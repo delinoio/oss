@@ -80,14 +80,24 @@ pub fn process(op: &Operation) -> Result<(Vec<u8>, String, String)> {
                 changes.push((target.id, edit.blocks));
             }
             let mut geometry = forge_document::geometry::Geometry::default();
-            for (_, blocks) in &changes {
+            for (id, blocks) in &changes {
+                let Some(width) = document
+                    .targets
+                    .iter()
+                    .find(|t| t.id == *id)
+                    .and_then(|t| t.available_width)
+                else {
+                    // Export remains safe without a provable source width; omit
+                    // geometry so measurement returns InvalidTarget, not a fake box.
+                    continue;
+                };
                 forge_docx::measure_blocks(
                     blocks,
                     &mut fonts,
                     &forge_document::Style::default(),
                     0.0,
                     0.0,
-                    468.0,
+                    width,
                     forge_document::geometry::CoordinateSpace::MountedRegion,
                     &mut geometry,
                 )?;

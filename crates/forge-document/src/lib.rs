@@ -46,7 +46,7 @@ pub struct Style {
     #[serde(default)]
     pub direction: Direction,
     #[serde(default)]
-    pub align: Align,
+    pub align: Option<Align>,
 }
 
 impl Style {

@@ -111,3 +111,11 @@ Keep project index, AGENTS rules, schema/examples, CLI/MCP descriptions and CI c
 - [DrawingML preset connection sites](https://github.com/LibreOffice/core/blob/master/oox/source/drawingml/customshapes/presetShapeDefinitions.xml).
 
 React Forge may supply an operation-local `TextLayout` to the new `layout_with_measurer`, `generate_with_measurer` and `update_with_measurer` APIs. This explicit opt-in boundary preserves the existing Forge defaults and does not install a process-global font policy. `FontEmbedding::PinnedDefault` retains the existing bundled OFL embedding; React Forge selects `ReferenceOnly` for system/caller font families. Existing CLI/MCP callers continue to use their original APIs.
+
+Editable imported presentation text also requires representable paragraph/run semantics. Fields, hyperlinks, bullets, inherited list defaults, unsupported run attributes/effects and text extensions remain opaque. The same content check applies to table cells. Replacing supported text must never silently flatten those semantics; unrelated edits retain their original XML.
+
+Preserving engine updates compare the old opaque leaf identities with the replacement tree. Replacing a container cannot remove an opaque descendant, even when the caller bypasses the patch API with a complete React-rendered tree; refusal leaves the source bytes untouched.
+
+Explicit property edits on imported supported shapes update their native preset geometry and/or fill. The editor changes only the requested properties, retains original transforms, outlines, effects and extension bytes, and rejects ambiguous multiple fills instead of reporting a successful no-op.
+
+Moving a container checks its entire subtree for opaque leaves before reinsertion. An unchanged frame does not authorize a native drawing-order change for unsupported content; a rejected ancestor move leaves the presentation and revision unchanged.

@@ -250,7 +250,7 @@ impl Fonts {
         layout.break_all_lines(Some(width as f32));
         forge_tree_doc::cancellation::checkpoint()?;
         layout.align(
-            match base.align {
+            match base.align.unwrap_or_default() {
                 Align::Left => Alignment::Left,
                 Align::Right => Alignment::Right,
                 Align::Center => Alignment::Center,
@@ -359,7 +359,7 @@ pub fn overlay(base: &Style, local: &Style) -> Style {
         } else {
             local.direction
         },
-        align: local.align,
+        align: local.align.or(base.align),
     }
 }
 

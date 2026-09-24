@@ -15,7 +15,7 @@ pub(crate) struct Writer<'a> {
     sequence: u32,
     drawing_ids: std::collections::HashSet<u32>,
     main: String,
-    list_ids: [Option<u32>; 2],
+    list_ids: std::collections::HashMap<(ListKind, Option<Uuid>), u32>,
 }
 
 fn twips(value: f64) -> i64 {
@@ -99,14 +99,15 @@ impl<'a> Writer<'a> {
             sequence: 0,
             drawing_ids,
             main: main.into(),
-            list_ids: [None, None],
+            list_ids: std::collections::HashMap::new(),
         })
     }
 
-    fn list_id(&mut self, kind: ListKind) -> Result<u32> {
-        let index = if kind == ListKind::Bullet { 0 } else { 1 };
-        if let Some(id) = self.list_ids[index] {
-            return Ok(id);
+    fn list_id(&mut self, list: &List) -> Result<u32> {
+        let kind = list.kind;
+        let key = (kind, list.instance_id);
+        if let Some(id) = self.list_ids.get(&key) {
+            return Ok(*id);
         }
         let relationships = relationships(&self.parts, &self.main)?;
         let existing: Vec<_> = relationships
@@ -190,7 +191,7 @@ impl<'a> Writer<'a> {
             insert_before_close(&bytes, &concrete)?
         };
         self.parts.insert(path, bytes);
-        self.list_ids[index] = Some(id);
+        self.list_ids.insert(key, id);
         Ok(id)
     }
 
@@ -239,14 +240,18 @@ impl<'a> Writer<'a> {
     }
 
     pub fn blocks(&mut self, blocks: &[Block], owner: &str) -> Result<String> {
+        self.blocks_with_style(blocks, owner, &Style::default())
+    }
+
+    fn blocks_with_style(&mut self, blocks: &[Block], owner: &str, base: &Style) -> Result<String> {
         let mut out = String::new();
         for block in blocks {
-            out.push_str(&self.block(block, owner)?);
+            out.push_str(&self.block_with_style(block, owner, base)?);
         }
         Ok(out)
     }
 
-    pub fn block(&mut self, block: &Block, owner: &str) -> Result<String> {
+    fn block_with_style(&mut self, block: &Block, owner: &str, base: &Style) -> Result<String> {
         forge_tree_doc::cancellation::checkpoint()?;
         match block {
             Block::Paragraph {
@@ -256,6 +261,7 @@ impl<'a> Writer<'a> {
                 runs,
                 ..
             } => {
+                let style = forge_document::fonts::overlay(base, style);
                 let mut out = format!("<w:p xmlns:w=\"{W}\" xmlns:r=\"{R}\"><w:pPr>");
                 if let Some(heading) = heading {
                     out.push_str(&format!(
@@ -267,19 +273,19 @@ impl<'a> Writer<'a> {
                     out.push_str(&format!(
                         "<w:numPr><w:ilvl w:val=\"{}\"/><w:numId w:val=\"{}\"/></w:numPr>",
                         list.level,
-                        self.list_id(list.kind)?
+                        self.list_id(list)?
                     ));
                 }
                 if style.direction == Direction::Rtl {
                     out.push_str("<w:bidi/>");
                 }
-                let align = match style.align {
+                let align = match style.align.unwrap_or_default() {
                     Align::Left => "left",
                     Align::Center => "center",
                     Align::Right => "right",
                     Align::Justify => "both",
                 };
-                out.push_str(&format!("<w:jc w:val=\"{align}\"/>{}</w:pPr>", rpr(style)));
+                out.push_str(&format!("<w:jc w:val=\"{align}\"/>{}</w:pPr>", rpr(&style)));
                 for run in runs {
                     forge_tree_doc::cancellation::checkpoint()?;
                     let rid = run
@@ -295,7 +301,7 @@ impl<'a> Writer<'a> {
                     // React callers, with explicit local overrides.
                     out.push_str(&format!(
                         "<w:r>{}",
-                        rpr(&forge_document::fonts::overlay(style, &run.style))
+                        rpr(&forge_document::fonts::overlay(&style, &run.style))
                     ));
                     for (i, line) in run.text.split('\n').enumerate() {
                         if i != 0 {
@@ -363,7 +369,8 @@ impl<'a> Writer<'a> {
                         }
                         out.push_str("</w:tcPr>");
                         if anchor == r {
-                            out.push_str(&self.blocks(&cell.blocks, owner)?);
+                            let style = forge_document::fonts::overlay(base, &cell.style);
+                            out.push_str(&self.blocks_with_style(&cell.blocks, owner, &style)?);
                         }
                         if anchor != r
                             || !matches!(

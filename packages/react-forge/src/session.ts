@@ -56,17 +56,18 @@ export class DocumentSession {
     return signal ? AbortSignal.any([signal, this.disposal.signal]) : this.disposal.signal;
   }
 
-  private async track<T>(stage: Stage, work: () => Promise<T>): Promise<T> {
+  private async track<T>(stage: Stage, work: (context: { revision: number }) => Promise<T>): Promise<T> {
     this.active();
+    const context = { revision: this.revision };
     const started = performance.now();
-    const operation = work();
+    const operation = work(context);
     this.operations.add(operation);
     let code: ErrorCode | undefined;
     try { return await operation; }
-    catch (error) { code = error instanceof ForgeError ? error.code : ErrorCode.Io; if (error instanceof ForgeError) throw new ForgeError(error.code, error.message, { stage, format: this.format, revision: this.revision, ...error.context }); throw error; }
+    catch (error) { code = error instanceof ForgeError ? error.code : ErrorCode.Io; if (error instanceof ForgeError) throw new ForgeError(error.code, error.message, { stage, format: this.format, ...error.context, revision: context.revision }); throw error; }
     finally {
       this.operations.delete(operation);
-      const event = Object.freeze({ source: "javascript" as const, stage, format: this.format, revision: this.revision, durationMs: performance.now() - started, code });
+      const event = Object.freeze({ source: "javascript" as const, stage, format: this.format, revision: context.revision, durationMs: performance.now() - started, code });
       this.emit(event);
     }
   }
@@ -225,19 +226,17 @@ export class DocumentSession {
         ...(this.format === Format.Docx ? { blocks: docxBlocks(root.snapshot(), this.documentId) } : { value: xlsxEdit(root.snapshot(), this.regions.get(id)!) }),
       })) };
     } else if (this.imported) {
-      model = structuredClone(this.imported);
-      for (const [id, root] of this.mounts) {
+      const edits = Array.from(this.mounts, ([id, root]) => {
         const nodes = root.snapshot();
         if (nodes.length !== 1) throw new ForgeError(ErrorCode.UnsupportedEdit, "A presentation mount must render one replacement node.");
-        const target = this.findNode(model, id)!;
-        const replacement = pptxNode(nodes[0]!, this.documentId);
         refs.set(nodes[0]!.id, id);
-        // Keep native identity and existing geometry unless explicitly replaced.
-        const frame = replacement.frame ?? target.frame;
-        for (const key of Object.keys(target)) delete target[key];
-        Object.assign(target, replacement, { id, frame });
-      }
-      model.assets = { ...(model.assets as Model), ...Object.fromEntries(Array.from(this.assets.keys(), id => [id, { handle: id }])) };
+        return { target: id, replacement: pptxNode(nodes[0]!, this.documentId) };
+      });
+      // Untouched source content stays in the bounded Office package. Only
+      // authored replacements cross the native React-tree input boundary.
+      model = { edits, source_identity: this.sourceIdentity,
+        assets: Object.fromEntries(Array.from(this.assets.keys(), id => [id, { handle: id }])) };
+
     } else {
       if (this.format === Format.Pptx) model = pptxModel(this.root.snapshot(), this.documentId, this.assets);
       else if (this.format === Format.Docx) model = docxModel(this.root.snapshot(), this.documentId);
@@ -245,7 +244,6 @@ export class DocumentSession {
       else if (this.format === Format.Pdf) model = pdfModel(this.root.snapshot(), this.documentId);
       else throw new ForgeError(ErrorCode.UnsupportedPackage, "This format is not connected to the native adapter yet.");
     }
-    if (this.imported && this.format === Format.Pptx) model = { document: model, source_identity: this.sourceIdentity };
     const json = JSON.stringify(model);
     if (Buffer.byteLength(json) > limits.treeBytes && !this.imported) throw new ForgeError(ErrorCode.ResourceLimit, "New document model exceeds 16 MiB.");
     const assets = new Map(this.assets);
@@ -255,8 +253,9 @@ export class DocumentSession {
     return { model, revision: this.revision, refs, assets, fontOptions };
   }
 
-  private async process(signal: AbortSignal): Promise<NativeOutput & { revision: number; refs: Map<string, string> }> {
+  private async process(signal: AbortSignal, context: { revision: number }): Promise<NativeOutput & { revision: number; refs: Map<string, string> }> {
     const { model, revision, refs, assets, fontOptions } = await this.prepare(signal);
+    context.revision = revision;
     const output = await processDocument(this.format, this.imported ? "update" : "generate", model,
       this.source, assets, this.documentId, revision, signal, fontOptions, event => this.emit(event));
     return { ...output, revision, refs };
@@ -264,13 +263,13 @@ export class DocumentSession {
 
   exportBuffer(options: { signal?: AbortSignal } = {}): Promise<Buffer> {
     const signal = this.signal(options.signal);
-    return this.track(Stage.Export, async () => (await this.process(signal)).bytes);
+    return this.track(Stage.Export, async context => (await this.process(signal, context)).bytes);
   }
 
   exportFile(path: string, options: { overwrite?: boolean; signal?: AbortSignal } = {}): Promise<{ published: true; revision: number }> {
     const signal = this.signal(options.signal);
-    return this.track(Stage.Export, () => withOutputReservation(path, signal, async destination => {
-      const result = await this.process(signal);
+    return this.track(Stage.Export, context => withOutputReservation(path, signal, async destination => {
+      const result = await this.process(signal, context);
       await publish(result.bytes, destination, { ...options, signal, source: this.fingerprint });
       return { published: true as const, revision: result.revision };
     }));
@@ -278,9 +277,9 @@ export class DocumentSession {
 
   measure(handle: NodeHandle, options: { revision: number; signal?: AbortSignal }): Promise<Geometry> {
     const signal = this.signal(options.signal);
-    return this.track(Stage.Layout, async () => {
+    return this.track(Stage.Layout, async context => {
       if (handle.documentId !== this.documentId) throw new ForgeError(ErrorCode.InvalidTarget, "Node belongs to a different document.");
-      const result = await this.process(signal);
+      const result = await this.process(signal, context);
       if (options.revision !== result.revision) throw new ForgeError(ErrorCode.Conflict, "Requested geometry revision is stale.");
       const geometry = JSON.parse(result.geometry) as { nodes: Record<string, { frame: Omit<Geometry, "revision"> }> };
       const node = geometry.nodes[result.refs.get(handle.nodeId) ?? handle.nodeId];

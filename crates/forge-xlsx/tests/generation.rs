@@ -158,3 +158,93 @@ fn tiny_models_cannot_expand_into_unbounded_merges_or_duplicate_dimensions() {
     });
     assert_eq!(generate(&model).unwrap_err().code, ErrorCode::ResourceLimit);
 }
+
+#[test]
+fn omitted_alignment_keeps_excel_general_while_explicit_alignment_is_emitted() {
+    for align in [None, Some("left"), Some("right")] {
+        let mut book = workbook();
+        book.sheets[0].cells[1].format = Some(
+            serde_json::from_value(json!({
+                "style":{"align":align}, "number_format":"0.00", "wrap":true, "border":true
+            }))
+            .unwrap(),
+        );
+        let parts = read(&generate(&book).unwrap()).unwrap();
+        let sheet = xml(&parts["xl/worksheets/sheet1.xml"]).unwrap();
+        let cell = sheet
+            .descendants()
+            .find(|n| n.has_tag_name((S, "c")) && n.attribute("r") == Some("A2"))
+            .unwrap();
+        let index = cell.attribute("s").unwrap().parse::<usize>().unwrap();
+        let styles = xml(&parts["xl/styles.xml"]).unwrap();
+        let xf = styles
+            .descendants()
+            .find(|n| n.has_tag_name((S, "cellXfs")))
+            .unwrap()
+            .children()
+            .filter(|n| n.is_element())
+            .nth(index)
+            .unwrap();
+        let alignment = xf
+            .children()
+            .find(|n| n.has_tag_name((S, "alignment")))
+            .unwrap();
+        assert_eq!(alignment.attribute("horizontal"), align);
+        assert_eq!(alignment.attribute("wrapText"), Some("1"));
+        assert!(
+            styles
+                .descendants()
+                .filter(|n| n.has_tag_name((S, "dxf")))
+                .all(|dxf| dxf
+                    .descendants()
+                    .filter(|n| n.has_tag_name((S, "alignment")))
+                    .all(|n| n.attribute("horizontal").is_none()))
+        );
+    }
+}
+
+#[test]
+fn differential_boolean_styles_distinguish_false_true_and_omitted() {
+    for enabled in [None, Some(false), Some(true)] {
+        let mut book = workbook();
+        book.sheets[0].conditional_formats[0].rule = serde_json::from_value(json!({
+            "type":"formula", "formula":"TRUE", "format":{"style":{"bold":enabled,"italic":enabled,"underline":enabled}}
+        })).unwrap();
+        let bytes = generate(&book).unwrap();
+        // Both initial generation and replacement of an imported rule use DXF
+        // overlays, which must explicitly clear an underlying cell's styling.
+        let imported = import(&bytes).unwrap();
+        let target = imported
+            .targets
+            .iter()
+            .find(|t| t.kind == TargetKind::ConditionalFormat)
+            .unwrap();
+        let edited = replace(
+            &imported,
+            &[(
+                target.id,
+                EditValue::ConditionalFormat(book.sheets[0].conditional_formats[0].clone()),
+            )],
+        )
+        .unwrap();
+        for (bytes, last) in [(&bytes, false), (&edited, true)] {
+            let parts = read(bytes).unwrap();
+            let styles = xml(&parts["xl/styles.xml"]).unwrap();
+            let dxfs: Vec<_> = styles
+                .descendants()
+                .filter(|n| n.has_tag_name((S, "dxf")))
+                .collect();
+            let dxf = if last { dxfs.last().unwrap() } else { &dxfs[0] };
+            for name in ["b", "i", "u"] {
+                let node = dxf.descendants().find(|n| n.has_tag_name((S, name)));
+                assert_eq!(node.is_some(), enabled.is_some());
+                if enabled == Some(false) {
+                    assert_eq!(
+                        node.unwrap().attribute("val"),
+                        Some(if name == "u" { "none" } else { "0" })
+                    );
+                }
+            }
+        }
+    }
+}

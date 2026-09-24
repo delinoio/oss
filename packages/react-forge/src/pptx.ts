@@ -1,6 +1,8 @@
 import { createElement } from "react";
 import type { AssetHandle, ElementProps, Frame, TextStyle } from "./types.js";
 
+export type PresentationTextStyle = Pick<TextStyle, "fontFamily" | "fontSize" | "bold" | "italic" | "underline" | "color">;
+
 export type Size = number | "hug" | "fill";
 export interface LayoutProps extends ElementProps {
   nodeKey?: string;
@@ -11,7 +13,7 @@ export interface LayoutProps extends ElementProps {
   gap?: number;
 }
 export interface TextProps extends LayoutProps {
-  style?: TextStyle;
+  style?: PresentationTextStyle;
   overflow?: "error" | "shrink";
   minFontSize?: number;
   placeholderRef?: string;
@@ -25,13 +27,13 @@ export const Column = component<LayoutProps>("column");
 export const Canvas = component<LayoutProps>("canvas");
 export const Text = component<TextProps>("text");
 export const Paragraph = component<ElementProps & { align?: "left" | "center" | "right" | "justify" }>("paragraph");
-export const Run = component<ElementProps & { style?: TextStyle }>("run");
+export const Run = component<ElementProps & { style?: PresentationTextStyle }>("run");
 export const List = component<TextProps & { items: string[]; marker?: "bullet" | "number" }>("list");
 export const Image = component<LayoutProps & { asset: AssetHandle; alt: string; fit?: "contain" | "cover" }>("image");
 export const Shape = component<LayoutProps & { shape?: "rect" | "rounded_rect" | "ellipse"; fill?: string }>("shape");
-export const Table = component<LayoutProps & { columns: Size[]; style?: TextStyle }>("table");
+export const Table = component<LayoutProps & { columns: Size[]; style?: PresentationTextStyle }>("table");
 export const TableRow = component<ElementProps>("table-row");
-export const Cell = component<ElementProps & { rowSpan?: number; colSpan?: number; fill?: string; style?: TextStyle }>("cell");
+export const Cell = component<ElementProps & { rowSpan?: number; colSpan?: number; fill?: string; style?: PresentationTextStyle }>("cell");
 export const Chart = component<LayoutProps & {
   data: { categories: string[]; series: { key: string; name: string; values: number[] }[] };
   orientation?: "vertical" | "horizontal";

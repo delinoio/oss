@@ -269,6 +269,15 @@ pub fn apply_patch(
                     );
                 }
                 let n = detach(&mut next, target)?;
+                let mut opaque = false;
+                n.visit(&mut |n| opaque |= n.kind == NodeKind::Opaque);
+                if opaque {
+                    return error(
+                        ErrorCode::UnsupportedEdit,
+                        "/target",
+                        "Cannot move a container with unsupported content",
+                    );
+                }
                 insert(&mut next, parent, *index, n)?;
             }
         }

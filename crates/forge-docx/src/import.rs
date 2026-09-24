@@ -23,6 +23,8 @@ pub struct Target {
     pub kind: TargetKind,
     pub region: Region,
     pub text: String,
+    /// Source flow width in points, absent when the source layout is ambiguous.
+    pub available_width: Option<f64>,
 }
 
 #[derive(Debug, Clone)]
@@ -42,6 +44,17 @@ fn supported_attributes(node: roxmltree::Node<'_, '_>) -> bool {
 }
 
 fn supported_word_element(n: roxmltree::Node<'_, '_>) -> bool {
+    // Only ordinary line breaks fit the editable paragraph model. Page/column
+    // breaks and text-wrapping clearance must survive as opaque source XML.
+    if n.has_tag_name((W, "br")) {
+        return n.attributes().all(|attribute| {
+            attribute.namespace() == Some(W)
+                && matches!(
+                    (attribute.name(), attribute.value()),
+                    ("type", "textWrapping") | ("clear", "none")
+                )
+        });
+    }
     n.tag_name().namespace() == Some(W)
         && matches!(
             n.tag_name().name(),
@@ -120,6 +133,93 @@ fn supported_word_node(node: roxmltree::Node<'_, '_>) -> bool {
         supported_word_element(n)
             // Cell replacement retains its original opening/closing wrapper.
             && ((n == node && node.has_tag_name((W, "tc"))) || supported_attributes(n))
+    })
+}
+
+// Chart replacement reconstructs a complete part. Whitelist the modeled plot
+// families, data/title/legend/label structures and their baseline presentation
+// properties, so standard-namespace features are not mistaken for owned data.
+fn representable_chart(root: roxmltree::Node<'_, '_>) -> bool {
+    root.descendants().filter(|n| n.is_element()).all(|n| {
+        let name = n.tag_name().name();
+        let attributes = |names: &[&str]| {
+            n.attributes()
+                .all(|a| a.namespace().is_none() && names.contains(&a.name()))
+        };
+        let value = |values: &[&str]| {
+            attributes(&["val"]) && n.attribute("val").is_some_and(|v| values.contains(&v))
+        };
+        match n.tag_name().namespace() {
+            Some(C) => match name {
+                "chartSpace" | "chart" | "plotArea" | "barChart" | "lineChart" | "pieChart"
+                | "ser" | "tx" | "cat" | "val" | "strRef" | "numRef" | "strCache" | "numCache"
+                | "strLit" | "numLit" | "title" | "rich" | "txPr" | "spPr" | "scaling"
+                | "catAx" | "valAx" | "legend" | "majorGridlines" | "dLbls" | "dPt" | "layout"
+                | "printSettings" | "headerFooter" | "pageSetup" | "f" | "v" => attributes(&[]),
+                "formatCode" => attributes(&[]) && n.text() == Some("General"),
+                "barDir" => value(&["col"]),
+                "grouping" => value(&["clustered", "standard"]),
+                "orientation" => value(&["minMax"]),
+                "gapWidth" => value(&["150"]),
+                "firstSliceAng" => value(&["0"]),
+                "legendPos" => value(&["r"]),
+                "plotVisOnly" | "auto" | "varyColors" => value(&["1", "true"]),
+                "autoUpdate" => value(&["0", "false"]),
+                "showVal" => value(&["0", "1", "false", "true"]),
+                "dispBlanksAs" => value(&["gap"]),
+                "axPos" => value(&["l", "b"]),
+                "majorTickMark" | "minorTickMark" | "symbol" => value(&["none"]),
+                "tickLblPos" => value(&["nextTo"]),
+                "crosses" => value(&["autoZero"]),
+                "crossBetween" => value(&["between"]),
+                "lblAlgn" => value(&["ctr"]),
+                "lblOffset" => value(&["100"]),
+                "lang" => value(&["en-US"]),
+                "marker" => attributes(&[]) || value(&["1", "true"]),
+                "idx" | "order" | "axId" | "crossAx" | "ptCount" => {
+                    attributes(&["val"])
+                        && n.attribute("val").is_some_and(|v| v.parse::<u32>().is_ok())
+                }
+                "pt" => {
+                    attributes(&["idx"])
+                        && n.attribute("idx").is_some_and(|v| v.parse::<u32>().is_ok())
+                }
+                "numFmt" => {
+                    attributes(&["formatCode", "sourceLinked"])
+                        && n.attribute("formatCode") == Some("General")
+                        && matches!(n.attribute("sourceLinked"), Some("1" | "true"))
+                }
+                "externalData" => n
+                    .attributes()
+                    .all(|a| a.namespace() == Some(R) && a.name() == "id"),
+                "pageMargins" => n.attributes().all(|a| {
+                    a.namespace().is_none()
+                        && match a.name() {
+                            "l" | "r" => a.value() == "0.7",
+                            "t" | "b" => a.value() == "0.75",
+                            "header" | "footer" => a.value() == "0.3",
+                            _ => false,
+                        }
+                }),
+                _ => false,
+            },
+            Some(A) => match name {
+                "bodyPr" | "lstStyle" | "p" | "defRPr" | "r" | "t" | "solidFill" => attributes(&[]),
+                "pPr" => {
+                    attributes(&["rtl"])
+                        && n.attribute("rtl")
+                            .is_none_or(|v| matches!(v, "0" | "false"))
+                }
+                "rPr" | "endParaRPr" => {
+                    attributes(&["lang"]) && n.attribute("lang").is_none_or(|v| v == "en-US")
+                }
+                "ln" => attributes(&["w"]) && n.attribute("w").is_none_or(|v| v == "25400"),
+                "prstDash" => value(&["solid"]),
+                "srgbClr" => value(&["4472C4", "ED7D31", "A5A5A5", "FFC000", "5B9BD5", "70AD47"]),
+                _ => false,
+            },
+            _ => false,
+        }
     })
 }
 
@@ -212,6 +312,9 @@ fn drawing_kind(
         {
             return Ok(None);
         }
+        if !representable_chart(doc.root_element()) {
+            return Ok(None);
+        }
         return Ok(Some(TargetKind::Chart));
     }
     if node
@@ -242,6 +345,15 @@ pub fn import(bytes: &[u8]) -> Result<Imported> {
             "Word document requires exactly one body",
         );
     }
+    let styles_path = relationships(&parts, &main)?
+        .into_iter()
+        .find(|r| !r.external && r.kind == format!("{R}/styles"))
+        .map(|r| resolve(&main, &r.target))
+        .transpose()?;
+    let styles = styles_path
+        .as_ref()
+        .map(|path| xml(&parts[path]))
+        .transpose()?;
     let mut owners = vec![main.clone()];
     for relation in relationships(&parts, &main)? {
         if !relation.external
@@ -257,6 +369,8 @@ pub fn import(bytes: &[u8]) -> Result<Imported> {
     for owner in owners {
         forge_tree_doc::cancellation::checkpoint()?;
         let doc = xml(&parts[&owner])?;
+        let mut source_geometry =
+            crate::source_geometry::SourceGeometry::new(&main_doc, styles.as_ref());
         for node in doc.descendants().filter(|n| {
             n.is_element()
                 && n.tag_name().namespace() == Some(W)
@@ -276,6 +390,7 @@ pub fn import(bytes: &[u8]) -> Result<Imported> {
             targets.push(Target {
                 id: Uuid::now_v7(),
                 kind,
+                available_width: source_geometry.available_width(node),
                 region: Region::new(&owner, node.range(), &parts)?,
                 text: node
                     .descendants()

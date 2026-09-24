@@ -39,7 +39,7 @@ fn margin() -> f64 {
     72.0
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ListKind {
     Bullet,
@@ -49,6 +49,9 @@ pub enum ListKind {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct List {
+    /// Paragraphs in one authored list share this identity. Omission retains
+    /// the legacy per-kind numbering sequence for native callers.
+    pub instance_id: Option<Uuid>,
     pub kind: ListKind,
     #[serde(default)]
     pub level: u8,
@@ -279,12 +282,15 @@ pub fn validate_blocks(
             } => {
                 style.validate()?;
                 if heading.is_some_and(|level| !(1..=9).contains(&level))
-                    || list.as_ref().is_some_and(|list| list.level > 8)
+                    || list.as_ref().is_some_and(|list| {
+                        list.level > 8
+                            || list.instance_id.is_some_and(|id| id.get_version_num() != 7)
+                    })
                 {
                     return error(
                         ErrorCode::InvalidField,
                         "paragraph",
-                        "Heading or list level is invalid",
+                        "Heading, list level or list instance identity is invalid",
                     );
                 }
                 for run in runs {

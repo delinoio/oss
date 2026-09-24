@@ -176,6 +176,132 @@ fn representable_text_body(body: roxmltree::Node<'_, '_>) -> bool {
         && children[0].attributes().len() == 0
         && !children[0].children().any(|n| n.is_element())
 }
+// Text replacement owns the complete paragraph/run subtree. Admit only
+// semantics that paragraphs()/text_style() can retain; native fields, links,
+// bullets, inherited list styles and extension properties must stay opaque.
+fn representable_text_content(body: roxmltree::Node<'_, '_>) -> bool {
+    fn attributes(n: roxmltree::Node<'_, '_>, names: &[&str]) -> bool {
+        n.attributes()
+            .all(|a| a.namespace().is_none() && names.contains(&a.name()))
+    }
+    fn empty(n: roxmltree::Node<'_, '_>) -> bool {
+        n.attributes().len() == 0 && !n.children().any(|c| c.is_element())
+    }
+    fn unique_children(n: roxmltree::Node<'_, '_>, names: &[&str]) -> bool {
+        let mut seen = std::collections::HashSet::new();
+        n.children().filter(|c| c.is_element()).all(|c| {
+            c.tag_name().namespace() == Some(A)
+                && names.contains(&c.tag_name().name())
+                && seen.insert(c.tag_name().name())
+        })
+    }
+    fn run_style(n: roxmltree::Node<'_, '_>) -> bool {
+        if !attributes(n, &["sz", "b", "i", "u"])
+            || n.attribute("sz")
+                .is_some_and(|s| s.parse::<u32>().map_or(true, |s| s == 0))
+            || ["b", "i"].iter().any(|name| {
+                n.attribute(*name)
+                    .is_some_and(|v| !matches!(v, "0" | "1" | "false" | "true"))
+            })
+            || n.attribute("u")
+                .is_some_and(|v| !matches!(v, "none" | "sng"))
+            || !unique_children(n, &["solidFill", "latin", "ea", "cs"])
+        {
+            return false;
+        }
+        let latin = n
+            .children()
+            .find(|c| c.has_tag_name((A, "latin")))
+            .and_then(|c| c.attribute("typeface"));
+        n.children()
+            .filter(|c| c.is_element())
+            .all(|c| match c.tag_name().name() {
+                "solidFill" => {
+                    let colors: Vec<_> = c.children().filter(|c| c.is_element()).collect();
+                    attributes(c, &[])
+                        && colors.len() == 1
+                        && colors[0].has_tag_name((A, "srgbClr"))
+                        && attributes(colors[0], &["val"])
+                        && colors[0].attribute("val").is_some_and(|v| {
+                            v.len() == 6 && v.bytes().all(|b| b.is_ascii_hexdigit())
+                        })
+                        && !colors[0].children().any(|c| c.is_element())
+                }
+                "latin" | "ea" | "cs" => {
+                    attributes(c, &["typeface"])
+                        && c.attribute("typeface").is_some_and(|v| {
+                            !v.is_empty() && !v.starts_with('+') && Some(v) == latin
+                        })
+                        && !c.children().any(|c| c.is_element())
+                }
+                _ => false,
+            })
+    }
+    fn paragraph_properties(n: roxmltree::Node<'_, '_>) -> bool {
+        attributes(n, &["algn"])
+            && n.attribute("algn")
+                .is_none_or(|v| matches!(v, "l" | "ctr" | "r" | "just"))
+            && unique_children(n, &["buNone", "lnSpc"])
+            && n.children().filter(|c| c.is_element()).all(|c| {
+                if c.has_tag_name((A, "buNone")) {
+                    return empty(c);
+                }
+                let spacing: Vec<_> = c.children().filter(|c| c.is_element()).collect();
+                attributes(c, &[])
+                    && spacing.len() == 1
+                    && spacing[0].has_tag_name((A, "spcPct"))
+                    && attributes(spacing[0], &["val"])
+                    && spacing[0].attribute("val") == Some("125000")
+                    && !spacing[0].children().any(|c| c.is_element())
+            })
+    }
+    body.attributes().len() == 0
+        && body.children().filter(|n| n.is_element()).all(|n| {
+            if n.has_tag_name((A, "bodyPr")) {
+                return true;
+            }
+            if n.has_tag_name((A, "lstStyle")) {
+                return empty(n);
+            }
+            if !n.has_tag_name((A, "p")) || !attributes(n, &[]) {
+                return false;
+            }
+            let mut properties = false;
+            let mut end = false;
+            n.children().filter(|c| c.is_element()).all(|c| {
+                if c.has_tag_name((A, "pPr")) {
+                    let valid = !properties && paragraph_properties(c);
+                    properties = true;
+                    return valid;
+                }
+                if c.has_tag_name((A, "endParaRPr")) {
+                    let valid = !end && empty(c);
+                    end = true;
+                    return valid;
+                }
+                if !(c.has_tag_name((A, "r")) || c.has_tag_name((A, "br"))) || !attributes(c, &[]) {
+                    return false;
+                }
+                let children: Vec<_> = c.children().filter(|n| n.is_element()).collect();
+                unique_children(c, &["rPr", "t"])
+                    && children.iter().all(|r| {
+                        if r.has_tag_name((A, "rPr")) {
+                            return run_style(*r);
+                        }
+                        c.has_tag_name((A, "r"))
+                            && r.attributes().all(|a| {
+                                a.namespace() == Some("http://www.w3.org/XML/1998/namespace")
+                                    && a.name() == "space"
+                                    && matches!(a.value(), "preserve" | "default")
+                            })
+                            && !r.children().any(|n| n.is_element())
+                    })
+                    && (c.has_tag_name((A, "br"))
+                        || children.iter().any(|n| n.has_tag_name((A, "t"))))
+            })
+        })
+}
+
 fn paragraphs(n: roxmltree::Node<'_, '_>) -> Vec<Paragraph> {
     n.children()
         .filter(|n| n.has_tag_name((A, "p")))
@@ -291,6 +417,13 @@ fn parse_table(n: roxmltree::Node<'_, '_>, frame: Frame) -> Result<(Vec<Column>,
         })
     {
         return Err(failure("unrepresentable table row heights"));
+    }
+    if tbl
+        .descendants()
+        .filter(|n| n.has_tag_name((A, "txBody")))
+        .any(|body| !representable_text_content(body))
+    {
+        return Err(failure("unrepresentable table text"));
     }
     let columns = desc(tbl, A, "tblGrid")
         .ok_or_else(|| failure("grid"))?
@@ -633,7 +766,7 @@ pub fn import(bytes: &[u8]) -> Result<Imported> {
                 if let Some(body) =
                     body.filter(|_| has_text || textbox || desc(item, P, "ph").is_some())
                 {
-                    if representable_text_body(body) {
+                    if representable_text_body(body) && representable_text_content(body) {
                         n.kind = NodeKind::Text;
                         n.paragraphs = paragraphs(body);
                         if n.paragraphs.is_empty() {

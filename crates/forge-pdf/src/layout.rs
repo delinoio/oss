@@ -235,7 +235,7 @@ impl Flow<'_> {
                     style.language = Some(language.into());
                 }
                 if heading.is_some() {
-                    style.bold = Some(true);
+                    style.bold.get_or_insert(true);
                     if style.font_size.is_none() {
                         style.font_size = Some(24.0 - f64::from(heading.unwrap()) * 2.0);
                     }
@@ -364,7 +364,7 @@ impl Flow<'_> {
                 };
                 let mut style = cell.style.clone();
                 if row.header {
-                    style.bold = Some(true);
+                    style.bold.get_or_insert(true);
                 }
                 let text = Arc::new(self.fonts.shape(&cell.runs, &style, width - 8.0, true)?);
                 let tags = self.spans(&cell.runs, cell_tag, language);
@@ -534,5 +534,57 @@ impl Flow<'_> {
         }
         self.y += height;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn semantic_headings_default_bold_without_overriding_explicit_false() {
+        for bold in [None, Some(false), Some(true)] {
+            let paragraph = Block::Paragraph {
+                id: Uuid::now_v7(),
+                heading: Some(1),
+                style: forge_document::Style {
+                    bold,
+                    ..Default::default()
+                },
+                runs: vec![
+                    Run {
+                        text: "Heading".into(),
+                        ..Default::default()
+                    },
+                    Run {
+                        text: " local".into(),
+                        style: forge_document::Style {
+                            bold: Some(false),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                ],
+            };
+            let doc = Document {
+                id: Uuid::now_v7(),
+                title: None,
+                language: "en".into(),
+                pages: vec![Page {
+                    id: Uuid::now_v7(),
+                    width: 400.,
+                    height: 400.,
+                    margin: 20.,
+                    blocks: vec![paragraph],
+                }],
+            };
+            let mut fonts = Fonts::new(false, &[forge_tree_doc::FONT_BYTES.to_vec()]).unwrap();
+            let planned = layout(&doc, &mut fonts).unwrap();
+            let Command::Line { text, .. } = &planned.pages[0].commands[0] else {
+                panic!("heading text command")
+            };
+            assert_eq!(text.runs[0].style.bold, Some(bold.unwrap_or(true)));
+            assert_eq!(text.runs[1].style.bold, Some(false));
+        }
     }
 }

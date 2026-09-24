@@ -259,8 +259,54 @@ fn package_input_and_output_part_expansion_limits_are_independent() {
         xml(&vec![b' '; MAX_PART_BYTES + 1]).unwrap_err().code,
         ErrorCode::ResourceLimit
     );
-    let at_depth = format!("{}{}", "<a>".repeat(127), "</a>".repeat(127));
+    let at_depth = format!("{}{}", "<a>".repeat(128), "</a>".repeat(128));
     assert!(xml(at_depth.as_bytes()).is_ok());
     let at_nodes = format!("<root>{}</root>", "<n/>".repeat(999_998));
     assert!(xml(at_nodes.as_bytes()).is_ok());
+}
+
+#[test]
+fn relationship_elements_require_the_opc_namespace_and_names() {
+    for owner in ["", "word/document.xml"] {
+        let path = if owner.is_empty() {
+            "_rels/.rels".into()
+        } else {
+            relation_path(owner)
+        };
+        let valid = format!(
+            "<r:Relationships xmlns:r=\"{REL}\"><r:Relationship Id=\"rId1\" \
+             Type=\"{R}/officeDocument\" Target=\"word/document.xml\"/></r:Relationships>"
+        );
+        let mut parts = document();
+        parts.insert(path.clone(), valid.as_bytes().to_vec());
+        assert_eq!(relationships(&parts, owner).unwrap().len(), 1);
+        for invalid in [
+            valid.replace(REL, "urn:foreign"),
+            valid.replace("r:Relationships", "r:WrongRoot"),
+            valid.replace(
+                "<r:Relationship Id",
+                "<Relationship xmlns=\"urn:foreign\" Id",
+            ),
+            valid.replace("<r:Relationship Id", "<r:WrongChild Id"),
+        ] {
+            parts.insert(path.clone(), invalid.into_bytes());
+            assert_eq!(
+                relationships(&parts, owner).unwrap_err().code,
+                ErrorCode::InvalidPackage
+            );
+        }
+    }
+}
+
+#[test]
+fn xml_accepts_exactly_128_element_levels_with_text_or_empty_leaves() {
+    for leaf in ["<leaf/>", "<leaf>text<!-- comment --></leaf>"] {
+        let accepted = format!("{}{}{}", "<a>".repeat(127), leaf, "</a>".repeat(127));
+        assert!(xml(accepted.as_bytes()).is_ok());
+        let rejected = format!("<a>{accepted}</a>");
+        assert_eq!(
+            xml(rejected.as_bytes()).unwrap_err().code,
+            ErrorCode::ResourceLimit
+        );
+    }
 }

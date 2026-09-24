@@ -122,6 +122,7 @@ fn native_document_contains_sections_rich_text_lists_images_merges_and_editable_
             heading: None,
             style: Style::default(),
             list: Some(List {
+                instance_id: None,
                 kind: ListKind::Number,
                 level: 1,
             }),
@@ -374,6 +375,7 @@ fn external_chart_replacements_allocate_drawing_and_list_ids_without_restyling_o
             style: Style::default(),
             heading: None,
             list: Some(List {
+                instance_id: None,
                 kind: ListKind::Number,
                 level: 0,
             }),
@@ -577,4 +579,356 @@ fn foreign_paragraph_attributes_and_drawing_bookmarks_remain_opaque() {
         );
     }
     assert_eq!(replace(&imported, &[], &Assets::new()).unwrap(), input);
+}
+
+#[test]
+fn typed_breaks_stay_opaque_while_line_breaks_remain_editable() {
+    for (attributes, editable) in [
+        ("", true),
+        (" w:type=\"textWrapping\"", true),
+        (" w:type=\"page\"", false),
+        (" w:type=\"column\"", false),
+        (" w:clear=\"all\"", false),
+    ] {
+        let bytes = generate(
+            &document(vec![paragraph("Before"), paragraph("Other")]),
+            &Assets::new(),
+        )
+        .unwrap();
+        let mut parts = read(&bytes).unwrap();
+        let original = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+        let changed = original.replacen(
+            "Before</w:t>",
+            &format!("Before</w:t><w:br{attributes}/><w:t>After</w:t>"),
+            1,
+        );
+        parts.insert("word/document.xml".into(), changed.into_bytes());
+        let imported = import(&forge_package::write(&parts).unwrap()).unwrap();
+        let target = imported
+            .targets
+            .iter()
+            .find(|target| target.text.contains("Before"))
+            .unwrap();
+        assert_eq!(
+            target.kind,
+            if editable {
+                TargetKind::Paragraph
+            } else {
+                TargetKind::Opaque
+            }
+        );
+        if !editable {
+            assert!(
+                replace(
+                    &imported,
+                    &[(target.id, vec![paragraph("Lost")])],
+                    &Assets::new()
+                )
+                .is_err()
+            );
+            let other = imported
+                .targets
+                .iter()
+                .find(|target| target.text == "Other")
+                .unwrap();
+            let output = replace(
+                &imported,
+                &[(other.id, vec![paragraph("Edited")])],
+                &Assets::new(),
+            )
+            .unwrap();
+            let next = read(&output).unwrap();
+            let protected = &parts["word/document.xml"][target.region.range.clone()];
+            assert!(
+                next["word/document.xml"]
+                    .windows(protected.len())
+                    .any(|window| window == protected)
+            );
+        }
+    }
+}
+
+#[test]
+fn cell_text_styles_cascade_through_nested_blocks_with_explicit_overrides() {
+    let doc: Document = serde_json::from_value(serde_json::json!({"sections":[{"blocks":[
+        {"type":"table","columns":[240],"rows":[{"cells":[{
+            "style":{"font_family":"Arial","font_size":18,"bold":true,"color":"#112233"},
+            "blocks":[
+                {"type":"paragraph","runs":[{"text":"Inherited"},{"text":"Run override","style":{"bold":false,"color":"#445566"}}]},
+                {"type":"paragraph","style":{"font_size":12},"runs":[{"text":"Paragraph override"}]},
+                {"type":"table","columns":[200],"rows":[{"cells":[{"style":{"italic":true},"blocks":[{"type":"paragraph","runs":[{"text":"Nested"}]}]}]}]}
+            ]
+        }]}]}
+    ]}]})).unwrap();
+    let parts = read(&generate(&doc, &Assets::new()).unwrap()).unwrap();
+    let parsed = xml(&parts["word/document.xml"]).unwrap();
+    for (text, size, bold, color) in [
+        ("Inherited", "36", "1", "112233"),
+        ("Run override", "36", "0", "445566"),
+        ("Paragraph override", "24", "1", "112233"),
+        ("Nested", "36", "1", "112233"),
+    ] {
+        let run = parsed
+            .descendants()
+            .find(|n| n.has_tag_name((W, "t")) && n.text() == Some(text))
+            .unwrap()
+            .parent()
+            .unwrap();
+        let property = |name| {
+            run.descendants()
+                .find(|n| n.has_tag_name((W, name)))
+                .unwrap()
+        };
+        assert_eq!(property("rFonts").attribute((W, "ascii")), Some("Arial"));
+        assert_eq!(property("sz").attribute((W, "val")), Some(size));
+        assert_eq!(property("b").attribute((W, "val")), Some(bold));
+        assert_eq!(property("color").attribute((W, "val")), Some(color));
+        if text == "Nested" {
+            assert_eq!(property("i").attribute((W, "val")), Some("1"));
+        }
+    }
+}
+
+#[test]
+fn independent_numbered_list_instances_restart_without_renumbering_imported_lists() {
+    let a = Uuid::now_v7();
+    let b = Uuid::now_v7();
+    let item = |id, text: &str| {
+        let mut block = paragraph(text);
+        if let Block::Paragraph { list, .. } = &mut block {
+            *list = Some(List {
+                instance_id: Some(id),
+                kind: ListKind::Number,
+                level: 0,
+            });
+        }
+        block
+    };
+    let blocks = vec![
+        item(a, "A1"),
+        item(a, "A2"),
+        paragraph("Between"),
+        item(b, "B1"),
+        item(b, "B2"),
+    ];
+    let generated = generate(&document(blocks.clone()), &Assets::new()).unwrap();
+    let original = import(include_bytes!("fixtures/external.docx")).unwrap();
+    let target = original
+        .targets
+        .iter()
+        .find(|t| t.kind == TargetKind::Paragraph && t.text == "External paragraph")
+        .unwrap();
+    let edited = replace(&original, &[(target.id, blocks)], &Assets::new()).unwrap();
+    for bytes in [&generated, &edited] {
+        let parts = read(bytes).unwrap();
+        let main = xml(&parts["word/document.xml"]).unwrap();
+        let number = |text| {
+            let paragraph = main
+                .descendants()
+                .find(|n| {
+                    n.has_tag_name((W, "p"))
+                        && n.descendants()
+                            .any(|n| n.has_tag_name((W, "t")) && n.text() == Some(text))
+                })
+                .unwrap();
+            paragraph
+                .descendants()
+                .find(|n| n.has_tag_name((W, "numId")))
+                .unwrap()
+                .attribute((W, "val"))
+                .unwrap()
+                .to_string()
+        };
+        assert_eq!(number("A1"), number("A2"));
+        assert_eq!(number("B1"), number("B2"));
+        assert_ne!(number("A1"), number("B1"));
+        let relation = forge_package::relationships(&parts, "word/document.xml")
+            .unwrap()
+            .into_iter()
+            .find(|r| r.kind.ends_with("/numbering"))
+            .unwrap();
+        let path = forge_package::resolve("word/document.xml", &relation.target).unwrap();
+        let numbering = xml(&parts[&path]).unwrap();
+        for id in [number("A1"), number("B1")] {
+            let concrete = numbering
+                .descendants()
+                .find(|n| n.has_tag_name((W, "num")) && n.attribute((W, "numId")) == Some(&id))
+                .unwrap();
+            let definition = concrete
+                .first_element_child()
+                .unwrap()
+                .attribute((W, "val"))
+                .unwrap();
+            let abstract_num = numbering
+                .descendants()
+                .find(|n| {
+                    n.has_tag_name((W, "abstractNum"))
+                        && n.attribute((W, "abstractNumId")) == Some(definition)
+                })
+                .unwrap();
+            assert!(
+                abstract_num
+                    .descendants()
+                    .filter(|n| n.has_tag_name((W, "start")))
+                    .all(|n| n.attribute((W, "val")) == Some("1"))
+            );
+        }
+    }
+    let after = read(&edited).unwrap();
+    for (path, bytes) in &original.parts {
+        if path.contains("numbering") && path.ends_with(".xml") {
+            let original_xml = xml(bytes).unwrap();
+            let next_xml = xml(&after[path]).unwrap();
+            for node in original_xml
+                .root_element()
+                .children()
+                .filter(|n| n.is_element())
+            {
+                assert!(
+                    next_xml
+                        .root_element()
+                        .children()
+                        .any(|n| n.is_element() && after[path][n.range()] == bytes[node.range()])
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn unmodeled_standard_chart_features_are_opaque_and_preserved() {
+    let original = read(include_bytes!("fixtures/charts.docx")).unwrap();
+    let path = "word/charts/chart1.xml";
+    let chart = String::from_utf8(original[path].clone()).unwrap();
+    for modified in [
+        chart.replace(
+            "</ser>",
+            "<trendline><trendlineType val=\"linear\"/></trendline></ser>",
+        ),
+        chart.replace(
+            "</scaling>",
+            "<min val=\"10\"/><max val=\"100\"/></scaling>",
+        ),
+        chart.replace("</scaling>", "<logBase val=\"10\"/></scaling>"),
+        chart.replace("grouping val=\"clustered\"", "grouping val=\"stacked\""),
+        chart.replace("</ser>", "<errBars><errDir val=\"y\"/></errBars></ser>"),
+    ] {
+        let mut parts = original.clone();
+        parts.insert(path.into(), modified.into_bytes());
+        let imported = import(&forge_package::write(&parts).unwrap()).unwrap();
+        assert_eq!(
+            imported
+                .targets
+                .iter()
+                .filter(|t| t.kind == TargetKind::Chart)
+                .count(),
+            2
+        );
+        let target = imported
+            .targets
+            .iter()
+            .find(|t| t.kind == TargetKind::Paragraph)
+            .unwrap();
+        let output = replace(
+            &imported,
+            &[(target.id, vec![paragraph("Unrelated edit")])],
+            &Assets::new(),
+        )
+        .unwrap();
+        assert_eq!(read(&output).unwrap()[path], parts[path]);
+    }
+}
+
+#[test]
+fn imported_flow_widths_follow_sections_and_cell_margin_cascades() {
+    let mut model = document(vec![paragraph("First section")]);
+    model.sections[0].width = 400.0;
+    model.sections[0].margin = 50.0;
+    let mut next = model.sections[0].clone();
+    next.width = 600.0;
+    next.header = vec![paragraph("Header")];
+    next.footer = vec![paragraph("Footer")];
+    next.blocks = vec![paragraph("Second section")];
+    model.sections.push(next);
+    let imported = import(&generate(&model, &Assets::new()).unwrap()).unwrap();
+    for (text, width) in [("First section", 300.0), ("Second section", 500.0)] {
+        let target = imported.targets.iter().find(|t| t.text == text).unwrap();
+        assert_eq!(target.available_width, Some(width));
+    }
+    assert!(
+        imported
+            .targets
+            .iter()
+            .filter(|t| t.text == "Header")
+            .all(|t| t.available_width.is_none())
+    );
+
+    let mut parts = read(include_bytes!("fixtures/external.docx")).unwrap();
+    let source = String::from_utf8(parts["word/document.xml"].clone())
+        .unwrap()
+        .replace("w:w=\"4320\"", "w:w=\"2000\"");
+    parts.insert("word/document.xml".into(), source.into_bytes());
+    let imported = import(&forge_package::write(&parts).unwrap()).unwrap();
+    let left = imported
+        .targets
+        .iter()
+        .find(|t| t.kind == TargetKind::Cell && t.text == "Left")
+        .unwrap();
+    // TableGrid inherits 108-twip left/right margins from TableNormal.
+    assert_eq!(left.available_width, Some(89.2));
+    let paragraph = imported
+        .targets
+        .iter()
+        .find(|t| t.kind == TargetKind::Paragraph && t.text == "Left")
+        .unwrap();
+    assert_eq!(paragraph.available_width, left.available_width);
+
+    let source = String::from_utf8(parts["word/document.xml"].clone())
+        .unwrap()
+        .replace(
+            "</w:tcPr>",
+            "<w:tcMar><w:left w:w=\"40\" w:type=\"dxa\"/><w:right w:w=\"60\" \
+             w:type=\"dxa\"/></w:tcMar></w:tcPr>",
+        );
+    for source in [
+        source.clone(),
+        source.replace("<w:tcW w:type=\"dxa\" w:w=\"2000\"/>", ""),
+    ] {
+        parts.insert("word/document.xml".into(), source.into_bytes());
+        let imported = import(&forge_package::write(&parts).unwrap()).unwrap();
+        assert_eq!(
+            imported
+                .targets
+                .iter()
+                .find(|t| t.kind == TargetKind::Cell && t.text == "Left")
+                .unwrap()
+                .available_width,
+            Some(95.0)
+        );
+    }
+}
+
+#[test]
+fn ambiguous_imported_section_width_does_not_invent_geometry() {
+    let mut parts =
+        read(&generate(&document(vec![paragraph("Columns")]), &Assets::new()).unwrap()).unwrap();
+    let source = String::from_utf8(parts["word/document.xml"].clone())
+        .unwrap()
+        .replace("</w:sectPr>", "<w:cols w:num=\"2\"/></w:sectPr>");
+    parts.insert("word/document.xml".into(), source.into_bytes());
+    let imported = import(&forge_package::write(&parts).unwrap()).unwrap();
+    assert!(imported.targets.iter().all(|t| t.available_width.is_none()));
+    let target = imported
+        .targets
+        .iter()
+        .find(|t| t.text == "Columns")
+        .unwrap();
+    assert!(
+        replace(
+            &imported,
+            &[(target.id, vec![paragraph("Still editable")])],
+            &Assets::new()
+        )
+        .is_ok()
+    );
 }

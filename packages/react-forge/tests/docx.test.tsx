@@ -64,3 +64,49 @@ test("Word leaf components reject children without exporting an older valid revi
     assert.ok((await session.exportBuffer()).length > 0);
   } finally { await session.dispose(); }
 });
+
+test("React list instances retain distinct stable native numbering identities", async () => {
+  const { RenderRoot } = await import("../src/renderer.js");
+  const { docxBlocks } = await import("../src/docx-model.js");
+  const { v7 } = await import("uuid");
+  const root = new RenderRoot(v7());
+  const view = (label: string) => <>
+    <List key="first" kind="number"><ListItem>{label}</ListItem><ListItem>Second</ListItem></List>
+    <List key="next" kind="number"><ListItem>Restart</ListItem><ListItem>Next</ListItem></List>
+  </>;
+  try {
+    const ids = () => docxBlocks(root.snapshot(), "unused").map(block => (block.list as { instance_id: string }).instance_id);
+    await root.render(view("First"));
+    const first = ids();
+    assert.equal(first[0], first[1]); assert.equal(first[2], first[3]); assert.notEqual(first[0], first[2]);
+    await root.render(view("Updated"));
+    assert.deepEqual(ids(), first);
+  } finally { await root.dispose(); }
+});
+
+test("mounted Word paragraphs measure source section and narrow cell widths", async () => {
+  const authored = createSession(Format.Docx);
+  let imported;
+  try {
+    await authored.render(<Document><Section width={400} margin={50}>
+      <Paragraph>Body target</Paragraph>
+      <Table columns={[100, 200]}><Row><Cell><Paragraph>Cell target</Paragraph></Cell><Cell><Paragraph>Other</Paragraph></Cell></Row></Table>
+    </Section></Document>);
+    imported = await importOffice(Format.Docx, await authored.exportBuffer());
+    const body = imported.inspect().targets.find(t => t.text === "Body target")!;
+    const cell = imported.inspect().targets.find(t => t.kind === "cell" && t.text === "Cell target")!;
+    const bodyRef = createRef<import("../src/index.js").NodeHandle>();
+    const cellRef = createRef<import("../src/index.js").NodeHandle>();
+    const text = "A paragraph long enough to wrap into several lines inside the narrower imported cell.";
+    await imported.mount(body, <Paragraph ref={bodyRef}>{text}</Paragraph>);
+    await imported.mount(cell, <Paragraph ref={cellRef}>{text}</Paragraph>);
+    await imported.exportBuffer();
+    const bodyBox = await imported.measure(bodyRef.current!, { revision: imported.revision });
+    const cellBox = await imported.measure(cellRef.current!, { revision: imported.revision });
+    assert.equal(bodyBox.coordinateSpace, "mounted_region");
+    assert.equal(bodyBox.width, 300);
+    assert.equal(cellBox.width, 88.5); // Source 100pt cell minus default 115-twip margins.
+    assert.ok(cellBox.height > bodyBox.height);
+    assert.ok((await imported.exportBuffer()).length > 0);
+  } finally { await authored.dispose(); await imported?.dispose(); }
+});

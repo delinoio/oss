@@ -6,7 +6,10 @@ type Model = Record<string, unknown>;
 function invalid(): never { throw new ForgeError(ErrorCode.MalformedInput, "Invalid presentation component nesting or props."); }
 
 function style(value: unknown): Model {
-  if (!value) return {};
+  if (value === undefined) return {};
+  if (!value || typeof value !== "object" || Array.isArray(value)) invalid();
+  const fields = ["fontFamily", "fontSize", "bold", "italic", "underline", "color"];
+  if (Object.keys(value).some(key => !fields.includes(key))) invalid();
   const s = value as TextStyle;
   return { font_family: s.fontFamily, font_size: s.fontSize, font_weight: s.bold === undefined ? undefined : s.bold ? 700 : 400,
     color: s.color, italic: s.italic, underline: s.underline };
@@ -32,6 +35,7 @@ function paragraphs(nodes: SerializedNode[]): Model {
 export function pptxNode(n: SerializedNode, documentId: string): Model {
   const type = n.type.replace(/^pptx:/, "");
   if (!n.type.startsWith("pptx:") || !["row", "column", "canvas", "text", "list", "image", "shape", "table", "chart", "connector"].includes(type)) invalid();
+  if (["list", "image", "shape", "chart", "connector"].includes(type) && n.children.length !== 0) invalid();
   const p = n.props;
   const node: Model = { id: n.id, type, key: p.nodeKey, frame: p.frame, width: p.width, height: p.height,
     padding: p.padding, gap: p.gap, style: style(p.style), overflow: p.overflow,

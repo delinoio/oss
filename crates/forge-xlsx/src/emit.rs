@@ -34,12 +34,14 @@ pub(crate) fn format(value: &CellFormat) -> Result<Format> {
     if let Some(color) = &s.background {
         f = f.set_background_color(Color::RGB(forge_document::color(color)?));
     }
-    f = f.set_align(match s.align {
-        Align::Left => FormatAlign::Left,
-        Align::Center => FormatAlign::Center,
-        Align::Right => FormatAlign::Right,
-        Align::Justify => FormatAlign::Justify,
-    });
+    if let Some(align) = s.align {
+        f = f.set_align(match align {
+            Align::Left => FormatAlign::Left,
+            Align::Center => FormatAlign::Center,
+            Align::Right => FormatAlign::Right,
+            Align::Justify => FormatAlign::Justify,
+        });
+    }
     if s.direction == Direction::Rtl {
         f = f.set_reading_direction(2);
     }
@@ -65,14 +67,14 @@ pub(crate) fn differential(value: &CellFormat) -> Result<String> {
     if let Some(size) = s.font_size {
         out.push_str(&format!("<sz val=\"{size}\"/>"));
     }
-    if s.bold.unwrap_or(false) {
-        out.push_str("<b/>");
+    if let Some(enabled) = s.bold {
+        out.push_str(if enabled { "<b/>" } else { "<b val=\"0\"/>" });
     }
-    if s.italic.unwrap_or(false) {
-        out.push_str("<i/>");
+    if let Some(enabled) = s.italic {
+        out.push_str(if enabled { "<i/>" } else { "<i val=\"0\"/>" });
     }
-    if s.underline.unwrap_or(false) {
-        out.push_str("<u/>");
+    if let Some(enabled) = s.underline {
+        out.push_str(if enabled { "<u/>" } else { "<u val=\"none\"/>" });
     }
     if let Some(color) = &s.color {
         out.push_str(&format!("<color rgb=\"FF{}\"/>", &color[1..]));
@@ -91,14 +93,18 @@ pub(crate) fn differential(value: &CellFormat) -> Result<String> {
             &color[1..]
         ));
     }
-    let align = match s.align {
-        Align::Left => "left",
-        Align::Center => "center",
-        Align::Right => "right",
-        Align::Justify => "justify",
-    };
+    let align = s
+        .align
+        .map(|align| match align {
+            Align::Left => "left",
+            Align::Center => "center",
+            Align::Right => "right",
+            Align::Justify => "justify",
+        })
+        .map(|align| format!(" horizontal=\"{align}\""))
+        .unwrap_or_default();
     out.push_str(&format!(
-        "<alignment horizontal=\"{align}\" wrapText=\"{}\" readingOrder=\"{}\"/>",
+        "<alignment{align} wrapText=\"{}\" readingOrder=\"{}\"/>",
         u8::from(value.wrap),
         if s.direction == Direction::Rtl { 2 } else { 0 }
     ));

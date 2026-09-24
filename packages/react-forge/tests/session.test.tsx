@@ -303,3 +303,25 @@ test("macOS publication protects Unicode normalization aliases after source remo
     assert.deepEqual(await readdir(directory), []);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
+
+test("concurrent export diagnostics and failures retain their own pinned revisions", async () => {
+  for (const failFirst of [false, true]) {
+    const session = createSession(Format.Pptx);
+    const events: import("../src/types.js").Diagnostic[] = [];
+    session.subscribe(event => events.push(event));
+    try {
+      await session.render(<Presentation>{Array.from({ length: 200 }, (_, i) =>
+        <Slide key={i}><Column><Text style={{ fontSize: failFirst && i === 199 ? -1 : 20 }}>{`Slide ${i}`}</Text></Column></Slide>)}</Presentation>);
+      const first = session.exportBuffer().then(() => undefined, error => error);
+      while (session.revision === 0) await new Promise(resolve => setImmediate(resolve));
+      await session.render(view("Next revision"));
+      await session.exportBuffer();
+      const error = await first;
+      if (failFirst) assert.equal(error.context.revision, 1);
+      else assert.equal(error, undefined);
+      const exports = events.filter(event => event.source === "javascript" && event.stage === "export");
+      assert.deepEqual(exports.map(event => event.revision).sort(), [1, 2]);
+      assert.equal(exports.find(event => event.revision === 1)?.code, failFirst ? ErrorCode.MalformedInput : undefined);
+    } finally { await session.dispose(); }
+  }
+});
