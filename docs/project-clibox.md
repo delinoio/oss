@@ -17,6 +17,7 @@ Provide a Rust CLI that JavaScript projects can pin through npm and their lockfi
 
 ## Domain Contract Documents
 - [Rust foundation](crates-clibox-foundation.md)
+- [File-access workflows (unreleased)](crates-clibox-fspy-contract.md)
 - [npm distribution](packages-clibox-distribution-contract.md)
 - [Public documentation](apps-clibox-docs-foundation.md)
 

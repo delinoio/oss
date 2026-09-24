@@ -11,6 +11,7 @@
 - `crates/cargo-mono`: Cargo-based Rust monorepo management CLI.
 - `crates/clibox`: non-publishable Rust executable distributed through npm and native packages.
 - `crates/clibox-config`, `crates/clibox-system`, `crates/clibox-transform`, `crates/clibox-wait`: non-publishable clibox command-family implementations.
+- `crates/clibox-fspy`: non-publishable file-access trace and workflow implementation governed by `docs/crates-clibox-fspy-contract.md`.
 - `crates/nodeup`: Rust-based Node.js version manager.
 - `crates/with-watch`: Rust-based filesystem-watching command wrapper.
 - `crates/serde-feather`: Size-first serde runtime-facing core crate.
@@ -33,6 +34,7 @@
 - Keep crate naming aligned with project IDs when possible.
 - Document behavior contracts in project index docs and relevant crate-domain docs before large implementation changes.
 - Keep clibox execution wrappers in `clibox-system` and their `run` command family independent of the other clibox companion crates. Reuse only the system environment planner, preserve literal child invocation semantics, and use native process groups/Windows Job Objects plus bounded cleanup for owned descendants. Unix ownership is limited to the wrapper process group, so daemonizing workloads or managed services that create another session/process group are unsupported and must be documented as self-managed. Lock/rate coordination may retain only documented private hashed local state and must fail closed on unsafe state.
+- Keep the seven #971 file-access workflows in `clibox-fspy`. Never treat fspy's existing path-access `READ` classification as evidence of a successful content read or publish an incomplete trace as complete. Shared interception changes require pnport regression coverage.
 - Planned crate paths must not be added as workspace members until the crate skeleton exists.
 - For new package scaffolding, default `publish = false` until publish contracts are explicitly approved.
 - Prefer minimal default features and keep optional capabilities opt-in for size-sensitive crates.

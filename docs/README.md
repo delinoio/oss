@@ -46,6 +46,7 @@ Each project must have one project index document and one or more domain contrac
 ### clibox
 - `docs/project-clibox.md`
 - `docs/crates-clibox-foundation.md` (five private Rust crates: CLI composition, configuration, OS utilities, offline transformations, and TCP/HTTP/file readiness; npm/native distribution only)
+- `docs/crates-clibox-fspy-contract.md` (unreleased file-access workflow and trace contract)
 - `docs/packages-clibox-distribution-contract.md`
 - `docs/apps-clibox-docs-foundation.md` (`apps/public-docs/docs/clibox`, canonical URL `https://oss.delino.io/clibox`, twelve user-guide routes)
 

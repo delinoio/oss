@@ -7,6 +7,7 @@ members = [
     "crates/cargo-mono",
     "crates/clibox",
     "crates/clibox-config",
+    "crates/clibox-fspy",
     "crates/clibox-system",
     "crates/clibox-transform",
     "crates/clibox-wait",
