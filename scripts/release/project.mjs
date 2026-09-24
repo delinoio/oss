@@ -280,7 +280,25 @@ export async function tagRevision(tag, request) {
   return object.sha;
 }
 
-export async function preflightVersion(plan, request) {
+export async function reactForgeVersionPublished(version, request = fetch) {
+  versionParts(version);
+  let response;
+  try {
+    response = await request(`https://registry.npmjs.org/${encodeURIComponent("@delino/react-forge")}/${version}`, { redirect: "error", signal: AbortSignal.timeout(30000) });
+  } catch { throw new Error("React Forge npm registry lookup failed"); }
+  if (response.status === 404) return false;
+  requireValue(response.ok, `React Forge npm registry lookup failed with HTTP ${response.status}`);
+  let metadata;
+  try { metadata = await response.json(); }
+  catch { throw new Error("Invalid React Forge npm registry response"); }
+  requireValue(metadata.name === "@delino/react-forge" && metadata.version === version && typeof metadata.dist?.integrity === "string", "React Forge npm registry identity mismatch");
+  return true;
+}
+
+export async function preflightVersion(plan, request, reactForgePublished = reactForgeVersionPublished) {
+  if (plan.project === Project.ReactForge && plan.previous_version !== "0.0.0" && plan.bump !== Bump.Patch) {
+    requireValue(await reactForgePublished(plan.previous_version), "A failed React Forge release requires the next patch version");
+  }
   requireValue(await tagRevision(plan.tag, request) === null, "Next version tag already exists");
   const release = await request(`/repos/${repository}/releases/tags/${encodeURIComponent(plan.tag)}`);
   requireValue(release.status === 404, "Next version release already exists or cannot be checked");
