@@ -96,6 +96,9 @@ func (s *Service) acceptScheduleOccurrence(ctx context.Context, record store.Rec
 		if err := value.Validate(); err != nil {
 			return nil, err
 		}
+		if trigger == domain.ManualOccurrence && value.Problem != nil {
+			return nil, scheduleReconfigurationRequired()
+		}
 		// Observe time after acquiring the database transaction. A heartbeat
 		// committed while this request waited cannot appear to be in the future.
 		now := clock().UTC()

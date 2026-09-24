@@ -691,3 +691,97 @@ message RecoverSessionExecutionRequest {
 message RecoverSessionExecutionResponse {
   SessionChange change = 1;
 }
+
+// Owner and paired-client schedule lifecycle. Workers execute derived session
+// assignments and cannot write timer state or invoke these product operations.
+service ScheduleService {
+  rpc SaveSchedule(SaveScheduleRequest) returns (SaveScheduleResponse);
+  rpc GetSchedule(GetScheduleRequest) returns (GetScheduleResponse);
+  rpc ListSchedules(ListSchedulesRequest) returns (ListSchedulesResponse);
+  rpc DeleteSchedule(DeleteScheduleRequest) returns (DeleteScheduleResponse);
+  rpc ControlSchedule(ControlScheduleRequest) returns (ControlScheduleResponse);
+  rpc RunScheduleNow(RunScheduleNowRequest) returns (RunScheduleNowResponse);
+  rpc ListScheduleOccurrences(ListScheduleOccurrencesRequest) returns (ListScheduleOccurrencesResponse);
+  rpc GetScheduleOccurrence(GetScheduleOccurrenceRequest) returns (GetScheduleOccurrenceResponse);
+}
+enum ScheduleAction {
+  SCHEDULE_ACTION_UNSPECIFIED = 0;
+  SCHEDULE_ACTION_PAUSE = 1;
+  SCHEDULE_ACTION_RESUME = 2;
+}
+message SaveScheduleRequest {
+  // Expected revision zero creates a UUID-v7 identity; omit ID to allocate it.
+  Mutation mutation = 1;
+  // Strict ScheduleDefinition; no origin, occurrence or timer state.
+  bytes definition_json = 2;
+  uint32 schema_version = 3;
+  // Write-only secondary authentication for new or relocated Local selection.
+  // Omission on an unchanged Local machine retains its authenticated origin.
+  string local_worker_token = 4;
+}
+message SaveScheduleResponse {
+  Resource schedule = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message GetScheduleRequest {
+  string id = 1;
+}
+message GetScheduleResponse {
+  // Includes the authoritative enabled/next_run_at/configuration revision.
+  Resource schedule = 1;
+}
+message ListSchedulesRequest {
+  string project_id = 1;
+  optional bool enabled = 2;
+  uint32 page_size = 3;
+  string page_token = 4;
+}
+message ListSchedulesResponse {
+  repeated Resource schedules = 1;
+  string next_page_token = 2;
+}
+message DeleteScheduleRequest {
+  Mutation mutation = 1;
+}
+message DeleteScheduleResponse {
+  string id = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message ControlScheduleRequest {
+  Mutation mutation = 1;
+  ScheduleAction action = 2;
+}
+message ControlScheduleResponse {
+  Resource schedule = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message RunScheduleNowRequest {
+  Mutation mutation = 1;
+}
+message RunScheduleNowResponse {
+  Resource occurrence = 1;
+  // Present only when this occurrence already owns a retained session.
+  Resource session = 2;
+  string request_id = 3;
+  bool replayed = 4;
+}
+message ListScheduleOccurrencesRequest {
+  // History is retained independently of the configuration's lifetime.
+  string schedule_id = 1;
+  uint32 page_size = 2;
+  string page_token = 3;
+}
+message ListScheduleOccurrencesResponse {
+  repeated Resource occurrences = 1;
+  string next_page_token = 2;
+}
+message GetScheduleOccurrenceRequest {
+  string schedule_id = 1;
+  string id = 2;
+}
+message GetScheduleOccurrenceResponse {
+  Resource occurrence = 1;
+}

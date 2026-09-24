@@ -41,6 +41,8 @@ const (
 	SessionServiceName = "delidev.v1.SessionService"
 	// InboxServiceName is the fully-qualified name of the InboxService service.
 	InboxServiceName = "delidev.v1.InboxService"
+	// ScheduleServiceName is the fully-qualified name of the ScheduleService service.
+	ScheduleServiceName = "delidev.v1.ScheduleService"
 )
 
 // These constants are the fully-qualified names of the RPCs defined in this package. They're
@@ -194,6 +196,30 @@ const (
 	// InboxServiceSetInboxReadStateProcedure is the fully-qualified name of the InboxService's
 	// SetInboxReadState RPC.
 	InboxServiceSetInboxReadStateProcedure = "/delidev.v1.InboxService/SetInboxReadState"
+	// ScheduleServiceSaveScheduleProcedure is the fully-qualified name of the ScheduleService's
+	// SaveSchedule RPC.
+	ScheduleServiceSaveScheduleProcedure = "/delidev.v1.ScheduleService/SaveSchedule"
+	// ScheduleServiceGetScheduleProcedure is the fully-qualified name of the ScheduleService's
+	// GetSchedule RPC.
+	ScheduleServiceGetScheduleProcedure = "/delidev.v1.ScheduleService/GetSchedule"
+	// ScheduleServiceListSchedulesProcedure is the fully-qualified name of the ScheduleService's
+	// ListSchedules RPC.
+	ScheduleServiceListSchedulesProcedure = "/delidev.v1.ScheduleService/ListSchedules"
+	// ScheduleServiceDeleteScheduleProcedure is the fully-qualified name of the ScheduleService's
+	// DeleteSchedule RPC.
+	ScheduleServiceDeleteScheduleProcedure = "/delidev.v1.ScheduleService/DeleteSchedule"
+	// ScheduleServiceControlScheduleProcedure is the fully-qualified name of the ScheduleService's
+	// ControlSchedule RPC.
+	ScheduleServiceControlScheduleProcedure = "/delidev.v1.ScheduleService/ControlSchedule"
+	// ScheduleServiceRunScheduleNowProcedure is the fully-qualified name of the ScheduleService's
+	// RunScheduleNow RPC.
+	ScheduleServiceRunScheduleNowProcedure = "/delidev.v1.ScheduleService/RunScheduleNow"
+	// ScheduleServiceListScheduleOccurrencesProcedure is the fully-qualified name of the
+	// ScheduleService's ListScheduleOccurrences RPC.
+	ScheduleServiceListScheduleOccurrencesProcedure = "/delidev.v1.ScheduleService/ListScheduleOccurrences"
+	// ScheduleServiceGetScheduleOccurrenceProcedure is the fully-qualified name of the
+	// ScheduleService's GetScheduleOccurrence RPC.
+	ScheduleServiceGetScheduleOccurrenceProcedure = "/delidev.v1.ScheduleService/GetScheduleOccurrence"
 )
 
 // SystemServiceClient is a client for the delidev.v1.SystemService service.
@@ -1908,4 +1934,256 @@ func (UnimplementedInboxServiceHandler) ListInbox(context.Context, *connect.Requ
 
 func (UnimplementedInboxServiceHandler) SetInboxReadState(context.Context, *connect.Request[v1.SetInboxReadStateRequest]) (*connect.Response[v1.SetInboxReadStateResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.InboxService.SetInboxReadState is not implemented"))
+}
+
+// ScheduleServiceClient is a client for the delidev.v1.ScheduleService service.
+type ScheduleServiceClient interface {
+	SaveSchedule(context.Context, *connect.Request[v1.SaveScheduleRequest]) (*connect.Response[v1.SaveScheduleResponse], error)
+	GetSchedule(context.Context, *connect.Request[v1.GetScheduleRequest]) (*connect.Response[v1.GetScheduleResponse], error)
+	ListSchedules(context.Context, *connect.Request[v1.ListSchedulesRequest]) (*connect.Response[v1.ListSchedulesResponse], error)
+	DeleteSchedule(context.Context, *connect.Request[v1.DeleteScheduleRequest]) (*connect.Response[v1.DeleteScheduleResponse], error)
+	ControlSchedule(context.Context, *connect.Request[v1.ControlScheduleRequest]) (*connect.Response[v1.ControlScheduleResponse], error)
+	RunScheduleNow(context.Context, *connect.Request[v1.RunScheduleNowRequest]) (*connect.Response[v1.RunScheduleNowResponse], error)
+	ListScheduleOccurrences(context.Context, *connect.Request[v1.ListScheduleOccurrencesRequest]) (*connect.Response[v1.ListScheduleOccurrencesResponse], error)
+	GetScheduleOccurrence(context.Context, *connect.Request[v1.GetScheduleOccurrenceRequest]) (*connect.Response[v1.GetScheduleOccurrenceResponse], error)
+}
+
+// NewScheduleServiceClient constructs a client for the delidev.v1.ScheduleService service. By
+// default, it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses,
+// and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the
+// connect.WithGRPC() or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewScheduleServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) ScheduleServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	scheduleServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("ScheduleService").Methods()
+	return &scheduleServiceClient{
+		saveSchedule: connect.NewClient[v1.SaveScheduleRequest, v1.SaveScheduleResponse](
+			httpClient,
+			baseURL+ScheduleServiceSaveScheduleProcedure,
+			connect.WithSchema(scheduleServiceMethods.ByName("SaveSchedule")),
+			connect.WithClientOptions(opts...),
+		),
+		getSchedule: connect.NewClient[v1.GetScheduleRequest, v1.GetScheduleResponse](
+			httpClient,
+			baseURL+ScheduleServiceGetScheduleProcedure,
+			connect.WithSchema(scheduleServiceMethods.ByName("GetSchedule")),
+			connect.WithClientOptions(opts...),
+		),
+		listSchedules: connect.NewClient[v1.ListSchedulesRequest, v1.ListSchedulesResponse](
+			httpClient,
+			baseURL+ScheduleServiceListSchedulesProcedure,
+			connect.WithSchema(scheduleServiceMethods.ByName("ListSchedules")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteSchedule: connect.NewClient[v1.DeleteScheduleRequest, v1.DeleteScheduleResponse](
+			httpClient,
+			baseURL+ScheduleServiceDeleteScheduleProcedure,
+			connect.WithSchema(scheduleServiceMethods.ByName("DeleteSchedule")),
+			connect.WithClientOptions(opts...),
+		),
+		controlSchedule: connect.NewClient[v1.ControlScheduleRequest, v1.ControlScheduleResponse](
+			httpClient,
+			baseURL+ScheduleServiceControlScheduleProcedure,
+			connect.WithSchema(scheduleServiceMethods.ByName("ControlSchedule")),
+			connect.WithClientOptions(opts...),
+		),
+		runScheduleNow: connect.NewClient[v1.RunScheduleNowRequest, v1.RunScheduleNowResponse](
+			httpClient,
+			baseURL+ScheduleServiceRunScheduleNowProcedure,
+			connect.WithSchema(scheduleServiceMethods.ByName("RunScheduleNow")),
+			connect.WithClientOptions(opts...),
+		),
+		listScheduleOccurrences: connect.NewClient[v1.ListScheduleOccurrencesRequest, v1.ListScheduleOccurrencesResponse](
+			httpClient,
+			baseURL+ScheduleServiceListScheduleOccurrencesProcedure,
+			connect.WithSchema(scheduleServiceMethods.ByName("ListScheduleOccurrences")),
+			connect.WithClientOptions(opts...),
+		),
+		getScheduleOccurrence: connect.NewClient[v1.GetScheduleOccurrenceRequest, v1.GetScheduleOccurrenceResponse](
+			httpClient,
+			baseURL+ScheduleServiceGetScheduleOccurrenceProcedure,
+			connect.WithSchema(scheduleServiceMethods.ByName("GetScheduleOccurrence")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// scheduleServiceClient implements ScheduleServiceClient.
+type scheduleServiceClient struct {
+	saveSchedule            *connect.Client[v1.SaveScheduleRequest, v1.SaveScheduleResponse]
+	getSchedule             *connect.Client[v1.GetScheduleRequest, v1.GetScheduleResponse]
+	listSchedules           *connect.Client[v1.ListSchedulesRequest, v1.ListSchedulesResponse]
+	deleteSchedule          *connect.Client[v1.DeleteScheduleRequest, v1.DeleteScheduleResponse]
+	controlSchedule         *connect.Client[v1.ControlScheduleRequest, v1.ControlScheduleResponse]
+	runScheduleNow          *connect.Client[v1.RunScheduleNowRequest, v1.RunScheduleNowResponse]
+	listScheduleOccurrences *connect.Client[v1.ListScheduleOccurrencesRequest, v1.ListScheduleOccurrencesResponse]
+	getScheduleOccurrence   *connect.Client[v1.GetScheduleOccurrenceRequest, v1.GetScheduleOccurrenceResponse]
+}
+
+// SaveSchedule calls delidev.v1.ScheduleService.SaveSchedule.
+func (c *scheduleServiceClient) SaveSchedule(ctx context.Context, req *connect.Request[v1.SaveScheduleRequest]) (*connect.Response[v1.SaveScheduleResponse], error) {
+	return c.saveSchedule.CallUnary(ctx, req)
+}
+
+// GetSchedule calls delidev.v1.ScheduleService.GetSchedule.
+func (c *scheduleServiceClient) GetSchedule(ctx context.Context, req *connect.Request[v1.GetScheduleRequest]) (*connect.Response[v1.GetScheduleResponse], error) {
+	return c.getSchedule.CallUnary(ctx, req)
+}
+
+// ListSchedules calls delidev.v1.ScheduleService.ListSchedules.
+func (c *scheduleServiceClient) ListSchedules(ctx context.Context, req *connect.Request[v1.ListSchedulesRequest]) (*connect.Response[v1.ListSchedulesResponse], error) {
+	return c.listSchedules.CallUnary(ctx, req)
+}
+
+// DeleteSchedule calls delidev.v1.ScheduleService.DeleteSchedule.
+func (c *scheduleServiceClient) DeleteSchedule(ctx context.Context, req *connect.Request[v1.DeleteScheduleRequest]) (*connect.Response[v1.DeleteScheduleResponse], error) {
+	return c.deleteSchedule.CallUnary(ctx, req)
+}
+
+// ControlSchedule calls delidev.v1.ScheduleService.ControlSchedule.
+func (c *scheduleServiceClient) ControlSchedule(ctx context.Context, req *connect.Request[v1.ControlScheduleRequest]) (*connect.Response[v1.ControlScheduleResponse], error) {
+	return c.controlSchedule.CallUnary(ctx, req)
+}
+
+// RunScheduleNow calls delidev.v1.ScheduleService.RunScheduleNow.
+func (c *scheduleServiceClient) RunScheduleNow(ctx context.Context, req *connect.Request[v1.RunScheduleNowRequest]) (*connect.Response[v1.RunScheduleNowResponse], error) {
+	return c.runScheduleNow.CallUnary(ctx, req)
+}
+
+// ListScheduleOccurrences calls delidev.v1.ScheduleService.ListScheduleOccurrences.
+func (c *scheduleServiceClient) ListScheduleOccurrences(ctx context.Context, req *connect.Request[v1.ListScheduleOccurrencesRequest]) (*connect.Response[v1.ListScheduleOccurrencesResponse], error) {
+	return c.listScheduleOccurrences.CallUnary(ctx, req)
+}
+
+// GetScheduleOccurrence calls delidev.v1.ScheduleService.GetScheduleOccurrence.
+func (c *scheduleServiceClient) GetScheduleOccurrence(ctx context.Context, req *connect.Request[v1.GetScheduleOccurrenceRequest]) (*connect.Response[v1.GetScheduleOccurrenceResponse], error) {
+	return c.getScheduleOccurrence.CallUnary(ctx, req)
+}
+
+// ScheduleServiceHandler is an implementation of the delidev.v1.ScheduleService service.
+type ScheduleServiceHandler interface {
+	SaveSchedule(context.Context, *connect.Request[v1.SaveScheduleRequest]) (*connect.Response[v1.SaveScheduleResponse], error)
+	GetSchedule(context.Context, *connect.Request[v1.GetScheduleRequest]) (*connect.Response[v1.GetScheduleResponse], error)
+	ListSchedules(context.Context, *connect.Request[v1.ListSchedulesRequest]) (*connect.Response[v1.ListSchedulesResponse], error)
+	DeleteSchedule(context.Context, *connect.Request[v1.DeleteScheduleRequest]) (*connect.Response[v1.DeleteScheduleResponse], error)
+	ControlSchedule(context.Context, *connect.Request[v1.ControlScheduleRequest]) (*connect.Response[v1.ControlScheduleResponse], error)
+	RunScheduleNow(context.Context, *connect.Request[v1.RunScheduleNowRequest]) (*connect.Response[v1.RunScheduleNowResponse], error)
+	ListScheduleOccurrences(context.Context, *connect.Request[v1.ListScheduleOccurrencesRequest]) (*connect.Response[v1.ListScheduleOccurrencesResponse], error)
+	GetScheduleOccurrence(context.Context, *connect.Request[v1.GetScheduleOccurrenceRequest]) (*connect.Response[v1.GetScheduleOccurrenceResponse], error)
+}
+
+// NewScheduleServiceHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewScheduleServiceHandler(svc ScheduleServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	scheduleServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("ScheduleService").Methods()
+	scheduleServiceSaveScheduleHandler := connect.NewUnaryHandler(
+		ScheduleServiceSaveScheduleProcedure,
+		svc.SaveSchedule,
+		connect.WithSchema(scheduleServiceMethods.ByName("SaveSchedule")),
+		connect.WithHandlerOptions(opts...),
+	)
+	scheduleServiceGetScheduleHandler := connect.NewUnaryHandler(
+		ScheduleServiceGetScheduleProcedure,
+		svc.GetSchedule,
+		connect.WithSchema(scheduleServiceMethods.ByName("GetSchedule")),
+		connect.WithHandlerOptions(opts...),
+	)
+	scheduleServiceListSchedulesHandler := connect.NewUnaryHandler(
+		ScheduleServiceListSchedulesProcedure,
+		svc.ListSchedules,
+		connect.WithSchema(scheduleServiceMethods.ByName("ListSchedules")),
+		connect.WithHandlerOptions(opts...),
+	)
+	scheduleServiceDeleteScheduleHandler := connect.NewUnaryHandler(
+		ScheduleServiceDeleteScheduleProcedure,
+		svc.DeleteSchedule,
+		connect.WithSchema(scheduleServiceMethods.ByName("DeleteSchedule")),
+		connect.WithHandlerOptions(opts...),
+	)
+	scheduleServiceControlScheduleHandler := connect.NewUnaryHandler(
+		ScheduleServiceControlScheduleProcedure,
+		svc.ControlSchedule,
+		connect.WithSchema(scheduleServiceMethods.ByName("ControlSchedule")),
+		connect.WithHandlerOptions(opts...),
+	)
+	scheduleServiceRunScheduleNowHandler := connect.NewUnaryHandler(
+		ScheduleServiceRunScheduleNowProcedure,
+		svc.RunScheduleNow,
+		connect.WithSchema(scheduleServiceMethods.ByName("RunScheduleNow")),
+		connect.WithHandlerOptions(opts...),
+	)
+	scheduleServiceListScheduleOccurrencesHandler := connect.NewUnaryHandler(
+		ScheduleServiceListScheduleOccurrencesProcedure,
+		svc.ListScheduleOccurrences,
+		connect.WithSchema(scheduleServiceMethods.ByName("ListScheduleOccurrences")),
+		connect.WithHandlerOptions(opts...),
+	)
+	scheduleServiceGetScheduleOccurrenceHandler := connect.NewUnaryHandler(
+		ScheduleServiceGetScheduleOccurrenceProcedure,
+		svc.GetScheduleOccurrence,
+		connect.WithSchema(scheduleServiceMethods.ByName("GetScheduleOccurrence")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/delidev.v1.ScheduleService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case ScheduleServiceSaveScheduleProcedure:
+			scheduleServiceSaveScheduleHandler.ServeHTTP(w, r)
+		case ScheduleServiceGetScheduleProcedure:
+			scheduleServiceGetScheduleHandler.ServeHTTP(w, r)
+		case ScheduleServiceListSchedulesProcedure:
+			scheduleServiceListSchedulesHandler.ServeHTTP(w, r)
+		case ScheduleServiceDeleteScheduleProcedure:
+			scheduleServiceDeleteScheduleHandler.ServeHTTP(w, r)
+		case ScheduleServiceControlScheduleProcedure:
+			scheduleServiceControlScheduleHandler.ServeHTTP(w, r)
+		case ScheduleServiceRunScheduleNowProcedure:
+			scheduleServiceRunScheduleNowHandler.ServeHTTP(w, r)
+		case ScheduleServiceListScheduleOccurrencesProcedure:
+			scheduleServiceListScheduleOccurrencesHandler.ServeHTTP(w, r)
+		case ScheduleServiceGetScheduleOccurrenceProcedure:
+			scheduleServiceGetScheduleOccurrenceHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedScheduleServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedScheduleServiceHandler struct{}
+
+func (UnimplementedScheduleServiceHandler) SaveSchedule(context.Context, *connect.Request[v1.SaveScheduleRequest]) (*connect.Response[v1.SaveScheduleResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ScheduleService.SaveSchedule is not implemented"))
+}
+
+func (UnimplementedScheduleServiceHandler) GetSchedule(context.Context, *connect.Request[v1.GetScheduleRequest]) (*connect.Response[v1.GetScheduleResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ScheduleService.GetSchedule is not implemented"))
+}
+
+func (UnimplementedScheduleServiceHandler) ListSchedules(context.Context, *connect.Request[v1.ListSchedulesRequest]) (*connect.Response[v1.ListSchedulesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ScheduleService.ListSchedules is not implemented"))
+}
+
+func (UnimplementedScheduleServiceHandler) DeleteSchedule(context.Context, *connect.Request[v1.DeleteScheduleRequest]) (*connect.Response[v1.DeleteScheduleResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ScheduleService.DeleteSchedule is not implemented"))
+}
+
+func (UnimplementedScheduleServiceHandler) ControlSchedule(context.Context, *connect.Request[v1.ControlScheduleRequest]) (*connect.Response[v1.ControlScheduleResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ScheduleService.ControlSchedule is not implemented"))
+}
+
+func (UnimplementedScheduleServiceHandler) RunScheduleNow(context.Context, *connect.Request[v1.RunScheduleNowRequest]) (*connect.Response[v1.RunScheduleNowResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ScheduleService.RunScheduleNow is not implemented"))
+}
+
+func (UnimplementedScheduleServiceHandler) ListScheduleOccurrences(context.Context, *connect.Request[v1.ListScheduleOccurrencesRequest]) (*connect.Response[v1.ListScheduleOccurrencesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ScheduleService.ListScheduleOccurrences is not implemented"))
+}
+
+func (UnimplementedScheduleServiceHandler) GetScheduleOccurrence(context.Context, *connect.Request[v1.GetScheduleOccurrenceRequest]) (*connect.Response[v1.GetScheduleOccurrenceResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ScheduleService.GetScheduleOccurrence is not implemented"))
 }

@@ -323,6 +323,9 @@ func (s *Service) DeleteConfiguration(ctx context.Context, req *connect.Request[
 		if err := validateDeletion(tx, kind, domain.ID(meta.Id)); err != nil {
 			return nil, err
 		}
+		if err := disableReferencedSchedules(tx, kind, domain.ID(meta.Id)); err != nil {
+			return nil, err
+		}
 		if err := tx.Delete(kind, domain.ID(meta.Id), meta.ExpectedRevision); err != nil {
 			return nil, err
 		}
@@ -355,7 +358,7 @@ func validateDeletion(tx *store.Tx, kind domain.Kind, id domain.ID) error {
 			return domain.Fail(domain.Conflict, "Connected accounts require credential and device cleanup before deletion.", "Disconnect the account and complete its protected-resource cleanup first.")
 		}
 	}
-	for _, ownerKind := range []domain.Kind{domain.ProjectKind, domain.AgentKind, domain.ModelKind, domain.AccountKind, domain.SessionKind, domain.ScheduleKind} {
+	for _, ownerKind := range []domain.Kind{domain.ProjectKind, domain.AgentKind, domain.ModelKind, domain.AccountKind, domain.SessionKind} {
 		records, err := all(tx, ownerKind)
 		if err != nil {
 			return err
@@ -414,12 +417,6 @@ func validateDeletion(tx *store.Tx, kind domain.Kind, id domain.ID) error {
 					return err
 				}
 				if (kind == domain.ProjectKind && session.ProjectID == id) || (kind == domain.AgentKind && session.AgentID == id) {
-					return conflict()
-				}
-			case domain.ScheduleKind:
-				// Dedicated lifecycle code must handle retained snapshots, schedule
-				// disabling, and device cleanup before these references can be removed.
-				if kind == domain.ProjectKind || kind == domain.AgentKind || kind == domain.AccountKind {
 					return conflict()
 				}
 			}

@@ -48,6 +48,7 @@ const (
 	nativeMultipleWorkspaces
 	nativeLocalWorkspaces
 	nativeUnbornLocalWorkspaces
+	nativeScheduledWorkspaces
 )
 
 func TestManualNativeCLILocalRepositories(t *testing.T) {
@@ -56,6 +57,10 @@ func TestManualNativeCLILocalRepositories(t *testing.T) {
 
 func TestManualNativeCLIUnbornLocalRepositories(t *testing.T) {
 	testManualNativeCLI(t, false, nativeUnbornLocalWorkspaces)
+}
+
+func TestManualNativeCLIScheduledWorkspaces(t *testing.T) {
+	testManualNativeCLI(t, false, nativeScheduledWorkspaces)
 }
 
 func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWorkspaceProfile) {
@@ -78,6 +83,9 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 	}
 	if profile == nativeLocalWorkspaces || profile == nativeUnbornLocalWorkspaces {
 		scenarios = []nativeScenario{{domain.ExecuteMode, domain.Local, 2}, {domain.PlanMode, domain.Local, 1}}
+	}
+	if profile == nativeScheduledWorkspaces {
+		scenarios = []nativeScenario{{domain.ExecuteMode, domain.Worktree, 2}, {domain.PlanMode, domain.Local, 1}}
 	}
 	for _, scenario := range scenarios {
 		mode := scenario.mode
@@ -311,7 +319,32 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 				project := run([]string{"project", "create"}, domain.Project{Name: "Private native fixture", Repositories: repositories, PrimaryRepository: repositories[len(repositories)-1]})["resource"].(map[string]any)
 				input.ProjectID = domain.ID(project["id"].(string))
 			}
-			accepted := run(create, input)
+			var scheduleID, occurrenceID string
+			expectedSource := domain.ExternalCLISession
+			accept := func() map[string]any { return run(create, input) }
+			if profile == nativeScheduledWorkspaces {
+				expectedSource = domain.ScheduledSession
+				definition := domain.ScheduleDefinition{Name: input.Name, Enabled: false, Prompt: input.Prompt, ProjectID: input.ProjectID, AgentID: input.AgentID, MachineID: input.MachineID, Workspace: input.Workspace, Starting: input.Starting, Mode: input.Mode, Cron: "0 0 1 1 *", Timezone: "Asia/Seoul", Overlap: domain.ScheduleAllowOverlap}
+				args := []string{"schedule", "create"}
+				if input.Workspace == domain.Local {
+					args = append(args, "--local-worker-dir", workerRoot)
+				}
+				schedule := run(args, definition)["schedule"].(map[string]any)
+				scheduleID = schedule["id"].(string)
+				manual := []string{"schedule", "run-now", "--id", scheduleID, "--revision", revision(schedule), "--request-id", string(domain.NewID())}
+				accept = func() map[string]any {
+					result := run(manual, nil)
+					occurrenceID = result["occurrence"].(map[string]any)["id"].(string)
+					// Run now joins its current session; inspect the exact current job
+					// through the ordinary resource API for the shared cleanup checks.
+					session := result["session"].(map[string]any)["data"].(map[string]any)
+					if progress, ok := session["execution"].(map[string]any); ok {
+						result["execution_job"] = run([]string{"job", "get", "--id", progress["job_id"].(string)}, nil)
+					}
+					return result
+				}
+			}
+			accepted := accept()
 			id := accepted["session"].(map[string]any)["id"].(string)
 			var state domain.Session
 			var steerArgs []string
@@ -381,10 +414,26 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 					t.Fatalf("public first execution did not complete: %+v", state)
 				}
 			}
-			if state.Outcome != domain.ExecutionSucceeded || state.ActiveExecutionID != "" || state.PendingInputs != 0 || state.InitialExecution == nil || state.InitialExecution.InitialAccountID != domain.ID(account["id"].(string)) || state.Source != domain.ExternalCLISession {
+			if state.Outcome != domain.ExecutionSucceeded || state.ActiveExecutionID != "" || state.PendingInputs != 0 || state.InitialExecution == nil || state.InitialExecution.InitialAccountID != domain.ID(account["id"].(string)) || state.Source != expectedSource {
 				t.Fatalf("public completion lost ownership: outcome=%s active=%s pending=%d initial=%t selected_account=%t source=%s", state.Outcome, state.ActiveExecutionID, state.PendingInputs, state.InitialExecution != nil, state.InitialExecution != nil && state.InitialExecution.InitialAccountID == domain.ID(account["id"].(string)), state.Source)
 			}
-			replay := run(create, input)
+			if profile == nativeScheduledWorkspaces {
+				if state.ScheduleOrigin == nil || state.ScheduleOrigin.ScheduleID != domain.ID(scheduleID) || state.ScheduleOrigin.OccurrenceID != domain.ID(occurrenceID) || state.ScheduleOrigin.Trigger != domain.ManualOccurrence {
+					t.Fatal("native scheduled execution lost immutable source ownership")
+				}
+				for {
+					occurrence := run([]string{"schedule", "occurrence", "--id", scheduleID, "--occurrence-id", occurrenceID}, nil)["occurrence"].(map[string]any)["data"].(map[string]any)
+					if occurrence["state"] == string(domain.OccurrenceSucceeded) {
+						break
+					}
+					select {
+					case <-time.After(20 * time.Millisecond):
+					case <-ctx.Done():
+						t.Fatal("native scheduled completion did not reconcile")
+					}
+				}
+			}
+			replay := accept()
 			if replay["replayed"] != true || replay["execution_job"] == nil {
 				t.Fatal("creation replay lost current job")
 			}
@@ -573,7 +622,7 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 			}
 			fifth := enqueue("Public fifth prompt", domain.PlanMode)
 			waitTurn(5, fifth)
-			replay = run(create, input)
+			replay = accept()
 			if replay["execution_job"].(map[string]any)["id"] == job["id"] {
 				t.Fatal("old creation receipt did not join the latest turn")
 			}

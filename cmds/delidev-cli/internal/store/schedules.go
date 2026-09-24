@@ -276,3 +276,80 @@ func (t *Tx) validateOccurrenceSession(id domain.ID, value domain.ScheduleOccurr
 	}
 	return nil
 }
+
+type ScheduleFilter struct {
+	ProjectID domain.ID
+	Enabled   *bool
+	After     domain.ID
+	Limit     int
+	Epoch     uint64
+}
+
+func (f ScheduleFilter) Validate() error {
+	return (Filter{Kind: domain.ScheduleKind, ProjectID: f.ProjectID, After: f.After, Limit: f.Limit}).validate()
+}
+
+func (t *Tx) schedulePageEpoch(kind domain.Kind, after domain.ID, expected uint64) (uint64, error) {
+	var epoch uint64
+	if err := t.tx.QueryRowContext(t.ctx, "SELECT COALESCE(MAX(sequence),0) FROM events WHERE kind=?", kind).Scan(&epoch); err != nil {
+		return 0, storageError(err)
+	}
+	if after != "" && expected != epoch {
+		return 0, domain.Fail(domain.CursorExpired, "Schedule state changed during pagination.", "Restart pagination to read current schedule or occurrence state.")
+	}
+	return epoch, nil
+}
+
+func (t *Tx) SchedulePage(f ScheduleFilter) ([]Record, bool, uint64, error) {
+	if err := f.Validate(); err != nil {
+		return nil, false, 0, err
+	}
+	epoch, err := t.schedulePageEpoch(domain.ScheduleKind, f.After, f.Epoch)
+	if err != nil {
+		return nil, false, 0, err
+	}
+	query := "SELECT " + recordColumns + " FROM entities WHERE kind='schedule' AND id>?"
+	args := []any{f.After}
+	if f.ProjectID != "" {
+		query += " AND project_id=?"
+		args = append(args, f.ProjectID)
+	}
+	if f.Enabled != nil {
+		query += " AND json_extract(body,'$.definition.enabled')=?"
+		args = append(args, *f.Enabled)
+	}
+	query += " ORDER BY id LIMIT ?"
+	args = append(args, f.Limit+1)
+	rows, more, err := t.sessionPage(f.Limit, query, args...)
+	return rows, more, epoch, err
+}
+
+func (t *Tx) ScheduleOccurrencePage(schedule, after domain.ID, limit int, expected uint64) ([]Record, bool, uint64, error) {
+	if err := (Filter{Kind: domain.OccurrenceKind, After: after, Limit: limit}).validate(); err != nil {
+		return nil, false, 0, err
+	}
+	if err := schedule.Validate(); err != nil {
+		return nil, false, 0, err
+	}
+	epoch, err := t.schedulePageEpoch(domain.OccurrenceKind, after, expected)
+	if err != nil {
+		return nil, false, 0, err
+	}
+	var sequence uint64
+	if after != "" {
+		r, err := t.Get(domain.OccurrenceKind, after)
+		if err != nil {
+			return nil, false, 0, err
+		}
+		v, err := Decode[domain.ScheduleOccurrence](r)
+		if err != nil {
+			return nil, false, 0, err
+		}
+		if v.ScheduleID != schedule {
+			return nil, false, 0, domain.Fail(domain.CursorExpired, "The history cursor belongs to another schedule.", "Restart this schedule's occurrence history.")
+		}
+		sequence = v.Sequence
+	}
+	rows, more, err := t.OccurrenceHistory(schedule, sequence, limit)
+	return rows, more, epoch, err
+}

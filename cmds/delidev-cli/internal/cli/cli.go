@@ -52,6 +52,7 @@ type client struct {
 	sessions      delidevv1connect.SessionServiceClient
 	interactions  delidevv1connect.InteractionServiceClient
 	inbox         delidevv1connect.InboxServiceClient
+	schedules     delidevv1connect.ScheduleServiceClient
 	endpoint      string
 	token         string
 }
@@ -140,6 +141,15 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		ctx = bounded
 	}
 	switch command {
+	case "schedule":
+		if len(rest) > 0 && rest[0] != "snapshot" {
+			switch rest[0] {
+			case "create", "edit", "delete", "pause", "resume", "run-now":
+				ensureRequest(&o)
+			}
+			value, err := scheduleCommand(ctx, c, o, rest, streams)
+			return emit(value, err)
+		}
 	case "inbox":
 		if len(rest) > 0 && rest[0] != "snapshot" {
 			if rest[0] == "mark-read" || rest[0] == "mark-unread" {
@@ -531,6 +541,7 @@ func connectClient(o options, input io.Reader) (client, error) {
 	return client{
 		transport: transport, endpoint: endpoint, token: token,
 		inbox:         delidevv1connect.NewInboxServiceClient(httpClient, endpoint, opts...),
+		schedules:     delidevv1connect.NewScheduleServiceClient(httpClient, endpoint, opts...),
 		interactions:  delidevv1connect.NewInteractionServiceClient(httpClient, endpoint, opts...),
 		sessions:      delidevv1connect.NewSessionServiceClient(httpClient, endpoint, opts...),
 		accounts:      delidevv1connect.NewAccountServiceClient(httpClient, endpoint, opts...),
@@ -647,6 +658,13 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   session steer --id SESSION --input-id INPUT --revision N --execution-id EXECUTION --turn-id TURN
   session stop|archive|restore|resume --id ID --revision N
   session rename --id ID --revision N --name NAME
+  schedule create --input FILE|- [--local-worker-dir PATH]
+  schedule edit --id ID --revision N --input FILE|- [--local-worker-dir PATH]
+  schedule list [--project-id ID] [--enabled all|true|false] [--limit N] [--page-token TOKEN]
+  schedule get|inspect|next-run --id ID
+  schedule pause|resume|delete|run-now --id ID --revision N
+  schedule history --id ID [--limit N] [--page-token TOKEN]
+  schedule occurrence --id SCHEDULE --occurrence-id OCCURRENCE
   interaction respond --id ID --revision N --input FILE|-
   interaction approve --id ID --revision N --input FILE|-
   inbox list [--session-id ID] [--project-id ID] [--read-state all|read|unread]
