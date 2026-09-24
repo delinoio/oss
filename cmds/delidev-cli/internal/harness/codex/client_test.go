@@ -73,7 +73,7 @@ func init() {
 				response["newMeaning"] = "unknown"
 			}
 			write(request.ID, response)
-			_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"method": "remoteControl/status/changed", "params": map[string]bool{"enabled": false}, "emittedAtMs": time.Now().UnixMilli()})
+			_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"method": "remoteControl/status/changed", "params": map[string]any{"status": "disabled", "installationId": "fixture-installation", "serverName": "fixture-server", "environmentId": nil}, "emittedAtMs": time.Now().UnixMilli()})
 		case "initialized":
 			if !initialized || notified || len(request.ID) > 0 {
 				os.Exit(6)

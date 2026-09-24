@@ -186,6 +186,15 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 					}
 					session.Dispatch = domain.DispatchPaused
 				}
+			} else if event.Kind == domain.ExecutionUsageObserved {
+				observation := domain.ExecutionUsageObservation{ExecutionID: input.ExecutionID, AccountID: input.AccountID, ConnectionID: input.ConnectionID, ProviderID: input.Configuration.ProviderID, ModelID: input.Configuration.ModelID, Harness: input.Configuration.Harness, Version: input.Installation.Version, ThreadID: event.NativeThreadID, TurnID: event.NativeTurnID, Sequence: event.Sequence, Usage: *event.Usage}
+				if _, err := tx.Put(domain.UsageKind, event.ObservationID, 0, sr.ID, sr.ProjectID, observation); err != nil {
+					return err
+				}
+				progress.LatestUsageID = event.ObservationID
+			} else if event.Kind == domain.ExecutionNoticeObserved {
+				progress.NoticeCount++
+				progress.LastNotice = event.Notice
 			} else if err := publishExecutionMessage(tx, input, sr, event); err != nil {
 				return err
 			}

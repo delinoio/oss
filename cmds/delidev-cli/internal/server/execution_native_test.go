@@ -113,16 +113,23 @@ func TestManualNativeCodexUsesRegisteredServerRelay(t *testing.T) {
 	if err := nativeEvents.AcceptInput(ctx, turn); err != nil {
 		t.Fatal(err)
 	}
-	sawInput, sawOutput := false, false
+	sawInput, sawOutput, sawUsage := false, false, false
 	for {
 		event, err := client.NextEvent(ctx)
 		if err != nil {
 			t.Fatal(err)
 		}
-		// This acceptance case verifies core message/terminal publication only.
-		// Private extensions remain explicitly outside its integration evidence.
-		if _, err := nativeEvents.PublishCore(ctx, event); err != nil {
+		if handled, err := nativeEvents.PublishCore(ctx, event); err != nil {
 			t.Fatal(err)
+		} else if !handled {
+			method := "typed-event"
+			if event.Native != nil {
+				method = event.Native.Method
+			}
+			t.Fatalf("scripted native turn produced an unhandled event: %s/%s", event.Kind, method)
+		}
+		if event.Kind == codex.UsageEvent && event.Usage != nil && *event.Usage.Last.Total == 2 {
+			sawUsage = true
 		}
 		if event.Message != nil {
 			if event.Message.Role == codex.UserRole && event.Message.ClientInputID == f.input.InputID && event.Message.Text == f.input.Input.Prompt {
@@ -143,7 +150,7 @@ func TestManualNativeCodexUsesRegisteredServerRelay(t *testing.T) {
 	if err := client.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if calls.Load() != 1 || !sawInput || !sawOutput {
+	if calls.Load() != 1 || !sawInput || !sawOutput || !sawUsage {
 		t.Fatal("registered execution did not retain its exact input/output with one provider request")
 	}
 	transcript, err := f.service.Store.List(ctx, store.Filter{Kind: domain.MessageKind, SessionID: f.input.SessionID, Limit: 10})
@@ -163,6 +170,14 @@ func TestManualNativeCodexUsesRegisteredServerRelay(t *testing.T) {
 	session, err := store.Decode[domain.Session](retained)
 	if err != nil || session.Outcome != domain.ExecutionSucceeded || session.PendingInputs != 0 || session.Execution == nil || session.Execution.Observed.Model != configuration.NativeModel {
 		t.Fatal("native core events did not update session acceptance and outcome")
+	}
+	usageRecord, err := f.service.Store.Get(ctx, domain.UsageKind, session.Execution.LatestUsageID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	usage, err := store.Decode[domain.ExecutionUsageObservation](usageRecord)
+	if err != nil || usage.AccountID != f.input.AccountID || usage.ConnectionID != f.input.ConnectionID || usage.ModelID != configuration.ModelID || usage.ThreadID != string(bound.Thread.ID) || usage.TurnID != string(turn.TurnID) || *usage.Usage.Last.Total != 2 || *usage.Usage.Total.Input != 1 || *usage.Usage.Total.Output != 1 {
+		t.Fatal("native usage observation lost its exact counters or event-time attribution")
 	}
 	if err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -188,5 +203,5 @@ func TestManualNativeCodexUsesRegisteredServerRelay(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	t.Log("installed Codex -> registered server relay -> scripted local provider -> Worker durable core-event outbox -> server transcript: exact input/model/native identities, server-only key and owned closure; dispatch readiness simulated, rich events unimplemented")
+	t.Log("installed Codex -> registered server relay -> scripted local provider -> Worker durable event outbox -> server transcript and attributed native usage: every event in this simple turn handled, exact identities/counters, server-only key and owned closure; dispatch readiness simulated, tools/interactions/populated quota unimplemented")
 }

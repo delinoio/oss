@@ -87,7 +87,7 @@ func (c *CodexEventPublisher) AcceptInput(ctx context.Context, result codex.Turn
 }
 
 // PublishCore reports whether this component handled the typed observation.
-// False is never permission to silently drop native tools/usage/interactions;
+// False is never permission to silently drop native tools/quota/interactions;
 // these require their own dedicated product adapters before full dispatch.
 func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event) (handled bool, returned error) {
 	c.mu.Lock()
@@ -108,6 +108,21 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 		return false, publicationUncertain()
 	}
 	switch event.Kind {
+	case codex.MetadataEvent:
+		switch event.Metadata {
+		case codex.ThreadIdentityChecked, codex.ThreadSettingsChecked, codex.RemoteControlDisabled, codex.QuotaUnavailable:
+			// These validated observations grant no new product authority.
+			return true, nil
+		default:
+			return false, nil
+		}
+	case codex.UsageEvent:
+		if event.Usage == nil || event.Usage.Validate() != nil || event.TurnID != c.turn {
+			return false, publicationUncertain()
+		}
+		return true, c.publish(ctx, domain.ExecutionEvent{Kind: domain.ExecutionUsageObserved, ObservationID: domain.NewID(), Usage: event.Usage})
+	case codex.NoticeEvent:
+		return true, c.publish(ctx, domain.ExecutionEvent{Kind: domain.ExecutionNoticeObserved, Notice: event.Notice})
 	case codex.TurnStartedEvent:
 		if event.Turn == nil || event.Turn.ID != c.turn || event.Turn.Status != codex.TurnRunning {
 			return false, publicationUncertain()

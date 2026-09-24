@@ -9,6 +9,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
@@ -19,9 +20,10 @@ import (
 
 type losePublicationAck struct {
 	delidevv1connect.WorkerServiceClient
-	t     *testing.T
-	path  string
-	calls []string
+	t      *testing.T
+	path   string
+	calls  []string
+	dropAt int
 }
 
 func (c *losePublicationAck) PublishExecution(ctx context.Context, req *connect.Request[pb.PublishExecutionRequest]) (*connect.Response[pb.PublishExecutionResponse], error) {
@@ -31,10 +33,56 @@ func (c *losePublicationAck) PublishExecution(ctx context.Context, req *connect.
 	}
 	c.calls = append(c.calls, req.Msg.Mutation.RequestId)
 	response, err := c.WorkerServiceClient.PublishExecution(ctx, req)
-	if err == nil && len(c.calls) == 1 {
+	dropAt := c.dropAt
+	if dropAt == 0 {
+		dropAt = 1
+	}
+	if err == nil && len(c.calls) == dropAt {
 		return nil, connect.NewError(connect.CodeUnavailable, errors.New("fixture lost acknowledgment"))
 	}
 	return response, err
+}
+
+func TestWorkerUsagePublicationRetainsIdentityAcrossLostAcknowledgment(t *testing.T) {
+	f := newPublicationFixture(t)
+	cfg := publicationWorkerConfig(t, f)
+	cfg.Client = &losePublicationAck{WorkerServiceClient: f.client, t: t, path: filepath.Join(cfg.Root, "jobs", string(f.job), "publication.json"), dropAt: 3}
+	publisher, err := worker.OpenExecutionPublisher(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer publisher.Close()
+	mapper := worker.NewCodexEventPublisher(publisher)
+	err = mapper.BindThread(context.Background(), codex.ThreadResult{RequestID: f.input.ThreadRequestID, Thread: &codex.Thread{ID: f.thread}, Effective: &codex.EffectiveSettings{Model: f.input.Configuration.NativeModel, Provider: codex.APIProvider, Sandbox: codex.Sandbox{Type: codex.ReadOnly}, ApprovalPolicy: codex.ApprovalOnRequest, ApprovalsReviewer: "user"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := mapper.AcceptInput(context.Background(), codex.TurnResult{RequestID: f.input.TurnRequestID, InputID: f.input.InputID, TurnID: f.turn}); err != nil {
+		t.Fatal(err)
+	}
+	for _, metadata := range []codex.MetadataKind{codex.ThreadSettingsChecked, codex.ThreadIdentityChecked, codex.RemoteControlDisabled, codex.QuotaUnavailable} {
+		if handled, err := mapper.PublishCore(context.Background(), codex.Event{Kind: codex.MetadataEvent, ThreadID: f.thread, Correlated: true, Metadata: metadata}); err != nil || !handled {
+			t.Fatalf("validated metadata was not handled: %v", err)
+		}
+	}
+	handled, err := mapper.PublishCore(context.Background(), codex.Event{Kind: codex.UsageEvent, ThreadID: f.thread, TurnID: f.turn, Correlated: true, Usage: &domain.NativeTokenUsage{Total: reportedCounts(30), Last: reportedCounts(20)}})
+	if !handled || err == nil || domain.SafeError(err).Code != domain.RecoveryRequired {
+		t.Fatal("lost usage acknowledgment was promoted to success")
+	}
+	if _, err := mapper.PublishCore(context.Background(), codex.Event{Kind: codex.NoticeEvent, ThreadID: f.thread, Correlated: true, Notice: domain.NativeWarning}); err == nil {
+		t.Fatal("later observation replaced uncertain usage")
+	}
+	if err := publisher.ReplayPending(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := f.service.Store.List(context.Background(), store.Filter{Kind: domain.UsageKind, SessionID: f.input.SessionID, Limit: 10})
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("lost usage acknowledgment generated another observation: %v", err)
+	}
+	observation, err := store.Decode[domain.ExecutionUsageObservation](rows[0])
+	if err != nil || observation.Sequence != 3 || *observation.Usage.Total.Total != 30 {
+		t.Fatal("retained usage changed after replay")
+	}
 }
 
 func publicationWorkerConfig(t *testing.T, f *publicationFixture) worker.PublicationConfig {

@@ -45,3 +45,5 @@
 - DeliDev `RegisterExecution` is restricted to the owning current Worker and exact claimed job revision. Accept a SHA-256 digest only; never send raw execution tokens or upstream keys in RPC replies, jobs or receipts. Exact retries must recheck live ownership and server epoch before returning the fixed relative proxy path.
 
 - DeliDev `PublishExecution` accepts closed typed core events only from the owning Worker and exact claimed job revision. Preserve contiguous sequences, immutable native identity bindings, reference-only receipts and atomic acceptance/transcript publication. Replaying an event cannot send native input, repeat queue accounting, clear recovery or claim owned cleanup. Never carry raw native extensions or diagnostics in this envelope.
+
+- DeliDev execution usage/notice publications carry only typed counters with an immutable observation ID or a closed generic notice kind. Derive attribution from the accepted execution assignment, preserve nullable native fields, and never turn cumulative samples into charges or native diagnostics into product payloads.

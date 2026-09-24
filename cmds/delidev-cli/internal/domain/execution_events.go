@@ -11,6 +11,8 @@ const (
 	ExecutionTextAppended     ExecutionEventKind = "text-appended"
 	ExecutionMessageCompleted ExecutionEventKind = "message-completed"
 	ExecutionTurnFinished     ExecutionEventKind = "turn-finished"
+	ExecutionUsageObserved    ExecutionEventKind = "usage-observed"
+	ExecutionNoticeObserved   ExecutionEventKind = "notice-observed"
 )
 
 type MessageRole string
@@ -91,6 +93,9 @@ type ExecutionEvent struct {
 	Message        *ExecutionMessageUpdate    `json:"message,omitempty"`
 	Outcome        ExecutionOutcome           `json:"outcome,omitempty"`
 	ProblemCode    Code                       `json:"problem_code,omitempty"`
+	Usage          *NativeTokenUsage          `json:"usage,omitempty"`
+	ObservationID  ID                         `json:"observation_id,omitempty"`
+	Notice         NativeNotice               `json:"notice,omitempty"`
 }
 
 func (e ExecutionEvent) Validate() error {
@@ -114,6 +119,17 @@ func (e ExecutionEvent) Validate() error {
 			return Fail(InvalidArgument, "Thread binding requires only observed settings and its native identity.", "Retain the actual native observation before accepting input.")
 		}
 	case ExecutionInputAccepted:
+	case ExecutionUsageObserved:
+		if e.Usage == nil || e.ObservationID.Validate() != nil {
+			return invalidObservation()
+		}
+		if err := e.Usage.Validate(); err != nil {
+			return err
+		}
+	case ExecutionNoticeObserved:
+		if e.Notice != NativeWarning && e.Notice != NativeConfigWarning {
+			return invalidObservation()
+		}
 	case ExecutionMessageStarted, ExecutionTextAppended, ExecutionMessageCompleted:
 		if e.Message == nil {
 			return Fail(InvalidArgument, "A message event requires its typed payload.", "Normalize the native message before publication.")
@@ -151,7 +167,7 @@ func (e ExecutionEvent) Validate() error {
 	default:
 		return Fail(Unsupported, "Unknown normalized execution event.", "Use a dedicated supported native event adapter.")
 	}
-	if (e.Kind != ExecutionThreadBound && e.Observed != nil) || (e.Kind != ExecutionMessageStarted && e.Kind != ExecutionTextAppended && e.Kind != ExecutionMessageCompleted && e.Message != nil) || (e.Kind != ExecutionTurnFinished && (e.Outcome != "" || e.ProblemCode != "")) {
+	if (e.Kind != ExecutionThreadBound && e.Observed != nil) || (e.Kind != ExecutionMessageStarted && e.Kind != ExecutionTextAppended && e.Kind != ExecutionMessageCompleted && e.Message != nil) || (e.Kind != ExecutionTurnFinished && (e.Outcome != "" || e.ProblemCode != "")) || (e.Kind != ExecutionUsageObserved && (e.Usage != nil || e.ObservationID != "")) || (e.Kind != ExecutionNoticeObserved && e.Notice != "") {
 		return Fail(InvalidArgument, "An execution event contains another kind's payload.", "Publish one unambiguous typed event.")
 	}
 	return nil
@@ -168,6 +184,9 @@ type ExecutionProgress struct {
 	NativeTurnID   string                    `json:"native_turn_id,omitempty"`
 	Observed       ObservedExecutionSettings `json:"observed"`
 	Outcome        ExecutionOutcome          `json:"outcome"`
+	LatestUsageID  ID                        `json:"latest_usage_id,omitempty"`
+	NoticeCount    uint64                    `json:"notice_count,omitempty"`
+	LastNotice     NativeNotice              `json:"last_notice,omitempty"`
 }
 
 type ExecutionMessage struct {

@@ -46,6 +46,9 @@ func (f *threadFixture) handleTurn(id json.RawMessage, method string, raw json.R
 	}
 	late := func() { time.Sleep(200 * time.Millisecond) }
 	switch method {
+	case "fixture/notify":
+		f.notify(params["method"].(string), params["params"])
+		write(id, map[string]any{})
 	case "turn/start":
 		if f.mode == "thread-turn-start-reject" {
 			reject()

@@ -20,6 +20,9 @@ const (
 	MessageCompletedEvent EventKind = "message-completed"
 	LateTurnResponseEvent EventKind = "late-turn-response"
 	NativeExtensionEvent  EventKind = "native-extension"
+	MetadataEvent         EventKind = "metadata"
+	UsageEvent            EventKind = "usage"
+	NoticeEvent           EventKind = "notice"
 )
 
 type MessageRole string
@@ -61,6 +64,9 @@ type Event struct {
 	Late        bool
 	Correlated  bool
 	EmittedAtMS *int64
+	Metadata    MetadataKind
+	Usage       *domain.NativeTokenUsage
+	Notice      domain.NativeNotice
 	// Native is present only for a still-private extension, including unrelated
 	// subagent events. It must pass a dedicated typed adapter before publication;
 	// neither it nor raw provider errors may be serialized as a product event.
@@ -216,8 +222,10 @@ func (c *Client) observeEventLocked(native nativewire.Event) (Event, error) {
 		return Event{Kind: TextDeltaEvent, ThreadID: c.thread, TurnID: params.TurnID, ItemID: params.ItemID, TextDelta: *params.Delta, Correlated: known, Late: turn.Turn.Status.terminal()}, nil
 	case "item/started", "item/completed":
 		return c.observeMessageLocked(native)
+	case "thread/tokenUsage/updated":
+		return c.observeUsageLocked(native)
 	default:
-		return privateNative(native), nil
+		return c.observeMetadataLocked(native)
 	}
 }
 func (c *Client) observeLateTurnLocked(native nativewire.Event) (Event, error) {
