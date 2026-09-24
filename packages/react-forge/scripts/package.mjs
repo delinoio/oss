@@ -29,7 +29,9 @@ function npm(args, options = {}) {
 }
 
 function tarEntries(bytes) {
-  const tar = gunzipSync(bytes, { maxOutputLength: 256 * 1024 * 1024 });
+  // Bound candidate inspection while allowing native binaries from the larger
+  // supported toolchains, including Windows and ARM64.
+  const tar = gunzipSync(bytes, { maxOutputLength: 512 * 1024 * 1024 });
   const entries = new Map();
   const text = (buffer) => buffer.toString("utf8").replace(/\0.*$/su, "");
   let offset = 0;

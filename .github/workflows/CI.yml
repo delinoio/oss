@@ -402,6 +402,7 @@ jobs:
       # Native tests and the package build share compiled dependencies while
       # every test, CLI consumer and rendering check still executes uncached.
       CARGO_TARGET_DIR: ${{ github.workspace }}/target/react-forge
+      REACT_FORGE_NATIVE_PROFILE: release
     defaults:
       run:
         shell: bash
