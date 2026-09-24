@@ -1,6 +1,6 @@
 # Migrating older command syntax
 
-Published version **0.1.6** uses **`env run`** for environment execution. The upcoming release renames it to **`run env`** and rejects `env run` with exit code 2 and migration guidance. Keep `env run` when pinned to the published 0.1.6 artifacts; update scripts to `run env` when upgrading to a release with that interface. The environment behavior remains unchanged.
+Published version **0.1.6** uses **`env run`** for environment execution. The next release renames it to **`run env`**, rejects `env run` with exit code 2 and migration guidance, and adds `run with-rate-limit`, `run with-lock`, `run with-service`, `run with-retry`, and `run with-timeout`. Keep `env run` and do not add the wrappers when pinned to the published 0.1.6 artifacts; update scripts only when upgrading to a release with the new interface. The environment behavior remains unchanged.
 
 ## Changes already available in 0.1.6
 

@@ -28,6 +28,49 @@ Environment execution has no shell-expression mode, dotenv loading or stored com
 
 On Windows, `run env` also treats `$1` as an environment-variable reference and removes it when unset. Invoke `clibox text replace` directly when passing regex capture references; wrapping it in `run env` applies that extra conversion even after shell quoting.
 
+## Coordinate execution
+
+The following wrappers are available in the next release, alongside `run env`; they are not present in published version 0.1.6. Each wrapper accepts one workload using the same environment-assignment grammar as `run env`:
+
+```text
+[KEY=VALUE ...] [--] COMMAND [ARG ...]
+```
+
+The workload is never interpreted as a shell expression. It inherits the working directory and standard streams, resolves commands through its child environment, and preserves literal arguments. Use `--` when the command might otherwise look like an environment assignment.
+
+```sh
+clibox run with-rate-limit --name ci-publish --limit 1 --period 1m -- pnpm publish
+clibox run with-lock --name database-migrate --on-locked fail -- pnpm migrate
+clibox run with-service http://127.0.0.1:3000/health -- pnpm test
+clibox run with-service http://127.0.0.1:3000/health --service node server.js -- pnpm test
+clibox run with-retry --max-attempts 5 --jitter none -- pnpm install
+clibox run with-timeout --timeout 10m --idle-timeout 30s -- pnpm test
+```
+
+All wrappers support `--kill-after DURATION`, which defaults to `5s`. On timeout, cancellation, or a managed-service failure, clibox asks owned work to stop, waits for that grace period, then forces termination if necessary. A cancellation observed before workload startup prevents that workload from starting; a later cancellation skips remaining grace. Durations use nonnegative integer `ms`, `s`, `m`, or `h` values. On Unix, keep workloads and managed services in the foreground: programs that daemonize or create a new session or process group leave wrapper ownership and must manage their own lifecycle. Child exit statuses remain meaningful; see [Output and cancellation](/clibox/output#execution-wrapper-statuses).
+
+### Rate limits and locks
+
+`with-rate-limit` requires `--name`, `--limit`, and `--period`. It admits one workload through a named local token bucket. `--burst` defaults to `1` and accepts values through `9007199254740992`. A token is consumed immediately before the workload starts and is not refunded when startup or cancellation fails. Calls using the same name must retain the same limit, period, and burst configuration.
+
+`with-lock` requires `--name` and acquires a named local exclusive lock before starting its workload. `--on-locked wait` is the default. `--on-locked skip` returns 0 without running the workload; `--on-locked fail` returns 75. `--wait-timeout` is accepted only with `wait`. For either command, `--wait-timeout 0` makes an immediate admission decision instead of waiting.
+
+Both commands default to `--scope project`, which coordinates calls from the same canonical project directory. Use `--scope user` to coordinate across projects, or `--project-dir DIRECTORY` to select another existing directory as project identity. Names are case-sensitive ASCII letters, digits, dots, underscores, or hyphens, from 1 through 128 characters. Rate limits and locks coordinate only the current user on the current machine; they do not create a shared service or cross-machine queue.
+
+### HTTP service readiness
+
+`with-service URL` waits for HTTP headers before starting the workload. It sends GET and accepts any 2xx status by default; use `--method head` or `--status CODE` for a specific probe. Polling defaults to every `250ms`, each attempt to `3s`, and the overall `--ready-timeout` to `30s`. After every unsuccessful probe, including the initial preflight before external observation or managed-service startup, clibox waits one polling interval before checking again. `--ready-timeout 0` disables only the overall readiness deadline; intervals and individual attempts remain positive.
+
+Without `--service`, the URL is external: clibox observes it but never terminates it. With `--service KEY=VALUE ... SERVER ARG ... -- WORKLOAD ...`, clibox first confirms that the URL is not already ready, then starts and owns that service. The first standalone `--` after `--service` separates the service command from the workload; a standalone separator inside service arguments is unsupported. Managed-service output goes to stderr. If the service exits before the workload finishes, its completion races the workload completion, or readiness fails, clibox stops its owned work.
+
+Service probes use only absolute HTTP(S) URLs without user information. Redirects, proxies, credentials, custom headers, response bodies, custom certificate authorities, and TLS-verification bypass are not supported. HTTPS verifies the operating system's trust store and hostname.
+
+### Retries and timeouts
+
+`with-retry` defaults to three total attempts, a `1s` initial delay, a backoff factor of `2`, a `30s` maximum delay, and full jitter. Use `--retry-exit-code CODE` one or more times to retry only those nonzero numeric exit statuses. It never replays stdin and does not retry startup failures or Unix signal termination. `--timeout 0` disables the wrapper's overall retry deadline.
+
+`with-timeout` requires a positive `--timeout` or `--idle-timeout`. The first bounds total runtime; the second resets whenever the workload writes bytes to stdout or stderr. Output is forwarded promptly, and output that arrives after an elapsed idle deadline does not extend the run. In a foreground Unix terminal, a workload with inherited input or output remains the foreground terminal process group even when another standard stream is redirected, so interactive prompts, reads, and writes work normally. Ctrl+C still cancels the wrapper and its owned workload, including a workload that ignores the direct interrupt. Ctrl+Z suspends the wrapper job as well as the workload; use your shell's normal `fg` command to resume it. Set either limit to `0` only to disable that individual limit while the other remains positive.
+
 ## Inspect and terminate port owners
 
 ```sh

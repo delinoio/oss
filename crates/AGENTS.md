@@ -32,6 +32,7 @@
 - Add new crates as explicit workspace members in root `Cargo.toml`.
 - Keep crate naming aligned with project IDs when possible.
 - Document behavior contracts in project index docs and relevant crate-domain docs before large implementation changes.
+- Keep clibox execution wrappers in `clibox-system` and their `run` command family independent of the other clibox companion crates. Reuse only the system environment planner, preserve literal child invocation semantics, and use native process groups/Windows Job Objects plus bounded cleanup for owned descendants. Unix ownership is limited to the wrapper process group, so daemonizing workloads or managed services that create another session/process group are unsupported and must be documented as self-managed. Lock/rate coordination may retain only documented private hashed local state and must fail closed on unsafe state.
 - Planned crate paths must not be added as workspace members until the crate skeleton exists.
 - For new package scaffolding, default `publish = false` until publish contracts are explicitly approved.
 - Prefer minimal default features and keep optional capabilities opt-in for size-sensitive crates.
@@ -156,7 +157,7 @@
 
 ### clibox Rules
 
-- Keep the CLI README and `apps/public-docs/docs/clibox` aligned with user-facing behavior. Follow `docs/apps-clibox-docs-foundation.md`; the consolidated public guide covers all 19 commands and preserves their limits, cancellation, and migration guidance.
+- Keep the CLI README and `apps/public-docs/docs/clibox` aligned with user-facing behavior. Follow `docs/apps-clibox-docs-foundation.md`; the consolidated public guide covers all 24 next-release commands while version-specific guidance preserves the 19-command published 0.1.6 surface, including their limits, cancellation, and migration guidance.
 
 - clibox CLI consistency uses canonical `run env`, `port list`, and `hash compute` without old-name aliases. Report `--quiet` suppresses stdout; PID selection is only `port list --pids`. File-output commands interpret `--output -` as stdout and `./-` as a literal dash file; `--force` requires real file output or `--in-place`. Keep short/long help, static redacted migration guidance, numeric owned-operation cancellation (130/143), filtered-error visibility, and native/npm behavior synchronized.
 

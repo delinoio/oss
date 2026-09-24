@@ -63,7 +63,17 @@ fn version_comes_from_the_cargo_package() {
 #[test]
 fn missing_subcommands_show_command_help_on_stderr() {
     let groups: [(&str, &[&str]); 10] = [
-        ("run", &["env"]),
+        (
+            "run",
+            &[
+                "env",
+                "with-rate-limit",
+                "with-lock",
+                "with-service",
+                "with-retry",
+                "with-timeout",
+            ],
+        ),
         ("port", &["list", "kill"]),
         ("clipboard", &["copy", "paste"]),
         ("wait", &["tcp", "http", "file"]),
@@ -145,6 +155,11 @@ fn every_command_has_help_and_examples() {
         vec!["wait", "http", "--help"],
         vec!["wait", "file", "--help"],
         vec!["run", "env", "--help"],
+        vec!["run", "with-rate-limit", "--help"],
+        vec!["run", "with-lock", "--help"],
+        vec!["run", "with-service", "--help"],
+        vec!["run", "with-retry", "--help"],
+        vec!["run", "with-timeout", "--help"],
         vec!["port", "list", "--help"],
         vec!["port", "kill", "--help"],
         vec!["open", "--help"],

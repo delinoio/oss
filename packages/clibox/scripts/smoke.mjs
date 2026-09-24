@@ -133,6 +133,18 @@ try {
       execFileSync(process.execPath, [launcher, "run", "env", "CLIBOX_TEST_EXIT=1", "--", process.execPath, fixture], { cwd: consumer, stdio: "pipe" });
     } catch (error) { delegatedStatus = error.status; }
     ensure(delegatedStatus === 37, `${manager} utility exit propagation failed`);
+    const wrapperHome = path.join(consumer, "wrapper-state");
+    const wrapperEnv = { ...process.env, HOME: wrapperHome, XDG_STATE_HOME: path.join(wrapperHome, "xdg-state") };
+    // Windows coordination state is rooted in LocalAppData, not HOME/XDG_STATE_HOME.
+    // Do not create persistent user-profile state from a removable package fixture.
+    if (process.platform !== "win32") {
+      ensure(invoke(["run", "with-rate-limit", "--name", "consumer-rate", "--limit", "1", "--period", "1m", "--", process.execPath, "-e", "process.exit(0)"], { env: wrapperEnv }).length === 0, `${manager} rate-limit wrapper smoke failed`);
+      ensure(invoke(["run", "with-lock", "--name", "consumer-lock", "--", process.execPath, "-e", "process.exit(0)"], { env: wrapperEnv }).length === 0, `${manager} lock wrapper smoke failed`);
+    }
+    ensure(invoke(["run", "with-retry", "--max-attempts", "1", "--", process.execPath, "-e", "process.exit(0)"], { env: wrapperEnv }).length === 0, `${manager} retry wrapper smoke failed`);
+    ensure(invoke(["run", "with-timeout", "--timeout", "5s", "--", process.execPath, "-e", "process.exit(0)"], { env: wrapperEnv }).length === 0, `${manager} timeout wrapper smoke failed`);
+    const serviceSyntax = spawnSync(process.execPath, [launcher, "run", "with-service", "http://127.0.0.1:9", "--ready-timeout", "1ms", "--", process.execPath, "-e", "process.exit(0)"], { cwd: consumer, env: wrapperEnv, encoding: "utf8" });
+    ensure(serviceSyntax.status !== 2, `${manager} service wrapper parsing failed`);
     const installed = JSON.parse(readFileSync(path.join(consumer, "node_modules", native.name, "package.json"), "utf8"));
     ensure(installed.version === metadata().version, "Installed native version mismatch");
     event("consumer_smoke", { manager, target: target.suffix, version: installed.version });

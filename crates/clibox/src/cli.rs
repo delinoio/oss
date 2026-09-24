@@ -72,6 +72,11 @@ pub fn parser_message(kind: clap::error::ErrorKind, raw: &[std::ffi::OsString]) 
     }
     let command = match (group, operation) {
         (Some("run"), Some("env")) => "clibox run env",
+        (Some("run"), Some("with-rate-limit")) => "clibox run with-rate-limit",
+        (Some("run"), Some("with-lock")) => "clibox run with-lock",
+        (Some("run"), Some("with-service")) => "clibox run with-service",
+        (Some("run"), Some("with-retry")) => "clibox run with-retry",
+        (Some("run"), Some("with-timeout")) => "clibox run with-timeout",
         (Some("port"), Some("list")) => "clibox port list",
         (Some("port"), Some("kill")) => "clibox port kill",
         (Some("clipboard"), Some("copy")) => "clibox clipboard copy",

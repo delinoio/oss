@@ -8,7 +8,9 @@ Results default to stdout. Text and Base64 add no newline; time values, generate
 
 Exit status is `0` for success, `1` for runtime failure or checksum mismatch, `2` for missing, malformed, or conflicting arguments, `130` for Ctrl+C/Windows Ctrl+Break, and `143` for Unix SIGTERM. Diagnostics use stderr. `RUST_LOG` enables more detailed structured diagnostics; the default is warnings/errors. Color requires a TTY and is disabled by `NO_COLOR`. Diagnostics omit input content, digests, patterns, replacements, raw arguments, and paths. Verification filenames are intentional command results.
 
-Operations are offline and use current OS permissions. No settings, cache, history, telemetry, automatic retries, or fixed execution timeout is added. No fixed input/output size limit is imposed: text replacement holds the entire input/result in memory, while Base64 and hashing stream bytes. Resource exhaustion can fail an operation. **Streaming stdout may already contain partial output when reading, decoding, writing, or interruption fails.** Use `--output` when an incomplete result must not replace a file.
+Operations are offline and use current OS permissions. No settings, history, telemetry, or automatic retry is added outside the explicit [execution wrappers](/clibox/system#coordinate-execution). Named rate limits and locks retain only private local coordination state. No fixed input/output size limit is imposed: text replacement holds the entire input/result in memory, while Base64 and hashing stream bytes. Resource exhaustion can fail an operation. **Streaming stdout may already contain partial output when reading, decoding, writing, or interruption fails.** Use `--output` when an incomplete result must not replace a file.
+
+If an execution wrapper cannot forward an owned workload or managed-service stream, it stops owned work and returns a runtime failure.
 
 ## File replacement
 
@@ -20,9 +22,17 @@ There are no automatic backups, file locks, or concurrent-modification checks. T
 
 ## Utility diagnostics and operation limits
 
-All operations use the current OS user's permissions and desktop session. No authentication service, saved configuration, cache, operation history or telemetry is added. Environment, port, open, clipboard, and transformation commands have no automatic retry or fixed execution timeout apart from the shared five-second port-termination verification. Readiness waits use the polling and deadline options in [Readiness waits](/clibox/wait). Owned operations return numeric 130 for Ctrl+C/Windows Ctrl+Break and 143 for Unix SIGTERM after cleanup. `run env` (`env run` in version 0.1.6) preserves the delegated child's exit status and Unix signal identity. Interruption does not undo completed copies, terminations, application launches or file replacements.
+All operations use the current OS user's permissions and desktop session. No authentication service, saved configuration, operation history, or telemetry is added. Environment, port, open, clipboard, and transformation commands have no automatic retry or fixed execution timeout apart from the shared five-second port-termination verification. The next release's execution wrappers add only their documented local coordination, retry, readiness, and timeout behavior. Readiness waits use the polling and deadline options in [Readiness waits](/clibox/wait). Owned operations return numeric 130 for Ctrl+C/Windows Ctrl+Break and 143 for Unix SIGTERM after cleanup. `run env` (`env run` in version 0.1.6) preserves the delegated child's exit status and Unix signal identity. Interruption does not undo completed copies, terminations, application launches or file replacements.
 
 Configuration input/output and nesting limits are documented in [Configuration commands](/clibox/configuration).
+
+## Execution wrapper statuses
+
+`run env` preserves its delegated child's numeric exit status and Unix signal identity. The next release's `run with-*` wrappers also preserve a natural child status when the wrapper itself succeeds. Their admission, readiness, overall, and idle timeouts return **124**. `run with-lock --on-locked fail` returns **75**; `--on-locked skip` returns **0** without starting a workload. Invalid wrapper arguments return **2** and other wrapper failures return **1**. Handled Ctrl+C/Windows Ctrl+Break returns **130** and Unix SIGTERM returns **143** after owned-work cleanup.
+
+External services observed by `run with-service` are never terminated. A managed service, retry attempt, or timeout-owned workload is stopped on a wrapper timeout, cancellation, or failure. A second cancellation skips any remaining cleanup grace. Wrapper diagnostics remain on stderr and omit names, commands, environment values, URLs, credentials, response data, and paths.
+
+When installed through npm on Unix, clibox forwards SIGINT, SIGTERM, and SIGHUP to the native command, including signals sent directly to the launcher process.
 
 Warnings/errors use structured stderr diagnostics. Set `RUST_LOG=debug` for more detail. Stdout remains dedicated to results or the delegated child's output. Color is used only on a TTY and respects `NO_COLOR`. Clibox-authored diagnostics omit clipboard text, environment values, transformation input, patterns, replacements, digests, complete argv, full URLs and paths; a child program still controls its own inherited output.
 

@@ -27,6 +27,16 @@ Waits are unlimited by default. Set `--timeout` when scripts must stop, and reme
 
 For dotenv or YAML syntax errors, inspect the reported input/document ordinal and line/column locally. Reduce input or expanded nesting when resource limits are exceeded. Configuration processing accepts at most 64 MiB of aggregate input and 64 MiB of output; YAML allows 128 collection levels. See [Configuration commands](/clibox/configuration).
 
+## Execution wrappers
+
+The `run with-*` commands are available in the next release, not in published version 0.1.6. If a pinned installation reports an unknown `run` subcommand, check `clibox --version` and upgrade the exact package version before changing the script. Use `env run` rather than `run env` while remaining on 0.1.6.
+
+For a rate limit or lock failure, confirm that all callers use the same case-sensitive name and, for a rate limit, the same limit, period, and burst. Choose `--scope project` for one project or `--scope user` for coordination across projects. `--wait-timeout 0` is an immediate decision, not unlimited waiting. A lock with `--on-locked fail` exits 75; `skip` exits 0 without starting its workload.
+
+For `with-service`, first verify that the URL is not already ready when using `--service`; an already-ready endpoint must be observed without `--service`. The first standalone `--` separates the managed service from the workload. Check the service's stderr output for its own failures. External endpoints are never stopped, while managed services are stopped after a wrapper failure, timeout, or cancellation. HTTPS uses normal operating-system trust, so repair the certificate or system CA installation instead of attempting a custom CA or TLS bypass.
+
+For `with-retry`, a consumed stdin stream is not replayed, and startup failures or Unix signal termination are not retried. Use `--retry-exit-code` to narrow retryable nonzero exits. For `with-timeout`, distinguish total runtime from output-idle time: either standard stream resets the idle timer. Timeout statuses are 124; set a limit to `0` only to disable that one limit while the other stays positive. See [System commands](/clibox/system#coordinate-execution) for examples and defaults.
+
 ## Diagnostics and support
 
 Use `RUST_LOG=clibox=debug` for structured stderr progress; on PowerShell set `$env:RUST_LOG = "clibox=debug"` first. `NO_COLOR` disables terminal color. Share the version, platform, stable failure code, and redacted diagnostics through [GitHub Issues](https://github.com/delinoio/oss/issues). Avoid sharing clipboard data, environment values, secret configuration, or private input files. A delegated child program controls its own output.

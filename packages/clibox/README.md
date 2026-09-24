@@ -83,6 +83,33 @@ Environment execution has no shell-expression mode, dotenv loading or stored com
 
 On Windows, `run env` also treats `$1` as an environment-variable reference and removes it when unset. Invoke `clibox text replace` directly when passing regex capture references; wrapping it in `run env` applies that extra conversion even after shell quoting.
 
+### Execution wrappers
+
+The installed command forwards the Rust `run` group unchanged on every supported target:
+
+```sh
+pnpm exec clibox run with-rate-limit --name ci-publish --limit 1 --period 1m -- npm publish
+pnpm exec clibox run with-lock --name database --on-locked fail -- pnpm migrate
+pnpm exec clibox run with-service http://127.0.0.1:3000/health -- npm test
+pnpm exec clibox run with-service http://127.0.0.1:3000/health --service node server.js -- npm test
+pnpm exec clibox run with-retry --max-attempts 5 --jitter none -- npm install
+pnpm exec clibox run with-timeout --timeout 10m --idle-timeout 30s -- npm test
+```
+
+Options come before the literal `[KEY=VALUE ...] [--] COMMAND [ARG ...]` workload. The wrappers retain `run env` assignment expansion, literal argv, child-only environment, cwd, PATH/PATHEXT lookup, and no-shell behavior. All accept `--kill-after DURATION` (default `5s`); units are integer `ms`, `s`, `m`, or `h`. On Unix, workloads and managed services must stay in the wrapper's process group; do not daemonize or create a new session or process group unless that program manages its own lifecycle.
+
+Rate and lock names use case-sensitive ASCII `[A-Za-z0-9._-]` up to 128 characters. The default scope is the canonical current project directory; use `--scope user` for local user scope or `--project-dir DIR` for another existing project identity without changing cwd. The latter cannot combine with user scope. Lock/bucket state uses separate hashed filenames and never stores raw names, paths, argv, or environment values. It is private local state at `$XDG_STATE_HOME/clibox/run` (or `~/.local/state/clibox/run`) on Linux, `~/Library/Application Support/clibox/run` on macOS, and LocalAppData `clibox/run` on Windows. It is not cross-machine synchronization, FIFO queuing, a command history, or a service. Manually remove state only after all relevant invocations stop.
+
+`with-service` polls an external endpoint until it is ready and never owns it. With `--service`, its first standalone `--` separates the service from the workload; service output goes to stderr and is cleaned up after the workload. `--ready-timeout 0` disables only the overall readiness deadline, while polling and individual attempts stay positive and bounded. Retry or runtime/idle timeout values of `0` similarly disable that individual limit; lock/rate `--wait-timeout 0` instead makes the admission decision immediate.
+
+`with-rate-limit` requires `--name`, `--limit`, and `--period`; `--burst` defaults to one and is at most `9007199254740992`. A token is consumed immediately before execution and is not refunded. `--wait-timeout` limits admission, with `0` immediate; bucket configuration must match and a backward wall clock adds no tokens. `with-lock` waits by default; `skip` exits 0 and `fail` exits 75 without a workload. `--wait-timeout` is allowed only when waiting, and nested same-key locks contend normally.
+
+`with-service` observes HTTP headers only: GET/2xx by default, or `--method head`/exact `--status`. It never follows redirects, uses proxies, sends credentials/headers, reads a body, accepts custom CAs, or bypasses TLS validation. External endpoints are never terminated. A managed service starts only after retryable not-ready preflight; an already-ready endpoint fails with guidance to omit `--service`. The first standalone `--` after `--service` separates service/workload; another delimiter inside service argv is unsupported. Managed-service output uses stderr and its owned tree is cleaned up after completion, failure, timeout, or cancellation.
+
+`with-retry` defaults to three attempts, a 1 s delay, factor 2, 30 s cap, and full jitter. It retries nonzero numeric exits by default, or only repeated `--retry-exit-code` values; it does not replay stdin or retry spawn failures/Unix signal termination. `with-timeout` needs a positive total or idle limit. Any stdout/stderr bytes reset idle time and are forwarded promptly, but interactive TTY identity is not guaranteed. A wrapper stops owned work and returns a runtime failure if it cannot forward an owned stream.
+
+Natural child status is retained. Admission/readiness/overall/idle timeout exits 124; invalid arguments exit 2; wrapper failure exits 1; Ctrl+C/Ctrl+Break exits 130; Unix SIGTERM exits 143. Cleanup requests graceful termination, waits the configured grace, then forces owned process-tree termination and waits up to five seconds for confirmation. On Unix, the npm launcher forwards SIGINT, SIGTERM, and SIGHUP to the native command, including PID-targeted signals. Diagnostics remain redacted stderr output; the Node launcher does no parsing, state access, network request, or shell execution.
+
 ### Inspect and terminate port owners
 
 ```sh

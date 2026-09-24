@@ -7,6 +7,9 @@ publish = false
 description = "Internal system commands for clibox"
 repository = "https://github.com/delinoio/oss"
 
+[features]
+test = []
+
 [dependencies]
 clap = { version = "4.5.32", features = ["derive"] }
 serde = { version = "1.0.228", features = ["derive"] }
@@ -14,10 +17,17 @@ serde_json = "1.0.149"
 tracing = "0.1.44"
 tempfile = "3.25.0"
 regex = "1.12.3"
+fs4 = "1.1.0"
+sha2 = "0.10"
+rand = "0.9"
+reqwest = { version = "0.12.28", default-features = false, features = ["blocking", "http2", "rustls-tls-no-provider"] }
+rustls = { version = "0.23.36", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-native-certs = "0.8.4"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2.182"
 signal-hook = "0.3.18"
+signal-hook-registry = "1.4.8"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 libproc = "0.14.11"
@@ -29,4 +39,4 @@ objc2-foundation = { version = "0.3.2", default-features = false, features = ["s
 x11rb = { version = "0.13.2", default-features = false }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_NetworkManagement_IpHelper", "Win32_Networking_WinSock", "Win32_System_Threading", "Win32_System_Console", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_System_Com", "Win32_System_Registry", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_Security", "Win32_Storage_FileSystem"] }
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_NetworkManagement_IpHelper", "Win32_Networking_WinSock", "Win32_System_Threading", "Win32_System_JobObjects", "Win32_System_Console", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_System_Com", "Win32_System_Registry", "Win32_System_SystemServices", "Win32_System_Diagnostics_ToolHelp", "Win32_System_WindowsProgramming", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_Security", "Win32_Security_Authorization", "Win32_Storage_FileSystem"] }

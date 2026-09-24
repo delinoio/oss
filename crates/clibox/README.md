@@ -64,6 +64,31 @@ Environment execution has no shell-expression mode, dotenv loading or stored com
 
 On Windows, `run env` also treats `$1` as an environment-variable reference and removes it when unset. Invoke `clibox text replace` directly when passing regex capture references; wrapping it in `run env` applies that extra conversion even after shell quoting.
 
+### Control local command execution
+
+`clibox run` applies one local execution control to the same literal `[KEY=VALUE ...] [--] COMMAND [ARG ...]` workload grammar as `run env`. Wrapper options precede the workload; assignment expansion, literal argv, child-only environment, cwd, PATH/PATHEXT lookup, and no-shell behavior are unchanged.
+
+```sh
+clibox run with-rate-limit --name publish --limit 2 --period 1m -- npm publish
+clibox run with-lock --name migrate --on-locked fail -- pnpm migrate
+clibox run with-service http://127.0.0.1:3000/health -- npm test
+clibox run with-service http://127.0.0.1:3000/health --service node server.js -- npm test
+clibox run with-retry --max-attempts 5 --jitter none -- cargo fetch
+clibox run with-timeout --timeout 10m --idle-timeout 30s -- npm test
+```
+
+Rate limits require `--name`, `--limit`, and `--period`; `--burst` defaults to one and is at most `9007199254740992`. A named local token bucket admits one workload per token, preserves its configuration, and does not refund a token after a failed spawn/cancellation. `--wait-timeout` bounds admission; `0` is immediate. Refill uses UTC accounting, never adds tokens on a backward clock movement, and caps forward refill at burst capacity.
+
+Locks use the same name/scope rules. They wait by default; `--on-locked skip` returns 0 and `--on-locked fail` returns 75 without starting a workload. `--wait-timeout` is valid only for `wait`. Same-key nested locks are ordinary contention rather than reentrant bypasses.
+
+Names are case-sensitive ASCII letters, digits, dots, underscores, or hyphens, up to 128 characters. Scope is the canonical current project directory by default; `--scope user` shares a current-user machine-local name, while `--project-dir DIR` selects another existing identity without changing cwd and cannot combine with user scope. Linux state is `$XDG_STATE_HOME/clibox/run` or `~/.local/state/clibox/run`, macOS state is `~/Library/Application Support/clibox/run`, and Windows state is LocalAppData `clibox/run`. Names and project paths are hashed before storage. State is local and retained; remove affected state manually only after all relevant wrappers stop, and never relax its private permissions or replace it with links.
+
+`with-service` uses headers-only HTTP readiness: GET/any 2xx by default, or HEAD/exact `--status`. It has no redirects, proxies, authentication, body reads, custom CAs, or TLS bypass. Without `--service`, clibox polls the external endpoint until ready and never stops it. With it, clibox rejects an already-ready endpoint, starts after a retryable not-ready preflight, sends service output to stderr, and owns service cleanup. The first standalone `--` after `--service` separates service and workload; another standalone separator inside service argv is unsupported. `--ready-timeout 0` disables its overall readiness deadline; polling and individual HTTP attempts remain bounded by their positive intervals.
+
+`with-retry` defaults to three attempts, 1 s delay, factor 2, 30 s cap, and full jitter. It retries nonzero numeric exits (or only repeated `--retry-exit-code` values), never replays consumed stdin, and does not retry spawn errors or Unix signal termination. `with-timeout` requires a positive total or idle limit; any stdout/stderr bytes reset idle timing and are forwarded promptly, though TTY identity is not guaranteed. A wrapper stops owned work and returns a runtime failure if it cannot forward an owned stream. Every wrapper has `--kill-after DURATION` (default `5s`); it requests graceful owned-tree termination, then forces after the grace period and waits up to five seconds for confirmation. On Unix, run workloads and managed services in the foreground: programs that daemonize or create a new session or process group leave wrapper ownership and must manage their own lifecycle.
+
+Natural child status and Unix signal identity are preserved. Wrapper timeouts return 124, invalid arguments return 2, other wrapper failures return 1, Ctrl+C/Ctrl+Break returns 130, and Unix SIGTERM returns 143. On Unix, the npm launcher forwards SIGINT, SIGTERM, and SIGHUP to the native command, including PID-targeted signals. Diagnostics are redacted stderr logs and never include wrapper names, argv, paths, URLs, environment values, credentials, or HTTP content.
+
 ### Inspect and terminate port owners
 
 ```sh
