@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { manifest, nativeName, platforms } from "./package.mjs";
+import { manifest, nativeName, normalizedTextBytes, platforms } from "./package.mjs";
 import { publishArtifacts } from "./publish.mjs";
 
 test("public manifests select exact-version native packages without install hooks", () => {
@@ -20,6 +20,10 @@ test("public manifests select exact-version native packages without install hook
     assert.deepEqual(native.libc, host.platform === "linux" ? ["glibc"] : undefined);
     assert.equal(native.scripts, undefined);
   }
+});
+
+test("license, notice and README bytes are stable across Windows checkouts", () => {
+  assert.equal(normalizedTextBytes(Buffer.from("first\r\nsecond\n")).toString("utf8"), "first\nsecond\n");
 });
 
 const artifacts = (version) => [...platforms.map((host) => ({ name: nativeName(host), version, integrity: `sha512-${host.id}` })), { name: "@delino/react-forge", version, integrity: "sha512-main" }];

@@ -11,8 +11,12 @@ export const root = path.resolve(packageRoot, "../..");
 export const registry = "https://registry.npmjs.org";
 export const platforms = JSON.parse(readFileSync(path.join(packageRoot, "src/native-platforms.json"), "utf8"));
 const source = JSON.parse(readFileSync(path.join(packageRoot, "package.json"), "utf8"));
-const license = readFileSync(path.join(root, "LICENSE"));
-const notice = readFileSync(path.join(root, "NOTICE"));
+// Git may check out text with CRLF on Windows. Published notices must have the
+// same canonical bytes on every host so the complete-set verifier can compare them.
+export const normalizedTextBytes = (bytes) => Buffer.from(bytes.toString("utf8").replace(/\r\n/gu, "\n"));
+const license = normalizedTextBytes(readFileSync(path.join(root, "LICENSE")));
+const notice = normalizedTextBytes(readFileSync(path.join(root, "NOTICE")));
+const readme = normalizedTextBytes(readFileSync(path.join(packageRoot, "README.md")));
 const repository = { type: "git", url: "git+https://github.com/delinoio/oss.git", directory: "packages/react-forge" };
 export const ensure = (condition, message) => { if (!condition) throw new Error(message); };
 export const integrity = (bytes) => `sha512-${createHash("sha512").update(bytes).digest("base64")}`;
@@ -111,7 +115,7 @@ export function inspect(file, revision = sourceRevision()) {
   ensure(JSON.stringify([...entries.keys()].sort()) === JSON.stringify(names), "Package file inventory mismatch");
   ensure(entries.get("LICENSE").equals(license), "Package license mismatch");
   ensure(entries.get("NOTICE").equals(notice), "Package notice mismatch");
-  ensure(entries.get("README.md").equals(readFileSync(path.join(packageRoot, "README.md"))), "Package README mismatch");
+  ensure(entries.get("README.md").equals(readme), "Package README mismatch");
   if (host) ensure(binaryMatches(host, entries.get("react-forge.node")), "Native binary target mismatch");
   else {
     ensure(entries.get("bin/react-forge.mjs").equals(readFileSync(path.join(packageRoot, "bin/react-forge.mjs"))), "CLI mismatch");
@@ -125,9 +129,9 @@ export function pack(host, output, revision = sourceRevision()) {
   const directory = path.resolve(output, host?.id ?? "main");
   rmSync(directory, { recursive: true, force: true });
   mkdirSync(directory, { recursive: true });
-  copyFileSync(path.join(root, "LICENSE"), path.join(directory, "LICENSE"));
-  copyFileSync(path.join(root, "NOTICE"), path.join(directory, "NOTICE"));
-  copyFileSync(path.join(packageRoot, "README.md"), path.join(directory, "README.md"));
+  writeFileSync(path.join(directory, "LICENSE"), license);
+  writeFileSync(path.join(directory, "NOTICE"), notice);
+  writeFileSync(path.join(directory, "README.md"), readme);
   if (host) {
     const binary = path.join(packageRoot, "dist", `react-forge.${host.id}.node`);
     ensure(binaryMatches(host, readFileSync(binary)), "Native build does not match host");
