@@ -223,6 +223,7 @@ func (s *Service) PairDevice(ctx context.Context, req *connect.Request[pb.PairDe
 			value.Disabled = false
 			value.LastSeen = time.Time{}
 			value.Installations = nil
+			value.DiscoveryRevision = 0
 			created, err := tx.Put(domain.MachineKind, device.MachineID, 0, "", "", value)
 			if err != nil {
 				return nil, err

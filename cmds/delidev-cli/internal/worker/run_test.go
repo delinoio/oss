@@ -31,14 +31,14 @@ func TestJournalReusesCompletionAndPreservesInterruptedExecution(t *testing.T) {
 	job := domain.Job{Type: domain.InspectRepositoryJob, State: domain.JobClaimed, MachineID: domain.NewID(), InstanceID: instance, Input: input, AcceptedAt: time.Now().UTC()}
 	raw, _ := json.Marshal(job)
 	resource := &pb.Resource{Id: string(domain.NewID()), Revision: 2, Kind: pb.EntityKind_ENTITY_KIND_JOB, DocumentJson: raw}
-	first, err := runJob(context.Background(), root, instance, resource, job)
+	first, err := runJob(context.Background(), Config{Root: root}, instance, resource, job)
 	if err != nil || first.Problem != nil {
 		t.Fatalf("execution: %v %v", err, first.Problem)
 	}
 	if err := os.RemoveAll(repo); err != nil {
 		t.Fatal(err)
 	}
-	replay, err := runJob(context.Background(), root, instance, resource, job)
+	replay, err := runJob(context.Background(), Config{Root: root}, instance, resource, job)
 	if err != nil || string(replay.Output) != string(first.Output) || replay.ReportID != first.ReportID {
 		t.Fatalf("completion was reexecuted: %v", err)
 	}
@@ -47,12 +47,12 @@ func TestJournalReusesCompletionAndPreservesInterruptedExecution(t *testing.T) {
 	if err := writeJSON(filepath.Join(root, "jobs", resource.Id+".json"), first); err != nil {
 		t.Fatal(err)
 	}
-	interrupted, err := runJob(context.Background(), root, instance, resource, job)
+	interrupted, err := runJob(context.Background(), Config{Root: root}, instance, resource, job)
 	if err != nil || interrupted.Problem == nil || interrupted.Problem.Code != domain.RecoveryRequired {
 		t.Fatalf("interrupted execution replayed: %v %+v", err, interrupted)
 	}
 	resource.Revision++
-	if _, err := runJob(context.Background(), root, instance, resource, job); domain.SafeError(err).Code != domain.RecoveryRequired {
+	if _, err := runJob(context.Background(), Config{Root: root}, instance, resource, job); domain.SafeError(err).Code != domain.RecoveryRequired {
 		t.Fatalf("changed assignment reused journal: %v", err)
 	}
 }

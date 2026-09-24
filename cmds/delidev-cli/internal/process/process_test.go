@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -46,6 +47,35 @@ func config(t *testing.T, mode string) Config {
 		t.Fatal(err)
 	}
 	return Config{Directory: filepath.Join(t.TempDir(), "processes"), OwnerID: domain.NewID(), Executable: executable, Args: []string{"__delidev_process_fixture", mode}, Env: []string{"PATH=/usr/bin:/bin", "DELIDEV_TEST_SECRET=not-for-journals"}, Cwd: t.TempDir()}
+}
+
+func TestNativeLaunchFailuresAreTypedAndReconciled(t *testing.T) {
+	for _, expected := range []domain.Code{domain.NotFound, domain.PermissionDenied, domain.Unsupported} {
+		t.Run(string(expected), func(t *testing.T) {
+			if runtime.GOOS == "windows" && expected == domain.PermissionDenied {
+				t.Skip("requires native ACL denial fixture")
+			}
+			c := config(t, "sleep")
+			c.Executable = filepath.Join(t.TempDir(), "invalid.exe")
+			c.Args = nil
+			if expected != domain.NotFound {
+				mode := os.FileMode(0700)
+				if expected == domain.PermissionDenied {
+					mode = 0600
+				}
+				if err := os.WriteFile(c.Executable, []byte("untrusted-native-launch-sentinel"), mode); err != nil {
+					t.Fatal(err)
+				}
+			}
+			err := Run(context.Background(), c)
+			if err == nil || domain.SafeError(err).Code != expected {
+				t.Fatalf("native launch classification: %v, wanted %s", err, expected)
+			}
+			if err := ReconcileOwner(c.Directory, c.OwnerID); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
 }
 func TestStartBarrierAndSeparateInteractiveStreams(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)

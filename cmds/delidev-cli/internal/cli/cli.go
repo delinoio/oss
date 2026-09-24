@@ -127,6 +127,12 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		ctx = bounded
 	}
 	switch command {
+	case "machine":
+		if len(rest) > 0 && rest[0] == "discover" {
+			ensureRequest(&o)
+			value, err := machineDiscover(ctx, c, o, rest[1:], streams)
+			return emit(value, err)
+		}
 	case "device":
 		if len(rest) > 0 && (rest[0] == "create-pairing" || rest[0] == "revoke") {
 			ensureRequest(&o)
@@ -532,6 +538,7 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   worker pair --worker-dir PATH --name NAME --code-stdin
   worker start --worker-dir PATH
   repository inspect --machine-id ID --path PATH [--preferred-remote NAME] [--wait]
+  machine discover --id ID --revision N [--input FILE|-] [--wait]
   backup create
   settings defaults
   KIND list [--limit 50] [--page-token TOKEN] [--project-id ID] [--session-id ID]

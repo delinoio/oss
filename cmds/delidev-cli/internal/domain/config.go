@@ -492,21 +492,25 @@ const (
 )
 
 type Installation struct {
-	Harness      Harness      `json:"harness"`
-	ExplicitPath string       `json:"explicit_path,omitempty"`
-	ResolvedPath string       `json:"resolved_path,omitempty"`
-	Version      string       `json:"version,omitempty"`
-	Capabilities []Capability `json:"capabilities"`
-	Problem      *Error       `json:"problem,omitempty"`
+	Harness          Harness           `json:"harness"`
+	State            InstallationState `json:"state"`
+	ExplicitPath     string            `json:"explicit_path,omitempty"`
+	ResolvedPath     string            `json:"resolved_path,omitempty"`
+	Version          string            `json:"version,omitempty"`
+	Capabilities     []Capability      `json:"capabilities"`
+	Problem          *Error            `json:"problem,omitempty"`
+	ObservedAt       *time.Time        `json:"observed_at,omitempty"`
+	ProtocolVerified bool              `json:"protocol_verified"`
 }
 type Machine struct {
-	Name          string         `json:"name"`
-	OS            string         `json:"os"`
-	Architecture  string         `json:"architecture"`
-	Version       string         `json:"version"`
-	Installations []Installation `json:"installations"`
-	LastSeen      time.Time      `json:"last_seen"`
-	Disabled      bool           `json:"disabled"`
+	Name              string         `json:"name"`
+	OS                string         `json:"os"`
+	Architecture      string         `json:"architecture"`
+	Version           string         `json:"version"`
+	Installations     []Installation `json:"installations"`
+	DiscoveryRevision uint64         `json:"discovery_revision,omitempty"`
+	LastSeen          time.Time      `json:"last_seen"`
+	Disabled          bool           `json:"disabled"`
 }
 
 func (m Machine) Validate() error {

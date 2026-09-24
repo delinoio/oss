@@ -92,6 +92,9 @@ const (
 	// WorkerServiceInspectRepositoryProcedure is the fully-qualified name of the WorkerService's
 	// InspectRepository RPC.
 	WorkerServiceInspectRepositoryProcedure = "/delidev.v1.WorkerService/InspectRepository"
+	// WorkerServiceDiscoverHarnessesProcedure is the fully-qualified name of the WorkerService's
+	// DiscoverHarnesses RPC.
+	WorkerServiceDiscoverHarnessesProcedure = "/delidev.v1.WorkerService/DiscoverHarnesses"
 )
 
 // SystemServiceClient is a client for the delidev.v1.SystemService service.
@@ -640,6 +643,7 @@ type WorkerServiceClient interface {
 	WatchWork(context.Context, *connect.Request[v1.WatchWorkRequest]) (*connect.ServerStreamForClient[v1.WatchWorkResponse], error)
 	ReportWork(context.Context, *connect.Request[v1.ReportWorkRequest]) (*connect.Response[v1.ReportWorkResponse], error)
 	InspectRepository(context.Context, *connect.Request[v1.InspectRepositoryRequest]) (*connect.Response[v1.InspectRepositoryResponse], error)
+	DiscoverHarnesses(context.Context, *connect.Request[v1.DiscoverHarnessesRequest]) (*connect.Response[v1.DiscoverHarnessesResponse], error)
 }
 
 // NewWorkerServiceClient constructs a client for the delidev.v1.WorkerService service. By default,
@@ -677,6 +681,12 @@ func NewWorkerServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(workerServiceMethods.ByName("InspectRepository")),
 			connect.WithClientOptions(opts...),
 		),
+		discoverHarnesses: connect.NewClient[v1.DiscoverHarnessesRequest, v1.DiscoverHarnessesResponse](
+			httpClient,
+			baseURL+WorkerServiceDiscoverHarnessesProcedure,
+			connect.WithSchema(workerServiceMethods.ByName("DiscoverHarnesses")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -686,6 +696,7 @@ type workerServiceClient struct {
 	watchWork         *connect.Client[v1.WatchWorkRequest, v1.WatchWorkResponse]
 	reportWork        *connect.Client[v1.ReportWorkRequest, v1.ReportWorkResponse]
 	inspectRepository *connect.Client[v1.InspectRepositoryRequest, v1.InspectRepositoryResponse]
+	discoverHarnesses *connect.Client[v1.DiscoverHarnessesRequest, v1.DiscoverHarnessesResponse]
 }
 
 // AttachWorker calls delidev.v1.WorkerService.AttachWorker.
@@ -708,12 +719,18 @@ func (c *workerServiceClient) InspectRepository(ctx context.Context, req *connec
 	return c.inspectRepository.CallUnary(ctx, req)
 }
 
+// DiscoverHarnesses calls delidev.v1.WorkerService.DiscoverHarnesses.
+func (c *workerServiceClient) DiscoverHarnesses(ctx context.Context, req *connect.Request[v1.DiscoverHarnessesRequest]) (*connect.Response[v1.DiscoverHarnessesResponse], error) {
+	return c.discoverHarnesses.CallUnary(ctx, req)
+}
+
 // WorkerServiceHandler is an implementation of the delidev.v1.WorkerService service.
 type WorkerServiceHandler interface {
 	AttachWorker(context.Context, *connect.Request[v1.AttachWorkerRequest]) (*connect.Response[v1.AttachWorkerResponse], error)
 	WatchWork(context.Context, *connect.Request[v1.WatchWorkRequest], *connect.ServerStream[v1.WatchWorkResponse]) error
 	ReportWork(context.Context, *connect.Request[v1.ReportWorkRequest]) (*connect.Response[v1.ReportWorkResponse], error)
 	InspectRepository(context.Context, *connect.Request[v1.InspectRepositoryRequest]) (*connect.Response[v1.InspectRepositoryResponse], error)
+	DiscoverHarnesses(context.Context, *connect.Request[v1.DiscoverHarnessesRequest]) (*connect.Response[v1.DiscoverHarnessesResponse], error)
 }
 
 // NewWorkerServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -747,6 +764,12 @@ func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(workerServiceMethods.ByName("InspectRepository")),
 		connect.WithHandlerOptions(opts...),
 	)
+	workerServiceDiscoverHarnessesHandler := connect.NewUnaryHandler(
+		WorkerServiceDiscoverHarnessesProcedure,
+		svc.DiscoverHarnesses,
+		connect.WithSchema(workerServiceMethods.ByName("DiscoverHarnesses")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/delidev.v1.WorkerService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case WorkerServiceAttachWorkerProcedure:
@@ -757,6 +780,8 @@ func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOp
 			workerServiceReportWorkHandler.ServeHTTP(w, r)
 		case WorkerServiceInspectRepositoryProcedure:
 			workerServiceInspectRepositoryHandler.ServeHTTP(w, r)
+		case WorkerServiceDiscoverHarnessesProcedure:
+			workerServiceDiscoverHarnessesHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -780,4 +805,8 @@ func (UnimplementedWorkerServiceHandler) ReportWork(context.Context, *connect.Re
 
 func (UnimplementedWorkerServiceHandler) InspectRepository(context.Context, *connect.Request[v1.InspectRepositoryRequest]) (*connect.Response[v1.InspectRepositoryResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.InspectRepository is not implemented"))
+}
+
+func (UnimplementedWorkerServiceHandler) DiscoverHarnesses(context.Context, *connect.Request[v1.DiscoverHarnessesRequest]) (*connect.Response[v1.DiscoverHarnessesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.DiscoverHarnesses is not implemented"))
 }

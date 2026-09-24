@@ -53,10 +53,11 @@ const (
 )
 
 type processFrame struct {
-	Kind  processFrameKind `json:"kind"`
-	Scope *processScope    `json:"scope,omitempty"`
-	Data  []byte           `json:"data,omitempty"`
-	Exit  int              `json:"exit,omitempty"`
+	Kind    processFrameKind `json:"kind"`
+	Scope   *processScope    `json:"scope,omitempty"`
+	Data    []byte           `json:"data,omitempty"`
+	Exit    int              `json:"exit,omitempty"`
+	Failure domain.Code      `json:"failure,omitempty"`
 }
 
 type managedProcess struct {
@@ -223,7 +224,9 @@ func startProcess(c *exec.Cmd, dir string, owner domain.ID) (_ *managedProcess, 
 					p.waitErr = err
 					return
 				}
-				if f.Exit != 0 {
+				if f.Failure != "" {
+					p.waitErr = launchFailure(f.Failure)
+				} else if f.Exit != 0 {
 					p.waitErr = commandExitError(f.Exit)
 				}
 				return
@@ -425,7 +428,16 @@ func superviseProcess(dir, socket string) int {
 		stderrWrite.Close()
 		scope.Complete = true
 		_ = saveScope(dir, scope)
-		_ = writer.frame(processFrame{Kind: processExit, Exit: 127})
+		code := domain.Unavailable
+		switch {
+		case errors.Is(err, os.ErrNotExist):
+			code = domain.NotFound
+		case errors.Is(err, os.ErrPermission):
+			code = domain.PermissionDenied
+		case errors.Is(err, syscall.ENOEXEC):
+			code = domain.Unsupported
+		}
+		_ = writer.frame(processFrame{Kind: processExit, Exit: 127, Failure: code})
 		return 0
 	}
 	command = processCommand{}

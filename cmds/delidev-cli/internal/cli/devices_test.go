@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -96,6 +97,38 @@ func TestCLIPairWorkerAndInspectRealRepository(t *testing.T) {
 		t.Fatal(err)
 	case <-time.After(10 * time.Second):
 		t.Fatal("worker timeout")
+	}
+	code, result = cliRun(t, root, []string{"machine", "get", "--id", machine}, "")
+	if code != 0 {
+		t.Fatal(result)
+	}
+	machineRevision := uint64(result["result"].(map[string]any)["revision"].(float64))
+	selections := domain.ExecutableSelections{}
+	for _, harness := range domain.Harnesses() {
+		selections.Executables = append(selections.Executables, domain.ExecutableSelection{Harness: harness, Path: filepath.Join(t.TempDir(), "not-installed")})
+	}
+	selectionJSON, err := json.Marshal(selections)
+	if err != nil {
+		t.Fatal(err)
+	}
+	discover := []string{"machine", "discover", "--id", machine, "--revision", strconv.FormatUint(machineRevision, 10), "--input", "-", "--wait", "--request-id", string(domain.NewID())}
+	code, result = cliRun(t, root, discover, string(selectionJSON))
+	if code != 0 {
+		t.Fatalf("discover: %d %v", code, result)
+	}
+	observed := result["result"].(map[string]any)["machine"].(map[string]any)["data"].(map[string]any)["installations"].([]any)
+	if len(observed) != 4 {
+		t.Fatalf("missing discovery outcomes: %v", observed)
+	}
+	for _, value := range observed {
+		installation := value.(map[string]any)
+		if installation["state"] != "missing" || installation["protocol_verified"] != false || installation["observed_at"] == nil {
+			t.Fatalf("invented readiness: %v", installation)
+		}
+	}
+	code, result = cliRun(t, root, discover, string(selectionJSON))
+	if code != 0 || result["result"].(map[string]any)["replayed"] != true {
+		t.Fatalf("CLI discovery retry: %d %v", code, result)
 	}
 	code, result = cliRun(t, root, []string{"repository", "inspect", "--machine-id", machine, "--path", sub, "--preferred-remote", "origin", "--wait"}, "")
 	if code != 0 {

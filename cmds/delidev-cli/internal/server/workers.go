@@ -335,7 +335,13 @@ func (s *Service) ReportWork(ctx context.Context, req *connect.Request[pb.Report
 			return nil, domain.Fail(domain.Conflict, "The job is no longer awaiting this result.", "Inspect its current accepted outcome.")
 		}
 		if problem == nil {
+			outputJSON := req.Msg.OutputJson
 			switch job.Type {
+			case domain.HarnessDiscoveryJob:
+				outputJSON, problem, err = finishDiscovery(tx, job, req.Msg.OutputJson)
+				if err != nil {
+					return nil, err
+				}
 			case domain.InspectRepositoryJob:
 				var output workspace.Inspection
 				if err := domain.Decode(req.Msg.OutputJson, &output); err != nil {
@@ -380,12 +386,14 @@ func (s *Service) ReportWork(ctx context.Context, req *connect.Request[pb.Report
 			default:
 				return nil, domain.Fail(domain.Unsupported, "This job has no supported completion protocol.", "Use a compatible Worker and server.")
 			}
+			job.Output = outputJSON
 		}
 		now := time.Now().UTC()
 		job.FinishedAt = &now
 		if problem == nil {
-			job.State, job.Output = domain.JobSucceeded, req.Msg.OutputJson
+			job.State = domain.JobSucceeded
 		} else {
+			job.Output = nil
 			job.State, job.Problem = domain.JobFailed, problem
 			if problem.Code == domain.RecoveryRequired {
 				job.State = domain.JobUncertain

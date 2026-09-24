@@ -236,7 +236,16 @@ func startProcess(command *exec.Cmd, dir string, owner domain.ID) (_ *managedPro
 	var info windows.ProcessInformation
 	flags := uint32(windows.CREATE_SUSPENDED | windows.CREATE_UNICODE_ENVIRONMENT | windows.CREATE_NEW_PROCESS_GROUP | windows.EXTENDED_STARTUPINFO_PRESENT | windows.CREATE_NO_WINDOW)
 	if err := windows.CreateProcess(executable, arguments, nil, nil, true, flags, &env[0], cwd, &startup.StartupInfo, &info); err != nil {
-		return nil, err
+		code := domain.Unavailable
+		switch {
+		case errors.Is(err, windows.ERROR_FILE_NOT_FOUND), errors.Is(err, windows.ERROR_PATH_NOT_FOUND):
+			code = domain.NotFound
+		case errors.Is(err, windows.ERROR_ACCESS_DENIED):
+			code = domain.PermissionDenied
+		case errors.Is(err, windows.ERROR_BAD_EXE_FORMAT):
+			code = domain.Unsupported
+		}
+		return nil, launchFailure(code)
 	}
 	runtime.KeepAlive(attributes)
 	runtime.KeepAlive(inherited)

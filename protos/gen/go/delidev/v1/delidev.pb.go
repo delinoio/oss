@@ -2614,6 +2614,129 @@ func (x *InspectRepositoryResponse) GetReplayed() bool {
 	return false
 }
 
+type DiscoverHarnessesRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Machine identity and optimistic revision, plus durable request identity.
+	Mutation *Mutation `protobuf:"bytes,1,opt,name=mutation,proto3" json:"mutation,omitempty"`
+	// Omit to refresh existing selections. Otherwise replace all selections with
+	// the closed ExecutableSelections document; omitted harnesses use Worker PATH.
+	SelectionsJson []byte `protobuf:"bytes,2,opt,name=selections_json,json=selectionsJson,proto3" json:"selections_json,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *DiscoverHarnessesRequest) Reset() {
+	*x = DiscoverHarnessesRequest{}
+	mi := &file_delidev_v1_delidev_proto_msgTypes[40]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DiscoverHarnessesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DiscoverHarnessesRequest) ProtoMessage() {}
+
+func (x *DiscoverHarnessesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_delidev_proto_msgTypes[40]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DiscoverHarnessesRequest.ProtoReflect.Descriptor instead.
+func (*DiscoverHarnessesRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{40}
+}
+
+func (x *DiscoverHarnessesRequest) GetMutation() *Mutation {
+	if x != nil {
+		return x.Mutation
+	}
+	return nil
+}
+
+func (x *DiscoverHarnessesRequest) GetSelectionsJson() []byte {
+	if x != nil {
+		return x.SelectionsJson
+	}
+	return nil
+}
+
+type DiscoverHarnessesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Machine       *Resource              `protobuf:"bytes,1,opt,name=machine,proto3" json:"machine,omitempty"`
+	Job           *Resource              `protobuf:"bytes,2,opt,name=job,proto3" json:"job,omitempty"`
+	RequestId     string                 `protobuf:"bytes,3,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Replayed      bool                   `protobuf:"varint,4,opt,name=replayed,proto3" json:"replayed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DiscoverHarnessesResponse) Reset() {
+	*x = DiscoverHarnessesResponse{}
+	mi := &file_delidev_v1_delidev_proto_msgTypes[41]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DiscoverHarnessesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DiscoverHarnessesResponse) ProtoMessage() {}
+
+func (x *DiscoverHarnessesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_delidev_proto_msgTypes[41]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DiscoverHarnessesResponse.ProtoReflect.Descriptor instead.
+func (*DiscoverHarnessesResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{41}
+}
+
+func (x *DiscoverHarnessesResponse) GetMachine() *Resource {
+	if x != nil {
+		return x.Machine
+	}
+	return nil
+}
+
+func (x *DiscoverHarnessesResponse) GetJob() *Resource {
+	if x != nil {
+		return x.Job
+	}
+	return nil
+}
+
+func (x *DiscoverHarnessesResponse) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *DiscoverHarnessesResponse) GetReplayed() bool {
+	if x != nil {
+		return x.Replayed
+	}
+	return false
+}
+
 var File_delidev_v1_delidev_proto protoreflect.FileDescriptor
 
 const file_delidev_v1_delidev_proto_rawDesc = "" +
@@ -2813,7 +2936,16 @@ const file_delidev_v1_delidev_proto_rawDesc = "" +
 	"\x03job\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\x03job\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x02 \x01(\tR\trequestId\x12\x1a\n" +
-	"\breplayed\x18\x03 \x01(\bR\breplayed*\xa2\x05\n" +
+	"\breplayed\x18\x03 \x01(\bR\breplayed\"u\n" +
+	"\x18DiscoverHarnessesRequest\x120\n" +
+	"\bmutation\x18\x01 \x01(\v2\x14.delidev.v1.MutationR\bmutation\x12'\n" +
+	"\x0fselections_json\x18\x02 \x01(\fR\x0eselectionsJson\"\xae\x01\n" +
+	"\x19DiscoverHarnessesResponse\x12.\n" +
+	"\amachine\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\amachine\x12&\n" +
+	"\x03job\x18\x02 \x01(\v2\x14.delidev.v1.ResourceR\x03job\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x03 \x01(\tR\trequestId\x12\x1a\n" +
+	"\breplayed\x18\x04 \x01(\bR\breplayed*\xa2\x05\n" +
 	"\n" +
 	"EntityKind\x12\x1b\n" +
 	"\x17ENTITY_KIND_UNSPECIFIED\x10\x00\x12\x17\n" +
@@ -2872,13 +3004,14 @@ const file_delidev_v1_delidev_proto_rawDesc = "" +
 	"\rCreatePairing\x12 .delidev.v1.CreatePairingRequest\x1a!.delidev.v1.CreatePairingResponse\x12K\n" +
 	"\n" +
 	"PairDevice\x12\x1d.delidev.v1.PairDeviceRequest\x1a\x1e.delidev.v1.PairDeviceResponse\x12Q\n" +
-	"\fRevokeDevice\x12\x1f.delidev.v1.RevokeDeviceRequest\x1a .delidev.v1.RevokeDeviceResponse2\xdd\x02\n" +
+	"\fRevokeDevice\x12\x1f.delidev.v1.RevokeDeviceRequest\x1a .delidev.v1.RevokeDeviceResponse2\xbf\x03\n" +
 	"\rWorkerService\x12Q\n" +
 	"\fAttachWorker\x12\x1f.delidev.v1.AttachWorkerRequest\x1a .delidev.v1.AttachWorkerResponse\x12J\n" +
 	"\tWatchWork\x12\x1c.delidev.v1.WatchWorkRequest\x1a\x1d.delidev.v1.WatchWorkResponse0\x01\x12K\n" +
 	"\n" +
 	"ReportWork\x12\x1d.delidev.v1.ReportWorkRequest\x1a\x1e.delidev.v1.ReportWorkResponse\x12`\n" +
-	"\x11InspectRepository\x12$.delidev.v1.InspectRepositoryRequest\x1a%.delidev.v1.InspectRepositoryResponseB<Z:github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1b\x06proto3"
+	"\x11InspectRepository\x12$.delidev.v1.InspectRepositoryRequest\x1a%.delidev.v1.InspectRepositoryResponse\x12`\n" +
+	"\x11DiscoverHarnesses\x12$.delidev.v1.DiscoverHarnessesRequest\x1a%.delidev.v1.DiscoverHarnessesResponseB<Z:github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1b\x06proto3"
 
 var (
 	file_delidev_v1_delidev_proto_rawDescOnce sync.Once
@@ -2893,7 +3026,7 @@ func file_delidev_v1_delidev_proto_rawDescGZIP() []byte {
 }
 
 var file_delidev_v1_delidev_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_delidev_v1_delidev_proto_msgTypes = make([]protoimpl.MessageInfo, 40)
+var file_delidev_v1_delidev_proto_msgTypes = make([]protoimpl.MessageInfo, 42)
 var file_delidev_v1_delidev_proto_goTypes = []any{
 	(EntityKind)(0),                     // 0: delidev.v1.EntityKind
 	(EventAction)(0),                    // 1: delidev.v1.EventAction
@@ -2938,6 +3071,8 @@ var file_delidev_v1_delidev_proto_goTypes = []any{
 	(*ReportWorkResponse)(nil),          // 40: delidev.v1.ReportWorkResponse
 	(*InspectRepositoryRequest)(nil),    // 41: delidev.v1.InspectRepositoryRequest
 	(*InspectRepositoryResponse)(nil),   // 42: delidev.v1.InspectRepositoryResponse
+	(*DiscoverHarnessesRequest)(nil),    // 43: delidev.v1.DiscoverHarnessesRequest
+	(*DiscoverHarnessesResponse)(nil),   // 44: delidev.v1.DiscoverHarnessesResponse
 }
 var file_delidev_v1_delidev_proto_depIdxs = []int32{
 	0,  // 0: delidev.v1.Resource.kind:type_name -> delidev.v1.EntityKind
@@ -2968,47 +3103,52 @@ var file_delidev_v1_delidev_proto_depIdxs = []int32{
 	6,  // 25: delidev.v1.ReportWorkRequest.problem:type_name -> delidev.v1.ErrorDetail
 	3,  // 26: delidev.v1.ReportWorkResponse.job:type_name -> delidev.v1.Resource
 	3,  // 27: delidev.v1.InspectRepositoryResponse.job:type_name -> delidev.v1.Resource
-	7,  // 28: delidev.v1.SystemService.GetStatus:input_type -> delidev.v1.GetStatusRequest
-	9,  // 29: delidev.v1.SystemService.StopServer:input_type -> delidev.v1.StopServerRequest
-	11, // 30: delidev.v1.SystemService.GetDoctor:input_type -> delidev.v1.GetDoctorRequest
-	13, // 31: delidev.v1.SystemService.CreateBackup:input_type -> delidev.v1.CreateBackupRequest
-	15, // 32: delidev.v1.ResourceService.GetResource:input_type -> delidev.v1.GetResourceRequest
-	17, // 33: delidev.v1.ResourceService.ListResources:input_type -> delidev.v1.ListResourcesRequest
-	19, // 34: delidev.v1.ResourceService.GetSnapshot:input_type -> delidev.v1.GetSnapshotRequest
-	21, // 35: delidev.v1.ResourceService.WatchEvents:input_type -> delidev.v1.WatchEventsRequest
-	23, // 36: delidev.v1.ConfigurationService.SaveConfiguration:input_type -> delidev.v1.SaveConfigurationRequest
-	25, // 37: delidev.v1.ConfigurationService.DeleteConfiguration:input_type -> delidev.v1.DeleteConfigurationRequest
-	27, // 38: delidev.v1.ConfigurationService.PreviewRouting:input_type -> delidev.v1.PreviewRoutingRequest
-	29, // 39: delidev.v1.DeviceService.CreatePairing:input_type -> delidev.v1.CreatePairingRequest
-	31, // 40: delidev.v1.DeviceService.PairDevice:input_type -> delidev.v1.PairDeviceRequest
-	33, // 41: delidev.v1.DeviceService.RevokeDevice:input_type -> delidev.v1.RevokeDeviceRequest
-	35, // 42: delidev.v1.WorkerService.AttachWorker:input_type -> delidev.v1.AttachWorkerRequest
-	37, // 43: delidev.v1.WorkerService.WatchWork:input_type -> delidev.v1.WatchWorkRequest
-	39, // 44: delidev.v1.WorkerService.ReportWork:input_type -> delidev.v1.ReportWorkRequest
-	41, // 45: delidev.v1.WorkerService.InspectRepository:input_type -> delidev.v1.InspectRepositoryRequest
-	8,  // 46: delidev.v1.SystemService.GetStatus:output_type -> delidev.v1.GetStatusResponse
-	10, // 47: delidev.v1.SystemService.StopServer:output_type -> delidev.v1.StopServerResponse
-	12, // 48: delidev.v1.SystemService.GetDoctor:output_type -> delidev.v1.GetDoctorResponse
-	14, // 49: delidev.v1.SystemService.CreateBackup:output_type -> delidev.v1.CreateBackupResponse
-	16, // 50: delidev.v1.ResourceService.GetResource:output_type -> delidev.v1.GetResourceResponse
-	18, // 51: delidev.v1.ResourceService.ListResources:output_type -> delidev.v1.ListResourcesResponse
-	20, // 52: delidev.v1.ResourceService.GetSnapshot:output_type -> delidev.v1.GetSnapshotResponse
-	22, // 53: delidev.v1.ResourceService.WatchEvents:output_type -> delidev.v1.WatchEventsResponse
-	24, // 54: delidev.v1.ConfigurationService.SaveConfiguration:output_type -> delidev.v1.SaveConfigurationResponse
-	26, // 55: delidev.v1.ConfigurationService.DeleteConfiguration:output_type -> delidev.v1.DeleteConfigurationResponse
-	28, // 56: delidev.v1.ConfigurationService.PreviewRouting:output_type -> delidev.v1.PreviewRoutingResponse
-	30, // 57: delidev.v1.DeviceService.CreatePairing:output_type -> delidev.v1.CreatePairingResponse
-	32, // 58: delidev.v1.DeviceService.PairDevice:output_type -> delidev.v1.PairDeviceResponse
-	34, // 59: delidev.v1.DeviceService.RevokeDevice:output_type -> delidev.v1.RevokeDeviceResponse
-	36, // 60: delidev.v1.WorkerService.AttachWorker:output_type -> delidev.v1.AttachWorkerResponse
-	38, // 61: delidev.v1.WorkerService.WatchWork:output_type -> delidev.v1.WatchWorkResponse
-	40, // 62: delidev.v1.WorkerService.ReportWork:output_type -> delidev.v1.ReportWorkResponse
-	42, // 63: delidev.v1.WorkerService.InspectRepository:output_type -> delidev.v1.InspectRepositoryResponse
-	46, // [46:64] is the sub-list for method output_type
-	28, // [28:46] is the sub-list for method input_type
-	28, // [28:28] is the sub-list for extension type_name
-	28, // [28:28] is the sub-list for extension extendee
-	0,  // [0:28] is the sub-list for field type_name
+	4,  // 28: delidev.v1.DiscoverHarnessesRequest.mutation:type_name -> delidev.v1.Mutation
+	3,  // 29: delidev.v1.DiscoverHarnessesResponse.machine:type_name -> delidev.v1.Resource
+	3,  // 30: delidev.v1.DiscoverHarnessesResponse.job:type_name -> delidev.v1.Resource
+	7,  // 31: delidev.v1.SystemService.GetStatus:input_type -> delidev.v1.GetStatusRequest
+	9,  // 32: delidev.v1.SystemService.StopServer:input_type -> delidev.v1.StopServerRequest
+	11, // 33: delidev.v1.SystemService.GetDoctor:input_type -> delidev.v1.GetDoctorRequest
+	13, // 34: delidev.v1.SystemService.CreateBackup:input_type -> delidev.v1.CreateBackupRequest
+	15, // 35: delidev.v1.ResourceService.GetResource:input_type -> delidev.v1.GetResourceRequest
+	17, // 36: delidev.v1.ResourceService.ListResources:input_type -> delidev.v1.ListResourcesRequest
+	19, // 37: delidev.v1.ResourceService.GetSnapshot:input_type -> delidev.v1.GetSnapshotRequest
+	21, // 38: delidev.v1.ResourceService.WatchEvents:input_type -> delidev.v1.WatchEventsRequest
+	23, // 39: delidev.v1.ConfigurationService.SaveConfiguration:input_type -> delidev.v1.SaveConfigurationRequest
+	25, // 40: delidev.v1.ConfigurationService.DeleteConfiguration:input_type -> delidev.v1.DeleteConfigurationRequest
+	27, // 41: delidev.v1.ConfigurationService.PreviewRouting:input_type -> delidev.v1.PreviewRoutingRequest
+	29, // 42: delidev.v1.DeviceService.CreatePairing:input_type -> delidev.v1.CreatePairingRequest
+	31, // 43: delidev.v1.DeviceService.PairDevice:input_type -> delidev.v1.PairDeviceRequest
+	33, // 44: delidev.v1.DeviceService.RevokeDevice:input_type -> delidev.v1.RevokeDeviceRequest
+	35, // 45: delidev.v1.WorkerService.AttachWorker:input_type -> delidev.v1.AttachWorkerRequest
+	37, // 46: delidev.v1.WorkerService.WatchWork:input_type -> delidev.v1.WatchWorkRequest
+	39, // 47: delidev.v1.WorkerService.ReportWork:input_type -> delidev.v1.ReportWorkRequest
+	41, // 48: delidev.v1.WorkerService.InspectRepository:input_type -> delidev.v1.InspectRepositoryRequest
+	43, // 49: delidev.v1.WorkerService.DiscoverHarnesses:input_type -> delidev.v1.DiscoverHarnessesRequest
+	8,  // 50: delidev.v1.SystemService.GetStatus:output_type -> delidev.v1.GetStatusResponse
+	10, // 51: delidev.v1.SystemService.StopServer:output_type -> delidev.v1.StopServerResponse
+	12, // 52: delidev.v1.SystemService.GetDoctor:output_type -> delidev.v1.GetDoctorResponse
+	14, // 53: delidev.v1.SystemService.CreateBackup:output_type -> delidev.v1.CreateBackupResponse
+	16, // 54: delidev.v1.ResourceService.GetResource:output_type -> delidev.v1.GetResourceResponse
+	18, // 55: delidev.v1.ResourceService.ListResources:output_type -> delidev.v1.ListResourcesResponse
+	20, // 56: delidev.v1.ResourceService.GetSnapshot:output_type -> delidev.v1.GetSnapshotResponse
+	22, // 57: delidev.v1.ResourceService.WatchEvents:output_type -> delidev.v1.WatchEventsResponse
+	24, // 58: delidev.v1.ConfigurationService.SaveConfiguration:output_type -> delidev.v1.SaveConfigurationResponse
+	26, // 59: delidev.v1.ConfigurationService.DeleteConfiguration:output_type -> delidev.v1.DeleteConfigurationResponse
+	28, // 60: delidev.v1.ConfigurationService.PreviewRouting:output_type -> delidev.v1.PreviewRoutingResponse
+	30, // 61: delidev.v1.DeviceService.CreatePairing:output_type -> delidev.v1.CreatePairingResponse
+	32, // 62: delidev.v1.DeviceService.PairDevice:output_type -> delidev.v1.PairDeviceResponse
+	34, // 63: delidev.v1.DeviceService.RevokeDevice:output_type -> delidev.v1.RevokeDeviceResponse
+	36, // 64: delidev.v1.WorkerService.AttachWorker:output_type -> delidev.v1.AttachWorkerResponse
+	38, // 65: delidev.v1.WorkerService.WatchWork:output_type -> delidev.v1.WatchWorkResponse
+	40, // 66: delidev.v1.WorkerService.ReportWork:output_type -> delidev.v1.ReportWorkResponse
+	42, // 67: delidev.v1.WorkerService.InspectRepository:output_type -> delidev.v1.InspectRepositoryResponse
+	44, // 68: delidev.v1.WorkerService.DiscoverHarnesses:output_type -> delidev.v1.DiscoverHarnessesResponse
+	50, // [50:69] is the sub-list for method output_type
+	31, // [31:50] is the sub-list for method input_type
+	31, // [31:31] is the sub-list for extension type_name
+	31, // [31:31] is the sub-list for extension extendee
+	0,  // [0:31] is the sub-list for field type_name
 }
 
 func init() { file_delidev_v1_delidev_proto_init() }
@@ -3022,7 +3162,7 @@ func file_delidev_v1_delidev_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delidev_v1_delidev_proto_rawDesc), len(file_delidev_v1_delidev_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   40,
+			NumMessages:   42,
 			NumExtensions: 0,
 			NumServices:   5,
 		},

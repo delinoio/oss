@@ -192,6 +192,7 @@ service WorkerService {
   rpc WatchWork(WatchWorkRequest) returns (stream WatchWorkResponse);
   rpc ReportWork(ReportWorkRequest) returns (ReportWorkResponse);
   rpc InspectRepository(InspectRepositoryRequest) returns (InspectRepositoryResponse);
+  rpc DiscoverHarnesses(DiscoverHarnessesRequest) returns (DiscoverHarnessesResponse);
 }
 enum DeviceType {
   DEVICE_TYPE_UNSPECIFIED = 0;
@@ -272,4 +273,17 @@ message InspectRepositoryResponse {
   Resource job = 1;
   string request_id = 2;
   bool replayed = 3;
+}
+message DiscoverHarnessesRequest {
+  // Machine identity and optimistic revision, plus durable request identity.
+  Mutation mutation = 1;
+  // Omit to refresh existing selections. Otherwise replace all selections with
+  // the closed ExecutableSelections document; omitted harnesses use Worker PATH.
+  bytes selections_json = 2;
+}
+message DiscoverHarnessesResponse {
+  Resource machine = 1;
+  Resource job = 2;
+  string request_id = 3;
+  bool replayed = 4;
 }

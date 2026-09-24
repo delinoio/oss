@@ -22,6 +22,21 @@ Configuration commands accept `--input FILE|-`; writes accept `--request-id UUID
 
 Entity kinds, workspace modes, harnesses, account modes, lifecycle/recovery/archive/delivery states, source kinds, capabilities, routing and overlap policies are closed typed enums. IDs cannot collide across kinds. First-execution snapshots and account selection commit atomically with routing state. Stop, Archive, restore, outcome, and recovery are independent; restore never dispatches.
 
+### Worker executable discovery
+`machine discover --id ID --revision N [--input FILE|-] [--wait]` saves executable selections and queues a durable Worker job atomically. Without `--input`, it refreshes the existing selections. A supplied document requires an explicit `executables` array and replaces all four selections; an empty array resets every harness to PATH, while omitted harnesses in a nonempty array use that Worker's PATH:
+
+```json
+{"executables":[{"harness":"codex","path":"/absolute/worker/path/codex"}]}
+```
+
+Only owner/client authorization may change selections. A monotonically increasing machine `discovery_revision` binds every refresh to its selections independently of connection metadata revisions. An older result becomes a typed failed job and cannot replace newer observations. Repeated request IDs reuse the same accepted job. Completion and machine observations commit together after job revision and Worker-instance authorization checks. Remote diagnostic text is reconstructed from a closed local classification before persistence.
+
+The Worker checks explicit absolute paths first and never falls back after their failure. Unset paths search only absolute PATH entries on that Worker. Symlinks resolve to the installed file; a found but broken or denied candidate remains visible. The current Windows discovery launcher accepts native `.exe` files; shell wrappers are explicitly incompatible rather than interpolated through a shell. Native launch failures preserve typed missing/interpreter, permission, incompatible-format, and unavailable classifications.
+
+Version probes use ten-second deadlines and independent 64 KiB stdout/stderr bounds, private per-harness home/config/cache/temp directories, an explicit environment without inherited account tokens, SSH agents, proxies or loader options, and the owned process start/cleanup contract. Grok receives `--no-auto-update`; Claude Code and OpenCode receive their documented update-disabling settings ([Claude Code environment](https://code.claude.com/docs/en/env-vars), [OpenCode CLI environment](https://opencode.ai/docs/cli/)). No harness is downloaded, installed, updated, or invoked for inference. Runtime deletion follows proof of owned descendant termination; uncertain ownership retains the runtime and a recovery error. Logs contain job/harness identities and typed states, never raw probe output or executable paths.
+
+Installation states are `unchecked`, `detected`, `missing`, `permission-denied`, `incompatible`, and `failed`. `detected` means only that the executable returned a bounded recognizable version. It leaves `protocol_verified=false` and capabilities empty; native protocol handshakes and selected-account readiness remain separate required checks before session execution. Server timestamps distinguish observed results from pending refreshes. Ordinary tests use temporary executable fixtures and never discover or launch a user's installed harnesses.
+
 ## Storage
 The server exclusively locks its private data scope, owns SQLite with foreign keys/WAL/transactions, and refuses corrupt/newer state. Mutations and events commit together. Request receipts survive restart. Consistent backups include committed WAL state; destructive migrations require a backup. Restore validates integrity/schema and deletion tombstones before replacement. Secrets are excluded from SQLite, transcripts, snapshots, and ordinary output. Worker-owned workspaces/snapshots and local retained-content search deliberately override cloud file/search defaults.
 

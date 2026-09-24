@@ -53,6 +53,19 @@ func (e commandExitError) ExitCode() int { return int(e) }
 func ownershipError() error {
 	return domain.Fail(domain.RecoveryRequired, "Owned process descendants could not be confirmed stopped.", "Retain the execution journal and reconcile its native ownership before retrying or releasing resources.")
 }
+
+func launchFailure(code domain.Code) *domain.Error {
+	switch code {
+	case domain.NotFound:
+		return domain.Fail(code, "The selected executable or its interpreter is missing.", "Check the selected Worker's native installation and refresh discovery.")
+	case domain.PermissionDenied:
+		return domain.Fail(code, "The operating system refused to launch the executable.", "Check file permissions and native execution policy on the selected Worker.")
+	case domain.Unsupported:
+		return domain.Fail(code, "The operating system cannot load this executable format.", "Select a native executable for this Worker's operating system and architecture.")
+	default:
+		return domain.Fail(domain.Unavailable, "The native executable could not be started.", "Inspect the selected Worker's installation and native resource availability.")
+	}
+}
 func Start(ctx context.Context, config Config) (*Handle, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, domain.SafeError(err)

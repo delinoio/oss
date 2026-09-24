@@ -16,6 +16,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
@@ -155,7 +156,7 @@ func watch(ctx context.Context, config Config, client delidevv1connect.WorkerSer
 		if job.MachineID != credential.MachineID || job.InstanceID != instance || job.State != domain.JobClaimed {
 			return domain.Fail(domain.PermissionDenied, "The received job belongs to another machine or process.", "Inspect the paired server and job ownership.")
 		}
-		result, err := runJob(ctx, config.Root, instance, resource, job)
+		result, err := runJob(ctx, config, instance, resource, job)
 		if err != nil {
 			return err
 		}
@@ -177,7 +178,8 @@ func watch(ctx context.Context, config Config, client delidevv1connect.WorkerSer
 	}
 	return stream.Err()
 }
-func runJob(ctx context.Context, root string, instance domain.ID, resource *pb.Resource, job domain.Job) (journal, error) {
+func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb.Resource, job domain.Job) (journal, error) {
+	root := config.Root
 	hash := sha256.Sum256(resource.DocumentJson)
 	digest := hex.EncodeToString(hash[:])
 	path := filepath.Join(root, "jobs", resource.Id+".json")
@@ -206,7 +208,7 @@ func runJob(ctx context.Context, root string, instance domain.ID, resource *pb.R
 		if err := writeJSON(path, result); err != nil {
 			return journal{}, err
 		}
-		output, err := execute(ctx, root, domain.ID(resource.Id), job)
+		output, err := execute(ctx, config, domain.ID(resource.Id), job)
 		if err != nil {
 			result.Problem = domain.SafeError(err)
 		} else {
@@ -219,14 +221,25 @@ func runJob(ctx context.Context, root string, instance domain.ID, resource *pb.R
 	}
 	return result, nil
 }
-func execute(ctx context.Context, root string, owner domain.ID, job domain.Job) (json.RawMessage, error) {
+func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job) (json.RawMessage, error) {
+	root := config.Root
 	switch job.Type {
+	case domain.HarnessDiscoveryJob:
+		var input domain.HarnessDiscoveryInput
+		if err := domain.Decode(job.Input, &input); err != nil {
+			return nil, err
+		}
+		result, err := harness.Discover(ctx, harness.DiscoveryConfig{Root: root, OwnerID: owner, Logger: config.Logger}, input)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(result)
 	case domain.InspectRepositoryJob:
 		var input domain.RepositoryInspectionInput
 		if err := domain.Decode(job.Input, &input); err != nil {
 			return nil, err
 		}
-		git := workspace.Git{HooksDir: filepath.Join(root, "empty-hooks"), ProcessRoot: filepath.Join(root, "processes"), OwnerID: owner}
+		git := workspace.Git{HooksDir: filepath.Join(root, "empty-hooks"), ProcessRoot: filepath.Join(root, "processes"), OwnerID: owner, Logger: config.Logger}
 		inspection, err := git.Inspect(ctx, input.Path)
 		if err != nil {
 			return nil, err
