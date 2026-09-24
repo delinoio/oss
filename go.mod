@@ -12,8 +12,11 @@ require (
 	github.com/aws/smithy-go v1.26.0
 	github.com/coreos/go-oidc/v3 v3.20.0
 	github.com/creack/pty v1.1.24
+	github.com/danieljoos/wincred v1.2.0
 	github.com/docker/docker v28.5.2+incompatible
+	github.com/ebitengine/purego v0.11.1
 	github.com/go-jose/go-jose/v4 v4.1.4
+	github.com/godbus/dbus/v5 v5.2.2
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/google/uuid v1.6.0
 	github.com/gowebpki/jcs v1.0.1

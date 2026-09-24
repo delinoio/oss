@@ -19,6 +19,7 @@ Run personal AI sessions across projects, accounts, native harnesses, and execut
 - [Worker workspace contract](cmds-delidev-workspace-contract.md)
 - [Owned process contract](cmds-delidev-process-contract.md)
 - [Native harness adapter contract](cmds-delidev-harness-contract.md)
+- [Protected credential storage](cmds-delidev-credentials-contract.md)
 - [Implementation and evidence ledger](cmds-delidev-evidence.md)
 
 ## Cross-Domain Invariants
