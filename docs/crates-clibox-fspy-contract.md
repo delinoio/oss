@@ -4,7 +4,7 @@
 
 Issue [#971](https://github.com/delinoio/oss/issues/971) defines seven unreleased file-access workflows. `crates/clibox-fspy` is a private, MIT-licensed, non-publishable Cargo workspace member. It owns workflow parsing, execution lifecycle, the versioned trace, analysis, and interactive controls. `crates/clibox` owns root composition. The existing private fspy source fork owns platform interception changes; pnport-mode interception and existing pnport behavior remain separate.
 
-The current implementation contains the common trace schema, complete-record reader, and comparison model. No #971 command is exposed in the clibox executable yet. The feature is not complete or released while any workflow or target gate below remains outstanding.
+The current implementation exposes `record`, `compare`, and `assetcov` in the clibox executable. The Linux ptrace collector supplies operation entry/completion and actual read results. macOS and Windows execution fail explicitly while their complete backends remain outstanding. `autowatch`, `latencylab`, `min-repro`, and `fbreak` remain outstanding. The feature is not complete or released while any workflow or target gate below remains outstanding.
 
 ## Platform and observation boundary
 

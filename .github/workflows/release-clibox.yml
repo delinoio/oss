@@ -131,7 +131,7 @@ jobs:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_RUSTFLAGS: -C link-self-contained=yes
         run: |
           set -euo pipefail
-          cargo test --locked -p clibox -p clibox-config -p clibox-system -p clibox-transform -p clibox-wait --target "$CLIBOX_TARGET"
+          cargo test --locked -p clibox -p clibox-config -p clibox-fspy -p clibox-system -p clibox-transform -p clibox-wait --target "$CLIBOX_TARGET"
           if [[ "$CLIBOX_TARGET" != *-linux-gnu ]]; then
             cargo build --locked --release -p clibox --target "$CLIBOX_TARGET"
           fi

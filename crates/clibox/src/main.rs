@@ -93,6 +93,7 @@ fn main() {
     match command {
         Command::Configuration(command) => clibox_config::execute(command),
         Command::Wait(command) => std::process::exit(i32::from(clibox_wait::execute(command))),
+        Command::Fspy(command) => std::process::exit(clibox_fspy::cli::execute(command)),
         Command::System(command) => clibox_system::execute(command, leading_separator, &raw),
         Command::Transform(command) => {
             std::process::exit(i32::from(clibox_transform::execute(command)));

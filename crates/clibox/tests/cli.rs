@@ -30,6 +30,7 @@ fn help_and_no_arguments_succeed_on_stdout() {
             "wait",
             "dotenv",
             "yaml",
+            "fspy",
         ] {
             assert!(
                 stdout
@@ -63,7 +64,7 @@ fn version_comes_from_the_cargo_package() {
 
 #[test]
 fn missing_subcommands_show_command_help_on_stderr() {
-    let groups: [(&str, &[&str]); 11] = [
+    let groups: [(&str, &[&str]); 12] = [
         (
             "run",
             &[
@@ -85,6 +86,7 @@ fn missing_subcommands_show_command_help_on_stderr() {
         ("time", &["format", "add"]),
         ("base64", &["encode", "decode"]),
         ("hash", &["compute", "verify"]),
+        ("fspy", &["record", "compare", "assetcov"]),
     ];
     for (group, subcommands) in groups {
         let output = Command::new(env!("CARGO_BIN_EXE_clibox"))
@@ -137,6 +139,7 @@ fn unknown_arguments_fail_on_stderr() {
         vec!["hash", "PRIVATE-MARKER"],
         vec!["dotenv", "PRIVATE-MARKER"],
         vec!["yaml", "PRIVATE-MARKER"],
+        vec!["fspy", "PRIVATE-MARKER"],
     ] {
         let output = Command::new(env!("CARGO_BIN_EXE_clibox"))
             .args(arguments)
@@ -179,6 +182,9 @@ fn every_command_has_help_and_examples() {
         vec!["base64", "decode", "--help"],
         vec!["hash", "compute", "--help"],
         vec!["hash", "verify", "--help"],
+        vec!["fspy", "record", "--help"],
+        vec!["fspy", "compare", "--help"],
+        vec!["fspy", "assetcov", "--help"],
     ] {
         for flag in ["-h", "--help"] {
             let mut args = args.clone();

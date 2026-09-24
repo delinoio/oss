@@ -191,6 +191,7 @@ pub struct Completion {
     pub native_error: Option<i64>,
     pub bytes: Option<u64>,
     pub injected_delay_ns: u64,
+    pub resolved_paths: Vec<EncodedPath>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -340,14 +341,19 @@ pub fn read_complete(
                     .ok_or(TraceError::InvalidStructure)?;
                 if value.monotonic_ns < start.monotonic_ns
                     || value.native_error.is_some() != (value.native_result < 0)
-                    || (value.bytes.is_some()
-                        && !matches!(
+                    || (value.native_error.is_none()
+                        && matches!(
                             start.operation,
                             Operation::Read
                                 | Operation::Pread
                                 | Operation::Write
                                 | Operation::Pwrite
-                        ))
+                        ) != value.bytes.is_some())
+                    || value.resolved_paths.len() > start.paths.len()
+                    || value
+                        .resolved_paths
+                        .iter()
+                        .any(|path| path.decode().is_err())
                     || (value.native_result >= 0
                         && value
                             .bytes
@@ -363,7 +369,8 @@ pub fn read_complete(
                 if !active.is_empty()
                     || value.operation_count != operations.len() as u64
                     || value.failure_count != failures
-                    || value.child_exit_code.is_some() == value.child_signal.is_some()
+                    || (value.complete
+                        && value.child_exit_code.is_some() == value.child_signal.is_some())
                     || (value.complete && value.classification.is_some())
                     || (!value.complete && value.classification.is_none())
                 {
@@ -538,6 +545,7 @@ mod tests {
                 native_error: None,
                 bytes,
                 injected_delay_ns: 0,
+                resolved_paths: Vec::new(),
             }),
             Event::Summary(Summary {
                 sequence: 3,
