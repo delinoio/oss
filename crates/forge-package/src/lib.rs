@@ -64,7 +64,8 @@ pub fn xml(bytes: &[u8]) -> Result<roxmltree::Document<'_>> {
             }
             Event::Empty(_) => {
                 nodes += 1;
-                if depth >= 127 {
+                maximum_depth = maximum_depth.max(depth + 1);
+                if depth >= 128 {
                     return error(ErrorCode::ResourceLimit, "", "XML depth exceeded");
                 }
             }
@@ -77,7 +78,7 @@ pub fn xml(bytes: &[u8]) -> Result<roxmltree::Document<'_>> {
             }
             _ => {}
         }
-        if depth >= 128 || nodes > 1_000_000 {
+        if depth > 128 || nodes > 1_000_000 {
             return error(
                 ErrorCode::ResourceLimit,
                 "",
@@ -118,7 +119,13 @@ pub fn xml(bytes: &[u8]) -> Result<roxmltree::Document<'_>> {
     };
     for node in doc.descendants() {
         checkpoint()?;
-        if node.ancestors().take(129).count() > 128 {
+        if node
+            .ancestors()
+            .filter(|ancestor| ancestor.is_element())
+            .take(129)
+            .count()
+            > 128
+        {
             return error(ErrorCode::ResourceLimit, "", "XML depth exceeded");
         }
     }

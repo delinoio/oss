@@ -80,3 +80,5 @@ React Forge native targets cover macOS/Windows/glibc Linux on x64 and arm64. Par
 Word paragraphs containing page/column breaks or non-default text-wrapping clearance remain opaque, including inside selected tables/cells. Only ordinary line breaks (implicit or explicit `textWrapping`, with absent/`none` clearance) are admitted to editable paragraphs; unrelated edits preserve the protected break XML.
 
 Every package relationship part requires an OPC-namespace `Relationships` root and leaf `Relationship` children. Matching attribute names on foreign or incorrectly named elements do not grant relationship authority; malformed relationship elements reject the package before reference resolution.
+
+The XML depth ceiling counts nested elements, with the document element at depth one. Exactly 128 levels are accepted for both paired and self-closing elements, including text/comment children at the deepest level; 129 levels are rejected by iterative preflight before recursive parsing.
