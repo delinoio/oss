@@ -2,7 +2,7 @@
 
 ## Ownership and implemented scope
 
-The server owns account state and credentials under [issue #964](cmds-delidev-requirements.md). This contract currently implements API credential connection, explicit keyless local connection, disconnection, cleanup reconciliation and account status through authenticated Connect and the CLI. Subscription login/logout/import, provider validation and quota refresh, model discovery, API proxy credentials and active-execution revocation remain required subsequent work. Saving a credential is not provider validation or execution readiness.
+The server owns account state and credentials under [issue #964](cmds-delidev-requirements.md). This contract currently implements API credential connection, explicit keyless local connection, disconnection, cleanup reconciliation and account status through authenticated Connect and the CLI. Bounded non-inference validation is defined in the [provider inspection contract](cmds-delidev-providers-contract.md). Subscription login/logout/import, quota refresh, automatic model catalog publication, API proxy credentials and active-execution revocation remain required subsequent work. Saving a credential is not provider validation or execution readiness.
 
 Account aliases/provider associations and display/routing preferences remain configuration. Health, connection generation, quota observations and pending removal are server-owned. General configuration writes must preserve those fields exactly; new accounts start disconnected. An account's provider/type cannot be relabeled through configuration, and a referenced provider's authentication/authority cannot be changed in place. Credentials never enter configuration documents.
 
@@ -14,6 +14,7 @@ Account aliases/provider associations and display/routing preferences remain con
 | `account connect --id ID --revision N --keyless` | `AccountService.ConnectAccount` | Explicitly connect a provider already configured with keyless local authentication; no native secret is written. |
 | `account disconnect --id ID --revision N` | `AccountService.DisconnectAccount` | Commit disconnection, remove every remaining protected reference owned by the account, then clear the cleanup marker. |
 | `account status --id ID` | `AccountService.GetAccountStatus` | Read current metadata without consulting or unlocking the native credential store. |
+| `account validate --id ID --revision N` | `AccountService.ValidateAccount` | Record a bounded non-inference endpoint/credential observation for the current connection. |
 
 Mutations accept `--request-id UUID-V7` and return the existing version-1 CLI envelope. They never start a server implicitly. Worker credentials cannot invoke any account RPC. Owner and paired client authorization is rechecked before secret staging, at state/receipt commit and before cleanup completion; revoking an in-flight client cannot publish a connection after a native write.
 

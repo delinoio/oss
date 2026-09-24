@@ -63,6 +63,14 @@ func (v *accountTestSecrets) Delete(ctx context.Context, ref credentials.Ref) er
 	v.removed[ref] = true
 	return nil
 }
+func (v *accountTestSecrets) Get(ctx context.Context, ref credentials.Ref) ([]byte, error) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if key, ok := v.values[ref]; ok {
+		return bytes.Clone(key), nil
+	}
+	return nil, domain.Fail(domain.NotFound, "Test credential missing.", "")
+}
 func (v *accountTestSecrets) UnremovedReferences(ctx context.Context, owner domain.ID) ([]credentials.Ref, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()

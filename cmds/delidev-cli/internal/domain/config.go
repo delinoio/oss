@@ -337,7 +337,7 @@ func (p Provider) Validate() error {
 }
 func ValidateEndpoint(value string, keyless bool) error {
 	u, err := url.Parse(value)
-	if err != nil || u.User != nil || u.Host == "" || u.RawQuery != "" || u.Fragment != "" || u.Opaque != "" {
+	if err != nil || u.User != nil || u.Host == "" || u.RawQuery != "" || u.ForceQuery || strings.Contains(value, "#") || u.Opaque != "" {
 		return Fail(InvalidArgument, "Invalid provider endpoint.", "Use an absolute URL without credentials, query, or fragment.")
 	}
 	ip := net.ParseIP(u.Hostname())
@@ -350,6 +350,11 @@ func ValidateEndpoint(value string, keyless bool) error {
 	}
 	if strings.Contains(u.EscapedPath(), "%") || strings.Contains(u.Path, "\\") {
 		return Fail(InvalidArgument, "The endpoint path is ambiguous.", "Use a plain API base path without encoded separators.")
+	}
+	for _, segment := range strings.Split(u.Path, "/") {
+		if segment == "." || segment == ".." {
+			return Fail(InvalidArgument, "The endpoint path contains traversal segments.", "Use the provider's canonical API base path.")
+		}
 	}
 	return nil
 }
@@ -472,6 +477,7 @@ type Account struct {
 	ConfirmedExhausted    bool               `json:"confirmed_exhausted"`
 	Connection            *AccountConnection `json:"connection,omitempty"`
 	Removal               *AccountRemoval    `json:"removal,omitempty"`
+	Validation            *AccountValidation `json:"validation,omitempty"`
 }
 
 func (a Account) Validate() error {
@@ -510,6 +516,15 @@ func (a Account) Validate() error {
 		}
 		if a.Health != AccountDisconnected {
 			return Fail(InvalidArgument, "Credential removal requires a disconnected account.", "Disconnect the account before removing protected resources.")
+		}
+	}
+	if a.Validation != nil {
+		v := a.Validation
+		if v.RequestID.Validate() != nil || a.Connection == nil || v.ConnectionID != a.Connection.ID || v.ObservedAt.IsZero() {
+			return Fail(InvalidArgument, "Invalid account validation generation.", "Validate the current account connection through its lifecycle operation.")
+		}
+		if !slices.Contains([]AuthenticationEvidence{CredentialAccepted, KeylessEndpoint, AuthenticationUnknown}, v.Authentication) || !slices.Contains([]ObservationState{Observed, ObservationFailed, ObservationUnsupported}, v.State) {
+			return Fail(InvalidArgument, "Invalid account validation evidence.", "Use a supported provider validation result.")
 		}
 	}
 	return nil

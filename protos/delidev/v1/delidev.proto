@@ -295,6 +295,7 @@ service AccountService {
   rpc ConnectAccount(ConnectAccountRequest) returns (ConnectAccountResponse);
   rpc DisconnectAccount(DisconnectAccountRequest) returns (DisconnectAccountResponse);
   rpc GetAccountStatus(GetAccountStatusRequest) returns (GetAccountStatusResponse);
+  rpc ValidateAccount(ValidateAccountRequest) returns (ValidateAccountResponse);
 }
 message ConnectAccountRequest {
   Mutation mutation = 1;
@@ -324,4 +325,15 @@ message GetAccountStatusRequest {
 }
 message GetAccountStatusResponse {
   Resource account = 1;
+}
+message ValidateAccountRequest {
+  Mutation mutation = 1;
+}
+message ValidateAccountResponse {
+  Resource account = 1;
+  string request_id = 2;
+  bool replayed = 3;
+  // Accepted, sanitized non-inference observation. Does not expose model payloads
+  // or credentials and is not inference, quota recovery or harness capability.
+  bytes validation_json = 4;
 }

@@ -137,7 +137,7 @@ func Run(ctx context.Context, args []string, streams IO) int {
 	}
 	switch command {
 	case "account":
-		if len(rest) > 0 && (rest[0] == "connect" || rest[0] == "disconnect" || rest[0] == "status") {
+		if len(rest) > 0 && (rest[0] == "connect" || rest[0] == "disconnect" || rest[0] == "status" || rest[0] == "validate") {
 			if rest[0] != "status" {
 				ensureRequest(&o)
 			}
@@ -558,6 +558,7 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   machine discover --id ID --revision N [--input FILE|-] [--protocol] [--wait]
   account connect --id ID --revision N (--key-stdin | --keyless)
   account disconnect --id ID --revision N
+  account validate --id ID --revision N
   account status --id ID
   backup create
   settings defaults

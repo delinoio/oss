@@ -56,6 +56,7 @@ type Service struct {
 	delidevv1connect.UnimplementedAccountServiceHandler
 	accountOnce    sync.Once
 	accountGate    chan struct{}
+	accountChecks  map[domain.ID]map[domain.ID]context.CancelFunc
 	accountSecrets accountSecrets
 	ownedVault     *credentials.Vault
 	Store          *store.Store

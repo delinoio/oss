@@ -66,6 +66,21 @@ func accountCommand(ctx context.Context, c client, o options, args []string, str
 		return nil, domain.Fail(domain.MissingInput, "The account's current revision is required.", "Read account status and provide --revision.")
 	}
 	mutation := &pb.Mutation{RequestId: string(o.requestID), Id: *id, ExpectedRevision: revision}
+	if operation == "validate" {
+		response, err := c.accounts.ValidateAccount(ctx, request(c, &pb.ValidateAccountRequest{Mutation: mutation}))
+		if err != nil {
+			return nil, rpc.ClientError(err)
+		}
+		var validation domain.AccountValidation
+		if err = domain.Decode(response.Msg.ValidationJson, &validation); err != nil {
+			return nil, err
+		}
+		value := map[string]any{"account": resourceJSON(response.Msg.Account), "validation": validation, "replayed": response.Msg.Replayed}
+		if validation.Problem != nil {
+			return value, validation.Problem
+		}
+		return value, nil
+	}
 	if operation == "connect" {
 		if keyStdin == keyless {
 			return nil, domain.Fail(domain.MissingInput, "Choose exactly one connection input.", "Use --key-stdin for an API key or --keyless for a keyless local provider.")

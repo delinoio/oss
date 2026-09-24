@@ -21,6 +21,7 @@ import (
 // production constructor always opens the protected OS-backed vault.
 type accountSecrets interface {
 	Put(context.Context, credentials.Ref, []byte) (string, error)
+	Get(context.Context, credentials.Ref) ([]byte, error)
 	Delete(context.Context, credentials.Ref) error
 	UnremovedReferences(context.Context, domain.ID) ([]credentials.Ref, error)
 }
@@ -197,6 +198,7 @@ func (s *Service) ConnectAccount(ctx context.Context, req *connect.Request[pb.Co
 			}
 			account.Connection = &domain.AccountConnection{ID: domain.ID(meta.RequestId), Authentication: provider.Authentication, ConnectedAt: time.Now().UTC().Truncate(time.Millisecond)}
 			account.Health = domain.AccountUnverified
+			account.Validation = nil
 			account.Quota = nil
 			account.ConfirmedExhausted = false
 			if _, err = tx.Put(domain.AccountKind, input.ID, input.Revision, "", "", account); err != nil {
@@ -250,6 +252,7 @@ func (s *Service) DisconnectAccount(ctx context.Context, req *connect.Request[pb
 		removal := &domain.AccountRemoval{RequestID: domain.ID(meta.RequestId), ExpectedRevision: input.Revision}
 		account.Connection = nil
 		account.Health = domain.AccountDisconnected
+		account.Validation = nil
 		account.Removal = removal
 		account.Quota = nil
 		account.ConfirmedExhausted = false
@@ -301,6 +304,7 @@ func (s *Service) finishAccountRemoval(ctx context.Context, accepted accountRece
 	if err != nil || !pending {
 		return err
 	}
+	s.cancelAccountChecks(accepted.ID)
 	vault, err := s.secrets()
 	if err != nil {
 		return err

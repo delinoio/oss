@@ -106,6 +106,9 @@ const (
 	// AccountServiceGetAccountStatusProcedure is the fully-qualified name of the AccountService's
 	// GetAccountStatus RPC.
 	AccountServiceGetAccountStatusProcedure = "/delidev.v1.AccountService/GetAccountStatus"
+	// AccountServiceValidateAccountProcedure is the fully-qualified name of the AccountService's
+	// ValidateAccount RPC.
+	AccountServiceValidateAccountProcedure = "/delidev.v1.AccountService/ValidateAccount"
 )
 
 // SystemServiceClient is a client for the delidev.v1.SystemService service.
@@ -827,6 +830,7 @@ type AccountServiceClient interface {
 	ConnectAccount(context.Context, *connect.Request[v1.ConnectAccountRequest]) (*connect.Response[v1.ConnectAccountResponse], error)
 	DisconnectAccount(context.Context, *connect.Request[v1.DisconnectAccountRequest]) (*connect.Response[v1.DisconnectAccountResponse], error)
 	GetAccountStatus(context.Context, *connect.Request[v1.GetAccountStatusRequest]) (*connect.Response[v1.GetAccountStatusResponse], error)
+	ValidateAccount(context.Context, *connect.Request[v1.ValidateAccountRequest]) (*connect.Response[v1.ValidateAccountResponse], error)
 }
 
 // NewAccountServiceClient constructs a client for the delidev.v1.AccountService service. By
@@ -858,6 +862,12 @@ func NewAccountServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(accountServiceMethods.ByName("GetAccountStatus")),
 			connect.WithClientOptions(opts...),
 		),
+		validateAccount: connect.NewClient[v1.ValidateAccountRequest, v1.ValidateAccountResponse](
+			httpClient,
+			baseURL+AccountServiceValidateAccountProcedure,
+			connect.WithSchema(accountServiceMethods.ByName("ValidateAccount")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -866,6 +876,7 @@ type accountServiceClient struct {
 	connectAccount    *connect.Client[v1.ConnectAccountRequest, v1.ConnectAccountResponse]
 	disconnectAccount *connect.Client[v1.DisconnectAccountRequest, v1.DisconnectAccountResponse]
 	getAccountStatus  *connect.Client[v1.GetAccountStatusRequest, v1.GetAccountStatusResponse]
+	validateAccount   *connect.Client[v1.ValidateAccountRequest, v1.ValidateAccountResponse]
 }
 
 // ConnectAccount calls delidev.v1.AccountService.ConnectAccount.
@@ -883,11 +894,17 @@ func (c *accountServiceClient) GetAccountStatus(ctx context.Context, req *connec
 	return c.getAccountStatus.CallUnary(ctx, req)
 }
 
+// ValidateAccount calls delidev.v1.AccountService.ValidateAccount.
+func (c *accountServiceClient) ValidateAccount(ctx context.Context, req *connect.Request[v1.ValidateAccountRequest]) (*connect.Response[v1.ValidateAccountResponse], error) {
+	return c.validateAccount.CallUnary(ctx, req)
+}
+
 // AccountServiceHandler is an implementation of the delidev.v1.AccountService service.
 type AccountServiceHandler interface {
 	ConnectAccount(context.Context, *connect.Request[v1.ConnectAccountRequest]) (*connect.Response[v1.ConnectAccountResponse], error)
 	DisconnectAccount(context.Context, *connect.Request[v1.DisconnectAccountRequest]) (*connect.Response[v1.DisconnectAccountResponse], error)
 	GetAccountStatus(context.Context, *connect.Request[v1.GetAccountStatusRequest]) (*connect.Response[v1.GetAccountStatusResponse], error)
+	ValidateAccount(context.Context, *connect.Request[v1.ValidateAccountRequest]) (*connect.Response[v1.ValidateAccountResponse], error)
 }
 
 // NewAccountServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -915,6 +932,12 @@ func NewAccountServiceHandler(svc AccountServiceHandler, opts ...connect.Handler
 		connect.WithSchema(accountServiceMethods.ByName("GetAccountStatus")),
 		connect.WithHandlerOptions(opts...),
 	)
+	accountServiceValidateAccountHandler := connect.NewUnaryHandler(
+		AccountServiceValidateAccountProcedure,
+		svc.ValidateAccount,
+		connect.WithSchema(accountServiceMethods.ByName("ValidateAccount")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/delidev.v1.AccountService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case AccountServiceConnectAccountProcedure:
@@ -923,6 +946,8 @@ func NewAccountServiceHandler(svc AccountServiceHandler, opts ...connect.Handler
 			accountServiceDisconnectAccountHandler.ServeHTTP(w, r)
 		case AccountServiceGetAccountStatusProcedure:
 			accountServiceGetAccountStatusHandler.ServeHTTP(w, r)
+		case AccountServiceValidateAccountProcedure:
+			accountServiceValidateAccountHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -942,4 +967,8 @@ func (UnimplementedAccountServiceHandler) DisconnectAccount(context.Context, *co
 
 func (UnimplementedAccountServiceHandler) GetAccountStatus(context.Context, *connect.Request[v1.GetAccountStatusRequest]) (*connect.Response[v1.GetAccountStatusResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.AccountService.GetAccountStatus is not implemented"))
+}
+
+func (UnimplementedAccountServiceHandler) ValidateAccount(context.Context, *connect.Request[v1.ValidateAccountRequest]) (*connect.Response[v1.ValidateAccountResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.AccountService.ValidateAccount is not implemented"))
 }

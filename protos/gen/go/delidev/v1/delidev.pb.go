@@ -3070,6 +3070,120 @@ func (x *GetAccountStatusResponse) GetAccount() *Resource {
 	return nil
 }
 
+type ValidateAccountRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Mutation      *Mutation              `protobuf:"bytes,1,opt,name=mutation,proto3" json:"mutation,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ValidateAccountRequest) Reset() {
+	*x = ValidateAccountRequest{}
+	mi := &file_delidev_v1_delidev_proto_msgTypes[48]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ValidateAccountRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ValidateAccountRequest) ProtoMessage() {}
+
+func (x *ValidateAccountRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_delidev_proto_msgTypes[48]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ValidateAccountRequest.ProtoReflect.Descriptor instead.
+func (*ValidateAccountRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{48}
+}
+
+func (x *ValidateAccountRequest) GetMutation() *Mutation {
+	if x != nil {
+		return x.Mutation
+	}
+	return nil
+}
+
+type ValidateAccountResponse struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Account   *Resource              `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"`
+	RequestId string                 `protobuf:"bytes,2,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Replayed  bool                   `protobuf:"varint,3,opt,name=replayed,proto3" json:"replayed,omitempty"`
+	// Accepted, sanitized non-inference observation. Does not expose model payloads
+	// or credentials and is not inference, quota recovery or harness capability.
+	ValidationJson []byte `protobuf:"bytes,4,opt,name=validation_json,json=validationJson,proto3" json:"validation_json,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ValidateAccountResponse) Reset() {
+	*x = ValidateAccountResponse{}
+	mi := &file_delidev_v1_delidev_proto_msgTypes[49]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ValidateAccountResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ValidateAccountResponse) ProtoMessage() {}
+
+func (x *ValidateAccountResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_delidev_proto_msgTypes[49]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ValidateAccountResponse.ProtoReflect.Descriptor instead.
+func (*ValidateAccountResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{49}
+}
+
+func (x *ValidateAccountResponse) GetAccount() *Resource {
+	if x != nil {
+		return x.Account
+	}
+	return nil
+}
+
+func (x *ValidateAccountResponse) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *ValidateAccountResponse) GetReplayed() bool {
+	if x != nil {
+		return x.Replayed
+	}
+	return false
+}
+
+func (x *ValidateAccountResponse) GetValidationJson() []byte {
+	if x != nil {
+		return x.ValidationJson
+	}
+	return nil
+}
+
 var File_delidev_v1_delidev_proto protoreflect.FileDescriptor
 
 const file_delidev_v1_delidev_proto_rawDesc = "" +
@@ -3300,7 +3414,15 @@ const file_delidev_v1_delidev_proto_rawDesc = "" +
 	"\x17GetAccountStatusRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"J\n" +
 	"\x18GetAccountStatusResponse\x12.\n" +
-	"\aaccount\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\aaccount*\xa2\x05\n" +
+	"\aaccount\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\aaccount\"J\n" +
+	"\x16ValidateAccountRequest\x120\n" +
+	"\bmutation\x18\x01 \x01(\v2\x14.delidev.v1.MutationR\bmutation\"\xad\x01\n" +
+	"\x17ValidateAccountResponse\x12.\n" +
+	"\aaccount\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\aaccount\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x02 \x01(\tR\trequestId\x12\x1a\n" +
+	"\breplayed\x18\x03 \x01(\bR\breplayed\x12'\n" +
+	"\x0fvalidation_json\x18\x04 \x01(\fR\x0evalidationJson*\xa2\x05\n" +
 	"\n" +
 	"EntityKind\x12\x1b\n" +
 	"\x17ENTITY_KIND_UNSPECIFIED\x10\x00\x12\x17\n" +
@@ -3366,11 +3488,12 @@ const file_delidev_v1_delidev_proto_rawDesc = "" +
 	"\n" +
 	"ReportWork\x12\x1d.delidev.v1.ReportWorkRequest\x1a\x1e.delidev.v1.ReportWorkResponse\x12`\n" +
 	"\x11InspectRepository\x12$.delidev.v1.InspectRepositoryRequest\x1a%.delidev.v1.InspectRepositoryResponse\x12`\n" +
-	"\x11DiscoverHarnesses\x12$.delidev.v1.DiscoverHarnessesRequest\x1a%.delidev.v1.DiscoverHarnessesResponse2\xaa\x02\n" +
+	"\x11DiscoverHarnesses\x12$.delidev.v1.DiscoverHarnessesRequest\x1a%.delidev.v1.DiscoverHarnessesResponse2\x86\x03\n" +
 	"\x0eAccountService\x12W\n" +
 	"\x0eConnectAccount\x12!.delidev.v1.ConnectAccountRequest\x1a\".delidev.v1.ConnectAccountResponse\x12`\n" +
 	"\x11DisconnectAccount\x12$.delidev.v1.DisconnectAccountRequest\x1a%.delidev.v1.DisconnectAccountResponse\x12]\n" +
-	"\x10GetAccountStatus\x12#.delidev.v1.GetAccountStatusRequest\x1a$.delidev.v1.GetAccountStatusResponseB<Z:github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1b\x06proto3"
+	"\x10GetAccountStatus\x12#.delidev.v1.GetAccountStatusRequest\x1a$.delidev.v1.GetAccountStatusResponse\x12Z\n" +
+	"\x0fValidateAccount\x12\".delidev.v1.ValidateAccountRequest\x1a#.delidev.v1.ValidateAccountResponseB<Z:github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1b\x06proto3"
 
 var (
 	file_delidev_v1_delidev_proto_rawDescOnce sync.Once
@@ -3385,7 +3508,7 @@ func file_delidev_v1_delidev_proto_rawDescGZIP() []byte {
 }
 
 var file_delidev_v1_delidev_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_delidev_v1_delidev_proto_msgTypes = make([]protoimpl.MessageInfo, 48)
+var file_delidev_v1_delidev_proto_msgTypes = make([]protoimpl.MessageInfo, 50)
 var file_delidev_v1_delidev_proto_goTypes = []any{
 	(EntityKind)(0),                     // 0: delidev.v1.EntityKind
 	(EventAction)(0),                    // 1: delidev.v1.EventAction
@@ -3438,6 +3561,8 @@ var file_delidev_v1_delidev_proto_goTypes = []any{
 	(*DisconnectAccountResponse)(nil),   // 48: delidev.v1.DisconnectAccountResponse
 	(*GetAccountStatusRequest)(nil),     // 49: delidev.v1.GetAccountStatusRequest
 	(*GetAccountStatusResponse)(nil),    // 50: delidev.v1.GetAccountStatusResponse
+	(*ValidateAccountRequest)(nil),      // 51: delidev.v1.ValidateAccountRequest
+	(*ValidateAccountResponse)(nil),     // 52: delidev.v1.ValidateAccountResponse
 }
 var file_delidev_v1_delidev_proto_depIdxs = []int32{
 	0,  // 0: delidev.v1.Resource.kind:type_name -> delidev.v1.EntityKind
@@ -3476,55 +3601,59 @@ var file_delidev_v1_delidev_proto_depIdxs = []int32{
 	4,  // 33: delidev.v1.DisconnectAccountRequest.mutation:type_name -> delidev.v1.Mutation
 	3,  // 34: delidev.v1.DisconnectAccountResponse.account:type_name -> delidev.v1.Resource
 	3,  // 35: delidev.v1.GetAccountStatusResponse.account:type_name -> delidev.v1.Resource
-	7,  // 36: delidev.v1.SystemService.GetStatus:input_type -> delidev.v1.GetStatusRequest
-	9,  // 37: delidev.v1.SystemService.StopServer:input_type -> delidev.v1.StopServerRequest
-	11, // 38: delidev.v1.SystemService.GetDoctor:input_type -> delidev.v1.GetDoctorRequest
-	13, // 39: delidev.v1.SystemService.CreateBackup:input_type -> delidev.v1.CreateBackupRequest
-	15, // 40: delidev.v1.ResourceService.GetResource:input_type -> delidev.v1.GetResourceRequest
-	17, // 41: delidev.v1.ResourceService.ListResources:input_type -> delidev.v1.ListResourcesRequest
-	19, // 42: delidev.v1.ResourceService.GetSnapshot:input_type -> delidev.v1.GetSnapshotRequest
-	21, // 43: delidev.v1.ResourceService.WatchEvents:input_type -> delidev.v1.WatchEventsRequest
-	23, // 44: delidev.v1.ConfigurationService.SaveConfiguration:input_type -> delidev.v1.SaveConfigurationRequest
-	25, // 45: delidev.v1.ConfigurationService.DeleteConfiguration:input_type -> delidev.v1.DeleteConfigurationRequest
-	27, // 46: delidev.v1.ConfigurationService.PreviewRouting:input_type -> delidev.v1.PreviewRoutingRequest
-	29, // 47: delidev.v1.DeviceService.CreatePairing:input_type -> delidev.v1.CreatePairingRequest
-	31, // 48: delidev.v1.DeviceService.PairDevice:input_type -> delidev.v1.PairDeviceRequest
-	33, // 49: delidev.v1.DeviceService.RevokeDevice:input_type -> delidev.v1.RevokeDeviceRequest
-	35, // 50: delidev.v1.WorkerService.AttachWorker:input_type -> delidev.v1.AttachWorkerRequest
-	37, // 51: delidev.v1.WorkerService.WatchWork:input_type -> delidev.v1.WatchWorkRequest
-	39, // 52: delidev.v1.WorkerService.ReportWork:input_type -> delidev.v1.ReportWorkRequest
-	41, // 53: delidev.v1.WorkerService.InspectRepository:input_type -> delidev.v1.InspectRepositoryRequest
-	43, // 54: delidev.v1.WorkerService.DiscoverHarnesses:input_type -> delidev.v1.DiscoverHarnessesRequest
-	45, // 55: delidev.v1.AccountService.ConnectAccount:input_type -> delidev.v1.ConnectAccountRequest
-	47, // 56: delidev.v1.AccountService.DisconnectAccount:input_type -> delidev.v1.DisconnectAccountRequest
-	49, // 57: delidev.v1.AccountService.GetAccountStatus:input_type -> delidev.v1.GetAccountStatusRequest
-	8,  // 58: delidev.v1.SystemService.GetStatus:output_type -> delidev.v1.GetStatusResponse
-	10, // 59: delidev.v1.SystemService.StopServer:output_type -> delidev.v1.StopServerResponse
-	12, // 60: delidev.v1.SystemService.GetDoctor:output_type -> delidev.v1.GetDoctorResponse
-	14, // 61: delidev.v1.SystemService.CreateBackup:output_type -> delidev.v1.CreateBackupResponse
-	16, // 62: delidev.v1.ResourceService.GetResource:output_type -> delidev.v1.GetResourceResponse
-	18, // 63: delidev.v1.ResourceService.ListResources:output_type -> delidev.v1.ListResourcesResponse
-	20, // 64: delidev.v1.ResourceService.GetSnapshot:output_type -> delidev.v1.GetSnapshotResponse
-	22, // 65: delidev.v1.ResourceService.WatchEvents:output_type -> delidev.v1.WatchEventsResponse
-	24, // 66: delidev.v1.ConfigurationService.SaveConfiguration:output_type -> delidev.v1.SaveConfigurationResponse
-	26, // 67: delidev.v1.ConfigurationService.DeleteConfiguration:output_type -> delidev.v1.DeleteConfigurationResponse
-	28, // 68: delidev.v1.ConfigurationService.PreviewRouting:output_type -> delidev.v1.PreviewRoutingResponse
-	30, // 69: delidev.v1.DeviceService.CreatePairing:output_type -> delidev.v1.CreatePairingResponse
-	32, // 70: delidev.v1.DeviceService.PairDevice:output_type -> delidev.v1.PairDeviceResponse
-	34, // 71: delidev.v1.DeviceService.RevokeDevice:output_type -> delidev.v1.RevokeDeviceResponse
-	36, // 72: delidev.v1.WorkerService.AttachWorker:output_type -> delidev.v1.AttachWorkerResponse
-	38, // 73: delidev.v1.WorkerService.WatchWork:output_type -> delidev.v1.WatchWorkResponse
-	40, // 74: delidev.v1.WorkerService.ReportWork:output_type -> delidev.v1.ReportWorkResponse
-	42, // 75: delidev.v1.WorkerService.InspectRepository:output_type -> delidev.v1.InspectRepositoryResponse
-	44, // 76: delidev.v1.WorkerService.DiscoverHarnesses:output_type -> delidev.v1.DiscoverHarnessesResponse
-	46, // 77: delidev.v1.AccountService.ConnectAccount:output_type -> delidev.v1.ConnectAccountResponse
-	48, // 78: delidev.v1.AccountService.DisconnectAccount:output_type -> delidev.v1.DisconnectAccountResponse
-	50, // 79: delidev.v1.AccountService.GetAccountStatus:output_type -> delidev.v1.GetAccountStatusResponse
-	58, // [58:80] is the sub-list for method output_type
-	36, // [36:58] is the sub-list for method input_type
-	36, // [36:36] is the sub-list for extension type_name
-	36, // [36:36] is the sub-list for extension extendee
-	0,  // [0:36] is the sub-list for field type_name
+	4,  // 36: delidev.v1.ValidateAccountRequest.mutation:type_name -> delidev.v1.Mutation
+	3,  // 37: delidev.v1.ValidateAccountResponse.account:type_name -> delidev.v1.Resource
+	7,  // 38: delidev.v1.SystemService.GetStatus:input_type -> delidev.v1.GetStatusRequest
+	9,  // 39: delidev.v1.SystemService.StopServer:input_type -> delidev.v1.StopServerRequest
+	11, // 40: delidev.v1.SystemService.GetDoctor:input_type -> delidev.v1.GetDoctorRequest
+	13, // 41: delidev.v1.SystemService.CreateBackup:input_type -> delidev.v1.CreateBackupRequest
+	15, // 42: delidev.v1.ResourceService.GetResource:input_type -> delidev.v1.GetResourceRequest
+	17, // 43: delidev.v1.ResourceService.ListResources:input_type -> delidev.v1.ListResourcesRequest
+	19, // 44: delidev.v1.ResourceService.GetSnapshot:input_type -> delidev.v1.GetSnapshotRequest
+	21, // 45: delidev.v1.ResourceService.WatchEvents:input_type -> delidev.v1.WatchEventsRequest
+	23, // 46: delidev.v1.ConfigurationService.SaveConfiguration:input_type -> delidev.v1.SaveConfigurationRequest
+	25, // 47: delidev.v1.ConfigurationService.DeleteConfiguration:input_type -> delidev.v1.DeleteConfigurationRequest
+	27, // 48: delidev.v1.ConfigurationService.PreviewRouting:input_type -> delidev.v1.PreviewRoutingRequest
+	29, // 49: delidev.v1.DeviceService.CreatePairing:input_type -> delidev.v1.CreatePairingRequest
+	31, // 50: delidev.v1.DeviceService.PairDevice:input_type -> delidev.v1.PairDeviceRequest
+	33, // 51: delidev.v1.DeviceService.RevokeDevice:input_type -> delidev.v1.RevokeDeviceRequest
+	35, // 52: delidev.v1.WorkerService.AttachWorker:input_type -> delidev.v1.AttachWorkerRequest
+	37, // 53: delidev.v1.WorkerService.WatchWork:input_type -> delidev.v1.WatchWorkRequest
+	39, // 54: delidev.v1.WorkerService.ReportWork:input_type -> delidev.v1.ReportWorkRequest
+	41, // 55: delidev.v1.WorkerService.InspectRepository:input_type -> delidev.v1.InspectRepositoryRequest
+	43, // 56: delidev.v1.WorkerService.DiscoverHarnesses:input_type -> delidev.v1.DiscoverHarnessesRequest
+	45, // 57: delidev.v1.AccountService.ConnectAccount:input_type -> delidev.v1.ConnectAccountRequest
+	47, // 58: delidev.v1.AccountService.DisconnectAccount:input_type -> delidev.v1.DisconnectAccountRequest
+	49, // 59: delidev.v1.AccountService.GetAccountStatus:input_type -> delidev.v1.GetAccountStatusRequest
+	51, // 60: delidev.v1.AccountService.ValidateAccount:input_type -> delidev.v1.ValidateAccountRequest
+	8,  // 61: delidev.v1.SystemService.GetStatus:output_type -> delidev.v1.GetStatusResponse
+	10, // 62: delidev.v1.SystemService.StopServer:output_type -> delidev.v1.StopServerResponse
+	12, // 63: delidev.v1.SystemService.GetDoctor:output_type -> delidev.v1.GetDoctorResponse
+	14, // 64: delidev.v1.SystemService.CreateBackup:output_type -> delidev.v1.CreateBackupResponse
+	16, // 65: delidev.v1.ResourceService.GetResource:output_type -> delidev.v1.GetResourceResponse
+	18, // 66: delidev.v1.ResourceService.ListResources:output_type -> delidev.v1.ListResourcesResponse
+	20, // 67: delidev.v1.ResourceService.GetSnapshot:output_type -> delidev.v1.GetSnapshotResponse
+	22, // 68: delidev.v1.ResourceService.WatchEvents:output_type -> delidev.v1.WatchEventsResponse
+	24, // 69: delidev.v1.ConfigurationService.SaveConfiguration:output_type -> delidev.v1.SaveConfigurationResponse
+	26, // 70: delidev.v1.ConfigurationService.DeleteConfiguration:output_type -> delidev.v1.DeleteConfigurationResponse
+	28, // 71: delidev.v1.ConfigurationService.PreviewRouting:output_type -> delidev.v1.PreviewRoutingResponse
+	30, // 72: delidev.v1.DeviceService.CreatePairing:output_type -> delidev.v1.CreatePairingResponse
+	32, // 73: delidev.v1.DeviceService.PairDevice:output_type -> delidev.v1.PairDeviceResponse
+	34, // 74: delidev.v1.DeviceService.RevokeDevice:output_type -> delidev.v1.RevokeDeviceResponse
+	36, // 75: delidev.v1.WorkerService.AttachWorker:output_type -> delidev.v1.AttachWorkerResponse
+	38, // 76: delidev.v1.WorkerService.WatchWork:output_type -> delidev.v1.WatchWorkResponse
+	40, // 77: delidev.v1.WorkerService.ReportWork:output_type -> delidev.v1.ReportWorkResponse
+	42, // 78: delidev.v1.WorkerService.InspectRepository:output_type -> delidev.v1.InspectRepositoryResponse
+	44, // 79: delidev.v1.WorkerService.DiscoverHarnesses:output_type -> delidev.v1.DiscoverHarnessesResponse
+	46, // 80: delidev.v1.AccountService.ConnectAccount:output_type -> delidev.v1.ConnectAccountResponse
+	48, // 81: delidev.v1.AccountService.DisconnectAccount:output_type -> delidev.v1.DisconnectAccountResponse
+	50, // 82: delidev.v1.AccountService.GetAccountStatus:output_type -> delidev.v1.GetAccountStatusResponse
+	52, // 83: delidev.v1.AccountService.ValidateAccount:output_type -> delidev.v1.ValidateAccountResponse
+	61, // [61:84] is the sub-list for method output_type
+	38, // [38:61] is the sub-list for method input_type
+	38, // [38:38] is the sub-list for extension type_name
+	38, // [38:38] is the sub-list for extension extendee
+	0,  // [0:38] is the sub-list for field type_name
 }
 
 func init() { file_delidev_v1_delidev_proto_init() }
@@ -3538,7 +3667,7 @@ func file_delidev_v1_delidev_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delidev_v1_delidev_proto_rawDesc), len(file_delidev_v1_delidev_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   48,
+			NumMessages:   50,
 			NumExtensions: 0,
 			NumServices:   6,
 		},
