@@ -877,3 +877,80 @@ fn moving_existing_chart_preserves_chart_workbook_and_relationship_bytes() {
         140 * 12700
     );
 }
+#[test]
+fn chart_data_edits_reject_workbook_row_child_extensions() {
+    let mut parts = read_package(EXTERNAL).unwrap();
+    let workbook_path = "ppt/embeddings/Microsoft_Excel_Sheet1.xlsx";
+    let original = read_package(&parts[workbook_path]).unwrap();
+    let sheet_path = "xl/worksheets/sheet1.xml";
+    for extension in [
+        "<extLst><ext uri=\"urn:preserved\"/></extLst>",
+        "<x:metadata xmlns:x=\"urn:preserved\"/>",
+    ] {
+        let mut workbook = original.clone();
+        let sheet = xml_part(&workbook, sheet_path);
+        assert!(sheet.contains("</row>"));
+        workbook.insert(
+            sheet_path.into(),
+            sheet
+                .replacen("</row>", &format!("{extension}</row>"), 1)
+                .into_bytes(),
+        );
+        let workbook_bytes = write_package(&workbook).unwrap();
+        parts.insert(workbook_path.into(), workbook_bytes.clone());
+        let source = write_package(&parts).unwrap();
+        let imported = import(&source).unwrap();
+        let chart = target(&imported.document, NodeKind::Chart);
+        let mut data = imported
+            .document
+            .find(&chart)
+            .unwrap()
+            .data
+            .clone()
+            .unwrap();
+        data.series[0].values[0] += 1.;
+        let next = patch(
+            &imported,
+            vec![Operation::SetChartData {
+                target: chart,
+                data,
+            }],
+        );
+        assert_eq!(
+            update(
+                &source,
+                &imported.document,
+                &imported.bindings,
+                &next,
+                &imported.assets,
+                imported.document_id,
+                1
+            )
+            .unwrap_err()
+            .code,
+            ErrorCode::UnsupportedEdit
+        );
+        let next = patch(
+            &imported,
+            vec![Operation::SetText {
+                target: target(&imported.document, NodeKind::Text),
+                text: "Unrelated edit".into(),
+                cell: None,
+            }],
+        );
+        let output = update(
+            &source,
+            &imported.document,
+            &imported.bindings,
+            &next,
+            &imported.assets,
+            imported.document_id,
+            1,
+        )
+        .unwrap();
+        assert_eq!(
+            read_package(&output).unwrap()[workbook_path],
+            workbook_bytes
+        );
+    }
+}

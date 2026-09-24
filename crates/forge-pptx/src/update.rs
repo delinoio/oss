@@ -580,6 +580,9 @@ fn update_workbook(old: &[u8], fresh: &[u8], previous: &ChartData) -> Result<Vec
         !n.has_tag_name((ns, "row"))
             || n.attributes()
                 .any(|a| a.name() != "r" && a.name() != "spans")
+            || n.children()
+                .filter(|child| child.is_element())
+                .any(|child| !child.has_tag_name((ns, "c")))
     }) {
         return error(
             ErrorCode::UnsupportedEdit,
