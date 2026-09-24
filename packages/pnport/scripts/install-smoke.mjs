@@ -31,6 +31,8 @@ try {
   assert.equal(result.status, 0, `Installer failed: ${result.stderr}`);
   const installed = path.join(install, ".pnport", "versions", version);
   ensure(existsSync(path.join(installed, target.binary)) && existsSync(path.join(installed, companion(target))), "Installed pair is incomplete");
+  ensure(existsSync(path.join(installed, "LICENSE")), "Installed pnport license is missing");
+  if (target.os !== "win32") ensure(existsSync(path.join(installed, "LICENSE.fspy")), "Installed fspy license is missing");
   const launcher = path.join(install, target.os === "win32" ? "pnport.cmd" : "pnport");
   ensure(existsSync(launcher), "Installer did not activate the public launcher");
   const invokeLauncher = () => target.os === "win32"

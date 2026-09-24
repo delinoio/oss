@@ -1,0 +1,36 @@
+[package]
+name = "fspy_nostd"
+edition = "2024"
+license.workspace = true
+publish = false
+
+[lib]
+doctest = false
+
+[dependencies]
+# Only the borrowed `BStr` type is used. Keeping every feature disabled makes
+# the environment iterator usable without `alloc` or `std`.
+bstr = { workspace = true }
+bitflags = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = { workspace = true }
+
+[target.'cfg(any(target_os = "linux", target_os = "none"))'.dependencies]
+# Parsing remains allocation-free and no-std; `atoi` enables `std` by default.
+atoi = { version = "3.1.0", default-features = false }
+linux-raw-sys = { workspace = true, features = ["errno", "general", "no_std"] }
+syscalls = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+bitflags = { workspace = true }
+windows-sys = { workspace = true, features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_Storage_FileSystem",
+  "Win32_System_LibraryLoader",
+  "Win32_System_Memory",
+] }
+
+[lints]
+workspace = true

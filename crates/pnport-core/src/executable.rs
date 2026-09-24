@@ -8,7 +8,7 @@ use std::{
 
 use crate::{
     diagnostic::{Code, Error, Result},
-    view::View,
+    view::{Translation, View},
 };
 
 /// A resolved execution keeps script arguments in the logical PnP namespace.
@@ -34,10 +34,32 @@ pub fn prepare_with_context(
     search_path: Option<&OsStr>,
     cwd: &Path,
 ) -> Result<Prepared> {
+    prepare_with_translation_in_context(path, args, search_path, cwd, |path| view.translate(path))
+}
+
+/// Resolve a native image while allowing an interposer to release its runtime
+/// lock before filesystem and signature inspection call back into libc hooks.
+pub fn prepare_with_translation(
+    path: &Path,
+    args: &[OsString],
+    search_path: Option<&OsStr>,
+    translate: impl FnMut(&Path) -> Result<Translation>,
+) -> Result<Prepared> {
+    let cwd = std::env::current_dir().map_err(|_| invalid())?;
+    prepare_with_translation_in_context(path, args, search_path, &cwd, translate)
+}
+
+fn prepare_with_translation_in_context(
+    path: &Path,
+    args: &[OsString],
+    search_path: Option<&OsStr>,
+    cwd: &Path,
+    mut translate: impl FnMut(&Path) -> Result<Translation>,
+) -> Result<Prepared> {
     let mut path = path.to_owned();
     let mut args = args.to_vec();
     for _ in 0..8 {
-        let translation = view.translate(&path)?;
+        let translation = translate(&path)?;
         let mut prefix = Vec::new();
         fs::File::open(&translation.physical)
             .map_err(access_error)?
@@ -164,7 +186,7 @@ fn executable_permissions(path: &Path) -> Result<()> {
     Ok(())
 }
 
-pub fn validate(path: &Path) -> Result<()> {
+pub fn validate(path: &Path) -> Result<PathBuf> {
     let path = fs::canonicalize(path).map_err(access_error)?;
     executable_permissions(&path)?;
     #[cfg(target_os = "macos")]
@@ -280,8 +302,46 @@ pub fn validate(path: &Path) -> Result<()> {
             offset += length;
         }
     }
-    Ok(())
+    Ok(path)
 }
+
+#[cfg(target_os = "macos")]
+pub struct LaunchAdmission {
+    pub path: PathBuf,
+    device: u64,
+    inode: u64,
+}
+
+#[cfg(target_os = "macos")]
+impl LaunchAdmission {
+    pub fn new(path: &Path) -> Result<Self> {
+        use std::os::unix::fs::MetadataExt;
+
+        let path = validate(path)?;
+        let metadata = fs::metadata(&path).map_err(access_error)?;
+        Ok(Self {
+            path,
+            device: metadata.dev(),
+            inode: metadata.ino(),
+        })
+    }
+
+    /// Recheck the selected image after preparing argv and environment, at
+    /// the last point before a pathname-based macOS exec or spawn call.
+    pub fn verify_at_launch(&self) -> Result<()> {
+        use std::os::unix::fs::MetadataExt;
+
+        if validate(&self.path)? != self.path {
+            return Err(invalid());
+        }
+        let metadata = fs::metadata(&self.path).map_err(access_error)?;
+        if metadata.dev() != self.device || metadata.ino() != self.inode {
+            return Err(invalid());
+        }
+        Ok(())
+    }
+}
+
 fn access_error(error: std::io::Error) -> Error {
     Error::new(
         if error.kind() == std::io::ErrorKind::NotFound {
@@ -368,7 +428,54 @@ fn check_signature(bytes: &[u8]) -> Result<()> {
 
 #[cfg(all(test, target_os = "macos"))]
 mod tests {
+    use std::os::unix::fs::symlink;
+
     use super::*;
+
+    #[test]
+    fn returns_the_canonical_admitted_image() {
+        let directory = tempfile::tempdir().expect("create fixture directory");
+        let source = directory.path().join("tool.c");
+        let executable = directory.path().join("tool");
+        let alias = directory.path().join("tool-alias");
+        fs::write(&source, "int main(void) { return 0; }\n").expect("write fixture");
+        assert!(std::process::Command::new("cc")
+            .arg(&source)
+            .arg("-o")
+            .arg(&executable)
+            .status()
+            .expect("compile fixture")
+            .success());
+        symlink(&executable, &alias).expect("create executable alias");
+        assert_eq!(
+            validate(&alias).expect("admit alias"),
+            fs::canonicalize(executable).expect("canonicalize fixture")
+        );
+    }
+
+    #[test]
+    fn launch_admission_rejects_a_replaced_image() {
+        let directory = tempfile::tempdir().expect("create fixture directory");
+        let source = directory.path().join("tool.c");
+        let executable = directory.path().join("tool");
+        let replacement = directory.path().join("replacement");
+        fs::write(&source, "int main(void) { return 0; }\n").expect("write fixture");
+        assert!(std::process::Command::new("cc")
+            .arg(&source)
+            .arg("-o")
+            .arg(&executable)
+            .status()
+            .expect("compile fixture")
+            .success());
+        let admission = LaunchAdmission::new(&executable).expect("admit executable");
+        fs::copy(&executable, &replacement).expect("copy valid replacement");
+        fs::rename(&replacement, &executable).expect("replace admitted inode");
+        assert!(validate(&executable).is_ok());
+        assert_eq!(
+            admission.verify_at_launch().unwrap_err().code,
+            Code::PnportCommandNotExecutable
+        );
+    }
 
     #[test]
     fn truncated_entitlement_blob_is_rejected_without_panicking() {

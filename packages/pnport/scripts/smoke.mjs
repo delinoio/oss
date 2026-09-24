@@ -13,9 +13,9 @@ const { targets, selectTarget } = require("../src/platforms.cjs");
 const { values } = parseArgs({ options: { binary: { type: "string" }, preload: { type: "string" }, target: { type: "string" } } });
 const target = values.target ? targets.find(({ rust }) => rust === values.target) : selectTarget();
 ensure(target, "Unsupported pnport smoke target");
-if (!values.binary || !values.preload) execFileSync("cargo", ["build", "--locked", "--release", "-p", "pnport", "-p", "pnport-preload"], { cwd: root, stdio: "inherit" });
+if (!values.binary || !values.preload) execFileSync("cargo", target.os === "darwin" ? ["build", "--locked", "--release", "-p", "pnport", "-p", "fspy_preload_unix", "--features", "fspy_preload_unix/pnport"] : ["build", "--locked", "--release", "-p", "pnport", "-p", "pnport-preload"], { cwd: root, stdio: "inherit" });
 const binary = path.resolve(root, values.binary ?? path.join("target/release", target.binary));
-const library = path.resolve(root, values.preload ?? path.join("target/release", target.os === "darwin" ? "libpnport_preload.dylib" : target.os === "win32" ? "pnport_preload.dll" : "libpnport_preload.so"));
+const library = path.resolve(root, values.preload ?? path.join("target/release", target.os === "darwin" ? "libfspy_preload_unix.dylib" : target.os === "win32" ? "pnport_preload.dll" : "libpnport_preload.so"));
 const temporary = mkdtempSync(path.join(tmpdir(), "pnport-package-"));
 try {
   const output = path.join(temporary, "packed");

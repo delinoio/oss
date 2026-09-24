@@ -13,7 +13,7 @@ use std::{
 };
 
 use libc::*;
-use pnport::{
+use pnport_core::{
     cache::Cache,
     diagnostic::Code,
     graph::{Graph, Snapshot},
@@ -557,7 +557,7 @@ hook!(execve,pnport_execve,(path:*const c_char,argv:*const *const c_char,envp:*c
     let Some(_guard)=Guard::enter() else {return original(path,argv,envp);};
     if RUNTIME.get().is_none() {return original(path,argv,envp);}
     let (path,translation)=translated!(path,AT_FDCWD,false,-1);
-    if let Err(error)=pnport::executable::validate(&translation.physical) {errno(fail(error.code));return -1;}
+    if let Err(error)=pnport_core::executable::validate(&translation.physical) {errno(fail(error.code));return -1;}
     let env=match child_env(envp) {Ok(env)=>env,Err(code)=>{errno(code);return -1;}};
     let mut pointers:Vec<_>=env.iter().map(|e|e.as_ptr()).collect();pointers.push(ptr::null());
     original(path.as_ptr(),argv,pointers.as_ptr())
@@ -567,7 +567,7 @@ hook!(posix_spawn,pnport_spawn,(pid:*mut pid_t,path:*const c_char,actions:*const
     let Some(_guard)=Guard::enter() else {return original(pid,path,actions,attributes,argv,envp);};
     if RUNTIME.get().is_none() {return original(pid,path,actions,attributes,argv,envp);}
     let (path,translation)=match translate(path,AT_FDCWD,false) {Ok(value)=>value,Err(code)=>return code};
-    if let Err(error)=pnport::executable::validate(&translation.physical) {return fail(error.code);}
+    if let Err(error)=pnport_core::executable::validate(&translation.physical) {return fail(error.code);}
     let env=match child_env(envp.cast()) {Ok(env)=>env,Err(code)=>return code};
     let mut pointers:Vec<_>=env.iter().map(|e|e.as_ptr() as *mut c_char).collect();pointers.push(ptr::null_mut());
     original(pid,path.as_ptr(),actions,attributes,argv,pointers.as_ptr())

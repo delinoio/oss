@@ -38,11 +38,19 @@ pub fn artifact() -> Result<PathBuf> {
         .ok()
         .and_then(|p| p.parent().map(Path::to_owned))
         .ok_or_else(injection_error)?;
-    let artifact = directory.join(if cfg!(target_os = "macos") {
+    let packaged = directory.join(if cfg!(target_os = "macos") {
         "libpnport_preload.dylib"
     } else {
         "libpnport_preload.so"
     });
+    // Development uses the fork's crate name; release packaging keeps the
+    // stable pnport companion filename checked by the existing installer.
+    let development = directory.join("libfspy_preload_unix.dylib");
+    let artifact = if cfg!(target_os = "macos") && development.is_file() {
+        development
+    } else {
+        packaged
+    };
     let bytes = fs::read(&artifact).map_err(|_| injection_error())?;
     #[cfg(target_os = "linux")]
     {
@@ -106,7 +114,21 @@ pub(crate) fn runtime_failure(session: &Path) -> Result<Option<Error>> {
     )))
 }
 
+#[cfg(not(target_os = "linux"))]
+fn pending_launches(session: &Path) -> Result<bool> {
+    match fs::read_dir(session.join("pending")) {
+        Ok(mut entries) => entries
+            .next()
+            .transpose()
+            .map(|entry| entry.is_some())
+            .map_err(|_| injection_error()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(_) => Err(injection_error()),
+    }
+}
+
 static SIGNAL: AtomicI32 = AtomicI32::new(0);
+#[cfg(target_os = "linux")]
 pub(crate) fn handled_signal() -> i32 {
     SIGNAL.load(Ordering::SeqCst)
 }
@@ -136,11 +158,24 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
     }
     #[cfg(not(target_os = "linux"))]
     {
-        let mut command = Command::new(&prepared.program);
+        #[cfg(target_os = "macos")]
+        let admission =
+            fspy_shared_unix::spawn::admit_pnport_program(&prepared.program).map_err(|_| {
+                Error::new(
+                    Code::PnportUnsupportedOperation,
+                    "The executable cannot accept macOS filesystem injection.",
+                )
+            })?;
+        #[cfg(target_os = "macos")]
+        let admitted_program = &admission.path;
+        #[cfg(not(target_os = "macos"))]
+        let admitted_program = prepared.program;
+        let mut command = Command::new(admitted_program);
         command
             .args(&prepared.args)
             .env("PNPORT_SESSION", &view.session)
-            .env("PNPORT_CACHE", &view.cache.root);
+            .env("PNPORT_CACHE", &view.cache.root)
+            .env_remove("PNPORT_LAUNCH_TOKEN");
         let variable = if cfg!(target_os = "macos") {
             "DYLD_INSERT_LIBRARIES"
         } else {
@@ -153,6 +188,9 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
                  without another interception library.",
             ));
         }
+        #[cfg(target_os = "macos")]
+        command.env(variable, artifact);
+        #[cfg(not(target_os = "macos"))]
         command.env(variable, artifact);
         #[cfg(unix)]
         {
@@ -160,6 +198,8 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
             command.process_group(0);
         }
         tracing::debug!(action = "spawn", "Starting the owned process tree");
+        #[cfg(target_os = "macos")]
+        admission.verify_at_launch()?;
         let mut child = command.spawn().map_err(|e| {
             Error::new(
                 if e.kind() == std::io::ErrorKind::NotFound {
@@ -173,14 +213,15 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
         let pid = child.id() as i32;
         let start = Instant::now();
         let mut status = None;
+        let mut root_exited_at = None;
         let mut watch = crate::input_watch::InputWatch::default();
         let mut active_markers = std::collections::HashSet::new();
         let starting = view.session.join("starting").join(pid.to_string());
         let ready = view.session.join("ready").join(pid.to_string());
         let mut initialization_started = false;
         let result = (|| loop {
-            if handled_signal() != 0 {
-                return Ok(128 + handled_signal());
+            if SIGNAL.load(Ordering::SeqCst) != 0 {
+                return Ok(128 + SIGNAL.load(Ordering::SeqCst));
             }
             for input in &view.graph.snapshot.inputs {
                 watch.register(input)?;
@@ -213,14 +254,28 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
                 );
             }
             if let Some(exit) = child.try_wait().map_err(|_| injection_error())? {
-                status = Some(exit);
-                tracing::debug!(action="child_exit", status=?exit, "Child exited");
+                if status.is_none() {
+                    status = Some(exit);
+                    root_exited_at = Some(Instant::now());
+                    tracing::debug!(action="child_exit", status=?exit, "Child exited");
+                }
                 if !ready.is_file() {
                     return Err(Error::new(
                         Code::PnportInjectionFailed,
                         "The executable did not initialize native interception; its result is not \
                          a virtualized run.",
                     ));
+                }
+                if pending_launches(&view.session)? {
+                    if root_exited_at.is_some_and(|at| at.elapsed() > Duration::from_secs(5)) {
+                        return Err(Error::new(
+                            Code::PnportInjectionFailed,
+                            "A child executable did not acknowledge native injection; its trace \
+                             is incomplete.",
+                        ));
+                    }
+                    std::thread::sleep(Duration::from_millis(100));
+                    continue;
                 }
                 return Ok(exit_code(exit));
             }
@@ -422,5 +477,14 @@ __attribute__((constructor)) static void start(void) {
             fs::read_dir(view.session.join("starting")).unwrap().count(),
             1
         );
+    }
+
+    #[test]
+    fn unacknowledged_descendant_prevents_a_complete_result() {
+        let (_root, mut view, executable) = fixture();
+        fs::create_dir(view.session.join("pending")).unwrap();
+        fs::write(view.session.join("pending/pnport-unacknowledged"), b"").unwrap();
+        let result = run(&mut view, &artifact().unwrap(), &executable, &[]);
+        assert_eq!(result.unwrap_err().code, Code::PnportInjectionFailed);
     }
 }
