@@ -289,3 +289,39 @@ message DiscoverHarnessesResponse {
   string request_id = 3;
   bool replayed = 4;
 }
+
+// Write-only account credentials. Workers cannot invoke this owner/client API.
+service AccountService {
+  rpc ConnectAccount(ConnectAccountRequest) returns (ConnectAccountResponse);
+  rpc DisconnectAccount(DisconnectAccountRequest) returns (DisconnectAccountResponse);
+  rpc GetAccountStatus(GetAccountStatusRequest) returns (GetAccountStatusResponse);
+}
+message ConnectAccountRequest {
+  Mutation mutation = 1;
+  // Bounded credential bytes, never included in receipts or ordinary output.
+  bytes api_key = 2;
+  // Explicit selection for a provider configured with keyless local authentication.
+  bool keyless = 3;
+}
+message ConnectAccountResponse {
+  Resource account = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message DisconnectAccountRequest {
+  Mutation mutation = 1;
+}
+message DisconnectAccountResponse {
+  Resource account = 1;
+  string request_id = 2;
+  bool replayed = 3;
+  // Accepted disconnection remains authoritative if native cleanup needs retry.
+  // Closed domain.Error JSON; never raw OS/provider text or credential material.
+  bytes cleanup_problem_json = 4;
+}
+message GetAccountStatusRequest {
+  string id = 1;
+}
+message GetAccountStatusResponse {
+  Resource account = 1;
+}

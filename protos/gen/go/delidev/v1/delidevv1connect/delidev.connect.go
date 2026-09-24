@@ -31,6 +31,8 @@ const (
 	DeviceServiceName = "delidev.v1.DeviceService"
 	// WorkerServiceName is the fully-qualified name of the WorkerService service.
 	WorkerServiceName = "delidev.v1.WorkerService"
+	// AccountServiceName is the fully-qualified name of the AccountService service.
+	AccountServiceName = "delidev.v1.AccountService"
 )
 
 // These constants are the fully-qualified names of the RPCs defined in this package. They're
@@ -95,6 +97,15 @@ const (
 	// WorkerServiceDiscoverHarnessesProcedure is the fully-qualified name of the WorkerService's
 	// DiscoverHarnesses RPC.
 	WorkerServiceDiscoverHarnessesProcedure = "/delidev.v1.WorkerService/DiscoverHarnesses"
+	// AccountServiceConnectAccountProcedure is the fully-qualified name of the AccountService's
+	// ConnectAccount RPC.
+	AccountServiceConnectAccountProcedure = "/delidev.v1.AccountService/ConnectAccount"
+	// AccountServiceDisconnectAccountProcedure is the fully-qualified name of the AccountService's
+	// DisconnectAccount RPC.
+	AccountServiceDisconnectAccountProcedure = "/delidev.v1.AccountService/DisconnectAccount"
+	// AccountServiceGetAccountStatusProcedure is the fully-qualified name of the AccountService's
+	// GetAccountStatus RPC.
+	AccountServiceGetAccountStatusProcedure = "/delidev.v1.AccountService/GetAccountStatus"
 )
 
 // SystemServiceClient is a client for the delidev.v1.SystemService service.
@@ -809,4 +820,126 @@ func (UnimplementedWorkerServiceHandler) InspectRepository(context.Context, *con
 
 func (UnimplementedWorkerServiceHandler) DiscoverHarnesses(context.Context, *connect.Request[v1.DiscoverHarnessesRequest]) (*connect.Response[v1.DiscoverHarnessesResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.DiscoverHarnesses is not implemented"))
+}
+
+// AccountServiceClient is a client for the delidev.v1.AccountService service.
+type AccountServiceClient interface {
+	ConnectAccount(context.Context, *connect.Request[v1.ConnectAccountRequest]) (*connect.Response[v1.ConnectAccountResponse], error)
+	DisconnectAccount(context.Context, *connect.Request[v1.DisconnectAccountRequest]) (*connect.Response[v1.DisconnectAccountResponse], error)
+	GetAccountStatus(context.Context, *connect.Request[v1.GetAccountStatusRequest]) (*connect.Response[v1.GetAccountStatusResponse], error)
+}
+
+// NewAccountServiceClient constructs a client for the delidev.v1.AccountService service. By
+// default, it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses,
+// and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the
+// connect.WithGRPC() or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewAccountServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) AccountServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	accountServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("AccountService").Methods()
+	return &accountServiceClient{
+		connectAccount: connect.NewClient[v1.ConnectAccountRequest, v1.ConnectAccountResponse](
+			httpClient,
+			baseURL+AccountServiceConnectAccountProcedure,
+			connect.WithSchema(accountServiceMethods.ByName("ConnectAccount")),
+			connect.WithClientOptions(opts...),
+		),
+		disconnectAccount: connect.NewClient[v1.DisconnectAccountRequest, v1.DisconnectAccountResponse](
+			httpClient,
+			baseURL+AccountServiceDisconnectAccountProcedure,
+			connect.WithSchema(accountServiceMethods.ByName("DisconnectAccount")),
+			connect.WithClientOptions(opts...),
+		),
+		getAccountStatus: connect.NewClient[v1.GetAccountStatusRequest, v1.GetAccountStatusResponse](
+			httpClient,
+			baseURL+AccountServiceGetAccountStatusProcedure,
+			connect.WithSchema(accountServiceMethods.ByName("GetAccountStatus")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// accountServiceClient implements AccountServiceClient.
+type accountServiceClient struct {
+	connectAccount    *connect.Client[v1.ConnectAccountRequest, v1.ConnectAccountResponse]
+	disconnectAccount *connect.Client[v1.DisconnectAccountRequest, v1.DisconnectAccountResponse]
+	getAccountStatus  *connect.Client[v1.GetAccountStatusRequest, v1.GetAccountStatusResponse]
+}
+
+// ConnectAccount calls delidev.v1.AccountService.ConnectAccount.
+func (c *accountServiceClient) ConnectAccount(ctx context.Context, req *connect.Request[v1.ConnectAccountRequest]) (*connect.Response[v1.ConnectAccountResponse], error) {
+	return c.connectAccount.CallUnary(ctx, req)
+}
+
+// DisconnectAccount calls delidev.v1.AccountService.DisconnectAccount.
+func (c *accountServiceClient) DisconnectAccount(ctx context.Context, req *connect.Request[v1.DisconnectAccountRequest]) (*connect.Response[v1.DisconnectAccountResponse], error) {
+	return c.disconnectAccount.CallUnary(ctx, req)
+}
+
+// GetAccountStatus calls delidev.v1.AccountService.GetAccountStatus.
+func (c *accountServiceClient) GetAccountStatus(ctx context.Context, req *connect.Request[v1.GetAccountStatusRequest]) (*connect.Response[v1.GetAccountStatusResponse], error) {
+	return c.getAccountStatus.CallUnary(ctx, req)
+}
+
+// AccountServiceHandler is an implementation of the delidev.v1.AccountService service.
+type AccountServiceHandler interface {
+	ConnectAccount(context.Context, *connect.Request[v1.ConnectAccountRequest]) (*connect.Response[v1.ConnectAccountResponse], error)
+	DisconnectAccount(context.Context, *connect.Request[v1.DisconnectAccountRequest]) (*connect.Response[v1.DisconnectAccountResponse], error)
+	GetAccountStatus(context.Context, *connect.Request[v1.GetAccountStatusRequest]) (*connect.Response[v1.GetAccountStatusResponse], error)
+}
+
+// NewAccountServiceHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewAccountServiceHandler(svc AccountServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	accountServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("AccountService").Methods()
+	accountServiceConnectAccountHandler := connect.NewUnaryHandler(
+		AccountServiceConnectAccountProcedure,
+		svc.ConnectAccount,
+		connect.WithSchema(accountServiceMethods.ByName("ConnectAccount")),
+		connect.WithHandlerOptions(opts...),
+	)
+	accountServiceDisconnectAccountHandler := connect.NewUnaryHandler(
+		AccountServiceDisconnectAccountProcedure,
+		svc.DisconnectAccount,
+		connect.WithSchema(accountServiceMethods.ByName("DisconnectAccount")),
+		connect.WithHandlerOptions(opts...),
+	)
+	accountServiceGetAccountStatusHandler := connect.NewUnaryHandler(
+		AccountServiceGetAccountStatusProcedure,
+		svc.GetAccountStatus,
+		connect.WithSchema(accountServiceMethods.ByName("GetAccountStatus")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/delidev.v1.AccountService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case AccountServiceConnectAccountProcedure:
+			accountServiceConnectAccountHandler.ServeHTTP(w, r)
+		case AccountServiceDisconnectAccountProcedure:
+			accountServiceDisconnectAccountHandler.ServeHTTP(w, r)
+		case AccountServiceGetAccountStatusProcedure:
+			accountServiceGetAccountStatusHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedAccountServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedAccountServiceHandler struct{}
+
+func (UnimplementedAccountServiceHandler) ConnectAccount(context.Context, *connect.Request[v1.ConnectAccountRequest]) (*connect.Response[v1.ConnectAccountResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.AccountService.ConnectAccount is not implemented"))
+}
+
+func (UnimplementedAccountServiceHandler) DisconnectAccount(context.Context, *connect.Request[v1.DisconnectAccountRequest]) (*connect.Response[v1.DisconnectAccountResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.AccountService.DisconnectAccount is not implemented"))
+}
+
+func (UnimplementedAccountServiceHandler) GetAccountStatus(context.Context, *connect.Request[v1.GetAccountStatusRequest]) (*connect.Response[v1.GetAccountStatusResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.AccountService.GetAccountStatus is not implemented"))
 }

@@ -76,7 +76,7 @@ func RouteAccount(agentID ID, agent Agent, model Model, project *Project, accoun
 			c.Eligibility = IncompatibleAccount
 		case !account.Enabled:
 			c.Eligibility = DisabledAccount
-		case account.Health != AccountReady:
+		case account.Health != AccountReady || account.Connection == nil || account.Removal != nil:
 			c.Eligibility = UnauthenticatedAccount
 		case account.ConfirmedExhausted:
 			c.Eligibility = ExhaustedAccount

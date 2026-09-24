@@ -165,6 +165,13 @@ func (s *Service) SaveConfiguration(ctx context.Context, req *connect.Request[pb
 	if err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
+	if kind == domain.AccountKind {
+		unlock, err := s.lockAccounts(ctx)
+		if err != nil {
+			return nil, rpc.Error(err, correlation)
+		}
+		defer unlock()
+	}
 	result, err := SaveConfiguration(ctx, s.Store, ConfigurationMutation{RequestID: domain.ID(req.Msg.Mutation.RequestId), ID: domain.ID(req.Msg.Mutation.Id), ExpectedRevision: req.Msg.Mutation.ExpectedRevision, Kind: kind, Document: req.Msg.DocumentJson})
 	if err != nil {
 		return nil, rpc.Error(err, correlation)
@@ -266,6 +273,39 @@ func (s *Service) DeleteConfiguration(ctx context.Context, req *connect.Request[
 		Revision uint64      `json:"revision"`
 		Kind     domain.Kind `json:"kind"`
 	}{meta.Id, meta.ExpectedRevision, kind}
+	if kind == domain.AccountKind {
+		unlock, err := s.lockAccounts(ctx)
+		if err != nil {
+			return nil, rpc.Error(err, correlation)
+		}
+		defer unlock()
+		_, replayed, err := s.Store.Replay(ctx, domain.ID(meta.RequestId), "configuration.delete", input)
+		if err != nil {
+			return nil, rpc.Error(err, correlation)
+		}
+		if !replayed {
+			err = s.Store.Read(ctx, func(tx *store.Tx) error {
+				if err := tx.Authorize(); err != nil {
+					return err
+				}
+				return validateDeletion(tx, kind, domain.ID(meta.Id))
+			})
+			if err != nil {
+				return nil, rpc.Error(err, correlation)
+			}
+			vault, err := s.secrets()
+			if err != nil {
+				return nil, rpc.Error(err, correlation)
+			}
+			refs, err := vault.UnremovedReferences(ctx, domain.ID(meta.Id))
+			if err != nil {
+				return nil, rpc.Error(err, correlation)
+			}
+			if len(refs) != 0 {
+				return nil, rpc.Error(domain.Fail(domain.Conflict, "The account retains protected credential intents.", "Disconnect the account and complete credential cleanup before deleting it."), correlation)
+			}
+		}
+	}
 	result, err := s.Store.Mutate(ctx, domain.ID(meta.RequestId), "configuration.delete", input, func(tx *store.Tx) (any, error) {
 		if err := validateDeletion(tx, kind, domain.ID(meta.Id)); err != nil {
 			return nil, err
@@ -298,7 +338,7 @@ func validateDeletion(tx *store.Tx, kind domain.Kind, id domain.ID) error {
 		if err != nil {
 			return err
 		}
-		if account.Health != domain.AccountDisconnected {
+		if account.Health != domain.AccountDisconnected || account.Connection != nil || account.Removal != nil {
 			return domain.Fail(domain.Conflict, "Connected accounts require credential and device cleanup before deletion.", "Disconnect the account and complete its protected-resource cleanup first.")
 		}
 	}

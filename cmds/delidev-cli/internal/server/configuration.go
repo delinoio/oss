@@ -216,7 +216,7 @@ func validateRelationships(tx *store.Tx, kind domain.Kind, id domain.ID, expecte
 			return domain.Fail(domain.InvalidArgument, "Account type does not match the provider.", "Use the provider's authentication type.")
 		}
 		if expected == 0 {
-			if v.Health != domain.AccountDisconnected || len(v.Quota) > 0 || v.ConfirmedExhausted {
+			if v.Health != domain.AccountDisconnected || len(v.Quota) > 0 || v.ConfirmedExhausted || v.Connection != nil || v.Removal != nil {
 				return domain.Fail(domain.InvalidArgument, "New account health must be disconnected.", "Use account connect/login to validate credentials and quota.")
 			}
 		} else {
@@ -229,15 +229,19 @@ func validateRelationships(tx *store.Tx, kind domain.Kind, id domain.ID, expecte
 				return err
 			}
 			oldObservations, _ := json.Marshal(struct {
-				Health    domain.AccountHealth
-				Quota     []domain.QuotaWindow
-				Exhausted bool
-			}{old.Health, old.Quota, old.ConfirmedExhausted})
+				Health     domain.AccountHealth
+				Quota      []domain.QuotaWindow
+				Exhausted  bool
+				Connection *domain.AccountConnection
+				Removal    *domain.AccountRemoval
+			}{old.Health, old.Quota, old.ConfirmedExhausted, old.Connection, old.Removal})
 			newObservations, _ := json.Marshal(struct {
-				Health    domain.AccountHealth
-				Quota     []domain.QuotaWindow
-				Exhausted bool
-			}{v.Health, v.Quota, v.ConfirmedExhausted})
+				Health     domain.AccountHealth
+				Quota      []domain.QuotaWindow
+				Exhausted  bool
+				Connection *domain.AccountConnection
+				Removal    *domain.AccountRemoval
+			}{v.Health, v.Quota, v.ConfirmedExhausted, v.Connection, v.Removal})
 			if old.ProviderID != v.ProviderID || old.Type != v.Type || string(oldObservations) != string(newObservations) {
 				return domain.Fail(domain.InvalidArgument, "Account identity and observed health are server-owned.", "Use login/connect/refresh to update authentication or quota.")
 			}

@@ -220,22 +220,62 @@ func (s *Store) signal() {
 	s.notify = make(chan struct{})
 }
 
+func mutationDigest(id domain.ID, operation string, input any) (string, error) {
+	if err := id.Validate(); err != nil {
+		return "", err
+	}
+	if err := domain.Text(operation, "operation", 128, true); err != nil {
+		return "", err
+	}
+	body, err := json.Marshal(input)
+	if err != nil || len(body) > 1<<20 {
+		return "", domain.Fail(domain.InvalidArgument, "Invalid mutation document.", "Provide at most 1 MiB of JSON.")
+	}
+	hash := sha256.Sum256(append([]byte(operation+"\x00"), body...))
+	return hex.EncodeToString(hash[:]), nil
+}
+
+// Replay checks an already accepted mutation without reserving an absent ID or
+// performing side effects. Native/file coordinators use it before staging work;
+// Mutate still rechecks the receipt and authorization at the commit boundary.
+func (s *Store) Replay(ctx context.Context, id domain.ID, operation string, input any) (Result, bool, error) {
+	digest, err := mutationDigest(id, operation, input)
+	if err != nil {
+		return Result{}, false, err
+	}
+	var result Result
+	found := false
+	err = s.Read(ctx, func(tx *Tx) error {
+		if err := tx.Authorize(); err != nil {
+			return err
+		}
+		var savedHash string
+		var saved []byte
+		err := tx.tx.QueryRowContext(ctx, "SELECT digest,result FROM receipts WHERE id=?", id).Scan(&savedHash, &saved)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return storageError(err)
+		}
+		if savedHash != digest {
+			return domain.Fail(domain.Conflict, "The request ID was already used for different input.", "Retry the original command unchanged or use a new request ID.")
+		}
+		found = true
+		result = Result{RequestID: id, Data: saved, Replayed: true}
+		return nil
+	})
+	return result, found, err
+}
+
 // Mutate commits state, metadata-only events, and a durable receipt together.
 // Request IDs are globally unique within the data scope and bound to the exact
 // canonical command. A failed transaction does not reserve its request identity.
 func (s *Store) Mutate(ctx context.Context, id domain.ID, operation string, input any, apply func(*Tx) (any, error)) (Result, error) {
-	if err := id.Validate(); err != nil {
+	digest, err := mutationDigest(id, operation, input)
+	if err != nil {
 		return Result{}, err
 	}
-	if err := domain.Text(operation, "operation", 128, true); err != nil {
-		return Result{}, err
-	}
-	body, err := json.Marshal(input)
-	if err != nil || len(body) > 1<<20 {
-		return Result{}, domain.Fail(domain.InvalidArgument, "Invalid mutation document.", "Provide at most 1 MiB of JSON.")
-	}
-	hash := sha256.Sum256(append([]byte(operation+"\x00"), body...))
-	digest := hex.EncodeToString(hash[:])
 	s.gate.RLock()
 	defer s.gate.RUnlock()
 	tx, err := s.db.BeginTx(ctx, nil)

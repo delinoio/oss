@@ -460,6 +460,15 @@ func (v *Vault) Delete(ctx context.Context, r Ref) (err error) {
 // deleted references. It never enumerates native credentials. Reconciliation
 // compares these references to server state before deleting unused material.
 func (v *Vault) References(ctx context.Context, owner domain.ID) ([]Ref, error) {
+	return v.references(ctx, owner, true)
+}
+
+// UnremovedReferences is a metadata-only deletion guard. Completed tombstones
+// remain durable but no longer block removal of their disconnected owner.
+func (v *Vault) UnremovedReferences(ctx context.Context, owner domain.ID) ([]Ref, error) {
+	return v.references(ctx, owner, false)
+}
+func (v *Vault) references(ctx context.Context, owner domain.ID, includeDeleted bool) ([]Ref, error) {
 	if err := owner.Validate(); err != nil {
 		return nil, err
 	}
@@ -504,7 +513,9 @@ func (v *Vault) References(ctx context.Context, owner domain.ID) ([]Ref, error) 
 		if _, err = v.read(rec.Ref); err != nil {
 			return nil, safe(err)
 		}
-		out = append(out, rec.Ref)
+		if includeDeleted || rec.State != deleted {
+			out = append(out, rec.Ref)
+		}
 	}
 	return out, nil
 }

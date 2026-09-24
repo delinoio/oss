@@ -2,7 +2,7 @@
 
 ## Scope and ownership
 
-Issue #964 and [the CLI contract](cmds-delidev-contract.md) require authoritative credentials on the server, outside SQLite, transcripts, snapshots, ordinary RPC responses, logs, Worker environments and harness configuration. `cmds/delidev-cli/internal/credentials` implements the protected storage primitive. Account login/connect/disconnect, provider validation, execution revocation, proxy use and deletion coordination remain separate work; this primitive alone does not connect an account or grant execution readiness. No CLI/RPC secret read operation is exposed.
+Issue #964 and [the CLI contract](cmds-delidev-contract.md) require authoritative credentials on the server, outside SQLite, transcripts, snapshots, ordinary RPC responses, logs, Worker environments and harness configuration. `cmds/delidev-cli/internal/credentials` implements the protected storage primitive. API connect/disconnect and cleanup now use this primitive through the [account lifecycle contract](cmds-delidev-accounts-contract.md). Subscription login, provider validation, execution revocation, proxy use and full deletion/restore coordination remain separate work; this primitive alone does not grant execution readiness. No CLI/RPC secret read operation is exposed.
 
 Only an authenticated server lifecycle operation may use the primitive. Callers own account revision checks, request receipt coordination and authorization revalidation. They must retain staged references after an uncertain database commit, compare them with authoritative state during reconciliation, and never speculate that a failed response means no credential was saved. A SQLite backup or non-secret configuration export is not a credential backup.
 
@@ -23,7 +23,7 @@ Each reference accepts 1–65,536 bytes. Its native OS record contains exactly 6
 
 Native write acceptance and file publication are separate crash boundaries. Cancellation or an OS error may leave a staged intent and native key; these survive for exact retry. Deletion records its marker before removing native material and reports completion only after the final marker is durable. If a saved native key disappears, sealed reads/writes fail explicitly instead of silently replacing an account credential. Malformed records, altered authenticated context, wrong keys, ambiguous native matches and invalid material lengths also fail closed.
 
-Owner reference enumeration reads only this private vault's metadata, including staged/deleting/deleted references. It never lists a user's OS credentials. Interrupted atomic-write scratch files are not promoted by filename guesses. Deletion markers must participate in the future restore/deletion coordinator; restoring old state must never authorize a removed credential.
+Owner reference enumeration reads only this private vault's metadata, including staged/deleting/deleted references. A separate unremoved-reference query excludes completed tombstones for account deletion and cleanup guards. It never lists a user's OS credentials. Interrupted atomic-write scratch files are not promoted by filename guesses. Deletion markers must participate in the future restore/deletion coordinator; restoring old state must never authorize a removed credential.
 
 Returned secret bytes belong to their caller and must be cleared promptly after bounded use. Buffer clearing reduces memory retention; it does not promise an OS sandbox, locked memory or protection against unrestricted same-user access to the server process.
 

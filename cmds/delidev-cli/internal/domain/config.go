@@ -422,6 +422,7 @@ type AccountHealth string
 
 const (
 	AccountDisconnected AccountHealth = "disconnected"
+	AccountUnverified   AccountHealth = "unverified"
 	AccountReady        AccountHealth = "ready"
 	AccountExpired      AccountHealth = "expired"
 	AccountRevoked      AccountHealth = "revoked"
@@ -447,16 +448,30 @@ type QuotaWindow struct {
 	ObservedAt      time.Time        `json:"observed_at"`
 	State           ObservationState `json:"state"`
 }
+type AccountConnection struct {
+	ID             ID             `json:"id"`
+	Authentication Authentication `json:"authentication"`
+	ConnectedAt    time.Time      `json:"connected_at"`
+}
+
+// Removal is independent of health: disconnected immediately blocks execution,
+// while this marker keeps native deletion retryable and blocks reconnection.
+type AccountRemoval struct {
+	RequestID        ID     `json:"request_id"`
+	ExpectedRevision uint64 `json:"expected_revision"`
+}
 type Account struct {
-	Alias                 string        `json:"alias"`
-	ProviderID            ID            `json:"provider_id"`
-	Type                  AccountType   `json:"type"`
-	Enabled               bool          `json:"enabled"`
-	ExcludeAutomatic      bool          `json:"exclude_automatic"`
-	RecoveryNotifications bool          `json:"recovery_notifications"`
-	Health                AccountHealth `json:"health"`
-	Quota                 []QuotaWindow `json:"quota"`
-	ConfirmedExhausted    bool          `json:"confirmed_exhausted"`
+	Alias                 string             `json:"alias"`
+	ProviderID            ID                 `json:"provider_id"`
+	Type                  AccountType        `json:"type"`
+	Enabled               bool               `json:"enabled"`
+	ExcludeAutomatic      bool               `json:"exclude_automatic"`
+	RecoveryNotifications bool               `json:"recovery_notifications"`
+	Health                AccountHealth      `json:"health"`
+	Quota                 []QuotaWindow      `json:"quota"`
+	ConfirmedExhausted    bool               `json:"confirmed_exhausted"`
+	Connection            *AccountConnection `json:"connection,omitempty"`
+	Removal               *AccountRemoval    `json:"removal,omitempty"`
 }
 
 func (a Account) Validate() error {
@@ -469,8 +484,33 @@ func (a Account) Validate() error {
 	if a.Type != APIAccount && a.Type != SubscriptionAccount {
 		return Fail(InvalidArgument, "Unknown account type.", "Select api or subscription.")
 	}
-	if !slices.Contains([]AccountHealth{AccountDisconnected, AccountReady, AccountExpired, AccountRevoked, AccountFailed}, a.Health) {
+	if !slices.Contains([]AccountHealth{AccountDisconnected, AccountUnverified, AccountReady, AccountExpired, AccountRevoked, AccountFailed}, a.Health) {
 		return Fail(InvalidArgument, "Unknown account health.", "Refresh account health through the server.")
+	}
+	if a.Connection != nil {
+		if err := a.Connection.ID.Validate(); err != nil {
+			return err
+		}
+		if a.Connection.ConnectedAt.IsZero() || a.Health == AccountDisconnected || a.Removal != nil {
+			return Fail(InvalidArgument, "Invalid account connection state.", "Use the account lifecycle operations.")
+		}
+		if !slices.Contains([]Authentication{BearerAuth, APIKeyAuth, KeylessAuth, SubscriptionAuth}, a.Connection.Authentication) {
+			return Fail(InvalidArgument, "Invalid account authentication mode.", "Use the provider's authentication mode.")
+		}
+	}
+	if (a.Health == AccountUnverified || a.Health == AccountReady) && a.Connection == nil {
+		return Fail(InvalidArgument, "Authenticated account states require a connection.", "Connect the account through its lifecycle operation.")
+	}
+	if a.Removal != nil {
+		if err := a.Removal.RequestID.Validate(); err != nil {
+			return err
+		}
+		if a.Removal.ExpectedRevision == 0 {
+			return Fail(InvalidArgument, "Credential removal requires its original revision.", "Use the account disconnect operation.")
+		}
+		if a.Health != AccountDisconnected {
+			return Fail(InvalidArgument, "Credential removal requires a disconnected account.", "Disconnect the account before removing protected resources.")
+		}
 	}
 	return nil
 }

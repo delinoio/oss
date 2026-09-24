@@ -108,7 +108,9 @@ func TestRevokedPrincipalCannotCommitOrReplayReceipt(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, req := range []domain.ID{request, domain.NewID()} {
-		_, err := s.Mutate(actor, req, "create", nil, action)
+		_, _, err := s.Replay(actor, req, "create", nil)
+		assertCode(t, err, domain.Unauthenticated)
+		_, err = s.Mutate(actor, req, "create", nil, action)
 		assertCode(t, err, domain.Unauthenticated)
 	}
 	if calls != 1 {

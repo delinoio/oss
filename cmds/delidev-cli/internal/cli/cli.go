@@ -47,6 +47,7 @@ type client struct {
 	configuration delidevv1connect.ConfigurationServiceClient
 	devices       delidevv1connect.DeviceServiceClient
 	workers       delidevv1connect.WorkerServiceClient
+	accounts      delidevv1connect.AccountServiceClient
 	endpoint      string
 	token         string
 }
@@ -116,6 +117,14 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		value, err := deviceLocal(ctx, o, command, rest, streams)
 		return emit(value, err)
 	}
+	if command == "account" && len(rest) > 0 && rest[0] == "connect" && o.tokenStdin {
+		for _, arg := range rest[1:] {
+			name, _, _ := strings.Cut(arg, "=")
+			if name == "--key-stdin" {
+				return emit(nil, domain.Fail(domain.InvalidArgument, "Server authentication and the API key cannot share stdin.", "Use the owner scope or pair a client before connecting an API key."))
+			}
+		}
+	}
 	c, err := connectClient(o, streams.In)
 	if err != nil {
 		return emit(nil, err)
@@ -127,6 +136,14 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		ctx = bounded
 	}
 	switch command {
+	case "account":
+		if len(rest) > 0 && (rest[0] == "connect" || rest[0] == "disconnect" || rest[0] == "status") {
+			if rest[0] != "status" {
+				ensureRequest(&o)
+			}
+			value, err := accountCommand(ctx, c, o, rest, streams)
+			return emit(value, err)
+		}
 	case "machine":
 		if len(rest) > 0 && rest[0] == "discover" {
 			ensureRequest(&o)
@@ -450,7 +467,7 @@ func connectClient(o options, input io.Reader) (client, error) {
 	}
 	httpClient, transport := rpc.HTTPClient()
 	opts := []connect.ClientOption{connect.WithReadMaxBytes(5 << 20), connect.WithSendMaxBytes(2 << 20)}
-	return client{transport: transport, endpoint: endpoint, devices: delidevv1connect.NewDeviceServiceClient(httpClient, endpoint, opts...), workers: delidevv1connect.NewWorkerServiceClient(httpClient, endpoint, opts...), system: delidevv1connect.NewSystemServiceClient(httpClient, endpoint, opts...), resources: delidevv1connect.NewResourceServiceClient(httpClient, endpoint, opts...), configuration: delidevv1connect.NewConfigurationServiceClient(httpClient, endpoint, opts...), token: token}, nil
+	return client{transport: transport, endpoint: endpoint, accounts: delidevv1connect.NewAccountServiceClient(httpClient, endpoint, opts...), devices: delidevv1connect.NewDeviceServiceClient(httpClient, endpoint, opts...), workers: delidevv1connect.NewWorkerServiceClient(httpClient, endpoint, opts...), system: delidevv1connect.NewSystemServiceClient(httpClient, endpoint, opts...), resources: delidevv1connect.NewResourceServiceClient(httpClient, endpoint, opts...), configuration: delidevv1connect.NewConfigurationServiceClient(httpClient, endpoint, opts...), token: token}, nil
 }
 func readDocument(path string, input io.Reader) ([]byte, error) {
 	reader := input
@@ -539,6 +556,9 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   worker start --worker-dir PATH
   repository inspect --machine-id ID --path PATH [--preferred-remote NAME] [--wait]
   machine discover --id ID --revision N [--input FILE|-] [--protocol] [--wait]
+  account connect --id ID --revision N (--key-stdin | --keyless)
+  account disconnect --id ID --revision N
+  account status --id ID
   backup create
   settings defaults
   KIND list [--limit 50] [--page-token TOKEN] [--project-id ID] [--session-id ID]

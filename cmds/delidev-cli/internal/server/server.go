@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
@@ -35,6 +36,7 @@ type Config struct {
 	TLSKey         string
 	AllowedOrigins []string
 	Logger         *slog.Logger
+	accountSecrets accountSecrets
 }
 type Endpoint struct {
 	URL             string    `json:"url"`
@@ -51,16 +53,21 @@ type Service struct {
 	delidevv1connect.UnimplementedConfigurationServiceHandler
 	delidevv1connect.UnimplementedDeviceServiceHandler
 	delidevv1connect.UnimplementedWorkerServiceHandler
-	Store         *store.Store
-	Identity      security.Identity
-	Endpoint      Endpoint
-	logger        *slog.Logger
-	stop          context.CancelFunc
-	stopping      atomic.Bool
-	connectionsMu sync.Mutex
-	connections   map[domain.ID]map[domain.ID]context.CancelFunc
-	pairAttempts  map[string]attemptWindow
-	workerStreams map[domain.ID]workerStream
+	delidevv1connect.UnimplementedAccountServiceHandler
+	accountOnce    sync.Once
+	accountGate    chan struct{}
+	accountSecrets accountSecrets
+	ownedVault     *credentials.Vault
+	Store          *store.Store
+	Identity       security.Identity
+	Endpoint       Endpoint
+	logger         *slog.Logger
+	stop           context.CancelFunc
+	stopping       atomic.Bool
+	connectionsMu  sync.Mutex
+	connections    map[domain.ID]map[domain.ID]context.CancelFunc
+	pairAttempts   map[string]attemptWindow
+	workerStreams  map[domain.ID]workerStream
 }
 
 func LoadEndpoint(root string) (Endpoint, error) {
@@ -147,7 +154,8 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	}
 	child, stop := context.WithCancel(ctx)
 	defer stop()
-	service := &Service{Store: state, Identity: identity, Endpoint: Endpoint{URL: protocol + "://" + listener.Addr().String(), ServerID: identity.ServerID, Version: rpc.Version, ProtocolVersion: rpc.ProtocolVersion, StartedAt: time.Now().UTC()}, logger: config.Logger, stop: stop}
+	service := &Service{Store: state, Identity: identity, Endpoint: Endpoint{URL: protocol + "://" + listener.Addr().String(), ServerID: identity.ServerID, Version: rpc.Version, ProtocolVersion: rpc.ProtocolVersion, StartedAt: time.Now().UTC()}, logger: config.Logger, stop: stop, accountSecrets: config.accountSecrets}
+	defer service.closeAccountSecrets()
 	handler := service.Handler(config.AllowedOrigins, ip.IsLoopback())
 	httpServer := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10, BaseContext: func(net.Listener) context.Context { return child }, ErrorLog: slog.NewLogLogger(config.Logger.Handler(), slog.LevelWarn)}
 	raw, err := json.Marshal(service.Endpoint)
@@ -179,6 +187,9 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 		}
 		<-done
 	}
+	if err := service.closeAccountSecrets(); err != nil {
+		return domain.SafeError(err)
+	}
 	config.Logger.Info("server_stopped", "server_id", identity.ServerID)
 	return nil
 }
@@ -191,6 +202,7 @@ func (s *Service) Handler(origins []string, loopback bool) http.Handler {
 	mux.Handle(delidevv1connect.NewConfigurationServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewDeviceServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewWorkerServiceHandler(s, options...))
+	mux.Handle(delidevv1connect.NewAccountServiceHandler(s, options...))
 	allowed := map[string]bool{}
 	for _, origin := range origins {
 		allowed[origin] = true

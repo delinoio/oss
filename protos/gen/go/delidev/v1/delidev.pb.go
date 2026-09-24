@@ -2746,6 +2746,330 @@ func (x *DiscoverHarnessesResponse) GetReplayed() bool {
 	return false
 }
 
+type ConnectAccountRequest struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Mutation *Mutation              `protobuf:"bytes,1,opt,name=mutation,proto3" json:"mutation,omitempty"`
+	// Bounded credential bytes, never included in receipts or ordinary output.
+	ApiKey []byte `protobuf:"bytes,2,opt,name=api_key,json=apiKey,proto3" json:"api_key,omitempty"`
+	// Explicit selection for a provider configured with keyless local authentication.
+	Keyless       bool `protobuf:"varint,3,opt,name=keyless,proto3" json:"keyless,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConnectAccountRequest) Reset() {
+	*x = ConnectAccountRequest{}
+	mi := &file_delidev_v1_delidev_proto_msgTypes[42]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConnectAccountRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConnectAccountRequest) ProtoMessage() {}
+
+func (x *ConnectAccountRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_delidev_proto_msgTypes[42]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConnectAccountRequest.ProtoReflect.Descriptor instead.
+func (*ConnectAccountRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{42}
+}
+
+func (x *ConnectAccountRequest) GetMutation() *Mutation {
+	if x != nil {
+		return x.Mutation
+	}
+	return nil
+}
+
+func (x *ConnectAccountRequest) GetApiKey() []byte {
+	if x != nil {
+		return x.ApiKey
+	}
+	return nil
+}
+
+func (x *ConnectAccountRequest) GetKeyless() bool {
+	if x != nil {
+		return x.Keyless
+	}
+	return false
+}
+
+type ConnectAccountResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Account       *Resource              `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"`
+	RequestId     string                 `protobuf:"bytes,2,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Replayed      bool                   `protobuf:"varint,3,opt,name=replayed,proto3" json:"replayed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConnectAccountResponse) Reset() {
+	*x = ConnectAccountResponse{}
+	mi := &file_delidev_v1_delidev_proto_msgTypes[43]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConnectAccountResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConnectAccountResponse) ProtoMessage() {}
+
+func (x *ConnectAccountResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_delidev_proto_msgTypes[43]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConnectAccountResponse.ProtoReflect.Descriptor instead.
+func (*ConnectAccountResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{43}
+}
+
+func (x *ConnectAccountResponse) GetAccount() *Resource {
+	if x != nil {
+		return x.Account
+	}
+	return nil
+}
+
+func (x *ConnectAccountResponse) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *ConnectAccountResponse) GetReplayed() bool {
+	if x != nil {
+		return x.Replayed
+	}
+	return false
+}
+
+type DisconnectAccountRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Mutation      *Mutation              `protobuf:"bytes,1,opt,name=mutation,proto3" json:"mutation,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DisconnectAccountRequest) Reset() {
+	*x = DisconnectAccountRequest{}
+	mi := &file_delidev_v1_delidev_proto_msgTypes[44]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DisconnectAccountRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DisconnectAccountRequest) ProtoMessage() {}
+
+func (x *DisconnectAccountRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_delidev_proto_msgTypes[44]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DisconnectAccountRequest.ProtoReflect.Descriptor instead.
+func (*DisconnectAccountRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{44}
+}
+
+func (x *DisconnectAccountRequest) GetMutation() *Mutation {
+	if x != nil {
+		return x.Mutation
+	}
+	return nil
+}
+
+type DisconnectAccountResponse struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Account   *Resource              `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"`
+	RequestId string                 `protobuf:"bytes,2,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Replayed  bool                   `protobuf:"varint,3,opt,name=replayed,proto3" json:"replayed,omitempty"`
+	// Accepted disconnection remains authoritative if native cleanup needs retry.
+	// Closed domain.Error JSON; never raw OS/provider text or credential material.
+	CleanupProblemJson []byte `protobuf:"bytes,4,opt,name=cleanup_problem_json,json=cleanupProblemJson,proto3" json:"cleanup_problem_json,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *DisconnectAccountResponse) Reset() {
+	*x = DisconnectAccountResponse{}
+	mi := &file_delidev_v1_delidev_proto_msgTypes[45]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DisconnectAccountResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DisconnectAccountResponse) ProtoMessage() {}
+
+func (x *DisconnectAccountResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_delidev_proto_msgTypes[45]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DisconnectAccountResponse.ProtoReflect.Descriptor instead.
+func (*DisconnectAccountResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{45}
+}
+
+func (x *DisconnectAccountResponse) GetAccount() *Resource {
+	if x != nil {
+		return x.Account
+	}
+	return nil
+}
+
+func (x *DisconnectAccountResponse) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *DisconnectAccountResponse) GetReplayed() bool {
+	if x != nil {
+		return x.Replayed
+	}
+	return false
+}
+
+func (x *DisconnectAccountResponse) GetCleanupProblemJson() []byte {
+	if x != nil {
+		return x.CleanupProblemJson
+	}
+	return nil
+}
+
+type GetAccountStatusRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetAccountStatusRequest) Reset() {
+	*x = GetAccountStatusRequest{}
+	mi := &file_delidev_v1_delidev_proto_msgTypes[46]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetAccountStatusRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetAccountStatusRequest) ProtoMessage() {}
+
+func (x *GetAccountStatusRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_delidev_proto_msgTypes[46]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetAccountStatusRequest.ProtoReflect.Descriptor instead.
+func (*GetAccountStatusRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{46}
+}
+
+func (x *GetAccountStatusRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type GetAccountStatusResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Account       *Resource              `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetAccountStatusResponse) Reset() {
+	*x = GetAccountStatusResponse{}
+	mi := &file_delidev_v1_delidev_proto_msgTypes[47]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetAccountStatusResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetAccountStatusResponse) ProtoMessage() {}
+
+func (x *GetAccountStatusResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_delidev_proto_msgTypes[47]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetAccountStatusResponse.ProtoReflect.Descriptor instead.
+func (*GetAccountStatusResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{47}
+}
+
+func (x *GetAccountStatusResponse) GetAccount() *Resource {
+	if x != nil {
+		return x.Account
+	}
+	return nil
+}
+
 var File_delidev_v1_delidev_proto protoreflect.FileDescriptor
 
 const file_delidev_v1_delidev_proto_rawDesc = "" +
@@ -2955,7 +3279,28 @@ const file_delidev_v1_delidev_proto_rawDesc = "" +
 	"\x03job\x18\x02 \x01(\v2\x14.delidev.v1.ResourceR\x03job\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x03 \x01(\tR\trequestId\x12\x1a\n" +
-	"\breplayed\x18\x04 \x01(\bR\breplayed*\xa2\x05\n" +
+	"\breplayed\x18\x04 \x01(\bR\breplayed\"|\n" +
+	"\x15ConnectAccountRequest\x120\n" +
+	"\bmutation\x18\x01 \x01(\v2\x14.delidev.v1.MutationR\bmutation\x12\x17\n" +
+	"\aapi_key\x18\x02 \x01(\fR\x06apiKey\x12\x18\n" +
+	"\akeyless\x18\x03 \x01(\bR\akeyless\"\x83\x01\n" +
+	"\x16ConnectAccountResponse\x12.\n" +
+	"\aaccount\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\aaccount\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x02 \x01(\tR\trequestId\x12\x1a\n" +
+	"\breplayed\x18\x03 \x01(\bR\breplayed\"L\n" +
+	"\x18DisconnectAccountRequest\x120\n" +
+	"\bmutation\x18\x01 \x01(\v2\x14.delidev.v1.MutationR\bmutation\"\xb8\x01\n" +
+	"\x19DisconnectAccountResponse\x12.\n" +
+	"\aaccount\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\aaccount\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x02 \x01(\tR\trequestId\x12\x1a\n" +
+	"\breplayed\x18\x03 \x01(\bR\breplayed\x120\n" +
+	"\x14cleanup_problem_json\x18\x04 \x01(\fR\x12cleanupProblemJson\")\n" +
+	"\x17GetAccountStatusRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"J\n" +
+	"\x18GetAccountStatusResponse\x12.\n" +
+	"\aaccount\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\aaccount*\xa2\x05\n" +
 	"\n" +
 	"EntityKind\x12\x1b\n" +
 	"\x17ENTITY_KIND_UNSPECIFIED\x10\x00\x12\x17\n" +
@@ -3021,7 +3366,11 @@ const file_delidev_v1_delidev_proto_rawDesc = "" +
 	"\n" +
 	"ReportWork\x12\x1d.delidev.v1.ReportWorkRequest\x1a\x1e.delidev.v1.ReportWorkResponse\x12`\n" +
 	"\x11InspectRepository\x12$.delidev.v1.InspectRepositoryRequest\x1a%.delidev.v1.InspectRepositoryResponse\x12`\n" +
-	"\x11DiscoverHarnesses\x12$.delidev.v1.DiscoverHarnessesRequest\x1a%.delidev.v1.DiscoverHarnessesResponseB<Z:github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1b\x06proto3"
+	"\x11DiscoverHarnesses\x12$.delidev.v1.DiscoverHarnessesRequest\x1a%.delidev.v1.DiscoverHarnessesResponse2\xaa\x02\n" +
+	"\x0eAccountService\x12W\n" +
+	"\x0eConnectAccount\x12!.delidev.v1.ConnectAccountRequest\x1a\".delidev.v1.ConnectAccountResponse\x12`\n" +
+	"\x11DisconnectAccount\x12$.delidev.v1.DisconnectAccountRequest\x1a%.delidev.v1.DisconnectAccountResponse\x12]\n" +
+	"\x10GetAccountStatus\x12#.delidev.v1.GetAccountStatusRequest\x1a$.delidev.v1.GetAccountStatusResponseB<Z:github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1b\x06proto3"
 
 var (
 	file_delidev_v1_delidev_proto_rawDescOnce sync.Once
@@ -3036,7 +3385,7 @@ func file_delidev_v1_delidev_proto_rawDescGZIP() []byte {
 }
 
 var file_delidev_v1_delidev_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_delidev_v1_delidev_proto_msgTypes = make([]protoimpl.MessageInfo, 42)
+var file_delidev_v1_delidev_proto_msgTypes = make([]protoimpl.MessageInfo, 48)
 var file_delidev_v1_delidev_proto_goTypes = []any{
 	(EntityKind)(0),                     // 0: delidev.v1.EntityKind
 	(EventAction)(0),                    // 1: delidev.v1.EventAction
@@ -3083,6 +3432,12 @@ var file_delidev_v1_delidev_proto_goTypes = []any{
 	(*InspectRepositoryResponse)(nil),   // 42: delidev.v1.InspectRepositoryResponse
 	(*DiscoverHarnessesRequest)(nil),    // 43: delidev.v1.DiscoverHarnessesRequest
 	(*DiscoverHarnessesResponse)(nil),   // 44: delidev.v1.DiscoverHarnessesResponse
+	(*ConnectAccountRequest)(nil),       // 45: delidev.v1.ConnectAccountRequest
+	(*ConnectAccountResponse)(nil),      // 46: delidev.v1.ConnectAccountResponse
+	(*DisconnectAccountRequest)(nil),    // 47: delidev.v1.DisconnectAccountRequest
+	(*DisconnectAccountResponse)(nil),   // 48: delidev.v1.DisconnectAccountResponse
+	(*GetAccountStatusRequest)(nil),     // 49: delidev.v1.GetAccountStatusRequest
+	(*GetAccountStatusResponse)(nil),    // 50: delidev.v1.GetAccountStatusResponse
 }
 var file_delidev_v1_delidev_proto_depIdxs = []int32{
 	0,  // 0: delidev.v1.Resource.kind:type_name -> delidev.v1.EntityKind
@@ -3116,49 +3471,60 @@ var file_delidev_v1_delidev_proto_depIdxs = []int32{
 	4,  // 28: delidev.v1.DiscoverHarnessesRequest.mutation:type_name -> delidev.v1.Mutation
 	3,  // 29: delidev.v1.DiscoverHarnessesResponse.machine:type_name -> delidev.v1.Resource
 	3,  // 30: delidev.v1.DiscoverHarnessesResponse.job:type_name -> delidev.v1.Resource
-	7,  // 31: delidev.v1.SystemService.GetStatus:input_type -> delidev.v1.GetStatusRequest
-	9,  // 32: delidev.v1.SystemService.StopServer:input_type -> delidev.v1.StopServerRequest
-	11, // 33: delidev.v1.SystemService.GetDoctor:input_type -> delidev.v1.GetDoctorRequest
-	13, // 34: delidev.v1.SystemService.CreateBackup:input_type -> delidev.v1.CreateBackupRequest
-	15, // 35: delidev.v1.ResourceService.GetResource:input_type -> delidev.v1.GetResourceRequest
-	17, // 36: delidev.v1.ResourceService.ListResources:input_type -> delidev.v1.ListResourcesRequest
-	19, // 37: delidev.v1.ResourceService.GetSnapshot:input_type -> delidev.v1.GetSnapshotRequest
-	21, // 38: delidev.v1.ResourceService.WatchEvents:input_type -> delidev.v1.WatchEventsRequest
-	23, // 39: delidev.v1.ConfigurationService.SaveConfiguration:input_type -> delidev.v1.SaveConfigurationRequest
-	25, // 40: delidev.v1.ConfigurationService.DeleteConfiguration:input_type -> delidev.v1.DeleteConfigurationRequest
-	27, // 41: delidev.v1.ConfigurationService.PreviewRouting:input_type -> delidev.v1.PreviewRoutingRequest
-	29, // 42: delidev.v1.DeviceService.CreatePairing:input_type -> delidev.v1.CreatePairingRequest
-	31, // 43: delidev.v1.DeviceService.PairDevice:input_type -> delidev.v1.PairDeviceRequest
-	33, // 44: delidev.v1.DeviceService.RevokeDevice:input_type -> delidev.v1.RevokeDeviceRequest
-	35, // 45: delidev.v1.WorkerService.AttachWorker:input_type -> delidev.v1.AttachWorkerRequest
-	37, // 46: delidev.v1.WorkerService.WatchWork:input_type -> delidev.v1.WatchWorkRequest
-	39, // 47: delidev.v1.WorkerService.ReportWork:input_type -> delidev.v1.ReportWorkRequest
-	41, // 48: delidev.v1.WorkerService.InspectRepository:input_type -> delidev.v1.InspectRepositoryRequest
-	43, // 49: delidev.v1.WorkerService.DiscoverHarnesses:input_type -> delidev.v1.DiscoverHarnessesRequest
-	8,  // 50: delidev.v1.SystemService.GetStatus:output_type -> delidev.v1.GetStatusResponse
-	10, // 51: delidev.v1.SystemService.StopServer:output_type -> delidev.v1.StopServerResponse
-	12, // 52: delidev.v1.SystemService.GetDoctor:output_type -> delidev.v1.GetDoctorResponse
-	14, // 53: delidev.v1.SystemService.CreateBackup:output_type -> delidev.v1.CreateBackupResponse
-	16, // 54: delidev.v1.ResourceService.GetResource:output_type -> delidev.v1.GetResourceResponse
-	18, // 55: delidev.v1.ResourceService.ListResources:output_type -> delidev.v1.ListResourcesResponse
-	20, // 56: delidev.v1.ResourceService.GetSnapshot:output_type -> delidev.v1.GetSnapshotResponse
-	22, // 57: delidev.v1.ResourceService.WatchEvents:output_type -> delidev.v1.WatchEventsResponse
-	24, // 58: delidev.v1.ConfigurationService.SaveConfiguration:output_type -> delidev.v1.SaveConfigurationResponse
-	26, // 59: delidev.v1.ConfigurationService.DeleteConfiguration:output_type -> delidev.v1.DeleteConfigurationResponse
-	28, // 60: delidev.v1.ConfigurationService.PreviewRouting:output_type -> delidev.v1.PreviewRoutingResponse
-	30, // 61: delidev.v1.DeviceService.CreatePairing:output_type -> delidev.v1.CreatePairingResponse
-	32, // 62: delidev.v1.DeviceService.PairDevice:output_type -> delidev.v1.PairDeviceResponse
-	34, // 63: delidev.v1.DeviceService.RevokeDevice:output_type -> delidev.v1.RevokeDeviceResponse
-	36, // 64: delidev.v1.WorkerService.AttachWorker:output_type -> delidev.v1.AttachWorkerResponse
-	38, // 65: delidev.v1.WorkerService.WatchWork:output_type -> delidev.v1.WatchWorkResponse
-	40, // 66: delidev.v1.WorkerService.ReportWork:output_type -> delidev.v1.ReportWorkResponse
-	42, // 67: delidev.v1.WorkerService.InspectRepository:output_type -> delidev.v1.InspectRepositoryResponse
-	44, // 68: delidev.v1.WorkerService.DiscoverHarnesses:output_type -> delidev.v1.DiscoverHarnessesResponse
-	50, // [50:69] is the sub-list for method output_type
-	31, // [31:50] is the sub-list for method input_type
-	31, // [31:31] is the sub-list for extension type_name
-	31, // [31:31] is the sub-list for extension extendee
-	0,  // [0:31] is the sub-list for field type_name
+	4,  // 31: delidev.v1.ConnectAccountRequest.mutation:type_name -> delidev.v1.Mutation
+	3,  // 32: delidev.v1.ConnectAccountResponse.account:type_name -> delidev.v1.Resource
+	4,  // 33: delidev.v1.DisconnectAccountRequest.mutation:type_name -> delidev.v1.Mutation
+	3,  // 34: delidev.v1.DisconnectAccountResponse.account:type_name -> delidev.v1.Resource
+	3,  // 35: delidev.v1.GetAccountStatusResponse.account:type_name -> delidev.v1.Resource
+	7,  // 36: delidev.v1.SystemService.GetStatus:input_type -> delidev.v1.GetStatusRequest
+	9,  // 37: delidev.v1.SystemService.StopServer:input_type -> delidev.v1.StopServerRequest
+	11, // 38: delidev.v1.SystemService.GetDoctor:input_type -> delidev.v1.GetDoctorRequest
+	13, // 39: delidev.v1.SystemService.CreateBackup:input_type -> delidev.v1.CreateBackupRequest
+	15, // 40: delidev.v1.ResourceService.GetResource:input_type -> delidev.v1.GetResourceRequest
+	17, // 41: delidev.v1.ResourceService.ListResources:input_type -> delidev.v1.ListResourcesRequest
+	19, // 42: delidev.v1.ResourceService.GetSnapshot:input_type -> delidev.v1.GetSnapshotRequest
+	21, // 43: delidev.v1.ResourceService.WatchEvents:input_type -> delidev.v1.WatchEventsRequest
+	23, // 44: delidev.v1.ConfigurationService.SaveConfiguration:input_type -> delidev.v1.SaveConfigurationRequest
+	25, // 45: delidev.v1.ConfigurationService.DeleteConfiguration:input_type -> delidev.v1.DeleteConfigurationRequest
+	27, // 46: delidev.v1.ConfigurationService.PreviewRouting:input_type -> delidev.v1.PreviewRoutingRequest
+	29, // 47: delidev.v1.DeviceService.CreatePairing:input_type -> delidev.v1.CreatePairingRequest
+	31, // 48: delidev.v1.DeviceService.PairDevice:input_type -> delidev.v1.PairDeviceRequest
+	33, // 49: delidev.v1.DeviceService.RevokeDevice:input_type -> delidev.v1.RevokeDeviceRequest
+	35, // 50: delidev.v1.WorkerService.AttachWorker:input_type -> delidev.v1.AttachWorkerRequest
+	37, // 51: delidev.v1.WorkerService.WatchWork:input_type -> delidev.v1.WatchWorkRequest
+	39, // 52: delidev.v1.WorkerService.ReportWork:input_type -> delidev.v1.ReportWorkRequest
+	41, // 53: delidev.v1.WorkerService.InspectRepository:input_type -> delidev.v1.InspectRepositoryRequest
+	43, // 54: delidev.v1.WorkerService.DiscoverHarnesses:input_type -> delidev.v1.DiscoverHarnessesRequest
+	45, // 55: delidev.v1.AccountService.ConnectAccount:input_type -> delidev.v1.ConnectAccountRequest
+	47, // 56: delidev.v1.AccountService.DisconnectAccount:input_type -> delidev.v1.DisconnectAccountRequest
+	49, // 57: delidev.v1.AccountService.GetAccountStatus:input_type -> delidev.v1.GetAccountStatusRequest
+	8,  // 58: delidev.v1.SystemService.GetStatus:output_type -> delidev.v1.GetStatusResponse
+	10, // 59: delidev.v1.SystemService.StopServer:output_type -> delidev.v1.StopServerResponse
+	12, // 60: delidev.v1.SystemService.GetDoctor:output_type -> delidev.v1.GetDoctorResponse
+	14, // 61: delidev.v1.SystemService.CreateBackup:output_type -> delidev.v1.CreateBackupResponse
+	16, // 62: delidev.v1.ResourceService.GetResource:output_type -> delidev.v1.GetResourceResponse
+	18, // 63: delidev.v1.ResourceService.ListResources:output_type -> delidev.v1.ListResourcesResponse
+	20, // 64: delidev.v1.ResourceService.GetSnapshot:output_type -> delidev.v1.GetSnapshotResponse
+	22, // 65: delidev.v1.ResourceService.WatchEvents:output_type -> delidev.v1.WatchEventsResponse
+	24, // 66: delidev.v1.ConfigurationService.SaveConfiguration:output_type -> delidev.v1.SaveConfigurationResponse
+	26, // 67: delidev.v1.ConfigurationService.DeleteConfiguration:output_type -> delidev.v1.DeleteConfigurationResponse
+	28, // 68: delidev.v1.ConfigurationService.PreviewRouting:output_type -> delidev.v1.PreviewRoutingResponse
+	30, // 69: delidev.v1.DeviceService.CreatePairing:output_type -> delidev.v1.CreatePairingResponse
+	32, // 70: delidev.v1.DeviceService.PairDevice:output_type -> delidev.v1.PairDeviceResponse
+	34, // 71: delidev.v1.DeviceService.RevokeDevice:output_type -> delidev.v1.RevokeDeviceResponse
+	36, // 72: delidev.v1.WorkerService.AttachWorker:output_type -> delidev.v1.AttachWorkerResponse
+	38, // 73: delidev.v1.WorkerService.WatchWork:output_type -> delidev.v1.WatchWorkResponse
+	40, // 74: delidev.v1.WorkerService.ReportWork:output_type -> delidev.v1.ReportWorkResponse
+	42, // 75: delidev.v1.WorkerService.InspectRepository:output_type -> delidev.v1.InspectRepositoryResponse
+	44, // 76: delidev.v1.WorkerService.DiscoverHarnesses:output_type -> delidev.v1.DiscoverHarnessesResponse
+	46, // 77: delidev.v1.AccountService.ConnectAccount:output_type -> delidev.v1.ConnectAccountResponse
+	48, // 78: delidev.v1.AccountService.DisconnectAccount:output_type -> delidev.v1.DisconnectAccountResponse
+	50, // 79: delidev.v1.AccountService.GetAccountStatus:output_type -> delidev.v1.GetAccountStatusResponse
+	58, // [58:80] is the sub-list for method output_type
+	36, // [36:58] is the sub-list for method input_type
+	36, // [36:36] is the sub-list for extension type_name
+	36, // [36:36] is the sub-list for extension extendee
+	0,  // [0:36] is the sub-list for field type_name
 }
 
 func init() { file_delidev_v1_delidev_proto_init() }
@@ -3172,9 +3538,9 @@ func file_delidev_v1_delidev_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delidev_v1_delidev_proto_rawDesc), len(file_delidev_v1_delidev_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   42,
+			NumMessages:   48,
 			NumExtensions: 0,
-			NumServices:   5,
+			NumServices:   6,
 		},
 		GoTypes:           file_delidev_v1_delidev_proto_goTypes,
 		DependencyIndexes: file_delidev_v1_delidev_proto_depIdxs,

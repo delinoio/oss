@@ -13,7 +13,7 @@ func routeFixture() (ID, Agent, Model, map[ID]Account) {
 	model := Model{ProviderID: provider, Harnesses: []Harness{Codex}}
 	accounts := map[ID]Account{}
 	for _, id := range []ID{a, b, c} {
-		accounts[id] = Account{ProviderID: provider, Enabled: true, Health: AccountReady}
+		accounts[id] = Account{ProviderID: provider, Type: APIAccount, Enabled: true, Health: AccountReady, Connection: &AccountConnection{ID: NewID(), Authentication: BearerAuth, ConnectedAt: time.Now().UTC()}}
 	}
 	return NewID(), agent, model, accounts
 }
@@ -136,5 +136,30 @@ func TestMinimumWindowComparableQuotaAndStaleReset(t *testing.T) {
 	route, _, err = RouteAccount(id, agent, model, nil, accounts, ResetWindow, RoutingState{}, now.Add(2*time.Hour))
 	if err != nil || route.Selected == a || !route.Fallback {
 		t.Fatalf("passed reset falsely recovered exhausted account: %+v %v", route, err)
+	}
+}
+
+func TestStoredOrDisconnectedCredentialsCannotRoute(t *testing.T) {
+	id, agent, model, accounts := routeFixture()
+	for i, link := range agent.Accounts {
+		account := accounts[link.ID]
+		switch i {
+		case 0:
+			account.Health = AccountUnverified
+		case 1:
+			account.Connection = nil
+		case 2:
+			account.Removal = &AccountRemoval{RequestID: NewID(), ExpectedRevision: 1}
+		}
+		accounts[link.ID] = account
+	}
+	route, _, err := RouteAccount(id, agent, model, nil, accounts, Priority, RoutingState{}, time.Now())
+	if err == nil || route.Selected != "" {
+		t.Fatal("unverified or incomplete connection authorized routing")
+	}
+	for _, candidate := range route.Candidates {
+		if candidate.Eligibility != UnauthenticatedAccount {
+			t.Fatalf("wrong connection exclusion: %s", candidate.Eligibility)
+		}
 	}
 }
