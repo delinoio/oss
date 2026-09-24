@@ -19,6 +19,7 @@ The pnport-mode macOS `posix_spawn` hook rejects a relative executable when opaq
 On Linux, shebang inspection uses the kernel's 256-byte `BINPRM_BUF_SIZE` window and rejects an interpreter pathname that reaches the window boundary without a delimiter; a truncated optional argument remains permitted.
 
 The generic fspy runner creates a random, user-private preload directory for each process instead of using a fixed shared temporary path. The directory remains owned for the runner's lifetime. `materialized_artifact` checks the bytes of any pre-existing regular artifact without following Unix symlinks before returning its path; a collision with different bytes fails initialization.
+If the private preload directory or global spy cannot initialize, the runner retains the initialization error and returns it from tracked `Command::spawn`; a missing or unwritable temporary directory must not panic the host process.
 
 The generic fspy runner records every executable candidate examined during PATH resolution, including absent candidates before the selected program. These reads join the Unix and Windows access results so a new earlier PATH match invalidates a cached trace. Relative selected paths are bound to the lookup process's working directory before launch.
 

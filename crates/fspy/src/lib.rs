@@ -15,7 +15,11 @@ mod os_impl;
 mod arena;
 mod command;
 
-use std::{io, process::ExitStatus, sync::LazyLock};
+use std::{
+    io,
+    process::ExitStatus,
+    sync::{Arc, LazyLock},
+};
 
 pub use command::Command;
 pub use error::TrackingIncomplete;
@@ -68,7 +72,15 @@ pub(crate) struct GlobalSpy {
 }
 
 fn private_preload_dir() -> io::Result<TempDir> {
-    let parent = std::fs::canonicalize(std::env::temp_dir())?;
+    // Test processes need an isolated invalid parent because macOS temp_dir()
+    // ignores TMPDIR. The override is absent from production builds.
+    #[cfg(test)]
+    let parent = std::env::var_os("FSPY_TEST_TEMP_PARENT")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir);
+    #[cfg(not(test))]
+    let parent = std::env::temp_dir();
+    let parent = std::fs::canonicalize(parent)?;
     let mut builder = tempfile::Builder::new();
     builder.prefix("fspy-");
     #[cfg(unix)]
@@ -79,10 +91,10 @@ fn private_preload_dir() -> io::Result<TempDir> {
     builder.tempdir_in(parent)
 }
 
-pub(crate) static SPY_IMPL: LazyLock<GlobalSpy> = LazyLock::new(|| {
-    let dir = private_preload_dir().expect("Failed to create private preload directory");
-    let spy = SpyImpl::init_in(dir.path()).expect("Failed to initialize global spy");
-    GlobalSpy { spy, _dir: dir }
+pub(crate) static SPY_IMPL: LazyLock<Result<GlobalSpy, Arc<io::Error>>> = LazyLock::new(|| {
+    let dir = private_preload_dir().map_err(Arc::new)?;
+    let spy = SpyImpl::init_in(dir.path()).map_err(Arc::new)?;
+    Ok(GlobalSpy { spy, _dir: dir })
 });
 
 #[cfg(all(test, unix))]
@@ -107,6 +119,47 @@ mod tests {
             .permissions()
             .mode();
         assert_eq!(mode & 0o777, 0o700);
+    }
+
+    #[test]
+    fn unavailable_preload_directory_returns_spawn_error() {
+        const CHILD_MARKER: &str = "FSPY_TEST_INVALID_TEMP_DIR";
+        if std::env::var_os(CHILD_MARKER).is_some() {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("create test runtime");
+            for _ in 0..2 {
+                let mut command = super::Command::new("true");
+                command.env("PATH", "/bin:/usr/bin");
+                let result = runtime.block_on(command.spawn(CancellationToken::new()));
+                match result {
+                    Err(super::error::SpawnError::SpyInitialization(_)) => {}
+                    Err(error) => panic!("unexpected spawn error: {error:?}"),
+                    Ok(_) => panic!("spawn unexpectedly succeeded"),
+                }
+            }
+            return;
+        }
+
+        let directory = tempfile::tempdir().expect("create fixture directory");
+        let missing = directory.path().join("missing-temp-parent");
+        let output = std::process::Command::new(std::env::current_exe().expect("find test binary"))
+            .args([
+                "--exact",
+                "tests::unavailable_preload_directory_returns_spawn_error",
+                "--nocapture",
+            ])
+            .env("FSPY_TEST_TEMP_PARENT", missing)
+            .env(CHILD_MARKER, "1")
+            .output()
+            .expect("run isolated initialization test");
+        assert!(
+            output.status.success(),
+            "stdout: {}\nstderr: {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 
     #[cfg(target_os = "linux")]

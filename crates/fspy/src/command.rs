@@ -6,6 +6,7 @@ use std::{
     io,
     path::{Path, PathBuf},
     process::Stdio,
+    sync::Arc,
 };
 
 #[cfg(unix)]
@@ -195,7 +196,10 @@ impl Command {
         cancellation_token: CancellationToken,
     ) -> Result<TrackedChild, SpawnError> {
         self.resolve_program()?;
-        SPY_IMPL.spy.spawn(self, cancellation_token).await
+        let spy = SPY_IMPL
+            .as_ref()
+            .map_err(|error| SpawnError::SpyInitialization(Arc::clone(error)))?;
+        spy.spy.spawn(self, cancellation_token).await
     }
 
     /// Resolve program name to full path using `PATH` and cwd.

@@ -1,7 +1,10 @@
-use std::{ffi::OsString, path::PathBuf};
+use std::{ffi::OsString, io, path::PathBuf, sync::Arc};
 
 #[derive(thiserror::Error, Debug)]
 pub enum SpawnError {
+    #[error("failed to initialize global spy: {0}")]
+    SpyInitialization(#[source] Arc<io::Error>),
+
     #[error(
         "could not resolve the full path of program '{}' with PATH={} under cwd({})",
         .program.display(),
