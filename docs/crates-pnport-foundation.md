@@ -38,6 +38,8 @@ Linux `readlinkat(fd, "", ...)` on an `O_PATH | O_NOFOLLOW` virtual-link descrip
 
 Relative `*at` operations validate the live descriptor as a directory before joining or normalizing paths, including `..`. Regular-file descriptors return `ENOTDIR` and invalid descriptors return `EBADF`, whether tracked or duplicated outside interception. Absolute paths continue to ignore the supplied directory descriptor. Native cwd state follows the live process handle after symlink retargeting or directory rename; only translated virtual cwd paths need saved logical identity.
 
+The Linux tracer preserves the original pathname spelling for native paths that do not require virtual translation, including relative symlink traversal, `..` after a symlink, and trailing separators. This applies to both operands of link and rename operations so ordinary kernel lookup and `ENOTDIR` behavior remain intact.
+
 The Linux supervisor keys logical cwd and tracked descriptor state by thread group. Cross-group `CLONE_FS` and `CLONE_FILES` sharing, plus `unshare` of either context, fail before the syscall with `PNPORT_UNSUPPORTED_OPERATION` and exit 125; within-group threads continue to share the tracked state.
 
 Linux `CLONE_THREAD` calls must also share both `CLONE_FILES` and `CLONE_FS`. A thread with a private descriptor table or cwd context fails before creation with the same unsupported diagnostic because a group-wide ownership map cannot represent its independent kernel state.

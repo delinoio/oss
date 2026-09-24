@@ -1679,10 +1679,7 @@ impl Trace<'_> {
                         self.force_error(pid, &mut regs, target_arg, libc::EROFS)?;
                         return Ok(true);
                     }
-                    if target != translated.physical
-                        && !(self.proc_root(pid, &target)?.is_some()
-                            && translated.logical == translated.physical)
-                    {
+                    if target != translated.physical && translated.logical != translated.physical {
                         self.rewrite_path(pid, &mut regs, target_arg, &translated.physical)?;
                     }
                     self.pending.insert(pid, Pending::Ordinary);
@@ -1780,7 +1777,6 @@ impl Trace<'_> {
             }
             return Ok(false);
         }
-        let root_alias = !in_root && self.proc_root(pid, &original)?.is_some();
         let proc_cwd = (!in_root).then(|| self.proc_cwd(pid, &original)).flatten();
         if let Some((logical, true)) = &proc_cwd {
             if call == libc::SYS_readlinkat || call == SYS_READLINK {
@@ -1897,7 +1893,6 @@ impl Trace<'_> {
         };
         let second_translation = if let Some((other_arg, other_fd)) = second {
             let other = read_path(pid, argument(&regs, other_arg))?;
-            let other_root_alias = self.proc_root(pid, &other)?.is_some();
             if !other.is_absolute() && other_fd != libc::AT_FDCWD {
                 let descriptor = format!("/proc/{pid}/fd/{other_fd}");
                 let error = match fs::metadata(descriptor) {
@@ -1922,7 +1917,7 @@ impl Trace<'_> {
                 self.force_error(pid, &mut regs, path_arg, libc::EROFS)?;
                 return Ok(true);
             }
-            Some((other_arg, other, translated, other_root_alias))
+            Some((other_arg, other, translated))
         } else {
             None
         };
@@ -1949,16 +1944,13 @@ impl Trace<'_> {
             }
             false
         } else {
-            original != translation.physical
-                && !(root_alias && translation.logical == translation.physical)
+            original != translation.physical && translation.logical != translation.physical
         };
         if changed {
             self.rewrite_path(pid, &mut regs, path_arg, &translation.physical)?;
         }
-        if let Some((other_arg, other, translated, other_root_alias)) = second_translation {
-            if other != translated.physical
-                && !(other_root_alias && translated.logical == translated.physical)
-            {
+        if let Some((other_arg, other, translated)) = second_translation {
+            if other != translated.physical && translated.logical != translated.physical {
                 self.rewrite_path_slot(pid, &mut regs, other_arg, &translated.physical, 1)?;
             }
         }

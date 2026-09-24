@@ -1489,6 +1489,71 @@ int main(int argc, char **argv) {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn linux_native_relative_paths_keep_kernel_lookup_semantics() {
+    use std::process::Command;
+    let root = fixture();
+    fs::create_dir_all(root.path().join("native/sub")).unwrap();
+    fs::write(root.path().join("native/value"), b"right").unwrap();
+    fs::write(root.path().join("value"), b"wrong").unwrap();
+    std::os::unix::fs::symlink("native/sub", root.path().join("link")).unwrap();
+    let source = root.path().join("native-paths.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <errno.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
+int main(void) {
+    int fd = open("link/../value", O_RDONLY);
+    if (fd < 0) return 40;
+    char bytes[6] = {0};
+    if (read(fd, bytes, 5) != 5 || strcmp(bytes, "right")) return 41;
+    close(fd);
+    errno = 0;
+    if (open("native/value/", O_RDONLY) != -1 || errno != ENOTDIR) return 42;
+    struct stat info;
+    errno = 0;
+    if (stat("native/value/", &info) != -1 || errno != ENOTDIR) return 43;
+    if (rename("value", "link/../renamed")) return 44;
+    if (access("native/renamed", F_OK) || access("renamed", F_OK) != -1) return 45;
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("native-paths");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(
+        fs::read(root.path().join("native/renamed")).unwrap(),
+        b"wrong"
+    );
+    assert!(!root.path().join("renamed").exists());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn linux_native_cwd_uses_live_directory_after_symlink_and_rename() {
     use std::process::Command;
     let root = fixture();
