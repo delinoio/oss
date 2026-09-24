@@ -51,6 +51,7 @@ fn handle_exec(
                     execve::original()(raw_command.prog, raw_command.argv, raw_command.envp);
                 // A Linux image can be named through an inspected descriptor.
                 // Keep it alive until the kernel has attempted execve.
+                #[cfg(target_os = "linux")]
                 drop(pre_exec);
                 Ok(result)
             },
