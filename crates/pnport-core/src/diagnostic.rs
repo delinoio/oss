@@ -20,6 +20,14 @@ pub enum Code {
     PnportReady,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExecFailureKind {
+    NotFound,
+    PermissionDenied,
+    InvalidFormat,
+    InterpreterLoop,
+}
+
 impl Code {
     pub fn as_str(self) -> &'static str {
         match self {
@@ -45,10 +53,20 @@ impl Code {
 pub struct Error {
     pub code: Code,
     pub message: &'static str,
+    pub exec_failure: Option<ExecFailureKind>,
 }
 impl Error {
     pub const fn new(code: Code, message: &'static str) -> Self {
-        Self { code, message }
+        Self {
+            code,
+            message,
+            exec_failure: None,
+        }
+    }
+
+    pub const fn with_exec_failure(mut self, kind: ExecFailureKind) -> Self {
+        self.exec_failure = Some(kind);
+        self
     }
 
     pub fn exit_code(&self) -> i32 {

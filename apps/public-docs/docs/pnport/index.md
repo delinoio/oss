@@ -8,7 +8,7 @@ pnport is a command-line tool in development for running subprocesses against an
 
 The 0.1.0 release targets macOS 13+, Windows 10 22H2+ with MSVC, and Ubuntu 22.04-equivalent glibc Linux, each on x64 and arm64. All six targets must pass native execution and installation checks before release. Linux static child executables are part of that gate. Musl hosts and mixed-architecture execution are outside the target set.
 
-Development evidence on one macOS arm64 host does not establish support for the other targets or for every executable. Linux and Windows execution remain incomplete. See [installation and availability](/pnport/installation) for the current status.
+Development evidence on macOS arm64 and Ubuntu 22.04 arm64 Docker does not establish support for every target or executable. Linux dynamic and static development fixtures pass on arm64; native Linux x64 execution and full release validation remain open. Windows execution remains unavailable. See [installation and availability](/pnport/installation) for the current status.
 
 ## What the CLI is designed to do
 

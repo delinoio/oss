@@ -321,6 +321,9 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-on-failure: false
 
+      - name: Build pnport injection companion
+        run: cargo build --locked -p pnport -p pnport-preload
+
       - name: Run cargo test
         run: cargo test --workspace --all-targets
 
