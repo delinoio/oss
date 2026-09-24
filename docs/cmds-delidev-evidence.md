@@ -7,12 +7,12 @@ The CLI/server/Worker implementation is in progress. No release or real-harness 
 
 | Boundary | Implementation | Verification |
 | --- | --- | --- |
-| CLI, typed JSON, explicit startup, server/sidecar lifecycle | Pending | Pending |
-| Connect, authentication, origins, pairing, TLS, streams | Pending | Pending |
+| CLI, typed JSON, explicit startup, server/sidecar lifecycle | Versioned JSON/errors, explicit detached/foreground startup and compatible reuse, status/stop, configuration CRUD, read-only doctor, backup implemented; native services/supervision pending | Native macOS subprocess smoke: no implicit startup, readiness/reuse, CRUD, backup, explicit stop, restart persistence |
+| Connect, authentication, origins, pairing, TLS, streams | Owner authentication on every product RPC, exact origins, TLS-required remote listeners, signed scoped cursors, bounded Connect event streaming implemented; device pairing/Worker authorization pending | Real loopback Connect: missing authentication, hostile origin/Host, snapshot/replay, deduplication across restart, backup deduplication; remote TLS validation guards tested, remote native lifecycle not validated |
 | SQLite, IDs/revisions, atomic events/receipts, backup/restore | Exclusive private scope, WAL transactions, global entity identity, optimistic revisions, durable receipts, metadata-only events, coherent bounded snapshots, consistent backup implemented; restore/deletion coordination pending | Real temporary SQLite: concurrent retries/restart, rollback, kind collisions, deletion receipt redaction, cursor bounds, WAL backup, corrupt/newer DB preservation; Go race tests pass |
-| Projects, repositories, settings, restrictions, templates | Pending | Pending |
+| Projects, repositories, settings, restrictions, templates | Strict versioned configuration schemas, relationship/revision validation and server-owned health fields implemented; repository save remains blocked until Worker inspection is implemented | CLI/Connect configuration and stale revision tests; complete project workflow pending |
 | Accounts, provider/models, protected secrets, proxy | Pending | Pending |
-| Six routing policies, quota evidence, immutable snapshots | Pending | Pending |
+| Six routing policies, quota evidence, immutable snapshots | Pure six-policy selection and read-only preview implemented; first-dispatch atomic snapshot/routing persistence pending | Weighted rotation, sequential traversal/recovery, project/account restrictions, Fixed exclusions, minimum blocking windows, stale evidence and quota ties tested |
 | Workers, executables, outbound jobs, processes, updates, services | Pending | Pending |
 | Codex, Claude Code, OpenCode, Grok Build native adapters | Pending | Real accounts/versions not validated |
 | Workspace preparation, Local protection, forks, snapshots | Pending | Pending |
@@ -30,3 +30,4 @@ The current user request is the CLI. Desktop windows/tray/widgets/native browser
 
 ## Local verification log
 - 2026-09-24, macOS arm64, Go 1.26.1: `go test -race ./cmds/delidev-cli/internal/...` and `go vet ./cmds/delidev-cli/internal/...` for the domain, private-files, and SQLite foundation. No harness or provider account was invoked.
+- 2026-09-24: `go test -race ./cmds/delidev-cli/...`, package vet, Buf formatting/lint, and generated Go bindings validated. The native macOS executable was exercised against an isolated temporary data directory. Linux arm64 cross-compilation succeeded; this does not establish native Linux behavior.

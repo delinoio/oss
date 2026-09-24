@@ -70,6 +70,9 @@ func Decode(data []byte, target any) error {
 	if len(data) > 1<<20 || !utf8.Valid(data) {
 		return Fail(InvalidArgument, "JSON input exceeds its limit or is not UTF-8.", "Use a document no larger than 1 MiB.")
 	}
+	if err := uniqueJSON(data); err != nil {
+		return err
+	}
 	d := json.NewDecoder(strings.NewReader(string(data)))
 	d.DisallowUnknownFields()
 	if err := d.Decode(target); err != nil {
@@ -78,6 +81,72 @@ func Decode(data []byte, target any) error {
 	var extra any
 	if err := d.Decode(&extra); err != io.EOF {
 		return Fail(InvalidArgument, "Expected exactly one JSON document.", "Remove trailing data.")
+	}
+	return nil
+}
+
+// Reject duplicate object keys before decoding into typed documents. Otherwise
+// different clients can disagree about which policy or credential field wins.
+func uniqueJSON(data []byte) error {
+	d := json.NewDecoder(strings.NewReader(string(data)))
+	d.UseNumber()
+	var walk func(int) error
+	invalid := func() error {
+		return Fail(InvalidArgument, "JSON contains duplicate keys, invalid structure, or excessive nesting.", "Use one unambiguous JSON document with unique fields.")
+	}
+	walk = func(depth int) error {
+		if depth > 64 {
+			return invalid()
+		}
+		token, err := d.Token()
+		if err != nil {
+			return invalid()
+		}
+		delimiter, ok := token.(json.Delim)
+		if !ok {
+			return nil
+		}
+		switch delimiter {
+		case '{':
+			seen := map[string]bool{}
+			for d.More() {
+				key, err := d.Token()
+				if err != nil {
+					return invalid()
+				}
+				name, ok := key.(string)
+				if !ok || seen[name] {
+					return invalid()
+				}
+				seen[name] = true
+				if err := walk(depth + 1); err != nil {
+					return err
+				}
+			}
+			close, err := d.Token()
+			if err != nil || close != json.Delim('}') {
+				return invalid()
+			}
+		case '[':
+			for d.More() {
+				if err := walk(depth + 1); err != nil {
+					return err
+				}
+			}
+			close, err := d.Token()
+			if err != nil || close != json.Delim(']') {
+				return invalid()
+			}
+		default:
+			return invalid()
+		}
+		return nil
+	}
+	if err := walk(0); err != nil {
+		return err
+	}
+	if _, err := d.Token(); err != io.EOF {
+		return invalid()
 	}
 	return nil
 }

@@ -23,7 +23,7 @@ func TestStrictJSON(t *testing.T) {
 	var target struct {
 		Name string `json:"name"`
 	}
-	for _, input := range []string{`{"name":"ok","secret":"ignored?"}`, `{"name":2}`, `{"name":"ok"} {}`, string([]byte{0xff})} {
+	for _, input := range []string{`{"name":"ok","secret":"ignored?"}`, `{"name":2}`, `{"name":"first","name":"last"}`, `{"name":"ok"} {}`, string([]byte{0xff})} {
 		if err := Decode([]byte(input), &target); err == nil {
 			t.Fatalf("accepted %q", input)
 		}

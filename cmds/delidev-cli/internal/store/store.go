@@ -78,6 +78,7 @@ type Tx struct {
 	requestID domain.ID
 	now       time.Time
 	touched   map[domain.ID]bool
+	readOnly  bool
 }
 
 func Open(ctx context.Context, root string) (*Store, error) {
@@ -375,6 +376,9 @@ func scan(row scanner) (Record, error) {
 }
 
 func (t *Tx) Put(kind domain.Kind, id domain.ID, expected uint64, sessionID, projectID domain.ID, value any) (Record, error) {
+	if t.readOnly {
+		return Record{}, domain.Fail(domain.PermissionDenied, "Read transactions cannot mutate state.", "Use a product mutation.")
+	}
 	if err := id.Validate(); err != nil {
 		return Record{}, err
 	}
@@ -450,6 +454,9 @@ func (t *Tx) event(r Record, action Action) error {
 	return storageError(err)
 }
 func (t *Tx) Delete(kind domain.Kind, id domain.ID, expected uint64) error {
+	if t.readOnly {
+		return domain.Fail(domain.PermissionDenied, "Read transactions cannot mutate state.", "Use a product mutation.")
+	}
 	r, err := t.Get(kind, id)
 	if err != nil {
 		return err
@@ -625,11 +632,29 @@ func Decode[T any](r Record) (T, error) {
 	return result, err
 }
 func (s *Store) Backup(ctx context.Context) (domain.ID, error) {
+	return s.BackupID(ctx, domain.NewID())
+}
+
+func (s *Store) BackupID(ctx context.Context, id domain.ID) (domain.ID, error) {
+	if err := id.Validate(); err != nil {
+		return "", err
+	}
 	s.gate.Lock()
 	defer s.gate.Unlock()
-	id := domain.NewID()
 	path := filepath.Join(s.root, "backups", string(id)+".sqlite")
-	private, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	if _, err := os.Lstat(path); err == nil {
+		if err := ValidateBackup(ctx, path); err != nil {
+			return "", err
+		}
+		return id, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", storageError(err)
+	}
+	pending := path + ".pending"
+	if err := os.Remove(pending); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", storageError(err)
+	}
+	private, err := os.OpenFile(pending, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
 		return "", storageError(err)
 	}
@@ -638,14 +663,14 @@ func (s *Store) Backup(ctx context.Context) (domain.ID, error) {
 	}
 	// VACUUM INTO is SQLite's consistent online backup; copying state.sqlite
 	// would omit committed WAL data. Parameter binding avoids SQL path injection.
-	if _, err := s.db.ExecContext(ctx, "VACUUM INTO ?", path); err != nil {
-		os.Remove(path)
+	if _, err := s.db.ExecContext(ctx, "VACUUM INTO ?", pending); err != nil {
+		os.Remove(pending)
 		return "", storageError(err)
 	}
-	if err := os.Chmod(path, 0600); err != nil {
+	if err := os.Chmod(pending, 0600); err != nil {
 		return "", storageError(err)
 	}
-	f, err := os.OpenFile(path, os.O_RDWR, 0)
+	f, err := os.OpenFile(pending, os.O_RDWR, 0)
 	if err != nil {
 		return "", storageError(err)
 	}
@@ -657,8 +682,11 @@ func (s *Store) Backup(ctx context.Context) (domain.ID, error) {
 	if closeErr != nil {
 		return "", storageError(closeErr)
 	}
-	if err := ValidateBackup(ctx, path); err != nil {
+	if err := ValidateBackup(ctx, pending); err != nil {
 		return "", err
+	}
+	if err := os.Rename(pending, path); err != nil {
+		return "", storageError(err)
 	}
 	return id, nil
 }
@@ -680,4 +708,53 @@ func init() {
 	if !strings.Contains(schema, fmt.Sprintf("PRAGMA application_id=%d;", applicationID)) {
 		panic("DeliDev SQLite application ID mismatch")
 	}
+}
+
+// Read provides an internally consistent server-side view without a receipt,
+// event, or write. Callbacks must not retain the transaction or perform I/O.
+func (s *Store) Read(ctx context.Context, read func(*Tx) error) error {
+	s.gate.RLock()
+	defer s.gate.RUnlock()
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return storageError(err)
+	}
+	defer tx.Rollback()
+	return read(&Tx{tx: tx, ctx: ctx, now: time.Now().UTC(), touched: map[domain.ID]bool{}, readOnly: true})
+}
+
+func (s *Store) ScopeIdentity(ctx context.Context) (domain.ID, error) {
+	s.gate.RLock()
+	defer s.gate.RUnlock()
+	var id domain.ID
+	err := s.db.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key='server_id'").Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", storageError(err)
+	}
+	if err := id.Validate(); err != nil {
+		return "", corrupt()
+	}
+	return id, nil
+}
+func (s *Store) BindIdentity(ctx context.Context, id domain.ID) error {
+	if err := id.Validate(); err != nil {
+		return err
+	}
+	s.gate.Lock()
+	defer s.gate.Unlock()
+	_, err := s.db.ExecContext(ctx, "INSERT INTO metadata(key,value) VALUES('server_id',?) ON CONFLICT(key) DO NOTHING", id)
+	if err != nil {
+		return storageError(err)
+	}
+	var current string
+	if err := s.db.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key='server_id'").Scan(&current); err != nil {
+		return storageError(err)
+	}
+	if current != string(id) {
+		return domain.Fail(domain.RecoveryRequired, "The database and owner identity disagree.", "Restore the matching owner credential and database backup; do not replace either implicitly.")
+	}
+	return nil
 }

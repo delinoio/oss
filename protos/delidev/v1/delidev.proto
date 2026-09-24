@@ -1,0 +1,179 @@
+syntax = "proto3";
+package delidev.v1;
+
+option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1";
+
+// All operations, including loopback, require authenticated owner authorization.
+service SystemService {
+  rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
+  rpc StopServer(StopServerRequest) returns (StopServerResponse);
+  rpc GetDoctor(GetDoctorRequest) returns (GetDoctorResponse);
+  rpc CreateBackup(CreateBackupRequest) returns (CreateBackupResponse);
+}
+service ResourceService {
+  rpc GetResource(GetResourceRequest) returns (GetResourceResponse);
+  rpc ListResources(ListResourcesRequest) returns (ListResourcesResponse);
+  rpc GetSnapshot(GetSnapshotRequest) returns (GetSnapshotResponse);
+  rpc WatchEvents(WatchEventsRequest) returns (stream WatchEventsResponse);
+}
+service ConfigurationService {
+  rpc SaveConfiguration(SaveConfigurationRequest) returns (SaveConfigurationResponse);
+  rpc DeleteConfiguration(DeleteConfigurationRequest) returns (DeleteConfigurationResponse);
+  rpc PreviewRouting(PreviewRoutingRequest) returns (PreviewRoutingResponse);
+}
+
+enum EntityKind {
+  ENTITY_KIND_UNSPECIFIED = 0;
+  ENTITY_KIND_PROJECT = 1;
+  ENTITY_KIND_REPOSITORY = 2;
+  ENTITY_KIND_AGENT = 3;
+  ENTITY_KIND_ACCOUNT = 4;
+  ENTITY_KIND_PROVIDER = 5;
+  ENTITY_KIND_MODEL = 6;
+  ENTITY_KIND_MACHINE = 7;
+  ENTITY_KIND_SESSION = 8;
+  ENTITY_KIND_TEMPLATE = 9;
+  ENTITY_KIND_SETTINGS = 10;
+  ENTITY_KIND_SCHEDULE = 11;
+  ENTITY_KIND_OCCURRENCE = 12;
+  ENTITY_KIND_MESSAGE = 13;
+  ENTITY_KIND_QUEUE = 14;
+  ENTITY_KIND_INTERACTION = 15;
+  ENTITY_KIND_REVIEW = 16;
+  ENTITY_KIND_SNAPSHOT = 17;
+  ENTITY_KIND_DEVICE = 18;
+  ENTITY_KIND_INTEGRATION = 19;
+  ENTITY_KIND_PULL_REQUEST = 20;
+  ENTITY_KIND_PROBLEM = 21;
+  ENTITY_KIND_INBOX = 22;
+  ENTITY_KIND_USAGE = 23;
+}
+// Resource documents are versioned, strictly validated UTF-8 JSON. Their closed
+// schemas live in the Go domain types. Unknown fields and enum values fail.
+// This envelope never permits arbitrary database writes: each mutation kind
+// passes its product validator, relationship checks, and authorization rules.
+message Resource {
+  string id = 1;
+  EntityKind kind = 2;
+  uint64 revision = 3;
+  string session_id = 4;
+  string project_id = 5;
+  uint32 schema_version = 6;
+  bytes document_json = 7;
+  string created_at = 8;
+  string updated_at = 9;
+}
+message Mutation {
+  string request_id = 1;
+  string id = 2;
+  uint64 expected_revision = 3;
+}
+message Filter {
+  EntityKind kind = 1;
+  string session_id = 2;
+  string project_id = 3;
+  uint32 page_size = 4;
+  string page_token = 5;
+}
+message ErrorDetail {
+  string code = 1;
+  string guidance = 2;
+  string cause = 3;
+  string correlation_id = 4;
+}
+message GetStatusRequest {}
+message GetStatusResponse {
+  string version = 1;
+  uint32 protocol_version = 2;
+  uint32 schema_version = 3;
+  string server_id = 4;
+  string listener = 5;
+  string started_at = 6;
+  bool stopping = 7;
+}
+message StopServerRequest {
+  string request_id = 1;
+}
+message StopServerResponse {
+  string request_id = 1;
+}
+message GetDoctorRequest {}
+message GetDoctorResponse {
+  bytes report_json = 1;
+}
+message CreateBackupRequest {
+  string request_id = 1;
+}
+message CreateBackupResponse {
+  string id = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message GetResourceRequest {
+  EntityKind kind = 1;
+  string id = 2;
+}
+message GetResourceResponse {
+  Resource resource = 1;
+}
+message ListResourcesRequest {
+  Filter filter = 1;
+}
+message ListResourcesResponse {
+  repeated Resource resources = 1;
+  string next_page_token = 2;
+}
+message GetSnapshotRequest {
+  Filter filter = 1;
+}
+message GetSnapshotResponse {
+  repeated Resource resources = 1;
+  string cursor = 2;
+}
+message WatchEventsRequest {
+  string cursor = 1;
+  string session_id = 2;
+}
+enum EventAction {
+  EVENT_ACTION_UNSPECIFIED = 0;
+  EVENT_ACTION_CREATED = 1;
+  EVENT_ACTION_UPDATED = 2;
+  EVENT_ACTION_DELETED = 3;
+}
+message WatchEventsResponse {
+  string cursor = 1;
+  string id = 2;
+  string entity_id = 3;
+  EntityKind kind = 4;
+  string session_id = 5;
+  uint64 revision = 6;
+  EventAction action = 7;
+  string time = 8;
+}
+message SaveConfigurationRequest {
+  Mutation mutation = 1;
+  EntityKind kind = 2;
+  uint32 schema_version = 3;
+  bytes document_json = 4;
+}
+message SaveConfigurationResponse {
+  Resource resource = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message DeleteConfigurationRequest {
+  Mutation mutation = 1;
+  EntityKind kind = 2;
+}
+message DeleteConfigurationResponse {
+  string id = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message PreviewRoutingRequest {
+  string agent_id = 1;
+  string project_id = 2;
+}
+message PreviewRoutingResponse {
+  bytes route_json = 1;
+}
