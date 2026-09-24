@@ -88,6 +88,14 @@ func TestManualNativeQuestionResponse(t *testing.T) {
 	if !answered || !closed || !accepted || c.execution.interactions.blocksInput() || !received.Load() || requests.Load() != 2 {
 		t.Fatal("native question lifecycle incomplete")
 	}
+	status, err := c.InspectInteraction(ctx, arrival)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inspected, err := c.InspectInteractionResponse(ctx, status.ResponseID, arrival)
+	if err != nil || inspected != status || !inspected.Accepted {
+		t.Fatal("native question inspection lost original live proof", err)
+	}
 	if err := c.Close(); err != nil {
 		t.Fatal(err)
 	}

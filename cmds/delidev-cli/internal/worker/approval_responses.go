@@ -44,9 +44,9 @@ type approvalResponseJournal struct {
 }
 
 type nativeApprovalResponder interface {
+	nativeResponseInspector
 	RespondApproval(context.Context, domain.ID, domain.ID, domain.ID, codex.ApprovalDecision) (codex.InteractionStatus, error)
 	GrantPermissions(context.Context, domain.ID, domain.ID, domain.ID, codex.PermissionGrant) (codex.InteractionStatus, error)
-	InspectInteraction(context.Context, domain.ID) (codex.InteractionStatus, error)
 }
 
 func startApprovalResponseController(ctx, nativeCtx context.Context, cancelNative context.CancelFunc, controls <-chan *pb.ApprovalResponseControl, mapper *CodexEventPublisher, client nativeApprovalResponder) func() error {
@@ -190,6 +190,7 @@ func (c *CodexEventPublisher) deliverApprovalResponse(ctx, publicationCtx contex
 	bounded, cancel = context.WithTimeout(publicationCtx, 15*time.Second)
 	err = c.publishApprovalDeliveryLocked(bounded, domain.ExecutionApprovalResponseUpdate{InteractionID: identity.InteractionID, ResponseID: identity.ResponseID, ClaimID: journal.ClaimID, NativeItemID: original.NativeItemID, Delivery: delivery})
 	cancel()
+	confirmed := delivery == domain.ApprovalDeliveryUncertain && c.inspectUncertainResponseLocked(publicationCtx, identity, original, client)
 	if err != nil {
 		return err
 	}
@@ -197,6 +198,9 @@ func (c *CodexEventPublisher) deliverApprovalResponse(ctx, publicationCtx contex
 		config.Logger.InfoContext(publicationCtx, "approval_response_delivery_retained", "job_id", identity.JobID, "interaction_id", identity.InteractionID, "response_id", identity.ResponseID, "claim_id", journal.ClaimID, "delivery", delivery)
 	}
 	if delivery == domain.ApprovalDeliveryUncertain {
+		if confirmed {
+			return nil // Preserve the queued original acceptance/tool publication.
+		}
 		return publicationUncertain()
 	}
 	if sendErr != nil {

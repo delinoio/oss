@@ -96,34 +96,12 @@ func (c *Client) InspectSteerAcceptance(ctx context.Context, requestID domain.ID
 	}
 	// Metadata must still name the original local conversation. Waiting flags
 	// and terminal state do not invalidate acceptance, but grant no send rights.
-	if err := c.inspectSteerScopeLocked(ctx); err != nil {
+	retained, err := c.inspectRetainedTurnLocked(ctx, attempt.operation.TurnID)
+	if err != nil {
 		return result, err
-	}
-	response, err := c.wire.Call(ctx, domain.NewID(), "thread/turns/list", struct {
-		ThreadID      domain.ID `json:"threadId"`
-		Limit         int       `json:"limit"`
-		SortDirection string    `json:"sortDirection"`
-		ItemsView     string    `json:"itemsView"`
-	}{c.thread, 1, "desc", "full"})
-	if err != nil || response.ErrorCode != nil {
-		return result, turnUncertain()
-	}
-	turn, inputs, err := decodeLatestTurnInputs(response.Result)
-	retained, known := c.execution.turns[attempt.operation.TurnID]
-	if err != nil || !known || turn.ID != retained.Turn.ID || (retained.Turn.Status.terminal() && turn.Status != retained.Turn.Status) || len(retained.Inputs) != len(inputs) {
-		return result, turnUncertain()
-	}
-	for i, id := range retained.Inputs {
-		binding, known := c.execution.inputs[id]
-		if !known || binding.TurnID != turn.ID || inputs[i].ID != id || inputs[i].PromptDigest != binding.Digest {
-			return result, turnUncertain()
-		}
 	}
 	if !slices.Contains(retained.Inputs, attempt.operation.InputID) {
 		return result, turnUncertain()
-	}
-	if err := c.inspectSteerScopeLocked(ctx); err != nil {
-		return result, err
 	}
 	if err := ctx.Err(); err != nil {
 		return result, domain.SafeError(err)
@@ -133,7 +111,7 @@ func (c *Client) InspectSteerAcceptance(ctx context.Context, requestID domain.ID
 	return result, nil
 }
 
-func (c *Client) inspectSteerScopeLocked(ctx context.Context) error {
+func (c *Client) inspectRetainedThreadLocked(ctx context.Context) error {
 	native, err := c.readThreadLocked(ctx, domain.NewID(), c.thread)
 	if err != nil {
 		return turnUncertain()

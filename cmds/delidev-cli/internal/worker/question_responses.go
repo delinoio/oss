@@ -59,8 +59,8 @@ type questionResponseJournal struct {
 }
 
 type nativeQuestionResponder interface {
+	nativeResponseInspector
 	AnswerQuestions(context.Context, domain.ID, domain.ID, domain.ID, codex.QuestionAnswers) (codex.InteractionStatus, error)
-	InspectInteraction(context.Context, domain.ID) (codex.InteractionStatus, error)
 }
 
 func startQuestionResponseController(ctx, nativeCtx context.Context, cancelNative context.CancelFunc, controls <-chan *pb.QuestionResponseControl, mapper *CodexEventPublisher, client nativeQuestionResponder) func() error {
@@ -194,6 +194,7 @@ func (c *CodexEventPublisher) deliverQuestionResponse(ctx, publicationCtx contex
 	bounded, cancel = context.WithTimeout(publicationCtx, 15*time.Second)
 	err = c.publishQuestionDeliveryLocked(bounded, domain.ExecutionQuestionResponseUpdate{InteractionID: identity.InteractionID, ResponseID: identity.ResponseID, ClaimID: journal.ClaimID, NativeItemID: original.NativeItemID, Delivery: delivery})
 	cancel()
+	confirmed := delivery == domain.QuestionDeliveryUncertain && c.inspectUncertainResponseLocked(publicationCtx, identity, original, client)
 	if err != nil {
 		return err
 	}
@@ -201,6 +202,9 @@ func (c *CodexEventPublisher) deliverQuestionResponse(ctx, publicationCtx contex
 		config.Logger.InfoContext(publicationCtx, "question_response_delivery_retained", "job_id", identity.JobID, "interaction_id", identity.InteractionID, "response_id", identity.ResponseID, "claim_id", journal.ClaimID, "delivery", delivery)
 	}
 	if delivery == domain.QuestionDeliveryUncertain {
+		if confirmed {
+			return nil // Preserve the queued original exact-answer publication.
+		}
 		return publicationUncertain()
 	}
 	if sendErr != nil {

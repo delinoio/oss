@@ -13,15 +13,24 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
 
+type fixtureHistoryNotification struct {
+	Method string          `json:"method"`
+	Params json.RawMessage `json:"params"`
+}
+
 func (f *threadFixture) handleContinuation(id json.RawMessage, method string, raw json.RawMessage, write func(json.RawMessage, any)) bool {
 	if method == "fixture/history" {
 		var params struct {
-			Page json.RawMessage `json:"page"`
+			Page            json.RawMessage             `json:"page"`
+			ChangeAfterRead bool                        `json:"changeAfterRead,omitempty"`
+			Notify          *fixtureHistoryNotification `json:"notify,omitempty"`
 		}
 		if domain.Decode(raw, &params) != nil || f.thread == nil {
 			os.Exit(60)
 		}
 		f.history = params.Page
+		f.historyChangeAfterRead = params.ChangeAfterRead
+		f.historyNotification = params.Notify
 		write(id, map[string]any{})
 		return true
 	}
@@ -53,6 +62,13 @@ func (f *threadFixture) handleContinuation(id json.RawMessage, method string, ra
 		time.Sleep(200 * time.Millisecond)
 	}
 	write(id, f.history)
+	if n := f.historyNotification; n != nil {
+		f.notify(n.Method, n.Params)
+		f.historyNotification = nil
+	}
+	if f.historyChangeAfterRead {
+		f.thread["modelProvider"] = "changed-after-history"
+	}
 	if f.mode == "thread-continuation-became-active" {
 		f.thread["status"] = map[string]any{"type": "active", "activeFlags": []string{}}
 	}

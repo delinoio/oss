@@ -26,6 +26,8 @@ type approvalControllerFixture struct {
 	path                        string
 	mode                        string
 	claims, sends, publications int
+	inspections                 int
+	inspection                  func(codex.InteractionStatus) (codex.InteractionStatus, error)
 	claim                       domain.ID
 	block                       chan struct{}
 }
@@ -43,6 +45,7 @@ func newApprovalControllerFixture(t *testing.T, mode string) *approvalController
 	publisher := &ExecutionPublisher{config: PublicationConfig{Root: root, Client: f, Instance: domain.NewID(), Credential: Credential{ServerID: domain.NewID(), DeviceID: domain.NewID(), MachineID: domain.NewID(), Type: domain.WorkerDevice}}, execution: execution, job: job, input: domain.ExecutionJobInput{SessionID: session}, path: filepath.Join(root, "jobs", string(job), "publication.json"), state: publicationJournal{Version: 1, JobID: job, LastSequence: 3}}
 	f.mapper = NewCodexEventPublisher(publisher)
 	f.mapper.thread, f.mapper.turn = domain.NewID(), domain.NewID()
+	f.mapper.approvalKinds[interaction] = domain.CodexCommandApproval
 	f.mapper.interactions[interaction] = domain.ExecutionInteractionUpdate{ID: interaction, NativeItemID: "native-approval", NativeRequestID: domain.InteractionRequestID{Kind: domain.InteractionTextID, Text: "original-native"}, Type: domain.NativeApprovalInteraction}
 	return f
 }
@@ -116,6 +119,24 @@ func (f *approvalControllerFixture) InspectInteraction(context.Context, domain.I
 	return codex.InteractionStatus{ID: domain.ID(f.control.InteractionId), TurnID: f.mapper.turn, ItemID: "native-approval", Delivery: codex.QuestionNotSent, Closure: codex.InteractionNativeClosed}, nil
 }
 
+func (f *approvalControllerFixture) InspectInteractionResponse(ctx context.Context, response, interaction domain.ID) (codex.InteractionStatus, error) {
+	f.inspections++
+	f.readJournal(responseObserved)
+	if response != domain.ID(f.control.ResponseId) || interaction != domain.ID(f.control.InteractionId) {
+		f.t.Fatal("inspection replaced the original response/arrival")
+	}
+	if _, ok := ctx.Deadline(); !ok {
+		f.t.Fatal("unbounded response inspection")
+	}
+	status := codex.InteractionStatus{ID: interaction, ResponseID: response, TurnID: f.mapper.turn, ItemID: "native-approval", Delivery: codex.QuestionDeliveryUncertain, Closure: codex.InteractionNativeClosed, Accepted: true}
+	status.ApprovalEvidence = codex.ApprovedCommandEvidence
+	if f.inspection != nil {
+		return f.inspection(status)
+	}
+	status.Accepted = false
+	return status, publicationUncertain()
+}
+
 func (f *approvalControllerFixture) PublishExecution(_ context.Context, req *connect.Request[pb.PublishExecutionRequest]) (*connect.Response[pb.PublishExecutionResponse], error) {
 	f.publications++
 	j := f.readJournal(responseObserved)
@@ -144,6 +165,13 @@ func TestApprovalControllerJournalsClaimAndSendWithoutResponseContent(t *testing
 			err := f.mapper.deliverApprovalResponse(context.Background(), context.Background(), f.control, f)
 			if (err == nil) != (mode == "permissions" || mode == "transmitted" || mode == "not-sent") {
 				t.Fatalf("unexpected controller result: %v", err)
+			}
+			expectedInspections := 0
+			if mode == "uncertain" {
+				expectedInspections = 1
+			}
+			if f.inspections != expectedInspections {
+				t.Fatal("automatic inspection did not match uncertain delivery")
 			}
 			expectedSends, expectedClaims := 1, 1
 			if mode == "claim-ack-lost" || mode == "foreign-claim" || mode == "foreign-native-request" || mode == "existing-journal" {

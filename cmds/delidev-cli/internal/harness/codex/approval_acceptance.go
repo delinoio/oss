@@ -99,7 +99,7 @@ func (c *Client) observePermissionAcceptanceLocked(owned *trackedInteraction, ou
 	if owned.status.Accepted {
 		return discarded, nil
 	}
-	owned.status.Accepted, owned.status.ApprovalEvidence = true, PermissionOutputEvidence
+	owned.confirmAcceptance(PermissionOutputEvidence)
 	status := owned.status
 	return Event{Kind: ApprovalAcceptedEvent, ThreadID: c.thread, TurnID: status.TurnID, ItemID: status.ItemID, InteractionState: &status, Correlated: true, Late: discarded.Late}, nil
 }

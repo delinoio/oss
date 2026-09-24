@@ -19,6 +19,8 @@ import (
 )
 
 type questionControllerFixture struct {
+	loseAcceptanceAck  bool
+	acceptanceRequests []string
 	delidevv1connect.WorkerServiceClient
 	t                           *testing.T
 	mapper                      *CodexEventPublisher
@@ -26,6 +28,8 @@ type questionControllerFixture struct {
 	path                        string
 	mode                        string
 	claims, sends, publications int
+	inspections                 int
+	inspection                  func(codex.InteractionStatus) (codex.InteractionStatus, error)
 	claim                       domain.ID
 	block                       chan struct{}
 }
@@ -112,11 +116,41 @@ func (f *questionControllerFixture) InspectInteraction(context.Context, domain.I
 	return codex.InteractionStatus{ID: domain.ID(f.control.InteractionId), TurnID: f.mapper.turn, ItemID: "native-question", Delivery: codex.QuestionNotSent, Closure: codex.InteractionNativeClosed}, nil
 }
 
+func (f *questionControllerFixture) InspectInteractionResponse(ctx context.Context, response, interaction domain.ID) (codex.InteractionStatus, error) {
+	f.inspections++
+	f.readJournal(responseObserved)
+	if response != domain.ID(f.control.ResponseId) || interaction != domain.ID(f.control.InteractionId) {
+		f.t.Fatal("inspection replaced the original response/arrival")
+	}
+	if _, ok := ctx.Deadline(); !ok {
+		f.t.Fatal("unbounded response inspection")
+	}
+	status := codex.InteractionStatus{ID: interaction, ResponseID: response, TurnID: f.mapper.turn, ItemID: "native-question", Delivery: codex.QuestionDeliveryUncertain, Closure: codex.InteractionNativeClosed, Accepted: true}
+	if f.inspection != nil {
+		return f.inspection(status)
+	}
+	status.Accepted = false
+	return status, publicationUncertain()
+}
+
 func (f *questionControllerFixture) PublishExecution(_ context.Context, req *connect.Request[pb.PublishExecutionRequest]) (*connect.Response[pb.PublishExecutionResponse], error) {
 	f.publications++
 	j := f.readJournal(responseObserved)
 	var e domain.ExecutionEvent
-	if domain.Decode(req.Msg.EventJson, &e) != nil || e.Validate() != nil || e.Kind != domain.ExecutionQuestionDeliveryObserved || e.QuestionResponse.ClaimID != j.ClaimID || e.QuestionResponse.Delivery != j.Delivery {
+	if domain.Decode(req.Msg.EventJson, &e) != nil || e.Validate() != nil {
+		f.t.Fatal("invalid response publication")
+	}
+	if e.Kind == domain.ExecutionQuestionAccepted {
+		if e.QuestionAcceptance.ClaimID != j.ClaimID || e.QuestionAcceptance.ResponseID != domain.ID(f.control.ResponseId) {
+			f.t.Fatal("acceptance replaced original durable claim")
+		}
+		f.acceptanceRequests = append(f.acceptanceRequests, req.Msg.Mutation.RequestId)
+		if f.loseAcceptanceAck {
+			return nil, connect.NewError(connect.CodeUnavailable, errors.New("fixture lost acceptance acknowledgment"))
+		}
+		return connect.NewResponse(&pb.PublishExecutionResponse{AcknowledgedSequence: e.Sequence}), nil
+	}
+	if e.Kind != domain.ExecutionQuestionDeliveryObserved || e.QuestionResponse.ClaimID != j.ClaimID || e.QuestionResponse.Delivery != j.Delivery {
 		f.t.Fatal("delivery event does not match retained response observation")
 	}
 	if f.mode == "publication-ack-lost" {
@@ -140,6 +174,13 @@ func TestQuestionControllerJournalsClaimAndSendWithoutAnswerContent(t *testing.T
 			err := f.mapper.deliverQuestionResponse(context.Background(), context.Background(), f.control, f)
 			if (err == nil) != (mode == "transmitted" || mode == "not-sent") {
 				t.Fatalf("unexpected controller result: %v", err)
+			}
+			expectedInspections := 0
+			if mode == "uncertain" {
+				expectedInspections = 1
+			}
+			if f.inspections != expectedInspections {
+				t.Fatal("automatic inspection did not match uncertain delivery")
 			}
 			expectedSends, expectedClaims := 1, 1
 			if mode == "claim-ack-lost" || mode == "foreign-claim" || mode == "foreign-native-request" || mode == "existing-journal" {

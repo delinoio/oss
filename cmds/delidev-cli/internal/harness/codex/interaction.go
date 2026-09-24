@@ -48,6 +48,26 @@ type trackedInteraction struct {
 	approvalKind    ApprovalKind
 	approvedTool    ToolKind
 	approvedCommand [32]byte
+	acceptance      *interactionAcceptance
+}
+
+// Status is written once before ready closes and remains immutable afterwards.
+// A waiting inspector can retain already-observed proof even if the native
+// process exits immediately afterwards. The original event owns publication.
+type interactionAcceptance struct {
+	ready  chan struct{}
+	status InteractionStatus
+}
+
+func (owned *trackedInteraction) confirmAcceptance(evidence ApprovalEvidence) {
+	if owned.status.Accepted {
+		return
+	}
+	owned.status.Accepted, owned.status.ApprovalEvidence = true, evidence
+	if owned.acceptance != nil {
+		owned.acceptance.status = owned.status
+		close(owned.acceptance.ready)
+	}
 }
 
 type interactionState struct {
@@ -130,7 +150,8 @@ func (c *Client) retainInteractionLocked(native nativewire.Event, turn domain.ID
 		s.responses = map[domain.ID]bool{}
 	}
 	owned := &trackedInteraction{
-		status: InteractionStatus{ID: interaction.ID, TurnID: turn, ItemID: item, Closure: InteractionOpen, Delivery: QuestionNotSent},
+		status:     InteractionStatus{ID: interaction.ID, TurnID: turn, ItemID: item, Closure: InteractionOpen, Delivery: QuestionNotSent},
+		acceptance: &interactionAcceptance{ready: make(chan struct{})},
 		// Retain only reply authority, never another copy of raw question data.
 		native: nativewire.Event{Kind: nativewire.ServerRequest, ID: slices.Clone(native.ID), Token: native.Token},
 		kind:   interaction.Kind, bytes: len(raw),

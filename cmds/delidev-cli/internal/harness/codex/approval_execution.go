@@ -76,7 +76,7 @@ func (c *Client) observeSingleUseApprovalLocked(turn domain.ID, tool *Tool) {
 	default:
 		return
 	}
-	owned.status.Accepted, owned.status.ApprovalEvidence = true, evidence
+	owned.confirmAcceptance(evidence)
 	if c.logger != nil {
 		c.logger.Info("Codex single-use approval execution confirmed", "owner_id", c.ownerID, "interaction_id", owned.status.ID, "response_id", owned.status.ResponseID, "turn_id", turn, "evidence", evidence)
 	}

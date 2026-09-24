@@ -153,6 +153,10 @@ func TestManualNativeApprovalResponse(t *testing.T) {
 			if err != nil || !closed || (!toolCompleted && !strings.HasPrefix(kind, "permissions-")) || status.Accepted != expectAccepted || accepted != status.Accepted || c.execution.interactions.blocksInput() == accepted {
 				t.Fatal("native approval lifecycle lost facts or inferred acceptance", err)
 			}
+			inspected, inspectErr := c.InspectInteractionResponse(ctx, status.ResponseID, arrival)
+			if inspected != status || (inspectErr == nil) != expectAccepted {
+				t.Fatal("native response inspection lost scope or invented acceptance", inspectErr)
+			}
 			if kind != "command-cancel" && (requests.Load() != 2 || !output.Load()) {
 				t.Fatal("native tool output did not reach scripted provider")
 			}

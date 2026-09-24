@@ -108,7 +108,7 @@ func (c *Client) observeRawInteractionEvidenceLocked(native nativewire.Event) (E
 	if owned.status.Accepted {
 		return discarded, nil
 	}
-	owned.status.Accepted = true
+	owned.confirmAcceptance("")
 	status := owned.status
 	return Event{Kind: QuestionAcceptedEvent, ThreadID: c.thread, TurnID: envelope.TurnID, ItemID: status.ItemID, InteractionState: &status, Correlated: true, Late: turn.Turn.Status.terminal()}, nil
 }
