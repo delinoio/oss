@@ -43,6 +43,73 @@ fn xml_part(parts: &std::collections::BTreeMap<String, Vec<u8>>, path: &str) -> 
     String::from_utf8(parts[path].clone()).unwrap()
 }
 #[test]
+fn lexical_true_flips_remain_opaque_and_preserved() {
+    let path = "ppt/slides/slide1.xml";
+    let original = read_package(EXTERNAL).unwrap();
+    let slide = xml_part(&original, path);
+    let doc = roxmltree::Document::parse(&slide).unwrap();
+    let picture = doc
+        .descendants()
+        .find(|n| n.tag_name().name() == "pic")
+        .unwrap();
+    let transform = picture
+        .descendants()
+        .find(|n| n.tag_name().name() == "xfrm")
+        .unwrap();
+    for axis in ["flipH", "flipV"] {
+        for value in ["1", "true", "0", "false"] {
+            let mut parts = original.clone();
+            let mut modified = slide.clone();
+            modified.insert_str(
+                transform.range().start + "<a:xfrm".len(),
+                &format!(" {axis}=\"{value}\""),
+            );
+            parts.insert(path.into(), modified.clone().into_bytes());
+            let source = write_package(&parts).unwrap();
+            let imported = import(&source).unwrap();
+            let flipped = matches!(value, "1" | "true");
+            assert_eq!(
+                imported.document.slides[0]
+                    .content
+                    .children
+                    .iter()
+                    .any(|n| n.kind == NodeKind::Image),
+                !flipped
+            );
+            let next = patch(
+                &imported,
+                vec![Operation::SetText {
+                    target: target(&imported.document, NodeKind::Text),
+                    text: "Unrelated edit".into(),
+                    cell: None,
+                }],
+            );
+            let output = update(
+                &source,
+                &imported.document,
+                &imported.bindings,
+                &next,
+                &imported.assets,
+                imported.document_id,
+                1,
+            )
+            .unwrap();
+            let result = xml_part(&read_package(&output).unwrap(), path);
+            let before = roxmltree::Document::parse(&modified).unwrap();
+            let after = roxmltree::Document::parse(&result).unwrap();
+            let before = before
+                .descendants()
+                .find(|n| n.tag_name().name() == "pic")
+                .unwrap();
+            let after = after
+                .descendants()
+                .find(|n| n.tag_name().name() == "pic")
+                .unwrap();
+            assert_eq!(&modified[before.range()], &result[after.range()]);
+        }
+    }
+}
+#[test]
 fn imported_chart_caches_follow_indices_and_preserve_unrepresentable_data() {
     let original = read_package(EXTERNAL).unwrap();
     let path = "ppt/charts/chart1.xml";

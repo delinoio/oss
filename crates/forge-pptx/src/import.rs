@@ -53,8 +53,8 @@ fn number(n: roxmltree::Node<'_, '_>, a: &str) -> Option<f64> {
 fn frame(n: roxmltree::Node<'_, '_>) -> Option<Frame> {
     let x = desc(n, A, "xfrm").or_else(|| desc(n, P, "xfrm"))?;
     if x.attribute("rot").is_some_and(|r| r != "0")
-        || x.attribute("flipH") == Some("1")
-        || x.attribute("flipV") == Some("1")
+        || matches!(x.attribute("flipH"), Some("1" | "true"))
+        || matches!(x.attribute("flipV"), Some("1" | "true"))
     {
         return None;
     }
