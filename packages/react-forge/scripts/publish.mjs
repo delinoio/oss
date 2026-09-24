@@ -19,14 +19,6 @@ export async function publishArtifacts(artifacts, { lookup = registryIntegrity, 
   ensure(typeof publish === "function", "Publisher required");
   const existing = await Promise.all(artifacts.map(lookup));
   for (let i = 0; i < artifacts.length; i++) ensure(existing[i] === null || existing[i] === artifacts[i].integrity, `Conflicting published integrity: ${artifacts[i].name}`);
-  // New npm names need a one-time interactive registration before OIDC trust
-  // can be configured. The entire first version is manually published from the
-  // verified candidate set; this job never publishes a partial bootstrap.
-  if (artifacts[0].version === "0.1.0") {
-    ensure(existing.every((value) => value !== null), "bootstrap_required: publish the seven verified 0.1.0 tarballs with 2FA, then configure all seven Trusted Publishers and rerun this job");
-    report(JSON.stringify({ event: "react_forge_bootstrap_verified", packages: artifacts.length }));
-    return;
-  }
   for (const artifact of artifacts) {
     let found = await lookup(artifact);
     ensure(found === null || found === artifact.integrity, `Conflicting published integrity: ${artifact.name}`);

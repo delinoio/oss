@@ -200,6 +200,5 @@ jobs:
           const fs = require('node:fs');
           const jobs = JSON.parse(process.env.RESULTS);
           const lines = ['## React Forge release', '', `Version: ${jobs.prepare.outputs?.version || 'unresolved'}`, `Commit: ${jobs.prepare.outputs?.revision || 'unresolved'}`, '', '| Phase | Result |', '| --- | --- |', ...Object.entries(jobs).map(([name, value]) => `| ${name} | ${value.result} |`), ''];
-          if (jobs.prepare.outputs?.version === '0.1.0' && jobs.package.result === 'success') lines.push('Bootstrap: publish the seven retained verified tarballs with npm 2FA, native packages first; configure seven Trusted Publishers for release-react-forge.yml, then rerun the tag workflow.');
           fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join('\n') + '\n');
           JS
