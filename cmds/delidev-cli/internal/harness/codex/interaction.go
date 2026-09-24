@@ -37,15 +37,17 @@ type InteractionStatus struct {
 }
 
 type trackedInteraction struct {
-	status       InteractionStatus
-	native       nativewire.Event
-	questions    *QuestionRequest
-	kind         InteractionKind
-	approval     *ApprovalRequest
-	bytes        int
-	answerDigest [32]byte
-	grantDigest  [32]byte
-	approvalKind ApprovalKind
+	status          InteractionStatus
+	native          nativewire.Event
+	questions       *QuestionRequest
+	kind            InteractionKind
+	approval        *ApprovalRequest
+	bytes           int
+	answerDigest    [32]byte
+	grantDigest     [32]byte
+	approvalKind    ApprovalKind
+	approvedTool    ToolKind
+	approvedCommand [32]byte
 }
 
 type interactionState struct {

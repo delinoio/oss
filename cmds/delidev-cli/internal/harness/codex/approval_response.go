@@ -86,6 +86,7 @@ func (c *Client) respondApproval(ctx context.Context, responseID, interactionID,
 	owned.status.ResponseID = responseID
 	owned.answerDigest = sha256.Sum256(raw)
 	owned.grantDigest = grantDigest
+	owned.retainSingleUseApproval(raw)
 	// Use the validated immutable bytes for both commitment and pipe delivery.
 	// No request command, path, rule, permission profile or response enters logs.
 	err = c.wire.Reply(ctx, owned.native, json.RawMessage(raw))

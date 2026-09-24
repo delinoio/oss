@@ -110,11 +110,15 @@ func (u ExecutionApprovalResponseUpdate) Validate() error {
 }
 
 // Acceptance is a separately correlated native processing fact. The initial
-// evidence profile supports the exact effective permission-tool response only;
-// command/file completion and native closure cannot substitute for it.
+// profiles distinguish exact permission output from pinned single-use approval
+// execution. Generic completion and native closure cannot substitute for them.
 type ApprovalAcceptanceEvidence string
 
-const NativePermissionsOutput ApprovalAcceptanceEvidence = "native-permissions-output"
+const (
+	NativePermissionsOutput ApprovalAcceptanceEvidence = "native-permissions-output"
+	NativeApprovedCommand   ApprovalAcceptanceEvidence = "native-approved-command"
+	NativeApprovedPatch     ApprovalAcceptanceEvidence = "native-approved-patch"
+)
 
 type ApprovalAcceptanceObservation struct {
 	Evidence ApprovalAcceptanceEvidence `json:"evidence"`

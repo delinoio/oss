@@ -280,6 +280,9 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 				if err := publishExecutionTool(tx, input, sr, event); err != nil {
 					return err
 				}
+				if err := publishSingleUseApprovalExecution(tx, job, input, actor, progress, event); err != nil {
+					return err
+				}
 			} else if err := publishExecutionMessage(tx, input, sr, progress, event); err != nil {
 				return err
 			}

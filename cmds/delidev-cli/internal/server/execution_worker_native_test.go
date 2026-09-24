@@ -552,9 +552,6 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 	}
 	session, err := store.Decode[domain.Session](retained)
 	expectedActive := domain.ID("")
-	if approvalResponseScenario {
-		expectedActive = f.input.ExecutionID
-	}
 	if err != nil || session.ActiveExecutionID != expectedActive || session.Execution == nil || !session.Execution.CleanupVerified || session.PendingInputs != 0 || session.Outcome != domain.ExecutionSucceeded {
 		t.Fatal("Worker native completion was not atomically published")
 	}
@@ -590,11 +587,11 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 		}
 		interaction, err := store.Decode[domain.ExecutionInteraction](rows[0])
 		response := interaction.ApprovalResponse
-		if err != nil || interaction.Closure == domain.InteractionOpen || interaction.Approval == nil || response == nil || response.State != domain.ApprovalResponseTransmitted || response.Claim == nil || response.Delivery == nil || response.Delivery.State != domain.ApprovalTransmitted || response.Input.Decision == nil || response.Input.Decision.Kind != domain.CodexApprovalAccept {
+		if err != nil || interaction.Closure == domain.InteractionOpen || interaction.Approval == nil || response == nil || response.State != domain.ApprovalResponseAccepted || response.Acceptance == nil || response.Acceptance.Evidence != domain.NativeApprovedCommand || response.Claim == nil || response.Delivery == nil || response.Delivery.State != domain.ApprovalTransmitted || response.Input.Decision == nil || response.Input.Decision.Kind != domain.CodexApprovalAccept {
 			t.Fatal("approval lost original claim and native transport evidence")
 		}
-		if session.Recovery != domain.NeedsRecovery || session.Dispatch != domain.DispatchPaused || session.Execution.UnconfirmedResponses != 1 {
-			t.Fatal("native command completion fabricated exact approval acceptance")
+		if session.Recovery != domain.NoRecovery || session.Dispatch != domain.DispatchReady || session.Execution.UnconfirmedResponses != 0 {
+			t.Fatal("single-use native approval execution was not reconciled")
 		}
 		_, entry := readExecutionInbox(t, f, domain.InteractionInbox, rows[0].ID)
 		if entry.ReadState != domain.InboxRead {

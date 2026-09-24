@@ -412,6 +412,9 @@ func (c *Client) observeMessageLocked(native nativewire.Event) (Event, error) {
 		eventKind := ToolStartedEvent
 		if native.Method == "item/completed" {
 			eventKind = ToolCompletedEvent
+			if known && !turn.Turn.Status.terminal() {
+				c.observeSingleUseApprovalLocked(params.TurnID, tool)
+			}
 		}
 		return Event{Kind: eventKind, ThreadID: c.thread, TurnID: params.TurnID, ItemID: tool.ID, Tool: tool, Correlated: known, Late: turn.Turn.Status.terminal()}, nil
 	case "userMessage":

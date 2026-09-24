@@ -65,6 +65,7 @@ func TestManualNativeApprovalResponse(t *testing.T) {
 			}
 			var arrival domain.ID
 			closed, toolCompleted, accepted := false, false, false
+			expectAccepted := strings.HasPrefix(kind, "permissions-") || kind == "command-accept" || kind == "file-accept"
 			for {
 				event, err := c.NextEvent(ctx)
 				if err != nil {
@@ -132,13 +133,24 @@ func TestManualNativeApprovalResponse(t *testing.T) {
 						t.Fatal("canceled native command was not declined")
 					}
 					toolCompleted = true
+					if kind == "command-accept" || kind == "file-accept" {
+						status, err := c.InspectInteraction(ctx, arrival)
+						evidence := ApprovedCommandEvidence
+						if kind == "file-accept" {
+							evidence = ApprovedPatchEvidence
+						}
+						if err != nil || !status.Accepted || status.ApprovalEvidence != evidence {
+							t.Fatal("single-use approval execution was not correlated", err)
+						}
+						accepted = true
+					}
 				}
 				if event.Kind == TurnCompletedEvent {
 					break
 				}
 			}
 			status, err := c.InspectInteraction(ctx, arrival)
-			if err != nil || !closed || (!toolCompleted && !strings.HasPrefix(kind, "permissions-")) || status.Accepted != (strings.HasPrefix(kind, "permissions-")) || accepted != status.Accepted || c.execution.interactions.blocksInput() == accepted {
+			if err != nil || !closed || (!toolCompleted && !strings.HasPrefix(kind, "permissions-")) || status.Accepted != expectAccepted || accepted != status.Accepted || c.execution.interactions.blocksInput() == accepted {
 				t.Fatal("native approval lifecycle lost facts or inferred acceptance", err)
 			}
 			if kind != "command-cancel" && (requests.Load() != 2 || !output.Load()) {
@@ -153,7 +165,7 @@ func TestManualNativeApprovalResponse(t *testing.T) {
 			if err := c.Close(); err != nil {
 				t.Fatal(err)
 			}
-			t.Logf("Codex %s %s: exact original request, one response, separate closure/tool completion; exact permission-output acceptance when available; no inferred command/file acceptance or external account", SupportedVersion, kind)
+			t.Logf("Codex %s %s: exact original request, one response, separate closure/tool completion; exact permission output or single-use execution proof; no remembered-policy inference or external account", SupportedVersion, kind)
 		})
 	}
 }
