@@ -908,6 +908,67 @@ int main(int argc, char **argv) {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn linux_native_fifo_opens_allow_peer_threads_to_unblock_each_other() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("fifo-peers.c");
+    fs::write(
+        &source,
+        r#"
+#include <fcntl.h>
+#include <pthread.h>
+#include <sys/stat.h>
+#include <unistd.h>
+static void *reader(void *unused) {
+    (void)unused;
+    int fd = open("fifo", O_RDONLY);
+    if (fd < 0) return (void *)1;
+    char byte = 0;
+    int ok = read(fd, &byte, 1) == 1 && byte == 'x';
+    close(fd);
+    return ok ? 0 : (void *)2;
+}
+int main(void) {
+    if (mkfifo("fifo", 0600)) return 20;
+    pthread_t thread;
+    if (pthread_create(&thread, 0, reader, 0)) return 21;
+    usleep(20000);
+    int fd = open("fifo", O_WRONLY);
+    if (fd < 0 || write(fd, "x", 1) != 1) return 22;
+    close(fd);
+    void *result = 0;
+    if (pthread_join(thread, &result) || result) return 23;
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("fifo-peers");
+    assert!(Command::new("cc")
+        .args(["-static", "-pthread", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new("timeout")
+        .arg("10s")
+        .arg(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn linux_concurrent_duplication_preserves_managed_descriptor_ownership() {
     use std::process::Command;
     let root = fixture();

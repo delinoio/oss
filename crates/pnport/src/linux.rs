@@ -380,9 +380,7 @@ fn traced_syscalls() -> Vec<i64> {
 fn fd_sensitive_syscall(call: i64) -> bool {
     if matches!(
         call,
-        x if x == libc::SYS_openat
-            || x == libc::SYS_openat2
-            || x == libc::SYS_close
+        x if x == libc::SYS_close
             || x == libc::SYS_close_range
             || x == libc::SYS_dup
             || x == libc::SYS_dup3
@@ -418,9 +416,7 @@ fn fd_sensitive_syscall(call: i64) -> bool {
     {
         matches!(
             call,
-            x if x == libc::SYS_open
-                || x == libc::SYS_creat
-                || x == libc::SYS_dup2
+            x if x == libc::SYS_dup2
                 || x == libc::SYS_futimesat
                 || x == libc::SYS_truncate
                 || x == libc::SYS_chmod
@@ -1253,7 +1249,11 @@ impl Trace<'_> {
                     "Resuming queued descriptor syscall"
                 );
                 self.fd_busy.insert(group, next);
-                return self.enter(next);
+                return if self.pending.contains_key(&next) {
+                    resume(next, true, 0)
+                } else {
+                    self.enter(next)
+                };
             }
         }
         Ok(())
@@ -2670,6 +2670,26 @@ impl Trace<'_> {
                 "Owned child path mediation failed"
             );
         })? {
+            if self.pending.get(&pid).is_some_and(
+                |action| matches!(action, Pending::Open(translation) if translation.readonly),
+            ) {
+                // Native opens can block (for example, a FIFO whose writer
+                // is another thread). Only managed opens need the group FD
+                // barrier, after pathname translation identifies ownership.
+                let group = Self::group(pid);
+                if self.fd_busy.contains_key(&group) {
+                    tracing::trace!(
+                        action = "linux_fd_barrier_wait",
+                        group,
+                        pid,
+                        call,
+                        "Queuing managed open"
+                    );
+                    self.fd_waiting.push_back((group, pid));
+                    return Ok(());
+                }
+                self.fd_busy.insert(group, pid);
+            }
             return resume(pid, true, 0);
         }
         if call == libc::SYS_ioctl {
@@ -2766,7 +2786,7 @@ impl Trace<'_> {
         let returned = result(&regs);
         let group = Self::group(pid);
         match action {
-            Pending::Open(translation) if returned >= 0 => {
+            Pending::Open(translation) if returned >= 0 && translation.readonly => {
                 self.fds
                     .entry(group)
                     .or_default()

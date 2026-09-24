@@ -205,6 +205,7 @@
 - pnport Linux must classify inherited managed descriptors before resuming the owned root task; descriptor-relative mutations retain read-only rejection even when the descriptor was opened by the caller. Reject writable inherited managed descriptors before execution.
 - pnport Linux named standard-stream aliases must resolve against the tracee's tracked FD table, including after dup onto descriptors 0, 1, or 2.
 - pnport Linux must serialize descriptor changes and mediated descriptor mutations across threads sharing an FD table through syscall exit; reserve known dup destinations at entry and cancel parked peer entries before cleanup resumes them.
+- pnport Linux native opens must remain available to peer threads while blocked, including FIFO reader/writer rendezvous; only managed opens participate in the FD barrier.
 - pnport Linux must reject mount-namespace and filesystem-root transitions before execution while pathname classification uses the supervisor's namespace and root.
 - pnport Linux must classify same-group `/proc/.../root` aliases by their underlying path, including physical cache paths; preserve native alias spelling when the path needs no virtual translation.
 - pnport Linux must leave native pathname bytes unchanged when no virtual translation is required, including both operands of link and rename calls; lexical normalization cannot replace kernel symlink and trailing-separator lookup.
