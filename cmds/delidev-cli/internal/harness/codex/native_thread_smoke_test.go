@@ -63,36 +63,10 @@ func TestManualNativeThreadSmoke(t *testing.T) {
 		}
 	}))
 	defer provider.Close()
-	root, err := filepath.EvalSymlinks(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range []string{"home", "codex", "config", "cache", "data", "state", "tmp", "workspace"} {
-		if err := security.PrivateDir(filepath.Join(root, name)); err != nil {
-			t.Fatal(err)
-		}
-	}
-	home := filepath.Join(root, "codex")
-	configText := fmt.Sprintf("model_provider = \"delidev_fixture\"\nmodel = \"fixture-model\"\n[model_providers.delidev_fixture]\nname = \"DeliDev fixture\"\nbase_url = %q\nwire_api = \"responses\"\nrequires_openai_auth = false\nrequest_max_retries = 0\nstream_max_retries = 0\n", provider.URL)
-	if err := os.WriteFile(filepath.Join(home, "config.toml"), []byte(configText), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	env := []string{"HOME=" + filepath.Join(root, "home"), "USERPROFILE=" + filepath.Join(root, "home"), "CODEX_HOME=" + home, "XDG_CONFIG_HOME=" + filepath.Join(root, "config"), "XDG_CACHE_HOME=" + filepath.Join(root, "cache"), "XDG_DATA_HOME=" + filepath.Join(root, "data"), "XDG_STATE_HOME=" + filepath.Join(root, "state"), "TMPDIR=" + filepath.Join(root, "tmp"), "TMP=" + filepath.Join(root, "tmp"), "TEMP=" + filepath.Join(root, "tmp"), "APPDATA=" + filepath.Join(root, "config"), "LOCALAPPDATA=" + filepath.Join(root, "data")}
-	path := filepath.Dir(binary) + string(os.PathListSeparator)
-	if runtime.GOOS == "windows" {
-		systemRoot := os.Getenv("SystemRoot")
-		if !filepath.IsAbs(systemRoot) {
-			t.Fatal("native Windows system context is unavailable")
-		}
-		env = append(env, "SystemRoot="+systemRoot)
-		path += filepath.Join(systemRoot, "System32")
-	} else {
-		path += "/usr/bin:/bin"
-	}
-	env = append(env, "PATH="+path)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	cfg := Config{Mode: ThreadProtocol, Version: SupportedVersion, Home: home, Process: process.Config{Directory: filepath.Join(root, "processes"), OwnerID: domain.NewID(), Executable: binary, Cwd: filepath.Join(root, "workspace"), Env: env}}
+	cfg := nativeFixtureConfig(t, binary, provider.URL)
+	root := filepath.Dir(cfg.Home)
 	client, err := Open(ctx, cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -122,20 +96,19 @@ func TestManualNativeThreadSmoke(t *testing.T) {
 	if observed.Status.Type != ThreadIdle {
 		t.Fatalf("unexpected native status: %v", observed.Status)
 	}
-	response, err := client.wire.Call(ctx, domain.NewID(), "turn/start", map[string]any{"threadId": result.Thread.ID, "input": []any{map[string]any{"type": "text", "text": "Return the local fixture response only."}}})
-	if err != nil || response.ErrorCode != nil {
-		t.Fatal("local fixture turn was rejected")
+	_, err = client.StartTurn(ctx, domain.NewID(), domain.NewID(), domain.SessionInput{Mode: domain.ExecuteMode, Prompt: "Return the local fixture response only."})
+	if err != nil {
+		t.Fatal(err)
 	}
 	for {
-		event, err := client.NextNativeEvent(ctx)
+		event, err := client.NextEvent(ctx)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if event.Method != "turn/completed" {
+		if event.Kind != TurnCompletedEvent {
 			continue
 		}
-		var terminal struct{ Turn struct{ Status string } }
-		if json.Unmarshal(event.Params, &terminal) != nil || terminal.Turn.Status != "completed" {
+		if event.Turn == nil || event.Turn.Status != TurnCompleted || !event.Correlated {
 			t.Fatal("fixture turn did not complete")
 		}
 		break
@@ -165,4 +138,40 @@ func TestManualNativeThreadSmoke(t *testing.T) {
 		t.Fatalf("unexpected local fixture request count %d", requests.Load())
 	}
 	t.Logf("%s/%s Codex %s: created, inspected, closed and resumed exact native thread; one local scripted model response; no external provider or user account", runtime.GOOS, runtime.GOARCH, SupportedVersion)
+}
+
+func nativeFixtureConfig(t *testing.T, binary, providerURL string) Config {
+	t.Helper()
+	if !filepath.IsAbs(binary) {
+		t.Fatal("the native fixture executable must be absolute")
+	}
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"home", "codex", "config", "cache", "data", "state", "tmp", "workspace"} {
+		if err := security.PrivateDir(filepath.Join(root, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	home := filepath.Join(root, "codex")
+	configText := fmt.Sprintf("model_provider = \"delidev_fixture\"\nmodel = \"fixture-model\"\n[model_providers.delidev_fixture]\nname = \"DeliDev fixture\"\nbase_url = %q\nwire_api = \"responses\"\nrequires_openai_auth = false\nrequest_max_retries = 0\nstream_max_retries = 0\n", providerURL)
+	if err := os.WriteFile(filepath.Join(home, "config.toml"), []byte(configText), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env := []string{"HOME=" + filepath.Join(root, "home"), "USERPROFILE=" + filepath.Join(root, "home"), "CODEX_HOME=" + home, "XDG_CONFIG_HOME=" + filepath.Join(root, "config"), "XDG_CACHE_HOME=" + filepath.Join(root, "cache"), "XDG_DATA_HOME=" + filepath.Join(root, "data"), "XDG_STATE_HOME=" + filepath.Join(root, "state"), "TMPDIR=" + filepath.Join(root, "tmp"), "TMP=" + filepath.Join(root, "tmp"), "TEMP=" + filepath.Join(root, "tmp"), "APPDATA=" + filepath.Join(root, "config"), "LOCALAPPDATA=" + filepath.Join(root, "data")}
+	path := filepath.Dir(binary) + string(os.PathListSeparator)
+	if runtime.GOOS == "windows" {
+		systemRoot := os.Getenv("SystemRoot")
+		if !filepath.IsAbs(systemRoot) {
+			t.Fatal("native Windows system context is unavailable")
+		}
+		env = append(env, "SystemRoot="+systemRoot)
+		path += filepath.Join(systemRoot, "System32")
+	} else {
+		path += "/usr/bin:/bin"
+	}
+	env = append(env, "PATH="+path)
+	cfg := Config{Mode: ThreadProtocol, Version: SupportedVersion, Home: home, Process: process.Config{Directory: filepath.Join(root, "processes"), OwnerID: domain.NewID(), Executable: binary, Cwd: filepath.Join(root, "workspace"), Env: env}}
+	return cfg
 }

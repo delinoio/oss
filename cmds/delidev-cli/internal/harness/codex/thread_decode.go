@@ -67,22 +67,8 @@ func decodeThread(raw json.RawMessage) (threadWire, error) {
 	if domain.Text(thread.Cwd, "native working directory", 4096, true) != nil || domain.Text(thread.ModelProvider, "native provider", 256, true) != nil {
 		return threadWire{}, incompatible()
 	}
-	switch thread.Status.Type {
-	case ThreadIdle, ThreadNotLoaded, ThreadSystemError:
-		if len(thread.Status.ActiveFlags) != 0 {
-			return threadWire{}, incompatible()
-		}
-	case ThreadActive:
-		if thread.Status.ActiveFlags == nil || len(thread.Status.ActiveFlags) > 2 {
-			return threadWire{}, incompatible()
-		}
-		for i, flag := range thread.Status.ActiveFlags {
-			if (flag != WaitingApproval && flag != WaitingInput) || slices.Contains(thread.Status.ActiveFlags[:i], flag) {
-				return threadWire{}, incompatible()
-			}
-		}
-	default:
-		return threadWire{}, incompatible()
+	if err := validateThreadStatus(thread.Status); err != nil {
+		return threadWire{}, err
 	}
 	return thread, nil
 }
@@ -181,4 +167,25 @@ func decodeBoundThread(raw json.RawMessage, settings ThreadSettings, expectedID 
 		return &thread, nil, incompatible()
 	}
 	return &thread, &EffectiveSettings{Model: response.Model, Provider: response.ModelProvider, Effort: response.ReasoningEffort, ServiceTier: response.ServiceTier, Cwd: response.Cwd, ApprovalPolicy: response.ApprovalPolicy, ApprovalsReviewer: response.ApprovalsReviewer, Sandbox: sandbox}, nil
+}
+
+func validateThreadStatus(status ThreadStatus) error {
+	switch status.Type {
+	case ThreadIdle, ThreadNotLoaded, ThreadSystemError:
+		if len(status.ActiveFlags) != 0 {
+			return incompatible()
+		}
+	case ThreadActive:
+		if status.ActiveFlags == nil || len(status.ActiveFlags) > 2 {
+			return incompatible()
+		}
+		for i, flag := range status.ActiveFlags {
+			if (flag != WaitingApproval && flag != WaitingInput) || slices.Contains(status.ActiveFlags[:i], flag) {
+				return incompatible()
+			}
+		}
+	default:
+		return incompatible()
+	}
+	return nil
 }

@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/nativewire"
 )
 
 // ThreadSettings is the private native translation of an accepted execution
@@ -305,6 +304,7 @@ func (c *Client) bindThread(ctx context.Context, requestID, threadID domain.ID, 
 		c.problem = threadUncertain()
 		return result, c.problem
 	}
+	c.execution = newExecutionState(*thread, *effective)
 	return result, nil
 }
 
@@ -321,36 +321,36 @@ func (c *Client) ReadThread(ctx context.Context, requestID, threadID domain.ID) 
 		return Thread{}, err
 	}
 	defer func() { <-c.control }()
+	wire, err := c.readThreadLocked(ctx, requestID, threadID)
+	if err != nil {
+		return Thread{}, err
+	}
+	return wire.summary(), nil
+}
+
+func (c *Client) readThreadLocked(ctx context.Context, requestID, threadID domain.ID) (threadWire, error) {
 	if c.thread != "" && threadID != c.thread {
-		return Thread{}, domain.Fail(domain.PermissionDenied, "The native thread belongs to another connection scope.", "Inspect only the retained native thread for this execution.")
+		return threadWire{}, domain.Fail(domain.PermissionDenied, "The native thread belongs to another connection scope.", "Inspect only the retained native thread for this execution.")
 	}
 	response, err := c.wire.Call(ctx, requestID, string(readThread), struct {
 		ThreadID     domain.ID `json:"threadId"`
 		IncludeTurns bool      `json:"includeTurns"`
 	}{threadID, false})
 	if err != nil {
-		return Thread{}, err
+		return threadWire{}, err
 	}
 	if response.ErrorCode != nil {
-		return Thread{}, nativeRejected(*response.ErrorCode)
+		return threadWire{}, nativeRejected(*response.ErrorCode)
 	}
 	var result struct {
 		Thread json.RawMessage `json:"thread"`
 	}
 	if domain.Decode(response.Result, &result) != nil {
-		return Thread{}, incompatible()
+		return threadWire{}, incompatible()
 	}
 	wire, err := decodeThread(result.Thread)
 	if err != nil || wire.ID != threadID {
-		return Thread{}, incompatible()
+		return threadWire{}, incompatible()
 	}
-	return wire.summary(), nil
-}
-
-// NextNativeEvent is a private adapter boundary for the execution coordinator.
-// It preserves notifications, interaction tokens and late response identities.
-// Raw payloads require typed validation before durable product publication; they
-// must never be logged, returned through Connect, or treated as authorization.
-func (c *Client) NextNativeEvent(ctx context.Context) (nativewire.Event, error) {
-	return c.wire.Next(ctx)
+	return wire, nil
 }

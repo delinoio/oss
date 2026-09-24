@@ -26,14 +26,17 @@ type Config struct {
 	Mode    ProtocolMode
 }
 type Client struct {
-	wire    *nativewire.Connection
-	version string
-	ownerID domain.ID
-	logger  *slog.Logger
-	control chan struct{}
-	thread  domain.ID
-	problem *domain.Error
-	mode    ProtocolMode
+	wire         *nativewire.Connection
+	version      string
+	ownerID      domain.ID
+	logger       *slog.Logger
+	control      chan struct{}
+	thread       domain.ID
+	problem      *domain.Error
+	mode         ProtocolMode
+	execution    *executionState
+	eventGate    chan struct{}
+	pendingEvent *nativewire.Event
 }
 
 type ProtocolMode string
@@ -169,7 +172,7 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	if config.Process.Logger != nil {
 		config.Process.Logger.InfoContext(ctx, "Codex native handshake verified", "owner_id", config.Process.OwnerID, "version", config.Version)
 	}
-	return &Client{wire: wire, version: config.Version, ownerID: config.Process.OwnerID, logger: config.Process.Logger, control: make(chan struct{}, 1), mode: config.Mode}, nil
+	return &Client{wire: wire, version: config.Version, ownerID: config.Process.OwnerID, logger: config.Process.Logger, control: make(chan struct{}, 1), eventGate: make(chan struct{}, 1), mode: config.Mode}, nil
 }
 func handshakeError(wire *nativewire.Connection, err error) error {
 	if observed := wire.Err(); observed != nil && observed.Code == domain.Unsupported {

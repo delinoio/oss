@@ -16,11 +16,17 @@ import (
 )
 
 type threadFixture struct {
-	mode   string
-	thread map[string]any
+	mode       string
+	thread     map[string]any
+	turn       domain.ID
+	turnInput  domain.ID
+	steerCount int
 }
 
 func (f *threadFixture) handle(id json.RawMessage, method string, raw json.RawMessage, write func(json.RawMessage, any)) bool {
+	if f.handleTurn(id, method, raw, write) {
+		return true
+	}
 	if method != string(startThread) && method != string(resumeThread) && method != string(readThread) {
 		return false
 	}
@@ -295,10 +301,14 @@ func TestThreadLateAcknowledgmentRetainsOriginalIdentityWithoutRetry(t *testing.
 	events, stop := context.WithTimeout(context.Background(), 3*time.Second)
 	defer stop()
 	for {
-		event, err := client.NextNativeEvent(events)
+		observation, err := client.NextEvent(events)
 		if err != nil {
 			t.Fatal(err)
 		}
+		if observation.Native == nil {
+			continue
+		}
+		event := *observation.Native
 		if event.Kind != nativewire.LateResponse {
 			continue
 		}
