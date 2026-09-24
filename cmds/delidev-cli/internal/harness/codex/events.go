@@ -23,6 +23,11 @@ const (
 	MetadataEvent         EventKind = "metadata"
 	UsageEvent            EventKind = "usage"
 	NoticeEvent           EventKind = "notice"
+	ToolStartedEvent      EventKind = "tool-started"
+	ToolCompletedEvent    EventKind = "tool-completed"
+	ToolOutputEvent       EventKind = "tool-output"
+	ToolPatchEvent        EventKind = "tool-patch"
+	ToolInputEvent        EventKind = "tool-input"
 )
 
 type MessageRole string
@@ -67,6 +72,8 @@ type Event struct {
 	Metadata    MetadataKind
 	Usage       *domain.NativeTokenUsage
 	Notice      domain.NativeNotice
+	Tool        *Tool
+	ToolInput   *ToolInput
 	// Native is present only for a still-private extension, including unrelated
 	// subagent events. It must pass a dedicated typed adapter before publication;
 	// neither it nor raw provider errors may be serialized as a product event.
@@ -224,6 +231,8 @@ func (c *Client) observeEventLocked(native nativewire.Event) (Event, error) {
 		return c.observeMessageLocked(native)
 	case "thread/tokenUsage/updated":
 		return c.observeUsageLocked(native)
+	case "item/commandExecution/outputDelta", "item/commandExecution/terminalInteraction", "item/fileChange/patchUpdated":
+		return c.observeToolUpdateLocked(native)
 	default:
 		return c.observeMetadataLocked(native)
 	}
@@ -312,6 +321,20 @@ func (c *Client) observeMessageLocked(native nativewire.Event) (Event, error) {
 	}
 	message := &Message{}
 	switch kind {
+	case "commandExecution", "fileChange":
+		tool, err := decodeTool(params.Item, kind, native.Method == "item/completed")
+		if err != nil {
+			return Event{}, err
+		}
+		turn, known := c.execution.turns[params.TurnID]
+		if !known && c.problem == nil {
+			return Event{}, incompatible()
+		}
+		eventKind := ToolStartedEvent
+		if native.Method == "item/completed" {
+			eventKind = ToolCompletedEvent
+		}
+		return Event{Kind: eventKind, ThreadID: c.thread, TurnID: params.TurnID, ItemID: tool.ID, Tool: tool, Correlated: known, Late: turn.Turn.Status.terminal()}, nil
 	case "userMessage":
 		var item struct {
 			Type     string            `json:"type"`

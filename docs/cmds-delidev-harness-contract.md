@@ -72,6 +72,13 @@ Token observations preserve native cumulative and last-request counters separate
 
 The native server composition test now rejects every unhandled event in its simple scripted turn and verifies retained token counters and attribution alongside the transcript. This is bounded evidence for that turn, not support for tools, interactions, populated quota, normal CLI dispatch or real account inference.
 
+### Codex native command and patch observations
+The private native event adapter now recognizes command/file-change item start/completion, command output deltas, native terminal-input observations and patch updates from the pinned `0.151.0` schema. It preserves command/source/cwd, advisory parsed actions, optional process/plugin metadata, unavailable exit/duration/output fields, native completion/failure/decline, exact file operations/diffs and optional move destinations. Native aggregate output remains separate from streamed output because its native truncation semantics can differ. Tool failure does not itself set the whole turn's outcome.
+
+These are typed observations only. Native tool/process IDs and paths do not authorize product terminal/file access, execute commands or broaden permissions. Source omission uses the pinned protocol's explicit `agent` default; explicit null/unknown source fails. Required/malformed/cross-kind fields, invalid lifecycle status, unknown turn ownership, count/text limits and wrong patch metadata fail validation. Foreign-thread observations stay private and JSON-excluded. Deprecated file-change textual-output notifications and other event families retain the explicit unsupported boundary.
+
+Durable product tool records, server publication, tool-history reconciliation and complete native tool acceptance still require integration. The current Worker publisher reports these new tool event kinds as unhandled and stops for reconciliation; parser success alone cannot silently discard them or advertise public execution capability. Current tool tests are controlled schema/adapter fixtures, not installed-harness tool execution evidence.
+
 ### First-turn Worker runner
 The actual outbound Worker loop now executes immutable first Codex assignments using the accepted configuration/account/input identities, a prepared workspace lease and a fresh private runtime. It validates the exact resolved executable without PATH fallback, registers its in-memory relay credential by digest, binds the native thread/input through the durable publication outbox and processes typed events in order. Unsupported event families stop for reconciliation. Local and multi-repository native permission roots, later-turn resume, rich tools/interactions and full public dispatch remain pending.
 
