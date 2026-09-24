@@ -94,3 +94,5 @@ DOCX authored list paragraphs may carry a shared UUID-v7 `instance_id`. Each lis
 Imported PPTX updates send a bounded envelope of authored replacements, new asset references and the source-bound identity snapshot. The native worker reconstructs untouched content from the separately bounded Office source rather than sending the full imported text through the 16 MiB React-tree limit. Large supported imports remain exportable without edits and with small mounted replacements.
 
 Word chart editability validates a closed ChartML/DrawingML structure and baseline property set, not just namespaces and plot type. Trendlines, error bars, logarithmic/custom axis bounds, stacked plots and other unmodeled standard features remain opaque. Supported native/generated and external bar/line/pie charts retain positive edit coverage; unrelated paragraph edits preserve protected chart parts exactly.
+
+PDF semantic headings and table headers default to bold only when bold is omitted. Explicit false remains authoritative before shaping, and run-level overrides continue to win over the heading default.
