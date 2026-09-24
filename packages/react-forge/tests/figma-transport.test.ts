@@ -216,6 +216,30 @@ test("401 rereads selected credentials once and errors never expose server secre
     await f.connection.close();
   }
 });
+test("permanent HTTP failures do not spend retry budget even for reads", async () => {
+  const f = fixture();
+  try {
+    for (const [status, code] of [
+      [400, ErrorCode.MalformedInput],
+      [403, ErrorCode.PermissionDenied],
+      [404, ErrorCode.InvalidTarget],
+      [409, ErrorCode.Conflict],
+      [413, ErrorCode.ResourceLimit],
+    ] as const) {
+      f.failures.push(new Response("SECRET-FROM-SERVER", { status }));
+      const before = f.calls.length;
+      await assert.rejects(
+        f.connection.call("use_figma", { code: "return 1" }, CallSafety.Read),
+        (e) => e instanceof RemoteError && e.code === code && !JSON.stringify(e).includes("SECRET"),
+      );
+      assert.equal(f.calls.length, before + 1);
+    }
+    assert.equal(f.connection.stats.retries, 0);
+    assert.equal(f.reads, 1);
+  } finally {
+    await f.connection.close();
+  }
+});
 test("sessions using the same authentication share their request budget", async () => {
   const token = `SYNTHETIC-${randomUUID()}`;
   const a = fixture(token),

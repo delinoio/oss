@@ -368,7 +368,15 @@ export class OfficialFigmaConnection implements FigmaConnection {
                 ? ErrorCode.PermissionDenied
                 : http?.status === 429
                   ? ErrorCode.RateLimited
-                  : ErrorCode.Remote;
+                  : http?.status === 404
+                    ? ErrorCode.InvalidTarget
+                    : http?.status === 409
+                      ? ErrorCode.Conflict
+                      : http?.status === 413
+                        ? ErrorCode.ResourceLimit
+                        : http && http.status >= 400 && http.status < 500 && http.status !== 408
+                          ? ErrorCode.MalformedInput
+                          : ErrorCode.Remote;
           problem = new RemoteError(
             code,
             !!http && [401, 403, 429].includes(http.status),
