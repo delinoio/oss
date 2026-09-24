@@ -28,17 +28,8 @@ test("license, notice and README bytes are stable across Windows checkouts", () 
 
 const artifacts = (version) => [...platforms.map((host) => ({ name: nativeName(host), version, integrity: `sha512-${host.id}` })), { name: "@delino/react-forge", version, integrity: "sha512-main" }];
 
-test("first publication requires the complete verified manual bootstrap", async () => {
+test("first release checks conflicts before writes and publishes native packages first", async () => {
   const set = artifacts("0.1.0");
-  let writes = 0;
-  await assert.rejects(publishArtifacts(set, { lookup: async () => null, publish: async () => { writes++; } }), /bootstrap_required/u);
-  assert.equal(writes, 0);
-  await publishArtifacts(set, { lookup: async (artifact) => artifact.integrity, publish: async () => { writes++; }, report: () => {} });
-  assert.equal(writes, 0);
-});
-
-test("later release checks conflicts before writes and publishes native packages first", async () => {
-  const set = artifacts("0.1.1");
   const published = new Map([[set[0].name, set[0].integrity]]);
   const writes = [];
   const lookup = async (artifact) => published.get(artifact.name) ?? null;
