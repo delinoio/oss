@@ -233,7 +233,7 @@ pub(crate) enum Outcome {
 
 pub(crate) fn execute(command: Command, raw: &[OsString]) -> Result<Outcome> {
     #[cfg(unix)]
-    runtime::configure_terminal_interrupt_acknowledgement(installed_launcher_acknowledgement());
+    runtime::configure_terminal_interrupt_acknowledgement(installed_launcher_acknowledgement())?;
     match command {
         Command::RateLimit(mut options) => {
             options.workload.restore_leading_separator(raw, false);

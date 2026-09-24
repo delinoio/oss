@@ -53,11 +53,32 @@ pub fn install_signals() -> Result<()> {
 }
 
 #[cfg(unix)]
-pub fn configure_terminal_interrupt_acknowledgement(descriptor: Option<libc::c_int>) {
-    let descriptor = descriptor
-        .filter(|descriptor| *descriptor >= 3)
-        .unwrap_or(-1);
+pub fn configure_terminal_interrupt_acknowledgement(descriptor: Option<libc::c_int>) -> Result<()> {
+    let descriptor = match descriptor.filter(|descriptor| *descriptor >= 3) {
+        Some(descriptor) => match close_on_exec(descriptor) {
+            Ok(()) => descriptor,
+            // A user-controlled environment can name an absent descriptor.
+            // Treat it as no launcher acknowledgement instead of changing
+            // workload behavior; an installed launcher's pipe is open here.
+            Err(error) if error.raw_os_error() == Some(libc::EBADF) => -1,
+            Err(error) => return Err(Failure::io(&error)),
+        },
+        None => -1,
+    };
     TERMINAL_INTERRUPT_ACK_DESCRIPTOR.store(descriptor, Ordering::SeqCst);
+    Ok(())
+}
+
+#[cfg(unix)]
+fn close_on_exec(descriptor: libc::c_int) -> std::io::Result<()> {
+    let flags = unsafe { libc::fcntl(descriptor, libc::F_GETFD) };
+    if flags == -1 {
+        return Err(std::io::Error::last_os_error());
+    }
+    if unsafe { libc::fcntl(descriptor, libc::F_SETFD, flags | libc::FD_CLOEXEC) } == -1 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(())
 }
 
 #[cfg(unix)]
@@ -289,6 +310,25 @@ pub fn wait_child(child: &mut Child, kill_on_cancel: bool) -> Result<ExitStatus>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn terminal_interrupt_acknowledgement_does_not_cross_exec() {
+        let mut pipe = [-1; 2];
+        assert_eq!(unsafe { libc::pipe(pipe.as_mut_ptr()) }, 0);
+
+        configure_terminal_interrupt_acknowledgement(Some(pipe[1])).unwrap();
+
+        let flags = unsafe { libc::fcntl(pipe[1], libc::F_GETFD) };
+        assert_ne!(flags, -1);
+        assert_ne!(flags & libc::FD_CLOEXEC, 0);
+
+        configure_terminal_interrupt_acknowledgement(None).unwrap();
+        unsafe {
+            libc::close(pipe[0]);
+            libc::close(pipe[1]);
+        }
+    }
 
     #[test]
     fn interruptible_work_stops_waiting_at_its_deadline() {
