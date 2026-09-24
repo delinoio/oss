@@ -21,6 +21,7 @@ type CodexEventPublisher struct {
 	artifacts         map[string]codexArtifactPublication
 	interactions      map[domain.ID]domain.ExecutionInteractionUpdate
 	questionResponses map[domain.ID]domain.ExecutionQuestionResponseUpdate
+	approvalResponses map[domain.ID]domain.ExecutionApprovalResponseUpdate
 	acceptedInputs    []domain.ExecutionInputBinding
 	steers            map[domain.ID]domain.ExecutionSteerUpdate
 	waiting           domain.NativeWaiting
@@ -28,7 +29,7 @@ type CodexEventPublisher struct {
 }
 
 func NewCodexEventPublisher(publisher *ExecutionPublisher) *CodexEventPublisher {
-	return &CodexEventPublisher{publisher: publisher, messages: map[string]domain.ExecutionMessageUpdate{}, tools: map[string]codexToolPublication{}, artifacts: map[string]codexArtifactPublication{}, interactions: map[domain.ID]domain.ExecutionInteractionUpdate{}, questionResponses: map[domain.ID]domain.ExecutionQuestionResponseUpdate{}, steers: map[domain.ID]domain.ExecutionSteerUpdate{}}
+	return &CodexEventPublisher{publisher: publisher, messages: map[string]domain.ExecutionMessageUpdate{}, tools: map[string]codexToolPublication{}, artifacts: map[string]codexArtifactPublication{}, interactions: map[domain.ID]domain.ExecutionInteractionUpdate{}, questionResponses: map[domain.ID]domain.ExecutionQuestionResponseUpdate{}, approvalResponses: map[domain.ID]domain.ExecutionApprovalResponseUpdate{}, steers: map[domain.ID]domain.ExecutionSteerUpdate{}}
 }
 
 func (c *CodexEventPublisher) publish(ctx context.Context, event domain.ExecutionEvent) error {

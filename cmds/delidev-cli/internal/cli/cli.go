@@ -149,6 +149,11 @@ func Run(ctx context.Context, args []string, streams IO) int {
 			return emit(value, err)
 		}
 	case "interaction":
+		if len(rest) > 0 && rest[0] == "approve" {
+			ensureRequest(&o)
+			value, err := respondApproval(ctx, c, o, rest[1:], streams)
+			return emit(value, err)
+		}
 		if len(rest) > 0 && rest[0] == "respond" {
 			ensureRequest(&o)
 			value, err := respondQuestion(ctx, c, o, rest[1:], streams)
@@ -642,6 +647,7 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   session stop|archive|restore|resume --id ID --revision N
   session rename --id ID --revision N --name NAME
   interaction respond --id ID --revision N --input FILE|-
+  interaction approve --id ID --revision N --input FILE|-
   inbox list [--session-id ID] [--project-id ID] [--read-state all|read|unread]
     [--source all|interaction|execution-terminal] [--limit N] [--page-token TOKEN]
   inbox get|inspect --id ID

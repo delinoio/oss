@@ -64,22 +64,35 @@ func (c *CodexEventPublisher) publishInteraction(ctx context.Context, e codex.Ev
 		if status == nil || status.TurnID != c.turn || status.ItemID != e.ItemID || status.Closure != codex.InteractionNativeClosed || e.Interaction != nil {
 			return publicationUncertain()
 		}
-		delivery, hasDelivery := c.questionResponses[status.ID]
-		if status.ResponseID != "" || status.Delivery != codex.QuestionNotSent {
-			if !hasDelivery {
-				return domain.Fail(domain.Unsupported, "Question response publication needs its durable owner claim.", "Retain the native response without inferring authorization or acceptance from closure.")
-			}
-			if status.ResponseID != delivery.ResponseID || domain.QuestionDelivery(status.Delivery) != delivery.Delivery {
-				return publicationUncertain()
-			}
-		} else if hasDelivery && delivery.Delivery != domain.QuestionNotSent {
-			return publicationUncertain()
-		}
 		var known bool
 		update, known = c.interactions[status.ID]
 		if !known || update.NativeItemID != e.ItemID || update.Closure != "" {
 			return publicationUncertain()
 		}
+		var responseID domain.ID
+		var observed codex.QuestionDelivery
+		var hasDelivery bool
+		switch update.Type {
+		case domain.UserQuestionInteraction:
+			delivery, ok := c.questionResponses[status.ID]
+			responseID, observed, hasDelivery = delivery.ResponseID, codex.QuestionDelivery(delivery.Delivery), ok
+		case domain.NativeApprovalInteraction:
+			delivery, ok := c.approvalResponses[status.ID]
+			responseID, observed, hasDelivery = delivery.ResponseID, codex.QuestionDelivery(delivery.Delivery), ok
+		default:
+			return publicationUncertain()
+		}
+		if status.ResponseID != "" || status.Delivery != codex.QuestionNotSent {
+			if !hasDelivery {
+				return domain.Fail(domain.Unsupported, "Response publication needs its original durable owner claim.", "Retain the native response without inferring authorization or acceptance from closure.")
+			}
+			if status.ResponseID != responseID || status.Delivery != observed {
+				return publicationUncertain()
+			}
+		} else if hasDelivery && observed != codex.QuestionNotSent {
+			return publicationUncertain()
+		}
+
 		kind, update.Closure = domain.ExecutionInteractionClosed, domain.InteractionNativeClosed
 	}
 	if err := c.publish(ctx, domain.ExecutionEvent{Kind: kind, Interaction: &update}); err != nil {
@@ -115,7 +128,7 @@ func (c *CodexEventPublisher) publishQuestionDeliveryLocked(ctx context.Context,
 	}
 	original, known := c.interactions[update.InteractionID]
 	_, delivered := c.questionResponses[update.InteractionID]
-	if !known || delivered || original.Closure != "" || original.NativeItemID != update.NativeItemID {
+	if !known || original.Type != domain.UserQuestionInteraction || delivered || original.Closure != "" || original.NativeItemID != update.NativeItemID {
 		return publicationUncertain()
 	}
 	if err := c.publish(ctx, domain.ExecutionEvent{Kind: domain.ExecutionQuestionDeliveryObserved, QuestionResponse: &update}); err != nil {

@@ -85,6 +85,9 @@ const (
 	// InteractionServiceRespondQuestionProcedure is the fully-qualified name of the
 	// InteractionService's RespondQuestion RPC.
 	InteractionServiceRespondQuestionProcedure = "/delidev.v1.InteractionService/RespondQuestion"
+	// InteractionServiceRespondApprovalProcedure is the fully-qualified name of the
+	// InteractionService's RespondApproval RPC.
+	InteractionServiceRespondApprovalProcedure = "/delidev.v1.InteractionService/RespondApproval"
 	// DeviceServiceCreatePairingProcedure is the fully-qualified name of the DeviceService's
 	// CreatePairing RPC.
 	DeviceServiceCreatePairingProcedure = "/delidev.v1.DeviceService/CreatePairing"
@@ -117,6 +120,9 @@ const (
 	// WorkerServiceClaimQuestionResponseProcedure is the fully-qualified name of the WorkerService's
 	// ClaimQuestionResponse RPC.
 	WorkerServiceClaimQuestionResponseProcedure = "/delidev.v1.WorkerService/ClaimQuestionResponse"
+	// WorkerServiceClaimApprovalResponseProcedure is the fully-qualified name of the WorkerService's
+	// ClaimApprovalResponse RPC.
+	WorkerServiceClaimApprovalResponseProcedure = "/delidev.v1.WorkerService/ClaimApprovalResponse"
 	// WorkerServiceClaimSteerInputProcedure is the fully-qualified name of the WorkerService's
 	// ClaimSteerInput RPC.
 	WorkerServiceClaimSteerInputProcedure = "/delidev.v1.WorkerService/ClaimSteerInput"
@@ -608,6 +614,7 @@ func (UnimplementedConfigurationServiceHandler) PreviewRouting(context.Context, 
 // InteractionServiceClient is a client for the delidev.v1.InteractionService service.
 type InteractionServiceClient interface {
 	RespondQuestion(context.Context, *connect.Request[v1.RespondQuestionRequest]) (*connect.Response[v1.RespondQuestionResponse], error)
+	RespondApproval(context.Context, *connect.Request[v1.RespondApprovalRequest]) (*connect.Response[v1.RespondApprovalResponse], error)
 }
 
 // NewInteractionServiceClient constructs a client for the delidev.v1.InteractionService service. By
@@ -627,12 +634,19 @@ func NewInteractionServiceClient(httpClient connect.HTTPClient, baseURL string, 
 			connect.WithSchema(interactionServiceMethods.ByName("RespondQuestion")),
 			connect.WithClientOptions(opts...),
 		),
+		respondApproval: connect.NewClient[v1.RespondApprovalRequest, v1.RespondApprovalResponse](
+			httpClient,
+			baseURL+InteractionServiceRespondApprovalProcedure,
+			connect.WithSchema(interactionServiceMethods.ByName("RespondApproval")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // interactionServiceClient implements InteractionServiceClient.
 type interactionServiceClient struct {
 	respondQuestion *connect.Client[v1.RespondQuestionRequest, v1.RespondQuestionResponse]
+	respondApproval *connect.Client[v1.RespondApprovalRequest, v1.RespondApprovalResponse]
 }
 
 // RespondQuestion calls delidev.v1.InteractionService.RespondQuestion.
@@ -640,9 +654,15 @@ func (c *interactionServiceClient) RespondQuestion(ctx context.Context, req *con
 	return c.respondQuestion.CallUnary(ctx, req)
 }
 
+// RespondApproval calls delidev.v1.InteractionService.RespondApproval.
+func (c *interactionServiceClient) RespondApproval(ctx context.Context, req *connect.Request[v1.RespondApprovalRequest]) (*connect.Response[v1.RespondApprovalResponse], error) {
+	return c.respondApproval.CallUnary(ctx, req)
+}
+
 // InteractionServiceHandler is an implementation of the delidev.v1.InteractionService service.
 type InteractionServiceHandler interface {
 	RespondQuestion(context.Context, *connect.Request[v1.RespondQuestionRequest]) (*connect.Response[v1.RespondQuestionResponse], error)
+	RespondApproval(context.Context, *connect.Request[v1.RespondApprovalRequest]) (*connect.Response[v1.RespondApprovalResponse], error)
 }
 
 // NewInteractionServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -658,10 +678,18 @@ func NewInteractionServiceHandler(svc InteractionServiceHandler, opts ...connect
 		connect.WithSchema(interactionServiceMethods.ByName("RespondQuestion")),
 		connect.WithHandlerOptions(opts...),
 	)
+	interactionServiceRespondApprovalHandler := connect.NewUnaryHandler(
+		InteractionServiceRespondApprovalProcedure,
+		svc.RespondApproval,
+		connect.WithSchema(interactionServiceMethods.ByName("RespondApproval")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/delidev.v1.InteractionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case InteractionServiceRespondQuestionProcedure:
 			interactionServiceRespondQuestionHandler.ServeHTTP(w, r)
+		case InteractionServiceRespondApprovalProcedure:
+			interactionServiceRespondApprovalHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -673,6 +701,10 @@ type UnimplementedInteractionServiceHandler struct{}
 
 func (UnimplementedInteractionServiceHandler) RespondQuestion(context.Context, *connect.Request[v1.RespondQuestionRequest]) (*connect.Response[v1.RespondQuestionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.InteractionService.RespondQuestion is not implemented"))
+}
+
+func (UnimplementedInteractionServiceHandler) RespondApproval(context.Context, *connect.Request[v1.RespondApprovalRequest]) (*connect.Response[v1.RespondApprovalResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.InteractionService.RespondApproval is not implemented"))
 }
 
 // DeviceServiceClient is a client for the delidev.v1.DeviceService service.
@@ -807,6 +839,7 @@ type WorkerServiceClient interface {
 	RegisterExecution(context.Context, *connect.Request[v1.RegisterExecutionRequest]) (*connect.Response[v1.RegisterExecutionResponse], error)
 	PublishExecution(context.Context, *connect.Request[v1.PublishExecutionRequest]) (*connect.Response[v1.PublishExecutionResponse], error)
 	ClaimQuestionResponse(context.Context, *connect.Request[v1.ClaimQuestionResponseRequest]) (*connect.Response[v1.ClaimQuestionResponseResponse], error)
+	ClaimApprovalResponse(context.Context, *connect.Request[v1.ClaimApprovalResponseRequest]) (*connect.Response[v1.ClaimApprovalResponseResponse], error)
 	ClaimSteerInput(context.Context, *connect.Request[v1.ClaimSteerInputRequest]) (*connect.Response[v1.ClaimSteerInputResponse], error)
 }
 
@@ -869,6 +902,12 @@ func NewWorkerServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(workerServiceMethods.ByName("ClaimQuestionResponse")),
 			connect.WithClientOptions(opts...),
 		),
+		claimApprovalResponse: connect.NewClient[v1.ClaimApprovalResponseRequest, v1.ClaimApprovalResponseResponse](
+			httpClient,
+			baseURL+WorkerServiceClaimApprovalResponseProcedure,
+			connect.WithSchema(workerServiceMethods.ByName("ClaimApprovalResponse")),
+			connect.WithClientOptions(opts...),
+		),
 		claimSteerInput: connect.NewClient[v1.ClaimSteerInputRequest, v1.ClaimSteerInputResponse](
 			httpClient,
 			baseURL+WorkerServiceClaimSteerInputProcedure,
@@ -888,6 +927,7 @@ type workerServiceClient struct {
 	registerExecution     *connect.Client[v1.RegisterExecutionRequest, v1.RegisterExecutionResponse]
 	publishExecution      *connect.Client[v1.PublishExecutionRequest, v1.PublishExecutionResponse]
 	claimQuestionResponse *connect.Client[v1.ClaimQuestionResponseRequest, v1.ClaimQuestionResponseResponse]
+	claimApprovalResponse *connect.Client[v1.ClaimApprovalResponseRequest, v1.ClaimApprovalResponseResponse]
 	claimSteerInput       *connect.Client[v1.ClaimSteerInputRequest, v1.ClaimSteerInputResponse]
 }
 
@@ -931,6 +971,11 @@ func (c *workerServiceClient) ClaimQuestionResponse(ctx context.Context, req *co
 	return c.claimQuestionResponse.CallUnary(ctx, req)
 }
 
+// ClaimApprovalResponse calls delidev.v1.WorkerService.ClaimApprovalResponse.
+func (c *workerServiceClient) ClaimApprovalResponse(ctx context.Context, req *connect.Request[v1.ClaimApprovalResponseRequest]) (*connect.Response[v1.ClaimApprovalResponseResponse], error) {
+	return c.claimApprovalResponse.CallUnary(ctx, req)
+}
+
 // ClaimSteerInput calls delidev.v1.WorkerService.ClaimSteerInput.
 func (c *workerServiceClient) ClaimSteerInput(ctx context.Context, req *connect.Request[v1.ClaimSteerInputRequest]) (*connect.Response[v1.ClaimSteerInputResponse], error) {
 	return c.claimSteerInput.CallUnary(ctx, req)
@@ -946,6 +991,7 @@ type WorkerServiceHandler interface {
 	RegisterExecution(context.Context, *connect.Request[v1.RegisterExecutionRequest]) (*connect.Response[v1.RegisterExecutionResponse], error)
 	PublishExecution(context.Context, *connect.Request[v1.PublishExecutionRequest]) (*connect.Response[v1.PublishExecutionResponse], error)
 	ClaimQuestionResponse(context.Context, *connect.Request[v1.ClaimQuestionResponseRequest]) (*connect.Response[v1.ClaimQuestionResponseResponse], error)
+	ClaimApprovalResponse(context.Context, *connect.Request[v1.ClaimApprovalResponseRequest]) (*connect.Response[v1.ClaimApprovalResponseResponse], error)
 	ClaimSteerInput(context.Context, *connect.Request[v1.ClaimSteerInputRequest]) (*connect.Response[v1.ClaimSteerInputResponse], error)
 }
 
@@ -1004,6 +1050,12 @@ func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(workerServiceMethods.ByName("ClaimQuestionResponse")),
 		connect.WithHandlerOptions(opts...),
 	)
+	workerServiceClaimApprovalResponseHandler := connect.NewUnaryHandler(
+		WorkerServiceClaimApprovalResponseProcedure,
+		svc.ClaimApprovalResponse,
+		connect.WithSchema(workerServiceMethods.ByName("ClaimApprovalResponse")),
+		connect.WithHandlerOptions(opts...),
+	)
 	workerServiceClaimSteerInputHandler := connect.NewUnaryHandler(
 		WorkerServiceClaimSteerInputProcedure,
 		svc.ClaimSteerInput,
@@ -1028,6 +1080,8 @@ func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOp
 			workerServicePublishExecutionHandler.ServeHTTP(w, r)
 		case WorkerServiceClaimQuestionResponseProcedure:
 			workerServiceClaimQuestionResponseHandler.ServeHTTP(w, r)
+		case WorkerServiceClaimApprovalResponseProcedure:
+			workerServiceClaimApprovalResponseHandler.ServeHTTP(w, r)
 		case WorkerServiceClaimSteerInputProcedure:
 			workerServiceClaimSteerInputHandler.ServeHTTP(w, r)
 		default:
@@ -1069,6 +1123,10 @@ func (UnimplementedWorkerServiceHandler) PublishExecution(context.Context, *conn
 
 func (UnimplementedWorkerServiceHandler) ClaimQuestionResponse(context.Context, *connect.Request[v1.ClaimQuestionResponseRequest]) (*connect.Response[v1.ClaimQuestionResponseResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.ClaimQuestionResponse is not implemented"))
+}
+
+func (UnimplementedWorkerServiceHandler) ClaimApprovalResponse(context.Context, *connect.Request[v1.ClaimApprovalResponseRequest]) (*connect.Response[v1.ClaimApprovalResponseResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.ClaimApprovalResponse is not implemented"))
 }
 
 func (UnimplementedWorkerServiceHandler) ClaimSteerInput(context.Context, *connect.Request[v1.ClaimSteerInputRequest]) (*connect.Response[v1.ClaimSteerInputResponse], error) {

@@ -26,6 +26,7 @@ const (
 	ExecutionInteractionClosed        ExecutionEventKind = "interaction-closed"
 	ExecutionWaitingChanged           ExecutionEventKind = "waiting-changed"
 	ExecutionQuestionDeliveryObserved ExecutionEventKind = "question-delivery-observed"
+	ExecutionApprovalDeliveryObserved ExecutionEventKind = "approval-delivery-observed"
 	ExecutionQuestionAccepted         ExecutionEventKind = "question-accepted"
 	ExecutionSteerObserved            ExecutionEventKind = "steer-observed"
 )
@@ -120,6 +121,7 @@ type ExecutionEvent struct {
 	Interaction        *ExecutionInteractionUpdate        `json:"interaction,omitempty"`
 	Waiting            *NativeWaiting                     `json:"waiting,omitempty"`
 	QuestionResponse   *ExecutionQuestionResponseUpdate   `json:"question_response,omitempty"`
+	ApprovalResponse   *ExecutionApprovalResponseUpdate   `json:"approval_response,omitempty"`
 	QuestionAcceptance *ExecutionQuestionAcceptanceUpdate `json:"question_acceptance,omitempty"`
 	Steer              *ExecutionSteerUpdate              `json:"steer,omitempty"`
 }
@@ -159,6 +161,13 @@ func (e ExecutionEvent) Validate() error {
 			return invalidInteraction()
 		}
 		if err := e.QuestionResponse.Validate(); err != nil {
+			return err
+		}
+	case ExecutionApprovalDeliveryObserved:
+		if e.ApprovalResponse == nil {
+			return invalidInteraction()
+		}
+		if err := e.ApprovalResponse.Validate(); err != nil {
 			return err
 		}
 	case ExecutionInteractionRequested, ExecutionInteractionClosed:
@@ -246,7 +255,7 @@ func (e ExecutionEvent) Validate() error {
 	default:
 		return Fail(Unsupported, "Unknown normalized execution event.", "Use a dedicated supported native event adapter.")
 	}
-	if (e.Kind != ExecutionSteerObserved && e.Steer != nil) || (e.Kind != ExecutionQuestionAccepted && e.QuestionAcceptance != nil) || (e.Kind != ExecutionQuestionDeliveryObserved && e.QuestionResponse != nil) || (!e.Kind.IsInteraction() && e.Interaction != nil) || (e.Kind != ExecutionWaitingChanged && e.Waiting != nil) || (!e.Kind.IsArtifact() && e.Artifact != nil) || (e.Kind != ExecutionProgressObserved && e.Progress != nil) || (!e.Kind.IsTool() && e.Tool != nil) || (e.Kind != ExecutionThreadBound && e.Observed != nil) || (e.Kind != ExecutionMessageStarted && e.Kind != ExecutionTextAppended && e.Kind != ExecutionMessageCompleted && e.Message != nil) || (e.Kind != ExecutionTurnFinished && (e.Outcome != "" || e.ProblemCode != "")) || (e.Kind != ExecutionUsageObserved && (e.Usage != nil || e.ObservationID != "")) || (e.Kind != ExecutionNoticeObserved && e.Notice != "") {
+	if (e.Kind != ExecutionApprovalDeliveryObserved && e.ApprovalResponse != nil) || (e.Kind != ExecutionSteerObserved && e.Steer != nil) || (e.Kind != ExecutionQuestionAccepted && e.QuestionAcceptance != nil) || (e.Kind != ExecutionQuestionDeliveryObserved && e.QuestionResponse != nil) || (!e.Kind.IsInteraction() && e.Interaction != nil) || (e.Kind != ExecutionWaitingChanged && e.Waiting != nil) || (!e.Kind.IsArtifact() && e.Artifact != nil) || (e.Kind != ExecutionProgressObserved && e.Progress != nil) || (!e.Kind.IsTool() && e.Tool != nil) || (e.Kind != ExecutionThreadBound && e.Observed != nil) || (e.Kind != ExecutionMessageStarted && e.Kind != ExecutionTextAppended && e.Kind != ExecutionMessageCompleted && e.Message != nil) || (e.Kind != ExecutionTurnFinished && (e.Outcome != "" || e.ProblemCode != "")) || (e.Kind != ExecutionUsageObserved && (e.Usage != nil || e.ObservationID != "")) || (e.Kind != ExecutionNoticeObserved && e.Notice != "") {
 		return Fail(InvalidArgument, "An execution event contains another kind's payload.", "Publish one unambiguous typed event.")
 	}
 	return nil

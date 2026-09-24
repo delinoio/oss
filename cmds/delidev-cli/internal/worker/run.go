@@ -33,6 +33,7 @@ type Config struct {
 	execution        *PublicationConfig
 	executionContext context.Context
 	questionControls <-chan *pb.QuestionResponseControl
+	approvalControls <-chan *pb.ApprovalResponseControl
 	steerControls    <-chan *pb.SteerInputControl
 }
 type journalState string
@@ -152,14 +153,16 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 		return err
 	}
 	type assignment struct {
-		resource  *pb.Resource
-		context   context.Context
-		cancel    context.CancelFunc
-		controls  chan *pb.QuestionResponseControl
-		responses map[domain.ID]responseControlIdentity
-		steers    chan *pb.SteerInputControl
-		steerIDs  map[domain.ID]steerControlIdentity
-		native    bool
+		resource    *pb.Resource
+		context     context.Context
+		cancel      context.CancelFunc
+		controls    chan *pb.QuestionResponseControl
+		approvals   chan *pb.ApprovalResponseControl
+		approvalIDs map[domain.ID]responseControlIdentity
+		responses   map[domain.ID]responseControlIdentity
+		steers      chan *pb.SteerInputControl
+		steerIDs    map[domain.ID]steerControlIdentity
+		native      bool
 	}
 	jobs := make(chan assignment, 1)
 	var active sync.Map
@@ -177,7 +180,7 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 			if message.SteerInput != nil {
 				control := message.SteerInput
 				identity, err := steerControl(control)
-				if err != nil || message.Job != nil || message.Heartbeat || message.CancelRequested || message.CancelJobId != "" || message.QuestionResponse != nil {
+				if err != nil || message.Job != nil || message.Heartbeat || message.CancelRequested || message.CancelJobId != "" || message.QuestionResponse != nil || message.ApprovalResponse != nil {
 					cancel(publicationUncertain())
 					return
 				}
@@ -223,7 +226,7 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 			if message.QuestionResponse != nil {
 				control := message.QuestionResponse
 				identity, err := responseControl(control)
-				if err != nil || message.Job != nil || message.Heartbeat || message.CancelRequested || message.CancelJobId != "" {
+				if err != nil || message.Job != nil || message.Heartbeat || message.CancelRequested || message.CancelJobId != "" || message.ApprovalResponse != nil {
 					cancel(publicationUncertain())
 					return
 				}
@@ -252,13 +255,69 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 					}
 					continue
 				}
-				if len(work.responses) >= domain.MaxExecutionInteractions {
+				if _, mixed := work.approvalIDs[identity.ResponseID]; mixed {
+					cancel(publicationUncertain())
+					return
+				}
+				if len(work.approvalIDs)+len(work.responses) >= domain.MaxExecutionInteractions {
 					cancel(publicationUncertain())
 					return
 				}
 				work.responses[identity.ResponseID] = identity
 				select {
 				case work.controls <- proto.Clone(control).(*pb.QuestionResponseControl):
+				case <-work.context.Done():
+				case <-ctx.Done():
+					return
+				default:
+					cancel(domain.Fail(domain.ResourceExhausted, "The native response control buffer is full.", "Retain the original execution for reconciliation without replaying answers."))
+					return
+				}
+				continue
+			}
+			if message.ApprovalResponse != nil {
+				control := message.ApprovalResponse
+				identity, err := approvalResponseControl(control)
+				if err != nil || message.Job != nil || message.Heartbeat || message.CancelRequested || message.CancelJobId != "" || message.QuestionResponse != nil {
+					cancel(publicationUncertain())
+					return
+				}
+				value, ok := active.Load(control.JobId)
+				if !ok {
+					// A control read before terminal publication may arrive after
+					// the local job finished. It cannot reopen that assignment.
+					if control.JobId == lastAssigned {
+						continue
+					}
+					cancel(publicationUncertain())
+					return
+				}
+				work := value.(*assignment)
+				if !work.native {
+					cancel(publicationUncertain())
+					return
+				}
+				if work.context.Err() != nil {
+					continue
+				}
+				if prior, exists := work.approvalIDs[identity.ResponseID]; exists {
+					if prior != identity {
+						cancel(publicationUncertain())
+						return
+					}
+					continue
+				}
+				if _, mixed := work.responses[identity.ResponseID]; mixed {
+					cancel(publicationUncertain())
+					return
+				}
+				if len(work.approvalIDs)+len(work.responses) >= domain.MaxExecutionInteractions {
+					cancel(publicationUncertain())
+					return
+				}
+				work.approvalIDs[identity.ResponseID] = identity
+				select {
+				case work.approvals <- proto.Clone(control).(*pb.ApprovalResponseControl):
 				case <-work.context.Done():
 				case <-ctx.Done():
 					return
@@ -295,7 +354,7 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 				return
 			}
 			jobContext, stopJob := context.WithCancel(ctx)
-			work := &assignment{resource: resource, context: jobContext, cancel: stopJob, controls: make(chan *pb.QuestionResponseControl, domain.MaxOpenInteractions), responses: map[domain.ID]responseControlIdentity{}, steers: make(chan *pb.SteerInputControl, 1), steerIDs: map[domain.ID]steerControlIdentity{}}
+			work := &assignment{resource: resource, context: jobContext, cancel: stopJob, controls: make(chan *pb.QuestionResponseControl, domain.MaxOpenInteractions), approvals: make(chan *pb.ApprovalResponseControl, domain.MaxOpenInteractions), approvalIDs: map[domain.ID]responseControlIdentity{}, responses: map[domain.ID]responseControlIdentity{}, steers: make(chan *pb.SteerInputControl, 1), steerIDs: map[domain.ID]steerControlIdentity{}}
 			var envelope domain.Job
 			if domain.Decode(resource.DocumentJson, &envelope) != nil {
 				stopJob()
@@ -360,6 +419,7 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 		jobConfig.execution = &PublicationConfig{Root: config.Root, Credential: credential, Instance: instance, Assignment: resource, Client: client, Logger: config.Logger}
 		jobConfig.executionContext = ctx
 		jobConfig.questionControls = work.controls
+		jobConfig.approvalControls = work.approvals
 		jobConfig.steerControls = work.steers
 		result, err := runJob(work.context, jobConfig, instance, resource, job)
 		work.cancel()

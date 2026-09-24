@@ -36,9 +36,18 @@ func publishExecutionTool(tx *store.Tx, input domain.ExecutionJobInput, session 
 			if tool.Started.Kind == domain.CommandTool {
 				prior, next := tool.Started.Command, update.Snapshot.Command
 				// Native process/parsed/output metadata can become available later;
-				// the command's original operation and source cannot be substituted.
-				if prior.Command != next.Command || prior.Cwd != next.Cwd || prior.Source != next.Source {
+				// the command's original operation cannot be substituted.
+				if prior.Command != next.Command || prior.Cwd != next.Cwd {
 					return executionEventConflict()
+				}
+				if prior.Source != next.Source {
+					matches, err := codexApprovalSourceTransition(tx, input, event, value.FirstSequence, prior.Source, next.Source)
+					if err != nil {
+						return err
+					}
+					if !matches {
+						return executionEventConflict()
+					}
 				}
 			}
 			tool.Completed = update.Snapshot
@@ -79,4 +88,38 @@ func publishExecutionTool(tx *store.Tx, input domain.ExecutionJobInput, session 
 	// Tools share the native item uniqueness and completed-item gate with text
 	// messages. A failed/declined tool is a completed item, not a failed turn.
 	return tx.BindExecutionMessage(session.ID, input.ExecutionID, update.ID, event.NativeThreadID, event.NativeTurnID, update.NativeID, value.State)
+}
+
+// Codex 0.151.0's approval presentation emits an early Agent start and
+// suppresses the later canonical start. Its unified-exec completion reports
+// ExecStartup instead. Preserve both observations only for that pinned profile
+// and a matching intervening command approval; this is not approval acceptance.
+// Remove this compatibility rule when the pinned native profile emits a stable
+// source, after validating the replacement against installed native evidence.
+func codexApprovalSourceTransition(tx *store.Tx, input domain.ExecutionJobInput, event domain.ExecutionEvent, started uint64, prior, next domain.CommandSource) (bool, error) {
+	if input.Configuration.Harness != domain.Codex || input.Installation.Version != domain.CodexProtocolVersion || prior != domain.AgentCommand || next != domain.ExecStartupCommand {
+		return false, nil
+	}
+	ids, err := tx.ExecutionItemInteractions(input.ExecutionID, event.NativeThreadID, event.NativeTurnID, event.Tool.NativeID)
+	if err != nil {
+		return false, err
+	}
+	for _, id := range ids {
+		r, err := tx.Get(domain.InteractionKind, id)
+		if err != nil {
+			return false, err
+		}
+		value, err := store.Decode[domain.ExecutionInteraction](r)
+		if err != nil {
+			return false, err
+		}
+		if r.SessionID != input.SessionID || value.ExecutionID != input.ExecutionID || value.Type != domain.NativeApprovalInteraction || value.FirstSequence <= started || value.FirstSequence >= event.Sequence || value.Approval == nil {
+			continue
+		}
+		approval := value.Approval
+		if approval.Harness == domain.Codex && approval.Version == domain.CodexProtocolVersion && approval.Codex != nil && approval.Codex.Kind == domain.CodexCommandApproval && approval.Codex.Command != nil && approval.Codex.Command.Kind == domain.CodexExecuteCommandApproval && approval.Codex.Command.ApprovalID == nil {
+			return true, nil
+		}
+	}
+	return false, nil
 }

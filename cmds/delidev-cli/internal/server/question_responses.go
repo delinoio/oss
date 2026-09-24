@@ -27,7 +27,7 @@ func (s *Service) acceptQuestionResponse(tx *store.Tx, responseID, interactionID
 	if err != nil {
 		return store.Record{}, err
 	}
-	if r.Revision != revision || value.Closure != domain.InteractionOpen || value.Response != nil || value.Type != domain.UserQuestionInteraction {
+	if r.Revision != revision || value.Closure != domain.InteractionOpen || value.Response != nil || value.ApprovalResponse != nil || value.Type != domain.UserQuestionInteraction {
 		return store.Record{}, domain.Fail(domain.Conflict, "The question changed, closed or already has a response.", "Reload its original request and current response state before responding; do not replay native input.")
 	}
 	if err := input.Validate(value.Questions); err != nil {
@@ -47,7 +47,14 @@ func (s *Service) acceptQuestionResponse(tx *store.Tx, responseID, interactionID
 }
 
 func (s *Service) questionResponseScope(tx *store.Tx, r store.Record, value domain.ExecutionInteraction) (store.ExecutionGrant, error) {
-	if s.executionAuthority == nil || r.Kind != domain.InteractionKind || value.Type != domain.UserQuestionInteraction || value.Closure != domain.InteractionOpen {
+	if value.Type != domain.UserQuestionInteraction {
+		return store.ExecutionGrant{}, executionEventConflict()
+	}
+	return s.interactionResponseScope(tx, r, value)
+}
+
+func (s *Service) interactionResponseScope(tx *store.Tx, r store.Record, value domain.ExecutionInteraction) (store.ExecutionGrant, error) {
+	if s.executionAuthority == nil || r.Kind != domain.InteractionKind || value.Closure != domain.InteractionOpen {
 		return store.ExecutionGrant{}, executionEventConflict()
 	}
 	_, session, err := sessionRecord(tx, r.SessionID)
@@ -73,7 +80,7 @@ func (s *Service) questionResponseScope(tx *store.Tx, r store.Record, value doma
 		return store.ExecutionGrant{}, err
 	}
 	// Reuse the complete live execution/account/Worker/project/epoch boundary.
-	// A question cannot introduce another account, model or permission policy.
+	// An interaction cannot introduce another account, model or permission policy.
 	if _, err := s.executionAuthority.scope(tx, grant); err != nil {
 		return store.ExecutionGrant{}, err
 	}

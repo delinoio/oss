@@ -214,9 +214,13 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	}
 	logger.InfoContext(ctx, "native_execution_input_accepted", "input_id", input.InputID)
 	finishResponses := startQuestionResponseController(ctx, nativeCtx, cancelNative, config.questionControls, mapper, client)
+	finishApprovals := startApprovalResponseController(ctx, nativeCtx, cancelNative, config.approvalControls, mapper, client)
 	finishSteers := startSteerController(ctx, nativeCtx, cancelNative, config.steerControls, mapper, client)
 	defer func() {
 		if err := finishSteers(); err != nil {
+			output, returned = nil, err
+		}
+		if err := finishApprovals(); err != nil {
 			output, returned = nil, err
 		}
 		if err := finishResponses(); err != nil {

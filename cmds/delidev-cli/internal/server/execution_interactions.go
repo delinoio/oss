@@ -52,6 +52,22 @@ func publishExecutionInteraction(tx *store.Tx, input domain.ExecutionJobInput, s
 
 func closePublishedInteraction(tx *store.Tx, r store.Record, value domain.ExecutionInteraction, closure domain.InteractionClosure, sequence uint64) (bool, error) {
 	uncertain := false
+	if value.ApprovalResponse != nil {
+		if value.Type != domain.NativeApprovalInteraction || value.Response != nil {
+			return false, executionEventConflict()
+		}
+		switch value.ApprovalResponse.State {
+		case domain.ApprovalResponseQueued, domain.ApprovalResponseCanceled:
+			value.ApprovalResponse.State = domain.ApprovalResponseCanceled
+		case domain.ApprovalResponseClaimed, domain.ApprovalResponseUncertain:
+			value.ApprovalResponse.State = domain.ApprovalResponseUncertain
+			uncertain = true
+		case domain.ApprovalResponseTransmitted, domain.ApprovalResponseAccepted:
+			// Closure does not prove response acceptance or install a policy.
+		default:
+			return false, executionEventConflict()
+		}
+	}
 	if value.Response != nil {
 		switch value.Response.State {
 		case domain.QuestionResponseQueued, domain.QuestionResponseCanceled:

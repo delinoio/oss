@@ -189,6 +189,7 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 		var records []store.Record
 		var cancelJob domain.ID
 		var responseControls []*pb.QuestionResponseControl
+		var approvalControls []*pb.ApprovalResponseControl
 		var steerControl *pb.SteerInputControl
 		err := s.Store.Read(ctx, func(tx *store.Tx) error {
 			if err := currentInstance(tx, machine, instance); err != nil {
@@ -215,6 +216,9 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 					}
 					if !requested {
 						responseControls, err = s.pendingQuestionResponses(tx, record, job, responseControlsSent)
+						if err == nil {
+							approvalControls, err = s.pendingApprovalResponses(tx, record, job, responseControlsSent)
+						}
 						if err == nil {
 							steerControl, err = s.pendingSteer(tx, record, job, steerControlsSent)
 						}
@@ -244,6 +248,15 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 				return rpc.Error(domain.Fail(domain.ResourceExhausted, "The execution response control bound is reached.", "Reconcile its original interactions without replaying native answers."), correlation)
 			}
 			if err := send(&pb.WatchWorkResponse{QuestionResponse: control}); err != nil {
+				return err
+			}
+			responseControlsSent[domain.ID(control.ResponseId)] = true
+		}
+		for _, control := range approvalControls {
+			if len(responseControlsSent) >= domain.MaxExecutionInteractions {
+				return rpc.Error(domain.Fail(domain.ResourceExhausted, "The execution response control bound is reached.", "Reconcile its original interactions without replaying native answers."), correlation)
+			}
+			if err := send(&pb.WatchWorkResponse{ApprovalResponse: control}); err != nil {
 				return err
 			}
 			responseControlsSent[domain.ID(control.ResponseId)] = true

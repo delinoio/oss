@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -40,6 +41,7 @@ const (
 	nativeWorkerQuestionStop
 	nativeWorkerQuestionResponse
 	nativeWorkerApprovalStop
+	nativeWorkerApprovalResponse
 )
 
 func TestManualNativeWorkerExecutesAcceptedCodexJob(t *testing.T) {
@@ -66,6 +68,10 @@ func TestManualNativeWorkerRetainsApprovalUntilStop(t *testing.T) {
 		t.Skip("this installed-harness fixture uses a POSIX shell builtin")
 	}
 	testManualNativeWorkerExecution(t, nativeWorkerApprovalStop)
+}
+
+func TestManualNativeWorkerDeliversOwnedApprovalResponse(t *testing.T) {
+	testManualNativeWorkerExecution(t, nativeWorkerApprovalResponse)
 }
 
 func TestManualNativeWorkerDeliversOwnedQuestionResponse(t *testing.T) {
@@ -104,9 +110,10 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	toolScenario := scenario == nativeWorkerCommand || scenario == nativeWorkerPlan
-	responseScenario := scenario == nativeWorkerQuestionResponse
-	questionScenario := scenario == nativeWorkerQuestionStop || responseScenario
-	approvalScenario := scenario == nativeWorkerApprovalStop
+	approvalResponseScenario := scenario == nativeWorkerApprovalResponse
+	responseScenario := scenario == nativeWorkerQuestionResponse || approvalResponseScenario
+	questionScenario := scenario == nativeWorkerQuestionStop || scenario == nativeWorkerQuestionResponse
+	approvalScenario := scenario == nativeWorkerApprovalStop || approvalResponseScenario
 	interactionScenario := questionScenario || approvalScenario
 	completedScenario := scenario == nativeWorkerCompletion || toolScenario || responseScenario
 	var calls atomic.Int64
@@ -175,7 +182,10 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 		if interactionScenario && !responseScenario {
 			t.Error("unanswered native interaction triggered another model request")
 		}
-		if responseScenario {
+		if approvalResponseScenario && (call != 2 || !strings.Contains(string(body), "function_call_output") || !strings.Contains(string(body), "native-tool-fixture")) {
+			t.Error("approved native command did not return actual output")
+		}
+		if responseScenario && !approvalResponseScenario {
 			var request struct {
 				Input []struct {
 					Type   string          `json:"type"`
@@ -239,7 +249,7 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 	var workerErr error
 	go func() {
 		defer close(done)
-		workerErr = worker.Run(running, worker.Config{Root: manager.Root, Logger: f.service.logger})
+		workerErr = worker.Run(running, worker.Config{Root: manager.Root, Logger: slog.New(slog.NewJSONHandler(os.Stderr, nil))})
 	}()
 	t.Cleanup(func() { stopWorker(); <-done })
 	responseAccepted := make(chan error, 1)
@@ -264,10 +274,14 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 						responseAccepted <- err
 						return
 					}
-					raw, err := json.Marshal(domain.QuestionResponseInput{Answers: map[string][]string{"choice": {"Second"}}})
-					if err == nil {
-						client := delidevv1connect.NewInteractionServiceClient(f.http.Client(), f.http.URL)
-						_, err = client.RespondQuestion(ctx, ownerRequest(f.service.Identity, &pb.RespondQuestionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: view.Interaction.Id, ExpectedRevision: view.Interaction.Revision}, ResponseJson: raw}))
+					client := delidevv1connect.NewInteractionServiceClient(f.http.Client(), f.http.URL)
+					mutation := &pb.Mutation{RequestId: string(domain.NewID()), Id: view.Interaction.Id, ExpectedRevision: view.Interaction.Revision}
+					if approvalResponseScenario {
+						raw, _ := json.Marshal(approvalInput())
+						_, err = client.RespondApproval(ctx, ownerRequest(f.service.Identity, &pb.RespondApprovalRequest{Mutation: mutation, ResponseJson: raw}))
+					} else {
+						raw, _ := json.Marshal(domain.QuestionResponseInput{Answers: map[string][]string{"choice": {"Second"}}})
+						_, err = client.RespondQuestion(ctx, ownerRequest(f.service.Identity, &pb.RespondQuestionRequest{Mutation: mutation, ResponseJson: raw}))
 					}
 					responseAccepted <- err
 					return
@@ -492,6 +506,23 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 			break
 		}
 		if job.State == domain.JobUncertain || job.State == domain.JobFailed || job.State == domain.JobCanceled {
+			outbox, _ := security.ReadPrivate(filepath.Join(manager.Root, "jobs", string(f.job), "publication.json"), 2<<20)
+			var retained struct {
+				Pending *struct {
+					Event domain.ExecutionEvent `json:"event"`
+				} `json:"pending"`
+			}
+			if json.Unmarshal(outbox, &retained) == nil && retained.Pending != nil && retained.Pending.Event.Tool != nil && retained.Pending.Event.Tool.Snapshot != nil {
+				update := retained.Pending.Event.Tool
+				record, readErr := f.service.Store.Get(ctx, domain.MessageKind, update.ID)
+				if readErr == nil {
+					prior, _ := store.Decode[domain.ExecutionMessage](record)
+					if prior.Tool != nil && prior.Tool.Started.Command != nil && update.Snapshot.Command != nil {
+						a, b := prior.Tool.Started.Command, update.Snapshot.Command
+						t.Logf("retained tool mismatch: command_equal=%t cwd_equal=%t source_before=%s source_after=%s", a.Command == b.Command, a.Cwd == b.Cwd, a.Source, b.Source)
+					}
+				}
+			}
 			t.Fatalf("native Worker failed: %s %v", job.State, job.Problem)
 		}
 		select {
@@ -501,7 +532,7 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 		}
 	}
 	expectedCalls, expectedMessages := int64(1), 2
-	if toolScenario {
+	if toolScenario || approvalResponseScenario {
 		expectedCalls, expectedMessages = 2, 3
 	}
 	if responseScenario {
@@ -520,14 +551,18 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 		t.Fatal(err)
 	}
 	session, err := store.Decode[domain.Session](retained)
-	if err != nil || session.ActiveExecutionID != "" || session.Execution == nil || !session.Execution.CleanupVerified || session.PendingInputs != 0 || session.Outcome != domain.ExecutionSucceeded {
+	expectedActive := domain.ID("")
+	if approvalResponseScenario {
+		expectedActive = f.input.ExecutionID
+	}
+	if err != nil || session.ActiveExecutionID != expectedActive || session.Execution == nil || !session.Execution.CleanupVerified || session.PendingInputs != 0 || session.Outcome != domain.ExecutionSucceeded {
 		t.Fatal("Worker native completion was not atomically published")
 	}
 	_, terminalInbox := readExecutionInbox(t, f, domain.ExecutionTerminalInbox, f.input.ExecutionID)
 	if terminalInbox.ReadState != domain.InboxUnread || terminalInbox.Terminal.Outcome != domain.ExecutionSucceeded || terminalInbox.Terminal.Sequence != session.Execution.LastSequence {
 		t.Fatal("native Worker completion did not retain immutable unread inbox evidence")
 	}
-	if responseScenario {
+	if responseScenario && !approvalResponseScenario {
 		rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.InteractionKind, SessionID: f.input.SessionID, Limit: 2})
 		if err != nil || len(rows) != 1 {
 			t.Fatal("native response lost its original interaction", err)
@@ -546,6 +581,28 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 		journal, err := security.ReadPrivate(filepath.Join(manager.Root, "jobs", string(f.job), "responses", string(rows[0].ID)+".json"), 64<<10)
 		if err != nil || !strings.Contains(string(journal), string(interaction.Response.Claim.ID)) || strings.Contains(string(journal), "Second") || strings.Contains(string(journal), "Native Worker question") {
 			t.Fatal("Worker response journal lost ownership or retained answer/question content")
+		}
+	}
+	if approvalResponseScenario {
+		rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.InteractionKind, SessionID: f.input.SessionID, Limit: 2})
+		if err != nil || len(rows) != 1 {
+			t.Fatal("approval response lost its original request", err)
+		}
+		interaction, err := store.Decode[domain.ExecutionInteraction](rows[0])
+		response := interaction.ApprovalResponse
+		if err != nil || interaction.Closure == domain.InteractionOpen || interaction.Approval == nil || response == nil || response.State != domain.ApprovalResponseTransmitted || response.Claim == nil || response.Delivery == nil || response.Delivery.State != domain.ApprovalTransmitted || response.Input.Decision == nil || response.Input.Decision.Kind != domain.CodexApprovalAccept {
+			t.Fatal("approval lost original claim and native transport evidence")
+		}
+		if session.Recovery != domain.NeedsRecovery || session.Dispatch != domain.DispatchPaused || session.Execution.UnconfirmedResponses != 1 {
+			t.Fatal("native command completion fabricated exact approval acceptance")
+		}
+		_, entry := readExecutionInbox(t, f, domain.InteractionInbox, rows[0].ID)
+		if entry.ReadState != domain.InboxRead {
+			t.Fatal("approval response erased independent inbox state")
+		}
+		journal, err := security.ReadPrivate(filepath.Join(manager.Root, "jobs", string(f.job), "approval-responses", string(rows[0].ID)+".json"), 64<<10)
+		if err != nil || !strings.Contains(string(journal), string(response.Claim.ID)) || strings.Contains(string(journal), "native-tool-fixture") || strings.Contains(string(journal), "\"decision\"") {
+			t.Fatal("approval journal lost metadata-only ownership", err)
 		}
 	}
 	messages, err := f.service.Store.List(ctx, store.Filter{Kind: domain.MessageKind, SessionID: f.input.SessionID, Limit: 10})
@@ -573,7 +630,7 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 			}
 		}
 	}
-	if (scenario == nativeWorkerCommand) != sawTool || (scenario == nativeWorkerPlan) != sawPlan {
+	if (scenario == nativeWorkerCommand || approvalResponseScenario) != sawTool || (scenario == nativeWorkerPlan) != sawPlan {
 		t.Fatal("native command was not retained as a dedicated tool")
 	}
 	// The retained runtime must support later native reconciliation without

@@ -181,18 +181,19 @@ func (u ExecutionInteractionUpdate) Validate(kind ExecutionEventKind) error {
 }
 
 type ExecutionInteraction struct {
-	ExecutionID     ID                   `json:"execution_id"`
-	NativeThreadID  string               `json:"native_thread_id"`
-	NativeTurnID    string               `json:"native_turn_id"`
-	NativeItemID    string               `json:"native_item_id"`
-	NativeRequestID InteractionRequestID `json:"native_request_id"`
-	Type            InteractionType      `json:"type"`
-	Questions       *QuestionRequest     `json:"questions"`
-	Approval        *ApprovalRequest     `json:"approval,omitempty"`
-	Closure         InteractionClosure   `json:"closure"`
-	FirstSequence   uint64               `json:"first_sequence"`
-	LastSequence    uint64               `json:"last_sequence"`
-	Response        *QuestionResponse    `json:"response,omitempty"`
+	ExecutionID      ID                   `json:"execution_id"`
+	NativeThreadID   string               `json:"native_thread_id"`
+	NativeTurnID     string               `json:"native_turn_id"`
+	NativeItemID     string               `json:"native_item_id"`
+	NativeRequestID  InteractionRequestID `json:"native_request_id"`
+	Type             InteractionType      `json:"type"`
+	Questions        *QuestionRequest     `json:"questions"`
+	Approval         *ApprovalRequest     `json:"approval,omitempty"`
+	Closure          InteractionClosure   `json:"closure"`
+	FirstSequence    uint64               `json:"first_sequence"`
+	LastSequence     uint64               `json:"last_sequence"`
+	Response         *QuestionResponse    `json:"response,omitempty"`
+	ApprovalResponse *ApprovalResponse    `json:"approval_response,omitempty"`
 }
 
 // Waiting flags are observed native state, not answer/approval authority and

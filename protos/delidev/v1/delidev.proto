@@ -24,6 +24,7 @@ service ConfigurationService {
 // Owner and paired-client responses use their own durable acceptance boundary.
 service InteractionService {
   rpc RespondQuestion(RespondQuestionRequest) returns (RespondQuestionResponse);
+  rpc RespondApproval(RespondApprovalRequest) returns (RespondApprovalResponse);
 }
 message RespondQuestionRequest {
   // The request ID also identifies the accepted response; the entity ID and
@@ -33,6 +34,19 @@ message RespondQuestionRequest {
   bytes response_json = 2;
 }
 message RespondQuestionResponse {
+  Resource interaction = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+
+message RespondApprovalRequest {
+  // The request ID also identifies the accepted response; the entity ID and
+  // revision refer to the original approval interaction.
+  Mutation mutation = 1;
+  // Strict original approval decision or permission-grant document, never a question answer.
+  bytes response_json = 2;
+}
+message RespondApprovalResponse {
   Resource interaction = 1;
   string request_id = 2;
   bool replayed = 3;
@@ -213,6 +227,7 @@ service WorkerService {
   rpc RegisterExecution(RegisterExecutionRequest) returns (RegisterExecutionResponse);
   rpc PublishExecution(PublishExecutionRequest) returns (PublishExecutionResponse);
   rpc ClaimQuestionResponse(ClaimQuestionResponseRequest) returns (ClaimQuestionResponseResponse);
+  rpc ClaimApprovalResponse(ClaimApprovalResponseRequest) returns (ClaimApprovalResponseResponse);
   rpc ClaimSteerInput(ClaimSteerInputRequest) returns (ClaimSteerInputResponse);
 }
 message ClaimSteerInputRequest {
@@ -235,6 +250,19 @@ message ClaimQuestionResponseRequest {
   string response_id = 5;
 }
 message ClaimQuestionResponseResponse {
+  // Only the owning live Worker receives the retained non-secret response.
+  Resource interaction = 1;
+  bool replayed = 2;
+}
+message ClaimApprovalResponseRequest {
+  // Exact original interaction revision and durable Worker claim request ID.
+  Mutation mutation = 1;
+  string machine_id = 2;
+  string instance_id = 3;
+  string job_id = 4;
+  string response_id = 5;
+}
+message ClaimApprovalResponseResponse {
   // Only the owning live Worker receives the retained non-secret response.
   Resource interaction = 1;
   bool replayed = 2;
@@ -328,6 +356,7 @@ message WatchWorkResponse {
   // Metadata-only control for the active assignment, independent of job order.
   QuestionResponseControl question_response = 5;
   SteerInputControl steer_input = 6;
+  ApprovalResponseControl approval_response = 7;
 }
 message SteerInputControl {
   string job_id = 1;
@@ -335,6 +364,12 @@ message SteerInputControl {
   uint64 revision = 3;
 }
 message QuestionResponseControl {
+  string job_id = 1;
+  string interaction_id = 2;
+  string response_id = 3;
+  uint64 revision = 4;
+}
+message ApprovalResponseControl {
   string job_id = 1;
   string interaction_id = 2;
   string response_id = 3;
