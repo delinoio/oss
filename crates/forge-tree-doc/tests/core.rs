@@ -75,6 +75,61 @@ fn strict_parser_and_revision_rollback() {
     );
 }
 #[test]
+fn slide_root_geometry_is_explicitly_rejected() {
+    let frame = Frame {
+        x: 10.,
+        y: 20.,
+        width: 500.,
+        height: 300.,
+    };
+    for kind in [NodeKind::Canvas, NodeKind::Row, NodeKind::Column] {
+        for field in ["frame", "width", "height"] {
+            let mut p = sample();
+            let root = &mut p.slides[0].content;
+            root.kind = kind;
+            match field {
+                "frame" => root.frame = Some(frame),
+                "width" => root.width = Some(Size::Points(500.)),
+                _ => root.height = Some(Size::Mode(SizeMode::Fill)),
+            }
+            let error = validate(&p, false).unwrap_err();
+            assert_eq!(error.code, ErrorCode::InvalidGeometry);
+            assert_eq!(layout(&p).unwrap_err().code, ErrorCode::InvalidGeometry);
+        }
+    }
+    let p = sample();
+    let id = Uuid::now_v7();
+    let original = p.clone();
+    let patch = Patch {
+        dsl_version: 1,
+        kind: PatchKind::Patch,
+        document_id: id,
+        base_revision: 0,
+        operations: vec![
+            Operation::SetText {
+                target: Target {
+                    key: Some("overview.title".into()),
+                    node_id: None,
+                },
+                text: "Must roll back".into(),
+                cell: None,
+            },
+            Operation::SetFrame {
+                target: Target {
+                    key: None,
+                    node_id: p.slides[0].content.id,
+                },
+                frame,
+            },
+        ],
+    };
+    assert_eq!(
+        apply_patch(&p, &patch, id, 0).unwrap_err().code,
+        ErrorCode::InvalidGeometry
+    );
+    assert_eq!(p, original);
+}
+#[test]
 fn detects_duplicate_identity_and_font_failure() {
     let mut p = sample();
     p.slides[0].content.children[0].key = Some("overview".into());

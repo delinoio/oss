@@ -207,6 +207,13 @@ pub fn validate(doc: &Presentation, allow_opaque: bool) -> Result<()> {
                 "Slide content must be a container",
             );
         }
+        if s.content.frame.is_some() || s.content.width.is_some() || s.content.height.is_some() {
+            return error(
+                ErrorCode::InvalidGeometry,
+                &format!("{path}/content"),
+                "Slide root geometry is defined by page; frame, width and height are not allowed",
+            );
+        }
         node(
             &s.content,
             None,

@@ -44,6 +44,8 @@ Save a patch using the actual document ID and current revision, then run `delino
 
 The other operations are `set_frame`, `insert_node`, `remove_node`, `move_node`, and `set_chart_data`. The same JSON types are used in CLI and MCP. Inspect supports depth 0–8 and at most 1,000 projected nodes; inspect a returned node ID for a deeper subtree.
 
+Slide root containers always occupy the full page. Set presentation dimensions with `page`; `frame`, `width`, `height`, and `set_frame` are rejected on the slide root. Use nested containers for smaller regions.
+
 ## MCP
 
 Start `delino-forge --state-dir DIRECTORY mcp` with stdio connected to an MCP client. Tools are `forge.schema`, `forge.capabilities`, `forge.asset.add`, `forge.create`, `forge.open`, `forge.inspect`, `forge.apply`, `forge.export`, `forge.preview`, and `forge.close`. Document operations return IDs, revisions, structured diagnostics or artifact paths. Logs use stderr; stdout carries only the MCP protocol.
