@@ -1,0 +1,39 @@
+[package]
+name = "fspy_preload_windows"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[target.'cfg(target_os = "windows")'.dependencies]
+wincode = { workspace = true }
+constcat = { workspace = true }
+fspy_detours_sys = { workspace = true }
+fspy_nostd = { workspace = true }
+allocator-api2 = { workspace = true }
+fspy_nostd_alloc = { workspace = true }
+fspy_shared = { workspace = true }
+ntapi = { workspace = true }
+smallvec = { workspace = true, features = ["std"] }
+widestring = { workspace = true }
+winapi = { workspace = true, features = [
+  "winerror",
+  "winbase",
+  "namedpipeapi",
+  "memoryapi",
+  "errhandlingapi",
+  "handleapi",
+  "processthreadsapi",
+  "std",
+] }
+windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_UI_Shell"] }
+winsafe = { workspace = true, features = ["kernel"] }
+
+[target.'cfg(target_os = "windows")'.dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

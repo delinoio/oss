@@ -249,6 +249,7 @@ fn write_cache_asset(home: &Path, sha256: &str, bytes: &[u8]) {
     fs::write(entry.join("asset"), bytes).expect("write cache asset");
 }
 
+#[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
 fn cache_ref_path(home: &Path, project_root: &Path, cmd: &str) -> String {
     let digest = Sha256::digest(format!("{}:{cmd}", project_root.display()).as_bytes());
     home.join("cache")

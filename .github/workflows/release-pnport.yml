@@ -94,7 +94,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cargo build --locked --release -p pnport -p pnport-preload --target "$PNPORT_TARGET"
+          if [[ "$PNPORT_TARGET" == *apple* ]]; then
+            cargo build --locked --release -p pnport -p fspy_preload_unix --features fspy_preload_unix/pnport --target "$PNPORT_TARGET"
+            cargo build --locked -p fspy_preload_unix --features fspy_preload_unix/pnport --target "$PNPORT_TARGET"
+          else
+            cargo build --locked --release -p pnport -p pnport-preload --target "$PNPORT_TARGET"
+          fi
           cargo test --locked -p pnport --target "$PNPORT_TARGET"
       - name: Verify installed consumers and native TypeScript
         shell: bash
@@ -106,7 +111,7 @@ jobs:
           binary="target/$PNPORT_TARGET/release/pnport"
           preload="target/$PNPORT_TARGET/release/libpnport_preload.so"
           if [[ "$PNPORT_TARGET" == *windows* ]]; then binary="$binary.exe"; preload="target/$PNPORT_TARGET/release/pnport_preload.dll"; fi
-          if [[ "$PNPORT_TARGET" == *apple* ]]; then preload="target/$PNPORT_TARGET/release/libpnport_preload.dylib"; fi
+          if [[ "$PNPORT_TARGET" == *apple* ]]; then preload="target/$PNPORT_TARGET/release/libfspy_preload_unix.dylib"; fi
           pnpm --filter @delino/pnport test:package --target "$PNPORT_TARGET" --binary "$binary" --preload "$preload"
           fixture="$RUNNER_TEMP/pnport-typescript"
           pnpm --filter @delino/pnport test:typescript:prepare "$fixture"

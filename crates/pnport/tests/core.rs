@@ -522,6 +522,119 @@ fn missing_executables_and_interpreters_return_not_found() {
 
 #[cfg(target_os = "macos")]
 #[test]
+fn descendant_exec_and_spawn_prepare_script_interpreters() {
+    use std::{os::unix::fs::PermissionsExt, process::Command};
+
+    let root = fixture();
+    let interpreter_source = root.path().join("child-interpreter.c");
+    let interpreter = root.path().join("child-interpreter");
+    fs::write(
+        &interpreter_source,
+        r#"#include <stdio.h>
+#include <string.h>
+int main(int argc, char **argv) {
+  FILE *file = fopen("node_modules/dep/file.txt", "r");
+  if (!file) return 70;
+  fclose(file);
+  if (argc != 4 || strcmp(argv[1], "option") || !strstr(argv[2], "child-script") || strcmp(argv[3], "literal")) return 71;
+  puts("descendant-script-ok");
+  return 0;
+}
+"#,
+    )
+    .unwrap();
+    assert!(Command::new("cc")
+        .arg(&interpreter_source)
+        .arg("-o")
+        .arg(&interpreter)
+        .status()
+        .unwrap()
+        .success());
+    let script = root.path().join("child-script");
+    fs::write(&script, format!("#!{} option\n", interpreter.display())).unwrap();
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o700)).unwrap();
+
+    let launcher_source = root.path().join("child-launcher.c");
+    let launcher = root.path().join("child-launcher");
+    fs::write(
+        &launcher_source,
+        r#"#include <errno.h>
+#include <spawn.h>
+#include <string.h>
+#include <sys/wait.h>
+#include <unistd.h>
+extern char **environ;
+int main(int argc, char **argv) {
+  if (argc != 3) return 2;
+  char *args[] = {"child-script", "literal", 0};
+  if (strcmp(argv[1], "execve") == 0) {
+    execve(argv[2], args, environ);
+    return 30;
+  }
+  if (strcmp(argv[1], "posix_spawn_chdir") == 0) {
+    posix_spawn_file_actions_t actions;
+    if (posix_spawn_file_actions_init(&actions) != 0) return 34;
+    if (posix_spawn_file_actions_addchdir_np(&actions, ".") != 0) return 35;
+    int result = posix_spawn(0, "child-script", &actions, 0, args, environ);
+    posix_spawn_file_actions_destroy(&actions);
+    return result == ENOTSUP ? 0 : (result ? result : 36);
+  }
+  pid_t pid;
+  if (posix_spawn(&pid, argv[2], 0, 0, args, environ) != 0) return 31;
+  int status;
+  if (waitpid(pid, &status, 0) != pid) return 32;
+  return WIFEXITED(status) ? WEXITSTATUS(status) : 33;
+}
+"#,
+    )
+    .unwrap();
+    assert!(Command::new("cc")
+        .arg(&launcher_source)
+        .arg("-o")
+        .arg(&launcher)
+        .status()
+        .unwrap()
+        .success());
+
+    for method in ["execve", "posix_spawn"] {
+        let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+            .current_dir(root.path())
+            .arg("--cache-dir")
+            .arg(root.path().join("private-cache"))
+            .args(["run", "--"])
+            .arg(&launcher)
+            .arg(method)
+            .arg(&script)
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{method}: {}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert_eq!(result.stdout, b"descendant-script-ok\n", "{method}");
+    }
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .arg("--cache-dir")
+        .arg(root.path().join("private-cache"))
+        .args(["run", "--"])
+        .arg(&launcher)
+        .arg("posix_spawn_chdir")
+        .arg(&script)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(125),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(String::from_utf8_lossy(&result.stderr).contains("PNPORT_UNSUPPORTED_OPERATION"));
+}
+
+#[cfg(target_os = "macos")]
+#[test]
 fn script_interpreters_preserve_logical_arguments_and_reject_protection() {
     use std::{os::unix::fs::PermissionsExt, process::Command};
     let root = fixture();

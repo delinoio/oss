@@ -17,7 +17,7 @@ export function sourceText(file) {
 
 export function metadata(read = sourceText) {
   const npm = JSON.parse(read("packages/pnport/package.json"));
-  const versions = ["pnport", "pnport-preload"].map((name) => {
+  const versions = ["pnport", "pnport-core", "pnport-preload"].map((name) => {
     const section = read(`crates/${name}/Cargo.toml`).match(/^\[package\]\s*\n([\s\S]*?)(?=^\[|$(?![\s\S]))/mu)?.[1];
     ensure(section?.includes(`name = "${name}"\n`), `Missing ${name} Cargo identity`);
     return section.match(/^version = "([^"]+)"$/mu)?.[1];
