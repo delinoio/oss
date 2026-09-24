@@ -3296,7 +3296,11 @@ fn continue_process_group(pid: u32) -> Result<()> {
 
 #[cfg(unix)]
 fn suspend_process_group(group: libc::pid_t) -> Result<()> {
-    let result = unsafe { libc::kill(-group, libc::SIGTSTP) };
+    // The foreground workload has already stopped from the terminal Ctrl+Z.
+    // SIGTSTP is ignored for orphaned process groups, so use SIGSTOP for the
+    // wrapper job: it has the same suspend/resume lifecycle here and cannot
+    // leave a session-owned wrapper running in the background.
+    let result = unsafe { libc::kill(-group, libc::SIGSTOP) };
     if result == -1 {
         return Err(Failure::io(&io::Error::last_os_error()));
     }
