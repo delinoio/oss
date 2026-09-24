@@ -264,3 +264,36 @@ fn package_input_and_output_part_expansion_limits_are_independent() {
     let at_nodes = format!("<root>{}</root>", "<n/>".repeat(999_998));
     assert!(xml(at_nodes.as_bytes()).is_ok());
 }
+
+#[test]
+fn relationship_elements_require_the_opc_namespace_and_names() {
+    for owner in ["", "word/document.xml"] {
+        let path = if owner.is_empty() {
+            "_rels/.rels".into()
+        } else {
+            relation_path(owner)
+        };
+        let valid = format!(
+            "<r:Relationships xmlns:r=\"{REL}\"><r:Relationship Id=\"rId1\" \
+             Type=\"{R}/officeDocument\" Target=\"word/document.xml\"/></r:Relationships>"
+        );
+        let mut parts = document();
+        parts.insert(path.clone(), valid.as_bytes().to_vec());
+        assert_eq!(relationships(&parts, owner).unwrap().len(), 1);
+        for invalid in [
+            valid.replace(REL, "urn:foreign"),
+            valid.replace("r:Relationships", "r:WrongRoot"),
+            valid.replace(
+                "<r:Relationship Id",
+                "<Relationship xmlns=\"urn:foreign\" Id",
+            ),
+            valid.replace("<r:Relationship Id", "<r:WrongChild Id"),
+        ] {
+            parts.insert(path.clone(), invalid.into_bytes());
+            assert_eq!(
+                relationships(&parts, owner).unwrap_err().code,
+                ErrorCode::InvalidPackage
+            );
+        }
+    }
+}
