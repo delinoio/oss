@@ -158,3 +158,47 @@ fn tiny_models_cannot_expand_into_unbounded_merges_or_duplicate_dimensions() {
     });
     assert_eq!(generate(&model).unwrap_err().code, ErrorCode::ResourceLimit);
 }
+
+#[test]
+fn omitted_alignment_keeps_excel_general_while_explicit_alignment_is_emitted() {
+    for align in [None, Some("left"), Some("right")] {
+        let mut book = workbook();
+        book.sheets[0].cells[1].format = Some(
+            serde_json::from_value(json!({
+                "style":{"align":align}, "number_format":"0.00", "wrap":true, "border":true
+            }))
+            .unwrap(),
+        );
+        let parts = read(&generate(&book).unwrap()).unwrap();
+        let sheet = xml(&parts["xl/worksheets/sheet1.xml"]).unwrap();
+        let cell = sheet
+            .descendants()
+            .find(|n| n.has_tag_name((S, "c")) && n.attribute("r") == Some("A2"))
+            .unwrap();
+        let index = cell.attribute("s").unwrap().parse::<usize>().unwrap();
+        let styles = xml(&parts["xl/styles.xml"]).unwrap();
+        let xf = styles
+            .descendants()
+            .find(|n| n.has_tag_name((S, "cellXfs")))
+            .unwrap()
+            .children()
+            .filter(|n| n.is_element())
+            .nth(index)
+            .unwrap();
+        let alignment = xf
+            .children()
+            .find(|n| n.has_tag_name((S, "alignment")))
+            .unwrap();
+        assert_eq!(alignment.attribute("horizontal"), align);
+        assert_eq!(alignment.attribute("wrapText"), Some("1"));
+        assert!(
+            styles
+                .descendants()
+                .filter(|n| n.has_tag_name((S, "dxf")))
+                .all(|dxf| dxf
+                    .descendants()
+                    .filter(|n| n.has_tag_name((S, "alignment")))
+                    .all(|n| n.attribute("horizontal").is_none()))
+        );
+    }
+}

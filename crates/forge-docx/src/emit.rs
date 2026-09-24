@@ -273,7 +273,7 @@ impl<'a> Writer<'a> {
                 if style.direction == Direction::Rtl {
                     out.push_str("<w:bidi/>");
                 }
-                let align = match style.align {
+                let align = match style.align.unwrap_or_default() {
                     Align::Left => "left",
                     Align::Center => "center",
                     Align::Right => "right",

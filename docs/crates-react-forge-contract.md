@@ -82,3 +82,5 @@ Word paragraphs containing page/column breaks or non-default text-wrapping clear
 Every package relationship part requires an OPC-namespace `Relationships` root and leaf `Relationship` children. Matching attribute names on foreign or incorrectly named elements do not grant relationship authority; malformed relationship elements reject the package before reference resolution.
 
 The XML depth ceiling counts nested elements, with the document element at depth one. Exactly 128 levels are accepted for both paired and self-closing elements, including text/comment children at the deepest level; 129 levels are rejected by iterative preflight before recursive parsing.
+
+Shared text alignment retains omission separately from explicit left alignment. DOCX/PDF resolve an omitted alignment to their inherited/default left behavior; XLSX leaves horizontal alignment absent to preserve Excel's General behavior for each value type. Applying number formats, borders or wrapping alone does not force left alignment, including differential styles.
