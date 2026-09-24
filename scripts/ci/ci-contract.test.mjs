@@ -26,7 +26,7 @@ const devhudTauri = JSON.parse(readFileSync(`${root}/apps/devhud/src-tauri/tauri
 
 const legacyJobs = [
   "go-quality", "go-test", "repository-environment", "rust-fmt", "rust-clippy", "rust-test",
-  "forge-test", "forge-render", "react-forge", "react-forge-package", "linux-packages", "node-public-docs-test", "node-clibox-test", "node-pnport-test", "pnport-native",
+  "forge-test", "forge-render", "react-forge", "linux-packages", "node-public-docs-test", "node-clibox-test", "node-pnport-test", "pnport-native",
 ];
 const devhudJobs = [
   "devhud-frontend", "devhud-extension", "devhud-rust-conformance", "devhud-security", "devhud-desktop",
@@ -70,13 +70,8 @@ test("one change plan gates every domain job before runner allocation", () => {
   assert.deepEqual(Object.keys(jobPaths).sort(), [...legacyJobs, ...devhudJobs, ...achJobs].sort());
   for (const id of [...legacyJobs, ...devhudJobs, ...achJobs]) {
     const job = workflow.jobs[id];
-    if (id === "react-forge-package") {
-      assert.deepEqual(job.needs, ["changes", "react-forge"]);
-      assert.equal(job.if, "${{ needs.changes.result == 'success' && needs.react-forge.result == 'success' && fromJSON(needs.changes.outputs.jobs)['react-forge-package'] }}");
-    } else {
-      assert.equal(job.needs, "changes", id);
-      assert.equal(job.if, "${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['" + id + "'] }}", id);
-    }
+    assert.equal(job.needs, "changes", id);
+    assert.equal(job.if, "${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['" + id + "'] }}", id);
     assert.equal(step(job, "filter"), undefined, id);
     assert.equal(step(job, "gate"), undefined, id);
   }
