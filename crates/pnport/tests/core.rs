@@ -978,6 +978,71 @@ int main(int argc, char **argv) {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn linux_rejects_mount_namespace_and_root_changes_before_execution() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("namespace.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <errno.h>
+#include <sched.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+int main(int argc, char **argv) {
+    if (argc != 2) return 20;
+    switch (atoi(argv[1])) {
+        case 0: syscall(SYS_unshare, CLONE_NEWNS); break;
+        case 1: syscall(SYS_clone, CLONE_NEWNS | SIGCHLD, 0, 0, 0, 0); break;
+        case 2: syscall(SYS_setns, -1, 0); break;
+        case 3: syscall(SYS_chroot, "/nonexistent"); break;
+        case 4: syscall(SYS_pivot_root, "/nonexistent", "/nonexistent"); break;
+    }
+    return errno == EPERM ? 22 : 21;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("namespace");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let outer_seccomp = fs::read_to_string("/proc/self/status")
+        .unwrap()
+        .lines()
+        .any(|line| line.trim() == "Seccomp:\t2");
+    for action in 0..5 {
+        let native = Command::new(&executable)
+            .arg(action.to_string())
+            .status()
+            .unwrap();
+        let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+            .current_dir(root.path())
+            .args(["run", "--"])
+            .arg(&executable)
+            .arg(action.to_string())
+            .output()
+            .unwrap();
+        if outer_seccomp && native.code() == Some(22) {
+            // Docker's outer seccomp filter may return EPERM before the
+            // tracee's filter can emit a ptrace stop for this syscall.
+            assert!(matches!(result.status.code(), Some(22) | Some(125)));
+            continue;
+        }
+        assert_eq!(result.status.code(), Some(125), "action {action}");
+        assert!(String::from_utf8_lossy(&result.stderr).contains("PNPORT_UNSUPPORTED_OPERATION"));
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn linux_rejects_cross_group_shared_fd_tables_before_clone() {
     use std::process::Command;
     let root = fixture();

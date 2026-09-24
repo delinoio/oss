@@ -305,6 +305,9 @@ fn traced_syscalls() -> Vec<i64> {
         libc::SYS_clone,
         libc::SYS_clone3,
         libc::SYS_unshare,
+        libc::SYS_setns,
+        libc::SYS_chroot,
+        libc::SYS_pivot_root,
         libc::SYS_close,
         libc::SYS_close_range,
         libc::SYS_dup,
@@ -2411,6 +2414,15 @@ impl Trace<'_> {
                 "Linux pidfd descriptor duplication cannot be mediated.",
             ));
         }
+        if call == libc::SYS_setns || call == libc::SYS_chroot || call == libc::SYS_pivot_root {
+            // Path classification runs in the supervisor's mount and root
+            // context. A tracee with a different view could resolve the
+            // same pathname to a different inode after mediation.
+            deny_syscall(pid, &mut regs)?;
+            return Err(unsupported(
+                "Linux mount namespace or filesystem root changes cannot be mediated.",
+            ));
+        }
         if call == libc::SYS_recvmsg || call == libc::SYS_recvmmsg {
             let messages = argument(&regs, 1);
             let count = if call == libc::SYS_recvmsg {
@@ -2446,6 +2458,12 @@ impl Trace<'_> {
             } else {
                 argument(&regs, 0)
             };
+            if flags & libc::CLONE_NEWNS as u64 != 0 {
+                deny_syscall(pid, &mut regs)?;
+                return Err(unsupported(
+                    "Linux mount namespace changes cannot be mediated.",
+                ));
+            }
             if call != libc::SYS_unshare
                 && flags & libc::CLONE_THREAD as u64 != 0
                 && flags & (libc::CLONE_FILES | libc::CLONE_FS) as u64

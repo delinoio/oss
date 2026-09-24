@@ -51,6 +51,7 @@ Invalid child pathname pointers are left for the kernel's ordinary `EFAULT` hand
 Pathname rewriting compares the caller's resolved lookup path with the selected physical backing. A virtual dependency can resolve to a native unplugged package whose PnP identity equals its physical path; that equality does not make the caller's virtual `node_modules` alias a native path.
 
 The Linux supervisor keys logical cwd and tracked descriptor state by thread group. Cross-group `CLONE_FS` and `CLONE_FILES` sharing, plus `unshare` of either context, fail before the syscall with `PNPORT_UNSUPPORTED_OPERATION` and exit 125; within-group threads continue to share the tracked state.
+Linux mount-namespace changes through clone/unshare or setns, and filesystem-root changes through chroot/pivot_root, fail before execution because the supervisor would otherwise classify paths in a different mount or root context from the tracee.
 
 Linux `CLONE_THREAD` calls must also share both `CLONE_FILES` and `CLONE_FS`. A thread with a private descriptor table or cwd context fails before creation with the same unsupported diagnostic because a group-wide ownership map cannot represent its independent kernel state.
 
