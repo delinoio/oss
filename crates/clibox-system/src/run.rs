@@ -1826,8 +1826,7 @@ fn spawn(
         Some(parent) => match ForegroundTerminal::transfer(parent, child.id()) {
             Ok(terminal) => Some(Arc::new(terminal)),
             Err(error) => {
-                let _ = signal_process_group(child.id(), true);
-                let _ = child.wait();
+                recover_unclaimed_child(&mut child, pid, unix_ownership, None);
                 return Err(error);
             }
         },
