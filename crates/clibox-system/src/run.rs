@@ -2506,6 +2506,11 @@ impl OwnedChild {
     #[cfg(unix)]
     fn tree_running(&mut self) -> Result<bool> {
         if self.completion()?.is_some() {
+            // Once the direct foreground workload has exited, terminal
+            // interrupts can no longer need relaying. Reclaim the relay
+            // before inspecting the group so it is never mistaken for a
+            // descendant that requires graceful cleanup.
+            self.restore_foreground_terminal();
             return match self.unix_ownership {
                 UnixOwnership::ProcessGroup => completed_process_group_running(self.pid),
                 // Nested wrappers deliberately own only their direct child.
@@ -2531,6 +2536,7 @@ impl OwnedChild {
             return match self.unix_ownership {
                 UnixOwnership::ProcessGroup => {
                     if direct_child_exited {
+                        self.restore_foreground_terminal();
                         completed_process_group_running(self.pid)
                     } else {
                         process_group_running(self.pid)
@@ -2621,6 +2627,13 @@ impl OwnedChild {
         }
     }
 
+    #[cfg(unix)]
+    fn restore_foreground_terminal(&mut self) {
+        if let Some(terminal) = self.foreground_terminal.take() {
+            terminal.restore();
+        }
+    }
+
     #[cfg(windows)]
     fn tree_running(&self) -> Result<bool> {
         self.job.is_running()
@@ -2664,9 +2677,7 @@ fn graceful_cleanup_wait(graceful_delivered: bool, kill_after: Duration) -> Dura
 impl Drop for OwnedChild {
     fn drop(&mut self) {
         let _ = self.reap_completed_child();
-        if let Some(terminal) = self.foreground_terminal.take() {
-            terminal.restore();
-        }
+        self.restore_foreground_terminal();
     }
 }
 
@@ -5428,6 +5439,45 @@ mod lifecycle_tests {
         }
 
         assert_eq!(observed, 0, "graceful cleanup terminated the relay");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn completed_foreground_workload_reclaims_its_interrupt_relay() {
+        let group = unsafe { libc::getpgrp() };
+        assert!(group > 0);
+        let relay = spawn_foreground_interrupt_relay(group).unwrap();
+        let mut process = std::process::Command::new("sh")
+            .arg("-c")
+            .arg("exit 0")
+            .spawn()
+            .unwrap();
+        let (_sender, completions) = mpsc::sync_channel(1);
+        let mut child = OwnedChild {
+            pid: process.id(),
+            unix_ownership: UnixOwnership::ProcessGroup,
+            reaped: false,
+            foreground_terminal: Some(Arc::new(ForegroundTerminal {
+                // The test owns no terminal; restoration still must reap the
+                // relay before group cleanup can inspect it.
+                descriptor: -1,
+                parent_group: group,
+                child_group: group,
+                interrupt_relay: relay,
+            })),
+            completions,
+            completion: None,
+            completion_observation_failed: false,
+            activity: None,
+            output_failure: None,
+            output_threads: Vec::new(),
+        };
+
+        child.restore_foreground_terminal();
+
+        assert_eq!(unsafe { libc::kill(relay, 0) }, -1);
+        assert_eq!(io::Error::last_os_error().raw_os_error(), Some(libc::ESRCH));
+        let _ = process.wait();
     }
 
     #[cfg(any(target_os = "linux", test))]
