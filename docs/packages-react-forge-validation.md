@@ -157,3 +157,10 @@ Final local macOS arm64 verification at the repaired implementation (`140974d6`)
 The Linux repair leaves a denied syscall parked until cleanup queues its termination signal, avoiding the short-child exit race. Offline native Ubuntu 22.04 arm64 Docker passed all 64 pnport tests and Clippy; the deterministic stopped-child regression fails with the old premature continuation and passes with the repair. This is native arm64 evidence, not native x64 execution.
 
 All six React Forge native jobs passed at `70efa714` in the [pre-repair matrix](https://github.com/delinoio/oss/actions/runs/35996920474). That result covers the six-platform implementation before these review repairs. CI is rerun by the single final repair push; this local record does not claim a result for that newer remote head. Microsoft Office execution and PDF/UA certification remain outside the evidence boundary.
+
+
+## Figma PR review repair validation
+
+The one-shot repair of PR #972 merges parent #970 at `653e1842` while preserving both validation histories. Five separate fixes cover indirectly changed collection/variant guards, a session-wide credential reread allowance, native rejection of nested pages, retained ownership transfer on remount, and serialized aggregate image admission. Regressions reproduce the collection self-conflict, remount overlap and concurrent 256 MiB budget bypass; additional cases verify no credential rereads after rejection or successful recovery, rejection before page/file creation, retained descendant IDs, duplicate image capacity and recovery after cancelled/failed registrations. All Figma tests remain synthetic and do not access live credentials or files.
+
+Final macOS arm64 verification passed root `cargo test` with 1,922 passed and three existing opt-in tests ignored, all 85 package tests including installed consumers, build/typecheck/lint, native planner/adapter Clippy with warnings denied, both Figma example type checks, 73 CI contract tests and workflow validation. The pre-push PR head had no failing CI checks; this record does not claim results for the final repair push. Generated repository `dist` trees are removed after verification.
