@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-09-24",
+  "example": "examples/travel-ir.tsx",
+  "sourceCommit": "1dbeb833",
+  "platform": "Darwin",
+  "architecture": "arm64",
+  "authoring": "React Forge CLI; final PPTX is byte-identical to the CLI export",
+  "pptxSha256": "8809ba82cec2acbd157321ba3dd46f318ee68a902ce6d82a94dde968f0ea6d2c",
+  "pptxBytes": 6999958,
+  "slides": 12,
+  "renderedPages": 12,
+  "renderedImageSize": [
+    1440,
+    810
+  ],
+  "nativeTableOwnerSlides": [
+    7
+  ],
+  "nativeChartOwnerSlides": [
+    8
+  ],
+  "embeddedChartWorkbooks": 1,
+  "chartCacheAndWorkbookValues": [
+    500,
+    1500,
+    3000,
+    5000
+  ],
+  "nativeTextRunsFoundInRenderedPdf": 144,
+  "packageIntegrity": "pass",
+  "slideGeometryAndFontPolicy": "pass",
+  "chartDataAndWorkbook": "pass",
+  "artifactToolImport": "pass",
+  "externalRelationships": 0,
+  "financialArithmetic": "pass",
+  "visuallyReviewedSlides": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12
+  ],
+  "tools": {
+    "libreOffice": "LibreOfficeDev 26.8.0.0.alpha0 2c87e51eeaa2b413ff4ae097b2705eea1995d8e5",
+    "poppler": "26.05.0",
+    "python": "3.12.14"
+  },
+  "referencedFonts": [
+    "Avenir Next",
+    "Calibri"
+  ],
+  "renderedPdfFonts": [
+    "AvenirNext-Bold",
+    "AvenirNext-Regular",
+    "Carlito",
+    "Carlito-Bold"
+  ],
+  "avenirNextSystemFontSha256": "98dec241f3ee712a37fad61aafdb83e225ed54c3e5b6e9f0abeb24eba13743ba",
+  "claimBoundary": "Structural and LibreOffice/Poppler visual evidence only. No direct Microsoft PowerPoint or Google Slides execution. No fonts redistributed."
+}
