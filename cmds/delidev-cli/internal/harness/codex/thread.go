@@ -155,7 +155,30 @@ func ValidateThreadSettings(settings ThreadSettings) error {
 	_, err := settings.params()
 	return err
 }
+
+// ValidateSelection checks the pinned native wire shape without reading the
+// server's filesystem or claiming that a provider accepts this model. Remote
+// workspace grammar and live native settings need their own owning checks.
+func ValidateSelection(settings ThreadSettings) error {
+	_, err := settings.wireSettings()
+	return err
+}
 func (s ThreadSettings) params() (threadParams, error) {
+	p, err := s.wireSettings()
+	if err != nil {
+		return p, err
+	}
+	resolved, err := filepath.EvalSymlinks(s.Cwd)
+	if err != nil || !filepath.IsAbs(s.Cwd) || !nativePathEqual(resolved, s.Cwd) {
+		return p, domain.Fail(domain.InvalidArgument, "The native working directory must be an existing canonical directory.", "Use the prepared primary workspace directory from this Worker.")
+	}
+	info, err := os.Stat(resolved)
+	if err != nil || !info.IsDir() {
+		return p, domain.Fail(domain.InvalidArgument, "The native working directory is unavailable.", "Reconcile the prepared workspace before native dispatch.")
+	}
+	return p, nil
+}
+func (s ThreadSettings) wireSettings() (threadParams, error) {
 	p := threadParams{Model: s.Model, ModelProvider: s.Provider, Cwd: s.Cwd, DeveloperInstructions: s.Instructions, ApprovalsReviewer: "user", ServiceTier: s.Options.ServiceTier, ApprovalPolicy: ApprovalPolicy(s.Options.ApprovalPolicy)}
 	for _, v := range []struct {
 		value, label string
@@ -169,14 +192,6 @@ func (s ThreadSettings) params() (threadParams, error) {
 		if err := domain.Text(v.value, v.label, v.maximum, v.required); err != nil {
 			return p, err
 		}
-	}
-	resolved, err := filepath.EvalSymlinks(s.Cwd)
-	if err != nil || !filepath.IsAbs(s.Cwd) || !nativePathEqual(resolved, s.Cwd) {
-		return p, domain.Fail(domain.InvalidArgument, "The native working directory must be an existing canonical directory.", "Use the prepared primary workspace directory from this Worker.")
-	}
-	info, err := os.Stat(resolved)
-	if err != nil || !info.IsDir() {
-		return p, domain.Fail(domain.InvalidArgument, "The native working directory is unavailable.", "Reconcile the prepared workspace before native dispatch.")
 	}
 	if s.Options.SubagentModel != "" || s.Options.SubagentEffort != "" || s.Options.MaxConcurrency != 0 || s.Options.ApprovalReviewModel != "" {
 		return p, unsupportedSettings()

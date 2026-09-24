@@ -42,7 +42,8 @@ func decodeEntity[T any](t *Tx, kind domain.Kind, id domain.ID) (Record, T, erro
 // readiness and set DispatchReady, then compare this exact returned selection
 // with its validated evidence before committing the same transaction. No native
 // send, credential grant or process launch is permitted inside the transaction.
-// Existing public paths never mark dispatch ready until that integration exists.
+// The public first-dispatch coordinator uses this primitive and queues the exact
+// validated Worker assignment in the same transaction.
 func (t *Tx) ClaimInitialExecution(sessionID domain.ID, sessionRevision uint64, inputID domain.ID, inputRevision uint64) (domain.InitialExecution, error) {
 	var empty domain.InitialExecution
 	if err := t.writeAllowed(); err != nil {

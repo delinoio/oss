@@ -59,7 +59,7 @@ func TestSessionAcceptanceRestartAndCurrentReceipt(t *testing.T) {
 	selection, worker := sessionSelection(t, f)
 	request, change := createSessionFixture(t, f, selection)
 	v := sessionBody(t, change.Session)
-	if v.Outcome != domain.ExecutionNotStarted || v.Dispatch != domain.DispatchBlocked || v.Recovery != domain.NoRecovery || v.Archive != domain.NotArchived || v.Problem == nil || v.Problem.Code != domain.Unsupported || v.ActiveExecutionID != "" || v.Source != domain.ExternalCLISession || v.MachineID != selection.MachineID {
+	if v.Outcome != domain.ExecutionNotStarted || v.Dispatch != domain.DispatchBlocked || v.Recovery != domain.NoRecovery || v.Archive != domain.NotArchived || v.Problem == nil || v.Problem.Code != domain.Unavailable || v.ActiveExecutionID != "" || v.Source != domain.ExternalCLISession || v.MachineID != selection.MachineID {
 		t.Fatalf("creation invented execution: %+v", v)
 	}
 	q := inputBody(t, change.Input)
@@ -239,8 +239,8 @@ func TestSessionArchiveRestoreKeepsOutcomeQueueAndDispatchIndependent(t *testing
 		t.Fatal("restore resumed or changed outcome")
 	}
 	_, err = client.ControlSession(ctx, ownerRequest(f.identity, &pb.ControlSessionRequest{Mutation: acctMutation(restored.Session, domain.NewID()), Action: pb.SessionAction_SESSION_ACTION_RESUME}))
-	if connect.CodeOf(err) != connect.CodeUnimplemented {
-		t.Fatal("missing adapter emulated execution")
+	if connect.CodeOf(err) != connect.CodeAborted {
+		t.Fatal("unprepared workspace resumed execution")
 	}
 	r, err := client.RenameSession(ctx, ownerRequest(f.identity, &pb.RenameSessionRequest{Mutation: acctMutation(restored.Session, domain.NewID()), Name: "Renamed"}))
 	if err != nil {

@@ -10,7 +10,7 @@ import (
 )
 
 func sessionChangeJSON(change *pb.SessionChange) any {
-	return map[string]any{"session": resourceJSON(change.Session), "input": resourceJSON(change.Input), "workspace_job": resourceJSON(change.WorkspaceJob), "recovery_job": resourceJSON(change.RecoveryJob), "replayed": change.Replayed}
+	return map[string]any{"session": resourceJSON(change.Session), "input": resourceJSON(change.Input), "workspace_job": resourceJSON(change.WorkspaceJob), "recovery_job": resourceJSON(change.RecoveryJob), "execution_job": resourceJSON(change.ExecutionJob), "replayed": change.Replayed}
 }
 
 func sessionWorkspaceWait(ctx context.Context, c client, change *pb.SessionChange, wait bool, recovery bool) (any, error) {

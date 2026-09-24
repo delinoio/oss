@@ -443,3 +443,18 @@ func TestMismatchedResumeCannotReplaceInspectionAuthority(t *testing.T) {
 		t.Fatal("the original identity was not retained for inspection")
 	}
 }
+
+func TestSelectionValidationDoesNotReadCoordinatorFilesystem(t *testing.T) {
+	settings := ThreadSettings{Model: "fixture-model", Provider: APIProvider, Cwd: `C:\Worker\session\workspace`, Options: domain.AgentOptions{Permission: domain.PermissionReadOnly}}
+	if err := ValidateSelection(settings); err != nil {
+		t.Fatal("remote wire selection was interpreted on the coordinator filesystem", err)
+	}
+	settings.Cwd = filepath.Join(t.TempDir(), "not-created")
+	if err := ValidateThreadSettings(settings); err == nil {
+		t.Fatal("owning native validation skipped filesystem readiness")
+	}
+	settings.Options.MaxConcurrency = 2
+	if err := ValidateSelection(settings); domain.SafeError(err).Code != domain.Unsupported {
+		t.Fatal("coordinator accepted unsupported native settings", err)
+	}
+}

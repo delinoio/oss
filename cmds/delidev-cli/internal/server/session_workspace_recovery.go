@@ -165,7 +165,7 @@ func finishWorkspaceRecovery(tx *store.Tx, record store.Record, job domain.Job) 
 			return err
 		}
 		session.Preparation.State = domain.PreparationReady
-		session.Problem = domain.SessionExecutionUnavailable()
+		session.Problem = domain.InitialExecutionPending()
 	case workspace.RecoveredClean:
 		preparation.State = domain.JobCanceled
 		preparation.Output = nil

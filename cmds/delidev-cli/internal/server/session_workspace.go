@@ -86,7 +86,7 @@ func queueSessionWorkspace(tx *store.Tx, id domain.ID, session *domain.Session, 
 		return err
 	}
 	session.Preparation = &domain.SessionPreparation{JobID: jobID, State: domain.PreparationPending}
-	session.Problem = domain.SessionExecutionUnavailable()
+	session.Problem = domain.InitialExecutionPending()
 	return nil
 }
 
@@ -114,7 +114,7 @@ func finishSessionWorkspace(tx *store.Tx, jobID domain.ID) error {
 	switch job.State {
 	case domain.JobSucceeded:
 		session.Preparation.State = domain.PreparationReady
-		session.Problem = domain.SessionExecutionUnavailable()
+		session.Problem = domain.InitialExecutionPending()
 	case domain.JobFailed:
 		session.Preparation.State = domain.PreparationFailed
 		session.Problem = job.Problem

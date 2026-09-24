@@ -91,3 +91,33 @@ func (tx *Tx) sessionPage(limit int, query string, args ...any) ([]Record, bool,
 	}
 	return result, false, storageError(rows.Err())
 }
+
+// First-dispatch scans exclude paused/restored and previously claimed sessions.
+// The coordinator must recheck every predicate inside its claim transaction.
+func (s *Store) InitialExecutionCandidates(ctx context.Context, after domain.ID, limit int) ([]Record, bool, error) {
+	if err := (Filter{Kind: domain.SessionKind, After: after, Limit: limit}).validate(); err != nil {
+		return nil, false, err
+	}
+	var result []Record
+	var more bool
+	err := s.Read(ctx, func(tx *Tx) error {
+		var err error
+		result, more, err = tx.sessionPage(limit, "SELECT "+recordColumns+" FROM entities WHERE kind='session' AND id>? AND json_extract(body,'$.initial_execution') IS NULL AND COALESCE(json_extract(body,'$.active_execution_id'),'')='' AND json_extract(body,'$.outcome')='not-started' AND json_extract(body,'$.archive')='active' AND json_extract(body,'$.recovery')='none' AND json_extract(body,'$.dispatch') IN ('blocked','ready') AND json_extract(body,'$.preparation.state')='ready' AND json_extract(body,'$.pending_inputs')>0 ORDER BY id LIMIT ?", after, limit+1)
+		return err
+	})
+	return result, more, err
+}
+
+func (tx *Tx) OldestQueuedInput(session domain.ID) (Record, error) {
+	if err := session.Validate(); err != nil {
+		return Record{}, err
+	}
+	rows, _, err := tx.sessionPage(1, "SELECT "+recordColumns+" FROM entities WHERE kind='queue' AND session_id=? AND json_extract(body,'$.delivery')='queued' ORDER BY json_extract(body,'$.sequence') LIMIT 1", session)
+	if err != nil {
+		return Record{}, err
+	}
+	if len(rows) == 0 {
+		return Record{}, domain.Fail(domain.MissingInput, "The session has no queued input.", "Enqueue an input before requesting execution.")
+	}
+	return rows[0], nil
+}

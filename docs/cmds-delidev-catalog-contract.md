@@ -2,7 +2,7 @@
 
 ## Scope
 
-The server owns provider presets, API model discovery, catalog publication and canonical model selection in `cmds/delidev-cli/internal/providers`, `internal/server`, `internal/store` and the corresponding CLI commands. The complete [issue #964 requirements](cmds-delidev-requirements.md) remain normative. This contract implements the API catalog boundary; native harness model discovery, execution compatibility validation, subscription authentication, API proxy execution and first-dispatch snapshots remain separate required work.
+The server owns provider presets, API model discovery, catalog publication and canonical model selection in `cmds/delidev-cli/internal/providers`, `internal/server`, `internal/store` and the corresponding CLI commands. The complete [issue #964 requirements](cmds-delidev-requirements.md) remain normative. This contract implements the API catalog boundary; native harness model discovery, selected-model execution capability and subscription authentication remain separate required work. API proxy execution and first-dispatch snapshots follow their own implemented authority contracts; a catalog cannot authorize them.
 
 ## Runtime and Language
 

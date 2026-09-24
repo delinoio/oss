@@ -101,8 +101,8 @@ func TestCLISessionAcceptanceQueueAndArchive(t *testing.T) {
 	}
 	revision = strconv.FormatUint(uint64(restored["revision"].(float64)), 10)
 	code, failed := cliRun(t, root, []string{"session", "resume", "--id", id, "--revision", revision}, "")
-	if code == 0 || failed["error"].(map[string]any)["code"] != "unsupported" {
-		t.Fatal("CLI claimed unsupported native execution")
+	if code == 0 || failed["error"].(map[string]any)["code"] != "conflict" {
+		t.Fatal("CLI resumed an unprepared workspace")
 	}
 
 	code, failed = cliRun(t, root, []string{"session", "recover-workspace", "--id", id, "--revision", revision, "--cleanup", "--wait"}, "")

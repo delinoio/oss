@@ -468,6 +468,7 @@ message SessionChange {
   bool replayed = 4;
   Resource workspace_job = 5;
   Resource recovery_job = 6;
+  Resource execution_job = 7;
 }
 message CreateSessionRequest {
   string request_id = 1;

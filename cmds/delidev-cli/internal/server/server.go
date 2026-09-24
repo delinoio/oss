@@ -184,6 +184,13 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 		}
 	}()
 	defer func() { stopCatalog(); <-catalogDone }()
+	dispatchCtx, stopDispatch := context.WithCancel(child)
+	dispatchDone := make(chan struct{})
+	go func() {
+		defer close(dispatchDone)
+		service.runInitialExecutionDispatch(dispatchCtx)
+	}()
+	defer func() { stopDispatch(); <-dispatchDone }()
 	config.Logger.Info("server_ready", "server_id", identity.ServerID, "listener", service.Endpoint.URL, "version", rpc.Version)
 	if ready != nil {
 		ready(service.Endpoint)
@@ -210,6 +217,8 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	}
 	stopCatalog()
 	<-catalogDone
+	stopDispatch()
+	<-dispatchDone
 	service.executionAuthority.close()
 	if err := service.closeAccountSecrets(); err != nil {
 		return domain.SafeError(err)

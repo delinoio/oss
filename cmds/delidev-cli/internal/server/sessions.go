@@ -69,6 +69,13 @@ func (s *Service) sessionResult(ctx context.Context, result store.Result) (*pb.S
 				change.RecoveryJob = rpc.Resource(recovery)
 			}
 		}
+		if value.InitialExecution != nil {
+			job, err := tx.SessionExecutionJob(session.ID, value.InitialExecution.ID)
+			if err != nil {
+				return err
+			}
+			change.ExecutionJob = rpc.Resource(job)
+		}
 		if refs.InputID != "" {
 			input, err := tx.Get(domain.QueueKind, refs.InputID)
 			if err != nil {
@@ -181,7 +188,7 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[pb.Cre
 			return nil, err
 		}
 		id := domain.NewID()
-		value := domain.Session{Name: input.Name, AgentID: input.AgentID, MachineID: input.MachineID, ProjectID: input.ProjectID, Workspace: input.Workspace, Starting: input.Starting, Source: input.Source, CreatedBy: actor.DeviceID, Outcome: domain.ExecutionNotStarted, Archive: domain.NotArchived, Recovery: domain.NoRecovery, Dispatch: domain.DispatchBlocked, Problem: domain.SessionExecutionUnavailable()}
+		value := domain.Session{Name: input.Name, AgentID: input.AgentID, MachineID: input.MachineID, ProjectID: input.ProjectID, Workspace: input.Workspace, Starting: input.Starting, Source: input.Source, CreatedBy: actor.DeviceID, Outcome: domain.ExecutionNotStarted, Archive: domain.NotArchived, Recovery: domain.NoRecovery, Dispatch: domain.DispatchBlocked, Problem: domain.InitialExecutionPending()}
 		preparation, err := sessionWorkspaceRequest(tx, id, value)
 		if err != nil {
 			return nil, err
@@ -394,7 +401,11 @@ func (s *Service) ControlSession(ctx context.Context, req *connect.Request[pb.Co
 			return nil, domain.Fail(domain.Conflict, "The session revision changed.", "Reload current state before controlling it.")
 		}
 		if action == domain.ResumeSession {
-			return nil, domain.SessionExecutionUnavailable()
+			if value.InitialExecution != nil {
+				return nil, domain.SessionExecutionUnavailable()
+			}
+			_, err := queueInitialExecution(tx, r, value, true)
+			return sessionReceipt{SessionID: r.ID}, err
 		}
 		if value.InitialExecution != nil {
 			if err := controlNativeSession(tx, r, &value, action); err != nil {

@@ -217,5 +217,9 @@ type QueuedInput struct {
 }
 
 func SessionExecutionUnavailable() *Error {
-	return Fail(Unsupported, "Native session execution is not integrated in this build.", "The session and ordered inputs are retained. A verified execution adapter is required before Resume or dispatch.")
+	return Fail(Unsupported, "This native session continuation is not integrated in this build.", "The retained execution cannot be repeated; later-turn Resume requires its own native continuation adapter.")
+}
+
+func InitialExecutionPending() *Error {
+	return Fail(Unavailable, "The first execution is waiting for verified dispatch readiness.", "Prepare the workspace, connect the selected Worker and validate its native installation and selected account. Inspect the retained session for the current blocking reason.")
 }
