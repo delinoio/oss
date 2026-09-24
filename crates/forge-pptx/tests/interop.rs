@@ -1597,3 +1597,37 @@ fn unsupported_text_semantics_remain_opaque_and_unchanged() {
         assert!(xml_part(&read_package(&output).unwrap(), path).contains(&replacement));
     }
 }
+
+#[test]
+fn replacing_an_imported_container_cannot_remove_opaque_descendants() {
+    let imported = import(EXTERNAL).unwrap();
+    let mut next = imported.document.clone();
+    let children = &mut next.slides[0].content.children;
+    let before = children.len();
+    children.retain(|node| node.kind != NodeKind::Opaque);
+    assert!(children.len() < before);
+    let error = update(
+        EXTERNAL,
+        &imported.document,
+        &imported.bindings,
+        &next,
+        &imported.assets,
+        imported.document_id,
+        1,
+    )
+    .unwrap_err();
+    assert_eq!(error.code, ErrorCode::UnsupportedEdit);
+    assert_eq!(
+        update(
+            EXTERNAL,
+            &imported.document,
+            &imported.bindings,
+            &imported.document,
+            &imported.assets,
+            imported.document_id,
+            0
+        )
+        .unwrap(),
+        EXTERNAL
+    );
+}

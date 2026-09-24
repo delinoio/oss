@@ -785,6 +785,16 @@ pub fn update_with_measurer(
         });
         let old_ids: Vec<_> = old_leaves.iter().map(|n| n.id.unwrap()).collect();
         let new_ids: Vec<_> = leaves.iter().map(|n| n.id.unwrap()).collect();
+        if old_leaves
+            .iter()
+            .any(|n| n.kind == NodeKind::Opaque && !new_ids.contains(&n.id.unwrap()))
+        {
+            return error(
+                ErrorCode::UnsupportedEdit,
+                "/children",
+                "Unsupported native content cannot be removed by replacing its container",
+            );
+        }
         if new_ids
             .iter()
             .any(|id| old_bindings.get(id).is_some_and(|b| &b.part != path))
