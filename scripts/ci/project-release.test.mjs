@@ -191,7 +191,7 @@ test("non-Cargo projects reach source validation and tagging without Cargo publi
   assert.doesNotThrow(() => runPreflight(Project.Clibox));
   assert.doesNotThrow(() => runPreflight(Project.Pnport, Bump.Minor));
   assert.doesNotThrow(() => runPreflight(Project.AsyncCommitHook));
-  assert.doesNotThrow(() => runPreflight(Project.ReactForge, Bump.Minor));
+  assert.doesNotThrow(() => runPreflight(Project.ReactForge, Bump.Patch));
   assert.throws(() => runPreflight(Project.Binpm), /CARGO_REGISTRY_TOKEN is required/u);
   const registry = workflow.jobs.registry;
   assert.equal(registry.if, undefined);
