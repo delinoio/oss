@@ -6,6 +6,7 @@
 
 ### Scope in This Domain
 
+- `protos/delidev/v1` and `protos/gen/go/delidev/v1`: DeliDev authenticated Connect schemas and tool-owned Go bindings; follow `docs/protos-delidev-v1-contract.md`.
 - `protos/devhud/v1`: implemented versioned DevHud Connect RPC schemas.
 - `protos/gen/go/devhud/v1`: committed, tool-owned Go messages and Connect server bindings generated from `protos/devhud/v1`.
 

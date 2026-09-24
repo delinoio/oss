@@ -34,6 +34,13 @@ Each project must have one project index document and one or more domain contrac
 
 ## Project Catalog
 
+### delidev
+- [Project index](project-delidev.md)
+- [CLI/server/Worker contract](cmds-delidev-contract.md)
+- [Connect protocol](protos-delidev-v1-contract.md)
+- [Complete issue #964 requirements](cmds-delidev-requirements.md)
+- [Implementation and evidence ledger](cmds-delidev-evidence.md)
+
 ### binpm
 - `docs/project-binpm.md`
 - `docs/crates-binpm-foundation.md`

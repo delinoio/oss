@@ -97,11 +97,13 @@ enum ProjectId {
   PublicDocs = "public-docs",
   DevHud = "devhud",
   AsyncCommitHook = "async-commit-hook",
+  DeliDev = "delidev",
 }
 ```
 
 ### Project Domain Ownership
 
+- `delidev` -> `cmds/delidev-cli`, `protos/delidev/v1`, `protos/gen/go/delidev/v1`; follow `docs/project-delidev.md` and the complete issue #964 requirements. The executable is `delidev`; Go owns single-user server and Worker business logic. Keep implementation and real-environment evidence distinct in `docs/cmds-delidev-evidence.md`.
 - `nodeup` -> `crates/nodeup`, `apps/public-docs/docs/nodeup`
 - `binpm` -> `crates/binpm`, `apps/public-docs/docs/binpm`
 - `with-watch` -> `crates/with-watch`
