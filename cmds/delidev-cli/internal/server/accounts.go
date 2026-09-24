@@ -258,6 +258,9 @@ func (s *Service) DisconnectAccount(ctx context.Context, req *connect.Request[pb
 		account.Removal = removal
 		account.Quota = nil
 		account.ConfirmedExhausted = false
+		if err := cancelAccountExecutions(tx, input.ID); err != nil {
+			return nil, err
+		}
 		if _, err = tx.Put(domain.AccountKind, input.ID, input.Revision, "", "", account); err != nil {
 			return nil, err
 		}

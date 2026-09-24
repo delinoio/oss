@@ -24,15 +24,27 @@ import (
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 )
 
+type nativeWorkerScenario uint8
+
+const (
+	nativeWorkerCompletion nativeWorkerScenario = iota
+	nativeWorkerRevocation
+	nativeWorkerDisconnect
+)
+
 func TestManualNativeWorkerExecutesAcceptedCodexJob(t *testing.T) {
-	testManualNativeWorkerExecution(t, false)
+	testManualNativeWorkerExecution(t, nativeWorkerCompletion)
 }
 
 func TestManualNativeWorkerRevocationJoinsCodexCleanup(t *testing.T) {
-	testManualNativeWorkerExecution(t, true)
+	testManualNativeWorkerExecution(t, nativeWorkerRevocation)
 }
 
-func testManualNativeWorkerExecution(t *testing.T, revoke bool) {
+func TestManualNativeWorkerAccountDisconnectCancelsCodex(t *testing.T) {
+	testManualNativeWorkerExecution(t, nativeWorkerDisconnect)
+}
+
+func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario) {
 	t.Helper()
 	binary := os.Getenv("DELIDEV_NATIVE_THREAD_EXECUTABLE")
 	if binary == "" {
@@ -60,7 +72,7 @@ func testManualNativeWorkerExecution(t *testing.T, revoke bool) {
 		if err != nil || !strings.Contains(string(body), "Fixture prompt") || !strings.Contains(string(body), "fixture-model") {
 			t.Error("Worker changed the accepted native input/model")
 		}
-		if revoke {
+		if scenario != nativeWorkerCompletion {
 			started <- struct{}{}
 			<-r.Context().Done()
 			upstreamStopped <- struct{}{}
@@ -101,23 +113,51 @@ func testManualNativeWorkerExecution(t *testing.T, revoke bool) {
 		workerErr = worker.Run(running, worker.Config{Root: manager.Root, Logger: f.service.logger})
 	}()
 	t.Cleanup(func() { stopWorker(); <-done })
-	if revoke {
+	if scenario != nativeWorkerCompletion {
 		select {
 		case <-started:
 		case <-ctx.Done():
 			t.Fatal("native Worker did not reach its owned inference request")
 		}
-		devices := delidevv1connect.NewDeviceServiceClient(f.http.Client(), f.http.URL)
-		_, err := devices.RevokeDevice(ctx, ownerRequest(f.service.Identity, &pb.RevokeDeviceRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(f.device), ExpectedRevision: 1}}))
-		if err != nil {
-			t.Fatal(err)
+		if scenario == nativeWorkerRevocation {
+			devices := delidevv1connect.NewDeviceServiceClient(f.http.Client(), f.http.URL)
+			_, err := devices.RevokeDevice(ctx, ownerRequest(f.service.Identity, &pb.RevokeDeviceRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(f.device), ExpectedRevision: 1}}))
+			if err != nil {
+				t.Fatal(err)
+			}
+		} else {
+			accounts := delidevv1connect.NewAccountServiceClient(f.http.Client(), f.http.URL)
+			response, err := accounts.DisconnectAccount(ctx, ownerRequest(f.service.Identity, &pb.DisconnectAccountRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(f.input.AccountID), ExpectedRevision: 1}}))
+			if err != nil || len(response.Msg.CleanupProblemJson) != 0 {
+				t.Fatalf("account disconnect failed: %v", err)
+			}
+			for {
+				changed := f.service.Store.Changed()
+				r, err := f.service.Store.Get(ctx, domain.JobKind, f.job)
+				if err != nil {
+					t.Fatal(err)
+				}
+				job, err := store.Decode[domain.Job](r)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if job.State == domain.JobUncertain {
+					break
+				}
+				select {
+				case <-changed:
+				case <-ctx.Done():
+					t.Fatal("account disconnect did not cancel and report the native job")
+				}
+			}
+			stopWorker()
 		}
 		select {
 		case <-done:
 		case <-ctx.Done():
 			t.Fatal("revoked Worker left its native operation running")
 		}
-		if workerErr == nil || (domain.SafeError(workerErr).Code != domain.Unauthenticated && domain.SafeError(workerErr).Code != domain.PermissionDenied) {
+		if scenario == nativeWorkerRevocation && (workerErr == nil || (domain.SafeError(workerErr).Code != domain.Unauthenticated && domain.SafeError(workerErr).Code != domain.PermissionDenied)) {
 			t.Fatalf("Worker revocation lost its authority failure: %v", workerErr)
 		}
 		select {
@@ -137,7 +177,7 @@ func testManualNativeWorkerExecution(t *testing.T, revoke bool) {
 			Output  json.RawMessage `json:"output"`
 			Problem *domain.Error   `json:"problem"`
 		}
-		if err != nil || json.Unmarshal(raw, &journal) != nil || journal.State != "finished" || journal.Problem == nil || len(journal.Output) != 0 {
+		if err != nil || json.Unmarshal(raw, &journal) != nil || (journal.State != "finished" && journal.State != "reported") || journal.Problem == nil || len(journal.Output) != 0 {
 			t.Fatal("revoked Worker did not durably retain its interrupted outcome")
 		}
 		retained, err := f.service.Store.Get(ctx, domain.SessionKind, f.input.SessionID)
@@ -148,7 +188,7 @@ func testManualNativeWorkerExecution(t *testing.T, revoke bool) {
 		if err != nil || session.ActiveExecutionID != f.input.ExecutionID || session.Recovery != domain.NeedsRecovery || session.Dispatch != domain.DispatchPaused || session.PendingInputs != 0 || session.Execution == nil || session.Execution.CleanupVerified {
 			t.Fatal("server confused canceled transport with acknowledged native cleanup")
 		}
-		t.Log("real Worker revocation cancels installed Codex and loopback inference, joins owned cleanup, retains a failed journal and server recovery without replay; account readiness remains seeded")
+		t.Log("real Worker/account revocation cancels installed Codex and loopback inference, joins owned cleanup, retains a failed journal and server recovery without replay; account readiness remains seeded")
 		return
 	}
 	var completed domain.Job
