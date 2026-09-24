@@ -164,9 +164,17 @@ func (i SessionInput) Validate() error {
 	return Text(i.Prompt, "session input", MaxPromptBytes, true)
 }
 
+// LocalOrigin is derived from secondary paired Worker authentication at creation.
+// A later viewing client cannot relocate that original execution machine.
+type LocalOrigin struct {
+	MachineID ID `json:"machine_id"`
+	DeviceID  ID `json:"device_id"`
+}
+
 // Session separates visibility, outcome and recovery from dispatch eligibility.
 // Blocked or restored sessions must never be interpreted as completed execution.
 type Session struct {
+	LocalOrigin            *LocalOrigin        `json:"local_origin,omitempty"`
 	Name                   string              `json:"name"`
 	AgentID                ID                  `json:"agent_id"`
 	MachineID              ID                  `json:"machine_id"`

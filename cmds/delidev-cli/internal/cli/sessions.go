@@ -6,6 +6,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/worker"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
@@ -84,7 +85,9 @@ func sessionCommand(ctx context.Context, c client, o options, args []string, str
 	case "create", "enqueue":
 		input := f.String("input", "-", "")
 		wait := new(bool)
+		localRoot := new(string)
 		if action == "create" {
+			localRoot = f.String("local-worker-dir", "", "private paired Worker scope on this computer for explicit Local checkout sharing")
 			wait = f.Bool("wait", false, "wait for the accepted Worker job within the command deadline")
 		}
 		var id *string
@@ -112,7 +115,11 @@ func sessionCommand(ctx context.Context, c client, o options, args []string, str
 				return nil, err
 			}
 			raw, _ = json.Marshal(value)
-			response, err := c.sessions.CreateSession(ctx, request(c, &pb.CreateSessionRequest{RequestId: string(o.requestID), DocumentJson: raw}))
+			token, err := localCreationCredential(ctx, c, value, *localRoot)
+			if err != nil {
+				return nil, err
+			}
+			response, err := c.sessions.CreateSession(ctx, request(c, &pb.CreateSessionRequest{RequestId: string(o.requestID), DocumentJson: raw, LocalWorkerToken: token}))
 			if err != nil {
 				return nil, rpc.ClientError(err)
 			}
@@ -308,4 +315,33 @@ func sessionExecutionRecoveryWait(ctx context.Context, c client, change *pb.Sess
 		return sessionChangeJSON(change), state.Problem
 	}
 	return sessionChangeJSON(change), nil
+}
+
+// Local checkout sharing is explicit; no machine ID or server URL can substitute
+// for the paired Worker credential in a private scope on the invoking computer.
+func localCreationCredential(ctx context.Context, c client, input domain.CreateSession, root string) (string, error) {
+	if input.Workspace != domain.Local {
+		if root != "" {
+			return "", domain.Fail(domain.InvalidArgument, "A Local Worker scope requires a Local session.", "Remove --local-worker-dir for Worktree or General Chat.")
+		}
+		return "", nil
+	}
+	if root == "" {
+		return "", domain.Fail(domain.MissingInput, "Local sessions require this computer's paired Worker scope.", "Pass --local-worker-dir PATH to explicitly share its existing checkouts; use Worktree for another computer.")
+	}
+	credential, err := worker.LoadCredential(root)
+	if err != nil {
+		return "", domain.Fail(domain.Unauthenticated, "The local Worker credential is unavailable or invalid.", "Use this computer's private paired Worker directory.")
+	}
+	if credential.Type != domain.WorkerDevice || credential.MachineID != input.MachineID || credential.Endpoint != c.endpoint {
+		return "", domain.Fail(domain.PermissionDenied, "The local Worker scope does not match the selected machine and server.", "Select the machine paired in this computer's Worker scope.")
+	}
+	status, err := c.system.GetStatus(ctx, request(c, &pb.GetStatusRequest{}))
+	if err != nil {
+		return "", rpc.ClientError(err)
+	}
+	if status.Msg.ServerId != string(credential.ServerID) || status.Msg.ProtocolVersion != rpc.ProtocolVersion {
+		return "", domain.Fail(domain.PermissionDenied, "The local Worker belongs to a different server identity or protocol.", "Reconnect to its original compatible paired server.")
+	}
+	return credential.Token, nil
 }

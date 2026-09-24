@@ -35,14 +35,15 @@ type PrepareRequest struct {
 	PrimaryRepository domain.ID            `json:"primary_repository,omitempty"`
 }
 type PreparedRepository struct {
-	ID             domain.ID        `json:"id"`
-	Source         string           `json:"source"`
-	Path           string           `json:"path"`
-	Base           domain.Reference `json:"base"`
-	Starting       domain.Reference `json:"starting"`
-	BaseCommit     string           `json:"base_commit"`
-	StartingCommit string           `json:"starting_commit"`
-	Owned          bool             `json:"owned"`
+	LocalIdentityDigest string           `json:"local_identity_digest,omitempty"`
+	ID                  domain.ID        `json:"id"`
+	Source              string           `json:"source"`
+	Path                string           `json:"path"`
+	Base                domain.Reference `json:"base"`
+	Starting            domain.Reference `json:"starting"`
+	BaseCommit          string           `json:"base_commit"`
+	StartingCommit      string           `json:"starting_commit"`
+	Owned               bool             `json:"owned"`
 }
 type State string
 
@@ -255,6 +256,10 @@ func (m *Manager) Prepare(ctx context.Context, request PrepareRequest) (Manifest
 				prepared.StartingCommit = trimGit(raw)
 				prepared.BaseCommit = prepared.StartingCommit
 				prepared.Starting = domain.Reference{Type: domain.CommitReference, Name: prepared.StartingCommit}
+				prepared.LocalIdentityDigest, err = captureLocalIdentity(ctx, git, prepared.ID, prepared.Path)
+				if err != nil {
+					return failed(err)
+				}
 			} else {
 				if prepared.Starting.Type == "" {
 					prepared.Starting, err = DefaultStarting(inspection, spec.PreferredRemote)

@@ -5108,9 +5108,12 @@ type CreateSessionRequest struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	RequestId string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
 	// Closed domain.CreateSession schema, including exactly one Agent Worker.
-	DocumentJson  []byte `protobuf:"bytes,2,opt,name=document_json,json=documentJson,proto3" json:"document_json,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	DocumentJson []byte `protobuf:"bytes,2,opt,name=document_json,json=documentJson,proto3" json:"document_json,omitempty"`
+	// Additional paired Worker credential loaded locally for explicit Local creation.
+	// Authentication input only: never retain in resources, jobs, receipts or logs.
+	LocalWorkerToken string `protobuf:"bytes,3,opt,name=local_worker_token,json=localWorkerToken,proto3" json:"local_worker_token,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *CreateSessionRequest) Reset() {
@@ -5155,6 +5158,13 @@ func (x *CreateSessionRequest) GetDocumentJson() []byte {
 		return x.DocumentJson
 	}
 	return nil
+}
+
+func (x *CreateSessionRequest) GetLocalWorkerToken() string {
+	if x != nil {
+		return x.LocalWorkerToken
+	}
+	return ""
 }
 
 type CreateSessionResponse struct {
@@ -6995,11 +7005,12 @@ const file_delidev_v1_delidev_proto_rawDesc = "" +
 	"\rworkspace_job\x18\x05 \x01(\v2\x14.delidev.v1.ResourceR\fworkspaceJob\x127\n" +
 	"\frecovery_job\x18\x06 \x01(\v2\x14.delidev.v1.ResourceR\vrecoveryJob\x129\n" +
 	"\rexecution_job\x18\a \x01(\v2\x14.delidev.v1.ResourceR\fexecutionJob\x12J\n" +
-	"\x16execution_recovery_job\x18\b \x01(\v2\x14.delidev.v1.ResourceR\x14executionRecoveryJob\"Z\n" +
+	"\x16execution_recovery_job\x18\b \x01(\v2\x14.delidev.v1.ResourceR\x14executionRecoveryJob\"\x88\x01\n" +
 	"\x14CreateSessionRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12#\n" +
-	"\rdocument_json\x18\x02 \x01(\fR\fdocumentJson\"J\n" +
+	"\rdocument_json\x18\x02 \x01(\fR\fdocumentJson\x12,\n" +
+	"\x12local_worker_token\x18\x03 \x01(\tR\x10localWorkerToken\"J\n" +
 	"\x15CreateSessionResponse\x121\n" +
 	"\x06change\x18\x01 \x01(\v2\x19.delidev.v1.SessionChangeR\x06change\"\x9b\x01\n" +
 	"\x13ListSessionsRequest\x12\x1d\n" +

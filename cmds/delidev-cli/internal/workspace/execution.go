@@ -93,7 +93,7 @@ func (m *Manager) noActiveExecutionClaim(session domain.ID) error {
 	return nil
 }
 
-// ClaimFirstExecution validates already prepared Worktree/General Chat files.
+// ClaimFirstExecution validates already prepared files and Local identity.
 // It neither prepares/fetches nor changes HEAD. A closed first claim cannot be
 // reused. Continuation requires the exact closed predecessor; its native-history
 // and current account/server authority must still be checked by the caller.
@@ -124,9 +124,7 @@ func (m *Manager) claimExecution(ctx context.Context, jobID, executionID domain.
 	if err := input.validate(); err != nil {
 		return nil, err
 	}
-	if input.Type == domain.Local {
-		return nil, domain.Fail(domain.Unsupported, "Local native execution needs verified originating-machine authority.", "Keep the original checkout unchanged until that execution profile is supported.")
-	}
+
 	if jobID == executionID || jobID == input.SessionID || executionID == input.SessionID {
 		return nil, ResultUncertain()
 	}

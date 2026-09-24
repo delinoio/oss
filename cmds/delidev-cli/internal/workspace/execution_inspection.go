@@ -34,7 +34,7 @@ func (i *ClosedExecutionInspection) Close() error {
 // workspace or repairs an absent claim. It requires the current closed owner;
 // retired history and an absent process index cannot stand in for that owner.
 func (m *Manager) InspectClosedExecution(ctx context.Context, expected ExecutionPredecessor, input PrepareRequest, manifest Manifest) (inspection *ClosedExecutionInspection, returned error) {
-	if domain.UniqueIDs([]domain.ID{input.SessionID, expected.JobID, expected.ExecutionID}) != nil || input.validate() != nil || input.Type == domain.Local {
+	if domain.UniqueIDs([]domain.ID{input.SessionID, expected.JobID, expected.ExecutionID}) != nil || input.validate() != nil {
 		return nil, ResultUncertain()
 	}
 	if err := ctx.Err(); err != nil {

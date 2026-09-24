@@ -253,8 +253,9 @@ func (m *Manager) verifyRecoveredReady(ctx context.Context, input PrepareRequest
 }
 
 // Only the continuation lease may select continuationIdentity, after proving
-// the exact prior closed claim. Preparation/first execution still require the
-// original detached creation commit. Both modes preserve all files unchanged.
+// the exact prior closed claim. Worktree preparation/first execution require the
+// original detached creation commit. Local retains its captured Git identity
+// while allowing current user commits. Both modes preserve all files unchanged.
 func (m *Manager) verifyWorkspaceIdentity(ctx context.Context, input PrepareRequest, manifest Manifest, validation readyValidation) (string, error) {
 	if validation != preparationIdentity && validation != continuationIdentity {
 		return "", ResultUncertain()
@@ -274,7 +275,7 @@ func (m *Manager) verifyWorkspaceIdentity(ctx context.Context, input PrepareRequ
 			if path != filepath.Join(root, "chat") {
 				return "", ResultUncertain()
 			}
-		} else if filepath.Dir(path) != root {
+		} else if input.Type == domain.Worktree && filepath.Dir(path) != root {
 			return "", ResultUncertain()
 		}
 		info, err := os.Lstat(path)
@@ -291,11 +292,11 @@ func (m *Manager) verifyWorkspaceIdentity(ctx context.Context, input PrepareRequ
 	git.OwnerID = input.SessionID
 	for _, repo := range manifest.Repositories {
 		head, err := git.run(ctx, repo.Path, "rev-parse", "--verify", "HEAD^{commit}")
-		if err != nil || !canonicalCommit(trimGit(head)) || (validation == preparationIdentity && trimGit(head) != repo.StartingCommit) {
+		if err != nil || !canonicalCommit(trimGit(head)) || (input.Type == domain.Worktree && validation == preparationIdentity && trimGit(head) != repo.StartingCommit) {
 			return "", ResultUncertain()
 		}
 		branch, err := git.run(ctx, repo.Path, "rev-parse", "--abbrev-ref", "HEAD")
-		if err != nil || trimGit(branch) == "" || (validation == preparationIdentity && trimGit(branch) != "HEAD") {
+		if err != nil || trimGit(branch) == "" || (input.Type == domain.Worktree && validation == preparationIdentity && trimGit(branch) != "HEAD") {
 			return "", ResultUncertain()
 		}
 		source, err := git.run(ctx, repo.Source, "rev-parse", "--path-format=absolute", "--git-common-dir")
@@ -318,14 +319,20 @@ func (m *Manager) verifyWorkspaceIdentity(ctx context.Context, input PrepareRequ
 		if err != nil {
 			return "", ResultUncertain()
 		}
-		// A managed linked worktree must retain its own registered administrative
-		// directory. Binding this identity lets later execution keep agent
-		// commits/branches without adopting a different repository/worktree.
-		relative, err := filepath.Rel(filepath.Join(common, "worktrees"), gitDirectory)
-		if err != nil || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
-			return "", ResultUncertain()
+		entry := repositoryIdentity{ID: repo.ID, CommonDirectory: common, GitDirectory: gitDirectory}
+		if input.Type == domain.Local {
+			if localIdentityDigest(entry) != repo.LocalIdentityDigest {
+				return "", ResultUncertain()
+			}
+		} else {
+			// Managed worktrees must retain their own linked administration;
+			// Local may instead use the main checkout's common Git directory.
+			relative, err := filepath.Rel(filepath.Join(common, "worktrees"), gitDirectory)
+			if err != nil || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
+				return "", ResultUncertain()
+			}
 		}
-		identity.Repositories = append(identity.Repositories, repositoryIdentity{ID: repo.ID, CommonDirectory: common, GitDirectory: gitDirectory})
+		identity.Repositories = append(identity.Repositories, entry)
 		registered, err := git.run(ctx, repo.Source, "worktree", "list", "--porcelain", "-z")
 		if err != nil {
 			return "", ResultUncertain()
@@ -346,4 +353,32 @@ func (m *Manager) verifyWorkspaceIdentity(ctx context.Context, input PrepareRequ
 	}
 	digest := sha256.Sum256(raw)
 	return hex.EncodeToString(digest[:]), nil
+}
+
+// Local preparation captures administrative identity without changing checkout
+// contents or choosing a branch. First execution may observe later user commits.
+func captureLocalIdentity(ctx context.Context, git Git, id domain.ID, path string) (string, error) {
+	common, err := git.run(ctx, path, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err != nil {
+		return "", domain.SafeError(err)
+	}
+	admin, err := git.run(ctx, path, "rev-parse", "--absolute-git-dir")
+	if err != nil {
+		return "", domain.SafeError(err)
+	}
+	commonPath, err := filepath.EvalSymlinks(trimGit(common))
+	if err != nil {
+		return "", ResultUncertain()
+	}
+	adminPath, err := filepath.EvalSymlinks(trimGit(admin))
+	if err != nil {
+		return "", ResultUncertain()
+	}
+	return localIdentityDigest(repositoryIdentity{ID: id, CommonDirectory: commonPath, GitDirectory: adminPath}), nil
+}
+
+func localIdentityDigest(value repositoryIdentity) string {
+	raw, _ := json.Marshal(value)
+	digest := sha256.Sum256(raw)
+	return hex.EncodeToString(digest[:])
 }

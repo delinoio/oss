@@ -128,12 +128,6 @@ func validateSessionSelection(tx *store.Tx, input domain.CreateSession) error {
 	if machine.Disabled {
 		return domain.Fail(domain.Unavailable, "The selected execution machine is disabled.", "Select an enabled Worker.")
 	}
-	if input.Workspace == domain.Local {
-		// A caller-supplied machine ID is not proof that the Worker is local to
-		// that client. Remove this restriction only with authenticated device-to-
-		// machine provenance; never silently interpret a remote checkout as Local.
-		return domain.Fail(domain.Unsupported, "Local session origin verification is not integrated in this build.", "Use a Worktree session until the client's own Worker identity can be verified.")
-	}
 	if input.ProjectID == "" {
 		return nil
 	}
@@ -191,18 +185,32 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[pb.Cre
 	if err := input.Validate(); err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
+	origin, originDigest, err := s.authenticateLocalOrigin(ctx, input, req.Msg.LocalWorkerToken)
+	if err != nil {
+		return nil, rpc.Error(err, correlation)
+	}
 	actor, _ := domain.PrincipalFrom(ctx)
 	// Bind receipt identity to the creating device as well as its selections.
 	identity := struct {
-		Input domain.CreateSession
-		Actor domain.Principal
-	}{input, actor}
+		Input  domain.CreateSession
+		Actor  domain.Principal
+		Origin *domain.LocalOrigin `json:",omitempty"`
+	}{input, actor, origin}
 	result, err := s.Store.Mutate(ctx, domain.ID(req.Msg.RequestId), "session.create", identity, func(tx *store.Tx) (any, error) {
+		if origin != nil {
+			current, err := tx.Authenticate(originDigest[:])
+			if err != nil {
+				return nil, err
+			}
+			if current.Type != domain.WorkerDevice || current.DeviceID != origin.DeviceID || current.MachineID != origin.MachineID {
+				return nil, localOriginRequired()
+			}
+		}
 		if err := validateSessionSelection(tx, input); err != nil {
 			return nil, err
 		}
 		id := domain.NewID()
-		value := domain.Session{Name: input.Name, AgentID: input.AgentID, MachineID: input.MachineID, ProjectID: input.ProjectID, Workspace: input.Workspace, Starting: input.Starting, Source: input.Source, CreatedBy: actor.DeviceID, Outcome: domain.ExecutionNotStarted, Archive: domain.NotArchived, Recovery: domain.NoRecovery, Dispatch: domain.DispatchBlocked, Problem: domain.InitialExecutionPending()}
+		value := domain.Session{LocalOrigin: origin, Name: input.Name, AgentID: input.AgentID, MachineID: input.MachineID, ProjectID: input.ProjectID, Workspace: input.Workspace, Starting: input.Starting, Source: input.Source, CreatedBy: actor.DeviceID, Outcome: domain.ExecutionNotStarted, Archive: domain.NotArchived, Recovery: domain.NoRecovery, Dispatch: domain.DispatchBlocked, Problem: domain.InitialExecutionPending()}
 		preparation, err := sessionWorkspaceRequest(tx, id, value)
 		if err != nil {
 			return nil, err
@@ -226,7 +234,7 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[pb.Cre
 	if err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
-	s.logger.Info("session_accepted", "correlation_id", correlation, "session_id", change.Session.Id, "machine_id", input.MachineID, "source", input.Source, "replayed", result.Replayed)
+	s.logger.Info("session_accepted", "correlation_id", correlation, "session_id", change.Session.Id, "machine_id", input.MachineID, "workspace_type", input.Workspace, "source", input.Source, "replayed", result.Replayed)
 	response := connect.NewResponse(&pb.CreateSessionResponse{Change: change})
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil

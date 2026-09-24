@@ -78,29 +78,40 @@ func (t *Tx) RevokeCredential(id domain.ID) error {
 func (s *Store) Authenticate(ctx context.Context, digest []byte) (domain.Principal, error) {
 	var actor domain.Principal
 	err := s.Read(ctx, func(tx *Tx) error {
-		var id domain.ID
-		if err := tx.tx.QueryRowContext(ctx, "SELECT device_id FROM credential_verifiers WHERE digest=?", digest).Scan(&id); err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				return domain.Fail(domain.Unauthenticated, "The device credential is invalid or revoked.", "Pair this device again with a new code.")
-			}
-			return storageError(err)
-		}
-		record, err := tx.Get(domain.DeviceKind, id)
-		if err != nil {
-			return err
-		}
-		device, err := Decode[domain.Device](record)
-		if err != nil {
-			return err
-		}
-		if device.Revoked {
-			return domain.Fail(domain.Unauthenticated, "The device credential was revoked.", "Pair this device again with a new code.")
-		}
-		actor = domain.Principal{Type: device.Type, DeviceID: id, MachineID: device.MachineID}
-		return nil
+		var err error
+		actor, err = tx.Authenticate(digest)
+		return err
 	})
 	return actor, err
 }
+
+// Authenticate rechecks secondary Local origin authority inside a mutation;
+// prior HTTP authentication cannot survive a concurrent revocation.
+func (t *Tx) Authenticate(digest []byte) (domain.Principal, error) {
+	var id domain.ID
+	if len(digest) != 32 {
+		return domain.Principal{}, domain.Fail(domain.Unauthenticated, "Invalid device credential.", "Use the paired device credential.")
+	}
+	if err := t.tx.QueryRowContext(t.ctx, "SELECT device_id FROM credential_verifiers WHERE digest=?", digest).Scan(&id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.Principal{}, domain.Fail(domain.Unauthenticated, "The device credential is invalid or revoked.", "Pair this device again with a new code.")
+		}
+		return domain.Principal{}, storageError(err)
+	}
+	record, err := t.Get(domain.DeviceKind, id)
+	if err != nil {
+		return domain.Principal{}, err
+	}
+	device, err := Decode[domain.Device](record)
+	if err != nil {
+		return domain.Principal{}, err
+	}
+	if device.Revoked {
+		return domain.Principal{}, domain.Fail(domain.Unauthenticated, "The device credential was revoked.", "Pair this device again with a new code.")
+	}
+	return domain.Principal{Type: device.Type, DeviceID: id, MachineID: device.MachineID}, nil
+}
+
 func (t *Tx) WorkerInstance(machine domain.ID) (domain.ID, time.Time, error) {
 	var instance domain.ID
 	var seen int64

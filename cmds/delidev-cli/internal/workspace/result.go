@@ -68,7 +68,7 @@ func ValidateResult(input PrepareRequest, result Manifest, workerOS string) erro
 	if input.Type != domain.Worktree && input.Type != domain.Local {
 		return ResultUncertain()
 	}
-	if len(input.Repositories) == 0 {
+	if len(input.Repositories) == 0 || (input.Type == domain.Local && input.OriginMachineID != input.MachineID) {
 		return ResultUncertain()
 	}
 	seen := make(map[domain.ID]bool)
@@ -81,6 +81,9 @@ func ValidateResult(input PrepareRequest, result Manifest, workerOS string) erro
 		}
 		seen[repo.ID] = true
 		if input.Type == domain.Worktree {
+			if repo.LocalIdentityDigest != "" {
+				return ResultUncertain()
+			}
 			if repo.Starting.Validate(false) != nil || repo.Base.Validate(false) != nil || (expected.Starting.Type != "" && repo.Starting != expected.Starting) || (expected.Base.Type != "" && repo.Base != expected.Base) || (expected.Base.Type == "" && repo.Base != repo.Starting) || (repo.Base == repo.Starting && repo.BaseCommit != repo.StartingCommit) {
 				return ResultUncertain()
 			}
@@ -97,7 +100,7 @@ func ValidateResult(input PrepareRequest, result Manifest, workerOS string) erro
 				return ResultUncertain()
 			}
 			ownedRoot = path.Dir(location)
-		} else if repo.Path != repo.Source || repo.StartingCommit != repo.BaseCommit || repo.Starting != (domain.Reference{Type: domain.CommitReference, Name: repo.StartingCommit}) {
+		} else if len(repo.LocalIdentityDigest) != 64 || !canonicalCommit(repo.LocalIdentityDigest) || repo.Path != repo.Source || repo.StartingCommit != repo.BaseCommit || repo.Starting != (domain.Reference{Type: domain.CommitReference, Name: repo.StartingCommit}) {
 			return ResultUncertain()
 		}
 		if repo.ID == input.PrimaryRepository {

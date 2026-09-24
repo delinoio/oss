@@ -148,11 +148,14 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 	}
 	var request workspace.PrepareRequest
 	var manifest workspace.Manifest
-	if domain.Decode(job.Input, &request) != nil || domain.Decode(job.Output, &manifest) != nil || request.SessionID != sr.ID || request.MachineID != session.MachineID || workspace.ValidateResult(request, manifest, machine.OS) != nil {
+	if domain.Decode(job.Input, &request) != nil || domain.Decode(job.Output, &manifest) != nil || request.SessionID != sr.ID || request.MachineID != session.MachineID || request.Type != session.Workspace || workspace.ValidateResult(request, manifest, machine.OS) != nil {
 		return empty, workspace.ResultUncertain()
 	}
-	if request.Type == domain.Local {
-		return empty, domain.Fail(domain.Unsupported, "This workspace requires an additional native execution adapter.", "Retain its prepared files; originating-machine authority must be validated before Local execution.")
+	if err := validateLocalOrigin(tx, session); err != nil {
+		return empty, err
+	}
+	if request.Type == domain.Local && (session.LocalOrigin == nil || request.OriginMachineID != session.LocalOrigin.MachineID) {
+		return empty, workspace.ResultUncertain()
 	}
 	settings := codex.ThreadSettings{Model: c.NativeModel, Provider: codex.APIProvider, Cwd: manifest.PrimaryPath, Effort: c.Effort, Instructions: c.Instructions, Options: c.Options}
 	if len(manifest.Repositories) > 1 {

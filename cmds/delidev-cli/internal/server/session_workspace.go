@@ -15,8 +15,11 @@ import (
 
 func sessionWorkspaceRequest(tx *store.Tx, id domain.ID, session domain.Session) (workspace.PrepareRequest, error) {
 	input := workspace.PrepareRequest{SessionID: id, MachineID: session.MachineID, Type: session.Workspace, Repositories: []workspace.RepositorySpec{}}
-	if session.Workspace == domain.Local {
-		return input, domain.Fail(domain.Unsupported, "Local session origin verification is not integrated in this build.", "Use a Worktree session until the client's own Worker identity can be verified.")
+	if err := validateLocalOrigin(tx, session); err != nil {
+		return input, err
+	}
+	if session.LocalOrigin != nil {
+		input.OriginMachineID = session.LocalOrigin.MachineID
 	}
 	if session.Workspace == domain.GeneralChat {
 		return input, nil
@@ -67,6 +70,10 @@ func sessionWorkspaceRequest(tx *store.Tx, id domain.ID, session domain.Session)
 			if start.RepositoryID == r.ID {
 				spec.Starting = start.Reference
 			}
+		}
+		if session.Workspace == domain.Local {
+			spec.Starting = domain.Reference{}
+			spec.AutoFetch = false
 		}
 		input.Repositories = append(input.Repositories, spec)
 	}

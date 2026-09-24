@@ -544,6 +544,9 @@ message CreateSessionRequest {
   string request_id = 1;
   // Closed domain.CreateSession schema, including exactly one Agent Worker.
   bytes document_json = 2;
+  // Additional paired Worker credential loaded locally for explicit Local creation.
+  // Authentication input only: never retain in resources, jobs, receipts or logs.
+  string local_worker_token = 3;
 }
 message CreateSessionResponse {
   SessionChange change = 1;

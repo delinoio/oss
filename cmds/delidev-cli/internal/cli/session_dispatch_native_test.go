@@ -29,16 +29,30 @@ import (
 // execution is opt-in and uses a fresh Worker environment plus a loopback
 // scripted keyless provider, never an existing login or external account.
 func TestManualNativeCLIFirstDispatch(t *testing.T) {
-	testManualNativeCLI(t, false, false)
+	testManualNativeCLI(t, false, nativeDefaultWorkspaces)
 }
 
 func TestManualNativeCLISteer(t *testing.T) {
-	testManualNativeCLI(t, true, false)
+	testManualNativeCLI(t, true, nativeDefaultWorkspaces)
 }
 
-func TestManualNativeCLIMultipleRepositories(t *testing.T) { testManualNativeCLI(t, false, true) }
+func TestManualNativeCLIMultipleRepositories(t *testing.T) {
+	testManualNativeCLI(t, false, nativeMultipleWorkspaces)
+}
 
-func testManualNativeCLI(t *testing.T, steerScenario, multipleRepositories bool) {
+type nativeCLIWorkspaceProfile uint8
+
+const (
+	nativeDefaultWorkspaces nativeCLIWorkspaceProfile = iota
+	nativeMultipleWorkspaces
+	nativeLocalWorkspaces
+)
+
+func TestManualNativeCLILocalRepositories(t *testing.T) {
+	testManualNativeCLI(t, false, nativeLocalWorkspaces)
+}
+
+func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWorkspaceProfile) {
 	t.Helper()
 	binary := os.Getenv("DELIDEV_NATIVE_THREAD_EXECUTABLE")
 	if binary == "" {
@@ -53,11 +67,15 @@ func testManualNativeCLI(t *testing.T, steerScenario, multipleRepositories bool)
 		repositories int
 	}
 	scenarios := []nativeScenario{{domain.ExecuteMode, domain.GeneralChat, 0}, {domain.PlanMode, domain.GeneralChat, 0}, {domain.ExecuteMode, domain.Worktree, 1}}
-	if multipleRepositories {
+	if profile == nativeMultipleWorkspaces {
 		scenarios = []nativeScenario{{domain.ExecuteMode, domain.Worktree, 2}, {domain.PlanMode, domain.Worktree, 2}}
+	}
+	if profile == nativeLocalWorkspaces {
+		scenarios = []nativeScenario{{domain.ExecuteMode, domain.Local, 2}, {domain.PlanMode, domain.Local, 1}}
 	}
 	for _, scenario := range scenarios {
 		mode := scenario.mode
+		multipleRepositories := scenario.repositories > 1
 		t.Run(string(scenario.workspace)+"/"+string(mode), func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 			defer cancel()
@@ -220,13 +238,18 @@ func testManualNativeCLI(t *testing.T, steerScenario, multipleRepositories bool)
 			}
 			model := run([]string{"model", "create"}, domain.Model{Name: "Fixture", NativeID: "fixture-model", ProviderID: domain.ID(provider["id"].(string)), Harnesses: []domain.Harness{domain.Codex}, MetadataSource: domain.UserDeclared})["resource"].(map[string]any)
 			options := domain.AgentOptions{Permission: domain.PermissionReadOnly}
-			if scenario.workspace == domain.Worktree {
+			if scenario.workspace != domain.GeneralChat {
 				options.Permission = domain.PermissionWorkspaceWrite
 			}
 			agent := run([]string{"agent", "create"}, domain.Agent{Name: "Fixture", Harness: domain.Codex, ModelID: domain.ID(model["id"].(string)), Accounts: []domain.WeightedAccount{{ID: domain.ID(account["id"].(string)), Weight: 1}}, Options: options})["resource"].(map[string]any)
 			create := []string{"session", "create", "--request-id", string(domain.NewID()), "--wait"}
+			type localCheckout struct{ root, head string }
+			var localCheckouts []localCheckout
+			if scenario.workspace == domain.Local {
+				create = append(create, "--local-worker-dir", workerRoot)
+			}
 			input := domain.CreateSession{Name: "Public CLI first execution", AgentID: domain.ID(agent["id"].(string)), MachineID: domain.ID(machine), Workspace: scenario.workspace, Mode: mode, Prompt: "Public first prompt"}
-			if scenario.workspace == domain.Worktree {
+			if scenario.workspace != domain.GeneralChat {
 				repositories := make([]domain.ID, 0, scenario.repositories)
 				for range scenario.repositories {
 					checkout, hooks := t.TempDir(), t.TempDir()
@@ -248,6 +271,22 @@ func testManualNativeCLI(t *testing.T, steerScenario, multipleRepositories bool)
 					git("add", "tracked.txt")
 					git("commit", "-m", "fixture")
 					commit := git("rev-parse", "HEAD")
+					if scenario.workspace == domain.Local {
+						git("switch", "-c", "existing-local-branch")
+						if err := os.WriteFile(filepath.Join(checkout, "local.txt"), []byte("local commit"), 0600); err != nil {
+							t.Fatal(err)
+						}
+						git("add", "local.txt")
+						git("commit", "-m", "existing local change")
+						if err := os.WriteFile(filepath.Join(checkout, "tracked.txt"), []byte("keep local dirty tree"), 0600); err != nil {
+							t.Fatal(err)
+						}
+						canonical, err := filepath.EvalSymlinks(checkout)
+						if err != nil {
+							t.Fatal(err)
+						}
+						localCheckouts = append(localCheckouts, localCheckout{canonical, git("rev-parse", "HEAD")})
+					}
 					repo := run([]string{"repository", "create", "--wait"}, domain.Repository{Name: "Private native fixture", Checkouts: []domain.Checkout{{MachineID: domain.ID(machine), Path: checkout}}, Starting: domain.Reference{Type: domain.CommitReference, Name: commit}})["resource"].(map[string]any)
 					id := domain.ID(repo["id"].(string))
 					repositories = append(repositories, id)
@@ -343,7 +382,7 @@ func testManualNativeCLI(t *testing.T, steerScenario, multipleRepositories bool)
 			}
 			checkRoots := func() {
 				t.Helper()
-				if !multipleRepositories {
+				if !multipleRepositories && scenario.workspace != domain.Local {
 					return
 				}
 				var assignment domain.ExecutionJobInput
@@ -359,8 +398,39 @@ func testManualNativeCLI(t *testing.T, steerScenario, multipleRepositories bool)
 					t.Fatal(err)
 				}
 				var checkpoint worker.CodexExecutionCheckpoint
-				if domain.Decode(raw, &checkpoint) != nil || !slices.Equal(checkpoint.Native.Effective.WorkspaceRoots, manifest.WorkspaceRoots()) || checkpoint.Native.Effective.Cwd != manifest.PrimaryPath {
+				var expectedRoots []string
+				if multipleRepositories {
+					expectedRoots = manifest.WorkspaceRoots()
+				}
+				if domain.Decode(raw, &checkpoint) != nil || !slices.Equal(checkpoint.Native.Effective.WorkspaceRoots, expectedRoots) || checkpoint.Native.Effective.Cwd != manifest.PrimaryPath {
 					t.Fatal("native continuation lost exact repository roots/primary")
+				}
+				if scenario.workspace == domain.Local {
+					if state.LocalOrigin == nil || state.LocalOrigin.MachineID != domain.ID(machine) || state.LocalOrigin.DeviceID == "" {
+						t.Fatal("Local origin was lost")
+					}
+					var preparation workspace.PrepareRequest
+					if domain.Decode(assignment.Preparation, &preparation) != nil || preparation.OriginMachineID != domain.ID(machine) {
+						t.Fatal("Local preparation lost origin")
+					}
+					for i, checkout := range localCheckouts {
+						if manifest.Repositories[i].Path != checkout.root || manifest.Repositories[i].Owned || manifest.Repositories[i].StartingCommit != checkout.head || preparation.Repositories[i].AutoFetch || preparation.Repositories[i].Starting.Type != "" {
+							t.Fatal("Local preparation moved or selected checkout contents")
+						}
+						git := exec.CommandContext(ctx, "git", "-C", checkout.root, "rev-parse", "HEAD")
+						out, err := git.Output()
+						if err != nil || strings.TrimSpace(string(out)) != checkout.head {
+							t.Fatal("Local HEAD changed", err)
+						}
+						branch, err := exec.CommandContext(ctx, "git", "-C", checkout.root, "branch", "--show-current").Output()
+						if err != nil || strings.TrimSpace(string(branch)) != "existing-local-branch" {
+							t.Fatal("Local branch changed", err)
+						}
+						dirty, err := os.ReadFile(filepath.Join(checkout.root, "tracked.txt"))
+						if err != nil || string(dirty) != "keep local dirty tree" {
+							t.Fatal("Local dirty file changed", err)
+						}
+					}
 				}
 			}
 			checkRoots()
