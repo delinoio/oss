@@ -383,6 +383,7 @@ fn tagged_reading_order_retains_logical_bidi_runs_and_link_annotations() {
 
 // Follow the PDF's semantic order, resolving page/MCID pairs. The content
 // stream may paint bidi runs in visual order; assistive readers follow /K.
+#[cfg(target_os = "macos")]
 fn structure_text(pdf: &lopdf::Document) -> String {
     let mut marked = std::collections::BTreeMap::new();
     for page in pdf.get_pages().values() {
