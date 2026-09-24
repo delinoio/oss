@@ -1206,18 +1206,21 @@ fn completed_workload_cleans_up_its_background_descendants() {
             "run",
             "with-timeout",
             "--idle-timeout",
-            "100ms",
+            "1s",
             "--kill-after",
-            "500ms",
+            "4s",
             &assignment,
             &started_assignment,
             "--",
             "sh",
             "-c",
-            "sh -c 'on_term() { for _ in 1 2 3 4 5 6 7 8 9 10; do printf \
-             descendant-cleanup-output >&2; sleep 0.02; done; exit 0; }; trap on_term TERM; : > \
-             \"$STARTED\"; while :; do sleep 30; done' & echo $! > \"$MARKER\"; while [ ! -f \
-             \"$STARTED\" ]; do sleep 0.01; done; printf workload-output >&2",
+            // The descendant stays active longer than the idle interval so
+            // an implementation that discards cleanup activity returns 124.
+            // The one-second boundary absorbs slower CI scheduler turns.
+            "sh -c 'on_term() { i=0; while [ \"$i\" -lt 100 ]; do printf \
+             descendant-cleanup-output >&2; sleep 0.02; i=$((i + 1)); done; exit 0; }; trap \
+             on_term TERM; : > \"$STARTED\"; while :; do sleep 30; done' & echo $! > \"$MARKER\"; \
+             while [ ! -f \"$STARTED\" ]; do sleep 0.01; done; printf workload-output >&2",
         ],
     )
     .output()
