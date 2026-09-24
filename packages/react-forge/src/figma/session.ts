@@ -498,6 +498,18 @@ export class FigmaSession {
         await root.dispose();
         throw error;
       }
+      // Unmount retained these entities only to prevent deletion by omission.
+      // A new mount selects ownership afresh: omitted descendants become foreign,
+      // and explicitly selected descendants must not coexist with old owners.
+      const released = new Set<string>();
+      for (const key of this.retained.keys()) {
+        const id = this.bindings[key];
+        if (id && ancestors(id).has(target.remoteId)) {
+          released.add(key);
+          this.retained.delete(key);
+        }
+      }
+      this.previous = this.previous.filter((entity) => !released.has(entity.key));
       let unmounted = false;
       return Object.freeze({
         render: (next: ReactNode) =>

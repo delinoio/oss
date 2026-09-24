@@ -690,3 +690,38 @@ test("nested pages fail native planning before any remote creation", async () =>
     } finally { await session.dispose(); }
   }
 });
+
+test("remounting transfers retained ownership without deleting omitted descendants", async () => {
+  const connection = new FakeConnection();
+  const frame = connection.canvas.node("FRAME");
+  const foreign = connection.canvas.node("VECTOR");
+  frame.appendChild(foreign);
+  const session = await FigmaSession.open(FILE, {}, connection);
+  try {
+    await session.refresh({ pageId: connection.canvas.page.id });
+    const target = session.inspect().targets.find(t => t.remoteId === frame.id)!;
+    const first = await session.mount(target, <Frame><Text name="Owned">First</Text></Frame>);
+    await session.publish();
+    const child = frame.children.find((n: any) => n.name === "Owned");
+    await first.unmount();
+    const second = await session.mount(target, <Frame width={240} />);
+    const result = await session.publish();
+    assert.equal(result.status, PublishStatus.Complete);
+    assert.deepEqual(result.createdNodeIds, []);
+    assert.deepEqual(result.deletedNodeIds, []);
+    assert.equal(child.parent.id, frame.id);
+    assert.equal(foreign.parent.id, frame.id);
+    await second.unmount();
+    const third = await session.mount(target, <Frame><Text target={child.id}>Third</Text></Frame>);
+    const edited = await session.publish();
+    assert.deepEqual(edited.createdNodeIds, []);
+    assert.deepEqual(edited.deletedNodeIds, []);
+    assert.equal(child.characters, "Third");
+    assert.equal(frame.width, 240);
+    assert.equal(foreign.parent.id, frame.id);
+    const calls = connection.stats.calls;
+    await session.publish();
+    assert.equal(connection.stats.calls, calls);
+    await third.unmount();
+  } finally { await session.dispose(); }
+});
