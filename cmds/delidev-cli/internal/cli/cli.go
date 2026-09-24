@@ -50,6 +50,7 @@ type client struct {
 	accounts      delidevv1connect.AccountServiceClient
 	providers     delidevv1connect.ProviderServiceClient
 	sessions      delidevv1connect.SessionServiceClient
+	interactions  delidevv1connect.InteractionServiceClient
 	endpoint      string
 	token         string
 }
@@ -138,6 +139,12 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		ctx = bounded
 	}
 	switch command {
+	case "interaction":
+		if len(rest) > 0 && rest[0] == "respond" {
+			ensureRequest(&o)
+			value, err := respondQuestion(ctx, c, o, rest[1:], streams)
+			return emit(value, err)
+		}
 	case "session":
 		if len(rest) > 0 && rest[0] != "get" && rest[0] != "inspect" && rest[0] != "snapshot" {
 			if rest[0] != "list" {
@@ -507,7 +514,7 @@ func connectClient(o options, input io.Reader) (client, error) {
 	}
 	httpClient, transport := rpc.HTTPClient()
 	opts := []connect.ClientOption{connect.WithReadMaxBytes(5 << 20), connect.WithSendMaxBytes(2 << 20)}
-	return client{transport: transport, endpoint: endpoint, sessions: delidevv1connect.NewSessionServiceClient(httpClient, endpoint, opts...), accounts: delidevv1connect.NewAccountServiceClient(httpClient, endpoint, opts...), providers: delidevv1connect.NewProviderServiceClient(httpClient, endpoint, opts...), devices: delidevv1connect.NewDeviceServiceClient(httpClient, endpoint, opts...), workers: delidevv1connect.NewWorkerServiceClient(httpClient, endpoint, opts...), system: delidevv1connect.NewSystemServiceClient(httpClient, endpoint, opts...), resources: delidevv1connect.NewResourceServiceClient(httpClient, endpoint, opts...), configuration: delidevv1connect.NewConfigurationServiceClient(httpClient, endpoint, opts...), token: token}, nil
+	return client{transport: transport, endpoint: endpoint, interactions: delidevv1connect.NewInteractionServiceClient(httpClient, endpoint, opts...), sessions: delidevv1connect.NewSessionServiceClient(httpClient, endpoint, opts...), accounts: delidevv1connect.NewAccountServiceClient(httpClient, endpoint, opts...), providers: delidevv1connect.NewProviderServiceClient(httpClient, endpoint, opts...), devices: delidevv1connect.NewDeviceServiceClient(httpClient, endpoint, opts...), workers: delidevv1connect.NewWorkerServiceClient(httpClient, endpoint, opts...), system: delidevv1connect.NewSystemServiceClient(httpClient, endpoint, opts...), resources: delidevv1connect.NewResourceServiceClient(httpClient, endpoint, opts...), configuration: delidevv1connect.NewConfigurationServiceClient(httpClient, endpoint, opts...), token: token}, nil
 }
 func readDocument(path string, input io.Reader) ([]byte, error) {
 	reader := input
@@ -612,6 +619,7 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   session enqueue --id ID --input FILE|-
   session stop|archive|restore|resume --id ID --revision N
   session rename --id ID --revision N --name NAME
+  interaction respond --id ID --revision N --input FILE|-
   queue list --session-id ID [--limit N] [--page-token TOKEN]
   queue edit --session-id ID --id ID --revision N --input FILE|-
   queue remove --session-id ID --id ID --revision N

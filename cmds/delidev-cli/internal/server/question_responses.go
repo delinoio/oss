@@ -4,12 +4,12 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 )
 
-// This private transaction primitive is not exposed by RPC until Worker
-// response controls exist. The eventual owner API must authenticate/revalidate
-// its principal and retain a reference-only mutation receipt around this call.
+// The owner API authenticates/revalidates its principal and retains a
+// reference-only receipt around this transaction, independently of native send.
 func (s *Service) acceptQuestionResponse(tx *store.Tx, responseID, interactionID domain.ID, revision uint64, input domain.QuestionResponseInput) (store.Record, error) {
 	for _, id := range []domain.ID{responseID, interactionID} {
 		if err := id.Validate(); err != nil {
@@ -34,6 +34,12 @@ func (s *Service) acceptQuestionResponse(tx *store.Tx, responseID, interactionID
 		return store.Record{}, err
 	}
 	if _, err := s.questionResponseScope(tx, r, value); err != nil {
+		return store.Record{}, err
+	}
+	// The current live scope accepts the pinned Codex profile only. Account for
+	// its per-question native answer wrapper before acceptance, not after the
+	// Worker has claimed a response that cannot fit on the native wire.
+	if err := codex.ValidateQuestionResponseSize(codex.QuestionAnswers{Answers: input.Answers}); err != nil {
 		return store.Record{}, err
 	}
 	value.Response = &domain.QuestionResponse{ID: responseID, State: domain.QuestionResponseQueued, Input: input, AcceptedAt: time.Now().UTC()}

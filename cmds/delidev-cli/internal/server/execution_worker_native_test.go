@@ -230,8 +230,8 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 	if responseScenario {
 		responderDone := make(chan struct{})
 		t.Cleanup(func() { cancel(); <-responderDone })
-		// The owner RPC is not exposed yet. Exercise its private atomic
-		// acceptance while the real Worker receives, claims and sends controls.
+		// Exercise the public owner API while the real Worker receives, claims
+		// and sends the active execution's durable response control.
 		go func() {
 			defer close(responderDone)
 			for {
@@ -242,7 +242,11 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 					return
 				}
 				if len(rows) == 1 {
-					_, err := acceptFixtureResponse(f, domain.NewID(), rows[0].ID, rows[0].Revision, domain.QuestionResponseInput{Answers: map[string][]string{"choice": {"Second"}}})
+					raw, err := json.Marshal(domain.QuestionResponseInput{Answers: map[string][]string{"choice": {"Second"}}})
+					if err == nil {
+						client := delidevv1connect.NewInteractionServiceClient(f.http.Client(), f.http.URL)
+						_, err = client.RespondQuestion(ctx, ownerRequest(f.service.Identity, &pb.RespondQuestionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(rows[0].ID), ExpectedRevision: rows[0].Revision}, ResponseJson: raw}))
+					}
 					responseAccepted <- err
 					return
 				}

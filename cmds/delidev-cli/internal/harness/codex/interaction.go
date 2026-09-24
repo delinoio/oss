@@ -232,11 +232,29 @@ func validateQuestionAnswers(original *QuestionRequest, response QuestionAnswers
 		}
 		result.Answers[question.ID] = nativeQuestionAnswer{Answers: slices.Clone(answers)}
 	}
-	raw, err := json.Marshal(result)
-	if err != nil || len(raw) > maxAnswerBytes {
-		return nativeQuestionResponse{}, domain.Fail(domain.ResourceExhausted, "The native question response exceeds its bound.", "Reduce the response without dropping any question identity.")
+	if err := questionResponseSize(result); err != nil {
+		return nativeQuestionResponse{}, err
 	}
 	return result, nil
+}
+
+// ValidateQuestionResponseSize preflights this profile's complete native wire
+// shape before durable owner acceptance. It validates size only; the caller
+// must separately validate every answer against the original non-secret request.
+func ValidateQuestionResponseSize(answers QuestionAnswers) error {
+	response := nativeQuestionResponse{Answers: map[string]nativeQuestionAnswer{}}
+	for id, values := range answers.Answers {
+		response.Answers[id] = nativeQuestionAnswer{Answers: values}
+	}
+	return questionResponseSize(response)
+}
+
+func questionResponseSize(response nativeQuestionResponse) error {
+	raw, err := json.Marshal(response)
+	if err != nil || len(raw) > maxAnswerBytes {
+		return domain.Fail(domain.ResourceExhausted, "The native question response exceeds its bound.", "Reduce the response without dropping any question identity.")
+	}
+	return nil
 }
 
 // AnswerQuestions sends at most once for a caller-journaled response identity.

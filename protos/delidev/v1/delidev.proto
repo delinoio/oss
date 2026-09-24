@@ -21,6 +21,22 @@ service ConfigurationService {
   rpc DeleteConfiguration(DeleteConfigurationRequest) returns (DeleteConfigurationResponse);
   rpc PreviewRouting(PreviewRoutingRequest) returns (PreviewRoutingResponse);
 }
+// Owner and paired-client responses use their own durable acceptance boundary.
+service InteractionService {
+  rpc RespondQuestion(RespondQuestionRequest) returns (RespondQuestionResponse);
+}
+message RespondQuestionRequest {
+  // The request ID also identifies the accepted response; the entity ID and
+  // revision refer to the original question interaction.
+  Mutation mutation = 1;
+  // Strict non-secret question-answer document, never an approval decision.
+  bytes response_json = 2;
+}
+message RespondQuestionResponse {
+  Resource interaction = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
 
 enum EntityKind {
   ENTITY_KIND_UNSPECIFIED = 0;

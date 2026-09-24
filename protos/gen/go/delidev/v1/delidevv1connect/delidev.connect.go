@@ -27,6 +27,8 @@ const (
 	ResourceServiceName = "delidev.v1.ResourceService"
 	// ConfigurationServiceName is the fully-qualified name of the ConfigurationService service.
 	ConfigurationServiceName = "delidev.v1.ConfigurationService"
+	// InteractionServiceName is the fully-qualified name of the InteractionService service.
+	InteractionServiceName = "delidev.v1.InteractionService"
 	// DeviceServiceName is the fully-qualified name of the DeviceService service.
 	DeviceServiceName = "delidev.v1.DeviceService"
 	// WorkerServiceName is the fully-qualified name of the WorkerService service.
@@ -78,6 +80,9 @@ const (
 	// ConfigurationServicePreviewRoutingProcedure is the fully-qualified name of the
 	// ConfigurationService's PreviewRouting RPC.
 	ConfigurationServicePreviewRoutingProcedure = "/delidev.v1.ConfigurationService/PreviewRouting"
+	// InteractionServiceRespondQuestionProcedure is the fully-qualified name of the
+	// InteractionService's RespondQuestion RPC.
+	InteractionServiceRespondQuestionProcedure = "/delidev.v1.InteractionService/RespondQuestion"
 	// DeviceServiceCreatePairingProcedure is the fully-qualified name of the DeviceService's
 	// CreatePairing RPC.
 	DeviceServiceCreatePairingProcedure = "/delidev.v1.DeviceService/CreatePairing"
@@ -582,6 +587,76 @@ func (UnimplementedConfigurationServiceHandler) DeleteConfiguration(context.Cont
 
 func (UnimplementedConfigurationServiceHandler) PreviewRouting(context.Context, *connect.Request[v1.PreviewRoutingRequest]) (*connect.Response[v1.PreviewRoutingResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ConfigurationService.PreviewRouting is not implemented"))
+}
+
+// InteractionServiceClient is a client for the delidev.v1.InteractionService service.
+type InteractionServiceClient interface {
+	RespondQuestion(context.Context, *connect.Request[v1.RespondQuestionRequest]) (*connect.Response[v1.RespondQuestionResponse], error)
+}
+
+// NewInteractionServiceClient constructs a client for the delidev.v1.InteractionService service. By
+// default, it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses,
+// and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the
+// connect.WithGRPC() or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewInteractionServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) InteractionServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	interactionServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("InteractionService").Methods()
+	return &interactionServiceClient{
+		respondQuestion: connect.NewClient[v1.RespondQuestionRequest, v1.RespondQuestionResponse](
+			httpClient,
+			baseURL+InteractionServiceRespondQuestionProcedure,
+			connect.WithSchema(interactionServiceMethods.ByName("RespondQuestion")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// interactionServiceClient implements InteractionServiceClient.
+type interactionServiceClient struct {
+	respondQuestion *connect.Client[v1.RespondQuestionRequest, v1.RespondQuestionResponse]
+}
+
+// RespondQuestion calls delidev.v1.InteractionService.RespondQuestion.
+func (c *interactionServiceClient) RespondQuestion(ctx context.Context, req *connect.Request[v1.RespondQuestionRequest]) (*connect.Response[v1.RespondQuestionResponse], error) {
+	return c.respondQuestion.CallUnary(ctx, req)
+}
+
+// InteractionServiceHandler is an implementation of the delidev.v1.InteractionService service.
+type InteractionServiceHandler interface {
+	RespondQuestion(context.Context, *connect.Request[v1.RespondQuestionRequest]) (*connect.Response[v1.RespondQuestionResponse], error)
+}
+
+// NewInteractionServiceHandler builds an HTTP handler from the service implementation. It returns
+// the path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewInteractionServiceHandler(svc InteractionServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	interactionServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("InteractionService").Methods()
+	interactionServiceRespondQuestionHandler := connect.NewUnaryHandler(
+		InteractionServiceRespondQuestionProcedure,
+		svc.RespondQuestion,
+		connect.WithSchema(interactionServiceMethods.ByName("RespondQuestion")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/delidev.v1.InteractionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case InteractionServiceRespondQuestionProcedure:
+			interactionServiceRespondQuestionHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedInteractionServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedInteractionServiceHandler struct{}
+
+func (UnimplementedInteractionServiceHandler) RespondQuestion(context.Context, *connect.Request[v1.RespondQuestionRequest]) (*connect.Response[v1.RespondQuestionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.InteractionService.RespondQuestion is not implemented"))
 }
 
 // DeviceServiceClient is a client for the delidev.v1.DeviceService service.
