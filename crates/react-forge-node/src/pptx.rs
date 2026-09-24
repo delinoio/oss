@@ -7,15 +7,20 @@ use uuid::Uuid;
 use crate::{Operation, OperationKind};
 
 pub fn process(op: &Operation) -> forge_tree_doc::Result<(Vec<u8>, String, String)> {
-    let mut fonts = op.fonts()?;
-    let mut identity = None;
-    let (bytes, doc) = match op.kind {
+    let (bytes, doc, mut fonts) = match op.kind {
         OperationKind::Inspect => {
             let imported = forge_pptx::import(&op.source)?;
-            identity = Some(SourceIdentity::capture(&imported, &op.source));
-            (op.source.clone(), imported.document)
+            let identity = SourceIdentity::capture(&imported, &op.source);
+            // Import exposes structure and source identity before callers can
+            // register fonts. Geometry is computed by export/measure instead.
+            return Ok((
+                op.source.clone(),
+                serde_json::to_string(&imported.document).map_err(forge_package::failure)?,
+                serde_json::json!({"source_identity": identity}).to_string(),
+            ));
         }
         OperationKind::Generate => {
+            let mut fonts = op.fonts()?;
             let mut doc: Presentation = forge_tree_doc::parse(op.model.as_bytes())?;
             doc.assign_ids();
             let input: serde_json::Value = forge_tree_doc::parse(op.model.as_bytes())?;
@@ -31,9 +36,10 @@ pub fn process(op: &Operation) -> forge_tree_doc::Result<(Vec<u8>, String, Strin
                 &mut fonts,
                 forge_pptx::FontEmbedding::ReferenceOnly,
             )?;
-            (bytes, doc)
+            (bytes, doc, fonts)
         }
         OperationKind::Update => {
+            let mut fonts = op.fonts()?;
             let mut imported = forge_pptx::import(&op.source)?;
             let update: Update = forge_tree_doc::parse(op.model.as_bytes())?;
             update.source_identity.restore(&mut imported, &op.source)?;
@@ -52,7 +58,7 @@ pub fn process(op: &Operation) -> forge_tree_doc::Result<(Vec<u8>, String, Strin
                 op.revision,
                 &mut fonts,
             )?;
-            (bytes, doc)
+            (bytes, doc, fonts)
         }
     };
     if op.cancelled.load(Ordering::Acquire) {
@@ -64,12 +70,7 @@ pub fn process(op: &Operation) -> forge_tree_doc::Result<(Vec<u8>, String, Strin
     }
     let geometry = forge_tree_doc::layout_with_measurer(&doc, Some(&doc), &mut fonts)?;
     let model = serde_json::to_string(&doc).map_err(|_| forge_package::failure("model"))?;
-    let mut geometry = serde_json::to_value(&geometry).map_err(forge_package::failure)?;
-    if let Some(identity) = identity {
-        geometry["source_identity"] =
-            serde_json::to_value(identity).map_err(forge_package::failure)?;
-    }
-    let geometry = geometry.to_string();
+    let geometry = serde_json::to_string(&geometry).map_err(forge_package::failure)?;
     Ok((bytes, model, geometry))
 }
 

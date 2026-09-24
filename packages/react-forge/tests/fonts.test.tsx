@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import React from "react";
-import { createSession, Format, ErrorCode, ForgeError } from "../src/index.js";
+import { createSession, importOffice, Format, ErrorCode, ForgeError, type NodeHandle } from "../src/index.js";
+import { processPptx } from "../src/native.js";
 import * as P from "../src/pptx.js";
 import * as W from "../src/docx.js";
 import * as X from "../src/xlsx.js";
@@ -49,4 +50,28 @@ test("registered fallback fonts participate in revision identity", async () => {
     await session.exportBuffer();
     assert.equal(session.revision, previous + 1);
   } finally { await session.dispose(); }
+});
+
+test("PPTX inspection defers shaping until caller fonts can be registered", async () => {
+  const font = { path: new URL("../../../crates/forge-tree-doc/assets/fonts/noto-sans-kr/NotoSansKR-VF.ttf", import.meta.url).pathname };
+  const original = createSession(Format.Pptx, { systemFonts: false });
+  let imported;
+  try {
+    await original.registerFont(font);
+    await original.render(view(Format.Pptx, "Original text"));
+    const bytes = await original.exportBuffer();
+    // Exercise the native boundary directly as well: import must not depend on
+    // system fallback even before the session has any registered font assets.
+    const result = await processPptx("inspect", {}, bytes, new Map(), original.documentId, 0,
+      new AbortController().signal, { system: false, ids: [] });
+    assert.ok(JSON.parse(result.geometry).source_identity);
+    imported = await importOffice(Format.Pptx, bytes, { systemFonts: false });
+    const target = imported.inspect().targets.find(t => t.kind === "text")!;
+    const ref = React.createRef<NodeHandle>();
+    await imported.mount(target, <P.Text ref={ref}>Caller supplied text</P.Text>);
+    await assert.rejects(imported.exportBuffer(), { code: ErrorCode.MissingFont });
+    await imported.registerFont(font);
+    assert.ok((await imported.exportBuffer()).length > 0);
+    assert.ok((await imported.measure(ref.current!, { revision: imported.revision })).width > 0);
+  } finally { await original.dispose(); await imported?.dispose(); }
 });

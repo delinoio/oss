@@ -122,7 +122,8 @@ export class DocumentSession {
       await session.track(Stage.Import, async () => {
         const signal = session.signal(options.signal);
         const input = await readSource(source, limits.officeBytes, signal);
-        const result = await processDocument(format, "inspect", {}, input.bytes, session.assets, session.documentId, 0, signal);
+        const result = await processDocument(format, "inspect", {}, input.bytes, session.assets, session.documentId, 0, signal,
+          { system: options.systemFonts !== false, ids: [] });
         session.source = result.bytes;
         session.imported = JSON.parse(result.model) as Model;
         if (format === Format.Pptx) session.sourceIdentity = (JSON.parse(result.geometry) as { source_identity: Model }).source_identity;
