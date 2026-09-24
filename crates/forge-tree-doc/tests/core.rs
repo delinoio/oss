@@ -425,3 +425,74 @@ fn cancellation_during_layout_stops_before_measuring_remaining_nodes() {
     assert_eq!(measure.calls, 1);
     cancellation::checkpoint().unwrap();
 }
+
+#[test]
+fn moving_a_container_with_opaque_descendants_is_atomic_and_rejected() {
+    let mut doc = sample();
+    doc.slides.truncate(1);
+    doc.slides[0].content = Node {
+        kind: NodeKind::Canvas,
+        key: Some("root".into()),
+        children: vec![
+            Node {
+                kind: NodeKind::Canvas,
+                key: Some("protected".into()),
+                frame: Some(Frame {
+                    x: 0.,
+                    y: 0.,
+                    width: 100.,
+                    height: 100.,
+                }),
+                children: vec![Node {
+                    kind: NodeKind::Opaque,
+                    opaque_ref: Some("native#1".into()),
+                    frame: Some(Frame {
+                        x: 0.,
+                        y: 0.,
+                        width: 10.,
+                        height: 10.,
+                    }),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            Node {
+                kind: NodeKind::Shape,
+                frame: Some(Frame {
+                    x: 150.,
+                    y: 0.,
+                    width: 20.,
+                    height: 20.,
+                }),
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    };
+    doc.assign_ids();
+    validate(&doc, true).unwrap();
+    let before = doc.clone();
+    let document_id = Uuid::now_v7();
+    let patch = Patch {
+        dsl_version: 1,
+        kind: PatchKind::Patch,
+        document_id,
+        base_revision: 0,
+        operations: vec![Operation::MoveNode {
+            target: Target {
+                key: Some("protected".into()),
+                node_id: None,
+            },
+            parent: Target {
+                key: Some("root".into()),
+                node_id: None,
+            },
+            index: 1,
+        }],
+    };
+    assert_eq!(
+        apply_patch(&doc, &patch, document_id, 0).unwrap_err().code,
+        ErrorCode::UnsupportedEdit
+    );
+    assert_eq!(doc, before);
+}

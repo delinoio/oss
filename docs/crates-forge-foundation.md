@@ -117,3 +117,5 @@ Editable imported presentation text also requires representable paragraph/run se
 Preserving engine updates compare the old opaque leaf identities with the replacement tree. Replacing a container cannot remove an opaque descendant, even when the caller bypasses the patch API with a complete React-rendered tree; refusal leaves the source bytes untouched.
 
 Explicit property edits on imported supported shapes update their native preset geometry and/or fill. The editor changes only the requested properties, retains original transforms, outlines, effects and extension bytes, and rejects ambiguous multiple fills instead of reporting a successful no-op.
+
+Moving a container checks its entire subtree for opaque leaves before reinsertion. An unchanged frame does not authorize a native drawing-order change for unsupported content; a rejected ancestor move leaves the presentation and revision unchanged.
