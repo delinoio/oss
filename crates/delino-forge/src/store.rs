@@ -52,6 +52,13 @@ pub struct State {
 struct Pointer {
     generation: Uuid,
 }
+#[derive(Serialize, Deserialize)]
+struct PendingExport {
+    document_id: Uuid,
+    revision: u64,
+    source: Source,
+    output_digest: String,
+}
 #[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
 pub struct Receipt {
     pub document_id: Uuid,
@@ -207,7 +214,7 @@ impl Store {
             serde_json::from_slice(&limited_read(&dir.join("current.json"), 1024)?)
                 .map_err(|_| Diagnostic::new(ErrorCode::Io, "", "Invalid state pointer"))?;
         let generation = dir.join(pointer.generation.to_string());
-        let state: State = serde_json::from_slice(&limited_read(
+        let mut state: State = serde_json::from_slice(&limited_read(
             &generation.join("state.json"),
             MAX_JSON_BYTES,
         )?)
@@ -219,7 +226,73 @@ impl Store {
             &generation.join("document.pptx"),
             forge_pptx::MAX_PACKAGE_BYTES,
         )?;
+        self.recover_export(&mut state, &bytes)?;
         Ok((state, bytes))
+    }
+
+    fn prepare_source_export(&self, state: &State, bytes: &[u8]) -> Result<()> {
+        let pending = PendingExport {
+            document_id: state.document_id,
+            revision: state.revision,
+            source: state
+                .source
+                .clone()
+                .ok_or_else(|| Diagnostic::new(ErrorCode::Io, "", "Missing export source"))?,
+            output_digest: sha(bytes),
+        };
+        atomic_file(
+            &self.directory(state.document_id)?.join("export.json"),
+            &serde_json::to_vec(&pending).map_err(|_| {
+                Diagnostic::new(ErrorCode::Io, "", "Export journal serialization failed")
+            })?,
+            false,
+        )
+    }
+
+    fn recover_export(&self, state: &mut State, bytes: &[u8]) -> Result<()> {
+        let journal = self.directory(state.document_id)?.join("export.json");
+        match fs::symlink_metadata(&journal) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => return Err(io_error(e)),
+            Ok(_) => {}
+        }
+        let pending: PendingExport =
+            serde_json::from_slice(&limited_read(&journal, MAX_JSON_BYTES)?)
+                .map_err(|_| Diagnostic::new(ErrorCode::Io, "", "Invalid export journal"))?;
+        let source = state
+            .source
+            .as_mut()
+            .ok_or_else(|| Diagnostic::new(ErrorCode::Io, "", "Missing export source"))?;
+        if pending.document_id != state.document_id
+            || pending.revision != state.revision
+            || pending.source.path != source.path
+            || (pending.source.digest != source.digest && pending.output_digest != source.digest)
+            || pending.output_digest != sha(bytes)
+        {
+            return error(ErrorCode::Io, "", "Invalid pending export identity");
+        }
+        let actual = sha(&limited_read(&source.path, forge_pptx::MAX_PACKAGE_BYTES)?);
+        if actual == pending.output_digest {
+            if source.digest != actual {
+                source.digest = actual;
+                self.commit(state, bytes)?;
+            }
+        } else if actual != pending.source.digest || source.digest != pending.source.digest {
+            return error(
+                ErrorCode::SourceChanged,
+                "",
+                "Source changed during export recovery",
+            );
+        }
+        // A crash can occur before publication or after either atomic commit.
+        // Accept only the journal's original bytes or this exact managed revision.
+        fs::remove_file(journal).map_err(io_error)?;
+        tracing::info!(
+            operation = "export",
+            stage = "recovery",
+            "Recovered source export state"
+        );
+        Ok(())
     }
 
     fn check_source(&self, state: &State) -> Result<()> {
@@ -464,14 +537,19 @@ impl Store {
         self.check_source(&state)?;
         forge_pptx::import(&bytes)?;
         self.check_cancelled()?;
-        atomic_file(path, &bytes, overwrite)?;
-        if state
+        let replaces_source = state
             .source
             .as_ref()
-            .is_some_and(|s| fs::canonicalize(path).is_ok_and(|p| p == s.path))
-        {
+            .is_some_and(|s| fs::canonicalize(path).is_ok_and(|p| p == s.path));
+        if replaces_source {
+            self.prepare_source_export(&state, &bytes)?;
+        }
+        self.check_cancelled()?;
+        atomic_file(path, &bytes, overwrite)?;
+        if replaces_source {
             state.source.as_mut().unwrap().digest = sha(&bytes);
             self.commit(&state, &bytes)?;
+            fs::remove_file(self.directory(id)?.join("export.json")).map_err(io_error)?;
         }
         Ok(
             serde_json::json!({"document_id":id,"revision":state.revision,"path":fs::canonicalize(path).map_err(io_error)?,"sha256":sha(&bytes),"mime_type":"application/vnd.openxmlformats-officedocument.presentationml.presentation"}),
@@ -514,11 +592,117 @@ pub fn default_root() -> Result<PathBuf> {
     Ok(base.join("delino-forge"))
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
+    fn source_export_recovers_every_publication_boundary() {
+        // Model durable disk states on either side of publication and pointer
+        // commit, including cancellation and an I/O failure after publication.
+        for boundary in ["before", "cancelled", "io_failure", "committed", "external"] {
+            let temp = tempfile::tempdir().unwrap();
+            let root = temp.path().join("state");
+            let store = Store::new(Some(root.clone()), CancellationToken::new()).unwrap();
+            let path = temp.path().join("source.pptx");
+            fs::write(
+                &path,
+                include_bytes!("../../forge-pptx/tests/fixtures/external.pptx"),
+            )
+            .unwrap();
+            let opened = store.open(&path).unwrap();
+            let id = opened.document_id;
+            let (initial, _) = store.current(id).unwrap();
+            let title = initial.document.slides[0]
+                .content
+                .children
+                .iter()
+                .find(|n| n.kind == NodeKind::Text)
+                .unwrap();
+            let patch = Patch {
+                dsl_version: 1,
+                kind: PatchKind::Patch,
+                document_id: id,
+                base_revision: 0,
+                operations: vec![Operation::SetText {
+                    target: Target {
+                        node_id: title.id,
+                        key: None,
+                    },
+                    text: "Export recovery".into(),
+                    cell: None,
+                }],
+            };
+            store.apply(patch.clone()).unwrap();
+            let (mut state, bytes) = store.current(id).unwrap();
+            store.prepare_source_export(&state, &bytes).unwrap();
+            if boundary != "before" {
+                atomic_file(&path, &bytes, true).unwrap();
+                state.source.as_mut().unwrap().digest = sha(&bytes);
+            }
+            match boundary {
+                "cancelled" => {
+                    store.cancel.cancel();
+                    assert_eq!(
+                        store.commit(&state, &bytes).unwrap_err().code,
+                        ErrorCode::Cancelled
+                    );
+                }
+                "io_failure" => {
+                    let pointer = store.directory(id).unwrap().join("current.json");
+                    let saved = fs::read(&pointer).unwrap();
+                    fs::remove_file(&pointer).unwrap();
+                    fs::create_dir(&pointer).unwrap();
+                    assert_eq!(
+                        store.commit(&state, &bytes).unwrap_err().code,
+                        ErrorCode::Io
+                    );
+                    fs::remove_dir(&pointer).unwrap();
+                    fs::write(&pointer, saved).unwrap();
+                }
+                "committed" => store.commit(&state, &bytes).unwrap(),
+                "external" => fs::write(&path, b"external change").unwrap(),
+                _ => {}
+            }
+            let restarted = Store::new(Some(root), CancellationToken::new()).unwrap();
+            if boundary == "external" {
+                assert_eq!(
+                    restarted.snapshot_bytes(id).unwrap_err().code,
+                    ErrorCode::SourceChanged
+                );
+                assert_eq!(fs::read(&path).unwrap(), b"external change");
+                continue;
+            }
+            assert_eq!(restarted.snapshot_bytes(id).unwrap(), bytes);
+            assert!(
+                !restarted
+                    .directory(id)
+                    .unwrap()
+                    .join("export.json")
+                    .exists()
+            );
+            let (recovered, _) = restarted.current(id).unwrap();
+            assert_eq!(
+                recovered.source.unwrap().digest,
+                sha(&fs::read(&path).unwrap())
+            );
+            assert_eq!(recovered.revision, 1);
+            let mut next = patch;
+            next.base_revision = 1;
+            if let Operation::SetText { text, .. } = &mut next.operations[0] {
+                *text = "Edit after recovery".into();
+            }
+            assert_eq!(restarted.apply(next).unwrap().revision, 2);
+            restarted.export(id, &path, true).unwrap();
+            assert_eq!(
+                restarted.snapshot_bytes(id).unwrap(),
+                fs::read(&path).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
     fn lock_release_does_not_wait_for_a_duplicated_descriptor() {
         let temp = tempfile::tempdir().unwrap();
         let store = Store::new(Some(temp.path().join("state")), CancellationToken::new()).unwrap();
