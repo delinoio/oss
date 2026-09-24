@@ -635,3 +635,42 @@ test("a failing setter on an existing node reports its confirmed partial changes
     await session.dispose();
   }
 });
+
+
+test("batched variable creation refreshes the existing collection guard", async () => {
+  const { Variable } = await import("../src/figma.js");
+  const connection = new FakeConnection();
+  const collection = connection.canvas.api.variables.createVariableCollection("External tokens");
+  const session = await FigmaSession.open(FILE, {}, connection);
+  try {
+    await session.refresh({ resources: true });
+    await session.render(<Document>{Array.from({ length: 30 }, (_, i) =>
+      <Variable key={i} nodeKey={`token-${i}`} name={`Token ${i}`} collection={`@${collection.id}`} resolvedType="FLOAT" value={i} scopes={["GAP"]} />
+    )}</Document>);
+    const receipt = await session.publish();
+    assert.equal(receipt.status, PublishStatus.Complete);
+    assert.equal(collection.variableIds.length, 30);
+    assert.ok(connection.writes >= 2);
+    const writes = connection.writes;
+    await session.publish();
+    assert.equal(connection.writes, writes);
+  } finally { await session.dispose(); }
+});
+
+test("variant reparenting refreshes component guards for subsequent edits", async () => {
+  const { ComponentSet } = await import("../src/figma.js");
+  const connection = new FakeConnection();
+  const session = new FigmaSession(options, connection);
+  const design = (text: string) => <Page><ComponentSet name="Choices">{Array.from({ length: 16 }, (_, i) =>
+    <Component key={i} name={`Choice=${i}`}><Text>{text}</Text></Component>
+  )}</ComponentSet></Page>;
+  try {
+    await session.render(design("First"));
+    await session.publish();
+    await session.render(design("Second"));
+    assert.equal((await session.publish()).status, PublishStatus.Complete);
+    const nodes = [...connection.canvas.nodes.values()];
+    assert.equal(nodes.filter(n => n.type === "COMPONENT_SET").length, 1);
+    assert.equal(nodes.filter(n => n.type === "TEXT" && n.characters === "Second").length, 16);
+  } finally { await session.dispose(); }
+});

@@ -81,6 +81,10 @@ if(input.mode==='inspect'){
 }
 if(input.mode==='screenshot'){const n=await lookup(input.nodeId);if(!n)throw Error('invalid_target');await n.screenshot({scale:input.scale||1});return {nodeId:n.id};}
 const oldIds=new Set(input.operations.filter(o=>o.action==='delete').map(o=>remote(o.entity.key)));
+// Resource membership and variant reparenting mutate referenced objects too.
+// Retain the old parents before writes so later batches guard our resulting state.
+const affected=new Map();
+const remember=(n,kind)=>{if(n)affected.set(n.id,{n,kind});};
 try{
  // Font readiness is checked before mutation, including current mixed fonts.
  for(const op of input.operations){const n=await lookup(remote(op.entity.key),op.entity.kind);if(op.action==='delete'&&n&&'children'in n&&n.children.some(c=>!oldIds.has(c.id)))throw Error('unsupported_edit');if(n&&op.entity.kind==='VARIABLE'&&(n.resolvedType!==op.entity.props.resolvedType||n.variableCollectionId!==remote(op.entity.props.collection)))throw Error('unsupported_edit');if(n&&op.entity.kind==='INSTANCE'){const main=await n.getMainComponentAsync();if(main?.id!==remote(op.entity.props.component))throw Error('unsupported_edit');}await fonts(n,op.entity.props,op.entity.kind);}
@@ -93,6 +97,8 @@ try{
 
  for(const op of input.operations){
   const e=op.entity,p=e.props;let n=await lookup(remote(e.key),e.kind);const existed=!!n;
+  if(e.kind==='VARIABLE')remember(await lookup(remote(p.collection),'COLLECTION'),'COLLECTION');
+  if(e.kind==='COMPONENT_SET')for(const key of p.variants){const c=await lookup(remote(key));remember(c);if(c?.parent?.type!=='DOCUMENT')remember(c?.parent);}
   if(op.action==='delete'){
    if(!n){result.completed++;continue;}
    if('children'in n&&n.children.some(c=>!oldIds.has(c.id)))throw Error('unsupported_edit');
@@ -152,6 +158,7 @@ try{
 // Return actual post-write state even on a property setter failure. A caller can
 // reconcile known creations without repeating them; lost responses remain unknown.
 const capture=(n,kind)=>{result.snapshots[n.id]=snapshot(n,kind);};
+for(const {n,kind}of affected.values())if(!n.removed)capture(n,kind);
 for(const op of input.operations){const id=remote(op.entity.key);const n=await lookup(id,op.entity.kind);if(n){capture(n,op.entity.kind);if('parent'in n&&n.parent&&n.parent.type!=='DOCUMENT')result.snapshots[n.parent.id]=snapshot(n.parent);}}
 for(const [id,state]of Object.entries(result.snapshots)){if(input.expected?.[id]?.stateHash&&state.stateHash!==input.expected[id].stateHash&&!result.createdNodeIds.includes(id))result.mutatedNodeIds.push(id);}
 result.mutatedNodeIds=[...new Set(result.mutatedNodeIds)];
