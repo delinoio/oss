@@ -26,6 +26,10 @@ for (const project of Object.values(Project)) for (const bump of Object.values(B
       assert.throws(() => versionChanges(project, bump, read), /first public release requires a minor bump/u);
       return;
     }
+    if (project === Project.ReactForge && bump !== Bump.Patch) {
+      assert.throws(() => versionChanges(project, bump, read), /recovery from 0\.1\.0 requires a patch bump/u);
+      return;
+    }
     const plan = versionChanges(project, bump, read);
     assert.equal(plan.previous_version, readVersion(project, read));
     assert.equal(plan.version, bumpVersion(plan.previous_version, bump));
@@ -183,7 +187,8 @@ test("async-commit-hook version drift fails before preflight or version writes",
 
 for (const project of Object.values(Project)) test(`${project} commit journals and resumes the same run after main advances`, async (t) => {
   const fixtureState = fixture(t);
-  const options = { directory: fixtureState.directory, project, bump: Bump.Minor, runId: "123", ...bot };
+  const bump = project === Project.ReactForge ? Bump.Patch : Bump.Minor;
+  const options = { directory: fixtureState.directory, project, bump, runId: "123", ...bot };
   const first = await prepareRelease(options);
   assert.equal(first.resumed, false);
   assert.equal(git(fixtureState.remote, ["rev-parse", "refs/heads/main"]), first.revision);
@@ -196,8 +201,8 @@ for (const project of Object.values(Project)) test(`${project} commit journals a
   assert.equal(second.resumed, true);
   assert.equal(second.revision, first.revision);
   assert.equal(second.version, first.version);
-  assert.throws(() => validateCommit(fixtureState.directory, first.revision, project, Bump.Patch, "123"), project === Project.Pnport ? /first public release requires a minor bump/u : /journal/u);
-  assert.throws(() => validateCommit(fixtureState.directory, first.revision, project, Bump.Minor, "456"), /journal/u);
+  assert.throws(() => validateCommit(fixtureState.directory, first.revision, project, bump === Bump.Patch ? Bump.Minor : Bump.Patch, "123"), project === Project.Pnport ? /first public release requires a minor bump/u : project === Project.ReactForge ? /recovery from 0\.1\.0 requires a patch bump/u : /journal/u);
+  assert.throws(() => validateCommit(fixtureState.directory, first.revision, project, bump, "456"), /journal/u);
 });
 
 test("A concurrent main push fails without rewriting remote history", async (t) => {

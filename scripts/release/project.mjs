@@ -144,6 +144,9 @@ export function versionChanges(project, bump, read) {
   if ([Project.Pnport, Project.ReactForge].includes(project) && previous_version === "0.0.0") {
     requireValue(bump === Bump.Minor, `${project} first public release requires a minor bump to 0.1.0`);
   }
+  if (project === Project.ReactForge && previous_version === "0.1.0") {
+    requireValue(bump === Bump.Patch, "react-forge recovery from 0.1.0 requires a patch bump to 0.1.1");
+  }
   const version = bumpVersion(previous_version, bump);
   const changes = { [file]: replaceVersion(read(file), project, kind, version).text };
   if (kind === Kind.Rust) {

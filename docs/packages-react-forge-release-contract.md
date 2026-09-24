@@ -16,7 +16,7 @@ After all seven names exist, configure each package's GitHub Actions Trusted Pub
 
 For exact source tags, only the guarded publish job receives GitHub Actions OIDC. It inspects the complete remote set before the first upload, publishes native packages before the main package, and confirms each registry integrity before advancing. A conflicting version or incomplete confirmation fails without repacking or retagging. After a failed release, fix the cause and issue the next patch version; retain the failed tag and its registry bytes. Manual workflow dispatch defaults to a credential-free dry run and cannot publish from a branch. The tag workflow's complete seven-tarball candidate and six-host gates must pass before publication. The public repository and matching package repository metadata permit npm provenance for this OIDC release. [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/)
 
-The `react-forge@v0.1.0` run passed all six hosts and assembled the complete candidate, but its publish job failed before its first registry write because an array callback passed an index as the registry request function. Version `0.1.0` remains unpublished. The corrected publisher is released at `0.1.1`, the next patch version and first functional publication target.
+The `react-forge@v0.1.0` run passed all six hosts and assembled the complete candidate, but its publish job failed before its first registry write because an array callback passed an index as the registry request function. Version `0.1.0` remains unpublished. The release coordinator accepts only a patch bump from this source version, producing `0.1.1` as the corrected first functional publication target.
 
 ## Validation and limits
 
