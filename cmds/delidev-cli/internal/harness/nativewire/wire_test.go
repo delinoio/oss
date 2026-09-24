@@ -183,6 +183,65 @@ func TestNativeWireConcurrentInteractionReplies(t *testing.T) {
 		t.Fatalf("wrong native response: %+v %v", resolved, err)
 	}
 }
+
+func TestNativeWireRetiresOnlyExactUnansweredArrival(t *testing.T) {
+	c, _, _ := startFixture(t, "normal")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	request := func() Event {
+		t.Helper()
+		if _, err := c.Call(ctx, domain.NewID(), "interactions", struct{}{}); err != nil {
+			t.Fatal(err)
+		}
+		event, err := c.Next(ctx)
+		if err != nil || event.Kind != ServerRequest {
+			t.Fatalf("missing native interaction: %v", err)
+		}
+		if progress, err := c.Next(ctx); err != nil || progress.Kind != Notification {
+			t.Fatalf("missing progress after native interaction: %v", err)
+		}
+		return event
+	}
+	first := request()
+	if retired, err := c.RetireRequest(first); err != nil || !retired {
+		t.Fatalf("native cancellation did not retire the arrival: %v", err)
+	}
+	if retired, err := c.RetireRequest(first); err != nil || retired {
+		t.Fatal("already closed arrival fabricated another resolution")
+	}
+	if err := c.Reply(ctx, first, map[string]string{"decision": "accept"}); domain.SafeError(err).Code != domain.Conflict {
+		t.Fatal("retired request still authorized a native write")
+	}
+	second := request()
+	if string(first.ID) != string(second.ID) || first.Token == second.Token {
+		t.Fatal("fixture did not replace the native numeric identity")
+	}
+	if retired, err := c.RetireRequest(first); retired || domain.SafeError(err).Code != domain.Conflict {
+		t.Fatal("old resolution removed a newer native arrival")
+	}
+	if err := c.Reply(ctx, second, map[string]string{"decision": "decline"}); err != nil {
+		t.Fatal(err)
+	}
+	if resolved, err := c.Next(ctx); err != nil || resolved.Method != "resolved" || string(resolved.Params) != `{"decision":"decline"}` {
+		t.Fatalf("resolution sent a synthetic answer or lost the actual reply: %v", err)
+	}
+	if retired, err := c.RetireRequest(second); err != nil || retired {
+		t.Fatal("pipe-delivered response was confused with pending request retirement")
+	}
+}
+
+func TestNativeWireRetirementDoesNotEraseInFlightOwnership(t *testing.T) {
+	token := domain.NewID()
+	c := &Connection{incoming: map[string]incoming{"n:7": {token: token, replying: true}}}
+	event := Event{Kind: ServerRequest, ID: json.RawMessage(`7`), Token: token}
+	if retired, err := c.RetireRequest(event); retired || domain.SafeError(err).Code != domain.Conflict || !c.incoming["n:7"].replying {
+		t.Fatal("resolution erased an uncertain in-flight response")
+	}
+	event.Kind = Notification
+	if retired, err := c.RetireRequest(event); retired || domain.SafeError(err).Code != domain.InvalidArgument {
+		t.Fatal("notification fabricated reply retirement authority")
+	}
+}
 func TestNativeWireProtocolFailuresAndBoundsStopOwnedScope(t *testing.T) {
 	for _, method := range []string{"malformed", "both", "invalid-error", "oversize", "events", "exit"} {
 		t.Run(method, func(t *testing.T) {

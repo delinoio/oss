@@ -294,6 +294,29 @@ func (c *Connection) Reply(ctx context.Context, event Event, result any) error {
 	c.mu.Unlock()
 	return nil
 }
+
+// RetireRequest invalidates only this exact arrival when an adapter observes
+// native cancellation/resolution. It sends no answer and proves no semantic
+// acceptance. False means the arrival is no longer pending, which may include
+// successful pipe transmission. A replacement or in-flight reply is never
+// removed: its ownership must be reconciled separately.
+func (c *Connection) RetireRequest(event Event) (bool, error) {
+	key, err := idKey(event.ID)
+	if err != nil || event.Kind != ServerRequest || event.Token.Validate() != nil {
+		return false, domain.Fail(domain.InvalidArgument, "The original native server request is required.", "Retain its exact request and arrival identity before resolution.")
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	original, exists := c.incoming[key]
+	if !exists {
+		return false, nil
+	}
+	if original.token != event.Token || original.replying {
+		return false, domain.Fail(domain.Conflict, "The native request was replaced or its response is in flight.", "Reconcile the original arrival without invalidating another response.")
+	}
+	delete(c.incoming, key)
+	return true, nil
+}
 func marshal(message envelope, params any) ([]byte, error) {
 	if err := domain.Text(message.Method, "native method", 256, true); err != nil {
 		return nil, err
