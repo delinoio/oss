@@ -1,7 +1,7 @@
 # React Forge Native Contract
 
 ## Scope
-Shared `forge-package`, format-specific `forge-docx`, `forge-xlsx`, `forge-pdf`, and dedicated `react-forge-node` adapter. Reuse `forge-tree-doc` and `forge-pptx` for presentations. Complete scope is preserved in [requirements](packages-react-forge-requirements.md).
+Shared `forge-package` and `forge-document`, format-specific `forge-docx`, `forge-xlsx`, `forge-pdf`, and dedicated `react-forge-node` adapter. `forge-document` owns reusable text/style, image and native chart/data primitives without merging format-specific document models. Reuse `forge-tree-doc` and `forge-pptx` for presentations. Complete scope is preserved in [requirements](packages-react-forge-requirements.md).
 
 ## Runtime and Language
 Rust on the repository-pinned toolchain. Engines do not depend on N-API, Office, LibreOffice, Python, external converters or runtime installation. Rust is selected over repository-default Go to reuse the Forge engines and native document libraries.
@@ -29,6 +29,8 @@ Operation-scoped tracing without global logger installation. Emit safe operation
 
 ## Build and Test
 Run root `cargo test` after required generated app prerequisites, plus targeted native and Node integration tests. Cover package resource/security limits, unchanged bytes, native chart/workbook edits, spreadsheet rules, fonts and PDF semantics. Test-only LibreOffice/Poppler may render outputs; record versions and font provenance. Such evidence is not Microsoft Office validation.
+
+The DOCX engine checkpoint has structural tests for rich text, headings, lists, sections, headers/footers, page breaks, merged cells, images and native bar/line/pie charts with editable embedded workbooks. Its python-docx 1.2.0 fixture verifies supported paragraph/cell edits and exact preservation of unselected parts and XML, plus opaque-equation refusal. These checks do not yet constitute the complete format/font/rendering acceptance evidence.
 
 ## Dependencies and Integrations
 Forge foundation from PR #967 is a repository dependency. Shared extraction must retain its regression coverage. All new crates remain unpublished. Native output is generated, untracked and rebuilt explicitly.

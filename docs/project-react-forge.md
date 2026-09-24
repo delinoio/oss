@@ -10,6 +10,7 @@ Provide private React document sessions and a TSX task CLI for authoring and pre
 - `packages/react-forge`: private TypeScript session library, React reconciler, components, CLI, examples and integration tests.
 - `crates/react-forge-node`: dedicated N-API adapter; JavaScript execution never moves into native workers.
 - `crates/forge-package`: shared bounded OOXML package and preservation primitives.
+- `crates/forge-document`: shared text/style validation, image validation and editable chart/data primitives.
 - `crates/forge-docx`: word-processing model and DOCX engine.
 - `crates/forge-xlsx`: spreadsheet model and XLSX engine.
 - `crates/forge-pdf`: independent PDF model, pagination and semantic tagging.

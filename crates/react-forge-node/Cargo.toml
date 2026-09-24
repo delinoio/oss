@@ -1,0 +1,24 @@
+[package]
+name = "react-forge-node"
+version = "0.0.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+test = false
+doctest = false
+
+[dependencies]
+napi = { version = "=3.13.0", default-features = false, features = ["napi8", "dyn-symbols"] }
+napi-derive = "=3.6.9"
+forge-tree-doc = { path = "../forge-tree-doc" }
+forge-pptx = { path = "../forge-pptx" }
+forge-package = { path = "../forge-package" }
+serde_json = "1.0.149"
+uuid = { version = "1.23.0", features = ["v7", "serde"] }
+tracing = "0.1.44"
+
+[build-dependencies]
+napi-build = "=2.5.0"

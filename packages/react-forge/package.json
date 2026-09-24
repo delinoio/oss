@@ -1,0 +1,64 @@
+{
+  "name": "react-forge",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./pptx": {
+      "types": "./dist/pptx.d.ts",
+      "import": "./dist/pptx.js"
+    },
+    "./docx": {
+      "types": "./dist/docx.d.ts",
+      "import": "./dist/docx.js"
+    },
+    "./xlsx": {
+      "types": "./dist/xlsx.d.ts",
+      "import": "./dist/xlsx.js"
+    },
+    "./pdf": {
+      "types": "./dist/pdf.d.ts",
+      "import": "./dist/pdf.js"
+    }
+  },
+  "bin": {
+    "react-forge": "./bin/react-forge.mjs"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "README.md"
+  ],
+  "scripts": {
+    "build:native": "node scripts/build-native.mjs",
+    "build": "pnpm build:native && tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "pnpm typecheck",
+    "test": "node --import tsx --test tests/*.test.ts tests/*.test.tsx"
+  },
+  "dependencies": {
+    "react": "19.2.8",
+    "react-reconciler": "0.33.0",
+    "tsx": "4.20.6",
+    "uuid": "11.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "@types/react": "19.2.14",
+    "@types/react-reconciler": "0.32.3",
+    "typescript": "5.9.3"
+  }
+}

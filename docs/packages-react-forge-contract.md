@@ -28,6 +28,8 @@ Structured callbacks include operation/stage, format, revision, duration and sta
 ## Build and Test
 Package-local typecheck, lint, test, build, native integration and workspace/installed CLI tests on the supported runtime. Test React behavior, concurrent updates/exports, stale/overlapping handles, cancellation/publication races, latest-render failures, external source modification and cleanup. Record benchmark time, memory and event-loop responsiveness without an SLO. Root Cargo and existing Forge regression tests remain required.
 
+Current implementation checkpoint: the real reconciler and PPTX N-API path cover library generation/import/mounts, state/effects/refs/Context, Suspense/use/lazy, Activity, error boundaries, external stores, revision-pinned exports, file conflicts and the workspace TSX CLI. This is incomplete implementation evidence, not acceptance of #968. The remaining format engines, font policy, extended React cases, installed CLI, rendering evidence, benchmarks and CI integration remain required.
+
 ## Dependencies and Integrations
 The N-API adapter owns native work; React and JavaScript callbacks remain on the JavaScript thread. Pin the React/reconciler pair. The Rust engines are format-processing libraries independent of N-API.
 
