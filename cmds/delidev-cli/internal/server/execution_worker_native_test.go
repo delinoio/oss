@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -418,6 +420,7 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 			if domain.Decode(journal.Output, &completion) != nil || completion.Validate() != nil || session.ActiveExecutionID != "" || session.Recovery != domain.NoRecovery || !session.Execution.CleanupVerified || session.Outcome != domain.ExecutionStopped {
 				t.Fatal("native interruption did not publish terminal cleanup separately from pause")
 			}
+			assertNativeWorkerCheckpoint(t, f, manager.Root, completion)
 		}
 		if scenario == nativeWorkerStop || scenario == nativeWorkerArchive || questionScenario {
 			if journal.Problem != nil || session.Outcome != domain.ExecutionStopped || !session.Execution.CleanupVerified {
@@ -482,6 +485,7 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 	if domain.Decode(completed.Output, &completion) != nil || completion.Validate() != nil || calls.Load() != expectedCalls {
 		t.Fatal("Worker completion lacks exact native terminal/cleanup evidence")
 	}
+	assertNativeWorkerCheckpoint(t, f, manager.Root, completion)
 	retained, err := f.service.Store.Get(ctx, domain.SessionKind, f.input.SessionID)
 	if err != nil {
 		t.Fatal(err)
@@ -568,4 +572,22 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 		t.Fatal(err)
 	}
 	t.Log("actual Worker attach -> outbound claimed job -> real prepared workspace lease -> digest registration -> installed Codex -> server relay -> scripted provider -> durable events -> native cleanup -> completion report; first-selection/account readiness seeded, public dispatch and richer events remain pending")
+}
+
+func assertNativeWorkerCheckpoint(t *testing.T, f *publicationFixture, root string, completion domain.ExecutionCompletion) {
+	t.Helper()
+	r, err := f.service.Store.Get(context.Background(), domain.JobKind, f.job)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := store.Decode[domain.Job](r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(job.Input)
+	ref := worker.ExecutionCheckpointRef{JobID: f.job, SessionID: f.input.SessionID, MachineID: f.input.MachineID, HistoryExecutionID: f.input.ExecutionID, AssignmentInputDigest: hex.EncodeToString(digest[:]), ConfigurationDigest: f.input.ConfigurationDigest, AccountID: f.input.AccountID, ConnectionID: f.input.ConnectionID, Completion: completion, InputMode: f.input.Input.Mode, PromptDigest: sha256.Sum256([]byte(f.input.Input.Prompt))}
+	checkpoint, err := worker.ReadCodexExecutionCheckpoint(root, ref)
+	if err != nil || checkpoint.Native.ThreadID != completion.NativeThreadID || checkpoint.Native.TurnID != completion.NativeTurnID || checkpoint.Native.Effective.Model != f.input.Configuration.NativeModel {
+		t.Fatalf("completed native Worker did not retain exact continuation evidence: %v", err)
+	}
 }

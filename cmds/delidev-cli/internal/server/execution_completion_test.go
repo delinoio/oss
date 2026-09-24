@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -112,7 +113,7 @@ func (f *publicationFixture) reportCompletion(t *testing.T, value domain.Executi
 }
 
 func TestNativeCompletionRequiresPublishedTerminalAndOwnedCleanup(t *testing.T) {
-	for _, scenario := range []string{"success", "missing-terminal", "missing-cleanup", "wrong-turn", "stale-sequence"} {
+	for _, scenario := range []string{"success", "checkpoint-success", "checkpoint-missing", "checkpoint-invalid", "legacy-with-checkpoint", "missing-terminal", "missing-cleanup", "wrong-turn", "stale-sequence"} {
 		t.Run(scenario, func(t *testing.T) {
 			f := newPublicationFixture(t)
 			f.publish(t, f.event(domain.ExecutionThreadBound, 1))
@@ -124,6 +125,14 @@ func TestNativeCompletionRequiresPublishedTerminalAndOwnedCleanup(t *testing.T) 
 			}
 			completion := f.completion()
 			switch scenario {
+			case "checkpoint-success":
+				completion.Version, completion.NativeCheckpointDigest = 2, strings.Repeat("ab", 32)
+			case "checkpoint-missing":
+				completion.Version = 2
+			case "checkpoint-invalid":
+				completion.Version, completion.NativeCheckpointDigest = 2, strings.Repeat("AB", 32)
+			case "legacy-with-checkpoint":
+				completion.NativeCheckpointDigest = strings.Repeat("ab", 32)
 			case "missing-cleanup":
 				completion.CleanupVerified = false
 			case "wrong-turn":
@@ -144,9 +153,13 @@ func TestNativeCompletionRequiresPublishedTerminalAndOwnedCleanup(t *testing.T) 
 			if err != nil {
 				t.Fatal(err)
 			}
-			if scenario == "success" {
+			if scenario == "success" || scenario == "checkpoint-success" {
 				if job.State != domain.JobSucceeded || !s.Execution.CleanupVerified || s.ActiveExecutionID != "" || s.Outcome != domain.ExecutionSucceeded || s.Dispatch != domain.DispatchPaused || s.Recovery != domain.NoRecovery {
 					t.Fatal("verified completion lost cleanup or silently started another turn")
+				}
+				var retained domain.ExecutionCompletion
+				if domain.Decode(job.Output, &retained) != nil || retained != completion {
+					t.Fatal("verified completion changed the exact retained checkpoint digest/profile")
 				}
 			} else if job.State != domain.JobUncertain || s.Execution.CleanupVerified || s.ActiveExecutionID != f.input.ExecutionID || s.Recovery != domain.NeedsRecovery || s.Dispatch != domain.DispatchPaused {
 				t.Fatal("invalid completion discarded uncertain native ownership")

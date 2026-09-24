@@ -1,6 +1,8 @@
 package domain
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"slices"
 )
@@ -38,6 +40,9 @@ type ExecutionCompletion struct {
 	LastSequence    uint64           `json:"last_sequence"`
 	Outcome         ExecutionOutcome `json:"outcome"`
 	CleanupVerified bool             `json:"cleanup_verified"`
+	// Version 2 binds the exact immutable Worker-private continuation file.
+	// Version 1 remains readable historical evidence but cannot prove this file.
+	NativeCheckpointDigest string `json:"native_checkpoint_digest,omitempty"`
 }
 
 func (c ExecutionCompletion) Validate() error {
@@ -46,7 +51,12 @@ func (c ExecutionCompletion) Validate() error {
 			return err
 		}
 	}
-	if c.Version != 1 || c.LastSequence < 3 || c.LastSequence > MaxExecutionEvents || !c.CleanupVerified || !slices.Contains([]ExecutionOutcome{ExecutionSucceeded, ExecutionFailed, ExecutionStopped}, c.Outcome) {
+	validProfile := c.Version == 1 && c.NativeCheckpointDigest == ""
+	if c.Version == 2 {
+		digest, err := hex.DecodeString(c.NativeCheckpointDigest)
+		validProfile = err == nil && len(digest) == sha256.Size && hex.EncodeToString(digest) == c.NativeCheckpointDigest
+	}
+	if !validProfile || c.LastSequence < 3 || c.LastSequence > MaxExecutionEvents || !c.CleanupVerified || !slices.Contains([]ExecutionOutcome{ExecutionSucceeded, ExecutionFailed, ExecutionStopped}, c.Outcome) {
 		return Fail(RecoveryRequired, "The execution completion does not prove its terminal boundary and cleanup.", "Retain its native history and owned process journals for reconciliation.")
 	}
 	return nil

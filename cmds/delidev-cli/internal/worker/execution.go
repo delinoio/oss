@@ -247,6 +247,18 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		if err := completion.Validate(); err != nil {
 			return nil, err
 		}
+		// Preserve exact native continuation evidence before the operation
+		// journal/report can announce cleanup. This carries no prompt, answer or
+		// bearer and cannot authorize Resume without the server's matching proof.
+		checkpointDigest, err := retainCodexCompletion(manager.Root, owner, job, input, bound, completion)
+		if err != nil {
+			return nil, err
+		}
+		completion.Version, completion.NativeCheckpointDigest = 2, checkpointDigest
+		if err := completion.Validate(); err != nil {
+			return nil, err
+		}
+		logger.InfoContext(ctx, "native_execution_checkpoint_retained")
 		return json.Marshal(completion)
 	}
 }
