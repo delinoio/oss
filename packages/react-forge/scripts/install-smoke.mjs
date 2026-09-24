@@ -45,6 +45,16 @@ export function main() {
       try { await processDocument("pptx", "generate", {}, Buffer.alloc(0), new Map(), "unused", 0, new AbortController().signal); }
       catch (error) { console.log(JSON.stringify(error)); }`;
     assert.equal(JSON.parse(execFileSync(process.execPath, ["--input-type=module", "--eval", unsupported], { cwd: directory, encoding: "utf8" })).code, "unsupported_package");
+    const nativeManifestPath = path.join(directory, "node_modules", "@delino", `react-forge-${host.id}`, "package.json");
+    const nativeManifest = readFileSync(nativeManifestPath, "utf8");
+    writeFileSync(nativeManifestPath, JSON.stringify({ ...JSON.parse(nativeManifest), version: "999.0.0" }));
+    let mismatch;
+    try {
+      execFileSync(process.execPath, [path.join(installed, "bin/react-forge.mjs"), "run", path.join(directory, "tasks/presentation.tsx"), "--output", path.join(directory, "mismatch.pptx"), "--json"], { cwd: directory, encoding: "utf8" });
+    } catch (error) { mismatch = error; }
+    assert.ok(mismatch, "Mismatched native package must fail");
+    assert.equal(JSON.parse(mismatch.stdout).error.code, "io");
+    writeFileSync(nativeManifestPath, nativeManifest);
     rmSync(path.join(directory, "node_modules", "@delino", `react-forge-${host.id}`), { recursive: true, force: true });
     let missing;
     try {
