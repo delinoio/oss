@@ -1461,7 +1461,10 @@ fn run_once(
     let mut last_activity = child
         .activity
         .as_ref()
-        .map(Activity::last_observed_at)
+        // Output can be read before `spawn` returns to this supervisor. The
+        // first idle interval must still begin when the workload starts, not
+        // at that unobserved early read.
+        .map(Activity::started_at)
         .unwrap_or_else(Instant::now);
     loop {
         let observed_at = Instant::now();
@@ -2245,6 +2248,7 @@ struct ActivityBatch {
 }
 
 struct ActivityState {
+    started_at: Instant,
     latest: Instant,
     pending: Option<ActivityBatch>,
 }
@@ -2257,6 +2261,7 @@ impl Activity {
     fn at(started_at: Instant) -> Self {
         Self {
             state: Arc::new(Mutex::new(ActivityState {
+                started_at,
                 latest: started_at,
                 pending: None,
             })),
@@ -2304,6 +2309,13 @@ impl Activity {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .pending
             .take()
+    }
+
+    fn started_at(&self) -> Instant {
+        self.state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .started_at
     }
 
     fn last_observed_at(&self) -> Instant {
@@ -5773,6 +5785,7 @@ mod lifecycle_tests {
         activity.observe_at(first);
         activity.observe_at(latest);
 
+        assert_eq!(activity.started_at(), start);
         assert_eq!(activity.last_observed_at(), latest);
         let batch = activity.take().unwrap();
         assert_eq!(batch.first, first);
