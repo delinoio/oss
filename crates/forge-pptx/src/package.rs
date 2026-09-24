@@ -240,10 +240,14 @@ pub fn related(parts: &Package, part: &str, id: &str) -> Result<String> {
     resolve(part, &r.target)
 }
 pub fn main_part(parts: &Package) -> Result<String> {
-    let r = relationships(parts, "")?
+    let roots: Vec<_> = relationships(parts, "")?
         .into_iter()
-        .find(|r| r.kind.ends_with("/officeDocument") && !r.external)
-        .ok_or_else(|| failure("main"))?;
+        .filter(|r| r.kind.ends_with("/officeDocument"))
+        .collect();
+    if roots.len() != 1 || roots[0].external || roots[0].kind != format!("{R}/officeDocument") {
+        return Err(failure("ambiguous or unsupported main relationship"));
+    }
+    let r = &roots[0];
     resolve("", &r.target)
 }
 pub fn insert_before_close(bytes: &[u8], child: &str) -> Result<Vec<u8>> {

@@ -43,6 +43,51 @@ fn xml_part(parts: &std::collections::BTreeMap<String, Vec<u8>>, path: &str) -> 
     String::from_utf8(parts[path].clone()).unwrap()
 }
 #[test]
+fn ambiguous_office_document_relationships_are_rejected() {
+    let original = read_package(EXTERNAL).unwrap();
+    let root = xml_part(&original, "_rels/.rels");
+    let kind = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument";
+    for external in [false, true] {
+        for prepend in [false, true] {
+            let mut parts = original.clone();
+            let extra = if external {
+                format!("<Relationship Id=\"otherRoot\" Type=\"{kind}\" Target=\"https://example.invalid/deck.pptx\" TargetMode=\"External\"/>")
+            } else {
+                parts.insert(
+                    "ppt/other.xml".into(),
+                    parts["ppt/presentation.xml"].clone(),
+                );
+                format!("<Relationship Id=\"otherRoot\" Type=\"{kind}\" Target=\"ppt/other.xml\"/>")
+            };
+            let mut modified = root.clone();
+            let xml = roxmltree::Document::parse(&root).unwrap();
+            let at = if prepend {
+                xml.root_element()
+                    .children()
+                    .find(|n| n.is_element())
+                    .unwrap()
+                    .range()
+                    .start
+            } else {
+                root.rfind("</Relationships>").unwrap()
+            };
+            modified.insert_str(at, &extra);
+            parts.insert("_rels/.rels".into(), modified.into_bytes());
+            assert_eq!(
+                validate_package(&parts).unwrap_err().code,
+                ErrorCode::InvalidPackage
+            );
+            assert_eq!(
+                import(&write_package(&parts).unwrap()).unwrap_err().code,
+                ErrorCode::InvalidPackage
+            );
+        }
+    }
+    validate_package(&original).unwrap();
+    import(EXTERNAL).unwrap();
+}
+
+#[test]
 fn unsupported_picture_fills_remain_opaque_and_preserved() {
     let path = "ppt/slides/slide1.xml";
     let original = read_package(EXTERNAL).unwrap();
