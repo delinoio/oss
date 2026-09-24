@@ -8,7 +8,8 @@
       "cache": false,
       "passThroughEnv": [
         "CARGO_HOME",
-        "RUSTUP_HOME"
+        "RUSTUP_HOME",
+        "REACT_FORGE_NATIVE_PROFILE"
       ],
       "outputs": [
         "dist/**"
