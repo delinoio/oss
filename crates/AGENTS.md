@@ -218,3 +218,9 @@
 - pnport macOS interpreter admission preserves logical script paths, verifies signed native images offline, and permits hardened images only with both DYLD-environment and disabled-library-validation entitlements. Never rewrite compiler binaries or signatures; native TypeScript fixtures pin the verified official release explicitly.
 - pnport cache extraction must use a private snapshot verified against the destination archive digest. Rechecking only the mutable source after extraction cannot prove which bytes were published; retain rewrite-and-restore regression coverage.
 - pnport preload constructor entry and completed readiness are distinct acknowledgements. Supported cache lock waits after entry must not trigger the missing-injection deadline; a child result without readiness remains a failure.
+
+### React Forge Engine Rules
+
+- Follow `docs/crates-react-forge-contract.md` and the complete issue #968 requirements. `forge-package` owns shared bounded OOXML preservation; `forge-docx`, `forge-xlsx`, and `forge-pdf` own independent models and engines. `react-forge-node` is only the private N-API adapter.
+- Native workers accept validated serializable data only. Never install a global logger, fetch external relationships, execute embedded content or silently discard unsupported content. Shared changes must retain Forge CLI/MCP behavior and pinned default fonts.
+- System discovery and caller fonts apply to React Forge only. Check newly rendered content without rendering untouched opaque source. Keep all packages unpublished.

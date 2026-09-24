@@ -34,6 +34,12 @@ Each project must have one project index document and one or more domain contrac
 
 ## Project Catalog
 
+### React Forge
+- [Project index](project-react-forge.md)
+- [Complete issue requirements](packages-react-forge-requirements.md)
+- [Node sessions and CLI](packages-react-forge-contract.md)
+- [Native engines and preservation](crates-react-forge-contract.md)
+
 ### Forge
 - [Project index](project-forge.md)
 - [Rust DSL, PPTX, CLI and MCP foundation](crates-forge-foundation.md)

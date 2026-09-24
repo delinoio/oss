@@ -6,6 +6,7 @@ license = "MIT"
 publish = false
 
 [dependencies]
+forge-package = { path = "../forge-package" }
 forge-tree-doc = { path = "../forge-tree-doc" }
 pptx = "=0.1.0"
 zip = { version = "8.6.0", default-features = false, features = ["deflate"] }

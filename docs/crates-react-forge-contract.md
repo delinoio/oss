@@ -1,0 +1,43 @@
+# React Forge Native Contract
+
+## Scope
+Shared `forge-package`, format-specific `forge-docx`, `forge-xlsx`, `forge-pdf`, and dedicated `react-forge-node` adapter. Reuse `forge-tree-doc` and `forge-pptx` for presentations. Complete scope is preserved in [requirements](packages-react-forge-requirements.md).
+
+## Runtime and Language
+Rust on the repository-pinned toolchain. Engines do not depend on N-API, Office, LibreOffice, Python, external converters or runtime installation. Rust is selected over repository-default Go to reuse the Forge engines and native document libraries.
+
+## Users and Operators
+The Node session library and repository engine developers; existing Forge CLI/MCP consumers retain their interfaces and font defaults.
+
+## Interfaces and Contracts
+Four separate document models share bounded package, style, font and asset infrastructure where applicable. Office charts remain editable, including their associated data. Spreadsheet formulas retain optional caller-provided cached values and request application recalculation; no formula calculation engine exists. PDF authoring is independent of Office and includes flow pagination, repeated table headers, actionable indivisible-content overflow and semantic reading-order tags; PDF import/editing and PDF/UA claims are excluded.
+
+Imports retain unsupported content as opaque bytes. Edit only provably owned supported regions; preserve all unrelated package payloads and outside-region XML bytes. Reject encrypted/signed/macro/legacy/Strict packages, ambiguous identities, dangling references and unsafe edits. Positive externally authored fixtures must demonstrate actual supported edits, including charts and spreadsheet rules.
+
+Limits: Office input/output and PDF output 256 MiB; expanded Office 512 MiB; 10,000 ZIP entries; individual ZIP/XML part 64 MiB; XML depth 128 and 1,000,000 nodes per part; newly rendered tree 16 MiB, depth 48 and 20,000 nodes; image 64 MiB and 64,000,000 pixels. Preserve stricter existing PPTX limits. Opaque content uses package limits, not newly rendered tree limits.
+
+React Forge defaults to system font discovery/fallback with explicit caller fonts. Check new content for missing glyphs, CJK, RTL/mixed direction and color emoji; report typed actionable failures instead of missing/replaced glyphs. Honor embedding permissions and never require untouched opaque content to be rendered. Do not change existing Forge's bundled default font policy.
+
+## Storage
+Memory-only native operations and explicit local files; no database/cache/recovery archive. Local storage is an explicit R2 exception. File publication belongs to the session's revision/cancellation boundary, with same-filesystem temporary output and truthful publication results.
+
+## Security
+Bound before expensive parsing/decoding; reject unsafe ZIP paths, duplicate identities, DTDs/entities, malformed structures and invalid references. Never execute embedded content or follow remote relationships. JavaScript values, functions, hooks and callbacks never enter worker computations.
+
+## Logging
+Operation-scoped tracing without global logger installation. Emit safe operation/stage/format/revision/duration/error fields, never parser messages containing contents, host paths or bytes.
+
+## Build and Test
+Run root `cargo test` after required generated app prerequisites, plus targeted native and Node integration tests. Cover package resource/security limits, unchanged bytes, native chart/workbook edits, spreadsheet rules, fonts and PDF semantics. Test-only LibreOffice/Poppler may render outputs; record versions and font provenance. Such evidence is not Microsoft Office validation.
+
+## Dependencies and Integrations
+Forge foundation from PR #967 is a repository dependency. Shared extraction must retain its regression coverage. All new crates remain unpublished. Native output is generated, untracked and rebuilt explicitly.
+
+## Change Triggers
+Update the Node contract, project index, Forge foundation when shared behavior changes, relevant ownership rules and evidence in the same change.
+
+## References
+- [Project](project-react-forge.md).
+- [Requirements](packages-react-forge-requirements.md).
+- [Forge foundation](crates-forge-foundation.md).
+- [Repository defaults](repository-defaults.md).
