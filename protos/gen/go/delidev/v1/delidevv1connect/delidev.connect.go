@@ -35,6 +35,8 @@ const (
 	AccountServiceName = "delidev.v1.AccountService"
 	// ProviderServiceName is the fully-qualified name of the ProviderService service.
 	ProviderServiceName = "delidev.v1.ProviderService"
+	// SessionServiceName is the fully-qualified name of the SessionService service.
+	SessionServiceName = "delidev.v1.SessionService"
 )
 
 // These constants are the fully-qualified names of the RPCs defined in this package. They're
@@ -123,6 +125,30 @@ const (
 	// ProviderServiceResolveModelProcedure is the fully-qualified name of the ProviderService's
 	// ResolveModel RPC.
 	ProviderServiceResolveModelProcedure = "/delidev.v1.ProviderService/ResolveModel"
+	// SessionServiceCreateSessionProcedure is the fully-qualified name of the SessionService's
+	// CreateSession RPC.
+	SessionServiceCreateSessionProcedure = "/delidev.v1.SessionService/CreateSession"
+	// SessionServiceListSessionsProcedure is the fully-qualified name of the SessionService's
+	// ListSessions RPC.
+	SessionServiceListSessionsProcedure = "/delidev.v1.SessionService/ListSessions"
+	// SessionServiceEnqueueInputProcedure is the fully-qualified name of the SessionService's
+	// EnqueueInput RPC.
+	SessionServiceEnqueueInputProcedure = "/delidev.v1.SessionService/EnqueueInput"
+	// SessionServiceEditQueuedInputProcedure is the fully-qualified name of the SessionService's
+	// EditQueuedInput RPC.
+	SessionServiceEditQueuedInputProcedure = "/delidev.v1.SessionService/EditQueuedInput"
+	// SessionServiceRemoveQueuedInputProcedure is the fully-qualified name of the SessionService's
+	// RemoveQueuedInput RPC.
+	SessionServiceRemoveQueuedInputProcedure = "/delidev.v1.SessionService/RemoveQueuedInput"
+	// SessionServiceListQueueProcedure is the fully-qualified name of the SessionService's ListQueue
+	// RPC.
+	SessionServiceListQueueProcedure = "/delidev.v1.SessionService/ListQueue"
+	// SessionServiceControlSessionProcedure is the fully-qualified name of the SessionService's
+	// ControlSession RPC.
+	SessionServiceControlSessionProcedure = "/delidev.v1.SessionService/ControlSession"
+	// SessionServiceRenameSessionProcedure is the fully-qualified name of the SessionService's
+	// RenameSession RPC.
+	SessionServiceRenameSessionProcedure = "/delidev.v1.SessionService/RenameSession"
 )
 
 // SystemServiceClient is a client for the delidev.v1.SystemService service.
@@ -1133,4 +1159,256 @@ func (UnimplementedProviderServiceHandler) SearchModels(context.Context, *connec
 
 func (UnimplementedProviderServiceHandler) ResolveModel(context.Context, *connect.Request[v1.ResolveModelRequest]) (*connect.Response[v1.ResolveModelResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ProviderService.ResolveModel is not implemented"))
+}
+
+// SessionServiceClient is a client for the delidev.v1.SessionService service.
+type SessionServiceClient interface {
+	CreateSession(context.Context, *connect.Request[v1.CreateSessionRequest]) (*connect.Response[v1.CreateSessionResponse], error)
+	ListSessions(context.Context, *connect.Request[v1.ListSessionsRequest]) (*connect.Response[v1.ListSessionsResponse], error)
+	EnqueueInput(context.Context, *connect.Request[v1.EnqueueInputRequest]) (*connect.Response[v1.EnqueueInputResponse], error)
+	EditQueuedInput(context.Context, *connect.Request[v1.EditQueuedInputRequest]) (*connect.Response[v1.EditQueuedInputResponse], error)
+	RemoveQueuedInput(context.Context, *connect.Request[v1.RemoveQueuedInputRequest]) (*connect.Response[v1.RemoveQueuedInputResponse], error)
+	ListQueue(context.Context, *connect.Request[v1.ListQueueRequest]) (*connect.Response[v1.ListQueueResponse], error)
+	ControlSession(context.Context, *connect.Request[v1.ControlSessionRequest]) (*connect.Response[v1.ControlSessionResponse], error)
+	RenameSession(context.Context, *connect.Request[v1.RenameSessionRequest]) (*connect.Response[v1.RenameSessionResponse], error)
+}
+
+// NewSessionServiceClient constructs a client for the delidev.v1.SessionService service. By
+// default, it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses,
+// and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the
+// connect.WithGRPC() or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) SessionServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	sessionServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("SessionService").Methods()
+	return &sessionServiceClient{
+		createSession: connect.NewClient[v1.CreateSessionRequest, v1.CreateSessionResponse](
+			httpClient,
+			baseURL+SessionServiceCreateSessionProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("CreateSession")),
+			connect.WithClientOptions(opts...),
+		),
+		listSessions: connect.NewClient[v1.ListSessionsRequest, v1.ListSessionsResponse](
+			httpClient,
+			baseURL+SessionServiceListSessionsProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("ListSessions")),
+			connect.WithClientOptions(opts...),
+		),
+		enqueueInput: connect.NewClient[v1.EnqueueInputRequest, v1.EnqueueInputResponse](
+			httpClient,
+			baseURL+SessionServiceEnqueueInputProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("EnqueueInput")),
+			connect.WithClientOptions(opts...),
+		),
+		editQueuedInput: connect.NewClient[v1.EditQueuedInputRequest, v1.EditQueuedInputResponse](
+			httpClient,
+			baseURL+SessionServiceEditQueuedInputProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("EditQueuedInput")),
+			connect.WithClientOptions(opts...),
+		),
+		removeQueuedInput: connect.NewClient[v1.RemoveQueuedInputRequest, v1.RemoveQueuedInputResponse](
+			httpClient,
+			baseURL+SessionServiceRemoveQueuedInputProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("RemoveQueuedInput")),
+			connect.WithClientOptions(opts...),
+		),
+		listQueue: connect.NewClient[v1.ListQueueRequest, v1.ListQueueResponse](
+			httpClient,
+			baseURL+SessionServiceListQueueProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("ListQueue")),
+			connect.WithClientOptions(opts...),
+		),
+		controlSession: connect.NewClient[v1.ControlSessionRequest, v1.ControlSessionResponse](
+			httpClient,
+			baseURL+SessionServiceControlSessionProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("ControlSession")),
+			connect.WithClientOptions(opts...),
+		),
+		renameSession: connect.NewClient[v1.RenameSessionRequest, v1.RenameSessionResponse](
+			httpClient,
+			baseURL+SessionServiceRenameSessionProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("RenameSession")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// sessionServiceClient implements SessionServiceClient.
+type sessionServiceClient struct {
+	createSession     *connect.Client[v1.CreateSessionRequest, v1.CreateSessionResponse]
+	listSessions      *connect.Client[v1.ListSessionsRequest, v1.ListSessionsResponse]
+	enqueueInput      *connect.Client[v1.EnqueueInputRequest, v1.EnqueueInputResponse]
+	editQueuedInput   *connect.Client[v1.EditQueuedInputRequest, v1.EditQueuedInputResponse]
+	removeQueuedInput *connect.Client[v1.RemoveQueuedInputRequest, v1.RemoveQueuedInputResponse]
+	listQueue         *connect.Client[v1.ListQueueRequest, v1.ListQueueResponse]
+	controlSession    *connect.Client[v1.ControlSessionRequest, v1.ControlSessionResponse]
+	renameSession     *connect.Client[v1.RenameSessionRequest, v1.RenameSessionResponse]
+}
+
+// CreateSession calls delidev.v1.SessionService.CreateSession.
+func (c *sessionServiceClient) CreateSession(ctx context.Context, req *connect.Request[v1.CreateSessionRequest]) (*connect.Response[v1.CreateSessionResponse], error) {
+	return c.createSession.CallUnary(ctx, req)
+}
+
+// ListSessions calls delidev.v1.SessionService.ListSessions.
+func (c *sessionServiceClient) ListSessions(ctx context.Context, req *connect.Request[v1.ListSessionsRequest]) (*connect.Response[v1.ListSessionsResponse], error) {
+	return c.listSessions.CallUnary(ctx, req)
+}
+
+// EnqueueInput calls delidev.v1.SessionService.EnqueueInput.
+func (c *sessionServiceClient) EnqueueInput(ctx context.Context, req *connect.Request[v1.EnqueueInputRequest]) (*connect.Response[v1.EnqueueInputResponse], error) {
+	return c.enqueueInput.CallUnary(ctx, req)
+}
+
+// EditQueuedInput calls delidev.v1.SessionService.EditQueuedInput.
+func (c *sessionServiceClient) EditQueuedInput(ctx context.Context, req *connect.Request[v1.EditQueuedInputRequest]) (*connect.Response[v1.EditQueuedInputResponse], error) {
+	return c.editQueuedInput.CallUnary(ctx, req)
+}
+
+// RemoveQueuedInput calls delidev.v1.SessionService.RemoveQueuedInput.
+func (c *sessionServiceClient) RemoveQueuedInput(ctx context.Context, req *connect.Request[v1.RemoveQueuedInputRequest]) (*connect.Response[v1.RemoveQueuedInputResponse], error) {
+	return c.removeQueuedInput.CallUnary(ctx, req)
+}
+
+// ListQueue calls delidev.v1.SessionService.ListQueue.
+func (c *sessionServiceClient) ListQueue(ctx context.Context, req *connect.Request[v1.ListQueueRequest]) (*connect.Response[v1.ListQueueResponse], error) {
+	return c.listQueue.CallUnary(ctx, req)
+}
+
+// ControlSession calls delidev.v1.SessionService.ControlSession.
+func (c *sessionServiceClient) ControlSession(ctx context.Context, req *connect.Request[v1.ControlSessionRequest]) (*connect.Response[v1.ControlSessionResponse], error) {
+	return c.controlSession.CallUnary(ctx, req)
+}
+
+// RenameSession calls delidev.v1.SessionService.RenameSession.
+func (c *sessionServiceClient) RenameSession(ctx context.Context, req *connect.Request[v1.RenameSessionRequest]) (*connect.Response[v1.RenameSessionResponse], error) {
+	return c.renameSession.CallUnary(ctx, req)
+}
+
+// SessionServiceHandler is an implementation of the delidev.v1.SessionService service.
+type SessionServiceHandler interface {
+	CreateSession(context.Context, *connect.Request[v1.CreateSessionRequest]) (*connect.Response[v1.CreateSessionResponse], error)
+	ListSessions(context.Context, *connect.Request[v1.ListSessionsRequest]) (*connect.Response[v1.ListSessionsResponse], error)
+	EnqueueInput(context.Context, *connect.Request[v1.EnqueueInputRequest]) (*connect.Response[v1.EnqueueInputResponse], error)
+	EditQueuedInput(context.Context, *connect.Request[v1.EditQueuedInputRequest]) (*connect.Response[v1.EditQueuedInputResponse], error)
+	RemoveQueuedInput(context.Context, *connect.Request[v1.RemoveQueuedInputRequest]) (*connect.Response[v1.RemoveQueuedInputResponse], error)
+	ListQueue(context.Context, *connect.Request[v1.ListQueueRequest]) (*connect.Response[v1.ListQueueResponse], error)
+	ControlSession(context.Context, *connect.Request[v1.ControlSessionRequest]) (*connect.Response[v1.ControlSessionResponse], error)
+	RenameSession(context.Context, *connect.Request[v1.RenameSessionRequest]) (*connect.Response[v1.RenameSessionResponse], error)
+}
+
+// NewSessionServiceHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	sessionServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("SessionService").Methods()
+	sessionServiceCreateSessionHandler := connect.NewUnaryHandler(
+		SessionServiceCreateSessionProcedure,
+		svc.CreateSession,
+		connect.WithSchema(sessionServiceMethods.ByName("CreateSession")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sessionServiceListSessionsHandler := connect.NewUnaryHandler(
+		SessionServiceListSessionsProcedure,
+		svc.ListSessions,
+		connect.WithSchema(sessionServiceMethods.ByName("ListSessions")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sessionServiceEnqueueInputHandler := connect.NewUnaryHandler(
+		SessionServiceEnqueueInputProcedure,
+		svc.EnqueueInput,
+		connect.WithSchema(sessionServiceMethods.ByName("EnqueueInput")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sessionServiceEditQueuedInputHandler := connect.NewUnaryHandler(
+		SessionServiceEditQueuedInputProcedure,
+		svc.EditQueuedInput,
+		connect.WithSchema(sessionServiceMethods.ByName("EditQueuedInput")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sessionServiceRemoveQueuedInputHandler := connect.NewUnaryHandler(
+		SessionServiceRemoveQueuedInputProcedure,
+		svc.RemoveQueuedInput,
+		connect.WithSchema(sessionServiceMethods.ByName("RemoveQueuedInput")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sessionServiceListQueueHandler := connect.NewUnaryHandler(
+		SessionServiceListQueueProcedure,
+		svc.ListQueue,
+		connect.WithSchema(sessionServiceMethods.ByName("ListQueue")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sessionServiceControlSessionHandler := connect.NewUnaryHandler(
+		SessionServiceControlSessionProcedure,
+		svc.ControlSession,
+		connect.WithSchema(sessionServiceMethods.ByName("ControlSession")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sessionServiceRenameSessionHandler := connect.NewUnaryHandler(
+		SessionServiceRenameSessionProcedure,
+		svc.RenameSession,
+		connect.WithSchema(sessionServiceMethods.ByName("RenameSession")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/delidev.v1.SessionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case SessionServiceCreateSessionProcedure:
+			sessionServiceCreateSessionHandler.ServeHTTP(w, r)
+		case SessionServiceListSessionsProcedure:
+			sessionServiceListSessionsHandler.ServeHTTP(w, r)
+		case SessionServiceEnqueueInputProcedure:
+			sessionServiceEnqueueInputHandler.ServeHTTP(w, r)
+		case SessionServiceEditQueuedInputProcedure:
+			sessionServiceEditQueuedInputHandler.ServeHTTP(w, r)
+		case SessionServiceRemoveQueuedInputProcedure:
+			sessionServiceRemoveQueuedInputHandler.ServeHTTP(w, r)
+		case SessionServiceListQueueProcedure:
+			sessionServiceListQueueHandler.ServeHTTP(w, r)
+		case SessionServiceControlSessionProcedure:
+			sessionServiceControlSessionHandler.ServeHTTP(w, r)
+		case SessionServiceRenameSessionProcedure:
+			sessionServiceRenameSessionHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedSessionServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedSessionServiceHandler struct{}
+
+func (UnimplementedSessionServiceHandler) CreateSession(context.Context, *connect.Request[v1.CreateSessionRequest]) (*connect.Response[v1.CreateSessionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.CreateSession is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) ListSessions(context.Context, *connect.Request[v1.ListSessionsRequest]) (*connect.Response[v1.ListSessionsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.ListSessions is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) EnqueueInput(context.Context, *connect.Request[v1.EnqueueInputRequest]) (*connect.Response[v1.EnqueueInputResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.EnqueueInput is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) EditQueuedInput(context.Context, *connect.Request[v1.EditQueuedInputRequest]) (*connect.Response[v1.EditQueuedInputResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.EditQueuedInput is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) RemoveQueuedInput(context.Context, *connect.Request[v1.RemoveQueuedInputRequest]) (*connect.Response[v1.RemoveQueuedInputResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.RemoveQueuedInput is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) ListQueue(context.Context, *connect.Request[v1.ListQueueRequest]) (*connect.Response[v1.ListQueueResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.ListQueue is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) ControlSession(context.Context, *connect.Request[v1.ControlSessionRequest]) (*connect.Response[v1.ControlSessionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.ControlSession is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) RenameSession(context.Context, *connect.Request[v1.RenameSessionRequest]) (*connect.Response[v1.RenameSessionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.RenameSession is not implemented"))
 }

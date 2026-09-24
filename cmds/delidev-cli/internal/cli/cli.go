@@ -49,6 +49,7 @@ type client struct {
 	workers       delidevv1connect.WorkerServiceClient
 	accounts      delidevv1connect.AccountServiceClient
 	providers     delidevv1connect.ProviderServiceClient
+	sessions      delidevv1connect.SessionServiceClient
 	endpoint      string
 	token         string
 }
@@ -137,6 +138,22 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		ctx = bounded
 	}
 	switch command {
+	case "session":
+		if len(rest) > 0 && rest[0] != "get" && rest[0] != "inspect" && rest[0] != "snapshot" {
+			if rest[0] != "list" {
+				ensureRequest(&o)
+			}
+			value, err := sessionCommand(ctx, c, o, rest, streams)
+			return emit(value, err)
+		}
+	case "queue":
+		if len(rest) > 0 && rest[0] != "get" && rest[0] != "inspect" && rest[0] != "snapshot" {
+			if rest[0] != "list" {
+				ensureRequest(&o)
+			}
+			value, err := queueCommand(ctx, c, o, rest, streams)
+			return emit(value, err)
+		}
 	case "provider":
 		presetCreate := false
 		if len(rest) > 0 && rest[0] == "create" {
@@ -490,7 +507,7 @@ func connectClient(o options, input io.Reader) (client, error) {
 	}
 	httpClient, transport := rpc.HTTPClient()
 	opts := []connect.ClientOption{connect.WithReadMaxBytes(5 << 20), connect.WithSendMaxBytes(2 << 20)}
-	return client{transport: transport, endpoint: endpoint, accounts: delidevv1connect.NewAccountServiceClient(httpClient, endpoint, opts...), providers: delidevv1connect.NewProviderServiceClient(httpClient, endpoint, opts...), devices: delidevv1connect.NewDeviceServiceClient(httpClient, endpoint, opts...), workers: delidevv1connect.NewWorkerServiceClient(httpClient, endpoint, opts...), system: delidevv1connect.NewSystemServiceClient(httpClient, endpoint, opts...), resources: delidevv1connect.NewResourceServiceClient(httpClient, endpoint, opts...), configuration: delidevv1connect.NewConfigurationServiceClient(httpClient, endpoint, opts...), token: token}, nil
+	return client{transport: transport, endpoint: endpoint, sessions: delidevv1connect.NewSessionServiceClient(httpClient, endpoint, opts...), accounts: delidevv1connect.NewAccountServiceClient(httpClient, endpoint, opts...), providers: delidevv1connect.NewProviderServiceClient(httpClient, endpoint, opts...), devices: delidevv1connect.NewDeviceServiceClient(httpClient, endpoint, opts...), workers: delidevv1connect.NewWorkerServiceClient(httpClient, endpoint, opts...), system: delidevv1connect.NewSystemServiceClient(httpClient, endpoint, opts...), resources: delidevv1connect.NewResourceServiceClient(httpClient, endpoint, opts...), configuration: delidevv1connect.NewConfigurationServiceClient(httpClient, endpoint, opts...), token: token}, nil
 }
 func readDocument(path string, input io.Reader) ([]byte, error) {
 	reader := input
@@ -588,6 +605,14 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   provider discover --account-id ID --revision N
   model search [--query TEXT] [--provider-id ID] [--include-hidden] [--limit N] [--page-token TOKEN]
   model resolve --selector ID|ALIAS|NATIVE_ID [--provider-id ID]
+  session create --input FILE|-
+  session list [--project-id ID] [--include-archived] [--limit N] [--page-token TOKEN]
+  session enqueue --id ID --input FILE|-
+  session stop|archive|restore|resume --id ID --revision N
+  session rename --id ID --revision N --name NAME
+  queue list --session-id ID [--limit N] [--page-token TOKEN]
+  queue edit --session-id ID --id ID --revision N --input FILE|-
+  queue remove --session-id ID --id ID --revision N
   backup create
   settings defaults
   KIND list [--limit 50] [--page-token TOKEN] [--project-id ID] [--session-id ID]

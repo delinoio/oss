@@ -24,6 +24,7 @@ Run personal AI sessions across projects, accounts, native harnesses, and execut
 - [Provider inspection](cmds-delidev-providers-contract.md)
 - [Provider and model catalog](cmds-delidev-catalog-contract.md)
 - [Native API relay](cmds-delidev-proxy-contract.md)
+- [Session acceptance and input queue](cmds-delidev-sessions-contract.md)
 - [Implementation and evidence ledger](cmds-delidev-evidence.md)
 
 ## Cross-Domain Invariants

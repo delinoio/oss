@@ -34,7 +34,7 @@ func TestCatalogMigrationPreservesV2AndRollsBackIdentityConflicts(t *testing.T) 
 			}
 			// Construct the exact previous schema while retaining real entity,
 			// receipt and event data created through the store transaction path.
-			_, err = db.Exec("DROP INDEX model_canonical; DROP INDEX model_alias; DROP INDEX model_native; DROP INDEX model_display; DROP INDEX event_kind_cursor; DROP TABLE model_suppressions; PRAGMA user_version=2;")
+			_, err = db.Exec("DROP INDEX session_visibility; DROP INDEX queue_sequence; DROP INDEX queue_pending; DROP INDEX model_canonical; DROP INDEX model_alias; DROP INDEX model_native; DROP INDEX model_display; DROP INDEX event_kind_cursor; DROP TABLE model_suppressions; PRAGMA user_version=2;")
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -408,7 +408,15 @@ func validateDeletion(tx *store.Tx, kind domain.Kind, id domain.ID) error {
 				if kind == domain.ProviderKind && account.ProviderID == id {
 					return conflict()
 				}
-			case domain.SessionKind, domain.ScheduleKind:
+			case domain.SessionKind:
+				session, err := store.Decode[domain.Session](record)
+				if err != nil {
+					return err
+				}
+				if (kind == domain.ProjectKind && session.ProjectID == id) || (kind == domain.AgentKind && session.AgentID == id) {
+					return conflict()
+				}
+			case domain.ScheduleKind:
 				// Dedicated lifecycle code must handle retained snapshots, schedule
 				// disabling, and device cleanup before these references can be removed.
 				if kind == domain.ProjectKind || kind == domain.AgentKind || kind == domain.AccountKind {

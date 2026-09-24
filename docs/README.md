@@ -46,6 +46,7 @@ Each project must have one project index document and one or more domain contrac
 - [Provider inspection](cmds-delidev-providers-contract.md)
 - [Provider and model catalog](cmds-delidev-catalog-contract.md)
 - [Native API relay](cmds-delidev-proxy-contract.md)
+- [Session acceptance and input queue](cmds-delidev-sessions-contract.md)
 - [Complete issue #964 requirements](cmds-delidev-requirements.md)
 - [Implementation and evidence ledger](cmds-delidev-evidence.md)
 
