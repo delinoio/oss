@@ -9,6 +9,7 @@ members = [
     "crates/forge-xlsx",
   "crates/forge-pdf",
     "crates/react-forge-node",
+    "crates/forge-figma",
     "crates/delino-forge",
     "apps/devhud/src-tauri",
     "crates/devhud-native-messaging-host",
