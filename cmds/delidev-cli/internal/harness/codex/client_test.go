@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -23,6 +24,7 @@ func init() {
 	// Fixtures implement only non-inference readiness. Any accidental account,
 	// thread creation or prompt request fails rather than reaching a real CLI.
 	initialized, notified := false, false
+	threads := &threadFixture{mode: mode}
 	scanner := bufio.NewScanner(os.Stdin)
 	write := func(id json.RawMessage, result any) {
 		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"id": id, "result": result})
@@ -46,7 +48,7 @@ func init() {
 				ClientInfo   struct{ Name, Title, Version string }
 				Capabilities struct{ ExperimentalAPI bool }
 			}
-			if json.Unmarshal(request.Params, &params) != nil || params.ClientInfo.Name != "delidev" || params.Capabilities.ExperimentalAPI {
+			if json.Unmarshal(request.Params, &params) != nil || params.ClientInfo.Name != "delidev" || params.Capabilities.ExperimentalAPI != strings.HasPrefix(mode, "thread-") {
 				os.Exit(5)
 			}
 			platform, family := runtime.GOOS, "unix"
@@ -87,6 +89,9 @@ func init() {
 			}
 			write(request.ID, map[string]any{"data": threads, "nextCursor": nil})
 		default:
+			if strings.HasPrefix(mode, "thread-") && threads.handle(request.ID, request.Method, request.Params, write) {
+				continue
+			}
 			os.Exit(8)
 		}
 	}

@@ -4,6 +4,7 @@ package codex
 
 import (
 	"context"
+	"log/slog"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -22,11 +23,26 @@ type Config struct {
 	Process process.Config
 	Version string
 	Home    string
+	Mode    ProtocolMode
 }
 type Client struct {
 	wire    *nativewire.Connection
 	version string
+	ownerID domain.ID
+	logger  *slog.Logger
+	control chan struct{}
+	thread  domain.ID
+	problem *domain.Error
+	mode    ProtocolMode
 }
+
+type ProtocolMode string
+
+const (
+	ProbeProtocol  ProtocolMode = "probe"
+	ThreadProtocol ProtocolMode = "thread"
+)
+
 type handshakePhase string
 
 const (
@@ -56,6 +72,12 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 		}
 	}()
 	if config.Version != SupportedVersion {
+		return nil, incompatible()
+	}
+	if config.Mode == "" {
+		config.Mode = ProbeProtocol
+	}
+	if config.Mode != ProbeProtocol && config.Mode != ThreadProtocol {
 		return nil, incompatible()
 	}
 	phase = runtimePhase
@@ -94,7 +116,10 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 		}
 	}()
 	phase = initializePhase
-	response, err := wire.Call(ctx, domain.NewID(), "initialize", map[string]any{"clientInfo": map[string]string{"name": "delidev", "title": "DeliDev", "version": rpc.Version}, "capabilities": map[string]bool{"experimentalApi": false}})
+	// Thread control pins legacy native history explicitly. In this exact
+	// installed version that selector requires the experimental capability;
+	// discovery probes retain the stable, non-mutating handshake.
+	response, err := wire.Call(ctx, domain.NewID(), "initialize", map[string]any{"clientInfo": map[string]string{"name": "delidev", "title": "DeliDev", "version": rpc.Version}, "capabilities": map[string]bool{"experimentalApi": config.Mode == ThreadProtocol}})
 	if err != nil {
 		return nil, handshakeError(wire, err)
 	}
@@ -144,7 +169,7 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	if config.Process.Logger != nil {
 		config.Process.Logger.InfoContext(ctx, "Codex native handshake verified", "owner_id", config.Process.OwnerID, "version", config.Version)
 	}
-	return &Client{wire: wire, version: config.Version}, nil
+	return &Client{wire: wire, version: config.Version, ownerID: config.Process.OwnerID, logger: config.Process.Logger, control: make(chan struct{}, 1), mode: config.Mode}, nil
 }
 func handshakeError(wire *nativewire.Connection, err error) error {
 	if observed := wire.Err(); observed != nil && observed.Code == domain.Unsupported {
