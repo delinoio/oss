@@ -7,7 +7,7 @@ use std::{
 };
 
 use crate::{
-    diagnostic::{Code, Error, Result},
+    diagnostic::{Code, Error, ExecFailureKind, Result},
     view::{Translation, View},
 };
 
@@ -113,6 +113,7 @@ fn prepare_with_translation_in_context(
                     Code::PnportCommandNotFound,
                     "The requested interpreter is not executable on PATH.",
                 )
+                .with_exec_failure(ExecFailureKind::NotFound)
             })?
         } else {
             if !Path::new(interpreter).is_absolute() {
@@ -130,7 +131,8 @@ fn prepare_with_translation_in_context(
     Err(Error::new(
         Code::PnportUnsupportedOperation,
         "The interpreter chain is cyclic or too deep.",
-    ))
+    )
+    .with_exec_failure(ExecFailureKind::InterpreterLoop))
 }
 
 pub fn find_interpreter(name: &OsStr, search_path: Option<&OsStr>) -> Result<PathBuf> {
@@ -144,6 +146,7 @@ pub fn find_interpreter(name: &OsStr, search_path: Option<&OsStr>) -> Result<Pat
             Code::PnportCommandNotFound,
             "The requested interpreter is not executable on PATH.",
         )
+        .with_exec_failure(ExecFailureKind::NotFound)
     })
 }
 
@@ -174,13 +177,13 @@ pub fn find_on_path(name: &OsStr, search_path: Option<&OsStr>, cwd: &Path) -> Op
 fn executable_permissions(path: &Path) -> Result<()> {
     let meta = fs::metadata(path).map_err(access_error)?;
     if !meta.is_file() {
-        return Err(invalid());
+        return Err(permission_denied());
     }
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
         if meta.mode() & 0o6000 != 0 || meta.mode() & 0o111 == 0 {
-            return Err(invalid());
+            return Err(permission_denied());
         }
     }
     Ok(())
@@ -343,14 +346,20 @@ impl LaunchAdmission {
 }
 
 fn access_error(error: std::io::Error) -> Error {
+    let kind = if error.kind() == std::io::ErrorKind::NotFound {
+        ExecFailureKind::NotFound
+    } else {
+        ExecFailureKind::PermissionDenied
+    };
     Error::new(
-        if error.kind() == std::io::ErrorKind::NotFound {
+        if kind == ExecFailureKind::NotFound {
             Code::PnportCommandNotFound
         } else {
             Code::PnportCommandNotExecutable
         },
         "Cannot access the requested executable.",
     )
+    .with_exec_failure(kind)
 }
 
 fn invalid() -> Error {
@@ -358,6 +367,15 @@ fn invalid() -> Error {
         Code::PnportCommandNotExecutable,
         "The executable is malformed, protected, or has no execute permission.",
     )
+    .with_exec_failure(ExecFailureKind::InvalidFormat)
+}
+
+fn permission_denied() -> Error {
+    Error::new(
+        Code::PnportCommandNotExecutable,
+        "The executable is malformed, protected, or has no execute permission.",
+    )
+    .with_exec_failure(ExecFailureKind::PermissionDenied)
 }
 #[cfg(target_os = "macos")]
 fn protected() -> Error {

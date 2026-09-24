@@ -23,7 +23,7 @@ use std::{
 
 use libc::{self, c_void};
 use pnport::{
-    diagnostic::{Code, Error, Result},
+    diagnostic::{Code, Error, ExecFailureKind, Result},
     executable::Prepared,
     graph::Input,
     view::{Translation, View},
@@ -1543,13 +1543,27 @@ impl Trace<'_> {
         let original_argv = read_pointer_vector(pid, argument(regs, argv_arg))?;
         let search_path = child_search_path(pid, argument(regs, argv_arg + 1))?;
         let cwd = self.base(pid, libc::AT_FDCWD, Path::new("."))?;
-        let prepared = pnport::executable::prepare_with_context(
+        let prepared = match pnport::executable::prepare_with_context(
             self.view,
             &translation.logical,
             &[],
             search_path.as_deref(),
             &cwd,
-        )?;
+        ) {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                let errno = match error.exec_failure {
+                    Some(ExecFailureKind::NotFound) => libc::ENOENT,
+                    Some(ExecFailureKind::PermissionDenied) => libc::EACCES,
+                    Some(ExecFailureKind::InvalidFormat) => libc::ENOEXEC,
+                    Some(ExecFailureKind::InterpreterLoop) => libc::ELOOP,
+                    None if error.code == Code::PnportResolutionFailed => libc::ENOENT,
+                    None => return Err(error),
+                };
+                self.force_error(pid, regs, path_arg, errno)?;
+                return Ok(true);
+            }
+        };
         if empty_path {
             // The replacement names an interpreter directly; the descriptor
             // no longer selects the executable after this rewrite.

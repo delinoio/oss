@@ -2317,6 +2317,80 @@ int main(int argc, char **argv) {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn linux_descendant_script_admission_returns_exec_errors_to_caller() {
+    use std::{os::unix::fs::PermissionsExt, process::Command};
+    let root = fixture();
+    let interpreter = root.path().join("nonexec-interpreter");
+    fs::write(&interpreter, b"not executable\n").unwrap();
+    fs::set_permissions(&interpreter, fs::Permissions::from_mode(0o644)).unwrap();
+    let mut archive = zip::ZipWriter::new(fs::File::create(root.path().join("cache.zip")).unwrap());
+    for (name, body) in [
+        ("missing", "#!/pnport-missing-interpreter\n".to_string()),
+        ("denied", format!("#!{}\n", interpreter.display())),
+        ("malformed", "#!\n".to_string()),
+    ] {
+        archive
+            .start_file(
+                format!("node_modules/dep/{name}"),
+                zip::write::SimpleFileOptions::default().unix_permissions(0o755),
+            )
+            .unwrap();
+        archive.write_all(body.as_bytes()).unwrap();
+    }
+    archive.finish().unwrap();
+    let source = root.path().join("script-errors.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <errno.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+int main(void) {
+    char *env[] = {0};
+    char *missing[] = {"node_modules/dep/missing", 0};
+    if (execve(missing[0], missing, env) != -1 || errno != ENOENT) return 41;
+    char *denied[] = {"node_modules/dep/denied", 0};
+    if (execve(denied[0], denied, env) != -1 || errno != EACCES) return 42;
+    char *malformed[] = {"node_modules/dep/malformed", 0};
+    if (execve(malformed[0], malformed, env) != -1 || errno != ENOEXEC) return 43;
+    int fd = open(missing[0], O_RDONLY);
+    if (fd < 0) return 44;
+    if (syscall(SYS_execveat, fd, "", missing, env, AT_EMPTY_PATH) != -1 || errno != ENOENT) return 45;
+    close(fd);
+    puts("continued");
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("script-errors");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(result.stdout, b"continued\n");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn linux_virtual_script_accepts_long_exec_vectors() {
     use std::process::Command;
     let root = fixture();
