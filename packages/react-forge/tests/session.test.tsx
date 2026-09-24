@@ -278,7 +278,7 @@ test("file exports retain invocation order across sessions and path aliases afte
 });
 
 
-test("Windows publication protects case aliases of existing and removed imported sources", { skip: process.platform !== "win32" }, async () => {
+test("Windows and macOS publication protect case aliases of existing and removed imported sources", { skip: !["win32", "darwin"].includes(process.platform) }, async () => {
   const directory = await mkdtemp(join(tmpdir(), "react-forge-case-"));
   const source = join(directory, "Source.pptx");
   try {
@@ -289,5 +289,17 @@ test("Windows publication protects case aliases of existing and removed imported
       await assert.rejects(publish(Buffer.from("Replacement"), join(directory, "SOURCE.PPTX"), { overwrite: true, source: fingerprint }), { code: ErrorCode.UnsupportedEdit });
       if (!removed) assert.equal(await readFile(source, "utf8"), "Imported bytes");
     }
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test("macOS publication protects Unicode normalization aliases after source removal", { skip: process.platform !== "darwin" }, async () => {
+  const directory = await mkdtemp(join(tmpdir(), "react-forge-unicode-"));
+  const source = join(directory, "Caf\u00e9.pptx");
+  try {
+    await writeFile(source, "Imported bytes");
+    const { fingerprint } = await readSource({ path: source }, 100);
+    await rm(source);
+    await assert.rejects(publish(Buffer.from("Replacement"), join(directory, "CAFE\u0301.PPTX"), { overwrite: true, source: fingerprint }), { code: ErrorCode.UnsupportedEdit });
+    assert.deepEqual(await readdir(directory), []);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
