@@ -234,7 +234,7 @@
 - pnport Linux must decide pathname rewriting by comparing the caller's resolved lookup path with physical backing. The PnP target identity may equal an unplugged package's physical path even when the caller used a virtual `node_modules` alias.
 - Linux pathname classification follows existing workspace symlink components into virtual or managed backing, while native paths retain their original bytes and no-follow operations act on the link inode itself.
 - pnport Linux arm64 syscall denial must update `NT_ARM_SYSTEM_CALL` after ordinary registers so rejected operations cannot execute during graceful cleanup.
-- A Linux seccomp admission failure must cancel the stopped syscall before graceful cleanup resumes the tracee; send final SIGKILL before the last ptrace continuation.
+- A Linux seccomp admission failure must cancel the stopped syscall and leave its consumed exit stop parked until cleanup queues the termination signal and resumes the tracee. Apply the same ordering to parked FD/cwd waiters; send final SIGKILL before the last ptrace continuation.
 - Leave invalid child pathname pointers to the Linux kernel so ordinary EFAULT behavior survives, including null pointers in both operands of path operations.
 - Linux openat2 must inspect extended open_how bytes before mediation: unknown nonzero extension bytes return E2BIG, zero bytes continue through virtual translation, and unreadable structures retain EFAULT.
 - Translated Linux script exec must return EFAULT to the caller for unreadable argv or envp vectors without terminating the owned tree.
