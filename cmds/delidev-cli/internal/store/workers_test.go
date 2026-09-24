@@ -19,6 +19,9 @@ func TestMigrationBacksUpOriginalAndRollsBackOnFailure(t *testing.T) {
 				t.Fatal(err)
 			}
 			path := filepath.Join(root, "state.sqlite")
+			if err := os.WriteFile(path, nil, 0600); err != nil {
+				t.Fatal(err)
+			}
 			db, err := sql.Open("sqlite", databaseURI(path, false))
 			if err != nil {
 				t.Fatal(err)
