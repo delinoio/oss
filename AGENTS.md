@@ -110,7 +110,7 @@ enum ProjectId {
 - `with-watch` -> `crates/with-watch`
 - `cargo-mono` -> `crates/cargo-mono`
 - `clibox` -> `crates/clibox`, `crates/clibox-config`, `crates/clibox-system`, `crates/clibox-transform`, `crates/clibox-wait`, `packages/clibox`, `apps/public-docs/docs/clibox`
-- `pnport` -> `crates/pnport`, `crates/pnport-preload`, `packages/pnport`, `apps/public-docs/docs/pnport`
+- `pnport` -> `crates/pnport`, `crates/pnport-core`, `crates/pnport-preload`, macOS `crates/fspy_preload_unix`, `packages/pnport`, `apps/public-docs/docs/pnport`
 - `runmoor` -> `cmds/runmoor`, `apps/public-docs/docs/runmoor`
 - `derun` -> `cmds/derun`
 - `serde-feather` -> `crates/serde-feather`, `crates/serde-feather-macros`

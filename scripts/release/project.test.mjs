@@ -12,7 +12,7 @@ const achFiles = [
   "cmds/async-commit-hook/internal/core/model.go", "apps/async-commit-hook/package.json",
   "packages/async-commit-hook-api-client/package.json", "packaging/async-commit-hook/release-metadata.json",
 ];
-const files = ["Cargo.lock", "packages/clibox/package.json", "packages/pnport/package.json", ...["binpm", "cargo-mono", "nodeup", "with-watch", "clibox", "pnport", "pnport-preload"].map((name) => `crates/${name}/Cargo.toml`), "cmds/derun/internal/version/version.go", "cmds/runmoor/internal/runmoor/types.go", ...achFiles];
+const files = ["Cargo.lock", "packages/clibox/package.json", "packages/pnport/package.json", ...["binpm", "cargo-mono", "nodeup", "with-watch", "clibox", "pnport", "pnport-core", "pnport-preload"].map((name) => `crates/${name}/Cargo.toml`), "cmds/derun/internal/version/version.go", "cmds/runmoor/internal/runmoor/types.go", ...achFiles];
 const sources = Object.fromEntries(files.map((file) => [file, readFileSync(path.join(root, file), "utf8")]));
 const read = (file) => sources[file];
 const bot = { name: "delino-release-bot[bot]", email: "123+delino-release-bot[bot]@users.noreply.github.com" };
@@ -31,7 +31,7 @@ for (const project of Object.values(Project)) for (const bump of Object.values(B
     assert.equal(plan.version, bumpVersion(plan.previous_version, bump));
     const updated = { ...sources, ...plan.changes };
     for (const candidate of Object.values(Project)) assert.equal(readVersion(candidate, (file) => updated[file]), candidate === project ? plan.version : readVersion(candidate, read));
-    assert.equal(Object.keys(plan.changes).length, project === Project.AsyncCommitHook || project === Project.Pnport ? 4 : project === Project.Clibox ? 3 : plan.kind === Kind.Rust ? 2 : 1);
+    assert.equal(Object.keys(plan.changes).length, project === Project.Pnport ? 5 : project === Project.AsyncCommitHook ? 4 : project === Project.Clibox ? 3 : plan.kind === Kind.Rust ? 2 : 1);
     if (project === Project.AsyncCommitHook) {
       assert.equal(plan.kind, Kind.Go);
       assert.equal(plan.tag, `async-commit-hook@v${plan.version}`);
@@ -42,7 +42,7 @@ for (const project of Object.values(Project)) for (const bump of Object.values(B
       const before = sources["Cargo.lock"].split("[[package]]");
       const after = updated["Cargo.lock"].split("[[package]]");
       assert.equal(before.length, after.length);
-      assert.equal(before.filter((section, i) => section !== after[i]).length, project === Project.Pnport ? 2 : 1);
+      assert.equal(before.filter((section, i) => section !== after[i]).length, project === Project.Pnport ? 3 : 1);
     }
   });
 }
@@ -80,14 +80,14 @@ test("pnport first minor bump produces 0.1.0 with CLI, preload, npm, and lockste
   const plan = versionChanges(Project.Pnport, Bump.Minor, read);
   assert.equal(plan.previous_version, "0.0.0");
   assert.equal(plan.version, "0.1.0");
-  assert.deepEqual(Object.keys(plan.changes).sort(), ["Cargo.lock", "crates/pnport/Cargo.toml", "crates/pnport-preload/Cargo.toml", "packages/pnport/package.json"].sort());
+  assert.deepEqual(Object.keys(plan.changes).sort(), ["Cargo.lock", "crates/pnport/Cargo.toml", "crates/pnport-core/Cargo.toml", "crates/pnport-preload/Cargo.toml", "packages/pnport/package.json"].sort());
   assert.equal(JSON.parse(plan.changes["packages/pnport/package.json"]).version, "0.1.0");
-  assert.equal((plan.changes["Cargo.lock"].match(/name = "pnport(?:-preload)?"\nversion = "0\.1\.0"/gu) ?? []).length, 2);
+  assert.equal((plan.changes["Cargo.lock"].match(/name = "pnport(?:-core|-preload)?"\nversion = "0\.1\.0"/gu) ?? []).length, 3);
   assert.equal(requiresCargoPublish(Project.Pnport), false);
   for (const bump of [Bump.Patch, Bump.Major]) {
     assert.throws(() => versionChanges(Project.Pnport, bump, read), /first public release requires a minor bump/u);
   }
-  for (const driftFile of ["packages/pnport/package.json", "crates/pnport-preload/Cargo.toml"]) {
+  for (const driftFile of ["packages/pnport/package.json", "crates/pnport-core/Cargo.toml", "crates/pnport-preload/Cargo.toml"]) {
     const drift = (file) => file === driftFile ? read(file).replace("0.0.0", "9.9.9") : read(file);
     assert.throws(() => versionChanges(Project.Pnport, Bump.Minor, drift), /versions disagree/u);
   }

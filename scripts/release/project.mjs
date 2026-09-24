@@ -122,7 +122,7 @@ export function readVersion(project, read = (file) => readFileSync(path.join(roo
   if (project === Project.Pnport) {
     const npm = JSON.parse(read("packages/pnport/package.json"));
     requireValue(npm.name === "@delino/pnport" && npm.version === current, "pnport Cargo/npm versions disagree");
-    requireValue(replaceVersion(read("crates/pnport-preload/Cargo.toml"), "pnport-preload", Kind.Rust).current === current, "pnport CLI/preload versions disagree");
+    for (const name of ["pnport-core", "pnport-preload"]) requireValue(replaceVersion(read(`crates/${name}/Cargo.toml`), name, Kind.Rust).current === current, "pnport CLI/core/preload versions disagree");
   }
   if (project === Project.AsyncCommitHook) asyncCommitHookVersionChanges(read, current);
   return current;
@@ -146,9 +146,11 @@ export function versionChanges(project, bump, read) {
     changes[file] = source.replace(/^  "version": "[^"]+",$/mu, `  "version": "${version}",`);
   }
   if (project === Project.Pnport) {
-    const preload = "crates/pnport-preload/Cargo.toml";
-    changes[preload] = replaceVersion(read(preload), "pnport-preload", Kind.Rust, version).text;
-    changes["Cargo.lock"] = replaceLockVersion(changes["Cargo.lock"], "pnport-preload", previous_version, version);
+    for (const name of ["pnport-core", "pnport-preload"]) {
+      const file = `crates/${name}/Cargo.toml`;
+      changes[file] = replaceVersion(read(file), name, Kind.Rust, version).text;
+      changes["Cargo.lock"] = replaceLockVersion(changes["Cargo.lock"], name, previous_version, version);
+    }
     const npm = "packages/pnport/package.json";
     const source = read(npm);
     requireValue([...source.matchAll(/^  "version": "[^"]+",$/gmu)].length === 1, "Missing or ambiguous pnport npm source version");

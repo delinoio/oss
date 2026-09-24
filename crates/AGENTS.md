@@ -198,7 +198,7 @@
 
 ### pnport Rules
 
-- Private pnport runtime belongs to `crates/pnport` and its matched native injection artifact to `crates/pnport-preload`; follow `docs/crates-pnport-foundation.md` and the complete requirements. Keep exact pnp/fspy pins, data-only graph loading, fail-closed interception, read-only dependency views, private leased cache and all six native conformance gates. No crates.io publication.
+- Private pnport runtime belongs to `crates/pnport` and `crates/pnport-core`; macOS injection is the pnport-mode `crates/fspy_preload_unix` fork and Linux/Windows retain `crates/pnport-preload`; follow `docs/crates-pnport-foundation.md`, `docs/crates-fspy-vendor-contract.md`, and the complete requirements. Keep exact pnp/fspy pins, data-only graph loading, fail-closed interception, read-only dependency views, private leased cache and all six native conformance gates. No crates.io publication.
 - Keep both private Cargo versions and lock entries synchronized with the pnport npm source at unpublished `0.0.0`; the first selected minor release candidate is `0.1.0`. Build the executable and adjacent interception library together for each native archive, and require their actual six-host execution and installation evidence before a version commit or tag.
 
 - pnport macOS interpreter admission preserves logical script paths, verifies signed native images offline, and permits hardened images only with both DYLD-environment and disabled-library-validation entitlements. Never rewrite compiler binaries or signatures; native TypeScript fixtures pin the verified official release explicitly.

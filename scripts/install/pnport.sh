@@ -73,7 +73,8 @@ expected=$(awk -v name="$asset" '$2 == name && $1 ~ /^[a-f0-9]+$/ {print $1}' "$
 [ "${#expected}" -eq 64 ] || { echo '[install.pnport] missing or duplicate archive checksum' >&2; exit 1; }
 if command -v shasum >/dev/null 2>&1; then actual=$(shasum -a 256 "$temporary/$asset" | awk '{print $1}'); else actual=$(sha256sum "$temporary/$asset" | awk '{print $1}'); fi
 [ "$actual" = "$expected" ] || { echo '[install.pnport] checksum mismatch' >&2; exit 1; }
-[ "$(tar -tzf "$temporary/$asset" | LC_ALL=C sort)" = "$(printf '%s\n%s\n' pnport "$library" | LC_ALL=C sort)" ] || { echo '[install.pnport] invalid native archive inventory' >&2; exit 1; }
+notices=$(printf '%s\n%s\n' LICENSE LICENSE.fspy)
+[ "$(tar -tzf "$temporary/$asset" | LC_ALL=C sort)" = "$(printf '%s\n%s\n%s\n' pnport "$library" "$notices" | LC_ALL=C sort)" ] || { echo '[install.pnport] invalid native archive inventory' >&2; exit 1; }
 tar -xzf "$temporary/$asset" -C "$temporary"
 [ -f "$temporary/pnport" ] && [ -f "$temporary/$library" ] || { echo '[install.pnport] incomplete native archive' >&2; exit 1; }
 [ "$("$temporary/pnport" --version)" = "pnport $version" ] || { echo '[install.pnport] executable version mismatch' >&2; exit 1; }
@@ -82,10 +83,12 @@ mkdir -p -- "$install_dir/.pnport/versions"
 versions="$install_dir/.pnport/versions"
 destination="$versions/$version"
 stage=$(mktemp -d "$versions/.stage.XXXXXX")
-cp -- "$temporary/pnport" "$temporary/$library" "$stage/"
+cp -- "$temporary/pnport" "$temporary/$library" "$temporary/LICENSE" "$stage/"
+cp -- "$temporary/LICENSE.fspy" "$stage/"
 chmod 755 "$stage/pnport"
 if [ -e "$destination" ]; then
-  cmp -s "$stage/pnport" "$destination/pnport" && cmp -s "$stage/$library" "$destination/$library" || { echo '[install.pnport] conflicting installed version' >&2; exit 1; }
+  cmp -s "$stage/pnport" "$destination/pnport" && cmp -s "$stage/$library" "$destination/$library" && cmp -s "$stage/LICENSE" "$destination/LICENSE" || { echo '[install.pnport] conflicting installed version' >&2; exit 1; }
+  cmp -s "$stage/LICENSE.fspy" "$destination/LICENSE.fspy" || { echo '[install.pnport] conflicting installed notice' >&2; exit 1; }
 else
   mv -- "$stage" "$destination"
   stage=""

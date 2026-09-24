@@ -11,6 +11,6 @@ test = false
 doctest = false
 
 [dependencies]
-pnport = { path = "../pnport" }
+pnport-core = { path = "../pnport-core" }
 libc = "0.2.182"
 serde_json = "1"
