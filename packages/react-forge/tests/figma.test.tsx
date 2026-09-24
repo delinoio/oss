@@ -677,3 +677,16 @@ test("variant reparenting refreshes component guards for subsequent edits", asyn
     assert.equal(nodes.filter(n => n.type === "TEXT" && n.characters === "Second").length, 16);
   } finally { await session.dispose(); }
 });
+
+test("nested pages fail native planning before any remote creation", async () => {
+  for (const children of [<Page><Page /></Page>, <Page><Frame><Page /></Frame></Page>]) {
+    const connection = new FakeConnection();
+    const session = new FigmaSession(options, connection);
+    try {
+      await session.render(children);
+      await assert.rejects(session.publish(), isCode(ErrorCode.InvalidTarget));
+      assert.equal(connection.writes, 0);
+      assert.equal(connection.canvas.root.children.length, 1);
+    } finally { await session.dispose(); }
+  }
+});

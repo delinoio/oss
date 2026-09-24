@@ -160,3 +160,16 @@ fn json_boundary_is_bounded_and_strict() {
         Err(Error::ResourceLimit)
     );
 }
+
+#[test]
+fn pages_cannot_have_parents_or_page_references() {
+    for (parent, page) in [
+        (Some("@0:1".into()), None),
+        (None, Some("@0:1".into())),
+        (Some("@1:2".into()), Some("@0:1".into())),
+    ] {
+        let nested = node(Kind::Page, parent, page);
+        assert_eq!(plan(input(vec![nested])).unwrap_err(), Error::InvalidTarget);
+    }
+    assert!(plan(input(vec![node(Kind::Page, None, None)])).is_ok());
+}

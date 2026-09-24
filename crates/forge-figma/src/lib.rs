@@ -404,7 +404,9 @@ fn validate(entities: &[Entity], complete: bool) -> Result<BTreeMap<&str, &Entit
                 return Err(Error::InvalidTarget);
             }
         }
-        if e.kind != Kind::Page && !e.kind.resource() && e.parent.is_none() {
+        if (e.kind == Kind::Page && (e.parent.is_some() || e.page.is_some()))
+            || (e.kind != Kind::Page && !e.kind.resource() && e.parent.is_none())
+        {
             return Err(Error::InvalidTarget);
         }
         let mut cursor = e;
