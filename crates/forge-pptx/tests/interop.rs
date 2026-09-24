@@ -1156,3 +1156,76 @@ fn chart_insertion_never_overwrites_preexisting_package_parts() {
         }
     }
 }
+#[test]
+fn chart_workbook_updates_follow_external_data_relationship_identity() {
+    let mut parts = read_package(EXTERNAL).unwrap();
+    let workbook_path = "ppt/embeddings/Microsoft_Excel_Sheet1.xlsx";
+    let unrelated_path = "ppt/embeddings/unrelated.xlsx";
+    let original_workbook = parts[workbook_path].clone();
+    parts.insert(unrelated_path.into(), original_workbook.clone());
+    let rel_path = "ppt/charts/_rels/chart1.xml.rels";
+    let extra = "<Relationship Id=\"unrelated\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/package\" Target=\"../embeddings/unrelated.xlsx\"/>";
+    let rels = xml_part(&parts, rel_path).replacen(
+        "<Relationship Id=",
+        &format!("{extra}<Relationship Id="),
+        1,
+    );
+    parts.insert(rel_path.into(), rels.into_bytes());
+    let chart_path = "ppt/charts/chart1.xml";
+    let original_chart = xml_part(&parts, chart_path);
+    let xml = roxmltree::Document::parse(&original_chart).unwrap();
+    let external = xml
+        .descendants()
+        .find(|n| n.tag_name().name() == "externalData")
+        .unwrap();
+    let original_external = &original_chart[external.range()];
+    for replacement in [
+        original_external.to_owned(),
+        String::new(),
+        format!("{original_external}{original_external}"),
+        original_external.replace("r:id=\"rId1\"", "r:id=\"missing\""),
+    ] {
+        parts.insert(
+            chart_path.into(),
+            original_chart
+                .replacen(original_external, &replacement, 1)
+                .into_bytes(),
+        );
+        let source = write_package(&parts).unwrap();
+        let imported = import(&source).unwrap();
+        let chart = target(&imported.document, NodeKind::Chart);
+        let mut data = imported
+            .document
+            .find(&chart)
+            .unwrap()
+            .data
+            .clone()
+            .unwrap();
+        data.series[0].values[0] = 91.;
+        let next = patch(
+            &imported,
+            vec![Operation::SetChartData {
+                target: chart,
+                data,
+            }],
+        );
+        let result = update(
+            &source,
+            &imported.document,
+            &imported.bindings,
+            &next,
+            &imported.assets,
+            imported.document_id,
+            1,
+        );
+        if replacement != original_external {
+            assert_eq!(result.unwrap_err().code, ErrorCode::UnsupportedEdit);
+        } else {
+            let result = read_package(&result.unwrap()).unwrap();
+            assert_eq!(result[unrelated_path], original_workbook);
+            assert_ne!(result[workbook_path], original_workbook);
+            let workbook = read_package(&result[workbook_path]).unwrap();
+            assert!(xml_part(&workbook, "xl/worksheets/sheet1.xml").contains(">91<"));
+        }
+    }
+}

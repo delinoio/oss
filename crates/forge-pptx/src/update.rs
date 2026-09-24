@@ -475,9 +475,28 @@ fn update_chart(
             "Chart references a noncanonical workbook range",
         );
     }
+    let external_data: Vec<_> = old_doc
+        .root_element()
+        .children()
+        .filter(|n| n.has_tag_name((C, "externalData")))
+        .collect();
+    if external_data.len() != 1 {
+        return error(
+            ErrorCode::UnsupportedEdit,
+            "/data",
+            "Chart must identify exactly one embedded workbook",
+        );
+    }
+    let workbook_id = external_data[0].attribute((R, "id")).ok_or_else(|| {
+        Diagnostic::new(
+            ErrorCode::UnsupportedEdit,
+            "/data",
+            "Chart workbook relationship is missing",
+        )
+    })?;
     let workbook_rel = relationships(parts, &chart_path)?
         .into_iter()
-        .find(|r| r.kind.ends_with("/package") && !r.external)
+        .find(|r| r.id == workbook_id && r.kind == format!("{R}/package") && !r.external)
         .ok_or_else(|| {
             Diagnostic::new(
                 ErrorCode::UnsupportedEdit,

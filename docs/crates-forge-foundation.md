@@ -44,6 +44,8 @@ Preview font injection allocates an unused font part and relationship ID, preser
 
 Selective chart-workbook updates accept only SpreadsheetML cells as row child elements. Row-level extension lists and foreign elements reject data edits before replacing sheet data; unrelated presentation edits retain the workbook bytes.
 
+Chart workbook ownership comes from the sole `externalData` element's explicit relationship ID, which must resolve to an internal package relationship. Missing, duplicate or unsupported workbook references reject data edits; unrelated package relationships never select the editing target.
+
 New chart XML, workbook and relationship-part names must be unused under ASCII case-insensitive package-name comparison. A colliding caller-supplied chart UUID returns `unsupported_edit`; original parts remain unchanged. Inserted nodes emit their native content only once per patch.
 
 ## Storage
