@@ -15,6 +15,9 @@ const achFiles = [
 const files = ["Cargo.lock", "packages/clibox/package.json", "packages/pnport/package.json", "packages/react-forge/package.json", ...["binpm", "cargo-mono", "nodeup", "with-watch", "clibox", "pnport", "pnport-core", "pnport-preload"].map((name) => `crates/${name}/Cargo.toml`), "cmds/derun/internal/version/version.go", "cmds/runmoor/internal/runmoor/types.go", ...achFiles];
 const sources = Object.fromEntries(files.map((file) => [file, readFileSync(path.join(root, file), "utf8")]));
 const read = (file) => sources[file];
+const readReactForgeRecovery = (file) => file === "packages/react-forge/package.json"
+  ? read(file).replace(/("version": ")[^"]+/u, (_, prefix) => `${prefix}0.1.0`)
+  : read(file);
 const bot = { name: "delino-release-bot[bot]", email: "123+delino-release-bot[bot]@users.noreply.github.com" };
 const revision = "1".repeat(40);
 const identity = { project: Project.Binpm, revision, tag: "binpm@v1.2.3" };
@@ -26,7 +29,7 @@ for (const project of Object.values(Project)) for (const bump of Object.values(B
       assert.throws(() => versionChanges(project, bump, read), /first public release requires a minor bump/u);
       return;
     }
-    if (project === Project.ReactForge && bump !== Bump.Patch) {
+    if (project === Project.ReactForge && readVersion(project, read) === "0.1.0" && bump !== Bump.Patch) {
       assert.throws(() => versionChanges(project, bump, read), /recovery from 0\.1\.0 requires a patch bump/u);
       return;
     }
@@ -98,13 +101,16 @@ test("pnport first minor bump produces 0.1.0 with CLI, preload, npm, and lockste
 });
 
 test("React Forge patch after the failed 0.1.0 tag updates only its private source manifest", () => {
-  const plan = versionChanges(Project.ReactForge, Bump.Patch, read);
+  const plan = versionChanges(Project.ReactForge, Bump.Patch, readReactForgeRecovery);
   assert.equal(plan.previous_version, "0.1.0");
   assert.equal(plan.version, "0.1.1");
   assert.deepEqual(Object.keys(plan.changes), ["packages/react-forge/package.json"]);
   assert.equal(JSON.parse(plan.changes["packages/react-forge/package.json"]).version, "0.1.1");
+  for (const bump of [Bump.Minor, Bump.Major]) {
+    assert.throws(() => versionChanges(Project.ReactForge, bump, readReactForgeRecovery), /recovery from 0\.1\.0 requires a patch bump/u);
+  }
   assert.equal(requiresCargoPublish(Project.ReactForge), false);
-  assert.throws(() => readVersion(Project.ReactForge, (file) => file === "packages/react-forge/package.json" ? read(file).replace('"name": "@delino/react-forge"', '"name": "foreign"') : read(file)));
+  assert.throws(() => readVersion(Project.ReactForge, (file) => file === "packages/react-forge/package.json" ? readReactForgeRecovery(file).replace('"name": "@delino/react-forge"', '"name": "foreign"') : readReactForgeRecovery(file)));
 });
 
 for (const file of achFiles) test(`async-commit-hook rejects drift and missing, duplicate or malformed versions in ${file}`, () => {
@@ -201,7 +207,7 @@ for (const project of Object.values(Project)) test(`${project} commit journals a
   assert.equal(second.resumed, true);
   assert.equal(second.revision, first.revision);
   assert.equal(second.version, first.version);
-  assert.throws(() => validateCommit(fixtureState.directory, first.revision, project, bump === Bump.Patch ? Bump.Minor : Bump.Patch, "123"), project === Project.Pnport ? /first public release requires a minor bump/u : project === Project.ReactForge ? /recovery from 0\.1\.0 requires a patch bump/u : /journal/u);
+  assert.throws(() => validateCommit(fixtureState.directory, first.revision, project, bump === Bump.Patch ? Bump.Minor : Bump.Patch, "123"), project === Project.Pnport ? /first public release requires a minor bump/u : project === Project.ReactForge && readVersion(project, read) === "0.1.0" ? /recovery from 0\.1\.0 requires a patch bump/u : /journal/u);
   assert.throws(() => validateCommit(fixtureState.directory, first.revision, project, bump, "456"), /journal/u);
 });
 
