@@ -21,6 +21,8 @@ Preparation serializes by session while independent sessions can proceed concurr
 ## Storage
 The Worker owns private `workspaces`, `locks`, and empty hook directories under its explicit data scope. UUID-v7 session/repository IDs derive managed paths. Manifests record original checkouts separately from deletion-owned paths. Cleanup recomputes owned paths from identities, reconciles Git registration even when a directory is absent, and never removes original Local checkouts. These local resources intentionally override the repository R2 default.
 
+Canonicalize the private Worker root before creating ownership paths. Git's registration namespace can resolve parent aliases (including macOS `/var` to `/private/var`); comparing it to an unresolved path can leave an orphaned Git registration after rollback. Parent-alias regression tests must verify both filesystem removal and Git registration removal.
+
 ## Security
 Git receives a bounded system/Git/SSH environment, not inherited API keys, server authorization, or repository-redirection variables. Authentication uses the Worker's prepared Git credential helpers/SSH agent. Interactive Git credential prompts are disabled. Preparation disables repository hooks for its own Git invocation without modifying user configuration. Raw Git stderr and remote URLs do not enter diagnostics. Reads reject replacement links at private workspace roots.
 

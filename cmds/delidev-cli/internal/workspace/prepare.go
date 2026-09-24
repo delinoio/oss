@@ -79,6 +79,13 @@ func (m *Manager) initialize() error {
 	if err := security.PrivateDir(m.Root); err != nil {
 		return err
 	}
+	// Git records canonical paths (for example /private/var on macOS). Keep
+	// ownership journals and registration comparisons in that same namespace.
+	canonical, err := filepath.EvalSymlinks(m.Root)
+	if err != nil {
+		return err
+	}
+	m.Root = canonical
 	for _, name := range []string{"workspaces", "locks", "empty-hooks"} {
 		if err := security.PrivateDir(filepath.Join(m.Root, name)); err != nil {
 			return err

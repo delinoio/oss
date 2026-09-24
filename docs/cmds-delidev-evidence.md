@@ -32,6 +32,7 @@ The current user request is the CLI. Desktop windows/tray/widgets/native browser
 - 2026-09-24, macOS arm64, Go 1.26.1: `go test -race ./cmds/delidev-cli/internal/...` and `go vet ./cmds/delidev-cli/internal/...` for the domain, private-files, and SQLite foundation. No harness or provider account was invoked.
 - 2026-09-24: `go test -race ./cmds/delidev-cli/...`, package vet, Buf formatting/lint, and generated Go bindings validated. The native macOS executable was exercised against an isolated temporary data directory. Linux arm64 cross-compilation succeeded; this does not establish native Linux behavior.
 - 2026-09-24: Windows amd64 cross-compilation succeeded. Native Windows runtime remains unverified. Real temporary Git preparation tests and package race tests/vet pass on macOS arm64.
+- A subsequent Git-registration regression exposed the macOS `/var` parent alias during rollback. Worker roots now canonicalize before ownership journals are created; the real Git regression and package race/vet checks were rerun after the fix.
 
 ## Native interface discovery (not execution validation)
 - Installed read-only version/help checks: Codex CLI `0.151.0`, Claude Code `2.1.236`, OpenCode `1.18.20`. No `grok` executable was found on this machine. No user credential files were read and no inference was invoked by these checks.

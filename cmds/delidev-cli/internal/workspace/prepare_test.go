@@ -222,3 +222,29 @@ func TestDefaultBranchNeverGuessed(t *testing.T) {
 		t.Fatal(ref, err)
 	}
 }
+
+func TestWorkerParentAliasUsesCanonicalOwnershipPaths(t *testing.T) {
+	parent := t.TempDir()
+	alias := filepath.Join(t.TempDir(), "alias")
+	if err := os.Symlink(parent, alias); err != nil {
+		t.Skip("creating a directory symlink is unavailable on this host")
+	}
+	root := repository(t)
+	m := &Manager{Root: filepath.Join(alias, "worker"), Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	request, _ := requestFor(root)
+	second := repository(t)
+	request.Repositories = append(request.Repositories, RepositorySpec{ID: domain.NewID(), Checkout: second, Starting: domain.Reference{Type: domain.LocalBranch, Name: "missing"}})
+	if _, err := m.Prepare(context.Background(), request); err == nil {
+		t.Fatal("partial workspace accepted")
+	}
+	canonical, err := filepath.EvalSymlinks(filepath.Join(parent, "worker"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Root != canonical {
+		t.Fatal("ownership root not canonicalized")
+	}
+	if worktrees := gitTest(t, root, "worktree", "list", "--porcelain"); strings.Count(worktrees, "worktree ") != 1 {
+		t.Fatal("aliased worktree registration survived rollback", worktrees)
+	}
+}
