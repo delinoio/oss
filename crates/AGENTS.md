@@ -209,6 +209,7 @@
 - pnport Linux arm64 syscall denial must update `NT_ARM_SYSTEM_CALL` after ordinary registers so rejected operations cannot execute during graceful cleanup.
 - A Linux seccomp admission failure must cancel the stopped syscall before graceful cleanup resumes the tracee; send final SIGKILL before the last ptrace continuation.
 - Leave invalid child pathname pointers to the Linux kernel so ordinary EFAULT behavior survives, including null pointers in both operands of path operations.
+- Linux `inotify_add_watch` with `IN_DONT_FOLLOW` on a virtual dependency link must watch the materialized link inode, not its resolved package target.
 - pnport cache extraction must use a private snapshot verified against the destination archive digest. Rechecking only the mutable source after extraction cannot prove which bytes were published; retain rewrite-and-restore regression coverage.
 - pnport cache cancellation after read-only staging must restore directory write permission and explicitly remove the incomplete stage before returning an error.
 - pnport preload constructor entry and completed readiness are distinct acknowledgements. Supported cache lock waits after entry must not trigger the missing-injection deadline; a child result without readiness remains a failure.

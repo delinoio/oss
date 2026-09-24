@@ -1337,6 +1337,27 @@ impl Trace<'_> {
         })
     }
 
+    fn virtual_link_backing(
+        &mut self,
+        pid: i32,
+        dirfd: i32,
+        original: &Path,
+    ) -> Result<(PathBuf, PathBuf)> {
+        let logical = pnport::graph::normalize(&self.base(pid, dirfd, original)?);
+        let parent = self.translate_view(logical.parent().ok_or_else(injection_failed)?)?;
+        let link = parent
+            .physical
+            .join(logical.file_name().ok_or_else(injection_failed)?);
+        if !fs::symlink_metadata(&link)
+            .map_err(|_| injection_failed())?
+            .file_type()
+            .is_symlink()
+        {
+            return Err(injection_failed());
+        }
+        Ok((logical, link))
+    }
+
     fn proc_root(&self, pid: i32, path: &Path) -> Result<Option<PathBuf>> {
         let Some(text) = path.to_str() else {
             return Ok(None);
@@ -2008,18 +2029,7 @@ impl Trace<'_> {
                         "Constrained openat2 cannot open a virtual link without following it.",
                     ));
                 }
-                let logical = pnport::graph::normalize(&self.base(pid, dirfd, &original)?);
-                let parent = self.translate_view(logical.parent().ok_or_else(injection_failed)?)?;
-                let link = parent
-                    .physical
-                    .join(logical.file_name().ok_or_else(injection_failed)?);
-                if !fs::symlink_metadata(&link)
-                    .map_err(|_| injection_failed())?
-                    .file_type()
-                    .is_symlink()
-                {
-                    return Err(injection_failed());
-                }
+                let (logical, link) = self.virtual_link_backing(pid, dirfd, &original)?;
                 self.rewrite_path(pid, &mut regs, path_arg, &link)?;
                 self.pending.insert(
                     pid,
@@ -2032,6 +2042,15 @@ impl Trace<'_> {
                 );
                 return Ok(true);
             }
+        }
+        if call == libc::SYS_inotify_add_watch
+            && translation.virtual_link
+            && argument(&regs, 2) as u32 & libc::IN_DONT_FOLLOW != 0
+        {
+            let (_, link) = self.virtual_link_backing(pid, dirfd, &original)?;
+            self.rewrite_path(pid, &mut regs, path_arg, &link)?;
+            self.pending.insert(pid, Pending::Ordinary);
+            return Ok(true);
         }
         if writing && translation.readonly {
             self.force_error(pid, &mut regs, path_arg, libc::EROFS)?;

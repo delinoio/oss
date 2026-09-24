@@ -36,6 +36,8 @@ Linux virtual-link `lstat`, non-following `fstatat`, and `statx` results synthes
 
 Linux `readlinkat(fd, "", ...)` on an `O_PATH | O_NOFOLLOW` virtual-link descriptor reports the same logical target as pathname `readlink`. Native symlink descriptors retain the kernel result, including pointer errors.
 
+Linux `inotify_add_watch` with `IN_DONT_FOLLOW` uses the materialized virtual-link inode; ordinary following watches use the resolved package target.
+
 Relative `*at` operations validate the live descriptor as a directory before joining or normalizing paths, including `..`. Regular-file descriptors return `ENOTDIR` and invalid descriptors return `EBADF`, whether tracked or duplicated outside interception. Absolute paths continue to ignore the supplied directory descriptor. Native cwd state follows the live process handle after symlink retargeting or directory rename; only translated virtual cwd paths need saved logical identity.
 
 The Linux tracer preserves the original pathname spelling for native paths that do not require virtual translation, including relative symlink traversal, `..` after a symlink, and trailing separators. This applies to both operands of link and rename operations so ordinary kernel lookup and `ENOTDIR` behavior remain intact.

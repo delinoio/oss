@@ -2785,6 +2785,69 @@ int main(void) {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn linux_inotify_dont_follow_watches_the_virtual_link_inode() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("watch-link.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/inotify.h>
+#include <sys/stat.h>
+#include <unistd.h>
+int main(void) {
+    int link = open("node_modules/dep", O_PATH | O_NOFOLLOW);
+    if (link < 0) return 41;
+    struct stat metadata;
+    if (fstat(link, &metadata) || !S_ISLNK(metadata.st_mode)) return 42;
+    int watcher = inotify_init1(IN_CLOEXEC);
+    if (watcher < 0) return 43;
+    if (inotify_add_watch(watcher, "node_modules/dep", IN_ATTRIB | IN_DONT_FOLLOW) < 0) return 44;
+    char name[64], details[4096];
+    snprintf(name, sizeof(name), "/proc/self/fdinfo/%d", watcher);
+    int info = open(name, O_RDONLY);
+    if (info < 0) return 45;
+    ssize_t length = read(info, details, sizeof(details) - 1);
+    if (length < 0) return 46;
+    details[length] = 0;
+    char *watch = strstr(details, "inotify wd:");
+    char *inode = watch ? strstr(watch, "ino:") : 0;
+    if (!inode) return 47;
+    unsigned long long watched = strtoull(inode + 4, 0, 16);
+    return watched == (unsigned long long)metadata.st_ino ? 0 : 48;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("watch-link");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn linux_reports_a_missing_elf_interpreter_as_command_not_found() {
     use std::process::Command;
     let root = fixture();
