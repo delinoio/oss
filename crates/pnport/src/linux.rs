@@ -1554,6 +1554,13 @@ impl Trace<'_> {
         let group = Self::group(pid);
         let remainder = if let Some(remainder) = text.strip_prefix("/dev/fd/") {
             remainder
+        } else if let Some(fd) = match text {
+            "/dev/stdin" => Some("0"),
+            "/dev/stdout" => Some("1"),
+            "/dev/stderr" => Some("2"),
+            _ => None,
+        } {
+            fd
         } else {
             let (owner, remainder) = text.strip_prefix("/proc/")?.split_once('/')?;
             let owner_group = match owner {

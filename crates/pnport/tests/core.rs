@@ -856,6 +856,58 @@ int main(void) {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn linux_named_standard_stream_aliases_keep_descriptor_ownership() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("standard-alias.c");
+    fs::write(
+        &source,
+        r#"
+#include <errno.h>
+#include <fcntl.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <unistd.h>
+int main(int argc, char **argv) {
+    if (argc != 3) return 20;
+    int fd = open("node_modules/dep/file.txt", O_RDONLY);
+    if (fd < 0) return 21;
+    if (dup2(fd, atoi(argv[1])) < 0) return 22;
+    errno = 0;
+    if (chmod(argv[2], 0600) != -1 || errno != EROFS) return 23;
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("standard-alias");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    for (fd, alias) in [(0, "/dev/stdin"), (1, "/dev/stdout"), (2, "/dev/stderr")] {
+        let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+            .current_dir(root.path())
+            .args(["run", "--"])
+            .arg(&executable)
+            .arg(fd.to_string())
+            .arg(alias)
+            .output()
+            .unwrap();
+        assert_eq!(
+            result.status.code(),
+            Some(0),
+            "{alias}: {}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn linux_reuses_scratch_after_threads_and_vfork_spawns() {
     use std::process::Command;
     let root = fixture();

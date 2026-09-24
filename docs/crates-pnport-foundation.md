@@ -132,6 +132,7 @@ On arm64, denying an unsupported syscall updates both the userspace `x8` registe
 Same-group `/proc/.../root/<path>` aliases, including task aliases, resolve against the tracee root before ownership checks. Managed package and cache backing retain read-only rejection through those aliases; ordinary native aliases keep their kernel pathname spelling. Physical cache and session-view paths are treated as backing storage even when the cache is inside the project and contains `node_modules` directories.
 
 Same-group `/proc/.../cwd` aliases of a virtual current directory resolve through the saved logical cwd, including paths below that directory. Writes still receive `EROFS`, readable opens retain descriptor ownership, and reading the cwd link reports the logical location. Successful `chdir` through a tracked `/proc/.../fd/<fd>` or `/dev/fd/<fd>` directory alias updates the saved logical cwd for a virtual directory and clears it for a native directory; failed `chdir` leaves cwd state unchanged.
+The named `/dev/stdin`, `/dev/stdout`, and `/dev/stderr` aliases use the tracee's tracked descriptors 0, 1, and 2, including after duplication onto a standard stream. They retain managed read-only ownership for pathname mutations.
 
 Logical `getcwd` synthesis runs only after the kernel accepts the output buffer. Invalid pointers and other failed calls retain their original errno instead of becoming an interception failure.
 
