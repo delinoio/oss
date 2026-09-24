@@ -43,3 +43,5 @@ The current user request is the CLI. Desktop windows/tray/widgets/native browser
 - CLI integration tests pair both a Worker and a client, reuse pairing receipts, inspect a real Git subdirectory over outbound Connect, and reject Worker credentials for owner resource queries. Package race tests and vet pass after this integration.
 
 - Native macOS CLI subprocess smoke passed for explicit server startup, private Worker pairing, outbound readiness, real Git inspection, asynchronous repository save, and revocation shutting down the Worker with a typed authentication error. No network fetch, inference or user account access was involved.
+
+- Revocation now atomically cancels undispatched Worker jobs and preserves claimed-job uncertainty; real Connect regressions cover both states. Migration backup names are synchronized before schema commit. Final package race tests/vet and generated-binding freshness checks pass; updated Worker CLI cross-compiles for Windows amd64 and Linux arm64 without implying native runtime validation.

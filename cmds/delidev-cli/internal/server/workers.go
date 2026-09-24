@@ -412,3 +412,40 @@ func (s *Service) ReportWork(ctx context.Context, req *connect.Request[pb.Report
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil
 }
+
+func revokeMachineJobs(tx *store.Tx, machine domain.ID) error {
+	for _, state := range []domain.JobState{domain.JobQueued, domain.JobClaimed} {
+		for {
+			records, err := tx.Jobs(machine, "", state, "", store.MaxPage)
+			if err != nil {
+				return err
+			}
+			for _, record := range records {
+				job, err := store.Decode[domain.Job](record)
+				if err != nil {
+					return err
+				}
+				if state == domain.JobQueued {
+					now := time.Now().UTC()
+					job.State, job.FinishedAt = domain.JobCanceled, &now
+					job.Problem = domain.Fail(domain.PermissionDenied, "The Worker was revoked before dispatch.", "Pair an authorized Worker and submit new work explicitly.")
+				} else {
+					// Revocation cannot prove that an already accepted native operation had
+					// no side effects, even when the connection is canceled immediately.
+					job.State, job.FinishedAt = domain.JobUncertain, nil
+					job.Problem = domain.Fail(domain.RecoveryRequired, "The Worker was revoked before completion was acknowledged.", "Reconcile its private execution journal before retrying.")
+				}
+				if _, err := tx.PutJob(record.ID, record.Revision, record.SessionID, record.ProjectID, job); err != nil {
+					return err
+				}
+				if err := finishRepositorySave(tx, job.ParentID); err != nil {
+					return err
+				}
+			}
+			if len(records) < store.MaxPage {
+				break
+			}
+		}
+	}
+	return nil
+}

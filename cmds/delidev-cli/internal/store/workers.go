@@ -80,7 +80,10 @@ func (s *Store) Authenticate(ctx context.Context, digest []byte) (domain.Princip
 	err := s.Read(ctx, func(tx *Tx) error {
 		var id domain.ID
 		if err := tx.tx.QueryRowContext(ctx, "SELECT device_id FROM credential_verifiers WHERE digest=?", digest).Scan(&id); err != nil {
-			return domain.Fail(domain.Unauthenticated, "The device credential is invalid or revoked.", "Pair this device again with a new code.")
+			if errors.Is(err, sql.ErrNoRows) {
+				return domain.Fail(domain.Unauthenticated, "The device credential is invalid or revoked.", "Pair this device again with a new code.")
+			}
+			return storageError(err)
 		}
 		record, err := tx.Get(domain.DeviceKind, id)
 		if err != nil {
@@ -150,6 +153,19 @@ func (s *Store) Heartbeat(ctx context.Context, machine, instance domain.ID) erro
 func (t *Tx) PutJob(id domain.ID, expected uint64, session, project domain.ID, job domain.Job) (Record, error) {
 	if err := job.Validate(); err != nil {
 		return Record{}, err
+	}
+	if expected > 0 {
+		existing, err := t.Get(domain.JobKind, id)
+		if err != nil {
+			return Record{}, err
+		}
+		original, err := Decode[domain.Job](existing)
+		if err != nil {
+			return Record{}, err
+		}
+		if original.Type != job.Type || original.MachineID != job.MachineID || original.ParentID != job.ParentID || !original.AcceptedAt.Equal(job.AcceptedAt) {
+			return Record{}, domain.Fail(domain.InvalidArgument, "Accepted job routing is immutable.", "Create a new explicit operation instead of reassigning accepted work.")
+		}
 	}
 	r, err := t.Put(domain.JobKind, id, expected, session, project, job)
 	if err != nil {

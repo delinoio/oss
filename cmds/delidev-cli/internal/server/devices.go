@@ -317,6 +317,9 @@ func (s *Service) RevokeDevice(ctx context.Context, req *connect.Request[pb.Revo
 			if _, err := tx.Put(domain.MachineKind, record.ID, record.Revision, "", "", machine); err != nil {
 				return nil, err
 			}
+			if err := revokeMachineJobs(tx, device.MachineID); err != nil {
+				return nil, err
+			}
 		}
 		return updated, nil
 	})

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
 const workerSchema = `
@@ -70,6 +71,9 @@ func migrate(ctx context.Context, db *sql.DB, root string) error {
 	}
 	if closeErr != nil {
 		return storageError(closeErr)
+	}
+	if err := security.SyncParent(backup); err != nil {
+		return storageError(err)
 	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {

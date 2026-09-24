@@ -107,3 +107,7 @@ func ReadPrivate(path string, max int64) ([]byte, error) {
 	}
 	return b, nil
 }
+
+// SyncParent makes a newly created private file name durable before dependent
+// state is committed, including a pre-migration database backup.
+func SyncParent(path string) error { return syncDirectory(filepath.Dir(path)) }

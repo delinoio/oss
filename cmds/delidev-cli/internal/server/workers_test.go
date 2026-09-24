@@ -128,6 +128,32 @@ func TestWorkerPairingOwnershipDispatchAndRevocation(t *testing.T) {
 		t.Fatalf("worker read owner resource: %v", err)
 	}
 	devices := delidevv1connect.NewDeviceServiceClient(http.DefaultClient, endpoint.URL)
+
+	unconfirmed, err := client.InspectRepository(ctx, ownerRequest(owner, &pb.InspectRepositoryRequest{RequestId: string(domain.NewID()), MachineId: device.Machine.Id, Path: "/tmp/pending"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stream.Receive() || stream.Msg().Job == nil || stream.Msg().Job.Id != unconfirmed.Msg.Job.Id {
+		t.Fatal("missing unconfirmed assignment")
+	}
+	queued, err := client.InspectRepository(ctx, ownerRequest(owner, &pb.InspectRepositoryRequest{RequestId: string(domain.NewID()), MachineId: other.Machine.Id, Path: "/tmp/queued"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := devices.RevokeDevice(ctx, ownerRequest(owner, &pb.RevokeDeviceRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: other.Device.Id, ExpectedRevision: other.Device.Revision}})); err != nil {
+		t.Fatal(err)
+	}
+	queuedResult, err := resources.GetResource(ctx, ownerRequest(owner, &pb.GetResourceRequest{Kind: pb.EntityKind_ENTITY_KIND_JOB, Id: queued.Msg.Job.Id}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var queuedJob domain.Job
+	if err := domain.Decode(queuedResult.Msg.Resource.DocumentJson, &queuedJob); err != nil {
+		t.Fatal(err)
+	}
+	if queuedJob.State != domain.JobCanceled {
+		t.Fatal("revoked queued work remained runnable")
+	}
 	revoke := &pb.RevokeDeviceRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: device.Device.Id, ExpectedRevision: device.Device.Revision}}
 	if _, err := devices.RevokeDevice(ctx, ownerRequest(owner, revoke)); err != nil {
 		t.Fatal(err)
@@ -135,6 +161,18 @@ func TestWorkerPairingOwnershipDispatchAndRevocation(t *testing.T) {
 	if stream.Receive() {
 		t.Fatal("revoked stream remained open")
 	}
+	uncertain, err := resources.GetResource(ctx, ownerRequest(owner, &pb.GetResourceRequest{Kind: pb.EntityKind_ENTITY_KIND_JOB, Id: unconfirmed.Msg.Job.Id}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var uncertainJob domain.Job
+	if err := domain.Decode(uncertain.Msg.Resource.DocumentJson, &uncertainJob); err != nil {
+		t.Fatal(err)
+	}
+	if uncertainJob.State != domain.JobUncertain || uncertainJob.InstanceID != domain.ID(instance) {
+		t.Fatal("revocation lost accepted execution uncertainty")
+	}
+
 	if _, err := client.AttachWorker(ctx, ownerRequest(one, attach)); connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Fatalf("revoked credential accepted receipt retry: %v", err)
 	}
