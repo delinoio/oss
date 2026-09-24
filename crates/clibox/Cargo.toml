@@ -20,7 +20,7 @@ clibox-wait = { path = "../clibox-wait" }
 
 [dev-dependencies]
 base64 = "0.22.1"
-clibox-system = { path = "../clibox-system", features = ["test-support"] }
+clibox-system = { path = "../clibox-system", features = ["test"] }
 sha2 = "0.10"
 rustls = { version = "0.23.36", default-features = false, features = ["ring", "std", "tls12"] }
 serde_json = "1.0.149"

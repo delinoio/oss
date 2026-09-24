@@ -3711,7 +3711,7 @@ impl StateKey {
 }
 
 fn state_root() -> Result<PathBuf> {
-    #[cfg(feature = "test-support")]
+    #[cfg(feature = "test")]
     if let Some(path) = test_state_root(env::var_os("CLIBOX_TEST_STATE_ROOT"))? {
         return Ok(path);
     }
@@ -3741,7 +3741,7 @@ fn state_root() -> Result<PathBuf> {
     }
 }
 
-#[cfg(feature = "test-support")]
+#[cfg(feature = "test")]
 fn test_state_root(value: Option<OsString>) -> Result<Option<PathBuf>> {
     let Some(value) = value else {
         return Ok(None);
@@ -3753,7 +3753,7 @@ fn test_state_root(value: Option<OsString>) -> Result<Option<PathBuf>> {
     Ok(Some(path.join("clibox").join("run")))
 }
 
-#[cfg(all(test, feature = "test-support"))]
+#[cfg(all(test, feature = "test"))]
 #[test]
 fn test_state_root_requires_an_absolute_path() {
     let temporary = std::env::temp_dir();

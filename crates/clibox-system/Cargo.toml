@@ -8,7 +8,7 @@ description = "Internal system commands for clibox"
 repository = "https://github.com/delinoio/oss"
 
 [features]
-test-support = []
+test = []
 
 [dependencies]
 clap = { version = "4.5.32", features = ["derive"] }
