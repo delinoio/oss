@@ -18,6 +18,7 @@
 - Forge chart insertion must reject collisions with preexisting chart, workbook and relationship parts, including case-equivalent package names. A supplied node identity never grants ownership of original package parts.
 - Forge image media reuse requires identical bytes, including case-equivalent part names; reject mismatched content instead of pointing a new image relationship at unrelated media.
 - Forge image import must validate full-frame stretch fill as well as crop/aspect geometry before allowing contain/cover edits; preserve other native picture fills as opaque.
+- Forge text import must validate body geometry against measurement semantics before exposing editable text; keep unrepresented insets, wrapping, columns, anchoring, rotation and autofit opaque.
 - Forge asset loading must visit only referenced image handles, deduplicate aliases, and bound aggregate bytes before reads in addition to per-file limits and checksum validation.
 - Forge nested canvases must validate unchanged children's bounds against their current allocation. Preserve native off-page bounds only for unchanged children under a slide-root canvas with unchanged page dimensions.
 - Forge containers must reject placeholder references before creation or patch commit; logical containers do not emit native placeholder shapes.

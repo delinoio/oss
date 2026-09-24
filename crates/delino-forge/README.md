@@ -66,6 +66,8 @@ Changing an imported table's merge/grid definition requires explicit node replac
 
 Tables with unequal native row heights or heights inconsistent with their frame remain opaque in v1. Their original content is preserved during edits to other nodes.
 
+Imported text is editable when its text area has explicit zero margins, square wrapping, top anchoring, horizontal single-column flow and no automatic fitting. Text boxes with other or implicit native geometry remain opaque so edits cannot bypass their actual space limits. They remain intact when you edit other supported objects.
+
 Previews use a private LibreOffice profile, a 120-second deadline per renderer and child-process cleanup on cancellation. They are limited to 100 pages, 40 million pixels per page and 250 million pixels total at 96 dpi. Missing renderers produce `renderer_unavailable`. Optional `FORGE_SOFFICE` and `FORGE_PDFTOPPM` variables select executable paths. The bundled, OFL-licensed Noto Sans KR is embedded for dependable Korean rendering. Preview evidence is LibreOffice/Poppler output, not a Microsoft PowerPoint compatibility certification.
 
 ## Validation

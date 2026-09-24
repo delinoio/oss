@@ -134,6 +134,48 @@ fn text_style(n: roxmltree::Node<'_, '_>) -> TextStyle {
         .map(|s| format!("#{s}"));
     s
 }
+fn representable_text_body(body: roxmltree::Node<'_, '_>) -> bool {
+    let properties: Vec<_> = body
+        .children()
+        .filter(|n| n.has_tag_name((A, "bodyPr")))
+        .collect();
+    if properties.len() != 1 {
+        return false;
+    }
+    let properties = properties[0];
+    // Omitted native insets are nonzero and placeholders may inherit body
+    // geometry. Require an explicit full-frame, horizontal, wrapped text area
+    // until measurement can model insets, columns, rotation and native autofit.
+    if ["lIns", "rIns", "tIns", "bIns"].iter().any(|name| {
+        properties
+            .attribute(*name)
+            .and_then(|v| v.parse::<i64>().ok())
+            != Some(0)
+    }) || properties.attribute("wrap") != Some("square")
+        || properties.attribute("anchor") != Some("t")
+        || properties.attributes().any(|a| {
+            a.namespace().is_some()
+                || match a.name() {
+                    "lIns" | "rIns" | "tIns" | "bIns" | "rot" | "spcCol" => {
+                        a.value().parse::<i64>() != Ok(0)
+                    }
+                    "wrap" => a.value() != "square",
+                    "anchor" => a.value() != "t",
+                    "vert" => a.value() != "horz",
+                    "numCol" => a.value().parse::<u32>() != Ok(1),
+                    "rtlCol" | "anchorCtr" => !matches!(a.value(), "0" | "false"),
+                    _ => true,
+                }
+        })
+    {
+        return false;
+    }
+    let children: Vec<_> = properties.children().filter(|n| n.is_element()).collect();
+    children.len() == 1
+        && children[0].has_tag_name((A, "noAutofit"))
+        && children[0].attributes().len() == 0
+        && !children[0].children().any(|n| n.is_element())
+}
 fn paragraphs(n: roxmltree::Node<'_, '_>) -> Vec<Paragraph> {
     n.children()
         .filter(|n| n.has_tag_name((A, "p")))
@@ -589,12 +631,16 @@ pub fn import(bytes: &[u8]) -> Result<Imported> {
                 if let Some(body) =
                     body.filter(|_| has_text || textbox || desc(item, P, "ph").is_some())
                 {
-                    n.kind = NodeKind::Text;
-                    n.paragraphs = paragraphs(body);
-                    if n.paragraphs.is_empty() {
-                        n.text = Some(String::new());
+                    if representable_text_body(body) {
+                        n.kind = NodeKind::Text;
+                        n.paragraphs = paragraphs(body);
+                        if n.paragraphs.is_empty() {
+                            n.text = Some(String::new());
+                        }
+                        true
+                    } else {
+                        false
                     }
-                    true
                 } else if let Some(preset) =
                     desc(item, A, "prstGeom").and_then(|n| n.attribute("prst"))
                 {

@@ -43,6 +43,112 @@ fn xml_part(parts: &std::collections::BTreeMap<String, Vec<u8>>, path: &str) -> 
     String::from_utf8(parts[path].clone()).unwrap()
 }
 #[test]
+fn unrepresentable_text_body_geometry_remains_opaque() {
+    let path = "ppt/slides/slide1.xml";
+    let original = read_package(EXTERNAL).unwrap();
+    let slide = xml_part(&original, path);
+    let xml = roxmltree::Document::parse(&slide).unwrap();
+    let properties = xml
+        .descendants()
+        .find(|n| n.tag_name().name() == "bodyPr")
+        .unwrap();
+    let supported = &slide[properties.range()];
+    let mut multiple_columns = supported.to_owned();
+    multiple_columns.insert_str("<a:bodyPr".len(), " numCol=\"2\"");
+    for geometry in [
+        "<a:bodyPr/>".to_owned(),
+        supported.replace("lIns=\"0\"", "lIns=\"91440\""),
+        supported.replace("tIns=\"0\"", "tIns=\"45720\""),
+        supported.replace("wrap=\"square\"", "wrap=\"none\""),
+        supported.replace("anchor=\"t\"", "anchor=\"ctr\""),
+        supported.replace("<a:noAutofit/>", "<a:spAutoFit/>"),
+        supported.replace("<a:noAutofit/>", "<a:normAutofit fontScale=\"90000\"/>"),
+        supported.replace("<a:bodyPr", "<a:bodyPr rot=\"60000\""),
+        supported.replace("<a:bodyPr", "<a:bodyPr vert=\"vert\""),
+        multiple_columns,
+    ] {
+        assert_ne!(geometry, supported);
+        let mut modified = slide.clone();
+        modified.replace_range(properties.range(), &geometry);
+        let mut parts = original.clone();
+        parts.insert(path.into(), modified.clone().into_bytes());
+        let source = write_package(&parts).unwrap();
+        let imported = import(&source).unwrap();
+        let title = key("slide-1.shape-2");
+        assert_eq!(
+            imported.document.find(&title).unwrap().kind,
+            NodeKind::Opaque
+        );
+        let rejected = Patch {
+            dsl_version: 1,
+            kind: PatchKind::Patch,
+            document_id: imported.document_id,
+            base_revision: 0,
+            operations: vec![Operation::SetText {
+                target: title,
+                text: "Unsafe measurement".into(),
+                cell: None,
+            }],
+        };
+        assert_eq!(
+            apply_patch(&imported.document, &rejected, imported.document_id, 0)
+                .unwrap_err()
+                .code,
+            ErrorCode::UnsupportedEdit
+        );
+        let image = target(&imported.document, NodeKind::Image);
+        let mut frame = imported.document.find(&image).unwrap().frame.unwrap();
+        frame.x += 1.0;
+        let next = patch(
+            &imported,
+            vec![Operation::SetFrame {
+                target: image,
+                frame,
+            }],
+        );
+        let output = update(
+            &source,
+            &imported.document,
+            &imported.bindings,
+            &next,
+            &imported.assets,
+            imported.document_id,
+            1,
+        )
+        .unwrap();
+        let after = xml_part(&read_package(&output).unwrap(), path);
+        let before_xml = roxmltree::Document::parse(&modified).unwrap();
+        let after_xml = roxmltree::Document::parse(&after).unwrap();
+        let before_title = before_xml
+            .descendants()
+            .find(|n| n.tag_name().name() == "sp")
+            .unwrap();
+        let after_title = after_xml
+            .descendants()
+            .find(|n| n.tag_name().name() == "sp")
+            .unwrap();
+        assert_eq!(&modified[before_title.range()], &after[after_title.range()]);
+    }
+    let imported = import(EXTERNAL).unwrap();
+    assert_eq!(
+        imported
+            .document
+            .find(&key("slide-1.shape-2"))
+            .unwrap()
+            .kind,
+        NodeKind::Text
+    );
+    assert_eq!(
+        imported
+            .document
+            .find(&key("slide-1.shape-3"))
+            .unwrap()
+            .kind,
+        NodeKind::Opaque
+    );
+}
+
+#[test]
 fn ambiguous_office_document_relationships_are_rejected() {
     let original = read_package(EXTERNAL).unwrap();
     let root = xml_part(&original, "_rels/.rels");

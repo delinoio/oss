@@ -9,6 +9,7 @@ from pptx.util import Pt
 from pptx.enum.shapes import MSO_SHAPE
 from pptx.chart.data import CategoryChartData
 from pptx.enum.chart import XL_CHART_TYPE
+from pptx.enum.text import MSO_ANCHOR, MSO_AUTO_SIZE
 from pptx.dml.color import RGBColor
 from lxml import etree
 
@@ -18,6 +19,12 @@ buf=BytesIO(); image.save(buf,format='PNG'); (root/'sample.png').write_bytes(buf
 image=Image.new('RGB',(100,200),(34,197,94)); image.save(root/'replacement.png')
 p=Presentation(); p.slide_width=Pt(960); p.slide_height=Pt(540)
 s=p.slides.add_slide(p.slide_layouts[5]); s.shapes.title.text='External presentation'
+# Keep one explicitly representable placeholder and the default textbox below
+# as an opaque native geometry fixture (nonzero insets, no wrap, shape autofit).
+title_frame=s.shapes.title.text_frame
+title_frame.margin_left=title_frame.margin_right=title_frame.margin_top=title_frame.margin_bottom=Pt(0)
+title_frame.word_wrap=True; title_frame.auto_size=MSO_AUTO_SIZE.NONE
+title_frame.vertical_anchor=MSO_ANCHOR.TOP
 box=s.shapes.add_textbox(Pt(40),Pt(90),Pt(440),Pt(60)); box.text='External text with preserved metadata'
 for r in box.text_frame.paragraphs[0].runs:
  r.font.name='Noto Sans KR'; r.font.size=Pt(18); r.font.color.rgb=RGBColor(23,32,51)
