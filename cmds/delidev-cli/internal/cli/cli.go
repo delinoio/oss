@@ -8,9 +8,7 @@ import (
 	"golang.org/x/term"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,6 +19,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/server"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/worker"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 )
@@ -46,6 +45,9 @@ type client struct {
 	system        delidevv1connect.SystemServiceClient
 	resources     delidevv1connect.ResourceServiceClient
 	configuration delidevv1connect.ConfigurationServiceClient
+	devices       delidevv1connect.DeviceServiceClient
+	workers       delidevv1connect.WorkerServiceClient
+	endpoint      string
 	token         string
 }
 
@@ -111,6 +113,10 @@ func Run(ctx context.Context, args []string, streams IO) int {
 	if command == "settings" && len(rest) == 1 && rest[0] == "defaults" {
 		return emit(domain.DefaultSettings(), nil)
 	}
+	if command == "worker" || (command == "device" && len(rest) > 0 && rest[0] == "pair") {
+		value, err := deviceLocal(ctx, o, command, rest, streams)
+		return emit(value, err)
+	}
 	c, err := connectClient(o, streams.In)
 	if err != nil {
 		return emit(nil, err)
@@ -122,6 +128,18 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		ctx = bounded
 	}
 	switch command {
+	case "device":
+		if len(rest) > 0 && (rest[0] == "create-pairing" || rest[0] == "revoke") {
+			ensureRequest(&o)
+			value, err := deviceRemote(ctx, c, o, rest)
+			return emit(value, err)
+		}
+	case "repository":
+		if len(rest) > 0 && rest[0] == "inspect" {
+			ensureRequest(&o)
+			value, err := repositoryInspect(ctx, c, o, rest[1:])
+			return emit(value, err)
+		}
 	case "server":
 		if len(rest) != 1 {
 			return emit(nil, usage())
@@ -345,6 +363,19 @@ func globals(args []string) (options, []string, error) {
 func connectClient(o options, input io.Reader) (client, error) {
 	endpoint := o.server
 	token := ""
+	if saved, err := worker.LoadCredential(o.dataDir); err == nil {
+		if saved.Type != domain.ClientDevice {
+			return client{}, domain.Fail(domain.PermissionDenied, "A Worker scope cannot authenticate product commands.", "Use the owner or a paired client scope.")
+		}
+		if endpoint == "" {
+			endpoint = saved.Endpoint
+		}
+		if endpoint == saved.Endpoint {
+			token = saved.Token
+		}
+	} else if !os.IsNotExist(err) {
+		return client{}, err
+	}
 	if endpoint == "" {
 		saved, err := server.LoadEndpoint(o.dataDir)
 		if err != nil {
@@ -363,14 +394,8 @@ func connectClient(o options, input io.Reader) (client, error) {
 		endpoint = saved.URL
 		token = identity.Token
 	}
-	u, err := url.Parse(endpoint)
-	if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
-		return client{}, domain.Fail(domain.InvalidArgument, "Invalid server URL.", "Use an origin without credentials, query, or path.")
-	}
-	ip := net.ParseIP(u.Hostname())
-	loopback := u.Hostname() == "localhost" || (ip != nil && ip.IsLoopback())
-	if u.Scheme != "https" && !(u.Scheme == "http" && loopback) {
-		return client{}, domain.Fail(domain.PermissionDenied, "Remote server connections require HTTPS.", "Select an authenticated TLS endpoint.")
+	if err := rpc.ValidateEndpoint(endpoint); err != nil {
+		return client{}, err
 	}
 	if o.tokenStdin {
 		if terminalInput(input) {
@@ -385,13 +410,9 @@ func connectClient(o options, input io.Reader) (client, error) {
 	if token == "" {
 		return client{}, domain.Fail(domain.MissingInput, "The selected server requires a credential.", "Provide it through --token-stdin or pair this device; never put secrets in argv.")
 	}
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.Proxy = nil
-	transport.ResponseHeaderTimeout = 15 * time.Second
-	transport.MaxResponseHeaderBytes = 32 << 10
-	httpClient := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	httpClient, transport := rpc.HTTPClient()
 	opts := []connect.ClientOption{connect.WithReadMaxBytes(5 << 20), connect.WithSendMaxBytes(2 << 20)}
-	return client{transport: transport, system: delidevv1connect.NewSystemServiceClient(httpClient, endpoint, opts...), resources: delidevv1connect.NewResourceServiceClient(httpClient, endpoint, opts...), configuration: delidevv1connect.NewConfigurationServiceClient(httpClient, endpoint, opts...), token: token}, nil
+	return client{transport: transport, endpoint: endpoint, devices: delidevv1connect.NewDeviceServiceClient(httpClient, endpoint, opts...), workers: delidevv1connect.NewWorkerServiceClient(httpClient, endpoint, opts...), system: delidevv1connect.NewSystemServiceClient(httpClient, endpoint, opts...), resources: delidevv1connect.NewResourceServiceClient(httpClient, endpoint, opts...), configuration: delidevv1connect.NewConfigurationServiceClient(httpClient, endpoint, opts...), token: token}, nil
 }
 func readDocument(path string, input io.Reader) ([]byte, error) {
 	reader := input
@@ -473,6 +494,12 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
                [--allowed-origins ORIGIN,ORIGIN]
   server status | stop
   doctor
+  device create-pairing --type worker|client --name NAME
+  device pair --device-dir PATH --code-stdin
+  device revoke --id ID --revision N
+  worker pair --worker-dir PATH --name NAME --code-stdin
+  worker start --worker-dir PATH
+  repository inspect --machine-id ID --path PATH [--preferred-remote NAME] [--wait]
   backup create
   settings defaults
   KIND list [--limit 50] [--page-token TOKEN] [--project-id ID] [--session-id ID]
