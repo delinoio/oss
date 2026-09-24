@@ -1,6 +1,8 @@
 # Documentation Catalog
 
 ## Purpose
+
+- [React Forge Figma contract](packages-react-forge-figma-contract.md).
 `docs/` is the source of truth for repository contracts.
 Each project must have one project index document and one or more domain contract documents.
 

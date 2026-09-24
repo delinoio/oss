@@ -248,6 +248,8 @@
 
 ### React Forge Engine Rules
 
+- `forge-figma` owns pure bounded Figma model validation, preservation-aware diff and batch planning. Keep OAuth, network I/O and JavaScript execution outside Rust workers. Follow `docs/packages-react-forge-figma-contract.md`.
+
 - Follow `docs/crates-react-forge-contract.md` and the complete issue #968 requirements. `forge-package` owns shared bounded OOXML preservation; `forge-document` owns shared text/style, asset and chart primitives; `forge-docx`, `forge-xlsx`, and `forge-pdf` own independent models and engines. `react-forge-node` is only the private N-API adapter.
 - Native workers accept validated serializable data only. Never install a global logger, fetch external relationships, execute embedded content or silently discard unsupported content. Shared changes must retain Forge CLI/MCP behavior and pinned default fonts.
 - System discovery and caller fonts apply to React Forge only. Presentation inspection must not require font setup before the caller can register fonts. Check newly rendered content without rendering untouched opaque source. Keep all packages unpublished.

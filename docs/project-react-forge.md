@@ -18,6 +18,8 @@ Provide private React document sessions and a TSX task CLI for authoring and pre
 - Existing `crates/forge-tree-doc` and `crates/forge-pptx`: presentation model, layout and PPTX engine reused from Forge.
 
 ## Domain Contract Documents
+
+- [Figma creation and editing](packages-react-forge-figma-contract.md).
 - [Complete requirements](packages-react-forge-requirements.md).
 - [Node session and CLI contract](packages-react-forge-contract.md).
 - [Native engines and preservation contract](crates-react-forge-contract.md).
