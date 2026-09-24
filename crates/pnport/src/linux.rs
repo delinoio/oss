@@ -1247,6 +1247,8 @@ struct Trace<'a> {
     dup_reservations: HashMap<i32, (i32, Translation)>,
     fd_busy: HashMap<i32, i32>,
     fd_waiting: VecDeque<(i32, i32)>,
+    cwd_busy: HashMap<i32, i32>,
+    cwd_waiting: VecDeque<(i32, i32)>,
     cwd: HashMap<i32, PathBuf>,
     scratch: HashMap<i32, ScratchSlot>,
     scratch_pending: HashMap<i32, Registers>,
@@ -1263,6 +1265,53 @@ struct Trace<'a> {
 }
 
 impl Trace<'_> {
+    fn resume_cwd_waiter(&mut self, pid: i32) -> Result<()> {
+        if self.pending.contains_key(&pid) {
+            resume(pid, true, 0)
+        } else if !self.scratch.contains_key(&pid) {
+            self.start_scratch(pid)
+        } else {
+            self.enter(pid)
+        }
+    }
+
+    fn release_cwd_barrier(&mut self, pid: i32) -> Result<()> {
+        let group = self.groups.get(&pid).copied().unwrap_or(pid);
+        if self.cwd_busy.get(&group) != Some(&pid) {
+            return Ok(());
+        }
+        self.cwd_busy.remove(&group);
+        while let Some(index) = self
+            .cwd_waiting
+            .iter()
+            .position(|(owner, _)| *owner == group)
+        {
+            let (_, next) = self
+                .cwd_waiting
+                .remove(index)
+                .ok_or_else(injection_failed)?;
+            if !self.tasks.contains(&next) {
+                continue;
+            }
+            let call = number(&registers(next)?);
+            if call == libc::SYS_chdir || call == libc::SYS_fchdir {
+                self.cwd_busy.insert(group, next);
+            }
+            tracing::trace!(
+                action = "linux_cwd_barrier_resume",
+                group,
+                next,
+                call,
+                "Resuming queued filesystem syscall"
+            );
+            self.resume_cwd_waiter(next)?;
+            if self.cwd_busy.contains_key(&group) {
+                break;
+            }
+        }
+        Ok(())
+    }
+
     fn release_fd_barrier(&mut self, pid: i32) -> Result<()> {
         let group = self.groups.get(&pid).copied().unwrap_or(pid);
         if self.fd_busy.get(&group) != Some(&pid) {
@@ -1283,6 +1332,14 @@ impl Trace<'_> {
                     "Resuming queued descriptor syscall"
                 );
                 self.fd_busy.insert(group, next);
+                if self
+                    .cwd_busy
+                    .get(&group)
+                    .is_some_and(|owner| *owner != next)
+                {
+                    self.cwd_waiting.push_back((group, next));
+                    return Ok(());
+                }
                 return if self.pending.contains_key(&next) {
                     resume(next, true, 0)
                 } else {
@@ -2805,6 +2862,10 @@ impl Trace<'_> {
         }
         let action = if call == libc::SYS_close {
             Pending::Close(argument(&regs, 0) as i32)
+        } else if call == libc::SYS_chdir {
+            // Even an untranslatable or invalid pathname needs an exit stop
+            // before peers can classify paths against this group's cwd.
+            Pending::ChangeDirectory(None)
         } else if call == libc::SYS_fchdir {
             let fd = argument(&regs, 0) as i32;
             let logical = self
@@ -3026,6 +3087,12 @@ impl Trace<'_> {
             }
         }
         self.fd_busy.clear();
+        for (_, pid) in self.cwd_waiting.drain(..) {
+            if let Ok(mut regs) = registers(pid) {
+                finish_denied_syscall(pid, &mut regs)?;
+            }
+        }
+        self.cwd_busy.clear();
         let termination_signal = match super::supervisor::handled_signal() {
             libc::SIGINT | libc::SIGHUP | libc::SIGTERM => super::supervisor::handled_signal(),
             _ => libc::SIGTERM,
@@ -3090,9 +3157,11 @@ impl Trace<'_> {
         }
         if libc::WIFEXITED(status) || libc::WIFSIGNALED(status) {
             tracing::trace!(action = "linux_exit", pid, status, "Owned child exited");
+            self.release_cwd_barrier(pid)?;
             self.release_fd_barrier(pid)?;
             self.tasks.remove(&pid);
             self.fd_waiting.retain(|(_, waiting)| *waiting != pid);
+            self.cwd_waiting.retain(|(_, waiting)| *waiting != pid);
             if self.early_stops.remove(&pid) {
                 self.reaped_early.insert(pid);
             }
@@ -3140,7 +3209,11 @@ impl Trace<'_> {
         }
         let signal = libc::WSTOPSIG(status);
         if signal == (libc::SIGTRAP | 0x80) {
+            let preparing_scratch = self.scratch_pending.contains_key(&pid);
             self.exit(pid)?;
+            if !preparing_scratch {
+                self.release_cwd_barrier(pid)?;
+            }
             self.release_fd_barrier(pid)?;
             return Ok(true);
         }
@@ -3172,10 +3245,24 @@ impl Trace<'_> {
                 return Ok(true);
             }
             if event == libc::PTRACE_EVENT_SECCOMP {
+                let call = number(&registers(pid)?);
+                let group = Self::group(pid);
+                if self.cwd_busy.get(&group).is_some_and(|owner| *owner != pid) {
+                    tracing::trace!(
+                        action = "linux_cwd_barrier_wait",
+                        group,
+                        pid,
+                        call,
+                        "Queuing filesystem syscall until cwd update commits"
+                    );
+                    self.cwd_waiting.push_back((group, pid));
+                    return Ok(true);
+                }
+                if call == libc::SYS_chdir || call == libc::SYS_fchdir {
+                    self.cwd_busy.insert(group, pid);
+                }
                 let handled = if self.scratch.contains_key(&pid) {
-                    let call = number(&registers(pid)?);
                     if fd_sensitive_syscall(call) {
-                        let group = Self::group(pid);
                         if self.fd_busy.contains_key(&group) {
                             tracing::trace!(
                                 action = "linux_fd_barrier_wait",
@@ -3263,6 +3350,7 @@ impl Trace<'_> {
                 return Ok(true);
             }
             if event == libc::PTRACE_EVENT_EXEC {
+                self.release_cwd_barrier(pid)?;
                 self.release_fd_barrier(pid)?;
                 // The exec stop precedes the new image's first userspace
                 // instruction. Inspect the image the kernel actually loaded,
@@ -3414,6 +3502,8 @@ pub fn run_traced(view: &mut View, prepared: &Prepared) -> Result<i32> {
         dup_reservations: HashMap::new(),
         fd_busy: HashMap::new(),
         fd_waiting: VecDeque::new(),
+        cwd_busy: HashMap::new(),
+        cwd_waiting: VecDeque::new(),
         cwd: HashMap::new(),
         scratch: HashMap::new(),
         scratch_pending: HashMap::new(),

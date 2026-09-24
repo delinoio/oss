@@ -776,6 +776,80 @@ int main(int argc, char **argv) {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn linux_parallel_chdir_and_relative_lookup_keep_group_cwd_consistent() {
+    use std::process::Command;
+    let root = fixture();
+    fs::write(root.path().join("file.txt"), b"root bytes").unwrap();
+    let source = root.path().join("parallel-cwd.c");
+    fs::write(
+        &source,
+        r#"
+#include <fcntl.h>
+#include <pthread.h>
+#include <stdatomic.h>
+#include <string.h>
+#include <unistd.h>
+static atomic_int done;
+static void *reader(void *unused) {
+    (void)unused;
+    for (int i = 0; i < 1000 || !atomic_load(&done); ++i) {
+        int fd = open("file.txt", O_RDONLY);
+        if (fd < 0) return (void *)1;
+        char bytes[32] = {0};
+        int count = read(fd, bytes, sizeof(bytes) - 1);
+        close(fd);
+        if (!((count == 10 && !strcmp(bytes, "root bytes")) ||
+              (count == 13 && !strcmp(bytes, "package bytes")))) return (void *)2;
+    }
+    return 0;
+}
+int main(int argc, char **argv) {
+    if (argc != 2) return 20;
+    alarm(15);
+    int native = open(".", O_RDONLY | O_DIRECTORY);
+    int managed = open("node_modules/dep", O_RDONLY | O_DIRECTORY);
+    if (native < 0 || managed < 0) return 21;
+    pthread_t peer;
+    if (pthread_create(&peer, 0, reader, 0)) return 22;
+    for (int i = 0; i < 100; ++i) {
+        if (i % 2 ? chdir("node_modules/dep") : fchdir(managed)) return 23;
+        if (i % 2 ? chdir(argv[1]) : fchdir(native)) return 24;
+    }
+    atomic_store(&done, 1);
+    void *result;
+    if (pthread_join(peer, &result)) return 25;
+    close(managed);
+    close(native);
+    return result ? 26 : 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("parallel-cwd");
+    assert!(Command::new("cc")
+        .args(["-static", "-pthread", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .arg(root.path())
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn linux_nonleader_proc_fd_aliases_keep_dependency_ownership() {
     use std::process::Command;
     let root = fixture();
