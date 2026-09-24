@@ -3,12 +3,12 @@
 ## Scope
 `crates/clibox` owns the Rust executable. Its private companion crates own configuration processing (`crates/clibox-config`), OS utilities (`crates/clibox-system`), offline transformations (`crates/clibox-transform`), and readiness waits (`crates/clibox-wait`). All five are explicit workspace members with `publish = false`; distribution uses npm, GitHub Release archives, and APT/DNF rather than crates.io. Issue [#916](https://github.com/delinoio/oss/issues/916) extends the original help/version foundation with six OS utilities. Issue [#917](https://github.com/delinoio/oss/issues/917) adds seven text/time/Base64/hash utilities alongside them. Issue [#919](https://github.com/delinoio/oss/issues/919) adds stateless TCP, HTTP, and file readiness waits.
 
-Issue [#920](https://github.com/delinoio/oss/issues/920) adds three local dotenv/YAML configuration commands.
+Issue [#920](https://github.com/delinoio/oss/issues/920) adds three local dotenv/YAML configuration commands. Issue [#951](https://github.com/delinoio/oss/issues/951) adds portable CPU counts.
 
 ### Crate boundaries
 - `clibox` owns the process entrypoint, logging/panic initialization, static redacted parser diagnostics, and root command composition. It depends directly on the four companion crates through path dependencies.
 - `clibox-config` owns dotenv/YAML command definitions, bounded parsing and reference resolution, configuration cancellation and diagnostics, and private permission-preserving atomic publication.
-- `clibox-system` owns its clap command tree, environment/open/clipboard/port implementations, private OS adapters, contextual failures, and signal/child-status handling.
+- `clibox-system` owns its clap command tree, environment/open/clipboard/port/CPU implementations, private OS adapters, contextual failures, and signal/child-status handling.
 - `clibox-transform` owns its clap command tree, text/time/Base64/hash implementations, streaming I/O, cancellation supervisor, safe errors, and permission-preserving atomic publication.
 - `clibox-wait` owns its clap command tree and target validation, polling and deadlines, DNS/TCP/HTTP/TLS/file probes, cancellation, and final reports.
 - Companion crates do not depend on each other or on the executable. Exports are limited to command composition and execution plus redacted runtime-failure reporters; the process panic hook uses the configuration reporter. These are internal interfaces, not supported public Rust library APIs.
@@ -31,7 +31,7 @@ Developers invoking a pinned CLI in terminals, npm scripts, portable local workf
 - Published version 0.1.6 already includes `port list`, `hash compute`, and the output/cancellation semantics above, but uses `env run`. The subsequent `run env` rename is implemented and targets the next minor release; it is not part of the published 0.1.6 artifacts. Version changes and publication remain owned by the existing manual Release Project workflow; documentation changes do not bump or publish versions.
 
 - `clibox`, `clibox --help`, and `clibox -h` print help to stdout and exit successfully. Root help includes its Cargo-derived version, Delino maintainer, repository, MIT license, and the repository's GitHub Issues support URL; subcommand help does not repeat this footer. `--version`/`-V` remain exactly `clibox <Cargo package version>`.
-- `clibox run`, `clibox port`, `clibox clipboard`, `clibox wait`, `clibox text`, `clibox time`, `clibox base64`, `clibox hash`, `clibox dotenv`, and `clibox yaml` without a subcommand print the corresponding command's help on stderr, leave stdout empty, and exit 2. Explicit `--help`/`-h` for those commands prints help on stdout and exits 0. Preserve clap's generated `DisplayHelpOnMissingArgumentOrSubcommand` output without replacing it with a generic diagnostic.
+- `clibox run`, `clibox port`, `clibox clipboard`, `clibox system`, `clibox wait`, `clibox text`, `clibox time`, `clibox base64`, `clibox hash`, `clibox dotenv`, and `clibox yaml` without a subcommand print the corresponding command's help on stderr, leave stdout empty, and exit 2. Explicit `--help`/`-h` for those commands prints help on stdout and exits 0. Preserve clap's generated `DisplayHelpOnMissingArgumentOrSubcommand` output without replacing it with a generic diagnostic.
 - `clibox wait tcp HOST:PORT [--timeout DURATION] [--interval DURATION] [--attempt-timeout DURATION] [--quiet | --json]`.
 - `clibox wait http URL [--method get|head] [--status CODE] [--timeout DURATION] [--interval DURATION] [--attempt-timeout DURATION] [--quiet | --json]`.
 - `clibox wait file PATH [--timeout DURATION] [--interval DURATION] [--quiet | --json]`.
@@ -49,10 +49,17 @@ clibox port kill PORT... [--protocol tcp|udp|all] [--json | --quiet]
 clibox open TARGET [--app APP] [--wait]
 clibox clipboard copy [TEXT]
 clibox clipboard paste
+clibox system cpus [--kind available|logical] [--json | --quiet]
 clibox dotenv list [--input FILE] [--output FILE] [--force]
 clibox dotenv merge FILE... [--output FILE] [--force]
 clibox yaml normalize [--input FILE] [--output FILE | --in-place] [--force]
 ```
+
+### CPU counts (#951)
+
+`clibox-system` owns enum-backed kinds and private OS adapters. `available` delegates directly to `std::thread::available_parallelism()` without adjustment or fallback. It is an estimate of suitable parallelism rather than idle CPUs, physical cores, or guaranteed capacity; document standard-library affinity, cgroup, VM, and Windows processor-group limits. `logical` returns online logical CPUs visible to the current OS/VM, without clibox affinity or quota reductions. Linux glibc and musl read `/sys/devices/system/cpu/online` and count ordered nonoverlapping CPU-list entries/ranges with checked arithmetic and no per-CPU allocation. macOS queries `hw.logicalcpu` with `sysctlbyname`; Windows passes `ALL_PROCESSOR_GROUPS` to `GetActiveProcessorCount`. Missing, malformed, empty, zero, or overflowing results fail without substituting `1` or another mode. Neither mode interprets `OMP_*`.
+
+The default output is a positive decimal integer and one LF. JSON is exactly one compact `{"kind":"available|logical","count":N}` object and one LF; quiet queries without stdout. The two output flags conflict. Invalid kinds/options, positional arguments, and flag conflicts fail before querying. No stdin, external utility, network, file output, history, configuration, monitoring, elevation, retries, or fixed timeout is added. Each invocation queries only its selected mode and observations may change between invocations. Runtime query or output failure exits 1, invalid CLI exits 2, handled Ctrl+C/Windows Ctrl+Break exits 130, and handled Unix SIGTERM exits 143. Query failure produces no stdout; output failure may leave partial stdout. Failed diagnostics do not replace operation status. Shared `clibox-system` cancellation checks the query wait and the publication boundary; no other family installs signal handlers. Redacted debug events include operation, kind, backend, and completion/failure classification only, while existing `Failure` codes distinguish permission, unavailable backend, invalid enumeration, and output I/O failures.
 
 ### Environment execution
 Compatibility is based on cross-env v10.1.0 commit `152ae6a85b5725ac3c725a8a3e471aee79acc712`: assignment quotes/escaping, parent-environment variable references, duplicate assignments (last value wins), empty values, PATH/NODE_PATH list conversion, and platform-specific command conversion. Assignments refer to the inherited parent environment, not earlier assignments. Windows command conversion supports simple references and `${NAME:-default}`; command arguments are never path-normalized. Executable lookup uses the child PATH and Windows PATHEXT, including npm `.cmd` shims. Simple batch variable references are resolved before Rust's batch argument escaping; never concatenate an arbitrary shell expression or use unescaped raw arguments. Unsupported safe batch encoding fails instead of weakening argument boundaries.

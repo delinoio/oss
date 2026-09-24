@@ -4,7 +4,7 @@
 
 A native Rust CLI distributed through native packages and `@delino/clibox` on npm for project-local version pinning.
 
-Cross-platform utilities for child environments, local port owners, resource opening, the desktop text clipboard, text replacement, time formatting/arithmetic, Base64 encoding/decoding, checksum generation/verification, and TCP/HTTP/file readiness waits.
+Cross-platform utilities for child environments, local port owners, CPU counts, resource opening, the desktop text clipboard, text replacement, time formatting/arithmetic, Base64 encoding/decoding, checksum generation/verification, and TCP/HTTP/file readiness waits.
 
 For JavaScript projects:
 
@@ -17,6 +17,8 @@ pnpm exec clibox --version
 The npm launcher requires Node.js 22 or newer. Prebuilt binaries cover macOS and Windows x64/arm64, and Linux x64/arm64 with glibc or musl. npm installation does not require Rust or installation scripts.
 
 ## Migrating older command syntax
+
+`system cpus` is implemented for the next release and is absent from published version 0.1.6.
 
 The examples below use `run env`, which is implemented for the next minor release. Published version **0.1.6** uses **`env run`** instead; substitute that spelling in the environment examples and use `clibox env --help` for its command group. Version 0.1.6 already includes `port list`, `hash compute`, and the output/cancellation behavior described here. Update scripts when upgrading to the corresponding interface; rejected old names return exit code 2 with migration guidance and are not aliases.
 
@@ -45,9 +47,10 @@ clibox port kill PORT... [--protocol tcp|udp|all] [--json | --quiet]
 clibox open TARGET [--app APP] [--wait]
 clibox clipboard copy [TEXT]
 clibox clipboard paste
+clibox system cpus [--kind available|logical] [--json | --quiet]
 ```
 
-Use `--help` after any command for English help and examples. Root help (`clibox`, `--help`, or `-h`) also identifies the built version, Delino maintainer, repository, MIT license, and GitHub Issues support path; subcommand help stays focused on that command. Running `clibox` without arguments or using explicit `--help` prints help to stdout and returns exit code **0**. Running `clibox run`, `clibox port`, `clibox clipboard`, `clibox wait`, `clibox text`, `clibox time`, `clibox base64`, `clibox hash`, `clibox dotenv`, or `clibox yaml` without a subcommand prints that command's help to stderr and returns exit code **2**. Other invalid or missing arguments return exit code **2** with an error diagnostic; runtime failures return **1**. `run env` forwards the child program's exit status and supported termination signals.
+Use `--help` after any command for English help and examples. Root help (`clibox`, `--help`, or `-h`) also identifies the built version, Delino maintainer, repository, MIT license, and GitHub Issues support path; subcommand help stays focused on that command. Running `clibox` without arguments or using explicit `--help` prints help to stdout and returns exit code **0**. Running `clibox run`, `clibox port`, `clibox clipboard`, `clibox system`, `clibox wait`, `clibox text`, `clibox time`, `clibox base64`, `clibox hash`, `clibox dotenv`, or `clibox yaml` without a subcommand prints that command's help to stderr and returns exit code **2**. Other invalid or missing arguments return exit code **2** with an error diagnostic; runtime failures return **1**. `run env` forwards the child program's exit status and supported termination signals.
 
 ### Run with environment variables
 
@@ -140,6 +143,21 @@ The limit is **16 MiB (16,777,216 UTF-8 bytes)**. Invalid UTF-8, embedded NUL an
 Linux requires installed `wl-copy`/`wl-paste` from **wl-clipboard** on Wayland, or **xclip** on X11. Wayland takes precedence when both display environments are present; a failing Wayland session does not silently fall back to X11. Linux resource opening also requires **xdg-open** from xdg-utils. Tools are not installed automatically. Wayland copy requires writable tmpfs-backed shared memory or a tmpfs-backed XDG runtime directory, so tool buffering remains in memory.
 
 Linux copy returns after successful setup while an OS tool retains clipboard ownership in the background until replacement or session termination; the calling CLI need not stay in the foreground. Clibox-managed clipboard processing uses memory only. Existing desktop clipboard managers may retain content independently.
+
+### Query CPU counts
+
+```sh
+clibox system cpus
+clibox system cpus --kind logical
+clibox system cpus --json
+clibox system cpus --kind logical --quiet
+```
+
+The default `available` kind returns Rust's estimate of suitable parallelism. It is not an idle CPU count, physical core count, or guarantee of CPU capacity. Rust's estimate can undercount or overcount when affinity, cgroup quotas, VM limits, or Windows processor groups affect execution; see [Rust's limitations](https://doc.rust-lang.org/std/thread/fn.available_parallelism.html). `logical` reports online logical CPUs visible to the current OS or VM without clibox applying affinity or quota reductions. Each call queries only the selected kind, so separate calls are not an atomic snapshot. `OMP_*` variables do not override either result.
+
+Plain output is exactly one positive decimal integer and LF, with no label or formatting. `--json` prints one compact object and LF, such as `{"kind":"available","count":8}`. `--quiet` still performs the query and preserves its status but suppresses stdout; it conflicts with `--json`. This command does not read stdin, call external utilities, or write a file or persistent state.
+
+Invalid arguments exit 2. Query and output failures exit 1 with redacted stderr guidance and no query-result stdout; failed stdout writes can leave partial bytes. Handled Ctrl+C/Windows Ctrl+Break exits 130 and Unix SIGTERM exits 143. A failed query never substitutes `1` or the other kind. On Linux, an unavailable online-CPU interface makes `logical` fail; check that the current OS exposes online CPU information. Use `RUST_LOG=clibox=debug` for redacted operation, kind, backend, and classification diagnostics, including when the default warning/error level is insufficient.
 
 ## Text, time, Base64, and hash commands
 

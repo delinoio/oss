@@ -22,6 +22,7 @@ fn help_and_no_arguments_succeed_on_stdout() {
             "port",
             "open",
             "clipboard",
+            "system",
             "text",
             "time",
             "base64",
@@ -62,7 +63,7 @@ fn version_comes_from_the_cargo_package() {
 
 #[test]
 fn missing_subcommands_show_command_help_on_stderr() {
-    let groups: [(&str, &[&str]); 10] = [
+    let groups: [(&str, &[&str]); 11] = [
         (
             "run",
             &[
@@ -76,6 +77,7 @@ fn missing_subcommands_show_command_help_on_stderr() {
         ),
         ("port", &["list", "kill"]),
         ("clipboard", &["copy", "paste"]),
+        ("system", &["cpus"]),
         ("wait", &["tcp", "http", "file"]),
         ("dotenv", &["list", "merge"]),
         ("yaml", &["normalize"]),
@@ -127,6 +129,7 @@ fn unknown_arguments_fail_on_stderr() {
         vec!["run", "PRIVATE-MARKER"],
         vec!["port", "PRIVATE-MARKER"],
         vec!["clipboard", "PRIVATE-MARKER"],
+        vec!["system", "PRIVATE-MARKER"],
         vec!["wait", "PRIVATE-MARKER"],
         vec!["text", "PRIVATE-MARKER"],
         vec!["time", "PRIVATE-MARKER"],
@@ -165,6 +168,7 @@ fn every_command_has_help_and_examples() {
         vec!["open", "--help"],
         vec!["clipboard", "copy", "--help"],
         vec!["clipboard", "paste", "--help"],
+        vec!["system", "cpus", "--help"],
         vec!["dotenv", "list", "--help"],
         vec!["dotenv", "merge", "--help"],
         vec!["yaml", "normalize", "--help"],
@@ -219,6 +223,11 @@ fn invalid_shapes_fail_before_any_os_effect() {
         vec!["open", "a", "b"],
         vec!["clipboard", "copy", "a", "b"],
         vec!["clipboard", "paste", "a"],
+        vec!["system", "cpus", "--kind", "physical"],
+        vec!["system", "cpus", "--kind"],
+        vec!["system", "cpus", "--json", "--quiet"],
+        vec!["system", "cpus", "extra"],
+        vec!["system", "cpus", "--unknown"],
     ] {
         let output = Command::new(env!("CARGO_BIN_EXE_clibox"))
             .args(&args)

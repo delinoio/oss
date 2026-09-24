@@ -25,6 +25,6 @@ Global options precede the subcommand in the examples here. Cache commands do no
 
 ## Machine-readable doctor output
 
-`doctor --json` emits one ANSI-free JSON object on stdout. Schema version 1 has `schemaVersion`, `ready`, and `checks`; each check has `id`, `status`, `code`, and `message`. Check IDs cover `project`, `platform`, `injection`, and `cache`; status is `pass`, `fail`, or `unsupported`. A non-ready report exits 125. Do not treat a `ready` result as tool-specific compatibility evidence.
+`doctor --json` emits one ANSI-free JSON object on stdout. Schema version 1 has `schemaVersion`, `ready`, and `checks`; each check has `id`, `status`, `code`, and `message`. Check IDs cover `project`, `platform`, `injection`, and `cache`, plus `linux-syscall` on Linux; status is `pass`, `fail`, or `unsupported`. A non-ready report exits 125. Do not treat a `ready` result as tool-specific compatibility evidence.
 
 See [diagnostics and troubleshooting](/pnport/diagnostics) for exit codes and privacy boundaries.

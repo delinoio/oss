@@ -1,6 +1,7 @@
 //! Internal OS command implementation for the clibox executable.
 
 mod clipboard;
+mod cpus;
 mod environment;
 mod error;
 mod open;

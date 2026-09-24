@@ -7,7 +7,7 @@ use std::{
 };
 
 use crate::{
-    diagnostic::{Code, Error, Result},
+    diagnostic::{Code, Error, ExecFailureKind, Result},
     view::{Translation, View},
 };
 
@@ -23,7 +23,18 @@ pub fn prepare(
     args: &[OsString],
     search_path: Option<&OsStr>,
 ) -> Result<Prepared> {
-    prepare_with_translation(path, args, search_path, |path| view.translate(path))
+    let cwd = std::env::current_dir().map_err(|_| invalid())?;
+    prepare_with_context(view, path, args, search_path, &cwd)
+}
+
+pub fn prepare_with_context(
+    view: &mut View,
+    path: &Path,
+    args: &[OsString],
+    search_path: Option<&OsStr>,
+    cwd: &Path,
+) -> Result<Prepared> {
+    prepare_with_translation_in_context(path, args, search_path, cwd, |path| view.translate(path))
 }
 
 /// Resolve a native image while allowing an interposer to release its runtime
@@ -32,6 +43,17 @@ pub fn prepare_with_translation(
     path: &Path,
     args: &[OsString],
     search_path: Option<&OsStr>,
+    translate: impl FnMut(&Path) -> Result<Translation>,
+) -> Result<Prepared> {
+    let cwd = std::env::current_dir().map_err(|_| invalid())?;
+    prepare_with_translation_in_context(path, args, search_path, &cwd, translate)
+}
+
+fn prepare_with_translation_in_context(
+    path: &Path,
+    args: &[OsString],
+    search_path: Option<&OsStr>,
+    cwd: &Path,
     mut translate: impl FnMut(&Path) -> Result<Translation>,
 ) -> Result<Prepared> {
     let mut path = path.to_owned();
@@ -82,7 +104,17 @@ pub fn prepare_with_translation(
                 })
                 .ok_or_else(invalid)?;
             interpreter_args.extend(words.iter().skip(1).map(OsString::from));
-            find_interpreter(name.as_ref(), search_path)?
+            #[cfg(target_os = "linux")]
+            // glibc's execvp uses this default when PATH is absent from the
+            // executing environment; an empty PATH remains explicitly empty.
+            let search_path = search_path.or(Some(OsStr::new("/bin:/usr/bin")));
+            find_on_path(name.as_ref(), search_path, cwd).ok_or_else(|| {
+                Error::new(
+                    Code::PnportCommandNotFound,
+                    "The requested interpreter is not executable on PATH.",
+                )
+                .with_exec_failure(ExecFailureKind::NotFound)
+            })?
         } else {
             if !Path::new(interpreter).is_absolute() {
                 return Err(invalid());
@@ -99,7 +131,8 @@ pub fn prepare_with_translation(
     Err(Error::new(
         Code::PnportUnsupportedOperation,
         "The interpreter chain is cyclic or too deep.",
-    ))
+    )
+    .with_exec_failure(ExecFailureKind::InterpreterLoop))
 }
 
 pub fn find_interpreter(name: &OsStr, search_path: Option<&OsStr>) -> Result<PathBuf> {
@@ -113,6 +146,7 @@ pub fn find_interpreter(name: &OsStr, search_path: Option<&OsStr>) -> Result<Pat
             Code::PnportCommandNotFound,
             "The requested interpreter is not executable on PATH.",
         )
+        .with_exec_failure(ExecFailureKind::NotFound)
     })
 }
 
@@ -143,13 +177,13 @@ pub fn find_on_path(name: &OsStr, search_path: Option<&OsStr>, cwd: &Path) -> Op
 fn executable_permissions(path: &Path) -> Result<()> {
     let meta = fs::metadata(path).map_err(access_error)?;
     if !meta.is_file() {
-        return Err(invalid());
+        return Err(permission_denied());
     }
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
         if meta.mode() & 0o6000 != 0 || meta.mode() & 0o111 == 0 {
-            return Err(invalid());
+            return Err(permission_denied());
         }
     }
     Ok(())
@@ -312,14 +346,20 @@ impl LaunchAdmission {
 }
 
 fn access_error(error: std::io::Error) -> Error {
+    let kind = match error.raw_os_error() {
+        Some(libc::ELOOP) => ExecFailureKind::InterpreterLoop,
+        _ if error.kind() == std::io::ErrorKind::NotFound => ExecFailureKind::NotFound,
+        _ => ExecFailureKind::PermissionDenied,
+    };
     Error::new(
-        if error.kind() == std::io::ErrorKind::NotFound {
+        if kind == ExecFailureKind::NotFound {
             Code::PnportCommandNotFound
         } else {
             Code::PnportCommandNotExecutable
         },
         "Cannot access the requested executable.",
     )
+    .with_exec_failure(kind)
 }
 
 fn invalid() -> Error {
@@ -327,6 +367,15 @@ fn invalid() -> Error {
         Code::PnportCommandNotExecutable,
         "The executable is malformed, protected, or has no execute permission.",
     )
+    .with_exec_failure(ExecFailureKind::InvalidFormat)
+}
+
+fn permission_denied() -> Error {
+    Error::new(
+        Code::PnportCommandNotExecutable,
+        "The executable is malformed, protected, or has no execute permission.",
+    )
+    .with_exec_failure(ExecFailureKind::PermissionDenied)
 }
 #[cfg(target_os = "macos")]
 fn protected() -> Error {

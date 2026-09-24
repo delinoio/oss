@@ -18,6 +18,6 @@ One process tree uses one PnP graph snapshot. If PnP data or an actively used ZI
 
 ## Current limits
 
-Release acceptance still requires complete six-target filesystem, process, watch, native loading, and installation checks, including static child execution on Linux. Linux and Windows execution are not currently supported by the development implementation. Protected or incompatible executables fail explicitly. pnport will not replace a protected executable, elevate privileges, or silently run it without virtualization. No claim of universal executable compatibility or editor-version certification is made.
+Release acceptance still requires complete six-target filesystem, process, watch, native loading, and installation checks, including static child execution on Linux. Linux development fixtures pass on Ubuntu 22.04 arm64, while native x64 and complete release validation remain open; Windows execution remains unavailable. Protected or incompatible executables fail explicitly. pnport will not replace a protected executable, elevate privileges, or silently run it without virtualization. No claim of universal executable compatibility or editor-version certification is made.
 
 For an unsupported child, check [diagnostics](/pnport/diagnostics) and use the [GitHub issue tracker](https://github.com/delinoio/oss/issues) to report a reproducible case.

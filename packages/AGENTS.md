@@ -32,6 +32,7 @@
 - Keep the npm README and `apps/public-docs/docs/clibox` aligned with user-facing command and installation behavior; link to `https://oss.delino.io/clibox`. The shared documentation selector uses clean same-origin paths on production and the consolidated development server, including clibox and pnport as destinations.
 
 - Native and installed npm commands must share the canonical `run env`, `port list`, and `hash compute` names, quiet/PID output separation, stdout dash selector, force validation, and numeric owned-operation cancellation (130/143); validate the migration in installed consumer smoke tests without launcher-side argument rewriting.
+- Native and installed npm smoke tests must exercise `system cpus` in default, logical, JSON, and quiet forms across all eight targets. The launcher forwards it unchanged and never computes or substitutes a CPU count.
 - Native and installed npm commands must also share the five `run with-*` wrappers for rate admission, lock ownership, service readiness, retries, and timeouts. The launcher remains a literal argv/stdio/signal forwarder: it must not parse wrapper options, own local state, make readiness requests, or introduce a shell.
 
 - Follow `docs/packages-clibox-distribution-contract.md`. Keep the source workspace private, with no unpublished platform dependencies; generate public manifests and exact optional dependencies during packaging only.
@@ -54,6 +55,7 @@
 - Private `packages/pnport` generates @delino/pnport and six exact-version native packages with preferUnplugged. Follow `docs/packages-pnport-distribution-contract.md`; no install hooks, runtime downloads, compilation or unrelated PATH fallback. All six execution/install gates precede publication.
 - Package each native executable with the adjacent interception library from the same build. Verify exact inventories, executable mode, source revision, versions, checksums and existing remote integrity before publishing six optional packages ahead of the launcher. Homebrew retries must reject older versions instead of downgrading the tap. Direct installers must search all GitHub Releases pages for the highest stable pnport version. Installer changes must select the six-host native CI matrix on main, and installation smoke must run the public launcher on each host. Keep generated `dist` untracked and remove it from final worktrees.
 - pnport native TypeScript conformance pins Yarn and the official compiler in its fixture and lockfile. Keep networked preparation separate from execution, disable Turbo caching for both conformance commands, and record the actual OS/architecture and compiler digest. The corrected official `typescript` package exposes `tsc`; never silently substitute it for an older `native-preview` package's `tsgo` command or rewrite its signature.
+- Run the pnport TypeScript conformance suite on glibc Linux as well as macOS. Linux checks the official native compiler's static ELF machine and runs inline/split builds offline; record Docker architecture and tracing limitations without counting emulated amd64 as native x64 release evidence.
 
 ### React Forge Rules
 
@@ -64,3 +66,4 @@
 
 - React Forge native/system-font build, integration, rendering and benchmark tasks must remain uncached. Use package-owned scripts and record test renderer/font provenance without bundling system fonts. Retain actual packed-consumer CLI coverage. Fonts/assets participate in immutable revision snapshots; disposal owns in-flight mounts and mutations.
 - Keep the ROAM travel IR example's reusable React source, local image assets, generation prompts and provenance together. Resolve its assets relative to the task module, retain explicit fictional-metric labels and calculation consistency, and keep exported decks/previews untracked. The example must run without network access or image-generation/conversion tools and must generate successfully on all six native CI hosts with their installed fonts.
+

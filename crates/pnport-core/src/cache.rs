@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::{
-    diagnostic::{archive_error, cache_error, Result},
+    diagnostic::{archive_error, cache_error, Error, Result},
     graph::digest,
 };
 
@@ -168,12 +168,43 @@ impl Cache {
         Ok(file)
     }
 
+    fn lock_with_wait(&self, wait: &mut dyn FnMut() -> Result<()>) -> Result<File> {
+        let file = private_file(&self.root.join(".lock"))?;
+        let mut contended = false;
+        loop {
+            wait()?;
+            match file.try_lock_exclusive() {
+                Ok(()) => return Ok(file),
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    if !contended {
+                        tracing::debug!(
+                            action = "cache_lock_wait",
+                            "Waiting for cache publication lock"
+                        );
+                        contended = true;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                Err(_) => return Err(cache_error()),
+            }
+        }
+    }
+
     pub fn materialize(&self, archive: &Path) -> Result<Lease> {
+        self.materialize_with_wait(archive, &mut || Ok(()))
+    }
+
+    pub fn materialize_with_wait(
+        &self,
+        archive: &Path,
+        wait: &mut dyn FnMut() -> Result<()>,
+    ) -> Result<Lease> {
         let mut file = File::open(archive).map_err(|_| archive_error())?;
         let mut hasher = Sha256::new();
-        std::io::copy(&mut file, &mut hasher).map_err(|_| archive_error())?;
+        copy_with_wait(&mut file, &mut hasher, wait, archive_error, archive_error)?;
         let identity = format!("{:x}", hasher.finalize());
-        let _guard = self.lock()?;
+        let _guard = self.lock_with_wait(wait)?;
+        wait()?;
         let destination = self.root.join(FORMAT).join(&identity);
         if !destination.exists() {
             let stage = tempfile::Builder::new()
@@ -190,14 +221,14 @@ impl Cache {
             // A package manager can rewrite the open archive between hashing
             // and extraction. Extract only the private bytes whose digest was
             // checked, so even a change-and-restore race cannot poison a key.
-            let snapshot = snapshot_archive(&mut file, stage.path(), &identity)?;
-            extract(snapshot, &content)?;
+            let snapshot = snapshot_archive(&mut file, stage.path(), &identity, wait)?;
+            extract(snapshot, &content, wait)?;
             let receipt = Receipt {
                 owner: "pnport".into(),
                 cleanup_version: 1,
                 format: FORMAT.into(),
                 sha256: identity.clone(),
-                items: inventory(&content)?,
+                items: inventory(&content, wait)?,
             };
             let bytes = serde_json::to_vec(&receipt).map_err(|_| cache_error())?;
             let mut output = private_file(&stage.path().join("receipt.json"))?;
@@ -206,15 +237,29 @@ impl Cache {
                 .and_then(|_| output.sync_all())
                 .map_err(|_| cache_error())?;
             private_file(&stage.path().join("lease"))?;
-            readonly_tree(&content)?;
-            fs::rename(stage.path(), &destination).map_err(|_| cache_error())?;
-            #[cfg(unix)]
-            File::open(self.root.join(FORMAT))
-                .and_then(|f| f.sync_all())
-                .map_err(|_| cache_error())?;
+            let publication = (|| {
+                readonly_tree(&content, wait)?;
+                wait()?;
+                fs::rename(stage.path(), &destination).map_err(|_| cache_error())?;
+                #[cfg(unix)]
+                File::open(self.root.join(FORMAT))
+                    .and_then(|f| f.sync_all())
+                    .map_err(|_| cache_error())?;
+                Ok(())
+            })();
+            if let Err(error) = publication {
+                if stage.path().exists() {
+                    // Read-only content directories prevent TempDir's silent
+                    // destructor from removing a canceled publication.
+                    writable_directories(stage.path())?;
+                    stage.close().map_err(|_| cache_error())?;
+                }
+                return Err(error);
+            }
             tracing::debug!(action = "cache_publish", identity = %identity);
         }
-        verify(&destination, &identity, FORMAT)?;
+        verify(&destination, &identity, FORMAT, wait)?;
+        wait()?;
         let lease = private_file(&destination.join("lease"))?;
         lease.lock_shared().map_err(|_| cache_error())?;
         tracing::debug!(action = "cache_lease", identity = %identity);
@@ -306,7 +351,11 @@ impl Cache {
                     {
                         remove_state(&entry.path())
                     }
-                    Ok(()) if verify(&entry.path(), &entry_name, &name).is_err() => State::Corrupt,
+                    Ok(())
+                        if verify(&entry.path(), &entry_name, &name, &mut || Ok(())).is_err() =>
+                    {
+                        State::Corrupt
+                    }
                     Ok(()) => State::Complete,
                 };
                 result.push(Entry { name: label, state });
@@ -353,14 +402,15 @@ fn writable_directories(path: &Path) -> Result<()> {
     }
     Ok(())
 }
-fn readonly_tree(path: &Path) -> Result<()> {
+fn readonly_tree(path: &Path, wait: &mut dyn FnMut() -> Result<()>) -> Result<()> {
+    wait()?;
     let meta = fs::symlink_metadata(path).map_err(|_| cache_error())?;
     if meta.file_type().is_symlink() {
         return Ok(());
     }
     if meta.is_dir() {
         for entry in fs::read_dir(path).map_err(|_| cache_error())? {
-            readonly_tree(&entry.map_err(|_| cache_error())?.path())?;
+            readonly_tree(&entry.map_err(|_| cache_error())?.path(), wait)?;
         }
     }
     let mut mode = meta.permissions();
@@ -382,9 +432,15 @@ fn readonly_tree(path: &Path) -> Result<()> {
     mode.set_readonly(true);
     fs::set_permissions(path, mode).map_err(|_| cache_error())
 }
-fn verify(path: &Path, identity: &str, format: &str) -> Result<()> {
+fn verify(
+    path: &Path,
+    identity: &str,
+    format: &str,
+    wait: &mut dyn FnMut() -> Result<()>,
+) -> Result<()> {
+    wait()?;
     let receipt = receipt(path, identity, format)?;
-    if receipt.items != inventory(&path.join("content"))? {
+    if receipt.items != inventory(&path.join("content"), wait)? {
         return Err(cache_error());
     }
     Ok(())
@@ -419,9 +475,15 @@ fn receipt(path: &Path, identity: &str, format: &str) -> Result<Receipt> {
     }
     Ok(receipt)
 }
-fn inventory(root: &Path) -> Result<BTreeMap<PathBuf, Item>> {
-    fn visit(root: &Path, path: &Path, items: &mut BTreeMap<PathBuf, Item>) -> Result<()> {
+fn inventory(root: &Path, wait: &mut dyn FnMut() -> Result<()>) -> Result<BTreeMap<PathBuf, Item>> {
+    fn visit(
+        root: &Path,
+        path: &Path,
+        items: &mut BTreeMap<PathBuf, Item>,
+        wait: &mut dyn FnMut() -> Result<()>,
+    ) -> Result<()> {
         for entry in fs::read_dir(path).map_err(|_| cache_error())? {
+            wait()?;
             let entry = entry.map_err(|_| cache_error())?;
             let path = entry.path();
             let relative = path
@@ -435,12 +497,12 @@ fn inventory(root: &Path) -> Result<BTreeMap<PathBuf, Item>> {
                     target: fs::read_link(&path).map_err(|_| cache_error())?,
                 }
             } else if meta.is_dir() {
-                visit(root, &path, items)?;
+                visit(root, &path, items, wait)?;
                 Item::Directory
             } else if meta.is_file() {
                 let mut file = File::open(&path).map_err(|_| cache_error())?;
                 let mut hash = Sha256::new();
-                std::io::copy(&mut file, &mut hash).map_err(|_| cache_error())?;
+                copy_with_wait(&mut file, &mut hash, wait, cache_error, cache_error)?;
                 #[cfg(unix)]
                 let executable = {
                     use std::os::unix::fs::PermissionsExt;
@@ -465,7 +527,7 @@ fn inventory(root: &Path) -> Result<BTreeMap<PathBuf, Item>> {
         Ok(())
     }
     let mut items = BTreeMap::new();
-    visit(root, root, &mut items)?;
+    visit(root, root, &mut items, wait)?;
     Ok(items)
 }
 
@@ -528,7 +590,34 @@ fn safe_relative(name: &str) -> Result<PathBuf> {
     }
     Ok(path)
 }
-fn snapshot_archive(source: &mut File, directory: &Path, identity: &str) -> Result<File> {
+fn copy_with_wait<R: Read, W: Write>(
+    reader: &mut R,
+    writer: &mut W,
+    wait: &mut dyn FnMut() -> Result<()>,
+    read_error: fn() -> Error,
+    write_error: fn() -> Error,
+) -> Result<u64> {
+    let mut copied = 0u64;
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        wait()?;
+        let count = reader.read(&mut buffer).map_err(|_| read_error())?;
+        if count == 0 {
+            return Ok(copied);
+        }
+        writer
+            .write_all(&buffer[..count])
+            .map_err(|_| write_error())?;
+        copied += count as u64;
+    }
+}
+
+fn snapshot_archive(
+    source: &mut File,
+    directory: &Path,
+    identity: &str,
+    wait: &mut dyn FnMut() -> Result<()>,
+) -> Result<File> {
     source
         .seek(SeekFrom::Start(0))
         .map_err(|_| archive_error())?;
@@ -536,6 +625,7 @@ fn snapshot_archive(source: &mut File, directory: &Path, identity: &str) -> Resu
     let mut hasher = Sha256::new();
     let mut buffer = [0u8; 64 * 1024];
     loop {
+        wait()?;
         let count = source.read(&mut buffer).map_err(|_| archive_error())?;
         if count == 0 {
             break;
@@ -558,11 +648,12 @@ fn snapshot_archive(source: &mut File, directory: &Path, identity: &str) -> Resu
     Ok(snapshot)
 }
 
-fn extract(file: File, destination: &Path) -> Result<()> {
+fn extract(file: File, destination: &Path, wait: &mut dyn FnMut() -> Result<()>) -> Result<()> {
     let mut archive = zip::ZipArchive::new(file).map_err(|_| archive_error())?;
     let mut links = vec![];
     let mut seen = BTreeMap::new();
     for i in 0..archive.len() {
+        wait()?;
         let mut entry = archive.by_index(i).map_err(|_| archive_error())?;
         let relative = safe_relative(entry.name().trim_end_matches('/'))?;
         if seen.insert(relative.clone(), ()).is_some() {
@@ -578,10 +669,9 @@ fn extract(file: File, destination: &Path) -> Result<()> {
             if entry.size() > 65536 {
                 return Err(archive_error());
             }
-            let mut target = String::new();
-            entry
-                .read_to_string(&mut target)
-                .map_err(|_| archive_error())?;
+            let mut bytes = Vec::new();
+            copy_with_wait(&mut entry, &mut bytes, wait, archive_error, archive_error)?;
+            let target = String::from_utf8(bytes).map_err(|_| archive_error())?;
             let target_path = Path::new(&target);
             if target_path.is_absolute() || target.contains(['\\', ':', '\0']) {
                 return Err(archive_error());
@@ -602,7 +692,8 @@ fn extract(file: File, destination: &Path) -> Result<()> {
                 .write(true)
                 .open(&path)
                 .map_err(|_| archive_error())?;
-            let written = std::io::copy(&mut entry, &mut file).map_err(|_| archive_error())?;
+            let written =
+                copy_with_wait(&mut entry, &mut file, wait, archive_error, archive_error)?;
             if written != entry.size() {
                 return Err(archive_error());
             }
@@ -621,6 +712,7 @@ fn extract(file: File, destination: &Path) -> Result<()> {
     }
     // Create links last so no archive-provided link can redirect extraction.
     for (path, target) in links {
+        wait()?;
         fs::create_dir_all(path.parent().ok_or_else(archive_error)?).map_err(|_| cache_error())?;
         #[cfg(unix)]
         std::os::unix::fs::symlink(&target, &path).map_err(|_| archive_error())?;
@@ -640,7 +732,7 @@ fn extract(file: File, destination: &Path) -> Result<()> {
             .map_err(|_| archive_error())?;
         }
     }
-    inventory(destination)?;
+    inventory(destination, wait)?;
     Ok(())
 }
 
@@ -688,6 +780,78 @@ mod tests {
     }
 
     #[test]
+    fn materialization_stops_during_extraction_when_lifecycle_changes() {
+        let root = tempfile::tempdir().unwrap();
+        let archive = root.path().join("source.zip");
+        fs::write(&archive, archive_bytes(&vec![b'x'; 256 * 1024])).unwrap();
+        let cache = Cache::open(root.path().join("cache")).unwrap();
+        let incomplete = cache.root.join("incomplete");
+        let mut stopped_during_extract = false;
+        let error = cache
+            .materialize_with_wait(&archive, &mut || {
+                for stage in fs::read_dir(&incomplete).map_err(|_| cache_error())? {
+                    let content = stage
+                        .map_err(|_| cache_error())?
+                        .path()
+                        .join("content/node_modules/dep/file.txt");
+                    if fs::metadata(content).is_ok_and(|metadata| metadata.len() > 0) {
+                        stopped_during_extract = true;
+                        return Err(Error::new(
+                            crate::diagnostic::Code::PnportGraphChanged,
+                            "A watched input changed during extraction.",
+                        ));
+                    }
+                }
+                Ok(())
+            })
+            .err()
+            .unwrap();
+        assert!(stopped_during_extract);
+        assert_eq!(error.code, crate::diagnostic::Code::PnportGraphChanged);
+        assert!(fs::read_dir(cache.root.join(FORMAT))
+            .unwrap()
+            .all(|entry| entry.unwrap().file_name() == ".pnport-format"));
+        assert_eq!(fs::read_dir(incomplete).unwrap().count(), 0);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cancellation_after_readonly_publication_removes_staging_tree() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = tempfile::tempdir().unwrap();
+        let archive = root.path().join("source.zip");
+        fs::write(&archive, archive_bytes(b"package bytes")).unwrap();
+        let cache = Cache::open(root.path().join("cache")).unwrap();
+        let incomplete = cache.root.join("incomplete");
+        let mut stopped_after_readonly = false;
+        let error = cache
+            .materialize_with_wait(&archive, &mut || {
+                for stage in fs::read_dir(&incomplete).map_err(|_| cache_error())? {
+                    let content = stage.map_err(|_| cache_error())?.path().join("content");
+                    if fs::metadata(content)
+                        .is_ok_and(|metadata| metadata.permissions().mode() & 0o200 == 0)
+                    {
+                        stopped_after_readonly = true;
+                        return Err(Error::new(
+                            crate::diagnostic::Code::PnportGraphChanged,
+                            "A watched input changed before publication.",
+                        ));
+                    }
+                }
+                Ok(())
+            })
+            .err()
+            .unwrap();
+        assert!(stopped_after_readonly);
+        assert_eq!(error.code, crate::diagnostic::Code::PnportGraphChanged);
+        assert_eq!(fs::read_dir(incomplete).unwrap().count(), 0);
+        assert!(fs::read_dir(cache.root.join(FORMAT))
+            .unwrap()
+            .all(|entry| entry.unwrap().file_name() == ".pnport-format"));
+    }
+
+    #[test]
     fn rewritten_archive_cannot_be_extracted_under_the_original_digest() {
         let root = tempfile::tempdir().unwrap();
         let archive = root.path().join("source.zip");
@@ -699,7 +863,7 @@ mod tests {
         // package manager could do while the materializer waits for its lock.
         fs::write(&archive, archive_bytes(b"modified")).unwrap();
         let staging = tempfile::tempdir().unwrap();
-        assert!(snapshot_archive(&mut source, staging.path(), &identity).is_err());
+        assert!(snapshot_archive(&mut source, staging.path(), &identity, &mut || Ok(())).is_err());
         assert_eq!(fs::read_dir(staging.path()).unwrap().count(), 0);
     }
 
@@ -712,7 +876,10 @@ mod tests {
         let mut source = File::open(&archive).unwrap();
         let staging = tempfile::tempdir().unwrap();
         let mut snapshot =
-            snapshot_archive(&mut source, staging.path(), &digest(&original)).unwrap();
+            snapshot_archive(&mut source, staging.path(), &digest(&original), &mut || {
+                Ok(())
+            })
+            .unwrap();
         fs::write(&archive, archive_bytes(b"modified")).unwrap();
         let content = staging.path().join("content");
         fs::create_dir(&content).unwrap();
@@ -720,7 +887,7 @@ mod tests {
         snapshot.read_to_end(&mut bytes).unwrap();
         assert_eq!(digest(&bytes), digest(&original));
         snapshot.seek(SeekFrom::Start(0)).unwrap();
-        extract(snapshot, &content).unwrap();
+        extract(snapshot, &content, &mut || Ok(())).unwrap();
         fs::write(&archive, &original).unwrap();
         assert_eq!(
             fs::read(content.join("node_modules/dep/file.txt")).unwrap(),
