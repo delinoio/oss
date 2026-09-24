@@ -988,25 +988,43 @@ fn read_path(pid: i32, address: u64) -> Result<Option<PathBuf>> {
     ))
 }
 
-fn read_pointer_vector(pid: i32, address: u64) -> Result<Vec<u64>> {
+enum ChildRead<T> {
+    Value(T),
+    Fault,
+}
+
+fn read_exec_memory(pid: i32, address: u64, length: usize) -> Result<ChildRead<Vec<u8>>> {
+    match read_remote(pid, address, length) {
+        Ok(bytes) => Ok(ChildRead::Value(bytes)),
+        Err(_) if io::Error::last_os_error().raw_os_error() == Some(libc::EFAULT) => {
+            Ok(ChildRead::Fault)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+fn read_pointer_vector(pid: i32, address: u64) -> Result<ChildRead<Vec<u64>>> {
     if address == 0 {
-        return Ok(Vec::new());
+        return Ok(ChildRead::Value(Vec::new()));
     }
     let mut values = Vec::new();
     let mut offset = 0;
     while offset < EXEC_BYTES_LIMIT {
-        let bytes = read_remote(
+        let bytes = match read_exec_memory(
             pid,
             address + offset as u64,
             (EXEC_BYTES_LIMIT - offset).min(PATH_LIMIT),
-        )?;
+        )? {
+            ChildRead::Value(bytes) => bytes,
+            ChildRead::Fault => return Ok(ChildRead::Fault),
+        };
         if bytes.len() < mem::size_of::<u64>() || bytes.len() % mem::size_of::<u64>() != 0 {
-            return Err(injection_failed());
+            return Ok(ChildRead::Fault);
         }
         for chunk in bytes.chunks_exact(mem::size_of::<u64>()) {
             let pointer = u64::from_ne_bytes(chunk.try_into().map_err(|_| injection_failed())?);
             if pointer == 0 {
-                return Ok(values);
+                return Ok(ChildRead::Value(values));
             }
             values.push(pointer);
         }
@@ -1017,16 +1035,27 @@ fn read_pointer_vector(pid: i32, address: u64) -> Result<Vec<u64>> {
     ))
 }
 
-fn child_search_path(pid: i32, envp: u64) -> Result<Option<OsString>> {
-    for pointer in read_pointer_vector(pid, envp)? {
-        if read_remote(pid, pointer, 5)?.get(..5) == Some(b"PATH=") {
+fn child_search_path(pid: i32, envp: u64) -> Result<ChildRead<Option<OsString>>> {
+    let pointers = match read_pointer_vector(pid, envp)? {
+        ChildRead::Value(pointers) => pointers,
+        ChildRead::Fault => return Ok(ChildRead::Fault),
+    };
+    for pointer in pointers {
+        let prefix = match read_exec_memory(pid, pointer, 5)? {
+            ChildRead::Value(prefix) => prefix,
+            ChildRead::Fault => return Ok(ChildRead::Fault),
+        };
+        if prefix.get(..5) == Some(b"PATH=") {
             let mut bytes = Vec::new();
             while bytes.len() < EXEC_BYTES_LIMIT {
-                let part = read_remote(
+                let part = match read_exec_memory(
                     pid,
                     pointer + bytes.len() as u64,
                     (EXEC_BYTES_LIMIT - bytes.len()).min(256),
-                )?;
+                )? {
+                    ChildRead::Value(part) => part,
+                    ChildRead::Fault => return Ok(ChildRead::Fault),
+                };
                 if let Some(end) = part.iter().position(|byte| *byte == 0) {
                     bytes.extend_from_slice(&part[..end]);
                     break;
@@ -1038,10 +1067,15 @@ fn child_search_path(pid: i32, envp: u64) -> Result<Option<OsString>> {
                     "A child PATH value exceeded Linux's argument byte limit.",
                 ));
             }
-            return Ok(Some(OsString::from(OsStr::from_bytes(&bytes[5..]))));
+            return Ok(ChildRead::Value(Some(OsString::from(OsStr::from_bytes(
+                &bytes[5..],
+            )))));
+        }
+        if prefix.len() < 5 && !prefix.contains(&0) {
+            return Ok(ChildRead::Fault);
         }
     }
-    Ok(None)
+    Ok(ChildRead::Value(None))
 }
 fn write_remote(pid: i32, address: u64, bytes: &[u8]) -> Result<()> {
     let local = libc::iovec {
@@ -1811,8 +1845,20 @@ impl Trace<'_> {
         {
             return Ok(false);
         }
-        let original_argv = read_pointer_vector(pid, argument(regs, argv_arg))?;
-        let search_path = child_search_path(pid, argument(regs, argv_arg + 1))?;
+        let original_argv = match read_pointer_vector(pid, argument(regs, argv_arg))? {
+            ChildRead::Value(argv) => argv,
+            ChildRead::Fault => {
+                self.force_error(pid, regs, path_arg, libc::EFAULT)?;
+                return Ok(true);
+            }
+        };
+        let search_path = match child_search_path(pid, argument(regs, argv_arg + 1))? {
+            ChildRead::Value(path) => path,
+            ChildRead::Fault => {
+                self.force_error(pid, regs, path_arg, libc::EFAULT)?;
+                return Ok(true);
+            }
+        };
         let cwd = self.base(pid, libc::AT_FDCWD, Path::new("."))?;
         let prepared = match pnport::executable::prepare_with_context(
             self.view,

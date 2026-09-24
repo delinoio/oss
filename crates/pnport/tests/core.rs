@@ -2667,6 +2667,7 @@ fn linux_descendant_script_admission_returns_exec_errors_to_caller() {
         ("missing", "#!/pnport-missing-interpreter\n".to_string()),
         ("denied", format!("#!{}\n", interpreter.display())),
         ("malformed", "#!\n".to_string()),
+        ("valid", "#!/bin/sh\nexit 0\n".to_string()),
     ] {
         archive
             .start_file(
@@ -2684,6 +2685,7 @@ fn linux_descendant_script_admission_returns_exec_errors_to_caller() {
 #define _GNU_SOURCE
 #include <errno.h>
 #include <fcntl.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <sys/syscall.h>
 #include <unistd.h>
@@ -2698,6 +2700,15 @@ int main(void) {
     int fd = open(missing[0], O_RDONLY);
     if (fd < 0) return 44;
     if (syscall(SYS_execveat, fd, "", missing, env, AT_EMPTY_PATH) != -1 || errno != ENOENT) return 45;
+    close(fd);
+    char *valid[] = {"node_modules/dep/valid", 0};
+    char **bad = (char **)(uintptr_t)1;
+    if (execve(valid[0], bad, env) != -1 || errno != EFAULT) return 46;
+    if (execve(valid[0], valid, bad) != -1 || errno != EFAULT) return 47;
+    fd = open(valid[0], O_RDONLY);
+    if (fd < 0) return 48;
+    if (syscall(SYS_execveat, fd, "", bad, env, AT_EMPTY_PATH) != -1 || errno != EFAULT) return 49;
+    if (syscall(SYS_execveat, fd, "", valid, bad, AT_EMPTY_PATH) != -1 || errno != EFAULT) return 50;
     close(fd);
     puts("continued");
     return 0;
