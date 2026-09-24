@@ -1,6 +1,9 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/forge-tree-doc",
+    "crates/forge-pptx",
+    "crates/delino-forge",
     "apps/devhud/src-tauri",
     "crates/devhud-native-messaging-host",
     "crates/binpm",

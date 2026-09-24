@@ -34,6 +34,10 @@ Each project must have one project index document and one or more domain contrac
 
 ## Project Catalog
 
+### Forge
+- [Project index](project-forge.md)
+- [Rust DSL, PPTX, CLI and MCP foundation](crates-forge-foundation.md)
+
 ### binpm
 - `docs/project-binpm.md`
 - `docs/crates-binpm-foundation.md`

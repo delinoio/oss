@@ -11,6 +11,16 @@ const native = Object.entries(jobPaths).filter(([, rule]) => rule.native).map(([
 const devhudNative = ["devhud-desktop", "devhud-ios-simulator", "devhud-android-emulator"];
 const selected = (event, paths) => Object.entries(planJobs(event, paths).jobs).filter(([, run]) => run).map(([id]) => id);
 
+test("root Rust toolchain changes select Forge validation and rendering", () => {
+  for (const event of [Event.PullRequest, Event.Push]) {
+    for (const path of ["rust-toolchain", "rust-toolchain.toml"]) {
+      for (const id of ["forge-test", "forge-render"]) {
+        assert.equal(planJobs(event, [path]).jobs[id], true, `${event}: ${path}: ${id}`);
+      }
+    }
+  }
+});
+
 test("PR never allocates native package jobs, including changes to CI itself", () => {
   for (const path of ["apps/devhud/src/App.tsx", "apps/devhud/src-tauri/src/main.rs", "Cargo.lock", ".github/workflows/CI.yml", "scripts/ci/plan.mjs", ".github/actions/setup-ci-node/action.yml"]) {
     const jobs = selected(Event.PullRequest, [path]);

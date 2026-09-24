@@ -7,6 +7,22 @@
 
 ### Scope in This Domain
 
+- `crates/forge-tree-doc`, `crates/forge-pptx`, `crates/delino-forge`: private Forge DSL, preserving PPTX adapter, and local CLI/stdio MCP. Follow `docs/crates-forge-foundation.md`; keep structured logs free of document content and publish output only through explicit export to a separate path from an opened document's tracked source. Keep the committed schema synchronized with Rust types, retain font source/license/hash and external-fixture provenance, and exercise the optional-renderer test explicitly in Forge rendering CI.
+- Forge-generated content-type override paths must match the exact spelling of their ZIP members for reader interoperability. Scope compatibility normalization to new packages and preserve imported source XML.
+- Forge document lock guards must explicitly unlock on drop, including error exits, so duplicated or fork-inherited descriptors cannot extend a completed operation's lock lifetime. Preserve exclusive ownership checks and redact lock-release diagnostics.
+- Forge custom XML ownership requires both its package relationship and namespace identity. Preserve unrelated colliding part names and relationship IDs, and bind those original parts into the metadata hashes.
+- Forge metadata bindings must be unique native targets in their corresponding logical slide; validate native slide order and count before accepting the stored tree.
+- Forge packages require exactly one supported internal office-document root relationship; reject ambiguous roots before importing or editing.
+- Forge exports to an opened document's tracked source, including canonical path aliases, must fail with `unsupported_edit` even with explicit overwrite; a fingerprint check followed by unconditional replacement cannot protect external saves. Keep separate-output export and explicit replacement of those outputs available, and expose this boundary through CLI/MCP help and capabilities. Retain recovery of earlier builds' interrupted source-export journals under the document lock; unrelated external changes remain conflicts.
+- Forge atomic file publication must flush its renamed directory entry: sync the parent directory on Unix and use write-through same-volume publication on Windows. Propagate durability failures.
+- Forge chart insertion must reject collisions with preexisting chart, workbook and relationship parts, including case-equivalent package names. A supplied node identity never grants ownership of original package parts.
+- Forge image media reuse requires identical bytes, including case-equivalent part names; reject mismatched content instead of pointing a new image relationship at unrelated media.
+- Forge image import must validate full-frame stretch fill as well as crop/aspect geometry before allowing contain/cover edits; preserve other native picture fills as opaque.
+- Forge text import must validate body geometry against measurement semantics before exposing editable text; keep unrepresented insets, wrapping, columns, anchoring, rotation and autofit opaque.
+- Forge asset loading must visit only referenced image handles, deduplicate aliases, and bound aggregate bytes before reads in addition to per-file limits and checksum validation.
+- Forge nested canvases must validate unchanged children's bounds against their current allocation. Preserve native off-page bounds only for unchanged children under a slide-root canvas with unchanged page dimensions.
+- Forge containers must reject placeholder references before creation or patch commit; logical containers do not emit native placeholder shapes.
+
 - `crates/binpm`: Rust-based Node-free binary package manager for release assets.
 - `crates/cargo-mono`: Cargo-based Rust monorepo management CLI.
 - `crates/clibox`: non-publishable Rust executable distributed through npm and native packages.

@@ -1,0 +1,31 @@
+{
+  "dsl_version": 1,
+  "kind": "presentation",
+  "unit": "pt",
+  "page": {"width": 960, "height": 540},
+  "theme": {
+    "font_family": "Noto Sans KR",
+    "colors": {"background": "#FFFFFF", "foreground": "#172033", "accent": "#2563EB"},
+    "text_styles": {
+      "title": {"font_size": 36, "font_weight": 700, "color_ref": "foreground"},
+      "body": {"font_size": 20, "color_ref": "foreground"}
+    }
+  },
+  "slides": [{
+    "key": "overview",
+    "background": {"color_ref": "background"},
+    "content": {
+      "type": "column", "key": "overview.content", "padding": 40, "gap": 24,
+      "children": [
+        {"type": "text", "key": "overview.title", "style_ref": "title", "text": "Delino Forge MCP"},
+        {"type": "row", "height": "fill", "gap": 32, "children": [
+          {"type": "column", "width": "fill", "gap": 16, "children": [
+            {"type": "text", "key": "overview.description", "style_ref": "body", "text": "Create and edit documents with structured instructions."},
+            {"type": "list", "style_ref": "body", "marker": "bullet", "items": ["Typed document trees", "Validated changes", "Editable Office output"]}
+          ]},
+          {"type": "shape", "key": "overview.accent", "width": 240, "height": "fill", "shape": "rounded_rect", "fill": {"color_ref": "accent"}}
+        ]}
+      ]
+    }
+  }]
+}
