@@ -87,7 +87,7 @@ func (m *Manager) initialize() error {
 		return err
 	}
 	m.Root = canonical
-	for _, name := range []string{"workspaces", "locks", "empty-hooks", "processes"} {
+	for _, name := range []string{"workspaces", "locks", "empty-hooks", "processes", "execution-claims"} {
 		if err := security.PrivateDir(filepath.Join(m.Root, name)); err != nil {
 			return err
 		}
@@ -165,6 +165,9 @@ func (m *Manager) Prepare(ctx context.Context, request PrepareRequest) (Manifest
 		return uncertain(err)
 	}
 	defer lock.Close()
+	if err := m.noActiveExecutionClaim(request.SessionID); err != nil {
+		return uncertain(err)
+	}
 	git := m.Git
 	git.OwnerID = request.SessionID
 	if err := security.PrivateDir(filepath.Join(git.ProcessRoot, string(request.SessionID))); err != nil {

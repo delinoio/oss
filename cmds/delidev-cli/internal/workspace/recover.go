@@ -104,6 +104,9 @@ func (m *Manager) Recover(ctx context.Context, input RecoveryRequest, completedC
 		return result, ResultUncertain()
 	}
 	defer lock.Close()
+	if err := m.noActiveExecutionClaim(request.SessionID); err != nil {
+		return result, err
+	}
 	root := filepath.Join(m.Root, "workspaces", string(request.SessionID))
 	processRoot := filepath.Join(m.Root, "processes")
 	// A pre-start cancellation has no process index. Only its durable completed

@@ -38,6 +38,8 @@ First-execution configuration, initial account selection, input claim and per-Ag
 
 The native API relay accepts only Worker-registered execution token digests bound to durable claimed jobs and the current server process epoch. Every request revalidates session, input, Worker, account connection and restrictions; account disconnection joins relay cleanup before credential deletion. Codex verifies effective private provider configuration and passes an installed-harness/server-relay composition with a scripted local provider. Core input/message/terminal events now publish through a locked durable Worker outbox into atomic server state/transcripts with immutable native identity mapping. Native token observations and redacted notices now share that outbox; counters retain event-time attribution without becoming billable aggregates or inferred costs. Public native dispatch, Worker credential delivery, aggregate usage, complete event normalization and owned-cleanup completion remain separate pending integration.
 
+Prepared first-execution workspace leases persist native ownership outside the workspace and serialize with preparation/recovery. Only verified execution-job process cleanup closes that claim; replacement Workers cannot infer cleanup from an absent directory or a released OS lock. Native dispatch and explicit recovery/later-turn lease integration remain required.
+
 ## Change Policy
 Keep command, protocol, evidence, and scoped AGENTS contracts synchronized with each implementation increment. Preserve the complete normative requirements even when individual acceptance items remain in progress. Generated bindings are tool-owned. Never claim the project complete while required CLI/server/Worker acceptance items remain unimplemented or unverified.
 
