@@ -1,13 +1,13 @@
 # React Forge
 
 ## Goal
-Provide private React document sessions and a TSX task CLI for authoring and preservation-aware editing of PPTX, DOCX, XLSX, and independent tagged PDF. Issue [#968](https://github.com/delinoio/oss/issues/968) defines the original delivery boundary; the explicit 2026-09-24 follow-up on PR #970 adds macOS x64 and Windows/Linux x64/arm64 support. Partial format support does not satisfy that issue. The Figma extension adds explicit remote creation and preservation-aware editing under its separate contract; authenticated acceptance targets Node.js 24 on macOS arm64.
+Provide private React document sessions, a TSX task CLI and a local session-based stdio MCP server for authoring and preservation-aware editing of PPTX, DOCX, XLSX, and independent tagged PDF. Issue [#968](https://github.com/delinoio/oss/issues/968) defines the original delivery boundary; the explicit 2026-09-24 follow-up on PR #970 adds macOS x64 and Windows/Linux x64/arm64 support. Partial format support does not satisfy that issue. The Figma extension adds explicit remote creation and preservation-aware editing under its separate contract; authenticated acceptance targets Node.js 24 on macOS arm64.
 
 ## Project ID
 `react-forge` (`ProjectId::ReactForge`). Product name: **React Forge**. The private npm package is `@delino/react-forge`; its CLI executable is `react-forge`.
 
 ## Domain Ownership Map
-- `packages/react-forge`: private TypeScript session library, React reconciler, components, CLI, examples and integration tests.
+- `packages/react-forge`: private TypeScript session library, React reconciler, components, CLI, stdio MCP server, examples and integration tests.
 - `packages/react-forge/examples/travel-ir.tsx` and `travel-ir-assets`: designed English ROAM investor-deck example, local concept imagery, source provenance and explicitly fictional financial model.
 - `crates/react-forge-node`: dedicated N-API adapter; JavaScript execution never moves into native workers.
 - `crates/forge-package`: shared bounded OOXML package and preservation primitives.
@@ -23,6 +23,7 @@ Provide private React document sessions and a TSX task CLI for authoring and pre
 
 - [Figma creation and editing](packages-react-forge-figma-contract.md).
 - [Complete requirements](packages-react-forge-requirements.md).
+- [Session-based MCP contract](packages-react-forge-mcp-contract.md).
 - [Node session and CLI contract](packages-react-forge-contract.md).
 - [Native engines and preservation contract](crates-react-forge-contract.md).
 - [Validation and benchmark evidence](packages-react-forge-validation.md).
@@ -31,7 +32,7 @@ Provide private React document sessions and a TSX task CLI for authoring and pre
 ## Cross-Domain Invariants
 - Support Node.js 24, React 19.2.8 with react-reconciler 0.33.0, and macOS/Windows/glibc Linux on x64 and arm64. Use the repository-pinned Rust toolchain. All packages remain private and unpublished.
 - TypeScript executes React; Rust processes validated serializable format-specific models. Rust is a project-specific exception to the default Go language; local files and explicit exports are an exception to default R2 storage.
-- Sessions live only in memory. Explicit export is the local persistence boundary. No automatic recovery, revision archive, service, telemetry, arbitrary URL fetching, runtime downloads or external conversion dependencies. Figma alone permits official MCP publication and scoped image uploads, with partial/unknown outcomes and external receipts instead of atomic remote replacement.
+- Sessions live only in memory. Explicit export is the local persistence boundary. No automatic recovery, revision archive, hosted service, telemetry, arbitrary URL fetching, runtime downloads or external conversion dependencies. Figma alone permits official MCP publication and scoped image uploads, with partial/unknown outcomes and external receipts instead of atomic remote replacement.
 - Persistent document/node identities are UUID v7. React keys and useId values do not become persistent identities. Figma native IDs are separately mapped to those logical identities.
 - Preserve unrelated Office parts/XML; reject unsafe or unprovable edits transactionally. Never flatten opaque imported content. Existing Forge CLI/MCP behavior and default fonts remain stable.
 - Registered assets and render-relevant asynchronous work must settle before export pins a revision. Later commits cannot change an export already pinned. Cancellation has no automatic timeout and cannot misreport an already completed atomic publication.

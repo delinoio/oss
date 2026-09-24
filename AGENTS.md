@@ -108,6 +108,8 @@ enum ProjectId {
 
 - `react-forge` is the private Node.js 24 / React 19.2.8 cross-platform document project in issue #968. Follow `docs/project-react-forge.md` and its complete requirements. Keep JavaScript reconciliation outside native workers, format models independent, sessions in memory, exports revision-pinned and atomic, and imported opaque content preserved. All required formats and evidence are required before completion.
 
+- React Forge exposes a local session-based stdio MCP server through `react-forge mcp`; follow `docs/packages-react-forge-mcp-contract.md`. Keep execution output isolated from protocol stdout, share the existing engine and Figma scheduling across sessions, and preserve explicit export/publication and cancellation outcomes.
+
 - React Forge owns `packages/react-forge`, `crates/react-forge-node`, `crates/forge-package`, `crates/forge-document`, `crates/forge-docx`, `crates/forge-xlsx`, `crates/forge-pdf`, and `crates/forge-figma`; reuse existing Forge presentation engines without changing CLI/MCP defaults.
 
 ### Project Domain Ownership

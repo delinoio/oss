@@ -10,6 +10,7 @@ const help = `React Forge 0.0.0
 
 Usage:
   react-forge run <entry.tsx> --output <file> [--data <json>] [--overwrite] [--json]
+  react-forge mcp [--cwd <directory>]
   react-forge --help
   react-forge --version
 
@@ -24,6 +25,19 @@ function write(stream: NodeJS.WriteStream, value: string): Promise<void> {
 }
 
 export async function main(args: string[]): Promise<number> {
+  if (args[0] === "mcp") {
+    try {
+      if (!(args.length === 1 || args.length === 3 && args[1] === "--cwd" && args[2] && !args[2].startsWith("--"))) {
+        throw new ForgeError(ErrorCode.MalformedInput, "Expected mcp [--cwd <directory>].");
+      }
+      const { serve } = await import("./mcp/server.js");
+      return await serve(resolve(args[2] ?? process.cwd()));
+    } catch (error) {
+      const safe = error instanceof ForgeError ? error : new ForgeError(ErrorCode.Io, "MCP server could not start.");
+      await write(process.stderr, `${JSON.stringify({ error: safe.toJSON() })}\n`);
+      return 1;
+    }
+  }
   const json = args.includes("--json");
   const controller = new AbortController();
   let cancelled = 0;

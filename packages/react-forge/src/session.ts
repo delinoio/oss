@@ -167,6 +167,16 @@ export class DocumentSession {
     return Object.freeze({ revision: this.revision, targets: Object.freeze(Array.from(this.targets.values())) });
   }
 
+  /** Settle React and assets and pin a revision without generating or publishing a file. */
+  snapshot(options: { signal?: AbortSignal } = {}): Promise<Inspection> {
+    const signal = this.signal(options.signal);
+    return this.track(Stage.Render, async context => {
+      const prepared = await this.prepare(signal);
+      context.revision = prepared.revision;
+      return prepared.inspection;
+    });
+  }
+
   private findNode(model: Model, id: string): ModelNode | undefined {
     const visit = (node: ModelNode): ModelNode | undefined => node.id === id ? node : node.children?.map(visit).find(Boolean);
     return (model.slides as { content: ModelNode }[]).map(slide => visit(slide.content)).find(Boolean);
@@ -206,7 +216,7 @@ export class DocumentSession {
     });
   }
 
-  private async prepare(signal: AbortSignal): Promise<{ model: Model; revision: number; refs: Map<string, string>; assets: Map<string, Buffer>; fontOptions: { system: boolean; ids: string[] } }> {
+  private async prepare(signal: AbortSignal): Promise<{ model: Model; revision: number; inspection: Inspection; refs: Map<string, string>; assets: Map<string, Buffer>; fontOptions: { system: boolean; ids: string[] } }> {
     for (;;) {
       const queue = this.queue;
       await abortable(queue, signal);
@@ -250,7 +260,7 @@ export class DocumentSession {
     const fontOptions = { system: this.options.systemFonts !== false, ids: Array.from(this.fonts) };
     const signature = JSON.stringify({ model, fontOptions });
     if (signature !== this.signature) { this.signature = signature; this.currentRevision++; }
-    return { model, revision: this.revision, refs, assets, fontOptions };
+    return { model, revision: this.revision, inspection: this.inspect(), refs, assets, fontOptions };
   }
 
   private async process(signal: AbortSignal, context: { revision: number }): Promise<NativeOutput & { revision: number; refs: Map<string, string> }> {

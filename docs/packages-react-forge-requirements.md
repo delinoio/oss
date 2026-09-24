@@ -126,7 +126,7 @@ The TSX module’s default-exported task function receives `{ data, signal }` an
 
 Include the TSX execution dependency in the package. Provide help, version information, human-readable errors, optional structured JSON results, and cancellation through process termination signals.
 
-CLI and library messages, README, contracts, examples, and troubleshooting documentation are written in English. No watch mode, new MCP interface, or GUI is included.
+CLI and library messages, README, contracts, examples, and troubleshooting documentation are written in English. The original issue excluded watch mode, a new MCP interface and a GUI. The subsequent explicit MCP request supersedes only the MCP exclusion under [the MCP contract](packages-react-forge-mcp-contract.md); watch mode and GUI remain excluded.
 
 ### Layout, fonts, and accessibility
 
@@ -228,7 +228,10 @@ Caller-supplied React/TSX is trusted code running with the caller’s permission
 - Complete editing of every OOXML feature, macros, encrypted/signed documents, and unsupported Strict/legacy formats.
 - Spreadsheet formula calculation, pivots, 3D/combination/scatter charts, and additional advanced features beyond the specified list.
 - DOCX tracked-change authoring and equation-object authoring.
-- Automatic persistence/recovery, historical revision storage, automatic timeouts, URL asset fetching, watch mode, a new MCP interface, or a GUI.
+- Automatic persistence/recovery, historical revision storage, automatic timeouts, URL asset fetching, watch mode or a GUI. The original new-MCP exclusion is superseded by the explicit session-based MCP follow-up.
 - PDF/UA certification and direct Microsoft Office validation in this initial issue.
 - Feature flags, remote telemetry, and cloud operations.
 
+
+## MCP follow-up
+The subsequent explicit request adds a local stdio `react-forge mcp` server for all existing formats, TSX code/file inputs, retained memory sessions and state, inspection/measurement, explicit file export or Figma publication, and cleanup. It preserves the original complete-format scope and existing Forge interfaces. The [MCP contract](packages-react-forge-mcp-contract.md) defines the added acceptance boundary; it adds no HTTP hosting, public distribution or automatic persistence.
