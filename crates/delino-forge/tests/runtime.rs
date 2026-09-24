@@ -73,6 +73,7 @@ fn state_atomicity_source_conflicts_and_restart() {
         s.apply(patch(id, 0, "Concurrent")).unwrap_err().code,
         ErrorCode::Busy
     );
+    fs2::FileExt::unlock(&lock).unwrap();
     drop(lock);
     s.apply(patch(id, 0, "Committed title")).unwrap();
     let reopened = Store::new(Some(root), CancellationToken::new()).unwrap();

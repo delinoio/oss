@@ -16,6 +16,24 @@ pub struct Store {
     pub root: PathBuf,
     pub cancel: CancellationToken,
 }
+
+struct DocumentLock(File);
+
+impl Drop for DocumentLock {
+    fn drop(&mut self) {
+        // Closing one descriptor does not release flock while a duplicate is
+        // alive, including one inherited by another thread's fork before exec.
+        // Explicit unlock ties ownership to the operation's guard lifetime.
+        if fs2::FileExt::unlock(&self.0).is_err() {
+            tracing::warn!(
+                operation = "unlock",
+                stage = "release",
+                code = ?ErrorCode::Io,
+                "Document lock release failed"
+            );
+        }
+    }
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Source {
     pub path: PathBuf,
@@ -166,7 +184,7 @@ impl Store {
         Ok(self.root.join("documents").join(id.to_string()))
     }
 
-    fn lock(&self, id: Uuid) -> Result<File> {
+    fn lock(&self, id: Uuid) -> Result<DocumentLock> {
         let path = self.root.join("locks").join(format!("{id}.lock"));
         if fs::symlink_metadata(&path).is_ok_and(|m| !m.file_type().is_file()) {
             return error(ErrorCode::Io, "", "Invalid lock file");
@@ -180,7 +198,7 @@ impl Store {
             .map_err(io_error)?;
         fs2::FileExt::try_lock_exclusive(&file)
             .map_err(|_| Diagnostic::new(ErrorCode::Busy, "", "Document is already in use"))?;
-        Ok(file)
+        Ok(DocumentLock(file))
     }
 
     fn current(&self, id: Uuid) -> Result<(State, Vec<u8>)> {
@@ -494,4 +512,29 @@ pub fn default_root() -> Result<PathBuf> {
         )
     })?;
     Ok(base.join("delino-forge"))
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lock_release_does_not_wait_for_a_duplicated_descriptor() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Store::new(Some(temp.path().join("state")), CancellationToken::new()).unwrap();
+        let id = Uuid::now_v7();
+        let guard = store.lock(id).unwrap();
+        // dup and fork share the same open file description on Unix. Retain a
+        // duplicate to model another thread's child before it reaches exec.
+        let inherited = guard.0.try_clone().unwrap();
+        assert!(matches!(store.lock(id), Err(e) if e.code == ErrorCode::Busy));
+        drop(guard);
+        let next = store
+            .lock(id)
+            .expect("Completed operation must release its lock");
+        drop(inherited);
+        assert!(matches!(store.lock(id), Err(e) if e.code == ErrorCode::Busy));
+        drop(next);
+        assert!(store.lock(id).is_ok());
+    }
 }
