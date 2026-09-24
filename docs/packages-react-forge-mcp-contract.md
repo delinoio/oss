@@ -1,13 +1,13 @@
 # React Forge MCP Contract
 
 ## Scope
-`packages/react-forge/src/mcp` owns the private React Forge stdio server, shared Node execution process, TSX loader and session registry. The explicit MCP follow-up supersedes the original issue #968 exclusion of a new MCP interface. Existing Forge MCP, React Forge library and one-shot CLI behavior remain supported.
+`packages/react-forge/src/mcp` owns the React Forge stdio server, shared Node execution process, TSX loader and session registry. The private source workspace assembles these modules into the public npm package. The explicit MCP follow-up supersedes the original issue #968 exclusion of a new MCP interface. Existing Forge MCP, React Forge library and one-shot CLI behavior remain supported.
 
 ## Runtime and Language
 Use the existing Node.js 24, React 19.2.8 and six-host native inventory. TypeScript owns MCP and React execution; validated native computations remain in the existing Rust workers. All sessions share one execution process and canonical React/React Forge imports, including Figma's per-authentication rate admission and per-file publication queues. Authenticated Figma retains its existing macOS Keychain boundary; this extension does not claim new Figma authentication platforms.
 
 ## Users and Operators
-Repository developers and local MCP clients executing trusted document tasks. Start the built private package with `react-forge mcp [--cwd <directory>]`. The working directory defaults to the launch directory and must exist. There is no HTTP listener, hosted service, public package publication or automatic client configuration change.
+Node.js developers and local MCP clients executing trusted document tasks. Start the installed package with `react-forge mcp [--cwd <directory>]`. The working directory defaults to the launch directory and must exist. There is no HTTP listener, hosted service or automatic client configuration change.
 
 ## Interfaces and Contracts
 The official TypeScript MCP SDK owns stdio framing and protocol negotiation. The server exposes tools only, using the `react_forge_` prefix:
@@ -50,7 +50,7 @@ The UTF-8 TSX entry plus serialized JSON data is capped at 16 MiB before evaluat
 The parent emits structured stderr diagnostics containing fixed operation/stage, duration and stable error classification. The execution child's stdout/stderr, including direct descriptor writes and task cleanup output, are disconnected from both protocol output and operational logs. Never relay arbitrary exceptions, task text, paths, XML, asset bytes or credentials. SDK protocol errors are logged using a fixed classification without their raw message. stdout contains only MCP messages.
 
 ## Build and Test
-Build the native binding and TypeScript output before server or packed-consumer tests. Run package build, typecheck, lint, test and `typecheck:examples`. All six existing CI hosts execute real SDK stdio tests and installed private archive consumers for the four local formats and fake Figma; standalone examples are checked after the build. Existing CLI, React, native integration and preservation tests remain required.
+Build the native binding and TypeScript output before server or packed-consumer tests. Run package build, typecheck, lint, test and `typecheck:examples`. All six existing CI hosts execute real SDK stdio tests and installed consumers for the four local formats and fake Figma; standalone examples are checked after the build. Existing CLI, React, native integration and preservation tests remain required.
 
 MCP coverage includes relative/inline imports, module singleton identity, fresh entry evaluation, actual React hook/Suspense state, mounted Office edits, exact revision measurement, original/output conflicts, filtered pagination, malformed/oversized source, latest-render errors, redaction, direct stdout writes, queued cancellation, late returned-session cleanup, EOF/signals, a blocked event loop, worker loss, and Figma complete/partial/unknown publication receipts without blind retries. Offline Figma tests use synthetic credentials/fake MCP only. Remove generated `dist` after validation.
 

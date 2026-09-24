@@ -30,9 +30,11 @@ export function main() {
     execFileSync(command, [...prefix, "install", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: directory, stdio: "pipe" });
     const installed = path.join(directory, "node_modules/@delino/react-forge");
     assert.equal(JSON.parse(readFileSync(path.join(installed, "package.json"), "utf8")).private, undefined);
+    const mcpModule = pathToFileURL(path.join(installed, "dist/mcp/server.js")).href;
     const imported = `import { Format } from "@delino/react-forge";
       import { Page } from "@delino/react-forge/figma";
-      if (Format.Figma !== "figma" || typeof Page !== "function") throw new Error("Figma export unavailable");`;
+      const { serve } = await import(${JSON.stringify(mcpModule)});
+      if (Format.Figma !== "figma" || typeof Page !== "function" || typeof serve !== "function") throw new Error("Figma or MCP export unavailable");`;
     execFileSync(process.execPath, ["--input-type=module", "--eval", imported], { cwd: directory, encoding: "utf8" });
     cpSync(path.join(packageRoot, "examples"), path.join(directory, "tasks"), { recursive: true });
     for (const [task, format] of [["presentation", "pptx"], ["document", "docx"], ["workbook", "xlsx"], ["pdf", "pdf"]]) {

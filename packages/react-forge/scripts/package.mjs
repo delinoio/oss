@@ -90,7 +90,7 @@ function expectedFiles(host) {
     }
   }
   visit(path.join(packageRoot, "dist"));
-  ensure(dist.includes("dist/index.js") && dist.includes("dist/native-platforms.json") && dist.includes("dist/figma.js") && dist.some((name) => name.startsWith("dist/figma/")), "Build the TypeScript package before packing");
+  ensure(dist.includes("dist/index.js") && dist.includes("dist/native-platforms.json") && dist.includes("dist/figma.js") && dist.some((name) => name.startsWith("dist/figma/")) && dist.includes("dist/mcp/server.js") && dist.includes("dist/mcp/worker.js"), "Build the TypeScript package before packing");
   return ["package.json", "bin/react-forge.mjs", "README.md", "LICENSE", "NOTICE", ...dist].sort();
 }
 

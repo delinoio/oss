@@ -129,11 +129,11 @@ Connect Figma in Codex or Claude Code first. Choose `CredentialSource.Codex`, `C
 
 Remote publication can be **complete**, **partial**, or **unknown**. A `FigmaPublishError` carries the receipt. Confirmed IDs survive partial failures; retrying a known partial batch does not recreate them. Unknown outcomes require inspecting/reopening the file, and ambiguous new-file/node creation is never automatically repeated. Cancellation stops later batches; it does not undo existing changes. File-output conflicts are checked before publishing, but a receipt-save failure can occur after Figma has changed, so inspect the attached receipt. An unchanged session publish makes no remote calls. Request admission and file queues are shared by sessions in the same process; other clients remain subject to server limits and optimistic conflict guards.
 
-The examples `travel-figma.tsx` and `travel-figma-edit.tsx` create the five-screen fictional ROAM app and reopen it to change text, an image, layout and itinerary content:
+The [creation example](https://github.com/delinoio/oss/blob/main/packages/react-forge/examples/travel-figma.tsx) and [edit example](https://github.com/delinoio/oss/blob/main/packages/react-forge/examples/travel-figma-edit.tsx) create the five-screen fictional ROAM app and reopen it to change text, an image, layout and itinerary content. Copy the examples with their referenced assets before running them:
 
 ```sh
-pnpm --filter @delino/react-forge cli run examples/travel-figma.tsx --data '{"planKey":"team::YOUR_SELECTED_TEAM"}' --output /tmp/roam.figma.json
-pnpm --filter @delino/react-forge cli run examples/travel-figma-edit.tsx --data '{"fileKey":"YOUR_FILE_KEY"}' --output /tmp/roam-edited.figma.json
+react-forge run ./travel-figma.tsx --data '{"planKey":"team::YOUR_SELECTED_TEAM"}' --output /tmp/roam.figma.json
+react-forge run ./travel-figma-edit.tsx --data '{"fileKey":"YOUR_FILE_KEY"}' --output /tmp/roam-edited.figma.json
 ```
 
 The generation task creates a new screen page; use the edit task for subsequent runs. The edit task explicitly reuses the existing note when run again. Image provenance is shared with the travel investor example.
@@ -141,7 +141,7 @@ The generation task creates a new screen page; use the edit task for subsequent 
 
 ## Local MCP sessions
 
-After building, run `react-forge mcp --cwd /absolute/path/to/tasks`. A local MCP client can launch the built executable directly; use a Node.js 24 executable and absolute paths:
+After installing, run `react-forge mcp --cwd /absolute/path/to/tasks`. A local MCP client can launch the installed executable directly; use a Node.js 24 executable and absolute paths:
 
 ```json
 {
@@ -163,7 +163,7 @@ The working directory defaults to the launch directory. It controls relative too
 
 Use `react_forge_capabilities` to discover formats, limits and the callback contract. `react_forge_execute` accepts exactly one of a `code` string or an `entry` file, optional JSON `data`, and an optional existing `sessionId`. The default-exported task receives `{ session, state, data, signal }`. A new task returns a session. An update returns void or the same session. `state` is a retained Map for components, setters, refs and mount handles; it never appears in tool output. The package exports `McpTaskContext` and `McpSessionTask` types.
 
-The MCP-only `examples/mcp-session.tsx` task creates a PDF session on its first call and updates it on later calls. Copy it to your task directory as `report.tsx`, then use this sequence:
+The [MCP session task example](https://github.com/delinoio/oss/blob/main/packages/react-forge/examples/mcp-session.tsx) creates a PDF session on its first call and updates it on later calls. Copy it to your task directory as `report.tsx`, then use this sequence:
 
 1. Call `react_forge_execute` with `{"entry":"report.tsx","data":{"title":"First draft"}}`. Keep its returned `sessionId`.
 2. Call `react_forge_inspect` with that ID. Local inspection waits for React/Suspense and registered assets, then returns the revision and target IDs without creating a file. `react_forge_measure` accepts a target's `nodeId` and this exact revision.
