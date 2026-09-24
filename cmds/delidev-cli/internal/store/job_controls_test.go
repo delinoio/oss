@@ -26,7 +26,7 @@ func TestCancellationMigratesV4AndPreservesClaimedEnvelopeAcrossRestart(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec("DROP TABLE job_assignments; DROP TABLE job_cancellations; PRAGMA user_version=4;"); err != nil {
+	if _, err := s.db.Exec("DROP TABLE execution_references; DROP TABLE execution_grants; DROP TABLE job_assignments; DROP TABLE job_cancellations; PRAGMA user_version=4;"); err != nil {
 		t.Fatal(err)
 	}
 	s.Close()

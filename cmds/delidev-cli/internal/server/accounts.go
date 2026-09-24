@@ -307,6 +307,9 @@ func (s *Service) finishAccountRemoval(ctx context.Context, accepted accountRece
 		return err
 	}
 	s.cancelAccountChecks(accepted.ID)
+	if err := s.executionAuthority.stopAccount(ctx, accepted.ID); err != nil {
+		return err
+	}
 	vault, err := s.secrets()
 	if err != nil {
 		return err

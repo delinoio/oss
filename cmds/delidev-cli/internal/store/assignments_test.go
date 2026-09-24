@@ -36,7 +36,7 @@ func TestAssignmentMigrationAndUncertainResultPreserveOriginalEnvelope(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec("DROP TABLE job_assignments; PRAGMA user_version=5;"); err != nil {
+	if _, err := s.db.Exec("DROP TABLE execution_references; DROP TABLE execution_grants; DROP TABLE job_assignments; PRAGMA user_version=5;"); err != nil {
 		t.Fatal(err)
 	}
 	s.Close()

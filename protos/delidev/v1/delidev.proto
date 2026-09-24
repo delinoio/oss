@@ -193,6 +193,20 @@ service WorkerService {
   rpc ReportWork(ReportWorkRequest) returns (ReportWorkResponse);
   rpc InspectRepository(InspectRepositoryRequest) returns (InspectRepositoryResponse);
   rpc DiscoverHarnesses(DiscoverHarnessesRequest) returns (DiscoverHarnessesResponse);
+  rpc RegisterExecution(RegisterExecutionRequest) returns (RegisterExecutionResponse);
+}
+message RegisterExecutionRequest {
+  // Exact claimed execution job/revision and durable registration request ID.
+  Mutation mutation = 1;
+  string machine_id = 2;
+  string instance_id = 3;
+  // SHA-256 of the Worker-generated private execution token, never its value.
+  bytes credential_digest = 4;
+}
+message RegisterExecutionResponse {
+  // Fixed relative path on the already-paired authenticated server origin.
+  string proxy_path = 1;
+  bool replayed = 2;
 }
 enum DeviceType {
   DEVICE_TYPE_UNSPECIFIED = 0;

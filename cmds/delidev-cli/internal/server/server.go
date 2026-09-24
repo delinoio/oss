@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
@@ -56,21 +57,23 @@ type Service struct {
 	delidevv1connect.UnimplementedWorkerServiceHandler
 	delidevv1connect.UnimplementedAccountServiceHandler
 	delidevv1connect.UnimplementedProviderServiceHandler
-	accountOnce    sync.Once
-	accountGate    chan struct{}
-	accountChecks  map[domain.ID]map[domain.ID]accountCheck
-	accountSecrets accountSecrets
-	ownedVault     *credentials.Vault
-	Store          *store.Store
-	Identity       security.Identity
-	Endpoint       Endpoint
-	logger         *slog.Logger
-	stop           context.CancelFunc
-	stopping       atomic.Bool
-	connectionsMu  sync.Mutex
-	connections    map[domain.ID]map[domain.ID]context.CancelFunc
-	pairAttempts   map[string]attemptWindow
-	workerStreams  map[domain.ID]workerStream
+	accountOnce        sync.Once
+	accountGate        chan struct{}
+	accountChecks      map[domain.ID]map[domain.ID]accountCheck
+	accountSecrets     accountSecrets
+	ownedVault         *credentials.Vault
+	Store              *store.Store
+	Identity           security.Identity
+	Endpoint           Endpoint
+	logger             *slog.Logger
+	stop               context.CancelFunc
+	stopping           atomic.Bool
+	connectionsMu      sync.Mutex
+	connections        map[domain.ID]map[domain.ID]context.CancelFunc
+	pairAttempts       map[string]attemptWindow
+	workerStreams      map[domain.ID]workerStream
+	executionOnce      sync.Once
+	executionAuthority *executionAuthority
 }
 
 func LoadEndpoint(root string) (Endpoint, error) {
@@ -160,6 +163,7 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	service := &Service{Store: state, Identity: identity, Endpoint: Endpoint{URL: protocol + "://" + listener.Addr().String(), ServerID: identity.ServerID, Version: rpc.Version, ProtocolVersion: rpc.ProtocolVersion, StartedAt: time.Now().UTC()}, logger: config.Logger, stop: stop, accountSecrets: config.accountSecrets}
 	defer service.closeAccountSecrets()
 	handler := service.Handler(config.AllowedOrigins, ip.IsLoopback())
+	defer service.executionAuthority.close()
 	httpServer := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10, BaseContext: func(net.Listener) context.Context { return child }, ErrorLog: slog.NewLogLogger(config.Logger.Handler(), slog.LevelWarn)}
 	raw, err := json.Marshal(service.Endpoint)
 	if err != nil {
@@ -196,6 +200,7 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 		}
 	case <-child.Done():
 		service.stopping.Store(true)
+		service.executionAuthority.cancel()
 		shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := httpServer.Shutdown(shutdown); err != nil {
@@ -205,6 +210,7 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	}
 	stopCatalog()
 	<-catalogDone
+	service.executionAuthority.close()
 	if err := service.closeAccountSecrets(); err != nil {
 		return domain.SafeError(err)
 	}
@@ -213,6 +219,8 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 }
 
 func (s *Service) Handler(origins []string, loopback bool) http.Handler {
+	s.executionOnce.Do(func() { s.executionAuthority = newExecutionAuthority(s) })
+	proxy := apiproxy.New(s.executionAuthority, s.logger)
 	mux := http.NewServeMux()
 	options := []connect.HandlerOption{connect.WithReadMaxBytes(2 << 20), connect.WithSendMaxBytes(5 << 20)}
 	mux.Handle(delidevv1connect.NewSystemServiceHandler(s, options...))
@@ -246,6 +254,12 @@ func (s *Service) Handler(origins []string, loopback bool) http.Handler {
 				reject(domain.Fail(domain.PermissionDenied, "The RPC authority is not an allowed loopback host.", "Use the server's explicit local endpoint."))
 				return
 			}
+		}
+		if strings.HasPrefix(r.URL.Path, apiproxy.Prefix+"/") {
+			// Native execution credentials use a closed private protocol, not
+			// owner/client RPC authentication or browser CORS authorization.
+			proxy.ServeHTTP(w, r)
+			return
 		}
 		origin := r.Header.Get("Origin")
 		if origin != "" && !allowed[origin] {

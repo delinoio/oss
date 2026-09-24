@@ -36,6 +36,8 @@ Only observed real-environment results qualify as harness/platform/account integ
 
 First-execution configuration, initial account selection, input claim and per-Agent routing state share one durable transaction. The implemented internal primitive requires independently established native readiness; existing public sessions remain blocked until that execution integration is complete. Template contents/order are retained exactly, later edits cannot rewrite them, and current restrictions still apply.
 
+The native API relay accepts only Worker-registered execution token digests bound to durable claimed jobs and the current server process epoch. Every request revalidates session, input, Worker, account connection and restrictions; account disconnection joins relay cleanup before credential deletion. Public native dispatch and Worker credential/configuration delivery remain separate pending integration.
+
 ## Change Policy
 Keep command, protocol, evidence, and scoped AGENTS contracts synchronized with each implementation increment. Preserve the complete normative requirements even when individual acceptance items remain in progress. Generated bindings are tool-owned. Never claim the project complete while required CLI/server/Worker acceptance items remain unimplemented or unverified.
 

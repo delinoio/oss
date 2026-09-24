@@ -25,11 +25,11 @@ const (
 	MessageCountTokens Operation = "message-count-tokens"
 )
 
-type ReferenceKind string
+type ReferenceKind = domain.NativeReferenceKind
 
 const (
-	ResponseReference     ReferenceKind = "response"
-	ConversationReference ReferenceKind = "conversation"
+	ResponseReference     = domain.NativeResponseReference
+	ConversationReference = domain.NativeConversationReference
 )
 
 // Scope is an immutable server-resolved dispatch binding, never client input.

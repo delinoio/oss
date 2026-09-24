@@ -41,7 +41,7 @@ func migrate(ctx context.Context, db *sql.DB, root string) error {
 	if version == SchemaVersion {
 		return nil
 	}
-	if version != 1 && version != 2 && version != 3 && version != 4 && version != 5 {
+	if version < 1 || version > 6 {
 		return domain.Fail(domain.RecoveryRequired, "No supported migration exists for this database.", "Preserve the original and use a matching server version.")
 	}
 	// Back up even this additive migration. Destructive future migrations must
@@ -100,12 +100,17 @@ func migrate(ctx context.Context, db *sql.DB, root string) error {
 			return storageError(err)
 		}
 	}
-	if _, err := tx.ExecContext(ctx, assignmentSchema); err != nil {
-		return storageError(err)
+	if version < 6 {
+		if _, err := tx.ExecContext(ctx, assignmentSchema); err != nil {
+			return storageError(err)
+		}
+		original := &Tx{tx: tx, ctx: ctx}
+		if err := original.preserveLegacyAssignments(); err != nil {
+			return err
+		}
 	}
-	original := &Tx{tx: tx, ctx: ctx}
-	if err := original.preserveLegacyAssignments(); err != nil {
-		return err
+	if _, err := tx.ExecContext(ctx, executionSchema); err != nil {
+		return storageError(err)
 	}
 	return storageError(tx.Commit())
 }

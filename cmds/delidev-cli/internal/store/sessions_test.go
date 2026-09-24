@@ -23,7 +23,7 @@ func TestSessionMigrationBacksUpV3AndRejectsAmbiguousQueueOrder(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, err = s.db.Exec("DROP TABLE job_assignments; DROP TABLE job_cancellations; DROP INDEX session_visibility; DROP INDEX queue_sequence; DROP INDEX queue_pending; PRAGMA user_version=3;")
+			_, err = s.db.Exec("DROP TABLE execution_references; DROP TABLE execution_grants; DROP TABLE job_assignments; DROP TABLE job_cancellations; DROP INDEX session_visibility; DROP INDEX queue_sequence; DROP INDEX queue_pending; PRAGMA user_version=3;")
 			if err != nil {
 				t.Fatal(err)
 			}

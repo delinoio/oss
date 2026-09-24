@@ -94,6 +94,30 @@ func (c ExecutionConfiguration) Digest() (string, error) {
 	return hex.EncodeToString(digest[:]), nil
 }
 
+func (c ExecutionConfiguration) Validate() error {
+	ids := make([]ID, len(c.Templates))
+	for i, template := range c.Templates {
+		ids[i] = template.ID
+	}
+	agent := Agent{Name: "Retained configuration", Harness: c.Harness, ModelID: c.ModelID, Effort: c.Effort, Options: c.Options, Accounts: c.Accounts, Routing: &c.Routing, Templates: ids}
+	model := Model{Name: "Retained model", NativeID: c.NativeModel, ProviderID: c.ProviderID, Harnesses: []Harness{c.Harness}, MetadataSource: Unknown}
+	resolved, err := ResolveExecutionConfiguration(c.AgentID, c.AgentRevision, agent, c.ModelRevision, model, c.Routing, c.Templates)
+	if err != nil {
+		return err
+	}
+	if resolved.Instructions != c.Instructions {
+		return Fail(RecoveryRequired, "Retained instructions do not match their ordered templates.", "Reconcile the immutable first-execution configuration.")
+	}
+	return nil
+}
+
+type NativeReferenceKind string
+
+const (
+	NativeResponseReference     NativeReferenceKind = "response"
+	NativeConversationReference NativeReferenceKind = "conversation"
+)
+
 // InitialExecution binds configuration, the first claimed input and the actual
 // routing observation. Current account/connection changes are separate from the
 // immutable original selection and require their own future lifecycle control.
