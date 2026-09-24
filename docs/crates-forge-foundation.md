@@ -24,6 +24,8 @@ Cell text edits retain native table properties; changing merge/grid/base-style d
 
 Imported chart caches use declared point counts and indices, independent of XML order. Sparse, duplicate, out-of-range or mismatched cache domains remain opaque because v1 cannot represent missing numeric cells without changing their meaning.
 
+Editable imported tables require equal native row heights spanning their frame, within one EMU of rounding. Unequal row heights or a frame/grid height mismatch remain opaque, preserving their native XML until explicit row heights are supported by both the DSL and text measurement.
+
 Forge metadata is identified by its root custom-XML relationship and `urn:delino:forge:v1` root element, not its filename. Unrelated custom XML, including a colliding `customXml/forge.xml` or relationship ID, is preserved and hashed; Forge allocates a separate part and relationship when necessary. Multiple claimed Forge metadata parts fail as ambiguous identity.
 
 ## Storage

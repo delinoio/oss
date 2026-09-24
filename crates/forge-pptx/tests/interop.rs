@@ -267,6 +267,84 @@ fn unrelated_custom_xml_does_not_claim_forge_identity_or_get_overwritten() {
     );
 }
 #[test]
+fn nonuniform_native_table_heights_remain_opaque_during_unrelated_edits() {
+    let path = "ppt/slides/slide1.xml";
+    let mut parts = read_package(EXTERNAL).unwrap();
+    let slide = xml_part(&parts, path);
+    let doc = roxmltree::Document::parse(&slide).unwrap();
+    let rows: Vec<_> = doc
+        .descendants()
+        .filter(|n| {
+            n.has_tag_name((
+                "http://schemas.openxmlformats.org/drawingml/2006/main",
+                "tr",
+            ))
+        })
+        .collect();
+    let original_table = doc
+        .descendants()
+        .find(|n| n.tag_name().name() == "tbl")
+        .unwrap();
+    for heights in [[10, 70, 100], [40, 40, 40]] {
+        let mut changed = slide.clone();
+        for (row, height) in rows.iter().zip(heights).rev() {
+            let raw = &slide[row.range()];
+            changed.replace_range(
+                row.range(),
+                &raw.replacen(
+                    &format!("h=\"{}\"", row.attribute("h").unwrap()),
+                    &format!("h=\"{}\"", height * 12700),
+                    1,
+                ),
+            );
+        }
+        assert_ne!(
+            &changed[original_table.range().start..],
+            &slide[original_table.range().start..]
+        );
+        parts.insert(path.into(), changed.clone().into_bytes());
+        let source = write_package(&parts).unwrap();
+        let imported = import(&source).unwrap();
+        assert!(
+            !imported.document.slides[0]
+                .content
+                .children
+                .iter()
+                .any(|n| n.kind == NodeKind::Table)
+        );
+        let next = patch(
+            &imported,
+            vec![Operation::SetText {
+                target: target(&imported.document, NodeKind::Text),
+                text: "Unrelated edit".into(),
+                cell: None,
+            }],
+        );
+        let output = update(
+            &source,
+            &imported.document,
+            &imported.bindings,
+            &next,
+            &imported.assets,
+            imported.document_id,
+            1,
+        )
+        .unwrap();
+        let result = xml_part(&read_package(&output).unwrap(), path);
+        let before = roxmltree::Document::parse(&changed).unwrap();
+        let after = roxmltree::Document::parse(&result).unwrap();
+        let before_table = before
+            .descendants()
+            .find(|n| n.tag_name().name() == "tbl")
+            .unwrap();
+        let after_table = after
+            .descendants()
+            .find(|n| n.tag_name().name() == "tbl")
+            .unwrap();
+        assert_eq!(&changed[before_table.range()], &result[after_table.range()]);
+    }
+}
+#[test]
 fn external_noop_is_byte_exact_and_partial_edits_preserve_extensions() {
     let i = import(EXTERNAL).unwrap();
     assert_eq!(

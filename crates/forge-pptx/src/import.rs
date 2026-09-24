@@ -208,8 +208,23 @@ fn image_projection_matches(
                 .is_ok_and(|actual| (actual - value).abs() <= 1.)
         })
 }
-fn parse_table(n: roxmltree::Node<'_, '_>) -> Result<(Vec<Column>, Vec<TableRow>)> {
+fn parse_table(n: roxmltree::Node<'_, '_>, frame: Frame) -> Result<(Vec<Column>, Vec<TableRow>)> {
     let tbl = desc(n, A, "tbl").ok_or_else(|| failure("table"))?;
+    let native_rows: Vec<_> = tbl
+        .children()
+        .filter(|n| n.has_tag_name((A, "tr")))
+        .collect();
+    let row_height = frame.height / native_rows.len() as f64;
+    // V1 measures equal rows spanning the frame. Keep other native geometry
+    // opaque until the DSL can preserve and measure explicit row heights.
+    if native_rows.is_empty()
+        || native_rows.iter().any(|r| {
+            !number(*r, "h")
+                .is_some_and(|h| h.is_finite() && h > 0. && (h - row_height).abs() <= 1. / 12700.)
+        })
+    {
+        return Err(failure("unrepresentable table row heights"));
+    }
     let columns = desc(tbl, A, "tblGrid")
         .ok_or_else(|| failure("grid"))?
         .children()
@@ -590,7 +605,7 @@ pub fn import(bytes: &[u8]) -> Result<Imported> {
                     false
                 }
             } else if desc(item, A, "tbl").is_some() {
-                if let Ok((columns, rows)) = parse_table(item) {
+                if let Ok((columns, rows)) = parse_table(item, n.frame.unwrap()) {
                     n.kind = NodeKind::Table;
                     n.columns = columns;
                     n.rows = rows;

@@ -62,6 +62,8 @@ Unchanged ZIP part payloads and unrelated XML remain intact. No-op exports of or
 
 Changing an imported table's merge/grid definition requires explicit node replacement. In-place cell text changes preserve its native cell properties. Chart data editing requires a single-sheet `Sheet1` workbook with the expected chart range and no formulas or additional data in that range. Other workbook structures are preserved by rejecting the edit. There is no slide-count change operation or cross-slide native shape move in v1.
 
+Tables with unequal native row heights or heights inconsistent with their frame remain opaque in v1. Their original content is preserved during edits to other nodes.
+
 Previews use a private LibreOffice profile, a 120-second deadline per renderer and child-process cleanup on cancellation. They are limited to 100 pages, 40 million pixels per page and 250 million pixels total at 96 dpi. Missing renderers produce `renderer_unavailable`. Optional `FORGE_SOFFICE` and `FORGE_PDFTOPPM` variables select executable paths. The bundled, OFL-licensed Noto Sans KR is embedded for dependable Korean rendering. Preview evidence is LibreOffice/Poppler output, not a Microsoft PowerPoint compatibility certification.
 
 ## Validation
