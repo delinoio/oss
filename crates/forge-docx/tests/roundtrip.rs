@@ -578,3 +578,70 @@ fn foreign_paragraph_attributes_and_drawing_bookmarks_remain_opaque() {
     }
     assert_eq!(replace(&imported, &[], &Assets::new()).unwrap(), input);
 }
+
+#[test]
+fn typed_breaks_stay_opaque_while_line_breaks_remain_editable() {
+    for (attributes, editable) in [
+        ("", true),
+        (" w:type=\"textWrapping\"", true),
+        (" w:type=\"page\"", false),
+        (" w:type=\"column\"", false),
+        (" w:clear=\"all\"", false),
+    ] {
+        let bytes = generate(
+            &document(vec![paragraph("Before"), paragraph("Other")]),
+            &Assets::new(),
+        )
+        .unwrap();
+        let mut parts = read(&bytes).unwrap();
+        let original = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+        let changed = original.replacen(
+            "Before</w:t>",
+            &format!("Before</w:t><w:br{attributes}/><w:t>After</w:t>"),
+            1,
+        );
+        parts.insert("word/document.xml".into(), changed.into_bytes());
+        let imported = import(&forge_package::write(&parts).unwrap()).unwrap();
+        let target = imported
+            .targets
+            .iter()
+            .find(|target| target.text.contains("Before"))
+            .unwrap();
+        assert_eq!(
+            target.kind,
+            if editable {
+                TargetKind::Paragraph
+            } else {
+                TargetKind::Opaque
+            }
+        );
+        if !editable {
+            assert!(
+                replace(
+                    &imported,
+                    &[(target.id, vec![paragraph("Lost")])],
+                    &Assets::new()
+                )
+                .is_err()
+            );
+            let other = imported
+                .targets
+                .iter()
+                .find(|target| target.text == "Other")
+                .unwrap();
+            let output = replace(
+                &imported,
+                &[(other.id, vec![paragraph("Edited")])],
+                &Assets::new(),
+            )
+            .unwrap();
+            let next = read(&output).unwrap();
+            let protected = &parts["word/document.xml"][target.region.range.clone()];
+            assert!(
+                next["word/document.xml"]
+                    .windows(protected.len())
+                    .any(|window| window == protected)
+            );
+        }
+    }
+}

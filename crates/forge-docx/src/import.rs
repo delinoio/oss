@@ -42,6 +42,17 @@ fn supported_attributes(node: roxmltree::Node<'_, '_>) -> bool {
 }
 
 fn supported_word_element(n: roxmltree::Node<'_, '_>) -> bool {
+    // Only ordinary line breaks fit the editable paragraph model. Page/column
+    // breaks and text-wrapping clearance must survive as opaque source XML.
+    if n.has_tag_name((W, "br")) {
+        return n.attributes().all(|attribute| {
+            attribute.namespace() == Some(W)
+                && matches!(
+                    (attribute.name(), attribute.value()),
+                    ("type", "textWrapping") | ("clear", "none")
+                )
+        });
+    }
     n.tag_name().namespace() == Some(W)
         && matches!(
             n.tag_name().name(),
