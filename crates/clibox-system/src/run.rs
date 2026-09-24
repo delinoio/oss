@@ -754,7 +754,26 @@ fn with_service(options: Service) -> Result<Outcome> {
             Err(error),
         );
     }
-    if service_completion_or_cleanup(&mut service_child, options.workload.kill_after)?.is_some() {
+    let service_exited = if service_completion_or_cleanup(
+        &mut service_child,
+        options.workload.kill_after,
+    )?
+    .is_some()
+    {
+        true
+    } else {
+        match service_child.exit_before_workload_completion() {
+            Ok(exited) => exited,
+            Err(error) => {
+                return cleanup_managed_service(
+                    &mut service_child,
+                    options.workload.kill_after,
+                    Err(error),
+                );
+            }
+        }
+    };
+    if service_exited {
         return cleanup_managed_service(
             &mut service_child,
             options.workload.kill_after,
@@ -5495,6 +5514,41 @@ mod lifecycle_tests {
         }
 
         assert!(child.wait().unwrap().success());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn observes_a_service_exit_before_workload_start_without_its_waiter() {
+        let mut process = ProcessCommand::new("sh")
+            .args(["-c", "exit 0"])
+            .spawn()
+            .unwrap();
+        let pid = process.id();
+        let (_sender, completions) = mpsc::sync_channel(1);
+        let mut service = OwnedChild {
+            pid,
+            unix_ownership: UnixOwnership::DirectChild,
+            reaped: false,
+            foreground_terminal: None,
+            completions,
+            completion: None,
+            completion_observation_failed: false,
+            activity: None,
+            output_failure: None,
+            output_threads: Vec::new(),
+        };
+
+        let observed = (0..50).any(|_| {
+            if service.exit_before_workload_completion().unwrap() {
+                true
+            } else {
+                thread::sleep(Duration::from_millis(1));
+                false
+            }
+        });
+
+        assert!(observed);
+        assert!(process.wait().unwrap().success());
     }
 
     #[cfg(unix)]
