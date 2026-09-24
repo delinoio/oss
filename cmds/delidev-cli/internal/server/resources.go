@@ -337,6 +337,7 @@ func (s *Service) DeleteConfiguration(ctx context.Context, req *connect.Request[
 	if err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
+	s.logger.InfoContext(ctx, "configuration_deleted", "kind", kind, "entity_id", meta.Id, "request_id", meta.RequestId, "replayed", result.Replayed)
 	response := connect.NewResponse(&pb.DeleteConfigurationResponse{Id: meta.Id, RequestId: meta.RequestId, Replayed: result.Replayed})
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil
@@ -358,7 +359,7 @@ func validateDeletion(tx *store.Tx, kind domain.Kind, id domain.ID) error {
 			return domain.Fail(domain.Conflict, "Connected accounts require credential and device cleanup before deletion.", "Disconnect the account and complete its protected-resource cleanup first.")
 		}
 	}
-	for _, ownerKind := range []domain.Kind{domain.ProjectKind, domain.AgentKind, domain.ModelKind, domain.AccountKind, domain.SessionKind} {
+	for _, ownerKind := range []domain.Kind{domain.ProjectKind, domain.AgentKind, domain.ModelKind, domain.AccountKind} {
 		records, err := all(tx, ownerKind)
 		if err != nil {
 			return err
@@ -409,14 +410,6 @@ func validateDeletion(tx *store.Tx, kind domain.Kind, id domain.ID) error {
 					return err
 				}
 				if kind == domain.ProviderKind && account.ProviderID == id {
-					return conflict()
-				}
-			case domain.SessionKind:
-				session, err := store.Decode[domain.Session](record)
-				if err != nil {
-					return err
-				}
-				if (kind == domain.ProjectKind && session.ProjectID == id) || (kind == domain.AgentKind && session.AgentID == id) {
 					return conflict()
 				}
 			}

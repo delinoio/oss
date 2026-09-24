@@ -42,7 +42,7 @@ func migrate(ctx context.Context, db *sql.DB, root string) error {
 	if version == SchemaVersion {
 		return nil
 	}
-	if version < 1 || version > 10 {
+	if version < 1 || version > 11 {
 		return domain.Fail(domain.RecoveryRequired, "No supported migration exists for this database.", "Preserve the original and use a matching server version.")
 	}
 	// Back up even this additive migration. Destructive future migrations must
@@ -141,14 +141,19 @@ func migrate(ctx context.Context, db *sql.DB, root string) error {
 			return err
 		}
 	}
-	var legacySchedules int
-	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM entities WHERE kind IN ('schedule','occurrence')").Scan(&legacySchedules); err != nil {
-		return storageError(err)
+	if version < 11 {
+		var legacySchedules int
+		if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM entities WHERE kind IN ('schedule','occurrence')").Scan(&legacySchedules); err != nil {
+			return storageError(err)
+		}
+		if legacySchedules != 0 {
+			return domain.Fail(domain.RecoveryRequired, "Legacy schedule ownership is unrecognized.", "Preserve the original database and pre-migration backup; do not infer execution authority from unvalidated records.")
+		}
+		if _, err := tx.ExecContext(ctx, scheduleSchema); err != nil {
+			return storageError(err)
+		}
 	}
-	if legacySchedules != 0 {
-		return domain.Fail(domain.RecoveryRequired, "Legacy schedule ownership is unrecognized.", "Preserve the original database and pre-migration backup; do not infer execution authority from unvalidated records.")
-	}
-	if _, err := tx.ExecContext(ctx, scheduleSchema); err != nil {
+	if _, err := tx.ExecContext(ctx, deletedConfigurationSchema); err != nil {
 		return storageError(err)
 	}
 	return storageError(tx.Commit())

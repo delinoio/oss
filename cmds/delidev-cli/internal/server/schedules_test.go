@@ -341,6 +341,10 @@ func TestScheduleRPCReferencedDeletionDisablesAtomically(t *testing.T) {
 		t.Run(string(kind), func(t *testing.T) {
 			f := newScheduleRPCFixture(t)
 			created := f.save(t, f.saveRequest(t, "", 0, f.definition, ""))
+			_, accepted := f.run(t, created)
+			created = f.current(t, created.Id)
+			originalSession := f.record(t, domain.SessionKind, domain.ID(accepted.Session.Id))
+			originalOccurrence := f.record(t, domain.OccurrenceKind, domain.ID(accepted.Occurrence.Id))
 			id := f.project
 			if kind == domain.AgentKind {
 				id = f.agent
@@ -358,6 +362,12 @@ func TestScheduleRPCReferencedDeletionDisablesAtomically(t *testing.T) {
 			request.Mutation.RequestId = string(domain.NewID())
 			if _, err := client.DeleteConfiguration(f.ctx, ownerRequest(f.service.Identity, request)); err != nil {
 				t.Fatal(err)
+			}
+			for _, original := range []store.Record{originalSession, originalOccurrence} {
+				current := f.record(t, original.Kind, original.ID)
+				if current.Revision != original.Revision || !bytes.Equal(current.Data, original.Data) {
+					t.Fatal("reference deletion rewrote accepted session/occurrence")
+				}
 			}
 			current := f.current(t, created.Id)
 			value := scheduleBody(t, current)

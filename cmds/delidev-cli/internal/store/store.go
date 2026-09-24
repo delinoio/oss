@@ -22,7 +22,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const SchemaVersion = 11
+const SchemaVersion = 12
 const applicationID = 0x444c4456
 const MaxPage = 200
 
@@ -133,7 +133,7 @@ func Open(ctx context.Context, root string) (*Store, error) {
 		if err != nil {
 			return fail(err)
 		}
-		if _, err = tx.ExecContext(ctx, schema+workerSchema+catalogSchema+sessionSchema+jobControlSchema+assignmentSchema+executionSchema+executionMessageSchema+interactionSchema+inboxSchema+scheduleSchema); err == nil {
+		if _, err = tx.ExecContext(ctx, schema+workerSchema+catalogSchema+sessionSchema+jobControlSchema+assignmentSchema+executionSchema+executionMessageSchema+interactionSchema+inboxSchema+scheduleSchema+deletedConfigurationSchema); err == nil {
 			err = tx.Commit()
 		} else {
 			tx.Rollback()
@@ -524,6 +524,9 @@ func (t *Tx) Delete(kind domain.Kind, id domain.ID, expected uint64) error {
 	}
 	if _, err = t.tx.ExecContext(t.ctx, "INSERT INTO tombstones(id,kind,created_at) VALUES(?,?,?)", id, kind, t.now.UnixMilli()); err != nil {
 		return storageError(err)
+	}
+	if err := t.preserveDeletedProjectPolicy(r); err != nil {
+		return err
 	}
 	if _, err = t.tx.ExecContext(t.ctx, "DELETE FROM entities WHERE id=?", id); err != nil {
 		return storageError(err)

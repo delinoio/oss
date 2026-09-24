@@ -56,3 +56,6 @@ Update the project index, CLI contract, evidence ledger and scoped AGENTS with a
 - [Native harness adapter contract](cmds-delidev-harness-contract.md)
 - [Complete requirements](cmds-delidev-requirements.md)
 - [Repository defaults](repository-defaults.md)
+
+### Deleted project configuration
+Relay authorization continues to enforce current project restrictions while the project exists. If configuration is explicitly deleted, an established session snapshot may use only the final Agent/account restrictions atomically retained with that project's deletion tombstone. Missing or invalid retained evidence denies authority; it never implies unrestricted access. This keeps an already authorized native request independent of configuration lifetime without bypassing current account/connection, Worker, session/input or cancellation checks. New first dispatch still requires live configuration.

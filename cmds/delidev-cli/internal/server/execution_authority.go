@@ -84,6 +84,9 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 	if !session.OwnsExecution(input) {
 		return empty, executionDenied()
 	}
+	if err := tx.RequireExecutionAgent(session, input.Configuration.AgentID); err != nil {
+		return empty, executionDenied()
+	}
 	ir, err := tx.Get(domain.QueueKind, input.InputID)
 	if err != nil || ir.SessionID != input.SessionID {
 		return empty, executionDenied()
@@ -93,11 +96,7 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 		return empty, executionDenied()
 	}
 	if session.ProjectID != "" {
-		r, err := tx.Get(domain.ProjectKind, session.ProjectID)
-		if err != nil {
-			return empty, executionDenied()
-		}
-		project, err := store.Decode[domain.Project](r)
+		project, err := tx.ExecutionProjectPolicy(session)
 		if err != nil || !project.Agents.Allows(session.AgentID) || !project.Accounts.Allows(input.AccountID) {
 			return empty, executionDenied()
 		}

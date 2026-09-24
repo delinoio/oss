@@ -181,7 +181,7 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 			}
 			var calls, validations atomic.Int64
 			interruptedRequest := make(chan struct{}, 1)
-			steerStarted, releaseSteer := make(chan struct{}), make(chan struct{})
+			firstRequestStarted, releaseFirstRequest := make(chan struct{}), make(chan struct{})
 			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.Header.Get("Authorization") != "" {
 					t.Error("keyless upstream received a credential")
@@ -218,12 +218,12 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 					}
 				}
 				w.Header().Set("Content-Type", "text/event-stream")
-				if steerScenario && call == 1 {
+				if (steerScenario || profile == nativeCronWorkspace) && call == 1 {
 					fmt.Fprintf(w, "data: %s\n\n", `{"type":"response.created","response":{"id":"resp_public_fixture_1","status":"in_progress"}}`)
 					w.(http.Flusher).Flush()
-					close(steerStarted)
+					close(firstRequestStarted)
 					select {
-					case <-releaseSteer:
+					case <-releaseFirstRequest:
 					case <-ctx.Done():
 						return
 					case <-r.Context().Done():
@@ -242,7 +242,7 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 					map[string]any{"type": "response.output_item.done", "output_index": 0, "item": map[string]any{"type": "message", "id": fmt.Sprintf("msg_public_fixture_%d", call), "role": "assistant", "content": []any{map[string]any{"type": "output_text", "text": "Public execution complete."}}}},
 					map[string]any{"type": "response.completed", "response": map[string]any{"id": fmt.Sprintf("resp_public_fixture_%d", call), "status": "completed", "output": []any{}, "usage": map[string]any{"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}}},
 				} {
-					if steerScenario && call == 1 && index == 0 {
+					if (steerScenario || profile == nativeCronWorkspace) && call == 1 && index == 0 {
 						continue
 					}
 					raw, _ := json.Marshal(event)
@@ -324,7 +324,12 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 					id := domain.ID(repo["id"].(string))
 					repositories = append(repositories, id)
 				}
-				project := run([]string{"project", "create"}, domain.Project{Name: "Private native fixture", Repositories: repositories, PrimaryRepository: repositories[len(repositories)-1]})["resource"].(map[string]any)
+				projectDefinition := domain.Project{Name: "Private native fixture", Repositories: repositories, PrimaryRepository: repositories[len(repositories)-1]}
+				if profile == nativeCronWorkspace {
+					projectDefinition.Agents = domain.Restriction{Configured: true, IDs: []domain.ID{input.AgentID}}
+					projectDefinition.Accounts = domain.Restriction{Configured: true, IDs: []domain.ID{domain.ID(account["id"].(string))}}
+				}
+				project := run([]string{"project", "create"}, projectDefinition)["resource"].(map[string]any)
 				input.ProjectID = domain.ID(project["id"].(string))
 			}
 			var scheduleID, occurrenceID string
@@ -393,11 +398,26 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 			}
 			accepted := accept()
 			id := accepted["session"].(map[string]any)["id"].(string)
+			if profile == nativeCronWorkspace {
+				select {
+				case <-firstRequestStarted:
+				case <-ctx.Done():
+					t.Fatal("native cron request did not begin")
+				}
+				// Delete configuration while the original response is live. Its
+				// final restrictions and immutable session snapshot still govern
+				// this request and every subsequent continuation/Resume.
+				for _, selected := range []struct{ kind, id string }{{"project", string(input.ProjectID)}, {"agent", string(input.AgentID)}} {
+					current := run([]string{selected.kind, "get", "--id", selected.id}, nil)
+					run([]string{selected.kind, "delete", "--id", selected.id, "--revision", revision(current)}, nil)
+				}
+				close(releaseFirstRequest)
+			}
 			var state domain.Session
 			var steerArgs []string
 			if steerScenario {
 				select {
-				case <-steerStarted:
+				case <-firstRequestStarted:
 				case <-ctx.Done():
 					t.Fatal("native first request did not start")
 				}
@@ -440,7 +460,7 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 						t.Fatal("native Steer was not accepted")
 					}
 				}
-				close(releaseSteer)
+				close(releaseFirstRequest)
 			}
 			for {
 				current := run([]string{"session", "get", "--id", id}, nil)

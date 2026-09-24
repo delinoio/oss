@@ -12,7 +12,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
 
-const dropScheduleFixtureSchema = "DROP INDEX schedule_due; DROP INDEX occurrence_position; DROP INDEX occurrence_cron_due; DROP INDEX occurrence_pending; DROP INDEX session_schedule; ALTER TABLE worker_instances DROP COLUMN available_since; "
+const dropScheduleFixtureSchema = "DROP TABLE deleted_project_policies; DROP INDEX schedule_due; DROP INDEX occurrence_position; DROP INDEX occurrence_cron_due; DROP INDEX occurrence_pending; DROP INDEX session_schedule; ALTER TABLE worker_instances DROP COLUMN available_since; "
 
 func scheduleFixture(t *testing.T, s *Store) (Record, domain.Schedule) {
 	t.Helper()

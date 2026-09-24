@@ -108,7 +108,7 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 	}
 	// Recheck current restrictions without resolving changed Agent/templates or
 	// rerunning routing. Only the immutable selected account may continue.
-	if _, err := tx.Get(domain.AgentKind, c.AgentID); err != nil {
+	if err := tx.RequireExecutionAgent(session, c.AgentID); err != nil {
 		return empty, err
 	}
 	mr, err := tx.Get(domain.ModelKind, c.ModelID)
@@ -123,11 +123,7 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 		return empty, domain.Fail(domain.Unsupported, "The selected model no longer supports this execution profile.", "Restore compatibility without replacing the original session snapshot.")
 	}
 	if session.ProjectID != "" {
-		pr, err := tx.Get(domain.ProjectKind, session.ProjectID)
-		if err != nil {
-			return empty, err
-		}
-		project, err := store.Decode[domain.Project](pr)
+		project, err := tx.ExecutionProjectPolicy(session)
 		if err != nil {
 			return empty, err
 		}
