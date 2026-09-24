@@ -195,6 +195,10 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 			} else if event.Kind == domain.ExecutionNoticeObserved {
 				progress.NoticeCount++
 				progress.LastNotice = event.Notice
+			} else if event.Kind.IsTool() {
+				if err := publishExecutionTool(tx, input, sr, event); err != nil {
+					return err
+				}
 			} else if err := publishExecutionMessage(tx, input, sr, event); err != nil {
 				return err
 			}

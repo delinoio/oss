@@ -13,6 +13,11 @@ const (
 	ExecutionTurnFinished     ExecutionEventKind = "turn-finished"
 	ExecutionUsageObserved    ExecutionEventKind = "usage-observed"
 	ExecutionNoticeObserved   ExecutionEventKind = "notice-observed"
+	ExecutionToolStarted      ExecutionEventKind = "tool-started"
+	ExecutionToolCompleted    ExecutionEventKind = "tool-completed"
+	ExecutionToolOutput       ExecutionEventKind = "tool-output"
+	ExecutionToolInput        ExecutionEventKind = "tool-input"
+	ExecutionToolPatch        ExecutionEventKind = "tool-patch"
 )
 
 type MessageRole string
@@ -20,6 +25,7 @@ type MessageRole string
 const (
 	UserMessage      MessageRole = "user"
 	AssistantMessage MessageRole = "assistant"
+	ToolMessage      MessageRole = "tool"
 )
 
 type MessagePhase string
@@ -95,6 +101,7 @@ type ExecutionEvent struct {
 	ProblemCode    Code                       `json:"problem_code,omitempty"`
 	Usage          *NativeTokenUsage          `json:"usage,omitempty"`
 	ObservationID  ID                         `json:"observation_id,omitempty"`
+	Tool           *ExecutionToolUpdate       `json:"tool,omitempty"`
 	Notice         NativeNotice               `json:"notice,omitempty"`
 }
 
@@ -154,6 +161,13 @@ func (e ExecutionEvent) Validate() error {
 		} else if m.InputID != "" || (m.Phase != nil && *m.Phase != CommentaryMessage && *m.Phase != FinalMessage) {
 			return Fail(InvalidArgument, "Invalid native assistant message metadata.", "Preserve its typed phase without borrowing input ownership.")
 		}
+	case ExecutionToolStarted, ExecutionToolCompleted, ExecutionToolOutput, ExecutionToolInput, ExecutionToolPatch:
+		if e.Tool == nil {
+			return invalidTool()
+		}
+		if err := e.Tool.Validate(e.Kind); err != nil {
+			return err
+		}
 	case ExecutionTurnFinished:
 		if !slices.Contains([]ExecutionOutcome{ExecutionSucceeded, ExecutionFailed, ExecutionStopped}, e.Outcome) {
 			return Fail(InvalidArgument, "A terminal event requires a definitive native outcome.", "Keep uncertain acceptance separate from native completion.")
@@ -167,7 +181,7 @@ func (e ExecutionEvent) Validate() error {
 	default:
 		return Fail(Unsupported, "Unknown normalized execution event.", "Use a dedicated supported native event adapter.")
 	}
-	if (e.Kind != ExecutionThreadBound && e.Observed != nil) || (e.Kind != ExecutionMessageStarted && e.Kind != ExecutionTextAppended && e.Kind != ExecutionMessageCompleted && e.Message != nil) || (e.Kind != ExecutionTurnFinished && (e.Outcome != "" || e.ProblemCode != "")) || (e.Kind != ExecutionUsageObserved && (e.Usage != nil || e.ObservationID != "")) || (e.Kind != ExecutionNoticeObserved && e.Notice != "") {
+	if (!e.Kind.IsTool() && e.Tool != nil) || (e.Kind != ExecutionThreadBound && e.Observed != nil) || (e.Kind != ExecutionMessageStarted && e.Kind != ExecutionTextAppended && e.Kind != ExecutionMessageCompleted && e.Message != nil) || (e.Kind != ExecutionTurnFinished && (e.Outcome != "" || e.ProblemCode != "")) || (e.Kind != ExecutionUsageObserved && (e.Usage != nil || e.ObservationID != "")) || (e.Kind != ExecutionNoticeObserved && e.Notice != "") {
 		return Fail(InvalidArgument, "An execution event contains another kind's payload.", "Publish one unambiguous typed event.")
 	}
 	return nil
@@ -192,15 +206,16 @@ type ExecutionProgress struct {
 }
 
 type ExecutionMessage struct {
-	ExecutionID    ID            `json:"execution_id"`
-	NativeThreadID string        `json:"native_thread_id"`
-	NativeTurnID   string        `json:"native_turn_id"`
-	NativeID       string        `json:"native_id"`
-	Role           MessageRole   `json:"role"`
-	Phase          *MessagePhase `json:"phase,omitempty"`
-	InputID        ID            `json:"input_id,omitempty"`
-	Text           string        `json:"text"`
-	State          MessageState  `json:"state"`
-	FirstSequence  uint64        `json:"first_sequence"`
-	LastSequence   uint64        `json:"last_sequence"`
+	ExecutionID    ID             `json:"execution_id"`
+	NativeThreadID string         `json:"native_thread_id"`
+	NativeTurnID   string         `json:"native_turn_id"`
+	NativeID       string         `json:"native_id"`
+	Role           MessageRole    `json:"role"`
+	Phase          *MessagePhase  `json:"phase,omitempty"`
+	InputID        ID             `json:"input_id,omitempty"`
+	Text           string         `json:"text"`
+	State          MessageState   `json:"state"`
+	Tool           *ExecutionTool `json:"tool,omitempty"`
+	FirstSequence  uint64         `json:"first_sequence"`
+	LastSequence   uint64         `json:"last_sequence"`
 }

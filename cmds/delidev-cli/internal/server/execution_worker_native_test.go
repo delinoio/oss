@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -28,6 +29,7 @@ type nativeWorkerScenario uint8
 
 const (
 	nativeWorkerCompletion nativeWorkerScenario = iota
+	nativeWorkerCommand
 	nativeWorkerRevocation
 	nativeWorkerDisconnect
 	nativeWorkerStop
@@ -36,6 +38,13 @@ const (
 
 func TestManualNativeWorkerExecutesAcceptedCodexJob(t *testing.T) {
 	testManualNativeWorkerExecution(t, nativeWorkerCompletion)
+}
+
+func TestManualNativeWorkerPublishesCodexCommand(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("this installed-harness fixture uses a POSIX shell builtin")
+	}
+	testManualNativeWorkerExecution(t, nativeWorkerCommand)
 }
 
 func TestManualNativeWorkerRevocationJoinsCodexCleanup(t *testing.T) {
@@ -69,10 +78,11 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+	completedScenario := scenario == nativeWorkerCompletion || scenario == nativeWorkerCommand
 	var calls atomic.Int64
 	started, upstreamStopped := make(chan struct{}, 1), make(chan struct{}, 1)
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls.Add(1)
+		call := calls.Add(1)
 		if r.Method != http.MethodPost || r.URL.Path != "/responses" || r.Header.Get("Authorization") != "Bearer temporary-upstream-fixture-key" {
 			t.Error("Worker inference escaped server-only API authority")
 			http.Error(w, "unsupported", http.StatusForbidden)
@@ -82,11 +92,40 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 		if err != nil || !strings.Contains(string(body), "Fixture prompt") || !strings.Contains(string(body), "fixture-model") {
 			t.Error("Worker changed the accepted native input/model")
 		}
-		if scenario != nativeWorkerCompletion {
+		if !completedScenario {
 			started <- struct{}{}
 			<-r.Context().Done()
 			upstreamStopped <- struct{}{}
 			return
+		}
+		if scenario == nativeWorkerCommand && call == 1 {
+			var toolRequest struct {
+				Tools []struct{ Type, Name string } `json:"tools"`
+			}
+			if json.Unmarshal(body, &toolRequest) != nil {
+				t.Error("native tool definitions unavailable")
+			}
+			found := false
+			for _, tool := range toolRequest.Tools {
+				found = found || (tool.Type == "function" && tool.Name == "exec_command")
+			}
+			if !found {
+				t.Error("selected native profile did not expose exec_command")
+			}
+			args, _ := json.Marshal(map[string]any{"cmd": "printf 'native-tool-fixture\\n'", "login": false, "max_output_tokens": 1000, "yield_time_ms": 1000})
+			w.Header().Set("Content-Type", "text/event-stream")
+			for _, event := range []any{
+				map[string]any{"type": "response.created", "response": map[string]any{"id": "resp_worker_tool", "status": "in_progress"}},
+				map[string]any{"type": "response.output_item.done", "output_index": 0, "item": map[string]any{"type": "function_call", "id": "fc_worker_fixture", "call_id": "call_worker_fixture", "name": "exec_command", "arguments": string(args)}},
+				map[string]any{"type": "response.completed", "response": map[string]any{"id": "resp_worker_tool", "status": "completed", "output": []any{}, "usage": map[string]any{"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}}},
+			} {
+				raw, _ := json.Marshal(event)
+				_, _ = fmt.Fprintf(w, "data: %s\n\n", raw)
+			}
+			return
+		}
+		if scenario == nativeWorkerCommand && (call != 2 || !strings.Contains(string(body), "function_call_output") || !strings.Contains(string(body), "native-tool-fixture") || !strings.Contains(string(body), "call_worker_fixture")) {
+			t.Error("native command output did not reach the same selected account")
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		for _, event := range []any{
@@ -123,7 +162,7 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 		workerErr = worker.Run(running, worker.Config{Root: manager.Root, Logger: f.service.logger})
 	}()
 	t.Cleanup(func() { stopWorker(); <-done })
-	if scenario != nativeWorkerCompletion {
+	if !completedScenario {
 		select {
 		case <-started:
 		case <-ctx.Done():
@@ -284,8 +323,12 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 			t.Fatal("Worker did not report native execution completion")
 		}
 	}
+	expectedCalls, expectedMessages := int64(1), 2
+	if scenario == nativeWorkerCommand {
+		expectedCalls, expectedMessages = 2, 3
+	}
 	var completion domain.ExecutionCompletion
-	if domain.Decode(completed.Output, &completion) != nil || completion.Validate() != nil || calls.Load() != 1 {
+	if domain.Decode(completed.Output, &completion) != nil || completion.Validate() != nil || calls.Load() != expectedCalls {
 		t.Fatal("Worker completion lacks exact native terminal/cleanup evidence")
 	}
 	retained, err := f.service.Store.Get(ctx, domain.SessionKind, f.input.SessionID)
@@ -297,14 +340,25 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 		t.Fatal("Worker native completion was not atomically published")
 	}
 	messages, err := f.service.Store.List(ctx, store.Filter{Kind: domain.MessageKind, SessionID: f.input.SessionID, Limit: 10})
-	if err != nil || len(messages) != 2 {
+	if err != nil || len(messages) != expectedMessages {
 		t.Fatal("native Worker lost its transcript")
 	}
+	sawTool := false
 	for _, row := range messages {
 		message, err := store.Decode[domain.ExecutionMessage](row)
 		if err != nil || message.State != domain.MessageComplete {
 			t.Fatal("native Worker retained an incomplete message")
 		}
+		if message.Role == domain.ToolMessage {
+			sawTool = true
+			tool := message.Tool
+			if tool == nil || tool.Started.Kind != domain.CommandTool || tool.Completed == nil || tool.Completed.Status != domain.ToolCompleted || tool.Completed.Command.ExitCode == nil || *tool.Completed.Command.ExitCode != 0 || tool.Completed.Command.AggregatedOutput == nil || !strings.Contains(*tool.Completed.Command.AggregatedOutput, "native-tool-fixture") || (tool.Output != nil && !strings.Contains(*tool.Output, "native-tool-fixture")) {
+				t.Fatal("native Worker command transcript lost actual output or completion")
+			}
+		}
+	}
+	if (scenario == nativeWorkerCommand) != sawTool {
+		t.Fatal("native command was not retained as a dedicated tool")
 	}
 	// The retained runtime must support later native reconciliation without
 	// keeping either the execution bearer or the server's upstream credential.

@@ -17,11 +17,12 @@ type CodexEventPublisher struct {
 	publisher         *ExecutionPublisher
 	thread, turn      domain.ID
 	messages          map[string]domain.ExecutionMessageUpdate
+	tools             map[string]codexToolPublication
 	blocked, finished bool
 }
 
 func NewCodexEventPublisher(publisher *ExecutionPublisher) *CodexEventPublisher {
-	return &CodexEventPublisher{publisher: publisher, messages: map[string]domain.ExecutionMessageUpdate{}}
+	return &CodexEventPublisher{publisher: publisher, messages: map[string]domain.ExecutionMessageUpdate{}, tools: map[string]codexToolPublication{}}
 }
 
 func (c *CodexEventPublisher) publish(ctx context.Context, event domain.ExecutionEvent) error {
@@ -87,7 +88,7 @@ func (c *CodexEventPublisher) AcceptInput(ctx context.Context, result codex.Turn
 }
 
 // PublishCore reports whether this component handled the typed observation.
-// False is never permission to silently drop native tools/quota/interactions;
+// False is never permission to silently drop unhandled quota/interactions;
 // these require their own dedicated product adapters before full dispatch.
 func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event) (handled bool, returned error) {
 	c.mu.Lock()
@@ -134,13 +135,15 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 		}
 		// Native idle/active does not override retained input or terminal state.
 		return true, nil
+	case codex.ToolStartedEvent, codex.ToolCompletedEvent, codex.ToolOutputEvent, codex.ToolInputEvent, codex.ToolPatchEvent:
+		return true, c.publishTool(ctx, event)
 	case codex.MessageStartedEvent, codex.MessageCompletedEvent:
 		if event.Message == nil || event.ItemID != event.Message.ID {
 			return false, publicationUncertain()
 		}
 		message, known := c.messages[event.ItemID]
 		if event.Kind == codex.MessageStartedEvent {
-			if known || len(c.messages) >= 10000 {
+			if _, tool := c.tools[event.ItemID]; known || tool || len(c.messages)+len(c.tools) >= 10000 {
 				return false, publicationUncertain()
 			}
 			message = domain.ExecutionMessageUpdate{ID: domain.NewID(), NativeID: event.ItemID}
