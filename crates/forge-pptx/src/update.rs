@@ -85,6 +85,77 @@ fn change_geometry(bytes: &[u8], native_id: u32, new: &str) -> Result<Vec<u8>> {
     }
     apply_edits(bytes, changes)
 }
+fn change_shape_properties(
+    bytes: &[u8],
+    native_id: u32,
+    doc: &Presentation,
+    old: &Node,
+    new: &Node,
+) -> Result<Vec<u8>> {
+    let parsed = xml(bytes)?;
+    let shape = shape_element(&parsed, native_id).ok_or_else(|| failure("shape"))?;
+    let properties = shape
+        .children()
+        .find(|n| n.has_tag_name((P, "spPr")))
+        .ok_or_else(|| failure("shape properties"))?;
+    let geometries: Vec<_> = properties
+        .children()
+        .filter(|n| n.has_tag_name((A, "prstGeom")))
+        .collect();
+    if geometries.len() != 1 {
+        return error(
+            ErrorCode::UnsupportedEdit,
+            "/shape",
+            "Shape geometry cannot be replaced safely",
+        );
+    }
+    let geometry = geometries[0];
+    let mut edits = Vec::new();
+    if old.shape != new.shape {
+        let preset = match new.shape {
+            Shape::Rect => "rect",
+            Shape::RoundedRect => "roundRect",
+            Shape::Ellipse => "ellipse",
+        };
+        edits.push((
+            geometry.range(),
+            format!("<a:prstGeom xmlns:a=\"{A}\" prst=\"{preset}\"><a:avLst/></a:prstGeom>"),
+        ));
+    }
+    if old.fill != new.fill {
+        let fills: Vec<_> = properties
+            .children()
+            .filter(|n| {
+                n.tag_name().namespace() == Some(A)
+                    && matches!(
+                        n.tag_name().name(),
+                        "noFill" | "solidFill" | "gradFill" | "blipFill" | "pattFill" | "grpFill"
+                    )
+            })
+            .collect();
+        if fills.len() > 1 {
+            return error(
+                ErrorCode::UnsupportedEdit,
+                "/fill",
+                "Ambiguous native shape fills cannot be replaced safely",
+            );
+        }
+        let color = doc.resolve_color(&new.fill, "#2563EB");
+        let fill = format!(
+            "<a:solidFill xmlns:a=\"{A}\"><a:srgbClr val=\"{}\"/></a:solidFill>",
+            &color[1..]
+        );
+        // Fill follows geometry and precedes line/effect/extension children.
+        // Only explicitly changed properties are owned by this edit.
+        let range = fills
+            .first()
+            .map(|n| n.range())
+            .unwrap_or(geometry.range().end..geometry.range().end);
+        edits.push((range, fill));
+    }
+    apply_edits(bytes, edits)
+}
+
 fn change_text(
     bytes: &[u8],
     native_id: u32,
@@ -871,6 +942,9 @@ pub fn update_with_measurer(
                         old_placement.nodes[&id].font_scale,
                         placement.nodes[&id].font_scale,
                     )?;
+                }
+                if n.kind == NodeKind::Shape && (old.shape != n.shape || old.fill != n.fill) {
+                    current = change_shape_properties(&current, b.shape_id, after, old, n)?;
                 }
                 if n.kind == NodeKind::Image && (old.asset_ref != n.asset_ref || moved) {
                     current = replace_image(&current, b.shape_id, &fragment)?;

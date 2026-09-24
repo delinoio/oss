@@ -1631,3 +1631,115 @@ fn replacing_an_imported_container_cannot_remove_opaque_descendants() {
         EXTERNAL
     );
 }
+
+#[test]
+fn imported_shape_property_edits_change_native_preset_and_fill_only() {
+    let mut source_parts = read_package(EXTERNAL).unwrap();
+    let slide = xml_part(&source_parts, "ppt/slides/slide1.xml");
+    let shape = r#"<p:sp><p:nvSpPr><p:cNvPr id="999" name="Editable shape"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="127000" y="127000"/><a:ext cx="1270000" cy="1270000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="123456"/></a:solidFill><a:ln w="12700"><a:solidFill><a:srgbClr val="445566"/></a:solidFill></a:ln><a:effectLst/><a:extLst><a:ext uri="urn:preserve"><custom:keep xmlns:custom="urn:custom"/></a:ext></a:extLst></p:spPr></p:sp>"#;
+    source_parts.insert(
+        "ppt/slides/slide1.xml".into(),
+        slide
+            .replace("</p:spTree>", &format!("{shape}</p:spTree>"))
+            .into_bytes(),
+    );
+    let source = write_package(&source_parts).unwrap();
+    let imported = import(&source).unwrap();
+    let selected = target(&imported.document, NodeKind::Shape);
+    let binding = &imported.bindings[&selected.node_id.unwrap()];
+    let parts = read_package(&source).unwrap();
+    let original = xml_part(&parts, &binding.part);
+    let parsed = roxmltree::Document::parse(&original).unwrap();
+    let shape = parsed
+        .descendants()
+        .find(|n| {
+            n.tag_name().name() == "cNvPr"
+                && n.attribute("id") == Some(binding.shape_id.to_string().as_str())
+        })
+        .unwrap()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap();
+    let old_properties = shape
+        .children()
+        .find(|n| n.tag_name().name() == "spPr")
+        .unwrap();
+    let unrelated: Vec<_> = old_properties
+        .children()
+        .filter(|n| {
+            n.is_element()
+                && !matches!(
+                    n.tag_name().name(),
+                    "prstGeom" | "solidFill" | "noFill" | "gradFill"
+                )
+        })
+        .map(|n| &original[n.range()])
+        .collect();
+    for (preset, expected) in [
+        (Shape::Ellipse, "ellipse"),
+        (Shape::RoundedRect, "roundRect"),
+        (Shape::Rect, "rect"),
+    ] {
+        let mut next = imported.document.clone();
+        let node = next.find_mut(&selected).unwrap();
+        node.shape = preset;
+        node.fill.color = Some("#AABBCC".into());
+        let output = update(
+            &source,
+            &imported.document,
+            &imported.bindings,
+            &next,
+            &imported.assets,
+            imported.document_id,
+            1,
+        )
+        .unwrap();
+        let result = read_package(&output).unwrap();
+        let slide = xml_part(&result, &binding.part);
+        let parsed = roxmltree::Document::parse(&slide).unwrap();
+        let shape = parsed
+            .descendants()
+            .find(|n| {
+                n.tag_name().name() == "cNvPr"
+                    && n.attribute("id") == Some(binding.shape_id.to_string().as_str())
+            })
+            .unwrap()
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap();
+        let props = shape
+            .children()
+            .find(|n| n.tag_name().name() == "spPr")
+            .unwrap();
+        assert_eq!(
+            props
+                .descendants()
+                .find(|n| n.tag_name().name() == "prstGeom")
+                .unwrap()
+                .attribute("prst"),
+            Some(expected)
+        );
+        assert_eq!(
+            props
+                .children()
+                .find(|n| n.tag_name().name() == "solidFill")
+                .unwrap()
+                .first_element_child()
+                .unwrap()
+                .attribute("val"),
+            Some("AABBCC")
+        );
+        for preserved in &unrelated {
+            assert!(slide[props.range()].contains(preserved));
+        }
+        for (path, bytes) in &parts {
+            if path != &binding.part
+                && !matches!(path.as_str(), "[Content_Types].xml" | "_rels/.rels")
+            {
+                assert_eq!(&result[path], bytes, "{path}");
+            }
+        }
+    }
+}
