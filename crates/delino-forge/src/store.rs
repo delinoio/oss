@@ -463,26 +463,31 @@ impl Store {
         let _guard = self.lock(id)?;
         let (state, _) = self.current(id)?;
         let mut budget = 1000;
-        fn project(n: &Node, depth: usize, budget: &mut usize) -> serde_json::Value {
-            if *budget == 0 {
-                return serde_json::json!({"truncated":true});
-            }
+        let mut truncated = false;
+        fn project(
+            n: &Node,
+            depth: usize,
+            budget: &mut usize,
+            truncated: &mut bool,
+        ) -> serde_json::Value {
             *budget -= 1;
             let mut shallow = n.clone();
             shallow.children.clear();
             let mut v = serde_json::to_value(shallow).unwrap_or_default();
             v["child_count"] = serde_json::json!(n.children.len());
-            v["children"] = if depth == 0 {
-                serde_json::json!([])
-            } else {
-                serde_json::Value::Array(
-                    n.children
-                        .iter()
-                        .take(1000)
-                        .map(|n| project(n, depth - 1, budget))
-                        .collect(),
-                )
-            };
+            let mut children = Vec::new();
+            if depth > 0 {
+                for child in &n.children {
+                    if *budget == 0 {
+                        break;
+                    }
+                    children.push(project(child, depth - 1, budget, truncated));
+                }
+            }
+            let omitted = children.len() < n.children.len();
+            *truncated |= omitted;
+            v["truncated"] = serde_json::json!(omitted);
+            v["children"] = serde_json::Value::Array(children);
             v
         }
         let content = if let Some(target) = target {
@@ -491,12 +496,20 @@ impl Store {
                 .document
                 .find(&target)
                 .ok_or_else(|| Diagnostic::new(ErrorCode::NotFound, "/target", "Node not found"))?;
-            project(node, depth, &mut budget)
+            project(node, depth, &mut budget, &mut truncated)
         } else {
-            serde_json::json!({"page":state.document.page,"slides":state.document.slides.iter().take(1000).map(|s|serde_json::json!({"id":s.id,"key":s.key,"slide_layout_ref":s.slide_layout_ref,"content":project(&s.content,depth,&mut budget)})).collect::<Vec<_>>()})
+            let mut slides = Vec::new();
+            for slide in &state.document.slides {
+                if budget == 0 {
+                    break;
+                }
+                slides.push(serde_json::json!({"id":slide.id,"key":slide.key,"slide_layout_ref":slide.slide_layout_ref,"content":project(&slide.content,depth,&mut budget,&mut truncated)}));
+            }
+            truncated |= slides.len() < state.document.slides.len();
+            serde_json::json!({"page":state.document.page,"slide_count":state.document.slides.len(),"slides":slides})
         };
         Ok(
-            serde_json::json!({"document_id":id,"revision":state.revision,"content":content,"layouts":state.layouts,"truncated":budget==0}),
+            serde_json::json!({"document_id":id,"revision":state.revision,"content":content,"layouts":state.layouts,"truncated":truncated}),
         )
     }
 
@@ -595,6 +608,84 @@ pub fn default_root() -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn inspection_budget_stops_all_sibling_and_slide_traversal() {
+        fn count(v: &serde_json::Value) -> usize {
+            match v {
+                serde_json::Value::Object(o) => {
+                    usize::from(o.contains_key("type")) + o.values().map(count).sum::<usize>()
+                }
+                serde_json::Value::Array(a) => a.iter().map(count).sum(),
+                _ => 0,
+            }
+        }
+        let temp = tempfile::tempdir().unwrap();
+        let store = Store::new(Some(temp.path().join("state")), CancellationToken::new()).unwrap();
+        let mut document: Presentation = parse(include_bytes!(
+            "../../forge-tree-doc/examples/overview.json"
+        ))
+        .unwrap();
+        let branch = Node {
+            kind: NodeKind::Column,
+            children: vec![
+                Node {
+                    kind: NodeKind::Shape,
+                    ..Default::default()
+                };
+                200
+            ],
+            ..Default::default()
+        };
+        document.slides[0].content = Node {
+            kind: NodeKind::Column,
+            children: vec![branch; 10],
+            ..Default::default()
+        };
+        let mut second = document.slides[0].clone();
+        second.key = Some("second".into());
+        document.slides.push(second);
+        document.assign_ids();
+        validate(&document, false).unwrap();
+        let state = State {
+            document_id: Uuid::now_v7(),
+            revision: 0,
+            document,
+            bindings: BTreeMap::new(),
+            layouts: Vec::new(),
+            source: None,
+        };
+        // Inspection reads the logical tree; no Office serialization is needed
+        // to exercise its independent traversal and response limits.
+        store.commit(&state, b"inspection fixture").unwrap();
+        let result = store.inspect(state.document_id, None, 8).unwrap();
+        assert_eq!(count(&result["content"]), 1000);
+        assert_eq!(result["content"]["slides"].as_array().unwrap().len(), 1);
+        assert_eq!(result["content"]["slide_count"], 2);
+        assert_eq!(result["truncated"], true);
+        let target = Target {
+            node_id: state.document.slides[1].content.id,
+            key: None,
+        };
+        let result = store
+            .inspect(state.document_id, Some(target.clone()), 8)
+            .unwrap();
+        assert_eq!(count(&result["content"]), 1000);
+        assert_eq!(result["content"]["children"].as_array().unwrap().len(), 5);
+        assert_eq!(result["content"]["child_count"], 10);
+        assert_eq!(result["content"]["truncated"], true);
+        let result = store.inspect(state.document_id, Some(target), 0).unwrap();
+        assert_eq!(count(&result["content"]), 1);
+        assert_eq!(result["truncated"], true);
+        let leaf = Target {
+            node_id: state.document.slides[0].content.children[0].children[0].id,
+            key: None,
+        };
+        assert_eq!(
+            store.inspect(state.document_id, Some(leaf), 8).unwrap()["truncated"],
+            false
+        );
+    }
 
     #[test]
     fn source_export_recovers_every_publication_boundary() {
