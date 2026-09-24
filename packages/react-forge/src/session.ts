@@ -211,9 +211,9 @@ export class DocumentSession {
       const roots = this.imported ? Array.from(this.mounts.values()) : [this.root];
       await Promise.all(roots.map(root => root.settled(signal)));
       checkSignal(signal);
-      // Mutations/assets can arrive while Suspense is pending. Recheck before
-      // pinning so newly mounted work is never exported as a fallback snapshot.
-      if (queue === this.queue && this.pendingAssets.size === 0) break;
+      // A root that settled earlier can receive a hook update while another root
+      // is suspended. Recheck all roots synchronously with the snapshot boundary.
+      if (queue === this.queue && this.pendingAssets.size === 0 && roots.every(root => root.isSettled())) break;
     }
     const refs = new Map<string, string>();
     let model: Model;

@@ -186,3 +186,36 @@ test("external PPTX mounts retain original source identities without requiring e
     assert.match((await processPptx("inspect", {}, await session.exportBuffer(), new Map(), session.documentId, 0, new AbortController().signal)).model, /Second external edit/);
   } finally { await session.dispose(); }
 });
+
+test("all mounted roots must still be settled when an export pins its snapshot", async () => {
+  const original = createSession(Format.Pptx);
+  await original.render(<Presentation><Slide><Column><Text>One</Text><Text>Two</Text></Column></Slide></Presentation>);
+  const imported = await importOffice(Format.Pptx, await original.exportBuffer());
+  await original.dispose();
+  const first = Promise.withResolvers<string>();
+  const second = Promise.withResolvers<string>();
+  let update!: () => void;
+  function First() {
+    const [pending, setPending] = useState(false);
+    update = () => setPending(true);
+    return <Text>{pending ? use(first.promise) : "Earlier state"}</Text>;
+  }
+  function Second() { return <Text>{use(second.promise)}</Text>; }
+  try {
+    const targets = imported.inspect().targets.filter(t => t.kind === "text");
+    await imported.mount(targets[0]!, <Suspense fallback={<Text>Fallback one</Text>}><First /></Suspense>);
+    await imported.mount(targets[1]!, <Suspense fallback={<Text>Fallback two</Text>}><Second /></Suspense>);
+    let finished = false;
+    const output = imported.exportBuffer().then(bytes => { finished = true; return bytes; });
+    await new Promise(resolve => setTimeout(resolve, 20));
+    update();
+    await new Promise(resolve => setTimeout(resolve, 20));
+    second.resolve("Second ready");
+    await new Promise(resolve => setTimeout(resolve, 50));
+    assert.equal(finished, false);
+    first.resolve("First updated");
+    const result = await processPptx("inspect", {}, await output, new Map(), imported.documentId, 0, new AbortController().signal);
+    assert.match(result.model, /First updated/); assert.match(result.model, /Second ready/);
+    assert.doesNotMatch(result.model, /Fallback|Earlier state/);
+  } finally { first.resolve("cleanup"); second.resolve("cleanup"); await imported.dispose(); }
+});

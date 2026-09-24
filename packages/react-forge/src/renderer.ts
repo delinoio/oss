@@ -186,6 +186,11 @@ export class RenderRoot {
     return (root.pendingLanes & ~536870912) !== 0 || hasPendingBoundary(root.current);
   }
 
+  isSettled(): boolean {
+    this.assertActive();
+    return !this.pending();
+  }
+
   async settled(signal?: AbortSignal): Promise<void> {
     this.assertActive();
     await abortable(new Promise<void>(resolve => setImmediate(resolve)), signal);
