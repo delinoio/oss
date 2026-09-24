@@ -10,6 +10,7 @@
 - `crates/forge-tree-doc`, `crates/forge-pptx`, `crates/delino-forge`: private Forge DSL, preserving PPTX adapter, and local CLI/stdio MCP. Follow `docs/crates-forge-foundation.md`; keep structured logs free of document content and keep source writes behind explicit export. Keep the committed schema synchronized with Rust types, retain font source/license/hash and external-fixture provenance, and exercise the optional-renderer test explicitly in Forge rendering CI.
 - Forge-generated content-type override paths must match the exact spelling of their ZIP members for reader interoperability. Scope compatibility normalization to new packages and preserve imported source XML.
 - Forge document lock guards must explicitly unlock on drop, including error exits, so duplicated or fork-inherited descriptors cannot extend a completed operation's lock lifetime. Preserve exclusive ownership checks and redact lock-release diagnostics.
+- Forge custom XML ownership requires both its package relationship and namespace identity. Preserve unrelated colliding part names and relationship IDs, and bind those original parts into the metadata hashes.
 
 - `crates/binpm`: Rust-based Node-free binary package manager for release assets.
 - `crates/cargo-mono`: Cargo-based Rust monorepo management CLI.

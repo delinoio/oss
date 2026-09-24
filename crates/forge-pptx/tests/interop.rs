@@ -199,6 +199,74 @@ fn all_nodes_are_native_and_chart_workbook_matches() {
     assert!(sheet.contains(">99<"));
 }
 #[test]
+fn unrelated_custom_xml_does_not_claim_forge_identity_or_get_overwritten() {
+    let mut parts = read_package(EXTERNAL).unwrap();
+    let unrelated = b"<forge xmlns=\"urn:another-application\">original payload</forge>";
+    parts.insert("customXml/forge.xml".into(), unrelated.to_vec());
+    let relationship = "<Relationship Id=\"rIdForgeMetadata\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml\" Target=\"/customXml/forge.xml\"/>";
+    let rels = xml_part(&parts, "_rels/.rels").replace(
+        "</Relationships>",
+        &format!("{relationship}</Relationships>"),
+    );
+    parts.insert("_rels/.rels".into(), rels.into_bytes());
+    let source = write_package(&parts).unwrap();
+    let imported = import(&source).unwrap();
+    assert_eq!(
+        update(
+            &source,
+            &imported.document,
+            &imported.bindings,
+            &imported.document,
+            &imported.assets,
+            imported.document_id,
+            0
+        )
+        .unwrap(),
+        source
+    );
+    let next = patch(
+        &imported,
+        vec![Operation::SetText {
+            target: target(&imported.document, NodeKind::Text),
+            text: "Modified".into(),
+            cell: None,
+        }],
+    );
+    let output = update(
+        &source,
+        &imported.document,
+        &imported.bindings,
+        &next,
+        &imported.assets,
+        imported.document_id,
+        1,
+    )
+    .unwrap();
+    let reopened = import(&output).unwrap();
+    assert_eq!(reopened.document_id, imported.document_id);
+    assert_eq!(reopened.revision, 1);
+    assert_eq!(
+        reopened
+            .document
+            .find(&target(&next, NodeKind::Text))
+            .unwrap()
+            .text
+            .as_deref(),
+        Some("Modified")
+    );
+    let output_parts = read_package(&output).unwrap();
+    assert_eq!(output_parts["customXml/forge.xml"], unrelated);
+    assert!(xml_part(&output_parts, "_rels/.rels").contains(relationship));
+    let mut externally_changed = output_parts;
+    externally_changed.insert("customXml/forge.xml".into(), b"<external/>".to_vec());
+    assert_eq!(
+        import(&write_package(&externally_changed).unwrap())
+            .unwrap_err()
+            .code,
+        ErrorCode::StaleMetadata
+    );
+}
+#[test]
 fn external_noop_is_byte_exact_and_partial_edits_preserve_extensions() {
     let i = import(EXTERNAL).unwrap();
     assert_eq!(

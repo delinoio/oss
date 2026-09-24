@@ -404,13 +404,13 @@ pub fn import(bytes: &[u8]) -> Result<Imported> {
     let parts = read(bytes)?;
     validate_package(&parts)?;
     let layouts = template_layouts(&parts)?;
-    if let Some(meta) = parts.get(META) {
-        let x = xml(meta)?;
+    if let Some(metadata_path) = crate::metadata_part(&parts)? {
+        let x = xml(&parts[&metadata_path])?;
         let text = x.root_element().text().ok_or_else(|| failure("metadata"))?;
         let m: Metadata = serde_json::from_str(text).map_err(failure)?;
         let hashes: BTreeMap<_, _> = parts
             .iter()
-            .filter(|(n, _)| n.as_str() != META)
+            .filter(|(n, _)| **n != metadata_path)
             .map(|(n, b)| (n.clone(), sha(b)))
             .collect();
         if m.version != 1 || m.hashes != hashes {
