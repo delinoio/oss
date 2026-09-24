@@ -1,7 +1,7 @@
 # React Forge Node Contract
 
 ## Scope
-`packages/react-forge` owns the private `@delino/react-forge` library, one-shot TSX CLI and [session-based stdio MCP](packages-react-forge-mcp-contract.md). The [complete requirements](packages-react-forge-requirements.md) are normative; this contract records implementation boundaries, not a reduced delivery scope.
+`packages/react-forge` owns the public `@delino/react-forge` library, one-shot TSX CLI and [session-based stdio MCP](packages-react-forge-mcp-contract.md). The [complete requirements](packages-react-forge-requirements.md) are normative; this contract records implementation boundaries, not a reduced delivery scope.
 
 The local Office/PDF behavior below is extended by the [Figma contract](packages-react-forge-figma-contract.md), which separately specifies remote creation/editing, host-owned authentication, explicit publication, partial outcomes and receipts. Its network and remote-state exceptions do not apply to the local formats.
 
@@ -9,7 +9,7 @@ The local Office/PDF behavior below is extended by the [Figma contract](packages
 Node.js 24 on macOS, Windows and glibc Linux, each with x64 and arm64, TypeScript, React 19.2.8 and react-reconciler 0.33.0. TSX executes trusted caller code with ordinary caller permissions. The reconciler must implement real React commits, refs, effects, Suspense, transitions and Activity; invoking components manually is forbidden.
 
 ## Users and Operators
-Repository developers authoring reusable document tasks. The local stdio MCP interface serves trusted document tasks. There is no public package, hosted service or GUI.
+Node.js developers authoring reusable document tasks. The local stdio MCP interface serves trusted document tasks. There is no hosted service or GUI.
 
 ## Interfaces and Contracts
 Common session APIs own settled `snapshot({ signal })` inspection without file generation, creation, Office import, inspection, root rendering, target mounting/updating, revision-aware asynchronous measurement, Buffer/file export, diagnostic subscriptions and disposal. Format imports are `@delino/react-forge/pptx`, `/docx`, `/xlsx`, and `/pdf`. Separate models retain each format's semantics. Refs expose typed document-node handles; layout effects follow React commit timing, not native layout completion.
@@ -47,7 +47,7 @@ Synchronize project/native contracts, package ownership rules, examples, capabil
 ## Implemented Sessions and Formats
 All four format engines connect through native session operations. Spreadsheet inspection includes sheet names and zero-based address/range data; mounted cells and rules may omit these to retain their imported selection. DOCX/XLSX support native bar, line and pie charts. Spreadsheet generation and mounted edits cover all specified value, formatting, conditional-formatting and validation families. PDF has independent text/list/table flow, images, shapes, links and explicit/automatic page breaks.
 
-`registerFont(bytesOrPath)` registers bounded fonts. System discovery is default; `createSession(format, { systemFonts: false })` requires explicit caller fonts. Assets settle before the revision is pinned. Workspace tasks for all four formats and `examples/edit-office.tsx` demonstrate the library and CLI interfaces. The installed-consumer test packs the private package, installs it into a temporary project and exercises the real binary for all four formats. This test is not public distribution.
+`registerFont(bytesOrPath)` registers bounded fonts. System discovery is default; `createSession(format, { systemFonts: false })` requires explicit caller fonts. Assets settle before the revision is pinned. Workspace tasks for all four formats and `examples/edit-office.tsx` demonstrate the library and CLI interfaces. The installed-consumer test packs the workspace source package, installs it into a temporary project and exercises the real binary for all four formats. The public distribution has a separate seven-package assembled-candidate test.
 
 `examples/travel-ir.tsx` is the designed 12-slide English ROAM investor-pitch example. It uses reusable React components, module-relative local image registration with cancellation, native text/table/chart output, and an embedded chart workbook. Its committed assets and exact image-generation prompts live in `examples/travel-ir-assets`; generation itself requires no network or converter. That directory documents font references, external market-statistic provenance and all fictional financial assumptions. Keep assumptions and formulas consistent, retain the distinction between concept imagery and a shipping app, and keep generated presentations/previews untracked.
 
@@ -59,13 +59,13 @@ Pinned exports snapshot font registrations along with model/assets, and font cha
 
 
 ## Validation and CI
-The `react-forge` CI job is selected on affected PRs and main pushes. Its six native runners cover macOS x64/arm64, Windows x64/arm64 and glibc Linux x64/arm64 with Node 24; each builds the private binding, runs native and existing Forge regressions plus Clippy, and invokes package-owned build/typecheck/lint/test tasks through Turbo. Native/system-font-dependent build, test, rendering and benchmark tasks are never Turbo-cacheable. The job has no release or publication credentials or action.
+The `react-forge` CI job is selected on affected PRs and main pushes. Its six native runners cover macOS x64/arm64, Windows x64/arm64 and glibc Linux x64/arm64 with Node 24; each builds the private binding, runs native and existing Forge regressions plus Clippy, and invokes package-owned build/typecheck/lint/test tasks through Turbo. Native/system-font-dependent build, test, rendering and benchmark tasks are never Turbo-cacheable. The job has no publication credentials or action. A dependent CI job verifies the complete seven-package candidate; the separate tag workflow owns release publication.
 
 Test-only LibreOffice/Poppler and pinned Python inspection dependencies produce created/edited Office renders plus independent native PDF renders. Original external Office fixtures are rendered alongside edits so original pagination, including deliberate blank pages, is distinguished from lost output. Structural XML, expected text, visible chart series, CJK text and PDF semantics are checked. Tool/font versions and checksums are recorded without redistributing system fonts. CI retains render and benchmark artifacts for seven days and removes generated package dist even on failure.
 
 `benchmark` runs representative authoring for all formats, preserving edits for three Office formats, and near-limit trees/slides in fresh Node processes. Reports include preparation/export duration, output size, peak RSS, event-loop p99/max delay and utilization, OS/CPU and dependency versions. They are observations without numerical guarantees. See [validation evidence](packages-react-forge-validation.md) for reproduction and limitations.
 
-The private workspace manifest omits `os`/`cpu` installation filters so unrelated cross-platform pnpm tools retain byte-clean stdout (including protoc plugins and clibox). Native build and loading independently enforce Node.js 24 and the six declared platform/architecture targets.
+The private source workspace manifest omits `os`/`cpu` installation filters so unrelated cross-platform pnpm tools retain byte-clean stdout (including protoc plugins and clibox). Native build and loading independently enforce Node.js 24 and the six declared platform/architecture targets.
 
 
 ## Platform Extension
@@ -83,3 +83,7 @@ Each export/measurement operation retains its pinned revision for JavaScript com
 
 ## MCP Extension
 The explicit MCP follow-up supersedes the original new-MCP exclusion. `react-forge mcp [--cwd <directory>]` exposes all five formats through memory-only sessions, inline/file TSX execution and explicit local export or remote publication. Follow the [MCP contract](packages-react-forge-mcp-contract.md) for tool inputs, retained state, cancellation, protocol isolation and failure outcomes. `McpTaskContext` and `McpSessionTask` are type-only exports; the existing library and one-shot CLI remain compatible.
+
+## Public distribution
+
+The private source workspace generates a public `@delino/react-forge` package plus six `@delino/react-forge-<host-id>` native packages. Main optional dependencies pin the exact source version. Generated platform manifests use `os`, `cpu`, and Linux `libc` filters; the source workspace manifest stays host-neutral. Runtime loading selects the exact matching package and rejects a missing or mismatched binding without downloads or compilation. See [release contract](packages-react-forge-release-contract.md).

@@ -8,7 +8,7 @@ on:
         description: Project to release
         required: true
         type: choice
-        options: [binpm, cargo-mono, nodeup, with-watch, derun, runmoor, clibox, pnport, async-commit-hook]
+        options: [binpm, cargo-mono, nodeup, with-watch, derun, runmoor, clibox, pnport, async-commit-hook, react-forge]
       bump:
         description: SemVer increment
         required: true
@@ -53,7 +53,7 @@ jobs:
         env:
           CLIENT_ID: ${{ vars.DELINO_RELEASE_BOT_CLIENT_ID }}
           PRIVATE_KEY: ${{ secrets.DELINO_RELEASE_BOT_PRIVATE_KEY }}
-          REGISTRY_TOKEN: ${{ inputs.project != 'clibox' && inputs.project != 'pnport' && inputs.project != 'async-commit-hook' && secrets.CARGO_REGISTRY_TOKEN || '' }}
+          REGISTRY_TOKEN: ${{ inputs.project != 'clibox' && inputs.project != 'pnport' && inputs.project != 'async-commit-hook' && inputs.project != 'react-forge' && secrets.CARGO_REGISTRY_TOKEN || '' }}
         run: |
           node --input-type=module <<'JS'
           import { requiresCargoPublish, versionChanges } from './scripts/release/project.mjs';
@@ -114,7 +114,7 @@ jobs:
       - name: Publish only the selected crate
         if: needs.prepare.outputs.kind == 'rust' && inputs.project != 'clibox' && inputs.project != 'pnport'
         env:
-          CARGO_REGISTRY_TOKEN: ${{ inputs.project != 'clibox' && inputs.project != 'pnport' && inputs.project != 'async-commit-hook' && secrets.CARGO_REGISTRY_TOKEN || '' }}
+          CARGO_REGISTRY_TOKEN: ${{ inputs.project != 'clibox' && inputs.project != 'pnport' && inputs.project != 'async-commit-hook' && inputs.project != 'react-forge' && secrets.CARGO_REGISTRY_TOKEN || '' }}
         run: cargo run --locked -p cargo-mono -- publish --package "$RELEASE_PROJECT"
 
   tag:

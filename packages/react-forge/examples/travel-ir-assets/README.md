@@ -62,7 +62,7 @@ The three original images were generated with the built-in `image_gen` tool on 2
 | `product.png` | Proposed ROAM itinerary interface mockup |
 | `horizon.png` | Closing slide's train-window travel concept |
 
-These generated assets are included as repository example assets under the repository's MIT license. Generating the presentation reuses the committed files and does not invoke an image service.
+These generated assets are included as repository example assets under the repository's Apache-2.0 license. Generating the presentation reuses the committed files and does not invoke an image service.
 
 ## Validation boundary
 

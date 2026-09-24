@@ -2,6 +2,7 @@
   "name": "delinoio-oss-workspace",
   "packageManager": "pnpm@10.26.2",
   "private": true,
+  "license": "Apache-2.0",
   "scripts": {
     "prepare": "./scripts/install-git-hooks.sh && ./scripts/prepare-apps.sh",
     "env:login": "node scripts/dev-environment/cli.mjs login",

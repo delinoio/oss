@@ -632,7 +632,34 @@
       "crates/delino-forge/**",
       "docs/project-react-forge.md",
       "docs/packages-react-forge-*.md",
-      "docs/crates-react-forge-contract.md"
+      "docs/crates-react-forge-contract.md",
+      "docs/repository-license-contract.md",
+      ".github/workflows/release-react-forge.yml",
+      "scripts/release/project.mjs"
+    ]
+  },
+  "react-forge-package": {
+    "paths": [
+      ".cargo/**",
+      "Cargo.toml",
+      "Cargo.lock",
+      "rust-toolchain",
+      "rust-toolchain.toml",
+      ".nvmrc",
+      "package.json",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "turbo.json",
+      "packages/react-forge/**",
+      "crates/react-forge-node/**",
+      "crates/forge-*/**",
+      "crates/delino-forge/**",
+      "docs/project-react-forge.md",
+      "docs/packages-react-forge-*.md",
+      "docs/crates-react-forge-contract.md",
+      "docs/repository-license-contract.md",
+      ".github/workflows/release-react-forge.yml",
+      "scripts/release/project.mjs"
     ]
   }
 }

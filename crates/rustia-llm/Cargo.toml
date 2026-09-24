@@ -2,7 +2,7 @@
 name = "rustia-llm"
 version = "0.1.1"
 edition = "2024"
-license = "MIT"
+license = "Apache-2.0"
 description = "Rustia-powered LLM tool-calling adapter for aisdk"
 homepage = "https://github.com/delinoio/oss/tree/main/crates/rustia-llm"
 repository = "https://github.com/delinoio/oss"

@@ -1,22 +1,14 @@
-# React Forge (private workspace)
+# React Forge
 
-The private `@delino/react-forge` package authors PPTX, DOCX, XLSX, independent tagged PDF and editable Figma Design files through persistent React sessions. It imports existing Office packages, exposes supported editable regions, and preserves unrelated XML and package parts when mounting React content into those regions. Its executable is named `react-forge`.
+`@delino/react-forge` authors PPTX, DOCX, XLSX, independent tagged PDF and editable Figma Design files through persistent React sessions. It imports existing Office packages, exposes supported editable regions, and preserves unrelated XML and package parts when mounting React content into those regions. Its executable is named `react-forge`.
 
-Use Node.js 24 on macOS, Windows or glibc Linux (x64 or arm64) and the repository-pinned Rust toolchain. React 19.2.8 and react-reconciler 0.33.0 are pinned together. Build the native binding explicitly:
+Use Node.js 24 on macOS, Windows, or glibc Linux, on x64 or arm64. Install normally with npm or pnpm; the matching native package is selected as an optional dependency. Keep optional dependencies enabled. Installation does not compile native code or download binaries from a separate service.
 
 ```sh
-pnpm install
-pnpm --filter @delino/react-forge build
-pnpm --filter @delino/react-forge cli run examples/presentation.tsx --output report.pptx
-pnpm --filter @delino/react-forge cli run examples/document.tsx --output report.docx
-pnpm --filter @delino/react-forge cli run examples/workbook.tsx --output report.xlsx
-pnpm --filter @delino/react-forge cli run examples/pdf.tsx --output report.pdf
-pnpm exec turbo run build typecheck lint test --filter=@delino/react-forge
+npm install @delino/react-forge
 ```
 
-The supported native hosts are macOS x64/arm64, Windows x64/arm64 (MSVC), and glibc Linux x64/arm64. Install the matching Rust target and platform build tools (Xcode command-line tools, MSVC C++ Build Tools, or a Linux C toolchain). Linux builds also need `pkg-config` and the Fontconfig development package (`libfontconfig1-dev` on Ubuntu); runtime font discovery needs Fontconfig. Install appropriate CJK/RTL/color-emoji fonts, or register caller fonts. Alpine/musl and other architectures are unsupported. Each build creates an artifact for the current host; rebuild when moving a workspace or private archive to another host. `capabilities.runtime.hosts` enumerates the supported IDs.
-
-The package remains private and workspace-only. Local-document generation has no Office, LibreOffice, Python, external conversion or runtime download dependency. Generated `dist` is untracked and removed from final worktrees. The tests also pack the built package into a temporary consumer to exercise its installed CLI.
+Alpine/musl and other architectures are unsupported. Linux runtime font discovery needs Fontconfig. Install appropriate CJK, RTL, and color emoji fonts or register caller fonts. `capabilities.runtime.hosts` enumerates the supported hosts. Document generation does not require Office, LibreOffice, Python, or an external conversion service.
 
 | Import | Authoring capabilities |
 | --- | --- |
@@ -90,10 +82,6 @@ Pass `AbortSignal` to import, asset, measurement or export options. Unresolved w
 
 `limits` and `capabilities` expose these budgets. All registered assets together are bounded to 256 MiB, with 64 MiB per explicit font. Applicable existing PPTX constraints remain, including 1,000 slides and tables of at most 1,000 rows × 128 columns. Chart data expansion is bounded to 200,000 cells and XLSX merge expansion to 250,000 cells. Opaque imported content uses package budgets. Integrators own authentication, isolation and process-wide resource governance.
 
-Test-only rendering uses LibreOffice, Poppler and the pinned dependencies in `scripts/render-requirements.txt`. After building, run `pnpm --filter @delino/react-forge test:render --output /tmp/react-forge-render`. Optional `REACT_FORGE_SOFFICE`, `REACT_FORGE_PDFTOPPM` and `REACT_FORGE_PYTHON` select explicit test tools. Run `pnpm --filter @delino/react-forge benchmark --output /tmp/react-forge-benchmark.json` for representative, external-edit and near-limit samples. Reports record tool/font provenance and time, peak RSS and event-loop delay; there is no performance SLO. This evidence is not direct Microsoft Office validation.
-
-Canonical internal ownership, acceptance evidence and complete requirements live in `docs/project-react-forge.md` and its linked contracts. Public distribution, hosting, watch mode and a GUI are outside this project. The local MCP interface is described below.
-
 ## Figma Design
 
 Figma creation and editing use the official remote Figma MCP server. Live authentication currently requires macOS Keychain and has been validated on macOS arm64 with Node.js 24. `render` updates the local React tree; `publish()` applies it to Figma. The same CLI writes a `.figma.json` receipt containing the file URL, revision, node bindings, image hashes and outcome. It is not a `.fig` file and contains no authentication token.
@@ -141,11 +129,11 @@ Connect Figma in Codex or Claude Code first. Choose `CredentialSource.Codex`, `C
 
 Remote publication can be **complete**, **partial**, or **unknown**. A `FigmaPublishError` carries the receipt. Confirmed IDs survive partial failures; retrying a known partial batch does not recreate them. Unknown outcomes require inspecting/reopening the file, and ambiguous new-file/node creation is never automatically repeated. Cancellation stops later batches; it does not undo existing changes. File-output conflicts are checked before publishing, but a receipt-save failure can occur after Figma has changed, so inspect the attached receipt. An unchanged session publish makes no remote calls. Request admission and file queues are shared by sessions in the same process; other clients remain subject to server limits and optimistic conflict guards.
 
-The examples `travel-figma.tsx` and `travel-figma-edit.tsx` create the five-screen fictional ROAM app and reopen it to change text, an image, layout and itinerary content:
+The [creation example](https://github.com/delinoio/oss/blob/main/packages/react-forge/examples/travel-figma.tsx) and [edit example](https://github.com/delinoio/oss/blob/main/packages/react-forge/examples/travel-figma-edit.tsx) create the five-screen fictional ROAM app and reopen it to change text, an image, layout and itinerary content. Copy the examples with their referenced assets before running them:
 
 ```sh
-pnpm --filter @delino/react-forge cli run examples/travel-figma.tsx --data '{"planKey":"team::YOUR_SELECTED_TEAM"}' --output /tmp/roam.figma.json
-pnpm --filter @delino/react-forge cli run examples/travel-figma-edit.tsx --data '{"fileKey":"YOUR_FILE_KEY"}' --output /tmp/roam-edited.figma.json
+react-forge run ./travel-figma.tsx --data '{"planKey":"team::YOUR_SELECTED_TEAM"}' --output /tmp/roam.figma.json
+react-forge run ./travel-figma-edit.tsx --data '{"fileKey":"YOUR_FILE_KEY"}' --output /tmp/roam-edited.figma.json
 ```
 
 The generation task creates a new screen page; use the edit task for subsequent runs. The edit task explicitly reuses the existing note when run again. Image provenance is shared with the travel investor example.
@@ -153,7 +141,7 @@ The generation task creates a new screen page; use the edit task for subsequent 
 
 ## Local MCP sessions
 
-After building, run `react-forge mcp --cwd /absolute/path/to/tasks`. A local MCP client can launch the built executable directly; use a Node.js 24 executable and absolute paths:
+After installing, run `react-forge mcp --cwd /absolute/path/to/tasks`. A local MCP client can launch the installed executable directly; use a Node.js 24 executable and absolute paths:
 
 ```json
 {
@@ -175,7 +163,7 @@ The working directory defaults to the launch directory. It controls relative too
 
 Use `react_forge_capabilities` to discover formats, limits and the callback contract. `react_forge_execute` accepts exactly one of a `code` string or an `entry` file, optional JSON `data`, and an optional existing `sessionId`. The default-exported task receives `{ session, state, data, signal }`. A new task returns a session. An update returns void or the same session. `state` is a retained Map for components, setters, refs and mount handles; it never appears in tool output. The package exports `McpTaskContext` and `McpSessionTask` types.
 
-The MCP-only `examples/mcp-session.tsx` task creates a PDF session on its first call and updates it on later calls. Copy it to your task directory as `report.tsx`, then use this sequence:
+The [MCP session task example](https://github.com/delinoio/oss/blob/main/packages/react-forge/examples/mcp-session.tsx) creates a PDF session on its first call and updates it on later calls. Copy it to your task directory as `report.tsx`, then use this sequence:
 
 1. Call `react_forge_execute` with `{"entry":"report.tsx","data":{"title":"First draft"}}`. Keep its returned `sessionId`.
 2. Call `react_forge_inspect` with that ID. Local inspection waits for React/Suspense and registered assets, then returns the revision and target IDs without creating a file. `react_forge_measure` accepts a target's `nodeId` and this exact revision.
@@ -194,3 +182,5 @@ Success is returned as structured content and matching JSON text; failures carry
 Caller code is trusted and runs with normal caller permissions. The execution process is not a sandbox. Execute does not automatically save or publish, but code can explicitly call those APIs or perform other side effects. A failed callback is not a transaction: earlier completed changes remain. Callers must dispose sessions they create but fail to return. Operations on one session stay ordered until each callback actually finishes, even after cancellation; pass `signal` to asynchronous work. A callback that ignores cancellation or blocks synchronously cannot be forcibly interrupted by an individual tool cancellation.
 
 Disconnect and process signals dispose sessions, with a five-second shutdown grace before terminating the execution process. Normal operations have no automatic timeout. Forced termination may prevent cleanup, and worker loss invalidates every in-memory session. `unknown_outcome` means to inspect any output or remote file before retrying. Server restart never automatically replays work. Closing sessions releases their owned resources; imported JavaScript modules remain cached until the process exits.
+
+Test renderers are not runtime dependencies. Direct Microsoft Office validation and PDF/UA certification are not claimed. React Forge is licensed under Apache-2.0. Report issues at https://github.com/delinoio/oss/issues.

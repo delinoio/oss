@@ -1,7 +1,7 @@
 [package]
 name = "fspy_nostd"
 edition = "2024"
-license.workspace = true
+license = "MIT"
 publish = false
 
 [lib]

@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import test from "node:test";
 import { connect } from "./mcp/client.js";
+import packageManifest from "../package.json" with { type: "json" };
 const exec = promisify(execFile);
 const cases = [["presentation", "pptx"], ["document", "docx"], ["workbook", "xlsx"], ["pdf", "pdf"]] as const;
 
@@ -19,7 +20,7 @@ test("scoped workspace archive installs and its CLI generates local formats and 
   const pm = (args: string[], cwd: string) => exec(process.execPath, [pnpm, ...args], { cwd, env });
   try {
     await pm(["pack", "--pack-destination", directory], packageRoot);
-    const tarball = join(directory, "delino-react-forge-0.0.0.tgz");
+    const tarball = join(directory, `delino-react-forge-${packageManifest.version}.tgz`);
     await writeFile(join(directory, "package.json"), JSON.stringify({ private: true, type: "module", packageManager: "pnpm@10.26.2", dependencies: { "@delino/react-forge": `file:${tarball}`, react: "19.2.8" } }));
     // Test the distributable layout without requiring lifecycle scripts,
     // workspace resolution or source files from this checkout.
@@ -66,6 +67,6 @@ test("scoped workspace archive installs and its CLI generates local formats and 
     const version = process.platform === "win32"
       ? await exec(process.env.ComSpec ?? "cmd.exe", ["/d", "/s", "/c", `""${shim}" --version"`], { cwd: directory, env, windowsVerbatimArguments: true })
       : await exec(shim, ["--version"], { cwd: directory, env });
-    assert.equal(version.stdout.trim(), "0.0.0");
+    assert.equal(version.stdout.trim(), packageManifest.version);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });

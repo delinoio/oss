@@ -1,5 +1,6 @@
 import { createRequire } from "node:module";
 import platforms from "./native-platforms.json" with { type: "json" };
+import packageManifest from "../package.json" with { type: "json" };
 import { ForgeError } from "./errors.js";
 import { ErrorCode, Format, Stage, type Diagnostic } from "./types.js";
 
@@ -20,8 +21,16 @@ function load(): Binding {
     if (!host || !glibc || process.versions.node.split(".")[0] !== "24") {
       throw new ForgeError(ErrorCode.UnsupportedPackage, "React Forge requires Node.js 24 on macOS, Windows or glibc Linux, using x64 or arm64.");
     }
-    try { binding = createRequire(import.meta.url)(`../dist/react-forge.${host.id}.node`) as Binding; }
-    catch { throw new ForgeError(ErrorCode.Io, "Native binding unavailable for this host. Rebuild here with pnpm --filter @delino/react-forge build."); }
+    const require = createRequire(import.meta.url);
+    try { binding = require(`../dist/react-forge.${host.id}.node`) as Binding; }
+    catch {
+      try {
+        const name = `@delino/react-forge-${host.id}`;
+        if (require(`${name}/package.json`).version !== packageManifest.version) throw new Error("Native package version mismatch");
+        binding = require(name) as Binding;
+      }
+      catch { throw new ForgeError(ErrorCode.Io, `Native binding unavailable for ${host.id}. Install the matching optional @delino/react-forge-${host.id} package, or rebuild the source workspace.`); }
+    }
   }
   return binding;
 }

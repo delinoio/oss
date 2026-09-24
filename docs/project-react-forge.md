@@ -1,13 +1,13 @@
 # React Forge
 
 ## Goal
-Provide private React document sessions, a TSX task CLI and a local session-based stdio MCP server for authoring and preservation-aware editing of PPTX, DOCX, XLSX, and independent tagged PDF. Issue [#968](https://github.com/delinoio/oss/issues/968) defines the original delivery boundary; the explicit 2026-09-24 follow-up on PR #970 adds macOS x64 and Windows/Linux x64/arm64 support. Partial format support does not satisfy that issue. The Figma extension adds explicit remote creation and preservation-aware editing under its separate contract; authenticated acceptance targets Node.js 24 on macOS arm64.
+Provide publicly distributed React document sessions, a TSX task CLI and a local session-based stdio MCP server for authoring and preservation-aware editing of PPTX, DOCX, XLSX, and independent tagged PDF. Issue [#968](https://github.com/delinoio/oss/issues/968) defines the original feature boundary; the explicit 2026-09-24 follow-up on PR #970 adds macOS x64 and Windows/Linux x64/arm64 support. The subsequent public npm distribution decision supersedes the original private-package boundary. Partial format support does not satisfy that issue. The Figma extension adds explicit remote creation and preservation-aware editing under its separate contract; authenticated acceptance targets Node.js 24 on macOS arm64.
 
 ## Project ID
-`react-forge` (`ProjectId::ReactForge`). Product name: **React Forge**. The private npm package is `@delino/react-forge`; its CLI executable is `react-forge`.
+`react-forge` (`ProjectId::ReactForge`). Product name: **React Forge**. The public npm package is `@delino/react-forge`; its CLI executable is `react-forge`.
 
 ## Domain Ownership Map
-- `packages/react-forge`: private TypeScript session library, React reconciler, components, CLI, stdio MCP server, examples and integration tests.
+- `packages/react-forge`: TypeScript session library, React reconciler, components, CLI, stdio MCP server, examples and integration tests.
 - `packages/react-forge/examples/travel-ir.tsx` and `travel-ir-assets`: designed English ROAM investor-deck example, local concept imagery, source provenance and explicitly fictional financial model.
 - `crates/react-forge-node`: dedicated N-API adapter; JavaScript execution never moves into native workers.
 - `crates/forge-package`: shared bounded OOXML package and preservation primitives.
@@ -27,10 +27,11 @@ Provide private React document sessions, a TSX task CLI and a local session-base
 - [Node session and CLI contract](packages-react-forge-contract.md).
 - [Native engines and preservation contract](crates-react-forge-contract.md).
 - [Validation and benchmark evidence](packages-react-forge-validation.md).
+- [Public npm release contract](packages-react-forge-release-contract.md).
 - [Existing Forge foundation](crates-forge-foundation.md).
 
 ## Cross-Domain Invariants
-- Support Node.js 24, React 19.2.8 with react-reconciler 0.33.0, and macOS/Windows/glibc Linux on x64 and arm64. Use the repository-pinned Rust toolchain. All packages remain private and unpublished.
+- Support Node.js 24, React 19.2.8 with react-reconciler 0.33.0, and macOS/Windows/glibc Linux on x64 and arm64. Use the repository-pinned Rust toolchain. The npm library and six native packages are public; Rust crates remain private and unpublished.
 - TypeScript executes React; Rust processes validated serializable format-specific models. Rust is a project-specific exception to the default Go language; local files and explicit exports are an exception to default R2 storage.
 - Sessions live only in memory. Explicit export is the local persistence boundary. No automatic recovery, revision archive, hosted service, telemetry, arbitrary URL fetching, runtime downloads or external conversion dependencies. Figma alone permits official MCP publication and scoped image uploads, with partial/unknown outcomes and external receipts instead of atomic remote replacement.
 - Persistent document/node identities are UUID v7. React keys and useId values do not become persistent identities. Figma native IDs are separately mapped to those logical identities.

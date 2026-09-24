@@ -156,7 +156,7 @@ test("Source and tap tokens are separately scoped and project release triggers r
       continue;
     }
     assert.deepEqual(release.on.push.tags, [`${project}@v*`]);
-    if ([Project.CargoMono, Project.Runmoor, Project.Clibox, Project.Pnport].includes(project)) continue;
+    if ([Project.CargoMono, Project.Runmoor, Project.Clibox, Project.Pnport, Project.ReactForge].includes(project)) continue;
     const steps = release.jobs.publish.steps;
     const token = steps.find((step) => step.uses === "actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1");
     assert.equal(token.with.repositories, "homebrew-tap");
@@ -174,9 +174,9 @@ test("Source and tap tokens are separately scoped and project release triggers r
   assert.match(tap, /credential\.helper=!gh auth git-credential/u);
 });
 
-test("clibox, pnport and async-commit-hook reach source validation and tagging without Cargo publication credentials", () => {
+test("non-Cargo projects reach source validation and tagging without Cargo publication credentials", () => {
   const prepare = workflow.jobs.prepare.steps.find((step) => step.name === "Validate configuration before committing");
-  const registryToken = "${{ inputs.project != 'clibox' && inputs.project != 'pnport' && inputs.project != 'async-commit-hook' && secrets.CARGO_REGISTRY_TOKEN || '' }}";
+  const registryToken = "${{ inputs.project != 'clibox' && inputs.project != 'pnport' && inputs.project != 'async-commit-hook' && inputs.project != 'react-forge' && secrets.CARGO_REGISTRY_TOKEN || '' }}";
   assert.equal(prepare.env.REGISTRY_TOKEN, registryToken);
   assert.equal(workflow.jobs.registry.steps.find((step) => step.name === "Publish only the selected crate").env.CARGO_REGISTRY_TOKEN, registryToken);
   assert.match(prepare.run, /requiresCargoPublish\(plan.project\)/u);
@@ -191,6 +191,7 @@ test("clibox, pnport and async-commit-hook reach source validation and tagging w
   assert.doesNotThrow(() => runPreflight(Project.Clibox));
   assert.doesNotThrow(() => runPreflight(Project.Pnport, Bump.Minor));
   assert.doesNotThrow(() => runPreflight(Project.AsyncCommitHook));
+  assert.doesNotThrow(() => runPreflight(Project.ReactForge, Bump.Minor));
   assert.throws(() => runPreflight(Project.Binpm), /CARGO_REGISTRY_TOKEN is required/u);
   const registry = workflow.jobs.registry;
   assert.equal(registry.if, undefined);

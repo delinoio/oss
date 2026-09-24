@@ -2,6 +2,7 @@
   "name": "@delino/react-forge",
   "version": "0.0.0",
   "private": true,
+  "license": "Apache-2.0",
   "type": "module",
   "engines": {
     "node": ">=24 <25"
@@ -55,7 +56,11 @@
     "cli": "node bin/react-forge.mjs",
     "test:render": "node scripts/render-check.mjs",
     "benchmark": "node scripts/benchmark.mjs",
-    "typecheck:examples": "tsc -p tsconfig.examples.json"
+    "typecheck:examples": "tsc -p tsconfig.examples.json",
+    "package:main": "node scripts/package.mjs main",
+    "package:native": "node scripts/package.mjs native",
+    "package:verify": "node scripts/package.mjs verify",
+    "test:package": "node scripts/install-smoke.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.1",

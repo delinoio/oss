@@ -15,7 +15,7 @@ fn help_and_no_arguments_succeed_on_stdout() {
         assert!(stdout.contains(&format!("Version: {}", env!("CARGO_PKG_VERSION"))));
         assert!(stdout.contains("Maintained by: Delino"));
         assert!(stdout.contains("Repository: https://github.com/delinoio/oss"));
-        assert!(stdout.contains("License: MIT"));
+        assert!(stdout.contains("License: Apache-2.0"));
         assert!(stdout.contains("Support: https://github.com/delinoio/oss/issues"));
         for command in [
             "run",
