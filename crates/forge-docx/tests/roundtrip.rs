@@ -122,6 +122,7 @@ fn native_document_contains_sections_rich_text_lists_images_merges_and_editable_
             heading: None,
             style: Style::default(),
             list: Some(List {
+                instance_id: None,
                 kind: ListKind::Number,
                 level: 1,
             }),
@@ -374,6 +375,7 @@ fn external_chart_replacements_allocate_drawing_and_list_ids_without_restyling_o
             style: Style::default(),
             heading: None,
             list: Some(List {
+                instance_id: None,
                 kind: ListKind::Number,
                 level: 0,
             }),
@@ -683,6 +685,112 @@ fn cell_text_styles_cascade_through_nested_blocks_with_explicit_overrides() {
         assert_eq!(property("color").attribute((W, "val")), Some(color));
         if text == "Nested" {
             assert_eq!(property("i").attribute((W, "val")), Some("1"));
+        }
+    }
+}
+
+#[test]
+fn independent_numbered_list_instances_restart_without_renumbering_imported_lists() {
+    let a = Uuid::now_v7();
+    let b = Uuid::now_v7();
+    let item = |id, text: &str| {
+        let mut block = paragraph(text);
+        if let Block::Paragraph { list, .. } = &mut block {
+            *list = Some(List {
+                instance_id: Some(id),
+                kind: ListKind::Number,
+                level: 0,
+            });
+        }
+        block
+    };
+    let blocks = vec![
+        item(a, "A1"),
+        item(a, "A2"),
+        paragraph("Between"),
+        item(b, "B1"),
+        item(b, "B2"),
+    ];
+    let generated = generate(&document(blocks.clone()), &Assets::new()).unwrap();
+    let original = import(include_bytes!("fixtures/external.docx")).unwrap();
+    let target = original
+        .targets
+        .iter()
+        .find(|t| t.kind == TargetKind::Paragraph && t.text == "External paragraph")
+        .unwrap();
+    let edited = replace(&original, &[(target.id, blocks)], &Assets::new()).unwrap();
+    for bytes in [&generated, &edited] {
+        let parts = read(bytes).unwrap();
+        let main = xml(&parts["word/document.xml"]).unwrap();
+        let number = |text| {
+            let paragraph = main
+                .descendants()
+                .find(|n| {
+                    n.has_tag_name((W, "p"))
+                        && n.descendants()
+                            .any(|n| n.has_tag_name((W, "t")) && n.text() == Some(text))
+                })
+                .unwrap();
+            paragraph
+                .descendants()
+                .find(|n| n.has_tag_name((W, "numId")))
+                .unwrap()
+                .attribute((W, "val"))
+                .unwrap()
+                .to_string()
+        };
+        assert_eq!(number("A1"), number("A2"));
+        assert_eq!(number("B1"), number("B2"));
+        assert_ne!(number("A1"), number("B1"));
+        let relation = forge_package::relationships(&parts, "word/document.xml")
+            .unwrap()
+            .into_iter()
+            .find(|r| r.kind.ends_with("/numbering"))
+            .unwrap();
+        let path = forge_package::resolve("word/document.xml", &relation.target).unwrap();
+        let numbering = xml(&parts[&path]).unwrap();
+        for id in [number("A1"), number("B1")] {
+            let concrete = numbering
+                .descendants()
+                .find(|n| n.has_tag_name((W, "num")) && n.attribute((W, "numId")) == Some(&id))
+                .unwrap();
+            let definition = concrete
+                .first_element_child()
+                .unwrap()
+                .attribute((W, "val"))
+                .unwrap();
+            let abstract_num = numbering
+                .descendants()
+                .find(|n| {
+                    n.has_tag_name((W, "abstractNum"))
+                        && n.attribute((W, "abstractNumId")) == Some(definition)
+                })
+                .unwrap();
+            assert!(
+                abstract_num
+                    .descendants()
+                    .filter(|n| n.has_tag_name((W, "start")))
+                    .all(|n| n.attribute((W, "val")) == Some("1"))
+            );
+        }
+    }
+    let after = read(&edited).unwrap();
+    for (path, bytes) in &original.parts {
+        if path.contains("numbering") && path.ends_with(".xml") {
+            let original_xml = xml(bytes).unwrap();
+            let next_xml = xml(&after[path]).unwrap();
+            for node in original_xml
+                .root_element()
+                .children()
+                .filter(|n| n.is_element())
+            {
+                assert!(
+                    next_xml
+                        .root_element()
+                        .children()
+                        .any(|n| n.is_element() && after[path][n.range()] == bytes[node.range()])
+                );
+            }
         }
     }
 }

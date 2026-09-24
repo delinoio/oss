@@ -64,3 +64,22 @@ test("Word leaf components reject children without exporting an older valid revi
     assert.ok((await session.exportBuffer()).length > 0);
   } finally { await session.dispose(); }
 });
+
+test("React list instances retain distinct stable native numbering identities", async () => {
+  const { RenderRoot } = await import("../src/renderer.js");
+  const { docxBlocks } = await import("../src/docx-model.js");
+  const { v7 } = await import("uuid");
+  const root = new RenderRoot(v7());
+  const view = (label: string) => <>
+    <List key="first" kind="number"><ListItem>{label}</ListItem><ListItem>Second</ListItem></List>
+    <List key="next" kind="number"><ListItem>Restart</ListItem><ListItem>Next</ListItem></List>
+  </>;
+  try {
+    const ids = () => docxBlocks(root.snapshot(), "unused").map(block => (block.list as { instance_id: string }).instance_id);
+    await root.render(view("First"));
+    const first = ids();
+    assert.equal(first[0], first[1]); assert.equal(first[2], first[3]); assert.notEqual(first[0], first[2]);
+    await root.render(view("Updated"));
+    assert.deepEqual(ids(), first);
+  } finally { await root.dispose(); }
+});
