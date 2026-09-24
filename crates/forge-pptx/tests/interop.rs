@@ -155,6 +155,38 @@ fn preview_font_uses_free_part_and_relationship_names() {
     assert_eq!(preview_bytes(&rendered).unwrap(), rendered);
 }
 #[test]
+fn metadata_cannot_bind_multiple_logical_nodes_to_one_native_shape() {
+    let mut document: Presentation = parse(include_bytes!(
+        "../../forge-tree-doc/examples/overview.json"
+    ))
+    .unwrap();
+    document.assign_ids();
+    let source = generate(&document, &Assets::new(), Uuid::now_v7(), 0).unwrap();
+    let imported = import(&source).unwrap();
+    assert!(imported.bindings.len() >= 2);
+    let mut parts = read_package(&source).unwrap();
+    let raw = xml_part(&parts, "customXml/forge.xml");
+    let xml = roxmltree::Document::parse(&raw).unwrap();
+    let mut metadata: Metadata = serde_json::from_str(xml.root_element().text().unwrap()).unwrap();
+    let ids: Vec<_> = metadata.bindings.keys().copied().collect();
+    let first = metadata.bindings[&ids[0]].clone();
+    metadata.bindings.insert(ids[1], first);
+    let json = serde_json::to_string(&metadata)
+        .unwrap()
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;");
+    parts.insert(
+        "customXml/forge.xml".into(),
+        format!("<forge xmlns=\"urn:delino:forge:v1\">{json}</forge>").into_bytes(),
+    );
+    assert_eq!(
+        import(&write_package(&parts).unwrap()).unwrap_err().code,
+        ErrorCode::InvalidPackage
+    );
+    assert_eq!(import(&source).unwrap().bindings, imported.bindings);
+}
+#[test]
 fn imported_chart_caches_follow_indices_and_preserve_unrepresentable_data() {
     let original = read_package(EXTERNAL).unwrap();
     let path = "ppt/charts/chart1.xml";

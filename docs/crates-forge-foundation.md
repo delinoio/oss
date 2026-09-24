@@ -34,6 +34,8 @@ Editable imported tables require equal native row heights spanning their frame, 
 
 Forge metadata is identified by its root custom-XML relationship and `urn:delino:forge:v1` root element, not its filename. Unrelated custom XML, including a colliding `customXml/forge.xml` or relationship ID, is preserved and hashed; Forge allocates a separate part and relationship when necessary. Multiple claimed Forge metadata parts fail as ambiguous identity.
 
+Metadata leaf bindings must be one-to-one with native `(part, shape_id)` targets. Multiple logical nodes claiming one native shape reject import even when the package hashes and individual shape lookups are valid.
+
 Both XML boolean true spellings (`1` and `true`) mark flipped native transforms as opaque; false spellings retain ordinary editable geometry. Unrelated edits preserve the original transform XML.
 
 Preview font injection allocates an unused font part and relationship ID, preserving unrelated content occupying the preferred names. The new embedded-font entry references the allocated ID; repeated preview preparation reuses the existing font definition.

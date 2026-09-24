@@ -454,8 +454,12 @@ pub fn import(bytes: &[u8]) -> Result<Imported> {
         {
             return Err(failure("metadata bindings"));
         }
+        let mut native_targets = std::collections::BTreeSet::new();
         for n in leaves {
             let binding = &m.bindings[&n.id.unwrap()];
+            if !native_targets.insert((&binding.part, binding.shape_id)) {
+                return Err(failure("duplicate native binding target"));
+            }
             let native = xml(parts
                 .get(&binding.part)
                 .ok_or_else(|| failure("binding part"))?)?;
