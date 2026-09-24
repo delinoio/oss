@@ -377,6 +377,72 @@ fn traced_syscalls() -> Vec<i64> {
     calls
 }
 
+fn fd_sensitive_syscall(call: i64) -> bool {
+    if matches!(
+        call,
+        x if x == libc::SYS_openat
+            || x == libc::SYS_openat2
+            || x == libc::SYS_close
+            || x == libc::SYS_close_range
+            || x == libc::SYS_dup
+            || x == libc::SYS_dup3
+            || x == libc::SYS_fcntl
+            || x == libc::SYS_ioctl
+            || x == libc::SYS_fchdir
+            || x == libc::SYS_fchmod
+            || x == libc::SYS_fchown
+            || x == libc::SYS_ftruncate
+            || x == libc::SYS_fallocate
+            || x == libc::SYS_fsetxattr
+            || x == libc::SYS_fremovexattr
+            || x == libc::SYS_fchmodat
+            || x == SYS_FCHMODAT2
+            || x == libc::SYS_fchownat
+            || x == libc::SYS_utimensat
+            || x == libc::SYS_truncate
+            || x == libc::SYS_setxattr
+            || x == libc::SYS_lsetxattr
+            || x == libc::SYS_removexattr
+            || x == libc::SYS_lremovexattr
+            || x == libc::SYS_unlinkat
+            || x == libc::SYS_renameat
+            || x == libc::SYS_renameat2
+            || x == libc::SYS_linkat
+            || x == libc::SYS_symlinkat
+            || x == libc::SYS_mkdirat
+            || x == libc::SYS_mknodat
+    ) {
+        return true;
+    }
+    #[cfg(target_arch = "x86_64")]
+    {
+        matches!(
+            call,
+            x if x == libc::SYS_open
+                || x == libc::SYS_creat
+                || x == libc::SYS_dup2
+                || x == libc::SYS_futimesat
+                || x == libc::SYS_truncate
+                || x == libc::SYS_chmod
+                || x == libc::SYS_chown
+                || x == libc::SYS_lchown
+                || x == libc::SYS_utime
+                || x == libc::SYS_utimes
+                || x == libc::SYS_unlink
+                || x == libc::SYS_rename
+                || x == libc::SYS_link
+                || x == libc::SYS_symlink
+                || x == libc::SYS_mkdir
+                || x == libc::SYS_rmdir
+                || x == libc::SYS_mknod
+        )
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        false
+    }
+}
+
 fn install_filter() -> std::io::Result<()> {
     let arch = if cfg!(target_arch = "aarch64") {
         0xc000_00b7
@@ -1104,7 +1170,7 @@ enum Pending {
     Open(Translation),
     Close(i32),
     CloseRange(u32, u32),
-    Dup(i32),
+    Dup(Option<Translation>),
     ChangeDirectory(Option<PathBuf>),
     LinkMetadata {
         output: u64,
@@ -1148,6 +1214,9 @@ struct Trace<'a> {
     groups: HashMap<i32, i32>,
     pending: HashMap<i32, Pending>,
     fds: HashMap<i32, HashMap<i32, Translation>>,
+    dup_reservations: HashMap<i32, (i32, Translation)>,
+    fd_busy: HashMap<i32, i32>,
+    fd_waiting: VecDeque<(i32, i32)>,
     cwd: HashMap<i32, PathBuf>,
     scratch: HashMap<i32, ScratchSlot>,
     scratch_pending: HashMap<i32, Registers>,
@@ -1164,6 +1233,71 @@ struct Trace<'a> {
 }
 
 impl Trace<'_> {
+    fn release_fd_barrier(&mut self, pid: i32) -> Result<()> {
+        let group = self.groups.get(&pid).copied().unwrap_or(pid);
+        if self.fd_busy.get(&group) != Some(&pid) {
+            return Ok(());
+        }
+        self.fd_busy.remove(&group);
+        while let Some(index) = self
+            .fd_waiting
+            .iter()
+            .position(|(owner, _)| *owner == group)
+        {
+            let (_, next) = self.fd_waiting.remove(index).ok_or_else(injection_failed)?;
+            if self.tasks.contains(&next) {
+                tracing::trace!(
+                    action = "linux_fd_barrier_resume",
+                    group,
+                    next,
+                    "Resuming queued descriptor syscall"
+                );
+                self.fd_busy.insert(group, next);
+                return self.enter(next);
+            }
+        }
+        Ok(())
+    }
+
+    fn resume_fd_sensitive(&mut self, pid: i32) -> Result<()> {
+        self.pending.insert(pid, Pending::Ordinary);
+        resume(pid, true, 0)
+    }
+
+    fn descriptor(&self, pid: i32, fd: i32) -> Option<Translation> {
+        let group = Self::group(pid);
+        if let Some(entry) = self.fds.get(&group).and_then(|fds| fds.get(&fd)) {
+            return Some(entry.clone());
+        }
+        if let Some((_, entry)) =
+            self.dup_reservations
+                .iter()
+                .find_map(|(task, (target, entry))| {
+                    (Self::group(*task) == group && *target == fd).then_some((task, entry))
+                })
+        {
+            return Some(entry.clone());
+        }
+        // The kernel installs a newly opened or duplicated descriptor before
+        // its owner reaches the exit stop. Another thread can reach a seccomp
+        // stop first, so also inspect the live descriptor before admitting a
+        // mutation or a descriptor alias.
+        let target = fs::read_link(format!("/proc/{pid}/fd/{fd}")).ok()?;
+        if !target.is_absolute()
+            || !(target.starts_with(&self.view.cache.root)
+                || target.starts_with(self.view.session.join("views"))
+                || self.view.graph.managed(&target))
+        {
+            return None;
+        }
+        Some(Translation {
+            logical: target.clone(),
+            physical: target,
+            readonly: true,
+            virtual_link: false,
+        })
+    }
+
     fn seed_inherited_descriptors(&mut self) -> Result<()> {
         let pid = self.root;
         let cache_root = fs::canonicalize(&self.view.cache.root).map_err(|_| injection_failed())?;
@@ -1423,7 +1557,7 @@ impl Trace<'_> {
                 .get(&group)
                 .cloned()
                 .unwrap_or_else(|| fs::read_link(format!("/proc/{pid}/cwd")).unwrap_or_default())
-        } else if let Some(entry) = self.fds.get(&group).and_then(|fds| fds.get(&dirfd)) {
+        } else if let Some(entry) = self.descriptor(pid, dirfd) {
             // A native directory descriptor survives rename and symlink
             // retargeting. Only materialized virtual paths need the saved
             // logical identity for relative lookup.
@@ -1584,7 +1718,7 @@ impl Trace<'_> {
             .split_once('/')
             .map_or((remainder, None), |(number, suffix)| (number, Some(suffix)));
         let fd = number.parse::<i32>().ok()?;
-        let mut entry = self.fds.get(&group)?.get(&fd)?.clone();
+        let mut entry = self.descriptor(pid, fd)?;
         if let Some(suffix) = suffix {
             entry.logical.push(suffix);
             entry.physical.push(suffix);
@@ -1931,9 +2065,8 @@ impl Trace<'_> {
                 // Empty-path readlinkat targets an O_PATH symlink descriptor,
                 // not a directory relative to that descriptor.
                 if let Some(link) = self
-                    .fds
-                    .get(&Self::group(pid))
-                    .and_then(|fds| fds.get(&dirfd))
+                    .descriptor(pid, dirfd)
+                    .as_ref()
                     .filter(|entry| entry.virtual_link)
                     .map(|entry| entry.logical.clone())
                 {
@@ -1969,11 +2102,7 @@ impl Trace<'_> {
             };
             if flags as i32 & libc::AT_EMPTY_PATH != 0 {
                 if call == libc::SYS_execveat {
-                    let translation = self
-                        .fds
-                        .get(&Self::group(pid))
-                        .and_then(|fds| fds.get(&dirfd))
-                        .cloned();
+                    let translation = self.descriptor(pid, dirfd);
                     if let Some(translation) = translation {
                         if self.prepare_script_exec(
                             pid,
@@ -1988,9 +2117,7 @@ impl Trace<'_> {
                     }
                 }
                 let readonly = self
-                    .fds
-                    .get(&Self::group(pid))
-                    .and_then(|fds| fds.get(&dirfd))
+                    .descriptor(pid, dirfd)
                     .is_some_and(|entry| entry.readonly);
                 if writing && readonly {
                     self.force_error(pid, &mut regs, path_arg, libc::EROFS)?;
@@ -2522,22 +2649,17 @@ impl Trace<'_> {
             // CLOEXEC leaves the table intact until the exec event, where
             // we reconcile surviving descriptors against /proc. Invalid
             // flags retain the kernel's EINVAL result.
-            return resume(pid, false, 0);
+            return self.resume_fd_sensitive(pid);
         }
         if (call == libc::SYS_utimensat || call == SYS_FUTIMESAT) && argument(&regs, 1) == 0 {
             let fd = argument(&regs, 0) as i32;
-            if self
-                .fds
-                .get(&Self::group(pid))
-                .and_then(|fds| fds.get(&fd))
-                .is_some_and(|entry| entry.readonly)
-            {
+            if self.descriptor(pid, fd).is_some_and(|entry| entry.readonly) {
                 set_argument(&mut regs, 0, u64::MAX);
                 set_registers(pid, &regs)?;
                 self.pending.insert(pid, Pending::ForcedError(libc::EROFS));
                 return resume(pid, true, 0);
             }
-            return resume(pid, false, 0);
+            return self.resume_fd_sensitive(pid);
         }
         if self.path_call(pid, regs).inspect_err(|error| {
             tracing::debug!(
@@ -2550,24 +2672,21 @@ impl Trace<'_> {
         })? {
             return resume(pid, true, 0);
         }
-        let group = Self::group(pid);
         if call == libc::SYS_ioctl {
             if self
-                .fds
-                .get(&group)
-                .and_then(|fds| fds.get(&(argument(&regs, 0) as i32)))
+                .descriptor(pid, argument(&regs, 0) as i32)
                 .is_some_and(|entry| entry.readonly)
             {
                 let request = argument(&regs, 1);
                 if matches!(request, FS_IOC_GETFLAGS | FS_IOC_FSGETXATTR | FIONREAD) {
-                    return resume(pid, false, 0);
+                    return self.resume_fd_sensitive(pid);
                 }
                 set_argument(&mut regs, 0, u64::MAX);
                 set_registers(pid, &regs)?;
                 self.pending.insert(pid, Pending::ForcedError(libc::EROFS));
                 return resume(pid, true, 0);
             }
-            return resume(pid, false, 0);
+            return self.resume_fd_sensitive(pid);
         }
         if matches!(
             call,
@@ -2578,9 +2697,7 @@ impl Trace<'_> {
                 | libc::SYS_fsetxattr
                 | libc::SYS_fremovexattr
         ) && self
-            .fds
-            .get(&group)
-            .and_then(|fds| fds.get(&(argument(&regs, 0) as i32)))
+            .descriptor(pid, argument(&regs, 0) as i32)
             .is_some_and(|entry| entry.readonly)
         {
             set_argument(&mut regs, 0, u64::MAX);
@@ -2593,9 +2710,8 @@ impl Trace<'_> {
         } else if call == libc::SYS_fchdir {
             let fd = argument(&regs, 0) as i32;
             let logical = self
-                .fds
-                .get(&group)
-                .and_then(|fds| fds.get(&fd))
+                .descriptor(pid, fd)
+                .as_ref()
                 .and_then(|entry| (entry.logical != entry.physical).then(|| entry.logical.clone()));
             Pending::ChangeDirectory(logical)
         } else if call == libc::SYS_dup
@@ -2607,7 +2723,14 @@ impl Trace<'_> {
                     libc::F_DUPFD | libc::F_DUPFD_CLOEXEC
                 ))
         {
-            Pending::Dup(argument(&regs, 0) as i32)
+            let source = self.descriptor(pid, argument(&regs, 0) as i32);
+            if call == libc::SYS_dup3 || call == SYS_DUP2 {
+                if let Some(entry) = source.as_ref() {
+                    self.dup_reservations
+                        .insert(pid, (argument(&regs, 1) as i32, entry.clone()));
+                }
+            }
+            Pending::Dup(source)
         } else if call == libc::SYS_getcwd {
             let group = Self::group(pid);
             if let Some(path) = self.cwd.get(&group) {
@@ -2620,7 +2743,11 @@ impl Trace<'_> {
                 return resume(pid, false, 0);
             }
         } else {
-            return resume(pid, false, 0);
+            return if self.fd_busy.get(&Self::group(pid)) == Some(&pid) {
+                self.resume_fd_sensitive(pid)
+            } else {
+                resume(pid, false, 0)
+            };
         };
         self.pending.insert(pid, action);
         resume(pid, true, 0)
@@ -2633,6 +2760,7 @@ impl Trace<'_> {
         let Some(action) = self.pending.remove(&pid) else {
             return resume(pid, false, 0);
         };
+        self.dup_reservations.remove(&pid);
         self.spawn_vm.remove(&pid);
         let mut regs = registers(pid)?;
         let returned = result(&regs);
@@ -2653,9 +2781,8 @@ impl Trace<'_> {
                     .or_default()
                     .retain(|fd, _| (*fd as u32) < first || (*fd as u32) > last);
             }
-            Pending::Dup(fd) if returned >= 0 => {
+            Pending::Dup(translated) if returned >= 0 => {
                 let entry = self.fds.entry(group).or_default();
-                let translated = entry.get(&fd).cloned();
                 entry.remove(&(returned as i32));
                 if let Some(translated) = translated {
                     entry.insert(returned as i32, translated);
@@ -2792,6 +2919,15 @@ impl Trace<'_> {
     }
 
     fn stop_tree(&mut self) -> Result<()> {
+        // A parked peer is still at its original seccomp entry. Cancel its
+        // syscall before cleanup resumes it, and release the group gate so
+        // signal handlers can make progress during the grace period.
+        for (_, pid) in self.fd_waiting.drain(..) {
+            if let Ok(mut regs) = registers(pid) {
+                finish_denied_syscall(pid, &mut regs)?;
+            }
+        }
+        self.fd_busy.clear();
         let termination_signal = match super::supervisor::handled_signal() {
             libc::SIGINT | libc::SIGHUP | libc::SIGTERM => super::supervisor::handled_signal(),
             _ => libc::SIGTERM,
@@ -2856,11 +2992,14 @@ impl Trace<'_> {
         }
         if libc::WIFEXITED(status) || libc::WIFSIGNALED(status) {
             tracing::trace!(action = "linux_exit", pid, status, "Owned child exited");
+            self.release_fd_barrier(pid)?;
             self.tasks.remove(&pid);
+            self.fd_waiting.retain(|(_, waiting)| *waiting != pid);
             if self.early_stops.remove(&pid) {
                 self.reaped_early.insert(pid);
             }
             self.pending.remove(&pid);
+            self.dup_reservations.remove(&pid);
             self.release_task_space(pid);
             let group = self.groups.remove(&pid).unwrap_or(pid);
             if pid == self.root {
@@ -2904,6 +3043,7 @@ impl Trace<'_> {
         let signal = libc::WSTOPSIG(status);
         if signal == (libc::SIGTRAP | 0x80) {
             self.exit(pid)?;
+            self.release_fd_barrier(pid)?;
             return Ok(true);
         }
         if signal == libc::SIGTRAP {
@@ -2935,6 +3075,22 @@ impl Trace<'_> {
             }
             if event == libc::PTRACE_EVENT_SECCOMP {
                 let handled = if self.scratch.contains_key(&pid) {
+                    let call = number(&registers(pid)?);
+                    if fd_sensitive_syscall(call) {
+                        let group = Self::group(pid);
+                        if self.fd_busy.contains_key(&group) {
+                            tracing::trace!(
+                                action = "linux_fd_barrier_wait",
+                                group,
+                                pid,
+                                call,
+                                "Queuing descriptor syscall"
+                            );
+                            self.fd_waiting.push_back((group, pid));
+                            return Ok(true);
+                        }
+                        self.fd_busy.insert(group, pid);
+                    }
                     self.enter(pid)
                 } else {
                     self.start_scratch(pid)
@@ -3009,6 +3165,7 @@ impl Trace<'_> {
                 return Ok(true);
             }
             if event == libc::PTRACE_EVENT_EXEC {
+                self.release_fd_barrier(pid)?;
                 // The exec stop precedes the new image's first userspace
                 // instruction. Inspect the image the kernel actually loaded,
                 // including script interpreters and fd-based execs, before
@@ -3037,11 +3194,13 @@ impl Trace<'_> {
                     );
                     self.tasks.remove(&former);
                     self.pending.remove(&former);
+                    self.dup_reservations.remove(&former);
                     self.release_task_space(former);
                     self.groups.remove(&former);
                 }
                 self.groups.insert(pid, Self::group(pid));
                 self.pending.remove(&pid);
+                self.dup_reservations.remove(&pid);
                 self.release_task_space(pid);
                 let space = self.new_space(Vec::new())?;
                 self.task_spaces.insert(pid, space);
@@ -3154,6 +3313,9 @@ pub fn run_traced(view: &mut View, prepared: &Prepared) -> Result<i32> {
         groups: HashMap::from([(pid, pid)]),
         pending: HashMap::new(),
         fds: HashMap::new(),
+        dup_reservations: HashMap::new(),
+        fd_busy: HashMap::new(),
+        fd_waiting: VecDeque::new(),
         cwd: HashMap::new(),
         scratch: HashMap::new(),
         scratch_pending: HashMap::new(),

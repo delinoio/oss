@@ -908,6 +908,77 @@ int main(int argc, char **argv) {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn linux_concurrent_duplication_preserves_managed_descriptor_ownership() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("concurrent-dup.c");
+    fs::write(
+        &source,
+        r#"
+#include <fcntl.h>
+#include <pthread.h>
+#include <stdio.h>
+#include <stdatomic.h>
+#include <sys/stat.h>
+#include <unistd.h>
+static atomic_int done;
+static atomic_int attempts;
+static void *mutate(void *unused) {
+    (void)unused;
+    while (!atomic_load(&done)) {
+        fchmod(100, 0600);
+        atomic_fetch_add(&attempts, 1);
+    }
+    return 0;
+}
+int main(void) {
+    int managed = open("node_modules/dep/file.txt", O_RDONLY);
+    int native = open("output.txt", O_CREAT | O_RDWR, 0600);
+    if (managed < 0 || native < 0) return 20;
+    struct stat before, after;
+    if (fstat(managed, &before)) return 21;
+    pthread_t thread;
+    if (pthread_create(&thread, 0, mutate, 0)) return 22;
+    for (int i = 0; i < 400; ++i) {
+        if (dup2(managed, 100) != 100 || dup2(native, 100) != 100) return 23;
+    }
+    atomic_store(&done, 1);
+    if (pthread_join(thread, 0) || !atomic_load(&attempts)) return 24;
+    if (fstat(managed, &after)) return 25;
+    if ((before.st_mode & 0777) != (after.st_mode & 0777)) {
+        fprintf(stderr, "managed mode changed from %o to %o after %d attempts\n",
+            before.st_mode & 0777, after.st_mode & 0777, atomic_load(&attempts));
+        return 26;
+    }
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("concurrent-dup");
+    assert!(Command::new("cc")
+        .args(["-static", "-pthread", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn linux_reuses_scratch_after_threads_and_vfork_spawns() {
     use std::process::Command;
     let root = fixture();
