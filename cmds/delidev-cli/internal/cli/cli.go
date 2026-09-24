@@ -607,6 +607,7 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   model resolve --selector ID|ALIAS|NATIVE_ID [--provider-id ID]
   session create --input FILE|- [--wait]
   session prepare --id ID --revision N [--wait]
+  session recover-workspace --id ID --revision N [--cleanup] [--wait]
   session list [--project-id ID] [--include-archived] [--limit N] [--page-token TOKEN]
   session enqueue --id ID --input FILE|-
   session stop|archive|restore|resume --id ID --revision N

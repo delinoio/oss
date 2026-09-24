@@ -194,6 +194,15 @@ func Run(ctx context.Context, config Config) error {
 // ReconcileOwner uses the owner's dedicated index, never scans other sessions'
 // process history and never interprets a missing index as proof of completion.
 func ReconcileOwner(root string, owner domain.ID) error {
+	return ReconcileOwnerContext(context.Background(), root, owner)
+}
+
+// Cancellation interrupts between bounded native ownership checks; an in-flight
+// termination still finishes its confirmation before yielding.
+func ReconcileOwnerContext(ctx context.Context, root string, owner domain.ID) error {
+	if err := ctx.Err(); err != nil {
+		return domain.SafeError(err)
+	}
 	if err := owner.Validate(); err != nil {
 		return err
 	}
@@ -209,6 +218,9 @@ func ReconcileOwner(root string, owner domain.ID) error {
 		return domain.Fail(domain.ResourceExhausted, "Process recovery exceeds its bounded owner scope.", "Inspect and prune confirmed completed ownership journals before retrying.")
 	}
 	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			return domain.SafeError(err)
+		}
 		if !entry.IsDir() || domain.ID(entry.Name()).Validate() != nil {
 			return ownershipError()
 		}

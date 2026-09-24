@@ -198,8 +198,9 @@ const (
 )
 
 type SessionPreparation struct {
-	JobID ID               `json:"job_id"`
-	State PreparationState `json:"state"`
+	JobID         ID               `json:"job_id"`
+	RecoveryJobID ID               `json:"recovery_job_id,omitempty"`
+	State         PreparationState `json:"state"`
 }
 
 type QueuedInput struct {

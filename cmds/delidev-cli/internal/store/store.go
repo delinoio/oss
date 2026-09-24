@@ -22,7 +22,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const SchemaVersion = 5
+const SchemaVersion = 6
 const applicationID = 0x444c4456
 const MaxPage = 200
 
@@ -133,7 +133,7 @@ func Open(ctx context.Context, root string) (*Store, error) {
 		if err != nil {
 			return fail(err)
 		}
-		if _, err = tx.ExecContext(ctx, schema+workerSchema+catalogSchema+sessionSchema+jobControlSchema); err == nil {
+		if _, err = tx.ExecContext(ctx, schema+workerSchema+catalogSchema+sessionSchema+jobControlSchema+assignmentSchema); err == nil {
 			err = tx.Commit()
 		} else {
 			tx.Rollback()

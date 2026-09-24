@@ -69,6 +69,7 @@ const (
 	InspectRepositoryJob JobType = "inspect-repository"
 	SaveRepositoryJob    JobType = "save-repository"
 	PrepareWorkspaceJob  JobType = "prepare-workspace"
+	RecoverWorkspaceJob  JobType = "recover-workspace"
 	HarnessDiscoveryJob  JobType = "harness-discovery"
 )
 
@@ -99,7 +100,7 @@ type Job struct {
 }
 
 func (j Job) Validate() error {
-	if !slices.Contains([]JobType{InspectRepositoryJob, SaveRepositoryJob, PrepareWorkspaceJob, HarnessDiscoveryJob}, j.Type) {
+	if !slices.Contains([]JobType{InspectRepositoryJob, SaveRepositoryJob, PrepareWorkspaceJob, RecoverWorkspaceJob, HarnessDiscoveryJob}, j.Type) {
 		return Fail(InvalidArgument, "Unknown Worker job type.", "Use a supported product operation.")
 	}
 	if !slices.Contains([]JobState{JobQueued, JobClaimed, JobSucceeded, JobFailed, JobUncertain, JobCanceled}, j.State) {

@@ -175,6 +175,11 @@ func (t *Tx) PutJob(id domain.ID, expected uint64, session, project domain.ID, j
 	if err != nil {
 		return Record{}, storageError(err)
 	}
+	if job.State == domain.JobClaimed {
+		if err := t.rememberAssignment(r); err != nil {
+			return Record{}, err
+		}
+	}
 	return r, nil
 }
 func (t *Tx) Jobs(machine, parent domain.ID, state domain.JobState, after domain.ID, limit int) ([]Record, error) {

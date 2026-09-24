@@ -58,6 +58,16 @@ func (s *Service) sessionResult(ctx context.Context, result store.Result) (*pb.S
 				return domain.Fail(domain.RecoveryRequired, "Workspace ownership is inconsistent.", "Preserve the data scope and inspect recovery.")
 			}
 			change.WorkspaceJob = rpc.Resource(job)
+			if value.Preparation.RecoveryJobID != "" {
+				recovery, err := tx.Get(domain.JobKind, value.Preparation.RecoveryJobID)
+				if err != nil {
+					return err
+				}
+				if recovery.SessionID != refs.SessionID {
+					return domain.Fail(domain.RecoveryRequired, "Workspace recovery ownership is inconsistent.", "Preserve the data scope for recovery.")
+				}
+				change.RecoveryJob = rpc.Resource(recovery)
+			}
 		}
 		if refs.InputID != "" {
 			input, err := tx.Get(domain.QueueKind, refs.InputID)

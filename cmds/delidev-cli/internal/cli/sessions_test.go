@@ -105,6 +105,10 @@ func TestCLISessionAcceptanceQueueAndArchive(t *testing.T) {
 		t.Fatal("CLI claimed unsupported native execution")
 	}
 
+	code, failed = cliRun(t, root, []string{"session", "recover-workspace", "--id", id, "--revision", revision, "--cleanup", "--wait"}, "")
+	if code != 5 || failed["error"].(map[string]any)["code"] != "conflict" {
+		t.Fatal("CLI recovered a confirmed canceled preparation without uncertainty")
+	}
 	workerCtx, stopWorker := context.WithCancel(ctx)
 	workerReady, workerDone := make(chan struct{}), make(chan error, 1)
 	go func() {

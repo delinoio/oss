@@ -394,6 +394,7 @@ service SessionService {
   rpc ControlSession(ControlSessionRequest) returns (ControlSessionResponse);
   rpc RenameSession(RenameSessionRequest) returns (RenameSessionResponse);
   rpc PrepareSessionWorkspace(PrepareSessionWorkspaceRequest) returns (PrepareSessionWorkspaceResponse);
+  rpc RecoverSessionWorkspace(RecoverSessionWorkspaceRequest) returns (RecoverSessionWorkspaceResponse);
 }
 message SessionChange {
   Resource session = 1;
@@ -401,6 +402,7 @@ message SessionChange {
   string request_id = 3;
   bool replayed = 4;
   Resource workspace_job = 5;
+  Resource recovery_job = 6;
 }
 message CreateSessionRequest {
   string request_id = 1;
@@ -478,5 +480,14 @@ message PrepareSessionWorkspaceRequest {
   Mutation mutation = 1;
 }
 message PrepareSessionWorkspaceResponse {
+  SessionChange change = 1;
+}
+
+message RecoverSessionWorkspaceRequest {
+  Mutation mutation = 1;
+  // Explicitly permits rollback of an incomplete preparation, never a ready workspace.
+  bool cleanup = 2;
+}
+message RecoverSessionWorkspaceResponse {
   SessionChange change = 1;
 }

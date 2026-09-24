@@ -10,15 +10,26 @@ import (
 )
 
 func sessionChangeJSON(change *pb.SessionChange) any {
-	return map[string]any{"session": resourceJSON(change.Session), "input": resourceJSON(change.Input), "workspace_job": resourceJSON(change.WorkspaceJob), "replayed": change.Replayed}
+	return map[string]any{"session": resourceJSON(change.Session), "input": resourceJSON(change.Input), "workspace_job": resourceJSON(change.WorkspaceJob), "recovery_job": resourceJSON(change.RecoveryJob), "replayed": change.Replayed}
 }
 
-func sessionWorkspaceWait(ctx context.Context, c client, change *pb.SessionChange, wait bool) (any, error) {
+func sessionWorkspaceWait(ctx context.Context, c client, change *pb.SessionChange, wait bool, recovery bool) (any, error) {
 	if !wait || change.WorkspaceJob == nil {
 		return sessionChangeJSON(change), nil
 	}
-	job, err := awaitJob(ctx, c, change.WorkspaceJob)
-	change.WorkspaceJob = job
+	selected := change.WorkspaceJob
+	if recovery {
+		selected = change.RecoveryJob
+	}
+	if selected == nil {
+		return sessionChangeJSON(change), domain.Fail(domain.RecoveryRequired, "The accepted workspace job is unavailable.", "Inspect the session before retrying.")
+	}
+	job, err := awaitJob(ctx, c, selected)
+	if recovery {
+		change.RecoveryJob = job
+	} else {
+		change.WorkspaceJob = job
+	}
 	if err != nil {
 		return sessionChangeJSON(change), err
 	}
@@ -27,6 +38,13 @@ func sessionWorkspaceWait(ctx context.Context, c client, change *pb.SessionChang
 		return sessionChangeJSON(change), rpc.ClientError(err)
 	}
 	change.Session = current.Msg.Resource
+	if recovery {
+		original, err := c.resources.GetResource(ctx, request(c, &pb.GetResourceRequest{Kind: pb.EntityKind_ENTITY_KIND_JOB, Id: change.WorkspaceJob.Id}))
+		if err != nil {
+			return sessionChangeJSON(change), rpc.ClientError(err)
+		}
+		change.WorkspaceJob = original.Msg.Resource
+	}
 	var state domain.Job
 	if err := domain.Decode(job.DocumentJson, &state); err != nil {
 		return sessionChangeJSON(change), err
@@ -76,7 +94,7 @@ func sessionCommand(ctx context.Context, c client, o options, args []string, str
 			if err != nil {
 				return nil, rpc.ClientError(err)
 			}
-			return sessionWorkspaceWait(ctx, c, response.Msg.Change, *wait)
+			return sessionWorkspaceWait(ctx, c, response.Msg.Change, *wait, false)
 		}
 		if err := domain.ID(*id).Validate(); err != nil {
 			return nil, err
@@ -111,12 +129,16 @@ func sessionCommand(ctx context.Context, c client, o options, args []string, str
 			return nil, rpc.ClientError(err)
 		}
 		return map[string]any{"sessions": resourcesJSON(response.Msg.Sessions), "next_page_token": response.Msg.NextPageToken}, nil
-	case "stop", "archive", "restore", "unarchive", "resume", "rename", "prepare":
+	case "stop", "archive", "restore", "unarchive", "resume", "rename", "prepare", "recover-workspace":
 		id := f.String("id", "", "")
 		revision := f.Uint64("revision", 0, "")
 		wait := new(bool)
-		if action == "prepare" {
+		if action == "prepare" || action == "recover-workspace" {
 			wait = f.Bool("wait", false, "wait for workspace preparation within the command deadline")
+		}
+		cleanup := new(bool)
+		if action == "recover-workspace" {
+			cleanup = f.Bool("cleanup", false, "clean only an incomplete preparation after ownership reconciliation")
 		}
 		var name *string
 		if action == "rename" {
@@ -129,12 +151,19 @@ func sessionCommand(ctx context.Context, c client, o options, args []string, str
 			return nil, domain.Fail(domain.MissingInput, "Session controls require an ID and current revision.", "Provide --id and --revision from session get.")
 		}
 		meta := &pb.Mutation{RequestId: string(o.requestID), Id: *id, ExpectedRevision: *revision}
+		if action == "recover-workspace" {
+			response, err := c.sessions.RecoverSessionWorkspace(ctx, request(c, &pb.RecoverSessionWorkspaceRequest{Mutation: meta, Cleanup: *cleanup}))
+			if err != nil {
+				return nil, rpc.ClientError(err)
+			}
+			return sessionWorkspaceWait(ctx, c, response.Msg.Change, *wait, true)
+		}
 		if action == "prepare" {
 			response, err := c.sessions.PrepareSessionWorkspace(ctx, request(c, &pb.PrepareSessionWorkspaceRequest{Mutation: meta}))
 			if err != nil {
 				return nil, rpc.ClientError(err)
 			}
-			return sessionWorkspaceWait(ctx, c, response.Msg.Change, *wait)
+			return sessionWorkspaceWait(ctx, c, response.Msg.Change, *wait, false)
 		}
 		if action == "rename" {
 			response, err := c.sessions.RenameSession(ctx, request(c, &pb.RenameSessionRequest{Mutation: meta, Name: *name}))

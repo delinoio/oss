@@ -98,6 +98,9 @@ func finishSessionWorkspace(tx *store.Tx, jobID domain.ID) error {
 		return err
 	}
 	job, err := store.Decode[domain.Job](r)
+	if err == nil && job.Type == domain.RecoverWorkspaceJob {
+		return finishWorkspaceRecovery(tx, r, job)
+	}
 	if err != nil || job.Type != domain.PrepareWorkspaceJob {
 		return err
 	}
@@ -140,6 +143,29 @@ func finishSessionWorkspace(tx *store.Tx, jobID domain.ID) error {
 func stopSessionWorkspace(tx *store.Tx, session *domain.Session) (bool, error) {
 	if session.Preparation == nil {
 		return true, nil
+	}
+	if session.Preparation.RecoveryJobID != "" {
+		r, err := tx.Get(domain.JobKind, session.Preparation.RecoveryJobID)
+		if err != nil {
+			return false, err
+		}
+		recovery, err := store.Decode[domain.Job](r)
+		if err != nil {
+			return false, err
+		}
+		if recovery.State == domain.JobQueued {
+			now := time.Now().UTC()
+			recovery.State, recovery.FinishedAt = domain.JobCanceled, &now
+			recovery.Problem = domain.Fail(domain.Canceled, "Workspace recovery was canceled before dispatch.", "The original preparation remains uncertain.")
+			if _, err := tx.PutJob(r.ID, r.Revision, r.SessionID, r.ProjectID, recovery); err != nil {
+				return false, err
+			}
+			session.Recovery = domain.NeedsRecovery
+		} else if recovery.State == domain.JobClaimed {
+			if err := tx.RequestJobCancellation(r.ID); err != nil {
+				return false, err
+			}
+		}
 	}
 	r, err := tx.Get(domain.JobKind, session.Preparation.JobID)
 	if err != nil {

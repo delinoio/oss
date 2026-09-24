@@ -1,7 +1,7 @@
 # DeliDev Worker workspace contract
 
 ## Scope
-`cmds/delidev-cli/internal/workspace` owns Worker-local Git inspection, reference resolution, and all-repository preparation. It is independent of server SQLite and never receives a server GitHub PAT. Preparation is dispatched by authenticated outbound Worker jobs and published atomically into session metadata. Native harness execution, forks and uncertain-preparation reconciliation remain separate pending boundaries in the evidence ledger.
+`cmds/delidev-cli/internal/workspace` owns Worker-local Git inspection, reference resolution, and all-repository preparation. It is independent of server SQLite and never receives a server GitHub PAT. Preparation is dispatched by authenticated outbound Worker jobs and published atomically into session metadata. Native harness execution, forks and snapshots remain separate pending boundaries in the evidence ledger.
 
 ## Runtime and Language
 Go and the execution machine's installed Git. No harness or Git installation is performed automatically.
@@ -17,6 +17,13 @@ Worktree preparation resolves each repository's independently configured base an
 Local preparation uses existing checkouts and their current HEAD/tree, with no fetch, branch change, or worktree creation. It requires matching execution/origin machine IDs. General Chat creates an independent session-owned directory without Git. The primary path is the designated primary repository or the General Chat directory.
 
 Preparation serializes by session while independent sessions can proceed concurrently. Git work is bounded and occurs outside database transactions. A durable ownership manifest is written before side effects; readiness is published only after every repository succeeds. Identical retries reuse a ready manifest; changed input cannot overwrite it. Partial preparation rolls back only newly owned worktrees. Failed cleanup retains a recoverable manifest; explicit retry cannot delete a ready workspace. Session Stop/Archive now cancel queued or claimed preparation through the owning job and retain ready workspaces. Active harness lifecycle and snapshot cleanup use separate product operations. Failure to acquire/inspect an existing ownership scope or persist its initial journal is uncertainty, not proof that cleanup completed; only confirmed rollback may permit another preparation attempt.
+
+## Preparation recovery
+`Manager.Recover` inspects the original session preparation under its per-session lock; it never repeats preparation or fetches. The Worker first verifies the exact original claimed job/revision/instance/digest against the private execution journal, with server evidence from its immutable assignment record. A missing or mismatched journal cannot authorize native work.
+
+Recovery has a two-minute Worker deadline and cancellable process-index traversal between individually bounded native ownership checks. A ready manifest must match the accepted input and exact local owned paths, avoid replacement links, retain the original detached HEAD, share the expected Git common directory and remain registered with its source checkout. Ready working changes are preserved. Git registration comparisons use native path separators and Windows case semantics; this is not evidence of native Windows runtime acceptance.
+
+Incomplete preparation requires explicit cleanup. Its manifest must match the accepted ordered repository prefix and deletion-owned paths; Local is excluded from this operation. A per-original-job proof in private `workspace-recovery` records the incomplete manifest before deletion and completion after synchronized removal. It survives removal of the workspace root, allowing a retry to reconcile Git registrations even when the root is absent. A complete proof or matching original terminal cleanup journal is required to treat absence as clean. These proofs belong to their session's managed data and participate in the future coordinated permanent-deletion boundary.
 
 ## Storage
 The Worker owns private `workspaces`, `locks`, and empty hook directories under its explicit data scope. UUID-v7 session/repository IDs derive managed paths. Manifests record original checkouts separately from deletion-owned paths. Cleanup recomputes owned paths from identities, reconciles Git registration even when a directory is absent, and never removes original Local checkouts. These local resources intentionally override the repository R2 default.

@@ -353,9 +353,16 @@ func (m *Manager) verify(manifest Manifest) error {
 	return nil
 }
 func (m *Manager) cleanup(ctx context.Context, root string, manifest Manifest) error {
+	if _, err := os.Lstat(root); err == nil {
+		if err := security.CheckPrivateDir(root); err != nil {
+			return ResultUncertain()
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return ResultUncertain()
+	}
 	git := m.Git
 	git.OwnerID = manifest.SessionID
-	if err := process.ReconcileOwner(git.ProcessRoot, manifest.SessionID); err != nil {
+	if err := process.ReconcileOwnerContext(ctx, git.ProcessRoot, manifest.SessionID); err != nil {
 		return err
 	}
 	for i := len(manifest.Repositories) - 1; i >= 0; i-- {
@@ -369,13 +376,20 @@ func (m *Manager) cleanup(ctx context.Context, root string, manifest Manifest) e
 		if repo.ID.Validate() != nil || repo.Path != expected || repo.Source == expected {
 			return domain.Fail(domain.RecoveryRequired, "Workspace cleanup ownership could not be verified.", "Inspect the exact repository and session association.")
 		}
+		if info, err := os.Lstat(expected); err == nil {
+			if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+				return ResultUncertain()
+			}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return ResultUncertain()
+		}
 		registered, err := git.run(ctx, repo.Source, "worktree", "list", "--porcelain", "-z")
 		if err != nil {
 			return err
 		}
 		present := false
 		for _, field := range strings.Split(string(registered), "\x00") {
-			if field == "worktree "+expected {
+			if path, ok := strings.CutPrefix(field, "worktree "); ok && sameNativePath(path, expected) {
 				present = true
 				break
 			}
@@ -388,7 +402,10 @@ func (m *Manager) cleanup(ctx context.Context, root string, manifest Manifest) e
 	}
 	// This root contains only this attempt's journal and owned General Chat data;
 	// no original Local checkout is contained in or removed with this directory.
-	return os.RemoveAll(root)
+	if err := os.RemoveAll(root); err != nil {
+		return err
+	}
+	return security.SyncParent(root)
 }
 func (m *Manager) RetryCleanup(ctx context.Context, session domain.ID) error {
 	if err := session.Validate(); err != nil {

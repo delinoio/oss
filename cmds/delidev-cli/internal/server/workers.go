@@ -387,6 +387,23 @@ func (s *Service) ReportWork(ctx context.Context, req *connect.Request[pb.Report
 		if problem == nil {
 			outputJSON := req.Msg.OutputJson
 			switch job.Type {
+			case domain.RecoverWorkspaceJob:
+				var expected workspace.RecoveryRequest
+				if err := domain.Decode(job.Input, &expected); err != nil {
+					return nil, err
+				}
+				machineRecord, err := tx.Get(domain.MachineKind, machine)
+				if err != nil {
+					return nil, err
+				}
+				machineValue, err := store.Decode[domain.Machine](machineRecord)
+				if err != nil {
+					return nil, err
+				}
+				var output workspace.RecoveryResult
+				if domain.Decode(req.Msg.OutputJson, &output) != nil || workspace.ValidateRecoveryResult(expected, output, machineValue.OS) != nil {
+					problem = workspace.ResultUncertain()
+				}
 			case domain.PrepareWorkspaceJob:
 				var expected workspace.PrepareRequest
 				if err := domain.Decode(job.Input, &expected); err != nil {

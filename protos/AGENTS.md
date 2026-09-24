@@ -39,3 +39,5 @@
 - async-commit-hook Pair is a deprecated v1 compatibility tombstone returning Unimplemented. All active RPCs require the same local UI origin and API version header; no pairing/authentication messages are newly introduced.
 
 - DeliDev workspace preparation uses the current `SessionChange.workspace_job` and revision-checked `PrepareSessionWorkspace`. Worker cancellation is an immutable-job-scoped control, including pre-cancellation on reconnect; it must never mutate claimed assignment revisions or cancel unrelated work. Preserve session/job atomic publication, unknown native ownership and pending Archive visibility until completion is proven.
+
+- DeliDev `RecoverSessionWorkspace` is an owner/client revision-checked operation with explicit partial-cleanup selection and current `SessionChange.recovery_job`. Recovery jobs bind the original claimed identity/revision/digest and cannot create execution authority. Keep malformed/mismatched proof uncertain and publish confirmed recovery plus the original preparation outcome atomically.

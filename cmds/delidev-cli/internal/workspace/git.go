@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -223,4 +224,15 @@ func (g Git) Resolve(ctx context.Context, inspection Inspection, ref domain.Refe
 		return "", err
 	}
 	return strings.TrimSpace(string(raw)), nil
+}
+
+// Git for Windows prints slash-separated paths while Go's ownership paths use
+// native separators. Compare in the native path namespace without changing the
+// original arguments or resolving a replacement filesystem link.
+func sameNativePath(a, b string) bool {
+	a, b = filepath.Clean(a), filepath.Clean(b)
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(a, b)
+	}
+	return a == b
 }

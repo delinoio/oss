@@ -282,6 +282,15 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 			return journal{}, domain.Fail(domain.RecoveryRequired, "The workspace assignment has inconsistent ownership.", "Reconcile the accepted session and job before executing work.")
 		}
 	}
+	if job.Type == domain.RecoverWorkspaceJob {
+		var input workspace.RecoveryRequest
+		if err := domain.Decode(job.Input, &input); err != nil {
+			return journal{}, err
+		}
+		if string(input.Preparation.SessionID) != resource.SessionId || input.Preparation.MachineID != job.MachineID || input.JobID != job.ParentID {
+			return journal{}, workspace.ResultUncertain()
+		}
+	}
 	root := config.Root
 	hash := sha256.Sum256(resource.DocumentJson)
 	digest := hex.EncodeToString(hash[:])
@@ -331,6 +340,53 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job) (json.RawMessage, error) {
 	root := config.Root
 	switch job.Type {
+	case domain.RecoverWorkspaceJob:
+		bounded, stopRecovery := context.WithTimeout(ctx, 2*time.Minute)
+		defer stopRecovery()
+		ctx = bounded
+		var input workspace.RecoveryRequest
+		if err := domain.Decode(job.Input, &input); err != nil {
+			return nil, err
+		}
+		if err := input.Validate(); err != nil {
+			return nil, err
+		}
+		raw, err := security.ReadPrivate(filepath.Join(root, "jobs", string(input.JobID)+".json"), 2<<20)
+		if err != nil {
+			return nil, workspace.ResultUncertain()
+		}
+		var prior journal
+		if domain.Decode(raw, &prior) != nil || prior.Version != 1 || prior.JobID != input.JobID || prior.InstanceID != input.InstanceID || prior.Revision != input.Revision || prior.Digest != input.AssignmentDigest || prior.ReportID.Validate() != nil {
+			return nil, workspace.ResultUncertain()
+		}
+		if prior.State != journalStarted && prior.State != journalFinished && prior.State != journalReported {
+			return nil, workspace.ResultUncertain()
+		}
+		completedClean := false
+		if prior.State == journalStarted {
+			if prior.Problem != nil || len(prior.Output) != 0 {
+				return nil, workspace.ResultUncertain()
+			}
+		} else if prior.Problem != nil {
+			if len(prior.Output) != 0 {
+				return nil, workspace.ResultUncertain()
+			}
+			switch prior.Problem.Code {
+			case domain.InvalidArgument, domain.NotFound, domain.Conflict, domain.PermissionDenied, domain.Unavailable, domain.MissingInput, domain.Unsupported, domain.ResourceExhausted, domain.Canceled, domain.Internal:
+				completedClean = true
+			case domain.RecoveryRequired:
+			default:
+				return nil, workspace.ResultUncertain()
+			}
+		} else if len(prior.Output) == 0 {
+			return nil, workspace.ResultUncertain()
+		}
+		manager := workspace.Manager{Root: root, Logger: config.Logger}
+		result, err := manager.Recover(ctx, input, completedClean)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(result)
 	case domain.PrepareWorkspaceJob:
 		var input workspace.PrepareRequest
 		if err := domain.Decode(job.Input, &input); err != nil {
