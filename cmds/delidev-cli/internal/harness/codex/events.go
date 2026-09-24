@@ -142,6 +142,9 @@ func (c *Client) NextEvent(ctx context.Context) (Event, error) {
 	if event.Kind == QuestionAcceptedEvent && c.logger != nil {
 		c.logger.InfoContext(ctx, "Codex native question acceptance observed", "owner_id", c.ownerID, "interaction_id", event.InteractionState.ID, "response_id", event.InteractionState.ResponseID, "turn_id", event.TurnID)
 	}
+	if event.Kind == InteractionRequestedEvent && event.Interaction.Kind == ApprovalInteraction && c.logger != nil {
+		c.logger.InfoContext(ctx, "Codex native approval requested", "owner_id", c.ownerID, "interaction_id", event.Interaction.ID, "turn_id", event.TurnID, "approval_kind", event.Interaction.Approval.Kind)
+	}
 	event.EmittedAtMS = native.EmittedAtMS
 	return event, nil
 }

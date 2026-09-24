@@ -64,6 +64,14 @@ func (f *threadFixture) handleTurn(id json.RawMessage, method string, raw json.R
 			// answer is canceled after native delivery becomes uncertain.
 			time.Sleep(30 * time.Second)
 		}
+	case "fixture/approval":
+		fields := params["params"].(map[string]any)
+		fields["threadId"], fields["turnId"] = f.thread["id"], f.turn
+		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"id": params["requestId"], "method": params["method"], "params": fields})
+		write(id, map[string]any{})
+		if f.mode == "thread-turn-approvals-blocked" {
+			time.Sleep(30 * time.Second)
+		}
 	case "fixture/notify":
 		f.notify(params["method"].(string), params["params"])
 		write(id, map[string]any{})

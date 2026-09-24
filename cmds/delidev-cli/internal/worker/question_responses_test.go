@@ -30,6 +30,14 @@ type questionControllerFixture struct {
 	block                       chan struct{}
 }
 
+func TestNativeApprovalPublicationRequiresDedicatedOwnerWorkflow(t *testing.T) {
+	f := newQuestionControllerFixture(t, "ready")
+	err := f.mapper.publishInteraction(context.Background(), codex.Event{Kind: codex.InteractionRequestedEvent, TurnID: f.mapper.turn, Interaction: &codex.Interaction{ID: domain.NewID(), Kind: codex.ApprovalInteraction, Approval: &codex.ApprovalRequest{Kind: codex.CommandApproval}}})
+	if err == nil || domain.SafeError(err).Code != domain.Unsupported || f.publications != 0 || f.claims != 0 || f.sends != 0 || len(f.mapper.interactions) != 1 {
+		t.Fatal("private approval bypassed dedicated durable publication/owner authority", err)
+	}
+}
+
 func newQuestionControllerFixture(t *testing.T, mode string) *questionControllerFixture {
 	t.Helper()
 	job, execution, interaction, response, session := domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID()

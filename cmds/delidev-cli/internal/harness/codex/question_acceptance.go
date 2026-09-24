@@ -75,7 +75,7 @@ func (c *Client) observeRawQuestionEvidenceLocked(native nativewire.Event) (Even
 	}
 	var owned *trackedInteraction
 	for _, candidate := range c.execution.interactions.arrivals {
-		if candidate.status.TurnID == envelope.TurnID && candidate.status.ItemID == *output.CallID {
+		if candidate.kind == UserInputInteraction && candidate.status.TurnID == envelope.TurnID && candidate.status.ItemID == *output.CallID {
 			owned = candidate
 			break
 		}

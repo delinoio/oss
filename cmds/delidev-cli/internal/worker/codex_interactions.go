@@ -15,6 +15,9 @@ func (c *CodexEventPublisher) publishInteraction(ctx context.Context, e codex.Ev
 	var update domain.ExecutionInteractionUpdate
 	if e.Kind == codex.InteractionRequestedEvent {
 		i := e.Interaction
+		if i != nil && i.Kind == codex.ApprovalInteraction {
+			return domain.Fail(domain.Unsupported, "Native approval publication requires its dedicated owner workflow.", "Retain the native approval without replying; do not reinterpret it as a question or ordinary input.")
+		}
 		if i == nil || i.ID.Validate() != nil || i.Kind != codex.UserInputInteraction || i.Questions == nil || e.InteractionState != nil {
 			return publicationUncertain()
 		}

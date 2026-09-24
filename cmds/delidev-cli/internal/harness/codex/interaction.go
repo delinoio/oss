@@ -39,6 +39,8 @@ type trackedInteraction struct {
 	status       InteractionStatus
 	native       nativewire.Event
 	questions    *QuestionRequest
+	kind         InteractionKind
+	approval     *ApprovalRequest
 	bytes        int
 	answerDigest [32]byte
 }
@@ -92,10 +94,10 @@ func cloneQuestions(request *QuestionRequest) *QuestionRequest {
 	return &copy
 }
 
-func (c *Client) retainQuestionLocked(native nativewire.Event, turn domain.ID, item string, interaction *Interaction, eligible bool) error {
+func (c *Client) retainInteractionLocked(native nativewire.Event, turn domain.ID, item string, interaction *Interaction, eligible bool) error {
 	s := &c.execution.interactions
 	for _, prior := range s.arrivals {
-		if prior.status.TurnID == turn && prior.status.ItemID == item {
+		if interaction.Kind == UserInputInteraction && prior.kind == UserInputInteraction && prior.status.TurnID == turn && prior.status.ItemID == item {
 			return incompatible()
 		}
 	}
@@ -109,9 +111,13 @@ func (c *Client) retainQuestionLocked(native nativewire.Event, turn domain.ID, i
 	if len(s.arrivals) >= maxTrackedInteractions {
 		return domain.Fail(domain.ResourceExhausted, "Native interaction tracking reached its bound.", "Drain and persist native state before replacing the connection explicitly.")
 	}
-	raw, err := json.Marshal(interaction.Questions)
+	var payload any = interaction.Questions
+	if interaction.Kind == ApprovalInteraction {
+		payload = interaction.Approval
+	}
+	raw, err := json.Marshal(payload)
 	if err != nil || len(raw) > maxQuestionBytes-s.bytes || s.open >= maxOpenInteractions {
-		return domain.Fail(domain.ResourceExhausted, "Pending native questions reached their bound.", "Resolve or stop pending interactions before accepting more native work.")
+		return domain.Fail(domain.ResourceExhausted, "Pending native interactions reached their bound.", "Resolve or stop pending interactions before accepting more native work.")
 	}
 	if s.arrivals == nil {
 		s.arrivals = map[domain.ID]*trackedInteraction{}
@@ -121,15 +127,24 @@ func (c *Client) retainQuestionLocked(native nativewire.Event, turn domain.ID, i
 	owned := &trackedInteraction{
 		status: InteractionStatus{ID: interaction.ID, TurnID: turn, ItemID: item, Closure: InteractionOpen, Delivery: QuestionNotSent},
 		// Retain only reply authority, never another copy of raw question data.
-		native:    nativewire.Event{Kind: nativewire.ServerRequest, ID: slices.Clone(native.ID), Token: native.Token},
-		questions: cloneQuestions(interaction.Questions), bytes: len(raw),
+		native: nativewire.Event{Kind: nativewire.ServerRequest, ID: slices.Clone(native.ID), Token: native.Token},
+		kind:   interaction.Kind, bytes: len(raw),
+	}
+	if interaction.Kind == UserInputInteraction {
+		owned.questions = cloneQuestions(interaction.Questions)
+	} else {
+		var err error
+		owned.approval, err = cloneApproval(interaction.Approval)
+		if err != nil {
+			return err
+		}
 	}
 	if !eligible {
 		if _, err := c.wire.RetireRequest(owned.native); err != nil {
 			return err
 		}
 		owned.status.Closure = InteractionTurnEnded
-		owned.questions, owned.bytes = nil, 0
+		owned.questions, owned.approval, owned.bytes = nil, nil, 0
 	} else {
 		s.open++
 		s.bytes += owned.bytes
@@ -153,7 +168,7 @@ func (c *Client) closeInteractionLocked(owned *trackedInteraction, closure Inter
 	s := &c.execution.interactions
 	s.bytes -= owned.bytes
 	s.open--
-	owned.questions, owned.bytes = nil, 0
+	owned.questions, owned.approval, owned.bytes = nil, nil, 0
 	return nil
 }
 
@@ -286,7 +301,7 @@ func (c *Client) AnswerQuestions(ctx context.Context, responseID, interactionID,
 	}
 	s := &c.execution.interactions
 	owned := s.arrivals[interactionID]
-	if owned == nil || owned.status.TurnID != turnID || c.execution.active != turnID || c.execution.paused || c.execution.interrupt != "" || owned.status.Closure != InteractionOpen || owned.status.Delivery != QuestionNotSent || s.responses[responseID] {
+	if owned == nil || owned.kind != UserInputInteraction || owned.status.TurnID != turnID || c.execution.active != turnID || c.execution.paused || c.execution.interrupt != "" || owned.status.Closure != InteractionOpen || owned.status.Delivery != QuestionNotSent || s.responses[responseID] {
 		return InteractionStatus{}, interactionConflict()
 	}
 	if len(s.responses) >= maxTrackedInteractions {

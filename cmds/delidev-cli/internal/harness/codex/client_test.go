@@ -26,6 +26,7 @@ func init() {
 	initialized, notified := false, false
 	threads := &threadFixture{mode: mode}
 	scanner := bufio.NewScanner(os.Stdin)
+	scanner.Buffer(make([]byte, 4096), 1<<20)
 	write := func(id json.RawMessage, result any) {
 		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"id": id, "result": result})
 	}
@@ -90,6 +91,12 @@ func init() {
 			}
 			write(request.ID, map[string]any{"data": threads, "nextCursor": nil})
 		default:
+			if request.Method == "" && mode == "thread-turn-approvals" {
+				if !threads.approvalReply(request.ID, request.Result) {
+					os.Exit(34)
+				}
+				continue
+			}
 			if request.Method == "" && mode == "thread-turn-questions" {
 				if !threads.questionReply(request.ID, request.Result) {
 					os.Exit(34)

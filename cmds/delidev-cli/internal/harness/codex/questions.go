@@ -14,6 +14,7 @@ type RequestIDKind string
 
 const (
 	UserInputInteraction InteractionKind = "user-input"
+	ApprovalInteraction  InteractionKind = "approval"
 	TextRequestID        RequestIDKind   = "text"
 	NumberRequestID      RequestIDKind   = "number"
 )
@@ -67,11 +68,12 @@ type Interaction struct {
 	NativeID  NativeRequestID
 	Kind      InteractionKind
 	Questions *QuestionRequest
+	Approval  *ApprovalRequest
 }
 
 func (c *Client) observeInteractionLocked(native nativewire.Event) (Event, error) {
 	if native.Method != "item/tool/requestUserInput" {
-		return privateNative(native), nil
+		return c.observeApprovalLocked(native)
 	}
 	var params struct {
 		ThreadID         domain.ID         `json:"threadId"`
@@ -106,7 +108,7 @@ func (c *Client) observeInteractionLocked(native nativewire.Event) (Event, error
 		request.Questions = append(request.Questions, question)
 	}
 	interaction := &Interaction{ID: native.Token, NativeID: nativeID, Kind: UserInputInteraction, Questions: request}
-	if err := c.retainQuestionLocked(native, params.TurnID, params.ItemID, interaction, known && !turn.Turn.Status.terminal()); err != nil {
+	if err := c.retainInteractionLocked(native, params.TurnID, params.ItemID, interaction, known && !turn.Turn.Status.terminal()); err != nil {
 		return Event{}, err
 	}
 	return Event{Kind: InteractionRequestedEvent, ThreadID: c.thread, TurnID: params.TurnID, ItemID: params.ItemID, Correlated: known, Late: turn.Turn.Status.terminal(), Interaction: interaction}, nil
