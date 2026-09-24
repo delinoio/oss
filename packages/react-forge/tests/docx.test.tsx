@@ -1,17 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
-import React from "react";
+import React, { createRef } from "react";
 import { createSession, importOffice, Format } from "../src/index.js";
 import { Document, Section, Header, Footer, Paragraph, Run, Link, List, ListItem, Table, Row, Cell, Chart, PageBreak } from "../src/docx.js";
 
 test("React authors rich DOCX, sections, native charts and tables", async () => {
   const session = createSession(Format.Docx);
   let imported;
+  const paragraph = createRef<import("../src/index.js").NodeHandle>();
   try {
     await session.render(<Document language="en-US"><Section>
       <Header><Paragraph>Header</Paragraph></Header>
-      <Paragraph heading={1}><Run style={{ bold: true }}>Word from React</Run></Paragraph>
+      <Paragraph heading={1} ref={paragraph}><Run style={{ bold: true }}>Word from React</Run></Paragraph>
       <Paragraph><Link href="https://example.com">Link</Link></Paragraph>
       <List><ListItem>One</ListItem><ListItem>Two</ListItem></List>
       <Table columns={[150, 150]}><Row header><Cell colSpan={2}><Paragraph>Merged</Paragraph></Cell></Row></Table>
@@ -20,6 +21,9 @@ test("React authors rich DOCX, sections, native charts and tables", async () => 
       <Footer><Paragraph>Footer</Paragraph></Footer>
     </Section></Document>);
     const bytes = await session.exportBuffer();
+    const box = await session.measure(paragraph.current!, { revision: session.revision });
+    assert.equal(box.coordinateSpace, "word_flow"); assert.equal(box.width, 468); assert.ok(box.height > 0);
+    assert.ok(session.inspect().targets.some(t => t.nodeId === paragraph.current!.nodeId));
     imported = await importOffice(Format.Docx, bytes);
     assert.ok(imported.inspect().targets.some(t => t.kind === "chart"));
     assert.ok(imported.inspect().targets.some(t => t.text === "Word from React"));

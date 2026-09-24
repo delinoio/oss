@@ -20,6 +20,7 @@ pub fn process(op: &Operation) -> Result<(Vec<u8>, String, String)> {
     match op.kind {
         OperationKind::Generate => {
             let mut document: forge_docx::Document = forge_tree_doc::parse(op.model.as_bytes())?;
+            forge_docx::validate(&document)?;
             let mut fonts = op.fonts()?;
             let base = forge_document::Style {
                 language: document.language.clone(),
@@ -35,7 +36,12 @@ pub fn process(op: &Operation) -> Result<(Vec<u8>, String, String)> {
                 }
             }
             let bytes = forge_docx::generate(&document, &op.assets)?;
-            Ok((bytes, op.model.clone(), "{\"nodes\":{}}".into()))
+            Ok((
+                bytes,
+                op.model.clone(),
+                serde_json::to_string(&forge_docx::measure(&document, &mut fonts)?)
+                    .map_err(forge_package::failure)?,
+            ))
         }
         OperationKind::Inspect => {
             let document = forge_docx::import(&op.source)?;
@@ -55,7 +61,10 @@ pub fn process(op: &Operation) -> Result<(Vec<u8>, String, String)> {
             let edits: Edits = forge_tree_doc::parse(op.model.as_bytes())?;
             let mut fonts = op.fonts()?;
             let mut changes = Vec::new();
+            let mut ids = std::collections::HashSet::new();
+            let mut count = 0;
             for mut edit in edits.edits {
+                forge_docx::validate_blocks(&edit.blocks, 0, &mut count, &mut ids)?;
                 forge_docx::prepare_fonts(
                     &mut edit.blocks,
                     &mut fonts,
@@ -70,8 +79,25 @@ pub fn process(op: &Operation) -> Result<(Vec<u8>, String, String)> {
                 };
                 changes.push((target.id, edit.blocks));
             }
+            let mut geometry = forge_document::geometry::Geometry::default();
+            for (_, blocks) in &changes {
+                forge_docx::measure_blocks(
+                    blocks,
+                    &mut fonts,
+                    &forge_document::Style::default(),
+                    0.0,
+                    0.0,
+                    468.0,
+                    forge_document::geometry::CoordinateSpace::MountedRegion,
+                    &mut geometry,
+                )?;
+            }
             let bytes = forge_docx::replace(&document, &changes, &op.assets)?;
-            Ok((bytes, op.model.clone(), "{\"nodes\":{}}".into()))
+            Ok((
+                bytes,
+                op.model.clone(),
+                serde_json::to_string(&geometry).map_err(forge_package::failure)?,
+            ))
         }
     }
 }

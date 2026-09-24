@@ -8,7 +8,7 @@ import { pdfModel } from "./pdf-model.js";
 import { xlsxModel, xlsxEdit } from "./xlsx-model.js";
 import type { Address, Range } from "./xlsx.js";
 import { docxModel, docxBlocks } from "./docx-model.js";
-import { RenderRoot } from "./renderer.js";
+import { RenderRoot, type SerializedNode } from "./renderer.js";
 import { ErrorCode, Format, Stage, limits, type AssetHandle, type AssetSource, type Diagnostic, type Geometry, type NodeHandle } from "./types.js";
 
 type Model = Record<string, unknown>;
@@ -149,6 +149,15 @@ export class DocumentSession {
 
   inspect(): Inspection {
     this.active();
+    if (!this.imported) {
+      const targets: TargetHandle[] = [];
+      const visit = (node: SerializedNode) => {
+        if (node.type !== "#text") targets.push(Object.freeze({ documentId: this.documentId, nodeId: node.id, kind: node.type.split(":")[1] ?? node.type, editable: false }));
+        node.children.forEach(visit);
+      };
+      this.root.snapshot().forEach(visit);
+      return Object.freeze({ revision: this.revision, targets: Object.freeze(targets) });
+    }
     return Object.freeze({ revision: this.revision, targets: Object.freeze(Array.from(this.targets.values())) });
   }
 
@@ -258,7 +267,8 @@ export class DocumentSession {
       const geometry = JSON.parse(result.geometry) as { nodes: Record<string, { frame: Omit<Geometry, "revision"> }> };
       const node = geometry.nodes[result.refs.get(handle.nodeId) ?? handle.nodeId];
       if (!node) throw new ForgeError(ErrorCode.InvalidTarget, "Node is absent from this revision.");
-      return Object.freeze({ ...node.frame, revision: result.revision });
+      const { coordinate_space, ...frame } = node.frame as Omit<Geometry, "revision"> & { coordinate_space?: Geometry["coordinateSpace"] };
+      return Object.freeze({ ...frame, coordinateSpace: coordinate_space ?? "page", revision: result.revision });
     });
   }
 

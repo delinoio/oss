@@ -9,3 +9,5 @@ pub use import::{EditValue, Imported, Target, TargetKind, address, import, range
 pub use model::*;
 mod fonts;
 pub use fonts::{check_validation_fonts, prepare_cell_fonts};
+mod measure;
+pub use measure::measure;

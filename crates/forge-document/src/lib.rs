@@ -295,3 +295,4 @@ impl Chart {
         Ok((chart, bytes))
     }
 }
+pub mod geometry;

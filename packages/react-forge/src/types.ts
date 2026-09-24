@@ -49,6 +49,7 @@ export interface NodeHandle {
 }
 
 export interface Geometry {
+  readonly coordinateSpace?: "word_flow" | "worksheet" | "mounted_region" | "page";
   readonly x: number;
   readonly y: number;
   readonly width: number;

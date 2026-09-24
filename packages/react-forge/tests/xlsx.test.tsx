@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
-import React from "react";
+import React, { createRef } from "react";
 import { createSession, importOffice, Format } from "../src/index.js";
 import { Workbook, Worksheet, Cell, Merge, Row, Column, Chart, ConditionalFormat, DataValidation, Comparison, ValidationKind } from "../src/xlsx.js";
 const a = (row: number, column = 0) => ({ row, column });
@@ -9,10 +9,11 @@ const range = { first: a(1), last: a(10) };
 
 test("React creates native spreadsheet values, rules, charts and multiple sheets", async () => {
   const session = createSession(Format.Xlsx);
+  const cell = createRef<import("../src/index.js").NodeHandle>();
   try {
     await session.render(<Workbook><Worksheet name="Report" freeze={a(1)} autofilter={range}>
       <Cell address={a(0)} value="React workbook" format={{ style: { bold: true }, wrap: true }} />
-      <Cell address={a(1)} value={42} /><Cell address={a(2)} value={true} />
+      <Cell ref={cell} address={a(1)} value={42} /><Cell address={a(2)} value={true} />
       <Cell address={a(3)} value={{ type: "date", value: "2026-09-24" }} />
       <Cell address={a(4)} value={{ type: "formula", expression: "A2*2", cached: 84 }} />
       <Cell address={a(5)} value="Link" hyperlink="https://example.com" />
@@ -22,6 +23,8 @@ test("React creates native spreadsheet values, rules, charts and multiple sheets
       <Chart kind="line" categories={["A", "B"]} series={[{ name: "Revenue", values: [2, 4] }]} />
     </Worksheet><Worksheet name="Other"><Cell address={a(0)} value="Unrelated" /></Worksheet></Workbook>);
     const imported = await importOffice(Format.Xlsx, await session.exportBuffer());
+    const box = await session.measure(cell.current!, { revision: session.revision });
+    assert.equal(box.coordinateSpace, "worksheet"); assert.equal(box.y, 30); assert.equal(box.height, 15);
     try {
       const targets = imported.inspect().targets;
       for (const kind of ["cell", "conditional_format", "validation", "chart"]) assert.ok(targets.some(t => t.kind === kind));

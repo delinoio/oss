@@ -33,6 +33,7 @@ pub fn process(op: &Operation) -> Result<(Vec<u8>, String, String)> {
     match op.kind {
         OperationKind::Generate => {
             let mut document: forge_xlsx::Workbook = forge_tree_doc::parse(op.model.as_bytes())?;
+            forge_xlsx::validate(&document)?;
             let mut fonts = op.fonts()?;
             for sheet in &mut document.sheets {
                 for cell in &mut sheet.cells {
@@ -46,7 +47,12 @@ pub fn process(op: &Operation) -> Result<(Vec<u8>, String, String)> {
                 }
             }
             let bytes = forge_xlsx::generate(&document)?;
-            Ok((bytes, op.model.clone(), "{\"nodes\":{}}".into()))
+            Ok((
+                bytes,
+                op.model.clone(),
+                serde_json::to_string(&forge_xlsx::measure(&document)?)
+                    .map_err(forge_package::failure)?,
+            ))
         }
         OperationKind::Inspect => {
             let document = forge_xlsx::import(&op.source)?;
