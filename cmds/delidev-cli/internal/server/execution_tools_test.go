@@ -22,7 +22,7 @@ func (f *publicationFixture) toolEvent(kind domain.ExecutionEventKind, sequence 
 	return e
 }
 
-func bindToolMapper(t *testing.T, f *publicationFixture, cfg worker.PublicationConfig) (*worker.ExecutionPublisher, *worker.CodexEventPublisher) {
+func bindNativeMapper(t *testing.T, f *publicationFixture, cfg worker.PublicationConfig) (*worker.ExecutionPublisher, *worker.CodexEventPublisher) {
 	t.Helper()
 	publisher, err := worker.OpenExecutionPublisher(cfg)
 	if err != nil {
@@ -40,7 +40,7 @@ func bindToolMapper(t *testing.T, f *publicationFixture, cfg worker.PublicationC
 	return publisher, mapper
 }
 
-func publishNativeTool(t *testing.T, f *publicationFixture, mapper *worker.CodexEventPublisher, e codex.Event) {
+func publishNativeEvent(t *testing.T, f *publicationFixture, mapper *worker.CodexEventPublisher, e codex.Event) {
 	t.Helper()
 	e.ThreadID, e.TurnID, e.Correlated = f.thread, f.turn, true
 	if handled, err := mapper.PublishCore(context.Background(), e); !handled || err != nil {
@@ -50,25 +50,25 @@ func publishNativeTool(t *testing.T, f *publicationFixture, mapper *worker.Codex
 
 func TestExecutionToolsPreserveStreamAggregatePatchesAndNativeOutcome(t *testing.T) {
 	f := newPublicationFixture(t)
-	_, mapper := bindToolMapper(t, f, publicationWorkerConfig(t, f))
+	_, mapper := bindNativeMapper(t, f, publicationWorkerConfig(t, f))
 	name, path, process, plugin, script := "fixture", "/private/workspace/file", "native-process", "native-plugin", "/private/workspace/script"
 	command := &codex.CommandExecution{Command: "cat file", Cwd: "/private/workspace", Source: codex.AgentCommand, Actions: []codex.CommandAction{{Kind: codex.ReadCommandAction, Command: "cat file", Name: &name, Path: &path}}, PluginID: &plugin, ScriptPath: &script}
 	tool := &codex.Tool{ID: "command-item", Kind: codex.CommandTool, Status: codex.ToolRunning, Command: command}
-	publishNativeTool(t, f, mapper, codex.Event{Kind: codex.ToolStartedEvent, ItemID: tool.ID, Tool: tool})
-	publishNativeTool(t, f, mapper, codex.Event{Kind: codex.ToolOutputEvent, ItemID: tool.ID, TextDelta: "complete streamed output\n"})
-	publishNativeTool(t, f, mapper, codex.Event{Kind: codex.ToolInputEvent, ItemID: tool.ID, ToolInput: &codex.ToolInput{ProcessID: process, Text: ""}})
+	publishNativeEvent(t, f, mapper, codex.Event{Kind: codex.ToolStartedEvent, ItemID: tool.ID, Tool: tool})
+	publishNativeEvent(t, f, mapper, codex.Event{Kind: codex.ToolOutputEvent, ItemID: tool.ID, TextDelta: "complete streamed output\n"})
+	publishNativeEvent(t, f, mapper, codex.Event{Kind: codex.ToolInputEvent, ItemID: tool.ID, ToolInput: &codex.ToolInput{ProcessID: process, Text: ""}})
 	aggregate, exit, duration := "[native truncated output]", int32(7), int64(92)
 	command.AggregatedOutput, command.ExitCode, command.DurationMS, command.ProcessID = &aggregate, &exit, &duration, &process
 	tool.Status = codex.ToolFailed
-	publishNativeTool(t, f, mapper, codex.Event{Kind: codex.ToolCompletedEvent, ItemID: tool.ID, Tool: tool})
+	publishNativeEvent(t, f, mapper, codex.Event{Kind: codex.ToolCompletedEvent, ItemID: tool.ID, Tool: tool})
 	patch := &codex.Tool{ID: "patch-item", Kind: codex.PatchTool, Status: codex.ToolRunning, Changes: []codex.FileChange{}}
-	publishNativeTool(t, f, mapper, codex.Event{Kind: codex.ToolStartedEvent, ItemID: patch.ID, Tool: patch})
+	publishNativeEvent(t, f, mapper, codex.Event{Kind: codex.ToolStartedEvent, ItemID: patch.ID, Tool: patch})
 	move := "/private/workspace/new"
 	patch.Status, patch.Changes = "", []codex.FileChange{{Path: path, Diff: "-old\n+new\n", Kind: codex.UpdatedFile, MovePath: &move}}
-	publishNativeTool(t, f, mapper, codex.Event{Kind: codex.ToolPatchEvent, ItemID: patch.ID, Tool: patch})
+	publishNativeEvent(t, f, mapper, codex.Event{Kind: codex.ToolPatchEvent, ItemID: patch.ID, Tool: patch})
 	patch.Status, patch.Changes[0].Diff = codex.ToolDeclined, "-old\n+final\n"
-	publishNativeTool(t, f, mapper, codex.Event{Kind: codex.ToolCompletedEvent, ItemID: patch.ID, Tool: patch})
-	publishNativeTool(t, f, mapper, codex.Event{Kind: codex.TurnCompletedEvent, Turn: &codex.Turn{ID: f.turn, Status: codex.TurnCompleted}})
+	publishNativeEvent(t, f, mapper, codex.Event{Kind: codex.ToolCompletedEvent, ItemID: patch.ID, Tool: patch})
+	publishNativeEvent(t, f, mapper, codex.Event{Kind: codex.TurnCompletedEvent, Turn: &codex.Turn{ID: f.turn, Status: codex.TurnCompleted}})
 	rows, err := f.service.Store.List(context.Background(), store.Filter{Kind: domain.MessageKind, SessionID: f.input.SessionID, Limit: 10})
 	if err != nil || len(rows) != 2 {
 		t.Fatalf("missing typed tool transcript: %v", err)
@@ -173,9 +173,9 @@ func TestExecutionToolOutputLostAcknowledgmentReplaysExactDelta(t *testing.T) {
 	cfg := publicationWorkerConfig(t, f)
 	client := &losePublicationAck{WorkerServiceClient: f.client, t: t, path: filepath.Join(cfg.Root, "jobs", string(f.job), "publication.json"), dropAt: 4}
 	cfg.Client = client
-	publisher, mapper := bindToolMapper(t, f, cfg)
+	publisher, mapper := bindNativeMapper(t, f, cfg)
 	tool := &codex.Tool{ID: "command-item", Kind: codex.CommandTool, Status: codex.ToolRunning, Command: &codex.CommandExecution{Command: "printf fixture", Cwd: "/private/workspace", Source: codex.AgentCommand, Actions: []codex.CommandAction{}}}
-	publishNativeTool(t, f, mapper, codex.Event{Kind: codex.ToolStartedEvent, ItemID: tool.ID, Tool: tool})
+	publishNativeEvent(t, f, mapper, codex.Event{Kind: codex.ToolStartedEvent, ItemID: tool.ID, Tool: tool})
 	e := codex.Event{Kind: codex.ToolOutputEvent, ThreadID: f.thread, TurnID: f.turn, Correlated: true, ItemID: tool.ID, TextDelta: "once\n"}
 	if handled, err := mapper.PublishCore(context.Background(), e); !handled || err == nil {
 		t.Fatal("lost tool acknowledgment was not retained")

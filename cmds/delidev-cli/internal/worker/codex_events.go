@@ -18,11 +18,12 @@ type CodexEventPublisher struct {
 	thread, turn      domain.ID
 	messages          map[string]domain.ExecutionMessageUpdate
 	tools             map[string]codexToolPublication
+	artifacts         map[string]codexArtifactPublication
 	blocked, finished bool
 }
 
 func NewCodexEventPublisher(publisher *ExecutionPublisher) *CodexEventPublisher {
-	return &CodexEventPublisher{publisher: publisher, messages: map[string]domain.ExecutionMessageUpdate{}, tools: map[string]codexToolPublication{}}
+	return &CodexEventPublisher{publisher: publisher, messages: map[string]domain.ExecutionMessageUpdate{}, tools: map[string]codexToolPublication{}, artifacts: map[string]codexArtifactPublication{}}
 }
 
 func (c *CodexEventPublisher) publish(ctx context.Context, event domain.ExecutionEvent) error {
@@ -135,6 +136,10 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 		}
 		// Native idle/active does not override retained input or terminal state.
 		return true, nil
+	case codex.ArtifactStartedEvent, codex.ArtifactCompletedEvent, codex.ArtifactDeltaEvent:
+		return true, c.publishArtifact(ctx, event)
+	case codex.TurnPlanEvent, codex.TurnDiffEvent:
+		return true, c.publishProgress(ctx, event)
 	case codex.ToolStartedEvent, codex.ToolCompletedEvent, codex.ToolOutputEvent, codex.ToolInputEvent, codex.ToolPatchEvent:
 		return true, c.publishTool(ctx, event)
 	case codex.MessageStartedEvent, codex.MessageCompletedEvent:
@@ -143,7 +148,7 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 		}
 		message, known := c.messages[event.ItemID]
 		if event.Kind == codex.MessageStartedEvent {
-			if _, tool := c.tools[event.ItemID]; known || tool || len(c.messages)+len(c.tools) >= 10000 {
+			if c.itemKnown(event.ItemID) || c.itemLimitReached() {
 				return false, publicationUncertain()
 			}
 			message = domain.ExecutionMessageUpdate{ID: domain.NewID(), NativeID: event.ItemID}

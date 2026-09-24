@@ -195,6 +195,14 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 			} else if event.Kind == domain.ExecutionNoticeObserved {
 				progress.NoticeCount++
 				progress.LastNotice = event.Notice
+			} else if event.Kind.IsArtifact() {
+				if err := publishExecutionArtifact(tx, input, sr, event); err != nil {
+					return err
+				}
+			} else if event.Kind == domain.ExecutionProgressObserved {
+				if err := publishExecutionProgress(tx, input, sr, progress, event); err != nil {
+					return err
+				}
 			} else if event.Kind.IsTool() {
 				if err := publishExecutionTool(tx, input, sr, event); err != nil {
 					return err

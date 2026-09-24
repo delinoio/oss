@@ -30,6 +30,7 @@ type nativeWorkerScenario uint8
 const (
 	nativeWorkerCompletion nativeWorkerScenario = iota
 	nativeWorkerCommand
+	nativeWorkerPlan
 	nativeWorkerRevocation
 	nativeWorkerDisconnect
 	nativeWorkerStop
@@ -45,6 +46,10 @@ func TestManualNativeWorkerPublishesCodexCommand(t *testing.T) {
 		t.Skip("this installed-harness fixture uses a POSIX shell builtin")
 	}
 	testManualNativeWorkerExecution(t, nativeWorkerCommand)
+}
+
+func TestManualNativeWorkerPublishesCodexPlanProgress(t *testing.T) {
+	testManualNativeWorkerExecution(t, nativeWorkerPlan)
 }
 
 func TestManualNativeWorkerRevocationJoinsCodexCleanup(t *testing.T) {
@@ -78,7 +83,8 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	completedScenario := scenario == nativeWorkerCompletion || scenario == nativeWorkerCommand
+	toolScenario := scenario == nativeWorkerCommand || scenario == nativeWorkerPlan
+	completedScenario := scenario == nativeWorkerCompletion || toolScenario
 	var calls atomic.Int64
 	started, upstreamStopped := make(chan struct{}, 1), make(chan struct{}, 1)
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -98,7 +104,13 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 			upstreamStopped <- struct{}{}
 			return
 		}
-		if scenario == nativeWorkerCommand && call == 1 {
+		if toolScenario && call == 1 {
+			toolName := "exec_command"
+			arguments := map[string]any{"cmd": "printf 'native-tool-fixture\\n'", "login": false, "max_output_tokens": 1000, "yield_time_ms": 1000}
+			if scenario == nativeWorkerPlan {
+				toolName = "update_plan"
+				arguments = map[string]any{"explanation": "native plan fixture", "plan": []any{map[string]any{"step": "Retain native plan progress", "status": "completed"}}}
+			}
 			var toolRequest struct {
 				Tools []struct{ Type, Name string } `json:"tools"`
 			}
@@ -107,16 +119,16 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 			}
 			found := false
 			for _, tool := range toolRequest.Tools {
-				found = found || (tool.Type == "function" && tool.Name == "exec_command")
+				found = found || (tool.Type == "function" && tool.Name == toolName)
 			}
 			if !found {
-				t.Error("selected native profile did not expose exec_command")
+				t.Error("selected native profile did not expose the required tool")
 			}
-			args, _ := json.Marshal(map[string]any{"cmd": "printf 'native-tool-fixture\\n'", "login": false, "max_output_tokens": 1000, "yield_time_ms": 1000})
+			args, _ := json.Marshal(arguments)
 			w.Header().Set("Content-Type", "text/event-stream")
 			for _, event := range []any{
 				map[string]any{"type": "response.created", "response": map[string]any{"id": "resp_worker_tool", "status": "in_progress"}},
-				map[string]any{"type": "response.output_item.done", "output_index": 0, "item": map[string]any{"type": "function_call", "id": "fc_worker_fixture", "call_id": "call_worker_fixture", "name": "exec_command", "arguments": string(args)}},
+				map[string]any{"type": "response.output_item.done", "output_index": 0, "item": map[string]any{"type": "function_call", "id": "fc_worker_fixture", "call_id": "call_worker_fixture", "name": toolName, "arguments": string(args)}},
 				map[string]any{"type": "response.completed", "response": map[string]any{"id": "resp_worker_tool", "status": "completed", "output": []any{}, "usage": map[string]any{"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}}},
 			} {
 				raw, _ := json.Marshal(event)
@@ -124,7 +136,7 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 			}
 			return
 		}
-		if scenario == nativeWorkerCommand && (call != 2 || !strings.Contains(string(body), "function_call_output") || !strings.Contains(string(body), "native-tool-fixture") || !strings.Contains(string(body), "call_worker_fixture")) {
+		if toolScenario && (call != 2 || !strings.Contains(string(body), "function_call_output") || !strings.Contains(string(body), "call_worker_fixture") || (scenario == nativeWorkerCommand && !strings.Contains(string(body), "native-tool-fixture"))) {
 			t.Error("native command output did not reach the same selected account")
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -324,7 +336,7 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 		}
 	}
 	expectedCalls, expectedMessages := int64(1), 2
-	if scenario == nativeWorkerCommand {
+	if toolScenario {
 		expectedCalls, expectedMessages = 2, 3
 	}
 	var completion domain.ExecutionCompletion
@@ -343,11 +355,18 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 	if err != nil || len(messages) != expectedMessages {
 		t.Fatal("native Worker lost its transcript")
 	}
-	sawTool := false
+	sawTool, sawPlan := false, false
 	for _, row := range messages {
 		message, err := store.Decode[domain.ExecutionMessage](row)
 		if err != nil || message.State != domain.MessageComplete {
 			t.Fatal("native Worker retained an incomplete message")
+		}
+		if message.Role == domain.ProgressMessage {
+			sawPlan = true
+			progress := message.Progress
+			if progress == nil || progress.Kind != domain.PlanProgress || progress.Plan == nil || progress.Plan.Explanation == nil || *progress.Plan.Explanation != "native plan fixture" || len(progress.Plan.Steps) != 1 || progress.Plan.Steps[0].Step != "Retain native plan progress" || progress.Plan.Steps[0].Status != domain.PlanCompleted || message.NativeID != "" {
+				t.Fatal("native Worker plan progress lost its exact observation")
+			}
 		}
 		if message.Role == domain.ToolMessage {
 			sawTool = true
@@ -357,7 +376,7 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 			}
 		}
 	}
-	if (scenario == nativeWorkerCommand) != sawTool {
+	if (scenario == nativeWorkerCommand) != sawTool || (scenario == nativeWorkerPlan) != sawPlan {
 		t.Fatal("native command was not retained as a dedicated tool")
 	}
 	// The retained runtime must support later native reconciliation without

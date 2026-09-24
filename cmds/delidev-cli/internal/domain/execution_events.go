@@ -5,19 +5,23 @@ import "slices"
 type ExecutionEventKind string
 
 const (
-	ExecutionThreadBound      ExecutionEventKind = "thread-bound"
-	ExecutionInputAccepted    ExecutionEventKind = "input-accepted"
-	ExecutionMessageStarted   ExecutionEventKind = "message-started"
-	ExecutionTextAppended     ExecutionEventKind = "text-appended"
-	ExecutionMessageCompleted ExecutionEventKind = "message-completed"
-	ExecutionTurnFinished     ExecutionEventKind = "turn-finished"
-	ExecutionUsageObserved    ExecutionEventKind = "usage-observed"
-	ExecutionNoticeObserved   ExecutionEventKind = "notice-observed"
-	ExecutionToolStarted      ExecutionEventKind = "tool-started"
-	ExecutionToolCompleted    ExecutionEventKind = "tool-completed"
-	ExecutionToolOutput       ExecutionEventKind = "tool-output"
-	ExecutionToolInput        ExecutionEventKind = "tool-input"
-	ExecutionToolPatch        ExecutionEventKind = "tool-patch"
+	ExecutionThreadBound       ExecutionEventKind = "thread-bound"
+	ExecutionInputAccepted     ExecutionEventKind = "input-accepted"
+	ExecutionMessageStarted    ExecutionEventKind = "message-started"
+	ExecutionTextAppended      ExecutionEventKind = "text-appended"
+	ExecutionMessageCompleted  ExecutionEventKind = "message-completed"
+	ExecutionTurnFinished      ExecutionEventKind = "turn-finished"
+	ExecutionUsageObserved     ExecutionEventKind = "usage-observed"
+	ExecutionNoticeObserved    ExecutionEventKind = "notice-observed"
+	ExecutionToolStarted       ExecutionEventKind = "tool-started"
+	ExecutionToolCompleted     ExecutionEventKind = "tool-completed"
+	ExecutionToolOutput        ExecutionEventKind = "tool-output"
+	ExecutionToolInput         ExecutionEventKind = "tool-input"
+	ExecutionToolPatch         ExecutionEventKind = "tool-patch"
+	ExecutionArtifactStarted   ExecutionEventKind = "artifact-started"
+	ExecutionArtifactCompleted ExecutionEventKind = "artifact-completed"
+	ExecutionArtifactDelta     ExecutionEventKind = "artifact-delta"
+	ExecutionProgressObserved  ExecutionEventKind = "progress-observed"
 )
 
 type MessageRole string
@@ -26,6 +30,8 @@ const (
 	UserMessage      MessageRole = "user"
 	AssistantMessage MessageRole = "assistant"
 	ToolMessage      MessageRole = "tool"
+	ArtifactMessage  MessageRole = "artifact"
+	ProgressMessage  MessageRole = "progress"
 )
 
 type MessagePhase string
@@ -101,6 +107,8 @@ type ExecutionEvent struct {
 	ProblemCode    Code                       `json:"problem_code,omitempty"`
 	Usage          *NativeTokenUsage          `json:"usage,omitempty"`
 	ObservationID  ID                         `json:"observation_id,omitempty"`
+	Artifact       *ExecutionArtifactUpdate   `json:"artifact,omitempty"`
+	Progress       *ExecutionProgressUpdate   `json:"progress,omitempty"`
 	Tool           *ExecutionToolUpdate       `json:"tool,omitempty"`
 	Notice         NativeNotice               `json:"notice,omitempty"`
 }
@@ -168,6 +176,20 @@ func (e ExecutionEvent) Validate() error {
 		if err := e.Tool.Validate(e.Kind); err != nil {
 			return err
 		}
+	case ExecutionArtifactStarted, ExecutionArtifactCompleted, ExecutionArtifactDelta:
+		if e.Artifact == nil {
+			return invalidArtifact()
+		}
+		if err := e.Artifact.Validate(e.Kind); err != nil {
+			return err
+		}
+	case ExecutionProgressObserved:
+		if e.Progress == nil {
+			return invalidArtifact()
+		}
+		if err := e.Progress.Validate(); err != nil {
+			return err
+		}
 	case ExecutionTurnFinished:
 		if !slices.Contains([]ExecutionOutcome{ExecutionSucceeded, ExecutionFailed, ExecutionStopped}, e.Outcome) {
 			return Fail(InvalidArgument, "A terminal event requires a definitive native outcome.", "Keep uncertain acceptance separate from native completion.")
@@ -181,7 +203,7 @@ func (e ExecutionEvent) Validate() error {
 	default:
 		return Fail(Unsupported, "Unknown normalized execution event.", "Use a dedicated supported native event adapter.")
 	}
-	if (!e.Kind.IsTool() && e.Tool != nil) || (e.Kind != ExecutionThreadBound && e.Observed != nil) || (e.Kind != ExecutionMessageStarted && e.Kind != ExecutionTextAppended && e.Kind != ExecutionMessageCompleted && e.Message != nil) || (e.Kind != ExecutionTurnFinished && (e.Outcome != "" || e.ProblemCode != "")) || (e.Kind != ExecutionUsageObserved && (e.Usage != nil || e.ObservationID != "")) || (e.Kind != ExecutionNoticeObserved && e.Notice != "") {
+	if (!e.Kind.IsArtifact() && e.Artifact != nil) || (e.Kind != ExecutionProgressObserved && e.Progress != nil) || (!e.Kind.IsTool() && e.Tool != nil) || (e.Kind != ExecutionThreadBound && e.Observed != nil) || (e.Kind != ExecutionMessageStarted && e.Kind != ExecutionTextAppended && e.Kind != ExecutionMessageCompleted && e.Message != nil) || (e.Kind != ExecutionTurnFinished && (e.Outcome != "" || e.ProblemCode != "")) || (e.Kind != ExecutionUsageObserved && (e.Usage != nil || e.ObservationID != "")) || (e.Kind != ExecutionNoticeObserved && e.Notice != "") {
 		return Fail(InvalidArgument, "An execution event contains another kind's payload.", "Publish one unambiguous typed event.")
 	}
 	return nil
@@ -199,6 +221,8 @@ type ExecutionProgress struct {
 	NativeTurnID    string                    `json:"native_turn_id,omitempty"`
 	Observed        ObservedExecutionSettings `json:"observed"`
 	Outcome         ExecutionOutcome          `json:"outcome"`
+	LatestPlanID    ID                        `json:"latest_plan_id,omitempty"`
+	LatestDiffID    ID                        `json:"latest_diff_id,omitempty"`
 	LatestUsageID   ID                        `json:"latest_usage_id,omitempty"`
 	NoticeCount     uint64                    `json:"notice_count,omitempty"`
 	LastNotice      NativeNotice              `json:"last_notice,omitempty"`
@@ -206,16 +230,18 @@ type ExecutionProgress struct {
 }
 
 type ExecutionMessage struct {
-	ExecutionID    ID             `json:"execution_id"`
-	NativeThreadID string         `json:"native_thread_id"`
-	NativeTurnID   string         `json:"native_turn_id"`
-	NativeID       string         `json:"native_id"`
-	Role           MessageRole    `json:"role"`
-	Phase          *MessagePhase  `json:"phase,omitempty"`
-	InputID        ID             `json:"input_id,omitempty"`
-	Text           string         `json:"text"`
-	State          MessageState   `json:"state"`
-	Tool           *ExecutionTool `json:"tool,omitempty"`
-	FirstSequence  uint64         `json:"first_sequence"`
-	LastSequence   uint64         `json:"last_sequence"`
+	ExecutionID    ID                 `json:"execution_id"`
+	NativeThreadID string             `json:"native_thread_id"`
+	NativeTurnID   string             `json:"native_turn_id"`
+	NativeID       string             `json:"native_id"`
+	Role           MessageRole        `json:"role"`
+	Phase          *MessagePhase      `json:"phase,omitempty"`
+	InputID        ID                 `json:"input_id,omitempty"`
+	Text           string             `json:"text"`
+	State          MessageState       `json:"state"`
+	Tool           *ExecutionTool     `json:"tool,omitempty"`
+	Artifact       *ExecutionArtifact `json:"artifact,omitempty"`
+	Progress       *NativeProgress    `json:"progress,omitempty"`
+	FirstSequence  uint64             `json:"first_sequence"`
+	LastSequence   uint64             `json:"last_sequence"`
 }

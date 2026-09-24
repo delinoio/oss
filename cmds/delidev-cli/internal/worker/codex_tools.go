@@ -33,7 +33,7 @@ func (c *CodexEventPublisher) publishTool(ctx context.Context, event codex.Event
 		}
 		update.Snapshot = &snapshot
 		if event.Kind == codex.ToolStartedEvent {
-			if _, message := c.messages[event.ItemID]; known || message || len(c.tools)+len(c.messages) >= 10000 {
+			if c.itemKnown(event.ItemID) || c.itemLimitReached() {
 				return publicationUncertain()
 			}
 			retained = codexToolPublication{ID: domain.NewID(), Kind: snapshot.Kind}
