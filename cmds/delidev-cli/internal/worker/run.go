@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sync"
 	"time"
 
 	"connectrpc.com/connect"
@@ -146,7 +147,13 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 		cancel(err)
 		return err
 	}
-	jobs := make(chan *pb.Resource, 1)
+	type assignment struct {
+		resource *pb.Resource
+		context  context.Context
+		cancel   context.CancelFunc
+	}
+	jobs := make(chan assignment, 1)
+	var active sync.Map
 	received := make(chan struct{})
 	// Receive independently of native execution. Revocation, stream replacement
 	// and server loss must cancel owned Git/harness work while it is running.
@@ -157,8 +164,18 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 		for stream.Receive() {
 			deadline.Reset(heartbeatTimeout)
 			message := stream.Msg()
+			if message.CancelJobId != "" {
+				if message.Job != nil || message.Heartbeat || message.CancelRequested || domain.ID(message.CancelJobId).Validate() != nil {
+					cancel(domain.Fail(domain.RecoveryRequired, "The Worker received an invalid cancellation control.", "Check server protocol compatibility."))
+					return
+				}
+				if stop, ok := active.Load(message.CancelJobId); ok {
+					stop.(context.CancelFunc)()
+				}
+				continue
+			}
 			if message.Job == nil {
-				if !message.Heartbeat {
+				if !message.Heartbeat || message.CancelRequested {
 					cancel(domain.Fail(domain.RecoveryRequired, "The Worker received an invalid stream record.", "Check server protocol compatibility."))
 					return
 				}
@@ -169,8 +186,21 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 				return
 			}
 			resource := proto.Clone(message.Job).(*pb.Resource)
+			if domain.ID(resource.Id).Validate() != nil {
+				cancel(domain.Fail(domain.RecoveryRequired, "The Worker received an invalid assignment identity.", "Check server protocol compatibility."))
+				return
+			}
+			jobContext, stopJob := context.WithCancel(ctx)
+			if _, loaded := active.LoadOrStore(resource.Id, stopJob); loaded {
+				stopJob()
+				cancel(domain.Fail(domain.RecoveryRequired, "The Worker received a duplicate live assignment.", "Reconcile its original operation before another send."))
+				return
+			}
+			if message.CancelRequested {
+				stopJob()
+			}
 			select {
-			case jobs <- resource:
+			case jobs <- assignment{resource: resource, context: jobContext, cancel: stopJob}:
 			case <-ctx.Done():
 				return
 			default:
@@ -186,12 +216,13 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 	}()
 	defer func() { cancel(context.Canceled); _ = stream.Close(); <-received }()
 	for {
-		var resource *pb.Resource
+		var work assignment
 		select {
 		case <-ctx.Done():
 			return context.Cause(ctx)
-		case resource = <-jobs:
+		case work = <-jobs:
 		}
+		resource := work.resource
 		if ctx.Err() != nil {
 			return context.Cause(ctx)
 		}
@@ -212,7 +243,9 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 		if job.MachineID != credential.MachineID || job.InstanceID != instance || job.State != domain.JobClaimed {
 			return domain.Fail(domain.PermissionDenied, "The received job belongs to another machine or process.", "Inspect the paired server and job ownership.")
 		}
-		result, err := runJob(ctx, config, instance, resource, job)
+		result, err := runJob(work.context, config, instance, resource, job)
+		work.cancel()
+		active.Delete(resource.Id)
 		if err != nil {
 			return err
 		}
@@ -240,6 +273,15 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 	}
 }
 func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb.Resource, job domain.Job) (journal, error) {
+	if job.Type == domain.PrepareWorkspaceJob {
+		var input workspace.PrepareRequest
+		if err := domain.Decode(job.Input, &input); err != nil {
+			return journal{}, err
+		}
+		if string(input.SessionID) != resource.SessionId || input.MachineID != job.MachineID {
+			return journal{}, domain.Fail(domain.RecoveryRequired, "The workspace assignment has inconsistent ownership.", "Reconcile the accepted session and job before executing work.")
+		}
+	}
 	root := config.Root
 	hash := sha256.Sum256(resource.DocumentJson)
 	digest := hex.EncodeToString(hash[:])
@@ -269,11 +311,15 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 		if err := writeJSON(path, result); err != nil {
 			return journal{}, err
 		}
-		output, err := execute(ctx, config, domain.ID(resource.Id), job)
-		if err != nil {
+		if err := ctx.Err(); err != nil {
 			result.Problem = domain.SafeError(err)
 		} else {
-			result.Output = output
+			output, err := execute(ctx, config, domain.ID(resource.Id), job)
+			if err != nil {
+				result.Problem = domain.SafeError(err)
+			} else {
+				result.Output = output
+			}
 		}
 	}
 	result.State = journalFinished
@@ -285,6 +331,20 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job) (json.RawMessage, error) {
 	root := config.Root
 	switch job.Type {
+	case domain.PrepareWorkspaceJob:
+		var input workspace.PrepareRequest
+		if err := domain.Decode(job.Input, &input); err != nil {
+			return nil, err
+		}
+		if input.MachineID != job.MachineID {
+			return nil, domain.Fail(domain.PermissionDenied, "Workspace preparation targets another machine.", "Reconcile the accepted assignment before retrying.")
+		}
+		manager := workspace.Manager{Root: root, Logger: config.Logger}
+		manifest, err := manager.Prepare(ctx, input)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(manifest)
 	case domain.HarnessDiscoveryJob:
 		var input domain.HarnessDiscoveryInput
 		if err := domain.Decode(job.Input, &input); err != nil {

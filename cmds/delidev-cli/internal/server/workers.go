@@ -97,6 +97,9 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 					if _, err := tx.PutJob(record.ID, record.Revision, record.SessionID, record.ProjectID, job); err != nil {
 						return nil, err
 					}
+					if err := finishSessionWorkspace(tx, record.ID); err != nil {
+						return nil, err
+					}
 					if err := finishRepositorySave(tx, job.ParentID); err != nil {
 						return nil, err
 					}
@@ -175,9 +178,11 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 	defer ticker.Stop()
 	var after domain.ID
 	var inFlight domain.ID
+	var cancellationSent domain.ID
 	for {
 		changed := s.Store.Changed()
 		var records []store.Record
+		var cancelJob domain.ID
 		err := s.Store.Read(ctx, func(tx *store.Tx) error {
 			if err := currentInstance(tx, machine, instance); err != nil {
 				return err
@@ -194,9 +199,17 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 					return err
 				}
 				if job.State == domain.JobClaimed && job.InstanceID == instance {
+					requested, err := tx.JobCancellationRequested(inFlight)
+					if err != nil {
+						return err
+					}
+					if requested && cancellationSent != inFlight {
+						cancelJob = inFlight
+					}
 					return nil
 				}
 				inFlight = ""
+				cancellationSent = ""
 			}
 			var err error
 			records, err = tx.Jobs(machine, "", "", after, store.MaxPage)
@@ -204,6 +217,12 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 		})
 		if err != nil {
 			return rpc.Error(err, correlation)
+		}
+		if cancelJob != "" {
+			if err := send(&pb.WatchWorkResponse{CancelJobId: string(cancelJob)}); err != nil {
+				return err
+			}
+			cancellationSent = cancelJob
 		}
 		for _, record := range records {
 			job, err := store.Decode[domain.Job](record)
@@ -241,10 +260,21 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 				}
 			}
 			if job.State == domain.JobClaimed && job.InstanceID == instance {
-				if err := send(&pb.WatchWorkResponse{Job: rpc.Resource(record)}); err != nil {
+				var cancelRequested bool
+				if err := s.Store.Read(ctx, func(tx *store.Tx) error {
+					var err error
+					cancelRequested, err = tx.JobCancellationRequested(record.ID)
+					return err
+				}); err != nil {
+					return rpc.Error(err, correlation)
+				}
+				if err := send(&pb.WatchWorkResponse{Job: rpc.Resource(record), CancelRequested: cancelRequested}); err != nil {
 					return err
 				}
 				inFlight = record.ID
+				if cancelRequested {
+					cancellationSent = record.ID
+				}
 				after = record.ID
 				break
 			}
@@ -357,6 +387,25 @@ func (s *Service) ReportWork(ctx context.Context, req *connect.Request[pb.Report
 		if problem == nil {
 			outputJSON := req.Msg.OutputJson
 			switch job.Type {
+			case domain.PrepareWorkspaceJob:
+				var expected workspace.PrepareRequest
+				if err := domain.Decode(job.Input, &expected); err != nil {
+					return nil, err
+				}
+				machineRecord, err := tx.Get(domain.MachineKind, machine)
+				if err != nil {
+					return nil, err
+				}
+				machineValue, err := store.Decode[domain.Machine](machineRecord)
+				if err != nil {
+					return nil, err
+				}
+				var manifest workspace.Manifest
+				if err := domain.Decode(req.Msg.OutputJson, &manifest); err != nil {
+					problem = workspace.ResultUncertain()
+				} else if err := workspace.ValidateResult(expected, manifest, machineValue.OS); err != nil {
+					problem = workspace.ResultUncertain()
+				}
 			case domain.HarnessDiscoveryJob:
 				outputJSON, problem, err = finishDiscovery(tx, job, req.Msg.OutputJson)
 				if err != nil {
@@ -415,12 +464,18 @@ func (s *Service) ReportWork(ctx context.Context, req *connect.Request[pb.Report
 		} else {
 			job.Output = nil
 			job.State, job.Problem = domain.JobFailed, problem
+			if problem.Code == domain.Canceled {
+				job.State = domain.JobCanceled
+			}
 			if problem.Code == domain.RecoveryRequired {
 				job.State = domain.JobUncertain
 			}
 		}
 		saved, err := tx.PutJob(record.ID, meta.ExpectedRevision, record.SessionID, record.ProjectID, job)
 		if err != nil {
+			return nil, err
+		}
+		if err := finishSessionWorkspace(tx, record.ID); err != nil {
 			return nil, err
 		}
 		if err := finishRepositorySave(tx, job.ParentID); err != nil {
@@ -464,6 +519,9 @@ func revokeMachineJobs(tx *store.Tx, machine domain.ID) error {
 					job.Problem = domain.Fail(domain.RecoveryRequired, "The Worker was revoked before completion was acknowledged.", "Reconcile its private execution journal before retrying.")
 				}
 				if _, err := tx.PutJob(record.ID, record.Revision, record.SessionID, record.ProjectID, job); err != nil {
+					return err
+				}
+				if err := finishSessionWorkspace(tx, record.ID); err != nil {
 					return err
 				}
 				if err := finishRepositorySave(tx, job.ParentID); err != nil {

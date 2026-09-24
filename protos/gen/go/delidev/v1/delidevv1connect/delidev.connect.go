@@ -149,6 +149,9 @@ const (
 	// SessionServiceRenameSessionProcedure is the fully-qualified name of the SessionService's
 	// RenameSession RPC.
 	SessionServiceRenameSessionProcedure = "/delidev.v1.SessionService/RenameSession"
+	// SessionServicePrepareSessionWorkspaceProcedure is the fully-qualified name of the
+	// SessionService's PrepareSessionWorkspace RPC.
+	SessionServicePrepareSessionWorkspaceProcedure = "/delidev.v1.SessionService/PrepareSessionWorkspace"
 )
 
 // SystemServiceClient is a client for the delidev.v1.SystemService service.
@@ -1171,6 +1174,7 @@ type SessionServiceClient interface {
 	ListQueue(context.Context, *connect.Request[v1.ListQueueRequest]) (*connect.Response[v1.ListQueueResponse], error)
 	ControlSession(context.Context, *connect.Request[v1.ControlSessionRequest]) (*connect.Response[v1.ControlSessionResponse], error)
 	RenameSession(context.Context, *connect.Request[v1.RenameSessionRequest]) (*connect.Response[v1.RenameSessionResponse], error)
+	PrepareSessionWorkspace(context.Context, *connect.Request[v1.PrepareSessionWorkspaceRequest]) (*connect.Response[v1.PrepareSessionWorkspaceResponse], error)
 }
 
 // NewSessionServiceClient constructs a client for the delidev.v1.SessionService service. By
@@ -1232,19 +1236,26 @@ func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(sessionServiceMethods.ByName("RenameSession")),
 			connect.WithClientOptions(opts...),
 		),
+		prepareSessionWorkspace: connect.NewClient[v1.PrepareSessionWorkspaceRequest, v1.PrepareSessionWorkspaceResponse](
+			httpClient,
+			baseURL+SessionServicePrepareSessionWorkspaceProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("PrepareSessionWorkspace")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // sessionServiceClient implements SessionServiceClient.
 type sessionServiceClient struct {
-	createSession     *connect.Client[v1.CreateSessionRequest, v1.CreateSessionResponse]
-	listSessions      *connect.Client[v1.ListSessionsRequest, v1.ListSessionsResponse]
-	enqueueInput      *connect.Client[v1.EnqueueInputRequest, v1.EnqueueInputResponse]
-	editQueuedInput   *connect.Client[v1.EditQueuedInputRequest, v1.EditQueuedInputResponse]
-	removeQueuedInput *connect.Client[v1.RemoveQueuedInputRequest, v1.RemoveQueuedInputResponse]
-	listQueue         *connect.Client[v1.ListQueueRequest, v1.ListQueueResponse]
-	controlSession    *connect.Client[v1.ControlSessionRequest, v1.ControlSessionResponse]
-	renameSession     *connect.Client[v1.RenameSessionRequest, v1.RenameSessionResponse]
+	createSession           *connect.Client[v1.CreateSessionRequest, v1.CreateSessionResponse]
+	listSessions            *connect.Client[v1.ListSessionsRequest, v1.ListSessionsResponse]
+	enqueueInput            *connect.Client[v1.EnqueueInputRequest, v1.EnqueueInputResponse]
+	editQueuedInput         *connect.Client[v1.EditQueuedInputRequest, v1.EditQueuedInputResponse]
+	removeQueuedInput       *connect.Client[v1.RemoveQueuedInputRequest, v1.RemoveQueuedInputResponse]
+	listQueue               *connect.Client[v1.ListQueueRequest, v1.ListQueueResponse]
+	controlSession          *connect.Client[v1.ControlSessionRequest, v1.ControlSessionResponse]
+	renameSession           *connect.Client[v1.RenameSessionRequest, v1.RenameSessionResponse]
+	prepareSessionWorkspace *connect.Client[v1.PrepareSessionWorkspaceRequest, v1.PrepareSessionWorkspaceResponse]
 }
 
 // CreateSession calls delidev.v1.SessionService.CreateSession.
@@ -1287,6 +1298,11 @@ func (c *sessionServiceClient) RenameSession(ctx context.Context, req *connect.R
 	return c.renameSession.CallUnary(ctx, req)
 }
 
+// PrepareSessionWorkspace calls delidev.v1.SessionService.PrepareSessionWorkspace.
+func (c *sessionServiceClient) PrepareSessionWorkspace(ctx context.Context, req *connect.Request[v1.PrepareSessionWorkspaceRequest]) (*connect.Response[v1.PrepareSessionWorkspaceResponse], error) {
+	return c.prepareSessionWorkspace.CallUnary(ctx, req)
+}
+
 // SessionServiceHandler is an implementation of the delidev.v1.SessionService service.
 type SessionServiceHandler interface {
 	CreateSession(context.Context, *connect.Request[v1.CreateSessionRequest]) (*connect.Response[v1.CreateSessionResponse], error)
@@ -1297,6 +1313,7 @@ type SessionServiceHandler interface {
 	ListQueue(context.Context, *connect.Request[v1.ListQueueRequest]) (*connect.Response[v1.ListQueueResponse], error)
 	ControlSession(context.Context, *connect.Request[v1.ControlSessionRequest]) (*connect.Response[v1.ControlSessionResponse], error)
 	RenameSession(context.Context, *connect.Request[v1.RenameSessionRequest]) (*connect.Response[v1.RenameSessionResponse], error)
+	PrepareSessionWorkspace(context.Context, *connect.Request[v1.PrepareSessionWorkspaceRequest]) (*connect.Response[v1.PrepareSessionWorkspaceResponse], error)
 }
 
 // NewSessionServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -1354,6 +1371,12 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 		connect.WithSchema(sessionServiceMethods.ByName("RenameSession")),
 		connect.WithHandlerOptions(opts...),
 	)
+	sessionServicePrepareSessionWorkspaceHandler := connect.NewUnaryHandler(
+		SessionServicePrepareSessionWorkspaceProcedure,
+		svc.PrepareSessionWorkspace,
+		connect.WithSchema(sessionServiceMethods.ByName("PrepareSessionWorkspace")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/delidev.v1.SessionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case SessionServiceCreateSessionProcedure:
@@ -1372,6 +1395,8 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 			sessionServiceControlSessionHandler.ServeHTTP(w, r)
 		case SessionServiceRenameSessionProcedure:
 			sessionServiceRenameSessionHandler.ServeHTTP(w, r)
+		case SessionServicePrepareSessionWorkspaceProcedure:
+			sessionServicePrepareSessionWorkspaceHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1411,4 +1436,8 @@ func (UnimplementedSessionServiceHandler) ControlSession(context.Context, *conne
 
 func (UnimplementedSessionServiceHandler) RenameSession(context.Context, *connect.Request[v1.RenameSessionRequest]) (*connect.Response[v1.RenameSessionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.RenameSession is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) PrepareSessionWorkspace(context.Context, *connect.Request[v1.PrepareSessionWorkspaceRequest]) (*connect.Response[v1.PrepareSessionWorkspaceResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.PrepareSessionWorkspace is not implemented"))
 }

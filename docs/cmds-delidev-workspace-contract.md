@@ -1,7 +1,7 @@
 # DeliDev Worker workspace contract
 
 ## Scope
-`cmds/delidev-cli/internal/workspace` owns Worker-local Git inspection, reference resolution, and all-repository preparation. It is independent of server SQLite and never receives a server GitHub PAT. Worker RPC dispatch and session lifecycle integration are tracked separately in the evidence ledger.
+`cmds/delidev-cli/internal/workspace` owns Worker-local Git inspection, reference resolution, and all-repository preparation. It is independent of server SQLite and never receives a server GitHub PAT. Preparation is dispatched by authenticated outbound Worker jobs and published atomically into session metadata. Native harness execution, forks and uncertain-preparation reconciliation remain separate pending boundaries in the evidence ledger.
 
 ## Runtime and Language
 Go and the execution machine's installed Git. No harness or Git installation is performed automatically.
@@ -16,7 +16,7 @@ Worktree preparation resolves each repository's independently configured base an
 
 Local preparation uses existing checkouts and their current HEAD/tree, with no fetch, branch change, or worktree creation. It requires matching execution/origin machine IDs. General Chat creates an independent session-owned directory without Git. The primary path is the designated primary repository or the General Chat directory.
 
-Preparation serializes by session while independent sessions can proceed concurrently. Git work is bounded and occurs outside database transactions. A durable ownership manifest is written before side effects; readiness is published only after every repository succeeds. Identical retries reuse a ready manifest; changed input cannot overwrite it. Partial preparation rolls back only newly owned worktrees. Failed cleanup retains a recoverable manifest; explicit retry cannot delete a ready workspace. Active lifecycle and snapshot cleanup use separate product operations.
+Preparation serializes by session while independent sessions can proceed concurrently. Git work is bounded and occurs outside database transactions. A durable ownership manifest is written before side effects; readiness is published only after every repository succeeds. Identical retries reuse a ready manifest; changed input cannot overwrite it. Partial preparation rolls back only newly owned worktrees. Failed cleanup retains a recoverable manifest; explicit retry cannot delete a ready workspace. Session Stop/Archive now cancel queued or claimed preparation through the owning job and retain ready workspaces. Active harness lifecycle and snapshot cleanup use separate product operations. Failure to acquire/inspect an existing ownership scope or persist its initial journal is uncertainty, not proof that cleanup completed; only confirmed rollback may permit another preparation attempt.
 
 ## Storage
 The Worker owns private `workspaces`, `locks`, and empty hook directories under its explicit data scope. UUID-v7 session/repository IDs derive managed paths. Manifests record original checkouts separately from deletion-owned paths. Cleanup recomputes owned paths from identities, reconciles Git registration even when a directory is absent, and never removes original Local checkouts. These local resources intentionally override the repository R2 default.
@@ -33,7 +33,7 @@ Structured preparation start/ready/failure/cleanup records contain session and m
 Run `go test -race ./cmds/delidev-cli/internal/workspace` and package vet. Tests create real temporary Git repositories, local remotes, linked worktrees, dirty Local trees, and separate General Chat directories. Validate fetch advancement/failure, detached commits, multi-repository rollback, idempotency, cancellation, original-checkout preservation, and missing-default rejection.
 
 ## Dependencies and Integrations
-Worker jobs will pass typed preparation requests/results over authenticated Connect. Files remain on the Worker, with references and resolved commits recorded on the server. Native forks, snapshots, terminal ownership, and full child-process recovery are additional lifecycle boundaries, not implied by passing preparation tests.
+Worker jobs pass typed preparation requests/results over authenticated Connect. The server validates complete manifests against the immutable accepted preparation input and records ready/failed/canceled/uncertain state with the job in one transaction. Cancellation is persisted outside the claimed envelope so reconnect can deliver a precanceled assignment without invalidating its journal identity. The Worker gives each job an independent cancellation context; a late control cannot cancel the next job. Files remain on the Worker, with references and resolved commits recorded on the server. Native forks, snapshots, terminal ownership, and full child-process recovery are additional lifecycle boundaries, not implied by passing preparation tests.
 
 ## Change Triggers
 Update this contract, the command contract, project index, scoped AGENTS, and evidence ledger when ownership, reference selection, cleanup, or Worker integration changes.

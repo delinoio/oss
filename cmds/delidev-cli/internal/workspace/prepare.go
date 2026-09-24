@@ -146,18 +146,29 @@ func (m *Manager) Prepare(ctx context.Context, request PrepareRequest) (Manifest
 	if err := request.validate(); err != nil {
 		return Manifest{}, err
 	}
+	// Failure to inspect an existing scope or persist its ownership journal does
+	// not prove cleanup. Only the failed() path below can certify that an attempt
+	// with side effects was removed; callers must retain uncertainty otherwise.
+	uncertain := func(cause error) (Manifest, error) {
+		logger := m.Logger
+		if logger == nil {
+			logger = slog.Default()
+		}
+		logger.Warn("workspace_preparation_uncertain", "session_id", request.SessionID, "machine_id", request.MachineID, "code", domain.SafeError(cause).Code)
+		return Manifest{}, ResultUncertain()
+	}
 	if err := m.initialize(); err != nil {
-		return Manifest{}, domain.SafeError(err)
+		return uncertain(err)
 	}
 	lock, err := security.TryLock(filepath.Join(m.Root, "locks", string(request.SessionID)+".lock"))
 	if err != nil {
-		return Manifest{}, err
+		return uncertain(err)
 	}
 	defer lock.Close()
 	git := m.Git
 	git.OwnerID = request.SessionID
 	if err := security.PrivateDir(filepath.Join(git.ProcessRoot, string(request.SessionID))); err != nil {
-		return Manifest{}, err
+		return uncertain(err)
 	}
 	raw, _ := json.Marshal(request)
 	digestBytes := sha256.Sum256(raw)
@@ -167,10 +178,10 @@ func (m *Manager) Prepare(ctx context.Context, request PrepareRequest) (Manifest
 	if _, err := os.Lstat(root); err == nil {
 		old, err := m.Read(request.SessionID)
 		if err != nil {
-			return Manifest{}, err
+			return uncertain(err)
 		}
 		if old.InputDigest != digest {
-			return Manifest{}, domain.Fail(domain.Conflict, "This session already owns a different workspace preparation.", "Inspect its recorded workspace; never overwrite an existing checkout.")
+			return Manifest{}, domain.Fail(domain.RecoveryRequired, "This session already owns a different workspace preparation.", "Inspect its recorded workspace; never overwrite an existing checkout.")
 		}
 		if old.State == Ready {
 			if err := m.verify(old); err != nil {
@@ -180,10 +191,10 @@ func (m *Manager) Prepare(ctx context.Context, request PrepareRequest) (Manifest
 		}
 		return old, domain.Fail(domain.RecoveryRequired, "An earlier workspace preparation requires cleanup.", "Inspect and retry cleanup before preparing this session again.")
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return Manifest{}, domain.SafeError(err)
+		return uncertain(err)
 	}
 	if err := security.PrivateDir(root); err != nil {
-		return Manifest{}, domain.SafeError(err)
+		return uncertain(err)
 	}
 	manifest := Manifest{Version: 1, SessionID: request.SessionID, MachineID: request.MachineID, Type: request.Type, State: Preparing, InputDigest: digest, Repositories: []PreparedRepository{}, CreatedAt: time.Now().UTC()}
 	write := func() error {
@@ -194,7 +205,7 @@ func (m *Manager) Prepare(ctx context.Context, request PrepareRequest) (Manifest
 		return security.WriteAtomic(manifestPath, raw)
 	}
 	if err := write(); err != nil {
-		return Manifest{}, domain.SafeError(err)
+		return uncertain(err)
 	}
 	m.Logger.Info("workspace_preparation_started", "session_id", request.SessionID, "machine_id", request.MachineID, "workspace_type", request.Type)
 	failed := func(cause error) (Manifest, error) {

@@ -10,7 +10,31 @@ import (
 )
 
 func sessionChangeJSON(change *pb.SessionChange) any {
-	return map[string]any{"session": resourceJSON(change.Session), "input": resourceJSON(change.Input), "replayed": change.Replayed}
+	return map[string]any{"session": resourceJSON(change.Session), "input": resourceJSON(change.Input), "workspace_job": resourceJSON(change.WorkspaceJob), "replayed": change.Replayed}
+}
+
+func sessionWorkspaceWait(ctx context.Context, c client, change *pb.SessionChange, wait bool) (any, error) {
+	if !wait || change.WorkspaceJob == nil {
+		return sessionChangeJSON(change), nil
+	}
+	job, err := awaitJob(ctx, c, change.WorkspaceJob)
+	change.WorkspaceJob = job
+	if err != nil {
+		return sessionChangeJSON(change), err
+	}
+	current, err := c.resources.GetResource(ctx, request(c, &pb.GetResourceRequest{Kind: pb.EntityKind_ENTITY_KIND_SESSION, Id: change.Session.Id}))
+	if err != nil {
+		return sessionChangeJSON(change), rpc.ClientError(err)
+	}
+	change.Session = current.Msg.Resource
+	var state domain.Job
+	if err := domain.Decode(job.DocumentJson, &state); err != nil {
+		return sessionChangeJSON(change), err
+	}
+	if state.Problem != nil {
+		return sessionChangeJSON(change), state.Problem
+	}
+	return sessionChangeJSON(change), nil
 }
 
 func sessionCommand(ctx context.Context, c client, o options, args []string, streams IO) (any, error) {
@@ -19,6 +43,10 @@ func sessionCommand(ctx context.Context, c client, o options, args []string, str
 	switch action {
 	case "create", "enqueue":
 		input := f.String("input", "-", "")
+		wait := new(bool)
+		if action == "create" {
+			wait = f.Bool("wait", false, "wait for workspace preparation within the command deadline")
+		}
 		var id *string
 		if action == "enqueue" {
 			id = f.String("id", "", "")
@@ -48,7 +76,7 @@ func sessionCommand(ctx context.Context, c client, o options, args []string, str
 			if err != nil {
 				return nil, rpc.ClientError(err)
 			}
-			return sessionChangeJSON(response.Msg.Change), nil
+			return sessionWorkspaceWait(ctx, c, response.Msg.Change, *wait)
 		}
 		if err := domain.ID(*id).Validate(); err != nil {
 			return nil, err
@@ -83,9 +111,13 @@ func sessionCommand(ctx context.Context, c client, o options, args []string, str
 			return nil, rpc.ClientError(err)
 		}
 		return map[string]any{"sessions": resourcesJSON(response.Msg.Sessions), "next_page_token": response.Msg.NextPageToken}, nil
-	case "stop", "archive", "restore", "unarchive", "resume", "rename":
+	case "stop", "archive", "restore", "unarchive", "resume", "rename", "prepare":
 		id := f.String("id", "", "")
 		revision := f.Uint64("revision", 0, "")
+		wait := new(bool)
+		if action == "prepare" {
+			wait = f.Bool("wait", false, "wait for workspace preparation within the command deadline")
+		}
 		var name *string
 		if action == "rename" {
 			name = f.String("name", "", "")
@@ -97,6 +129,13 @@ func sessionCommand(ctx context.Context, c client, o options, args []string, str
 			return nil, domain.Fail(domain.MissingInput, "Session controls require an ID and current revision.", "Provide --id and --revision from session get.")
 		}
 		meta := &pb.Mutation{RequestId: string(o.requestID), Id: *id, ExpectedRevision: *revision}
+		if action == "prepare" {
+			response, err := c.sessions.PrepareSessionWorkspace(ctx, request(c, &pb.PrepareSessionWorkspaceRequest{Mutation: meta}))
+			if err != nil {
+				return nil, rpc.ClientError(err)
+			}
+			return sessionWorkspaceWait(ctx, c, response.Msg.Change, *wait)
+		}
 		if action == "rename" {
 			response, err := c.sessions.RenameSession(ctx, request(c, &pb.RenameSessionRequest{Mutation: meta, Name: *name}))
 			if err != nil {

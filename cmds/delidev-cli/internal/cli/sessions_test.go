@@ -6,13 +6,16 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/server"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/worker"
 )
 
 func TestCLISessionAcceptanceQueueAndArchive(t *testing.T) {
@@ -55,7 +58,8 @@ func TestCLISessionAcceptanceQueueAndArchive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	code, paired := cliRun(t, root, []string{"worker", "pair", "--worker-dir", filepath.Join(t.TempDir(), "worker"), "--code-stdin"}, string(codeDocument))
+	workerRoot := filepath.Join(t.TempDir(), "worker")
+	code, paired := cliRun(t, root, []string{"worker", "pair", "--worker-dir", workerRoot, "--code-stdin"}, string(codeDocument))
 	if code != 0 {
 		t.Fatal(paired)
 	}
@@ -99,5 +103,95 @@ func TestCLISessionAcceptanceQueueAndArchive(t *testing.T) {
 	code, failed := cliRun(t, root, []string{"session", "resume", "--id", id, "--revision", revision}, "")
 	if code == 0 || failed["error"].(map[string]any)["code"] != "unsupported" {
 		t.Fatal("CLI claimed unsupported native execution")
+	}
+
+	workerCtx, stopWorker := context.WithCancel(ctx)
+	workerReady, workerDone := make(chan struct{}), make(chan error, 1)
+	go func() {
+		workerDone <- worker.Run(workerCtx, worker.Config{Root: workerRoot, Ready: func(domain.ID) { close(workerReady) }})
+	}()
+	defer func() {
+		stopWorker()
+		if err := <-workerDone; err != nil {
+			t.Error(err)
+		}
+	}()
+	select {
+	case <-workerReady:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Worker startup timed out")
+	}
+	prepareArgs := []string{"session", "prepare", "--id", id, "--revision", revision, "--wait", "--request-id", string(domain.NewID())}
+	prepared := run(prepareArgs, nil)
+	session = prepared["session"].(map[string]any)
+	preparedJob := prepared["workspace_job"].(map[string]any)
+	if state := session["data"].(map[string]any); state["preparation"].(map[string]any)["state"] != "ready" || state["dispatch"] != "paused" || state["outcome"] != "not-started" {
+		t.Fatal("preparation changed execution or failed to publish readiness")
+	}
+	chat := preparedJob["data"].(map[string]any)["output"].(map[string]any)["primary_path"].(string)
+	retained := filepath.Join(chat, "retained.txt")
+	if err := os.WriteFile(retained, []byte("preserve across archive"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	replay := run(prepareArgs, nil)
+	if replay["replayed"] != true || replay["workspace_job"].(map[string]any)["id"] != preparedJob["id"] {
+		t.Fatal("preparation receipt repeated native work")
+	}
+	run([]string{"session", "archive", "--id", id, "--revision", strconv.FormatUint(uint64(session["revision"].(float64)), 10)}, nil)
+	if raw, err := os.ReadFile(retained); err != nil || string(raw) != "preserve across archive" {
+		t.Fatal("Archive deleted ready workspace")
+	}
+
+	// Create two real repositories through validated CLI writes. Explicit full
+	// commits exercise detached preparation without network or user Git accounts.
+	repositories := []domain.ID{}
+	commits := []string{}
+	for i := 0; i < 2; i++ {
+		checkout := t.TempDir()
+		git := func(args ...string) string {
+			t.Helper()
+			argv := append([]string{"-C", checkout, "-c", "user.name=DeliDev Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgSign=false", "-c", "core.hooksPath=" + t.TempDir()}, args...)
+			out, err := exec.Command("git", argv...).CombinedOutput()
+			if err != nil {
+				t.Fatalf("git: %v %s", err, out)
+			}
+			return strings.TrimSpace(string(out))
+		}
+		git("init", "-b", "main")
+		if err := os.WriteFile(filepath.Join(checkout, "tracked.txt"), []byte("fixture"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		git("add", "tracked.txt")
+		git("commit", "-m", "fixture")
+		commit := git("rev-parse", "HEAD")
+		commits = append(commits, commit)
+		saved := run([]string{"repository", "create", "--wait"}, domain.Repository{Name: "fixture-" + strconv.Itoa(i), Checkouts: []domain.Checkout{{MachineID: domain.ID(machine), Path: checkout}}, Starting: domain.Reference{Type: domain.CommitReference, Name: commit}})["resource"].(map[string]any)
+		repositories = append(repositories, domain.ID(saved["id"].(string)))
+	}
+	project := run([]string{"project", "create"}, domain.Project{Name: "all repositories", Repositories: repositories, PrimaryRepository: repositories[1]})["resource"].(map[string]any)
+	selected := input
+	selected.ProjectID = domain.ID(project["id"].(string))
+	selected.Workspace = domain.Worktree
+	worktree := run([]string{"session", "create", "--wait"}, selected)
+	workspaceJob := worktree["workspace_job"].(map[string]any)
+	output := workspaceJob["data"].(map[string]any)["output"].(map[string]any)
+	preparedRepos := output["repositories"].([]any)
+	if len(preparedRepos) != 2 || output["primary_path"] != preparedRepos[1].(map[string]any)["path"] {
+		t.Fatal("primary/ordered repositories were lost")
+	}
+	for i, item := range preparedRepos {
+		data := item.(map[string]any)
+		if data["id"] != string(repositories[i]) || data["starting_commit"] != commits[i] || data["owned"] != true {
+			t.Fatal("wrong preparation identity/commit/ownership")
+		}
+		path := data["path"].(string)
+		out, err := exec.Command("git", "-C", path, "rev-parse", "HEAD").Output()
+		if err != nil || strings.TrimSpace(string(out)) != commits[i] {
+			t.Fatal("recorded commit differs from actual checkout")
+		}
+		out, err = exec.Command("git", "-C", path, "rev-parse", "--abbrev-ref", "HEAD").Output()
+		if err != nil || strings.TrimSpace(string(out)) != "HEAD" {
+			t.Fatal("prepared worktree was not detached")
+		}
 	}
 }

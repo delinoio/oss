@@ -37,3 +37,5 @@
 - async-commit-hook branch labels are display-only when Branch.id or Worktree.branch_id is present. Preserve additive branch_id fields, bounded worktree scope, legacy omission and exact-byte run filtering.
 
 - async-commit-hook Pair is a deprecated v1 compatibility tombstone returning Unimplemented. All active RPCs require the same local UI origin and API version header; no pairing/authentication messages are newly introduced.
+
+- DeliDev workspace preparation uses the current `SessionChange.workspace_job` and revision-checked `PrepareSessionWorkspace`. Worker cancellation is an immutable-job-scoped control, including pre-cancellation on reconnect; it must never mutate claimed assignment revisions or cancel unrelated work. Preserve session/job atomic publication, unknown native ownership and pending Archive visibility until completion is proven.

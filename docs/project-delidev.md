@@ -28,7 +28,7 @@ Run personal AI sessions across projects, accounts, native harnesses, and execut
 - [Implementation and evidence ledger](cmds-delidev-evidence.md)
 
 ## Cross-Domain Invariants
-Go owns product logic. Every product operation uses authenticated Connect RPC with shared CLI validation and durable mutation request identities. A normal CLI command never starts a server. Server and Worker data are private and local, explicitly overriding the repository's R2 storage and cloud search defaults. SQLite belongs exclusively to the server; workspace files belong to the execution Worker. Public entity IDs are canonical lowercase UUID v7.
+Go owns product logic. Every product operation uses authenticated Connect RPC with shared CLI validation and durable mutation request identities. A normal CLI command never starts a server. Server and Worker data are private and local, explicitly overriding the repository's R2 storage and cloud search defaults. SQLite belongs exclusively to the server; workspace files belong to the execution Worker. Session acceptance and its preparation job commit together; complete preparation results and session readiness publish together. Stop/Archive cancellation targets immutable job ownership, and uncertain native cleanup cannot become completed Archive or automatic retry. Public entity IDs are canonical lowercase UUID v7.
 
 Local is the default; listeners default to loopback. Remote transport requires authentication and encryption. Native harness/provider protocols remain internal adapter boundaries. No WebSocket, standalone client SSE, browser client, Docker distribution, account failover, harness installation, or automatic server updates are introduced.
 

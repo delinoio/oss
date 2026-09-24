@@ -45,6 +45,20 @@ func (s *Service) sessionResult(ctx context.Context, result store.Result) (*pb.S
 			return err
 		}
 		change.Session = rpc.Resource(session)
+		value, err := store.Decode[domain.Session](session)
+		if err != nil {
+			return err
+		}
+		if value.Preparation != nil {
+			job, err := tx.Get(domain.JobKind, value.Preparation.JobID)
+			if err != nil {
+				return err
+			}
+			if job.SessionID != refs.SessionID {
+				return domain.Fail(domain.RecoveryRequired, "Workspace ownership is inconsistent.", "Preserve the data scope and inspect recovery.")
+			}
+			change.WorkspaceJob = rpc.Resource(job)
+		}
 		if refs.InputID != "" {
 			input, err := tx.Get(domain.QueueKind, refs.InputID)
 			if err != nil {
@@ -158,6 +172,13 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[pb.Cre
 		}
 		id := domain.NewID()
 		value := domain.Session{Name: input.Name, AgentID: input.AgentID, MachineID: input.MachineID, ProjectID: input.ProjectID, Workspace: input.Workspace, Starting: input.Starting, Source: input.Source, CreatedBy: actor.DeviceID, Outcome: domain.ExecutionNotStarted, Archive: domain.NotArchived, Recovery: domain.NoRecovery, Dispatch: domain.DispatchBlocked, Problem: domain.SessionExecutionUnavailable()}
+		preparation, err := sessionWorkspaceRequest(tx, id, value)
+		if err != nil {
+			return nil, err
+		}
+		if err := queueSessionWorkspace(tx, id, &value, preparation); err != nil {
+			return nil, err
+		}
 		itemID, err := appendSessionInput(tx, id, &value, domain.SessionInput{Prompt: input.Prompt, Mode: input.Mode})
 		if err != nil {
 			return nil, err
@@ -362,21 +383,30 @@ func (s *Service) ControlSession(ctx context.Context, req *connect.Request[pb.Co
 		if r.Revision != meta.ExpectedRevision {
 			return nil, domain.Fail(domain.Conflict, "The session revision changed.", "Reload current state before controlling it.")
 		}
-		// There is no executable session adapter yet. Never claim native Stop,
-		// Archive cleanup or Resume from a metadata-only transition. This guard
-		// must be replaced by the durable owned-resource lifecycle integration.
+		// Preparation has an owned native lifecycle; harness execution does not
+		// yet. Keep that separate boundary fail-closed until adapters own it.
 		if action == domain.ResumeSession {
 			return nil, domain.SessionExecutionUnavailable()
 		}
-		if value.ActiveExecutionID != "" || value.Outcome != domain.ExecutionNotStarted || value.Recovery != domain.NoRecovery || value.Archive == domain.ArchivePending {
+		if value.ActiveExecutionID != "" || value.Outcome != domain.ExecutionNotStarted || (value.Recovery != domain.NoRecovery && (value.Preparation == nil || value.Preparation.State != domain.PreparationUncertain)) {
 			return nil, domain.Fail(domain.RecoveryRequired, "Native session ownership must be reconciled before this control can complete.", "Keep dispatch paused until owned native resources can be verified and stopped.")
 		}
 		switch action {
 		case domain.StopSession:
 			value.Dispatch = domain.DispatchPaused
+			if _, err := stopSessionWorkspace(tx, &value); err != nil {
+				return nil, err
+			}
 		case domain.ArchiveSession:
 			value.Dispatch = domain.DispatchPaused
-			value.Archive = domain.Archived
+			stopped, err := stopSessionWorkspace(tx, &value)
+			if err != nil {
+				return nil, err
+			}
+			value.Archive = domain.ArchivePending
+			if stopped && value.Recovery == domain.NoRecovery {
+				value.Archive = domain.Archived
+			}
 		case domain.RestoreSession:
 			if value.Archive != domain.Archived {
 				return nil, domain.Fail(domain.Conflict, "The session is not archived.", "Inspect its current visibility state.")

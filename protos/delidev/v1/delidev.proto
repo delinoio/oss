@@ -251,6 +251,10 @@ message WatchWorkRequest {
 message WatchWorkResponse {
   Resource job = 1;
   bool heartbeat = 2;
+  // Bound to the included immutable assignment; no native operation may start.
+  bool cancel_requested = 3;
+  // A separate control for a previously delivered assignment on this stream.
+  string cancel_job_id = 4;
 }
 message ReportWorkRequest {
   Mutation mutation = 1;
@@ -389,12 +393,14 @@ service SessionService {
   rpc ListQueue(ListQueueRequest) returns (ListQueueResponse);
   rpc ControlSession(ControlSessionRequest) returns (ControlSessionResponse);
   rpc RenameSession(RenameSessionRequest) returns (RenameSessionResponse);
+  rpc PrepareSessionWorkspace(PrepareSessionWorkspaceRequest) returns (PrepareSessionWorkspaceResponse);
 }
 message SessionChange {
   Resource session = 1;
   Resource input = 2;
   string request_id = 3;
   bool replayed = 4;
+  Resource workspace_job = 5;
 }
 message CreateSessionRequest {
   string request_id = 1;
@@ -466,5 +472,11 @@ message RenameSessionRequest {
   string name = 2;
 }
 message RenameSessionResponse {
+  SessionChange change = 1;
+}
+message PrepareSessionWorkspaceRequest {
+  Mutation mutation = 1;
+}
+message PrepareSessionWorkspaceResponse {
   SessionChange change = 1;
 }
