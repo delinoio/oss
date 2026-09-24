@@ -39,6 +39,8 @@ const (
 	ProviderServiceName = "delidev.v1.ProviderService"
 	// SessionServiceName is the fully-qualified name of the SessionService service.
 	SessionServiceName = "delidev.v1.SessionService"
+	// InboxServiceName is the fully-qualified name of the InboxService service.
+	InboxServiceName = "delidev.v1.InboxService"
 )
 
 // These constants are the fully-qualified names of the RPCs defined in this package. They're
@@ -169,6 +171,14 @@ const (
 	// SessionServiceRecoverSessionWorkspaceProcedure is the fully-qualified name of the
 	// SessionService's RecoverSessionWorkspace RPC.
 	SessionServiceRecoverSessionWorkspaceProcedure = "/delidev.v1.SessionService/RecoverSessionWorkspace"
+	// InboxServiceGetInboxEntryProcedure is the fully-qualified name of the InboxService's
+	// GetInboxEntry RPC.
+	InboxServiceGetInboxEntryProcedure = "/delidev.v1.InboxService/GetInboxEntry"
+	// InboxServiceListInboxProcedure is the fully-qualified name of the InboxService's ListInbox RPC.
+	InboxServiceListInboxProcedure = "/delidev.v1.InboxService/ListInbox"
+	// InboxServiceSetInboxReadStateProcedure is the fully-qualified name of the InboxService's
+	// SetInboxReadState RPC.
+	InboxServiceSetInboxReadStateProcedure = "/delidev.v1.InboxService/SetInboxReadState"
 )
 
 // SystemServiceClient is a client for the delidev.v1.SystemService service.
@@ -1631,4 +1641,126 @@ func (UnimplementedSessionServiceHandler) PrepareSessionWorkspace(context.Contex
 
 func (UnimplementedSessionServiceHandler) RecoverSessionWorkspace(context.Context, *connect.Request[v1.RecoverSessionWorkspaceRequest]) (*connect.Response[v1.RecoverSessionWorkspaceResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.RecoverSessionWorkspace is not implemented"))
+}
+
+// InboxServiceClient is a client for the delidev.v1.InboxService service.
+type InboxServiceClient interface {
+	GetInboxEntry(context.Context, *connect.Request[v1.GetInboxEntryRequest]) (*connect.Response[v1.GetInboxEntryResponse], error)
+	ListInbox(context.Context, *connect.Request[v1.ListInboxRequest]) (*connect.Response[v1.ListInboxResponse], error)
+	SetInboxReadState(context.Context, *connect.Request[v1.SetInboxReadStateRequest]) (*connect.Response[v1.SetInboxReadStateResponse], error)
+}
+
+// NewInboxServiceClient constructs a client for the delidev.v1.InboxService service. By default, it
+// uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and sends
+// uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC() or
+// connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewInboxServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) InboxServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	inboxServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("InboxService").Methods()
+	return &inboxServiceClient{
+		getInboxEntry: connect.NewClient[v1.GetInboxEntryRequest, v1.GetInboxEntryResponse](
+			httpClient,
+			baseURL+InboxServiceGetInboxEntryProcedure,
+			connect.WithSchema(inboxServiceMethods.ByName("GetInboxEntry")),
+			connect.WithClientOptions(opts...),
+		),
+		listInbox: connect.NewClient[v1.ListInboxRequest, v1.ListInboxResponse](
+			httpClient,
+			baseURL+InboxServiceListInboxProcedure,
+			connect.WithSchema(inboxServiceMethods.ByName("ListInbox")),
+			connect.WithClientOptions(opts...),
+		),
+		setInboxReadState: connect.NewClient[v1.SetInboxReadStateRequest, v1.SetInboxReadStateResponse](
+			httpClient,
+			baseURL+InboxServiceSetInboxReadStateProcedure,
+			connect.WithSchema(inboxServiceMethods.ByName("SetInboxReadState")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// inboxServiceClient implements InboxServiceClient.
+type inboxServiceClient struct {
+	getInboxEntry     *connect.Client[v1.GetInboxEntryRequest, v1.GetInboxEntryResponse]
+	listInbox         *connect.Client[v1.ListInboxRequest, v1.ListInboxResponse]
+	setInboxReadState *connect.Client[v1.SetInboxReadStateRequest, v1.SetInboxReadStateResponse]
+}
+
+// GetInboxEntry calls delidev.v1.InboxService.GetInboxEntry.
+func (c *inboxServiceClient) GetInboxEntry(ctx context.Context, req *connect.Request[v1.GetInboxEntryRequest]) (*connect.Response[v1.GetInboxEntryResponse], error) {
+	return c.getInboxEntry.CallUnary(ctx, req)
+}
+
+// ListInbox calls delidev.v1.InboxService.ListInbox.
+func (c *inboxServiceClient) ListInbox(ctx context.Context, req *connect.Request[v1.ListInboxRequest]) (*connect.Response[v1.ListInboxResponse], error) {
+	return c.listInbox.CallUnary(ctx, req)
+}
+
+// SetInboxReadState calls delidev.v1.InboxService.SetInboxReadState.
+func (c *inboxServiceClient) SetInboxReadState(ctx context.Context, req *connect.Request[v1.SetInboxReadStateRequest]) (*connect.Response[v1.SetInboxReadStateResponse], error) {
+	return c.setInboxReadState.CallUnary(ctx, req)
+}
+
+// InboxServiceHandler is an implementation of the delidev.v1.InboxService service.
+type InboxServiceHandler interface {
+	GetInboxEntry(context.Context, *connect.Request[v1.GetInboxEntryRequest]) (*connect.Response[v1.GetInboxEntryResponse], error)
+	ListInbox(context.Context, *connect.Request[v1.ListInboxRequest]) (*connect.Response[v1.ListInboxResponse], error)
+	SetInboxReadState(context.Context, *connect.Request[v1.SetInboxReadStateRequest]) (*connect.Response[v1.SetInboxReadStateResponse], error)
+}
+
+// NewInboxServiceHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewInboxServiceHandler(svc InboxServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	inboxServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("InboxService").Methods()
+	inboxServiceGetInboxEntryHandler := connect.NewUnaryHandler(
+		InboxServiceGetInboxEntryProcedure,
+		svc.GetInboxEntry,
+		connect.WithSchema(inboxServiceMethods.ByName("GetInboxEntry")),
+		connect.WithHandlerOptions(opts...),
+	)
+	inboxServiceListInboxHandler := connect.NewUnaryHandler(
+		InboxServiceListInboxProcedure,
+		svc.ListInbox,
+		connect.WithSchema(inboxServiceMethods.ByName("ListInbox")),
+		connect.WithHandlerOptions(opts...),
+	)
+	inboxServiceSetInboxReadStateHandler := connect.NewUnaryHandler(
+		InboxServiceSetInboxReadStateProcedure,
+		svc.SetInboxReadState,
+		connect.WithSchema(inboxServiceMethods.ByName("SetInboxReadState")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/delidev.v1.InboxService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case InboxServiceGetInboxEntryProcedure:
+			inboxServiceGetInboxEntryHandler.ServeHTTP(w, r)
+		case InboxServiceListInboxProcedure:
+			inboxServiceListInboxHandler.ServeHTTP(w, r)
+		case InboxServiceSetInboxReadStateProcedure:
+			inboxServiceSetInboxReadStateHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedInboxServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedInboxServiceHandler struct{}
+
+func (UnimplementedInboxServiceHandler) GetInboxEntry(context.Context, *connect.Request[v1.GetInboxEntryRequest]) (*connect.Response[v1.GetInboxEntryResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.InboxService.GetInboxEntry is not implemented"))
+}
+
+func (UnimplementedInboxServiceHandler) ListInbox(context.Context, *connect.Request[v1.ListInboxRequest]) (*connect.Response[v1.ListInboxResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.InboxService.ListInbox is not implemented"))
+}
+
+func (UnimplementedInboxServiceHandler) SetInboxReadState(context.Context, *connect.Request[v1.SetInboxReadStateRequest]) (*connect.Response[v1.SetInboxReadStateResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.InboxService.SetInboxReadState is not implemented"))
 }

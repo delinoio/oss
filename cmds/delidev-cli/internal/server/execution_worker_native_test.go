@@ -234,18 +234,24 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 		// and sends the active execution's durable response control.
 		go func() {
 			defer close(responderDone)
+			inbox := delidevv1connect.NewInboxServiceClient(f.http.Client(), f.http.URL)
 			for {
 				changed := f.service.Store.Changed()
-				rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.InteractionKind, SessionID: f.input.SessionID, Limit: 2})
+				rows, err := inbox.ListInbox(ctx, ownerRequest(f.service.Identity, &pb.ListInboxRequest{SessionId: string(f.input.SessionID), Source: pb.InboxSource_INBOX_SOURCE_INTERACTION, ReadState: pb.InboxReadState_INBOX_READ_STATE_UNREAD, PageSize: 2}))
 				if err != nil {
 					responseAccepted <- err
 					return
 				}
-				if len(rows) == 1 {
+				if len(rows.Msg.Entries) == 1 {
+					view := rows.Msg.Entries[0]
+					if _, err := inbox.SetInboxReadState(ctx, ownerRequest(f.service.Identity, &pb.SetInboxReadStateRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: view.Entry.Id, ExpectedRevision: view.Entry.Revision}, ReadState: pb.InboxReadState_INBOX_READ_STATE_READ})); err != nil {
+						responseAccepted <- err
+						return
+					}
 					raw, err := json.Marshal(domain.QuestionResponseInput{Answers: map[string][]string{"choice": {"Second"}}})
 					if err == nil {
 						client := delidevv1connect.NewInteractionServiceClient(f.http.Client(), f.http.URL)
-						_, err = client.RespondQuestion(ctx, ownerRequest(f.service.Identity, &pb.RespondQuestionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(rows[0].ID), ExpectedRevision: rows[0].Revision}, ResponseJson: raw}))
+						_, err = client.RespondQuestion(ctx, ownerRequest(f.service.Identity, &pb.RespondQuestionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: view.Interaction.Id, ExpectedRevision: view.Interaction.Revision}, ResponseJson: raw}))
 					}
 					responseAccepted <- err
 					return
@@ -501,8 +507,8 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 			t.Fatal("native request closure falsely confirmed answer acceptance")
 		}
 		_, questionInbox := readExecutionInbox(t, f, domain.InteractionInbox, rows[0].ID)
-		if questionInbox.ReadState != domain.InboxUnread {
-			t.Fatal("native response or closure implicitly read the inbox request")
+		if questionInbox.ReadState != domain.InboxRead {
+			t.Fatal("native response or closure lost explicit owner inbox read state")
 		}
 		journal, err := security.ReadPrivate(filepath.Join(manager.Root, "jobs", string(f.job), "responses", string(rows[0].ID)+".json"), 64<<10)
 		if err != nil || !strings.Contains(string(journal), string(interaction.Response.Claim.ID)) || strings.Contains(string(journal), "Second") || strings.Contains(string(journal), "Native Worker question") {

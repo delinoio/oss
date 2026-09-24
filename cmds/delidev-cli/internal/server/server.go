@@ -232,6 +232,7 @@ func (s *Service) Handler(origins []string, loopback bool) http.Handler {
 	mux.Handle(delidevv1connect.NewProviderServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewSessionServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewInteractionServiceHandler(s, options...))
+	mux.Handle(delidevv1connect.NewInboxServiceHandler(s, options...))
 	allowed := map[string]bool{}
 	for _, origin := range origins {
 		allowed[origin] = true

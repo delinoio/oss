@@ -172,3 +172,57 @@ func inboxMigrationError(err error) error {
 		return err
 	}
 }
+
+type InboxFilter struct {
+	SessionID domain.ID
+	ProjectID domain.ID
+	Source    domain.InboxSource
+	ReadState domain.InboxReadState
+	After     domain.ID
+	Limit     int
+	Epoch     uint64
+}
+
+func (f InboxFilter) Validate() error {
+	if err := (Filter{Kind: domain.InboxKind, SessionID: f.SessionID, ProjectID: f.ProjectID, After: f.After, Limit: f.Limit}).validate(); err != nil {
+		return err
+	}
+	if f.Source != "" && f.Source != domain.InteractionInbox && f.Source != domain.ExecutionTerminalInbox {
+		return domain.Fail(domain.InvalidArgument, "Unknown inbox source filter.", "Select interaction or execution-terminal, or omit the filter.")
+	}
+	if f.ReadState != "" && !f.ReadState.Valid() {
+		return domain.Fail(domain.InvalidArgument, "Unknown inbox read-state filter.", "Select read or unread, or omit the filter.")
+	}
+	return nil
+}
+
+// Callers join current source/session documents inside this same transaction.
+// The inbox epoch prevents read-state changes from silently skipping or repeating
+// membership across pages; source details remain current for each page.
+func (t *Tx) InboxPage(f InboxFilter) ([]Record, bool, uint64, error) {
+	if err := f.Validate(); err != nil {
+		return nil, false, 0, err
+	}
+	var epoch uint64
+	if err := t.tx.QueryRowContext(t.ctx, "SELECT COALESCE(MAX(sequence),0) FROM events WHERE kind='inbox'").Scan(&epoch); err != nil {
+		return nil, false, 0, storageError(err)
+	}
+	if f.After != "" && f.Epoch != epoch {
+		return nil, false, 0, domain.Fail(domain.CursorExpired, "The inbox changed during pagination.", "Restart inbox pagination to use current entries and read states.")
+	}
+	query := "SELECT " + recordColumns + " FROM entities WHERE kind='inbox' AND id>?"
+	args := []any{f.After}
+	for _, part := range []struct {
+		column string
+		value  string
+	}{{"session_id", string(f.SessionID)}, {"project_id", string(f.ProjectID)}, {"json_extract(body,'$.source')", string(f.Source)}, {"json_extract(body,'$.read_state')", string(f.ReadState)}} {
+		if part.value != "" {
+			query += " AND " + part.column + "=?"
+			args = append(args, part.value)
+		}
+	}
+	query += " ORDER BY id LIMIT ?"
+	args = append(args, f.Limit+1)
+	rows, more, err := t.sessionPage(f.Limit, query, args...)
+	return rows, more, epoch, err
+}
