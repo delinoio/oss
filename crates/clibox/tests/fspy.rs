@@ -151,6 +151,182 @@ mod linux {
         assert_eq!(result.status.code(), Some(1));
         assert!(String::from_utf8_lossy(&result.stderr).contains("blocked_input"));
         assert!(!blocked_bundle.exists());
+
+        let external = tempfile::tempdir().unwrap();
+        fs::write(external.path().join("outside"), b"secret").unwrap();
+        symlink(external.path().join("outside"), root.path().join("escape")).unwrap();
+        let escaped_bundle = output.path().join("escaped");
+        let result = Command::new(env!("CARGO_BIN_EXE_clibox"))
+            .current_dir(root.path())
+            .args([
+                "fspy",
+                "min-repro",
+                "--include",
+                "escape",
+                "--bundle-dir",
+                escaped_bundle.to_str().unwrap(),
+                "--expect-exit",
+                "7",
+                "--expect-stderr",
+                "failure",
+                "--",
+                "/bin/sh",
+                "-c",
+                "cat escape >/dev/null; printf failure >&2; exit 7",
+            ])
+            .output()
+            .unwrap();
+        assert_eq!(result.status.code(), Some(1));
+        assert!(String::from_utf8_lossy(&result.stderr).contains("escaping_symlink"));
+        assert!(!escaped_bundle.exists());
+    }
+
+    #[test]
+    fn record_and_compare_require_complete_result_aware_traces() {
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("input"), b"one").unwrap();
+        fs::write(root.path().join("other"), b"two").unwrap();
+        let before = outside.path().join("before.ndjson");
+        let after = outside.path().join("after.ndjson");
+        for (trace, script) in [
+            (&before, "cat input >/dev/null"),
+            (&after, "cat input other >/dev/null"),
+        ] {
+            let result = Command::new(env!("CARGO_BIN_EXE_clibox"))
+                .current_dir(root.path())
+                .args([
+                    "fspy",
+                    "record",
+                    "--output",
+                    trace.to_str().unwrap(),
+                    "--",
+                    "/bin/sh",
+                    "-c",
+                    script,
+                ])
+                .output()
+                .unwrap();
+            assert!(
+                result.status.success(),
+                "{}",
+                String::from_utf8_lossy(&result.stderr)
+            );
+            let events: Vec<serde_json::Value> = fs::read_to_string(trace)
+                .unwrap()
+                .lines()
+                .map(|line| serde_json::from_str(line).unwrap())
+                .collect();
+            assert!(events
+                .iter()
+                .any(|event| event["type"] == "operation-completion"
+                    && event["bytes"].as_u64().is_some_and(|bytes| bytes > 0)));
+            assert_eq!(events.last().unwrap()["type"], "summary");
+            assert_eq!(events.last().unwrap()["complete"], true);
+        }
+        let comparison = Command::new(env!("CARGO_BIN_EXE_clibox"))
+            .args([
+                "fspy",
+                "compare",
+                before.to_str().unwrap(),
+                after.to_str().unwrap(),
+                "--fail-on-change",
+                "--json",
+            ])
+            .output()
+            .unwrap();
+        assert_eq!(comparison.status.code(), Some(1));
+        let report: serde_json::Value = serde_json::from_slice(&comparison.stdout).unwrap();
+        assert!(!report["added"].as_array().unwrap().is_empty());
+
+        let incomplete = outside.path().join("incomplete.ndjson");
+        let valid = fs::read_to_string(&before).unwrap();
+        fs::write(
+            &incomplete,
+            valid
+                .lines()
+                .take(valid.lines().count() - 1)
+                .collect::<Vec<_>>()
+                .join("\n"),
+        )
+        .unwrap();
+        let result = Command::new(env!("CARGO_BIN_EXE_clibox"))
+            .args([
+                "fspy",
+                "compare",
+                incomplete.to_str().unwrap(),
+                after.to_str().unwrap(),
+            ])
+            .output()
+            .unwrap();
+        assert_eq!(result.status.code(), Some(1));
+        assert!(result.stdout.is_empty());
+    }
+
+    #[test]
+    fn assetcov_counts_content_reads_and_initial_empty_eof() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir(root.path().join("assets")).unwrap();
+        fs::write(root.path().join("assets/used"), b"used").unwrap();
+        fs::write(root.path().join("assets/empty"), b"").unwrap();
+        fs::write(root.path().join("assets/missed"), b"missed").unwrap();
+        let result = Command::new(env!("CARGO_BIN_EXE_clibox"))
+            .current_dir(root.path())
+            .args([
+                "fspy",
+                "assetcov",
+                "--include",
+                "assets/**",
+                "--fail-under",
+                "90",
+                "--json",
+                "--",
+                "/bin/sh",
+                "-c",
+                "cat assets/used assets/empty >/dev/null",
+            ])
+            .output()
+            .unwrap();
+        assert_eq!(result.status.code(), Some(1));
+        let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+        assert_eq!(report["total_count"], 3);
+        assert_eq!(report["covered_count"], 2);
+    }
+
+    #[test]
+    fn latencylab_runs_equal_tracing_and_observes_injected_delay() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("input"), b"content").unwrap();
+        let result = Command::new(env!("CARGO_BIN_EXE_clibox"))
+            .current_dir(root.path())
+            .args([
+                "fspy",
+                "latencylab",
+                "--include",
+                "input",
+                "--delay",
+                "2ms",
+                "--runs",
+                "1",
+                "--json",
+                "--",
+                "/bin/cat",
+                "input",
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+        let runs = report["runs"].as_array().unwrap();
+        assert_eq!(runs.len(), 2);
+        assert_eq!(runs[0]["condition"], "baseline");
+        assert_eq!(runs[1]["condition"], "delayed");
+        assert_eq!(runs[0]["observed_injected_delay_ns"], 0);
+        assert!(runs[1]["observed_injected_delay_ns"].as_u64().unwrap() >= 2_000_000);
     }
 
     struct PtySession {

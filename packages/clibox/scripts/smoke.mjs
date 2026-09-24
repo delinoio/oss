@@ -125,7 +125,7 @@ try {
     } finally {
       await new Promise((resolve) => listener.close(resolve));
     }
-    for (const group of ["run", "port", "clipboard", "system", "wait", "text", "time", "base64", "hash", "dotenv", "yaml"]) {
+    for (const group of ["run", "port", "clipboard", "system", "wait", "text", "time", "base64", "hash", "dotenv", "yaml", "fspy"]) {
       const missing = spawnSync(process.execPath, [launcher, group], { cwd: consumer, encoding: "utf8" });
       ensure(missing.status === 2 && missing.stdout === "" && missing.stderr.includes(`Usage: ${target.binary} ${group}`) && missing.stderr.includes("Commands:"), `${manager} ${group} missing-subcommand help smoke failed`);
     }
@@ -133,6 +133,23 @@ try {
     writeFileSync(readyFile, "");
     const ready = JSON.parse(execFileSync(process.execPath, [launcher, "wait", "file", readyFile, "--json", "--timeout", "5s"], { cwd: consumer, encoding: "utf8" }));
     ensure(ready.kind === "file" && ready.status === "ready" && ready.attempts === 1 && ready.error === null, `${manager} readiness smoke failed`);
+    if (process.platform === "linux") {
+      const trace = path.join(consumer, "observed.ndjson");
+      ensure(invoke(["fspy", "record", "--output", trace, "--", "/bin/cat", "binary input.dat"]).length === 0, `${manager} installed file recording leaked stdout`);
+      const recorded = readFileSync(trace, "utf8");
+      ensure(recorded.includes('"type":"operation-completion"') && recorded.includes('"type":"summary"'), `${manager} installed trace is incomplete`);
+      const compared = JSON.parse(invoke(["fspy", "compare", trace, trace, "--json"]));
+      ensure(compared.added.length === 0 && compared.removed.length === 0, `${manager} installed comparison failed`);
+      const covered = JSON.parse(invoke(["fspy", "assetcov", "--include", "binary input.dat", "--json", "--", "/bin/cat", "binary input.dat"]));
+      ensure(covered.covered_count === 1 && covered.total_count === 1, `${manager} installed asset coverage failed`);
+      const latency = JSON.parse(invoke(["fspy", "latencylab", "--include", "binary input.dat", "--delay", "1ms", "--runs", "1", "--json", "--", "/bin/cat", "binary input.dat"]));
+      ensure(latency.runs.length === 2 && latency.runs[1].observed_injected_delay_ns > 0, `${manager} installed latency experiment failed`);
+      const noTty = spawnSync(process.execPath, [launcher, "fspy", "fbreak", "--include", "binary input.dat", "--", "/bin/cat", "binary input.dat"], { cwd: consumer, encoding: "utf8", input: "" });
+      ensure(noTty.status === 1 && noTty.stderr.includes("control_tty_unavailable"), `${manager} installed file break accepted absent terminal`);
+      const bundle = path.join(consumer, "reproduction");
+      const reproduced = JSON.parse(invoke(["fspy", "min-repro", "--include", "binary input.dat", "--bundle-dir", bundle, "--expect-exit", "7", "--expect-stderr", "failure", "--json", "--", "/bin/sh", "-c", "cat 'binary input.dat' >/dev/null; printf failure >&2; exit 7"]));
+      ensure(reproduced.collected_files === 1 && readFileSync(path.join(bundle, "binary input.dat")).equals(bytes), `${manager} installed reproduction failed`);
+    }
     const fixture = path.join(consumer, "utility-check.cjs");
     writeFileSync(fixture, "if (process.env.CLIBOX_TEST_EXIT) process.exit(37); process.stdout.write(JSON.stringify({ value: process.env.CLIBOX_TEST_VALUE, args: process.argv.slice(2) }));");
     const utility = JSON.parse(execFileSync(process.execPath, [launcher, "run", "env", "CLIBOX_TEST_VALUE=unicode 🦀", "--", process.execPath, fixture, "", "two words", "a&b|c"], { cwd: consumer, encoding: "utf8" }));
