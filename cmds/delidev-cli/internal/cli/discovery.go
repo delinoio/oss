@@ -14,6 +14,7 @@ func machineDiscover(ctx context.Context, c client, o options, args []string, st
 	revision := fs.Uint64("revision", 0, "expected machine revision")
 	input := fs.String("input", "", "replacement executable selections, or omit to refresh existing selections")
 	wait := fs.Bool("wait", false, "wait within the command deadline")
+	protocol := fs.Bool("protocol", false, "validate native protocol without login or inference")
 	if err := parse(fs, args); err != nil {
 		return nil, err
 	}
@@ -28,7 +29,7 @@ func machineDiscover(ctx context.Context, c client, o options, args []string, st
 			return nil, err
 		}
 	}
-	response, err := c.workers.DiscoverHarnesses(ctx, request(c, &pb.DiscoverHarnessesRequest{Mutation: &pb.Mutation{RequestId: string(o.requestID), Id: *id, ExpectedRevision: *revision}, SelectionsJson: raw}))
+	response, err := c.workers.DiscoverHarnesses(ctx, request(c, &pb.DiscoverHarnessesRequest{Mutation: &pb.Mutation{RequestId: string(o.requestID), Id: *id, ExpectedRevision: *revision}, SelectionsJson: raw, VerifyProtocol: *protocol}))
 	if err != nil {
 		return nil, rpc.ClientError(err)
 	}

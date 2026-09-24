@@ -40,6 +40,7 @@ Each project must have one project index document and one or more domain contrac
 - [Connect protocol](protos-delidev-v1-contract.md)
 - [Worker workspace preparation](cmds-delidev-workspace-contract.md)
 - [Owned process contract](cmds-delidev-process-contract.md)
+- [Native harness adapter contract](cmds-delidev-harness-contract.md)
 - [Complete issue #964 requirements](cmds-delidev-requirements.md)
 - [Implementation and evidence ledger](cmds-delidev-evidence.md)
 

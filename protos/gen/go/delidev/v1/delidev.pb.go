@@ -2621,6 +2621,8 @@ type DiscoverHarnessesRequest struct {
 	// Omit to refresh existing selections. Otherwise replace all selections with
 	// the closed ExecutableSelections document; omitted harnesses use Worker PATH.
 	SelectionsJson []byte `protobuf:"bytes,2,opt,name=selections_json,json=selectionsJson,proto3" json:"selections_json,omitempty"`
+	// Validate the installed native protocol without login, inference, or sessions.
+	VerifyProtocol bool `protobuf:"varint,3,opt,name=verify_protocol,json=verifyProtocol,proto3" json:"verify_protocol,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -2667,6 +2669,13 @@ func (x *DiscoverHarnessesRequest) GetSelectionsJson() []byte {
 		return x.SelectionsJson
 	}
 	return nil
+}
+
+func (x *DiscoverHarnessesRequest) GetVerifyProtocol() bool {
+	if x != nil {
+		return x.VerifyProtocol
+	}
+	return false
 }
 
 type DiscoverHarnessesResponse struct {
@@ -2936,10 +2945,11 @@ const file_delidev_v1_delidev_proto_rawDesc = "" +
 	"\x03job\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\x03job\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x02 \x01(\tR\trequestId\x12\x1a\n" +
-	"\breplayed\x18\x03 \x01(\bR\breplayed\"u\n" +
+	"\breplayed\x18\x03 \x01(\bR\breplayed\"\x9e\x01\n" +
 	"\x18DiscoverHarnessesRequest\x120\n" +
 	"\bmutation\x18\x01 \x01(\v2\x14.delidev.v1.MutationR\bmutation\x12'\n" +
-	"\x0fselections_json\x18\x02 \x01(\fR\x0eselectionsJson\"\xae\x01\n" +
+	"\x0fselections_json\x18\x02 \x01(\fR\x0eselectionsJson\x12'\n" +
+	"\x0fverify_protocol\x18\x03 \x01(\bR\x0everifyProtocol\"\xae\x01\n" +
 	"\x19DiscoverHarnessesResponse\x12.\n" +
 	"\amachine\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\amachine\x12&\n" +
 	"\x03job\x18\x02 \x01(\v2\x14.delidev.v1.ResourceR\x03job\x12\x1d\n" +

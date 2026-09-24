@@ -492,15 +492,16 @@ const (
 )
 
 type Installation struct {
-	Harness          Harness           `json:"harness"`
-	State            InstallationState `json:"state"`
-	ExplicitPath     string            `json:"explicit_path,omitempty"`
-	ResolvedPath     string            `json:"resolved_path,omitempty"`
-	Version          string            `json:"version,omitempty"`
-	Capabilities     []Capability      `json:"capabilities"`
-	Problem          *Error            `json:"problem,omitempty"`
-	ObservedAt       *time.Time        `json:"observed_at,omitempty"`
-	ProtocolVerified bool              `json:"protocol_verified"`
+	Harness          Harness              `json:"harness"`
+	State            InstallationState    `json:"state"`
+	ExplicitPath     string               `json:"explicit_path,omitempty"`
+	ResolvedPath     string               `json:"resolved_path,omitempty"`
+	Version          string               `json:"version,omitempty"`
+	Capabilities     []Capability         `json:"capabilities"`
+	Problem          *Error               `json:"problem,omitempty"`
+	ObservedAt       *time.Time           `json:"observed_at,omitempty"`
+	ProtocolVerified bool                 `json:"protocol_verified"`
+	Protocol         *ProtocolObservation `json:"protocol,omitempty"`
 }
 type Machine struct {
 	Name              string         `json:"name"`

@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"log/slog"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -12,9 +14,67 @@ import (
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 )
+
+func TestVersionOnlyDiscoveryReceiptSurvivesProtocolAddition(t *testing.T) {
+	ctx := context.Background()
+	root := filepath.Join(t.TempDir(), "server")
+	db, err := store.Open(ctx, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	machineID, requestID := domain.NewID(), domain.NewID()
+	machine := domain.Machine{Name: "legacy", OS: "linux", Architecture: "amd64", Version: rpc.Version}
+	_, err = db.Mutate(ctx, domain.NewID(), "fixture", nil, func(tx *store.Tx) (any, error) { return tx.Put(domain.MachineKind, machineID, 0, "", "", machine) })
+	if err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	// Exact pre-protocol receipt input shape: do not regenerate it through the
+	// new selector, or the regression would merely test the current code twice.
+	legacy := struct {
+		Machine    domain.ID
+		Revision   uint64
+		Selections *domain.ExecutableSelections
+	}{machineID, 1, nil}
+	accepted, err := db.Mutate(ctx, requestID, "machine.discover", legacy, func(tx *store.Tx) (any, error) {
+		selected := domain.ExecutableSelections{Executables: []domain.ExecutableSelection{}}
+		machine.Installations = selected.Installations()
+		machine.DiscoveryRevision = 1
+		saved, err := tx.Put(domain.MachineKind, machineID, 1, "", "", machine)
+		if err != nil {
+			return nil, err
+		}
+		raw, _ := json.Marshal(domain.HarnessDiscoveryInput{Revision: 1, Selections: selected})
+		job, err := tx.PutJob(domain.NewID(), 0, "", "", domain.Job{Type: domain.HarnessDiscoveryJob, State: domain.JobQueued, MachineID: machineID, Input: raw, AcceptedAt: time.Now().UTC()})
+		return discoveryAccepted{Machine: saved, Job: job}, err
+	})
+	if err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	var original discoveryAccepted
+	if err := domain.Decode(accepted.Data, &original); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db, err = store.Open(ctx, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	service := &Service{Store: db, logger: slog.New(slog.NewJSONHandler(io.Discard, nil))}
+	response, err := service.DiscoverHarnesses(ctx, connect.NewRequest(&pb.DiscoverHarnessesRequest{Mutation: &pb.Mutation{RequestId: string(requestID), Id: string(machineID), ExpectedRevision: 1}}))
+	if err != nil || !response.Msg.Replayed || response.Msg.Job.Id != string(original.Job.ID) {
+		t.Fatalf("legacy acceptance could not be recovered: %v %v", response, err)
+	}
+}
 
 func TestDiscoveryRevisionReceiptsAuthorizationAndAtomicPublication(t *testing.T) {
 	endpoint, owner, stop, done := runTestServer(t, filepath.Join(t.TempDir(), "server"))
@@ -44,7 +104,7 @@ func TestDiscoveryRevisionReceiptsAuthorizationAndAtomicPublication(t *testing.T
 		t.Fatal("missing heartbeat")
 	}
 	selections, _ := json.Marshal(domain.ExecutableSelections{Executables: []domain.ExecutableSelection{{Harness: domain.Codex, Path: "/selected/codex"}}})
-	request := &pb.DiscoverHarnessesRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: device.Machine.Id, ExpectedRevision: attached.Msg.Machine.Revision}, SelectionsJson: selections}
+	request := &pb.DiscoverHarnessesRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: device.Machine.Id, ExpectedRevision: attached.Msg.Machine.Revision}, SelectionsJson: selections, VerifyProtocol: true}
 	if _, err := client.DiscoverHarnesses(ctx, ownerRequest(worker, request)); connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Fatalf("Worker changed owner selections: %v", err)
 	}
@@ -62,13 +122,17 @@ func TestDiscoveryRevisionReceiptsAuthorizationAndAtomicPublication(t *testing.T
 	if err != nil || !replay.Msg.Replayed || replay.Msg.Job.Id != accepted.Msg.Job.Id {
 		t.Fatalf("discovery duplicated: %v", err)
 	}
+	changed := &pb.DiscoverHarnessesRequest{Mutation: request.Mutation, SelectionsJson: request.SelectionsJson, VerifyProtocol: false}
+	if _, err := client.DiscoverHarnesses(ctx, ownerRequest(owner, changed)); connect.CodeOf(err) != connect.CodeAborted {
+		t.Fatalf("receipt reused with different protocol request: %v", err)
+	}
 	if !stream.Receive() || stream.Msg().Job == nil {
 		t.Fatal("missing job", stream.Err())
 	}
 	first := stream.Msg().Job
 	// A refresh with no document preserves explicit selections but creates a new
 	// discovery generation. Old observations must not overwrite newer work.
-	refresh := &pb.DiscoverHarnessesRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: device.Machine.Id, ExpectedRevision: accepted.Msg.Machine.Revision}}
+	refresh := &pb.DiscoverHarnessesRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: device.Machine.Id, ExpectedRevision: accepted.Msg.Machine.Revision}, VerifyProtocol: true}
 	second, err := client.DiscoverHarnesses(ctx, ownerRequest(owner, refresh))
 	if err != nil {
 		t.Fatal(err)
@@ -91,6 +155,15 @@ func TestDiscoveryRevisionReceiptsAuthorizationAndAtomicPublication(t *testing.T
 			output.Installations[index].State = domain.InstallationMissing
 			output.Installations[index].Problem = domain.Fail(domain.NotFound, "secret-native-error", "secret-guidance")
 		}
+		if !input.VerifyProtocol {
+			t.Fatal("protocol request not bound to accepted job")
+		}
+		output.Installations[0].State = domain.InstallationDetected
+		output.Installations[0].Version = domain.CodexProtocolVersion
+		output.Installations[0].ResolvedPath = "/selected/codex"
+		output.Installations[0].Problem = nil
+		output.Installations[0].ProtocolVerified = true
+		output.Installations[0].Protocol = &domain.ProtocolObservation{Protocol: domain.CodexAppServer, State: domain.ProtocolVerified}
 		raw, _ := json.Marshal(output)
 		return &pb.ReportWorkRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: job.Id, ExpectedRevision: job.Revision}, MachineId: device.Machine.Id, InstanceId: instance, OutputJson: raw}
 	}
@@ -153,7 +226,7 @@ func TestDiscoveryRevisionReceiptsAuthorizationAndAtomicPublication(t *testing.T
 	if err := domain.Decode(current.Msg.Resource.DocumentJson, &machine); err != nil {
 		t.Fatal(err)
 	}
-	if machine.DiscoveryRevision != 2 || machine.Installations[0].ExplicitPath != "/selected/codex" || machine.Installations[0].ObservedAt == nil || machine.Installations[0].State != domain.InstallationMissing {
+	if machine.DiscoveryRevision != 2 || machine.Installations[0].ExplicitPath != "/selected/codex" || machine.Installations[0].ObservedAt == nil || machine.Installations[0].State != domain.InstallationDetected || !machine.Installations[0].ProtocolVerified {
 		t.Fatalf("incorrect observations: %+v", machine)
 	}
 	if strings.Contains(string(current.Msg.Resource.DocumentJson), "secret-") || strings.Contains(string(finished.Msg.Job.DocumentJson), "secret-") {

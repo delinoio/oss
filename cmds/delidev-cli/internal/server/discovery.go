@@ -39,7 +39,9 @@ func (s *Service) DiscoverHarnesses(ctx context.Context, req *connect.Request[pb
 		Machine    domain.ID
 		Revision   uint64
 		Selections *domain.ExecutableSelections
-	}{domain.ID(meta.Id), meta.ExpectedRevision, selections}
+		// Omission preserves receipts issued before protocol probes were added.
+		VerifyProtocol bool `json:"VerifyProtocol,omitempty"`
+	}{domain.ID(meta.Id), meta.ExpectedRevision, selections, req.Msg.VerifyProtocol}
 	result, err := s.Store.Mutate(ctx, domain.ID(meta.RequestId), "machine.discover", input, func(tx *store.Tx) (any, error) {
 		record, machine, err := activeMachine(tx, input.Machine)
 		if err != nil {
@@ -65,7 +67,7 @@ func (s *Service) DiscoverHarnesses(ctx context.Context, req *connect.Request[pb
 		if err != nil {
 			return nil, err
 		}
-		raw, err := json.Marshal(domain.HarnessDiscoveryInput{Revision: machine.DiscoveryRevision, Selections: selected})
+		raw, err := json.Marshal(domain.HarnessDiscoveryInput{Revision: machine.DiscoveryRevision, Selections: selected, VerifyProtocol: req.Msg.VerifyProtocol})
 		if err != nil {
 			return nil, err
 		}

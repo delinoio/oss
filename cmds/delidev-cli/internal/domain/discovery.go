@@ -64,8 +64,9 @@ func (s ExecutableSelections) Installations() []Installation {
 }
 
 type HarnessDiscoveryInput struct {
-	Revision   uint64               `json:"revision"`
-	Selections ExecutableSelections `json:"selections"`
+	Revision       uint64               `json:"revision"`
+	Selections     ExecutableSelections `json:"selections"`
+	VerifyProtocol bool                 `json:"verify_protocol,omitempty"`
 }
 type HarnessDiscoveryOutput struct {
 	Installations []Installation `json:"installations"`
@@ -99,8 +100,8 @@ func (o *HarnessDiscoveryOutput) ValidateDiscovery(input HarnessDiscoveryInput) 
 	expected := input.Selections.Installations()
 	for index := range o.Installations {
 		i := &o.Installations[index]
-		if i.Harness != expected[index].Harness || i.ExplicitPath != expected[index].ExplicitPath || i.ProtocolVerified || len(i.Capabilities) != 0 || i.ObservedAt != nil {
-			return Fail(InvalidArgument, "Discovery reported unrequested selection or unverified capabilities.", "Report only the version probe for the accepted selections.")
+		if i.Harness != expected[index].Harness || i.ExplicitPath != expected[index].ExplicitPath || len(i.Capabilities) != 0 || i.ObservedAt != nil {
+			return Fail(InvalidArgument, "Discovery reported unrequested selection or unverified capabilities.", "Report only the discovery observations requested by the accepted job.")
 		}
 		if err := Text(i.ResolvedPath, "resolved executable path", 4096, false); err != nil {
 			return err
@@ -118,6 +119,9 @@ func (o *HarnessDiscoveryOutput) ValidateDiscovery(input HarnessDiscoveryInput) 
 			return Fail(InvalidArgument, "Unknown discovery outcome.", "Report a supported terminal discovery state.")
 		}
 		i.Problem = InstallationProblem(i.State)
+		if err := i.validateProtocol(input.VerifyProtocol); err != nil {
+			return err
+		}
 		i.Capabilities = []Capability{}
 	}
 	return nil

@@ -280,6 +280,8 @@ message DiscoverHarnessesRequest {
   // Omit to refresh existing selections. Otherwise replace all selections with
   // the closed ExecutableSelections document; omitted harnesses use Worker PATH.
   bytes selections_json = 2;
+  // Validate the installed native protocol without login, inference, or sessions.
+  bool verify_protocol = 3;
 }
 message DiscoverHarnessesResponse {
   Resource machine = 1;

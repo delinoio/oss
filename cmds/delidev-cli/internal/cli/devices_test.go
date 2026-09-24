@@ -111,10 +111,13 @@ func TestCLIPairWorkerAndInspectRealRepository(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	discover := []string{"machine", "discover", "--id", machine, "--revision", strconv.FormatUint(machineRevision, 10), "--input", "-", "--wait", "--request-id", string(domain.NewID())}
+	discover := []string{"machine", "discover", "--id", machine, "--revision", strconv.FormatUint(machineRevision, 10), "--input", "-", "--protocol", "--wait", "--request-id", string(domain.NewID())}
 	code, result = cliRun(t, root, discover, string(selectionJSON))
 	if code != 0 {
 		t.Fatalf("discover: %d %v", code, result)
+	}
+	if result["result"].(map[string]any)["job"].(map[string]any)["data"].(map[string]any)["input"].(map[string]any)["verify_protocol"] != true {
+		t.Fatal("CLI dropped native verification selection")
 	}
 	observed := result["result"].(map[string]any)["machine"].(map[string]any)["data"].(map[string]any)["installations"].([]any)
 	if len(observed) != 4 {

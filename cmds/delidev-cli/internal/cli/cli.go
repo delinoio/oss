@@ -538,7 +538,7 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   worker pair --worker-dir PATH --name NAME --code-stdin
   worker start --worker-dir PATH
   repository inspect --machine-id ID --path PATH [--preferred-remote NAME] [--wait]
-  machine discover --id ID --revision N [--input FILE|-] [--wait]
+  machine discover --id ID --revision N [--input FILE|-] [--protocol] [--wait]
   backup create
   settings defaults
   KIND list [--limit 50] [--page-token TOKEN] [--project-id ID] [--session-id ID]
