@@ -2,6 +2,7 @@ package codex
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -33,7 +34,7 @@ func TestManualNativeThreadSmoke(t *testing.T) {
 	}
 	var requests atomic.Int64
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests.Add(1)
+		requestIndex := requests.Add(1)
 		if r.Method != "POST" || r.URL.Path != "/responses" {
 			t.Error("unexpected fixture operation")
 			http.Error(w, "unsupported", 404)
@@ -51,11 +52,15 @@ func TestManualNativeThreadSmoke(t *testing.T) {
 		if json.Unmarshal(body, &request) != nil || request.Model != "fixture-model" || request.Reasoning.Effort != "high" || request.Instructions == "" || request.Instructions == "Temporary non-inference thread validation." {
 			t.Error("native model, effort or base instructions changed")
 		}
+		if strings.Count(string(body), "Return the local fixture response only.") != 1 || (requestIndex == 2 && (strings.Count(string(body), "Continue the same private fixture conversation.") != 1 || !strings.Contains(string(body), "Fixture complete."))) || requestIndex > 2 {
+			t.Error("native continuation lost history or replayed an input")
+		}
 		w.Header().Set("Content-Type", "text/event-stream")
+		responseID := fmt.Sprintf("resp_fixture_%d", requestIndex)
 		events := []any{
-			map[string]any{"type": "response.created", "response": map[string]any{"id": "resp_fixture", "status": "in_progress"}},
-			map[string]any{"type": "response.output_item.done", "output_index": 0, "item": map[string]any{"type": "message", "id": "msg_fixture", "role": "assistant", "content": []any{map[string]any{"type": "output_text", "text": "Fixture complete."}}}},
-			map[string]any{"type": "response.completed", "response": map[string]any{"id": "resp_fixture", "status": "completed", "output": []any{}, "usage": map[string]any{"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}}},
+			map[string]any{"type": "response.created", "response": map[string]any{"id": responseID, "status": "in_progress"}},
+			map[string]any{"type": "response.output_item.done", "output_index": 0, "item": map[string]any{"type": "message", "id": fmt.Sprintf("msg_fixture_%d", requestIndex), "role": "assistant", "content": []any{map[string]any{"type": "output_text", "text": "Fixture complete."}}}},
+			map[string]any{"type": "response.completed", "response": map[string]any{"id": responseID, "status": "completed", "output": []any{}, "usage": map[string]any{"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}}},
 		}
 		for _, event := range events {
 			raw, _ := json.Marshal(event)
@@ -96,7 +101,8 @@ func TestManualNativeThreadSmoke(t *testing.T) {
 	if observed.Status.Type != ThreadIdle {
 		t.Fatalf("unexpected native status: %v", observed.Status)
 	}
-	_, err = client.StartTurn(ctx, domain.NewID(), domain.NewID(), domain.SessionInput{Mode: domain.ExecuteMode, Prompt: "Return the local fixture response only."})
+	inputID := domain.NewID()
+	firstTurn, err := client.StartTurn(ctx, domain.NewID(), inputID, domain.SessionInput{Mode: domain.ExecuteMode, Prompt: "Return the local fixture response only."})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,10 +140,40 @@ func TestManualNativeThreadSmoke(t *testing.T) {
 	if resumed.Thread == nil || resumed.Thread.ID != result.Thread.ID {
 		t.Fatal("native resume identity changed")
 	}
-	if requests.Load() != 1 {
+	checkpoint := ContinuationCheckpoint{ThreadID: result.Thread.ID, SessionID: result.Thread.SessionID, TurnID: firstTurn.TurnID, Status: TurnCompleted, Mode: domain.ExecuteMode, Effective: *result.Effective, Inputs: []HistoricalInput{{ID: inputID, PromptDigest: sha256.Sum256([]byte("Return the local fixture response only."))}}}
+	nextInput := domain.SessionInput{Mode: domain.PlanMode, Prompt: "Continue the same private fixture conversation."}
+	_, err = client.StartTurn(ctx, domain.NewID(), domain.NewID(), nextInput)
+	assertCode(t, err, domain.RecoveryRequired)
+	verified, err := client.VerifyContinuation(ctx, domain.NewID(), checkpoint, ContinueAfterSuccess)
+	if err != nil || verified.ID != firstTurn.TurnID || verified.Status != TurnCompleted {
+		t.Fatalf("native most recent turn verification failed: %v", err)
+	}
+	_, err = client.StartTurn(ctx, domain.NewID(), inputID, nextInput)
+	assertCode(t, err, domain.Conflict)
+	secondTurn, err := client.StartTurn(ctx, domain.NewID(), domain.NewID(), nextInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for {
+		event, err := client.NextEvent(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if event.Kind != TurnCompletedEvent {
+			continue
+		}
+		if event.Turn == nil || event.Turn.ID != secondTurn.TurnID || event.Turn.Status != TurnCompleted || !event.Correlated || event.Late {
+			t.Fatal("continued native turn did not complete independently")
+		}
+		break
+	}
+	if err := client.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if requests.Load() != 2 {
 		t.Fatalf("unexpected local fixture request count %d", requests.Load())
 	}
-	t.Logf("%s/%s Codex %s: created, inspected, closed and resumed exact native thread; one local scripted model response; no external provider or user account", runtime.GOOS, runtime.GOARCH, SupportedVersion)
+	t.Logf("%s/%s Codex %s: resumed exact native thread, verified retained terminal input and continued once in Plan mode; two local scripted model responses; no external provider or user account", runtime.GOOS, runtime.GOARCH, SupportedVersion)
 }
 
 func nativeFixtureConfig(t *testing.T, binary, providerURL string) Config {

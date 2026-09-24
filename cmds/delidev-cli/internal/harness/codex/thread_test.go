@@ -21,9 +21,13 @@ type threadFixture struct {
 	turn       domain.ID
 	turnInput  domain.ID
 	steerCount int
+	history    json.RawMessage
 }
 
 func (f *threadFixture) handle(id json.RawMessage, method string, raw json.RawMessage, write func(json.RawMessage, any)) bool {
+	if f.handleContinuation(id, method, raw, write) {
+		return true
+	}
 	if f.handleTurn(id, method, raw, write) {
 		return true
 	}

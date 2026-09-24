@@ -330,6 +330,10 @@ func (c *Client) bindThread(ctx context.Context, requestID, threadID domain.ID, 
 		return result, c.problem
 	}
 	c.execution = newExecutionState(*thread, *effective)
+	// Binding an idle retained thread does not establish its last accepted
+	// input or completion. A fresh process must verify the retained checkpoint
+	// before it can send an ordinary input or mutate an existing turn.
+	c.execution.continuationPending = method == resumeThread
 	return result, nil
 }
 

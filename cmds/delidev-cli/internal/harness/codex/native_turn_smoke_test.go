@@ -2,6 +2,7 @@ package codex
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -83,7 +84,8 @@ func TestManualNativeTurnControls(t *testing.T) {
 				}
 			})
 			settings := ThreadSettings{Model: "fixture-model", Provider: "delidev_fixture", Effort: "high", Cwd: cfg.Process.Cwd, Instructions: "Temporary non-inference thread validation.", Options: domain.AgentOptions{Permission: domain.PermissionReadOnly, ApprovalPolicy: "on-request"}}
-			if _, err := client.StartThread(ctx, domain.NewID(), settings); err != nil {
+			bound, err := client.StartThread(ctx, domain.NewID(), settings)
+			if err != nil {
 				t.Fatal(err)
 			}
 			mode := domain.ExecuteMode
@@ -157,7 +159,63 @@ func TestManualNativeTurnControls(t *testing.T) {
 					t.Fatal("owned native cleanup did not close its model connection")
 				}
 			}
-			t.Logf("Codex %s: native %s completed with %d local scripted requests; no external provider or account", SupportedVersion, action, requests.Load())
+			if err := client.Close(); err != nil {
+				t.Fatal(err)
+			}
+			checkpoint := ContinuationCheckpoint{ThreadID: bound.Thread.ID, SessionID: bound.Thread.SessionID, TurnID: turn.TurnID, Status: TurnCompleted, Mode: mode, Effective: *bound.Effective, Inputs: []HistoricalInput{{ID: initialInput, PromptDigest: sha256.Sum256([]byte("Return the local fixture response only."))}}}
+			if action == "steer" {
+				checkpoint.Inputs = append(checkpoint.Inputs, HistoricalInput{ID: steeredInput, PromptDigest: sha256.Sum256([]byte("Include this explicit steered input in the same turn."))})
+			}
+			if action == "interrupt" {
+				checkpoint.Status = TurnInterrupted
+			}
+			cfg.Process.OwnerID = domain.NewID()
+			resumed, err := Open(ctx, cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				if err := resumed.Close(); err != nil {
+					t.Error(err)
+				}
+			})
+			if _, err := resumed.ResumeThread(ctx, domain.NewID(), checkpoint.ThreadID, settings); err != nil {
+				t.Fatal(err)
+			}
+			intent := ContinueAfterSuccess
+			if action == "interrupt" {
+				_, err := resumed.VerifyContinuation(ctx, domain.NewID(), checkpoint, intent)
+				assertCode(t, err, domain.Conflict)
+				intent = ResumeAfterTerminal
+			}
+			if _, err := resumed.VerifyContinuation(ctx, domain.NewID(), checkpoint, intent); err != nil {
+				t.Fatal(err)
+			}
+			before := requests.Load()
+			continued, err := resumed.StartTurn(ctx, domain.NewID(), domain.NewID(), domain.SessionInput{Mode: domain.ExecuteMode, Prompt: "Continue the retained native control fixture once."})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for {
+				event, err := resumed.NextEvent(ctx)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if event.Kind != TurnCompletedEvent {
+					continue
+				}
+				if !event.Correlated || event.Late || event.TurnID != continued.TurnID || event.Turn.Status != TurnCompleted {
+					t.Fatal("continued native control fixture did not complete")
+				}
+				break
+			}
+			if err := resumed.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if requests.Load() != before+1 {
+				t.Fatal("native continuation caused unexpected model requests")
+			}
+			t.Logf("Codex %s: native %s terminal history verified after process replacement and continued once; %d local scripted requests, no external provider or account", SupportedVersion, action, requests.Load())
 		})
 	}
 }
