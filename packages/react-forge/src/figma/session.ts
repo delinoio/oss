@@ -162,6 +162,7 @@ export class FigmaSession {
   private readonly mounts = new Map<string, Mount>();
   private readonly retained = new Map<string, Entity>();
   private readonly assets = new Map<string, Buffer>();
+  private assetQueue: Promise<unknown> = Promise.resolve();
   private readonly imageHashes: Record<string, string> = {};
   private readonly pendingAssets = new Set<Promise<AssetHandle>>();
   private readonly listeners = new Set<(event: Diagnostic) => void>();
@@ -258,7 +259,10 @@ export class FigmaSession {
     options: { signal?: AbortSignal } = {},
   ): Promise<AssetHandle> {
     const signal = this.signal(options.signal);
-    const task = (async () => {
+    // Admission and validation share a queue so concurrent registrations cannot
+    // all pass the aggregate check before any validated bytes are retained.
+    const task = this.assetQueue.catch(() => {}).then(async () => {
+      checkSignal(signal);
       const { bytes } = await readSource(source, 10 * 1024 * 1024, signal);
       const id = `sha256:${digest(bytes)}`;
       if (
@@ -283,7 +287,8 @@ export class FigmaSession {
       if (!this.assets.has(id)) await validateFigmaImage(bytes, signal);
       this.assets.set(id, bytes);
       return Object.freeze({ assetId: id, documentId: this.documentId });
-    })();
+    });
+    this.assetQueue = task;
     this.pendingAssets.add(task);
     void task.finally(() => this.pendingAssets.delete(task)).catch(() => {});
     return task;

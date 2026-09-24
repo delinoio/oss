@@ -725,3 +725,47 @@ test("remounting transfers retained ownership without deleting omitted descendan
     await third.unmount();
   } finally { await session.dispose(); }
 });
+
+test("concurrent image registration respects the aggregate budget and deduplicates bytes", async () => {
+  const session = new FigmaSession(options, new FakeConnection());
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==", "base64");
+  // Padded one-pixel PNGs exercise the real encoded-byte boundary without large
+  // decoded images. Distinct trailing bytes give each fixture its own hash.
+  const padded = (mib: number, marker: number) => {
+    const bytes = Buffer.alloc(mib * 1024 * 1024);
+    png.copy(bytes);
+    bytes[bytes.length - 1] = marker;
+    return bytes;
+  };
+  try {
+    const first = padded(6, 1);
+    const tasks = [session.registerImage(first), session.registerImage(first)];
+    for (let i = 0; i < 26; i++) tasks.push(session.registerImage(padded(10, i + 2)));
+    const results = await Promise.allSettled(tasks);
+    assert.equal(results.filter(r => r.status === "fulfilled").length, 27);
+    const failed = results.filter(r => r.status === "rejected");
+    assert.equal(failed.length, 1);
+    assert.equal(failed[0]!.reason.code, ErrorCode.ResourceLimit);
+    assert.deepEqual(results[0], results[1]);
+    const accepted = await session.registerImage(first);
+    assert.deepEqual(accepted, (results[0] as PromiseFulfilledResult<unknown>).value);
+  } finally { await session.dispose(); }
+});
+
+test("failed and cancelled image registrations do not block later work", async () => {
+  const session = new FigmaSession(options, new FakeConnection());
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==", "base64");
+  const cancel = new AbortController();
+  try {
+    const invalid = session.registerImage(png.subarray(0, 8));
+    const cancelled = session.registerImage(png, { signal: cancel.signal });
+    const valid = session.registerImage(png);
+    cancel.abort();
+    const results = await Promise.allSettled([invalid, cancelled, valid]);
+    assert.equal(results[0]!.status, "rejected");
+    assert.equal(results[1]!.status, "rejected");
+    assert.equal(results[2]!.status, "fulfilled");
+    assert.equal((results[0] as PromiseRejectedResult).reason.code, ErrorCode.MalformedInput);
+    assert.equal((results[1] as PromiseRejectedResult).reason.code, ErrorCode.Cancelled);
+  } finally { await session.dispose(); }
+});
