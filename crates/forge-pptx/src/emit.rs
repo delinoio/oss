@@ -417,6 +417,18 @@ pub(crate) fn emit_node(
             let stem = format!("ppt/charts/forge-{}", id.simple());
             let chart_path = format!("{stem}.xml");
             let workbook_path = format!("{stem}.xlsx");
+            let relationship_path = relation_path(&chart_path);
+            if parts.keys().any(|existing| {
+                [&chart_path, &workbook_path, &relationship_path]
+                    .iter()
+                    .any(|candidate| existing.eq_ignore_ascii_case(candidate))
+            }) {
+                return error(
+                    ErrorCode::UnsupportedEdit,
+                    "/id",
+                    "Chart identity collides with existing package parts",
+                );
+            }
             let (chart, workbook) = chart_parts(n)?;
             parts.insert(chart_path.clone(), chart);
             parts.insert(workbook_path.clone(), workbook);

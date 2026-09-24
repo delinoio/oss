@@ -954,3 +954,69 @@ fn chart_data_edits_reject_workbook_row_child_extensions() {
         );
     }
 }
+#[test]
+fn chart_insertion_never_overwrites_preexisting_package_parts() {
+    let id = Uuid::now_v7();
+    let stem = format!("ppt/charts/forge-{}", id.simple());
+    let original = read_package(EXTERNAL).unwrap();
+    let authored: Presentation = parse(include_bytes!(
+        "../../forge-tree-doc/examples/all-nodes.json"
+    ))
+    .unwrap();
+    let mut chart = authored.find(&key("details.chart")).unwrap().clone();
+    chart.id = Some(id);
+    let collisions = [
+        (format!("{stem}.xml"), original["ppt/charts/chart1.xml"].clone()),
+        (format!("{stem}.xlsx"), original["ppt/embeddings/Microsoft_Excel_Sheet1.xlsx"].clone()),
+        (format!("ppt/charts/_rels/forge-{}.xml.rels", id.simple()), b"<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"/>".to_vec()),
+        (format!("{}.xml", stem.replace("forge-", "FORGE-")), original["ppt/charts/chart1.xml"].clone()),
+    ];
+    for collision in std::iter::once(None).chain(collisions.into_iter().map(Some)) {
+        let mut parts = original.clone();
+        if let Some((path, bytes)) = &collision {
+            parts.insert(path.clone(), bytes.clone());
+        }
+        let source = write_package(&parts).unwrap();
+        let imported = import(&source).unwrap();
+        let next = patch(
+            &imported,
+            vec![Operation::InsertNode {
+                parent: Target {
+                    key: None,
+                    node_id: imported.document.slides[0].content.id,
+                },
+                index: 1,
+                node: Box::new(chart.clone()),
+            }],
+        );
+        let result = update(
+            &source,
+            &imported.document,
+            &imported.bindings,
+            &next,
+            &imported.assets,
+            imported.document_id,
+            1,
+        );
+        if collision.is_some() {
+            assert_eq!(result.unwrap_err().code, ErrorCode::UnsupportedEdit);
+        } else {
+            let result = result.unwrap();
+            assert!(
+                import(&result)
+                    .unwrap()
+                    .document
+                    .find(&Target {
+                        key: None,
+                        node_id: Some(id)
+                    })
+                    .is_some()
+            );
+            assert!(
+                read_package(&result)
+                    .unwrap()
+                    .contains_key(&format!("{stem}.xml"))
+            );
+        }
+    }
+}

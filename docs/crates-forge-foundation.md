@@ -38,6 +38,8 @@ Both XML boolean true spellings (`1` and `true`) mark flipped native transforms 
 
 Selective chart-workbook updates accept only SpreadsheetML cells as row child elements. Row-level extension lists and foreign elements reject data edits before replacing sheet data; unrelated presentation edits retain the workbook bytes.
 
+New chart XML, workbook and relationship-part names must be unused under ASCII case-insensitive package-name comparison. A colliding caller-supplied chart UUID returns `unsupported_edit`; original parts remain unchanged. Inserted nodes emit their native content only once per patch.
+
 ## Storage
 The user-data directory owns registered assets, document originals, immutable revisions, and atomically replaced state pointers. `--state-dir` overrides the default. Persistent state is private to the user. Open/apply do not overwrite source files. Export requires an explicit overwrite option to replace an existing output and verifies source fingerprints, serializes writers, validates candidate bytes and atomically publishes from the same filesystem. Close removes only the selected managed document; shared assets and lock files are retained. An interrupted generation is unreachable until the atomic pointer commit, and old generations remain available. Source fingerprints are checked before mutation and again before committing an edit. Local storage is an explicit exception to the repository's R2 default.
 

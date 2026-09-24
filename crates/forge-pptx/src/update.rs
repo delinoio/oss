@@ -769,6 +769,11 @@ pub fn update(
                     "Unsupported native content cannot be edited or moved",
                 );
             }
+            // Inserted leaves are emitted once in the drawing-order rewrite
+            // below, so their new package parts cannot collide with themselves.
+            if old.is_none() {
+                continue;
+            }
             // Existing chart parts belong to the selective editor below. Build
             // only a frame fragment; change_geometry copies its transform, not
             // its synthetic relationship. No package clone or workbook generation.
