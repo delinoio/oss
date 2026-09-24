@@ -26,13 +26,14 @@ const (
 // Closure and pipe delivery are independent facts. Neither confirms that the
 // native tool accepted an answer. Native acceptance needs separate evidence.
 type InteractionStatus struct {
-	ID         domain.ID
-	TurnID     domain.ID
-	ItemID     string
-	Closure    InteractionClosure
-	ResponseID domain.ID
-	Delivery   QuestionDelivery
-	Accepted   bool
+	ID               domain.ID
+	TurnID           domain.ID
+	ItemID           string
+	Closure          InteractionClosure
+	ResponseID       domain.ID
+	Delivery         QuestionDelivery
+	ApprovalEvidence ApprovalEvidence
+	Accepted         bool
 }
 
 type trackedInteraction struct {
@@ -43,6 +44,8 @@ type trackedInteraction struct {
 	approval     *ApprovalRequest
 	bytes        int
 	answerDigest [32]byte
+	grantDigest  [32]byte
+	approvalKind ApprovalKind
 }
 
 type interactionState struct {
@@ -135,6 +138,7 @@ func (c *Client) retainInteractionLocked(native nativewire.Event, turn domain.ID
 	} else {
 		var err error
 		owned.approval, err = cloneApproval(interaction.Approval)
+		owned.approvalKind = interaction.Approval.Kind
 		if err != nil {
 			return err
 		}

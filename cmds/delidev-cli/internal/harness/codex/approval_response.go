@@ -68,12 +68,24 @@ func (c *Client) respondApproval(ctx context.Context, responseID, interactionID,
 	if err != nil || len(raw) > maxAnswerBytes {
 		return owned.status, domain.Fail(domain.ResourceExhausted, "The native approval response exceeds its bound.", "Keep the exact original decision within the supported response limit.")
 	}
+	var grantDigest [32]byte
+	if owned.approvalKind == PermissionsApproval {
+		var grant PermissionGrant
+		if domain.Decode(raw, &grant) != nil {
+			return owned.status, incompatible()
+		}
+		grantDigest, err = permissionGrantDigest(grant)
+		if err != nil {
+			return owned.status, err
+		}
+	}
 	if ctx.Err() != nil {
 		return owned.status, domain.SafeError(ctx.Err())
 	}
 	s.responses[responseID] = true
 	owned.status.ResponseID = responseID
 	owned.answerDigest = sha256.Sum256(raw)
+	owned.grantDigest = grantDigest
 	// Use the validated immutable bytes for both commitment and pipe delivery.
 	// No request command, path, rule, permission profile or response enters logs.
 	err = c.wire.Reply(ctx, owned.native, json.RawMessage(raw))

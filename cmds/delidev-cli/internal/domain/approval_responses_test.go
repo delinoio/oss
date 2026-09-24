@@ -66,11 +66,14 @@ func TestApprovalPermissionGrantPreservesRequestedRestrictions(t *testing.T) {
 			case "drop-deny":
 				grant.Permissions.FileSystem.Entries = grant.Permissions.FileSystem.Entries[:1]
 			case "new-read":
-				grant.Permissions.FileSystem.Read = append(grant.Permissions.FileSystem.Read, "/other")
+				path := "/other"
+				grant.Permissions.FileSystem.Entries = append(grant.Permissions.FileSystem.Entries, CodexFilePermissionEntry{Access: CodexFilePermissionRead, Path: CodexFilePermissionPathValue{Kind: CodexFilePermissionPath, Path: &path}})
 			case "new-write":
-				grant.Permissions.FileSystem.Write = append(grant.Permissions.FileSystem.Write, "/fixture/read")
+				path := "/fixture/read"
+				grant.Permissions.FileSystem.Entries = append(grant.Permissions.FileSystem.Entries, CodexFilePermissionEntry{Access: CodexFilePermissionWrite, Path: CodexFilePermissionPathValue{Kind: CodexFilePermissionPath, Path: &path}})
 			case "normalized-path":
-				grant.Permissions.FileSystem.Write[0] = "/fixture/other/../write"
+				path := "/fixture/other/../write"
+				grant.Permissions.FileSystem.Entries[0].Path = CodexFilePermissionPathValue{Kind: CodexFilePermissionPath, Path: &path}
 			case "new-rule":
 				*grant.Permissions.FileSystem.Entries[0].Path.Pattern = "/**"
 			case "new-depth":
@@ -105,5 +108,37 @@ func TestApprovalPermissionGrantPreservesRequestedRestrictions(t *testing.T) {
 	var roundtrip CodexPermissionsApprovalRequest
 	if Decode(raw, &roundtrip) != nil || roundtrip.Permissions.FileSystem.Entries[0].Access != CodexFilePermissionWrite {
 		t.Fatal("grant validation changed original request")
+	}
+}
+
+func TestApprovalPermissionEntriesOverrideDeprecatedMirrors(t *testing.T) {
+	for _, entries := range []string{`[]`, `[{"access":"write","path":{"type":"path","path":"/effective"}}]`} {
+		var request CodexPermissionsApprovalRequest
+		if err := Decode([]byte(`{"cwd":"/fixture","permissions":{"file_system":{"write":["/ignored"],"entries":`+entries+`}}}`), &request); err != nil {
+			t.Fatal(err)
+		}
+		before, _ := json.Marshal(request)
+		for _, test := range []struct {
+			profile string
+			allowed bool
+		}{
+			{`{"file_system":{"write":["/ignored"]}}`, false},
+			{`{"file_system":{"read":["/effective"]}}`, entries != `[]`},
+			{`{"file_system":{"write":["/ignored"],"entries":[]}}`, true},
+			{`{"file_system":{"entries":` + entries + `}}`, true},
+		} {
+			var profile CodexPermissionProfile
+			if err := Decode([]byte(test.profile), &profile); err != nil {
+				t.Fatal(err)
+			}
+			grant := CodexPermissionGrant{Scope: CodexPermissionTurn, Permissions: profile}
+			if (grant.Validate(&request) == nil) != test.allowed {
+				t.Fatal("public entries precedence changed native grant authority")
+			}
+		}
+		after, _ := json.Marshal(request)
+		if string(before) != string(after) {
+			t.Fatal("validation rewrote original native request")
+		}
 	}
 }

@@ -9,10 +9,10 @@ import (
 )
 
 // Raw notifications supplement the canonical item/usage stream. They include
-// private instructions and diagnostic metadata, so only an exact owned question
-// output may create a product observation. Discard all other bounded supplement
+// private instructions and diagnostic metadata, so only exact owned question
+// or permission outputs may create product observations. Discard all other bounded supplement
 // content; its canonical event still requires the appropriate typed adapter.
-func (c *Client) observeRawQuestionEvidenceLocked(native nativewire.Event) (Event, error) {
+func (c *Client) observeRawInteractionEvidenceLocked(native nativewire.Event) (Event, error) {
 	var envelope struct {
 		ThreadID      domain.ID       `json:"threadId"`
 		TurnID        domain.ID       `json:"turnId"`
@@ -55,15 +55,7 @@ func (c *Client) observeRawQuestionEvidenceLocked(native nativewire.Event) (Even
 	default:
 		return Event{}, incompatible()
 	}
-	var output struct {
-		Type      string          `json:"type"`
-		ID        *string         `json:"id,omitempty"`
-		CallID    *string         `json:"call_id,omitempty"`
-		Name      *string         `json:"name,omitempty"`
-		Namespace *string         `json:"namespace,omitempty"`
-		Output    json.RawMessage `json:"output"`
-		Metadata  json.RawMessage `json:"internal_chat_message_metadata_passthrough,omitempty"`
-	}
+	var output nativeFunctionOutput
 	if domain.Decode(envelope.Item, &output) != nil || len(output.Output) == 0 {
 		return Event{}, incompatible()
 	}
@@ -74,19 +66,30 @@ func (c *Client) observeRawQuestionEvidenceLocked(native nativewire.Event) (Even
 		return Event{}, incompatible()
 	}
 	var owned *trackedInteraction
+	matches := 0
 	for _, candidate := range c.execution.interactions.arrivals {
-		if candidate.kind == UserInputInteraction && candidate.status.TurnID == envelope.TurnID && candidate.status.ItemID == *output.CallID {
+		if candidate.status.TurnID != envelope.TurnID || candidate.status.ItemID != *output.CallID {
+			continue
+		}
+		matches++
+		if candidate.kind == UserInputInteraction || (candidate.kind == ApprovalInteraction && candidate.approvalKind == PermissionsApproval) {
 			owned = candidate
-			break
 		}
 	}
 	if owned == nil {
 		return discarded, nil
 	}
+	if matches != 1 {
+		return Event{}, incompatible()
+	}
+
 	// Stop/cancellation also returns a native tool error or empty answer. With
 	// no delivered owner response this is only supplemental native output.
 	if owned.status.ResponseID == "" || owned.status.Delivery == QuestionNotSent {
 		return discarded, nil
+	}
+	if owned.kind == ApprovalInteraction {
+		return c.observePermissionAcceptanceLocked(owned, output, discarded)
 	}
 	// A duplicate exact observation can confirm an existing fact, but cannot
 	// create another publication or consume response accounting twice.
@@ -108,4 +111,14 @@ func (c *Client) observeRawQuestionEvidenceLocked(native nativewire.Event) (Even
 	owned.status.Accepted = true
 	status := owned.status
 	return Event{Kind: QuestionAcceptedEvent, ThreadID: c.thread, TurnID: envelope.TurnID, ItemID: status.ItemID, InteractionState: &status, Correlated: true, Late: turn.Turn.Status.terminal()}, nil
+}
+
+type nativeFunctionOutput struct {
+	Type      string          `json:"type"`
+	ID        *string         `json:"id,omitempty"`
+	CallID    *string         `json:"call_id,omitempty"`
+	Name      *string         `json:"name,omitempty"`
+	Namespace *string         `json:"namespace,omitempty"`
+	Output    json.RawMessage `json:"output"`
+	Metadata  json.RawMessage `json:"internal_chat_message_metadata_passthrough,omitempty"`
 }

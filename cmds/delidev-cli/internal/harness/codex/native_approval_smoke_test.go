@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -25,13 +26,14 @@ func TestManualNativeApprovalResponse(t *testing.T) {
 	if binary == "" {
 		t.Skip("explicit installed native harness with local scripted responses only")
 	}
-	for _, kind := range []string{"command-accept", "command-cancel", "file-accept", "permissions-grant"} {
+	for _, kind := range []string{"command-accept", "command-cancel", "file-accept", "permissions-grant", "permissions-session", "permissions-strict", "permissions-empty"} {
 		t.Run(kind, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			provider, requests, output := nativeApprovalProvider(t, kind)
 			cfg := nativeFixtureConfig(t, binary, provider.URL)
-			if kind == "permissions-grant" {
+			cfg.Process.Logger = slog.New(slog.NewJSONHandler(os.Stderr, nil))
+			if strings.HasPrefix(kind, "permissions-") {
 				// This under-development native tool is opt-in only in this private
 				// fixture, matching the pinned upstream app-server test profile.
 				file, err := os.OpenFile(filepath.Join(cfg.Home, "config.toml"), os.O_APPEND|os.O_WRONLY, 0o600)
@@ -62,7 +64,7 @@ func TestManualNativeApprovalResponse(t *testing.T) {
 				t.Fatal(err)
 			}
 			var arrival domain.ID
-			closed, toolCompleted := false, false
+			closed, toolCompleted, accepted := false, false, false
 			for {
 				event, err := c.NextEvent(ctx)
 				if err != nil {
@@ -73,7 +75,7 @@ func TestManualNativeApprovalResponse(t *testing.T) {
 						t.Fatal("native approval lost original ownership")
 					}
 					request := event.Interaction.Approval
-					if kind == "permissions-grant" {
+					if strings.HasPrefix(kind, "permissions-") {
 						if request.Kind != PermissionsApproval || request.Permissions == nil || request.Permissions.Cwd != cfg.Process.Cwd || request.Permissions.Permissions.FileSystem == nil {
 							t.Fatal("expected exact native permissions request")
 						}
@@ -93,8 +95,19 @@ func TestManualNativeApprovalResponse(t *testing.T) {
 					}
 					var status InteractionStatus
 					var err error
-					if kind == "permissions-grant" {
-						status, err = c.GrantPermissions(ctx, domain.NewID(), arrival, turn.TurnID, PermissionGrant{Scope: PermissionTurn, Permissions: request.Permissions.Permissions})
+					if strings.HasPrefix(kind, "permissions-") {
+						grant := PermissionGrant{Scope: PermissionTurn, Permissions: request.Permissions.Permissions}
+						if kind == "permissions-session" {
+							grant.Scope = PermissionSession
+						}
+						if kind == "permissions-empty" {
+							grant.Permissions = PermissionProfile{}
+						}
+						if kind == "permissions-strict" {
+							strict := true
+							grant.StrictAutoReview = &strict
+						}
+						status, err = c.GrantPermissions(ctx, domain.NewID(), arrival, turn.TurnID, grant)
 					} else {
 						status, err = c.RespondApproval(ctx, domain.NewID(), arrival, turn.TurnID, decision)
 					}
@@ -108,6 +121,12 @@ func TestManualNativeApprovalResponse(t *testing.T) {
 					}
 					closed = true
 				}
+				if event.Kind == ApprovalAcceptedEvent {
+					if !strings.HasPrefix(kind, "permissions-") || event.InteractionState == nil || event.InteractionState.ID != arrival || event.InteractionState.ApprovalEvidence != PermissionOutputEvidence || !event.InteractionState.Accepted || accepted {
+						t.Fatal("foreign or duplicate native approval acceptance")
+					}
+					accepted = true
+				}
 				if event.Kind == ToolCompletedEvent {
 					if kind == "command-cancel" && event.Tool.Status != ToolDeclined {
 						t.Fatal("canceled native command was not declined")
@@ -119,7 +138,7 @@ func TestManualNativeApprovalResponse(t *testing.T) {
 				}
 			}
 			status, err := c.InspectInteraction(ctx, arrival)
-			if err != nil || !closed || (!toolCompleted && kind != "permissions-grant") || status.Accepted || !c.execution.interactions.blocksInput() {
+			if err != nil || !closed || (!toolCompleted && !strings.HasPrefix(kind, "permissions-")) || status.Accepted != (strings.HasPrefix(kind, "permissions-")) || accepted != status.Accepted || c.execution.interactions.blocksInput() == accepted {
 				t.Fatal("native approval lifecycle lost facts or inferred acceptance", err)
 			}
 			if kind != "command-cancel" && (requests.Load() != 2 || !output.Load()) {
@@ -134,7 +153,7 @@ func TestManualNativeApprovalResponse(t *testing.T) {
 			if err := c.Close(); err != nil {
 				t.Fatal(err)
 			}
-			t.Logf("Codex %s %s: exact original request, one response, separate closure/tool completion; no inferred semantic acceptance or external account", SupportedVersion, kind)
+			t.Logf("Codex %s %s: exact original request, one response, separate closure/tool completion; exact permission-output acceptance when available; no inferred command/file acceptance or external account", SupportedVersion, kind)
 		})
 	}
 }
@@ -161,7 +180,7 @@ func nativeApprovalProvider(t *testing.T, kind string) (*httptest.Server, *atomi
 			return
 		}
 		name := "exec_command"
-		if kind == "permissions-grant" {
+		if strings.HasPrefix(kind, "permissions-") {
 			name = "request_permissions"
 		}
 		if count == 1 {
@@ -180,16 +199,26 @@ func nativeApprovalProvider(t *testing.T, kind string) (*httptest.Server, *atomi
 					var text string
 					if json.Unmarshal(item.Output, &text) == nil && text != "" && (kind != "command-accept" || strings.Contains(text, "delidev-approval-fixture")) {
 						valid := true
-						if kind == "permissions-grant" {
+						if strings.HasPrefix(kind, "permissions-") {
 							var granted struct {
-								Scope       string `json:"scope"`
+								Scope       PermissionGrantScope `json:"scope"`
+								Strict      bool                 `json:"strict_auto_review"`
 								Permissions struct {
 									FileSystem struct {
 										Write []string `json:"write"`
 									} `json:"file_system"`
 								} `json:"permissions"`
 							}
-							valid = json.Unmarshal([]byte(text), &granted) == nil && granted.Scope == "turn" && len(granted.Permissions.FileSystem.Write) == 1 && filepath.IsAbs(granted.Permissions.FileSystem.Write[0])
+							scope := PermissionTurn
+							if kind == "permissions-session" {
+								scope = PermissionSession
+							}
+							valid = json.Unmarshal([]byte(text), &granted) == nil && granted.Scope == scope && granted.Strict == (kind == "permissions-strict")
+							if kind == "permissions-empty" {
+								valid = valid && len(granted.Permissions.FileSystem.Write) == 0
+							} else {
+								valid = valid && len(granted.Permissions.FileSystem.Write) == 1 && filepath.IsAbs(granted.Permissions.FileSystem.Write[0])
+							}
 						}
 						output.Store(valid)
 					}
@@ -212,7 +241,7 @@ func nativeApprovalProvider(t *testing.T, kind string) (*httptest.Server, *atomi
 			if kind == "file-accept" {
 				args, _ := json.Marshal(map[string]any{"cmd": "apply_patch <<'PATCH'\n*** Begin Patch\n*** Add File: approval-fixture.txt\n+delidev-approval-fixture\n*** End Patch\nPATCH"})
 				item = map[string]any{"type": "function_call", "id": "fc_approval_fixture", "call_id": "call_approval_fixture", "name": name, "arguments": string(args)}
-			} else if kind == "permissions-grant" {
+			} else if strings.HasPrefix(kind, "permissions-") {
 				args, _ := json.Marshal(map[string]any{"reason": "Private fixture workspace grant", "permissions": map[string]any{"file_system": map[string]any{"write": []string{"."}}}})
 				item = map[string]any{"type": "function_call", "id": "fc_approval_fixture", "call_id": "call_approval_fixture", "name": name, "arguments": string(args)}
 			} else {

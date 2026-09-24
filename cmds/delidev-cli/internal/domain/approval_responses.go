@@ -77,12 +77,13 @@ const (
 // its own original interaction, response and claim before any send or report.
 type ApprovalResponseClaim = QuestionResponseClaim
 type ApprovalResponse struct {
-	ID         ID                           `json:"id"`
-	State      ApprovalResponseState        `json:"state"`
-	Input      ApprovalResponseInput        `json:"input"`
-	AcceptedAt time.Time                    `json:"accepted_at"`
-	Claim      *ApprovalResponseClaim       `json:"claim,omitempty"`
-	Delivery   *ApprovalDeliveryObservation `json:"delivery,omitempty"`
+	ID         ID                             `json:"id"`
+	State      ApprovalResponseState          `json:"state"`
+	Input      ApprovalResponseInput          `json:"input"`
+	AcceptedAt time.Time                      `json:"accepted_at"`
+	Claim      *ApprovalResponseClaim         `json:"claim,omitempty"`
+	Delivery   *ApprovalDeliveryObservation   `json:"delivery,omitempty"`
+	Acceptance *ApprovalAcceptanceObservation `json:"acceptance,omitempty"`
 }
 type ApprovalDeliveryObservation struct {
 	State    ApprovalDelivery `json:"state"`
@@ -104,6 +105,37 @@ func (u ExecutionApprovalResponseUpdate) Validate() error {
 	}
 	if Text(u.NativeItemID, "native approval item", 1024, true) != nil || !slices.Contains([]ApprovalDelivery{ApprovalNotSent, ApprovalTransmitted, ApprovalDeliveryUncertain}, u.Delivery) {
 		return invalidApprovalResponse()
+	}
+	return nil
+}
+
+// Acceptance is a separately correlated native processing fact. The initial
+// evidence profile supports the exact effective permission-tool response only;
+// command/file completion and native closure cannot substitute for it.
+type ApprovalAcceptanceEvidence string
+
+const NativePermissionsOutput ApprovalAcceptanceEvidence = "native-permissions-output"
+
+type ApprovalAcceptanceObservation struct {
+	Evidence ApprovalAcceptanceEvidence `json:"evidence"`
+	Sequence uint64                     `json:"sequence"`
+}
+type ExecutionApprovalAcceptanceUpdate struct {
+	InteractionID ID                         `json:"interaction_id"`
+	ResponseID    ID                         `json:"response_id"`
+	ClaimID       ID                         `json:"claim_id"`
+	NativeItemID  string                     `json:"native_item_id"`
+	Evidence      ApprovalAcceptanceEvidence `json:"evidence"`
+}
+
+func (u ExecutionApprovalAcceptanceUpdate) Validate() error {
+	for _, id := range []ID{u.InteractionID, u.ResponseID, u.ClaimID} {
+		if err := id.Validate(); err != nil {
+			return err
+		}
+	}
+	if Text(u.NativeItemID, "native approval item", 1024, true) != nil || u.Evidence != NativePermissionsOutput {
+		return Fail(InvalidArgument, "Unknown native approval acceptance evidence.", "Retain exact owned permission-tool output; transmission, closure and tool completion cannot replace it.")
 	}
 	return nil
 }

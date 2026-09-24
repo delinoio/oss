@@ -81,6 +81,8 @@ Versioned typed failures carry safe recovery guidance and correlation IDs. Never
 
 `PublishExecution.approval-delivery-observed` contains one dedicated `approval_response` with interaction/response/claim UUIDs, native item identity and closed delivery enum. Content never enters this event or claim receipts. The server preserves one immutable observation/sequence and separately tracks unconfirmed acceptance; native closure, tool success and terminal cleanup cannot mark semantic acceptance. The product interaction stores `approval_response` separately from the question-only `response` field, preserving existing readers and schema version. No database schema migration is required.
 
+`PublishExecution.approval-accepted` adds one closed content-free `approval_acceptance` payload with interaction/response/claim UUIDs, native item identity and `native-permissions-output` evidence. It is valid only for the exact retained Codex permissions grant after a possible-delivery observation from the current owning Worker. The server stores evidence/sequence under `approval_response.acceptance`, marks the response accepted and decrements outstanding acceptance once; original grant, delivery, closure and independent recovery remain unchanged. Command/file approvals, foreign/duplicate evidence and content-bearing payloads fail atomically. Exact outbox/receipt replay repeats no native send or accounting. This additive domain JSON form changes neither protobuf fields nor database schema. Native history recovery remains separate required work.
+
 ## Build and Test
 Use the root pinned Buf/Go protobuf/Connect generators. Never edit generated code. Run schema formatting/lint, generation freshness, and command integration tests after protocol edits.
 

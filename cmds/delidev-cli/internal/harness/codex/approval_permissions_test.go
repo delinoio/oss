@@ -111,3 +111,44 @@ func TestNativePermissionsApprovalTransmitsOnlyItsOriginalGrant(t *testing.T) {
 		t.Fatal("permission closure inferred semantic acceptance")
 	}
 }
+
+func TestNativePermissionEntriesOverrideDeprecatedMirrors(t *testing.T) {
+	for _, entries := range []string{`[]`, `[{"access":"write","path":{"type":"path","path":"/effective"}}]`} {
+		requested := decodePermissionFixture(t, `{"fileSystem":{"write":["/ignored"],"entries":`+entries+`}}`)
+		request := &PermissionsApprovalRequest{Cwd: "/fixture", Permissions: requested}
+		before, _ := json.Marshal(request)
+		for _, test := range []struct {
+			profile string
+			allowed bool
+		}{
+			{`{"fileSystem":{"write":["/ignored"]}}`, false},
+			{`{"fileSystem":{"read":["/effective"]}}`, entries != `[]`},
+			{`{"fileSystem":{"write":["/ignored"],"entries":[]}}`, true},
+			{`{"fileSystem":{"entries":` + entries + `}}`, true},
+		} {
+			grant := PermissionGrant{Scope: PermissionTurn, Permissions: decodePermissionFixture(t, test.profile)}
+			if (grant.validate(request) == nil) != test.allowed {
+				t.Fatal("native entries precedence changed grant authority")
+			}
+		}
+		after, _ := json.Marshal(request)
+		if string(before) != string(after) {
+			t.Fatal("validation rewrote original native request")
+		}
+		full, err := permissionGrantDigest(PermissionGrant{Scope: PermissionTurn, Permissions: requested})
+		if err != nil {
+			t.Fatal(err)
+		}
+		effective := decodePermissionFixture(t, `{"fileSystem":{"entries":`+entries+`}}`)
+		canonical, err := permissionGrantDigest(PermissionGrant{Scope: PermissionTurn, Permissions: effective})
+		if err != nil || full != canonical {
+			t.Fatal("ignored mirrors changed exact native processing evidence", err)
+		}
+		if entries == `[]` {
+			empty, err := permissionGrantDigest(PermissionGrant{Scope: PermissionTurn})
+			if err != nil || full != empty {
+				t.Fatal("present empty entries did not override legacy access")
+			}
+		}
+	}
+}

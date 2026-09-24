@@ -188,29 +188,19 @@ func (g PermissionGrant) validate(request *PermissionsApprovalRequest) error {
 		}
 		return nil
 	}
-	for _, p := range f.Read {
-		if !slices.Contains(r.Read, p) && !slices.Contains(r.Write, p) {
-			return invalid()
-		}
-	}
-	for _, p := range f.Write {
-		if !slices.Contains(r.Write, p) {
-			return invalid()
-		}
-	}
-	for _, entry := range f.Entries {
-		if !slices.ContainsFunc(r.Entries, func(original FilePermissionEntry) bool {
+	granted, requested := effectivePermissionEntries(f), effectivePermissionEntries(r)
+	for _, entry := range granted {
+		if !slices.ContainsFunc(requested, func(original FilePermissionEntry) bool {
 			return reflect.DeepEqual(original.Path, entry.Path) && (original.Access == entry.Access || (original.Access == FilePermissionWrite && entry.Access == FilePermissionRead))
 		}) {
 			return invalid()
 		}
 	}
-	if len(f.Read) != 0 || len(f.Write) != 0 || len(f.Entries) != 0 {
-		// Native intersection remains authoritative. Retain every requested deny
-		// descriptor as well so the selected grant never drops a restriction
-		// while approving another path; this code never resolves path overlap.
-		for _, entry := range r.Entries {
-			if entry.Access == FilePermissionDeny && !slices.ContainsFunc(f.Entries, func(granted FilePermissionEntry) bool { return reflect.DeepEqual(entry, granted) }) {
+	if len(granted) != 0 {
+		// Retain effective deny descriptors while granting any filesystem access.
+		// Native entries take precedence over their deprecated read/write mirrors.
+		for _, entry := range requested {
+			if entry.Access == FilePermissionDeny && !slices.ContainsFunc(granted, func(selected FilePermissionEntry) bool { return reflect.DeepEqual(entry, selected) }) {
 				return invalid()
 			}
 		}
@@ -219,4 +209,24 @@ func (g PermissionGrant) validate(request *PermissionsApprovalRequest) error {
 		return invalid()
 	}
 	return nil
+}
+
+// The pinned app-server conversion treats a present entries collection,
+// including an empty one, as authoritative over legacy read/write mirrors.
+// Preserve descriptor order and bytes; this does not interpret filesystem paths.
+func effectivePermissionEntries(fs *AdditionalFilePermissions) []FilePermissionEntry {
+	if fs == nil {
+		return nil
+	}
+	if fs.Entries != nil {
+		return slices.Clone(fs.Entries)
+	}
+	result := make([]FilePermissionEntry, 0, len(fs.Read)+len(fs.Write))
+	for _, path := range fs.Read {
+		result = append(result, FilePermissionEntry{Access: FilePermissionRead, Path: FilePermissionPathValue{Kind: FilePermissionPath, Path: &path}})
+	}
+	for _, path := range fs.Write {
+		result = append(result, FilePermissionEntry{Access: FilePermissionWrite, Path: FilePermissionPathValue{Kind: FilePermissionPath, Path: &path}})
+	}
+	return result
 }

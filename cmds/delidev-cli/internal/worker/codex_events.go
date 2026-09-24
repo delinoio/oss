@@ -20,6 +20,7 @@ type CodexEventPublisher struct {
 	tools             map[string]codexToolPublication
 	artifacts         map[string]codexArtifactPublication
 	interactions      map[domain.ID]domain.ExecutionInteractionUpdate
+	approvalKinds     map[domain.ID]domain.CodexApprovalKind
 	questionResponses map[domain.ID]domain.ExecutionQuestionResponseUpdate
 	approvalResponses map[domain.ID]domain.ExecutionApprovalResponseUpdate
 	acceptedInputs    []domain.ExecutionInputBinding
@@ -29,7 +30,7 @@ type CodexEventPublisher struct {
 }
 
 func NewCodexEventPublisher(publisher *ExecutionPublisher) *CodexEventPublisher {
-	return &CodexEventPublisher{publisher: publisher, messages: map[string]domain.ExecutionMessageUpdate{}, tools: map[string]codexToolPublication{}, artifacts: map[string]codexArtifactPublication{}, interactions: map[domain.ID]domain.ExecutionInteractionUpdate{}, questionResponses: map[domain.ID]domain.ExecutionQuestionResponseUpdate{}, approvalResponses: map[domain.ID]domain.ExecutionApprovalResponseUpdate{}, steers: map[domain.ID]domain.ExecutionSteerUpdate{}}
+	return &CodexEventPublisher{publisher: publisher, messages: map[string]domain.ExecutionMessageUpdate{}, tools: map[string]codexToolPublication{}, artifacts: map[string]codexArtifactPublication{}, interactions: map[domain.ID]domain.ExecutionInteractionUpdate{}, approvalKinds: map[domain.ID]domain.CodexApprovalKind{}, questionResponses: map[domain.ID]domain.ExecutionQuestionResponseUpdate{}, approvalResponses: map[domain.ID]domain.ExecutionApprovalResponseUpdate{}, steers: map[domain.ID]domain.ExecutionSteerUpdate{}}
 }
 
 func (c *CodexEventPublisher) publish(ctx context.Context, event domain.ExecutionEvent) error {
@@ -169,6 +170,8 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 		return true, nil
 	case codex.ThreadStatusEvent:
 		return c.publishWaiting(ctx, event.Status)
+	case codex.ApprovalAcceptedEvent:
+		return true, c.publishApprovalAcceptance(ctx, event)
 	case codex.QuestionAcceptedEvent:
 		return true, c.publishQuestionAcceptance(ctx, event)
 	case codex.InteractionRequestedEvent, codex.InteractionClosedEvent:

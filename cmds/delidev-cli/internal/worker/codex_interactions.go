@@ -98,6 +98,11 @@ func (c *CodexEventPublisher) publishInteraction(ctx context.Context, e codex.Ev
 	if err := c.publish(ctx, domain.ExecutionEvent{Kind: kind, Interaction: &update}); err != nil {
 		return err
 	}
+	if update.Approval != nil {
+		// Acceptance needs the original closed kind, not another retained copy
+		// of commands, paths or permission profiles. Keep it through closure.
+		c.approvalKinds[update.ID] = update.Approval.Codex.Kind
+	}
 	update.Questions = nil // Durable original question content belongs to the server.
 	update.Approval = nil  // The original approval also belongs to server retention.
 	if update.NativeRequestID.Number != nil {

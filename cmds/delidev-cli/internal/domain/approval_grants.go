@@ -48,29 +48,19 @@ func (g CodexPermissionGrant) Validate(request *CodexPermissionsApprovalRequest)
 		}
 		return nil
 	}
-	for _, p := range f.Read {
-		if !slices.Contains(r.Read, p) && !slices.Contains(r.Write, p) {
-			return invalid()
-		}
-	}
-	for _, p := range f.Write {
-		if !slices.Contains(r.Write, p) {
-			return invalid()
-		}
-	}
-	for _, entry := range f.Entries {
-		if !slices.ContainsFunc(r.Entries, func(original CodexFilePermissionEntry) bool {
+	granted, requested := effectiveCodexPermissionEntries(f), effectiveCodexPermissionEntries(r)
+	for _, entry := range granted {
+		if !slices.ContainsFunc(requested, func(original CodexFilePermissionEntry) bool {
 			return reflect.DeepEqual(original.Path, entry.Path) && (original.Access == entry.Access || (original.Access == CodexFilePermissionWrite && entry.Access == CodexFilePermissionRead))
 		}) {
 			return invalid()
 		}
 	}
-	if len(f.Read) != 0 || len(f.Write) != 0 || len(f.Entries) != 0 {
-		// Native intersection remains authoritative. Retain every requested deny
-		// descriptor as well so the selected grant never drops a restriction
-		// while approving another path; this code never resolves path overlap.
-		for _, entry := range r.Entries {
-			if entry.Access == CodexFilePermissionDeny && !slices.ContainsFunc(f.Entries, func(granted CodexFilePermissionEntry) bool { return reflect.DeepEqual(entry, granted) }) {
+	if len(granted) != 0 {
+		// Retain effective deny descriptors while granting any filesystem access.
+		// Native entries take precedence over their deprecated read/write mirrors.
+		for _, entry := range requested {
+			if entry.Access == CodexFilePermissionDeny && !slices.ContainsFunc(granted, func(selected CodexFilePermissionEntry) bool { return reflect.DeepEqual(entry, selected) }) {
 				return invalid()
 			}
 		}
@@ -79,4 +69,24 @@ func (g CodexPermissionGrant) Validate(request *CodexPermissionsApprovalRequest)
 		return invalid()
 	}
 	return nil
+}
+
+// The pinned app-server conversion treats a present entries collection,
+// including an empty one, as authoritative over legacy read/write mirrors.
+// Preserve descriptor order and bytes; this does not interpret filesystem paths.
+func effectiveCodexPermissionEntries(fs *CodexAdditionalFilePermissions) []CodexFilePermissionEntry {
+	if fs == nil {
+		return nil
+	}
+	if fs.Entries != nil {
+		return slices.Clone(fs.Entries)
+	}
+	result := make([]CodexFilePermissionEntry, 0, len(fs.Read)+len(fs.Write))
+	for _, path := range fs.Read {
+		result = append(result, CodexFilePermissionEntry{Access: CodexFilePermissionRead, Path: CodexFilePermissionPathValue{Kind: CodexFilePermissionPath, Path: &path}})
+	}
+	for _, path := range fs.Write {
+		result = append(result, CodexFilePermissionEntry{Access: CodexFilePermissionWrite, Path: CodexFilePermissionPathValue{Kind: CodexFilePermissionPath, Path: &path}})
+	}
+	return result
 }
