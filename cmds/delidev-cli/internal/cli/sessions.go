@@ -10,7 +10,7 @@ import (
 )
 
 func sessionChangeJSON(change *pb.SessionChange) any {
-	return map[string]any{"session": resourceJSON(change.Session), "input": resourceJSON(change.Input), "workspace_job": resourceJSON(change.WorkspaceJob), "recovery_job": resourceJSON(change.RecoveryJob), "execution_job": resourceJSON(change.ExecutionJob), "replayed": change.Replayed}
+	return map[string]any{"session": resourceJSON(change.Session), "input": resourceJSON(change.Input), "workspace_job": resourceJSON(change.WorkspaceJob), "recovery_job": resourceJSON(change.RecoveryJob), "execution_job": resourceJSON(change.ExecutionJob), "execution_recovery_job": resourceJSON(change.ExecutionRecoveryJob), "replayed": change.Replayed}
 }
 
 func sessionWorkspaceWait(ctx context.Context, c client, change *pb.SessionChange, wait bool, recovery bool) (any, error) {
@@ -85,7 +85,7 @@ func sessionCommand(ctx context.Context, c client, o options, args []string, str
 		input := f.String("input", "-", "")
 		wait := new(bool)
 		if action == "create" {
-			wait = f.Bool("wait", false, "wait for workspace preparation within the command deadline")
+			wait = f.Bool("wait", false, "wait for the accepted Worker job within the command deadline")
 		}
 		var id *string
 		if action == "enqueue" {
@@ -151,12 +151,16 @@ func sessionCommand(ctx context.Context, c client, o options, args []string, str
 			return nil, rpc.ClientError(err)
 		}
 		return map[string]any{"sessions": resourcesJSON(response.Msg.Sessions), "next_page_token": response.Msg.NextPageToken}, nil
-	case "stop", "archive", "restore", "unarchive", "resume", "rename", "prepare", "recover-workspace":
+	case "stop", "archive", "restore", "unarchive", "resume", "rename", "prepare", "recover-workspace", "recover-execution":
 		id := f.String("id", "", "")
 		revision := f.Uint64("revision", 0, "")
 		wait := new(bool)
-		if action == "prepare" || action == "recover-workspace" {
-			wait = f.Bool("wait", false, "wait for workspace preparation within the command deadline")
+		if action == "prepare" || action == "recover-workspace" || action == "recover-execution" {
+			wait = f.Bool("wait", false, "wait for the accepted Worker job within the command deadline")
+		}
+		execution := new(string)
+		if action == "recover-execution" {
+			execution = f.String("execution-id", "", "exact retained execution to reconcile")
 		}
 		cleanup := new(bool)
 		if action == "recover-workspace" {
@@ -173,6 +177,16 @@ func sessionCommand(ctx context.Context, c client, o options, args []string, str
 			return nil, domain.Fail(domain.MissingInput, "Session controls require an ID and current revision.", "Provide --id and --revision from session get.")
 		}
 		meta := &pb.Mutation{RequestId: string(o.requestID), Id: *id, ExpectedRevision: *revision}
+		if action == "recover-execution" {
+			if err := domain.ID(*execution).Validate(); err != nil {
+				return nil, err
+			}
+			response, err := c.sessions.RecoverSessionExecution(ctx, request(c, &pb.RecoverSessionExecutionRequest{Mutation: meta, ExpectedExecutionId: *execution}))
+			if err != nil {
+				return nil, rpc.ClientError(err)
+			}
+			return sessionExecutionRecoveryWait(ctx, c, response.Msg.Change, *wait)
+		}
 		if action == "recover-workspace" {
 			response, err := c.sessions.RecoverSessionWorkspace(ctx, request(c, &pb.RecoverSessionWorkspaceRequest{Mutation: meta, Cleanup: *cleanup}))
 			if err != nil {
@@ -262,4 +276,36 @@ func queueCommand(ctx context.Context, c client, o options, args []string, strea
 		return sessionChangeJSON(response.Msg.Change), nil
 	}
 	return nil, usage()
+}
+
+func sessionExecutionRecoveryWait(ctx context.Context, c client, change *pb.SessionChange, wait bool) (any, error) {
+	if !wait {
+		return sessionChangeJSON(change), nil
+	}
+	if change.ExecutionRecoveryJob == nil {
+		return sessionChangeJSON(change), domain.ExecutionRecoveryUncertain()
+	}
+	job, err := awaitJob(ctx, c, change.ExecutionRecoveryJob)
+	change.ExecutionRecoveryJob = job
+	if err != nil {
+		return sessionChangeJSON(change), err
+	}
+	for _, target := range []**pb.Resource{&change.Session, &change.ExecutionJob} {
+		if *target == nil {
+			return sessionChangeJSON(change), domain.ExecutionRecoveryUncertain()
+		}
+		current, err := c.resources.GetResource(ctx, request(c, &pb.GetResourceRequest{Kind: (*target).Kind, Id: (*target).Id}))
+		if err != nil {
+			return sessionChangeJSON(change), rpc.ClientError(err)
+		}
+		*target = current.Msg.Resource
+	}
+	var state domain.Job
+	if err := domain.Decode(job.DocumentJson, &state); err != nil {
+		return sessionChangeJSON(change), err
+	}
+	if state.Problem != nil {
+		return sessionChangeJSON(change), state.Problem
+	}
+	return sessionChangeJSON(change), nil
 }

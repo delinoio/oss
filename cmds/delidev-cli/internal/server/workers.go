@@ -438,6 +438,10 @@ func (s *Service) ReportWork(ctx context.Context, req *connect.Request[pb.Report
 		if problem == nil {
 			outputJSON := req.Msg.OutputJson
 			switch job.Type {
+			case domain.RecoverExecutionJob:
+				if validateExecutionRecoveryResult(tx, record, job, req.Msg.OutputJson) != nil {
+					problem = domain.ExecutionRecoveryUncertain()
+				}
 			case domain.RecoverWorkspaceJob:
 				var expected workspace.RecoveryRequest
 				if err := domain.Decode(job.Input, &expected); err != nil {
@@ -549,6 +553,9 @@ func (s *Service) ReportWork(ctx context.Context, req *connect.Request[pb.Report
 		if err := finishRepositorySave(tx, job.ParentID); err != nil {
 			return nil, err
 		}
+		if job.Type == domain.RecoverExecutionJob {
+			return store.Record{ID: saved.ID}, nil
+		}
 		return saved, nil
 	})
 	if err != nil {
@@ -572,7 +579,7 @@ func (s *Service) ReportWork(ctx context.Context, req *connect.Request[pb.Report
 			if err != nil {
 				return err
 			}
-			if job.MachineID != machine || job.InstanceID != instance || job.Type != domain.ExecuteSessionJob {
+			if job.MachineID != machine || job.InstanceID != instance || (job.Type != domain.ExecuteSessionJob && job.Type != domain.RecoverExecutionJob) {
 				return executionEventConflict()
 			}
 			return nil

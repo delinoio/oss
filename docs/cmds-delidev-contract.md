@@ -96,3 +96,7 @@ The pinned Codex API profile exposes `session steer --id SESSION --input-id INPU
 
 
 Question and approval response controllers now automatically inspect native state after uncertain pipe delivery. This read preserves the original response identity and transport fact, verifies the same connection's thread/turn/input scope, and keeps missing evidence paused without resending. Already observed exact live proof continues through its original durable publication. This does not provide historical acceptance reconstruction or process-replacement recovery; those remain required by the complete issue contract.
+
+
+### Explicit retained execution recovery
+The supported completed-execution profile exposes `session recover-execution --id ID --revision N --execution-id ID [--wait]` through the owner/client `RecoverSessionExecution` RPC. It queues a dedicated metadata-only inspection on the original paired Worker scope and publishes verified original completion plus current session recovery atomically. It never resends native input or starts a harness, and successful recovery retains pause until explicit Resume. Missing event/response evidence or incomplete ownership proof remains recovery-required. The complete comparison, retry and Archive boundaries are defined in `docs/cmds-delidev-sessions-contract.md`; native process reattachment and historical acceptance reconstruction remain separate open requirements.

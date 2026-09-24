@@ -32,12 +32,7 @@ type CompletedExecutionRef struct {
 // content-free checkpoint binding. A coordinator must independently authorize
 // recovery, match terminal progress and preserve pause; this is no new report
 // authority for an old Worker instance and never authorizes input replay.
-type CompletedExecutionEvidence struct {
-	Version    uint32                     `json:"version"`
-	JobID      domain.ID                  `json:"job_id"`
-	ReportID   domain.ID                  `json:"report_id"`
-	Completion domain.ExecutionCompletion `json:"completion"`
-}
+type CompletedExecutionEvidence = domain.ExecutionRecoveryEvidence
 
 type completionInspectionStage string
 
@@ -125,7 +120,7 @@ func InspectCompletedExecution(ctx context.Context, manager *workspace.Manager, 
 	if err := bounded.Err(); err != nil {
 		return evidence, domain.SafeError(err)
 	}
-	manager.Logger.InfoContext(bounded, "completed_native_execution_inspected", "session_id", ref.Checkpoint.SessionID, "job_id", job, "execution_id", completion.ExecutionID, "outcome", completion.Outcome)
+	logger.InfoContext(bounded, "completed_native_execution_inspected", "session_id", ref.Checkpoint.SessionID, "job_id", job, "execution_id", completion.ExecutionID, "outcome", completion.Outcome)
 	return CompletedExecutionEvidence{Version: 1, JobID: job, ReportID: prior.ReportID, Completion: completion}, nil
 }
 

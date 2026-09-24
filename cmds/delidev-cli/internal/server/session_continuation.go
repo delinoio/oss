@@ -121,6 +121,7 @@ func queueContinuation(tx *store.Tx, sr store.Record, session domain.Session, ex
 	}
 	session.CurrentExecution = &domain.ExecutionSelection{ID: input.ExecutionID, InputID: input.InputID, AccountID: input.AccountID, ConnectionID: input.ConnectionID}
 	session.ActiveExecutionID, session.Outcome, session.Dispatch = input.ExecutionID, domain.ExecutionNotStarted, domain.DispatchClaimed
+	session.ExecutionRecoveryJobID = ""
 	session.Execution, session.Problem, session.NextExecutionIntent = nil, nil, ""
 	if _, err := tx.Put(domain.SessionKind, sr.ID, sr.Revision, sr.ID, sr.ProjectID, session); err != nil {
 		return store.Record{}, err

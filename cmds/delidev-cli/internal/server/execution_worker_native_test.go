@@ -32,6 +32,7 @@ type nativeWorkerScenario uint8
 
 const (
 	nativeWorkerCompletion nativeWorkerScenario = iota
+	nativeWorkerRecovery
 	nativeWorkerCommand
 	nativeWorkerPlan
 	nativeWorkerRevocation
@@ -43,6 +44,10 @@ const (
 	nativeWorkerApprovalStop
 	nativeWorkerApprovalResponse
 )
+
+func TestManualNativeWorkerRecoversLostCompletionAfterRestart(t *testing.T) {
+	testManualNativeWorkerExecution(t, nativeWorkerRecovery)
+}
 
 func TestManualNativeWorkerExecutesAcceptedCodexJob(t *testing.T) {
 	testManualNativeWorkerExecution(t, nativeWorkerCompletion)
@@ -115,7 +120,7 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 	questionScenario := scenario == nativeWorkerQuestionStop || scenario == nativeWorkerQuestionResponse
 	approvalScenario := scenario == nativeWorkerApprovalStop || approvalResponseScenario
 	interactionScenario := questionScenario || approvalScenario
-	completedScenario := scenario == nativeWorkerCompletion || toolScenario || responseScenario
+	completedScenario := scenario == nativeWorkerCompletion || scenario == nativeWorkerRecovery || toolScenario || responseScenario
 	var calls atomic.Int64
 	started, upstreamStopped := make(chan struct{}, 1), make(chan struct{}, 1)
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -239,7 +244,41 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 		input.Manifest, _ = json.Marshal(manifest)
 		input.Installation.ResolvedPath = binary
 	}, true))
-	credential := worker.Credential{Version: 1, Type: domain.WorkerDevice, Endpoint: f.http.URL, ServerID: f.service.Identity.ServerID, DeviceID: f.device, MachineID: f.input.MachineID, PairingID: domain.NewID(), Token: f.workerToken}
+	endpoint := f.http.URL
+	lostReport := make(chan struct{}, 1)
+	var allowRecovery atomic.Bool
+	if scenario == nativeWorkerRecovery {
+		originalHandler := f.http.Config.Handler
+		faultServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == delidevv1connect.WorkerServiceReportWorkProcedure && !allowRecovery.Load() {
+				select {
+				case lostReport <- struct{}{}:
+				default:
+				}
+				http.Error(w, "scripted lost completion report", http.StatusServiceUnavailable)
+				return
+			}
+			originalHandler.ServeHTTP(w, r)
+		}))
+		t.Cleanup(faultServer.Close)
+		endpoint = faultServer.URL
+		_, err := f.service.Store.Mutate(ctx, domain.NewID(), "fixture.native-recovery-preparation", nil, func(tx *store.Tx) (any, error) {
+			sr, session, err := sessionRecord(tx, f.input.SessionID)
+			if err != nil {
+				return nil, err
+			}
+			id := domain.NewID()
+			if _, err := tx.PutJob(id, 0, sr.ID, "", domain.Job{Type: domain.PrepareWorkspaceJob, State: domain.JobSucceeded, MachineID: session.MachineID, Input: f.input.Preparation, Output: f.input.Manifest, AcceptedAt: time.Now().UTC()}); err != nil {
+				return nil, err
+			}
+			session.Preparation = &domain.SessionPreparation{JobID: id, State: domain.PreparationReady}
+			return tx.Put(sr.Kind, sr.ID, sr.Revision, sr.ID, "", session)
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	credential := worker.Credential{Version: 1, Type: domain.WorkerDevice, Endpoint: endpoint, ServerID: f.service.Identity.ServerID, DeviceID: f.device, MachineID: f.input.MachineID, PairingID: domain.NewID(), Token: f.workerToken}
 	raw, _ := json.Marshal(credential)
 	if err := security.WriteAtomic(filepath.Join(manager.Root, "device.json"), raw); err != nil {
 		t.Fatal(err)
@@ -252,6 +291,21 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 		workerErr = worker.Run(running, worker.Config{Root: manager.Root, Logger: slog.New(slog.NewJSONHandler(os.Stderr, nil))})
 	}()
 	t.Cleanup(func() { stopWorker(); <-done })
+	if scenario == nativeWorkerRecovery {
+		select {
+		case <-lostReport:
+		case <-ctx.Done():
+			t.Fatal("native completion did not reach the fault boundary")
+		}
+		stopWorker()
+		select {
+		case <-done:
+		case <-ctx.Done():
+			t.Fatal("original Worker did not stop")
+		}
+		recoverRestartedNativeWorker(t, ctx, f, manager.Root, &allowRecovery, &calls)
+		return
+	}
 	responseAccepted := make(chan error, 1)
 	if responseScenario {
 		responderDone := make(chan struct{})
@@ -695,4 +749,80 @@ func assertNativeWorkerCheckpoint(t *testing.T, f *publicationFixture, root stri
 	if err != nil || evidence.Completion != completion || evidence.JobID != f.job || evidence.ReportID.Validate() != nil {
 		t.Fatal("native Worker completion could not be independently inspected", err)
 	}
+}
+
+// This fault boundary loses the original report before coordinator acceptance,
+// after the real Worker retained terminal events, native checkpoint and cleanup.
+func recoverRestartedNativeWorker(t *testing.T, ctx context.Context, f *publicationFixture, root string, allow *atomic.Bool, calls *atomic.Int64) {
+	t.Helper()
+	_, err := f.service.Store.Mutate(ctx, domain.NewID(), "fixture.expire-original-worker", nil, func(tx *store.Tx) (any, error) {
+		instance, _, err := tx.WorkerInstance(f.input.MachineID)
+		if err != nil {
+			return nil, err
+		}
+		return nil, tx.SetWorkerInstance(f.input.MachineID, instance, time.Now().UTC().Add(-2*time.Minute))
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	allow.Store(true)
+	running, cancel := context.WithCancel(ctx)
+	ready, done := make(chan domain.ID, 1), make(chan error, 1)
+	go func() {
+		done <- worker.Run(running, worker.Config{Root: root, Logger: slog.New(slog.NewJSONHandler(os.Stderr, nil)), Ready: func(id domain.ID) { ready <- id }})
+	}()
+	defer func() { cancel(); <-done }()
+	select {
+	case <-ready:
+	case err := <-done:
+		done <- err
+		t.Fatal("replacement Worker failed", err)
+	case <-ctx.Done():
+		t.Fatal("replacement Worker did not attach")
+	}
+	_, change := acceptRecovery(t, f)
+	id := domain.ID(change.ExecutionRecoveryJob.Id)
+	for {
+		changed := f.service.Store.Changed()
+		record, err := f.service.Store.Get(ctx, domain.JobKind, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		job, err := store.Decode[domain.Job](record)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if job.State.Terminal() || job.State == domain.JobUncertain {
+			if job.State != domain.JobSucceeded {
+				t.Fatalf("actual retained completion failed recovery: %v", job.Problem)
+			}
+			break
+		}
+		select {
+		case <-changed:
+		case <-ctx.Done():
+			t.Fatal("restarted Worker did not finish recovery")
+		}
+	}
+	record, err := f.service.Store.Get(ctx, domain.SessionKind, f.input.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := store.Decode[domain.Session](record)
+	if err != nil || session.Recovery != domain.NoRecovery || session.Dispatch != domain.DispatchPaused || session.ActiveExecutionID != "" || session.NextExecutionIntent != "" || session.Execution == nil || !session.Execution.CleanupVerified || session.Outcome != domain.ExecutionSucceeded || calls.Load() != 1 {
+		t.Fatal("recovery replayed native input or failed to retain pause", err)
+	}
+	original, err := f.service.Store.Get(ctx, domain.JobKind, f.job)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := store.Decode[domain.Job](original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var completion domain.ExecutionCompletion
+	if domain.Decode(job.Output, &completion) != nil || completion.Version != 2 || completion.Validate() != nil {
+		t.Fatal("recovered original completion is invalid")
+	}
+	assertNativeWorkerCheckpoint(t, f, root, completion)
 }

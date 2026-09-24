@@ -466,6 +466,12 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 			return journal{}, domain.Fail(domain.RecoveryRequired, "The workspace assignment has inconsistent ownership.", "Reconcile the accepted session and job before executing work.")
 		}
 	}
+	if job.Type == domain.RecoverExecutionJob {
+		var input domain.ExecutionRecoveryRequest
+		if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || string(input.SessionID) != resource.SessionId || input.MachineID != job.MachineID || input.JobID != job.ParentID {
+			return journal{}, domain.ExecutionRecoveryUncertain()
+		}
+	}
 	if job.Type == domain.RecoverWorkspaceJob {
 		var input workspace.RecoveryRequest
 		if err := domain.Decode(job.Input, &input); err != nil {
@@ -526,6 +532,8 @@ func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job
 	switch job.Type {
 	case domain.ExecuteSessionJob:
 		return executeSession(ctx, config, owner, job)
+	case domain.RecoverExecutionJob:
+		return recoverExecution(ctx, config, job)
 	case domain.RecoverWorkspaceJob:
 		bounded, stopRecovery := context.WithTimeout(ctx, 2*time.Minute)
 		defer stopRecovery()

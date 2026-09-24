@@ -514,6 +514,7 @@ service SessionService {
   rpc ControlSession(ControlSessionRequest) returns (ControlSessionResponse);
   rpc RenameSession(RenameSessionRequest) returns (RenameSessionResponse);
   rpc PrepareSessionWorkspace(PrepareSessionWorkspaceRequest) returns (PrepareSessionWorkspaceResponse);
+  rpc RecoverSessionExecution(RecoverSessionExecutionRequest) returns (RecoverSessionExecutionResponse);
   rpc RecoverSessionWorkspace(RecoverSessionWorkspaceRequest) returns (RecoverSessionWorkspaceResponse);
 }
 message SteerQueuedInputRequest {
@@ -537,6 +538,7 @@ message SessionChange {
   Resource workspace_job = 5;
   Resource recovery_job = 6;
   Resource execution_job = 7;
+  Resource execution_recovery_job = 8;
 }
 message CreateSessionRequest {
   string request_id = 1;
@@ -676,4 +678,13 @@ message SetInboxReadStateResponse {
   InboxView view = 1;
   string request_id = 2;
   bool replayed = 3;
+}
+
+// Reconcile retained completion only; successful recovery leaves dispatch paused.
+message RecoverSessionExecutionRequest {
+  Mutation mutation = 1;
+  string expected_execution_id = 2;
+}
+message RecoverSessionExecutionResponse {
+  SessionChange change = 1;
 }

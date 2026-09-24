@@ -98,6 +98,9 @@ func finishSessionWorkspace(tx *store.Tx, jobID domain.ID) error {
 		return err
 	}
 	job, err := store.Decode[domain.Job](r)
+	if err == nil && job.Type == domain.RecoverExecutionJob {
+		return finishExecutionRecovery(tx, r, job)
+	}
 	if err == nil && job.Type == domain.RecoverWorkspaceJob {
 		return finishWorkspaceRecovery(tx, r, job)
 	}

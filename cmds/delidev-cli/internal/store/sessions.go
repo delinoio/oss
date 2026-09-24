@@ -135,3 +135,39 @@ func (tx *Tx) OldestQueuedInput(session domain.ID) (Record, error) {
 	}
 	return rows[0], nil
 }
+
+// Completion recovery must not hide an uncertain Steer merely because its
+// pending pointer was retired by Worker loss or native terminal publication.
+func (tx *Tx) RequireSettledExecutionDeliveries(session, execution domain.ID, acceptedInputs int) error {
+	if session.Validate() != nil || execution.Validate() != nil || acceptedInputs < 1 || acceptedInputs > domain.MaxAcceptedExecutionInputs {
+		return domain.ExecutionRecoveryUncertain()
+	}
+	var unresolved bool
+	// A claimed response can become uncertain before a delivery observation
+	// increments the summary counter. Inspect original records independently.
+	err := tx.tx.QueryRowContext(tx.ctx, `SELECT EXISTS(
+ SELECT 1 FROM entities WHERE session_id=? AND json_extract(body,'$.execution_id')=? AND (
+  (kind='queue' AND json_extract(body,'$.delivery') IN ('claimed','uncertain')) OR
+  (kind='steer' AND json_extract(body,'$.state') IN ('queued','claimed','uncertain')) OR
+  (kind='interaction' AND (
+   json_extract(body,'$.closure')='open' OR
+   (json_type(body,'$.response')='object' AND COALESCE(json_extract(body,'$.response.state'),'') NOT IN ('accepted','canceled')) OR
+   (json_type(body,'$.approval_response')='object' AND COALESCE(json_extract(body,'$.approval_response.state'),'') NOT IN ('accepted','canceled'))
+  ))
+ ))`, session, execution).Scan(&unresolved)
+	if err != nil {
+		return storageError(err)
+	}
+	if unresolved {
+		return domain.ExecutionRecoveryUncertain()
+	}
+	var accepted int
+	err = tx.tx.QueryRowContext(tx.ctx, `SELECT COUNT(*) FROM entities WHERE kind='queue' AND session_id=? AND json_extract(body,'$.execution_id')=? AND json_extract(body,'$.delivery')='accepted'`, session, execution).Scan(&accepted)
+	if err != nil {
+		return storageError(err)
+	}
+	if accepted != acceptedInputs {
+		return domain.ExecutionRecoveryUncertain()
+	}
+	return nil
+}

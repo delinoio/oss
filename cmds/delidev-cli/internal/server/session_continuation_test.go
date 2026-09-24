@@ -498,3 +498,31 @@ func TestContinuationRejectsChangedReadinessAndUnprovenPredecessor(t *testing.T)
 		})
 	}
 }
+
+func TestContinuationClearsOnlyCurrentExecutionRecoveryReference(t *testing.T) {
+	f := newContinuationFixture(t, domain.ExecutionStopped)
+	recoveryID := domain.NewID()
+	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.recovered-predecessor", nil, func(tx *store.Tx) (any, error) {
+		sr, session, err := sessionRecord(tx, domain.ID(f.change.Session.Id))
+		if err != nil {
+			return nil, err
+		}
+		if _, err := tx.PutJob(recoveryID, 0, sr.ID, sr.ProjectID, domain.Job{Type: domain.RecoverExecutionJob, State: domain.JobSucceeded, MachineID: session.MachineID, ParentID: session.Execution.JobID, Input: json.RawMessage(`{}`), AcceptedAt: time.Now().UTC()}); err != nil {
+			return nil, err
+		}
+		session.ExecutionRecoveryJobID = recoveryID
+		return tx.Put(sr.Kind, sr.ID, sr.Revision, sr.ID, sr.ProjectID, session)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.enqueue(t, "Resume after verified recovery", domain.ExecuteMode)
+	f.control(t, pb.SessionAction_SESSION_ACTION_RESUME)
+	current, err := store.Decode[domain.Session](f.refresh(t))
+	if err != nil || current.ExecutionRecoveryJobID != "" || current.ActiveExecutionID == f.input.ExecutionID || current.ActiveExecutionID == "" {
+		t.Fatal("new execution inherited predecessor recovery ownership", err)
+	}
+	if _, err := f.service.Store.Get(context.Background(), domain.JobKind, recoveryID); err != nil {
+		t.Fatal("continuation deleted historical recovery", err)
+	}
+}

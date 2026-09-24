@@ -641,6 +641,7 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   session create --input FILE|- [--wait]
   session prepare --id ID --revision N [--wait]
   session recover-workspace --id ID --revision N [--cleanup] [--wait]
+  session recover-execution --id ID --revision N --execution-id ID [--wait]
   session list [--project-id ID] [--include-archived] [--limit N] [--page-token TOKEN]
   session enqueue --id ID --input FILE|-
   session steer --id SESSION --input-id INPUT --revision N --execution-id EXECUTION --turn-id TURN

@@ -97,3 +97,6 @@ Protocol changes update this contract and [command contract](cmds-delidev-contra
 ## References
 - [Project](project-delidev.md)
 - [Repository defaults](repository-defaults.md)
+
+### Completed execution recovery RPC
+`SessionService.RecoverSessionExecution` accepts a session mutation revision and exact `expected_execution_id`. Owner/client actor-bound, reference-only receipts return current `SessionChange` references; the additive `execution_recovery_job` field 8 is separate from preparation recovery field 6. The new closed `recover-execution` job carries only original assignment/scope/terminal/input-digest comparison facts and workspace metadata. Its content-free output retains the original report UUID and version-2 completion; it grants no old-instance report authority or execution credential. `ReportWork` checks current recovery-job ownership, validates original/current proof bindings again and atomically reconciles the original job/session while preserving pause. Recovery reports also use reference-only receipts. Worker loss or invalid evidence retains uncertainty; no RPC can infer missing native acceptance or resend input. This additive protocol/domain change requires no SQLite schema migration.

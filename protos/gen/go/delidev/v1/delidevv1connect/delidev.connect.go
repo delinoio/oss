@@ -180,6 +180,9 @@ const (
 	// SessionServicePrepareSessionWorkspaceProcedure is the fully-qualified name of the
 	// SessionService's PrepareSessionWorkspace RPC.
 	SessionServicePrepareSessionWorkspaceProcedure = "/delidev.v1.SessionService/PrepareSessionWorkspace"
+	// SessionServiceRecoverSessionExecutionProcedure is the fully-qualified name of the
+	// SessionService's RecoverSessionExecution RPC.
+	SessionServiceRecoverSessionExecutionProcedure = "/delidev.v1.SessionService/RecoverSessionExecution"
 	// SessionServiceRecoverSessionWorkspaceProcedure is the fully-qualified name of the
 	// SessionService's RecoverSessionWorkspace RPC.
 	SessionServiceRecoverSessionWorkspaceProcedure = "/delidev.v1.SessionService/RecoverSessionWorkspace"
@@ -1441,6 +1444,7 @@ type SessionServiceClient interface {
 	ControlSession(context.Context, *connect.Request[v1.ControlSessionRequest]) (*connect.Response[v1.ControlSessionResponse], error)
 	RenameSession(context.Context, *connect.Request[v1.RenameSessionRequest]) (*connect.Response[v1.RenameSessionResponse], error)
 	PrepareSessionWorkspace(context.Context, *connect.Request[v1.PrepareSessionWorkspaceRequest]) (*connect.Response[v1.PrepareSessionWorkspaceResponse], error)
+	RecoverSessionExecution(context.Context, *connect.Request[v1.RecoverSessionExecutionRequest]) (*connect.Response[v1.RecoverSessionExecutionResponse], error)
 	RecoverSessionWorkspace(context.Context, *connect.Request[v1.RecoverSessionWorkspaceRequest]) (*connect.Response[v1.RecoverSessionWorkspaceResponse], error)
 }
 
@@ -1515,6 +1519,12 @@ func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(sessionServiceMethods.ByName("PrepareSessionWorkspace")),
 			connect.WithClientOptions(opts...),
 		),
+		recoverSessionExecution: connect.NewClient[v1.RecoverSessionExecutionRequest, v1.RecoverSessionExecutionResponse](
+			httpClient,
+			baseURL+SessionServiceRecoverSessionExecutionProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("RecoverSessionExecution")),
+			connect.WithClientOptions(opts...),
+		),
 		recoverSessionWorkspace: connect.NewClient[v1.RecoverSessionWorkspaceRequest, v1.RecoverSessionWorkspaceResponse](
 			httpClient,
 			baseURL+SessionServiceRecoverSessionWorkspaceProcedure,
@@ -1536,6 +1546,7 @@ type sessionServiceClient struct {
 	controlSession          *connect.Client[v1.ControlSessionRequest, v1.ControlSessionResponse]
 	renameSession           *connect.Client[v1.RenameSessionRequest, v1.RenameSessionResponse]
 	prepareSessionWorkspace *connect.Client[v1.PrepareSessionWorkspaceRequest, v1.PrepareSessionWorkspaceResponse]
+	recoverSessionExecution *connect.Client[v1.RecoverSessionExecutionRequest, v1.RecoverSessionExecutionResponse]
 	recoverSessionWorkspace *connect.Client[v1.RecoverSessionWorkspaceRequest, v1.RecoverSessionWorkspaceResponse]
 }
 
@@ -1589,6 +1600,11 @@ func (c *sessionServiceClient) PrepareSessionWorkspace(ctx context.Context, req 
 	return c.prepareSessionWorkspace.CallUnary(ctx, req)
 }
 
+// RecoverSessionExecution calls delidev.v1.SessionService.RecoverSessionExecution.
+func (c *sessionServiceClient) RecoverSessionExecution(ctx context.Context, req *connect.Request[v1.RecoverSessionExecutionRequest]) (*connect.Response[v1.RecoverSessionExecutionResponse], error) {
+	return c.recoverSessionExecution.CallUnary(ctx, req)
+}
+
 // RecoverSessionWorkspace calls delidev.v1.SessionService.RecoverSessionWorkspace.
 func (c *sessionServiceClient) RecoverSessionWorkspace(ctx context.Context, req *connect.Request[v1.RecoverSessionWorkspaceRequest]) (*connect.Response[v1.RecoverSessionWorkspaceResponse], error) {
 	return c.recoverSessionWorkspace.CallUnary(ctx, req)
@@ -1606,6 +1622,7 @@ type SessionServiceHandler interface {
 	ControlSession(context.Context, *connect.Request[v1.ControlSessionRequest]) (*connect.Response[v1.ControlSessionResponse], error)
 	RenameSession(context.Context, *connect.Request[v1.RenameSessionRequest]) (*connect.Response[v1.RenameSessionResponse], error)
 	PrepareSessionWorkspace(context.Context, *connect.Request[v1.PrepareSessionWorkspaceRequest]) (*connect.Response[v1.PrepareSessionWorkspaceResponse], error)
+	RecoverSessionExecution(context.Context, *connect.Request[v1.RecoverSessionExecutionRequest]) (*connect.Response[v1.RecoverSessionExecutionResponse], error)
 	RecoverSessionWorkspace(context.Context, *connect.Request[v1.RecoverSessionWorkspaceRequest]) (*connect.Response[v1.RecoverSessionWorkspaceResponse], error)
 }
 
@@ -1676,6 +1693,12 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 		connect.WithSchema(sessionServiceMethods.ByName("PrepareSessionWorkspace")),
 		connect.WithHandlerOptions(opts...),
 	)
+	sessionServiceRecoverSessionExecutionHandler := connect.NewUnaryHandler(
+		SessionServiceRecoverSessionExecutionProcedure,
+		svc.RecoverSessionExecution,
+		connect.WithSchema(sessionServiceMethods.ByName("RecoverSessionExecution")),
+		connect.WithHandlerOptions(opts...),
+	)
 	sessionServiceRecoverSessionWorkspaceHandler := connect.NewUnaryHandler(
 		SessionServiceRecoverSessionWorkspaceProcedure,
 		svc.RecoverSessionWorkspace,
@@ -1704,6 +1727,8 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 			sessionServiceRenameSessionHandler.ServeHTTP(w, r)
 		case SessionServicePrepareSessionWorkspaceProcedure:
 			sessionServicePrepareSessionWorkspaceHandler.ServeHTTP(w, r)
+		case SessionServiceRecoverSessionExecutionProcedure:
+			sessionServiceRecoverSessionExecutionHandler.ServeHTTP(w, r)
 		case SessionServiceRecoverSessionWorkspaceProcedure:
 			sessionServiceRecoverSessionWorkspaceHandler.ServeHTTP(w, r)
 		default:
@@ -1753,6 +1778,10 @@ func (UnimplementedSessionServiceHandler) RenameSession(context.Context, *connec
 
 func (UnimplementedSessionServiceHandler) PrepareSessionWorkspace(context.Context, *connect.Request[v1.PrepareSessionWorkspaceRequest]) (*connect.Response[v1.PrepareSessionWorkspaceResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.PrepareSessionWorkspace is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) RecoverSessionExecution(context.Context, *connect.Request[v1.RecoverSessionExecutionRequest]) (*connect.Response[v1.RecoverSessionExecutionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.RecoverSessionExecution is not implemented"))
 }
 
 func (UnimplementedSessionServiceHandler) RecoverSessionWorkspace(context.Context, *connect.Request[v1.RecoverSessionWorkspaceRequest]) (*connect.Response[v1.RecoverSessionWorkspaceResponse], error) {
