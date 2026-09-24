@@ -362,7 +362,23 @@ pub(crate) fn emit_node(
             })?;
             let (w, h, ext) = image_info(bytes)?;
             let part = format!("ppt/media/forge-{}.{}", sha(bytes), ext);
-            parts.entry(part.clone()).or_insert_with(|| bytes.clone());
+            let part = match parts
+                .iter()
+                .find(|(name, _)| name.eq_ignore_ascii_case(&part))
+            {
+                Some((name, existing)) if existing == bytes => name.clone(),
+                Some(_) => {
+                    return error(
+                        ErrorCode::UnsupportedEdit,
+                        "/asset_ref",
+                        "Image media name collides with different package content",
+                    );
+                }
+                None => {
+                    parts.insert(part.clone(), bytes.clone());
+                    part
+                }
+            };
             add_content_type(
                 parts,
                 &part,

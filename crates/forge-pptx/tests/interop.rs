@@ -43,6 +43,48 @@ fn xml_part(parts: &std::collections::BTreeMap<String, Vec<u8>>, path: &str) -> 
     String::from_utf8(parts[path].clone()).unwrap()
 }
 #[test]
+fn image_media_collisions_never_select_unrelated_bytes() {
+    let handle = format!("asset_{}", sha(REPLACEMENT));
+    let media = format!("ppt/media/forge-{}.png", sha(REPLACEMENT));
+    for name in [media.clone(), media.to_ascii_uppercase()] {
+        for identical in [false, true] {
+            let mut parts = read_package(EXTERNAL).unwrap();
+            let original = if identical { REPLACEMENT } else { PNG };
+            parts.insert(name.clone(), original.to_vec());
+            let source = write_package(&parts).unwrap();
+            let imported = import(&source).unwrap();
+            let next = patch(
+                &imported,
+                vec![Operation::SetImageAsset {
+                    target: target(&imported.document, NodeKind::Image),
+                    asset_ref: handle.clone(),
+                }],
+            );
+            let mut assets = imported.assets.clone();
+            assets.insert(handle.clone(), REPLACEMENT.to_vec());
+            let result = update(
+                &source,
+                &imported.document,
+                &imported.bindings,
+                &next,
+                &assets,
+                imported.document_id,
+                1,
+            );
+            if identical {
+                let output = result.unwrap();
+                let reopened = import(&output).unwrap();
+                assert_eq!(reopened.assets[&handle], REPLACEMENT);
+                assert_eq!(read_package(&output).unwrap()[&name], original);
+            } else {
+                assert_eq!(result.unwrap_err().code, ErrorCode::UnsupportedEdit);
+            }
+            assert_eq!(read_package(&source).unwrap()[&name], original);
+        }
+    }
+}
+
+#[test]
 fn lexical_true_flips_remain_opaque_and_preserved() {
     let path = "ppt/slides/slide1.xml";
     let original = read_package(EXTERNAL).unwrap();
