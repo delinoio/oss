@@ -46,6 +46,11 @@ func (f *threadFixture) handleTurn(id json.RawMessage, method string, raw json.R
 	}
 	late := func() { time.Sleep(200 * time.Millisecond) }
 	switch method {
+	case "fixture/metadata":
+		for key, value := range params {
+			f.thread[key] = value
+		}
+		write(id, map[string]any{})
 	case "fixture/question":
 		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"id": params["requestId"], "method": "item/tool/requestUserInput", "params": map[string]any{"threadId": f.thread["id"], "turnId": f.turn, "itemId": func() any {
 			if params["itemId"] != nil {
@@ -86,6 +91,15 @@ func (f *threadFixture) handleTurn(id json.RawMessage, method string, raw json.R
 
 	case "turn/steer":
 		f.steerCount++
+		if f.mode == "thread-turn-late-steer-reject" {
+			late()
+			reject()
+			return true
+		}
+		if f.mode == "thread-turn-steer-unsupported" {
+			_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"id": id, "error": map[string]any{"code": -32601, "message": "fixture-protected-rejection"}})
+			return true
+		}
 		if params["expectedTurnId"] != string(f.turn) || (f.mode == "thread-turn-steer-reject" && f.steerCount == 1) {
 			reject()
 			return true

@@ -21,6 +21,7 @@ type CodexEventPublisher struct {
 	artifacts         map[string]codexArtifactPublication
 	interactions      map[domain.ID]domain.ExecutionInteractionUpdate
 	questionResponses map[domain.ID]domain.ExecutionQuestionResponseUpdate
+	acceptedInputs    []domain.ExecutionInputBinding
 	waiting           domain.NativeWaiting
 	blocked, finished bool
 }
@@ -88,7 +89,21 @@ func (c *CodexEventPublisher) AcceptInput(ctx context.Context, result codex.Turn
 		return publicationUncertain()
 	}
 	c.turn = result.TurnID
-	return c.publish(ctx, domain.ExecutionEvent{Kind: domain.ExecutionInputAccepted})
+	if err := c.publish(ctx, domain.ExecutionEvent{Kind: domain.ExecutionInputAccepted}); err != nil {
+		return err
+	}
+	c.acceptedInputs = []domain.ExecutionInputBinding{domain.BindExecutionInput(result.InputID, c.publisher.input.Input.Prompt)}
+	return nil
+}
+
+func (c *CodexEventPublisher) completionInputs() ([]domain.ExecutionInputBinding, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.blocked || !c.finished || c.publisher == nil || len(c.acceptedInputs) == 0 {
+		return nil, publicationUncertain()
+	}
+	primary := domain.BindExecutionInput(c.publisher.input.InputID, c.publisher.input.Input.Prompt)
+	return domain.CheckedExecutionInputs(primary.InputID, primary.PromptDigest, c.acceptedInputs)
 }
 
 // PublishCore reports whether this component handled the typed observation.

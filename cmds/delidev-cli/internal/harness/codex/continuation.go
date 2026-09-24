@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"slices"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/nativewire"
@@ -132,10 +133,12 @@ func (c *Client) VerifyContinuation(ctx context.Context, requestID domain.ID, ch
 	if err := ctx.Err(); err != nil {
 		return result, domain.SafeError(err)
 	}
-	state.turns[turn.ID] = trackedTurn{Turn: turn, Mode: checkpoint.Mode}
+	retained := trackedTurn{Turn: turn, Mode: checkpoint.Mode}
 	for _, input := range checkpoint.Inputs {
 		state.inputs[input.ID] = inputAttempt{Digest: input.PromptDigest, TurnID: turn.ID}
+		retained.Inputs = append(retained.Inputs, input.ID)
 	}
+	state.turns[turn.ID] = retained
 	state.continuationPending, state.paused = false, false
 	return turn, nil
 }
@@ -153,28 +156,39 @@ func sameEffectiveSettings(a, b EffectiveSettings) bool {
 }
 
 func decodeContinuation(raw json.RawMessage, checkpoint ContinuationCheckpoint) (Turn, error) {
+	turn, inputs, err := decodeLatestTurnInputs(raw)
+	if err != nil || turn.ID != checkpoint.TurnID || turn.Status != checkpoint.Status || !slices.Equal(inputs, checkpoint.Inputs) {
+		return Turn{}, incompatible()
+	}
+	return turn, nil
+}
+
+// The complete most-recent turn is shared by continuation and Steer inspection.
+// This parser returns only input identities/digests, never retained prompt text.
+func decodeLatestTurnInputs(raw json.RawMessage) (Turn, []HistoricalInput, error) {
 	var page struct {
 		Data            []json.RawMessage `json:"data"`
 		NextCursor      *string           `json:"nextCursor"`
 		BackwardsCursor *string           `json:"backwardsCursor"`
 	}
 	if domain.Decode(raw, &page) != nil || len(page.Data) != 1 {
-		return Turn{}, incompatible()
+		return Turn{}, nil, incompatible()
 	}
 	for _, cursor := range []*string{page.NextCursor, page.BackwardsCursor} {
 		if cursor != nil && domain.Text(*cursor, "native turn cursor", 4096, true) != nil {
-			return Turn{}, incompatible()
+			return Turn{}, nil, incompatible()
 		}
 	}
 	turn, err := decodeTurn(page.Data[0])
-	if err != nil || turn.ID != checkpoint.TurnID || turn.Status != checkpoint.Status {
-		return Turn{}, incompatible()
+	if err != nil {
+		return Turn{}, nil, incompatible()
 	}
 	var wire turnWire
 	if domain.Decode(page.Data[0], &wire) != nil || wire.ItemsView != "full" || len(wire.Items) == 0 || len(wire.Items) > maxTrackedTurns {
-		return Turn{}, incompatible()
+		return Turn{}, nil, incompatible()
 	}
-	inputs := 0
+	var inputs []HistoricalInput
+	identities := make(map[domain.ID]bool)
 	items := make(map[string]bool, len(wire.Items))
 	for _, rawItem := range wire.Items {
 		// Non-user history is deliberately not interpreted as fresh execution
@@ -184,7 +198,7 @@ func decodeContinuation(raw json.RawMessage, checkpoint ContinuationCheckpoint) 
 			ID   string `json:"id"`
 		}
 		if json.Unmarshal(rawItem, &identity) != nil || domain.Text(identity.Type, "native item kind", 256, true) != nil || domain.Text(identity.ID, "native item identity", 1024, true) != nil || items[identity.ID] {
-			return Turn{}, incompatible()
+			return Turn{}, nil, incompatible()
 		}
 		items[identity.ID] = true
 		if identity.Type != "userMessage" {
@@ -200,17 +214,18 @@ func decodeContinuation(raw json.RawMessage, checkpoint ContinuationCheckpoint) 
 				Elements []json.RawMessage `json:"text_elements"`
 			} `json:"content"`
 		}
-		if domain.Decode(rawItem, &item) != nil || inputs >= len(checkpoint.Inputs) || item.ClientID != checkpoint.Inputs[inputs].ID || len(item.Content) != 1 {
-			return Turn{}, incompatible()
+		if domain.Decode(rawItem, &item) != nil || item.ClientID.Validate() != nil || identities[item.ClientID] || len(item.Content) != 1 {
+			return Turn{}, nil, incompatible()
 		}
 		part := item.Content[0]
-		if part.Type != "text" || part.Text == nil || len(part.Elements) != 0 || domain.Text(*part.Text, "retained native input", nativewire.MaxFrame, true) != nil || sha256.Sum256([]byte(*part.Text)) != checkpoint.Inputs[inputs].PromptDigest {
-			return Turn{}, incompatible()
+		if part.Type != "text" || part.Text == nil || len(part.Elements) != 0 || domain.Text(*part.Text, "retained native input", nativewire.MaxFrame, true) != nil {
+			return Turn{}, nil, incompatible()
 		}
-		inputs++
+		identities[item.ClientID] = true
+		inputs = append(inputs, HistoricalInput{ID: item.ClientID, PromptDigest: sha256.Sum256([]byte(*part.Text))})
 	}
-	if inputs != len(checkpoint.Inputs) {
-		return Turn{}, incompatible()
+	if len(inputs) == 0 {
+		return Turn{}, nil, incompatible()
 	}
-	return turn, nil
+	return turn, inputs, nil
 }

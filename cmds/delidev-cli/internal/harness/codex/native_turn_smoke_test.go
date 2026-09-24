@@ -105,8 +105,9 @@ func TestManualNativeTurnControls(t *testing.T) {
 				}
 			}
 			steeredInput := domain.NewID()
+			steerRequest := domain.NewID()
 			if action == "steer" {
-				ack, err := client.Steer(ctx, domain.NewID(), steeredInput, turn.TurnID, domain.SessionInput{Mode: mode, Prompt: "Include this explicit steered input in the same turn."})
+				ack, err := client.Steer(ctx, steerRequest, steeredInput, turn.TurnID, domain.SessionInput{Mode: mode, Prompt: "Include this explicit steered input in the same turn."})
 				if err != nil || ack.TurnID != turn.TurnID {
 					t.Fatalf("native expected-turn steer failed: %v", err)
 				}
@@ -143,6 +144,12 @@ func TestManualNativeTurnControls(t *testing.T) {
 			}
 			if action == "steer" && !seenInputs[steeredInput] {
 				t.Fatal("native steer did not materialize its client input identity")
+			}
+			if action == "steer" {
+				observed, err := client.InspectSteerAcceptance(ctx, steerRequest)
+				if err != nil || observed.InputID != steeredInput || observed.TurnID != turn.TurnID || observed.Delivery != SteerAccepted || observed.Evidence != SteerHistory {
+					t.Fatalf("native same-turn history did not verify Steer: %+v, %v", observed, err)
+				}
 			}
 			if action == "interrupt" {
 				_, err = client.StartTurn(ctx, domain.NewID(), domain.NewID(), input(mode))

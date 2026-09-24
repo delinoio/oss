@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -65,7 +66,7 @@ func newCheckpointFixture(t *testing.T) checkpointFixture {
 }
 
 func (f *checkpointFixture) retain() error {
-	digest, err := retainCodexCompletion(f.root, f.jobID, f.job, f.input, f.bound, f.completion)
+	digest, err := retainCodexCompletion(f.root, f.jobID, f.job, f.input, f.bound, f.completion, f.ref.AcceptedInputs)
 	if err == nil {
 		f.ref.Completion = f.completion
 		f.ref.Completion.Version, f.ref.Completion.NativeCheckpointDigest = 2, digest
@@ -325,5 +326,66 @@ func TestExecutionCheckpointRetainsFailureAndInterruptionWithoutSuccess(t *testi
 		if err != nil || got.Completion.Outcome != outcome || got.Native.Status == codex.TurnCompleted {
 			t.Fatalf("terminal outcome was promoted to success: %v", err)
 		}
+	}
+}
+
+func TestExecutionCheckpointRetainsEveryAcceptedInputInOrder(t *testing.T) {
+	f := newCheckpointFixture(t)
+	f.ref.AcceptedInputs = []domain.ExecutionInputBinding{domain.BindExecutionInput(f.input.InputID, f.input.Input.Prompt), domain.BindExecutionInput(domain.NewID(), "Explicit same-turn input 한글 🐦"), domain.BindExecutionInput(domain.NewID(), "Another accepted input")}
+	if err := f.retain(); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ReadCodexExecutionCheckpoint(f.root, f.ref)
+	if err != nil || len(got.Native.Inputs) != 3 || got.Native.Inputs[1].ID != f.ref.AcceptedInputs[1].InputID {
+		t.Fatal("multi-input checkpoint did not preserve its exact turn", err)
+	}
+	path, _ := executionCheckpointPath(f.root, f.input.ExecutionID)
+	original, _ := security.ReadPrivate(path, maxExecutionCheckpointBytes)
+	if strings.Contains(string(original), "Explicit same-turn") || strings.Contains(string(original), "Another accepted") {
+		t.Fatal("checkpoint retained Steer prompt text")
+	}
+	for _, change := range []func(*ExecutionCheckpointRef){
+		func(r *ExecutionCheckpointRef) { r.AcceptedInputs = nil },
+		func(r *ExecutionCheckpointRef) { r.AcceptedInputs = r.AcceptedInputs[:2] },
+		func(r *ExecutionCheckpointRef) {
+			r.AcceptedInputs[1], r.AcceptedInputs[2] = r.AcceptedInputs[2], r.AcceptedInputs[1]
+		},
+		func(r *ExecutionCheckpointRef) { r.AcceptedInputs[1].InputID = domain.NewID() },
+		func(r *ExecutionCheckpointRef) {
+			r.AcceptedInputs[1].PromptDigest = domain.BindExecutionInput(domain.NewID(), "Altered").PromptDigest
+		},
+		func(r *ExecutionCheckpointRef) {
+			r.AcceptedInputs = append(r.AcceptedInputs, domain.BindExecutionInput(domain.NewID(), "Extra"))
+		},
+	} {
+		ref := f.ref
+		ref.AcceptedInputs = slices.Clone(ref.AcceptedInputs)
+		change(&ref)
+		_, err := ReadCodexExecutionCheckpoint(f.root, ref)
+		checkpointRecovery(t, err)
+	}
+	if err := f.retain(); err != nil {
+		t.Fatal("exact checkpoint replay failed", err)
+	}
+	f.ref.AcceptedInputs[1].InputID = domain.NewID()
+	checkpointRecovery(t, f.retain())
+	retained, _ := security.ReadPrivate(path, maxExecutionCheckpointBytes)
+	if string(original) != string(retained) {
+		t.Fatal("conflicting multi-input checkpoint replaced original evidence")
+	}
+}
+
+func TestExecutionCheckpointBoundIncludesCompleteAcceptedInputSet(t *testing.T) {
+	f := newCheckpointFixture(t)
+	f.ref.AcceptedInputs = []domain.ExecutionInputBinding{domain.BindExecutionInput(f.input.InputID, f.input.Input.Prompt)}
+	for len(f.ref.AcceptedInputs) < domain.MaxAcceptedExecutionInputs {
+		f.ref.AcceptedInputs = append(f.ref.AcceptedInputs, domain.BindExecutionInput(domain.NewID(), "Bounded input"))
+	}
+	if err := f.retain(); err != nil {
+		t.Fatal("accepted input bound exceeded checkpoint representation", err)
+	}
+	got, err := ReadCodexExecutionCheckpoint(f.root, f.ref)
+	if err != nil || len(got.Native.Inputs) != domain.MaxAcceptedExecutionInputs {
+		t.Fatal("bounded checkpoint omitted accepted input evidence", err)
 	}
 }

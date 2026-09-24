@@ -79,5 +79,14 @@ func (c ExecutionContinuation) Validate(input ExecutionJobInput) error {
 	if c.Intent != ContinueExplicitly && (c.Intent != ContinueAutomatically || p.Outcome != ExecutionSucceeded) {
 		return invalid()
 	}
+	bindings, err := CheckedExecutionInputs(p.InputID, c.PromptDigest, p.AcceptedInputs)
+	if err != nil {
+		return invalid()
+	}
+	for _, binding := range bindings {
+		if binding.InputID == input.InputID {
+			return invalid()
+		}
+	}
 	return nil
 }

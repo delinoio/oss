@@ -77,6 +77,9 @@ func queueContinuation(tx *store.Tx, sr store.Record, session domain.Session, ex
 	if priorInput.SessionID != sr.ID || queued.Delivery != domain.InputAccepted || queued.ExecutionID != assignment.ExecutionID || queued.NativeRequestID != assignment.TurnRequestID || queued.Prompt != assignment.Input.Prompt || queued.Mode != assignment.Input.Mode {
 		return store.Record{}, nativeCompletionUncertain()
 	}
+	if err := checkContinuationInputs(tx, sr.ID, assignment, *session.Execution); err != nil {
+		return store.Record{}, err
+	}
 	// Recheck current authority against the immutable selection even when Resume
 	// has no input yet. The Worker rechecks native history before the later send.
 	input, err := checkedExecutionAssignment(tx, sr, session, machine, assignment)
@@ -127,4 +130,27 @@ func queueContinuation(tx *store.Tx, sr store.Record, session domain.Session, ex
 		return store.Record{}, err
 	}
 	return tx.PutJob(domain.NewID(), 0, sr.ID, sr.ProjectID, domain.Job{Type: domain.ExecuteSessionJob, State: domain.JobQueued, MachineID: session.MachineID, Input: raw, AcceptedAt: time.Now().UTC()})
+}
+
+func checkContinuationInputs(tx *store.Tx, sessionID domain.ID, assignment domain.ExecutionJobInput, progress domain.ExecutionProgress) error {
+	bindings, err := domain.CheckedExecutionInputs(assignment.InputID, continuationDigest([]byte(assignment.Input.Prompt)), progress.AcceptedInputs)
+	if err != nil {
+		return err
+	}
+	requests := make(map[domain.ID]bool, len(bindings))
+	for _, binding := range bindings {
+		record, err := tx.Get(domain.QueueKind, binding.InputID)
+		if err != nil {
+			return err
+		}
+		input, err := store.Decode[domain.QueuedInput](record)
+		if err != nil {
+			return err
+		}
+		if record.SessionID != sessionID || input.Delivery != domain.InputAccepted || input.ExecutionID != assignment.ExecutionID || input.Mode != assignment.Input.Mode || input.NativeRequestID.Validate() != nil || requests[input.NativeRequestID] || domain.BindExecutionInput(record.ID, input.Prompt) != binding {
+			return nativeCompletionUncertain()
+		}
+		requests[input.NativeRequestID] = true
+	}
+	return nil
 }

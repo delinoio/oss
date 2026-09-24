@@ -149,6 +149,7 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 			}
 			progress.NativeTurnID = event.NativeTurnID
 			progress.Outcome = domain.ExecutionRunning
+			progress.AcceptedInputs = []domain.ExecutionInputBinding{domain.BindExecutionInput(input.InputID, input.Input.Prompt)}
 			queued.Delivery = domain.InputAccepted
 			session.PendingInputs--
 			session.PendingInputBytes -= uint64(len(queued.Prompt))

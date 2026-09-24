@@ -224,6 +224,95 @@ func TestContinuationFIFOFreezesSelectionAndRetainsPredecessor(t *testing.T) {
 	}
 }
 
+func TestContinuationPreservesSameTurnInputsAndEarlierQueuedInput(t *testing.T) {
+	for _, change := range []string{"valid", "legacy", "missing-binding", "wrong-digest", "unaccepted", "wrong-mode", "foreign-execution", "duplicate-request", "duplicate-input"} {
+		t.Run(change, func(t *testing.T) {
+			f := newContinuationFixture(t, domain.ExecutionSucceeded)
+			first := f.enqueue(t, "Earlier queued input", domain.ExecuteMode)
+			steered := f.enqueue(t, "Selected later same-turn input", f.input.Input.Mode)
+			_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.retained-same-turn-input", change, func(tx *store.Tx) (any, error) {
+				r, err := tx.Get(domain.SessionKind, domain.ID(f.change.Session.Id))
+				if err != nil {
+					return nil, err
+				}
+				session, err := store.Decode[domain.Session](r)
+				if err != nil {
+					return nil, err
+				}
+				ir, err := tx.Get(domain.QueueKind, domain.ID(steered.Id))
+				if err != nil {
+					return nil, err
+				}
+				input, err := store.Decode[domain.QueuedInput](ir)
+				if err != nil {
+					return nil, err
+				}
+				if change == "legacy" {
+					session.Execution.AcceptedInputs = nil
+					return tx.Put(r.Kind, r.ID, r.Revision, r.SessionID, r.ProjectID, session)
+				}
+				input.Delivery, input.ExecutionID, input.NativeRequestID = domain.InputAccepted, f.input.ExecutionID, domain.NewID()
+				binding := domain.BindExecutionInput(ir.ID, input.Prompt)
+				session.Execution.AcceptedInputs = append(session.Execution.AcceptedInputs, binding)
+				session.PendingInputs--
+				session.PendingInputBytes -= uint64(len(input.Prompt))
+				switch change {
+				case "missing-binding":
+					session.Execution.AcceptedInputs[1].InputID = domain.NewID()
+				case "wrong-digest":
+					session.Execution.AcceptedInputs[1].PromptDigest = strings.Repeat("ab", 32)
+				case "unaccepted":
+					input.Delivery = domain.InputUncertain
+				case "wrong-mode":
+					input.Mode = domain.ExecuteMode
+					if f.input.Input.Mode == domain.ExecuteMode {
+						input.Mode = domain.PlanMode
+					}
+				case "foreign-execution":
+					input.ExecutionID = domain.NewID()
+				case "duplicate-request":
+					input.NativeRequestID = f.input.TurnRequestID
+				case "duplicate-input":
+					session.Execution.AcceptedInputs[1] = session.Execution.AcceptedInputs[0]
+				}
+				if _, err := tx.Put(ir.Kind, ir.ID, ir.Revision, ir.SessionID, ir.ProjectID, input); err != nil {
+					return nil, err
+				}
+				return tx.Put(r.Kind, r.ID, r.Revision, r.SessionID, r.ProjectID, session)
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			before := f.refresh(t)
+			err = f.service.dispatchExecution(context.Background(), before)
+			if change != "valid" && change != "legacy" {
+				after, _ := store.Decode[domain.Session](f.refresh(t))
+				prior, _ := store.Decode[domain.Session](before)
+				if err == nil || after.CurrentExecution != nil || after.ActiveExecutionID != "" || after.Execution.ExecutionID != f.input.ExecutionID || after.PendingInputs != prior.PendingInputs || after.PendingInputBytes != prior.PendingInputBytes {
+					t.Fatal("invalid retained input authorized continuation or partial mutation", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.claim(t)
+			if f.input.InputID != domain.ID(first.Id) {
+				t.Fatal("same-turn selection skipped an earlier ordinary queue input")
+			}
+			if change == "valid" && (len(f.input.Continuation.Previous.AcceptedInputs) != 2 || f.input.Continuation.Previous.AcceptedInputs[1].InputID != domain.ID(steered.Id)) {
+				t.Fatal("continuation discarded same-turn acceptance evidence")
+			}
+			if change == "valid" {
+				f.input.InputID = domain.ID(steered.Id)
+				if f.input.Validate() == nil {
+					t.Fatal("successor assignment reused a preceding Steer input")
+				}
+			}
+		})
+	}
+}
+
 func TestContinuationExplicitResumeWithQueuedAndFutureInput(t *testing.T) {
 	for _, outcome := range []domain.ExecutionOutcome{domain.ExecutionFailed, domain.ExecutionStopped, domain.ExecutionSucceeded} {
 		for _, empty := range []bool{false, true} {

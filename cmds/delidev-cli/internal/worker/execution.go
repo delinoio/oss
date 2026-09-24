@@ -104,7 +104,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		}
 		var promptDigest [sha256.Size]byte
 		copy(promptDigest[:], rawDigest)
-		checkpoint, err = ReadCodexExecutionCheckpoint(manager.Root, ExecutionCheckpointRef{JobID: c.Previous.JobID, SessionID: input.SessionID, MachineID: input.MachineID, HistoryExecutionID: c.HistoryExecutionID, AssignmentInputDigest: c.AssignmentInputDigest, ConfigurationDigest: input.ConfigurationDigest, AccountID: input.AccountID, ConnectionID: input.ConnectionID, Completion: c.Completion, InputMode: c.InputMode, PromptDigest: promptDigest})
+		checkpoint, err = ReadCodexExecutionCheckpoint(manager.Root, ExecutionCheckpointRef{JobID: c.Previous.JobID, SessionID: input.SessionID, MachineID: input.MachineID, HistoryExecutionID: c.HistoryExecutionID, AssignmentInputDigest: c.AssignmentInputDigest, ConfigurationDigest: input.ConfigurationDigest, AccountID: input.AccountID, ConnectionID: input.ConnectionID, Completion: c.Completion, InputMode: c.InputMode, PromptDigest: promptDigest, AcceptedInputs: c.Previous.AcceptedInputs})
 		if err != nil {
 			return nil, err
 		}
@@ -296,7 +296,11 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		// Preserve exact native continuation evidence before the operation
 		// journal/report can announce cleanup. This carries no prompt, answer or
 		// bearer and cannot authorize Resume without the server's matching proof.
-		checkpointDigest, err := retainCodexCompletion(manager.Root, owner, job, input, bound, completion)
+		acceptedInputs, err := mapper.completionInputs()
+		if err != nil {
+			return nil, err
+		}
+		checkpointDigest, err := retainCodexCompletion(manager.Root, owner, job, input, bound, completion, acceptedInputs)
 		if err != nil {
 			return nil, err
 		}

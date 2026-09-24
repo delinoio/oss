@@ -250,6 +250,7 @@ type ExecutionProgress struct {
 	JobID                ID                        `json:"job_id"`
 	ExecutionID          ID                        `json:"execution_id"`
 	InputID              ID                        `json:"input_id"`
+	AcceptedInputs       []ExecutionInputBinding   `json:"accepted_inputs,omitempty"`
 	LastSequence         uint64                    `json:"last_sequence"`
 	NativeThreadID       string                    `json:"native_thread_id"`
 	NativeTurnID         string                    `json:"native_turn_id,omitempty"`

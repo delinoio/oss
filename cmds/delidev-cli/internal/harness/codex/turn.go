@@ -56,8 +56,9 @@ type turnOperation struct {
 }
 
 type trackedTurn struct {
-	Turn Turn
-	Mode domain.SessionMode
+	Turn   Turn
+	Mode   domain.SessionMode
+	Inputs []domain.ID
 }
 type inputAttempt struct {
 	Digest [32]byte
@@ -74,6 +75,7 @@ type executionState struct {
 	turns               map[domain.ID]trackedTurn
 	inputs              map[domain.ID]inputAttempt
 	pending             map[domain.ID]turnOperation
+	steers              map[domain.ID]*steerAttempt
 	interactions        interactionState
 }
 
@@ -90,7 +92,7 @@ func newExecutionState(thread Thread, settings EffectiveSettings) *executionStat
 		v := *thread.DirectInput
 		thread.DirectInput = &v
 	}
-	return &executionState{thread: thread, settings: settings, paused: thread.Status.Type != ThreadIdle, turns: map[domain.ID]trackedTurn{}, inputs: map[domain.ID]inputAttempt{}, pending: map[domain.ID]turnOperation{}}
+	return &executionState{thread: thread, settings: settings, paused: thread.Status.Type != ThreadIdle, turns: map[domain.ID]trackedTurn{}, inputs: map[domain.ID]inputAttempt{}, pending: map[domain.ID]turnOperation{}, steers: map[domain.ID]*steerAttempt{}}
 }
 func copyString(v *string) *string {
 	if v == nil {
@@ -248,7 +250,7 @@ func (c *Client) StartTurn(ctx context.Context, requestID, inputID domain.ID, in
 	if err != nil || turn.Status != TurnRunning || state.turns[turn.ID].Turn.ID != "" {
 		return result, c.rejectTurnReply(ctx, StartTurnAction, requestID)
 	}
-	state.turns[turn.ID] = trackedTurn{Turn: turn, Mode: input.Mode}
+	state.turns[turn.ID] = trackedTurn{Turn: turn, Mode: input.Mode, Inputs: []domain.ID{inputID}}
 	state.inputs[inputID] = inputAttempt{Digest: op.InputDigest, TurnID: turn.ID}
 	state.active = turn.ID
 	result.TurnID = turn.ID
@@ -283,6 +285,12 @@ func (c *Client) Steer(ctx context.Context, requestID, inputID, expectedTurnID d
 	if err := c.reserveInputLocked(inputID); err != nil {
 		return result, err
 	}
+	if _, exists := state.steers[requestID]; exists {
+		return result, turnConflict()
+	}
+	if len(state.steers) >= maxTrackedTurns || len(turn.Inputs) >= domain.MaxAcceptedExecutionInputs {
+		return result, domain.Fail(domain.ResourceExhausted, "Native Steer tracking reached its bound.", "Keep further input queued until terminal history and owned cleanup can be verified; no input was truncated or sent.")
+	}
 	if err := c.checkNativeStateLocked(ctx, false); err != nil {
 		return result, err
 	}
@@ -294,15 +302,30 @@ func (c *Client) Steer(ctx context.Context, requestID, inputID, expectedTurnID d
 	}{c.thread, expectedTurnID, inputID, []nativeTextInput{{Type: nativeText, Text: input.Prompt}}}
 	op := turnOperation{Action: SteerTurnAction, RequestID: requestID, InputID: inputID, TurnID: expectedTurnID, Mode: input.Mode, InputDigest: sha256.Sum256([]byte(input.Prompt))}
 	response, err := c.callTurnLocked(ctx, op, params)
+	attempt := &steerAttempt{operation: op, delivery: SteerNotSent}
+	state.steers[requestID] = attempt
+	if err == nil || domain.SafeError(err).Code == domain.RecoveryRequired {
+		turn.Inputs = append(turn.Inputs, inputID)
+		state.turns[expectedTurnID] = turn
+		attempt.delivery = SteerUncertain
+	}
 	if err != nil {
+		if attempt.delivery == SteerUncertain {
+			attempt.problem = c.problem
+		} else if response.ErrorCode != nil {
+			attempt.evidence = SteerRejection
+		}
 		return result, err
 	}
 	var ack struct {
 		TurnID domain.ID `json:"turnId"`
 	}
 	if domain.Decode(response.Result, &ack) != nil || ack.TurnID != expectedTurnID {
-		return result, c.rejectTurnReply(ctx, SteerTurnAction, requestID)
+		err := c.rejectTurnReply(ctx, SteerTurnAction, requestID)
+		attempt.problem = c.problem
+		return result, err
 	}
+	attempt.delivery, attempt.evidence = SteerAccepted, SteerAcknowledgment
 	return result, nil
 }
 

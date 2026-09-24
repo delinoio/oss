@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
@@ -47,9 +48,10 @@ type ExecutionCheckpointRef struct {
 	Completion            domain.ExecutionCompletion
 	InputMode             domain.SessionMode
 	PromptDigest          [sha256.Size]byte
+	AcceptedInputs        []domain.ExecutionInputBinding
 }
 
-const maxExecutionCheckpointBytes = 64 << 10
+const maxExecutionCheckpointBytes = 1 << 20
 
 func executionCheckpointUncertain() *domain.Error {
 	return domain.Fail(domain.RecoveryRequired, "The retained native runtime checkpoint does not match its preceding execution.", "Preserve the original Worker runtime, assignment and cleanup report; never reconstruct missing history, replace its ownership or resend prior input.")
@@ -75,7 +77,24 @@ func (r ExecutionCheckpointRef) validate() error {
 	if r.Completion.Validate() != nil || !r.InputMode.Valid() {
 		return executionCheckpointUncertain()
 	}
+	if _, err := r.nativeInputs(); err != nil {
+		return err
+	}
 	return nil
+}
+
+func (r ExecutionCheckpointRef) nativeInputs() ([]codex.HistoricalInput, error) {
+	bindings, err := domain.CheckedExecutionInputs(r.Completion.InputID, hex.EncodeToString(r.PromptDigest[:]), r.AcceptedInputs)
+	if err != nil {
+		return nil, executionCheckpointUncertain()
+	}
+	inputs := make([]codex.HistoricalInput, len(bindings))
+	for i, binding := range bindings {
+		digest, _ := hex.DecodeString(binding.PromptDigest)
+		inputs[i].ID = binding.InputID
+		copy(inputs[i].PromptDigest[:], digest)
+	}
+	return inputs, nil
 }
 
 func (p CodexExecutionCheckpoint) matches(ref ExecutionCheckpointRef) bool {
@@ -84,7 +103,8 @@ func (p CodexExecutionCheckpoint) matches(ref ExecutionCheckpointRef) bool {
 	// hash while binding every byte of the original effective native settings.
 	terminal := ref.Completion
 	terminal.Version, terminal.NativeCheckpointDigest = 1, ""
-	if ref.validate() != nil || p.Version != 1 || p.JobID != ref.JobID || p.SessionID != ref.SessionID || p.MachineID != ref.MachineID || p.HistoryExecutionID != ref.HistoryExecutionID || p.AssignmentInputDigest != ref.AssignmentInputDigest || p.ConfigurationDigest != ref.ConfigurationDigest || p.AccountID != ref.AccountID || p.ConnectionID != ref.ConnectionID || p.Completion != terminal || p.Native.ThreadID != ref.Completion.NativeThreadID || p.Native.SessionID != p.Native.ThreadID || p.Native.TurnID != ref.Completion.NativeTurnID || p.Native.Mode != ref.InputMode || len(p.Native.Inputs) != 1 || p.Native.Inputs[0].ID != ref.Completion.InputID || p.Native.Inputs[0].PromptDigest != ref.PromptDigest {
+	inputs, err := ref.nativeInputs()
+	if err != nil || ref.validate() != nil || p.Version != 1 || p.JobID != ref.JobID || p.SessionID != ref.SessionID || p.MachineID != ref.MachineID || p.HistoryExecutionID != ref.HistoryExecutionID || p.AssignmentInputDigest != ref.AssignmentInputDigest || p.ConfigurationDigest != ref.ConfigurationDigest || p.AccountID != ref.AccountID || p.ConnectionID != ref.ConnectionID || p.Completion != terminal || p.Native.ThreadID != ref.Completion.NativeThreadID || p.Native.SessionID != p.Native.ThreadID || p.Native.TurnID != ref.Completion.NativeTurnID || p.Native.Mode != ref.InputMode || !slices.Equal(p.Native.Inputs, inputs) {
 		return false
 	}
 	status := map[domain.ExecutionOutcome]codex.TurnStatus{domain.ExecutionSucceeded: codex.TurnCompleted, domain.ExecutionFailed: codex.TurnFailed, domain.ExecutionStopped: codex.TurnInterrupted}[ref.Completion.Outcome]
@@ -161,7 +181,7 @@ func ReadCodexExecutionCheckpoint(root string, ref ExecutionCheckpointRef) (Code
 	return checkpoint, nil
 }
 
-func retainCodexCompletion(root string, jobID domain.ID, job domain.Job, input domain.ExecutionJobInput, bound codex.ThreadResult, completion domain.ExecutionCompletion) (string, error) {
+func retainCodexCompletion(root string, jobID domain.ID, job domain.Job, input domain.ExecutionJobInput, bound codex.ThreadResult, completion domain.ExecutionCompletion, acceptedInputs []domain.ExecutionInputBinding) (string, error) {
 	var accepted domain.ExecutionJobInput
 	if domain.Decode(job.Input, &accepted) != nil || input.Validate() != nil || completion.Validate() != nil || completion.Version != 1 || bound.Thread == nil || bound.Effective == nil || bound.RequestID != input.ThreadRequestID || bound.Thread.ID != completion.NativeThreadID || completion.ExecutionID != input.ExecutionID || completion.InputID != input.InputID || job.Type != domain.ExecuteSessionJob || job.MachineID != input.MachineID {
 		return "", executionCheckpointUncertain()
@@ -175,11 +195,16 @@ func retainCodexCompletion(root string, jobID domain.ID, job domain.Job, input d
 		return "", executionCheckpointUncertain()
 	}
 	ref := ExecutionCheckpointRef{JobID: jobID, SessionID: input.SessionID, MachineID: input.MachineID, HistoryExecutionID: input.ExecutionID, AssignmentInputDigest: executionInputDigest(job.Input), ConfigurationDigest: input.ConfigurationDigest, AccountID: input.AccountID, ConnectionID: input.ConnectionID, Completion: completion, InputMode: input.Input.Mode, PromptDigest: sha256.Sum256([]byte(input.Input.Prompt))}
+	ref.AcceptedInputs = acceptedInputs
+	nativeInputs, err := ref.nativeInputs()
+	if err != nil {
+		return "", err
+	}
 	if input.Continuation != nil {
 		ref.HistoryExecutionID = input.Continuation.HistoryExecutionID
 	}
 	status := map[domain.ExecutionOutcome]codex.TurnStatus{domain.ExecutionSucceeded: codex.TurnCompleted, domain.ExecutionFailed: codex.TurnFailed, domain.ExecutionStopped: codex.TurnInterrupted}[completion.Outcome]
-	checkpoint := CodexExecutionCheckpoint{Version: 1, JobID: jobID, SessionID: ref.SessionID, MachineID: ref.MachineID, HistoryExecutionID: ref.HistoryExecutionID, AssignmentInputDigest: ref.AssignmentInputDigest, ConfigurationDigest: ref.ConfigurationDigest, AccountID: ref.AccountID, ConnectionID: ref.ConnectionID, Completion: completion, Native: codex.ContinuationCheckpoint{ThreadID: bound.Thread.ID, SessionID: bound.Thread.SessionID, TurnID: completion.NativeTurnID, Status: status, Mode: input.Input.Mode, Inputs: []codex.HistoricalInput{{ID: input.InputID, PromptDigest: sha256.Sum256([]byte(input.Input.Prompt))}}, Effective: *bound.Effective}}
+	checkpoint := CodexExecutionCheckpoint{Version: 1, JobID: jobID, SessionID: ref.SessionID, MachineID: ref.MachineID, HistoryExecutionID: ref.HistoryExecutionID, AssignmentInputDigest: ref.AssignmentInputDigest, ConfigurationDigest: ref.ConfigurationDigest, AccountID: ref.AccountID, ConnectionID: ref.ConnectionID, Completion: completion, Native: codex.ContinuationCheckpoint{ThreadID: bound.Thread.ID, SessionID: bound.Thread.SessionID, TurnID: completion.NativeTurnID, Status: status, Mode: input.Input.Mode, Inputs: nativeInputs, Effective: *bound.Effective}}
 	if !checkpoint.matches(ref) {
 		return "", executionCheckpointUncertain()
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"slices"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/nativewire"
@@ -88,6 +89,7 @@ type Event struct {
 	Diff             *string
 	Interaction      *Interaction
 	InteractionState *InteractionStatus
+	Steer            *SteerObservation
 	// Native is present only for a still-private extension, including unrelated
 	// subagent events. It must pass a dedicated typed adapter before publication;
 	// neither it nor raw provider errors may be serialized as a product event.
@@ -283,6 +285,21 @@ func (c *Client) observeLateTurnLocked(native nativewire.Event) (Event, error) {
 	event := Event{Kind: LateTurnResponseEvent, ThreadID: c.thread, RequestID: id, InputID: op.InputID, TurnID: op.TurnID, Action: op.Action, Correlated: true, Late: true}
 	if native.Response.ErrorCode != nil {
 		event.Problem = nativeTurnError(op.Action, *native.Response.ErrorCode)
+		if op.Action == SteerTurnAction {
+			attempt := c.execution.steers[id]
+			if attempt == nil || attempt.delivery == SteerAccepted {
+				return Event{}, incompatible()
+			}
+			if event.Problem.Code != domain.RecoveryRequired {
+				attempt.delivery, attempt.evidence = SteerNotSent, SteerRejection
+				delete(c.execution.inputs, op.InputID)
+				turn := c.execution.turns[op.TurnID]
+				turn.Inputs = slices.DeleteFunc(turn.Inputs, func(input domain.ID) bool { return input == op.InputID })
+				c.execution.turns[op.TurnID] = turn
+			}
+			observation := attempt.observation(c.thread)
+			event.Steer = &observation
+		}
 		delete(c.execution.pending, id)
 		return event, nil
 	}
@@ -296,7 +313,7 @@ func (c *Client) observeLateTurnLocked(native nativewire.Event) (Event, error) {
 			return Event{}, incompatible()
 		}
 		if _, exists := c.execution.turns[turn.ID]; !exists {
-			c.execution.turns[turn.ID] = trackedTurn{Turn: turn, Mode: op.Mode}
+			c.execution.turns[turn.ID] = trackedTurn{Turn: turn, Mode: op.Mode, Inputs: []domain.ID{op.InputID}}
 			c.execution.active = turn.ID
 		}
 		event.TurnID = turn.ID
@@ -309,6 +326,16 @@ func (c *Client) observeLateTurnLocked(native nativewire.Event) (Event, error) {
 		if domain.Decode(native.Response.Result, &ack) != nil || ack.TurnID != op.TurnID {
 			return Event{}, incompatible()
 		}
+		attempt := c.execution.steers[id]
+		if attempt == nil || attempt.delivery == SteerNotSent {
+			return Event{}, incompatible()
+		}
+		attempt.delivery = SteerAccepted
+		if attempt.evidence != SteerHistory {
+			attempt.evidence = SteerAcknowledgment
+		}
+		observation := attempt.observation(c.thread)
+		event.Steer = &observation
 	case InterruptTurnAction:
 		var ack map[string]json.RawMessage
 		if domain.Decode(native.Response.Result, &ack) != nil || ack == nil || len(ack) != 0 {
