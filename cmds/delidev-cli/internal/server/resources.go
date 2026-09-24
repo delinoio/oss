@@ -176,7 +176,32 @@ func (s *Service) SaveConfiguration(ctx context.Context, req *connect.Request[pb
 	if record.Kind == "" {
 		return nil, rpc.Error(domain.Fail(domain.NotFound, "The accepted entity was subsequently deleted.", "The original request cannot recreate it; use a new request ID for new work."), correlation)
 	}
-	response := connect.NewResponse(&pb.SaveConfigurationResponse{Resource: rpc.Resource(record), RequestId: string(result.RequestID), Replayed: result.Replayed})
+	message := &pb.SaveConfigurationResponse{RequestId: string(result.RequestID), Replayed: result.Replayed}
+	if record.Kind == domain.JobKind {
+		current, err := s.Store.Get(ctx, domain.JobKind, record.ID)
+		if err != nil {
+			return nil, rpc.Error(err, correlation)
+		}
+		message.Job = rpc.Resource(current)
+		job, err := store.Decode[domain.Job](current)
+		if err != nil {
+			return nil, rpc.Error(err, correlation)
+		}
+		if job.State == domain.JobSucceeded {
+			var output repositorySaveOutput
+			if err := domain.Decode(job.Output, &output); err != nil {
+				return nil, rpc.Error(err, correlation)
+			}
+			saved, err := s.Store.Get(ctx, domain.RepositoryKind, output.ID)
+			if err != nil {
+				return nil, rpc.Error(err, correlation)
+			}
+			message.Resource = rpc.Resource(saved)
+		}
+	} else {
+		message.Resource = rpc.Resource(record)
+	}
+	response := connect.NewResponse(message)
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil
 }

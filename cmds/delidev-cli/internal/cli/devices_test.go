@@ -113,6 +113,49 @@ func TestCLIPairWorkerAndInspectRealRepository(t *testing.T) {
 	if data["output"].(map[string]any)["root"] != canonical {
 		t.Fatalf("wrong canonical root: %v", data)
 	}
+
+	repository, err := json.Marshal(domain.Repository{Name: "fixture", PreferredRemote: "origin", Checkouts: []domain.Checkout{{MachineID: domain.ID(machine), Path: sub}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Omit automatic fetch to exercise the server default, not a Go bool zero.
+	var config map[string]any
+	json.Unmarshal(repository, &config)
+	delete(config, "auto_fetch")
+	repository, _ = json.Marshal(config)
+	saveID := string(domain.NewID())
+	save := []string{"repository", "create", "--wait", "--request-id", saveID}
+	code, result = cliRun(t, root, save, string(repository))
+	if code != 0 {
+		t.Fatalf("save: %d %v", code, result)
+	}
+	saved := result["result"].(map[string]any)["resource"].(map[string]any)
+	savedID := saved["id"].(string)
+	if saved["data"].(map[string]any)["auto_fetch"] != true {
+		t.Fatal("automatic fetch default was disabled")
+	}
+	checkout := saved["data"].(map[string]any)["checkouts"].([]any)[0].(map[string]any)
+	if checkout["path"] != canonical {
+		t.Fatal("saved noncanonical checkout")
+	}
+	code, result = cliRun(t, root, save, string(repository))
+	if code != 0 || result["result"].(map[string]any)["resource"].(map[string]any)["id"] != savedID {
+		t.Fatalf("save retry duplicated: %d %v", code, result)
+	}
+	if err := exec.Command("git", "-C", repo, "remote", "remove", "origin").Run(); err != nil {
+		t.Fatal(err)
+	}
+	code, result = cliRun(t, root, []string{"repository", "edit", "--id", savedID, "--revision", "1", "--wait"}, string(repository))
+	if code != 2 || result["error"].(map[string]any)["code"] != "invalid_argument" {
+		t.Fatalf("missing remote saved: %d %v", code, result)
+	}
+	if result["result"].(map[string]any)["job"] == nil {
+		t.Fatal("failure lost accepted operation identity")
+	}
+	code, result = cliRun(t, root, []string{"repository", "get", "--id", savedID}, "")
+	if code != 0 || result["result"].(map[string]any)["revision"] != float64(1) {
+		t.Fatalf("failed validation changed configuration: %d %v", code, result)
+	}
 	code, result = cliRun(t, workerRoot, []string{"project", "list"}, "")
 	if code != 3 {
 		t.Fatalf("worker used as client: %d %v", code, result)

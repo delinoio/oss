@@ -6,6 +6,8 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"io"
+	"log/slog"
 	"net/http"
 	"path/filepath"
 	"runtime"
@@ -16,6 +18,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
@@ -134,5 +137,52 @@ func TestWorkerPairingOwnershipDispatchAndRevocation(t *testing.T) {
 	}
 	if _, err := client.AttachWorker(ctx, ownerRequest(one, attach)); connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Fatalf("revoked credential accepted receipt retry: %v", err)
+	}
+}
+
+func TestReplacingExpiredWorkerPreservesUncertainty(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.Open(ctx, filepath.Join(t.TempDir(), "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	machine, device, previous, current, jobID := domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID()
+	_, err = db.Mutate(ctx, domain.NewID(), "fixture", nil, func(tx *store.Tx) (any, error) {
+		if _, err := tx.Put(domain.MachineKind, machine, 0, "", "", domain.Machine{Name: "fixture", OS: "linux", Architecture: "amd64", Version: rpc.Version}); err != nil {
+			return nil, err
+		}
+		if _, err := tx.Put(domain.DeviceKind, device, 0, "", "", domain.Device{Name: "fixture", Type: domain.WorkerDevice, MachineID: machine, PairedAt: time.Now().UTC()}); err != nil {
+			return nil, err
+		}
+		if err := tx.SetWorkerInstance(machine, previous, time.Now().Add(-time.Minute)); err != nil {
+			return nil, err
+		}
+		raw, _ := json.Marshal(domain.RepositoryInspectionInput{Path: "/tmp/repo"})
+		return tx.PutJob(jobID, 0, "", "", domain.Job{Type: domain.InspectRepositoryJob, State: domain.JobClaimed, MachineID: machine, InstanceID: previous, Input: raw, AcceptedAt: time.Now().UTC()})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := &Service{Store: db, Identity: security.Identity{ServerID: domain.NewID()}, logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	actor := domain.WithPrincipal(ctx, domain.Principal{Type: domain.WorkerDevice, MachineID: machine, DeviceID: device})
+	_, err = service.AttachWorker(actor, connect.NewRequest(&pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: string(machine), InstanceId: string(current), Version: rpc.Version}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := db.Get(ctx, domain.JobKind, jobID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := store.Decode[domain.Job](record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job.State != domain.JobUncertain || job.InstanceID != previous || job.Problem == nil || job.Problem.Code != domain.RecoveryRequired {
+		t.Fatalf("disconnected work was reassigned: %+v", job)
+	}
+	_, err = service.ReportWork(actor, connect.NewRequest(&pb.ReportWorkRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(jobID), ExpectedRevision: 1}, MachineId: string(machine), InstanceId: string(previous), Problem: &pb.ErrorDetail{Code: string(domain.Canceled)}}))
+	if connect.CodeOf(err) != connect.CodeAborted {
+		t.Fatalf("stale process reported after replacement: %v", err)
 	}
 }

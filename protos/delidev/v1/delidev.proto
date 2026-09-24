@@ -162,6 +162,8 @@ message SaveConfigurationResponse {
   Resource resource = 1;
   string request_id = 2;
   bool replayed = 3;
+  // Accepted asynchronous configuration validation. Inspect this job until done.
+  Resource job = 4;
 }
 message DeleteConfigurationRequest {
   Mutation mutation = 1;

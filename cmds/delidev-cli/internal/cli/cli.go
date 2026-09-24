@@ -79,7 +79,6 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		response := envelope{Version: 1, RequestID: o.requestID, Result: value}
 		code := 0
 		if err != nil {
-			response.Result = nil
 			response.Error = domain.SafeError(err)
 			code = response.Error.ExitCode()
 		}
@@ -220,6 +219,7 @@ func Run(ctx context.Context, args []string, streams IO) int {
 	fs := flags(command + " " + action)
 	id := fs.String("id", "", "entity ID")
 	revision := fs.Uint64("revision", 0, "expected entity revision")
+	wait := fs.Bool("wait", false, "wait for asynchronous configuration validation")
 	input := fs.String("input", "-", "configuration JSON file, or - for stdin")
 	limit := fs.Uint("limit", 50, "page size")
 	page := fs.String("page-token", "", "page token")
@@ -273,6 +273,38 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		response, err := c.configuration.SaveConfiguration(ctx, request(c, &pb.SaveConfigurationRequest{Mutation: &pb.Mutation{RequestId: string(o.requestID), Id: *id, ExpectedRevision: *revision}, Kind: rpc.WireKind(kind), SchemaVersion: 1, DocumentJson: body}))
 		if err != nil {
 			return emit(nil, rpc.ClientError(err))
+		}
+		if response.Msg.Job != nil {
+			job := response.Msg.Job
+			if *wait {
+				job, err = awaitJob(ctx, c, job)
+				if err != nil {
+					return emit(map[string]any{"job": resourceJSON(job)}, err)
+				}
+			}
+			var state domain.Job
+			if err := domain.Decode(job.DocumentJson, &state); err != nil {
+				return emit(nil, err)
+			}
+			if state.State == domain.JobSucceeded {
+				var output struct {
+					ID       string `json:"id"`
+					Revision uint64 `json:"revision"`
+				}
+				if err := domain.Decode(state.Output, &output); err != nil {
+					return emit(nil, err)
+				}
+				saved, err := c.resources.GetResource(ctx, request(c, &pb.GetResourceRequest{Kind: rpc.WireKind(kind), Id: output.ID}))
+				if err != nil {
+					return emit(map[string]any{"job": resourceJSON(job)}, rpc.ClientError(err))
+				}
+				return emit(map[string]any{"resource": resourceJSON(saved.Msg.Resource), "job": resourceJSON(job), "replayed": response.Msg.Replayed}, nil)
+			}
+			value := map[string]any{"job": resourceJSON(job), "replayed": response.Msg.Replayed}
+			if *wait && state.Problem != nil {
+				return emit(value, state.Problem)
+			}
+			return emit(value, nil)
 		}
 		return emit(map[string]any{"resource": resourceJSON(response.Msg.Resource), "replayed": response.Msg.Replayed}, nil)
 	case "delete":

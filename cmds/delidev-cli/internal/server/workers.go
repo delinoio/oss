@@ -97,6 +97,9 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 					if _, err := tx.PutJob(record.ID, record.Revision, record.SessionID, record.ProjectID, job); err != nil {
 						return nil, err
 					}
+					if err := finishRepositorySave(tx, job.ParentID); err != nil {
+						return nil, err
+					}
 				}
 				if len(jobs) < store.MaxPage {
 					break
@@ -388,7 +391,14 @@ func (s *Service) ReportWork(ctx context.Context, req *connect.Request[pb.Report
 				job.State = domain.JobUncertain
 			}
 		}
-		return tx.PutJob(record.ID, meta.ExpectedRevision, record.SessionID, record.ProjectID, job)
+		saved, err := tx.PutJob(record.ID, meta.ExpectedRevision, record.SessionID, record.ProjectID, job)
+		if err != nil {
+			return nil, err
+		}
+		if err := finishRepositorySave(tx, job.ParentID); err != nil {
+			return nil, err
+		}
+		return saved, nil
 	})
 	if err != nil {
 		return nil, rpc.Error(err, correlation)

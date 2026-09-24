@@ -192,27 +192,45 @@ func repositoryInspect(ctx context.Context, c client, o options, args []string) 
 	}
 	job := response.Msg.Job
 	if *wait {
-		for {
-			latest, err := c.resources.GetResource(ctx, request(c, &pb.GetResourceRequest{Kind: pb.EntityKind_ENTITY_KIND_JOB, Id: job.Id}))
-			if err != nil {
-				return map[string]any{"job": resourceJSON(job)}, rpc.ClientError(err)
-			}
-			job = latest.Msg.Resource
-			var state domain.Job
-			if err := domain.Decode(job.DocumentJson, &state); err != nil {
-				return nil, err
-			}
-			if state.State.Terminal() || state.State == domain.JobUncertain {
-				break
-			}
-			timer := time.NewTimer(200 * time.Millisecond)
-			select {
-			case <-ctx.Done():
-				timer.Stop()
-				return map[string]any{"job": resourceJSON(job), "pending": true}, nil
-			case <-timer.C:
-			}
+		job, err = awaitJob(ctx, c, job)
+		if err != nil {
+			return map[string]any{"job": resourceJSON(job)}, err
+		}
+		var state domain.Job
+		if err := domain.Decode(job.DocumentJson, &state); err != nil {
+			return nil, err
+		}
+		if state.Problem != nil {
+			return map[string]any{"job": resourceJSON(job)}, state.Problem
 		}
 	}
 	return map[string]any{"job": resourceJSON(job), "replayed": response.Msg.Replayed}, nil
+}
+func awaitJob(ctx context.Context, c client, job *pb.Resource) (*pb.Resource, error) {
+	bounded, cancel := context.WithTimeout(ctx, 25*time.Second)
+	defer cancel()
+	for {
+		latest, err := c.resources.GetResource(bounded, request(c, &pb.GetResourceRequest{Kind: pb.EntityKind_ENTITY_KIND_JOB, Id: job.Id}))
+		if err != nil {
+			if bounded.Err() != nil {
+				return job, nil
+			}
+			return job, rpc.ClientError(err)
+		}
+		job = latest.Msg.Resource
+		var state domain.Job
+		if err := domain.Decode(job.DocumentJson, &state); err != nil {
+			return job, err
+		}
+		if state.State.Terminal() || state.State == domain.JobUncertain {
+			return job, nil
+		}
+		timer := time.NewTimer(200 * time.Millisecond)
+		select {
+		case <-bounded.Done():
+			timer.Stop()
+			return job, nil
+		case <-timer.C:
+		}
+	}
 }

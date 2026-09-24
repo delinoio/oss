@@ -1465,10 +1465,12 @@ func (x *SaveConfigurationRequest) GetDocumentJson() []byte {
 }
 
 type SaveConfigurationResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Resource      *Resource              `protobuf:"bytes,1,opt,name=resource,proto3" json:"resource,omitempty"`
-	RequestId     string                 `protobuf:"bytes,2,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
-	Replayed      bool                   `protobuf:"varint,3,opt,name=replayed,proto3" json:"replayed,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Resource  *Resource              `protobuf:"bytes,1,opt,name=resource,proto3" json:"resource,omitempty"`
+	RequestId string                 `protobuf:"bytes,2,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Replayed  bool                   `protobuf:"varint,3,opt,name=replayed,proto3" json:"replayed,omitempty"`
+	// Accepted asynchronous configuration validation. Inspect this job until done.
+	Job           *Resource `protobuf:"bytes,4,opt,name=job,proto3" json:"job,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1522,6 +1524,13 @@ func (x *SaveConfigurationResponse) GetReplayed() bool {
 		return x.Replayed
 	}
 	return false
+}
+
+func (x *SaveConfigurationResponse) GetJob() *Resource {
+	if x != nil {
+		return x.Job
+	}
+	return nil
 }
 
 type DeleteConfigurationRequest struct {
@@ -2705,12 +2714,13 @@ const file_delidev_v1_delidev_proto_rawDesc = "" +
 	"\bmutation\x18\x01 \x01(\v2\x14.delidev.v1.MutationR\bmutation\x12*\n" +
 	"\x04kind\x18\x02 \x01(\x0e2\x16.delidev.v1.EntityKindR\x04kind\x12%\n" +
 	"\x0eschema_version\x18\x03 \x01(\rR\rschemaVersion\x12#\n" +
-	"\rdocument_json\x18\x04 \x01(\fR\fdocumentJson\"\x88\x01\n" +
+	"\rdocument_json\x18\x04 \x01(\fR\fdocumentJson\"\xb0\x01\n" +
 	"\x19SaveConfigurationResponse\x120\n" +
 	"\bresource\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\bresource\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x02 \x01(\tR\trequestId\x12\x1a\n" +
-	"\breplayed\x18\x03 \x01(\bR\breplayed\"z\n" +
+	"\breplayed\x18\x03 \x01(\bR\breplayed\x12&\n" +
+	"\x03job\x18\x04 \x01(\v2\x14.delidev.v1.ResourceR\x03job\"z\n" +
 	"\x1aDeleteConfigurationRequest\x120\n" +
 	"\bmutation\x18\x01 \x01(\v2\x14.delidev.v1.MutationR\bmutation\x12*\n" +
 	"\x04kind\x18\x02 \x01(\x0e2\x16.delidev.v1.EntityKindR\x04kind\"h\n" +
@@ -2943,61 +2953,62 @@ var file_delidev_v1_delidev_proto_depIdxs = []int32{
 	4,  // 10: delidev.v1.SaveConfigurationRequest.mutation:type_name -> delidev.v1.Mutation
 	0,  // 11: delidev.v1.SaveConfigurationRequest.kind:type_name -> delidev.v1.EntityKind
 	3,  // 12: delidev.v1.SaveConfigurationResponse.resource:type_name -> delidev.v1.Resource
-	4,  // 13: delidev.v1.DeleteConfigurationRequest.mutation:type_name -> delidev.v1.Mutation
-	0,  // 14: delidev.v1.DeleteConfigurationRequest.kind:type_name -> delidev.v1.EntityKind
-	2,  // 15: delidev.v1.CreatePairingRequest.type:type_name -> delidev.v1.DeviceType
-	3,  // 16: delidev.v1.CreatePairingResponse.pairing:type_name -> delidev.v1.Resource
-	3,  // 17: delidev.v1.PairDeviceResponse.device:type_name -> delidev.v1.Resource
-	3,  // 18: delidev.v1.PairDeviceResponse.machine:type_name -> delidev.v1.Resource
-	4,  // 19: delidev.v1.RevokeDeviceRequest.mutation:type_name -> delidev.v1.Mutation
-	3,  // 20: delidev.v1.RevokeDeviceResponse.device:type_name -> delidev.v1.Resource
-	3,  // 21: delidev.v1.AttachWorkerResponse.machine:type_name -> delidev.v1.Resource
-	3,  // 22: delidev.v1.WatchWorkResponse.job:type_name -> delidev.v1.Resource
-	4,  // 23: delidev.v1.ReportWorkRequest.mutation:type_name -> delidev.v1.Mutation
-	6,  // 24: delidev.v1.ReportWorkRequest.problem:type_name -> delidev.v1.ErrorDetail
-	3,  // 25: delidev.v1.ReportWorkResponse.job:type_name -> delidev.v1.Resource
-	3,  // 26: delidev.v1.InspectRepositoryResponse.job:type_name -> delidev.v1.Resource
-	7,  // 27: delidev.v1.SystemService.GetStatus:input_type -> delidev.v1.GetStatusRequest
-	9,  // 28: delidev.v1.SystemService.StopServer:input_type -> delidev.v1.StopServerRequest
-	11, // 29: delidev.v1.SystemService.GetDoctor:input_type -> delidev.v1.GetDoctorRequest
-	13, // 30: delidev.v1.SystemService.CreateBackup:input_type -> delidev.v1.CreateBackupRequest
-	15, // 31: delidev.v1.ResourceService.GetResource:input_type -> delidev.v1.GetResourceRequest
-	17, // 32: delidev.v1.ResourceService.ListResources:input_type -> delidev.v1.ListResourcesRequest
-	19, // 33: delidev.v1.ResourceService.GetSnapshot:input_type -> delidev.v1.GetSnapshotRequest
-	21, // 34: delidev.v1.ResourceService.WatchEvents:input_type -> delidev.v1.WatchEventsRequest
-	23, // 35: delidev.v1.ConfigurationService.SaveConfiguration:input_type -> delidev.v1.SaveConfigurationRequest
-	25, // 36: delidev.v1.ConfigurationService.DeleteConfiguration:input_type -> delidev.v1.DeleteConfigurationRequest
-	27, // 37: delidev.v1.ConfigurationService.PreviewRouting:input_type -> delidev.v1.PreviewRoutingRequest
-	29, // 38: delidev.v1.DeviceService.CreatePairing:input_type -> delidev.v1.CreatePairingRequest
-	31, // 39: delidev.v1.DeviceService.PairDevice:input_type -> delidev.v1.PairDeviceRequest
-	33, // 40: delidev.v1.DeviceService.RevokeDevice:input_type -> delidev.v1.RevokeDeviceRequest
-	35, // 41: delidev.v1.WorkerService.AttachWorker:input_type -> delidev.v1.AttachWorkerRequest
-	37, // 42: delidev.v1.WorkerService.WatchWork:input_type -> delidev.v1.WatchWorkRequest
-	39, // 43: delidev.v1.WorkerService.ReportWork:input_type -> delidev.v1.ReportWorkRequest
-	41, // 44: delidev.v1.WorkerService.InspectRepository:input_type -> delidev.v1.InspectRepositoryRequest
-	8,  // 45: delidev.v1.SystemService.GetStatus:output_type -> delidev.v1.GetStatusResponse
-	10, // 46: delidev.v1.SystemService.StopServer:output_type -> delidev.v1.StopServerResponse
-	12, // 47: delidev.v1.SystemService.GetDoctor:output_type -> delidev.v1.GetDoctorResponse
-	14, // 48: delidev.v1.SystemService.CreateBackup:output_type -> delidev.v1.CreateBackupResponse
-	16, // 49: delidev.v1.ResourceService.GetResource:output_type -> delidev.v1.GetResourceResponse
-	18, // 50: delidev.v1.ResourceService.ListResources:output_type -> delidev.v1.ListResourcesResponse
-	20, // 51: delidev.v1.ResourceService.GetSnapshot:output_type -> delidev.v1.GetSnapshotResponse
-	22, // 52: delidev.v1.ResourceService.WatchEvents:output_type -> delidev.v1.WatchEventsResponse
-	24, // 53: delidev.v1.ConfigurationService.SaveConfiguration:output_type -> delidev.v1.SaveConfigurationResponse
-	26, // 54: delidev.v1.ConfigurationService.DeleteConfiguration:output_type -> delidev.v1.DeleteConfigurationResponse
-	28, // 55: delidev.v1.ConfigurationService.PreviewRouting:output_type -> delidev.v1.PreviewRoutingResponse
-	30, // 56: delidev.v1.DeviceService.CreatePairing:output_type -> delidev.v1.CreatePairingResponse
-	32, // 57: delidev.v1.DeviceService.PairDevice:output_type -> delidev.v1.PairDeviceResponse
-	34, // 58: delidev.v1.DeviceService.RevokeDevice:output_type -> delidev.v1.RevokeDeviceResponse
-	36, // 59: delidev.v1.WorkerService.AttachWorker:output_type -> delidev.v1.AttachWorkerResponse
-	38, // 60: delidev.v1.WorkerService.WatchWork:output_type -> delidev.v1.WatchWorkResponse
-	40, // 61: delidev.v1.WorkerService.ReportWork:output_type -> delidev.v1.ReportWorkResponse
-	42, // 62: delidev.v1.WorkerService.InspectRepository:output_type -> delidev.v1.InspectRepositoryResponse
-	45, // [45:63] is the sub-list for method output_type
-	27, // [27:45] is the sub-list for method input_type
-	27, // [27:27] is the sub-list for extension type_name
-	27, // [27:27] is the sub-list for extension extendee
-	0,  // [0:27] is the sub-list for field type_name
+	3,  // 13: delidev.v1.SaveConfigurationResponse.job:type_name -> delidev.v1.Resource
+	4,  // 14: delidev.v1.DeleteConfigurationRequest.mutation:type_name -> delidev.v1.Mutation
+	0,  // 15: delidev.v1.DeleteConfigurationRequest.kind:type_name -> delidev.v1.EntityKind
+	2,  // 16: delidev.v1.CreatePairingRequest.type:type_name -> delidev.v1.DeviceType
+	3,  // 17: delidev.v1.CreatePairingResponse.pairing:type_name -> delidev.v1.Resource
+	3,  // 18: delidev.v1.PairDeviceResponse.device:type_name -> delidev.v1.Resource
+	3,  // 19: delidev.v1.PairDeviceResponse.machine:type_name -> delidev.v1.Resource
+	4,  // 20: delidev.v1.RevokeDeviceRequest.mutation:type_name -> delidev.v1.Mutation
+	3,  // 21: delidev.v1.RevokeDeviceResponse.device:type_name -> delidev.v1.Resource
+	3,  // 22: delidev.v1.AttachWorkerResponse.machine:type_name -> delidev.v1.Resource
+	3,  // 23: delidev.v1.WatchWorkResponse.job:type_name -> delidev.v1.Resource
+	4,  // 24: delidev.v1.ReportWorkRequest.mutation:type_name -> delidev.v1.Mutation
+	6,  // 25: delidev.v1.ReportWorkRequest.problem:type_name -> delidev.v1.ErrorDetail
+	3,  // 26: delidev.v1.ReportWorkResponse.job:type_name -> delidev.v1.Resource
+	3,  // 27: delidev.v1.InspectRepositoryResponse.job:type_name -> delidev.v1.Resource
+	7,  // 28: delidev.v1.SystemService.GetStatus:input_type -> delidev.v1.GetStatusRequest
+	9,  // 29: delidev.v1.SystemService.StopServer:input_type -> delidev.v1.StopServerRequest
+	11, // 30: delidev.v1.SystemService.GetDoctor:input_type -> delidev.v1.GetDoctorRequest
+	13, // 31: delidev.v1.SystemService.CreateBackup:input_type -> delidev.v1.CreateBackupRequest
+	15, // 32: delidev.v1.ResourceService.GetResource:input_type -> delidev.v1.GetResourceRequest
+	17, // 33: delidev.v1.ResourceService.ListResources:input_type -> delidev.v1.ListResourcesRequest
+	19, // 34: delidev.v1.ResourceService.GetSnapshot:input_type -> delidev.v1.GetSnapshotRequest
+	21, // 35: delidev.v1.ResourceService.WatchEvents:input_type -> delidev.v1.WatchEventsRequest
+	23, // 36: delidev.v1.ConfigurationService.SaveConfiguration:input_type -> delidev.v1.SaveConfigurationRequest
+	25, // 37: delidev.v1.ConfigurationService.DeleteConfiguration:input_type -> delidev.v1.DeleteConfigurationRequest
+	27, // 38: delidev.v1.ConfigurationService.PreviewRouting:input_type -> delidev.v1.PreviewRoutingRequest
+	29, // 39: delidev.v1.DeviceService.CreatePairing:input_type -> delidev.v1.CreatePairingRequest
+	31, // 40: delidev.v1.DeviceService.PairDevice:input_type -> delidev.v1.PairDeviceRequest
+	33, // 41: delidev.v1.DeviceService.RevokeDevice:input_type -> delidev.v1.RevokeDeviceRequest
+	35, // 42: delidev.v1.WorkerService.AttachWorker:input_type -> delidev.v1.AttachWorkerRequest
+	37, // 43: delidev.v1.WorkerService.WatchWork:input_type -> delidev.v1.WatchWorkRequest
+	39, // 44: delidev.v1.WorkerService.ReportWork:input_type -> delidev.v1.ReportWorkRequest
+	41, // 45: delidev.v1.WorkerService.InspectRepository:input_type -> delidev.v1.InspectRepositoryRequest
+	8,  // 46: delidev.v1.SystemService.GetStatus:output_type -> delidev.v1.GetStatusResponse
+	10, // 47: delidev.v1.SystemService.StopServer:output_type -> delidev.v1.StopServerResponse
+	12, // 48: delidev.v1.SystemService.GetDoctor:output_type -> delidev.v1.GetDoctorResponse
+	14, // 49: delidev.v1.SystemService.CreateBackup:output_type -> delidev.v1.CreateBackupResponse
+	16, // 50: delidev.v1.ResourceService.GetResource:output_type -> delidev.v1.GetResourceResponse
+	18, // 51: delidev.v1.ResourceService.ListResources:output_type -> delidev.v1.ListResourcesResponse
+	20, // 52: delidev.v1.ResourceService.GetSnapshot:output_type -> delidev.v1.GetSnapshotResponse
+	22, // 53: delidev.v1.ResourceService.WatchEvents:output_type -> delidev.v1.WatchEventsResponse
+	24, // 54: delidev.v1.ConfigurationService.SaveConfiguration:output_type -> delidev.v1.SaveConfigurationResponse
+	26, // 55: delidev.v1.ConfigurationService.DeleteConfiguration:output_type -> delidev.v1.DeleteConfigurationResponse
+	28, // 56: delidev.v1.ConfigurationService.PreviewRouting:output_type -> delidev.v1.PreviewRoutingResponse
+	30, // 57: delidev.v1.DeviceService.CreatePairing:output_type -> delidev.v1.CreatePairingResponse
+	32, // 58: delidev.v1.DeviceService.PairDevice:output_type -> delidev.v1.PairDeviceResponse
+	34, // 59: delidev.v1.DeviceService.RevokeDevice:output_type -> delidev.v1.RevokeDeviceResponse
+	36, // 60: delidev.v1.WorkerService.AttachWorker:output_type -> delidev.v1.AttachWorkerResponse
+	38, // 61: delidev.v1.WorkerService.WatchWork:output_type -> delidev.v1.WatchWorkResponse
+	40, // 62: delidev.v1.WorkerService.ReportWork:output_type -> delidev.v1.ReportWorkResponse
+	42, // 63: delidev.v1.WorkerService.InspectRepository:output_type -> delidev.v1.InspectRepositoryResponse
+	46, // [46:64] is the sub-list for method output_type
+	28, // [28:46] is the sub-list for method input_type
+	28, // [28:28] is the sub-list for extension type_name
+	28, // [28:28] is the sub-list for extension extendee
+	0,  // [0:28] is the sub-list for field type_name
 }
 
 func init() { file_delidev_v1_delidev_proto_init() }

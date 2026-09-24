@@ -26,7 +26,7 @@ func configurationValue(kind domain.Kind, raw []byte) (validatable, error) {
 	case domain.ProjectKind:
 		value = &domain.Project{}
 	case domain.RepositoryKind:
-		value = &domain.Repository{}
+		value = &domain.Repository{AutoFetch: true}
 	case domain.AgentKind:
 		value = &domain.Agent{}
 	case domain.AccountKind:
@@ -57,6 +57,9 @@ func SaveConfiguration(ctx context.Context, s *store.Store, input ConfigurationM
 	}
 	if input.ID == "" && input.ExpectedRevision != 0 {
 		return store.Result{}, domain.Fail(domain.InvalidArgument, "A new entity has no expected revision.", "Use revision zero when creating configuration.")
+	}
+	if repository, ok := value.(*domain.Repository); ok {
+		return saveRepository(ctx, s, input, *repository)
 	}
 	return s.Mutate(ctx, input.RequestID, "configuration.save", input, func(tx *store.Tx) (any, error) {
 		id := input.ID
@@ -111,9 +114,10 @@ func validateRelationships(tx *store.Tx, kind domain.Kind, id domain.ID, expecte
 				return err
 			}
 		}
-		// Repository inspection/revalidation is Worker-owned. Unverified checkouts
-		// cannot be saved through a configuration write without an inspection result.
-		return domain.Fail(domain.MissingInput, "Repository configuration requires Worker inspection.", "Inspect the repository on its execution Worker before saving it.")
+		if v.IntegrationID != "" {
+			return mustExist(tx, domain.IntegrationKind, v.IntegrationID)
+		}
+		return nil
 	case *domain.Agent:
 		record, err := tx.Get(domain.ModelKind, v.ModelID)
 		if err != nil {
