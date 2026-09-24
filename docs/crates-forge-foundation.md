@@ -36,6 +36,8 @@ Forge metadata is identified by its root custom-XML relationship and `urn:delino
 
 Both XML boolean true spellings (`1` and `true`) mark flipped native transforms as opaque; false spellings retain ordinary editable geometry. Unrelated edits preserve the original transform XML.
 
+Preview font injection allocates an unused font part and relationship ID, preserving unrelated content occupying the preferred names. The new embedded-font entry references the allocated ID; repeated preview preparation reuses the existing font definition.
+
 Selective chart-workbook updates accept only SpreadsheetML cells as row child elements. Row-level extension lists and foreign elements reject data edits before replacing sheet data; unrelated presentation edits retain the workbook bytes.
 
 New chart XML, workbook and relationship-part names must be unused under ASCII case-insensitive package-name comparison. A colliding caller-supplied chart UUID returns `unsupported_edit`; original parts remain unchanged. Inserted nodes emit their native content only once per patch.

@@ -110,6 +110,51 @@ fn lexical_true_flips_remain_opaque_and_preserved() {
     }
 }
 #[test]
+fn preview_font_uses_free_part_and_relationship_names() {
+    let mut parts = read_package(EXTERNAL).unwrap();
+    let font_path = "ppt/fonts/forge-noto-sans-kr.fntdata";
+    let original_font = b"unrelated embedded content";
+    parts.insert(font_path.into(), original_font.to_vec());
+    let rel_path = "ppt/_rels/presentation.xml.rels";
+    let original_rel = format!("<Relationship Id=\"rIdForgeFont\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/font\" Target=\"/{font_path}\"/>");
+    let relationships = xml_part(&parts, rel_path).replace(
+        "</Relationships>",
+        &format!("{original_rel}</Relationships>"),
+    );
+    parts.insert(rel_path.into(), relationships.into_bytes());
+    let source = write_package(&parts).unwrap();
+    let rendered = preview_bytes(&source).unwrap();
+    let output = read_package(&rendered).unwrap();
+    validate_package(&output).unwrap();
+    assert_eq!(output[font_path], original_font);
+    assert!(xml_part(&output, rel_path).contains(&original_rel));
+    let main = xml_part(&output, "ppt/presentation.xml");
+    let doc = roxmltree::Document::parse(&main).unwrap();
+    let regular = doc
+        .descendants()
+        .find(|n| n.tag_name().name() == "regular")
+        .unwrap();
+    let rid = regular
+        .attribute((
+            "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+            "id",
+        ))
+        .unwrap();
+    assert_ne!(rid, "rIdForgeFont");
+    let rels = xml_part(&output, rel_path);
+    let rels = roxmltree::Document::parse(&rels).unwrap();
+    let target = rels
+        .descendants()
+        .find(|n| n.attribute("Id") == Some(rid))
+        .unwrap()
+        .attribute("Target")
+        .unwrap()
+        .trim_start_matches('/');
+    assert_ne!(target, font_path);
+    assert!(output[target].ends_with(FONT_BYTES));
+    assert_eq!(preview_bytes(&rendered).unwrap(), rendered);
+}
+#[test]
 fn imported_chart_caches_follow_indices_and_preserve_unrepresentable_data() {
     let original = read_package(EXTERNAL).unwrap();
     let path = "ppt/charts/chart1.xml";

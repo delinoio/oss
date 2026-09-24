@@ -97,19 +97,33 @@ pub(crate) fn embed(parts: &mut Package) -> Result<()> {
     {
         return Ok(());
     }
-    let path = "ppt/fonts/forge-noto-sans-kr.fntdata";
-    parts.insert(path.into(), eot()?);
-    add_content_type(parts, path, "application/x-fontdata")?;
+    let mut path = "ppt/fonts/forge-noto-sans-kr.fntdata".to_owned();
+    while parts
+        .keys()
+        .any(|existing| existing.eq_ignore_ascii_case(&path))
+    {
+        path = format!(
+            "ppt/fonts/forge-noto-sans-kr-{}.fntdata",
+            uuid::Uuid::now_v7()
+        );
+    }
+    let existing = relationships(parts, &main)?;
+    let mut relationship_id = "rIdForgeFont".to_owned();
+    while existing.iter().any(|r| r.id == relationship_id) {
+        relationship_id = format!("rIdForgeFont{}", uuid::Uuid::now_v7().simple());
+    }
+    parts.insert(path.clone(), eot()?);
+    add_content_type(parts, &path, "application/x-fontdata")?;
     add_relationship(
         parts,
         &main,
-        "rIdForgeFont",
+        &relationship_id,
         &format!("{R}/font"),
         &format!("/{path}"),
     )?;
     let entry = format!(
         "<p:embeddedFont xmlns:p=\"{P}\" xmlns:r=\"{R}\"><p:font typeface=\"Noto Sans \
-         KR\"/><p:regular r:id=\"rIdForgeFont\"/></p:embeddedFont>"
+         KR\"/><p:regular r:id=\"{relationship_id}\"/></p:embeddedFont>"
     );
     let mut content = std::str::from_utf8(&bytes).map_err(failure)?.to_string();
     if let Some(list) = doc
