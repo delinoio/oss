@@ -689,6 +689,73 @@ int main(int argc, char **argv) {
 
     #[cfg(target_os = "linux")]
     #[tokio::test]
+    async fn seccomp_records_readlink_paths() {
+        let directory = tempfile::tempdir().expect("create fixture directory");
+        let source = directory.path().join("static-readlink.c");
+        let executable = directory.path().join("static-readlink");
+        let direct = directory.path().join("direct-link");
+        let nested = directory.path().join("nested");
+        let relative = nested.join("relative-link");
+        fs::create_dir(&nested).expect("create link directory");
+        std::os::unix::fs::symlink("target", &direct).expect("create direct link");
+        std::os::unix::fs::symlink("target", &relative).expect("create relative link");
+        fs::write(
+            &source,
+            r#"#include <fcntl.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+int main(int argc, char **argv) {
+  if (argc != 3) return 2;
+  char target[64];
+#if defined(__x86_64__)
+  if (syscall(SYS_readlink, argv[1], target, sizeof(target)) < 0) return 3;
+#else
+  if (syscall(SYS_readlinkat, AT_FDCWD, argv[1], target, sizeof(target)) < 0) return 3;
+#endif
+  int directory = syscall(SYS_openat, AT_FDCWD, argv[2], O_RDONLY | O_DIRECTORY);
+  if (directory < 0) return 4;
+  if (syscall(SYS_readlinkat, directory, "relative-link", target, sizeof(target)) < 0) return 5;
+  close(directory);
+  return 0;
+}
+"#,
+        )
+        .expect("write readlink fixture");
+        assert!(
+            std::process::Command::new("cc")
+                .arg("-static")
+                .arg(&source)
+                .arg("-o")
+                .arg(&executable)
+                .status()
+                .expect("compile static readlink fixture")
+                .success()
+        );
+        let mut command = super::Command::new(&executable);
+        command.args([&direct, &nested]);
+        let child = command
+            .spawn(CancellationToken::new())
+            .await
+            .expect("spawn tracked fixture");
+        let termination = child.wait_handle.await.expect("wait for fixture");
+        assert!(termination.status.success(), "{:?}", termination.status);
+        let accesses = termination.path_accesses.expect("complete trace");
+        for expected in [&relative, &direct] {
+            assert!(
+                accesses.iter().any(|access| {
+                    access.mode.contains(super::AccessMode::READ)
+                        && access.path.strip_path_prefix(expected, |path| {
+                            path.is_ok_and(|remaining| remaining.as_os_str().is_empty())
+                        })
+                }),
+                "missing read for {}",
+                expected.display()
+            );
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
     async fn seccomp_exec_records_script_interpreter() {
         let directory = tempfile::tempdir().expect("create fixture directory");
         let source = directory.path().join("launcher.c");

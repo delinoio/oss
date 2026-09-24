@@ -3,6 +3,7 @@ mod execve;
 mod getdents;
 mod mutate;
 mod open;
+mod readlink;
 mod stat;
 
 use std::{
@@ -102,6 +103,9 @@ impl_handler!(
 
     chdir,
     fchdir,
+
+    #[cfg(target_arch = "x86_64")] readlink,
+    readlinkat,
 
     #[cfg(target_arch = "x86_64")] unlink,
     unlinkat,
