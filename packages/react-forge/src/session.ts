@@ -55,17 +55,18 @@ export class DocumentSession {
     return signal ? AbortSignal.any([signal, this.disposal.signal]) : this.disposal.signal;
   }
 
-  private async track<T>(stage: Stage, work: () => Promise<T>): Promise<T> {
+  private async track<T>(stage: Stage, work: (context: { revision: number }) => Promise<T>): Promise<T> {
     this.active();
+    const context = { revision: this.revision };
     const started = performance.now();
-    const operation = work();
+    const operation = work(context);
     this.operations.add(operation);
     let code: ErrorCode | undefined;
     try { return await operation; }
-    catch (error) { code = error instanceof ForgeError ? error.code : ErrorCode.Io; if (error instanceof ForgeError) throw new ForgeError(error.code, error.message, { stage, format: this.format, revision: this.revision, ...error.context }); throw error; }
+    catch (error) { code = error instanceof ForgeError ? error.code : ErrorCode.Io; if (error instanceof ForgeError) throw new ForgeError(error.code, error.message, { stage, format: this.format, ...error.context, revision: context.revision }); throw error; }
     finally {
       this.operations.delete(operation);
-      const event = Object.freeze({ source: "javascript" as const, stage, format: this.format, revision: this.revision, durationMs: performance.now() - started, code });
+      const event = Object.freeze({ source: "javascript" as const, stage, format: this.format, revision: context.revision, durationMs: performance.now() - started, code });
       this.emit(event);
     }
   }
@@ -254,8 +255,9 @@ export class DocumentSession {
     return { model, revision: this.revision, refs, assets, fontOptions };
   }
 
-  private async process(signal: AbortSignal): Promise<NativeOutput & { revision: number; refs: Map<string, string> }> {
+  private async process(signal: AbortSignal, context: { revision: number }): Promise<NativeOutput & { revision: number; refs: Map<string, string> }> {
     const { model, revision, refs, assets, fontOptions } = await this.prepare(signal);
+    context.revision = revision;
     const output = await processDocument(this.format, this.imported ? "update" : "generate", model,
       this.source, assets, this.documentId, revision, signal, fontOptions, event => this.emit(event));
     return { ...output, revision, refs };
@@ -263,13 +265,13 @@ export class DocumentSession {
 
   exportBuffer(options: { signal?: AbortSignal } = {}): Promise<Buffer> {
     const signal = this.signal(options.signal);
-    return this.track(Stage.Export, async () => (await this.process(signal)).bytes);
+    return this.track(Stage.Export, async context => (await this.process(signal, context)).bytes);
   }
 
   exportFile(path: string, options: { overwrite?: boolean; signal?: AbortSignal } = {}): Promise<{ published: true; revision: number }> {
     const signal = this.signal(options.signal);
-    return this.track(Stage.Export, () => withOutputReservation(path, signal, async destination => {
-      const result = await this.process(signal);
+    return this.track(Stage.Export, context => withOutputReservation(path, signal, async destination => {
+      const result = await this.process(signal, context);
       await publish(result.bytes, destination, { ...options, signal, source: this.fingerprint });
       return { published: true as const, revision: result.revision };
     }));
@@ -277,9 +279,9 @@ export class DocumentSession {
 
   measure(handle: NodeHandle, options: { revision: number; signal?: AbortSignal }): Promise<Geometry> {
     const signal = this.signal(options.signal);
-    return this.track(Stage.Layout, async () => {
+    return this.track(Stage.Layout, async context => {
       if (handle.documentId !== this.documentId) throw new ForgeError(ErrorCode.InvalidTarget, "Node belongs to a different document.");
-      const result = await this.process(signal);
+      const result = await this.process(signal, context);
       if (options.revision !== result.revision) throw new ForgeError(ErrorCode.Conflict, "Requested geometry revision is stale.");
       const geometry = JSON.parse(result.geometry) as { nodes: Record<string, { frame: Omit<Geometry, "revision"> }> };
       const node = geometry.nodes[result.refs.get(handle.nodeId) ?? handle.nodeId];
