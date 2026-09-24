@@ -2299,6 +2299,7 @@ impl Trace<'_> {
             }
             return Ok(false);
         }
+        let mut descriptor_source = None;
         if let Some((descriptor, exact_fd)) = (!in_root)
             .then(|| self.proc_descriptor(pid, &original))
             .flatten()
@@ -2328,25 +2329,24 @@ impl Trace<'_> {
                 self.force_error(pid, &mut regs, path_arg, libc::EROFS)?;
                 return Ok(true);
             }
-            if call == libc::SYS_chdir {
-                let logical = if descriptor.logical == descriptor.physical {
-                    None
-                } else if exact_fd {
-                    Some(descriptor.logical)
-                } else {
-                    // A suffix can contain relative components or virtual links.
-                    Some(self.translate_view(&descriptor.logical)?.logical)
-                };
-                self.pending.insert(pid, Pending::ChangeDirectory(logical));
-                return Ok(true);
+            if exact_fd {
+                if call == libc::SYS_chdir {
+                    let logical =
+                        (descriptor.logical != descriptor.physical).then_some(descriptor.logical);
+                    self.pending.insert(pid, Pending::ChangeDirectory(logical));
+                    return Ok(true);
+                }
+                if is_open {
+                    // The kernel follows /proc/self/fd to the materialized file.
+                    // Retain the logical ownership on the newly opened descriptor.
+                    self.pending.insert(pid, Pending::Open(descriptor));
+                    return Ok(true);
+                }
+                return Ok(false);
             }
-            if is_open {
-                // The kernel follows /proc/self/fd to the materialized file.
-                // Retain the logical ownership on the newly opened descriptor.
-                self.pending.insert(pid, Pending::Open(descriptor));
-                return Ok(true);
-            }
-            return Ok(false);
+            // A descriptor suffix may cross another virtual node_modules
+            // boundary, so resolve it through the PnP view again.
+            descriptor_source = Some(descriptor.logical);
         }
         let proc_cwd = (!in_root).then(|| self.proc_cwd(pid, &original)).flatten();
         if let Some((logical, true)) = &proc_cwd {
@@ -2367,7 +2367,9 @@ impl Trace<'_> {
                 return Ok(true);
             }
         }
-        let source = if let Some((logical, _)) = &proc_cwd {
+        let source = if let Some(source) = descriptor_source {
+            source
+        } else if let Some((logical, _)) = &proc_cwd {
             logical.clone()
         } else if in_root && original.is_absolute() {
             let base = self.base(pid, dirfd, Path::new("."))?;

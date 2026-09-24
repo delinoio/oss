@@ -805,6 +805,7 @@ static int check(const char *path) {
     close(readable);
     return count == 13 && !strcmp(bytes, "package bytes") ? 0 : 3;
 }
+
 static void *worker(void *arg) {
     int fd = (int)(intptr_t)arg;
     char path[128];
@@ -854,6 +855,64 @@ int main(void) {
     assert!(!root.path().join("node_modules").exists());
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_proc_fd_descendants_resolve_nested_virtual_dependencies() {
+    use std::process::Command;
+    let root = fixture();
+    let mut graph = data();
+    graph["packageRegistryData"][2][1][0][1]["packageDependencies"] =
+        json!([["@scope/pkg", "npm:1"]]);
+    inline(root.path(), &graph);
+    let source = root.path().join("nested-proc-fd.c");
+    fs::write(
+        &source,
+        r#"
+#include <errno.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
+int main(void) {
+    int dir = open("node_modules/dep", O_RDONLY | O_DIRECTORY);
+    if (dir < 0) return 20;
+    char path[256];
+    snprintf(path, sizeof(path), "/proc/self/fd/%d/node_modules/@scope/pkg/package.json", dir);
+    int file = open(path, O_RDONLY);
+    if (file < 0) return 21;
+    char bytes[64] = {0};
+    int count = read(file, bytes, sizeof(bytes) - 1);
+    if (count != 21 || strcmp(bytes, "{\"name\":\"@scope/pkg\"}")) return 22;
+    errno = 0;
+    if (open(path, O_WRONLY) != -1 || errno != EROFS) return 23;
+    close(file);
+    close(dir);
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("nested-proc-fd");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
 #[cfg(target_os = "linux")]
 #[test]
 fn linux_named_standard_stream_aliases_keep_descriptor_ownership() {

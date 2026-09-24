@@ -204,6 +204,7 @@
 - A newly auto-attached Linux child may report its initial ptrace stop before the parent's clone event; keep it parked until clone registration installs its task, address-space, FD, and cwd state. Track it for cleanup immediately and kill it without resuming an unmediated syscall if shutdown begins before registration.
 - pnport Linux must classify inherited managed descriptors before resuming the owned root task; descriptor-relative mutations retain read-only rejection even when the descriptor was opened by the caller. Reject writable inherited managed descriptors before execution.
 - pnport Linux named standard-stream aliases and their descendant paths must resolve against the tracee's tracked FD table, including after dup onto descriptors 0, 1, or 2.
+- pnport Linux tracked descriptor-alias descendants must resolve nested virtual dependencies through the PnP view before entering the kernel.
 - pnport Linux must serialize descriptor changes and mediated descriptor mutations across threads sharing an FD table through syscall exit; reserve known dup destinations at entry and cancel parked peer entries before cleanup resumes them.
 - pnport Linux native opens must remain available to peer threads while blocked, including FIFO reader/writer rendezvous; only managed opens participate in the FD barrier.
 - pnport Linux must reject mount-namespace and filesystem-root transitions before execution while pathname classification uses the supervisor's namespace and root.
