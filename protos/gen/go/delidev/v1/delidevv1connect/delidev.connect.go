@@ -117,6 +117,9 @@ const (
 	// WorkerServiceClaimQuestionResponseProcedure is the fully-qualified name of the WorkerService's
 	// ClaimQuestionResponse RPC.
 	WorkerServiceClaimQuestionResponseProcedure = "/delidev.v1.WorkerService/ClaimQuestionResponse"
+	// WorkerServiceClaimSteerInputProcedure is the fully-qualified name of the WorkerService's
+	// ClaimSteerInput RPC.
+	WorkerServiceClaimSteerInputProcedure = "/delidev.v1.WorkerService/ClaimSteerInput"
 	// AccountServiceConnectAccountProcedure is the fully-qualified name of the AccountService's
 	// ConnectAccount RPC.
 	AccountServiceConnectAccountProcedure = "/delidev.v1.AccountService/ConnectAccount"
@@ -141,6 +144,9 @@ const (
 	// ProviderServiceResolveModelProcedure is the fully-qualified name of the ProviderService's
 	// ResolveModel RPC.
 	ProviderServiceResolveModelProcedure = "/delidev.v1.ProviderService/ResolveModel"
+	// SessionServiceSteerQueuedInputProcedure is the fully-qualified name of the SessionService's
+	// SteerQueuedInput RPC.
+	SessionServiceSteerQueuedInputProcedure = "/delidev.v1.SessionService/SteerQueuedInput"
 	// SessionServiceCreateSessionProcedure is the fully-qualified name of the SessionService's
 	// CreateSession RPC.
 	SessionServiceCreateSessionProcedure = "/delidev.v1.SessionService/CreateSession"
@@ -801,6 +807,7 @@ type WorkerServiceClient interface {
 	RegisterExecution(context.Context, *connect.Request[v1.RegisterExecutionRequest]) (*connect.Response[v1.RegisterExecutionResponse], error)
 	PublishExecution(context.Context, *connect.Request[v1.PublishExecutionRequest]) (*connect.Response[v1.PublishExecutionResponse], error)
 	ClaimQuestionResponse(context.Context, *connect.Request[v1.ClaimQuestionResponseRequest]) (*connect.Response[v1.ClaimQuestionResponseResponse], error)
+	ClaimSteerInput(context.Context, *connect.Request[v1.ClaimSteerInputRequest]) (*connect.Response[v1.ClaimSteerInputResponse], error)
 }
 
 // NewWorkerServiceClient constructs a client for the delidev.v1.WorkerService service. By default,
@@ -862,6 +869,12 @@ func NewWorkerServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(workerServiceMethods.ByName("ClaimQuestionResponse")),
 			connect.WithClientOptions(opts...),
 		),
+		claimSteerInput: connect.NewClient[v1.ClaimSteerInputRequest, v1.ClaimSteerInputResponse](
+			httpClient,
+			baseURL+WorkerServiceClaimSteerInputProcedure,
+			connect.WithSchema(workerServiceMethods.ByName("ClaimSteerInput")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -875,6 +888,7 @@ type workerServiceClient struct {
 	registerExecution     *connect.Client[v1.RegisterExecutionRequest, v1.RegisterExecutionResponse]
 	publishExecution      *connect.Client[v1.PublishExecutionRequest, v1.PublishExecutionResponse]
 	claimQuestionResponse *connect.Client[v1.ClaimQuestionResponseRequest, v1.ClaimQuestionResponseResponse]
+	claimSteerInput       *connect.Client[v1.ClaimSteerInputRequest, v1.ClaimSteerInputResponse]
 }
 
 // AttachWorker calls delidev.v1.WorkerService.AttachWorker.
@@ -917,6 +931,11 @@ func (c *workerServiceClient) ClaimQuestionResponse(ctx context.Context, req *co
 	return c.claimQuestionResponse.CallUnary(ctx, req)
 }
 
+// ClaimSteerInput calls delidev.v1.WorkerService.ClaimSteerInput.
+func (c *workerServiceClient) ClaimSteerInput(ctx context.Context, req *connect.Request[v1.ClaimSteerInputRequest]) (*connect.Response[v1.ClaimSteerInputResponse], error) {
+	return c.claimSteerInput.CallUnary(ctx, req)
+}
+
 // WorkerServiceHandler is an implementation of the delidev.v1.WorkerService service.
 type WorkerServiceHandler interface {
 	AttachWorker(context.Context, *connect.Request[v1.AttachWorkerRequest]) (*connect.Response[v1.AttachWorkerResponse], error)
@@ -927,6 +946,7 @@ type WorkerServiceHandler interface {
 	RegisterExecution(context.Context, *connect.Request[v1.RegisterExecutionRequest]) (*connect.Response[v1.RegisterExecutionResponse], error)
 	PublishExecution(context.Context, *connect.Request[v1.PublishExecutionRequest]) (*connect.Response[v1.PublishExecutionResponse], error)
 	ClaimQuestionResponse(context.Context, *connect.Request[v1.ClaimQuestionResponseRequest]) (*connect.Response[v1.ClaimQuestionResponseResponse], error)
+	ClaimSteerInput(context.Context, *connect.Request[v1.ClaimSteerInputRequest]) (*connect.Response[v1.ClaimSteerInputResponse], error)
 }
 
 // NewWorkerServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -984,6 +1004,12 @@ func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(workerServiceMethods.ByName("ClaimQuestionResponse")),
 		connect.WithHandlerOptions(opts...),
 	)
+	workerServiceClaimSteerInputHandler := connect.NewUnaryHandler(
+		WorkerServiceClaimSteerInputProcedure,
+		svc.ClaimSteerInput,
+		connect.WithSchema(workerServiceMethods.ByName("ClaimSteerInput")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/delidev.v1.WorkerService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case WorkerServiceAttachWorkerProcedure:
@@ -1002,6 +1028,8 @@ func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOp
 			workerServicePublishExecutionHandler.ServeHTTP(w, r)
 		case WorkerServiceClaimQuestionResponseProcedure:
 			workerServiceClaimQuestionResponseHandler.ServeHTTP(w, r)
+		case WorkerServiceClaimSteerInputProcedure:
+			workerServiceClaimSteerInputHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1041,6 +1069,10 @@ func (UnimplementedWorkerServiceHandler) PublishExecution(context.Context, *conn
 
 func (UnimplementedWorkerServiceHandler) ClaimQuestionResponse(context.Context, *connect.Request[v1.ClaimQuestionResponseRequest]) (*connect.Response[v1.ClaimQuestionResponseResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.ClaimQuestionResponse is not implemented"))
+}
+
+func (UnimplementedWorkerServiceHandler) ClaimSteerInput(context.Context, *connect.Request[v1.ClaimSteerInputRequest]) (*connect.Response[v1.ClaimSteerInputResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.ClaimSteerInput is not implemented"))
 }
 
 // AccountServiceClient is a client for the delidev.v1.AccountService service.
@@ -1341,6 +1373,7 @@ func (UnimplementedProviderServiceHandler) ResolveModel(context.Context, *connec
 
 // SessionServiceClient is a client for the delidev.v1.SessionService service.
 type SessionServiceClient interface {
+	SteerQueuedInput(context.Context, *connect.Request[v1.SteerQueuedInputRequest]) (*connect.Response[v1.SteerQueuedInputResponse], error)
 	CreateSession(context.Context, *connect.Request[v1.CreateSessionRequest]) (*connect.Response[v1.CreateSessionResponse], error)
 	ListSessions(context.Context, *connect.Request[v1.ListSessionsRequest]) (*connect.Response[v1.ListSessionsResponse], error)
 	EnqueueInput(context.Context, *connect.Request[v1.EnqueueInputRequest]) (*connect.Response[v1.EnqueueInputResponse], error)
@@ -1364,6 +1397,12 @@ func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 	baseURL = strings.TrimRight(baseURL, "/")
 	sessionServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("SessionService").Methods()
 	return &sessionServiceClient{
+		steerQueuedInput: connect.NewClient[v1.SteerQueuedInputRequest, v1.SteerQueuedInputResponse](
+			httpClient,
+			baseURL+SessionServiceSteerQueuedInputProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("SteerQueuedInput")),
+			connect.WithClientOptions(opts...),
+		),
 		createSession: connect.NewClient[v1.CreateSessionRequest, v1.CreateSessionResponse](
 			httpClient,
 			baseURL+SessionServiceCreateSessionProcedure,
@@ -1429,6 +1468,7 @@ func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 
 // sessionServiceClient implements SessionServiceClient.
 type sessionServiceClient struct {
+	steerQueuedInput        *connect.Client[v1.SteerQueuedInputRequest, v1.SteerQueuedInputResponse]
 	createSession           *connect.Client[v1.CreateSessionRequest, v1.CreateSessionResponse]
 	listSessions            *connect.Client[v1.ListSessionsRequest, v1.ListSessionsResponse]
 	enqueueInput            *connect.Client[v1.EnqueueInputRequest, v1.EnqueueInputResponse]
@@ -1439,6 +1479,11 @@ type sessionServiceClient struct {
 	renameSession           *connect.Client[v1.RenameSessionRequest, v1.RenameSessionResponse]
 	prepareSessionWorkspace *connect.Client[v1.PrepareSessionWorkspaceRequest, v1.PrepareSessionWorkspaceResponse]
 	recoverSessionWorkspace *connect.Client[v1.RecoverSessionWorkspaceRequest, v1.RecoverSessionWorkspaceResponse]
+}
+
+// SteerQueuedInput calls delidev.v1.SessionService.SteerQueuedInput.
+func (c *sessionServiceClient) SteerQueuedInput(ctx context.Context, req *connect.Request[v1.SteerQueuedInputRequest]) (*connect.Response[v1.SteerQueuedInputResponse], error) {
+	return c.steerQueuedInput.CallUnary(ctx, req)
 }
 
 // CreateSession calls delidev.v1.SessionService.CreateSession.
@@ -1493,6 +1538,7 @@ func (c *sessionServiceClient) RecoverSessionWorkspace(ctx context.Context, req 
 
 // SessionServiceHandler is an implementation of the delidev.v1.SessionService service.
 type SessionServiceHandler interface {
+	SteerQueuedInput(context.Context, *connect.Request[v1.SteerQueuedInputRequest]) (*connect.Response[v1.SteerQueuedInputResponse], error)
 	CreateSession(context.Context, *connect.Request[v1.CreateSessionRequest]) (*connect.Response[v1.CreateSessionResponse], error)
 	ListSessions(context.Context, *connect.Request[v1.ListSessionsRequest]) (*connect.Response[v1.ListSessionsResponse], error)
 	EnqueueInput(context.Context, *connect.Request[v1.EnqueueInputRequest]) (*connect.Response[v1.EnqueueInputResponse], error)
@@ -1512,6 +1558,12 @@ type SessionServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	sessionServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("SessionService").Methods()
+	sessionServiceSteerQueuedInputHandler := connect.NewUnaryHandler(
+		SessionServiceSteerQueuedInputProcedure,
+		svc.SteerQueuedInput,
+		connect.WithSchema(sessionServiceMethods.ByName("SteerQueuedInput")),
+		connect.WithHandlerOptions(opts...),
+	)
 	sessionServiceCreateSessionHandler := connect.NewUnaryHandler(
 		SessionServiceCreateSessionProcedure,
 		svc.CreateSession,
@@ -1574,6 +1626,8 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 	)
 	return "/delidev.v1.SessionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case SessionServiceSteerQueuedInputProcedure:
+			sessionServiceSteerQueuedInputHandler.ServeHTTP(w, r)
 		case SessionServiceCreateSessionProcedure:
 			sessionServiceCreateSessionHandler.ServeHTTP(w, r)
 		case SessionServiceListSessionsProcedure:
@@ -1602,6 +1656,10 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 
 // UnimplementedSessionServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedSessionServiceHandler struct{}
+
+func (UnimplementedSessionServiceHandler) SteerQueuedInput(context.Context, *connect.Request[v1.SteerQueuedInputRequest]) (*connect.Response[v1.SteerQueuedInputResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.SteerQueuedInput is not implemented"))
+}
 
 func (UnimplementedSessionServiceHandler) CreateSession(context.Context, *connect.Request[v1.CreateSessionRequest]) (*connect.Response[v1.CreateSessionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.CreateSession is not implemented"))

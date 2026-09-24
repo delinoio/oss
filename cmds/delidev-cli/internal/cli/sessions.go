@@ -59,6 +59,28 @@ func sessionCommand(ctx context.Context, c client, o options, args []string, str
 	action := args[0]
 	f := flags("session " + action)
 	switch action {
+	case "steer":
+		id := f.String("id", "", "")
+		inputID := f.String("input-id", "", "")
+		revision := f.Uint64("revision", 0, "")
+		execution := f.String("execution-id", "", "")
+		turn := f.String("turn-id", "", "")
+		if err := parse(f, args[1:]); err != nil {
+			return nil, err
+		}
+		if *revision == 0 {
+			return nil, domain.Fail(domain.MissingInput, "Steer requires the queued input revision.", "Provide its --revision together with --id, --input-id, --execution-id and --turn-id.")
+		}
+		for _, value := range []string{*id, *inputID, *execution, *turn} {
+			if err := domain.ID(value).Validate(); err != nil {
+				return nil, err
+			}
+		}
+		response, err := c.sessions.SteerQueuedInput(ctx, request(c, &pb.SteerQueuedInputRequest{Mutation: &pb.Mutation{RequestId: string(o.requestID), Id: *inputID, ExpectedRevision: *revision}, SessionId: *id, ExpectedExecutionId: *execution, ExpectedTurnId: *turn}))
+		if err != nil {
+			return nil, rpc.ClientError(err)
+		}
+		return map[string]any{"steer": resourceJSON(response.Msg.Steer), "change": sessionChangeJSON(response.Msg.Change), "replayed": response.Msg.Replayed}, nil
 	case "create", "enqueue":
 		input := f.String("input", "-", "")
 		wait := new(bool)

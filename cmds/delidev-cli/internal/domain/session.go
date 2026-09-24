@@ -181,6 +181,7 @@ type Session struct {
 	Dispatch            DispatchState       `json:"dispatch"`
 	Problem             *Error              `json:"problem,omitempty"`
 	ActiveExecutionID   ID                  `json:"active_execution_id,omitempty"`
+	PendingSteerID      ID                  `json:"pending_steer_id,omitempty"`
 	LastInputSequence   uint64              `json:"last_input_sequence"`
 	PendingInputs       uint32              `json:"pending_inputs"`
 	PendingInputBytes   uint64              `json:"pending_input_bytes"`

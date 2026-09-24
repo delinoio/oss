@@ -102,7 +102,7 @@ func (s *Service) PublishExecution(ctx context.Context, req *connect.Request[pb.
 	if err := domain.Decode(result.Data, &receipt); err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
-	if event.Kind == domain.ExecutionThreadBound || event.Kind == domain.ExecutionInputAccepted || event.Kind == domain.ExecutionTurnFinished || event.Kind.IsInteraction() || event.Kind == domain.ExecutionWaitingChanged || event.Kind == domain.ExecutionQuestionDeliveryObserved || event.Kind == domain.ExecutionQuestionAccepted {
+	if event.Kind == domain.ExecutionThreadBound || event.Kind == domain.ExecutionInputAccepted || event.Kind == domain.ExecutionTurnFinished || event.Kind.IsInteraction() || event.Kind == domain.ExecutionWaitingChanged || event.Kind == domain.ExecutionQuestionDeliveryObserved || event.Kind == domain.ExecutionQuestionAccepted || event.Kind == domain.ExecutionSteerObserved {
 		s.logger.InfoContext(ctx, "execution_event_committed", "job_id", identity.Job, "execution_id", event.ExecutionID, "kind", event.Kind, "sequence", event.Sequence, "replayed", result.Replayed)
 	}
 	response := connect.NewResponse(&pb.PublishExecutionResponse{AcknowledgedSequence: receipt.Sequence, Replayed: result.Replayed})
@@ -164,6 +164,9 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 				return executionEventConflict()
 			}
 			if event.Kind == domain.ExecutionTurnFinished {
+				if err := retireSteer(tx, sr, session, true); err != nil {
+					return err
+				}
 				responseUncertain, responseErr = endPublishedInteractions(tx, input, event)
 				if responseErr != nil {
 					return responseErr
@@ -217,6 +220,10 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 				if _, err := tx.CreateInboxEntry(sr.ID, sr.ProjectID, domain.InboxEntry{Source: domain.ExecutionTerminalInbox, SourceID: input.ExecutionID, ReadState: domain.InboxUnread, Terminal: &terminal}); err != nil {
 					return err
 				}
+			} else if event.Kind == domain.ExecutionSteerObserved {
+				if err := publishSteer(tx, job, input, actor, sr, session, event); err != nil {
+					return err
+				}
 			} else if event.Kind == domain.ExecutionQuestionDeliveryObserved {
 				responseUncertain, responseErr = publishQuestionDelivery(tx, job, input, actor, progress, event)
 				if responseErr != nil {
@@ -227,11 +234,21 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 					return err
 				}
 			} else if event.Kind.IsInteraction() {
+				if event.Kind == domain.ExecutionInteractionRequested {
+					if err := retireSteer(tx, sr, session, false); err != nil {
+						return err
+					}
+				}
 				responseUncertain, responseErr = publishExecutionInteraction(tx, input, sr, event)
 				if responseErr != nil {
 					return responseErr
 				}
 			} else if event.Kind == domain.ExecutionWaitingChanged {
+				if *event.Waiting != (domain.NativeWaiting{}) {
+					if err := retireSteer(tx, sr, session, false); err != nil {
+						return err
+					}
+				}
 				progress.Waiting = *event.Waiting
 			} else if event.Kind == domain.ExecutionUsageObserved {
 				observation := domain.ExecutionUsageObservation{ExecutionID: input.ExecutionID, AccountID: input.AccountID, ConnectionID: input.ConnectionID, ProviderID: input.Configuration.ProviderID, ModelID: input.Configuration.ModelID, Harness: input.Configuration.Harness, Version: input.Installation.Version, ThreadID: event.NativeThreadID, TurnID: event.NativeTurnID, Sequence: event.Sequence, Usage: *event.Usage}
@@ -254,7 +271,7 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 				if err := publishExecutionTool(tx, input, sr, event); err != nil {
 					return err
 				}
-			} else if err := publishExecutionMessage(tx, input, sr, event); err != nil {
+			} else if err := publishExecutionMessage(tx, input, sr, progress, event); err != nil {
 				return err
 			}
 		}
@@ -269,13 +286,28 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 	return nil
 }
 
-func publishExecutionMessage(tx *store.Tx, input domain.ExecutionJobInput, session store.Record, event domain.ExecutionEvent) error {
+func publishExecutionMessage(tx *store.Tx, input domain.ExecutionJobInput, session store.Record, progress *domain.ExecutionProgress, event domain.ExecutionEvent) error {
 	update := event.Message
 	if update == nil {
 		return executionEventConflict()
 	}
-	if update.Role == domain.UserMessage && (update.InputID != input.InputID || update.Text != input.Input.Prompt) {
-		return executionEventConflict()
+	if update.Role == domain.UserMessage {
+		primary := domain.BindExecutionInput(input.InputID, input.Input.Prompt)
+		bindings, err := domain.CheckedExecutionInputs(primary.InputID, primary.PromptDigest, progress.AcceptedInputs)
+		if err != nil {
+			return err
+		}
+		binding := domain.BindExecutionInput(update.InputID, update.Text)
+		found := false
+		for _, accepted := range bindings {
+			if accepted == binding {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return executionEventConflict()
+		}
 	}
 	var value domain.ExecutionMessage
 	var revision uint64

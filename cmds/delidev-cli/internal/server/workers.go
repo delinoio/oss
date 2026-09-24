@@ -183,11 +183,13 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 	var inFlight domain.ID
 	var cancellationSent domain.ID
 	responseControlsSent := map[domain.ID]bool{}
+	steerControlsSent := map[domain.ID]bool{}
 	for {
 		changed := s.Store.Changed()
 		var records []store.Record
 		var cancelJob domain.ID
 		var responseControls []*pb.QuestionResponseControl
+		var steerControl *pb.SteerInputControl
 		err := s.Store.Read(ctx, func(tx *store.Tx) error {
 			if err := currentInstance(tx, machine, instance); err != nil {
 				return err
@@ -213,12 +215,16 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 					}
 					if !requested {
 						responseControls, err = s.pendingQuestionResponses(tx, record, job, responseControlsSent)
+						if err == nil {
+							steerControl, err = s.pendingSteer(tx, record, job, steerControlsSent)
+						}
 					}
 					return err
 				}
 				inFlight = ""
 				cancellationSent = ""
 				responseControlsSent = map[domain.ID]bool{}
+				steerControlsSent = map[domain.ID]bool{}
 			}
 			var err error
 			records, err = tx.Jobs(machine, "", "", after, store.MaxPage)
@@ -241,6 +247,15 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 				return err
 			}
 			responseControlsSent[domain.ID(control.ResponseId)] = true
+		}
+		if steerControl != nil {
+			if len(steerControlsSent) >= domain.MaxExecutionSteers {
+				return rpc.Error(steerConflict(), correlation)
+			}
+			if err := send(&pb.WatchWorkResponse{SteerInput: steerControl}); err != nil {
+				return err
+			}
+			steerControlsSent[domain.ID(steerControl.SteerId)] = true
 		}
 		assigned := false
 		for _, record := range records {

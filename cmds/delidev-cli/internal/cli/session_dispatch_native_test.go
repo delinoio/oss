@@ -27,6 +27,15 @@ import (
 // execution is opt-in and uses a fresh Worker environment plus a loopback
 // scripted keyless provider, never an existing login or external account.
 func TestManualNativeCLIFirstDispatch(t *testing.T) {
+	testManualNativeCLI(t, false)
+}
+
+func TestManualNativeCLISteer(t *testing.T) {
+	testManualNativeCLI(t, true)
+}
+
+func testManualNativeCLI(t *testing.T, steerScenario bool) {
+	t.Helper()
 	binary := os.Getenv("DELIDEV_NATIVE_THREAD_EXECUTABLE")
 	if binary == "" {
 		t.Skip("explicit installed Codex and private loopback fixture only")
@@ -124,6 +133,7 @@ func TestManualNativeCLIFirstDispatch(t *testing.T) {
 			}
 			var calls, validations atomic.Int64
 			interruptedRequest := make(chan struct{}, 1)
+			steerStarted, releaseSteer := make(chan struct{}), make(chan struct{})
 			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.Header.Get("Authorization") != "" {
 					t.Error("keyless upstream received a credential")
@@ -147,6 +157,9 @@ func TestManualNativeCLIFirstDispatch(t *testing.T) {
 					t.Error("native execution changed accepted input/model")
 				}
 				prompts := []string{"Public first prompt", "Public second prompt", "Public third prompt", "Public fourth prompt", "Public fifth prompt", "Public interrupted prompt", "Public resumed interrupted prompt"}
+				if steerScenario {
+					prompts = []string{"Public first prompt", "Public same-turn Steer 한글 🐦", "Public continuation after Steer"}
+				}
 				if call < 1 || call > int64(len(prompts)) {
 					t.Error("unexpected provider inference count")
 				} else {
@@ -157,6 +170,18 @@ func TestManualNativeCLIFirstDispatch(t *testing.T) {
 					}
 				}
 				w.Header().Set("Content-Type", "text/event-stream")
+				if steerScenario && call == 1 {
+					fmt.Fprintf(w, "data: %s\n\n", `{"type":"response.created","response":{"id":"resp_public_fixture_1","status":"in_progress"}}`)
+					w.(http.Flusher).Flush()
+					close(steerStarted)
+					select {
+					case <-releaseSteer:
+					case <-ctx.Done():
+						return
+					case <-r.Context().Done():
+						return
+					}
+				}
 				if call == 6 {
 					fmt.Fprintf(w, "data: %s\n\n", `{"type":"response.created","response":{"id":"resp_public_interrupted","status":"in_progress"}}`)
 					w.(http.Flusher).Flush()
@@ -164,11 +189,14 @@ func TestManualNativeCLIFirstDispatch(t *testing.T) {
 					<-r.Context().Done()
 					return
 				}
-				for _, event := range []any{
+				for index, event := range []any{
 					map[string]any{"type": "response.created", "response": map[string]any{"id": fmt.Sprintf("resp_public_fixture_%d", call), "status": "in_progress"}},
 					map[string]any{"type": "response.output_item.done", "output_index": 0, "item": map[string]any{"type": "message", "id": fmt.Sprintf("msg_public_fixture_%d", call), "role": "assistant", "content": []any{map[string]any{"type": "output_text", "text": "Public execution complete."}}}},
 					map[string]any{"type": "response.completed", "response": map[string]any{"id": fmt.Sprintf("resp_public_fixture_%d", call), "status": "completed", "output": []any{}, "usage": map[string]any{"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}}},
 				} {
+					if steerScenario && call == 1 && index == 0 {
+						continue
+					}
 					raw, _ := json.Marshal(event)
 					fmt.Fprintf(w, "data: %s\n\n", raw)
 				}
@@ -218,6 +246,54 @@ func TestManualNativeCLIFirstDispatch(t *testing.T) {
 			accepted := run(create, input)
 			id := accepted["session"].(map[string]any)["id"].(string)
 			var state domain.Session
+			var steerArgs []string
+			if steerScenario {
+				select {
+				case <-steerStarted:
+				case <-ctx.Done():
+					t.Fatal("native first request did not start")
+				}
+				for {
+					current := run([]string{"session", "get", "--id", id}, nil)
+					raw, _ := json.Marshal(current["data"])
+					state = domain.Session{}
+					if domain.Decode(raw, &state) != nil || state.Recovery != domain.NoRecovery {
+						t.Fatal("native input acceptance failed")
+					}
+					if state.Execution != nil && state.Execution.NativeTurnID != "" {
+						break
+					}
+					select {
+					case <-time.After(20 * time.Millisecond):
+					case <-ctx.Done():
+						t.Fatal("original input was not accepted")
+					}
+				}
+				queued := run([]string{"session", "enqueue", "--id", id}, domain.SessionInput{Prompt: "Public same-turn Steer 한글 🐦", Mode: mode})["input"].(map[string]any)
+				steerArgs = []string{"session", "steer", "--id", id, "--input-id", queued["id"].(string), "--revision", revision(queued), "--execution-id", string(state.ActiveExecutionID), "--turn-id", state.Execution.NativeTurnID, "--request-id", string(domain.NewID())}
+				steered := run(steerArgs, nil)
+				steerID := steered["steer"].(map[string]any)["id"].(string)
+				for {
+					current := run([]string{"steer", "get", "--id", steerID}, nil)
+					raw, _ := json.Marshal(current["data"])
+					var attempt domain.SteerAttempt
+					if domain.Decode(raw, &attempt) != nil {
+						t.Fatal("invalid Steer state")
+					}
+					if attempt.State == domain.SteerAccepted {
+						break
+					}
+					if attempt.State != domain.SteerQueued && attempt.State != domain.SteerClaimed {
+						t.Fatalf("native Steer failed: %+v", attempt)
+					}
+					select {
+					case <-time.After(20 * time.Millisecond):
+					case <-ctx.Done():
+						t.Fatal("native Steer was not accepted")
+					}
+				}
+				close(releaseSteer)
+			}
 			for {
 				current := run([]string{"session", "get", "--id", id}, nil)
 				raw, _ := json.Marshal(current["data"])
@@ -254,14 +330,18 @@ func TestManualNativeCLIFirstDispatch(t *testing.T) {
 				t.Fatal("native process cleanup not proven", err)
 			}
 			queue := run([]string{"queue", "list", "--session-id", id}, nil)["inputs"].([]any)
-			if len(queue) != 1 || queue[0].(map[string]any)["data"].(map[string]any)["delivery"] != string(domain.InputAccepted) || queue[0].(map[string]any)["data"].(map[string]any)["mode"] != string(mode) {
+			expectedInputs, expectedMessages, expectedCalls := 1, 2, int64(1)
+			if steerScenario {
+				expectedInputs, expectedMessages, expectedCalls = 2, 4, 2
+			}
+			if len(queue) != expectedInputs || queue[0].(map[string]any)["data"].(map[string]any)["delivery"] != string(domain.InputAccepted) || queue[0].(map[string]any)["data"].(map[string]any)["mode"] != string(mode) {
 				t.Fatal("public queue lost native input acceptance/mode")
 			}
 			messages := run([]string{"message", "list", "--session-id", id}, nil)["resources"].([]any)
-			if len(messages) != 2 {
+			if len(messages) != expectedMessages {
 				t.Fatal("public execution lost native transcript")
 			}
-			if calls.Load() != 1 || validations.Load() != 1 {
+			if calls.Load() != expectedCalls || validations.Load() != 1 {
 				t.Fatal("public receipt replay repeated validation or inference")
 			}
 			initialBytes, _ := json.Marshal(state.InitialExecution)
@@ -299,6 +379,22 @@ func TestManualNativeCLIFirstDispatch(t *testing.T) {
 			}
 			enqueue := func(prompt string, mode domain.SessionMode) string {
 				return run([]string{"session", "enqueue", "--id", id}, domain.SessionInput{Prompt: prompt, Mode: mode})["input"].(map[string]any)["id"].(string)
+			}
+			if steerScenario {
+				if len(state.Execution.AcceptedInputs) != 2 || state.PendingSteerID != "" {
+					t.Fatal("Steer lost ordered acceptance/checkpoint evidence")
+				}
+				retried := run(steerArgs, nil)
+				if retried["replayed"] != true || retried["steer"].(map[string]any)["data"].(map[string]any)["state"] != string(domain.SteerAccepted) {
+					t.Fatal("old Steer receipt lost current state")
+				}
+				followup := enqueue("Public continuation after Steer", domain.ExecuteMode)
+				waitTurn(3, followup)
+				if validations.Load() != 1 {
+					t.Fatal("Steer replaced account validation")
+				}
+				t.Log("public CLI selected queue -> same-turn native Steer -> exact acceptance/transcript -> owned cleanup -> process-replacement FIFO continuation; no seeded readiness or external inference")
+				return
 			}
 			// Complete two FIFO turns in fresh native processes on the original history.
 			second := enqueue("Public second prompt", domain.PlanMode)

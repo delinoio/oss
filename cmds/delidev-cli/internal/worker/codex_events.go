@@ -22,12 +22,13 @@ type CodexEventPublisher struct {
 	interactions      map[domain.ID]domain.ExecutionInteractionUpdate
 	questionResponses map[domain.ID]domain.ExecutionQuestionResponseUpdate
 	acceptedInputs    []domain.ExecutionInputBinding
+	steers            map[domain.ID]domain.ExecutionSteerUpdate
 	waiting           domain.NativeWaiting
 	blocked, finished bool
 }
 
 func NewCodexEventPublisher(publisher *ExecutionPublisher) *CodexEventPublisher {
-	return &CodexEventPublisher{publisher: publisher, messages: map[string]domain.ExecutionMessageUpdate{}, tools: map[string]codexToolPublication{}, artifacts: map[string]codexArtifactPublication{}, interactions: map[domain.ID]domain.ExecutionInteractionUpdate{}, questionResponses: map[domain.ID]domain.ExecutionQuestionResponseUpdate{}}
+	return &CodexEventPublisher{publisher: publisher, messages: map[string]domain.ExecutionMessageUpdate{}, tools: map[string]codexToolPublication{}, artifacts: map[string]codexArtifactPublication{}, interactions: map[domain.ID]domain.ExecutionInteractionUpdate{}, questionResponses: map[domain.ID]domain.ExecutionQuestionResponseUpdate{}, steers: map[domain.ID]domain.ExecutionSteerUpdate{}}
 }
 
 func (c *CodexEventPublisher) publish(ctx context.Context, event domain.ExecutionEvent) error {
@@ -118,6 +119,23 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 		}
 	}()
 	if c.blocked || c.finished || c.publisher == nil || c.thread == "" || c.turn == "" {
+		return false, publicationUncertain()
+	}
+	if event.Kind == codex.LateTurnResponseEvent && event.Action == codex.SteerTurnAction {
+		observed := event.Steer
+		accepted, known := c.steers[event.RequestID]
+		if !known || observed == nil || !event.Late || !event.Correlated || event.ThreadID != c.thread || event.TurnID != c.turn || event.InputID != accepted.InputID || observed.RequestID != accepted.SteerID || observed.InputID != accepted.InputID || observed.ThreadID != c.thread || observed.TurnID != c.turn {
+			return false, publicationUncertain()
+		}
+		if accepted.Delivery == domain.SteerNativeAccepted && observed.Delivery == codex.SteerAccepted && event.Problem == nil {
+			return true, nil
+		}
+		if accepted.Delivery == domain.SteerNotSent && observed.Delivery == codex.SteerNotSent && event.Problem != nil && event.Problem.Code == accepted.ProblemCode {
+			return true, nil
+		}
+		if accepted.Delivery == domain.SteerNativeUncertain {
+			return true, c.publishLateSteer(ctx, accepted, event)
+		}
 		return false, publicationUncertain()
 	}
 	if event.Kind == codex.NativeExtensionEvent || event.Kind == codex.LateTurnResponseEvent {

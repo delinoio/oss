@@ -33,6 +33,7 @@ type Config struct {
 	execution        *PublicationConfig
 	executionContext context.Context
 	questionControls <-chan *pb.QuestionResponseControl
+	steerControls    <-chan *pb.SteerInputControl
 }
 type journalState string
 
@@ -156,6 +157,8 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 		cancel    context.CancelFunc
 		controls  chan *pb.QuestionResponseControl
 		responses map[domain.ID]responseControlIdentity
+		steers    chan *pb.SteerInputControl
+		steerIDs  map[domain.ID]steerControlIdentity
 		native    bool
 	}
 	jobs := make(chan assignment, 1)
@@ -171,6 +174,52 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 		for stream.Receive() {
 			deadline.Reset(heartbeatTimeout)
 			message := stream.Msg()
+			if message.SteerInput != nil {
+				control := message.SteerInput
+				identity, err := steerControl(control)
+				if err != nil || message.Job != nil || message.Heartbeat || message.CancelRequested || message.CancelJobId != "" || message.QuestionResponse != nil {
+					cancel(publicationUncertain())
+					return
+				}
+				value, ok := active.Load(control.JobId)
+				if !ok {
+					if control.JobId == lastAssigned {
+						continue
+					}
+					cancel(publicationUncertain())
+					return
+				}
+				work := value.(*assignment)
+				if !work.native {
+					cancel(publicationUncertain())
+					return
+				}
+				if work.context.Err() != nil {
+					continue
+				}
+				if prior, exists := work.steerIDs[identity.SteerID]; exists {
+					if prior != identity {
+						cancel(publicationUncertain())
+						return
+					}
+					continue
+				}
+				if len(work.steerIDs) >= domain.MaxExecutionSteers {
+					cancel(publicationUncertain())
+					return
+				}
+				work.steerIDs[identity.SteerID] = identity
+				select {
+				case work.steers <- proto.Clone(control).(*pb.SteerInputControl):
+				case <-work.context.Done():
+				case <-ctx.Done():
+					return
+				default:
+					cancel(publicationUncertain())
+					return
+				}
+				continue
+			}
 			if message.QuestionResponse != nil {
 				control := message.QuestionResponse
 				identity, err := responseControl(control)
@@ -246,7 +295,7 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 				return
 			}
 			jobContext, stopJob := context.WithCancel(ctx)
-			work := &assignment{resource: resource, context: jobContext, cancel: stopJob, controls: make(chan *pb.QuestionResponseControl, domain.MaxOpenInteractions), responses: map[domain.ID]responseControlIdentity{}}
+			work := &assignment{resource: resource, context: jobContext, cancel: stopJob, controls: make(chan *pb.QuestionResponseControl, domain.MaxOpenInteractions), responses: map[domain.ID]responseControlIdentity{}, steers: make(chan *pb.SteerInputControl, 1), steerIDs: map[domain.ID]steerControlIdentity{}}
 			var envelope domain.Job
 			if domain.Decode(resource.DocumentJson, &envelope) != nil {
 				stopJob()
@@ -311,6 +360,7 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 		jobConfig.execution = &PublicationConfig{Root: config.Root, Credential: credential, Instance: instance, Assignment: resource, Client: client, Logger: config.Logger}
 		jobConfig.executionContext = ctx
 		jobConfig.questionControls = work.controls
+		jobConfig.steerControls = work.steers
 		result, err := runJob(work.context, jobConfig, instance, resource, job)
 		work.cancel()
 		active.Delete(resource.Id)

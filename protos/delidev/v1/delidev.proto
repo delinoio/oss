@@ -65,6 +65,7 @@ enum EntityKind {
   ENTITY_KIND_USAGE = 23;
   ENTITY_KIND_JOB = 24;
   ENTITY_KIND_PAIRING = 25;
+  ENTITY_KIND_STEER = 26;
 }
 // Resource documents are versioned, strictly validated UTF-8 JSON. Their closed
 // schemas live in the Go domain types. Unknown fields and enum values fail.
@@ -212,6 +213,18 @@ service WorkerService {
   rpc RegisterExecution(RegisterExecutionRequest) returns (RegisterExecutionResponse);
   rpc PublishExecution(PublishExecutionRequest) returns (PublishExecutionResponse);
   rpc ClaimQuestionResponse(ClaimQuestionResponseRequest) returns (ClaimQuestionResponseResponse);
+  rpc ClaimSteerInput(ClaimSteerInputRequest) returns (ClaimSteerInputResponse);
+}
+message ClaimSteerInputRequest {
+  Mutation mutation = 1;
+  string machine_id = 2;
+  string instance_id = 3;
+  string job_id = 4;
+}
+message ClaimSteerInputResponse {
+  Resource steer = 1;
+  Resource input = 2;
+  bool replayed = 3;
 }
 message ClaimQuestionResponseRequest {
   // Exact original interaction revision and durable Worker claim request ID.
@@ -314,6 +327,12 @@ message WatchWorkResponse {
   string cancel_job_id = 4;
   // Metadata-only control for the active assignment, independent of job order.
   QuestionResponseControl question_response = 5;
+  SteerInputControl steer_input = 6;
+}
+message SteerInputControl {
+  string job_id = 1;
+  string steer_id = 2;
+  uint64 revision = 3;
 }
 message QuestionResponseControl {
   string job_id = 1;
@@ -450,6 +469,7 @@ message ResolveModelResponse {
 // Owner/client session acceptance and ordered input. Native execution and
 // interactions are separately capability-checked; acceptance is not dispatch.
 service SessionService {
+  rpc SteerQueuedInput(SteerQueuedInputRequest) returns (SteerQueuedInputResponse);
   rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
   rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
   rpc EnqueueInput(EnqueueInputRequest) returns (EnqueueInputResponse);
@@ -460,6 +480,19 @@ service SessionService {
   rpc RenameSession(RenameSessionRequest) returns (RenameSessionResponse);
   rpc PrepareSessionWorkspace(PrepareSessionWorkspaceRequest) returns (PrepareSessionWorkspaceResponse);
   rpc RecoverSessionWorkspace(RecoverSessionWorkspaceRequest) returns (RecoverSessionWorkspaceResponse);
+}
+message SteerQueuedInputRequest {
+  // Exact queue record revision; request_id also identifies the Steer attempt.
+  Mutation mutation = 1;
+  string session_id = 2;
+  string expected_execution_id = 3;
+  string expected_turn_id = 4;
+}
+message SteerQueuedInputResponse {
+  Resource steer = 1;
+  SessionChange change = 2;
+  string request_id = 3;
+  bool replayed = 4;
 }
 message SessionChange {
   Resource session = 1;

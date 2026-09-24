@@ -55,6 +55,9 @@ func (s *Service) questionResponseScope(tx *store.Tx, r store.Record, value doma
 		return store.ExecutionGrant{}, err
 	}
 	progress := session.Execution
+	if session.PendingSteerID != "" {
+		return store.ExecutionGrant{}, steerConflict()
+	}
 	if session.Outcome != domain.ExecutionRunning || progress == nil || progress.Outcome != domain.ExecutionRunning || progress.CleanupVerified || session.ActiveExecutionID != value.ExecutionID || progress.ExecutionID != value.ExecutionID || progress.NativeThreadID != value.NativeThreadID || progress.NativeTurnID != value.NativeTurnID {
 		return store.ExecutionGrant{}, executionEventConflict()
 	}

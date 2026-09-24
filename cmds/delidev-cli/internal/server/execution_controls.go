@@ -31,6 +31,9 @@ func controlNativeSession(tx *store.Tx, sr store.Record, session *domain.Session
 		return executionEventConflict()
 	}
 	session.Dispatch, session.NextExecutionIntent = domain.DispatchPaused, ""
+	if err := retireSteer(tx, sr, session, false); err != nil {
+		return err
+	}
 	if action == domain.ArchiveSession {
 		session.Archive = domain.ArchivePending
 	}
@@ -88,6 +91,9 @@ func cancelAccountExecutions(tx *store.Tx, account domain.ID) error {
 				return err
 			}
 			session.Dispatch, session.NextExecutionIntent = domain.DispatchPaused, ""
+			if err := retireSteer(tx, sr, &session, false); err != nil {
+				return err
+			}
 			if session.Problem == nil {
 				session.Problem = domain.Fail(domain.Unauthenticated, "The selected account was disconnected; native execution cancellation was requested.", "Retain the original execution until its cleanup and input acceptance are reconciled.")
 			}

@@ -27,6 +27,7 @@ const (
 	ExecutionWaitingChanged           ExecutionEventKind = "waiting-changed"
 	ExecutionQuestionDeliveryObserved ExecutionEventKind = "question-delivery-observed"
 	ExecutionQuestionAccepted         ExecutionEventKind = "question-accepted"
+	ExecutionSteerObserved            ExecutionEventKind = "steer-observed"
 )
 
 type MessageRole string
@@ -120,6 +121,7 @@ type ExecutionEvent struct {
 	Waiting            *NativeWaiting                     `json:"waiting,omitempty"`
 	QuestionResponse   *ExecutionQuestionResponseUpdate   `json:"question_response,omitempty"`
 	QuestionAcceptance *ExecutionQuestionAcceptanceUpdate `json:"question_acceptance,omitempty"`
+	Steer              *ExecutionSteerUpdate              `json:"steer,omitempty"`
 }
 
 func (e ExecutionEvent) Validate() error {
@@ -138,6 +140,13 @@ func (e ExecutionEvent) Validate() error {
 		}
 	}
 	switch e.Kind {
+	case ExecutionSteerObserved:
+		if e.Steer == nil {
+			return Fail(InvalidArgument, "A Steer observation is required.", "Use the original claim and exact native delivery classification.")
+		}
+		if err := e.Steer.Validate(); err != nil {
+			return err
+		}
 	case ExecutionQuestionAccepted:
 		if e.QuestionAcceptance == nil {
 			return invalidInteraction()
@@ -237,7 +246,7 @@ func (e ExecutionEvent) Validate() error {
 	default:
 		return Fail(Unsupported, "Unknown normalized execution event.", "Use a dedicated supported native event adapter.")
 	}
-	if (e.Kind != ExecutionQuestionAccepted && e.QuestionAcceptance != nil) || (e.Kind != ExecutionQuestionDeliveryObserved && e.QuestionResponse != nil) || (!e.Kind.IsInteraction() && e.Interaction != nil) || (e.Kind != ExecutionWaitingChanged && e.Waiting != nil) || (!e.Kind.IsArtifact() && e.Artifact != nil) || (e.Kind != ExecutionProgressObserved && e.Progress != nil) || (!e.Kind.IsTool() && e.Tool != nil) || (e.Kind != ExecutionThreadBound && e.Observed != nil) || (e.Kind != ExecutionMessageStarted && e.Kind != ExecutionTextAppended && e.Kind != ExecutionMessageCompleted && e.Message != nil) || (e.Kind != ExecutionTurnFinished && (e.Outcome != "" || e.ProblemCode != "")) || (e.Kind != ExecutionUsageObserved && (e.Usage != nil || e.ObservationID != "")) || (e.Kind != ExecutionNoticeObserved && e.Notice != "") {
+	if (e.Kind != ExecutionSteerObserved && e.Steer != nil) || (e.Kind != ExecutionQuestionAccepted && e.QuestionAcceptance != nil) || (e.Kind != ExecutionQuestionDeliveryObserved && e.QuestionResponse != nil) || (!e.Kind.IsInteraction() && e.Interaction != nil) || (e.Kind != ExecutionWaitingChanged && e.Waiting != nil) || (!e.Kind.IsArtifact() && e.Artifact != nil) || (e.Kind != ExecutionProgressObserved && e.Progress != nil) || (!e.Kind.IsTool() && e.Tool != nil) || (e.Kind != ExecutionThreadBound && e.Observed != nil) || (e.Kind != ExecutionMessageStarted && e.Kind != ExecutionTextAppended && e.Kind != ExecutionMessageCompleted && e.Message != nil) || (e.Kind != ExecutionTurnFinished && (e.Outcome != "" || e.ProblemCode != "")) || (e.Kind != ExecutionUsageObserved && (e.Usage != nil || e.ObservationID != "")) || (e.Kind != ExecutionNoticeObserved && e.Notice != "") {
 		return Fail(InvalidArgument, "An execution event contains another kind's payload.", "Publish one unambiguous typed event.")
 	}
 	return nil
@@ -251,6 +260,7 @@ type ExecutionProgress struct {
 	ExecutionID          ID                        `json:"execution_id"`
 	InputID              ID                        `json:"input_id"`
 	AcceptedInputs       []ExecutionInputBinding   `json:"accepted_inputs,omitempty"`
+	SteerAttempts        uint32                    `json:"steer_attempts,omitempty"`
 	LastSequence         uint64                    `json:"last_sequence"`
 	NativeThreadID       string                    `json:"native_thread_id"`
 	NativeTurnID         string                    `json:"native_turn_id,omitempty"`
