@@ -673,4 +673,26 @@ func assertNativeWorkerCheckpoint(t *testing.T, f *publicationFixture, root stri
 	if err != nil || checkpoint.Native.ThreadID != completion.NativeThreadID || checkpoint.Native.TurnID != completion.NativeTurnID || checkpoint.Native.Effective.Model != f.input.Configuration.NativeModel {
 		t.Fatalf("completed native Worker did not retain exact continuation evidence: %v", err)
 	}
+	var original store.Record
+	if err := f.service.Store.Read(context.Background(), func(tx *store.Tx) error {
+		var err error
+		original, err = tx.JobAssignment(f.job)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := store.Decode[domain.Job](original)
+	var input domain.ExecutionJobInput
+	var preparation workspace.PrepareRequest
+	var manifest workspace.Manifest
+	if err != nil || domain.Decode(claimed.Input, &input) != nil || domain.Decode(input.Preparation, &preparation) != nil || domain.Decode(input.Manifest, &manifest) != nil {
+		t.Fatal("native inspection lost immutable original assignment", err)
+	}
+	assignmentDigest := sha256.Sum256(original.Data)
+	ref.Completion.Version, ref.Completion.NativeCheckpointDigest = 1, ""
+	inspection := worker.CompletedExecutionRef{ServerID: f.service.Identity.ServerID, DeviceID: f.device, InstanceID: claimed.InstanceID, AssignmentRevision: original.Revision, AssignmentDigest: hex.EncodeToString(assignmentDigest[:]), Checkpoint: ref, Preparation: preparation, Manifest: manifest}
+	evidence, err := worker.InspectCompletedExecution(context.Background(), &workspace.Manager{Root: root}, inspection)
+	if err != nil || evidence.Completion != completion || evidence.JobID != f.job || evidence.ReportID.Validate() != nil {
+		t.Fatal("native Worker completion could not be independently inspected", err)
+	}
 }

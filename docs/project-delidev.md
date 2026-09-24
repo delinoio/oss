@@ -50,6 +50,8 @@ Private Codex approval adapters now preserve command, file and additional-permis
 
 Uncertain question/approval response delivery now automatically inspects the original native conversation and exact retained turn/input scope after retaining the original delivery observation. Already observed exact live proof uses its original queued durable publication; history/closure alone never manufactures acceptance or permits a resend. Native pause and earlier recovery remain independent. Lost-event historical reconstruction and process-replacement recovery remain required.
 
+An internal completed-execution inspection now correlates the original Worker operation/outbox/native checkpoint with current closed workspace/process ownership, preserving results without relaunch or report replay. Dedicated public execution-recovery RPC/CLI/job coordination and atomic server reconciliation remain the next integration boundary; missing historical interaction evidence and safe native reattachment remain separate requirements.
+
 ## Change Policy
 Keep command, protocol, evidence, and scoped AGENTS contracts synchronized with each implementation increment. Preserve the complete normative requirements even when individual acceptance items remain in progress. Generated bindings are tool-owned. Never claim the project complete while required CLI/server/Worker acceptance items remain unimplemented or unverified.
 
