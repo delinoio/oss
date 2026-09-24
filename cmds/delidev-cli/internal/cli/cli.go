@@ -48,6 +48,7 @@ type client struct {
 	devices       delidevv1connect.DeviceServiceClient
 	workers       delidevv1connect.WorkerServiceClient
 	accounts      delidevv1connect.AccountServiceClient
+	providers     delidevv1connect.ProviderServiceClient
 	endpoint      string
 	token         string
 }
@@ -136,6 +137,28 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		ctx = bounded
 	}
 	switch command {
+	case "provider":
+		presetCreate := false
+		if len(rest) > 0 && rest[0] == "create" {
+			for _, arg := range rest[1:] {
+				name, _, _ := strings.Cut(arg, "=")
+				if name == "--preset" {
+					presetCreate = true
+				}
+			}
+		}
+		if len(rest) > 0 && (rest[0] == "presets" || rest[0] == "discover" || presetCreate) {
+			if rest[0] != "presets" {
+				ensureRequest(&o)
+			}
+			value, err := providerCatalog(ctx, c, o, rest)
+			return emit(value, err)
+		}
+	case "model":
+		if len(rest) > 0 && (rest[0] == "search" || rest[0] == "resolve") {
+			value, err := modelCatalog(ctx, c, rest)
+			return emit(value, err)
+		}
 	case "account":
 		if len(rest) > 0 && (rest[0] == "connect" || rest[0] == "disconnect" || rest[0] == "status" || rest[0] == "validate") {
 			if rest[0] != "status" {
@@ -467,7 +490,7 @@ func connectClient(o options, input io.Reader) (client, error) {
 	}
 	httpClient, transport := rpc.HTTPClient()
 	opts := []connect.ClientOption{connect.WithReadMaxBytes(5 << 20), connect.WithSendMaxBytes(2 << 20)}
-	return client{transport: transport, endpoint: endpoint, accounts: delidevv1connect.NewAccountServiceClient(httpClient, endpoint, opts...), devices: delidevv1connect.NewDeviceServiceClient(httpClient, endpoint, opts...), workers: delidevv1connect.NewWorkerServiceClient(httpClient, endpoint, opts...), system: delidevv1connect.NewSystemServiceClient(httpClient, endpoint, opts...), resources: delidevv1connect.NewResourceServiceClient(httpClient, endpoint, opts...), configuration: delidevv1connect.NewConfigurationServiceClient(httpClient, endpoint, opts...), token: token}, nil
+	return client{transport: transport, endpoint: endpoint, accounts: delidevv1connect.NewAccountServiceClient(httpClient, endpoint, opts...), providers: delidevv1connect.NewProviderServiceClient(httpClient, endpoint, opts...), devices: delidevv1connect.NewDeviceServiceClient(httpClient, endpoint, opts...), workers: delidevv1connect.NewWorkerServiceClient(httpClient, endpoint, opts...), system: delidevv1connect.NewSystemServiceClient(httpClient, endpoint, opts...), resources: delidevv1connect.NewResourceServiceClient(httpClient, endpoint, opts...), configuration: delidevv1connect.NewConfigurationServiceClient(httpClient, endpoint, opts...), token: token}, nil
 }
 func readDocument(path string, input io.Reader) ([]byte, error) {
 	reader := input
@@ -560,6 +583,11 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   account disconnect --id ID --revision N
   account validate --id ID --revision N
   account status --id ID
+  provider presets
+  provider create --preset PRESET [--name NAME]
+  provider discover --account-id ID --revision N
+  model search [--query TEXT] [--provider-id ID] [--include-hidden] [--limit N] [--page-token TOKEN]
+  model resolve --selector ID|ALIAS|NATIVE_ID [--provider-id ID]
   backup create
   settings defaults
   KIND list [--limit 50] [--page-token TOKEN] [--project-id ID] [--session-id ID]

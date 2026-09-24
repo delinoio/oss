@@ -89,16 +89,17 @@ func (v *accountTestSecrets) counts() (int, int, int) {
 }
 
 type accountFixture struct {
-	t         *testing.T
-	root      string
-	secrets   *accountTestSecrets
-	endpoint  Endpoint
-	identity  security.Identity
-	accounts  delidevv1connect.AccountServiceClient
-	config    delidevv1connect.ConfigurationServiceClient
-	resources delidevv1connect.ResourceServiceClient
-	stop      context.CancelFunc
-	done      chan error
+	t                *testing.T
+	root             string
+	secrets          *accountTestSecrets
+	endpoint         Endpoint
+	identity         security.Identity
+	accounts         delidevv1connect.AccountServiceClient
+	config           delidevv1connect.ConfigurationServiceClient
+	resources        delidevv1connect.ResourceServiceClient
+	stop             context.CancelFunc
+	done             chan error
+	automaticCatalog bool
 }
 
 func newAccountFixture(t *testing.T) *accountFixture {
@@ -114,7 +115,7 @@ func (f *accountFixture) start() {
 	f.done = make(chan error, 1)
 	ready := make(chan Endpoint, 1)
 	go func() {
-		f.done <- Serve(ctx, Config{DataDir: f.root, Listen: "127.0.0.1:0", Logger: slog.New(slog.NewJSONHandler(io.Discard, nil)), accountSecrets: f.secrets}, func(e Endpoint) { ready <- e })
+		f.done <- Serve(ctx, Config{DataDir: f.root, Listen: "127.0.0.1:0", Logger: slog.New(slog.NewJSONHandler(io.Discard, nil)), accountSecrets: f.secrets, disableCatalogMaintenance: !f.automaticCatalog}, func(e Endpoint) { ready <- e })
 	}()
 	select {
 	case f.endpoint = <-ready:

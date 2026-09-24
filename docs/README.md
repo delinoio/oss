@@ -44,6 +44,7 @@ Each project must have one project index document and one or more domain contrac
 - [Protected credential storage](cmds-delidev-credentials-contract.md)
 - [Account lifecycle](cmds-delidev-accounts-contract.md)
 - [Provider inspection](cmds-delidev-providers-contract.md)
+- [Provider and model catalog](cmds-delidev-catalog-contract.md)
 - [Complete issue #964 requirements](cmds-delidev-requirements.md)
 - [Implementation and evidence ledger](cmds-delidev-evidence.md)
 

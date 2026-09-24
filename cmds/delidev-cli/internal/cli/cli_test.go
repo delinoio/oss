@@ -79,4 +79,34 @@ func TestVersionedCLIMutationRevisionAndMissingInput(t *testing.T) {
 	if code != 2 || value["error"].(map[string]any)["code"] != "missing_input" {
 		t.Fatalf("missing revision accepted: %d %+v", code, value)
 	}
+	code, value = cliRun(t, root, []string{"provider", "presets"}, "")
+	if code != 0 || len(value["result"].(map[string]any)["presets"].([]any)) != 9 {
+		t.Fatalf("preset listing failed: %d %+v", code, value)
+	}
+	presetArgs := []string{"provider", "create", "--preset", "openrouter", "--name", "My router", "--request-id", string(domain.NewID())}
+	code, value = cliRun(t, root, presetArgs, "")
+	if code != 0 {
+		t.Fatalf("preset creation failed: %+v", value)
+	}
+	resource = value["result"].(map[string]any)["resource"].(map[string]any)
+	provider := resource["data"].(map[string]any)
+	if provider["name"] != "My router" || provider["endpoint"] != "https://openrouter.ai/api/v1" || provider["discovery"] != true {
+		t.Fatal("preset did not create concrete editable configuration")
+	}
+	code, value = cliRun(t, root, presetArgs, "")
+	if code != 0 || value["result"].(map[string]any)["replayed"] != true {
+		t.Fatal("preset creation replay failed")
+	}
+	code, value = cliRun(t, root, []string{"provider", "create", "--preset=missing"}, "")
+	if code != 2 || value["error"].(map[string]any)["code"] != "invalid_argument" {
+		t.Fatal("unknown preset accepted")
+	}
+	code, value = cliRun(t, root, []string{"model", "search", "--limit", "201"}, "")
+	if code != 2 {
+		t.Fatal("oversized model page accepted")
+	}
+	code, value = cliRun(t, root, []string{"model", "resolve"}, "")
+	if code != 2 || value["error"].(map[string]any)["code"] != "missing_input" {
+		t.Fatal("missing model selector accepted")
+	}
 }

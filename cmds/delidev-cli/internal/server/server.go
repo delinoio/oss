@@ -30,13 +30,14 @@ import (
 const DefaultListen = "127.0.0.1:46310"
 
 type Config struct {
-	DataDir        string
-	Listen         string
-	TLSCertificate string
-	TLSKey         string
-	AllowedOrigins []string
-	Logger         *slog.Logger
-	accountSecrets accountSecrets
+	DataDir                   string
+	Listen                    string
+	TLSCertificate            string
+	TLSKey                    string
+	AllowedOrigins            []string
+	Logger                    *slog.Logger
+	accountSecrets            accountSecrets
+	disableCatalogMaintenance bool
 }
 type Endpoint struct {
 	URL             string    `json:"url"`
@@ -54,9 +55,10 @@ type Service struct {
 	delidevv1connect.UnimplementedDeviceServiceHandler
 	delidevv1connect.UnimplementedWorkerServiceHandler
 	delidevv1connect.UnimplementedAccountServiceHandler
+	delidevv1connect.UnimplementedProviderServiceHandler
 	accountOnce    sync.Once
 	accountGate    chan struct{}
-	accountChecks  map[domain.ID]map[domain.ID]context.CancelFunc
+	accountChecks  map[domain.ID]map[domain.ID]accountCheck
 	accountSecrets accountSecrets
 	ownedVault     *credentials.Vault
 	Store          *store.Store
@@ -169,12 +171,25 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	defer os.Remove(filepath.Join(state.Root(), "server.json"))
 	done := make(chan error, 1)
 	go func() { done <- httpServer.Serve(listener) }()
+	catalogCtx, stopCatalog := context.WithCancel(child)
+	catalogDone := make(chan struct{})
+	go func() {
+		defer close(catalogDone)
+		if !config.disableCatalogMaintenance {
+			service.runCatalogMaintenance(catalogCtx)
+		}
+	}()
+	defer func() { stopCatalog(); <-catalogDone }()
 	config.Logger.Info("server_ready", "server_id", identity.ServerID, "listener", service.Endpoint.URL, "version", rpc.Version)
 	if ready != nil {
 		ready(service.Endpoint)
 	}
 	select {
 	case err := <-done:
+		// A failed listener must revoke child request contexts too. Otherwise
+		// an active provider request could outlive its vault/database owner.
+		stop()
+		_ = httpServer.Close()
 		if !errors.Is(err, http.ErrServerClosed) {
 			config.Logger.Error("server_failed", "cause", "listener_failure")
 			return domain.Fail(domain.Unavailable, "The server listener failed.", "Inspect server status and explicitly restart after resolving the failure.")
@@ -188,6 +203,8 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 		}
 		<-done
 	}
+	stopCatalog()
+	<-catalogDone
 	if err := service.closeAccountSecrets(); err != nil {
 		return domain.SafeError(err)
 	}
@@ -204,6 +221,7 @@ func (s *Service) Handler(origins []string, loopback bool) http.Handler {
 	mux.Handle(delidevv1connect.NewDeviceServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewWorkerServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewAccountServiceHandler(s, options...))
+	mux.Handle(delidevv1connect.NewProviderServiceHandler(s, options...))
 	allowed := map[string]bool{}
 	for _, origin := range origins {
 		allowed[origin] = true

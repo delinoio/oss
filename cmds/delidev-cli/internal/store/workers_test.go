@@ -57,7 +57,7 @@ func TestMigrationBacksUpOriginalAndRollsBackOnFailure(t *testing.T) {
 			for _, item := range []struct {
 				Path    string
 				Version int
-			}{{backups[0], 1}, {path, map[bool]int{false: 2, true: 1}[conflicting]}} {
+			}{{backups[0], 1}, {path, map[bool]int{false: SchemaVersion, true: 1}[conflicting]}} {
 				db, err := sql.Open("sqlite", databaseURI(item.Path, true))
 				if err != nil {
 					t.Fatal(err)

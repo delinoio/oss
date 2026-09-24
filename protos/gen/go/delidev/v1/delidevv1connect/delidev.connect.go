@@ -33,6 +33,8 @@ const (
 	WorkerServiceName = "delidev.v1.WorkerService"
 	// AccountServiceName is the fully-qualified name of the AccountService service.
 	AccountServiceName = "delidev.v1.AccountService"
+	// ProviderServiceName is the fully-qualified name of the ProviderService service.
+	ProviderServiceName = "delidev.v1.ProviderService"
 )
 
 // These constants are the fully-qualified names of the RPCs defined in this package. They're
@@ -109,6 +111,18 @@ const (
 	// AccountServiceValidateAccountProcedure is the fully-qualified name of the AccountService's
 	// ValidateAccount RPC.
 	AccountServiceValidateAccountProcedure = "/delidev.v1.AccountService/ValidateAccount"
+	// ProviderServiceListProviderPresetsProcedure is the fully-qualified name of the ProviderService's
+	// ListProviderPresets RPC.
+	ProviderServiceListProviderPresetsProcedure = "/delidev.v1.ProviderService/ListProviderPresets"
+	// ProviderServiceDiscoverModelsProcedure is the fully-qualified name of the ProviderService's
+	// DiscoverModels RPC.
+	ProviderServiceDiscoverModelsProcedure = "/delidev.v1.ProviderService/DiscoverModels"
+	// ProviderServiceSearchModelsProcedure is the fully-qualified name of the ProviderService's
+	// SearchModels RPC.
+	ProviderServiceSearchModelsProcedure = "/delidev.v1.ProviderService/SearchModels"
+	// ProviderServiceResolveModelProcedure is the fully-qualified name of the ProviderService's
+	// ResolveModel RPC.
+	ProviderServiceResolveModelProcedure = "/delidev.v1.ProviderService/ResolveModel"
 )
 
 // SystemServiceClient is a client for the delidev.v1.SystemService service.
@@ -971,4 +985,152 @@ func (UnimplementedAccountServiceHandler) GetAccountStatus(context.Context, *con
 
 func (UnimplementedAccountServiceHandler) ValidateAccount(context.Context, *connect.Request[v1.ValidateAccountRequest]) (*connect.Response[v1.ValidateAccountResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.AccountService.ValidateAccount is not implemented"))
+}
+
+// ProviderServiceClient is a client for the delidev.v1.ProviderService service.
+type ProviderServiceClient interface {
+	ListProviderPresets(context.Context, *connect.Request[v1.ListProviderPresetsRequest]) (*connect.Response[v1.ListProviderPresetsResponse], error)
+	DiscoverModels(context.Context, *connect.Request[v1.DiscoverModelsRequest]) (*connect.Response[v1.DiscoverModelsResponse], error)
+	SearchModels(context.Context, *connect.Request[v1.SearchModelsRequest]) (*connect.Response[v1.SearchModelsResponse], error)
+	ResolveModel(context.Context, *connect.Request[v1.ResolveModelRequest]) (*connect.Response[v1.ResolveModelResponse], error)
+}
+
+// NewProviderServiceClient constructs a client for the delidev.v1.ProviderService service. By
+// default, it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses,
+// and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the
+// connect.WithGRPC() or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewProviderServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) ProviderServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	providerServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("ProviderService").Methods()
+	return &providerServiceClient{
+		listProviderPresets: connect.NewClient[v1.ListProviderPresetsRequest, v1.ListProviderPresetsResponse](
+			httpClient,
+			baseURL+ProviderServiceListProviderPresetsProcedure,
+			connect.WithSchema(providerServiceMethods.ByName("ListProviderPresets")),
+			connect.WithClientOptions(opts...),
+		),
+		discoverModels: connect.NewClient[v1.DiscoverModelsRequest, v1.DiscoverModelsResponse](
+			httpClient,
+			baseURL+ProviderServiceDiscoverModelsProcedure,
+			connect.WithSchema(providerServiceMethods.ByName("DiscoverModels")),
+			connect.WithClientOptions(opts...),
+		),
+		searchModels: connect.NewClient[v1.SearchModelsRequest, v1.SearchModelsResponse](
+			httpClient,
+			baseURL+ProviderServiceSearchModelsProcedure,
+			connect.WithSchema(providerServiceMethods.ByName("SearchModels")),
+			connect.WithClientOptions(opts...),
+		),
+		resolveModel: connect.NewClient[v1.ResolveModelRequest, v1.ResolveModelResponse](
+			httpClient,
+			baseURL+ProviderServiceResolveModelProcedure,
+			connect.WithSchema(providerServiceMethods.ByName("ResolveModel")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// providerServiceClient implements ProviderServiceClient.
+type providerServiceClient struct {
+	listProviderPresets *connect.Client[v1.ListProviderPresetsRequest, v1.ListProviderPresetsResponse]
+	discoverModels      *connect.Client[v1.DiscoverModelsRequest, v1.DiscoverModelsResponse]
+	searchModels        *connect.Client[v1.SearchModelsRequest, v1.SearchModelsResponse]
+	resolveModel        *connect.Client[v1.ResolveModelRequest, v1.ResolveModelResponse]
+}
+
+// ListProviderPresets calls delidev.v1.ProviderService.ListProviderPresets.
+func (c *providerServiceClient) ListProviderPresets(ctx context.Context, req *connect.Request[v1.ListProviderPresetsRequest]) (*connect.Response[v1.ListProviderPresetsResponse], error) {
+	return c.listProviderPresets.CallUnary(ctx, req)
+}
+
+// DiscoverModels calls delidev.v1.ProviderService.DiscoverModels.
+func (c *providerServiceClient) DiscoverModels(ctx context.Context, req *connect.Request[v1.DiscoverModelsRequest]) (*connect.Response[v1.DiscoverModelsResponse], error) {
+	return c.discoverModels.CallUnary(ctx, req)
+}
+
+// SearchModels calls delidev.v1.ProviderService.SearchModels.
+func (c *providerServiceClient) SearchModels(ctx context.Context, req *connect.Request[v1.SearchModelsRequest]) (*connect.Response[v1.SearchModelsResponse], error) {
+	return c.searchModels.CallUnary(ctx, req)
+}
+
+// ResolveModel calls delidev.v1.ProviderService.ResolveModel.
+func (c *providerServiceClient) ResolveModel(ctx context.Context, req *connect.Request[v1.ResolveModelRequest]) (*connect.Response[v1.ResolveModelResponse], error) {
+	return c.resolveModel.CallUnary(ctx, req)
+}
+
+// ProviderServiceHandler is an implementation of the delidev.v1.ProviderService service.
+type ProviderServiceHandler interface {
+	ListProviderPresets(context.Context, *connect.Request[v1.ListProviderPresetsRequest]) (*connect.Response[v1.ListProviderPresetsResponse], error)
+	DiscoverModels(context.Context, *connect.Request[v1.DiscoverModelsRequest]) (*connect.Response[v1.DiscoverModelsResponse], error)
+	SearchModels(context.Context, *connect.Request[v1.SearchModelsRequest]) (*connect.Response[v1.SearchModelsResponse], error)
+	ResolveModel(context.Context, *connect.Request[v1.ResolveModelRequest]) (*connect.Response[v1.ResolveModelResponse], error)
+}
+
+// NewProviderServiceHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewProviderServiceHandler(svc ProviderServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	providerServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("ProviderService").Methods()
+	providerServiceListProviderPresetsHandler := connect.NewUnaryHandler(
+		ProviderServiceListProviderPresetsProcedure,
+		svc.ListProviderPresets,
+		connect.WithSchema(providerServiceMethods.ByName("ListProviderPresets")),
+		connect.WithHandlerOptions(opts...),
+	)
+	providerServiceDiscoverModelsHandler := connect.NewUnaryHandler(
+		ProviderServiceDiscoverModelsProcedure,
+		svc.DiscoverModels,
+		connect.WithSchema(providerServiceMethods.ByName("DiscoverModels")),
+		connect.WithHandlerOptions(opts...),
+	)
+	providerServiceSearchModelsHandler := connect.NewUnaryHandler(
+		ProviderServiceSearchModelsProcedure,
+		svc.SearchModels,
+		connect.WithSchema(providerServiceMethods.ByName("SearchModels")),
+		connect.WithHandlerOptions(opts...),
+	)
+	providerServiceResolveModelHandler := connect.NewUnaryHandler(
+		ProviderServiceResolveModelProcedure,
+		svc.ResolveModel,
+		connect.WithSchema(providerServiceMethods.ByName("ResolveModel")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/delidev.v1.ProviderService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case ProviderServiceListProviderPresetsProcedure:
+			providerServiceListProviderPresetsHandler.ServeHTTP(w, r)
+		case ProviderServiceDiscoverModelsProcedure:
+			providerServiceDiscoverModelsHandler.ServeHTTP(w, r)
+		case ProviderServiceSearchModelsProcedure:
+			providerServiceSearchModelsHandler.ServeHTTP(w, r)
+		case ProviderServiceResolveModelProcedure:
+			providerServiceResolveModelHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedProviderServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedProviderServiceHandler struct{}
+
+func (UnimplementedProviderServiceHandler) ListProviderPresets(context.Context, *connect.Request[v1.ListProviderPresetsRequest]) (*connect.Response[v1.ListProviderPresetsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ProviderService.ListProviderPresets is not implemented"))
+}
+
+func (UnimplementedProviderServiceHandler) DiscoverModels(context.Context, *connect.Request[v1.DiscoverModelsRequest]) (*connect.Response[v1.DiscoverModelsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ProviderService.DiscoverModels is not implemented"))
+}
+
+func (UnimplementedProviderServiceHandler) SearchModels(context.Context, *connect.Request[v1.SearchModelsRequest]) (*connect.Response[v1.SearchModelsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ProviderService.SearchModels is not implemented"))
+}
+
+func (UnimplementedProviderServiceHandler) ResolveModel(context.Context, *connect.Request[v1.ResolveModelRequest]) (*connect.Response[v1.ResolveModelResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ProviderService.ResolveModel is not implemented"))
 }

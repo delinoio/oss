@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 )
 
 type Harness string
@@ -368,21 +369,22 @@ const (
 )
 
 type Model struct {
-	ProviderID       ID             `json:"provider_id"`
-	NativeID         string         `json:"native_id"`
-	Name             string         `json:"name"`
-	Alias            string         `json:"alias,omitempty"`
-	Harnesses        []Harness      `json:"harnesses"`
-	Hidden           bool           `json:"hidden"`
-	Order            int32          `json:"order"`
-	Manual           bool           `json:"manual"`
-	New              bool           `json:"new"`
-	ContextLimit     *uint64        `json:"context_limit,omitempty"`
-	MetadataSource   EvidenceSource `json:"metadata_source"`
-	InputModalities  []string       `json:"input_modalities,omitempty"`
-	OutputModalities []string       `json:"output_modalities,omitempty"`
-	Tools            *bool          `json:"tools,omitempty"`
-	Reasoning        *bool          `json:"reasoning,omitempty"`
+	ProviderID       ID              `json:"provider_id"`
+	NativeID         string          `json:"native_id"`
+	Name             string          `json:"name"`
+	Alias            string          `json:"alias,omitempty"`
+	Harnesses        []Harness       `json:"harnesses"`
+	Hidden           bool            `json:"hidden"`
+	Order            int32           `json:"order"`
+	Manual           bool            `json:"manual"`
+	New              bool            `json:"new"`
+	ContextLimit     *uint64         `json:"context_limit,omitempty"`
+	MetadataSource   EvidenceSource  `json:"metadata_source"`
+	InputModalities  []string        `json:"input_modalities,omitempty"`
+	OutputModalities []string        `json:"output_modalities,omitempty"`
+	Tools            *bool           `json:"tools,omitempty"`
+	Reasoning        *bool           `json:"reasoning,omitempty"`
+	Discovery        *ModelDiscovery `json:"discovery,omitempty"`
 }
 
 func (m Model) Validate() error {
@@ -397,11 +399,11 @@ func (m Model) Validate() error {
 	if err := Text(m.Alias, "model alias", 128, false); err != nil {
 		return err
 	}
-	if strings.ContainsAny(m.Alias, " \t\n/:\\") {
+	if strings.ContainsAny(m.Alias, "/:\\") || strings.IndexFunc(m.Alias, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) >= 0 || (m.Alias != "" && ID(m.Alias).Validate() == nil) {
 		return Fail(InvalidArgument, "Invalid model alias.", "Use a unique single-word CLI alias.")
 	}
-	if len(m.Harnesses) == 0 || len(m.Harnesses) > 4 {
-		return Fail(InvalidArgument, "A model needs explicit harness compatibility.", "Select compatible harnesses; metadata never grants compatibility.")
+	if len(m.Harnesses) > 4 {
+		return Fail(InvalidArgument, "Too many model harness compatibility entries.", "Select each supported harness once; unknown compatibility may remain empty.")
 	}
 	seen := map[Harness]bool{}
 	for _, h := range m.Harnesses {
@@ -412,6 +414,19 @@ func (m Model) Validate() error {
 	}
 	if m.MetadataSource != Known && m.MetadataSource != UserDeclared && m.MetadataSource != Unknown {
 		return Fail(InvalidArgument, "Unknown model metadata source.", "Distinguish known, user-declared, and unknown metadata.")
+	}
+	if m.Discovery != nil && (m.Discovery.FirstSeenAt.IsZero() || m.Discovery.UpdatedAt.Before(m.Discovery.FirstSeenAt)) {
+		return Fail(InvalidArgument, "Invalid model discovery evidence.", "Refresh through the provider catalog operation.")
+	}
+	for _, modalities := range [][]string{m.InputModalities, m.OutputModalities} {
+		if len(modalities) > 16 {
+			return Fail(InvalidArgument, "Too many model modalities.", "Use at most 16 advisory modalities.")
+		}
+		for _, modality := range modalities {
+			if err := Text(modality, "model modality", 32, true); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
@@ -466,18 +481,19 @@ type AccountRemoval struct {
 	ExpectedRevision uint64 `json:"expected_revision"`
 }
 type Account struct {
-	Alias                 string             `json:"alias"`
-	ProviderID            ID                 `json:"provider_id"`
-	Type                  AccountType        `json:"type"`
-	Enabled               bool               `json:"enabled"`
-	ExcludeAutomatic      bool               `json:"exclude_automatic"`
-	RecoveryNotifications bool               `json:"recovery_notifications"`
-	Health                AccountHealth      `json:"health"`
-	Quota                 []QuotaWindow      `json:"quota"`
-	ConfirmedExhausted    bool               `json:"confirmed_exhausted"`
-	Connection            *AccountConnection `json:"connection,omitempty"`
-	Removal               *AccountRemoval    `json:"removal,omitempty"`
-	Validation            *AccountValidation `json:"validation,omitempty"`
+	Alias                 string              `json:"alias"`
+	ProviderID            ID                  `json:"provider_id"`
+	Type                  AccountType         `json:"type"`
+	Enabled               bool                `json:"enabled"`
+	ExcludeAutomatic      bool                `json:"exclude_automatic"`
+	RecoveryNotifications bool                `json:"recovery_notifications"`
+	Health                AccountHealth       `json:"health"`
+	Quota                 []QuotaWindow       `json:"quota"`
+	ConfirmedExhausted    bool                `json:"confirmed_exhausted"`
+	Connection            *AccountConnection  `json:"connection,omitempty"`
+	Removal               *AccountRemoval     `json:"removal,omitempty"`
+	Validation            *AccountValidation  `json:"validation,omitempty"`
+	Catalog               *CatalogObservation `json:"catalog,omitempty"`
 }
 
 func (a Account) Validate() error {
@@ -525,6 +541,12 @@ func (a Account) Validate() error {
 		}
 		if !slices.Contains([]AuthenticationEvidence{CredentialAccepted, KeylessEndpoint, AuthenticationUnknown}, v.Authentication) || !slices.Contains([]ObservationState{Observed, ObservationFailed, ObservationUnsupported}, v.State) {
 			return Fail(InvalidArgument, "Invalid account validation evidence.", "Use a supported provider validation result.")
+		}
+	}
+	if a.Catalog != nil {
+		c := a.Catalog
+		if c.RequestID.Validate() != nil || a.Connection == nil || c.ConnectionID != a.Connection.ID || c.ObservedAt.IsZero() || !slices.Contains([]ObservationState{Observed, ObservationFailed, ObservationUnsupported}, c.State) {
+			return Fail(InvalidArgument, "Invalid catalog observation.", "Refresh the current account connection through the catalog operation.")
 		}
 	}
 	return nil

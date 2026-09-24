@@ -7,6 +7,7 @@
 ### Scope in This Domain
 
 - `protos/delidev/v1` and `protos/gen/go/delidev/v1`: DeliDev authenticated Connect schemas and tool-owned Go bindings; follow `docs/protos-delidev-v1-contract.md`. Account credentials are bounded write-only inputs; an accepted disconnect with failed cleanup returns the current account and a sanitized typed cleanup problem, preserving its original retry identity. Account validation returns the accepted sanitized non-inference observation with current account metadata; replay cannot repeat provider requests or grant readiness from an old connection.
+- DeliDev `ProviderService` is owner/client-only: catalog discovery returns an accepted observation and current account metadata; search cursors bind filters and the catalog event epoch; resolution returns canonical identities without treating display preferences as execution permissions. Model provenance and account catalog observations remain server-owned.
 - `protos/devhud/v1`: implemented versioned DevHud Connect RPC schemas.
 - `protos/gen/go/devhud/v1`: committed, tool-owned Go messages and Connect server bindings generated from `protos/devhud/v1`.
 

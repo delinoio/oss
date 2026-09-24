@@ -199,6 +199,7 @@ func (s *Service) ConnectAccount(ctx context.Context, req *connect.Request[pb.Co
 			account.Connection = &domain.AccountConnection{ID: domain.ID(meta.RequestId), Authentication: provider.Authentication, ConnectedAt: time.Now().UTC().Truncate(time.Millisecond)}
 			account.Health = domain.AccountUnverified
 			account.Validation = nil
+			account.Catalog = nil
 			account.Quota = nil
 			account.ConfirmedExhausted = false
 			if _, err = tx.Put(domain.AccountKind, input.ID, input.Revision, "", "", account); err != nil {
@@ -253,6 +254,7 @@ func (s *Service) DisconnectAccount(ctx context.Context, req *connect.Request[pb
 		account.Connection = nil
 		account.Health = domain.AccountDisconnected
 		account.Validation = nil
+		account.Catalog = nil
 		account.Removal = removal
 		account.Quota = nil
 		account.ConfirmedExhausted = false

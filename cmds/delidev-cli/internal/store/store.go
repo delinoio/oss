@@ -22,7 +22,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const SchemaVersion = 2
+const SchemaVersion = 3
 const applicationID = 0x444c4456
 const MaxPage = 200
 
@@ -133,7 +133,7 @@ func Open(ctx context.Context, root string) (*Store, error) {
 		if err != nil {
 			return fail(err)
 		}
-		if _, err = tx.ExecContext(ctx, schema+workerSchema); err == nil {
+		if _, err = tx.ExecContext(ctx, schema+workerSchema+catalogSchema); err == nil {
 			err = tx.Commit()
 		} else {
 			tx.Rollback()
@@ -512,6 +512,15 @@ func (t *Tx) Delete(kind domain.Kind, id domain.ID, expected uint64) error {
 	}
 	if expected != r.Revision {
 		return domain.Fail(domain.Conflict, "The entity revision changed.", "Reload its current revision before deletion.")
+	}
+	if kind == domain.ModelKind {
+		model, err := Decode[domain.Model](r)
+		if err != nil {
+			return err
+		}
+		if _, err = t.tx.ExecContext(t.ctx, "INSERT OR IGNORE INTO model_suppressions(provider_id,native_id) VALUES(?,?)", model.ProviderID, model.NativeID); err != nil {
+			return storageError(err)
+		}
 	}
 	if _, err = t.tx.ExecContext(t.ctx, "INSERT INTO tombstones(id,kind,created_at) VALUES(?,?,?)", id, kind, t.now.UnixMilli()); err != nil {
 		return storageError(err)

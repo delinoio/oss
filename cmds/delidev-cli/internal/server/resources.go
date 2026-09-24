@@ -165,7 +165,7 @@ func (s *Service) SaveConfiguration(ctx context.Context, req *connect.Request[pb
 	if err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
-	if kind == domain.AccountKind {
+	if kind == domain.AccountKind || kind == domain.ProviderKind {
 		unlock, err := s.lockAccounts(ctx)
 		if err != nil {
 			return nil, rpc.Error(err, correlation)
@@ -182,6 +182,19 @@ func (s *Service) SaveConfiguration(ctx context.Context, req *connect.Request[pb
 	}
 	if record.Kind == "" {
 		return nil, rpc.Error(domain.Fail(domain.NotFound, "The accepted entity was subsequently deleted.", "The original request cannot recreate it; use a new request ID for new work."), correlation)
+	}
+	if kind == domain.ProviderKind {
+		current, err := s.Store.Get(ctx, domain.ProviderKind, record.ID)
+		if err != nil {
+			return nil, rpc.Error(err, correlation)
+		}
+		provider, err := store.Decode[domain.Provider](current)
+		if err != nil {
+			return nil, rpc.Error(err, correlation)
+		}
+		if !provider.Discovery {
+			s.cancelCatalogChecks(record.ID)
+		}
 	}
 	message := &pb.SaveConfigurationResponse{RequestId: string(result.RequestID), Replayed: result.Replayed}
 	if record.Kind == domain.JobKind {

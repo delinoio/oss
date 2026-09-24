@@ -3184,6 +3184,431 @@ func (x *ValidateAccountResponse) GetValidationJson() []byte {
 	return nil
 }
 
+type ListProviderPresetsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListProviderPresetsRequest) Reset() {
+	*x = ListProviderPresetsRequest{}
+	mi := &file_delidev_v1_delidev_proto_msgTypes[50]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListProviderPresetsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListProviderPresetsRequest) ProtoMessage() {}
+
+func (x *ListProviderPresetsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_delidev_proto_msgTypes[50]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListProviderPresetsRequest.ProtoReflect.Descriptor instead.
+func (*ListProviderPresetsRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{50}
+}
+
+type ListProviderPresetsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	PresetsJson   []byte                 `protobuf:"bytes,1,opt,name=presets_json,json=presetsJson,proto3" json:"presets_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListProviderPresetsResponse) Reset() {
+	*x = ListProviderPresetsResponse{}
+	mi := &file_delidev_v1_delidev_proto_msgTypes[51]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListProviderPresetsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListProviderPresetsResponse) ProtoMessage() {}
+
+func (x *ListProviderPresetsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_delidev_proto_msgTypes[51]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListProviderPresetsResponse.ProtoReflect.Descriptor instead.
+func (*ListProviderPresetsResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{51}
+}
+
+func (x *ListProviderPresetsResponse) GetPresetsJson() []byte {
+	if x != nil {
+		return x.PresetsJson
+	}
+	return nil
+}
+
+type DiscoverModelsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Explicit account identity/current revision; the provider is server-owned.
+	Mutation      *Mutation `protobuf:"bytes,1,opt,name=mutation,proto3" json:"mutation,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DiscoverModelsRequest) Reset() {
+	*x = DiscoverModelsRequest{}
+	mi := &file_delidev_v1_delidev_proto_msgTypes[52]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DiscoverModelsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DiscoverModelsRequest) ProtoMessage() {}
+
+func (x *DiscoverModelsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_delidev_proto_msgTypes[52]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DiscoverModelsRequest.ProtoReflect.Descriptor instead.
+func (*DiscoverModelsRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{52}
+}
+
+func (x *DiscoverModelsRequest) GetMutation() *Mutation {
+	if x != nil {
+		return x.Mutation
+	}
+	return nil
+}
+
+type DiscoverModelsResponse struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Account         *Resource              `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"`
+	RequestId       string                 `protobuf:"bytes,2,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Replayed        bool                   `protobuf:"varint,3,opt,name=replayed,proto3" json:"replayed,omitempty"`
+	ObservationJson []byte                 `protobuf:"bytes,4,opt,name=observation_json,json=observationJson,proto3" json:"observation_json,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *DiscoverModelsResponse) Reset() {
+	*x = DiscoverModelsResponse{}
+	mi := &file_delidev_v1_delidev_proto_msgTypes[53]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DiscoverModelsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DiscoverModelsResponse) ProtoMessage() {}
+
+func (x *DiscoverModelsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_delidev_proto_msgTypes[53]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DiscoverModelsResponse.ProtoReflect.Descriptor instead.
+func (*DiscoverModelsResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{53}
+}
+
+func (x *DiscoverModelsResponse) GetAccount() *Resource {
+	if x != nil {
+		return x.Account
+	}
+	return nil
+}
+
+func (x *DiscoverModelsResponse) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *DiscoverModelsResponse) GetReplayed() bool {
+	if x != nil {
+		return x.Replayed
+	}
+	return false
+}
+
+func (x *DiscoverModelsResponse) GetObservationJson() []byte {
+	if x != nil {
+		return x.ObservationJson
+	}
+	return nil
+}
+
+type SearchModelsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Query         string                 `protobuf:"bytes,1,opt,name=query,proto3" json:"query,omitempty"`
+	ProviderId    string                 `protobuf:"bytes,2,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"`
+	IncludeHidden bool                   `protobuf:"varint,3,opt,name=include_hidden,json=includeHidden,proto3" json:"include_hidden,omitempty"`
+	PageSize      uint32                 `protobuf:"varint,4,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	PageToken     string                 `protobuf:"bytes,5,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SearchModelsRequest) Reset() {
+	*x = SearchModelsRequest{}
+	mi := &file_delidev_v1_delidev_proto_msgTypes[54]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SearchModelsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SearchModelsRequest) ProtoMessage() {}
+
+func (x *SearchModelsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_delidev_proto_msgTypes[54]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SearchModelsRequest.ProtoReflect.Descriptor instead.
+func (*SearchModelsRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{54}
+}
+
+func (x *SearchModelsRequest) GetQuery() string {
+	if x != nil {
+		return x.Query
+	}
+	return ""
+}
+
+func (x *SearchModelsRequest) GetProviderId() string {
+	if x != nil {
+		return x.ProviderId
+	}
+	return ""
+}
+
+func (x *SearchModelsRequest) GetIncludeHidden() bool {
+	if x != nil {
+		return x.IncludeHidden
+	}
+	return false
+}
+
+func (x *SearchModelsRequest) GetPageSize() uint32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+func (x *SearchModelsRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
+	}
+	return ""
+}
+
+type SearchModelsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Models        []*Resource            `protobuf:"bytes,1,rep,name=models,proto3" json:"models,omitempty"`
+	Providers     []*Resource            `protobuf:"bytes,2,rep,name=providers,proto3" json:"providers,omitempty"`
+	NextPageToken string                 `protobuf:"bytes,3,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SearchModelsResponse) Reset() {
+	*x = SearchModelsResponse{}
+	mi := &file_delidev_v1_delidev_proto_msgTypes[55]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SearchModelsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SearchModelsResponse) ProtoMessage() {}
+
+func (x *SearchModelsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_delidev_proto_msgTypes[55]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SearchModelsResponse.ProtoReflect.Descriptor instead.
+func (*SearchModelsResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{55}
+}
+
+func (x *SearchModelsResponse) GetModels() []*Resource {
+	if x != nil {
+		return x.Models
+	}
+	return nil
+}
+
+func (x *SearchModelsResponse) GetProviders() []*Resource {
+	if x != nil {
+		return x.Providers
+	}
+	return nil
+}
+
+func (x *SearchModelsResponse) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
+	}
+	return ""
+}
+
+type ResolveModelRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Selector      string                 `protobuf:"bytes,1,opt,name=selector,proto3" json:"selector,omitempty"`
+	ProviderId    string                 `protobuf:"bytes,2,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResolveModelRequest) Reset() {
+	*x = ResolveModelRequest{}
+	mi := &file_delidev_v1_delidev_proto_msgTypes[56]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveModelRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveModelRequest) ProtoMessage() {}
+
+func (x *ResolveModelRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_delidev_proto_msgTypes[56]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveModelRequest.ProtoReflect.Descriptor instead.
+func (*ResolveModelRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{56}
+}
+
+func (x *ResolveModelRequest) GetSelector() string {
+	if x != nil {
+		return x.Selector
+	}
+	return ""
+}
+
+func (x *ResolveModelRequest) GetProviderId() string {
+	if x != nil {
+		return x.ProviderId
+	}
+	return ""
+}
+
+type ResolveModelResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Model         *Resource              `protobuf:"bytes,1,opt,name=model,proto3" json:"model,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResolveModelResponse) Reset() {
+	*x = ResolveModelResponse{}
+	mi := &file_delidev_v1_delidev_proto_msgTypes[57]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveModelResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveModelResponse) ProtoMessage() {}
+
+func (x *ResolveModelResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_delidev_proto_msgTypes[57]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveModelResponse.ProtoReflect.Descriptor instead.
+func (*ResolveModelResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_delidev_proto_rawDescGZIP(), []int{57}
+}
+
+func (x *ResolveModelResponse) GetModel() *Resource {
+	if x != nil {
+		return x.Model
+	}
+	return nil
+}
+
 var File_delidev_v1_delidev_proto protoreflect.FileDescriptor
 
 const file_delidev_v1_delidev_proto_rawDesc = "" +
@@ -3422,7 +3847,36 @@ const file_delidev_v1_delidev_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x02 \x01(\tR\trequestId\x12\x1a\n" +
 	"\breplayed\x18\x03 \x01(\bR\breplayed\x12'\n" +
-	"\x0fvalidation_json\x18\x04 \x01(\fR\x0evalidationJson*\xa2\x05\n" +
+	"\x0fvalidation_json\x18\x04 \x01(\fR\x0evalidationJson\"\x1c\n" +
+	"\x1aListProviderPresetsRequest\"@\n" +
+	"\x1bListProviderPresetsResponse\x12!\n" +
+	"\fpresets_json\x18\x01 \x01(\fR\vpresetsJson\"I\n" +
+	"\x15DiscoverModelsRequest\x120\n" +
+	"\bmutation\x18\x01 \x01(\v2\x14.delidev.v1.MutationR\bmutation\"\xae\x01\n" +
+	"\x16DiscoverModelsResponse\x12.\n" +
+	"\aaccount\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\aaccount\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x02 \x01(\tR\trequestId\x12\x1a\n" +
+	"\breplayed\x18\x03 \x01(\bR\breplayed\x12)\n" +
+	"\x10observation_json\x18\x04 \x01(\fR\x0fobservationJson\"\xaf\x01\n" +
+	"\x13SearchModelsRequest\x12\x14\n" +
+	"\x05query\x18\x01 \x01(\tR\x05query\x12\x1f\n" +
+	"\vprovider_id\x18\x02 \x01(\tR\n" +
+	"providerId\x12%\n" +
+	"\x0einclude_hidden\x18\x03 \x01(\bR\rincludeHidden\x12\x1b\n" +
+	"\tpage_size\x18\x04 \x01(\rR\bpageSize\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\x05 \x01(\tR\tpageToken\"\xa0\x01\n" +
+	"\x14SearchModelsResponse\x12,\n" +
+	"\x06models\x18\x01 \x03(\v2\x14.delidev.v1.ResourceR\x06models\x122\n" +
+	"\tproviders\x18\x02 \x03(\v2\x14.delidev.v1.ResourceR\tproviders\x12&\n" +
+	"\x0fnext_page_token\x18\x03 \x01(\tR\rnextPageToken\"R\n" +
+	"\x13ResolveModelRequest\x12\x1a\n" +
+	"\bselector\x18\x01 \x01(\tR\bselector\x12\x1f\n" +
+	"\vprovider_id\x18\x02 \x01(\tR\n" +
+	"providerId\"B\n" +
+	"\x14ResolveModelResponse\x12*\n" +
+	"\x05model\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\x05model*\xa2\x05\n" +
 	"\n" +
 	"EntityKind\x12\x1b\n" +
 	"\x17ENTITY_KIND_UNSPECIFIED\x10\x00\x12\x17\n" +
@@ -3493,7 +3947,12 @@ const file_delidev_v1_delidev_proto_rawDesc = "" +
 	"\x0eConnectAccount\x12!.delidev.v1.ConnectAccountRequest\x1a\".delidev.v1.ConnectAccountResponse\x12`\n" +
 	"\x11DisconnectAccount\x12$.delidev.v1.DisconnectAccountRequest\x1a%.delidev.v1.DisconnectAccountResponse\x12]\n" +
 	"\x10GetAccountStatus\x12#.delidev.v1.GetAccountStatusRequest\x1a$.delidev.v1.GetAccountStatusResponse\x12Z\n" +
-	"\x0fValidateAccount\x12\".delidev.v1.ValidateAccountRequest\x1a#.delidev.v1.ValidateAccountResponseB<Z:github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1b\x06proto3"
+	"\x0fValidateAccount\x12\".delidev.v1.ValidateAccountRequest\x1a#.delidev.v1.ValidateAccountResponse2\xf8\x02\n" +
+	"\x0fProviderService\x12f\n" +
+	"\x13ListProviderPresets\x12&.delidev.v1.ListProviderPresetsRequest\x1a'.delidev.v1.ListProviderPresetsResponse\x12W\n" +
+	"\x0eDiscoverModels\x12!.delidev.v1.DiscoverModelsRequest\x1a\".delidev.v1.DiscoverModelsResponse\x12Q\n" +
+	"\fSearchModels\x12\x1f.delidev.v1.SearchModelsRequest\x1a .delidev.v1.SearchModelsResponse\x12Q\n" +
+	"\fResolveModel\x12\x1f.delidev.v1.ResolveModelRequest\x1a .delidev.v1.ResolveModelResponseB<Z:github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1b\x06proto3"
 
 var (
 	file_delidev_v1_delidev_proto_rawDescOnce sync.Once
@@ -3508,7 +3967,7 @@ func file_delidev_v1_delidev_proto_rawDescGZIP() []byte {
 }
 
 var file_delidev_v1_delidev_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_delidev_v1_delidev_proto_msgTypes = make([]protoimpl.MessageInfo, 50)
+var file_delidev_v1_delidev_proto_msgTypes = make([]protoimpl.MessageInfo, 58)
 var file_delidev_v1_delidev_proto_goTypes = []any{
 	(EntityKind)(0),                     // 0: delidev.v1.EntityKind
 	(EventAction)(0),                    // 1: delidev.v1.EventAction
@@ -3563,6 +4022,14 @@ var file_delidev_v1_delidev_proto_goTypes = []any{
 	(*GetAccountStatusResponse)(nil),    // 50: delidev.v1.GetAccountStatusResponse
 	(*ValidateAccountRequest)(nil),      // 51: delidev.v1.ValidateAccountRequest
 	(*ValidateAccountResponse)(nil),     // 52: delidev.v1.ValidateAccountResponse
+	(*ListProviderPresetsRequest)(nil),  // 53: delidev.v1.ListProviderPresetsRequest
+	(*ListProviderPresetsResponse)(nil), // 54: delidev.v1.ListProviderPresetsResponse
+	(*DiscoverModelsRequest)(nil),       // 55: delidev.v1.DiscoverModelsRequest
+	(*DiscoverModelsResponse)(nil),      // 56: delidev.v1.DiscoverModelsResponse
+	(*SearchModelsRequest)(nil),         // 57: delidev.v1.SearchModelsRequest
+	(*SearchModelsResponse)(nil),        // 58: delidev.v1.SearchModelsResponse
+	(*ResolveModelRequest)(nil),         // 59: delidev.v1.ResolveModelRequest
+	(*ResolveModelResponse)(nil),        // 60: delidev.v1.ResolveModelResponse
 }
 var file_delidev_v1_delidev_proto_depIdxs = []int32{
 	0,  // 0: delidev.v1.Resource.kind:type_name -> delidev.v1.EntityKind
@@ -3603,57 +4070,70 @@ var file_delidev_v1_delidev_proto_depIdxs = []int32{
 	3,  // 35: delidev.v1.GetAccountStatusResponse.account:type_name -> delidev.v1.Resource
 	4,  // 36: delidev.v1.ValidateAccountRequest.mutation:type_name -> delidev.v1.Mutation
 	3,  // 37: delidev.v1.ValidateAccountResponse.account:type_name -> delidev.v1.Resource
-	7,  // 38: delidev.v1.SystemService.GetStatus:input_type -> delidev.v1.GetStatusRequest
-	9,  // 39: delidev.v1.SystemService.StopServer:input_type -> delidev.v1.StopServerRequest
-	11, // 40: delidev.v1.SystemService.GetDoctor:input_type -> delidev.v1.GetDoctorRequest
-	13, // 41: delidev.v1.SystemService.CreateBackup:input_type -> delidev.v1.CreateBackupRequest
-	15, // 42: delidev.v1.ResourceService.GetResource:input_type -> delidev.v1.GetResourceRequest
-	17, // 43: delidev.v1.ResourceService.ListResources:input_type -> delidev.v1.ListResourcesRequest
-	19, // 44: delidev.v1.ResourceService.GetSnapshot:input_type -> delidev.v1.GetSnapshotRequest
-	21, // 45: delidev.v1.ResourceService.WatchEvents:input_type -> delidev.v1.WatchEventsRequest
-	23, // 46: delidev.v1.ConfigurationService.SaveConfiguration:input_type -> delidev.v1.SaveConfigurationRequest
-	25, // 47: delidev.v1.ConfigurationService.DeleteConfiguration:input_type -> delidev.v1.DeleteConfigurationRequest
-	27, // 48: delidev.v1.ConfigurationService.PreviewRouting:input_type -> delidev.v1.PreviewRoutingRequest
-	29, // 49: delidev.v1.DeviceService.CreatePairing:input_type -> delidev.v1.CreatePairingRequest
-	31, // 50: delidev.v1.DeviceService.PairDevice:input_type -> delidev.v1.PairDeviceRequest
-	33, // 51: delidev.v1.DeviceService.RevokeDevice:input_type -> delidev.v1.RevokeDeviceRequest
-	35, // 52: delidev.v1.WorkerService.AttachWorker:input_type -> delidev.v1.AttachWorkerRequest
-	37, // 53: delidev.v1.WorkerService.WatchWork:input_type -> delidev.v1.WatchWorkRequest
-	39, // 54: delidev.v1.WorkerService.ReportWork:input_type -> delidev.v1.ReportWorkRequest
-	41, // 55: delidev.v1.WorkerService.InspectRepository:input_type -> delidev.v1.InspectRepositoryRequest
-	43, // 56: delidev.v1.WorkerService.DiscoverHarnesses:input_type -> delidev.v1.DiscoverHarnessesRequest
-	45, // 57: delidev.v1.AccountService.ConnectAccount:input_type -> delidev.v1.ConnectAccountRequest
-	47, // 58: delidev.v1.AccountService.DisconnectAccount:input_type -> delidev.v1.DisconnectAccountRequest
-	49, // 59: delidev.v1.AccountService.GetAccountStatus:input_type -> delidev.v1.GetAccountStatusRequest
-	51, // 60: delidev.v1.AccountService.ValidateAccount:input_type -> delidev.v1.ValidateAccountRequest
-	8,  // 61: delidev.v1.SystemService.GetStatus:output_type -> delidev.v1.GetStatusResponse
-	10, // 62: delidev.v1.SystemService.StopServer:output_type -> delidev.v1.StopServerResponse
-	12, // 63: delidev.v1.SystemService.GetDoctor:output_type -> delidev.v1.GetDoctorResponse
-	14, // 64: delidev.v1.SystemService.CreateBackup:output_type -> delidev.v1.CreateBackupResponse
-	16, // 65: delidev.v1.ResourceService.GetResource:output_type -> delidev.v1.GetResourceResponse
-	18, // 66: delidev.v1.ResourceService.ListResources:output_type -> delidev.v1.ListResourcesResponse
-	20, // 67: delidev.v1.ResourceService.GetSnapshot:output_type -> delidev.v1.GetSnapshotResponse
-	22, // 68: delidev.v1.ResourceService.WatchEvents:output_type -> delidev.v1.WatchEventsResponse
-	24, // 69: delidev.v1.ConfigurationService.SaveConfiguration:output_type -> delidev.v1.SaveConfigurationResponse
-	26, // 70: delidev.v1.ConfigurationService.DeleteConfiguration:output_type -> delidev.v1.DeleteConfigurationResponse
-	28, // 71: delidev.v1.ConfigurationService.PreviewRouting:output_type -> delidev.v1.PreviewRoutingResponse
-	30, // 72: delidev.v1.DeviceService.CreatePairing:output_type -> delidev.v1.CreatePairingResponse
-	32, // 73: delidev.v1.DeviceService.PairDevice:output_type -> delidev.v1.PairDeviceResponse
-	34, // 74: delidev.v1.DeviceService.RevokeDevice:output_type -> delidev.v1.RevokeDeviceResponse
-	36, // 75: delidev.v1.WorkerService.AttachWorker:output_type -> delidev.v1.AttachWorkerResponse
-	38, // 76: delidev.v1.WorkerService.WatchWork:output_type -> delidev.v1.WatchWorkResponse
-	40, // 77: delidev.v1.WorkerService.ReportWork:output_type -> delidev.v1.ReportWorkResponse
-	42, // 78: delidev.v1.WorkerService.InspectRepository:output_type -> delidev.v1.InspectRepositoryResponse
-	44, // 79: delidev.v1.WorkerService.DiscoverHarnesses:output_type -> delidev.v1.DiscoverHarnessesResponse
-	46, // 80: delidev.v1.AccountService.ConnectAccount:output_type -> delidev.v1.ConnectAccountResponse
-	48, // 81: delidev.v1.AccountService.DisconnectAccount:output_type -> delidev.v1.DisconnectAccountResponse
-	50, // 82: delidev.v1.AccountService.GetAccountStatus:output_type -> delidev.v1.GetAccountStatusResponse
-	52, // 83: delidev.v1.AccountService.ValidateAccount:output_type -> delidev.v1.ValidateAccountResponse
-	61, // [61:84] is the sub-list for method output_type
-	38, // [38:61] is the sub-list for method input_type
-	38, // [38:38] is the sub-list for extension type_name
-	38, // [38:38] is the sub-list for extension extendee
-	0,  // [0:38] is the sub-list for field type_name
+	4,  // 38: delidev.v1.DiscoverModelsRequest.mutation:type_name -> delidev.v1.Mutation
+	3,  // 39: delidev.v1.DiscoverModelsResponse.account:type_name -> delidev.v1.Resource
+	3,  // 40: delidev.v1.SearchModelsResponse.models:type_name -> delidev.v1.Resource
+	3,  // 41: delidev.v1.SearchModelsResponse.providers:type_name -> delidev.v1.Resource
+	3,  // 42: delidev.v1.ResolveModelResponse.model:type_name -> delidev.v1.Resource
+	7,  // 43: delidev.v1.SystemService.GetStatus:input_type -> delidev.v1.GetStatusRequest
+	9,  // 44: delidev.v1.SystemService.StopServer:input_type -> delidev.v1.StopServerRequest
+	11, // 45: delidev.v1.SystemService.GetDoctor:input_type -> delidev.v1.GetDoctorRequest
+	13, // 46: delidev.v1.SystemService.CreateBackup:input_type -> delidev.v1.CreateBackupRequest
+	15, // 47: delidev.v1.ResourceService.GetResource:input_type -> delidev.v1.GetResourceRequest
+	17, // 48: delidev.v1.ResourceService.ListResources:input_type -> delidev.v1.ListResourcesRequest
+	19, // 49: delidev.v1.ResourceService.GetSnapshot:input_type -> delidev.v1.GetSnapshotRequest
+	21, // 50: delidev.v1.ResourceService.WatchEvents:input_type -> delidev.v1.WatchEventsRequest
+	23, // 51: delidev.v1.ConfigurationService.SaveConfiguration:input_type -> delidev.v1.SaveConfigurationRequest
+	25, // 52: delidev.v1.ConfigurationService.DeleteConfiguration:input_type -> delidev.v1.DeleteConfigurationRequest
+	27, // 53: delidev.v1.ConfigurationService.PreviewRouting:input_type -> delidev.v1.PreviewRoutingRequest
+	29, // 54: delidev.v1.DeviceService.CreatePairing:input_type -> delidev.v1.CreatePairingRequest
+	31, // 55: delidev.v1.DeviceService.PairDevice:input_type -> delidev.v1.PairDeviceRequest
+	33, // 56: delidev.v1.DeviceService.RevokeDevice:input_type -> delidev.v1.RevokeDeviceRequest
+	35, // 57: delidev.v1.WorkerService.AttachWorker:input_type -> delidev.v1.AttachWorkerRequest
+	37, // 58: delidev.v1.WorkerService.WatchWork:input_type -> delidev.v1.WatchWorkRequest
+	39, // 59: delidev.v1.WorkerService.ReportWork:input_type -> delidev.v1.ReportWorkRequest
+	41, // 60: delidev.v1.WorkerService.InspectRepository:input_type -> delidev.v1.InspectRepositoryRequest
+	43, // 61: delidev.v1.WorkerService.DiscoverHarnesses:input_type -> delidev.v1.DiscoverHarnessesRequest
+	45, // 62: delidev.v1.AccountService.ConnectAccount:input_type -> delidev.v1.ConnectAccountRequest
+	47, // 63: delidev.v1.AccountService.DisconnectAccount:input_type -> delidev.v1.DisconnectAccountRequest
+	49, // 64: delidev.v1.AccountService.GetAccountStatus:input_type -> delidev.v1.GetAccountStatusRequest
+	51, // 65: delidev.v1.AccountService.ValidateAccount:input_type -> delidev.v1.ValidateAccountRequest
+	53, // 66: delidev.v1.ProviderService.ListProviderPresets:input_type -> delidev.v1.ListProviderPresetsRequest
+	55, // 67: delidev.v1.ProviderService.DiscoverModels:input_type -> delidev.v1.DiscoverModelsRequest
+	57, // 68: delidev.v1.ProviderService.SearchModels:input_type -> delidev.v1.SearchModelsRequest
+	59, // 69: delidev.v1.ProviderService.ResolveModel:input_type -> delidev.v1.ResolveModelRequest
+	8,  // 70: delidev.v1.SystemService.GetStatus:output_type -> delidev.v1.GetStatusResponse
+	10, // 71: delidev.v1.SystemService.StopServer:output_type -> delidev.v1.StopServerResponse
+	12, // 72: delidev.v1.SystemService.GetDoctor:output_type -> delidev.v1.GetDoctorResponse
+	14, // 73: delidev.v1.SystemService.CreateBackup:output_type -> delidev.v1.CreateBackupResponse
+	16, // 74: delidev.v1.ResourceService.GetResource:output_type -> delidev.v1.GetResourceResponse
+	18, // 75: delidev.v1.ResourceService.ListResources:output_type -> delidev.v1.ListResourcesResponse
+	20, // 76: delidev.v1.ResourceService.GetSnapshot:output_type -> delidev.v1.GetSnapshotResponse
+	22, // 77: delidev.v1.ResourceService.WatchEvents:output_type -> delidev.v1.WatchEventsResponse
+	24, // 78: delidev.v1.ConfigurationService.SaveConfiguration:output_type -> delidev.v1.SaveConfigurationResponse
+	26, // 79: delidev.v1.ConfigurationService.DeleteConfiguration:output_type -> delidev.v1.DeleteConfigurationResponse
+	28, // 80: delidev.v1.ConfigurationService.PreviewRouting:output_type -> delidev.v1.PreviewRoutingResponse
+	30, // 81: delidev.v1.DeviceService.CreatePairing:output_type -> delidev.v1.CreatePairingResponse
+	32, // 82: delidev.v1.DeviceService.PairDevice:output_type -> delidev.v1.PairDeviceResponse
+	34, // 83: delidev.v1.DeviceService.RevokeDevice:output_type -> delidev.v1.RevokeDeviceResponse
+	36, // 84: delidev.v1.WorkerService.AttachWorker:output_type -> delidev.v1.AttachWorkerResponse
+	38, // 85: delidev.v1.WorkerService.WatchWork:output_type -> delidev.v1.WatchWorkResponse
+	40, // 86: delidev.v1.WorkerService.ReportWork:output_type -> delidev.v1.ReportWorkResponse
+	42, // 87: delidev.v1.WorkerService.InspectRepository:output_type -> delidev.v1.InspectRepositoryResponse
+	44, // 88: delidev.v1.WorkerService.DiscoverHarnesses:output_type -> delidev.v1.DiscoverHarnessesResponse
+	46, // 89: delidev.v1.AccountService.ConnectAccount:output_type -> delidev.v1.ConnectAccountResponse
+	48, // 90: delidev.v1.AccountService.DisconnectAccount:output_type -> delidev.v1.DisconnectAccountResponse
+	50, // 91: delidev.v1.AccountService.GetAccountStatus:output_type -> delidev.v1.GetAccountStatusResponse
+	52, // 92: delidev.v1.AccountService.ValidateAccount:output_type -> delidev.v1.ValidateAccountResponse
+	54, // 93: delidev.v1.ProviderService.ListProviderPresets:output_type -> delidev.v1.ListProviderPresetsResponse
+	56, // 94: delidev.v1.ProviderService.DiscoverModels:output_type -> delidev.v1.DiscoverModelsResponse
+	58, // 95: delidev.v1.ProviderService.SearchModels:output_type -> delidev.v1.SearchModelsResponse
+	60, // 96: delidev.v1.ProviderService.ResolveModel:output_type -> delidev.v1.ResolveModelResponse
+	70, // [70:97] is the sub-list for method output_type
+	43, // [43:70] is the sub-list for method input_type
+	43, // [43:43] is the sub-list for extension type_name
+	43, // [43:43] is the sub-list for extension extendee
+	0,  // [0:43] is the sub-list for field type_name
 }
 
 func init() { file_delidev_v1_delidev_proto_init() }
@@ -3667,9 +4147,9 @@ func file_delidev_v1_delidev_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delidev_v1_delidev_proto_rawDesc), len(file_delidev_v1_delidev_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   50,
+			NumMessages:   58,
 			NumExtensions: 0,
-			NumServices:   6,
+			NumServices:   7,
 		},
 		GoTypes:           file_delidev_v1_delidev_proto_goTypes,
 		DependencyIndexes: file_delidev_v1_delidev_proto_depIdxs,

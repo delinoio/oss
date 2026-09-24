@@ -171,24 +171,20 @@ func validateRelationships(tx *store.Tx, kind domain.Kind, id domain.ID, expecte
 			}
 		}
 	case *domain.Model:
+		if expected == 0 {
+			if v.MetadataSource == domain.Known {
+				return domain.Fail(domain.InvalidArgument, "Provider-observed model metadata is server-owned.", "Use user-declared for manual advisory metadata or unknown when unavailable.")
+			}
+			if v.Discovery != nil || v.New {
+				return domain.Fail(domain.InvalidArgument, "Model discovery provenance is server-owned.", "Register a manual model without discovery fields.")
+			}
+			v.Manual = true
+		}
 		if err := mustExist(tx, domain.ProviderKind, v.ProviderID); err != nil {
 			return err
 		}
-		models, err := all(tx, domain.ModelKind)
-		if err != nil {
+		if err := tx.ValidateModelIdentity(id, *v); err != nil {
 			return err
-		}
-		for _, record := range models {
-			if record.ID == id {
-				continue
-			}
-			m, err := store.Decode[domain.Model](record)
-			if err != nil {
-				return err
-			}
-			if (v.Alias != "" && (m.Alias == v.Alias || string(record.ID) == v.Alias)) || (m.ProviderID == v.ProviderID && m.NativeID == v.NativeID) {
-				return domain.Fail(domain.Conflict, "The model identity or CLI alias already exists.", "Choose a unique alias and canonical provider/model identity.")
-			}
 		}
 		if expected > 0 {
 			record, err := tx.Get(kind, id)
@@ -199,8 +195,16 @@ func validateRelationships(tx *store.Tx, kind domain.Kind, id domain.ID, expecte
 			if err != nil {
 				return err
 			}
+			oldDiscovery, _ := json.Marshal(old.Discovery)
+			newDiscovery, _ := json.Marshal(v.Discovery)
+			if string(oldDiscovery) != string(newDiscovery) || old.Manual != v.Manual || (!old.New && v.New) {
+				return domain.Fail(domain.InvalidArgument, "Model registration and discovery provenance are server-owned.", "Preserve provenance; NEW may only be acknowledged by clearing it.")
+			}
 			if old.ProviderID != v.ProviderID || old.NativeID != v.NativeID {
 				return domain.Fail(domain.Conflict, "Canonical model identity is immutable.", "Register a new model instead of relabeling historical usage.")
+			}
+			if v.MetadataSource == domain.Known && (old.MetadataSource != domain.Known || modelAdvisoryBytes(old) != modelAdvisoryBytes(*v)) {
+				return domain.Fail(domain.InvalidArgument, "Provider-observed model metadata cannot be forged through configuration.", "Use user-declared when changing advisory metadata.")
 			}
 		}
 	case *domain.Account:
@@ -216,7 +220,7 @@ func validateRelationships(tx *store.Tx, kind domain.Kind, id domain.ID, expecte
 			return domain.Fail(domain.InvalidArgument, "Account type does not match the provider.", "Use the provider's authentication type.")
 		}
 		if expected == 0 {
-			if v.Health != domain.AccountDisconnected || len(v.Quota) > 0 || v.ConfirmedExhausted || v.Connection != nil || v.Removal != nil || v.Validation != nil {
+			if v.Health != domain.AccountDisconnected || len(v.Quota) > 0 || v.ConfirmedExhausted || v.Connection != nil || v.Removal != nil || v.Validation != nil || v.Catalog != nil {
 				return domain.Fail(domain.InvalidArgument, "New account health must be disconnected.", "Use account connect/login to validate credentials and quota.")
 			}
 		} else {
@@ -235,7 +239,8 @@ func validateRelationships(tx *store.Tx, kind domain.Kind, id domain.ID, expecte
 				Connection *domain.AccountConnection
 				Removal    *domain.AccountRemoval
 				Validation *domain.AccountValidation
-			}{old.Health, old.Quota, old.ConfirmedExhausted, old.Connection, old.Removal, old.Validation})
+				Catalog    *domain.CatalogObservation
+			}{old.Health, old.Quota, old.ConfirmedExhausted, old.Connection, old.Removal, old.Validation, old.Catalog})
 			newObservations, _ := json.Marshal(struct {
 				Health     domain.AccountHealth
 				Quota      []domain.QuotaWindow
@@ -243,7 +248,8 @@ func validateRelationships(tx *store.Tx, kind domain.Kind, id domain.ID, expecte
 				Connection *domain.AccountConnection
 				Removal    *domain.AccountRemoval
 				Validation *domain.AccountValidation
-			}{v.Health, v.Quota, v.ConfirmedExhausted, v.Connection, v.Removal, v.Validation})
+				Catalog    *domain.CatalogObservation
+			}{v.Health, v.Quota, v.ConfirmedExhausted, v.Connection, v.Removal, v.Validation, v.Catalog})
 			if old.ProviderID != v.ProviderID || old.Type != v.Type || string(oldObservations) != string(newObservations) {
 				return domain.Fail(domain.InvalidArgument, "Account identity and observed health are server-owned.", "Use login/connect/refresh to update authentication or quota.")
 			}

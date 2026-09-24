@@ -337,3 +337,43 @@ message ValidateAccountResponse {
   // or credentials and is not inference, quota recovery or harness capability.
   bytes validation_json = 4;
 }
+
+service ProviderService {
+  rpc ListProviderPresets(ListProviderPresetsRequest) returns (ListProviderPresetsResponse);
+  rpc DiscoverModels(DiscoverModelsRequest) returns (DiscoverModelsResponse);
+  rpc SearchModels(SearchModelsRequest) returns (SearchModelsResponse);
+  rpc ResolveModel(ResolveModelRequest) returns (ResolveModelResponse);
+}
+message ListProviderPresetsRequest {}
+message ListProviderPresetsResponse {
+  bytes presets_json = 1;
+}
+message DiscoverModelsRequest {
+  // Explicit account identity/current revision; the provider is server-owned.
+  Mutation mutation = 1;
+}
+message DiscoverModelsResponse {
+  Resource account = 1;
+  string request_id = 2;
+  bool replayed = 3;
+  bytes observation_json = 4;
+}
+message SearchModelsRequest {
+  string query = 1;
+  string provider_id = 2;
+  bool include_hidden = 3;
+  uint32 page_size = 4;
+  string page_token = 5;
+}
+message SearchModelsResponse {
+  repeated Resource models = 1;
+  repeated Resource providers = 2;
+  string next_page_token = 3;
+}
+message ResolveModelRequest {
+  string selector = 1;
+  string provider_id = 2;
+}
+message ResolveModelResponse {
+  Resource model = 1;
+}

@@ -59,9 +59,13 @@ const (
 )
 
 type Model struct {
-	ID           string  `json:"id"`
-	Name         string  `json:"name"`
-	ContextLimit *uint64 `json:"context_limit,omitempty"`
+	ID               string   `json:"id"`
+	Name             string   `json:"name"`
+	ContextLimit     *uint64  `json:"context_limit,omitempty"`
+	InputModalities  []string `json:"input_modalities,omitempty"`
+	OutputModalities []string `json:"output_modalities,omitempty"`
+	Tools            *bool    `json:"tools,omitempty"`
+	Reasoning        *bool    `json:"reasoning,omitempty"`
 }
 type Observation struct {
 	Failure           Failure                `json:"failure,omitempty"`
@@ -179,9 +183,14 @@ func inspect(ctx context.Context, client *http.Client, provider domain.Provider,
 	models := []Model{}
 	seen := map[string]bool{}
 	after := ""
-	remaining := maxBody
+	remaining := 4 * maxBody
 	for page := 0; page < maxPages; page++ {
 		query := url.Values{}
+		if profile == openRouter {
+			query.Set("limit", "500")
+			query.Set("offset", strconv.Itoa(page*500))
+			query.Set("output_modalities", "all")
+		}
 		if provider.Protocol == domain.AnthropicMessages {
 			query.Set("limit", "1000")
 			if after != "" {
@@ -200,6 +209,10 @@ func inspect(ctx context.Context, client *http.Client, provider domain.Provider,
 			return o
 		}
 		items, next, err := parseModels(raw, provider.Protocol, key)
+		moreRouter := false
+		if err == nil && profile == openRouter {
+			moreRouter, err = routerPage(raw, page*500, len(items))
+		}
 		clear(raw)
 		if err != nil {
 			o.Failure = InvalidResponse
@@ -216,6 +229,9 @@ func inspect(ctx context.Context, client *http.Client, provider domain.Provider,
 			}
 			seen[item.ID] = true
 			models = append(models, item)
+		}
+		if moreRouter {
+			continue
 		}
 		if next == "" {
 			slices.SortFunc(models, func(a, b Model) int { return strings.Compare(a.ID, b.ID) })
@@ -438,17 +454,28 @@ func parseModels(raw []byte, protocol domain.APIProtocol, key []byte) ([]Model, 
 			return nil, "", errors.New("invalid model identity")
 		}
 		model.Name = model.ID
-		if protocol == domain.AnthropicMessages && len(item["display_name"]) != 0 {
-			if json.Unmarshal(item["display_name"], &model.Name) != nil || !displayName(model.Name) || containsKey(model.Name, key) {
+		nameField := "name"
+		if protocol == domain.AnthropicMessages {
+			nameField = "display_name"
+		}
+		if len(item[nameField]) != 0 && string(item[nameField]) != "null" {
+			if json.Unmarshal(item[nameField], &model.Name) != nil || !displayName(model.Name) || containsKey(model.Name, key) {
 				return nil, "", errors.New("invalid model name")
 			}
 		}
-		if protocol == domain.AnthropicMessages && len(item["max_input_tokens"]) > 0 && string(item["max_input_tokens"]) != "null" {
+		contextField := "context_length"
+		if protocol == domain.AnthropicMessages {
+			contextField = "max_input_tokens"
+		}
+		if len(item[contextField]) > 0 && string(item[contextField]) != "null" {
 			var limit uint64
-			if json.Unmarshal(item["max_input_tokens"], &limit) != nil || limit == 0 {
+			if json.Unmarshal(item[contextField], &limit) != nil || limit == 0 {
 				return nil, "", errors.New("invalid context limit")
 			}
 			model.ContextLimit = &limit
+		}
+		if err := advisoryMetadata(item, key, &model); err != nil {
+			return nil, "", err
 		}
 		models = append(models, model)
 	}
