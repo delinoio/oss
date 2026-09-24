@@ -14,8 +14,9 @@ use winapi::{
         fileapi::GetFinalPathNameByHandleW,
         winnt::{
             ACCESS_MASK, ACCESS_SYSTEM_SECURITY, DELETE, FILE_APPEND_DATA, FILE_DELETE_CHILD,
-            FILE_READ_DATA, FILE_WRITE_ATTRIBUTES, FILE_WRITE_DATA, FILE_WRITE_EA, GENERIC_ALL,
-            GENERIC_READ, GENERIC_WRITE, MAXIMUM_ALLOWED, WRITE_DAC, WRITE_OWNER,
+            FILE_EXECUTE, FILE_READ_ATTRIBUTES, FILE_READ_DATA, FILE_READ_EA,
+            FILE_WRITE_ATTRIBUTES, FILE_WRITE_DATA, FILE_WRITE_EA, GENERIC_ALL, GENERIC_EXECUTE,
+            GENERIC_READ, GENERIC_WRITE, MAXIMUM_ALLOWED, READ_CONTROL, WRITE_DAC, WRITE_OWNER,
         },
     },
 };
@@ -106,8 +107,19 @@ pub const fn access_mask_to_mode(desired_access: ACCESS_MASK) -> AccessMode {
             | GENERIC_ALL
             | MAXIMUM_ALLOWED))
         != 0;
-    let has_read =
-        (desired_access & (FILE_READ_DATA | GENERIC_READ | GENERIC_ALL | MAXIMUM_ALLOWED)) != 0;
+    let has_read = (desired_access
+        & (FILE_READ_DATA
+            | FILE_READ_EA
+            | FILE_READ_ATTRIBUTES
+            | FILE_EXECUTE
+            | READ_CONTROL
+            | ACCESS_SYSTEM_SECURITY
+            | GENERIC_READ
+            | GENERIC_EXECUTE
+            | GENERIC_WRITE
+            | GENERIC_ALL
+            | MAXIMUM_ALLOWED))
+        != 0;
     if has_write {
         if has_read {
             AccessMode::READ.union(AccessMode::WRITE)
@@ -189,6 +201,28 @@ mod tests {
                 fspy_shared::ipc::AccessMode::READ.union(fspy_shared::ipc::AccessMode::WRITE)
             );
         }
+    }
+
+    #[test]
+    fn metadata_and_execution_reads_survive_mixed_write_masks() {
+        use winapi::um::winnt::{
+            ACCESS_SYSTEM_SECURITY, FILE_EXECUTE, FILE_READ_ATTRIBUTES, FILE_READ_EA,
+            FILE_WRITE_DATA, GENERIC_EXECUTE, GENERIC_WRITE, READ_CONTROL,
+        };
+
+        let both = fspy_shared::ipc::AccessMode::READ.union(fspy_shared::ipc::AccessMode::WRITE);
+        for right in [
+            FILE_READ_ATTRIBUTES,
+            FILE_READ_EA,
+            READ_CONTROL,
+            FILE_EXECUTE,
+            GENERIC_EXECUTE,
+            ACCESS_SYSTEM_SECURITY,
+            GENERIC_WRITE,
+        ] {
+            assert_eq!(access_mask_to_mode(right | FILE_WRITE_DATA), both);
+        }
+        assert_eq!(access_mask_to_mode(GENERIC_WRITE), both);
     }
 
     #[test]
