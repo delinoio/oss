@@ -169,6 +169,12 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		return nil, domain.SafeError(context.Canceled)
 	}
 	logger.InfoContext(ctx, "native_execution_input_accepted", "input_id", input.InputID)
+	finishResponses := startQuestionResponseController(ctx, nativeCtx, cancelNative, config.questionControls, mapper, client)
+	defer func() {
+		if err := finishResponses(); err != nil {
+			output, returned = nil, err
+		}
+	}()
 	readContext, publicationContext := ctx, nativeCtx
 	stopping := false
 	for {

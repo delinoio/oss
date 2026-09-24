@@ -82,7 +82,7 @@ func (s *Service) PublishExecution(ctx context.Context, req *connect.Request[pb.
 		if ir.SessionID != sr.ID || queued.ExecutionID != input.ExecutionID || queued.NativeRequestID != input.TurnRequestID || queued.Prompt != input.Input.Prompt || queued.Mode != input.Input.Mode || (queued.Delivery != domain.InputClaimed && queued.Delivery != domain.InputAccepted && queued.Delivery != domain.InputUncertain) {
 			return nil, executionEventConflict()
 		}
-		if err := applyExecutionEvent(tx, jobRecord, input, sr, &session, ir, &queued, event); err != nil {
+		if err := applyExecutionEvent(tx, jobRecord, input, actor.DeviceID, sr, &session, ir, &queued, event); err != nil {
 			return nil, err
 		}
 		if _, err := tx.Put(domain.SessionKind, sr.ID, sr.Revision, sr.ID, sr.ProjectID, session); err != nil {
@@ -102,7 +102,7 @@ func (s *Service) PublishExecution(ctx context.Context, req *connect.Request[pb.
 	if err := domain.Decode(result.Data, &receipt); err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
-	if event.Kind == domain.ExecutionThreadBound || event.Kind == domain.ExecutionInputAccepted || event.Kind == domain.ExecutionTurnFinished || event.Kind.IsInteraction() || event.Kind == domain.ExecutionWaitingChanged {
+	if event.Kind == domain.ExecutionThreadBound || event.Kind == domain.ExecutionInputAccepted || event.Kind == domain.ExecutionTurnFinished || event.Kind.IsInteraction() || event.Kind == domain.ExecutionWaitingChanged || event.Kind == domain.ExecutionQuestionDeliveryObserved {
 		s.logger.InfoContext(ctx, "execution_event_committed", "job_id", identity.Job, "execution_id", event.ExecutionID, "kind", event.Kind, "sequence", event.Sequence, "replayed", result.Replayed)
 	}
 	response := connect.NewResponse(&pb.PublishExecutionResponse{AcknowledgedSequence: receipt.Sequence, Replayed: result.Replayed})
@@ -110,7 +110,7 @@ func (s *Service) PublishExecution(ctx context.Context, req *connect.Request[pb.
 	return response, nil
 }
 
-func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJobInput, sr store.Record, session *domain.Session, ir store.Record, queued *domain.QueuedInput, event domain.ExecutionEvent) error {
+func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJobInput, actor domain.ID, sr store.Record, session *domain.Session, ir store.Record, queued *domain.QueuedInput, event domain.ExecutionEvent) error {
 	var responseUncertain bool
 	var responseErr error
 	progress := session.Execution
@@ -154,6 +154,10 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 				if responseErr != nil {
 					return responseErr
 				}
+				// Request closure and a terminal turn do not prove that native
+				// core accepted a transmitted answer. Retain that independent gate
+				// after recording the actual native outcome below.
+				responseUncertain = responseUncertain || progress.UnconfirmedResponses != 0
 				progress.Waiting = domain.NativeWaiting{}
 				if event.Outcome == domain.ExecutionSucceeded {
 					complete, err := tx.ExecutionMessagesComplete(input.ExecutionID)
@@ -192,6 +196,11 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 						session.Problem = domain.Fail(code, "The native execution did not complete successfully.", "Inspect the retained execution and confirm owned cleanup before explicit Resume.")
 					}
 					session.Dispatch = domain.DispatchPaused
+				}
+			} else if event.Kind == domain.ExecutionQuestionDeliveryObserved {
+				responseUncertain, responseErr = publishQuestionDelivery(tx, job, input, actor, progress, event)
+				if responseErr != nil {
+					return responseErr
 				}
 			} else if event.Kind.IsInteraction() {
 				responseUncertain, responseErr = publishExecutionInteraction(tx, input, sr, event)

@@ -50,6 +50,10 @@ func closePublishedInteraction(tx *store.Tx, r store.Record, value domain.Execut
 			// that it was accepted or authorize a replacement send.
 			value.Response.State = domain.QuestionResponseUncertain
 			uncertain = true
+		case domain.QuestionResponseTransmitted:
+			// Preserve confirmed pipe transmission without treating native
+			// request closure as semantic acceptance. Terminal reconciliation
+			// retains the separate unconfirmed-response execution gate.
 		default:
 			return false, executionEventConflict()
 		}

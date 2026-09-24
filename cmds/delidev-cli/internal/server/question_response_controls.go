@@ -181,7 +181,7 @@ func invalidateQuestionResponses(tx *store.Tx, input domain.ExecutionJobInput) e
 		switch value.Response.State {
 		case domain.QuestionResponseQueued:
 			value.Response.State = domain.QuestionResponseCanceled
-		case domain.QuestionResponseClaimed:
+		case domain.QuestionResponseClaimed, domain.QuestionResponseTransmitted:
 			value.Response.State = domain.QuestionResponseUncertain
 		case domain.QuestionResponseCanceled, domain.QuestionResponseUncertain:
 			continue

@@ -5,26 +5,27 @@ import "slices"
 type ExecutionEventKind string
 
 const (
-	ExecutionThreadBound          ExecutionEventKind = "thread-bound"
-	ExecutionInputAccepted        ExecutionEventKind = "input-accepted"
-	ExecutionMessageStarted       ExecutionEventKind = "message-started"
-	ExecutionTextAppended         ExecutionEventKind = "text-appended"
-	ExecutionMessageCompleted     ExecutionEventKind = "message-completed"
-	ExecutionTurnFinished         ExecutionEventKind = "turn-finished"
-	ExecutionUsageObserved        ExecutionEventKind = "usage-observed"
-	ExecutionNoticeObserved       ExecutionEventKind = "notice-observed"
-	ExecutionToolStarted          ExecutionEventKind = "tool-started"
-	ExecutionToolCompleted        ExecutionEventKind = "tool-completed"
-	ExecutionToolOutput           ExecutionEventKind = "tool-output"
-	ExecutionToolInput            ExecutionEventKind = "tool-input"
-	ExecutionToolPatch            ExecutionEventKind = "tool-patch"
-	ExecutionArtifactStarted      ExecutionEventKind = "artifact-started"
-	ExecutionArtifactCompleted    ExecutionEventKind = "artifact-completed"
-	ExecutionArtifactDelta        ExecutionEventKind = "artifact-delta"
-	ExecutionProgressObserved     ExecutionEventKind = "progress-observed"
-	ExecutionInteractionRequested ExecutionEventKind = "interaction-requested"
-	ExecutionInteractionClosed    ExecutionEventKind = "interaction-closed"
-	ExecutionWaitingChanged       ExecutionEventKind = "waiting-changed"
+	ExecutionThreadBound              ExecutionEventKind = "thread-bound"
+	ExecutionInputAccepted            ExecutionEventKind = "input-accepted"
+	ExecutionMessageStarted           ExecutionEventKind = "message-started"
+	ExecutionTextAppended             ExecutionEventKind = "text-appended"
+	ExecutionMessageCompleted         ExecutionEventKind = "message-completed"
+	ExecutionTurnFinished             ExecutionEventKind = "turn-finished"
+	ExecutionUsageObserved            ExecutionEventKind = "usage-observed"
+	ExecutionNoticeObserved           ExecutionEventKind = "notice-observed"
+	ExecutionToolStarted              ExecutionEventKind = "tool-started"
+	ExecutionToolCompleted            ExecutionEventKind = "tool-completed"
+	ExecutionToolOutput               ExecutionEventKind = "tool-output"
+	ExecutionToolInput                ExecutionEventKind = "tool-input"
+	ExecutionToolPatch                ExecutionEventKind = "tool-patch"
+	ExecutionArtifactStarted          ExecutionEventKind = "artifact-started"
+	ExecutionArtifactCompleted        ExecutionEventKind = "artifact-completed"
+	ExecutionArtifactDelta            ExecutionEventKind = "artifact-delta"
+	ExecutionProgressObserved         ExecutionEventKind = "progress-observed"
+	ExecutionInteractionRequested     ExecutionEventKind = "interaction-requested"
+	ExecutionInteractionClosed        ExecutionEventKind = "interaction-closed"
+	ExecutionWaitingChanged           ExecutionEventKind = "waiting-changed"
+	ExecutionQuestionDeliveryObserved ExecutionEventKind = "question-delivery-observed"
 )
 
 type MessageRole string
@@ -98,24 +99,25 @@ type ExecutionMessageUpdate struct {
 // envelope. Exactly one event kind owns its optional payload. Unknown native
 // extensions need dedicated adapters before they can enter this document.
 type ExecutionEvent struct {
-	Version        uint32                      `json:"version"`
-	ExecutionID    ID                          `json:"execution_id"`
-	Sequence       uint64                      `json:"sequence"`
-	Kind           ExecutionEventKind          `json:"kind"`
-	NativeThreadID string                      `json:"native_thread_id"`
-	NativeTurnID   string                      `json:"native_turn_id,omitempty"`
-	Observed       *ObservedExecutionSettings  `json:"observed,omitempty"`
-	Message        *ExecutionMessageUpdate     `json:"message,omitempty"`
-	Outcome        ExecutionOutcome            `json:"outcome,omitempty"`
-	ProblemCode    Code                        `json:"problem_code,omitempty"`
-	Usage          *NativeTokenUsage           `json:"usage,omitempty"`
-	ObservationID  ID                          `json:"observation_id,omitempty"`
-	Artifact       *ExecutionArtifactUpdate    `json:"artifact,omitempty"`
-	Progress       *ExecutionProgressUpdate    `json:"progress,omitempty"`
-	Tool           *ExecutionToolUpdate        `json:"tool,omitempty"`
-	Notice         NativeNotice                `json:"notice,omitempty"`
-	Interaction    *ExecutionInteractionUpdate `json:"interaction,omitempty"`
-	Waiting        *NativeWaiting              `json:"waiting,omitempty"`
+	Version          uint32                           `json:"version"`
+	ExecutionID      ID                               `json:"execution_id"`
+	Sequence         uint64                           `json:"sequence"`
+	Kind             ExecutionEventKind               `json:"kind"`
+	NativeThreadID   string                           `json:"native_thread_id"`
+	NativeTurnID     string                           `json:"native_turn_id,omitempty"`
+	Observed         *ObservedExecutionSettings       `json:"observed,omitempty"`
+	Message          *ExecutionMessageUpdate          `json:"message,omitempty"`
+	Outcome          ExecutionOutcome                 `json:"outcome,omitempty"`
+	ProblemCode      Code                             `json:"problem_code,omitempty"`
+	Usage            *NativeTokenUsage                `json:"usage,omitempty"`
+	ObservationID    ID                               `json:"observation_id,omitempty"`
+	Artifact         *ExecutionArtifactUpdate         `json:"artifact,omitempty"`
+	Progress         *ExecutionProgressUpdate         `json:"progress,omitempty"`
+	Tool             *ExecutionToolUpdate             `json:"tool,omitempty"`
+	Notice           NativeNotice                     `json:"notice,omitempty"`
+	Interaction      *ExecutionInteractionUpdate      `json:"interaction,omitempty"`
+	Waiting          *NativeWaiting                   `json:"waiting,omitempty"`
+	QuestionResponse *ExecutionQuestionResponseUpdate `json:"question_response,omitempty"`
 }
 
 func (e ExecutionEvent) Validate() error {
@@ -134,6 +136,13 @@ func (e ExecutionEvent) Validate() error {
 		}
 	}
 	switch e.Kind {
+	case ExecutionQuestionDeliveryObserved:
+		if e.QuestionResponse == nil {
+			return invalidInteraction()
+		}
+		if err := e.QuestionResponse.Validate(); err != nil {
+			return err
+		}
 	case ExecutionInteractionRequested, ExecutionInteractionClosed:
 		if e.Interaction == nil {
 			return invalidInteraction()
@@ -219,7 +228,7 @@ func (e ExecutionEvent) Validate() error {
 	default:
 		return Fail(Unsupported, "Unknown normalized execution event.", "Use a dedicated supported native event adapter.")
 	}
-	if (!e.Kind.IsInteraction() && e.Interaction != nil) || (e.Kind != ExecutionWaitingChanged && e.Waiting != nil) || (!e.Kind.IsArtifact() && e.Artifact != nil) || (e.Kind != ExecutionProgressObserved && e.Progress != nil) || (!e.Kind.IsTool() && e.Tool != nil) || (e.Kind != ExecutionThreadBound && e.Observed != nil) || (e.Kind != ExecutionMessageStarted && e.Kind != ExecutionTextAppended && e.Kind != ExecutionMessageCompleted && e.Message != nil) || (e.Kind != ExecutionTurnFinished && (e.Outcome != "" || e.ProblemCode != "")) || (e.Kind != ExecutionUsageObserved && (e.Usage != nil || e.ObservationID != "")) || (e.Kind != ExecutionNoticeObserved && e.Notice != "") {
+	if (e.Kind != ExecutionQuestionDeliveryObserved && e.QuestionResponse != nil) || (!e.Kind.IsInteraction() && e.Interaction != nil) || (e.Kind != ExecutionWaitingChanged && e.Waiting != nil) || (!e.Kind.IsArtifact() && e.Artifact != nil) || (e.Kind != ExecutionProgressObserved && e.Progress != nil) || (!e.Kind.IsTool() && e.Tool != nil) || (e.Kind != ExecutionThreadBound && e.Observed != nil) || (e.Kind != ExecutionMessageStarted && e.Kind != ExecutionTextAppended && e.Kind != ExecutionMessageCompleted && e.Message != nil) || (e.Kind != ExecutionTurnFinished && (e.Outcome != "" || e.ProblemCode != "")) || (e.Kind != ExecutionUsageObserved && (e.Usage != nil || e.ObservationID != "")) || (e.Kind != ExecutionNoticeObserved && e.Notice != "") {
 		return Fail(InvalidArgument, "An execution event contains another kind's payload.", "Publish one unambiguous typed event.")
 	}
 	return nil
@@ -229,21 +238,22 @@ func (e ExecutionEvent) Validate() error {
 // original immutable account/configuration selection. Only a separately
 // verified completion report may set CleanupVerified after terminal publication.
 type ExecutionProgress struct {
-	JobID           ID                        `json:"job_id"`
-	ExecutionID     ID                        `json:"execution_id"`
-	InputID         ID                        `json:"input_id"`
-	LastSequence    uint64                    `json:"last_sequence"`
-	NativeThreadID  string                    `json:"native_thread_id"`
-	NativeTurnID    string                    `json:"native_turn_id,omitempty"`
-	Observed        ObservedExecutionSettings `json:"observed"`
-	Outcome         ExecutionOutcome          `json:"outcome"`
-	LatestPlanID    ID                        `json:"latest_plan_id,omitempty"`
-	LatestDiffID    ID                        `json:"latest_diff_id,omitempty"`
-	LatestUsageID   ID                        `json:"latest_usage_id,omitempty"`
-	NoticeCount     uint64                    `json:"notice_count,omitempty"`
-	LastNotice      NativeNotice              `json:"last_notice,omitempty"`
-	CleanupVerified bool                      `json:"cleanup_verified,omitempty"`
-	Waiting         NativeWaiting             `json:"waiting"`
+	JobID                ID                        `json:"job_id"`
+	ExecutionID          ID                        `json:"execution_id"`
+	InputID              ID                        `json:"input_id"`
+	LastSequence         uint64                    `json:"last_sequence"`
+	NativeThreadID       string                    `json:"native_thread_id"`
+	NativeTurnID         string                    `json:"native_turn_id,omitempty"`
+	Observed             ObservedExecutionSettings `json:"observed"`
+	Outcome              ExecutionOutcome          `json:"outcome"`
+	LatestPlanID         ID                        `json:"latest_plan_id,omitempty"`
+	LatestDiffID         ID                        `json:"latest_diff_id,omitempty"`
+	LatestUsageID        ID                        `json:"latest_usage_id,omitempty"`
+	NoticeCount          uint64                    `json:"notice_count,omitempty"`
+	LastNotice           NativeNotice              `json:"last_notice,omitempty"`
+	CleanupVerified      bool                      `json:"cleanup_verified,omitempty"`
+	Waiting              NativeWaiting             `json:"waiting"`
+	UnconfirmedResponses uint32                    `json:"unconfirmed_responses,omitempty"`
 }
 
 type ExecutionMessage struct {

@@ -47,8 +47,16 @@ func (c *CodexEventPublisher) publishInteraction(ctx context.Context, e codex.Ev
 		if status == nil || status.TurnID != c.turn || status.ItemID != e.ItemID || status.Closure != codex.InteractionNativeClosed || e.Interaction != nil {
 			return publicationUncertain()
 		}
+		delivery, hasDelivery := c.questionResponses[status.ID]
 		if status.ResponseID != "" || status.Delivery != codex.QuestionNotSent {
-			return domain.Fail(domain.Unsupported, "Question response publication needs its durable owner claim.", "Retain the native response without inferring authorization or acceptance from closure.")
+			if !hasDelivery {
+				return domain.Fail(domain.Unsupported, "Question response publication needs its durable owner claim.", "Retain the native response without inferring authorization or acceptance from closure.")
+			}
+			if status.ResponseID != delivery.ResponseID || domain.QuestionDelivery(status.Delivery) != delivery.Delivery {
+				return publicationUncertain()
+			}
+		} else if hasDelivery && delivery.Delivery != domain.QuestionNotSent {
+			return publicationUncertain()
 		}
 		var known bool
 		update, known = c.interactions[status.ID]
@@ -66,6 +74,36 @@ func (c *CodexEventPublisher) publishInteraction(ctx context.Context, e codex.Ev
 		update.NativeRequestID.Number = &number
 	}
 	c.interactions[update.ID] = update
+	return nil
+}
+
+// PublishQuestionDelivery retains a journaled native send observation. The
+// original server claim is checked again at publication; this metadata never
+// carries an answer or grants permission to invoke the native send itself.
+func (c *CodexEventPublisher) PublishQuestionDelivery(ctx context.Context, update domain.ExecutionQuestionResponseUpdate) (returned error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.publishQuestionDeliveryLocked(ctx, update)
+}
+
+func (c *CodexEventPublisher) publishQuestionDeliveryLocked(ctx context.Context, update domain.ExecutionQuestionResponseUpdate) (returned error) {
+	defer func() {
+		if returned != nil {
+			c.blocked = true
+		}
+	}()
+	if err := update.Validate(); err != nil {
+		return err
+	}
+	original, known := c.interactions[update.InteractionID]
+	_, delivered := c.questionResponses[update.InteractionID]
+	if !known || delivered || original.Closure != "" || original.NativeItemID != update.NativeItemID {
+		return publicationUncertain()
+	}
+	if err := c.publish(ctx, domain.ExecutionEvent{Kind: domain.ExecutionQuestionDeliveryObserved, QuestionResponse: &update}); err != nil {
+		return err
+	}
+	c.questionResponses[update.InteractionID] = update
 	return nil
 }
 

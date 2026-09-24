@@ -54,6 +54,7 @@ type ExecutionPublisher struct {
 	path      string
 	state     publicationJournal
 	execution domain.ID
+	job       domain.ID
 	input     domain.ExecutionJobInput
 	closed    bool
 	release   func() error
@@ -118,7 +119,7 @@ func OpenExecutionPublisher(config PublicationConfig) (publisher *ExecutionPubli
 	} else if err := writeJSON(path, state); err != nil {
 		return nil, publicationUncertain()
 	}
-	return &ExecutionPublisher{config: config, path: path, state: state, execution: input.ExecutionID, input: input, release: lock.Close}, nil
+	return &ExecutionPublisher{config: config, path: path, state: state, execution: input.ExecutionID, job: jobID, input: input, release: lock.Close}, nil
 }
 
 func (p *ExecutionPublisher) Close() error {

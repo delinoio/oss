@@ -32,6 +32,7 @@ type Config struct {
 	Ready            func(domain.ID)
 	execution        *PublicationConfig
 	executionContext context.Context
+	questionControls <-chan *pb.QuestionResponseControl
 }
 type journalState string
 
@@ -150,9 +151,12 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 		return err
 	}
 	type assignment struct {
-		resource *pb.Resource
-		context  context.Context
-		cancel   context.CancelFunc
+		resource  *pb.Resource
+		context   context.Context
+		cancel    context.CancelFunc
+		controls  chan *pb.QuestionResponseControl
+		responses map[domain.ID]responseControlIdentity
+		native    bool
 	}
 	jobs := make(chan assignment, 1)
 	var active sync.Map
@@ -163,16 +167,57 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 	// protocol failure, never permission to buffer arbitrary future execution.
 	go func() {
 		defer close(received)
+		var lastAssigned string
 		for stream.Receive() {
 			deadline.Reset(heartbeatTimeout)
 			message := stream.Msg()
 			if message.QuestionResponse != nil {
-				// Server-side claims exist before native send-intent integration.
-				// Until that controller is connected, fail explicitly even when
-				// the unsupported control is mixed with a heartbeat/assignment;
-				// never silently discard an accepted owner's response.
-				cancel(domain.Fail(domain.Unsupported, "This Worker has no integrated question response delivery controller.", "Retain the queued response until claim journaling and native delivery are supported; no answer was sent."))
-				return
+				control := message.QuestionResponse
+				identity, err := responseControl(control)
+				if err != nil || message.Job != nil || message.Heartbeat || message.CancelRequested || message.CancelJobId != "" {
+					cancel(publicationUncertain())
+					return
+				}
+				value, ok := active.Load(control.JobId)
+				if !ok {
+					// A control read before terminal publication may arrive after
+					// the local job finished. It cannot reopen that assignment.
+					if control.JobId == lastAssigned {
+						continue
+					}
+					cancel(publicationUncertain())
+					return
+				}
+				work := value.(*assignment)
+				if !work.native {
+					cancel(publicationUncertain())
+					return
+				}
+				if work.context.Err() != nil {
+					continue
+				}
+				if prior, exists := work.responses[identity.ResponseID]; exists {
+					if prior != identity {
+						cancel(publicationUncertain())
+						return
+					}
+					continue
+				}
+				if len(work.responses) >= domain.MaxExecutionInteractions {
+					cancel(publicationUncertain())
+					return
+				}
+				work.responses[identity.ResponseID] = identity
+				select {
+				case work.controls <- proto.Clone(control).(*pb.QuestionResponseControl):
+				case <-work.context.Done():
+				case <-ctx.Done():
+					return
+				default:
+					cancel(domain.Fail(domain.ResourceExhausted, "The native response control buffer is full.", "Retain the original execution for reconciliation without replaying answers."))
+					return
+				}
+				continue
 			}
 			if message.CancelJobId != "" {
 				if message.Job != nil || message.Heartbeat || message.CancelRequested || domain.ID(message.CancelJobId).Validate() != nil {
@@ -180,7 +225,7 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 					return
 				}
 				if stop, ok := active.Load(message.CancelJobId); ok {
-					stop.(context.CancelFunc)()
+					stop.(*assignment).cancel()
 				}
 				continue
 			}
@@ -201,7 +246,15 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 				return
 			}
 			jobContext, stopJob := context.WithCancel(ctx)
-			if _, loaded := active.LoadOrStore(resource.Id, stopJob); loaded {
+			work := &assignment{resource: resource, context: jobContext, cancel: stopJob, controls: make(chan *pb.QuestionResponseControl, domain.MaxOpenInteractions), responses: map[domain.ID]responseControlIdentity{}}
+			var envelope domain.Job
+			if domain.Decode(resource.DocumentJson, &envelope) != nil {
+				stopJob()
+				cancel(publicationUncertain())
+				return
+			}
+			work.native = envelope.Type == domain.ExecuteSessionJob
+			if _, loaded := active.LoadOrStore(resource.Id, work); loaded {
 				stopJob()
 				cancel(domain.Fail(domain.RecoveryRequired, "The Worker received a duplicate live assignment.", "Reconcile its original operation before another send."))
 				return
@@ -209,8 +262,9 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 			if message.CancelRequested {
 				stopJob()
 			}
+			lastAssigned = resource.Id
 			select {
-			case jobs <- assignment{resource: resource, context: jobContext, cancel: stopJob}:
+			case jobs <- *work:
 			case <-ctx.Done():
 				return
 			default:
@@ -256,6 +310,7 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 		jobConfig := config
 		jobConfig.execution = &PublicationConfig{Root: config.Root, Credential: credential, Instance: instance, Assignment: resource, Client: client, Logger: config.Logger}
 		jobConfig.executionContext = ctx
+		jobConfig.questionControls = work.controls
 		result, err := runJob(work.context, jobConfig, instance, resource, job)
 		work.cancel()
 		active.Delete(resource.Id)

@@ -76,10 +76,11 @@ func (r QuestionResponseInput) Validate(original *QuestionRequest) error {
 type QuestionResponseState string
 
 const (
-	QuestionResponseQueued    QuestionResponseState = "queued"
-	QuestionResponseClaimed   QuestionResponseState = "claimed"
-	QuestionResponseUncertain QuestionResponseState = "uncertain"
-	QuestionResponseCanceled  QuestionResponseState = "canceled"
+	QuestionResponseQueued      QuestionResponseState = "queued"
+	QuestionResponseClaimed     QuestionResponseState = "claimed"
+	QuestionResponseTransmitted QuestionResponseState = "transmitted"
+	QuestionResponseUncertain   QuestionResponseState = "uncertain"
+	QuestionResponseCanceled    QuestionResponseState = "canceled"
 )
 
 // A claim authorizes only its original Worker attempt. It does not prove a
@@ -96,9 +97,48 @@ type QuestionResponseClaim struct {
 // Queued acceptance is a server fact only. Native ownership/delivery and
 // semantic acceptance require separate state transitions and evidence.
 type QuestionResponse struct {
-	ID         ID                     `json:"id"`
-	State      QuestionResponseState  `json:"state"`
-	Input      QuestionResponseInput  `json:"input"`
-	AcceptedAt time.Time              `json:"accepted_at"`
-	Claim      *QuestionResponseClaim `json:"claim,omitempty"`
+	ID         ID                           `json:"id"`
+	State      QuestionResponseState        `json:"state"`
+	Input      QuestionResponseInput        `json:"input"`
+	AcceptedAt time.Time                    `json:"accepted_at"`
+	Claim      *QuestionResponseClaim       `json:"claim,omitempty"`
+	Delivery   *QuestionDeliveryObservation `json:"delivery,omitempty"`
+}
+
+type QuestionDelivery string
+
+const (
+	QuestionNotSent           QuestionDelivery = "not-sent"
+	QuestionTransmitted       QuestionDelivery = "transmitted"
+	QuestionDeliveryUncertain QuestionDelivery = "uncertain"
+)
+
+// Pipe delivery and semantic answer acceptance are separate facts. This
+// observation never introduces an accepted state or duplicates answer content.
+type QuestionDeliveryObservation struct {
+	State    QuestionDelivery `json:"state"`
+	Sequence uint64           `json:"sequence"`
+}
+
+type ExecutionQuestionResponseUpdate struct {
+	InteractionID ID               `json:"interaction_id"`
+	ResponseID    ID               `json:"response_id"`
+	ClaimID       ID               `json:"claim_id"`
+	NativeItemID  string           `json:"native_item_id"`
+	Delivery      QuestionDelivery `json:"delivery"`
+}
+
+func (u ExecutionQuestionResponseUpdate) Validate() error {
+	for _, id := range []ID{u.InteractionID, u.ResponseID, u.ClaimID} {
+		if err := id.Validate(); err != nil {
+			return err
+		}
+	}
+	if err := Text(u.NativeItemID, "native question item", 1024, true); err != nil {
+		return err
+	}
+	if u.Delivery != QuestionNotSent && u.Delivery != QuestionTransmitted && u.Delivery != QuestionDeliveryUncertain {
+		return Fail(InvalidArgument, "Unknown question response delivery observation.", "Retain the original attempt as not sent, transmitted or uncertain; do not infer native acceptance.")
+	}
+	return nil
 }

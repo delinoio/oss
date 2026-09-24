@@ -20,12 +20,13 @@ type CodexEventPublisher struct {
 	tools             map[string]codexToolPublication
 	artifacts         map[string]codexArtifactPublication
 	interactions      map[domain.ID]domain.ExecutionInteractionUpdate
+	questionResponses map[domain.ID]domain.ExecutionQuestionResponseUpdate
 	waiting           domain.NativeWaiting
 	blocked, finished bool
 }
 
 func NewCodexEventPublisher(publisher *ExecutionPublisher) *CodexEventPublisher {
-	return &CodexEventPublisher{publisher: publisher, messages: map[string]domain.ExecutionMessageUpdate{}, tools: map[string]codexToolPublication{}, artifacts: map[string]codexArtifactPublication{}, interactions: map[domain.ID]domain.ExecutionInteractionUpdate{}}
+	return &CodexEventPublisher{publisher: publisher, messages: map[string]domain.ExecutionMessageUpdate{}, tools: map[string]codexToolPublication{}, artifacts: map[string]codexArtifactPublication{}, interactions: map[domain.ID]domain.ExecutionInteractionUpdate{}, questionResponses: map[domain.ID]domain.ExecutionQuestionResponseUpdate{}}
 }
 
 func (c *CodexEventPublisher) publish(ctx context.Context, event domain.ExecutionEvent) error {

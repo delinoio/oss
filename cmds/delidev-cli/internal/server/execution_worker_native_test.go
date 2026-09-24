@@ -36,6 +36,7 @@ const (
 	nativeWorkerStop
 	nativeWorkerArchive
 	nativeWorkerQuestionStop
+	nativeWorkerQuestionResponse
 )
 
 func TestManualNativeWorkerExecutesAcceptedCodexJob(t *testing.T) {
@@ -55,6 +56,10 @@ func TestManualNativeWorkerPublishesCodexPlanProgress(t *testing.T) {
 
 func TestManualNativeWorkerRetainsQuestionUntilStop(t *testing.T) {
 	testManualNativeWorkerExecution(t, nativeWorkerQuestionStop)
+}
+
+func TestManualNativeWorkerDeliversOwnedQuestionResponse(t *testing.T) {
+	testManualNativeWorkerExecution(t, nativeWorkerQuestionResponse)
 }
 
 func TestManualNativeWorkerRevocationJoinsCodexCleanup(t *testing.T) {
@@ -89,8 +94,9 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	toolScenario := scenario == nativeWorkerCommand || scenario == nativeWorkerPlan
-	questionScenario := scenario == nativeWorkerQuestionStop
-	completedScenario := scenario == nativeWorkerCompletion || toolScenario
+	responseScenario := scenario == nativeWorkerQuestionResponse
+	questionScenario := scenario == nativeWorkerQuestionStop || responseScenario
+	completedScenario := scenario == nativeWorkerCompletion || toolScenario || responseScenario
 	var calls atomic.Int64
 	started, upstreamStopped := make(chan struct{}, 1), make(chan struct{}, 1)
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -150,8 +156,37 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 		if toolScenario && (call != 2 || !strings.Contains(string(body), "function_call_output") || !strings.Contains(string(body), "call_worker_fixture") || (scenario == nativeWorkerCommand && !strings.Contains(string(body), "native-tool-fixture"))) {
 			t.Error("native command output did not reach the same selected account")
 		}
-		if questionScenario {
+		if questionScenario && !responseScenario {
 			t.Error("unanswered native question triggered another model request")
+		}
+		if responseScenario {
+			var request struct {
+				Input []struct {
+					Type   string          `json:"type"`
+					CallID string          `json:"call_id"`
+					Output json.RawMessage `json:"output"`
+				} `json:"input"`
+			}
+			matched := false
+			if json.Unmarshal(body, &request) == nil && call == 2 {
+				for _, item := range request.Input {
+					if item.Type != "function_call_output" || item.CallID != "call_worker_fixture" {
+						continue
+					}
+					var text string
+					var answer struct {
+						Answers map[string]struct {
+							Answers []string `json:"answers"`
+						} `json:"answers"`
+					}
+					if json.Unmarshal(item.Output, &text) == nil && domain.Decode([]byte(text), &answer) == nil && len(answer.Answers) == 1 && len(answer.Answers["choice"].Answers) == 1 && answer.Answers["choice"].Answers[0] == "Second" {
+						matched = true
+					}
+				}
+			}
+			if !matched {
+				t.Error("Worker question reply did not reach native core with the exact accepted answer")
+			}
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		for _, event := range []any{
@@ -191,6 +226,35 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 		workerErr = worker.Run(running, worker.Config{Root: manager.Root, Logger: f.service.logger})
 	}()
 	t.Cleanup(func() { stopWorker(); <-done })
+	responseAccepted := make(chan error, 1)
+	if responseScenario {
+		responderDone := make(chan struct{})
+		t.Cleanup(func() { cancel(); <-responderDone })
+		// The owner RPC is not exposed yet. Exercise its private atomic
+		// acceptance while the real Worker receives, claims and sends controls.
+		go func() {
+			defer close(responderDone)
+			for {
+				changed := f.service.Store.Changed()
+				rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.InteractionKind, SessionID: f.input.SessionID, Limit: 2})
+				if err != nil {
+					responseAccepted <- err
+					return
+				}
+				if len(rows) == 1 {
+					_, err := acceptFixtureResponse(f, domain.NewID(), rows[0].ID, rows[0].Revision, domain.QuestionResponseInput{Answers: map[string][]string{"choice": {"Second"}}})
+					responseAccepted <- err
+					return
+				}
+				select {
+				case <-changed:
+				case <-ctx.Done():
+					responseAccepted <- ctx.Err()
+					return
+				}
+			}
+		}()
+	}
 	if !completedScenario {
 	startedWait:
 		for {
@@ -398,6 +462,12 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 	if toolScenario {
 		expectedCalls, expectedMessages = 2, 3
 	}
+	if responseScenario {
+		expectedCalls = 2
+		if err := <-responseAccepted; err != nil {
+			t.Fatal(err)
+		}
+	}
 	var completion domain.ExecutionCompletion
 	if domain.Decode(completed.Output, &completion) != nil || completion.Validate() != nil || calls.Load() != expectedCalls {
 		t.Fatal("Worker completion lacks exact native terminal/cleanup evidence")
@@ -407,8 +477,25 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 		t.Fatal(err)
 	}
 	session, err := store.Decode[domain.Session](retained)
-	if err != nil || session.ActiveExecutionID != "" || session.Execution == nil || !session.Execution.CleanupVerified || session.PendingInputs != 0 || session.Outcome != domain.ExecutionSucceeded {
+	if err != nil || (!responseScenario && session.ActiveExecutionID != "") || session.Execution == nil || !session.Execution.CleanupVerified || session.PendingInputs != 0 || session.Outcome != domain.ExecutionSucceeded {
 		t.Fatal("Worker native completion was not atomically published")
+	}
+	if responseScenario {
+		rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.InteractionKind, SessionID: f.input.SessionID, Limit: 2})
+		if err != nil || len(rows) != 1 {
+			t.Fatal("native response lost its original interaction", err)
+		}
+		interaction, err := store.Decode[domain.ExecutionInteraction](rows[0])
+		if err != nil || interaction.Closure == domain.InteractionOpen || interaction.Response == nil || interaction.Response.State != domain.QuestionResponseTransmitted || interaction.Response.Claim == nil || interaction.Response.Delivery == nil || interaction.Response.Delivery.State != domain.QuestionTransmitted || len(interaction.Response.Input.Answers["choice"]) != 1 || interaction.Response.Input.Answers["choice"][0] != "Second" {
+			t.Fatal("native response lost its claim/transport evidence")
+		}
+		if session.Recovery != domain.NeedsRecovery || session.Dispatch != domain.DispatchPaused || session.ActiveExecutionID != f.input.ExecutionID || session.Execution.UnconfirmedResponses != 1 {
+			t.Fatal("native request closure falsely confirmed answer acceptance")
+		}
+		journal, err := security.ReadPrivate(filepath.Join(manager.Root, "jobs", string(f.job), "responses", string(rows[0].ID)+".json"), 64<<10)
+		if err != nil || !strings.Contains(string(journal), string(interaction.Response.Claim.ID)) || strings.Contains(string(journal), "Second") || strings.Contains(string(journal), "Native Worker question") {
+			t.Fatal("Worker response journal lost ownership or retained answer/question content")
+		}
 	}
 	messages, err := f.service.Store.List(ctx, store.Filter{Kind: domain.MessageKind, SessionID: f.input.SessionID, Limit: 10})
 	if err != nil || len(messages) != expectedMessages {
