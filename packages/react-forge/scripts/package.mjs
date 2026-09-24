@@ -69,9 +69,21 @@ export function manifest(host = null, revision = sourceRevision()) {
 
 function expectedFiles(host) {
   if (host) return ["package.json", "react-forge.node", "README.md", "LICENSE", "NOTICE"].sort();
-  const dist = readdirSync(path.join(packageRoot, "dist")).filter((name) => /\.(?:js|d\.ts|json)$/u.test(name));
-  ensure(dist.includes("index.js") && dist.includes("native-platforms.json"), "Build the TypeScript package before packing");
-  return ["package.json", "bin/react-forge.mjs", "README.md", "LICENSE", "NOTICE", ...dist.map((name) => `dist/${name}`)].sort();
+  const dist = [];
+  function visit(directory, relative = "") {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const name = path.posix.join(relative, entry.name);
+      if (entry.isDirectory()) visit(path.join(directory, entry.name), name);
+      else {
+        if (relative === "" && /^react-forge\.[\w-]+\.node$/u.test(entry.name)) continue;
+        ensure(entry.isFile() && /\.(?:js|d\.ts|json)$/u.test(entry.name), `Unexpected compiled output: ${name}`);
+        dist.push(`dist/${name}`);
+      }
+    }
+  }
+  visit(path.join(packageRoot, "dist"));
+  ensure(dist.includes("dist/index.js") && dist.includes("dist/native-platforms.json") && dist.includes("dist/figma.js") && dist.some((name) => name.startsWith("dist/figma/")), "Build the TypeScript package before packing");
+  return ["package.json", "bin/react-forge.mjs", "README.md", "LICENSE", "NOTICE", ...dist].sort();
 }
 
 function binaryMatches(host, bytes) {
@@ -118,7 +130,11 @@ export function pack(host, output, revision = sourceRevision()) {
     copyFileSync(binary, path.join(directory, "react-forge.node"));
   } else {
     mkdirSync(path.join(directory, "dist"));
-    for (const name of expectedFiles(null).filter((item) => item.startsWith("dist/"))) copyFileSync(path.join(packageRoot, name), path.join(directory, name));
+    for (const name of expectedFiles(null).filter((item) => item.startsWith("dist/"))) {
+      const destinationFile = path.join(directory, name);
+      mkdirSync(path.dirname(destinationFile), { recursive: true });
+      copyFileSync(path.join(packageRoot, name), destinationFile);
+    }
     mkdirSync(path.join(directory, "bin"));
     copyFileSync(path.join(packageRoot, "bin/react-forge.mjs"), path.join(directory, "bin/react-forge.mjs"));
     chmodSync(path.join(directory, "bin/react-forge.mjs"), 0o755);
