@@ -86,3 +86,5 @@ The XML depth ceiling counts nested elements, with the document element at depth
 Shared text alignment retains omission separately from explicit left alignment. DOCX/PDF resolve an omitted alignment to their inherited/default left behavior; XLSX leaves horizontal alignment absent to preserve Excel's General behavior for each value type. Applying number formats, borders or wrapping alone does not force left alignment, including differential styles.
 
 Spreadsheet differential styles preserve the three states of boolean text formatting: omitted inherits, true enables, and false emits an explicit OOXML reset (`b/i val="0"`, `u val="none"`). Both generated and mounted conditional-format rules can disable formatting inherited from the cell.
+
+DOCX emission cascades cell text styles into nested paragraphs, runs and tables even for direct Rust engine callers. Paragraph and run properties override inherited values, including explicit false booleans; emitted run formatting matches the style used by font preparation and measurement.

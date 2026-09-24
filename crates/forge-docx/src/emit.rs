@@ -239,14 +239,18 @@ impl<'a> Writer<'a> {
     }
 
     pub fn blocks(&mut self, blocks: &[Block], owner: &str) -> Result<String> {
+        self.blocks_with_style(blocks, owner, &Style::default())
+    }
+
+    fn blocks_with_style(&mut self, blocks: &[Block], owner: &str, base: &Style) -> Result<String> {
         let mut out = String::new();
         for block in blocks {
-            out.push_str(&self.block(block, owner)?);
+            out.push_str(&self.block_with_style(block, owner, base)?);
         }
         Ok(out)
     }
 
-    pub fn block(&mut self, block: &Block, owner: &str) -> Result<String> {
+    fn block_with_style(&mut self, block: &Block, owner: &str, base: &Style) -> Result<String> {
         forge_tree_doc::cancellation::checkpoint()?;
         match block {
             Block::Paragraph {
@@ -256,6 +260,7 @@ impl<'a> Writer<'a> {
                 runs,
                 ..
             } => {
+                let style = forge_document::fonts::overlay(base, style);
                 let mut out = format!("<w:p xmlns:w=\"{W}\" xmlns:r=\"{R}\"><w:pPr>");
                 if let Some(heading) = heading {
                     out.push_str(&format!(
@@ -279,7 +284,7 @@ impl<'a> Writer<'a> {
                     Align::Right => "right",
                     Align::Justify => "both",
                 };
-                out.push_str(&format!("<w:jc w:val=\"{align}\"/>{}</w:pPr>", rpr(style)));
+                out.push_str(&format!("<w:jc w:val=\"{align}\"/>{}</w:pPr>", rpr(&style)));
                 for run in runs {
                     forge_tree_doc::cancellation::checkpoint()?;
                     let rid = run
@@ -295,7 +300,7 @@ impl<'a> Writer<'a> {
                     // React callers, with explicit local overrides.
                     out.push_str(&format!(
                         "<w:r>{}",
-                        rpr(&forge_document::fonts::overlay(style, &run.style))
+                        rpr(&forge_document::fonts::overlay(&style, &run.style))
                     ));
                     for (i, line) in run.text.split('\n').enumerate() {
                         if i != 0 {
@@ -363,7 +368,8 @@ impl<'a> Writer<'a> {
                         }
                         out.push_str("</w:tcPr>");
                         if anchor == r {
-                            out.push_str(&self.blocks(&cell.blocks, owner)?);
+                            let style = forge_document::fonts::overlay(base, &cell.style);
+                            out.push_str(&self.blocks_with_style(&cell.blocks, owner, &style)?);
                         }
                         if anchor != r
                             || !matches!(

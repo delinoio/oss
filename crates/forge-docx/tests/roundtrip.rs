@@ -645,3 +645,44 @@ fn typed_breaks_stay_opaque_while_line_breaks_remain_editable() {
         }
     }
 }
+
+#[test]
+fn cell_text_styles_cascade_through_nested_blocks_with_explicit_overrides() {
+    let doc: Document = serde_json::from_value(serde_json::json!({"sections":[{"blocks":[
+        {"type":"table","columns":[240],"rows":[{"cells":[{
+            "style":{"font_family":"Arial","font_size":18,"bold":true,"color":"#112233"},
+            "blocks":[
+                {"type":"paragraph","runs":[{"text":"Inherited"},{"text":"Run override","style":{"bold":false,"color":"#445566"}}]},
+                {"type":"paragraph","style":{"font_size":12},"runs":[{"text":"Paragraph override"}]},
+                {"type":"table","columns":[200],"rows":[{"cells":[{"style":{"italic":true},"blocks":[{"type":"paragraph","runs":[{"text":"Nested"}]}]}]}]}
+            ]
+        }]}]}
+    ]}]})).unwrap();
+    let parts = read(&generate(&doc, &Assets::new()).unwrap()).unwrap();
+    let parsed = xml(&parts["word/document.xml"]).unwrap();
+    for (text, size, bold, color) in [
+        ("Inherited", "36", "1", "112233"),
+        ("Run override", "36", "0", "445566"),
+        ("Paragraph override", "24", "1", "112233"),
+        ("Nested", "36", "1", "112233"),
+    ] {
+        let run = parsed
+            .descendants()
+            .find(|n| n.has_tag_name((W, "t")) && n.text() == Some(text))
+            .unwrap()
+            .parent()
+            .unwrap();
+        let property = |name| {
+            run.descendants()
+                .find(|n| n.has_tag_name((W, name)))
+                .unwrap()
+        };
+        assert_eq!(property("rFonts").attribute((W, "ascii")), Some("Arial"));
+        assert_eq!(property("sz").attribute((W, "val")), Some(size));
+        assert_eq!(property("b").attribute((W, "val")), Some(bold));
+        assert_eq!(property("color").attribute((W, "val")), Some(color));
+        if text == "Nested" {
+            assert_eq!(property("i").attribute((W, "val")), Some("1"));
+        }
+    }
+}
