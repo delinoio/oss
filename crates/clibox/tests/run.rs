@@ -4,6 +4,8 @@
 use std::os::fd::AsRawFd;
 #[cfg(unix)]
 use std::os::fd::FromRawFd;
+#[cfg(target_os = "linux")]
+use std::process::Child;
 use std::{
     fs,
     io::{Read, Write},
@@ -89,6 +91,14 @@ fn terminal_process_command(mut command: Command, redirected_stdin: bool) -> (Co
         });
     }
     (command, master)
+}
+
+#[cfg(target_os = "linux")]
+fn spawn_terminal(mut command: Command) -> Child {
+    // `Command` retains the parent copies of the slave descriptors after
+    // spawning. Consume it here so those copies close before a test reads the
+    // PTY master and waits for end-of-file.
+    command.spawn().unwrap()
 }
 
 #[cfg(target_os = "linux")]
@@ -501,7 +511,7 @@ fn timeout_does_not_block_on_a_stalled_output_consumer() {
 #[cfg(target_os = "linux")]
 fn interactive_workload_keeps_foreground_terminal_access() {
     let home = tempfile::tempdir().unwrap();
-    let (mut wrapper, mut terminal) = terminal_command(
+    let (wrapper, mut terminal) = terminal_command(
         home.path(),
         &[
             "run",
@@ -516,7 +526,7 @@ fn interactive_workload_keeps_foreground_terminal_access() {
             "read value; printf 'reply=%s\\n' \"$value\"",
         ],
     );
-    let mut wrapper = wrapper.spawn().unwrap();
+    let mut wrapper = spawn_terminal(wrapper);
     terminal.write_all(b"answer\n").unwrap();
     assert!(wrapper.wait().unwrap().success());
     assert!(read_terminal(terminal).contains("reply=answer"));
@@ -526,7 +536,7 @@ fn interactive_workload_keeps_foreground_terminal_access() {
 #[cfg(target_os = "linux")]
 fn terminal_interrupt_cancels_a_foreground_workload_and_its_wrapper() {
     let home = tempfile::tempdir().unwrap();
-    let (mut wrapper, terminal) = terminal_command(
+    let (wrapper, terminal) = terminal_command(
         home.path(),
         &[
             "run",
@@ -541,7 +551,7 @@ fn terminal_interrupt_cancels_a_foreground_workload_and_its_wrapper() {
             "trap '' INT; while :; do :; done",
         ],
     );
-    let mut wrapper = wrapper.spawn().unwrap();
+    let mut wrapper = spawn_terminal(wrapper);
     let wrapper_group = wrapper.id() as libc::pid_t;
     let deadline = std::time::Instant::now() + Duration::from_secs(2);
     let child_group = loop {
@@ -578,7 +588,7 @@ fn terminal_interrupt_cancels_a_foreground_workload_and_its_wrapper() {
 #[cfg(target_os = "linux")]
 fn foreground_completion_reaps_the_interrupt_relay_without_grace_delay() {
     let home = tempfile::tempdir().unwrap();
-    let (mut wrapper, _terminal) = terminal_command(
+    let (wrapper, _terminal) = terminal_command(
         home.path(),
         &[
             "run",
@@ -592,7 +602,7 @@ fn foreground_completion_reaps_the_interrupt_relay_without_grace_delay() {
         ],
     );
     let started = std::time::Instant::now();
-    let status = wrapper.spawn().unwrap().wait().unwrap();
+    let status = spawn_terminal(wrapper).wait().unwrap();
 
     assert!(status.success());
     assert!(
@@ -649,8 +659,8 @@ fn node_launcher_counts_terminal_service_startup_interrupt_once() {
         .env("XDG_STATE_HOME", home.path().join("state"))
         .env("CLIBOX_LAUNCHER", clibox_launcher)
         .env("CLIBOX_TEST_BINARY", env!("CARGO_BIN_EXE_clibox"));
-    let (mut launcher, mut terminal) = terminal_process_command(node, false);
-    let mut launcher = launcher.spawn().unwrap();
+    let (launcher, mut terminal) = terminal_process_command(node, false);
+    let mut launcher = spawn_terminal(launcher);
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
     let early_status = loop {
         if service_started.is_file() {
@@ -690,7 +700,7 @@ fn node_launcher_counts_terminal_service_startup_interrupt_once() {
 #[cfg(target_os = "linux")]
 fn interactive_output_forwarding_survives_tostop() {
     let home = tempfile::tempdir().unwrap();
-    let (mut wrapper, terminal) = terminal_command(
+    let (wrapper, terminal) = terminal_command(
         home.path(),
         &[
             "run",
@@ -708,7 +718,7 @@ fn interactive_output_forwarding_survives_tostop() {
         ],
     );
     enable_terminal_tostop(&terminal);
-    let mut wrapper = wrapper.spawn().unwrap();
+    let mut wrapper = spawn_terminal(wrapper);
     let wrapper_group = wrapper.id() as libc::pid_t;
 
     let deadline = std::time::Instant::now() + Duration::from_secs(2);
@@ -735,7 +745,7 @@ fn interactive_output_forwarding_survives_tostop() {
 #[cfg(target_os = "linux")]
 fn inherited_output_keeps_foreground_terminal_when_stdin_is_redirected() {
     let home = tempfile::tempdir().unwrap();
-    let (mut wrapper, terminal) = terminal_command_with_redirected_stdin(
+    let (wrapper, terminal) = terminal_command_with_redirected_stdin(
         home.path(),
         &[
             "run",
@@ -751,7 +761,7 @@ fn inherited_output_keeps_foreground_terminal_when_stdin_is_redirected() {
         ],
     );
     enable_terminal_tostop(&terminal);
-    let mut wrapper = wrapper.spawn().unwrap();
+    let mut wrapper = spawn_terminal(wrapper);
     let wrapper_group = wrapper.id() as libc::pid_t;
 
     let deadline = std::time::Instant::now() + Duration::from_secs(2);
@@ -778,7 +788,7 @@ fn inherited_output_keeps_foreground_terminal_when_stdin_is_redirected() {
 #[cfg(target_os = "linux")]
 fn interactive_workload_stop_suspends_and_resumes_the_wrapper_job() {
     let home = tempfile::tempdir().unwrap();
-    let (mut wrapper, mut terminal) = terminal_command(
+    let (wrapper, mut terminal) = terminal_command(
         home.path(),
         &[
             "run",
@@ -793,7 +803,7 @@ fn interactive_workload_stop_suspends_and_resumes_the_wrapper_job() {
             "read value; printf 'reply=%s\\n' \"$value\"",
         ],
     );
-    let mut wrapper = wrapper.spawn().unwrap();
+    let mut wrapper = spawn_terminal(wrapper);
     let wrapper_group = wrapper.id() as libc::pid_t;
     let deadline = std::time::Instant::now() + Duration::from_secs(2);
     let child_group = loop {
