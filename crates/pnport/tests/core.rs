@@ -1044,7 +1044,9 @@ static int spawn_once(char *path) {
 int main(int argc, char **argv) {
     if (argc > 1) return probe();
     if (probe()) return 20;
-    if (thread_once()) return 21;
+    // The first wave establishes the scheduler-dependent peak of transient
+    // joined threads whose ptrace exit stops are still being drained.
+    for (int i = 0; i < 48; ++i) if (thread_once()) return 21;
     size_t before = vm_size_kb();
     if (!before) return 22;
     for (int i = 0; i < 48; ++i) if (thread_once()) return 23;
