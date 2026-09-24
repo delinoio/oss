@@ -976,6 +976,7 @@ struct Trace<'a> {
     view: &'a mut View,
     tasks: HashSet<i32>,
     startup_stops: HashSet<i32>,
+    early_stops: HashSet<i32>,
     groups: HashMap<i32, i32>,
     pending: HashMap<i32, Pending>,
     fds: HashMap<i32, HashMap<i32, Translation>>,
@@ -2571,6 +2572,7 @@ impl Trace<'_> {
         if libc::WIFEXITED(status) || libc::WIFSIGNALED(status) {
             tracing::trace!(action = "linux_exit", pid, status, "Owned child exited");
             self.tasks.remove(&pid);
+            self.early_stops.remove(&pid);
             self.pending.remove(&pid);
             self.release_task_space(pid);
             let group = self.groups.remove(&pid).unwrap_or(pid);
@@ -2597,6 +2599,18 @@ impl Trace<'_> {
             return Ok(true);
         }
         if !libc::WIFSTOPPED(status) {
+            return Ok(true);
+        }
+        if status >> 16 == libc::PTRACE_EVENT_STOP && !self.tasks.contains(&pid) {
+            // waitpid may report a newly auto-attached child's initial stop
+            // before its parent's clone event. Keep it parked until that
+            // event installs the child's address-space and descriptor state.
+            tracing::debug!(
+                action = "linux_early_child_stop",
+                pid,
+                "Waiting for the parent clone event"
+            );
+            self.early_stops.insert(pid);
             return Ok(true);
         }
         let signal = libc::WSTOPSIG(status);
@@ -2649,7 +2663,10 @@ impl Trace<'_> {
                 }
                 let child = created as i32;
                 self.tasks.insert(child);
-                self.startup_stops.insert(child);
+                let early_stop = self.early_stops.remove(&child);
+                if !early_stop {
+                    self.startup_stops.insert(child);
+                }
                 let parent_group = Self::group(pid);
                 let child_group = Self::group(child);
                 let spawn_vm = self.spawn_vm.remove(&pid);
@@ -2677,6 +2694,9 @@ impl Trace<'_> {
                     if let Some(cwd) = self.cwd.get(&parent_group).cloned() {
                         self.cwd.insert(child_group, cwd);
                     }
+                }
+                if early_stop {
+                    resume(child, false, 0)?;
                 }
                 resume(pid, self.pending.contains_key(&pid), 0)?;
                 return Ok(true);
@@ -2822,6 +2842,7 @@ pub fn run_traced(view: &mut View, prepared: &Prepared) -> Result<i32> {
         view,
         tasks: HashSet::from([pid]),
         startup_stops: HashSet::from([pid]),
+        early_stops: HashSet::new(),
         groups: HashMap::from([(pid, pid)]),
         pending: HashMap::new(),
         fds: HashMap::new(),

@@ -900,6 +900,17 @@ static int thread_once(void) {
     if (pthread_create(&thread, 0, worker, 0) || pthread_join(thread, &result)) return 1;
     return (int)(intptr_t)result;
 }
+static int thread_wave(void) {
+    pthread_t threads[32];
+    for (int i = 0; i < 32; ++i) {
+        if (pthread_create(&threads[i], 0, worker, 0)) return 1;
+    }
+    for (int i = 0; i < 32; ++i) {
+        void *result = 0;
+        if (pthread_join(threads[i], &result) || result) return 1;
+    }
+    return 0;
+}
 static int spawn_once(char *path) {
     pid_t child;
     char *args[] = {path, "child", 0};
@@ -928,6 +939,7 @@ int main(int argc, char **argv) {
         fprintf(stderr, "spawn scratch VmSize grew from %zu to %zu kB\n", before, after);
         return 28;
     }
+    for (int i = 0; i < 4; ++i) if (thread_wave()) return 29;
     return 0;
 }
 "#,
