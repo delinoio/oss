@@ -268,16 +268,8 @@ export class DocumentSession {
   exportFile(path: string, options: { overwrite?: boolean; signal?: AbortSignal } = {}): Promise<{ published: true; revision: number }> {
     const signal = this.signal(options.signal);
     return this.track(Stage.Export, async () => {
-      // Each export compares the source state it started with. A concurrent
-      // successful overwrite makes an older export conflict instead of silently
-      // accepting the newer fingerprint and overwriting it with old content.
-      const source = this.fingerprint ? { ...this.fingerprint } : undefined;
-      const expectedDigest = source?.digest;
       const result = await this.process(signal);
-      try { await publish(result.bytes, path, { ...options, signal, source }); }
-      finally {
-        if (source && source.digest !== expectedDigest && this.fingerprint) this.fingerprint.digest = source.digest;
-      }
+      await publish(result.bytes, path, { ...options, signal, source: this.fingerprint });
       return { published: true, revision: result.revision };
     });
   }

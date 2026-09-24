@@ -14,6 +14,7 @@ Usage:
 
 The module's default task receives { data, signal } and returns a document session.
 Output must have the session's format extension. Existing output requires --overwrite.
+Imported source files cannot be overwritten; choose a separate output path.
 Tasks execute trusted code with your permissions. No automatic timeout is applied.
 `;
 

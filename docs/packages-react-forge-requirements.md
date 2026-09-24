@@ -144,7 +144,7 @@ CLI and library messages, README, contracts, examples, and troubleshooting docum
 
 ### Data safety and limits
 
-Default file export fails if the destination exists. Explicit overwrite permits atomic replacement. Before replacing an imported source, verify that it has not changed externally.
+Default file export fails if the destination exists. Explicit overwrite permits atomic replacement. Source safety is enforced by rejecting replacement of an imported source or its canonical path aliases, even with explicit overwrite (`unsupported_edit`). Export to a separate path: fingerprint-then-rename cannot safely implement conditional replacement against external saves.
 
 Use same-filesystem temporary output and atomic publication. Failed or canceled operations must preserve existing files and clean up owned temporary output. Dispose releases session-owned resources and does not delete exported files.
 

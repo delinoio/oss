@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile, symlink, rename } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import React, { Suspense, createRef, use, useState } from "react";
@@ -93,7 +93,7 @@ test("file conflict, overwrite, source modification and cancellation leave no te
     assert.deepEqual(await readFile(path), previous);
     imported = await importOffice(Format.Pptx, { path });
     await writeFile(path, "External save");
-    await assert.rejects(imported.exportFile(path, { overwrite: true }), { code: ErrorCode.Conflict });
+    await assert.rejects(imported.exportFile(path, { overwrite: true }), { code: ErrorCode.UnsupportedEdit });
     assert.equal((await readFile(path)).toString(), "External save");
     const controller = new AbortController(); controller.abort();
     await assert.rejects(session.exportFile(path, { overwrite: true, signal: controller.signal }), { code: ErrorCode.Cancelled });
@@ -218,4 +218,29 @@ test("all mounted roots must still be settled when an export pins its snapshot",
     assert.match(result.model, /First updated/); assert.match(result.model, /Second ready/);
     assert.doesNotMatch(result.model, /Fallback|Earlier state/);
   } finally { first.resolve("cleanup"); second.resolve("cleanup"); await imported.dispose(); }
+});
+
+
+test("source overwrite always fails closed for unchanged, replaced and aliased paths", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "react-forge-source-"));
+  const source = join(directory, "source.bin");
+  try {
+    await writeFile(source, "Original");
+    const { fingerprint } = await readSource({ path: source }, 100);
+    await symlink(source, join(directory, "alias.bin"));
+    await symlink(directory, join(directory, "directory-alias"));
+    for (const output of [source, join(directory, "alias.bin"), join(directory, "directory-alias", "source.bin")]) {
+      await assert.rejects(publish(Buffer.from("Export"), output, { source: fingerprint, overwrite: true }), { code: ErrorCode.UnsupportedEdit });
+      assert.equal((await readFile(source)).toString(), "Original");
+    }
+    await writeFile(join(directory, "external.bin"), "External save");
+    await rename(join(directory, "external.bin"), source);
+    await assert.rejects(publish(Buffer.from("Export"), source, { source: fingerprint, overwrite: true }), { code: ErrorCode.UnsupportedEdit });
+    assert.equal((await readFile(source)).toString(), "External save");
+    const output = join(directory, "separate.bin");
+    await publish(Buffer.from("First"), output, { source: fingerprint });
+    await publish(Buffer.from("Second"), output, { source: fingerprint, overwrite: true });
+    assert.equal((await readFile(output)).toString(), "Second");
+    assert.equal((await readdir(directory)).some(name => name.endsWith(".tmp")), false);
+  } finally { await rm(directory, { recursive: true, force: true }); }
 });
