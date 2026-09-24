@@ -1,7 +1,7 @@
 # React Forge Figma Contract
 
 ## Scope and ownership
-Extend the private Node 24/macOS arm64 React Forge runtime with new Figma Design creation and preservation-aware editing of external files. The React package owns components, sessions, Keychain adapters and official MCP transport. `forge-figma` owns pure model validation, diff and bounded batches; `react-forge-node` adapts that engine to Node workers.
+Extend private React Forge with new Figma Design creation and preservation-aware editing of external files. Authenticated Figma acceptance targets Node.js 24 on macOS arm64 with macOS Keychain; the local Office/PDF formats retain their six-host support. The React package owns components, sessions, Keychain adapters and official MCP transport. `forge-figma` owns pure model validation, diff and bounded batches; `react-forge-node` adapts that engine to Node workers.
 
 ## Interfaces
 `Format.Figma`, `createSession`, `openFigma` and `/figma` support pages, frames/auto layout, text, shapes/vectors, images, components, variants/instances, variables and styles. React rendering is local. Explicit `publish()` pins settled React work and applies a revision. Inspection and mounts use document-scoped handles. Only selected properties and managed children belong to an edit; unrelated and unsupported content remains untouched. Unsafe edits and external conflicts fail closed.

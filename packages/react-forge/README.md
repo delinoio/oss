@@ -96,7 +96,7 @@ Canonical internal ownership, acceptance evidence and complete requirements live
 
 ## Figma Design
 
-Figma creation and editing use the official remote Figma MCP server. `render` updates the local React tree; `publish()` applies it to Figma. The same CLI writes a `.figma.json` receipt containing the file URL, revision, node bindings, image hashes and outcome. It is not a `.fig` file and contains no authentication token.
+Figma creation and editing use the official remote Figma MCP server. Live authentication currently requires macOS Keychain and has been validated on macOS arm64 with Node.js 24. `render` updates the local React tree; `publish()` applies it to Figma. The same CLI writes a `.figma.json` receipt containing the file URL, revision, node bindings, image hashes and outcome. It is not a `.fig` file and contains no authentication token.
 
 ```tsx
 import { createSession, Format, CredentialSource, openFigma } from "@delino/react-forge";

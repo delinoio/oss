@@ -1,7 +1,7 @@
 # React Forge
 
 ## Goal
-Provide private React document sessions and a TSX task CLI for authoring and preservation-aware editing of PPTX, DOCX, XLSX, and independent tagged PDF. Issue [#968](https://github.com/delinoio/oss/issues/968) defines the original delivery boundary; the explicit 2026-09-24 follow-up on PR #970 adds macOS x64 and Windows/Linux x64/arm64 support. Partial format support does not satisfy that issue.
+Provide private React document sessions and a TSX task CLI for authoring and preservation-aware editing of PPTX, DOCX, XLSX, and independent tagged PDF. Issue [#968](https://github.com/delinoio/oss/issues/968) defines the original delivery boundary; the explicit 2026-09-24 follow-up on PR #970 adds macOS x64 and Windows/Linux x64/arm64 support. Partial format support does not satisfy that issue. The Figma extension adds explicit remote creation and preservation-aware editing under its separate contract; authenticated acceptance targets Node.js 24 on macOS arm64.
 
 ## Project ID
 `react-forge` (`ProjectId::ReactForge`). Product name: **React Forge**. The private npm package is `@delino/react-forge`; its CLI executable is `react-forge`.
@@ -15,6 +15,8 @@ Provide private React document sessions and a TSX task CLI for authoring and pre
 - `crates/forge-docx`: word-processing model and DOCX engine.
 - `crates/forge-xlsx`: spreadsheet model and XLSX engine.
 - `crates/forge-pdf`: independent PDF model, pagination and semantic tagging.
+- `crates/forge-figma`: pure Figma model validation, diff and bounded publication plans; the Node package owns official MCP networking and host credentials.
+- `packages/react-forge/examples/travel-figma*.tsx`: editable ROAM mobile design and explicit reopened-file edits.
 - Existing `crates/forge-tree-doc` and `crates/forge-pptx`: presentation model, layout and PPTX engine reused from Forge.
 
 ## Domain Contract Documents
@@ -29,8 +31,8 @@ Provide private React document sessions and a TSX task CLI for authoring and pre
 ## Cross-Domain Invariants
 - Support Node.js 24, React 19.2.8 with react-reconciler 0.33.0, and macOS/Windows/glibc Linux on x64 and arm64. Use the repository-pinned Rust toolchain. All packages remain private and unpublished.
 - TypeScript executes React; Rust processes validated serializable format-specific models. Rust is a project-specific exception to the default Go language; local files and explicit exports are an exception to default R2 storage.
-- Sessions live only in memory. Explicit export is the persistence boundary. No automatic recovery, revision archive, service, telemetry, URL fetching, runtime downloads or external conversion dependencies.
-- Persistent document/node identities are UUID v7. React keys and useId values do not become persistent identities.
+- Sessions live only in memory. Explicit export is the local persistence boundary. No automatic recovery, revision archive, service, telemetry, arbitrary URL fetching, runtime downloads or external conversion dependencies. Figma alone permits official MCP publication and scoped image uploads, with partial/unknown outcomes and external receipts instead of atomic remote replacement.
+- Persistent document/node identities are UUID v7. React keys and useId values do not become persistent identities. Figma native IDs are separately mapped to those logical identities.
 - Preserve unrelated Office parts/XML; reject unsafe or unprovable edits transactionally. Never flatten opaque imported content. Existing Forge CLI/MCP behavior and default fonts remain stable.
 - Registered assets and render-relevant asynchronous work must settle before export pins a revision. Later commits cannot change an export already pinned. Cancellation has no automatic timeout and cannot misreport an already completed atomic publication.
 - Source-backed requirements must remain intact. Track missing evidence honestly; do not close #968 until all acceptance criteria pass. Direct Microsoft Office validation and PDF/UA certification are not claimed.
