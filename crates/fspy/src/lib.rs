@@ -76,8 +76,7 @@ fn private_preload_dir() -> io::Result<TempDir> {
     // ignores TMPDIR. The override is absent from production builds.
     #[cfg(test)]
     let parent = std::env::var_os("FSPY_TEST_TEMP_PARENT")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir);
+        .map_or_else(std::env::temp_dir, std::path::PathBuf::from);
     #[cfg(not(test))]
     let parent = std::env::temp_dir();
     let parent = std::fs::canonicalize(parent)?;
