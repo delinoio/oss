@@ -164,6 +164,12 @@ fn native_document_contains_sections_rich_text_lists_images_merges_and_editable_
         .filter(|(p, _)| p.starts_with("word/charts/") && p.ends_with(".xml"))
     {
         let chart = xml(bytes).unwrap();
+        assert!(
+            chart
+                .descendants()
+                .any(|node| node.has_tag_name((forge_package::A, "srgbClr"))),
+            "standalone Word chart series need explicit colors"
+        );
         let external = chart
             .descendants()
             .find(|n| n.has_tag_name((C, "externalData")))

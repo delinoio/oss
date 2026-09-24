@@ -41,3 +41,34 @@ fn system_fallback_shapes_mixed_scripts_and_color_emoji() {
         assert!(shaped.layout.height() > 0.0);
     }
 }
+
+#[test]
+#[cfg(target_os = "macos")]
+fn office_fallback_runs_preserve_logical_text_and_styles() {
+    let mut fonts = Fonts::new(true, &[]).unwrap();
+    let input = "Latin 한국어 日本語 中文 مرحبا שלום 😀\nnext line";
+    let base = Style {
+        font_family: Some("Helvetica".into()),
+        bold: true,
+        ..Default::default()
+    };
+    let resolved = fonts.resolved_runs(&run(input), &base).unwrap();
+    assert_eq!(
+        resolved.iter().map(|r| r.text.as_str()).collect::<String>(),
+        input
+    );
+    assert!(
+        resolved
+            .iter()
+            .all(|r| r.style.bold && r.style.font_family.is_some())
+    );
+    assert!(
+        resolved
+            .iter()
+            .any(|r| r.text.contains('한') && r.style.font_family.as_deref() != Some("Helvetica"))
+    );
+    assert!(
+        resolved.iter().any(|r| r.text.contains('😀')
+            && r.style.font_family.as_deref() == Some("Apple Color Emoji"))
+    );
+}

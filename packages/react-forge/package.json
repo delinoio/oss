@@ -47,7 +47,8 @@
     "build": "pnpm build:native && tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit",
     "lint": "pnpm typecheck",
-    "test": "node --import tsx --test tests/*.test.ts tests/*.test.tsx"
+    "test": "node --import tsx --test tests/*.test.ts tests/*.test.tsx",
+    "cli": "node bin/react-forge.mjs"
   },
   "dependencies": {
     "react": "19.2.8",

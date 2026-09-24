@@ -1,6 +1,14 @@
 import { ErrorCode, type Format, type Stage } from "./types.js";
 
+// tsx isolates task imports in a module namespace. A session returned by that
+// namespace must retain its typed errors across the CLI's module boundary.
+const errorBrand = Symbol.for("react-forge.error.v1");
 export class ForgeError extends Error {
+  readonly [errorBrand] = true;
+  static [Symbol.hasInstance](value: unknown): value is ForgeError {
+    return typeof value === "object" && value !== null && errorBrand in value
+      && (value as ForgeError)[errorBrand] === true;
+  }
   readonly name = "ForgeError";
   constructor(
     readonly code: ErrorCode,

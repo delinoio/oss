@@ -238,7 +238,10 @@ impl Chart {
     /// Produce a native chart plus its editable data workbook. The consumer
     /// binds externalData to this workbook within its own package namespace.
     pub fn office_parts(&self) -> Result<(Vec<u8>, Vec<u8>)> {
-        use rust_xlsxwriter::{Chart as NativeChart, ChartDataLabel, ChartType, Workbook};
+        use rust_xlsxwriter::{
+            Chart as NativeChart, ChartDataLabel, ChartFormat, ChartLine, ChartPoint,
+            ChartSolidFill, ChartType, Color, Workbook,
+        };
         self.validate()?;
         let mut workbook = Workbook::new();
         let worksheet = workbook.add_worksheet();
@@ -273,6 +276,36 @@ impl Chart {
                     self.categories.len() as u32,
                     index as u16 + 1,
                 ));
+            // A standalone Word chart cannot assume that its container has the
+            // spreadsheet theme used by the chart writer. Explicit RGB styles
+            // keep new series visible without adding or replacing a document's
+            // theme, which could restyle unrelated imported content.
+            const PALETTE: [u32; 6] = [0x4472c4, 0xed7d31, 0xa5a5a5, 0xffc000, 0x5b9bd5, 0x70ad47];
+            let color = Color::RGB(PALETTE[index % PALETTE.len()]);
+            match self.kind {
+                ChartKind::Line => {
+                    series.set_format(ChartLine::new().set_color(color).set_width(2.0));
+                }
+                ChartKind::Bar => {
+                    series.set_format(
+                        ChartFormat::new().set_solid_fill(ChartSolidFill::new().set_color(color)),
+                    );
+                }
+                ChartKind::Pie => {
+                    let points: Vec<_> = self
+                        .categories
+                        .iter()
+                        .enumerate()
+                        .map(|(index, _)| {
+                            ChartPoint::new().set_format(
+                                ChartSolidFill::new()
+                                    .set_color(Color::RGB(PALETTE[index % PALETTE.len()])),
+                            )
+                        })
+                        .collect();
+                    series.set_points(&points);
+                }
+            }
             if self.labels {
                 series.set_data_label(&ChartDataLabel::new().show_value());
             }

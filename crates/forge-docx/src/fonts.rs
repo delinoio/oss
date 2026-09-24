@@ -16,10 +16,7 @@ pub fn prepare_fonts(blocks: &mut [Block], fonts: &mut Fonts, base: &Style) -> R
                 if style.font_family.is_none() {
                     style.font_family = Some(fonts.default_family()?);
                 }
-                fonts.shape(runs, style, 100_000.0, false)?;
-                for run in runs {
-                    run.style = overlay(style, &run.style);
-                }
+                *runs = fonts.resolved_runs(runs, style)?;
             }
             Block::Table { rows, .. } => {
                 for row in rows {

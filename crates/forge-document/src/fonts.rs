@@ -23,6 +23,7 @@ pub struct ShapedText {
     pub text: String,
     pub layout: Layout<usize>,
     pub runs: Vec<Run>,
+    ranges: Vec<std::ops::Range<usize>>,
 }
 fn missing() -> Diagnostic {
     Diagnostic::new(
@@ -256,7 +257,12 @@ impl Fonts {
         if glyph_count == 0 && text.chars().any(|c| !c.is_whitespace() && !invisible(c)) {
             return Err(missing());
         }
-        Ok(ShapedText { text, layout, runs })
+        Ok(ShapedText {
+            text,
+            layout,
+            runs,
+            ranges,
+        })
     }
 }
 
@@ -328,6 +334,72 @@ impl forge_tree_doc::TextLayout for Fonts {
 }
 
 impl Fonts {
+    /// Materialize selected fallback family names into Office runs. Validating
+    /// glyphs alone is insufficient when an Office reader picks a different
+    /// fallback from the family originally requested by the caller.
+    pub fn resolved_runs(&mut self, runs: &[Run], base: &Style) -> Result<Vec<Run>> {
+        use parley::swash::{FontRef, StringId};
+        let shaped = self.shape(runs, base, 100_000.0, false)?;
+        let mut spans = Vec::new();
+        let mut families = std::collections::HashMap::new();
+        for line in shaped.layout.lines() {
+            for run in line.runs() {
+                let font = run.font();
+                let key = (font.data.id(), font.index);
+                if !families.contains_key(&key) {
+                    let face = FontRef::from_index(font.data.as_ref(), font.index as usize)
+                        .ok_or_else(missing)?;
+                    // Swash decodes both Unicode and legacy Macintosh name
+                    // records. Several installed macOS fonts have only the latter.
+                    let names = face.localized_strings();
+                    let family: String = [StringId::TypographicFamily, StringId::Family]
+                        .into_iter()
+                        .find_map(|id| {
+                            names
+                                .find_by_id(id, Some("en"))
+                                .or_else(|| names.find_by_id(id, None))
+                        })
+                        .filter(|name| name.is_decodable())
+                        .ok_or_else(missing)?
+                        .chars()
+                        .collect();
+                    if family.is_empty() {
+                        return Err(missing());
+                    }
+                    crate::text(&family).map_err(|_| missing())?;
+                    families.insert(key, family);
+                }
+                spans.push((run.text_range(), families[&key].clone()));
+            }
+        }
+        spans.sort_by_key(|(range, _)| range.start);
+        let mut output: Vec<Run> = Vec::new();
+        for (index, range) in shaped.ranges.iter().enumerate() {
+            let first = spans.partition_point(|(span, _)| span.end <= range.start);
+            for (span, family) in spans[first..]
+                .iter()
+                .take_while(|(span, _)| span.start < range.end)
+            {
+                let start = range.start.max(span.start);
+                let end = range.end.min(span.end);
+                if start >= end {
+                    continue;
+                }
+                let mut run = shaped.runs[index].clone();
+                run.text = shaped.text[start..end].into();
+                run.style.font_family = Some(family.clone());
+                if let Some(previous) = output.last_mut() {
+                    if previous.style == run.style && previous.hyperlink == run.hyperlink {
+                        previous.text.push_str(&run.text);
+                        continue;
+                    }
+                }
+                output.push(run);
+            }
+        }
+        Ok(output)
+    }
+
     pub fn default_family(&mut self) -> Result<String> {
         let ids: Vec<_> = self
             .fonts

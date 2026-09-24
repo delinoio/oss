@@ -57,3 +57,5 @@ The external workbook fixture is generated with openpyxl 3.1.5; its generator an
 The presentation engine exposes operation-owned text measurement and an explicit `FontEmbedding` selection. Existing `generate`/`update`/layout APIs still select the previous pinned default and OFL embedding. React Forge selects system/caller shaping and reference-only font output. This extension must retain the complete existing Forge regression suite.
 
 Current validation includes structural PDF pagination/tagging, system CJK/RTL/color-emoji output, explicit-font and missing-font behavior, and React PDF export/measurement. Poppler page rendering and pypdf extraction have also been inspected locally. The complete reproducible rendering/benchmark/CLI/CI evidence remains outstanding; these checkpoints do not close #968.
+
+Office font validation materializes the selected fallback family into newly authored Word runs while preserving logical text, run styles and hyperlinks. Macintosh-only font name records are decoded as well as Unicode records. Standalone Word chart series use explicit RGB colors so imported documents do not require a theme rewrite for visible data.
