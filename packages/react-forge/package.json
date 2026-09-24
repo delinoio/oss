@@ -52,7 +52,7 @@
     "build": "pnpm build:native && tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit",
     "lint": "pnpm typecheck",
-    "test": "node --import tsx --test tests/*.test.ts tests/*.test.tsx",
+    "test": "node --import tsx --test tests/*.test.ts tests/*.test.tsx scripts/package.test.mjs",
     "cli": "node bin/react-forge.mjs",
     "test:render": "node scripts/render-check.mjs",
     "benchmark": "node scripts/benchmark.mjs",

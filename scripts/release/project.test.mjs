@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { Bump, Project, Kind, bumpVersion, readVersion, versionChanges, sourceMetadata, git, prepareRelease, validateCommit, preflightVersion, pushReleaseTag, tagRevision, requiresCargoPublish } from "./project.mjs";
+import { Bump, Project, Kind, bumpVersion, readVersion, versionChanges, sourceMetadata, git, prepareRelease, validateCommit, preflightVersion, pushReleaseTag, tagRevision, requiresCargoPublish, reactForgeVersionPublished } from "./project.mjs";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const achFiles = [
@@ -27,10 +27,6 @@ for (const project of Object.values(Project)) for (const bump of Object.values(B
   test(`${project} ${bump} changes only the selected version sources`, () => {
     if (project === Project.Pnport && bump !== Bump.Minor) {
       assert.throws(() => versionChanges(project, bump, read), /first public release requires a minor bump/u);
-      return;
-    }
-    if (project === Project.ReactForge && readVersion(project, read) === "0.1.0" && bump !== Bump.Patch) {
-      assert.throws(() => versionChanges(project, bump, read), /recovery from 0\.1\.0 requires a patch bump/u);
       return;
     }
     const plan = versionChanges(project, bump, read);
@@ -106,9 +102,6 @@ test("React Forge patch after the failed 0.1.0 tag updates only its private sour
   assert.equal(plan.version, "0.1.1");
   assert.deepEqual(Object.keys(plan.changes), ["packages/react-forge/package.json"]);
   assert.equal(JSON.parse(plan.changes["packages/react-forge/package.json"]).version, "0.1.1");
-  for (const bump of [Bump.Minor, Bump.Major]) {
-    assert.throws(() => versionChanges(Project.ReactForge, bump, readReactForgeRecovery), /recovery from 0\.1\.0 requires a patch bump/u);
-  }
   assert.equal(requiresCargoPublish(Project.ReactForge), false);
   assert.throws(() => readVersion(Project.ReactForge, (file) => file === "packages/react-forge/package.json" ? readReactForgeRecovery(file).replace('"name": "@delino/react-forge"', '"name": "foreign"') : readReactForgeRecovery(file)));
 });
@@ -207,7 +200,7 @@ for (const project of Object.values(Project)) test(`${project} commit journals a
   assert.equal(second.resumed, true);
   assert.equal(second.revision, first.revision);
   assert.equal(second.version, first.version);
-  assert.throws(() => validateCommit(fixtureState.directory, first.revision, project, bump === Bump.Patch ? Bump.Minor : Bump.Patch, "123"), project === Project.Pnport ? /first public release requires a minor bump/u : project === Project.ReactForge && readVersion(project, read) === "0.1.0" ? /recovery from 0\.1\.0 requires a patch bump/u : /journal/u);
+  assert.throws(() => validateCommit(fixtureState.directory, first.revision, project, bump === Bump.Patch ? Bump.Minor : Bump.Patch, "123"), project === Project.Pnport ? /first public release requires a minor bump/u : /journal/u);
   assert.throws(() => validateCommit(fixtureState.directory, first.revision, project, bump, "456"), /journal/u);
 });
 
@@ -252,6 +245,32 @@ test("Preflight rejects existing releases, tags and uncertain API results", asyn
   await assert.rejects(preflightVersion(identity, async () => ({ status: 200, body: { object: { type: "commit", sha: revision } } })), /already exists/u);
   await assert.rejects(tagRevision(identity.tag, async () => ({ status: 403 })), /ownership/u);
   assert.equal(await tagRevision(identity.tag, async (route) => ({ status: 200, body: { object: { type: route.includes("/git/tags/") ? "commit" : "tag", sha: revision } } })), revision);
+});
+
+test("React Forge requires patch recovery while the current version is unpublished", async () => {
+  for (const bump of [Bump.Minor, Bump.Major]) {
+    const plan = versionChanges(Project.ReactForge, bump, readReactForgeRecovery);
+    await assert.rejects(preflightVersion(plan, absent, async () => false), /requires the next patch version/u);
+    await preflightVersion(plan, absent, async () => true);
+  }
+  await preflightVersion(versionChanges(Project.ReactForge, Bump.Patch, readReactForgeRecovery), absent, async () => { throw new Error("Patch must not read npm"); });
+  const later = (file) => file === "packages/react-forge/package.json" ? readReactForgeRecovery(file).replace(/("version": ")0\.1\.0/u, (_, prefix) => `${prefix}0.1.1`) : readReactForgeRecovery(file);
+  await assert.rejects(preflightVersion(versionChanges(Project.ReactForge, Bump.Minor, later), absent, async () => false), /requires the next patch version/u);
+});
+
+test("React Forge npm publication lookup fails closed on uncertain responses", async () => {
+  const version = "0.1.1";
+  const metadata = { name: "@delino/react-forge", version, dist: { integrity: "sha512-fixture" } };
+  const lookup = (status, body = metadata) => reactForgeVersionPublished(version, async (url, options) => {
+    assert.equal(url, "https://registry.npmjs.org/%40delino%2Freact-forge/0.1.1");
+    assert.equal(options.redirect, "error");
+    return { status, ok: status === 200, json: async () => body };
+  });
+  assert.equal(await lookup(404), false);
+  assert.equal(await lookup(200), true);
+  await assert.rejects(lookup(503), /HTTP 503/u);
+  await assert.rejects(lookup(200, { ...metadata, version: "0.1.2" }), /identity mismatch/u);
+  await assert.rejects(reactForgeVersionPublished(version, async () => { throw new Error("transport"); }), /lookup failed/u);
 });
 
 for (const project of [Project.Binpm, Project.Pnport, Project.AsyncCommitHook]) test(`${project} tag-push interruption recovers only the same tag and commit`, async (t) => {
