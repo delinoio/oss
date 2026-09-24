@@ -14,6 +14,8 @@ Common session APIs own creation, Office import, inspection, root rendering, tar
 
 Mutations serialize per session. Failed changes never publish partial state; invalid latest renders fail export instead of falling back to older content. Target handles are document-scoped and mounted regions cannot overlap. Export waits for relevant Suspense work and registered assets, then pins an immutable revision. Effects' independent asynchronous work remains the caller's responsibility. AbortSignal and disposal release pending work with no automatic timeout.
 
+PPTX list, image, shape, chart and connector components are leaves. Nonempty React children on these components fail with `malformed_input`; they are never silently discarded.
+
 `react-forge run <entry.tsx> --output <file> [--data <json>] [--overwrite] [--json]` loads the default task function with `{ data, signal }`, exports its returned session and disposes it. Help, version, typed human/JSON failures and process-signal cleanup are required. Include the TSX loader dependency.
 
 ## Storage

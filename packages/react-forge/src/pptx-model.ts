@@ -32,6 +32,7 @@ function paragraphs(nodes: SerializedNode[]): Model {
 export function pptxNode(n: SerializedNode, documentId: string): Model {
   const type = n.type.replace(/^pptx:/, "");
   if (!n.type.startsWith("pptx:") || !["row", "column", "canvas", "text", "list", "image", "shape", "table", "chart", "connector"].includes(type)) invalid();
+  if (["list", "image", "shape", "chart", "connector"].includes(type) && n.children.length !== 0) invalid();
   const p = n.props;
   const node: Model = { id: n.id, type, key: p.nodeKey, frame: p.frame, width: p.width, height: p.height,
     padding: p.padding, gap: p.gap, style: style(p.style), overflow: p.overflow,
