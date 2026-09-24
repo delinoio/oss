@@ -94,6 +94,23 @@ fn standard_rule(node: roxmltree::Node<'_, '_>) -> bool {
     })
 }
 
+fn supported_validation(node: roxmltree::Node<'_, '_>) -> bool {
+    node.attributes().all(|a| match a.name() {
+        "type" | "sqref" | "allowBlank" | "operator" | "prompt" | "error" => true,
+        "showInputMessage" | "showErrorMessage" => {
+            matches!(a.value(), "0" | "1" | "false" | "true")
+        }
+        "showDropDown" => matches!(a.value(), "0" | "false"),
+        "errorStyle" => a.value() == "stop",
+        _ => false,
+    }) && node
+        .descendants()
+        .filter(|n| n.is_element() && *n != node)
+        .all(|n| {
+            matches!(n.tag_name().name(), "formula1" | "formula2") && n.attributes().len() == 0
+        })
+}
+
 pub fn import(bytes: &[u8]) -> Result<Imported> {
     let parts = read(bytes)?;
     let main = validate_office(&parts, OfficeKind::Workbook)?;
@@ -375,18 +392,19 @@ pub fn import(bytes: &[u8]) -> Result<Imported> {
                         Some("cellIs" | "expression" | "colorScale" | "dataBar" | "iconSet")
                     )
                 } else {
-                    matches!(
-                        node.attribute("type"),
-                        Some(
-                            "list"
-                                | "whole"
-                                | "decimal"
-                                | "date"
-                                | "time"
-                                | "textLength"
-                                | "custom"
+                    supported_validation(node)
+                        && matches!(
+                            node.attribute("type"),
+                            Some(
+                                "list"
+                                    | "whole"
+                                    | "decimal"
+                                    | "date"
+                                    | "time"
+                                    | "textLength"
+                                    | "custom"
+                            )
                         )
-                    )
                 };
             targets.push(Target {
                 id: Uuid::now_v7(),
@@ -608,7 +626,19 @@ pub fn replace(imported: &Imported, edits: &[(Uuid, EditValue)]) -> Result<Vec<u
                         "Imported validation edits must retain their range",
                     );
                 }
-                crate::emit::validation(rule)?
+                let original = xml(&imported.parts[&target.region.part])?;
+                let node = original
+                    .descendants()
+                    .find(|n| n.range() == target.region.range)
+                    .ok_or_else(|| failure("validation region"))?;
+                // Visibility is not part of the authored model. Preserve imported flags,
+                // including the OOXML false defaults, instead of applying authoring defaults.
+                let visible = |name| matches!(node.attribute(name), Some("1" | "true"));
+                crate::emit::validation_with_visibility(
+                    rule,
+                    visible("showInputMessage"),
+                    visible("showErrorMessage"),
+                )?
             }
             EditValue::Chart(chart) if target.kind == TargetKind::Chart => {
                 let (chart_bytes, workbook_bytes) = chart.office_parts()?;

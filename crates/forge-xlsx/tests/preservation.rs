@@ -166,6 +166,17 @@ fn all_conditional_format_families_and_validations_edit_individually_inside_exte
             error: Some("Invalid value".into()),
         };
         let bytes = replace(&original, &[(target.id, EditValue::Validation(rule))]).unwrap();
+        let parts = read(&bytes).unwrap();
+        let sheet = xml(&parts[&target.region.part]).unwrap();
+        let edited = sheet
+            .descendants()
+            .find(|n| {
+                n.has_tag_name((S, "dataValidation"))
+                    && n.attribute("sqref") == Some(target.range.unwrap().a1().as_str())
+            })
+            .unwrap();
+        assert_eq!(edited.attribute("showInputMessage"), Some("0"));
+        assert_eq!(edited.attribute("showErrorMessage"), Some("0"));
         assert_eq!(
             import(&bytes)
                 .unwrap()
@@ -174,6 +185,70 @@ fn all_conditional_format_families_and_validations_edit_individually_inside_exte
                 .filter(|t| t.kind == TargetKind::Validation)
                 .count(),
             7
+        );
+    }
+}
+
+#[test]
+fn unmodeled_validation_attributes_are_opaque_and_preserved() {
+    for attributes in [
+        "errorTitle=\"Invalid\"",
+        "promptTitle=\"Select\"",
+        "errorStyle=\"warning\"",
+        "errorStyle=\"information\"",
+        "showDropDown=\"1\"",
+        "futureOption=\"1\"",
+    ] {
+        let mut parts = read(EXTERNAL).unwrap();
+        let path = "xl/worksheets/sheet1.xml";
+        let sheet = String::from_utf8(parts[path].clone()).unwrap();
+        let sheet = if attributes.starts_with("showDropDown") {
+            sheet.replacen("showDropDown=\"0\"", "", 1)
+        } else {
+            sheet
+        };
+        parts.insert(
+            path.into(),
+            sheet
+                .replacen(
+                    "<dataValidation ",
+                    &format!("<dataValidation {attributes} "),
+                    1,
+                )
+                .into_bytes(),
+        );
+        let imported = import(&forge_package::write(&parts).unwrap()).unwrap();
+        let target = imported
+            .targets
+            .iter()
+            .find(|t| t.range == Some(range("J2:J6").unwrap()))
+            .unwrap();
+        assert_eq!(target.kind, TargetKind::Opaque, "{attributes}");
+        let rule = Validation {
+            id: Uuid::now_v7(),
+            range: target.range.unwrap(),
+            kind: ValidationKind::List,
+            operator: None,
+            formulas: vec!["A1:A3".into()],
+            allow_blank: false,
+            prompt: None,
+            error: None,
+        };
+        assert_eq!(
+            replace(&imported, &[(target.id, EditValue::Validation(rule))])
+                .unwrap_err()
+                .code,
+            forge_tree_doc::ErrorCode::UnsupportedEdit
+        );
+        let exported = read(&replace(&imported, &[]).unwrap()).unwrap();
+        assert_eq!(exported[path], parts[path]);
+        assert_eq!(
+            imported
+                .targets
+                .iter()
+                .filter(|t| t.kind == TargetKind::Validation)
+                .count(),
+            6
         );
     }
 }

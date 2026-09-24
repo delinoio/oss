@@ -214,14 +214,23 @@ pub(crate) fn conditional(
 }
 
 pub(crate) fn validation(rule: &Validation) -> Result<String> {
+    validation_with_visibility(rule, rule.prompt.is_some(), true)
+}
+
+pub(crate) fn validation_with_visibility(
+    rule: &Validation,
+    show_input: bool,
+    show_error: bool,
+) -> Result<String> {
     rule.validate()?;
     let mut attrs = format!(
         "type=\"{}\" sqref=\"{}\" allowBlank=\"{}\" showInputMessage=\"{}\" \
-         showErrorMessage=\"1\" errorStyle=\"stop\"",
+         showErrorMessage=\"{}\" errorStyle=\"stop\"",
         rule.kind.xml(),
         rule.range.a1(),
         u8::from(rule.allow_blank),
-        u8::from(rule.prompt.is_some())
+        u8::from(show_input),
+        u8::from(show_error)
     );
     if !matches!(rule.kind, ValidationKind::List | ValidationKind::Custom) {
         attrs.push_str(&format!(
