@@ -287,7 +287,7 @@ pub fn replace(
         }
         selected.push(target);
     }
-    let mut writer = Writer::new(imported.parts.clone(), assets);
+    let mut writer = Writer::new(imported.parts.clone(), assets, &imported.main)?;
     let mut fragments = Vec::new();
     for (target, (_, blocks)) in selected.iter().zip(edits) {
         let mut fragment = writer.blocks(blocks, &target.region.part)?;
@@ -315,7 +315,17 @@ pub fn replace(
             ) {
                 fragment.push_str("<w:p/>");
             }
-            fragment = format!("<w:tc xmlns:w=\"{W}\">{properties}{fragment}</w:tc>");
+            // Preserve the original cell opening/closing tags, attributes and
+            // namespace bindings along with tcPr. Only the selected cell's block
+            // content is owned by the mounted subtree.
+            let original = &prefix[cell.range()];
+            let opening = original.find('>').ok_or_else(|| failure("cell"))? + 1;
+            let closing = original.rfind("</").ok_or_else(|| failure("cell"))?;
+            fragment = format!(
+                "{}{properties}{fragment}{}",
+                &original[..opening],
+                &original[closing..]
+            );
         }
         fragments.push(fragment);
     }

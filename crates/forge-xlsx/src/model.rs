@@ -609,7 +609,16 @@ pub fn validate(workbook: &Workbook) -> Result<()> {
                                 "Cached value must be finite",
                             );
                         }
-                        Some(CachedValue::Text(t)) => forge_document::text(t)?,
+                        Some(CachedValue::Text(t)) => {
+                            forge_document::text(t)?;
+                            if t.chars().count() > 32767 {
+                                return error(
+                                    ErrorCode::ResourceLimit,
+                                    "formula/cached",
+                                    "Cached cell text exceeds 32767 characters",
+                                );
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -620,8 +629,20 @@ pub fn validate(workbook: &Workbook) -> Result<()> {
                 _ => {}
             }
         }
+        // The writer materializes blank cells for merges. Bound their XML node
+        // cost before expansion, even when the input model is only a few bytes.
+        let mut expanded_cells = sheet.cells.len() as u64;
         for (i, merge) in sheet.merges.iter().enumerate() {
             merge.validate()?;
+            expanded_cells += u64::from(merge.last.row - merge.first.row + 1)
+                * u64::from(merge.last.column - merge.first.column + 1);
+            if expanded_cells > 250_000 {
+                return error(
+                    ErrorCode::ResourceLimit,
+                    "merge",
+                    "Expanded worksheet exceeds the XML node budget",
+                );
+            }
             if merge.first == merge.last
                 || sheet.merges[..i].iter().any(|other| merge.overlaps(*other))
             {
@@ -649,7 +670,15 @@ pub fn validate(workbook: &Workbook) -> Result<()> {
         if let Some(filter) = sheet.autofilter {
             filter.validate()?;
         }
+        let mut rows = HashSet::new();
         for dimension in &sheet.rows {
+            if !rows.insert(dimension.row) {
+                return error(
+                    ErrorCode::DuplicateIdentity,
+                    "row",
+                    "Duplicate row dimension",
+                );
+            }
             Address {
                 row: dimension.row,
                 column: 0,
@@ -664,7 +693,15 @@ pub fn validate(workbook: &Workbook) -> Result<()> {
                 );
             }
         }
+        let mut columns = HashSet::new();
         for dimension in &sheet.columns {
+            if !columns.insert(dimension.column) {
+                return error(
+                    ErrorCode::DuplicateIdentity,
+                    "column",
+                    "Duplicate column dimension",
+                );
+            }
             Address {
                 row: 0,
                 column: dimension.column,

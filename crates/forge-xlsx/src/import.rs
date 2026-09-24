@@ -76,6 +76,7 @@ pub fn range(value: &str) -> Result<Range> {
 fn standard_rule(node: roxmltree::Node<'_, '_>) -> bool {
     node.descendants().filter(|n| n.is_element()).all(|n| {
         n.tag_name().namespace() == Some(S)
+            && n.attributes().all(|a| a.namespace().is_none())
             && matches!(
                 n.tag_name().name(),
                 "conditionalFormatting"
@@ -357,14 +358,14 @@ pub fn import(bytes: &[u8]) -> Result<Imported> {
                 node.attribute("sqref")
             }
             .and_then(|r| range(r).ok());
-            if let Some(dxf) = node.attribute("dxfId") {
-                if dxf.parse::<usize>().map_err(failure)? >= dxf_count {
-                    return error(
-                        ErrorCode::InvalidReference,
-                        "conditional_format",
-                        "Rule references an undefined differential format",
-                    );
-                }
+            if let Some(dxf) = node.attribute("dxfId")
+                && dxf.parse::<usize>().map_err(failure)? >= dxf_count
+            {
+                return error(
+                    ErrorCode::InvalidReference,
+                    "conditional_format",
+                    "Rule references an undefined differential format",
+                );
             }
             let supported = reference.is_some()
                 && standard_rule(node)
@@ -781,9 +782,20 @@ pub fn replace(imported: &Imported, edits: &[(Uuid, EditValue)]) -> Result<Vec<u
             }
             next
         } else {
-            insert_before_close(
+            crate::emit::insert_sheet_child(
                 bytes,
                 &format!("<calcPr xmlns=\"{S}\" fullCalcOnLoad=\"1\" forceFullCalc=\"1\"/>"),
+                &[
+                    "oleSize",
+                    "customWorkbookViews",
+                    "pivotCaches",
+                    "smartTagPr",
+                    "smartTagTypes",
+                    "webPublishing",
+                    "fileRecoveryPr",
+                    "webPublishObjects",
+                    "extLst",
+                ],
             )?
         };
         parts.insert(imported.main.clone(), next);

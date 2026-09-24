@@ -13,6 +13,9 @@ pub(crate) struct Writer<'a> {
     pub parts: Package,
     pub assets: &'a Assets,
     sequence: u32,
+    drawing_ids: std::collections::HashSet<u32>,
+    main: String,
+    list_ids: [Option<u32>; 2],
 }
 
 fn twips(value: f64) -> i64 {
@@ -34,14 +37,24 @@ pub(crate) fn rpr(style: &Style) -> String {
         let s = (size * 2.0).round();
         out.push_str(&format!("<w:sz w:val=\"{s}\"/><w:szCs w:val=\"{s}\"/>"));
     }
-    if style.bold {
-        out.push_str("<w:b/><w:bCs/>");
+    if let Some(enabled) = style.bold {
+        let value = u8::from(enabled);
+        out.push_str(&format!(
+            "<w:b w:val=\"{value}\"/><w:bCs w:val=\"{value}\"/>"
+        ));
     }
-    if style.italic {
-        out.push_str("<w:i/><w:iCs/>");
+    if let Some(enabled) = style.italic {
+        let value = u8::from(enabled);
+        out.push_str(&format!(
+            "<w:i w:val=\"{value}\"/><w:iCs w:val=\"{value}\"/>"
+        ));
     }
-    if style.underline {
-        out.push_str("<w:u w:val=\"single\"/>");
+    if let Some(enabled) = style.underline {
+        out.push_str(if enabled {
+            "<w:u w:val=\"single\"/>"
+        } else {
+            "<w:u w:val=\"none\"/>"
+        });
     }
     if style.direction == Direction::Rtl {
         out.push_str("<w:rtl/>");
@@ -60,12 +73,119 @@ pub(crate) fn rpr(style: &Style) -> String {
 }
 
 impl<'a> Writer<'a> {
-    pub fn new(parts: Package, assets: &'a Assets) -> Self {
-        Self {
+    pub fn new(parts: Package, assets: &'a Assets, main: &str) -> Result<Self> {
+        let mut drawing_ids = std::collections::HashSet::new();
+        for (path, bytes) in &parts {
+            if path.ends_with(".xml") {
+                let doc = xml(bytes)?;
+                for node in doc.descendants().filter(|n| n.has_tag_name((WP, "docPr"))) {
+                    let id = node
+                        .attribute("id")
+                        .and_then(|v| v.parse().ok())
+                        .ok_or_else(|| failure("drawing identity"))?;
+                    drawing_ids.insert(id);
+                }
+            }
+        }
+        Ok(Self {
             parts,
             assets,
             sequence: 0,
+            drawing_ids,
+            main: main.into(),
+            list_ids: [None, None],
+        })
+    }
+
+    fn list_id(&mut self, kind: ListKind) -> Result<u32> {
+        let index = if kind == ListKind::Bullet { 0 } else { 1 };
+        if let Some(id) = self.list_ids[index] {
+            return Ok(id);
         }
+        let relationships = relationships(&self.parts, &self.main)?;
+        let existing: Vec<_> = relationships
+            .iter()
+            .filter(|r| r.kind == format!("{R}/numbering"))
+            .collect();
+        if existing.len() > 1 || existing.iter().any(|r| r.external) {
+            return Err(failure("numbering relationship"));
+        }
+        let path = if let Some(relation) = existing.first() {
+            resolve(&self.main, &relation.target)?
+        } else {
+            let path = loop {
+                let candidate = format!("word/numbering{}.xml", Uuid::now_v7().simple());
+                if !self
+                    .parts
+                    .keys()
+                    .any(|p| p.eq_ignore_ascii_case(&candidate))
+                {
+                    break candidate;
+                }
+            };
+            self.parts.insert(
+                path.clone(),
+                format!("<w:numbering xmlns:w=\"{W}\"/>").into_bytes(),
+            );
+            add_content_type(
+                &mut self.parts,
+                &path,
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml",
+            )?;
+            let main = self.main.clone();
+            self.relationship(&main, "numbering", &format!("/{path}"), false)?;
+            path
+        };
+        let bytes = self.parts.get(&path).ok_or_else(|| failure("numbering"))?;
+        let doc = xml(bytes)?;
+        if !doc.root_element().has_tag_name((W, "numbering")) {
+            return Err(failure("numbering"));
+        }
+        let mut used = std::collections::HashSet::new();
+        for node in doc.root_element().children().filter(|n| n.is_element()) {
+            for attr in ["numId", "abstractNumId"] {
+                if let Some(value) = node.attribute((W, attr)) {
+                    used.insert(
+                        value
+                            .parse::<u32>()
+                            .map_err(|_| failure("numbering identity"))?,
+                    );
+                }
+            }
+        }
+        let id = (1..u32::MAX)
+            .find(|id| !used.contains(id))
+            .ok_or_else(|| failure("numbering identity"))?;
+        // Definitions precede concrete lists. Append without reserializing any
+        // original numbering, so existing list IDs and overrides keep their bytes.
+        let definition = numbering_definition(id, kind);
+        let at = doc
+            .root_element()
+            .children()
+            .find(|n| n.has_tag_name((W, "num")) || n.has_tag_name((W, "numIdMacAtCleanup")))
+            .map(|n| n.range().start);
+        let mut bytes = if let Some(at) = at {
+            replace_range(bytes, at..at, &definition)
+        } else {
+            insert_before_close(bytes, &definition)?
+        };
+        let concrete = format!(
+            "<w:num xmlns:w=\"{W}\" w:numId=\"{id}\"><w:abstractNumId w:val=\"{id}\"/></w:num>"
+        );
+        let doc = xml(&bytes)?;
+        let at = doc
+            .root_element()
+            .children()
+            .find(|n| n.has_tag_name((W, "numIdMacAtCleanup")))
+            .map(|n| n.range().start);
+        bytes = if let Some(at) = at {
+            replace_range(&bytes, at..at, &concrete)
+        } else {
+            insert_before_close(&bytes, &concrete)?
+        };
+        self.parts.insert(path, bytes);
+        self.list_ids[index] = Some(id);
+        Ok(id)
     }
 
     fn relationship(
@@ -96,6 +216,9 @@ impl<'a> Writer<'a> {
 
     fn drawing(&mut self, width: f64, height: f64, alt: &str, graphic: &str) -> String {
         self.sequence += 1;
+        while !self.drawing_ids.insert(self.sequence) {
+            self.sequence += 1;
+        }
         let (cx, cy) = (emu(width), emu(height));
         format!(
             "<w:p xmlns:w=\"{W}\" xmlns:r=\"{R}\" xmlns:a=\"{A}\" \
@@ -137,7 +260,7 @@ impl<'a> Writer<'a> {
                     out.push_str(&format!(
                         "<w:numPr><w:ilvl w:val=\"{}\"/><w:numId w:val=\"{}\"/></w:numPr>",
                         list.level,
-                        if list.kind == ListKind::Bullet { 1 } else { 2 }
+                        self.list_id(list.kind)?
                     ));
                 }
                 if style.direction == Direction::Rtl {
@@ -159,9 +282,13 @@ impl<'a> Writer<'a> {
                     if let Some(rid) = &rid {
                         out.push_str(&format!("<w:hyperlink r:id=\"{rid}\">"));
                     }
-                    // Explicit run style overrides paragraph defaults through the
-                    // ordinary WordprocessingML style cascade.
-                    out.push_str(&format!("<w:r>{}", rpr(&run.style)));
+                    // Paragraph mark properties do not cascade into runs in Word.
+                    // Materialize the inherited style for both direct engine and
+                    // React callers, with explicit local overrides.
+                    out.push_str(&format!(
+                        "<w:r>{}",
+                        rpr(&forge_document::fonts::overlay(style, &run.style))
+                    ));
                     for (i, line) in run.text.split('\n').enumerate() {
                         if i != 0 {
                             out.push_str("<w:br/>");
@@ -341,34 +468,30 @@ impl<'a> Writer<'a> {
     }
 }
 
-fn numbering() -> String {
-    let mut out = format!("<w:numbering xmlns:w=\"{W}\">");
-    for id in 1..=2 {
+fn numbering_definition(id: u32, kind: ListKind) -> String {
+    let mut out = format!(
+        "<w:abstractNum xmlns:w=\"{W}\" w:abstractNumId=\"{id}\"><w:multiLevelType \
+         w:val=\"multilevel\"/>"
+    );
+    for level in 0..9 {
+        let format = if kind == ListKind::Bullet {
+            "bullet"
+        } else {
+            "decimal"
+        };
+        let text = if kind == ListKind::Bullet {
+            "•".into()
+        } else {
+            format!("%{}.", level + 1)
+        };
         out.push_str(&format!(
-            "<w:abstractNum w:abstractNumId=\"{id}\"><w:multiLevelType w:val=\"multilevel\"/>"
-        ));
-        for level in 0..9 {
-            let format = if id == 1 { "bullet" } else { "decimal" };
-            let text = if id == 1 {
-                "•".into()
-            } else {
-                format!("%{}.", level + 1)
-            };
-            out.push_str(&format!(
-                "<w:lvl w:ilvl=\"{level}\"><w:start w:val=\"1\"/><w:numFmt \
-                 w:val=\"{format}\"/><w:lvlText w:val=\"{text}\"/><w:pPr><w:ind w:left=\"{}\" \
-                 w:hanging=\"360\"/></w:pPr></w:lvl>",
-                (level + 1) * 720
-            ));
-        }
-        out.push_str("</w:abstractNum>");
-    }
-    for id in 1..=2 {
-        out.push_str(&format!(
-            "<w:num w:numId=\"{id}\"><w:abstractNumId w:val=\"{id}\"/></w:num>"
+            "<w:lvl w:ilvl=\"{level}\"><w:start w:val=\"1\"/><w:numFmt \
+             w:val=\"{format}\"/><w:lvlText w:val=\"{text}\"/><w:pPr><w:ind w:left=\"{}\" \
+             w:hanging=\"360\"/></w:pPr></w:lvl>",
+            (level + 1) * 720
         ));
     }
-    out.push_str("</w:numbering>");
+    out.push_str("</w:abstractNum>");
     out
 }
 
@@ -387,19 +510,6 @@ pub fn generate(document: &Document, assets: &Assets) -> Result<Vec<u8>> {
         &mut parts,
         DOC,
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml",
-    )?;
-    parts.insert("word/numbering.xml".into(), numbering().into_bytes());
-    add_content_type(
-        &mut parts,
-        "word/numbering.xml",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml",
-    )?;
-    add_relationship(
-        &mut parts,
-        DOC,
-        "rIdNumbering",
-        &format!("{R}/numbering"),
-        "numbering.xml",
     )?;
     let mut styles = format!("<w:styles xmlns:w=\"{W}\"><w:docDefaults><w:rPrDefault><w:rPr>");
     if let Some(language) = &document.language {
@@ -429,18 +539,20 @@ pub fn generate(document: &Document, assets: &Assets) -> Result<Vec<u8>> {
         &format!("{R}/styles"),
         "styles.xml",
     )?;
-    let mut writer = Writer::new(parts, assets);
+    let mut writer = Writer::new(parts, assets, DOC)?;
     let mut body = String::new();
     for (index, section) in document.sections.iter().enumerate() {
         body.push_str(&writer.blocks(&section.blocks, DOC)?);
         let mut properties = String::from("<w:sectPr>");
         for (kind, blocks) in [("header", &section.header), ("footer", &section.footer)] {
-            if blocks.is_empty() {
-                continue;
-            }
+            // An explicit empty section header/footer prevents Word's default
+            // inheritance from exposing the preceding section's content.
             let path = format!("word/{kind}{}.xml", index + 1);
             let tag = if kind == "header" { "hdr" } else { "ftr" };
-            let content = writer.blocks(blocks, &path)?;
+            let mut content = writer.blocks(blocks, &path)?;
+            if content.is_empty() {
+                content.push_str("<w:p/>");
+            }
             writer.parts.insert(
                 path.clone(),
                 format!("<w:{tag} xmlns:w=\"{W}\" xmlns:r=\"{R}\">{content}</w:{tag}>")

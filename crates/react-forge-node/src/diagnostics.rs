@@ -42,10 +42,10 @@ impl<S: Subscriber> Layer<S> for Collector {
         }
         let mut fields = Fields(BTreeMap::new());
         event.record(&mut fields);
-        if let Ok(mut events) = self.0.lock() {
-            if events.len() < 32 {
-                events.push(fields.0);
-            }
+        if let Ok(mut events) = self.0.lock()
+            && events.len() < 32
+        {
+            events.push(fields.0);
         }
     }
 }

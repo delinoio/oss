@@ -49,7 +49,7 @@ fn office_fallback_runs_preserve_logical_text_and_styles() {
     let input = "Latin 한국어 日本語 中文 مرحبا שלום 😀\nnext line";
     let base = Style {
         font_family: Some("Helvetica".into()),
-        bold: true,
+        bold: Some(true),
         ..Default::default()
     };
     let resolved = fonts.resolved_runs(&run(input), &base).unwrap();
@@ -60,7 +60,7 @@ fn office_fallback_runs_preserve_logical_text_and_styles() {
     assert!(
         resolved
             .iter()
-            .all(|r| r.style.bold && r.style.font_family.is_some())
+            .all(|r| r.style.bold == Some(true) && r.style.font_family.is_some())
     );
     assert!(
         resolved
@@ -71,4 +71,58 @@ fn office_fallback_runs_preserve_logical_text_and_styles() {
         resolved.iter().any(|r| r.text.contains('😀')
             && r.style.font_family.as_deref() == Some("Apple Color Emoji"))
     );
+}
+
+#[test]
+fn explicit_false_run_styles_override_inherited_emphasis() {
+    let mut fonts = Fonts::new(false, &[forge_tree_doc::FONT_BYTES.to_vec()]).unwrap();
+    let base = Style {
+        bold: Some(true),
+        italic: Some(true),
+        underline: Some(true),
+        ..Default::default()
+    };
+    let local = Run {
+        text: "Regular".into(),
+        style: Style {
+            bold: Some(false),
+            italic: Some(false),
+            underline: Some(false),
+            ..Default::default()
+        },
+        hyperlink: None,
+    };
+    let shaped = fonts.shape(&[local], &base, 100.0, false).unwrap();
+    assert_eq!(shaped.runs[0].style.bold, Some(false));
+    assert_eq!(shaped.runs[0].style.italic, Some(false));
+    assert_eq!(shaped.runs[0].style.underline, Some(false));
+}
+
+#[test]
+fn restricted_subset_and_bitmap_only_font_permissions_fail_before_pdf_embedding() {
+    let source = forge_tree_doc::FONT_BYTES;
+    let tables = u16::from_be_bytes(source[4..6].try_into().unwrap()) as usize;
+    let entry = (0..tables)
+        .map(|i| 12 + 16 * i)
+        .find(|at| &source[*at..*at + 4] == b"OS/2")
+        .unwrap();
+    let offset = u32::from_be_bytes(source[entry + 8..entry + 12].try_into().unwrap()) as usize;
+    // Mutate the in-memory OFL fixture's fsType solely to exercise each license
+    // policy branch; no modified or restricted font is distributed.
+    for permissions in [0x0002_u16, 0x0100, 0x0200] {
+        let mut bytes = source.to_vec();
+        bytes[offset + 8..offset + 10].copy_from_slice(&permissions.to_be_bytes());
+        let mut fonts = Fonts::new(false, &[bytes]).unwrap();
+        let error = fonts
+            .shape(&run("Permissions"), &Style::default(), 180.0, true)
+            .err()
+            .unwrap();
+        assert_eq!(error.code, ErrorCode::FontUnavailable);
+        assert_eq!(error.path, "fonts/embedding");
+        assert!(
+            fonts
+                .shape(&run("Reference only"), &Style::default(), 180.0, false)
+                .is_ok()
+        );
+    }
 }

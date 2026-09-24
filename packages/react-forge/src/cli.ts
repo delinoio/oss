@@ -58,8 +58,13 @@ export async function main(args: string[]): Promise<number> {
     const taskModule = await abortable(tsImport(pathToFileURL(resolve(args[1])).href, {
       parentURL: import.meta.url,
     }) as Promise<{ default?: unknown }>, controller.signal);
-    if (typeof taskModule.default !== "function") throw new ForgeError(ErrorCode.MalformedInput, "TSX module must default-export a task function.");
-    const task = Promise.resolve(taskModule.default({ data, signal: controller.signal })) as Promise<DocumentSession>;
+    // A TSX entry outside an ESM package is compiled as CommonJS by tsx;
+    // Node exposes its TypeScript default export through the CJS namespace.
+    const candidate = taskModule.default;
+    const run = typeof candidate === "function" ? candidate
+      : candidate && typeof candidate === "object" && "default" in candidate ? candidate.default : undefined;
+    if (typeof run !== "function") throw new ForgeError(ErrorCode.MalformedInput, "TSX module must default-export a task function.");
+    const task = Promise.resolve(run({ data, signal: controller.signal })) as Promise<DocumentSession>;
     void task.then(async result => { if (controller.signal.aborted && !session && typeof result?.dispose === "function") await result.dispose(); }).catch(() => {});
     session = await abortable(task, controller.signal);
     if (!session || typeof session.exportFile !== "function" || typeof session.dispose !== "function") throw new ForgeError(ErrorCode.MalformedInput, "Task must return a document session.");

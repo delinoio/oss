@@ -39,14 +39,14 @@ fn native_document_contains_sections_rich_text_lists_images_merges_and_editable_
             heading: Some(1),
             list: None,
             style: Style {
-                bold: true,
+                bold: Some(true),
                 ..Default::default()
             },
             runs: vec![Run {
                 text: "Heading and link".into(),
                 hyperlink: Some("https://example.com/document".into()),
                 style: Style {
-                    italic: true,
+                    italic: Some(true),
                     ..Default::default()
                 },
             }],
@@ -288,4 +288,156 @@ fn invalid_merge_and_duplicate_identity_fail_without_mutating_input() {
         }],
     );
     assert!(grid.is_err());
+}
+
+#[test]
+fn external_chart_replacements_allocate_drawing_and_list_ids_without_restyling_originals() {
+    let original = import(include_bytes!("fixtures/charts.docx")).unwrap();
+    let targets: Vec<_> = original
+        .targets
+        .iter()
+        .filter(|t| t.kind == TargetKind::Chart)
+        .collect();
+    assert_eq!(targets.len(), 3);
+    for (target, kind) in targets
+        .iter()
+        .zip([ChartKind::Bar, ChartKind::Line, ChartKind::Pie])
+    {
+        let list = Block::Paragraph {
+            id: Uuid::now_v7(),
+            style: Style::default(),
+            heading: None,
+            list: Some(List {
+                kind: ListKind::Number,
+                level: 0,
+            }),
+            runs: vec![Run {
+                text: "New numbered item".into(),
+                ..Default::default()
+            }],
+        };
+        let chart = Block::Chart {
+            id: Uuid::now_v7(),
+            width: 300.0,
+            height: 180.0,
+            alt: "Updated data".into(),
+            chart: Chart {
+                kind,
+                title: Some("Updated external chart".into()),
+                categories: vec!["Replacement".into()],
+                series: vec![Series {
+                    name: "New values".into(),
+                    values: vec![23.0],
+                }],
+                legend: true,
+                labels: true,
+            },
+        };
+        let output = replace(&original, &[(target.id, vec![list, chart])], &Assets::new()).unwrap();
+        let parts = read(&output).unwrap();
+        let main = &parts[&original.main];
+        assert!(main.starts_with(&original.parts[&original.main][..target.region.range.start]));
+        assert!(main.ends_with(&original.parts[&original.main][target.region.range.end..]));
+        for (name, bytes) in &original.parts {
+            if name != &original.main
+                && name != &forge_package::relation_path(&original.main)
+                && name != "[Content_Types].xml"
+                && name != "word/numbering.xml"
+            {
+                assert_eq!(parts[name], *bytes, "{name}");
+            }
+        }
+        let main = xml(main).unwrap();
+        let mut ids = std::collections::HashSet::new();
+        for node in main.descendants().filter(|n| {
+            n.has_tag_name((
+                "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing",
+                "docPr",
+            ))
+        }) {
+            assert!(
+                ids.insert(node.attribute("id").unwrap()),
+                "drawing IDs must remain unique"
+            );
+        }
+        let old = xml(&original.parts["word/numbering.xml"]).unwrap();
+        let new = xml(&parts["word/numbering.xml"]).unwrap();
+        let source = std::str::from_utf8(&original.parts["word/numbering.xml"]).unwrap();
+        let updated = std::str::from_utf8(&parts["word/numbering.xml"]).unwrap();
+        for child in old.root_element().children().filter(|n| n.is_element()) {
+            assert!(updated.contains(&source[child.range()]));
+        }
+        let num_id = main
+            .descendants()
+            .find(|n| n.has_tag_name((W, "numId")))
+            .unwrap()
+            .attribute((W, "val"))
+            .unwrap();
+        assert!(
+            !old.descendants()
+                .any(|n| n.has_tag_name((W, "num")) && n.attribute((W, "numId")) == Some(num_id))
+        );
+        assert!(
+            new.descendants()
+                .any(|n| n.has_tag_name((W, "num")) && n.attribute((W, "numId")) == Some(num_id))
+        );
+        assert_eq!(
+            import(&output)
+                .unwrap()
+                .targets
+                .iter()
+                .filter(|t| t.kind == TargetKind::Chart)
+                .count(),
+            3
+        );
+    }
+}
+
+#[test]
+fn cell_wrapper_and_empty_section_header_boundaries_are_preserved() {
+    let mut parts = read(include_bytes!("fixtures/external.docx")).unwrap();
+    let original = String::from_utf8(parts["word/document.xml"].clone())
+        .unwrap()
+        .replacen(
+            "<w:tc>",
+            "<w:tc w:rsidR=\"01020304\" xmlns:retained=\"urn:retained\">",
+            1,
+        );
+    parts.insert("word/document.xml".into(), original.into_bytes());
+    let input = forge_package::write(&parts).unwrap();
+    let imported = import(&input).unwrap();
+    let target = imported
+        .targets
+        .iter()
+        .find(|t| t.kind == TargetKind::Cell)
+        .unwrap();
+    let updated = read(
+        &replace(
+            &imported,
+            &[(target.id, vec![paragraph("Replacement")])],
+            &Assets::new(),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert!(
+        std::str::from_utf8(&updated["word/document.xml"])
+            .unwrap()
+            .contains("<w:tc w:rsidR=\"01020304\" xmlns:retained=\"urn:retained\">")
+    );
+    let mut model = document(vec![paragraph("First section")]);
+    model.sections.push(Section {
+        width: 612.0,
+        height: 792.0,
+        margin: 72.0,
+        header: vec![],
+        footer: vec![],
+        blocks: vec![paragraph("Second section")],
+    });
+    let parts = read(&generate(&model, &Assets::new()).unwrap()).unwrap();
+    for path in ["word/header2.xml", "word/footer2.xml"] {
+        let parsed = xml(&parts[path]).unwrap();
+        assert!(parsed.descendants().any(|n| n.has_tag_name((W, "p"))));
+        assert!(!parsed.descendants().any(|n| n.has_tag_name((W, "t"))));
+    }
 }

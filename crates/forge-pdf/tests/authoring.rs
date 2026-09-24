@@ -229,27 +229,242 @@ fn actual_text(pdf: &lopdf::Document) -> String {
         let data = pdf.get_page_content(*id).unwrap();
         let content = lopdf::content::Content::decode(&data).unwrap();
         for op in content.operations {
-            if op.operator == "BDC" {
-                if let Some(dict) = op.operands.last().and_then(|o| o.as_dict().ok()) {
-                    if let Ok(value) = dict.get(b"ActualText") {
-                        let bytes = value.as_str().unwrap();
-                        if bytes.starts_with(&[0xfe, 0xff]) {
-                            text.push_str(
-                                &String::from_utf16(
-                                    &bytes[2..]
-                                        .chunks_exact(2)
-                                        .map(|b| u16::from_be_bytes([b[0], b[1]]))
-                                        .collect::<Vec<_>>(),
-                                )
-                                .unwrap(),
-                            );
-                        } else {
-                            text.push_str(std::str::from_utf8(bytes).unwrap());
-                        }
-                    }
+            if op.operator == "BDC"
+                && let Some(dict) = op.operands.last().and_then(|o| o.as_dict().ok())
+                && let Ok(value) = dict.get(b"ActualText")
+            {
+                let bytes = value.as_str().unwrap();
+                if bytes.starts_with(&[0xfe, 0xff]) {
+                    text.push_str(
+                        &String::from_utf16(
+                            &bytes[2..]
+                                .chunks_exact(2)
+                                .map(|b| u16::from_be_bytes([b[0], b[1]]))
+                                .collect::<Vec<_>>(),
+                        )
+                        .unwrap(),
+                    );
+                } else {
+                    text.push_str(std::str::from_utf8(bytes).unwrap());
                 }
             }
         }
     }
+    text
+}
+
+#[test]
+fn initial_table_headers_stay_with_the_first_body_line() {
+    let header = id();
+    let body = id();
+    let doc = document(vec![
+        Block::Shape {
+            id: id(),
+            kind: ShapeKind::Rectangle,
+            width: 100.0,
+            height: 160.0,
+            fill: None,
+            stroke: None,
+            alt: None,
+        },
+        Block::Table {
+            id: id(),
+            columns: vec![260.0],
+            rows: vec![
+                Row {
+                    id: header,
+                    header: true,
+                    cells: vec![Cell {
+                        id: id(),
+                        style: Style::default(),
+                        runs: runs("Header"),
+                    }],
+                },
+                Row {
+                    id: body,
+                    header: false,
+                    cells: vec![Cell {
+                        id: id(),
+                        style: Style::default(),
+                        runs: runs("Body"),
+                    }],
+                },
+            ],
+        },
+    ]);
+    let (_, layout) = generate(&doc, &Assets::new(), &mut fonts()).unwrap();
+    assert_eq!(layout.nodes[&header].frame.page, 1);
+    assert_eq!(
+        layout.nodes[&header].frame.page,
+        layout.nodes[&body].frame.page
+    );
+}
+
+#[test]
+#[cfg(target_os = "macos")]
+fn tagged_reading_order_retains_logical_bidi_runs_and_link_annotations() {
+    let doc = document(vec![
+        Block::Paragraph {
+            id: id(),
+            heading: Some(2),
+            style: Style::default(),
+            runs: runs("First heading"),
+        },
+        Block::Paragraph {
+            id: id(),
+            heading: None,
+            style: Style::default(),
+            runs: vec![
+                Run {
+                    text: "English ".into(),
+                    style: Style::default(),
+                    hyperlink: None,
+                },
+                Run {
+                    text: "مرحبا 123 שלום".into(),
+                    style: Style {
+                        direction: forge_document::Direction::Rtl,
+                        language: Some("ar".into()),
+                        ..Default::default()
+                    },
+                    hyperlink: Some("https://example.com".into()),
+                },
+            ],
+        },
+        paragraph("Last paragraph"),
+    ]);
+    let (bytes, _) = generate(&doc, &Assets::new(), &mut Fonts::new(true, &[]).unwrap()).unwrap();
+    let pdf = lopdf::Document::load_mem(&bytes).unwrap();
+    let root = pdf
+        .catalog()
+        .unwrap()
+        .get(b"StructTreeRoot")
+        .unwrap()
+        .as_reference()
+        .unwrap();
+    let mut order = Vec::new();
+    fn visit(pdf: &lopdf::Document, object: &lopdf::Object, order: &mut Vec<String>) {
+        let object = if let Ok(id) = object.as_reference() {
+            pdf.get_object(id).unwrap()
+        } else {
+            object
+        };
+        match object {
+            lopdf::Object::Array(children) => {
+                for child in children {
+                    visit(pdf, child, order);
+                }
+            }
+            lopdf::Object::Dictionary(dict) => {
+                if let Ok(tag) = dict.get(b"S").and_then(lopdf::Object::as_name) {
+                    order.push(String::from_utf8_lossy(tag).into_owned());
+                }
+                if let Ok(children) = dict.get(b"K") {
+                    visit(pdf, children, order);
+                }
+            }
+            _ => {}
+        }
+    }
+    visit(&pdf, pdf.get_object(root).unwrap(), &mut order);
+    assert!(
+        order.iter().position(|tag| tag == "H2").unwrap()
+            < order.iter().position(|tag| tag == "Link").unwrap()
+    );
+    assert_eq!(order.last().unwrap(), "Span");
+    let text = structure_text(&pdf);
+    assert!(text.find("First heading").unwrap() < text.find("English").unwrap());
+    assert!(text.contains("مرحبا 123 שלום"));
+    assert!(text.find("English").unwrap() < text.find("Last paragraph").unwrap());
+    let objects = format!("{:?}", pdf.objects);
+    assert!(objects.contains("OBJR"));
+    assert!(objects.contains("https://example.com"));
+}
+
+// Follow the PDF's semantic order, resolving page/MCID pairs. The content
+// stream may paint bidi runs in visual order; assistive readers follow /K.
+fn structure_text(pdf: &lopdf::Document) -> String {
+    let mut marked = std::collections::BTreeMap::new();
+    for page in pdf.get_pages().values() {
+        let content =
+            lopdf::content::Content::decode(&pdf.get_page_content(*page).unwrap()).unwrap();
+        for op in content.operations {
+            if op.operator != "BDC" {
+                continue;
+            }
+            let Some(dict) = op.operands.last().and_then(|o| o.as_dict().ok()) else {
+                continue;
+            };
+            if let (Ok(id), Ok(bytes)) = (
+                dict.get(b"MCID").and_then(lopdf::Object::as_i64),
+                dict.get(b"ActualText").and_then(lopdf::Object::as_str),
+            ) {
+                let value = if bytes.starts_with(&[0xfe, 0xff]) {
+                    String::from_utf16(
+                        &bytes[2..]
+                            .chunks_exact(2)
+                            .map(|b| u16::from_be_bytes([b[0], b[1]]))
+                            .collect::<Vec<_>>(),
+                    )
+                    .unwrap()
+                } else {
+                    String::from_utf8(bytes.to_vec()).unwrap()
+                };
+                marked.insert((*page, id), value);
+            }
+        }
+    }
+    fn visit(
+        pdf: &lopdf::Document,
+        value: &lopdf::Object,
+        page: Option<lopdf::ObjectId>,
+        marked: &std::collections::BTreeMap<(lopdf::ObjectId, i64), String>,
+        text: &mut String,
+    ) {
+        let value = if let Ok(id) = value.as_reference() {
+            pdf.get_object(id).unwrap()
+        } else {
+            value
+        };
+        match value {
+            lopdf::Object::Array(items) => {
+                for item in items {
+                    visit(pdf, item, page, marked, text);
+                }
+            }
+            lopdf::Object::Dictionary(dict) => {
+                let page = dict
+                    .get(b"Pg")
+                    .ok()
+                    .and_then(|v| v.as_reference().ok())
+                    .or(page);
+                if let (Some(page), Ok(id)) =
+                    (page, dict.get(b"MCID").and_then(lopdf::Object::as_i64))
+                    && let Some(value) = marked.get(&(page, id))
+                {
+                    text.push_str(value);
+                }
+                if let Ok(child) = dict.get(b"K") {
+                    visit(pdf, child, page, marked, text);
+                }
+            }
+            lopdf::Object::Integer(id) => {
+                if let Some(page) = page
+                    && let Some(value) = marked.get(&(page, *id))
+                {
+                    text.push_str(value);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut text = String::new();
+    visit(
+        pdf,
+        pdf.catalog().unwrap().get(b"StructTreeRoot").unwrap(),
+        None,
+        &marked,
+        &mut text,
+    );
     text
 }

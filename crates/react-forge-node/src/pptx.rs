@@ -18,6 +18,7 @@ pub fn process(op: &Operation) -> forge_tree_doc::Result<(Vec<u8>, String, Strin
             if input.pointer("/theme/font_family").is_none() {
                 doc.theme.font_family = fonts.default_family()?;
             }
+            check_chart_fonts(&doc, None, &mut fonts)?;
             let bytes = forge_pptx::generate_with_measurer(
                 &doc,
                 &op.assets,
@@ -34,6 +35,7 @@ pub fn process(op: &Operation) -> forge_tree_doc::Result<(Vec<u8>, String, Strin
             doc.assign_ids();
             let mut assets = imported.assets;
             assets.extend(op.assets.clone());
+            check_chart_fonts(&doc, Some(&imported.document), &mut fonts)?;
             let bytes = forge_pptx::update_with_measurer(
                 &op.source,
                 &imported.document,
@@ -59,4 +61,44 @@ pub fn process(op: &Operation) -> forge_tree_doc::Result<(Vec<u8>, String, Strin
     let geometry =
         serde_json::to_string(&geometry).map_err(|_| forge_package::failure("layout"))?;
     Ok((bytes, model, geometry))
+}
+
+fn check_chart_fonts(
+    doc: &Presentation,
+    previous: Option<&Presentation>,
+    fonts: &mut forge_document::fonts::Fonts,
+) -> forge_tree_doc::Result<()> {
+    forge_tree_doc::validate(doc, previous.is_some())?;
+    fn visit(
+        node: &forge_tree_doc::Node,
+        previous: Option<&Presentation>,
+        fonts: &mut forge_document::fonts::Fonts,
+    ) -> forge_tree_doc::Result<()> {
+        let old = previous.and_then(|doc| {
+            doc.find(&forge_tree_doc::Target {
+                key: None,
+                node_id: node.id,
+            })
+        });
+        if node.kind == forge_tree_doc::NodeKind::Chart
+            && old.is_none_or(|old| old.data != node.data)
+            && let Some(data) = &node.data
+        {
+            for text in data
+                .categories
+                .iter()
+                .chain(data.series.iter().map(|series| &series.name))
+            {
+                fonts.check_text(text, &forge_document::Style::default())?;
+            }
+        }
+        for child in &node.children {
+            visit(child, previous, fonts)?;
+        }
+        Ok(())
+    }
+    for slide in &doc.slides {
+        visit(&slide.content, previous, fonts)?;
+    }
+    Ok(())
 }

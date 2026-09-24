@@ -88,13 +88,13 @@ pub fn generate(
                         let mut chunks: Vec<(usize, f32, Vec<KrillaGlyph>, f32)> = Vec::new();
                         for cluster in run.visual_clusters() {
                             if cluster.is_ligature_continuation() {
-                                if let Some((_, _, glyphs, _)) = chunks.last_mut() {
-                                    if let Some(glyph) = glyphs.last_mut() {
-                                        glyph.text_range.start =
-                                            glyph.text_range.start.min(cluster.text_range().start);
-                                        glyph.text_range.end =
-                                            glyph.text_range.end.max(cluster.text_range().end);
-                                    }
+                                if let Some((_, _, glyphs, _)) = chunks.last_mut()
+                                    && let Some(glyph) = glyphs.last_mut()
+                                {
+                                    glyph.text_range.start =
+                                        glyph.text_range.start.min(cluster.text_range().start);
+                                    glyph.text_range.end =
+                                        glyph.text_range.end.max(cluster.text_range().end);
                                 }
                                 continue;
                             }
@@ -166,7 +166,7 @@ pub fn generate(
                                 size,
                                 false,
                             );
-                            if style.underline {
+                            if style.underline.unwrap_or(false) {
                                 surface.set_fill(None);
                                 surface.set_stroke(Some(Stroke {
                                     paint: rgb_color(style.color.as_deref().unwrap_or("#000000"))?
@@ -180,24 +180,23 @@ pub fn generate(
                                 surface.draw_path(&path.finish().ok_or_else(failed)?);
                             }
                             surface.end_tagged();
-                            if !artifact {
-                                if let Some(href) = &text.runs[index].hyperlink {
-                                    if advance > 0.0 {
-                                        annotations.push((
-                                            tag,
-                                            start * 2 + 1,
-                                            href.clone(),
-                                            text.runs[index].text.clone(),
-                                            Rect::from_xywh(
-                                                *x as f32 + offset,
-                                                *y as f32,
-                                                advance,
-                                                metrics.line_height,
-                                            )
-                                            .ok_or_else(failed)?,
-                                        ));
-                                    }
-                                }
+                            if !artifact
+                                && let Some(href) = &text.runs[index].hyperlink
+                                && advance > 0.0
+                            {
+                                annotations.push((
+                                    tag,
+                                    start * 2 + 1,
+                                    href.clone(),
+                                    text.runs[index].text.clone(),
+                                    Rect::from_xywh(
+                                        *x as f32 + offset,
+                                        *y as f32,
+                                        advance,
+                                        metrics.line_height,
+                                    )
+                                    .ok_or_else(failed)?,
+                                ));
                             }
                         }
                     }

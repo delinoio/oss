@@ -35,11 +35,11 @@ pub struct Style {
     pub font_family: Option<String>,
     pub font_size: Option<f64>,
     #[serde(default)]
-    pub bold: bool,
+    pub bold: Option<bool>,
     #[serde(default)]
-    pub italic: bool,
+    pub italic: Option<bool>,
     #[serde(default)]
-    pub underline: bool,
+    pub underline: Option<bool>,
     pub color: Option<String>,
     pub background: Option<String>,
     pub language: Option<String>,
@@ -207,6 +207,15 @@ impl Chart {
                 "Chart requires bounded nonempty categories and series",
             );
         }
+        // Native chart data expands into XML cells and cached chart points.
+        // Bound the cross-product before allocating a workbook or chart cache.
+        if (self.categories.len() + 1) * (self.series.len() + 1) > 200_000 {
+            return error(
+                ErrorCode::ResourceLimit,
+                "chart/data",
+                "Chart data exceeds the XML node budget",
+            );
+        }
         if self.kind == ChartKind::Pie && self.series.len() != 1 {
             return error(
                 ErrorCode::InvalidField,
@@ -307,7 +316,7 @@ impl Chart {
                 }
             }
             if self.labels {
-                series.set_data_label(&ChartDataLabel::new().show_value());
+                series.set_data_label(ChartDataLabel::new().show_value());
             }
         }
         if let Some(title) = &self.title {

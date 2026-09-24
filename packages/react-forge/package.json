@@ -15,23 +15,28 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
     },
     "./pptx": {
       "types": "./dist/pptx.d.ts",
-      "import": "./dist/pptx.js"
+      "import": "./dist/pptx.js",
+      "require": "./dist/pptx.js"
     },
     "./docx": {
       "types": "./dist/docx.d.ts",
-      "import": "./dist/docx.js"
+      "import": "./dist/docx.js",
+      "require": "./dist/docx.js"
     },
     "./xlsx": {
       "types": "./dist/xlsx.d.ts",
-      "import": "./dist/xlsx.js"
+      "import": "./dist/xlsx.js",
+      "require": "./dist/xlsx.js"
     },
     "./pdf": {
       "types": "./dist/pdf.d.ts",
-      "import": "./dist/pdf.js"
+      "import": "./dist/pdf.js",
+      "require": "./dist/pdf.js"
     }
   },
   "bin": {

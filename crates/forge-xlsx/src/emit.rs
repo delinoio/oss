@@ -19,13 +19,13 @@ pub(crate) fn format(value: &CellFormat) -> Result<Format> {
     if let Some(size) = s.font_size {
         f = f.set_font_size(size);
     }
-    if s.bold {
+    if s.bold.unwrap_or(false) {
         f = f.set_bold();
     }
-    if s.italic {
+    if s.italic.unwrap_or(false) {
         f = f.set_italic();
     }
-    if s.underline {
+    if s.underline.unwrap_or(false) {
         f = f.set_underline(rust_xlsxwriter::FormatUnderline::Single);
     }
     if let Some(color) = &s.color {
@@ -65,13 +65,13 @@ pub(crate) fn differential(value: &CellFormat) -> Result<String> {
     if let Some(size) = s.font_size {
         out.push_str(&format!("<sz val=\"{size}\"/>"));
     }
-    if s.bold {
+    if s.bold.unwrap_or(false) {
         out.push_str("<b/>");
     }
-    if s.italic {
+    if s.italic.unwrap_or(false) {
         out.push_str("<i/>");
     }
-    if s.underline {
+    if s.underline.unwrap_or(false) {
         out.push_str("<u/>");
     }
     if let Some(color) = &s.color {
@@ -80,7 +80,7 @@ pub(crate) fn differential(value: &CellFormat) -> Result<String> {
     out.push_str("</font>");
     if let Some(number) = &value.number_format {
         out.push_str(&format!(
-            "<numFmt numFmtId=\"0\" formatCode=\"{}\"/>",
+            "<numFmt numFmtId=\"164\" formatCode=\"{}\"/>",
             escape(number)
         ));
     }
@@ -409,6 +409,9 @@ pub fn generate(model: &Workbook) -> Result<Vec<u8>> {
                 ChartKind::Line => ChartType::Line,
                 ChartKind::Pie => ChartType::Pie,
             });
+            // Chart data is isolated on a hidden sheet; applications must still
+            // plot it instead of treating hidden source values as absent.
+            native.show_hidden_data();
             for (i, _) in chart.chart.series.iter().enumerate() {
                 let series = native
                     .add_series()
@@ -422,7 +425,7 @@ pub fn generate(model: &Workbook) -> Result<Vec<u8>> {
                         i as u16 + 1,
                     ));
                 if chart.chart.labels {
-                    series.set_data_label(&ChartDataLabel::new().show_value());
+                    series.set_data_label(ChartDataLabel::new().show_value());
                 }
             }
             if let Some(title) = &chart.chart.title {
@@ -568,17 +571,8 @@ pub fn generate(model: &Workbook) -> Result<Vec<u8>> {
         }
         parts.insert(path, bytes);
     }
-    if !dxfs.is_empty() {
-        let bytes = &parts["xl/styles.xml"];
-        let doc = xml(bytes)?;
-        let dxf = doc
-            .root_element()
-            .children()
-            .find(|n| n.has_tag_name((S, "dxfs")))
-            .ok_or_else(|| failure("dxfs"))?;
-        let replacement = format!("<dxfs count=\"{}\">{}</dxfs>", dxfs.len(), dxfs.concat());
-        let bytes = replace_range(bytes, dxf.range(), &replacement);
-        parts.insert("xl/styles.xml".into(), bytes);
+    for fragment in dxfs {
+        crate::styles::append_dxf(&mut parts, "xl/styles.xml", fragment)?;
     }
     validate_office(&parts, OfficeKind::Workbook)?;
     write(&parts)

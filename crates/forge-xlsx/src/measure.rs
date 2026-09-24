@@ -9,13 +9,10 @@ pub fn measure(workbook: &Workbook) -> forge_tree_doc::Result<Geometry> {
     validate(workbook)?;
     let mut geometry = Geometry::default();
     for sheet in &workbook.sheets {
+        let columns: std::collections::HashMap<_, _> =
+            sheet.columns.iter().map(|c| (c.column, c.width)).collect();
         let column_width = |column: u16| {
-            let width = sheet
-                .columns
-                .iter()
-                .find(|c| c.column == column)
-                .map(|c| c.width)
-                .unwrap_or(8.43);
+            let width = columns.get(&column).copied().unwrap_or(8.43);
             ((width * 7.0 + 5.0).floor()) * 0.75
         };
         let mut positions = vec![0.0; 16_385];
@@ -23,15 +20,17 @@ pub fn measure(workbook: &Workbook) -> forge_tree_doc::Result<Geometry> {
             positions[column + 1] = positions[column] + column_width(column as u16);
         }
         let x = |column: u16| positions[usize::from(column)];
-        let y = |row: u32| {
-            f64::from(row) * 15.0
-                + sheet
-                    .rows
-                    .iter()
-                    .filter(|r| r.row < row)
-                    .map(|r| r.height - 15.0)
-                    .sum::<f64>()
-        };
+        let mut rows: Vec<_> = sheet
+            .rows
+            .iter()
+            .map(|r| (r.row, r.height - 15.0))
+            .collect();
+        rows.sort_by_key(|r| r.0);
+        let mut prefix = vec![0.0];
+        for (_, delta) in &rows {
+            prefix.push(prefix.last().copied().unwrap() + delta);
+        }
+        let y = |row: u32| f64::from(row) * 15.0 + prefix[rows.partition_point(|r| r.0 < row)];
         let mut total_width = 0.0_f64;
         let mut total_height = 0.0_f64;
         for cell in &sheet.cells {

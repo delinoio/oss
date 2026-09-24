@@ -35,11 +35,14 @@ pub fn sha(bytes: &[u8]) -> String {
 }
 pub fn xml(bytes: &[u8]) -> Result<roxmltree::Document<'_>> {
     let text = std::str::from_utf8(bytes).map_err(failure)?;
-    if bytes.len() > 64 * 1024 * 1024 || text.contains("<!DOCTYPE") || text.contains("<!ENTITY") {
+    if bytes.len() > MAX_PART_BYTES {
+        return error(ErrorCode::ResourceLimit, "", "XML part exceeds 64 MiB");
+    }
+    if text.contains("<!DOCTYPE") || text.contains("<!ENTITY") {
         return error(
             ErrorCode::InvalidPackage,
             "",
-            "XML DTDs, entities, and oversized parts are forbidden",
+            "XML DTDs and entities are forbidden",
         );
     }
     // roxmltree constructs its tree recursively. Enforce the depth budget with
@@ -110,6 +113,24 @@ pub fn read(bytes: &[u8]) -> Result<Package> {
     if zip.len() > MAX_ENTRIES {
         return error(ErrorCode::ResourceLimit, "", "ZIP entry count exceeded");
     }
+    // Inspect declared expansion before allocating payloads. The streaming
+    // checks below independently enforce the same budget on actual bytes.
+    let mut declared = 0_u64;
+    for index in 0..zip.len() {
+        let file = zip.by_index(index).map_err(failure)?;
+        if !file.is_dir() {
+            declared = declared.checked_add(file.size()).ok_or_else(|| {
+                Diagnostic::new(ErrorCode::ResourceLimit, "", "ZIP expansion limit exceeded")
+            })?;
+            if file.size() > MAX_PART_BYTES as u64 || declared > MAX_EXPANDED_BYTES as u64 {
+                return error(
+                    ErrorCode::ResourceLimit,
+                    "",
+                    "ZIP declared expansion exceeds its limit",
+                );
+            }
+        }
+    }
     let mut parts = Package::new();
     let mut total = 0_usize;
     let mut names = std::collections::HashSet::new();
@@ -158,7 +179,9 @@ pub fn read(bytes: &[u8]) -> Result<Package> {
         if data.len() > 64 * 1024 * 1024 || total > 512 * 1024 * 1024 {
             return error(ErrorCode::ResourceLimit, "", "ZIP expansion limit exceeded");
         }
-        if name.ends_with(".xml") || name.ends_with(".rels") {
+        if name.to_ascii_lowercase().ends_with(".xml")
+            || name.to_ascii_lowercase().ends_with(".rels")
+        {
             xml(&data)?;
         }
         parts.insert(name, data);

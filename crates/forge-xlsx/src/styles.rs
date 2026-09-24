@@ -132,7 +132,28 @@ pub fn append(bytes: &[u8], collection: &str, fragments: &[String]) -> Result<Ve
 pub fn append_dxf(parts: &mut Package, path: &str, fragment: String) -> Result<usize> {
     let bytes = parts.get(path).ok_or_else(|| failure("styles"))?;
     let index = count(bytes, "dxfs")?;
-    let fragment = standalone(&fragment);
+    let mut fragment = standalone(&fragment);
+    let doc = xml(fragment.as_bytes())?;
+    if let Some(number) = doc.descendants().find(|n| n.has_tag_name((S, "numFmt"))) {
+        let original = xml(bytes)?;
+        let used: std::collections::HashSet<_> = original
+            .descendants()
+            .filter_map(|n| n.attribute("numFmtId"))
+            .filter_map(|v| v.parse::<u32>().ok())
+            .collect();
+        let id = (164..u32::MAX)
+            .find(|id| !used.contains(id))
+            .ok_or_else(|| failure("number format identity"))?;
+        let attr = number
+            .attribute_node("numFmtId")
+            .ok_or_else(|| failure("number format"))?;
+        fragment = String::from_utf8(replace_range(
+            fragment.as_bytes(),
+            attr.range_value(),
+            &id.to_string(),
+        ))
+        .map_err(failure)?;
+    }
     let bytes = append(bytes, "dxfs", &[fragment])?;
     parts.insert(path.into(), bytes);
     Ok(index)

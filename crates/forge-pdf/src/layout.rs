@@ -230,7 +230,7 @@ impl Flow<'_> {
                     style.language = Some(language.into());
                 }
                 if heading.is_some() {
-                    style.bold = true;
+                    style.bold = Some(true);
                     if style.font_size.is_none() {
                         style.font_size = Some(24.0 - f64::from(heading.unwrap()) * 2.0);
                     }
@@ -357,7 +357,9 @@ impl Flow<'_> {
                     self.tag(Tag::TD, Some(row_tag))
                 };
                 let mut style = cell.style.clone();
-                style.bold |= row.header;
+                if row.header {
+                    style.bold = Some(true);
+                }
                 let text = Arc::new(self.fonts.shape(&cell.runs, &style, width - 8.0, true)?);
                 let tags = self.spans(&cell.runs, cell_tag, language);
                 cells.push((text, tags));
@@ -389,7 +391,18 @@ impl Flow<'_> {
                     }
                     // Initial headers stay together with a body line where possible.
                     if row_index == 0 {
-                        self.ensure(header_height)?;
+                        let body_line = shaped
+                            .get(header_count)
+                            .map(|cells| {
+                                cells
+                                    .iter()
+                                    .filter_map(|(text, _)| text.layout.lines().next())
+                                    .map(|line| f64::from(line.metrics().line_height))
+                                    .fold(0.0_f64, f64::max)
+                                    + 8.0
+                            })
+                            .unwrap_or(0.0);
+                        self.ensure(header_height + body_line)?;
                     }
                     end.clone_from(&counts);
                     height = full_height;
@@ -406,7 +419,7 @@ impl Flow<'_> {
                         }
                         height = height.max(used);
                     }
-                    if end == offsets && offsets != counts {
+                    if end == offsets && (offsets != counts || height > self.remaining() + 0.001) {
                         if (self.y - self.page.margin - header_height).abs() < 0.001
                             || self.y == self.page.margin
                         {

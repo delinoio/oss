@@ -157,3 +157,82 @@ fn bounded_xml_depth_and_macro_types_fail_before_editing() {
     let bytes = write(&document()).unwrap();
     assert_eq!(read(&bytes).unwrap(), document());
 }
+
+#[test]
+fn declared_zip_expansion_entry_and_xml_node_budgets_fail_before_inflation() {
+    let mut compressed = archive(&[
+        "one.bin",
+        "two.bin",
+        "three.bin",
+        "four.bin",
+        "five.bin",
+        "six.bin",
+        "seven.bin",
+        "eight.bin",
+        "nine.bin",
+    ]);
+    // Forge the central directory's uncompressed sizes. Reject these before
+    // trying to inflate the deliberately tiny payload, independently of CRC.
+    let positions: Vec<_> = compressed
+        .windows(4)
+        .enumerate()
+        .filter(|(_, bytes)| *bytes == b"PK\x01\x02")
+        .map(|(at, _)| at)
+        .collect();
+    for at in positions {
+        compressed[at + 24..at + 28].copy_from_slice(&(MAX_PART_BYTES as u32).to_le_bytes());
+    }
+    assert_eq!(
+        read(&compressed).unwrap_err().code,
+        ErrorCode::ResourceLimit
+    );
+    let mut part = archive(&["part.bin"]);
+    let at = part.windows(4).position(|b| b == b"PK\x01\x02").unwrap();
+    part[at + 24..at + 28].copy_from_slice(&(MAX_PART_BYTES as u32 + 1).to_le_bytes());
+    assert_eq!(read(&part).unwrap_err().code, ErrorCode::ResourceLimit);
+    let names: Vec<_> = (0..=MAX_ENTRIES).map(|i| format!("{i}.bin")).collect();
+    assert_eq!(
+        read(&archive(
+            &names.iter().map(String::as_str).collect::<Vec<_>>()
+        ))
+        .unwrap_err()
+        .code,
+        ErrorCode::ResourceLimit
+    );
+    let nodes = format!("<root>{}</root>", "<n/>".repeat(1_000_000));
+    assert_eq!(
+        xml(nodes.as_bytes()).unwrap_err().code,
+        ErrorCode::ResourceLimit
+    );
+}
+
+#[test]
+fn legacy_signed_strict_and_non_xml_extension_case_cannot_bypass_package_checks() {
+    assert_eq!(
+        read(&[0xd0, 0xcf, 0x11, 0xe0]).unwrap_err().code,
+        ErrorCode::UnsupportedPackage
+    );
+    for name in ["_xmlsignatures/origin.sigs", "word/vbaProject.bin"] {
+        assert_eq!(
+            read(&archive(&[name])).unwrap_err().code,
+            ErrorCode::UnsupportedPackage
+        );
+    }
+    let mut parts = document();
+    parts.insert(
+        "unsafe.XML".into(),
+        b"<!DOCTYPE root [<!ENTITY x 'hidden'>]><root>&x;</root>".to_vec(),
+    );
+    assert_eq!(
+        read(&write(&parts).unwrap()).unwrap_err().code,
+        ErrorCode::InvalidPackage
+    );
+    let mut parts = document();
+    parts.insert("word/document.xml".into(), b"<w:document xmlns:w=\"http://purl.oclc.org/ooxml/wordprocessingml/main\"><w:body/></w:document>".to_vec());
+    assert_eq!(
+        validate_office(&parts, OfficeKind::Document)
+            .unwrap_err()
+            .code,
+        ErrorCode::UnsupportedPackage
+    );
+}

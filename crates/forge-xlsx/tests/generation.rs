@@ -123,3 +123,38 @@ fn validation_rejects_duplicate_sheets_overlapping_merges_and_invalid_rules() {
     model.sheets[0].cells[0].id = model.sheets[0].cells[1].id;
     assert!(generate(&model).is_err());
 }
+
+#[test]
+fn tiny_models_cannot_expand_into_unbounded_merges_or_duplicate_dimensions() {
+    use forge_tree_doc::ErrorCode;
+    let mut model = workbook();
+    model.sheets[0].merges = vec![Range {
+        first: Address { row: 0, column: 0 },
+        last: Address {
+            row: 1_048_575,
+            column: 16_383,
+        },
+    }];
+    assert_eq!(generate(&model).unwrap_err().code, ErrorCode::ResourceLimit);
+    let mut model = workbook();
+    model.sheets[0].rows = vec![
+        RowDimension {
+            row: 0,
+            height: 15.0,
+        },
+        RowDimension {
+            row: 0,
+            height: 30.0,
+        },
+    ];
+    assert_eq!(
+        generate(&model).unwrap_err().code,
+        ErrorCode::DuplicateIdentity
+    );
+    let mut model = workbook();
+    model.sheets[0].cells[0].value = Value::Formula(Formula {
+        expression: "A2".into(),
+        cached: Some(CachedValue::Text("x".repeat(32_768))),
+    });
+    assert_eq!(generate(&model).unwrap_err().code, ErrorCode::ResourceLimit);
+}

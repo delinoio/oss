@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { v7 } from "uuid";
-import { ForgeError, checkSignal } from "./errors.js";
+import { ForgeError, abortable, checkSignal } from "./errors.js";
 import { digest, publish, readSource, type SourceFingerprint } from "./files.js";
 import { processDocument, type NativeOutput } from "./native.js";
 import { pptxModel, pptxNode } from "./pptx-model.js";
@@ -39,6 +39,7 @@ export class DocumentSession {
   private queue: Promise<unknown> = Promise.resolve();
   private signature = "";
   private currentRevision = 0;
+  private disposalTask?: Promise<void>;
   private readonly operations = new Set<Promise<unknown>>();
 
   constructor(format: Format, private readonly options: { systemFonts?: boolean } = {}) { this.format = format; }
@@ -181,8 +182,11 @@ export class DocumentSession {
         if (overlap) throw new ForgeError(ErrorCode.Conflict, "Mounted document regions overlap.");
       }
       const root = new RenderRoot(this.documentId);
-      try { await root.render(children); } catch (error) { await root.dispose(); throw error; }
+      // Register before the first await so dispose can reach an in-flight
+      // mount even if React has not committed it yet.
       this.mounts.set(target.nodeId, root);
+      try { await root.render(children); this.active(); }
+      catch (error) { this.mounts.delete(target.nodeId); await root.dispose(); throw error; }
       let unmounted = false;
       return Object.freeze({
         render: (next: ReactNode) => this.mutate(async () => {
@@ -197,12 +201,18 @@ export class DocumentSession {
     });
   }
 
-  private async prepare(signal: AbortSignal): Promise<{ model: Model; revision: number; refs: Map<string, string> }> {
-    await this.queue;
-    await Promise.all(this.pendingAssets);
-    const roots = this.imported ? Array.from(this.mounts.values()) : [this.root];
-    await Promise.all(roots.map(root => root.settled(signal)));
-    checkSignal(signal);
+  private async prepare(signal: AbortSignal): Promise<{ model: Model; revision: number; refs: Map<string, string>; assets: Map<string, Buffer>; fontOptions: { system: boolean; ids: string[] } }> {
+    for (;;) {
+      const queue = this.queue;
+      await abortable(queue, signal);
+      await abortable(Promise.all(this.pendingAssets), signal);
+      const roots = this.imported ? Array.from(this.mounts.values()) : [this.root];
+      await Promise.all(roots.map(root => root.settled(signal)));
+      checkSignal(signal);
+      // Mutations/assets can arrive while Suspense is pending. Recheck before
+      // pinning so newly mounted work is never exported as a fallback snapshot.
+      if (queue === this.queue && this.pendingAssets.size === 0) break;
+    }
     const refs = new Map<string, string>();
     let model: Model;
     if (this.imported && this.format !== Format.Pptx) {
@@ -233,14 +243,17 @@ export class DocumentSession {
     }
     const json = JSON.stringify(model);
     if (Buffer.byteLength(json) > limits.treeBytes && !this.imported) throw new ForgeError(ErrorCode.ResourceLimit, "New document model exceeds 16 MiB.");
-    if (json !== this.signature) { this.signature = json; this.currentRevision++; }
-    return { model, revision: this.revision, refs };
+    const assets = new Map(this.assets);
+    const fontOptions = { system: this.options.systemFonts !== false, ids: Array.from(this.fonts) };
+    const signature = JSON.stringify({ model, fontOptions });
+    if (signature !== this.signature) { this.signature = signature; this.currentRevision++; }
+    return { model, revision: this.revision, refs, assets, fontOptions };
   }
 
   private async process(signal: AbortSignal): Promise<NativeOutput & { revision: number; refs: Map<string, string> }> {
-    const { model, revision, refs } = await this.prepare(signal);
+    const { model, revision, refs, assets, fontOptions } = await this.prepare(signal);
     const output = await processDocument(this.format, this.imported ? "update" : "generate", model,
-      this.source, new Map(this.assets), this.documentId, revision, signal, { system: this.options.systemFonts !== false, ids: Array.from(this.fonts) }, event => this.emit(event));
+      this.source, assets, this.documentId, revision, signal, fontOptions, event => this.emit(event));
     return { ...output, revision, refs };
   }
 
@@ -252,8 +265,16 @@ export class DocumentSession {
   exportFile(path: string, options: { overwrite?: boolean; signal?: AbortSignal } = {}): Promise<{ published: true; revision: number }> {
     const signal = this.signal(options.signal);
     return this.track(Stage.Export, async () => {
+      // Each export compares the source state it started with. A concurrent
+      // successful overwrite makes an older export conflict instead of silently
+      // accepting the newer fingerprint and overwriting it with old content.
+      const source = this.fingerprint ? { ...this.fingerprint } : undefined;
+      const expectedDigest = source?.digest;
       const result = await this.process(signal);
-      await publish(result.bytes, path, { ...options, signal, source: this.fingerprint });
+      try { await publish(result.bytes, path, { ...options, signal, source }); }
+      finally {
+        if (source && source.digest !== expectedDigest && this.fingerprint) this.fingerprint.digest = source.digest;
+      }
       return { published: true, revision: result.revision };
     });
   }
@@ -272,13 +293,17 @@ export class DocumentSession {
     });
   }
 
-  async dispose(): Promise<void> {
-    if (this.disposal.signal.aborted) return;
+  dispose(): Promise<void> {
+    if (this.disposalTask) return this.disposalTask;
     this.disposal.abort();
-    await Promise.all([this.root.dispose(), ...Array.from(this.mounts.values(), root => root.dispose())]);
-    await Promise.allSettled(this.operations);
-    this.mounts.clear(); this.assets.clear(); this.fonts.clear(); this.listeners.clear(); this.targets.clear(); this.regions.clear();
-    this.source = Buffer.alloc(0); this.imported = undefined;
+    this.disposalTask = (async () => {
+      await Promise.all([this.root.dispose(), ...Array.from(this.mounts.values(), root => root.dispose())]);
+      await this.queue;
+      await Promise.allSettled(this.operations);
+      this.mounts.clear(); this.assets.clear(); this.fonts.clear(); this.listeners.clear(); this.targets.clear(); this.regions.clear();
+      this.source = Buffer.alloc(0); this.imported = undefined;
+    })();
+    return this.disposalTask;
   }
 }
 

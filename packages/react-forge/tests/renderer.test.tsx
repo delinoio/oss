@@ -195,3 +195,14 @@ test("rejected use promises reach error boundaries and can recover in a fresh re
     await root.render(createElement("text", null, "retry")); await root.settled(); assert.match(contents(root), /retry/);
   } finally { await root.dispose(); }
 });
+
+
+test("rendered byte and node ceilings are enforced before native processing", async () => {
+  const root = new RenderRoot("session");
+  try {
+    await root.render(createElement("text", null, "x".repeat(16 * 1024 * 1024)));
+    assert.throws(() => root.snapshot(), { code: ErrorCode.ResourceLimit });
+    await root.render(createElement(React.Fragment, null, ...Array.from({ length: 20_001 }, (_, key) => createElement("shape", { key }))));
+    assert.throws(() => root.snapshot(), { code: ErrorCode.ResourceLimit });
+  } finally { await root.dispose(); }
+});

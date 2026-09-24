@@ -128,3 +128,46 @@ test("bounded input reads and concurrent no-clobber publication", async () => {
     assert.ok(["first", "second"].includes((await readFile(path)).toString()));
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
+
+test("dispose cancels an in-flight mounted root and all callers await its cleanup", async () => {
+  const original = createSession(Format.Pptx);
+  await original.render(view("Original"));
+  const imported = await importOffice(Format.Pptx, await original.exportBuffer());
+  await original.dispose();
+  const target = imported.inspect().targets.find(t => t.kind === "text")!;
+  const mounted = imported.mount(target, <Text>New root</Text>);
+  const result = mounted.catch(error => error as Error);
+  await new Promise<void>(resolve => setImmediate(resolve));
+  const first = imported.dispose();
+  const second = imported.dispose();
+  assert.equal(first, second);
+  await Promise.all([first, second, result]);
+  await assert.rejects(async () => imported.exportBuffer(), { code: ErrorCode.Disposed });
+});
+
+test("a new mounted Suspense root arriving during another pending export is awaited", async () => {
+  const original = createSession(Format.Pptx);
+  await original.render(<Presentation><Slide><Column><Text>One</Text><Text>Two</Text></Column></Slide></Presentation>);
+  const imported = await importOffice(Format.Pptx, await original.exportBuffer());
+  await original.dispose();
+  let resolveFirst!: (value: string) => void;
+  let resolveSecond!: (value: string) => void;
+  const first = new Promise<string>(resolve => { resolveFirst = resolve; });
+  const second = new Promise<string>(resolve => { resolveSecond = resolve; });
+  function Pending({ promise }: { promise: Promise<string> }) { return <Text>{use(promise)}</Text>; }
+  try {
+    const targets = imported.inspect().targets.filter(t => t.kind === "text");
+    await imported.mount(targets[0]!, <Suspense fallback={<Text>Fallback one</Text>}><Pending promise={first} /></Suspense>);
+    let finished = false;
+    const output = imported.exportBuffer().then(bytes => { finished = true; return bytes; });
+    await new Promise<void>(resolve => setImmediate(resolve));
+    await imported.mount(targets[1]!, <Suspense fallback={<Text>Fallback two</Text>}><Pending promise={second} /></Suspense>);
+    resolveFirst("First ready");
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(finished, false);
+    resolveSecond("Second ready");
+    const result = await processPptx("inspect", {}, await output, new Map(), imported.documentId, 0, new AbortController().signal);
+    assert.match(result.model, /First ready/); assert.match(result.model, /Second ready/);
+    assert.doesNotMatch(result.model, /Fallback/);
+  } finally { await imported.dispose(); }
+});

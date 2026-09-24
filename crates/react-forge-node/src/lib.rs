@@ -40,6 +40,7 @@ fn cancelled() -> napi::Error {
     ))
 }
 
+#[derive(Default)]
 #[napi]
 pub struct Cancellation {
     flag: Arc<AtomicBool>,
@@ -184,6 +185,9 @@ impl Task for Operation {
     }
 }
 
+// This private N-API boundary keeps Buffer ownership and cancellation explicit;
+// workers receive the normalized Operation, never a live JavaScript object.
+#[allow(clippy::too_many_arguments)]
 #[napi]
 pub fn process_document(
     format: String,

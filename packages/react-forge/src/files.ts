@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { open, realpath, unlink } from "node:fs/promises";
-import { closeSync, fsyncSync, fstatSync, linkSync, openSync, readSync, renameSync, unlinkSync } from "node:fs";
+import { constants, closeSync, fsyncSync, fstatSync, linkSync, openSync, readSync, renameSync, unlinkSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { ForgeError, checkSignal } from "./errors.js";
 import { ErrorCode, type AssetSource } from "./types.js";
@@ -9,7 +9,7 @@ export interface SourceFingerprint { path: string; digest: string }
 export const digest = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 
 function sourceDigest(path: string, limit: number): string {
-  const fd = openSync(path, "r");
+  const fd = openSync(path, constants.O_RDONLY | constants.O_NONBLOCK);
   try {
     const stat = fstatSync(fd);
     if (!stat.isFile() || stat.size > limit) throw new ForgeError(ErrorCode.Conflict, "Imported source changed externally.");
@@ -40,7 +40,7 @@ export async function readSource(source: AssetSource, limit: number, signal?: Ab
   let handle;
   try {
     const path = await realpath(source.path);
-    handle = await open(path, "r");
+    handle = await open(path, constants.O_RDONLY | constants.O_NONBLOCK);
     const before = await handle.stat();
     if (!before.isFile()) throw new ForgeError(ErrorCode.MalformedInput, "Input must be a regular file.");
     if (before.size > limit) throw new ForgeError(ErrorCode.ResourceLimit, "Input exceeds its byte limit.");
@@ -96,7 +96,7 @@ export async function publish(bytes: Buffer, output: string, options: {
     if (options.overwrite) { renameSync(temporary, destination); published = true; }
     else { linkSync(temporary, destination); published = true; unlinkSync(temporary); }
     temporary = undefined;
-    if (options.source && (existing === options.source.path || destination === options.source.path)) options.source.digest = digest(bytes);
+    if (options.source && destination === options.source.path) options.source.digest = digest(bytes);
     const parent = openSync(directory, "r");
     try { fsyncSync(parent); } finally { closeSync(parent); }
     return { published: true };

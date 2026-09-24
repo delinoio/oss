@@ -170,11 +170,15 @@ impl Fonts {
                 range.clone(),
             );
             builder.push(
-                StyleProperty::FontWeight(FontWeight::new(if style.bold { 700.0 } else { 400.0 })),
+                StyleProperty::FontWeight(FontWeight::new(if style.bold.unwrap_or(false) {
+                    700.0
+                } else {
+                    400.0
+                })),
                 range.clone(),
             );
             builder.push(
-                StyleProperty::FontStyle(if style.italic {
+                StyleProperty::FontStyle(if style.italic.unwrap_or(false) {
                     FontStyle::Italic
                 } else {
                     FontStyle::Normal
@@ -278,9 +282,9 @@ pub fn overlay(base: &Style, local: &Style) -> Style {
             .clone()
             .or_else(|| base.font_family.clone()),
         font_size: local.font_size.or(base.font_size),
-        bold: base.bold || local.bold,
-        italic: base.italic || local.italic,
-        underline: base.underline || local.underline,
+        bold: local.bold.or(base.bold),
+        italic: local.italic.or(base.italic),
+        underline: local.underline.or(base.underline),
         color: local.color.clone().or_else(|| base.color.clone()),
         background: local.background.clone().or_else(|| base.background.clone()),
         language: local.language.clone().or_else(|| base.language.clone()),
@@ -305,10 +309,10 @@ impl forge_tree_doc::TextLayout for Fonts {
             Style {
                 font_family: value.font_family.clone(),
                 font_size: value.font_size.map(|n| n * scale),
-                bold: value.font_weight.is_some_and(|n| n >= 600),
-                italic: value.italic.unwrap_or(false),
-                underline: value.underline.unwrap_or(false),
-                color: value.color.as_ref().map(|c| c.clone()),
+                bold: value.font_weight.map(|n| n >= 600),
+                italic: value.italic,
+                underline: value.underline,
+                color: value.color.clone(),
                 ..Default::default()
             }
         }
@@ -346,7 +350,7 @@ impl Fonts {
             for run in line.runs() {
                 let font = run.font();
                 let key = (font.data.id(), font.index);
-                if !families.contains_key(&key) {
+                if let std::collections::hash_map::Entry::Vacant(e) = families.entry(key) {
                     let face = FontRef::from_index(font.data.as_ref(), font.index as usize)
                         .ok_or_else(missing)?;
                     // Swash decodes both Unicode and legacy Macintosh name
@@ -367,7 +371,7 @@ impl Fonts {
                         return Err(missing());
                     }
                     crate::text(&family).map_err(|_| missing())?;
-                    families.insert(key, family);
+                    e.insert(family);
                 }
                 spans.push((run.text_range(), families[&key].clone()));
             }
@@ -388,11 +392,12 @@ impl Fonts {
                 let mut run = shaped.runs[index].clone();
                 run.text = shaped.text[start..end].into();
                 run.style.font_family = Some(family.clone());
-                if let Some(previous) = output.last_mut() {
-                    if previous.style == run.style && previous.hyperlink == run.hyperlink {
-                        previous.text.push_str(&run.text);
-                        continue;
-                    }
+                if let Some(previous) = output.last_mut()
+                    && previous.style == run.style
+                    && previous.hyperlink == run.hyperlink
+                {
+                    previous.text.push_str(&run.text);
+                    continue;
                 }
                 output.push(run);
             }
