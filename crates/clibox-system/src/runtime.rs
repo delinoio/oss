@@ -70,6 +70,24 @@ pub fn configure_terminal_interrupt_acknowledgement(descriptor: Option<libc::c_i
 }
 
 #[cfg(unix)]
+pub fn configure_installed_terminal_interrupt_acknowledgement() -> Result<()> {
+    const ACKNOWLEDGEMENT_DESCRIPTOR: &str = "CLIBOX_TERMINAL_INTERRUPT_ACK_FD";
+
+    let value = std::env::var(ACKNOWLEDGEMENT_DESCRIPTOR).ok();
+    let descriptor = installed_terminal_interrupt_acknowledgement_descriptor(value.as_deref());
+    configure_terminal_interrupt_acknowledgement(descriptor)
+}
+
+#[cfg(unix)]
+fn installed_terminal_interrupt_acknowledgement_descriptor(
+    value: Option<&str>,
+) -> Option<libc::c_int> {
+    value
+        .and_then(|value| value.parse().ok())
+        .filter(|descriptor| *descriptor == 3)
+}
+
+#[cfg(unix)]
 fn close_on_exec(descriptor: libc::c_int) -> std::io::Result<()> {
     let flags = unsafe { libc::fcntl(descriptor, libc::F_GETFD) };
     if flags == -1 {
@@ -310,6 +328,21 @@ pub fn wait_child(child: &mut Child, kill_on_cancel: bool) -> Result<ExitStatus>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn installed_terminal_acknowledgement_accepts_only_the_launcher_descriptor() {
+        assert_eq!(
+            installed_terminal_interrupt_acknowledgement_descriptor(Some("3")),
+            Some(3)
+        );
+        for value in [None, Some("2"), Some("4"), Some("not-a-descriptor")] {
+            assert_eq!(
+                installed_terminal_interrupt_acknowledgement_descriptor(value),
+                None
+            );
+        }
+    }
 
     #[cfg(unix)]
     #[test]

@@ -232,8 +232,6 @@ pub(crate) enum Outcome {
 }
 
 pub(crate) fn execute(command: Command, raw: &[OsString]) -> Result<Outcome> {
-    #[cfg(unix)]
-    runtime::configure_terminal_interrupt_acknowledgement(installed_launcher_acknowledgement())?;
     match command {
         Command::RateLimit(mut options) => {
             options.workload.restore_leading_separator(raw, false);
@@ -258,16 +256,6 @@ pub(crate) fn execute(command: Command, raw: &[OsString]) -> Result<Outcome> {
             with_timeout(options)
         }
     }
-}
-
-#[cfg(unix)]
-fn installed_launcher_acknowledgement() -> Option<libc::c_int> {
-    const ACKNOWLEDGEMENT_DESCRIPTOR: &str = "CLIBOX_TERMINAL_INTERRUPT_ACK_FD";
-
-    env::var(ACKNOWLEDGEMENT_DESCRIPTOR)
-        .ok()
-        .and_then(|value| value.parse().ok())
-        .filter(|descriptor| *descriptor == 3)
 }
 
 impl Workload {
