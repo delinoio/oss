@@ -3524,4 +3524,20 @@ fn unplugged_installation_containers_are_not_dependency_conflicts() {
         .unwrap();
     assert!(file.readonly);
     assert!(file.physical.is_file());
+    #[cfg(target_os = "linux")]
+    {
+        let result = std::process::Command::new(env!("CARGO_BIN_EXE_pnport"))
+            .current_dir(root.path())
+            .args(["run", "--", "/bin/cat"])
+            .arg(canonical.join("node_modules/dep/package.json"))
+            .output()
+            .unwrap();
+        assert_eq!(
+            result.status.code(),
+            Some(0),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert_eq!(result.stdout, b"{\"name\":\"dep\"}");
+    }
 }

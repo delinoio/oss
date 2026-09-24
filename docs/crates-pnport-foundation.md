@@ -40,6 +40,8 @@ Relative `*at` operations validate the live descriptor as a directory before joi
 
 The Linux tracer preserves the original pathname spelling for native paths that do not require virtual translation, including relative symlink traversal, `..` after a symlink, and trailing separators. This applies to both operands of link and rename operations so ordinary kernel lookup and `ENOTDIR` behavior remain intact.
 
+Pathname rewriting compares the caller's resolved lookup path with the selected physical backing. A virtual dependency can resolve to a native unplugged package whose PnP identity equals its physical path; that equality does not make the caller's virtual `node_modules` alias a native path.
+
 The Linux supervisor keys logical cwd and tracked descriptor state by thread group. Cross-group `CLONE_FS` and `CLONE_FILES` sharing, plus `unshare` of either context, fail before the syscall with `PNPORT_UNSUPPORTED_OPERATION` and exit 125; within-group threads continue to share the tracked state.
 
 Linux `CLONE_THREAD` calls must also share both `CLONE_FILES` and `CLONE_FS`. A thread with a private descriptor table or cwd context fails before creation with the same unsupported diagnostic because a group-wide ownership map cannot represent its independent kernel state.

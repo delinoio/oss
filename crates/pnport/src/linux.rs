@@ -1274,8 +1274,7 @@ impl Trace<'_> {
 
     fn translate(&mut self, pid: i32, dirfd: i32, pointer: u64) -> Result<Translation> {
         let path = read_path(pid, pointer)?;
-        let absolute = self.base(pid, dirfd, &path)?;
-        let logical = self.proc_root(pid, &absolute)?.unwrap_or(absolute);
+        let logical = self.source_path(pid, dirfd, &path)?;
         self.translate_view(&logical).inspect_err(|error| {
             if error.code == Code::PnportResolutionFailed {
                 tracing::debug!(action = "linux_resolution_miss", path = %logical.display(),
@@ -1284,6 +1283,11 @@ impl Trace<'_> {
                 let _ = fs::write(self.view.session.join("failure"), error.code.as_str());
             }
         })
+    }
+
+    fn source_path(&self, pid: i32, dirfd: i32, path: &Path) -> Result<PathBuf> {
+        let absolute = self.base(pid, dirfd, &path)?;
+        Ok(self.proc_root(pid, &absolute)?.unwrap_or(absolute))
     }
 
     fn translate_view(&mut self, path: &Path) -> Result<Translation> {
@@ -1754,7 +1758,8 @@ impl Trace<'_> {
                         self.force_error(pid, &mut regs, target_arg, libc::EROFS)?;
                         return Ok(true);
                     }
-                    if target != translated.physical && translated.logical != translated.physical {
+                    let source = self.source_path(pid, target_fd, &target)?;
+                    if pnport::graph::normalize(&source) != translated.physical {
                         self.rewrite_path(pid, &mut regs, target_arg, &translated.physical)?;
                     }
                     self.pending.insert(pid, Pending::Ordinary);
@@ -1871,6 +1876,14 @@ impl Trace<'_> {
                 return Ok(true);
             }
         }
+        let source = if let Some((logical, _)) = &proc_cwd {
+            logical.clone()
+        } else if in_root && original.is_absolute() {
+            let base = self.base(pid, dirfd, Path::new("."))?;
+            base.join(original.strip_prefix("/").map_err(|_| injection_failed())?)
+        } else {
+            self.source_path(pid, dirfd, &original)?
+        };
         let translation = match if let Some((logical, _)) = proc_cwd {
             self.translate_view(&logical)
         } else if in_root && original.is_absolute() {
@@ -1992,7 +2005,8 @@ impl Trace<'_> {
                 self.force_error(pid, &mut regs, path_arg, libc::EROFS)?;
                 return Ok(true);
             }
-            Some((other_arg, other, translated))
+            let source = self.source_path(pid, other_fd, &other)?;
+            Some((other_arg, source, translated))
         } else {
             None
         };
@@ -2019,13 +2033,17 @@ impl Trace<'_> {
             }
             false
         } else {
-            original != translation.physical && translation.logical != translation.physical
+            // View.logical identifies the resolved package and can equal its
+            // physical path for an unplugged dependency. Compare the caller's
+            // lookup path instead, while leaving native relative spelling in
+            // place for the kernel's symlink and trailing-slash semantics.
+            pnport::graph::normalize(&source) != translation.physical
         };
         if changed {
             self.rewrite_path(pid, &mut regs, path_arg, &translation.physical)?;
         }
-        if let Some((other_arg, other, translated)) = second_translation {
-            if other != translated.physical && translated.logical != translated.physical {
+        if let Some((other_arg, source, translated)) = second_translation {
+            if pnport::graph::normalize(&source) != translated.physical {
                 self.rewrite_path_slot(pid, &mut regs, other_arg, &translated.physical, 1)?;
             }
         }
