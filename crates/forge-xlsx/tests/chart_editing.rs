@@ -70,3 +70,26 @@ fn external_bar_line_and_pie_chart_edits_preserve_shared_original_data() {
         );
     }
 }
+
+#[test]
+fn foreign_chart_elements_and_attributes_remain_opaque() {
+    for fragment in [
+        "<mc:AlternateContent xmlns:mc=\"http://schemas.openxmlformats.org/markup-compatibility/2006\"><mc:Fallback/></mc:AlternateContent>",
+        "<custom xmlns=\"urn:vendor:chart\"/>",
+        "<title xmlns:v=\"urn:vendor:chart\" v:flag=\"keep\"/>",
+    ] {
+        let mut parts = read(include_bytes!("fixtures/external.xlsx")).unwrap();
+        let path = "xl/charts/chart1.xml";
+        let chart = String::from_utf8(parts[path].clone()).unwrap();
+        parts.insert(path.into(), chart.replace("</chartSpace>", &format!("{fragment}</chartSpace>")).into_bytes());
+        let original = import(&forge_package::write(&parts).unwrap()).unwrap();
+        let target = original.targets.iter().find(|t| t.region.part == path).unwrap();
+        assert_eq!(target.kind, TargetKind::Opaque, "{fragment}");
+        assert_eq!(original.targets.iter().filter(|t| t.kind == TargetKind::Chart).count(), 2);
+        let chart = Chart { kind: ChartKind::Bar, title: None, categories: vec!["A".into()],
+            series: vec![Series { name: "Values".into(), values: vec![1.0] }], legend: true, labels: false };
+        assert_eq!(replace(&original, &[(target.id, EditValue::Chart(chart))]).unwrap_err().code,
+            forge_tree_doc::ErrorCode::UnsupportedEdit);
+        assert_eq!(read(&replace(&original, &[]).unwrap()).unwrap()[path], parts[path]);
+    }
+}

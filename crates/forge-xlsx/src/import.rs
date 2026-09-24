@@ -441,6 +441,15 @@ pub fn import(bytes: &[u8]) -> Result<Imported> {
                 types[0].tag_name().name(),
                 "barChart" | "lineChart" | "pieChart"
             )
+            && doc.descendants().filter(|n| n.is_element()).all(|n| {
+                matches!(n.tag_name().namespace(), Some(C) | Some(A))
+                    && n.attributes().all(|a| {
+                        matches!(
+                            a.namespace(),
+                            None | Some(R) | Some("http://www.w3.org/XML/1998/namespace")
+                        )
+                    })
+            })
             && !doc.descendants().any(|n| n.tag_name().name() == "extLst");
         targets.push(Target {
             id: Uuid::now_v7(),
