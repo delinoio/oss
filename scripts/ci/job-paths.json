@@ -593,6 +593,7 @@
       "rust-toolchain.toml",
       "crates/forge-tree-doc/**",
       "crates/forge-pptx/**",
+      "crates/forge-package/**",
       "crates/delino-forge/**",
       "docs/project-forge.md",
       "docs/crates-forge-foundation.md"
@@ -607,9 +608,31 @@
       "rust-toolchain.toml",
       "crates/forge-tree-doc/**",
       "crates/forge-pptx/**",
+      "crates/forge-package/**",
       "crates/delino-forge/**",
       "docs/project-forge.md",
       "docs/crates-forge-foundation.md"
+    ]
+  },
+  "react-forge": {
+    "paths": [
+      ".cargo/**",
+      "Cargo.toml",
+      "Cargo.lock",
+      "rust-toolchain",
+      "rust-toolchain.toml",
+      ".nvmrc",
+      "package.json",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "turbo.json",
+      "packages/react-forge/**",
+      "crates/react-forge-node/**",
+      "crates/forge-*/**",
+      "crates/delino-forge/**",
+      "docs/project-react-forge.md",
+      "docs/packages-react-forge-*.md",
+      "docs/crates-react-forge-contract.md"
     ]
   }
 }

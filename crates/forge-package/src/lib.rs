@@ -50,12 +50,14 @@ pub fn xml(bytes: &[u8]) -> Result<roxmltree::Document<'_>> {
     // worker's stack. Keep this preflight while the tree parser is recursive.
     let mut reader = quick_xml::Reader::from_reader(bytes);
     let mut depth = 0_usize;
+    let mut maximum_depth = 0_usize;
     let mut nodes = 1_usize;
     loop {
         use quick_xml::events::Event;
         match reader.read_event().map_err(failure)? {
             Event::Start(_) => {
                 depth += 1;
+                maximum_depth = maximum_depth.max(depth);
                 nodes += 1;
             }
             Event::Empty(_) => {
@@ -81,15 +83,37 @@ pub fn xml(bytes: &[u8]) -> Result<roxmltree::Document<'_>> {
             );
         }
     }
-    let doc = roxmltree::Document::parse_with_options(
-        text,
-        roxmltree::ParsingOptions {
-            allow_dtd: false,
-            nodes_limit: 1_000_000,
-            ..Default::default()
-        },
-    )
-    .map_err(failure)?;
+    let parse = || {
+        roxmltree::Document::parse_with_options(
+            text,
+            roxmltree::ParsingOptions {
+                allow_dtd: false,
+                nodes_limit: 1_000_000,
+                ..Default::default()
+            },
+        )
+        .map_err(failure)
+    };
+    // roxmltree's recursive tokenizer has large debug-build stack frames.
+    // The preflight bounds recursion, but valid deep XML can still overflow a
+    // small caller/worker stack. Only deep documents use this scoped stack;
+    // remove it when the tokenizer becomes iterative or has a proven smaller
+    // stack bound at our supported depth in debug and release configurations.
+    let doc = if maximum_depth >= 32 {
+        std::thread::scope(|scope| {
+            std::thread::Builder::new()
+                .name("forge-xml".into())
+                .stack_size(16 * 1024 * 1024)
+                .spawn_scoped(scope, parse)
+                .map_err(|_| {
+                    Diagnostic::new(ErrorCode::Io, "", "Unable to allocate XML parser stack")
+                })?
+                .join()
+                .map_err(|_| failure("XML parser worker failed"))?
+        })?
+    } else {
+        parse()?
+    };
     if doc
         .descendants()
         .any(|n| n.ancestors().take(129).count() > 128)
@@ -215,6 +239,9 @@ pub fn write(parts: &Package) -> Result<Vec<u8>> {
         out.write_all(bytes).map_err(failure)?;
     }
     let bytes = out.finish().map_err(failure)?.into_inner();
+    bounded_output(bytes)
+}
+fn bounded_output(bytes: Vec<u8>) -> Result<Vec<u8>> {
     if bytes.len() > MAX_PACKAGE_BYTES {
         return error(
             ErrorCode::ResourceLimit,
@@ -513,4 +540,20 @@ pub fn validate_package(parts: &Package) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod output_tests {
+    use super::*;
+
+    #[test]
+    fn serialized_output_accepts_exact_limit_and_rejects_overflow() {
+        let bytes = vec![0; MAX_PACKAGE_BYTES + 1];
+        assert_eq!(
+            bounded_output(bytes).unwrap_err().code,
+            ErrorCode::ResourceLimit
+        );
+        let bytes = vec![0; MAX_PACKAGE_BYTES];
+        assert_eq!(bounded_output(bytes).unwrap().len(), MAX_PACKAGE_BYTES);
+    }
 }

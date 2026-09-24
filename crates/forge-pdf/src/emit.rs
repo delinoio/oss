@@ -298,7 +298,10 @@ pub fn generate(
         tree.push(build_group(*root, &layout.semantics, &mut groups));
     }
     pdf.set_tag_tree(tree);
-    let bytes = pdf.finish().map_err(|_| failed())?;
+    let bytes = bounded_output(pdf.finish().map_err(|_| failed())?)?;
+    Ok((bytes, layout))
+}
+fn bounded_output(bytes: Vec<u8>) -> Result<Vec<u8>> {
     if bytes.len() > 256 * 1024 * 1024 {
         return error(
             ErrorCode::ResourceLimit,
@@ -306,7 +309,7 @@ pub fn generate(
             "PDF output exceeds 256 MiB",
         );
     }
-    Ok((bytes, layout))
+    Ok(bytes)
 }
 fn failed() -> Diagnostic {
     Diagnostic::new(
@@ -396,4 +399,20 @@ fn variations(bytes: &[u8], index: u32, coords: &[i16]) -> Result<Vec<(krilla::t
         result.push((krilla::text::Tag::new(&axis.tag.to_bytes()), value));
     }
     Ok(result)
+}
+
+#[cfg(test)]
+mod output_tests {
+    use super::*;
+
+    #[test]
+    fn serialized_pdf_accepts_exact_limit_and_rejects_overflow() {
+        let bytes = vec![0; 256 * 1024 * 1024 + 1];
+        assert_eq!(
+            bounded_output(bytes).unwrap_err().code,
+            ErrorCode::ResourceLimit
+        );
+        let bytes = vec![0; 256 * 1024 * 1024];
+        assert_eq!(bounded_output(bytes).unwrap().len(), 256 * 1024 * 1024);
+    }
 }

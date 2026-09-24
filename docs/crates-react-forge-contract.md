@@ -30,7 +30,7 @@ Operation-scoped tracing without global logger installation. Emit safe operation
 ## Build and Test
 Run root `cargo test` after required generated app prerequisites, plus targeted native and Node integration tests. Cover package resource/security limits, unchanged bytes, native chart/workbook edits, spreadsheet rules, fonts and PDF semantics. Test-only LibreOffice/Poppler may render outputs; record versions and font provenance. Such evidence is not Microsoft Office validation.
 
-The DOCX engine checkpoint has structural tests for rich text, headings, lists, sections, headers/footers, page breaks, merged cells, images and native bar/line/pie charts with editable embedded workbooks. Its python-docx 1.2.0 fixture verifies supported paragraph/cell edits and exact preservation of unselected parts and XML, plus opaque-equation refusal. These checks do not yet constitute the complete format/font/rendering acceptance evidence.
+The DOCX engine has structural tests for rich text, headings, lists, sections, headers/footers, page breaks, merged cells, images and native bar/line/pie charts with editable embedded workbooks. Its python-docx 1.2.0 fixture verifies supported paragraph/cell edits and exact preservation of unselected parts and XML, plus opaque-equation refusal. The complementary renderer evidence and reproduction commands are recorded in [validation](packages-react-forge-validation.md).
 
 ## Dependencies and Integrations
 Forge foundation from PR #967 is a repository dependency. Shared extraction must retain its regression coverage. All new crates remain unpublished. Native output is generated, untracked and rebuilt explicitly.
@@ -44,19 +44,19 @@ Update the Node contract, project index, Forge foundation when shared behavior c
 - [Forge foundation](crates-forge-foundation.md).
 - [Repository defaults](repository-defaults.md).
 
-## Spreadsheet Engine Checkpoint
+## Spreadsheet Engine
 `forge-xlsx` owns independent workbook models and native worksheet/chart emission. Formula caches are caller-provided and typed; omitted caches remain absent, and workbook calculation properties request application recalculation. Five conditional-format families and seven validation families have independent generation and external-fixture edit tests. Supported cell edits preserve original styles unless an explicit replacement format is supplied; replacement formats append resources without rewriting existing style children. Chart replacement adds isolated worksheet data and retains unrelated source data and chart parts. Imported cells and rules retain their original address/range. Unknown extensions remain opaque.
 
 The external workbook fixture is generated with openpyxl 3.1.5; its generator and provenance are committed beside the fixture. These structural and preservation checks are not renderer or Microsoft Office validation.
 
-## PDF and Font Engine Checkpoint
+## PDF and Font Engine
 `forge-document::fonts` uses pinned Parley 0.6.0/Fontique 0.6.0 for operation-local system discovery, caller-provided fonts, shaping and fallback. It checks shaped glyphs and color-emoji representations. PDF subset embedding rejects restricted, no-subsetting and bitmap-only embedding permissions instead of bypassing them. Office output references font families; it does not embed caller/system font files. Office applications own final fallback, layout and pagination.
 
 `forge-pdf` uses pinned Krilla 0.7.0 to generate independent tagged PDFs. Flow paragraphs split at shaped line boundaries. Table rows split across pages, initial header rows repeat as visual pagination artifacts, and the semantic tree retains one logical table header. Tagged headings, paragraphs, lists, cells, links and figures preserve logical reading order, alternate text and document/run language. Each authored node has revision-specific page fragments; the first fragment is the initial geometry. Oversized indivisible content fails before output publication. No PDF/UA conformance is claimed.
 
 The presentation engine exposes operation-owned text measurement and an explicit `FontEmbedding` selection. Existing `generate`/`update`/layout APIs still select the previous pinned default and OFL embedding. React Forge selects system/caller shaping and reference-only font output. This extension must retain the complete existing Forge regression suite.
 
-Current validation includes structural PDF pagination/tagging, system CJK/RTL/color-emoji output, explicit-font and missing-font behavior, and React PDF export/measurement. Poppler page rendering and pypdf extraction have also been inspected locally. The complete reproducible rendering/benchmark/CLI/CI evidence remains outstanding; these checkpoints do not close #968.
+Current validation includes structural PDF pagination/tagging, system CJK/RTL/color-emoji output, explicit-font and missing-font behavior, and React PDF export/measurement. Poppler page rendering and pypdf extraction have also been inspected locally. Reproducible renderer, benchmark, CLI and CI evidence is recorded in the validation contract.
 
 Office font validation materializes the selected fallback family into newly authored Word runs while preserving logical text, run styles and hyperlinks. Macintosh-only font name records are decoded as well as Unicode records. Standalone Word chart series use explicit RGB colors so imported documents do not require a theme rewrite for visible data.
 
@@ -66,3 +66,7 @@ Preservation hardening allocates Word drawing/list IDs against existing packages
 ZIP declared expansion is checked before inflation, with independent actual-byte checks. Tests cover expanded-size, entry, XML node/depth, image pixel and chart expansion boundaries. Font fixtures also cover restricted, no-subsetting and bitmap-only embedding flags. PDF semantic-order tests resolve page/MCID pairs through the structure tree; the first table header remains with the first body line.
 
 Imported presentation sessions bind the original package digest to a UUID-v7 traversal snapshot, including image asset keys and connector targets. Re-importing bytes for an update restores those identities before comparison, so externally authored packages need no pre-existing Forge metadata and no-op exports retain their original bytes. JSON geometry parsing retains exact floating-point round trips.
+
+XML preflight enforces the published depth before parsing. Valid XML with at least 32 nested elements uses a scoped 16 MiB parser stack because the recursive roxmltree tokenizer has large unoptimized frames; shallow parts remain on the caller stack. Remove this compatibility boundary only after iterative parsing or a proven supported-depth stack bound. Output-byte checks are exercised at and above 256 MiB independently of expensive serialization; package input, part/aggregate expansion, XML depth/nodes, image bytes/pixels and React tree byte/depth/node boundaries have explicit tests.
+
+Word regions with foreign paragraph/run attributes or bookmark/field/revision markers around drawings remain opaque. Drawing and chart replacements reject foreign extension namespaces instead of dropping them; selected cell wrapper attributes remain byte-preserved. Ordinary external paragraphs, cells, images and native chart families retain positive edit coverage.

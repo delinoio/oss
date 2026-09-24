@@ -24,7 +24,7 @@ export default async function task({ signal }: { signal: AbortSignal }) {
       operator={kind === ValidationKind.List || kind === ValidationKind.Custom ? undefined : Comparison.Between}
       formulas={kind === ValidationKind.List ? ['"One,Two,Three"'] : kind === ValidationKind.Custom ? ["LEN(A19)>0"] : kind === ValidationKind.Date ? ["1", "60000"] : ["0", "100"]}
       allowBlank prompt={`Enter ${kind}`} error="The entered value is outside the allowed range." />)}
-    {(["bar", "line", "pie"] as const).map((kind, i) => <Chart key={kind} kind={kind} at={at(22 + i * 16)} width={560} height={280}
+    {(["bar", "line", "pie"] as const).map((kind, i) => <Chart key={kind} kind={kind} at={at(12 + i * 10)} width={560} height={180}
       title={`${kind} revenue`} alt={`${kind} revenue chart`} categories={["Q1", "Q2", "Q3", "Q4"]} series={[{ name: "Revenue", values: [4, 7, 9, 12] }]} legend labels />)}
   </Worksheet><Worksheet name="Notes"><Cell address={at(0)} value="Formulas are recalculated by the spreadsheet application." /></Worksheet></Workbook>);
   return session;

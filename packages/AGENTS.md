@@ -60,3 +60,5 @@
 - `packages/react-forge` owns the private session library, real React reconciler, format components and one-shot TSX CLI. Follow `docs/packages-react-forge-contract.md` and all requirements from #968. Pin React 19.2.8 and react-reconciler 0.33.0; support Node.js 24 on macOS arm64.
 - Sessions are memory-only. Serialize mutations, reject invalid latest renders and overlapping targets, pin export revisions, support cancellation without timeouts, and clean resources on dispose without deleting exports. Keep callbacks and component code outside native computations.
 - Internal docs, examples, messages and troubleshooting are English; no public publication or runtime downloads. Tests must exercise installed/workspace CLI and asynchronous React behavior, not manually invoked components.
+
+- React Forge native/system-font build, integration, rendering and benchmark tasks must remain uncached. Use package-owned scripts and record test renderer/font provenance without bundling system fonts. Retain actual packed-consumer CLI coverage. Fonts/assets participate in immutable revision snapshots; disposal owns in-flight mounts and mutations.

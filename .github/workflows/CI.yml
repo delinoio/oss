@@ -389,6 +389,67 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  react-forge:
+    needs: changes
+    if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['react-forge'] }}
+    name: React Forge macOS arm64
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/setup-ci-node
+        id: ci-node
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: nightly-2026-01-01
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-on-failure: false
+          workspaces: |
+            . -> target
+            . -> target/react-forge
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Verify supported host and native contracts
+        run: |
+          node -e 'if (process.platform !== "darwin" || process.arch !== "arm64" || process.versions.node.split(".")[0] !== "24") process.exit(1)'
+          cargo test -p forge-package -p forge-document -p forge-docx -p forge-xlsx -p forge-pdf -p forge-tree-doc -p forge-pptx -p delino-forge
+          cargo clippy -p react-forge-node -p forge-package -p forge-document -p forge-docx -p forge-xlsx -p forge-pdf --all-targets -- -D warnings
+      - name: Build and test library and installed CLI
+        run: pnpm exec turbo run build typecheck lint test --filter=react-forge
+      - name: Install test-only renderers
+        run: |
+          brew install --cask libreoffice
+          brew install poppler
+          python3 -m venv "$RUNNER_TEMP/react-forge-python"
+          "$RUNNER_TEMP/react-forge-python/bin/pip" install -r packages/react-forge/scripts/render-requirements.txt
+      - name: Verify generated and edited Office and native PDF output
+        env:
+          REACT_FORGE_PYTHON: ${{ runner.temp }}/react-forge-python/bin/python
+        run: pnpm --filter react-forge test:render --output "$RUNNER_TEMP/react-forge-render"
+      - name: Measure representative and near-limit workloads
+        run: pnpm --filter react-forge benchmark --output "$RUNNER_TEMP/react-forge-benchmark.json"
+      - name: Retain rendering and benchmark evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: react-forge-macos-arm64
+          path: |
+            ${{ runner.temp }}/react-forge-render
+            ${{ runner.temp }}/react-forge-benchmark.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Remove generated package output
+        if: always()
+        run: rm -rf packages/react-forge/dist
+      - name: Save pnpm cache after successful main validation
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.ci-node.outputs.cache-path }}
+          key: ${{ steps.ci-node.outputs.cache-key }}
+
   linux-packages:
     needs: changes
     if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['linux-packages'] }}
@@ -1733,6 +1794,7 @@ jobs:
       - rust-test
       - forge-test
       - forge-render
+      - react-forge
       - node-public-docs-test
       - node-clibox-test
       - node-pnport-test

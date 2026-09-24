@@ -39,6 +39,7 @@ Each project must have one project index document and one or more domain contrac
 - [Complete issue requirements](packages-react-forge-requirements.md)
 - [Node sessions and CLI](packages-react-forge-contract.md)
 - [Native engines and preservation](crates-react-forge-contract.md)
+- [Validation and benchmarks](packages-react-forge-validation.md)
 
 ### Forge
 - [Project index](project-forge.md)

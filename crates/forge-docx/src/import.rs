@@ -32,79 +32,94 @@ pub struct Imported {
     pub main: String,
 }
 
+fn supported_attributes(node: roxmltree::Node<'_, '_>) -> bool {
+    node.attributes().all(|attribute| {
+        matches!(
+            attribute.namespace(),
+            None | Some(W) | Some(R) | Some("http://www.w3.org/XML/1998/namespace")
+        )
+    })
+}
+
+fn supported_word_element(n: roxmltree::Node<'_, '_>) -> bool {
+    n.tag_name().namespace() == Some(W)
+        && matches!(
+            n.tag_name().name(),
+            "p" | "pPr"
+                | "pStyle"
+                | "r"
+                | "rPr"
+                | "t"
+                | "tab"
+                | "br"
+                | "b"
+                | "bCs"
+                | "i"
+                | "iCs"
+                | "u"
+                | "color"
+                | "sz"
+                | "szCs"
+                | "rFonts"
+                | "lang"
+                | "rtl"
+                | "bidi"
+                | "jc"
+                | "spacing"
+                | "ind"
+                | "keepNext"
+                | "keepLines"
+                | "pageBreakBefore"
+                | "widowControl"
+                | "outlineLvl"
+                | "numPr"
+                | "numId"
+                | "ilvl"
+                | "hyperlink"
+                | "shd"
+                | "highlight"
+                | "noProof"
+                | "caps"
+                | "smallCaps"
+                | "strike"
+                | "vertAlign"
+                | "tbl"
+                | "tblPr"
+                | "tblStyle"
+                | "tblW"
+                | "tblLayout"
+                | "tblLook"
+                | "tblGrid"
+                | "gridCol"
+                | "tblBorders"
+                | "top"
+                | "left"
+                | "bottom"
+                | "right"
+                | "insideH"
+                | "insideV"
+                | "tblCellMar"
+                | "tr"
+                | "trPr"
+                | "tblHeader"
+                | "trHeight"
+                | "cantSplit"
+                | "tc"
+                | "tcPr"
+                | "tcW"
+                | "gridSpan"
+                | "vMerge"
+                | "vAlign"
+                | "tcBorders"
+                | "tcMar"
+        )
+}
+
 fn supported_word_node(node: roxmltree::Node<'_, '_>) -> bool {
     node.descendants().filter(|n| n.is_element()).all(|n| {
-        n.tag_name().namespace() == Some(W)
-            && matches!(
-                n.tag_name().name(),
-                "p" | "pPr"
-                    | "pStyle"
-                    | "r"
-                    | "rPr"
-                    | "t"
-                    | "tab"
-                    | "br"
-                    | "b"
-                    | "bCs"
-                    | "i"
-                    | "iCs"
-                    | "u"
-                    | "color"
-                    | "sz"
-                    | "szCs"
-                    | "rFonts"
-                    | "lang"
-                    | "rtl"
-                    | "bidi"
-                    | "jc"
-                    | "spacing"
-                    | "ind"
-                    | "keepNext"
-                    | "keepLines"
-                    | "pageBreakBefore"
-                    | "widowControl"
-                    | "outlineLvl"
-                    | "numPr"
-                    | "numId"
-                    | "ilvl"
-                    | "hyperlink"
-                    | "shd"
-                    | "highlight"
-                    | "noProof"
-                    | "caps"
-                    | "smallCaps"
-                    | "strike"
-                    | "vertAlign"
-                    | "tbl"
-                    | "tblPr"
-                    | "tblStyle"
-                    | "tblW"
-                    | "tblLayout"
-                    | "tblLook"
-                    | "tblGrid"
-                    | "gridCol"
-                    | "tblBorders"
-                    | "top"
-                    | "left"
-                    | "bottom"
-                    | "right"
-                    | "insideH"
-                    | "insideV"
-                    | "tblCellMar"
-                    | "tr"
-                    | "trPr"
-                    | "tblHeader"
-                    | "trHeight"
-                    | "cantSplit"
-                    | "tc"
-                    | "tcPr"
-                    | "tcW"
-                    | "gridSpan"
-                    | "vMerge"
-                    | "vAlign"
-                    | "tcBorders"
-                    | "tcMar"
-            )
+        supported_word_element(n)
+            // Cell replacement retains its original opening/closing wrapper.
+            && ((n == node && node.has_tag_name((W, "tc"))) || supported_attributes(n))
     })
 }
 
@@ -118,6 +133,28 @@ fn drawing_kind(
         .filter(|n| n.has_tag_name((W, "drawing")))
         .collect();
     if drawings.len() != 1 || node.descendants().any(|n| n.has_tag_name((W, "t"))) {
+        return Ok(None);
+    }
+    // Bookmarks, field/revision markers and foreign paragraph/run attributes
+    // outside the drawing are not owned by a simple image/chart replacement.
+    if node.descendants().filter(|n| n.is_element()).any(|n| {
+        if n.ancestors()
+            .any(|ancestor| ancestor.has_tag_name((W, "drawing")))
+        {
+            return !supported_attributes(n)
+                || !matches!(
+                n.tag_name().namespace(),
+                Some(W)
+                    | Some(A)
+                    | Some(C)
+                    | Some(
+                        "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
+                    )
+                    | Some("http://schemas.openxmlformats.org/drawingml/2006/picture")
+            );
+        }
+        !supported_word_element(n) || !supported_attributes(n)
+    }) {
         return Ok(None);
     }
     // Arbitrary DrawingML groups/effects/anchors cannot be replaced as a simple
@@ -139,6 +176,17 @@ fn drawing_kind(
         if doc.descendants().any(|n| {
             matches!(n.tag_name().name(), "extLst" | "externalData")
                 && n.tag_name().namespace() != Some(C)
+        }) {
+            return Ok(None);
+        }
+        if doc.descendants().filter(|n| n.is_element()).any(|n| {
+            !matches!(n.tag_name().namespace(), Some(C) | Some(A))
+                || n.attributes().any(|attribute| {
+                    !matches!(
+                        attribute.namespace(),
+                        None | Some(R) | Some("http://www.w3.org/XML/1998/namespace")
+                    )
+                })
         }) {
             return Ok(None);
         }

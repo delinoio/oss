@@ -26,7 +26,7 @@ const devhudTauri = JSON.parse(readFileSync(`${root}/apps/devhud/src-tauri/tauri
 
 const legacyJobs = [
   "go-quality", "go-test", "repository-environment", "rust-fmt", "rust-clippy", "rust-test",
-  "forge-test", "forge-render", "linux-packages", "node-public-docs-test", "node-clibox-test", "node-pnport-test", "pnport-native",
+  "forge-test", "forge-render", "react-forge", "linux-packages", "node-public-docs-test", "node-clibox-test", "node-pnport-test", "pnport-native",
 ];
 const devhudJobs = [
   "devhud-frontend", "devhud-extension", "devhud-rust-conformance", "devhud-security", "devhud-desktop",
@@ -420,4 +420,18 @@ test("Forge retains three-platform interoperability and mandatory Linux renderin
   const renderCommands = workflow.jobs["forge-render"].steps.map(({ run }) => run ?? "").join("\n");
   assert.match(renderCommands, /libreoffice-impress poppler-utils/u);
   assert.match(renderCommands, /--test render -- --ignored/u);
+});
+
+
+test("React Forge validates its supported runtime with uncached native and rendering work", () => {
+  const job = workflow.jobs["react-forge"];
+  assert.equal(job["runs-on"], "macos-15");
+  const commands = job.steps.map(({ run }) => run ?? "").join("\n");
+  for (const command of ["forge-package", "forge-document", "forge-docx", "forge-xlsx", "forge-pdf", "react-forge-node", "turbo run build typecheck lint test --filter=react-forge", "test:render", "benchmark", "render-requirements.txt"]) assert.ok(commands.includes(command), command);
+  assert.equal(namedStep(job, "Remove generated package output").if, "always()");
+  const evidence = namedStep(job, "Retain rendering and benchmark evidence");
+  assert.equal(evidence.with["retention-days"], 7);
+  assert.equal(evidence.if, "always()");
+  const tasks = JSON.parse(readFileSync(`${root}/packages/react-forge/turbo.json`, "utf8")).tasks;
+  for (const name of ["build", "test", "test:render", "benchmark"]) assert.equal(tasks[name].cache, false, name);
 });

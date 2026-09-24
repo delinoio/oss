@@ -43,3 +43,13 @@ fn image_dimensions_are_bounded_before_pixel_decode() {
         ErrorCode::ResourceLimit
     );
 }
+
+#[test]
+fn image_byte_budget_rejects_before_decoding() {
+    assert_eq!(
+        forge_document::image(&vec![0; 64 * 1024 * 1024 + 1])
+            .unwrap_err()
+            .code,
+        ErrorCode::ResourceLimit
+    );
+}

@@ -20,6 +20,7 @@ Provide private React document sessions and a TSX task CLI for authoring and pre
 - [Complete requirements](packages-react-forge-requirements.md).
 - [Node session and CLI contract](packages-react-forge-contract.md).
 - [Native engines and preservation contract](crates-react-forge-contract.md).
+- [Validation and benchmark evidence](packages-react-forge-validation.md).
 - [Existing Forge foundation](crates-forge-foundation.md).
 
 ## Cross-Domain Invariants

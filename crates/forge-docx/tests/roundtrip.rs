@@ -441,3 +441,74 @@ fn cell_wrapper_and_empty_section_header_boundaries_are_preserved() {
         assert!(!parsed.descendants().any(|n| n.has_tag_name((W, "t"))));
     }
 }
+
+#[test]
+fn foreign_paragraph_attributes_and_drawing_bookmarks_remain_opaque() {
+    let mut parts = read(include_bytes!("fixtures/charts.docx")).unwrap();
+    let original = std::str::from_utf8(&parts["word/document.xml"]).unwrap();
+    let parsed = xml(original.as_bytes()).unwrap();
+    let text_paragraph = parsed
+        .descendants()
+        .find(|n| {
+            n.has_tag_name((W, "p")) && n.descendants().any(|child| child.has_tag_name((W, "t")))
+        })
+        .unwrap();
+    let picture = parsed
+        .descendants()
+        .find(|n| {
+            n.has_tag_name((W, "p"))
+                && n.descendants()
+                    .any(|child| child.has_tag_name((forge_package::A, "blip")))
+        })
+        .unwrap();
+    let mut modified = original.to_string();
+    let mut replacements = vec![
+        (
+            text_paragraph.range(),
+            original[text_paragraph.range()].replacen(
+                "<w:p",
+                "<w:p xmlns:custom=\"urn:custom\" custom:meaning=\"protected\"",
+                1,
+            ),
+        ),
+        (
+            picture.range(),
+            original[picture.range()].replacen(
+                "</w:p>",
+                "<w:bookmarkStart w:id=\"919\" w:name=\"protected\"/><w:bookmarkEnd \
+                 w:id=\"919\"/></w:p>",
+                1,
+            ),
+        ),
+    ];
+    replacements.sort_by_key(|(range, _)| std::cmp::Reverse(range.start));
+    for (range, replacement) in replacements {
+        modified.replace_range(range, &replacement);
+    }
+    parts.insert("word/document.xml".into(), modified.into_bytes());
+    let input = forge_package::write(&parts).unwrap();
+    let imported = import(&input).unwrap();
+    let main = std::str::from_utf8(&imported.parts["word/document.xml"]).unwrap();
+    let protected: Vec<_> = imported
+        .targets
+        .iter()
+        .filter(|target| target.region.part == "word/document.xml")
+        .filter(|target| {
+            let content = &main[target.region.range.clone()];
+            content.contains("custom:meaning") || content.contains("w:bookmarkStart")
+        })
+        .collect();
+    assert_eq!(protected.len(), 2);
+    for target in protected {
+        assert_eq!(target.kind, TargetKind::Opaque);
+        assert!(
+            replace(
+                &imported,
+                &[(target.id, vec![paragraph("Rejected")])],
+                &Assets::new()
+            )
+            .is_err()
+        );
+    }
+    assert_eq!(replace(&imported, &[], &Assets::new()).unwrap(), input);
+}

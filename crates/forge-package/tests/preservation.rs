@@ -236,3 +236,31 @@ fn legacy_signed_strict_and_non_xml_extension_case_cannot_bypass_package_checks(
         ErrorCode::UnsupportedPackage
     );
 }
+
+#[test]
+fn package_input_and_output_part_expansion_limits_are_independent() {
+    assert_eq!(
+        read(&vec![0; MAX_PACKAGE_BYTES + 1]).unwrap_err().code,
+        ErrorCode::ResourceLimit
+    );
+    let mut parts = Package::from([("oversized.bin".into(), vec![0; MAX_PART_BYTES + 1])]);
+    assert_eq!(write(&parts).unwrap_err().code, ErrorCode::ResourceLimit);
+    parts.clear();
+    for i in 0..9 {
+        parts.insert(format!("{i}.bin"), vec![0; MAX_PART_BYTES]);
+    }
+    assert_eq!(write(&parts).unwrap_err().code, ErrorCode::ResourceLimit);
+    parts.clear();
+    for i in 0..=MAX_ENTRIES {
+        parts.insert(format!("{i}.bin"), Vec::new());
+    }
+    assert_eq!(write(&parts).unwrap_err().code, ErrorCode::ResourceLimit);
+    assert_eq!(
+        xml(&vec![b' '; MAX_PART_BYTES + 1]).unwrap_err().code,
+        ErrorCode::ResourceLimit
+    );
+    let at_depth = format!("{}{}", "<a>".repeat(127), "</a>".repeat(127));
+    assert!(xml(at_depth.as_bytes()).is_ok());
+    let at_nodes = format!("<root>{}</root>", "<n/>".repeat(999_998));
+    assert!(xml(at_nodes.as_bytes()).is_ok());
+}
