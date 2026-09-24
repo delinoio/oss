@@ -289,6 +289,19 @@ pub(crate) fn chart_parts(n: &Node) -> Result<(Vec<u8>, Vec<u8>)> {
     let workbook = pptx::chart::xlsx::generate_category_xlsx(&source).map_err(failure)?;
     Ok((bytes, workbook))
 }
+pub(crate) fn chart_frame(n: &Node, native_id: u32, frame: Frame) -> Result<String> {
+    let id = n.id.ok_or_else(|| failure("id"))?;
+    Ok(ns(ShapeTree::new_chart_graphic_frame_xml(
+        ShapeId(native_id),
+        &n.key.clone().unwrap_or_else(|| id.to_string()),
+        &format!("rIdForge{}", id.simple()),
+        emu(frame.x),
+        emu(frame.y),
+        emu(frame.width),
+        emu(frame.height),
+    )))
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn emit_node(
     parts: &mut Package,
@@ -432,15 +445,7 @@ pub(crate) fn emit_node(
                 &format!("{R}/chart"),
                 &format!("/{chart_path}"),
             )?;
-            ns(ShapeTree::new_chart_graphic_frame_xml(
-                sid,
-                &name,
-                &rid,
-                emu(f.x),
-                emu(f.y),
-                emu(f.width),
-                emu(f.height),
-            ))
+            chart_frame(n, native_id, f)?
         }
         NodeKind::Table => {
             let s = ns(ShapeTree::new_table_xml(

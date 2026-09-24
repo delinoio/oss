@@ -766,25 +766,16 @@ pub fn update(
                     "Unsupported native content cannot be edited or moved",
                 );
             }
-            // Existing chart parts must only be changed by the selective editor below.
-            // Emission is used to obtain geometry, never to reserialize their package.
-            let mut scratch;
-            let destination = if old.is_some() && n.kind == NodeKind::Chart {
-                scratch = parts.clone();
-                &mut scratch
+            // Existing chart parts belong to the selective editor below. Build
+            // only a frame fragment; change_geometry copies its transform, not
+            // its synthetic relationship. No package clone or workbook generation.
+            let fragment = if old.is_some() && n.kind == NodeKind::Chart {
+                emit::chart_frame(n, b.shape_id, placement.nodes[&id].frame)?
             } else {
-                &mut parts
+                emit::emit_node(
+                    &mut parts, path, n, after, &placement, assets, b.shape_id, &bindings,
+                )?
             };
-            let fragment = emit::emit_node(
-                destination,
-                path,
-                n,
-                after,
-                &placement,
-                assets,
-                b.shape_id,
-                &bindings,
-            )?;
             if let Some(old) = old {
                 let mut current = parts[path].clone();
                 if n.kind != old.kind {

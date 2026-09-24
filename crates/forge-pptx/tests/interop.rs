@@ -737,3 +737,76 @@ fn horizontal_bars_and_series_resize_keep_cache_and_workbook_in_sync() {
     let workbook = read_package(workbook.1).unwrap();
     assert!(xml_part(&workbook, "xl/worksheets/sheet1.xml").contains("Third series"));
 }
+#[test]
+fn moving_existing_chart_preserves_chart_workbook_and_relationship_bytes() {
+    let imported = import(EXTERNAL).unwrap();
+    let chart = target(&imported.document, NodeKind::Chart);
+    let frame = Frame {
+        x: 550.,
+        y: 140.,
+        width: 350.,
+        height: 250.,
+    };
+    let next = patch(
+        &imported,
+        vec![Operation::SetFrame {
+            target: chart.clone(),
+            frame,
+        }],
+    );
+    let output = update(
+        EXTERNAL,
+        &imported.document,
+        &imported.bindings,
+        &next,
+        &imported.assets,
+        imported.document_id,
+        1,
+    )
+    .unwrap();
+    let original = read_package(EXTERNAL).unwrap();
+    let result = read_package(&output).unwrap();
+    for (path, bytes) in &original {
+        if path.starts_with("ppt/charts/")
+            || path.starts_with("ppt/embeddings/")
+            || path == "ppt/slides/_rels/slide1.xml.rels"
+        {
+            assert_eq!(result[path], *bytes, "preserved {path}");
+        }
+    }
+    assert!(!result.keys().any(|p| p.starts_with("ppt/charts/forge-")));
+    assert_eq!(
+        import(&output)
+            .unwrap()
+            .document
+            .find(&chart)
+            .unwrap()
+            .frame,
+        Some(frame)
+    );
+    let slide = xml_part(&result, "ppt/slides/slide1.xml");
+    let xml = roxmltree::Document::parse(&slide).unwrap();
+    let chart_id = imported.bindings[&chart.node_id.unwrap()]
+        .shape_id
+        .to_string();
+    let native = xml
+        .descendants()
+        .find(|n| n.tag_name().name() == "cNvPr" && n.attribute("id") == Some(chart_id.as_str()))
+        .unwrap()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap();
+    let offset = native
+        .descendants()
+        .find(|n| n.tag_name().name() == "off")
+        .unwrap();
+    assert_eq!(
+        offset.attribute("x").unwrap().parse::<i64>().unwrap(),
+        550 * 12700
+    );
+    assert_eq!(
+        offset.attribute("y").unwrap().parse::<i64>().unwrap(),
+        140 * 12700
+    );
+}
