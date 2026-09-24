@@ -395,6 +395,10 @@ jobs:
     name: React Forge ${{ matrix.id }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
+    env:
+      # Native tests and the package build share compiled dependencies while
+      # every test, CLI consumer and rendering check still executes uncached.
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target/react-forge
     defaults:
       run:
         shell: bash
@@ -422,7 +426,6 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-on-failure: false
           workspaces: |
-            . -> target
             . -> target/react-forge
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
@@ -446,6 +449,8 @@ jobs:
         env:
           REACT_FORGE_WINDOWS_CONSOLE_TEST: "1"
         run: cargo test --target ${{ matrix.target }} -p react-forge-node --test windows_console -- --nocapture
+      - name: Generate travel investor example
+        run: pnpm --filter @delino/react-forge cli run examples/travel-ir.tsx --output "$RUNNER_TEMP/react-forge-travel-ir.pptx" --json
       - name: Install test-only macOS renderers
         if: runner.os == 'macOS'
         run: |
@@ -474,6 +479,7 @@ jobs:
           path: |
             ${{ runner.temp }}/react-forge-render
             ${{ runner.temp }}/react-forge-benchmark.json
+            ${{ runner.temp }}/react-forge-travel-ir.pptx
           if-no-files-found: error
           retention-days: 7
       - name: Remove generated package output

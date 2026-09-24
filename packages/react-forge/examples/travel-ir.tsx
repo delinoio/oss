@@ -31,7 +31,9 @@ function Copy({ x, y, w, h, size = 20, color = palette.ink, bold = false, childr
   color?: string; bold?: boolean; children: string;
 }) {
   return <Text frame={{ x, y, width: w, height: h }}
-    style={{ fontSize: size, color, bold }} overflow="error">{children}</Text>;
+    // Installed host fonts have different metrics. Bounded shrink preserves the
+    // designed frames without clipping or reducing captions below 10 points.
+    style={{ fontSize: size, color, bold }} overflow="shrink" minFontSize={Math.max(10, size * 0.85)}>{children}</Text>;
 }
 
 function Page({ number, title, subtitle, dark = false, note, children }: {
@@ -148,7 +150,7 @@ function Distribution() {
   return <Page number={7} title="Win the next trip through a useful plan."
     subtitle="Three measurable acquisition experiments, before broad paid expansion."
     note="Proposed experiments. Scale a channel only after retained contribution exceeds acquisition cost.">
-    <Table frame={{ x: 48, y: 259, width: 864, height: 208 }} columns={[184, 390, 290]}
+    <Table frame={{ x: 48, y: 259, width: 864, height: 224 }} columns={[184, 390, 290]}
       style={{ fontSize: 18, color: palette.ink }}>
       <TableRow>{["Channel", "First experiment", "Decision metric"].map(label =>
         <Cell key={label} fill={palette.ink} style={{ bold: true, color: palette.white }}>{label}</Cell>)}</TableRow>
@@ -241,7 +243,10 @@ export default async function task({ signal }: { signal: AbortSignal }) {
       }, { signal })),
     );
     signal.throwIfAborted();
-    await session.render(<Presentation width={960} height={540} fontFamily="Avenir Next">
+    // Use a host-native family so Office can resolve the same reference used
+    // during authoring. Linux's documented font setup includes Noto Sans.
+    const fontFamily = process.platform === "darwin" ? "Avenir Next" : process.platform === "win32" ? "Segoe UI" : "Noto Sans";
+    await session.render(<Presentation width={960} height={540} fontFamily={fontFamily}>
       <Cover coast={coast!} /><Problem /><Product product={product!} /><Experience />
       <Market /><Economics /><Distribution /><Milestones /><Advantage /><Roadmap /><Ask />
       <Close horizon={horizon!} />

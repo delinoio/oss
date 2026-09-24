@@ -436,6 +436,7 @@ test("React Forge validates its supported runtime with uncached native and rende
     assert.equal(host.target, declared.target);
   }
   assert.match(namedStep(job, "Verify Windows console cancellation").run, /windows_console/u);
+  assert.match(namedStep(job, "Generate travel investor example").run, /examples\/travel-ir\.tsx/u);
   assert.match(namedStep(job, "Verify supported host and native contracts").run, /--include-ignored/u);
   const commands = job.steps.map(({ run }) => run ?? "").join("\n");
   for (const command of ["forge-package", "forge-document", "forge-docx", "forge-xlsx", "forge-pdf", "react-forge-node", "turbo run build typecheck lint test --filter=@delino/react-forge", "test:render", "benchmark", "render-requirements.txt"]) assert.ok(commands.includes(command), command);

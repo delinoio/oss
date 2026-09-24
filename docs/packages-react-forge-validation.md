@@ -4,7 +4,7 @@
 Acceptance evidence and repeatable validation for `packages/react-forge`, its native engines and the shared Forge boundary. The complete requirements remain normative; this document records evidence without expanding platform, performance, Office or accessibility claims.
 
 ## Runtime and Language
-Parley/Fontique 0.9.0 (CoreText enumeration and macOS 15 CJK fallback fixes), Node.js 24.20.0, React 19.2.8, react-reconciler 0.33.0, TypeScript 5.9.3 and pinned Rust nightly-2026-01-01 on macOS arm64. Test scripts use JavaScript and Python; production generation uses only JavaScript and Rust.
+Parley/Fontique 0.9.0 (CoreText enumeration and macOS 15 CJK fallback fixes), Node.js 24, React 19.2.8, react-reconciler 0.33.0, TypeScript 5.9.3 and pinned Rust nightly-2026-01-01 on macOS/Windows/glibc Linux x64/arm64. Historical local measurements below used Node.js 24.20.0 on macOS arm64. Test scripts use JavaScript and Python; production generation uses only JavaScript and Rust.
 
 ## Users and Operators
 Repository developers and CI maintainers reproducing document, preservation and session behavior.
@@ -115,4 +115,19 @@ Update evidence and relevant project/native/Node contracts when formats, preserv
 - [Workflow contract](repository-workflow-contract.md).
 
 ## Cross-platform extension
-The 2026-09-24 PR #970 follow-up expands the initial macOS-arm64 observations above to six native hosts. The CI matrix runs build, native and React regressions, installed consumers, system-font tests and benchmarks on every host, plus isolated Windows console cancellation and macOS/Linux render checks. The initial macOS evidence records remain historical observations rather than proof for another operating system. Cross-platform CI results must be recorded after the matching native jobs actually execute.
+The 2026-09-24 PR #970 follow-up expands the initial macOS-arm64 observations above to six native hosts. The CI matrix runs build, native and React regressions, installed consumers, system-font tests, ROAM example generation and benchmarks on every host, plus isolated Windows console cancellation and macOS/Linux render checks. Each Rust invocation selects the matching target explicitly, including Windows arm64, and Node asserts its actual host architecture. The initial macOS evidence records remain historical observations rather than proof for another operating system.
+
+| Native ID | Runner | Native target |
+| --- | --- | --- |
+| `darwin-x64` | `macos-15-intel` | `x86_64-apple-darwin` |
+| `darwin-arm64` | `macos-15` | `aarch64-apple-darwin` |
+| `linux-x64-gnu` | `ubuntu-22.04` | `x86_64-unknown-linux-gnu` |
+| `linux-arm64-gnu` | `ubuntu-22.04-arm` | `aarch64-unknown-linux-gnu` |
+| `win32-x64-msvc` | `windows-2022` | `x86_64-pc-windows-msvc` |
+| `win32-arm64-msvc` | `windows-11-arm` | `aarch64-pc-windows-msvc` |
+
+The [initial matrix](https://github.com/delinoio/oss/actions/runs/35992992719) at `fba6059d` passed both macOS and Windows architectures and exposed Linux's monochrome emoji fallback failure. After the color-first grapheme repair, both Linux jobs, both Windows jobs and macOS arm64 passed at `6fa32003` in the [runtime validation run](https://github.com/delinoio/oss/actions/runs/35994740028). Final follow-up results, including the complete investor example on every host, are recorded in [PR #970's checks](https://github.com/delinoio/oss/pull/970/checks) and PR description. These are native executions, not cross-compilation-only evidence.
+
+Local follow-up verification passed root `cargo test` (1,883 passed; three existing ignored tests), targeted native Clippy with warnings denied, 45 package tests, typecheck/lint, 73 CI contract tests and workflow validation. Seven generated/edited LibreOffice/Poppler cases passed after the font repair. macOS source protection additionally covers removed case and Unicode-normalization aliases.
+
+The investor example selects Avenir Next/Segoe UI/Noto Sans by host, keeps body frames intact with bounded shrink, and accommodates two-line table cells. A caller-only DejaVu Sans probe reproducing Linux's wider fallback now exports successfully. The refreshed macOS deck retains all 144 extracted native text runs, its 12 slides, native table/chart/workbook and original text sizes. Raster comparison leaves 11 slides byte-for-byte visually unchanged; only slide 7's increased table row height differs, and that slide was visually checked. The updated artifact's SHA-256 is `30e1cebee59cfaa6e0702814d1003d6f9c7744186e1ab6b723ded36ea902f878`. Package integrity, geometry/font policy and independent Artifact Tool import passed without rewriting the Forge export. This does not claim identical font metrics or Office rendering across platforms.

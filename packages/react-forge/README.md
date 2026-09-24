@@ -14,7 +14,7 @@ pnpm --filter @delino/react-forge cli run examples/pdf.tsx --output report.pdf
 pnpm exec turbo run build typecheck lint test --filter=@delino/react-forge
 ```
 
-The supported native hosts are macOS x64/arm64, Windows x64/arm64 (MSVC), and glibc Linux x64/arm64. Install the matching Rust toolchain and platform build tools (Xcode command-line tools, MSVC C++ Build Tools, or a Linux C toolchain). Linux also needs Fontconfig; install appropriate CJK/RTL/color-emoji fonts, or register caller fonts. Alpine/musl and other architectures are unsupported. Each build creates an artifact for the current host; rebuild when moving a workspace or private archive to another host. `capabilities.runtime.hosts` enumerates the supported IDs.
+The supported native hosts are macOS x64/arm64, Windows x64/arm64 (MSVC), and glibc Linux x64/arm64. Install the matching Rust target and platform build tools (Xcode command-line tools, MSVC C++ Build Tools, or a Linux C toolchain). Linux builds also need `pkg-config` and the Fontconfig development package (`libfontconfig1-dev` on Ubuntu); runtime font discovery needs Fontconfig. Install appropriate CJK/RTL/color-emoji fonts, or register caller fonts. Alpine/musl and other architectures are unsupported. Each build creates an artifact for the current host; rebuild when moving a workspace or private archive to another host. `capabilities.runtime.hosts` enumerates the supported IDs.
 
 The package remains private and workspace-only. Generation has no Office, LibreOffice, Python, external conversion or runtime download dependency. Generated `dist` is untracked and removed from final worktrees. The tests also pack the built package into a temporary consumer to exercise its installed CLI.
 

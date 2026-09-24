@@ -4,7 +4,7 @@
 
 ## Generate the presentation
 
-From the repository root on the supported Node.js 24/macOS arm64 host:
+From the repository root on Node.js 24 and any supported macOS, Windows or glibc Linux x64/arm64 host (replace the output with a native writable path on Windows):
 
 ```sh
 pnpm --filter @delino/react-forge build
@@ -13,7 +13,7 @@ pnpm --filter @delino/react-forge cli run examples/travel-ir.tsx --output /tmp/r
 
 The CLI rejects an existing output unless `--overwrite` is supplied. The task resolves assets relative to its own module, registers the three images concurrently with the caller's abort signal, and disposes its session if authoring fails. Normal CLI completion also disposes the returned session. No network access, image generation, or presentation converter is required to run the example.
 
-The authoring canvas is 960 × 540 points (16:9). Avenir Next is the designed slide font, available on the supported macOS host; the native chart retains Forge's Calibri label style. Fonts are referenced, not redistributed. Other Office hosts may substitute unavailable fonts. The interface mockup and travel imagery are raster assets; surrounding text, the acquisition table on slide 7, and the bookings chart on slide 8 remain editable Office objects. The mockup is not an implemented app screen.
+The authoring canvas is 960 × 540 points (16:9). Slide text selects Avenir Next on macOS, Segoe UI on Windows, and Noto Sans on Linux (install `fonts-noto-core` on Ubuntu). Text frames permit at most 15% font reduction with a 10-point caption floor, and table rows accommodate two lines, to handle host font metrics without clipping. The native chart retains Forge's Calibri label style. Fonts are referenced, not redistributed, and Office hosts may substitute unavailable fonts. The six-host CI matrix generates the complete example on each host; the original macOS visual review is not a claim of identical typography on other systems. The interface mockup and travel imagery are raster assets; surrounding text, the acquisition table on slide 7, and the bookings chart on slide 8 remain editable Office objects. The mockup is not an implemented app screen.
 
 ## Story and reusable components
 
