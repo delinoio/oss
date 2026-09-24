@@ -34,6 +34,7 @@ const (
 	TurnPlanEvent             EventKind = "turn-plan"
 	TurnDiffEvent             EventKind = "turn-diff"
 	InteractionRequestedEvent EventKind = "interaction-requested"
+	InteractionClosedEvent    EventKind = "interaction-closed"
 )
 
 type MessageRole string
@@ -60,31 +61,32 @@ type Message struct {
 }
 
 type Event struct {
-	Kind          EventKind
-	ThreadID      domain.ID
-	TurnID        domain.ID
-	Turn          *Turn
-	Status        *ThreadStatus
-	Message       *Message
-	TextDelta     string
-	ItemID        string
-	RequestID     domain.ID
-	InputID       domain.ID
-	Action        TurnAction
-	Problem       *domain.Error
-	Late          bool
-	Correlated    bool
-	EmittedAtMS   *int64
-	Metadata      MetadataKind
-	Usage         *domain.NativeTokenUsage
-	Notice        domain.NativeNotice
-	Tool          *Tool
-	ToolInput     *ToolInput
-	Artifact      *Artifact
-	ArtifactDelta *ArtifactDelta
-	Plan          *PlanUpdate
-	Diff          *string
-	Interaction   *Interaction
+	Kind             EventKind
+	ThreadID         domain.ID
+	TurnID           domain.ID
+	Turn             *Turn
+	Status           *ThreadStatus
+	Message          *Message
+	TextDelta        string
+	ItemID           string
+	RequestID        domain.ID
+	InputID          domain.ID
+	Action           TurnAction
+	Problem          *domain.Error
+	Late             bool
+	Correlated       bool
+	EmittedAtMS      *int64
+	Metadata         MetadataKind
+	Usage            *domain.NativeTokenUsage
+	Notice           domain.NativeNotice
+	Tool             *Tool
+	ToolInput        *ToolInput
+	Artifact         *Artifact
+	ArtifactDelta    *ArtifactDelta
+	Plan             *PlanUpdate
+	Diff             *string
+	Interaction      *Interaction
+	InteractionState *InteractionStatus
 	// Native is present only for a still-private extension, including unrelated
 	// subagent events. It must pass a dedicated typed adapter before publication;
 	// neither it nor raw provider errors may be serialized as a product event.
@@ -197,6 +199,11 @@ func (c *Client) observeEventLocked(native nativewire.Event) (Event, error) {
 		if turn.ID != c.execution.active {
 			return Event{}, incompatible()
 		}
+		if turn.Status.terminal() {
+			if err := c.endInteractionsLocked(turn.ID); err != nil {
+				return Event{}, err
+			}
+		}
 		prior.Turn = turn
 		c.execution.turns[turn.ID] = prior
 		if turn.Status.terminal() {
@@ -208,6 +215,8 @@ func (c *Client) observeEventLocked(native nativewire.Event) (Event, error) {
 			// uncertain send or a previous Stop/failed execution pause.
 		}
 		return event, nil
+	case "serverRequest/resolved":
+		return c.observeInteractionClosedLocked(native)
 	case "thread/status/changed":
 		var params struct {
 			ThreadID domain.ID    `json:"threadId"`

@@ -46,6 +46,14 @@ func (f *threadFixture) handleTurn(id json.RawMessage, method string, raw json.R
 	}
 	late := func() { time.Sleep(200 * time.Millisecond) }
 	switch method {
+	case "fixture/question":
+		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"id": params["requestId"], "method": "item/tool/requestUserInput", "params": map[string]any{"threadId": f.thread["id"], "turnId": f.turn, "itemId": "question-tool", "isBlocking": true, "questions": params["questions"]}})
+		write(id, map[string]any{})
+		if f.mode == "thread-turn-questions-blocked" {
+			// The owned fixture intentionally stops reading its pipe so a large
+			// answer is canceled after native delivery becomes uncertain.
+			time.Sleep(30 * time.Second)
+		}
 	case "fixture/notify":
 		f.notify(params["method"].(string), params["params"])
 		write(id, map[string]any{})

@@ -65,14 +65,15 @@ type inputAttempt struct {
 }
 
 type executionState struct {
-	thread    Thread
-	settings  EffectiveSettings
-	active    domain.ID
-	paused    bool
-	interrupt domain.ID
-	turns     map[domain.ID]trackedTurn
-	inputs    map[domain.ID]inputAttempt
-	pending   map[domain.ID]turnOperation
+	thread       Thread
+	settings     EffectiveSettings
+	active       domain.ID
+	paused       bool
+	interrupt    domain.ID
+	turns        map[domain.ID]trackedTurn
+	inputs       map[domain.ID]inputAttempt
+	pending      map[domain.ID]turnOperation
+	interactions interactionState
 }
 
 const maxTrackedTurns = 4096
@@ -122,6 +123,9 @@ func (c *Client) eligibleTurnLocked(allowRecovery bool) error {
 	}
 	if !allowRecovery && c.problem != nil {
 		return c.problem
+	}
+	if !allowRecovery && c.execution.interactions.blocksInput() {
+		return interactionConflict()
 	}
 	if c.execution.thread.DirectInput == nil || !*c.execution.thread.DirectInput {
 		return unsupportedSettings()

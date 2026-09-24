@@ -67,9 +67,6 @@ type Interaction struct {
 	NativeID  NativeRequestID
 	Kind      InteractionKind
 	Questions *QuestionRequest
-	// Raw request data and the pipe reply token remain private. A caller cannot
-	// reconstruct reply authority from a serialized normalized observation.
-	native nativewire.Event
 }
 
 func (c *Client) observeInteractionLocked(native nativewire.Event) (Event, error) {
@@ -108,7 +105,10 @@ func (c *Client) observeInteractionLocked(native nativewire.Event) (Event, error
 		seen[question.ID] = true
 		request.Questions = append(request.Questions, question)
 	}
-	interaction := &Interaction{ID: native.Token, NativeID: nativeID, Kind: UserInputInteraction, Questions: request, native: native}
+	interaction := &Interaction{ID: native.Token, NativeID: nativeID, Kind: UserInputInteraction, Questions: request}
+	if err := c.retainQuestionLocked(native, params.TurnID, params.ItemID, interaction, known && !turn.Turn.Status.terminal()); err != nil {
+		return Event{}, err
+	}
 	return Event{Kind: InteractionRequestedEvent, ThreadID: c.thread, TurnID: params.TurnID, ItemID: params.ItemID, Correlated: known, Late: turn.Turn.Status.terminal(), Interaction: interaction}, nil
 }
 

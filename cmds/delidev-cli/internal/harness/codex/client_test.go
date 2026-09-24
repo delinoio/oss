@@ -34,6 +34,7 @@ func init() {
 			ID     json.RawMessage `json:"id"`
 			Method string          `json:"method"`
 			Params json.RawMessage `json:"params"`
+			Result json.RawMessage `json:"result"`
 		}
 		if err := json.Unmarshal(scanner.Bytes(), &request); err != nil {
 			os.Exit(3)
@@ -89,6 +90,12 @@ func init() {
 			}
 			write(request.ID, map[string]any{"data": threads, "nextCursor": nil})
 		default:
+			if request.Method == "" && mode == "thread-turn-questions" {
+				if !threads.questionReply(request.ID, request.Result) {
+					os.Exit(34)
+				}
+				continue
+			}
 			if strings.HasPrefix(mode, "thread-") && threads.handle(request.ID, request.Method, request.Params, write) {
 				continue
 			}
