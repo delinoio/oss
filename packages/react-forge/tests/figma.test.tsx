@@ -355,6 +355,9 @@ test("expired selected credentials reread once and do not fall back to another p
   });
   await assert.rejects(reader.load(), isCode(ErrorCode.Authentication));
   assert.equal(reads, 2);
+  await assert.rejects(reader.load(), isCode(ErrorCode.Authentication));
+  await assert.rejects(reader.reread(), isCode(ErrorCode.Authentication));
+  assert.equal(reads, 2);
 });
 
 test("lost responses to known edits are confirmed without replay", async () => {

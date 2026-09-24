@@ -126,6 +126,7 @@ export class OfficialFigmaConnection implements FigmaConnection {
   private readonly disposal = new AbortController();
   private tools = new Set<string>();
   private lastHttp?: { status: number; after?: number };
+  private authenticationFailed = false;
   codeLimit = 50_000;
   stats: CallStats = { calls: 0, retries: 0, waitMs: 0 };
   get identity() {
@@ -139,6 +140,8 @@ export class OfficialFigmaConnection implements FigmaConnection {
     private readonly planKey?: string,
   ) {}
   connect(signal?: AbortSignal): Promise<void> {
+    if (this.authenticationFailed)
+      return Promise.reject(new RemoteError(ErrorCode.Authentication, true));
     if (!this.connecting)
       this.connecting = this.initialize(signal).catch((error) => {
         this.connecting = undefined;
@@ -159,6 +162,8 @@ export class OfficialFigmaConnection implements FigmaConnection {
           reconnectionDelayGrowFactor: 1,
         },
         fetch: async (input, init) => {
+          if (this.authenticationFailed)
+            throw new RemoteError(ErrorCode.Authentication, true);
           if (String(input) !== FIGMA_ENDPOINT)
             throw new RemoteError(ErrorCode.Authentication, true);
           const send = () => {
@@ -176,9 +181,20 @@ export class OfficialFigmaConnection implements FigmaConnection {
           };
           let response = await send();
           if (response.status === 401) {
+            this.lastHttp = { status: 401 };
             await response.body?.cancel();
-            token = await this.credentials.load(signal);
+            try {
+              token = await this.credentials.reread(signal);
+            } catch {
+              this.authenticationFailed = true;
+              this.credentials.invalidate();
+              throw new RemoteError(ErrorCode.Authentication, true);
+            }
             response = await send();
+            if (response.status === 401) {
+              this.authenticationFailed = true;
+              this.credentials.invalidate();
+            }
           }
           this.lastHttp = response.ok
             ? undefined

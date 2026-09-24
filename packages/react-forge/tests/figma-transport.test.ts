@@ -212,9 +212,32 @@ test("401 rereads selected credentials once and errors never expose server secre
     );
     assert.equal(f.reads, 2);
     assert.equal(f.connection.stats.retries, 0);
+    const calls = f.calls.length;
+    const requests = f.authorizations.length;
+    for (let i = 0; i < 2; i++) {
+      await assert.rejects(f.connection.connect(), (e) => e.code === ErrorCode.Authentication);
+      await assert.rejects(f.connection.call("whoami", {}, CallSafety.Read), (e) => e.code === ErrorCode.Authentication);
+    }
+    assert.equal(f.reads, 2);
+    assert.equal(f.calls.length, calls);
+    assert.equal(f.authorizations.length, requests);
   } finally {
     await f.connection.close();
   }
+});
+test("successful credential recovery does not replenish the session allowance", async () => {
+  const f = fixture();
+  try {
+    f.failures.push(new Response("fixture", { status: 401 }));
+    await f.connection.call("whoami", {}, CallSafety.Read);
+    assert.equal(f.reads, 2);
+    f.failures.push(new Response("fixture", { status: 401 }));
+    const calls = f.calls.length;
+    await assert.rejects(f.connection.call("whoami", {}, CallSafety.Read), (e) => e.code === ErrorCode.Authentication);
+    assert.equal(f.calls.length, calls + 1);
+    assert.equal(f.reads, 2);
+    assert.equal(f.connection.stats.retries, 0);
+  } finally { await f.connection.close(); }
 });
 test("permanent HTTP failures do not spend retry budget even for reads", async () => {
   const f = fixture();

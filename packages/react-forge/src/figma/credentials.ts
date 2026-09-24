@@ -103,6 +103,8 @@ export class CredentialReader {
   private selected?: CredentialSource;
   private current?: Credential;
   private budgetIdentity?: string;
+  private rereadUsed = false;
+  private failed = false;
   constructor(
     private readonly options: CredentialOptions = {},
     private readonly read: KeychainRead = readKeychain,
@@ -116,17 +118,43 @@ export class CredentialReader {
     return this.budgetIdentity!;
   }
   async load(signal?: AbortSignal): Promise<string> {
-    let next = await this.resolve(signal);
+    checkSignal(signal);
+    if (this.failed) return this.authenticationFailure();
+    if (this.current) {
+      if (this.current.expiresAt !== undefined && this.current.expiresAt <= Date.now() + 30_000)
+        return this.reread(signal);
+      return this.current.token;
+    }
+    const next = await this.resolve(signal);
     if (next?.expiresAt !== undefined && next.expiresAt <= Date.now() + 30_000)
-      next = await this.resolve(signal);
+      return this.reread(signal);
+    return this.accept(next);
+  }
+  async reread(signal?: AbortSignal): Promise<string> {
+    checkSignal(signal);
+    if (this.failed || this.rereadUsed) return this.authenticationFailure();
+    // Expiry and rejected bearer tokens share one recovery allowance. Reconnects
+    // must not reset it or repeatedly access another application's Keychain item.
+    this.rereadUsed = true;
+    return this.accept(await this.resolve(signal));
+  }
+  invalidate() {
+    this.failed = true;
+    this.current = undefined;
+  }
+  private authenticationFailure(): never {
+    this.invalidate();
+    throw new ForgeError(
+      ErrorCode.Authentication,
+      "Reconnect Figma in the selected app and start a new session.",
+    );
+  }
+  private accept(next: Credential | undefined): string {
     if (
       !next ||
       (next.expiresAt !== undefined && next.expiresAt <= Date.now() + 30_000)
     ) {
-      throw new ForgeError(
-        ErrorCode.Authentication,
-        "Connect or refresh Figma MCP in Codex or Claude Code, then retry with that credential source.",
-      );
+      return this.authenticationFailure();
     }
     this.selected = next.source;
     this.current = next;
