@@ -4,6 +4,7 @@ import { ForgeError, checkSignal } from "./errors.js";
 import { digest, publish, readSource, type SourceFingerprint } from "./files.js";
 import { processDocument, type NativeOutput } from "./native.js";
 import { pptxModel, pptxNode } from "./pptx-model.js";
+import { pdfModel } from "./pdf-model.js";
 import { xlsxModel, xlsxEdit } from "./xlsx-model.js";
 import type { Address, Range } from "./xlsx.js";
 import { docxModel, docxBlocks } from "./docx-model.js";
@@ -26,6 +27,7 @@ export class DocumentSession {
   private readonly root = new RenderRoot(this.documentId);
   private readonly disposal = new AbortController();
   private readonly assets = new Map<string, Buffer>();
+  private readonly fonts = new Set<string>();
   private readonly pendingAssets = new Set<Promise<AssetHandle>>();
   private readonly listeners = new Set<(event: Diagnostic) => void>();
   private readonly targets = new Map<string, TargetHandle>();
@@ -39,7 +41,7 @@ export class DocumentSession {
   private currentRevision = 0;
   private readonly operations = new Set<Promise<unknown>>();
 
-  constructor(format: Format) { this.format = format; }
+  constructor(format: Format, private readonly options: { systemFonts?: boolean } = {}) { this.format = format; }
   get revision(): number { return this.currentRevision; }
 
   private active() {
@@ -85,6 +87,14 @@ export class DocumentSession {
   }
 
   registerImage(source: AssetSource, options: { signal?: AbortSignal } = {}): Promise<AssetHandle> {
+    return this.registerAsset(source, false, options);
+  }
+
+  registerFont(source: AssetSource, options: { signal?: AbortSignal } = {}): Promise<AssetHandle> {
+    return this.registerAsset(source, true, options);
+  }
+
+  private registerAsset(source: AssetSource, font: boolean, options: { signal?: AbortSignal }): Promise<AssetHandle> {
     const signal = this.signal(options.signal);
     const operation = this.track(Stage.Import, async () => {
       const { bytes } = await readSource(source, limits.imageBytes, signal);
@@ -94,6 +104,7 @@ export class DocumentSession {
       for (const [id, value] of this.assets) if (id !== assetId) total += value.length;
       if (total > limits.officeBytes) throw new ForgeError(ErrorCode.ResourceLimit, "Registered assets exceed 256 MiB.");
       this.assets.set(assetId, bytes);
+      if (font) this.fonts.add(assetId);
       return Object.freeze({ assetId, documentId: this.documentId });
     });
     this.pendingAssets.add(operation);
@@ -101,8 +112,8 @@ export class DocumentSession {
     return operation;
   }
 
-  static async import(format: Format, source: AssetSource, options: { signal?: AbortSignal } = {}): Promise<DocumentSession> {
-    const session = new DocumentSession(format);
+  static async import(format: Format, source: AssetSource, options: { signal?: AbortSignal; systemFonts?: boolean } = {}): Promise<DocumentSession> {
+    const session = new DocumentSession(format, options);
     try {
       await session.track(Stage.Import, async () => {
         const signal = session.signal(options.signal);
@@ -206,6 +217,7 @@ export class DocumentSession {
       if (this.format === Format.Pptx) model = pptxModel(this.root.snapshot(), this.documentId, this.assets);
       else if (this.format === Format.Docx) model = docxModel(this.root.snapshot(), this.documentId);
       else if (this.format === Format.Xlsx) model = xlsxModel(this.root.snapshot(), this.documentId);
+      else if (this.format === Format.Pdf) model = pdfModel(this.root.snapshot(), this.documentId);
       else throw new ForgeError(ErrorCode.UnsupportedPackage, "This format is not connected to the native adapter yet.");
     }
     const json = JSON.stringify(model);
@@ -217,7 +229,7 @@ export class DocumentSession {
   private async process(signal: AbortSignal): Promise<NativeOutput & { revision: number; refs: Map<string, string> }> {
     const { model, revision, refs } = await this.prepare(signal);
     const output = await processDocument(this.format, this.imported ? "update" : "generate", model,
-      this.source, new Map(this.assets), this.documentId, revision, signal);
+      this.source, new Map(this.assets), this.documentId, revision, signal, { system: this.options.systemFonts !== false, ids: Array.from(this.fonts) });
     return { ...output, revision, refs };
   }
 
@@ -253,10 +265,10 @@ export class DocumentSession {
     this.disposal.abort();
     await Promise.all([this.root.dispose(), ...Array.from(this.mounts.values(), root => root.dispose())]);
     await Promise.allSettled(this.operations);
-    this.mounts.clear(); this.assets.clear(); this.listeners.clear(); this.targets.clear(); this.regions.clear();
+    this.mounts.clear(); this.assets.clear(); this.fonts.clear(); this.listeners.clear(); this.targets.clear(); this.regions.clear();
     this.source = Buffer.alloc(0); this.imported = undefined;
   }
 }
 
-export const createSession = (format: Format): DocumentSession => new DocumentSession(format);
+export const createSession = (format: Format, options: { systemFonts?: boolean } = {}): DocumentSession => new DocumentSession(format, options);
 export const importOffice = DocumentSession.import;

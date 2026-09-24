@@ -25,5 +25,7 @@ tracing = "0.1.44"
 forge-xlsx = { path = "../forge-xlsx" }
 forge-document = { path = "../forge-document" }
 
+forge-pdf = { path = "../forge-pdf" }
+
 [build-dependencies]
 napi-build = "=2.5.0"

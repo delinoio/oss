@@ -7,15 +7,20 @@ mod package;
 mod update;
 use std::collections::BTreeMap;
 
-pub use emit::generate;
+pub use emit::{generate, generate_with_measurer};
 use forge_tree_doc::{Presentation, Result};
 pub use import::{Binding, Imported, TemplateLayout, import};
 pub use package::{
     MAX_PACKAGE_BYTES, read as read_package, sha, validate_package, write as write_package,
 };
 use serde::{Deserialize, Serialize};
-pub use update::update;
+pub use update::{update, update_with_measurer};
 use uuid::Uuid;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FontEmbedding {
+    PinnedDefault,
+    ReferenceOnly,
+}
 pub type Assets = BTreeMap<String, Vec<u8>>;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Metadata {

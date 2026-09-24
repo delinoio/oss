@@ -1,5 +1,5 @@
 [package]
-name = "forge-document"
+name = "forge-pdf"
 version = "0.0.0"
 edition = "2024"
 license = "MIT"
@@ -7,12 +7,13 @@ publish = false
 
 [dependencies]
 forge-tree-doc = { path = "../forge-tree-doc" }
-forge-package = { path = "../forge-package" }
+forge-document = { path = "../forge-document" }
 serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
 uuid = { version = "1.23.0", features = ["v7", "serde"] }
-rust_xlsxwriter = "=0.99.1"
-image = { version = "0.25.10", default-features = false, features = ["png", "jpeg"] }
-url = "2.5.8"
+krilla = { version = "=0.7.0", default-features = false, features = ["raster-images"] }
 parley = "=0.6.0"
-fontique = "=0.6.0"
 ttf-parser = "=0.25.1"
+
+[dev-dependencies]
+lopdf = "0.38.0"

@@ -720,8 +720,28 @@ pub fn generate(
     document_id: Uuid,
     revision: u64,
 ) -> Result<Vec<u8>> {
+    generate_with_measurer(
+        doc,
+        assets,
+        document_id,
+        revision,
+        &mut TextMeasurer::default(),
+        crate::FontEmbedding::PinnedDefault,
+    )
+}
+
+/// Native generation with an explicitly selected font policy. Existing callers
+/// retain the pinned OFL embedding and default measurement through `generate`.
+pub fn generate_with_measurer(
+    doc: &Presentation,
+    assets: &Assets,
+    document_id: Uuid,
+    revision: u64,
+    text: &mut dyn TextLayout,
+    embedding: crate::FontEmbedding,
+) -> Result<Vec<u8>> {
     validate(doc, false)?;
-    let placed = layout(doc)?;
+    let placed = layout_with_measurer(doc, None, text)?;
     let mut native = pptx::Presentation::new().map_err(failure)?;
     native
         .set_slide_width(emu(doc.page.width).0)
@@ -811,7 +831,9 @@ pub fn generate(
             .into_bytes(),
         );
     }
-    crate::font::embed(&mut parts)?;
+    if embedding == crate::FontEmbedding::PinnedDefault {
+        crate::font::embed(&mut parts)?;
+    }
     add_metadata(&mut parts, document_id, revision, doc, &bindings)?;
     validate_package(&parts)?;
     write(&parts)

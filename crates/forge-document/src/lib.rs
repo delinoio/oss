@@ -6,6 +6,8 @@ use std::{collections::BTreeMap, io::Cursor};
 use forge_tree_doc::{ErrorCode, Result, error};
 use serde::{Deserialize, Serialize};
 
+pub mod fonts;
+
 pub type Assets = BTreeMap<String, Vec<u8>>;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]

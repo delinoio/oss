@@ -1,13 +1,13 @@
 import { createRequire } from "node:module";
 import { ForgeError } from "./errors.js";
-import { ErrorCode, Format } from "./types.js";
+import { ErrorCode, Format, Stage } from "./types.js";
 
 interface Cancellation { cancel(): void }
 export interface NativeOutput { bytes: Buffer; model: string; geometry: string }
 interface Binding {
   Cancellation: new () => Cancellation;
   processDocument(format: string, operation: string, model: string, source: Buffer, assets: { id: string; bytes: Buffer }[],
-    documentId: string, revision: number, cancellation: Cancellation): Promise<NativeOutput>;
+    documentId: string, revision: number, cancellation: Cancellation, fontOptions: string): Promise<NativeOutput>;
 }
 let binding: Binding | undefined;
 function load(): Binding {
@@ -30,7 +30,7 @@ const codes: Record<string, ErrorCode> = {
 };
 
 export async function processDocument(format: Format, operation: "generate" | "inspect" | "update", model: unknown,
-  source: Buffer, assets: Map<string, Buffer>, documentId: string, revision: number, signal: AbortSignal): Promise<NativeOutput> {
+  source: Buffer, assets: Map<string, Buffer>, documentId: string, revision: number, signal: AbortSignal, fontOptions: { system: boolean; ids: string[] } = { system: true, ids: [] }): Promise<NativeOutput> {
   const native = load();
   const cancellation = new native.Cancellation();
   const cancel = () => cancellation.cancel();
@@ -38,7 +38,7 @@ export async function processDocument(format: Format, operation: "generate" | "i
   if (signal.aborted) cancel();
   try {
     return await native.processDocument(format, operation, JSON.stringify(model), source,
-      Array.from(assets, ([id, bytes]) => ({ id, bytes })), documentId, revision, cancellation);
+      Array.from(assets, ([id, bytes]) => ({ id, bytes })), documentId, revision, cancellation, JSON.stringify(fontOptions));
   } catch (error) {
     let code = ErrorCode.MalformedInput;
     if (error instanceof Error) {
@@ -47,7 +47,10 @@ export async function processDocument(format: Format, operation: "generate" | "i
         code = codes[detail.code ?? ""] ?? code;
       } catch { /* Native runtime messages can contain paths; never forward them. */ }
     }
-    throw new ForgeError(code, `Native document processing failed (${code}). Correct the input and retry.`);
+    const message = code === ErrorCode.MissingFont
+      ? "Required glyphs, color emoji, or embedding permissions are unavailable. Register a compatible font with registerFont() or install a system fallback, then retry."
+      : `Native document processing failed (${code}). Correct the input and retry.`;
+    throw new ForgeError(code, message, { format, revision, stage: operation === "inspect" ? Stage.Import : Stage.Export });
   } finally { signal.removeEventListener("abort", cancel); }
 }
 

@@ -19,7 +19,21 @@ struct Edit {
 pub fn process(op: &Operation) -> Result<(Vec<u8>, String, String)> {
     match op.kind {
         OperationKind::Generate => {
-            let document: forge_docx::Document = forge_tree_doc::parse(op.model.as_bytes())?;
+            let mut document: forge_docx::Document = forge_tree_doc::parse(op.model.as_bytes())?;
+            let mut fonts = op.fonts()?;
+            let base = forge_document::Style {
+                language: document.language.clone(),
+                ..Default::default()
+            };
+            for section in &mut document.sections {
+                for blocks in [
+                    &mut section.header,
+                    &mut section.blocks,
+                    &mut section.footer,
+                ] {
+                    forge_docx::prepare_fonts(blocks, &mut fonts, &base)?;
+                }
+            }
             let bytes = forge_docx::generate(&document, &op.assets)?;
             Ok((bytes, op.model.clone(), "{\"nodes\":{}}".into()))
         }
@@ -39,8 +53,14 @@ pub fn process(op: &Operation) -> Result<(Vec<u8>, String, String)> {
         OperationKind::Update => {
             let document = forge_docx::import(&op.source)?;
             let edits: Edits = forge_tree_doc::parse(op.model.as_bytes())?;
+            let mut fonts = op.fonts()?;
             let mut changes = Vec::new();
-            for edit in edits.edits {
+            for mut edit in edits.edits {
+                forge_docx::prepare_fonts(
+                    &mut edit.blocks,
+                    &mut fonts,
+                    &forge_document::Style::default(),
+                )?;
                 let Some(target) = document.targets.get(edit.target_index) else {
                     return error(
                         ErrorCode::InvalidReference,

@@ -7,3 +7,5 @@ mod styles;
 pub use emit::generate;
 pub use import::{EditValue, Imported, Target, TargetKind, address, import, range, replace};
 pub use model::*;
+mod fonts;
+pub use fonts::{check_validation_fonts, prepare_cell_fonts};

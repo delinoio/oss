@@ -7,6 +7,7 @@ use std::sync::{
 
 use forge_tree_doc::{Diagnostic, ErrorCode};
 mod docx;
+mod pdf;
 mod pptx;
 mod xlsx;
 
@@ -14,6 +15,7 @@ enum Format {
     Pptx,
     Docx,
     Xlsx,
+    Pdf,
 }
 use napi::{
     Env, Task,
@@ -85,6 +87,33 @@ pub struct Operation {
     document_id: Uuid,
     revision: u64,
     cancelled: Arc<AtomicBool>,
+    font_options: FontOptions,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FontOptions {
+    system: bool,
+    ids: Vec<String>,
+}
+impl Operation {
+    fn fonts(&self) -> forge_tree_doc::Result<forge_document::fonts::Fonts> {
+        let bytes = self
+            .font_options
+            .ids
+            .iter()
+            .map(|id| {
+                self.assets.get(id).cloned().ok_or_else(|| {
+                    Diagnostic::new(
+                        ErrorCode::InvalidReference,
+                        "fonts",
+                        "Font asset is not registered",
+                    )
+                })
+            })
+            .collect::<forge_tree_doc::Result<Vec<_>>>()?;
+        forge_document::fonts::Fonts::new(self.font_options.system, &bytes)
+    }
 }
 
 impl Task for Operation {
@@ -99,6 +128,7 @@ impl Task for Operation {
             Format::Pptx => pptx::process(self),
             Format::Docx => docx::process(self),
             Format::Xlsx => xlsx::process(self),
+            Format::Pdf => pdf::process(self),
         };
         if self.cancelled.load(Ordering::Acquire) {
             return Err(cancelled());
@@ -132,6 +162,7 @@ pub fn process_document(
     document_id: String,
     revision: u32,
     cancellation: &Cancellation,
+    font_options: String,
 ) -> napi::Result<AsyncTask<Operation>> {
     if model.len() > forge_tree_doc::MAX_JSON_BYTES
         || source.len() > forge_package::MAX_PACKAGE_BYTES
@@ -146,6 +177,7 @@ pub fn process_document(
         "pptx" => Format::Pptx,
         "docx" => Format::Docx,
         "xlsx" => Format::Xlsx,
+        "pdf" => Format::Pdf,
         _ => {
             return Err(native_error(Diagnostic::new(
                 ErrorCode::UnsupportedPackage,
@@ -203,7 +235,9 @@ pub fn process_document(
             )));
         }
     }
+    let font_options = forge_tree_doc::parse(font_options.as_bytes()).map_err(native_error)?;
     Ok(AsyncTask::new(Operation {
+        font_options,
         format,
         kind,
         model,

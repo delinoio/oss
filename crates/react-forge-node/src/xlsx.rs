@@ -32,7 +32,19 @@ enum Value {
 pub fn process(op: &Operation) -> Result<(Vec<u8>, String, String)> {
     match op.kind {
         OperationKind::Generate => {
-            let document: forge_xlsx::Workbook = forge_tree_doc::parse(op.model.as_bytes())?;
+            let mut document: forge_xlsx::Workbook = forge_tree_doc::parse(op.model.as_bytes())?;
+            let mut fonts = op.fonts()?;
+            for sheet in &mut document.sheets {
+                for cell in &mut sheet.cells {
+                    forge_xlsx::prepare_cell_fonts(cell, &mut fonts)?;
+                }
+                for chart in &sheet.charts {
+                    fonts.check_chart(&chart.chart)?;
+                }
+                for rule in &sheet.validations {
+                    forge_xlsx::check_validation_fonts(rule, &mut fonts)?;
+                }
+            }
             let bytes = forge_xlsx::generate(&document)?;
             Ok((bytes, op.model.clone(), "{\"nodes\":{}}".into()))
         }
@@ -65,6 +77,7 @@ pub fn process(op: &Operation) -> Result<(Vec<u8>, String, String)> {
         OperationKind::Update => {
             let document = forge_xlsx::import(&op.source)?;
             let edits: Edits = forge_tree_doc::parse(op.model.as_bytes())?;
+            let mut fonts = op.fonts()?;
             let mut changes = Vec::new();
             for edit in edits.edits {
                 let Some(target) = document.targets.get(edit.target_index) else {
@@ -76,10 +89,24 @@ pub fn process(op: &Operation) -> Result<(Vec<u8>, String, String)> {
                 };
                 use forge_xlsx::EditValue;
                 let value = match edit.value {
-                    Value::Cell(v) => EditValue::Cell(v),
+                    Value::Cell(mut v) => {
+                        // Omitted format on an imported edit retains the source style.
+                        let previous = v.format.clone();
+                        forge_xlsx::prepare_cell_fonts(&mut v, &mut fonts)?;
+                        if previous.is_none() {
+                            v.format = None;
+                        }
+                        EditValue::Cell(v)
+                    }
                     Value::ConditionalFormat(v) => EditValue::ConditionalFormat(v),
-                    Value::Validation(v) => EditValue::Validation(v),
-                    Value::Chart(v) => EditValue::Chart(v),
+                    Value::Validation(v) => {
+                        forge_xlsx::check_validation_fonts(&v, &mut fonts)?;
+                        EditValue::Validation(v)
+                    }
+                    Value::Chart(v) => {
+                        fonts.check_chart(&v)?;
+                        EditValue::Chart(v)
+                    }
                 };
                 changes.push((target.id, value));
             }

@@ -109,3 +109,5 @@ Keep project index, AGENTS rules, schema/examples, CLI/MCP descriptions and CI c
 - [EOT header and unchanged sfnt payload](https://www.w3.org/submissions/EOT/).
 - [LibreOffice renderer parameters](https://help.libreoffice.org/latest/en-GB/text/shared/guide/start_parameters.html).
 - [DrawingML preset connection sites](https://github.com/LibreOffice/core/blob/master/oox/source/drawingml/customshapes/presetShapeDefinitions.xml).
+
+React Forge may supply an operation-local `TextLayout` to the new `layout_with_measurer`, `generate_with_measurer` and `update_with_measurer` APIs. This explicit opt-in boundary preserves the existing Forge defaults and does not install a process-global font policy. `FontEmbedding::PinnedDefault` retains the existing bundled OFL embedding; React Forge selects `ReferenceOnly` for system/caller font families. Existing CLI/MCP callers continue to use their original APIs.

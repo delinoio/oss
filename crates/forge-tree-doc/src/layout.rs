@@ -17,6 +17,17 @@ pub struct PlacedNode {
 pub struct Layout {
     pub nodes: BTreeMap<Uuid, PlacedNode>,
 }
+/// Opt-in measurement boundary; the default Forge font policy stays unchanged.
+pub trait TextLayout {
+    fn measure(
+        &mut self,
+        paragraphs: &[Paragraph],
+        base: &TextStyle,
+        width: f64,
+        scale: f64,
+    ) -> Result<(f64, f64)>;
+}
+
 pub struct TextMeasurer {
     fonts: FontSystem,
 }
@@ -152,9 +163,21 @@ pub fn table_widths(n: &Node, width: f64) -> Result<Vec<f64>> {
         .map(|c| c.width.fixed().unwrap_or(equal))
         .collect())
 }
+impl TextLayout for TextMeasurer {
+    fn measure(
+        &mut self,
+        paragraphs: &[Paragraph],
+        base: &TextStyle,
+        width: f64,
+        scale: f64,
+    ) -> Result<(f64, f64)> {
+        TextMeasurer::measure(self, paragraphs, base, width, scale)
+    }
+}
+
 struct Engine<'a> {
     doc: &'a Presentation,
-    text: TextMeasurer,
+    text: &'a mut dyn TextLayout,
     result: Layout,
     unchanged: std::collections::HashSet<Uuid>,
     preserved_canvas_sizes: BTreeMap<Uuid, (f64, f64)>,
@@ -420,6 +443,16 @@ pub fn layout(doc: &Presentation) -> Result<Layout> {
     layout_for_edit(doc, None)
 }
 pub fn layout_for_edit(doc: &Presentation, previous: Option<&Presentation>) -> Result<Layout> {
+    layout_with_measurer(doc, previous, &mut TextMeasurer::default())
+}
+
+/// Use an operation-owned measurer without replacing any global or default
+/// policy.
+pub fn layout_with_measurer(
+    doc: &Presentation,
+    previous: Option<&Presentation>,
+    text: &mut dyn TextLayout,
+) -> Result<Layout> {
     validate(doc, true)?;
     let mut unchanged = std::collections::HashSet::new();
     let mut preserved_canvas_sizes = BTreeMap::new();
@@ -448,7 +481,7 @@ pub fn layout_for_edit(doc: &Presentation, previous: Option<&Presentation>) -> R
     }
     let mut engine = Engine {
         doc,
-        text: TextMeasurer::default(),
+        text,
         result: Layout::default(),
         unchanged,
         preserved_canvas_sizes,

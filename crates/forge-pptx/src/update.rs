@@ -698,12 +698,37 @@ pub fn update(
     document_id: Uuid,
     revision: u64,
 ) -> Result<Vec<u8>> {
+    update_with_measurer(
+        bytes,
+        before,
+        old_bindings,
+        after,
+        assets,
+        document_id,
+        revision,
+        &mut TextMeasurer::default(),
+    )
+}
+
+/// Preserving edit with an operation-owned measurement policy. Unchanged framed
+/// source nodes keep native geometry and never require font inspection.
+#[allow(clippy::too_many_arguments)]
+pub fn update_with_measurer(
+    bytes: &[u8],
+    before: &Presentation,
+    old_bindings: &BTreeMap<Uuid, Binding>,
+    after: &Presentation,
+    assets: &Assets,
+    document_id: Uuid,
+    revision: u64,
+    text: &mut dyn TextLayout,
+) -> Result<Vec<u8>> {
     if before == after {
         return Ok(bytes.to_vec());
     }
     validate(after, true)?;
-    let placement = layout_for_edit(after, Some(before))?;
-    let old_placement = layout_for_edit(before, Some(before))?;
+    let placement = layout_with_measurer(after, Some(before), text)?;
+    let old_placement = layout_with_measurer(before, Some(before), text)?;
     let mut parts = read(bytes)?;
     let paths = slide_paths(&parts)?;
     if paths.len() != after.slides.len() {
