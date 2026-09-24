@@ -1,3 +1,4 @@
+import { FigmaSession, type FigmaOptions } from "./figma/session.js";
 import type { ReactNode } from "react";
 import { v7 } from "uuid";
 import { ForgeError, abortable, checkSignal } from "./errors.js";
@@ -303,5 +304,9 @@ export class DocumentSession {
   }
 }
 
-export const createSession = (format: Format, options: { systemFonts?: boolean } = {}): DocumentSession => new DocumentSession(format, options);
+export function createSession(format: Format.Figma, options: FigmaOptions): FigmaSession;
+export function createSession(format: Exclude<Format, Format.Figma>, options?: { systemFonts?: boolean }): DocumentSession;
+export function createSession(format: Format, options: FigmaOptions & {systemFonts?: boolean} = {}): DocumentSession | FigmaSession {
+  return format === Format.Figma ? new FigmaSession(options) : new DocumentSession(format, options);
+}
 export const importOffice = DocumentSession.import;

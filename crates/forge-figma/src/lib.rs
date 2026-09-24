@@ -109,7 +109,7 @@ fn remote_id(id: &str) -> bool {
         && id.len() <= 256
         && id
             .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b":;-_".contains(&b))
+            .all(|b| b.is_ascii_alphanumeric() || b":;-_,.".contains(&b))
 }
 fn reference(id: &str) -> bool {
     id.strip_prefix('@').map(remote_id).unwrap_or_else(|| {
@@ -244,6 +244,14 @@ fn validate_props(e: &Entity) -> Result<()> {
                         _ => false,
                     }
             }
+            "codeSyntax" => {
+                e.kind == Kind::Variable
+                    && value.as_object().is_some_and(|v| {
+                        v.iter().all(|(k, v)| {
+                            ["WEB", "ANDROID", "iOS"].contains(&k.as_str()) && string(v, 256)
+                        })
+                    })
+            }
             "scopes" => {
                 e.kind == Kind::Variable
                     && value.as_array().is_some_and(|v| {
@@ -330,7 +338,7 @@ fn validate_props(e: &Entity) -> Result<()> {
     }
     Ok(())
 }
-fn validate(entities: &[Entity]) -> Result<BTreeMap<&str, &Entity>> {
+fn validate(entities: &[Entity], complete: bool) -> Result<BTreeMap<&str, &Entity>> {
     if entities.len() > MAX_NODES {
         return Err(Error::ResourceLimit);
     }
@@ -370,13 +378,23 @@ fn validate(entities: &[Entity]) -> Result<BTreeMap<&str, &Entity>> {
             if visited.len() > MAX_DEPTH {
                 return Err(Error::ResourceLimit);
             }
-            cursor = found.get(parent.as_str()).ok_or(Error::InvalidTarget)?;
+            let Some(next) = found.get(parent.as_str()) else {
+                if complete {
+                    return Err(Error::InvalidTarget);
+                } else {
+                    break;
+                }
+            };
+            cursor = next;
             if !cursor.kind.container() {
                 return Err(Error::InvalidTarget);
             }
         }
         for child in &e.children {
             if child.starts_with('@') {
+                continue;
+            }
+            if !complete && !found.contains_key(child.as_str()) {
                 continue;
             }
             if found
@@ -416,8 +434,8 @@ pub fn plan(input: Input) -> Result<Plan> {
     if !(512..=MAX_CODE_UNITS).contains(&input.payload_limit) {
         return Err(Error::ResourceLimit);
     }
-    let desired = validate(&input.desired)?;
-    let previous = validate(&input.previous)?;
+    let desired = validate(&input.desired, true)?;
+    let previous = validate(&input.previous, false)?;
     if input
         .bindings
         .iter()
@@ -513,6 +531,7 @@ pub fn plan(input: Input) -> Result<Plan> {
         }
         let append = batches.last().is_some_and(|b| {
             b.page == page
+                && b.operations.len() < 24
                 && serde_json::to_string(&b.operations)
                     .map(|s| s.encode_utf16().count() + units + 1 <= input.payload_limit)
                     .unwrap_or(false)

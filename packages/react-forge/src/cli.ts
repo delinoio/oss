@@ -2,7 +2,8 @@ import { extname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { tsImport } from "tsx/esm/api";
 import { ForgeError, abortable } from "./errors.js";
-import { ErrorCode, limits } from "./types.js";
+import { ErrorCode, Format, limits } from "./types.js";
+import type { FigmaSession } from "./figma/session.js";
 import type { DocumentSession } from "./session.js";
 
 const help = `React Forge 0.0.0
@@ -13,7 +14,7 @@ Usage:
   react-forge --version
 
 The module's default task receives { data, signal } and returns a document session.
-Output must have the session's format extension. Existing output requires --overwrite.
+Output must have the session's format extension (.figma.json for a remote Figma receipt). Existing output requires --overwrite.
 Imported source files cannot be overwritten; choose a separate output path.
 Tasks execute trusted code with your permissions. No automatic timeout is applied.
 `;
@@ -28,7 +29,7 @@ export async function main(args: string[]): Promise<number> {
   let cancelled = 0;
   const interrupt = () => { cancelled = 130; controller.abort(); };
   const terminate = () => { cancelled = 143; controller.abort(); };
-  let session: DocumentSession | undefined;
+  let session: DocumentSession | FigmaSession | undefined;
   process.on("SIGINT", interrupt);
   process.on("SIGTERM", terminate);
   if (process.platform === "win32") process.on("SIGBREAK", interrupt);
@@ -66,12 +67,12 @@ export async function main(args: string[]): Promise<number> {
     const run = typeof candidate === "function" ? candidate
       : candidate && typeof candidate === "object" && "default" in candidate ? candidate.default : undefined;
     if (typeof run !== "function") throw new ForgeError(ErrorCode.MalformedInput, "TSX module must default-export a task function.");
-    const task = Promise.resolve(run({ data, signal: controller.signal })) as Promise<DocumentSession>;
+    const task = Promise.resolve(run({ data, signal: controller.signal })) as Promise<DocumentSession | FigmaSession>;
     void task.then(async result => { if (controller.signal.aborted && !session && typeof result?.dispose === "function") await result.dispose(); }).catch(() => {});
     const returned = await abortable(task, controller.signal);
     if (!returned || typeof returned.exportFile !== "function" || typeof returned.dispose !== "function") throw new ForgeError(ErrorCode.MalformedInput, "Task must return a document session.");
     session = returned;
-    if (extname(output).toLowerCase() !== `.${session.format}`) throw new ForgeError(ErrorCode.MalformedInput, "Output extension must match the document session format.");
+    if (session.format === Format.Figma ? !output.endsWith(".figma.json") : extname(output).toLowerCase() !== `.${session.format}`) throw new ForgeError(ErrorCode.MalformedInput, "Output extension must match the document session format.");
     const result = await session.exportFile(output, { overwrite: flags.has("--overwrite"), signal: controller.signal });
     await write(process.stdout, json ? `${JSON.stringify({ ok: true, format: session.format, ...result })}\n` : `Exported ${session.format.toUpperCase()} revision ${result.revision}.\n`);
     return 0;

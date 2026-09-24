@@ -5,9 +5,17 @@ export enum Format {
   Docx = "docx",
   Xlsx = "xlsx",
   Pdf = "pdf",
+  Figma = "figma",
 }
 
 export enum ErrorCode {
+  Authentication = "authentication",
+  PermissionDenied = "permission_denied",
+  RateLimited = "rate_limited",
+  QuotaExceeded = "quota_exceeded",
+  Remote = "remote",
+  PartialPublish = "partial_publish",
+  UnknownOutcome = "unknown_outcome",
   MalformedInput = "malformed_input",
   UnsupportedPackage = "unsupported_package",
   UnsupportedEdit = "unsupported_edit",
