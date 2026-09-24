@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
 import React, { createRef } from "react";
-import { createSession, importOffice, Format } from "../src/index.js";
-import { Document, Section, Header, Footer, Paragraph, Run, Link, List, ListItem, Table, Row, Cell, Chart, PageBreak } from "../src/docx.js";
+import { createSession, importOffice, Format, ErrorCode } from "../src/index.js";
+import { Document, Section, Header, Footer, Paragraph, Run, Link, List, ListItem, Table, Row, Cell, Chart, PageBreak, Image } from "../src/docx.js";
 
 test("React authors rich DOCX, sections, native charts and tables", async () => {
   const session = createSession(Format.Docx);
@@ -42,5 +42,25 @@ test("external Word paragraph mounts survive repeated state updates", async () =
     finally { await reopened.dispose(); }
     await region.render(<Paragraph>Updated replacement</Paragraph>);
     assert.ok((await session.exportBuffer()).byteLength > 0);
+  } finally { await session.dispose(); }
+});
+
+
+test("Word leaf components reject children without exporting an older valid revision", async () => {
+  const session = createSession(Format.Docx);
+  try {
+    await session.render(<Document><Section><Paragraph>Valid baseline</Paragraph></Section></Document>);
+    await session.exportBuffer();
+    const leaves = [
+      <PageBreak><Paragraph>Must not disappear</Paragraph></PageBreak>,
+      <Image asset={{ documentId: session.documentId, assetId: "unused" }} width={20} height={20} alt="Example"><Paragraph>Must not disappear</Paragraph></Image>,
+      <Chart kind="bar" categories={["A"]} series={[{ name: "Values", values: [1] }]} width={100} height={100} alt="Example"><Paragraph>Must not disappear</Paragraph></Chart>,
+    ];
+    for (const leaf of leaves) {
+      await session.render(<Document><Section>{leaf}</Section></Document>);
+      await assert.rejects(session.exportBuffer(), { code: ErrorCode.MalformedInput });
+    }
+    await session.render(<Document><Section><PageBreak /><Paragraph>Recovered</Paragraph></Section></Document>);
+    assert.ok((await session.exportBuffer()).length > 0);
   } finally { await session.dispose(); }
 });

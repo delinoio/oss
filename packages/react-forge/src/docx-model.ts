@@ -22,6 +22,7 @@ function runs(nodes: SerializedNode[]): Model[] {
 export function docxBlocks(nodes: SerializedNode[], documentId: string): Model[] {
   return nodes.flatMap(node => {
     const p = node.props;
+    if (["docx:page-break", "docx:image", "docx:chart"].includes(node.type) && node.children.length) invalid();
     if (node.type === "docx:list") return node.children.map(item => {
       if (item.type !== "docx:list-item") invalid();
       return { type: "paragraph", id: item.id, style: commonStyle(item.props.style), list: { kind: p.kind ?? "bullet", level: p.level ?? 0 }, runs: runs(item.children) };
