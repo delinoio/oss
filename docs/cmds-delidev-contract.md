@@ -22,6 +22,8 @@ Configuration commands accept `--input FILE|-`; writes accept `--request-id UUID
 
 Entity kinds, workspace modes, harnesses, account modes, lifecycle/recovery/archive/delivery states, source kinds, capabilities, routing and overlap policies are closed typed enums. IDs cannot collide across kinds. First-execution snapshots and account selection commit atomically with routing state. Stop, Archive, restore, outcome, and recovery are independent; restore never dispatches.
 
+The private first-execution transaction primitive now resolves exact ordered instructions/current configuration and atomically retains the immutable snapshot, initial account/connection, actual routing observation, input claim and routing cursor/rotation state. It is not called by public session operations yet: native preflight, Worker dispatch, transcript publication and execution authority integration remain pending. See the [session contract](cmds-delidev-sessions-contract.md) for required readiness and rollback boundaries.
+
 Workers continuously receive their outbound stream while a native operation runs. Connection loss/revocation or a 45-second heartbeat timeout cancels that operation and retains its journal after owned cleanup. The server keeps later jobs queued until the current assignment resolves, preventing a backlog of preclaimed native operations. Reconnect reuses definitive journal outcomes and preserves missing-completion uncertainty.
 
 ### Provider and model catalog

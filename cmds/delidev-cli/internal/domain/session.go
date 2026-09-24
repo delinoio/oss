@@ -50,6 +50,7 @@ const (
 	DispatchReady   DispatchState = "ready"
 	DispatchPaused  DispatchState = "paused"
 	DispatchBlocked DispatchState = "blocked"
+	DispatchClaimed DispatchState = "claimed"
 )
 
 type InputDelivery string
@@ -184,6 +185,7 @@ type Session struct {
 	PendingInputs     uint32              `json:"pending_inputs"`
 	PendingInputBytes uint64              `json:"pending_input_bytes"`
 	Preparation       *SessionPreparation `json:"preparation,omitempty"`
+	InitialExecution  *InitialExecution   `json:"initial_execution,omitempty"`
 }
 
 type PreparationState string
@@ -209,6 +211,8 @@ type QueuedInput struct {
 	Prompt          string        `json:"prompt"`
 	Mode            SessionMode   `json:"mode"`
 	Delivery        InputDelivery `json:"delivery"`
+	ExecutionID     ID            `json:"execution_id,omitempty"`
+	NativeRequestID ID            `json:"native_request_id,omitempty"`
 }
 
 func SessionExecutionUnavailable() *Error {

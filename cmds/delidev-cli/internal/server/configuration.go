@@ -350,23 +350,6 @@ func PreviewRouting(ctx context.Context, s *store.Store, agentID, projectID doma
 	return route, err
 }
 func routingState(tx *store.Tx, agentID domain.ID) (domain.RoutingState, error) {
-	// Routing records have independent UUID-v7 IDs; their owning Agent Worker ID
-	// is an indexed project-independent association in the data document.
-	records, err := all(tx, domain.RoutingKind)
-	if err != nil {
-		return domain.RoutingState{}, err
-	}
-	for _, record := range records {
-		var v struct {
-			AgentID domain.ID           `json:"agent_id"`
-			State   domain.RoutingState `json:"state"`
-		}
-		if err := domain.Decode(record.Data, &v); err != nil {
-			return v.State, err
-		}
-		if v.AgentID == agentID {
-			return v.State, nil
-		}
-	}
-	return domain.RoutingState{}, nil
+	_, state, err := tx.Routing(agentID)
+	return state, err
 }
