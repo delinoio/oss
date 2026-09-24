@@ -15,10 +15,7 @@ func (c *CodexEventPublisher) publishInteraction(ctx context.Context, e codex.Ev
 	var update domain.ExecutionInteractionUpdate
 	if e.Kind == codex.InteractionRequestedEvent {
 		i := e.Interaction
-		if i != nil && i.Kind == codex.ApprovalInteraction {
-			return domain.Fail(domain.Unsupported, "Native approval publication requires its dedicated owner workflow.", "Retain the native approval without replying; do not reinterpret it as a question or ordinary input.")
-		}
-		if i == nil || i.ID.Validate() != nil || i.Kind != codex.UserInputInteraction || i.Questions == nil || e.InteractionState != nil {
+		if i == nil || i.ID.Validate() != nil || e.InteractionState != nil {
 			return publicationUncertain()
 		}
 		if _, exists := c.interactions[i.ID]; exists || len(c.interactions) >= domain.MaxExecutionInteractions {
@@ -33,18 +30,35 @@ func (c *CodexEventPublisher) publishInteraction(ctx context.Context, e codex.Ev
 		default:
 			return publicationUncertain()
 		}
-		q := &domain.QuestionRequest{Blocking: i.Questions.Blocking, AutoResolutionMS: i.Questions.AutoResolutionMS, Questions: []domain.Question{}}
-		for _, source := range i.Questions.Questions {
-			question := domain.Question{ID: source.ID, Header: source.Header, Text: source.Text, Other: source.Other, Secret: source.Secret}
-			if source.Options != nil {
-				question.Options = make([]domain.QuestionOption, 0, len(source.Options))
+		switch i.Kind {
+		case codex.ApprovalInteraction:
+			if i.Questions != nil {
+				return publicationUncertain()
 			}
-			for _, option := range source.Options {
-				question.Options = append(question.Options, domain.QuestionOption{Label: option.Label, Description: option.Description})
+			approval, err := codexApprovalRequest(i.Approval)
+			if err != nil {
+				return err
 			}
-			q.Questions = append(q.Questions, question)
+			update.Type, update.Approval = domain.NativeApprovalInteraction, approval
+		case codex.UserInputInteraction:
+			if i.Questions == nil || i.Approval != nil {
+				return publicationUncertain()
+			}
+			q := &domain.QuestionRequest{Blocking: i.Questions.Blocking, AutoResolutionMS: i.Questions.AutoResolutionMS, Questions: []domain.Question{}}
+			for _, source := range i.Questions.Questions {
+				question := domain.Question{ID: source.ID, Header: source.Header, Text: source.Text, Other: source.Other, Secret: source.Secret}
+				if source.Options != nil {
+					question.Options = make([]domain.QuestionOption, 0, len(source.Options))
+				}
+				for _, option := range source.Options {
+					question.Options = append(question.Options, domain.QuestionOption{Label: option.Label, Description: option.Description})
+				}
+				q.Questions = append(q.Questions, question)
+			}
+			update.Questions = q
+		default:
+			return publicationUncertain()
 		}
-		update.Questions = q
 	} else {
 		status := e.InteractionState
 		if status == nil || status.TurnID != c.turn || status.ItemID != e.ItemID || status.Closure != codex.InteractionNativeClosed || e.Interaction != nil {
@@ -72,6 +86,7 @@ func (c *CodexEventPublisher) publishInteraction(ctx context.Context, e codex.Ev
 		return err
 	}
 	update.Questions = nil // Durable original question content belongs to the server.
+	update.Approval = nil  // The original approval also belongs to server retention.
 	if update.NativeRequestID.Number != nil {
 		number := *update.NativeRequestID.Number
 		update.NativeRequestID.Number = &number

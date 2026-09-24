@@ -10,15 +10,17 @@ type InteractionRequestIDKind string
 type InteractionClosure string
 
 const (
-	UserQuestionInteraction  InteractionType          = "user-question"
-	InteractionTextID        InteractionRequestIDKind = "text"
-	InteractionNumberID      InteractionRequestIDKind = "number"
-	InteractionOpen          InteractionClosure       = "open"
-	InteractionNativeClosed  InteractionClosure       = "native-closed"
-	InteractionTurnEnded     InteractionClosure       = "turn-ended"
-	MaxExecutionInteractions                          = 4096
-	MaxOpenInteractions                               = 128
-	MaxOpenQuestionBytes                              = 8 << 20
+	UserQuestionInteraction   InteractionType          = "user-question"
+	NativeApprovalInteraction InteractionType          = "native-approval"
+	InteractionTextID         InteractionRequestIDKind = "text"
+	InteractionNumberID       InteractionRequestIDKind = "number"
+	InteractionOpen           InteractionClosure       = "open"
+	InteractionNativeClosed   InteractionClosure       = "native-closed"
+	InteractionTurnEnded      InteractionClosure       = "turn-ended"
+	MaxExecutionInteractions                           = 4096
+	MaxOpenInteractions                                = 128
+	MaxOpenQuestionBytes                               = 8 << 20
+	MaxOpenInteractionBytes                            = MaxOpenQuestionBytes
 )
 
 type InteractionRequestID struct {
@@ -60,7 +62,7 @@ type QuestionRequest struct {
 }
 
 func invalidInteraction() error {
-	return Fail(InvalidArgument, "Invalid native interaction observation.", "Preserve its exact request kind, original questions and native ownership without response or approval fields.")
+	return Fail(InvalidArgument, "Invalid native interaction observation.", "Preserve its exact request kind, original payload and native ownership without response fields.")
 }
 
 // Required native fields must not silently acquire Go zero values from missing
@@ -137,6 +139,7 @@ type ExecutionInteractionUpdate struct {
 	NativeRequestID InteractionRequestID `json:"native_request_id"`
 	Type            InteractionType      `json:"type"`
 	Questions       *QuestionRequest     `json:"questions,omitempty"`
+	Approval        *ApprovalRequest     `json:"approval,omitempty"`
 	Closure         InteractionClosure   `json:"closure,omitempty"`
 }
 
@@ -145,7 +148,7 @@ func (k ExecutionEventKind) IsInteraction() bool {
 }
 
 func (u ExecutionInteractionUpdate) Validate(kind ExecutionEventKind) error {
-	if u.ID.Validate() != nil || Text(u.NativeItemID, "native question item", 1024, true) != nil || u.Type != UserQuestionInteraction {
+	if u.ID.Validate() != nil || Text(u.NativeItemID, "native interaction item", 1024, true) != nil || (u.Type != UserQuestionInteraction && u.Type != NativeApprovalInteraction) {
 		return invalidInteraction()
 	}
 	if _, err := u.NativeRequestID.Key(); err != nil {
@@ -153,11 +156,18 @@ func (u ExecutionInteractionUpdate) Validate(kind ExecutionEventKind) error {
 	}
 	switch kind {
 	case ExecutionInteractionRequested:
-		if u.Questions == nil || u.Closure != "" || u.Questions.Validate() != nil {
+		if u.Closure != "" {
+			return invalidInteraction()
+		}
+		if u.Type == UserQuestionInteraction {
+			if u.Questions == nil || u.Approval != nil || u.Questions.Validate() != nil {
+				return invalidInteraction()
+			}
+		} else if u.Approval == nil || u.Questions != nil || u.Approval.Validate() != nil {
 			return invalidInteraction()
 		}
 	case ExecutionInteractionClosed:
-		if u.Questions != nil || u.Closure != InteractionNativeClosed {
+		if u.Questions != nil || u.Approval != nil || u.Closure != InteractionNativeClosed {
 			return invalidInteraction()
 		}
 	default:
@@ -165,7 +175,7 @@ func (u ExecutionInteractionUpdate) Validate(kind ExecutionEventKind) error {
 	}
 	raw, err := json.Marshal(u)
 	if err != nil || len(raw) > 512<<10 {
-		return Fail(ResourceExhausted, "The question observation exceeds its publication bound.", "Retain native state for reconciliation without truncating the questions.")
+		return Fail(ResourceExhausted, "The interaction observation exceeds its publication bound.", "Retain native state for reconciliation without truncating the original request.")
 	}
 	return nil
 }
@@ -178,6 +188,7 @@ type ExecutionInteraction struct {
 	NativeRequestID InteractionRequestID `json:"native_request_id"`
 	Type            InteractionType      `json:"type"`
 	Questions       *QuestionRequest     `json:"questions"`
+	Approval        *ApprovalRequest     `json:"approval,omitempty"`
 	Closure         InteractionClosure   `json:"closure"`
 	FirstSequence   uint64               `json:"first_sequence"`
 	LastSequence    uint64               `json:"last_sequence"`

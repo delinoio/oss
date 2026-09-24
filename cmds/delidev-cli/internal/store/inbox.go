@@ -54,7 +54,7 @@ func (t *Tx) CreateInboxEntry(session, project domain.ID, value domain.InboxEntr
 		if err != nil {
 			return Record{}, err
 		}
-		request := domain.ExecutionInteractionUpdate{ID: r.ID, NativeItemID: interaction.NativeItemID, NativeRequestID: interaction.NativeRequestID, Type: interaction.Type, Questions: interaction.Questions}
+		request := domain.ExecutionInteractionUpdate{ID: r.ID, NativeItemID: interaction.NativeItemID, NativeRequestID: interaction.NativeRequestID, Type: interaction.Type, Questions: interaction.Questions, Approval: interaction.Approval}
 		if r.SessionID != session || r.ProjectID != project || request.Validate(domain.ExecutionInteractionRequested) != nil || interaction.ExecutionID.Validate() != nil || domain.Text(interaction.NativeThreadID, "native thread identity", 1024, true) != nil || domain.Text(interaction.NativeTurnID, "native turn identity", 1024, true) != nil || interaction.FirstSequence == 0 || interaction.LastSequence < interaction.FirstSequence || interaction.LastSequence > domain.MaxExecutionEvents {
 			return Record{}, inboxConflict()
 		}

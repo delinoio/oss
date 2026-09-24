@@ -22,6 +22,8 @@ PRAGMA user_version=9;
 
 // Interaction identity is independent of a tool's transcript identity: a tool
 // may own requests without creating a message, and closure is not completion.
+// The historical question_bytes column accounts for all typed request payloads;
+// keeping its name preserves the existing schema and byte-bound semantics.
 func (t *Tx) BindExecutionInteraction(session, execution, interaction domain.ID, thread string, request domain.InteractionRequestID, questionBytes int) error {
 	if err := t.writeAllowed(); err != nil {
 		return err
@@ -42,8 +44,8 @@ func (t *Tx) BindExecutionInteraction(session, execution, interaction domain.ID,
 	if err := t.tx.QueryRowContext(t.ctx, "SELECT COUNT(*),COALESCE(SUM(closure='open'),0),COALESCE(SUM(CASE WHEN closure='open' THEN question_bytes ELSE 0 END),0) FROM execution_interactions WHERE execution_id=?", execution).Scan(&count, &open, &size); err != nil {
 		return storageError(err)
 	}
-	if count >= domain.MaxExecutionInteractions || open >= domain.MaxOpenInteractions || questionBytes > domain.MaxOpenQuestionBytes-size {
-		return domain.Fail(domain.ResourceExhausted, "Execution interaction retention reached its bound.", "Retain native state and reconcile pending requests without dropping or truncating questions.")
+	if count >= domain.MaxExecutionInteractions || open >= domain.MaxOpenInteractions || questionBytes > domain.MaxOpenInteractionBytes-size {
+		return domain.Fail(domain.ResourceExhausted, "Execution interaction retention reached its bound.", "Retain native state and reconcile pending requests without dropping or truncating original payloads.")
 	}
 	_, err = t.tx.ExecContext(t.ctx, "INSERT INTO execution_interactions(interaction_id,session_id,execution_id,native_thread_id,native_request_key,closure,question_bytes) VALUES(?,?,?,?,?,'open',?)", interaction, session, execution, thread, key, questionBytes)
 	return storageError(err)

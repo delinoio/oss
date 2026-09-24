@@ -39,6 +39,7 @@ const (
 	nativeWorkerArchive
 	nativeWorkerQuestionStop
 	nativeWorkerQuestionResponse
+	nativeWorkerApprovalStop
 )
 
 func TestManualNativeWorkerExecutesAcceptedCodexJob(t *testing.T) {
@@ -58,6 +59,13 @@ func TestManualNativeWorkerPublishesCodexPlanProgress(t *testing.T) {
 
 func TestManualNativeWorkerRetainsQuestionUntilStop(t *testing.T) {
 	testManualNativeWorkerExecution(t, nativeWorkerQuestionStop)
+}
+
+func TestManualNativeWorkerRetainsApprovalUntilStop(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("this installed-harness fixture uses a POSIX shell builtin")
+	}
+	testManualNativeWorkerExecution(t, nativeWorkerApprovalStop)
 }
 
 func TestManualNativeWorkerDeliversOwnedQuestionResponse(t *testing.T) {
@@ -98,6 +106,8 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 	toolScenario := scenario == nativeWorkerCommand || scenario == nativeWorkerPlan
 	responseScenario := scenario == nativeWorkerQuestionResponse
 	questionScenario := scenario == nativeWorkerQuestionStop || responseScenario
+	approvalScenario := scenario == nativeWorkerApprovalStop
+	interactionScenario := questionScenario || approvalScenario
 	completedScenario := scenario == nativeWorkerCompletion || toolScenario || responseScenario
 	var calls atomic.Int64
 	started, upstreamStopped := make(chan struct{}, 1), make(chan struct{}, 1)
@@ -112,13 +122,13 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 		if err != nil || !strings.Contains(string(body), "Fixture prompt") || !strings.Contains(string(body), "fixture-model") {
 			t.Error("Worker changed the accepted native input/model")
 		}
-		if !completedScenario && !questionScenario {
+		if !completedScenario && !interactionScenario {
 			started <- struct{}{}
 			<-r.Context().Done()
 			upstreamStopped <- struct{}{}
 			return
 		}
-		if (toolScenario || questionScenario) && call == 1 {
+		if (toolScenario || interactionScenario) && call == 1 {
 			toolName := "exec_command"
 			arguments := map[string]any{"cmd": "printf 'native-tool-fixture\\n'", "login": false, "max_output_tokens": 1000, "yield_time_ms": 1000}
 			if scenario == nativeWorkerPlan {
@@ -129,6 +139,10 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 				started <- struct{}{}
 				toolName = "request_user_input"
 				arguments = map[string]any{"questions": []any{map[string]any{"id": "choice", "header": "Choose", "question": "Native Worker question", "options": []any{map[string]any{"label": "First", "description": "First option"}, map[string]any{"label": "Second", "description": "Second option"}}}}}
+			}
+			if approvalScenario {
+				started <- struct{}{}
+				arguments["sandbox_permissions"], arguments["justification"] = "require_escalated", "Private native Worker approval fixture"
 			}
 			var toolRequest struct {
 				Tools []struct{ Type, Name string } `json:"tools"`
@@ -158,8 +172,8 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 		if toolScenario && (call != 2 || !strings.Contains(string(body), "function_call_output") || !strings.Contains(string(body), "call_worker_fixture") || (scenario == nativeWorkerCommand && !strings.Contains(string(body), "native-tool-fixture"))) {
 			t.Error("native command output did not reach the same selected account")
 		}
-		if questionScenario && !responseScenario {
-			t.Error("unanswered native question triggered another model request")
+		if interactionScenario && !responseScenario {
+			t.Error("unanswered native interaction triggered another model request")
 		}
 		if responseScenario {
 			var request struct {
@@ -303,16 +317,24 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 				t.Fatal(err)
 			}
 			if session.Execution != nil && session.Execution.LastSequence >= 4 {
-				if !questionScenario {
+				if !interactionScenario {
 					break
 				}
 				rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.InteractionKind, SessionID: f.input.SessionID, Limit: 2})
 				if err != nil {
 					t.Fatal(err)
 				}
-				if len(rows) == 1 && session.Execution.Waiting.UserInput {
+				if len(rows) == 1 && (session.Execution.Waiting.UserInput || (approvalScenario && session.Execution.Waiting.Approval)) {
 					interaction, err := store.Decode[domain.ExecutionInteraction](rows[0])
-					if err != nil || interaction.Closure != domain.InteractionOpen || interaction.NativeItemID != "call_worker_fixture" || interaction.Type != domain.UserQuestionInteraction || !interaction.Questions.Blocking || len(interaction.Questions.Questions) != 1 || interaction.Questions.Questions[0].Text != "Native Worker question" {
+					if approvalScenario {
+						if err != nil || interaction.Closure != domain.InteractionOpen || interaction.Type != domain.NativeApprovalInteraction || interaction.Approval == nil || interaction.Approval.Codex.Command == nil || interaction.Approval.Codex.Command.Command == nil || !strings.Contains(*interaction.Approval.Codex.Command.Command, "native-tool-fixture") || len(interaction.Approval.Codex.Command.AvailableDecisions) == 0 || interaction.Response != nil {
+							t.Fatal("native Worker lost original pending approval")
+						}
+						_, entry := readExecutionInbox(t, f, domain.InteractionInbox, rows[0].ID)
+						if entry.ReadState != domain.InboxUnread {
+							t.Fatal("native approval did not create unread inbox state")
+						}
+					} else if err != nil || interaction.Closure != domain.InteractionOpen || interaction.NativeItemID != "call_worker_fixture" || interaction.Type != domain.UserQuestionInteraction || !interaction.Questions.Blocking || len(interaction.Questions.Questions) != 1 || interaction.Questions.Questions[0].Text != "Native Worker question" {
 						t.Fatal("native Worker did not retain its exact pending question")
 					}
 					break
@@ -381,7 +403,7 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 		if scenario == nativeWorkerRevocation && (workerErr == nil || (domain.SafeError(workerErr).Code != domain.Unauthenticated && domain.SafeError(workerErr).Code != domain.PermissionDenied)) {
 			t.Fatalf("Worker revocation lost its authority failure: %v", workerErr)
 		}
-		if !questionScenario {
+		if !interactionScenario {
 			select {
 			case <-upstreamStopped:
 			case <-ctx.Done():
@@ -422,7 +444,7 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 			}
 			assertNativeWorkerCheckpoint(t, f, manager.Root, completion)
 		}
-		if scenario == nativeWorkerStop || scenario == nativeWorkerArchive || questionScenario {
+		if scenario == nativeWorkerStop || scenario == nativeWorkerArchive || interactionScenario {
 			if journal.Problem != nil || session.Outcome != domain.ExecutionStopped || !session.Execution.CleanupVerified {
 				t.Fatal("explicit control did not finish its bounded native interruption")
 			}
@@ -430,14 +452,21 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 				t.Fatal("Stop/Archive lost their independent visibility state")
 			}
 		}
-		if questionScenario {
+		if interactionScenario {
 			rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.InteractionKind, SessionID: f.input.SessionID, Limit: 2})
 			if err != nil || len(rows) != 1 {
 				t.Fatal("Stop lost retained question")
 			}
 			interaction, err := store.Decode[domain.ExecutionInteraction](rows[0])
-			if err != nil || interaction.Closure == domain.InteractionOpen || interaction.Questions.Questions[0].Text != "Native Worker question" || session.Execution.Waiting != (domain.NativeWaiting{}) {
+			if err != nil || interaction.Closure == domain.InteractionOpen || session.Execution.Waiting != (domain.NativeWaiting{}) {
 				t.Fatal("Stop left an unanswered question active or lost its original content")
+			}
+			if approvalScenario {
+				if interaction.Approval == nil || interaction.Approval.Codex.Command == nil || interaction.Response != nil {
+					t.Fatal("Stop discarded approval or invented a response")
+				}
+			} else if interaction.Questions.Questions[0].Text != "Native Worker question" {
+				t.Fatal("Stop discarded original question")
 			}
 		}
 		if session.Execution.CleanupVerified {

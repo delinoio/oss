@@ -177,33 +177,8 @@ func (s ToolSnapshot) Validate() error {
 		}
 	}
 	for _, a := range c.Actions {
-		if Text(a.Command, "native parsed command", MaxMessageText, true) != nil {
-			return invalidTool()
-		}
-		for _, field := range []*string{a.Name, a.Path, a.Query} {
-			if field != nil && Text(*field, "native command action", 4096, false) != nil {
-				return invalidTool()
-			}
-		}
-		switch a.Kind {
-		case ReadCommandAction:
-			if a.Name == nil || a.Path == nil || a.Query != nil {
-				return invalidTool()
-			}
-		case ListCommandAction:
-			if a.Name != nil || a.Query != nil {
-				return invalidTool()
-			}
-		case SearchCommandAction:
-			if a.Name != nil {
-				return invalidTool()
-			}
-		case UnknownCommandAction:
-			if a.Name != nil || a.Path != nil || a.Query != nil {
-				return invalidTool()
-			}
-		default:
-			return invalidTool()
+		if err := a.Validate(); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -217,6 +192,38 @@ func validateFileChanges(changes []FileChangeObservation) error {
 		if Text(c.Path, "native changed path", 4096, true) != nil || Text(c.Diff, "native patch", MaxMessageText, false) != nil || !slices.Contains([]FileChangeKind{AddedFile, DeletedFile, UpdatedFile}, c.Kind) || (c.MovePath != nil && (c.Kind != UpdatedFile || Text(*c.MovePath, "native move path", 4096, true) != nil)) {
 			return invalidTool()
 		}
+	}
+	return nil
+}
+
+func (a CommandAction) Validate() error {
+	if Text(a.Command, "native parsed command", MaxMessageText, true) != nil {
+		return invalidTool()
+	}
+	for _, field := range []*string{a.Name, a.Path, a.Query} {
+		if field != nil && Text(*field, "native command action", 4096, false) != nil {
+			return invalidTool()
+		}
+	}
+	switch a.Kind {
+	case ReadCommandAction:
+		if a.Name == nil || a.Path == nil || a.Query != nil {
+			return invalidTool()
+		}
+	case ListCommandAction:
+		if a.Name != nil || a.Query != nil {
+			return invalidTool()
+		}
+	case SearchCommandAction:
+		if a.Name != nil {
+			return invalidTool()
+		}
+	case UnknownCommandAction:
+		if a.Name != nil || a.Path != nil || a.Query != nil {
+			return invalidTool()
+		}
+	default:
+		return invalidTool()
 	}
 	return nil
 }

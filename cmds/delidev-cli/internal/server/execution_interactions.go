@@ -13,11 +13,18 @@ func publishExecutionInteraction(tx *store.Tx, input domain.ExecutionJobInput, s
 		return false, executionEventConflict()
 	}
 	if event.Kind == domain.ExecutionInteractionRequested {
-		value := domain.ExecutionInteraction{ExecutionID: input.ExecutionID, NativeThreadID: event.NativeThreadID, NativeTurnID: event.NativeTurnID, NativeItemID: u.NativeItemID, NativeRequestID: u.NativeRequestID, Type: u.Type, Questions: u.Questions, Closure: domain.InteractionOpen, FirstSequence: event.Sequence, LastSequence: event.Sequence}
+		if u.Approval != nil && (u.Approval.Harness != input.Configuration.Harness || u.Approval.Version != input.Installation.Version) {
+			return false, executionEventConflict()
+		}
+		value := domain.ExecutionInteraction{ExecutionID: input.ExecutionID, NativeThreadID: event.NativeThreadID, NativeTurnID: event.NativeTurnID, NativeItemID: u.NativeItemID, NativeRequestID: u.NativeRequestID, Type: u.Type, Questions: u.Questions, Approval: u.Approval, Closure: domain.InteractionOpen, FirstSequence: event.Sequence, LastSequence: event.Sequence}
 		if _, err := tx.Put(domain.InteractionKind, u.ID, 0, session.ID, session.ProjectID, value); err != nil {
 			return false, err
 		}
-		raw, err := json.Marshal(u.Questions)
+		var payload any = u.Questions
+		if u.Type == domain.NativeApprovalInteraction {
+			payload = u.Approval
+		}
+		raw, err := json.Marshal(payload)
 		if err != nil {
 			return false, err
 		}

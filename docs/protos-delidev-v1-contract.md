@@ -71,6 +71,9 @@ Bearer authentication and exact origin enforcement include local RPC. Remote tra
 ## Logging
 Versioned typed failures carry safe recovery guidance and correlation IDs. Never serialize raw upstream errors or credential values.
 
+### Native approval observation documents
+`PublishExecution` interaction documents now admit `native-approval` with one closed `approval` payload instead of `questions`. The payload binds `harness`, native `version` and the version-specific `codex` request graph; the server rechecks immutable assignment provenance. Requests/metadata-only closure use existing interaction events and resource/inbox reads, without protobuf field additions. Every approval field is observational: neither this publication nor `RespondQuestion` grants approval response authority. Mixed request payloads, response fields, unproposed decisions and changed native identity fail atomically. Question and approval records share retention bounds and independent unread/read state.
+
 ## Build and Test
 Use the root pinned Buf/Go protobuf/Connect generators. Never edit generated code. Run schema formatting/lint, generation freshness, and command integration tests after protocol edits.
 
