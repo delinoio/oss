@@ -22,6 +22,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
+	"google.golang.org/protobuf/proto"
 )
 
 type Config struct {
@@ -126,19 +127,74 @@ func Run(ctx context.Context, config Config) error {
 	return nil
 }
 func watch(ctx context.Context, config Config, client delidevv1connect.WorkerServiceClient, credential Credential, instance domain.ID) error {
+	return watchWithTimeout(ctx, config, client, credential, instance, domain.WorkerConnectionTimeout)
+}
+
+func watchWithTimeout(ctx context.Context, config Config, client delidevv1connect.WorkerServiceClient, credential Credential, instance domain.ID, heartbeatTimeout time.Duration) error {
+	ctx, cancel := context.WithCancelCause(ctx)
+	// TCP can remain half-open after connectivity is lost. The server emits a
+	// heartbeat every ten seconds; silence past its lease is authority loss too.
+	deadline := time.AfterFunc(heartbeatTimeout, func() {
+		cancel(domain.Fail(domain.Unavailable, "The Worker connection heartbeat expired.", "Reconnect and reconcile the accepted operation before further execution."))
+	})
+	defer deadline.Stop()
 	stream, err := client.WatchWork(ctx, authenticated(credential, &pb.WatchWorkRequest{MachineId: string(credential.MachineID), InstanceId: string(instance)}))
 	if err != nil {
+		if ctx.Err() != nil {
+			err = context.Cause(ctx)
+		}
+		cancel(err)
 		return err
 	}
-	defer stream.Close()
-	for stream.Receive() {
-		if stream.Msg().Job == nil {
-			if !stream.Msg().Heartbeat {
-				return domain.Fail(domain.RecoveryRequired, "The Worker received an invalid stream record.", "Check server protocol compatibility.")
+	jobs := make(chan *pb.Resource, 1)
+	received := make(chan struct{})
+	// Receive independently of native execution. Revocation, stream replacement
+	// and server loss must cancel owned Git/harness work while it is running.
+	// The server sends one unresolved assignment per stream; overflow is a
+	// protocol failure, never permission to buffer arbitrary future execution.
+	go func() {
+		defer close(received)
+		for stream.Receive() {
+			deadline.Reset(heartbeatTimeout)
+			message := stream.Msg()
+			if message.Job == nil {
+				if !message.Heartbeat {
+					cancel(domain.Fail(domain.RecoveryRequired, "The Worker received an invalid stream record.", "Check server protocol compatibility."))
+					return
+				}
+				continue
 			}
-			continue
+			if message.Heartbeat {
+				cancel(domain.Fail(domain.RecoveryRequired, "The Worker received an ambiguous assignment.", "Check server protocol compatibility."))
+				return
+			}
+			resource := proto.Clone(message.Job).(*pb.Resource)
+			select {
+			case jobs <- resource:
+			case <-ctx.Done():
+				return
+			default:
+				cancel(domain.Fail(domain.ResourceExhausted, "The server exceeded the Worker assignment window.", "Reconcile accepted jobs before reconnecting."))
+				return
+			}
 		}
-		resource := stream.Msg().Job
+		err := stream.Err()
+		if err == nil {
+			err = domain.Fail(domain.Unavailable, "The Worker work stream ended.", "Reconnect and reconcile the accepted operation.")
+		}
+		cancel(err)
+	}()
+	defer func() { cancel(context.Canceled); _ = stream.Close(); <-received }()
+	for {
+		var resource *pb.Resource
+		select {
+		case <-ctx.Done():
+			return context.Cause(ctx)
+		case resource = <-jobs:
+		}
+		if ctx.Err() != nil {
+			return context.Cause(ctx)
+		}
 		if resource.Kind != pb.EntityKind_ENTITY_KIND_JOB || resource.SchemaVersion != 1 || resource.Revision == 0 {
 			return domain.Fail(domain.RecoveryRequired, "The Worker received an invalid job envelope.", "Check server protocol compatibility.")
 		}
@@ -160,6 +216,9 @@ func watch(ctx context.Context, config Config, client delidevv1connect.WorkerSer
 		if err != nil {
 			return err
 		}
+		if ctx.Err() != nil {
+			return context.Cause(ctx)
+		}
 		report := &pb.ReportWorkRequest{Mutation: &pb.Mutation{RequestId: string(result.ReportID), Id: string(result.JobID), ExpectedRevision: result.Revision}, MachineId: string(credential.MachineID), InstanceId: string(instance), OutputJson: result.Output}
 		if result.Problem != nil {
 			report.Problem = &pb.ErrorDetail{Code: string(result.Problem.Code)}
@@ -168,6 +227,9 @@ func watch(ctx context.Context, config Config, client delidevv1connect.WorkerSer
 		_, err = client.ReportWork(attempt, authenticated(credential, report))
 		cancel()
 		if err != nil {
+			if ctx.Err() != nil {
+				return context.Cause(ctx)
+			}
 			return err
 		}
 		result.State = journalReported
@@ -176,7 +238,6 @@ func watch(ctx context.Context, config Config, client delidevv1connect.WorkerSer
 		}
 		config.Logger.InfoContext(ctx, "worker job completed", "machine_id", credential.MachineID, "job_id", id, "type", job.Type, "failed", result.Problem != nil)
 	}
-	return stream.Err()
 }
 func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb.Resource, job domain.Job) (journal, error) {
 	root := config.Root

@@ -15,7 +15,7 @@ import (
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
-const workerLease = 45 * time.Second
+const workerLease = domain.WorkerConnectionTimeout
 
 type workerStream struct {
 	ID     domain.ID
@@ -174,12 +174,29 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 	var after domain.ID
+	var inFlight domain.ID
 	for {
 		changed := s.Store.Changed()
 		var records []store.Record
 		err := s.Store.Read(ctx, func(tx *store.Tx) error {
 			if err := currentInstance(tx, machine, instance); err != nil {
 				return err
+			}
+			// Keep receiving heartbeats while the Worker performs this operation,
+			// but do not preclaim later jobs into a blocked native-input backlog.
+			if inFlight != "" {
+				record, err := tx.Get(domain.JobKind, inFlight)
+				if err != nil {
+					return err
+				}
+				job, err := store.Decode[domain.Job](record)
+				if err != nil {
+					return err
+				}
+				if job.State == domain.JobClaimed && job.InstanceID == instance {
+					return nil
+				}
+				inFlight = ""
 			}
 			var err error
 			records, err = tx.Jobs(machine, "", "", after, store.MaxPage)
@@ -227,6 +244,9 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 				if err := send(&pb.WatchWorkResponse{Job: rpc.Resource(record)}); err != nil {
 					return err
 				}
+				inFlight = record.ID
+				after = record.ID
+				break
 			}
 			after = record.ID
 		}

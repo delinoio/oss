@@ -137,10 +137,14 @@ func TestDiscoveryRevisionReceiptsAuthorizationAndAtomicPublication(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !stream.Receive() || stream.Msg().Job == nil || stream.Msg().Job.Id != second.Msg.Job.Id {
-		t.Fatal("missing refreshed job")
+	queued, err := resources.GetResource(ctx, ownerRequest(owner, &pb.GetResourceRequest{Kind: pb.EntityKind_ENTITY_KIND_JOB, Id: second.Msg.Job.Id}))
+	if err != nil {
+		t.Fatal(err)
 	}
-	claimed := stream.Msg().Job
+	var waiting domain.Job
+	if err := domain.Decode(queued.Msg.Resource.DocumentJson, &waiting); err != nil || waiting.State != domain.JobQueued {
+		t.Fatal("later discovery was preclaimed while the Worker was busy")
+	}
 	report := func(job *pb.Resource) *pb.ReportWorkRequest {
 		var value domain.Job
 		if err := domain.Decode(job.DocumentJson, &value); err != nil {
@@ -178,6 +182,10 @@ func TestDiscoveryRevisionReceiptsAuthorizationAndAtomicPublication(t *testing.T
 	if staleJob.State != domain.JobFailed || staleJob.Problem.Code != domain.Conflict {
 		t.Fatalf("stale result published: %+v", staleJob)
 	}
+	if !stream.Receive() || stream.Msg().Job == nil || stream.Msg().Job.Id != second.Msg.Job.Id {
+		t.Fatal("missing refreshed job after prior completion")
+	}
+	claimed := stream.Msg().Job
 	completion := report(claimed)
 	// A general machine revision change from attachment is independent of the
 	// executable discovery generation and must not invalidate fresh results.

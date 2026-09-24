@@ -124,6 +124,9 @@ func (g Git) Inspect(ctx context.Context, path string) (Inspection, error) {
 		if domain.SafeError(err).Code == domain.RecoveryRequired {
 			return Inspection{}, err
 		}
+		if ctx.Err() != nil {
+			return Inspection{}, domain.SafeError(ctx.Err())
+		}
 		return Inspection{}, domain.Fail(domain.InvalidArgument, "The path is not an accessible Git working tree on this Worker.", "Select an existing root, subdirectory, or linked worktree.")
 	}
 	root := strings.TrimSuffix(string(raw), "\n")

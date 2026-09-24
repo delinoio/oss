@@ -9,6 +9,8 @@ import (
 
 type DeviceType string
 
+const WorkerConnectionTimeout = 45 * time.Second
+
 const (
 	OwnerDevice  DeviceType = "owner"
 	ClientDevice DeviceType = "client"
