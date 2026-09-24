@@ -33,30 +33,40 @@ func (s *Service) acceptQuestionResponse(tx *store.Tx, responseID, interactionID
 	if err := input.Validate(value.Questions); err != nil {
 		return store.Record{}, err
 	}
-	_, session, err := sessionRecord(tx, r.SessionID)
-	if err != nil {
-		return store.Record{}, err
-	}
-	progress := session.Execution
-	if session.Outcome != domain.ExecutionRunning || progress == nil || progress.Outcome != domain.ExecutionRunning || progress.CleanupVerified || session.ActiveExecutionID != value.ExecutionID || progress.ExecutionID != value.ExecutionID || progress.NativeThreadID != value.NativeThreadID || progress.NativeTurnID != value.NativeTurnID {
-		return store.Record{}, executionEventConflict()
-	}
-	job, err := tx.SessionExecutionJob(r.SessionID, value.ExecutionID)
-	if err != nil {
-		return store.Record{}, err
-	}
-	if job.ID != progress.JobID {
-		return store.Record{}, executionEventConflict()
-	}
-	grant, err := tx.ExecutionGrantForJob(job.ID)
-	if err != nil {
-		return store.Record{}, err
-	}
-	// Reuse the complete live execution/account/Worker/project/epoch boundary.
-	// A question cannot introduce another account, model or permission policy.
-	if _, err := s.executionAuthority.scope(tx, grant); err != nil {
+	if _, err := s.questionResponseScope(tx, r, value); err != nil {
 		return store.Record{}, err
 	}
 	value.Response = &domain.QuestionResponse{ID: responseID, State: domain.QuestionResponseQueued, Input: input, AcceptedAt: time.Now().UTC()}
 	return tx.Put(r.Kind, r.ID, r.Revision, r.SessionID, r.ProjectID, value)
+}
+
+func (s *Service) questionResponseScope(tx *store.Tx, r store.Record, value domain.ExecutionInteraction) (store.ExecutionGrant, error) {
+	if s.executionAuthority == nil || r.Kind != domain.InteractionKind || value.Type != domain.UserQuestionInteraction || value.Closure != domain.InteractionOpen {
+		return store.ExecutionGrant{}, executionEventConflict()
+	}
+	_, session, err := sessionRecord(tx, r.SessionID)
+	if err != nil {
+		return store.ExecutionGrant{}, err
+	}
+	progress := session.Execution
+	if session.Outcome != domain.ExecutionRunning || progress == nil || progress.Outcome != domain.ExecutionRunning || progress.CleanupVerified || session.ActiveExecutionID != value.ExecutionID || progress.ExecutionID != value.ExecutionID || progress.NativeThreadID != value.NativeThreadID || progress.NativeTurnID != value.NativeTurnID {
+		return store.ExecutionGrant{}, executionEventConflict()
+	}
+	job, err := tx.SessionExecutionJob(r.SessionID, value.ExecutionID)
+	if err != nil {
+		return store.ExecutionGrant{}, err
+	}
+	if job.ID != progress.JobID {
+		return store.ExecutionGrant{}, executionEventConflict()
+	}
+	grant, err := tx.ExecutionGrantForJob(job.ID)
+	if err != nil {
+		return store.ExecutionGrant{}, err
+	}
+	// Reuse the complete live execution/account/Worker/project/epoch boundary.
+	// A question cannot introduce another account, model or permission policy.
+	if _, err := s.executionAuthority.scope(tx, grant); err != nil {
+		return store.ExecutionGrant{}, err
+	}
+	return grant, nil
 }

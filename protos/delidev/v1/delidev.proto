@@ -195,6 +195,20 @@ service WorkerService {
   rpc DiscoverHarnesses(DiscoverHarnessesRequest) returns (DiscoverHarnessesResponse);
   rpc RegisterExecution(RegisterExecutionRequest) returns (RegisterExecutionResponse);
   rpc PublishExecution(PublishExecutionRequest) returns (PublishExecutionResponse);
+  rpc ClaimQuestionResponse(ClaimQuestionResponseRequest) returns (ClaimQuestionResponseResponse);
+}
+message ClaimQuestionResponseRequest {
+  // Exact original interaction revision and durable Worker claim request ID.
+  Mutation mutation = 1;
+  string machine_id = 2;
+  string instance_id = 3;
+  string job_id = 4;
+  string response_id = 5;
+}
+message ClaimQuestionResponseResponse {
+  // Only the owning live Worker receives the retained non-secret response.
+  Resource interaction = 1;
+  bool replayed = 2;
 }
 message PublishExecutionRequest {
   // Immutable claimed job/revision, with a durable event request identity.
@@ -282,6 +296,14 @@ message WatchWorkResponse {
   bool cancel_requested = 3;
   // A separate control for a previously delivered assignment on this stream.
   string cancel_job_id = 4;
+  // Metadata-only control for the active assignment, independent of job order.
+  QuestionResponseControl question_response = 5;
+}
+message QuestionResponseControl {
+  string job_id = 1;
+  string interaction_id = 2;
+  string response_id = 3;
+  uint64 revision = 4;
 }
 message ReportWorkRequest {
   Mutation mutation = 1;

@@ -111,6 +111,8 @@ func (s *Service) PublishExecution(ctx context.Context, req *connect.Request[pb.
 }
 
 func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJobInput, sr store.Record, session *domain.Session, ir store.Record, queued *domain.QueuedInput, event domain.ExecutionEvent) error {
+	var responseUncertain bool
+	var responseErr error
 	progress := session.Execution
 	if progress == nil {
 		if event.Kind != domain.ExecutionThreadBound || event.Sequence != 1 || queued.Delivery != domain.InputClaimed {
@@ -148,8 +150,9 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 				return executionEventConflict()
 			}
 			if event.Kind == domain.ExecutionTurnFinished {
-				if err := endPublishedInteractions(tx, input, event); err != nil {
-					return err
+				responseUncertain, responseErr = endPublishedInteractions(tx, input, event)
+				if responseErr != nil {
+					return responseErr
 				}
 				progress.Waiting = domain.NativeWaiting{}
 				if event.Outcome == domain.ExecutionSucceeded {
@@ -191,8 +194,9 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 					session.Dispatch = domain.DispatchPaused
 				}
 			} else if event.Kind.IsInteraction() {
-				if err := publishExecutionInteraction(tx, input, sr, event); err != nil {
-					return err
+				responseUncertain, responseErr = publishExecutionInteraction(tx, input, sr, event)
+				if responseErr != nil {
+					return responseErr
 				}
 			} else if event.Kind == domain.ExecutionWaitingChanged {
 				progress.Waiting = *event.Waiting
@@ -223,6 +227,12 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 		}
 	}
 	progress.LastSequence = event.Sequence
+	if responseUncertain {
+		session.Recovery, session.Dispatch = domain.NeedsRecovery, domain.DispatchPaused
+		if session.Problem == nil {
+			session.Problem = domain.Fail(domain.RecoveryRequired, "The native question response requires reconciliation.", "Preserve its original claim and inspect native state before another send; closure does not prove answer acceptance.")
+		}
+	}
 	return nil
 }
 

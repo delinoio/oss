@@ -166,6 +166,14 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 		for stream.Receive() {
 			deadline.Reset(heartbeatTimeout)
 			message := stream.Msg()
+			if message.QuestionResponse != nil {
+				// Server-side claims exist before native send-intent integration.
+				// Until that controller is connected, fail explicitly even when
+				// the unsupported control is mixed with a heartbeat/assignment;
+				// never silently discard an accepted owner's response.
+				cancel(domain.Fail(domain.Unsupported, "This Worker has no integrated question response delivery controller.", "Retain the queued response until claim journaling and native delivery are supported; no answer was sent."))
+				return
+			}
 			if message.CancelJobId != "" {
 				if message.Job != nil || message.Heartbeat || message.CancelRequested || domain.ID(message.CancelJobId).Validate() != nil {
 					cancel(domain.Fail(domain.RecoveryRequired, "The Worker received an invalid cancellation control.", "Check server protocol compatibility."))

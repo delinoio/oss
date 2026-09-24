@@ -85,6 +85,9 @@ func nativeCompletionUncertain() *domain.Error {
 }
 
 func retainNativeUncertainty(tx *store.Tx, input domain.ExecutionJobInput, sr store.Record, session *domain.Session) error {
+	if err := invalidateQuestionResponses(tx, input); err != nil {
+		return err
+	}
 	session.Recovery, session.Dispatch = domain.NeedsRecovery, domain.DispatchPaused
 	if session.Problem == nil {
 		session.Problem = nativeCompletionUncertain()

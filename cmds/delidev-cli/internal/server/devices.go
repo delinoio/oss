@@ -75,7 +75,7 @@ func (s *Service) authorizeRequest(r *http.Request) (*http.Request, func(), erro
 	}
 	if actor.Type == domain.WorkerDevice {
 		switch r.URL.Path {
-		case delidevv1connect.WorkerServiceAttachWorkerProcedure, delidevv1connect.WorkerServiceWatchWorkProcedure, delidevv1connect.WorkerServiceReportWorkProcedure, delidevv1connect.WorkerServiceRegisterExecutionProcedure, delidevv1connect.WorkerServicePublishExecutionProcedure, delidevv1connect.SystemServiceGetStatusProcedure:
+		case delidevv1connect.WorkerServiceAttachWorkerProcedure, delidevv1connect.WorkerServiceWatchWorkProcedure, delidevv1connect.WorkerServiceReportWorkProcedure, delidevv1connect.WorkerServiceRegisterExecutionProcedure, delidevv1connect.WorkerServicePublishExecutionProcedure, delidevv1connect.WorkerServiceClaimQuestionResponseProcedure, delidevv1connect.SystemServiceGetStatusProcedure:
 		default:
 			return nil, nil, domain.Fail(domain.PermissionDenied, "Worker credentials cannot invoke owner product operations.", "Use an owner or paired client credential.")
 		}

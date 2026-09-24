@@ -182,10 +182,12 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 	var after domain.ID
 	var inFlight domain.ID
 	var cancellationSent domain.ID
+	responseControlsSent := map[domain.ID]bool{}
 	for {
 		changed := s.Store.Changed()
 		var records []store.Record
 		var cancelJob domain.ID
+		var responseControls []*pb.QuestionResponseControl
 		err := s.Store.Read(ctx, func(tx *store.Tx) error {
 			if err := currentInstance(tx, machine, instance); err != nil {
 				return err
@@ -209,10 +211,14 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 					if requested && cancellationSent != inFlight {
 						cancelJob = inFlight
 					}
-					return nil
+					if !requested {
+						responseControls, err = s.pendingQuestionResponses(tx, record, job, responseControlsSent)
+					}
+					return err
 				}
 				inFlight = ""
 				cancellationSent = ""
+				responseControlsSent = map[domain.ID]bool{}
 			}
 			var err error
 			records, err = tx.Jobs(machine, "", "", after, store.MaxPage)
@@ -227,6 +233,16 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 			}
 			cancellationSent = cancelJob
 		}
+		for _, control := range responseControls {
+			if len(responseControlsSent) >= domain.MaxExecutionInteractions {
+				return rpc.Error(domain.Fail(domain.ResourceExhausted, "The execution response control bound is reached.", "Reconcile its original interactions without replaying native answers."), correlation)
+			}
+			if err := send(&pb.WatchWorkResponse{QuestionResponse: control}); err != nil {
+				return err
+			}
+			responseControlsSent[domain.ID(control.ResponseId)] = true
+		}
+		assigned := false
 		for _, record := range records {
 			job, err := store.Decode[domain.Job](record)
 			if err != nil {
@@ -275,6 +291,7 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 					return err
 				}
 				inFlight = record.ID
+				assigned = true
 				if cancelRequested {
 					cancellationSent = record.ID
 				}
@@ -283,7 +300,7 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 			}
 			after = record.ID
 		}
-		if len(records) == store.MaxPage {
+		if assigned || len(records) == store.MaxPage {
 			continue
 		}
 		select {

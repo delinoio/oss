@@ -76,15 +76,29 @@ func (r QuestionResponseInput) Validate(original *QuestionRequest) error {
 type QuestionResponseState string
 
 const (
-	QuestionResponseQueued   QuestionResponseState = "queued"
-	QuestionResponseCanceled QuestionResponseState = "canceled"
+	QuestionResponseQueued    QuestionResponseState = "queued"
+	QuestionResponseClaimed   QuestionResponseState = "claimed"
+	QuestionResponseUncertain QuestionResponseState = "uncertain"
+	QuestionResponseCanceled  QuestionResponseState = "canceled"
 )
+
+// A claim authorizes only its original Worker attempt. It does not prove a
+// native send, and another process must never adopt it to replay the answer.
+type QuestionResponseClaim struct {
+	ID         ID        `json:"id"`
+	JobID      ID        `json:"job_id"`
+	MachineID  ID        `json:"machine_id"`
+	InstanceID ID        `json:"instance_id"`
+	DeviceID   ID        `json:"device_id"`
+	ClaimedAt  time.Time `json:"claimed_at"`
+}
 
 // Queued acceptance is a server fact only. Native ownership/delivery and
 // semantic acceptance require separate state transitions and evidence.
 type QuestionResponse struct {
-	ID         ID                    `json:"id"`
-	State      QuestionResponseState `json:"state"`
-	Input      QuestionResponseInput `json:"input"`
-	AcceptedAt time.Time             `json:"accepted_at"`
+	ID         ID                     `json:"id"`
+	State      QuestionResponseState  `json:"state"`
+	Input      QuestionResponseInput  `json:"input"`
+	AcceptedAt time.Time              `json:"accepted_at"`
+	Claim      *QuestionResponseClaim `json:"claim,omitempty"`
 }
