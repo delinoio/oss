@@ -154,7 +154,11 @@ func TestNativeCompletionRequiresPublishedTerminalAndOwnedCleanup(t *testing.T) 
 				t.Fatal(err)
 			}
 			if scenario == "success" || scenario == "checkpoint-success" {
-				if job.State != domain.JobSucceeded || !s.Execution.CleanupVerified || s.ActiveExecutionID != "" || s.Outcome != domain.ExecutionSucceeded || s.Dispatch != domain.DispatchPaused || s.Recovery != domain.NoRecovery {
+				dispatch := domain.DispatchPaused
+				if scenario == "checkpoint-success" {
+					dispatch = domain.DispatchReady
+				}
+				if job.State != domain.JobSucceeded || !s.Execution.CleanupVerified || s.ActiveExecutionID != "" || s.Outcome != domain.ExecutionSucceeded || s.Dispatch != dispatch || s.Recovery != domain.NoRecovery {
 					t.Fatal("verified completion lost cleanup or silently started another turn")
 				}
 				var retained domain.ExecutionCompletion

@@ -70,7 +70,7 @@ func (s *Service) sessionResult(ctx context.Context, result store.Result) (*pb.S
 			}
 		}
 		if value.InitialExecution != nil {
-			job, err := tx.SessionExecutionJob(session.ID, value.InitialExecution.ID)
+			job, err := tx.SessionExecutionJob(session.ID, value.ExecutionSelection().ID)
 			if err != nil {
 				return err
 			}
@@ -402,7 +402,8 @@ func (s *Service) ControlSession(ctx context.Context, req *connect.Request[pb.Co
 		}
 		if action == domain.ResumeSession {
 			if value.InitialExecution != nil {
-				return nil, domain.SessionExecutionUnavailable()
+				_, err := queueContinuation(tx, r, value, true)
+				return sessionReceipt{SessionID: r.ID}, err
 			}
 			_, err := queueInitialExecution(tx, r, value, true)
 			return sessionReceipt{SessionID: r.ID}, err

@@ -17,8 +17,7 @@ func nativeExecutionScope(tx *store.Tx, record store.Record, job domain.Job) (do
 	if err != nil {
 		return input, sr, session, err
 	}
-	initial := session.InitialExecution
-	if initial == nil || initial.ID != input.ExecutionID || initial.ConfigurationDigest != input.ConfigurationDigest || initial.InputID != input.InputID || initial.InitialAccountID != input.AccountID || initial.ConnectionID != input.ConnectionID || session.ActiveExecutionID != input.ExecutionID || (session.Execution != nil && session.Execution.JobID != record.ID) {
+	if !session.OwnsExecution(input) || session.ActiveExecutionID != input.ExecutionID || (session.Execution != nil && session.Execution.JobID != record.ID) {
 		return input, sr, session, executionEventConflict()
 	}
 	return input, sr, session, nil
@@ -34,9 +33,13 @@ func finishNativeExecution(tx *store.Tx, record store.Record, job domain.Job, ex
 	verified := reported == nil && domain.Decode(raw, &completion) == nil && completion.Validate() == nil && completion.ExecutionID == input.ExecutionID && completion.InputID == input.InputID && progress != nil && progress.JobID == record.ID && progress.ExecutionID == input.ExecutionID && progress.InputID == input.InputID && progress.NativeThreadID == string(completion.NativeThreadID) && progress.NativeTurnID == string(completion.NativeTurnID) && progress.LastSequence == completion.LastSequence && progress.Outcome == completion.Outcome && !progress.CleanupVerified
 	now := time.Now().UTC()
 	job.FinishedAt = &now
-	session.Dispatch = domain.DispatchPaused
+	previousDispatch := session.Dispatch
+	session.Dispatch, session.NextExecutionIntent = domain.DispatchPaused, ""
 	if verified {
 		progress.CleanupVerified = true
+		if completion.Version == 2 && completion.Outcome == domain.ExecutionSucceeded && session.Outcome == domain.ExecutionSucceeded && previousDispatch == domain.DispatchClaimed && session.Archive == domain.NotArchived && session.Recovery == domain.NoRecovery && progress.Waiting == (domain.NativeWaiting{}) && progress.UnconfirmedResponses == 0 {
+			session.Dispatch, session.NextExecutionIntent = domain.DispatchReady, domain.ContinueAutomatically
+		}
 		if session.Recovery == domain.NoRecovery {
 			session.ActiveExecutionID = ""
 			// This first-execution profile currently owns only the agent process
@@ -88,7 +91,7 @@ func retainNativeUncertainty(tx *store.Tx, input domain.ExecutionJobInput, sr st
 	if err := invalidateQuestionResponses(tx, input); err != nil {
 		return err
 	}
-	session.Recovery, session.Dispatch = domain.NeedsRecovery, domain.DispatchPaused
+	session.Recovery, session.Dispatch, session.NextExecutionIntent = domain.NeedsRecovery, domain.DispatchPaused, ""
 	if session.Problem == nil {
 		session.Problem = nativeCompletionUncertain()
 	}

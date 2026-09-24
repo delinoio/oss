@@ -42,13 +42,13 @@ func TestManualNativeCLIFirstDispatch(t *testing.T) {
 	} {
 		mode := scenario.mode
 		t.Run(string(scenario.workspace)+"/"+string(mode), func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 			defer cancel()
 			root := filepath.Join(t.TempDir(), "server")
 			ready := make(chan struct{})
 			done := make(chan error, 1)
 			go func() {
-				done <- server.Serve(ctx, server.Config{DataDir: root, Listen: "127.0.0.1:0", Logger: slog.New(slog.NewJSONHandler(io.Discard, nil))}, func(server.Endpoint) { close(ready) })
+				done <- server.Serve(ctx, server.Config{DataDir: root, Listen: "127.0.0.1:0", Logger: slog.New(slog.NewJSONHandler(os.Stderr, nil))}, func(server.Endpoint) { close(ready) })
 			}()
 			defer func() {
 				cancel()
@@ -92,7 +92,7 @@ func TestManualNativeCLIFirstDispatch(t *testing.T) {
 			workerCtx, stopWorker := context.WithCancel(ctx)
 			workerReady, workerDone := make(chan struct{}), make(chan error, 1)
 			go func() {
-				workerDone <- worker.Run(workerCtx, worker.Config{Root: workerRoot, Logger: slog.New(slog.NewJSONHandler(io.Discard, nil)), Ready: func(domain.ID) { close(workerReady) }})
+				workerDone <- worker.Run(workerCtx, worker.Config{Root: workerRoot, Logger: slog.New(slog.NewJSONHandler(os.Stderr, nil)), Ready: func(domain.ID) { close(workerReady) }})
 			}()
 			defer func() {
 				stopWorker()
@@ -123,6 +123,7 @@ func TestManualNativeCLIFirstDispatch(t *testing.T) {
 				t.Fatal("actual native protocol was not verified")
 			}
 			var calls, validations atomic.Int64
+			interruptedRequest := make(chan struct{}, 1)
 			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.Header.Get("Authorization") != "" {
 					t.Error("keyless upstream received a credential")
@@ -140,22 +141,40 @@ func TestManualNativeCLIFirstDispatch(t *testing.T) {
 					http.Error(w, "unsupported", 400)
 					return
 				}
-				calls.Add(1)
+				call := calls.Add(1)
 				body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
-				if err != nil || !strings.Contains(string(body), "Public first prompt") || !strings.Contains(string(body), "fixture-model") {
+				if err != nil || !strings.Contains(string(body), "fixture-model") {
 					t.Error("native execution changed accepted input/model")
 				}
+				prompts := []string{"Public first prompt", "Public second prompt", "Public third prompt", "Public fourth prompt", "Public fifth prompt", "Public interrupted prompt", "Public resumed interrupted prompt"}
+				if call < 1 || call > int64(len(prompts)) {
+					t.Error("unexpected provider inference count")
+				} else {
+					for _, prompt := range prompts[:call] {
+						if strings.Count(string(body), prompt) != 1 {
+							t.Error("native history omitted or duplicated an accepted user input")
+						}
+					}
+				}
 				w.Header().Set("Content-Type", "text/event-stream")
+				if call == 6 {
+					fmt.Fprintf(w, "data: %s\n\n", `{"type":"response.created","response":{"id":"resp_public_interrupted","status":"in_progress"}}`)
+					w.(http.Flusher).Flush()
+					interruptedRequest <- struct{}{}
+					<-r.Context().Done()
+					return
+				}
 				for _, event := range []any{
-					map[string]any{"type": "response.created", "response": map[string]any{"id": "resp_public_fixture", "status": "in_progress"}},
-					map[string]any{"type": "response.output_item.done", "output_index": 0, "item": map[string]any{"type": "message", "id": "msg_public_fixture", "role": "assistant", "content": []any{map[string]any{"type": "output_text", "text": "Public execution complete."}}}},
-					map[string]any{"type": "response.completed", "response": map[string]any{"id": "resp_public_fixture", "status": "completed", "output": []any{}, "usage": map[string]any{"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}}},
+					map[string]any{"type": "response.created", "response": map[string]any{"id": fmt.Sprintf("resp_public_fixture_%d", call), "status": "in_progress"}},
+					map[string]any{"type": "response.output_item.done", "output_index": 0, "item": map[string]any{"type": "message", "id": fmt.Sprintf("msg_public_fixture_%d", call), "role": "assistant", "content": []any{map[string]any{"type": "output_text", "text": "Public execution complete."}}}},
+					map[string]any{"type": "response.completed", "response": map[string]any{"id": fmt.Sprintf("resp_public_fixture_%d", call), "status": "completed", "output": []any{}, "usage": map[string]any{"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}}},
 				} {
 					raw, _ := json.Marshal(event)
 					fmt.Fprintf(w, "data: %s\n\n", raw)
 				}
 			}))
 			defer upstream.Close()
+			defer upstream.CloseClientConnections()
 			provider := run([]string{"provider", "create"}, domain.Provider{Name: "Private fixture", Endpoint: upstream.URL, Protocol: domain.OpenAIResponses, Authentication: domain.KeylessAuth})["resource"].(map[string]any)
 			account := run([]string{"account", "create"}, domain.Account{Alias: "Private fixture", ProviderID: domain.ID(provider["id"].(string)), Type: domain.APIAccount, Enabled: true, Health: domain.AccountDisconnected})["resource"].(map[string]any)
 			account = run([]string{"account", "connect", "--id", account["id"].(string), "--revision", revision(account), "--keyless"}, nil)["account"].(map[string]any)
@@ -164,7 +183,11 @@ func TestManualNativeCLIFirstDispatch(t *testing.T) {
 				t.Fatal("public account validation did not establish readiness")
 			}
 			model := run([]string{"model", "create"}, domain.Model{Name: "Fixture", NativeID: "fixture-model", ProviderID: domain.ID(provider["id"].(string)), Harnesses: []domain.Harness{domain.Codex}, MetadataSource: domain.UserDeclared})["resource"].(map[string]any)
-			agent := run([]string{"agent", "create"}, domain.Agent{Name: "Fixture", Harness: domain.Codex, ModelID: domain.ID(model["id"].(string)), Accounts: []domain.WeightedAccount{{ID: domain.ID(account["id"].(string)), Weight: 1}}, Options: domain.AgentOptions{Permission: domain.PermissionReadOnly}})["resource"].(map[string]any)
+			options := domain.AgentOptions{Permission: domain.PermissionReadOnly}
+			if scenario.workspace == domain.Worktree {
+				options.Permission = domain.PermissionWorkspaceWrite
+			}
+			agent := run([]string{"agent", "create"}, domain.Agent{Name: "Fixture", Harness: domain.Codex, ModelID: domain.ID(model["id"].(string)), Accounts: []domain.WeightedAccount{{ID: domain.ID(account["id"].(string)), Weight: 1}}, Options: options})["resource"].(map[string]any)
 			create := []string{"session", "create", "--request-id", string(domain.NewID()), "--wait"}
 			input := domain.CreateSession{Name: "Public CLI first execution", AgentID: domain.ID(agent["id"].(string)), MachineID: domain.ID(machine), Workspace: scenario.workspace, Mode: mode, Prompt: "Public first prompt"}
 			if scenario.workspace == domain.Worktree {
@@ -241,7 +264,173 @@ func TestManualNativeCLIFirstDispatch(t *testing.T) {
 			if calls.Load() != 1 || validations.Load() != 1 {
 				t.Fatal("public receipt replay repeated validation or inference")
 			}
-			t.Log("Public CLI pairing, native discovery, non-inference account validation, session creation, automatic immutable dispatch, scoped keyless relay, native completion and owned cleanup passed; no readiness or execution record was seeded")
+			initialBytes, _ := json.Marshal(state.InitialExecution)
+			originalThread := state.Execution.NativeThreadID
+			previousExecution := state.Execution.ExecutionID
+			waitTurn := func(count int, inputID string) {
+				t.Helper()
+				for {
+					current := run([]string{"session", "get", "--id", id}, nil)
+					raw, _ := json.Marshal(current["data"])
+					state = domain.Session{}
+					if domain.Decode(raw, &state) != nil {
+						t.Fatal("invalid continuation session")
+					}
+					if state.Recovery != domain.NoRecovery || state.Outcome == domain.ExecutionFailed {
+						t.Fatalf("continuation %d failed: %+v", count, state)
+					}
+					if state.Execution != nil && state.Execution.InputID == domain.ID(inputID) && state.Execution.CleanupVerified {
+						break
+					}
+					select {
+					case <-time.After(30 * time.Millisecond):
+					case <-ctx.Done():
+						t.Fatalf("continuation %d timed out: %+v", count, state)
+					}
+				}
+				retained, _ := json.Marshal(state.InitialExecution)
+				if string(retained) != string(initialBytes) || state.Execution.NativeThreadID != originalThread || state.Execution.ExecutionID == previousExecution || state.Dispatch != domain.DispatchReady || state.Outcome != domain.ExecutionSucceeded || state.ActiveExecutionID != "" || state.NextExecutionIntent != domain.ContinueAutomatically {
+					t.Fatal("continuation replaced history, snapshot or ownership")
+				}
+				previousExecution = state.Execution.ExecutionID
+				if calls.Load() != int64(count) {
+					t.Fatal("continuation replayed or skipped native input", calls.Load(), count)
+				}
+			}
+			enqueue := func(prompt string, mode domain.SessionMode) string {
+				return run([]string{"session", "enqueue", "--id", id}, domain.SessionInput{Prompt: prompt, Mode: mode})["input"].(map[string]any)["id"].(string)
+			}
+			// Complete two FIFO turns in fresh native processes on the original history.
+			second := enqueue("Public second prompt", domain.PlanMode)
+			third := enqueue("Public third prompt", domain.ExecuteMode)
+			_ = second
+			waitTurn(3, third)
+			control := func(action string) map[string]any {
+				t.Helper()
+				for {
+					current := run([]string{"session", "get", "--id", id}, nil)
+					code, result := cliRun(t, root, []string{"session", action, "--id", id, "--revision", revision(current)}, "")
+					if code == 0 {
+						return result["result"].(map[string]any)
+					}
+					if result["error"].(map[string]any)["code"] != string(domain.Conflict) {
+						t.Fatalf("public control failed: %v", result)
+					}
+					select {
+					case <-time.After(20 * time.Millisecond):
+					case <-ctx.Done():
+						t.Fatal("control revision never stabilized")
+					}
+				}
+			}
+			control("stop")
+			fourth := enqueue("Public fourth prompt", domain.ExecuteMode)
+			select {
+			case <-time.After(1200 * time.Millisecond):
+			case <-ctx.Done():
+				t.Fatal("fixture deadline")
+			}
+			if calls.Load() != 3 {
+				t.Fatal("enqueue resumed a stopped session")
+			}
+			control("resume")
+			waitTurn(4, fourth)
+			// An explicit empty Resume retains authorization for the next queued entry.
+			control("stop")
+			resumed := control("resume")["session"].(map[string]any)["data"].(map[string]any)
+			if resumed["next_execution_intent"] != string(domain.ContinueExplicitly) {
+				t.Fatal("empty Resume lost its explicit intent")
+			}
+			fifth := enqueue("Public fifth prompt", domain.PlanMode)
+			waitTurn(5, fifth)
+			replay = run(create, input)
+			if replay["execution_job"].(map[string]any)["id"] == job["id"] {
+				t.Fatal("old creation receipt did not join the latest turn")
+			}
+			queue = run([]string{"queue", "list", "--session-id", id}, nil)["inputs"].([]any)
+			messages = run([]string{"message", "list", "--session-id", id}, nil)["resources"].([]any)
+			if len(queue) != 5 || len(messages) != 10 || validations.Load() != 1 {
+				t.Fatal("continuation lost ordered input/transcript or repeated provider validation")
+			}
+			for n, entry := range queue {
+				data := entry.(map[string]any)["data"].(map[string]any)
+				if data["delivery"] != string(domain.InputAccepted) || data["sequence"] != float64(n+1) {
+					t.Fatal("FIFO input ownership changed")
+				}
+			}
+			if scenario.workspace == domain.GeneralChat && mode == domain.ExecuteMode {
+				sixth := enqueue("Public interrupted prompt", domain.ExecuteMode)
+				select {
+				case <-interruptedRequest:
+				case <-ctx.Done():
+					t.Fatal("interruption fixture did not start")
+				}
+				// Provider submission can precede the public input-accepted event. Stop
+				// only after that durable boundary to test a real retained native interrupt.
+				for {
+					current := run([]string{"session", "get", "--id", id}, nil)
+					raw, _ := json.Marshal(current["data"])
+					state = domain.Session{}
+					_ = domain.Decode(raw, &state)
+					if state.Execution != nil && state.Execution.InputID == domain.ID(sixth) && state.Execution.Outcome == domain.ExecutionRunning && state.Execution.LastSequence >= 4 {
+						break
+					}
+					select {
+					case <-time.After(20 * time.Millisecond):
+					case <-ctx.Done():
+						t.Fatal("native input was not accepted")
+					}
+				}
+				control("stop")
+				for {
+					current := run([]string{"session", "get", "--id", id}, nil)
+					raw, _ := json.Marshal(current["data"])
+					state = domain.Session{}
+					_ = domain.Decode(raw, &state)
+					if state.Recovery != domain.NoRecovery {
+						t.Fatal("native Stop lost cleanup proof")
+					}
+					if state.Execution != nil && state.Execution.CleanupVerified {
+						break
+					}
+					select {
+					case <-time.After(20 * time.Millisecond):
+					case <-ctx.Done():
+						t.Fatal("native Stop did not finish")
+					}
+				}
+				if state.Execution.Outcome != domain.ExecutionStopped || state.Dispatch != domain.DispatchPaused || state.ActiveExecutionID != "" {
+					t.Fatal("native interrupt did not remain paused")
+				}
+				seventh := enqueue("Public resumed interrupted prompt", domain.PlanMode)
+				control("resume")
+				waitTurn(7, seventh)
+				// Changed retained evidence must fail before provider work, with the next
+				// claimed input uncertain and its predecessor/history still reachable.
+				checkpoint := filepath.Join(workerRoot, "runtimes", string(state.Execution.ExecutionID), "native-completion.json")
+				if err := os.WriteFile(checkpoint, []byte("{}"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				eighth := enqueue("Public blocked corrupt checkpoint", domain.ExecuteMode)
+				for {
+					current := run([]string{"session", "get", "--id", id}, nil)
+					raw, _ := json.Marshal(current["data"])
+					state = domain.Session{}
+					_ = domain.Decode(raw, &state)
+					if state.Recovery == domain.NeedsRecovery {
+						break
+					}
+					select {
+					case <-time.After(20 * time.Millisecond):
+					case <-ctx.Done():
+						t.Fatal("corrupt evidence was not rejected")
+					}
+				}
+				if calls.Load() != 7 || state.Dispatch != domain.DispatchPaused || state.CurrentExecution == nil || state.CurrentExecution.InputID != domain.ID(eighth) || state.PendingInputs != 1 {
+					t.Fatal("corrupt checkpoint replayed native input or discarded its claim")
+				}
+			}
+			t.Log("Public CLI first execution, FIFO continuation, native interruption/Resume, queued/future Resume, immutable history/settings, receipt joins and corrupt-checkpoint rejection passed without seeded readiness")
 		})
 	}
 }

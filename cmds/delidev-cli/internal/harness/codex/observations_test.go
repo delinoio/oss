@@ -30,6 +30,32 @@ func usageCounts(total int64) map[string]any {
 	return map[string]any{"inputTokens": int64(11), "cachedInputTokens": int64(4), "outputTokens": int64(7), "reasoningOutputTokens": int64(3), "totalTokens": total}
 }
 
+func TestNativeResumeGoalAbsenceHasNoExecutionAuthority(t *testing.T) {
+	c, turn := observationClient()
+	c.execution.paused = true
+	event, err := observeFixture(c, "thread/goal/cleared", map[string]any{"threadId": c.thread})
+	if err != nil || event.Metadata != NativeGoalAbsent || !event.Correlated || event.Native != nil || !c.execution.paused || c.execution.active != turn {
+		t.Fatal("goal absence changed execution authority", err)
+	}
+	for _, value := range []any{nil, map[string]any{}, map[string]any{"threadId": "invalid"}, map[string]any{"threadId": c.thread, "goal": "unexpected"}} {
+		if _, err := observeFixture(c, "thread/goal/cleared", value); err == nil {
+			t.Fatal("malformed goal absence accepted")
+		}
+	}
+	for _, observation := range []struct {
+		method string
+		params any
+	}{
+		{"thread/goal/cleared", map[string]any{"threadId": domain.NewID()}},
+		{"thread/goal/updated", map[string]any{"threadId": c.thread, "goal": "private goal"}},
+	} {
+		event, err := observeFixture(c, observation.method, observation.params)
+		if err != nil || event.Kind != NativeExtensionEvent || event.Correlated {
+			t.Fatal("foreign/populated goal bypassed its adapter", err)
+		}
+	}
+}
+
 func TestNativeUsagePreservesReportedMeaningAndUnavailableFields(t *testing.T) {
 	c, turn := observationClient()
 	params := map[string]any{"threadId": c.thread, "turnId": turn, "tokenUsage": map[string]any{"total": usageCounts(30), "last": usageCounts(20), "modelContextWindow": nil}}

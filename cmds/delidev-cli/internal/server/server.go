@@ -188,7 +188,7 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	dispatchDone := make(chan struct{})
 	go func() {
 		defer close(dispatchDone)
-		service.runInitialExecutionDispatch(dispatchCtx)
+		service.runExecutionDispatch(dispatchCtx)
 	}()
 	defer func() { stopDispatch(); <-dispatchDone }()
 	config.Logger.Info("server_ready", "server_id", identity.ServerID, "listener", service.Endpoint.URL, "version", rpc.Version)

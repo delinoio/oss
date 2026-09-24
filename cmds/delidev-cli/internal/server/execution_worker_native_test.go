@@ -507,7 +507,7 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 		if err != nil || interaction.Closure == domain.InteractionOpen || interaction.Response == nil || interaction.Response.State != domain.QuestionResponseAccepted || interaction.Response.Acceptance == nil || interaction.Response.Acceptance.Evidence != domain.NativeQuestionOutput || interaction.Response.Claim == nil || interaction.Response.Delivery == nil || interaction.Response.Delivery.State != domain.QuestionTransmitted || len(interaction.Response.Input.Answers["choice"]) != 1 || interaction.Response.Input.Answers["choice"][0] != "Second" {
 			t.Fatal("native response lost its claim/transport evidence")
 		}
-		if session.Recovery != domain.NoRecovery || session.Dispatch != domain.DispatchPaused || session.ActiveExecutionID != "" || session.Execution.UnconfirmedResponses != 0 {
+		if session.Recovery != domain.NoRecovery || session.Dispatch != domain.DispatchReady || session.ActiveExecutionID != "" || session.Execution.UnconfirmedResponses != 0 {
 			t.Fatal("exact native answer acceptance failed to reconcile healthy execution")
 		}
 		_, questionInbox := readExecutionInbox(t, f, domain.InteractionInbox, rows[0].ID)

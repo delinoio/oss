@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
@@ -28,6 +29,10 @@ type firstDispatchFixture struct {
 	agent, account, machine *pb.Resource
 	change                  *pb.SessionChange
 	request                 *pb.CreateSessionRequest
+	workerIdentity          security.Identity
+	workerClient            delidevv1connect.WorkerServiceClient
+	workerInstance          string
+	workerStream            *connect.ServerStreamForClient[pb.WatchWorkResponse]
 }
 
 // Public configuration/account/session APIs and authenticated Worker reports
@@ -75,6 +80,7 @@ func newFirstDispatchFixture(t *testing.T) *firstDispatchFixture {
 	f.agent = base.save(pb.EntityKind_ENTITY_KIND_AGENT, domain.Agent{Name: "Fixture", Harness: domain.Codex, ModelID: domain.ID(model.Id), Accounts: []domain.WeightedAccount{{ID: domain.ID(account.Id), Weight: 1}}, Options: domain.AgentOptions{Permission: domain.PermissionReadOnly}, Routing: &routing})
 	f.selection = domain.CreateSession{Name: "Fixture", AgentID: domain.ID(f.agent.Id), MachineID: domain.ID(f.machine.Id), Workspace: domain.GeneralChat, Prompt: "first retained input", Mode: domain.PlanMode, Source: domain.ExternalCLISession}
 	ctx, client, instance, stream := workspaceStream(t, base, identity, domain.ID(f.machine.Id))
+	f.workerIdentity, f.workerClient, f.workerInstance, f.workerStream = identity, client, instance, stream
 	f.machine = currentCatalogResource(t, base, f.machine)
 	selections, _ := json.Marshal(domain.ExecutableSelections{Executables: []domain.ExecutableSelection{{Harness: domain.Codex, Path: "/fixture/codex"}}})
 	_, err = client.DiscoverHarnesses(ctx, ownerRequest(base.identity, &pb.DiscoverHarnessesRequest{Mutation: acctMutation(f.machine, domain.NewID()), SelectionsJson: selections, VerifyProtocol: true}))
@@ -162,7 +168,7 @@ func TestInitialDispatchAtomicConfigurationRollbackAndCurrentReceipt(t *testing.
 	ctx := context.Background()
 	f.mutateAgent(t, func(a *domain.Agent) { a.Options.MaxConcurrency = 2 })
 	before := f.refresh(t)
-	if err := f.service.dispatchInitial(ctx, before); domain.SafeError(err).Code != domain.Unsupported {
+	if err := f.service.dispatchExecution(ctx, before); domain.SafeError(err).Code != domain.Unsupported {
 		t.Fatal("unsupported option dispatched", err)
 	}
 	blocked := f.refresh(t)
@@ -180,7 +186,7 @@ func TestInitialDispatchAtomicConfigurationRollbackAndCurrentReceipt(t *testing.
 	}); err != nil {
 		t.Fatal(err)
 	}
-	_ = f.service.dispatchInitial(ctx, blocked)
+	_ = f.service.dispatchExecution(ctx, blocked)
 	if f.refresh(t).Revision != blocked.Revision {
 		t.Fatal("unchanged block created a revision loop")
 	}
@@ -189,7 +195,7 @@ func TestInitialDispatchAtomicConfigurationRollbackAndCurrentReceipt(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = f.service.dispatchInitial(ctx, f.refresh(t)); err != nil {
+	if err = f.service.dispatchExecution(ctx, f.refresh(t)); err != nil {
 		t.Fatal(err)
 	}
 	accepted := f.refresh(t)
@@ -210,7 +216,7 @@ func TestInitialDispatchAtomicConfigurationRollbackAndCurrentReceipt(t *testing.
 		t.Fatal("assignment differs from exact claimed input/configuration")
 	}
 	f.mutateAgent(t, func(a *domain.Agent) { a.Effort = "low" })
-	if err = f.service.dispatchInitial(ctx, accepted); domain.SafeError(err).Code != domain.Conflict {
+	if err = f.service.dispatchExecution(ctx, accepted); domain.SafeError(err).Code != domain.Conflict {
 		t.Fatal("claimed work re-dispatched", err)
 	}
 	var after domain.Job
@@ -234,7 +240,7 @@ func TestInitialDispatchStopAndResumeAreSerialized(t *testing.T) {
 			var control *pb.SessionChange
 			request := &pb.ControlSessionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(original.ID), ExpectedRevision: original.Revision}, Action: action}
 			wg.Add(2)
-			go func() { defer wg.Done(); dispatchErr = f.service.dispatchInitial(ctx, original) }()
+			go func() { defer wg.Done(); dispatchErr = f.service.dispatchExecution(ctx, original) }()
 			go func() {
 				defer wg.Done()
 				r, e := sessionClient(f.accountFixture).ControlSession(ctx, ownerRequest(f.identity, request))
@@ -272,7 +278,7 @@ func TestInitialDispatchStopAndResumeAreSerialized(t *testing.T) {
 					}
 					control = r.Msg.Change
 				}
-				if err := f.service.dispatchInitial(ctx, f.refresh(t)); domain.SafeError(err).Code != domain.Conflict {
+				if err := f.service.dispatchExecution(ctx, f.refresh(t)); domain.SafeError(err).Code != domain.Conflict {
 					t.Fatal("paused/restored work auto-dispatched", err)
 				}
 				resume := &pb.ControlSessionRequest{Mutation: acctMutation(control.Session, domain.NewID()), Action: pb.SessionAction_SESSION_ACTION_RESUME}
@@ -334,7 +340,7 @@ func TestInitialDispatchRequiresCurrentEvidence(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err = f.service.dispatchInitial(ctx, f.refresh(t)); err == nil {
+			if err = f.service.dispatchExecution(ctx, f.refresh(t)); err == nil {
 				t.Fatal("invalidated readiness dispatched")
 			}
 			state, _ := store.Decode[domain.Session](f.refresh(t))

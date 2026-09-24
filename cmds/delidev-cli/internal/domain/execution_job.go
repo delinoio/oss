@@ -26,6 +26,7 @@ type ExecutionJobInput struct {
 	Installation        Installation           `json:"installation"`
 	Preparation         json.RawMessage        `json:"preparation"`
 	Manifest            json.RawMessage        `json:"manifest"`
+	Continuation        *ExecutionContinuation `json:"continuation,omitempty"`
 }
 
 // ExecutionCompletion proves only a fully published native terminal boundary
@@ -63,7 +64,7 @@ func (c ExecutionCompletion) Validate() error {
 }
 
 func (i ExecutionJobInput) Validate() error {
-	if i.Version != 1 || i.Installation.Harness != i.Configuration.Harness {
+	if !((i.Version == 1 && i.Continuation == nil) || (i.Version == 2 && i.Continuation != nil)) || i.Installation.Harness != i.Configuration.Harness {
 		return Fail(Unsupported, "The execution assignment profile is incompatible.", "Use a matching server and Worker native profile.")
 	}
 	for _, id := range []ID{i.SessionID, i.MachineID, i.ExecutionID, i.InputID, i.ThreadRequestID, i.TurnRequestID, i.AccountID, i.ConnectionID} {
@@ -87,5 +88,11 @@ func (i ExecutionJobInput) Validate() error {
 	if len(i.Preparation) == 0 || len(i.Manifest) == 0 || !json.Valid(i.Preparation) || !json.Valid(i.Manifest) {
 		return Fail(InvalidArgument, "The execution assignment needs complete workspace evidence.", "Prepare and validate every owned workspace first.")
 	}
-	return i.Input.Validate()
+	if err := i.Input.Validate(); err != nil {
+		return err
+	}
+	if i.Continuation != nil {
+		return i.Continuation.Validate(i)
+	}
+	return nil
 }

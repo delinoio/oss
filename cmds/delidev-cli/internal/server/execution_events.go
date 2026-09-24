@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"reflect"
 	"strings"
 
 	"connectrpc.com/connect"
@@ -64,8 +65,7 @@ func (s *Service) PublishExecution(ctx context.Context, req *connect.Request[pb.
 		if err != nil {
 			return nil, err
 		}
-		initial := session.InitialExecution
-		if initial == nil || initial.ID != input.ExecutionID || initial.ConfigurationDigest != input.ConfigurationDigest || initial.InputID != input.InputID || initial.InitialAccountID != input.AccountID || initial.ConnectionID != input.ConnectionID || session.ActiveExecutionID != input.ExecutionID || session.MachineID != input.MachineID || session.AgentID != input.Configuration.AgentID {
+		if !session.OwnsExecution(input) || session.ActiveExecutionID != input.ExecutionID {
 			return nil, executionEventConflict()
 		}
 		if input.Configuration.Harness != domain.Codex || domain.ID(event.NativeThreadID).Validate() != nil || (event.NativeTurnID != "" && domain.ID(event.NativeTurnID).Validate() != nil) {
@@ -121,6 +121,9 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 		if err := event.Observed.Validate(input.Configuration); err != nil {
 			return err
 		}
+		if c := input.Continuation; c != nil && (c.Previous.NativeThreadID != event.NativeThreadID || !reflect.DeepEqual(c.Previous.Observed, *event.Observed)) {
+			return executionEventConflict()
+		}
 		progress = &domain.ExecutionProgress{JobID: job.ID, ExecutionID: input.ExecutionID, InputID: input.InputID, NativeThreadID: event.NativeThreadID, Observed: *event.Observed, Outcome: domain.ExecutionNotStarted}
 		session.Execution = progress
 	} else {
@@ -129,6 +132,16 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 		}
 		if event.Kind == domain.ExecutionInputAccepted {
 			if progress.NativeTurnID != "" || progress.Outcome != domain.ExecutionNotStarted || queued.Delivery == domain.InputAccepted {
+				return executionEventConflict()
+			}
+			if c := input.Continuation; c != nil && c.Previous.NativeTurnID == event.NativeTurnID {
+				return executionEventConflict()
+			}
+			completed, err := tx.NativeTurnCompleted(sr.ID, event.NativeThreadID, event.NativeTurnID)
+			if err != nil {
+				return err
+			}
+			if completed {
 				return executionEventConflict()
 			}
 			if session.PendingInputs == 0 || session.PendingInputBytes < uint64(len(queued.Prompt)) {

@@ -175,6 +175,9 @@ func retainCodexCompletion(root string, jobID domain.ID, job domain.Job, input d
 		return "", executionCheckpointUncertain()
 	}
 	ref := ExecutionCheckpointRef{JobID: jobID, SessionID: input.SessionID, MachineID: input.MachineID, HistoryExecutionID: input.ExecutionID, AssignmentInputDigest: executionInputDigest(job.Input), ConfigurationDigest: input.ConfigurationDigest, AccountID: input.AccountID, ConnectionID: input.ConnectionID, Completion: completion, InputMode: input.Input.Mode, PromptDigest: sha256.Sum256([]byte(input.Input.Prompt))}
+	if input.Continuation != nil {
+		ref.HistoryExecutionID = input.Continuation.HistoryExecutionID
+	}
 	status := map[domain.ExecutionOutcome]codex.TurnStatus{domain.ExecutionSucceeded: codex.TurnCompleted, domain.ExecutionFailed: codex.TurnFailed, domain.ExecutionStopped: codex.TurnInterrupted}[completion.Outcome]
 	checkpoint := CodexExecutionCheckpoint{Version: 1, JobID: jobID, SessionID: ref.SessionID, MachineID: ref.MachineID, HistoryExecutionID: ref.HistoryExecutionID, AssignmentInputDigest: ref.AssignmentInputDigest, ConfigurationDigest: ref.ConfigurationDigest, AccountID: ref.AccountID, ConnectionID: ref.ConnectionID, Completion: completion, Native: codex.ContinuationCheckpoint{ThreadID: bound.Thread.ID, SessionID: bound.Thread.SessionID, TurnID: completion.NativeTurnID, Status: status, Mode: input.Input.Mode, Inputs: []codex.HistoricalInput{{ID: input.InputID, PromptDigest: sha256.Sum256([]byte(input.Input.Prompt))}}, Effective: *bound.Effective}}
 	if !checkpoint.matches(ref) {

@@ -120,6 +120,46 @@ func TestExecutionCheckpointRetainsExactNativeContextWithoutContent(t *testing.T
 	}
 }
 
+func TestExecutionCheckpointContinuationKeepsOriginalHistoryRoot(t *testing.T) {
+	f := newCheckpointFixture(t)
+	if err := f.retain(); err != nil {
+		t.Fatal(err)
+	}
+	first, err := ReadCodexExecutionCheckpoint(f.root, f.ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := domain.ExecutionProgress{JobID: f.jobID, ExecutionID: f.input.ExecutionID, InputID: f.input.InputID, LastSequence: f.completion.LastSequence, NativeThreadID: string(f.completion.NativeThreadID), NativeTurnID: string(f.completion.NativeTurnID), Observed: domain.ObservedExecutionSettings{Model: f.input.Configuration.NativeModel, Permission: domain.PermissionReadOnly, ApprovalPolicy: "on-request"}, Outcome: domain.ExecutionSucceeded, CleanupVerified: true}
+	next := f
+	next.jobID = domain.NewID()
+	next.input.Version, next.input.ExecutionID, next.input.InputID = 2, domain.NewID(), domain.NewID()
+	next.input.ThreadRequestID, next.input.TurnRequestID = domain.NewID(), domain.NewID()
+	next.input.Input = domain.SessionInput{Prompt: "Fresh continuation content", Mode: domain.ExecuteMode}
+	next.input.Continuation = &domain.ExecutionContinuation{HistoryExecutionID: f.input.ExecutionID, HistoryRequestID: domain.NewID(), Previous: previous, Completion: f.ref.Completion, AssignmentInputDigest: f.ref.AssignmentInputDigest, InputMode: f.input.Input.Mode, PromptDigest: executionInputDigest([]byte(f.input.Input.Prompt)), Intent: domain.ContinueAutomatically}
+	next.job.Input, _ = json.Marshal(next.input)
+	next.bound.RequestID = next.input.ThreadRequestID
+	next.completion.ExecutionID, next.completion.InputID, next.completion.NativeTurnID = next.input.ExecutionID, next.input.InputID, domain.NewID()
+	next.ref.JobID, next.ref.AssignmentInputDigest = next.jobID, executionInputDigest(next.job.Input)
+	next.ref.InputMode, next.ref.PromptDigest = next.input.Input.Mode, sha256.Sum256([]byte(next.input.Input.Prompt))
+	if _, err := harness.PrivateRuntimeEnvironment(filepath.Join(f.root, "runtimes", string(next.input.ExecutionID))); err != nil {
+		t.Fatal(err)
+	}
+	if err := next.retain(); err != nil {
+		t.Fatal(err)
+	}
+	checkpoint, err := ReadCodexExecutionCheckpoint(next.root, next.ref)
+	if err != nil || checkpoint.HistoryExecutionID != first.HistoryExecutionID || checkpoint.Completion.ExecutionID == first.Completion.ExecutionID || checkpoint.Native.ThreadID != first.Native.ThreadID || checkpoint.Native.TurnID == first.Native.TurnID {
+		t.Fatal("successor lost original history or fresh execution ownership", err)
+	}
+	if _, err := ReadCodexExecutionCheckpoint(f.root, f.ref); err != nil {
+		t.Fatal("successor replaced predecessor evidence", err)
+	}
+	changed := next.ref
+	changed.HistoryExecutionID = next.input.ExecutionID
+	_, err = ReadCodexExecutionCheckpoint(next.root, changed)
+	checkpointRecovery(t, err)
+}
+
 func TestExecutionCheckpointRejectsChangedPredecessor(t *testing.T) {
 	f := newCheckpointFixture(t)
 	if err := f.retain(); err != nil {

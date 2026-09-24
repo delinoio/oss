@@ -167,26 +167,28 @@ func (i SessionInput) Validate() error {
 // Session separates visibility, outcome and recovery from dispatch eligibility.
 // Blocked or restored sessions must never be interpreted as completed execution.
 type Session struct {
-	Name              string              `json:"name"`
-	AgentID           ID                  `json:"agent_id"`
-	MachineID         ID                  `json:"machine_id"`
-	ProjectID         ID                  `json:"project_id,omitempty"`
-	Workspace         WorkspaceType       `json:"workspace"`
-	Starting          []RepositoryStart   `json:"starting,omitempty"`
-	Source            SessionSource       `json:"source"`
-	CreatedBy         ID                  `json:"created_by,omitempty"`
-	Outcome           ExecutionOutcome    `json:"outcome"`
-	Archive           ArchiveState        `json:"archive"`
-	Recovery          RecoveryState       `json:"recovery"`
-	Dispatch          DispatchState       `json:"dispatch"`
-	Problem           *Error              `json:"problem,omitempty"`
-	ActiveExecutionID ID                  `json:"active_execution_id,omitempty"`
-	LastInputSequence uint64              `json:"last_input_sequence"`
-	PendingInputs     uint32              `json:"pending_inputs"`
-	PendingInputBytes uint64              `json:"pending_input_bytes"`
-	Preparation       *SessionPreparation `json:"preparation,omitempty"`
-	InitialExecution  *InitialExecution   `json:"initial_execution,omitempty"`
-	Execution         *ExecutionProgress  `json:"execution,omitempty"`
+	Name                string              `json:"name"`
+	AgentID             ID                  `json:"agent_id"`
+	MachineID           ID                  `json:"machine_id"`
+	ProjectID           ID                  `json:"project_id,omitempty"`
+	Workspace           WorkspaceType       `json:"workspace"`
+	Starting            []RepositoryStart   `json:"starting,omitempty"`
+	Source              SessionSource       `json:"source"`
+	CreatedBy           ID                  `json:"created_by,omitempty"`
+	Outcome             ExecutionOutcome    `json:"outcome"`
+	Archive             ArchiveState        `json:"archive"`
+	Recovery            RecoveryState       `json:"recovery"`
+	Dispatch            DispatchState       `json:"dispatch"`
+	Problem             *Error              `json:"problem,omitempty"`
+	ActiveExecutionID   ID                  `json:"active_execution_id,omitempty"`
+	LastInputSequence   uint64              `json:"last_input_sequence"`
+	PendingInputs       uint32              `json:"pending_inputs"`
+	PendingInputBytes   uint64              `json:"pending_input_bytes"`
+	Preparation         *SessionPreparation `json:"preparation,omitempty"`
+	InitialExecution    *InitialExecution   `json:"initial_execution,omitempty"`
+	CurrentExecution    *ExecutionSelection `json:"current_execution,omitempty"`
+	NextExecutionIntent ExecutionIntent     `json:"next_execution_intent,omitempty"`
+	Execution           *ExecutionProgress  `json:"execution,omitempty"`
 }
 
 type PreparationState string
@@ -217,7 +219,7 @@ type QueuedInput struct {
 }
 
 func SessionExecutionUnavailable() *Error {
-	return Fail(Unsupported, "This native session continuation is not integrated in this build.", "The retained execution cannot be repeated; later-turn Resume requires its own native continuation adapter.")
+	return Fail(Unsupported, "This native session action is not integrated in this build.", "Preserve the retained execution and use an implemented native lifecycle action.")
 }
 
 func InitialExecutionPending() *Error {

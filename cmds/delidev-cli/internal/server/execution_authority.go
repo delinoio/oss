@@ -81,8 +81,7 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 	if err != nil || session.InitialExecution == nil || session.ActiveExecutionID != grant.ExecutionID || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || session.Dispatch != domain.DispatchClaimed || (session.Outcome != domain.ExecutionNotStarted && session.Outcome != domain.ExecutionRunning) {
 		return empty, executionDenied()
 	}
-	initial := session.InitialExecution
-	if session.MachineID != grant.MachineID || session.AgentID != input.Configuration.AgentID || initial.ID != grant.ExecutionID || initial.ConfigurationDigest != input.ConfigurationDigest || initial.InitialAccountID != input.AccountID || initial.ConnectionID != input.ConnectionID || initial.InputID != input.InputID {
+	if !session.OwnsExecution(input) {
 		return empty, executionDenied()
 	}
 	ir, err := tx.Get(domain.QueueKind, input.InputID)

@@ -2,6 +2,17 @@ package store
 
 import "github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 
+// Terminal inbox sources are immutable across read-state changes and retain
+// every preceding turn, including those older than the latest checkpoint.
+func (t *Tx) NativeTurnCompleted(session domain.ID, thread, turn string) (bool, error) {
+	if session.Validate() != nil || domain.Text(thread, "native thread", 1024, true) != nil || domain.Text(turn, "native turn", 1024, true) != nil {
+		return false, domain.Fail(domain.InvalidArgument, "Invalid retained native turn lookup.", "Use the exact session and native identities.")
+	}
+	var exists bool
+	err := t.tx.QueryRowContext(t.ctx, `SELECT EXISTS(SELECT 1 FROM entities WHERE kind='inbox' AND session_id=? AND json_extract(body,'$.source')='execution-terminal' AND json_extract(body,'$.terminal.native_thread_id')=? AND json_extract(body,'$.terminal.native_turn_id')=?)`, session, thread, turn).Scan(&exists)
+	return exists, storageError(err)
+}
+
 func (t *Tx) SessionExecutionJob(session, execution domain.ID) (Record, error) {
 	for _, id := range []domain.ID{session, execution} {
 		if err := id.Validate(); err != nil {

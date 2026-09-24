@@ -53,7 +53,7 @@ func (t *Tx) ClaimInitialExecution(sessionID domain.ID, sessionRevision uint64, 
 	if err != nil {
 		return empty, err
 	}
-	if sr.Revision != sessionRevision || session.InitialExecution != nil || session.ActiveExecutionID != "" || session.Outcome != domain.ExecutionNotStarted || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || session.Dispatch != domain.DispatchReady {
+	if sr.Revision != sessionRevision || session.InitialExecution != nil || session.CurrentExecution != nil || session.NextExecutionIntent != "" || session.ActiveExecutionID != "" || session.Outcome != domain.ExecutionNotStarted || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || session.Dispatch != domain.DispatchReady {
 		return empty, domain.Fail(domain.Conflict, "The session is not ready for its first execution claim.", "Revalidate the current session and native readiness without replacing an existing snapshot.")
 	}
 	if session.Preparation == nil || session.Preparation.State != domain.PreparationReady {

@@ -16,6 +16,7 @@ const (
 	RemoteControlDisabled  MetadataKind = "remote-control-disabled"
 	QuotaUnavailable       MetadataKind = "quota-unavailable"
 	RawSupplementDiscarded MetadataKind = "raw-supplement-discarded"
+	NativeGoalAbsent       MetadataKind = "native-goal-absent"
 )
 
 type tokenCountsWire struct {
@@ -64,6 +65,20 @@ func (c *Client) metadata(kind MetadataKind) Event {
 
 func (c *Client) observeMetadataLocked(native nativewire.Event) (Event, error) {
 	switch native.Method {
+	case "thread/goal/cleared":
+		var params struct {
+			ThreadID domain.ID `json:"threadId"`
+		}
+		if domain.Decode(native.Params, &params) != nil || params.ThreadID.Validate() != nil {
+			return Event{}, incompatible()
+		}
+		if params.ThreadID != c.thread {
+			return privateNative(native), nil
+		}
+		// The pinned native resume path emits this snapshot when no goal exists.
+		// It grants no input/goal authority; populated goal updates still require
+		// a dedicated adapter and must not be discarded as harmless metadata.
+		return c.metadata(NativeGoalAbsent), nil
 	case "thread/started":
 		var params struct {
 			Thread json.RawMessage `json:"thread"`

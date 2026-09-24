@@ -12,13 +12,13 @@ func controlNativeSession(tx *store.Tx, sr store.Record, session *domain.Session
 		if session.Archive != domain.Archived {
 			return domain.Fail(domain.Conflict, "The session is not archived.", "Inspect its current native cleanup and visibility state.")
 		}
-		session.Archive, session.Dispatch = domain.NotArchived, domain.DispatchPaused
+		session.Archive, session.Dispatch, session.NextExecutionIntent = domain.NotArchived, domain.DispatchPaused, ""
 		return nil
 	}
 	if action != domain.StopSession && action != domain.ArchiveSession {
 		return domain.SessionExecutionUnavailable()
 	}
-	r, err := tx.SessionExecutionJob(sr.ID, session.InitialExecution.ID)
+	r, err := tx.SessionExecutionJob(sr.ID, session.ExecutionSelection().ID)
 	if err != nil {
 		return err
 	}
@@ -27,10 +27,10 @@ func controlNativeSession(tx *store.Tx, sr store.Record, session *domain.Session
 		return err
 	}
 	progress := session.Execution
-	if progress != nil && (progress.JobID != r.ID || progress.ExecutionID != session.InitialExecution.ID || progress.InputID != session.InitialExecution.InputID) {
+	if progress != nil && (progress.JobID != r.ID || progress.ExecutionID != session.ExecutionSelection().ID || progress.InputID != session.ExecutionSelection().InputID) {
 		return executionEventConflict()
 	}
-	session.Dispatch = domain.DispatchPaused
+	session.Dispatch, session.NextExecutionIntent = domain.DispatchPaused, ""
 	if action == domain.ArchiveSession {
 		session.Archive = domain.ArchivePending
 	}
@@ -87,7 +87,7 @@ func cancelAccountExecutions(tx *store.Tx, account domain.ID) error {
 			if err := tx.RequestJobCancellation(r.ID); err != nil {
 				return err
 			}
-			session.Dispatch = domain.DispatchPaused
+			session.Dispatch, session.NextExecutionIntent = domain.DispatchPaused, ""
 			if session.Problem == nil {
 				session.Problem = domain.Fail(domain.Unauthenticated, "The selected account was disconnected; native execution cancellation was requested.", "Retain the original execution until its cleanup and input acceptance are reconciled.")
 			}
