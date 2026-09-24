@@ -794,3 +794,47 @@ fn independent_numbered_list_instances_restart_without_renumbering_imported_list
         }
     }
 }
+
+#[test]
+fn unmodeled_standard_chart_features_are_opaque_and_preserved() {
+    let original = read(include_bytes!("fixtures/charts.docx")).unwrap();
+    let path = "word/charts/chart1.xml";
+    let chart = String::from_utf8(original[path].clone()).unwrap();
+    for modified in [
+        chart.replace(
+            "</ser>",
+            "<trendline><trendlineType val=\"linear\"/></trendline></ser>",
+        ),
+        chart.replace(
+            "</scaling>",
+            "<min val=\"10\"/><max val=\"100\"/></scaling>",
+        ),
+        chart.replace("</scaling>", "<logBase val=\"10\"/></scaling>"),
+        chart.replace("grouping val=\"clustered\"", "grouping val=\"stacked\""),
+        chart.replace("</ser>", "<errBars><errDir val=\"y\"/></errBars></ser>"),
+    ] {
+        let mut parts = original.clone();
+        parts.insert(path.into(), modified.into_bytes());
+        let imported = import(&forge_package::write(&parts).unwrap()).unwrap();
+        assert_eq!(
+            imported
+                .targets
+                .iter()
+                .filter(|t| t.kind == TargetKind::Chart)
+                .count(),
+            2
+        );
+        let target = imported
+            .targets
+            .iter()
+            .find(|t| t.kind == TargetKind::Paragraph)
+            .unwrap();
+        let output = replace(
+            &imported,
+            &[(target.id, vec![paragraph("Unrelated edit")])],
+            &Assets::new(),
+        )
+        .unwrap();
+        assert_eq!(read(&output).unwrap()[path], parts[path]);
+    }
+}
