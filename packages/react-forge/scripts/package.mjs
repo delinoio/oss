@@ -73,6 +73,8 @@ function expectedFiles(host) {
   function visit(directory, relative = "") {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       const name = path.posix.join(relative, entry.name);
+      // The default release output lives below dist, but it is never runtime code.
+      if (relative === "" && entry.name === "release" && entry.isDirectory()) continue;
       if (entry.isDirectory()) visit(path.join(directory, entry.name), name);
       else {
         if (relative === "" && /^react-forge\.[\w-]+\.node$/u.test(entry.name)) continue;
