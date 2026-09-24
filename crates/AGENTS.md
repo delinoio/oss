@@ -12,6 +12,7 @@
 - Forge document lock guards must explicitly unlock on drop, including error exits, so duplicated or fork-inherited descriptors cannot extend a completed operation's lock lifetime. Preserve exclusive ownership checks and redact lock-release diagnostics.
 - Forge custom XML ownership requires both its package relationship and namespace identity. Preserve unrelated colliding part names and relationship IDs, and bind those original parts into the metadata hashes.
 - Forge source-replacing exports must journal the exact revision and before/after fingerprints before publication. Recover interrupted fingerprint commits under the document lock; unrelated external changes remain conflicts.
+- Forge journal publication must flush its renamed directory entry before source replacement: sync the parent directory on Unix and use write-through same-volume publication on Windows. Propagate durability failures.
 - Forge chart insertion must reject collisions with preexisting chart, workbook and relationship parts, including case-equivalent package names. A supplied node identity never grants ownership of original package parts.
 
 - `crates/binpm`: Rust-based Node-free binary package manager for release assets.

@@ -143,6 +143,16 @@ fn atomic_file(path: &Path, bytes: &[u8], overwrite: bool) -> Result<()> {
     let mut tmp = tempfile::NamedTempFile::new_in(parent).map_err(io_error)?;
     tmp.write_all(bytes).map_err(io_error)?;
     tmp.as_file().sync_all().map_err(io_error)?;
+    persist_durable(tmp, path, parent, overwrite)
+}
+
+#[cfg(not(windows))]
+fn persist_durable(
+    tmp: tempfile::NamedTempFile,
+    path: &Path,
+    parent: &Path,
+    overwrite: bool,
+) -> Result<()> {
     if overwrite {
         tmp.persist(path).map_err(|e| io_error(e.error))?;
     } else {
@@ -153,6 +163,65 @@ fn atomic_file(path: &Path, bytes: &[u8], overwrite: bool) -> Result<()> {
                 io_error(e.error)
             }
         })?;
+    }
+    // File fsync alone does not persist the renamed directory entry. In
+    // particular, the export journal must survive before source publication.
+    File::open(parent)
+        .and_then(|directory| directory.sync_all())
+        .map_err(io_error)
+}
+
+#[cfg(windows)]
+fn persist_durable(
+    tmp: tempfile::NamedTempFile,
+    path: &Path,
+    parent: &Path,
+    overwrite: bool,
+) -> Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_ATTRIBUTE_NORMAL, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW,
+        SetFileAttributesW,
+    };
+    fn wide(path: &Path) -> Result<Vec<u16>> {
+        let mut value: Vec<_> = path.as_os_str().encode_wide().collect();
+        if value.contains(&0) {
+            return error(ErrorCode::Io, "", "Invalid publication path");
+        }
+        value.push(0);
+        Ok(value)
+    }
+    // Close the data handle before rename, retaining TempPath cleanup on error.
+    // Canonical parents supply extended paths, including long Windows paths.
+    let temporary = tmp.into_temp_path();
+    let from = wide(&fs::canonicalize(&temporary).map_err(io_error)?)?;
+    let to =
+        wide(&fs::canonicalize(parent).map_err(io_error)?.join(
+            path.file_name().ok_or_else(|| {
+                Diagnostic::new(ErrorCode::Io, "", "Missing publication filename")
+            })?,
+        ))?;
+    let flags = MOVEFILE_WRITE_THROUGH
+        | if overwrite {
+            MOVEFILE_REPLACE_EXISTING
+        } else {
+            0
+        };
+    // Like tempfile's persist implementation, clear the owned staging file's
+    // temporary attribute before it becomes persistent user or state data.
+    // SAFETY: from is a live, NUL-terminated UTF-16 path to our staging file.
+    if unsafe { SetFileAttributesW(from.as_ptr(), FILE_ATTRIBUTE_NORMAL) } == 0 {
+        return Err(io_error(std::io::Error::last_os_error()));
+    }
+    // SAFETY: both buffers are live, NUL-terminated UTF-16 paths, and flags
+    // request a same-volume rename without deferred or copy/delete fallback.
+    if unsafe { MoveFileExW(from.as_ptr(), to.as_ptr(), flags) } == 0 {
+        let e = std::io::Error::last_os_error();
+        if !overwrite && e.kind() == std::io::ErrorKind::AlreadyExists {
+            return error(ErrorCode::OutputExists, "", "Output already exists");
+        }
+        return Err(io_error(e));
     }
     Ok(())
 }
@@ -608,6 +677,33 @@ pub fn default_root() -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn durable_publication_preserves_conflicts_and_cleans_failed_staging() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("published");
+        atomic_file(&path, b"first", false).unwrap();
+        assert_eq!(
+            atomic_file(&path, b"conflict", false).unwrap_err().code,
+            ErrorCode::OutputExists
+        );
+        assert_eq!(fs::read(&path).unwrap(), b"first");
+        atomic_file(&path, b"replacement", true).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"replacement");
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::MetadataExt;
+
+            use windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_TEMPORARY;
+            assert_eq!(
+                fs::metadata(&path).unwrap().file_attributes() & FILE_ATTRIBUTE_TEMPORARY,
+                0
+            );
+        }
+        assert!(atomic_file(&temp.path().join("invalid\0filename"), b"invalid", false).is_err());
+        assert_eq!(fs::read_dir(temp.path()).unwrap().count(), 1);
+        assert_eq!(fs::read(&path).unwrap(), b"replacement");
+    }
 
     #[test]
     fn inspection_budget_stops_all_sibling_and_slide_traversal() {
