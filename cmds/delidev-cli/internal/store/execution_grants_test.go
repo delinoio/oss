@@ -27,7 +27,7 @@ func TestExecutionAuthorityMigrationPreservesAssignmentsAndBackup(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec("DROP TABLE execution_interactions; DROP TABLE execution_messages; DROP TABLE execution_references; DROP TABLE execution_grants; PRAGMA user_version=6;"); err != nil {
+	if _, err := s.db.Exec("DROP INDEX inbox_source; DROP INDEX inbox_read; DROP INDEX inbox_session_read; DROP TABLE execution_interactions; DROP TABLE execution_messages; DROP TABLE execution_references; DROP TABLE execution_grants; PRAGMA user_version=6;"); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Close(); err != nil {

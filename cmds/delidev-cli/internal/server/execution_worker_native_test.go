@@ -484,6 +484,10 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 	if err != nil || (!responseScenario && session.ActiveExecutionID != "") || session.Execution == nil || !session.Execution.CleanupVerified || session.PendingInputs != 0 || session.Outcome != domain.ExecutionSucceeded {
 		t.Fatal("Worker native completion was not atomically published")
 	}
+	_, terminalInbox := readExecutionInbox(t, f, domain.ExecutionTerminalInbox, f.input.ExecutionID)
+	if terminalInbox.ReadState != domain.InboxUnread || terminalInbox.Terminal.Outcome != domain.ExecutionSucceeded || terminalInbox.Terminal.Sequence != session.Execution.LastSequence {
+		t.Fatal("native Worker completion did not retain immutable unread inbox evidence")
+	}
 	if responseScenario {
 		rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.InteractionKind, SessionID: f.input.SessionID, Limit: 2})
 		if err != nil || len(rows) != 1 {
@@ -495,6 +499,10 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 		}
 		if session.Recovery != domain.NeedsRecovery || session.Dispatch != domain.DispatchPaused || session.ActiveExecutionID != f.input.ExecutionID || session.Execution.UnconfirmedResponses != 1 {
 			t.Fatal("native request closure falsely confirmed answer acceptance")
+		}
+		_, questionInbox := readExecutionInbox(t, f, domain.InteractionInbox, rows[0].ID)
+		if questionInbox.ReadState != domain.InboxUnread {
+			t.Fatal("native response or closure implicitly read the inbox request")
 		}
 		journal, err := security.ReadPrivate(filepath.Join(manager.Root, "jobs", string(f.job), "responses", string(rows[0].ID)+".json"), 64<<10)
 		if err != nil || !strings.Contains(string(journal), string(interaction.Response.Claim.ID)) || strings.Contains(string(journal), "Second") || strings.Contains(string(journal), "Native Worker question") {

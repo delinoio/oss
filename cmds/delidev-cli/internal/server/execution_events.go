@@ -197,6 +197,12 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 					}
 					session.Dispatch = domain.DispatchPaused
 				}
+				// Retain native outcome independently of session Stop/recovery and
+				// process cleanup. Inbox read state never changes this evidence.
+				terminal := domain.InboxTerminal{JobID: job.ID, InputID: input.InputID, NativeThreadID: event.NativeThreadID, NativeTurnID: event.NativeTurnID, Sequence: event.Sequence, Outcome: event.Outcome}
+				if _, err := tx.CreateInboxEntry(sr.ID, sr.ProjectID, domain.InboxEntry{Source: domain.ExecutionTerminalInbox, SourceID: input.ExecutionID, ReadState: domain.InboxUnread, Terminal: &terminal}); err != nil {
+					return err
+				}
 			} else if event.Kind == domain.ExecutionQuestionDeliveryObserved {
 				responseUncertain, responseErr = publishQuestionDelivery(tx, job, input, actor, progress, event)
 				if responseErr != nil {

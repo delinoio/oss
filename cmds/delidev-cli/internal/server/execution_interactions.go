@@ -21,7 +21,11 @@ func publishExecutionInteraction(tx *store.Tx, input domain.ExecutionJobInput, s
 		if err != nil {
 			return false, err
 		}
-		return false, tx.BindExecutionInteraction(session.ID, input.ExecutionID, u.ID, event.NativeThreadID, u.NativeRequestID, len(raw))
+		if err := tx.BindExecutionInteraction(session.ID, input.ExecutionID, u.ID, event.NativeThreadID, u.NativeRequestID, len(raw)); err != nil {
+			return false, err
+		}
+		_, err = tx.CreateInboxEntry(session.ID, session.ProjectID, domain.InboxEntry{Source: domain.InteractionInbox, SourceID: u.ID, ReadState: domain.InboxUnread})
+		return false, err
 	}
 	r, err := tx.Get(domain.InteractionKind, u.ID)
 	if err != nil {

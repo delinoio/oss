@@ -135,6 +135,9 @@ The outbound work stream now emits metadata-only question response controls for 
 
 Native or terminal closure of a claimed response changes it to `uncertain`, retains both original question/answer and claim, and atomically pauses further sends with required recovery. This transition does not overwrite a separately observed terminal outcome. Lost Worker ownership likewise marks claimed responses uncertain and cancels still-queued responses, but cannot manufacture native request closure. No claim retry after closure, uncertainty, cancellation, stale heartbeat, revocation or replacement returns answer content or permits a resend.
 
+### Independent inbox state
+Native question creation and native terminal publication now create one unique unread inbox reference in the same transaction. The terminal entry preserves observed native outcome separately from session Stop/recovery and later cleanup. Source receipt replay never duplicates entries or resets read state. Inbox read-state mutations have a separate entity revision and cannot alter the original question revision, accepted response/claim, native delivery, session dispatch or recovery. Schema v10 backfills only retained legacy evidence without rewriting source documents. Existing resource reads expose the metadata; dedicated public read-state and joined inspection APIs remain pending. See the [inbox contract](cmds-delidev-inbox-contract.md).
+
 ### Journaled Worker question delivery
 The running Worker consumes active-job response controls independently of its native event reader. It validates the stream variant and immutable target, bounds pending controls to 128 and retained control identities to 4,096, and ignores identical repeated controls without invoking another claim. A stale control cannot reopen a locally completed request/job; mixed variants, foreign targets, changed duplicate identity and overflow fail explicitly.
 
