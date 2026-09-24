@@ -838,3 +838,97 @@ fn unmodeled_standard_chart_features_are_opaque_and_preserved() {
         assert_eq!(read(&output).unwrap()[path], parts[path]);
     }
 }
+
+#[test]
+fn imported_flow_widths_follow_sections_and_cell_margin_cascades() {
+    let mut model = document(vec![paragraph("First section")]);
+    model.sections[0].width = 400.0;
+    model.sections[0].margin = 50.0;
+    let mut next = model.sections[0].clone();
+    next.width = 600.0;
+    next.header = vec![paragraph("Header")];
+    next.footer = vec![paragraph("Footer")];
+    next.blocks = vec![paragraph("Second section")];
+    model.sections.push(next);
+    let imported = import(&generate(&model, &Assets::new()).unwrap()).unwrap();
+    for (text, width) in [("First section", 300.0), ("Second section", 500.0)] {
+        let target = imported.targets.iter().find(|t| t.text == text).unwrap();
+        assert_eq!(target.available_width, Some(width));
+    }
+    assert!(
+        imported
+            .targets
+            .iter()
+            .filter(|t| t.text == "Header")
+            .all(|t| t.available_width.is_none())
+    );
+
+    let mut parts = read(include_bytes!("fixtures/external.docx")).unwrap();
+    let source = String::from_utf8(parts["word/document.xml"].clone())
+        .unwrap()
+        .replace("w:w=\"4320\"", "w:w=\"2000\"");
+    parts.insert("word/document.xml".into(), source.into_bytes());
+    let imported = import(&forge_package::write(&parts).unwrap()).unwrap();
+    let left = imported
+        .targets
+        .iter()
+        .find(|t| t.kind == TargetKind::Cell && t.text == "Left")
+        .unwrap();
+    // TableGrid inherits 108-twip left/right margins from TableNormal.
+    assert_eq!(left.available_width, Some(89.2));
+    let paragraph = imported
+        .targets
+        .iter()
+        .find(|t| t.kind == TargetKind::Paragraph && t.text == "Left")
+        .unwrap();
+    assert_eq!(paragraph.available_width, left.available_width);
+
+    let source = String::from_utf8(parts["word/document.xml"].clone())
+        .unwrap()
+        .replace(
+            "</w:tcPr>",
+            "<w:tcMar><w:left w:w=\"40\" w:type=\"dxa\"/><w:right w:w=\"60\" \
+             w:type=\"dxa\"/></w:tcMar></w:tcPr>",
+        );
+    for source in [
+        source.clone(),
+        source.replace("<w:tcW w:type=\"dxa\" w:w=\"2000\"/>", ""),
+    ] {
+        parts.insert("word/document.xml".into(), source.into_bytes());
+        let imported = import(&forge_package::write(&parts).unwrap()).unwrap();
+        assert_eq!(
+            imported
+                .targets
+                .iter()
+                .find(|t| t.kind == TargetKind::Cell && t.text == "Left")
+                .unwrap()
+                .available_width,
+            Some(95.0)
+        );
+    }
+}
+
+#[test]
+fn ambiguous_imported_section_width_does_not_invent_geometry() {
+    let mut parts =
+        read(&generate(&document(vec![paragraph("Columns")]), &Assets::new()).unwrap()).unwrap();
+    let source = String::from_utf8(parts["word/document.xml"].clone())
+        .unwrap()
+        .replace("</w:sectPr>", "<w:cols w:num=\"2\"/></w:sectPr>");
+    parts.insert("word/document.xml".into(), source.into_bytes());
+    let imported = import(&forge_package::write(&parts).unwrap()).unwrap();
+    assert!(imported.targets.iter().all(|t| t.available_width.is_none()));
+    let target = imported
+        .targets
+        .iter()
+        .find(|t| t.text == "Columns")
+        .unwrap();
+    assert!(
+        replace(
+            &imported,
+            &[(target.id, vec![paragraph("Still editable")])],
+            &Assets::new()
+        )
+        .is_ok()
+    );
+}

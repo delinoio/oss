@@ -3,6 +3,7 @@
 mod emit;
 mod import;
 mod model;
+mod source_geometry;
 pub use emit::generate;
 pub use import::{Imported, Target, TargetKind, import, replace};
 pub use model::*;

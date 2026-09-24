@@ -23,6 +23,8 @@ pub struct Target {
     pub kind: TargetKind,
     pub region: Region,
     pub text: String,
+    /// Source flow width in points, absent when the source layout is ambiguous.
+    pub available_width: Option<f64>,
 }
 
 #[derive(Debug, Clone)]
@@ -343,6 +345,15 @@ pub fn import(bytes: &[u8]) -> Result<Imported> {
             "Word document requires exactly one body",
         );
     }
+    let styles_path = relationships(&parts, &main)?
+        .into_iter()
+        .find(|r| !r.external && r.kind == format!("{R}/styles"))
+        .map(|r| resolve(&main, &r.target))
+        .transpose()?;
+    let styles = styles_path
+        .as_ref()
+        .map(|path| xml(&parts[path]))
+        .transpose()?;
     let mut owners = vec![main.clone()];
     for relation in relationships(&parts, &main)? {
         if !relation.external
@@ -358,6 +369,8 @@ pub fn import(bytes: &[u8]) -> Result<Imported> {
     for owner in owners {
         forge_tree_doc::cancellation::checkpoint()?;
         let doc = xml(&parts[&owner])?;
+        let mut source_geometry =
+            crate::source_geometry::SourceGeometry::new(&main_doc, styles.as_ref());
         for node in doc.descendants().filter(|n| {
             n.is_element()
                 && n.tag_name().namespace() == Some(W)
@@ -377,6 +390,7 @@ pub fn import(bytes: &[u8]) -> Result<Imported> {
             targets.push(Target {
                 id: Uuid::now_v7(),
                 kind,
+                available_width: source_geometry.available_width(node),
                 region: Region::new(&owner, node.range(), &parts)?,
                 text: node
                     .descendants()
