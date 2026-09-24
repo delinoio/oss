@@ -12,27 +12,28 @@ import (
 type EventKind string
 
 const (
-	TurnStartedEvent       EventKind = "turn-started"
-	TurnCompletedEvent     EventKind = "turn-completed"
-	ThreadStatusEvent      EventKind = "thread-status"
-	TextDeltaEvent         EventKind = "text-delta"
-	MessageStartedEvent    EventKind = "message-started"
-	MessageCompletedEvent  EventKind = "message-completed"
-	LateTurnResponseEvent  EventKind = "late-turn-response"
-	NativeExtensionEvent   EventKind = "native-extension"
-	MetadataEvent          EventKind = "metadata"
-	UsageEvent             EventKind = "usage"
-	NoticeEvent            EventKind = "notice"
-	ToolStartedEvent       EventKind = "tool-started"
-	ToolCompletedEvent     EventKind = "tool-completed"
-	ToolOutputEvent        EventKind = "tool-output"
-	ToolPatchEvent         EventKind = "tool-patch"
-	ToolInputEvent         EventKind = "tool-input"
-	ArtifactStartedEvent   EventKind = "artifact-started"
-	ArtifactCompletedEvent EventKind = "artifact-completed"
-	ArtifactDeltaEvent     EventKind = "artifact-delta"
-	TurnPlanEvent          EventKind = "turn-plan"
-	TurnDiffEvent          EventKind = "turn-diff"
+	TurnStartedEvent          EventKind = "turn-started"
+	TurnCompletedEvent        EventKind = "turn-completed"
+	ThreadStatusEvent         EventKind = "thread-status"
+	TextDeltaEvent            EventKind = "text-delta"
+	MessageStartedEvent       EventKind = "message-started"
+	MessageCompletedEvent     EventKind = "message-completed"
+	LateTurnResponseEvent     EventKind = "late-turn-response"
+	NativeExtensionEvent      EventKind = "native-extension"
+	MetadataEvent             EventKind = "metadata"
+	UsageEvent                EventKind = "usage"
+	NoticeEvent               EventKind = "notice"
+	ToolStartedEvent          EventKind = "tool-started"
+	ToolCompletedEvent        EventKind = "tool-completed"
+	ToolOutputEvent           EventKind = "tool-output"
+	ToolPatchEvent            EventKind = "tool-patch"
+	ToolInputEvent            EventKind = "tool-input"
+	ArtifactStartedEvent      EventKind = "artifact-started"
+	ArtifactCompletedEvent    EventKind = "artifact-completed"
+	ArtifactDeltaEvent        EventKind = "artifact-delta"
+	TurnPlanEvent             EventKind = "turn-plan"
+	TurnDiffEvent             EventKind = "turn-diff"
+	InteractionRequestedEvent EventKind = "interaction-requested"
 )
 
 type MessageRole string
@@ -83,6 +84,7 @@ type Event struct {
 	ArtifactDelta *ArtifactDelta
 	Plan          *PlanUpdate
 	Diff          *string
+	Interaction   *Interaction
 	// Native is present only for a still-private extension, including unrelated
 	// subagent events. It must pass a dedicated typed adapter before publication;
 	// neither it nor raw provider errors may be serialized as a product event.
@@ -141,6 +143,9 @@ func privateNative(event nativewire.Event) Event {
 func (c *Client) observeEventLocked(native nativewire.Event) (Event, error) {
 	if native.Kind == nativewire.LateResponse {
 		return c.observeLateTurnLocked(native)
+	}
+	if native.Kind == nativewire.ServerRequest && c.execution != nil {
+		return c.observeInteractionLocked(native)
 	}
 	if native.Kind != nativewire.Notification || c.execution == nil {
 		return privateNative(native), nil
