@@ -2698,6 +2698,8 @@ int main(int argc, char **argv) {
     close(marker);
     return 44;
 }
+
+
 "#,
     )
     .unwrap();
@@ -2729,6 +2731,56 @@ int main(int argc, char **argv) {
         "{}",
         String::from_utf8_lossy(&result.stderr)
     );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_invalid_path_pointers_keep_kernel_efault() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("path-fault.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <errno.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+int main(void) {
+    struct stat info;
+    if (syscall(SYS_openat, AT_FDCWD, 0, O_RDONLY) != -1 || errno != EFAULT) return 41;
+    if (syscall(SYS_newfstatat, AT_FDCWD, (char *)1, &info, 0) != -1 || errno != EFAULT) return 42;
+    if (syscall(SYS_renameat, AT_FDCWD, "path-fault",
+                AT_FDCWD, 0) != -1 || errno != EFAULT) return 43;
+    if (syscall(SYS_symlinkat, 0, AT_FDCWD, "link") != -1 || errno != EFAULT) return 44;
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("path-fault");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(!root.path().join("link").exists());
 }
 
 #[cfg(target_os = "linux")]

@@ -509,7 +509,8 @@ pub fn probe() -> Result<()> {
         }
         let mut regs = registers(pid)?;
         if number(&regs) != libc::SYS_openat
-            || read_path(pid, argument(&regs, 1))? != Path::new("/pnport-probe-must-be-rewritten")
+            || read_path(pid, argument(&regs, 1))?
+                != Some(PathBuf::from("/pnport-probe-must-be-rewritten"))
         {
             tracing::debug!(
                 action = "linux_probe",
@@ -762,20 +763,26 @@ fn receives_ancillary_data(pid: i32, message: u64) -> Result<bool> {
     Ok(!header.msg_control.is_null() && header.msg_controllen > 0)
 }
 
-fn read_path(pid: i32, address: u64) -> Result<PathBuf> {
+fn read_path(pid: i32, address: u64) -> Result<Option<PathBuf>> {
     if address == 0 {
-        return Err(injection_failed());
+        return Ok(None);
     }
     let mut bytes = Vec::new();
     while bytes.len() < PATH_LIMIT {
-        let part = read_remote(
+        let part = match read_remote(
             pid,
             address + bytes.len() as u64,
             (PATH_LIMIT - bytes.len()).min(256),
-        )?;
+        ) {
+            Ok(part) => part,
+            Err(_) if std::io::Error::last_os_error().raw_os_error() == Some(libc::EFAULT) => {
+                return Ok(None);
+            }
+            Err(error) => return Err(error),
+        };
         if let Some(end) = part.iter().position(|byte| *byte == 0) {
             bytes.extend_from_slice(&part[..end]);
-            return Ok(PathBuf::from(OsStr::from_bytes(&bytes)));
+            return Ok(Some(PathBuf::from(OsStr::from_bytes(&bytes))));
         }
         bytes.extend_from_slice(&part);
     }
@@ -1299,8 +1306,7 @@ impl Trace<'_> {
         Ok(root.join(path))
     }
 
-    fn translate(&mut self, pid: i32, dirfd: i32, pointer: u64) -> Result<Translation> {
-        let path = read_path(pid, pointer)?;
+    fn translate(&mut self, pid: i32, dirfd: i32, path: &Path) -> Result<Translation> {
         let logical = self.source_path(pid, dirfd, &path)?;
         self.translate_view(&logical).inspect_err(|error| {
             if error.code == Code::PnportResolutionFailed {
@@ -1684,7 +1690,50 @@ impl Trace<'_> {
         } else {
             0
         };
-        let original = read_path(pid, argument(&regs, path_arg))?;
+        let Some(original) = read_path(pid, argument(&regs, path_arg))? else {
+            // The kernel owns EFAULT for invalid child pathname pointers.
+            return Ok(false);
+        };
+        let second = if call == libc::SYS_renameat
+            || call == libc::SYS_renameat2
+            || call == libc::SYS_linkat
+        {
+            Some((3, argument(&regs, 2) as i32))
+        } else {
+            #[cfg(target_arch = "x86_64")]
+            {
+                if call == libc::SYS_rename || call == libc::SYS_link {
+                    Some((1, libc::AT_FDCWD))
+                } else {
+                    None
+                }
+            }
+            #[cfg(target_arch = "aarch64")]
+            {
+                None
+            }
+        };
+        let second_original = if let Some((other_arg, _)) = second {
+            let Some(other) = read_path(pid, argument(&regs, other_arg))? else {
+                return Ok(false);
+            };
+            Some(other)
+        } else {
+            None
+        };
+        let symlink_call = call == libc::SYS_symlinkat || {
+            #[cfg(target_arch = "x86_64")]
+            {
+                call == libc::SYS_symlink
+            }
+            #[cfg(target_arch = "aarch64")]
+            {
+                false
+            }
+        };
+        if symlink_call && argument(&regs, 0) == 0 {
+            return Ok(false);
+        }
         if original.as_os_str().is_empty() {
             if call == libc::SYS_readlinkat {
                 // Empty-path readlinkat targets an O_PATH symlink descriptor,
@@ -1758,7 +1807,9 @@ impl Trace<'_> {
                 if call == libc::SYS_linkat {
                     let target_fd = argument(&regs, 2) as i32;
                     let target_arg = 3;
-                    let target = read_path(pid, argument(&regs, target_arg))?;
+                    let Some(target) = second_original.as_ref() else {
+                        return Ok(false);
+                    };
                     if !target.is_absolute() && target_fd != libc::AT_FDCWD {
                         match fs::metadata(format!("/proc/{pid}/fd/{target_fd}")) {
                             Ok(metadata) if !metadata.is_dir() => {
@@ -1772,15 +1823,14 @@ impl Trace<'_> {
                             _ => {}
                         }
                     }
-                    let translated =
-                        match self.translate(pid, target_fd, argument(&regs, target_arg)) {
-                            Ok(value) => value,
-                            Err(error) if error.code == Code::PnportResolutionFailed => {
-                                self.force_error(pid, &mut regs, target_arg, libc::ENOENT)?;
-                                return Ok(true);
-                            }
-                            Err(error) => return Err(error),
-                        };
+                    let translated = match self.translate(pid, target_fd, target) {
+                        Ok(value) => value,
+                        Err(error) if error.code == Code::PnportResolutionFailed => {
+                            self.force_error(pid, &mut regs, target_arg, libc::ENOENT)?;
+                            return Ok(true);
+                        }
+                        Err(error) => return Err(error),
+                    };
                     if translated.readonly {
                         self.force_error(pid, &mut regs, target_arg, libc::EROFS)?;
                         return Ok(true);
@@ -1919,7 +1969,7 @@ impl Trace<'_> {
                 &base.join(original.strip_prefix("/").map_err(|_| injection_failed())?),
             )
         } else {
-            self.translate(pid, dirfd, argument(&regs, path_arg))
+            self.translate(pid, dirfd, &original)
         } {
             Ok(value) => value,
             Err(error) if error.code == Code::PnportResolutionFailed => {
@@ -1987,56 +2037,37 @@ impl Trace<'_> {
             self.force_error(pid, &mut regs, path_arg, libc::EROFS)?;
             return Ok(true);
         }
-        let second = if call == libc::SYS_renameat
-            || call == libc::SYS_renameat2
-            || call == libc::SYS_linkat
-        {
-            Some((3, argument(&regs, 2) as i32))
-        } else {
-            #[cfg(target_arch = "x86_64")]
-            {
-                if call == libc::SYS_rename || call == libc::SYS_link {
-                    Some((1, libc::AT_FDCWD))
-                } else {
-                    None
+        let second_translation =
+            if let Some(((other_arg, other_fd), other)) = second.zip(second_original) {
+                if !other.is_absolute() && other_fd != libc::AT_FDCWD {
+                    let descriptor = format!("/proc/{pid}/fd/{other_fd}");
+                    let error = match fs::metadata(descriptor) {
+                        Ok(metadata) if !metadata.is_dir() => Some(libc::ENOTDIR),
+                        Err(_) => Some(libc::EBADF),
+                        _ => None,
+                    };
+                    if let Some(error) = error {
+                        self.force_error(pid, &mut regs, path_arg, error)?;
+                        return Ok(true);
+                    }
                 }
-            }
-            #[cfg(target_arch = "aarch64")]
-            {
-                None
-            }
-        };
-        let second_translation = if let Some((other_arg, other_fd)) = second {
-            let other = read_path(pid, argument(&regs, other_arg))?;
-            if !other.is_absolute() && other_fd != libc::AT_FDCWD {
-                let descriptor = format!("/proc/{pid}/fd/{other_fd}");
-                let error = match fs::metadata(descriptor) {
-                    Ok(metadata) if !metadata.is_dir() => Some(libc::ENOTDIR),
-                    Err(_) => Some(libc::EBADF),
-                    _ => None,
+                let translated = match self.translate(pid, other_fd, &other) {
+                    Ok(value) => value,
+                    Err(error) if error.code == Code::PnportResolutionFailed => {
+                        self.force_error(pid, &mut regs, path_arg, libc::ENOENT)?;
+                        return Ok(true);
+                    }
+                    Err(error) => return Err(error),
                 };
-                if let Some(error) = error {
-                    self.force_error(pid, &mut regs, path_arg, error)?;
+                if translated.readonly {
+                    self.force_error(pid, &mut regs, path_arg, libc::EROFS)?;
                     return Ok(true);
                 }
-            }
-            let translated = match self.translate(pid, other_fd, argument(&regs, other_arg)) {
-                Ok(value) => value,
-                Err(error) if error.code == Code::PnportResolutionFailed => {
-                    self.force_error(pid, &mut regs, path_arg, libc::ENOENT)?;
-                    return Ok(true);
-                }
-                Err(error) => return Err(error),
+                let source = self.source_path(pid, other_fd, &other)?;
+                Some((other_arg, source, translated))
+            } else {
+                None
             };
-            if translated.readonly {
-                self.force_error(pid, &mut regs, path_arg, libc::EROFS)?;
-                return Ok(true);
-            }
-            let source = self.source_path(pid, other_fd, &other)?;
-            Some((other_arg, source, translated))
-        } else {
-            None
-        };
         let changed = if openat2_resolve != 0 {
             // openat2's resolve flags apply to the path relative to its real
             // dirfd. Keep that spelling when it already names the translated
