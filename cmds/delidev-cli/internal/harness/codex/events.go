@@ -12,22 +12,27 @@ import (
 type EventKind string
 
 const (
-	TurnStartedEvent      EventKind = "turn-started"
-	TurnCompletedEvent    EventKind = "turn-completed"
-	ThreadStatusEvent     EventKind = "thread-status"
-	TextDeltaEvent        EventKind = "text-delta"
-	MessageStartedEvent   EventKind = "message-started"
-	MessageCompletedEvent EventKind = "message-completed"
-	LateTurnResponseEvent EventKind = "late-turn-response"
-	NativeExtensionEvent  EventKind = "native-extension"
-	MetadataEvent         EventKind = "metadata"
-	UsageEvent            EventKind = "usage"
-	NoticeEvent           EventKind = "notice"
-	ToolStartedEvent      EventKind = "tool-started"
-	ToolCompletedEvent    EventKind = "tool-completed"
-	ToolOutputEvent       EventKind = "tool-output"
-	ToolPatchEvent        EventKind = "tool-patch"
-	ToolInputEvent        EventKind = "tool-input"
+	TurnStartedEvent       EventKind = "turn-started"
+	TurnCompletedEvent     EventKind = "turn-completed"
+	ThreadStatusEvent      EventKind = "thread-status"
+	TextDeltaEvent         EventKind = "text-delta"
+	MessageStartedEvent    EventKind = "message-started"
+	MessageCompletedEvent  EventKind = "message-completed"
+	LateTurnResponseEvent  EventKind = "late-turn-response"
+	NativeExtensionEvent   EventKind = "native-extension"
+	MetadataEvent          EventKind = "metadata"
+	UsageEvent             EventKind = "usage"
+	NoticeEvent            EventKind = "notice"
+	ToolStartedEvent       EventKind = "tool-started"
+	ToolCompletedEvent     EventKind = "tool-completed"
+	ToolOutputEvent        EventKind = "tool-output"
+	ToolPatchEvent         EventKind = "tool-patch"
+	ToolInputEvent         EventKind = "tool-input"
+	ArtifactStartedEvent   EventKind = "artifact-started"
+	ArtifactCompletedEvent EventKind = "artifact-completed"
+	ArtifactDeltaEvent     EventKind = "artifact-delta"
+	TurnPlanEvent          EventKind = "turn-plan"
+	TurnDiffEvent          EventKind = "turn-diff"
 )
 
 type MessageRole string
@@ -54,26 +59,30 @@ type Message struct {
 }
 
 type Event struct {
-	Kind        EventKind
-	ThreadID    domain.ID
-	TurnID      domain.ID
-	Turn        *Turn
-	Status      *ThreadStatus
-	Message     *Message
-	TextDelta   string
-	ItemID      string
-	RequestID   domain.ID
-	InputID     domain.ID
-	Action      TurnAction
-	Problem     *domain.Error
-	Late        bool
-	Correlated  bool
-	EmittedAtMS *int64
-	Metadata    MetadataKind
-	Usage       *domain.NativeTokenUsage
-	Notice      domain.NativeNotice
-	Tool        *Tool
-	ToolInput   *ToolInput
+	Kind          EventKind
+	ThreadID      domain.ID
+	TurnID        domain.ID
+	Turn          *Turn
+	Status        *ThreadStatus
+	Message       *Message
+	TextDelta     string
+	ItemID        string
+	RequestID     domain.ID
+	InputID       domain.ID
+	Action        TurnAction
+	Problem       *domain.Error
+	Late          bool
+	Correlated    bool
+	EmittedAtMS   *int64
+	Metadata      MetadataKind
+	Usage         *domain.NativeTokenUsage
+	Notice        domain.NativeNotice
+	Tool          *Tool
+	ToolInput     *ToolInput
+	Artifact      *Artifact
+	ArtifactDelta *ArtifactDelta
+	Plan          *PlanUpdate
+	Diff          *string
 	// Native is present only for a still-private extension, including unrelated
 	// subagent events. It must pass a dedicated typed adapter before publication;
 	// neither it nor raw provider errors may be serialized as a product event.
@@ -227,6 +236,8 @@ func (c *Client) observeEventLocked(native nativewire.Event) (Event, error) {
 			return Event{}, incompatible()
 		}
 		return Event{Kind: TextDeltaEvent, ThreadID: c.thread, TurnID: params.TurnID, ItemID: params.ItemID, TextDelta: *params.Delta, Correlated: known, Late: turn.Turn.Status.terminal()}, nil
+	case "turn/plan/updated", "turn/diff/updated", "item/plan/delta", "item/reasoning/summaryTextDelta", "item/reasoning/summaryPartAdded", "item/reasoning/textDelta":
+		return c.observeArtifactUpdateLocked(native)
 	case "item/started", "item/completed":
 		return c.observeMessageLocked(native)
 	case "thread/tokenUsage/updated":
@@ -321,6 +332,20 @@ func (c *Client) observeMessageLocked(native nativewire.Event) (Event, error) {
 	}
 	message := &Message{}
 	switch kind {
+	case "plan", "reasoning":
+		artifact, err := decodeArtifact(params.Item, kind)
+		if err != nil {
+			return Event{}, err
+		}
+		turn, known := c.execution.turns[params.TurnID]
+		if !known && c.problem == nil {
+			return Event{}, incompatible()
+		}
+		eventKind := ArtifactStartedEvent
+		if native.Method == "item/completed" {
+			eventKind = ArtifactCompletedEvent
+		}
+		return Event{Kind: eventKind, ThreadID: c.thread, TurnID: params.TurnID, ItemID: artifact.ID, Artifact: artifact, Correlated: known, Late: turn.Turn.Status.terminal()}, nil
 	case "commandExecution", "fileChange":
 		tool, err := decodeTool(params.Item, kind, native.Method == "item/completed")
 		if err != nil {

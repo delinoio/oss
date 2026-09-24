@@ -108,3 +108,8 @@ Run delidev Go race tests and vet; when protocols change, regenerate/lint bindin
 
 ## Change Triggers
 Update this contract, command/protocol contracts, scoped AGENTS and the evidence ledger when adapter profiles, wire semantics, runtime isolation, capability validation or native acceptance changes. Keep incomplete harness/account/platform combinations explicit.
+
+### Private Codex plan, reasoning and diff observations
+The pinned native parser now recognizes plan/reasoning item start/completion, plan text deltas, indexed reasoning summary/content deltas and summary-part additions, turn-level plan steps and aggregated turn diffs. These families remain distinct: completed plan content is authoritative and need not match concatenated plan deltas; reasoning retains only explicitly supplied text with its native part indices; structured plan steps do not finish the turn; a turn diff does not establish repository/file-review ownership. Omitted reasoning arrays follow the pinned empty-array defaults, while explicit null arrays/elements, wrong-kind fields, invalid enums/indices and unknown root-turn ownership are rejected. Parts, indices, text and envelopes remain bounded. Foreign-thread events stay private and JSON-excluded, and post-terminal observations retain their late classification.
+
+These new artifact/progress kinds currently remain unhandled by the Worker publisher until their dedicated durable records are integrated. Parser fixtures do not establish installed-harness artifact acceptance, public dispatch, reconstruction of unavailable/encrypted reasoning, native history reconciliation or diff-review support.
