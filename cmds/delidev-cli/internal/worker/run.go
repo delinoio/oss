@@ -27,9 +27,10 @@ import (
 )
 
 type Config struct {
-	Root   string
-	Logger *slog.Logger
-	Ready  func(domain.ID)
+	Root      string
+	Logger    *slog.Logger
+	Ready     func(domain.ID)
+	execution *PublicationConfig
 }
 type journalState string
 
@@ -243,7 +244,9 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 		if job.MachineID != credential.MachineID || job.InstanceID != instance || job.State != domain.JobClaimed {
 			return domain.Fail(domain.PermissionDenied, "The received job belongs to another machine or process.", "Inspect the paired server and job ownership.")
 		}
-		result, err := runJob(work.context, config, instance, resource, job)
+		jobConfig := config
+		jobConfig.execution = &PublicationConfig{Root: config.Root, Credential: credential, Instance: instance, Assignment: resource, Client: client, Logger: config.Logger}
+		result, err := runJob(work.context, jobConfig, instance, resource, job)
 		work.cancel()
 		active.Delete(resource.Id)
 		if err != nil {
@@ -269,10 +272,16 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 		if err := writeJSON(filepath.Join(config.Root, "jobs", string(id)+".json"), result); err != nil {
 			return err
 		}
-		config.Logger.InfoContext(ctx, "worker job completed", "machine_id", credential.MachineID, "job_id", id, "type", job.Type, "failed", result.Problem != nil)
+		config.Logger.InfoContext(ctx, "worker job reported", "machine_id", credential.MachineID, "job_id", id, "type", job.Type, "reported_problem", result.Problem != nil)
 	}
 }
 func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb.Resource, job domain.Job) (journal, error) {
+	if job.Type == domain.ExecuteSessionJob {
+		var input domain.ExecutionJobInput
+		if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || string(input.SessionID) != resource.SessionId || input.MachineID != job.MachineID {
+			return journal{}, publicationUncertain()
+		}
+	}
 	if job.Type == domain.PrepareWorkspaceJob {
 		var input workspace.PrepareRequest
 		if err := domain.Decode(job.Input, &input); err != nil {
@@ -340,6 +349,8 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job) (json.RawMessage, error) {
 	root := config.Root
 	switch job.Type {
+	case domain.ExecuteSessionJob:
+		return executeSession(ctx, config, owner, job)
 	case domain.RecoverWorkspaceJob:
 		bounded, stopRecovery := context.WithTimeout(ctx, 2*time.Minute)
 		defer stopRecovery()

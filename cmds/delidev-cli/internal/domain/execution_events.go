@@ -174,19 +174,21 @@ func (e ExecutionEvent) Validate() error {
 }
 
 // ExecutionProgress tracks current native publication separately from the
-// original immutable account/configuration selection. It proves no cleanup.
+// original immutable account/configuration selection. Only a separately
+// verified completion report may set CleanupVerified after terminal publication.
 type ExecutionProgress struct {
-	JobID          ID                        `json:"job_id"`
-	ExecutionID    ID                        `json:"execution_id"`
-	InputID        ID                        `json:"input_id"`
-	LastSequence   uint64                    `json:"last_sequence"`
-	NativeThreadID string                    `json:"native_thread_id"`
-	NativeTurnID   string                    `json:"native_turn_id,omitempty"`
-	Observed       ObservedExecutionSettings `json:"observed"`
-	Outcome        ExecutionOutcome          `json:"outcome"`
-	LatestUsageID  ID                        `json:"latest_usage_id,omitempty"`
-	NoticeCount    uint64                    `json:"notice_count,omitempty"`
-	LastNotice     NativeNotice              `json:"last_notice,omitempty"`
+	JobID           ID                        `json:"job_id"`
+	ExecutionID     ID                        `json:"execution_id"`
+	InputID         ID                        `json:"input_id"`
+	LastSequence    uint64                    `json:"last_sequence"`
+	NativeThreadID  string                    `json:"native_thread_id"`
+	NativeTurnID    string                    `json:"native_turn_id,omitempty"`
+	Observed        ObservedExecutionSettings `json:"observed"`
+	Outcome         ExecutionOutcome          `json:"outcome"`
+	LatestUsageID   ID                        `json:"latest_usage_id,omitempty"`
+	NoticeCount     uint64                    `json:"notice_count,omitempty"`
+	LastNotice      NativeNotice              `json:"last_notice,omitempty"`
+	CleanupVerified bool                      `json:"cleanup_verified,omitempty"`
 }
 
 type ExecutionMessage struct {

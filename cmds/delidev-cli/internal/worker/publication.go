@@ -131,6 +131,15 @@ func (p *ExecutionPublisher) Close() error {
 	return p.release()
 }
 
+func (p *ExecutionPublisher) acknowledgedSequence() (uint64, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.closed || p.state.Pending != nil {
+		return 0, publicationUncertain()
+	}
+	return p.state.LastSequence, nil
+}
+
 func (p *ExecutionPublisher) Publish(ctx context.Context, event domain.ExecutionEvent) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()

@@ -36,6 +36,10 @@ type authorityFixture struct {
 }
 
 func newAuthorityFixture(t *testing.T, upstream string) *authorityFixture {
+	return newConfiguredAuthorityFixture(t, upstream, nil, false)
+}
+
+func newConfiguredAuthorityFixture(t *testing.T, upstream string, configure func(*domain.ExecutionJobInput), queued bool) *authorityFixture {
 	t.Helper()
 	s, err := store.Open(context.Background(), filepath.Join(t.TempDir(), "state"))
 	if err != nil {
@@ -63,6 +67,9 @@ func newAuthorityFixture(t *testing.T, upstream string) *authorityFixture {
 		t.Fatal(err)
 	}
 	f.input = domain.ExecutionJobInput{Version: 1, SessionID: domain.NewID(), MachineID: domain.NewID(), ExecutionID: domain.NewID(), InputID: domain.NewID(), ThreadRequestID: domain.NewID(), TurnRequestID: domain.NewID(), Configuration: configuration, ConfigurationDigest: digest, AccountID: accountID, ConnectionID: connectionID, Input: domain.SessionInput{Mode: domain.ExecuteMode, Prompt: "Fixture prompt"}, Installation: domain.Installation{Harness: domain.Codex, State: domain.InstallationDetected, Version: domain.CodexProtocolVersion, ProtocolVerified: true, Protocol: &domain.ProtocolObservation{Protocol: domain.CodexAppServer, State: domain.ProtocolVerified}}, Preparation: json.RawMessage(`{}`), Manifest: json.RawMessage(`{}`)}
+	if configure != nil {
+		configure(&f.input)
+	}
 	secrets := &accountTestSecrets{values: map[credentials.Ref][]byte{}, removed: map[credentials.Ref]bool{}}
 	secrets.values[credentials.Ref{Owner: accountID, ID: connectionID, Purpose: credentials.AccountAPI}] = []byte("temporary-upstream-fixture-key")
 	f.service = &Service{Store: s, Identity: security.Identity{ServerID: domain.NewID(), Token: "fixture-owner-token"}, logger: slog.New(slog.NewJSONHandler(io.Discard, nil)), accountSecrets: secrets}
@@ -90,7 +97,12 @@ func newAuthorityFixture(t *testing.T, upstream string) *authorityFixture {
 		if err := tx.PutCredential(f.device, workerDigest[:]); err != nil {
 			return nil, err
 		}
-		if err := tx.SetWorkerInstance(f.input.MachineID, f.instance, time.Now().UTC()); err != nil {
+		seen := time.Now().UTC()
+		if queued {
+			// The real Worker must be able to acquire its own instance lease.
+			seen = seen.Add(-2 * time.Minute)
+		}
+		if err := tx.SetWorkerInstance(f.input.MachineID, f.instance, seen); err != nil {
 			return nil, err
 		}
 		initial := domain.InitialExecution{ID: f.input.ExecutionID, InputID: f.input.InputID, Configuration: configuration, ConfigurationDigest: digest, InitialAccountID: accountID, ConnectionID: connectionID, AcceptedAt: time.Now().UTC()}
@@ -101,7 +113,11 @@ func newAuthorityFixture(t *testing.T, upstream string) *authorityFixture {
 			return nil, err
 		}
 		raw, _ := json.Marshal(f.input)
-		return tx.PutJob(f.job, 0, f.input.SessionID, "", domain.Job{Type: domain.ExecuteSessionJob, State: domain.JobClaimed, MachineID: f.input.MachineID, InstanceID: f.instance, Input: raw, AcceptedAt: time.Now().UTC()})
+		state, instance := domain.JobClaimed, f.instance
+		if queued {
+			state, instance = domain.JobQueued, ""
+		}
+		return tx.PutJob(f.job, 0, f.input.SessionID, "", domain.Job{Type: domain.ExecuteSessionJob, State: state, MachineID: f.input.MachineID, InstanceID: instance, Input: raw, AcceptedAt: time.Now().UTC()})
 	})
 	if err != nil {
 		t.Fatal(err)

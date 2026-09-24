@@ -97,6 +97,9 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 					if _, err := tx.PutJob(record.ID, record.Revision, record.SessionID, record.ProjectID, job); err != nil {
 						return nil, err
 					}
+					if err := finishLostNativeExecution(tx, record, job); err != nil {
+						return nil, err
+					}
 					if err := finishSessionWorkspace(tx, record.ID); err != nil {
 						return nil, err
 					}
@@ -384,6 +387,9 @@ func (s *Service) ReportWork(ctx context.Context, req *connect.Request[pb.Report
 		if job.State != domain.JobClaimed {
 			return nil, domain.Fail(domain.Conflict, "The job is no longer awaiting this result.", "Inspect its current accepted outcome.")
 		}
+		if job.Type == domain.ExecuteSessionJob {
+			return finishNativeExecution(tx, record, job, meta.ExpectedRevision, req.Msg.OutputJson, problem)
+		}
 		if problem == nil {
 			outputJSON := req.Msg.OutputJson
 			switch job.Type {
@@ -507,6 +513,29 @@ func (s *Service) ReportWork(ctx context.Context, req *connect.Request[pb.Report
 	if err := domain.Decode(result.Data, &record); err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
+	if record.Kind == "" {
+		err = s.Store.Read(ctx, func(tx *store.Tx) error {
+			if err := currentInstance(tx, machine, instance); err != nil {
+				return err
+			}
+			var err error
+			record, err = tx.Get(domain.JobKind, record.ID)
+			if err != nil {
+				return err
+			}
+			job, err := store.Decode[domain.Job](record)
+			if err != nil {
+				return err
+			}
+			if job.MachineID != machine || job.InstanceID != instance || job.Type != domain.ExecuteSessionJob {
+				return executionEventConflict()
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, rpc.Error(err, correlation)
+		}
+	}
 	s.logger.InfoContext(ctx, "worker job reported", "machine_id", machine, "job_id", meta.Id, "replayed", result.Replayed)
 	response := connect.NewResponse(&pb.ReportWorkResponse{Job: rpc.Resource(record), Replayed: result.Replayed})
 	rpc.CopyCorrelation(response, req.Header())
@@ -536,6 +565,9 @@ func revokeMachineJobs(tx *store.Tx, machine domain.ID) error {
 					job.Problem = domain.Fail(domain.RecoveryRequired, "The Worker was revoked before completion was acknowledged.", "Reconcile its private execution journal before retrying.")
 				}
 				if _, err := tx.PutJob(record.ID, record.Revision, record.SessionID, record.ProjectID, job); err != nil {
+					return err
+				}
+				if err := finishLostNativeExecution(tx, record, job); err != nil {
 					return err
 				}
 				if err := finishSessionWorkspace(tx, record.ID); err != nil {

@@ -269,6 +269,13 @@ func cleanPath() string {
 	return strings.Join(paths, string(os.PathListSeparator))
 }
 func probeEnvironment(home string) ([]string, error) {
+	return PrivateRuntimeEnvironment(home)
+}
+
+// PrivateRuntimeEnvironment prepares a DeliDev-owned native runtime. Only
+// bounded system lookup context survives; callers supply scoped execution
+// credentials separately and retain this directory when native history exists.
+func PrivateRuntimeEnvironment(home string) ([]string, error) {
 	for _, name := range []string{"", "config", "cache", "data", "state", "tmp", "codex", "claude", "opencode"} {
 		if err := security.PrivateDir(filepath.Join(home, name)); err != nil {
 			return nil, err

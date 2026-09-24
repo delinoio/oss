@@ -26,6 +26,32 @@ type ExecutionJobInput struct {
 	Manifest            json.RawMessage        `json:"manifest"`
 }
 
+// ExecutionCompletion proves only a fully published native terminal boundary
+// followed by owned process/workspace-lease cleanup. Interrupted or incomplete
+// publication must report recovery instead of manufacturing this document.
+type ExecutionCompletion struct {
+	Version         uint32           `json:"version"`
+	ExecutionID     ID               `json:"execution_id"`
+	InputID         ID               `json:"input_id"`
+	NativeThreadID  ID               `json:"native_thread_id"`
+	NativeTurnID    ID               `json:"native_turn_id"`
+	LastSequence    uint64           `json:"last_sequence"`
+	Outcome         ExecutionOutcome `json:"outcome"`
+	CleanupVerified bool             `json:"cleanup_verified"`
+}
+
+func (c ExecutionCompletion) Validate() error {
+	for _, id := range []ID{c.ExecutionID, c.InputID, c.NativeThreadID, c.NativeTurnID} {
+		if err := id.Validate(); err != nil {
+			return err
+		}
+	}
+	if c.Version != 1 || c.LastSequence < 3 || c.LastSequence > MaxExecutionEvents || !c.CleanupVerified || !slices.Contains([]ExecutionOutcome{ExecutionSucceeded, ExecutionFailed, ExecutionStopped}, c.Outcome) {
+		return Fail(RecoveryRequired, "The execution completion does not prove its terminal boundary and cleanup.", "Retain its native history and owned process journals for reconciliation.")
+	}
+	return nil
+}
+
 func (i ExecutionJobInput) Validate() error {
 	if i.Version != 1 || i.Installation.Harness != i.Configuration.Harness {
 		return Fail(Unsupported, "The execution assignment profile is incompatible.", "Use a matching server and Worker native profile.")
