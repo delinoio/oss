@@ -58,6 +58,8 @@ When a traced Linux child in pnport's foreground process group requests a job-co
 
 Graph-data or active archive changes/deletion require restart and tree termination. Source edits use native watch behavior. Cancellation and runtime failures request graceful termination, wait five seconds, then terminate/reap remaining descendants. Detached descendants cannot survive the supervisor. No normal timeout or automatic retry. Injection is tree-scoped, with explicit capability errors; no protected-executable replacement or privilege escalation.
 
+Linux seccomp admission failures cancel the stopped syscall before graceful cleanup can resume a signal-handling child. The final reap sends SIGKILL before any last ptrace continuation.
+
 The current macOS polling guard hashes each newly observed input once, then compares file size, device/inode, mtime and ctime before deciding to hash again. It checks metadata both before and after hashing and requires restart on unstable reads, disappearance or a changed digest. Restoring mtime after a same-size write does not bypass ctime validation. Unchanged polling never rereads whole ZIP archives or PnP data; parsed active-archive registrations remain retained for the full run.
 
 The preload records constructor entry before graph hydration or contended cache coordination, and records readiness only after runtime setup succeeds. The supervisor's five-second missing-injection deadline applies until constructor entry, not to supported cache lock waits. Entry alone never validates a child result: readiness remains mandatory at exit. Signal handling and input-change checks continue during initialization waits; the common five-second shutdown grace is unchanged.

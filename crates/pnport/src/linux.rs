@@ -650,6 +650,31 @@ fn deny_syscall(pid: i32, regs: &mut Registers) -> Result<()> {
     set_active_syscall(pid, -1)?;
     Ok(())
 }
+fn finish_denied_syscall(pid: i32, regs: &mut Registers) -> Result<()> {
+    deny_syscall(pid, regs)?;
+    // A signal injected at a seccomp entry can restart the original syscall
+    // after its handler returns. Reach the cancelled syscall's exit stop
+    // before cleanup is allowed to deliver any graceful signal.
+    resume(pid, true, 0)?;
+    let mut status = 0;
+    loop {
+        let stopped = unsafe { libc::waitpid(pid, &mut status, WAIT_ALL) };
+        if stopped == pid {
+            break;
+        }
+        if stopped < 0 && std::io::Error::last_os_error().raw_os_error() == Some(libc::EINTR) {
+            continue;
+        }
+        return Err(injection_failed());
+    }
+    if !libc::WIFSTOPPED(status) || libc::WSTOPSIG(status) != (libc::SIGTRAP | 0x80) {
+        return Err(injection_failed());
+    }
+    let mut returned = registers(pid)?;
+    set_result(&mut returned, -(libc::ENOSYS as i64));
+    set_registers(pid, &returned)?;
+    resume(pid, false, 0)
+}
 #[cfg(target_arch = "x86_64")]
 fn argument(regs: &Registers, index: usize) -> u64 {
     [regs.rdi, regs.rsi, regs.rdx, regs.r10, regs.r8, regs.r9][index]
@@ -2539,8 +2564,8 @@ impl Trace<'_> {
         }
         for pid in &self.tasks {
             unsafe {
-                libc::ptrace(libc::PTRACE_CONT, *pid, 0, 0);
                 libc::kill(*pid, libc::SIGKILL);
+                libc::ptrace(libc::PTRACE_CONT, *pid, 0, 0);
             }
         }
         let reap_deadline = Instant::now() + Duration::from_secs(1);
@@ -2656,10 +2681,19 @@ impl Trace<'_> {
                 return Ok(true);
             }
             if event == libc::PTRACE_EVENT_SECCOMP {
-                if self.scratch.contains_key(&pid) {
-                    self.enter(pid)?;
+                let handled = if self.scratch.contains_key(&pid) {
+                    self.enter(pid)
                 } else {
-                    self.start_scratch(pid)?;
+                    self.start_scratch(pid)
+                };
+                if let Err(error) = handled {
+                    // A failed admission can leave the tracee parked before
+                    // the kernel executes its original syscall. Cleanup must
+                    // never resume that syscall, even when the child handles
+                    // the graceful termination signal.
+                    let mut regs = registers(pid)?;
+                    finish_denied_syscall(pid, &mut regs)?;
+                    return Err(error);
                 }
                 return Ok(true);
             }

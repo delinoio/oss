@@ -207,6 +207,7 @@
 - pnport Linux must leave native pathname bytes unchanged when no virtual translation is required, including both operands of link and rename calls; lexical normalization cannot replace kernel symlink and trailing-separator lookup.
 - pnport Linux must decide pathname rewriting by comparing the caller's resolved lookup path with physical backing. The PnP target identity may equal an unplugged package's physical path even when the caller used a virtual `node_modules` alias.
 - pnport Linux arm64 syscall denial must update `NT_ARM_SYSTEM_CALL` after ordinary registers so rejected operations cannot execute during graceful cleanup.
+- A Linux seccomp admission failure must cancel the stopped syscall before graceful cleanup resumes the tracee; send final SIGKILL before the last ptrace continuation.
 - pnport cache extraction must use a private snapshot verified against the destination archive digest. Rechecking only the mutable source after extraction cannot prove which bytes were published; retain rewrite-and-restore regression coverage.
 - pnport cache cancellation after read-only staging must restore directory write permission and explicitly remove the incomplete stage before returning an error.
 - pnport preload constructor entry and completed readiness are distinct acknowledgements. Supported cache lock waits after entry must not trigger the missing-injection deadline; a child result without readiness remains a failure.

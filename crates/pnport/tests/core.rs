@@ -2656,7 +2656,79 @@ int main(int argc, char **argv) {
         "{}",
         String::from_utf8_lossy(&result.stderr)
     );
-    assert_eq!(fs::read(&marker).unwrap(), b"handled");
+    assert_eq!(
+        fs::read(&marker)
+            .unwrap_or_else(|error| panic!("{error}: {}", String::from_utf8_lossy(&result.stderr))),
+        b"handled"
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_cleanup_cancels_a_failed_seccomp_entry_before_signals() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("failed-entry.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <errno.h>
+#include <fcntl.h>
+#include <linux/openat2.h>
+#include <signal.h>
+#include <stdio.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+static void ignored(int signal) { (void)signal; }
+int main(int argc, char **argv) {
+    if (argc != 2) return 40;
+    int marker = open(argv[1], O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    if (marker < 0 || write(marker, "ready", 5) != 5) return 43;
+    signal(SIGTERM, ignored);
+    struct open_how how = { .flags = O_RDONLY, .resolve = RESOLVE_BENEATH };
+    int result = syscall(SYS_openat2, AT_FDCWD,
+                         "node_modules/dep/file.txt", &how, sizeof(how));
+    if (result == -1 && errno == ENOSYS) write(marker, "denied", 6);
+    else {
+        char report[40];
+        int size = snprintf(report, sizeof(report), "native:%d:%d", result, errno);
+        write(marker, report, size);
+    }
+    close(marker);
+    return 44;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("failed-entry");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let marker = root.path().join("failed-entry-started");
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .arg(&marker)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(125),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(
+        fs::read(&marker).unwrap(),
+        b"readydenied",
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
 }
 
 #[cfg(target_os = "linux")]
