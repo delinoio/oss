@@ -447,7 +447,9 @@ jobs:
           cargo test --target ${{ matrix.target }} -p forge-document -p forge-pdf -- --include-ignored
           cargo clippy --target ${{ matrix.target }} -p react-forge-node -p forge-package -p forge-document -p forge-docx -p forge-xlsx -p forge-pdf -p forge-figma --all-targets -- -D warnings
       - name: Build and test library, installed CLI and stdio MCP
-        run: pnpm exec turbo run build typecheck lint test --filter=@delino/react-forge
+        run: |
+          set -o pipefail
+          pnpm exec turbo run build typecheck lint test --filter=@delino/react-forge 2>&1 | tee "$RUNNER_TEMP/react-forge-turbo.log"
       - name: Typecheck standalone document examples
         run: pnpm --filter @delino/react-forge typecheck:examples
       - name: Verify Windows console cancellation
@@ -494,6 +496,7 @@ jobs:
         with:
           name: react-forge-${{ matrix.id }}
           path: |
+            ${{ runner.temp }}/react-forge-turbo.log
             ${{ runner.temp }}/react-forge-render
             ${{ runner.temp }}/react-forge-benchmark.json
             ${{ runner.temp }}/react-forge-travel-ir.pptx
