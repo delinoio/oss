@@ -114,7 +114,7 @@ Logical `getcwd` synthesis runs only after the kernel accepts the output buffer.
 
 The Linux tracer mediates `ioctl` on tracked read-only dependency descriptors. It permits the known read-only filesystem flag queries and `FIONREAD`; other requests receive `EROFS` before the kernel can change file or filesystem metadata. This includes `FS_IOC_SETFLAGS` and `FS_IOC_FSSETXATTR`, which can mutate through a read-open descriptor.
 
-Cache materialization calls the lifecycle check throughout hashing, snapshotting, ZIP extraction, inventory verification, and read-only publication, including while the cache lock is held. Cancellation or graph invalidation during extraction discards the incomplete stage before a cache entry becomes visible.
+Cache materialization calls the lifecycle check throughout hashing, snapshotting, ZIP extraction, inventory verification, and read-only publication, including while the cache lock is held. Cancellation or graph invalidation during extraction discards the incomplete stage before a cache entry becomes visible. If publication fails after any stage directory becomes read-only, cleanup first restores directory write permission and explicitly removes the stage; a failed cleanup is reported instead of leaving an unreported `incomplete/entry-*` tree.
 
 Every owned Linux `exec` stop validates the actual ELF image exposed by `/proc/<pid>/exe` before resuming its first user instruction. This covers descendants, descriptor-based execution, and script interpreters; a mixed class or architecture fails with the unsupported-operation diagnostic and exit 125.
 

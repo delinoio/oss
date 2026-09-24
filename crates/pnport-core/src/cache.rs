@@ -237,13 +237,25 @@ impl Cache {
                 .and_then(|_| output.sync_all())
                 .map_err(|_| cache_error())?;
             private_file(&stage.path().join("lease"))?;
-            readonly_tree(&content, wait)?;
-            wait()?;
-            fs::rename(stage.path(), &destination).map_err(|_| cache_error())?;
-            #[cfg(unix)]
-            File::open(self.root.join(FORMAT))
-                .and_then(|f| f.sync_all())
-                .map_err(|_| cache_error())?;
+            let publication = (|| {
+                readonly_tree(&content, wait)?;
+                wait()?;
+                fs::rename(stage.path(), &destination).map_err(|_| cache_error())?;
+                #[cfg(unix)]
+                File::open(self.root.join(FORMAT))
+                    .and_then(|f| f.sync_all())
+                    .map_err(|_| cache_error())?;
+                Ok(())
+            })();
+            if let Err(error) = publication {
+                if stage.path().exists() {
+                    // Read-only content directories prevent TempDir's silent
+                    // destructor from removing a canceled publication.
+                    writable_directories(stage.path())?;
+                    stage.close().map_err(|_| cache_error())?;
+                }
+                return Err(error);
+            }
             tracing::debug!(action = "cache_publish", identity = %identity);
         }
         verify(&destination, &identity, FORMAT, wait)?;
@@ -800,6 +812,43 @@ mod tests {
             .unwrap()
             .all(|entry| entry.unwrap().file_name() == ".pnport-format"));
         assert_eq!(fs::read_dir(incomplete).unwrap().count(), 0);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cancellation_after_readonly_publication_removes_staging_tree() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = tempfile::tempdir().unwrap();
+        let archive = root.path().join("source.zip");
+        fs::write(&archive, archive_bytes(b"package bytes")).unwrap();
+        let cache = Cache::open(root.path().join("cache")).unwrap();
+        let incomplete = cache.root.join("incomplete");
+        let mut stopped_after_readonly = false;
+        let error = cache
+            .materialize_with_wait(&archive, &mut || {
+                for stage in fs::read_dir(&incomplete).map_err(|_| cache_error())? {
+                    let content = stage.map_err(|_| cache_error())?.path().join("content");
+                    if fs::metadata(content)
+                        .is_ok_and(|metadata| metadata.permissions().mode() & 0o200 == 0)
+                    {
+                        stopped_after_readonly = true;
+                        return Err(Error::new(
+                            crate::diagnostic::Code::PnportGraphChanged,
+                            "A watched input changed before publication.",
+                        ));
+                    }
+                }
+                Ok(())
+            })
+            .err()
+            .unwrap();
+        assert!(stopped_after_readonly);
+        assert_eq!(error.code, crate::diagnostic::Code::PnportGraphChanged);
+        assert_eq!(fs::read_dir(incomplete).unwrap().count(), 0);
+        assert!(fs::read_dir(cache.root.join(FORMAT))
+            .unwrap()
+            .all(|entry| entry.unwrap().file_name() == ".pnport-format"));
     }
 
     #[test]
