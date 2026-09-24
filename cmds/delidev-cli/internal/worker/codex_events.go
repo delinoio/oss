@@ -19,11 +19,13 @@ type CodexEventPublisher struct {
 	messages          map[string]domain.ExecutionMessageUpdate
 	tools             map[string]codexToolPublication
 	artifacts         map[string]codexArtifactPublication
+	interactions      map[domain.ID]domain.ExecutionInteractionUpdate
+	waiting           domain.NativeWaiting
 	blocked, finished bool
 }
 
 func NewCodexEventPublisher(publisher *ExecutionPublisher) *CodexEventPublisher {
-	return &CodexEventPublisher{publisher: publisher, messages: map[string]domain.ExecutionMessageUpdate{}, tools: map[string]codexToolPublication{}, artifacts: map[string]codexArtifactPublication{}}
+	return &CodexEventPublisher{publisher: publisher, messages: map[string]domain.ExecutionMessageUpdate{}, tools: map[string]codexToolPublication{}, artifacts: map[string]codexArtifactPublication{}, interactions: map[domain.ID]domain.ExecutionInteractionUpdate{}}
 }
 
 func (c *CodexEventPublisher) publish(ctx context.Context, event domain.ExecutionEvent) error {
@@ -131,11 +133,9 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 		}
 		return true, nil
 	case codex.ThreadStatusEvent:
-		if event.Status == nil || len(event.Status.ActiveFlags) != 0 || (event.Status.Type != codex.ThreadIdle && event.Status.Type != codex.ThreadActive) {
-			return false, nil
-		}
-		// Native idle/active does not override retained input or terminal state.
-		return true, nil
+		return c.publishWaiting(ctx, event.Status)
+	case codex.InteractionRequestedEvent, codex.InteractionClosedEvent:
+		return true, c.publishInteraction(ctx, event)
 	case codex.ArtifactStartedEvent, codex.ArtifactCompletedEvent, codex.ArtifactDeltaEvent:
 		return true, c.publishArtifact(ctx, event)
 	case codex.TurnPlanEvent, codex.TurnDiffEvent:

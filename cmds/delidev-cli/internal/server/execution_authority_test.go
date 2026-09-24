@@ -109,7 +109,7 @@ func newConfiguredAuthorityFixture(t *testing.T, upstream string, configure func
 		if err := put(domain.SessionKind, f.input.SessionID, f.input.SessionID, domain.Session{Name: "Fixture", AgentID: agentID, MachineID: f.input.MachineID, Workspace: domain.GeneralChat, Outcome: domain.ExecutionRunning, Archive: domain.NotArchived, Recovery: domain.NoRecovery, Dispatch: domain.DispatchClaimed, ActiveExecutionID: f.input.ExecutionID, InitialExecution: &initial}); err != nil {
 			return nil, err
 		}
-		if err := put(domain.QueueKind, f.input.InputID, f.input.SessionID, domain.QueuedInput{Sequence: 1, ContentRevision: 1, Prompt: f.input.Input.Prompt, Mode: domain.ExecuteMode, Delivery: domain.InputAccepted, ExecutionID: f.input.ExecutionID, NativeRequestID: f.input.TurnRequestID}); err != nil {
+		if err := put(domain.QueueKind, f.input.InputID, f.input.SessionID, domain.QueuedInput{Sequence: 1, ContentRevision: 1, Prompt: f.input.Input.Prompt, Mode: f.input.Input.Mode, Delivery: domain.InputAccepted, ExecutionID: f.input.ExecutionID, NativeRequestID: f.input.TurnRequestID}); err != nil {
 			return nil, err
 		}
 		raw, _ := json.Marshal(f.input)

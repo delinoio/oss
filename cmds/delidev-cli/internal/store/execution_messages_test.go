@@ -26,7 +26,7 @@ func TestExecutionMessageMigrationPreservesExistingGrantAndBackup(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec("DROP TABLE execution_messages; PRAGMA user_version=7;"); err != nil {
+	if _, err := s.db.Exec("DROP TABLE execution_interactions; DROP TABLE execution_messages; PRAGMA user_version=7;"); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Close(); err != nil {

@@ -40,6 +40,8 @@ The native API relay accepts only Worker-registered execution token digests boun
 
 Prepared first-execution workspace leases persist native ownership outside the workspace and serialize with preparation/recovery. Only verified execution-job process cleanup closes that claim; replacement Workers cannot infer cleanup from an absent directory or a released OS lock. The first Codex Worker runner now uses this lease; public dispatch and explicit recovery/later-turn lease integration remain required.
 
+Native Codex questions and waiting observations now use the durable Worker publication boundary. Schema v9 retains exact interaction identities and original question content independently of transcript items; native/terminal closure never fabricates an answer. Existing resource reads expose retained interactions, while owner responses, protected answer retention, inbox read state and acceptance reconciliation remain required.
+
 ## Change Policy
 Keep command, protocol, evidence, and scoped AGENTS contracts synchronized with each implementation increment. Preserve the complete normative requirements even when individual acceptance items remain in progress. Generated bindings are tool-owned. Never claim the project complete while required CLI/server/Worker acceptance items remain unimplemented or unverified.
 
