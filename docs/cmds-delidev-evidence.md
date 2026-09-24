@@ -9,7 +9,7 @@ The CLI/server/Worker implementation is in progress. No release or real-harness 
 | --- | --- | --- |
 | CLI, typed JSON, explicit startup, server/sidecar lifecycle | Pending | Pending |
 | Connect, authentication, origins, pairing, TLS, streams | Pending | Pending |
-| SQLite, IDs/revisions, atomic events/receipts, backup/restore | Pending | Pending |
+| SQLite, IDs/revisions, atomic events/receipts, backup/restore | Exclusive private scope, WAL transactions, global entity identity, optimistic revisions, durable receipts, metadata-only events, coherent bounded snapshots, consistent backup implemented; restore/deletion coordination pending | Real temporary SQLite: concurrent retries/restart, rollback, kind collisions, deletion receipt redaction, cursor bounds, WAL backup, corrupt/newer DB preservation; Go race tests pass |
 | Projects, repositories, settings, restrictions, templates | Pending | Pending |
 | Accounts, provider/models, protected secrets, proxy | Pending | Pending |
 | Six routing policies, quota evidence, immutable snapshots | Pending | Pending |
@@ -27,3 +27,6 @@ The CLI/server/Worker implementation is in progress. No release or real-harness 
 
 ## Presentation scope
 The current user request is the CLI. Desktop windows/tray/widgets/native browser presentation and desktop artifact installation belong to the full product issue and remain visible in the complete requirements; they are not claimed as CLI implementation evidence. Their server-owned data and product operations remain within the CLI/RPC scope.
+
+## Local verification log
+- 2026-09-24, macOS arm64, Go 1.26.1: `go test -race ./cmds/delidev-cli/internal/...` and `go vet ./cmds/delidev-cli/internal/...` for the domain, private-files, and SQLite foundation. No harness or provider account was invoked.
