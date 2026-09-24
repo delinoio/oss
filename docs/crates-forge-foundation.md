@@ -37,6 +37,8 @@ Run package unit/integration tests, schema/example checks, cargo fmt and Clippy.
 ## Dependencies and Integrations
 Use serde/schemars for the DSL, cosmic-text for shaping, official rmcp for stdio MCP, pptx for new Office elements, and a Forge-owned ZIP/XML preservation layer for existing documents. Noto Sans KR must carry its source hash and OFL license. LibreOffice and Poppler are optional external renderers. No automatic installation or remote fetching occurs in the product.
 
+New packages match every content-type override's path spelling to its actual ZIP member. The pinned pptx 0.1.0 writer lowercases overrides while retaining mixed-case members. Although OPC defines ASCII-case-insensitive equivalence, exact spelling also supports case-sensitive inspectors and older readers. This compatibility normalization runs only on newly generated packages, never on imported XML. The generated round-trip regression checks every override against its exact ZIP member. See [Microsoft's package URI compatibility note](https://learn.microsoft.com/en-us/dotnet/core/compatibility/core-libraries/8.0/system-io-packaging-case-insensitive-uri).
+
 ## Change Triggers
 Keep project index, AGENTS rules, schema/examples, CLI/MCP descriptions and CI contracts synchronized. All packages remain unpublished until a separate release contract is approved.
 

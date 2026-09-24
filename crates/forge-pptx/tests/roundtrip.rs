@@ -32,6 +32,21 @@ fn generates_and_reopens() {
     let out = update(&bytes, &p, &imported.bindings, &next, &Assets::new(), id, 1).unwrap();
     assert_eq!(import(&out).unwrap().revision, 1);
     let a = read_package(&bytes).unwrap();
+    let content_types =
+        roxmltree::Document::parse(std::str::from_utf8(&a["[Content_Types].xml"]).unwrap())
+            .unwrap();
+    for entry in content_types
+        .root_element()
+        .children()
+        .filter(|n| n.is_element())
+    {
+        if let Some(name) = entry.attribute("PartName") {
+            assert!(
+                a.contains_key(name.strip_prefix('/').unwrap()),
+                "Generated content type must match the ZIP member spelling: {name}"
+            );
+        }
+    }
     let b = read_package(&out).unwrap();
     for (name, old) in a {
         if !name.starts_with("ppt/slides/slide") && name != "customXml/forge.xml" {

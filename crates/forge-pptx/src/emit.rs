@@ -635,6 +635,52 @@ pub(crate) fn table_xml(doc: &Presentation, n: &Node, f: Frame) -> Result<String
     out.push_str("</a:tbl>");
     Ok(out)
 }
+fn match_generated_content_type_paths(parts: &mut Package) -> Result<()> {
+    // pptx 0.1.0 lowercases override names but retains ZIP member casing. OPC
+    // permits this, but case-sensitive readers can lose the specialized MIME
+    // types. Match exact member spelling for new packages until upstream does
+    // so. Never run this on imported packages: their original XML is preserved.
+    let names: BTreeMap<_, _> = parts
+        .keys()
+        .map(|name| (name.to_ascii_lowercase(), name))
+        .collect();
+    if names.len() != parts.len() {
+        return Err(failure("ambiguous generated part names"));
+    }
+    let bytes = parts
+        .get("[Content_Types].xml")
+        .ok_or_else(|| failure("content types"))?;
+    let doc = xml(bytes)?;
+    let mut edits = Vec::new();
+    for node in doc.root_element().children().filter(|n| {
+        n.has_tag_name((
+            "http://schemas.openxmlformats.org/package/2006/content-types",
+            "Override",
+        ))
+    }) {
+        let attribute = node
+            .attributes()
+            .find(|a| a.name() == "PartName")
+            .ok_or_else(|| failure("override path"))?;
+        let path = attribute
+            .value()
+            .strip_prefix('/')
+            .ok_or_else(|| failure("override path"))?;
+        let actual = names
+            .get(&path.to_ascii_lowercase())
+            .ok_or_else(|| failure("missing generated part"))?;
+        if path != actual.as_str() {
+            edits.push((attribute.range_value(), escape(&format!("/{actual}"))));
+        }
+    }
+    let mut out = bytes.clone();
+    for (range, value) in edits.into_iter().rev() {
+        out = replace_range(&out, range, &value);
+    }
+    parts.insert("[Content_Types].xml".into(), out);
+    Ok(())
+}
+
 pub fn generate(
     doc: &Presentation,
     assets: &Assets,
@@ -676,6 +722,7 @@ pub fn generate(
         slide_parts.push(slide.partname.as_str().trim_start_matches('/').to_string());
     }
     let mut parts = read(&native.to_bytes().map_err(failure)?)?;
+    match_generated_content_type_paths(&mut parts)?;
     let mut bindings = BTreeMap::new();
     for (s, part) in doc.slides.iter().zip(&slide_parts) {
         let mut next = 2;
