@@ -1287,7 +1287,7 @@ impl Trace<'_> {
     }
 
     fn source_path(&self, pid: i32, dirfd: i32, path: &Path) -> Result<PathBuf> {
-        let absolute = self.base(pid, dirfd, &path)?;
+        let absolute = self.base(pid, dirfd, path)?;
         Ok(self.proc_root(pid, &absolute)?.unwrap_or(absolute))
     }
 
