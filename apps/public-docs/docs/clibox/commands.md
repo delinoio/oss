@@ -2,7 +2,7 @@
 
 The index uses `run env`, the five `run with-*` wrappers, and `system cpus` from the next release. Published version **0.1.6** instead uses **`env run`** and does not include the wrappers or CPU queries. The other command names below are already available in 0.1.6. See [Migration](/clibox/migration).
 
-All 25 commands are available through the native executable and the npm launcher in the next release. Use `pnpm exec clibox` or `npm exec -- clibox` for a project-local installation.
+The 25 existing commands are available through the native executable and the npm launcher in the next release. Seven additional `fspy` workflows are in unreleased development and are not available in published 0.1.6. Use `pnpm exec clibox` or `npm exec -- clibox` for a project-local installation.
 
 | Command | Purpose |
 | --- | --- |
@@ -31,6 +31,18 @@ All 25 commands are available through the native executable and the npm launcher
 | [`clibox dotenv list`](/clibox/configuration#list-dotenv-keys) | List sorted unique dotenv keys. |
 | [`clibox dotenv merge`](/clibox/configuration#merge-dotenv-files) | Merge dotenv layers in order. |
 | [`clibox yaml normalize`](/clibox/configuration#normalize-yaml) | Expand YAML references and normalize formatting. |
+
+## Unreleased file-access workflows
+
+| Command | Purpose |
+| --- | --- |
+| [`clibox fspy record`](/clibox/file-access#record-and-compare) | Record complete file-operation starts and results. |
+| [`clibox fspy compare`](/clibox/file-access#record-and-compare) | Compare two complete traces. |
+| [`clibox fspy autowatch`](/clibox/file-access#rerun-from-observed-inputs) | Rerun when observed project inputs change. |
+| [`clibox fspy assetcov`](/clibox/file-access#measure-asset-reads) | Measure actual selected-file reads. |
+| [`clibox fspy latencylab`](/clibox/file-access#experiment-with-delay) | Measure selected pre-operation delay. |
+| [`clibox fspy min-repro`](/clibox/file-access#collect-a-verified-reproduction) | Publish a verified observed-input bundle. |
+| [`clibox fspy fbreak`](/clibox/file-access#pause-before-an-operation) | Pause a matching caller before the operation. |
 
 ## Help and version
 

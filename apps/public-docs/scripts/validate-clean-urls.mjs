@@ -86,6 +86,16 @@ const cliboxHeadings = {
     "HTTP",
     "Files",
     "Results and cancellation"
+  ],
+  "/clibox/file-access": [
+    "File-access workflows",
+    "Record and compare",
+    "Rerun from observed inputs",
+    "Measure asset reads",
+    "Experiment with delay",
+    "Collect a verified reproduction",
+    "Pause before an operation",
+    "Output, limits, and recovery"
   ]
 };
 
@@ -212,7 +222,7 @@ const requiredHeadings = new Map([
 const requiredLinks = new Map([
   ["/clibox/", ["/clibox/install", "/clibox/getting-started", "/clibox/commands", "/clibox/migration"]],
   ["/clibox/install", ["/clibox/releases", "https://oss.delino.io/linux-packages"]],
-  ["/clibox/commands", ["/clibox/system#query-cpu-counts", "/clibox/system#run-with-environment-variables", "/clibox/transformations#hashes-and-verification", "/clibox/wait#http", "/clibox/configuration#normalize-yaml"]],
+  ["/clibox/commands", ["/clibox/system#query-cpu-counts", "/clibox/system#run-with-environment-variables", "/clibox/transformations#hashes-and-verification", "/clibox/wait#http", "/clibox/configuration#normalize-yaml", "/clibox/file-access#record-and-compare"]],
   ["/pnport/", ["/pnport/installation", "/pnport/getting-started", "/pnport/commands", "/pnport/filesystem-and-processes", "/pnport/editors", "/pnport/cache", "/pnport/diagnostics", "/pnport/benchmarks", "/pnport/releases"]],
   ["/pnport/installation", ["/pnport/getting-started", "/pnport/commands", "/pnport/releases"]],
   ["/pnport/diagnostics", ["/pnport/cache"]],

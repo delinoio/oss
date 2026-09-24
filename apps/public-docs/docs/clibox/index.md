@@ -10,7 +10,7 @@ clibox is a native command-line toolbox for everyday development, available thro
 - Wait for a TCP endpoint, HTTP response, or regular file.
 - List dotenv keys, merge configuration layers, and normalize YAML.
 
-The [command index](/clibox/commands) covers all 25 commands. Start with [installation](/clibox/install) and the [getting started guide](/clibox/getting-started).
+The [command index](/clibox/commands) covers the 25 existing commands and seven unreleased file-access workflows. Start with [installation](/clibox/install) and the [getting started guide](/clibox/getting-started).
 
 ## Supported environments
 
@@ -27,6 +27,7 @@ Published version 0.1.6 includes `env run`, `port list`, and `hash compute`. The
 - [System commands](/clibox/system)
 - [Text, time, Base64, and hashes](/clibox/transformations)
 - [Readiness waits](/clibox/wait)
+- [Unreleased file-access workflows](/clibox/file-access)
 - [Configuration commands](/clibox/configuration)
 - [Releases and verification](/clibox/releases)
 - [Troubleshooting](/clibox/troubleshooting)

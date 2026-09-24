@@ -43,6 +43,8 @@ For `with-retry`, a consumed stdin stream is not replayed, and startup failures 
 
 ## Diagnostics and support
 
+For unreleased `fspy` workflows, check [file-access workflow limits and recovery](/clibox/file-access#output-limits-and-recovery). Incomplete traces cannot be used for comparison or coverage; `tracing_unavailable` means the selected platform or process cannot establish the required observation boundary. A failed reproduction never publishes a verified bundle. Review traces and bundles before sharing them because paths and collected file contents may be sensitive.
+
 Use `RUST_LOG=clibox=debug` for structured stderr progress; on PowerShell set `$env:RUST_LOG = "clibox=debug"` first. `NO_COLOR` disables terminal color. Share the version, platform, stable failure code, and redacted diagnostics through [GitHub Issues](https://github.com/delinoio/oss/issues). Avoid sharing clipboard data, environment values, secret configuration, or private input files. A delegated child program controls its own output.
 
 ## Validation limits and recovery

@@ -16,6 +16,10 @@ pnpm exec clibox --version
 
 The npm launcher requires Node.js 22 or newer. Prebuilt binaries cover macOS and Windows x64/arm64, and Linux x64/arm64 with glibc or musl. npm installation does not require Rust or installation scripts.
 
+## Unreleased file-access workflows
+
+`clibox fspy` adds `record`, `compare`, `autowatch`, `assetcov`, `latencylab`, `min-repro`, and `fbreak` for local development. They are absent from published version 0.1.6 and remain unreleased while native target validation is in progress. See the [file-access guide](https://oss.delino.io/clibox/file-access) for command examples, coverage limits, sensitive artifacts, and failure recovery. Check `clibox fspy --help` in a development build before use.
+
 ## Migrating older command syntax
 
 `system cpus` is implemented for the next release and is absent from published version 0.1.6.

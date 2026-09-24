@@ -75,6 +75,7 @@ const cliboxPages = [
   { text: "System Commands", link: "/clibox/system" },
   { text: "Text, Time, Base64, and Hashes", link: "/clibox/transformations" },
   { text: "Readiness Waits", link: "/clibox/wait" },
+  { text: "File-access Workflows", link: "/clibox/file-access" },
   { text: "Configuration", link: "/clibox/configuration" },
   { text: "Output and Cancellation", link: "/clibox/output" },
   { text: "Migration", link: "/clibox/migration" },

@@ -27,6 +27,10 @@ Use `clibox` commands in `package.json` scripts, for example `clibox port list 3
 
 The package manager installs the matching prebuilt executable. Rust, postinstall scripts, and separate binary downloads are not required. You can install with `--ignore-scripts`.
 
+## Unreleased file-access workflows
+
+`clibox fspy` adds `record`, `compare`, `autowatch`, `assetcov`, `latencylab`, `min-repro`, and `fbreak` for local development. They are absent from published version 0.1.6 and remain unreleased while native target validation is in progress. See the [file-access guide](https://oss.delino.io/clibox/file-access) for command examples, coverage limits, sensitive artifacts, and failure recovery. Check `clibox fspy --help` in a development build before use.
+
 ## Troubleshooting
 
 If the native package is missing, reinstall with optional dependencies enabled (`npm install --include=optional` or `pnpm install` without `--no-optional`). Do not copy `node_modules` between operating systems, architectures, or Linux libc environments; reinstall from your lockfile on the destination machine. If a lockfile omits the destination's optional package, regenerate it with your package manager and commit the corrected lockfile.
