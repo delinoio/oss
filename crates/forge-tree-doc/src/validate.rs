@@ -301,6 +301,13 @@ fn node(
         );
     }
     identity(&n.key, n.id, keys, ids, path)?;
+    if n.is_container() && n.placeholder_ref.is_some() {
+        return error(
+            ErrorCode::InvalidField,
+            path,
+            "Container nodes cannot reference native placeholders",
+        );
+    }
     if n.kind == NodeKind::Opaque && (!allow_opaque || n.opaque_ref.is_none()) {
         return error(
             ErrorCode::UnsupportedEdit,

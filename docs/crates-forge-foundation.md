@@ -18,6 +18,8 @@ Each slide's root container occupies the page at `(0, 0)`. Root `frame`, `width`
 
 Nested canvas children always validate against the current allocated parent size, including when only an ancestor or sibling changed. Unchanged native off-page geometry may bypass bounds checking only under a slide-root canvas whose page dimensions remain unchanged.
 
+Row, column and canvas nodes reject `placeholder_ref` during DSL and patch validation because containers have no native placeholder emission. Supported leaf placeholders still resolve against the selected native slide layout during output.
+
 Patch operations include set_text, set_text_style, unset_text_style, set_frame, insert_node, remove_node, move_node, set_chart_data, and set_image_asset. Targets contain exactly one node ID or key. set_text replaces the complete text body, retaining node style and removing run styling. Patches execute against a temporary state, validate as a whole, and increment one revision only on success. No-ops retain their revision. `set_text` optionally accepts a zero-based `cell` row/column on a table; merged-cell references must select the top-left grid slot. Node style operations preserve the precedence of explicit run styles. Image replacement accepts a document alias or registered content handle. Asset handles use SHA-256 content addressing instead of entity identifiers.
 
 CLI commands are schema, capabilities, asset add, create, open, inspect, apply, export, preview, close, and mcp. MCP exposes corresponding `forge.*` tools with structured input/output and recoverable tool errors. Inspect supports bounded tree projections. Schema and examples are generated/tested against Rust types, not independently maintained wire models.

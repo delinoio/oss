@@ -220,6 +220,45 @@ fn geometry_cycles_duplicate_ids_merges_and_connectors() {
     assert_eq!(layout(&p).unwrap_err().code, ErrorCode::LayoutCycle);
 }
 #[test]
+fn container_placeholder_references_fail_creation_and_insertion() {
+    for kind in [NodeKind::Row, NodeKind::Column, NodeKind::Canvas] {
+        let mut authored = canvas(serde_json::json!([]));
+        authored.slides[0].content.kind = kind;
+        authored.slides[0].content.placeholder_ref = Some("unavailable".into());
+        let parsed: Presentation = parse(&serde_json::to_vec(&authored).unwrap()).unwrap();
+        assert_eq!(
+            validate(&parsed, false).unwrap_err().code,
+            ErrorCode::InvalidField
+        );
+        let previous = sample();
+        let id = Uuid::now_v7();
+        let patch = Patch {
+            dsl_version: 1,
+            kind: PatchKind::Patch,
+            document_id: id,
+            base_revision: 0,
+            operations: vec![Operation::InsertNode {
+                parent: Target {
+                    node_id: previous.slides[0].content.id,
+                    key: None,
+                },
+                index: 0,
+                node: Box::new(Node {
+                    kind,
+                    placeholder_ref: Some("unavailable".into()),
+                    ..Default::default()
+                }),
+            }],
+        };
+        assert_eq!(
+            apply_patch(&previous, &patch, id, 0).unwrap_err().code,
+            ErrorCode::InvalidField
+        );
+        validate(&previous, false).unwrap();
+    }
+}
+
+#[test]
 fn resized_canvas_rechecks_unchanged_child_bounds() {
     let mut previous = canvas(serde_json::json!([]));
     previous.slides[0].content.kind = NodeKind::Column;

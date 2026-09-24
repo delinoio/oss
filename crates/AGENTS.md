@@ -19,6 +19,7 @@
 - Forge image import must validate full-frame stretch fill as well as crop/aspect geometry before allowing contain/cover edits; preserve other native picture fills as opaque.
 - Forge asset loading must visit only referenced image handles, deduplicate aliases, and bound aggregate bytes before reads in addition to per-file limits and checksum validation.
 - Forge nested canvases must validate unchanged children's bounds against their current allocation. Preserve native off-page bounds only for unchanged children under a slide-root canvas with unchanged page dimensions.
+- Forge containers must reject placeholder references before creation or patch commit; logical containers do not emit native placeholder shapes.
 
 - `crates/binpm`: Rust-based Node-free binary package manager for release assets.
 - `crates/cargo-mono`: Cargo-based Rust monorepo management CLI.
