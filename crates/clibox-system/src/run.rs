@@ -1414,6 +1414,13 @@ fn limits_expired_before_activity_refresh(
         || observed_at.saturating_duration_since(activity.last) >= idle
 }
 
+fn completion_or_poll_observed_at(
+    completion_observed_at: Option<Instant>,
+    poll_observed_at: Instant,
+) -> Instant {
+    completion_observed_at.unwrap_or(poll_observed_at)
+}
+
 fn supervision_poll_interval(limits: &Limits, last_activity: Instant, now: Instant) -> Duration {
     let idle = limits.idle.and_then(|idle| last_activity.checked_add(idle));
     limits
@@ -1459,11 +1466,27 @@ fn run_once(
     loop {
         let observed_at = Instant::now();
         let activity_since_last = child.activity.as_ref().and_then(Activity::take);
+        // A direct-child completion can already be queued when this
+        // supervisor iteration begins. Its worker timestamp, rather than the
+        // later polling timestamp, is the only time at which the completed
+        // workload may be judged against its limits.
+        let workload_completion = match child.completion() {
+            Ok(completion) => completion,
+            Err(error) => {
+                cleanup_run_once_children(&mut child, &mut monitored_service, kill_after);
+                return Err(error);
+            }
+        };
         if limits_expired_before_activity_refresh(
             &limits,
             last_activity,
             activity_since_last,
-            observed_at,
+            completion_or_poll_observed_at(
+                workload_completion
+                    .as_ref()
+                    .map(|completion| completion.observed_at),
+                observed_at,
+            ),
         ) {
             tracing::debug!(operation = "run", stage = "timeout", "run_cleanup");
             if cleanup_or_log(&mut child, kill_after) {
@@ -1524,13 +1547,6 @@ fn run_once(
                 }
             },
             None => None,
-        };
-        let workload_completion = match child.completion() {
-            Ok(completion) => completion,
-            Err(error) => {
-                cleanup_run_once_children(&mut child, &mut monitored_service, kill_after);
-                return Err(error);
-            }
         };
         if service_completion.is_some() {
             let service = monitored_service.expect("a completed service is monitored");
@@ -5713,6 +5729,26 @@ mod lifecycle_tests {
             },
             start,
             completion,
+        ));
+    }
+
+    #[test]
+    fn queued_completion_uses_its_original_observation_time() {
+        let start = Instant::now();
+        let deadline = start.checked_add(Duration::from_millis(2)).unwrap();
+        let completion = start.checked_add(Duration::from_millis(1)).unwrap();
+        let delayed_poll = deadline.checked_add(Duration::from_millis(1)).unwrap();
+
+        let observed_at = completion_or_poll_observed_at(Some(completion), delayed_poll);
+
+        assert_eq!(observed_at, completion);
+        assert!(!limits_expired_at(
+            &Limits {
+                overall: Some(deadline),
+                idle: None,
+            },
+            start,
+            observed_at,
         ));
     }
 
