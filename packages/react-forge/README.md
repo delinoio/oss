@@ -1,22 +1,14 @@
-# React Forge (private workspace)
+# React Forge
 
-The private `@delino/react-forge` package authors PPTX, DOCX, XLSX, independent tagged PDF and editable Figma Design files through persistent React sessions. It imports existing Office packages, exposes supported editable regions, and preserves unrelated XML and package parts when mounting React content into those regions. Its executable is named `react-forge`.
+`@delino/react-forge` authors PPTX, DOCX, XLSX, independent tagged PDF and editable Figma Design files through persistent React sessions. It imports existing Office packages, exposes supported editable regions, and preserves unrelated XML and package parts when mounting React content into those regions. Its executable is named `react-forge`.
 
-Use Node.js 24 on macOS, Windows or glibc Linux (x64 or arm64) and the repository-pinned Rust toolchain. React 19.2.8 and react-reconciler 0.33.0 are pinned together. Build the native binding explicitly:
+Use Node.js 24 on macOS, Windows, or glibc Linux, on x64 or arm64. Install normally with npm or pnpm; the matching native package is selected as an optional dependency. Keep optional dependencies enabled. Installation does not compile native code or download binaries from a separate service.
 
 ```sh
-pnpm install
-pnpm --filter @delino/react-forge build
-pnpm --filter @delino/react-forge cli run examples/presentation.tsx --output report.pptx
-pnpm --filter @delino/react-forge cli run examples/document.tsx --output report.docx
-pnpm --filter @delino/react-forge cli run examples/workbook.tsx --output report.xlsx
-pnpm --filter @delino/react-forge cli run examples/pdf.tsx --output report.pdf
-pnpm exec turbo run build typecheck lint test --filter=@delino/react-forge
+npm install @delino/react-forge
 ```
 
-The supported native hosts are macOS x64/arm64, Windows x64/arm64 (MSVC), and glibc Linux x64/arm64. Install the matching Rust target and platform build tools (Xcode command-line tools, MSVC C++ Build Tools, or a Linux C toolchain). Linux builds also need `pkg-config` and the Fontconfig development package (`libfontconfig1-dev` on Ubuntu); runtime font discovery needs Fontconfig. Install appropriate CJK/RTL/color-emoji fonts, or register caller fonts. Alpine/musl and other architectures are unsupported. Each build creates an artifact for the current host; rebuild when moving a workspace or private archive to another host. `capabilities.runtime.hosts` enumerates the supported IDs.
-
-The package remains private and workspace-only. Local-document generation has no Office, LibreOffice, Python, external conversion or runtime download dependency. Generated `dist` is untracked and removed from final worktrees. The tests also pack the built package into a temporary consumer to exercise its installed CLI.
+Alpine/musl and other architectures are unsupported. Linux runtime font discovery needs Fontconfig. Install appropriate CJK, RTL, and color emoji fonts or register caller fonts. `capabilities.runtime.hosts` enumerates the supported hosts. Document generation does not require Office, LibreOffice, Python, or an external conversion service.
 
 | Import | Authoring capabilities |
 | --- | --- |
@@ -89,10 +81,6 @@ Pass `AbortSignal` to import, asset, measurement or export options. Unresolved w
 | Individual image | 64 MiB and 64,000,000 pixels |
 
 `limits` and `capabilities` expose these budgets. All registered assets together are bounded to 256 MiB, with 64 MiB per explicit font. Applicable existing PPTX constraints remain, including 1,000 slides and tables of at most 1,000 rows × 128 columns. Chart data expansion is bounded to 200,000 cells and XLSX merge expansion to 250,000 cells. Opaque imported content uses package budgets. Integrators own authentication, isolation and process-wide resource governance.
-
-Test-only rendering uses LibreOffice, Poppler and the pinned dependencies in `scripts/render-requirements.txt`. After building, run `pnpm --filter @delino/react-forge test:render --output /tmp/react-forge-render`. Optional `REACT_FORGE_SOFFICE`, `REACT_FORGE_PDFTOPPM` and `REACT_FORGE_PYTHON` select explicit test tools. Run `pnpm --filter @delino/react-forge benchmark --output /tmp/react-forge-benchmark.json` for representative, external-edit and near-limit samples. Reports record tool/font provenance and time, peak RSS and event-loop delay; there is no performance SLO. This evidence is not direct Microsoft Office validation.
-
-Canonical internal ownership, acceptance evidence and complete requirements live in `docs/project-react-forge.md` and its linked contracts. Public distribution, hosting, watch mode and a GUI are outside this project. The local MCP interface is described below.
 
 ## Figma Design
 
@@ -194,3 +182,5 @@ Success is returned as structured content and matching JSON text; failures carry
 Caller code is trusted and runs with normal caller permissions. The execution process is not a sandbox. Execute does not automatically save or publish, but code can explicitly call those APIs or perform other side effects. A failed callback is not a transaction: earlier completed changes remain. Callers must dispose sessions they create but fail to return. Operations on one session stay ordered until each callback actually finishes, even after cancellation; pass `signal` to asynchronous work. A callback that ignores cancellation or blocks synchronously cannot be forcibly interrupted by an individual tool cancellation.
 
 Disconnect and process signals dispose sessions, with a five-second shutdown grace before terminating the execution process. Normal operations have no automatic timeout. Forced termination may prevent cleanup, and worker loss invalidates every in-memory session. `unknown_outcome` means to inspect any output or remote file before retrying. Server restart never automatically replays work. Closing sessions releases their owned resources; imported JavaScript modules remain cached until the process exits.
+
+Test renderers are not runtime dependencies. Direct Microsoft Office validation and PDF/UA certification are not claimed. React Forge is licensed under Apache-2.0. Report issues at https://github.com/delinoio/oss/issues.

@@ -44,6 +44,7 @@ Each project must have one project index document and one or more domain contrac
 - [Session-based stdio MCP](packages-react-forge-mcp-contract.md)
 - [Native engines and preservation](crates-react-forge-contract.md)
 - [Validation and benchmarks](packages-react-forge-validation.md)
+- [Public npm release](packages-react-forge-release-contract.md)
 
 ### Forge
 - [Project index](project-forge.md)

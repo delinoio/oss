@@ -5,8 +5,9 @@ import { ForgeError, abortable } from "./errors.js";
 import { ErrorCode, Format, limits } from "./types.js";
 import type { FigmaSession } from "./figma/session.js";
 import type { DocumentSession } from "./session.js";
+import packageManifest from "../package.json" with { type: "json" };
 
-const help = `React Forge 0.0.0
+const help = `React Forge ${packageManifest.version}
 
 Usage:
   react-forge run <entry.tsx> --output <file> [--data <json>] [--overwrite] [--json]
@@ -49,7 +50,7 @@ export async function main(args: string[]): Promise<number> {
   if (process.platform === "win32") process.on("SIGBREAK", interrupt);
   try {
     if (args.length === 1 && ["--help", "-h"].includes(args[0]!)) { await write(process.stdout, help); return 0; }
-    if (args.length === 1 && args[0] === "--version") { await write(process.stdout, "0.0.0\n"); return 0; }
+    if (args.length === 1 && args[0] === "--version") { await write(process.stdout, `${packageManifest.version}\n`); return 0; }
     if (args[0] !== "run" || !args[1] || args[1].startsWith("-") || extname(args[1]) !== ".tsx") {
       throw new ForgeError(ErrorCode.MalformedInput, "Expected run <entry.tsx>. Use --help for usage.");
     }

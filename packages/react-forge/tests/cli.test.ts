@@ -1,4 +1,5 @@
 import { fileURLToPath } from "node:url";
+import packageManifest from "../package.json" with { type: "json" };
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
@@ -31,7 +32,7 @@ test("workspace CLI runs TSX tasks and reports JSON, help, version and safe erro
       return true;
     });
     assert.match((await exec(process.execPath, [cli, "--help"])).stdout, /default task/);
-    assert.equal((await exec(process.execPath, [cli, "--version"])).stdout.trim(), "0.0.0");
+    assert.equal((await exec(process.execPath, [cli, "--version"])).stdout.trim(), packageManifest.version);
     await assert.rejects(exec(process.execPath, [cli, "run", task, "--unknown", "--json"]), (error: unknown) => {
       const result = JSON.parse((error as { stdout: string }).stdout);
       assert.equal(result.ok, false);

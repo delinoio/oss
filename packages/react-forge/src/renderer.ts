@@ -2,6 +2,7 @@ import { createContext, type ReactNode } from "react";
 import Reconciler, { type HostConfig } from "react-reconciler";
 import { ConcurrentRoot, DefaultEventPriority } from "react-reconciler/constants.js";
 import { v7 } from "uuid";
+import packageManifest from "../package.json" with { type: "json" };
 import { ForgeError, abortable } from "./errors.js";
 import { ErrorCode, limits, type NodeHandle } from "./types.js";
 
@@ -53,7 +54,7 @@ let priority = 0;
 const context = Object.freeze({});
 const noop = () => {};
 const config = {
-  rendererVersion: "0.0.0", rendererPackageName: "@delino/react-forge",
+  rendererVersion: packageManifest.version, rendererPackageName: "@delino/react-forge",
   isPrimaryRenderer: true, supportsMutation: true, supportsPersistence: false,
   supportsHydration: false, supportsResources: false, supportsSingletons: false,
   supportsMicrotasks: true, supportsTestSelectors: false, warnsIfNotActing: false,

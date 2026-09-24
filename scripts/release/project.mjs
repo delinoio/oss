@@ -3,9 +3,9 @@ import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const Project = Object.freeze({ Binpm: "binpm", CargoMono: "cargo-mono", Nodeup: "nodeup", WithWatch: "with-watch", Derun: "derun", Runmoor: "runmoor", Clibox: "clibox", Pnport: "pnport", AsyncCommitHook: "async-commit-hook" });
+export const Project = Object.freeze({ Binpm: "binpm", CargoMono: "cargo-mono", Nodeup: "nodeup", WithWatch: "with-watch", Derun: "derun", Runmoor: "runmoor", Clibox: "clibox", Pnport: "pnport", AsyncCommitHook: "async-commit-hook", ReactForge: "react-forge" });
 export const Bump = Object.freeze({ Patch: "patch", Minor: "minor", Major: "major" });
-export const Kind = Object.freeze({ Rust: "rust", Go: "go" });
+export const Kind = Object.freeze({ Rust: "rust", Go: "go", Node: "node" });
 const repository = "delinoio/oss";
 const botName = "delino-release-bot[bot]";
 const root = fileURLToPath(new URL("../..", import.meta.url));
@@ -19,6 +19,7 @@ const versions = Object.freeze({
   derun: { kind: Kind.Go, file: "cmds/derun/internal/version/version.go" },
   runmoor: { kind: Kind.Go, file: "cmds/runmoor/internal/runmoor/types.go" },
   "async-commit-hook": { kind: Kind.Go, file: "cmds/async-commit-hook/internal/core/model.go" },
+  "react-forge": { kind: Kind.Node, file: "packages/react-forge/package.json" },
 });
 const asyncCommitHookVersions = Object.freeze([
   { file: "apps/async-commit-hook/package.json", name: "async-commit-hook" },
@@ -74,6 +75,15 @@ export function bumpVersion(version, bump) {
 // complete TOML sections, never a dependency's version or an external lock entry.
 // Reject ambiguous/new layouts until their release contract is explicitly added.
 function replaceVersion(source, project, kind, next) {
+  if (kind === Kind.Node) {
+    const manifest = JSON.parse(source);
+    requireValue(manifest.name === "@delino/react-forge" && manifest.private === true, "React Forge source package identity mismatch");
+    const pattern = /^  "version": "([^"]+)",$/gmu;
+    const matches = [...source.matchAll(pattern)];
+    requireValue(matches.length === 1 && matches[0][1] === manifest.version, "Missing or ambiguous React Forge version");
+    versionParts(manifest.version);
+    return { current: manifest.version, text: next ? source.replace(pattern, `  "version": "${next}",`) : source };
+  }
   const pattern = kind === Kind.Rust
     ? /(^\[package\]\s*\n)([\s\S]*?)(?=^\[|$(?![\s\S]))/gmu
     : /^const Version = "([^"]+)"$/gmu;
@@ -131,8 +141,8 @@ export function readVersion(project, read = (file) => readFileSync(path.join(roo
 export function versionChanges(project, bump, read) {
   const { file, kind } = descriptor(project);
   const previous_version = readVersion(project, read);
-  if (project === Project.Pnport && previous_version === "0.0.0") {
-    requireValue(bump === Bump.Minor, "pnport first public release requires a minor bump to 0.1.0");
+  if ([Project.Pnport, Project.ReactForge].includes(project) && previous_version === "0.0.0") {
+    requireValue(bump === Bump.Minor, `${project} first public release requires a minor bump to 0.1.0`);
   }
   const version = bumpVersion(previous_version, bump);
   const changes = { [file]: replaceVersion(read(file), project, kind, version).text };

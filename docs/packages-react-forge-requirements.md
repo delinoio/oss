@@ -1,6 +1,6 @@
 # React Forge Complete Requirements
 
-Source: issue #968, retrieved 2026-09-24. This is the complete agreed delivery scope, not a claim of completed implementation. See the project and domain contracts for ownership and validation evidence.
+Source: issue #968, retrieved 2026-09-24. This preserves the complete original issue scope and is not a claim of completed implementation. The later public npm distribution decision supersedes only this issue's private-package and publication exclusions; see `packages-react-forge-release-contract.md`. See the project and domain contracts for ownership and validation evidence.
 
 ## Summary
 

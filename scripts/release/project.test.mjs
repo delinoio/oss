@@ -12,7 +12,7 @@ const achFiles = [
   "cmds/async-commit-hook/internal/core/model.go", "apps/async-commit-hook/package.json",
   "packages/async-commit-hook-api-client/package.json", "packaging/async-commit-hook/release-metadata.json",
 ];
-const files = ["Cargo.lock", "packages/clibox/package.json", "packages/pnport/package.json", ...["binpm", "cargo-mono", "nodeup", "with-watch", "clibox", "pnport", "pnport-core", "pnport-preload"].map((name) => `crates/${name}/Cargo.toml`), "cmds/derun/internal/version/version.go", "cmds/runmoor/internal/runmoor/types.go", ...achFiles];
+const files = ["Cargo.lock", "packages/clibox/package.json", "packages/pnport/package.json", "packages/react-forge/package.json", ...["binpm", "cargo-mono", "nodeup", "with-watch", "clibox", "pnport", "pnport-core", "pnport-preload"].map((name) => `crates/${name}/Cargo.toml`), "cmds/derun/internal/version/version.go", "cmds/runmoor/internal/runmoor/types.go", ...achFiles];
 const sources = Object.fromEntries(files.map((file) => [file, readFileSync(path.join(root, file), "utf8")]));
 const read = (file) => sources[file];
 const bot = { name: "delino-release-bot[bot]", email: "123+delino-release-bot[bot]@users.noreply.github.com" };
@@ -22,7 +22,7 @@ const absent = async () => ({ status: 404 });
 
 for (const project of Object.values(Project)) for (const bump of Object.values(Bump)) {
   test(`${project} ${bump} changes only the selected version sources`, () => {
-    if (project === Project.Pnport && bump !== Bump.Minor) {
+    if ([Project.Pnport, Project.ReactForge].includes(project) && bump !== Bump.Minor) {
       assert.throws(() => versionChanges(project, bump, read), /first public release requires a minor bump/u);
       return;
     }
@@ -91,6 +91,16 @@ test("pnport first minor bump produces 0.1.0 with CLI, preload, npm, and lockste
     const drift = (file) => file === driftFile ? read(file).replace("0.0.0", "9.9.9") : read(file);
     assert.throws(() => versionChanges(Project.Pnport, Bump.Minor, drift), /versions disagree/u);
   }
+});
+
+test("React Forge first public release updates only its private source manifest", () => {
+  const plan = versionChanges(Project.ReactForge, Bump.Minor, read);
+  assert.equal(plan.previous_version, "0.0.0");
+  assert.equal(plan.version, "0.1.0");
+  assert.deepEqual(Object.keys(plan.changes), ["packages/react-forge/package.json"]);
+  assert.equal(JSON.parse(plan.changes["packages/react-forge/package.json"]).version, "0.1.0");
+  assert.equal(requiresCargoPublish(Project.ReactForge), false);
+  assert.throws(() => readVersion(Project.ReactForge, (file) => file === "packages/react-forge/package.json" ? read(file).replace('"name": "@delino/react-forge"', '"name": "foreign"') : read(file)));
 });
 
 for (const file of achFiles) test(`async-commit-hook rejects drift and missing, duplicate or malformed versions in ${file}`, () => {
@@ -186,7 +196,7 @@ for (const project of Object.values(Project)) test(`${project} commit journals a
   assert.equal(second.resumed, true);
   assert.equal(second.revision, first.revision);
   assert.equal(second.version, first.version);
-  assert.throws(() => validateCommit(fixtureState.directory, first.revision, project, Bump.Patch, "123"), project === Project.Pnport ? /first public release requires a minor bump/u : /journal/u);
+  assert.throws(() => validateCommit(fixtureState.directory, first.revision, project, Bump.Patch, "123"), [Project.Pnport, Project.ReactForge].includes(project) ? /first public release requires a minor bump/u : /journal/u);
   assert.throws(() => validateCommit(fixtureState.directory, first.revision, project, Bump.Minor, "456"), /journal/u);
 });
 

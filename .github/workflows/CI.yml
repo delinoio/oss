@@ -456,6 +456,17 @@ jobs:
         run: cargo test --target ${{ matrix.target }} -p react-forge-node --test windows_console -- --nocapture
       - name: Generate travel investor example
         run: pnpm --filter @delino/react-forge cli run examples/travel-ir.tsx --output "$RUNNER_TEMP/react-forge-travel-ir.pptx" --json
+      - name: Verify installed public package on this host
+        run: |
+          node packages/react-forge/scripts/package.mjs main
+          node packages/react-forge/scripts/package.mjs native
+          node packages/react-forge/scripts/install-smoke.mjs
+      - uses: actions/upload-artifact@v7
+        with:
+          name: react-forge-native-${{ matrix.id }}
+          path: packages/react-forge/dist/release/tarballs/delino-react-forge-${{ matrix.id }}-*.tgz
+          if-no-files-found: error
+          retention-days: 7
       - name: Install test-only macOS renderers
         if: runner.os == 'macOS'
         run: |
@@ -496,6 +507,37 @@ jobs:
         with:
           path: ${{ steps.ci-node.outputs.cache-path }}
           key: ${{ steps.ci-node.outputs.cache-key }}
+
+  react-forge-package:
+    needs: [changes, react-forge]
+    if: ${{ needs.changes.result == 'success' && needs.react-forge.result == 'success' && fromJSON(needs.changes.outputs.jobs)['react-forge-package'] }}
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm --filter @delino/react-forge exec tsc -p tsconfig.json
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: react-forge-native-*
+          path: packages/react-forge/dist/release/tarballs
+          merge-multiple: true
+      - name: Verify complete public package candidate
+        run: |
+          node packages/react-forge/scripts/package.mjs main
+          node packages/react-forge/scripts/package.mjs verify
+          node packages/react-forge/scripts/publish.mjs
+      - name: Remove generated package output
+        if: always()
+        run: rm -rf packages/react-forge/dist
 
   linux-packages:
     needs: changes
@@ -1842,6 +1884,7 @@ jobs:
       - forge-test
       - forge-render
       - react-forge
+      - react-forge-package
       - node-public-docs-test
       - node-clibox-test
       - node-pnport-test
