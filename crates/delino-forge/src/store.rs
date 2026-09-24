@@ -434,8 +434,30 @@ impl Store {
     }
 
     fn assets(&self, doc: &Presentation) -> Result<Assets> {
+        self.assets_with_limit(doc, forge_pptx::MAX_PACKAGE_BYTES)
+    }
+
+    fn assets_with_limit(&self, doc: &Presentation, mut remaining: usize) -> Result<Assets> {
+        let mut references = std::collections::BTreeSet::new();
+        for slide in &doc.slides {
+            slide.content.visit(&mut |node| {
+                if node.kind == NodeKind::Image
+                    && let Some(reference) = node.asset_ref.as_deref()
+                {
+                    references.insert(reference);
+                }
+            });
+        }
         let mut assets = Assets::new();
-        for asset in doc.assets.values() {
+        for reference in references {
+            self.check_cancelled()?;
+            let asset = doc.assets.get(reference).ok_or_else(|| {
+                Diagnostic::new(
+                    ErrorCode::InvalidReference,
+                    "/assets",
+                    "Referenced asset is missing",
+                )
+            })?;
             if asset.handle.len() != 70
                 || !asset.handle.starts_with("asset_")
                 || !asset.handle[6..].bytes().all(|b| b.is_ascii_hexdigit())
@@ -446,13 +468,17 @@ impl Store {
                     "Asset handle is invalid",
                 );
             }
+            if assets.contains_key(&asset.handle) {
+                continue;
+            }
             let bytes = limited_read(
                 &self.root.join("assets").join(&asset.handle),
-                64 * 1024 * 1024,
+                remaining.min(64 * 1024 * 1024),
             )?;
             if sha(&bytes) != asset.handle[6..] {
                 return error(ErrorCode::Io, "/assets", "Asset checksum mismatch");
             }
+            remaining -= bytes.len();
             assets.insert(asset.handle.clone(), bytes);
         }
         Ok(assets)
@@ -696,6 +722,53 @@ pub fn default_root() -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn assets_load_only_referenced_unique_handles_within_total_budget() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Store::new(Some(temp.path().join("state")), CancellationToken::new()).unwrap();
+        let first = include_bytes!("../../forge-pptx/tests/fixtures/sample.png");
+        let second = include_bytes!("../../forge-pptx/tests/fixtures/replacement.png");
+        let first_handle = format!("asset_{}", sha(first));
+        let second_handle = format!("asset_{}", sha(second));
+        for (handle, bytes) in [
+            (&first_handle, first.as_slice()),
+            (&second_handle, second.as_slice()),
+        ] {
+            fs::write(store.root.join("assets").join(handle), bytes).unwrap();
+        }
+        let mut document: Presentation = serde_json::from_value(serde_json::json!({
+            "dsl_version":1,"kind":"presentation",
+            "assets":{"first":{"handle":first_handle},"alias":{"handle":first_handle},
+                "second":{"handle":second_handle},"unused":{"handle":format!("asset_{}", "0".repeat(64))}},
+            "slides":[{"content":{"type":"canvas","children":[
+                {"type":"image","asset_ref":"first","frame":{"x":0,"y":0,"width":100,"height":100}},
+                {"type":"image","asset_ref":"alias","frame":{"x":100,"y":0,"width":100,"height":100}}
+            ]}}]
+        })).unwrap();
+        let assets = store.assets_with_limit(&document, first.len()).unwrap();
+        assert_eq!(assets.len(), 1);
+        assert_eq!(assets[&first_handle], first);
+        document.slides[0].content.children[1].asset_ref = Some("second".into());
+        let total = first.len() + second.len();
+        assert_eq!(
+            store
+                .assets_with_limit(&document, total - 1)
+                .unwrap_err()
+                .code,
+            ErrorCode::ResourceLimit
+        );
+        assert_eq!(store.assets_with_limit(&document, total).unwrap().len(), 2);
+        fs::write(
+            store.root.join("assets").join(&first_handle),
+            vec![0; first.len()],
+        )
+        .unwrap();
+        assert_eq!(
+            store.assets_with_limit(&document, total).unwrap_err().code,
+            ErrorCode::Io
+        );
+    }
 
     #[test]
     fn durable_publication_preserves_conflicts_and_cleans_failed_staging() {

@@ -64,6 +64,8 @@ Atomic file publication syncs file bytes before rename, then syncs the destinati
 ## Security
 Bound JSON, ZIP expansion, entry count, XML depth, image decoding and tree traversal before expensive processing. Reject duplicate/traversing package paths, DTD/entity input, unsafe references and ambiguous identity. Do not execute embedded content or follow external assets. Preview uses a private profile, discarded subprocess output, cancellation and 120-second per-renderer timeouts, and reaps owned descendants through Unix process groups or Windows Job Objects. Its 96-dpi raster budget is 100 slides, 40 million pixels per slide and 250 million pixels per document; the resulting page count must match. Logs must not contain document text, image bytes, source XML, or host paths.
 
+Create/apply load only asset handles referenced by image nodes, deduplicated across aliases. Each file remains limited to 64 MiB and the aggregate loaded bytes to the 256 MiB package budget. Each bounded read uses the remaining aggregate allowance before allocating payload bytes, verifies its content hash, and checks cancellation between assets. Unused asset declarations do not read files.
+
 Document locks explicitly unlock when their operation guard drops on success or error. Closing a descriptor alone can leave a Unix lock alive while another thread's forked child retains a duplicate before exec. A regression retains a duplicate descriptor and verifies that the next operation can acquire the lock immediately, while competing operations still receive `busy`. Unlock failures emit only structured operation, stage and error-code diagnostics.
 
 ## Logging
