@@ -23,9 +23,9 @@ test("React Forge release is exact-tag or credential-free manual dry run", () =>
   assert.ok(!JSON.stringify(release).includes("NPM_TOKEN"));
 });
 
-test("PR CI runs host installations and assembles all six native candidates", () => {
+test("PR CI runs host installations and leaves complete candidate assembly to release", () => {
   assert.ok(ci.jobs["react-forge"].steps.some((step) => step.name === "Verify installed public package on this host"));
-  assert.deepEqual(ci.jobs["react-forge-package"].needs, ["changes", "react-forge"]);
-  assert.ok(ci.jobs["react-forge-package"].steps.some((step) => step.run?.includes("package.mjs verify")));
-  assert.ok(ci.jobs["ci-result"].needs.includes("react-forge-package"));
+  assert.equal(ci.jobs["react-forge-package"], undefined);
+  assert.ok(!ci.jobs["react-forge"].steps.some((step) => String(step.with?.name).startsWith("react-forge-native-")));
+  assert.ok(release.jobs.package.steps.some((step) => step.run?.includes("package.mjs verify")));
 });
