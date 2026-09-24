@@ -10,11 +10,14 @@ use std::{
     collections::{HashMap, HashSet},
     ffi::{CString, OsStr, OsString},
     fs::{self, File},
-    io::{Read, Seek, SeekFrom},
+    io::{self, Read, Seek, SeekFrom},
     mem,
-    os::unix::{ffi::OsStrExt, process::CommandExt},
+    os::{
+        fd::{AsRawFd, FromRawFd, OwnedFd},
+        unix::{ffi::OsStrExt, process::CommandExt},
+    },
     path::{Component, Path, PathBuf},
-    process::Command,
+    process::{Child, Command},
     time::{Duration, Instant},
 };
 
@@ -30,6 +33,7 @@ use crate::input_watch::InputWatch;
 
 const LAUNCH_ARG: &str = "__pnport_linux_launch";
 const PROBE_ARG: &str = "__pnport_linux_probe";
+const HELPER_FD_ENV: &str = "PNPORT_HELPER_FD";
 const WAIT_ALL: i32 = 0x4000_0000;
 const SECCOMP_RET_TRACE: u32 = 0x7ff0_0000;
 const SECCOMP_RET_ALLOW: u32 = 0x7fff_0000;
@@ -304,7 +308,7 @@ pub fn dispatch_helper() {
     let mut args = std::env::args_os();
     args.next();
     match args.next().as_deref() {
-        Some(value) if value == OsStr::new(PROBE_ARG) => {
+        Some(value) if value == OsStr::new(PROBE_ARG) && authenticate_helper() => {
             let status = helper_setup()
                 .and_then(|_| {
                     let path = b"/pnport-probe-must-be-rewritten\0";
@@ -329,7 +333,7 @@ pub fn dispatch_helper() {
                 .unwrap_or(125);
             unsafe { libc::_exit(status) }
         }
-        Some(value) if value == OsStr::new(LAUNCH_ARG) => {
+        Some(value) if value == OsStr::new(LAUNCH_ARG) && authenticate_helper() => {
             if helper_setup().is_err() {
                 record_helper_failure();
                 unsafe { libc::_exit(125) }
@@ -356,6 +360,79 @@ pub fn dispatch_helper() {
     }
 }
 
+fn authenticate_helper() -> bool {
+    use std::os::unix::fs::MetadataExt;
+
+    let Some(fd) = std::env::var(HELPER_FD_ENV)
+        .ok()
+        .and_then(|value| value.parse::<i32>().ok())
+        .filter(|fd| *fd >= 3)
+    else {
+        return false;
+    };
+    let parent = unsafe { libc::getppid() };
+    let mut peer = unsafe { mem::zeroed::<libc::ucred>() };
+    let mut length = mem::size_of::<libc::ucred>() as libc::socklen_t;
+    if unsafe {
+        libc::getsockopt(
+            fd,
+            libc::SOL_SOCKET,
+            libc::SO_PEERCRED,
+            (&mut peer as *mut libc::ucred).cast(),
+            &mut length,
+        )
+    } != 0
+        || length as usize != mem::size_of::<libc::ucred>()
+        || peer.pid != parent
+        || peer.uid != unsafe { libc::getuid() }
+        || peer.gid != unsafe { libc::getgid() }
+    {
+        return false;
+    }
+    let same_image = fs::metadata("/proc/self/exe")
+        .and_then(|child| {
+            fs::metadata(format!("/proc/{parent}/exe"))
+                .map(|owner| child.dev() == owner.dev() && child.ino() == owner.ino())
+        })
+        .unwrap_or(false);
+    if !same_image {
+        return false;
+    }
+    unsafe { libc::close(fd) };
+    std::env::remove_var(HELPER_FD_ENV);
+    true
+}
+
+fn spawn_owned_helper(command: &mut Command) -> Result<(Child, OwnedFd)> {
+    let mut pair = [0i32; 2];
+    if unsafe {
+        libc::socketpair(
+            libc::AF_UNIX,
+            libc::SOCK_STREAM | libc::SOCK_CLOEXEC,
+            0,
+            pair.as_mut_ptr(),
+        )
+    } != 0
+    {
+        return Err(injection_failed());
+    }
+    let owner = unsafe { OwnedFd::from_raw_fd(pair[0]) };
+    let helper = unsafe { OwnedFd::from_raw_fd(pair[1]) };
+    let helper_fd = helper.as_raw_fd();
+    command.env(HELPER_FD_ENV, helper_fd.to_string());
+    unsafe {
+        command.pre_exec(move || {
+            if libc::fcntl(helper_fd, libc::F_SETFD, 0) < 0 {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    let child = command.spawn().map_err(|_| injection_failed())?;
+    drop(helper);
+    Ok((child, owner))
+}
+
 fn record_helper_failure() {
     record_helper_code(Code::PnportInjectionFailed);
 }
@@ -376,10 +453,7 @@ fn helper_setup() -> std::io::Result<()> {
 
 pub fn probe() -> Result<()> {
     let binary = std::env::current_exe().map_err(|_| injection_failed())?;
-    let mut child = Command::new(binary)
-        .arg(PROBE_ARG)
-        .spawn()
-        .map_err(|_| injection_failed())?;
+    let (mut child, owner) = spawn_owned_helper(Command::new(binary).arg(PROBE_ARG))?;
     let pid = child.id() as i32;
     let mediated = (|| -> Result<()> {
         let mut status = 0;
@@ -395,6 +469,7 @@ pub fn probe() -> Result<()> {
             );
             return Err(injection_failed());
         }
+        drop(owner);
         if unsafe { libc::ptrace(libc::PTRACE_SEIZE, pid, 0, TRACE_OPTIONS) } != 0 {
             tracing::debug!(
                 action = "linux_probe",
@@ -2684,7 +2759,7 @@ pub fn run_traced(view: &mut View, prepared: &Prepared) -> Result<i32> {
         .arg(&prepared.program)
         .args(&prepared.args)
         .env("PNPORT_SESSION", &view.session);
-    let child = command.spawn().map_err(|_| injection_failed())?;
+    let (child, owner) = spawn_owned_helper(&mut command)?;
     let pid = child.id() as i32;
     let mut status = 0;
     if unsafe { libc::waitpid(pid, &mut status, libc::WUNTRACED) } != pid
@@ -2697,6 +2772,7 @@ pub fn run_traced(view: &mut View, prepared: &Prepared) -> Result<i32> {
         }
         return Err(injection_failed());
     }
+    drop(owner);
     if unsafe { libc::ptrace(libc::PTRACE_SEIZE, pid, 0, TRACE_OPTIONS) } != 0 {
         unsafe {
             libc::kill(pid, libc::SIGKILL);

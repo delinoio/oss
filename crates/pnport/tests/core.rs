@@ -2779,6 +2779,49 @@ int main(int argc, char **argv) {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn linux_private_helper_arguments_require_an_owner() {
+    use std::{
+        io::Read,
+        process::{Command, Stdio},
+        thread,
+        time::{Duration, Instant},
+    };
+
+    for args in [
+        vec!["__pnport_linux_probe"],
+        vec!["__pnport_linux_launch", "/bin/true"],
+    ] {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_pnport"))
+            .args(args)
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let status = loop {
+            if let Some(status) = child.try_wait().unwrap() {
+                break status;
+            }
+            if Instant::now() >= deadline {
+                child.kill().unwrap();
+                child.wait().unwrap();
+                panic!("private helper command stopped without an owner");
+            }
+            thread::sleep(Duration::from_millis(10));
+        };
+        let mut stderr = String::new();
+        child
+            .stderr
+            .take()
+            .unwrap()
+            .read_to_string(&mut stderr)
+            .unwrap();
+        assert_eq!(status.code(), Some(2), "{stderr}");
+        assert!(stderr.contains("unrecognized subcommand"), "{stderr}");
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn linux_doctor_probes_a_mediated_pathname_syscall() {
     use std::process::Command;
     let root = fixture();
