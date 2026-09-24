@@ -1904,6 +1904,37 @@ impl Trace<'_> {
 
     fn path_call(&mut self, pid: i32, mut regs: Registers) -> Result<bool> {
         let call = number(&regs);
+        let open_how = if call == libc::SYS_openat2 {
+            let size = argument(&regs, 3);
+            if size < OPEN_HOW_SIZE as u64 {
+                return Ok(false);
+            }
+            let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
+            if page_size <= 0 {
+                return Err(injection_failed());
+            }
+            if size > page_size as u64 {
+                // The kernel owns the error for an oversized structure.
+                return Ok(false);
+            }
+            let bytes = match read_remote(pid, argument(&regs, 2), size as usize) {
+                Ok(bytes) if bytes.len() == size as usize => bytes,
+                Ok(_) => return Ok(false),
+                Err(_) if io::Error::last_os_error().raw_os_error() == Some(libc::EFAULT) => {
+                    return Ok(false);
+                }
+                Err(error) => return Err(error),
+            };
+            if bytes[OPEN_HOW_SIZE..].iter().any(|byte| *byte != 0) {
+                // Unknown extension fields must not bypass virtual pathname
+                // mediation, even if a newer kernel would recognize them.
+                self.force_error(pid, &mut regs, 1, libc::E2BIG)?;
+                return Ok(true);
+            }
+            Some(bytes)
+        } else {
+            None
+        };
         let (path_arg, dirfd, writing) = match call {
             n if n == libc::SYS_openat => (
                 1,
@@ -1917,12 +1948,7 @@ impl Trace<'_> {
                     != 0,
             ),
             n if n == libc::SYS_openat2 => {
-                if argument(&regs, 3) < OPEN_HOW_SIZE as u64 {
-                    // The kernel rejects an undersized open_how before it
-                    // needs to read the caller's buffer.
-                    return Ok(false);
-                }
-                let bytes = read_remote(pid, argument(&regs, 2), 8)?;
+                let bytes = open_how.as_ref().ok_or_else(injection_failed)?;
                 let flags = u64::from_ne_bytes(
                     bytes
                         .get(..8)
@@ -2052,7 +2078,7 @@ impl Trace<'_> {
             _ => return Ok(false),
         };
         let openat2_resolve = if call == libc::SYS_openat2 {
-            let how = read_remote(pid, argument(&regs, 2), OPEN_HOW_SIZE)?;
+            let how = open_how.as_ref().ok_or_else(injection_failed)?;
             u64::from_ne_bytes(
                 how.get(16..OPEN_HOW_SIZE)
                     .ok_or_else(injection_failed)?
@@ -2216,7 +2242,7 @@ impl Trace<'_> {
         }
         let is_open = call == libc::SYS_openat || call == libc::SYS_openat2 || call == SYS_OPEN;
         let open_flags = if call == libc::SYS_openat2 {
-            let how = read_remote(pid, argument(&regs, 2), 8)?;
+            let how = open_how.as_ref().ok_or_else(injection_failed)?;
             Some(i32::from_ne_bytes(
                 how.get(..4)
                     .ok_or_else(injection_failed)?

@@ -56,6 +56,7 @@ Linux mount-namespace changes through clone/unshare or setns, and filesystem-roo
 Linux `CLONE_THREAD` calls must also share both `CLONE_FILES` and `CLONE_FS`. A thread with a private descriptor table or cwd context fails before creation with the same unsupported diagnostic because a group-wide ownership map cannot represent its independent kernel state.
 
 Linux `openat2` checks the caller-provided `open_how` size before reading the structure. Undersized calls retain the kernel's `EINVAL` result, including when the pointer is null; valid calls continue through virtual path translation and resolution-flag checks.
+An extended `open_how` with nonzero bytes beyond the supported 24-byte header returns `E2BIG` before pathname translation, while zero-filled extension bytes retain virtual translation. Unreadable structures retain the kernel's `EFAULT` result.
 
 `dlopen(NULL, flags)` delegates directly to the native loader's process/global symbol namespace. Named library paths continue through filesystem translation; the null form is not a path error.
 

@@ -3369,6 +3369,7 @@ fn linux_openat2_preserves_dirfd_resolution_constraints() {
 #include <fcntl.h>
 #include <linux/openat2.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 int main(void) {
@@ -3390,6 +3391,18 @@ int main(void) {
     fd = syscall(SYS_openat2, dir, "/file.txt", &how, sizeof(how));
     if (fd < 0) return 44;
     close(fd);
+    struct { struct open_how how; uint64_t extension; } extended = {
+        .how = {.flags = O_WRONLY}, .extension = 1
+    };
+    errno = 0;
+    if (syscall(SYS_openat2, AT_FDCWD, "node_modules/dep/file.txt", &extended, sizeof(extended)) != -1 || errno != E2BIG) return 45;
+    extended.extension = 0;
+    extended.how.flags = O_RDONLY;
+    fd = syscall(SYS_openat2, AT_FDCWD, "node_modules/dep/file.txt", &extended, sizeof(extended));
+    if (fd < 0) return 46;
+    close(fd);
+    errno = 0;
+    if (syscall(SYS_openat2, AT_FDCWD, "node_modules/dep/file.txt", (void *)1, sizeof(how)) != -1 || errno != EFAULT) return 47;
     puts("openat2-ok");
     return 0;
 }

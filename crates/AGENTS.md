@@ -214,6 +214,7 @@
 - pnport Linux arm64 syscall denial must update `NT_ARM_SYSTEM_CALL` after ordinary registers so rejected operations cannot execute during graceful cleanup.
 - A Linux seccomp admission failure must cancel the stopped syscall before graceful cleanup resumes the tracee; send final SIGKILL before the last ptrace continuation.
 - Leave invalid child pathname pointers to the Linux kernel so ordinary EFAULT behavior survives, including null pointers in both operands of path operations.
+- Linux openat2 must inspect extended open_how bytes before mediation: unknown nonzero extension bytes return E2BIG, zero bytes continue through virtual translation, and unreadable structures retain EFAULT.
 - Translated Linux script exec must return EFAULT to the caller for unreadable argv or envp vectors without terminating the owned tree.
 - Linux `inotify_add_watch` with `IN_DONT_FOLLOW` on a virtual dependency link must watch the materialized link inode, not its resolved package target.
 - Missing entries beneath an existing read-only virtual dependency directory reject mutations with EROFS; ordinary missing reads retain ENOENT.
