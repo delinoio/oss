@@ -58,7 +58,7 @@ test("launch preserves literal argv, stdio, status and forwards signals without 
   const received = [];
   child.kill = (signal) => received.push(signal);
   const args = ["space argument", "$(not-a-command)", "--", "한글"];
-  const result = launch("/a path/clibox", args, { parent, spawnChild: (file, actualArgs, options) => {
+  const result = launch("/a path/clibox", args, { platform: Platform.Linux, parent, spawnChild: (file, actualArgs, options) => {
     assert.equal(file, "/a path/clibox");
     assert.equal(actualArgs, args);
     assert.deepEqual(options.stdio, ["inherit", "inherit", "inherit", "pipe"]);
