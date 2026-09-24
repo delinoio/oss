@@ -197,6 +197,43 @@ fn preview_font_uses_free_part_and_relationship_names() {
     assert_eq!(preview_bytes(&rendered).unwrap(), rendered);
 }
 #[test]
+fn metadata_cannot_map_leaves_to_different_logical_slides() {
+    let mut document: Presentation = serde_json::from_value(serde_json::json!({
+        "dsl_version":1,"kind":"presentation","slides":[
+            {"content":{"type":"canvas","children":[{"type":"shape","frame":{"x":0,"y":0,"width":100,"height":100}}]}},
+            {"content":{"type":"canvas","children":[{"type":"shape","frame":{"x":0,"y":0,"width":100,"height":100}}]}}
+        ]
+    })).unwrap();
+    document.assign_ids();
+    let source = generate(&document, &Assets::new(), Uuid::now_v7(), 0).unwrap();
+    let mut parts = read_package(&source).unwrap();
+    let raw = xml_part(&parts, "customXml/forge.xml");
+    let xml = roxmltree::Document::parse(&raw).unwrap();
+    let mut metadata: Metadata = serde_json::from_str(xml.root_element().text().unwrap()).unwrap();
+    let ids: Vec<_> = metadata.bindings.keys().copied().collect();
+    assert_eq!(ids.len(), 2);
+    let a = metadata.bindings[&ids[0]].clone();
+    let b = metadata.bindings[&ids[1]].clone();
+    assert_ne!(a.part, b.part);
+    metadata.bindings.insert(ids[0], b);
+    metadata.bindings.insert(ids[1], a);
+    let json = serde_json::to_string(&metadata)
+        .unwrap()
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;");
+    parts.insert(
+        "customXml/forge.xml".into(),
+        format!("<forge xmlns=\"urn:delino:forge:v1\">{json}</forge>").into_bytes(),
+    );
+    assert_eq!(
+        import(&write_package(&parts).unwrap()).unwrap_err().code,
+        ErrorCode::InvalidPackage
+    );
+    assert_eq!(import(&source).unwrap().document, document);
+}
+
+#[test]
 fn metadata_cannot_bind_multiple_logical_nodes_to_one_native_shape() {
     let mut document: Presentation = parse(include_bytes!(
         "../../forge-tree-doc/examples/overview.json"

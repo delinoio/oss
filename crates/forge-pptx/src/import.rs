@@ -447,23 +447,30 @@ pub fn import(bytes: &[u8]) -> Result<Imported> {
             return Err(failure("document identity"));
         }
         let mut leaves = Vec::new();
-        for slide in &m.document.slides {
+        let native_slides = slide_paths(&parts)?;
+        if native_slides.len() != m.document.slides.len() {
+            return Err(failure("metadata slide count"));
+        }
+        for (slide, part) in m.document.slides.iter().zip(&native_slides) {
             slide.content.visit(&mut |n| {
                 if !n.is_container() {
-                    leaves.push(n);
+                    leaves.push((n, part));
                 }
             });
         }
         if leaves.len() != m.bindings.len()
             || leaves
                 .iter()
-                .any(|n| n.id.is_none() || !m.bindings.contains_key(&n.id.unwrap()))
+                .any(|(n, _)| n.id.is_none() || !m.bindings.contains_key(&n.id.unwrap()))
         {
             return Err(failure("metadata bindings"));
         }
         let mut native_targets = std::collections::BTreeSet::new();
-        for n in leaves {
+        for (n, slide_part) in leaves {
             let binding = &m.bindings[&n.id.unwrap()];
+            if &binding.part != slide_part {
+                return Err(failure("binding logical slide"));
+            }
             if !native_targets.insert((&binding.part, binding.shape_id)) {
                 return Err(failure("duplicate native binding target"));
             }

@@ -38,7 +38,7 @@ Editable imported tables require equal native row heights spanning their frame, 
 
 Forge metadata is identified by its root custom-XML relationship and `urn:delino:forge:v1` root element, not its filename. Unrelated custom XML, including a colliding `customXml/forge.xml` or relationship ID, is preserved and hashed; Forge allocates a separate part and relationship when necessary. Multiple claimed Forge metadata parts fail as ambiguous identity.
 
-Metadata leaf bindings must be one-to-one with native `(part, shape_id)` targets. Multiple logical nodes claiming one native shape reject import even when the package hashes and individual shape lookups are valid.
+Metadata leaf bindings must be one-to-one with native `(part, shape_id)` targets and match the native slide at the logical leaf's slide index. Logical and native slide counts must match. Duplicate targets and cross-slide bindings reject import even when the package hashes and individual shape lookups are valid.
 
 Both XML boolean true spellings (`1` and `true`) mark flipped native transforms as opaque; false spellings retain ordinary editable geometry. Unrelated edits preserve the original transform XML.
 
