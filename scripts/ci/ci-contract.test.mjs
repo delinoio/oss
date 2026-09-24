@@ -433,6 +433,7 @@ test("React Forge validates its supported runtime with uncached native and rende
     const declared = platforms.find(({ id }) => id === host.id);
     assert.equal(host.platform, declared.platform);
     assert.equal(host.architecture, declared.architecture);
+    assert.equal(host.target, declared.target);
   }
   assert.match(namedStep(job, "Verify Windows console cancellation").run, /windows_console/u);
   assert.match(namedStep(job, "Verify supported host and native contracts").run, /--include-ignored/u);

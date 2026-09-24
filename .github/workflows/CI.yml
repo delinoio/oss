@@ -402,12 +402,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { id: darwin-x64, runner: macos-15-intel, platform: darwin, architecture: x64 }
-          - { id: darwin-arm64, runner: macos-15, platform: darwin, architecture: arm64 }
-          - { id: linux-x64-gnu, runner: ubuntu-22.04, platform: linux, architecture: x64 }
-          - { id: linux-arm64-gnu, runner: ubuntu-22.04-arm, platform: linux, architecture: arm64 }
-          - { id: win32-x64-msvc, runner: windows-2022, platform: win32, architecture: x64 }
-          - { id: win32-arm64-msvc, runner: windows-11-arm, platform: win32, architecture: arm64 }
+          - { id: darwin-x64, runner: macos-15-intel, platform: darwin, architecture: x64, target: x86_64-apple-darwin }
+          - { id: darwin-arm64, runner: macos-15, platform: darwin, architecture: arm64, target: aarch64-apple-darwin }
+          - { id: linux-x64-gnu, runner: ubuntu-22.04, platform: linux, architecture: x64, target: x86_64-unknown-linux-gnu }
+          - { id: linux-arm64-gnu, runner: ubuntu-22.04-arm, platform: linux, architecture: arm64, target: aarch64-unknown-linux-gnu }
+          - { id: win32-x64-msvc, runner: windows-2022, platform: win32, architecture: x64, target: x86_64-pc-windows-msvc }
+          - { id: win32-arm64-msvc, runner: windows-11-arm, platform: win32, architecture: arm64, target: aarch64-pc-windows-msvc }
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-ci-node
@@ -416,6 +416,7 @@ jobs:
         with:
           toolchain: nightly-2026-01-01
           components: clippy, rustfmt
+          targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -435,16 +436,16 @@ jobs:
       - name: Verify supported host and native contracts
         run: |
           node -e 'if (process.platform !== "${{ matrix.platform }}" || process.arch !== "${{ matrix.architecture }}" || process.versions.node.split(".")[0] !== "24") process.exit(1)'
-          cargo test -p forge-package -p forge-document -p forge-docx -p forge-xlsx -p forge-pdf -p forge-tree-doc -p forge-pptx -p delino-forge
-          cargo test -p forge-document -p forge-pdf -- --include-ignored
-          cargo clippy -p react-forge-node -p forge-package -p forge-document -p forge-docx -p forge-xlsx -p forge-pdf --all-targets -- -D warnings
+          cargo test --target ${{ matrix.target }} -p forge-package -p forge-document -p forge-docx -p forge-xlsx -p forge-pdf -p forge-tree-doc -p forge-pptx -p delino-forge
+          cargo test --target ${{ matrix.target }} -p forge-document -p forge-pdf -- --include-ignored
+          cargo clippy --target ${{ matrix.target }} -p react-forge-node -p forge-package -p forge-document -p forge-docx -p forge-xlsx -p forge-pdf --all-targets -- -D warnings
       - name: Build and test library and installed CLI
         run: pnpm exec turbo run build typecheck lint test --filter=@delino/react-forge
       - name: Verify Windows console cancellation
         if: runner.os == 'Windows'
         env:
           REACT_FORGE_WINDOWS_CONSOLE_TEST: "1"
-        run: cargo test -p react-forge-node --test windows_console -- --nocapture
+        run: cargo test --target ${{ matrix.target }} -p react-forge-node --test windows_console -- --nocapture
       - name: Install test-only macOS renderers
         if: runner.os == 'macOS'
         run: |

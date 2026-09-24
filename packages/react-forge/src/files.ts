@@ -94,7 +94,7 @@ export async function publish(bytes: Buffer, output: string, options: {
     // atomic save after fingerprinting. Require a separate output path instead.
     // Windows realpath does not guarantee canonical filename casing. Reject
     // case aliases conservatively, including a source removed after import.
-    const samePath = (a: string | undefined, b: string) => process.platform === "win32" ? a?.toLowerCase() === b.toLowerCase() : a === b;
+    const samePath = (a: string | undefined, b: string) => process.platform === "win32" ? a?.toUpperCase() === b.toUpperCase() : a === b;
     if (options.source && (samePath(existing, options.source.path) || samePath(destination, options.source.path))) {
       throw new ForgeError(ErrorCode.UnsupportedEdit, "Imported sources cannot be overwritten. Export to a separate output path.");
     }
