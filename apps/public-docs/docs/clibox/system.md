@@ -1,6 +1,6 @@
 # System commands
 
-The upcoming release names environment execution `run env`, as shown below. Published version **0.1.6** uses **`env run`** instead; substitute that spelling in the environment examples and use `clibox env --help` for its command group. The environment behavior and other system commands are unchanged. See [Migration](/clibox/migration).
+The upcoming release names environment execution `run env` and adds `system cpus`, as shown below. Published version **0.1.6** uses **`env run`** instead and does not include CPU queries; substitute that spelling in the environment examples and use `clibox env --help` for its command group. See [Migration](/clibox/migration).
 
 ```text
 clibox run env [KEY=VALUE ...] [--] COMMAND [ARG ...]
@@ -9,9 +9,25 @@ clibox port kill PORT... [--protocol tcp|udp|all] [--json | --quiet]
 clibox open TARGET [--app APP] [--wait]
 clibox clipboard copy [TEXT]
 clibox clipboard paste
+clibox system cpus [--kind available|logical] [--json | --quiet]
 ```
 
-Use `--help` after any command for English help and examples. Root help (`clibox`, `--help`, or `-h`) also identifies the built version, Delino maintainer, repository, MIT license, and GitHub Issues support path; subcommand help stays focused on that command. Running `clibox` without arguments or using explicit `--help` prints help to stdout and returns exit code **0**. Running `clibox run`, `clibox port`, `clibox clipboard`, `clibox wait`, `clibox text`, `clibox time`, `clibox base64`, `clibox hash`, `clibox dotenv`, or `clibox yaml` without a subcommand prints that command's help to stderr and returns exit code **2**. Other invalid or missing arguments return exit code **2** with an error diagnostic; runtime failures return **1**. `run env` forwards the child program's exit status and supported termination signals.
+Use `--help` after any command for English help and examples. Root help (`clibox`, `--help`, or `-h`) also identifies the built version, Delino maintainer, repository, MIT license, and GitHub Issues support path; subcommand help stays focused on that command. Running `clibox` without arguments or using explicit `--help` prints help to stdout and returns exit code **0**. Running `clibox run`, `clibox port`, `clibox clipboard`, `clibox system`, `clibox wait`, `clibox text`, `clibox time`, `clibox base64`, `clibox hash`, `clibox dotenv`, or `clibox yaml` without a subcommand prints that command's help to stderr and returns exit code **2**. Other invalid or missing arguments return exit code **2** with an error diagnostic; runtime failures return **1**. `run env` forwards the child program's exit status and supported termination signals.
+
+## Query CPU counts
+
+```sh
+clibox system cpus
+clibox system cpus --kind logical
+clibox system cpus --json
+clibox system cpus --kind logical --quiet
+```
+
+The default `available` result is [Rust's estimate of suitable parallelism](https://doc.rust-lang.org/std/thread/fn.available_parallelism.html), not an idle CPU count, physical core count, or guaranteed capacity. Affinity, cgroup limits, VMs, and Windows processor groups can make that estimate differ from actual capacity. `logical` counts online logical CPUs visible to this OS or VM without clibox affinity or quota reductions. `OMP_*` variables do not override either count. Each invocation observes only its selected kind, and separate invocations can return different values as CPU availability changes.
+
+Plain output is a positive decimal integer followed by one LF, with no label or formatting. `--json` emits a single compact object and LF, for example `{"kind":"available","count":8}`. `--quiet` still performs the query and preserves the exit status while suppressing stdout; it conflicts with `--json`. The command reads no stdin and runs no external utility. It has no file output or persistent state.
+
+Invalid arguments exit 2. Query or output failures exit 1 with redacted stderr guidance. Failed queries never emit a substitute count or JSON success result; a failed stdout write can leave partial output. Handled Ctrl+C/Windows Ctrl+Break exits 130, and Unix SIGTERM exits 143. On Linux, if online CPU information is unavailable, `logical` fails; check whether the current environment exposes it. Use `RUST_LOG=clibox=debug` for safe operation and failure classifications.
 
 ## Run with environment variables
 

@@ -21,6 +21,10 @@ The package provides the `clibox` command only, with no public JavaScript import
 
 For port permission errors, inspect the returned partial results and use the appropriate user/session permissions; clibox does not elevate privileges. Clipboard access needs a reachable desktop session, its normal display authorization and the listed installed tools. A busy Windows clipboard or a Wayland compositor without the required capability produces an actionable failure. Open failures may indicate missing applications, URI associations, Linux xdg-utils or desktop access. Errors after dispatch do not guarantee that nothing opened.
 
+## CPU counts
+
+`system cpus` is available in the next release, not in published version 0.1.6. Check `clibox --version` if the command is unknown. If `--kind logical` fails on Linux, confirm that the environment exposes online CPU information and that the current user can read it. A failed `available` or `logical` query never falls back to a substitute count. Use the stable failure code in stderr and `RUST_LOG=clibox=debug` for redacted details; do not assume that two invocations observe the same CPU state.
+
 ## Waits and configuration
 
 Waits are unlimited by default. Set `--timeout` when scripts must stop, and remember that a TCP connection or file's existence does not prove application or write completion. HTTP redirects are not followed. Certificate and permission errors terminate rather than retrying. See [Readiness waits](/clibox/wait).

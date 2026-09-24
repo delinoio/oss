@@ -16,6 +16,7 @@ const cliboxHeadings = {
     "Missing native package or version mismatch",
     "Arguments, timestamps, and files",
     "Desktop commands",
+    "CPU counts",
     "Waits and configuration",
     "Diagnostics and support",
     "Validation limits and recovery"
@@ -73,6 +74,7 @@ const cliboxHeadings = {
   ],
   "/clibox/system": [
     "System commands",
+    "Query CPU counts",
     "Run with environment variables",
     "Inspect and terminate port owners",
     "Open a resource",
@@ -210,7 +212,7 @@ const requiredHeadings = new Map([
 const requiredLinks = new Map([
   ["/clibox/", ["/clibox/install", "/clibox/getting-started", "/clibox/commands", "/clibox/migration"]],
   ["/clibox/install", ["/clibox/releases", "https://oss.delino.io/linux-packages"]],
-  ["/clibox/commands", ["/clibox/system#run-with-environment-variables", "/clibox/transformations#hashes-and-verification", "/clibox/wait#http", "/clibox/configuration#normalize-yaml"]],
+  ["/clibox/commands", ["/clibox/system#query-cpu-counts", "/clibox/system#run-with-environment-variables", "/clibox/transformations#hashes-and-verification", "/clibox/wait#http", "/clibox/configuration#normalize-yaml"]],
   ["/pnport/", ["/pnport/installation", "/pnport/getting-started", "/pnport/commands", "/pnport/filesystem-and-processes", "/pnport/editors", "/pnport/cache", "/pnport/diagnostics", "/pnport/benchmarks", "/pnport/releases"]],
   ["/pnport/installation", ["/pnport/getting-started", "/pnport/commands", "/pnport/releases"]],
   ["/pnport/diagnostics", ["/pnport/cache"]],
