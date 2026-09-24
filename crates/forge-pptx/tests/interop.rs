@@ -43,6 +43,78 @@ fn xml_part(parts: &std::collections::BTreeMap<String, Vec<u8>>, path: &str) -> 
     String::from_utf8(parts[path].clone()).unwrap()
 }
 #[test]
+fn unsupported_picture_fills_remain_opaque_and_preserved() {
+    let path = "ppt/slides/slide1.xml";
+    let original = read_package(EXTERNAL).unwrap();
+    let slide = xml_part(&original, path);
+    let xml = roxmltree::Document::parse(&slide).unwrap();
+    let picture = xml
+        .descendants()
+        .find(|n| n.tag_name().name() == "pic")
+        .unwrap();
+    let stretch = picture
+        .descendants()
+        .find(|n| n.tag_name().name() == "stretch")
+        .unwrap();
+    for mode in [
+        "<a:tile/>",
+        "<a:stretch><a:fillRect l=\"10000\"/></a:stretch>",
+        "<a:stretch><a:fillRect b=\"-1000\"/></a:stretch>",
+    ] {
+        let mut modified = slide.clone();
+        modified.replace_range(stretch.range(), mode);
+        let mut parts = original.clone();
+        parts.insert(path.into(), modified.clone().into_bytes());
+        let source = write_package(&parts).unwrap();
+        let imported = import(&source).unwrap();
+        assert!(
+            !imported.document.slides[0]
+                .content
+                .children
+                .iter()
+                .any(|n| n.kind == NodeKind::Image)
+        );
+        let next = patch(
+            &imported,
+            vec![Operation::SetText {
+                target: target(&imported.document, NodeKind::Text),
+                text: "Preserve picture fill".into(),
+                cell: None,
+            }],
+        );
+        let output = update(
+            &source,
+            &imported.document,
+            &imported.bindings,
+            &next,
+            &imported.assets,
+            imported.document_id,
+            1,
+        )
+        .unwrap();
+        let after = xml_part(&read_package(&output).unwrap(), path);
+        let before_xml = roxmltree::Document::parse(&modified).unwrap();
+        let after_xml = roxmltree::Document::parse(&after).unwrap();
+        let before_pic = before_xml
+            .descendants()
+            .find(|n| n.tag_name().name() == "pic")
+            .unwrap();
+        let after_pic = after_xml
+            .descendants()
+            .find(|n| n.tag_name().name() == "pic")
+            .unwrap();
+        assert_eq!(&modified[before_pic.range()], &after[after_pic.range()]);
+    }
+    assert!(
+        import(EXTERNAL).unwrap().document.slides[0]
+            .content
+            .children
+            .iter()
+            .any(|n| n.kind == NodeKind::Image)
+    );
+}
+
+#[test]
 fn image_media_collisions_never_select_unrelated_bytes() {
     let handle = format!("asset_{}", sha(REPLACEMENT));
     let media = format!("ppt/media/forge-{}.png", sha(REPLACEMENT));

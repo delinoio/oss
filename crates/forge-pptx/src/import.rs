@@ -177,6 +177,31 @@ fn image_projection_matches(
     frame: Frame,
     fit: ImageFit,
 ) -> bool {
+    let Some(fill) = item.children().find(|n| n.has_tag_name((P, "blipFill"))) else {
+        return false;
+    };
+    let modes: Vec<_> = fill
+        .children()
+        .filter(|n| n.has_tag_name((A, "tile")) || n.has_tag_name((A, "stretch")))
+        .collect();
+    if modes.len() != 1 || !modes[0].has_tag_name((A, "stretch")) {
+        return false;
+    }
+    // V1 models a bitmap stretched into the full frame after optional cropping.
+    // Tile modes and inset fill rectangles cannot be represented by contain/cover.
+    let rectangles: Vec<_> = modes[0].children().filter(|n| n.is_element()).collect();
+    if rectangles.len() > 1
+        || rectangles.iter().any(|n| {
+            !n.has_tag_name((A, "fillRect"))
+                || n.attributes().any(|a| {
+                    a.namespace().is_some()
+                        || !matches!(a.name(), "l" | "t" | "r" | "b")
+                        || a.value().parse::<i64>() != Ok(0)
+                })
+        })
+    {
+        return false;
+    }
     let Ok((width, height, _)) = crate::emit::image_info(data) else {
         return false;
     };
