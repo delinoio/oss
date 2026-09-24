@@ -49,6 +49,7 @@ const (
 	nativeLocalWorkspaces
 	nativeUnbornLocalWorkspaces
 	nativeScheduledWorkspaces
+	nativeCronWorkspace
 )
 
 func TestManualNativeCLILocalRepositories(t *testing.T) {
@@ -61,6 +62,10 @@ func TestManualNativeCLIUnbornLocalRepositories(t *testing.T) {
 
 func TestManualNativeCLIScheduledWorkspaces(t *testing.T) {
 	testManualNativeCLI(t, false, nativeScheduledWorkspaces)
+}
+
+func TestManualNativeCLICronWorkspace(t *testing.T) {
+	testManualNativeCLI(t, false, nativeCronWorkspace)
 }
 
 func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWorkspaceProfile) {
@@ -86,6 +91,9 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 	}
 	if profile == nativeScheduledWorkspaces {
 		scenarios = []nativeScenario{{domain.ExecuteMode, domain.Worktree, 2}, {domain.PlanMode, domain.Local, 1}}
+	}
+	if profile == nativeCronWorkspace {
+		scenarios = []nativeScenario{{domain.ExecuteMode, domain.Worktree, 1}}
 	}
 	for _, scenario := range scenarios {
 		mode := scenario.mode
@@ -321,10 +329,15 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 			}
 			var scheduleID, occurrenceID string
 			expectedSource := domain.ExternalCLISession
+			expectedTrigger := domain.ManualOccurrence
 			accept := func() map[string]any { return run(create, input) }
-			if profile == nativeScheduledWorkspaces {
+			if profile == nativeScheduledWorkspaces || profile == nativeCronWorkspace {
 				expectedSource = domain.ScheduledSession
 				definition := domain.ScheduleDefinition{Name: input.Name, Enabled: false, Prompt: input.Prompt, ProjectID: input.ProjectID, AgentID: input.AgentID, MachineID: input.MachineID, Workspace: input.Workspace, Starting: input.Starting, Mode: input.Mode, Cron: "0 0 1 1 *", Timezone: "Asia/Seoul", Overlap: domain.ScheduleAllowOverlap}
+				if profile == nativeCronWorkspace {
+					definition.Enabled, definition.Cron = true, "* * * * *"
+					expectedTrigger = domain.CronOccurrence
+				}
 				args := []string{"schedule", "create"}
 				if input.Workspace == domain.Local {
 					args = append(args, "--local-worker-dir", workerRoot)
@@ -332,9 +345,43 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 				schedule := run(args, definition)["schedule"].(map[string]any)
 				scheduleID = schedule["id"].(string)
 				manual := []string{"schedule", "run-now", "--id", scheduleID, "--revision", revision(schedule), "--request-id", string(domain.NewID())}
+				if profile == nativeCronWorkspace {
+					// Observe a real future minute through the server's own timer. No
+					// internal clock/state injection or Run now may create this session.
+					expectedDue := schedule["data"].(map[string]any)["next_run_at"]
+					for {
+						history := run([]string{"schedule", "history", "--id", scheduleID}, nil)["occurrences"].([]any)
+						if len(history) > 0 {
+							if len(history) != 1 {
+								t.Fatal("one timer instant produced multiple occurrences")
+							}
+							occurrence := history[0].(map[string]any)
+							data := occurrence["data"].(map[string]any)
+							if data["trigger"] != string(domain.CronOccurrence) || data["due_at"] != expectedDue || data["session_id"] == nil || data["state"] == string(domain.OccurrenceSkipped) {
+								t.Fatal("the original online cron instant did not create its owned session")
+							}
+							occurrenceID = occurrence["id"].(string)
+							break
+						}
+						select {
+						case <-time.After(100 * time.Millisecond):
+						case <-ctx.Done():
+							t.Fatal("the real cron timer did not accept its occurrence")
+						}
+					}
+					current := run([]string{"schedule", "get", "--id", scheduleID}, nil)["schedule"].(map[string]any)
+					run([]string{"schedule", "pause", "--id", scheduleID, "--revision", revision(current)}, nil)
+				}
 				accept = func() map[string]any {
-					result := run(manual, nil)
-					occurrenceID = result["occurrence"].(map[string]any)["id"].(string)
+					var result map[string]any
+					if profile == nativeCronWorkspace {
+						occurrence := run([]string{"schedule", "occurrence", "--id", scheduleID, "--occurrence-id", occurrenceID}, nil)["occurrence"].(map[string]any)
+						sessionID := occurrence["data"].(map[string]any)["session_id"].(string)
+						result = map[string]any{"occurrence": occurrence, "session": run([]string{"session", "get", "--id", sessionID}, nil)}
+					} else {
+						result = run(manual, nil)
+						occurrenceID = result["occurrence"].(map[string]any)["id"].(string)
+					}
 					// Run now joins its current session; inspect the exact current job
 					// through the ordinary resource API for the shared cleanup checks.
 					session := result["session"].(map[string]any)["data"].(map[string]any)
@@ -417,8 +464,8 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 			if state.Outcome != domain.ExecutionSucceeded || state.ActiveExecutionID != "" || state.PendingInputs != 0 || state.InitialExecution == nil || state.InitialExecution.InitialAccountID != domain.ID(account["id"].(string)) || state.Source != expectedSource {
 				t.Fatalf("public completion lost ownership: outcome=%s active=%s pending=%d initial=%t selected_account=%t source=%s", state.Outcome, state.ActiveExecutionID, state.PendingInputs, state.InitialExecution != nil, state.InitialExecution != nil && state.InitialExecution.InitialAccountID == domain.ID(account["id"].(string)), state.Source)
 			}
-			if profile == nativeScheduledWorkspaces {
-				if state.ScheduleOrigin == nil || state.ScheduleOrigin.ScheduleID != domain.ID(scheduleID) || state.ScheduleOrigin.OccurrenceID != domain.ID(occurrenceID) || state.ScheduleOrigin.Trigger != domain.ManualOccurrence {
+			if expectedSource == domain.ScheduledSession {
+				if state.ScheduleOrigin == nil || state.ScheduleOrigin.ScheduleID != domain.ID(scheduleID) || state.ScheduleOrigin.OccurrenceID != domain.ID(occurrenceID) || state.ScheduleOrigin.Trigger != expectedTrigger {
 					t.Fatal("native scheduled execution lost immutable source ownership")
 				}
 				for {
@@ -432,9 +479,14 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 						t.Fatal("native scheduled completion did not reconcile")
 					}
 				}
+				if profile == nativeCronWorkspace {
+					current := run([]string{"schedule", "get", "--id", scheduleID}, nil)["schedule"].(map[string]any)
+					run([]string{"schedule", "delete", "--id", scheduleID, "--revision", revision(current)}, nil)
+					t.Log("Actual cron acceptance, native completion and schedule deletion preserved independent history/session")
+				}
 			}
 			replay := accept()
-			if replay["replayed"] != true || replay["execution_job"] == nil {
+			if (profile != nativeCronWorkspace && replay["replayed"] != true) || replay["execution_job"] == nil {
 				t.Fatal("creation replay lost current job")
 			}
 			job := replay["execution_job"].(map[string]any)
