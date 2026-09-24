@@ -43,7 +43,20 @@ pub fn process(op: &Operation) -> forge_tree_doc::Result<(Vec<u8>, String, Strin
             let mut imported = forge_pptx::import(&op.source)?;
             let update: Update = forge_tree_doc::parse(op.model.as_bytes())?;
             update.source_identity.restore(&mut imported, &op.source)?;
-            let mut doc = update.document;
+            let mut doc = imported.document.clone();
+            for edit in update.edits {
+                let target = doc
+                    .find_mut(&forge_tree_doc::Target {
+                        node_id: Some(edit.target),
+                        key: None,
+                    })
+                    .ok_or_else(|| forge_package::failure("replacement target"))?;
+                let frame = edit.replacement.frame.or(target.frame);
+                *target = edit.replacement;
+                target.id = Some(edit.target);
+                target.frame = frame;
+            }
+            doc.assets.extend(update.assets);
             doc.assign_ids();
             let mut assets = imported.assets;
             assets.extend(op.assets.clone());
@@ -124,9 +137,17 @@ struct SourceIdentity {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Update {
-    document: Presentation,
+    edits: Vec<Edit>,
+    assets: std::collections::BTreeMap<String, forge_tree_doc::AssetRef>,
     source_identity: SourceIdentity,
 }
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Edit {
+    target: Uuid,
+    replacement: forge_tree_doc::Node,
+}
+
 impl SourceIdentity {
     fn capture(imported: &forge_pptx::Imported, source: &[u8]) -> Self {
         let mut ids = Vec::new();
@@ -205,5 +226,91 @@ impl SourceIdentity {
             .collect();
         imported.document_id = self.document_id;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn large_imported_models_export_through_bounded_replacement_envelopes() {
+        let mut parts = forge_pptx::read_package(include_bytes!(
+            "../../forge-pptx/tests/fixtures/external.pptx"
+        ))
+        .unwrap();
+        let path = "ppt/slides/slide1.xml";
+        let original = String::from_utf8(parts[path].clone()).unwrap();
+        let xml = forge_package::xml(original.as_bytes()).unwrap();
+        let title = xml
+            .descendants()
+            .find(|n| n.has_tag_name((forge_package::P, "cNvPr")) && n.attribute("id") == Some("2"))
+            .unwrap()
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap();
+        let raw = &original[title.range()];
+        let text = "A".repeat(1_000_000);
+        let shapes: String = (1000..1018)
+            .map(|id| {
+                raw.replace("id=\"2\"", &format!("id=\"{id}\""))
+                    .replace("External presentation", &text)
+            })
+            .collect();
+        parts.insert(
+            path.into(),
+            original
+                .replace("</p:spTree>", &format!("{shapes}</p:spTree>"))
+                .into_bytes(),
+        );
+        let source = forge_pptx::write_package(&parts).unwrap();
+        let imported = forge_pptx::import(&source).unwrap();
+        assert!(
+            serde_json::to_vec(&imported.document).unwrap().len() > forge_tree_doc::MAX_JSON_BYTES
+        );
+        let identity = SourceIdentity::capture(&imported, &source);
+        let target = imported.document.slides[0]
+            .content
+            .children
+            .iter()
+            .find(|n| n.kind == forge_tree_doc::NodeKind::Text)
+            .unwrap();
+        for edits in [
+            serde_json::json!([]),
+            serde_json::json!([{"target": target.id, "replacement":{"type":"text","text":"Edited"}}]),
+        ] {
+            let op = Operation {
+                format: crate::Format::Pptx,
+                kind: OperationKind::Update,
+                model: serde_json::json!({"source_identity":identity,"edits":edits,"assets":{}})
+                    .to_string(),
+                source: source.clone(),
+                assets: Default::default(),
+                document_id: imported.document_id,
+                revision: 1,
+                cancelled: Default::default(),
+                font_options: crate::FontOptions {
+                    system: false,
+                    ids: vec![],
+                },
+            };
+            // Caller-only text work needs a registered font; no-op import itself
+            // remains independent of system discovery.
+            let mut op = op;
+            op.assets
+                .insert("font".into(), forge_tree_doc::FONT_BYTES.to_vec());
+            op.font_options.ids.push("font".into());
+            let (output, _, _) = process(&op).unwrap();
+            if edits.as_array().unwrap().is_empty() {
+                assert_eq!(output, source);
+            } else {
+                assert!(
+                    String::from_utf8(forge_pptx::read_package(&output).unwrap()[path].clone())
+                        .unwrap()
+                        .contains("Edited")
+                );
+            }
+        }
     }
 }

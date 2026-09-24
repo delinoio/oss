@@ -266,3 +266,4 @@
 
 - React Forge must retain six native macOS/Windows/glibc Linux x64/arm64 targets. Enable all system-font tests in its prepared host matrix and validate Windows cancellation in an isolated real console, never by treating Node process.kill as a console event.
 - Presentation text editability must validate paragraph/run semantics as well as body geometry, including table-cell text. Preserve unmodeled fields, links, bullets, defaults and extensions as opaque content.
+- Imported PPTX update envelopes must contain replacements and source identity, not a serialized copy of untouched Office content. Apply the React-tree input ceiling to authored work without making successfully imported large documents unexportable.

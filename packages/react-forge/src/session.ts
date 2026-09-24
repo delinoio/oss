@@ -225,19 +225,17 @@ export class DocumentSession {
         ...(this.format === Format.Docx ? { blocks: docxBlocks(root.snapshot(), this.documentId) } : { value: xlsxEdit(root.snapshot(), this.regions.get(id)!) }),
       })) };
     } else if (this.imported) {
-      model = structuredClone(this.imported);
-      for (const [id, root] of this.mounts) {
+      const edits = Array.from(this.mounts, ([id, root]) => {
         const nodes = root.snapshot();
         if (nodes.length !== 1) throw new ForgeError(ErrorCode.UnsupportedEdit, "A presentation mount must render one replacement node.");
-        const target = this.findNode(model, id)!;
-        const replacement = pptxNode(nodes[0]!, this.documentId);
         refs.set(nodes[0]!.id, id);
-        // Keep native identity and existing geometry unless explicitly replaced.
-        const frame = replacement.frame ?? target.frame;
-        for (const key of Object.keys(target)) delete target[key];
-        Object.assign(target, replacement, { id, frame });
-      }
-      model.assets = { ...(model.assets as Model), ...Object.fromEntries(Array.from(this.assets.keys(), id => [id, { handle: id }])) };
+        return { target: id, replacement: pptxNode(nodes[0]!, this.documentId) };
+      });
+      // Untouched source content stays in the bounded Office package. Only
+      // authored replacements cross the native React-tree input boundary.
+      model = { edits, source_identity: this.sourceIdentity,
+        assets: Object.fromEntries(Array.from(this.assets.keys(), id => [id, { handle: id }])) };
+
     } else {
       if (this.format === Format.Pptx) model = pptxModel(this.root.snapshot(), this.documentId, this.assets);
       else if (this.format === Format.Docx) model = docxModel(this.root.snapshot(), this.documentId);
@@ -245,7 +243,6 @@ export class DocumentSession {
       else if (this.format === Format.Pdf) model = pdfModel(this.root.snapshot(), this.documentId);
       else throw new ForgeError(ErrorCode.UnsupportedPackage, "This format is not connected to the native adapter yet.");
     }
-    if (this.imported && this.format === Format.Pptx) model = { document: model, source_identity: this.sourceIdentity };
     const json = JSON.stringify(model);
     if (Buffer.byteLength(json) > limits.treeBytes && !this.imported) throw new ForgeError(ErrorCode.ResourceLimit, "New document model exceeds 16 MiB.");
     const assets = new Map(this.assets);
