@@ -10,7 +10,7 @@ clibox is a native command-line toolbox for everyday development, available thro
 - Wait for a TCP endpoint, HTTP response, or regular file.
 - List dotenv keys, merge configuration layers, and normalize YAML.
 
-The [command index](/clibox/commands) covers all 24 commands. Start with [installation](/clibox/install) and the [getting started guide](/clibox/getting-started).
+The [command index](/clibox/commands) covers all 25 commands. Start with [installation](/clibox/install) and the [getting started guide](/clibox/getting-started).
 
 ## Supported environments
 

@@ -32,6 +32,7 @@
 - Keep the npm README and `apps/public-docs/docs/clibox` aligned with user-facing command and installation behavior; link to `https://oss.delino.io/clibox`. The shared documentation selector uses clean same-origin paths on production and the consolidated development server, including clibox and pnport as destinations.
 
 - Native and installed npm commands must share the canonical `run env`, `port list`, and `hash compute` names, quiet/PID output separation, stdout dash selector, force validation, and numeric owned-operation cancellation (130/143); validate the migration in installed consumer smoke tests without launcher-side argument rewriting.
+- Native and installed npm smoke tests must exercise `system cpus` in default, logical, JSON, and quiet forms across all eight targets. The launcher forwards it unchanged and never computes or substitutes a CPU count.
 - Native and installed npm commands must also share the five `run with-*` wrappers for rate admission, lock ownership, service readiness, retries, and timeouts. The launcher remains a literal argv/stdio/signal forwarder: it must not parse wrapper options, own local state, make readiness requests, or introduce a shell.
 
 - Follow `docs/packages-clibox-distribution-contract.md`. Keep the source workspace private, with no unpublished platform dependencies; generate public manifests and exact optional dependencies during packaging only.

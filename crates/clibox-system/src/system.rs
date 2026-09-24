@@ -2,7 +2,7 @@ use std::ffi::OsString;
 
 use clap::Subcommand;
 
-use crate::{clipboard, environment, error::Result, open, port, run, runtime};
+use crate::{clipboard, cpus, environment, error::Result, open, port, run, runtime};
 
 #[derive(Subcommand)]
 pub enum Action {
@@ -39,6 +39,11 @@ pub enum Action {
     Clipboard {
         #[command(subcommand)]
         command: clipboard::Action,
+    },
+    /// Query local CPU counts for portable scripts and builds.
+    System {
+        #[command(subcommand)]
+        command: cpus::Action,
     },
 }
 
@@ -139,6 +144,9 @@ impl Action {
             Self::Clipboard {
                 command: clipboard::Action::Paste,
             } => "clipboard-paste",
+            Self::System {
+                command: cpus::Action::Cpus { .. },
+            } => "system-cpus",
         }
     }
 }
@@ -181,6 +189,7 @@ pub fn execute(command: Action, leading_separator: bool, raw: &[OsString]) -> Re
         Action::Port { command } => return port::execute(command),
         Action::Open { target, app, wait } => open::execute(target, app, wait)?,
         Action::Clipboard { command } => clipboard::execute(command)?,
+        Action::System { command } => cpus::execute(command)?,
     }
     Ok(0)
 }
