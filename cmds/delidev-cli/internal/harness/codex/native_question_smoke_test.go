@@ -22,69 +22,7 @@ func TestManualNativeQuestionResponse(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	var requests atomic.Int64
-	var received atomic.Bool
-	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		count := requests.Add(1)
-		body, err := io.ReadAll(io.LimitReader(r.Body, 2<<20))
-		var request struct {
-			Model string `json:"model"`
-			Input []struct {
-				Type   string
-				CallID string `json:"call_id"`
-				Output json.RawMessage
-			} `json:"input"`
-			Tools []struct{ Name string } `json:"tools"`
-		}
-		if r.Method != "POST" || r.URL.Path != "/responses" || err != nil || json.Unmarshal(body, &request) != nil || request.Model != "fixture-model" || count > 2 {
-			t.Error("unexpected scripted native question request")
-			http.Error(w, "invalid fixture request", 400)
-			return
-		}
-		if count == 1 {
-			offered := false
-			for _, tool := range request.Tools {
-				offered = offered || tool.Name == "request_user_input"
-			}
-			if !offered {
-				t.Error("native question tool was not offered")
-				http.Error(w, "unsupported", 400)
-				return
-			}
-		} else {
-			for _, item := range request.Input {
-				if item.Type != "function_call_output" || item.CallID != "call_question_fixture" {
-					continue
-				}
-				var text string
-				var response nativeQuestionResponse
-				if json.Unmarshal(item.Output, &text) == nil && domain.Decode([]byte(text), &response) == nil && len(response.Answers) == 1 && len(response.Answers["choice"].Answers) == 1 && response.Answers["choice"].Answers[0] == "First" {
-					received.Store(true)
-				}
-			}
-			if !received.Load() {
-				t.Error("native tool did not return the exact question answer")
-			}
-		}
-		w.Header().Set("Content-Type", "text/event-stream")
-		send := func(event any) {
-			raw, _ := json.Marshal(event)
-			_, _ = fmt.Fprintf(w, "data: %s\n\n", raw)
-			w.(http.Flusher).Flush()
-		}
-		responseID := fmt.Sprintf("resp_question_fixture_%d", count)
-		send(map[string]any{"type": "response.created", "response": map[string]any{"id": responseID, "status": "in_progress"}})
-		var item any
-		if count == 1 {
-			arguments, _ := json.Marshal(map[string]any{"questions": []any{questionFixture()}})
-			item = map[string]any{"type": "function_call", "id": "fc_question_fixture", "call_id": "call_question_fixture", "name": "request_user_input", "arguments": string(arguments)}
-		} else {
-			item = map[string]any{"type": "message", "id": "msg_question_fixture", "role": "assistant", "content": []any{map[string]any{"type": "output_text", "text": "Native question fixture complete."}}}
-		}
-		send(map[string]any{"type": "response.output_item.done", "output_index": 0, "item": item})
-		send(map[string]any{"type": "response.completed", "response": map[string]any{"id": responseID, "status": "completed", "output": []any{}, "usage": map[string]any{"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}}})
-	}))
-	t.Cleanup(provider.Close)
+	provider, requests, received := nativeQuestionProvider(t)
 	cfg := nativeFixtureConfig(t, binary, provider.URL)
 	c, err := Open(ctx, cfg)
 	if err != nil {
@@ -148,4 +86,73 @@ func TestManualNativeQuestionResponse(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("Codex %s: question sent and native request closed; scripted model received exact answer; %d function-output item observations; no external account", SupportedVersion, functionOutputs)
+}
+
+// nativeQuestionProvider never sends a request outside its loopback listener.
+func nativeQuestionProvider(t *testing.T) (*httptest.Server, *atomic.Int64, *atomic.Bool) {
+	t.Helper()
+	var requests atomic.Int64
+	var received atomic.Bool
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		count := requests.Add(1)
+		body, err := io.ReadAll(io.LimitReader(r.Body, 2<<20))
+		var request struct {
+			Model string `json:"model"`
+			Input []struct {
+				Type   string
+				CallID string `json:"call_id"`
+				Output json.RawMessage
+			} `json:"input"`
+			Tools []struct{ Name string } `json:"tools"`
+		}
+		if r.Method != "POST" || r.URL.Path != "/responses" || err != nil || json.Unmarshal(body, &request) != nil || request.Model != "fixture-model" || count > 2 {
+			t.Error("unexpected scripted native question request")
+			http.Error(w, "invalid fixture request", 400)
+			return
+		}
+		if count == 1 {
+			offered := false
+			for _, tool := range request.Tools {
+				offered = offered || tool.Name == "request_user_input"
+			}
+			if !offered {
+				t.Error("native question tool was not offered")
+				http.Error(w, "unsupported", 400)
+				return
+			}
+		} else {
+			for _, item := range request.Input {
+				if item.Type != "function_call_output" || item.CallID != "call_question_fixture" {
+					continue
+				}
+				var text string
+				var response nativeQuestionResponse
+				if json.Unmarshal(item.Output, &text) == nil && domain.Decode([]byte(text), &response) == nil && len(response.Answers) == 1 && len(response.Answers["choice"].Answers) == 1 && response.Answers["choice"].Answers[0] == "First" {
+					received.Store(true)
+				}
+			}
+			if !received.Load() {
+				t.Error("native tool did not return the exact question answer")
+			}
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		send := func(event any) {
+			raw, _ := json.Marshal(event)
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", raw)
+			w.(http.Flusher).Flush()
+		}
+		responseID := fmt.Sprintf("resp_question_fixture_%d", count)
+		send(map[string]any{"type": "response.created", "response": map[string]any{"id": responseID, "status": "in_progress"}})
+		var item any
+		if count == 1 {
+			arguments, _ := json.Marshal(map[string]any{"questions": []any{questionFixture()}})
+			item = map[string]any{"type": "function_call", "id": "fc_question_fixture", "call_id": "call_question_fixture", "name": "request_user_input", "arguments": string(arguments)}
+		} else {
+			item = map[string]any{"type": "message", "id": "msg_question_fixture", "role": "assistant", "content": []any{map[string]any{"type": "output_text", "text": "Native question fixture complete."}}}
+		}
+		send(map[string]any{"type": "response.output_item.done", "output_index": 0, "item": item})
+		send(map[string]any{"type": "response.completed", "response": map[string]any{"id": responseID, "status": "completed", "output": []any{}, "usage": map[string]any{"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}}})
+	}))
+	t.Cleanup(provider.Close)
+	return provider, &requests, &received
 }
