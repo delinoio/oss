@@ -254,6 +254,14 @@ func (c *Client) bindThread(ctx context.Context, requestID, threadID domain.ID, 
 	if c.thread != "" {
 		return result, domain.Fail(domain.Conflict, "This native connection already owns a root thread.", "Use the retained native thread; do not start or resume another one on this connection.")
 	}
+	if c.api != nil {
+		if settings.Provider != APIProvider {
+			return result, incompatible()
+		}
+		if err := c.verifyAPI(ctx, settings.Cwd); err != nil {
+			return result, err
+		}
+	}
 	params.ThreadID = threadID
 	if method == resumeThread {
 		exclude := true

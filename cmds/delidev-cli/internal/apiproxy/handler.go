@@ -343,7 +343,7 @@ func executionToken(header http.Header) (string, error) {
 	default:
 		return "", errors.New("ambiguous authorization")
 	}
-	if !validToken(token) {
+	if !ValidToken(token) {
 		return "", errors.New("invalid execution credential")
 	}
 	return token, nil

@@ -121,7 +121,8 @@ type Authority interface {
 	Acquire(context.Context, string) (*Lease, error)
 }
 
-func validToken(value string) bool {
+// ValidToken checks only the private token format, never execution authority.
+func ValidToken(value string) bool {
 	if !strings.HasPrefix(value, TokenPrefix) {
 		return false
 	}

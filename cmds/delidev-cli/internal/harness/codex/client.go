@@ -24,6 +24,7 @@ type Config struct {
 	Version string
 	Home    string
 	Mode    ProtocolMode
+	API     *APIConfig
 }
 type Client struct {
 	wire         *nativewire.Connection
@@ -37,6 +38,7 @@ type Client struct {
 	execution    *executionState
 	eventGate    chan struct{}
 	pendingEvent *nativewire.Event
+	api          *apiBinding
 }
 
 type ProtocolMode string
@@ -105,7 +107,12 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	// A protocol probe cannot borrow an unrelated cached login. The native
 	// ephemeral store is also the future execution boundary for short-lived
 	// DeliDev proxy credentials, never server-owned upstream API keys.
-	config.Process.Args = []string{"-c", `cli_auth_credentials_store="ephemeral"`, "-c", "check_for_update_on_startup=false", "-c", "analytics.enabled=false", "-c", "feedback.enabled=false", "app-server"}
+	config.Process.Args = []string{"-c", `cli_auth_credentials_store="ephemeral"`, "-c", "check_for_update_on_startup=false", "-c", "analytics.enabled=false", "-c", "feedback.enabled=false"}
+	api, err := configureAPI(&config)
+	if err != nil {
+		return nil, err
+	}
+	config.Process.Args = append(config.Process.Args, "app-server")
 	phase = launchPhase
 	wire, err := nativewire.Start(ctx, config.Process)
 	if err != nil {
@@ -172,7 +179,11 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	if config.Process.Logger != nil {
 		config.Process.Logger.InfoContext(ctx, "Codex native handshake verified", "owner_id", config.Process.OwnerID, "version", config.Version)
 	}
-	return &Client{wire: wire, version: config.Version, ownerID: config.Process.OwnerID, logger: config.Process.Logger, control: make(chan struct{}, 1), eventGate: make(chan struct{}, 1), mode: config.Mode}, nil
+	client = &Client{wire: wire, version: config.Version, ownerID: config.Process.OwnerID, logger: config.Process.Logger, control: make(chan struct{}, 1), eventGate: make(chan struct{}, 1), mode: config.Mode, api: api}
+	if err := client.verifyAPI(ctx, config.Process.Cwd); err != nil {
+		return nil, err
+	}
+	return client, nil
 }
 func handshakeError(wire *nativewire.Connection, err error) error {
 	if observed := wire.Err(); observed != nil && observed.Code == domain.Unsupported {
