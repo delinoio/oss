@@ -244,3 +244,35 @@ test("source overwrite always fails closed for unchanged, replaced and aliased p
     assert.equal((await readdir(directory)).some(name => name.endsWith(".tmp")), false);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
+
+test("file exports retain invocation order across sessions and path aliases after a queued cancellation", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "react-forge-ordered-"));
+  const path = join(directory, "result.pptx");
+  const older = createSession(Format.Pptx);
+  const newer = createSession(Format.Pptx);
+  const pending = Promise.withResolvers<string>();
+  function Delayed() { return view(use(pending.promise)); }
+  try {
+    await symlink(directory, join(directory, "alias"));
+    await older.render(<Suspense fallback={view("Fallback")}><Delayed /></Suspense>);
+    await newer.render(view("Newer export"));
+    const first = older.exportFile(path, { overwrite: true });
+    const controller = new AbortController();
+    const cancelled = newer.exportFile(path, { overwrite: true, signal: controller.signal });
+    controller.abort();
+    await assert.rejects(cancelled, { code: ErrorCode.Cancelled });
+    let finished = false;
+    const last = newer.exportFile(join(directory, "alias", "result.pptx"), { overwrite: true }).then(result => { finished = true; return result; });
+    await new Promise(resolve => setTimeout(resolve, 50));
+    assert.equal(finished, false);
+    await assert.rejects(readFile(path), { code: "ENOENT" });
+    pending.resolve("Older export");
+    await Promise.all([first, last]);
+    const result = await processPptx("inspect", {}, await readFile(path), new Map(), newer.documentId, 0, new AbortController().signal);
+    assert.match(result.model, /Newer export/);
+    assert.doesNotMatch(result.model, /Older export|Fallback/);
+    await older.render(<Presentation><Slide><Text style={{ fontSize: -1 }}>Invalid</Text></Slide></Presentation>);
+    await assert.rejects(older.exportFile(path, { overwrite: true }));
+    await newer.exportFile(path, { overwrite: true });
+  } finally { pending.resolve("cleanup"); await older.dispose(); await newer.dispose(); await rm(directory, { recursive: true, force: true }); }
+});

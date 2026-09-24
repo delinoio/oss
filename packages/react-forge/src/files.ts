@@ -1,12 +1,44 @@
 import { createHash, randomUUID } from "node:crypto";
 import { open, realpath, unlink } from "node:fs/promises";
-import { constants, closeSync, fsyncSync, linkSync, openSync, renameSync, unlinkSync } from "node:fs";
+import { constants, closeSync, fsyncSync, linkSync, openSync, renameSync, unlinkSync, realpathSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
-import { ForgeError, checkSignal } from "./errors.js";
+import { ForgeError, abortable, checkSignal } from "./errors.js";
 import { ErrorCode, type AssetSource } from "./types.js";
 
 export interface SourceFingerprint { path: string; digest: string }
 export const digest = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
+
+const outputQueues = new Map<string, Promise<void>>();
+
+export async function withOutputReservation<T>(output: string, signal: AbortSignal, work: (destination: string) => Promise<T>): Promise<T> {
+  checkSignal(signal);
+  let directory: string;
+  let key: string;
+  try {
+    directory = realpathSync(dirname(resolve(output)));
+    const info = statSync(directory, { bigint: true });
+    if (!info.isDirectory()) throw new Error("Not a directory");
+    key = `${info.dev}:${info.ino}`;
+  } catch { throw new ForgeError(ErrorCode.Io, "Unable to reserve the output directory."); }
+  // Reserve synchronously in invocation order, before React/native preparation.
+  // Directory identity also covers symlink and case aliases for absent outputs
+  // on case-insensitive volumes; unrelated directories still run independently.
+  const previous = outputQueues.get(key) ?? Promise.resolve();
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const current = previous.then(() => held);
+  outputQueues.set(key, current);
+  void current.then(() => { if (outputQueues.get(key) === current) outputQueues.delete(key); });
+  try {
+    await abortable(previous, signal);
+    checkSignal(signal);
+    return await work(join(directory, basename(output)));
+  } finally {
+    // A cancelled waiter releases only its own slot. Its successors still wait
+    // for the earlier publisher through the chained current promise.
+    release();
+  }
+}
 
 export async function readSource(source: AssetSource, limit: number, signal?: AbortSignal): Promise<{ bytes: Buffer; fingerprint?: SourceFingerprint }> {
   checkSignal(signal);

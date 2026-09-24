@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { v7 } from "uuid";
 import { ForgeError, abortable, checkSignal } from "./errors.js";
-import { digest, publish, readSource, type SourceFingerprint } from "./files.js";
+import { digest, publish, withOutputReservation, readSource, type SourceFingerprint } from "./files.js";
 import { processDocument, type NativeOutput } from "./native.js";
 import { pptxModel, pptxNode } from "./pptx-model.js";
 import { pdfModel } from "./pdf-model.js";
@@ -267,11 +267,11 @@ export class DocumentSession {
 
   exportFile(path: string, options: { overwrite?: boolean; signal?: AbortSignal } = {}): Promise<{ published: true; revision: number }> {
     const signal = this.signal(options.signal);
-    return this.track(Stage.Export, async () => {
+    return this.track(Stage.Export, () => withOutputReservation(path, signal, async destination => {
       const result = await this.process(signal);
-      await publish(result.bytes, path, { ...options, signal, source: this.fingerprint });
-      return { published: true, revision: result.revision };
-    });
+      await publish(result.bytes, destination, { ...options, signal, source: this.fingerprint });
+      return { published: true as const, revision: result.revision };
+    }));
   }
 
   measure(handle: NodeHandle, options: { revision: number; signal?: AbortSignal }): Promise<Geometry> {
