@@ -568,13 +568,12 @@ fn prepare_replayed_syscall(regs: &mut Registers) -> Result<()> {
 fn number(regs: &Registers) -> i64 {
     regs.regs[8] as i64
 }
-#[cfg(target_arch = "x86_64")]
-fn deny_syscall(regs: &mut Registers) {
-    regs.orig_rax = u64::MAX;
-}
-#[cfg(target_arch = "aarch64")]
-fn deny_syscall(regs: &mut Registers) {
-    regs.regs[8] = u64::MAX;
+fn deny_syscall(pid: i32, regs: &mut Registers) -> Result<()> {
+    set_number(regs, -1);
+    set_registers(pid, regs)?;
+    #[cfg(target_arch = "aarch64")]
+    set_active_syscall(pid, -1)?;
+    Ok(())
 }
 #[cfg(target_arch = "x86_64")]
 fn argument(regs: &Registers, index: usize) -> u64 {
@@ -2059,8 +2058,7 @@ impl Trace<'_> {
                 | libc::SYS_io_uring_enter
                 | libc::SYS_io_uring_register
         ) {
-            deny_syscall(&mut regs);
-            set_registers(pid, &regs)?;
+            deny_syscall(pid, &mut regs)?;
             return Err(unsupported(
                 "This Linux filesystem interface cannot be mediated.",
             ));
@@ -2068,8 +2066,7 @@ impl Trace<'_> {
         if call == libc::SYS_pidfd_getfd {
             // This installs a descriptor without passing through open or dup.
             // Reject it before the kernel can create an untracked cache handle.
-            deny_syscall(&mut regs);
-            set_registers(pid, &regs)?;
+            deny_syscall(pid, &mut regs)?;
             return Err(unsupported(
                 "Linux pidfd descriptor duplication cannot be mediated.",
             ));
@@ -2091,8 +2088,7 @@ impl Trace<'_> {
                     // An SCM_RIGHTS receive would install a new descriptor
                     // outside the group's ownership map. Stop before the
                     // kernel can create it, including for another thread.
-                    deny_syscall(&mut regs);
-                    set_registers(pid, &regs)?;
+                    deny_syscall(pid, &mut regs)?;
                     return Err(unsupported(
                         "Linux ancillary descriptor reception cannot be mediated.",
                     ));
@@ -2117,8 +2113,7 @@ impl Trace<'_> {
             {
                 // A thread group has one FD and logical cwd map. A thread
                 // with either private kernel context would invalidate it.
-                deny_syscall(&mut regs);
-                set_registers(pid, &regs)?;
+                deny_syscall(pid, &mut regs)?;
                 return Err(unsupported(
                     "Linux threads with private descriptor or cwd contexts cannot be mediated.",
                 ));
@@ -2129,8 +2124,7 @@ impl Trace<'_> {
                 // FD and logical cwd state are owned by one thread group.
                 // Sharing or splitting either context across that boundary
                 // would make its cached identity stale.
-                deny_syscall(&mut regs);
-                set_registers(pid, &regs)?;
+                deny_syscall(pid, &mut regs)?;
                 return Err(unsupported(
                     "Linux cross-group CLONE_FILES or CLONE_FS cannot be mediated.",
                 ));
@@ -2148,8 +2142,7 @@ impl Trace<'_> {
         if call == libc::SYS_close_range {
             let flags = argument(&regs, 2) as u32;
             if flags & CLOSE_RANGE_UNSHARE != 0 {
-                deny_syscall(&mut regs);
-                set_registers(pid, &regs)?;
+                deny_syscall(pid, &mut regs)?;
                 return Err(unsupported(
                     "Linux close_range with UNSHARE cannot preserve descriptor ownership.",
                 ));

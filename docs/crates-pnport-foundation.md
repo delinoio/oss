@@ -106,6 +106,8 @@ Cross-group `CLONE_FILES` and `unshare(CLONE_FILES)` fail before execution becau
 
 Linux rejects `pidfd_getfd` before it can install a descriptor outside the tracked ownership map. This applies even when the source descriptor is not managed because the tracer cannot safely infer an arbitrary pidfd's source table.
 
+On arm64, denying an unsupported syscall updates both the userspace `x8` register and the kernel's `NT_ARM_SYSTEM_CALL` active number before a parked tracee resumes. This prevents the original operation from running while a cleanup signal handler executes during the five-second grace period.
+
 Same-group `/proc/.../root/<path>` aliases, including task aliases, resolve against the tracee root before ownership checks. Managed package and cache backing retain read-only rejection through those aliases; ordinary native aliases keep their kernel pathname spelling. Physical cache and session-view paths are treated as backing storage even when the cache is inside the project and contains `node_modules` directories.
 
 Same-group `/proc/.../cwd` aliases of a virtual current directory resolve through the saved logical cwd, including paths below that directory. Writes still receive `EROFS`, readable opens retain descriptor ownership, and reading the cwd link reports the logical location. Successful `chdir` through a tracked `/proc/.../fd/<fd>` or `/dev/fd/<fd>` directory alias updates the saved logical cwd for a virtual directory and clears it for a native directory; failed `chdir` leaves cwd state unchanged.

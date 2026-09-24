@@ -203,6 +203,7 @@
 - pnport Linux scratch slots follow address-space ownership. Reuse completed task slots for shared-memory threads, reuse inherited mappings independently after fork, and let a vfork child borrow its suspended parent's slot without accumulating mappings in the parent.
 - pnport Linux must classify inherited managed descriptors before resuming the owned root task; descriptor-relative mutations retain read-only rejection even when the descriptor was opened by the caller. Reject writable inherited managed descriptors before execution.
 - pnport Linux must classify same-group `/proc/.../root` aliases by their underlying path, including physical cache paths; preserve native alias spelling when the path needs no virtual translation.
+- pnport Linux arm64 syscall denial must update `NT_ARM_SYSTEM_CALL` after ordinary registers so rejected operations cannot execute during graceful cleanup.
 - pnport cache extraction must use a private snapshot verified against the destination archive digest. Rechecking only the mutable source after extraction cannot prove which bytes were published; retain rewrite-and-restore regression coverage.
 - pnport cache cancellation after read-only staging must restore directory write permission and explicitly remove the incomplete stage before returning an error.
 - pnport preload constructor entry and completed readiness are distinct acknowledgements. Supported cache lock waits after entry must not trigger the missing-injection deadline; a child result without readiness remains a failure.

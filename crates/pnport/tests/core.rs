@@ -2519,13 +2519,21 @@ fn linux_gracefully_resumes_an_unsupported_syscall_stop() {
 static const char *marker;
 static void terminated(int signal) {
     (void)signal;
+    int preserved = fcntl(100, F_GETFD) >= 0;
     int fd = open(marker, O_WRONLY | O_CREAT, 0600);
-    if (fd >= 0) { write(fd, "handled", 7); close(fd); }
+    if (fd >= 0) {
+        if (preserved) write(fd, "handled", 7);
+        else write(fd, "mutated", 7);
+        close(fd);
+    }
     _exit(0);
 }
 int main(int argc, char **argv) {
     if (argc != 2) return 40;
     marker = argv[1];
+    int source = open("/dev/null", O_RDONLY);
+    if (source < 0 || dup2(source, 100) != 100) return 42;
+    if (source != 100) close(source);
     signal(SIGTERM, terminated);
     syscall(SYS_close_range, 100, 100, 2);
     return 41;
