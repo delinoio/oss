@@ -8,8 +8,11 @@ mod autowatch;
 pub mod cli;
 mod fbreak;
 mod latencylab;
+mod minrepro;
 mod output;
 mod selector;
+#[cfg(target_os = "linux")]
+mod snapshot;
 pub mod trace;
 
 #[cfg(target_os = "linux")]

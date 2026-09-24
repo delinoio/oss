@@ -263,6 +263,9 @@ pub fn execute(options: Fbreak) -> i32 {
                 max_bytes: options.max_trace_bytes,
                 delay_rule: None,
                 break_control: Some(&control),
+                child_cwd: None,
+                stderr_match: None,
+                deny_rule: None,
             },
             &cancellation,
         );

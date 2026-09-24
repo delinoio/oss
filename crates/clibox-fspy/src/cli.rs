@@ -11,7 +11,7 @@ use std::{
 use clap::{Args, Subcommand};
 
 use crate::{
-    assetcov, autowatch, fbreak, latencylab, output,
+    assetcov, autowatch, fbreak, latencylab, minrepro, output,
     trace::{self, Comparison, EncodedPath},
 };
 
@@ -73,6 +73,16 @@ pub enum Fspy {
                       timeout, 130 Ctrl+C, 143 SIGTERM."
     )]
     Autowatch(autowatch::Autowatch),
+    /// Collect traced project inputs and publish only a verified reproduction.
+    #[command(
+        after_help = "Example: clibox fspy min-repro --include 'src/**' --bundle-dir repro \
+                      --expect-exit 1 --expect-stderr 'failure' -- cargo test\nThe candidate runs \
+                      once from a separate directory; this is not an OS sandbox or a portable \
+                      runtime bundle. The command and expected stderr text are never \
+                      stored.\nExit codes: 0 verified bundle, 1 failure, 2 invalid input, 124 \
+                      timeout, 130 Ctrl+C, 143 SIGTERM."
+    )]
+    MinRepro(minrepro::MinRepro),
 }
 
 #[derive(Args)]
@@ -174,6 +184,7 @@ pub fn execute(command: Fspy) -> i32 {
         Fspy::Latencylab(options) => latencylab::execute(options),
         Fspy::Fbreak(options) => fbreak::execute(options),
         Fspy::Autowatch(options) => autowatch::execute(options),
+        Fspy::MinRepro(options) => minrepro::execute(options),
     }
 }
 
@@ -235,6 +246,9 @@ fn record(options: Record) -> i32 {
             max_bytes: options.max_trace_bytes,
             delay_rule: None,
             break_control: None,
+            child_cwd: None,
+            stderr_match: None,
+            deny_rule: None,
         },
         &cancellation,
     );

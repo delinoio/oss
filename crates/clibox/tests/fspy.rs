@@ -14,6 +14,145 @@ mod linux {
         time::{Duration, Instant},
     };
 
+    fn min_repro_command(root: &Path, bundle: &Path, script: &str) -> Command {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_clibox"));
+        command.current_dir(root).args([
+            "fspy",
+            "min-repro",
+            "--include",
+            "input",
+            "--bundle-dir",
+            bundle.to_str().unwrap(),
+            "--expect-exit",
+            "7",
+            "--expect-stderr",
+            "failure",
+            "--json",
+            "--",
+            "/bin/sh",
+            "-c",
+            script,
+        ]);
+        command
+    }
+
+    #[test]
+    fn min_repro_publishes_only_verified_observed_inputs() {
+        let root = tempfile::tempdir().unwrap();
+        let output = tempfile::tempdir().unwrap();
+        let bundle = output.path().join("repro");
+        fs::write(root.path().join("input"), b"needed").unwrap();
+        fs::write(root.path().join("unused"), b"omit").unwrap();
+        let result = min_repro_command(
+            root.path(),
+            &bundle,
+            "cat input >/dev/null; printf failure >&2; exit 7",
+        )
+        .output()
+        .unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert_eq!(fs::read(bundle.join("input")).unwrap(), b"needed");
+        assert!(!bundle.join("unused").exists());
+        let metadata = fs::read_dir(&bundle)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .find(|path| {
+                path.file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .starts_with(".clibox-fspy-bundle-")
+            })
+            .unwrap();
+        let manifest = fs::read_to_string(metadata.join("manifest.json")).unwrap();
+        assert!(manifest.contains("external_dependencies"));
+        assert!(!manifest.contains("failure"), "stderr predicate leaked");
+    }
+
+    #[test]
+    fn min_repro_rejects_original_tree_access_and_preserves_existing_bundle() {
+        let root = tempfile::tempdir().unwrap();
+        let output = tempfile::tempdir().unwrap();
+        let bundle = output.path().join("repro");
+        let input = root.path().join("input");
+        fs::write(&input, b"needed").unwrap();
+        let script = format!(
+            "cat '{}' >/dev/null; printf failure >&2; exit 7",
+            input.display()
+        );
+        let result = min_repro_command(root.path(), &bundle, &script)
+            .output()
+            .unwrap();
+        assert_eq!(result.status.code(), Some(1));
+        assert!(String::from_utf8_lossy(&result.stderr).contains("original_tree_access"));
+        assert!(!bundle.exists());
+
+        fs::create_dir(&bundle).unwrap();
+        fs::write(bundle.join("keep"), b"unchanged").unwrap();
+        let result = min_repro_command(root.path(), &bundle, "touch launched; exit 7")
+            .output()
+            .unwrap();
+        assert_eq!(result.status.code(), Some(2));
+        assert_eq!(fs::read(bundle.join("keep")).unwrap(), b"unchanged");
+        assert!(!root.path().join("launched").exists());
+    }
+
+    #[test]
+    fn min_repro_preserves_internal_links_and_blocks_sensitive_inputs() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().unwrap();
+        let output = tempfile::tempdir().unwrap();
+        fs::create_dir(root.path().join("assets")).unwrap();
+        fs::write(root.path().join("assets/data"), b"needed").unwrap();
+        symlink("assets/data", root.path().join("input")).unwrap();
+        let bundle = output.path().join("linked");
+        let result = min_repro_command(
+            root.path(),
+            &bundle,
+            "cat input >/dev/null; printf failure >&2; exit 7",
+        )
+        .output()
+        .unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert_eq!(
+            fs::read_link(bundle.join("input")).unwrap(),
+            Path::new("assets/data")
+        );
+        assert_eq!(fs::read(bundle.join("assets/data")).unwrap(), b"needed");
+
+        fs::write(root.path().join(".env"), b"secret").unwrap();
+        let blocked_bundle = output.path().join("blocked");
+        let mut command = Command::new(env!("CARGO_BIN_EXE_clibox"));
+        command.current_dir(root.path()).args([
+            "fspy",
+            "min-repro",
+            "--include",
+            ".env",
+            "--bundle-dir",
+            blocked_bundle.to_str().unwrap(),
+            "--expect-exit",
+            "7",
+            "--expect-stderr",
+            "failure",
+            "--",
+            "/bin/sh",
+            "-c",
+            "cat .env >/dev/null; printf failure >&2; exit 7",
+        ]);
+        let result = command.output().unwrap();
+        assert_eq!(result.status.code(), Some(1));
+        assert!(String::from_utf8_lossy(&result.stderr).contains("blocked_input"));
+        assert!(!blocked_bundle.exists());
+    }
+
     struct PtySession {
         child: Child,
         master: File,

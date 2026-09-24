@@ -208,6 +208,9 @@ pub fn execute(options: Latencylab) -> i32 {
                         max_bytes: options.max_trace_bytes,
                         delay_rule: requested,
                         break_control: None,
+                        child_cwd: None,
+                        stderr_match: None,
+                        deny_rule: None,
                     },
                     &cancellation,
                 );

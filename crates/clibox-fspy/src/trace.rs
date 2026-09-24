@@ -116,6 +116,7 @@ pub enum FailureClass {
     CleanupFailure,
     OutputFailure,
     ControlLoss,
+    CandidateBoundary,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]

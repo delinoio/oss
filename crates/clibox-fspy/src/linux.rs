@@ -7,7 +7,8 @@
 use std::{
     collections::{BTreeMap, VecDeque},
     ffi::{OsStr, OsString},
-    fs, io,
+    fs,
+    io::{self, Read as _, Write as _},
     os::{
         fd::{FromRawFd as _, OwnedFd},
         raw::c_void,
@@ -17,7 +18,7 @@ use std::{
         },
     },
     path::{Component, Path, PathBuf},
-    process::{Command, ExitStatus, Stdio},
+    process::{ChildStderr, Command, ExitStatus, Stdio},
     sync::{
         atomic::{AtomicBool, Ordering},
         mpsc::{Receiver, TryRecvError},
@@ -70,6 +71,9 @@ pub struct CaptureRequest<'a> {
     pub max_bytes: usize,
     pub delay_rule: Option<&'a dyn Fn(&Start) -> Duration>,
     pub break_control: Option<&'a BreakControl<'a>>,
+    pub child_cwd: Option<&'a Path>,
+    pub stderr_match: Option<&'a str>,
+    pub deny_rule: Option<&'a dyn Fn(&Start) -> bool>,
 }
 
 #[derive(Debug)]
@@ -81,6 +85,8 @@ pub enum LinuxTraceError {
     Cancelled,
     Cleanup,
     ControlLost,
+    Output(io::Error),
+    CandidateBoundary,
 }
 
 impl LinuxTraceError {
@@ -93,6 +99,8 @@ impl LinuxTraceError {
             Self::Cancelled => FailureClass::Cancelled,
             Self::Cleanup => FailureClass::CleanupFailure,
             Self::ControlLost => FailureClass::ControlLoss,
+            Self::Output(_) => FailureClass::OutputFailure,
+            Self::CandidateBoundary => FailureClass::CandidateBoundary,
         }
     }
 }
@@ -101,6 +109,7 @@ pub struct LinuxCapture {
     pub events: Vec<Event>,
     pub root_status: Option<ExitStatus>,
     pub failure: Option<LinuxTraceError>,
+    pub stderr_matched: bool,
 }
 
 impl LinuxCapture {
@@ -165,6 +174,9 @@ pub fn capture(request: CaptureRequest<'_>, cancellation: &AtomicBool) -> io::Re
         max_bytes,
         delay_rule,
         break_control,
+        child_cwd,
+        stderr_match,
+        deny_rule,
     } = request;
     let root = fs::canonicalize(root)?;
     if !root.is_dir() {
@@ -219,6 +231,16 @@ pub fn capture(request: CaptureRequest<'_>, cancellation: &AtomicBool) -> io::Re
     }
     let mut command = Command::new(program);
     command.args(arguments);
+    if let Some(cwd) = child_cwd {
+        command.current_dir(cwd);
+        // A candidate runs from a different directory. Keep the shell's PWD
+        // hint consistent with the kernel cwd so it cannot consult the
+        // original project through an inherited stale PWD value.
+        command.env("PWD", cwd);
+    }
+    if stderr_match.is_some() {
+        command.stderr(Stdio::piped());
+    }
     match child_io {
         ChildIo::Inherit => {}
         ChildIo::Report | ChildIo::Interactive => {
@@ -255,7 +277,11 @@ pub fn capture(request: CaptureRequest<'_>, cancellation: &AtomicBool) -> io::Re
             Ok(())
         });
     }
-    let child = command.spawn()?;
+    let mut child = command.spawn()?;
+    let stderr_thread = child.stderr.take().map(|pipe| {
+        let needle = stderr_match.unwrap_or_default().as_bytes().to_vec();
+        thread::spawn(move || stream_matching_stderr(pipe, &needle))
+    });
     let root_pid = i32::try_from(child.id()).map_err(|_| io::Error::other("invalid child pid"))?;
     drop(child);
     collector.tasks.insert(
@@ -359,7 +385,7 @@ pub fn capture(request: CaptureRequest<'_>, cancellation: &AtomicBool) -> io::Re
             break;
         }
         let result = if signal == (libc::SIGTRAP | 0x80) {
-            collector.syscall_stop(tid, delay_rule, break_control)
+            collector.syscall_stop(tid, delay_rule, break_control, deny_rule)
         } else if signal == libc::SIGTRAP && event != 0 {
             collector.event_stop(tid, event)
         } else {
@@ -379,6 +405,20 @@ pub fn capture(request: CaptureRequest<'_>, cancellation: &AtomicBool) -> io::Re
     }
     if failure.is_some() && cleanup(root_pid, &collector.tasks, kill_after).is_err() {
         failure = Some(LinuxTraceError::Cleanup);
+    }
+    let mut stderr_matched = false;
+    if !matches!(failure, Some(LinuxTraceError::Cleanup))
+        && let Some(handle) = stderr_thread
+    {
+        match handle.join() {
+            Ok(Ok(matched)) => stderr_matched = matched,
+            Ok(Err(error)) => failure = Some(LinuxTraceError::Output(error)),
+            Err(_) => {
+                failure = Some(LinuxTraceError::Output(io::Error::other(
+                    "stderr forwarding failed",
+                )));
+            }
+        }
     }
     if root_status.is_none() && failure.is_none() {
         failure = Some(LinuxTraceError::Tracing(io::Error::other(
@@ -401,7 +441,40 @@ pub fn capture(request: CaptureRequest<'_>, cancellation: &AtomicBool) -> io::Re
         events: collector.events,
         root_status,
         failure,
+        stderr_matched,
     })
+}
+
+fn stream_matching_stderr(mut pipe: ChildStderr, needle: &[u8]) -> io::Result<bool> {
+    let mut output = io::stderr().lock();
+    let mut tail = Vec::new();
+    let mut matched = needle.is_empty();
+    let mut forwarding_error = None;
+    let mut chunk = [0u8; 8192];
+    loop {
+        let size = match pipe.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(size) => size,
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            Err(error) => return Err(error),
+        };
+        if forwarding_error.is_none()
+            && let Err(error) = output.write_all(&chunk[..size])
+        {
+            forwarding_error = Some(error);
+        }
+        if !matched {
+            tail.extend_from_slice(&chunk[..size]);
+            matched = tail.windows(needle.len()).any(|window| window == needle);
+            if !matched {
+                let keep = needle.len().saturating_sub(1);
+                if tail.len() > keep {
+                    tail.drain(..tail.len() - keep);
+                }
+            }
+        }
+    }
+    forwarding_error.map_or(Ok(matched), Err)
 }
 
 fn cleanup(root_pid: i32, tasks: &BTreeMap<i32, Task>, kill_after: Duration) -> io::Result<()> {
@@ -553,6 +626,7 @@ impl Collector {
         tid: i32,
         delay_rule: Option<&dyn Fn(&Start) -> Duration>,
         break_control: Option<&BreakControl<'_>>,
+        deny_rule: Option<&dyn Fn(&Start) -> bool>,
     ) -> Result<(), LinuxTraceError> {
         let mut info = std::mem::MaybeUninit::<raw_ptrace::ptrace_syscall_info>::zeroed();
         ptrace(
@@ -586,6 +660,9 @@ impl Collector {
                     };
                     self.operation_id += 1;
                     self.append(Event::OperationStart(start.clone()))?;
+                    if deny_rule.is_some_and(|rule| rule(&start)) {
+                        return Err(LinuxTraceError::CandidateBoundary);
+                    }
                     if let Some(task) = self.tasks.get_mut(&tid) {
                         task.pending = Some(start.clone());
                         if let Some(duration) = delay_rule.map(|rule| rule(&start))
@@ -1033,6 +1110,9 @@ mod tests {
                 max_bytes: 10 * 1024 * 1024,
                 delay_rule: None,
                 break_control: None,
+                child_cwd: None,
+                stderr_match: None,
+                deny_rule: None,
             },
             &cancellation,
         )
@@ -1073,6 +1153,9 @@ mod tests {
                 max_bytes: 10 * 1024 * 1024,
                 delay_rule: None,
                 break_control: None,
+                child_cwd: None,
+                stderr_match: None,
+                deny_rule: None,
             },
             &cancellation,
         )
@@ -1130,6 +1213,9 @@ mod tests {
                 max_bytes: 10 * 1024 * 1024,
                 delay_rule: Some(&rule),
                 break_control: None,
+                child_cwd: None,
+                stderr_match: None,
+                deny_rule: None,
             },
             &AtomicBool::new(false),
         )
@@ -1139,5 +1225,38 @@ mod tests {
             event,
             Event::OperationCompletion(done) if done.injected_delay_ns >= 5_000_000
         )));
+    }
+
+    #[test]
+    fn matches_child_stderr_without_persisting_it_in_the_trace() {
+        let root = tempfile::tempdir().unwrap();
+        let arguments = [
+            OsStr::new("-c").to_os_string(),
+            OsStr::new("printf expected >&2; exit 7").to_os_string(),
+        ];
+        let captured = capture(
+            CaptureRequest {
+                root: root.path(),
+                program: OsStr::new("/bin/sh"),
+                arguments: &arguments,
+                child_io: ChildIo::Report,
+                timeout: Some(Duration::from_secs(10)),
+                kill_after: Duration::from_secs(5),
+                max_events: 100_000,
+                max_bytes: 10 * 1024 * 1024,
+                delay_rule: None,
+                break_control: None,
+                child_cwd: None,
+                stderr_match: Some("expected"),
+                deny_rule: None,
+            },
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        assert!(captured.complete());
+        assert_eq!(captured.root_status.unwrap().code(), Some(7));
+        assert!(captured.stderr_matched);
+        let encoded = serde_json::to_string(&captured.events).unwrap();
+        assert!(!encoded.contains("expected"));
     }
 }
