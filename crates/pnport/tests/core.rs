@@ -865,6 +865,7 @@ fn linux_named_standard_stream_aliases_keep_descriptor_ownership() {
         r#"
 #include <errno.h>
 #include <fcntl.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -875,6 +876,13 @@ int main(int argc, char **argv) {
     if (dup2(fd, atoi(argv[1])) < 0) return 22;
     errno = 0;
     if (chmod(argv[2], 0600) != -1 || errno != EROFS) return 23;
+    fd = open("node_modules/dep", O_RDONLY | O_DIRECTORY);
+    if (fd < 0) return 24;
+    if (dup2(fd, atoi(argv[1])) < 0) return 25;
+    char descendant[128];
+    if (snprintf(descendant, sizeof(descendant), "%s/file.txt", argv[2]) >= sizeof(descendant)) return 26;
+    errno = 0;
+    if (chmod(descendant, 0600) != -1 || errno != EROFS) return 27;
     return 0;
 }
 "#,

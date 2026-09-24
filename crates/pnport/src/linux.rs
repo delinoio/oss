@@ -1720,38 +1720,42 @@ impl Trace<'_> {
     fn proc_descriptor(&self, pid: i32, path: &Path) -> Option<(Translation, bool)> {
         let text = path.to_str()?;
         let group = Self::group(pid);
-        let remainder = if let Some(remainder) = text.strip_prefix("/dev/fd/") {
-            remainder
-        } else if let Some(fd) = match text {
-            "/dev/stdin" => Some("0"),
-            "/dev/stdout" => Some("1"),
-            "/dev/stderr" => Some("2"),
-            _ => None,
-        } {
-            fd
+        let named = [("/dev/stdin", 0), ("/dev/stdout", 1), ("/dev/stderr", 2)]
+            .into_iter()
+            .find_map(|(alias, fd)| {
+                text.strip_prefix(alias)
+                    .filter(|suffix| suffix.is_empty() || suffix.starts_with('/'))
+                    .map(|suffix| (fd, suffix.strip_prefix('/')))
+            });
+        let (fd, suffix) = if let Some(named) = named {
+            named
         } else {
-            let (owner, remainder) = text.strip_prefix("/proc/")?.split_once('/')?;
-            let owner_group = match owner {
-                "self" | "thread-self" => group,
-                _ => Self::group(owner.parse::<i32>().ok()?),
-            };
-            if owner_group != group {
-                return None;
-            }
-            if let Some(remainder) = remainder.strip_prefix("fd/") {
+            let remainder = if let Some(remainder) = text.strip_prefix("/dev/fd/") {
                 remainder
             } else {
-                let (task, remainder) = remainder.strip_prefix("task/")?.split_once("/fd/")?;
-                if Self::group(task.parse::<i32>().ok()?) != group {
+                let (owner, remainder) = text.strip_prefix("/proc/")?.split_once('/')?;
+                let owner_group = match owner {
+                    "self" | "thread-self" => group,
+                    _ => Self::group(owner.parse::<i32>().ok()?),
+                };
+                if owner_group != group {
                     return None;
                 }
-                remainder
-            }
+                if let Some(remainder) = remainder.strip_prefix("fd/") {
+                    remainder
+                } else {
+                    let (task, remainder) = remainder.strip_prefix("task/")?.split_once("/fd/")?;
+                    if Self::group(task.parse::<i32>().ok()?) != group {
+                        return None;
+                    }
+                    remainder
+                }
+            };
+            let (number, suffix) = remainder
+                .split_once('/')
+                .map_or((remainder, None), |(number, suffix)| (number, Some(suffix)));
+            (number.parse::<i32>().ok()?, suffix)
         };
-        let (number, suffix) = remainder
-            .split_once('/')
-            .map_or((remainder, None), |(number, suffix)| (number, Some(suffix)));
-        let fd = number.parse::<i32>().ok()?;
         let mut entry = self.descriptor(pid, fd)?;
         if let Some(suffix) = suffix {
             entry.logical.push(suffix);
