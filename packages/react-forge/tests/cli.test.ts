@@ -92,3 +92,23 @@ test("CLI task failures stay redacted and SIGINT/SIGTERM dispose pending session
     }
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
+
+test("malformed task results produce one typed diagnostic without cleanup exceptions", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "react-forge-malformed-task-"));
+  const cli = new URL("../bin/react-forge.mjs", import.meta.url).pathname;
+  const entry = join(directory, "entry.tsx");
+  try {
+    for (const result of ["null", "{}", "{ dispose: 1 }", "{ exportFile() {}, dispose: 'invalid' }"]) {
+      await writeFile(entry, `export default function task() { return (${result}); }`);
+      await assert.rejects(exec(process.execPath, [cli, "run", entry, "--output", join(directory, "result.pdf"), "--json"]), (error: unknown) => {
+        const failure = error as { code: number; stdout: string; stderr: string };
+        assert.equal(failure.code, 1);
+        assert.equal(failure.stdout.trim().split("\n").length, 1);
+        assert.equal(JSON.parse(failure.stdout).error.code, "malformed_input");
+        assert.equal(failure.stderr, "");
+        return true;
+      });
+      assert.deepEqual(await readdir(directory), ["entry.tsx"]);
+    }
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});

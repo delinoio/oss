@@ -67,8 +67,9 @@ export async function main(args: string[]): Promise<number> {
     if (typeof run !== "function") throw new ForgeError(ErrorCode.MalformedInput, "TSX module must default-export a task function.");
     const task = Promise.resolve(run({ data, signal: controller.signal })) as Promise<DocumentSession>;
     void task.then(async result => { if (controller.signal.aborted && !session && typeof result?.dispose === "function") await result.dispose(); }).catch(() => {});
-    session = await abortable(task, controller.signal);
-    if (!session || typeof session.exportFile !== "function" || typeof session.dispose !== "function") throw new ForgeError(ErrorCode.MalformedInput, "Task must return a document session.");
+    const returned = await abortable(task, controller.signal);
+    if (!returned || typeof returned.exportFile !== "function" || typeof returned.dispose !== "function") throw new ForgeError(ErrorCode.MalformedInput, "Task must return a document session.");
+    session = returned;
     if (extname(output).toLowerCase() !== `.${session.format}`) throw new ForgeError(ErrorCode.MalformedInput, "Output extension must match the document session format.");
     const result = await session.exportFile(output, { overwrite: flags.has("--overwrite"), signal: controller.signal });
     await write(process.stdout, json ? `${JSON.stringify({ ok: true, format: session.format, ...result })}\n` : `Exported ${session.format.toUpperCase()} revision ${result.revision}.\n`);
