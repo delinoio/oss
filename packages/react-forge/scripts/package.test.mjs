@@ -32,7 +32,10 @@ test("first release checks conflicts before writes and publishes native packages
   const set = artifacts("0.1.0");
   const published = new Map([[set[0].name, set[0].integrity]]);
   const writes = [];
-  const lookup = async (artifact) => published.get(artifact.name) ?? null;
+  const lookup = async (...args) => {
+    assert.equal(args.length, 1);
+    return published.get(args[0].name) ?? null;
+  };
   const publish = async (artifact) => { writes.push(artifact.name); published.set(artifact.name, artifact.integrity); };
   await publishArtifacts(set, { lookup, publish, report: () => {} });
   assert.deepEqual(writes, set.slice(1).map((item) => item.name));

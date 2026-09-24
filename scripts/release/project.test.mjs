@@ -22,7 +22,7 @@ const absent = async () => ({ status: 404 });
 
 for (const project of Object.values(Project)) for (const bump of Object.values(Bump)) {
   test(`${project} ${bump} changes only the selected version sources`, () => {
-    if ([Project.Pnport, Project.ReactForge].includes(project) && bump !== Bump.Minor) {
+    if (project === Project.Pnport && bump !== Bump.Minor) {
       assert.throws(() => versionChanges(project, bump, read), /first public release requires a minor bump/u);
       return;
     }
@@ -93,12 +93,12 @@ test("pnport first minor bump produces 0.1.0 with CLI, preload, npm, and lockste
   }
 });
 
-test("React Forge first public release updates only its private source manifest", () => {
-  const plan = versionChanges(Project.ReactForge, Bump.Minor, read);
-  assert.equal(plan.previous_version, "0.0.0");
-  assert.equal(plan.version, "0.1.0");
+test("React Forge patch after the failed 0.1.0 tag updates only its private source manifest", () => {
+  const plan = versionChanges(Project.ReactForge, Bump.Patch, read);
+  assert.equal(plan.previous_version, "0.1.0");
+  assert.equal(plan.version, "0.1.1");
   assert.deepEqual(Object.keys(plan.changes), ["packages/react-forge/package.json"]);
-  assert.equal(JSON.parse(plan.changes["packages/react-forge/package.json"]).version, "0.1.0");
+  assert.equal(JSON.parse(plan.changes["packages/react-forge/package.json"]).version, "0.1.1");
   assert.equal(requiresCargoPublish(Project.ReactForge), false);
   assert.throws(() => readVersion(Project.ReactForge, (file) => file === "packages/react-forge/package.json" ? read(file).replace('"name": "@delino/react-forge"', '"name": "foreign"') : read(file)));
 });
@@ -196,7 +196,7 @@ for (const project of Object.values(Project)) test(`${project} commit journals a
   assert.equal(second.resumed, true);
   assert.equal(second.revision, first.revision);
   assert.equal(second.version, first.version);
-  assert.throws(() => validateCommit(fixtureState.directory, first.revision, project, Bump.Patch, "123"), [Project.Pnport, Project.ReactForge].includes(project) ? /first public release requires a minor bump/u : /journal/u);
+  assert.throws(() => validateCommit(fixtureState.directory, first.revision, project, Bump.Patch, "123"), project === Project.Pnport ? /first public release requires a minor bump/u : /journal/u);
   assert.throws(() => validateCommit(fixtureState.directory, first.revision, project, Bump.Minor, "456"), /journal/u);
 });
 

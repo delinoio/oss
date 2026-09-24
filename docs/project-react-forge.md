@@ -32,7 +32,7 @@ Provide publicly distributed React document sessions, a TSX task CLI and a local
 
 ## Cross-Domain Invariants
 - Support Node.js 24, React 19.2.8 with react-reconciler 0.33.0, and macOS/Windows/glibc Linux on x64 and arm64. Use the repository-pinned Rust toolchain. The npm library and six native packages are public; Rust crates remain private and unpublished.
-- The external `0.0.1` npm packages only reserve seven names. `0.1.0` is the first functional release and uses the exact-tag Trusted Publisher workflow.
+- The external `0.0.1` npm packages only reserve seven names. The `0.1.0` source tag passed all packaging gates but failed before npm publication. `0.1.1` is the first functional publication target through the exact-tag Trusted Publisher workflow.
 - TypeScript executes React; Rust processes validated serializable format-specific models. Rust is a project-specific exception to the default Go language; local files and explicit exports are an exception to default R2 storage.
 - Sessions live only in memory. Explicit export is the local persistence boundary. No automatic recovery, revision archive, hosted service, telemetry, arbitrary URL fetching, runtime downloads or external conversion dependencies. Figma alone permits official MCP publication and scoped image uploads, with partial/unknown outcomes and external receipts instead of atomic remote replacement.
 - Persistent document/node identities are UUID v7. React keys and useId values do not become persistent identities. Figma native IDs are separately mapped to those logical identities.

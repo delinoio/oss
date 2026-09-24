@@ -17,7 +17,7 @@ export async function registryIntegrity(artifact, request = fetch) {
 export async function publishArtifacts(artifacts, { lookup = registryIntegrity, publish, delay = sleep, report = console.log } = {}) {
   ensure(artifacts.length === 7 && artifacts.at(-1).name === "@delino/react-forge", "Native packages must precede the main package");
   ensure(typeof publish === "function", "Publisher required");
-  const existing = await Promise.all(artifacts.map(lookup));
+  const existing = await Promise.all(artifacts.map((artifact) => lookup(artifact)));
   for (let i = 0; i < artifacts.length; i++) ensure(existing[i] === null || existing[i] === artifacts[i].integrity, `Conflicting published integrity: ${artifacts[i].name}`);
   for (const artifact of artifacts) {
     let found = await lookup(artifact);
