@@ -3918,10 +3918,12 @@ dependencies = [
  "forge-tree-doc",
  "image",
  "parley",
+ "parley_data",
  "rust_xlsxwriter",
  "serde",
  "swash",
  "ttf-parser 0.25.1",
+ "unicode-segmentation",
  "url",
  "uuid",
 ]

@@ -11,6 +11,7 @@ use parley::{
         FontFamily, FontFamilyName, FontStyle, FontWeight, LineHeight, OverflowWrap, StyleProperty,
     },
 };
+use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{Align, Direction, Run, Style};
 
@@ -18,6 +19,7 @@ pub struct Fonts {
     fonts: FontContext,
     layout: LayoutContext<usize>,
     families: Vec<String>,
+    color_families: Vec<String>,
 }
 pub struct ShapedText {
     pub text: String,
@@ -45,7 +47,9 @@ impl Fonts {
             source_cache: Default::default(),
         };
         let mut families = Vec::new();
+        let mut color_families = Vec::new();
         let mut ids = Vec::new();
+        let mut color_ids = Vec::new();
         let mut total = 0_usize;
         for bytes in supplied {
             forge_tree_doc::cancellation::checkpoint()?;
@@ -63,9 +67,21 @@ impl Fonts {
             if registered.is_empty() {
                 return Err(missing());
             }
-            for (id, _) in registered {
+            for (id, faces) in registered {
+                let has_color = faces.iter().any(|font| {
+                    ttf_parser::Face::parse(bytes, font.index()).is_ok_and(|face| {
+                        let tables = face.tables();
+                        tables.colr.is_some() || tables.sbix.is_some() || tables.cbdt.is_some()
+                    })
+                });
                 if let Some(name) = fonts.collection.family_name(id) {
                     families.push(name.to_owned());
+                    if has_color {
+                        color_families.push(name.to_owned());
+                    }
+                }
+                if has_color {
+                    color_ids.push(id);
                 }
                 ids.push(id);
             }
@@ -77,17 +93,20 @@ impl Fonts {
                 GenericFamily::SansSerif,
                 GenericFamily::Serif,
                 GenericFamily::Monospace,
-                GenericFamily::Emoji,
             ] {
                 fonts
                     .collection
                     .set_generic_families(family, ids.iter().copied());
             }
+            fonts
+                .collection
+                .set_generic_families(GenericFamily::Emoji, color_ids.iter().copied());
         }
         Ok(Self {
             fonts,
             layout: LayoutContext::new(),
             families,
+            color_families,
         })
     }
 
@@ -165,10 +184,35 @@ impl Fonts {
                 .map(|name| FontFamilyName::Named(Cow::Owned(name.clone())))
                 .collect();
             stack.push(FontFamilyName::Generic(GenericFamily::SansSerif));
+            let mut emoji_stack: Vec<_> = self
+                .color_families
+                .iter()
+                .map(|name| FontFamilyName::Named(Cow::Owned(name.clone())))
+                .collect();
+            emoji_stack.push(FontFamilyName::Generic(GenericFamily::Emoji));
+            emoji_stack.extend(stack.iter().cloned());
             builder.push(
                 StyleProperty::FontFamily(FontFamily::List(Cow::Owned(stack))),
                 range.clone(),
             );
+            // Parley 0.9 appends the emoji generic after the caller's stack.
+            // Fontconfig's sans-serif list can then select a monochrome glyph
+            // before Noto Color Emoji. Prioritize color families only on emoji
+            // graphemes, preserving ordinary digits/spacing and text selectors.
+            // Remove this override once upstream offers equivalent color-first
+            // selection without changing non-emoji text or splitting sequences.
+            for (offset, grapheme) in run.text.grapheme_indices(true) {
+                forge_tree_doc::cancellation::checkpoint()?;
+                if prefers_color(grapheme) {
+                    let start = range.start + offset;
+                    builder.push(
+                        StyleProperty::FontFamily(FontFamily::List(Cow::Owned(
+                            emoji_stack.clone(),
+                        ))),
+                        start..start + grapheme.len(),
+                    );
+                }
+            }
             builder.push(
                 StyleProperty::FontSize(style.font_size.unwrap_or(12.0) as f32),
                 range.clone(),
@@ -281,6 +325,15 @@ impl Fonts {
             ranges,
         })
     }
+}
+
+fn prefers_color(grapheme: &str) -> bool {
+    !grapheme.contains('\u{fe0e}')
+        && (grapheme.contains('\u{fe0f}')
+            || grapheme.contains('\u{20e3}')
+            || grapheme
+                .chars()
+                .any(|c| !c.is_ascii() && parley_data::Properties::get(c).is_emoji_or_pictograph()))
 }
 
 pub fn invisible(c: char) -> bool {
@@ -459,5 +512,21 @@ impl Fonts {
             self.check_text(text, &style)?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod color_selection_tests {
+    use super::prefers_color;
+
+    #[test]
+    fn sequences_and_text_selectors_keep_their_presentation() {
+        for text in ["😀", "👨‍👩‍👧‍👦", "🇰🇷", "1\u{fe0f}\u{20e3}", "❤\u{fe0f}"]
+        {
+            assert!(prefers_color(text), "{text:?}");
+        }
+        for text in ["1", "#", " ", "A", "한", "❤\u{fe0e}"] {
+            assert!(!prefers_color(text), "{text:?}");
+        }
     }
 }

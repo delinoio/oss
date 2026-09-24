@@ -83,6 +83,61 @@ fn office_fallback_runs_preserve_logical_text_and_styles() {
 }
 
 #[test]
+// Apple Color Emoji exceeds the caller-font asset limit; macOS validates it
+// through system discovery above. Windows/Linux fonts fit the caller boundary.
+#[cfg(not(target_os = "macos"))]
+#[ignore = "Requires installed color emoji fonts; enabled in React Forge CI"]
+fn caller_fonts_prefer_color_only_for_emoji_graphemes() {
+    let mut system = Fonts::new(true, &[]).unwrap();
+    let font_bytes = |fonts: &mut Fonts, text: &str| {
+        let shaped = fonts
+            .shape(&run(text), &Style::default(), 300.0, true)
+            .unwrap();
+        shaped
+            .layout
+            .lines()
+            .next()
+            .unwrap()
+            .runs()
+            .next()
+            .unwrap()
+            .font()
+            .data
+            .as_ref()
+            .to_vec()
+    };
+    // Linux's default sans font has monochrome emoji. Register it first to
+    // reproduce the color fallback conflict without distributing system fonts.
+    let normal = font_bytes(&mut system, "123");
+    let color = font_bytes(&mut system, "😀");
+    let mut private = Fonts::new(false, &[normal.clone(), color]).unwrap();
+    let shaped = private
+        .shape(&run("123 😀 👨‍👩‍👧‍👦"), &Style::default(), 300.0, true)
+        .unwrap();
+    assert_eq!(
+        shaped
+            .layout
+            .lines()
+            .next()
+            .unwrap()
+            .runs()
+            .next()
+            .unwrap()
+            .font()
+            .data
+            .as_ref(),
+        normal
+    );
+    let resolved = private
+        .resolved_runs(&run("123 😀 👨‍👩‍👧‍👦"), &Style::default())
+        .unwrap();
+    assert_eq!(
+        resolved.iter().map(|r| r.text.as_str()).collect::<String>(),
+        "123 😀 👨‍👩‍👧‍👦"
+    );
+}
+
+#[test]
 fn explicit_false_run_styles_override_inherited_emphasis() {
     let mut fonts = Fonts::new(false, &[forge_tree_doc::FONT_BYTES.to_vec()]).unwrap();
     let base = Style {
