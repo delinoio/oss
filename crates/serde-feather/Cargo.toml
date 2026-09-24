@@ -2,7 +2,7 @@
 name = "serde-feather"
 version = "0.1.0"
 edition = "2021"
-license = "MIT"
+license = "Apache-2.0"
 description = "Size-first serde integration scaffold with optional derive support"
 publish = false
 

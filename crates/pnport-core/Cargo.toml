@@ -2,7 +2,7 @@
 name = "pnport-core"
 version = "0.0.0"
 edition = "2021"
-license = "MIT"
+license = "Apache-2.0"
 authors = ["Delino"]
 description = "Private pnport graph, cache, and virtual filesystem core"
 repository = "https://github.com/delinoio/oss"

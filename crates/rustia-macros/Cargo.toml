@@ -2,7 +2,7 @@
 name = "rustia-macros"
 version = "0.1.2"
 edition = "2024"
-license = "MIT"
+license = "Apache-2.0"
 description = "Derive macros for rustia validation and LLM data contracts"
 homepage = "https://github.com/delinoio/oss/tree/main/crates/rustia-macros"
 repository = "https://github.com/delinoio/oss"

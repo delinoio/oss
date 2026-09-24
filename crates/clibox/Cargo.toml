@@ -2,7 +2,7 @@
 name = "clibox"
 version = "0.2.0"
 edition = "2021"
-license = "MIT"
+license = "Apache-2.0"
 authors = ["Delino"]
 description = "A native CLI distributed through native packages and npm"
 readme = "README.md"

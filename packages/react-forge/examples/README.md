@@ -12,7 +12,7 @@ pnpm --filter @delino/react-forge cli run examples/pdf.tsx --output /tmp/report.
 
 Existing destinations fail by default. Use `--overwrite` to explicitly replace an output, and `--json` for structured CLI results. System fonts affect measurements and appearance. Office applications own their final font substitution and pagination. PDF is independently authored and tagged; no PDF/UA conformance is claimed. Spreadsheet cached results are supplied by this example, not computed by React Forge.
 
-`sample.png` is the generated non-photographic fixture from `crates/forge-pptx/tests/fixtures/generate.py` (repository MIT license). It is included locally so examples work without downloads.
+`sample.png` is the generated non-photographic fixture from `crates/forge-pptx/tests/fixtures/generate.py` (repository Apache-2.0 license). It is included locally so examples work without downloads.
 
 For a complete designed deck, run the [ROAM travel-app investor example](travel-ir-assets/README.md):
 

@@ -31,4 +31,4 @@ Published version 0.1.6 includes `env run`, `port list`, and `hash compute`. The
 - [Releases and verification](/clibox/releases)
 - [Troubleshooting](/clibox/troubleshooting)
 
-clibox is MIT licensed. Report problems through [GitHub Issues](https://github.com/delinoio/oss/issues).
+clibox is Apache-2.0 licensed. Report problems through [GitHub Issues](https://github.com/delinoio/oss/issues).

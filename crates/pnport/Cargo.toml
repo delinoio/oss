@@ -2,7 +2,7 @@
 name = "pnport"
 version = "0.0.0"
 edition = "2021"
-license = "MIT"
+license = "Apache-2.0"
 authors = ["Delino"]
 description = "A native Yarn Plug'n'Play subprocess filesystem"
 repository = "https://github.com/delinoio/oss"

@@ -1,6 +1,7 @@
 ### Instructions
 
 - Use the `@docs/` directory as the source of truth for project contracts and implementation documents.
+- License repository-owned source and future distributions under Apache-2.0. Keep imported code and bundled fonts under their original licenses with notices intact; follow `docs/repository-license-contract.md`.
 - All repository-wide rules must be defined in the appropriate AGENTS.md.
 - Every repository-owned directory named `dist` is ignored generated output and must never be tracked. Generate required `dist` content explicitly before compilation, testing, or packaging, and remove generated `dist` directories from the final worktree.
 - List files in `docs/` before starting each task, and keep `docs/` up-to-date.

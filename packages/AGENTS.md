@@ -1,6 +1,7 @@
 ### Instructions for `packages/`
 
 - Follow root `AGENTS.md` and the owning project/domain contracts.
+- Public npm packages generated here declare Apache-2.0 and include the complete license; preserve bundled third-party notices.
 - Generated packages must have a canonical source contract, reproducible generation, freshness checks, and no implicit secret or persistence policy.
 
 ### Scope in This Domain

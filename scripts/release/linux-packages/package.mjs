@@ -71,7 +71,7 @@ export function packageFiles(plan, input, output, signing) {
     nodeup: 'Node.js version manager', 'with-watch': 'Rerun commands when inputs change', derun: 'Terminal relay and MCP server', runmoor: 'Local ephemeral GitHub Actions runners', clibox: 'Cross-platform developer utilities',
   }[plan.project];
   const result = [];
-  const license = ['derun', 'runmoor'].includes(plan.project) ? 'Apache-2.0' : 'MIT';
+  const license = 'Apache-2.0';
   // Preserve upstream declarations and include the complete applicable terms.
   const copyright = path.join(output, 'copyright');
   writeFileSync(copyright, `Upstream: https://github.com/delinoio/oss\nSource: ${plan.tag} (${plan.revision})\nDeclared package license: ${license}\n\n${readFileSync(`packaging/linux/licenses/${license}.txt`, 'utf8')}\n`);

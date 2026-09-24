@@ -21,11 +21,11 @@ export function packageKeyring(signing, directory, version = 1) {
   // A version identifies one certificate forever. Fixed timestamps also make a
   // rebuild deterministic before the first complete candidate is persisted.
   writeFileSync(config, encode({ name: keyringName, arch: 'all', platform: 'linux', version: `${version}`, version_schema: 'none', release: '1',
-    section: 'misc', priority: 'optional', maintainer: 'Delino', license: 'MIT',
+    section: 'misc', priority: 'optional', maintainer: 'Delino', license: 'Apache-2.0',
     description: 'Delino APT repository public certificate', mtime: '2026-09-20T00:00:00Z',
     contents: [
       { src: certificate, dst: '/usr/share/keyrings/delino-packages.gpg', file_info: { mode: 0o644 } },
-      { src: path.resolve('packaging/linux/licenses/MIT.txt'), dst: `/usr/share/doc/${keyringName}/copyright`, file_info: { mode: 0o644 } },
+      { src: path.resolve('packaging/linux/licenses/Apache-2.0.txt'), dst: `/usr/share/doc/${keyringName}/copyright`, file_info: { mode: 0o644 } },
     ], deb: { compression: 'xz' },
   }));
   const name = `${keyringName}_${version}-1_all.deb`;

@@ -2,7 +2,7 @@
 name = "serde-feather-macros"
 version = "0.1.0"
 edition = "2021"
-license = "MIT"
+license = "Apache-2.0"
 description = "Proc-macro scaffold crate for serde-feather"
 publish = false
 

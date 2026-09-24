@@ -19,7 +19,7 @@ export function packageManifest(target, version, sourceRevision) {
     name: target?.name ?? mainName,
     version,
     description: target ? `Native clibox executable for ${target.suffix}` : metadata().description,
-    license: "MIT",
+    license: "Apache-2.0",
     repository: { type: "git", url: repository, directory: "packages/clibox" },
     gitHead: sourceRevision,
     publishConfig: { access: "public", registry },

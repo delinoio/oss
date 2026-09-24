@@ -3,6 +3,9 @@
 ## Purpose
 This document defines default technology choices and repository workflow defaults for new repository work when a more specific project or domain contract does not already choose a different approach.
 
+## License
+Repository-owned source, package metadata and future release artifacts use Apache-2.0. Preserve the original licenses and copyright notices of imported code and bundled fonts. See `docs/repository-license-contract.md`.
+
 ## Default Technology Choices
 - New persisted entities should use UUID v7 identifiers by default. Use another identifier shape only when there is a documented compatibility, storage, protocol, or product reason.
 - AI-based search should use Cloudflare AI Search by default. Use another search backend only when the project contract documents the reason and migration boundary.
