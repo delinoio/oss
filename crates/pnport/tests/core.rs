@@ -2543,11 +2543,27 @@ int main(int argc, char **argv) {
         assert!(Instant::now() < deadline, "tracee PID was not published");
         std::thread::sleep(Duration::from_millis(10));
     };
-    std::thread::sleep(Duration::from_millis(150));
+    let supervisor_stopped = loop {
+        let state = fs::read_to_string(format!("/proc/{}/status", child.id()))
+            .unwrap_or_default()
+            .lines()
+            .any(|line| line.starts_with("State:\tT"));
+        if state || child.try_wait().unwrap().is_some() || Instant::now() >= deadline {
+            break state;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    if !supervisor_stopped {
+        unsafe { libc::kill(tracee, libc::SIGKILL) };
+        child.kill().unwrap();
+        child.wait().unwrap();
+        panic!("pnport did not expose the child's job-control stop");
+    }
     assert!(
         child.try_wait().unwrap().is_none(),
         "SIGSTOP was suppressed"
     );
+    assert_eq!(unsafe { libc::kill(child.id() as i32, libc::SIGCONT) }, 0);
     assert_eq!(unsafe { libc::kill(tracee, libc::SIGCONT) }, 0);
     while child.try_wait().unwrap().is_none() && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(10));

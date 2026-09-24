@@ -2725,6 +2725,26 @@ impl Trace<'_> {
                 if unsafe { libc::ptrace(libc::PTRACE_LISTEN, pid, 0, 0) } != 0 {
                     return Err(injection_failed());
                 }
+                // The shell waits for pnport as the job leader. A tracee can
+                // stop itself without stopping that leader, leaving `fg`
+                // unable to resume the job. Mirror only foreground-group
+                // stops; an independently grouped descendant must not stop
+                // its supervisor.
+                if matches!(
+                    signal,
+                    libc::SIGSTOP | libc::SIGTSTP | libc::SIGTTIN | libc::SIGTTOU
+                ) && unsafe { libc::getpgid(Self::group(pid)) == libc::getpgrp() }
+                {
+                    tracing::debug!(
+                        action = "linux_job_stop",
+                        pid,
+                        signal,
+                        "Stopping supervisor with the foreground tracee"
+                    );
+                    if unsafe { libc::raise(libc::SIGSTOP) } != 0 {
+                        return Err(injection_failed());
+                    }
+                }
             }
             return Ok(true);
         }

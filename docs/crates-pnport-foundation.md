@@ -52,6 +52,8 @@ Inherit cwd, environment and stdio. Never capture child output; stdout remains s
 
 The private Linux launch and capability-probe helper arguments require an inherited Unix socket from the same-image pnport parent. The helper checks the socket's kernel peer credentials against its parent before entering its attachment stop, then closes the socket and removes its internal environment variable. Direct use of either argument fails as an invalid CLI command instead of parking an unowned process.
 
+When a traced Linux child in pnport's foreground process group requests a job-control stop, the supervisor parks that tracee and stops itself so the shell observes the job as stopped. A foreground `SIGCONT` resumes the supervisor and child; an independently grouped descendant's stop does not park the supervisor.
+
 Graph-data or active archive changes/deletion require restart and tree termination. Source edits use native watch behavior. Cancellation and runtime failures request graceful termination, wait five seconds, then terminate/reap remaining descendants. Detached descendants cannot survive the supervisor. No normal timeout or automatic retry. Injection is tree-scoped, with explicit capability errors; no protected-executable replacement or privilege escalation.
 
 The current macOS polling guard hashes each newly observed input once, then compares file size, device/inode, mtime and ctime before deciding to hash again. It checks metadata both before and after hashing and requires restart on unstable reads, disappearance or a changed digest. Restoring mtime after a same-size write does not bypass ctime validation. Unchanged polling never rereads whole ZIP archives or PnP data; parsed active-archive registrations remain retained for the full run.
