@@ -252,3 +252,74 @@ fn unmodeled_validation_attributes_are_opaque_and_preserved() {
         );
     }
 }
+
+#[test]
+fn unmodeled_conditional_attributes_are_opaque_and_preserved() {
+    for (element, attribute) in [
+        ("cfRule", "stopIfTrue=\"1\""),
+        ("cfvo", "gte=\"0\""),
+        ("dataBar", "minLength=\"5\""),
+        ("dataBar", "maxLength=\"90\""),
+        ("iconSet", "percent=\"0\""),
+        ("color", "tint=\"0.2\""),
+        ("formula", "futureOption=\"1\""),
+    ] {
+        let mut parts = read(EXTERNAL).unwrap();
+        let path = "xl/worksheets/sheet1.xml";
+        let sheet = String::from_utf8(parts[path].clone()).unwrap();
+        let doc = xml(sheet.as_bytes()).unwrap();
+        let node = doc
+            .descendants()
+            .find(|n| {
+                n.has_tag_name((S, element)) && n.ancestors().any(|p| p.has_tag_name((S, "cfRule")))
+            })
+            .unwrap();
+        let rule_start = node
+            .ancestors()
+            .find(|n| n.has_tag_name((S, "cfRule")))
+            .unwrap()
+            .range()
+            .start;
+        let insertion = node.range().start + 1 + element.len();
+        let mut modified = sheet.clone();
+        modified.insert_str(insertion, &format!(" {attribute}"));
+        parts.insert(path.into(), modified.into_bytes());
+        let imported = import(&forge_package::write(&parts).unwrap()).unwrap();
+        let target = imported
+            .targets
+            .iter()
+            .find(|t| t.region.part == path && t.region.range.start == rule_start)
+            .unwrap();
+        assert_eq!(target.kind, TargetKind::Opaque, "{element}/{attribute}");
+        let replacement = ConditionalFormat {
+            id: Uuid::now_v7(),
+            range: target.range.unwrap(),
+            rule: serde_json::from_value(json!({
+                "type": "formula", "formula": "B2<20",
+                "format": {"style": {"bold": true}}
+            }))
+            .unwrap(),
+        };
+        assert_eq!(
+            replace(
+                &imported,
+                &[(target.id, EditValue::ConditionalFormat(replacement))]
+            )
+            .unwrap_err()
+            .code,
+            forge_tree_doc::ErrorCode::UnsupportedEdit
+        );
+        assert_eq!(
+            read(&replace(&imported, &[]).unwrap()).unwrap()[path],
+            parts[path]
+        );
+        assert_eq!(
+            imported
+                .targets
+                .iter()
+                .filter(|t| t.kind == TargetKind::ConditionalFormat)
+                .count(),
+            4
+        );
+    }
+}

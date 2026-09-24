@@ -111,6 +111,19 @@ fn supported_validation(node: roxmltree::Node<'_, '_>) -> bool {
         })
 }
 
+fn supported_conditional(node: roxmltree::Node<'_, '_>) -> bool {
+    node.descendants().filter(|n| n.is_element()).all(|n| {
+        n.attributes().all(|a| match n.tag_name().name() {
+            "cfRule" => matches!(a.name(), "type" | "priority" | "dxfId" | "operator"),
+            "cfvo" => matches!(a.name(), "type" | "val"),
+            "color" => a.name() == "rgb",
+            "dataBar" => a.name() == "showValue",
+            "iconSet" => matches!(a.name(), "iconSet" | "reverse" | "showValue"),
+            _ => false,
+        })
+    })
+}
+
 pub fn import(bytes: &[u8]) -> Result<Imported> {
     let parts = read(bytes)?;
     let main = validate_office(&parts, OfficeKind::Workbook)?;
@@ -390,10 +403,11 @@ pub fn import(bytes: &[u8]) -> Result<Imported> {
             let supported = reference.is_some()
                 && standard_rule(node)
                 && if is_cf {
-                    matches!(
-                        node.attribute("type"),
-                        Some("cellIs" | "expression" | "colorScale" | "dataBar" | "iconSet")
-                    )
+                    supported_conditional(node)
+                        && matches!(
+                            node.attribute("type"),
+                            Some("cellIs" | "expression" | "colorScale" | "dataBar" | "iconSet")
+                        )
                 } else {
                     supported_validation(node)
                         && matches!(

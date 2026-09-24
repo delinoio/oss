@@ -233,3 +233,5 @@
 - React Forge resource tests must cover accepted boundaries as well as over-limit rejection. Preserve iterative XML preflight and bounded-stack handling for valid deep XML until the upstream recursive parser has a proven safe stack bound.
 
 - Word drawing replacement owns only supported inline content; foreign paragraph/run attributes and surrounding bookmark/field/revision markers must stay opaque. Validate extension namespaces before exposing a chart as editable.
+
+- Spreadsheet rule editability requires modeled attributes on every rule and nested threshold/color element; unsupported precedence or rendering properties remain opaque even without extension namespaces.
