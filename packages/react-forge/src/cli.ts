@@ -31,6 +31,7 @@ export async function main(args: string[]): Promise<number> {
   let session: DocumentSession | undefined;
   process.on("SIGINT", interrupt);
   process.on("SIGTERM", terminate);
+  if (process.platform === "win32") process.on("SIGBREAK", interrupt);
   try {
     if (args.length === 1 && ["--help", "-h"].includes(args[0]!)) { await write(process.stdout, help); return 0; }
     if (args.length === 1 && args[0] === "--version") { await write(process.stdout, "0.0.0\n"); return 0; }
@@ -82,5 +83,6 @@ export async function main(args: string[]): Promise<number> {
     await session?.dispose();
     process.off("SIGINT", interrupt);
     process.off("SIGTERM", terminate);
+    if (process.platform === "win32") process.off("SIGBREAK", interrupt);
   }
 }

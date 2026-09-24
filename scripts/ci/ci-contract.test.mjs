@@ -425,7 +425,17 @@ test("Forge retains three-platform interoperability and mandatory Linux renderin
 
 test("React Forge validates its supported runtime with uncached native and rendering work", () => {
   const job = workflow.jobs["react-forge"];
-  assert.equal(job["runs-on"], "macos-15");
+  assert.equal(job["runs-on"], "${{ matrix.runner }}");
+  assert.equal(job.strategy["fail-fast"], false);
+  const platforms = JSON.parse(readFileSync(`${root}/packages/react-forge/src/native-platforms.json`, "utf8"));
+  assert.deepEqual(job.strategy.matrix.include.map(({ id }) => id), platforms.map(({ id }) => id));
+  for (const host of job.strategy.matrix.include) {
+    const declared = platforms.find(({ id }) => id === host.id);
+    assert.equal(host.platform, declared.platform);
+    assert.equal(host.architecture, declared.architecture);
+  }
+  assert.match(namedStep(job, "Verify Windows console cancellation").run, /windows_console/u);
+  assert.match(namedStep(job, "Verify supported host and native contracts").run, /--include-ignored/u);
   const commands = job.steps.map(({ run }) => run ?? "").join("\n");
   for (const command of ["forge-package", "forge-document", "forge-docx", "forge-xlsx", "forge-pdf", "react-forge-node", "turbo run build typecheck lint test --filter=@delino/react-forge", "test:render", "benchmark", "render-requirements.txt"]) assert.ok(commands.includes(command), command);
   assert.equal(namedStep(job, "Remove generated package output").if, "always()");

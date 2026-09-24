@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
@@ -10,14 +11,14 @@ const exec = promisify(execFile);
 
 test("workspace CLI runs TSX tasks and reports JSON, help, version and safe errors", async () => {
   const directory = await mkdtemp(join(tmpdir(), "react-forge-cli-"));
-  const cli = new URL("../bin/react-forge.mjs", import.meta.url).pathname;
-  const task = new URL("../examples/presentation.tsx", import.meta.url).pathname;
+  const cli = fileURLToPath(new URL("../bin/react-forge.mjs", import.meta.url));
+  const task = fileURLToPath(new URL("../examples/presentation.tsx", import.meta.url));
   try {
     const { stdout } = await exec(process.execPath, [cli, "run", task, "--output", join(directory, "result.pptx"), "--data", '{"title":"CLI test"}', "--json"]);
     assert.equal(JSON.parse(stdout).ok, true);
     assert.equal((await readFile(join(directory, "result.pptx"))).subarray(0, 2).toString(), "PK");
     for (const [name, format] of [["document", "docx"], ["workbook", "xlsx"], ["pdf", "pdf"]]) {
-      const task = new URL(`../examples/${name}.tsx`, import.meta.url).pathname;
+      const task = fileURLToPath(new URL(`../examples/${name}.tsx`, import.meta.url));
       const { stdout } = await exec(process.execPath, [cli, "run", task, "--output", join(directory, `result.${format}`), "--json"]);
       assert.equal(JSON.parse(stdout).format, format);
       assert.equal(JSON.parse(stdout).published, true);
@@ -43,7 +44,7 @@ test("workspace CLI runs TSX tasks and reports JSON, help, version and safe erro
 
 test("CLI task failures stay redacted and SIGINT/SIGTERM dispose pending sessions", async () => {
   const directory = await mkdtemp(join(tmpdir(), "react-forge-signals-"));
-  const cli = new URL("../bin/react-forge.mjs", import.meta.url).pathname;
+  const cli = fileURLToPath(new URL("../bin/react-forge.mjs", import.meta.url));
   const entry = join(directory, "entry.tsx");
   const quote = JSON.stringify;
   try {
@@ -54,14 +55,16 @@ test("CLI task failures stay redacted and SIGINT/SIGTERM dispose pending session
       assert.doesNotMatch(stdout, /PRIVATE_TASK/);
       return true;
     });
-    for (const signal of ["SIGINT", "SIGTERM"] as const) {
+    // Windows console events are exercised by the isolated native-console
+    // integration. child.kill on Windows forcibly terminates without events.
+    for (const signal of (process.platform === "win32" ? [] : ["SIGINT", "SIGTERM"]) as ("SIGINT" | "SIGTERM")[]) {
       const ready = join(directory, `${signal}.ready`);
       const cleaned = join(directory, `${signal}.cleaned`);
       await writeFile(entry, `
         import React, { Suspense, use, useEffect } from ${quote(createRequire(import.meta.url).resolve("react"))};
         import { writeFileSync } from "node:fs";
-        import { createSession, Format } from ${quote(new URL("../dist/index.js", import.meta.url).pathname)};
-        import { Document, Page, Paragraph } from ${quote(new URL("../dist/pdf.js", import.meta.url).pathname)};
+        import { createSession, Format } from ${quote(new URL("../dist/index.js", import.meta.url).href)};
+        import { Document, Page, Paragraph } from ${quote(new URL("../dist/pdf.js", import.meta.url).href)};
         const pending = new Promise(() => {});
         function Pending() { use(pending); return null; }
         function App() {
@@ -95,7 +98,7 @@ test("CLI task failures stay redacted and SIGINT/SIGTERM dispose pending session
 
 test("malformed task results produce one typed diagnostic without cleanup exceptions", async () => {
   const directory = await mkdtemp(join(tmpdir(), "react-forge-malformed-task-"));
-  const cli = new URL("../bin/react-forge.mjs", import.meta.url).pathname;
+  const cli = fileURLToPath(new URL("../bin/react-forge.mjs", import.meta.url));
   const entry = join(directory, "entry.tsx");
   try {
     for (const result of ["null", "{}", "{ dispose: 1 }", "{ exportFile() {}, dispose: 'invalid' }"]) {

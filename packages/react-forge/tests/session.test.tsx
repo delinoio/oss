@@ -228,7 +228,7 @@ test("source overwrite always fails closed for unchanged, replaced and aliased p
     await writeFile(source, "Original");
     const { fingerprint } = await readSource({ path: source }, 100);
     await symlink(source, join(directory, "alias.bin"));
-    await symlink(directory, join(directory, "directory-alias"));
+    await symlink(directory, join(directory, "directory-alias"), process.platform === "win32" ? "junction" : "dir");
     for (const output of [source, join(directory, "alias.bin"), join(directory, "directory-alias", "source.bin")]) {
       await assert.rejects(publish(Buffer.from("Export"), output, { source: fingerprint, overwrite: true }), { code: ErrorCode.UnsupportedEdit });
       assert.equal((await readFile(source)).toString(), "Original");
@@ -253,7 +253,7 @@ test("file exports retain invocation order across sessions and path aliases afte
   const pending = Promise.withResolvers<string>();
   function Delayed() { return view(use(pending.promise)); }
   try {
-    await symlink(directory, join(directory, "alias"));
+    await symlink(directory, join(directory, "alias"), process.platform === "win32" ? "junction" : "dir");
     await older.render(<Suspense fallback={view("Fallback")}><Delayed /></Suspense>);
     await newer.render(view("Newer export"));
     const first = older.exportFile(path, { overwrite: true });
@@ -275,4 +275,19 @@ test("file exports retain invocation order across sessions and path aliases afte
     await assert.rejects(older.exportFile(path, { overwrite: true }));
     await newer.exportFile(path, { overwrite: true });
   } finally { pending.resolve("cleanup"); await older.dispose(); await newer.dispose(); await rm(directory, { recursive: true, force: true }); }
+});
+
+
+test("Windows publication protects case aliases of existing and removed imported sources", { skip: process.platform !== "win32" }, async () => {
+  const directory = await mkdtemp(join(tmpdir(), "react-forge-case-"));
+  const source = join(directory, "Source.pptx");
+  try {
+    await writeFile(source, "Imported bytes");
+    const { fingerprint } = await readSource({ path: source }, 100);
+    for (const removed of [false, true]) {
+      if (removed) await rm(source);
+      await assert.rejects(publish(Buffer.from("Replacement"), join(directory, "SOURCE.PPTX"), { overwrite: true, source: fingerprint }), { code: ErrorCode.UnsupportedEdit });
+      if (!removed) assert.equal(await readFile(source, "utf8"), "Imported bytes");
+    }
+  } finally { await rm(directory, { recursive: true, force: true }); }
 });

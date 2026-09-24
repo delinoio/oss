@@ -4,7 +4,7 @@
 `packages/react-forge` owns the private `@delino/react-forge` library and one-shot TSX CLI. The [complete requirements](packages-react-forge-requirements.md) are normative; this contract records implementation boundaries, not a reduced delivery scope.
 
 ## Runtime and Language
-Node.js 24 on macOS arm64, TypeScript, React 19.2.8 and react-reconciler 0.33.0. TSX executes trusted caller code with ordinary caller permissions. The reconciler must implement real React commits, refs, effects, Suspense, transitions and Activity; invoking components manually is forbidden.
+Node.js 24 on macOS, Windows and glibc Linux, each with x64 and arm64, TypeScript, React 19.2.8 and react-reconciler 0.33.0. TSX executes trusted caller code with ordinary caller permissions. The reconciler must implement real React commits, refs, effects, Suspense, transitions and Activity; invoking components manually is forbidden.
 
 ## Users and Operators
 Repository developers authoring reusable document tasks. There is no public package, hosted service, GUI or MCP interface.
@@ -55,10 +55,20 @@ Pinned exports snapshot font registrations along with model/assets, and font cha
 
 
 ## Validation and CI
-The `react-forge` CI job is selected on affected PRs and main pushes. It runs Node 24 on the macOS arm64 `macos-15` runner, builds the private binding, runs native and existing Forge regressions plus Clippy, and invokes package-owned build/typecheck/lint/test tasks through Turbo. Native/system-font-dependent build, test, rendering and benchmark tasks are never Turbo-cacheable. The job has no release or publication credentials or action.
+The `react-forge` CI job is selected on affected PRs and main pushes. Its six native runners cover macOS x64/arm64, Windows x64/arm64 and glibc Linux x64/arm64 with Node 24; each builds the private binding, runs native and existing Forge regressions plus Clippy, and invokes package-owned build/typecheck/lint/test tasks through Turbo. Native/system-font-dependent build, test, rendering and benchmark tasks are never Turbo-cacheable. The job has no release or publication credentials or action.
 
 Test-only LibreOffice/Poppler and pinned Python inspection dependencies produce created/edited Office renders plus independent native PDF renders. Original external Office fixtures are rendered alongside edits so original pagination, including deliberate blank pages, is distinguished from lost output. Structural XML, expected text, visible chart series, CJK text and PDF semantics are checked. Tool/font versions and checksums are recorded without redistributing system fonts. CI retains render and benchmark artifacts for seven days and removes generated package dist even on failure.
 
 `benchmark` runs representative authoring for all formats, preserving edits for three Office formats, and near-limit trees/slides in fresh Node processes. Reports include preparation/export duration, output size, peak RSS, event-loop p99/max delay and utilization, OS/CPU and dependency versions. They are observations without numerical guarantees. See [validation evidence](packages-react-forge-validation.md) for reproduction and limitations.
 
-The private workspace manifest omits `os`/`cpu` installation filters so unrelated cross-platform pnpm tools retain byte-clean stdout (including protoc plugins and clibox). Native build and loading independently enforce Node.js 24/macOS arm64; this does not expand runtime support.
+The private workspace manifest omits `os`/`cpu` installation filters so unrelated cross-platform pnpm tools retain byte-clean stdout (including protoc plugins and clibox). Native build and loading independently enforce Node.js 24 and the six declared platform/architecture targets.
+
+
+## Platform Extension
+The 2026-09-24 PR #970 follow-up supersedes issue #968's original macOS-arm64-only boundary. `src/native-platforms.json` is the shared build/runtime inventory of six Node-platform/architecture/Rust-target tuples. Native builds explicitly select the matching Rust target and emit `react-forge.<id>.node`; loading selects only that host artifact, never another architecture or an external binary. Packed test consumers contain the locally built artifact and must be rebuilt on another host. Host-neutral workspace metadata prevents pnpm warnings from corrupting unrelated protocol stdout. Unsupported architectures, Node majors and musl return `unsupported_package` before binding load.
+
+`capabilities.runtime.hosts` lists all supported platform/architecture IDs. Linux uses Fontconfig and installed fonts; CI installs Noto CJK/core/color emoji. Windows uses DirectWrite/system fonts and registers the repository's OFL CJK fixture on disposable runners; callers can also use `registerFont`. Missing fonts remain typed recoverable failures, never downloaded implicitly.
+
+File paths use native URL conversion, including Windows drive letters and escaped characters. Canonical directory identities serialize publications; Windows source comparisons also reject case aliases. Files are flushed before atomic publication on every host. Unix additionally synchronizes the parent directory; Windows does not claim directory crash durability because Node cannot fsync directories there. Windows Ctrl+C and Ctrl+Break cancel and dispose with status 130, validated in an isolated real console. Unix SIGINT/SIGTERM retain status 130/143. Forceful termination cannot guarantee cleanup on any host.
+
+All six runners execute native/React tests, installed archive/CLI consumers, system-font PDF/CJK/RTL/emoji tests and benchmarks. macOS and Linux additionally run LibreOffice/Poppler structural, extraction and raster checks; Windows runs the same native exports/imports and a real console test without depending on external Office converters. No Microsoft Office validation is claimed.

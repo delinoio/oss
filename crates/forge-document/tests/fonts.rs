@@ -30,7 +30,10 @@ fn explicit_font_and_missing_fallback_are_checked() {
     assert_eq!(error.code, ErrorCode::FontUnavailable);
 }
 #[test]
-#[cfg(target_os = "macos")]
+#[cfg_attr(
+    not(target_os = "macos"),
+    ignore = "Requires installed system CJK/RTL/color emoji fonts; enabled in React Forge CI"
+)]
 fn system_fallback_shapes_mixed_scripts_and_color_emoji() {
     let mut fonts = Fonts::new(true, &[]).unwrap();
     for text in ["Latin 한국어 日本語 中文", "Hello مرحبا שלום 123", "😀 👨‍👩‍👧‍👦"]
@@ -43,7 +46,10 @@ fn system_fallback_shapes_mixed_scripts_and_color_emoji() {
 }
 
 #[test]
-#[cfg(target_os = "macos")]
+#[cfg_attr(
+    not(target_os = "macos"),
+    ignore = "Requires installed system CJK/RTL/color emoji fonts; enabled in React Forge CI"
+)]
 fn office_fallback_runs_preserve_logical_text_and_styles() {
     let mut fonts = Fonts::new(true, &[]).unwrap();
     let input = "Latin 한국어 日本語 中文 مرحبا שלום 😀\nnext line";
@@ -67,10 +73,13 @@ fn office_fallback_runs_preserve_logical_text_and_styles() {
             .iter()
             .any(|r| r.text.contains('한') && r.style.font_family.as_deref() != Some("Helvetica"))
     );
-    assert!(
-        resolved.iter().any(|r| r.text.contains('😀')
-            && r.style.font_family.as_deref() == Some("Apple Color Emoji"))
-    );
+    assert!(resolved.iter().any(|r| {
+        r.text.contains('😀')
+            && r.style
+                .font_family
+                .as_deref()
+                .is_some_and(|name| name.contains("Emoji"))
+    }));
 }
 
 #[test]

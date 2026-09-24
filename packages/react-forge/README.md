@@ -2,17 +2,19 @@
 
 The private `@delino/react-forge` package authors PPTX, DOCX, XLSX, and independent tagged PDF through persistent React sessions. It imports existing Office packages, exposes supported editable regions, and preserves unrelated XML and package parts when mounting React content into those regions. Its executable is named `react-forge`.
 
-Use Node.js 24 on macOS arm64 and the repository-pinned Rust toolchain. React 19.2.8 and react-reconciler 0.33.0 are pinned together. Build the native binding explicitly:
+Use Node.js 24 on macOS, Windows or glibc Linux (x64 or arm64) and the repository-pinned Rust toolchain. React 19.2.8 and react-reconciler 0.33.0 are pinned together. Build the native binding explicitly:
 
 ```sh
 pnpm install
 pnpm --filter @delino/react-forge build
-pnpm --filter @delino/react-forge cli run examples/presentation.tsx --output /tmp/report.pptx
-pnpm --filter @delino/react-forge cli run examples/document.tsx --output /tmp/report.docx
-pnpm --filter @delino/react-forge cli run examples/workbook.tsx --output /tmp/report.xlsx
-pnpm --filter @delino/react-forge cli run examples/pdf.tsx --output /tmp/report.pdf
+pnpm --filter @delino/react-forge cli run examples/presentation.tsx --output report.pptx
+pnpm --filter @delino/react-forge cli run examples/document.tsx --output report.docx
+pnpm --filter @delino/react-forge cli run examples/workbook.tsx --output report.xlsx
+pnpm --filter @delino/react-forge cli run examples/pdf.tsx --output report.pdf
 pnpm exec turbo run build typecheck lint test --filter=@delino/react-forge
 ```
+
+The supported native hosts are macOS x64/arm64, Windows x64/arm64 (MSVC), and glibc Linux x64/arm64. Install the matching Rust toolchain and platform build tools (Xcode command-line tools, MSVC C++ Build Tools, or a Linux C toolchain). Linux also needs Fontconfig; install appropriate CJK/RTL/color-emoji fonts, or register caller fonts. Alpine/musl and other architectures are unsupported. Each build creates an artifact for the current host; rebuild when moving a workspace or private archive to another host. `capabilities.runtime.hosts` enumerates the supported IDs.
 
 The package remains private and workspace-only. Generation has no Office, LibreOffice, Python, external conversion or runtime download dependency. Generated `dist` is untracked and removed from final worktrees. The tests also pack the built package into a temporary consumer to exercise its installed CLI.
 
@@ -72,7 +74,7 @@ System font discovery/fallback is the default. Use `createSession(format, { syst
 
 Spreadsheet formula caches are optional caller-supplied numbers, strings or Booleans. Missing caches remain absent and the workbook requests recalculation. There is no formula engine. Native charts retain editable associated workbook data. PDF retains headings, paragraphs, lists, table headers/cells, links, alternative text, language and logical reading order. Repeated table headers are visual artifacts with one logical header. Oversized indivisible content produces `layout_overflow`. No PDF/UA conformance is claimed.
 
-Pass `AbortSignal` to import, asset, measurement or export options. Unresolved work has no automatic timeout; dispose cancels and joins owned work. SIGINT/SIGTERM cancel CLI work, clean up the session and exit 130/143. Failed tasks do not publish output. File export rejects existing destinations by default. File exports in the same directory run in call order across sessions, including directory aliases; a queued export can be cancelled. Buffer exports and exports to different directories remain independent. Explicit overwrite uses same-filesystem temporary output, flushing, atomic publication and parent-directory synchronization. Imported source files and their canonical path aliases cannot be overwritten, even with `overwrite: true`; export to a separate path. A fingerprint check followed by a rename cannot protect another application's concurrent save. Cancellation before publication preserves the existing file. A durability failure after publication reports `published: true`. Disposal never deletes exported files. Correct input and retry; rollback uses a repository revision and rebuild without rewriting old exports.
+Pass `AbortSignal` to import, asset, measurement or export options. Unresolved work has no automatic timeout; dispose cancels and joins owned work. On Unix, SIGINT/SIGTERM cancel CLI work, clean up the session and exit 130/143. On Windows, console Ctrl+C/Ctrl+Break clean up and exit 130; programmatic termination (including Node child.kill) is forceful and cannot promise cleanup. Failed tasks do not publish output. File export rejects existing destinations by default. File exports in the same directory run in call order across sessions, including directory aliases; a queued export can be cancelled. Buffer exports and exports to different directories remain independent. Explicit overwrite uses same-filesystem temporary output, flushing, atomic publication and Unix parent-directory synchronization. Windows flushes file bytes before publication; Node does not expose directory fsync there, so crash durability of the directory entry is not guaranteed. Imported source files and their canonical path aliases cannot be overwritten, even with `overwrite: true`; export to a separate path. A fingerprint check followed by a rename cannot protect another application's concurrent save. Cancellation before publication preserves the existing file. A durability failure after publication reports `published: true`. Disposal never deletes exported files. Correct input and retry; rollback uses a repository revision and rebuild without rewriting old exports.
 
 `ForgeError.code` distinguishes malformed input, unsupported packages/edits, invalid targets, conflicts, resource limits, missing fonts, overflow, cancellation, disposed sessions, I/O and React-render failures. Safe context includes applicable stage, format, revision and bounded model location. Diagnostic subscriptions include operation/stage, revision, duration and classification. Native tracing is operation-scoped without a global subscriber; callback exceptions cannot change outcomes. Events exclude document text, XML, bytes, credentials and host paths.
 

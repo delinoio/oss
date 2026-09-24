@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import test from "node:test";
 import React from "react";
@@ -23,7 +24,7 @@ test("all formats validate system CJK/RTL/color emoji and caller-only missing-fo
     try {
       await system.render(view(format, "English 한국어 日本語 中文 مرحبا שלום 😀"));
       assert.ok((await system.exportBuffer()).length > 0, format);
-      await supplied.registerFont({ path: new URL("../../../crates/forge-tree-doc/assets/fonts/noto-sans-kr/NotoSansKR-VF.ttf", import.meta.url).pathname });
+      await supplied.registerFont({ path: fileURLToPath(new URL("../../../crates/forge-tree-doc/assets/fonts/noto-sans-kr/NotoSansKR-VF.ttf", import.meta.url)) });
       await supplied.render(view(format, "English 한국어 日本語 中文"));
       assert.ok((await supplied.exportBuffer()).length > 0, format);
       for (const text of ["\u{10ffff}", "😀"]) {
@@ -46,14 +47,14 @@ test("registered fallback fonts participate in revision identity", async () => {
     await session.render(view(Format.Docx, "Stable text"));
     await session.exportBuffer();
     const previous = session.revision;
-    await session.registerFont({ path: new URL("../../../crates/forge-tree-doc/assets/fonts/noto-sans-kr/NotoSansKR-VF.ttf", import.meta.url).pathname });
+    await session.registerFont({ path: fileURLToPath(new URL("../../../crates/forge-tree-doc/assets/fonts/noto-sans-kr/NotoSansKR-VF.ttf", import.meta.url)) });
     await session.exportBuffer();
     assert.equal(session.revision, previous + 1);
   } finally { await session.dispose(); }
 });
 
 test("PPTX inspection defers shaping until caller fonts can be registered", async () => {
-  const font = { path: new URL("../../../crates/forge-tree-doc/assets/fonts/noto-sans-kr/NotoSansKR-VF.ttf", import.meta.url).pathname };
+  const font = { path: fileURLToPath(new URL("../../../crates/forge-tree-doc/assets/fonts/noto-sans-kr/NotoSansKR-VF.ttf", import.meta.url)) };
   const original = createSession(Format.Pptx, { systemFonts: false });
   let imported;
   try {

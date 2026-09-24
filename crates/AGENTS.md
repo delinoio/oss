@@ -237,3 +237,5 @@
 - Spreadsheet rule editability requires modeled attributes on every rule and nested threshold/color element; unsupported precedence or rendering properties remain opaque even without extension namespaces.
 
 - DOCX text backgrounds use native run shading; paragraph defaults must be materialized on text runs with explicit run overrides retained.
+
+- React Forge must retain six native macOS/Windows/glibc Linux x64/arm64 targets. Enable all system-font tests in its prepared host matrix and validate Windows cancellation in an isolated real console, never by treating Node process.kill as a console event.

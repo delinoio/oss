@@ -20,7 +20,9 @@ const escape = value => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").r
 // Headless LibreOffice's fontconfig backend does not necessarily discover
 // macOS system fonts. Declare them explicitly only for this test-owned profile.
 await writeFile(fontconfig, `<?xml version="1.0"?><!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd"><fontconfig><dir>/System/Library/Fonts</dir><dir>/Library/Fonts</dir><cachedir>${escape(cache)}</cachedir></fontconfig>`);
-const env = { ...process.env, FONTCONFIG_FILE: fontconfig };
+// Linux uses its fontconfig installation, including the distro's CJK/emoji
+// packages. Overriding it with macOS-only paths would erase that font inventory.
+const env = process.platform === "darwin" ? { ...process.env, FONTCONFIG_FILE: fontconfig } : { ...process.env };
 const version = async (command, args) => { const result = await exec(command, args, { env }); return (result.stdout + result.stderr).trim().split("\n")[0]; };
 const versions = { node: process.version, libreOffice: await version(office, ["--headless", "--version"]), poppler: await version(poppler, ["-v"]), python: await version(python, ["--version"]) };
 const prepareDirectory = async (directory, pdf) => {

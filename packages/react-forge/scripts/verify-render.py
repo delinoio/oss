@@ -108,7 +108,10 @@ for case in manifest["cases"]:
 # Read font metadata and checksums without copying or redistributing system
 # fonts. OFL test font provenance is committed in forge-tree-doc/assets/fonts.
 fonts = []
-for path in [Path('/System/Library/Fonts/Helvetica.ttc'), Path('/System/Library/Fonts/AppleSDGothicNeo.ttc'), Path('/System/Library/Fonts/Apple Color Emoji.ttc'), Path('/System/Library/Fonts/GeezaPro.ttc')]:
+font_paths = [Path('/System/Library/Fonts/Helvetica.ttc'), Path('/System/Library/Fonts/AppleSDGothicNeo.ttc'), Path('/System/Library/Fonts/Apple Color Emoji.ttc'), Path('/System/Library/Fonts/GeezaPro.ttc')]
+if platform.system() == 'Linux':
+    font_paths = sorted(p for p in Path('/usr/share/fonts').rglob('*') if p.suffix.lower() in {'.ttf', '.ttc', '.otf'})
+for path in font_paths:
     if not path.is_file():
         continue
     data = path.read_bytes()
@@ -130,8 +133,8 @@ for path in [Path('/System/Library/Fonts/Helvetica.ttc'), Path('/System/Library/
                     pass
                 if version:
                     break
-    fonts.append({"file": path.name, "version": version, "sha256": hashlib.sha256(data).hexdigest(), "provenance": "macOS-installed; not redistributed"})
+    fonts.append({"file": path.name, "version": version, "sha256": hashlib.sha256(data).hexdigest(), "provenance": f"{platform.system()}-installed; not redistributed"})
 manifest["fonts"] = fonts
-manifest["os"] = {"system": platform.system(), "version": platform.mac_ver()[0], "architecture": platform.machine()}
+manifest["os"] = {"system": platform.system(), "version": platform.platform(), "architecture": platform.machine()}
 (root / 'evidence.json').write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + '\n')
 print(f"Verified {len(manifest['cases'])} generated/edited cases; XML, extraction, semantic tags and raster checks against original pagination passed.")

@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import test from "node:test";
 import React, { createRef } from "react";
@@ -29,7 +30,7 @@ test("React PDF has independent authoring, pagination and revision geometry", as
 test("caller font bytes work and missing glyphs fail with a typed error", async () => {
   const session = createSession(Format.Pdf, { systemFonts: false });
   try {
-    await session.registerFont({ path: new URL("../../../crates/forge-tree-doc/assets/fonts/noto-sans-kr/NotoSansKR-VF.ttf", import.meta.url).pathname });
+    await session.registerFont({ path: fileURLToPath(new URL("../../../crates/forge-tree-doc/assets/fonts/noto-sans-kr/NotoSansKR-VF.ttf", import.meta.url)) });
     await session.render(<Document language="ko"><Page><Paragraph>한국어</Paragraph></Page></Document>);
     assert.ok((await session.exportBuffer()).length);
     await session.render(<Document language="en"><Page><Paragraph>{"\u{10ffff}"}</Paragraph></Page></Document>);

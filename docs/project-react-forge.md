@@ -1,7 +1,7 @@
 # React Forge
 
 ## Goal
-Provide private React document sessions and a TSX task CLI for authoring and preservation-aware editing of PPTX, DOCX, XLSX, and independent tagged PDF. Issue [#968](https://github.com/delinoio/oss/issues/968) defines the complete delivery boundary. Partial format support does not satisfy that issue.
+Provide private React document sessions and a TSX task CLI for authoring and preservation-aware editing of PPTX, DOCX, XLSX, and independent tagged PDF. Issue [#968](https://github.com/delinoio/oss/issues/968) defines the original delivery boundary; the explicit 2026-09-24 follow-up on PR #970 adds macOS x64 and Windows/Linux x64/arm64 support. Partial format support does not satisfy that issue.
 
 ## Project ID
 `react-forge` (`ProjectId::ReactForge`). Product name: **React Forge**. The private npm package is `@delino/react-forge`; its CLI executable is `react-forge`.
@@ -25,7 +25,7 @@ Provide private React document sessions and a TSX task CLI for authoring and pre
 - [Existing Forge foundation](crates-forge-foundation.md).
 
 ## Cross-Domain Invariants
-- Support Node.js 24, React 19.2.8 with react-reconciler 0.33.0, and macOS arm64. Use the repository-pinned Rust toolchain. All packages remain private and unpublished.
+- Support Node.js 24, React 19.2.8 with react-reconciler 0.33.0, and macOS/Windows/glibc Linux on x64 and arm64. Use the repository-pinned Rust toolchain. All packages remain private and unpublished.
 - TypeScript executes React; Rust processes validated serializable format-specific models. Rust is a project-specific exception to the default Go language; local files and explicit exports are an exception to default R2 storage.
 - Sessions live only in memory. Explicit export is the persistence boundary. No automatic recovery, revision archive, service, telemetry, URL fetching, runtime downloads or external conversion dependencies.
 - Persistent document/node identities are UUID v7. React keys and useId values do not become persistent identities.

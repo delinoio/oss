@@ -1,4 +1,5 @@
 import { createRequire } from "node:module";
+import platforms from "./native-platforms.json" with { type: "json" };
 import { ForgeError } from "./errors.js";
 import { ErrorCode, Format, Stage, type Diagnostic } from "./types.js";
 
@@ -12,11 +13,13 @@ interface Binding {
 let binding: Binding | undefined;
 function load(): Binding {
   if (!binding) {
-    if (process.platform !== "darwin" || process.arch !== "arm64" || process.versions.node.split(".")[0] !== "24") {
-      throw new ForgeError(ErrorCode.UnsupportedPackage, "React Forge requires Node.js 24 on macOS arm64.");
+    const host = platforms.find(host => host.platform === process.platform && host.architecture === process.arch);
+    const glibc = process.platform !== "linux" || !!(process.report.getReport() as { header: { glibcVersionRuntime?: string } }).header.glibcVersionRuntime;
+    if (!host || !glibc || process.versions.node.split(".")[0] !== "24") {
+      throw new ForgeError(ErrorCode.UnsupportedPackage, "React Forge requires Node.js 24 on macOS, Windows or glibc Linux, using x64 or arm64.");
     }
-    try { binding = createRequire(import.meta.url)("../dist/react-forge.node") as Binding; }
-    catch { throw new ForgeError(ErrorCode.Io, "Native binding unavailable. Run pnpm --filter @delino/react-forge build."); }
+    try { binding = createRequire(import.meta.url)(`../dist/react-forge.${host.id}.node`) as Binding; }
+    catch { throw new ForgeError(ErrorCode.Io, "Native binding unavailable for this host. Rebuild here with pnpm --filter @delino/react-forge build."); }
   }
   return binding;
 }

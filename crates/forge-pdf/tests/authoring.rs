@@ -202,7 +202,10 @@ fn oversized_indivisible_objects_and_lines_fail_before_publication() {
     );
 }
 #[test]
-#[cfg(target_os = "macos")]
+#[cfg_attr(
+    not(target_os = "macos"),
+    ignore = "Requires installed system CJK/RTL/color emoji fonts; enabled in React Forge CI"
+)]
 fn native_pdf_embeds_system_cjk_rtl_and_color_emoji() {
     let doc = document(vec![
         paragraph("Latin 한국어 日本語 中文"),
@@ -301,7 +304,10 @@ fn initial_table_headers_stay_with_the_first_body_line() {
 }
 
 #[test]
-#[cfg(target_os = "macos")]
+#[cfg_attr(
+    not(target_os = "macos"),
+    ignore = "Requires installed system CJK/RTL/color emoji fonts; enabled in React Forge CI"
+)]
 fn tagged_reading_order_retains_logical_bidi_runs_and_link_annotations() {
     let doc = document(vec![
         Block::Paragraph {
@@ -383,7 +389,6 @@ fn tagged_reading_order_retains_logical_bidi_runs_and_link_annotations() {
 
 // Follow the PDF's semantic order, resolving page/MCID pairs. The content
 // stream may paint bidi runs in visual order; assistive readers follow /K.
-#[cfg(target_os = "macos")]
 fn structure_text(pdf: &lopdf::Document) -> String {
     let mut marked = std::collections::BTreeMap::new();
     for page in pdf.get_pages().values() {

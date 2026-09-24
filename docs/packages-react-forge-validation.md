@@ -13,7 +13,7 @@ Repository developers and CI maintainers reproducing document, preservation and 
 - `pnpm exec turbo run build typecheck lint test --filter=@delino/react-forge` builds and validates the real library plus workspace and packed-consumer CLI.
 - `pnpm --filter @delino/react-forge test:render --output <directory>` creates four formats, edits three external Office fixtures, renders their originals for comparison, and independently verifies package XML, extracted text, native chart visibility, CJK and PDF semantics.
 - `pnpm --filter @delino/react-forge benchmark --output <report.json>` records eleven fresh-process workload samples.
-- CI `react-forge` runs on the supported macOS arm64 runner. Its native/system-font work is uncached and its seven-day artifacts contain Office/PDF files, page PNGs, provenance and benchmark reports.
+- CI `react-forge` runs on six native platform/architecture runners. Its native/system-font work is uncached and its seven-day artifacts contain Office/PDF files, page PNGs, provenance and benchmark reports.
 
 ## Storage
 Committed `packages/react-forge/tests/evidence` JSON records contain local observation data and version/font checksums. Rendered artifacts are explicitly requested local output or short-lived CI artifacts; no system fonts are copied or redistributed. Existing external fixture bytes and their reproducible generators remain under their owning native crate tests. Generated package dist is removed from final worktrees.
@@ -113,3 +113,6 @@ Update evidence and relevant project/native/Node contracts when formats, preserv
 - [Native contract](crates-react-forge-contract.md).
 - [Repository defaults](repository-defaults.md).
 - [Workflow contract](repository-workflow-contract.md).
+
+## Cross-platform extension
+The 2026-09-24 PR #970 follow-up expands the initial macOS-arm64 observations above to six native hosts. The CI matrix runs build, native and React regressions, installed consumers, system-font tests and benchmarks on every host, plus isolated Windows console cancellation and macOS/Linux render checks. The initial macOS evidence records remain historical observations rather than proof for another operating system. Cross-platform CI results must be recorded after the matching native jobs actually execute.

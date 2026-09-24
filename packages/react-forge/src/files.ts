@@ -92,7 +92,10 @@ export async function publish(bytes: Buffer, output: string, options: {
     });
     // No portable conditional rename protects a source from another process's
     // atomic save after fingerprinting. Require a separate output path instead.
-    if (options.source && (existing === options.source.path || destination === options.source.path)) {
+    // Windows realpath does not guarantee canonical filename casing. Reject
+    // case aliases conservatively, including a source removed after import.
+    const samePath = (a: string | undefined, b: string) => process.platform === "win32" ? a?.toLowerCase() === b.toLowerCase() : a === b;
+    if (options.source && (samePath(existing, options.source.path) || samePath(destination, options.source.path))) {
       throw new ForgeError(ErrorCode.UnsupportedEdit, "Imported sources cannot be overwritten. Export to a separate output path.");
     }
     if (existing && !options.overwrite) throw new ForgeError(ErrorCode.Conflict, "Output already exists. Enable overwrite explicitly to replace it.");
@@ -105,8 +108,13 @@ export async function publish(bytes: Buffer, output: string, options: {
     if (options.overwrite) { renameSync(temporary, destination); published = true; }
     else { linkSync(temporary, destination); published = true; unlinkSync(temporary); }
     temporary = undefined;
-    const parent = openSync(directory, "r");
-    try { fsyncSync(parent); } finally { closeSync(parent); }
+    // Node cannot open/fsync directories on Windows. The temporary file was
+    // flushed before its atomic rename/link, but directory crash durability is
+    // guaranteed only on Unix where the directory synchronization is available.
+    if (process.platform !== "win32") {
+      const parent = openSync(directory, "r");
+      try { fsyncSync(parent); } finally { closeSync(parent); }
+    }
     return { published: true };
   } catch (error) {
     if (published) {

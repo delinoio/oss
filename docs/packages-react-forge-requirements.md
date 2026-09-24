@@ -8,7 +8,7 @@ Create **React Forge**, an internal Node.js library and TSX CLI for generating P
 
 Support persistent React sessions, including state updates and asynchronous rendering. Support importing existing PPTX, DOCX, and XLSX files, inspecting editable regions, and mounting React subtrees into those regions while preserving unrelated content.
 
-The initial supported environment is **Node.js 24, React 19.2.8, and macOS arm64**. Deliver all agreed capabilities before closing this issue. There is no fixed deadline, public release, or feature flag.
+The issue originally limited support to **Node.js 24, React 19.2.8, and macOS arm64**. The explicit 2026-09-24 follow-up on PR #970 expands the supported platform scope to **macOS, Windows and glibc Linux on x64 and arm64**, with the same Node and React versions. This follow-up supersedes the original platform exclusion; the other issue requirements remain in force. Deliver all agreed capabilities before closing this issue. There is no fixed deadline, public release, or feature flag.
 
 ## Evidence
 
@@ -172,7 +172,7 @@ Caller-supplied React/TSX is trusted code running with the caller’s permission
 
 ### Operations, diagnostics, and support
 
-- Support and validate Node.js 24, React 19.2.8, and macOS arm64.
+- Support and validate Node.js 24 and React 19.2.8 on macOS, Windows and glibc Linux, each with x64 and arm64.
 - Distribute through the repository workspace only. Public npm publication, prebuilt distribution, and public documentation are deferred.
 - No feature flag applies: use is explicitly selected through package imports and API/CLI calls. There are no rollout cohorts or remote kill switches.
 - No hosted service, database, queue, scheduler, billing integration, remote telemetry, or alerting infrastructure is introduced.
@@ -194,7 +194,7 @@ Caller-supplied React/TSX is trusted code running with the caller’s permission
 - Exported formulas request application recalculation without claiming a built-in calculation engine.
 - CJK, RTL, mixed-direction text, color emoji, missing-font failure behavior, and tagged PDF semantics pass representative tests.
 - Concurrency, stale revisions, external source changes, overwrite conflicts, cancellation, and file publication produce the documented behavior.
-- The supported macOS arm64 runtime completes library and installed/workspace CLI tests.
+- All six supported macOS/Windows/glibc Linux x64/arm64 runtimes complete library and installed/workspace CLI tests.
 - Automated structural, preservation, and rendering checks pass. Direct Microsoft Office application validation is a follow-up and must not be claimed as completed evidence.
 - Benchmarks, English documentation, examples, diagnostics, and repository integration are complete.
 - Existing Forge CLI/MCP behavior remains covered by regression tests.
@@ -221,7 +221,7 @@ Caller-supplied React/TSX is trusted code running with the caller’s permission
 ## Out of Scope
 
 - Public npm/crates publication, public documentation hosting, and release infrastructure.
-- Windows, Linux, other CPU architectures, other Node/React versions, and browser/WASM support.
+- musl Linux, CPU architectures other than x64/arm64, other Node/React versions, and browser/WASM support.
 - React DOM, arbitrary HTML/CSS rendering, browser interactions, RSC, and experimental React APIs.
 - Untrusted-code sandboxing and hosted multi-tenant execution.
 - Office-to-PDF conversion and PDF import/editing.
