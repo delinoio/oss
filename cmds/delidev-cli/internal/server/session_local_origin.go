@@ -59,7 +59,10 @@ func validateLocalOrigin(tx *store.Tx, session domain.Session) error {
 	}
 	r, err := tx.Get(domain.DeviceKind, origin.DeviceID)
 	if err != nil {
-		return localOriginRequired()
+		if domain.SafeError(err).Code == domain.NotFound {
+			return localOriginRequired()
+		}
+		return err
 	}
 	device, err := store.Decode[domain.Device](r)
 	if err != nil || device.Revoked || device.Type != domain.WorkerDevice || device.MachineID != origin.MachineID {

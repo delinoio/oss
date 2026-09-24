@@ -225,6 +225,18 @@ func (t *Tx) OccurrenceHistory(schedule domain.ID, after uint64, limit int) ([]R
 	return t.sessionPage(limit, "SELECT "+recordColumns+" FROM entities WHERE kind='occurrence' AND json_extract(body,'$.schedule_id')=? AND json_extract(body,'$.sequence')>? ORDER BY json_extract(body,'$.sequence') LIMIT ?", schedule, after, limit+1)
 }
 
+// Read current sessions, including runs whose occurrence history is already
+// terminal: explicitly resuming such a session makes it active again for overlap.
+func (t *Tx) ScheduledSessions(schedule, after domain.ID, limit int) ([]Record, bool, error) {
+	if err := schedule.Validate(); err != nil {
+		return nil, false, err
+	}
+	if err := (Filter{Kind: domain.SessionKind, After: after, Limit: limit}).validate(); err != nil {
+		return nil, false, err
+	}
+	return t.sessionPage(limit, "SELECT "+recordColumns+" FROM entities WHERE kind='session' AND json_extract(body,'$.schedule_origin.schedule_id')=? AND id>? ORDER BY id LIMIT ?", schedule, after, limit+1)
+}
+
 // WorkerAvailableAt proves the due instant is covered by the current observed
 // lease, not merely by a reconnect after it. Lease gaps and clock rollback reset
 // available_since; imported pre-v11 leases begin at their last observed beat.
