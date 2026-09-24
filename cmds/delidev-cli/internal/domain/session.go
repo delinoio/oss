@@ -186,6 +186,7 @@ type Session struct {
 	PendingInputBytes uint64              `json:"pending_input_bytes"`
 	Preparation       *SessionPreparation `json:"preparation,omitempty"`
 	InitialExecution  *InitialExecution   `json:"initial_execution,omitempty"`
+	Execution         *ExecutionProgress  `json:"execution,omitempty"`
 }
 
 type PreparationState string

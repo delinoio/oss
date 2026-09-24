@@ -104,6 +104,9 @@ const (
 	// WorkerServiceRegisterExecutionProcedure is the fully-qualified name of the WorkerService's
 	// RegisterExecution RPC.
 	WorkerServiceRegisterExecutionProcedure = "/delidev.v1.WorkerService/RegisterExecution"
+	// WorkerServicePublishExecutionProcedure is the fully-qualified name of the WorkerService's
+	// PublishExecution RPC.
+	WorkerServicePublishExecutionProcedure = "/delidev.v1.WorkerService/PublishExecution"
 	// AccountServiceConnectAccountProcedure is the fully-qualified name of the AccountService's
 	// ConnectAccount RPC.
 	AccountServiceConnectAccountProcedure = "/delidev.v1.AccountService/ConnectAccount"
@@ -708,6 +711,7 @@ type WorkerServiceClient interface {
 	InspectRepository(context.Context, *connect.Request[v1.InspectRepositoryRequest]) (*connect.Response[v1.InspectRepositoryResponse], error)
 	DiscoverHarnesses(context.Context, *connect.Request[v1.DiscoverHarnessesRequest]) (*connect.Response[v1.DiscoverHarnessesResponse], error)
 	RegisterExecution(context.Context, *connect.Request[v1.RegisterExecutionRequest]) (*connect.Response[v1.RegisterExecutionResponse], error)
+	PublishExecution(context.Context, *connect.Request[v1.PublishExecutionRequest]) (*connect.Response[v1.PublishExecutionResponse], error)
 }
 
 // NewWorkerServiceClient constructs a client for the delidev.v1.WorkerService service. By default,
@@ -757,6 +761,12 @@ func NewWorkerServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(workerServiceMethods.ByName("RegisterExecution")),
 			connect.WithClientOptions(opts...),
 		),
+		publishExecution: connect.NewClient[v1.PublishExecutionRequest, v1.PublishExecutionResponse](
+			httpClient,
+			baseURL+WorkerServicePublishExecutionProcedure,
+			connect.WithSchema(workerServiceMethods.ByName("PublishExecution")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -768,6 +778,7 @@ type workerServiceClient struct {
 	inspectRepository *connect.Client[v1.InspectRepositoryRequest, v1.InspectRepositoryResponse]
 	discoverHarnesses *connect.Client[v1.DiscoverHarnessesRequest, v1.DiscoverHarnessesResponse]
 	registerExecution *connect.Client[v1.RegisterExecutionRequest, v1.RegisterExecutionResponse]
+	publishExecution  *connect.Client[v1.PublishExecutionRequest, v1.PublishExecutionResponse]
 }
 
 // AttachWorker calls delidev.v1.WorkerService.AttachWorker.
@@ -800,6 +811,11 @@ func (c *workerServiceClient) RegisterExecution(ctx context.Context, req *connec
 	return c.registerExecution.CallUnary(ctx, req)
 }
 
+// PublishExecution calls delidev.v1.WorkerService.PublishExecution.
+func (c *workerServiceClient) PublishExecution(ctx context.Context, req *connect.Request[v1.PublishExecutionRequest]) (*connect.Response[v1.PublishExecutionResponse], error) {
+	return c.publishExecution.CallUnary(ctx, req)
+}
+
 // WorkerServiceHandler is an implementation of the delidev.v1.WorkerService service.
 type WorkerServiceHandler interface {
 	AttachWorker(context.Context, *connect.Request[v1.AttachWorkerRequest]) (*connect.Response[v1.AttachWorkerResponse], error)
@@ -808,6 +824,7 @@ type WorkerServiceHandler interface {
 	InspectRepository(context.Context, *connect.Request[v1.InspectRepositoryRequest]) (*connect.Response[v1.InspectRepositoryResponse], error)
 	DiscoverHarnesses(context.Context, *connect.Request[v1.DiscoverHarnessesRequest]) (*connect.Response[v1.DiscoverHarnessesResponse], error)
 	RegisterExecution(context.Context, *connect.Request[v1.RegisterExecutionRequest]) (*connect.Response[v1.RegisterExecutionResponse], error)
+	PublishExecution(context.Context, *connect.Request[v1.PublishExecutionRequest]) (*connect.Response[v1.PublishExecutionResponse], error)
 }
 
 // NewWorkerServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -853,6 +870,12 @@ func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(workerServiceMethods.ByName("RegisterExecution")),
 		connect.WithHandlerOptions(opts...),
 	)
+	workerServicePublishExecutionHandler := connect.NewUnaryHandler(
+		WorkerServicePublishExecutionProcedure,
+		svc.PublishExecution,
+		connect.WithSchema(workerServiceMethods.ByName("PublishExecution")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/delidev.v1.WorkerService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case WorkerServiceAttachWorkerProcedure:
@@ -867,6 +890,8 @@ func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOp
 			workerServiceDiscoverHarnessesHandler.ServeHTTP(w, r)
 		case WorkerServiceRegisterExecutionProcedure:
 			workerServiceRegisterExecutionHandler.ServeHTTP(w, r)
+		case WorkerServicePublishExecutionProcedure:
+			workerServicePublishExecutionHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -898,6 +923,10 @@ func (UnimplementedWorkerServiceHandler) DiscoverHarnesses(context.Context, *con
 
 func (UnimplementedWorkerServiceHandler) RegisterExecution(context.Context, *connect.Request[v1.RegisterExecutionRequest]) (*connect.Response[v1.RegisterExecutionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.RegisterExecution is not implemented"))
+}
+
+func (UnimplementedWorkerServiceHandler) PublishExecution(context.Context, *connect.Request[v1.PublishExecutionRequest]) (*connect.Response[v1.PublishExecutionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.PublishExecution is not implemented"))
 }
 
 // AccountServiceClient is a client for the delidev.v1.AccountService service.

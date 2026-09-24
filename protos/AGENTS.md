@@ -43,3 +43,5 @@
 - DeliDev `RecoverSessionWorkspace` is an owner/client revision-checked operation with explicit partial-cleanup selection and current `SessionChange.recovery_job`. Recovery jobs bind the original claimed identity/revision/digest and cannot create execution authority. Keep malformed/mismatched proof uncertain and publish confirmed recovery plus the original preparation outcome atomically.
 
 - DeliDev `RegisterExecution` is restricted to the owning current Worker and exact claimed job revision. Accept a SHA-256 digest only; never send raw execution tokens or upstream keys in RPC replies, jobs or receipts. Exact retries must recheck live ownership and server epoch before returning the fixed relative proxy path.
+
+- DeliDev `PublishExecution` accepts closed typed core events only from the owning Worker and exact claimed job revision. Preserve contiguous sequences, immutable native identity bindings, reference-only receipts and atomic acceptance/transcript publication. Replaying an event cannot send native input, repeat queue accounting, clear recovery or claim owned cleanup. Never carry raw native extensions or diagnostics in this envelope.

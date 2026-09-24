@@ -194,6 +194,19 @@ service WorkerService {
   rpc InspectRepository(InspectRepositoryRequest) returns (InspectRepositoryResponse);
   rpc DiscoverHarnesses(DiscoverHarnessesRequest) returns (DiscoverHarnessesResponse);
   rpc RegisterExecution(RegisterExecutionRequest) returns (RegisterExecutionResponse);
+  rpc PublishExecution(PublishExecutionRequest) returns (PublishExecutionResponse);
+}
+message PublishExecutionRequest {
+  // Immutable claimed job/revision, with a durable event request identity.
+  Mutation mutation = 1;
+  string machine_id = 2;
+  string instance_id = 3;
+  // Closed normalized event, never a raw native extension or credential.
+  bytes event_json = 4;
+}
+message PublishExecutionResponse {
+  uint64 acknowledged_sequence = 1;
+  bool replayed = 2;
 }
 message RegisterExecutionRequest {
   // Exact claimed execution job/revision and durable registration request ID.

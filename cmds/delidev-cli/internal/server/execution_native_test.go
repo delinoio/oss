@@ -15,9 +15,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/worker"
 )
 
 func TestManualNativeCodexUsesRegisteredServerRelay(t *testing.T) {
@@ -54,7 +57,7 @@ func TestManualNativeCodexUsesRegisteredServerRelay(t *testing.T) {
 		}
 	}))
 	defer upstream.Close()
-	f := newAuthorityFixture(t, upstream.URL)
+	f := publicationFixtureFromAuthority(t, newAuthorityFixture(t, upstream.URL))
 	f.registerGrant(t)
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -65,6 +68,14 @@ func TestManualNativeCodexUsesRegisteredServerRelay(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	publicationConfig := publicationWorkerConfig(t, f)
+	publicationConfig.Root = filepath.Join(root, "worker")
+	publisher, err := worker.OpenExecutionPublisher(publicationConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer publisher.Close()
+	nativeEvents := worker.NewCodexEventPublisher(publisher)
 	env := []string{"HOME=" + filepath.Join(root, "home"), "USERPROFILE=" + filepath.Join(root, "home"), "CODEX_HOME=" + filepath.Join(root, "codex"), "XDG_CONFIG_HOME=" + filepath.Join(root, "config"), "XDG_CACHE_HOME=" + filepath.Join(root, "cache"), "XDG_DATA_HOME=" + filepath.Join(root, "data"), "XDG_STATE_HOME=" + filepath.Join(root, "state"), "APPDATA=" + filepath.Join(root, "config"), "LOCALAPPDATA=" + filepath.Join(root, "data"), "TMPDIR=" + filepath.Join(root, "tmp"), "TMP=" + filepath.Join(root, "tmp"), "TEMP=" + filepath.Join(root, "tmp")}
 	lookup := filepath.Dir(binary)
 	if runtime.GOOS == "windows" {
@@ -88,17 +99,29 @@ func TestManualNativeCodexUsesRegisteredServerRelay(t *testing.T) {
 		}
 	})
 	configuration := f.input.Configuration
-	if _, err := client.StartThread(ctx, f.input.ThreadRequestID, codex.ThreadSettings{Model: configuration.NativeModel, Provider: codex.APIProvider, Effort: configuration.Effort, Cwd: filepath.Join(root, "workspace"), Instructions: configuration.Instructions, Options: configuration.Options}); err != nil {
+	bound, err := client.StartThread(ctx, f.input.ThreadRequestID, codex.ThreadSettings{Model: configuration.NativeModel, Provider: codex.APIProvider, Effort: configuration.Effort, Cwd: filepath.Join(root, "workspace"), Instructions: configuration.Instructions, Options: configuration.Options})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := nativeEvents.BindThread(ctx, bound); err != nil {
 		t.Fatal(err)
 	}
 	turn, err := client.StartTurn(ctx, f.input.TurnRequestID, f.input.InputID, f.input.Input)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := nativeEvents.AcceptInput(ctx, turn); err != nil {
+		t.Fatal(err)
+	}
 	sawInput, sawOutput := false, false
 	for {
 		event, err := client.NextEvent(ctx)
 		if err != nil {
+			t.Fatal(err)
+		}
+		// This acceptance case verifies core message/terminal publication only.
+		// Private extensions remain explicitly outside its integration evidence.
+		if _, err := nativeEvents.PublishCore(ctx, event); err != nil {
 			t.Fatal(err)
 		}
 		if event.Message != nil {
@@ -122,6 +145,24 @@ func TestManualNativeCodexUsesRegisteredServerRelay(t *testing.T) {
 	}
 	if calls.Load() != 1 || !sawInput || !sawOutput {
 		t.Fatal("registered execution did not retain its exact input/output with one provider request")
+	}
+	transcript, err := f.service.Store.List(ctx, store.Filter{Kind: domain.MessageKind, SessionID: f.input.SessionID, Limit: 10})
+	if err != nil || len(transcript) != 2 {
+		t.Fatalf("native core transcript did not reach server storage: %v", err)
+	}
+	for _, record := range transcript {
+		message, err := store.Decode[domain.ExecutionMessage](record)
+		if err != nil || message.State != domain.MessageComplete || message.NativeThreadID != string(bound.Thread.ID) || message.NativeTurnID != string(turn.TurnID) {
+			t.Fatal("stored native message lost its binding or completion")
+		}
+	}
+	retained, err := f.service.Store.Get(ctx, domain.SessionKind, f.input.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := store.Decode[domain.Session](retained)
+	if err != nil || session.Outcome != domain.ExecutionSucceeded || session.PendingInputs != 0 || session.Execution == nil || session.Execution.Observed.Model != configuration.NativeModel {
+		t.Fatal("native core events did not update session acceptance and outcome")
 	}
 	if err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -147,5 +188,5 @@ func TestManualNativeCodexUsesRegisteredServerRelay(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	t.Log("installed Codex -> authenticated registered server relay -> scripted loopback provider: exact model/input/output, server-only upstream key, one request, owned cleanup; dispatch readiness was simulated")
+	t.Log("installed Codex -> registered server relay -> scripted local provider -> Worker durable core-event outbox -> server transcript: exact input/model/native identities, server-only key and owned closure; dispatch readiness simulated, rich events unimplemented")
 }
