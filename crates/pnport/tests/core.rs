@@ -2848,6 +2848,55 @@ int main(void) {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn linux_missing_entries_under_virtual_directories_are_readonly() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("missing-virtual.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <errno.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+int main(void) {
+    if (mkdir("node_modules/new-package", 0700) != -1 || errno != EROFS) return 41;
+    if (open("node_modules/dep/new.txt", O_WRONLY | O_CREAT, 0600) != -1 || errno != EROFS) return 42;
+    if (open("node_modules/dep/missing.txt", O_RDONLY) != -1 || errno != ENOENT) return 43;
+    int native = open("native-output", O_WRONLY | O_CREAT, 0600);
+    if (native < 0) return 44;
+    close(native);
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("missing-virtual");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(root.path().join("native-output").exists());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn linux_reports_a_missing_elf_interpreter_as_command_not_found() {
     use std::process::Command;
     let root = fixture();

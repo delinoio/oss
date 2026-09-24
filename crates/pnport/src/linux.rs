@@ -72,6 +72,10 @@ const SYS_LSTAT: i64 = libc::SYS_lstat;
 #[cfg(target_arch = "aarch64")]
 const SYS_LSTAT: i64 = -1;
 #[cfg(target_arch = "x86_64")]
+const SYS_ACCESS: i64 = libc::SYS_access;
+#[cfg(target_arch = "aarch64")]
+const SYS_ACCESS: i64 = -1;
+#[cfg(target_arch = "x86_64")]
 const SYS_READLINK: i64 = libc::SYS_readlink;
 #[cfg(target_arch = "aarch64")]
 const SYS_READLINK: i64 = -1;
@@ -1337,6 +1341,22 @@ impl Trace<'_> {
         })
     }
 
+    fn missing_path_errno(&mut self, source: &Path, writing: bool) -> Result<i32> {
+        if writing {
+            if let Some(parent) = source.parent() {
+                match self.translate_view(parent) {
+                    Ok(parent) if parent.readonly && parent.physical.is_dir() => {
+                        return Ok(libc::EROFS);
+                    }
+                    Ok(_) => {}
+                    Err(error) if error.code == Code::PnportResolutionFailed => {}
+                    Err(error) => return Err(error),
+                }
+            }
+        }
+        Ok(libc::ENOENT)
+    }
+
     fn virtual_link_backing(
         &mut self,
         pid: i32,
@@ -1982,6 +2002,10 @@ impl Trace<'_> {
         } else {
             self.source_path(pid, dirfd, &original)?
         };
+        let mutating = writing
+            && call != libc::SYS_faccessat
+            && call != libc::SYS_faccessat2
+            && call != SYS_ACCESS;
         let translation = match if let Some((logical, _)) = proc_cwd {
             self.translate_view(&logical)
         } else if in_root && original.is_absolute() {
@@ -1994,7 +2018,8 @@ impl Trace<'_> {
         } {
             Ok(value) => value,
             Err(error) if error.code == Code::PnportResolutionFailed => {
-                self.force_error(pid, &mut regs, path_arg, libc::ENOENT)?;
+                let errno = self.missing_path_errno(&source, mutating)?;
+                self.force_error(pid, &mut regs, path_arg, errno)?;
                 return Ok(true);
             }
             Err(error) => return Err(error),
@@ -2070,10 +2095,12 @@ impl Trace<'_> {
                         return Ok(true);
                     }
                 }
+                let source = self.source_path(pid, other_fd, &other)?;
                 let translated = match self.translate(pid, other_fd, &other) {
                     Ok(value) => value,
                     Err(error) if error.code == Code::PnportResolutionFailed => {
-                        self.force_error(pid, &mut regs, path_arg, libc::ENOENT)?;
+                        let errno = self.missing_path_errno(&source, true)?;
+                        self.force_error(pid, &mut regs, path_arg, errno)?;
                         return Ok(true);
                     }
                     Err(error) => return Err(error),
@@ -2082,7 +2109,6 @@ impl Trace<'_> {
                     self.force_error(pid, &mut regs, path_arg, libc::EROFS)?;
                     return Ok(true);
                 }
-                let source = self.source_path(pid, other_fd, &other)?;
                 Some((other_arg, source, translated))
             } else {
                 None

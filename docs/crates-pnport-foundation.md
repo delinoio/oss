@@ -20,6 +20,8 @@ Hydration builds immutable indexes of hard-linked locators and package-location 
 
 Dependency content and virtual directories are read-only. Project source/output writes are native. Read, stat, enumeration, links, realpath, directory-relative handles, watches, mmap, native loading and execution are conformance requirements. Detect physical node_modules conflicts before access, including conflicts created during execution. Do not delete conflicting user content. Ordinary misses return normal filesystem errors.
 
+Mutations creating an absent entry beneath an existing virtual dependency directory return `EROFS`; missing reads retain `ENOENT`.
+
 Linux static syscall mediation translates pathname extended-attribute and filesystem-stat reads for virtual dependency entries; missing attributes keep native `ENODATA` results instead of reporting a missing virtual path.
 
 On x64 GNU Linux, the legacy descriptor-relative `futimesat` timestamp mutation follows the same virtual translation and read-only rejection as `utimensat`; native output paths retain kernel behavior.
