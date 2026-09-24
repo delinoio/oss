@@ -67,4 +67,6 @@ Linux preload accesses under `/proc` and `/sys` remain visible in the trace. Onl
 
 ## Maintenance and validation
 
+Issue #971 adds `clibox-fspy` as a separate companion crate. Its current Linux syscall entry/completion collector is independent of the existing fspy result API, which exposes only post-execution path-access classifications. The required complete macOS/Windows injection extension and integration with this fork remain outstanding; the current clibox workflow family is unreleased. Preserve pnport-mode behavior and run its conformance tests whenever shared injected interception changes.
+
 For an update, select an exact upstream commit, compare all imported trees and external Git revisions, update licenses and provenance, then reapply and review every local change. Verify the locked Cargo graph, formatting, Clippy and root `cargo test`. Build the macOS pnport-mode fspy preload before pnport fixture and TypeScript tests. Run Linux and Windows build checks on their native CI hosts. Inspect npm/native package inventories, ABI marker, installed license notices and the six-host release gate. No GitHub repository fork, crates.io publication or pnport release is part of this source fork.

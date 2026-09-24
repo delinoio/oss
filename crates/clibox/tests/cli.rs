@@ -86,7 +86,10 @@ fn missing_subcommands_show_command_help_on_stderr() {
         ("time", &["format", "add"]),
         ("base64", &["encode", "decode"]),
         ("hash", &["compute", "verify"]),
-        ("fspy", &["record", "compare", "assetcov"]),
+        (
+            "fspy",
+            &["record", "compare", "assetcov", "latencylab", "fbreak"],
+        ),
     ];
     for (group, subcommands) in groups {
         let output = Command::new(env!("CARGO_BIN_EXE_clibox"))
@@ -185,6 +188,8 @@ fn every_command_has_help_and_examples() {
         vec!["fspy", "record", "--help"],
         vec!["fspy", "compare", "--help"],
         vec!["fspy", "assetcov", "--help"],
+        vec!["fspy", "latencylab", "--help"],
+        vec!["fspy", "fbreak", "--help"],
     ] {
         for flag in ["-h", "--help"] {
             let mut args = args.clone();

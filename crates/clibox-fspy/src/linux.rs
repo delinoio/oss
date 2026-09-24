@@ -5,7 +5,7 @@
 //! ptrace stop on both sides of a syscall.
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, VecDeque},
     ffi::{OsStr, OsString},
     fs, io,
     os::{
@@ -18,7 +18,10 @@ use std::{
     },
     path::{Component, Path, PathBuf},
     process::{Command, ExitStatus, Stdio},
-    sync::atomic::{AtomicBool, Ordering},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc::{Receiver, TryRecvError},
+    },
     thread,
     time::{Duration, Instant},
 };
@@ -32,6 +35,7 @@ use crate::trace::{
 };
 
 const MAX_PATH_BYTES: usize = 4096;
+const SUMMARY_RESERVE_BYTES: usize = 512;
 const POLL: Duration = Duration::from_millis(2);
 
 #[derive(Clone, Copy, Debug)]
@@ -39,6 +43,19 @@ pub enum ChildIo {
     Inherit,
     Report,
     Interactive,
+}
+
+#[derive(Clone, Copy)]
+pub enum BreakCommand {
+    Next,
+    Continue,
+    Quit,
+}
+
+pub struct BreakControl<'a> {
+    pub rule: &'a dyn Fn(&Start) -> bool,
+    pub commands: &'a Receiver<BreakCommand>,
+    pub display: &'a dyn Fn(&Start),
 }
 
 #[derive(Clone, Copy)]
@@ -51,6 +68,8 @@ pub struct CaptureRequest<'a> {
     pub kill_after: Duration,
     pub max_events: usize,
     pub max_bytes: usize,
+    pub delay_rule: Option<&'a dyn Fn(&Start) -> Duration>,
+    pub break_control: Option<&'a BreakControl<'a>>,
 }
 
 #[derive(Debug)]
@@ -61,6 +80,7 @@ pub enum LinuxTraceError {
     Timeout,
     Cancelled,
     Cleanup,
+    ControlLost,
 }
 
 impl LinuxTraceError {
@@ -72,6 +92,7 @@ impl LinuxTraceError {
             Self::Timeout => FailureClass::Timeout,
             Self::Cancelled => FailureClass::Cancelled,
             Self::Cleanup => FailureClass::CleanupFailure,
+            Self::ControlLost => FailureClass::ControlLoss,
         }
     }
 }
@@ -91,6 +112,8 @@ impl LinuxCapture {
 
 struct Task {
     pending: Option<Start>,
+    delayed: Option<(Instant, Instant)>,
+    injected_delay_ns: u64,
     parent_pid: Option<u32>,
     initialized: bool,
 }
@@ -107,6 +130,8 @@ struct Collector {
     max_events: usize,
     max_bytes: usize,
     encoded_bytes: usize,
+    paused: VecDeque<i32>,
+    break_disabled: bool,
 }
 
 /// Trace a newly launched command and all children observed by ptrace.
@@ -123,6 +148,12 @@ struct Collector {
     reason = "Keep the ptrace ownership state machine together"
 )]
 pub fn capture(request: CaptureRequest<'_>, cancellation: &AtomicBool) -> io::Result<LinuxCapture> {
+    if request.delay_rule.is_some() && request.break_control.is_some() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "delay and break controls cannot run together",
+        ));
+    }
     let CaptureRequest {
         root,
         program,
@@ -132,6 +163,8 @@ pub fn capture(request: CaptureRequest<'_>, cancellation: &AtomicBool) -> io::Re
         kill_after,
         max_events,
         max_bytes,
+        delay_rule,
+        break_control,
     } = request;
     let root = fs::canonicalize(root)?;
     if !root.is_dir() {
@@ -169,9 +202,16 @@ pub fn capture(request: CaptureRequest<'_>, cancellation: &AtomicBool) -> io::Re
         max_events,
         max_bytes,
         encoded_bytes: 0,
+        paused: VecDeque::new(),
+        break_disabled: false,
     };
     collector.encoded_bytes = encoded_size(&collector.events[0]);
-    if max_events == 0 || collector.encoded_bytes >= max_bytes {
+    if max_events == 0
+        || collector
+            .encoded_bytes
+            .saturating_add(SUMMARY_RESERVE_BYTES)
+            > max_bytes
+    {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "trace limit cannot hold the header",
@@ -222,6 +262,8 @@ pub fn capture(request: CaptureRequest<'_>, cancellation: &AtomicBool) -> io::Re
         root_pid,
         Task {
             pending: None,
+            delayed: None,
+            injected_delay_ns: 0,
             parent_pid: None,
             initialized: false,
         },
@@ -230,6 +272,16 @@ pub fn capture(request: CaptureRequest<'_>, cancellation: &AtomicBool) -> io::Re
     let mut failure = None;
     let deadline = timeout.and_then(|budget| started.checked_add(budget));
     while !collector.tasks.is_empty() {
+        if let Some(control) = break_control
+            && let Err(error) = collector.process_break_commands(control)
+        {
+            failure = Some(error);
+            break;
+        }
+        if let Err(error) = collector.resume_due_delays() {
+            failure = Some(error);
+            break;
+        }
         if cancellation.load(Ordering::Relaxed) {
             failure = Some(LinuxTraceError::Cancelled);
             break;
@@ -238,21 +290,17 @@ pub fn capture(request: CaptureRequest<'_>, cancellation: &AtomicBool) -> io::Re
             failure = Some(LinuxTraceError::Timeout);
             break;
         }
-        let mut status = 0;
-        // SAFETY: waitpid writes one status word; __WALL collects traced threads.
-        let tid = unsafe { libc::waitpid(-1, &raw mut status, libc::__WALL | libc::WNOHANG) };
-        if tid == 0 {
-            thread::sleep(POLL);
-            continue;
-        }
-        if tid == -1 {
-            let error = io::Error::last_os_error();
-            if error.kind() == io::ErrorKind::Interrupted {
+        let (tid, status) = match wait_owned(collector.tasks.keys().copied()) {
+            Ok(Some(event)) => event,
+            Ok(None) => {
+                thread::sleep(POLL);
                 continue;
             }
-            failure = Some(LinuxTraceError::Tracing(error));
-            break;
-        }
+            Err(error) => {
+                failure = Some(LinuxTraceError::Tracing(error));
+                break;
+            }
+        };
         if libc::WIFEXITED(status) || libc::WIFSIGNALED(status) {
             if tid == root_pid {
                 root_status = Some(ExitStatus::from_raw(status));
@@ -311,7 +359,7 @@ pub fn capture(request: CaptureRequest<'_>, cancellation: &AtomicBool) -> io::Re
             break;
         }
         let result = if signal == (libc::SIGTRAP | 0x80) {
-            collector.syscall_stop(tid)
+            collector.syscall_stop(tid, delay_rule, break_control)
         } else if signal == libc::SIGTRAP && event != 0 {
             collector.event_stop(tid, event)
         } else {
@@ -373,17 +421,17 @@ fn cleanup(root_pid: i32, tasks: &BTreeMap<i32, Task>, kill_after: Duration) -> 
         .copied()
         .collect::<std::collections::BTreeSet<_>>();
     while !remaining.is_empty() && Instant::now() < forced {
-        let mut status = 0;
-        // SAFETY: waitpid writes one status word for an owned traced task.
-        let tid = unsafe { libc::waitpid(-1, &raw mut status, libc::__WALL | libc::WNOHANG) };
-        if tid > 0 {
-            if libc::WIFEXITED(status) || libc::WIFSIGNALED(status) {
-                remaining.remove(&tid);
-            } else {
-                let _ = ptrace(tid, libc::PTRACE_CONT, 0, 0);
+        match wait_owned(remaining.iter().copied()) {
+            Ok(Some((tid, status))) => {
+                if libc::WIFEXITED(status) || libc::WIFSIGNALED(status) {
+                    remaining.remove(&tid);
+                } else {
+                    let _ = ptrace(tid, libc::PTRACE_CONT, 0, 0);
+                }
             }
-        } else if tid == -1 && io::Error::last_os_error().raw_os_error() == Some(libc::ECHILD) {
-            break;
+            Ok(None) => {}
+            Err(error) if error.raw_os_error() == Some(libc::ECHILD) => {}
+            Err(error) => return Err(error),
         }
         if Instant::now() >= graceful {
             // SAFETY: group ID originates from the spawned process.
@@ -402,6 +450,26 @@ fn cleanup(root_pid: i32, tasks: &BTreeMap<i32, Task>, kill_after: Duration) -> 
     }
 }
 
+fn wait_owned(tids: impl Iterator<Item = i32>) -> io::Result<Option<(i32, i32)>> {
+    for tid in tids {
+        let mut status = 0;
+        // SAFETY: waitpid writes one status word and is restricted to an
+        // explicitly owned tracee, so concurrent collectors cannot consume
+        // one another's ptrace stops.
+        let waited = unsafe { libc::waitpid(tid, &raw mut status, libc::__WALL | libc::WNOHANG) };
+        if waited == tid {
+            return Ok(Some((tid, status)));
+        }
+        if waited == -1 {
+            let error = io::Error::last_os_error();
+            if error.kind() != io::ErrorKind::Interrupted {
+                return Err(error);
+            }
+        }
+    }
+    Ok(None)
+}
+
 impl Collector {
     fn elapsed_ns(&self) -> u64 {
         u64::try_from(self.started.elapsed().as_nanos()).unwrap_or(u64::MAX)
@@ -409,7 +477,11 @@ impl Collector {
 
     fn append(&mut self, event: Event) -> Result<(), LinuxTraceError> {
         let bytes = encoded_size(&event);
-        if self.encoded_bytes.saturating_add(bytes) > self.max_bytes
+        if self
+            .encoded_bytes
+            .saturating_add(bytes)
+            .saturating_add(SUMMARY_RESERVE_BYTES)
+            > self.max_bytes
             || self.events.len() >= self.max_events.saturating_mul(2).saturating_add(1)
         {
             return Err(LinuxTraceError::ResourceLimit);
@@ -449,6 +521,8 @@ impl Collector {
             })?;
             self.tasks.entry(child_tid).or_insert_with(|| Task {
                 pending: None,
+                delayed: None,
+                injected_delay_ns: 0,
                 parent_pid: Some(process_id(tid)),
                 initialized: false,
             });
@@ -474,7 +548,12 @@ impl Collector {
         Self::resume(tid, 0)
     }
 
-    fn syscall_stop(&mut self, tid: i32) -> Result<(), LinuxTraceError> {
+    fn syscall_stop(
+        &mut self,
+        tid: i32,
+        delay_rule: Option<&dyn Fn(&Start) -> Duration>,
+        break_control: Option<&BreakControl<'_>>,
+    ) -> Result<(), LinuxTraceError> {
         let mut info = std::mem::MaybeUninit::<raw_ptrace::ptrace_syscall_info>::zeroed();
         ptrace(
             tid,
@@ -485,6 +564,7 @@ impl Collector {
         .map_err(LinuxTraceError::Tracing)?;
         // SAFETY: a successful PTRACE_GET_SYSCALL_INFO initializes the buffer.
         let info = unsafe { info.assume_init() };
+        let mut hold = false;
         match u32::from(info.op) {
             raw_ptrace::PTRACE_SYSCALL_INFO_ENTRY => {
                 // SAFETY: the op discriminant identifies the initialized union arm.
@@ -507,18 +587,37 @@ impl Collector {
                     self.operation_id += 1;
                     self.append(Event::OperationStart(start.clone()))?;
                     if let Some(task) = self.tasks.get_mut(&tid) {
-                        task.pending = Some(start);
+                        task.pending = Some(start.clone());
+                        if let Some(duration) = delay_rule.map(|rule| rule(&start))
+                            && !duration.is_zero()
+                        {
+                            let now = Instant::now();
+                            let until = now.checked_add(duration).ok_or_else(|| {
+                                LinuxTraceError::Tracing(io::Error::other("invalid injected delay"))
+                            })?;
+                            task.delayed = Some((now, until));
+                            hold = true;
+                        }
+                    }
+                    if let Some(control) = break_control
+                        && !self.break_disabled
+                        && (control.rule)(&start)
+                    {
+                        (control.display)(&start);
+                        self.paused.push_back(tid);
+                        hold = true;
                     }
                 }
             }
             raw_ptrace::PTRACE_SYSCALL_INFO_EXIT => {
                 // SAFETY: the op discriminant identifies the initialized union arm.
                 let exit = unsafe { info.__bindgen_anon_1.exit };
-                if let Some(start) = self
-                    .tasks
-                    .get_mut(&tid)
-                    .and_then(|task| task.pending.take())
-                {
+                let pending = self.tasks.get_mut(&tid).and_then(|task| {
+                    task.pending
+                        .take()
+                        .map(|start| (start, std::mem::take(&mut task.injected_delay_ns)))
+                });
+                if let Some((start, injected_delay_ns)) = pending {
                     let native_error = (exit.is_error != 0).then_some(-exit.rval);
                     let bytes = if native_error.is_none()
                         && matches!(
@@ -539,12 +638,12 @@ impl Collector {
                         native_result: exit.rval,
                         native_error,
                         bytes,
-                        injected_delay_ns: 0,
+                        injected_delay_ns,
                         resolved_paths: self.resolved_paths(tid, &start, exit.rval),
                     };
+                    self.append(Event::OperationCompletion(completion))?;
                     self.failure_count += u64::from(native_error.is_some());
                     self.operation_count += 1;
-                    self.append(Event::OperationCompletion(completion))?;
                 }
             }
             _ => {
@@ -553,7 +652,50 @@ impl Collector {
                 )));
             }
         }
-        Self::resume(tid, 0)
+        if hold { Ok(()) } else { Self::resume(tid, 0) }
+    }
+
+    fn resume_due_delays(&mut self) -> Result<(), LinuxTraceError> {
+        let now = Instant::now();
+        for (&tid, task) in &mut self.tasks {
+            if let Some((started, until)) = task.delayed
+                && now >= until
+            {
+                task.delayed = None;
+                task.injected_delay_ns =
+                    u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
+                Self::resume(tid, 0)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn process_break_commands(
+        &mut self,
+        control: &BreakControl<'_>,
+    ) -> Result<(), LinuxTraceError> {
+        if self.break_disabled {
+            return Ok(());
+        }
+        loop {
+            match control.commands.try_recv() {
+                Ok(BreakCommand::Next) => {
+                    if let Some(tid) = self.paused.pop_front() {
+                        Self::resume(tid, 0)?;
+                    }
+                }
+                Ok(BreakCommand::Continue) => {
+                    self.break_disabled = true;
+                    while let Some(tid) = self.paused.pop_front() {
+                        Self::resume(tid, 0)?;
+                    }
+                    return Ok(());
+                }
+                Ok(BreakCommand::Quit) => return Err(LinuxTraceError::Cancelled),
+                Err(TryRecvError::Empty) => return Ok(()),
+                Err(TryRecvError::Disconnected) => return Err(LinuxTraceError::ControlLost),
+            }
+        }
     }
 
     fn resolved_paths(&self, tid: i32, start: &Start, result: i64) -> Vec<EncodedPath> {
@@ -889,6 +1031,8 @@ mod tests {
                 kill_after: Duration::from_secs(5),
                 max_events: 100_000,
                 max_bytes: 10 * 1024 * 1024,
+                delay_rule: None,
+                break_control: None,
             },
             &cancellation,
         )
@@ -927,6 +1071,8 @@ mod tests {
                 kill_after: Duration::from_secs(5),
                 max_events: 100_000,
                 max_bytes: 10 * 1024 * 1024,
+                delay_rule: None,
+                break_control: None,
             },
             &cancellation,
         )
@@ -952,5 +1098,46 @@ mod tests {
             }
             _ => false,
         }));
+    }
+
+    #[test]
+    fn holds_matching_caller_before_read_and_records_observed_delay() {
+        let root = tempfile::tempdir().expect("create root");
+        let input = root.path().join("input");
+        fs::write(&input, b"content").expect("write input");
+        let arguments = [input.into_os_string()];
+        let rule = |start: &crate::trace::Start| {
+            if start.operation == Operation::Read
+                && start.paths.iter().any(|path| {
+                    path.scope == PathScope::Project
+                        && path.decode().expect("path encoding") == b"input"
+                })
+            {
+                Duration::from_millis(5)
+            } else {
+                Duration::ZERO
+            }
+        };
+        let captured = capture(
+            CaptureRequest {
+                root: root.path(),
+                program: OsStr::new("/bin/cat"),
+                arguments: &arguments,
+                child_io: ChildIo::Report,
+                timeout: Some(Duration::from_secs(10)),
+                kill_after: Duration::from_secs(5),
+                max_events: 100_000,
+                max_bytes: 10 * 1024 * 1024,
+                delay_rule: Some(&rule),
+                break_control: None,
+            },
+            &AtomicBool::new(false),
+        )
+        .expect("trace delayed cat");
+        assert!(captured.complete(), "{:?}", captured.failure);
+        assert!(captured.events.iter().any(|event| matches!(
+            event,
+            Event::OperationCompletion(done) if done.injected_delay_ns >= 5_000_000
+        )));
     }
 }

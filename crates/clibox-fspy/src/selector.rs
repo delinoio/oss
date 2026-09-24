@@ -58,7 +58,6 @@ impl Selector {
                 || relative
                     .components()
                     .any(|part| matches!(part, Component::ParentDir))
-                || !self.matches(relative)
             {
                 return None;
             }
@@ -69,6 +68,27 @@ impl Selector {
         {
             None
         }
+    }
+
+    #[cfg(target_os = "linux")]
+    pub fn matches_trace_path(
+        &self,
+        path: &EncodedPath,
+        selected_physical: &BTreeSet<PathBuf>,
+    ) -> bool {
+        use std::os::unix::ffi::OsStrExt as _;
+
+        if path.scope != PathScope::Project || path.encoding != PathEncoding::UnixBytes {
+            return false;
+        }
+        let Ok(bytes) = path.decode() else {
+            return false;
+        };
+        let relative = Path::new(std::ffi::OsStr::from_bytes(&bytes));
+        self.matches(relative)
+            || self
+                .resolve_trace_path(path)
+                .is_some_and(|physical| selected_physical.contains(&physical))
     }
 
     pub fn selected_files(&self) -> io::Result<Vec<SelectedFile>> {

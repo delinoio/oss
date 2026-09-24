@@ -154,6 +154,8 @@ pub fn execute(options: Assetcov) -> i32 {
             kill_after: options.kill_after,
             max_events: options.max_events,
             max_bytes: options.max_trace_bytes,
+            delay_rule: None,
+            break_control: None,
         },
         &cancellation,
     );

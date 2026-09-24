@@ -11,7 +11,7 @@ use std::{
 use clap::{Args, Subcommand};
 
 use crate::{
-    assetcov, output,
+    assetcov, fbreak, latencylab, output,
     trace::{self, Comparison, EncodedPath},
 };
 
@@ -44,6 +44,26 @@ pub enum Fspy {
                       input, 124 timeout, 130 Ctrl+C, 143 SIGTERM."
     )]
     Assetcov(assetcov::Assetcov),
+    /// Compare traced baseline runs with runs delayed before selected
+    /// operations.
+    #[command(
+        after_help = "Example: clibox fspy latencylab --include 'assets/**' --delay 5ms -- cargo \
+                      test\nRuns alternate baseline and delayed conditions. Results measure this \
+                      execution, not a storage-device prediction.\nExit codes: 0 report, 1 \
+                      runtime or experiment failure, 2 invalid input, 124 timeout, 130 Ctrl+C, \
+                      143 SIGTERM."
+    )]
+    Latencylab(latencylab::Latencylab),
+    /// Pause a selected caller before its file operation and control it from a
+    /// TTY.
+    #[command(
+        after_help = "Example: clibox fspy fbreak --include 'assets/**' --op read -- cargo \
+                      test\nControls: n release one match, c continue all callers, q quit. The \
+                      child cannot read terminal input.\nExit codes: 0 success, child failure \
+                      status, 1 tracing or control failure, 2 invalid input, 124 timeout, 130 \
+                      quit/Ctrl+C, 143 SIGTERM."
+    )]
+    Fbreak(fbreak::Fbreak),
 }
 
 #[derive(Args)]
@@ -142,6 +162,8 @@ pub fn execute(command: Fspy) -> i32 {
         Fspy::Record(options) => record(options),
         Fspy::Compare(options) => compare(&options),
         Fspy::Assetcov(options) => assetcov::execute(options),
+        Fspy::Latencylab(options) => latencylab::execute(options),
+        Fspy::Fbreak(options) => fbreak::execute(options),
     }
 }
 
@@ -201,6 +223,8 @@ fn record(options: Record) -> i32 {
             kill_after: options.kill_after,
             max_events: options.max_events,
             max_bytes: options.max_trace_bytes,
+            delay_rule: None,
+            break_control: None,
         },
         &cancellation,
     );

@@ -5,6 +5,8 @@
 
 mod assetcov;
 pub mod cli;
+mod fbreak;
+mod latencylab;
 mod output;
 mod selector;
 pub mod trace;

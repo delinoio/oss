@@ -5,6 +5,7 @@ use std::{
 };
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -84,7 +85,7 @@ impl EncodedPath {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, ValueEnum)]
 #[serde(rename_all = "kebab-case")]
 pub enum Operation {
     Open,
@@ -114,6 +115,7 @@ pub enum FailureClass {
     ChildFailure,
     CleanupFailure,
     OutputFailure,
+    ControlLoss,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -339,8 +341,18 @@ pub fn read_complete(
                 let start = active
                     .remove(&value.operation_id)
                     .ok_or(TraceError::InvalidStructure)?;
+                let expected_error = if value.native_result < 0 {
+                    Some(
+                        value
+                            .native_result
+                            .checked_neg()
+                            .ok_or(TraceError::InvalidStructure)?,
+                    )
+                } else {
+                    None
+                };
                 if value.monotonic_ns < start.monotonic_ns
-                    || value.native_error.is_some() != (value.native_result < 0)
+                    || value.native_error != expected_error
                     || (value.native_error.is_none()
                         && matches!(
                             start.operation,
@@ -366,7 +378,7 @@ pub fn read_complete(
             }
             Event::Summary(value) if header.is_some() => {
                 check_sequence(value.sequence, &mut next_sequence)?;
-                if !active.is_empty()
+                if (value.complete && !active.is_empty())
                     || value.operation_count != operations.len() as u64
                     || value.failure_count != failures
                     || (value.complete
