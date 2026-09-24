@@ -2657,17 +2657,25 @@ int main(int argc, char **argv) {
 #[cfg(target_os = "linux")]
 #[test]
 fn linux_descendant_script_admission_returns_exec_errors_to_caller() {
-    use std::{os::unix::fs::PermissionsExt, process::Command};
+    use std::{
+        os::unix::fs::{symlink, PermissionsExt},
+        process::Command,
+    };
     let root = fixture();
     let interpreter = root.path().join("nonexec-interpreter");
     fs::write(&interpreter, b"not executable\n").unwrap();
     fs::set_permissions(&interpreter, fs::Permissions::from_mode(0o644)).unwrap();
+    let loop_a = root.path().join("interpreter-loop-a");
+    let loop_b = root.path().join("interpreter-loop-b");
+    symlink(&loop_b, &loop_a).unwrap();
+    symlink(&loop_a, &loop_b).unwrap();
     let mut archive = zip::ZipWriter::new(fs::File::create(root.path().join("cache.zip")).unwrap());
     for (name, body) in [
         ("missing", "#!/pnport-missing-interpreter\n".to_string()),
         ("denied", format!("#!{}\n", interpreter.display())),
         ("malformed", "#!\n".to_string()),
         ("valid", "#!/bin/sh\nexit 0\n".to_string()),
+        ("loop", format!("#!{}\n", loop_a.display())),
     ] {
         archive
             .start_file(
@@ -2697,6 +2705,8 @@ int main(void) {
     if (execve(denied[0], denied, env) != -1 || errno != EACCES) return 42;
     char *malformed[] = {"node_modules/dep/malformed", 0};
     if (execve(malformed[0], malformed, env) != -1 || errno != ENOEXEC) return 43;
+    char *loop[] = {"node_modules/dep/loop", 0};
+    if (execve(loop[0], loop, env) != -1 || errno != ELOOP) return 51;
     int fd = open(missing[0], O_RDONLY);
     if (fd < 0) return 44;
     if (syscall(SYS_execveat, fd, "", missing, env, AT_EMPTY_PATH) != -1 || errno != ENOENT) return 45;

@@ -346,10 +346,10 @@ impl LaunchAdmission {
 }
 
 fn access_error(error: std::io::Error) -> Error {
-    let kind = if error.kind() == std::io::ErrorKind::NotFound {
-        ExecFailureKind::NotFound
-    } else {
-        ExecFailureKind::PermissionDenied
+    let kind = match error.raw_os_error() {
+        Some(libc::ELOOP) => ExecFailureKind::InterpreterLoop,
+        _ if error.kind() == std::io::ErrorKind::NotFound => ExecFailureKind::NotFound,
+        _ => ExecFailureKind::PermissionDenied,
     };
     Error::new(
         if kind == ExecFailureKind::NotFound {

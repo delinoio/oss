@@ -62,6 +62,7 @@ Linux `openat2` checks the caller-provided `open_how` size before reading the st
 Inherit cwd, environment and stdio. Never capture child output; stdout remains suitable for language-server protocols. Preserve literal arguments and child status. Owned failures use 2 (arguments), 127 (not found), 126 (not executable), or 125 (initialization/runtime/restart). Structured stable codes disambiguate owned failures from child status. Signals use conventional signal-derived status.
 
 For descendant Linux `execve` and `execveat`, virtual script admission returns `ENOENT`, `EACCES`, `ENOEXEC`, or `ELOOP` to the invoking process for missing interpreters, permissions, malformed scripts, or interpreter loops. The supervisor continues tracing that process; infrastructure and mediation failures still fail closed.
+An absolute script interpreter whose pathname is a symlink loop retains the kernel's `ELOOP` result instead of being classified as a permission failure.
 
 The private Linux launch and capability-probe helper arguments require an inherited Unix socket from the same-image pnport parent. The helper checks the socket's kernel peer credentials against its parent before entering its attachment stop, then closes the socket and removes its internal environment variable. Direct use of either argument fails as an invalid CLI command instead of parking an unowned process.
 

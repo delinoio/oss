@@ -218,6 +218,7 @@
 - Linux `inotify_add_watch` with `IN_DONT_FOLLOW` on a virtual dependency link must watch the materialized link inode, not its resolved package target.
 - Missing entries beneath an existing read-only virtual dependency directory reject mutations with EROFS; ordinary missing reads retain ENOENT.
 - Descendant Linux script admission errors must return native exec errno to the invoking process; only mediation and capability failures stop the owned tree.
+- An absolute Linux script interpreter that resolves through a symlink loop must return ELOOP to its invoking process.
 - pnport cache extraction must use a private snapshot verified against the destination archive digest. Rechecking only the mutable source after extraction cannot prove which bytes were published; retain rewrite-and-restore regression coverage.
 - pnport cache cancellation after read-only staging must restore directory write permission and explicitly remove the incomplete stage before returning an error.
 - pnport preload constructor entry and completed readiness are distinct acknowledgements. Supported cache lock waits after entry must not trigger the missing-injection deadline; a child result without readiness remains a failure.
