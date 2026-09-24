@@ -1197,22 +1197,27 @@ fn outer_timeout_terminates_descendants_of_nested_npm_launcher_chain() {
 fn completed_workload_cleans_up_its_background_descendants() {
     let home = tempfile::tempdir().unwrap();
     let marker = home.path().join("completed-descendant-pid");
+    let started = home.path().join("completed-descendant-started");
     let assignment = format!("MARKER={}", marker.display());
+    let started_assignment = format!("STARTED={}", started.display());
     let output = command(
         home.path(),
         &[
             "run",
             "with-timeout",
             "--idle-timeout",
-            "30s",
-            "--kill-after",
             "100ms",
+            "--kill-after",
+            "500ms",
             &assignment,
+            &started_assignment,
             "--",
             "sh",
             "-c",
-            "sh -c 'trap \"printf descendant-cleanup-output >&2; exit 0\" TERM; while :; do sleep \
-             30; done' & echo $! > \"$MARKER\"",
+            "sh -c 'on_term() { for _ in 1 2 3 4 5 6 7 8 9 10; do printf \
+             descendant-cleanup-output >&2; sleep 0.02; done; exit 0; }; trap on_term TERM; : > \
+             \"$STARTED\"; while :; do sleep 30; done' & echo $! > \"$MARKER\"; while [ ! -f \
+             \"$STARTED\" ]; do sleep 0.01; done; printf workload-output >&2",
         ],
     )
     .output()
