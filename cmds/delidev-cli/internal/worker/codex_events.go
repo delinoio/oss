@@ -115,7 +115,7 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 	switch event.Kind {
 	case codex.MetadataEvent:
 		switch event.Metadata {
-		case codex.ThreadIdentityChecked, codex.ThreadSettingsChecked, codex.RemoteControlDisabled, codex.QuotaUnavailable:
+		case codex.ThreadIdentityChecked, codex.ThreadSettingsChecked, codex.RemoteControlDisabled, codex.QuotaUnavailable, codex.RawSupplementDiscarded:
 			// These validated observations grant no new product authority.
 			return true, nil
 		default:
@@ -135,6 +135,8 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 		return true, nil
 	case codex.ThreadStatusEvent:
 		return c.publishWaiting(ctx, event.Status)
+	case codex.QuestionAcceptedEvent:
+		return true, c.publishQuestionAcceptance(ctx, event)
 	case codex.InteractionRequestedEvent, codex.InteractionClosedEvent:
 		return true, c.publishInteraction(ctx, event)
 	case codex.ArtifactStartedEvent, codex.ArtifactCompletedEvent, codex.ArtifactDeltaEvent:

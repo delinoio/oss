@@ -140,3 +140,17 @@ func (c *CodexEventPublisher) publishWaiting(ctx context.Context, status *codex.
 	c.waiting = waiting
 	return true, nil
 }
+
+func (c *CodexEventPublisher) publishQuestionAcceptance(ctx context.Context, event codex.Event) error {
+	status := event.InteractionState
+	if status == nil || !status.Accepted || status.TurnID != c.turn || status.ItemID != event.ItemID || status.ResponseID.Validate() != nil || event.Interaction != nil {
+		return publicationUncertain()
+	}
+	original, known := c.interactions[status.ID]
+	delivery, delivered := c.questionResponses[status.ID]
+	if !known || !delivered || original.NativeItemID != event.ItemID || delivery.ResponseID != status.ResponseID || delivery.NativeItemID != event.ItemID || delivery.Delivery == domain.QuestionNotSent || domain.QuestionDelivery(status.Delivery) != delivery.Delivery {
+		return publicationUncertain()
+	}
+	update := domain.ExecutionQuestionAcceptanceUpdate{InteractionID: status.ID, ResponseID: status.ResponseID, ClaimID: delivery.ClaimID, NativeItemID: event.ItemID, Evidence: domain.NativeQuestionOutput}
+	return c.publish(ctx, domain.ExecutionEvent{Kind: domain.ExecutionQuestionAccepted, QuestionAcceptance: &update})
+}

@@ -41,10 +41,8 @@ func TestManualNativeQuestionHistory(t *testing.T) {
 			}
 			persisted, fallback := false, false
 			params.HistoryMode, params.Ephemeral, params.AllowProviderModelFallback = history, &persisted, &fallback
-			started, err := c.wire.Call(ctx, domain.NewID(), "thread/start", struct {
-				threadParams
-				Raw bool `json:"experimentalRawEvents"`
-			}{params, true})
+			params.RawEvents = true
+			started, err := c.wire.Call(ctx, domain.NewID(), "thread/start", params)
 			if err != nil || started.ErrorCode != nil {
 				t.Fatalf("native history start failed: %v, rejected=%t", err, started.ErrorCode != nil)
 			}

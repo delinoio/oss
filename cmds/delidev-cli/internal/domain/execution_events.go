@@ -26,6 +26,7 @@ const (
 	ExecutionInteractionClosed        ExecutionEventKind = "interaction-closed"
 	ExecutionWaitingChanged           ExecutionEventKind = "waiting-changed"
 	ExecutionQuestionDeliveryObserved ExecutionEventKind = "question-delivery-observed"
+	ExecutionQuestionAccepted         ExecutionEventKind = "question-accepted"
 )
 
 type MessageRole string
@@ -99,25 +100,26 @@ type ExecutionMessageUpdate struct {
 // envelope. Exactly one event kind owns its optional payload. Unknown native
 // extensions need dedicated adapters before they can enter this document.
 type ExecutionEvent struct {
-	Version          uint32                           `json:"version"`
-	ExecutionID      ID                               `json:"execution_id"`
-	Sequence         uint64                           `json:"sequence"`
-	Kind             ExecutionEventKind               `json:"kind"`
-	NativeThreadID   string                           `json:"native_thread_id"`
-	NativeTurnID     string                           `json:"native_turn_id,omitempty"`
-	Observed         *ObservedExecutionSettings       `json:"observed,omitempty"`
-	Message          *ExecutionMessageUpdate          `json:"message,omitempty"`
-	Outcome          ExecutionOutcome                 `json:"outcome,omitempty"`
-	ProblemCode      Code                             `json:"problem_code,omitempty"`
-	Usage            *NativeTokenUsage                `json:"usage,omitempty"`
-	ObservationID    ID                               `json:"observation_id,omitempty"`
-	Artifact         *ExecutionArtifactUpdate         `json:"artifact,omitempty"`
-	Progress         *ExecutionProgressUpdate         `json:"progress,omitempty"`
-	Tool             *ExecutionToolUpdate             `json:"tool,omitempty"`
-	Notice           NativeNotice                     `json:"notice,omitempty"`
-	Interaction      *ExecutionInteractionUpdate      `json:"interaction,omitempty"`
-	Waiting          *NativeWaiting                   `json:"waiting,omitempty"`
-	QuestionResponse *ExecutionQuestionResponseUpdate `json:"question_response,omitempty"`
+	Version            uint32                             `json:"version"`
+	ExecutionID        ID                                 `json:"execution_id"`
+	Sequence           uint64                             `json:"sequence"`
+	Kind               ExecutionEventKind                 `json:"kind"`
+	NativeThreadID     string                             `json:"native_thread_id"`
+	NativeTurnID       string                             `json:"native_turn_id,omitempty"`
+	Observed           *ObservedExecutionSettings         `json:"observed,omitempty"`
+	Message            *ExecutionMessageUpdate            `json:"message,omitempty"`
+	Outcome            ExecutionOutcome                   `json:"outcome,omitempty"`
+	ProblemCode        Code                               `json:"problem_code,omitempty"`
+	Usage              *NativeTokenUsage                  `json:"usage,omitempty"`
+	ObservationID      ID                                 `json:"observation_id,omitempty"`
+	Artifact           *ExecutionArtifactUpdate           `json:"artifact,omitempty"`
+	Progress           *ExecutionProgressUpdate           `json:"progress,omitempty"`
+	Tool               *ExecutionToolUpdate               `json:"tool,omitempty"`
+	Notice             NativeNotice                       `json:"notice,omitempty"`
+	Interaction        *ExecutionInteractionUpdate        `json:"interaction,omitempty"`
+	Waiting            *NativeWaiting                     `json:"waiting,omitempty"`
+	QuestionResponse   *ExecutionQuestionResponseUpdate   `json:"question_response,omitempty"`
+	QuestionAcceptance *ExecutionQuestionAcceptanceUpdate `json:"question_acceptance,omitempty"`
 }
 
 func (e ExecutionEvent) Validate() error {
@@ -136,6 +138,13 @@ func (e ExecutionEvent) Validate() error {
 		}
 	}
 	switch e.Kind {
+	case ExecutionQuestionAccepted:
+		if e.QuestionAcceptance == nil {
+			return invalidInteraction()
+		}
+		if err := e.QuestionAcceptance.Validate(); err != nil {
+			return err
+		}
 	case ExecutionQuestionDeliveryObserved:
 		if e.QuestionResponse == nil {
 			return invalidInteraction()
@@ -228,7 +237,7 @@ func (e ExecutionEvent) Validate() error {
 	default:
 		return Fail(Unsupported, "Unknown normalized execution event.", "Use a dedicated supported native event adapter.")
 	}
-	if (e.Kind != ExecutionQuestionDeliveryObserved && e.QuestionResponse != nil) || (!e.Kind.IsInteraction() && e.Interaction != nil) || (e.Kind != ExecutionWaitingChanged && e.Waiting != nil) || (!e.Kind.IsArtifact() && e.Artifact != nil) || (e.Kind != ExecutionProgressObserved && e.Progress != nil) || (!e.Kind.IsTool() && e.Tool != nil) || (e.Kind != ExecutionThreadBound && e.Observed != nil) || (e.Kind != ExecutionMessageStarted && e.Kind != ExecutionTextAppended && e.Kind != ExecutionMessageCompleted && e.Message != nil) || (e.Kind != ExecutionTurnFinished && (e.Outcome != "" || e.ProblemCode != "")) || (e.Kind != ExecutionUsageObserved && (e.Usage != nil || e.ObservationID != "")) || (e.Kind != ExecutionNoticeObserved && e.Notice != "") {
+	if (e.Kind != ExecutionQuestionAccepted && e.QuestionAcceptance != nil) || (e.Kind != ExecutionQuestionDeliveryObserved && e.QuestionResponse != nil) || (!e.Kind.IsInteraction() && e.Interaction != nil) || (e.Kind != ExecutionWaitingChanged && e.Waiting != nil) || (!e.Kind.IsArtifact() && e.Artifact != nil) || (e.Kind != ExecutionProgressObserved && e.Progress != nil) || (!e.Kind.IsTool() && e.Tool != nil) || (e.Kind != ExecutionThreadBound && e.Observed != nil) || (e.Kind != ExecutionMessageStarted && e.Kind != ExecutionTextAppended && e.Kind != ExecutionMessageCompleted && e.Message != nil) || (e.Kind != ExecutionTurnFinished && (e.Outcome != "" || e.ProblemCode != "")) || (e.Kind != ExecutionUsageObserved && (e.Usage != nil || e.ObservationID != "")) || (e.Kind != ExecutionNoticeObserved && e.Notice != "") {
 		return Fail(InvalidArgument, "An execution event contains another kind's payload.", "Publish one unambiguous typed event.")
 	}
 	return nil

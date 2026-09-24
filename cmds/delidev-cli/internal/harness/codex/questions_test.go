@@ -43,7 +43,7 @@ func TestNativeQuestionsPreserveArrivalIdentityBlockingAndOptionSemantics(t *tes
 	event.ID = json.RawMessage(`"7"`)
 	var fields map[string]any
 	_ = json.Unmarshal(event.Params, &fields)
-	fields["isBlocking"], fields["autoResolutionMs"] = false, 100
+	fields["isBlocking"], fields["autoResolutionMs"], fields["itemId"] = false, 100, "second-question-tool"
 	event.Params, _ = json.Marshal(fields)
 	e, err = c.observeEventLocked(event)
 	if err != nil || e.Interaction.NativeID.Kind != TextRequestID || e.Interaction.NativeID.Text != "7" || e.Interaction.NativeID.Number != nil || e.Interaction.Questions.Blocking || *e.Interaction.Questions.AutoResolutionMS != 100 {

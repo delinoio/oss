@@ -183,7 +183,7 @@ func invalidateQuestionResponses(tx *store.Tx, input domain.ExecutionJobInput) e
 			value.Response.State = domain.QuestionResponseCanceled
 		case domain.QuestionResponseClaimed, domain.QuestionResponseTransmitted:
 			value.Response.State = domain.QuestionResponseUncertain
-		case domain.QuestionResponseCanceled, domain.QuestionResponseUncertain:
+		case domain.QuestionResponseCanceled, domain.QuestionResponseUncertain, domain.QuestionResponseAccepted:
 			continue
 		default:
 			return executionEventConflict()

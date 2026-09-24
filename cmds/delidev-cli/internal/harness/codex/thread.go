@@ -113,6 +113,7 @@ const (
 )
 
 type threadParams struct {
+	RawEvents                  bool              `json:"experimentalRawEvents"`
 	ThreadID                   domain.ID         `json:"threadId,omitempty"`
 	Model                      string            `json:"model"`
 	ModelProvider              string            `json:"modelProvider"`
@@ -263,6 +264,7 @@ func (c *Client) bindThread(ctx context.Context, requestID, threadID domain.ID, 
 		}
 	}
 	params.ThreadID = threadID
+	params.RawEvents = true
 	if method == resumeThread {
 		exclude := true
 		params.ExcludeTurns = &exclude

@@ -2,6 +2,7 @@ package codex
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"slices"
 	"strconv"
@@ -31,13 +32,15 @@ type InteractionStatus struct {
 	Closure    InteractionClosure
 	ResponseID domain.ID
 	Delivery   QuestionDelivery
+	Accepted   bool
 }
 
 type trackedInteraction struct {
-	status    InteractionStatus
-	native    nativewire.Event
-	questions *QuestionRequest
-	bytes     int
+	status       InteractionStatus
+	native       nativewire.Event
+	questions    *QuestionRequest
+	bytes        int
+	answerDigest [32]byte
 }
 
 type interactionState struct {
@@ -63,7 +66,7 @@ func interactionUncertain() *domain.Error {
 }
 func (s *interactionState) blocksInput() bool {
 	for _, interaction := range s.arrivals {
-		if interaction.status.Closure == InteractionOpen || interaction.status.Delivery != QuestionNotSent {
+		if interaction.status.Closure == InteractionOpen || (interaction.status.Delivery != QuestionNotSent && !interaction.status.Accepted) {
 			return true
 		}
 	}
@@ -91,6 +94,11 @@ func cloneQuestions(request *QuestionRequest) *QuestionRequest {
 
 func (c *Client) retainQuestionLocked(native nativewire.Event, turn domain.ID, item string, interaction *Interaction, eligible bool) error {
 	s := &c.execution.interactions
+	for _, prior := range s.arrivals {
+		if prior.status.TurnID == turn && prior.status.ItemID == item {
+			return incompatible()
+		}
+	}
 	key := requestKey(interaction.NativeID)
 	// The pinned server allocates monotonically increasing request IDs. Refuse
 	// reuse even after closure: resolved notifications contain no arrival token
@@ -293,6 +301,8 @@ func (c *Client) AnswerQuestions(ctx context.Context, responseID, interactionID,
 	}
 	s.responses[responseID] = true
 	owned.status.ResponseID = responseID
+	raw, _ := json.Marshal(response) // Validated by questionResponseSize above.
+	owned.answerDigest = sha256.Sum256(raw)
 	err = c.wire.Reply(ctx, owned.native, response)
 	if err == nil {
 		owned.status.Delivery = QuestionTransmitted

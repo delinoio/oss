@@ -246,7 +246,7 @@ func TestNativeQuestionSecretAndLateRequestNeverSend(t *testing.T) {
 	}
 	fixtureSignal(t, c, "finish", map[string]any{"status": TurnInterrupted})
 	nextKind(t, c, TurnCompletedEvent)
-	fixtureSignal(t, c, "question", map[string]any{"requestId": 8, "questions": []any{questionFixture()}})
+	fixtureSignal(t, c, "question", map[string]any{"requestId": 8, "itemId": "late-question", "questions": []any{questionFixture()}})
 	late := nextKind(t, c, InteractionRequestedEvent)
 	status, err = c.InspectInteraction(context.Background(), late.Interaction.ID)
 	if err != nil || !late.Late || !late.Correlated || status.Closure != InteractionTurnEnded || status.Delivery != QuestionNotSent {
@@ -267,6 +267,10 @@ func TestNativeQuestionOwnershipBoundsDoNotReplaceRetainedState(t *testing.T) {
 				}
 				event := questionEvent(t, c, turn, []any{q})
 				event.ID = json.RawMessage(strconv.Itoa(i))
+				var fields map[string]any
+				_ = json.Unmarshal(event.Params, &fields)
+				fields["itemId"] = "question-" + strconv.Itoa(i)
+				event.Params = mustJSON(t, fields)
 				if limit == "history" && i == 1 {
 					for len(c.execution.interactions.arrivals) < maxTrackedInteractions {
 						c.execution.interactions.arrivals[domain.NewID()] = &trackedInteraction{}

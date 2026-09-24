@@ -81,6 +81,7 @@ const (
 	QuestionResponseTransmitted QuestionResponseState = "transmitted"
 	QuestionResponseUncertain   QuestionResponseState = "uncertain"
 	QuestionResponseCanceled    QuestionResponseState = "canceled"
+	QuestionResponseAccepted    QuestionResponseState = "accepted"
 )
 
 // A claim authorizes only its original Worker attempt. It does not prove a
@@ -97,12 +98,13 @@ type QuestionResponseClaim struct {
 // Queued acceptance is a server fact only. Native ownership/delivery and
 // semantic acceptance require separate state transitions and evidence.
 type QuestionResponse struct {
-	ID         ID                           `json:"id"`
-	State      QuestionResponseState        `json:"state"`
-	Input      QuestionResponseInput        `json:"input"`
-	AcceptedAt time.Time                    `json:"accepted_at"`
-	Claim      *QuestionResponseClaim       `json:"claim,omitempty"`
-	Delivery   *QuestionDeliveryObservation `json:"delivery,omitempty"`
+	ID         ID                             `json:"id"`
+	State      QuestionResponseState          `json:"state"`
+	Input      QuestionResponseInput          `json:"input"`
+	AcceptedAt time.Time                      `json:"accepted_at"`
+	Claim      *QuestionResponseClaim         `json:"claim,omitempty"`
+	Delivery   *QuestionDeliveryObservation   `json:"delivery,omitempty"`
+	Acceptance *QuestionAcceptanceObservation `json:"acceptance,omitempty"`
 }
 
 type QuestionDelivery string
@@ -139,6 +141,39 @@ func (u ExecutionQuestionResponseUpdate) Validate() error {
 	}
 	if u.Delivery != QuestionNotSent && u.Delivery != QuestionTransmitted && u.Delivery != QuestionDeliveryUncertain {
 		return Fail(InvalidArgument, "Unknown question response delivery observation.", "Retain the original attempt as not sent, transmitted or uncertain; do not infer native acceptance.")
+	}
+	return nil
+}
+
+// Acceptance is a native tool-output fact, independently retained from server
+// queue acceptance, pipe delivery, native request closure and disk persistence.
+type QuestionAcceptanceEvidence string
+
+const NativeQuestionOutput QuestionAcceptanceEvidence = "native-question-output"
+
+type QuestionAcceptanceObservation struct {
+	Evidence QuestionAcceptanceEvidence `json:"evidence"`
+	Sequence uint64                     `json:"sequence"`
+}
+type ExecutionQuestionAcceptanceUpdate struct {
+	InteractionID ID                         `json:"interaction_id"`
+	ResponseID    ID                         `json:"response_id"`
+	ClaimID       ID                         `json:"claim_id"`
+	NativeItemID  string                     `json:"native_item_id"`
+	Evidence      QuestionAcceptanceEvidence `json:"evidence"`
+}
+
+func (u ExecutionQuestionAcceptanceUpdate) Validate() error {
+	for _, id := range []ID{u.InteractionID, u.ResponseID, u.ClaimID} {
+		if err := id.Validate(); err != nil {
+			return err
+		}
+	}
+	if err := Text(u.NativeItemID, "native question item", 1024, true); err != nil {
+		return err
+	}
+	if u.Evidence != NativeQuestionOutput {
+		return Fail(InvalidArgument, "Unknown native question acceptance evidence.", "Use the exact owned native tool-output observation; transport or closure cannot substitute for acceptance.")
 	}
 	return nil
 }

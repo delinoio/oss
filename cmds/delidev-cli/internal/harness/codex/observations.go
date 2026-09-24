@@ -11,10 +11,11 @@ import (
 type MetadataKind string
 
 const (
-	ThreadIdentityChecked MetadataKind = "thread-identity-checked"
-	ThreadSettingsChecked MetadataKind = "thread-settings-checked"
-	RemoteControlDisabled MetadataKind = "remote-control-disabled"
-	QuotaUnavailable      MetadataKind = "quota-unavailable"
+	ThreadIdentityChecked  MetadataKind = "thread-identity-checked"
+	ThreadSettingsChecked  MetadataKind = "thread-settings-checked"
+	RemoteControlDisabled  MetadataKind = "remote-control-disabled"
+	QuotaUnavailable       MetadataKind = "quota-unavailable"
+	RawSupplementDiscarded MetadataKind = "raw-supplement-discarded"
 )
 
 type tokenCountsWire struct {

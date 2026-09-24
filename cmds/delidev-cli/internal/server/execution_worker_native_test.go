@@ -487,7 +487,7 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 		t.Fatal(err)
 	}
 	session, err := store.Decode[domain.Session](retained)
-	if err != nil || (!responseScenario && session.ActiveExecutionID != "") || session.Execution == nil || !session.Execution.CleanupVerified || session.PendingInputs != 0 || session.Outcome != domain.ExecutionSucceeded {
+	if err != nil || session.ActiveExecutionID != "" || session.Execution == nil || !session.Execution.CleanupVerified || session.PendingInputs != 0 || session.Outcome != domain.ExecutionSucceeded {
 		t.Fatal("Worker native completion was not atomically published")
 	}
 	_, terminalInbox := readExecutionInbox(t, f, domain.ExecutionTerminalInbox, f.input.ExecutionID)
@@ -500,11 +500,11 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 			t.Fatal("native response lost its original interaction", err)
 		}
 		interaction, err := store.Decode[domain.ExecutionInteraction](rows[0])
-		if err != nil || interaction.Closure == domain.InteractionOpen || interaction.Response == nil || interaction.Response.State != domain.QuestionResponseTransmitted || interaction.Response.Claim == nil || interaction.Response.Delivery == nil || interaction.Response.Delivery.State != domain.QuestionTransmitted || len(interaction.Response.Input.Answers["choice"]) != 1 || interaction.Response.Input.Answers["choice"][0] != "Second" {
+		if err != nil || interaction.Closure == domain.InteractionOpen || interaction.Response == nil || interaction.Response.State != domain.QuestionResponseAccepted || interaction.Response.Acceptance == nil || interaction.Response.Acceptance.Evidence != domain.NativeQuestionOutput || interaction.Response.Claim == nil || interaction.Response.Delivery == nil || interaction.Response.Delivery.State != domain.QuestionTransmitted || len(interaction.Response.Input.Answers["choice"]) != 1 || interaction.Response.Input.Answers["choice"][0] != "Second" {
 			t.Fatal("native response lost its claim/transport evidence")
 		}
-		if session.Recovery != domain.NeedsRecovery || session.Dispatch != domain.DispatchPaused || session.ActiveExecutionID != f.input.ExecutionID || session.Execution.UnconfirmedResponses != 1 {
-			t.Fatal("native request closure falsely confirmed answer acceptance")
+		if session.Recovery != domain.NoRecovery || session.Dispatch != domain.DispatchPaused || session.ActiveExecutionID != "" || session.Execution.UnconfirmedResponses != 0 {
+			t.Fatal("exact native answer acceptance failed to reconcile healthy execution")
 		}
 		_, questionInbox := readExecutionInbox(t, f, domain.InteractionInbox, rows[0].ID)
 		if questionInbox.ReadState != domain.InboxRead {

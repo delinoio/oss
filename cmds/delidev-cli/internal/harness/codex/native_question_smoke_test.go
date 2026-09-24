@@ -41,7 +41,7 @@ func TestManualNativeQuestionResponse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var answered, closed bool
+	var answered, closed, accepted bool
 	var arrival domain.ID
 	functionOutputs := 0
 	for {
@@ -66,6 +66,12 @@ func TestManualNativeQuestionResponse(t *testing.T) {
 			}
 			closed = true
 		}
+		if event.Kind == QuestionAcceptedEvent {
+			if !answered || !event.InteractionState.Accepted || event.InteractionState.ID != arrival || event.InteractionState.ResponseID == "" || event.InteractionState.Delivery != QuestionTransmitted {
+				t.Fatal("native acceptance lost exact response binding")
+			}
+			accepted = true
+		}
 		if event.Native != nil && event.Native.Method == "item/completed" {
 			var params struct{ Item struct{ Type string } }
 			if json.Unmarshal(event.Native.Params, &params) == nil && params.Item.Type == "functionCallOutput" {
@@ -79,13 +85,13 @@ func TestManualNativeQuestionResponse(t *testing.T) {
 			break
 		}
 	}
-	if !answered || !closed || !received.Load() || requests.Load() != 2 {
+	if !answered || !closed || !accepted || c.execution.interactions.blocksInput() || !received.Load() || requests.Load() != 2 {
 		t.Fatal("native question lifecycle incomplete")
 	}
 	if err := c.Close(); err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("Codex %s: question sent and native request closed; scripted model received exact answer; %d function-output item observations; no external account", SupportedVersion, functionOutputs)
+	t.Logf("Codex %s: question sent, closed and accepted by exact native tool output; scripted model received exact answer; %d function-output item observations; no external account", SupportedVersion, functionOutputs)
 }
 
 // nativeQuestionProvider never sends a request outside its loopback listener.

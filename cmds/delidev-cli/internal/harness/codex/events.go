@@ -35,6 +35,7 @@ const (
 	TurnDiffEvent             EventKind = "turn-diff"
 	InteractionRequestedEvent EventKind = "interaction-requested"
 	InteractionClosedEvent    EventKind = "interaction-closed"
+	QuestionAcceptedEvent     EventKind = "question-accepted"
 )
 
 type MessageRole string
@@ -136,6 +137,9 @@ func (c *Client) NextEvent(ctx context.Context) (Event, error) {
 		}
 		return Event{}, c.problem
 	}
+	if event.Kind == QuestionAcceptedEvent && c.logger != nil {
+		c.logger.InfoContext(ctx, "Codex native question acceptance observed", "owner_id", c.ownerID, "interaction_id", event.InteractionState.ID, "response_id", event.InteractionState.ResponseID, "turn_id", event.TurnID)
+	}
 	event.EmittedAtMS = native.EmittedAtMS
 	return event, nil
 }
@@ -153,6 +157,8 @@ func (c *Client) observeEventLocked(native nativewire.Event) (Event, error) {
 		return privateNative(native), nil
 	}
 	switch native.Method {
+	case "rawResponseItem/completed", "rawResponse/completed":
+		return c.observeRawQuestionEvidenceLocked(native)
 	case "turn/started", "turn/completed":
 		var params struct {
 			ThreadID domain.ID       `json:"threadId"`

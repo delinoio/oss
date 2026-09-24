@@ -102,7 +102,7 @@ func (s *Service) PublishExecution(ctx context.Context, req *connect.Request[pb.
 	if err := domain.Decode(result.Data, &receipt); err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
-	if event.Kind == domain.ExecutionThreadBound || event.Kind == domain.ExecutionInputAccepted || event.Kind == domain.ExecutionTurnFinished || event.Kind.IsInteraction() || event.Kind == domain.ExecutionWaitingChanged || event.Kind == domain.ExecutionQuestionDeliveryObserved {
+	if event.Kind == domain.ExecutionThreadBound || event.Kind == domain.ExecutionInputAccepted || event.Kind == domain.ExecutionTurnFinished || event.Kind.IsInteraction() || event.Kind == domain.ExecutionWaitingChanged || event.Kind == domain.ExecutionQuestionDeliveryObserved || event.Kind == domain.ExecutionQuestionAccepted {
 		s.logger.InfoContext(ctx, "execution_event_committed", "job_id", identity.Job, "execution_id", event.ExecutionID, "kind", event.Kind, "sequence", event.Sequence, "replayed", result.Replayed)
 	}
 	response := connect.NewResponse(&pb.PublishExecutionResponse{AcknowledgedSequence: receipt.Sequence, Replayed: result.Replayed})
@@ -207,6 +207,10 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 				responseUncertain, responseErr = publishQuestionDelivery(tx, job, input, actor, progress, event)
 				if responseErr != nil {
 					return responseErr
+				}
+			} else if event.Kind == domain.ExecutionQuestionAccepted {
+				if err := publishQuestionAcceptance(tx, job, input, actor, progress, event); err != nil {
+					return err
 				}
 			} else if event.Kind.IsInteraction() {
 				responseUncertain, responseErr = publishExecutionInteraction(tx, input, sr, event)
