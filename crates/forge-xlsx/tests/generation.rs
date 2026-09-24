@@ -202,3 +202,49 @@ fn omitted_alignment_keeps_excel_general_while_explicit_alignment_is_emitted() {
         );
     }
 }
+
+#[test]
+fn differential_boolean_styles_distinguish_false_true_and_omitted() {
+    for enabled in [None, Some(false), Some(true)] {
+        let mut book = workbook();
+        book.sheets[0].conditional_formats[0].rule = serde_json::from_value(json!({
+            "type":"formula", "formula":"TRUE", "format":{"style":{"bold":enabled,"italic":enabled,"underline":enabled}}
+        })).unwrap();
+        let bytes = generate(&book).unwrap();
+        // Both initial generation and replacement of an imported rule use DXF
+        // overlays, which must explicitly clear an underlying cell's styling.
+        let imported = import(&bytes).unwrap();
+        let target = imported
+            .targets
+            .iter()
+            .find(|t| t.kind == TargetKind::ConditionalFormat)
+            .unwrap();
+        let edited = replace(
+            &imported,
+            &[(
+                target.id,
+                EditValue::ConditionalFormat(book.sheets[0].conditional_formats[0].clone()),
+            )],
+        )
+        .unwrap();
+        for (bytes, last) in [(&bytes, false), (&edited, true)] {
+            let parts = read(bytes).unwrap();
+            let styles = xml(&parts["xl/styles.xml"]).unwrap();
+            let dxfs: Vec<_> = styles
+                .descendants()
+                .filter(|n| n.has_tag_name((S, "dxf")))
+                .collect();
+            let dxf = if last { dxfs.last().unwrap() } else { &dxfs[0] };
+            for name in ["b", "i", "u"] {
+                let node = dxf.descendants().find(|n| n.has_tag_name((S, name)));
+                assert_eq!(node.is_some(), enabled.is_some());
+                if enabled == Some(false) {
+                    assert_eq!(
+                        node.unwrap().attribute("val"),
+                        Some(if name == "u" { "none" } else { "0" })
+                    );
+                }
+            }
+        }
+    }
+}
