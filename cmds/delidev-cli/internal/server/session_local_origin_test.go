@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -163,5 +164,80 @@ func TestLocalSessionRefusesMachineAssertionsAndForeignAuthority(t *testing.T) {
 		return nil
 	}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestLocalPreparationRecoveryRechecksOriginAtAcceptanceAndResult(t *testing.T) {
+	for _, stage := range []string{"acceptance", "result"} {
+		t.Run(stage, func(t *testing.T) {
+			s, f, input, credential := localOriginFixture(t)
+			raw, _ := json.Marshal(input)
+			created, err := sessionClient(f).CreateSession(context.Background(), ownerRequest(f.identity, &pb.CreateSessionRequest{RequestId: string(domain.NewID()), DocumentJson: raw, LocalWorkerToken: credential.Token}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, client, instance, stream := workspaceStream(t, f, credential, input.MachineID)
+			if !stream.Receive() || stream.Msg().Job == nil {
+				t.Fatal(stream.Err())
+			}
+			claimed := stream.Msg().Job
+			if _, err := client.ReportWork(ctx, ownerRequest(credential, &pb.ReportWorkRequest{Mutation: acctMutation(claimed, domain.NewID()), MachineId: string(input.MachineID), InstanceId: instance, Problem: &pb.ErrorDetail{Code: string(domain.RecoveryRequired)}})); err != nil {
+				t.Fatal(err)
+			}
+			corruptOrigin := func() {
+				t.Helper()
+				_, err := s.Store.Mutate(ctx, domain.NewID(), "fixture.replace-local-origin", nil, func(tx *store.Tx) (any, error) {
+					r, session, err := sessionRecord(tx, domain.ID(created.Msg.Change.Session.Id))
+					if err != nil {
+						return nil, err
+					}
+					// The reporting Worker remains authenticated, but the original origin
+					// evidence no longer proves this Local session's accepted computer.
+					session.LocalOrigin.DeviceID = domain.NewID()
+					return tx.Put(r.Kind, r.ID, r.Revision, r.SessionID, r.ProjectID, session)
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if stage == "acceptance" {
+				corruptOrigin()
+			}
+			current := currentCatalogResource(t, f, created.Msg.Change.Session)
+			recovery, err := sessionClient(f).RecoverSessionWorkspace(ctx, ownerRequest(f.identity, &pb.RecoverSessionWorkspaceRequest{Mutation: acctMutation(current, domain.NewID()), Cleanup: true}))
+			if stage == "acceptance" {
+				if connect.CodeOf(err) != connect.CodePermissionDenied {
+					t.Fatal("unproven origin accepted recovery", err)
+				}
+				if sessionBody(t, currentCatalogResource(t, f, current)).Preparation.RecoveryJobID != "" {
+					t.Fatal("rejected recovery left a job")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !stream.Receive() || stream.Msg().Job == nil || stream.Msg().Job.Id != recovery.Msg.Change.RecoveryJob.Id {
+				t.Fatal("missing recovery assignment", stream.Err())
+			}
+			recoveryJob := stream.Msg().Job
+			corruptOrigin()
+			var job domain.Job
+			var request workspace.RecoveryRequest
+			if domain.Decode(recoveryJob.DocumentJson, &job) != nil || domain.Decode(job.Input, &request) != nil {
+				t.Fatal("bad recovery fixture")
+			}
+			preparationRaw, _ := json.Marshal(request.Preparation)
+			digest := sha256.Sum256(preparationRaw)
+			output, _ := json.Marshal(workspace.RecoveryResult{JobID: request.JobID, InputDigest: hex.EncodeToString(digest[:]), Outcome: workspace.RecoveredClean})
+			_, err = client.ReportWork(ctx, ownerRequest(credential, &pb.ReportWorkRequest{Mutation: acctMutation(recoveryJob, domain.NewID()), MachineId: string(input.MachineID), InstanceId: instance, OutputJson: output}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			recovered := sessionBody(t, currentCatalogResource(t, f, current))
+			if recovered.Preparation.State != domain.PreparationUncertain || recovered.Recovery != domain.NeedsRecovery || recovered.Dispatch != domain.DispatchPaused {
+				t.Fatal("changed origin published clean recovery", recovered)
+			}
+		})
 	}
 }

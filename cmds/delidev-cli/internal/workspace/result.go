@@ -76,12 +76,12 @@ func ValidateResult(input PrepareRequest, result Manifest, workerOS string) erro
 	ownedRoot := ""
 	for i, repo := range result.Repositories {
 		expected := input.Repositories[i]
-		if repo.ID != expected.ID || repo.ID.Validate() != nil || seen[repo.ID] || !absolute(repo.Source) || !absolute(repo.Path) || repo.Source != expected.Checkout || !canonicalCommit(repo.BaseCommit) || !canonicalCommit(repo.StartingCommit) || repo.Owned != (input.Type == domain.Worktree) {
+		if repo.ID != expected.ID || repo.ID.Validate() != nil || seen[repo.ID] || !absolute(repo.Source) || !absolute(repo.Path) || repo.Source != expected.Checkout || repo.Owned != (input.Type == domain.Worktree) {
 			return ResultUncertain()
 		}
 		seen[repo.ID] = true
 		if input.Type == domain.Worktree {
-			if repo.LocalIdentityDigest != "" {
+			if repo.LocalIdentityDigest != "" || repo.LocalHEAD != LocalHEADCommitted || !canonicalCommit(repo.BaseCommit) || !canonicalCommit(repo.StartingCommit) {
 				return ResultUncertain()
 			}
 			if repo.Starting.Validate(false) != nil || repo.Base.Validate(false) != nil || (expected.Starting.Type != "" && repo.Starting != expected.Starting) || (expected.Base.Type != "" && repo.Base != expected.Base) || (expected.Base.Type == "" && repo.Base != repo.Starting) || (repo.Base == repo.Starting && repo.BaseCommit != repo.StartingCommit) {
@@ -100,7 +100,7 @@ func ValidateResult(input PrepareRequest, result Manifest, workerOS string) erro
 				return ResultUncertain()
 			}
 			ownedRoot = path.Dir(location)
-		} else if len(repo.LocalIdentityDigest) != 64 || !canonicalCommit(repo.LocalIdentityDigest) || repo.Path != repo.Source || repo.StartingCommit != repo.BaseCommit || repo.Starting != (domain.Reference{Type: domain.CommitReference, Name: repo.StartingCommit}) {
+		} else if !validLocalRepository(repo) || repo.Base != expected.Base {
 			return ResultUncertain()
 		}
 		if repo.ID == input.PrimaryRepository {
@@ -126,4 +126,20 @@ func canonicalCommit(value string) bool {
 		}
 	}
 	return true
+}
+
+// Local captures historical preparation facts; an unborn branch has no commit
+// or starting reference. Only this explicit state permits empty commit fields.
+func validLocalRepository(repo PreparedRepository) bool {
+	if repo.Owned || repo.Path != repo.Source || len(repo.LocalIdentityDigest) != 64 || !canonicalCommit(repo.LocalIdentityDigest) || repo.StartingCommit != repo.BaseCommit {
+		return false
+	}
+	switch repo.LocalHEAD {
+	case LocalHEADCommitted:
+		return canonicalCommit(repo.StartingCommit) && repo.Starting == (domain.Reference{Type: domain.CommitReference, Name: repo.StartingCommit})
+	case LocalHEADUnborn:
+		return repo.StartingCommit == "" && repo.Starting == (domain.Reference{})
+	default:
+		return false
+	}
 }

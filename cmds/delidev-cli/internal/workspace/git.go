@@ -51,12 +51,20 @@ func (b *limitedOutput) Write(p []byte) (int, error) {
 	return b.Buffer.Write(p)
 }
 func (g Git) run(ctx context.Context, root string, args ...string) ([]byte, error) {
+	raw, _, err := g.runCommand(ctx, root, args...)
+	return raw, err
+}
+
+// Native exit status is private evidence for commands with documented absence
+// statuses. Launch, ownership, cancellation and output failures return -1 and
+// must never be interpreted as an absent Git reference.
+func (g Git) runCommand(ctx context.Context, root string, args ...string) ([]byte, int, error) {
 	binary := g.Executable
 	if binary == "" {
 		var err error
 		binary, err = exec.LookPath("git")
 		if err != nil {
-			return nil, domain.Fail(domain.MissingInput, "Git is not installed on this Worker.", "Install Git on the selected execution machine.")
+			return nil, -1, domain.Fail(domain.MissingInput, "Git is not installed on this Worker.", "Install Git on the selected execution machine.")
 		}
 	}
 	timeout := g.Timeout
@@ -72,28 +80,28 @@ func (g Git) run(ctx context.Context, root string, args ...string) ([]byte, erro
 	commandArgs = append(commandArgs, args...)
 
 	if g.ProcessRoot == "" || g.OwnerID.Validate() != nil {
-		return nil, domain.Fail(domain.MissingInput, "Git requires a private execution ownership scope.", "Run this operation through its owning Worker job or session.")
+		return nil, -1, domain.Fail(domain.MissingInput, "Git requires a private execution ownership scope.", "Run this operation through its owning Worker job or session.")
 	}
 	var out limitedOutput
 	out.limit = MaxGitOutput
 	err := process.Run(bounded, process.Config{Directory: g.ProcessRoot, OwnerID: g.OwnerID, Executable: binary, Args: commandArgs, Env: gitEnvironment(), Cwd: root, Stdout: &out, Stderr: io.Discard, Logger: g.Logger})
 	if err != nil {
 		if domain.SafeError(err).Code == domain.RecoveryRequired {
-			return nil, err
+			return nil, -1, err
 		}
 		if bounded.Err() != nil {
-			return nil, domain.SafeError(bounded.Err())
+			return nil, -1, domain.SafeError(bounded.Err())
 		}
 		if out.overflow {
-			return nil, domain.Fail(domain.ResourceExhausted, "Git output exceeded its bound.", "Narrow the requested repository operation.")
+			return nil, -1, domain.Fail(domain.ResourceExhausted, "Git output exceeded its bound.", "Narrow the requested repository operation.")
 		}
 		var exit interface{ ExitCode() int }
 		if errors.As(err, &exit) {
-			return nil, &domain.Error{Code: domain.Unavailable, Message: "Git could not complete the operation on this Worker.", Guidance: "Check the selected repository, reference, remote access, and Worker Git authentication; no stale fallback was used.", Cause: "git_exit"}
+			return nil, exit.ExitCode(), &domain.Error{Code: domain.Unavailable, Message: "Git could not complete the operation on this Worker.", Guidance: "Check the selected repository, reference, remote access, and Worker Git authentication; no stale fallback was used.", Cause: "git_exit"}
 		}
-		return nil, &domain.Error{Code: domain.Unavailable, Message: "Git could not be launched on this Worker.", Guidance: "Check the configured executable and filesystem permissions.", Cause: "git_launch"}
+		return nil, -1, &domain.Error{Code: domain.Unavailable, Message: "Git could not be launched on this Worker.", Guidance: "Check the configured executable and filesystem permissions.", Cause: "git_launch"}
 	}
-	return out.Bytes(), nil
+	return out.Bytes(), 0, nil
 }
 func gitEnvironment() []string {
 	allowed := map[string]bool{

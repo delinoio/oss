@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -20,12 +21,18 @@ import (
 )
 
 func TestWorkspaceRecoveryAfterWorkerRestartUsesOriginalJournal(t *testing.T) {
-	for _, mode := range []string{"ready", "partial-cleanup", "mismatched-journal"} {
-		partial := mode == "partial-cleanup"
+	for _, mode := range []string{"ready", "partial-cleanup", "mismatched-journal", "local-ready", "local-partial-cleanup", "local-mismatched-journal"} {
+		partial := strings.HasSuffix(mode, "partial-cleanup")
+		local := strings.HasPrefix(mode, "local-")
 		t.Run(mode, func(t *testing.T) {
 			f := newAccountFixture(t)
 			selection, identity := sessionSelection(t, f)
-			_, initial := createSessionFixture(t, f, selection)
+			var initial *pb.SessionChange
+			if local {
+				initial = createUnbornRecoverySession(t, f, selection, identity)
+			} else {
+				_, initial = createSessionFixture(t, f, selection)
+			}
 			_, _, instance, stream := workspaceStream(t, f, identity, selection.MachineID)
 			if !stream.Receive() || stream.Msg().Job == nil {
 				t.Fatal(stream.Err())
@@ -69,7 +76,7 @@ func TestWorkspaceRecoveryAfterWorkerRestartUsesOriginalJournal(t *testing.T) {
 			if err := security.WriteAtomic(filepath.Join(workerRoot, "jobs", claimed.Id+".json"), journalRaw); err != nil {
 				t.Fatal(err)
 			}
-			if mode == "mismatched-journal" {
+			if strings.HasSuffix(mode, "mismatched-journal") {
 				journal["digest"] = strings.Repeat("0", 64)
 				corrupted, _ := json.Marshal(journal)
 				if err := security.WriteAtomic(filepath.Join(workerRoot, "jobs", claimed.Id+".json"), corrupted); err != nil {
@@ -155,7 +162,7 @@ func TestWorkspaceRecoveryAfterWorkerRestartUsesOriginalJournal(t *testing.T) {
 				}
 				time.Sleep(10 * time.Millisecond)
 			}
-			if mode == "mismatched-journal" {
+			if strings.HasSuffix(mode, "mismatched-journal") {
 				if v := sessionBody(t, current); v.Recovery != domain.NeedsRecovery || v.Archive != domain.ArchivePending || v.Preparation.State != domain.PreparationUncertain {
 					t.Fatal("mismatched original journal falsely confirmed recovery")
 				}
@@ -202,12 +209,27 @@ func TestWorkspaceRecoveryAfterWorkerRestartUsesOriginalJournal(t *testing.T) {
 			if err != nil || string(oldJournal) != string(journalRaw) {
 				t.Fatal("recovery rewrote original execution evidence")
 			}
-			if partial {
+			if partial && !local {
 				if _, err := os.Stat(filepath.Dir(retained)); !os.IsNotExist(err) {
 					t.Fatal("incomplete workspace not cleaned")
 				}
 			} else if content, err := os.ReadFile(retained); err != nil || string(content) != "ready content" {
 				t.Fatal("ready content lost during recovery")
+			}
+			if local {
+				if partial {
+					if _, err := os.Stat(filepath.Join(manager.Root, "workspaces", initial.Session.Id)); !os.IsNotExist(err) {
+						t.Fatal("Local metadata remains", err)
+					}
+				}
+				branch, err := exec.Command("git", "-C", manifest.PrimaryPath, "symbolic-ref", "HEAD").Output()
+				if err != nil || strings.TrimSpace(string(branch)) != "refs/heads/unborn" {
+					t.Fatal("recovery changed Local branch", err)
+				}
+				staged, err := os.ReadFile(filepath.Join(manifest.PrimaryPath, "staged.txt"))
+				if err != nil || string(staged) != "original staged content" {
+					t.Fatal("Local recovery changed staged file", err)
+				}
 			}
 		})
 	}
@@ -254,4 +276,45 @@ func TestStoppingRecoveryCancelsOnlyItsJobAndKeepsOriginalUncertain(t *testing.T
 	if value.Archive != domain.ArchivePending || value.Recovery != domain.NeedsRecovery || value.Preparation.State != domain.PreparationUncertain || value.Dispatch != domain.DispatchPaused {
 		t.Fatal("canceled recovery falsely confirmed original cleanup")
 	}
+}
+
+// The repository descriptor is fixture state; session creation, assignment,
+// server/Worker restart and recovery all use the public authenticated protocol.
+func createUnbornRecoverySession(t *testing.T, f *accountFixture, selection domain.CreateSession, identity security.Identity) *pb.SessionChange {
+	t.Helper()
+	checkout, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command("git", "-C", checkout, "init", "-b", "unborn").CombinedOutput(); err != nil {
+		t.Fatalf("private Git: %v %s", err, out)
+	}
+	if err := os.WriteFile(filepath.Join(checkout, "staged.txt"), []byte("original staged content"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command("git", "-C", checkout, "add", "staged.txt").CombinedOutput(); err != nil {
+		t.Fatalf("private Git add: %v %s", err, out)
+	}
+	f.shutdown()
+	db, err := store.Open(context.Background(), f.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := domain.NewID()
+	_, err = db.Mutate(context.Background(), domain.NewID(), "fixture.local-recovery-repository", nil, func(tx *store.Tx) (any, error) {
+		return tx.Put(domain.RepositoryKind, repo, 0, "", "", domain.Repository{Name: "Local recovery", Checkouts: []domain.Checkout{{MachineID: selection.MachineID, Path: checkout}}})
+	})
+	closeErr := db.Close()
+	if err != nil || closeErr != nil {
+		t.Fatal(err, closeErr)
+	}
+	f.start()
+	project := f.save(pb.EntityKind_ENTITY_KIND_PROJECT, domain.Project{Name: "Local recovery", Repositories: []domain.ID{repo}, PrimaryRepository: repo})
+	selection.Workspace, selection.ProjectID = domain.Local, domain.ID(project.Id)
+	raw, _ := json.Marshal(selection)
+	response, err := sessionClient(f).CreateSession(context.Background(), ownerRequest(f.identity, &pb.CreateSessionRequest{RequestId: string(domain.NewID()), DocumentJson: raw, LocalWorkerToken: identity.Token}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return response.Msg.Change
 }

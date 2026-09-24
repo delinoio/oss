@@ -40,6 +40,9 @@ func (s *Service) RecoverSessionWorkspace(ctx context.Context, req *connect.Requ
 		if _, _, err := activeMachine(tx, session.MachineID); err != nil {
 			return nil, err
 		}
+		if err := validateLocalOrigin(tx, session); err != nil {
+			return nil, err
+		}
 		action := workspace.InspectPreparation
 		if req.Msg.Cleanup {
 			action = workspace.CleanupPreparation
@@ -90,6 +93,9 @@ func (s *Service) RecoverSessionWorkspace(ctx context.Context, req *connect.Requ
 		if err := domain.Decode(claim.Input, &preparation); err != nil {
 			return nil, err
 		}
+		if err := validateRecoveryPreparation(tx, r.ID, session, preparation); err != nil {
+			return nil, err
+		}
 		digest := sha256.Sum256(assigned.Data)
 		input := workspace.RecoveryRequest{JobID: original.ID, InstanceID: claim.InstanceID, Revision: assigned.Revision, AssignmentDigest: hex.EncodeToString(digest[:]), Preparation: preparation, Action: action}
 		raw, err := json.Marshal(input)
@@ -119,6 +125,19 @@ func (s *Service) RecoverSessionWorkspace(ctx context.Context, req *connect.Requ
 	response := connect.NewResponse(&pb.RecoverSessionWorkspaceResponse{Change: change})
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil
+}
+
+func validateRecoveryPreparation(tx *store.Tx, id domain.ID, session domain.Session, input workspace.PrepareRequest) error {
+	if input.SessionID != id || input.MachineID != session.MachineID || input.Type != session.Workspace {
+		return workspace.ResultUncertain()
+	}
+	if err := validateLocalOrigin(tx, session); err != nil {
+		return err
+	}
+	if input.Type == domain.Local && (session.LocalOrigin == nil || input.OriginMachineID != session.LocalOrigin.MachineID) {
+		return workspace.ResultUncertain()
+	}
+	return nil
 }
 
 func finishWorkspaceRecovery(tx *store.Tx, record store.Record, job domain.Job) error {

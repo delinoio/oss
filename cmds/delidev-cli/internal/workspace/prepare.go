@@ -34,7 +34,16 @@ type PrepareRequest struct {
 	Repositories      []RepositorySpec     `json:"repositories"`
 	PrimaryRepository domain.ID            `json:"primary_repository,omitempty"`
 }
+type LocalHEADState string
+
+const (
+	// Omission preserves existing committed Local manifests and their checkpoints.
+	LocalHEADCommitted LocalHEADState = ""
+	LocalHEADUnborn    LocalHEADState = "unborn"
+)
+
 type PreparedRepository struct {
+	LocalHEAD           LocalHEADState   `json:"local_head,omitempty"`
 	LocalIdentityDigest string           `json:"local_identity_digest,omitempty"`
 	ID                  domain.ID        `json:"id"`
 	Source              string           `json:"source"`
@@ -248,14 +257,19 @@ func (m *Manager) Prepare(ctx context.Context, request PrepareRequest) (Manifest
 			if request.Type == domain.Local {
 				// Local means exactly the existing checkout. Do not fetch, select a new
 				// starting branch, or prepare a replacement tree for any repository.
-				raw, err := git.run(ctx, inspection.Root, "rev-parse", "--verify", "HEAD^{commit}")
+				headState, commit, err := git.localHEAD(ctx, inspection.Root)
 				if err != nil {
 					return failed(err)
 				}
 				prepared.Path = inspection.Root
-				prepared.StartingCommit = trimGit(raw)
+				prepared.LocalHEAD = headState
+				prepared.StartingCommit = commit
 				prepared.BaseCommit = prepared.StartingCommit
-				prepared.Starting = domain.Reference{Type: domain.CommitReference, Name: prepared.StartingCommit}
+				prepared.Starting = domain.Reference{}
+				if headState == LocalHEADCommitted {
+					prepared.Starting = domain.Reference{Type: domain.CommitReference, Name: commit}
+				}
+				m.Logger.Debug("workspace_local_head_observed", "session_id", request.SessionID, "repository_id", spec.ID, "unborn", headState == LocalHEADUnborn)
 				prepared.LocalIdentityDigest, err = captureLocalIdentity(ctx, git, prepared.ID, prepared.Path)
 				if err != nil {
 					return failed(err)

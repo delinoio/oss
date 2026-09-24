@@ -456,7 +456,8 @@ func (s *Service) ReportWork(ctx context.Context, req *connect.Request[pb.Report
 					return nil, err
 				}
 				var output workspace.RecoveryResult
-				if domain.Decode(req.Msg.OutputJson, &output) != nil || workspace.ValidateRecoveryResult(expected, output, machineValue.OS) != nil {
+				_, session, sessionErr := sessionRecord(tx, record.SessionID)
+				if sessionErr != nil || validateRecoveryPreparation(tx, record.SessionID, session, expected.Preparation) != nil || domain.Decode(req.Msg.OutputJson, &output) != nil || workspace.ValidateRecoveryResult(expected, output, machineValue.OS) != nil {
 					problem = workspace.ResultUncertain()
 				}
 			case domain.PrepareWorkspaceJob:

@@ -205,9 +205,6 @@ func (m *Manager) validatePartial(input PrepareRequest, manifest Manifest) error
 		return ResultUncertain()
 	}
 	root := filepath.Join(m.Root, "workspaces", string(input.SessionID))
-	if input.Type == domain.Local {
-		return domain.Fail(domain.Unsupported, "Local preparation recovery is not available through this operation.", "Preserve all original checkouts.")
-	}
 	if input.Type == domain.GeneralChat {
 		if len(manifest.Repositories) != 0 || (manifest.PrimaryPath != "" && manifest.PrimaryPath != filepath.Join(root, "chat")) {
 			return ResultUncertain()
@@ -217,7 +214,16 @@ func (m *Manager) validatePartial(input PrepareRequest, manifest Manifest) error
 	primaryFound := manifest.PrimaryPath == ""
 	for i, repo := range manifest.Repositories {
 		expected := input.Repositories[i]
-		if repo.ID != expected.ID || repo.Source != expected.Checkout || repo.Path != filepath.Join(root, string(repo.ID)) || !repo.Owned || repo.Source == repo.Path || !canonicalCommit(repo.StartingCommit) || !canonicalCommit(repo.BaseCommit) {
+		if repo.ID != expected.ID || repo.Source != expected.Checkout {
+			return ResultUncertain()
+		}
+		if input.Type == domain.Local {
+			// Local entries are recorded only after complete read-only inspection.
+			// Cleanup discards metadata, never these non-owned original directories.
+			if !validLocalRepository(repo) || repo.Base != expected.Base {
+				return ResultUncertain()
+			}
+		} else if repo.Path != filepath.Join(root, string(repo.ID)) || !repo.Owned || repo.Source == repo.Path || repo.LocalIdentityDigest != "" || repo.LocalHEAD != LocalHEADCommitted || !canonicalCommit(repo.StartingCommit) || !canonicalCommit(repo.BaseCommit) {
 			return ResultUncertain()
 		}
 		if repo.ID == input.PrimaryRepository && manifest.PrimaryPath == repo.Path {
@@ -291,13 +297,21 @@ func (m *Manager) verifyWorkspaceIdentity(ctx context.Context, input PrepareRequ
 	git := m.Git
 	git.OwnerID = input.SessionID
 	for _, repo := range manifest.Repositories {
-		head, err := git.run(ctx, repo.Path, "rev-parse", "--verify", "HEAD^{commit}")
-		if err != nil || !canonicalCommit(trimGit(head)) || (input.Type == domain.Worktree && validation == preparationIdentity && trimGit(head) != repo.StartingCommit) {
-			return "", ResultUncertain()
-		}
-		branch, err := git.run(ctx, repo.Path, "rev-parse", "--abbrev-ref", "HEAD")
-		if err != nil || trimGit(branch) == "" || (input.Type == domain.Worktree && validation == preparationIdentity && trimGit(branch) != "HEAD") {
-			return "", ResultUncertain()
+		if input.Type == domain.Local {
+			// The user's current branch may gain its first commit, or switch to an
+			// orphan branch, without changing the retained administrative identity.
+			if _, _, err := git.localHEAD(ctx, repo.Path); err != nil {
+				return "", ResultUncertain()
+			}
+		} else {
+			head, err := git.run(ctx, repo.Path, "rev-parse", "--verify", "HEAD^{commit}")
+			if err != nil || !canonicalCommit(trimGit(head)) || (validation == preparationIdentity && trimGit(head) != repo.StartingCommit) {
+				return "", ResultUncertain()
+			}
+			branch, err := git.run(ctx, repo.Path, "rev-parse", "--abbrev-ref", "HEAD")
+			if err != nil || trimGit(branch) == "" || (validation == preparationIdentity && trimGit(branch) != "HEAD") {
+				return "", ResultUncertain()
+			}
 		}
 		source, err := git.run(ctx, repo.Source, "rev-parse", "--path-format=absolute", "--git-common-dir")
 		if err != nil {

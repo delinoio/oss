@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -46,10 +47,15 @@ const (
 	nativeDefaultWorkspaces nativeCLIWorkspaceProfile = iota
 	nativeMultipleWorkspaces
 	nativeLocalWorkspaces
+	nativeUnbornLocalWorkspaces
 )
 
 func TestManualNativeCLILocalRepositories(t *testing.T) {
 	testManualNativeCLI(t, false, nativeLocalWorkspaces)
+}
+
+func TestManualNativeCLIUnbornLocalRepositories(t *testing.T) {
+	testManualNativeCLI(t, false, nativeUnbornLocalWorkspaces)
 }
 
 func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWorkspaceProfile) {
@@ -70,7 +76,7 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 	if profile == nativeMultipleWorkspaces {
 		scenarios = []nativeScenario{{domain.ExecuteMode, domain.Worktree, 2}, {domain.PlanMode, domain.Worktree, 2}}
 	}
-	if profile == nativeLocalWorkspaces {
+	if profile == nativeLocalWorkspaces || profile == nativeUnbornLocalWorkspaces {
 		scenarios = []nativeScenario{{domain.ExecuteMode, domain.Local, 2}, {domain.PlanMode, domain.Local, 1}}
 	}
 	for _, scenario := range scenarios {
@@ -269,15 +275,22 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 						t.Fatal(err)
 					}
 					git("add", "tracked.txt")
-					git("commit", "-m", "fixture")
-					commit := git("rev-parse", "HEAD")
+					var commit string
+					starting := domain.Reference{}
+					if profile != nativeUnbornLocalWorkspaces {
+						git("commit", "-m", "fixture")
+						commit = git("rev-parse", "HEAD")
+						starting = domain.Reference{Type: domain.CommitReference, Name: commit}
+					}
 					if scenario.workspace == domain.Local {
 						git("switch", "-c", "existing-local-branch")
 						if err := os.WriteFile(filepath.Join(checkout, "local.txt"), []byte("local commit"), 0600); err != nil {
 							t.Fatal(err)
 						}
 						git("add", "local.txt")
-						git("commit", "-m", "existing local change")
+						if profile != nativeUnbornLocalWorkspaces {
+							git("commit", "-m", "existing local change")
+						}
 						if err := os.WriteFile(filepath.Join(checkout, "tracked.txt"), []byte("keep local dirty tree"), 0600); err != nil {
 							t.Fatal(err)
 						}
@@ -285,9 +298,13 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 						if err != nil {
 							t.Fatal(err)
 						}
-						localCheckouts = append(localCheckouts, localCheckout{canonical, git("rev-parse", "HEAD")})
+						head := ""
+						if profile != nativeUnbornLocalWorkspaces {
+							head = git("rev-parse", "HEAD")
+						}
+						localCheckouts = append(localCheckouts, localCheckout{canonical, head})
 					}
-					repo := run([]string{"repository", "create", "--wait"}, domain.Repository{Name: "Private native fixture", Checkouts: []domain.Checkout{{MachineID: domain.ID(machine), Path: checkout}}, Starting: domain.Reference{Type: domain.CommitReference, Name: commit}})["resource"].(map[string]any)
+					repo := run([]string{"repository", "create", "--wait"}, domain.Repository{Name: "Private native fixture", Checkouts: []domain.Checkout{{MachineID: domain.ID(machine), Path: checkout}}, Starting: starting})["resource"].(map[string]any)
 					id := domain.ID(repo["id"].(string))
 					repositories = append(repositories, id)
 				}
@@ -417,10 +434,21 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 						if manifest.Repositories[i].Path != checkout.root || manifest.Repositories[i].Owned || manifest.Repositories[i].StartingCommit != checkout.head || preparation.Repositories[i].AutoFetch || preparation.Repositories[i].Starting.Type != "" {
 							t.Fatal("Local preparation moved or selected checkout contents")
 						}
-						git := exec.CommandContext(ctx, "git", "-C", checkout.root, "rev-parse", "HEAD")
-						out, err := git.Output()
-						if err != nil || strings.TrimSpace(string(out)) != checkout.head {
-							t.Fatal("Local HEAD changed", err)
+						if profile == nativeUnbornLocalWorkspaces {
+							if manifest.Repositories[i].LocalHEAD != workspace.LocalHEADUnborn || manifest.Repositories[i].BaseCommit != "" || manifest.Repositories[i].Starting != (domain.Reference{}) {
+								t.Fatal("unborn Local preparation invented a commit/reference")
+							}
+							out, err := exec.CommandContext(ctx, "git", "-C", checkout.root, "show-ref", "--verify", "--quiet", "refs/heads/existing-local-branch").Output()
+							var nativeExit *exec.ExitError
+							if !errors.As(err, &nativeExit) || nativeExit.ExitCode() != 1 || len(out) != 0 {
+								t.Fatal("native execution committed the unborn checkout", err)
+							}
+						} else {
+							git := exec.CommandContext(ctx, "git", "-C", checkout.root, "rev-parse", "HEAD")
+							out, err := git.Output()
+							if err != nil || strings.TrimSpace(string(out)) != checkout.head {
+								t.Fatal("Local HEAD changed", err)
+							}
 						}
 						branch, err := exec.CommandContext(ctx, "git", "-C", checkout.root, "branch", "--show-current").Output()
 						if err != nil || strings.TrimSpace(string(branch)) != "existing-local-branch" {
