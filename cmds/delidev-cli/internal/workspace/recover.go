@@ -229,9 +229,38 @@ func (m *Manager) validatePartial(input PrepareRequest, manifest Manifest) error
 	}
 	return nil
 }
+
+type readyValidation uint8
+
+const (
+	preparationIdentity readyValidation = iota
+	continuationIdentity
+)
+
+type repositoryIdentity struct {
+	ID              domain.ID `json:"id"`
+	CommonDirectory string    `json:"common_directory"`
+	GitDirectory    string    `json:"git_directory"`
+}
+type workspaceIdentity struct {
+	PrimaryPath  string               `json:"primary_path"`
+	Repositories []repositoryIdentity `json:"repositories"`
+}
+
 func (m *Manager) verifyRecoveredReady(ctx context.Context, input PrepareRequest, manifest Manifest) error {
+	_, err := m.verifyWorkspaceIdentity(ctx, input, manifest, preparationIdentity)
+	return err
+}
+
+// Only the continuation lease may select continuationIdentity, after proving
+// the exact prior closed claim. Preparation/first execution still require the
+// original detached creation commit. Both modes preserve all files unchanged.
+func (m *Manager) verifyWorkspaceIdentity(ctx context.Context, input PrepareRequest, manifest Manifest, validation readyValidation) (string, error) {
+	if validation != preparationIdentity && validation != continuationIdentity {
+		return "", ResultUncertain()
+	}
 	if err := ValidateResult(input, manifest, runtime.GOOS); err != nil {
-		return err
+		return "", err
 	}
 	root := filepath.Join(m.Root, "workspaces", string(input.SessionID))
 	paths := []string{manifest.PrimaryPath}
@@ -243,42 +272,63 @@ func (m *Manager) verifyRecoveredReady(ctx context.Context, input PrepareRequest
 		// follow replacement symlinks or accept another Worker's matching suffix.
 		if input.Type == domain.GeneralChat {
 			if path != filepath.Join(root, "chat") {
-				return ResultUncertain()
+				return "", ResultUncertain()
 			}
 		} else if filepath.Dir(path) != root {
-			return ResultUncertain()
+			return "", ResultUncertain()
 		}
 		info, err := os.Lstat(path)
 		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-			return ResultUncertain()
+			return "", ResultUncertain()
 		}
 		canonical, err := filepath.EvalSymlinks(path)
 		if err != nil || canonical != path {
-			return ResultUncertain()
+			return "", ResultUncertain()
 		}
 	}
+	identity := workspaceIdentity{PrimaryPath: manifest.PrimaryPath, Repositories: []repositoryIdentity{}}
 	git := m.Git
 	git.OwnerID = input.SessionID
 	for _, repo := range manifest.Repositories {
 		head, err := git.run(ctx, repo.Path, "rev-parse", "--verify", "HEAD^{commit}")
-		if err != nil || trimGit(head) != repo.StartingCommit {
-			return ResultUncertain()
+		if err != nil || !canonicalCommit(trimGit(head)) || (validation == preparationIdentity && trimGit(head) != repo.StartingCommit) {
+			return "", ResultUncertain()
 		}
 		branch, err := git.run(ctx, repo.Path, "rev-parse", "--abbrev-ref", "HEAD")
-		if err != nil || trimGit(branch) != "HEAD" {
-			return ResultUncertain()
+		if err != nil || trimGit(branch) == "" || (validation == preparationIdentity && trimGit(branch) != "HEAD") {
+			return "", ResultUncertain()
 		}
 		source, err := git.run(ctx, repo.Source, "rev-parse", "--path-format=absolute", "--git-common-dir")
 		if err != nil {
-			return ResultUncertain()
+			return "", ResultUncertain()
 		}
 		prepared, err := git.run(ctx, repo.Path, "rev-parse", "--path-format=absolute", "--git-common-dir")
 		if err != nil || trimGit(source) != trimGit(prepared) {
-			return ResultUncertain()
+			return "", ResultUncertain()
 		}
+		common, err := filepath.EvalSymlinks(trimGit(prepared))
+		if err != nil {
+			return "", ResultUncertain()
+		}
+		administrative, err := git.run(ctx, repo.Path, "rev-parse", "--absolute-git-dir")
+		if err != nil {
+			return "", ResultUncertain()
+		}
+		gitDirectory, err := filepath.EvalSymlinks(trimGit(administrative))
+		if err != nil {
+			return "", ResultUncertain()
+		}
+		// A managed linked worktree must retain its own registered administrative
+		// directory. Binding this identity lets later execution keep agent
+		// commits/branches without adopting a different repository/worktree.
+		relative, err := filepath.Rel(filepath.Join(common, "worktrees"), gitDirectory)
+		if err != nil || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
+			return "", ResultUncertain()
+		}
+		identity.Repositories = append(identity.Repositories, repositoryIdentity{ID: repo.ID, CommonDirectory: common, GitDirectory: gitDirectory})
 		registered, err := git.run(ctx, repo.Source, "worktree", "list", "--porcelain", "-z")
 		if err != nil {
-			return ResultUncertain()
+			return "", ResultUncertain()
 		}
 		found := false
 		for _, field := range strings.Split(string(registered), "\x00") {
@@ -287,8 +337,13 @@ func (m *Manager) verifyRecoveredReady(ctx context.Context, input PrepareRequest
 			}
 		}
 		if !found {
-			return ResultUncertain()
+			return "", ResultUncertain()
 		}
 	}
-	return nil
+	raw, err := json.Marshal(identity)
+	if err != nil {
+		return "", ResultUncertain()
+	}
+	digest := sha256.Sum256(raw)
+	return hex.EncodeToString(digest[:]), nil
 }
