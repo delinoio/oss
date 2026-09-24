@@ -15,6 +15,7 @@
 - Forge atomic file publication must flush its renamed directory entry: sync the parent directory on Unix and use write-through same-volume publication on Windows. Propagate durability failures.
 - Forge chart insertion must reject collisions with preexisting chart, workbook and relationship parts, including case-equivalent package names. A supplied node identity never grants ownership of original package parts.
 - Forge image media reuse requires identical bytes, including case-equivalent part names; reject mismatched content instead of pointing a new image relationship at unrelated media.
+- Forge nested canvases must validate unchanged children's bounds against their current allocation. Preserve native off-page bounds only for unchanged children under a slide-root canvas with unchanged page dimensions.
 
 - `crates/binpm`: Rust-based Node-free binary package manager for release assets.
 - `crates/cargo-mono`: Cargo-based Rust monorepo management CLI.

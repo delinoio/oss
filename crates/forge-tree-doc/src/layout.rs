@@ -157,6 +157,7 @@ struct Engine<'a> {
     text: TextMeasurer,
     result: Layout,
     unchanged: std::collections::HashSet<Uuid>,
+    preserved_canvas_sizes: BTreeMap<Uuid, (f64, f64)>,
 }
 impl Engine<'_> {
     fn intrinsic(&mut self, n: &Node, width: f64, depth: usize) -> Result<(f64, f64)> {
@@ -314,7 +315,13 @@ impl Engine<'_> {
                         "Canvas child requires a frame",
                     )
                 })?;
-                if !c.id.is_some_and(|id| self.unchanged.contains(&id))
+                // Only imported slide roots can legitimately retain native
+                // off-page geometry. Nested authored canvases must recheck
+                // children when an ancestor changes their allocated size.
+                let preserve_bounds = self.preserved_canvas_sizes.get(&id)
+                    == Some(&(f.width, f.height))
+                    && c.id.is_some_and(|id| self.unchanged.contains(&id));
+                if !preserve_bounds
                     && (cf.x < 0.0
                         || cf.y < 0.0
                         || cf.x + cf.width > f.width + 0.01
@@ -415,7 +422,15 @@ pub fn layout(doc: &Presentation) -> Result<Layout> {
 pub fn layout_for_edit(doc: &Presentation, previous: Option<&Presentation>) -> Result<Layout> {
     validate(doc, true)?;
     let mut unchanged = std::collections::HashSet::new();
+    let mut preserved_canvas_sizes = BTreeMap::new();
     if let Some(previous) = previous {
+        for slide in &previous.slides {
+            if slide.content.kind == NodeKind::Canvas
+                && let Some(id) = slide.content.id
+            {
+                preserved_canvas_sizes.insert(id, (previous.page.width, previous.page.height));
+            }
+        }
         for slide in &doc.slides {
             slide.content.visit(&mut |n| {
                 if let Some(id) = n.id
@@ -436,6 +451,7 @@ pub fn layout_for_edit(doc: &Presentation, previous: Option<&Presentation>) -> R
         text: TextMeasurer::default(),
         result: Layout::default(),
         unchanged,
+        preserved_canvas_sizes,
     };
     for slide in &doc.slides {
         engine.place(

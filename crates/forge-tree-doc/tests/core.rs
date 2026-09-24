@@ -220,6 +220,65 @@ fn geometry_cycles_duplicate_ids_merges_and_connectors() {
     assert_eq!(layout(&p).unwrap_err().code, ErrorCode::LayoutCycle);
 }
 #[test]
+fn resized_canvas_rechecks_unchanged_child_bounds() {
+    let mut previous = canvas(serde_json::json!([]));
+    previous.slides[0].content.kind = NodeKind::Column;
+    previous.slides[0].content.children = vec![
+        serde_json::from_value(serde_json::json!({
+            "type":"canvas","key":"nested","height":"fill","children":[
+                {"type":"shape","frame":{"x":0,"y":200,"width":100,"height":100}}
+            ]
+        }))
+        .unwrap(),
+    ];
+    previous.assign_ids();
+    layout(&previous).unwrap();
+    layout_for_edit(&previous, Some(&previous)).unwrap();
+    let id = Uuid::now_v7();
+    let next = apply_patch(
+        &previous,
+        &Patch {
+            dsl_version: 1,
+            kind: PatchKind::Patch,
+            document_id: id,
+            base_revision: 0,
+            operations: vec![Operation::InsertNode {
+                parent: Target {
+                    key: Some("root".into()),
+                    node_id: None,
+                },
+                index: 1,
+                node: Box::new(Node {
+                    kind: NodeKind::Shape,
+                    height: Some(Size::Points(200.0)),
+                    ..Default::default()
+                }),
+            }],
+        },
+        id,
+        0,
+    )
+    .unwrap();
+    assert_eq!(
+        layout_for_edit(&next, Some(&previous)).unwrap_err().code,
+        ErrorCode::InvalidGeometry
+    );
+
+    let original = canvas(serde_json::json!([
+        {"type":"shape","frame":{"x":0,"y":380,"width":100,"height":30}}
+    ]));
+    // A native off-page shape may be preserved while its slide allocation stays
+    // unchanged.
+    layout_for_edit(&original, Some(&original)).unwrap();
+    let mut resized = original.clone();
+    resized.page.height = 300.0;
+    assert_eq!(
+        layout_for_edit(&resized, Some(&original)).unwrap_err().code,
+        ErrorCode::InvalidGeometry
+    );
+}
+
+#[test]
 fn flow_fill_and_canvas_coordinates_are_deterministic() {
     let mut p = sample();
     let l = layout(&p).unwrap();
