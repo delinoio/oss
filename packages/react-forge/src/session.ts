@@ -35,6 +35,7 @@ export class DocumentSession {
   private readonly mounts = new Map<string, RenderRoot>();
   private source: Buffer = Buffer.alloc(0);
   private imported?: Model;
+  private sourceIdentity?: Model;
   private fingerprint?: SourceFingerprint;
   private queue: Promise<unknown> = Promise.resolve();
   private signature = "";
@@ -124,6 +125,7 @@ export class DocumentSession {
         const result = await processDocument(format, "inspect", {}, input.bytes, session.assets, session.documentId, 0, signal);
         session.source = result.bytes;
         session.imported = JSON.parse(result.model) as Model;
+        if (format === Format.Pptx) session.sourceIdentity = (JSON.parse(result.geometry) as { source_identity: Model }).source_identity;
         session.fingerprint = input.fingerprint;
         session.collectTargets();
       });
@@ -241,6 +243,7 @@ export class DocumentSession {
       else if (this.format === Format.Pdf) model = pdfModel(this.root.snapshot(), this.documentId);
       else throw new ForgeError(ErrorCode.UnsupportedPackage, "This format is not connected to the native adapter yet.");
     }
+    if (this.imported && this.format === Format.Pptx) model = { document: model, source_identity: this.sourceIdentity };
     const json = JSON.stringify(model);
     if (Buffer.byteLength(json) > limits.treeBytes && !this.imported) throw new ForgeError(ErrorCode.ResourceLimit, "New document model exceeds 16 MiB.");
     const assets = new Map(this.assets);
@@ -301,7 +304,7 @@ export class DocumentSession {
       await this.queue;
       await Promise.allSettled(this.operations);
       this.mounts.clear(); this.assets.clear(); this.fonts.clear(); this.listeners.clear(); this.targets.clear(); this.regions.clear();
-      this.source = Buffer.alloc(0); this.imported = undefined;
+      this.source = Buffer.alloc(0); this.imported = undefined; this.sourceIdentity = undefined;
     })();
     return this.disposalTask;
   }

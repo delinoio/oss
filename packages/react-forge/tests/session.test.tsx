@@ -171,3 +171,18 @@ test("a new mounted Suspense root arriving during another pending export is awai
     assert.doesNotMatch(result.model, /Fallback/);
   } finally { await imported.dispose(); }
 });
+
+test("external PPTX mounts retain original source identities without requiring embedded metadata", async () => {
+  const source = await readFile(new URL("../../../crates/forge-pptx/tests/fixtures/external.pptx", import.meta.url));
+  const session = await importOffice(Format.Pptx, source);
+  try {
+    assert.ok((await session.exportBuffer()).equals(source), "No-op import must preserve the original package bytes");
+    const target = session.inspect().targets.find(target => target.kind === "text")!;
+    const mounted = await session.mount(target, <Text>External PPTX edited by React</Text>);
+    const bytes = await session.exportBuffer();
+    const inspected = await processPptx("inspect", {}, bytes, new Map(), session.documentId, 0, new AbortController().signal);
+    assert.match(inspected.model, /External PPTX edited by React/);
+    await mounted.render(<Text>Second external edit</Text>);
+    assert.match((await processPptx("inspect", {}, await session.exportBuffer(), new Map(), session.documentId, 0, new AbortController().signal)).model, /Second external edit/);
+  } finally { await session.dispose(); }
+});

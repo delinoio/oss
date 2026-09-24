@@ -225,3 +225,5 @@
 - Native workers accept validated serializable data only. Never install a global logger, fetch external relationships, execute embedded content or silently discard unsupported content. Shared changes must retain Forge CLI/MCP behavior and pinned default fonts.
 - System discovery and caller fonts apply to React Forge only. Check newly rendered content without rendering untouched opaque source. Keep all packages unpublished.
 - Keep React Forge font shaping and PDF tagging operation-owned. `TextLayout` injection and explicit `FontEmbedding` selection must preserve existing Forge API defaults. Office font references do not imply embedded caller fonts. PDF subset embedding must enforce licensing flags, and repeated visual table headers must remain pagination artifacts outside the logical reading order.
+
+- React Forge preserving PPTX updates must restore source-digest-bound node and image identities across independent native imports. External packages without Forge metadata must support no-op byte preservation and repeated mounted edits.
