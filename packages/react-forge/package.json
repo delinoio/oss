@@ -6,12 +6,6 @@
   "engines": {
     "node": ">=24 <25"
   },
-  "os": [
-    "darwin"
-  ],
-  "cpu": [
-    "arm64"
-  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
