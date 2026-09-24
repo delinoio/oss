@@ -36,6 +36,7 @@ fn missing() -> Diagnostic {
 
 impl Fonts {
     pub fn new(system: bool, supplied: &[Vec<u8>]) -> Result<Self> {
+        forge_tree_doc::cancellation::checkpoint()?;
         let mut fonts = FontContext {
             collection: Collection::new(CollectionOptions {
                 system_fonts: system,
@@ -47,6 +48,7 @@ impl Fonts {
         let mut ids = Vec::new();
         let mut total = 0_usize;
         for bytes in supplied {
+            forge_tree_doc::cancellation::checkpoint()?;
             total = total.checked_add(bytes.len()).ok_or_else(missing)?;
             if bytes.len() > 64 * 1024 * 1024 || total > 256 * 1024 * 1024 {
                 return error(
@@ -120,6 +122,7 @@ impl Fonts {
         }
         let mut ranges = Vec::new();
         for run in &runs {
+            forge_tree_doc::cancellation::checkpoint()?;
             run.validate()?;
             match run.style.direction {
                 Direction::Ltr => text.push('\u{2066}'),
@@ -152,6 +155,7 @@ impl Fonts {
         builder.push_default(StyleProperty::LineHeight(LineHeight::FontSizeRelative(1.3)));
         builder.push_default(StyleProperty::OverflowWrap(OverflowWrap::Anywhere));
         for (index, run) in runs.iter().enumerate() {
+            forge_tree_doc::cancellation::checkpoint()?;
             let style = &run.style;
             let range = ranges[index].clone();
             let mut stack: Vec<_> = style
@@ -191,8 +195,11 @@ impl Fonts {
             );
             builder.push(StyleProperty::Brush(index), range);
         }
+        forge_tree_doc::cancellation::checkpoint()?;
         let mut layout = builder.build(&text);
+        forge_tree_doc::cancellation::checkpoint()?;
         layout.break_all_lines(Some(width as f32));
+        forge_tree_doc::cancellation::checkpoint()?;
         layout.align(
             Some(width as f32),
             match base.align {
@@ -206,6 +213,7 @@ impl Fonts {
         let mut checked = HashSet::new();
         let mut glyph_count = 0;
         for line in layout.lines() {
+            forge_tree_doc::cancellation::checkpoint()?;
             for run in line.runs() {
                 let font = run.font();
                 let face = ttf_parser::Face::parse(font.data.as_ref(), font.index)
@@ -231,6 +239,7 @@ impl Fonts {
                     }
                 }
                 for cluster in run.visual_clusters() {
+                    forge_tree_doc::cancellation::checkpoint()?;
                     let fragment = &text[cluster.text_range()];
                     let visible = fragment
                         .chars()
@@ -320,6 +329,7 @@ impl forge_tree_doc::TextLayout for Fonts {
         base_style.font_size = Some(base.font_size.unwrap_or(20.0) * scale);
         let (mut width_used, mut height) = (0.0_f64, 0.0);
         for paragraph in paragraphs {
+            forge_tree_doc::cancellation::checkpoint()?;
             let runs: Vec<_> = paragraph
                 .runs
                 .iter()
@@ -347,6 +357,7 @@ impl Fonts {
         let mut spans = Vec::new();
         let mut families = std::collections::HashMap::new();
         for line in shaped.layout.lines() {
+            forge_tree_doc::cancellation::checkpoint()?;
             for run in line.runs() {
                 let font = run.font();
                 let key = (font.data.id(), font.index);

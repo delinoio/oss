@@ -96,6 +96,7 @@ fn measure_validated(
 ) -> Result<f64> {
     let mut cursor = y;
     for block in blocks {
+        forge_tree_doc::cancellation::checkpoint()?;
         let (id, w, h) = match block {
             Block::Paragraph {
                 id, style, runs, ..

@@ -241,6 +241,7 @@ impl<'a> Writer<'a> {
     }
 
     pub fn block(&mut self, block: &Block, owner: &str) -> Result<String> {
+        forge_tree_doc::cancellation::checkpoint()?;
         match block {
             Block::Paragraph {
                 style,
@@ -274,6 +275,7 @@ impl<'a> Writer<'a> {
                 };
                 out.push_str(&format!("<w:jc w:val=\"{align}\"/>{}</w:pPr>", rpr(style)));
                 for run in runs {
+                    forge_tree_doc::cancellation::checkpoint()?;
                     let rid = run
                         .hyperlink
                         .as_ref()
@@ -326,6 +328,7 @@ impl<'a> Writer<'a> {
                 }
                 out.push_str("</w:tblGrid>");
                 for (r, row) in rows.iter().enumerate() {
+                    forge_tree_doc::cancellation::checkpoint()?;
                     out.push_str("<w:tr>");
                     if row.header {
                         out.push_str("<w:trPr><w:tblHeader/></w:trPr>");

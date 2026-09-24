@@ -171,6 +171,7 @@ pub fn import(bytes: &[u8]) -> Result<Imported> {
     let mut targets = Vec::new();
     let mut charts = Vec::new();
     for sheet in sheets {
+        forge_tree_doc::cancellation::checkpoint()?;
         let name = sheet
             .attribute("name")
             .ok_or_else(|| failure("sheet name"))?;
@@ -252,6 +253,7 @@ pub fn import(bytes: &[u8]) -> Result<Imported> {
             .map(|n| range(n.attribute("ref").unwrap_or("")))
             .collect::<Result<_>>()?;
         for (i, merge) in merges.iter().enumerate() {
+            forge_tree_doc::cancellation::checkpoint()?;
             if merges[..i].iter().any(|m| merge.overlaps(*m)) {
                 return error(
                     ErrorCode::InvalidPackage,
@@ -276,6 +278,7 @@ pub fn import(bytes: &[u8]) -> Result<Imported> {
             inferred_row = row_id;
             let mut column = 0;
             for cell in row.children().filter(|n| n.has_tag_name((S, "c"))) {
+                forge_tree_doc::cancellation::checkpoint()?;
                 let at = cell
                     .attribute("r")
                     .map(address)
@@ -424,6 +427,7 @@ pub fn import(bytes: &[u8]) -> Result<Imported> {
         }
     }
     for (sheet, path) in &charts {
+        forge_tree_doc::cancellation::checkpoint()?;
         let doc = xml(&parts[path])?;
         let plots: Vec<_> = doc
             .descendants()

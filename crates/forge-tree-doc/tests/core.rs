@@ -389,3 +389,39 @@ fn committed_schema_matches_rust_contracts() {
         serde_json::from_slice(include_bytes!("../schema.json")).unwrap();
     assert_eq!(schema(), committed);
 }
+
+#[test]
+fn cancellation_during_layout_stops_before_measuring_remaining_nodes() {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
+    struct CancelMeasurer {
+        flag: Arc<AtomicBool>,
+        calls: usize,
+    }
+    impl TextLayout for CancelMeasurer {
+        fn measure(
+            &mut self,
+            _: &[Paragraph],
+            _: &TextStyle,
+            _: f64,
+            _: f64,
+        ) -> Result<(f64, f64)> {
+            self.calls += 1;
+            self.flag.store(true, Ordering::Release);
+            Ok((10.0, 10.0))
+        }
+    }
+    let doc = sample();
+    let flag = Arc::new(AtomicBool::new(false));
+    let mut measure = CancelMeasurer {
+        flag: flag.clone(),
+        calls: 0,
+    };
+    let result =
+        cancellation::with_cancellation(flag, || layout_with_measurer(&doc, None, &mut measure));
+    assert_eq!(result.unwrap_err().code, ErrorCode::Cancelled);
+    assert_eq!(measure.calls, 1);
+    cancellation::checkpoint().unwrap();
+}

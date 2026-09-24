@@ -94,6 +94,7 @@ pub fn layout(document: &Document, fonts: &mut Fonts) -> Result<Layout> {
         flow.new_page()?;
         flow.place(page.id, flow.frame(0.0, 0.0, page.width, page.height));
         for block in &page.blocks {
+            forge_tree_doc::cancellation::checkpoint()?;
             flow.block(block, &document.language)?;
         }
     }
@@ -101,6 +102,7 @@ pub fn layout(document: &Document, fonts: &mut Fonts) -> Result<Layout> {
 }
 impl Flow<'_> {
     fn new_page(&mut self) -> Result<()> {
+        forge_tree_doc::cancellation::checkpoint()?;
         if self.result.pages.len() >= 20_000 {
             return error(
                 ErrorCode::ResourceLimit,
@@ -193,6 +195,7 @@ impl Flow<'_> {
 
     fn paragraph(&mut self, id: Uuid, text: Arc<ShapedText>, tags: Vec<usize>) -> Result<()> {
         for (line_index, line) in text.layout.lines().enumerate() {
+            forge_tree_doc::cancellation::checkpoint()?;
             let height = f64::from(line.metrics().line_height);
             self.ensure(height)?;
             let width = f64::from(line.metrics().advance);
@@ -348,6 +351,7 @@ impl Flow<'_> {
         let table = self.tag(Tag::Table, None);
         let mut shaped = Vec::new();
         for row in rows {
+            forge_tree_doc::cancellation::checkpoint()?;
             let row_tag = self.tag(Tag::TR, Some(table));
             let mut cells = Vec::new();
             for (cell, width) in row.cells.iter().zip(columns) {
@@ -379,6 +383,7 @@ impl Flow<'_> {
             return overflow();
         }
         for (row_index, (row, cells)) in rows.iter().zip(&shaped).enumerate() {
+            forge_tree_doc::cancellation::checkpoint()?;
             let mut offsets = vec![0; cells.len()];
             let counts: Vec<_> = cells.iter().map(|(t, _)| t.layout.len()).collect();
             loop {

@@ -90,6 +90,7 @@ impl TextMeasurer {
         let mut max_width = 0.0_f64;
         let mut height = 0.0;
         for p in paragraphs {
+            crate::cancellation::checkpoint()?;
             let styles: Vec<_> = p
                 .runs
                 .iter()
@@ -184,6 +185,7 @@ struct Engine<'a> {
 }
 impl Engine<'_> {
     fn intrinsic(&mut self, n: &Node, width: f64, depth: usize) -> Result<(f64, f64)> {
+        crate::cancellation::checkpoint()?;
         if depth > 48 {
             return error(ErrorCode::ResourceLimit, "", "Layout depth exceeded");
         }
@@ -246,6 +248,7 @@ impl Engine<'_> {
     }
 
     fn place(&mut self, n: &Node, f: Frame) -> Result<()> {
+        crate::cancellation::checkpoint()?;
         let id = n.id.ok_or_else(|| {
             Diagnostic::new(
                 ErrorCode::InvalidReference,

@@ -576,10 +576,12 @@ pub fn import(bytes: &[u8]) -> Result<Imported> {
     let mut bindings = BTreeMap::new();
     let mut assets = Assets::new();
     for (i, path) in slide_paths(&parts)?.into_iter().enumerate() {
+        forge_tree_doc::cancellation::checkpoint()?;
         let x = xml(&parts[&path])?;
         let tree = desc(x.root_element(), P, "spTree").ok_or_else(|| failure("tree"))?;
         let mut native_ids = std::collections::HashSet::new();
         for native in tree.descendants().filter(|n| n.has_tag_name((P, "cNvPr"))) {
+            forge_tree_doc::cancellation::checkpoint()?;
             let id = native
                 .attribute("id")
                 .and_then(|v| v.parse::<u32>().ok())

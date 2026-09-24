@@ -22,7 +22,7 @@ React Forge defaults to system font discovery/fallback with explicit caller font
 Memory-only native operations and explicit local files; no database/cache/recovery archive. Local storage is an explicit R2 exception. File publication belongs to the session's revision/cancellation boundary, with same-filesystem temporary output and truthful publication results.
 
 ## Security
-Bound before expensive parsing/decoding; reject unsafe ZIP paths, duplicate identities, DTDs/entities, malformed structures and invalid references. Never execute embedded content or follow remote relationships. JavaScript values, functions, hooks and callbacks never enter worker computations.
+Bound before expensive parsing/decoding; reject unsafe ZIP paths, duplicate identities, DTDs/entities, malformed structures and invalid references. Never execute embedded content or follow remote relationships. JavaScript values, functions, hooks and callbacks never enter worker computations. Native cancellation flags are scoped to each synchronous operation and restored on return or unwind; independent workers never share implicit cancellation state. Checkpoints interrupt ZIP inflation/compression in 64 KiB chunks, XML preflight and traversal, font/run/glyph work, layout nodes/pages/rows, and Office generation/import/edit loops. Third-party parser, shaping and final serialization calls remain indivisible bounded units; cancellation is checked around them rather than claiming preemption inside those libraries.
 
 ## Logging
 Operation-scoped tracing without global logger installation. Emit safe operation/stage/format/revision/duration/error fields, never parser messages containing contents, host paths or bytes.

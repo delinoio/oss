@@ -40,6 +40,7 @@ pub fn generate(
     let mut font_cache = HashMap::new();
     let mut image_cache = HashMap::new();
     for planned in &layout.pages {
+        forge_tree_doc::cancellation::checkpoint()?;
         let mut page = pdf.start_page_with(
             PageSettings::from_wh(planned.width as f32, planned.height as f32)
                 .ok_or_else(failed)?,
@@ -47,6 +48,7 @@ pub fn generate(
         let mut annotations = Vec::new();
         let mut surface = page.surface();
         for command in &planned.commands {
+            forge_tree_doc::cancellation::checkpoint()?;
             match command {
                 Command::Line {
                     text,
@@ -87,6 +89,7 @@ pub fn generate(
                         let size = run.font_size();
                         let mut chunks: Vec<(usize, f32, Vec<KrillaGlyph>, f32)> = Vec::new();
                         for cluster in run.visual_clusters() {
+                            forge_tree_doc::cancellation::checkpoint()?;
                             if cluster.is_ligature_continuation() {
                                 if let Some((_, _, glyphs, _)) = chunks.last_mut()
                                     && let Some(glyph) = glyphs.last_mut()

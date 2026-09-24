@@ -770,6 +770,7 @@ pub fn update_with_measurer(
         });
     }
     for (i, (slide, path)) in after.slides.iter().zip(&paths).enumerate() {
+        forge_tree_doc::cancellation::checkpoint()?;
         let mut leaves = Vec::new();
         slide.content.visit(&mut |n| {
             if !n.is_container() {
@@ -795,6 +796,7 @@ pub fn update_with_measurer(
             );
         }
         for n in &leaves {
+            forge_tree_doc::cancellation::checkpoint()?;
             let id = n.id.unwrap();
             let b = bindings[&id].clone();
             let old = before.find(&Target {
@@ -894,6 +896,7 @@ pub fn update_with_measurer(
             }
             let mut text = String::new();
             for n in &leaves {
+                forge_tree_doc::cancellation::checkpoint()?;
                 let id = n.id.unwrap();
                 if let Some(raw) = fragments.get(&id) {
                     text.push_str(raw);

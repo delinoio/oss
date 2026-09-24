@@ -255,6 +255,7 @@ pub fn import(bytes: &[u8]) -> Result<Imported> {
     }
     let mut targets = Vec::new();
     for owner in owners {
+        forge_tree_doc::cancellation::checkpoint()?;
         let doc = xml(&parts[&owner])?;
         for node in doc.descendants().filter(|n| {
             n.is_element()
@@ -338,6 +339,7 @@ pub fn replace(
     let mut writer = Writer::new(imported.parts.clone(), assets, &imported.main)?;
     let mut fragments = Vec::new();
     for (target, (_, blocks)) in selected.iter().zip(edits) {
+        forge_tree_doc::cancellation::checkpoint()?;
         let mut fragment = writer.blocks(blocks, &target.region.part)?;
         if target.kind == TargetKind::Cell {
             let bytes = &imported.parts[&target.region.part];

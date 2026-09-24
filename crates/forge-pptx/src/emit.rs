@@ -752,6 +752,7 @@ pub fn generate_with_measurer(
     let layouts = native.slide_layouts().map_err(failure)?;
     let mut slide_parts = Vec::new();
     for s in &doc.slides {
+        forge_tree_doc::cancellation::checkpoint()?;
         let selected = if let Some(reference) = &s.slide_layout_ref {
             layouts
                 .iter()
@@ -778,6 +779,7 @@ pub fn generate_with_measurer(
     match_generated_content_type_paths(&mut parts)?;
     let mut bindings = BTreeMap::new();
     for (s, part) in doc.slides.iter().zip(&slide_parts) {
+        forge_tree_doc::cancellation::checkpoint()?;
         let mut next = 2;
         s.content.visit(&mut |n| {
             if !n.is_container() {
@@ -794,6 +796,7 @@ pub fn generate_with_measurer(
         });
     }
     for (s, part) in doc.slides.iter().zip(&slide_parts) {
+        forge_tree_doc::cancellation::checkpoint()?;
         let mut nodes = Vec::new();
         s.content.visit(&mut |n| {
             if !n.is_container() {
@@ -802,6 +805,7 @@ pub fn generate_with_measurer(
         });
         let mut content = String::new();
         for n in nodes {
+            forge_tree_doc::cancellation::checkpoint()?;
             content.push_str(&emit_node(
                 &mut parts,
                 part,

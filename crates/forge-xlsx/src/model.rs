@@ -542,6 +542,7 @@ pub fn validate(workbook: &Workbook) -> Result<()> {
         );
     }
     for sheet in &workbook.sheets {
+        forge_tree_doc::cancellation::checkpoint()?;
         identity(sheet.id)?;
         forge_document::text(&sheet.name)?;
         if sheet.name.is_empty()
@@ -559,6 +560,7 @@ pub fn validate(workbook: &Workbook) -> Result<()> {
         }
         let mut addresses = HashSet::new();
         for cell in &sheet.cells {
+            forge_tree_doc::cancellation::checkpoint()?;
             identity(cell.id)?;
             cell.address.validate()?;
             if !addresses.insert((cell.address.row, cell.address.column)) {
@@ -633,6 +635,7 @@ pub fn validate(workbook: &Workbook) -> Result<()> {
         // cost before expansion, even when the input model is only a few bytes.
         let mut expanded_cells = sheet.cells.len() as u64;
         for (i, merge) in sheet.merges.iter().enumerate() {
+            forge_tree_doc::cancellation::checkpoint()?;
             merge.validate()?;
             expanded_cells += u64::from(merge.last.row - merge.first.row + 1)
                 * u64::from(merge.last.column - merge.first.column + 1);

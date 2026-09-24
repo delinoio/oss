@@ -7,7 +7,7 @@ use std::{
     io::{Cursor, Read, Write},
 };
 
-use forge_tree_doc::{Diagnostic, ErrorCode, Result, error};
+use forge_tree_doc::{Diagnostic, ErrorCode, Result, cancellation::checkpoint, error};
 pub use preservation::*;
 use sha2::{Digest, Sha256};
 use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
@@ -34,6 +34,7 @@ pub fn sha(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 pub fn xml(bytes: &[u8]) -> Result<roxmltree::Document<'_>> {
+    checkpoint()?;
     let text = std::str::from_utf8(bytes).map_err(failure)?;
     if bytes.len() > MAX_PART_BYTES {
         return error(ErrorCode::ResourceLimit, "", "XML part exceeds 64 MiB");
@@ -53,6 +54,7 @@ pub fn xml(bytes: &[u8]) -> Result<roxmltree::Document<'_>> {
     let mut maximum_depth = 0_usize;
     let mut nodes = 1_usize;
     loop {
+        checkpoint()?;
         use quick_xml::events::Event;
         match reader.read_event().map_err(failure)? {
             Event::Start(_) => {
@@ -114,15 +116,16 @@ pub fn xml(bytes: &[u8]) -> Result<roxmltree::Document<'_>> {
     } else {
         parse()?
     };
-    if doc
-        .descendants()
-        .any(|n| n.ancestors().take(129).count() > 128)
-    {
-        return error(ErrorCode::ResourceLimit, "", "XML depth exceeded");
+    for node in doc.descendants() {
+        checkpoint()?;
+        if node.ancestors().take(129).count() > 128 {
+            return error(ErrorCode::ResourceLimit, "", "XML depth exceeded");
+        }
     }
     Ok(doc)
 }
 pub fn read(bytes: &[u8]) -> Result<Package> {
+    checkpoint()?;
     if bytes.len() > MAX_PACKAGE_BYTES {
         return error(ErrorCode::ResourceLimit, "", "Package exceeds 256 MiB");
     }
@@ -141,6 +144,7 @@ pub fn read(bytes: &[u8]) -> Result<Package> {
     // checks below independently enforce the same budget on actual bytes.
     let mut declared = 0_u64;
     for index in 0..zip.len() {
+        checkpoint()?;
         let file = zip.by_index(index).map_err(failure)?;
         if !file.is_dir() {
             declared = declared.checked_add(file.size()).ok_or_else(|| {
@@ -159,6 +163,7 @@ pub fn read(bytes: &[u8]) -> Result<Package> {
     let mut total = 0_usize;
     let mut names = std::collections::HashSet::new();
     for i in 0..zip.len() {
+        checkpoint()?;
         let mut file = zip.by_index(i).map_err(failure)?;
         let name = file.name().to_string();
         if file.is_dir() {
@@ -195,10 +200,10 @@ pub fn read(bytes: &[u8]) -> Result<Package> {
             return error(ErrorCode::ResourceLimit, "", "ZIP part exceeds 64 MiB");
         }
         let mut data = Vec::new();
-        file.by_ref()
-            .take(64 * 1024 * 1024 + 1)
-            .read_to_end(&mut data)
-            .map_err(failure)?;
+        read_chunks(
+            &mut file.by_ref().take(MAX_PART_BYTES as u64 + 1),
+            &mut data,
+        )?;
         total += data.len();
         if data.len() > 64 * 1024 * 1024 || total > 512 * 1024 * 1024 {
             return error(ErrorCode::ResourceLimit, "", "ZIP expansion limit exceeded");
@@ -219,7 +224,20 @@ pub fn read(bytes: &[u8]) -> Result<Package> {
     }
     Ok(parts)
 }
+fn read_chunks(reader: &mut impl Read, output: &mut Vec<u8>) -> Result<()> {
+    let mut chunk = [0; 64 * 1024];
+    loop {
+        checkpoint()?;
+        let length = reader.read(&mut chunk).map_err(failure)?;
+        if length == 0 {
+            return Ok(());
+        }
+        output.extend_from_slice(&chunk[..length]);
+    }
+}
+
 pub fn write(parts: &Package) -> Result<Vec<u8>> {
+    checkpoint()?;
     if parts.len() > MAX_ENTRIES
         || parts.values().any(|b| b.len() > MAX_PART_BYTES)
         || parts.values().map(Vec::len).sum::<usize>() > MAX_EXPANDED_BYTES
@@ -235,10 +253,16 @@ pub fn write(parts: &Package) -> Result<Vec<u8>> {
         .compression_method(zip::CompressionMethod::Deflated)
         .last_modified_time(zip::DateTime::default());
     for (name, bytes) in parts {
+        checkpoint()?;
         out.start_file(name, options).map_err(failure)?;
-        out.write_all(bytes).map_err(failure)?;
+        for chunk in bytes.chunks(64 * 1024) {
+            checkpoint()?;
+            out.write_all(chunk).map_err(failure)?;
+        }
     }
+    checkpoint()?;
     let bytes = out.finish().map_err(failure)?.into_inner();
+    checkpoint()?;
     bounded_output(bytes)
 }
 fn bounded_output(bytes: Vec<u8>) -> Result<Vec<u8>> {
@@ -545,6 +569,38 @@ pub fn validate_package(parts: &Package) -> Result<()> {
 #[cfg(test)]
 mod output_tests {
     use super::*;
+
+    #[test]
+    fn cancelled_inflation_stops_between_chunks_without_reading_the_remainder() {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        };
+        struct CancelReader {
+            flag: Arc<AtomicBool>,
+            reads: usize,
+        }
+        impl Read for CancelReader {
+            fn read(&mut self, chunk: &mut [u8]) -> std::io::Result<usize> {
+                self.reads += 1;
+                chunk.fill(1);
+                self.flag.store(true, Ordering::Release);
+                Ok(chunk.len())
+            }
+        }
+        let flag = Arc::new(AtomicBool::new(false));
+        let mut reader = CancelReader {
+            flag: flag.clone(),
+            reads: 0,
+        };
+        let mut output = Vec::new();
+        let result = forge_tree_doc::cancellation::with_cancellation(flag, || {
+            read_chunks(&mut reader, &mut output)
+        });
+        assert_eq!(result.unwrap_err().code, ErrorCode::Cancelled);
+        assert_eq!(reader.reads, 1);
+        assert_eq!(output.len(), 64 * 1024);
+    }
 
     #[test]
     fn serialized_output_accepts_exact_limit_and_rejects_overflow() {

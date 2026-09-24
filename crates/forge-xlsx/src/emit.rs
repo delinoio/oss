@@ -282,6 +282,7 @@ pub fn generate(model: &Workbook) -> Result<Vec<u8>> {
     let mut names: std::collections::HashSet<_> =
         model.sheets.iter().map(|s| s.name.to_lowercase()).collect();
     for sheet in &model.sheets {
+        forge_tree_doc::cancellation::checkpoint()?;
         let worksheet = workbook.add_worksheet();
         worksheet.set_name(&sheet.name).map_err(failure)?;
         for merge in &sheet.merges {
@@ -297,6 +298,7 @@ pub fn generate(model: &Workbook) -> Result<Vec<u8>> {
                 .map_err(failure)?;
         }
         for cell in &sheet.cells {
+            forge_tree_doc::cancellation::checkpoint()?;
             let address = cell.address;
             let mut native_format = cell
                 .format
@@ -458,6 +460,7 @@ pub fn generate(model: &Workbook) -> Result<Vec<u8>> {
         sheet.set_name(&name).map_err(failure)?;
         sheet.set_hidden(true);
         for (row, category) in chart.categories.iter().enumerate() {
+            forge_tree_doc::cancellation::checkpoint()?;
             sheet
                 .write_string(row as u32 + 1, 0, category)
                 .map_err(failure)?;
@@ -467,6 +470,7 @@ pub fn generate(model: &Workbook) -> Result<Vec<u8>> {
                 .write_string(0, col as u16 + 1, &series.name)
                 .map_err(failure)?;
             for (row, value) in series.values.iter().enumerate() {
+                forge_tree_doc::cancellation::checkpoint()?;
                 sheet
                     .write_number(row as u32 + 1, col as u16 + 1, *value)
                     .map_err(failure)?;
@@ -493,6 +497,7 @@ pub fn generate(model: &Workbook) -> Result<Vec<u8>> {
             .collect();
         let mut replacements = Vec::new();
         for cell in doc.descendants().filter(|n| n.has_tag_name((S, "c"))) {
+            forge_tree_doc::cancellation::checkpoint()?;
             let Some(formula) = cell
                 .attribute("r")
                 .and_then(|address| formulas.get(address))

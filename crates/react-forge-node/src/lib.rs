@@ -147,10 +147,10 @@ impl Task for Operation {
         let started = std::time::Instant::now();
         let result=collector.scoped(|| {
             tracing::info!(target:"react_forge",format,operation,stage,revision=self.revision,status="started",duration_ms=0_u64);
-            let mut result = match self.format {
+            let mut result = forge_tree_doc::cancellation::with_cancellation(self.cancelled.clone(), || match self.format {
                 Format::Pptx => pptx::process(self), Format::Docx => docx::process(self),
                 Format::Xlsx => xlsx::process(self), Format::Pdf => pdf::process(self),
-            };
+            });
             if self.cancelled.load(Ordering::Acquire){result=Err(Diagnostic::new(ErrorCode::Cancelled,"","The native operation was cancelled"));}
             let code=result.as_ref().err().and_then(|e|serde_json::to_value(e.code).ok()).and_then(|v|v.as_str().map(str::to_owned)).unwrap_or_default();
             let status=if result.is_ok(){"completed"}else{"failed"};
