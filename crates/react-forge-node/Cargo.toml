@@ -16,9 +16,14 @@ napi-derive = "=3.6.9"
 forge-tree-doc = { path = "../forge-tree-doc" }
 forge-pptx = { path = "../forge-pptx" }
 forge-package = { path = "../forge-package" }
+forge-docx = { path = "../forge-docx" }
+serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 uuid = { version = "1.23.0", features = ["v7", "serde"] }
 tracing = "0.1.44"
+
+forge-xlsx = { path = "../forge-xlsx" }
+forge-document = { path = "../forge-document" }
 
 [build-dependencies]
 napi-build = "=2.5.0"

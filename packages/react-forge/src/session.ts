@@ -2,14 +2,18 @@ import type { ReactNode } from "react";
 import { v7 } from "uuid";
 import { ForgeError, checkSignal } from "./errors.js";
 import { digest, publish, readSource, type SourceFingerprint } from "./files.js";
-import { processPptx, type NativeOutput } from "./native.js";
+import { processDocument, type NativeOutput } from "./native.js";
 import { pptxModel, pptxNode } from "./pptx-model.js";
+import { xlsxModel, xlsxEdit } from "./xlsx-model.js";
+import type { Address, Range } from "./xlsx.js";
+import { docxModel, docxBlocks } from "./docx-model.js";
 import { RenderRoot } from "./renderer.js";
 import { ErrorCode, Format, Stage, limits, type AssetHandle, type AssetSource, type Diagnostic, type Geometry, type NodeHandle } from "./types.js";
 
 type Model = Record<string, unknown>;
 interface ModelNode extends Model { id: string; type: string; children?: ModelNode[] }
-export interface TargetHandle extends NodeHandle { readonly kind: string; readonly editable: boolean }
+export interface TargetHandle extends NodeHandle { readonly kind: string; readonly editable: boolean; readonly text?: string; readonly sheet?: string; readonly address?: Address; readonly range?: Range }
+interface NativeRegion { id: string; kind: string; target_index: number; part: string; start: number; end: number; text?: string; sheet?: string; address?: Address; range?: Range }
 export interface Inspection { readonly revision: number; readonly targets: readonly TargetHandle[] }
 export interface MountedRegion {
   render(children: ReactNode): Promise<void>;
@@ -25,6 +29,7 @@ export class DocumentSession {
   private readonly pendingAssets = new Set<Promise<AssetHandle>>();
   private readonly listeners = new Set<(event: Diagnostic) => void>();
   private readonly targets = new Map<string, TargetHandle>();
+  private readonly regions = new Map<string, NativeRegion>();
   private readonly mounts = new Map<string, RenderRoot>();
   private source: Buffer = Buffer.alloc(0);
   private imported?: Model;
@@ -102,8 +107,7 @@ export class DocumentSession {
       await session.track(Stage.Import, async () => {
         const signal = session.signal(options.signal);
         const input = await readSource(source, limits.officeBytes, signal);
-        if (format !== Format.Pptx) throw new ForgeError(ErrorCode.UnsupportedPackage, "This Office format is not connected to the native adapter yet.");
-        const result = await processPptx("inspect", {}, input.bytes, session.assets, session.documentId, 0, signal);
+        const result = await processDocument(format, "inspect", {}, input.bytes, session.assets, session.documentId, 0, signal);
         session.source = result.bytes;
         session.imported = JSON.parse(result.model) as Model;
         session.fingerprint = input.fingerprint;
@@ -114,6 +118,14 @@ export class DocumentSession {
   }
 
   private collectTargets() {
+    if (this.format !== Format.Pptx) {
+      for (const region of this.imported?.targets as NativeRegion[] ?? []) {
+        const handle = Object.freeze({ documentId: this.documentId, nodeId: region.id, kind: region.kind, editable: region.kind !== "opaque", text: region.text, sheet: region.sheet, address: region.address ? Object.freeze(region.address) : undefined, range: region.range ? Object.freeze({ first: Object.freeze(region.range.first), last: Object.freeze(region.range.last) }) : undefined });
+        this.targets.set(region.id, handle);
+        this.regions.set(region.id, region);
+      }
+      return;
+    }
     const visit = (node: ModelNode) => {
       const handle = Object.freeze({ documentId: this.documentId, nodeId: node.id, kind: node.type, editable: node.type !== "opaque" });
       this.targets.set(node.id, handle);
@@ -136,9 +148,15 @@ export class DocumentSession {
     return this.mutate(async () => {
       if (!this.imported || this.targets.get(target.nodeId) !== target || !target.editable) throw new ForgeError(ErrorCode.InvalidTarget, "Target is invalid, opaque, stale or belongs to another document.");
       const descendants = (node: ModelNode, id: string): boolean => node.id === id || !!node.children?.some(child => descendants(child, id));
-      const selected = this.findNode(this.imported, target.nodeId)!;
+      const selected = this.format === Format.Pptx ? this.findNode(this.imported, target.nodeId)! : undefined;
       for (const id of this.mounts.keys()) {
-        if (descendants(selected, id) || descendants(this.findNode(this.imported, id)!, target.nodeId)) throw new ForgeError(ErrorCode.Conflict, "Mounted document regions overlap.");
+        let overlap: boolean;
+        if (selected) overlap = descendants(selected, id) || descendants(this.findNode(this.imported, id)!, target.nodeId);
+        else {
+          const a = this.regions.get(target.nodeId)!; const b = this.regions.get(id)!;
+          overlap = a.part === b.part && a.start < b.end && b.start < a.end;
+        }
+        if (overlap) throw new ForgeError(ErrorCode.Conflict, "Mounted document regions overlap.");
       }
       const root = new RenderRoot(this.documentId);
       try { await root.render(children); } catch (error) { await root.dispose(); throw error; }
@@ -165,7 +183,12 @@ export class DocumentSession {
     checkSignal(signal);
     const refs = new Map<string, string>();
     let model: Model;
-    if (this.imported) {
+    if (this.imported && this.format !== Format.Pptx) {
+      model = { edits: Array.from(this.mounts, ([id, root]) => ({
+        target_index: this.regions.get(id)!.target_index,
+        ...(this.format === Format.Docx ? { blocks: docxBlocks(root.snapshot(), this.documentId) } : { value: xlsxEdit(root.snapshot(), this.regions.get(id)!) }),
+      })) };
+    } else if (this.imported) {
       model = structuredClone(this.imported);
       for (const [id, root] of this.mounts) {
         const nodes = root.snapshot();
@@ -180,8 +203,10 @@ export class DocumentSession {
       }
       model.assets = { ...(model.assets as Model), ...Object.fromEntries(Array.from(this.assets.keys(), id => [id, { handle: id }])) };
     } else {
-      if (this.format !== Format.Pptx) throw new ForgeError(ErrorCode.UnsupportedPackage, "This format is not connected to the native adapter yet.");
-      model = pptxModel(this.root.snapshot(), this.documentId, this.assets);
+      if (this.format === Format.Pptx) model = pptxModel(this.root.snapshot(), this.documentId, this.assets);
+      else if (this.format === Format.Docx) model = docxModel(this.root.snapshot(), this.documentId);
+      else if (this.format === Format.Xlsx) model = xlsxModel(this.root.snapshot(), this.documentId);
+      else throw new ForgeError(ErrorCode.UnsupportedPackage, "This format is not connected to the native adapter yet.");
     }
     const json = JSON.stringify(model);
     if (Buffer.byteLength(json) > limits.treeBytes && !this.imported) throw new ForgeError(ErrorCode.ResourceLimit, "New document model exceeds 16 MiB.");
@@ -191,7 +216,7 @@ export class DocumentSession {
 
   private async process(signal: AbortSignal): Promise<NativeOutput & { revision: number; refs: Map<string, string> }> {
     const { model, revision, refs } = await this.prepare(signal);
-    const output = await processPptx(this.imported ? "update" : "generate", model,
+    const output = await processDocument(this.format, this.imported ? "update" : "generate", model,
       this.source, new Map(this.assets), this.documentId, revision, signal);
     return { ...output, revision, refs };
   }
@@ -228,7 +253,7 @@ export class DocumentSession {
     this.disposal.abort();
     await Promise.all([this.root.dispose(), ...Array.from(this.mounts.values(), root => root.dispose())]);
     await Promise.allSettled(this.operations);
-    this.mounts.clear(); this.assets.clear(); this.listeners.clear(); this.targets.clear();
+    this.mounts.clear(); this.assets.clear(); this.listeners.clear(); this.targets.clear(); this.regions.clear();
     this.source = Buffer.alloc(0); this.imported = undefined;
   }
 }

@@ -423,6 +423,39 @@ pub fn replace_range(bytes: &[u8], range: std::ops::Range<usize>, new: &str) -> 
     out.extend_from_slice(&bytes[range.end..]);
     out
 }
+
+/// Insert into a previously parsed element without reparsing a detached
+/// fragment. Nested Office elements can use namespaces declared only on their
+/// ancestors.
+pub fn insert_element_child(
+    bytes: &[u8],
+    range: std::ops::Range<usize>,
+    child: &str,
+) -> Result<Vec<u8>> {
+    let text = std::str::from_utf8(bytes).map_err(failure)?;
+    let element = text
+        .get(range.clone())
+        .ok_or_else(|| failure("element range"))?;
+    if element.ends_with("/>") {
+        let name = element
+            .strip_prefix('<')
+            .ok_or_else(|| failure("element"))?
+            .split(|c: char| c.is_whitespace() || c == '/' || c == '>')
+            .next()
+            .ok_or_else(|| failure("element name"))?;
+        Ok(replace_range(
+            bytes,
+            range.end - 2..range.end,
+            &format!(">{child}</{name}>"),
+        ))
+    } else {
+        let at = range.start
+            + element
+                .rfind("</")
+                .ok_or_else(|| failure("element close"))?;
+        Ok(replace_range(bytes, at..at, child))
+    }
+}
 pub fn validate_package(parts: &Package) -> Result<()> {
     main_part(parts)?;
     for name in parts.keys().filter(|p| p.ends_with(".rels")) {

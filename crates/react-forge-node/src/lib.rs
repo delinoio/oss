@@ -5,7 +5,16 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-use forge_tree_doc::{Diagnostic, ErrorCode, Presentation};
+use forge_tree_doc::{Diagnostic, ErrorCode};
+mod docx;
+mod pptx;
+mod xlsx;
+
+enum Format {
+    Pptx,
+    Docx,
+    Xlsx,
+}
 use napi::{
     Env, Task,
     bindgen_prelude::{AsyncTask, Buffer},
@@ -68,6 +77,7 @@ enum OperationKind {
 }
 
 pub struct Operation {
+    format: Format,
     kind: OperationKind,
     model: String,
     source: Vec<u8>,
@@ -85,50 +95,14 @@ impl Task for Operation {
         if self.cancelled.load(Ordering::Acquire) {
             return Err(cancelled());
         }
-        let result = (|| -> forge_tree_doc::Result<Self::Output> {
-            let (bytes, doc) = match self.kind {
-                OperationKind::Inspect => {
-                    let imported = forge_pptx::import(&self.source)?;
-                    (self.source.clone(), imported.document)
-                }
-                OperationKind::Generate => {
-                    let mut doc: Presentation = forge_tree_doc::parse(self.model.as_bytes())?;
-                    doc.assign_ids();
-                    let bytes =
-                        forge_pptx::generate(&doc, &self.assets, self.document_id, self.revision)?;
-                    (bytes, doc)
-                }
-                OperationKind::Update => {
-                    let imported = forge_pptx::import(&self.source)?;
-                    let mut doc: Presentation = forge_tree_doc::parse(self.model.as_bytes())?;
-                    doc.assign_ids();
-                    let mut assets = imported.assets;
-                    assets.extend(self.assets.clone());
-                    let bytes = forge_pptx::update(
-                        &self.source,
-                        &imported.document,
-                        &imported.bindings,
-                        &doc,
-                        &assets,
-                        imported.document_id,
-                        self.revision,
-                    )?;
-                    (bytes, doc)
-                }
-            };
-            if self.cancelled.load(Ordering::Acquire) {
-                return forge_tree_doc::error(
-                    ErrorCode::Cancelled,
-                    "",
-                    "The native operation was cancelled",
-                );
-            }
-            let geometry = forge_tree_doc::layout_for_edit(&doc, Some(&doc))?;
-            let model = serde_json::to_string(&doc).map_err(|_| forge_package::failure("model"))?;
-            let geometry =
-                serde_json::to_string(&geometry).map_err(|_| forge_package::failure("layout"))?;
-            Ok((bytes, model, geometry))
-        })();
+        let result = match self.format {
+            Format::Pptx => pptx::process(self),
+            Format::Docx => docx::process(self),
+            Format::Xlsx => xlsx::process(self),
+        };
+        if self.cancelled.load(Ordering::Acquire) {
+            return Err(cancelled());
+        }
         result.map_err(native_error)
     }
 
@@ -149,7 +123,8 @@ impl Task for Operation {
 }
 
 #[napi]
-pub fn process_pptx(
+pub fn process_document(
+    format: String,
     operation: String,
     model: String,
     source: Buffer,
@@ -167,6 +142,18 @@ pub fn process_pptx(
             "Native input exceeds its resource limit",
         )));
     }
+    let format = match format.as_str() {
+        "pptx" => Format::Pptx,
+        "docx" => Format::Docx,
+        "xlsx" => Format::Xlsx,
+        _ => {
+            return Err(native_error(Diagnostic::new(
+                ErrorCode::UnsupportedPackage,
+                "",
+                "Unsupported document format",
+            )));
+        }
+    };
     let kind = match operation.as_str() {
         "generate" => OperationKind::Generate,
         "inspect" => OperationKind::Inspect,
@@ -217,6 +204,7 @@ pub fn process_pptx(
         }
     }
     Ok(AsyncTask::new(Operation {
+        format,
         kind,
         model,
         source: source.to_vec(),

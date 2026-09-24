@@ -1,12 +1,12 @@
 import { createRequire } from "node:module";
 import { ForgeError } from "./errors.js";
-import { ErrorCode } from "./types.js";
+import { ErrorCode, Format } from "./types.js";
 
 interface Cancellation { cancel(): void }
 export interface NativeOutput { bytes: Buffer; model: string; geometry: string }
 interface Binding {
   Cancellation: new () => Cancellation;
-  processPptx(operation: string, model: string, source: Buffer, assets: { id: string; bytes: Buffer }[],
+  processDocument(format: string, operation: string, model: string, source: Buffer, assets: { id: string; bytes: Buffer }[],
     documentId: string, revision: number, cancellation: Cancellation): Promise<NativeOutput>;
 }
 let binding: Binding | undefined;
@@ -29,7 +29,7 @@ const codes: Record<string, ErrorCode> = {
   source_changed: ErrorCode.Conflict, invalid_reference: ErrorCode.InvalidTarget,
 };
 
-export async function processPptx(operation: "generate" | "inspect" | "update", model: unknown,
+export async function processDocument(format: Format, operation: "generate" | "inspect" | "update", model: unknown,
   source: Buffer, assets: Map<string, Buffer>, documentId: string, revision: number, signal: AbortSignal): Promise<NativeOutput> {
   const native = load();
   const cancellation = new native.Cancellation();
@@ -37,7 +37,7 @@ export async function processPptx(operation: "generate" | "inspect" | "update", 
   signal.addEventListener("abort", cancel, { once: true });
   if (signal.aborted) cancel();
   try {
-    return await native.processPptx(operation, JSON.stringify(model), source,
+    return await native.processDocument(format, operation, JSON.stringify(model), source,
       Array.from(assets, ([id, bytes]) => ({ id, bytes })), documentId, revision, cancellation);
   } catch (error) {
     let code = ErrorCode.MalformedInput;
@@ -50,3 +50,5 @@ export async function processPptx(operation: "generate" | "inspect" | "update", 
     throw new ForgeError(code, `Native document processing failed (${code}). Correct the input and retry.`);
   } finally { signal.removeEventListener("abort", cancel); }
 }
+
+export const processPptx = (...args: Parameters<typeof processDocument> extends [Format, ...infer Rest] ? Rest : never) => processDocument(Format.Pptx, ...args);

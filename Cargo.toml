@@ -6,6 +6,7 @@ members = [
     "crates/forge-package",
     "crates/forge-document",
     "crates/forge-docx",
+    "crates/forge-xlsx",
     "crates/react-forge-node",
     "crates/delino-forge",
     "apps/devhud/src-tauri",

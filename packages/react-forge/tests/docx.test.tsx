@@ -1,0 +1,42 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { readFile } from "node:fs/promises";
+import React from "react";
+import { createSession, importOffice, Format } from "../src/index.js";
+import { Document, Section, Header, Footer, Paragraph, Run, Link, List, ListItem, Table, Row, Cell, Chart, PageBreak } from "../src/docx.js";
+
+test("React authors rich DOCX, sections, native charts and tables", async () => {
+  const session = createSession(Format.Docx);
+  let imported;
+  try {
+    await session.render(<Document language="en-US"><Section>
+      <Header><Paragraph>Header</Paragraph></Header>
+      <Paragraph heading={1}><Run style={{ bold: true }}>Word from React</Run></Paragraph>
+      <Paragraph><Link href="https://example.com">Link</Link></Paragraph>
+      <List><ListItem>One</ListItem><ListItem>Two</ListItem></List>
+      <Table columns={[150, 150]}><Row header><Cell colSpan={2}><Paragraph>Merged</Paragraph></Cell></Row></Table>
+      <Chart kind="pie" categories={["A", "B"]} series={[{ name: "Values", values: [2, 3] }]} width={300} height={200} alt="Distribution" />
+      <PageBreak />
+      <Footer><Paragraph>Footer</Paragraph></Footer>
+    </Section></Document>);
+    const bytes = await session.exportBuffer();
+    imported = await importOffice(Format.Docx, bytes);
+    assert.ok(imported.inspect().targets.some(t => t.kind === "chart"));
+    assert.ok(imported.inspect().targets.some(t => t.text === "Word from React"));
+  } finally { await session.dispose(); await imported?.dispose(); }
+});
+
+test("external Word paragraph mounts survive repeated state updates", async () => {
+  const bytes = await readFile(new URL("../../../crates/forge-docx/tests/fixtures/external.docx", import.meta.url));
+  const session = await importOffice(Format.Docx, bytes);
+  try {
+    const target = session.inspect().targets.find(t => t.text === "External paragraph")!;
+    const region = await session.mount(target, <Paragraph>React replacement</Paragraph>);
+    const output = await session.exportBuffer();
+    const reopened = await importOffice(Format.Docx, output);
+    try { assert.ok(reopened.inspect().targets.some(t => t.text === "React replacement")); }
+    finally { await reopened.dispose(); }
+    await region.render(<Paragraph>Updated replacement</Paragraph>);
+    assert.ok((await session.exportBuffer()).byteLength > 0);
+  } finally { await session.dispose(); }
+});

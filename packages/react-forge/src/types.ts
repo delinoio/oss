@@ -66,6 +66,8 @@ export interface TextStyle {
   italic?: boolean;
   underline?: boolean;
   color?: string;
+  background?: string;
+  align?: "left" | "center" | "right" | "justify";
   language?: string;
   direction?: "auto" | "ltr" | "rtl";
 }

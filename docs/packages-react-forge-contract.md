@@ -40,3 +40,5 @@ Synchronize project/native contracts, package ownership rules, examples, capabil
 - [Project](project-react-forge.md).
 - [Requirements](packages-react-forge-requirements.md).
 - [Repository defaults](repository-defaults.md).
+
+DOCX and XLSX now have real native session/React connections. Spreadsheet inspection includes worksheet names and zero-based address/range data; mounted cells and rules may omit their address/range to retain the imported selection. Workspace library tests exercise DOCX rich content and charts, spreadsheet scalar/date/formula values, dimensions, merges, rules, native charts and external-document region replacement. Font/layout, PDF, full CLI and acceptance evidence remain ongoing work.

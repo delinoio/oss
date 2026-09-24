@@ -43,3 +43,8 @@ Update the Node contract, project index, Forge foundation when shared behavior c
 - [Requirements](packages-react-forge-requirements.md).
 - [Forge foundation](crates-forge-foundation.md).
 - [Repository defaults](repository-defaults.md).
+
+## Spreadsheet Engine Checkpoint
+`forge-xlsx` owns independent workbook models and native worksheet/chart emission. Formula caches are caller-provided and typed; omitted caches remain absent, and workbook calculation properties request application recalculation. Five conditional-format families and seven validation families have independent generation and external-fixture edit tests. Supported cell edits preserve original styles unless an explicit replacement format is supplied; replacement formats append resources without rewriting existing style children. Chart replacement adds isolated worksheet data and retains unrelated source data and chart parts. Imported cells and rules retain their original address/range. Unknown extensions remain opaque.
+
+The external workbook fixture is generated with openpyxl 3.1.5; its generator and provenance are committed beside the fixture. These structural and preservation checks are not renderer or Microsoft Office validation.
