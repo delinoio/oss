@@ -30,6 +30,8 @@ const (
 	nativeWorkerCompletion nativeWorkerScenario = iota
 	nativeWorkerRevocation
 	nativeWorkerDisconnect
+	nativeWorkerStop
+	nativeWorkerArchive
 )
 
 func TestManualNativeWorkerExecutesAcceptedCodexJob(t *testing.T) {
@@ -42,6 +44,14 @@ func TestManualNativeWorkerRevocationJoinsCodexCleanup(t *testing.T) {
 
 func TestManualNativeWorkerAccountDisconnectCancelsCodex(t *testing.T) {
 	testManualNativeWorkerExecution(t, nativeWorkerDisconnect)
+}
+
+func TestManualNativeWorkerStopInterruptsCodex(t *testing.T) {
+	testManualNativeWorkerExecution(t, nativeWorkerStop)
+}
+
+func TestManualNativeWorkerArchiveWaitsForCodexCleanup(t *testing.T) {
+	testManualNativeWorkerExecution(t, nativeWorkerArchive)
 }
 
 func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario) {
@@ -119,18 +129,55 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 		case <-ctx.Done():
 			t.Fatal("native Worker did not reach its owned inference request")
 		}
+		// The completed native user message proves the Worker crossed its
+		// acceptance/publication boundary before testing graceful interruption.
+		for scenario != nativeWorkerRevocation {
+			changed := f.service.Store.Changed()
+			r, err := f.service.Store.Get(ctx, domain.SessionKind, f.input.SessionID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			session, err := store.Decode[domain.Session](r)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if session.Execution != nil && session.Execution.LastSequence >= 4 {
+				break
+			}
+			select {
+			case <-changed:
+			case <-ctx.Done():
+				t.Fatal("native input was not durably published before interruption")
+			}
+		}
 		if scenario == nativeWorkerRevocation {
 			devices := delidevv1connect.NewDeviceServiceClient(f.http.Client(), f.http.URL)
 			_, err := devices.RevokeDevice(ctx, ownerRequest(f.service.Identity, &pb.RevokeDeviceRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(f.device), ExpectedRevision: 1}}))
 			if err != nil {
 				t.Fatal(err)
 			}
-		} else {
+		} else if scenario == nativeWorkerDisconnect {
 			accounts := delidevv1connect.NewAccountServiceClient(f.http.Client(), f.http.URL)
 			response, err := accounts.DisconnectAccount(ctx, ownerRequest(f.service.Identity, &pb.DisconnectAccountRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(f.input.AccountID), ExpectedRevision: 1}}))
 			if err != nil || len(response.Msg.CleanupProblemJson) != 0 {
 				t.Fatalf("account disconnect failed: %v", err)
 			}
+		} else {
+			r, err := f.service.Store.Get(ctx, domain.SessionKind, f.input.SessionID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			sessions := delidevv1connect.NewSessionServiceClient(f.http.Client(), f.http.URL)
+			action := pb.SessionAction_SESSION_ACTION_STOP
+			if scenario == nativeWorkerArchive {
+				action = pb.SessionAction_SESSION_ACTION_ARCHIVE
+			}
+			_, err = sessions.ControlSession(ctx, ownerRequest(f.service.Identity, &pb.ControlSessionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(r.ID), ExpectedRevision: r.Revision}, Action: action}))
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		if scenario != nativeWorkerRevocation {
 			for {
 				changed := f.service.Store.Changed()
 				r, err := f.service.Store.Get(ctx, domain.JobKind, f.job)
@@ -141,7 +188,7 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 				if err != nil {
 					t.Fatal(err)
 				}
-				if job.State == domain.JobUncertain {
+				if job.State == domain.JobUncertain || job.State.Terminal() {
 					break
 				}
 				select {
@@ -177,7 +224,7 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 			Output  json.RawMessage `json:"output"`
 			Problem *domain.Error   `json:"problem"`
 		}
-		if err != nil || json.Unmarshal(raw, &journal) != nil || (journal.State != "finished" && journal.State != "reported") || journal.Problem == nil || len(journal.Output) != 0 {
+		if err != nil || json.Unmarshal(raw, &journal) != nil || (journal.State != "finished" && journal.State != "reported") || (journal.Problem == nil) == (len(journal.Output) == 0) {
 			t.Fatal("revoked Worker did not durably retain its interrupted outcome")
 		}
 		retained, err := f.service.Store.Get(ctx, domain.SessionKind, f.input.SessionID)
@@ -185,10 +232,32 @@ func testManualNativeWorkerExecution(t *testing.T, scenario nativeWorkerScenario
 			t.Fatal(err)
 		}
 		session, err := store.Decode[domain.Session](retained)
-		if err != nil || session.ActiveExecutionID != f.input.ExecutionID || session.Recovery != domain.NeedsRecovery || session.Dispatch != domain.DispatchPaused || session.PendingInputs != 0 || session.Execution == nil || session.Execution.CleanupVerified {
-			t.Fatal("server confused canceled transport with acknowledged native cleanup")
+		if err != nil || session.Dispatch != domain.DispatchPaused || session.PendingInputs != 0 || session.Execution == nil {
+			t.Fatal("native cancellation discarded durable input/session state")
 		}
-		t.Log("real Worker/account revocation cancels installed Codex and loopback inference, joins owned cleanup, retains a failed journal and server recovery without replay; account readiness remains seeded")
+		if scenario == nativeWorkerRevocation || journal.Problem != nil {
+			if session.ActiveExecutionID != f.input.ExecutionID || session.Recovery != domain.NeedsRecovery || session.Execution.CleanupVerified {
+				t.Fatal("server confused canceled transport with acknowledged native cleanup")
+			}
+		} else {
+			var completion domain.ExecutionCompletion
+			if domain.Decode(journal.Output, &completion) != nil || completion.Validate() != nil || session.ActiveExecutionID != "" || session.Recovery != domain.NoRecovery || !session.Execution.CleanupVerified || session.Outcome != domain.ExecutionStopped {
+				t.Fatal("native interruption did not publish terminal cleanup separately from pause")
+			}
+		}
+		if scenario == nativeWorkerStop || scenario == nativeWorkerArchive {
+			if journal.Problem != nil || session.Outcome != domain.ExecutionStopped || !session.Execution.CleanupVerified {
+				t.Fatal("explicit control did not finish its bounded native interruption")
+			}
+			if (scenario == nativeWorkerArchive) != (session.Archive == domain.Archived) {
+				t.Fatal("Stop/Archive lost their independent visibility state")
+			}
+		}
+		if session.Execution.CleanupVerified {
+			t.Log("targeted control interrupts installed Codex, publishes terminal facts, joins owned cleanup and reports completion while preserving pause/Archive; account readiness remains seeded")
+		} else {
+			t.Log("revocation cancels installed Codex and loopback inference, joins owned cleanup and retains a failed journal/server recovery without replay; account readiness remains seeded")
+		}
 		return
 	}
 	var completed domain.Job

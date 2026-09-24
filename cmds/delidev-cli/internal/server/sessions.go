@@ -393,10 +393,17 @@ func (s *Service) ControlSession(ctx context.Context, req *connect.Request[pb.Co
 		if r.Revision != meta.ExpectedRevision {
 			return nil, domain.Fail(domain.Conflict, "The session revision changed.", "Reload current state before controlling it.")
 		}
-		// Preparation has an owned native lifecycle; harness execution does not
-		// yet. Keep that separate boundary fail-closed until adapters own it.
 		if action == domain.ResumeSession {
 			return nil, domain.SessionExecutionUnavailable()
+		}
+		if value.InitialExecution != nil {
+			if err := controlNativeSession(tx, r, &value, action); err != nil {
+				return nil, err
+			}
+			if _, err := tx.Put(domain.SessionKind, r.ID, r.Revision, r.ID, r.ProjectID, value); err != nil {
+				return nil, err
+			}
+			return sessionReceipt{SessionID: r.ID}, nil
 		}
 		if value.ActiveExecutionID != "" || value.Outcome != domain.ExecutionNotStarted || (value.Recovery != domain.NoRecovery && (value.Preparation == nil || value.Preparation.State != domain.PreparationUncertain)) {
 			return nil, domain.Fail(domain.RecoveryRequired, "Native session ownership must be reconciled before this control can complete.", "Keep dispatch paused until owned native resources can be verified and stopped.")

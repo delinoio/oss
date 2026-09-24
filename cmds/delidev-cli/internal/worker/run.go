@@ -27,10 +27,11 @@ import (
 )
 
 type Config struct {
-	Root      string
-	Logger    *slog.Logger
-	Ready     func(domain.ID)
-	execution *PublicationConfig
+	Root             string
+	Logger           *slog.Logger
+	Ready            func(domain.ID)
+	execution        *PublicationConfig
+	executionContext context.Context
 }
 type journalState string
 
@@ -246,6 +247,7 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 		}
 		jobConfig := config
 		jobConfig.execution = &PublicationConfig{Root: config.Root, Credential: credential, Instance: instance, Assignment: resource, Client: client, Logger: config.Logger}
+		jobConfig.executionContext = ctx
 		result, err := runJob(work.context, jobConfig, instance, resource, job)
 		work.cancel()
 		active.Delete(resource.Id)

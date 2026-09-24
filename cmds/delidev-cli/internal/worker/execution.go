@@ -26,7 +26,7 @@ import (
 
 func executeSession(ctx context.Context, config Config, owner domain.ID, job domain.Job) (output json.RawMessage, returned error) {
 	connection := config.execution
-	if connection == nil || connection.Assignment == nil || domain.ID(connection.Assignment.Id) != owner {
+	if connection == nil || connection.Assignment == nil || domain.ID(connection.Assignment.Id) != owner || config.executionContext == nil {
 		return nil, domain.Fail(domain.Unsupported, "Native execution requires the owning authenticated Worker stream.", "Use the accepted immutable assignment on its original Worker.")
 	}
 	var input domain.ExecutionJobInput
@@ -132,7 +132,15 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	if registered == nil || registered.Msg == nil || registered.Msg.ProxyPath != "/api-proxy/v1" {
 		return nil, publicationUncertain()
 	}
-	client, err := codex.Open(ctx, codex.Config{Mode: codex.ThreadProtocol, Version: input.Installation.Version, Home: filepath.Join(home, "codex"), API: &codex.APIConfig{ServerOrigin: connection.Credential.Endpoint, Token: token}, Process: process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: settings.Cwd, Env: env, Logger: config.Logger}})
+	// Stream authority always owns the process lifetime. Before input has a
+	// durable native binding, a targeted cancellation also kills immediately.
+	// Afterwards it can request one bounded native interruption while still
+	// receiving/publishing terminal facts; it never outlives the work stream.
+	nativeCtx, cancelNative := context.WithCancel(config.executionContext)
+	defer cancelNative()
+	cancelBeforeAcceptance := context.AfterFunc(ctx, cancelNative)
+	defer cancelBeforeAcceptance()
+	client, err := codex.Open(nativeCtx, codex.Config{Mode: codex.ThreadProtocol, Version: input.Installation.Version, Home: filepath.Join(home, "codex"), API: &codex.APIConfig{ServerOrigin: connection.Credential.Endpoint, Token: token}, Process: process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: settings.Cwd, Env: env, Logger: config.Logger}})
 	if err != nil {
 		return nil, err
 	}
@@ -157,13 +165,47 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	if err := mapper.AcceptInput(ctx, turn); err != nil {
 		return nil, err
 	}
+	if !cancelBeforeAcceptance() {
+		return nil, domain.SafeError(context.Canceled)
+	}
 	logger.InfoContext(ctx, "native_execution_input_accepted", "input_id", input.InputID)
+	readContext, publicationContext := ctx, nativeCtx
+	stopping := false
 	for {
-		event, err := client.NextEvent(ctx)
+		if ctx.Err() != nil && !stopping {
+			if err := nativeCtx.Err(); err != nil {
+				return nil, domain.SafeError(err)
+			}
+			stopping = true
+			bounded, cancel := context.WithTimeout(nativeCtx, 15*time.Second)
+			defer cancel()
+			readContext, publicationContext = bounded, bounded
+			request := domain.NewID()
+			intent := struct {
+				Version     uint32    `json:"version"`
+				ExecutionID domain.ID `json:"execution_id"`
+				RequestID   domain.ID `json:"request_id"`
+				ThreadID    domain.ID `json:"thread_id"`
+				TurnID      domain.ID `json:"turn_id"`
+			}{1, input.ExecutionID, request, bound.Thread.ID, turn.TurnID}
+			if err := writeJSON(filepath.Join(home, "interruption.json"), intent); err != nil {
+				return nil, publicationUncertain()
+			}
+			logger.InfoContext(bounded, "native_execution_interruption_requested", "request_id", request)
+			if _, err := client.Interrupt(bounded, request, turn.TurnID); err != nil && domain.SafeError(err).Code != domain.Conflict {
+				return nil, err
+			}
+			// A definitive native conflict may race an already completed turn.
+			// Consume its bounded retained facts; never retry the interruption.
+		}
+		event, err := client.NextEvent(readContext)
 		if err != nil {
+			if !stopping && ctx.Err() != nil && nativeCtx.Err() == nil {
+				continue
+			}
 			return nil, err
 		}
-		handled, err := mapper.PublishCore(ctx, event)
+		handled, err := mapper.PublishCore(publicationContext, event)
 		if err != nil {
 			return nil, err
 		}

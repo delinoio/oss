@@ -7,6 +7,61 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 )
 
+func controlNativeSession(tx *store.Tx, sr store.Record, session *domain.Session, action domain.SessionAction) error {
+	if action == domain.RestoreSession {
+		if session.Archive != domain.Archived {
+			return domain.Fail(domain.Conflict, "The session is not archived.", "Inspect its current native cleanup and visibility state.")
+		}
+		session.Archive, session.Dispatch = domain.NotArchived, domain.DispatchPaused
+		return nil
+	}
+	if action != domain.StopSession && action != domain.ArchiveSession {
+		return domain.SessionExecutionUnavailable()
+	}
+	r, err := tx.SessionExecutionJob(sr.ID, session.InitialExecution.ID)
+	if err != nil {
+		return err
+	}
+	job, err := store.Decode[domain.Job](r)
+	if err != nil {
+		return err
+	}
+	progress := session.Execution
+	if progress != nil && (progress.JobID != r.ID || progress.ExecutionID != session.InitialExecution.ID || progress.InputID != session.InitialExecution.InputID) {
+		return executionEventConflict()
+	}
+	session.Dispatch = domain.DispatchPaused
+	if action == domain.ArchiveSession {
+		session.Archive = domain.ArchivePending
+	}
+	if session.ActiveExecutionID == "" && session.Recovery == domain.NoRecovery && progress != nil && progress.CleanupVerified && job.State.Terminal() {
+		if action == domain.ArchiveSession {
+			session.Archive = domain.Archived
+		}
+		return nil
+	}
+	input, _, _, err := nativeExecutionScope(tx, r, job)
+	if err != nil {
+		return err
+	}
+	if err := tx.RequestJobCancellation(r.ID); err != nil {
+		return err
+	}
+	if job.State == domain.JobQueued {
+		now := time.Now().UTC()
+		job.State, job.FinishedAt = domain.JobCanceled, &now
+		job.Problem = domain.Fail(domain.Canceled, "The native job was canceled before Worker dispatch.", "The immutable first claim remains paused for explicit recovery; no input was sent by this job.")
+		if _, err := tx.PutJob(r.ID, r.Revision, r.SessionID, r.ProjectID, job); err != nil {
+			return err
+		}
+		session.Outcome, session.Problem = domain.ExecutionStopped, job.Problem
+	}
+	if job.State != domain.JobClaimed {
+		return retainNativeUncertainty(tx, input, sr, session)
+	}
+	return nil
+}
+
 // Account disconnection revokes relay access and durably cancels the owning
 // native jobs in the same acceptance transaction. Transport/native cleanup is
 // separate; this function never treats a cancellation request as proof of exit.

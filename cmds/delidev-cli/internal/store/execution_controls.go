@@ -2,6 +2,22 @@ package store
 
 import "github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 
+func (t *Tx) SessionExecutionJob(session, execution domain.ID) (Record, error) {
+	for _, id := range []domain.ID{session, execution} {
+		if err := id.Validate(); err != nil {
+			return Record{}, err
+		}
+	}
+	records, _, err := t.sessionPage(2, "SELECT "+recordColumns+" FROM entities WHERE kind='job' AND session_id=? AND json_extract(body,'$.type')='execute-session' AND json_extract(body,'$.input.execution_id')=? ORDER BY id LIMIT 2", session, execution)
+	if err != nil {
+		return Record{}, err
+	}
+	if len(records) != 1 {
+		return Record{}, domain.Fail(domain.RecoveryRequired, "The session execution has missing or ambiguous job ownership.", "Reconcile the original immutable execution before controlling native resources.")
+	}
+	return records[0], nil
+}
+
 // AccountExecutionJobs reads only unfinished assignments whose selected account
 // matches. Candidate routing accounts and completed historical jobs cannot make
 // another execution a cancellation target.

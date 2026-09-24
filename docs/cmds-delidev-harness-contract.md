@@ -77,6 +77,8 @@ The actual outbound Worker loop now executes immutable first Codex assignments u
 
 A terminal event is published before native closure; only joined native cleanup plus independent workspace process-index reconciliation can produce the typed terminal completion report. Stream loss/revocation cancels the owned native context and retains the failed operation journal before reconnect/exit. Runtime history remains for explicit recovery, while execution/upstream bearers are absent from retained files. Structured logs include job/execution/session/harness and closed lifecycle/error metadata only.
 
+Targeted job cancellation after durable input acceptance now keeps the native client alive only under its original Worker stream for one bounded interruption. The Worker synchronizes `interruption.json` containing execution/request/thread/turn UUIDs before calling native `turn/interrupt`; no input or token is included. Interruption plus terminal publication shares a 15-second deadline, and no native interrupt retry is allowed. A definitive completion race can consume retained terminal events. Stream loss or cancellation before durable acceptance still kills immediately; failures retain recovery. Server Stop/Archive uses this boundary, and Archive completes only after the matching terminal and independent cleanup report.
+
 ## Storage
 Native protocol content remains transient inside the Worker adapter until typed product state is accepted by the server. Ownership journals contain only process metadata. Discovery stores selected/resolved paths, bounded versions, protocol classifications and server observation timestamps, never credentials, raw initialization payloads or native error bodies.
 
