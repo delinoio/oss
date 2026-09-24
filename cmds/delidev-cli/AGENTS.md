@@ -8,3 +8,4 @@
 - Preserve durable request receipts, typed revision checks, atomic state/events/routing, independent outcome/archive/recovery, uncertainty before retries, and deletion tombstones.
 - No harness installation, account failover, TTY scraping, unsupported-feature emulation, unprotected secrets, or raw provider diagnostics.
 - Run package Go tests and vet. Use real temporary SQLite/Git/process resources for integration tests; generate protocol bindings from the schema.
+- Follow `docs/cmds-delidev-workspace-contract.md` for Worker Git work. Never fetch during inspection or Local preparation, silently use stale remote refs after fetch failure, run repository hooks during managed preparation, or delete an original Local checkout. Keep partial cleanup retryable and distinguish prepared workspace tests from complete session/process recovery.

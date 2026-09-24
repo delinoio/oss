@@ -25,13 +25,21 @@ func PrivateDir(path string) error {
 	if err != nil {
 		return err
 	}
+	return validateDirectory(path, info)
+}
+
+func CheckPrivateDir(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	return validateDirectory(path, info)
+}
+func validateDirectory(path string, info os.FileInfo) error {
 	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return domain.Fail(domain.PermissionDenied, "The data scope is not a real directory.", "Choose a private directory without a symlink at its root.")
 	}
-	if err := checkPrivate(path, info); err != nil {
-		return err
-	}
-	return nil
+	return checkPrivate(path, info)
 }
 
 func RegularPrivate(path string) error {

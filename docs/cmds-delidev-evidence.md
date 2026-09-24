@@ -15,7 +15,7 @@ The CLI/server/Worker implementation is in progress. No release or real-harness 
 | Six routing policies, quota evidence, immutable snapshots | Pure six-policy selection and read-only preview implemented; first-dispatch atomic snapshot/routing persistence pending | Weighted rotation, sequential traversal/recovery, project/account restrictions, Fixed exclusions, minimum blocking windows, stale evidence and quota ties tested |
 | Workers, executables, outbound jobs, processes, updates, services | Pending | Pending |
 | Codex, Claude Code, OpenCode, Grok Build native adapters | Pending | Real accounts/versions not validated |
-| Workspace preparation, Local protection, forks, snapshots | Pending | Pending |
+| Workspace preparation, Local protection, forks, snapshots | Worker-local inspection, exact reference resolution, detached multi-repository preparation, primary cwd, Local protection, General Chat isolation, durable preparation/cleanup manifests implemented; RPC integration, native forks and snapshots pending | Real temporary Git: subdirectory/linked inspection, detached commits, retry reuse, partial rollback, dirty Local preservation, remote fetch advancement/failure, disabled fetch, cancellation, explicit missing-default failure |
 | Sessions, queue, Steer, interactions, Plan, archive/recovery | Pending | Pending |
 | Schedules, overlap/skip/wait, durable occurrences | Pending | Pending |
 | Terminal/files/diff/reviews/Sidechat/forwarding | Pending | Pending |
@@ -31,3 +31,8 @@ The current user request is the CLI. Desktop windows/tray/widgets/native browser
 ## Local verification log
 - 2026-09-24, macOS arm64, Go 1.26.1: `go test -race ./cmds/delidev-cli/internal/...` and `go vet ./cmds/delidev-cli/internal/...` for the domain, private-files, and SQLite foundation. No harness or provider account was invoked.
 - 2026-09-24: `go test -race ./cmds/delidev-cli/...`, package vet, Buf formatting/lint, and generated Go bindings validated. The native macOS executable was exercised against an isolated temporary data directory. Linux arm64 cross-compilation succeeded; this does not establish native Linux behavior.
+- 2026-09-24: Windows amd64 cross-compilation succeeded. Native Windows runtime remains unverified. Real temporary Git preparation tests and package race tests/vet pass on macOS arm64.
+
+## Native interface discovery (not execution validation)
+- Installed read-only version/help checks: Codex CLI `0.151.0`, Claude Code `2.1.236`, OpenCode `1.18.20`. No `grok` executable was found on this machine. No user credential files were read and no inference was invoked by these checks.
+- Official adapter references retrieved: [Codex app-server](https://learn.chatgpt.com/docs/app-server) for native expected-turn steering; [Claude Code programmatic execution](https://code.claude.com/docs/en/headless) for structured streams; [OpenCode server](https://opencode.ai/docs/server/) for authenticated native HTTP; [Grok Build headless/ACP](https://docs.x.ai/build/cli/headless-scripting) for native JSON-RPC integration. Installed-version capability validation and real-account evidence remain required before claiming an adapter supported end to end.

@@ -1,0 +1,215 @@
+// Package workspace owns Worker-local Git preparation. No operation in this
+// package opens the server database or uses a server-side GitHub PAT.
+package workspace
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+)
+
+const MaxGitOutput = 4 << 20
+
+type Inspection struct {
+	Root        string            `json:"root"`
+	Name        string            `json:"name"`
+	Remotes     []string          `json:"remotes"`
+	DefaultRefs map[string]string `json:"default_refs"`
+}
+type Git struct {
+	Executable string
+	HooksDir   string
+	Timeout    time.Duration
+}
+
+type limitedOutput struct {
+	bytes.Buffer
+	limit    int
+	overflow bool
+}
+
+func (b *limitedOutput) Write(p []byte) (int, error) {
+	if len(p) > b.limit-b.Len() {
+		b.overflow = true
+		return 0, io.ErrShortBuffer
+	}
+	return b.Buffer.Write(p)
+}
+func (g Git) run(ctx context.Context, root string, args ...string) ([]byte, error) {
+	binary := g.Executable
+	if binary == "" {
+		var err error
+		binary, err = exec.LookPath("git")
+		if err != nil {
+			return nil, domain.Fail(domain.MissingInput, "Git is not installed on this Worker.", "Install Git on the selected execution machine.")
+		}
+	}
+	timeout := g.Timeout
+	if timeout == 0 {
+		timeout = 2 * time.Minute
+	}
+	bounded, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	commandArgs := []string{"-C", root, "-c", "core.quotePath=false", "-c", "color.ui=false"}
+	if g.HooksDir != "" {
+		commandArgs = append(commandArgs, "-c", "core.hooksPath="+g.HooksDir)
+	}
+	commandArgs = append(commandArgs, args...)
+	cmd := exec.CommandContext(bounded, binary, commandArgs...)
+	// Keep the Worker's explicitly prepared Git authentication, but remove
+	// inherited repository routing and prompt hooks that could select another
+	// checkout or turn a noninteractive operation into a hidden prompt.
+	cmd.Env = gitEnvironment()
+	cmd.WaitDelay = 2 * time.Second
+	var out limitedOutput
+	out.limit = MaxGitOutput
+	cmd.Stdout = &out
+	cmd.Stderr = io.Discard
+	if err := cmd.Run(); err != nil {
+		if bounded.Err() != nil {
+			return nil, domain.SafeError(bounded.Err())
+		}
+		if out.overflow {
+			return nil, domain.Fail(domain.ResourceExhausted, "Git output exceeded its bound.", "Narrow the requested repository operation.")
+		}
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
+			return nil, &domain.Error{Code: domain.Unavailable, Message: "Git could not complete the operation on this Worker.", Guidance: "Check the selected repository, reference, remote access, and Worker Git authentication; no stale fallback was used.", Cause: "git_exit"}
+		}
+		return nil, &domain.Error{Code: domain.Unavailable, Message: "Git could not be launched on this Worker.", Guidance: "Check the configured executable and filesystem permissions.", Cause: "git_launch"}
+	}
+	return out.Bytes(), nil
+}
+func gitEnvironment() []string {
+	allowed := map[string]bool{
+		"PATH": true, "HOME": true, "USERPROFILE": true, "HOMEDRIVE": true, "HOMEPATH": true,
+		"SYSTEMROOT": true, "WINDIR": true, "TEMP": true, "TMP": true, "TMPDIR": true,
+		"LANG": true, "LC_ALL": true, "XDG_CONFIG_HOME": true, "SSH_AUTH_SOCK": true,
+		"SSH_AGENT_PID": true, "GIT_SSH": true, "GIT_SSH_COMMAND": true,
+		"GIT_CONFIG_SYSTEM": true, "GIT_CONFIG_GLOBAL": true, "GIT_CONFIG_NOSYSTEM": true,
+	}
+	out := []string{}
+	for _, entry := range os.Environ() {
+		name, _, _ := strings.Cut(entry, "=")
+		if allowed[strings.ToUpper(name)] {
+			out = append(out, entry)
+		}
+	}
+	return append(out, "GIT_TERMINAL_PROMPT=0", "GCM_INTERACTIVE=never", "GIT_OPTIONAL_LOCKS=0")
+}
+
+func (g Git) Inspect(ctx context.Context, path string) (Inspection, error) {
+	if err := domain.Text(path, "checkout path", 4096, true); err != nil {
+		return Inspection{}, err
+	}
+	if !filepath.IsAbs(path) {
+		return Inspection{}, domain.Fail(domain.InvalidArgument, "Repository inspection requires an absolute Worker path.", "Provide the checkout root or a directory inside it.")
+	}
+	raw, err := g.run(ctx, path, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return Inspection{}, domain.Fail(domain.InvalidArgument, "The path is not an accessible Git working tree on this Worker.", "Select an existing root, subdirectory, or linked worktree.")
+	}
+	root := strings.TrimSuffix(string(raw), "\n")
+	root = strings.TrimSuffix(root, "\r")
+	root, err = filepath.EvalSymlinks(root)
+	if err != nil {
+		return Inspection{}, domain.Fail(domain.Unavailable, "The canonical Git root could not be resolved.", "Check the checkout's filesystem availability.")
+	}
+	raw, err = g.run(ctx, root, "remote")
+	if err != nil {
+		return Inspection{}, err
+	}
+	result := Inspection{Root: root, Name: filepath.Base(root), Remotes: []string{}, DefaultRefs: map[string]string{}}
+	for _, remote := range strings.Split(strings.TrimSuffix(string(raw), "\n"), "\n") {
+		remote = strings.TrimSuffix(remote, "\r")
+		if remote == "" {
+			continue
+		}
+		if strings.ContainsAny(remote, " /\\:\r\n") || strings.HasPrefix(remote, "-") {
+			return Inspection{}, domain.Fail(domain.InvalidArgument, "A Git remote has an unsupported name.", "Rename the remote to an unambiguous name before using this checkout.")
+		}
+		result.Remotes = append(result.Remotes, remote)
+		symbolic, err := g.run(ctx, root, "symbolic-ref", "--quiet", "refs/remotes/"+remote+"/HEAD")
+		if err == nil {
+			ref := strings.TrimSpace(string(symbolic))
+			prefix := "refs/remotes/" + remote + "/"
+			if strings.HasPrefix(ref, prefix) {
+				result.DefaultRefs[remote] = strings.TrimPrefix(ref, prefix)
+			}
+		} else if ctx.Err() != nil {
+			return Inspection{}, domain.SafeError(ctx.Err())
+		}
+	}
+	return result, nil
+}
+func DefaultStarting(inspection Inspection, preferred string) (domain.Reference, error) {
+	remote := preferred
+	if remote != "" && !slices.Contains(inspection.Remotes, remote) {
+		return domain.Reference{}, domain.Fail(domain.InvalidArgument, "The preferred remote does not exist on this Worker.", "Refresh repository inspection and select a current remote.")
+	}
+	if remote == "" {
+		if slices.Contains(inspection.Remotes, "origin") {
+			remote = "origin"
+		} else if len(inspection.Remotes) == 1 {
+			remote = inspection.Remotes[0]
+		} else {
+			return domain.Reference{}, domain.Fail(domain.MissingInput, "The starting remote is ambiguous or absent.", "Choose a preferred remote or an explicit starting reference.")
+		}
+	}
+	branch := inspection.DefaultRefs[remote]
+	if branch == "" {
+		return domain.Reference{}, domain.Fail(domain.MissingInput, "The selected remote's default branch is unavailable locally.", "Configure its default branch explicitly; DeliDev does not guess main or master.")
+	}
+	return domain.Reference{Type: domain.RemoteBranch, Remote: remote, Name: branch}, nil
+}
+func (g Git) Resolve(ctx context.Context, inspection Inspection, ref domain.Reference, autoFetch bool) (string, error) {
+	if err := ref.Validate(false); err != nil {
+		return "", err
+	}
+	name := ref.Name
+	switch ref.Type {
+	case domain.LocalBranch:
+		if _, err := g.run(ctx, inspection.Root, "check-ref-format", "refs/heads/"+ref.Name); err != nil {
+			return "", domain.Fail(domain.InvalidArgument, "The local branch reference is invalid.", "Choose an exact local branch name.")
+		}
+		name = "refs/heads/" + ref.Name
+	case domain.RemoteBranch:
+		if !slices.Contains(inspection.Remotes, ref.Remote) {
+			return "", domain.Fail(domain.InvalidArgument, "The remote is not present on the selected Worker.", "Reinspect and configure an existing remote.")
+		}
+		if _, err := g.run(ctx, inspection.Root, "check-ref-format", "refs/heads/"+ref.Name); err != nil {
+			return "", domain.Fail(domain.InvalidArgument, "The remote branch reference is invalid.", "Choose an exact remote branch name.")
+		}
+		name = "refs/remotes/" + ref.Remote + "/" + ref.Name
+		if autoFetch {
+			// Fetch only this branch into its tracking ref before resolving the commit.
+			// --no-recurse-submodules avoids unrelated preparation/authentication work.
+			if _, err := g.run(ctx, inspection.Root, "fetch", "--no-tags", "--no-recurse-submodules", "--", ref.Remote, "+refs/heads/"+ref.Name+":"+name); err != nil {
+				return "", err
+			}
+		}
+	case domain.CommitReference:
+		if len(name) != 40 && len(name) != 64 {
+			return "", domain.Fail(domain.InvalidArgument, "A commit reference must use its full object ID.", "Choose an exact 40- or 64-digit Git commit identity.")
+		}
+		for _, c := range name {
+			if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+				return "", domain.Fail(domain.InvalidArgument, "Invalid commit identity.", "Use lowercase hexadecimal Git object IDs.")
+			}
+		}
+	}
+	raw, err := g.run(ctx, inspection.Root, "rev-parse", "--verify", "--end-of-options", name+"^{commit}")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(raw)), nil
+}

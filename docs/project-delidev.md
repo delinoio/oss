@@ -16,6 +16,7 @@ Run personal AI sessions across projects, accounts, native harnesses, and execut
 - [CLI/server/Worker contract](cmds-delidev-contract.md)
 - [Complete issue #964 requirements](cmds-delidev-requirements.md)
 - [Protocol contract](protos-delidev-v1-contract.md)
+- [Worker workspace contract](cmds-delidev-workspace-contract.md)
 - [Implementation and evidence ledger](cmds-delidev-evidence.md)
 
 ## Cross-Domain Invariants
