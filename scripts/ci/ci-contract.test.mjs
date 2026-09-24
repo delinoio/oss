@@ -427,7 +427,7 @@ test("React Forge validates its supported runtime with uncached native and rende
   const job = workflow.jobs["react-forge"];
   assert.equal(job["runs-on"], "macos-15");
   const commands = job.steps.map(({ run }) => run ?? "").join("\n");
-  for (const command of ["forge-package", "forge-document", "forge-docx", "forge-xlsx", "forge-pdf", "react-forge-node", "turbo run build typecheck lint test --filter=react-forge", "test:render", "benchmark", "render-requirements.txt"]) assert.ok(commands.includes(command), command);
+  for (const command of ["forge-package", "forge-document", "forge-docx", "forge-xlsx", "forge-pdf", "react-forge-node", "turbo run build typecheck lint test --filter=@delino/react-forge", "test:render", "benchmark", "render-requirements.txt"]) assert.ok(commands.includes(command), command);
   assert.equal(namedStep(job, "Remove generated package output").if, "always()");
   const evidence = namedStep(job, "Retain rendering and benchmark evidence");
   assert.equal(evidence.with["retention-days"], 7);

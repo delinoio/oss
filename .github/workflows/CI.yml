@@ -417,7 +417,7 @@ jobs:
           cargo test -p forge-package -p forge-document -p forge-docx -p forge-xlsx -p forge-pdf -p forge-tree-doc -p forge-pptx -p delino-forge
           cargo clippy -p react-forge-node -p forge-package -p forge-document -p forge-docx -p forge-xlsx -p forge-pdf --all-targets -- -D warnings
       - name: Build and test library and installed CLI
-        run: pnpm exec turbo run build typecheck lint test --filter=react-forge
+        run: pnpm exec turbo run build typecheck lint test --filter=@delino/react-forge
       - name: Install test-only renderers
         run: |
           brew install --cask libreoffice
@@ -427,9 +427,9 @@ jobs:
       - name: Verify generated and edited Office and native PDF output
         env:
           REACT_FORGE_PYTHON: ${{ runner.temp }}/react-forge-python/bin/python
-        run: pnpm --filter react-forge test:render --output "$RUNNER_TEMP/react-forge-render"
+        run: pnpm --filter @delino/react-forge test:render --output "$RUNNER_TEMP/react-forge-render"
       - name: Measure representative and near-limit workloads
-        run: pnpm --filter react-forge benchmark --output "$RUNNER_TEMP/react-forge-benchmark.json"
+        run: pnpm --filter @delino/react-forge benchmark --output "$RUNNER_TEMP/react-forge-benchmark.json"
       - name: Retain rendering and benchmark evidence
         if: always()
         uses: actions/upload-artifact@v4

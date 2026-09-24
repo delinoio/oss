@@ -8,19 +8,22 @@ import test from "node:test";
 const exec = promisify(execFile);
 const cases = [["presentation", "pptx"], ["document", "docx"], ["workbook", "xlsx"], ["pdf", "pdf"]] as const;
 
-test("local workspace archive installs and its CLI generates all four formats", async () => {
+test("scoped workspace archive installs and its CLI generates all four formats", async () => {
   const directory = await mkdtemp(join(tmpdir(), "react-forge-installed-"));
   const packageRoot = new URL("../", import.meta.url).pathname;
   const env = { ...process.env, PATH: `${dirname(process.execPath)}${delimiter}${process.env.PATH ?? ""}` };
   try {
     await exec("pnpm", ["pack", "--pack-destination", directory], { cwd: packageRoot, env });
-    const tarball = join(directory, "react-forge-0.0.0.tgz");
-    await writeFile(join(directory, "package.json"), JSON.stringify({ private: true, type: "module", packageManager: "pnpm@10.26.2", dependencies: { "react-forge": `file:${tarball}`, react: "19.2.8" } }));
+    const tarball = join(directory, "delino-react-forge-0.0.0.tgz");
+    await writeFile(join(directory, "package.json"), JSON.stringify({ private: true, type: "module", packageManager: "pnpm@10.26.2", dependencies: { "@delino/react-forge": `file:${tarball}`, react: "19.2.8" } }));
     // Test the distributable layout without requiring lifecycle scripts,
     // workspace resolution or source files from this checkout.
     await exec("pnpm", ["install", "--ignore-scripts"], { cwd: directory, env });
     await cp(join(packageRoot, "examples"), join(directory, "tasks"), { recursive: true });
-    const cli = join(directory, "node_modules", "react-forge", "bin", "react-forge.mjs");
+    const installedRoot = join(directory, "node_modules", "@delino", "react-forge");
+    const manifest = JSON.parse(await readFile(join(installedRoot, "package.json"), "utf8"));
+    assert.equal(manifest.name, "@delino/react-forge");
+    const cli = join(installedRoot, "bin", "react-forge.mjs");
     for (const [task, format] of cases) {
       const output = join(directory, `report.${format}`);
       const { stdout } = await exec(process.execPath, [cli, "run", join(directory, "tasks", `${task}.tsx`), "--output", output, "--json"], { cwd: directory, env });

@@ -98,12 +98,12 @@ There is **no automatic timeout**. Unresolved work can remain pending until canc
 
 ### Library and CLI interfaces
 
-Provide the private `react-forge` package with common session APIs and format-specific component imports:
+Provide the private `@delino/react-forge` package with common session APIs and format-specific component imports. The npm scope reflects the subsequent package-naming decision; the project ID and CLI executable remain `react-forge`:
 
-- `react-forge/pptx`
-- `react-forge/docx`
-- `react-forge/xlsx`
-- `react-forge/pdf`
+- `@delino/react-forge/pptx`
+- `@delino/react-forge/docx`
+- `@delino/react-forge/xlsx`
+- `@delino/react-forge/pdf`
 
 The API must cover session creation, Office import, structure inspection, root rendering, target mounting/updating, revision-aware measurement, Buffer export, file export, diagnostic subscription, and disposal.
 

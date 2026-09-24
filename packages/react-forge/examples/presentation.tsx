@@ -1,6 +1,6 @@
 import React from "react";
-import { createSession, Format } from "react-forge";
-import { Presentation, Slide, Column, Text, Table, TableRow, Cell, Chart } from "react-forge/pptx";
+import { createSession, Format } from "@delino/react-forge";
+import { Presentation, Slide, Column, Text, Table, TableRow, Cell, Chart } from "@delino/react-forge/pptx";
 
 export default async function task({ data, signal }: { data?: { title?: string }; signal: AbortSignal }) {
   signal.throwIfAborted();

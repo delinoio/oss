@@ -1,6 +1,6 @@
 import React from "react";
-import { createSession, Format } from "react-forge";
-import { Workbook, Worksheet, Cell, Merge, Row, Column, Chart, ConditionalFormat, DataValidation, Comparison, ThresholdKind, IconSet, ValidationKind } from "react-forge/xlsx";
+import { createSession, Format } from "@delino/react-forge";
+import { Workbook, Worksheet, Cell, Merge, Row, Column, Chart, ConditionalFormat, DataValidation, Comparison, ThresholdKind, IconSet, ValidationKind } from "@delino/react-forge/xlsx";
 const at = (row: number, column = 0) => ({ row, column });
 const range = (first: number, last: number, column = 1) => ({ first: at(first, column), last: at(last, column) });
 

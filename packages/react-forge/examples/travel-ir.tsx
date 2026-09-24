@@ -1,7 +1,7 @@
 import React, { type ReactNode } from "react";
 import { fileURLToPath } from "node:url";
-import { createSession, Format, type AssetHandle } from "react-forge";
-import { Canvas, Cell, Chart, Image, Presentation, Slide, Table, TableRow, Text } from "react-forge/pptx";
+import { createSession, Format, type AssetHandle } from "@delino/react-forge";
+import { Canvas, Cell, Chart, Image, Presentation, Slide, Table, TableRow, Text } from "@delino/react-forge/pptx";
 
 // All coordinates and type sizes are in points. The deck is 16:9.
 const palette = {

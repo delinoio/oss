@@ -53,7 +53,7 @@ let priority = 0;
 const context = Object.freeze({});
 const noop = () => {};
 const config = {
-  rendererVersion: "0.0.0", rendererPackageName: "react-forge",
+  rendererVersion: "0.0.0", rendererPackageName: "@delino/react-forge",
   isPrimaryRenderer: true, supportsMutation: true, supportsPersistence: false,
   supportsHydration: false, supportsResources: false, supportsSingletons: false,
   supportsMicrotasks: true, supportsTestSelectors: false, warnsIfNotActing: false,

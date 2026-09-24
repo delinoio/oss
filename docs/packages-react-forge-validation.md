@@ -10,9 +10,9 @@ Node.js 24.20.0, React 19.2.8, react-reconciler 0.33.0, TypeScript 5.9.3 and pin
 Repository developers and CI maintainers reproducing document, preservation and session behavior.
 
 ## Interfaces and Contracts
-- `pnpm exec turbo run build typecheck lint test --filter=react-forge` builds and validates the real library plus workspace and packed-consumer CLI.
-- `pnpm --filter react-forge test:render --output <directory>` creates four formats, edits three external Office fixtures, renders their originals for comparison, and independently verifies package XML, extracted text, native chart visibility, CJK and PDF semantics.
-- `pnpm --filter react-forge benchmark --output <report.json>` records eleven fresh-process workload samples.
+- `pnpm exec turbo run build typecheck lint test --filter=@delino/react-forge` builds and validates the real library plus workspace and packed-consumer CLI.
+- `pnpm --filter @delino/react-forge test:render --output <directory>` creates four formats, edits three external Office fixtures, renders their originals for comparison, and independently verifies package XML, extracted text, native chart visibility, CJK and PDF semantics.
+- `pnpm --filter @delino/react-forge benchmark --output <report.json>` records eleven fresh-process workload samples.
 - CI `react-forge` runs on the supported macOS arm64 runner. Its native/system-font work is uncached and its seven-day artifacts contain Office/PDF files, page PNGs, provenance and benchmark reports.
 
 ## Storage
@@ -28,8 +28,8 @@ Runtime diagnostics are checked for safe classifications and model locations, ob
 Run from the repository root after `pnpm install`:
 
 ```sh
-pnpm --filter react-forge build
-pnpm exec turbo run build typecheck lint test --filter=react-forge
+pnpm --filter @delino/react-forge build
+pnpm exec turbo run build typecheck lint test --filter=@delino/react-forge
 cargo test -p forge-package -p forge-document -p forge-docx -p forge-xlsx -p forge-pdf -p forge-tree-doc -p forge-pptx -p delino-forge
 cargo clippy -p react-forge-node -p forge-package -p forge-document -p forge-docx -p forge-xlsx -p forge-pdf --all-targets -- -D warnings
 pnpm ci:contracts
@@ -41,8 +41,8 @@ pnpm --filter devhud verify:mobile
 Install LibreOffice and Poppler as test tools and create a Python environment from `packages/react-forge/scripts/render-requirements.txt`. Explicit test tool paths can be supplied through `REACT_FORGE_SOFFICE`, `REACT_FORGE_PDFTOPPM` and `REACT_FORGE_PYTHON`. Then run:
 
 ```sh
-pnpm --filter react-forge test:render --output /tmp/react-forge-render
-pnpm --filter react-forge benchmark --output /tmp/react-forge-benchmark.json
+pnpm --filter @delino/react-forge test:render --output /tmp/react-forge-render
+pnpm --filter @delino/react-forge benchmark --output /tmp/react-forge-benchmark.json
 FORGE_RENDER_ARTIFACTS=/tmp/forge-render cargo test -p delino-forge --test render -- --ignored
 ```
 
@@ -85,6 +85,10 @@ Measured on 2026-09-24 (development build; observations only):
 | DOCX | near limit | 4225.5 | 219.6 | 5.7 |
 | XLSX | near limit | 2298.1 | 261.0 | 5.7 |
 | PDF | near limit | 2466.6 | 268.8 | 5.7 |
+
+## Scoped Package Identity
+
+The npm package is `@delino/react-forge`; the project/directory identity and CLI executable remain `react-forge`. The scoped package passed `pnpm exec turbo run build typecheck lint test --filter=@delino/react-forge`, including all 34 tests and an installed consumer of `delino-react-forge-0.0.0.tgz`. That consumer checks the installed manifest name, imports the scoped entry points to generate all four formats, and runs the `react-forge` binary. CI's package selectors use the scoped name; all 73 CI contract tests and workflow validation passed. The ROAM task also typechecks and exports through the scoped workspace package. This naming change does not publish the private package.
 
 ## Designed Travel Investor Example
 

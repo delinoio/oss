@@ -1,8 +1,8 @@
 import React from "react";
-import { importOffice, Format, ForgeError, ErrorCode } from "react-forge";
-import { Text } from "react-forge/pptx";
-import { Paragraph } from "react-forge/docx";
-import { Cell } from "react-forge/xlsx";
+import { importOffice, Format, ForgeError, ErrorCode } from "@delino/react-forge";
+import { Text } from "@delino/react-forge/pptx";
+import { Paragraph } from "@delino/react-forge/docx";
+import { Cell } from "@delino/react-forge/xlsx";
 
 export default async function task({ data, signal }: { data?: { format: Format; source: string; text?: string }; signal: AbortSignal }) {
   if (!data || ![Format.Pptx, Format.Docx, Format.Xlsx].includes(data.format) || typeof data.source !== "string") {

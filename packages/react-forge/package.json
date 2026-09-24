@@ -1,5 +1,5 @@
 {
-  "name": "react-forge",
+  "name": "@delino/react-forge",
   "version": "0.0.0",
   "private": true,
   "type": "module",

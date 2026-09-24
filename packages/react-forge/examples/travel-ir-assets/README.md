@@ -7,8 +7,8 @@
 From the repository root on the supported Node.js 24/macOS arm64 host:
 
 ```sh
-pnpm --filter react-forge build
-pnpm --filter react-forge cli run examples/travel-ir.tsx --output /tmp/roam-investor-deck.pptx --json
+pnpm --filter @delino/react-forge build
+pnpm --filter @delino/react-forge cli run examples/travel-ir.tsx --output /tmp/roam-investor-deck.pptx --json
 ```
 
 The CLI rejects an existing output unless `--overwrite` is supplied. The task resolves assets relative to its own module, registers the three images concurrently with the caller's abort signal, and disposes its session if authoring fails. Normal CLI completion also disposes the returned session. No network access, image generation, or presentation converter is required to run the example.
@@ -69,7 +69,7 @@ These generated assets are included as repository example assets under the repos
 Check the example's types after building the package:
 
 ```sh
-pnpm --filter react-forge exec tsc --noEmit --target ES2023 --module NodeNext --moduleResolution NodeNext --jsx react-jsx --strict --skipLibCheck examples/travel-ir.tsx
+pnpm --filter @delino/react-forge exec tsc --noEmit --target ES2023 --module NodeNext --moduleResolution NodeNext --jsx react-jsx --strict --skipLibCheck examples/travel-ir.tsx
 ```
 
 The delivered deck was structurally checked for 12 slides, its editable table, native chart/workbook data and slide geometry, then rendered with test-only LibreOffice and Poppler and visually reviewed slide by slide. The compact record is `../../tests/evidence/travel-ir-macos-arm64.json`; that renderer substituted Carlito for the chart's Calibri while using Avenir Next for slide text. Office applications remain authoritative for final rendering. This does not claim a direct Microsoft PowerPoint or Google Slides test. Generated PPTX/PDF/PNG previews are local outputs, not tracked source or runtime dependencies.

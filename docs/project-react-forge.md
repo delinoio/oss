@@ -4,7 +4,7 @@
 Provide private React document sessions and a TSX task CLI for authoring and preservation-aware editing of PPTX, DOCX, XLSX, and independent tagged PDF. Issue [#968](https://github.com/delinoio/oss/issues/968) defines the complete delivery boundary. Partial format support does not satisfy that issue.
 
 ## Project ID
-`react-forge` (`ProjectId::ReactForge`). Product name: **React Forge**.
+`react-forge` (`ProjectId::ReactForge`). Product name: **React Forge**. The private npm package is `@delino/react-forge`; its CLI executable is `react-forge`.
 
 ## Domain Ownership Map
 - `packages/react-forge`: private TypeScript session library, React reconciler, components, CLI, examples and integration tests.

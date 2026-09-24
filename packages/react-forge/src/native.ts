@@ -16,7 +16,7 @@ function load(): Binding {
       throw new ForgeError(ErrorCode.UnsupportedPackage, "React Forge requires Node.js 24 on macOS arm64.");
     }
     try { binding = createRequire(import.meta.url)("../dist/react-forge.node") as Binding; }
-    catch { throw new ForgeError(ErrorCode.Io, "Native binding unavailable. Run pnpm --filter react-forge build."); }
+    catch { throw new ForgeError(ErrorCode.Io, "Native binding unavailable. Run pnpm --filter @delino/react-forge build."); }
   }
   return binding;
 }

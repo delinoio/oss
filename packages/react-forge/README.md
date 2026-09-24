@@ -1,32 +1,32 @@
 # React Forge (private workspace)
 
-React Forge authors PPTX, DOCX, XLSX, and independent tagged PDF through persistent React sessions. It imports existing Office packages, exposes supported editable regions, and preserves unrelated XML and package parts when mounting React content into those regions.
+The private `@delino/react-forge` package authors PPTX, DOCX, XLSX, and independent tagged PDF through persistent React sessions. It imports existing Office packages, exposes supported editable regions, and preserves unrelated XML and package parts when mounting React content into those regions. Its executable is named `react-forge`.
 
 Use Node.js 24 on macOS arm64 and the repository-pinned Rust toolchain. React 19.2.8 and react-reconciler 0.33.0 are pinned together. Build the native binding explicitly:
 
 ```sh
 pnpm install
-pnpm --filter react-forge build
-pnpm --filter react-forge cli run examples/presentation.tsx --output /tmp/report.pptx
-pnpm --filter react-forge cli run examples/document.tsx --output /tmp/report.docx
-pnpm --filter react-forge cli run examples/workbook.tsx --output /tmp/report.xlsx
-pnpm --filter react-forge cli run examples/pdf.tsx --output /tmp/report.pdf
-pnpm exec turbo run build typecheck lint test --filter=react-forge
+pnpm --filter @delino/react-forge build
+pnpm --filter @delino/react-forge cli run examples/presentation.tsx --output /tmp/report.pptx
+pnpm --filter @delino/react-forge cli run examples/document.tsx --output /tmp/report.docx
+pnpm --filter @delino/react-forge cli run examples/workbook.tsx --output /tmp/report.xlsx
+pnpm --filter @delino/react-forge cli run examples/pdf.tsx --output /tmp/report.pdf
+pnpm exec turbo run build typecheck lint test --filter=@delino/react-forge
 ```
 
 The package remains private and workspace-only. Generation has no Office, LibreOffice, Python, external conversion or runtime download dependency. Generated `dist` is untracked and removed from final worktrees. The tests also pack the built package into a temporary consumer to exercise its installed CLI.
 
 | Import | Authoring capabilities |
 | --- | --- |
-| `react-forge/pptx` | Rich text/lists, PNG/JPEG, shapes, merged tables, editable bar charts, connectors, row/column/canvas layout |
-| `react-forge/docx` | Paragraphs/headings/lists, merged tables, images, hyperlinks, sections, page breaks, headers/footers, editable bar/line/pie charts |
-| `react-forge/xlsx` | Typed cells/formulas, formatting, merges, dimensions, freeze panes, filters, links, editable bar/line/pie charts, five conditional-format and seven validation families |
-| `react-forge/pdf` | Independent pages, flow text/lists/tables, automatic pagination, repeated headers, images/shapes/links and semantic tags |
+| `@delino/react-forge/pptx` | Rich text/lists, PNG/JPEG, shapes, merged tables, editable bar charts, connectors, row/column/canvas layout |
+| `@delino/react-forge/docx` | Paragraphs/headings/lists, merged tables, images, hyperlinks, sections, page breaks, headers/footers, editable bar/line/pie charts |
+| `@delino/react-forge/xlsx` | Typed cells/formulas, formatting, merges, dimensions, freeze panes, filters, links, editable bar/line/pie charts, five conditional-format and seven validation families |
+| `@delino/react-forge/pdf` | Independent pages, flow text/lists/tables, automatic pagination, repeated headers, images/shapes/links and semantic tags |
 
 ```tsx
 import React from "react";
-import { createSession, Format } from "react-forge";
-import { Presentation, Slide, Column, Text } from "react-forge/pptx";
+import { createSession, Format } from "@delino/react-forge";
+import { Presentation, Slide, Column, Text } from "@delino/react-forge/pptx";
 
 export default async function task({ data, signal }) {
   signal.throwIfAborted();
@@ -46,8 +46,8 @@ Library callers dispose sessions in `finally`. Common exports include `createSes
 
 ```tsx
 import React from "react";
-import { importOffice, Format } from "react-forge";
-import { Paragraph } from "react-forge/docx";
+import { importOffice, Format } from "@delino/react-forge";
+import { Paragraph } from "@delino/react-forge/docx";
 
 const session = await importOffice(Format.Docx, { path: "/tmp/original.docx" });
 try {
@@ -87,6 +87,6 @@ Pass `AbortSignal` to import, asset, measurement or export options. Unresolved w
 
 `limits` and `capabilities` expose these budgets. All registered assets together are bounded to 256 MiB, with 64 MiB per explicit font. Applicable existing PPTX constraints remain, including 1,000 slides and tables of at most 1,000 rows × 128 columns. Chart data expansion is bounded to 200,000 cells and XLSX merge expansion to 250,000 cells. Opaque imported content uses package budgets. Integrators own authentication, isolation and process-wide resource governance.
 
-Test-only rendering uses LibreOffice, Poppler and the pinned dependencies in `scripts/render-requirements.txt`. After building, run `pnpm --filter react-forge test:render --output /tmp/react-forge-render`. Optional `REACT_FORGE_SOFFICE`, `REACT_FORGE_PDFTOPPM` and `REACT_FORGE_PYTHON` select explicit test tools. Run `pnpm --filter react-forge benchmark --output /tmp/react-forge-benchmark.json` for representative, external-edit and near-limit samples. Reports record tool/font provenance and time, peak RSS and event-loop delay; there is no performance SLO. This evidence is not direct Microsoft Office validation.
+Test-only rendering uses LibreOffice, Poppler and the pinned dependencies in `scripts/render-requirements.txt`. After building, run `pnpm --filter @delino/react-forge test:render --output /tmp/react-forge-render`. Optional `REACT_FORGE_SOFFICE`, `REACT_FORGE_PDFTOPPM` and `REACT_FORGE_PYTHON` select explicit test tools. Run `pnpm --filter @delino/react-forge benchmark --output /tmp/react-forge-benchmark.json` for representative, external-edit and near-limit samples. Reports record tool/font provenance and time, peak RSS and event-loop delay; there is no performance SLO. This evidence is not direct Microsoft Office validation.
 
 Canonical internal ownership, acceptance evidence and complete requirements live in `docs/project-react-forge.md` and its linked contracts. Public distribution, hosting, watch mode, a new MCP interface and a GUI are outside this project.

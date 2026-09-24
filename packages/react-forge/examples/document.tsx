@@ -1,7 +1,7 @@
 import React from "react";
 import { fileURLToPath } from "node:url";
-import { createSession, Format } from "react-forge";
-import { Document, Section, Header, Footer, Paragraph, Run, Link, List, ListItem, Table, Row, Cell, Image, Chart, PageBreak } from "react-forge/docx";
+import { createSession, Format } from "@delino/react-forge";
+import { Document, Section, Header, Footer, Paragraph, Run, Link, List, ListItem, Table, Row, Cell, Image, Chart, PageBreak } from "@delino/react-forge/docx";
 
 export default async function task({ signal }: { signal: AbortSignal }) {
   const session = createSession(Format.Docx);
