@@ -564,6 +564,40 @@ export class FigmaSession {
       m.keys = new Set(entities.map((e) => e.key));
       desired.push(...entities);
     }
+    const desiredKinds = new Map(desired.map((e) => [e.key, e.kind]));
+    for (const old of this.previous)
+      if (
+        !desiredKinds.has(old.key) &&
+        [FigmaKind.Component, FigmaKind.ComponentSet].includes(old.kind)
+      )
+        throw new ForgeError(
+          ErrorCode.UnsupportedEdit,
+          "Component removal cannot prove preservation of external instances.",
+        );
+    const referenceKind = (key: string) =>
+      desiredKinds.get(key) ??
+      this.snapshots.get(
+        key.startsWith("@") ? key.slice(1) : (bindings[key] ?? ""),
+      )?.type;
+    for (const entity of desired) {
+      const refs: [string, FigmaKind][] = [];
+      for (const [field, kind] of [
+        ["component", FigmaKind.Component],
+        ["collection", FigmaKind.Collection],
+        ["fillStyle", FigmaKind.PaintStyle],
+        ["textStyle", FigmaKind.TextStyle],
+      ] as const)
+        if (entity.props[field]) refs.push([entity.props[field], kind]);
+      for (const key of Object.values(entity.props.bindings ?? {}))
+        refs.push([String(key), FigmaKind.Variable]);
+      for (const key of entity.props.variants ?? [])
+        refs.push([key, FigmaKind.Component]);
+      if (refs.some(([key, kind]) => referenceKind(key) !== kind))
+        throw new ForgeError(
+          ErrorCode.InvalidTarget,
+          "Inspect and select a Figma reference of the expected kind.",
+        );
+    }
     const explicit = new Set<string>();
     for (const e of desired) {
       if (e.props.image && !this.assets.has(e.props.image))
@@ -645,7 +679,9 @@ export class FigmaSession {
       fingerprints: Object.fromEntries(
         [...this.snapshots].map(([id, s]) => [id, fingerprint(s)]),
       ),
-      ...changed,
+      createdNodeIds: [...new Set(changed.createdNodeIds)],
+      mutatedNodeIds: [...new Set(changed.mutatedNodeIds)],
+      deletedNodeIds: [...new Set(changed.deletedNodeIds)],
       ...this.connection.stats,
     };
     this.last = structuredClone(value);
@@ -1248,9 +1284,38 @@ export class FigmaSession {
         ErrorCode.Conflict,
         "Measure requires a confirmed published Figma revision.",
       );
-    const bounds = this.snapshots.get(
-      this.bindings[this.handleKeys.get(handle.nodeId) ?? handle.nodeId] ?? "",
-    )?.bounds;
+    const id =
+      this.bindings[this.handleKeys.get(handle.nodeId) ?? handle.nodeId];
+    const baseline = id ? this.snapshots.get(id) : undefined;
+    if (!id || !baseline)
+      throw new ForgeError(
+        ErrorCode.InvalidTarget,
+        "The Figma node has not been published.",
+      );
+    const page = this.pages.get(id);
+    const read = await this.connection.call(
+      "use_figma",
+      {
+        fileKey: this.key,
+        code: script({
+          mode: "inspect",
+          page: page ? `@${page}` : undefined,
+          bindings: {},
+          targets: [{ id, kind: baseline.type }],
+        }),
+        description: "Measure a published Figma node",
+        skillNames: "figma-use",
+      },
+      CallSafety.Read,
+      this.signal(options.signal),
+    );
+    const current = read.nodes?.find((n: Snapshot) => n.id === id);
+    if (!current || current.stateHash !== baseline.stateHash)
+      throw new ForgeError(
+        ErrorCode.Conflict,
+        "The Figma node changed since the published revision.",
+      );
+    const bounds = current.bounds;
     if (!bounds)
       throw new ForgeError(
         ErrorCode.InvalidTarget,
