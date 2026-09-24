@@ -206,7 +206,7 @@ func runJob(ctx context.Context, root string, instance domain.ID, resource *pb.R
 		if err := writeJSON(path, result); err != nil {
 			return journal{}, err
 		}
-		output, err := execute(ctx, root, job)
+		output, err := execute(ctx, root, domain.ID(resource.Id), job)
 		if err != nil {
 			result.Problem = domain.SafeError(err)
 		} else {
@@ -219,14 +219,14 @@ func runJob(ctx context.Context, root string, instance domain.ID, resource *pb.R
 	}
 	return result, nil
 }
-func execute(ctx context.Context, root string, job domain.Job) (json.RawMessage, error) {
+func execute(ctx context.Context, root string, owner domain.ID, job domain.Job) (json.RawMessage, error) {
 	switch job.Type {
 	case domain.InspectRepositoryJob:
 		var input domain.RepositoryInspectionInput
 		if err := domain.Decode(job.Input, &input); err != nil {
 			return nil, err
 		}
-		git := workspace.Git{HooksDir: filepath.Join(root, "empty-hooks")}
+		git := workspace.Git{HooksDir: filepath.Join(root, "empty-hooks"), ProcessRoot: filepath.Join(root, "processes"), OwnerID: owner}
 		inspection, err := git.Inspect(ctx, input.Path)
 		if err != nil {
 			return nil, err

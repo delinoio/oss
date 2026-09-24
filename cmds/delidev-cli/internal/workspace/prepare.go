@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
@@ -86,7 +87,7 @@ func (m *Manager) initialize() error {
 		return err
 	}
 	m.Root = canonical
-	for _, name := range []string{"workspaces", "locks", "empty-hooks"} {
+	for _, name := range []string{"workspaces", "locks", "empty-hooks", "processes"} {
 		if err := security.PrivateDir(filepath.Join(m.Root, name)); err != nil {
 			return err
 		}
@@ -95,6 +96,8 @@ func (m *Manager) initialize() error {
 	if m.Logger == nil {
 		m.Logger = slog.Default()
 	}
+	m.Git.ProcessRoot = filepath.Join(m.Root, "processes")
+	m.Git.Logger = m.Logger
 	m.initialized = true
 	return nil
 }
@@ -151,6 +154,11 @@ func (m *Manager) Prepare(ctx context.Context, request PrepareRequest) (Manifest
 		return Manifest{}, err
 	}
 	defer lock.Close()
+	git := m.Git
+	git.OwnerID = request.SessionID
+	if err := security.PrivateDir(filepath.Join(git.ProcessRoot, string(request.SessionID))); err != nil {
+		return Manifest{}, err
+	}
 	raw, _ := json.Marshal(request)
 	digestBytes := sha256.Sum256(raw)
 	digest := hex.EncodeToString(digestBytes[:])
@@ -197,6 +205,9 @@ func (m *Manager) Prepare(ctx context.Context, request PrepareRequest) (Manifest
 			m.Logger.Error("workspace_cleanup_journal_failed", "session_id", request.SessionID, "code", domain.SafeError(err).Code)
 			return manifest, domain.Fail(domain.RecoveryRequired, "Workspace cleanup could not be journaled.", "Preserve the Worker workspace and retry recovery.")
 		}
+		if domain.SafeError(cause).Code == domain.RecoveryRequired {
+			return manifest, cause
+		}
 		if err := m.cleanup(cleanup, root, manifest); err != nil {
 			m.Logger.Warn("workspace_cleanup_pending", "session_id", request.SessionID, "code", domain.SafeError(err).Code)
 			return manifest, domain.Fail(domain.RecoveryRequired, "Workspace preparation failed and cleanup remains pending.", "Retry cleanup on this Worker; existing Local checkouts were preserved.")
@@ -214,7 +225,7 @@ func (m *Manager) Prepare(ctx context.Context, request PrepareRequest) (Manifest
 			if err := ctx.Err(); err != nil {
 				return failed(domain.SafeError(err))
 			}
-			inspection, err := m.Git.Inspect(ctx, spec.Checkout)
+			inspection, err := git.Inspect(ctx, spec.Checkout)
 			if err != nil {
 				return failed(err)
 			}
@@ -222,7 +233,7 @@ func (m *Manager) Prepare(ctx context.Context, request PrepareRequest) (Manifest
 			if request.Type == domain.Local {
 				// Local means exactly the existing checkout. Do not fetch, select a new
 				// starting branch, or prepare a replacement tree for any repository.
-				raw, err := m.Git.run(ctx, inspection.Root, "rev-parse", "--verify", "HEAD^{commit}")
+				raw, err := git.run(ctx, inspection.Root, "rev-parse", "--verify", "HEAD^{commit}")
 				if err != nil {
 					return failed(err)
 				}
@@ -237,7 +248,7 @@ func (m *Manager) Prepare(ctx context.Context, request PrepareRequest) (Manifest
 						return failed(err)
 					}
 				}
-				prepared.StartingCommit, err = m.Git.Resolve(ctx, inspection, prepared.Starting, spec.AutoFetch)
+				prepared.StartingCommit, err = git.Resolve(ctx, inspection, prepared.Starting, spec.AutoFetch)
 				if err != nil {
 					return failed(err)
 				}
@@ -247,7 +258,7 @@ func (m *Manager) Prepare(ctx context.Context, request PrepareRequest) (Manifest
 				if prepared.Base == prepared.Starting {
 					prepared.BaseCommit = prepared.StartingCommit
 				} else {
-					prepared.BaseCommit, err = m.Git.Resolve(ctx, inspection, prepared.Base, spec.AutoFetch)
+					prepared.BaseCommit, err = git.Resolve(ctx, inspection, prepared.Base, spec.AutoFetch)
 					if err != nil {
 						return failed(err)
 					}
@@ -259,7 +270,7 @@ func (m *Manager) Prepare(ctx context.Context, request PrepareRequest) (Manifest
 				if err := write(); err != nil {
 					return failed(domain.SafeError(err))
 				}
-				if _, err = m.Git.run(ctx, inspection.Root, "worktree", "add", "--detach", "--", prepared.Path, prepared.StartingCommit); err != nil {
+				if _, err = git.run(ctx, inspection.Root, "worktree", "add", "--detach", "--", prepared.Path, prepared.StartingCommit); err != nil {
 					return failed(err)
 				}
 			}
@@ -331,6 +342,11 @@ func (m *Manager) verify(manifest Manifest) error {
 	return nil
 }
 func (m *Manager) cleanup(ctx context.Context, root string, manifest Manifest) error {
+	git := m.Git
+	git.OwnerID = manifest.SessionID
+	if err := process.ReconcileOwner(git.ProcessRoot, manifest.SessionID); err != nil {
+		return err
+	}
 	for i := len(manifest.Repositories) - 1; i >= 0; i-- {
 		repo := manifest.Repositories[i]
 		if !repo.Owned {
@@ -342,7 +358,7 @@ func (m *Manager) cleanup(ctx context.Context, root string, manifest Manifest) e
 		if repo.ID.Validate() != nil || repo.Path != expected || repo.Source == expected {
 			return domain.Fail(domain.RecoveryRequired, "Workspace cleanup ownership could not be verified.", "Inspect the exact repository and session association.")
 		}
-		registered, err := m.Git.run(ctx, repo.Source, "worktree", "list", "--porcelain", "-z")
+		registered, err := git.run(ctx, repo.Source, "worktree", "list", "--porcelain", "-z")
 		if err != nil {
 			return err
 		}
@@ -354,7 +370,7 @@ func (m *Manager) cleanup(ctx context.Context, root string, manifest Manifest) e
 			}
 		}
 		if present {
-			if _, err := m.Git.run(ctx, repo.Source, "worktree", "remove", "--force", "--", expected); err != nil {
+			if _, err := git.run(ctx, repo.Source, "worktree", "remove", "--force", "--", expected); err != nil {
 				return err
 			}
 		}

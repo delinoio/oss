@@ -42,3 +42,6 @@ Update this contract, the command contract, project index, scoped AGENTS, and ev
 - [Project](project-delidev.md)
 - [Complete requirements](cmds-delidev-requirements.md)
 - [Repository defaults](repository-defaults.md)
+
+## Native process ownership
+Worker Git operations run through the [owned process contract](cmds-delidev-process-contract.md), with the accepted job or session UUID as owner. A canceled or failed Git operation cannot authorize workspace rollback until its owned descendants are proven stopped. Uncertain process ownership retains the cleanup-pending manifest; retry cleanup reconciles that owner's indexed native process scopes before removing owned files.

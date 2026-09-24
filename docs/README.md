@@ -39,6 +39,7 @@ Each project must have one project index document and one or more domain contrac
 - [CLI/server/Worker contract](cmds-delidev-contract.md)
 - [Connect protocol](protos-delidev-v1-contract.md)
 - [Worker workspace preparation](cmds-delidev-workspace-contract.md)
+- [Owned process contract](cmds-delidev-process-contract.md)
 - [Complete issue #964 requirements](cmds-delidev-requirements.md)
 - [Implementation and evidence ledger](cmds-delidev-evidence.md)
 

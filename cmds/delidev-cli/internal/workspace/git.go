@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 )
 
 const MaxGitOutput = 4 << 20
@@ -26,9 +28,12 @@ type Inspection struct {
 	DefaultRefs map[string]string `json:"default_refs"`
 }
 type Git struct {
-	Executable string
-	HooksDir   string
-	Timeout    time.Duration
+	Executable  string
+	ProcessRoot string
+	OwnerID     domain.ID
+	Logger      *slog.Logger
+	HooksDir    string
+	Timeout     time.Duration
 }
 
 type limitedOutput struct {
@@ -64,24 +69,24 @@ func (g Git) run(ctx context.Context, root string, args ...string) ([]byte, erro
 		commandArgs = append(commandArgs, "-c", "core.hooksPath="+g.HooksDir)
 	}
 	commandArgs = append(commandArgs, args...)
-	cmd := exec.CommandContext(bounded, binary, commandArgs...)
-	// Keep the Worker's explicitly prepared Git authentication, but remove
-	// inherited repository routing and prompt hooks that could select another
-	// checkout or turn a noninteractive operation into a hidden prompt.
-	cmd.Env = gitEnvironment()
-	cmd.WaitDelay = 2 * time.Second
+
+	if g.ProcessRoot == "" || g.OwnerID.Validate() != nil {
+		return nil, domain.Fail(domain.MissingInput, "Git requires a private execution ownership scope.", "Run this operation through its owning Worker job or session.")
+	}
 	var out limitedOutput
 	out.limit = MaxGitOutput
-	cmd.Stdout = &out
-	cmd.Stderr = io.Discard
-	if err := cmd.Run(); err != nil {
+	err := process.Run(bounded, process.Config{Directory: g.ProcessRoot, OwnerID: g.OwnerID, Executable: binary, Args: commandArgs, Env: gitEnvironment(), Cwd: root, Stdout: &out, Stderr: io.Discard, Logger: g.Logger})
+	if err != nil {
+		if domain.SafeError(err).Code == domain.RecoveryRequired {
+			return nil, err
+		}
 		if bounded.Err() != nil {
 			return nil, domain.SafeError(bounded.Err())
 		}
 		if out.overflow {
 			return nil, domain.Fail(domain.ResourceExhausted, "Git output exceeded its bound.", "Narrow the requested repository operation.")
 		}
-		var exit *exec.ExitError
+		var exit interface{ ExitCode() int }
 		if errors.As(err, &exit) {
 			return nil, &domain.Error{Code: domain.Unavailable, Message: "Git could not complete the operation on this Worker.", Guidance: "Check the selected repository, reference, remote access, and Worker Git authentication; no stale fallback was used.", Cause: "git_exit"}
 		}
@@ -116,6 +121,9 @@ func (g Git) Inspect(ctx context.Context, path string) (Inspection, error) {
 	}
 	raw, err := g.run(ctx, path, "rev-parse", "--show-toplevel")
 	if err != nil {
+		if domain.SafeError(err).Code == domain.RecoveryRequired {
+			return Inspection{}, err
+		}
 		return Inspection{}, domain.Fail(domain.InvalidArgument, "The path is not an accessible Git working tree on this Worker.", "Select an existing root, subdirectory, or linked worktree.")
 	}
 	root := strings.TrimSuffix(string(raw), "\n")

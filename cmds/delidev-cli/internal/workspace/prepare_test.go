@@ -48,7 +48,7 @@ func TestInspectRootSubdirectoryLinkedWorktreeWithoutURLs(t *testing.T) {
 		t.Fatal(err)
 	}
 	gitTest(t, root, "remote", "add", "origin", "https://user:seed-secret@example.invalid/repo.git")
-	g := Git{}
+	g := Git{ProcessRoot: filepath.Join(t.TempDir(), "processes"), OwnerID: domain.NewID()}
 	inspection, err := g.Inspect(context.Background(), filepath.Join(root, "sub"))
 	if err != nil {
 		t.Fatal(err)
