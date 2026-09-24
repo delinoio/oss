@@ -28,6 +28,8 @@ Cell text edits retain native table properties; changing merge/grid/base-style d
 
 Imported chart caches use declared point counts and indices, independent of XML order. Sparse, duplicate, out-of-range or mismatched cache domains remain opaque because v1 cannot represent missing numeric cells without changing their meaning.
 
+Native bar charts with no series remain opaque so an otherwise supported presentation can still be opened and edited without changing the empty chart.
+
 Existing chart edits emit geometry without cloning the package or generating replacement chart/workbook parts. Geometry changes preserve native chart data and relationships byte-for-byte; data changes use the selective cache/workbook editor only.
 
 Editable imported tables require equal native row heights spanning their frame, within one EMU of rounding. Unequal row heights or a frame/grid height mismatch remain opaque, preserving their native XML until explicit row heights are supported by both the DSL and text measurement.

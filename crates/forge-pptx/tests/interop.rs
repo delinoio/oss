@@ -187,6 +187,65 @@ fn metadata_cannot_bind_multiple_logical_nodes_to_one_native_shape() {
     assert_eq!(import(&source).unwrap().bindings, imported.bindings);
 }
 #[test]
+fn empty_native_bar_charts_remain_opaque() {
+    let mut parts = read_package(EXTERNAL).unwrap();
+    let path = "ppt/charts/chart1.xml";
+    let chart = xml_part(&parts, path);
+    let xml = roxmltree::Document::parse(&chart).unwrap();
+    let mut empty = chart.clone();
+    for series in xml
+        .descendants()
+        .filter(|n| n.tag_name().name() == "ser")
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+    {
+        empty.replace_range(series.range(), "");
+    }
+    parts.insert(path.into(), empty.clone().into_bytes());
+    let source = write_package(&parts).unwrap();
+    let imported = import(&source).unwrap();
+    assert!(
+        !imported.document.slides[0]
+            .content
+            .children
+            .iter()
+            .any(|n| n.kind == NodeKind::Chart)
+    );
+    assert_eq!(
+        update(
+            &source,
+            &imported.document,
+            &imported.bindings,
+            &imported.document,
+            &imported.assets,
+            imported.document_id,
+            0
+        )
+        .unwrap(),
+        source
+    );
+    let next = patch(
+        &imported,
+        vec![Operation::SetText {
+            target: target(&imported.document, NodeKind::Text),
+            text: "Unrelated edit".into(),
+            cell: None,
+        }],
+    );
+    let output = update(
+        &source,
+        &imported.document,
+        &imported.bindings,
+        &next,
+        &imported.assets,
+        imported.document_id,
+        1,
+    )
+    .unwrap();
+    assert_eq!(read_package(&output).unwrap()[path], empty.as_bytes());
+}
+#[test]
 fn imported_chart_caches_follow_indices_and_preserve_unrepresentable_data() {
     let original = read_package(EXTERNAL).unwrap();
     let path = "ppt/charts/chart1.xml";

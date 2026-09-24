@@ -377,6 +377,13 @@ fn parse_chart(
             values,
         });
     }
+    if data.series.is_empty() {
+        return error(
+            ErrorCode::UnsupportedEdit,
+            "",
+            "Empty native charts remain opaque",
+        );
+    }
     let orientation = if desc(bar, C, "barDir").and_then(|n| n.attribute("val")) == Some("bar") {
         Orientation::Horizontal
     } else {
