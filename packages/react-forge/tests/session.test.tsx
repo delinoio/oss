@@ -31,6 +31,8 @@ test("native library generation, stable revision measurements, invalid latest re
     await session.render(view("Retry"));
     assert.ok((await session.exportBuffer()).byteLength > 0);
     assert.doesNotMatch(events.join(""), /Private text|observer failure|Users/);
+    assert.ok(events.some(event => JSON.parse(event).source === "native" && JSON.parse(event).status === "completed"));
+    assert.ok(events.some(event => JSON.parse(event).source === "native" && JSON.parse(event).status === "failed"));
   } finally { await session.dispose(); }
   await assert.rejects(async () => session.exportBuffer(), { code: ErrorCode.Disposed });
 });

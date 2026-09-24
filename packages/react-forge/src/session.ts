@@ -60,13 +60,15 @@ export class DocumentSession {
     this.operations.add(operation);
     let code: ErrorCode | undefined;
     try { return await operation; }
-    catch (error) { code = error instanceof ForgeError ? error.code : ErrorCode.Io; throw error; }
+    catch (error) { code = error instanceof ForgeError ? error.code : ErrorCode.Io; if (error instanceof ForgeError) throw new ForgeError(error.code, error.message, { stage, format: this.format, revision: this.revision, ...error.context }); throw error; }
     finally {
       this.operations.delete(operation);
-      const event = Object.freeze({ stage, format: this.format, revision: this.revision, durationMs: performance.now() - started, code });
-      for (const listener of this.listeners) { try { listener(event); } catch { /* Observers cannot mutate operation outcomes. */ } }
+      const event = Object.freeze({ source: "javascript" as const, stage, format: this.format, revision: this.revision, durationMs: performance.now() - started, code });
+      this.emit(event);
     }
   }
+
+  private emit(event: Diagnostic) { for (const listener of this.listeners) { try { listener(event); } catch { /* Observers cannot mutate operation outcomes. */ } } }
 
   private mutate<T>(work: () => Promise<T>): Promise<T> {
     this.active();
@@ -229,7 +231,7 @@ export class DocumentSession {
   private async process(signal: AbortSignal): Promise<NativeOutput & { revision: number; refs: Map<string, string> }> {
     const { model, revision, refs } = await this.prepare(signal);
     const output = await processDocument(this.format, this.imported ? "update" : "generate", model,
-      this.source, new Map(this.assets), this.documentId, revision, signal, { system: this.options.systemFonts !== false, ids: Array.from(this.fonts) });
+      this.source, new Map(this.assets), this.documentId, revision, signal, { system: this.options.systemFonts !== false, ids: Array.from(this.fonts) }, event => this.emit(event));
     return { ...output, revision, refs };
   }
 

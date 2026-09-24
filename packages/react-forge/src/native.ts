@@ -1,9 +1,9 @@
 import { createRequire } from "node:module";
 import { ForgeError } from "./errors.js";
-import { ErrorCode, Format, Stage } from "./types.js";
+import { ErrorCode, Format, Stage, type Diagnostic } from "./types.js";
 
 interface Cancellation { cancel(): void }
-export interface NativeOutput { bytes: Buffer; model: string; geometry: string }
+export interface NativeOutput { bytes: Buffer; model: string; geometry: string; diagnostics: string }
 interface Binding {
   Cancellation: new () => Cancellation;
   processDocument(format: string, operation: string, model: string, source: Buffer, assets: { id: string; bytes: Buffer }[],
@@ -30,20 +30,35 @@ const codes: Record<string, ErrorCode> = {
 };
 
 export async function processDocument(format: Format, operation: "generate" | "inspect" | "update", model: unknown,
-  source: Buffer, assets: Map<string, Buffer>, documentId: string, revision: number, signal: AbortSignal, fontOptions: { system: boolean; ids: string[] } = { system: true, ids: [] }): Promise<NativeOutput> {
+  source: Buffer, assets: Map<string, Buffer>, documentId: string, revision: number, signal: AbortSignal, fontOptions: { system: boolean; ids: string[] } = { system: true, ids: [] }, onDiagnostic?: (event: Diagnostic) => void): Promise<NativeOutput> {
+  const emit = (events: unknown) => {
+    if (!Array.isArray(events)) return;
+    for (const event of events) {
+      if (!event || typeof event !== "object") continue;
+      const diagnostic: Diagnostic = Object.freeze({ source: "native", format, revision,
+        stage: operation === "inspect" ? Stage.Import : Stage.Export, operation,
+        status: ["started", "completed", "failed"].includes(event.status) ? event.status : undefined,
+        durationMs: Number.isFinite(event.duration_ms) ? event.duration_ms : 0,
+        code: event.code ? codes[event.code] ?? ErrorCode.MalformedInput : undefined });
+      try { onDiagnostic?.(diagnostic); } catch { /* Observers cannot affect native results. */ }
+    }
+  };
   const native = load();
   const cancellation = new native.Cancellation();
   const cancel = () => cancellation.cancel();
   signal.addEventListener("abort", cancel, { once: true });
   if (signal.aborted) cancel();
   try {
-    return await native.processDocument(format, operation, JSON.stringify(model), source,
+    const result = await native.processDocument(format, operation, JSON.stringify(model), source,
       Array.from(assets, ([id, bytes]) => ({ id, bytes })), documentId, revision, cancellation, JSON.stringify(fontOptions));
+    emit(JSON.parse(result.diagnostics));
+    return result;
   } catch (error) {
     let code = ErrorCode.MalformedInput;
     if (error instanceof Error) {
       try {
-        const detail = JSON.parse(error.message) as { code?: string };
+        const detail = JSON.parse(error.message) as { code?: string; native_events?: unknown };
+        emit(detail.native_events);
         code = codes[detail.code ?? ""] ?? code;
       } catch { /* Native runtime messages can contain paths; never forward them. */ }
     }

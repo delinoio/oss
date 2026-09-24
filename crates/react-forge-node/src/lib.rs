@@ -6,6 +6,7 @@ use std::sync::{
 };
 
 use forge_tree_doc::{Diagnostic, ErrorCode};
+mod diagnostics;
 mod docx;
 mod pdf;
 mod pptx;
@@ -70,6 +71,7 @@ pub struct NativeOutput {
     pub bytes: Buffer,
     pub model: String,
     pub geometry: String,
+    pub diagnostics: String,
 }
 
 enum OperationKind {
@@ -118,28 +120,57 @@ impl Operation {
 
 impl Task for Operation {
     type JsValue = NativeOutput;
-    type Output = (Vec<u8>, String, String);
+    type Output = (Vec<u8>, String, String, String);
 
     fn compute(&mut self) -> napi::Result<Self::Output> {
         if self.cancelled.load(Ordering::Acquire) {
             return Err(cancelled());
         }
-        let result = match self.format {
-            Format::Pptx => pptx::process(self),
-            Format::Docx => docx::process(self),
-            Format::Xlsx => xlsx::process(self),
-            Format::Pdf => pdf::process(self),
+        let collector = diagnostics::Collector::default();
+        let format = match self.format {
+            Format::Pptx => "pptx",
+            Format::Docx => "docx",
+            Format::Xlsx => "xlsx",
+            Format::Pdf => "pdf",
         };
-        if self.cancelled.load(Ordering::Acquire) {
-            return Err(cancelled());
+        let operation = match self.kind {
+            OperationKind::Generate => "generate",
+            OperationKind::Inspect => "inspect",
+            OperationKind::Update => "update",
+        };
+        let stage = if matches!(self.kind, OperationKind::Inspect) {
+            "import"
+        } else {
+            "export"
+        };
+        let started = std::time::Instant::now();
+        let result=collector.scoped(|| {
+            tracing::info!(target:"react_forge",format,operation,stage,revision=self.revision,status="started",duration_ms=0_u64);
+            let mut result = match self.format {
+                Format::Pptx => pptx::process(self), Format::Docx => docx::process(self),
+                Format::Xlsx => xlsx::process(self), Format::Pdf => pdf::process(self),
+            };
+            if self.cancelled.load(Ordering::Acquire){result=Err(Diagnostic::new(ErrorCode::Cancelled,"","The native operation was cancelled"));}
+            let code=result.as_ref().err().and_then(|e|serde_json::to_value(e.code).ok()).and_then(|v|v.as_str().map(str::to_owned)).unwrap_or_default();
+            let status=if result.is_ok(){"completed"}else{"failed"};
+            tracing::info!(target:"react_forge",format,operation,stage,revision=self.revision,status,code=code.as_str(),duration_ms=started.elapsed().as_millis() as u64);
+            result
+        });
+        let events = collector.json();
+        match result {
+            Ok((bytes, model, geometry)) => Ok((bytes, model, geometry, events)),
+            Err(error) => {
+                let mut value = serde_json::to_value(error).unwrap_or_default();
+                value["native_events"] = serde_json::from_str(&events).unwrap_or_default();
+                Err(napi::Error::from_reason(value.to_string()))
+            }
         }
-        result.map_err(native_error)
     }
 
     fn resolve(
         &mut self,
         _env: Env,
-        (bytes, model, geometry): Self::Output,
+        (bytes, model, geometry, diagnostics): Self::Output,
     ) -> napi::Result<NativeOutput> {
         if self.cancelled.load(Ordering::Acquire) {
             return Err(cancelled());
@@ -148,6 +179,7 @@ impl Task for Operation {
             bytes: bytes.into(),
             model,
             geometry,
+            diagnostics,
         })
     }
 }

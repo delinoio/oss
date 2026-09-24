@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import React, { Activity, Component, Fragment, Profiler, StrictMode, Suspense, createContext, createElement,
   createRef, lazy, memo, startTransition, use, useContext, useEffect, useImperativeHandle,
-  useLayoutEffect, useReducer, useState, useSyncExternalStore, type ReactNode } from "react";
+  useActionState, useDeferredValue, useLayoutEffect, useReducer, useState, useSyncExternalStore, type ReactNode } from "react";
 import { RenderRoot } from "../src/renderer.js";
 import { ErrorCode, type NodeHandle } from "../src/types.js";
 import { ForgeError } from "../src/errors.js";
@@ -150,4 +150,48 @@ test("tree limits and nonserializable host props fail with typed diagnostics", a
   await root.render(deep);
   assert.throws(() => root.snapshot(), { code: ErrorCode.ResourceLimit });
   await root.dispose();
+});
+
+
+test("deferred Suspense updates wait for the current transition instead of exporting stale content", async () => {
+  const root = new RenderRoot("session");
+  const pending = Promise.withResolvers<string>();
+  let update!: (value: string) => void;
+  function Value({ value }: { value: string }) { return createElement("text", null, value === "new" ? use(pending.promise) : "old"); }
+  function App() { const [value, set] = useState("old"); update = set; const deferred = useDeferredValue(value); return <Suspense fallback={createElement("text", null, "fallback")}><Value value={deferred} /></Suspense>; }
+  try {
+    await root.render(<App />); await root.settled(); update("new");
+    let settled = false; const ready = root.settled().then(() => { settled = true; });
+    await new Promise(resolve => setTimeout(resolve, 20)); assert.equal(settled, false);
+    pending.resolve("resolved deferred value"); await ready; assert.match(contents(root), /resolved deferred value/);
+  } finally { await root.dispose(); }
+});
+
+test("action-state dispatches run in transitions and commit their awaited result", async () => {
+  const root = new RenderRoot("session");
+  const pending = Promise.withResolvers<void>();
+  let dispatch!: (value: string) => void;
+  function App() { const [value, submit, busy] = useActionState(async (_old: string, next: string) => { await pending.promise; return next; }, "initial"); dispatch = submit; return createElement("text", null, `${value}:${busy}`); }
+  try {
+    await root.render(<App />); await root.settled(); startTransition(() => dispatch("completed action"));
+    let settled = false; const ready = root.settled().then(() => { settled = true; });
+    await new Promise(resolve => setTimeout(resolve, 20)); assert.equal(settled, false);
+    pending.resolve(); await ready; assert.match(contents(root), /completed action:false/);
+  } finally { await root.dispose(); }
+});
+
+test("rejected use promises reach error boundaries and can recover in a fresh render", async () => {
+  const root = new RenderRoot("session");
+  const pending = Promise.withResolvers<string>();
+  class Boundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+    state = { failed: false }; static getDerivedStateFromError() { return { failed: true }; }
+    render() { return this.state.failed ? createElement("text", null, "recovered promise") : this.props.children; }
+  }
+  function Async() { return createElement("text", null, use(pending.promise)); }
+  try {
+    await root.render(<Boundary><Suspense fallback={null}><Async /></Suspense></Boundary>);
+    const ready = root.settled(); pending.reject(new Error("private rejected payload")); await ready;
+    assert.match(contents(root), /recovered promise/); assert.doesNotMatch(contents(root), /private rejected payload/);
+    await root.render(createElement("text", null, "retry")); await root.settled(); assert.match(contents(root), /retry/);
+  } finally { await root.dispose(); }
 });
