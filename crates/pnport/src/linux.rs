@@ -977,6 +977,7 @@ struct Trace<'a> {
     tasks: HashSet<i32>,
     startup_stops: HashSet<i32>,
     early_stops: HashSet<i32>,
+    reaped_early: HashSet<i32>,
     groups: HashMap<i32, i32>,
     pending: HashMap<i32, Pending>,
     fds: HashMap<i32, HashMap<i32, Translation>>,
@@ -2519,6 +2520,12 @@ impl Trace<'_> {
         };
         for pid in &self.tasks {
             unsafe {
+                if self.early_stops.contains(pid) {
+                    // No task state exists yet to mediate a resumed syscall.
+                    // SIGKILL wakes this ptrace stop and keeps shutdown closed.
+                    libc::kill(*pid, libc::SIGKILL);
+                    continue;
+                }
                 libc::kill(*pid, termination_signal);
                 // A traced task can be parked at the stop that caused the
                 // failure. SIGTERM is only delivered after it is resumed.
@@ -2572,7 +2579,9 @@ impl Trace<'_> {
         if libc::WIFEXITED(status) || libc::WIFSIGNALED(status) {
             tracing::trace!(action = "linux_exit", pid, status, "Owned child exited");
             self.tasks.remove(&pid);
-            self.early_stops.remove(&pid);
+            if self.early_stops.remove(&pid) {
+                self.reaped_early.insert(pid);
+            }
             self.pending.remove(&pid);
             self.release_task_space(pid);
             let group = self.groups.remove(&pid).unwrap_or(pid);
@@ -2601,7 +2610,7 @@ impl Trace<'_> {
         if !libc::WIFSTOPPED(status) {
             return Ok(true);
         }
-        if status >> 16 == libc::PTRACE_EVENT_STOP && !self.tasks.contains(&pid) {
+        if status >> 16 == libc::PTRACE_EVENT_STOP && !self.task_spaces.contains_key(&pid) {
             // waitpid may report a newly auto-attached child's initial stop
             // before its parent's clone event. Keep it parked until that
             // event installs the child's address-space and descriptor state.
@@ -2610,6 +2619,7 @@ impl Trace<'_> {
                 pid,
                 "Waiting for the parent clone event"
             );
+            self.tasks.insert(pid);
             self.early_stops.insert(pid);
             return Ok(true);
         }
@@ -2662,6 +2672,16 @@ impl Trace<'_> {
                     return Err(injection_failed());
                 }
                 let child = created as i32;
+                if self.reaped_early.remove(&child) {
+                    self.spawn_vm.remove(&pid);
+                    tracing::debug!(
+                        action = "linux_reaped_early_child",
+                        child,
+                        "Child exited before clone registration"
+                    );
+                    resume(pid, self.pending.contains_key(&pid), 0)?;
+                    return Ok(true);
+                }
                 self.tasks.insert(child);
                 let early_stop = self.early_stops.remove(&child);
                 if !early_stop {
@@ -2843,6 +2863,7 @@ pub fn run_traced(view: &mut View, prepared: &Prepared) -> Result<i32> {
         tasks: HashSet::from([pid]),
         startup_stops: HashSet::from([pid]),
         early_stops: HashSet::new(),
+        reaped_early: HashSet::new(),
         groups: HashMap::from([(pid, pid)]),
         pending: HashMap::new(),
         fds: HashMap::new(),
