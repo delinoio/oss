@@ -528,7 +528,7 @@ fn rate_limit(options: RateLimit) -> Result<Outcome> {
         }
         let wait = bucket.wait_duration();
         drop(lock);
-        if deadline.is_some_and(|limit| Instant::now() >= limit) {
+        if admission_deadline_expired(deadline, true) {
             return Ok(Outcome::Code(124));
         }
         tracing::debug!(
@@ -536,7 +536,7 @@ fn rate_limit(options: RateLimit) -> Result<Outcome> {
             stage = "waiting",
             "run_admission"
         );
-        sleep_cancellable(clip_to_deadline(wait, deadline))?;
+        sleep_cancellable(clip_to_admission_deadline(wait, deadline))?;
     }
 }
 
@@ -4160,7 +4160,7 @@ fn try_acquire(path: &Path) -> Result<Option<File>> {
     }
 }
 
-fn acquire(path: &Path, deadline: Option<Instant>) -> Result<File> {
+fn acquire(path: &Path, deadline: Option<AdmissionDeadline>) -> Result<File> {
     let mut attempted = false;
     loop {
         check_cancelled()?;
@@ -4172,9 +4172,10 @@ fn acquire(path: &Path, deadline: Option<Instant>) -> Result<File> {
         }
         attempted = true;
         if let Some(lock) = try_acquire(path)? {
+            ensure_admission_acquisition_before_deadline(deadline)?;
             return Ok(lock);
         }
-        if deadline.is_some_and(|limit| Instant::now() >= limit) {
+        if admission_deadline_expired(deadline, true) {
             return Err(Failure::new(
                 Code::TerminationTimeout,
                 "Execution admission wait timed out.",
@@ -4885,20 +4886,57 @@ fn deadline(start: Instant, duration: Option<Duration>) -> Result<Option<Instant
         .transpose()
 }
 
+#[derive(Clone, Copy)]
+enum AdmissionDeadline {
+    Immediate,
+    Timed(Instant),
+}
+
 /// Admission `0` means an immediate decision: it disables no execution
 /// timeout, because it applies only while waiting for a lock or token.
-fn admission_deadline(start: Instant, duration: Option<Duration>) -> Result<Option<Instant>> {
+fn admission_deadline(
+    start: Instant,
+    duration: Option<Duration>,
+) -> Result<Option<AdmissionDeadline>> {
     duration
         .map(|duration| {
+            if duration.is_zero() {
+                return Ok(AdmissionDeadline::Immediate);
+            }
             start
                 .checked_add(duration)
+                .map(AdmissionDeadline::Timed)
                 .ok_or_else(|| Failure::new(Code::InvalidInput, "Duration is too large."))
         })
         .transpose()
 }
 
-fn admission_deadline_expired(deadline: Option<Instant>, attempted: bool) -> bool {
-    attempted && deadline.is_some_and(|limit| Instant::now() >= limit)
+fn admission_deadline_expired(deadline: Option<AdmissionDeadline>, attempted: bool) -> bool {
+    match deadline {
+        Some(AdmissionDeadline::Immediate) => attempted,
+        Some(AdmissionDeadline::Timed(limit)) => Instant::now() >= limit,
+        None => false,
+    }
+}
+
+fn ensure_admission_acquisition_before_deadline(deadline: Option<AdmissionDeadline>) -> Result<()> {
+    if matches!(deadline, Some(AdmissionDeadline::Timed(limit)) if Instant::now() >= limit) {
+        return Err(Failure::new(
+            Code::TerminationTimeout,
+            "Execution admission wait timed out.",
+        ));
+    }
+    Ok(())
+}
+
+fn clip_to_admission_deadline(duration: Duration, deadline: Option<AdmissionDeadline>) -> Duration {
+    match deadline {
+        Some(AdmissionDeadline::Immediate) => Duration::ZERO,
+        Some(AdmissionDeadline::Timed(limit)) => {
+            duration.min(limit.saturating_duration_since(Instant::now()))
+        }
+        None => duration,
+    }
 }
 
 fn clip_to_deadline(duration: Duration, deadline: Option<Instant>) -> Duration {
@@ -5220,13 +5258,30 @@ mod rate_limit_tests {
         });
 
         let deadline = Instant::now() + Duration::from_millis(1);
-        let error = match acquire(&path, Some(deadline)) {
+        let error = match acquire(&path, Some(AdmissionDeadline::Timed(deadline))) {
             Ok(_) => panic!("a lock released after the deadline must not be acquired"),
             Err(error) => error,
         };
 
         release.join().unwrap();
         assert_eq!(error.code, Code::TerminationTimeout);
+    }
+
+    #[test]
+    fn timed_admission_rejects_a_late_successful_acquisition() {
+        let deadline = Instant::now()
+            .checked_sub(Duration::from_millis(1))
+            .unwrap();
+
+        let error =
+            ensure_admission_acquisition_before_deadline(Some(AdmissionDeadline::Timed(deadline)))
+                .unwrap_err();
+
+        assert_eq!(error.code, Code::TerminationTimeout);
+        assert!(
+            ensure_admission_acquisition_before_deadline(Some(AdmissionDeadline::Immediate,))
+                .is_ok()
+        );
     }
 
     #[test]
