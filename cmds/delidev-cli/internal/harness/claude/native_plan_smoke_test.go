@@ -216,6 +216,8 @@ func TestManualNativePlanQuestionArtifactAndApproval(t *testing.T) {
 		t.Fatal(err)
 	}
 	answered, approved := false, false
+	tools := map[string]*NativeTool{}
+	results := map[string]*NativeToolResult{}
 	for {
 		event, err := s.Next(ctx)
 		if err != nil {
@@ -224,6 +226,32 @@ func TestManualNativePlanQuestionArtifactAndApproval(t *testing.T) {
 		observation, err := binding.Observe(event)
 		if err != nil {
 			t.Fatal(err)
+		}
+		for _, content := range observation.Content {
+			if content.Kind == ContentCompleted && content.Block != nil && content.Block.Tool != nil {
+				tool := content.Block.Tool
+				if tools[tool.ID] != nil {
+					t.Fatal("typed native tool completion repeated")
+				}
+				tools[tool.ID] = tool
+				if tool.Name == "ExitPlanMode" {
+					var proposed map[string]any
+					var completed struct {
+						Plan string `json:"plan"`
+						Path string `json:"planFilePath"`
+					}
+					if json.Unmarshal(tool.ProposedInput, &proposed) != nil || len(proposed) != 0 || json.Unmarshal(tool.Input, &completed) != nil || completed.Plan != plan || completed.Path != artifact.Load().(string) {
+						t.Fatal("typed native Plan completion lost its proposal or enriched plan")
+					}
+				}
+			}
+			if content.Kind == ToolResultObserved {
+				result := content.ToolResult
+				if result == nil || tools[result.ID] == nil || results[result.ID] != nil || (result.Error != nil && *result.Error) || len(result.Structured) == 0 {
+					t.Fatal("typed native plan result lost original ownership or failed")
+				}
+				results[result.ID] = result
+			}
 		}
 		if event.Kind == NativeRequest {
 			var request struct {
@@ -234,6 +262,16 @@ func TestManualNativePlanQuestionArtifactAndApproval(t *testing.T) {
 			}
 			if json.Unmarshal(event.Body, &request) != nil || request.Subtype != "can_use_tool" {
 				t.Fatal("unknown native plan interaction")
+			}
+			tool := tools[request.ID]
+			input, err := json.Marshal(request.Input)
+			if err != nil || tool == nil || tool.Name != request.Tool {
+				t.Fatal("native callback lost completed tool ownership")
+			}
+			want, err := streamReplyDigest(tool.Input)
+			actual, actualErr := streamReplyDigest(input)
+			if err != nil || actualErr != nil || want != actual {
+				t.Fatal("native callback changed completed tool input")
 			}
 			switch request.Tool {
 			case "AskUserQuestion":
@@ -259,7 +297,7 @@ func TestManualNativePlanQuestionArtifactAndApproval(t *testing.T) {
 			}
 		}
 		if event.Kind == NativeMessage && event.Type == "result" {
-			if observation.Kind != InputFinished || !observation.Accepted || observation.Result == nil || !observation.Result.Successful() {
+			if observation.Kind != InputFinished || !observation.Accepted || observation.Result == nil || !observation.Result.Successful() || len(tools) != 3 || len(results) != 3 {
 				t.Fatal("typed lifecycle did not retain original native acceptance and completion")
 			}
 			var result struct {

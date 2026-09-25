@@ -71,6 +71,16 @@ func (b *ExecutionBinding) validateSystemInit(raw []byte) error {
 	if !slices.Contains(init.Commands, "compact") || !slices.Contains(init.Capabilities, "msg_lifecycle_v1") || len(init.Memory) != 1 || filepath.Clean(init.Memory["auto"]) != filepath.Join(b.home, "projects", "delidev", "memory") {
 		return lifecycleUncertain()
 	}
+	b.advertisedTools = make(map[string]bool, len(init.Tools)+1)
+	for _, name := range init.Tools {
+		b.advertisedTools[name] = true
+	}
+	// The pinned CLI advertises Task in SDK initialization while its native
+	// Messages tool declaration uses Agent. Preserve both native spellings;
+	// this is a version-specific display/identity alias, not a capability grant.
+	if b.advertisedTools["Task"] {
+		b.advertisedTools["Agent"] = true
+	}
 	return nil
 }
 
@@ -115,6 +125,7 @@ type NativeResult struct {
 	Kind   ResultKind
 	Reason TerminalReason
 	Error  bool
+	Usage  *ResultUsage
 }
 
 func (r NativeResult) Successful() bool {
@@ -199,11 +210,15 @@ func (b *ExecutionBinding) validateResult(raw []byte) (NativeResult, bool, error
 	if (result.Kind == ResultMaxTurns && result.Reason != MaxTurns) || (result.Kind == ResultMaxBudget && result.Reason != BudgetExhausted) || (result.Kind == ResultStructuredOutput && result.Reason != StructuredOutputRetryExhausted && result.Reason != AbortedStreaming && result.Reason != AbortedTools) {
 		return NativeResult{}, false, lifecycleUncertain()
 	}
-	value := NativeResult{Kind: result.Kind, Reason: result.Reason, Error: *result.Error}
+	usage, err := decodeResultUsage(result.Usage, result.ModelUsage, result.Cost)
+	if err != nil {
+		return NativeResult{}, false, err
+	}
+	value := NativeResult{Kind: result.Kind, Reason: result.Reason, Error: *result.Error, Usage: usage}
 	if (b.command == CommandCompleted && value.cancelsCommand()) || (b.command == CommandCancelled && !value.cancelsCommand()) {
 		return NativeResult{}, false, lifecycleUncertain()
 	}
-	if value.Successful() && (!b.initialized || !b.accepted || b.command == CommandCancelled || len(result.Errors) != 0 || len(result.DeferredTool) != 0) {
+	if value.Successful() && (!b.initialized || !b.accepted || b.command == CommandCancelled || len(result.Errors) != 0 || len(result.DeferredTool) != 0 || len(b.content.active) != 0 || b.content.openTools != 0) {
 		return NativeResult{}, false, lifecycleUncertain()
 	}
 	return value, result.Input == b.input, nil

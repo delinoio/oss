@@ -124,7 +124,7 @@ func validateRequest(ctx context.Context, raw []byte, lease *Lease, op Operation
 	}
 	for key := range object {
 		lower := strings.ToLower(key)
-		if key != lower && (lower == "model" || lower == "stream" || lower == "previous_response_id" || lower == "conversation" || lower == "models" || lower == "route") {
+		if key != lower && (lower == "model" || lower == "stream" || lower == "previous_response_id" || lower == "conversation" || lower == "models" || lower == "route" || lower == "fallbacks") {
 			return false, domain.Fail(domain.InvalidArgument, "Ambiguous native API control field.", "Use exact lowercase native API field names.")
 		}
 	}
@@ -137,6 +137,12 @@ func validateRequest(ctx context.Context, raw []byte, lease *Lease, op Operation
 	}
 	if _, exists := object["route"]; exists {
 		return false, domain.Fail(domain.PermissionDenied, "Request-selected fallback routing is not authorized.", "Use only the fixed execution provider and model.")
+	}
+	// Anthropic's native fallbacks chain can choose a different model while
+	// leaving the top-level model unchanged. The execution owns exactly one
+	// model, so even an empty/null chain cannot introduce routing authority.
+	if _, exists := object["fallbacks"]; exists {
+		return false, domain.Fail(domain.PermissionDenied, "Native fallback models are outside this execution's authorization.", "Use only the fixed execution model.")
 	}
 	stream := false
 	if raw, ok := object["stream"]; ok {

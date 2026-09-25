@@ -20,6 +20,7 @@ const (
 	InputAccepted           LifecycleKind = "input-accepted"
 	InputFinished           LifecycleKind = "input-finished"
 	UncorrelatedTermination LifecycleKind = "uncorrelated-termination"
+	ContentObserved         LifecycleKind = "content-observed"
 	PrivateObservation      LifecycleKind = "private-observation"
 )
 
@@ -32,6 +33,7 @@ const (
 	commandValidation  lifecyclePhase = "command"
 	initValidation     lifecyclePhase = "initialize"
 	replayValidation   lifecyclePhase = "replay"
+	contentValidation  lifecyclePhase = "content"
 	resultValidation   lifecyclePhase = "result"
 )
 
@@ -44,8 +46,9 @@ const (
 )
 
 // LifecycleObservation retains native acceptance independently of completion.
-// Native contains still-private message/interaction/usage data. Its presence is
-// not permission to discard it: each family needs its own publication adapter.
+// Content and Result contain validated native observations. Native additionally
+// retains private extensions and interactions; none of these facts grants
+// public publication authority or permission to discard unhandled families.
 type LifecycleObservation struct {
 	Kind      LifecycleKind
 	SessionID domain.ID
@@ -54,6 +57,7 @@ type LifecycleObservation struct {
 	Command   CommandState
 	Accepted  bool
 	Result    *NativeResult
+	Content   []ContentEvent
 	Native    *StreamEvent `json:"-"`
 }
 
@@ -62,23 +66,25 @@ type LifecycleObservation struct {
 // Worker must retain its durable claim before constructing this binding and
 // must still process every private observation through its dedicated adapter.
 type ExecutionBinding struct {
-	mu          sync.Mutex
-	session     domain.ID
-	input       domain.ID
-	digest      [sha256.Size]byte
-	model       string
-	workspace   string
-	home        string
-	permission  NativePermission
-	command     CommandState
-	initialized bool
-	accepted    bool
-	finished    bool
-	terminal    *NativeResult
-	seen        map[string]bool
-	problem     *domain.Error
-	logger      *slog.Logger
-	owner       domain.ID
+	mu              sync.Mutex
+	session         domain.ID
+	input           domain.ID
+	digest          [sha256.Size]byte
+	model           string
+	workspace       string
+	home            string
+	permission      NativePermission
+	command         CommandState
+	initialized     bool
+	accepted        bool
+	finished        bool
+	terminal        *NativeResult
+	seen            map[string]bool
+	problem         *domain.Error
+	logger          *slog.Logger
+	owner           domain.ID
+	content         contentState
+	advertisedTools map[string]bool
 }
 
 func BindExecution(config APIStreamConfig, input domain.ID, text string) (*ExecutionBinding, error) {
@@ -187,7 +193,21 @@ func (b *ExecutionBinding) Observe(event StreamEvent) (observation LifecycleObse
 			}
 			b.accepted = true
 			observation.Kind, observation.Accepted = InputAccepted, true
+		} else {
+			phase = contentValidation
+			content, err := b.observeContent(event)
+			if err != nil {
+				return LifecycleObservation{}, err
+			}
+			observation.Kind, observation.Content = ContentObserved, content
 		}
+	case "stream_event", "assistant":
+		phase = contentValidation
+		content, err := b.observeContent(event)
+		if err != nil {
+			return LifecycleObservation{}, err
+		}
+		observation.Kind, observation.Content = ContentObserved, content
 	case "result":
 		phase = resultValidation
 		result, correlated, err := b.validateResult(event.Body)
@@ -197,7 +217,7 @@ func (b *ExecutionBinding) Observe(event StreamEvent) (observation LifecycleObse
 		observation.Result = &result
 		if correlated {
 			b.finished = true
-			retained := result
+			retained := NativeResult{Kind: result.Kind, Reason: result.Reason, Error: result.Error}
 			b.terminal = &retained
 			observation.Kind = InputFinished
 		} else {

@@ -47,3 +47,28 @@ func TestAnthropicBetaQueryPreservesOnlyExactScopedOperation(t *testing.T) {
 		}
 	}
 }
+
+func TestAnthropicFallbackChainCannotEscapeImmutableModel(t *testing.T) {
+	for _, operation := range []Operation{MessageCreate, MessageCountTokens} {
+		t.Run(string(operation), func(t *testing.T) {
+			path := "/messages"
+			if operation == MessageCountTokens {
+				path = "/messages/count_tokens"
+			}
+			f := newProxyFixture(t, domain.AnthropicMessages, []Operation{operation}, func(http.ResponseWriter, *http.Request) { t.Error("fallback request reached provider") })
+			for _, body := range []string{
+				`{"model":"fixed-model","fallbacks":[{"model":"other-model"}]}`,
+				`{"model":"fixed-model","fallbacks":[]}`,
+				`{"model":"fixed-model","fallbacks":null}`,
+				`{"model":"fixed-model","Fallbacks":[{"model":"other-model"}]}`,
+				`{"model":"fixed-model","FALLBACKS":[{"model":"other-model"}]}`,
+			} {
+				response, raw, err := f.request(t, path+"?beta=true", body, nil)
+				if err != nil || response.StatusCode < 400 || f.calls.Load() != 0 || f.authority.keys.Load() != 0 {
+					t.Fatal("fallback chain reached provider key or network", err)
+				}
+				assertNoProxySecrets(t, f, raw)
+			}
+		})
+	}
+}
