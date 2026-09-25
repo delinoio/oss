@@ -13,6 +13,7 @@ members = [
     "crates/forge-scene",
     "crates/forge-glb",
     "crates/forge-fbx",
+    "crates/forge-sprite",
     "crates/forge-sfx",
     "crates/delino-forge",
     "apps/devhud/src-tauri",

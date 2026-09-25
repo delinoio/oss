@@ -12,6 +12,11 @@
 - Keep real SDK and installed-archive MCP coverage in the six-host package suite, including entry-relative imports, state retention, source protection, cancellation, process cleanup and fake Figma. Run `typecheck:examples` after building.
 - MCP cancellation fixtures must install abort waiters before publishing readiness and handle signals that are already aborted; exercise late continuation without widening timeouts to hide missed cancellation.
 
+- CLI signal tests must wait for mounted-effect readiness with a bounded 30-second startup deadline, report early process exits, and cover delayed task startup before checking cancellation and effect cleanup.
+
+- Follow `docs/packages-react-forge-sprite-contract.md` for `/sprite`, `Format.Sprite`, strict component props, pixel geometry and atomic `.sprite.zip` exports. Hidden layers suppress drawing only; their drawing leaves retain translated measurement geometry. Keep sprites connected to common session/CLI/MCP lifecycle and installed-consumer tests; never publish the sheet and JSON as separate uncoordinated writes.
+
+
 - Static GLB/FBX creation follows `docs/packages-react-forge-scene-contract.md`. Keep binary geometry outside React JSON, 3D bounds separate from 2D geometry, aggregate admission bounded, and source assets immutable across pinned exports. Blender/web viewers are verification tools only; never repair imported validation assets to conceal exporter faults.
 - Native scene measurement diagnostics and errors use the layout stage; preserve document import and export stages when adapting native events, using trusted format/operation metadata.
 - Queue explicit scene renders with the other session operations so concurrent calls commit independently in invocation order. A later recovery render must not hide an earlier render failure or let an intervening export bypass it.

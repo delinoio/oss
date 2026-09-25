@@ -109,6 +109,8 @@ enum ProjectId {
 
 ### React Forge Contract
 
+- React Forge sprites follow `docs/packages-react-forge-sprite-contract.md`: use an independent bounded pixel renderer and one revision-pinned `.sprite.zip` archive for sheet PNG, frame PNGs and metadata. Keep image generation services, sprite import and engine-specific compatibility outside this extension; do not describe it as released before npm publication.
+
 - Figma creation/editing follows `docs/packages-react-forge-figma-contract.md`. Figma alone permits explicit official-MCP networking and remote publication. Reuse matching MCP Keychain credentials without refreshing/writing them. Preserve unselected external content; report partial/unknown writes and never blindly retry creation.
 
 - `react-forge` is the public npm Node.js 24 / React 19.2.8 cross-platform document project in issue #968. Follow `docs/project-react-forge.md` and its complete requirements. Keep JavaScript reconciliation outside native workers, format models independent, sessions in memory, exports revision-pinned and atomic, and imported opaque content preserved. All required formats and evidence are required before completion.
@@ -118,7 +120,7 @@ enum ProjectId {
 
 - React Forge SFX follows `docs/packages-react-forge-sfx-contract.md`: bounded offline procedural WAV generation, native worker synthesis, and zombie-game gunshot acceptance. Keep generated audio untracked and distinguish source support from published availability.
 
-- React Forge owns `packages/react-forge`, `crates/react-forge-node`, `crates/forge-package`, `crates/forge-document`, `crates/forge-docx`, `crates/forge-xlsx`, `crates/forge-pdf`, `crates/forge-figma`, `crates/forge-sfx`, and `apps/public-docs/docs/react-forge`; reuse existing Forge presentation engines without changing CLI/MCP defaults.
+- React Forge owns `packages/react-forge`, `crates/react-forge-node`, `crates/forge-package`, `crates/forge-document`, `crates/forge-docx`, `crates/forge-xlsx`, `crates/forge-pdf`, `crates/forge-figma`, `crates/forge-sfx`, `crates/forge-sprite`, and `apps/public-docs/docs/react-forge`; reuse existing Forge presentation engines without changing CLI/MCP defaults.
 
 ### Project Domain Ownership
 

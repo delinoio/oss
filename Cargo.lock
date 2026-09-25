@@ -4039,6 +4039,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-sprite"
+version = "0.0.0"
+dependencies = [
+ "flate2",
+ "forge-package",
+ "forge-tree-doc",
+ "image",
+ "png 0.18.1",
+ "serde",
+ "serde_json",
+ "uuid",
+ "zip 8.6.0",
+]
+
+[[package]]
 name = "forge-tree-doc"
 version = "0.0.0"
 dependencies = [
@@ -9829,6 +9844,7 @@ dependencies = [
  "forge-pptx",
  "forge-scene",
  "forge-sfx",
+ "forge-sprite",
  "forge-tree-doc",
  "forge-xlsx",
  "napi",

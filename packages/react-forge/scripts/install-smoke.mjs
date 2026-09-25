@@ -7,6 +7,8 @@ import { parseArgs } from "node:util";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { nativeName, packageRoot, platforms, sourceRevision, inspect, tarballName } from "./package.mjs";
 
+const localFormats = [["presentation", "pptx"], ["document", "docx"], ["workbook", "xlsx"], ["pdf", "pdf"], ["scene-glb", "glb"], ["scene-fbx", "fbx"], ["sprite", "sprite"], ["zombie-gunshot", "wav"]];
+
 export function main() {
   const { values } = parseArgs({ options: { output: { type: "string", default: path.join(packageRoot, "dist/release") } } });
   const host = platforms.find((item) => item.platform === process.platform && item.architecture === process.arch);
@@ -37,12 +39,12 @@ export function main() {
       if (Format.Figma !== "figma" || typeof Page !== "function" || typeof serve !== "function") throw new Error("Figma or MCP export unavailable");`;
     execFileSync(process.execPath, ["--input-type=module", "--eval", imported], { cwd: directory, encoding: "utf8" });
     cpSync(path.join(packageRoot, "examples"), path.join(directory, "tasks"), { recursive: true });
-    for (const [task, format] of [["presentation", "pptx"], ["document", "docx"], ["workbook", "xlsx"], ["pdf", "pdf"], ["scene-glb", "glb"], ["scene-fbx", "fbx"], ["zombie-gunshot", "wav"]]) {
-      const output = path.join(directory, `report.${format}`);
+    for (const [task, format] of localFormats) {
+      const output = path.join(directory, `report.${format === "sprite" ? "sprite.zip" : format}`);
       const stdout = execFileSync(process.execPath, [path.join(installed, "bin/react-forge.mjs"), "run", path.join(directory, "tasks", `${task}.tsx`), "--output", output, "--json"], { cwd: directory, encoding: "utf8" });
       assert.equal(JSON.parse(stdout).format, format);
       const bytes = readFileSync(output);
-      const magic = { pptx: "PK", docx: "PK", xlsx: "PK", pdf: "%PDF-", glb: "glTF", fbx: "Kaydara FBX Binary", wav: "RIFF" };
+      const magic = { pptx: "PK", docx: "PK", xlsx: "PK", pdf: "%PDF-", glb: "glTF", fbx: "Kaydara FBX Binary", sprite: "PK", wav: "RIFF" };
       assert.equal(bytes.subarray(0, magic[format].length).toString(), magic[format]);
     }
     assert.equal(execFileSync(process.execPath, [path.join(installed, "bin/react-forge.mjs"), "--version"], { cwd: directory, encoding: "utf8" }).trim(), version);
@@ -69,7 +71,7 @@ export function main() {
     } catch (error) { missing = error; }
     assert.ok(missing, "Missing native package must fail");
     assert.equal(JSON.parse(missing.stdout).error.code, "io");
-    console.log(JSON.stringify({ event: "react_forge_install_smoke", host: host.id, version, formats: 7 }));
+    console.log(JSON.stringify({ event: "react_forge_install_smoke", host: host.id, version, formats: localFormats.length }));
   } finally { rmSync(directory, { recursive: true, force: true }); }
 }
 

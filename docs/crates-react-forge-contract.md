@@ -105,6 +105,9 @@ Imported DOCX targets retain a source flow width in points. Body mounts use thei
 
 The generation-only GLB/FBX extension follows [the scene contract](packages-react-forge-scene-contract.md). `SceneSession` shares local publication and MCP lifecycle, uses independent world-space bounds and native scene engines, and introduces no runtime conversion dependency.
 
+## Sprite Engine Extension
+`forge-sprite` adds an independent bounded pixel model, deterministic CPU RGBA rasterization, PNG encoding and ZIP assembly; `react-forge-node/src/sprite.rs` connects the shared generation worker and diagnostics. It reuses cancellation and bounded ZIP output while preserving Office models and all existing font behavior. It does not use the OOXML-specific package reader. Follow the [sprite contract](packages-react-forge-sprite-contract.md) for exact dimensions, work/memory bounds, color/sampling semantics and archive metadata. Raster output is authored only; sprite import is rejected.
+
 ## SFX extension
 
 `forge-sfx` independently validates and synthesizes the bounded sound model under the [SFX contract](packages-react-forge-sfx-contract.md). The N-API adapter dispatches format `wav` generation on an existing worker, emits operation-scoped diagnostics and returns PCM16 bytes plus timeline frames without font discovery. No React, audio device, filesystem or network I/O enters synthesis.

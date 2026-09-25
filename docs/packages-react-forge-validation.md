@@ -222,6 +222,26 @@ The first hosted run (`36115873712`) completed native/package checks on Linux x6
 
 Local repair verification passed 78 CI contract tests, workflow/actionlint validation, six Python evidence regressions, package build/typecheck/lint with 113 tests, and standalone example checks. Fresh preparation generated and independently inspected all eight models, then a separate Blender 4.5.14 process rendered the stand's GLB/FBX pair at 2048px/96 samples on macOS Metal. All eight images and their contact sheet passed comparison and visual inspection. The new verifier also accepted the complete previous 32-image record without rewriting it. This verifies the preparation-to-render boundary locally; it is not a hosted Linux CPU timing result. Rust and frontend sources were unchanged, and their broader historical checks were not rerun.
 
+## Sprite extension validation (2026-09-25)
+
+Local validation uses macOS arm64, Node.js 24.20.0 and the repository Rust nightly. Package build, typecheck, lint and standalone examples passed. `pnpm test` passed 110 tests, including seven sprite cases and installed workspace-archive CLI/MCP generation. The affected CI contract, planner and release contract suites passed 37 tests. The existing Forge engine regression selection passed 126 tests with one existing optional renderer test ignored. Native sprite/adapter Clippy passed with warnings denied. The final focused native sprite suite passed eight tests, including the deepest empty layer and a source-image crop wider than the logical canvas limit.
+
+The source implementation is committed at `4116283a`. Public main/native candidate assembly and `test:package` passed for darwin-arm64, generating all five local formats from an installed package. The compact fixture record is `packages/react-forge/tests/evidence/sprite-macos-arm64.json`.
+
+Sprite coverage decodes PNG pixels to verify alpha compositing, clipping, layer order, palettes, source-image cropping/flips, nearest-neighbor scaling and transparent atlas padding. It also checks deterministic archives, frame order/duration/pivots/loop flags, refs and geometry, React updates, revision-pinned exports, output conflicts, cancellation and recovery, strict props/nesting, asset ownership and resource boundaries. The example produced eight 128×128 frames and a 544×272 sheet, with idle and non-looping hop animations. The sheet was visually inspected; generated PNGs/ZIPs remain outside the repository. No engine-specific importer or external artwork-generation service was exercised.
+
+The shell initially selected Node.js 24.11.0. Its synchronous loader failed both the new sprite MCP case and an unchanged existing PDF MCP case with `ERR_INVALID_RETURN_PROPERTY_VALUE`; the already-installed Node.js 24.20.0 passed the full suite. No loader workaround or runtime pin change was introduced. Initial root `cargo test` runs reached five binpm CLI failures involving macOS `/var` versus `/private/var` temporary paths; canonical `TMPDIR=/private/tmp` fixed those cases. That root run then identified missing pnport injection artifacts; preparation follows `docs/crates-pnport-foundation.md` (`cargo build -p pnport -p fspy_preload_unix --features fspy_preload_unix/pnport`). Cross-platform CI and npm publication are not claimed by this local evidence.
+
+After that documented preparation, root `TMPDIR=/private/tmp cargo test` passed **1,930 tests**, with three existing opt-in tests ignored. The final package suite again passed **110 tests** after the last native rebuild, and the installed public candidate reported five generated local formats. No binpm/pnport production code was changed. Generated `packages/react-forge/dist` (including local candidate archives) was removed after validation; the inspected example output remains outside the repository.
+
+### PR #989 CLI readiness repair (2026-09-25)
+
+The [darwin-x64 CI job](https://github.com/delinoio/oss/actions/runs/36124614014/job/108037799956) passed 109 package tests and failed the Unix CLI signal fixture before sending a signal: its mounted-effect readiness marker did not appear within the approximately two-second polling window. A 2.1-second task-start delay reproduces the same assertion locally. The repaired test waits for actual mounted readiness under a 30-second monotonic deadline, stops on an early process exit, and retains the delayed-start regression. SIGINT/SIGTERM exit codes, redacted cancellation, effect cleanup and absence of partial exports remain asserted.
+
+On macOS arm64 with Node.js 24.20.0, all three focused CLI tests and all 110 package tests passed after the native rebuild. Package typecheck, lint and standalone example checks also passed. This is local verification of the CI root cause; the repaired darwin-x64 job requires a new CI run.
+
+The accompanying sprite review repairs passed 11 native tests and sprite/adapter Clippy with warnings denied: hidden descendants retain translated geometry, frame and atlas work share one budget, and PNG cancellation interrupts compression within a wide scanline before a subsequent successful export. With the documented pnport preparation, root `TMPDIR=/private/tmp cargo test` passed 1,932 tests with three existing opt-in tests ignored. The regenerated slime archive preserves all nine PNGs' decoded RGBA pixels and the metadata byte-for-byte against the previously inspected artifact; bounded compression changes the encoded archive size to 25,793 bytes. The new sheet was visually inspected. The earlier committed fixture record remains evidence for its named implementation commit, and generated `dist` output was removed after this verification.
+
 ## Procedural game SFX extension
 
 The SFX follow-up adds the independent `forge-sfx` engine and `Format.Wav` without
@@ -402,3 +422,27 @@ With the fix, all fifteen scene tests passed. macOS arm64/Node.js 24.17.0 packag
 build/typecheck/lint and all **125 tests** passed, including installed-archive
 CLI/MCP coverage; standalone example type checks also passed. This JavaScript
 queue repair changes no native engine, asset bytes or prior visual evidence.
+
+### Combined sprite/SFX merge validation
+
+PR #989 merges `main` at `bcc35d49`, preserving the SFX extension and dependency-security updates while retaining sprites. Both component subpaths, native dispatch paths, measurement coordinate spaces and export extensions are registered together. Installed CLI/MCP fixtures cover all six local formats, including `.wav` and `.sprite.zip`. The shared signal fixture retains the upstream 2.5-second delayed start for both Unix signals and the 30-second readiness deadline.
+
+After resolving the merge, the macOS arm64 package build, typecheck, lint and standalone examples passed, as did all 115 package tests, all 77 repository CI contract tests, workflow validation and sprite/SFX/adapter Clippy with warnings denied. Historical evidence above remains tied to its recorded source state and format count.
+
+On the merged code at `3e938a14`, public main/native candidate installation passed with six generated local formats. The final prepared root `TMPDIR=/private/tmp cargo test` run passed 1,938 tests with 3 existing opt-in tests ignored. Generated repository-owned `dist` output was removed after validation.
+
+
+## PR #988 sprite integration merge repair (2026-09-25)
+
+Merged `main` at `6debb999` (PR #989) without rebasing. Conflict resolution retains
+both static GLB/FBX engines and the sprite engine in Cargo, the native adapter,
+package subpaths, diagnostic vocabulary, CLI/MCP routing, installed consumers,
+and six-host CI/release checks. Sprite output retains its `.sprite.zip` compound
+extension; GLB/FBX retain their format signatures and world-bound MCP checks.
+All existing feature contracts and historical acceptance records are preserved.
+
+On macOS arm64 with Node.js 24.17.0, package build/typecheck/lint and all **132
+tests** passed, including installed-archive CLI/MCP generation for all eight local
+formats. Standalone example type checks, **81 CI contract tests**, and workflow
+validation also passed. These checks do not claim new visual renders or remote
+platform execution.

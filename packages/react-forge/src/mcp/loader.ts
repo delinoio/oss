@@ -18,7 +18,7 @@ export class TaskLoader {
       // Caller projects may have their own React or no React Forge installation.
       // Pin only the engine's public imports; ordinary caller imports keep Node
       // resolution. A second engine would split React and Figma rate/file queues.
-      if (/^(?:react(?:\/.*)?|react-reconciler(?:\/.*)?|@delino\/react-forge(?:\/(?:pptx|docx|xlsx|pdf|figma|sfx|glb|fbx))?)$/.test(specifier)) {
+      if (/^(?:react(?:\/.*)?|react-reconciler(?:\/.*)?|@delino\/react-forge(?:\/(?:pptx|docx|xlsx|pdf|figma|sprite|sfx|glb|fbx))?)$/.test(specifier)) {
         return nextResolve(specifier, { ...context, parentURL: import.meta.url });
       }
       return nextResolve(specifier, context);

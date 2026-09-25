@@ -439,7 +439,7 @@ test("React Forge validates its supported runtime with uncached native and rende
   assert.match(namedStep(job, "Generate travel investor example").run, /examples\/travel-ir\.tsx/u);
   assert.match(namedStep(job, "Verify supported host and native contracts").run, /--include-ignored/u);
   const commands = job.steps.map(({ run }) => run ?? "").join("\n");
-  for (const command of ["forge-package", "forge-document", "forge-docx", "forge-xlsx", "forge-pdf", "react-forge-node", "turbo run build typecheck lint test --filter=@delino/react-forge", "test:render", "benchmark", "render-requirements.txt"]) assert.ok(commands.includes(command), command);
+  for (const command of ["forge-package", "forge-document", "forge-docx", "forge-xlsx", "forge-pdf", "forge-sprite", "react-forge-node", "turbo run build typecheck lint test --filter=@delino/react-forge", "test:render", "benchmark", "render-requirements.txt"]) assert.ok(commands.includes(command), command);
   assert.equal(namedStep(job, "Remove generated package output").if, "always()");
   const evidence = namedStep(job, "Retain rendering and benchmark evidence");
   assert.equal(evidence.with["retention-days"], 7);

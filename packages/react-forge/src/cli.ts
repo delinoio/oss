@@ -1,9 +1,10 @@
 import type { SceneSession } from "./scene/session.js";
+import { matchesOutputExtension } from "./output-extension.js";
 import { extname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { tsImport } from "tsx/esm/api";
 import { ForgeError, abortable } from "./errors.js";
-import { ErrorCode, Format, limits } from "./types.js";
+import { ErrorCode, limits } from "./types.js";
 import type { FigmaSession } from "./figma/session.js";
 import type { DocumentSession } from "./session.js";
 import packageManifest from "../package.json" with { type: "json" };
@@ -17,7 +18,7 @@ Usage:
   react-forge --version
 
 The module's default task receives { data, signal } and returns a document session.
-Output must have the session's format extension (.figma.json for a remote Figma receipt). Existing output requires --overwrite.
+Output must have the session's format extension (.sprite.zip for sprites; .figma.json for a remote Figma receipt). Existing output requires --overwrite.
 Imported source files cannot be overwritten; choose a separate output path.
 Tasks execute trusted code with your permissions. No automatic timeout is applied.
 `;
@@ -88,7 +89,7 @@ export async function main(args: string[]): Promise<number> {
     const returned = await abortable(task, controller.signal);
     if (!returned || typeof returned.exportFile !== "function" || typeof returned.dispose !== "function") throw new ForgeError(ErrorCode.MalformedInput, "Task must return a document session.");
     session = returned;
-    if (session.format === Format.Figma ? !output.endsWith(".figma.json") : extname(output).toLowerCase() !== `.${session.format}`) throw new ForgeError(ErrorCode.MalformedInput, "Output extension must match the document session format.");
+    if (!matchesOutputExtension(session.format, output)) throw new ForgeError(ErrorCode.MalformedInput, "Output extension must match the document session format.");
     const result = await session.exportFile(output, { overwrite: flags.has("--overwrite"), signal: controller.signal });
     await write(process.stdout, json ? `${JSON.stringify({ ok: true, format: session.format, ...result })}\n` : `Exported ${session.format.toUpperCase()} revision ${result.revision}.\n`);
     return 0;

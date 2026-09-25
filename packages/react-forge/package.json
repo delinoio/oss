@@ -48,6 +48,11 @@
       "import": "./dist/fbx.js",
       "require": "./dist/fbx.js"
     },
+    "./sprite": {
+      "types": "./dist/sprite.d.ts",
+      "import": "./dist/sprite.js",
+      "require": "./dist/sprite.js"
+    },
     "./sfx": {
       "types": "./dist/sfx.d.ts",
       "import": "./dist/sfx.js",
