@@ -14,6 +14,7 @@ type sessionHistory struct {
 	messages    []HistoryMessageProof
 	compactions []HistoryCompactionProof
 	actions     []HistoryCompactionActionProof
+	resumes     []historyResumeProof
 	boundary    *StreamEvent
 	echo        *StreamEvent
 	output      *StreamEvent

@@ -153,7 +153,7 @@ func (index *historyActionIndex) observeDiagnostic(fields map[string]json.RawMes
 	return nil
 }
 
-func (index *historyActionIndex) verify(ctx context.Context, nodes map[string]historyNode, provenance map[string]bool, compactions []historyCompaction) error {
+func (index *historyActionIndex) verify(ctx context.Context, nodes map[string]historyNode, provenance map[string]bool, compactions []historyCompaction, detached map[string]bool) error {
 	boundaries := make(map[string]historyCompaction, len(compactions))
 	for _, boundary := range compactions {
 		boundaries[boundary.proof.NativeID] = boundary
@@ -201,7 +201,9 @@ func (index *historyActionIndex) verify(ctx context.Context, nodes map[string]hi
 				return historyUncertain()
 			}
 		}
-		if nodes[output].parent != p.Echo.NativeID || !provenance[output] {
+		// Only a previously verified exact closed prefix plus the pinned native
+		// resume-context branch can retain a diagnostic outside selected context.
+		if nodes[output].parent != p.Echo.NativeID || (!provenance[output] && !(p.Status == CompactFailed && detached[output])) {
 			return historyUncertain()
 		}
 		last = nodes[output].position

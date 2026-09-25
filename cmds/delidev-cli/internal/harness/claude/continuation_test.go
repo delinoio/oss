@@ -88,7 +88,7 @@ func TestClosedContinuationKeepsOriginalHistoryAndConsumesOneNativeLaunch(t *tes
 }
 
 func TestClosedContinuationRefusesIneligibleNativeBoundariesBeforeCleanup(t *testing.T) {
-	for _, name := range []string{"reading", "permission", "unaccepted", "unfinished", "no-terminal", "running", "problem", "continuing", "summary", "compaction", "task", "background", "callback", "tool", "server-tool", "active-provider", "open-tool", "callback-bytes", "missing-ledger", "manual", "pending-ledger", "empty-ledger", "queued-event", "canceled"} {
+	for _, name := range []string{"reading", "permission", "unaccepted", "unfinished", "no-terminal", "running", "problem", "continuing", "summary", "compaction", "task", "background", "callback", "tool", "server-tool", "active-provider", "open-tool", "callback-bytes", "missing-ledger", "pending-ledger", "empty-ledger", "queued-event", "canceled"} {
 		t.Run(name, func(t *testing.T) {
 			s, f := continuationFixture(t)
 			ctx := context.Background()
@@ -131,8 +131,6 @@ func TestClosedContinuationRefusesIneligibleNativeBoundariesBeforeCleanup(t *tes
 				s.current.interactionBytes = 1
 			case "missing-ledger":
 				s.history = nil
-			case "manual":
-				s.history.actions = []HistoryCompactionActionProof{{ActionID: domain.NewID()}}
 			case "pending-ledger":
 				s.history.action = domain.NewID()
 			case "empty-ledger":

@@ -49,6 +49,7 @@ type TranscriptObservation struct {
 	ActionMessages        uint32
 	StoredDiagnostics     uint32
 	ModeRecords           uint32
+	ResumeContextMessages uint32
 }
 
 func historyUncertain() *domain.Error {
@@ -174,6 +175,10 @@ func VerifyMainTranscript(ctx context.Context, raw []byte, session domain.ID, wo
 }
 
 func verifyTranscript(ctx context.Context, raw []byte, session domain.ID, workspace string, proofs []HistoryMessageProof, child *ChildHistoryBinding, compactProofs []HistoryCompactionProof, actionProofs []HistoryCompactionActionProof) (TranscriptObservation, error) {
+	return verifyResumedTranscript(ctx, raw, session, workspace, proofs, child, compactProofs, actionProofs, nil)
+}
+
+func verifyResumedTranscript(ctx context.Context, raw []byte, session domain.ID, workspace string, proofs []HistoryMessageProof, child *ChildHistoryBinding, compactProofs []HistoryCompactionProof, actionProofs []HistoryCompactionActionProof, resumes []historyResumeProof) (TranscriptObservation, error) {
 	if err := ctx.Err(); err != nil {
 		return TranscriptObservation{}, domain.SafeError(err)
 	}
@@ -206,6 +211,13 @@ func verifyTranscript(ctx context.Context, raw []byte, session domain.ID, worksp
 	actions, err := indexHistoryActions(actionProofs, expected, expectedBoundaries, expectedSummaries)
 	if err != nil {
 		return TranscriptObservation{}, err
+	}
+	resume, err := indexResumedHistory(ctx, raw, proofs, actionProofs, resumes)
+	if err != nil {
+		return TranscriptObservation{}, err
+	}
+	if child != nil && len(resumes) != 0 {
+		return TranscriptObservation{}, historyUncertain()
 	}
 	lines := bytes.Split(raw[:len(raw)-1], []byte{'\n'})
 	if len(lines) > maxHistoryRecords {
@@ -394,7 +406,12 @@ func verifyTranscript(ctx context.Context, raw []byte, session domain.ID, worksp
 	if index != -1 {
 		return TranscriptObservation{}, historyUncertain()
 	}
-	if err := actions.verify(ctx, nodes, provenance, compactions); err != nil {
+	for id := range resume.messages {
+		if !provenance[id] || matched[id] || actions.matched[id] || summaries[id] {
+			return TranscriptObservation{}, historyUncertain()
+		}
+	}
+	if err := actions.verify(ctx, nodes, provenance, compactions, resume.detached); err != nil {
 		return TranscriptObservation{}, err
 	}
 	active, err := relinkCompactedHistory(ctx, nodes, compactions)
@@ -423,5 +440,5 @@ func verifyTranscript(ctx context.Context, raw []byte, session domain.ID, worksp
 		}
 	}
 	digest := sha256.Sum256(raw)
-	return TranscriptObservation{SHA256: hex.EncodeToString(digest[:]), Bytes: uint64(len(raw)), LeafID: leaf, MatchedMessages: uint32(len(proofs)), AdditionalMessages: additional, ActiveMatchedMessages: activeCount, CompactedMessages: uint32(len(proofs)) - activeCount, Compactions: uint32(len(compactions)), SummaryMessages: uint32(len(summaries)), ReplayedRecords: replayCount, CompactionActions: uint32(len(actionProofs)), ActionMessages: uint32(len(actions.matched)), StoredDiagnostics: uint32(len(actions.stored)), ModeRecords: modeRecords}, nil
+	return TranscriptObservation{SHA256: hex.EncodeToString(digest[:]), Bytes: uint64(len(raw)), LeafID: leaf, MatchedMessages: uint32(len(proofs)), AdditionalMessages: additional, ActiveMatchedMessages: activeCount, CompactedMessages: uint32(len(proofs)) - activeCount, Compactions: uint32(len(compactions)), SummaryMessages: uint32(len(summaries)), ReplayedRecords: replayCount, CompactionActions: uint32(len(actionProofs)), ActionMessages: uint32(len(actions.matched)), StoredDiagnostics: uint32(len(actions.stored)), ModeRecords: modeRecords, ResumeContextMessages: uint32(len(resume.messages))}, nil
 }

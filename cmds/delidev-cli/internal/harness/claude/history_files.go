@@ -25,7 +25,11 @@ const (
 // repairing state. The caller must hold its exclusive runtime/workspace lease
 // and independently prove owned process cleanup before using these bytes as a
 // checkpoint. This read neither stops a process nor grants Resume authority.
-func ReadMainTranscript(ctx context.Context, home string, session domain.ID, workspace string, messages []HistoryMessageProof, compactions []HistoryCompactionProof, actions []HistoryCompactionActionProof, logger *slog.Logger) (observation TranscriptObservation, returned error) {
+func ReadMainTranscript(ctx context.Context, home string, session domain.ID, workspace string, messages []HistoryMessageProof, compactions []HistoryCompactionProof, actions []HistoryCompactionActionProof, logger *slog.Logger) (TranscriptObservation, error) {
+	return readMainTranscript(ctx, home, session, workspace, messages, compactions, actions, nil, logger)
+}
+
+func readMainTranscript(ctx context.Context, home string, session domain.ID, workspace string, messages []HistoryMessageProof, compactions []HistoryCompactionProof, actions []HistoryCompactionActionProof, resumes []historyResumeProof, logger *slog.Logger) (observation TranscriptObservation, returned error) {
 	phase := historyScopePhase
 	defer func() { logHistoryRead(ctx, logger, session, false, phase, returned) }()
 	if session.Validate() != nil {
@@ -42,7 +46,7 @@ func ReadMainTranscript(ctx context.Context, home string, session domain.ID, wor
 		return observation, err
 	}
 	phase = historyProofPhase
-	return verifyTranscript(ctx, raw, session, workspace, messages, nil, compactions, actions)
+	return verifyResumedTranscript(ctx, raw, session, workspace, messages, nil, compactions, actions, resumes)
 }
 
 // ReadChildTranscript derives filenames from the independently retained native

@@ -27,12 +27,25 @@ func TestManualNativeExplicitCompaction(t *testing.T) {
 		{"successful", false, false}, {"provider-rejection", true, false}, {"insufficient-history", false, true},
 	} {
 		for _, next := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s/continue-%t", fixture.name, next), func(t *testing.T) { nativeManualCompactionFixture(t, fixture.rejected, fixture.insufficient, next) })
+			t.Run(fmt.Sprintf("%s/continue-%t", fixture.name, next), func(t *testing.T) {
+				nativeManualCompactionFixture(t, fixture.rejected, fixture.insufficient, next, false)
+			})
 		}
 	}
 }
 
-func nativeManualCompactionFixture(t *testing.T, rejected, insufficient, continueInput bool) {
+func TestManualNativeCompactionProcessReplacement(t *testing.T) {
+	for _, fixture := range []struct {
+		name                   string
+		rejected, insufficient bool
+	}{{"successful", false, false}, {"provider-rejection", true, false}, {"insufficient-history", false, true}} {
+		t.Run(fixture.name, func(t *testing.T) {
+			nativeManualCompactionFixture(t, fixture.rejected, fixture.insufficient, true, true)
+		})
+	}
+}
+
+func nativeManualCompactionFixture(t *testing.T, rejected, insufficient, continueInput, replace bool) {
 	failed := rejected || insufficient
 	binary := os.Getenv("DELIDEV_NATIVE_CLAUDE_EXECUTABLE")
 	if binary == "" {
@@ -115,19 +128,23 @@ func nativeManualCompactionFixture(t *testing.T, rejected, insufficient, continu
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 	authority := nativeAPIAuthority{ctx: ctx, scope: apiproxy.Scope{ExecutionID: domain.NewID(), SessionID: cfg.SessionID, AccountID: domain.NewID(), ConnectionID: domain.NewID(), ProviderID: domain.NewID(), ModelID: domain.NewID(), NativeModel: cfg.Model, Provider: domain.Provider{Name: "Compaction fixture", Endpoint: provider.URL + "/provider", Protocol: domain.AnthropicMessages, Authentication: domain.APIKeyAuth}, Operations: []apiproxy.Operation{apiproxy.MessageCreate}}}
-	relay := httptest.NewServer(apiproxy.New(authority, slog.New(slog.NewJSONHandler(io.Discard, nil))))
+	rotating := &rotatingNativeAPIAuthority{token: nativeAPIFixtureToken, authority: authority}
+	relay := httptest.NewServer(apiproxy.New(rotating, slog.New(slog.NewJSONHandler(io.Discard, nil))))
 	defer relay.Close()
 	cfg.API.ServerOrigin = relay.URL
 	s, err := OpenAPISession(ctx, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
+	all := []*APISession{s}
 	defer func() {
-		if err := s.Close(); err != nil {
-			t.Error(err)
-		}
-		if err := process.ReconcileOwner(cfg.Process.Directory, cfg.Process.OwnerID); err != nil {
-			t.Error(err)
+		for _, session := range all {
+			if err := session.Close(); err != nil {
+				t.Error(err)
+			}
+			if err := process.ReconcileOwner(cfg.Process.Directory, session.config.Process.OwnerID); err != nil {
+				t.Error(err)
+			}
 		}
 		for _, private := range []string{nativeAPIFixtureToken, nativeAPIUpstreamKey, "Private fixture"} {
 			if strings.Contains(logs.String(), private) {
@@ -251,8 +268,26 @@ func nativeManualCompactionFixture(t *testing.T, rejected, insufficient, continu
 			if _, err := s.StartCompaction(ctx, actionID); err == nil {
 				t.Fatal("native compaction action was replayed")
 			}
-			if closed, err := s.CloseForContinuation(ctx); err == nil || domain.SafeError(err).Code != domain.Unsupported || closed != nil || s.closed.Load() {
-				t.Fatal("unreconciled manual Resume history gained process handoff authority")
+			if replace {
+				closed, err := s.CloseForContinuation(ctx)
+				if err != nil {
+					t.Fatal("original manual history closure failed", err)
+				}
+				token := nativeContinuationToken(92)
+				rotating.rotate(token)
+				api := APIConfig{ServerOrigin: relay.URL, Token: token}
+				intent := ContinueSuccessfulRun
+				if failed {
+					if _, err := ContinueAPISession(ctx, closed, domain.NewID(), api, intent); err == nil || closed.used {
+						t.Fatal("failed compaction resumed implicitly")
+					}
+					intent = ResumeTerminalRun
+				}
+				s, err = ContinueAPISession(ctx, closed, domain.NewID(), api, intent)
+				if err != nil {
+					t.Fatal("manual native process replacement failed", err)
+				}
+				all = append(all, s)
 			}
 
 		}
@@ -267,10 +302,19 @@ func nativeManualCompactionFixture(t *testing.T, rejected, insufficient, continu
 	if calls.Load() != expectedCalls || (continueInput && (compactedRequest.Load() == failed || retainedRequest.Load() != failed)) {
 		t.Fatal("native manual compaction retried or lost its context boundary", calls.Load())
 	}
-	if err := s.Finish(ctx); err != nil {
-		t.Fatal(err)
+	closed, err := s.CloseForContinuation(ctx)
+	if err != nil {
+		t.Fatal("manual retained process handoff failed", err)
 	}
-	verified, err := ReadMainTranscript(ctx, cfg.Home, cfg.SessionID, cfg.Workspace, proofs, compactions, actions, cfg.Process.Logger)
+	verified := closed.transcript
+	wantAdditional, wantResume := uint32(1), uint32(0)
+	if replace {
+		wantResume = 2
+		if failed {
+			wantResume = 1
+		}
+		wantAdditional += wantResume
+	}
 	wantMessages, wantCompactions, wantActionMessages, wantDiagnostics := uint32(6), uint32(1), uint32(2), uint32(0)
 	if failed {
 		wantCompactions, wantActionMessages, wantDiagnostics = 0, 1, 1
@@ -281,7 +325,7 @@ func nativeManualCompactionFixture(t *testing.T, rejected, insufficient, continu
 	if !continueInput {
 		wantMessages -= 2
 	}
-	if err != nil || verified.MatchedMessages != wantMessages || verified.AdditionalMessages != 1 || verified.CompactionActions != 1 || verified.ActionMessages != wantActionMessages || verified.StoredDiagnostics != wantDiagnostics || verified.Compactions != wantCompactions || verified.SummaryMessages != wantCompactions || (verified.CompactedMessages == 0) != failed {
+	if err != nil || verified.MatchedMessages != wantMessages || verified.AdditionalMessages != wantAdditional || verified.ResumeContextMessages != wantResume || verified.CompactionActions != 1 || verified.ActionMessages != wantActionMessages || verified.StoredDiagnostics != wantDiagnostics || verified.Compactions != wantCompactions || verified.SummaryMessages != wantCompactions || (verified.CompactedMessages == 0) != failed {
 		t.Fatal("manual history lost original conversation or action provenance", err, verified)
 	}
 }
