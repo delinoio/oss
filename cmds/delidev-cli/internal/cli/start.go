@@ -12,10 +12,20 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/server"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/worker"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
 func startDetached(ctx context.Context, o options, config server.Config, streams IO) (any, error) {
+	return ensureDetached(ctx, o, config, streams, false)
+}
+
+func ensureDetached(ctx context.Context, o options, config server.Config, streams IO, automatic bool) (any, error) {
+	if _, err := worker.LoadCredential(o.dataDir); err == nil {
+		return nil, domain.Fail(domain.PermissionDenied, "Server startup requires an owner scope, not a paired device scope.", "Run the lifecycle command on the server machine with its original data directory.")
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
 	if err := server.ValidateConfig(config); err != nil {
 		return nil, err
 	}
@@ -31,6 +41,27 @@ func startDetached(ctx context.Context, o options, config server.Config, streams
 		return nil, err
 	}
 	defer lock.Close()
+	intentLock, err := server.LockLifecycle(o.dataDir)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if intentLock != nil {
+			intentLock.Close()
+		}
+	}()
+	intent, err := server.ReadLifecycle(o.dataDir)
+	if err != nil {
+		return nil, err
+	}
+	if automatic {
+		if intent.State != server.DesiredRunning {
+			return map[string]any{"state": "stopped"}, nil
+		}
+		if !intent.Matches(config) {
+			return nil, domain.Fail(domain.Unsupported, "Automatic startup configuration differs from the original server.", "Use the original controller configuration or explicitly start the desired server after reviewing its state.")
+		}
+	}
 	probe := func() (any, error) {
 		c, err := startupClient(o, streams.In, tlsConfig)
 		if err != nil {
@@ -46,18 +77,37 @@ func startDetached(ctx context.Context, o options, config server.Config, streams
 		if status.Msg.ProtocolVersion != rpc.ProtocolVersion || status.Msg.Version != rpc.Version {
 			return nil, domain.Fail(domain.Unsupported, "A different server version already owns this scope.", "Use its compatible CLI or explicitly stop it after reviewing active sessions.")
 		}
+		if status.Msg.Stopping || intent.State == server.DesiredStopped {
+			return nil, domain.Fail(domain.Conflict, "The server is stopping.", "Wait for confirmed shutdown before explicitly starting again.")
+		}
 		return map[string]any{"reused": true, "status": status.Msg}, nil
 	}
 	if status, err := probe(); err == nil {
+		// Adopt legacy foreground servers only after authenticated compatibility.
+		if intent.Version == 0 {
+			if _, err := server.WriteRunning(o.dataDir, config); err != nil {
+				return nil, err
+			}
+		}
 		return status, nil
-	} else if domain.SafeError(err).Code == domain.Unsupported || domain.SafeError(err).Code == domain.RecoveryRequired {
+	} else if code := domain.SafeError(err).Code; code != domain.ServerUnavailable && code != domain.Unavailable {
 		return nil, err
 	}
+	if !automatic {
+		intent, err = server.WriteRunning(o.dataDir, config)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if err := intentLock.Close(); err != nil {
+		return nil, domain.SafeError(err)
+	}
+	intentLock = nil
 	executable, err := os.Executable()
 	if err != nil {
 		return nil, domain.SafeError(err)
 	}
-	args := []string{"--data-dir", o.dataDir, "server", "run", "--listen", config.Listen}
+	args := []string{"--data-dir", o.dataDir, "server", "run", "--listen", config.Listen, "--startup-id", string(intent.Generation)}
 	if config.TLSCertificate != "" {
 		args = append(args, "--tls-cert", config.TLSCertificate, "--tls-key", config.TLSKey)
 	}
@@ -105,6 +155,9 @@ func startDetached(ctx context.Context, o options, config server.Config, streams
 		case <-timeout.C:
 			return nil, domain.Fail(domain.RecoveryRequired, "The server has not reported readiness yet.", "Inspect server status and the private server log before retrying startup.")
 		case <-exited:
+			if current, err := server.ReadLifecycle(o.dataDir); err == nil && current.State == server.DesiredStopped {
+				return map[string]any{"state": "stopped"}, nil
+			}
 			return nil, domain.Fail(domain.Unavailable, "The server exited before becoming ready.", "Inspect the private server log for a typed startup failure.")
 		case <-ticker.C:
 			if result, err := probe(); err == nil {

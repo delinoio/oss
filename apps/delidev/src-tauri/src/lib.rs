@@ -4,7 +4,10 @@ use std::{
     io::Read,
     path::{Path, PathBuf},
     process::{Command, Stdio},
-    sync::Mutex,
+    sync::{
+        Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
     thread,
     time::{Duration, Instant},
 };
@@ -16,6 +19,9 @@ use zeroize::{Zeroize, Zeroizing};
 const OUTPUT_LIMIT: u64 = 64 << 10;
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(40);
 const ORIGINS: &str = "tauri://localhost,http://tauri.localhost,http://127.0.0.1:46311";
+
+mod supervision;
+pub use supervision::{LocalServerState, LocalServerStatus, Supervision};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -29,6 +35,7 @@ pub enum NativeFailure {
     PermissionDenied,
     InvalidEvidence,
     StorageUnavailable,
+    Stopped,
 }
 
 type Result<T> = std::result::Result<T, NativeFailure>;
@@ -91,7 +98,8 @@ pub struct Connector {
     executable: PathBuf,
     root: PathBuf,
     gate: Mutex<()>,
-    listen: &'static str,
+    listen: String,
+    exiting: AtomicBool,
 }
 
 impl Connector {
@@ -108,7 +116,8 @@ impl Connector {
             executable,
             root,
             gate: Mutex::new(()),
-            listen: "127.0.0.1:46310",
+            listen: "127.0.0.1:46310".into(),
+            exiting: AtomicBool::new(false),
         })
     }
 
@@ -126,14 +135,17 @@ impl Connector {
     fn connect_inner(&self) -> Result<Connection> {
         // The Go executable owns compatibility, startup locking and detachment.
         // Dropping this client never invokes stop or assumes server ownership.
-        self.run(&[
+        let started = self.run(&[
             "server".into(),
             "start".into(),
             "--listen".into(),
-            self.listen.into(),
+            self.listen.clone().into(),
             "--allowed-origins".into(),
             ORIGINS.into(),
         ])?;
+        if started.get("state").and_then(|value| value.as_str()) == Some("stopped") {
+            return Err(NativeFailure::Stopped);
+        }
         let client_root = self.root.join("desktop-client");
         let metadata = self.run(&[
             "device".into(),
@@ -170,6 +182,9 @@ impl Connector {
     }
 
     fn run(&self, arguments: &[OsString]) -> Result<serde_json::Value> {
+        if self.exiting.load(Ordering::Acquire) {
+            return Err(NativeFailure::Stopped);
+        }
         let mut command = Command::new(&self.executable);
         command
             .arg("--data-dir")
@@ -212,6 +227,9 @@ impl Connector {
         let err = thread::spawn(move || read_bounded(stderr, OUTPUT_LIMIT));
         let started = Instant::now();
         let result = loop {
+            if self.exiting.load(Ordering::Acquire) {
+                break Err(NativeFailure::Stopped);
+            }
             match child.try_wait() {
                 Ok(Some(status)) => break Ok(status),
                 Ok(None) if started.elapsed() < COMMAND_TIMEOUT => {
@@ -241,7 +259,8 @@ impl Connector {
                 "unsupported" => NativeFailure::Incompatible,
                 "unauthenticated" => NativeFailure::CredentialUnavailable,
                 "permission_denied" => NativeFailure::PermissionDenied,
-                "recovery_required" | "conflict" => NativeFailure::InvalidEvidence,
+                "conflict" => NativeFailure::Busy,
+                "recovery_required" => NativeFailure::InvalidEvidence,
                 _ => NativeFailure::SidecarFailed,
             });
         }
@@ -249,6 +268,38 @@ impl Connector {
             return Err(NativeFailure::SidecarFailed);
         }
         envelope.result.ok_or(NativeFailure::InvalidEvidence)
+    }
+
+    fn ensure(&self) -> Result<LocalServerState> {
+        let _guard = self.gate.try_lock().map_err(|_| NativeFailure::Busy)?;
+        let value = self.run(&[
+            "server".into(),
+            "ensure".into(),
+            "--listen".into(),
+            self.listen.clone().into(),
+            "--allowed-origins".into(),
+            ORIGINS.into(),
+        ])?;
+        if value.get("state").and_then(|value| value.as_str()) == Some("stopped") {
+            return Ok(LocalServerState::Stopped);
+        }
+        let status = if value.get("reused").and_then(|v| v.as_bool()) == Some(true) {
+            value.get("status")
+        } else if value.get("started").and_then(|v| v.as_bool()) == Some(true) {
+            value.get("server").and_then(|v| v.get("status"))
+        } else {
+            None
+        }
+        .ok_or(NativeFailure::InvalidEvidence)?;
+        if status.get("version").and_then(|v| v.as_str()) != Some("0.1.0")
+            || status.get("protocol_version").and_then(|v| v.as_u64()) != Some(1)
+            || (self.listen != "127.0.0.1:0"
+                && status.get("listener").and_then(|v| v.as_str())
+                    != Some(format!("http://{}", self.listen).as_str()))
+        {
+            return Err(NativeFailure::Incompatible);
+        }
+        Ok(LocalServerState::Ready)
     }
 }
 

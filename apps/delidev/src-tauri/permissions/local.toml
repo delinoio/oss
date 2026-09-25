@@ -1,4 +1,4 @@
 [[permission]]
 identifier = "local-bootstrap"
 description = "Start or reuse the same local Go server and load its separate paired desktop credential."
-commands.allow = ["connect_local"]
+commands.allow = ["connect_local", "local_server_status"]

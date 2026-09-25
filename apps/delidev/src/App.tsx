@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { type Transport } from "@connectrpc/connect";
 import { TransportProvider, useQuery } from "@connectrpc/connect-query";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -10,7 +10,7 @@ import { Problem } from "./ui";
 import { MutationIntents } from "./mutation";
 import { connectionQueryClient } from "./cache";
 
-function Shell() {
+function Shell({ localServer }: { localServer?: ReactNode }) {
   const [surface, setSurface] = useState(Surface.Sessions);
   const [selected, setSelected] = useState("");
   const [settings, setSettings] = useState(false);
@@ -36,7 +36,7 @@ function Shell() {
     <div className="session-list"><header><h2>Sessions</h2><button aria-label="Refresh sessions" onClick={() => { setPage(""); void sessions.refetch(); }}>↻</button></header><label className="checkbox"><input type="checkbox" checked={archived} onChange={(event) => { setArchived(event.target.checked); setPage(""); }} />Include archived</label><Problem error={sessions.error} />
       {sessions.data?.sessions.map((row) => { const data = document(row); const workspace = text(data.workspace) as Workspace; return <button className="session-link" key={row.id} aria-current={selected === row.id ? "true" : undefined} onClick={() => open(row.id)}><span role="img" aria-label={workspaceNames[workspace] || "Workspace"} title={workspaceNames[workspace]}>{workspace === Workspace.Worktree ? "⑂" : workspace === Workspace.Local ? "▣" : "◌"}</span><span>{resourceName(row)}<small>{text(data.outcome)} · {text(data.archive)}</small></span></button>; })}
       {page ? <button onClick={() => setPage("")}>First page</button> : null}{sessions.data?.nextPageToken ? <button onClick={() => setPage(sessions.data!.nextPageToken)}>More sessions</button> : null}
-    </div><footer><p role="status">{status.data ? `Server ${status.data.version}` : status.isPending ? "Connecting to server…" : "Server unavailable"}</p><button onClick={(event) => { event.currentTarget.focus(); setSettings(true); }}>Settings</button></footer>
+    </div><footer><p role="status">{status.data ? `Server ${status.data.version}` : status.isPending ? "Connecting to server…" : "Server unavailable"}</p>{localServer}<button onClick={(event) => { event.currentTarget.focus(); setSettings(true); }}>Settings</button></footer>
   </aside><main id="main" tabIndex={-1}>{draftState.error ? <p role="alert">{draftState.error}</p> : null}
     <div hidden={surface !== Surface.Sessions} className="session-container">{selected ? <SessionView key={selected} id={selected} draft={drafts.get(selected) ?? ""} setDraft={(value) => saveDraft(selected, value)} /> : <section className="page welcome"><h2>Your sessions, in one place</h2><p>Select a retained session or start a new conversation.</p><h3>Before your first session</h3><ol><li>Connect to your DeliDev server.</li><li>Pair an execution Worker and verify its installed harness.</li><li>Connect an AI account and configure an Agent Worker.</li><li>Configure a project, or choose General Chat.</li></ol><button onClick={(event) => { event.currentTarget.focus(); setSettings(true); }}>View prerequisites in Settings</button><Problem error={status.error} /></section>}</div>
     {surface === Surface.Search ? <Search open={open} /> : surface === Surface.Activity ? <Activity open={open} /> : surface === Surface.Inbox ? <Inbox open={open} /> : null}
@@ -45,9 +45,10 @@ function Shell() {
 
 // The native caller mounts a new App per selected server/device. Query caches
 // and in-memory drafts never cross that identity boundary.
-export function App({ transport }: { transport: Transport }) {
+export function App({ transport, localServer, connectionReady = true, connectionEpoch = 0 }: { transport: Transport; localServer?: ReactNode; connectionReady?: boolean; connectionEpoch?: number }) {
   const connection = useMemo(() => ({ id: newRequestId(), ...connectionQueryClient() }), [transport]);
   const client = connection.client;
   useEffect(() => connection.activate(), [connection]);
-  return <TransportProvider transport={transport}><QueryClientProvider key={connection.id} client={client}><MutationIntents><Shell /></MutationIntents></QueryClientProvider></TransportProvider>;
+  useEffect(() => { if (connectionReady) void client.invalidateQueries({ refetchType: "active" }); }, [client, connectionReady, connectionEpoch]);
+  return <TransportProvider transport={transport}><QueryClientProvider key={connection.id} client={client}><MutationIntents><Shell localServer={localServer} /></MutationIntents></QueryClientProvider></TransportProvider>;
 }

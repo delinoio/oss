@@ -2,7 +2,10 @@
 
 use std::{path::PathBuf, sync::Arc};
 
-use delidev_desktop::{Connection, Connector, NativeFailure, bundled_sidecar, default_data_root};
+use delidev_desktop::{
+    Connection, Connector, LocalServerStatus, NativeFailure, Supervision, bundled_sidecar,
+    default_data_root,
+};
 use tauri::{WebviewWindow, WebviewWindowBuilder, Wry, webview::NewWindowResponse};
 
 fn trusted_url(url: &tauri::Url) -> bool {
@@ -26,6 +29,7 @@ fn trusted_url(url: &tauri::Url) -> bool {
 async fn connect_local(
     window: WebviewWindow<Wry>,
     connector: tauri::State<'_, Arc<Connector>>,
+    supervision: tauri::State<'_, Arc<Supervision>>,
 ) -> Result<Connection, NativeFailure> {
     if window.label() != "main"
         || !trusted_url(&window.url().map_err(|_| NativeFailure::PermissionDenied)?)
@@ -33,13 +37,28 @@ async fn connect_local(
         return Err(NativeFailure::PermissionDenied);
     }
     let connector = Arc::clone(connector.inner());
-    let connection = tauri::async_runtime::spawn_blocking(move || connector.connect())
+    let result = tauri::async_runtime::spawn_blocking(move || connector.connect())
         .await
-        .map_err(|_| NativeFailure::SidecarFailed)??;
+        .map_err(|_| NativeFailure::SidecarFailed)?;
+    supervision.refresh();
+    let connection = result?;
     if connection.endpoint != "http://127.0.0.1:46310" {
         return Err(NativeFailure::Incompatible);
     }
     Ok(connection)
+}
+
+#[tauri::command]
+fn local_server_status(
+    window: WebviewWindow<Wry>,
+    supervision: tauri::State<'_, Arc<Supervision>>,
+) -> Result<LocalServerStatus, NativeFailure> {
+    if window.label() != "main"
+        || !trusted_url(&window.url().map_err(|_| NativeFailure::PermissionDenied)?)
+    {
+        return Err(NativeFailure::PermissionDenied);
+    }
+    Ok(supervision.status())
 }
 
 fn run() -> Result<(), NativeFailure> {
@@ -56,9 +75,11 @@ fn run() -> Result<(), NativeFailure> {
     }
     let executable = std::env::current_exe().map_err(|_| NativeFailure::SidecarMissing)?;
     let connector = Arc::new(Connector::new(bundled_sidecar(&executable)?, root)?);
+    let supervision = Arc::new(Supervision::new(Arc::clone(&connector)));
     tauri::Builder::<Wry>::new()
         .manage(connector)
-        .invoke_handler(tauri::generate_handler![connect_local])
+        .manage(Arc::clone(&supervision))
+        .invoke_handler(tauri::generate_handler![connect_local, local_server_status])
         .setup(|app| {
             let result = (|| -> tauri::Result<()> {
                 let config = &app.config().app.windows[0];

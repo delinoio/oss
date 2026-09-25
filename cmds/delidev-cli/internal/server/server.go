@@ -31,6 +31,7 @@ import (
 const DefaultListen = "127.0.0.1:46310"
 
 type Config struct {
+	StartupID                 domain.ID
 	DataDir                   string
 	Listen                    string
 	TLSCertificate            string
@@ -122,6 +123,29 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	if config.Logger == nil {
 		config.Logger = slog.New(slog.NewJSONHandler(os.Stderr, nil))
 	}
+	if err := security.PrivateDir(config.DataDir); err != nil {
+		return domain.SafeError(err)
+	}
+	lifecycleLock, err := LockLifecycle(config.DataDir)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if lifecycleLock != nil {
+			lifecycleLock.Close()
+		}
+	}()
+	if config.StartupID != "" {
+		intent, err := ReadLifecycle(config.DataDir)
+		if err != nil {
+			return err
+		}
+		if intent.State != DesiredRunning || intent.Generation != config.StartupID || !intent.Matches(config) {
+			return domain.Fail(domain.Conflict, "This server startup was canceled or superseded.", "Inspect lifecycle intent before explicitly starting again.")
+		}
+	} else if _, err := ReadLifecycle(config.DataDir); err != nil {
+		return err
+	}
 	var certificate tls.Certificate
 	if config.TLSCertificate != "" {
 		certificate, err = tls.LoadX509KeyPair(config.TLSCertificate, config.TLSKey)
@@ -134,6 +158,11 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 		return err
 	}
 	defer state.Close()
+	if config.StartupID == "" {
+		if _, err := WriteRunning(config.DataDir, config); err != nil {
+			return err
+		}
+	}
 	storedIdentity, err := state.ScopeIdentity(ctx)
 	if err != nil {
 		return err
@@ -199,6 +228,10 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	}()
 	defer func() { stopSchedules(); <-schedulesDone }()
 	config.Logger.Info("server_ready", "server_id", identity.ServerID, "listener", service.Endpoint.URL, "version", rpc.Version)
+	if err := lifecycleLock.Close(); err != nil {
+		return domain.SafeError(err)
+	}
+	lifecycleLock = nil
 	if ready != nil {
 		ready(service.Endpoint)
 	}
@@ -338,9 +371,17 @@ func (s *Service) GetStatus(_ context.Context, req *connect.Request[pb.GetStatus
 }
 func (s *Service) StopServer(ctx context.Context, req *connect.Request[pb.StopServerRequest]) (*connect.Response[pb.StopServerResponse], error) {
 	id := domain.ID(req.Msg.RequestId)
-	_, err := s.Store.Mutate(ctx, id, "server.stop", struct {
+	lock, err := LockLifecycle(s.Store.Root())
+	if err != nil {
+		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
+	}
+	defer lock.Close()
+	_, err = s.Store.Mutate(ctx, id, "server.stop", struct {
 		StartedAt time.Time `json:"started_at"`
 	}{s.Endpoint.StartedAt}, func(*store.Tx) (any, error) {
+		if err := writeStopped(s.Store.Root(), id, configurationDigest(Config{})); err != nil {
+			return nil, err
+		}
 		return struct {
 			Accepted bool `json:"accepted"`
 		}{true}, nil

@@ -113,7 +113,7 @@ func Run(ctx context.Context, args []string, streams IO) int {
 	}
 	command := remaining[0]
 	rest := remaining[1:]
-	if command == "server" && len(rest) > 0 && (rest[0] == "start" || rest[0] == "run") {
+	if command == "server" && len(rest) > 0 && (rest[0] == "start" || rest[0] == "run" || rest[0] == "ensure") {
 		value, err := start(ctx, o, rest, streams)
 		return emit(value, err)
 	}
@@ -134,6 +134,13 @@ func Run(ctx context.Context, args []string, streams IO) int {
 	}
 	c, err := connectClient(o, streams.In)
 	if err != nil {
+		if command == "server" && len(rest) == 1 && rest[0] == "stop" && o.server == "" && !o.tokenStdin && domain.SafeError(err).Code == domain.ServerUnavailable {
+			ensureRequest(&o)
+			if suppressErr := server.SuppressLocalRestart(o.dataDir, o.requestID); suppressErr != nil {
+				return emit(nil, suppressErr)
+			}
+			return emit(nil, offlineStop())
+		}
 		return emit(nil, err)
 	}
 	defer c.transport.CloseIdleConnections()
@@ -256,6 +263,12 @@ func Run(ctx context.Context, args []string, streams IO) int {
 			ensureRequest(&o)
 			response, err := c.system.StopServer(ctx, request(c, &pb.StopServerRequest{RequestId: string(o.requestID)}))
 			if err != nil {
+				if o.server == "" && !o.tokenStdin && (domain.SafeError(rpc.ClientError(err)).Code == domain.ServerUnavailable || domain.SafeError(rpc.ClientError(err)).Code == domain.Unavailable) {
+					if suppressErr := server.SuppressLocalRestart(o.dataDir, o.requestID); suppressErr != nil {
+						return emit(nil, suppressErr)
+					}
+					return emit(nil, offlineStop())
+				}
 				return emit(nil, rpc.ClientError(err))
 			}
 			return emit(response.Msg, nil)
@@ -607,7 +620,7 @@ func resourcesJSON(records []*pb.Resource) []any {
 }
 
 func start(ctx context.Context, o options, args []string, streams IO) (any, error) {
-	if o.server != "" {
+	if o.server != "" || o.tokenStdin {
 		return nil, domain.Fail(domain.InvalidArgument, "Server startup is a local infrastructure command.", "Run it on the server machine with its data directory.")
 	}
 	fs := flags("server start")
@@ -616,12 +629,30 @@ func start(ctx context.Context, o options, args []string, streams IO) (any, erro
 	key := fs.String("tls-key", "", "TLS key")
 	origins := fs.String("allowed-origins", "", "comma-separated exact origins")
 	foreground := fs.Bool("foreground", false, "remain attached")
+	startupID := fs.String("startup-id", "", "exact detached startup generation")
 	if err := parse(fs, args[1:]); err != nil {
 		return nil, err
 	}
+	if _, err := worker.LoadCredential(o.dataDir); err == nil {
+		return nil, domain.Fail(domain.PermissionDenied, "Server startup requires an owner scope, not a paired device scope.", "Select the server's original local data directory.")
+	} else if !os.IsNotExist(err) {
+		return nil, err
+	}
 	configuration := server.Config{DataDir: o.dataDir, Listen: *listen, TLSCertificate: *cert, TLSKey: *key, Logger: slog.New(slog.NewJSONHandler(streams.Err, nil))}
+	if *startupID != "" {
+		if args[0] != "run" || domain.ID(*startupID).Validate() != nil {
+			return nil, usage()
+		}
+		configuration.StartupID = domain.ID(*startupID)
+	}
 	if *origins != "" {
 		configuration.AllowedOrigins = strings.Split(*origins, ",")
+	}
+	if args[0] == "ensure" {
+		if *foreground {
+			return nil, usage()
+		}
+		return ensureDetached(ctx, o, configuration, streams, true)
 	}
 	if args[0] == "run" || *foreground {
 		err := server.Serve(ctx, configuration, func(e server.Endpoint) {
@@ -635,6 +666,10 @@ func start(ctx context.Context, o options, args []string, streams IO) (any, erro
 	return startDetached(ctx, o, configuration, streams)
 }
 
+func offlineStop() error {
+	return domain.Fail(domain.RecoveryRequired, "Automatic local restart is suppressed, but server shutdown is unconfirmed.", "Inspect the existing server before starting again; no session or process cleanup is claimed.")
+}
+
 const help = `DeliDev 0.1.0 (unreleased)
 
 Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
@@ -642,6 +677,7 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   server start [--foreground] [--listen IP:PORT] [--tls-cert FILE --tls-key FILE]
                [--allowed-origins ORIGIN,ORIGIN]
   server status | stop
+  server ensure [--listen IP:PORT] [--allowed-origins ORIGIN,ORIGIN]
   doctor
   device create-pairing --type worker|client --name NAME
   device pair --device-dir PATH --code-stdin
