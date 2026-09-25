@@ -43,6 +43,7 @@ type APISession struct {
 	config            APIStreamConfig
 	initial           AppliedSettings
 	current           *ExecutionBinding
+	compaction        *manualCompactionBinding
 	inputs            map[domain.ID]bool
 	reading           bool
 	closed            atomic.Bool
@@ -109,7 +110,10 @@ func (s *APISession) SendInput(ctx context.Context, input domain.ID, text string
 	if intent != ContinueSuccessfulRun && intent != ResumeTerminalRun {
 		return AppliedSettings{}, apiConfigurationError()
 	}
-	if s.reading || s.inputs[input] || s.permissionChanged {
+	if s.reading || s.inputs[input] || (s.current != nil && s.current.seen[string(input)]) || s.permissionChanged || (s.compaction != nil && !s.compaction.settled) {
+		return AppliedSettings{}, sessionBusy()
+	}
+	if s.compaction != nil && s.compaction.status == CompactFailed && intent != ResumeTerminalRun {
 		return AppliedSettings{}, sessionBusy()
 	}
 	if len(s.inputs) >= maxStreamIdentities {
@@ -156,7 +160,7 @@ func (s *APISession) SendInput(ctx context.Context, input domain.ID, text string
 	}
 	// Retain the input attempt before pipe delivery. Any uncertain send blocks
 	// all new inputs; neither a later terminal nor a retry clears that latch.
-	s.inputs[input], s.current = true, next
+	s.inputs[input], s.current, s.compaction = true, next, nil
 	if err := s.stream.SendInput(ctx, input, s.config.SessionID, text); err != nil {
 		return AppliedSettings{}, s.latch(sessionInputPhase, lifecycleUncertain())
 	}
@@ -195,7 +199,12 @@ func (s *APISession) Next(ctx context.Context) (LifecycleObservation, error) {
 		}
 		return LifecycleObservation{}, s.latch(sessionEventPhase, lifecycleUncertain())
 	}
-	observation, err := s.current.Observe(event)
+	var observation LifecycleObservation
+	if s.compaction != nil && event.Kind == NativeMessage {
+		observation, err = s.compaction.observe(event)
+	} else {
+		observation, err = s.current.Observe(event)
+	}
 	if err != nil || observation.Kind == PrivateObservation {
 		return observation, s.latch(sessionEventPhase, lifecycleUncertain())
 	}
@@ -212,6 +221,65 @@ func (s *APISession) Next(ctx context.Context) (LifecycleObservation, error) {
 		}
 	}
 	return observation, nil
+}
+
+// StartCompaction claims a native local command, not a conversation input. The
+// caller must durably retain the action before this one pipe send and consume
+// Next through its original idle boundary. No arguments, retry or separate
+// summarization model are added to the pinned native /compact operation.
+func (s *APISession) StartCompaction(ctx context.Context, action domain.ID) (AppliedSettings, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.status(); err != nil {
+		return AppliedSettings{}, err
+	}
+	if err := ctx.Err(); err != nil {
+		return AppliedSettings{}, domain.SafeError(err)
+	}
+	if action.Validate() != nil {
+		return AppliedSettings{}, apiConfigurationError()
+	}
+	if s.reading || s.inputs[action] || s.permissionChanged || s.current == nil || s.current.seen[string(action)] || (s.compaction != nil && !s.compaction.settled) {
+		return AppliedSettings{}, sessionBusy()
+	}
+	if len(s.inputs) >= maxStreamIdentities {
+		return AppliedSettings{}, domain.Fail(domain.ResourceExhausted, "The live Claude Code session reached its operation identity bound.", "Retain the native history for explicit process recovery.")
+	}
+	previous := s.current
+	work := previous.knownWork()
+	if previous.problem != nil || previous.runState != RunIdle || !previous.finished || previous.terminal == nil || previous.continuing || previous.pendingCompaction != nil || work.PendingTasks != 0 || work.BackgroundTasks != 0 || previous.content.openTools != 0 || len(previous.content.active) != 0 || previous.interactionBytes != 0 {
+		return AppliedSettings{}, sessionBusy()
+	}
+	for _, interaction := range previous.interactions {
+		if !interaction.echoed && !interaction.canceled {
+			return AppliedSettings{}, sessionBusy()
+		}
+	}
+	core, err := BindExecution(s.config, action, "/compact")
+	if err != nil {
+		return AppliedSettings{}, err
+	}
+	core.seen = previous.seen
+	if err := s.stream.inputBarrier(); err != nil {
+		return AppliedSettings{}, err
+	}
+	bounded, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	applied, err := s.stream.ReadAppliedSettings(bounded, domain.NewID(), s.config.Model, s.config.Effort)
+	if err != nil || !sameAppliedSettings(applied, s.initial) {
+		return AppliedSettings{}, s.latch(sessionSettingsPhase, settingsUncertain())
+	}
+	if err := s.stream.inputBarrier(); err != nil {
+		return AppliedSettings{}, err
+	}
+	s.inputs[action], s.compaction = true, &manualCompactionBinding{core: core}
+	if err := s.stream.SendInput(ctx, action, s.config.SessionID, "/compact"); err != nil {
+		return AppliedSettings{}, s.latch(sessionInputPhase, lifecycleUncertain())
+	}
+	if s.config.Process.Logger != nil {
+		s.config.Process.Logger.InfoContext(ctx, "Claude Code manual compaction delivered", "owner_id", s.config.Process.OwnerID, "action_id", action)
+	}
+	return applied, nil
 }
 
 func (s *APISession) Reply(ctx context.Context, arrival domain.ID, reply PermissionReply) error {

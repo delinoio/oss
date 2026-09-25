@@ -92,22 +92,7 @@ func (b *ExecutionBinding) observeProgress(event StreamEvent) (*NativeProgressOb
 	}
 	switch event.Type {
 	case "system":
-		var value struct {
-			Type          string            `json:"type"`
-			Session       domain.ID         `json:"session_id"`
-			UUID          string            `json:"uuid"`
-			Subtype       string            `json:"subtype"`
-			Status        *SessionStatus    `json:"status"`
-			Permission    *NativePermission `json:"permissionMode"`
-			CompactResult *CompactResult    `json:"compact_result"`
-			CompactError  *string           `json:"compact_error"`
-		}
-		var fields map[string]json.RawMessage
-		_ = json.Unmarshal(event.Body, &fields)
-		if decodeNativeObject(event.Body, &value) != nil || value.Subtype != "status" || len(fields["status"]) == 0 || (value.Status != nil && !slices.Contains([]SessionStatus{SessionRequesting, SessionCompacting}, *value.Status)) || (value.Permission != nil && !validNativePermission(*value.Permission)) || (value.CompactResult != nil && !slices.Contains([]CompactResult{CompactSucceeded, CompactFailed}, *value.CompactResult)) || !taskTexts(value.CompactError) {
-			return nil, lifecycleUncertain()
-		}
-		return &NativeProgressObservation{Kind: SessionStatusObserved, Status: value.Status, Permission: value.Permission, CompactResult: value.CompactResult, CompactError: value.CompactError}, nil
+		return decodeSessionProgress(event.Body)
 	case "tool_progress":
 		var value struct {
 			Type         string                  `json:"type"`
@@ -170,4 +155,23 @@ func (b *ExecutionBinding) observeProgress(event StreamEvent) (*NativeProgressOb
 	default:
 		return nil, lifecycleUncertain()
 	}
+}
+
+func decodeSessionProgress(raw json.RawMessage) (*NativeProgressObservation, error) {
+	var value struct {
+		Type          string            `json:"type"`
+		Session       domain.ID         `json:"session_id"`
+		UUID          string            `json:"uuid"`
+		Subtype       string            `json:"subtype"`
+		Status        *SessionStatus    `json:"status"`
+		Permission    *NativePermission `json:"permissionMode"`
+		CompactResult *CompactResult    `json:"compact_result"`
+		CompactError  *string           `json:"compact_error"`
+	}
+	var fields map[string]json.RawMessage
+	_ = json.Unmarshal(raw, &fields)
+	if decodeNativeObject(raw, &value) != nil || value.Subtype != "status" || len(fields["status"]) == 0 || (value.Status != nil && !slices.Contains([]SessionStatus{SessionRequesting, SessionCompacting}, *value.Status)) || (value.Permission != nil && !validNativePermission(*value.Permission)) || (value.CompactResult != nil && !slices.Contains([]CompactResult{CompactSucceeded, CompactFailed}, *value.CompactResult)) || !taskTexts(value.CompactError) {
+		return nil, lifecycleUncertain()
+	}
+	return &NativeProgressObservation{Kind: SessionStatusObserved, Status: value.Status, Permission: value.Permission, CompactResult: value.CompactResult, CompactError: value.CompactError}, nil
 }

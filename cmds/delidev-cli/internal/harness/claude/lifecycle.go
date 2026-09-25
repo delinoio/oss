@@ -15,19 +15,21 @@ import (
 type LifecycleKind string
 
 const (
-	CommandObserved         LifecycleKind = "command-observed"
-	SessionInitialized      LifecycleKind = "session-initialized"
-	InputAccepted           LifecycleKind = "input-accepted"
-	InputFinished           LifecycleKind = "input-finished"
-	UncorrelatedTermination LifecycleKind = "uncorrelated-termination"
-	ContentObserved         LifecycleKind = "content-observed"
-	InteractionObserved     LifecycleKind = "interaction-observed"
-	TaskObserved            LifecycleKind = "task-observed"
-	ProgressObserved        LifecycleKind = "progress-observed"
-	RunStateObserved        LifecycleKind = "run-state-observed"
-	ContinuationInitialized LifecycleKind = "continuation-initialized"
-	ContinuationFinished    LifecycleKind = "continuation-finished"
-	PrivateObservation      LifecycleKind = "private-observation"
+	CommandObserved           LifecycleKind = "command-observed"
+	SessionInitialized        LifecycleKind = "session-initialized"
+	InputAccepted             LifecycleKind = "input-accepted"
+	InputFinished             LifecycleKind = "input-finished"
+	UncorrelatedTermination   LifecycleKind = "uncorrelated-termination"
+	ContentObserved           LifecycleKind = "content-observed"
+	InteractionObserved       LifecycleKind = "interaction-observed"
+	TaskObserved              LifecycleKind = "task-observed"
+	ProgressObserved          LifecycleKind = "progress-observed"
+	RunStateObserved          LifecycleKind = "run-state-observed"
+	ContinuationInitialized   LifecycleKind = "continuation-initialized"
+	ContinuationFinished      LifecycleKind = "continuation-finished"
+	PrivateObservation        LifecycleKind = "private-observation"
+	CompactionCommandObserved LifecycleKind = "compaction-command-observed"
+	CompactionResultObserved  LifecycleKind = "compaction-result-observed"
 )
 
 type CommandState string
@@ -60,19 +62,22 @@ const (
 // additionally retains private extensions; none of these facts grants
 // public publication authority or permission to discard unhandled families.
 type LifecycleObservation struct {
-	Kind        LifecycleKind
-	SessionID   domain.ID
-	InputID     domain.ID
-	NativeID    string
-	Command     CommandState
-	Accepted    bool
-	Result      *NativeResult
-	Interaction *InteractionObservation
-	Task        *NativeTaskObservation     `json:"-"`
-	Progress    *NativeProgressObservation `json:"-"`
-	Run         *NativeRunObservation      `json:"-"`
-	Compaction  *NativeCompaction          `json:"-"`
-	Summary     *NativeCompactionSummary   `json:"-"`
+	Kind           LifecycleKind
+	SessionID      domain.ID
+	InputID        domain.ID
+	ActionID       domain.ID
+	NativeID       string
+	Command        CommandState
+	Accepted       bool
+	Result         *NativeResult
+	Interaction    *InteractionObservation
+	Task           *NativeTaskObservation     `json:"-"`
+	Progress       *NativeProgressObservation `json:"-"`
+	Run            *NativeRunObservation      `json:"-"`
+	Compaction     *NativeCompaction          `json:"-"`
+	Summary        *NativeCompactionSummary   `json:"-"`
+	CompactCommand *NativeCompactionCommand   `json:"-"`
+	CompactResult  *NativeCompactionResult    `json:"-"`
 	// TurnID is the original native init envelope identity. An automatic
 	// continuation has its own turn and never acknowledges a product input.
 	TurnID  string

@@ -48,7 +48,7 @@ func ObserveMainCompaction(boundary, summary StreamEvent, session domain.ID) (Hi
 	if anchor == "" || anchor == envelope.ID || anchor == envelope.LogicalParent || envelope.ID == envelope.LogicalParent {
 		return HistoryCompactionProof{}, historyUncertain()
 	}
-	if _, err := decodeCompactionSummary(summary.Body, session, &compactionSummaryBinding{boundary: envelope.ID, anchor: anchor}); err != nil {
+	if _, err := decodeCompactionSummary(summary.Body, session, &compactionSummaryBinding{boundary: envelope.ID, anchor: anchor, trigger: metadata.Trigger}); err != nil {
 		return HistoryCompactionProof{}, historyUncertain()
 	}
 	var fields map[string]json.RawMessage

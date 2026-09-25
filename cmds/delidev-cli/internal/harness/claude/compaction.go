@@ -20,6 +20,7 @@ const (
 type compactionSummaryBinding struct {
 	boundary string
 	anchor   string
+	trigger  CompactionTrigger
 }
 
 // NativeCompactionSummary retains the original synthetic user context. Its
@@ -27,6 +28,7 @@ type compactionSummaryBinding struct {
 type NativeCompactionSummary struct {
 	BoundaryID string
 	Blocks     []NativeContentBlock `json:"-"`
+	Text       *string              `json:"-"`
 }
 
 type PreservedSegment struct {
@@ -141,7 +143,7 @@ func (b *ExecutionBinding) observeCompaction(raw json.RawMessage) (*NativeCompac
 		if b.seen[anchor] || anchor == string(b.input) {
 			return nil, lifecycleUncertain()
 		}
-		b.pendingCompaction = &compactionSummaryBinding{boundary: envelope.ID, anchor: anchor}
+		b.pendingCompaction = &compactionSummaryBinding{boundary: envelope.ID, anchor: anchor, trigger: value.Trigger}
 	}
 	if b.logger != nil {
 		b.logger.Debug("Claude Code compaction observed", "owner_id", b.owner, "trigger", value.Trigger)
@@ -165,20 +167,33 @@ func decodeCompactionSummary(raw json.RawMessage, session domain.ID, pending *co
 		Parent    json.RawMessage `json:"parent_tool_use_id"`
 		Timestamp string          `json:"timestamp"`
 		Synthetic bool            `json:"isSynthetic"`
+		Replay    *bool           `json:"isReplay"`
 		Message   json.RawMessage `json:"message"`
 	}
 	var message struct {
-		Role    string            `json:"role"`
-		Content []json.RawMessage `json:"content"`
+		Role    string          `json:"role"`
+		Content json.RawMessage `json:"content"`
 	}
-	if pending == nil || decodeNativeObject(raw, &envelope) != nil || envelope.Type != "user" || envelope.ID != pending.anchor || envelope.Session != session || !envelope.Synthetic || !bytes.Equal(bytes.TrimSpace(envelope.Parent), []byte("null")) || decodeNativeObject(envelope.Message, &message) != nil || message.Role != "user" || len(message.Content) == 0 || len(message.Content) > 128 {
+	if pending == nil || decodeNativeObject(raw, &envelope) != nil || envelope.Type != "user" || envelope.ID != pending.anchor || envelope.Session != session || !envelope.Synthetic || (envelope.Replay != nil && *envelope.Replay) || !bytes.Equal(bytes.TrimSpace(envelope.Parent), []byte("null")) || decodeNativeObject(envelope.Message, &message) != nil || message.Role != "user" {
 		return nil, lifecycleUncertain()
 	}
 	if _, err := time.Parse(time.RFC3339Nano, envelope.Timestamp); err != nil {
 		return nil, lifecycleUncertain()
 	}
 	value := &NativeCompactionSummary{BoundaryID: pending.boundary}
-	for _, raw := range message.Content {
+	var blocks []json.RawMessage
+	if json.Unmarshal(message.Content, &blocks) != nil {
+		var text string
+		if pending.trigger != ManualCompaction || json.Unmarshal(message.Content, &text) != nil || domain.Text(text, "native compaction summary", domain.MaxMessageText, false) != nil {
+			return nil, lifecycleUncertain()
+		}
+		value.Text = &text
+		return value, nil
+	}
+	if len(blocks) == 0 || len(blocks) > 128 {
+		return nil, lifecycleUncertain()
+	}
+	for _, raw := range blocks {
 		block, err := decodeContentBlock(raw)
 		if err != nil || block.Kind != TextBlock {
 			return nil, lifecycleUncertain()
