@@ -3,8 +3,8 @@
 use std::{path::PathBuf, sync::Arc};
 
 use delidev_desktop::{
-    Connection, Connector, LocalServerStatus, LocalWorkerProof, NativeFailure, Supervision,
-    bundled_sidecar, default_data_root,
+    Connection, Connector, LocalServerStatus, LocalWorkerAction, LocalWorkerProof,
+    LocalWorkerStatus, NativeFailure, Supervision, bundled_sidecar, default_data_root,
 };
 use tauri::{WebviewWindow, WebviewWindowBuilder, Wry, webview::NewWindowResponse};
 
@@ -81,6 +81,26 @@ async fn local_worker_proof(
     Ok(proof)
 }
 
+#[tauri::command]
+async fn local_worker_control(
+    window: WebviewWindow<Wry>,
+    connector: tauri::State<'_, Arc<Connector>>,
+    action: LocalWorkerAction,
+    generation: Option<String>,
+) -> Result<LocalWorkerStatus, NativeFailure> {
+    if window.label() != "main"
+        || !trusted_url(&window.url().map_err(|_| NativeFailure::PermissionDenied)?)
+    {
+        return Err(NativeFailure::PermissionDenied);
+    }
+    let connector = Arc::clone(connector.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        connector.local_worker(action, generation.as_deref())
+    })
+    .await
+    .map_err(|_| NativeFailure::SidecarFailed)?
+}
+
 fn run() -> Result<(), NativeFailure> {
     let mut args = std::env::args_os().skip(1);
     let root = match args.next() {
@@ -102,7 +122,8 @@ fn run() -> Result<(), NativeFailure> {
         .invoke_handler(tauri::generate_handler![
             connect_local,
             local_server_status,
-            local_worker_proof
+            local_worker_proof,
+            local_worker_control
         ])
         .setup(|app| {
             let result = (|| -> tauri::Result<()> {

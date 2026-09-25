@@ -20,6 +20,9 @@ const OUTPUT_LIMIT: u64 = 64 << 10;
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(40);
 const ORIGINS: &str = "tauri://localhost,http://tauri.localhost,http://127.0.0.1:46311";
 
+mod local_worker;
+pub use local_worker::{LocalWorkerAction, LocalWorkerState, LocalWorkerStatus};
+
 mod supervision;
 pub use supervision::{LocalServerState, LocalServerStatus, Supervision};
 

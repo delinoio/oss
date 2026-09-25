@@ -252,3 +252,106 @@ fn worker_proof_requires_a_distinct_canonical_machine_identity() {
         assert!(verified_connection(&document(&value), &value, DeviceType::Worker).is_err());
     }
 }
+
+#[test]
+#[ignore = "requires an explicitly built Go sidecar; starts only its owned private Worker"]
+fn real_local_worker_registration_start_status_and_offline_stop() {
+    let binary =
+        PathBuf::from(std::env::var_os("DELIDEV_TEST_SIDECAR").expect("explicit sidecar required"));
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path().join("server");
+    let mut connector = Connector::new(binary, root).unwrap();
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    connector.listen = listener.local_addr().unwrap().to_string();
+    drop(listener);
+    struct Stop<'a>(&'a Connector);
+    impl Drop for Stop<'_> {
+        fn drop(&mut self) {
+            if let Ok(status) = self.0.local_worker(LocalWorkerAction::Status, None) {
+                if let Some(generation) = status.generation {
+                    let _ = self
+                        .0
+                        .local_worker(LocalWorkerAction::Stop, Some(&generation));
+                }
+            }
+            let _ = self.0.run(&["server".into(), "stop".into()]);
+        }
+    }
+    let _stop = Stop(&connector);
+    connector.connect().unwrap();
+    assert!(
+        connector
+            .local_worker(LocalWorkerAction::Status, None)
+            .is_err()
+    );
+    assert!(!connector.root.join("worker").exists());
+    let registered = connector
+        .local_worker(LocalWorkerAction::Register, None)
+        .unwrap();
+    assert_eq!(registered.state, LocalWorkerState::NotStarted);
+    let retry = connector
+        .local_worker(LocalWorkerAction::Register, None)
+        .unwrap();
+    assert_eq!(retry.machine_id, registered.machine_id);
+    let started = connector
+        .local_worker(LocalWorkerAction::Start, None)
+        .unwrap();
+    assert_eq!(started.state, LocalWorkerState::Running);
+    let generation = started.generation.as_deref().unwrap();
+    assert_eq!(started.machine_id, registered.machine_id);
+    assert_eq!(
+        connector
+            .local_worker(LocalWorkerAction::Start, None)
+            .unwrap()
+            .generation,
+        started.generation
+    );
+    assert!(
+        connector
+            .local_worker(LocalWorkerAction::Stop, None)
+            .is_err()
+    );
+    assert!(
+        connector
+            .local_worker(
+                LocalWorkerAction::Stop,
+                Some(&uuid::Uuid::now_v7().to_string())
+            )
+            .is_err()
+    );
+    assert_eq!(
+        connector
+            .local_worker(LocalWorkerAction::Status, None)
+            .unwrap()
+            .state,
+        LocalWorkerState::Running
+    );
+    // A second native controller reads the same process; dropping it leaves the
+    // detached Worker running without changing its scope or process generation.
+    let mut observer =
+        Connector::new(connector.executable.clone(), connector.root.clone()).unwrap();
+    observer.listen = connector.listen.clone();
+    assert_eq!(
+        observer
+            .local_worker(LocalWorkerAction::Status, None)
+            .unwrap()
+            .generation,
+        started.generation
+    );
+    drop(observer);
+    connector.run(&["server".into(), "stop".into()]).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while connector.root.join("server.json").exists() {
+        assert!(Instant::now() < deadline);
+        thread::sleep(Duration::from_millis(25));
+    }
+    let stopped = connector
+        .local_worker(LocalWorkerAction::Stop, Some(generation))
+        .unwrap();
+    assert_eq!(stopped.state, LocalWorkerState::Exited);
+    assert!(!stopped.controller_active);
+    assert_eq!(
+        connector.local_worker_proof().unwrap().machine_id,
+        registered.machine_id
+    );
+}

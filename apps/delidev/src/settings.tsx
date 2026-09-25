@@ -6,6 +6,7 @@ import { document, encode, resourceName, text, type Document } from "./documents
 import { ConfigurationFields, editableKinds, kindNames, newConfiguration } from "./configuration-fields";
 import { ConfigurationDeletion, RoutingPreview } from "./configuration-actions";
 import { JobState, TrackedJob } from "./jobs";
+import { LocalWorkerControls, type ControlLocalWorker } from "./local-worker-controls";
 import { MachineSettings } from "./machine-settings";
 import { AccountConnection } from "./account-connection";
 import { useRetainedMutation } from "./mutation";
@@ -33,7 +34,7 @@ export function ConfigurationEditor({ kind, initial, active, saved, cancel }: { 
   </form>;
 }
 
-export function Settings({ close, visible = true }: { close: () => void; visible?: boolean }) {
+export function Settings({ close, visible = true, controlLocalWorker }: { close: () => void; visible?: boolean; controlLocalWorker?: ControlLocalWorker }) {
   const [kind, setKind] = useState(EntityKind.PROVIDER);
   const [page, setPage] = useState("");
   const [editing, setEditing] = useState<{ initial?: Resource; key: string }>();
@@ -46,9 +47,10 @@ export function Settings({ close, visible = true }: { close: () => void; visible
   const tabs = [[EntityKind.PROVIDER, "Providers"], [EntityKind.MODEL, "Models"], [EntityKind.ACCOUNT, "AI accounts"], [EntityKind.AGENT, "Agent Workers"], [EntityKind.TEMPLATE, "Instructions"], [EntityKind.PROJECT, "Projects"], [EntityKind.REPOSITORY, "Repositories"], [EntityKind.MACHINE, "Execution Workers"]] as const;
   const done = () => { setEditing(undefined); setDeleting(undefined); void client.invalidateQueries({ refetchType: "active" }); };
   return <Modal title="Settings" close={close} visible={visible}><nav aria-label="Settings categories">{tabs.map(([value, label]) => <button key={value} disabled={Boolean(editing || account || deleting || routing || machine)} aria-pressed={kind === value} onClick={() => { setKind(value); setPage(""); }}>{label}</button>)}</nav>
+    {controlLocalWorker ? <div hidden={kind !== EntityKind.MACHINE || Boolean(machine || editing || deleting || routing || account)}><LocalWorkerControls control={controlLocalWorker} active={visible && kind === EntityKind.MACHINE} changed={() => void client.invalidateQueries({ refetchType: "active" })} /></div> : null}
     {machine ? <MachineSettings initial={machine} active={visible} close={() => { setMachine(undefined); void result.refetch(); }} /> : deleting ? <ConfigurationDeletion initial={deleting} deleted={done} close={() => setDeleting(undefined)} /> : routing ? <RoutingPreview agent={routing} active={visible} close={() => setRouting(undefined)} /> : editing ? <ConfigurationEditor key={editing.key} kind={kind} initial={editing.initial} active={visible} saved={done} cancel={() => setEditing(undefined)} /> : account ? <AccountConnection initial={account} active={visible} close={() => { setAccount(undefined); void result.refetch(); }} /> : <>
       <header><p>Saved on the selected server.</p><button onClick={() => void result.refetch()}>Refresh settings</button></header>
-      {editableKinds.includes(kind) ? <button className="primary" onClick={() => setEditing({ key: newRequestId() })}>New {kindNames[kind]}</button> : <p>Configure these entries through the DeliDev CLI.</p>}
+      {editableKinds.includes(kind) ? <button className="primary" onClick={() => setEditing({ key: newRequestId() })}>New {kindNames[kind]}</button> : kind !== EntityKind.MACHINE || !controlLocalWorker ? <p>Configure these entries through the DeliDev CLI.</p> : null}
       <Problem error={result.error} />{result.data?.resources.map((row) => { const data = document(row); return <article className="result" key={row.id}><h3>{resourceName(row)}</h3>{text(data.health) ? <p>Status: {text(data.health)}</p> : null}{text(data.harness) ? <p>Harness: {text(data.harness)}</p> : null}{kind === EntityKind.TEMPLATE ? <pre>{text(data.contents)}</pre> : null}<small>{row.id}</small><div className="actions">{editableKinds.includes(kind) ? <button disabled={row.schemaVersion !== 1} onClick={() => setEditing({ initial: row, key: newRequestId() })}>Edit {resourceName(row)}</button> : null}{editableKinds.includes(kind) ? <button disabled={row.schemaVersion !== 1} onClick={() => setDeleting(row)}>Delete {resourceName(row)}</button> : null}{kind === EntityKind.AGENT ? <button disabled={row.schemaVersion !== 1} onClick={() => setRouting(row)}>Preview routing</button> : null}{kind === EntityKind.MACHINE ? <button disabled={row.schemaVersion !== 1} onClick={() => setMachine(row)}>Inspect installed harnesses</button> : null}{kind === EntityKind.ACCOUNT ? <button disabled={row.schemaVersion !== 1} onClick={() => setAccount(row)}>Manage connection</button> : null}</div></article>; })}
       {result.data?.resources.length === 0 ? <p>No saved entries.</p> : null}<nav aria-label="Settings pages"><button disabled={!page || result.isFetching} onClick={() => setPage("")}>First page</button><button disabled={!result.data?.nextPageToken || result.isFetching} onClick={() => setPage(result.data!.nextPageToken)}>Next page</button></nav>
     </>}

@@ -5,6 +5,7 @@ import { createDeliDevTransport } from "@delinoio/delidev-api-client";
 import { App } from "./App";
 import { Problem } from "./ui";
 import { LocalServerControls, LocalServerState, LocalServerStatusText, type LocalServerStatus } from "./local-server";
+import type { ControlLocalWorker, LocalWorkerStatus } from "./local-worker-controls";
 import { verifyLocalServer } from "./connection";
 
 interface NativeConnection { endpoint: string; token: string; server_id: string; device_id: string }
@@ -58,7 +59,13 @@ export function Desktop() {
     if (!selected || previous.current !== selected || proof.endpoint !== selected.endpoint || proof.server_id !== selected.server_id) throw new Error("Local Worker authority changed");
     return { machineId: proof.machine_id, token: proof.token };
   };
+  const controlLocalWorker: ControlLocalWorker = async (action, generation) => {
+    const selected = previous.current;
+    const value = await invoke<LocalWorkerStatus>("local_worker_control", { action, generation });
+    if (!selected || previous.current !== selected) throw new Error("Local Worker connection changed");
+    return value;
+  };
   const problem = typeof error === "string" && Object.hasOwn(nativeProblems, error) ? <p role="alert">{nativeProblems[error]}</p> : <Problem error={error} />;
-  if (transport) return <App readLocalWorker={readLocalWorker} transport={transport} connectionReady={status?.state === LocalServerState.Ready} connectionEpoch={connectionEpoch} localServer={<LocalServerControls status={status} restart={() => void connect()} busy={busy} problem={problem} />} />;
+  if (transport) return <App controlLocalWorker={controlLocalWorker} readLocalWorker={readLocalWorker} transport={transport} connectionReady={status?.state === LocalServerState.Ready} connectionEpoch={connectionEpoch} localServer={<LocalServerControls status={status} restart={() => void connect()} busy={busy} problem={problem} />} />;
   return <main className="connect-page"><h1>DeliDev</h1><h2>Connect to your local server</h2><p>The server and its sessions continue when you close DeliDev.</p>{isTauri() ? <button className="primary" disabled={busy} onClick={() => void connect()}>{busy ? "Connecting…" : "Start or connect"}</button> : <p>Open the DeliDev desktop app to connect. Browser clients are not supported.</p>}{isTauri() ? <LocalServerStatusText status={status} /> : null}{problem}</main>;
 }

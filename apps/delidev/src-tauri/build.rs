@@ -5,6 +5,7 @@ fn main() {
             "connect_local",
             "local_server_status",
             "local_worker_proof",
+            "local_worker_control",
         ]),
     ))
     .expect("DeliDev native build configuration must be valid");
