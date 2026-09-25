@@ -68,7 +68,7 @@ func (s *Service) PublishExecution(ctx context.Context, req *connect.Request[pb.
 		if !session.OwnsExecution(input) || session.ActiveExecutionID != input.ExecutionID {
 			return nil, executionEventConflict()
 		}
-		if input.Configuration.Harness != domain.Codex || domain.ID(event.NativeThreadID).Validate() != nil || (event.NativeTurnID != "" && domain.ID(event.NativeTurnID).Validate() != nil) {
+		if input.Configuration.Harness != domain.Codex || domain.NativeIdentity(event.NativeThreadID).Validate(input.Configuration.Harness, domain.NativeThreadIdentity) != nil || (event.NativeTurnID != "" && domain.NativeIdentity(event.NativeTurnID).Validate(input.Configuration.Harness, domain.NativeTurnIdentity) != nil) {
 			return nil, domain.Fail(domain.Unsupported, "This native event identity has no supported publication profile.", "Validate the installed harness adapter before publishing events.")
 		}
 		ir, err := tx.Get(domain.QueueKind, input.InputID)

@@ -62,7 +62,7 @@ func queueContinuation(tx *store.Tx, sr store.Record, session domain.Session, ex
 	}
 	var assignment domain.ExecutionJobInput
 	var completion domain.ExecutionCompletion
-	if domain.Decode(job.Input, &assignment) != nil || assignment.Validate() != nil || !session.OwnsExecution(assignment) || assignment.SessionID != sr.ID || job.MachineID != session.MachineID || domain.Decode(job.Output, &completion) != nil || completion.Version != 2 || completion.Validate() != nil || session.Execution.JobID != previous.ID {
+	if domain.Decode(job.Input, &assignment) != nil || assignment.Validate() != nil || !session.OwnsExecution(assignment) || assignment.SessionID != sr.ID || job.MachineID != session.MachineID || domain.Decode(job.Output, &completion) != nil || completion.Version != 2 || completion.ValidateForHarness(assignment.Configuration.Harness) != nil || session.Execution.JobID != previous.ID {
 		return store.Record{}, nativeCompletionUncertain()
 	}
 	terminalState := map[domain.ExecutionOutcome]domain.JobState{domain.ExecutionSucceeded: domain.JobSucceeded, domain.ExecutionFailed: domain.JobFailed, domain.ExecutionStopped: domain.JobCanceled}[completion.Outcome]

@@ -17,7 +17,7 @@ import (
 )
 
 func (f *publicationFixture) completion() domain.ExecutionCompletion {
-	return domain.ExecutionCompletion{Version: 1, ExecutionID: f.input.ExecutionID, InputID: f.input.InputID, NativeThreadID: f.thread, NativeTurnID: f.turn, LastSequence: 3, Outcome: domain.ExecutionSucceeded, CleanupVerified: true}
+	return domain.ExecutionCompletion{Version: 1, ExecutionID: f.input.ExecutionID, InputID: f.input.InputID, NativeThreadID: domain.NativeIdentity(f.thread), NativeTurnID: domain.NativeIdentity(f.turn), LastSequence: 3, Outcome: domain.ExecutionSucceeded, CleanupVerified: true}
 }
 
 func TestNativeWorkerLossRetainsInputAndTerminalFacts(t *testing.T) {
@@ -136,7 +136,7 @@ func TestNativeCompletionRequiresPublishedTerminalAndOwnedCleanup(t *testing.T) 
 			case "missing-cleanup":
 				completion.CleanupVerified = false
 			case "wrong-turn":
-				completion.NativeTurnID = domain.NewID()
+				completion.NativeTurnID = domain.NativeIdentity(domain.NewID())
 			case "stale-sequence":
 				completion.LastSequence++
 			}

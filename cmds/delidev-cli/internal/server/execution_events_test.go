@@ -327,3 +327,22 @@ func TestExecutionPublicationRetainsBoundedMessageWithoutTruncation(t *testing.T
 		t.Fatal("failed append changed or truncated retained text")
 	}
 }
+
+func TestCodexPublicationKeepsItsOriginalNativeIdentityProfile(t *testing.T) {
+	f := newPublicationFixture(t)
+	f.publish(t, f.event(domain.ExecutionThreadBound, 1))
+	event := f.event(domain.ExecutionInputAccepted, 2)
+	event.NativeTurnID = "93ce72f1-5a6e-4181-9b3d-219cbb424a24"
+	if _, err := f.call(f.requestEvent(t, event)); err == nil {
+		t.Fatal("Claude UUID-v4 turn changed the selected Codex publication profile")
+	}
+	record, err := f.service.Store.Get(context.Background(), domain.SessionKind, f.input.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := store.Decode[domain.Session](record)
+	if err != nil || session.Execution == nil || session.Execution.LastSequence != 1 || session.Execution.NativeTurnID != "" {
+		t.Fatal("rejected native identity partially advanced execution", err)
+	}
+	f.publish(t, f.event(domain.ExecutionInputAccepted, 2))
+}

@@ -325,7 +325,7 @@ func TestExecutionRecoveryFailureAllowsNewExplicitInspection(t *testing.T) {
 	_, first := acceptRecovery(t, f)
 	claimed, evidence := claimRecovery(t, f, first.ExecutionRecoveryJob)
 	bad := evidence
-	bad.Completion.NativeTurnID = domain.NewID()
+	bad.Completion.NativeTurnID = domain.NativeIdentity(domain.NewID())
 	raw, _ := json.Marshal(bad)
 	_, err := f.client.ReportWork(context.Background(), ownerRequest(security.Identity{Token: f.workerToken}, &pb.ReportWorkRequest{Mutation: &pb.Mutation{Id: string(claimed.ID), ExpectedRevision: claimed.Revision, RequestId: string(domain.NewID())}, MachineId: string(f.input.MachineID), InstanceId: string(f.instance), OutputJson: raw}))
 	if err != nil {

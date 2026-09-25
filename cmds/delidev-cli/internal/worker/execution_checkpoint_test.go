@@ -59,7 +59,7 @@ func newCheckpointFixture(t *testing.T) checkpointFixture {
 	}
 	id := domain.NewID()
 	bound := codex.ThreadResult{RequestID: input.ThreadRequestID, Thread: &codex.Thread{ID: id, SessionID: id}, Effective: &codex.EffectiveSettings{Model: configuration.NativeModel, Provider: codex.APIProvider, Cwd: root, ApprovalPolicy: codex.ApprovalOnRequest, ApprovalsReviewer: "user", Sandbox: codex.Sandbox{Type: codex.ReadOnly}}}
-	completion := domain.ExecutionCompletion{Version: 1, ExecutionID: input.ExecutionID, InputID: input.InputID, NativeThreadID: id, NativeTurnID: domain.NewID(), LastSequence: 10, Outcome: domain.ExecutionSucceeded, CleanupVerified: true}
+	completion := domain.ExecutionCompletion{Version: 1, ExecutionID: input.ExecutionID, InputID: input.InputID, NativeThreadID: domain.NativeIdentity(id), NativeTurnID: domain.NativeIdentity(domain.NewID()), LastSequence: 10, Outcome: domain.ExecutionSucceeded, CleanupVerified: true}
 	raw, _ := json.Marshal(input)
 	jobID := domain.NewID()
 	ref := ExecutionCheckpointRef{JobID: jobID, SessionID: input.SessionID, MachineID: input.MachineID, HistoryExecutionID: input.ExecutionID, AssignmentInputDigest: executionInputDigest(raw), ConfigurationDigest: digest, AccountID: accountID, ConnectionID: input.ConnectionID, Completion: completion, InputMode: input.Input.Mode, PromptDigest: sha256.Sum256([]byte(input.Input.Prompt))}
@@ -140,7 +140,7 @@ func TestExecutionCheckpointContinuationKeepsOriginalHistoryRoot(t *testing.T) {
 	next.input.Continuation = &domain.ExecutionContinuation{HistoryExecutionID: f.input.ExecutionID, HistoryRequestID: domain.NewID(), Previous: previous, Completion: f.ref.Completion, AssignmentInputDigest: f.ref.AssignmentInputDigest, InputMode: f.input.Input.Mode, PromptDigest: executionInputDigest([]byte(f.input.Input.Prompt)), Intent: domain.ContinueAutomatically}
 	next.job.Input, _ = json.Marshal(next.input)
 	next.bound.RequestID = next.input.ThreadRequestID
-	next.completion.ExecutionID, next.completion.InputID, next.completion.NativeTurnID = next.input.ExecutionID, next.input.InputID, domain.NewID()
+	next.completion.ExecutionID, next.completion.InputID, next.completion.NativeTurnID = next.input.ExecutionID, next.input.InputID, domain.NativeIdentity(domain.NewID())
 	next.ref.JobID, next.ref.AssignmentInputDigest = next.jobID, executionInputDigest(next.job.Input)
 	next.ref.InputMode, next.ref.PromptDigest = next.input.Input.Mode, sha256.Sum256([]byte(next.input.Input.Prompt))
 	if _, err := harness.PrivateRuntimeEnvironment(filepath.Join(f.root, "runtimes", string(next.input.ExecutionID))); err != nil {
@@ -178,8 +178,8 @@ func TestExecutionCheckpointRejectsChangedPredecessor(t *testing.T) {
 		func(r *ExecutionCheckpointRef) { r.ConnectionID = domain.NewID() },
 		func(r *ExecutionCheckpointRef) { r.Completion.ExecutionID = domain.NewID() },
 		func(r *ExecutionCheckpointRef) { r.Completion.InputID = domain.NewID() },
-		func(r *ExecutionCheckpointRef) { r.Completion.NativeThreadID = domain.NewID() },
-		func(r *ExecutionCheckpointRef) { r.Completion.NativeTurnID = domain.NewID() },
+		func(r *ExecutionCheckpointRef) { r.Completion.NativeThreadID = domain.NativeIdentity(domain.NewID()) },
+		func(r *ExecutionCheckpointRef) { r.Completion.NativeTurnID = domain.NativeIdentity(domain.NewID()) },
 		func(r *ExecutionCheckpointRef) { r.Completion.LastSequence++ },
 		func(r *ExecutionCheckpointRef) { r.Completion.CleanupVerified = false },
 		func(r *ExecutionCheckpointRef) { r.Completion.Outcome = domain.ExecutionStopped },
@@ -298,7 +298,7 @@ func TestExecutionCheckpointRequiresExactAssignmentAndConfirmedCleanup(t *testin
 	for _, change := range []func(*checkpointFixture){
 		func(f *checkpointFixture) { f.completion.CleanupVerified = false },
 		func(f *checkpointFixture) { f.completion.Outcome = domain.ExecutionRunning },
-		func(f *checkpointFixture) { f.completion.NativeThreadID = domain.NewID() },
+		func(f *checkpointFixture) { f.completion.NativeThreadID = domain.NativeIdentity(domain.NewID()) },
 		func(f *checkpointFixture) { f.input.Input.Prompt = "changed" },
 		func(f *checkpointFixture) { f.job.Input = json.RawMessage(`{}`) },
 		func(f *checkpointFixture) { f.job.MachineID = domain.NewID() },

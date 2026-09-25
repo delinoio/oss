@@ -295,7 +295,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		default:
 			return nil, publicationUncertain()
 		}
-		completion := domain.ExecutionCompletion{Version: 1, ExecutionID: input.ExecutionID, InputID: input.InputID, NativeThreadID: bound.Thread.ID, NativeTurnID: turn.TurnID, LastSequence: sequence, Outcome: outcome, CleanupVerified: true}
+		completion := domain.ExecutionCompletion{Version: 1, ExecutionID: input.ExecutionID, InputID: input.InputID, NativeThreadID: domain.NativeIdentity(bound.Thread.ID), NativeTurnID: domain.NativeIdentity(turn.TurnID), LastSequence: sequence, Outcome: outcome, CleanupVerified: true}
 		if err := completion.Validate(); err != nil {
 			return nil, err
 		}

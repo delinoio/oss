@@ -724,7 +724,7 @@ func assertNativeWorkerCheckpoint(t *testing.T, f *publicationFixture, root stri
 	digest := sha256.Sum256(job.Input)
 	ref := worker.ExecutionCheckpointRef{JobID: f.job, SessionID: f.input.SessionID, MachineID: f.input.MachineID, HistoryExecutionID: f.input.ExecutionID, AssignmentInputDigest: hex.EncodeToString(digest[:]), ConfigurationDigest: f.input.ConfigurationDigest, AccountID: f.input.AccountID, ConnectionID: f.input.ConnectionID, Completion: completion, InputMode: f.input.Input.Mode, PromptDigest: sha256.Sum256([]byte(f.input.Input.Prompt))}
 	checkpoint, err := worker.ReadCodexExecutionCheckpoint(root, ref)
-	if err != nil || checkpoint.Native.ThreadID != completion.NativeThreadID || checkpoint.Native.TurnID != completion.NativeTurnID || checkpoint.Native.Effective.Model != f.input.Configuration.NativeModel {
+	if err != nil || string(checkpoint.Native.ThreadID) != string(completion.NativeThreadID) || string(checkpoint.Native.TurnID) != string(completion.NativeTurnID) || checkpoint.Native.Effective.Model != f.input.Configuration.NativeModel {
 		t.Fatalf("completed native Worker did not retain exact continuation evidence: %v", err)
 	}
 	var original store.Record

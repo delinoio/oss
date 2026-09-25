@@ -77,7 +77,7 @@ func (f *continuationFixture) complete(t *testing.T, outcome domain.ExecutionOut
 func (f *continuationFixture) finish(t *testing.T, outcome domain.ExecutionOutcome) *pb.ReportWorkRequest {
 	t.Helper()
 	f.publish(t, domain.ExecutionTurnFinished, 3, outcome)
-	completion := domain.ExecutionCompletion{Version: 2, ExecutionID: f.input.ExecutionID, InputID: f.input.InputID, NativeThreadID: f.thread, NativeTurnID: f.turn, LastSequence: 3, Outcome: outcome, CleanupVerified: true, NativeCheckpointDigest: strings.Repeat("ab", 32)}
+	completion := domain.ExecutionCompletion{Version: 2, ExecutionID: f.input.ExecutionID, InputID: f.input.InputID, NativeThreadID: domain.NativeIdentity(f.thread), NativeTurnID: domain.NativeIdentity(f.turn), LastSequence: 3, Outcome: outcome, CleanupVerified: true, NativeCheckpointDigest: strings.Repeat("ab", 32)}
 	raw, _ := json.Marshal(completion)
 	req := &pb.ReportWorkRequest{Mutation: acctMutation(f.job, domain.NewID()), MachineId: f.machine.Id, InstanceId: f.workerInstance, OutputJson: raw}
 	if _, err := f.workerClient.ReportWork(context.Background(), ownerRequest(f.workerIdentity, req)); err != nil {
