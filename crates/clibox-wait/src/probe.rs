@@ -120,7 +120,7 @@ async fn resolve(host: &str, port: u16) -> Result<Vec<SocketAddr>, Code> {
         builder.options_mut().ip_strategy = LookupIpStrategy::Ipv4AndIpv6;
         builder.options_mut().cache_size = 0;
         builder.options_mut().attempts = 1;
-        Ok::<_, Code>(builder.build())
+        builder.build().map_err(|_| Code::DnsConfiguration)
     })
     .await
     .map_err(|_| Code::DnsConfiguration)??;
