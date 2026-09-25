@@ -20,7 +20,10 @@ func protocolOutput() (HarnessDiscoveryInput, HarnessDiscoveryOutput) {
 		if i.Harness == GrokBuild {
 			i.Version = GrokProtocolVersion
 		}
-		if i.Harness == Codex || i.Harness == ClaudeCode || i.Harness == GrokBuild {
+		if i.Harness == OpenCode {
+			i.Version = OpenCodeProtocolVersion
+		}
+		if i.Harness == Codex || i.Harness == ClaudeCode || i.Harness == GrokBuild || i.Harness == OpenCode {
 			i.Protocol.State = ProtocolVerified
 			i.Protocol.Problem = nil
 			i.ProtocolVerified = true
@@ -41,7 +44,7 @@ func TestNativeProtocolObservationIsSeparateFromExecutionReadiness(t *testing.T)
 			t.Fatal("raw protocol error retained")
 		}
 	}
-	for _, change := range []string{"unrequested", "foreign-protocol", "unverified-version", "unverified-claude-version", "unverified-grok-version", "missing", "false-state", "unimplemented-profile", "execution-capability", "claude-execution-capability", "grok-execution-capability"} {
+	for _, change := range []string{"unrequested", "foreign-protocol", "unverified-version", "unverified-claude-version", "unverified-grok-version", "unverified-opencode-version", "missing", "false-state", "execution-capability", "claude-execution-capability", "grok-execution-capability", "opencode-execution-capability"} {
 		t.Run(change, func(t *testing.T) {
 			input, output := protocolOutput()
 			switch change {
@@ -59,16 +62,16 @@ func TestNativeProtocolObservationIsSeparateFromExecutionReadiness(t *testing.T)
 				output.Installations[0].Protocol = nil
 			case "false-state":
 				output.Installations[0].ProtocolVerified = false
-			case "unimplemented-profile":
-				output.Installations[2].Protocol.State = ProtocolVerified
-				output.Installations[2].ProtocolVerified = true
-				output.Installations[2].Protocol.Problem = nil
+			case "unverified-opencode-version":
+				output.Installations[2].Version = "1.18.33"
 			case "execution-capability":
 				output.Installations[0].Capabilities = []Capability{CapabilityExecute}
 			case "claude-execution-capability":
 				output.Installations[1].Capabilities = []Capability{CapabilityExecute}
 			case "grok-execution-capability":
 				output.Installations[3].Capabilities = []Capability{CapabilityExecute}
+			case "opencode-execution-capability":
+				output.Installations[2].Capabilities = []Capability{CapabilityExecute}
 			}
 			if err := output.ValidateDiscovery(input); err == nil {
 				t.Fatal("invalid observation accepted")

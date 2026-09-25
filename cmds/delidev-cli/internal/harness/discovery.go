@@ -18,6 +18,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/claude"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/grok"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/opencode"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
@@ -135,8 +136,14 @@ func Discover(ctx context.Context, config DiscoveryConfig, input domain.HarnessD
 		i.Problem = domain.InstallationProblem(i.State)
 		if input.VerifyProtocol && i.State == domain.InstallationDetected {
 			i.Protocol = &domain.ProtocolObservation{Protocol: domain.ProtocolFor(i.Harness), State: domain.ProtocolUnsupported}
-			if i.Harness == domain.Codex || i.Harness == domain.ClaudeCode || i.Harness == domain.GrokBuild {
+			if i.Harness == domain.Codex || i.Harness == domain.ClaudeCode || i.Harness == domain.GrokBuild || i.Harness == domain.OpenCode {
 				home := filepath.Join(directory, string(i.Harness))
+				if i.Harness == domain.OpenCode {
+					// The native --version command creates XDG runtime directories.
+					// Keep protocol initialization fresh rather than accepting any
+					// state a preceding installation probe happened to leave behind.
+					home = filepath.Join(directory, "opencode-protocol")
+				}
 				env, err := probeEnvironment(home)
 				if err != nil {
 					return domain.HarnessDiscoveryOutput{}, err
@@ -154,6 +161,8 @@ func Discover(ctx context.Context, config DiscoveryConfig, input domain.HarnessD
 					err = claude.Probe(bounded, claude.ProbeConfig{Process: config, Version: i.Version, Home: filepath.Join(home, "claude")})
 				case domain.GrokBuild:
 					err = grok.Probe(bounded, grok.ProbeConfig{Process: config, Version: i.Version, Home: filepath.Join(home, "grok")})
+				case domain.OpenCode:
+					err = opencode.Probe(bounded, opencode.ProbeConfig{Process: config, Version: i.Version, Home: filepath.Join(home, "opencode")})
 				}
 				cancel()
 				if err != nil && domain.SafeError(err).Code == domain.RecoveryRequired {
