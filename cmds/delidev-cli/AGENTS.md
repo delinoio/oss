@@ -160,3 +160,4 @@
 - Windows native launch classification must include documented incompatible-image, machine-type and missing-subsystem loader statuses without exposing OS diagnostic strings.
 
 - A reported execution-claim publication failure before lease issuance may roll back only that attempt's empty private process owner and exact new claim, restoring the prior closed claim for continuation. Hold the session lock; retain history, workspace and all unexpected ownership evidence. Never apply this rollback to a returned lease or crash-recovered active claim.
+- Create process scope directories exclusively. Before any native startup attempt, a failed controller creation may remove and synchronize only its original empty directory; preserve replaced/nonempty scopes and report cleanup uncertainty. Never apply this shortcut after native startup is attempted.

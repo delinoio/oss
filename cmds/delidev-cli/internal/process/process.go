@@ -106,11 +106,14 @@ func Start(ctx context.Context, config Config) (*Handle, error) {
 		return nil, err
 	}
 	scope := filepath.Join(directory, string(domain.NewID()))
-	if err := security.PrivateDir(scope); err != nil {
-		return nil, err
+	logger := config.Logger
+	if logger == nil {
+		logger = slog.New(slog.NewJSONHandler(io.Discard, nil))
 	}
-	controller, err := security.TryLock(filepath.Join(scope, "controller.lock"))
+	logger = logger.With("owner_id", config.OwnerID, "process_scope_id", filepath.Base(scope))
+	controller, err := prepareController(scope, security.TryLock, security.SyncParent)
 	if err != nil {
+		logger.WarnContext(ctx, "native process controller preparation failed", "code", domain.SafeError(err).Code)
 		return nil, err
 	}
 	command := exec.Command(config.Executable, config.Args...)
@@ -118,11 +121,6 @@ func Start(ctx context.Context, config Config) (*Handle, error) {
 	command.Dir = config.Cwd
 	command.Stdout = config.Stdout
 	command.Stderr = config.Stderr
-	logger := config.Logger
-	if logger == nil {
-		logger = slog.New(slog.NewJSONHandler(io.Discard, nil))
-	}
-	logger = logger.With("owner_id", config.OwnerID, "process_scope_id", filepath.Base(scope))
 	p, err := startProcess(command, scope, config.OwnerID)
 	if err != nil {
 		_ = controller.Close()
@@ -148,6 +146,44 @@ func Start(ctx context.Context, config Config) (*Handle, error) {
 	}()
 	return h, nil
 }
+
+// The parent is already private, including its inheritable Windows ACL. Create
+// this final component exclusively so rollback never adopts an existing scope.
+func prepareController(scope string, lock func(string) (*security.Lock, error), syncParent func(string) error) (*security.Lock, error) {
+	if err := os.Mkdir(scope, 0700); err != nil {
+		return nil, err
+	}
+	// Stat an open handle to capture Windows file identity immediately. Lstat
+	// may defer identity lookup until SameFile, after the path was replaced.
+	file, err := os.Open(scope)
+	var original os.FileInfo
+	if err == nil {
+		original, err = file.Stat()
+		err = errors.Join(err, file.Close())
+	}
+	if err == nil {
+		err = security.CheckPrivateDir(scope)
+	}
+	if err == nil {
+		var controller *security.Lock
+		controller, err = lock(filepath.Join(scope, "controller.lock"))
+		if err == nil {
+			return controller, nil
+		}
+	}
+	// Native startup has not been attempted. Remove only an empty directory;
+	// a partial lock, journal or any unexpected evidence must remain intact.
+	current, statErr := os.Lstat(scope)
+	if statErr == nil && original != nil && current.IsDir() && current.Mode()&os.ModeSymlink == 0 && os.SameFile(original, current) {
+		if cleanupErr := os.Remove(scope); cleanupErr == nil {
+			if syncParent(scope) == nil {
+				return nil, err
+			}
+		}
+	}
+	return nil, domain.Fail(domain.RecoveryRequired, "The unlaunched process scope could not be removed durably.", "Preserve the process owner index and inspect its retained evidence before retrying.")
+}
+
 func (h *Handle) Identity() Process { return h.native.snapshot() }
 func (h *Handle) Resume() error {
 	h.mu.Lock()

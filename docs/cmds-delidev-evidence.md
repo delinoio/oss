@@ -393,3 +393,4 @@ The current user request is the CLI. Desktop windows/tray/widgets/native browser
 
 ### PR #983 streamed-key and pre-launch recovery follow-up (2026-09-25)
 - Real HTTP regressions reproduce split JSON field-name reflection for upstream keys, Base64 keys and execution tokens, at root/nested paths with literal/escaped spellings. Decoded names now pass global and original-parent matchers before JSON-pointer escaping and frame delivery, under the existing memory bounds. Focused relay race tests pass.
+- Controller-preparation fixtures inject pre-launch creation failure, verify synchronized empty-scope removal, and run a real subsequent native process under the same owner. Separate cases preserve partial lock/journal/unknown files, existing or replaced scope identities, and recovery on parent synchronization failure. No native-started cleanup proof is bypassed.

@@ -72,6 +72,8 @@ Provider reflection protection includes SSE field names across frames, sanitized
 
 Stream reflection checks include decoded JSON key fragments at both global and original parent paths, so repeated wrappers and JSON escaping cannot bypass protected-name checks.
 
+Controller creation failure before native startup removes only the current attempt's original empty scope and synchronizes its parent. Nonempty/replaced evidence and uncertain durability remain recoverable failures; native-started scopes always require their existing ownership proof.
+
 ## Logging
 Use `log/slog` on stderr with correlation, operation, session, and Worker IDs. Stable typed failures retain safe causes and recovery guidance. Prompts, raw emails, tokens, provider bodies, and internal instructions are excluded. Structured JSON is never mixed with progress.
 

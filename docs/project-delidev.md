@@ -70,6 +70,8 @@ Keep command, protocol, evidence, and scoped AGENTS contracts synchronized with 
 The implemented Codex question path now reconciles exact live native answer acceptance through content-free, claim-bound Worker events. Healthy question turns complete without an unconfirmed-answer recovery gate; uncertain/missing historical evidence still requires recovery. Public first dispatch has its separate current-readiness gate; protected answers and the remaining harness profiles still require implementation; verified Codex turns now continue through the separate FIFO/Resume gate.
 
 ### PR repair boundaries
+Process controller setup now creates each scope exclusively and synchronizes removal of its original empty scope after a proven pre-launch failure, preserving replaced/nonempty evidence and all native-started ownership requirements.
+
 Streamed JSON key names now share bounded reflection protection at their original parent paths and across the key sequence, before escaped field names reach a Worker.
 
 Cross-platform configuration preserves remote Unix checkout paths on Windows servers and Windows drive paths on Unix servers; canonical filesystem validation stays on the owning Worker. Coherent snapshots now reject aggregate binary/JSON overflow with narrower-scope guidance and no partial cursor. Reflection guards also cover fragmented SSE field names, HTTP-200 standalone error envelopes and retained decimal context limits. Native Windows acceptance remains pending the post-repair CI run.
