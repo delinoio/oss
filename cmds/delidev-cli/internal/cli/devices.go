@@ -213,7 +213,7 @@ func awaitJob(ctx context.Context, c client, job *pb.Resource) (*pb.Resource, er
 		latest, err := c.resources.GetResource(bounded, request(c, &pb.GetResourceRequest{Kind: pb.EntityKind_ENTITY_KIND_JOB, Id: job.Id}))
 		if err != nil {
 			if bounded.Err() != nil {
-				return job, nil
+				return job, domain.SafeError(bounded.Err())
 			}
 			return job, rpc.ClientError(err)
 		}
@@ -222,14 +222,20 @@ func awaitJob(ctx context.Context, c client, job *pb.Resource) (*pb.Resource, er
 		if err := domain.Decode(job.DocumentJson, &state); err != nil {
 			return job, err
 		}
-		if state.State.Terminal() || state.State == domain.JobUncertain {
+		if state.State == domain.JobUncertain {
+			if state.Problem != nil {
+				return job, state.Problem
+			}
+			return job, domain.Fail(domain.RecoveryRequired, "The accepted job requires reconciliation.", "Inspect the retained job before retrying; waiting does not cancel or repeat it.")
+		}
+		if state.State.Terminal() {
 			return job, nil
 		}
 		timer := time.NewTimer(200 * time.Millisecond)
 		select {
 		case <-bounded.Done():
 			timer.Stop()
-			return job, nil
+			return job, domain.SafeError(bounded.Err())
 		case <-timer.C:
 		}
 	}
