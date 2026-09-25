@@ -288,7 +288,7 @@ test("aggregate accepts only success and skips explicitly authorized by the plan
 
 test("React Forge runs on affected PRs and main, with shared package regression coverage", () => {
   for (const event of [Event.PullRequest, Event.Push]) {
-    for (const path of ["packages/react-forge/src/session.ts", "crates/react-forge-node/src/lib.rs", "crates/forge-pdf/src/lib.rs", "rust-toolchain", "pnpm-lock.yaml", "docs/packages-react-forge-contract.md"]) {
+    for (const path of ["packages/react-forge/src/session.ts", "crates/react-forge-node/src/lib.rs", "crates/forge-pdf/src/lib.rs", "crates/forge-sprite/src/lib.rs", "rust-toolchain", "pnpm-lock.yaml", "docs/packages-react-forge-contract.md"]) {
       assert.equal(planJobs(event, [path]).jobs["react-forge"], true, path);
     }
     for (const id of ["react-forge", "forge-test", "forge-render"]) assert.equal(planJobs(event, ["crates/forge-package/src/lib.rs"]).jobs[id], true, id);

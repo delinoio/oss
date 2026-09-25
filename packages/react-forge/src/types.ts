@@ -5,6 +5,7 @@ export enum Format {
   Docx = "docx",
   Xlsx = "xlsx",
   Pdf = "pdf",
+  Sprite = "sprite",
   Wav = "wav",
   Figma = "figma",
 }
@@ -63,7 +64,7 @@ export interface NodeHandle {
 }
 
 export interface Geometry {
-  readonly coordinateSpace?: "word_flow" | "worksheet" | "mounted_region" | "page" | "timeline";
+  readonly coordinateSpace?: "word_flow" | "worksheet" | "mounted_region" | "page" | "sprite_frame" | "timeline";
   readonly x: number;
   readonly y: number;
   readonly width: number;

@@ -98,7 +98,7 @@ jobs:
         run: ./packages/react-forge/scripts/install-ci-fonts.ps1
       - name: Build and validate native engines
         run: |
-          cargo test --locked --target ${{ matrix.target }} -p react-forge-node -p forge-package -p forge-document -p forge-docx -p forge-xlsx -p forge-pdf -p forge-sfx -p forge-figma -p forge-tree-doc -p forge-pptx -p delino-forge
+          cargo test --locked --target ${{ matrix.target }} -p react-forge-node -p forge-package -p forge-document -p forge-docx -p forge-xlsx -p forge-pdf -p forge-sprite -p forge-sfx -p forge-figma -p forge-tree-doc -p forge-pptx -p delino-forge
           pnpm --filter @delino/react-forge build
           pnpm --filter @delino/react-forge test
       - name: Verify Windows console cancellation

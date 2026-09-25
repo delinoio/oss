@@ -11,6 +11,7 @@ mod docx;
 mod pdf;
 mod pptx;
 mod sfx;
+mod sprite;
 mod xlsx;
 
 enum Format {
@@ -18,6 +19,7 @@ enum Format {
     Docx,
     Xlsx,
     Pdf,
+    Sprite,
     Wav,
 }
 use napi::{
@@ -135,6 +137,7 @@ impl Task for Operation {
             Format::Docx => "docx",
             Format::Xlsx => "xlsx",
             Format::Pdf => "pdf",
+            Format::Sprite => "sprite",
             Format::Wav => "wav",
         };
         let operation = match self.kind {
@@ -154,6 +157,7 @@ impl Task for Operation {
                 Format::Pptx => pptx::process(self), Format::Docx => docx::process(self),
                 Format::Xlsx => xlsx::process(self), Format::Pdf => pdf::process(self),
                 Format::Wav => sfx::process(self),
+                Format::Sprite => sprite::process(self),
             });
             if self.cancelled.load(Ordering::Acquire){result=Err(Diagnostic::new(ErrorCode::Cancelled,"","The native operation was cancelled"));}
             let code=result.as_ref().err().and_then(|e|serde_json::to_value(e.code).ok()).and_then(|v|v.as_str().map(str::to_owned)).unwrap_or_default();
@@ -218,6 +222,7 @@ pub fn process_document(
         "docx" => Format::Docx,
         "xlsx" => Format::Xlsx,
         "pdf" => Format::Pdf,
+        "sprite" => Format::Sprite,
         "wav" => Format::Wav,
         _ => {
             return Err(native_error(Diagnostic::new(

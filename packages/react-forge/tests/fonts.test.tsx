@@ -17,7 +17,7 @@ const view = (format: Format, text: string) => {
   }
 };
 
-test("local document formats validate system CJK/RTL/color emoji and caller-only missing-font failures", async () => {
+test("Office/PDF formats validate system CJK/RTL/color emoji and caller-only missing-font failures", async () => {
   for (const format of [Format.Pptx, Format.Docx, Format.Xlsx, Format.Pdf] as const) {
     const system = createSession(format);
     const supplied = createSession(format, { systemFonts: false });

@@ -62,6 +62,7 @@ Each project must have one project index document and one or more domain contrac
 - [Complete issue requirements](packages-react-forge-requirements.md)
 - [Game SFX and WAV export](packages-react-forge-sfx-contract.md)
 - [Node sessions and CLI](packages-react-forge-contract.md)
+- [Sprite authoring and export](packages-react-forge-sprite-contract.md) (unreleased)
 - [Session-based stdio MCP](packages-react-forge-mcp-contract.md)
 - [Native engines and preservation](crates-react-forge-contract.md)
 - [Validation and benchmarks](packages-react-forge-validation.md)
