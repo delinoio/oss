@@ -26,7 +26,7 @@ const devhudTauri = JSON.parse(readFileSync(`${root}/apps/devhud/src-tauri/tauri
 
 const legacyJobs = [
   "go-quality", "go-test", "repository-environment", "rust-fmt", "rust-clippy", "rust-test",
-  "forge-test", "forge-render", "react-forge", "linux-packages", "node-public-docs-test", "node-clibox-test", "node-pnport-test", "pnport-native",
+  "forge-test", "forge-render", "react-forge", "react-forge-scenes", "linux-packages", "node-public-docs-test", "node-clibox-test", "node-pnport-test", "pnport-native",
 ];
 const devhudJobs = [
   "devhud-frontend", "devhud-extension", "devhud-rust-conformance", "devhud-security", "devhud-desktop",
@@ -70,7 +70,7 @@ test("one change plan gates every domain job before runner allocation", () => {
   assert.deepEqual(Object.keys(jobPaths).sort(), [...legacyJobs, ...devhudJobs, ...achJobs].sort());
   for (const id of [...legacyJobs, ...devhudJobs, ...achJobs]) {
     const job = workflow.jobs[id];
-    assert.equal(job.needs, "changes", id);
+    assert.deepEqual(job.needs, id === "react-forge-scenes" ? ["changes", "react-forge"] : "changes", id);
     assert.equal(job.if, "${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['" + id + "'] }}", id);
     assert.equal(step(job, "filter"), undefined, id);
     assert.equal(step(job, "gate"), undefined, id);
@@ -446,4 +446,34 @@ test("React Forge validates its supported runtime with uncached native and rende
   assert.equal(evidence.if, "always()");
   const tasks = JSON.parse(readFileSync(`${root}/packages/react-forge/turbo.json`, "utf8")).tasks;
   for (const name of ["build", "test", "test:render", "benchmark"]) assert.equal(tasks[name].cache, false, name);
+});
+
+test("React Forge renders every product pair independently without reducing image quality", () => {
+  const native = workflow.jobs["react-forge"];
+  const renders = workflow.jobs["react-forge-scenes"];
+  assert.deepEqual(jobPaths["react-forge-scenes"], jobPaths["react-forge"]);
+  assert.equal(native["timeout-minutes"], 60);
+  const prepare = namedStep(native, "Prepare and inspect generated GLB and FBX scenes");
+  assert.equal(prepare.if, "matrix.id == 'linux-x64-gnu'");
+  assert.match(prepare.run, /test:scenes.*--prepare-only/u);
+  const inputs = namedStep(native, "Retain prepared 3D inputs");
+  assert.equal(inputs.if, prepare.if);
+  assert.equal(inputs.with.name, "react-forge-scene-inputs");
+  assert.equal(inputs.with["if-no-files-found"], "error");
+  assert.deepEqual(renders.needs, ["changes", "react-forge"]);
+  assert.equal(renders["timeout-minutes"], 120);
+  assert.equal(renders.strategy["fail-fast"], false);
+  assert.deepEqual(renders.strategy.matrix.product, ["studio", "headphones", "dac", "stand"]);
+  assert.equal(renders.steps.find(({ uses }) => uses === "actions/download-artifact@v4").with.name, inputs.with.name);
+  const render = namedStep(renders, "Render and compare both exported formats");
+  assert.match(render.run, /test-scene-comparison\.py/u);
+  assert.match(render.run, /--python-exit-code 1.*render-scenes\.py.*--products "\$PRODUCT" --formats glb,fbx --views hero,front,back,detail --resolution 2048 --samples 96 --device CPU/u);
+  assert.match(render.run, /compare-scenes\.py.*--product "\$PRODUCT"/u);
+  assert.equal(render.env.PRODUCT, "${{ matrix.product }}");
+  assert.match(namedStep(renders, "Install pinned test-only render tools").run, /9ba871ff2ecd36526b77432745980b7e6664ecd0c7ca11c48849073dcfe06da3/u);
+  const evidence = namedStep(renders, "Retain product render evidence");
+  assert.equal(evidence.if, "always()");
+  assert.equal(evidence.with.name, "react-forge-scene-${{ matrix.product }}");
+  assert.equal(evidence.with["retention-days"], 7);
+  assert.equal(evidence.with["if-no-files-found"], "error");
 });

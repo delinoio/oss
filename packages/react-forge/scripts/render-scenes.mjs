@@ -25,7 +25,13 @@ const fixtures=[...['studio','headphones','dac','stand'].map(p=>join(output,`aur
 const independent=run('cargo',['run','--locked','--quiet','-p','forge-fbx','--example','inspect','--',...fixtures],{cwd:root,stdio:['ignore','pipe','inherit'],encoding:'utf8'}).stdout;
 writeFileSync(join(output,'ufbx-report.json'),independent);
 run(blender,['--background','--factory-startup','--python-exit-code','1','--python',join(pkg,'scripts/inspect-scenes.py'),'--','--input',output]);
-run(blender,['--background','--factory-startup','--python-exit-code','1','--python',join(pkg,'scripts/render-scenes.py'),'--','--input',output,'--output',join(output,'renders'),'--device',device,'--resolution',resolution,'--samples',samples,'--hero-resolution',heroResolution]);
-const report=JSON.parse(readFileSync(join(output,'renders/render-report.json'),'utf8'));
-if(report.imports.length!==8||report.imports.some(i=>i.renders.length!==4))throw Error('Incomplete visual evidence');
-console.log(JSON.stringify({event:'react_forge_scene_verification',imports:8,renders:32,blender:'4.5.14'}));
+if(process.argv.includes('--prepare-only')) {
+  // CI distributes these validated inputs to independent CPU render jobs.
+  // Preparation is deliberately not reported as completed visual evidence.
+  console.log(JSON.stringify({event:'react_forge_scene_prepared',imports:8,blender:'4.5.14'}));
+} else {
+  run(blender,['--background','--factory-startup','--python-exit-code','1','--python',join(pkg,'scripts/render-scenes.py'),'--','--input',output,'--output',join(output,'renders'),'--device',device,'--resolution',resolution,'--samples',samples,'--hero-resolution',heroResolution]);
+  const report=JSON.parse(readFileSync(join(output,'renders/render-report.json'),'utf8'));
+  if(report.imports.length!==8||report.imports.some(i=>i.renders.length!==4))throw Error('Incomplete visual evidence');
+  console.log(JSON.stringify({event:'react_forge_scene_verification',imports:8,renders:32,blender:'4.5.14'}));
+}
