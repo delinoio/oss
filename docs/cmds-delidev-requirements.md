@@ -367,4 +367,3 @@ All behavior and exclusions above are required acceptance criteria across deskto
 Use real temporary SQLite/Git/PTY/process resources for integration tests and keep protocol/GitHub fixtures out of production paths. Record actual harness/version, account capability, OS, GitHub, and native lifecycle evidence. Fixtures, simulated replies, or passing builds alone must not be reported as real-environment validation; identify unverified combinations.
 
 This integrates the non-UI lessons from delino-apps issue 111 and delino-apps PR 112, including all 20 review findings. DeliDev's explicit choices above supersede their conflicting defaults; new UI layout choices are deferred while this issue's existing UI requirements remain required.
-
