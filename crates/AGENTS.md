@@ -177,6 +177,7 @@
 ### clibox Rules
 
 - YAML structural sharing uses `imbl` with `RcK`, preserving ordered-map diffing, bounded expansion accounting, and single-threaded reference sharing. Keep the panic-safe chunk dependency and the long shadowed-merge/resource-limit fixtures when updating collections.
+- Concurrent publication fixtures must preserve fail-closed destination validation: a Unix handle unlinked by another successful replacement may return `UnsafeDestination`. Require at least one successful writer, one complete successful payload, and clean staging; retain deterministic zero-link rejection coverage.
 
 - Keep the CLI README and `apps/public-docs/docs/clibox` aligned with user-facing behavior. Follow `docs/apps-clibox-docs-foundation.md`; the consolidated public guide covers all 25 next-release commands while version-specific guidance preserves the 19-command published 0.1.6 surface, including their limits, cancellation, and migration guidance.
 
