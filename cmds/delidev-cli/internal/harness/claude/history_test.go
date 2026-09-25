@@ -188,7 +188,7 @@ func TestMainHistoryCancellationReturnsNoPartialProof(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	observed, err := VerifyMainTranscript(ctx, historyJSONL(t, records), session, workspace, proofs)
-	if err == nil || observed != (MainTranscriptObservation{}) {
+	if err == nil || observed != (TranscriptObservation{}) {
 		t.Fatal("canceled history read returned a partial checkpoint")
 	}
 }

@@ -141,4 +141,8 @@ func TestManualNativeBackgroundRunBoundary(t *testing.T) {
 		t.Fatal("second input did not complete exactly once")
 	}
 
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	nativeFixtureChildHistory(t, cfg, s.current.tasks, nil)
 }

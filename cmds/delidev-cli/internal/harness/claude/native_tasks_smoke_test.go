@@ -135,6 +135,7 @@ func TestManualNativeTaskLifecycle(t *testing.T) {
 	if err := s.SendInput(ctx, input, cfg.SessionID, prompt); err != nil {
 		t.Fatal(err)
 	}
+	historyProofs := map[string][]HistoryMessageProof{}
 	var result *NativeResult
 	var commandClosed bool
 	var childInput, childTool, childReturned, childResult, taskStarted, taskUpdated, taskNotified bool
@@ -183,6 +184,17 @@ func TestManualNativeTaskLifecycle(t *testing.T) {
 			_ = json.Unmarshal(fields["parent_tool_use_id"], &parent)
 			t.Log("failed envelope keys", keys, "has parent", parent != nil, "block types", message.Content, "active messages", len(binding.content.active))
 			t.Fatalf("native task observation failed: %s/%s: %v; %s", event.Type, subtype, err, logs.String())
+		}
+		if event.Kind == NativeMessage && (event.Type == "user" || event.Type == "assistant") {
+			var parent *string
+			_ = json.Unmarshal(fields["parent_tool_use_id"], &parent)
+			if parent != nil {
+				proof, err := ObserveChildHistoryMessage(event, cfg.SessionID, *parent)
+				if err != nil {
+					t.Fatal(err)
+				}
+				historyProofs[*parent] = append(historyProofs[*parent], proof)
+			}
 		}
 		if observation.Kind == InputFinished {
 			result = observation.Result
@@ -243,6 +255,10 @@ func TestManualNativeTaskLifecycle(t *testing.T) {
 		t.Log("native evidence", result.Successful(), calls.Load(), childInput, childTool, childReturned, childResult, taskStarted, taskUpdated, taskNotified, len(binding.tasks), len(binding.backgroundTasks))
 		t.Fatal("native child execution did not finish exactly once")
 	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	nativeFixtureChildHistory(t, cfg, binding.tasks, historyProofs)
 }
 
 func nativeTaskTextContains(raw json.RawMessage, want string) bool {
