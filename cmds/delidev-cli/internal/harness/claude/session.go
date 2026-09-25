@@ -121,7 +121,7 @@ func (s *APISession) SendInput(ctx context.Context, input domain.ID, text string
 	}
 	if previous := s.current; previous != nil {
 		work := previous.knownWork()
-		if previous.problem != nil || previous.runState != RunIdle || !previous.finished || previous.terminal == nil || previous.continuing || work.PendingTasks != 0 || work.BackgroundTasks != 0 || previous.content.openTools != 0 || len(previous.content.active) != 0 || previous.interactionBytes != 0 {
+		if previous.problem != nil || previous.runState != RunIdle || !previous.finished || previous.terminal == nil || previous.continuing || previous.pendingCompaction != nil || work.PendingTasks != 0 || work.BackgroundTasks != 0 || previous.content.openTools != 0 || len(previous.content.active) != 0 || previous.interactionBytes != 0 {
 			return AppliedSettings{}, sessionBusy()
 		}
 		if intent == ContinueSuccessfulRun && (!previous.terminal.Successful() || previous.continuationFailed) {

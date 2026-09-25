@@ -71,6 +71,8 @@ type LifecycleObservation struct {
 	Task        *NativeTaskObservation     `json:"-"`
 	Progress    *NativeProgressObservation `json:"-"`
 	Run         *NativeRunObservation      `json:"-"`
+	Compaction  *NativeCompaction          `json:"-"`
+	Summary     *NativeCompactionSummary   `json:"-"`
 	// TurnID is the original native init envelope identity. An automatic
 	// continuation has its own turn and never acknowledges a product input.
 	TurnID  string
@@ -112,6 +114,7 @@ type ExecutionBinding struct {
 	continuationSeen   bool
 	continuationFailed bool
 	notifications      uint32
+	pendingCompaction  *compactionSummaryBinding
 }
 
 func BindExecution(config APIStreamConfig, input domain.ID, text string) (*ExecutionBinding, error) {
@@ -195,8 +198,9 @@ func (b *ExecutionBinding) Observe(event StreamEvent) (observation LifecycleObse
 		Session domain.ID `json:"session_id"`
 		UUID    string    `json:"uuid"`
 		Replay  bool      `json:"isReplay"`
+		Parent  *string   `json:"parent_tool_use_id"`
 	}
-	for name, target := range map[string]any{"type": &header.Type, "subtype": &header.Subtype, "session_id": &header.Session, "uuid": &header.UUID, "isReplay": &header.Replay} {
+	for name, target := range map[string]any{"type": &header.Type, "subtype": &header.Subtype, "session_id": &header.Session, "uuid": &header.UUID, "isReplay": &header.Replay, "parent_tool_use_id": &header.Parent} {
 		if raw := fields[name]; len(raw) != 0 && json.Unmarshal(raw, target) != nil {
 			return LifecycleObservation{}, lifecycleUncertain()
 		}
@@ -205,6 +209,9 @@ func (b *ExecutionBinding) Observe(event StreamEvent) (observation LifecycleObse
 		return LifecycleObservation{}, lifecycleUncertain()
 	}
 	observation.NativeID = header.UUID
+	if b.pendingCompaction != nil && (event.Type == "result" || ((event.Type == "stream_event" || event.Type == "assistant") && header.Parent == nil) || (event.Type == "system" && header.Subtype == "session_state_changed")) {
+		return LifecycleObservation{}, lifecycleUncertain()
+	}
 	switch event.Type {
 	case "command_lifecycle":
 		phase = commandValidation
@@ -247,6 +254,16 @@ func (b *ExecutionBinding) Observe(event StreamEvent) (observation LifecycleObse
 			}
 			observation.Kind, observation.Run = RunStateObserved, value
 			observation.InputID, observation.Accepted = "", false
+		} else if header.Subtype == "compact_boundary" {
+			phase = contentValidation
+			value, err := b.observeCompaction(event.Body)
+			if err != nil {
+				return LifecycleObservation{}, err
+			}
+			observation.Kind, observation.Compaction = CompactionObserved, value
+			// Compaction can run before original input replay. It cannot accept
+			// that input or provide another product input identity.
+			observation.InputID, observation.Accepted = "", false
 		} else {
 			switch TaskEventKind(header.Subtype) {
 			case TaskStarted, TaskProgress, TaskUpdated, TaskNotification, BackgroundTasksChanged:
@@ -277,7 +294,15 @@ func (b *ExecutionBinding) Observe(event StreamEvent) (observation LifecycleObse
 		}
 		observation.Kind, observation.Progress = ProgressObserved, value
 	case "user":
-		if header.Replay {
+		if b.pendingCompaction != nil && !header.Replay && (header.Parent == nil || header.UUID == b.pendingCompaction.anchor) {
+			phase = contentValidation
+			value, err := b.observeCompactionSummary(event.Body)
+			if err != nil {
+				return LifecycleObservation{}, err
+			}
+			observation.Kind, observation.Summary = CompactionSummaryObserved, value
+			observation.InputID, observation.Accepted = "", false
+		} else if header.Replay {
 			phase = replayValidation
 			if err := b.acceptReplay(event.Body); err != nil {
 				return LifecycleObservation{}, err

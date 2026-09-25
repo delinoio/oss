@@ -86,7 +86,7 @@ func sessionFixture(t *testing.T) (*APISession, *sessionFixtureTransport) {
 }
 
 func TestSessionInputGatePreservesPendingWorkAndFailedRun(t *testing.T) {
-	for _, name := range []string{"no-idle", "unfinished", "no-result", "active-continuation", "pending-task", "background-task", "open-tool", "active-content", "callback-body", "callback-unconfirmed", "original-failed", "continuation-failed", "uncertain", "duplicate-input", "invalid-intent", "queued-native-events", "input-capacity", "reading", "changed-permission"} {
+	for _, name := range []string{"no-idle", "unfinished", "no-result", "active-continuation", "pending-task", "background-task", "open-tool", "active-content", "callback-body", "callback-unconfirmed", "original-failed", "continuation-failed", "uncertain", "duplicate-input", "invalid-intent", "queued-native-events", "input-capacity", "reading", "changed-permission", "pending-compaction"} {
 		t.Run(name, func(t *testing.T) {
 			s, f := sessionFixture(t)
 			id := domain.NewID()
@@ -108,6 +108,8 @@ func TestSessionInputGatePreservesPendingWorkAndFailedRun(t *testing.T) {
 				s.current.content.openTools = 1
 			case "active-content":
 				s.current.content.active = map[string]*providerMessageState{"": {}}
+			case "pending-compaction":
+				s.current.pendingCompaction = &compactionSummaryBinding{boundary: string(domain.NewID()), anchor: string(domain.NewID())}
 			case "callback-body":
 				s.current.interactionBytes = 1
 			case "callback-unconfirmed":
