@@ -180,6 +180,12 @@ func Open(ctx context.Context, root string) (_ *Store, returned error) {
 			return fail(err)
 		}
 	}
+	// Persisted lease timestamps cannot prove availability in this server
+	// process. Preserve instance ownership for recovery, but require a fresh
+	// observation before any schedule can use its availability interval.
+	if _, err := db.ExecContext(ctx, "UPDATE worker_instances SET available_since=0"); err != nil {
+		return fail(err)
+	}
 	s := &Store{db: db, root: root, lock: lock, notify: make(chan struct{})}
 	success = true
 	return s, nil

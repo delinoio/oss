@@ -218,7 +218,7 @@ func TestScheduleCoordinatorConcurrentRunNowRetryAndCronConflict(t *testing.T) {
 }
 
 func TestScheduleCoordinatorOfflineSkipsWithoutCreatingSessions(t *testing.T) {
-	for _, kind := range []string{"server", "worker", "reconnected-worker"} {
+	for _, kind := range []string{"server", "worker", "reconnected-worker", "server-restart-worker-offline"} {
 		t.Run(kind, func(t *testing.T) {
 			f := newScheduleDispatchFixture(t, domain.ScheduleWaitOverlap, false)
 			expected := domain.WorkerOfflineOccurrence
@@ -226,6 +226,18 @@ func TestScheduleCoordinatorOfflineSkipsWithoutCreatingSessions(t *testing.T) {
 			case "server":
 				f.service.Endpoint.StartedAt = f.now
 				expected = domain.ServerOfflineOccurrence
+			case "server-restart-worker-offline":
+				if err := f.service.Store.Close(); err != nil {
+					t.Fatal(err)
+				}
+				db, err := store.Open(f.ctx, f.root)
+				if err != nil {
+					t.Fatal(err)
+				}
+				f.service.Store = db
+				// Restart just before the due instant; the old beat is still
+				// inside 45 seconds, but no current-process Worker was observed.
+				f.service.Endpoint.StartedAt = f.now.Add(-1500 * time.Millisecond)
 			case "worker":
 				f.mutate(t, func(tx *store.Tx) error { return tx.SetWorkerInstance(f.machine, f.instance, f.now.Add(-time.Minute)) })
 			case "reconnected-worker":

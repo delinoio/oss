@@ -277,6 +277,22 @@ func TestWorkerScheduleAvailabilityCannotBackdateReconnectOrLeaseGap(t *testing.
 	check(start.Add(time.Minute), start.Add(time.Minute), false)
 	set(start.Add(30*time.Second), instance)
 	check(start, start.Add(35*time.Second), true)
+	// Reopening within the lease window cannot carry old availability into
+	// the new server process, even when the same Worker instance reconnects.
+	root := s.Root()
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	var err error
+	s, err = Open(ctx, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	check(start.Add(32*time.Second), start.Add(35*time.Second), false)
+	set(start.Add(35*time.Second), instance)
+	check(start.Add(32*time.Second), start.Add(35*time.Second), false)
+	check(start.Add(35*time.Second), start.Add(36*time.Second), true)
 	set(start.Add(2*time.Minute), instance)
 	check(start.Add(time.Minute), start.Add(2*time.Minute), false)
 	set(start.Add(3*time.Minute), domain.NewID())

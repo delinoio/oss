@@ -85,3 +85,5 @@ Update this contract, the command and protocol contracts, project/catalog entrie
 - [Worker workspaces](cmds-delidev-workspace-contract.md)
 - [Pinned cron documentation](https://github.com/robfig/cron/blob/v3.0.1/doc.go)
 - [Pinned cron calendar search](https://github.com/robfig/cron/blob/v3.0.1/spec.go)
+
+Opening the exclusive server store invalidates persisted Worker availability intervals while preserving instance identity for recovery. The first authenticated attach/heartbeat establishes a fresh interval; a reconnect cannot backdate availability across server restart. A cron instant after restart but before that observation is Worker-offline even if the previous process recorded a beat less than 45 seconds earlier.

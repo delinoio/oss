@@ -133,7 +133,7 @@ func (t *Tx) SetWorkerInstance(machine, instance domain.ID, seen time.Time) erro
 	}
 	_, err := t.tx.ExecContext(t.ctx, `INSERT INTO worker_instances(machine_id,instance_id,last_seen,available_since) VALUES(?,?,?,?)
  ON CONFLICT(machine_id) DO UPDATE SET
- available_since=CASE WHEN worker_instances.instance_id<>excluded.instance_id OR excluded.last_seen<worker_instances.last_seen OR excluded.last_seen-worker_instances.last_seen>45000 THEN excluded.last_seen ELSE worker_instances.available_since END,
+ available_since=CASE WHEN worker_instances.available_since=0 OR worker_instances.instance_id<>excluded.instance_id OR excluded.last_seen<worker_instances.last_seen OR excluded.last_seen-worker_instances.last_seen>45000 THEN excluded.last_seen ELSE worker_instances.available_since END,
  instance_id=excluded.instance_id,last_seen=excluded.last_seen`, machine, instance, seen.UnixMilli(), seen.UnixMilli())
 	return storageError(err)
 }
@@ -153,7 +153,7 @@ func (s *Store) Heartbeat(ctx context.Context, machine, instance domain.ID) erro
 	}
 	now := time.Now().UTC().UnixMilli()
 	result, err := sqlTx.ExecContext(ctx, `UPDATE worker_instances SET
- available_since=CASE WHEN ?<last_seen OR ?-last_seen>45000 THEN ? ELSE available_since END,
+ available_since=CASE WHEN available_since=0 OR ?<last_seen OR ?-last_seen>45000 THEN ? ELSE available_since END,
  last_seen=? WHERE machine_id=? AND instance_id=?`, now, now, now, now, machine, instance)
 	if err != nil {
 		return storageError(err)

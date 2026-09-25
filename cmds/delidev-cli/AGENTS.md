@@ -145,3 +145,5 @@
 - Non-200 provider error bodies must pass secret reflection checks even when their native machine codes are allowlisted; retain failure status without reflecting a colliding protected value.
 
 - Bounded CLI job waits retain the latest accepted job and return a typed nonzero failure on timeout, cancellation or uncertainty; never report those states as completed work.
+
+- Reset Worker schedule availability on each exclusive server-store open, preserve instance recovery identity, and require fresh current-process observation without backdating reconnects.
