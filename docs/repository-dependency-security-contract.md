@@ -13,7 +13,7 @@ GitHub reported 39 open Dependabot alerts at the start of this change. The chang
 | Dependency | Updated resolution | Coverage |
 | --- | --- | --- |
 | `js-yaml` | 4.3.2 in root, DevHud and pnpm override | Alerts 223, 224, 235 |
-| `body-parser` | 1.20.6 through Express 4.22.3 | Alert 265 |
+| `body-parser` | 1.20.8 through Express 4.22.3 | Alert 265 |
 | `react-router` / `react-router-dom` | 7.18.4 | Alert 205 |
 | `pypdf` | 6.16.1 in test-only rendering requirements | Alerts 242–264 |
 | `hickory-resolver` / `hickory-proto` | 0.26.3 | Alerts 240, 241; preserve disabled DNSSEC, one attempt, no cache and both IP families; map fallible resolver construction to the existing redacted configuration error |
