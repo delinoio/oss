@@ -9,7 +9,7 @@ repository = "https://github.com/delinoio/oss"
 
 [dependencies]
 clap = { version = "4.5.32", features = ["derive"] }
-im-rc = "15.1.0"
+imbl = "7.0.2"
 regex = "1.12.3"
 tempfile = "3.25.0"
 tracing = "0.1.44"

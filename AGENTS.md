@@ -23,6 +23,7 @@
 - After addressing pull request review comments and pushing updates, mark the corresponding review threads as resolved.
 - When no explicit scope is specified and you are currently working within a pull request scope, interpret instructions within the current pull request scope.
 - Do not guess; rather search for the web.
+- Follow `docs/repository-dependency-security-contract.md` for dependency security updates, validation evidence, and unresolved upstream constraints. Keep unresolved advisories visible; a fixed runtime pin or an unavailable patch is not a vulnerability fix.
 - Debug by logging. You should write enough logging code.
 - Write sufficient logs for debugging and operational troubleshooting.
 - Prefer structured logging libraries for business and system logs (Go: `log/slog`, Rust: `tracing`).
@@ -327,7 +328,9 @@ enum RustiaComponent {
 - `<description>` should be concise, specific, and start with a lowercase verb phrase when possible.
 - Do not create unscoped pull request titles or use bracket-style project prefixes like `[serde-feather]`.
 
-### Node Runtime Baseline
+### Runtime Baselines
+
+- Root `go.mod` selects the Go security baseline, currently Go `1.26.8`; keep the API/sweeper Docker build image on that exact version. CI reads the module selector.
 
 - Root `.nvmrc` is the canonical Node.js runtime selector for local development workflows.
 - The current required runtime is Node.js `24` (LTS major line).

@@ -494,7 +494,7 @@ for (const { os, rustTarget } of platforms.targets) {
 for (const [name, version] of Object.entries({
   "@rsbuild/core": "2.1.10",
   "@rsbuild/plugin-react": "2.0.1",
-  "js-yaml": "4.3.1",
+  "js-yaml": "4.3.2",
   react: "19.2.8",
   "react-dom": "19.2.8",
   typescript: "5.9.3",

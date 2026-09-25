@@ -6,7 +6,7 @@ use std::{
     sync::LazyLock,
 };
 
-use im_rc::{ordmap::DiffItem, OrdMap};
+use imbl::{ordmap::DiffItem, shared_ptr::RcK, GenericOrdMap};
 use regex::Regex;
 use yaml_rust2::{
     parser::{Event, Parser, Tag},
@@ -14,6 +14,9 @@ use yaml_rust2::{
 };
 
 use crate::config_runtime::{Cancellation, Error, Failure, Output, Result, LIMIT};
+
+// Keep structural sharing local to this single-threaded parser.
+type OrdMap<K, V> = GenericOrdMap<K, V, RcK>;
 
 const DEPTH: usize = 128;
 static INTEGER: LazyLock<Regex> =

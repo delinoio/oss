@@ -9,6 +9,7 @@ Each project must have one project index document and one or more domain contrac
 ## Repository Defaults
 - Repository-wide default technology choices and workflow defaults are defined in `docs/repository-defaults.md`.
 - Repository licensing and third-party notice boundaries are defined in `docs/repository-license-contract.md`.
+- Dependency security updates, audit evidence, and unresolved upstream constraints are recorded in [the dependency security contract](repository-dependency-security-contract.md).
 - Repository configuration, stable root development commands, local development modes, environment ownership, startup-generation integrity, and secret classification are defined in `docs/repository-environment-contract.md`.
 - Project and domain contracts must document deviations from those defaults when a different language, ID format, search backend, build toolchain, static-site deployment platform, or file storage/access pattern is chosen.
 
