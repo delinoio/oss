@@ -70,6 +70,8 @@ Secrets enter through stdin/hidden input and authenticated transport only. The p
 
 Provider reflection protection includes SSE field names across frames, sanitized standalone error envelopes even under HTTP 200, and numeric model context limits before catalog publication. Resource snapshots enforce the same aggregate binary/JSON budget as paginated lists, but return explicit narrower-scope failure instead of partial coherent state. Remote checkout syntax is preserved across server operating systems until the owning Worker performs canonical filesystem inspection.
 
+Stream reflection checks include decoded JSON key fragments at both global and original parent paths, so repeated wrappers and JSON escaping cannot bypass protected-name checks.
+
 ## Logging
 Use `log/slog` on stderr with correlation, operation, session, and Worker IDs. Stable typed failures retain safe causes and recovery guidance. Prompts, raw emails, tokens, provider bodies, and internal instructions are excluded. Structured JSON is never mixed with progress.
 

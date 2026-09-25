@@ -526,6 +526,49 @@ func TestProxyPreservesBenignSSEMetadata(t *testing.T) {
 	}
 }
 
+func TestProxyDoesNotReleaseFragmentedJSONFieldNames(t *testing.T) {
+	for valueIndex, value := range []string{fixtureKey, base64.StdEncoding.EncodeToString([]byte(fixtureKey)), fixtureToken} {
+		for _, nested := range []bool{false, true} {
+			for _, escaped := range []bool{false, true} {
+				t.Run(fmt.Sprintf("value=%d/nested=%t/escaped=%t", valueIndex, nested, escaped), func(t *testing.T) {
+					middle := len(value) / 2
+					var frames []string
+					for _, fragment := range []string{value[:middle], value[middle:]} {
+						name, _ := json.Marshal(fragment)
+						if escaped {
+							var encoded strings.Builder
+							encoded.WriteByte('"')
+							for _, c := range fragment {
+								fmt.Fprintf(&encoded, `\u%04x`, c)
+							}
+							encoded.WriteByte('"')
+							name = []byte(encoded.String())
+						}
+						body := fmt.Sprintf(`{%s:1}`, name)
+						if nested {
+							body = `{"choices":[{"delta":` + body + `}]}`
+						}
+						frames = append(frames, "data: "+body+"\n\n")
+					}
+					f := newProxyFixture(t, domain.OpenAIChat, []Operation{ChatCompletion}, func(w http.ResponseWriter, r *http.Request) {
+						w.Header().Set("Content-Type", "text/event-stream")
+						for _, frame := range frames {
+							fmt.Fprint(w, frame)
+							w.(http.Flusher).Flush()
+						}
+						fmt.Fprint(w, "data: [DONE]\n\n")
+					})
+					response, raw, err := f.request(t, "/chat/completions", `{"model":"fixed-model","stream":true}`, nil)
+					if err != nil || response.StatusCode != http.StatusBadGateway || strings.Contains(string(raw), frames[0]) || bytes.Contains(raw, []byte("[DONE]")) {
+						t.Fatal("fragmented JSON field names escaped", err)
+					}
+					assertNoProxySecrets(t, f, raw)
+				})
+			}
+		}
+	}
+}
+
 func TestProxyDoesNotReleaseFragmentedSSEFieldNames(t *testing.T) {
 	for _, separator := range []string{"\n", "\r\n"} {
 		for _, suffix := range []string{"", ": ignored"} {

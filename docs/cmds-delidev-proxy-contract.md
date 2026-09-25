@@ -34,6 +34,8 @@ Response checks reject literal, decoded JSON-string and Base64 representations o
 
 SSE field-name bytes use a separate bounded cross-frame matcher, including unknown and colonless fields. Metadata values and JSON deltas retain their independent matchers; benign unknown fields preserve their original bytes.
 
+Decoded JSON object names also enter independent global and parent-path matchers before JSON-pointer escaping. Thus repeated enclosing keys cannot hide fragmented nested names, and escaped raw/Base64 credential fragments are checked before any original frame is released. These states share the existing active-path and pending-byte bounds.
+
 HTTP-200 standalone error envelopes use the same protected-code/local-body fallback as non-200 errors before returning a synthesized HTTP 502 response. A successful transport status cannot bypass protected-value checks.
 
 ## Logging

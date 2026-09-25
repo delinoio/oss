@@ -111,6 +111,15 @@ func (s *streamGuard) inspect(raw []byte) error {
 				if !ok {
 					return errInvalidDocument
 				}
+				// Keys are forwarded content too. Match decoded names before JSON
+				// pointer escaping, both globally and at each original parent path;
+				// repeated enclosing keys must not reset a nested fragment match.
+				if err := s.check("@json-field-names"+path, name); err != nil {
+					return err
+				}
+				if err := s.check("@json-field-sequence", name); err != nil {
+					return err
+				}
 				name = strings.ReplaceAll(strings.ReplaceAll(name, "~", "~0"), "/", "~1")
 				if err = walk(path+"/"+name, depth+1); err != nil {
 					return err
