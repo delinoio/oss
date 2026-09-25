@@ -38,6 +38,7 @@ describe("DocsSiteSwitcher", () => {
       "async-commit-hook",
       "clibox",
       "pnport",
+      "React Forge",
     ]);
     expect(menu.getAttribute("id")).toBe(trigger.getAttribute("aria-controls"));
     expect(items[1]?.getAttribute("aria-current")).toBe("page");
@@ -49,6 +50,7 @@ describe("DocsSiteSwitcher", () => {
       "/async-commit-hook/",
       "/clibox/",
       "/pnport/",
+      "/react-forge/",
     ]);
   });
 
@@ -138,6 +140,22 @@ describe("DocsSiteSwitcher", () => {
     (pathname) => expect(getDocumentationSiteForPathname(pathname)).toBe(DocumentationSiteId.PublicDocs),
   );
 
+  it.each(["/react-forge", "/react-forge/", "/react-forge/figma", "/react-forge/mcp/"])(
+    "selects React Forge for %s",
+    (pathname) => {
+      renderSwitcher(getDocumentationSiteForPathname(pathname));
+      fireEvent.click(screen.getByRole("button", { name: "React Forge" }));
+      const selected = screen.getByRole("menuitem", { name: "React Forge" });
+      expect(selected.getAttribute("aria-current")).toBe("page");
+      expect(document.activeElement).toBe(selected);
+    },
+  );
+
+  it.each(["/react-forge-extra", "/react-forgeish/mcp"])(
+    "does not select React Forge for unrelated path %s",
+    (pathname) => expect(getDocumentationSiteForPathname(pathname)).toBe(DocumentationSiteId.PublicDocs),
+  );
+
   it("retains same-origin destinations on the consolidated development server", () => {
     expect(window.location.port).toBe("46302");
     renderSwitcher(DocumentationSiteId.Clibox);
@@ -149,11 +167,11 @@ describe("DocsSiteSwitcher", () => {
     }
   });
 
-  it("reaches pnport at the end and restores its trigger on Escape", () => {
-    renderSwitcher(DocumentationSiteId.Pnport);
-    const trigger = screen.getByRole("button", { name: "pnport" });
+  it("reaches React Forge at the end and restores its trigger on Escape", () => {
+    renderSwitcher(DocumentationSiteId.ReactForge);
+    const trigger = screen.getByRole("button", { name: "React Forge" });
     fireEvent.keyDown(trigger, { key: "ArrowUp" });
-    const item = screen.getByRole("menuitem", { name: "pnport" });
+    const item = screen.getByRole("menuitem", { name: "React Forge" });
     expect(document.activeElement).toBe(item);
     fireEvent.keyDown(item, { key: "Home" });
     expect(document.activeElement).toBe(screen.getAllByRole("menuitem")[0]);

@@ -17,7 +17,7 @@ Each project must have one project index document and one or more domain contrac
 - Do not arbitrarily omit, delete, or simplify requested or source-backed content during documentation edits unless the user explicitly asks for that outcome.
 - If documentation content, scope, or intent is ambiguous, ask the user before deciding what to remove, merge, or reinterpret.
 - If a documentation change affects repository or domain policy boundaries, update or create the relevant `AGENTS.md` file in the same change when needed.
-- `docs/` remains the internal source of truth for contracts, architecture notes, repo-local paths, and implementation details. Public documentation is owned and built by `apps/public-docs`; the project content roots are `apps/public-docs/docs/{runmoor,nodeup,binpm,async-commit-hook,clibox,pnport}`. Those pages must curate from these contracts without documenting repository-internal implementation details unless the detail is a stable public interface, user-visible behavior, or explicitly public maintainer workflow.
+- `docs/` remains the internal source of truth for contracts, architecture notes, repo-local paths, and implementation details. Public documentation is owned and built by `apps/public-docs`; the project content roots are `apps/public-docs/docs/{runmoor,nodeup,binpm,async-commit-hook,clibox,pnport,react-forge}`. Those pages must curate from these contracts without documenting repository-internal implementation details unless the detail is a stable public interface, user-visible behavior, or explicitly public maintainer workflow.
 
 ## Naming Rules
 - Project index docs: `docs/project-<project-id>.md`
@@ -37,8 +37,27 @@ Each project must have one project index document and one or more domain contrac
 
 ## Project Catalog
 
+### delidev
+- [Project index](project-delidev.md)
+- [CLI/server/Worker contract](cmds-delidev-contract.md)
+- [Connect protocol](protos-delidev-v1-contract.md)
+- [Worker workspace preparation](cmds-delidev-workspace-contract.md)
+- [Owned process contract](cmds-delidev-process-contract.md)
+- [Native harness adapter contract](cmds-delidev-harness-contract.md)
+- [Protected credential storage](cmds-delidev-credentials-contract.md)
+- [Account lifecycle](cmds-delidev-accounts-contract.md)
+- [Provider inspection](cmds-delidev-providers-contract.md)
+- [Provider and model catalog](cmds-delidev-catalog-contract.md)
+- [Native API relay](cmds-delidev-proxy-contract.md)
+- [Session acceptance and input queue](cmds-delidev-sessions-contract.md)
+- [Retained inbox and read-state contract](cmds-delidev-inbox-contract.md)
+- [Schedules and durable occurrences](cmds-delidev-schedules-contract.md)
+- [Complete issue #964 requirements](cmds-delidev-requirements.md)
+- [Implementation and evidence ledger](cmds-delidev-evidence.md)
+
 ### React Forge
 - [Project index](project-react-forge.md)
+- [Public documentation](apps-react-forge-docs-foundation.md) (`apps/public-docs/docs/react-forge`, canonical URL `https://oss.delino.io/react-forge/`, fourteen user-guide routes)
 - [Complete issue requirements](packages-react-forge-requirements.md)
 - [Node sessions and CLI](packages-react-forge-contract.md)
 - [Session-based stdio MCP](packages-react-forge-mcp-contract.md)
@@ -85,7 +104,7 @@ Each project must have one project index document and one or more domain contrac
 
 ### public-docs
 - `docs/project-public-docs.md`
-- `docs/apps-public-docs-foundation.md` (single `oss.delino.io` publisher, six project subpaths, site selector, and stable `/devhud` section)
+- `docs/apps-public-docs-foundation.md` (single `oss.delino.io` publisher, seven project subpaths, site selector, and stable `/devhud` section)
 - `docs/packages-docs-site-switcher-contract.md` (shared accessible documentation site selector package and fixed site registry)
 
 ### serde-feather

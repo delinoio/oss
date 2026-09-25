@@ -98,6 +98,9 @@ test("integrated project docs select the public-docs workspace and shared inputs
     for (const path of ["docs/project-runmoor.md"]) {
       assert.deepEqual(selected(event, [path]), ["repository-environment"]);
     }
+    const reactForgeContract = planJobs(event, ["docs/apps-react-forge-docs-foundation.md"]);
+    assert.equal(reactForgeContract.jobs[id], true);
+    assert.equal(reactForgeContract.forced[id], true);
     const needs = results(event, paths);
     assert.equal(validateResults(needs), true);
     for (const result of ["failure", "cancelled", "skipped"]) {

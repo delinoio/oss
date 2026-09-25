@@ -170,6 +170,7 @@
       ".nvmrc",
       "apps/public-docs/**",
       "packages/docs-site-switcher/**",
+      "docs/apps-react-forge-docs-foundation.md",
       "docs/apps-devhud-operations-contract.md",
       "docs/apps-devhud-support-contract.md",
       "docs/project-devhud.md",

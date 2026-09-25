@@ -67,6 +67,7 @@
 - `docs/project-with-watch.md`: Command rerun watcher CLI project index.
 - `docs/project-derun.md`: Derun CLI project index.
 - `docs/project-public-docs.md`: Public docs app project index.
+- `docs/apps-react-forge-docs-foundation.md`: React Forge public guide routes, content, availability, and validation contract.
 - `docs/packages-docs-site-switcher-contract.md`: Shared accessible documentation site selector package contract.
 - `docs/project-serde-feather.md`: Serde Feather multi-crate project index.
 - `docs/project-rustia.md`: Rustia multi-crate project index.
@@ -98,6 +99,7 @@ enum ProjectId {
   PublicDocs = "public-docs",
   DevHud = "devhud",
   AsyncCommitHook = "async-commit-hook",
+  DeliDev = "delidev",
   Forge = "forge",
   ReactForge = "react-forge",
 }
@@ -110,11 +112,13 @@ enum ProjectId {
 - `react-forge` is the public npm Node.js 24 / React 19.2.8 cross-platform document project in issue #968. Follow `docs/project-react-forge.md` and its complete requirements. Keep JavaScript reconciliation outside native workers, format models independent, sessions in memory, exports revision-pinned and atomic, and imported opaque content preserved. All required formats and evidence are required before completion.
 
 - React Forge exposes a local session-based stdio MCP server through `react-forge mcp`; follow `docs/packages-react-forge-mcp-contract.md`. Keep execution output isolated from protocol stdout, share the existing engine and Figma scheduling across sessions, and preserve explicit export/publication and cancellation outcomes.
+- React Forge public guides are owned by `apps/public-docs/docs/react-forge` at `https://oss.delino.io/react-forge/`; follow `docs/apps-react-forge-docs-foundation.md` and keep the package README linked to them. Describe released user behavior and evidence limits without publishing repository internals.
 
-- React Forge owns `packages/react-forge`, `crates/react-forge-node`, `crates/forge-package`, `crates/forge-document`, `crates/forge-docx`, `crates/forge-xlsx`, `crates/forge-pdf`, and `crates/forge-figma`; reuse existing Forge presentation engines without changing CLI/MCP defaults.
+- React Forge owns `packages/react-forge`, `crates/react-forge-node`, `crates/forge-package`, `crates/forge-document`, `crates/forge-docx`, `crates/forge-xlsx`, `crates/forge-pdf`, `crates/forge-figma`, and `apps/public-docs/docs/react-forge`; reuse existing Forge presentation engines without changing CLI/MCP defaults.
 
 ### Project Domain Ownership
 
+- `delidev` -> `cmds/delidev-cli`, `protos/delidev/v1`, `protos/gen/go/delidev/v1`; follow `docs/project-delidev.md` and the complete issue #964 requirements. The executable is `delidev`; Go owns single-user server and Worker business logic. Keep implementation and real-environment evidence distinct in `docs/cmds-delidev-evidence.md`.
 - `forge` -> `crates/forge-tree-doc`, `crates/forge-pptx`, `crates/delino-forge`; follow `docs/project-forge.md` and `docs/crates-forge-foundation.md`. Keep all three packages private, local-only, and preserve unsupported PPTX content during supported edits. Opened documents export to a separate path; reject replacement of their tracked source even with explicit overwrite. CLI/MCP share one core; optional preview is not a generation dependency.
 
 - `nodeup` -> `crates/nodeup`, `apps/public-docs/docs/nodeup`
@@ -363,7 +367,7 @@ Coverage expectations:
 - `rust-fmt`: runs `cargo fmt --all --check`.
 - `rust-clippy`: runs `cargo clippy --workspace --all-targets --all-features -- -D warnings`.
 - `rust-test`: builds pnport and its injection companion with `cargo build --locked -p pnport -p pnport-preload`, then runs `cargo test --workspace --all-targets`.
-- `node-public-docs-test`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter public-docs test`, covering the root and all six project content sections.
+- `node-public-docs-test`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter public-docs test`, covering the root and all seven project content sections.
 - `node-clibox-test`: runs `cargo test --locked -p clibox -p clibox-config -p clibox-system -p clibox-transform -p clibox-wait` for native utility/configuration/process/adapter behavior, native CLI consumer installation and launcher/distribution tests on Linux, macOS, and Windows, selected by shared CI planning and required by `CI Result`.
 - `node-pnport-test`: checks launcher and package contracts, version synchronization, immutable artifacts, installer rollback, and fail-closed release publication on affected PRs and main pushes.
 - `pnport-native`: on affected main pushes and manual CI dispatch, runs the six native targets, installed npm/Yarn PnP consumers, TypeScript conformance, archive packaging, and direct-installer smoke. PRs skip this native matrix; the pnport tag workflow independently requires the same six targets before publication.
@@ -389,7 +393,7 @@ Change-scoped execution rules:
 - PRs run affected validation, including OCI checks, but never allocate the two Linux CLI package, six pnport native, ten desktop, three iOS, or four Android package entries. Relevant main pushes run Linux CLI, pnport native, eight Windows/Linux DevHud desktop entries, four Android entries, and four Windows/Linux React Forge hosts; they skip Mac desktop, iOS native, and React Forge Darwin rows. Manual dispatch runs every check and platform. The signed DevHud candidate requires both Mac desktop packages, signed iOS arm64, and arm64/x64 simulators; the React Forge tag release requires both Darwin rows through the shared CI validation command. There is no nightly CI schedule.
 - PR comparisons use the base/head merge-base; main comparisons use the exact `before..sha` trees, including all commits in the push. Missing or invalid comparisons fail. Deleted and renamed files select both affected owners.
 - Node workspace jobs use `scripts/ci/run-affected.mjs` to invoke the installed Turbo Node entry point directly with `turbo run <task> --affected --filter <workspace>` arguments, without a shell or package-manager shim, and with the planner's exact `TURBO_SCM_BASE` and `TURBO_SCM_HEAD`. External inputs and forced runs omit `--affected`; an otherwise empty affected set is a successful no-op.
-- Because `public-docs` builds six project content roots directly, changes under `apps/public-docs/docs/{async-commit-hook,binpm,nodeup,runmoor,clibox,pnport}` select and force `node-public-docs-test`.
+- Because `public-docs` builds seven project content roots directly, changes under `apps/public-docs/docs/{async-commit-hook,binpm,nodeup,runmoor,clibox,pnport,react-forge}` select and force `node-public-docs-test`. Changes to `docs/apps-react-forge-docs-foundation.md` alone also force that job.
 - Central path rules cover Go, Rust, every Node workspace, repository environment tooling, DevHud domains, packaging, public docs, and package/release/review workflows. Runmoor-only release scripts do not select DevHud native packaging; shared DevHud packaging inputs still do.
 - The PR frontend job runs the complete DevHud test command, including native-script fixtures, clean desktop/mobile frontend output validation, static mobile/widget contracts, and immutable CEF pins. Its aggregate `test` task is non-cacheable because it validates consecutive clean builds and external contract inputs.
 - Protocol generation and package-local frontend outputs are deterministic and cacheable; the ignored administrator and ach UI embeds, native package, mobile, smoke, signing, release, and deployment tasks remain non-cacheable.

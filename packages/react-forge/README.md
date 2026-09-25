@@ -2,6 +2,8 @@
 
 `@delino/react-forge` authors PPTX, DOCX, XLSX, independent tagged PDF and editable Figma Design files through persistent React sessions. It imports existing Office packages, exposes supported editable regions, and preserves unrelated XML and package parts when mounting React content into those regions. Its executable is named `react-forge`.
 
+The [React Forge guides](https://oss.delino.io/react-forge/) cover installation, each format, Office editing, Figma publication, the CLI, and local MCP sessions.
+
 Use Node.js 24 on macOS, Windows, or glibc Linux, on x64 or arm64. Install normally with npm or pnpm; the matching native package is selected as an optional dependency. Keep optional dependencies enabled. Installation does not compile native code or download binaries from a separate service.
 
 ```sh
@@ -84,10 +86,11 @@ Pass `AbortSignal` to import, asset, measurement or export options. Unresolved w
 
 ## Figma Design
 
-Figma creation and editing use the official remote Figma MCP server. Live authentication currently requires macOS Keychain and has been validated on macOS arm64 with Node.js 24. `render` updates the local React tree; `publish()` applies it to Figma. The same CLI writes a `.figma.json` receipt containing the file URL, revision, node bindings, image hashes and outcome. It is not a `.fig` file and contains no authentication token.
+Figma creation and editing use the official remote Figma MCP server. Live authentication currently requires macOS Keychain and has been validated on macOS arm64 with Node.js 24. `render` updates the local React tree; `publish()` applies it to Figma. The same CLI writes a `.figma.json` receipt containing the file key and URL when known, plus the revision, node bindings, image hashes and outcome. It is not a `.fig` file and contains no authentication token.
 
 ```tsx
-import { createSession, Format, CredentialSource, openFigma } from "@delino/react-forge";
+import { readFile } from "node:fs/promises";
+import { createSession, Format, CredentialSource, openFigma, type FigmaReceipt } from "@delino/react-forge";
 import { Document, Page, Frame, Text } from "@delino/react-forge/figma";
 
 const session = createSession(Format.Figma, {
@@ -107,7 +110,8 @@ try {
   await session.dispose();
 }
 
-const editing = await openFigma(fileUrlOrReceipt);
+const receipt = JSON.parse(await readFile("previous.figma.json", "utf8")) as FigmaReceipt;
+const editing = await openFigma(receipt);
 try {
   const page = editing.inspect().targets.find(t => t.kind === "PAGE");
   if (!page) throw new Error("Select a page first.");
@@ -121,13 +125,13 @@ try {
 }
 ```
 
-`openFigma` accepts a Design URL, file key or previous receipt. `refresh({ pageId, nodeIds })` narrows reads to up to 24 explicitly selected IDs and their ancestors; omit `nodeIds` to inspect the page. `refresh({ resources: true })` inspects local variables and paint/text styles. Use `target={remoteId}` to explicitly select existing children within a mounted frame. Their kind and parent stay fixed. Properties you omit and children you do not select remain under the original author's control. Removal of an owned container containing unselected children is rejected. Unmounting relinquishes the React region while preserving its last published state.
+`openFigma` accepts a Design URL or file key string, or a parsed receipt object. It does not read a receipt from a path string. `refresh({ pageId, nodeIds })` narrows reads to up to 24 explicitly selected IDs and their ancestors; omit `nodeIds` to inspect the page. `refresh({ resources: true })` inspects local variables and paint/text styles. Use `target={remoteId}` to explicitly select existing children within a mounted frame. Their kind and parent stay fixed. Properties you omit and children you do not select remain under the original author's control. Removal of an owned container containing unselected children is rejected. Unmounting relinquishes the React region while preserving its last published state.
 
 Components include pages, frames/Auto Layout, text, rectangles/ellipses/lines/vectors, registered PNG/JPEG images, components, component sets, instances, variable collections/variables, paint styles and text styles. `nodeKey` declares a local reference for instances, styles and variable bindings. Colors use `#RRGGBB`; `fontName` uses a font available in the Figma file, with its exact style spelling. Figma handles font availability and rendering; local font registration and binary export belong to the Office/PDF sessions. Images are limited to 10 MiB and 64 million pixels each.
 
 Connect Figma in Codex or Claude Code first. Choose `CredentialSource.Codex`, `ClaudeCode`, or `Auto`. Automatic selection stays pinned for that session. Expired or rejected credentials are reread once; further authentication requires reconnecting Figma in the selected application. React Forge never refreshes or changes that application's credentials.
 
-Remote publication can be **complete**, **partial**, or **unknown**. A `FigmaPublishError` carries the receipt. Confirmed IDs survive partial failures; retrying a known partial batch does not recreate them. Unknown outcomes require inspecting/reopening the file, and ambiguous new-file/node creation is never automatically repeated. Cancellation stops later batches; it does not undo existing changes. File-output conflicts are checked before publishing, but a receipt-save failure can occur after Figma has changed, so inspect the attached receipt. An unchanged session publish makes no remote calls. Request admission and file queues are shared by sessions in the same process; other clients remain subject to server limits and optimistic conflict guards.
+Remote publication can be **complete**, **partial**, or **unknown**. A `FigmaPublishError` carries the receipt. Confirmed IDs survive partial failures; retrying a known partial batch does not recreate them. Reopening from a receipt requires its `fileKey`. After an ambiguous `create_new_file` failure, the receipt may have neither `fileKey` nor `url`; check the selected Figma account and destination for the intended file. Only after identifying it reliably should you reopen it by its Design URL or key and inspect the result. If you cannot establish whether creation succeeded, keep the outcome unknown and do not repeat creation. Ambiguous node creation is never automatically repeated. Cancellation stops later batches; it does not undo existing changes. File-output conflicts are checked before publishing, but a receipt-save failure can occur after Figma has changed, so inspect the attached receipt. An unchanged session publish makes no remote calls. Request admission and file queues are shared by sessions in the same process; other clients remain subject to server limits and optimistic conflict guards.
 
 The [creation example](https://github.com/delinoio/oss/blob/main/packages/react-forge/examples/travel-figma.tsx) and [edit example](https://github.com/delinoio/oss/blob/main/packages/react-forge/examples/travel-figma-edit.tsx) create the five-screen fictional ROAM app and reopen it to change text, an image, layout and itinerary content. Copy the examples with their referenced assets before running them:
 
