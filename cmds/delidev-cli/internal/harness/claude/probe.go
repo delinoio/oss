@@ -33,6 +33,7 @@ const (
 	runtimePhase    probePhase = "runtime"
 	launchPhase     probePhase = "launch"
 	initializePhase probePhase = "initialize"
+	settingsPhase   probePhase = "settings"
 	cleanupPhase    probePhase = "cleanup"
 )
 

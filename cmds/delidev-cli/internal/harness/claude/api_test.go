@@ -89,7 +89,36 @@ func init() {
 	}
 	_, _ = os.Stdout.Write(fixtureResponse(request.ID, result))
 	if scanner.Scan() {
-		_, _ = os.Stdout.WriteString("unexpected-input\n")
+		var settingsRequest struct {
+			Type    string    `json:"type"`
+			ID      domain.ID `json:"request_id"`
+			Request struct {
+				Subtype string `json:"subtype"`
+			} `json:"request"`
+		}
+		if decodeNativeObject(scanner.Bytes(), &settingsRequest) != nil || settingsRequest.Type != "control_request" || settingsRequest.ID.Validate() != nil || settingsRequest.ID == request.ID || settingsRequest.Request.Subtype != "get_settings" {
+			os.Exit(78)
+		}
+		settings := settingsFixture()
+		applied := settings["applied"].(map[string]any)
+		switch mode {
+		case "settings-effort":
+			applied["effort"] = "medium"
+		case "settings-model":
+			applied["model"] = "foreign-model"
+		case "settings-sources":
+			settings["sources"] = []any{map[string]any{"source": "managed", "settings": map[string]any{}}}
+		case "settings-advisor":
+			applied["advisor"] = "unrequested-model"
+		case "settings-ultracode":
+			applied["ultracode"] = true
+		case "settings-missing":
+			delete(applied, "effort")
+		}
+		_, _ = os.Stdout.Write(fixtureResponse(settingsRequest.ID, settings))
+		if scanner.Scan() {
+			_, _ = os.Stdout.WriteString("unexpected-input\n")
+		}
 	}
 	os.Exit(0)
 }
@@ -107,7 +136,7 @@ func apiFixtureConfig(t *testing.T, mode string) (APIStreamConfig, *bytes.Buffer
 }
 
 func TestAPIStreamRebuildsPrivateRuntimeAndValidatesNativeAuthority(t *testing.T) {
-	for _, mode := range []string{"valid", "permission", "authority", "subscription", "no-token-source", "bare-commands", "remote", "timeout"} {
+	for _, mode := range []string{"valid", "permission", "authority", "subscription", "no-token-source", "bare-commands", "remote", "timeout", "settings-effort", "settings-model", "settings-sources", "settings-advisor", "settings-ultracode", "settings-missing"} {
 		t.Run(mode, func(t *testing.T) {
 			cfg, logs := apiFixtureConfig(t, mode)
 			duration := 5 * time.Second
@@ -120,6 +149,15 @@ func TestAPIStreamRebuildsPrivateRuntimeAndValidatesNativeAuthority(t *testing.T
 			if mode == "valid" {
 				if err != nil {
 					t.Fatal(err)
+				}
+				applied, ok := s.InitialAppliedSettings()
+				if !ok || applied.Model != cfg.Model || applied.Effort == nil || *applied.Effort != cfg.Effort {
+					t.Fatal("initial native settings observation lost")
+				}
+				*applied.Effort = LowEffort
+				again, _ := s.InitialAppliedSettings()
+				if *again.Effort != cfg.Effort {
+					t.Fatal("caller changed initial settings observation")
 				}
 				if err := s.Close(); err != nil {
 					t.Fatal(err)

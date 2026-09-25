@@ -80,6 +80,7 @@ type Stream struct {
 	activeIncoming int
 	events         []StreamEvent
 	eventBytes     int
+	initialApplied *AppliedSettings
 }
 
 func streamIncompatible() *domain.Error {

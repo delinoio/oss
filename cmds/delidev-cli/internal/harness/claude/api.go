@@ -65,7 +65,7 @@ func prepareAPIStream(config APIStreamConfig) (process.Config, error) {
 	}
 	if config.Process.OwnerID.Validate() != nil || !filepath.IsAbs(config.Process.Executable) || config.SessionID.Validate() != nil || domain.Text(config.Model, "native model", 256, true) != nil || domain.Text(config.Instructions, "native instructions", 256<<10, false) != nil ||
 		!slices.Contains([]NativePermission{DefaultPermission, PlanPermission, AcceptEditsPermission, DontAskPermission, BypassPermission}, config.Permission) ||
-		!slices.Contains([]NativeEffort{"", LowEffort, MediumEffort, HighEffort, XHighEffort, MaxEffort}, config.Effort) || !apiproxy.ValidToken(config.API.Token) {
+		!validNativeEffort(config.Effort, true) || !apiproxy.ValidToken(config.API.Token) {
 		return process.Config{}, apiConfigurationError()
 	}
 	if err := rpc.ValidateEndpoint(config.API.ServerOrigin); err != nil {
@@ -177,6 +177,14 @@ func OpenAPIStream(ctx context.Context, config APIStreamConfig) (stream *Stream,
 	if err := validateInitializeProfile(response.Result, string(config.Permission), "ANTHROPIC_API_KEY"); err != nil {
 		return nil, err
 	}
+	phase = settingsPhase
+	applied, err := s.ReadAppliedSettings(bounded, domain.NewID(), config.Model, config.Effort)
+	if err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	s.initialApplied = &applied
+	s.mu.Unlock()
 	if err := s.Err(); err != nil {
 		return nil, err
 	}
