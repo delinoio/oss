@@ -123,6 +123,11 @@ func TestStartBarrierAndSeparateInteractiveStreams(t *testing.T) {
 	if err := h.Stop(); err != nil {
 		t.Fatal(err)
 	}
+	// Windows locks deny reads of controller.lock until the Handle releases it.
+	// Inspect every retained byte only after normal owned cleanup and Close.
+	if err := h.Close(); err != nil {
+		t.Fatal(err)
+	}
 	err = filepath.WalkDir(c.Directory, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
 			return err
