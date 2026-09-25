@@ -211,33 +211,13 @@ func validateStoredInput(raw []byte, settings SessionSettings, input sessionInpu
 	if err != nil {
 		return false, sessionProblem()
 	}
-	info, err := shape(root["info"], []string{"id", "sessionID", "role", "time", "agent", "model"}, []string{"summary"})
-	if err != nil || !scalar(info["id"], input.receipt.MessageID) || !scalar(info["sessionID"], input.receipt.SessionID) || !scalar(info["role"], "user") || !scalar(info["agent"], settings.Agent) {
+	message, err := decodeNativeMessage(root["info"])
+	if err != nil || message.Role != UserMessageRole || message.ID != input.receipt.MessageID || message.SessionID != input.receipt.SessionID || message.User == nil {
 		return false, sessionProblem()
 	}
-	times, err := shape(info["time"], []string{"created"}, nil)
-	if err != nil {
+	user := message.User
+	if user.Agent != settings.Agent || user.Provider != settings.Provider || user.Model != settings.Model || user.Variant != nil || user.System != nil || user.Tools != nil || user.Format != nil {
 		return false, sessionProblem()
-	}
-	if created, ok := nativeCount(times["created"]); !ok || created == 0 {
-		return false, sessionProblem()
-	}
-	model, err := shape(info["model"], []string{"providerID", "modelID"}, nil)
-	if err != nil || !scalar(model["providerID"], settings.Provider) || !scalar(model["modelID"], settings.Model) {
-		return false, sessionProblem()
-	}
-	if summary, exists := info["summary"]; exists {
-		fields, err := shape(summary, []string{"diffs"}, []string{"title", "body"})
-		if err != nil || !validateDiffs(fields["diffs"]) {
-			return false, sessionProblem()
-		}
-		for _, key := range []string{"title", "body"} {
-			if text, exists := fields[key]; exists {
-				if _, ok := boundedString(text, maxHTTPBody, false); !ok {
-					return false, sessionProblem()
-				}
-			}
-		}
 	}
 	var parts []json.RawMessage
 	if json.Unmarshal(root["parts"], &parts) != nil || parts == nil || len(parts) > 1 {

@@ -48,7 +48,7 @@ func TestManualNativeOpenCodeEvents(t *testing.T) {
 	// These assertions inspect a scripted native fixture, not a production
 	// semantic observer. Transport recognition alone cannot publish these facts.
 	userSeen, partSeen, deltaSeen, assistantDone, idle := false, false, false, false, false
-	for count := 0; count < 256 && !idle; count++ {
+	for count := 0; count < 256 && !(idle && userSeen && partSeen && deltaSeen && assistantDone); count++ {
 		event, err := stream.Next(ctx)
 		if err != nil {
 			t.Fatalf("native event read: %v", err)
@@ -63,6 +63,10 @@ func TestManualNativeOpenCodeEvents(t *testing.T) {
 			if err != nil || !scalar(properties["sessionID"], id) || !scalar(info["sessionID"], id) {
 				t.Fatal("native message escaped original session")
 			}
+			decoded, err := decodeNativeMessage(properties["info"])
+			if err != nil || decoded.SessionID != id {
+				t.Fatalf("native typed message: %v", err)
+			}
 			if scalar(info["role"], "user") {
 				userSeen = scalar(info["id"], fixtureMessageID)
 			} else if scalar(info["parentID"], fixtureMessageID) && scalar(info["finish"], "stop") {
@@ -70,6 +74,9 @@ func TestManualNativeOpenCodeEvents(t *testing.T) {
 				if err == nil {
 					completed, ok := nativeCount(times["completed"])
 					assistantDone = completed > 0 && ok
+					if assistantDone && (decoded.Assistant == nil || decoded.Assistant.Completed == nil || decoded.Assistant.Finish == nil || *decoded.Assistant.Finish != FinishStop || decoded.Assistant.Usage.Input != 20 || decoded.Assistant.Usage.Output != 4 || decoded.Assistant.Usage.Total == nil || *decoded.Assistant.Usage.Total != 24 || decoded.Assistant.Cost.String() != "0") {
+						t.Fatal("native usage or terminal metadata changed during typed decoding")
+					}
 				}
 			}
 		case MessagePartUpdatedEvent:
