@@ -165,7 +165,7 @@ func TestManualNativeContentAndTurnUsage(t *testing.T) {
 	if strings.Contains(string(raw), nativeAPIFixtureToken) || strings.Contains(string(raw), nativeAPIUpstreamKey) {
 		t.Fatal("native transcript retained fixture credentials")
 	}
-	observation, err := VerifyMainTranscript(ctx, raw, cfg.SessionID, cfg.Workspace, historyProofs)
+	observation, err := ReadMainTranscript(ctx, cfg.Home, cfg.SessionID, cfg.Workspace, historyProofs, nil, nil, cfg.Process.Logger)
 	if err != nil || observation.MatchedMessages != 6 || observation.AdditionalMessages != 0 {
 		t.Fatal("persisted native transcript did not retain the ordered original inputs and blocks", err)
 	}

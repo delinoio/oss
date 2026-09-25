@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -18,7 +17,6 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
 func TestManualNativeAutomaticCompaction(t *testing.T) {
@@ -177,11 +175,7 @@ func TestManualNativeAutomaticCompaction(t *testing.T) {
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
-	raw, err := security.ReadPrivate(filepath.Join(cfg.Home, "projects", "delidev", string(cfg.SessionID)+".jsonl"), maxHistoryTranscript)
-	if err != nil {
-		t.Fatal(err)
-	}
-	verified, err := VerifyCompactedMainTranscript(ctx, raw, cfg.SessionID, cfg.Workspace, proofs, compactions)
+	verified, err := ReadMainTranscript(ctx, cfg.Home, cfg.SessionID, cfg.Workspace, proofs, compactions, nil, cfg.Process.Logger)
 	if err != nil || verified.MatchedMessages != 6 || verified.AdditionalMessages != 0 || verified.Compactions != 1 || verified.SummaryMessages != 1 || verified.CompactedMessages == 0 || verified.ActiveMatchedMessages == 0 || verified.ActiveMatchedMessages+verified.CompactedMessages != 6 {
 		t.Fatal("native compaction history did not retain original and active evidence", err, verified)
 	}

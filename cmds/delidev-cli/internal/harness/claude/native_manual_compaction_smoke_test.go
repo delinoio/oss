@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -18,7 +17,6 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
 func TestManualNativeExplicitCompaction(t *testing.T) {
@@ -268,11 +266,7 @@ func nativeManualCompactionFixture(t *testing.T, rejected, insufficient, continu
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
-	raw, err := security.ReadPrivate(filepath.Join(cfg.Home, "projects", "delidev", string(cfg.SessionID)+".jsonl"), maxHistoryTranscript)
-	if err != nil {
-		t.Fatal(err)
-	}
-	verified, err := VerifyMainTranscriptWithActions(ctx, raw, cfg.SessionID, cfg.Workspace, proofs, compactions, actions)
+	verified, err := ReadMainTranscript(ctx, cfg.Home, cfg.SessionID, cfg.Workspace, proofs, compactions, actions, cfg.Process.Logger)
 	wantMessages, wantCompactions, wantActionMessages, wantDiagnostics := uint32(6), uint32(1), uint32(2), uint32(0)
 	if failed {
 		wantCompactions, wantActionMessages, wantDiagnostics = 0, 1, 1
