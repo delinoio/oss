@@ -16,3 +16,4 @@ export * from "./transport.js";
 export * from "./synchronization.js";
 export * from "./errors.js";
 export * from "./validation.js";
+export * as UsageQuery from "./gen/delidev/v1/delidev-UsageService_connectquery.js";

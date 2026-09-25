@@ -84,3 +84,16 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .queue-item { padding-block: 12px; }
 
 .session-tools { max-height: 45vh; overflow: auto; flex-shrink: 0; }
+
+.usage-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 0 16px; margin-block: 24px; }
+.usage-filters .actions { grid-column: 1 / -1; }
+.usage-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 16px; }
+.usage-stats > div { padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: white; }
+.usage-stats dt { font-size: .85rem; color: var(--muted); }
+.usage-stats dd { margin: 8px 0; font-size: 1.3rem; overflow-wrap: anywhere; }
+.usage-stats small, .usage-table small { display: block; color: var(--muted); overflow-wrap: anywhere; }
+.usage-table { overflow-x: auto; }
+.usage-table table { width: 100%; border-collapse: collapse; text-align: left; }
+.usage-table caption { text-align: left; padding-block: 12px; color: var(--muted); }
+.usage-table th, .usage-table td { padding: 12px; border-bottom: 1px solid var(--border); vertical-align: top; min-width: 140px; }
+.usage-table .usage-stats { grid-template-columns: 1fr; }

@@ -893,3 +893,70 @@ message ListActivityResponse {
   repeated ActivityEntry entries = 1;
   string next_page_token = 2;
 }
+
+service UsageService {
+  rpc GetUsageSummary(GetUsageSummaryRequest) returns (GetUsageSummaryResponse);
+}
+message GetUsageSummaryRequest {
+  // Half-open server retention-time range. Zero defaults to the last 30 days.
+  int64 from_unix_ms = 1;
+  int64 until_unix_ms = 2;
+  string session_id = 3;
+  string project_id = 4;
+  string account_id = 5;
+  string provider_id = 6;
+  string model_id = 7;
+  bool general_chat = 8;
+}
+message UsageMeasure {
+  // Empty is unavailable. "0" is measured zero. Decimal integer, never float.
+  string known_total = 1;
+  uint32 measured_responses = 2;
+  uint32 unavailable_responses = 3;
+}
+message UsageTotals {
+  uint32 responses = 1;
+  UsageMeasure input = 2;
+  UsageMeasure cached_input = 3;
+  UsageMeasure cache_write_input = 4;
+  UsageMeasure output = 5;
+  UsageMeasure reasoning_output = 6;
+  UsageMeasure total = 7;
+}
+message UsageGroup {
+  string session_id = 1;
+  // Empty means projectless General Chat; removed projects retain their UUID.
+  string project_id = 2;
+  string account_id = 3;
+  string provider_id = 4;
+  string model_id = 5;
+  UsageTotals totals = 6;
+  // Current display labels only; immutable IDs above remain authoritative.
+  // Missing/deleted configuration leaves its label empty.
+  string session_name = 7;
+  string project_name = 8;
+  string account_name = 9;
+  string provider_name = 10;
+  string model_name = 11;
+}
+enum UsageCoverage {
+  USAGE_COVERAGE_UNSPECIFIED = 0;
+  // Exact known subtotals only. Missing/legacy/child telemetry is not zero.
+  USAGE_COVERAGE_OBSERVED_ROOT_RESPONSES = 1;
+}
+enum UsageCostState {
+  USAGE_COST_STATE_UNSPECIFIED = 0;
+  USAGE_COST_STATE_UNAVAILABLE = 1;
+}
+message GetUsageSummaryResponse {
+  int64 from_unix_ms = 1;
+  int64 until_unix_ms = 2;
+  UsageTotals totals = 3;
+  repeated UsageGroup groups = 4;
+  UsageCoverage coverage = 5;
+  UsageCostState actual_cost = 6;
+  UsageCostState estimated_cost = 7;
+  // Accepted in this time range with no exact response retained in the range.
+  // This does not assert that those executions made no calls.
+  uint32 accepted_executions_without_response = 8;
+}

@@ -13,6 +13,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 import { ConfigurationService, EntityKind, ResourceService, ScheduleService, SystemService, createDeliDevTransport, newRequestId } from "@delinoio/delidev-api-client";
 import { CreateSession } from "./views";
+import { Usage } from "./usage";
 import { Schedules } from "./schedules";
 import { Settings } from "./settings";
 import { MutationIntents } from "./mutation";
@@ -321,3 +322,16 @@ it("creates and edits singleton server preferences with the exact Go defaults", 
   expect(latest[0].revision).toBe(first[0].revision + 1n);
   expect(document(latest[0])).toEqual({ ...defaults, default_routing: "priority", automatic_fetch: false });
 }, 15000);
+
+
+it("reads unavailable usage through the actual Go service without inventing cost", async () => {
+ const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
+ render(<TransportProvider transport={transport}><QueryClientProvider client={client}><Usage active open={()=>{}} /></QueryClientProvider></TransportProvider>);
+ await screen.findByText("Known subtotals · incomplete coverage");
+ expect(screen.getByText(/No exact response usage is recorded/)).toBeTruthy();
+ expect(screen.getByText("Actual API cost:").parentElement!.textContent).toContain("Unavailable");
+ fireEvent.click(screen.getByRole("checkbox",{name:"General Chat only"}));
+ fireEvent.click(screen.getByRole("button",{name:"Apply usage filters"}));
+ await waitFor(()=>expect(screen.queryByText("Loading usage…")).toBeNull());
+ cleanup();client.clear();
+});

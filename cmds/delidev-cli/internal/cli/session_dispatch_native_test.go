@@ -484,6 +484,17 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 			if state.Outcome != domain.ExecutionSucceeded || state.ActiveExecutionID != "" || state.PendingInputs != 0 || state.InitialExecution == nil || state.InitialExecution.InitialAccountID != domain.ID(account["id"].(string)) || state.Source != expectedSource {
 				t.Fatalf("public completion lost ownership: outcome=%s active=%s pending=%d initial=%t selected_account=%t source=%s", state.Outcome, state.ActiveExecutionID, state.PendingInputs, state.InitialExecution != nil, state.InitialExecution != nil && state.InitialExecution.InitialAccountID == domain.ID(account["id"].(string)), state.Source)
 			}
+			checkUsage := func(responses, missing int) {
+				t.Helper()
+				summary := run([]string{"usage", "summary", "--session-id", id, "--account-id", account["id"].(string)}, nil)
+				totals := summary["totals"].(map[string]any)
+				if totals["responses"] != float64(responses) || totals["total"].(map[string]any)["known_total"] != fmt.Sprint(responses*2) || summary["accepted_executions_without_response"] != float64(missing) || summary["actual_cost"] != "USAGE_COST_STATE_UNAVAILABLE" {
+					t.Fatal("native usage was replayed, relabeled or made complete", summary)
+				}
+			}
+			if !steerScenario {
+				checkUsage(1, 0)
+			}
 			if expectedSource == domain.ScheduledSession {
 				if state.ScheduleOrigin == nil || state.ScheduleOrigin.ScheduleID != domain.ID(scheduleID) || state.ScheduleOrigin.OccurrenceID != domain.ID(occurrenceID) || state.ScheduleOrigin.Trigger != expectedTrigger {
 					t.Fatal("native scheduled execution lost immutable source ownership")
@@ -630,6 +641,12 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 				previousExecution = state.Execution.ExecutionID
 				if calls.Load() != int64(count) {
 					t.Fatal("continuation replayed or skipped native input", calls.Load(), count)
+				}
+				if !steerScenario {
+					// The pinned native resume listener cannot opt into exact raw
+					// response events. Preserve the first known subtotal, surface
+					// missing resumed telemetry and never sum replayed counters.
+					checkUsage(1, count-1)
 				}
 			}
 			enqueue := func(prompt string, mode domain.SessionMode) string {

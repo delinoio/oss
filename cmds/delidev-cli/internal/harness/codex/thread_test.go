@@ -66,7 +66,7 @@ func (f *threadFixture) handle(id json.RawMessage, method string, raw json.RawMe
 		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"id": id, "error": map[string]any{"code": code, "message": "fixture-protected-diagnostic", "data": "fixture-protected-details"}})
 		return true
 	}
-	if params["experimentalRawEvents"] != true {
+	if (method == string(startThread) && params["experimentalRawEvents"] != true) || (method == string(resumeThread) && params["experimentalRawEvents"] != nil) {
 		os.Exit(26)
 	}
 	threadID := domain.NewID()

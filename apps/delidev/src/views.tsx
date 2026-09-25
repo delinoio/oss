@@ -12,7 +12,7 @@ import { StartingReferences } from "./schedules";
 import { useLocalWorkerProof, type ReadLocalWorkerProof } from "./local-worker";
 import { Interaction } from "./interactions";
 
-export enum Surface { Sessions = "sessions", Search = "search", Activity = "activity", Inbox = "inbox", Schedules = "schedules" }
+export enum Surface { Sessions = "sessions", Search = "search", Activity = "activity", Inbox = "inbox", Schedules = "schedules", Usage = "usage" }
 function Pager({ page, next, setPage, busy }: { page: string; next?: string; setPage: (value: string) => void; busy: boolean }) {
   return <nav aria-label="Results pages"><button disabled={!page || busy} onClick={() => setPage("")}>First page</button><button disabled={!next || busy} onClick={() => setPage(next!)}>Next page</button></nav>;
 }

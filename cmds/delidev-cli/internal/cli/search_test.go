@@ -91,6 +91,22 @@ func TestCLISearchRetainedConversationsAndFilters(t *testing.T) {
 	if len(seen) != 3 {
 		t.Fatal("pagination omitted retained messages")
 	}
+	if code, result := cliRun(t, root, []string{"usage", "list"}, ""); code != 0 {
+		t.Fatal("existing cumulative observation reads broke", result)
+	}
+	usageCode, usageResult := cliRun(t, root, []string{"usage", "summary", "--session-id", string(session), "--general-chat"}, "")
+	if usageCode != 0 {
+		t.Fatal(usageResult)
+	}
+	usageSummary := usageResult["result"].(map[string]any)
+	if usageSummary["accepted_executions_without_response"] != float64(1) || usageSummary["actual_cost"] != "USAGE_COST_STATE_UNAVAILABLE" || usageSummary["totals"].(map[string]any)["total"].(map[string]any)["known_total"] != "" {
+		t.Fatal("CLI invented complete usage or cost", usageResult)
+	}
+	for _, bad := range [][]string{{"usage"}, {"usage", "summary", "--from", "yesterday"}, {"usage", "summary", "--account-id", "invalid"}, {"usage", "summary", "--project-id", string(domain.NewID()), "--general-chat"}} {
+		if code, _ := cliRun(t, root, bad, ""); code == 0 {
+			t.Fatal("invalid usage scope accepted", bad)
+		}
+	}
 	code, activity := cliRun(t, root, []string{"activity", "list", "--session-id", string(session)}, "")
 	if code != 0 {
 		t.Fatal(activity)

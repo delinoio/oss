@@ -278,6 +278,7 @@ func (s *Service) Handler(origins []string, loopback bool) http.Handler {
 	mux.Handle(delidevv1connect.NewResourceServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewSearchServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewActivityServiceHandler(s, options...))
+	mux.Handle(delidevv1connect.NewUsageServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewConfigurationServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewDeviceServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewWorkerServiceHandler(s, options...))

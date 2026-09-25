@@ -116,7 +116,7 @@ const (
 )
 
 type threadParams struct {
-	RawEvents                  bool              `json:"experimentalRawEvents"`
+	RawEvents                  bool              `json:"experimentalRawEvents,omitempty"`
 	ThreadID                   domain.ID         `json:"threadId,omitempty"`
 	Model                      string            `json:"model"`
 	ModelProvider              string            `json:"modelProvider"`
@@ -310,11 +310,14 @@ func (c *Client) bindThread(ctx context.Context, requestID, threadID domain.ID, 
 		}
 	}
 	params.ThreadID = threadID
-	params.RawEvents = true
 	if method == resumeThread {
 		exclude := true
 		params.ExcludeTurns = &exclude
 	} else {
+		// The pinned ThreadResumeParams has no raw-event opt-in and its server
+		// listener disables these supplements. Only fresh thread/start accepts
+		// this option; do not pretend an ignored resume field enables telemetry.
+		params.RawEvents = true
 		params.HistoryMode = LegacyHistory
 		ephemeral := false
 		params.Ephemeral = &ephemeral

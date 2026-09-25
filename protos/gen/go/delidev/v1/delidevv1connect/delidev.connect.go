@@ -47,6 +47,8 @@ const (
 	SearchServiceName = "delidev.v1.SearchService"
 	// ActivityServiceName is the fully-qualified name of the ActivityService service.
 	ActivityServiceName = "delidev.v1.ActivityService"
+	// UsageServiceName is the fully-qualified name of the UsageService service.
+	UsageServiceName = "delidev.v1.UsageService"
 )
 
 // These constants are the fully-qualified names of the RPCs defined in this package. They're
@@ -230,6 +232,9 @@ const (
 	// ActivityServiceListActivityProcedure is the fully-qualified name of the ActivityService's
 	// ListActivity RPC.
 	ActivityServiceListActivityProcedure = "/delidev.v1.ActivityService/ListActivity"
+	// UsageServiceGetUsageSummaryProcedure is the fully-qualified name of the UsageService's
+	// GetUsageSummary RPC.
+	UsageServiceGetUsageSummaryProcedure = "/delidev.v1.UsageService/GetUsageSummary"
 )
 
 // SystemServiceClient is a client for the delidev.v1.SystemService service.
@@ -2336,4 +2341,74 @@ type UnimplementedActivityServiceHandler struct{}
 
 func (UnimplementedActivityServiceHandler) ListActivity(context.Context, *connect.Request[v1.ListActivityRequest]) (*connect.Response[v1.ListActivityResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ActivityService.ListActivity is not implemented"))
+}
+
+// UsageServiceClient is a client for the delidev.v1.UsageService service.
+type UsageServiceClient interface {
+	GetUsageSummary(context.Context, *connect.Request[v1.GetUsageSummaryRequest]) (*connect.Response[v1.GetUsageSummaryResponse], error)
+}
+
+// NewUsageServiceClient constructs a client for the delidev.v1.UsageService service. By default, it
+// uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and sends
+// uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC() or
+// connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewUsageServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) UsageServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	usageServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("UsageService").Methods()
+	return &usageServiceClient{
+		getUsageSummary: connect.NewClient[v1.GetUsageSummaryRequest, v1.GetUsageSummaryResponse](
+			httpClient,
+			baseURL+UsageServiceGetUsageSummaryProcedure,
+			connect.WithSchema(usageServiceMethods.ByName("GetUsageSummary")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// usageServiceClient implements UsageServiceClient.
+type usageServiceClient struct {
+	getUsageSummary *connect.Client[v1.GetUsageSummaryRequest, v1.GetUsageSummaryResponse]
+}
+
+// GetUsageSummary calls delidev.v1.UsageService.GetUsageSummary.
+func (c *usageServiceClient) GetUsageSummary(ctx context.Context, req *connect.Request[v1.GetUsageSummaryRequest]) (*connect.Response[v1.GetUsageSummaryResponse], error) {
+	return c.getUsageSummary.CallUnary(ctx, req)
+}
+
+// UsageServiceHandler is an implementation of the delidev.v1.UsageService service.
+type UsageServiceHandler interface {
+	GetUsageSummary(context.Context, *connect.Request[v1.GetUsageSummaryRequest]) (*connect.Response[v1.GetUsageSummaryResponse], error)
+}
+
+// NewUsageServiceHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewUsageServiceHandler(svc UsageServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	usageServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("UsageService").Methods()
+	usageServiceGetUsageSummaryHandler := connect.NewUnaryHandler(
+		UsageServiceGetUsageSummaryProcedure,
+		svc.GetUsageSummary,
+		connect.WithSchema(usageServiceMethods.ByName("GetUsageSummary")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/delidev.v1.UsageService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case UsageServiceGetUsageSummaryProcedure:
+			usageServiceGetUsageSummaryHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedUsageServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedUsageServiceHandler struct{}
+
+func (UnimplementedUsageServiceHandler) GetUsageSummary(context.Context, *connect.Request[v1.GetUsageSummaryRequest]) (*connect.Response[v1.GetUsageSummaryResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.UsageService.GetUsageSummary is not implemented"))
 }

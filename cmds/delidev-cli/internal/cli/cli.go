@@ -46,6 +46,7 @@ type client struct {
 	resources     delidevv1connect.ResourceServiceClient
 	search        delidevv1connect.SearchServiceClient
 	activity      delidevv1connect.ActivityServiceClient
+	usage         delidevv1connect.UsageServiceClient
 	configuration delidevv1connect.ConfigurationServiceClient
 	devices       delidevv1connect.DeviceServiceClient
 	workers       delidevv1connect.WorkerServiceClient
@@ -154,6 +155,11 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		ctx = bounded
 	}
 	switch command {
+	case "usage":
+		if len(rest) > 0 && rest[0] == "summary" {
+			value, err := usageCommand(ctx, c, rest)
+			return emit(value, err)
+		}
 	case "activity":
 		value, err := activityCommand(ctx, c, rest)
 		return emit(value, err)
@@ -577,6 +583,7 @@ func connectClient(o options, input io.Reader) (client, error) {
 		resources:     delidevv1connect.NewResourceServiceClient(httpClient, endpoint, opts...),
 		search:        delidevv1connect.NewSearchServiceClient(httpClient, endpoint, opts...),
 		activity:      delidevv1connect.NewActivityServiceClient(httpClient, endpoint, opts...),
+		usage:         delidevv1connect.NewUsageServiceClient(httpClient, endpoint, opts...),
 		configuration: delidevv1connect.NewConfigurationServiceClient(httpClient, endpoint, opts...),
 	}, nil
 }
@@ -728,6 +735,7 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   schedule occurrence --id SCHEDULE --occurrence-id OCCURRENCE
   interaction respond --id ID --revision N --input FILE|-
   interaction approve --id ID --revision N --input FILE|-
+  usage summary [--from RFC3339] [--until RFC3339] [--session-id ID] [--project-id ID | --general-chat] [--account-id ID] [--provider-id ID] [--model-id ID]
   activity list [--session-id ID] [--project-id ID] [--limit N] [--page-token TOKEN]
   search --query TEXT [--session-id ID] [--project-id ID] [--agent-id ID] [--account-id ID]
     [--outcome all|not-started|running|succeeded|failed|stopped] [--archive all|active|archiving|archived]
