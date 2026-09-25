@@ -1,0 +1,124 @@
+{
+  "protocolVersion": 1,
+  "agentCapabilities": {
+    "loadSession": true,
+    "promptCapabilities": {
+      "image": false,
+      "audio": false,
+      "embeddedContext": true
+    },
+    "mcpCapabilities": {
+      "http": true,
+      "sse": true
+    },
+    "sessionCapabilities": {
+      "list": {},
+      "resume": {},
+      "close": {}
+    },
+    "auth": {},
+    "_meta": {
+      "x.ai/fs_notify": true,
+      "x.ai/hooks": {
+        "blockingEvents": [
+          "pre_tool_use",
+          "stop",
+          "subagent_stop"
+        ],
+        "decisions": [
+          "deny",
+          "block"
+        ],
+        "stopSignals": [
+          "continue",
+          "stopReason",
+          "additionalContext"
+        ]
+      },
+      "x.ai/capabilities": {
+        "toolOverrides": {
+          "x_keyword_search": true,
+          "x_semantic_search": true,
+          "x_user_search": false,
+          "x_thread_fetch": false
+        }
+      }
+    }
+  },
+  "authMethods": [
+    {
+      "id": "grok.com",
+      "name": "Grok",
+      "description": "Private authentication advertisement"
+    }
+  ],
+  "_meta": {
+    "grokShell": true,
+    "defaultAuthMethodId": null,
+    "x.ai/mcp/sdk": true,
+    "x.ai/pluginDirs": true,
+    "currentWorkingDirectory": "/private/fixture",
+    "agentVersion": "1.0.41",
+    "agentId": "79c78c1a-ab95-53ac-840a-1d6c6b25a952",
+    "agentInstanceId": "c4bc803b-c8eb-4dbf-be16-f199a1cf141e",
+    "hostname": "private-host-sentinel",
+    "modelState": {
+      "currentModelId": "grok-4.6",
+      "availableModels": []
+    },
+    "mcpServers": [],
+    "mcpApps": false,
+    "metadata": null,
+    "availableCommands": [
+      {
+        "name": "compact",
+        "description": "Private command descriptor",
+        "input": {
+          "hint": "Private argument hint"
+        }
+      },
+      {
+        "name": "always-approve",
+        "description": "Private command descriptor",
+        "input": {
+          "hint": "Private argument hint"
+        }
+      },
+      {
+        "name": "context",
+        "description": "Private command descriptor",
+        "input": null
+      },
+      {
+        "name": "session-info",
+        "description": "Private command descriptor",
+        "input": null
+      },
+      {
+        "name": "deep-research",
+        "description": "Private command descriptor",
+        "input": {
+          "hint": "Private argument hint"
+        }
+      },
+      {
+        "name": "workflow",
+        "description": "Private command descriptor",
+        "input": {
+          "hint": "Private argument hint"
+        }
+      },
+      {
+        "name": "goal",
+        "description": "Private command descriptor",
+        "input": {
+          "hint": "Private argument hint"
+        }
+      }
+    ],
+    "cancelRewind": true,
+    "sessionRecap": true,
+    "feedbackTraceOffer": false,
+    "voiceMode": true
+  }
+}

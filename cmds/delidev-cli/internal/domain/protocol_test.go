@@ -17,7 +17,10 @@ func protocolOutput() (HarnessDiscoveryInput, HarnessDiscoveryOutput) {
 		if i.Harness == ClaudeCode {
 			i.Version = ClaudeProtocolVersion
 		}
-		if i.Harness == Codex || i.Harness == ClaudeCode {
+		if i.Harness == GrokBuild {
+			i.Version = GrokProtocolVersion
+		}
+		if i.Harness == Codex || i.Harness == ClaudeCode || i.Harness == GrokBuild {
 			i.Protocol.State = ProtocolVerified
 			i.Protocol.Problem = nil
 			i.ProtocolVerified = true
@@ -38,7 +41,7 @@ func TestNativeProtocolObservationIsSeparateFromExecutionReadiness(t *testing.T)
 			t.Fatal("raw protocol error retained")
 		}
 	}
-	for _, change := range []string{"unrequested", "foreign-protocol", "unverified-version", "unverified-claude-version", "missing", "false-state", "unimplemented-profile", "execution-capability", "claude-execution-capability"} {
+	for _, change := range []string{"unrequested", "foreign-protocol", "unverified-version", "unverified-claude-version", "unverified-grok-version", "missing", "false-state", "unimplemented-profile", "execution-capability", "claude-execution-capability", "grok-execution-capability"} {
 		t.Run(change, func(t *testing.T) {
 			input, output := protocolOutput()
 			switch change {
@@ -50,6 +53,8 @@ func TestNativeProtocolObservationIsSeparateFromExecutionReadiness(t *testing.T)
 				output.Installations[0].Version = "0.152.0"
 			case "unverified-claude-version":
 				output.Installations[1].Version = "2.1.237"
+			case "unverified-grok-version":
+				output.Installations[3].Version = "1.0.42"
 			case "missing":
 				output.Installations[0].Protocol = nil
 			case "false-state":
@@ -62,6 +67,8 @@ func TestNativeProtocolObservationIsSeparateFromExecutionReadiness(t *testing.T)
 				output.Installations[0].Capabilities = []Capability{CapabilityExecute}
 			case "claude-execution-capability":
 				output.Installations[1].Capabilities = []Capability{CapabilityExecute}
+			case "grok-execution-capability":
+				output.Installations[3].Capabilities = []Capability{CapabilityExecute}
 			}
 			if err := output.ValidateDiscovery(input); err == nil {
 				t.Fatal("invalid observation accepted")

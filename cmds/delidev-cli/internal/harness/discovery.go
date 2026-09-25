@@ -17,6 +17,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/claude"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/grok"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
@@ -134,7 +135,7 @@ func Discover(ctx context.Context, config DiscoveryConfig, input domain.HarnessD
 		i.Problem = domain.InstallationProblem(i.State)
 		if input.VerifyProtocol && i.State == domain.InstallationDetected {
 			i.Protocol = &domain.ProtocolObservation{Protocol: domain.ProtocolFor(i.Harness), State: domain.ProtocolUnsupported}
-			if i.Harness == domain.Codex || i.Harness == domain.ClaudeCode {
+			if i.Harness == domain.Codex || i.Harness == domain.ClaudeCode || i.Harness == domain.GrokBuild {
 				home := filepath.Join(directory, string(i.Harness))
 				env, err := probeEnvironment(home)
 				if err != nil {
@@ -151,6 +152,8 @@ func Discover(ctx context.Context, config DiscoveryConfig, input domain.HarnessD
 					}
 				case domain.ClaudeCode:
 					err = claude.Probe(bounded, claude.ProbeConfig{Process: config, Version: i.Version, Home: filepath.Join(home, "claude")})
+				case domain.GrokBuild:
+					err = grok.Probe(bounded, grok.ProbeConfig{Process: config, Version: i.Version, Home: filepath.Join(home, "grok")})
 				}
 				cancel()
 				if err != nil && domain.SafeError(err).Code == domain.RecoveryRequired {
@@ -284,7 +287,7 @@ func probeEnvironment(home string) ([]string, error) {
 // bounded system lookup context survives; callers supply scoped execution
 // credentials separately and retain this directory when native history exists.
 func PrivateRuntimeEnvironment(home string) ([]string, error) {
-	for _, name := range []string{"", "config", "cache", "data", "state", "tmp", "codex", "claude", "opencode"} {
+	for _, name := range []string{"", "config", "cache", "data", "state", "tmp", "codex", "claude", "opencode", "grok"} {
 		if err := security.PrivateDir(filepath.Join(home, name)); err != nil {
 			return nil, err
 		}
@@ -299,6 +302,7 @@ func PrivateRuntimeEnvironment(home string) ([]string, error) {
 			}
 		}
 	}
+	env = append(env, "GROK_HOME="+filepath.Join(home, "grok"), "GROK_DISABLE_AUTOUPDATER=1")
 	return env, nil
 }
 
@@ -311,6 +315,15 @@ func parseVersion(harness domain.Harness, raw string) string {
 		value = strings.TrimSuffix(value, " (Claude Code)")
 	case domain.GrokBuild:
 		value = strings.TrimPrefix(value, "grok ")
+		// The official native build appends its abbreviated source commit. Only
+		// accept this exact bounded suffix; arbitrary diagnostics are not versions.
+		if version, suffix, found := strings.Cut(value, " ("); found {
+			hash, closed := strings.CutSuffix(suffix, ")")
+			if !closed || len(hash) < 7 || len(hash) > 40 || strings.Trim(hash, "0123456789abcdef") != "" {
+				return ""
+			}
+			value = version
+		}
 	}
 	value = strings.TrimPrefix(value, "v")
 	if !domain.ValidInstallationVersion(value) {

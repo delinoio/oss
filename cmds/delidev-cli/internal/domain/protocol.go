@@ -11,6 +11,7 @@ const (
 const (
 	CodexProtocolVersion  = "0.151.0"
 	ClaudeProtocolVersion = "2.1.236"
+	GrokProtocolVersion   = "1.0.41"
 )
 
 type ProtocolState string
@@ -63,7 +64,7 @@ func (i *Installation) validateProtocol(requested bool) error {
 	}
 	switch i.Protocol.State {
 	case ProtocolVerified:
-		supported := (i.Harness == Codex && i.Version == CodexProtocolVersion) || (i.Harness == ClaudeCode && i.Version == ClaudeProtocolVersion)
+		supported := (i.Harness == Codex && i.Version == CodexProtocolVersion) || (i.Harness == ClaudeCode && i.Version == ClaudeProtocolVersion) || (i.Harness == GrokBuild && i.Version == GrokProtocolVersion)
 		if !supported || !i.ProtocolVerified || i.Protocol.Problem != nil {
 			return Fail(InvalidArgument, "The reported native profile is not validated.", "Use a supported protocol profile; version detection alone cannot grant capabilities.")
 		}
