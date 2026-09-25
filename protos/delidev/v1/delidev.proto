@@ -831,3 +831,65 @@ message SearchConversationsResponse {
   repeated ConversationSearchHit hits = 1;
   string next_page_token = 2;
 }
+
+service ActivityService {
+  rpc ListActivity(ListActivityRequest) returns (ListActivityResponse);
+}
+enum ActivityKind {
+  ACTIVITY_KIND_UNSPECIFIED = 0;
+  // Accepted dispatch is not proof that native input started.
+  ACTIVITY_KIND_EXECUTION_ACCEPTED = 1;
+  // Observed native outcomes do not assert process cleanup.
+  ACTIVITY_KIND_EXECUTION_SUCCEEDED = 2;
+  ACTIVITY_KIND_EXECUTION_FAILED = 3;
+  ACTIVITY_KIND_EXECUTION_STOPPED = 4;
+  ACTIVITY_KIND_SCHEDULE_CRON = 5;
+  ACTIVITY_KIND_SCHEDULE_RUN_NOW = 6;
+}
+enum ActivityOccurrenceState {
+  ACTIVITY_OCCURRENCE_STATE_UNSPECIFIED = 0;
+  ACTIVITY_OCCURRENCE_STATE_WAITING = 1;
+  ACTIVITY_OCCURRENCE_STATE_ACTIVE = 2;
+  ACTIVITY_OCCURRENCE_STATE_SUCCEEDED = 3;
+  ACTIVITY_OCCURRENCE_STATE_FAILED = 4;
+  ACTIVITY_OCCURRENCE_STATE_STOPPED = 5;
+  ACTIVITY_OCCURRENCE_STATE_SKIPPED = 6;
+}
+enum ActivityJobState {
+  ACTIVITY_JOB_STATE_UNSPECIFIED = 0;
+  ACTIVITY_JOB_STATE_QUEUED = 1;
+  ACTIVITY_JOB_STATE_CLAIMED = 2;
+  ACTIVITY_JOB_STATE_SUCCEEDED = 3;
+  ACTIVITY_JOB_STATE_FAILED = 4;
+  ACTIVITY_JOB_STATE_UNCERTAIN = 5;
+  ACTIVITY_JOB_STATE_CANCELED = 6;
+}
+message ListActivityRequest {
+  string session_id = 1;
+  string project_id = 2;
+  uint32 page_size = 3;
+  string page_token = 4;
+}
+// Metadata only. Original source identity is also the stable activity identity.
+message ActivityEntry {
+  string id = 1;
+  EntityKind source_kind = 2;
+  uint64 source_revision = 3;
+  int64 observed_at_unix_ms = 4;
+  ActivityKind kind = 5;
+  string session_id = 6;
+  string project_id = 7;
+  string execution_id = 8;
+  string account_id = 9;
+  string job_id = 10;
+  string schedule_id = 11;
+  string occurrence_id = 12;
+  // Current occurrence state, distinct from its original acceptance time.
+  ActivityOccurrenceState occurrence_state = 13;
+  // Current dispatch/cleanup job state, including pre-native failure.
+  ActivityJobState job_state = 14;
+}
+message ListActivityResponse {
+  repeated ActivityEntry entries = 1;
+  string next_page_token = 2;
+}

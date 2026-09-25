@@ -27,6 +27,7 @@ Run personal AI sessions across projects, accounts, native harnesses, and execut
 - [Session acceptance and input queue](cmds-delidev-sessions-contract.md)
 - [Retained inbox and read-state contract](cmds-delidev-inbox-contract.md)
 - [Retained conversation search](cmds-delidev-search-contract.md)
+- [Retained activity](cmds-delidev-activity-contract.md)
 - [Schedules and durable occurrences](cmds-delidev-schedules-contract.md)
 - [Implementation and evidence ledger](cmds-delidev-evidence.md)
 

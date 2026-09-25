@@ -26,7 +26,7 @@ func TestCLISearchRetainedConversationsAndFilters(t *testing.T) {
 			return nil, err
 		}
 		input, _ := json.Marshal(domain.ExecutionJobInput{ExecutionID: execution, SessionID: session, AccountID: account})
-		if _, err := tx.Put(domain.JobKind, domain.NewID(), 0, session, "", domain.Job{Type: domain.ExecuteSessionJob, Input: input}); err != nil {
+		if _, err := tx.Put(domain.JobKind, domain.NewID(), 0, session, "", domain.Job{Type: domain.ExecuteSessionJob, State: domain.JobQueued, Input: input}); err != nil {
 			return nil, err
 		}
 		for range 3 {
@@ -90,6 +90,23 @@ func TestCLISearchRetainedConversationsAndFilters(t *testing.T) {
 	}
 	if len(seen) != 3 {
 		t.Fatal("pagination omitted retained messages")
+	}
+	code, activity := cliRun(t, root, []string{"activity", "list", "--session-id", string(session)}, "")
+	if code != 0 {
+		t.Fatal(activity)
+	}
+	entries := activity["result"].(map[string]any)["entries"].([]any)
+	if len(entries) != 1 {
+		t.Fatal("CLI activity omitted accepted dispatch")
+	}
+	entry := entries[0].(map[string]any)
+	if entry["kind"] != "execution-accepted" || entry["session_id"] != string(session) || entry["account_id"] != string(account) || entry["execution_id"] != string(execution) || entry["source_kind"] != "job" || entry["data"] != nil {
+		t.Fatal("CLI activity changed metadata projection")
+	}
+	for _, invalid := range [][]string{{"activity"}, {"activity", "list", "--limit", "0"}, {"activity", "list", "--limit", "201"}, {"activity", "list", "--session-id", "bad"}} {
+		if code, value := cliRun(t, root, invalid, ""); code == 0 || value["error"] == nil {
+			t.Fatal("invalid activity command accepted", invalid)
+		}
 	}
 	for _, invalid := range [][]string{{"search"}, {"search", "--query", "x", "--limit", "0"}, {"search", "--query", "x", "--limit", "201"}, {"search", "--query", "x", "--outcome", "complete"}, {"search", "--query", "x", "--archive", "trash"}, {"search", "--query", "x", "--agent-id", "bad"}} {
 		if code, value := cliRun(t, root, invalid, ""); code == 0 || value["error"] == nil {

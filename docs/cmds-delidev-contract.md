@@ -126,3 +126,6 @@ SQLite file URIs preserve percent-escaped path bytes and use `/X:/...` for absol
 
 ### Retained conversation search
 `delidev search --query TEXT` and owner/client `SearchService.SearchConversations` search canonical retained message, tool and artifact content, including Archive. Literal Unicode search, historical execution-account filtering, current session filters, protected query commitments and bounded coherent pages follow [the search contract](cmds-delidev-search-contract.md). Search does not dispatch work, read private native history or alter inbox state.
+
+### Retained activity
+`delidev activity list` and owner/client `ActivityService.ListActivity` expose original execution acceptance, native terminal results and cron/Run now occurrences in chronological order with source links. The [activity contract](cmds-delidev-activity-contract.md) keeps this metadata-only projection separate from execution authority, process cleanup and inbox read state.

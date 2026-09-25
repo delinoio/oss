@@ -118,3 +118,6 @@ Protocol changes update this contract and [command contract](cmds-delidev-contra
 
 ### Conversation search RPC
 `SearchService.SearchConversations` is owner/paired-client-only and reads complete current message resources with bounded session metadata. Literal query plus session/project/Agent/original-execution-account/outcome/archive filters follow the search contract; unknown enum values fail. Signed pages bind the actor, all normalized selectors and source epoch through a keyed query commitment. Reads recheck revocation within the same transaction; both protobuf and JSON pages are byte-bounded. Search never changes read state or execution.
+
+### Activity RPC
+`ActivityService.ListActivity` is owner/paired-client-only and returns closed event/occurrence enums, original source IDs/revisions and server retention time. Execution acceptance, native terminal evidence and scheduling remain distinct. No source documents, prompt/output content, instructions, credentials or native thread/turn IDs enter this response. Current-source pages bind actor/session/project/source epoch, are bounded, and recheck revocation in the read transaction; original execution jobs retain account attribution.

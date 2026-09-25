@@ -45,6 +45,8 @@ const (
 	ScheduleServiceName = "delidev.v1.ScheduleService"
 	// SearchServiceName is the fully-qualified name of the SearchService service.
 	SearchServiceName = "delidev.v1.SearchService"
+	// ActivityServiceName is the fully-qualified name of the ActivityService service.
+	ActivityServiceName = "delidev.v1.ActivityService"
 )
 
 // These constants are the fully-qualified names of the RPCs defined in this package. They're
@@ -225,6 +227,9 @@ const (
 	// SearchServiceSearchConversationsProcedure is the fully-qualified name of the SearchService's
 	// SearchConversations RPC.
 	SearchServiceSearchConversationsProcedure = "/delidev.v1.SearchService/SearchConversations"
+	// ActivityServiceListActivityProcedure is the fully-qualified name of the ActivityService's
+	// ListActivity RPC.
+	ActivityServiceListActivityProcedure = "/delidev.v1.ActivityService/ListActivity"
 )
 
 // SystemServiceClient is a client for the delidev.v1.SystemService service.
@@ -2261,4 +2266,74 @@ type UnimplementedSearchServiceHandler struct{}
 
 func (UnimplementedSearchServiceHandler) SearchConversations(context.Context, *connect.Request[v1.SearchConversationsRequest]) (*connect.Response[v1.SearchConversationsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SearchService.SearchConversations is not implemented"))
+}
+
+// ActivityServiceClient is a client for the delidev.v1.ActivityService service.
+type ActivityServiceClient interface {
+	ListActivity(context.Context, *connect.Request[v1.ListActivityRequest]) (*connect.Response[v1.ListActivityResponse], error)
+}
+
+// NewActivityServiceClient constructs a client for the delidev.v1.ActivityService service. By
+// default, it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses,
+// and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the
+// connect.WithGRPC() or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewActivityServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) ActivityServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	activityServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("ActivityService").Methods()
+	return &activityServiceClient{
+		listActivity: connect.NewClient[v1.ListActivityRequest, v1.ListActivityResponse](
+			httpClient,
+			baseURL+ActivityServiceListActivityProcedure,
+			connect.WithSchema(activityServiceMethods.ByName("ListActivity")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// activityServiceClient implements ActivityServiceClient.
+type activityServiceClient struct {
+	listActivity *connect.Client[v1.ListActivityRequest, v1.ListActivityResponse]
+}
+
+// ListActivity calls delidev.v1.ActivityService.ListActivity.
+func (c *activityServiceClient) ListActivity(ctx context.Context, req *connect.Request[v1.ListActivityRequest]) (*connect.Response[v1.ListActivityResponse], error) {
+	return c.listActivity.CallUnary(ctx, req)
+}
+
+// ActivityServiceHandler is an implementation of the delidev.v1.ActivityService service.
+type ActivityServiceHandler interface {
+	ListActivity(context.Context, *connect.Request[v1.ListActivityRequest]) (*connect.Response[v1.ListActivityResponse], error)
+}
+
+// NewActivityServiceHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewActivityServiceHandler(svc ActivityServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	activityServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("ActivityService").Methods()
+	activityServiceListActivityHandler := connect.NewUnaryHandler(
+		ActivityServiceListActivityProcedure,
+		svc.ListActivity,
+		connect.WithSchema(activityServiceMethods.ByName("ListActivity")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/delidev.v1.ActivityService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case ActivityServiceListActivityProcedure:
+			activityServiceListActivityHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedActivityServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedActivityServiceHandler struct{}
+
+func (UnimplementedActivityServiceHandler) ListActivity(context.Context, *connect.Request[v1.ListActivityRequest]) (*connect.Response[v1.ListActivityResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ActivityService.ListActivity is not implemented"))
 }
