@@ -183,7 +183,7 @@
 
 - `apps/public-docs/docs/react-forge` owns the seventeen English public guides at `https://oss.delino.io/react-forge/`. Follow `docs/apps-react-forge-docs-foundation.md`; expose every stable route in the sidebar and React Forge as a peer in the shared site selector.
 - Keep installation and API examples aligned with the released `@delino/react-forge` package and public types. Distinguish six-host local Office/PDF support from macOS Keychain Figma authentication; document explicit publication, receipts, preservation, and verification limits without exposing repository internals.
-- Validate all fourteen rendered routes, guide links, selector state, sidebar, social/footer links, clean URLs, and prohibited credentials and internal paths through `pnpm --filter public-docs test`.
+- Validate all seventeen rendered routes, guide links, selector state, sidebar, social/footer links, clean URLs, and prohibited credentials and internal paths through `pnpm --filter public-docs test`.
 
 - React Forge GLB/FBX public guides remain explicitly unreleased until a release includes them. Preserve the static-only scene boundary and Blender 4.5 FBX compatibility limits; source and CI coverage do not establish published availability or execution on untested hosts.
 

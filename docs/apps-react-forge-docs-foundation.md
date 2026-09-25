@@ -24,7 +24,7 @@ Every route appears in the Rspress sidebar and the shared selector identifies `/
 
 ## Build and validation
 
-Use the consolidated `pnpm dev:public-docs` loopback server on port `46302` and the existing Cloudflare Pages publication. Run `pnpm test` from `apps/public-docs`. Rendered validation checks all 17 artifacts, headings and guide links, sidebar entries, exact selector state, repository links, clean routes, and prohibited credential/internal-path content. Keep public examples aligned with compiled source examples and exported types; no live Figma write is part of documentation validation. Changes to this contract alone select and force `node-public-docs-test`.
+Use the consolidated `pnpm dev:public-docs` loopback server on port `46302` and the existing Cloudflare Pages publication. Run `pnpm test` from `apps/public-docs`. The validation rule in `apps/AGENTS.md` covers this complete route inventory, including GLB, FBX, and SFX. Rendered validation checks all 17 artifacts, headings and guide links, sidebar entries, exact selector state, repository links, clean routes, and prohibited credential/internal-path content. Keep public examples aligned with compiled source examples and exported types; no live Figma write is part of documentation validation. Changes to this contract alone select and force `node-public-docs-test`.
 
 ## Change policy
 
