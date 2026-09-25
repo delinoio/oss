@@ -1,0 +1,18 @@
+{
+  "host": "macos-arm64",
+  "node": "24.20.0",
+  "sampleRate": 48000,
+  "channels": 1,
+  "bitsPerSample": 16,
+  "frames": 36000,
+  "seconds": 0.75,
+  "bytes": 72044,
+  "sha256": "fa750e6d70bc68f7a10fc327631355bc236e36a18cdb8d6a496b2bb0dc858198",
+  "peakDbfs": -0.4456953099305293,
+  "attackRms": 0.24285626655214013,
+  "tailRms": 0.002257750951143639,
+  "silentEnd": true,
+  "clippedSamples": 0,
+  "firstSample": 0,
+  "lastSample": 0
+}

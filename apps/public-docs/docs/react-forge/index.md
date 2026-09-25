@@ -9,6 +9,7 @@ Local document work runs on Node.js 24 on macOS, Windows, and glibc Linux, on x6
 - [Install React Forge](/react-forge/installation) and [create a first presentation](/react-forge/getting-started).
 - Use [sessions](/react-forge/sessions) for repeated React updates, inspection, assets, fonts, measurement, and explicit exports.
 - Author [PPTX](/react-forge/pptx), [DOCX](/react-forge/docx), [XLSX](/react-forge/xlsx), or [PDF](/react-forge/pdf) with each format's own components.
+- Preview [game SFX generation](/react-forge/sfx), an unreleased WAV feature absent from npm `0.1.1`.
 - [Edit an existing Office file](/react-forge/office-editing) by selecting a supported region while preserving unrelated content.
 - [Create or edit Figma Design files](/react-forge/figma) with explicit publication and a receipt that records remote outcomes.
 - Run one-shot tasks with the [CLI](/react-forge/cli), or retain sessions through the [local stdio MCP server](/react-forge/mcp).

@@ -3995,6 +3995,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-sfx"
+version = "0.0.0"
+dependencies = [
+ "forge-tree-doc",
+ "serde",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
 name = "forge-tree-doc"
 version = "0.0.0"
 dependencies = [
@@ -9731,6 +9741,7 @@ dependencies = [
  "forge-package",
  "forge-pdf",
  "forge-pptx",
+ "forge-sfx",
  "forge-tree-doc",
  "forge-xlsx",
  "napi",

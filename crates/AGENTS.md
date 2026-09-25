@@ -271,3 +271,5 @@
 - Presentation text editability must validate paragraph/run semantics as well as body geometry, including table-cell text. Preserve unmodeled fields, links, bullets, defaults and extensions as opaque content.
 - Imported PPTX update envelopes must contain replacements and source identity, not a serialized copy of untouched Office content. Apply the React-tree input ceiling to authored work without making successfully imported large documents unexportable.
 - Imported DOCX mounted measurements must use source section/cell flow constraints. Preserve unknown width as unavailable geometry while retaining safe edits; never substitute a default page width for ambiguous source layout.
+
+- `forge-sfx` owns independent bounded procedural game-audio synthesis and PCM16 WAV encoding under `docs/packages-react-forge-sfx-contract.md`. Validate before allocation, check cooperative cancellation during synthesis/encoding, and keep devices, files, networking and callbacks outside the engine. Add its tests and Clippy to the six-host React Forge gates.

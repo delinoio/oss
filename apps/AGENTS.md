@@ -179,6 +179,8 @@
 
 ### React Forge public documentation Rules
 
-- `apps/public-docs/docs/react-forge` owns the fourteen English public guides at `https://oss.delino.io/react-forge/`. Follow `docs/apps-react-forge-docs-foundation.md`; expose every stable route in the sidebar and React Forge as a peer in the shared site selector.
+- `apps/public-docs/docs/react-forge` owns the fifteen English public guides at `https://oss.delino.io/react-forge/`. Follow `docs/apps-react-forge-docs-foundation.md`; expose every stable route in the sidebar and React Forge as a peer in the shared site selector.
 - Keep installation and API examples aligned with the released `@delino/react-forge` package and public types. Distinguish six-host local Office/PDF support from macOS Keychain Figma authentication; document explicit publication, receipts, preservation, and verification limits without exposing repository internals.
-- Validate all fourteen rendered routes, guide links, selector state, sidebar, social/footer links, clean URLs, and prohibited credentials and internal paths through `pnpm --filter public-docs test`.
+- Validate all fifteen rendered routes, guide links, selector state, sidebar, social/footer links, clean URLs, and prohibited credentials and internal paths through `pnpm --filter public-docs test`.
+
+- React Forge `/sfx` documents the unreleased procedural WAV extension separately from published `0.1.1` behavior. Preserve its availability notice and separate SFX evidence from historical six-host document validation.

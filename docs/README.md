@@ -57,8 +57,9 @@ Each project must have one project index document and one or more domain contrac
 
 ### React Forge
 - [Project index](project-react-forge.md)
-- [Public documentation](apps-react-forge-docs-foundation.md) (`apps/public-docs/docs/react-forge`, canonical URL `https://oss.delino.io/react-forge/`, fourteen user-guide routes)
+- [Public documentation](apps-react-forge-docs-foundation.md) (`apps/public-docs/docs/react-forge`, canonical URL `https://oss.delino.io/react-forge/`, fifteen user-guide routes)
 - [Complete issue requirements](packages-react-forge-requirements.md)
+- [Game SFX and WAV export](packages-react-forge-sfx-contract.md)
 - [Node sessions and CLI](packages-react-forge-contract.md)
 - [Session-based stdio MCP](packages-react-forge-mcp-contract.md)
 - [Native engines and preservation](crates-react-forge-contract.md)
