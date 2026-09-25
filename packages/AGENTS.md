@@ -10,7 +10,7 @@
 
 - `packages/devhud-api-client`: implemented generated TypeScript DevHud API client, Connect Query bindings, and safe handwritten wire helpers.
 
-- `packages/docs-site-switcher`: shared accessible documentation site selector used by the consolidated Public Docs root and all six project content sections. Follow `docs/packages-docs-site-switcher-contract.md`; keep its fixed site registry, enum IDs, keyboard behavior, focus management, and active-route semantics synchronized across consumers.
+- `packages/docs-site-switcher`: shared accessible documentation site selector used by the consolidated Public Docs root and all seven project content sections. Follow `docs/packages-docs-site-switcher-contract.md`; keep its fixed site registry, enum IDs, keyboard behavior, focus management, and active-route semantics synchronized across consumers.
 
 ### DevHud Rules
 
@@ -66,6 +66,7 @@
 - Sessions are memory-only. Serialize mutations, reject invalid latest renders and overlapping targets, pin export revisions, serialize file exports sharing a directory identity in invocation order across sessions, support cancellation without timeouts, and clean resources on dispose without deleting exports. Keep callbacks and component code outside native computations. Reject exports to an imported document's tracked source or canonical aliases even with explicit overwrite; require a separate output path because fingerprint-then-rename cannot protect external saves.
 - Imported-source protection must conservatively reject case aliases on Windows/macOS and Unicode normalization aliases on macOS, including after the original source has been removed.
 - Internal docs, examples, messages and troubleshooting are English; public npm publication follows `docs/packages-react-forge-release-contract.md`, with no runtime downloads. Tests must exercise installed/workspace CLI and asynchronous React behavior, not manually invoked components.
+- Keep the public `https://oss.delino.io/react-forge/` guides and npm README aligned with released library, CLI, MCP, format, Figma, and platform behavior. Public guide ownership and validation follow `docs/apps-react-forge-docs-foundation.md`.
 - Treat the external `0.0.1` npm packages only as name reservations. The `0.1.0` source tag failed before registry publication and remains immutable. Patch version `0.1.1` is the first functional release of all seven packages through the exact-tag OIDC workflow. After a failed React Forge release, fix the cause and bump the patch version rather than rerunning or moving its tag. Publish only a complete verified seven-package candidate through the configured Trusted Publishers.
 
 - React Forge native/system-font build, integration, rendering and benchmark tasks must remain uncached. Use package-owned scripts and record test renderer/font provenance without bundling system fonts. Retain actual packed-consumer CLI coverage. Fonts/assets participate in immutable revision snapshots; disposal owns in-flight mounts and mutations.

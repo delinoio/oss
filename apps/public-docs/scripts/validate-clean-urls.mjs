@@ -102,6 +102,23 @@ const pnportHeadings = {
   "/pnport/releases": ["Releases and rollback", "Release readiness", "Explicit updates and rollback"],
 };
 
+const reactForgeHeadings = {
+  "/react-forge/": ["React Forge", "Choose a workflow"],
+  "/react-forge/installation": ["Install React Forge", "Requirements", "Verify the installation"],
+  "/react-forge/getting-started": ["Getting started", "Next steps"],
+  "/react-forge/sessions": ["Sessions and common API", "Fonts and assets", "Inspection and measurement", "Lifecycle and diagnostics"],
+  "/react-forge/pptx": ["Author PPTX presentations"],
+  "/react-forge/docx": ["Author DOCX documents"],
+  "/react-forge/xlsx": ["Author XLSX workbooks"],
+  "/react-forge/pdf": ["Author tagged PDF"],
+  "/react-forge/office-editing": ["Edit existing Office files"],
+  "/react-forge/figma": ["Figma Design creation and editing", "Reopen and edit", "Publication outcomes and receipts"],
+  "/react-forge/cli": ["One-shot CLI tasks"],
+  "/react-forge/mcp": ["Local MCP sessions", "Typical local document sequence", "Figma and failure recovery"],
+  "/react-forge/limits-and-troubleshooting": ["Limits and troubleshooting", "Common failures", "Boundaries"],
+  "/react-forge/releases": ["Releases and validation", "Validation scope", "Update or roll back"],
+};
+
 const stableRouteIds = [
   ...Object.entries(projectRoutes).flatMap(([slug, routes]) => routes.map((route) => `/${slug}${route}`)),
   "/",
@@ -121,7 +138,7 @@ const stableRouteIds = [
   "/derun",
   "/with-watch",
 ];
-const projectSlugs = Object.keys(projectRoutes).filter((slug) => slug !== "clibox" && slug !== "pnport");
+const projectSlugs = Object.keys(projectRoutes).filter((slug) => slug !== "clibox" && slug !== "pnport" && slug !== "react-forge");
 
 const outputDir = path.resolve("doc_build");
 const stableRoutePathPattern = stableRouteIds
@@ -185,7 +202,7 @@ async function collectHtmlFiles(directory, depth = 0) {
 const htmlFiles = await collectHtmlFiles(outputDir);
 const failures = [];
 
-// Existing project sections have separate validators. clibox and pnport also
+// Existing project sections have separate validators. clibox, pnport, and React Forge also
 // use the strict article/resource checks below, with exact route exceptions.
 for (const slug of projectSlugs) {
   if (!(await pathExists(path.join(outputDir, slug)))) {
@@ -200,6 +217,7 @@ function attributeValue(match) {
 const requiredHeadings = new Map([
   ...Object.entries(cliboxHeadings),
   ...Object.entries(pnportHeadings),
+  ...Object.entries(reactForgeHeadings),
   ["/devhud", ["DevHud"]],
   ["/devhud/install", ["Install and Verify DevHud", "Desktop", "Mobile stores", "Chrome extension"]],
   ["/devhud/guide", ["Using DevHud", "First run and identity", "Settings and PAT profiles", "Capture, drafts, and browser context", "Decks and widgets"]],
@@ -216,8 +234,12 @@ const requiredLinks = new Map([
   ["/pnport/", ["/pnport/installation", "/pnport/getting-started", "/pnport/commands", "/pnport/filesystem-and-processes", "/pnport/editors", "/pnport/cache", "/pnport/diagnostics", "/pnport/benchmarks", "/pnport/releases"]],
   ["/pnport/installation", ["/pnport/getting-started", "/pnport/commands", "/pnport/releases"]],
   ["/pnport/diagnostics", ["/pnport/cache"]],
-  ["/", ["https://oss.delino.io/runmoor/", "https://oss.delino.io/nodeup/", "https://oss.delino.io/binpm/", "https://oss.delino.io/async-commit-hook/", "https://oss.delino.io/clibox/", "https://oss.delino.io/pnport/"]],
-  ["/projects-overview", ["https://oss.delino.io/runmoor/", "https://oss.delino.io/nodeup/", "https://oss.delino.io/binpm/", "https://oss.delino.io/async-commit-hook/", "https://oss.delino.io/clibox/", "https://oss.delino.io/pnport/"]],
+  ["/react-forge/", ["/react-forge/installation", "/react-forge/getting-started", "/react-forge/sessions", "/react-forge/pptx", "/react-forge/docx", "/react-forge/xlsx", "/react-forge/pdf", "/react-forge/office-editing", "/react-forge/figma", "/react-forge/cli", "/react-forge/mcp", "/react-forge/limits-and-troubleshooting", "/react-forge/releases"]],
+  ["/react-forge/installation", ["/react-forge/getting-started", "/react-forge/releases", "/react-forge/figma"]],
+  ["/react-forge/figma", ["/react-forge/cli", "/react-forge/mcp", "/react-forge/limits-and-troubleshooting"]],
+  ["/react-forge/mcp", ["/react-forge/figma"]],
+  ["/", ["https://oss.delino.io/runmoor/", "https://oss.delino.io/nodeup/", "https://oss.delino.io/binpm/", "https://oss.delino.io/async-commit-hook/", "https://oss.delino.io/clibox/", "https://oss.delino.io/pnport/", "https://oss.delino.io/react-forge/"]],
+  ["/projects-overview", ["https://oss.delino.io/runmoor/", "https://oss.delino.io/nodeup/", "https://oss.delino.io/binpm/", "https://oss.delino.io/async-commit-hook/", "https://oss.delino.io/clibox/", "https://oss.delino.io/pnport/", "https://oss.delino.io/react-forge/"]],
   ["/devhud", ["/devhud/install", "/devhud/privacy", "/devhud/security", "/devhud/support"]],
   ["/devhud/install", ["/devhud/releases", "/devhud/security", "/devhud/support"]],
   ["/devhud/guide", ["/devhud/privacy", "/devhud/security", "/devhud/support"]],
