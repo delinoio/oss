@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -17,6 +18,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
 func TestManualNativeContentAndTurnUsage(t *testing.T) {
@@ -88,6 +90,7 @@ func TestManualNativeContentAndTurnUsage(t *testing.T) {
 			}
 		}
 	}()
+	historyProofs := []HistoryMessageProof{}
 	for turn := int64(1); turn <= 2; turn++ {
 		input := domain.NewID()
 		const prompt = "Observe multiple native content blocks."
@@ -102,6 +105,13 @@ func TestManualNativeContentAndTurnUsage(t *testing.T) {
 			observation, err := s.Next(ctx)
 			if err != nil {
 				t.Fatal(err)
+			}
+			if observation.Native != nil && (observation.Native.Type == "assistant" || observation.Native.Type == "user") {
+				proof, err := ObserveMainHistoryMessage(*observation.Native, cfg.SessionID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				historyProofs = append(historyProofs, proof)
 			}
 			for _, content := range observation.Content {
 				if content.Kind == ContentCompleted {
@@ -144,5 +154,19 @@ func TestManualNativeContentAndTurnUsage(t *testing.T) {
 	}
 	if calls.Load() != 2 {
 		t.Fatal("native provider call count changed")
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := security.ReadPrivate(filepath.Join(cfg.Home, "projects", "delidev", string(cfg.SessionID)+".jsonl"), maxHistoryTranscript)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), nativeAPIFixtureToken) || strings.Contains(string(raw), nativeAPIUpstreamKey) {
+		t.Fatal("native transcript retained fixture credentials")
+	}
+	observation, err := VerifyMainTranscript(ctx, raw, cfg.SessionID, cfg.Workspace, historyProofs)
+	if err != nil || observation.MatchedMessages != 6 || observation.AdditionalMessages != 0 {
+		t.Fatal("persisted native transcript did not retain the ordered original inputs and blocks", err)
 	}
 }
