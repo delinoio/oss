@@ -22,7 +22,7 @@ test("root Rust toolchain changes select Forge validation and rendering", () => 
 });
 
 test("PR never allocates native package jobs, including changes to CI itself", () => {
-  for (const path of ["apps/devhud/src/App.tsx", "apps/devhud/src-tauri/src/main.rs", "Cargo.lock", ".github/workflows/CI.yml", "scripts/ci/plan.mjs", ".github/actions/setup-ci-node/action.yml"]) {
+  for (const path of ["apps/devhud/src/App.tsx", "apps/devhud/src-tauri/src/main.rs", "Cargo.lock", ".gitattributes", ".github/workflows/CI.yml", "scripts/ci/plan.mjs", ".github/actions/setup-ci-node/action.yml"]) {
     const jobs = selected(Event.PullRequest, [path]);
     assert.ok(jobs.includes("devhud-frontend"), path);
     for (const id of native) assert.ok(!jobs.includes(id), `${path}: ${id}`);
@@ -39,6 +39,15 @@ test("shared affected runner changes exercise every eligible workspace job", () 
   }
 });
 
+test("Git LFS attribute changes force every eligible job", () => {
+  for (const event of [Event.PullRequest, Event.Push]) {
+    const plan = planJobs(event, [".gitattributes"]);
+    const expected = Object.keys(jobPaths).filter((id) => id !== "devhud-ios-simulator" && (event !== Event.PullRequest || !native.includes(id)));
+    assert.deepEqual(Object.entries(plan.jobs).filter(([, run]) => run).map(([id]) => id), expected);
+    for (const id of expected) assert.equal(plan.forced[id], true, `${event}: ${id}`);
+  }
+});
+
 test("pnport installer changes select six-host native verification on main", () => {
   for (const installer of ["scripts/install/pnport.sh", "scripts/install/pnport.ps1"]) {
     assert.equal(planJobs(Event.Push, [installer]).jobs["pnport-native"], true, installer);
@@ -47,7 +56,7 @@ test("pnport installer changes select six-host native verification on main", () 
 });
 
 test("main selects affected non-Mac native jobs; manual selects every job", () => {
-  for (const path of ["apps/devhud/src/App.tsx", "apps/devhud/src-tauri/src/main.rs", "protos/devhud/v1/settings.proto", "pnpm-lock.yaml", ".github/workflows/CI.yml"]) {
+  for (const path of ["apps/devhud/src/App.tsx", "apps/devhud/src-tauri/src/main.rs", "protos/devhud/v1/settings.proto", "pnpm-lock.yaml", ".gitattributes", ".github/workflows/CI.yml"]) {
     for (const id of ["devhud-desktop", "devhud-android-emulator"]) assert.ok(selected(Event.Push, [path]).includes(id), `${path}: ${id}`);
     assert.ok(!selected(Event.Push, [path]).includes("devhud-ios-simulator"), path);
   }

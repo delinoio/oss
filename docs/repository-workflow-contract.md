@@ -4,6 +4,12 @@ Repository workflows are reviewed as source-backed contracts. Workflow IDs, job 
 
 ## Continuous integration
 
+### Git LFS assets
+
+The six currently tracked assets of at least 512 KiB use exact-path entries in the root `.gitattributes`: the two identical Noto Sans KR fonts used by Forge and DevHud, the three React Forge ROAM example PNGs, and the DevHud API removal PNG. The fonts share one LFS object. Their source and license records remain beside the files. Future repository assets at or above this threshold require an explicit LFS entry and a hydrated checkout in every build, test, or packaging job that consumes them. Attribute changes force the CI job planner to select every event-eligible job; pull requests still defer native packaging.
+
+CI and release jobs that consume these assets enable `actions/checkout` LFS downloading before building. In particular, the API image build must receive the actual removal PNG before Docker copies its context, and desktop builds must receive the font before compilation. Validate migrated files against their original SHA-256 values, inspect committed pointer blobs, and run `git lfs fsck` before publishing a branch. This migration adds a new commit without rewriting historical commits or tags; older Git blobs remain in history. `async-commit-hook` intentionally rejects LFS repositories, so this repository is no longer a supported execution source for that tool; its existing product contract is unchanged.
+
 ### Pinned repository utilities
 
 The root `clibox-prebuilt` dev dependency aliases the published `@delino/clibox@0.1.6` package. Its exact launcher and optional native packages are integrity-pinned in `pnpm-lock.yaml`; the private `packages/clibox` workspace is not an executable dependency. Ordinary `pnpm install` installs the prebuilt without Rust compilation. Run repository utility scripts from the repository root; they invoke `pnpm exec clibox` directly. There is no additional repository launcher or runtime download.

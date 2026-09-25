@@ -73,6 +73,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
+          lfs: true
           ref: ${{ needs.prepare.outputs.revision }}
           persist-credentials: false
       - uses: actions/setup-node@v6
