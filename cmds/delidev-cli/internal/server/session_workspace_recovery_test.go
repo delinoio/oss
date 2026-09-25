@@ -117,16 +117,18 @@ func TestWorkspaceRecoveryAfterWorkerRestartUsesOriginalJournal(t *testing.T) {
 				t.Fatal(err)
 			}
 			workerCtx, stop := context.WithCancel(context.Background())
-			ready, done := make(chan struct{}), make(chan error, 1)
+			ready, done := make(chan struct{}), make(chan struct{})
+			var workerErr error
 			go func() {
-				done <- worker.Run(workerCtx, worker.Config{Root: workerRoot, Ready: func(domain.ID) { close(ready) }})
+				defer close(done)
+				workerErr = worker.Run(workerCtx, worker.Config{Root: workerRoot, Ready: func(domain.ID) { close(ready) }})
 			}()
 			defer func() {
 				stop()
 				select {
-				case err := <-done:
-					if err != nil {
-						t.Error(err)
+				case <-done:
+					if workerErr != nil {
+						t.Error(workerErr)
 					}
 				case <-time.After(5 * time.Second):
 					t.Error("Worker cleanup timed out")
@@ -151,17 +153,7 @@ func TestWorkspaceRecoveryAfterWorkerRestartUsesOriginalJournal(t *testing.T) {
 				t.Fatal(err)
 			}
 			recoveryID := response.Msg.Change.RecoveryJob.Id
-			deadline := time.Now().Add(5 * time.Second)
-			for {
-				current = currentCatalogResource(t, f, initial.Session)
-				if sessionBody(t, current).Recovery != domain.Reconciling {
-					break
-				}
-				if time.Now().After(deadline) {
-					t.Fatal("recovery did not finish")
-				}
-				time.Sleep(10 * time.Millisecond)
-			}
+			current = waitWorkspaceRecovery(t, f, initial.Session, response.Msg.Change.RecoveryJob, done)
 			if strings.HasSuffix(mode, "mismatched-journal") {
 				if v := sessionBody(t, current); v.Recovery != domain.NeedsRecovery || v.Archive != domain.ArchivePending || v.Preparation.State != domain.PreparationUncertain {
 					t.Fatal("mismatched original journal falsely confirmed recovery")
@@ -181,17 +173,7 @@ func TestWorkspaceRecoveryAfterWorkerRestartUsesOriginalJournal(t *testing.T) {
 					t.Fatal("failed recovery was silently reexecuted")
 				}
 				recoveryID = response.Msg.Change.RecoveryJob.Id
-				deadline = time.Now().Add(5 * time.Second)
-				for {
-					current = currentCatalogResource(t, f, initial.Session)
-					if sessionBody(t, current).Recovery != domain.Reconciling {
-						break
-					}
-					if time.Now().After(deadline) {
-						t.Fatal("explicit recovery retry timed out")
-					}
-					time.Sleep(10 * time.Millisecond)
-				}
+				current = waitWorkspaceRecovery(t, f, initial.Session, response.Msg.Change.RecoveryJob, done)
 			}
 			value := sessionBody(t, current)
 			want := domain.PreparationReady
@@ -232,6 +214,59 @@ func TestWorkspaceRecoveryAfterWorkerRestartUsesOriginalJournal(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// Real recovery may spend two minutes verifying native ownership, then thirty
+// seconds reporting the result. A five-second test deadline races valid Git
+// work on loaded Windows runners. Keep a bounded allowance for those phases
+// and dispatch, while requiring the exact job and session to settle together.
+func waitWorkspaceRecovery(t *testing.T, f *accountFixture, session, job *pb.Resource, workerDone <-chan struct{}) *pb.Resource {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+	started := time.Now()
+	type recoveryProgress struct {
+		Job         domain.JobState
+		Recovery    domain.RecoveryState
+		Preparation domain.PreparationState
+	}
+	var previous recoveryProgress
+	for {
+		jobResult, err := f.resources.GetResource(ctx, ownerRequest(f.identity, &pb.GetResourceRequest{Kind: job.Kind, Id: job.Id}))
+		if err != nil {
+			t.Fatalf("recovery job read failed: code=%s last_state=%+v", domain.SafeError(err).Code, previous)
+		}
+		var currentJob domain.Job
+		if err := domain.Decode(jobResult.Msg.Resource.DocumentJson, &currentJob); err != nil {
+			t.Fatal(err)
+		}
+		sessionResult, err := f.resources.GetResource(ctx, ownerRequest(f.identity, &pb.GetResourceRequest{Kind: session.Kind, Id: session.Id}))
+		if err != nil {
+			t.Fatalf("recovery session read failed: code=%s last_state=%+v", domain.SafeError(err).Code, previous)
+		}
+		current := sessionResult.Msg.Resource
+		value := sessionBody(t, current)
+		if value.Preparation == nil || string(value.Preparation.RecoveryJobID) != job.Id {
+			t.Fatal("session no longer references the expected recovery job")
+		}
+		progress := recoveryProgress{currentJob.State, value.Recovery, value.Preparation.State}
+		if progress != previous {
+			t.Logf("workspace_recovery_progress elapsed_ms=%d job_state=%s recovery=%s preparation=%s", time.Since(started).Milliseconds(), progress.Job, progress.Recovery, progress.Preparation)
+			previous = progress
+		}
+		if currentJob.State != domain.JobQueued && currentJob.State != domain.JobClaimed && value.Recovery != domain.Reconciling {
+			return current
+		}
+		select {
+		case <-workerDone:
+			t.Fatalf("replacement Worker exited before recovery settled: last_state=%+v", progress)
+		case <-ctx.Done():
+			t.Fatalf("workspace recovery timed out: last_state=%+v", progress)
+		case <-ticker.C:
+		}
 	}
 }
 

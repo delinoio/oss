@@ -403,3 +403,31 @@ The current user request is the CLI. Desktop windows/tray/widgets/native browser
 - Actual detached CLI subprocess fixtures reproduce readiness timeout with DNS-only certificates on loopback and wildcard bind addresses. Startup now pins the configured certificate, verifies lifetime/server use, and dials wildcard binds through loopback. Native tests verify start/reuse/stop for plaintext loopback and DNS-only TLS loopback/IPv4/IPv6 wildcard configurations; separate TLS handshake fixtures reject mismatched and expired certificates and retain ordinary client hostname/CA checks. No user account or external inference is involved.
 - CI run [36095895174](https://github.com/delinoio/oss/actions/runs/36095895174) completes successfully at prior head `bbf8a77d`, including native Windows Go tests. The initial CI inventory for this pass contains no failed check; these new commits still require their own post-push CI result.
 - Final local validation passes: the complete DeliDev Go race suite, package vet, all Windows amd64 test-package compilation, the complete process and API-relay suites in non-root network-disabled Linux arm64 containers, and the actual detached plaintext/TLS start-reuse-stop plus certificate rejection fixtures on macOS and Linux. Both native platforms exercise IPv4 and IPv6 wildcard TLS. `git diff --check` passes; no Rust, frontend, generated protocol or repository-owned `dist` output changed. These repairs do not complete issue #964 or grant unverified harness/platform capabilities.
+
+
+## Windows workspace-recovery CI wait repair (2026-09-26)
+
+PR #988's Windows Go job `108087485872` in run `36139926794` failed the
+`local-mismatched-journal` recovery retry after its five-second fixture deadline.
+That deadline was shorter than the existing two-minute native recovery plus
+thirty-second result-report budgets. No production deadline or recovery
+authorization was changed. The fixture now uses a bounded three-minute wait,
+checks the exact recovery job and session together, detects early Worker exit,
+and emits only typed state transitions and elapsed time. Its original journal,
+uncertainty, explicit-retry, pause/archive and checkout-preservation assertions
+remain intact.
+
+On macOS arm64 with Go 1.26.8, the original focused case passed three ordinary
+runs. A private PATH wrapper that sleeps 700 ms before executing the real
+`/usr/bin/git` reproduced the same retry-timeout failure in the old fixture.
+With the fix, that same real SQLite/Connect/Worker/Git scenario passed; the
+explicit retry completed after 8.251 seconds and retained the original journal,
+unborn branch and staged content. This reproduces slow native-tool latency,
+not native Windows acceptance. The wrapper and output remain temporary and
+never replace the installed Git executable.
+
+After the repair, `go test -race ./cmds/delidev-cli/...` and
+`go vet ./cmds/delidev-cli/...` passed on macOS arm64. The updated server test
+binary also cross-compiled for Windows amd64 with CGO disabled. Hosted Windows
+execution after the repair push is not claimed. No Rust, frontend, production
+runtime, model or texture bytes changed, and no generated `dist` was retained.
