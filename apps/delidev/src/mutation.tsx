@@ -57,7 +57,9 @@ export function useRetainedMutation<I extends DescMessage, O extends DescMessage
     let result: MessageShape<O>;
     try {
       result = await mutation.mutateAsync(retained);
+      mutation.reset();
     } catch (error) {
+      mutation.reset();
       if (!registry.alive) return;
       const failure = clientFailure(error);
       const uncertain = [FailureCode.Unavailable, FailureCode.ServerUnavailable, FailureCode.Canceled, FailureCode.Internal].includes(failure.code);

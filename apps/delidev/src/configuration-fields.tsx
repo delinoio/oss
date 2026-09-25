@@ -1,0 +1,78 @@
+import { useState } from "react";
+import { useQuery } from "@connectrpc/connect-query";
+import { EntityKind, ProviderQuery, ResourceQuery } from "@delinoio/delidev-api-client";
+import { document, items, object, resourceName, text, type Document } from "./documents";
+import { Problem } from "./ui";
+
+export enum Harness { Codex = "codex", Claude = "claude-code", OpenCode = "opencode", Grok = "grok-build" }
+export enum Protocol { Responses = "openai-responses", Chat = "openai-chat", Anthropic = "anthropic-messages", Subscription = "native-subscription" }
+export enum Authentication { Bearer = "bearer", Key = "api-key", Keyless = "keyless", Subscription = "subscription" }
+enum Routing { Fixed = "fixed", Priority = "priority", RoundRobin = "round-robin", Quota = "remaining-quota", Reset = "reset-window", Sequential = "sequential-exhaustion" }
+enum Permission { Default = "default", Read = "read-only", Workspace = "workspace-write", Full = "full-access" }
+export const editableKinds = [EntityKind.PROVIDER, EntityKind.MODEL, EntityKind.ACCOUNT, EntityKind.AGENT, EntityKind.TEMPLATE];
+export const kindNames: Partial<Record<EntityKind, string>> = { [EntityKind.PROVIDER]: "Provider", [EntityKind.MODEL]: "Model", [EntityKind.ACCOUNT]: "AI account", [EntityKind.AGENT]: "Agent Worker", [EntityKind.TEMPLATE]: "Instructions", [EntityKind.PROJECT]: "Project", [EntityKind.MACHINE]: "Execution Worker" };
+export function newConfiguration(kind: EntityKind): Document {
+  switch (kind) {
+    case EntityKind.PROVIDER: return { name: "", endpoint: "", protocol: Protocol.Responses, authentication: Authentication.Bearer, discovery: true };
+    case EntityKind.MODEL: return { name: "", provider_id: "", native_id: "", alias: "", harnesses: [], hidden: false, order: 0, manual: true, new: false, metadata_source: "unknown" };
+    case EntityKind.ACCOUNT: return { alias: "", provider_id: "", type: "api", enabled: true, exclude_automatic: false, recovery_notifications: true, health: "disconnected", quota: [], confirmed_exhausted: false };
+    case EntityKind.AGENT: return { name: "", harness: Harness.Codex, model_id: "", accounts: [], templates: [], options: { permission: Permission.Default } };
+    case EntityKind.TEMPLATE: return { name: "", contents: "" };
+    default: throw new Error("Unsupported configuration editor");
+  }
+}
+export function TextField({ label, value, change, required = false, max = 256, disabled = false }: { label: string; value: unknown; change: (value: string) => void; required?: boolean; max?: number; disabled?: boolean }) {
+  return <label>{label}<input value={text(value)} required={required} maxLength={max} disabled={disabled} onChange={(event) => change(event.target.value)} /></label>;
+}
+function Choice({ label, value, choices, change, disabled = false, inherited = false }: { label: string; value: unknown; choices: readonly string[]; change: (value: string) => void; disabled?: boolean; inherited?: boolean }) {
+  return <label>{label}<select value={text(value)} disabled={disabled} onChange={(event) => change(event.target.value)}>{inherited ? <option value="">Use server default</option> : null}{choices.map((choice) => <option key={choice} value={choice}>{choice}</option>)}</select></label>;
+}
+function Check({ label, value, change }: { label: string; value: unknown; change: (value: boolean) => void }) { return <label className="checkbox"><input type="checkbox" checked={value === true} onChange={(event) => change(event.target.checked)} />{label}</label>; }
+
+// Selectors retain only one bounded page. An already selected identity outside
+// that page remains explicit rather than falling back to its first result.
+export function ResourceChoice({ label, kind, value, change, active, disabled = false, required = false }: { label: string; kind: EntityKind; value: string; change: (id: string, data?: Document) => void; active: boolean; disabled?: boolean; required?: boolean }) {
+  const [page, setPage] = useState("");
+  const result = useQuery(ResourceQuery.listResources, { filter: { kind, pageSize: 50, pageToken: page } }, { enabled: active });
+  const rows = result.data?.resources ?? [];
+  return <div className="resource-choice"><label>{label}<select disabled={disabled} required={required} value={value} onChange={(event) => change(event.target.value, document(rows.find((row) => row.id === event.target.value)))}><option value="">Select {label.toLowerCase()}</option>{value && !rows.some((row) => row.id === value) ? <option value={value}>Selected {kindNames[kind]} · {value}</option> : null}{rows.map((row) => <option key={row.id} value={row.id}>{resourceName(row)}{kind === EntityKind.ACCOUNT ? ` · ${text(document(row).health)}` : ""}</option>)}</select></label>
+    {page || result.data?.nextPageToken ? <div className="actions"><button type="button" disabled={!page || result.isFetching || disabled} onClick={() => setPage("")}>First choices</button><button type="button" disabled={!result.data?.nextPageToken || result.isFetching || disabled} onClick={() => setPage(result.data!.nextPageToken)}>More choices</button></div> : null}<Problem error={result.error} />
+  </div>;
+}
+
+function OrderedLinks({ label, kind, links, change, active, weighted = false }: { label: string; kind: EntityKind; links: unknown[]; change: (values: unknown[]) => void; active: boolean; weighted?: boolean }) {
+  const [selected, setSelected] = useState("");
+  const id = (value: unknown) => weighted ? text(object(value).id) : text(value);
+  return <fieldset><legend>{label}</legend><p>Order is preserved. {weighted ? "Weights are relative values from 1 to 1,000." : "Instructions are appended in this order."}</p>
+    <ResourceChoice label={`Add ${kindNames[kind]}`} kind={kind} value={selected} change={setSelected} active={active} /><button type="button" disabled={!selected || links.some((value) => id(value) === selected) || links.length >= 1000} onClick={() => { change([...links, weighted ? { id: selected, weight: 1 } : selected]); setSelected(""); }}>Add selected</button>
+    <ol>{links.map((link, index) => <li key={id(link)}><code>{id(link)}</code>{weighted ? <label>Relative weight<input type="number" min={1} max={1000} value={Number(object(link).weight)} onChange={(event) => change(links.map((value, i) => i === index ? { ...object(value), weight: Number(event.target.value) } : value))} /></label> : null}<div className="actions"><button type="button" aria-label={`Move entry ${index + 1} up`} disabled={index === 0} onClick={() => { const next = [...links]; [next[index - 1], next[index]] = [next[index], next[index - 1]]; change(next); }}>Up</button><button type="button" aria-label={`Remove entry ${index + 1}`} onClick={() => change(links.filter((_, i) => i !== index))}>Remove</button></div></li>)}</ol>
+  </fieldset>;
+}
+
+function ProviderFields({ data, change, active, existing }: FieldsProps) {
+  const presets = useQuery(ProviderQuery.listProviderPresets, {}, { enabled: active && !existing });
+  let options: Document[] = [];
+  try { if (presets.data) options = items(JSON.parse(new TextDecoder().decode(presets.data.presetsJson))).map(object); } catch { /* The server remains authoritative; malformed presets cannot seed a form. */ }
+  const [preset, setPreset] = useState("");
+  const selected = options.find((option) => option.id === preset);
+  return <>{!existing ? <><label>Provider preset<select value={preset} onChange={(event) => { setPreset(event.target.value); const value = options.find((option) => option.id === event.target.value); if (value) change(object(value.provider)); }}><option value="">Custom provider</option>{options.map((option) => <option value={text(option.id)} key={text(option.id)}>{text(object(option.provider).name)}</option>)}</select></label>{selected ? <p>{text(selected.key_guidance)} {text(selected.compatibility)}</p> : null}<Problem error={presets.error} /></> : null}
+    <TextField label="Name" value={data.name} change={(name) => change({ ...data, name })} required />
+    <Choice label="API protocol" value={data.protocol} choices={Object.values(Protocol)} change={(protocol) => change({ ...data, protocol, ...(protocol === Protocol.Subscription ? { authentication: Authentication.Subscription, endpoint: "" } : data.protocol === Protocol.Subscription ? { authentication: Authentication.Bearer } : {}) })} />
+    {data.protocol === Protocol.Subscription ? <p>Subscription login remains unavailable. Saving this configuration does not connect an account.</p> : <><TextField label="API base URL" value={data.endpoint} max={4096} change={(endpoint) => change({ ...data, endpoint })} required /><p>Localhost refers to the server computer. Keys are entered separately in the account connection form.</p><Choice label="Authentication" value={data.authentication} choices={[Authentication.Bearer, Authentication.Key, Authentication.Keyless]} change={(authentication) => change({ ...data, authentication })} /><Check label="Discover models automatically for connected accounts" value={data.discovery} change={(discovery) => change({ ...data, discovery })} /></>}
+  </>;
+}
+interface FieldsProps { data: Document; change: (value: Document) => void; active: boolean; existing: boolean }
+export function ConfigurationFields({ kind, ...props }: FieldsProps & { kind: EntityKind }) {
+  const { data, change, active, existing } = props;
+  const field = (key: string) => (value: unknown) => change({ ...data, [key]: value });
+  if (kind === EntityKind.PROVIDER) return <ProviderFields {...props} />;
+  if (kind === EntityKind.TEMPLATE) return <><TextField label="Name" value={data.name} change={field("name")} required /><label>Instructions<textarea rows={12} required maxLength={131072} value={text(data.contents)} onChange={(event) => field("contents")(event.target.value)} /></label><p>Appended to the selected harness's base instructions; the base instructions are preserved.</p></>;
+  if (kind === EntityKind.ACCOUNT) return <><TextField label="Account alias" value={data.alias} change={field("alias")} required /><ResourceChoice label="Provider" kind={EntityKind.PROVIDER} value={text(data.provider_id)} active={active} disabled={existing} required change={(provider_id, provider) => change({ ...data, provider_id, type: provider?.protocol === Protocol.Subscription ? "subscription" : "api" })} /><Check label="Enable this account" value={data.enabled} change={field("enabled")} /><Check label="Exclude from automatic account selection" value={data.exclude_automatic} change={field("exclude_automatic")} /><Check label="Notify when account quota recovers" value={data.recovery_notifications} change={field("recovery_notifications")} /><p>Connection, health and quota are managed separately. Saving preferences never marks the account ready.</p></>;
+  if (kind === EntityKind.MODEL) return <><ResourceChoice label="Provider" kind={EntityKind.PROVIDER} value={text(data.provider_id)} change={field("provider_id")} active={active} disabled={existing} required /><TextField label="Native model ID" value={data.native_id} change={field("native_id")} disabled={existing} required /><TextField label="Display name" value={data.name} change={field("name")} required /><TextField label="CLI alias" value={data.alias} change={field("alias")} max={128} /><fieldset><legend>Configured harness compatibility</legend>{Object.values(Harness).map((harness) => <Check key={harness} label={harness} value={items(data.harnesses).includes(harness)} change={(selected) => field("harnesses")(selected ? [...items(data.harnesses), harness] : items(data.harnesses).filter((value) => value !== harness))} />)}<p>Configured compatibility is checked against the installed harness before execution. It does not prove execution support.</p></fieldset><Check label="Hide from default model lists" value={data.hidden} change={field("hidden")} /><label>Display order<input type="number" min={-2147483648} max={2147483647} value={Number(data.order)} onChange={(event) => field("order")(Number(event.target.value))} /></label>{data.new === true ? <Check label="Keep NEW marker until reviewed" value={data.new} change={field("new")} /> : null}<p>Metadata: {text(data.metadata_source)} · context limit: {data.context_limit == null ? "Unknown" : String(data.context_limit)}</p></>;
+  if (kind === EntityKind.AGENT) {
+    const options = object(data.options);
+    const option = (name: string) => (value: unknown) => change({ ...data, options: { ...options, [name]: value } });
+    return <><TextField label="Name" value={data.name} change={field("name")} required /><Choice label="Harness" value={data.harness} choices={Object.values(Harness)} change={field("harness")} /><ResourceChoice label="Model" kind={EntityKind.MODEL} value={text(data.model_id)} change={field("model_id")} active={active} required /><TextField label="Reasoning effort" value={data.effort} change={field("effort")} /><Choice label="Account routing" value={data.routing} choices={Object.values(Routing)} change={(routing) => { const next = { ...data }; if (routing) next.routing = routing; else delete next.routing; change(next); }} inherited /><OrderedLinks label="Accounts" kind={EntityKind.ACCOUNT} links={items(data.accounts)} change={field("accounts")} active={active} weighted /><OrderedLinks label="Instruction templates" kind={EntityKind.TEMPLATE} links={items(data.templates)} change={field("templates")} active={active} /><Choice label="Permission mode" value={options.permission} choices={Object.values(Permission)} change={option("permission")} />{options.permission === Permission.Full ? <p className="notice">Full access permits native operations beyond the workspace when supported. Review this scope before using the Agent Worker.</p> : null}<details><summary>Native harness options</summary><TextField label="Subagent model" value={options.subagent_model} change={option("subagent_model")} /><TextField label="Subagent effort" value={options.subagent_effort} change={option("subagent_effort")} /><label>Maximum concurrency (0 uses native default)<input type="number" min={0} max={64} value={Number(options.max_concurrency ?? 0)} onChange={(event) => option("max_concurrency")(Number(event.target.value))} /></label><TextField label="Approval policy" value={options.approval_policy} change={option("approval_policy")} /><TextField label="Approval review model" value={options.approval_review_model} change={option("approval_review_model")} /><TextField label="Service tier" value={options.service_tier} change={option("service_tier")} /><p>Unsupported native options produce a server error; no fallback harness or account is selected.</p></details></>;
+  }
+  return null;
+}

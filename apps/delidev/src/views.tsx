@@ -54,17 +54,7 @@ export function Inbox({ open }: { open: (id: string) => void }) {
   </section>;
 }
 
-export function Settings({ close }: { close: () => void }) {
-  const [kind, setKind] = useState(EntityKind.PROJECT);
-  const [page, setPage] = useState("");
-  const result = useQuery(ResourceQuery.listResources, { filter: { kind, pageSize: 50, pageToken: page } });
-  const tabs = [[EntityKind.PROJECT, "Projects"], [EntityKind.AGENT, "Agent Workers"], [EntityKind.ACCOUNT, "AI accounts"], [EntityKind.MACHINE, "Execution Workers"], [EntityKind.TEMPLATE, "Instructions"]] as const;
-  return <Modal title="Settings" close={close}><nav aria-label="Settings categories">{tabs.map(([value, label]) => <button key={value} aria-pressed={kind === value} onClick={() => { setKind(value); setPage(""); }}>{label}</button>)}</nav><Problem error={result.error} />
-    <p>These are the selected server's saved settings. Configuration editing remains available through the DeliDev CLI.</p>
-    {result.data?.resources.map((row) => { const data = document(row); return <article className="result" key={row.id}><h3>{resourceName(row)}</h3>{text(data.health) ? <p>Status: {text(data.health)}</p> : null}{text(data.harness) ? <p>Harness: {text(data.harness)}</p> : null}{kind === EntityKind.TEMPLATE ? <pre>{text(data.contents)}</pre> : null}<small>{row.id}</small></article>; })}
-    {result.data?.resources.length === 0 ? <p>No saved entries. Configure this prerequisite with the CLI.</p> : null}<Pager page={page} setPage={setPage} next={result.data?.nextPageToken} busy={result.isFetching} />
-  </Modal>;
-}
+export { Settings } from "./settings";
 
 export function CreateSession({ close, open, visible }: { close: () => void; open: (id: string) => void; visible: boolean }) {
   const projects = useQuery(ResourceQuery.listResources, { filter: { kind: EntityKind.PROJECT, pageSize: 200 } }, { enabled: visible });

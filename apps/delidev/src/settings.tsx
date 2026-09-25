@@ -1,0 +1,47 @@
+import { useState } from "react";
+import { useQuery } from "@connectrpc/connect-query";
+import { useQueryClient } from "@tanstack/react-query";
+import { ConfigurationQuery, EntityKind, ResourceQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { document, encode, resourceName, text, type Document } from "./documents";
+import { ConfigurationFields, editableKinds, kindNames, newConfiguration } from "./configuration-fields";
+import { AccountConnection } from "./account-connection";
+import { useRetainedMutation } from "./mutation";
+import { Modal, Problem } from "./ui";
+
+export function ConfigurationEditor({ kind, initial, active, saved, cancel }: { kind: EntityKind; initial?: Resource; active: boolean; saved: () => void; cancel: () => void }) {
+  const [data, setData] = useState<Document>(() => initial ? document(initial) : newConfiguration(kind));
+  const [problem, setProblem] = useState("");
+  const current = useQuery(ResourceQuery.getResource, { kind, id: initial?.id ?? "" }, { enabled: active && Boolean(initial), refetchInterval: active ? 5000 : false });
+  const mutation = useRetainedMutation(`configuration:${kind}:${initial?.id ?? "new"}`, ConfigurationQuery.saveConfiguration, saved);
+  const stale = Boolean(initial && current.data?.resource && current.data.resource.revision !== initial.revision);
+  const blocked = mutation.busy || mutation.uncertain;
+  const change = (value: Document) => {
+    if (encode(value).byteLength > 1 << 20 || (kind === EntityKind.TEMPLATE && new TextEncoder().encode(text(value.contents)).byteLength > 128 << 10)) { setProblem("This configuration is too large. Shorten the text before adding more content."); return; }
+    setData(value); setProblem("");
+  };
+  return <form onSubmit={(event) => { event.preventDefault(); if (blocked || stale || (initial && current.error)) return; void mutation.send({ mutation: { id: initial?.id ?? "", expectedRevision: initial?.revision ?? 0n, requestId: newRequestId() }, kind, schemaVersion: 1, documentJson: encode(data) }); }}>
+    <h3>{initial ? "Edit" : "New"} {kindNames[kind]}</h3>
+    <fieldset disabled={blocked}><ConfigurationFields kind={kind} data={data} change={change} active={active} existing={Boolean(initial)} /></fieldset>
+    {stale ? <p role="alert">This entry changed elsewhere. Your draft is retained. Cancel this edit and reopen the latest entry before saving.</p> : null}{problem ? <p role="alert">{problem}</p> : null}<Problem error={current.error || mutation.error} />
+    <div className="actions"><button className="primary" disabled={blocked || stale || Boolean(initial && current.error)}>Save {kindNames[kind]}</button>{mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>Retry the same configuration</button> : null}<button type="button" disabled={blocked} onClick={cancel}>Cancel edit</button></div>
+  </form>;
+}
+
+export function Settings({ close, visible = true }: { close: () => void; visible?: boolean }) {
+  const [kind, setKind] = useState(EntityKind.PROVIDER);
+  const [page, setPage] = useState("");
+  const [editing, setEditing] = useState<{ initial?: Resource; key: string }>();
+  const [account, setAccount] = useState<Resource>();
+  const client = useQueryClient();
+  const result = useQuery(ResourceQuery.listResources, { filter: { kind, pageSize: 50, pageToken: page } }, { enabled: visible });
+  const tabs = [[EntityKind.PROVIDER, "Providers"], [EntityKind.MODEL, "Models"], [EntityKind.ACCOUNT, "AI accounts"], [EntityKind.AGENT, "Agent Workers"], [EntityKind.TEMPLATE, "Instructions"], [EntityKind.PROJECT, "Projects"], [EntityKind.MACHINE, "Execution Workers"]] as const;
+  const done = () => { setEditing(undefined); void client.invalidateQueries({ refetchType: "active" }); };
+  return <Modal title="Settings" close={close} visible={visible}><nav aria-label="Settings categories">{tabs.map(([value, label]) => <button key={value} disabled={Boolean(editing || account)} aria-pressed={kind === value} onClick={() => { setKind(value); setPage(""); }}>{label}</button>)}</nav>
+    {editing ? <ConfigurationEditor key={editing.key} kind={kind} initial={editing.initial} active={visible} saved={done} cancel={() => setEditing(undefined)} /> : account ? <AccountConnection initial={account} active={visible} close={() => { setAccount(undefined); void result.refetch(); }} /> : <>
+      <header><p>Saved on the selected server.</p><button onClick={() => void result.refetch()}>Refresh settings</button></header>
+      {editableKinds.includes(kind) ? <button className="primary" onClick={() => setEditing({ key: newRequestId() })}>New {kindNames[kind]}</button> : <p>Configure these entries through the DeliDev CLI.</p>}
+      <Problem error={result.error} />{result.data?.resources.map((row) => { const data = document(row); return <article className="result" key={row.id}><h3>{resourceName(row)}</h3>{text(data.health) ? <p>Status: {text(data.health)}</p> : null}{text(data.harness) ? <p>Harness: {text(data.harness)}</p> : null}{kind === EntityKind.TEMPLATE ? <pre>{text(data.contents)}</pre> : null}<small>{row.id}</small><div className="actions">{editableKinds.includes(kind) ? <button disabled={row.schemaVersion !== 1} onClick={() => setEditing({ initial: row, key: newRequestId() })}>Edit {resourceName(row)}</button> : null}{kind === EntityKind.ACCOUNT ? <button disabled={row.schemaVersion !== 1} onClick={() => setAccount(row)}>Manage connection</button> : null}</div></article>; })}
+      {result.data?.resources.length === 0 ? <p>No saved entries.</p> : null}<nav aria-label="Settings pages"><button disabled={!page || result.isFetching} onClick={() => setPage("")}>First page</button><button disabled={!result.data?.nextPageToken || result.isFetching} onClick={() => setPage(result.data!.nextPageToken)}>Next page</button></nav>
+    </>}
+  </Modal>;
+}

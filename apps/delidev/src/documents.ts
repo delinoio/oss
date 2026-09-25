@@ -18,4 +18,4 @@ export function encode(value: unknown): Uint8Array { return new TextEncoder().en
 export enum Workspace { Worktree = "worktree", Local = "local", GeneralChat = "general-chat" }
 export enum Mode { Execute = "execute", Plan = "plan" }
 export const workspaceNames: Record<Workspace, string> = { [Workspace.Worktree]: "Worktree", [Workspace.Local]: "Local computer", [Workspace.GeneralChat]: "General Chat" };
-export function resourceName(resource?: Resource): string { return text(document(resource).name) || "Unnamed"; }
+export function resourceName(resource?: Resource): string { const data = document(resource); return text(data.name) || text(data.alias) || "Unnamed"; }

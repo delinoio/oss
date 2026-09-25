@@ -40,7 +40,7 @@ function Shell({ localServer }: { localServer?: ReactNode }) {
   </aside><main id="main" tabIndex={-1}>{draftState.error ? <p role="alert">{draftState.error}</p> : null}
     <div hidden={surface !== Surface.Sessions} className="session-container">{selected ? <SessionView key={selected} id={selected} draft={drafts.get(selected) ?? ""} setDraft={(value) => saveDraft(selected, value)} /> : <section className="page welcome"><h2>Your sessions, in one place</h2><p>Select a retained session or start a new conversation.</p><h3>Before your first session</h3><ol><li>Connect to your DeliDev server.</li><li>Pair an execution Worker and verify its installed harness.</li><li>Connect an AI account and configure an Agent Worker.</li><li>Configure a project, or choose General Chat.</li></ol><button onClick={(event) => { event.currentTarget.focus(); setSettings(true); }}>View prerequisites in Settings</button><Problem error={status.error} /></section>}</div>
     {surface === Surface.Search ? <Search open={open} /> : surface === Surface.Activity ? <Activity open={open} /> : surface === Surface.Inbox ? <Inbox open={open} /> : null}
-  </main>{settings ? <Settings close={() => setSettings(false)} /> : null}<CreateSession visible={creating} close={() => { setCreating(false); void sessions.refetch(); }} open={open} /></div>;
+  </main><Settings close={() => setSettings(false)} visible={settings} /><CreateSession visible={creating} close={() => { setCreating(false); void sessions.refetch(); }} open={open} /></div>;
 }
 
 // The native caller mounts a new App per selected server/device. Query caches
