@@ -96,6 +96,10 @@ func (s *streamGuard) inspect(raw []byte) error {
 		if value, ok := token.(string); ok {
 			return s.check(path, value)
 		}
+		if value, ok := token.(json.Number); ok {
+			// Keep the native spelling, including precision and exponent syntax.
+			return s.check(path, value.String())
+		}
 		delim, ok := token.(json.Delim)
 		if !ok {
 			return nil

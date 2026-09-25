@@ -414,6 +414,55 @@ func TestProxyDoesNotReleaseFragmentedProtectedValues(t *testing.T) {
 	}
 }
 
+func TestProxyNumericFragments(t *testing.T) {
+	for _, tc := range []struct {
+		name, key, first, second string
+		blocked                  bool
+	}{
+		{"integer", "123456", "123", "456", true},
+		{"exact-large-integer", "9007199254740993456", "9007199254740993", "456", true},
+		{"exact-exponent", "1e+23456", "1e+23", "456", true},
+		{"benign-prefix", "123456", "123", "789", false},
+	} {
+		for _, nested := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/nested=%t", tc.name, nested), func(t *testing.T) {
+				var frames []string
+				for _, fragment := range []string{tc.first, tc.second} {
+					body := `{"usage":` + fragment + `}`
+					if nested {
+						body = `{"choices":[` + body + `]}`
+					}
+					frames = append(frames, "data: "+body+"\n\n")
+				}
+				body := strings.Join(frames, "") + "data: [DONE]\n\n"
+				f := newProxyFixture(t, domain.OpenAIChat, []Operation{ChatCompletion}, func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "text/event-stream")
+					for _, frame := range frames {
+						fmt.Fprint(w, frame)
+						w.(http.Flusher).Flush()
+					}
+					fmt.Fprint(w, "data: [DONE]\n\n")
+				})
+				f.authority.key = tc.key
+				response, raw, err := f.request(t, "/chat/completions", `{"model":"fixed-model","stream":true}`, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if tc.blocked {
+					if response.StatusCode != http.StatusBadGateway || strings.Contains(string(raw), frames[0]) || bytes.Contains(raw, []byte("[DONE]")) {
+						t.Fatal("fragmented numeric secret escaped")
+					}
+				} else if response.StatusCode != http.StatusOK || string(raw) != body {
+					t.Fatal("benign numeric stream changed")
+				}
+				if bytes.Contains(raw, []byte(tc.key)) || strings.Contains(f.logs.String(), tc.key) {
+					t.Fatal("numeric secret appeared in output or logs")
+				}
+			})
+		}
+	}
+}
+
 func TestProxyPreservesBenignPrefixAtNativeCompletion(t *testing.T) {
 	body := "data: {\"choices\":[{\"delta\":{\"content\":\"proxy-\"}}]}\n\ndata: [DONE]\n\n"
 	f := newProxyFixture(t, domain.OpenAIChat, []Operation{ChatCompletion}, func(w http.ResponseWriter, r *http.Request) {

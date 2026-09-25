@@ -141,7 +141,7 @@
 
 - Git remote HEAD inspection treats only documented symbolic-ref status 1 as an unavailable default; propagate all ownership, timeout, launch and other exit failures.
 
-- Apply bounded cross-frame secret reflection checks to SSE field names, comments and metadata values as well as decoded JSON field names and string deltas before delivering any original frame bytes. Unknown or colonless fields cannot bypass these checks; repeated JSON enclosing keys cannot reset a nested key-fragment match.
+- Apply bounded cross-frame secret reflection checks to SSE field names, comments and metadata values as well as decoded JSON field names, string deltas and exact numeric spellings before delivering any original frame bytes. Unknown or colonless fields cannot bypass these checks; repeated JSON enclosing keys cannot reset a nested key-fragment match.
 
 - Provider error bodies, including HTTP-200 error envelopes, must pass secret reflection checks even when their native machine codes are allowlisted; retain failure status without reflecting a colliding protected value.
 - Model discovery must apply raw/Base64 credential reflection checks to the retained decimal spelling of numeric context limits as well as retained strings; reject the complete catalog before publication on a match.
