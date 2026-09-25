@@ -235,7 +235,7 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   fireEvent.click(screen.getByRole("button", { name: "Projects" }));
   fireEvent.click(await screen.findByRole("button", { name: "Delete Owned project" }));
   fireEvent.click(screen.getByRole("button", { name: "Confirm configuration deletion" }));
-  await waitFor(() => expect(screen.queryByRole("heading", { name: "Owned project" })).toBeNull());
+  await waitFor(() => expect(screen.queryByRole("heading", { name: "Delete Owned project?" })).toBeNull());
   expect((await createClient(ResourceService, transport).listResources({ filter: { kind: EntityKind.PROJECT } })).resources).toHaveLength(0);
 }, 60000);
 

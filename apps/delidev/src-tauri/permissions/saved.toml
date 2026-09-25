@@ -1,0 +1,9 @@
+[[permission]]
+identifier = "saved-manage"
+description = "The trusted main window can manage saved private client pairings and open independently pinned server windows."
+commands.allow = ["connection_context", "saved_connections", "pair_connection", "retry_connection", "open_connection", "show_connection_manager"]
+
+[[permission]]
+identifier = "saved-use"
+description = "A trusted saved-server window can load only its original native pinned client authority and show the main window."
+commands.allow = ["connection_context", "connect_saved", "show_connection_manager"]

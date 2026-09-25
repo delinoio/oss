@@ -11,7 +11,7 @@
   "app": {
     "windows": [{"label": "main", "title": "DeliDev", "create": false, "width": 1280, "height": 820, "minWidth": 960, "minHeight": 640}],
     "security": {
-      "capabilities": ["main"],
+      "capabilities": ["main", "saved"],
       "csp": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src ipc: http://ipc.localhost http://127.0.0.1:46310; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'",
       "devCsp": "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src ipc: http://ipc.localhost http://127.0.0.1:46310 ws://127.0.0.1:46311; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'"
     }

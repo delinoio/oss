@@ -1,7 +1,7 @@
 use std::{
     ffi::OsString,
     fs::{self, File},
-    io::Read,
+    io::{Read, Write},
     path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::{
@@ -20,6 +20,9 @@ const OUTPUT_LIMIT: u64 = 64 << 10;
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(40);
 const ORIGINS: &str = "tauri://localhost,http://tauri.localhost,http://127.0.0.1:46311";
 
+mod connections;
+pub use connections::{SavedConnection, SavedConnectionState, canonical_id, connection_origin};
+
 mod local_worker;
 pub use local_worker::{LocalWorkerAction, LocalWorkerState, LocalWorkerStatus};
 
@@ -37,6 +40,7 @@ pub enum NativeFailure {
     CredentialUnavailable,
     PermissionDenied,
     InvalidEvidence,
+    InvalidInput,
     StorageUnavailable,
     Stopped,
 }
@@ -255,6 +259,14 @@ impl Connector {
     }
 
     fn run(&self, arguments: &[OsString]) -> Result<serde_json::Value> {
+        self.run_with_input(arguments, None)
+    }
+
+    fn run_with_input(
+        &self,
+        arguments: &[OsString],
+        input: Option<Zeroizing<Vec<u8>>>,
+    ) -> Result<serde_json::Value> {
         if self.exiting.load(Ordering::Acquire) {
             return Err(NativeFailure::Stopped);
         }
@@ -263,7 +275,11 @@ impl Connector {
             .arg("--data-dir")
             .arg(&self.root)
             .args(arguments)
-            .stdin(Stdio::null())
+            .stdin(if input.is_some() {
+                Stdio::piped()
+            } else {
+                Stdio::null()
+            })
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .env_clear();
@@ -298,6 +314,14 @@ impl Connector {
         let stderr = child.stderr.take().ok_or(NativeFailure::SidecarFailed)?;
         let out = thread::spawn(move || read_bounded(stdout, OUTPUT_LIMIT));
         let err = thread::spawn(move || read_bounded(stderr, OUTPUT_LIMIT));
+        let writer = input.map(|bytes| {
+            let mut stdin = child.stdin.take().expect("piped input for closed command");
+            thread::spawn(move || {
+                stdin
+                    .write_all(&bytes)
+                    .map_err(|_| NativeFailure::SidecarFailed)
+            })
+        });
         let started = Instant::now();
         let result = loop {
             if self.exiting.load(Ordering::Acquire) {
@@ -320,7 +344,13 @@ impl Connector {
         // pipes: detached servers redirect both streams to their private log.
         let output = out.join().map_err(|_| NativeFailure::SidecarFailed)?;
         let diagnostic = err.join().map_err(|_| NativeFailure::SidecarFailed)?;
+        let written = writer
+            .map(|writer| writer.join().map_err(|_| NativeFailure::SidecarFailed))
+            .transpose()?;
         let status = result?;
+        if let Some(written) = written {
+            written?;
+        }
         diagnostic?; // Drain and bound diagnostics, but never reflect their contents.
         let envelope: CliEnvelope =
             serde_json::from_slice(&output?).map_err(|_| NativeFailure::InvalidEvidence)?;
@@ -330,6 +360,7 @@ impl Connector {
         if let Some(error) = envelope.error {
             return Err(match error.code.as_str() {
                 "unsupported" => NativeFailure::Incompatible,
+                "invalid_argument" | "missing_input" => NativeFailure::InvalidInput,
                 "unauthenticated" => NativeFailure::CredentialUnavailable,
                 "permission_denied" => NativeFailure::PermissionDenied,
                 "conflict" => NativeFailure::Busy,
@@ -398,6 +429,14 @@ fn verified_connection(
     expected: &DeviceMetadata,
     kind: DeviceType,
 ) -> Result<Connection> {
+    validated_connection(bytes, expected, kind, false)
+}
+fn validated_connection(
+    bytes: &[u8],
+    expected: &DeviceMetadata,
+    kind: DeviceType,
+    saved: bool,
+) -> Result<Connection> {
     let credential: Credential =
         serde_json::from_slice(bytes).map_err(|_| NativeFailure::InvalidEvidence)?;
     let token = Zeroizing::new(credential.token);
@@ -433,7 +472,9 @@ fn verified_connection(
     if decoded.len() != 32 || URL_SAFE_NO_PAD.encode(&*decoded) != *token {
         return Err(NativeFailure::InvalidEvidence);
     }
-    if !expected.endpoint.starts_with("http://127.0.0.1:")
+    if saved {
+        connection_origin(&expected.endpoint)?;
+    } else if !expected.endpoint.starts_with("http://127.0.0.1:")
         || expected.endpoint[17..]
             .parse::<u16>()
             .ok()

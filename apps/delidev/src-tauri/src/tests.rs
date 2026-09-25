@@ -355,3 +355,87 @@ fn real_local_worker_registration_start_status_and_offline_stop() {
         registered.machine_id
     );
 }
+
+#[test]
+#[ignore = "requires an explicitly built Go sidecar; pairs only with an owned temporary server"]
+fn real_saved_connection_keeps_owner_local_and_remote_authority_separate() {
+    let binary =
+        PathBuf::from(std::env::var_os("DELIDEV_TEST_SIDECAR").expect("explicit sidecar required"));
+    let temporary = tempfile::tempdir().unwrap();
+    let mut server = Connector::new(binary.clone(), temporary.path().join("server")).unwrap();
+    server.listen = "127.0.0.1:0".into();
+    struct Stop<'a>(&'a Connector);
+    impl Drop for Stop<'_> {
+        fn drop(&mut self) {
+            let _ = self.0.run(&["server".into(), "stop".into()]);
+        }
+    }
+    let _stop = Stop(&server);
+    let local = server.connect().unwrap();
+    let grant = server
+        .run(&[
+            "device".into(),
+            "create-pairing".into(),
+            "--type".into(),
+            "client".into(),
+            "--name".into(),
+            "saved fixture".into(),
+        ])
+        .unwrap();
+    let bytes = Zeroizing::new(fs::read(grant["code_file"].as_str().unwrap()).unwrap());
+    let client_root = temporary.path().join("separate-client");
+    let client = Connector::new(binary, client_root.clone()).unwrap();
+    assert!(client.saved_connections().unwrap().is_empty());
+    assert!(!client_root.exists());
+    let id = uuid::Uuid::now_v7().to_string();
+    let paired = client.pair_saved(&id, "Saved fixture", bytes).unwrap();
+    assert!(paired.state == SavedConnectionState::Paired);
+    assert_eq!(paired.server_id, local.server_id);
+    assert_ne!(paired.device_id, local.device_id);
+    let connected = client.connect_saved(&paired).unwrap();
+    assert_eq!(connected.device_id, paired.device_id);
+    assert_ne!(connected.token, local.token);
+    let owner: serde_json::Value =
+        serde_json::from_slice(&fs::read(server.root.join("owner.json")).unwrap()).unwrap();
+    assert_ne!(connected.token, owner["token"].as_str().unwrap());
+    let inventory = client.saved_connections().unwrap();
+    assert!(inventory == vec![paired.clone()]);
+    let metadata = serde_json::to_string(&inventory).unwrap();
+    assert!(!metadata.contains(&connected.token));
+    assert!(!metadata.contains("\"code\""));
+    assert!(client.retry_saved(&id).unwrap() == paired);
+    let mut foreign = paired.clone();
+    foreign.server_id = uuid::Uuid::now_v7().to_string();
+    assert!(client.connect_saved(&foreign).is_err());
+    for name in ["owner.json", "server.json", "state.sqlite", "worker"] {
+        assert!(!client_root.join(name).exists());
+    }
+    server
+        .run(&[
+            "device".into(),
+            "revoke".into(),
+            "--id".into(),
+            paired.device_id.clone().into(),
+            "--revision".into(),
+            "1".into(),
+        ])
+        .unwrap();
+    assert!(matches!(
+        client.connect_saved(&paired),
+        Err(NativeFailure::CredentialUnavailable)
+    ));
+    assert!(client.inspect_saved(&id).unwrap() == paired);
+    fs::remove_file(
+        client_root
+            .join("connections")
+            .join(&id)
+            .join("client/device.json"),
+    )
+    .unwrap();
+    assert!(client.retry_saved(&id).is_err());
+    assert!(
+        client
+            .pair_saved("../escape", "invalid", Zeroizing::new(vec![]))
+            .is_err()
+    );
+}

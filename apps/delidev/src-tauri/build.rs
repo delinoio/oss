@@ -6,6 +6,13 @@ fn main() {
             "local_server_status",
             "local_worker_proof",
             "local_worker_control",
+            "connection_context",
+            "saved_connections",
+            "pair_connection",
+            "retry_connection",
+            "open_connection",
+            "connect_saved",
+            "show_connection_manager",
         ]),
     ))
     .expect("DeliDev native build configuration must be valid");

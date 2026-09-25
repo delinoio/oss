@@ -20,6 +20,7 @@ serde_json = "1"
 tracing = "0.1"
 uuid = { version = "=1.23.0", features = ["serde", "v7"] }
 zeroize = "=1.8.2"
+url = "=2.5.8"
 tauri = { git = "https://github.com/tauri-apps/tauri", rev = "4af26a3f7f8b692d62cca549bbacd93f5ce90b41", default-features = false, features = ["wry", "compression", "x11", "common-controls-v6"], optional = true }
 tracing-subscriber = { version = "0.3", features = ["fmt", "json"], optional = true }
 

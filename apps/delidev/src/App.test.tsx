@@ -125,3 +125,19 @@ it("drops connection-scoped drafts and caches when the selected transport change
   fireEvent.click(await screen.findByRole("button", { name: /General Chat Retained session/ }));
   expect((await screen.findByRole("textbox", { name: "Message" }) as HTMLTextAreaElement).value).toBe("");
 });
+
+
+it("does not present cached server status as current connectivity after a failed refresh", async () => {
+  const value = fixture();
+  const view = render(<App transport={value.transport} />);
+  await screen.findByText("Server 0.1.0");
+  fireEvent.click(await screen.findByRole("button", { name: /General Chat Retained session/ }));
+  const composer = await screen.findByRole("textbox", { name: "Message" });
+  fireEvent.change(composer, { target: { value: "Keep while disconnected" } });
+  value.status.mockRejectedValue(new ConnectError("Server disconnected", Code.Unavailable));
+  view.rerender(<App transport={value.transport} connectionEpoch={1} />);
+  await screen.findByText("Server unavailable");
+  expect(screen.queryByText("Server 0.1.0")).toBeNull();
+  expect((composer as HTMLTextAreaElement).value).toBe("Keep while disconnected");
+  expect(value.enqueues).not.toHaveBeenCalled();
+});
