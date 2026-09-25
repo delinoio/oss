@@ -181,8 +181,9 @@
 
 ### React Forge public documentation Rules
 
-- `apps/public-docs/docs/react-forge` owns the fifteen English public guides at `https://oss.delino.io/react-forge/`. Follow `docs/apps-react-forge-docs-foundation.md`; expose every stable route in the sidebar and React Forge as a peer in the shared site selector.
-- Keep installation and API examples aligned with the released `@delino/react-forge` package and public types. Distinguish six-host local Office/PDF support from macOS Keychain Figma authentication; document explicit publication, receipts, preservation, and verification limits without exposing repository internals.
-- Validate all fifteen rendered routes, guide links, selector state, sidebar, social/footer links, clean URLs, and prohibited credentials and internal paths through `pnpm --filter public-docs test`.
+- `apps/public-docs/docs/react-forge` owns the sixteen English public guides at `https://oss.delino.io/react-forge/`. Follow `docs/apps-react-forge-docs-foundation.md`; expose every stable route in the grouped React Forge sidebar and React Forge as a peer in the shared site selector.
+- Keep the seven format guides in `react-forge/formats/<format>/index.md`, link to their `/react-forge/formats/<format>/` routes, and preserve permanent redirects from the former top-level format routes. Validate both route sets through the public-docs build.
+- Keep released installation and API examples aligned with the published `@delino/react-forge` package and public types; align clearly marked unreleased previews with source examples and exported types. Distinguish six-host local Office/PDF support from macOS Keychain Figma authentication; document explicit publication, receipts, preservation, and verification limits without exposing repository internals.
+- Validate all sixteen rendered routes, guide links, selector state, sidebar, social/footer links, clean URLs, and prohibited credentials and internal paths through `pnpm --filter public-docs test`.
 
-- React Forge `/sfx` documents the unreleased procedural WAV extension separately from published `0.1.1` behavior. Preserve its availability notice and separate SFX evidence from historical six-host document validation.
+- React Forge `/formats/sfx/` and `/formats/sprite/` preview unreleased procedural WAV and pixel-sprite extensions separately from published `0.1.1` behavior. Preserve each article's availability notice and separate their evidence from historical six-host document validation.

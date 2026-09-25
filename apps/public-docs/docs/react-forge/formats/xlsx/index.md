@@ -2,6 +2,10 @@
 
 Use `@delino/react-forge/xlsx` in a `Format.Xlsx` session. `Workbook` contains named `Worksheet` elements. `Cell` accepts strings, numbers, Booleans, dates, and formulas; addresses and ranges are zero-based `{ row, column }` values. You can set dimensions, merges, freeze panes, filters, links, charts, conditional formats, and data validation.
 
+This example writes typed cells, a formula, and an editable chart. Start with [Getting started](/react-forge/getting-started) if you need the shared CLI task pattern first.
+
+## Build and export
+
 ```tsx
 import React from "react";
 import { createSession, Format } from "@delino/react-forge";
@@ -24,6 +28,8 @@ try {
   await session.dispose();
 }
 ```
+
+## Formulas and editable workbook features
 
 Formula cached values are optional and caller supplied; React Forge does not evaluate formulas. When a cache is absent, the workbook requests recalculation by the spreadsheet application. Bar, line, and pie charts retain editable data. Conditional formatting includes cell-value, formula, color-scale, data-bar, and icon-set rules; validation includes list, integer, decimal, date, time, text-length, and custom families.
 
