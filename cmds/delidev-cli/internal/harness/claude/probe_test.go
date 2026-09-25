@@ -235,7 +235,7 @@ func TestProbeRejectsInvalidProfileOrRuntimeBeforeLaunch(t *testing.T) {
 
 func TestInitializeRejectsChangedOrAmbiguousNativeScope(t *testing.T) {
 	id := domain.NewID()
-	for _, change := range []string{"missing-remote", "remote", "permission", "style", "missing-account", "credential", "provider", "commands", "empty-models", "duplicate-model", "unknown-feature", "unknown-level", "pid", "unknown-field", "duplicate-json", "invalid-utf8", "null-body", "missing-body", "mixed-error", "null-error", "null-envelope"} {
+	for _, change := range []string{"missing-remote", "remote", "permission", "style", "missing-account", "credential", "empty-api-source", "null-api-source", "provider", "commands", "empty-models", "duplicate-model", "unknown-feature", "unknown-level", "pid", "unknown-field", "duplicate-json", "invalid-utf8", "null-body", "missing-body", "mixed-error", "null-error", "null-envelope"} {
 		t.Run(change, func(t *testing.T) {
 			result := fixtureResult()
 			switch change {
@@ -251,6 +251,10 @@ func TestInitializeRejectsChangedOrAmbiguousNativeScope(t *testing.T) {
 				delete(result, "account")
 			case "credential":
 				result["account"].(map[string]any)["tokenSource"] = "apiKeyHelper"
+			case "empty-api-source":
+				result["account"].(map[string]any)["apiKeySource"] = ""
+			case "null-api-source":
+				result["account"].(map[string]any)["apiKeySource"] = nil
 			case "provider":
 				result["account"].(map[string]any)["apiProvider"] = "bedrock"
 			case "commands":

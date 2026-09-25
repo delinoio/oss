@@ -77,6 +77,9 @@ func init() {
 			case "unknown-cancel":
 				emit(map[string]any{"type": "control_cancel_request", "request_id": "unseen"})
 				continue
+			case "identity-collision":
+				emit(map[string]any{"type": "control_request", "request_id": message.RequestID, "request": map[string]any{"subtype": "can_use_tool"}})
+				continue
 			case "oversize":
 				_, _ = os.Stdout.Write(bytes.Repeat([]byte{'x'}, maxStreamFrame+1))
 				continue
@@ -91,9 +94,12 @@ func init() {
 				}
 				continue
 			}
-			if mode == "interaction" || mode == "canceled" || mode == "duplicate-callback" || mode == "duplicate-cancel" {
+			if mode == "interaction" || mode == "canceled" || mode == "duplicate-callback" || mode == "duplicate-cancel" || strings.HasSuffix(mode, "echo") {
 				r := map[string]any{"type": "control_request", "request_id": "callback-1", "request": map[string]any{"subtype": "can_use_tool", "tool_name": "Bash", "input": map[string]any{"command": "private-command-sentinel"}}}
 				emit(r)
+				if mode == "unclaimed-echo" {
+					emit(map[string]any{"type": "control_response", "response": map[string]any{"subtype": "success", "request_id": "callback-1", "response": map[string]any{"behavior": "deny"}}})
+				}
 				if mode == "duplicate-callback" {
 					emit(r)
 				}
@@ -115,6 +121,16 @@ func init() {
 			}
 			if domain.Decode(message.Response, &r) != nil || r.RequestID != "callback-1" || r.Subtype != "success" || r.Response.Behavior != "deny" {
 				os.Exit(52)
+			}
+			if strings.HasSuffix(mode, "echo") {
+				echo := map[string]any{"type": "control_response", "response": message.Response}
+				if mode == "mismatched-echo" {
+					echo["response"] = map[string]any{"subtype": "success", "request_id": r.RequestID, "response": map[string]any{"behavior": "allow"}}
+				}
+				emit(echo)
+				if mode == "duplicate-echo" {
+					emit(echo)
+				}
 			}
 			emit(map[string]any{"type": "control_cancel_request", "request_id": r.RequestID})
 			emit(map[string]any{"type": "system", "subtype": "response_received"})
@@ -305,7 +321,7 @@ func TestStreamRejectsProtocolFailuresAndStopsOwnedScope(t *testing.T) {
 	for _, test := range []struct {
 		mode string
 		code domain.Code
-	}{{"malformed", domain.Unsupported}, {"duplicate-key", domain.Unsupported}, {"invalid-utf8", domain.Unsupported}, {"ambiguous-response", domain.Unsupported}, {"array-response", domain.Unsupported}, {"duplicate-response", domain.Unsupported}, {"unknown-cancel", domain.Unsupported}, {"duplicate-cancel", domain.Unsupported}, {"oversize", domain.ResourceExhausted}, {"foreign-response", domain.Unsupported}, {"partial-exit", domain.Unsupported}, {"flood", domain.ResourceExhausted}, {"duplicate-callback", domain.Unsupported}} {
+	}{{"malformed", domain.Unsupported}, {"duplicate-key", domain.Unsupported}, {"invalid-utf8", domain.Unsupported}, {"ambiguous-response", domain.Unsupported}, {"array-response", domain.Unsupported}, {"duplicate-response", domain.Unsupported}, {"unknown-cancel", domain.Unsupported}, {"duplicate-cancel", domain.Unsupported}, {"identity-collision", domain.Unsupported}, {"unclaimed-echo", domain.Unsupported}, {"oversize", domain.ResourceExhausted}, {"foreign-response", domain.Unsupported}, {"partial-exit", domain.Unsupported}, {"flood", domain.ResourceExhausted}, {"duplicate-callback", domain.Unsupported}} {
 		t.Run(test.mode, func(t *testing.T) {
 			s, _, _ := streamFixture(t, test.mode)
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -323,6 +339,62 @@ func TestStreamRejectsProtocolFailuresAndStopsOwnedScope(t *testing.T) {
 				t.Fatal("failed connection exposed retained events")
 			}
 		})
+	}
+}
+
+func TestStreamMatchesOnlyOneExactClaimedReplyEcho(t *testing.T) {
+	for _, mode := range []string{"reply-echo", "mismatched-echo", "duplicate-echo"} {
+		t.Run(mode, func(t *testing.T) {
+			s, _, _ := streamFixture(t, mode)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if _, err := s.Call(ctx, domain.NewID(), map[string]any{"subtype": "initialize"}); err != nil {
+				t.Fatal(err)
+			}
+			event, err := s.Next(ctx)
+			if err != nil || event.Kind != NativeRequest {
+				t.Fatal("missing callback", err)
+			}
+			if err := s.Reply(ctx, event, map[string]any{"behavior": "deny"}); err != nil {
+				t.Fatal(err)
+			}
+			if mode != "reply-echo" {
+				select {
+				case <-s.Done():
+				case <-ctx.Done():
+					t.Fatal("invalid reply echo did not terminate stream")
+				}
+				if err := s.Err(); err == nil || err.Code != domain.Unsupported {
+					t.Fatal("invalid echo lost its failure classification", err)
+				}
+				return
+			}
+			echo, err := s.Next(ctx)
+			if err != nil || echo.Kind != NativeReplyEcho || echo.ArrivalID != event.ArrivalID || echo.RequestID != event.RequestID || echo.Response.Failed || string(echo.Response.Result) != `{"behavior":"deny"}` {
+				t.Fatal("reply echo changed its original claim", err)
+			}
+			closed, err := s.Next(ctx)
+			if err != nil || closed.Kind != NativeCancellation || closed.ArrivalID != event.ArrivalID {
+				t.Fatal("reply echo consumed cancellation evidence", err)
+			}
+		})
+	}
+}
+
+func TestStreamReplyDigestPreservesExactValues(t *testing.T) {
+	a, err := streamReplyDigest([]byte(`{"behavior":"allow","updatedInput":{"b":9007199254740993,"a":[1,"x"]}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := streamReplyDigest([]byte(`{ "updatedInput": { "a": [1,"x"], "b":9007199254740993 }, "behavior":"allow" }`))
+	if err != nil || a != b {
+		t.Fatal("object ordering changed reply identity")
+	}
+	for _, raw := range []string{`{"behavior":"allow","updatedInput":{"b":9007199254740992,"a":[1,"x"]}}`, `{"behavior":"allow","updatedInput":{"b":9007199254740993,"a":["x",1]}}`, `{"behavior":"deny","updatedInput":{"b":9007199254740993,"a":[1,"x"]}}`} {
+		digest, err := streamReplyDigest([]byte(raw))
+		if err != nil || digest == a {
+			t.Fatal("changed reply borrowed original identity")
+		}
 	}
 }
 

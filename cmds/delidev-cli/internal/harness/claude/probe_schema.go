@@ -27,8 +27,9 @@ type initializeResult struct {
 }
 
 type probeAccount struct {
-	TokenSource string `json:"tokenSource"`
-	APIProvider string `json:"apiProvider"`
+	TokenSource  string `json:"tokenSource"`
+	APIProvider  string `json:"apiProvider"`
+	APIKeySource string `json:"apiKeySource,omitempty"`
 }
 
 type probeAgent struct {
@@ -75,12 +76,23 @@ func validateInitialize(raw []byte, expected domain.ID) error {
 	if response.Subtype != "success" || len(response.Error) != 0 {
 		return incompatible()
 	}
+	return validateInitializeProfile(response.Response, "dontAsk", "")
+}
+
+func validateInitializeProfile(raw []byte, permission, apiKeySource string) error {
 	var result initializeResult
-	if domain.Decode(response.Response, &result) != nil || result.Commands == nil || len(result.Commands) != 0 ||
-		result.Account == nil || result.Account.TokenSource != "none" || result.Account.APIProvider != "firstParty" ||
-		result.PID <= 0 || result.CurrentPermissionMode != "dontAsk" || result.OutputStyle != "default" ||
+	if domain.Decode(raw, &result) != nil || result.Commands == nil || len(result.Commands) != 0 ||
+		result.Account == nil || result.Account.TokenSource != "none" || result.Account.APIProvider != "firstParty" || result.Account.APIKeySource != apiKeySource ||
+		result.PID <= 0 || result.CurrentPermissionMode != permission || result.OutputStyle != "default" ||
 		!explicitFalse(result.RemoteControlAutoEnable) || !explicitFalse(result.RemoteControlAutoOnByDefault) || !explicitFalse(result.IDERCAutoEnableGate) ||
 		result.FastModeState != "off" || result.FastModeDisabledReason != "sdk_opt_in_required" {
+		return incompatible()
+	}
+	var fields struct {
+		Account map[string]json.RawMessage `json:"account"`
+	}
+	_ = json.Unmarshal(raw, &fields)
+	if _, declared := fields.Account["apiKeySource"]; declared != (apiKeySource != "") {
 		return incompatible()
 	}
 	if !uniqueText(result.AvailableOutputStyles, 32, 128) || !slices.Contains(result.AvailableOutputStyles, result.OutputStyle) ||

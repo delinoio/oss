@@ -3,6 +3,7 @@ package claude
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -25,6 +26,7 @@ const (
 	NativeRequest      StreamEventKind = "control-request"
 	NativeCancellation StreamEventKind = "control-cancellation"
 	NativeLateResponse StreamEventKind = "late-control-response"
+	NativeReplyEcho    StreamEventKind = "control-reply-echo"
 )
 
 // StreamEvent is private transport evidence. Typed session/interaction adapters
@@ -54,6 +56,8 @@ type streamArrival struct {
 	claimed  bool
 	closed   bool
 	canceled bool
+	echoed   bool
+	reply    [sha256.Size]byte
 }
 
 // Stream owns Claude's NDJSON control/input transport, not session authority.
@@ -288,7 +292,7 @@ func streamJSON(value any) ([]byte, error) {
 }
 
 func (s *Stream) claimLocked(id domain.ID) error {
-	if s.seen[id] {
+	if _, collision := s.incoming[string(id)]; s.seen[id] || collision {
 		return domain.Fail(domain.Conflict, "This Claude Code operation identity was already used.", "Reconcile the original operation instead of resending it.")
 	}
 	if len(s.seen) >= maxStreamIdentities {
@@ -436,6 +440,11 @@ func (s *Stream) Reply(ctx context.Context, event StreamEvent, result any) error
 		return domain.Fail(domain.Conflict, "The Claude Code callback was already answered, canceled or replaced.", "Use only the original pending native interaction.")
 	}
 	arrival.claimed = true
+	arrival.reply, err = streamReplyDigest(params)
+	if err != nil {
+		s.mu.Unlock()
+		return err
+	}
 	s.incoming[event.RequestID] = arrival
 	s.mu.Unlock()
 	if err := s.write(ctx, raw); err != nil {
@@ -483,12 +492,12 @@ func (s *Stream) receiveResponse(raw []byte) error {
 		Type     string `json:"type"`
 		Response *struct {
 			Subtype   string          `json:"subtype"`
-			RequestID domain.ID       `json:"request_id"`
+			RequestID string          `json:"request_id"`
 			Response  json.RawMessage `json:"response,omitempty"`
 			Error     json.RawMessage `json:"error,omitempty"`
 		} `json:"response"`
 	}
-	if domain.Decode(raw, &message) != nil || message.Response == nil || message.Response.RequestID.Validate() != nil {
+	if domain.Decode(raw, &message) != nil || message.Response == nil || domain.Text(message.Response.RequestID, "native response identity", 128, true) != nil {
 		return streamIncompatible()
 	}
 	r := message.Response
@@ -515,11 +524,21 @@ func (s *Stream) receiveResponse(raw []byte) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	p, exists := s.pending[r.RequestID]
+	p, exists := s.pending[domain.ID(r.RequestID)]
 	if !exists {
-		return streamIncompatible()
+		// --replay-user-messages also echoes delivered callback replies. They
+		// use the native callback's identity, which is not our control UUID-v7.
+		// Match the exact claimed reply without interpreting echo as tool success.
+		arrival, found := s.incoming[r.RequestID]
+		digest, err := streamReplyDigest(r.Response)
+		if !found || !arrival.claimed || arrival.echoed || r.Subtype != "success" || err != nil || digest != arrival.reply {
+			return streamIncompatible()
+		}
+		arrival.echoed = true
+		s.incoming[r.RequestID] = arrival
+		return s.queueLocked(StreamEvent{Kind: NativeReplyEcho, RequestID: r.RequestID, ArrivalID: arrival.id, Response: response, size: len(raw)})
 	}
-	delete(s.pending, r.RequestID)
+	delete(s.pending, domain.ID(r.RequestID))
 	if p.abandoned {
 		return s.queueLocked(StreamEvent{Kind: NativeLateResponse, RequestID: string(r.RequestID), Response: response, size: len(raw)})
 	}
@@ -560,7 +579,7 @@ func (s *Stream) receiveRequest(raw []byte, kind string) error {
 		s.incoming[message.RequestID] = arrival
 		return s.queueLocked(StreamEvent{Kind: NativeCancellation, RequestID: message.RequestID, ArrivalID: arrival.id, size: len(raw)})
 	}
-	if exists {
+	if exists || s.seen[domain.ID(message.RequestID)] {
 		return streamIncompatible()
 	}
 	if s.activeIncoming >= maxStreamPending || len(s.incoming) >= maxStreamIdentities {
@@ -570,6 +589,23 @@ func (s *Stream) receiveRequest(raw []byte, kind string) error {
 	s.incoming[message.RequestID] = arrival
 	s.activeIncoming++
 	return s.queueLocked(StreamEvent{Kind: NativeRequest, RequestID: message.RequestID, ArrivalID: arrival.id, Body: bytes.Clone(message.Request), size: len(raw)})
+}
+
+// Normalize only object ordering/whitespace. Keep number spellings intact and
+// avoid float64 rounding: an altered reply cannot borrow another reply's proof.
+// Both callers already validate unique keys, UTF-8, size and depth.
+func streamReplyDigest(raw []byte) ([sha256.Size]byte, error) {
+	var value any
+	d := json.NewDecoder(bytes.NewReader(raw))
+	d.UseNumber()
+	if d.Decode(&value) != nil {
+		return [sha256.Size]byte{}, streamIncompatible()
+	}
+	canonical, err := json.Marshal(value)
+	if err != nil {
+		return [sha256.Size]byte{}, streamIncompatible()
+	}
+	return sha256.Sum256(canonical), nil
 }
 
 type streamFrames struct {

@@ -99,7 +99,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusUnauthorized, domain.Unauthenticated)
 		return
 	}
-	if r.Method != http.MethodPost || operation == "" || r.URL.RawQuery != "" || r.URL.ForceQuery || r.URL.RawPath != "" || r.URL.Fragment != "" || r.URL.IsAbs() {
+	// Claude's native beta Messages client uses this exact query spelling. It
+	// selects the same scoped operation, not another route/provider. Preserve
+	// it upstream; every other query (including equivalent encodings) fails.
+	queryAllowed := r.URL.RawQuery == "" || (operation.protocol() == domain.AnthropicMessages && r.URL.RawQuery == "beta=true")
+	if r.Method != http.MethodPost || operation == "" || !queryAllowed || r.URL.ForceQuery || r.URL.RawPath != "" || r.URL.Fragment != "" || r.URL.IsAbs() {
 		fail(http.StatusNotFound, domain.Unsupported)
 		return
 	}
@@ -355,6 +359,7 @@ func upstreamRequest(ctx context.Context, incoming *http.Request, raw []byte, sc
 		return nil, err
 	}
 	base.Path = strings.TrimSuffix(base.Path, "/") + strings.TrimPrefix(incoming.URL.Path, Prefix)
+	base.RawQuery = incoming.URL.RawQuery
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base.String(), bytes.NewReader(raw))
 	if err != nil {
 		return nil, err
