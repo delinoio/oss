@@ -63,15 +63,39 @@ const MaxExecutionEvents = 100000
 // Observations remain distinct from the immutable requested configuration.
 // Nil effort/tier means unavailable, not a manufactured native default.
 type ObservedExecutionSettings struct {
-	Model          string         `json:"model"`
-	Effort         *string        `json:"effort"`
-	ServiceTier    *string        `json:"service_tier"`
-	Permission     PermissionMode `json:"permission"`
-	ApprovalPolicy string         `json:"approval_policy"`
+	Model            string               `json:"model"`
+	Effort           *string              `json:"effort"`
+	ServiceTier      *string              `json:"service_tier"`
+	Permission       PermissionMode       `json:"permission"`
+	ApprovalPolicy   string               `json:"approval_policy"`
+	ClaudePermission ClaudePermissionMode `json:"claude_permission,omitempty"`
 }
 
 func (o ObservedExecutionSettings) Validate(configuration ExecutionConfiguration) error {
-	if o.Model != configuration.NativeModel || !slices.Contains([]PermissionMode{PermissionReadOnly, PermissionWorkspaceWrite, PermissionFullAccess}, o.Permission) || !slices.Contains([]string{"untrusted", "on-request", "never"}, o.ApprovalPolicy) {
+	return o.ValidateForInput(configuration, ExecuteMode)
+}
+
+func (o ObservedExecutionSettings) ValidateForInput(configuration ExecutionConfiguration, mode SessionMode) error {
+	if !mode.Valid() || o.Model != configuration.NativeModel {
+		return Fail(Unsupported, "The observed native settings are incompatible.", "Reconcile the accepted configuration and native profile before sending input.")
+	}
+	switch configuration.Harness {
+	case Codex:
+		if o.ClaudePermission != "" || configuration.Options.ClaudePermission != "" || !slices.Contains([]PermissionMode{PermissionReadOnly, PermissionWorkspaceWrite, PermissionFullAccess}, o.Permission) || !slices.Contains([]string{"untrusted", "on-request", "never"}, o.ApprovalPolicy) {
+			return Fail(Unsupported, "The observed native settings are incompatible.", "Reconcile the accepted configuration and native profile before sending input.")
+		}
+	case ClaudeCode:
+		permission, err := configuration.Options.ClaudePermissionForInput(mode)
+		if err != nil {
+			return err
+		}
+		if !o.ClaudePermission.Valid() || o.Permission != PermissionDefault || o.ApprovalPolicy != "" || o.ServiceTier != nil || configuration.Options.ServiceTier != "" {
+			return Fail(Unsupported, "The observed Claude settings contain an unsupported native policy.", "Preserve the original Claude tool permission observation without a synthetic sandbox, approval policy or service tier.")
+		}
+		if o.ClaudePermission != permission {
+			return Fail(RecoveryRequired, "The native Claude permission mode changed.", "Reconcile the original selection and input mode before sending input.")
+		}
+	default:
 		return Fail(Unsupported, "The observed native settings are incompatible.", "Reconcile the accepted configuration and native profile before sending input.")
 	}
 	for _, pair := range []struct {

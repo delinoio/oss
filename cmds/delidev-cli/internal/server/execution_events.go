@@ -118,7 +118,7 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 		if event.Kind != domain.ExecutionThreadBound || event.Sequence != 1 || queued.Delivery != domain.InputClaimed {
 			return executionEventConflict()
 		}
-		if err := event.Observed.Validate(input.Configuration); err != nil {
+		if err := event.Observed.ValidateForInput(input.Configuration, input.Input.Mode); err != nil {
 			return err
 		}
 		if c := input.Continuation; c != nil && (c.Previous.NativeThreadID != event.NativeThreadID || !reflect.DeepEqual(c.Previous.Observed, *event.Observed)) {

@@ -96,7 +96,7 @@ func (s *APISession) readRetainedTranscript(ctx context.Context) (TranscriptObse
 // server. The caller must independently hold its exclusive workspace/runtime
 // lease and durably authorize this execution before calling. It sends no input.
 // Failed launches consume the handoff: never retry an uncertain replacement.
-func ContinueAPISession(ctx context.Context, closed *ClosedAPISession, owner domain.ID, api APIConfig, intent InputIntent) (*APISession, error) {
+func ContinueAPISession(ctx context.Context, closed *ClosedAPISession, owner domain.ID, api APIConfig, intent InputIntent) (session *APISession, returned error) {
 	if err := ctx.Err(); err != nil {
 		return nil, domain.SafeError(err)
 	}
@@ -109,17 +109,25 @@ func ContinueAPISession(ctx context.Context, closed *ClosedAPISession, owner dom
 		return nil, sessionBusy()
 	}
 	previous := closed.previous
+	phase := continuationAuthority
+	defer func() {
+		if returned != nil && previous.config.Process.Logger != nil {
+			previous.config.Process.Logger.WarnContext(ctx, "Claude Code process continuation failed", "owner_id", owner, "session_id", previous.config.SessionID, "phase", phase, "code", domain.SafeError(returned).Code)
+		}
+	}()
 	authority := sha256.Sum256([]byte(api.Token))
 	if !previous.closed.Load() || previous.problem != nil || previous.owners[owner] || previous.authorities[authority] || api.ServerOrigin != previous.serverOrigin || (closed.requiresResume && intent != ResumeTerminalRun) || len(previous.owners) >= maxStreamIdentities || len(previous.authorities) >= maxStreamIdentities {
 		return nil, sessionBusy()
 	}
 	closed.used = true
+	phase = continuationOriginalHistory
 	observed, err := previous.readRetainedTranscript(ctx)
 	if err != nil || observed != closed.transcript {
 		return nil, historyUncertain()
 	}
 	config := previous.config
 	config.Process.OwnerID, config.API = owner, api
+	phase = continuationNativeInitialize
 	stream, err := openAPIStreamMode(ctx, config, true)
 	if err != nil {
 		return nil, err
@@ -130,15 +138,18 @@ func ContinueAPISession(ctx context.Context, closed *ClosedAPISession, owner dom
 		}
 		return nil, err
 	}
+	phase = continuationAppliedSettings
 	initial, ok := stream.InitialAppliedSettings()
 	if !ok || !sameAppliedSettings(initial, previous.initial) {
 		return fail(settingsUncertain())
 	}
 	// Initialization may not silently rewrite or substitute accepted history.
+	phase = continuationInitializedHistory
 	observed, err = previous.readRetainedTranscript(ctx)
 	if err != nil || observed != closed.transcript {
 		return fail(historyUncertain())
 	}
+	phase = continuationInputBarrier
 	if err := stream.inputBarrier(); err != nil {
 		return fail(err)
 	}
@@ -164,3 +175,14 @@ func ContinueAPISession(ctx context.Context, closed *ClosedAPISession, owner dom
 	}
 	return next, nil
 }
+
+type continuationPhase string
+
+const (
+	continuationAuthority          continuationPhase = "authority"
+	continuationOriginalHistory    continuationPhase = "original-history"
+	continuationNativeInitialize   continuationPhase = "native-initialize"
+	continuationAppliedSettings    continuationPhase = "applied-settings"
+	continuationInitializedHistory continuationPhase = "initialized-history"
+	continuationInputBarrier       continuationPhase = "input-barrier"
+)

@@ -73,7 +73,7 @@ func (c *CodexEventPublisher) BindThread(ctx context.Context, result codex.Threa
 	if result.Effective.Provider != codex.APIProvider || result.Effective.ApprovalsReviewer != "user" {
 		return publicationUncertain()
 	}
-	if err := observed.Validate(c.publisher.input.Configuration); err != nil {
+	if err := observed.ValidateForInput(c.publisher.input.Configuration, c.publisher.input.Input.Mode); err != nil {
 		return err
 	}
 	c.thread = result.Thread.ID

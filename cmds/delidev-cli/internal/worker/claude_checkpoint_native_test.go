@@ -36,6 +36,13 @@ type claudeCheckpointAuthority struct {
 
 const claudeCheckpointUpstreamKey = "server-only-private-checkpoint-fixture"
 
+type claudeCheckpointLogWriter struct{ t *testing.T }
+
+func (w claudeCheckpointLogWriter) Write(raw []byte) (int, error) {
+	w.t.Log(strings.TrimSpace(string(raw)))
+	return len(raw), nil
+}
+
 func (a *claudeCheckpointAuthority) Acquire(ctx context.Context, token string) (*apiproxy.Lease, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -73,8 +80,12 @@ func TestManualNativeClaudeWorkerCheckpoint(t *testing.T) {
 	f.input.Manifest, _ = json.Marshal(workspace.Manifest{Version: 1, SessionID: f.input.SessionID, MachineID: f.input.MachineID, Type: domain.Local, State: workspace.Ready, PrimaryPath: workdir})
 	f.job.Input, _ = json.Marshal(f.input)
 	f.ref.AssignmentInputDigest = executionInputDigest(f.job.Input)
-	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
-	cfg := claude.APIStreamConfig{Process: process.Config{Directory: filepath.Join(f.root, "processes"), OwnerID: f.jobID, Executable: binary, Cwd: runtimeRoot, Env: env, Logger: logger}, Version: claude.SupportedVersion, Home: filepath.Join(runtimeRoot, "claude"), Workspace: workdir, SessionID: f.input.SessionID, Model: f.input.Configuration.NativeModel, Effort: claude.HighEffort, Permission: claude.PlanPermission, Instructions: f.input.Configuration.Instructions}
+	logger := slog.New(slog.NewJSONHandler(claudeCheckpointLogWriter{t}, nil))
+	permission, effort, err := claudeExecutionSettings(f.input.Configuration, f.input.Input.Mode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := claude.APIStreamConfig{Process: process.Config{Directory: filepath.Join(f.root, "processes"), OwnerID: f.jobID, Executable: binary, Cwd: runtimeRoot, Env: env, Logger: logger}, Version: claude.SupportedVersion, Home: filepath.Join(runtimeRoot, "claude"), Workspace: workdir, SessionID: f.input.SessionID, Model: f.input.Configuration.NativeModel, Effort: effort, Permission: permission, Instructions: f.input.Configuration.Instructions}
 	const followup = "Private follow-up after retained checkpoint."
 	var calls atomic.Int64
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

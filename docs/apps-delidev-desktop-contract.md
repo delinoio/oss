@@ -134,3 +134,8 @@ Update app/root AGENTS, project ownership, the client/protocol contracts, build/
 - [TypeScript client](packages-delidev-api-client-contract.md)
 - [Evidence](cmds-delidev-evidence.md)
 - [Repository defaults](repository-defaults.md)
+
+### Claude native permission configuration
+Agent Worker forms expose Claude's separate native tool permission field with exact `default`, `plan`, `acceptEdits`, `dontAsk` and `bypassPermissions` choices. Explain native Plan behavior independently of filesystem sandbox isolation, and display the relevant edit, denial or bypass scope. Saving configuration does not imply that the unfinished public Claude execution path is available.
+
+Switching harnesses preserves all original options, including unsupported/unknown values. A retained Codex sandbox or approval policy stays visible as an incompatibility and is removed only through the explicit clear action; switching back first restores the original displayed choices. A Claude selection retained on another harness likewise needs explicit clearing. Unknown select values retain their exact value with an unsupported-selection label instead of appearing to select a different available option. Other document fields and revision-bound retry behavior remain intact. Go independently rejects mixed native policies and preserves prior storage on failure.

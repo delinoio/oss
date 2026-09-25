@@ -210,3 +210,40 @@ it("edits global routing and fetch preferences without rewriting unrelated polic
   expect(request.mutation.expectedRevision).toBe(8n);
   expect(JSON.parse(new TextDecoder().decode(request.documentJson))).toEqual({ ...original, default_routing: "priority", automatic_fetch: false });
 });
+
+it("retains incompatible permission selections across harness changes until explicit clearing", async () => {
+  const model = resource(EntityKind.MODEL, { name: "Fixture model" });
+  const original = { name: "Original agent", harness: "codex", model_id: model.id, accounts: [], templates: [], options: { permission: "workspace-write", approval_policy: "on-request", future_option: "retained" } };
+  const agent = resource(EntityKind.AGENT, original, 3n);
+  const value = fixture([agent, model]);
+  render(value.view(<ConfigurationEditor kind={EntityKind.AGENT} initial={agent} active saved={() => {}} cancel={() => {}} />));
+  fireEvent.change(screen.getByRole("combobox", { name: "Harness" }), { target: { value: "claude-code" } });
+  expect(screen.getByRole("alert").textContent).toContain("workspace-write · on-request");
+  expect(screen.queryByRole("combobox", { name: "Permission mode" })).toBeNull();
+  expect(screen.queryByRole("textbox", { name: "Approval policy" })).toBeNull();
+  fireEvent.change(screen.getByRole("combobox", { name: "Claude permission mode" }), { target: { value: "acceptEdits" } });
+  fireEvent.change(screen.getByRole("combobox", { name: "Harness" }), { target: { value: "codex" } });
+  expect((screen.getByRole("combobox", { name: "Permission mode" }) as HTMLSelectElement).value).toBe("workspace-write");
+  expect((screen.getByRole("textbox", { name: "Approval policy" }) as HTMLInputElement).value).toBe("on-request");
+  expect(screen.getByRole("alert").textContent).toContain("acceptEdits");
+  fireEvent.change(screen.getByRole("combobox", { name: "Harness" }), { target: { value: "claude-code" } });
+  fireEvent.click(screen.getByRole("button", { name: "Clear incompatible permission settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
+  const request = input(value.save.mock.calls[0][0]);
+  expect(request.mutation.expectedRevision).toBe(3n);
+  expect(JSON.parse(new TextDecoder().decode(request.documentJson))).toEqual({ ...original, harness: "claude-code", options: { permission: "default", claude_permission: "acceptEdits", future_option: "retained" } });
+});
+
+it("shows unsupported stored Claude modes without replacing the retained draft", async () => {
+  const model = resource(EntityKind.MODEL, { name: "Fixture model" });
+  const agent = resource(EntityKind.AGENT, { name: "Future agent", harness: "claude-code", model_id: model.id, options: { permission: "default", claude_permission: "future-mode" } });
+  const value = fixture([agent, model]);
+  render(value.view(<ConfigurationEditor kind={EntityKind.AGENT} initial={agent} active saved={() => {}} cancel={() => {}} />));
+  const selector = screen.getByRole("combobox", { name: "Claude permission mode" }) as HTMLSelectElement;
+  expect(selector.value).toBe("future-mode");
+  expect(screen.getByRole("option", { name: "Unsupported selection · future-mode" })).toBeTruthy();
+  fireEvent.change(selector, { target: { value: "bypassPermissions" } });
+  expect(screen.getByText(/Bypass skips native permission prompts/)).toBeTruthy();
+  expect(value.save).not.toHaveBeenCalled();
+});

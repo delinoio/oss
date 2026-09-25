@@ -223,7 +223,7 @@ func (s ThreadSettings) wireSettings() (threadParams, error) {
 		}
 		p.WorkspaceRoots = slices.Clone(s.WorkspaceRoots)
 	}
-	if s.Options.SubagentModel != "" || s.Options.SubagentEffort != "" || s.Options.MaxConcurrency != 0 || s.Options.ApprovalReviewModel != "" {
+	if s.Options.SubagentModel != "" || s.Options.SubagentEffort != "" || s.Options.MaxConcurrency != 0 || s.Options.ApprovalReviewModel != "" || s.Options.ClaudePermission != "" {
 		return p, unsupportedSettings()
 	}
 	switch s.Options.Permission {

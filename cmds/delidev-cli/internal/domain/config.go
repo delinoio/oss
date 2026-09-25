@@ -213,13 +213,14 @@ const (
 )
 
 type AgentOptions struct {
-	SubagentModel       string         `json:"subagent_model,omitempty"`
-	SubagentEffort      string         `json:"subagent_effort,omitempty"`
-	MaxConcurrency      uint32         `json:"max_concurrency,omitempty"`
-	Permission          PermissionMode `json:"permission"`
-	ApprovalPolicy      string         `json:"approval_policy,omitempty"`
-	ApprovalReviewModel string         `json:"approval_review_model,omitempty"`
-	ServiceTier         string         `json:"service_tier,omitempty"`
+	SubagentModel       string               `json:"subagent_model,omitempty"`
+	SubagentEffort      string               `json:"subagent_effort,omitempty"`
+	MaxConcurrency      uint32               `json:"max_concurrency,omitempty"`
+	Permission          PermissionMode       `json:"permission"`
+	ClaudePermission    ClaudePermissionMode `json:"claude_permission,omitempty"`
+	ApprovalPolicy      string               `json:"approval_policy,omitempty"`
+	ApprovalReviewModel string               `json:"approval_review_model,omitempty"`
+	ServiceTier         string               `json:"service_tier,omitempty"`
 }
 type WeightedAccount struct {
 	ID     ID     `json:"id"`
@@ -267,6 +268,9 @@ func (a Agent) Validate() error {
 	}
 	if a.Options.Permission != PermissionDefault && a.Options.Permission != PermissionReadOnly && a.Options.Permission != PermissionWorkspaceWrite && a.Options.Permission != PermissionFullAccess {
 		return Fail(InvalidArgument, "Unknown native permission mode.", "Choose an explicit supported permission mode.")
+	}
+	if err := a.Options.validateClaudePermission(a.Harness); err != nil {
+		return err
 	}
 	if a.Options.MaxConcurrency > 64 {
 		return Fail(InvalidArgument, "Invalid native concurrency limit.", "Use at most 64; installed harness limits are checked before dispatch.")
