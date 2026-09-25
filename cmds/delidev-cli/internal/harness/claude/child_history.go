@@ -54,7 +54,7 @@ func VerifyChildTranscript(ctx context.Context, raw, metadata []byte, session do
 	} else if value.ParentAgentID == nil || *value.ParentAgentID != binding.ParentAgentID || *value.SpawnDepth < 2 {
 		return ChildTranscriptObservation{}, historyUncertain()
 	}
-	transcript, err := verifyTranscript(ctx, raw, session, workspace, proofs, &binding, nil)
+	transcript, err := verifyTranscript(ctx, raw, session, workspace, proofs, &binding, nil, nil)
 	if err != nil {
 		return ChildTranscriptObservation{}, err
 	}

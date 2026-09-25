@@ -76,7 +76,7 @@ func VerifyCompactedMainTranscript(ctx context.Context, raw []byte, session doma
 	if len(compactions) == 0 || len(compactions) > maxStreamIdentities {
 		return TranscriptObservation{}, historyUncertain()
 	}
-	return verifyTranscript(ctx, raw, session, workspace, proofs, nil, compactions)
+	return verifyTranscript(ctx, raw, session, workspace, proofs, nil, compactions, nil)
 }
 
 // Stored JSONL uses camel-case keys, unlike the live SDK envelope. Rename only
@@ -119,6 +119,7 @@ func storedCompaction(raw json.RawMessage) (*NativeCompaction, error) {
 }
 
 type historyNode struct {
+	meta         bool
 	parent       string
 	role         HistoryRole
 	position     int

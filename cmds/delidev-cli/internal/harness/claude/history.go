@@ -42,6 +42,9 @@ type TranscriptObservation struct {
 	Compactions           uint32
 	SummaryMessages       uint32
 	ReplayedRecords       uint32
+	CompactionActions     uint32
+	ActionMessages        uint32
+	StoredDiagnostics     uint32
 }
 
 func historyUncertain() *domain.Error {
@@ -163,14 +166,14 @@ func validHistoryDigest(value string) bool {
 // The caller must independently prove private file/process ownership, durable
 // publication, every child/auxiliary file and current account/configuration.
 func VerifyMainTranscript(ctx context.Context, raw []byte, session domain.ID, workspace string, proofs []HistoryMessageProof) (TranscriptObservation, error) {
-	return verifyTranscript(ctx, raw, session, workspace, proofs, nil, nil)
+	return verifyTranscript(ctx, raw, session, workspace, proofs, nil, nil, nil)
 }
 
-func verifyTranscript(ctx context.Context, raw []byte, session domain.ID, workspace string, proofs []HistoryMessageProof, child *ChildHistoryBinding, compactProofs []HistoryCompactionProof) (TranscriptObservation, error) {
+func verifyTranscript(ctx context.Context, raw []byte, session domain.ID, workspace string, proofs []HistoryMessageProof, child *ChildHistoryBinding, compactProofs []HistoryCompactionProof, actionProofs []HistoryCompactionActionProof) (TranscriptObservation, error) {
 	if err := ctx.Err(); err != nil {
 		return TranscriptObservation{}, domain.SafeError(err)
 	}
-	if len(raw) == 0 || len(raw) > maxHistoryTranscript || raw[len(raw)-1] != '\n' || session.Validate() != nil || !filepath.IsAbs(workspace) || filepath.Clean(workspace) != workspace || domain.Text(workspace, "native history workspace", 4096, true) != nil || (len(proofs) == 0 && child == nil) || len(proofs) > maxStreamIdentities {
+	if len(raw) == 0 || len(raw) > maxHistoryTranscript || raw[len(raw)-1] != '\n' || session.Validate() != nil || !filepath.IsAbs(workspace) || filepath.Clean(workspace) != workspace || domain.Text(workspace, "native history workspace", 4096, true) != nil || (len(proofs) == 0 && child == nil) || len(proofs) > maxStreamIdentities || len(compactProofs) > maxStreamIdentities || len(actionProofs) > maxStreamIdentities || (child != nil && len(actionProofs) != 0) {
 		return TranscriptObservation{}, historyUncertain()
 	}
 	expected := map[string]HistoryMessageProof{}
@@ -195,6 +198,10 @@ func verifyTranscript(ctx context.Context, raw []byte, session domain.ID, worksp
 		if expectedSummaries[id].NativeID != "" {
 			return TranscriptObservation{}, historyUncertain()
 		}
+	}
+	actions, err := indexHistoryActions(actionProofs, expected, expectedBoundaries, expectedSummaries)
+	if err != nil {
+		return TranscriptObservation{}, err
 	}
 	lines := bytes.Split(raw[:len(raw)-1], []byte{'\n'})
 	if len(lines) > maxHistoryRecords {
@@ -236,7 +243,7 @@ func verifyTranscript(ctx context.Context, raw []byte, session domain.ID, worksp
 			continue
 		case "user", "assistant", "attachment":
 		case "system":
-			if len(compactProofs) == 0 {
+			if len(compactProofs) == 0 && len(actionProofs) == 0 {
 				return TranscriptObservation{}, historyUncertain()
 			}
 		default:
@@ -261,7 +268,7 @@ func verifyTranscript(ctx context.Context, raw []byte, session domain.ID, worksp
 			return TranscriptObservation{}, historyUncertain()
 		}
 		if original, ok := nodes[id]; ok {
-			if len(compactProofs) == 0 || kind == "system" || replayed[id] || original.replayDigest != replayDigest {
+			if len(compactProofs) == 0 || original.role == "system" || replayed[id] || original.replayDigest != replayDigest {
 				return TranscriptObservation{}, historyUncertain()
 			}
 			replayed[id] = true
@@ -276,7 +283,16 @@ func verifyTranscript(ctx context.Context, raw []byte, session domain.ID, worksp
 			}
 		}
 		role := HistoryRole(kind)
-		if kind == "system" {
+		var meta bool
+		if fields["isMeta"] != nil && json.Unmarshal(fields["isMeta"], &meta) != nil {
+			return TranscriptObservation{}, historyUncertain()
+		}
+		if kind == "system" && expectedBoundaries[id].NativeID == "" {
+			if expected[id].NativeID != "" || expectedSummaries[id].NativeID != "" || actions.messages[id].NativeID != "" || actions.observeDiagnostic(fields, id, parentID) != nil {
+				return TranscriptObservation{}, historyUncertain()
+			}
+			role = "local-command"
+		} else if kind == "system" {
 			proof, ok := expectedBoundaries[id]
 			var subtype, logicalParent string
 			meta, err := storedCompaction(fields["compactMetadata"])
@@ -324,13 +340,18 @@ func verifyTranscript(ctx context.Context, raw []byte, session domain.ID, worksp
 					return TranscriptObservation{}, historyUncertain()
 				}
 				matched[id] = true
+			} else if proof, ok := actions.messages[id]; ok {
+				if proof.Role != observed || proof.PayloadSHA256 != hex.EncodeToString(digest[:]) || meta {
+					return TranscriptObservation{}, historyUncertain()
+				}
+				actions.matched[id] = true
 			} else {
 				additional++
 			}
-		} else if expected[id].NativeID != "" {
+		} else if expected[id].NativeID != "" || actions.messages[id].NativeID != "" {
 			return TranscriptObservation{}, historyUncertain()
 		}
-		nodes[id] = historyNode{parent: parentID, role: role, position: position, replayDigest: replayDigest}
+		nodes[id] = historyNode{parent: parentID, role: role, position: position, replayDigest: replayDigest, meta: meta}
 	}
 	if len(matched) != len(proofs) || nodes[leaf].role == "" || len(replayed) != 0 || len(compactions) != len(compactProofs) || len(summaries) != len(compactProofs) {
 		return TranscriptObservation{}, historyUncertain()
@@ -354,6 +375,9 @@ func verifyTranscript(ctx context.Context, raw []byte, session domain.ID, worksp
 	if index != -1 {
 		return TranscriptObservation{}, historyUncertain()
 	}
+	if err := actions.verify(ctx, nodes, provenance, compactions); err != nil {
+		return TranscriptObservation{}, err
+	}
 	active, err := relinkCompactedHistory(ctx, nodes, compactions)
 	if err != nil {
 		return TranscriptObservation{}, err
@@ -375,10 +399,10 @@ func verifyTranscript(ctx context.Context, raw []byte, session domain.ID, worksp
 	for _, boundary := range compactions {
 		// A detached boundary cannot turn an unrelated retained branch into
 		// trusted compaction evidence, even when its metadata digest matches.
-		if !provenance[boundary.proof.SummaryID] {
+		if !provenance[boundary.proof.SummaryID] && actions.boundaries[boundary.proof.NativeID].ActionID == "" {
 			return TranscriptObservation{}, historyUncertain()
 		}
 	}
 	digest := sha256.Sum256(raw)
-	return TranscriptObservation{SHA256: hex.EncodeToString(digest[:]), Bytes: uint64(len(raw)), LeafID: leaf, MatchedMessages: uint32(len(proofs)), AdditionalMessages: additional, ActiveMatchedMessages: activeCount, CompactedMessages: uint32(len(proofs)) - activeCount, Compactions: uint32(len(compactions)), SummaryMessages: uint32(len(summaries)), ReplayedRecords: replayCount}, nil
+	return TranscriptObservation{SHA256: hex.EncodeToString(digest[:]), Bytes: uint64(len(raw)), LeafID: leaf, MatchedMessages: uint32(len(proofs)), AdditionalMessages: additional, ActiveMatchedMessages: activeCount, CompactedMessages: uint32(len(proofs)) - activeCount, Compactions: uint32(len(compactions)), SummaryMessages: uint32(len(summaries)), ReplayedRecords: replayCount, CompactionActions: uint32(len(actionProofs)), ActionMessages: uint32(len(actions.matched)), StoredDiagnostics: uint32(len(actions.stored))}, nil
 }

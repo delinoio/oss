@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -17,6 +18,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
 func TestManualNativeExplicitCompaction(t *testing.T) {
@@ -26,11 +28,13 @@ func TestManualNativeExplicitCompaction(t *testing.T) {
 	}{
 		{"successful", false, false}, {"provider-rejection", true, false}, {"insufficient-history", false, true},
 	} {
-		t.Run(fixture.name, func(t *testing.T) { nativeManualCompactionFixture(t, fixture.rejected, fixture.insufficient) })
+		for _, next := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/continue-%t", fixture.name, next), func(t *testing.T) { nativeManualCompactionFixture(t, fixture.rejected, fixture.insufficient, next) })
+		}
 	}
 }
 
-func nativeManualCompactionFixture(t *testing.T, rejected, insufficient bool) {
+func nativeManualCompactionFixture(t *testing.T, rejected, insufficient, continueInput bool) {
 	failed := rejected || insufficient
 	binary := os.Getenv("DELIDEV_NATIVE_CLAUDE_EXECUTABLE")
 	if binary == "" {
@@ -133,10 +137,17 @@ func nativeManualCompactionFixture(t *testing.T, rejected, insufficient bool) {
 			}
 		}
 	}()
+	var proofs []HistoryMessageProof
+	var compactions []HistoryCompactionProof
+	var actions []HistoryCompactionActionProof
+	var nativeBoundary, nativeEcho, nativeOutput StreamEvent
 	var actionID domain.ID
 	var originalInput domain.ID
 	var originalTurn string
 	for turn := 0; turn < 4; turn++ {
+		if turn == 3 && !continueInput {
+			break
+		}
 		if turn == 1 && insufficient {
 			continue
 		}
@@ -179,12 +190,23 @@ func nativeManualCompactionFixture(t *testing.T, rejected, insufficient bool) {
 					t.Fatal("compaction fabricated a conversation outcome")
 				}
 				if observed.Kind == CompactionObserved {
+					nativeBoundary = *observed.Native
 					boundary = observed.Compaction.Trigger == ManualCompaction
 				}
 				if observed.Kind == CompactionSummaryObserved {
 					summary = observed.Summary.Text != nil && len(observed.Summary.Blocks) == 0
+					proof, err := ObserveMainCompaction(nativeBoundary, *observed.Native, cfg.SessionID)
+					if err != nil {
+						t.Fatal(err)
+					}
+					compactions = append(compactions, proof)
 				}
 				if observed.Kind == CompactionCommandObserved {
+					if observed.CompactCommand.Kind == CompactionCommandEcho {
+						nativeEcho = *observed.Native
+					} else {
+						nativeOutput = *observed.Native
+					}
 					echo = echo || observed.CompactCommand.Kind == CompactionCommandEcho
 					output = output || observed.CompactCommand.Kind == CompactionCommandOutput
 					diagnostic = diagnostic || observed.CompactCommand.Kind == CompactionCommandDiagnostic
@@ -196,8 +218,17 @@ func nativeManualCompactionFixture(t *testing.T, rejected, insufficient bool) {
 					}
 					success = observed.CompactResult.Status == expected && !observed.CompactResult.Error
 				}
-			} else if observed.Kind == InputFinished {
-				success = observed.Result.Successful()
+			} else {
+				if observed.Kind == InputFinished {
+					success = observed.Result.Successful()
+				}
+				if observed.Native != nil && (observed.Native.Type == "user" || observed.Native.Type == "assistant") {
+					proof, err := ObserveMainHistoryMessage(*observed.Native, cfg.SessionID)
+					if err != nil {
+						t.Fatal(err)
+					}
+					proofs = append(proofs, proof)
+				}
 			}
 			idle = observed.Kind == RunStateObserved && observed.Run.State == RunIdle
 		}
@@ -205,6 +236,17 @@ func nativeManualCompactionFixture(t *testing.T, rejected, insufficient bool) {
 			t.Fatal("original native operation did not finish successfully")
 		}
 		if turn == 2 {
+			status, boundaryID := CompactSucceeded, ""
+			if failed {
+				status = CompactFailed
+			} else {
+				boundaryID = compactions[len(compactions)-1].NativeID
+			}
+			proof, err := ObserveCompactionActionHistory(nativeEcho, nativeOutput, cfg.SessionID, actionID, proofs[len(proofs)-1].NativeID, status, boundaryID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			actions = append(actions, proof)
 			if boundary == failed || summary == failed || !echo || output == failed || diagnostic != failed || s.current.input != originalInput || s.current.turnID != originalTurn || !s.current.terminal.Successful() {
 				t.Fatal("manual command overwrote original conversation ownership")
 			}
@@ -217,10 +259,31 @@ func nativeManualCompactionFixture(t *testing.T, rejected, insufficient bool) {
 	if insufficient {
 		expectedCalls = 2
 	}
-	if calls.Load() != expectedCalls || compactedRequest.Load() == failed || retainedRequest.Load() != failed {
+	if !continueInput {
+		expectedCalls--
+	}
+	if calls.Load() != expectedCalls || (continueInput && (compactedRequest.Load() == failed || retainedRequest.Load() != failed)) {
 		t.Fatal("native manual compaction retried or lost its context boundary", calls.Load())
 	}
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
+	}
+	raw, err := security.ReadPrivate(filepath.Join(cfg.Home, "projects", "delidev", string(cfg.SessionID)+".jsonl"), maxHistoryTranscript)
+	if err != nil {
+		t.Fatal(err)
+	}
+	verified, err := VerifyMainTranscriptWithActions(ctx, raw, cfg.SessionID, cfg.Workspace, proofs, compactions, actions)
+	wantMessages, wantCompactions, wantActionMessages, wantDiagnostics := uint32(6), uint32(1), uint32(2), uint32(0)
+	if failed {
+		wantCompactions, wantActionMessages, wantDiagnostics = 0, 1, 1
+	}
+	if insufficient {
+		wantMessages = 4
+	}
+	if !continueInput {
+		wantMessages -= 2
+	}
+	if err != nil || verified.MatchedMessages != wantMessages || verified.AdditionalMessages != 1 || verified.CompactionActions != 1 || verified.ActionMessages != wantActionMessages || verified.StoredDiagnostics != wantDiagnostics || verified.Compactions != wantCompactions || verified.SummaryMessages != wantCompactions || (verified.CompactedMessages == 0) != failed {
+		t.Fatal("manual history lost original conversation or action provenance", err, verified)
 	}
 }
