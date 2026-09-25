@@ -14,7 +14,7 @@ func (b *ExecutionBinding) observeChildInput(parent string, rawBlocks []json.Raw
 		if err != nil {
 			return nil, err
 		}
-		if block.Kind != TextBlock {
+		if !userContentBlock(block.Kind) {
 			return nil, lifecycleUncertain()
 		}
 		blocks = append(blocks, block)
@@ -47,6 +47,9 @@ func (b *ExecutionBinding) observeChildSnapshot(parent string, message providerM
 		block, err := decodeContentBlock(raw)
 		if err != nil {
 			return nil, err
+		}
+		if !assistantBlock(block.Kind) {
+			return nil, lifecycleUncertain()
 		}
 		if block.Tool != nil {
 			tool := block.Tool

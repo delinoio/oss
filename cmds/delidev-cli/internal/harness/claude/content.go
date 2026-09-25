@@ -32,6 +32,7 @@ const (
 	ProviderMessageFinished  ContentEventKind = "provider-message-finished"
 	ProviderMessageSnapshot  ContentEventKind = "provider-message-snapshot"
 	ChildInputObserved       ContentEventKind = "child-input-observed"
+	NativeContextObserved    ContentEventKind = "native-context-observed"
 	ContentStarted           ContentEventKind = "content-started"
 	ContentChanged           ContentEventKind = "content-changed"
 	ContentCompleted         ContentEventKind = "content-completed"
@@ -40,6 +41,9 @@ const (
 	AssistantProblemObserved ContentEventKind = "assistant-problem-observed"
 	TextBlock                ContentBlockKind = "text"
 	ThinkingBlock            ContentBlockKind = "thinking"
+	RedactedThinkingBlock    ContentBlockKind = "redacted_thinking"
+	ImageBlock               ContentBlockKind = "image"
+	DocumentBlock            ContentBlockKind = "document"
 	ToolUseBlock             ContentBlockKind = "tool_use"
 	TextDelta                ContentDeltaKind = "text_delta"
 	ThinkingDelta            ContentDeltaKind = "thinking_delta"
@@ -61,10 +65,16 @@ type NativeTool struct {
 }
 
 type NativeContentBlock struct {
-	Kind     ContentBlockKind `json:"kind"`
-	Text     *string          `json:"text,omitempty"`
-	Thinking *string          `json:"thinking,omitempty"`
-	Tool     *NativeTool      `json:"tool,omitempty"`
+	Kind      ContentBlockKind `json:"kind"`
+	Text      *string          `json:"text,omitempty"`
+	Thinking  *string          `json:"thinking,omitempty"`
+	Tool      *NativeTool      `json:"tool,omitempty"`
+	Citations *NativeCitations `json:"citations,omitempty"`
+	Cache     json.RawMessage  `json:"-"`
+	// Rich sources remain private adapter data until attachment publication
+	// supplies its own storage and display boundary. URLs/file IDs are data,
+	// never instructions to fetch a remote or local resource.
+	Media *NativeMediaBlock `json:"-"`
 	// Opaque signatures belong to native thinking continuity, not displayable
 	// reasoning. Compare stream bytes only; native persistence/verification owns
 	// their meaning. Never reconstruct hidden text from them.
@@ -78,28 +88,31 @@ type NativeToolResult struct {
 	Text   *string              `json:"text"`
 	Blocks []NativeContentBlock `json:"blocks"`
 	// Structured is Claude's original tool_use_result object. This explicit
-	// provider extension is display/history data, never a filesystem, process,
+	// provider extension may duplicate binary media and remains private until
+	// its typed publication adapter exists. It grants no filesystem, process,
 	// network or interaction-response capability.
-	Structured json.RawMessage `json:"structured,omitempty"`
+	Structured json.RawMessage `json:"-"`
 }
 
 type ContentEvent struct {
-	Kind            ContentEventKind
-	MessageID       string
-	Model           string
-	ParentToolID    string
-	Index           *uint32
-	Block           *NativeContentBlock
-	Blocks          []NativeContentBlock
-	SubagentType    *string
-	TaskDescription *string
-	DeltaKind       ContentDeltaKind
-	Delta           *string
-	Usage           *ProviderUsage
-	StopReason      *NativeStopReason
-	StopSequence    *string
-	ToolResult      *NativeToolResult
-	Problem         NativeAssistantProblem
+	Kind               ContentEventKind
+	MessageID          string
+	Model              string
+	ParentToolID       string
+	Index              *uint32
+	Block              *NativeContentBlock
+	Blocks             []NativeContentBlock
+	SubagentType       *string
+	TaskDescription    *string
+	DeltaKind          ContentDeltaKind
+	Delta              *string
+	Citation           *NativeCitation
+	CitationCompletion NativeCitationCompletion
+	Usage              *ProviderUsage
+	StopReason         *NativeStopReason
+	StopSequence       *string
+	ToolResult         *NativeToolResult
+	Problem            NativeAssistantProblem
 }
 
 type contentBlockState struct {
@@ -109,6 +122,9 @@ type contentBlockState struct {
 	toolID, toolName   string
 	initialInput       json.RawMessage
 	completed, stopped bool
+	citations          [][sha256.Size]byte
+	initialCitations   int
+	cache              json.RawMessage
 }
 
 type providerMessageState struct {
@@ -155,12 +171,19 @@ func decodeContentBlock(raw []byte) (NativeContentBlock, error) {
 	switch kind {
 	case TextBlock:
 		var value struct {
-			Type ContentBlockKind `json:"type"`
-			Text *string          `json:"text"`
+			Type      ContentBlockKind `json:"type"`
+			Text      *string          `json:"text"`
+			Citations json.RawMessage  `json:"citations"`
+			Cache     json.RawMessage  `json:"cache_control"`
 		}
-		if decodeNativeObject(raw, &value) != nil || value.Text == nil || domain.Text(*value.Text, "native text", domain.MaxMessageText, false) != nil {
+		if decodeNativeObject(raw, &value) != nil || value.Text == nil || domain.Text(*value.Text, "native text", domain.MaxMessageText, false) != nil || validateNativeCache(value.Cache) != nil {
 			return NativeContentBlock{}, lifecycleUncertain()
 		}
+		citations, err := decodeCitations(value.Citations)
+		if err != nil {
+			return NativeContentBlock{}, err
+		}
+		block.Citations, block.Cache = citations, bytes.Clone(value.Cache)
 		block.Text = value.Text
 	case ThinkingBlock:
 		var value struct {
@@ -172,6 +195,21 @@ func decodeContentBlock(raw []byte) (NativeContentBlock, error) {
 			return NativeContentBlock{}, lifecycleUncertain()
 		}
 		block.Thinking, block.signature = value.Thinking, *value.Signature
+	case RedactedThinkingBlock:
+		var value struct {
+			Type ContentBlockKind `json:"type"`
+			Data *string          `json:"data"`
+		}
+		if decodeNativeObject(raw, &value) != nil || value.Data == nil || domain.Text(*value.Data, "native redacted thinking", 128<<10, true) != nil {
+			return NativeContentBlock{}, lifecycleUncertain()
+		}
+		block.signature = *value.Data
+	case ImageBlock, DocumentBlock:
+		media, err := decodeMediaBlock(raw, kind)
+		if err != nil {
+			return NativeContentBlock{}, err
+		}
+		block.Media = media
 	case ToolUseBlock:
 		var value struct {
 			Type  ContentBlockKind `json:"type"`
@@ -293,21 +331,30 @@ func (b *ExecutionBinding) observePartial(raw []byte) ([]ContentEvent, error) {
 		if err != nil {
 			return nil, err
 		}
+		if !assistantBlock(block.Kind) {
+			return nil, lifecycleUncertain()
+		}
 		state := &contentBlockState{kind: block.Kind}
+		state.citations, err = citationDigests(block.Citations)
+		if err != nil {
+			return nil, err
+		}
+		state.initialCitations = len(state.citations)
+		state.cache = bytes.Clone(block.Cache)
 		if block.Text != nil {
 			state.text.WriteString(*block.Text)
 		}
 		if block.Thinking != nil {
 			state.text.WriteString(*block.Thinking)
-			state.signature.WriteString(block.signature)
 		}
+		state.signature.WriteString(block.signature)
 		if block.Tool != nil {
 			if !b.advertisedTools[block.Tool.Name] || b.content.tools[block.Tool.ID].name != "" || b.content.openTools >= 128 || len(b.content.tools) >= 4096 {
 				return nil, lifecycleUncertain()
 			}
 			state.toolID, state.toolName, state.initialInput = block.Tool.ID, block.Tool.Name, bytes.Clone(block.Tool.Input)
 		}
-		if err := b.content.retainBytes(state.text.Len() + state.signature.Len() + len(state.initialInput)); err != nil {
+		if err := b.content.retainBytes(state.text.Len() + state.signature.Len() + len(state.initialInput) + len(state.cache) + len(state.citations)*sha256.Size); err != nil {
 			return nil, err
 		}
 		active.blocks = append(active.blocks, state)
@@ -324,6 +371,35 @@ func (b *ExecutionBinding) observePartial(raw []byte) ([]ContentEvent, error) {
 		state := active.blocks[*change.Index]
 		if state.stopped || state.completed {
 			return nil, lifecycleUncertain()
+		}
+		var header struct {
+			Type ContentDeltaKind `json:"type"`
+		}
+		if json.Unmarshal(change.Delta, &header) != nil {
+			return nil, lifecycleUncertain()
+		}
+		if header.Type == CitationsDelta {
+			var delta struct {
+				Type     ContentDeltaKind `json:"type"`
+				Citation json.RawMessage  `json:"citation"`
+			}
+			if state.kind != TextBlock || len(state.citations) >= 1024 || decodeNativeObject(change.Delta, &delta) != nil {
+				return nil, lifecycleUncertain()
+			}
+			citation, err := decodeCitation(delta.Citation)
+			if err != nil {
+				return nil, err
+			}
+			digest, err := streamReplyDigest(citation.Native)
+			if err != nil {
+				return nil, err
+			}
+			if err := b.content.retainBytes(sha256.Size); err != nil {
+				return nil, err
+			}
+			state.citations = append(state.citations, digest)
+			base.Kind, base.Index, base.DeltaKind, base.Citation = ContentChanged, change.Index, CitationsDelta, &citation
+			return []ContentEvent{base}, nil
 		}
 		delta, content, err := decodeContentDelta(change.Delta)
 		if err != nil {
@@ -508,13 +584,33 @@ func (b *ExecutionBinding) observeAssistant(raw []byte) ([]ContentEvent, error) 
 	if block.Kind != state.kind {
 		return nil, lifecycleUncertain()
 	}
+	var citationCompletion NativeCitationCompletion
 	switch block.Kind {
 	case TextBlock:
-		if *block.Text != state.text.String() {
+		citations, err := citationDigests(block.Citations)
+		if err != nil || !bytes.Equal(bytes.TrimSpace(block.Cache), bytes.TrimSpace(state.cache)) || *block.Text != state.text.String() {
+			return nil, lifecycleUncertain()
+		}
+		if slices.Equal(citations, state.citations) {
+			citationCompletion = CitationsMatched
+		} else if state.initialCitations == 0 && len(state.citations) > 0 && block.Citations != nil && !block.Citations.Null && len(citations) == 0 {
+			// Native 2.1.236 forwards citation deltas but its completed text block
+			// keeps an empty citation array. Preserve both observations explicitly;
+			// never replace the native array or discard earlier delta evidence.
+			// Remove this exception when a verified native profile retains them.
+			citationCompletion = CitationsOmittedByNative
+			if b.logger != nil {
+				b.logger.Debug("Claude Code completed block omitted streamed citations", "owner_id", b.owner, "citation_count", len(state.citations))
+			}
+		} else {
 			return nil, lifecycleUncertain()
 		}
 	case ThinkingBlock:
 		if *block.Thinking != state.text.String() || block.signature != state.signature.String() {
+			return nil, lifecycleUncertain()
+		}
+	case RedactedThinkingBlock:
+		if block.signature != state.signature.String() {
 			return nil, lifecycleUncertain()
 		}
 	case ToolUseBlock:
@@ -537,16 +633,20 @@ func (b *ExecutionBinding) observeAssistant(raw []byte) ([]ContentEvent, error) 
 		ownerInput, ownerTurn := b.contentOwner(parent)
 		b.content.tools[block.Tool.ID] = nativeToolState{ownerInput: ownerInput, ownerTurn: ownerTurn, name: block.Tool.Name, parent: parent, message: active.id, index: index, input: observed, streamed: true}
 		b.content.openTools++
+	default:
+		return nil, lifecycleUncertain()
 	}
 	state.completed = true
-	// Exact completion has already been compared with the streamed bytes.
+	// Completion has been compared with the streamed bytes, preserving the
+	// separately classified native citation omission when applicable.
 	// Retain only identity/state for stop and later tool ownership, so long
 	// messages do not accumulate every completed block in the observer.
-	b.content.bufferedBytes -= state.text.Len() + state.signature.Len() + len(state.initialInput)
+	b.content.bufferedBytes -= state.text.Len() + state.signature.Len() + len(state.initialInput) + len(state.cache) + len(state.citations)*sha256.Size
 	state.text.Reset()
 	state.signature.Reset()
 	state.initialInput = nil
-	return []ContentEvent{{Kind: ContentCompleted, MessageID: active.id, Model: active.model, ParentToolID: parent, Index: &index, Block: &block, Usage: message.Usage, StopReason: message.Stop, StopSequence: message.Sequence}}, nil
+	state.cache, state.citations = nil, nil
+	return []ContentEvent{{Kind: ContentCompleted, MessageID: active.id, Model: active.model, ParentToolID: parent, Index: &index, Block: &block, CitationCompletion: citationCompletion, Usage: message.Usage, StopReason: message.Stop, StopSequence: message.Sequence}}, nil
 }
 
 func (b *ExecutionBinding) observeToolResult(raw []byte) ([]ContentEvent, error) {
@@ -578,6 +678,34 @@ func (b *ExecutionBinding) observeToolResult(raw []byte) ([]ContentEvent, error)
 	}
 	if !taskTexts(envelope.SubagentType, envelope.TaskDescription) || (parent == "" && (envelope.SubagentType != nil || envelope.TaskDescription != nil)) {
 		return nil, lifecycleUncertain()
+	}
+	// Native Read can publish a PDF as a separate synthetic root user message
+	// without a tool_use_id. Preserve that original context envelope rather
+	// than inventing a tool association or accepting another product input.
+	if parent == "" && envelope.Synthetic != nil && *envelope.Synthetic && len(envelope.Structured) == 0 {
+		var header struct {
+			Type ContentBlockKind `json:"type"`
+		}
+		if json.Unmarshal(message.Content[0], &header) != nil {
+			return nil, lifecycleUncertain()
+		}
+		if header.Type == ImageBlock || header.Type == DocumentBlock {
+			if b.content.active[parent] != nil {
+				return nil, lifecycleUncertain()
+			}
+			blocks := make([]NativeContentBlock, 0, len(message.Content))
+			for _, raw := range message.Content {
+				block, err := decodeContentBlock(raw)
+				if err != nil {
+					return nil, err
+				}
+				if block.Kind != ImageBlock && block.Kind != DocumentBlock {
+					return nil, lifecycleUncertain()
+				}
+				blocks = append(blocks, block)
+			}
+			return []ContentEvent{{Kind: NativeContextObserved, Blocks: blocks}}, nil
+		}
 	}
 	if parent != "" && len(envelope.Structured) == 0 {
 		var header struct {
@@ -663,12 +791,20 @@ func decodeToolResultText(raw []byte) (*string, []NativeContentBlock, error) {
 		if err != nil {
 			return nil, nil, err
 		}
-		if block.Kind != TextBlock {
+		if !userContentBlock(block.Kind) {
 			return nil, nil, domain.Fail(domain.Unsupported, "The Claude Code tool result needs its rich-content adapter.", "Retain all original result blocks without flattening or omitting them.")
 		}
 		result = append(result, block)
 	}
 	return nil, result, nil
+}
+
+func assistantBlock(kind ContentBlockKind) bool {
+	return kind == TextBlock || kind == ThinkingBlock || kind == RedactedThinkingBlock || kind == ToolUseBlock
+}
+
+func userContentBlock(kind ContentBlockKind) bool {
+	return kind == TextBlock || kind == ImageBlock || kind == DocumentBlock
 }
 
 // Child ownership follows the original parent tool even when its callback
