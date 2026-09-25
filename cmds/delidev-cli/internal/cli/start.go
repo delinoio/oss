@@ -93,12 +93,28 @@ func ensureDetached(ctx context.Context, o options, config server.Config, stream
 	} else if code := domain.SafeError(err).Code; code != domain.ServerUnavailable && code != domain.Unavailable {
 		return nil, err
 	}
+	// Endpoint removal precedes the original store lock release during final
+	// shutdown. Join that ownership boundary before publishing a new intent or
+	// spawning a replacement; an absent endpoint is not proof of cleanup.
+	ownership, err := waitStartupOwnership(ctx, o.dataDir, config)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if ownership != nil {
+			ownership.Close()
+		}
+	}()
 	if !automatic {
 		intent, err = server.WriteRunning(o.dataDir, config)
 		if err != nil {
 			return nil, err
 		}
 	}
+	if err := ownership.Close(); err != nil {
+		return nil, domain.SafeError(err)
+	}
+	ownership = nil
 	if err := intentLock.Close(); err != nil {
 		return nil, domain.SafeError(err)
 	}
@@ -165,6 +181,44 @@ func ensureDetached(ctx context.Context, o options, config server.Config, stream
 			} else if domain.SafeError(err).Code == domain.Unsupported {
 				return nil, err
 			}
+		}
+	}
+}
+
+// Startup already holds the controller and lifecycle locks. A still-owned
+// database may be finishing shutdown or may be an unavailable live server;
+// bounded waiting grants neither termination nor configuration replacement.
+func waitStartupOwnership(ctx context.Context, root string, config server.Config) (*security.Lock, error) {
+	deadline, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	ticker := time.NewTicker(25 * time.Millisecond)
+	defer ticker.Stop()
+	waiting := false
+	for {
+		if err := deadline.Err(); err != nil {
+			if ctx.Err() != nil {
+				return nil, domain.SafeError(ctx.Err())
+			}
+			return nil, domain.Fail(domain.Conflict, "The original server still owns this data scope.", "Wait for confirmed shutdown or inspect the original server before retrying startup.")
+		}
+		lock, err := security.TryLock(filepath.Join(root, "server.lock"))
+		if err == nil {
+			if deadline.Err() != nil {
+				lock.Close()
+				return nil, domain.SafeError(deadline.Err())
+			}
+			return lock, nil
+		}
+		if domain.SafeError(err).Code != domain.Conflict {
+			return nil, domain.SafeError(err)
+		}
+		if !waiting && config.Logger != nil {
+			config.Logger.InfoContext(ctx, "server_start_waiting_for_original_ownership")
+		}
+		waiting = true
+		select {
+		case <-deadline.Done():
+		case <-ticker.C:
 		}
 	}
 }

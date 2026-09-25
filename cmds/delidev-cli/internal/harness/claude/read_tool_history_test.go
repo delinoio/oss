@@ -7,12 +7,18 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
 
 func readContinuationFixture(t *testing.T) *APISession {
+	t.Helper()
+	return inlineContinuationFixture(t, inlineReadTool)
+}
+
+func inlineContinuationFixture(t *testing.T, kind inlineToolKind) *APISession {
 	t.Helper()
 	s, _ := continuationFixture(t)
 	path := filepath.Join(s.config.Home, "projects", "delidev", string(s.config.SessionID)+".jsonl")
@@ -29,19 +35,25 @@ func readContinuationFixture(t *testing.T) *APISession {
 		records = append(records, record)
 	}
 	input := map[string]any{"file_path": "/private/read-fixture.txt"}
+	if kind == inlineBashTool {
+		input = map[string]any{"command": "printf private-original-bash"}
+	}
 	inputRaw, _ := json.Marshal(input)
 	inputHash, err := streamReplyDigest(inputRaw)
 	if err != nil {
 		t.Fatal(err)
 	}
 	metadata := map[string]any{"type": "text", "file": map[string]any{"filePath": "/private/read-fixture.txt", "content": "Private original Read content", "numLines": 1, "startLine": 1, "totalLines": 1}}
+	if kind == inlineBashTool {
+		metadata = map[string]any{"stdout": "Private original Bash content", "stderr": "", "interrupted": false, "isImage": false, "noOutputExpected": false}
+	}
 	metadataRaw, _ := json.Marshal(metadata)
-	metadataHash, valid := inlineReadMetadata(metadataRaw)
+	metadataHash, valid := inlineMetadata(kind, metadataRaw)
 	if !valid {
 		t.Fatal("invalid fixture Read metadata")
 	}
-	toolID, message, resultID := "toolu_original_read", "msg_original_read", string(domain.NewID())
-	tool := map[string]any{"type": "assistant", "uuid": string(domain.NewID()), "parentUuid": records[3]["parentUuid"], "sessionId": s.config.SessionID, "cwd": s.config.Workspace, "version": SupportedVersion, "isSidechain": false, "message": map[string]any{"role": "assistant", "id": message, "model": s.config.Model, "content": []any{map[string]any{"type": "tool_use", "id": toolID, "name": "Read", "input": input}}}}
+	toolID, message, resultID := "toolu_original_"+strings.ToLower(string(kind)), "msg_original_"+strings.ToLower(string(kind)), string(domain.NewID())
+	tool := map[string]any{"type": "assistant", "uuid": string(domain.NewID()), "parentUuid": records[3]["parentUuid"], "sessionId": s.config.SessionID, "cwd": s.config.Workspace, "version": SupportedVersion, "isSidechain": false, "message": map[string]any{"role": "assistant", "id": message, "model": s.config.Model, "content": []any{map[string]any{"type": "tool_use", "id": toolID, "name": string(kind), "input": input}}}}
 	result := map[string]any{"type": "user", "uuid": resultID, "parentUuid": tool["uuid"], "sessionId": s.config.SessionID, "cwd": s.config.Workspace, "version": SupportedVersion, "isSidechain": false, "toolUseResult": metadata, "message": map[string]any{"role": "user", "content": []any{map[string]any{"type": "tool_result", "tool_use_id": toolID, "is_error": false, "content": "Private original Read content"}}}}
 	records[3]["parentUuid"] = resultID
 	records = append(records[:3:3], append([]map[string]any{tool, result}, records[3:]...)...)
@@ -60,7 +72,7 @@ func readContinuationFixture(t *testing.T) *APISession {
 			s.current.content.seen["\x00"+record["message"].(map[string]any)["id"].(string)] = true
 		}
 	}
-	s.current.content.tools = map[string]nativeToolState{toolID: {name: "Read", ownerInput: s.current.input, ownerTurn: s.current.turnID, message: message, input: inputHash, streamed: true, finished: true, read: &inlineReadEvidence{NativeID: resultID, Metadata: metadataHash}}}
+	s.current.content.tools = map[string]nativeToolState{toolID: {name: string(kind), ownerInput: s.current.input, ownerTurn: s.current.turnID, message: message, input: inputHash, streamed: true, finished: true, inline: &inlineToolEvidence{NativeID: resultID, Metadata: metadataHash}}}
 	if err := os.WriteFile(path, historyJSONL(t, records), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +102,7 @@ func TestReadCheckpointPreservesOriginalToolOwnershipWithoutContent(t *testing.T
 	}
 	original := s.current.content.tools["toolu_original_read"]
 	actual := restored.previous.current.content.tools["toolu_original_read"]
-	if actual.name != original.name || actual.ownerInput != original.ownerInput || actual.ownerTurn != original.ownerTurn || actual.message != original.message || actual.input != original.input || !actual.finished || !actual.streamed || actual.read == nil || *actual.read != *original.read {
+	if actual.name != original.name || actual.ownerInput != original.ownerInput || actual.ownerTurn != original.ownerTurn || actual.message != original.message || actual.input != original.input || !actual.finished || !actual.streamed || actual.inline == nil || *actual.inline != *original.inline {
 		t.Fatal("Read checkpoint lost original ownership")
 	}
 	clear(raw)
@@ -174,7 +186,7 @@ func TestReadClosureRequiresSettledInlineRootObservation(t *testing.T) {
 			case "unstreamed":
 				tool.streamed = false
 			case "missing-result":
-				tool.read = nil
+				tool.inline = nil
 			case "programmatic":
 				tool.caller = NativeToolCaller{Kind: CodeCaller20250825, ToolID: "caller"}
 			}

@@ -136,6 +136,8 @@ type interactionState struct {
 	request                    NativeInteraction
 	event                      StreamEvent
 	reply                      [sha256.Size]byte
+	requestDigest              [sha256.Size]byte
+	behavior                   PermissionBehavior
 	prepared, echoed, canceled bool
 	retainedBytes              int
 	questions                  map[string]bool
@@ -272,8 +274,12 @@ func (b *ExecutionBinding) observeInteraction(event StreamEvent) (*InteractionOb
 	for _, question := range value.Questions {
 		questionKeys[question.Question] = true
 	}
+	requestDigest, err := streamReplyDigest(event.Body)
+	if err != nil {
+		return nil, lifecycleUncertain()
+	}
 	ownerInput, ownerTurn := tool.ownerInput, tool.ownerTurn
-	b.interactions[event.ArrivalID] = &interactionState{input: ownerInput, turn: ownerTurn, request: retainedValue, questions: questionKeys, retainedBytes: 2 * len(value.Input), event: StreamEvent{Kind: NativeRequest, RequestID: event.RequestID, ArrivalID: event.ArrivalID}}
+	b.interactions[event.ArrivalID] = &interactionState{input: ownerInput, turn: ownerTurn, request: retainedValue, requestDigest: requestDigest, questions: questionKeys, retainedBytes: 2 * len(value.Input), event: StreamEvent{Kind: NativeRequest, RequestID: event.RequestID, ArrivalID: event.ArrivalID}}
 	b.interactionBytes += 2 * len(value.Input)
 	return &InteractionObservation{Kind: InteractionRequested, ArrivalID: event.ArrivalID, Request: &value, InputID: ownerInput, TurnID: ownerTurn}, nil
 }
@@ -351,7 +357,7 @@ func (b *ExecutionBinding) PreparePermissionReply(arrival domain.ID, reply Permi
 	}
 	b.releaseInteractionInput(value)
 	value.prepared = true
-	value.reply = digest
+	value.reply, value.behavior = digest, reply.Behavior
 	if b.logger != nil {
 		b.logger.Info("Claude Code permission reply prepared", "owner_id", b.owner, "arrival_id", arrival, "behavior", reply.Behavior)
 	}

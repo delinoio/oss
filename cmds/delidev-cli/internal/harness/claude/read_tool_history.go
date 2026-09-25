@@ -12,15 +12,43 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
 
-// This first closed-tool profile covers only an inline text Read. Native
-// file-result references, callbacks, children, media and writing tools require
-// their own auxiliary-history evidence before they can replace a process.
-type inlineReadEvidence struct {
+// Closed inline-tool profiles preserve Read and synchronous Bash results.
+// File-result references, children, media and other tools require independent
+// auxiliary-history evidence. Tool approvals have a separate exact-echo proof.
+type inlineToolEvidence struct {
 	NativeID string
 	Metadata [sha256.Size]byte
 }
 
-type checkpointReadTool struct {
+type inlineToolKind string
+
+const (
+	inlineReadTool inlineToolKind = "Read"
+	inlineBashTool inlineToolKind = "Bash"
+)
+
+type inlineToolProofs struct {
+	Read []checkpointInlineTool
+	Bash []checkpointInlineTool
+}
+
+type namedInlineTool struct {
+	checkpointInlineTool
+	Kind inlineToolKind
+}
+
+func (p inlineToolProofs) all() []namedInlineTool {
+	result := make([]namedInlineTool, 0, len(p.Read)+len(p.Bash))
+	for _, item := range p.Read {
+		result = append(result, namedInlineTool{item, inlineReadTool})
+	}
+	for _, item := range p.Bash {
+		result = append(result, namedInlineTool{item, inlineBashTool})
+	}
+	return result
+}
+
+type checkpointInlineTool struct {
 	ID             string           `json:"id"`
 	Input          domain.ID        `json:"input_id"`
 	Turn           string           `json:"native_turn_id"`
@@ -50,24 +78,58 @@ func inlineReadMetadata(raw []byte) ([sha256.Size]byte, bool) {
 	return digest, err == nil
 }
 
-func (b *ExecutionBinding) closedReadTools() ([]checkpointReadTool, error) {
-	var result []checkpointReadTool
+func inlineBashMetadata(raw []byte) ([sha256.Size]byte, bool) {
+	var value struct {
+		Stdout      *string `json:"stdout"`
+		Stderr      *string `json:"stderr"`
+		Interrupted *bool   `json:"interrupted"`
+		Image       *bool   `json:"isImage"`
+		NoOutput    *bool   `json:"noOutputExpected"`
+	}
+	if decodeNativeObject(raw, &value) != nil || value.Stdout == nil || value.Stderr == nil || value.Interrupted == nil || *value.Interrupted || value.Image == nil || *value.Image || value.NoOutput == nil {
+		return [sha256.Size]byte{}, false
+	}
+	digest, err := streamReplyDigest(raw)
+	return digest, err == nil
+}
+
+func inlineMetadata(kind inlineToolKind, raw []byte) ([sha256.Size]byte, bool) {
+	switch kind {
+	case inlineReadTool:
+		return inlineReadMetadata(raw)
+	case inlineBashTool:
+		return inlineBashMetadata(raw)
+	default:
+		return [sha256.Size]byte{}, false
+	}
+}
+
+func (b *ExecutionBinding) closedInlineTools() (inlineToolProofs, error) {
+	var result inlineToolProofs
 	if len(b.content.tools) > 4096 {
-		return nil, continuationUnavailable()
+		return result, continuationUnavailable()
 	}
 	for id, tool := range b.content.tools {
-		if tool.name != "Read" || tool.parent != "" || !tool.finished || !tool.streamed || tool.read == nil || tool.caller.ToolID != "" || (tool.caller.Kind != "" && tool.caller.Kind != DirectCaller) {
-			return nil, continuationUnavailable()
+		if (tool.name != string(inlineReadTool) && tool.name != string(inlineBashTool)) || tool.parent != "" || !tool.finished || !tool.streamed || tool.inline == nil || tool.caller.ToolID != "" || (tool.caller.Kind != "" && tool.caller.Kind != DirectCaller) {
+			return inlineToolProofs{}, continuationUnavailable()
 		}
-		result = append(result, checkpointReadTool{ID: id, Input: tool.ownerInput, Turn: tool.ownerTurn, Message: tool.message, Index: tool.index, InputDigest: hex.EncodeToString(tool.input[:]), Caller: tool.caller.Kind, Result: tool.read.NativeID, MetadataDigest: hex.EncodeToString(tool.read.Metadata[:])})
+		proof := checkpointInlineTool{ID: id, Input: tool.ownerInput, Turn: tool.ownerTurn, Message: tool.message, Index: tool.index, InputDigest: hex.EncodeToString(tool.input[:]), Caller: tool.caller.Kind, Result: tool.inline.NativeID, MetadataDigest: hex.EncodeToString(tool.inline.Metadata[:])}
+		if tool.name == string(inlineReadTool) {
+			result.Read = append(result.Read, proof)
+		} else {
+			result.Bash = append(result.Bash, proof)
+		}
 	}
-	slices.SortFunc(result, func(a, b checkpointReadTool) int { return strings.Compare(a.ID, b.ID) })
+	for _, items := range [][]checkpointInlineTool{result.Read, result.Bash} {
+		slices.SortFunc(items, func(a, b checkpointInlineTool) int { return strings.Compare(a.ID, b.ID) })
+	}
 	return result, nil
 }
 
-func verifyReadToolHistory(ctx context.Context, raw []byte, tools []checkpointReadTool, messages []HistoryMessageProof) error {
-	expected := map[string]checkpointReadTool{}
-	results := map[string]checkpointReadTool{}
+func verifyInlineToolHistory(ctx context.Context, raw []byte, proofsByKind inlineToolProofs, messages []HistoryMessageProof) error {
+	tools := proofsByKind.all()
+	expected := map[string]namedInlineTool{}
+	results := map[string]namedInlineTool{}
 	for _, tool := range tools {
 		if _, exists := expected[tool.ID]; exists {
 			return historyUncertain()
@@ -132,7 +194,7 @@ func verifyReadToolHistory(ctx context.Context, raw []byte, tools []checkpointRe
 				tool, exists := expected[block.ID]
 				digest, err := streamReplyDigest(block.Input)
 				caller, callerErr := decodeToolCaller(block.Caller)
-				if !exists || started[tool.ID] || block.Name != "Read" || tool.Message != message.ID || tool.Index != index || err != nil || hex.EncodeToString(digest[:]) != tool.InputDigest || callerErr != nil || caller.Kind != tool.Caller || caller.ToolID != "" {
+				if !exists || started[tool.ID] || block.Name != string(tool.Kind) || tool.Message != message.ID || tool.Index != index || err != nil || hex.EncodeToString(digest[:]) != tool.InputDigest || callerErr != nil || caller.Kind != tool.Caller || caller.ToolID != "" {
 					return historyUncertain()
 				}
 				started[tool.ID] = true
@@ -144,7 +206,7 @@ func verifyReadToolHistory(ctx context.Context, raw []byte, tools []checkpointRe
 				Error   *bool   `json:"is_error"`
 				Content *string `json:"content"`
 			}
-			metadata, valid := inlineReadMetadata(record.Metadata)
+			metadata, valid := inlineMetadata(tool.Kind, record.Metadata)
 			if record.Kind != "user" || !started[tool.ID] || finished[tool.ID] || json.Unmarshal(message.Content, &blocks) != nil || len(blocks) != 1 || blocks[0].Type != "tool_result" || blocks[0].ID != tool.ID || (blocks[0].Error != nil && *blocks[0].Error) || blocks[0].Content == nil || strings.Contains(*blocks[0].Content, "<persisted-output>") || !valid || hex.EncodeToString(metadata[:]) != tool.MetadataDigest {
 				return historyUncertain()
 			}

@@ -146,3 +146,97 @@ func TestAutomaticStartupRecoversOnlyRunningOriginalConfiguration(t *testing.T) 
 		t.Fatal("concurrent controller not excluded", err)
 	}
 }
+
+func TestStartupCannotReplaceIntentOrSpawnBeforeOriginalStoreReleasesOwnership(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "server")
+	config := server.Config{DataDir: root, Listen: "127.0.0.1:0", Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	ctx, cancel := context.WithCancel(context.Background())
+	ready, done := make(chan struct{}), make(chan error, 1)
+	go func() { done <- server.Serve(ctx, config, func(server.Endpoint) { close(ready) }) }()
+	select {
+	case <-ready:
+	case err := <-done:
+		cancel()
+		t.Fatal("initial server failed", err)
+	case <-time.After(10 * time.Second):
+		cancel()
+		t.Fatal("initial server readiness timed out")
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if err := server.SuppressLocalRestart(root, domain.NewID()); err != nil {
+		t.Fatal(err)
+	}
+	original, err := server.ReadLifecycle(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Reproduce the shutdown interval with no endpoint and the original private
+	// database lock still held. No replacement process may cross this boundary.
+	lock, err := security.TryLock(filepath.Join(root, "server.lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Close()
+	short, stop := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer stop()
+	_, err = startDetached(short, options{dataDir: root}, config, IO{In: strings.NewReader(""), Out: io.Discard, Err: io.Discard})
+	if err == nil || short.Err() == nil {
+		t.Fatal("startup did not join original ownership before cancellation", err)
+	}
+	retained, err := server.ReadLifecycle(root)
+	if err != nil || retained != original {
+		t.Fatal("blocked startup replaced original stop intent", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "server.log")); !os.IsNotExist(err) {
+		t.Fatal("blocked startup created a replacement process log")
+	}
+}
+
+func TestStartupOwnershipWaitResumesAfterOriginalCleanup(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "server")
+	if err := security.PrivateDir(root); err != nil {
+		t.Fatal(err)
+	}
+	original, err := security.TryLock(filepath.Join(root, "server.lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	result := make(chan *security.Lock, 1)
+	errors := make(chan error, 1)
+	go func() {
+		lock, err := waitStartupOwnership(ctx, root, server.Config{})
+		if err != nil {
+			errors <- err
+		} else {
+			result <- lock
+		}
+	}()
+	select {
+	case lock := <-result:
+		lock.Close()
+		original.Close()
+		t.Fatal("startup passed still-owned database")
+	case err := <-errors:
+		original.Close()
+		t.Fatal(err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	if err := original.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case lock := <-result:
+		if err := lock.Close(); err != nil {
+			t.Fatal(err)
+		}
+	case err := <-errors:
+		t.Fatal(err)
+	case <-ctx.Done():
+		t.Fatal("startup did not observe confirmed original cleanup")
+	}
+}

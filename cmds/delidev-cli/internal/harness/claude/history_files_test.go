@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
@@ -162,7 +163,7 @@ func TestRetainedHistoryReaderRejectsUnsafeScopesWithoutRepair(t *testing.T) {
 }
 
 func TestRetainedHistoryReaderPinsFileAndAncestorIdentityAcrossPair(t *testing.T) {
-	for _, name := range []string{"file-content", "file-replaced", "directory-replaced", "root-replaced", "scope-permissions", "canceled"} {
+	for _, name := range []string{"file-content", "file-mtime", "file-replaced", "directory-replaced", "root-replaced", "scope-permissions", "canceled"} {
 		t.Run(name, func(t *testing.T) {
 			if runtime.GOOS == "windows" && name == "scope-permissions" {
 				t.Skip("Unix mode mutation")
@@ -184,6 +185,9 @@ func TestRetainedHistoryReaderPinsFileAndAncestorIdentityAcrossPair(t *testing.T
 			}
 			ctx := context.Background()
 			switch name {
+			case "file-mtime":
+				timestamp := time.Now().Add(-time.Hour)
+				must(os.Chtimes(filepath.Join(home, "native", "first"), timestamp, timestamp))
 			case "file-content":
 				must(os.WriteFile(filepath.Join(home, "native", "first"), []byte("changed length"), 0600))
 			case "file-replaced":
@@ -222,5 +226,33 @@ func TestRetainedChildFilenameDoesNotAcquirePathAuthority(t *testing.T) {
 		if !nativeHistoryTaskFilename(task) {
 			t.Fatal("native token rejected")
 		}
+	}
+}
+
+func TestRetainedHistoryReaderAllowsUnrelatedDirectoryEntriesWithoutChangingProof(t *testing.T) {
+	for _, relative := range []string{"unrelated-root", "native/unrelated-parent"} {
+		t.Run(relative, func(t *testing.T) {
+			home := historyFileFixture(t, map[string][]byte{"native/first": []byte("original"), "native/second": []byte("second")})
+			scope, err := openHistoryFiles(context.Background(), home)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer scope.Close()
+			if _, err := scope.read(context.Background(), filepath.Join("native", "first"), 16); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(home, relative), []byte("unrelated native metadata"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if raw, err := scope.read(context.Background(), filepath.Join("native", "second"), 16); err != nil || string(raw) != "second" {
+				t.Fatal("unrelated directory metadata invalidated unchanged file ownership", err)
+			}
+			if err := os.Remove(filepath.Join(home, relative)); err != nil {
+				t.Fatal(err)
+			}
+			if err := scope.check(context.Background()); err != nil {
+				t.Fatal("unrelated entry removal invalidated unchanged files", err)
+			}
+		})
 	}
 }

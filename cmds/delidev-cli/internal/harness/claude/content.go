@@ -149,7 +149,7 @@ type nativeToolState struct {
 	finished              bool
 	streamed              bool
 	caller                NativeToolCaller
-	read                  *inlineReadEvidence
+	inline                *inlineToolEvidence
 }
 
 type contentState struct {
@@ -844,9 +844,9 @@ func (b *ExecutionBinding) observeToolResult(raw []byte) ([]ContentEvent, error)
 	}
 	for id := range seen {
 		tool := b.content.tools[id]
-		if tool.name == "Read" && tool.parent == "" && len(events) == 1 && events[0].ToolResult.Text != nil && (events[0].ToolResult.Error == nil || !*events[0].ToolResult.Error) && !strings.Contains(*events[0].ToolResult.Text, "<persisted-output>") {
-			if digest, valid := inlineReadMetadata(envelope.Structured); valid {
-				tool.read = &inlineReadEvidence{NativeID: envelope.UUID, Metadata: digest}
+		if (tool.name == string(inlineReadTool) || tool.name == string(inlineBashTool)) && tool.parent == "" && len(events) == 1 && events[0].ToolResult.Text != nil && (events[0].ToolResult.Error == nil || !*events[0].ToolResult.Error) && !strings.Contains(*events[0].ToolResult.Text, "<persisted-output>") {
+			if digest, valid := inlineMetadata(inlineToolKind(tool.name), envelope.Structured); valid {
+				tool.inline = &inlineToolEvidence{NativeID: envelope.UUID, Metadata: digest}
 			}
 		}
 		tool.finished = true

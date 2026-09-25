@@ -16,10 +16,10 @@ import (
 type historyFilePhase string
 
 const (
-	historyScopePhase    historyFilePhase = "scope"
-	historyReadPhase     historyFilePhase = "read"
-	historyProofPhase    historyFilePhase = "proof"
-	historyReadToolPhase historyFilePhase = "inline-read-proof"
+	historyScopePhase      historyFilePhase = "scope"
+	historyReadPhase       historyFilePhase = "read"
+	historyProofPhase      historyFilePhase = "proof"
+	historyInlineToolPhase historyFilePhase = "inline-tool-proof"
 )
 
 // ReadMainTranscript reads the fixed native session path without creating or
@@ -31,9 +31,9 @@ func ReadMainTranscript(ctx context.Context, home string, session domain.ID, wor
 }
 
 func readMainTranscript(ctx context.Context, home string, session domain.ID, workspace string, messages []HistoryMessageProof, compactions []HistoryCompactionProof, actions []HistoryCompactionActionProof, resumes []historyResumeProof, logger *slog.Logger) (observation TranscriptObservation, returned error) {
-	return readMainTranscriptWithReadTools(ctx, home, session, workspace, messages, compactions, actions, resumes, nil, logger)
+	return readMainTranscriptWithInlineTools(ctx, home, session, workspace, messages, compactions, actions, resumes, nil, logger)
 }
-func readMainTranscriptWithReadTools(ctx context.Context, home string, session domain.ID, workspace string, messages []HistoryMessageProof, compactions []HistoryCompactionProof, actions []HistoryCompactionActionProof, resumes []historyResumeProof, tools *[]checkpointReadTool, logger *slog.Logger) (observation TranscriptObservation, returned error) {
+func readMainTranscriptWithInlineTools(ctx context.Context, home string, session domain.ID, workspace string, messages []HistoryMessageProof, compactions []HistoryCompactionProof, actions []HistoryCompactionActionProof, resumes []historyResumeProof, tools *inlineToolProofs, logger *slog.Logger) (observation TranscriptObservation, returned error) {
 	phase := historyScopePhase
 	defer func() { logHistoryRead(ctx, logger, session, false, phase, returned) }()
 	if session.Validate() != nil {
@@ -44,6 +44,7 @@ func readMainTranscriptWithReadTools(ctx context.Context, home string, session d
 		return observation, err
 	}
 	defer scope.Close()
+	scope.logger = logger
 	phase = historyReadPhase
 	raw, err := scope.read(ctx, filepath.Join("projects", "delidev", string(session)+".jsonl"), maxHistoryTranscript)
 	if err != nil {
@@ -55,8 +56,8 @@ func readMainTranscriptWithReadTools(ctx context.Context, home string, session d
 		return observation, err
 	}
 	if tools != nil {
-		phase = historyReadToolPhase
-		if err := verifyReadToolHistory(ctx, raw, *tools, messages); err != nil {
+		phase = historyInlineToolPhase
+		if err := verifyInlineToolHistory(ctx, raw, *tools, messages); err != nil {
 			return TranscriptObservation{}, err
 		}
 	}
@@ -78,6 +79,7 @@ func ReadChildTranscript(ctx context.Context, home string, session domain.ID, wo
 		return observation, err
 	}
 	defer scope.Close()
+	scope.logger = logger
 	phase = historyReadPhase
 	base := filepath.Join("projects", "delidev", string(session), "subagents", "agent-"+binding.TaskID)
 	raw, err := scope.read(ctx, base+".jsonl", maxHistoryTranscript)
@@ -129,6 +131,7 @@ type historyFiles struct {
 	home    string
 	root    *os.Root
 	entries map[string]os.FileInfo
+	logger  *slog.Logger
 }
 
 func openHistoryFiles(ctx context.Context, home string) (*historyFiles, error) {
@@ -170,6 +173,7 @@ func (scope *historyFiles) check(ctx context.Context) error {
 	}
 	root, err := os.Lstat(scope.home)
 	if err != nil || !sameHistoryFile(scope.entries["."], root) {
+		scope.logChangedEntry(ctx, scope.entries["."], root, true)
 		return historyUncertain()
 	}
 	for name, before := range scope.entries {
@@ -178,14 +182,32 @@ func (scope *historyFiles) check(ctx context.Context) error {
 		}
 		after, err := scope.root.Lstat(name)
 		if err != nil || !sameHistoryFile(before, after) || !ownedHistoryEntry(filepath.Join(scope.home, name), after) {
+			scope.logChangedEntry(ctx, before, after, name == ".")
 			return historyUncertain()
 		}
 	}
 	return nil
 }
 
+// Record only metadata comparison outcomes, never paths or filesystem errors.
+func (scope *historyFiles) logChangedEntry(ctx context.Context, before, after os.FileInfo, root bool) {
+	if scope.logger == nil || before == nil || after == nil {
+		return
+	}
+	scope.logger.WarnContext(ctx, "Claude Code retained history entry changed during inspection", "root", root, "directory", before.IsDir(), "same_identity", os.SameFile(before, after), "same_mode", before.Mode() == after.Mode(), "same_size", before.Size() == after.Size(), "same_mtime", before.ModTime() == after.ModTime())
+}
+
 func sameHistoryFile(before, after os.FileInfo) bool {
-	return os.SameFile(before, after) && before.Mode() == after.Mode() && before.Size() == after.Size() && before.ModTime() == after.ModTime()
+	if before == nil || after == nil || !os.SameFile(before, after) || before.Mode() != after.Mode() {
+		return false
+	}
+	// A native process may create unrelated entries during initialization. Pin
+	// directory identity/mode and recheck ownership, not its listing timestamp
+	// or size. Transcript and sidecar files still require exact stable metadata.
+	if before.IsDir() {
+		return true
+	}
+	return before.Size() == after.Size() && before.ModTime() == after.ModTime()
 }
 
 func (scope *historyFiles) read(ctx context.Context, name string, limit int64) ([]byte, error) {

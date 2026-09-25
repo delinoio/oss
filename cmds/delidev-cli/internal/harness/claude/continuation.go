@@ -54,12 +54,16 @@ func (s *APISession) CloseForContinuation(ctx context.Context) (*ClosedAPISessio
 	if s.reading || s.permissionChanged || b == nil || b.problem != nil || !b.accepted || !b.finished || b.terminal == nil || b.runState != RunIdle || b.continuing || b.pendingCompaction != nil || (s.compaction != nil && !s.compaction.settled) {
 		return nil, sessionBusy()
 	}
-	// Inline text Read results can be joined to original main history. Other
-	// tools, child/auxiliary files and callbacks retain their separate gates.
-	if s.history == nil || !s.owners[s.config.Process.OwnerID] || len(s.authorities) == 0 || len(b.tasks) != 0 || len(b.backgroundTasks) != 0 || len(b.interactions) != 0 || len(b.content.serverTools) != 0 || len(b.content.active) != 0 || b.content.openTools != 0 || b.interactionBytes != 0 || s.history.boundary != nil || s.history.action != "" || len(s.history.messages) == 0 {
+	// Settled inline Read/Bash results join original main history, with exact
+	// echoed tool approvals retained separately from native tool completion.
+	// Other tools, child histories and callbacks keep their separate gates.
+	if s.history == nil || !s.owners[s.config.Process.OwnerID] || len(s.authorities) == 0 || len(b.tasks) != 0 || len(b.backgroundTasks) != 0 || len(b.content.serverTools) != 0 || len(b.content.active) != 0 || b.content.openTools != 0 || b.interactionBytes != 0 || s.history.boundary != nil || s.history.action != "" || len(s.history.messages) == 0 {
 		return nil, continuationUnavailable()
 	}
-	if _, err := b.closedReadTools(); err != nil {
+	if _, err := b.closedInlineTools(); err != nil {
+		return nil, err
+	}
+	if _, err := b.closedToolApprovals(); err != nil {
 		return nil, err
 	}
 	if err := s.stream.inputBarrier(); err != nil {
@@ -84,11 +88,11 @@ func (s *APISession) readRetainedTranscript(ctx context.Context) (TranscriptObse
 	if h == nil || s.current == nil {
 		return TranscriptObservation{}, historyUncertain()
 	}
-	tools, err := s.current.closedReadTools()
+	tools, err := s.current.closedInlineTools()
 	if err != nil {
 		return TranscriptObservation{}, err
 	}
-	observed, err := readMainTranscriptWithReadTools(ctx, s.config.Home, s.config.SessionID, s.config.Workspace, h.messages, h.compactions, h.actions, h.resumes, &tools, s.config.Process.Logger)
+	observed, err := readMainTranscriptWithInlineTools(ctx, s.config.Home, s.config.SessionID, s.config.Workspace, h.messages, h.compactions, h.actions, h.resumes, &tools, s.config.Process.Logger)
 	if err != nil {
 		return TranscriptObservation{}, err
 	}
