@@ -37,15 +37,21 @@ type NativeWebSearchResult struct {
 }
 
 type NativeServerResult struct {
-	ID          string
-	Name        ServerToolName
-	Problem     ServerToolProblem
-	Search      []NativeWebSearchResult
-	URL         *string
-	RetrievedAt *string
-	Document    *NativeMediaBlock `json:"-"`
-	Caller      json.RawMessage   `json:"-"`
-	Native      json.RawMessage   `json:"-"`
+	Kind           ContentBlockKind
+	ID             string
+	Name           ServerToolName
+	Problem        ServerToolProblem
+	Search         []NativeWebSearchResult
+	URL            *string
+	RetrievedAt    *string
+	Document       *NativeMediaBlock      `json:"-"`
+	Caller         json.RawMessage        `json:"-"`
+	Native         json.RawMessage        `json:"-"`
+	Detail         *string                `json:"-"`
+	Execution      *NativeServerExecution `json:"-"`
+	Edit           *NativeServerEdit      `json:"-"`
+	Advice         *NativeServerAdvice    `json:"-"`
+	ToolReferences []string               `json:"-"`
 }
 
 type serverToolState struct {
@@ -82,7 +88,7 @@ func decodeServerBlock(raw []byte, kind ContentBlockKind) (NativeContentBlock, e
 		if decodeNativeObject(raw, &value) != nil || domain.Text(value.ID, "native server tool identity", 1024, true) != nil || len(value.Input) > domain.MaxMessageText || domain.Decode(value.Input, &input) != nil || input == nil || validateNativeCache(value.Cache) != nil {
 			return NativeContentBlock{}, lifecycleUncertain()
 		}
-		if value.Name != ServerWebSearch && value.Name != ServerWebFetch {
+		if !knownServerTool(value.Name) {
 			return NativeContentBlock{}, domain.Fail(domain.Unsupported, "The Claude Code server tool needs its native result adapter.", "Retain the original provider operation without substituting a local tool.")
 		}
 		if err := decodeDirectServerCaller(value.Caller); err != nil {
@@ -104,7 +110,17 @@ func decodeServerBlock(raw []byte, kind ContentBlockKind) (NativeContentBlock, e
 	if err := decodeDirectServerCaller(value.Caller); err != nil {
 		return NativeContentBlock{}, err
 	}
-	result := &NativeServerResult{ID: value.ID, Caller: bytes.Clone(value.Caller), Native: bytes.Clone(raw)}
+	result := &NativeServerResult{Kind: kind, ID: value.ID, Caller: bytes.Clone(value.Caller), Native: bytes.Clone(raw)}
+	if kind != WebSearchResultBlock && kind != WebFetchResultBlock {
+		if len(value.Caller) != 0 {
+			return NativeContentBlock{}, lifecycleUncertain()
+		}
+		if err := decodeServerExtension(value.Content, kind, result); err != nil {
+			return NativeContentBlock{}, err
+		}
+		block.ServerResult = result
+		return block, nil
+	}
 	var problem struct {
 		Type string            `json:"type"`
 		Code ServerToolProblem `json:"error_code"`
@@ -202,7 +218,11 @@ func (b *ExecutionBinding) stageServerBlocks(blocks []NativeContentBlock, parent
 			if !ok {
 				tool, ok = b.content.serverTools[result.ID]
 			}
-			if !ok || tool.finished || tool.name != result.Name || tool.parent != parent || tool.message != message || local[result.ID].name != "" {
+			matches := tool.name == result.Name
+			if result.Kind == ToolSearchResultBlock {
+				matches = tool.name == ServerToolSearchRegex || tool.name == ServerToolSearchBM25
+			}
+			if !ok || tool.finished || !matches || tool.parent != parent || tool.message != message || local[result.ID].name != "" {
 				return nil, 0, lifecycleUncertain()
 			}
 			tool.finished = true
@@ -212,6 +232,13 @@ func (b *ExecutionBinding) stageServerBlocks(blocks []NativeContentBlock, parent
 	}
 	if len(b.content.tools)+len(b.content.serverTools)+len(local)+newIDs > 4096 || b.content.openTools+len(local)+delta < 0 {
 		return nil, 0, lifecycleUncertain()
+	}
+	// The tool-search result family serves both original search algorithms.
+	// Resolve its display name only from the fully validated original call.
+	for _, block := range blocks {
+		if block.ServerResult != nil {
+			block.ServerResult.Name = changes[block.ServerResult.ID].name
+		}
 	}
 	return changes, delta, nil
 }

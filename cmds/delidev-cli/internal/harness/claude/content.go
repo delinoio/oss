@@ -215,7 +215,7 @@ func decodeContentBlock(raw []byte) (NativeContentBlock, error) {
 			return NativeContentBlock{}, err
 		}
 		block.Media = media
-	case ServerToolUseBlock, WebSearchResultBlock, WebFetchResultBlock:
+	case ServerToolUseBlock, WebSearchResultBlock, WebFetchResultBlock, CodeExecutionResultBlock, BashExecutionResultBlock, EditorExecutionResultBlock, AdvisorResultBlock, ToolSearchResultBlock:
 		return decodeServerBlock(raw, kind)
 	case ToolUseBlock:
 		var value struct {
@@ -665,7 +665,7 @@ func (b *ExecutionBinding) observeAssistant(raw []byte) ([]ContentEvent, error) 
 		if err != nil || observedErr != nil || proposed != observed || block.ServerTool.ID != state.toolID || string(block.ServerTool.Name) != state.toolName || !bytes.Equal(block.ServerTool.Cache, state.cache) || !bytes.Equal(block.ServerTool.Caller, state.caller) {
 			return nil, lifecycleUncertain()
 		}
-	case WebSearchResultBlock, WebFetchResultBlock:
+	case WebSearchResultBlock, WebFetchResultBlock, CodeExecutionResultBlock, BashExecutionResultBlock, EditorExecutionResultBlock, AdvisorResultBlock, ToolSearchResultBlock:
 		observed, err := streamReplyDigest(block.ServerResult.Native)
 		if err != nil || state.staticDigest == nil || observed != *state.staticDigest {
 			return nil, lifecycleUncertain()
@@ -845,7 +845,7 @@ func decodeToolResultText(raw []byte) (*string, []NativeContentBlock, error) {
 }
 
 func assistantBlock(kind ContentBlockKind) bool {
-	return kind == TextBlock || kind == ThinkingBlock || kind == RedactedThinkingBlock || kind == ToolUseBlock || kind == ServerToolUseBlock || kind == WebSearchResultBlock || kind == WebFetchResultBlock
+	return kind == TextBlock || kind == ThinkingBlock || kind == RedactedThinkingBlock || kind == ToolUseBlock || kind == ServerToolUseBlock || serverResultKind(kind)
 }
 
 func (s *contentBlockState) retainedBytes() int {
