@@ -38,6 +38,24 @@ Each project must have one project index document and one or more domain contrac
 
 ## Project Catalog
 
+### delidev
+- [Project index](project-delidev.md)
+- [CLI/server/Worker contract](cmds-delidev-contract.md)
+- [Connect protocol](protos-delidev-v1-contract.md)
+- [Worker workspace preparation](cmds-delidev-workspace-contract.md)
+- [Owned process contract](cmds-delidev-process-contract.md)
+- [Native harness adapter contract](cmds-delidev-harness-contract.md)
+- [Protected credential storage](cmds-delidev-credentials-contract.md)
+- [Account lifecycle](cmds-delidev-accounts-contract.md)
+- [Provider inspection](cmds-delidev-providers-contract.md)
+- [Provider and model catalog](cmds-delidev-catalog-contract.md)
+- [Native API relay](cmds-delidev-proxy-contract.md)
+- [Session acceptance and input queue](cmds-delidev-sessions-contract.md)
+- [Retained inbox and read-state contract](cmds-delidev-inbox-contract.md)
+- [Schedules and durable occurrences](cmds-delidev-schedules-contract.md)
+- [Complete issue #964 requirements](cmds-delidev-requirements.md)
+- [Implementation and evidence ledger](cmds-delidev-evidence.md)
+
 ### React Forge
 - [Project index](project-react-forge.md)
 - [Public documentation](apps-react-forge-docs-foundation.md) (`apps/public-docs/docs/react-forge`, canonical URL `https://oss.delino.io/react-forge/`, fourteen user-guide routes)
