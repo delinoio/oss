@@ -617,6 +617,7 @@
   },
   "react-forge": {
     "paths": [
+      ".gitattributes",
       ".cargo/**",
       "Cargo.toml",
       "Cargo.lock",
@@ -641,6 +642,7 @@
   },
   "react-forge-scenes": {
     "paths": [
+      ".gitattributes",
       ".cargo/**",
       "Cargo.toml",
       "Cargo.lock",

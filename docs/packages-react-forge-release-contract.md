@@ -20,6 +20,10 @@ The `react-forge@v0.1.0` run passed all six hosts and assembled the complete can
 
 ## Validation and limits
 
+The six source build checkouts enable Git LFS before package tests and installed
+example validation, hydrating AURA's source PNGs. Complete candidate assembly and
+publication use compiled output; source textures remain outside npm packages.
+
 Run the package build, tests and installed consumer on all six hosts; the aggregate job validates all seven tarballs and publication dry run. Run release coordinator tests and workflow checks for version-only commits, exact tag authority, name-registration state, callback argument isolation, integrity conflict and partial-write safety. For the first functional release, all seven public `0.1.1` versions were checked against the workflow's downloaded tarballs: each npm SHA-512 integrity matched, each metadata entry carried SLSA provenance, and each package's `latest` tag resolved to `0.1.1`. The six host jobs exercised installed consumers before publication. Rust crates remain private and unpublished; no public documentation hosting or GitHub Release is added. Existing immutable npm versions retain their historical license and bytes.
 
 The static-scene extension adds six local CLI/MCP format consumers (four document formats plus GLB/FBX), new independent native engine tests in every host job, and pinned Blender 4.5.14 Linux x64 visual validation in PR CI. These changes require a future functional release; the existing 0.1.1 publication evidence remains historical and contains no scene support. Three.js, Khronos Validator, ufbx, and Blender are test-only tools.

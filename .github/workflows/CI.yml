@@ -418,6 +418,8 @@ jobs:
           - { id: win32-arm64-msvc, runner: windows-11-arm, platform: win32, architecture: arm64, target: aarch64-pc-windows-msvc }
     steps:
       - uses: actions/checkout@v6
+        with:
+          lfs: true
       - uses: ./.github/actions/setup-ci-node
         id: ci-node
       - uses: dtolnay/rust-toolchain@v1

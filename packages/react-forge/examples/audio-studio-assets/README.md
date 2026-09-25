@@ -6,6 +6,12 @@ Original fictional product family: H01 over-ear headphones, D01 desktop DAC/ampl
 
 `textures.mjs` deterministically regenerates seven source PNGs: 2048px brushed-metal roughness/normal and cellular leather roughness/normal, a 1024px woven-fabric normal map, a 2048×768 OLED display, and a 2048px transparent engraving atlas. The antialiased monoline alphabet is original vector-path code, without a font dependency. Run `node examples/audio-studio-assets/textures.mjs` from the package directory to reproduce the PNG bytes.
 
+The seven PNGs are stored in Git LFS. Before building these examples from a clone,
+install Git LFS, run `git lfs install`, then run
+`git lfs pull --include="packages/react-forge/examples/audio-studio-assets/*.png"`
+from the repository root. Source generators and provenance remain ordinary Git
+files; LFS changes storage only, not texture resolution or quality.
+
 The refined family uses champagne anodized aluminum, satin graphite, leather and woven acoustic liners. H01 includes a supported adjustment mechanism, stitched padding, pivot hardware, channel engravings and cable sockets. D01 includes an OLED volume readout, a 112-flute encoder, balanced/6.35 mm outputs, USB-C/RCA/DC connectors, a perforated lid with recessed dust screens and side cooling ribs. S01 includes a leather saddle, structural spine, base pad, mounting screws and etched identification. These are fictional industrial-design studies, not manufacturing drawings or electrical specifications.
 
 After building, run from the repository root:

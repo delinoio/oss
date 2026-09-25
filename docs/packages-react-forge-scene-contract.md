@@ -28,4 +28,14 @@ Exports wait for relevant React work and registrations before pinning immutable 
 
 ## Validation
 
+AURA's seven source PNG textures under `packages/react-forge/examples/audio-studio-assets`
+are tracked by the exact directory pattern in the root `.gitattributes` using Git
+LFS. Local source consumers run `git lfs install` and `git lfs pull` before example
+validation; source-consuming CI and release build checkouts enable LFS. Keep the
+texture generator, provenance, compact evidence, and TSX geometry in ordinary Git,
+and generated GLB/FBX files and renders outside source control. Storage migrations
+must preserve every texture's SHA-256 and size and verify actual hydrated bytes,
+not only pointer syntax. The existing async-commit-hook execution limitation for
+LFS repositories still applies; this does not add LFS support to that tool.
+
 Require Khronos GLB validation, independent ufbx FBX parsing, and Blender re-imports with no material/mesh repair. Product samples additionally require independent local web GLB viewing and actual image inspection. Evidence records exact tool versions, output hashes, structure checks and observed differences. Native, React, installed CLI/MCP, six-host CI and existing document regressions remain required. Render tools are test-only; generated exports, screenshots and dist are untracked. The extension is unreleased until an explicit release includes it.
