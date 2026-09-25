@@ -19,6 +19,10 @@ func startDetached(ctx context.Context, o options, config server.Config, streams
 	if err := server.ValidateConfig(config); err != nil {
 		return nil, err
 	}
+	tlsConfig, err := startupTLS(config)
+	if err != nil {
+		return nil, err
+	}
 	if err := security.PrivateDir(o.dataDir); err != nil {
 		return nil, domain.SafeError(err)
 	}
@@ -28,7 +32,7 @@ func startDetached(ctx context.Context, o options, config server.Config, streams
 	}
 	defer lock.Close()
 	probe := func() (any, error) {
-		c, err := connectClient(o, streams.In)
+		c, err := startupClient(o, streams.In, tlsConfig)
 		if err != nil {
 			return nil, err
 		}

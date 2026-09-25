@@ -70,6 +70,8 @@ Keep command, protocol, evidence, and scoped AGENTS contracts synchronized with 
 The implemented Codex question path now reconciles exact live native answer acceptance through content-free, claim-bound Worker events. Healthy question turns complete without an unconfirmed-answer recovery gate; uncertain/missing historical evidence still requires recovery. Public first dispatch has its separate current-readiness gate; protected answers and the remaining harness profiles still require implementation; verified Codex turns now continue through the separate FIFO/Resume gate.
 
 ### PR repair boundaries
+Detached TLS startup and reuse authenticate status against the explicitly configured certificate, including DNS-only certificates on IP/wildcard binds, without changing ordinary client trust.
+
 Unix output-pipe setup failures persist pre-launch completion so an exited supervisor does not require reboot recovery for a command that never started.
 
 Process controller setup now creates each scope exclusively and synchronizes removal of its original empty scope after a proven pre-launch failure, preserving replaced/nonempty evidence and all native-started ownership requirements.

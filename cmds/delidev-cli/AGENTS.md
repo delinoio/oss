@@ -2,7 +2,7 @@
 
 - Follow `docs/project-delidev.md`, `docs/cmds-delidev-contract.md`, `docs/protos-delidev-v1-contract.md`, and the complete issue #964 requirements snapshot.
 - Keep the evidence ledger current. Fixture success, cross-compilation, or explicit unsupported results do not prove real-harness/platform acceptance.
-- The executable is `delidev`; ordinary commands cannot implicitly start the server. Server/sidecar behavior is identical.
+- The executable is `delidev`; ordinary commands cannot implicitly start the server. Server/sidecar behavior is identical. Local detached TLS readiness may trust only the explicitly configured certificate, with exact peer matching, certificate validity/server-use checks and authenticated status. Wildcard binds dial matching loopback; ordinary/remote clients retain standard hostname and CA verification.
 - Keep business logic in Go and product communication in authenticated Connect. Workers initiate outbound connections; never add a client-facing WebSocket or SSE API.
 - Use private temporary state/accounts/repositories in tests. Never access user logins, redeem credits, publish to GitHub, or invoke inference from ordinary tests.
 - Preserve durable request receipts, typed revision checks, atomic state/events/routing, independent outcome/archive/recovery, uncertainty before retries, and deletion tombstones.
