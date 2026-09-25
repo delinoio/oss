@@ -21,6 +21,7 @@ const (
 	InputFinished           LifecycleKind = "input-finished"
 	UncorrelatedTermination LifecycleKind = "uncorrelated-termination"
 	ContentObserved         LifecycleKind = "content-observed"
+	InteractionObserved     LifecycleKind = "interaction-observed"
 	PrivateObservation      LifecycleKind = "private-observation"
 )
 
@@ -29,12 +30,13 @@ type CommandState string
 type lifecyclePhase string
 
 const (
-	envelopeValidation lifecyclePhase = "envelope"
-	commandValidation  lifecyclePhase = "command"
-	initValidation     lifecyclePhase = "initialize"
-	replayValidation   lifecyclePhase = "replay"
-	contentValidation  lifecyclePhase = "content"
-	resultValidation   lifecyclePhase = "result"
+	envelopeValidation    lifecyclePhase = "envelope"
+	commandValidation     lifecyclePhase = "command"
+	initValidation        lifecyclePhase = "initialize"
+	replayValidation      lifecyclePhase = "replay"
+	contentValidation     lifecyclePhase = "content"
+	resultValidation      lifecyclePhase = "result"
+	interactionValidation lifecyclePhase = "interaction"
 )
 
 const (
@@ -46,19 +48,20 @@ const (
 )
 
 // LifecycleObservation retains native acceptance independently of completion.
-// Content and Result contain validated native observations. Native additionally
-// retains private extensions and interactions; none of these facts grants
+// Content, Result and Interaction contain validated native observations. Native
+// additionally retains private extensions; none of these facts grants
 // public publication authority or permission to discard unhandled families.
 type LifecycleObservation struct {
-	Kind      LifecycleKind
-	SessionID domain.ID
-	InputID   domain.ID
-	NativeID  string
-	Command   CommandState
-	Accepted  bool
-	Result    *NativeResult
-	Content   []ContentEvent
-	Native    *StreamEvent `json:"-"`
+	Kind        LifecycleKind
+	SessionID   domain.ID
+	InputID     domain.ID
+	NativeID    string
+	Command     CommandState
+	Accepted    bool
+	Result      *NativeResult
+	Interaction *InteractionObservation
+	Content     []ContentEvent
+	Native      *StreamEvent `json:"-"`
 }
 
 // ExecutionBinding validates one immutable input attempt. It sends nothing,
@@ -66,25 +69,27 @@ type LifecycleObservation struct {
 // Worker must retain its durable claim before constructing this binding and
 // must still process every private observation through its dedicated adapter.
 type ExecutionBinding struct {
-	mu              sync.Mutex
-	session         domain.ID
-	input           domain.ID
-	digest          [sha256.Size]byte
-	model           string
-	workspace       string
-	home            string
-	permission      NativePermission
-	command         CommandState
-	initialized     bool
-	accepted        bool
-	finished        bool
-	terminal        *NativeResult
-	seen            map[string]bool
-	problem         *domain.Error
-	logger          *slog.Logger
-	owner           domain.ID
-	content         contentState
-	advertisedTools map[string]bool
+	mu               sync.Mutex
+	session          domain.ID
+	input            domain.ID
+	digest           [sha256.Size]byte
+	model            string
+	workspace        string
+	home             string
+	permission       NativePermission
+	command          CommandState
+	initialized      bool
+	accepted         bool
+	finished         bool
+	terminal         *NativeResult
+	seen             map[string]bool
+	problem          *domain.Error
+	logger           *slog.Logger
+	owner            domain.ID
+	content          contentState
+	advertisedTools  map[string]bool
+	interactions     map[domain.ID]*interactionState
+	interactionBytes int
 }
 
 func BindExecution(config APIStreamConfig, input domain.ID, text string) (*ExecutionBinding, error) {
@@ -135,7 +140,18 @@ func (b *ExecutionBinding) Observe(event StreamEvent) (observation LifecycleObse
 	observation = LifecycleObservation{Kind: PrivateObservation, SessionID: b.session, InputID: b.input, Accepted: b.accepted, Native: &event}
 	if event.Kind != NativeMessage {
 		switch event.Kind {
-		case NativeRequest, NativeCancellation, NativeLateResponse, NativeReplyEcho:
+		case NativeRequest, NativeCancellation, NativeReplyEcho:
+			phase = interactionValidation
+			value, err := b.observeInteraction(event)
+			if err != nil {
+				return LifecycleObservation{}, err
+			}
+			observation.Kind, observation.Interaction = InteractionObserved, value
+			if b.logger != nil {
+				b.logger.Debug("Claude Code interaction observed", "owner_id", b.owner, "arrival_id", value.ArrivalID, "state", value.Kind, "canceled", value.Canceled)
+			}
+			return observation, nil
+		case NativeLateResponse:
 			return observation, nil
 		default:
 			return LifecycleObservation{}, lifecycleUncertain()

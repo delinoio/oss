@@ -221,5 +221,12 @@ func (b *ExecutionBinding) validateResult(raw []byte) (NativeResult, bool, error
 	if value.Successful() && (!b.initialized || !b.accepted || b.command == CommandCancelled || len(result.Errors) != 0 || len(result.DeferredTool) != 0 || len(b.content.active) != 0 || b.content.openTools != 0) {
 		return NativeResult{}, false, lifecycleUncertain()
 	}
+	if value.Successful() {
+		for _, interaction := range b.interactions {
+			if !interaction.echoed && !interaction.canceled {
+				return NativeResult{}, false, lifecycleUncertain()
+			}
+		}
+	}
 	return value, result.Input == b.input, nil
 }

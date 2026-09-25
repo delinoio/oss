@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -223,6 +224,18 @@ func TestManualNativePlanQuestionArtifactAndApproval(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		if event.Kind == NativeRequest {
+			var fields map[string]json.RawMessage
+			if json.Unmarshal(event.Body, &fields) != nil {
+				t.Fatal("invalid native callback envelope")
+			}
+			keys := make([]string, 0, len(fields))
+			for key := range fields {
+				keys = append(keys, key)
+			}
+			sort.Strings(keys)
+			t.Log("native permission callback field names", keys)
+		}
 		observation, err := binding.Observe(event)
 		if err != nil {
 			t.Fatal(err)
@@ -254,6 +267,11 @@ func TestManualNativePlanQuestionArtifactAndApproval(t *testing.T) {
 			}
 		}
 		if event.Kind == NativeRequest {
+			if observation.Kind != InteractionObserved || observation.Interaction == nil || observation.Interaction.Request == nil {
+				t.Fatal("native callback was not typed")
+			}
+			typed := observation.Interaction.Request
+			reply := PermissionReply{Behavior: PermissionAllow}
 			var request struct {
 				Subtype string                     `json:"subtype"`
 				Tool    string                     `json:"tool_name"`
@@ -278,7 +296,10 @@ func TestManualNativePlanQuestionArtifactAndApproval(t *testing.T) {
 				if answered || request.ID != "toolu_plan_question" || !strings.Contains(string(request.Input["questions"]), question) {
 					t.Fatal("native question changed")
 				}
-				request.Input["answers"], _ = json.Marshal(map[string]string{question: "First"})
+				if typed.Kind != UserQuestion || len(typed.Questions) != 1 || typed.Questions[0].Question != question {
+					t.Fatal("typed question changed")
+				}
+				reply.Answers = map[string]string{question: "First"}
 				answered = true
 			case "ExitPlanMode":
 				if !answered || approved || request.ID != "toolu_plan_exit" {
@@ -288,11 +309,18 @@ func TestManualNativePlanQuestionArtifactAndApproval(t *testing.T) {
 				if json.Unmarshal(request.Input["plan"], &content) != nil || content != plan || json.Unmarshal(request.Input["planFilePath"], &path) != nil || path != artifact.Load().(string) {
 					t.Fatal("native approval did not retain the exact written plan")
 				}
+				if typed.Kind != PlanApproval || typed.Plan == nil || *typed.Plan != plan || typed.PlanPath == nil || *typed.PlanPath != path {
+					t.Fatal("typed plan approval changed")
+				}
 				approved = true
 			default:
 				t.Fatal("unexpected native permission callback", request.Tool)
 			}
-			if err := s.Reply(ctx, event, map[string]any{"behavior": "allow", "updatedInput": request.Input}); err != nil {
+			original, body, err := binding.PreparePermissionReply(event.ArrivalID, reply)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := s.Reply(ctx, original, body); err != nil {
 				t.Fatal(err)
 			}
 		}
