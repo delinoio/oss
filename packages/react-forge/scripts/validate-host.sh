@@ -13,9 +13,9 @@ REACT_FORGE_TARGET="$target" node --input-type=module -e '
   }
 '
 
-cargo test --locked --target "$target" -p react-forge-node -p forge-package -p forge-document -p forge-docx -p forge-xlsx -p forge-pdf -p forge-figma -p forge-tree-doc -p forge-pptx -p delino-forge
+cargo test --locked --target "$target" -p react-forge-node -p forge-package -p forge-document -p forge-docx -p forge-xlsx -p forge-pdf -p forge-sfx -p forge-figma -p forge-tree-doc -p forge-pptx -p delino-forge
 cargo test --locked --target "$target" -p forge-document -p forge-pdf -- --include-ignored
-cargo clippy --locked --target "$target" -p react-forge-node -p forge-package -p forge-document -p forge-docx -p forge-xlsx -p forge-pdf -p forge-figma --all-targets -- -D warnings
+cargo clippy --locked --target "$target" -p react-forge-node -p forge-package -p forge-document -p forge-docx -p forge-xlsx -p forge-pdf -p forge-sfx -p forge-figma --all-targets -- -D warnings
 pnpm exec turbo run build typecheck lint test --filter=@delino/react-forge 2>&1 | tee "$RUNNER_TEMP/react-forge-turbo.log"
 pnpm --filter @delino/react-forge typecheck:examples
 

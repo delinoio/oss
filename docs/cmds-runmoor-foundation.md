@@ -6,7 +6,7 @@
 
 ## Runtime and Language
 
-Use the root Go module and Go version. Dependencies include `actions/scaleset v0.4.0`, `go-toml/v2 v2.4.3`, the Docker v28.5.2 client with API negotiation, existing `modernc.org/sqlite`, and `google/uuid`. Unsupported host operations return typed diagnostics while portable code remains buildable in Windows Go CI.
+Use the root Go module and Go version. Dependencies include `actions/scaleset v0.4.0`, `go-toml/v2 v2.4.3`, the official split `github.com/moby/moby/client v0.6.0` and `github.com/moby/moby/api v1.56.0` modules, existing `modernc.org/sqlite`, and `google/uuid`. Moby negotiates the daemon API automatically (client minimum API 1.40); the adapter retains local Unix-socket selection without ambient API-version overrides. Inspect/create/list/wait results use the SDK's explicit result envelopes. The legacy monolithic Docker module is no longer a dependency. Unsupported host operations return typed diagnostics while portable code remains buildable in Windows Go CI.
 
 ## Users and Operators
 

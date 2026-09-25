@@ -37,12 +37,12 @@ export function main() {
       if (Format.Figma !== "figma" || typeof Page !== "function" || typeof serve !== "function") throw new Error("Figma or MCP export unavailable");`;
     execFileSync(process.execPath, ["--input-type=module", "--eval", imported], { cwd: directory, encoding: "utf8" });
     cpSync(path.join(packageRoot, "examples"), path.join(directory, "tasks"), { recursive: true });
-    for (const [task, format] of [["presentation", "pptx"], ["document", "docx"], ["workbook", "xlsx"], ["pdf", "pdf"]]) {
+    for (const [task, format] of [["presentation", "pptx"], ["document", "docx"], ["workbook", "xlsx"], ["pdf", "pdf"], ["zombie-gunshot", "wav"]]) {
       const output = path.join(directory, `report.${format}`);
       const stdout = execFileSync(process.execPath, [path.join(installed, "bin/react-forge.mjs"), "run", path.join(directory, "tasks", `${task}.tsx`), "--output", output, "--json"], { cwd: directory, encoding: "utf8" });
       assert.equal(JSON.parse(stdout).format, format);
       const bytes = readFileSync(output);
-      assert.equal(bytes.subarray(0, format === "pdf" ? 5 : 2).toString(), format === "pdf" ? "%PDF-" : "PK");
+      assert.equal(bytes.subarray(0, format === "pdf" ? 5 : format === "wav" ? 4 : 2).toString(), format === "pdf" ? "%PDF-" : format === "wav" ? "RIFF" : "PK");
     }
     assert.equal(execFileSync(process.execPath, [path.join(installed, "bin/react-forge.mjs"), "--version"], { cwd: directory, encoding: "utf8" }).trim(), version);
     const nativeModule = pathToFileURL(path.join(installed, "dist/native.js")).href;
@@ -68,7 +68,7 @@ export function main() {
     } catch (error) { missing = error; }
     assert.ok(missing, "Missing native package must fail");
     assert.equal(JSON.parse(missing.stdout).error.code, "io");
-    console.log(JSON.stringify({ event: "react_forge_install_smoke", host: host.id, version, formats: 4 }));
+    console.log(JSON.stringify({ event: "react_forge_install_smoke", host: host.id, version, formats: 5 }));
   } finally { rmSync(directory, { recursive: true, force: true }); }
 }
 

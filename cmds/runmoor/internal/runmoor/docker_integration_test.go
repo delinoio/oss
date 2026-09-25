@@ -11,12 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/image"
-	"github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/api/types/volume"
-	"github.com/docker/docker/client"
-	"github.com/docker/docker/pkg/stdcopy"
+	"github.com/moby/moby/api/pkg/stdcopy"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/client"
 )
 
 const testRunnerBase = "ghcr.io/actions/actions-runner@sha256:e5496277be5d09bc968b3d64911b74e219ac4a3f2edce956a3ecf9271bea1ef4"
@@ -49,7 +46,7 @@ func TestDockerIntegration(t *testing.T) {
 		daemon = testDindBase
 	}
 	for _, ref := range []string{base, daemon} {
-		stream, e := cli.ImagePull(ctx, ref, image.PullOptions{})
+		stream, e := cli.ImagePull(ctx, ref, client.ImagePullOptions{})
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -73,7 +70,7 @@ func TestDockerIntegration(t *testing.T) {
 		t.Fatal(e)
 	}
 	imageID = ins.ID
-	defer cli.ImageRemove(context.Background(), tag, image.RemoveOptions{Force: true})
+	defer cli.ImageRemove(context.Background(), tag, client.ImageRemoveOptions{Force: true})
 	for _, mode := range []Mode{Plain, DinD} {
 		t.Run(string(mode), func(t *testing.T) {
 			p := c.Pools[0]
@@ -90,11 +87,11 @@ func TestDockerIntegration(t *testing.T) {
 			r := Runner{ID: id, PoolID: "integration", Name: "runmoor-" + id, Phase: Preparing, Backend: Docker, Resources: p.Cost(), Image: p.Image}
 			driver := &DockerDriver{}
 			// A foreign volume proves cleanup never sweeps by a broad name prefix.
-			foreign, e := cli.VolumeCreate(ctx, volume.CreateOptions{Name: r.Name + "-foreign", Labels: map[string]string{ownerKey: snap.Installation, runnerKey: newID()}})
+			foreign, e := cli.VolumeCreate(ctx, client.VolumeCreateOptions{Name: r.Name + "-foreign", Labels: map[string]string{ownerKey: snap.Installation, runnerKey: newID()}})
 			if e != nil {
 				t.Fatal(e)
 			}
-			defer cli.VolumeRemove(context.Background(), foreign.Name, true)
+			defer cli.VolumeRemove(context.Background(), foreign.Volume.Name, client.VolumeRemoveOptions{Force: true})
 			defer func() {
 				clean, stop := context.WithTimeout(context.Background(), 45*time.Second)
 				defer stop()
@@ -106,18 +103,18 @@ func TestDockerIntegration(t *testing.T) {
 			if e = driver.Prepare(ctx, c, p, r, snap, "fixture-jit", func(h Handle) error { r.Handle = h; return nil }); e != nil {
 				t.Fatal(e)
 			}
-			actual, e := cli.ContainerInspect(ctx, r.Handle.Container)
+			actual, e := cli.ContainerInspect(ctx, r.Handle.Container, client.ContainerInspectOptions{})
 			if e != nil {
 				t.Fatal(e)
 			}
-			if actual.HostConfig.Memory != 512*1024*1024 || actual.HostConfig.NanoCPUs != 1e9 || actual.HostConfig.LogConfig.Type != "none" {
+			if actual.Container.HostConfig.Memory != 512*1024*1024 || actual.Container.HostConfig.NanoCPUs != 1e9 || actual.Container.HostConfig.LogConfig.Type != "none" {
 				t.Fatal("runner limits/log policy not applied")
 			}
-			encoded, _ := json.Marshal(actual.Config)
+			encoded, _ := json.Marshal(actual.Container.Config)
 			if strings.Contains(string(encoded), "fixture-jit") {
 				t.Fatal("JIT leaked into inspectable container configuration")
 			}
-			for _, m := range actual.Mounts {
+			for _, m := range actual.Container.Mounts {
 				if m.Type != "volume" {
 					t.Fatal("host bind mount reached runner")
 				}
@@ -126,11 +123,11 @@ func TestDockerIntegration(t *testing.T) {
 				t.Fatal(e)
 			}
 			if mode == DinD {
-				daemonInfo, e := cli.ContainerInspect(ctx, r.Handle.Daemon)
+				daemonInfo, e := cli.ContainerInspect(ctx, r.Handle.Daemon, client.ContainerInspectOptions{})
 				if e != nil {
 					t.Fatal(e)
 				}
-				if daemonInfo.HostConfig.Memory != 768*1024*1024 || daemonInfo.HostConfig.NanoCPUs != 1e9 || daemonInfo.HostConfig.CgroupnsMode != container.CgroupnsModePrivate {
+				if daemonInfo.Container.HostConfig.Memory != 768*1024*1024 || daemonInfo.Container.HostConfig.NanoCPUs != 1e9 || daemonInfo.Container.HostConfig.CgroupnsMode != container.CgroupnsModePrivate {
 					t.Fatal("daemon resource envelope is not enforced")
 				}
 				if e = integrationExec(ctx, cli, r.Handle.Container, dindProbe); e != nil {
@@ -145,14 +142,14 @@ func TestDockerIntegration(t *testing.T) {
 			if e != nil || !obs.Running || obs.Handle.Container != r.Handle.Container {
 				t.Fatal("restart adoption failed", e)
 			}
-			if e = cli.ContainerPause(ctx, r.Handle.Container); e != nil {
+			if _, e = cli.ContainerPause(ctx, r.Handle.Container, client.ContainerPauseOptions{}); e != nil {
 				t.Fatal(e)
 			}
 			obs, e = driver.Inspect(ctx, c, r, snap)
 			if e != nil || obs.Running || !obs.Exists {
 				t.Fatal("paused runner remained available", e)
 			}
-			if e = cli.ContainerUnpause(ctx, r.Handle.Container); e != nil {
+			if _, e = cli.ContainerUnpause(ctx, r.Handle.Container, client.ContainerUnpauseOptions{}); e != nil {
 				t.Fatal(e)
 			}
 			obs, e = driver.Inspect(ctx, c, r, snap)
@@ -163,12 +160,12 @@ func TestDockerIntegration(t *testing.T) {
 				if obs.Handle.Daemon != r.Handle.Daemon {
 					t.Fatal("restart adoption lost the owned daemon")
 				}
-				if e = cli.ContainerStop(ctx, r.Handle.Daemon, container.StopOptions{}); e != nil {
+				if _, e = cli.ContainerStop(ctx, r.Handle.Daemon, client.ContainerStopOptions{}); e != nil {
 					t.Fatal(e)
 				}
 				obs, e = driver.Inspect(ctx, c, r, snap)
-				actual, inspectErr := cli.ContainerInspect(ctx, r.Handle.Container)
-				if e != nil || inspectErr != nil || obs.Running || !actual.State.Running {
+				actual, inspectErr := cli.ContainerInspect(ctx, r.Handle.Container, client.ContainerInspectOptions{})
+				if e != nil || inspectErr != nil || obs.Running || !actual.Container.State.Running {
 					t.Fatal("live runner remained available without its DinD daemon", e, inspectErr)
 				}
 			}
@@ -181,19 +178,19 @@ func TestDockerIntegration(t *testing.T) {
 			if e = driver.Cleanup(ctx, c, r, snap); e != nil {
 				t.Fatal("cleanup is not idempotent", e)
 			}
-			containers, e := cli.ContainerList(ctx, container.ListOptions{All: true, Filters: dockerFilter(snap, r)})
-			if e != nil || len(containers) != 0 {
+			containers, e := cli.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: dockerFilter(snap, r)})
+			if e != nil || len(containers.Items) != 0 {
 				t.Fatal("execution containers leaked")
 			}
-			vols, e := cli.VolumeList(ctx, volume.ListOptions{Filters: dockerFilter(snap, r)})
-			if e != nil || len(vols.Volumes) != 0 {
+			vols, e := cli.VolumeList(ctx, client.VolumeListOptions{Filters: dockerFilter(snap, r)})
+			if e != nil || len(vols.Items) != 0 {
 				t.Fatal("execution volumes leaked")
 			}
-			nets, e := cli.NetworkList(ctx, network.ListOptions{Filters: dockerFilter(snap, r)})
-			if e != nil || len(nets) != 0 {
+			nets, e := cli.NetworkList(ctx, client.NetworkListOptions{Filters: dockerFilter(snap, r)})
+			if e != nil || len(nets.Items) != 0 {
 				t.Fatal("execution networks leaked")
 			}
-			if _, e = cli.VolumeInspect(ctx, foreign.Name); e != nil {
+			if _, e = cli.VolumeInspect(ctx, foreign.Volume.Name, client.VolumeInspectOptions{}); e != nil {
 				t.Fatal("foreign resource was removed")
 			}
 		})
@@ -205,14 +202,16 @@ func TestDockerIntegration(t *testing.T) {
 		r := snap.Runners[id]
 		makeContainer := func(labels map[string]string) string {
 			t.Helper()
-			v, err := cli.ContainerCreate(ctx, &container.Config{
+			v, err := cli.ContainerCreate(ctx, client.ContainerCreateOptions{Config: &container.Config{
 				Image: imageID, Entrypoint: []string{"/bin/sh"}, Cmd: []string{"-c", "sleep 3600"}, Labels: labels,
-			}, &container.HostConfig{NetworkMode: "none", LogConfig: container.LogConfig{Type: "none"}, Resources: container.Resources{NanoCPUs: 1e9, Memory: 128 * 1024 * 1024}}, nil, nil, r.Name)
+			}, HostConfig: &container.HostConfig{NetworkMode: "none", LogConfig: container.LogConfig{Type: "none"}, Resources: container.Resources{NanoCPUs: 1e9, Memory: 128 * 1024 * 1024}}, Name: r.Name})
 			if err != nil {
 				t.Fatal(err)
 			}
-			t.Cleanup(func() { _ = cli.ContainerRemove(context.Background(), v.ID, container.RemoveOptions{Force: true}) })
-			if err = cli.ContainerStart(ctx, v.ID, container.StartOptions{}); err != nil {
+			t.Cleanup(func() {
+				_, _ = cli.ContainerRemove(context.Background(), v.ID, client.ContainerRemoveOptions{Force: true})
+			})
+			if _, err = cli.ContainerStart(ctx, v.ID, client.ContainerStartOptions{}); err != nil {
 				t.Fatal(err)
 			}
 			return v.ID
@@ -226,7 +225,7 @@ func TestDockerIntegration(t *testing.T) {
 		}); err != nil {
 			t.Fatal(err)
 		}
-		if err := cli.ContainerRemove(ctx, original, container.RemoveOptions{Force: true}); err != nil {
+		if _, err := cli.ContainerRemove(ctx, original, client.ContainerRemoveOptions{Force: true}); err != nil {
 			t.Fatal(err)
 		}
 		labels := dockerLabels(snap, *r, "runner")
@@ -245,13 +244,13 @@ func TestDockerIntegration(t *testing.T) {
 		if _, count, _ := usage(m.Store.View()); count != 1 {
 			t.Fatal("foreign replacement released the reservation")
 		}
-		live, err := cli.ContainerInspect(ctx, replacement)
-		if err != nil || !live.State.Running {
+		live, err := cli.ContainerInspect(ctx, replacement, client.ContainerInspectOptions{})
+		if err != nil || !live.Container.State.Running {
 			t.Fatal("force stop mutated the foreign replacement", err)
 		}
 		// Only this test's creator removes the foreign container. Confirmed
 		// absence then permits the manager to finish its original cleanup.
-		if err = cli.ContainerRemove(ctx, replacement, container.RemoveOptions{Force: true}); err != nil {
+		if _, err = cli.ContainerRemove(ctx, replacement, client.ContainerRemoveOptions{Force: true}); err != nil {
 			t.Fatal(err)
 		}
 		m.cleanup(ctx, id)
@@ -293,11 +292,11 @@ func TestDockerIntegration(t *testing.T) {
 	})
 }
 func integrationExec(ctx context.Context, cli *client.Client, id, script string) error {
-	v, e := cli.ContainerExecCreate(ctx, id, container.ExecOptions{Cmd: []string{"/bin/sh", "-c", script}, AttachStdout: true, AttachStderr: true})
+	v, e := cli.ExecCreate(ctx, id, client.ExecCreateOptions{Cmd: []string{"/bin/sh", "-c", script}, AttachStdout: true, AttachStderr: true})
 	if e != nil {
 		return e
 	}
-	conn, e := cli.ContainerExecAttach(ctx, v.ID, container.ExecAttachOptions{})
+	conn, e := cli.ExecAttach(ctx, v.ID, client.ExecAttachOptions{})
 	if e != nil {
 		return e
 	}
@@ -307,7 +306,7 @@ func integrationExec(ctx context.Context, cli *client.Client, id, script string)
 	if e != nil {
 		return e
 	}
-	state, e := cli.ContainerExecInspect(ctx, v.ID)
+	state, e := cli.ExecInspect(ctx, v.ID, client.ExecInspectOptions{})
 	if e != nil {
 		return e
 	}

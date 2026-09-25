@@ -176,3 +176,69 @@ The existing six-host job now runs the MCP tests through the package test comman
 ## Public npm candidate validation
 
 The public package consists of the main library and six exact-version native optional packages. Seven external `0.0.1` packages reserved the npm names without runtime code. Local `package:main`, `package:native` and `test:package` check the installed candidate on the current host; PR CI checks installed consumers on each host. The exact-tag workflow combines all six native tarballs and repeats six-host build, installed-consumer and complete-set gates before OIDC publication. The `0.1.0` tag passed all six release hosts and the seven-package assembly on its second attempt, after one Linux x64 MCP fixture readiness timeout. Its publish job then failed before any registry write because the registry lookup callback received the array index as its request argument. The corrected `0.1.1` [release run](https://github.com/delinoio/oss/actions/runs/36048311720) passed all six hosts and published all seven packages. Downloaded candidate tarballs matched npm's SHA-512 integrity for every package; npm metadata reported SLSA provenance and `latest: 0.1.1` for each. See [release contract](packages-react-forge-release-contract.md).
+
+## Procedural game SFX extension
+
+The SFX follow-up adds the independent `forge-sfx` engine and `Format.Wav` without
+changing Office/PDF engines or Figma publication. Local macOS arm64 verification
+used Node.js 24.20.0. Package build, typecheck, lint and standalone example checks
+passed, as did all 108 package tests. The new coverage exercises waveform timing,
+real React state and refs, invalid latest renders, native diagnostics, output
+preservation, cancellation, and the gunshot's attack/tail/silence. Workspace and
+installed-archive CLI and real SDK MCP clients generate WAV. The public main plus
+host-native candidate also passed `test:package` with five local output formats.
+No npm publication occurred; released `0.1.1` does not contain SFX.
+
+Five native synthesis tests passed, checking RIFF fields, PCM size, reference-tone
+frequency by zero crossings at both sample rates, seeded noise, left/right pan,
+peak attenuation, silence, model limits and cancellation. Native Clippy passed
+with warnings denied. Public-docs tests passed with the fifteenth React Forge
+route, and all 77 repository CI contracts plus workflow validation passed.
+The six-host jobs include the new native crate and installed SFX consumer checks;
+those other hosts were not executed locally.
+
+`examples/zombie-gunshot.tsx` was exported by the built one-shot CLI and decoded
+independently with Python's standard-library `wave` module. The compact record is
+`tests/evidence/zombie-gunshot-macos-arm64.json` under the package. The file has
+36,000 mono frames at 48 kHz/16-bit PCM (0.75 seconds, 72,044 bytes), SHA-256
+`fa750e6d70bc68f7a10fc327631355bc236e36a18cdb8d6a496b2bb0dc858198`.
+Peak is approximately -0.446 dBFS with no clipped samples. First and last samples
+are zero; the final 100 ms are silent. First-50-ms RMS is 0.24286 and the
+300–550-ms tail RMS is 0.00226. Repeated output matches, and changing the seed
+changes the PCM. This validates synthesis and file properties, not subjective
+listening quality or in-game acoustic realism. The playable artifact stays
+outside the repository, and no third-party recordings are used.
+
+The initial Node.js 24.11.0 run exposed the existing synchronous MCP loader's
+`ERR_INVALID_RETURN_PROPERTY_VALUE` even in a React-only task before importing
+React Forge. Repeating with
+24.20.0, the runtime used in earlier MCP evidence, passed the full package suite.
+The first root Cargo run under 24.11.0 stalled in the unrelated clibox npm-signal
+fixture; its orphaned test child was cleaned up. The 24.20.0 serial root rerun
+passed that fixture without changing clibox or the MCP loader behavior.
+
+The final root run passed 1,927 Rust tests with 3 existing opt-in tests
+ignored, using `TMPDIR=/private/tmp fnm exec --using 24.20.0 cargo test --no-fail-fast -- --test-threads=1`. Before that run, the documented macOS pnport
+injection companion was explicitly generated with
+`cargo build --locked -p pnport -p fspy_preload_unix --features fspy_preload_unix/pnport`;
+the previous run had stopped on its missing native artifact. No unrelated Rust
+source was changed. Generated repository-owned `dist` directories were removed
+after validation.
+
+### PR #987 CLI readiness repair
+
+The initial six-host CI run passed five React Forge hosts. The darwin-x64 job
+failed the CLI signal fixture before sending a signal: its fixed 200 polls at
+10 ms exhausted the startup budget before the React effect's readiness marker
+appeared. All SFX cases passed in that job. The fixture now uses a bounded
+30-second monotonic readiness deadline, stops early on process exit or signal,
+and includes exit state and captured output in readiness failures. Cancellation
+codes, effect cleanup and absence of partial exports remain required.
+
+A deliberate 2.5-second task startup delay reproduced the old assertion failure
+locally and passed after the repair for both SIGINT and SIGTERM. On macOS arm64
+with Node.js 24.20.0, the focused regression and all 108 package tests passed,
+along with build, typecheck, lint, standalone example checks and the public
+main/native installed-package smoke test for all five local output formats.
+No production code or public contract changed; native Intel Mac execution of the
+repair remains a CI validation step.

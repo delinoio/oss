@@ -11,3 +11,5 @@
 
 - Follow `docs/packages-react-forge-mcp-contract.md` for stdio MCP. Keep one shared execution process and canonical React/React Forge module identities; never forward task stdout/stderr to protocol or operational logs. Preserve per-session call order until cancelled callbacks actually settle, bound entry plus data to 16 MiB, retain Figma receipts on partial/unknown outcomes, and never retry writes automatically. Five-second forced cleanup applies only to server shutdown, never normal operations.
 - Keep real SDK and installed-archive MCP coverage in the six-host package suite, including entry-relative imports, state retention, source protection, cancellation, process cleanup and fake Figma. Run `typecheck:examples` after building.
+
+- Follow `docs/packages-react-forge-sfx-contract.md` for `Format.Wav` and `/sfx`. Keep bounded procedural synthesis in `forge-sfx`, preserve shared revision/cancellation/atomic-publication behavior, and exercise the original zombie-game gunshot through workspace and installed CLI/MCP. Keep generated audio outside source and mark SFX unreleased until published.
