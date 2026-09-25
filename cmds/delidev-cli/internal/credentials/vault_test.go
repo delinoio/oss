@@ -125,6 +125,16 @@ func TestVaultDurableRoundTripAndImmutableRetry(t *testing.T) {
 	if bytes.Contains(logs.Bytes(), secret[:100]) {
 		t.Fatal("secret leaked to logs")
 	}
+	// Finish reads and close the vault before scanning persisted bytes. Windows
+	// enforces the live lock against ReadFile too; bypassing it would weaken the
+	// production exclusivity contract just to inspect the test fixture.
+	refs, err := reopened.References(ctx, ref.Owner)
+	if err != nil || len(refs) != 1 || refs[0] != ref {
+		t.Fatalf("references: %v %v", refs, err)
+	}
+	if err := reopened.Close(); err != nil {
+		t.Fatal(err)
+	}
 	err = filepath.WalkDir(v.root, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -143,10 +153,6 @@ func TestVaultDurableRoundTripAndImmutableRetry(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
-	}
-	refs, err := reopened.References(ctx, ref.Owner)
-	if err != nil || len(refs) != 1 || refs[0] != ref {
-		t.Fatalf("references: %v %v", refs, err)
 	}
 }
 func TestNativeWriteUncertaintyReconcilesAfterReopen(t *testing.T) {
