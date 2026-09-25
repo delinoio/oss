@@ -188,3 +188,9 @@ Caller code is trusted and runs with normal caller permissions. The execution pr
 Disconnect and process signals dispose sessions, with a five-second shutdown grace before terminating the execution process. Normal operations have no automatic timeout. Forced termination may prevent cleanup, and worker loss invalidates every in-memory session. `unknown_outcome` means to inspect any output or remote file before retrying. Server restart never automatically replays work. Closing sessions releases their owned resources; imported JavaScript modules remain cached until the process exits.
 
 Test renderers are not runtime dependencies. Direct Microsoft Office validation and PDF/UA certification are not claimed. React Forge is licensed under Apache-2.0. Report issues at https://github.com/delinoio/oss/issues.
+
+## Game SFX (unreleased)
+
+The source adds `createSession(Format.Wav)` and `Sound`, `Noise`, `Tone`, `SampleRate`, `Channels` and `Waveform` from `@delino/react-forge/sfx`. This extension is not included in npm `0.1.1`. See the [SFX guide](https://oss.delino.io/react-forge/sfx) for the complete parameters and a zombie-game gunshot.
+
+Compose timed seeded noise and sine/triangle sweeps, then use the existing buffer/file export or CLI/MCP with `.wav`. Output is mono/stereo PCM16 at 44100/48000 Hz. Durations, starts, fades and exponential decay are seconds; gains are linear, with automatic attenuation above 0.95 peak. Limits are 30 seconds, 256 layers and 16 million aggregate voice samples. Refs measure in seconds-based `timeline` coordinates. Image/font registration, audio import, recorded samples, live playback and MP3/OGG are unsupported. Generation needs no audio device, network, fonts or conversion tool.

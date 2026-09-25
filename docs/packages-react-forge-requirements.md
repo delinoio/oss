@@ -235,3 +235,7 @@ Caller-supplied React/TSX is trusted code running with the caller’s permission
 
 ## MCP follow-up
 The subsequent explicit request adds a local stdio `react-forge mcp` server for all existing formats, TSX code/file inputs, retained memory sessions and state, inspection/measurement, explicit file export or Figma publication, and cleanup. It preserves the original complete-format scope and existing Forge interfaces. The [MCP contract](packages-react-forge-mcp-contract.md) defines the added acceptance boundary; it adds no HTTP hosting, public distribution or automatic persistence.
+
+## SFX follow-up
+
+The subsequent explicit game SFX request adds offline React-authored sound generation and WAV export, validated with a zombie-game gunshot. The [SFX contract](packages-react-forge-sfx-contract.md) specifies the additional components, independent native model, synthesis bounds, CLI/MCP behavior and evidence. This additive scope does not reduce any original document-format requirement.

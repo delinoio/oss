@@ -115,7 +115,9 @@ enum ProjectId {
 - React Forge exposes a local session-based stdio MCP server through `react-forge mcp`; follow `docs/packages-react-forge-mcp-contract.md`. Keep execution output isolated from protocol stdout, share the existing engine and Figma scheduling across sessions, and preserve explicit export/publication and cancellation outcomes.
 - React Forge public guides are owned by `apps/public-docs/docs/react-forge` at `https://oss.delino.io/react-forge/`; follow `docs/apps-react-forge-docs-foundation.md` and keep the package README linked to them. Describe released user behavior and evidence limits without publishing repository internals.
 
-- React Forge owns `packages/react-forge`, `crates/react-forge-node`, `crates/forge-package`, `crates/forge-document`, `crates/forge-docx`, `crates/forge-xlsx`, `crates/forge-pdf`, `crates/forge-figma`, and `apps/public-docs/docs/react-forge`; reuse existing Forge presentation engines without changing CLI/MCP defaults.
+- React Forge SFX follows `docs/packages-react-forge-sfx-contract.md`: bounded offline procedural WAV generation, native worker synthesis, and zombie-game gunshot acceptance. Keep generated audio untracked and distinguish source support from published availability.
+
+- React Forge owns `packages/react-forge`, `crates/react-forge-node`, `crates/forge-package`, `crates/forge-document`, `crates/forge-docx`, `crates/forge-xlsx`, `crates/forge-pdf`, `crates/forge-figma`, `crates/forge-sfx`, and `apps/public-docs/docs/react-forge`; reuse existing Forge presentation engines without changing CLI/MCP defaults.
 
 ### Project Domain Ownership
 

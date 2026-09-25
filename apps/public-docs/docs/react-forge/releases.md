@@ -18,3 +18,7 @@ Office interoperability evidence uses structural checks and LibreOffice/Poppler 
 Pin a verified npm version in your project and install its matching optional native package. To roll back, select an earlier **functional** published version, reinstall, and verify `npm list @delino/react-forge` before running tasks. Do not select the name-reservation `0.0.1` or unpublished `0.1.0`. Existing exported documents remain separate files; React Forge does not migrate or replay an in-memory session after a package change.
 
 See [Installation](/react-forge/installation) for supported hosts and [limits and troubleshooting](/react-forge/limits-and-troubleshooting) for recoverable errors. Report reproducible problems through [Delino OSS issues](https://github.com/delinoio/oss/issues).
+
+## Unreleased SFX extension
+
+Procedural game SFX authoring and PCM WAV export are implemented for the next release, but are absent from npm `0.1.1`. The [SFX guide](/react-forge/sfx) describes the planned public API and a zombie-game gunshot example. SFX has separate synthesis and CLI/MCP checks; the earlier six-host document release is not SFX acceptance evidence. No game-engine listening evaluation is claimed.
