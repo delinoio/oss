@@ -1,5 +1,5 @@
 import { execFile, spawn, type ChildProcess } from "node:child_process";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -8,21 +8,21 @@ import { promisify } from "node:util";
 import { createClient, type Transport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { EntityKind, ResourceService, SystemService, createDeliDevTransport, newRequestId } from "@delinoio/delidev-api-client";
 import { Settings } from "./settings";
 import { MutationIntents } from "./mutation";
 import { document } from "./documents";
 
-let directory: string, transport: Transport, providerOrigin: string;
-let process: ChildProcess | undefined, provider: Server | undefined;
+let directory: string, transport: Transport, providerOrigin: string, binary: string, scope: string;
+let process: ChildProcess | undefined, worker: ChildProcess | undefined, provider: Server | undefined;
 const pause = () => new Promise((resolve) => setTimeout(resolve, 25));
 beforeAll(async () => {
   directory = await mkdtemp(join(tmpdir(), "delidev-settings-"));
-  const binary = join(directory, processInfo.platform === "win32" ? "delidev.exe" : "delidev");
+  binary = join(directory, processInfo.platform === "win32" ? "delidev.exe" : "delidev");
   await promisify(execFile)("go", ["build", "-o", binary, "./cmds/delidev-cli"], { cwd: resolve(processInfo.cwd(), "../.."), timeout: 120000 });
-  const scope = join(directory, "server");
+  scope = join(directory, "server");
   process = spawn(binary, ["--data-dir", scope, "server", "run", "--listen", "127.0.0.1:0"], { stdio: "ignore" });
   const until = Date.now() + 15000;
   let ready = false;
@@ -50,7 +50,24 @@ beforeAll(async () => {
   if (!address || typeof address === "string") throw new Error("No fixture listener");
   providerOrigin = `http://127.0.0.1:${address.port}/v1`;
 }, 150000);
+async function stopChild(child?: ChildProcess) {
+  if (!child || child.exitCode !== null || child.signalCode !== null) return;
+  child.kill("SIGTERM");
+  const until = Date.now() + 5000;
+  while (child.exitCode === null && child.signalCode === null && Date.now() < until) await pause();
+  if (child.exitCode === null && child.signalCode === null) {
+    const exit = new Promise<void>((resolve) => child.once("exit", () => resolve()));
+    child.kill("SIGKILL"); await exit;
+  }
+}
+function runCLI(args: string[], input?: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = execFile(binary, ["--data-dir", scope, ...args], { timeout: 30000, maxBuffer: 1 << 20 }, (error, stdout) => error ? reject(new Error("Owned fixture CLI failed")) : resolve(stdout));
+    child.stdin!.end(input);
+  });
+}
 afterAll(async () => {
+  await stopChild(worker);
   if (process && process.exitCode === null) {
     try { await createClient(SystemService, transport).stopServer({ requestId: newRequestId() }, { timeoutMs: 2000 }); } catch { /* Cleanup still owns exactly this child. */ }
     const until = Date.now() + 3000;
@@ -106,3 +123,56 @@ it("configures a real Go server through the settings forms and explicitly valida
   expect(agents.resources).toHaveLength(1);
   expect(document(agents.resources[0])).toMatchObject({ name: "Configured agent", harness: "codex", accounts: [{ weight: 1 }], options: { permission: "default" } });
 }, 30000);
+
+it("inspects and saves a real owned Git checkout through a separate Go Worker before creating a project", async () => {
+  const pairing = JSON.parse(await runCLI(["device", "create-pairing", "--type", "worker", "--name", "Owned Git Worker"]));
+  const grant = await readFile(pairing.result.code_file, "utf8");
+  const workerRoot = join(directory, "worker");
+  await runCLI(["worker", "pair", "--worker-dir", workerRoot, "--name", "Owned Git Worker", "--code-stdin"], grant);
+  worker = spawn(binary, ["--data-dir", scope, "worker", "start", "--worker-dir", workerRoot], { stdio: ["ignore", "pipe", "ignore"] });
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Owned Worker readiness timed out")), 10000);
+    let output = "";
+    const fail = () => { clearTimeout(timer); reject(new Error("Owned Worker exited before readiness")); };
+    worker!.once("error", fail); worker!.once("exit", fail);
+    worker!.stdout!.on("data", (chunk: Buffer) => {
+      output += chunk.toString();
+      if (output.length > 16384) { fail(); return; }
+      if (output.includes('"status":"ready"')) { clearTimeout(timer); worker!.removeListener("exit", fail); worker!.removeListener("error", fail); resolve(); }
+    });
+  });
+  const checkout = join(directory, "checkout");
+  await promisify(execFile)("git", ["init", "--quiet", checkout], { timeout: 10000 });
+  const canonical = await realpath(checkout);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
+  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
+  const change = (name: string, value: string) => fireEvent.change(screen.getByLabelText(name), { target: { value } });
+  fireEvent.click(screen.getByRole("button", { name: "Repositories" }));
+  fireEvent.click(screen.getByRole("button", { name: "New Repository" }));
+  change("Name", "Owned repository");
+  change("Execution Worker", (await screen.findByRole("option", { name: "Owned Git Worker" }) as HTMLOptionElement).value);
+  change("Absolute checkout path on this Worker", checkout);
+  fireEvent.click(screen.getByRole("button", { name: "Inspect checkout" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Add inspected checkout" }, { timeout: 15000 }));
+  fireEvent.click(screen.getByRole("button", { name: "Save Repository" }));
+  await screen.findByText("Repository save accepted");
+  fireEvent.click(await screen.findByRole("button", { name: "Done" }, { timeout: 15000 }));
+  await screen.findByRole("heading", { name: "Owned repository" });
+  const repositories = await createClient(ResourceService, transport).listResources({ filter: { kind: EntityKind.REPOSITORY } });
+  expect(document(repositories.resources[0]).checkouts).toEqual([expect.objectContaining({ path: canonical })]);
+  fireEvent.click(screen.getByRole("button", { name: "Projects" }));
+  fireEvent.click(screen.getByRole("button", { name: "New Project" }));
+  change("Name", "Owned project");
+  change("Add Repository", (await screen.findByRole("option", { name: "Owned repository" }) as HTMLOptionElement).value);
+  fireEvent.click(screen.getByRole("button", { name: "Add selected" }));
+  change("Primary repository", repositories.resources[0].id);
+  fireEvent.click(screen.getByRole("checkbox", { name: "Restrict ai accounts" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
+  await screen.findByRole("heading", { name: "Owned project" });
+  const projects = await createClient(ResourceService, transport).listResources({ filter: { kind: EntityKind.PROJECT } });
+  expect(document(projects.resources[0])).toMatchObject({ primary_repository: repositories.resources[0].id, accounts: { configured: true, ids: [] } });
+  fireEvent.click(screen.getByRole("button", { name: "Delete Owned project" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm configuration deletion" }));
+  await waitFor(() => expect(screen.queryByRole("heading", { name: "Owned project" })).toBeNull());
+  expect((await createClient(ResourceService, transport).listResources({ filter: { kind: EntityKind.PROJECT } })).resources).toHaveLength(0);
+}, 45000);
