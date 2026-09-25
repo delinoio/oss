@@ -35,21 +35,21 @@ type HistoryMessageProof struct {
 }
 
 type TranscriptObservation struct {
-	SHA256                string
-	Bytes                 uint64
-	LeafID                string
-	MatchedMessages       uint32
-	AdditionalMessages    uint32
-	ActiveMatchedMessages uint32
-	CompactedMessages     uint32
-	Compactions           uint32
-	SummaryMessages       uint32
-	ReplayedRecords       uint32
-	CompactionActions     uint32
-	ActionMessages        uint32
-	StoredDiagnostics     uint32
-	ModeRecords           uint32
-	ResumeContextMessages uint32
+	SHA256                string `json:"sha256"`
+	Bytes                 uint64 `json:"bytes"`
+	LeafID                string `json:"leaf_id"`
+	MatchedMessages       uint32 `json:"matched_messages"`
+	AdditionalMessages    uint32 `json:"additional_messages"`
+	ActiveMatchedMessages uint32 `json:"active_matched_messages"`
+	CompactedMessages     uint32 `json:"compacted_messages"`
+	Compactions           uint32 `json:"compactions"`
+	SummaryMessages       uint32 `json:"summary_messages"`
+	ReplayedRecords       uint32 `json:"replayed_records"`
+	CompactionActions     uint32 `json:"compaction_actions"`
+	ActionMessages        uint32 `json:"action_messages"`
+	StoredDiagnostics     uint32 `json:"stored_diagnostics"`
+	ModeRecords           uint32 `json:"mode_records"`
+	ResumeContextMessages uint32 `json:"resume_context_messages"`
 }
 
 func historyUncertain() *domain.Error {

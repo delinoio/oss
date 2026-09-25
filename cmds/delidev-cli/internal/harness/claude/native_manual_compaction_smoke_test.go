@@ -28,7 +28,7 @@ func TestManualNativeExplicitCompaction(t *testing.T) {
 	} {
 		for _, next := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/continue-%t", fixture.name, next), func(t *testing.T) {
-				nativeManualCompactionFixture(t, fixture.rejected, fixture.insufficient, next, false)
+				nativeManualCompactionFixture(t, fixture.rejected, fixture.insufficient, next, false, false)
 			})
 		}
 	}
@@ -40,12 +40,23 @@ func TestManualNativeCompactionProcessReplacement(t *testing.T) {
 		rejected, insufficient bool
 	}{{"successful", false, false}, {"provider-rejection", true, false}, {"insufficient-history", false, true}} {
 		t.Run(fixture.name, func(t *testing.T) {
-			nativeManualCompactionFixture(t, fixture.rejected, fixture.insufficient, true, true)
+			nativeManualCompactionFixture(t, fixture.rejected, fixture.insufficient, true, true, false)
 		})
 	}
 }
 
-func nativeManualCompactionFixture(t *testing.T, rejected, insufficient, continueInput, replace bool) {
+func TestManualNativeManualCheckpointContinuation(t *testing.T) {
+	for _, fixture := range []struct {
+		name                   string
+		rejected, insufficient bool
+	}{{"successful", false, false}, {"provider-rejection", true, false}, {"insufficient-history", false, true}} {
+		t.Run(fixture.name, func(t *testing.T) {
+			nativeManualCompactionFixture(t, fixture.rejected, fixture.insufficient, true, true, true)
+		})
+	}
+}
+
+func nativeManualCompactionFixture(t *testing.T, rejected, insufficient, continueInput, replace, retained bool) {
 	failed := rejected || insufficient
 	binary := os.Getenv("DELIDEV_NATIVE_CLAUDE_EXECUTABLE")
 	if binary == "" {
@@ -273,6 +284,18 @@ func nativeManualCompactionFixture(t *testing.T, rejected, insufficient, continu
 				if err != nil {
 					t.Fatal("original manual history closure failed", err)
 				}
+				if retained {
+					configuration := s.config
+					configuration.API = APIConfig{ServerOrigin: relay.URL}
+					raw, reference, err := closed.RetainCheckpoint(ctx)
+					if err != nil {
+						t.Fatal("manual native checkpoint retention failed", err)
+					}
+					closed, err = RestoreCheckpoint(ctx, configuration, raw, reference)
+					if err != nil {
+						t.Fatal("manual native checkpoint restoration failed", err)
+					}
+				}
 				token := nativeContinuationToken(92)
 				rotating.rotate(token)
 				api := APIConfig{ServerOrigin: relay.URL, Token: token}
@@ -328,4 +351,17 @@ func nativeManualCompactionFixture(t *testing.T, rejected, insufficient, continu
 	if err != nil || verified.MatchedMessages != wantMessages || verified.AdditionalMessages != wantAdditional || verified.ResumeContextMessages != wantResume || verified.CompactionActions != 1 || verified.ActionMessages != wantActionMessages || verified.StoredDiagnostics != wantDiagnostics || verified.Compactions != wantCompactions || verified.SummaryMessages != wantCompactions || (verified.CompactedMessages == 0) != failed {
 		t.Fatal("manual history lost original conversation or action provenance", err, verified)
 	}
+	if retained {
+		configuration := s.config
+		configuration.API = APIConfig{ServerOrigin: relay.URL}
+		raw, reference, err := closed.RetainCheckpoint(ctx)
+		if err != nil {
+			t.Fatal("post-Resume checkpoint retention failed", err)
+		}
+		restored, err := RestoreCheckpoint(ctx, configuration, raw, reference)
+		if err != nil || restored.transcript != verified || len(restored.previous.history.resumes) != 1 {
+			t.Fatal("serialized original prefix lost manual Resume provenance", err)
+		}
+	}
+
 }

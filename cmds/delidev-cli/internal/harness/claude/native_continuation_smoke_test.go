@@ -49,6 +49,14 @@ func nativeContinuationToken(n byte) string {
 }
 
 func TestManualNativeClosedSessionContinuation(t *testing.T) {
+	nativeClosedSessionContinuation(t, false)
+}
+
+func TestManualNativeCheckpointContinuation(t *testing.T) {
+	nativeClosedSessionContinuation(t, true)
+}
+
+func nativeClosedSessionContinuation(t *testing.T, retained bool) {
 	binary := os.Getenv("DELIDEV_NATIVE_CLAUDE_EXECUTABLE")
 	if binary == "" {
 		t.Skip("explicit native binary and private scripted provider required")
@@ -165,6 +173,24 @@ func TestManualNativeClosedSessionContinuation(t *testing.T) {
 				}
 				if turn == 3 {
 					break
+				}
+				if retained {
+					configuration := s.config
+					configuration.API = APIConfig{ServerOrigin: relay.URL}
+					raw, reference, err := closed.RetainCheckpoint(ctx)
+					if err != nil {
+						t.Fatal("native checkpoint retention failed", err)
+					}
+					for _, private := range []string{cfg.Home, cfg.Workspace, cfg.Instructions, nativeAPIFixtureToken, nativeAPIUpstreamKey, "Fixture request", "Fixture response"} {
+						if bytes.Contains(raw, []byte(private)) {
+							t.Fatal("checkpoint contains private runtime content")
+						}
+					}
+					closed, err = RestoreCheckpoint(ctx, configuration, raw, reference)
+					if err != nil {
+						t.Fatal("independently pinned native checkpoint did not restore", err)
+					}
+					clear(raw)
 				}
 				token := nativeContinuationToken(byte(30 + turn))
 				authority.rotate(token)
