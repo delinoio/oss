@@ -72,6 +72,36 @@ func TestMainHistoryProofPreservesBodiesAndPinsFinalizedMetadataSeparately(t *te
 	}
 }
 
+func TestMainHistoryModeMetadataCannotSupplyPermissionOrConversation(t *testing.T) {
+	for _, kind := range []string{"normal", "plan", "null", "extra", "identity", "foreign"} {
+		t.Run(kind, func(t *testing.T) {
+			session, workspace, records, proofs := historyFixture(t)
+			mode := map[string]any{"type": "mode", "mode": "normal", "sessionId": session}
+			switch kind {
+			case "plan":
+				mode["mode"] = "plan"
+			case "null":
+				mode["mode"] = nil
+			case "extra":
+				mode["permissionMode"] = "default"
+			case "identity":
+				mode["uuid"] = string(domain.NewID())
+			case "foreign":
+				mode["sessionId"] = domain.NewID()
+			}
+			records = append(records, mode)
+			observed, err := VerifyMainTranscript(context.Background(), historyJSONL(t, records), session, workspace, proofs)
+			if kind == "normal" {
+				if err != nil || observed.ModeRecords != 1 || observed.MatchedMessages != 2 || observed.AdditionalMessages != 0 {
+					t.Fatal("native non-permission metadata changed conversation proof", err)
+				}
+			} else if err == nil || observed != (TranscriptObservation{}) {
+				t.Fatal("unknown mode metadata granted authority")
+			}
+		})
+	}
+}
+
 func TestMainHistoryRejectsForeignChangedTruncatedAndDetachedEvidence(t *testing.T) {
 	for _, name := range []string{"changed-body", "changed-model", "changed-provider-id", "changed-role", "foreign-session", "foreign-cwd", "foreign-version", "sidechain", "missing-parent", "forward-parent", "cycle", "detached-proof", "changed-leaf", "unknown-record", "duplicate-uuid", "duplicate-proof", "reversed-proofs", "invalid-digest", "missing-proof", "truncated", "blank-line", "duplicate-json-key", "empty", "null-content", "invalid-content", "missing-id"} {
 		t.Run(name, func(t *testing.T) {

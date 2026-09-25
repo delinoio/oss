@@ -168,7 +168,14 @@ func (index *historyActionIndex) verify(ctx context.Context, nodes map[string]hi
 		}
 		echo := nodes[p.Echo.NativeID]
 		meta := nodes[echo.parent]
-		if !index.matched[p.Echo.NativeID] || !provenance[p.Echo.NativeID] || echo.position <= last || meta.role != HistoryUser || !meta.meta || meta.parent != p.PriorMessageID || index.messages[echo.parent].NativeID != "" {
+		parentMatches := meta.parent == p.PriorMessageID
+		if boundary, ok := boundaries[p.BoundaryID]; ok && p.Status == CompactSucceeded {
+			// Native batched persistence can attach the caveat either to the
+			// preserved prior tail or directly to this original summary. Both
+			// resolve to the same context after the proved native relink.
+			parentMatches = parentMatches || meta.parent == boundary.proof.SummaryID
+		}
+		if !index.matched[p.Echo.NativeID] || !provenance[p.Echo.NativeID] || echo.position <= last || meta.role != HistoryUser || !meta.meta || !parentMatches || index.messages[echo.parent].NativeID != "" {
 			return historyUncertain()
 		}
 		output := p.Output.NativeID
@@ -180,8 +187,8 @@ func (index *historyActionIndex) verify(ctx context.Context, nodes map[string]hi
 			if !ok || boundary.metadata.Trigger != ManualCompaction || nodes[boundary.proof.SummaryID].position >= meta.position {
 				return historyUncertain()
 			}
-			// The command caveat attaches to the preserved tail, so the exact
-			// original summary becomes its ancestor only after native relinking.
+			// The exact preserved tail must still be the preceding conversation,
+			// regardless of which of the two native caveat parents was persisted.
 			if boundary.metadata.Segment != nil && boundary.metadata.Segment.Tail != p.PriorMessageID {
 				return historyUncertain()
 			}

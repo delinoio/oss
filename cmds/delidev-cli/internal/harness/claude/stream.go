@@ -183,6 +183,46 @@ func (s *Stream) Close() error {
 	return s.cleanup
 }
 
+// Finish closes stdin at an independently proved idle boundary and joins the
+// native exit before accepting retained files. Close remains the forced Stop
+// path: canceling a process is cleanup proof, not proof that native buffered
+// persistence completed. Unexpected trailing events keep completion uncertain.
+func (s *Stream) Finish(ctx context.Context) error {
+	if err := s.acquire(ctx); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	if s.problem != nil || s.closing || len(s.events) != 0 || len(s.pending) != 0 || s.activeIncoming != 0 {
+		s.mu.Unlock()
+		s.release()
+		return sessionBusy()
+	}
+	s.closing = true
+	s.mu.Unlock()
+	err := s.process.CloseInput()
+	s.release()
+	if err != nil {
+		_ = s.Close()
+		return streamUncertain()
+	}
+	select {
+	case <-s.done:
+	case <-ctx.Done():
+		if err := s.Close(); err != nil {
+			return streamUncertain()
+		}
+		return domain.SafeError(ctx.Err())
+	}
+	// The process waiter already joined output and owned descendant cleanup.
+	// A clean native exit cannot hide a partial frame or new unconsumed work.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cleanup != nil || s.problem != nil || len(s.events) != 0 || len(s.pending) != 0 || s.activeIncoming != 0 || s.process.Wait() != nil {
+		return streamUncertain()
+	}
+	return nil
+}
+
 func (s *Stream) Next(ctx context.Context) (StreamEvent, error) {
 	for {
 		s.mu.Lock()

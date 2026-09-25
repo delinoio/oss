@@ -147,7 +147,69 @@ func init() {
 		}
 		_, _ = os.Stderr.WriteString("private-stderr-sentinel")
 	}
+	switch mode {
+	case "finish-trailing":
+		emit(map[string]any{"type": "system", "subtype": "unexpected"})
+	case "finish-partial":
+		_, _ = os.Stdout.WriteString("{\"type\":")
+	case "finish-nonzero":
+		os.Exit(1)
+	case "finish-blocked":
+		for {
+			time.Sleep(time.Second)
+		}
+	}
 	os.Exit(0)
+}
+
+func TestStreamFinishJoinsNativeExitAndRejectsUnconsumedWork(t *testing.T) {
+	for _, mode := range []string{"normal", "finish-trailing", "finish-partial", "finish-nonzero", "finish-blocked"} {
+		t.Run(mode, func(t *testing.T) {
+			s, _, logs := streamFixture(t, mode)
+			if _, err := s.Call(context.Background(), domain.NewID(), map[string]any{"subtype": "ready"}); err != nil {
+				t.Fatal(err)
+			}
+			// Race-instrumented Go helper processes pause during a clean exit.
+			// Keep that harness overhead distinct from the deliberate timeout.
+			duration := 5 * time.Second
+			if mode == "finish-blocked" {
+				duration = 100 * time.Millisecond
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), duration)
+			defer cancel()
+			err := s.Finish(ctx)
+			if (err == nil) != (mode == "normal") {
+				t.Fatal("native exit granted incorrect completion", mode, err)
+			}
+			select {
+			case <-s.Done():
+			default:
+				t.Fatal("Finish left native cleanup running")
+			}
+			if err := s.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(logs.String(), "private-stderr-sentinel") {
+				t.Fatal("finish leaked private native output")
+			}
+		})
+	}
+	for _, mode := range []string{"normal", "interaction"} {
+		t.Run("busy-"+mode, func(t *testing.T) {
+			s, _, _ := streamFixture(t, mode)
+			if mode == "normal" {
+				if err := s.SendInput(context.Background(), domain.NewID(), domain.NewID(), "Private pending input"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := s.Call(context.Background(), domain.NewID(), map[string]any{"subtype": "ready"}); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.Finish(context.Background()); err == nil || s.Err() != nil {
+				t.Fatal("Finish overtook pending work or destroyed its stream")
+			}
+		})
+	}
 }
 
 func streamFixture(t *testing.T, mode string) (*Stream, process.Config, *bytes.Buffer) {

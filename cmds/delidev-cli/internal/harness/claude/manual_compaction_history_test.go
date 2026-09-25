@@ -94,6 +94,19 @@ func TestManualHistoryKeepsActionsSeparateFromConversation(t *testing.T) {
 	}
 }
 
+func TestManualHistoryAcceptsOnlyItsOriginalSummaryAsAlternateCaveatParent(t *testing.T) {
+	session, workspace, records, messages, compactions, actions := manualHistoryFixture(t, false)
+	records[len(records)-4]["parentUuid"] = compactions[0].SummaryID
+	observed, err := VerifyMainTranscriptWithActions(context.Background(), historyJSONL(t, records), session, workspace, messages, compactions, actions)
+	if err != nil || observed.MatchedMessages != 2 || observed.ActiveMatchedMessages != 1 || observed.CompactedMessages != 1 || observed.AdditionalMessages != 1 || observed.ActionMessages != 2 {
+		t.Fatal("original summary-parent persistence changed native context", err, observed)
+	}
+	records[len(records)-4]["parentUuid"] = compactions[0].NativeID
+	if _, err := VerifyMainTranscriptWithActions(context.Background(), historyJSONL(t, records), session, workspace, messages, compactions, actions); err == nil {
+		t.Fatal("arbitrary boundary parent acquired manual command authority")
+	}
+}
+
 func TestManualHistoryRetainsActionsAcrossLaterAutomaticCompaction(t *testing.T) {
 	for _, failed := range []bool{false, true} {
 		session, workspace, records, messages, compactions, actions := manualHistoryFixture(t, failed)

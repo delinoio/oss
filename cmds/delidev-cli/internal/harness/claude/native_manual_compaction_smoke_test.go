@@ -251,6 +251,10 @@ func nativeManualCompactionFixture(t *testing.T, rejected, insufficient, continu
 			if _, err := s.StartCompaction(ctx, actionID); err == nil {
 				t.Fatal("native compaction action was replayed")
 			}
+			if closed, err := s.CloseForContinuation(ctx); err == nil || domain.SafeError(err).Code != domain.Unsupported || closed != nil || s.closed.Load() {
+				t.Fatal("unreconciled manual Resume history gained process handoff authority")
+			}
+
 		}
 	}
 	expectedCalls := int64(4)
@@ -263,7 +267,7 @@ func nativeManualCompactionFixture(t *testing.T, rejected, insufficient, continu
 	if calls.Load() != expectedCalls || (continueInput && (compactedRequest.Load() == failed || retainedRequest.Load() != failed)) {
 		t.Fatal("native manual compaction retried or lost its context boundary", calls.Load())
 	}
-	if err := s.Close(); err != nil {
+	if err := s.Finish(ctx); err != nil {
 		t.Fatal(err)
 	}
 	verified, err := ReadMainTranscript(ctx, cfg.Home, cfg.SessionID, cfg.Workspace, proofs, compactions, actions, cfg.Process.Logger)

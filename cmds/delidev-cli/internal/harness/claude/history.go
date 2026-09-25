@@ -12,6 +12,9 @@ import (
 )
 
 type HistoryRole string
+type historySessionMode string
+
+const historyNormalMode historySessionMode = "normal"
 
 const (
 	HistoryUser          HistoryRole = "user"
@@ -45,6 +48,7 @@ type TranscriptObservation struct {
 	CompactionActions     uint32
 	ActionMessages        uint32
 	StoredDiagnostics     uint32
+	ModeRecords           uint32
 }
 
 func historyUncertain() *domain.Error {
@@ -215,6 +219,7 @@ func verifyTranscript(ctx context.Context, raw []byte, session domain.ID, worksp
 	replayCount := uint32(0)
 	var leaf string
 	additional := uint32(0)
+	modeRecords := uint32(0)
 	for position, line := range lines {
 		if err := ctx.Err(); err != nil {
 			return TranscriptObservation{}, domain.SafeError(err)
@@ -235,6 +240,20 @@ func verifyTranscript(ctx context.Context, raw []byte, session domain.ID, worksp
 			if child != nil || fields["uuid"] != nil || fields["parentUuid"] != nil {
 				return TranscriptObservation{}, historyUncertain()
 			}
+			continue
+		case "mode":
+			// The pinned CLI persists this non-permission session mode when
+			// closing a resumed process, including native Plan sessions. It
+			// is hashed metadata, never applied permission/Resume authority.
+			var mode struct {
+				Type    string             `json:"type"`
+				Mode    historySessionMode `json:"mode"`
+				Session domain.ID          `json:"sessionId"`
+			}
+			if child != nil || decodeNativeObject(line, &mode) != nil || mode.Mode != historyNormalMode {
+				return TranscriptObservation{}, historyUncertain()
+			}
+			modeRecords++
 			continue
 		case "last-prompt":
 			if child != nil || json.Unmarshal(fields["leafUuid"], &leaf) != nil || !nativeUUID(leaf) {
@@ -404,5 +423,5 @@ func verifyTranscript(ctx context.Context, raw []byte, session domain.ID, worksp
 		}
 	}
 	digest := sha256.Sum256(raw)
-	return TranscriptObservation{SHA256: hex.EncodeToString(digest[:]), Bytes: uint64(len(raw)), LeafID: leaf, MatchedMessages: uint32(len(proofs)), AdditionalMessages: additional, ActiveMatchedMessages: activeCount, CompactedMessages: uint32(len(proofs)) - activeCount, Compactions: uint32(len(compactions)), SummaryMessages: uint32(len(summaries)), ReplayedRecords: replayCount, CompactionActions: uint32(len(actionProofs)), ActionMessages: uint32(len(actions.matched)), StoredDiagnostics: uint32(len(actions.stored))}, nil
+	return TranscriptObservation{SHA256: hex.EncodeToString(digest[:]), Bytes: uint64(len(raw)), LeafID: leaf, MatchedMessages: uint32(len(proofs)), AdditionalMessages: additional, ActiveMatchedMessages: activeCount, CompactedMessages: uint32(len(proofs)) - activeCount, Compactions: uint32(len(compactions)), SummaryMessages: uint32(len(summaries)), ReplayedRecords: replayCount, CompactionActions: uint32(len(actionProofs)), ActionMessages: uint32(len(actions.matched)), StoredDiagnostics: uint32(len(actions.stored)), ModeRecords: modeRecords}, nil
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
 // NativePermission is Claude's own permission selector, not a translation of
@@ -60,6 +61,10 @@ func apiConfigurationError() *domain.Error {
 }
 
 func prepareAPIStream(config APIStreamConfig) (process.Config, error) {
+	return prepareAPIStreamMode(config, false)
+}
+
+func prepareAPIStreamMode(config APIStreamConfig, resumed bool) (process.Config, error) {
 	if config.Version != SupportedVersion {
 		return process.Config{}, incompatible()
 	}
@@ -86,9 +91,10 @@ func prepareAPIStream(config APIStreamConfig) (process.Config, error) {
 	if err != nil || !info.IsDir() {
 		return process.Config{}, apiConfigurationError()
 	}
-	// Rebuild from the same private, empty account directories as discovery;
+	// Fresh launches use discovery's empty private directories. The private
+	// closed-session handoff rechecks their retained ownership before reuse;
 	// only PATH and Windows system lookup context survive caller environment.
-	env, err := probeEnvironment(ProbeConfig{Process: config.Process, Version: config.Version, Home: config.Home})
+	env, err := nativeEnvironment(ProbeConfig{Process: config.Process, Version: config.Version, Home: config.Home}, !resumed)
 	if err != nil {
 		return process.Config{}, err
 	}
@@ -109,20 +115,30 @@ func prepareAPIStream(config APIStreamConfig) (process.Config, error) {
 	// The pinned CLI otherwise omits its authoritative post-continuation idle
 	// event. Keep this explicit opt-in until a verified profile emits it by default.
 	args := []string{"--print", "--input-format=stream-json", "--output-format=stream-json", "--verbose", "--setting-sources=", "--strict-mcp-config", `--mcp-config={"mcpServers":{}}`, "--permission-mode=" + string(config.Permission), "--permission-prompt-tool=stdio", "--no-chrome", "--replay-user-messages", "--include-partial-messages", "--model=" + config.Model, "--session-id=" + string(config.SessionID)}
+	if resumed {
+		args[len(args)-1] = "--resume=" + string(config.SessionID)
+	}
 	if config.Effort != "" {
 		args = append(args, "--effort="+string(config.Effort))
 	}
 	if config.Instructions != "" {
 		path := filepath.Join(filepath.Dir(config.Home), "instructions.txt")
-		file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
-		if err != nil {
-			return process.Config{}, apiConfigurationError()
-		}
-		_, written := file.WriteString(config.Instructions)
-		synced := file.Sync()
-		closed := file.Close()
-		if written != nil || synced != nil || closed != nil {
-			return process.Config{}, apiConfigurationError()
+		if resumed {
+			raw, err := security.ReadPrivate(path, 256<<10)
+			if err != nil || string(raw) != config.Instructions {
+				return process.Config{}, historyUncertain()
+			}
+		} else {
+			file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+			if err != nil {
+				return process.Config{}, apiConfigurationError()
+			}
+			_, written := file.WriteString(config.Instructions)
+			synced := file.Sync()
+			closed := file.Close()
+			if written != nil || synced != nil || closed != nil {
+				return process.Config{}, apiConfigurationError()
+			}
 		}
 		args = append(args, "--append-system-prompt-file="+path)
 	}
@@ -134,7 +150,11 @@ func prepareAPIStream(config APIStreamConfig) (process.Config, error) {
 // OpenAPIStream validates only native launch and initialization. A typed session
 // adapter must bind subsequent lifecycle/input/result observations before they
 // can establish accepted input, publish events or retain resumable history.
-func OpenAPIStream(ctx context.Context, config APIStreamConfig) (stream *Stream, returned error) {
+func OpenAPIStream(ctx context.Context, config APIStreamConfig) (*Stream, error) {
+	return openAPIStreamMode(ctx, config, false)
+}
+
+func openAPIStreamMode(ctx context.Context, config APIStreamConfig, resumed bool) (stream *Stream, returned error) {
 	if err := ctx.Err(); err != nil {
 		return nil, domain.SafeError(err)
 	}
@@ -147,7 +167,7 @@ func OpenAPIStream(ctx context.Context, config APIStreamConfig) (stream *Stream,
 			config.Process.Logger.WarnContext(ctx, "Claude Code API stream initialization failed", "owner_id", config.Process.OwnerID, "phase", phase, "code", domain.SafeError(returned).Code)
 		}
 	}()
-	prepared, err := prepareAPIStream(config)
+	prepared, err := prepareAPIStreamMode(config, resumed)
 	if err != nil {
 		return nil, err
 	}

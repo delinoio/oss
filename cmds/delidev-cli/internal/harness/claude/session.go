@@ -2,6 +2,8 @@ package claude
 
 import (
 	"context"
+	"crypto/sha256"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -30,11 +32,13 @@ type sessionTransport interface {
 	inputBarrier() error
 	Err() *domain.Error
 	Close() error
+	Finish(context.Context) error
 }
 
-// APISession owns the ordered live protocol for a fresh private process. The
+// APISession owns the ordered live protocol for one private process. The
 // Worker must durably claim each input and authorize any reply before calling
-// these methods. It does not implement crash recovery or public dispatch.
+// these methods. An eligible closed root conversation can explicitly hand off
+// to a replacement process; crash recovery and public dispatch remain separate.
 // Consume Next through idle before SendInput; a concurrent pending read cannot
 // be overtaken by a new input. Reply remains usable while Next waits.
 type APISession struct {
@@ -49,6 +53,10 @@ type APISession struct {
 	closed            atomic.Bool
 	problem           *domain.Error
 	permissionChanged bool
+	history           *sessionHistory
+	authorities       map[[sha256.Size]byte]bool
+	owners            map[domain.ID]bool
+	serverOrigin      string
 }
 
 func OpenAPISession(ctx context.Context, config APIStreamConfig) (*APISession, error) {
@@ -65,10 +73,11 @@ func OpenAPISession(ctx context.Context, config APIStreamConfig) (*APISession, e
 	}
 	// The stream owns its secret launch state. The controller needs only the
 	// immutable non-secret settings used by each typed execution binding.
+	origin, authority := config.API.ServerOrigin, sha256.Sum256([]byte(config.API.Token))
 	config.API = APIConfig{}
-	config.Process.Env = nil
+	config.Process.Env = retainedLookupEnvironment(config.Process.Env)
 	config.Process.Args = nil
-	return &APISession{stream: stream, config: config, initial: initial, inputs: map[domain.ID]bool{}}, nil
+	return &APISession{stream: stream, config: config, initial: initial, inputs: map[domain.ID]bool{}, history: &sessionHistory{}, authorities: map[[sha256.Size]byte]bool{authority: true}, owners: map[domain.ID]bool{config.Process.OwnerID: true}, serverOrigin: origin}, nil
 }
 
 func sessionBusy() *domain.Error {
@@ -220,6 +229,11 @@ func (s *APISession) Next(ctx context.Context) (LifecycleObservation, error) {
 			s.config.Process.Logger.Info("Claude Code native permission transition blocks additional input", "owner_id", s.config.Process.OwnerID, "permission", *observation.Progress.Permission)
 		}
 	}
+	if s.history != nil {
+		if err := s.history.observe(observation); err != nil {
+			return observation, s.latch(sessionEventPhase, historyUncertain())
+		}
+	}
 	return observation, nil
 }
 
@@ -311,6 +325,51 @@ func (s *APISession) Close() error {
 	return s.stream.Close()
 }
 
+// Finish joins a native EOF exit only after all observed work is settled. It
+// does not accept unknown history or create a process-replacement capability.
+func (s *APISession) Finish(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.status(); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return domain.SafeError(err)
+	}
+	b := s.current
+	if s.reading || b == nil || b.problem != nil || b.runState != RunIdle || !b.finished || b.terminal == nil || b.continuing || b.pendingCompaction != nil || (s.compaction != nil && !s.compaction.settled) {
+		return sessionBusy()
+	}
+	work := b.knownWork()
+	if work.PendingTasks != 0 || work.BackgroundTasks != 0 || b.content.openTools != 0 || len(b.content.active) != 0 || b.interactionBytes != 0 {
+		return sessionBusy()
+	}
+	for _, interaction := range b.interactions {
+		if !interaction.echoed && !interaction.canceled {
+			return sessionBusy()
+		}
+	}
+	return s.finishLocked(ctx)
+}
+
+func (s *APISession) finishLocked(ctx context.Context) error {
+	if err := s.stream.inputBarrier(); err != nil {
+		return err
+	}
+	s.closed.Store(true)
+	bounded, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	if err := s.stream.Finish(bounded); err != nil {
+		// A failed EOF handoff must still join forced cleanup; it cannot leave
+		// the native process alive behind a closed controller or mint a proof.
+		if cleanup := s.stream.Close(); cleanup != nil {
+			return s.latch(sessionTransportPhase, streamUncertain())
+		}
+		return s.latch(sessionTransportPhase, domain.SafeError(err))
+	}
+	return nil
+}
+
 func (s *Stream) inputBarrier() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -321,4 +380,17 @@ func (s *Stream) inputBarrier() error {
 		return sessionBusy()
 	}
 	return nil
+}
+
+// Preserve only the already validated non-secret platform lookup context for
+// a future owned process. Never retain caller credentials or loader overrides.
+func retainedLookupEnvironment(env []string) []string {
+	var result []string
+	for _, entry := range env {
+		key, _, ok := strings.Cut(entry, "=")
+		if ok && (strings.EqualFold(key, "PATH") || strings.EqualFold(key, "SYSTEMROOT") || strings.EqualFold(key, "WINDIR")) {
+			result = append(result, entry)
+		}
+	}
+	return result
 }

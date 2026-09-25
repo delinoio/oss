@@ -172,8 +172,9 @@ func TestManualNativeAutomaticCompaction(t *testing.T) {
 	if boundaries != 1 || len(compactions) != 1 || calls.Load() != 4 || len(proofs) != 6 || !compactedRequest.Load() {
 		t.Fatalf("native compaction observations: boundaries=%d requests=%d", boundaries, calls.Load())
 	}
-	if err := s.Close(); err != nil {
-		t.Fatal(err)
+	closed, err := s.CloseForContinuation(ctx)
+	if err != nil || closed.transcript.Compactions != 1 || closed.transcript.MatchedMessages != 6 {
+		t.Fatal("automatic compaction lost its session-owned ledger", err)
 	}
 	verified, err := ReadMainTranscript(ctx, cfg.Home, cfg.SessionID, cfg.Workspace, proofs, compactions, nil, cfg.Process.Logger)
 	if err != nil || verified.MatchedMessages != 6 || verified.AdditionalMessages != 0 || verified.Compactions != 1 || verified.SummaryMessages != 1 || verified.CompactedMessages == 0 || verified.ActiveMatchedMessages == 0 || verified.ActiveMatchedMessages+verified.CompactedMessages != 6 {
