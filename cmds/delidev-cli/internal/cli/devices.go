@@ -224,7 +224,9 @@ func awaitJob(ctx context.Context, c client, job *pb.Resource) (*pb.Resource, er
 		}
 		if state.State == domain.JobUncertain {
 			if state.Problem != nil {
-				return job, state.Problem
+				// Callers refresh related session/machine records before returning
+				// this retained problem. The wait itself has a final observation.
+				return job, nil
 			}
 			return job, domain.Fail(domain.RecoveryRequired, "The accepted job requires reconciliation.", "Inspect the retained job before retrying; waiting does not cancel or repeat it.")
 		}
