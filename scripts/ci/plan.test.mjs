@@ -22,7 +22,7 @@ test("root Rust toolchain changes select Forge validation and rendering", () => 
 });
 
 test("PR never allocates native package jobs, including changes to CI itself", () => {
-  for (const path of ["apps/devhud/src/App.tsx", "apps/devhud/src-tauri/src/main.rs", "Cargo.lock", ".github/workflows/CI.yml", "scripts/ci/plan.mjs", ".github/actions/setup-ci-node/action.yml"]) {
+  for (const path of ["apps/devhud/src/App.tsx", "apps/devhud/src-tauri/src/main.rs", "Cargo.lock", ".gitattributes", ".github/workflows/CI.yml", "scripts/ci/plan.mjs", ".github/actions/setup-ci-node/action.yml"]) {
     const jobs = selected(Event.PullRequest, [path]);
     assert.ok(jobs.includes("devhud-frontend"), path);
     for (const id of native) assert.ok(!jobs.includes(id), `${path}: ${id}`);
@@ -38,7 +38,7 @@ test("pnport installer changes select six-host native verification on main", () 
 });
 
 test("main selects the existing full native matrix only when affected; manual selects every job", () => {
-  for (const path of ["apps/devhud/src/App.tsx", "apps/devhud/src-tauri/src/main.rs", "protos/devhud/v1/settings.proto", "pnpm-lock.yaml", ".github/workflows/CI.yml"]) {
+  for (const path of ["apps/devhud/src/App.tsx", "apps/devhud/src-tauri/src/main.rs", "protos/devhud/v1/settings.proto", "pnpm-lock.yaml", ".gitattributes", ".github/workflows/CI.yml"]) {
     for (const id of devhudNative) assert.ok(selected(Event.Push, [path]).includes(id), `${path}: ${id}`);
   }
   assert.deepEqual(selected(Event.Manual, []), Object.keys(jobPaths));
