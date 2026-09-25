@@ -398,3 +398,4 @@ The current user request is the CLI. Desktop windows/tray/widgets/native browser
 
 ### PR #983 numeric streams and startup recovery follow-up (2026-09-25)
 - Real HTTP regressions reproduce numeric key fragments across root/nested SSE JSON values, including large integers and exact exponent spellings. The original number spelling now enters the existing value-path matcher before frame delivery; unrelated numeric output remains byte-identical. Focused relay race tests pass.
+- A native Linux subprocess fixture injects stdout and stderr pipe exhaustion after the durable start barrier. It reproduces the incomplete stderr journal, verifies no command side effects, and now proves completed ownership plus normal reconciliation after supervisor exit. The fixture uses only a private temporary scope in a non-root network-disabled container.

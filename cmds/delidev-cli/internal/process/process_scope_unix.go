@@ -309,6 +309,10 @@ func (w streamWriter) Write(b []byte) (int, error) {
 }
 
 func superviseProcess(dir, socket string) int {
+	return superviseProcessWithPipe(dir, socket, os.Pipe)
+}
+
+func superviseProcessWithPipe(dir, socket string, pipe func() (*os.File, *os.File, error)) int {
 	scope, err := readScope(dir)
 	if err != nil {
 		return 3
@@ -341,7 +345,7 @@ func superviseProcess(dir, socket string) int {
 		return 0
 	}
 	cancel := make(chan struct{})
-	inputRead, inputWrite, err := os.Pipe()
+	inputRead, inputWrite, err := pipe()
 	if err != nil {
 		return 3
 	}
@@ -402,16 +406,20 @@ func superviseProcess(dir, socket string) int {
 	}
 	// Use actual OS pipes so exec.Cmd.Wait observes shell exit independently of
 	// inherited output descriptors held open by a daemonized descendant.
-	read, write, err := os.Pipe()
+	read, write, err := pipe()
 	if err != nil {
 		scope.Complete = true
 		_ = saveScope(dir, scope)
 		return 3
 	}
 	defer read.Close()
-	stderrRead, stderrWrite, err := os.Pipe()
+	stderrRead, stderrWrite, err := pipe()
 	if err != nil {
 		write.Close()
+		// No command has started, so there can be no owned descendants.
+		// Retain this proof before the supervisor exits on resource exhaustion.
+		scope.Complete = true
+		_ = saveScope(dir, scope)
 		return 3
 	}
 	defer stderrRead.Close()
