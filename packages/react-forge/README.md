@@ -2,7 +2,7 @@
 
 `@delino/react-forge` authors PPTX, DOCX, XLSX, independent tagged PDF and editable Figma Design files through persistent React sessions. It imports existing Office packages, exposes supported editable regions, and preserves unrelated XML and package parts when mounting React content into those regions. Its executable is named `react-forge`.
 
-The [React Forge guides](https://oss.delino.io/react-forge/) cover installation, each format, Office editing, Figma publication, the CLI, and local MCP sessions.
+The [React Forge guides](https://oss.delino.io/react-forge/) cover installation, each released format, Office editing, Figma publication, the CLI, local MCP sessions, and clearly marked unreleased SFX and Sprite previews.
 
 Use Node.js 24 on macOS, Windows, or glibc Linux, on x64 or arm64. Install normally with npm or pnpm; the matching native package is selected as an optional dependency. Keep optional dependencies enabled. Installation does not compile native code or download binaries from a separate service.
 
@@ -191,7 +191,7 @@ Test renderers are not runtime dependencies. Direct Microsoft Office validation 
 
 ## Sprite authoring (unreleased)
 
-The next release adds `Format.Sprite` and `@delino/react-forge/sprite`. This feature is not included in npm 0.1.1.
+The next release adds `Format.Sprite` and `@delino/react-forge/sprite`. This feature is not included in npm 0.1.1. See the [Sprite guide](https://oss.delino.io/react-forge/sprite) for the preview workflow and limits.
 
 ```tsx
 import React from "react";

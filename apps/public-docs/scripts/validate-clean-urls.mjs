@@ -103,7 +103,7 @@ const pnportHeadings = {
 };
 
 const reactForgeHeadings = {
-  "/react-forge/": ["React Forge", "Choose a workflow"],
+  "/react-forge/": ["React Forge", "Start with a presentation", "Where it runs", "Choose a workflow"],
   "/react-forge/installation": ["Install React Forge", "Requirements", "Verify the installation"],
   "/react-forge/getting-started": ["Getting started", "Next steps"],
   "/react-forge/sessions": ["Sessions and common API", "Fonts and assets", "Inspection and measurement", "Lifecycle and diagnostics"],
@@ -111,12 +111,14 @@ const reactForgeHeadings = {
   "/react-forge/docx": ["Author DOCX documents"],
   "/react-forge/xlsx": ["Author XLSX workbooks"],
   "/react-forge/pdf": ["Author tagged PDF"],
+  "/react-forge/sfx": ["Game sound effects (WAV)"],
+  "/react-forge/sprite": ["Pixel sprites and animation", "Create an animated sprite", "Limits and boundaries"],
   "/react-forge/office-editing": ["Edit existing Office files"],
   "/react-forge/figma": ["Figma Design creation and editing", "Reopen and edit", "Publication outcomes and receipts"],
   "/react-forge/cli": ["One-shot CLI tasks"],
   "/react-forge/mcp": ["Local MCP sessions", "Typical local document sequence", "Figma and failure recovery"],
   "/react-forge/limits-and-troubleshooting": ["Limits and troubleshooting", "Common failures", "Boundaries"],
-  "/react-forge/releases": ["Releases and validation", "Validation scope", "Update or roll back"],
+  "/react-forge/releases": ["Releases and validation", "Choose by availability", "Validation scope", "Update or roll back"],
 };
 
 const stableRouteIds = [
@@ -234,7 +236,7 @@ const requiredLinks = new Map([
   ["/pnport/", ["/pnport/installation", "/pnport/getting-started", "/pnport/commands", "/pnport/filesystem-and-processes", "/pnport/editors", "/pnport/cache", "/pnport/diagnostics", "/pnport/benchmarks", "/pnport/releases"]],
   ["/pnport/installation", ["/pnport/getting-started", "/pnport/commands", "/pnport/releases"]],
   ["/pnport/diagnostics", ["/pnport/cache"]],
-  ["/react-forge/", ["/react-forge/installation", "/react-forge/getting-started", "/react-forge/sessions", "/react-forge/pptx", "/react-forge/docx", "/react-forge/xlsx", "/react-forge/pdf", "/react-forge/office-editing", "/react-forge/figma", "/react-forge/cli", "/react-forge/mcp", "/react-forge/limits-and-troubleshooting", "/react-forge/releases"]],
+  ["/react-forge/", ["/react-forge/installation", "/react-forge/getting-started", "/react-forge/sessions", "/react-forge/pptx", "/react-forge/docx", "/react-forge/xlsx", "/react-forge/pdf", "/react-forge/office-editing", "/react-forge/figma", "/react-forge/cli", "/react-forge/mcp", "/react-forge/sfx", "/react-forge/sprite", "/react-forge/limits-and-troubleshooting", "/react-forge/releases"]],
   ["/react-forge/installation", ["/react-forge/getting-started", "/react-forge/releases", "/react-forge/figma"]],
   ["/react-forge/figma", ["/react-forge/cli", "/react-forge/mcp", "/react-forge/limits-and-troubleshooting"]],
   ["/react-forge/mcp", ["/react-forge/figma"]],
@@ -727,6 +729,15 @@ for (const [routeId, headings] of requiredHeadings) {
     if (!headingsInArticle.has(heading)) failures.push(`${routeId} is missing required heading text: ${heading}`);
   }
   if (!/<main\b[^>]*>/iu.test(pageContents)) failures.push(`${routeId} is missing a main landmark`);
+}
+
+for (const routeId of ["/react-forge/sfx", "/react-forge/sprite"]) {
+  const route = routeOutputFiles.find((entry) => entry.routeId === routeId);
+  const contents = route ? await readFile(route.outputFile, "utf8") : "";
+  const introduction = visibleText(articleContent(contents)).slice(0, 550);
+  if (!/\bUnreleased\b/u.test(introduction) || !/\bnot included in npm 0\.1\.1\b/iu.test(introduction)) {
+    failures.push(`${routeId} is missing its main-content npm 0.1.1 unreleased notice`);
+  }
 }
 
 for (const [routeId, links] of requiredLinks) {

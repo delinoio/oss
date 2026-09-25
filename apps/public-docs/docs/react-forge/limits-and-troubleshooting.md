@@ -1,6 +1,6 @@
 # Limits and troubleshooting
 
-React Forge exposes current budgets through `limits` and `capabilities`. A resource-limit or unsupported-package error is explicit; it does not silently flatten content or download a replacement dependency.
+Start with `ForgeError.code` when an operation fails, then use the recovery table below. The installed package exposes its current budgets through `limits` and `capabilities`. A resource-limit or unsupported-package error is explicit; React Forge does not silently flatten content or download a replacement dependency.
 
 | Resource | Ceiling |
 | --- | ---: |
@@ -13,6 +13,8 @@ React Forge exposes current budgets through `limits` and `capabilities`. A resou
 | Registered assets together | 256 MiB |
 
 An explicit font is bounded to 64 MiB. Existing PPTX constraints include 1,000 slides and tables up to 1,000 rows by 128 columns. Chart expansion is bounded to 200,000 cells and XLSX merge expansion to 250,000 cells. Figma images are limited to 10 MiB and 64 million pixels each. Check the installed package's `limits` and `capabilities` for the applicable full set.
+
+The unreleased [SFX](/react-forge/sfx#sessions-mcp-and-limits) and [Sprite](/react-forge/sprite#limits-and-boundaries) previews have their own bounds. They are absent from npm `0.1.1`; do not use their source-only APIs with that installed version.
 
 ## Common failures
 
