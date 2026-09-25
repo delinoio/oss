@@ -1,0 +1,256 @@
+package claude
+
+import (
+	"context"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+)
+
+type InputIntent string
+type sessionPhase string
+
+const (
+	ContinueSuccessfulRun InputIntent  = "continue-successful-run"
+	ResumeTerminalRun     InputIntent  = "resume-terminal-run"
+	sessionTransportPhase sessionPhase = "transport"
+	sessionSettingsPhase  sessionPhase = "settings"
+	sessionInputPhase     sessionPhase = "input"
+	sessionEventPhase     sessionPhase = "event"
+	sessionReplyPhase     sessionPhase = "reply"
+)
+
+type sessionTransport interface {
+	ReadAppliedSettings(context.Context, domain.ID, string, NativeEffort) (AppliedSettings, error)
+	SendInput(context.Context, domain.ID, domain.ID, string) error
+	Next(context.Context) (StreamEvent, error)
+	Reply(context.Context, StreamEvent, any) error
+	inputBarrier() error
+	Err() *domain.Error
+	Close() error
+}
+
+// APISession owns the ordered live protocol for a fresh private process. The
+// Worker must durably claim each input and authorize any reply before calling
+// these methods. It does not implement crash recovery or public dispatch.
+// Consume Next through idle before SendInput; a concurrent pending read cannot
+// be overtaken by a new input. Reply remains usable while Next waits.
+type APISession struct {
+	mu                sync.Mutex
+	stream            sessionTransport
+	config            APIStreamConfig
+	initial           AppliedSettings
+	current           *ExecutionBinding
+	inputs            map[domain.ID]bool
+	reading           bool
+	closed            atomic.Bool
+	problem           *domain.Error
+	permissionChanged bool
+}
+
+func OpenAPISession(ctx context.Context, config APIStreamConfig) (*APISession, error) {
+	stream, err := OpenAPIStream(ctx, config)
+	if err != nil {
+		return nil, err
+	}
+	initial, ok := stream.InitialAppliedSettings()
+	if !ok {
+		if err := stream.Close(); err != nil {
+			return nil, streamUncertain()
+		}
+		return nil, settingsUncertain()
+	}
+	// The stream owns its secret launch state. The controller needs only the
+	// immutable non-secret settings used by each typed execution binding.
+	config.API = APIConfig{}
+	config.Process.Env = nil
+	config.Process.Args = nil
+	return &APISession{stream: stream, config: config, initial: initial, inputs: map[domain.ID]bool{}}, nil
+}
+
+func sessionBusy() *domain.Error {
+	return domain.Fail(domain.Conflict, "The Claude Code session has not reached an eligible input boundary.", "Retain the current run and consume its native lifecycle; do not resend accepted input.")
+}
+
+func (s *APISession) latch(phase sessionPhase, problem *domain.Error) *domain.Error {
+	if s.problem == nil {
+		s.problem = problem
+		if s.config.Process.Logger != nil {
+			s.config.Process.Logger.Warn("Claude Code live session requires reconciliation", "owner_id", s.config.Process.OwnerID, "phase", phase, "code", problem.Code)
+		}
+	}
+	return s.problem
+}
+
+func (s *APISession) status() error {
+	if s.problem != nil {
+		return s.problem
+	}
+	if s.closed.Load() {
+		return domain.Fail(domain.Canceled, "The Claude Code session is closed.", "Reconcile native history and cleanup before explicit recovery.")
+	}
+	if err := s.stream.Err(); err != nil {
+		return s.latch(sessionTransportPhase, lifecycleUncertain())
+	}
+	return nil
+}
+
+func (s *APISession) SendInput(ctx context.Context, input domain.ID, text string, intent InputIntent) (AppliedSettings, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.status(); err != nil {
+		return AppliedSettings{}, err
+	}
+	if err := ctx.Err(); err != nil {
+		return AppliedSettings{}, domain.SafeError(err)
+	}
+	if intent != ContinueSuccessfulRun && intent != ResumeTerminalRun {
+		return AppliedSettings{}, apiConfigurationError()
+	}
+	if s.reading || s.inputs[input] || s.permissionChanged {
+		return AppliedSettings{}, sessionBusy()
+	}
+	if len(s.inputs) >= maxStreamIdentities {
+		return AppliedSettings{}, domain.Fail(domain.ResourceExhausted, "The live Claude Code session reached its input identity bound.", "Retain the native history for explicit process recovery.")
+	}
+	next, err := BindExecution(s.config, input, text)
+	if err != nil {
+		return AppliedSettings{}, err
+	}
+	if previous := s.current; previous != nil {
+		work := previous.knownWork()
+		if previous.problem != nil || previous.runState != RunIdle || !previous.finished || previous.terminal == nil || previous.continuing || work.PendingTasks != 0 || work.BackgroundTasks != 0 || previous.content.openTools != 0 || len(previous.content.active) != 0 || previous.interactionBytes != 0 {
+			return AppliedSettings{}, sessionBusy()
+		}
+		if intent == ContinueSuccessfulRun && (!previous.terminal.Successful() || previous.continuationFailed) {
+			return AppliedSettings{}, sessionBusy()
+		}
+		for _, interaction := range previous.interactions {
+			if !interaction.echoed && !interaction.canceled {
+				return AppliedSettings{}, sessionBusy()
+			}
+		}
+		// Reuse identity and closed ownership registries for the lifetime of this
+		// process. A later run cannot reuse an old tool/message/callback identity or
+		// attribute a late exact echo to its new input. Notification eligibility is
+		// deliberately per run, never inherited from an earlier completed task.
+		next.seen = previous.seen
+		next.content = previous.content
+		next.tasks = previous.tasks
+		next.backgroundTasks = previous.backgroundTasks
+		next.interactions = previous.interactions
+	}
+	if err := s.stream.inputBarrier(); err != nil {
+		return AppliedSettings{}, err
+	}
+	bounded, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	applied, err := s.stream.ReadAppliedSettings(bounded, domain.NewID(), s.config.Model, s.config.Effort)
+	if err != nil || !sameAppliedSettings(applied, s.initial) {
+		return AppliedSettings{}, s.latch(sessionSettingsPhase, settingsUncertain())
+	}
+	if err := s.stream.inputBarrier(); err != nil {
+		return AppliedSettings{}, err
+	}
+	// Retain the input attempt before pipe delivery. Any uncertain send blocks
+	// all new inputs; neither a later terminal nor a retry clears that latch.
+	s.inputs[input], s.current = true, next
+	if err := s.stream.SendInput(ctx, input, s.config.SessionID, text); err != nil {
+		return AppliedSettings{}, s.latch(sessionInputPhase, lifecycleUncertain())
+	}
+	if s.config.Process.Logger != nil {
+		s.config.Process.Logger.InfoContext(ctx, "Claude Code input delivered", "owner_id", s.config.Process.OwnerID, "input_id", input, "intent", intent)
+	}
+	return applied, nil
+}
+
+func sameAppliedSettings(a, b AppliedSettings) bool {
+	return a.Model == b.Model && ((a.Effort == nil && b.Effort == nil) || (a.Effort != nil && b.Effort != nil && *a.Effort == *b.Effort))
+}
+
+func (s *APISession) Next(ctx context.Context) (LifecycleObservation, error) {
+	s.mu.Lock()
+	if err := s.status(); err != nil {
+		s.mu.Unlock()
+		return LifecycleObservation{}, err
+	}
+	if s.current == nil || s.reading {
+		s.mu.Unlock()
+		return LifecycleObservation{}, sessionBusy()
+	}
+	s.reading = true
+	s.mu.Unlock()
+	event, err := s.stream.Next(ctx)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reading = false
+	if status := s.status(); status != nil {
+		return LifecycleObservation{}, status
+	}
+	if err != nil {
+		if ctx.Err() != nil {
+			return LifecycleObservation{}, domain.SafeError(ctx.Err())
+		}
+		return LifecycleObservation{}, s.latch(sessionEventPhase, lifecycleUncertain())
+	}
+	observation, err := s.current.Observe(event)
+	if err != nil || observation.Kind == PrivateObservation {
+		return observation, s.latch(sessionEventPhase, lifecycleUncertain())
+	}
+	if s.current.problem != nil {
+		s.latch(sessionEventPhase, s.current.problem)
+	}
+	if observation.Progress != nil && observation.Progress.Permission != nil && *observation.Progress.Permission != s.config.Permission {
+		// Native Plan tools can change permissions inside the accepted turn.
+		// Preserve that observation and finish its transcript, but do not send
+		// another input under silently changed permission authority.
+		s.permissionChanged = true
+		if s.config.Process.Logger != nil {
+			s.config.Process.Logger.Info("Claude Code native permission transition blocks additional input", "owner_id", s.config.Process.OwnerID, "permission", *observation.Progress.Permission)
+		}
+	}
+	return observation, nil
+}
+
+func (s *APISession) Reply(ctx context.Context, arrival domain.ID, reply PermissionReply) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.status(); err != nil {
+		return err
+	}
+	if ctx.Err() != nil {
+		return domain.SafeError(ctx.Err())
+	}
+	if s.current == nil {
+		return sessionBusy()
+	}
+	event, raw, err := s.current.PreparePermissionReply(arrival, reply)
+	if err != nil {
+		return err
+	}
+	if err := s.stream.Reply(ctx, event, raw); err != nil {
+		return s.latch(sessionReplyPhase, lifecycleUncertain())
+	}
+	return nil
+}
+
+// Close always joins owned process cleanup, including after protocol failure.
+// It does not turn an uncertain input or reply into a completed operation.
+func (s *APISession) Close() error {
+	s.closed.Store(true)
+	return s.stream.Close()
+}
+
+func (s *Stream) inputBarrier() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.statusLocked(); err != nil {
+		return err
+	}
+	if len(s.events) != 0 || len(s.pending) != 0 || s.activeIncoming != 0 {
+		return sessionBusy()
+	}
+	return nil
+}

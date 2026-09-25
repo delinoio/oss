@@ -71,7 +71,7 @@ func TestManualNativeContentAndTurnUsage(t *testing.T) {
 	relay := httptest.NewServer(apiproxy.New(authority, slog.New(slog.NewJSONHandler(io.Discard, nil))))
 	defer relay.Close()
 	cfg.API.ServerOrigin = relay.URL
-	s, err := OpenAPIStream(ctx, cfg)
+	s, err := OpenAPISession(ctx, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,11 +91,7 @@ func TestManualNativeContentAndTurnUsage(t *testing.T) {
 	for turn := int64(1); turn <= 2; turn++ {
 		input := domain.NewID()
 		const prompt = "Observe multiple native content blocks."
-		binding, err := BindExecution(cfg, input, prompt)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := s.SendInput(ctx, input, cfg.SessionID, prompt); err != nil {
+		if _, err := s.SendInput(ctx, input, prompt, ContinueSuccessfulRun); err != nil {
 			t.Fatal(err)
 		}
 		var completed []string
@@ -103,11 +99,7 @@ func TestManualNativeContentAndTurnUsage(t *testing.T) {
 		var result *NativeResult
 		var commandClosed, messageClosed, runIdle bool
 		for result == nil || !commandClosed || !runIdle {
-			event, err := s.Next(ctx)
-			if err != nil {
-				t.Fatal(err)
-			}
-			observation, err := binding.Observe(event)
+			observation, err := s.Next(ctx)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -136,7 +128,7 @@ func TestManualNativeContentAndTurnUsage(t *testing.T) {
 				commandClosed = true
 			}
 		}
-		if len(completed) != 2 || completed[0] != "First visible block." || completed[1] != "Second visible block." || nativeIDs[0] == nativeIDs[1] || !messageClosed || !result.Successful() || !binding.accepted || result.Usage == nil {
+		if len(completed) != 2 || completed[0] != "First visible block." || completed[1] != "Second visible block." || nativeIDs[0] == nativeIDs[1] || !messageClosed || !result.Successful() || !s.current.accepted || result.Usage == nil {
 			t.Fatal("native block sequence or original completion was lost")
 		}
 		usage := result.Usage

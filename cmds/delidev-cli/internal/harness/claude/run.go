@@ -69,12 +69,7 @@ func (b *ExecutionBinding) canStartContinuation() bool {
 	// A native init has no origin. Known task notification evidence permits
 	// retaining this provisional turn; its result must independently declare
 	// task-notification origin. Never guess which task produced that turn.
-	for _, task := range b.tasks {
-		if task.notified {
-			return true
-		}
-	}
-	return false
+	return b.notifications != 0
 }
 
 func taskNotificationOrigin(raw json.RawMessage) bool {

@@ -111,6 +111,7 @@ type ExecutionBinding struct {
 	continuing         bool
 	continuationSeen   bool
 	continuationFailed bool
+	notifications      uint32
 }
 
 func BindExecution(config APIStreamConfig, input domain.ID, text string) (*ExecutionBinding, error) {
@@ -172,6 +173,8 @@ func (b *ExecutionBinding) Observe(event StreamEvent) (observation LifecycleObse
 				return LifecycleObservation{}, err
 			}
 			observation.Kind, observation.Interaction = InteractionObserved, value
+			observation.InputID, observation.TurnID = value.InputID, value.TurnID
+			observation.Accepted = value.InputID != ""
 			if b.logger != nil {
 				b.logger.Debug("Claude Code interaction observed", "owner_id", b.owner, "arrival_id", value.ArrivalID, "state", value.Kind, "canceled", value.Canceled)
 			}
@@ -253,6 +256,9 @@ func (b *ExecutionBinding) Observe(event StreamEvent) (observation LifecycleObse
 					return LifecycleObservation{}, err
 				}
 				observation.Kind, observation.Task = TaskObserved, value
+				if value.Kind == TaskNotification {
+					b.notifications++
+				}
 			}
 			if header.Subtype == "status" {
 				phase = progressValidation

@@ -124,10 +124,14 @@ type InteractionObservation struct {
 	Request   *NativeInteraction `json:"-"`
 	ArrivalID domain.ID
 	Canceled  bool
+	InputID   domain.ID
+	TurnID    string
 	// Exact native echo proves only the original reply was echoed. It does not
 	// prove tool success, plan execution or acceptance of an input turn.
 }
 type interactionState struct {
+	input                      domain.ID
+	turn                       string
 	request                    NativeInteraction
 	event                      StreamEvent
 	reply                      [sha256.Size]byte
@@ -148,7 +152,7 @@ func (b *ExecutionBinding) observeInteraction(event StreamEvent) (*InteractionOb
 		if retained == nil || retained.request.RequestID != event.RequestID {
 			return nil, lifecycleUncertain()
 		}
-		result := &InteractionObservation{ArrivalID: event.ArrivalID, Canceled: retained.canceled}
+		result := &InteractionObservation{ArrivalID: event.ArrivalID, Canceled: retained.canceled, InputID: retained.input, TurnID: retained.turn}
 		switch event.Kind {
 		case NativeCancellation:
 			if retained.canceled {
@@ -267,9 +271,10 @@ func (b *ExecutionBinding) observeInteraction(event StreamEvent) (*InteractionOb
 	for _, question := range value.Questions {
 		questionKeys[question.Question] = true
 	}
-	b.interactions[event.ArrivalID] = &interactionState{request: retainedValue, questions: questionKeys, retainedBytes: 2 * len(value.Input), event: StreamEvent{Kind: NativeRequest, RequestID: event.RequestID, ArrivalID: event.ArrivalID}}
+	ownerInput, ownerTurn := tool.ownerInput, tool.ownerTurn
+	b.interactions[event.ArrivalID] = &interactionState{input: ownerInput, turn: ownerTurn, request: retainedValue, questions: questionKeys, retainedBytes: 2 * len(value.Input), event: StreamEvent{Kind: NativeRequest, RequestID: event.RequestID, ArrivalID: event.ArrivalID}}
 	b.interactionBytes += 2 * len(value.Input)
-	return &InteractionObservation{Kind: InteractionRequested, ArrivalID: event.ArrivalID, Request: &value}, nil
+	return &InteractionObservation{Kind: InteractionRequested, ArrivalID: event.ArrivalID, Request: &value, InputID: ownerInput, TurnID: ownerTurn}, nil
 }
 
 // PermissionReply selects one original callback. General/Plan approvals keep

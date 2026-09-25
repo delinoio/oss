@@ -193,7 +193,7 @@ func TestManualNativePlanQuestionArtifactAndApproval(t *testing.T) {
 	relay := httptest.NewServer(apiproxy.New(authority, slog.New(slog.NewJSONHandler(io.Discard, nil))))
 	defer relay.Close()
 	cfg.API.ServerOrigin = relay.URL
-	s, err := OpenAPIStream(ctx, cfg)
+	s, err := OpenAPISession(ctx, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,21 +209,19 @@ func TestManualNativePlanQuestionArtifactAndApproval(t *testing.T) {
 		}
 	}()
 	input := domain.NewID()
-	binding, err := BindExecution(cfg, input, "Plan the private fixture change.")
-	if err != nil {
+	if _, err := s.SendInput(ctx, input, "Plan the private fixture change.", ContinueSuccessfulRun); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SendInput(ctx, input, cfg.SessionID, "Plan the private fixture change."); err != nil {
-		t.Fatal(err)
-	}
+	finished := false
 	answered, approved := false, false
 	tools := map[string]*NativeTool{}
 	results := map[string]*NativeToolResult{}
 	for {
-		event, err := s.Next(ctx)
+		observation, err := s.Next(ctx)
 		if err != nil {
 			t.Fatal(err)
 		}
+		event := *observation.Native
 		if event.Kind == NativeRequest {
 			var fields map[string]json.RawMessage
 			if json.Unmarshal(event.Body, &fields) != nil {
@@ -235,10 +233,6 @@ func TestManualNativePlanQuestionArtifactAndApproval(t *testing.T) {
 			}
 			sort.Strings(keys)
 			t.Log("native permission callback field names", keys)
-		}
-		observation, err := binding.Observe(event)
-		if err != nil {
-			t.Fatal(err)
 		}
 		for _, content := range observation.Content {
 			if content.Kind == ContentCompleted && content.Block != nil && content.Block.Tool != nil {
@@ -316,11 +310,7 @@ func TestManualNativePlanQuestionArtifactAndApproval(t *testing.T) {
 			default:
 				t.Fatal("unexpected native permission callback", request.Tool)
 			}
-			original, body, err := binding.PreparePermissionReply(event.ArrivalID, reply)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := s.Reply(ctx, original, body); err != nil {
+			if err := s.Reply(ctx, event.ArrivalID, reply); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -336,6 +326,18 @@ func TestManualNativePlanQuestionArtifactAndApproval(t *testing.T) {
 			}
 			if json.Unmarshal(event.Body, &result) != nil || result.Session != cfg.SessionID || result.Input != input || result.Error || result.Terminal != "completed" || !answered || !approved || requests.Load() != 4 {
 				t.Fatal("native plan did not complete its original input")
+			}
+			finished = true
+		}
+		if observation.Kind == RunStateObserved && observation.Run.State == RunIdle {
+			if !finished {
+				t.Fatal("idle preceded original plan result")
+			}
+			if !s.permissionChanged {
+				t.Fatal("native Plan permission transition was not retained")
+			}
+			if _, err := s.SendInput(ctx, domain.NewID(), "Do not implicitly adopt changed native permission.", ResumeTerminalRun); err == nil || domain.SafeError(err).Code != domain.Conflict || requests.Load() != 4 {
+				t.Fatal("changed native Plan permission silently authorized another input", err)
 			}
 			return
 		}

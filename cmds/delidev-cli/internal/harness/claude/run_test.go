@@ -79,6 +79,7 @@ func TestRunBoundaryRejectsPrematureIdleAndForeignContinuation(t *testing.T) {
 				event = lifecycleChange(t, lifecycleInit(t, b), "model", "changed")
 			case "no-task-notification":
 				b.tasks = map[string]nativeTaskState{}
+				b.notifications = 0
 				event = lifecycleInit(t, b)
 			case "replay-original":
 				lifecycleObserve(t, b, lifecycleInit(t, b))

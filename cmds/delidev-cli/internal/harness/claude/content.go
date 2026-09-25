@@ -117,6 +117,8 @@ type providerMessageState struct {
 }
 
 type nativeToolState struct {
+	ownerInput            domain.ID
+	ownerTurn             string
 	name, parent, message string
 	index                 uint32
 	input                 [sha256.Size]byte
@@ -532,7 +534,8 @@ func (b *ExecutionBinding) observeAssistant(raw []byte) ([]ContentEvent, error) 
 			return nil, lifecycleUncertain()
 		}
 		block.Tool.ProposedInput = bytes.Clone(input)
-		b.content.tools[block.Tool.ID] = nativeToolState{name: block.Tool.Name, parent: parent, message: active.id, index: index, input: observed, streamed: true}
+		ownerInput, ownerTurn := b.contentOwner(parent)
+		b.content.tools[block.Tool.ID] = nativeToolState{ownerInput: ownerInput, ownerTurn: ownerTurn, name: block.Tool.Name, parent: parent, message: active.id, index: index, input: observed, streamed: true}
 		b.content.openTools++
 	}
 	state.completed = true
@@ -666,4 +669,17 @@ func decodeToolResultText(raw []byte) (*string, []NativeContentBlock, error) {
 		result = append(result, block)
 	}
 	return nil, result, nil
+}
+
+// Child ownership follows the original parent tool even when its callback
+// arrives while a different automatic turn is active in the same native run.
+func (b *ExecutionBinding) contentOwner(parent string) (domain.ID, string) {
+	if parent != "" {
+		tool := b.content.tools[parent]
+		return tool.ownerInput, tool.ownerTurn
+	}
+	if b.continuing {
+		return "", b.turnID
+	}
+	return b.input, b.turnID
 }

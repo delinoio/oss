@@ -60,7 +60,7 @@ func TestManualNativeBackgroundRunBoundary(t *testing.T) {
 	relay := httptest.NewServer(apiproxy.New(authority, slog.New(slog.NewJSONHandler(io.Discard, nil))))
 	defer relay.Close()
 	cfg.API.ServerOrigin = relay.URL
-	s, err := OpenAPIStream(ctx, cfg)
+	s, err := OpenAPISession(ctx, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,23 +73,14 @@ func TestManualNativeBackgroundRunBoundary(t *testing.T) {
 		}
 	}()
 	input := domain.NewID()
-	binding, err := BindExecution(cfg, input, "Run the asynchronous child fixture.")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := s.SendInput(ctx, input, cfg.SessionID, "Run the asynchronous child fixture."); err != nil {
+	if _, err := s.SendInput(ctx, input, "Run the asynchronous child fixture.", ContinueSuccessfulRun); err != nil {
 		t.Fatal(err)
 	}
 	var original, synthetic, idle bool
 	var originalTurn, continuationTurn string
 	for !idle {
-		event, err := s.Next(ctx)
+		observation, err := s.Next(ctx)
 		if err != nil {
-			t.Fatal(err)
-		}
-		observation, err := binding.Observe(event)
-		if err != nil {
-			t.Log("rejected native family", event.Type)
 			t.Log(logs.String())
 			t.Fatal(err)
 		}
@@ -123,4 +114,31 @@ func TestManualNativeBackgroundRunBoundary(t *testing.T) {
 	if calls.Load() != 4 {
 		t.Fatal("native run changed its expected provider operations")
 	}
+	second := domain.NewID()
+	if _, err := s.SendInput(ctx, second, "Continue only after the original native run is idle.", ContinueSuccessfulRun); err != nil {
+		t.Fatal(err)
+	}
+	var secondFinished bool
+	for {
+		observation, err := s.Next(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if observation.Kind == ContinuationInitialized || observation.Kind == ContinuationFinished {
+			t.Fatal("historical task notification created another automatic turn")
+		}
+		if observation.Kind == InputFinished {
+			if observation.InputID != second || !observation.Result.Successful() {
+				t.Fatal("next input borrowed earlier native result")
+			}
+			secondFinished = true
+		}
+		if observation.Kind == RunStateObserved && observation.Run.State == RunIdle {
+			break
+		}
+	}
+	if !secondFinished || calls.Load() != 5 {
+		t.Fatal("second input did not complete exactly once")
+	}
+
 }
