@@ -1,0 +1,204 @@
+name: Release React Forge
+
+on:
+  push:
+    tags: ["react-forge@v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact source version without v prefix
+        required: true
+      dry_run:
+        description: Build and validate without publication
+        type: choice
+        options: ["true", "false"]
+        default: "true"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-react-forge
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.source.outputs.version }}
+      revision: ${{ steps.source.outputs.revision }}
+      dry_run: ${{ steps.source.outputs.dry_run }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: Validate exact source and release identity
+        id: source
+        env:
+          RELEASE_PROJECT: react-forge
+          REQUESTED_VERSION: ${{ inputs.version }}
+          REQUESTED_DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          node scripts/release/project.mjs source
+          revision=$(git rev-parse HEAD)
+          test "$revision" = "$GITHUB_SHA"
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prepare
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { id: darwin-x64, runner: macos-15-intel, architecture: x64, target: x86_64-apple-darwin }
+          - { id: darwin-arm64, runner: macos-15, architecture: arm64, target: aarch64-apple-darwin }
+          - { id: linux-x64-gnu, runner: ubuntu-22.04, architecture: x64, target: x86_64-unknown-linux-gnu }
+          - { id: linux-arm64-gnu, runner: ubuntu-22.04-arm, architecture: arm64, target: aarch64-unknown-linux-gnu }
+          - { id: win32-x64-msvc, runner: windows-2022, architecture: x64, target: x86_64-pc-windows-msvc }
+          - { id: win32-arm64-msvc, runner: windows-11-arm, architecture: arm64, target: aarch64-pc-windows-msvc }
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target/react-forge
+      REACT_FORGE_NATIVE_PROFILE: release
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.revision }}
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          architecture: ${{ matrix.architecture }}
+          package-manager-cache: false
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: nightly-2026-01-01
+          targets: ${{ matrix.target }}
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Install Linux font dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libfontconfig1-dev fonts-noto-core fonts-noto-cjk fonts-noto-color-emoji
+      - name: Register Windows test font
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./packages/react-forge/scripts/install-ci-fonts.ps1
+      - name: Build and validate native engines
+        run: |
+          cargo test --locked --target ${{ matrix.target }} -p react-forge-node -p forge-package -p forge-document -p forge-docx -p forge-xlsx -p forge-pdf -p forge-figma -p forge-tree-doc -p forge-pptx -p delino-forge
+          pnpm --filter @delino/react-forge build
+          pnpm --filter @delino/react-forge test
+      - name: Verify Windows console cancellation
+        if: runner.os == 'Windows'
+        env:
+          REACT_FORGE_WINDOWS_CONSOLE_TEST: "1"
+        run: cargo test --locked --target ${{ matrix.target }} -p react-forge-node --test windows_console -- --nocapture
+      - name: Pack and run the installed public distribution
+        run: |
+          node packages/react-forge/scripts/package.mjs main
+          node packages/react-forge/scripts/package.mjs native
+          node packages/react-forge/scripts/install-smoke.mjs
+      - uses: actions/upload-artifact@v7
+        with:
+          name: react-forge-native-${{ matrix.id }}
+          path: packages/react-forge/dist/release/tarballs/delino-react-forge-${{ matrix.id }}-${{ needs.prepare.outputs.version }}.tgz
+          if-no-files-found: error
+          retention-days: 30
+      - name: Remove generated package output
+        if: always()
+        run: rm -rf packages/react-forge/dist
+
+  package:
+    needs: [prepare, build]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.revision }}
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm --filter @delino/react-forge exec tsc -p tsconfig.json
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: react-forge-native-*
+          path: packages/react-forge/dist/release/tarballs
+          merge-multiple: true
+      - name: Assemble and inspect the exact seven-package set
+        run: |
+          node packages/react-forge/scripts/package.mjs main
+          node packages/react-forge/scripts/package.mjs verify
+          node packages/react-forge/scripts/publish.mjs
+      - uses: actions/upload-artifact@v7
+        with:
+          name: react-forge-complete-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.revision }}
+          path: packages/react-forge/dist/release/tarballs/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Remove generated package output
+        if: always()
+        run: rm -rf packages/react-forge/dist
+
+  publish-npm:
+    needs: [prepare, package]
+    if: needs.prepare.outputs.dry_run == 'false' && github.repository == 'delinoio/oss' && startsWith(github.ref, 'refs/tags/react-forge@v')
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.revision }}
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+      - run: npm install --global npm@11.15.0 --ignore-scripts --no-audit --no-fund
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm --filter @delino/react-forge exec tsc -p tsconfig.json
+      - uses: actions/download-artifact@v8
+        with:
+          name: react-forge-complete-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.revision }}
+          path: packages/react-forge/dist/release/tarballs
+      - name: Verify and publish immutable npm artifacts
+        run: node packages/react-forge/scripts/publish.mjs --publish
+
+  summary:
+    if: always()
+    needs: [prepare, build, package, publish-npm]
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Report release result
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          node <<'JS'
+          const fs = require('node:fs');
+          const jobs = JSON.parse(process.env.RESULTS);
+          const lines = ['## React Forge release', '', `Version: ${jobs.prepare.outputs?.version || 'unresolved'}`, `Commit: ${jobs.prepare.outputs?.revision || 'unresolved'}`, '', '| Phase | Result |', '| --- | --- |', ...Object.entries(jobs).map(([name, value]) => `| ${name} | ${value.result} |`), ''];
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join('\n') + '\n');
+          JS

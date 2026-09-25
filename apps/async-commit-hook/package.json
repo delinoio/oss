@@ -2,6 +2,7 @@
   "name": "async-commit-hook",
   "version": "0.1.1",
   "private": true,
+  "license": "Apache-2.0",
   "type": "module",
   "scripts": {
     "dev": "pnpm --filter @delinoio/async-commit-hook-api-client build && node scripts/development.mjs",

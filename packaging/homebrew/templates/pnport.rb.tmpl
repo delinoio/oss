@@ -2,7 +2,7 @@ class Pnport < Formula
   desc "Run subprocesses through an installed Yarn Plug'n'Play filesystem"
   homepage "https://oss.delino.io/pnport"
   version "__VERSION__"
-  license "MIT"
+  license "Apache-2.0"
 
   on_macos do
     if Hardware::CPU.intel?
@@ -28,6 +28,8 @@ class Pnport < Formula
 
   def install
     bin.install "pnport"
+    prefix.install "LICENSE"
+    prefix.install "LICENSE.fspy"
     if OS.mac?
       bin.install "libpnport_preload.dylib"
     else

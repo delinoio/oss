@@ -1,0 +1,16 @@
+[package]
+name = "fspy_nostd_alloc"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[lib]
+doctest = false
+
+[dependencies]
+allocator-api2 = { workspace = true, features = ["alloc"] }
+bump-scope = { workspace = true, features = ["allocator-api2-02"] }
+fspy_nostd = { workspace = true }
+
+[lints]
+workspace = true

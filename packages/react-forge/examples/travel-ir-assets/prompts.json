@@ -1,0 +1,18 @@
+{
+  "generator": "Built-in image_gen tool",
+  "generatedOn": "2026-09-24",
+  "assets": [
+    {
+      "file": "coast.png",
+      "prompt": "Use case: photorealistic-natural. Asset type: portrait editorial photograph for an English investor pitch for fictional travel app ROAM. Show a beautiful sunlit Mediterranean coastal village with warm terracotta roofs, cream plaster architecture, deep cobalt blue sea, a winding coastal walkway and lush small greenery. View from a quiet terrace, human-scale discovery, no identifiable people. Tall portrait 2:3 composition with the scene filling every edge, striking diagonal coastline, sophisticated premium travel magazine photography, natural texture, warm late afternoon light, realistic color, no excessive HDR. No text, labels, logos, borders, watermarks, collage or graphic overlays. This is an original concept travel scene, not an exact documented destination."
+    },
+    {
+      "file": "product.png",
+      "prompt": "Use case: ui-mockup. Asset type: single polished straight-on smartphone product concept for fictional travel app ROAM in an investor deck. Portrait 2:3 image. Show one black modern slim smartphone centered upright fully visible from top to bottom on a perfectly flat warm ivory background #F5F1E8; subtle realistic shadow only. Screen UI must be elegant high-fidelity and readable, off-white with deep navy typography, cobalt blue controls. At top wordmark \"ROAM\". Main screen title \"Lisbon weekend\". Smaller line \"3 days · 2 travelers\". Top half has a beautiful original photo of a sunny terracotta city and blue sea. Below a clean tab row \"Day 1   Day 2   Day 3\", with Day 1 selected. Two itinerary rows clearly reading \"09:00  Coffee in Alfama\" and \"11:00  Explore the waterfront\", small refined thumbnails. Bottom blue full-width button \"Share trip\". Keep the screen minimal, aligned, credible, correct English spelling. No extraneous text. No hands, no perspective tilt, no floating panels, no other devices. This is a proposed interface, no actual existing app branding."
+    },
+    {
+      "file": "horizon.png",
+      "prompt": "Use case: photorealistic-natural. Asset type: landscape editorial travel photograph for a fictional travel app investor pitch. Aspect ratio 16:9, photograph fills the entire image. View looking out through an open train window over a turquoise lake and distant Alpine mountains on a beautiful clear morning. Window frame visible only subtly at left edge and bottom, no people or text, sense of freedom and possibility. Strong photographic composition, sunlit natural texture, pale sky top third, rich cobalt and aqua lake, muted warm wood at lower edge, high-end travel magazine realism. No logos, graphics, lettering, captions, watermarks. An original concept scene, not a claim of an actual destination."
+    }
+  ]
+}

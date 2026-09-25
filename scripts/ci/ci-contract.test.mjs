@@ -26,7 +26,7 @@ const devhudTauri = JSON.parse(readFileSync(`${root}/apps/devhud/src-tauri/tauri
 
 const legacyJobs = [
   "go-quality", "go-test", "repository-environment", "rust-fmt", "rust-clippy", "rust-test",
-  "linux-packages", "node-public-docs-test", "node-clibox-test", "node-pnport-test", "pnport-native",
+  "forge-test", "forge-render", "react-forge", "linux-packages", "node-public-docs-test", "node-clibox-test", "node-pnport-test", "pnport-native",
 ];
 const devhudJobs = [
   "devhud-frontend", "devhud-extension", "devhud-rust-conformance", "devhud-security", "devhud-desktop",
@@ -410,4 +410,40 @@ test("local CI commands are documented by repository contracts", () => {
 
 test("native Go integration retains an explicit bounded package watchdog", () => {
   assert.equal(namedStep(workflow.jobs["go-test"], "Run go test").run, "go test -timeout=20m ./...");
+});
+
+
+test("Forge retains three-platform interoperability and mandatory Linux rendering", () => {
+  assert.deepEqual(workflow.jobs["forge-test"].strategy.matrix.os, ["ubuntu-latest", "macos-latest", "windows-latest"]);
+  const testCommands = workflow.jobs["forge-test"].steps.map(({ run }) => run ?? "").join("\n");
+  assert.match(testCommands, /cargo test -p forge-tree-doc -p forge-pptx -p delino-forge/u);
+  const renderCommands = workflow.jobs["forge-render"].steps.map(({ run }) => run ?? "").join("\n");
+  assert.match(renderCommands, /libreoffice-impress poppler-utils/u);
+  assert.match(renderCommands, /--test render -- --ignored/u);
+});
+
+
+test("React Forge validates its supported runtime with uncached native and rendering work", () => {
+  const job = workflow.jobs["react-forge"];
+  assert.equal(job["runs-on"], "${{ matrix.runner }}");
+  assert.equal(job.strategy["fail-fast"], false);
+  const platforms = JSON.parse(readFileSync(`${root}/packages/react-forge/src/native-platforms.json`, "utf8"));
+  assert.deepEqual(job.strategy.matrix.include.map(({ id }) => id), platforms.map(({ id }) => id));
+  for (const host of job.strategy.matrix.include) {
+    const declared = platforms.find(({ id }) => id === host.id);
+    assert.equal(host.platform, declared.platform);
+    assert.equal(host.architecture, declared.architecture);
+    assert.equal(host.target, declared.target);
+  }
+  assert.match(namedStep(job, "Verify Windows console cancellation").run, /windows_console/u);
+  assert.match(namedStep(job, "Generate travel investor example").run, /examples\/travel-ir\.tsx/u);
+  assert.match(namedStep(job, "Verify supported host and native contracts").run, /--include-ignored/u);
+  const commands = job.steps.map(({ run }) => run ?? "").join("\n");
+  for (const command of ["forge-package", "forge-document", "forge-docx", "forge-xlsx", "forge-pdf", "react-forge-node", "turbo run build typecheck lint test --filter=@delino/react-forge", "test:render", "benchmark", "render-requirements.txt"]) assert.ok(commands.includes(command), command);
+  assert.equal(namedStep(job, "Remove generated package output").if, "always()");
+  const evidence = namedStep(job, "Retain rendering and benchmark evidence");
+  assert.equal(evidence.with["retention-days"], 7);
+  assert.equal(evidence.if, "always()");
+  const tasks = JSON.parse(readFileSync(`${root}/packages/react-forge/turbo.json`, "utf8")).tasks;
+  for (const name of ["build", "test", "test:render", "benchmark"]) assert.equal(tasks[name].cache, false, name);
 });

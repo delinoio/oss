@@ -2,25 +2,33 @@ use std::{
     io::Read,
     process::{Child, Command, ExitStatus, Stdio},
     sync::{
-        atomic::{AtomicI32, Ordering},
+        atomic::{AtomicI32, AtomicUsize, Ordering},
         mpsc,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use crate::error::{Code, Failure, Result};
 
 static SIGNAL: AtomicI32 = AtomicI32::new(0);
+static CANCELLATION_GENERATION: AtomicUsize = AtomicUsize::new(0);
+#[cfg(unix)]
+static TERMINAL_INTERRUPT_ACK_DESCRIPTOR: AtomicI32 = AtomicI32::new(-1);
 pub const POLL: Duration = Duration::from_millis(20);
 
 pub fn install_signals() -> Result<()> {
     #[cfg(unix)]
     for signal in [libc::SIGINT, libc::SIGTERM, libc::SIGHUP, libc::SIGQUIT] {
-        // Only an atomic store runs in the signal handler. Blocking work stays in the
-        // command loop.
+        // Signal handlers only update atomics and, for a terminal SIGINT,
+        // acknowledge the installed launcher through its private pipe.
+        // Blocking work stays in the command loop.
         unsafe {
-            signal_hook::low_level::register(signal, move || {
+            signal_hook_registry::register_sigaction(signal, move |info| {
                 SIGNAL.store(signal, Ordering::SeqCst);
+                CANCELLATION_GENERATION.fetch_add(1, Ordering::SeqCst);
+                if signal == libc::SIGINT {
+                    acknowledge_terminal_interrupt(info);
+                }
             })
         }
         .map_err(|e| Failure::io(&e))?;
@@ -34,6 +42,7 @@ pub fn install_signals() -> Result<()> {
                 CTRL_BREAK_EVENT => SIGNAL.store(21, Ordering::SeqCst),
                 _ => return 0,
             }
+            CANCELLATION_GENERATION.fetch_add(1, Ordering::SeqCst);
             1
         }
         if SetConsoleCtrlHandler(Some(handler), 1) == 0 {
@@ -43,8 +52,77 @@ pub fn install_signals() -> Result<()> {
     Ok(())
 }
 
+#[cfg(unix)]
+pub fn configure_terminal_interrupt_acknowledgement(descriptor: Option<libc::c_int>) -> Result<()> {
+    let descriptor = match descriptor.filter(|descriptor| *descriptor >= 3) {
+        Some(descriptor) => match close_on_exec(descriptor) {
+            Ok(()) => descriptor,
+            // A user-controlled environment can name an absent descriptor.
+            // Treat it as no launcher acknowledgement instead of changing
+            // workload behavior; an installed launcher's pipe is open here.
+            Err(error) if error.raw_os_error() == Some(libc::EBADF) => -1,
+            Err(error) => return Err(Failure::io(&error)),
+        },
+        None => -1,
+    };
+    TERMINAL_INTERRUPT_ACK_DESCRIPTOR.store(descriptor, Ordering::SeqCst);
+    Ok(())
+}
+
+#[cfg(unix)]
+pub fn configure_installed_terminal_interrupt_acknowledgement() -> Result<()> {
+    const ACKNOWLEDGEMENT_DESCRIPTOR: &str = "CLIBOX_TERMINAL_INTERRUPT_ACK_FD";
+
+    let value = std::env::var(ACKNOWLEDGEMENT_DESCRIPTOR).ok();
+    let descriptor = installed_terminal_interrupt_acknowledgement_descriptor(value.as_deref());
+    configure_terminal_interrupt_acknowledgement(descriptor)
+}
+
+#[cfg(unix)]
+fn installed_terminal_interrupt_acknowledgement_descriptor(
+    value: Option<&str>,
+) -> Option<libc::c_int> {
+    value
+        .and_then(|value| value.parse().ok())
+        .filter(|descriptor| *descriptor == 3)
+}
+
+#[cfg(unix)]
+fn close_on_exec(descriptor: libc::c_int) -> std::io::Result<()> {
+    let flags = unsafe { libc::fcntl(descriptor, libc::F_GETFD) };
+    if flags == -1 {
+        return Err(std::io::Error::last_os_error());
+    }
+    if unsafe { libc::fcntl(descriptor, libc::F_SETFD, flags | libc::FD_CLOEXEC) } == -1 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn acknowledge_terminal_interrupt(info: &libc::siginfo_t) {
+    let descriptor = TERMINAL_INTERRUPT_ACK_DESCRIPTOR.load(Ordering::SeqCst);
+    // Terminal-generated signals have no sending process. An explicit signal
+    // to the launcher has a sender PID and must keep its normal forwarding
+    // behavior.
+    if descriptor >= 3 && unsafe { info.si_pid() } == 0 {
+        let acknowledgement = [1u8];
+        unsafe {
+            let _ = libc::write(
+                descriptor,
+                acknowledgement.as_ptr().cast(),
+                acknowledgement.len(),
+            );
+        }
+    }
+}
+
 pub fn cancelled() -> bool {
     SIGNAL.load(Ordering::SeqCst) != 0
+}
+
+pub fn cancellation_generation() -> usize {
+    CANCELLATION_GENERATION.load(Ordering::SeqCst)
 }
 pub fn check_cancelled() -> Result<()> {
     if cancelled() {
@@ -136,13 +214,37 @@ pub fn delegated(mut command: Command) -> Result<ExitStatus> {
 pub fn interruptible<T: Send + 'static>(
     work: impl FnOnce() -> Result<T> + Send + 'static,
 ) -> Result<T> {
+    interruptible_until(None, work)
+}
+
+/// Block on cancellable OS work until an optional monotonic deadline. The
+/// worker can outlive the caller when the operating system does not provide a
+/// cancellation primitive, so callers must not let its result create side
+/// effects after the boundary has elapsed.
+pub fn interruptible_until<T: Send + 'static>(
+    deadline: Option<Instant>,
+    work: impl FnOnce() -> Result<T> + Send + 'static,
+) -> Result<T> {
     let (tx, rx) = mpsc::sync_channel(1);
     std::thread::spawn(move || {
         let _ = tx.send(work());
     });
     loop {
         check_cancelled()?;
-        match rx.recv_timeout(POLL) {
+        let timeout = match deadline {
+            Some(deadline) => {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                if remaining.is_zero() {
+                    return Err(Failure::new(
+                        Code::TerminationTimeout,
+                        "Execution time limit expired while preparing the child command.",
+                    ));
+                }
+                POLL.min(remaining)
+            }
+            None => POLL,
+        };
+        match rx.recv_timeout(timeout) {
             Ok(result) => return result,
             Err(mpsc::RecvTimeoutError::Timeout) => (),
             Err(_) => {
@@ -220,5 +322,63 @@ pub fn wait_child(child: &mut Child, kill_on_cancel: bool) -> Result<ExitStatus>
             return Ok(status);
         }
         std::thread::sleep(POLL);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn installed_terminal_acknowledgement_accepts_only_the_launcher_descriptor() {
+        assert_eq!(
+            installed_terminal_interrupt_acknowledgement_descriptor(Some("3")),
+            Some(3)
+        );
+        for value in [None, Some("2"), Some("4"), Some("not-a-descriptor")] {
+            assert_eq!(
+                installed_terminal_interrupt_acknowledgement_descriptor(value),
+                None
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn terminal_interrupt_acknowledgement_does_not_cross_exec() {
+        let mut pipe = [-1; 2];
+        assert_eq!(unsafe { libc::pipe(pipe.as_mut_ptr()) }, 0);
+
+        configure_terminal_interrupt_acknowledgement(Some(pipe[1])).unwrap();
+
+        let flags = unsafe { libc::fcntl(pipe[1], libc::F_GETFD) };
+        assert_ne!(flags, -1);
+        assert_ne!(flags & libc::FD_CLOEXEC, 0);
+
+        configure_terminal_interrupt_acknowledgement(None).unwrap();
+        unsafe {
+            libc::close(pipe[0]);
+            libc::close(pipe[1]);
+        }
+    }
+
+    #[test]
+    fn interruptible_work_stops_waiting_at_its_deadline() {
+        let (release, blocked_work) = mpsc::sync_channel(0);
+        let deadline = Instant::now()
+            .checked_add(Duration::from_millis(1))
+            .unwrap();
+
+        let error = match interruptible_until(Some(deadline), move || {
+            let _ = blocked_work.recv();
+            Ok(())
+        }) {
+            Ok(()) => panic!("blocked work must not outlive its deadline"),
+            Err(error) => error,
+        };
+
+        assert_eq!(error.code, Code::TerminationTimeout);
+        release.send(()).unwrap();
     }
 }

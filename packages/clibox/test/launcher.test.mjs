@@ -11,6 +11,7 @@ import { packageRoot } from "../scripts/common.mjs";
 
 const { targets, Platform, Architecture, Libc, selectTarget } = platforms;
 const { Failure, resolveBinary, launch } = launcher;
+const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 function fixture(t) {
   const directory = realpathSync(mkdtempSync(path.join(tmpdir(), "clibox launcher ")));
@@ -57,10 +58,12 @@ test("launch preserves literal argv, stdio, status and forwards signals without 
   const received = [];
   child.kill = (signal) => received.push(signal);
   const args = ["space argument", "$(not-a-command)", "--", "한글"];
-  const result = launch("/a path/clibox", args, { parent, spawnChild: (file, actualArgs, options) => {
+  const result = launch("/a path/clibox", args, { platform: Platform.Linux, parent, spawnChild: (file, actualArgs, options) => {
     assert.equal(file, "/a path/clibox");
     assert.equal(actualArgs, args);
-    assert.deepEqual(options, { stdio: "inherit", shell: false });
+    assert.deepEqual(options.stdio, ["inherit", "inherit", "inherit", "pipe"]);
+    assert.equal(options.shell, false);
+    assert.equal(options.env.CLIBOX_TERMINAL_INTERRUPT_ACK_FD, "3");
     return child;
   } });
   parent.emit("SIGTERM");
@@ -111,7 +114,49 @@ test("Unix launchers continue forwarding SIGINT, SIGTERM and SIGHUP", async () =
   child.kill = (signal) => received.push(signal);
   const result = launch("clibox", [], { platform: Platform.Linux, parent, spawnChild: () => child });
   for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) parent.emit(signal);
-  assert.deepEqual(received, ["SIGINT", "SIGTERM", "SIGHUP"]);
+  await delay(20);
+  assert.deepEqual(received.sort(), ["SIGINT", "SIGTERM", "SIGHUP"].sort());
+  child.emit("exit", null, "SIGTERM");
+  assert.deepEqual(await result, { code: null, signal: "SIGTERM" });
+  assert.equal(parent.eventNames().length, 0);
+});
+
+test("Unix launchers do not forward a terminal SIGINT acknowledged by the native child", async () => {
+  const parent = new EventEmitter();
+  const child = new EventEmitter();
+  const acknowledgement = new EventEmitter();
+  child.stdio = [null, null, null, acknowledgement];
+  child.exitCode = null;
+  child.signalCode = null;
+  const received = [];
+  child.kill = (signal) => received.push(signal);
+  const result = launch("clibox", [], { platform: Platform.Linux, parent, spawnChild: () => child });
+
+  parent.emit("SIGINT");
+  acknowledgement.emit("data", Buffer.from([1]));
+  await delay(20);
+  assert.deepEqual(received, []);
+
+  parent.emit("SIGINT");
+  await delay(20);
+  assert.deepEqual(received, ["SIGINT"]);
+  child.emit("exit", null, "SIGTERM");
+  assert.deepEqual(await result, { code: null, signal: "SIGTERM" });
+  assert.equal(parent.eventNames().length, 0);
+});
+
+test("Unix launchers forward SIGINT despite TTY stdin", async () => {
+  const parent = new EventEmitter();
+  parent.stdin = { isTTY: true };
+  const child = new EventEmitter();
+  child.exitCode = null;
+  child.signalCode = null;
+  const received = [];
+  child.kill = (signal) => received.push(signal);
+  const result = launch("clibox", [], { platform: Platform.Linux, parent, spawnChild: () => child });
+  for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) parent.emit(signal);
+  await delay(20);
+  assert.deepEqual(received.sort(), ["SIGINT", "SIGTERM", "SIGHUP"].sort());
   child.emit("exit", null, "SIGTERM");
   assert.deepEqual(await result, { code: null, signal: "SIGTERM" });
   assert.equal(parent.eventNames().length, 0);

@@ -68,6 +68,19 @@ if (mode === "prepare") {
       for (const entitlement of ["allow-dyld-environment-variables", "disable-library-validation"]) {
         assert.match(signature.stdout + signature.stderr, new RegExp(`<key>com\\.apple\\.security\\.cs\\.${entitlement}</key>\\s*<true\\s*/>`));
       }
+    } else if (process.platform === "linux") {
+      const image = readFileSync(native);
+      assert.equal(image.subarray(0, 4).toString("hex"), "7f454c46");
+      assert.equal(image[4], 2, "The compiler must be a 64-bit ELF executable.");
+      assert.equal(image.readUInt16LE(18), process.arch === "arm64" ? 183 : 62);
+      const offset = Number(image.readBigUInt64LE(32));
+      const stride = image.readUInt16LE(54);
+      const count = image.readUInt16LE(56);
+      assert(count > 0 && stride >= 56 && offset + count * stride <= image.length);
+      for (let index = 0; index < count; index++) {
+        assert.notEqual(image.readUInt32LE(offset + index * stride), 3,
+          "Linux conformance must exercise the static syscall backend.");
+      }
     }
     for (const workspace of ["core", "app"]) {
       rmSync(join(root, "packages", workspace, "lib"), { recursive: true, force: true });
@@ -102,7 +115,11 @@ if (mode === "prepare") {
     successful(execute(binary, ["--cache-dir", cache, "cache", "clean"], root));
     samples.push({ format, coldMs, warmMs, nativeSha256: originalDigest });
   }
-  const hostVersion = process.platform === "darwin" ? successful(execute("/usr/bin/sw_vers", ["-productVersion"], directory)).stdout.trim() : osVersion();
+  const hostVersion = process.platform === "darwin"
+    ? successful(execute("/usr/bin/sw_vers", ["-productVersion"], directory)).stdout.trim()
+    : process.platform === "linux"
+      ? readFileSync("/etc/os-release", "utf8").match(/^PRETTY_NAME="?([^"\n]+)"?/m)?.[1]
+      : osVersion();
   const evidence = { event: "pnport_typescript_conformance", compiler, yarn, platform: process.platform, arch: process.arch, osVersion: hostVersion, pnportSha256: sha256(binary), samples };
   writeFileSync(join(directory, "typescript-evidence.json"), JSON.stringify(evidence, null, 2));
   console.log(JSON.stringify(evidence));

@@ -8,11 +8,12 @@ executing JavaScript, resolves dependencies and aliases using pnp 0.12.12, keeps
 peer-specific logical paths, and materializes ZIP content in a private cache.
 It includes `doctor --json` schema v1 and `cache path|list|prune|clean`.
 
-A macOS native C conformance fixture exercises file reads, metadata, directory
-traversal, directory-relative open, mmap, logical realpath, dependency write
-rejection, source writes, literal/empty arguments, inherited protocol stdout and
-posix_spawn with a replacement environment. This evidence is limited to the
-fixture. It is not tool compatibility certification or full filesystem support.
+Native C conformance fixtures exercise file reads, metadata, directory
+traversal, directory-relative open, mmap, dependency write rejection, source
+writes, inherited protocol stdout, and child execution. Linux also has a fully
+static Go fixture and an offline Yarn inline/split suite using Microsoft's
+unchanged native TypeScript compiler. These are development conformance tests,
+not complete tool compatibility certification.
 
 The development command shape is:
 
@@ -34,11 +35,18 @@ environment values, full argv or child output. Owned failures use stable
 `PNPORT_*` codes and exit 125, except missing commands (127), execution failures
 (126), and argument errors (2). Child exit status is preserved.
 
-Current restrictions include incomplete fork/exec/posix_spawnp propagation,
-mutation/handle/watch coverage, detached-descendant recovery and terminal
-job-control certification, and no Linux syscall or Windows Detours backend.
-Linux and Windows execution currently fails explicitly. The macOS backend is a
-development implementation, not the release support contract.
+Linux x64 and arm64 GNU builds use an owned-child seccomp syscall tracer for
+dynamic and static executables. `doctor` checks the host, companion `.so`, and
+actual syscall tracing before running a command. Unsupported kernel or container
+tracing fails with `PNPORT_UNSUPPORTED_OPERATION` and exit 125. Ubuntu 22.04
+arm64 Docker execution passes the native fixtures and offline TypeScript suite;
+the arm64 host's amd64 emulation does not expose the tracing capability, so
+native x64 execution still needs validation. Windows has no Detours backend.
+Current restrictions include incomplete macOS fork/exec/posix_spawnp
+propagation, mutation/handle/watch coverage, complete detached-descendant and
+abrupt-supervisor recovery, and terminal job-control certification. The macOS
+backend is also a development implementation. All six target release gates
+remain open.
 
 Before release, all six native targets must pass the complete filesystem,
 process, installation, privacy and recovery suite. Native/npm packages,

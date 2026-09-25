@@ -1,0 +1,321 @@
+import { FigmaSession, type FigmaOptions } from "./figma/session.js";
+import type { ReactNode } from "react";
+import { v7 } from "uuid";
+import { ForgeError, abortable, checkSignal } from "./errors.js";
+import { digest, publish, withOutputReservation, readSource, type SourceFingerprint } from "./files.js";
+import { processDocument, type NativeOutput } from "./native.js";
+import { pptxModel, pptxNode } from "./pptx-model.js";
+import { pdfModel } from "./pdf-model.js";
+import { xlsxModel, xlsxEdit } from "./xlsx-model.js";
+import type { Address, Range } from "./xlsx.js";
+import { docxModel, docxBlocks } from "./docx-model.js";
+import { RenderRoot, type SerializedNode } from "./renderer.js";
+import { ErrorCode, Format, Stage, limits, type AssetHandle, type AssetSource, type Diagnostic, type Geometry, type NodeHandle } from "./types.js";
+
+type Model = Record<string, unknown>;
+interface ModelNode extends Model { id: string; type: string; children?: ModelNode[] }
+export interface TargetHandle extends NodeHandle { readonly kind: string; readonly editable: boolean; readonly text?: string; readonly sheet?: string; readonly address?: Address; readonly range?: Range }
+interface NativeRegion { id: string; kind: string; target_index: number; part: string; start: number; end: number; text?: string; sheet?: string; address?: Address; range?: Range }
+export interface Inspection { readonly revision: number; readonly targets: readonly TargetHandle[] }
+export interface MountedRegion {
+  render(children: ReactNode): Promise<void>;
+  unmount(): Promise<void>;
+}
+
+export class DocumentSession {
+  readonly documentId = v7();
+  readonly format: Format;
+  private readonly root = new RenderRoot(this.documentId);
+  private readonly disposal = new AbortController();
+  private readonly assets = new Map<string, Buffer>();
+  private readonly fonts = new Set<string>();
+  private readonly pendingAssets = new Set<Promise<AssetHandle>>();
+  private readonly listeners = new Set<(event: Diagnostic) => void>();
+  private readonly targets = new Map<string, TargetHandle>();
+  private readonly regions = new Map<string, NativeRegion>();
+  private readonly mounts = new Map<string, RenderRoot>();
+  private source: Buffer = Buffer.alloc(0);
+  private imported?: Model;
+  private sourceIdentity?: Model;
+  private fingerprint?: SourceFingerprint;
+  private queue: Promise<unknown> = Promise.resolve();
+  private signature = "";
+  private currentRevision = 0;
+  private disposalTask?: Promise<void>;
+  private readonly operations = new Set<Promise<unknown>>();
+
+  constructor(format: Format, private readonly options: { systemFonts?: boolean } = {}) { this.format = format; }
+  get revision(): number { return this.currentRevision; }
+
+  private active() {
+    if (this.disposal.signal.aborted) throw new ForgeError(ErrorCode.Disposed, "The document session is disposed.");
+  }
+
+  private signal(signal?: AbortSignal): AbortSignal {
+    this.active();
+    return signal ? AbortSignal.any([signal, this.disposal.signal]) : this.disposal.signal;
+  }
+
+  private async track<T>(stage: Stage, work: (context: { revision: number }) => Promise<T>): Promise<T> {
+    this.active();
+    const context = { revision: this.revision };
+    const started = performance.now();
+    const operation = work(context);
+    this.operations.add(operation);
+    let code: ErrorCode | undefined;
+    try { return await operation; }
+    catch (error) { code = error instanceof ForgeError ? error.code : ErrorCode.Io; if (error instanceof ForgeError) throw new ForgeError(error.code, error.message, { stage, format: this.format, ...error.context, revision: context.revision }); throw error; }
+    finally {
+      this.operations.delete(operation);
+      const event = Object.freeze({ source: "javascript" as const, stage, format: this.format, revision: context.revision, durationMs: performance.now() - started, code });
+      this.emit(event);
+    }
+  }
+
+  private emit(event: Diagnostic) { for (const listener of this.listeners) { try { listener(event); } catch { /* Observers cannot mutate operation outcomes. */ } } }
+
+  private mutate<T>(work: () => Promise<T>): Promise<T> {
+    this.active();
+    const result = this.queue.then(() => { this.active(); return work(); });
+    this.queue = result.catch(() => {});
+    return result;
+  }
+
+  subscribe(listener: (event: Diagnostic) => void): () => void {
+    this.active(); this.listeners.add(listener); return () => { this.listeners.delete(listener); };
+  }
+
+  render(children: ReactNode): Promise<void> {
+    return this.mutate(() => this.track(Stage.Render, async () => {
+      if (this.imported) throw new ForgeError(ErrorCode.UnsupportedEdit, "Use a mounted region to edit an imported Office document.");
+      await this.root.render(children);
+    }));
+  }
+
+  registerImage(source: AssetSource, options: { signal?: AbortSignal } = {}): Promise<AssetHandle> {
+    return this.registerAsset(source, false, options);
+  }
+
+  registerFont(source: AssetSource, options: { signal?: AbortSignal } = {}): Promise<AssetHandle> {
+    return this.registerAsset(source, true, options);
+  }
+
+  private registerAsset(source: AssetSource, font: boolean, options: { signal?: AbortSignal }): Promise<AssetHandle> {
+    const signal = this.signal(options.signal);
+    const operation = this.track(Stage.Import, async () => {
+      const { bytes } = await readSource(source, limits.imageBytes, signal);
+      checkSignal(signal);
+      const assetId = `sha256:${digest(bytes)}`;
+      let total = bytes.length;
+      for (const [id, value] of this.assets) if (id !== assetId) total += value.length;
+      if (total > limits.officeBytes) throw new ForgeError(ErrorCode.ResourceLimit, "Registered assets exceed 256 MiB.");
+      this.assets.set(assetId, bytes);
+      if (font) this.fonts.add(assetId);
+      return Object.freeze({ assetId, documentId: this.documentId });
+    });
+    this.pendingAssets.add(operation);
+    void operation.finally(() => this.pendingAssets.delete(operation)).catch(() => {});
+    return operation;
+  }
+
+  static async import(format: Format, source: AssetSource, options: { signal?: AbortSignal; systemFonts?: boolean } = {}): Promise<DocumentSession> {
+    const session = new DocumentSession(format, options);
+    try {
+      await session.track(Stage.Import, async () => {
+        const signal = session.signal(options.signal);
+        const input = await readSource(source, limits.officeBytes, signal);
+        const result = await processDocument(format, "inspect", {}, input.bytes, session.assets, session.documentId, 0, signal,
+          { system: options.systemFonts !== false, ids: [] });
+        session.source = result.bytes;
+        session.imported = JSON.parse(result.model) as Model;
+        if (format === Format.Pptx) session.sourceIdentity = (JSON.parse(result.geometry) as { source_identity: Model }).source_identity;
+        session.fingerprint = input.fingerprint;
+        session.collectTargets();
+      });
+      return session;
+    } catch (error) { await session.dispose(); throw error; }
+  }
+
+  private collectTargets() {
+    if (this.format !== Format.Pptx) {
+      for (const region of this.imported?.targets as NativeRegion[] ?? []) {
+        const handle = Object.freeze({ documentId: this.documentId, nodeId: region.id, kind: region.kind, editable: region.kind !== "opaque", text: region.text, sheet: region.sheet, address: region.address ? Object.freeze(region.address) : undefined, range: region.range ? Object.freeze({ first: Object.freeze(region.range.first), last: Object.freeze(region.range.last) }) : undefined });
+        this.targets.set(region.id, handle);
+        this.regions.set(region.id, region);
+      }
+      return;
+    }
+    const visit = (node: ModelNode) => {
+      const handle = Object.freeze({ documentId: this.documentId, nodeId: node.id, kind: node.type, editable: node.type !== "opaque" });
+      this.targets.set(node.id, handle);
+      for (const child of node.children ?? []) visit(child);
+    };
+    for (const slide of (this.imported?.slides ?? []) as { content: ModelNode }[]) visit(slide.content);
+  }
+
+  inspect(): Inspection {
+    this.active();
+    if (!this.imported) {
+      const targets: TargetHandle[] = [];
+      const visit = (node: SerializedNode) => {
+        if (node.type !== "#text") targets.push(Object.freeze({ documentId: this.documentId, nodeId: node.id, kind: node.type.split(":")[1] ?? node.type, editable: false }));
+        node.children.forEach(visit);
+      };
+      this.root.snapshot().forEach(visit);
+      return Object.freeze({ revision: this.revision, targets: Object.freeze(targets) });
+    }
+    return Object.freeze({ revision: this.revision, targets: Object.freeze(Array.from(this.targets.values())) });
+  }
+
+  /** Settle React and assets and pin a revision without generating or publishing a file. */
+  snapshot(options: { signal?: AbortSignal } = {}): Promise<Inspection> {
+    const signal = this.signal(options.signal);
+    return this.track(Stage.Render, async context => {
+      const prepared = await this.prepare(signal);
+      context.revision = prepared.revision;
+      return prepared.inspection;
+    });
+  }
+
+  private findNode(model: Model, id: string): ModelNode | undefined {
+    const visit = (node: ModelNode): ModelNode | undefined => node.id === id ? node : node.children?.map(visit).find(Boolean);
+    return (model.slides as { content: ModelNode }[]).map(slide => visit(slide.content)).find(Boolean);
+  }
+
+  mount(target: TargetHandle, children: ReactNode): Promise<MountedRegion> {
+    return this.mutate(async () => {
+      if (!this.imported || this.targets.get(target.nodeId) !== target || !target.editable) throw new ForgeError(ErrorCode.InvalidTarget, "Target is invalid, opaque, stale or belongs to another document.");
+      const descendants = (node: ModelNode, id: string): boolean => node.id === id || !!node.children?.some(child => descendants(child, id));
+      const selected = this.format === Format.Pptx ? this.findNode(this.imported, target.nodeId)! : undefined;
+      for (const id of this.mounts.keys()) {
+        let overlap: boolean;
+        if (selected) overlap = descendants(selected, id) || descendants(this.findNode(this.imported, id)!, target.nodeId);
+        else {
+          const a = this.regions.get(target.nodeId)!; const b = this.regions.get(id)!;
+          overlap = a.part === b.part && a.start < b.end && b.start < a.end;
+        }
+        if (overlap) throw new ForgeError(ErrorCode.Conflict, "Mounted document regions overlap.");
+      }
+      const root = new RenderRoot(this.documentId);
+      // Register before the first await so dispose can reach an in-flight
+      // mount even if React has not committed it yet.
+      this.mounts.set(target.nodeId, root);
+      try { await root.render(children); this.active(); }
+      catch (error) { this.mounts.delete(target.nodeId); await root.dispose(); throw error; }
+      let unmounted = false;
+      return Object.freeze({
+        render: (next: ReactNode) => this.mutate(async () => {
+          if (unmounted) throw new ForgeError(ErrorCode.InvalidTarget, "Mounted region is no longer active.");
+          await root.render(next);
+        }),
+        unmount: () => this.mutate(async () => {
+          if (unmounted) return;
+          unmounted = true; this.mounts.delete(target.nodeId); await root.dispose();
+        }),
+      });
+    });
+  }
+
+  private async prepare(signal: AbortSignal): Promise<{ model: Model; revision: number; inspection: Inspection; refs: Map<string, string>; assets: Map<string, Buffer>; fontOptions: { system: boolean; ids: string[] } }> {
+    for (;;) {
+      const queue = this.queue;
+      await abortable(queue, signal);
+      await abortable(Promise.all(this.pendingAssets), signal);
+      const roots = this.imported ? Array.from(this.mounts.values()) : [this.root];
+      await Promise.all(roots.map(root => root.settled(signal)));
+      checkSignal(signal);
+      // A root that settled earlier can receive a hook update while another root
+      // is suspended. Recheck all roots synchronously with the snapshot boundary.
+      if (queue === this.queue && this.pendingAssets.size === 0 && roots.every(root => root.isSettled())) break;
+    }
+    const refs = new Map<string, string>();
+    let model: Model;
+    if (this.imported && this.format !== Format.Pptx) {
+      model = { edits: Array.from(this.mounts, ([id, root]) => ({
+        target_index: this.regions.get(id)!.target_index,
+        ...(this.format === Format.Docx ? { blocks: docxBlocks(root.snapshot(), this.documentId) } : { value: xlsxEdit(root.snapshot(), this.regions.get(id)!) }),
+      })) };
+    } else if (this.imported) {
+      const edits = Array.from(this.mounts, ([id, root]) => {
+        const nodes = root.snapshot();
+        if (nodes.length !== 1) throw new ForgeError(ErrorCode.UnsupportedEdit, "A presentation mount must render one replacement node.");
+        refs.set(nodes[0]!.id, id);
+        return { target: id, replacement: pptxNode(nodes[0]!, this.documentId) };
+      });
+      // Untouched source content stays in the bounded Office package. Only
+      // authored replacements cross the native React-tree input boundary.
+      model = { edits, source_identity: this.sourceIdentity,
+        assets: Object.fromEntries(Array.from(this.assets.keys(), id => [id, { handle: id }])) };
+
+    } else {
+      if (this.format === Format.Pptx) model = pptxModel(this.root.snapshot(), this.documentId, this.assets);
+      else if (this.format === Format.Docx) model = docxModel(this.root.snapshot(), this.documentId);
+      else if (this.format === Format.Xlsx) model = xlsxModel(this.root.snapshot(), this.documentId);
+      else if (this.format === Format.Pdf) model = pdfModel(this.root.snapshot(), this.documentId);
+      else throw new ForgeError(ErrorCode.UnsupportedPackage, "This format is not connected to the native adapter yet.");
+    }
+    const json = JSON.stringify(model);
+    if (Buffer.byteLength(json) > limits.treeBytes && !this.imported) throw new ForgeError(ErrorCode.ResourceLimit, "New document model exceeds 16 MiB.");
+    const assets = new Map(this.assets);
+    const fontOptions = { system: this.options.systemFonts !== false, ids: Array.from(this.fonts) };
+    const signature = JSON.stringify({ model, fontOptions });
+    if (signature !== this.signature) { this.signature = signature; this.currentRevision++; }
+    return { model, revision: this.revision, inspection: this.inspect(), refs, assets, fontOptions };
+  }
+
+  private async process(signal: AbortSignal, context: { revision: number }): Promise<NativeOutput & { revision: number; refs: Map<string, string> }> {
+    const { model, revision, refs, assets, fontOptions } = await this.prepare(signal);
+    context.revision = revision;
+    const output = await processDocument(this.format, this.imported ? "update" : "generate", model,
+      this.source, assets, this.documentId, revision, signal, fontOptions, event => this.emit(event));
+    return { ...output, revision, refs };
+  }
+
+  exportBuffer(options: { signal?: AbortSignal } = {}): Promise<Buffer> {
+    const signal = this.signal(options.signal);
+    return this.track(Stage.Export, async context => (await this.process(signal, context)).bytes);
+  }
+
+  exportFile(path: string, options: { overwrite?: boolean; signal?: AbortSignal } = {}): Promise<{ published: true; revision: number }> {
+    const signal = this.signal(options.signal);
+    return this.track(Stage.Export, context => withOutputReservation(path, signal, async destination => {
+      const result = await this.process(signal, context);
+      await publish(result.bytes, destination, { ...options, signal, source: this.fingerprint });
+      return { published: true as const, revision: result.revision };
+    }));
+  }
+
+  measure(handle: NodeHandle, options: { revision: number; signal?: AbortSignal }): Promise<Geometry> {
+    const signal = this.signal(options.signal);
+    return this.track(Stage.Layout, async context => {
+      if (handle.documentId !== this.documentId) throw new ForgeError(ErrorCode.InvalidTarget, "Node belongs to a different document.");
+      const result = await this.process(signal, context);
+      if (options.revision !== result.revision) throw new ForgeError(ErrorCode.Conflict, "Requested geometry revision is stale.");
+      const geometry = JSON.parse(result.geometry) as { nodes: Record<string, { frame: Omit<Geometry, "revision"> }> };
+      const node = geometry.nodes[result.refs.get(handle.nodeId) ?? handle.nodeId];
+      if (!node) throw new ForgeError(ErrorCode.InvalidTarget, "Node is absent from this revision.");
+      const { coordinate_space, ...frame } = node.frame as Omit<Geometry, "revision"> & { coordinate_space?: Geometry["coordinateSpace"] };
+      return Object.freeze({ ...frame, coordinateSpace: coordinate_space ?? "page", revision: result.revision });
+    });
+  }
+
+  dispose(): Promise<void> {
+    if (this.disposalTask) return this.disposalTask;
+    this.disposal.abort();
+    this.disposalTask = (async () => {
+      await Promise.all([this.root.dispose(), ...Array.from(this.mounts.values(), root => root.dispose())]);
+      await this.queue;
+      await Promise.allSettled(this.operations);
+      this.mounts.clear(); this.assets.clear(); this.fonts.clear(); this.listeners.clear(); this.targets.clear(); this.regions.clear();
+      this.source = Buffer.alloc(0); this.imported = undefined; this.sourceIdentity = undefined;
+    })();
+    return this.disposalTask;
+  }
+}
+
+export function createSession(format: Format.Figma, options: FigmaOptions): FigmaSession;
+export function createSession(format: Exclude<Format, Format.Figma>, options?: { systemFonts?: boolean }): DocumentSession;
+export function createSession(format: Format, options: FigmaOptions & {systemFonts?: boolean} = {}): DocumentSession | FigmaSession {
+  return format === Format.Figma ? new FigmaSession(options) : new DocumentSession(format, options);
+}
+export const importOffice = DocumentSession.import;

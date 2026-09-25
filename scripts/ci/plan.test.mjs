@@ -11,6 +11,16 @@ const native = Object.entries(jobPaths).filter(([, rule]) => rule.native).map(([
 const devhudNative = ["devhud-desktop", "devhud-ios-simulator", "devhud-android-emulator"];
 const selected = (event, paths) => Object.entries(planJobs(event, paths).jobs).filter(([, run]) => run).map(([id]) => id);
 
+test("root Rust toolchain changes select Forge validation and rendering", () => {
+  for (const event of [Event.PullRequest, Event.Push]) {
+    for (const path of ["rust-toolchain", "rust-toolchain.toml"]) {
+      for (const id of ["forge-test", "forge-render"]) {
+        assert.equal(planJobs(event, [path]).jobs[id], true, `${event}: ${path}: ${id}`);
+      }
+    }
+  }
+});
+
 test("PR never allocates native package jobs, including changes to CI itself", () => {
   for (const path of ["apps/devhud/src/App.tsx", "apps/devhud/src-tauri/src/main.rs", "Cargo.lock", ".github/workflows/CI.yml", "scripts/ci/plan.mjs", ".github/actions/setup-ci-node/action.yml"]) {
     const jobs = selected(Event.PullRequest, [path]);
@@ -270,4 +280,15 @@ test("aggregate accepts only success and skips explicitly authorized by the plan
   const unexpected = results(Event.PullRequest, []);
   unexpected["devhud-desktop"].result = "success";
   assert.throws(() => validateResults(unexpected), /expected skipped/u);
+});
+
+
+test("React Forge runs on affected PRs and main, with shared package regression coverage", () => {
+  for (const event of [Event.PullRequest, Event.Push]) {
+    for (const path of ["packages/react-forge/src/session.ts", "crates/react-forge-node/src/lib.rs", "crates/forge-pdf/src/lib.rs", "rust-toolchain", "pnpm-lock.yaml", "docs/packages-react-forge-contract.md"]) {
+      assert.equal(planJobs(event, [path]).jobs["react-forge"], true, path);
+    }
+    for (const id of ["react-forge", "forge-test", "forge-render"]) assert.equal(planJobs(event, ["crates/forge-package/src/lib.rs"]).jobs[id], true, id);
+    assert.equal(planJobs(event, ["docs/project-with-watch.md"]).jobs["react-forge"], false);
+  }
 });

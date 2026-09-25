@@ -5,7 +5,7 @@ const { targets } = require("../src/platforms.cjs");
 function identity(version, revision) {
   if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version)) throw new Error("Invalid exact stable version");
   if (!/^[0-9a-f]{40}$/.test(revision)) throw new Error("A complete source revision is required");
-  return { version, gitHead: revision, license: "MIT", engines: { node: ">=22" }, repository: { type: "git", url: "git+https://github.com/delinoio/oss.git" } };
+  return { version, gitHead: revision, license: "Apache-2.0", engines: { node: ">=22" }, repository: { type: "git", url: "git+https://github.com/delinoio/oss.git" } };
 }
 
 export function launcherManifest(version, revision) {

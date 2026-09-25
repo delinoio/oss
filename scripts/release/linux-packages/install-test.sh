@@ -13,10 +13,7 @@ mkdir -p /root/.config/delino-package-test
 printf 'preserve\n' > /root/.config/delino-package-test/sentinel
 verify_license() {
   local license_file="/usr/share/doc/$project/copyright"
-  case "$project" in
-    derun|runmoor) grep -F 'TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION' "$license_file" ;;
-    *) grep -F 'Permission is hereby granted, free of charge' "$license_file" ;;
-  esac
+  grep -F 'TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION' "$license_file"
 }
 if command -v apt-get >/dev/null; then
   export DEBIAN_FRONTEND=noninteractive

@@ -1,0 +1,4 @@
+# Test-only structural/raster verification. Never production runtime dependencies.
+lxml==6.1.1
+Pillow==12.3.0
+pypdf==6.10.0

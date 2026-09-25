@@ -1,0 +1,231 @@
+{
+  "schemaVersion": 1,
+  "versions": {
+    "node": "v24.20.0",
+    "libreOffice": "LibreOffice 26.8.0.3 bce0998afefdbc355585ca324285661a2170ba77",
+    "poppler": "pdftoppm version 26.05.0",
+    "python": "Python 3.12.14",
+    "pypdf": "6.10.0",
+    "Pillow": "12.3.0",
+    "lxml": "6.1.1"
+  },
+  "cases": [
+    {
+      "name": "created-pptx",
+      "format": "pptx",
+      "edited": false,
+      "pages": 1,
+      "raster": [
+        {
+          "file": "page-1.png",
+          "width": 1050,
+          "height": 591,
+          "nonwhiteRatio": 0.067751,
+          "coloredPixels": 25439,
+          "sha256": "f71a4c01fff1fb551aba519c4ae1ccca20095c75a9b442fa7c06ed956efb4d32"
+        }
+      ],
+      "textExtraction": "passed",
+      "packageXml": "passed"
+    },
+    {
+      "name": "edited-pptx",
+      "format": "pptx",
+      "edited": true,
+      "sourcePagination": "preserved, including source blank pages",
+      "pages": 1,
+      "raster": [
+        {
+          "file": "page-1.png",
+          "width": 1050,
+          "height": 591,
+          "nonwhiteRatio": 0.197522,
+          "coloredPixels": 74609,
+          "sha256": "e84a14f5c077db4d3fb6b9057de26139a88550ff0aa0c9328741687d6ec033a4"
+        }
+      ],
+      "textExtraction": "passed",
+      "packageXml": "passed"
+    },
+    {
+      "name": "created-docx",
+      "format": "docx",
+      "edited": false,
+      "pages": 2,
+      "raster": [
+        {
+          "file": "page-1.png",
+          "width": 812,
+          "height": 1050,
+          "nonwhiteRatio": 0.044335,
+          "coloredPixels": 28680,
+          "sha256": "0dd598629a0ccca8bfc4863fb1f3dc249bf4a51c85524174508395f12e9f7e0d"
+        },
+        {
+          "file": "page-2.png",
+          "width": 812,
+          "height": 1050,
+          "nonwhiteRatio": 0.044323,
+          "coloredPixels": 19097,
+          "sha256": "7c62be2344028cb82afb3beae74f05d7c85327659a64826d510a9379fd850c33"
+        }
+      ],
+      "textExtraction": "passed",
+      "packageXml": "passed"
+    },
+    {
+      "name": "edited-docx",
+      "format": "docx",
+      "edited": true,
+      "sourcePagination": "preserved, including source blank pages",
+      "pages": 1,
+      "raster": [
+        {
+          "file": "page-1.png",
+          "width": 812,
+          "height": 1050,
+          "nonwhiteRatio": 0.006105,
+          "coloredPixels": 0,
+          "sha256": "ee23749e9bacd6b7c2653f3863a07dd72a9ae8b80fdbf3f6440a7c1364690b5c"
+        }
+      ],
+      "textExtraction": "passed",
+      "packageXml": "passed"
+    },
+    {
+      "name": "created-xlsx",
+      "format": "xlsx",
+      "edited": false,
+      "pages": 2,
+      "raster": [
+        {
+          "file": "page-1.png",
+          "width": 743,
+          "height": 1050,
+          "nonwhiteRatio": 0.059095,
+          "coloredPixels": 25174,
+          "sha256": "08fb32dda119a4c6828a71259f7641cbfcf12fb90f710fd269b8e79db18785b9"
+        },
+        {
+          "file": "page-2.png",
+          "width": 743,
+          "height": 1050,
+          "nonwhiteRatio": 0.002296,
+          "coloredPixels": 0,
+          "sha256": "63019cd92c7f40d499b6d3825803aaaeeb2496d75fb9cc00730a11c2f04ab495"
+        }
+      ],
+      "textExtraction": "passed",
+      "packageXml": "passed"
+    },
+    {
+      "name": "edited-xlsx",
+      "format": "xlsx",
+      "edited": true,
+      "sourcePagination": "preserved, including source blank pages",
+      "pages": 4,
+      "raster": [
+        {
+          "file": "page-1.png",
+          "width": 743,
+          "height": 1050,
+          "nonwhiteRatio": 0.069547,
+          "coloredPixels": 37474,
+          "sha256": "fc2e771b8f29474955116ab647fa874231f5e990e95bab79809e3269809c9638"
+        },
+        {
+          "file": "page-2.png",
+          "width": 743,
+          "height": 1050,
+          "nonwhiteRatio": 0.048812,
+          "coloredPixels": 36192,
+          "sha256": "8b6a48bc648420a50b38a3994738f22a5cff846ce4011752ffb2811a50a10cb5"
+        },
+        {
+          "file": "page-3.png",
+          "width": 743,
+          "height": 1050,
+          "nonwhiteRatio": 0.0,
+          "coloredPixels": 0,
+          "sha256": "fe586271c4c0bae8e7c449fd62b135f18af6fd18dd065bd53128748517de45bb"
+        },
+        {
+          "file": "page-4.png",
+          "width": 743,
+          "height": 1050,
+          "nonwhiteRatio": 0.00077,
+          "coloredPixels": 0,
+          "sha256": "909b57e5c210c8fbb0fa03c177a41a6d66dedae412da6446f61afb7a5d2adddd"
+        }
+      ],
+      "textExtraction": "passed",
+      "packageXml": "passed"
+    },
+    {
+      "name": "created-pdf",
+      "format": "pdf",
+      "edited": false,
+      "pages": 3,
+      "raster": [
+        {
+          "file": "page-1.png",
+          "width": 812,
+          "height": 1050,
+          "nonwhiteRatio": 0.121318,
+          "coloredPixels": 22975,
+          "sha256": "9bddefc531d53546464e28334c3a12fbbda5efde1e3453fa4a808f3314e7f9d1"
+        },
+        {
+          "file": "page-2.png",
+          "width": 812,
+          "height": 1050,
+          "nonwhiteRatio": 0.125766,
+          "coloredPixels": 0,
+          "sha256": "fc046b9d61c21de097fe077dd340ce158bafce6fdf6b0b993ea800fd66a0e607"
+        },
+        {
+          "file": "page-3.png",
+          "width": 812,
+          "height": 1050,
+          "nonwhiteRatio": 0.048969,
+          "coloredPixels": 0,
+          "sha256": "678abb1de727907212c8f2cf55145afdaedaee2eb2f131c9b85fd46a1e8c98aa"
+        }
+      ],
+      "textExtraction": "passed",
+      "semanticTags": "passed"
+    }
+  ],
+  "claim": "Test-only LibreOffice and Poppler evidence; no Microsoft Office or PDF/UA claim",
+  "fonts": [
+    {
+      "file": "Helvetica.ttc",
+      "version": "17.0d1e1",
+      "sha256": "25eceb458d4baf628ee0b6a135a9f8ac5ec7b2826646720834bd2bf00dfc825a",
+      "provenance": "macOS-installed; not redistributed"
+    },
+    {
+      "file": "AppleSDGothicNeo.ttc",
+      "version": "21.0d1e6",
+      "sha256": "e33989af92c53dd2b80efd88f50c404094a046658d0e7a7692619587570e616c",
+      "provenance": "macOS-installed; not redistributed"
+    },
+    {
+      "file": "Apple Color Emoji.ttc",
+      "version": "21.4d3e1",
+      "sha256": "435ee0b75b26d671e089ddad38640473cc31febc4dbdfae27843a0a000d7ff62",
+      "provenance": "macOS-installed; not redistributed"
+    },
+    {
+      "file": "GeezaPro.ttc",
+      "version": "20.2d1e1",
+      "sha256": "5b4309f8d596abee520c0826885a39483a16fb244489d2c313322575df4b04a2",
+      "provenance": "macOS-installed; not redistributed"
+    }
+  ],
+  "os": {
+    "system": "Darwin",
+    "version": "26.6.2",
+    "architecture": "arm64"
+  }
+}

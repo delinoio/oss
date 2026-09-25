@@ -11,7 +11,7 @@ pnpm add -D -E @delino/clibox@0.1.6
 npm install --save-dev --save-exact @delino/clibox@0.1.6
 ```
 
-Run `clibox --version` through that project's package manager and commit the manifest and lockfile. Review [Migration](/clibox/migration) when upgrading scripts using older names. Version 0.1.6 includes `env run`, `port list`, and `hash compute`. The upcoming release renames only environment execution to `run env`; that rename is not present in the published 0.1.6 artifacts. Use the version-specific examples in [Getting started](/clibox/getting-started).
+Run `clibox --version` through that project's package manager and commit the manifest and lockfile. Review [Migration](/clibox/migration) when upgrading scripts using older names. Version 0.1.6 includes `env run`, `port list`, and `hash compute`. The next release renames environment execution to `run env` and adds the five `run with-*` execution wrappers; neither change is present in the published 0.1.6 artifacts. Use the version-specific examples in [Getting started](/clibox/getting-started).
 
 ## Distribution and verification
 
@@ -42,4 +42,4 @@ APT/DNF integration uses the stable channel, but native packages are not publish
 
 ## Use an earlier version
 
-Replace the version in the exact npm/pnpm installation command with the earlier published version you intend to use, then commit the updated lockfile. clibox stores no application state to migrate. Downgrading changes command behavior; it cannot restore overwritten files, clipboard contents, terminated processes, or other completed effects. Keep your own backups when replacing files.
+Replace the version in the exact npm/pnpm installation command with the earlier published version you intend to use, then commit the updated lockfile. Except for `run with-lock` and `run with-rate-limit`, clibox stores no application state to migrate. Those wrappers retain private local coordination state, which can affect later invocations or reject an incompatible rate configuration after reinstall. Stop every affected invocation before deciding to remove that state; clibox provides no cleanup command. Downgrading changes command behavior; it cannot restore overwritten files, clipboard contents, terminated processes, or other completed effects. Keep your own backups when replacing files.

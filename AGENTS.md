@@ -1,6 +1,7 @@
 ### Instructions
 
 - Use the `@docs/` directory as the source of truth for project contracts and implementation documents.
+- License repository-owned source and future distributions under Apache-2.0. Keep imported code and bundled fonts under their original licenses with notices intact; follow `docs/repository-license-contract.md`.
 - All repository-wide rules must be defined in the appropriate AGENTS.md.
 - Every repository-owned directory named `dist` is ignored generated output and must never be tracked. Generate required `dist` content explicitly before compilation, testing, or packaging, and remove generated `dist` directories from the final worktree.
 - List files in `docs/` before starting each task, and keep `docs/` up-to-date.
@@ -98,18 +99,32 @@ enum ProjectId {
   DevHud = "devhud",
   AsyncCommitHook = "async-commit-hook",
   DeliDev = "delidev",
+  Forge = "forge",
+  ReactForge = "react-forge",
 }
 ```
+
+### React Forge Contract
+
+- Figma creation/editing follows `docs/packages-react-forge-figma-contract.md`. Figma alone permits explicit official-MCP networking and remote publication. Reuse matching MCP Keychain credentials without refreshing/writing them. Preserve unselected external content; report partial/unknown writes and never blindly retry creation.
+
+- `react-forge` is the public npm Node.js 24 / React 19.2.8 cross-platform document project in issue #968. Follow `docs/project-react-forge.md` and its complete requirements. Keep JavaScript reconciliation outside native workers, format models independent, sessions in memory, exports revision-pinned and atomic, and imported opaque content preserved. All required formats and evidence are required before completion.
+
+- React Forge exposes a local session-based stdio MCP server through `react-forge mcp`; follow `docs/packages-react-forge-mcp-contract.md`. Keep execution output isolated from protocol stdout, share the existing engine and Figma scheduling across sessions, and preserve explicit export/publication and cancellation outcomes.
+
+- React Forge owns `packages/react-forge`, `crates/react-forge-node`, `crates/forge-package`, `crates/forge-document`, `crates/forge-docx`, `crates/forge-xlsx`, `crates/forge-pdf`, and `crates/forge-figma`; reuse existing Forge presentation engines without changing CLI/MCP defaults.
 
 ### Project Domain Ownership
 
 - `delidev` -> `cmds/delidev-cli`, `protos/delidev/v1`, `protos/gen/go/delidev/v1`; follow `docs/project-delidev.md` and the complete issue #964 requirements. The executable is `delidev`; Go owns single-user server and Worker business logic. Keep implementation and real-environment evidence distinct in `docs/cmds-delidev-evidence.md`.
+- `forge` -> `crates/forge-tree-doc`, `crates/forge-pptx`, `crates/delino-forge`; follow `docs/project-forge.md` and `docs/crates-forge-foundation.md`. Keep all three packages private, local-only, and preserve unsupported PPTX content during supported edits. Opened documents export to a separate path; reject replacement of their tracked source even with explicit overwrite. CLI/MCP share one core; optional preview is not a generation dependency.
+
 - `nodeup` -> `crates/nodeup`, `apps/public-docs/docs/nodeup`
 - `binpm` -> `crates/binpm`, `apps/public-docs/docs/binpm`
 - `with-watch` -> `crates/with-watch`
 - `cargo-mono` -> `crates/cargo-mono`
 - `clibox` -> `crates/clibox`, `crates/clibox-config`, `crates/clibox-system`, `crates/clibox-transform`, `crates/clibox-wait`, `packages/clibox`, `apps/public-docs/docs/clibox`
-- `pnport` -> `crates/pnport`, `crates/pnport-preload`, `packages/pnport`, `apps/public-docs/docs/pnport`
+- `pnport` -> `crates/pnport`, `crates/pnport-core`, `crates/pnport-preload`, macOS `crates/fspy_preload_unix`, `packages/pnport`, `apps/public-docs/docs/pnport`
 - `runmoor` -> `cmds/runmoor`, `apps/public-docs/docs/runmoor`
 - `derun` -> `cmds/derun`
 - `serde-feather` -> `crates/serde-feather`, `crates/serde-feather-macros`
@@ -349,12 +364,13 @@ Coverage expectations:
 - `go-test`: generates and validates the ignored administrator and ach UI bundles, then runs `go test ./...` on `ubuntu-latest`, `macos-latest`, and `windows-latest`.
 - `rust-fmt`: runs `cargo fmt --all --check`.
 - `rust-clippy`: runs `cargo clippy --workspace --all-targets --all-features -- -D warnings`.
-- `rust-test`: runs `cargo test --workspace --all-targets`.
+- `rust-test`: builds pnport and its injection companion with `cargo build --locked -p pnport -p pnport-preload`, then runs `cargo test --workspace --all-targets`.
 - `node-public-docs-test`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter public-docs test`, covering the root and all six project content sections.
 - `node-clibox-test`: runs `cargo test --locked -p clibox -p clibox-config -p clibox-system -p clibox-transform -p clibox-wait` for native utility/configuration/process/adapter behavior, native CLI consumer installation and launcher/distribution tests on Linux, macOS, and Windows, selected by shared CI planning and required by `CI Result`.
 - `node-pnport-test`: checks launcher and package contracts, version synchronization, immutable artifacts, installer rollback, and fail-closed release publication on affected PRs and main pushes.
 - `pnport-native`: on affected main pushes and manual CI dispatch, runs the six native targets, installed npm/Yarn PnP consumers, TypeScript conformance, archive packaging, and direct-installer smoke. PRs skip this native matrix; the pnport tag workflow independently requires the same six targets before publication.
 - `node-public-docs-test`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter public-docs test`.
+- `forge-test` and `forge-render`: validate the three private Forge crates on Linux/macOS/Windows, official stdio MCP interoperability, and mandatory Linux LibreOffice/Poppler rendering. Both follow central change planning and remain required in `CI Result`; optional local renderers do not make the selected render job optional.
 - `ci-contracts`: validates workflow syntax and the repository CI contract with the checked-in Go `actionlint` tool and Node fixtures.
 - `async-commit-hook`: follows the central change plan, runs Go race tests, local UI/docs/client tests, protocol freshness and release fixtures, and builds all six unsigned target archives. Shared setup actions restore caches; only successful main validation saves them.
 - `devhud-frontend`, `devhud-extension`, and `devhud-admin`: run package-local type, lint, unit, component, accessibility, and deterministic frontend/package builds.
@@ -470,6 +486,7 @@ Release automation baseline:
 - clibox implements `run env`, `port list`, `port kill`, `open`, and text `clipboard copy`/`paste` alongside help/version. Preserve child argv/signal compatibility, revalidated port-owner termination with one shared five-second wait, explicit-app-only waiting, 16 MiB NUL-free UTF-8 clipboard validation and Linux background clipboard ownership. Use current-user/session authority without persistence, elevation, automatic retries or sensitive diagnostic values.
 - The seven offline text/time/Base64/hash commands specified by issue #917 coexist with the issue #916 OS utilities. Preserve enum-backed modes, redacted stderr diagnostics, cancellable processing with numeric 130/143 for handled transformation cancellation, permission-preserving atomic file publication, and bundled timezone data. Keep OS-command signal propagation separate from transformation publication supervision. All five clibox crates must remain `publish = false`. Release Project validates the exact release source and pushes `clibox@v<version>` without waiting for main CI, requiring or injecting a Cargo registry token or publishing to crates.io. npm and GitHub publishers must not depend on a crates.io version. The same verified npm GNU binaries also produce two signed Linux GitHub Release archives and stable APT/DNF packages; Homebrew remains excluded. The npm publication flag controls npm only.
 - The CLI provides help/version and `wait tcp`, `wait http`, and `wait file` under issue #919, alongside the #916 utilities, the seven offline #917 transformations, and the #920 configuration commands. Waits are stateless, use immediate nonoverlapping polling and monotonic deadlines, support handled cancellation, and expose only redacted human/quiet/JSON results. The GNU binaries also feed the stable native repository described above.
+- Issue #953 adds `run with-rate-limit`, `run with-lock`, `run with-service`, `run with-retry`, and `run with-timeout`. Reuse the existing environment execution grammar without a shell; preserve companion-crate independence and keep supervision in the system command family. Local lock/bucket state is the sole clibox application state: it is private, versioned, hashed, same-user/same-machine only, atomically published under OS-owned locks, and fails closed on unsafe storage, corruption, or configuration mismatch. Preserve redacted lifecycle tracing, bounded owned-process cleanup, external-service non-ownership, literal stdin/argv behavior, native child statuses, and 124/75/0/2/1/130/143 wrapper outcomes across native and installed npm launches.
 - Preserve issue #920's `dotenv list`, `dotenv merge`, and `yaml normalize` contracts: offline Rust processing, exact value/precision preservation, independent 64 MiB input/output limits, 128 YAML collection levels, atomic permission-preserving file publication, handled cancellation, and strictly redacted stderr diagnostics.
 - HTTPS uses OS trust with Rustls/ring and no implicit proxies, credentials, redirects, custom CA overrides, or body reads. Keep parser and dependency errors redacted even under `RUST_LOG=trace`. musl crypto compilation uses `musl-tools`/target-specific `CC=musl-gcc`, while final linking remains pinned self-contained `rust-lld`; no dynamic OpenSSL dependency is permitted.
 - `release-clibox.yml` runs native unit/process tests and validates all eight native targets and the full nine-package set before publication. Publish and verify platform packages before the main package; reuse only identical registry integrity on retries. Dry runs are secret-free and non-publishing.
@@ -483,3 +500,5 @@ Release automation baseline:
 - Keep dependency views read-only, graph/peer identity stable, cache ownership private, publication atomic and active leases protected. No runtime networking, telemetry, automatic eviction or self-update.
 - Native/npm versions and pnport@v<version> identity agree; skip Cargo registry credentials/publication. Complete-set execution/install verification precedes publication authority.
 - Keep unpublished pnport Cargo, lock, and npm source versions at `0.0.0` until the first minor bump to `0.1.0`; reject patch and major bumps from `0.0.0`. Release Project follows the common prepare/registry/tag/summary path without native validation or Cargo publication. The separate exact-tag workflow requires all six native execution, installed npm/Yarn PnP, TypeScript, archive, and installer gates before npm, GitHub Release, or Homebrew publication; it defaults to a credential-free dry run. A failed gate leaves the tag intact and blocks publication; recover in the pnport workflow without moving the tag. The public `/pnport` guides remain explicitly unreleased until publication.
+
+- `react-forge`: required affected Node 24 library, native and installed-CLI validation on macOS/Windows/glibc Linux x64/arm64; require real Windows console cancellation, macOS/Linux Office/PDF rendering and six-host benchmarks. Retain existing Forge regression jobs when shared package primitives change. Native/system-font work is uncached, render evidence expires after seven days, and CI cannot publish packages or install production dependencies at runtime. Complete candidate assembly and npm publication belong to the exact-tag release workflow.

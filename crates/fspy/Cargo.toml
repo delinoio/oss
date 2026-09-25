@@ -1,0 +1,74 @@
+[package]
+name = "fspy"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[dependencies]
+allocator-api2 = { workspace = true, features = ["alloc"] }
+wincode = { workspace = true }
+bstr = { workspace = true, features = ["alloc", "std"] }
+bumpalo = { workspace = true, features = ["allocator-api2", "collections"] }
+derive_more = { workspace = true, features = ["debug"] }
+materialized_artifact = { workspace = true }
+fspy_shared = { workspace = true }
+futures-util = { workspace = true }
+libc = { workspace = true }
+ouroboros = { workspace = true }
+rustc-hash = { workspace = true }
+tempfile = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["macros", "net", "process", "io-util", "sync", "rt"] }
+tokio-util = { workspace = true }
+which = { workspace = true, features = ["tracing"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+fspy_seccomp_unotify = { workspace = true, features = ["supervisor"] }
+nix = { workspace = true, features = ["uio"] }
+tokio = { workspace = true, features = ["bytes"] }
+
+[target.'cfg(unix)'.dependencies]
+fspy_shared_unix = { workspace = true }
+nix = { workspace = true, features = ["fs", "process", "socket", "feature"] }
+
+# The preload artifact deps live under `[dependencies]` — not
+# `[build-dependencies]`, where Cargo would compile them with the
+# build-override profile (opt-level 0 in release; see
+# https://github.com/rust-lang/cargo/issues/16719) — so they get the normal
+# profile, in this workspace and downstream ones, with no per-package profile
+# overrides. Cargo provides `CARGO_CDYLIB_FILE_*` while compiling this crate
+# for `artifact!` to embed. Each dep is scoped to the targets whose code
+# embeds it, so other targets (e.g. musl, which never dynamically links a
+# preload) don't build a useless empty cdylib. Scoping artifact deps under
+# `[target.cfg…]` is only safe for normal deps: the same shape under
+# `[target.cfg….build-dependencies]` panics cargo's resolver on cross-compile.
+[target.'cfg(all(unix, not(target_env = "musl")))'.dependencies]
+fspy_preload_unix = { workspace = true }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+fspy_detours_sys = { workspace = true }
+fspy_preload_windows = { workspace = true }
+ntapi = { workspace = true }
+winapi = { workspace = true, features = ["winbase", "securitybaseapi", "handleapi", "fileapi", "stringapiset", "winnls"] }
+winsafe = { workspace = true, features = ["kernel"] }
+
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+tempfile = { workspace = true }
+
+[dev-dependencies]
+anyhow = { workspace = true }
+csv-async = { workspace = true, features = ["tokio"] }
+ctor = { workspace = true }
+ntest = { workspace = true }
+test-log = { workspace = true, features = ["trace"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "fs", "io-std", "time"] }
+
+[lints]
+workspace = true
+
+[lib]
+doctest = false
+
+[package.metadata.cargo-shear]
+ignored = ["ctor", "fspy_preload_unix", "fspy_preload_windows"]

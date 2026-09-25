@@ -1,0 +1,11 @@
+[package]
+name = "forge-figma"
+version = "0.0.0"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = { version = "1.0.149", features = ["float_roundtrip"] }
+uuid = { version = "1.23.0", features = ["v7", "serde"] }

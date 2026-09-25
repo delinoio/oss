@@ -2,7 +2,7 @@
 name = "pnport-preload"
 version = "0.0.0"
 edition = "2021"
-license = "MIT"
+license = "Apache-2.0"
 publish = false
 
 [lib]
@@ -11,6 +11,6 @@ test = false
 doctest = false
 
 [dependencies]
-pnport = { path = "../pnport" }
+pnport-core = { path = "../pnport-core" }
 libc = "0.2.182"
 serde_json = "1"

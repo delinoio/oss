@@ -135,11 +135,16 @@ async function events(path) {
   }
 }
 
-async function waitForEvent(path, predicate) {
-  const deadline = Date.now() + 5_000;
+async function waitForEvent(path, predicate, { timeoutMs = 5_000, child } = {}) {
+  const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const recorded = await events(path);
     if (recorded.some(predicate)) return;
+    if (child && (child.exitCode !== null || child.signalCode !== null)) {
+      throw new Error(
+        `fake tool exited before the awaited event (code ${child.exitCode}, signal ${child.signalCode})`,
+      );
+    }
     await delay(20);
   }
   throw new Error("timed out waiting for fake tool event");
@@ -909,6 +914,10 @@ test("team configuration pin is private, exclusive, and released after Turbo", a
   await waitForEvent(
     firstEventLog,
     (event) => event.tool === "pnpm" && event.action === "turbo-blocked",
+    // Windows CI may spend more than the generic event deadline in team
+    // preflights. Keep the exclusive-startup boundary bounded and surface an
+    // early child exit separately from a slow but active startup.
+    { timeoutMs: 20_000, child: first.child },
   );
   const { stateDirectory, teamConfigurationPinFile } =
     resolveLocalStatePaths(baseEnvironment);

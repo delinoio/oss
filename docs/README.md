@@ -1,11 +1,14 @@
 # Documentation Catalog
 
 ## Purpose
+
+- [React Forge Figma contract](packages-react-forge-figma-contract.md).
 `docs/` is the source of truth for repository contracts.
 Each project must have one project index document and one or more domain contract documents.
 
 ## Repository Defaults
 - Repository-wide default technology choices and workflow defaults are defined in `docs/repository-defaults.md`.
+- Repository licensing and third-party notice boundaries are defined in `docs/repository-license-contract.md`.
 - Repository configuration, stable root development commands, local development modes, environment ownership, startup-generation integrity, and secret classification are defined in `docs/repository-environment-contract.md`.
 - Project and domain contracts must document deviations from those defaults when a different language, ID format, search backend, build toolchain, static-site deployment platform, or file storage/access pattern is chosen.
 
@@ -51,6 +54,19 @@ Each project must have one project index document and one or more domain contrac
 - [Schedules and durable occurrences](cmds-delidev-schedules-contract.md)
 - [Complete issue #964 requirements](cmds-delidev-requirements.md)
 - [Implementation and evidence ledger](cmds-delidev-evidence.md)
+
+### React Forge
+- [Project index](project-react-forge.md)
+- [Complete issue requirements](packages-react-forge-requirements.md)
+- [Node sessions and CLI](packages-react-forge-contract.md)
+- [Session-based stdio MCP](packages-react-forge-mcp-contract.md)
+- [Native engines and preservation](crates-react-forge-contract.md)
+- [Validation and benchmarks](packages-react-forge-validation.md)
+- [Public npm release](packages-react-forge-release-contract.md)
+
+### Forge
+- [Project index](project-forge.md)
+- [Rust DSL, PPTX, CLI and MCP foundation](crates-forge-foundation.md)
 
 ### binpm
 - `docs/project-binpm.md`
@@ -132,6 +148,7 @@ The deterministic bilingual frontend, target-isolated Tauri desktop CEF plus iOS
 ### pnport
 - [Project index](project-pnport.md)
 - [Rust foundation](crates-pnport-foundation.md)
+- [fspy source fork and licensing](crates-fspy-vendor-contract.md)
 - [Complete issue #958 requirements](crates-pnport-requirements.md)
 - [npm/native distribution](packages-pnport-distribution-contract.md)
 - [Public documentation](apps-pnport-docs-foundation.md) (ten guides under `/pnport`, with 0.1.0 marked unreleased)

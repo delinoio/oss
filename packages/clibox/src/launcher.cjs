@@ -7,6 +7,9 @@ const path = require("node:path");
 const { Platform, selectTarget } = require("./platforms.cjs");
 
 const Failure = Object.freeze({ Unsupported: "unsupported-platform", Missing: "missing-binary", Version: "version-mismatch", Spawn: "spawn-failed" });
+const TerminalInterruptAcknowledgementDescriptor = 3;
+const TerminalInterruptAcknowledgementEnvironment = "CLIBOX_TERMINAL_INTERRUPT_ACK_FD";
+const TerminalInterruptGraceMs = 10;
 class LauncherError extends Error {
   constructor(code, message) { super(message); this.code = code; }
 }
@@ -34,20 +37,55 @@ function resolveBinary(manifestPath = path.join(__dirname, "..", "package.json")
   return binary;
 }
 
-function launch(binary, args, { spawnChild = spawn, parent = process, platform = process.platform } = {}) {
+function launch(binary, args, { spawnChild = spawn, parent = process, environment = process.env, platform = process.platform } = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawnChild(binary, args, { stdio: "inherit", shell: false });
+    let terminalInterruptAcknowledgements = 0;
+    const usesTerminalInterruptAcknowledgement = platform !== Platform.Windows;
+    const child = spawnChild(binary, args, {
+      stdio: usesTerminalInterruptAcknowledgement ? ["inherit", "inherit", "inherit", "pipe"] : "inherit",
+      shell: false,
+      ...(usesTerminalInterruptAcknowledgement ? {
+        env: {
+          ...environment,
+          [TerminalInterruptAcknowledgementEnvironment]: String(TerminalInterruptAcknowledgementDescriptor),
+        },
+      } : {}),
+    });
+    const acknowledgement = usesTerminalInterruptAcknowledgement ? child.stdio?.[TerminalInterruptAcknowledgementDescriptor] : null;
+    const acknowledgeTerminalInterrupt = (chunk) => { terminalInterruptAcknowledgements += chunk.length; };
+    const ignoreAcknowledgementError = () => {};
+    acknowledgement?.on("data", acknowledgeTerminalInterrupt);
+    acknowledgement?.on("error", ignoreAcknowledgementError);
     const signals = ["SIGINT", "SIGTERM", "SIGHUP", ...(platform === Platform.Windows ? ["SIGBREAK"] : [])];
     const handlers = signals.map((signal) => [signal, () => {
       // Windows broadcasts console Ctrl+C/Break to both processes. Node's kill
       // API forcibly terminates Windows children, so forwarding would race the
-      // native handler's cleanup and numeric exit status. Await that handler;
-      // Unix signals still require explicit forwarding.
+      // native handler's cleanup and numeric exit status. Unix signals must
+      // always be forwarded: a supervisor can target this launcher's PID even
+      // when stdin is attached to a foreground terminal.
       if (platform === Platform.Windows && (signal === "SIGINT" || signal === "SIGBREAK")) return;
+      if (signal === "SIGINT") {
+        // The native handler acknowledges a terminal-generated SIGINT. Give
+        // that signal a short event-loop turn before forwarding so the same
+        // Ctrl+C is counted once, while an explicit SIGINT to this launcher
+        // still reaches the native child.
+        setTimeout(() => {
+          if (terminalInterruptAcknowledgements > 0) {
+            terminalInterruptAcknowledgements -= 1;
+          } else if (child.exitCode === null && child.signalCode === null) {
+            child.kill(signal);
+          }
+        }, TerminalInterruptGraceMs);
+        return;
+      }
       if (child.exitCode === null && child.signalCode === null) child.kill(signal);
     }]);
     for (const [signal, handler] of handlers) parent.on(signal, handler);
-    const cleanup = () => { for (const [signal, handler] of handlers) parent.removeListener(signal, handler); };
+    const cleanup = () => {
+      acknowledgement?.removeListener("data", acknowledgeTerminalInterrupt);
+      acknowledgement?.removeListener("error", ignoreAcknowledgementError);
+      for (const [signal, handler] of handlers) parent.removeListener(signal, handler);
+    };
     child.once("error", () => {
       cleanup();
       reject(new LauncherError(Failure.Spawn, "Unable to start clibox. Check executable permissions and reinstall for this platform."));

@@ -1,17 +1,23 @@
 # Command index
 
-The index uses `run env` for the upcoming release. On published version **0.1.6**, use **`env run`** instead. All other command names below are already available in 0.1.6. See [Migration](/clibox/migration).
+The index uses `run env`, the five `run with-*` wrappers, and `system cpus` from the next release. Published version **0.1.6** instead uses **`env run`** and does not include the wrappers or CPU queries. The other command names below are already available in 0.1.6. See [Migration](/clibox/migration).
 
-All 19 commands are available through the native executable and the npm launcher. Use `pnpm exec clibox` or `npm exec -- clibox` for a project-local installation.
+All 25 commands are available through the native executable and the npm launcher in the next release. Use `pnpm exec clibox` or `npm exec -- clibox` for a project-local installation.
 
 | Command | Purpose |
 | --- | --- |
 | [`clibox run env`](/clibox/system#run-with-environment-variables) | Set a child environment and execute a command. |
+| [`clibox run with-rate-limit`](/clibox/system#coordinate-execution) | Admit a workload through a named local token bucket. |
+| [`clibox run with-lock`](/clibox/system#coordinate-execution) | Run a workload while holding a named local lock. |
+| [`clibox run with-service`](/clibox/system#coordinate-execution) | Wait for HTTP readiness, optionally while owning a service. |
+| [`clibox run with-retry`](/clibox/system#coordinate-execution) | Retry selected nonzero workload exits with backoff. |
+| [`clibox run with-timeout`](/clibox/system#coordinate-execution) | Limit a workload's total runtime or output-idle time. |
 | [`clibox port list`](/clibox/system#inspect-and-terminate-port-owners) | Inspect local listening TCP or bound UDP port owners. |
 | [`clibox port kill`](/clibox/system#inspect-and-terminate-port-owners) | Terminate revalidated port owners. |
 | [`clibox open`](/clibox/system#open-a-resource) | Open a file, directory, or URI. |
 | [`clibox clipboard copy`](/clibox/system#copy-and-paste-text) | Copy text from an argument or stdin. |
 | [`clibox clipboard paste`](/clibox/system#copy-and-paste-text) | Write desktop clipboard text to stdout. |
+| [`clibox system cpus`](/clibox/system#query-cpu-counts) | Query estimated parallelism or online logical CPUs. |
 | [`clibox text replace`](/clibox/transformations#text-replacement) | Replace literal text or regex matches. |
 | [`clibox time format`](/clibox/transformations#time-formatting-and-arithmetic) | Format an explicit timestamp or the current instant. |
 | [`clibox time add`](/clibox/transformations#time-formatting-and-arithmetic) | Apply calendar or elapsed-time arithmetic. |

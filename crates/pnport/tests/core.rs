@@ -270,7 +270,7 @@ fn confined_dangling_archive_symlinks_remain_readable() {
     assert!(cache.materialize(&path).is_ok());
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 #[test]
 fn pnp_unaware_native_process_reads_virtual_dependencies() {
     use std::process::Command;
@@ -288,7 +288,7 @@ fn pnp_unaware_native_process_reads_virtual_dependencies() {
         .current_dir(root.path())
         .arg("--cache-dir")
         .arg(cache.path().join("cache"))
-        .args(["--log-level", "debug", "run", "--"])
+        .args(["run", "--"])
         .arg(&executable)
         .args(["", "literal;$() argument"])
         .output()
@@ -336,6 +336,3618 @@ fn pnp_unaware_native_process_reads_virtual_dependencies() {
         String::from_utf8_lossy(&result.stderr)
     );
     assert_eq!(result.stdout, b"protocol-output\nprotocol-output\n");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_rewrites_paths_from_a_guard_adjacent_stack() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("guard-stack.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <errno.h>
+#include <fcntl.h>
+#include <string.h>
+#include <sys/mman.h>
+#include <unistd.h>
+extern long tiny_stack_open(const char *path, void *stack);
+int main(void) {
+    char *pages = mmap(0, 8192, PROT_READ | PROT_WRITE,
+                       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (pages == MAP_FAILED || mprotect(pages, 4096, PROT_NONE)) return 40;
+    long fd = tiny_stack_open("node_modules/dep/file.txt", pages + 4096 + 128);
+    if (fd < 0) return 41;
+    char bytes[14] = {0};
+    if (read(fd, bytes, 13) != 13 || strcmp(bytes, "package bytes")) return 42;
+    close(fd);
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let assembly = root.path().join("guard-stack.S");
+    fs::write(
+        &assembly,
+        if cfg!(target_arch = "aarch64") {
+            ".text\n.global tiny_stack_open\ntiny_stack_open:\nmov x9, sp\nmov sp, x1\nmov x1, \
+             x0\nmov x0, #-100\nmov x2, #0\nmov x8, #56\nsvc #0\nmov sp, x9\nret\n"
+        } else {
+            ".text\n.global tiny_stack_open\ntiny_stack_open:\npush %r12\nmov %rsp, %r12\nmov \
+             %rsi, %rsp\nmov %rdi, %rsi\nmov $-100, %rdi\nxor %rdx, %rdx\nxor %r10, %r10\nmov \
+             $257, %rax\nsyscall\nmov %r12, %rsp\npop %r12\nret\n.section \
+             .note.GNU-stack,\"\",@progbits\n"
+        },
+    )
+    .unwrap();
+    let executable = root.path().join("guard-stack");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .arg(&assembly)
+        .status()
+        .unwrap()
+        .success());
+    assert_eq!(
+        Command::new(&executable)
+            .current_dir(root.path())
+            .status()
+            .unwrap()
+            .code(),
+        Some(41)
+    );
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn pnp_unaware_static_process_reads_virtual_dependencies() {
+    use std::process::Command;
+    let root = fixture();
+    let cache = tempfile::tempdir().unwrap();
+    let source = root.path().join("static.c");
+    fs::write(&source, r#"
+#define _GNU_SOURCE
+#include <fcntl.h>
+#include <dirent.h>
+#include <errno.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include <sys/mman.h>
+#include <sys/syscall.h>
+#include <sys/inotify.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include <unistd.h>
+int main(int argc, char **argv) {
+    struct stat info;
+    if (stat("node_modules/dep/file.txt", &info) || info.st_size != 13) return 21;
+    int fd = open("node_modules/dep/file.txt", O_RDONLY);
+    if (fd < 0) return 22;
+    char bytes[32] = {0};
+    if (read(fd, bytes, 13) != 13 || strcmp(bytes, "package bytes")) return 23;
+    void *mapped = mmap(NULL, 13, PROT_READ, MAP_PRIVATE, fd, 0);
+    if (mapped == MAP_FAILED || memcmp(mapped, "package bytes", 13)) return 24;
+    munmap(mapped, 13);
+    char fd_path[64];
+    snprintf(fd_path, sizeof(fd_path), "/proc/self/fd/%d", fd);
+    errno = 0;
+    if (open(fd_path, O_RDWR) != -1 || errno != EROFS) return 37;
+    int reopened = open(fd_path, O_RDONLY);
+    if (reopened < 0) return 38;
+    errno = 0;
+    if (fchmod(reopened, 0600) != -1 || errno != EROFS) return 39;
+    close(reopened);
+    errno = 0;
+    if (futimens(fd, NULL) != -1 || errno != EROFS) return 58;
+    close(fd);
+    DIR *dir = opendir("node_modules/dep");
+    if (!dir) return 25;
+    fd = openat(dirfd(dir), "file.txt", O_RDONLY);
+    if (fd < 0 || fstat(fd, &info) || info.st_size != 13) return 26;
+    errno = 0;
+    if (fchmod(fd, 0600) != -1 || errno != EROFS) return 34;
+    errno = 0;
+    if (syscall(452, dirfd(dir), "file.txt", 0600, 0) != -1 || errno != EROFS) return 56;
+    errno = 0;
+    if (syscall(452, fd, "", 0600, AT_EMPTY_PATH) != -1 || errno != EROFS) return 57;
+    close(fd);
+    snprintf(fd_path, sizeof(fd_path), "/proc/self/fd/%d/file.txt", dirfd(dir));
+    errno = 0;
+    if (open(fd_path, O_WRONLY) != -1 || errno != EROFS) return 54;
+    fd = open(fd_path, O_RDONLY);
+    if (fd < 0 || fchmod(fd, 0600) != -1 || errno != EROFS) return 55;
+    close(fd);
+    closedir(dir);
+    if (lstat("node_modules/dep", &info) || !S_ISLNK(info.st_mode) || (info.st_mode & 07777) != 0777) return 27;
+    if (fstatat(AT_FDCWD, "node_modules/dep", &info, AT_SYMLINK_NOFOLLOW) || (info.st_mode & 07777) != 0777) return 60;
+    struct statx link_info;
+    if (syscall(SYS_statx, AT_FDCWD, "node_modules/dep", AT_SYMLINK_NOFOLLOW, STATX_MODE, &link_info) ||
+        (link_info.stx_mode & 07777) != 0777) return 61;
+    errno = 0;
+    if (open("node_modules/dep", O_RDONLY | O_NOFOLLOW) != -1 || errno != ELOOP) return 44;
+    int link_fd = open("node_modules/dep", O_PATH | O_NOFOLLOW);
+    if (link_fd < 0 || fstat(link_fd, &info) || !S_ISLNK(info.st_mode)) return 45;
+    char target[4096], fd_target[4096];
+    ssize_t target_len = readlink("node_modules/dep", target, sizeof(target));
+    if (target_len <= 0) return 28;
+    ssize_t fd_len = readlinkat(link_fd, "", fd_target, sizeof(fd_target));
+    if (fd_len != target_len || memcmp(fd_target, target, target_len)) {
+        fprintf(stderr, "empty readlinkat length=%zd path length=%zd errno=%d\n", fd_len, target_len, errno);
+        return 62;
+    }
+    errno = 0;
+    if (syscall(SYS_readlinkat, link_fd, "", (char *)1, 16) != -1 || errno != EFAULT) return 63;
+    close(link_fd);
+    errno = 0;
+    if (syscall(SYS_readlinkat, AT_FDCWD, "node_modules/dep", (char *)1, 16) != -1 || errno != EFAULT) return 46;
+    int ranged = open("node_modules/dep/file.txt", O_RDONLY);
+    if (ranged < 0 || syscall(SYS_close_range, ranged, ranged, 0) != 0) return 47;
+    int private_fd = memfd_create("pnport-range", 0);
+    if (private_fd < 0 || fchmod(private_fd, 0600) != 0) return 48;
+    close(private_fd);
+    errno = 0;
+    if (open("node_modules/dep/file.txt", O_WRONLY) != -1 || errno != EROFS) return 29;
+    errno = 0;
+    if (unlink("node_modules/dep/file.txt") != -1 || errno != EROFS) return 35;
+    int watcher = inotify_init1(IN_CLOEXEC);
+    if (watcher < 0 || inotify_add_watch(watcher, "node_modules/dep/file.txt", IN_MODIFY) < 0) return 36;
+    close(watcher);
+    fd = open("output.txt", O_WRONLY | O_CREAT, 0600);
+    if (fd < 0 || write(fd, "native", 6) != 6) return 30;
+    if (futimens(fd, NULL) != 0) return 59;
+    close(fd);
+    if (argc == 1) {
+        if (mkdir("native-old", 0700) || symlink("native-old", "native-link")) return 49;
+        link_fd = open("native-link", O_PATH | O_NOFOLLOW);
+        if (link_fd < 0) return 64;
+        ssize_t native_len = readlinkat(link_fd, "", target, sizeof(target));
+        if (native_len != 10 || memcmp(target, "native-old", 10)) return 65;
+        close(link_fd);
+        fd = open("native-old/value", O_WRONLY | O_CREAT, 0600);
+        if (fd < 0 || write(fd, "old", 3) != 3) return 50;
+        close(fd);
+        int native = open("native-link", O_RDONLY | O_DIRECTORY);
+        if (native < 0 || rename("native-old", "native-moved") || mkdir("native-old", 0700)) return 51;
+        fd = open("native-old/value", O_WRONLY | O_CREAT, 0600);
+        if (fd < 0 || write(fd, "new", 3) != 3) return 52;
+        close(fd);
+        fd = openat(native, "value", O_RDONLY);
+        char native_bytes[4] = {0};
+        if (fd < 0 || read(fd, native_bytes, 3) != 3 || strcmp(native_bytes, "old")) return 53;
+        close(fd);
+        close(native);
+        pid_t child = fork();
+        if (child < 0) return 31;
+        if (child == 0) {
+            char *child_argv[] = {argv[0], "child", NULL};
+            char *child_env[] = {NULL};
+            execve(argv[0], child_argv, child_env);
+            _exit(32);
+        }
+        int status = 0;
+        if (waitpid(child, &status, 0) != child || !WIFEXITED(status) || WEXITSTATUS(status)) return 33;
+    }
+    puts("static-ok");
+    return 0;
+}
+
+"#).unwrap();
+    let executable = root.path().join("static-fixture");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    assert_eq!(
+        Command::new(&executable)
+            .current_dir(root.path())
+            .status()
+            .unwrap()
+            .code(),
+        Some(21)
+    );
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .arg("--cache-dir")
+        .arg(cache.path().join("cache"))
+        .args(["--log-level", "debug", "run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "stdout={} stderr={}",
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(result.stdout, b"static-ok\nstatic-ok\n");
+    assert_eq!(fs::read(root.path().join("output.txt")).unwrap(), b"native");
+    assert!(!root.path().join("node_modules").exists());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_getcwd_preserves_kernel_errors_for_virtual_directories() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("getcwd-fault.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <errno.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+int main(void) {
+    if (chdir("node_modules/dep")) return 40;
+    errno = 0;
+    if (syscall(SYS_getcwd, (void *)1, 4096) != -1 || errno != EFAULT) return 41;
+    errno = 0;
+    char output[4096];
+    if (syscall(SYS_getcwd, output, 0) != -1 || errno != ERANGE) return 42;
+    if (syscall(SYS_getcwd, output, sizeof(output)) <= 0) return 43;
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("getcwd-fault");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_proc_cwd_aliases_preserve_virtual_dependency_ownership() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("proc-cwd.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <errno.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
+int main(void) {
+    if (chdir("node_modules/dep")) return 40;
+    errno = 0;
+    if (chmod("/proc/self/cwd/file.txt", 0600) != -1 || errno != EROFS) return 41;
+    char numeric[128];
+    snprintf(numeric, sizeof(numeric), "/proc/%d/cwd/file.txt", getpid());
+    errno = 0;
+    if (open(numeric, O_WRONLY) != -1 || errno != EROFS) return 42;
+    int fd = open("/proc/self/cwd/file.txt", O_RDONLY);
+    if (fd < 0) return 43;
+    char bytes[14] = {0};
+    if (read(fd, bytes, 13) != 13 || strcmp(bytes, "package bytes")) return 44;
+    close(fd);
+    char cwd[4096] = {0};
+    ssize_t length = readlink("/proc/self/cwd", cwd, sizeof(cwd) - 1);
+    if (length <= 0 || !strstr(cwd, "/node_modules/dep")) return 45;
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("proc-cwd");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_chdir_through_descriptor_alias_updates_logical_cwd() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("proc-fd-chdir.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <errno.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
+int main(int argc, char **argv) {
+    if (argc != 2) return 40;
+    int native = open(".", O_RDONLY | O_DIRECTORY);
+    int virtual = open("node_modules/dep", O_RDONLY | O_DIRECTORY);
+    if (native < 0 || virtual < 0) return 41;
+    char alias[128];
+    snprintf(alias, sizeof(alias), "/proc/self/fd/%d", virtual);
+    if (chdir(alias)) return 42;
+    char cwd[4096];
+    if (!getcwd(cwd, sizeof(cwd))) return 43;
+    char expected[4096];
+    snprintf(expected, sizeof(expected), "%s/cache.zip/node_modules/dep", argv[1]);
+    if (strcmp(cwd, expected)) {
+        fprintf(stderr, "cwd mismatch: got=%s expected=%s\n", cwd, expected);
+        return 44;
+    }
+    int file = open("file.txt", O_RDONLY);
+    if (file < 0) return 45;
+    char bytes[14] = {0};
+    if (read(file, bytes, 13) != 13 || strcmp(bytes, "package bytes")) return 46;
+    snprintf(alias, sizeof(alias), "/proc/self/fd/%d", file);
+    errno = 0;
+    if (chdir(alias) != -1 || errno != ENOTDIR) return 47;
+    if (!getcwd(cwd, sizeof(cwd)) || strcmp(cwd, expected)) return 48;
+    snprintf(alias, sizeof(alias), "/dev/fd/%d", native);
+    if (chdir(alias)) return 49;
+    if (!getcwd(cwd, sizeof(cwd)) || strcmp(cwd, argv[1])) return 50;
+    int output = open("output.txt", O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    if (output < 0 || write(output, "ok", 2) != 2) return 51;
+    close(output);
+    close(file);
+    close(virtual);
+    close(native);
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("proc-fd-chdir");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let direct = Command::new(&executable)
+        .current_dir(root.path())
+        .arg(root.path())
+        .output()
+        .unwrap();
+    assert_eq!(direct.status.code(), Some(41));
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .arg(root.path())
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(fs::read(root.path().join("output.txt")).unwrap(), b"ok");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_parallel_chdir_and_relative_lookup_keep_group_cwd_consistent() {
+    use std::process::Command;
+    let root = fixture();
+    fs::write(root.path().join("file.txt"), b"root bytes").unwrap();
+    let source = root.path().join("parallel-cwd.c");
+    fs::write(
+        &source,
+        r#"
+#include <fcntl.h>
+#include <pthread.h>
+#include <stdatomic.h>
+#include <string.h>
+#include <unistd.h>
+static atomic_int done;
+static void *reader(void *unused) {
+    (void)unused;
+    for (int i = 0; i < 1000 || !atomic_load(&done); ++i) {
+        int fd = open("file.txt", O_RDONLY);
+        if (fd < 0) return (void *)1;
+        char bytes[32] = {0};
+        int count = read(fd, bytes, sizeof(bytes) - 1);
+        close(fd);
+        if (!((count == 10 && !strcmp(bytes, "root bytes")) ||
+              (count == 13 && !strcmp(bytes, "package bytes")))) return (void *)2;
+    }
+    return 0;
+}
+int main(int argc, char **argv) {
+    if (argc != 2) return 20;
+    alarm(15);
+    int native = open(".", O_RDONLY | O_DIRECTORY);
+    int managed = open("node_modules/dep", O_RDONLY | O_DIRECTORY);
+    if (native < 0 || managed < 0) return 21;
+    pthread_t peer;
+    if (pthread_create(&peer, 0, reader, 0)) return 22;
+    for (int i = 0; i < 100; ++i) {
+        if (i % 2 ? chdir("node_modules/dep") : fchdir(managed)) return 23;
+        if (i % 2 ? chdir(argv[1]) : fchdir(native)) return 24;
+    }
+    atomic_store(&done, 1);
+    void *result;
+    if (pthread_join(peer, &result)) return 25;
+    close(managed);
+    close(native);
+    return result ? 26 : 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("parallel-cwd");
+    assert!(Command::new("cc")
+        .args(["-static", "-pthread", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .arg(root.path())
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_nonleader_proc_fd_aliases_keep_dependency_ownership() {
+    use std::process::Command;
+    let root = fixture();
+    let cache = tempfile::tempdir().unwrap();
+    let source = root.path().join("proc-alias.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <errno.h>
+#include <fcntl.h>
+#include <pthread.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+static int check(const char *path) {
+    errno = 0;
+    int writable = open(path, O_WRONLY);
+    if (writable >= 0) close(writable);
+    if (writable != -1 || errno != EROFS) return 1;
+    int readable = open(path, O_RDONLY);
+    if (readable < 0) return 2;
+    char bytes[14] = {0};
+    int count = read(readable, bytes, 13);
+    close(readable);
+    return count == 13 && !strcmp(bytes, "package bytes") ? 0 : 3;
+}
+
+static void *worker(void *arg) {
+    int fd = (int)(intptr_t)arg;
+    char path[128];
+    snprintf(path, sizeof(path), "/proc/%d/fd/%d/file.txt", getpid(), fd);
+    if (check(path)) return (void *)(intptr_t)21;
+    snprintf(path, sizeof(path), "/proc/%d/task/%ld/fd/%d/file.txt", getpid(), syscall(SYS_gettid), fd);
+    if (check(path)) return (void *)(intptr_t)22;
+    snprintf(path, sizeof(path), "/proc/self/task/%ld/fd/%d/file.txt", syscall(SYS_gettid), fd);
+    if (check(path)) return (void *)(intptr_t)23;
+    return 0;
+}
+int main(void) {
+    int fd = open("node_modules/dep", O_RDONLY | O_DIRECTORY);
+    if (fd < 0) return 20;
+    pthread_t thread;
+    if (pthread_create(&thread, 0, worker, (void *)(intptr_t)fd)) return 24;
+    void *result;
+    if (pthread_join(thread, &result)) return 25;
+    close(fd);
+    return (int)(intptr_t)result;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("proc-alias");
+    assert!(Command::new("cc")
+        .args(["-static", "-pthread", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .arg("--cache-dir")
+        .arg(cache.path().join("cache"))
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(!root.path().join("node_modules").exists());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_proc_fd_descendants_resolve_nested_virtual_dependencies() {
+    use std::process::Command;
+    let root = fixture();
+    let mut graph = data();
+    graph["packageRegistryData"][2][1][0][1]["packageDependencies"] =
+        json!([["@scope/pkg", "npm:1"]]);
+    inline(root.path(), &graph);
+    let source = root.path().join("nested-proc-fd.c");
+    fs::write(
+        &source,
+        r#"
+#include <errno.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
+int main(void) {
+    int dir = open("node_modules/dep", O_RDONLY | O_DIRECTORY);
+    if (dir < 0) return 20;
+    char path[256];
+    snprintf(path, sizeof(path), "/proc/self/fd/%d/node_modules/@scope/pkg/package.json", dir);
+    int file = open(path, O_RDONLY);
+    if (file < 0) return 21;
+    char bytes[64] = {0};
+    int count = read(file, bytes, sizeof(bytes) - 1);
+    if (count != 21 || strcmp(bytes, "{\"name\":\"@scope/pkg\"}")) return 22;
+    errno = 0;
+    if (open(path, O_WRONLY) != -1 || errno != EROFS) return 23;
+    close(file);
+    close(dir);
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("nested-proc-fd");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_named_standard_stream_aliases_keep_descriptor_ownership() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("standard-alias.c");
+    fs::write(
+        &source,
+        r#"
+#include <errno.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <unistd.h>
+int main(int argc, char **argv) {
+    if (argc != 3) return 20;
+    int fd = open("node_modules/dep/file.txt", O_RDONLY);
+    if (fd < 0) return 21;
+    if (dup2(fd, atoi(argv[1])) < 0) return 22;
+    errno = 0;
+    if (chmod(argv[2], 0600) != -1 || errno != EROFS) return 23;
+    fd = open("node_modules/dep", O_RDONLY | O_DIRECTORY);
+    if (fd < 0) return 24;
+    if (dup2(fd, atoi(argv[1])) < 0) return 25;
+    char descendant[128];
+    if (snprintf(descendant, sizeof(descendant), "%s/file.txt", argv[2]) >= sizeof(descendant)) return 26;
+    errno = 0;
+    if (chmod(descendant, 0600) != -1 || errno != EROFS) return 27;
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("standard-alias");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    for (fd, alias) in [(0, "/dev/stdin"), (1, "/dev/stdout"), (2, "/dev/stderr")] {
+        let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+            .current_dir(root.path())
+            .args(["run", "--"])
+            .arg(&executable)
+            .arg(fd.to_string())
+            .arg(alias)
+            .output()
+            .unwrap();
+        assert_eq!(
+            result.status.code(),
+            Some(0),
+            "{alias}: {}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_native_fifo_opens_allow_peer_threads_to_unblock_each_other() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("fifo-peers.c");
+    fs::write(
+        &source,
+        r#"
+#include <fcntl.h>
+#include <pthread.h>
+#include <sys/stat.h>
+#include <unistd.h>
+static void *reader(void *unused) {
+    (void)unused;
+    int fd = open("fifo", O_RDONLY);
+    if (fd < 0) return (void *)1;
+    char byte = 0;
+    int ok = read(fd, &byte, 1) == 1 && byte == 'x';
+    close(fd);
+    return ok ? 0 : (void *)2;
+}
+int main(void) {
+    if (mkfifo("fifo", 0600)) return 20;
+    pthread_t thread;
+    if (pthread_create(&thread, 0, reader, 0)) return 21;
+    usleep(20000);
+    int fd = open("fifo", O_WRONLY);
+    if (fd < 0 || write(fd, "x", 1) != 1) return 22;
+    close(fd);
+    void *result = 0;
+    if (pthread_join(thread, &result) || result) return 23;
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("fifo-peers");
+    assert!(Command::new("cc")
+        .args(["-static", "-pthread", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new("timeout")
+        .arg("10s")
+        .arg(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_concurrent_duplication_preserves_managed_descriptor_ownership() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("concurrent-dup.c");
+    fs::write(
+        &source,
+        r#"
+#include <fcntl.h>
+#include <pthread.h>
+#include <stdio.h>
+#include <stdatomic.h>
+#include <sys/stat.h>
+#include <unistd.h>
+static atomic_int done;
+static atomic_int attempts;
+static void *mutate(void *unused) {
+    (void)unused;
+    while (!atomic_load(&done)) {
+        fchmod(100, 0600);
+        atomic_fetch_add(&attempts, 1);
+    }
+    return 0;
+}
+int main(void) {
+    int managed = open("node_modules/dep/file.txt", O_RDONLY);
+    int native = open("output.txt", O_CREAT | O_RDWR, 0600);
+    if (managed < 0 || native < 0) return 20;
+    struct stat before, after;
+    if (fstat(managed, &before)) return 21;
+    pthread_t thread;
+    if (pthread_create(&thread, 0, mutate, 0)) return 22;
+    for (int i = 0; i < 400; ++i) {
+        if (dup2(managed, 100) != 100 || dup2(native, 100) != 100) return 23;
+    }
+    atomic_store(&done, 1);
+    if (pthread_join(thread, 0) || !atomic_load(&attempts)) return 24;
+    if (fstat(managed, &after)) return 25;
+    if ((before.st_mode & 0777) != (after.st_mode & 0777)) {
+        fprintf(stderr, "managed mode changed from %o to %o after %d attempts\n",
+            before.st_mode & 0777, after.st_mode & 0777, atomic_load(&attempts));
+        return 26;
+    }
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("concurrent-dup");
+    assert!(Command::new("cc")
+        .args(["-static", "-pthread", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_reuses_scratch_after_threads_and_vfork_spawns() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("scratch-reuse.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <fcntl.h>
+#include <pthread.h>
+#include <spawn.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/wait.h>
+#include <unistd.h>
+extern char **environ;
+static int probe(void) {
+    int fd = open("node_modules/dep/file.txt", O_RDONLY);
+    if (fd < 0) return 1;
+    close(fd);
+    return 0;
+}
+static size_t vm_size_kb(void) {
+    FILE *status = fopen("/proc/self/status", "r");
+    if (!status) return 0;
+    char line[256];
+    size_t size = 0;
+    while (fgets(line, sizeof(line), status)) {
+        if (sscanf(line, "VmSize: %zu kB", &size) == 1) break;
+    }
+    fclose(status);
+    return size;
+}
+static void *worker(void *unused) {
+    (void)unused;
+    return (void *)(intptr_t)probe();
+}
+static int thread_once(void) {
+    pthread_t thread;
+    void *result = 0;
+    if (pthread_create(&thread, 0, worker, 0) || pthread_join(thread, &result)) return 1;
+    return (int)(intptr_t)result;
+}
+static int thread_wave(void) {
+    pthread_t threads[32];
+    for (int i = 0; i < 32; ++i) {
+        if (pthread_create(&threads[i], 0, worker, 0)) return 1;
+    }
+    for (int i = 0; i < 32; ++i) {
+        void *result = 0;
+        if (pthread_join(threads[i], &result) || result) return 1;
+    }
+    return 0;
+}
+static int spawn_once(char *path) {
+    pid_t child;
+    char *args[] = {path, "child", 0};
+    if (posix_spawn(&child, path, 0, 0, args, environ)) return 1;
+    int status = 0;
+    return waitpid(child, &status, 0) != child || !WIFEXITED(status) || WEXITSTATUS(status);
+}
+int main(int argc, char **argv) {
+    if (argc > 1) return probe();
+    if (probe()) return 20;
+    // The first wave establishes the scheduler-dependent peak of transient
+    // joined threads whose ptrace exit stops are still being drained.
+    for (int i = 0; i < 48; ++i) if (thread_once()) return 21;
+    size_t before = vm_size_kb();
+    if (!before) return 22;
+    for (int i = 0; i < 48; ++i) if (thread_once()) return 23;
+    size_t after = vm_size_kb();
+    if (after > before + 32768) {
+        fprintf(stderr, "thread scratch VmSize grew from %zu to %zu kB\n", before, after);
+        return 24;
+    }
+    if (spawn_once(argv[0])) return 25;
+    before = vm_size_kb();
+    if (!before) return 26;
+    for (int i = 0; i < 48; ++i) if (spawn_once(argv[0])) return 27;
+    after = vm_size_kb();
+    if (after > before + 32768) {
+        fprintf(stderr, "spawn scratch VmSize grew from %zu to %zu kB\n", before, after);
+        return 28;
+    }
+    for (int i = 0; i < 4; ++i) if (thread_wave()) return 29;
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("scratch-reuse");
+    assert!(Command::new("cc")
+        .args(["-static", "-pthread", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    assert_ne!(
+        Command::new(&executable)
+            .current_dir(root.path())
+            .status()
+            .unwrap()
+            .code(),
+        Some(0)
+    );
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(!root.path().join("node_modules").exists());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_rejects_mount_namespace_and_root_changes_before_execution() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("namespace.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <errno.h>
+#include <sched.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+int main(int argc, char **argv) {
+    if (argc != 2) return 20;
+    switch (atoi(argv[1])) {
+        case 0: syscall(SYS_unshare, CLONE_NEWNS); break;
+        case 1: syscall(SYS_clone, CLONE_NEWNS | SIGCHLD, 0, 0, 0, 0); break;
+        case 2: syscall(SYS_setns, -1, 0); break;
+        case 3: syscall(SYS_chroot, "/nonexistent"); break;
+        case 4: syscall(SYS_pivot_root, "/nonexistent", "/nonexistent"); break;
+    }
+    return errno == EPERM ? 22 : 21;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("namespace");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let outer_seccomp = fs::read_to_string("/proc/self/status")
+        .unwrap()
+        .lines()
+        .any(|line| line.trim() == "Seccomp:\t2");
+    for action in 0..5 {
+        let native = Command::new(&executable)
+            .arg(action.to_string())
+            .status()
+            .unwrap();
+        let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+            .current_dir(root.path())
+            .args(["run", "--"])
+            .arg(&executable)
+            .arg(action.to_string())
+            .output()
+            .unwrap();
+        if outer_seccomp && native.code() == Some(22) {
+            // Docker's outer seccomp filter may return EPERM before the
+            // tracee's filter can emit a ptrace stop for this syscall.
+            assert!(matches!(result.status.code(), Some(22) | Some(125)));
+            continue;
+        }
+        assert_eq!(result.status.code(), Some(125), "action {action}");
+        assert!(String::from_utf8_lossy(&result.stderr).contains("PNPORT_UNSUPPORTED_OPERATION"));
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_rejects_cross_group_shared_fd_tables_before_clone() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("shared-files.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <fcntl.h>
+#include <sched.h>
+#include <signal.h>
+#include <sys/syscall.h>
+#include <sys/wait.h>
+#include <unistd.h>
+int main(int argc, char **argv) {
+    if (argc != 2) return 20;
+    pid_t child = syscall(SYS_clone, CLONE_FILES | SIGCHLD, 0, 0, 0, 0);
+    if (child < 0) return 21;
+    if (child == 0) {
+        int marker = open(argv[1], O_CREAT | O_WRONLY, 0600);
+        if (marker >= 0) close(marker);
+        _exit(marker >= 0 ? 0 : 22);
+    }
+    int status = 0;
+    return waitpid(child, &status, 0) == child && WIFEXITED(status) && WEXITSTATUS(status) == 0 ? 0 : 23;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("shared-files");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let marker = root.path().join("cloned.txt");
+    assert_eq!(
+        Command::new(&executable)
+            .arg(&marker)
+            .status()
+            .unwrap()
+            .code(),
+        Some(0)
+    );
+    fs::remove_file(&marker).unwrap();
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .arg(&marker)
+        .output()
+        .unwrap();
+    assert_eq!(result.status.code(), Some(125));
+    assert!(String::from_utf8_lossy(&result.stderr).contains("PNPORT_UNSUPPORTED_OPERATION"));
+    assert!(!marker.exists());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_rejects_cross_group_shared_cwd_before_clone() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("shared-cwd.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <fcntl.h>
+#include <sched.h>
+#include <signal.h>
+#include <sys/syscall.h>
+#include <sys/wait.h>
+#include <unistd.h>
+int main(int argc, char **argv) {
+    if (argc != 2) return 20;
+    pid_t child = syscall(SYS_clone, CLONE_FS | SIGCHLD, 0, 0, 0, 0);
+    if (child < 0) return 21;
+    if (child == 0) {
+        int marker = open(argv[1], O_CREAT | O_WRONLY, 0600);
+        if (marker >= 0) close(marker);
+        _exit(marker >= 0 ? 0 : 22);
+    }
+    int status = 0;
+    return waitpid(child, &status, 0) == child && WIFEXITED(status) && WEXITSTATUS(status) == 0 ? 0 : 23;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("shared-cwd");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let marker = root.path().join("cloned-cwd.txt");
+    assert_eq!(
+        Command::new(&executable)
+            .arg(&marker)
+            .status()
+            .unwrap()
+            .code(),
+        Some(0)
+    );
+    fs::remove_file(&marker).unwrap();
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .arg(&marker)
+        .output()
+        .unwrap();
+    assert_eq!(result.status.code(), Some(125));
+    assert!(String::from_utf8_lossy(&result.stderr).contains("PNPORT_UNSUPPORTED_OPERATION"));
+    assert!(!marker.exists());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_rejects_threads_with_private_fd_or_cwd_contexts() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("private-thread-context.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <fcntl.h>
+#include <sched.h>
+#include <stdatomic.h>
+#include <stdlib.h>
+#include <unistd.h>
+static _Atomic int done;
+static int worker(void *value) {
+    int marker = open((const char *)value, O_CREAT | O_WRONLY, 0600);
+    if (marker >= 0) close(marker);
+    atomic_store(&done, marker >= 0 ? 1 : -1);
+    return marker >= 0 ? 0 : 22;
+}
+int main(int argc, char **argv) {
+    if (argc != 3) return 20;
+    void *stack = malloc(1024 * 1024);
+    if (!stack) return 21;
+    int shared = argv[2][0] == 'f' ? CLONE_FS : CLONE_FILES;
+    int flags = CLONE_VM | CLONE_SIGHAND | CLONE_THREAD | shared;
+    if (clone(worker, (char *)stack + 1024 * 1024, flags, argv[1]) < 0) return 23;
+    for (int attempt = 0; attempt < 1000 && !atomic_load(&done); ++attempt) usleep(1000);
+    return atomic_load(&done) == 1 ? 0 : 24;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("private-thread-context");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let marker = root.path().join("thread-marker");
+    for mode in ["files", "cwd"] {
+        assert_eq!(
+            Command::new(&executable)
+                .current_dir(root.path())
+                .arg(&marker)
+                .arg(mode)
+                .status()
+                .unwrap()
+                .code(),
+            Some(0),
+            "native mode={mode}"
+        );
+        fs::remove_file(&marker).unwrap();
+        let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+            .current_dir(root.path())
+            .args(["run", "--"])
+            .arg(&executable)
+            .arg(&marker)
+            .arg(mode)
+            .output()
+            .unwrap();
+        assert_eq!(
+            result.status.code(),
+            Some(125),
+            "mode={mode} stderr={}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert!(String::from_utf8_lossy(&result.stderr).contains("PNPORT_UNSUPPORTED_OPERATION"));
+        assert!(!marker.exists());
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_inherited_cache_descriptors_remain_readonly() {
+    use std::{
+        os::{
+            fd::AsRawFd,
+            unix::{fs::PermissionsExt, process::CommandExt},
+        },
+        process::Command,
+    };
+    let root = fixture();
+    let cache_path = root.path().join("owned-cache");
+    let cache = Cache::open(cache_path.clone()).unwrap();
+    let lease = cache.materialize(&root.path().join("cache.zip")).unwrap();
+    let content = lease.content.join("node_modules/dep/file.txt");
+    let original_mode = fs::metadata(&content).unwrap().permissions().mode() & 0o777;
+    let inherited = fs::File::open(&content).unwrap();
+    let source = root.path().join("inherited-fd.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <errno.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+int main(void) {
+    if (fcntl(9, F_GETFD) < 0) return 40;
+    errno = 0;
+    if (fchmod(9, 0600) != -1 || errno != EROFS) return 41;
+    errno = 0;
+    if (fchown(9, getuid(), getgid()) != -1 || errno != EROFS) return 42;
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("inherited-fd");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let mut command = Command::new(env!("CARGO_BIN_EXE_pnport"));
+    command
+        .current_dir(root.path())
+        .arg("--cache-dir")
+        .arg(&cache_path)
+        .args(["run", "--"])
+        .arg(&executable);
+    let source_fd = inherited.as_raw_fd();
+    unsafe {
+        command.pre_exec(move || {
+            if libc::dup2(source_fd, 9) < 0 || libc::fcntl(9, libc::F_SETFD, 0) < 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    let result = command.output().unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(
+        fs::metadata(content).unwrap().permissions().mode() & 0o777,
+        original_mode
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_proc_root_aliases_retain_managed_ownership() {
+    use std::{os::unix::fs::PermissionsExt, process::Command};
+    let root = fixture();
+    let cache_path = root.path().join("owned-cache");
+    let cache = Cache::open(cache_path.clone()).unwrap();
+    let lease = cache.materialize(&root.path().join("cache.zip")).unwrap();
+    let content = lease.content.join("node_modules/dep/file.txt");
+    let original_mode = fs::metadata(&content).unwrap().permissions().mode() & 0o777;
+    let output = root.path().join("output.txt");
+    let source = root.path().join("proc-root.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <errno.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+int main(int argc, char **argv) {
+    if (argc != 3) return 40;
+    char alias[8192];
+    snprintf(alias, sizeof(alias), "/proc/self/root%s", argv[1]);
+    errno = 0;
+    if (chmod(alias, 0600) != -1 || errno != EROFS) return 41;
+    errno = 0;
+    if (open(alias, O_WRONLY) != -1 || errno != EROFS) return 42;
+    snprintf(alias, sizeof(alias), "/proc/%d/task/%ld/root%s", getpid(), syscall(SYS_gettid), argv[1]);
+    errno = 0;
+    if (chmod(alias, 0600) != -1 || errno != EROFS) return 43;
+    snprintf(alias, sizeof(alias), "/proc/self/root%s", argv[2]);
+    int fd = open(alias, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    if (fd < 0 || write(fd, "ok", 2) != 2) return 44;
+    close(fd);
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("proc-root");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .arg("--cache-dir")
+        .arg(&cache_path)
+        .args(["run", "--"])
+        .arg(&executable)
+        .arg(&content)
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(fs::read(output).unwrap(), b"ok");
+    assert_eq!(
+        fs::metadata(content).unwrap().permissions().mode() & 0o777,
+        original_mode
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_rejects_pidfd_descriptor_duplication_before_installation() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("pidfd-getfd.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <fcntl.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+int main(void) {
+    int dependency = open("node_modules/dep/file.txt", O_RDONLY);
+    if (dependency < 0) return 40;
+    int owner = syscall(SYS_pidfd_open, getpid(), 0);
+    if (owner < 0) return 41;
+    int copy = syscall(SYS_pidfd_getfd, owner, dependency, 0);
+    return copy < 0 ? 42 : 43;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("pidfd-getfd");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    if result.status.code() == Some(42)
+        && fs::read_to_string("/proc/self/status")
+            .unwrap()
+            .lines()
+            .any(|line| line.trim() == "Seccomp:\t2")
+    {
+        // Docker's existing ERRNO filter takes precedence over our TRACE
+        // action. The unconfined focused run exercises pnport's own denial.
+        return;
+    }
+    assert_eq!(result.status.code(), Some(125));
+    assert!(String::from_utf8_lossy(&result.stderr).contains("PNPORT_UNSUPPORTED_OPERATION"));
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_rejects_ancillary_descriptor_receives_before_fd_mutation() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("received-fd.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <fcntl.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <unistd.h>
+int main(int argc, char **argv) {
+    if (argc != 3) return 39;
+    if (argv[2][0] == 'p') {
+        int plain[2];
+        if (socketpair(AF_UNIX, SOCK_DGRAM, 0, plain)) return 48;
+        char byte = 'p';
+        if (send(plain[0], &byte, 1, 0) != 1) return 49;
+        char received_byte;
+        struct iovec data = {.iov_base = &received_byte, .iov_len = 1};
+        struct msghdr message = {.msg_iov = &data, .msg_iovlen = 1};
+        if (recvmsg(plain[1], &message, 0) != 1 || received_byte != 'p') return 50;
+        int marker = open(argv[1], O_CREAT | O_WRONLY, 0600);
+        if (marker < 0) return 51;
+        close(marker);
+        return 0;
+    }
+    int fd = open("node_modules/dep/file.txt", O_RDONLY);
+    if (fd < 0) return 40;
+    int sockets[2];
+    if (socketpair(AF_UNIX, SOCK_DGRAM, 0, sockets)) return 41;
+    char byte = 'x';
+    struct iovec sent_data = {.iov_base = &byte, .iov_len = 1};
+    union { struct cmsghdr align; char bytes[CMSG_SPACE(sizeof(int))]; } sent_control = {0};
+    struct msghdr sent = {.msg_iov = &sent_data, .msg_iovlen = 1,
+        .msg_control = sent_control.bytes, .msg_controllen = sizeof(sent_control.bytes)};
+    struct cmsghdr *control = CMSG_FIRSTHDR(&sent);
+    control->cmsg_level = SOL_SOCKET;
+    control->cmsg_type = SCM_RIGHTS;
+    control->cmsg_len = CMSG_LEN(sizeof(int));
+    memcpy(CMSG_DATA(control), &fd, sizeof(fd));
+    if (sendmsg(sockets[0], &sent, 0) != 1) return 42;
+    char received_byte;
+    struct iovec received_data = {.iov_base = &received_byte, .iov_len = 1};
+    union { struct cmsghdr align; char bytes[CMSG_SPACE(sizeof(int))]; } received_control = {0};
+    struct msghdr received = {.msg_iov = &received_data, .msg_iovlen = 1,
+        .msg_control = received_control.bytes, .msg_controllen = sizeof(received_control.bytes)};
+    if (argv[2][0] == 'm') {
+        struct mmsghdr batch = {.msg_hdr = received};
+        if (recvmmsg(sockets[1], &batch, 1, 0, 0) != 1) return 43;
+        received = batch.msg_hdr;
+    } else if (recvmsg(sockets[1], &received, 0) != 1) {
+        return 44;
+    }
+    control = CMSG_FIRSTHDR(&received);
+    if (!control || control->cmsg_type != SCM_RIGHTS) return 45;
+    int transferred;
+    memcpy(&transferred, CMSG_DATA(control), sizeof(transferred));
+    if (fchmod(transferred, 0600)) return 46;
+    int marker = open(argv[1], O_CREAT | O_WRONLY, 0600);
+    if (marker < 0) return 47;
+    close(marker);
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("received-fd");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let marker = root.path().join("received-fd-marker");
+    assert_eq!(
+        Command::new(&executable)
+            .arg(&marker)
+            .arg("recvmsg")
+            .current_dir(root.path())
+            .status()
+            .unwrap()
+            .code(),
+        Some(40)
+    );
+    for mode in ["recvmsg", "mmsg"] {
+        let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+            .current_dir(root.path())
+            .args(["run", "--"])
+            .arg(&executable)
+            .arg(&marker)
+            .arg(mode)
+            .output()
+            .unwrap();
+        assert_eq!(
+            result.status.code(),
+            Some(125),
+            "mode={mode} stderr={}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert!(String::from_utf8_lossy(&result.stderr).contains("PNPORT_UNSUPPORTED_OPERATION"));
+        assert!(!marker.exists());
+    }
+    let plain = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .arg(&marker)
+        .arg("plain")
+        .output()
+        .unwrap();
+    assert_eq!(
+        plain.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&plain.stderr)
+    );
+    assert!(marker.exists());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_workspace_symlinks_reach_virtual_and_managed_targets() {
+    use std::{os::unix::fs::symlink, process::Command};
+    let root = fixture();
+    let cache_root = tempfile::tempdir().unwrap();
+    let cache_path = cache_root.path().join("cache");
+    let cache = Cache::open(cache_path.clone()).unwrap();
+    let lease = cache.materialize(&root.path().join("cache.zip")).unwrap();
+    symlink(
+        "node_modules/dep/file.txt",
+        root.path().join("virtual-alias"),
+    )
+    .unwrap();
+    symlink("node_modules/dep", root.path().join("virtual-dir")).unwrap();
+    symlink(
+        lease.content.join("node_modules/dep/file.txt"),
+        root.path().join("managed-alias"),
+    )
+    .unwrap();
+    fs::write(root.path().join("native.txt"), b"native bytes").unwrap();
+    symlink("native.txt", root.path().join("native-alias")).unwrap();
+    let source = root.path().join("symlink-lookup.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <errno.h>
+#include <fcntl.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
+static int check(const char *name, const char *expected) {
+    char value[64];
+    int fd = open(name, O_RDONLY);
+    if (fd < 0) return -1;
+    ssize_t count = read(fd, value, sizeof(value));
+    close(fd);
+    return count == (ssize_t)strlen(expected) && !memcmp(value, expected, count);
+}
+int main(void) {
+    if (check("virtual-alias", "package bytes") != 1) return 41;
+    if (check("virtual-dir/file.txt", "package bytes") != 1) return 42;
+    if (chmod("managed-alias", 0600) != -1 || errno != EROFS) return 43;
+    if (open("managed-alias", O_WRONLY) != -1 || errno != EROFS) return 44;
+    if (check("native-alias", "native bytes") != 1) return 45;
+    struct stat info;
+    if (lstat("managed-alias", &info) || !S_ISLNK(info.st_mode)) return 46;
+    if (unlink("managed-alias")) return 47;
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("symlink-lookup");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    assert_eq!(
+        Command::new(&executable)
+            .current_dir(root.path())
+            .status()
+            .unwrap()
+            .code(),
+        Some(41)
+    );
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .arg("--cache-dir")
+        .arg(&cache_path)
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(!root.path().join("node_modules").exists());
+    assert!(!root.path().join("managed-alias").exists());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_native_relative_paths_keep_kernel_lookup_semantics() {
+    use std::process::Command;
+    let root = fixture();
+    fs::create_dir_all(root.path().join("native/sub")).unwrap();
+    fs::write(root.path().join("native/value"), b"right").unwrap();
+    fs::write(root.path().join("value"), b"wrong").unwrap();
+    std::os::unix::fs::symlink("native/sub", root.path().join("link")).unwrap();
+    let source = root.path().join("native-paths.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <errno.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
+int main(void) {
+    int fd = open("link/../value", O_RDONLY);
+    if (fd < 0) return 40;
+    char bytes[6] = {0};
+    if (read(fd, bytes, 5) != 5 || strcmp(bytes, "right")) return 41;
+    close(fd);
+    errno = 0;
+    if (open("native/value/", O_RDONLY) != -1 || errno != ENOTDIR) return 42;
+    struct stat info;
+    errno = 0;
+    if (stat("native/value/", &info) != -1 || errno != ENOTDIR) return 43;
+    if (rename("value", "link/../renamed")) return 44;
+    if (access("native/renamed", F_OK) || access("renamed", F_OK) != -1) return 45;
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("native-paths");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(
+        fs::read(root.path().join("native/renamed")).unwrap(),
+        b"wrong"
+    );
+    assert!(!root.path().join("renamed").exists());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_native_cwd_uses_live_directory_after_symlink_and_rename() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("native-cwd.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <fcntl.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
+static int check(const char *directory, const char *expected) {
+    char cwd[4096];
+    if (!getcwd(cwd, sizeof(cwd))) return 1;
+    if (strcmp(cwd, directory)) return 2;
+    int fd = open("value", O_RDONLY);
+    if (fd < 0) return 3;
+    char bytes[4] = {0};
+    int count = read(fd, bytes, 3);
+    close(fd);
+    return count == 3 && !strcmp(bytes, expected) ? 0 : 4;
+}
+int main(int argc, char **argv) {
+    if (argc != 2) return 20;
+    char old[4096], moved[4096];
+    snprintf(old, sizeof(old), "%s/old", argv[1]);
+    snprintf(moved, sizeof(moved), "%s/moved", argv[1]);
+    if (mkdir("old", 0700) || mkdir("new", 0700) || symlink("old", "alias")) return 21;
+    int fd = open("old/value", O_CREAT | O_WRONLY, 0600);
+    if (fd < 0 || write(fd, "old", 3) != 3) return 22;
+    close(fd);
+    fd = open("new/value", O_CREAT | O_WRONLY, 0600);
+    if (fd < 0 || write(fd, "new", 3) != 3) return 23;
+    close(fd);
+    if (chdir("alias") || unlink("../alias") || symlink("new", "../alias")) return 24;
+    if (check(old, "old")) return 25;
+    if (rename(old, moved)) return 26;
+    if (check(moved, "old")) return 27;
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("native-cwd");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .arg(root.path())
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_empty_path_descriptor_forms_preserve_native_and_readonly_behavior() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("empty-path.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <errno.h>
+#include <fcntl.h>
+#include <sys/syscall.h>
+#include <sys/stat.h>
+#include <unistd.h>
+int main(void) {
+    int dependency = open("node_modules/dep/file.txt", O_RDONLY);
+    if (dependency < 0) return 20;
+    int output = open("output", O_CREAT | O_RDWR, 0600);
+    if (output < 0) return 21;
+    if (syscall(SYS_faccessat2, output, "", R_OK, AT_EMPTY_PATH)) return 22;
+    if (fchownat(output, "", getuid(), getgid(), AT_EMPTY_PATH)) return 23;
+    if (utimensat(output, "", 0, AT_EMPTY_PATH)) return 24;
+    if (syscall(SYS_faccessat2, dependency, "", R_OK, AT_EMPTY_PATH)) return 25;
+    errno = 0;
+    if (syscall(SYS_faccessat2, dependency, "", W_OK, AT_EMPTY_PATH) != -1 || errno != EROFS) return 26;
+    errno = 0;
+    if (fchownat(dependency, "", getuid(), getgid(), AT_EMPTY_PATH) != -1 || errno != EROFS) return 27;
+    errno = 0;
+    if (utimensat(dependency, "", 0, AT_EMPTY_PATH) != -1 || errno != EROFS) return 28;
+    errno = 0;
+    if (linkat(dependency, "", AT_FDCWD, "linked-dependency", AT_EMPTY_PATH) != -1 || errno != EROFS) return 29;
+    errno = 0;
+    if (linkat(output, "", AT_FDCWD, "node_modules/dep/linked", AT_EMPTY_PATH) != -1 || errno != EROFS) return 30;
+    close(output);
+    close(dependency);
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("empty-path");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(!root.path().join("linked-dependency").exists());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_rejects_mutating_ioctls_on_dependency_descriptors() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("managed-ioctl.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <errno.h>
+#include <fcntl.h>
+#include <linux/fs.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
+int main(void) {
+    int fd = open("node_modules/dep/file.txt", O_RDONLY);
+    if (fd < 0) return 40;
+    unsigned long flags = 0;
+    errno = 0;
+    if (ioctl(fd, FS_IOC_GETFLAGS, &flags) < 0 && errno == EROFS) return 41;
+    errno = 0;
+    if (ioctl(fd, FS_IOC_SETFLAGS, &flags) != -1 || errno != EROFS) return 42;
+    struct fsxattr attrs = {0};
+    errno = 0;
+    if (ioctl(fd, FS_IOC_FSSETXATTR, &attrs) != -1 || errno != EROFS) return 43;
+    close(fd);
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("managed-ioctl");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_static_xattr_reads_translate_virtual_paths() {
+    use std::process::Command;
+    let root = fixture();
+    let cache = tempfile::tempdir().unwrap();
+    let source = root.path().join("xattr.c");
+    fs::write(
+        &source,
+        r#"
+#include <errno.h>
+#include <sys/xattr.h>
+int main(void) {
+    const char *path = "node_modules/dep/file.txt";
+    char values[256];
+    errno = 0;
+    if (getxattr(path, "user.pnport.missing", values, sizeof(values)) != -1 || errno != ENODATA) return 21;
+    errno = 0;
+    if (lgetxattr(path, "user.pnport.missing", values, sizeof(values)) != -1 || errno != ENODATA) return 22;
+    if (listxattr(path, values, sizeof(values)) < 0) return 23;
+    if (llistxattr(path, values, sizeof(values)) < 0) return 24;
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("xattr-fixture");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    assert_eq!(
+        Command::new(&executable)
+            .current_dir(root.path())
+            .status()
+            .unwrap()
+            .code(),
+        Some(21)
+    );
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .arg("--cache-dir")
+        .arg(cache.path().join("cache"))
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(!root.path().join("node_modules").exists());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_static_filesystem_stats_translate_virtual_paths() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("statfs.c");
+    fs::write(
+        &source,
+        r#"
+#include <errno.h>
+#include <sys/statfs.h>
+#include <sys/statvfs.h>
+int main(void) {
+    const char *path = "node_modules/dep/file.txt";
+    struct statfs native;
+    if (statfs(path, &native)) return errno == ENOENT ? 21 : 22;
+    struct statvfs portable;
+    if (statvfs(path, &portable)) return 23;
+    return native.f_bsize > 0 && portable.f_bsize > 0 ? 0 : 24;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("statfs-fixture");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    assert_eq!(
+        Command::new(&executable)
+            .current_dir(root.path())
+            .status()
+            .unwrap()
+            .code(),
+        Some(21)
+    );
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(!root.path().join("node_modules").exists());
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[test]
+fn linux_x64_futimesat_rejects_virtual_dependency_mutation() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("futimesat.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <errno.h>
+#include <fcntl.h>
+#include <sys/time.h>
+#include <unistd.h>
+int main(void) {
+    int dir = open("node_modules/dep", O_RDONLY | O_DIRECTORY);
+    if (dir < 0) return errno == ENOENT ? 40 : 41;
+    errno = 0;
+    if (futimesat(dir, "file.txt", NULL) != -1 || errno != EROFS) return 42;
+    int output = open("output.txt", O_CREAT | O_WRONLY, 0600);
+    if (output < 0) return 43;
+    close(output);
+    if (futimesat(AT_FDCWD, "output.txt", NULL)) return 44;
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("futimesat");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    assert_eq!(
+        Command::new(&executable)
+            .current_dir(root.path())
+            .status()
+            .unwrap()
+            .code(),
+        Some(40)
+    );
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(root.path().join("output.txt").exists());
+    assert!(!root.path().join("node_modules").exists());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn pnp_unaware_static_go_process_reads_virtual_dependencies() {
+    use std::process::Command;
+    if Command::new("go").arg("version").output().is_err() {
+        eprintln!("Go is unavailable; the pinned Linux Docker gate runs this fixture");
+        return;
+    }
+    let root = fixture();
+    let cache = tempfile::tempdir().unwrap();
+    let executable = root.path().join("static-go-fixture");
+    assert!(Command::new("go")
+        .env("CGO_ENABLED", "0")
+        .env("GO111MODULE", "off")
+        .args(["build", "-o"])
+        .arg(&executable)
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/static-go/main.go"
+        ))
+        .status()
+        .unwrap()
+        .success());
+    assert_eq!(
+        Command::new(&executable)
+            .current_dir(root.path())
+            .status()
+            .unwrap()
+            .code(),
+        Some(21)
+    );
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .arg("--cache-dir")
+        .arg(cache.path().join("cache"))
+        .args(["--log-level", "debug", "run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "stdout={} stderr={}",
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(result.stdout, b"static-go-ok\nstatic-go-ok\n");
+    assert_eq!(fs::read(root.path().join("output-go.txt")).unwrap(), b"go");
+    assert!(!root.path().join("node_modules").exists());
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[test]
+fn linux_rejects_a_compat_elf_at_the_descendant_exec_stop() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("compat.s");
+    fs::write(
+        &source,
+        ".section .text\n.globl _start\n_start:\nmovl $1, %eax\nxorl %ebx, %ebx\nint $0x80\n",
+    )
+    .unwrap();
+    let object = root.path().join("compat.o");
+    let compat = root.path().join("compat");
+    assert!(Command::new("as")
+        .args(["--32", "-o"])
+        .arg(&object)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    assert!(Command::new("ld")
+        .args(["-m", "elf_i386", "-o"])
+        .arg(&compat)
+        .arg(&object)
+        .status()
+        .unwrap()
+        .success());
+    // Hosts without IA32 compatibility cannot execute the negative control.
+    if !Command::new(&compat)
+        .status()
+        .is_ok_and(|status| status.code() == Some(0))
+    {
+        return;
+    }
+    let launcher_source = root.path().join("compat-launcher.c");
+    fs::write(
+        &launcher_source,
+        r#"
+#include <unistd.h>
+int main(int argc, char **argv) {
+    if (argc != 2) return 40;
+    char *args[] = {argv[1], 0};
+    execve(argv[1], args, 0);
+    return 41;
+}
+"#,
+    )
+    .unwrap();
+    let launcher = root.path().join("compat-launcher");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&launcher)
+        .arg(&launcher_source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&launcher)
+        .arg(&compat)
+        .output()
+        .unwrap();
+    assert_eq!(result.status.code(), Some(125));
+    assert!(String::from_utf8_lossy(&result.stderr).contains("PNPORT_UNSUPPORTED_OPERATION"));
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_descendant_execve_enters_a_virtual_executable() {
+    use std::process::Command;
+    let root = fixture();
+    let cache = tempfile::tempdir().unwrap();
+    let worker_source = root.path().join("worker.c");
+    fs::write(
+        &worker_source,
+        r#"
+#include <errno.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <sys/stat.h>
+#include <unistd.h>
+int main(void) {
+    int fd = open("/proc/self/exe", O_RDONLY);
+    if (fd < 0) return 30;
+    errno = 0;
+    if (fchmod(fd, 0600) != -1 || errno != EROFS) return 31;
+    errno = 0;
+    if (fchmodat(AT_FDCWD, "/proc/self/exe", 0600, 0) != -1 || errno != EROFS) return 32;
+    close(fd);
+    puts("virtual-exec-ok");
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let worker = root.path().join("worker");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&worker)
+        .arg(&worker_source)
+        .status()
+        .unwrap()
+        .success());
+    let archive_path = root.path().join("cache.zip");
+    let mut archive = zip::ZipWriter::new(fs::File::create(&archive_path).unwrap());
+    archive
+        .start_file(
+            "node_modules/dep/worker",
+            zip::write::SimpleFileOptions::default().unix_permissions(0o755),
+        )
+        .unwrap();
+    archive.write_all(&fs::read(&worker).unwrap()).unwrap();
+    archive.finish().unwrap();
+    let launcher_source = root.path().join("launcher.c");
+    fs::write(
+        &launcher_source,
+        r#"
+#include <unistd.h>
+int main(void) {
+    char *args[] = {"node_modules/dep/worker", 0};
+    char *env[] = {0};
+    execve(args[0], args, env);
+    return 42;
+}
+
+"#,
+    )
+    .unwrap();
+    let launcher = root.path().join("launcher");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&launcher)
+        .arg(&launcher_source)
+        .status()
+        .unwrap()
+        .success());
+    assert_eq!(
+        Command::new(&launcher)
+            .current_dir(root.path())
+            .status()
+            .unwrap()
+            .code(),
+        Some(42)
+    );
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .arg("--cache-dir")
+        .arg(cache.path().join("cache"))
+        .args(["run", "--"])
+        .arg(&launcher)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(result.stdout, b"virtual-exec-ok\n");
+    assert!(!root.path().join("node_modules").exists());
+
+    let fd_launcher_source = root.path().join("fd-launcher.c");
+    fs::write(
+        &fd_launcher_source,
+        r#"
+#define _GNU_SOURCE
+#include <fcntl.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+int main(void) {
+    int fd = open("node_modules/dep/worker", O_RDONLY);
+    if (fd < 0) return 40;
+    char *args[] = {"worker", 0};
+    char *env[] = {0};
+    syscall(SYS_execveat, fd, "", args, env, AT_EMPTY_PATH);
+    return 41;
+}
+"#,
+    )
+    .unwrap();
+    let fd_launcher = root.path().join("fd-launcher");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&fd_launcher)
+        .arg(&fd_launcher_source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .arg("--cache-dir")
+        .arg(cache.path().join("cache"))
+        .args(["run", "--"])
+        .arg(&fd_launcher)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(result.stdout, b"virtual-exec-ok\n");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_descendant_virtual_script_keeps_its_logical_argument() {
+    use std::process::Command;
+    let root = fixture();
+    let cache = tempfile::tempdir().unwrap();
+    let mut archive = zip::ZipWriter::new(fs::File::create(root.path().join("cache.zip")).unwrap());
+    archive
+        .start_file(
+            "node_modules/dep/script",
+            zip::write::SimpleFileOptions::default().unix_permissions(0o755),
+        )
+        .unwrap();
+    archive
+        .write_all(b"#!/usr/bin/env -S sh\nIFS= read -r value < \"${0%/*}/file.txt\"\nprintf '%s|%s|%s\\n' \"$0\" \"$value\" \"$1\"\n")
+        .unwrap();
+    archive
+        .start_file(
+            "node_modules/dep/file.txt",
+            zip::write::SimpleFileOptions::default(),
+        )
+        .unwrap();
+    archive.write_all(b"package bytes").unwrap();
+    archive.finish().unwrap();
+    let source = root.path().join("script-launcher.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <fcntl.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+int main(int argc, char **argv) {
+    char *args[] = {"node_modules/dep/script", "extra", 0};
+    char *env_with_path[] = {"PATH=/bin", 0};
+    char *env_without_path[] = {0};
+    if (argc > 1 && argv[1][0] == 'f') {
+        int fd = open(args[0], O_RDONLY);
+        if (fd < 0) return 43;
+        syscall(SYS_execveat, fd, "", args, env_with_path, AT_EMPTY_PATH);
+    } else {
+        execve(args[0], args, argc > 1 ? env_without_path : env_with_path);
+    }
+    return 42;
+}
+"#,
+    )
+    .unwrap();
+    let launcher = root.path().join("script-launcher");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&launcher)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    assert_eq!(
+        Command::new(&launcher)
+            .current_dir(root.path())
+            .status()
+            .unwrap()
+            .code(),
+        Some(42)
+    );
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .arg("--cache-dir")
+        .arg(cache.path().join("cache"))
+        .args(["run", "--"])
+        .arg(&launcher)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let logical = root.path().join("cache.zip/node_modules/dep/script");
+    assert_eq!(
+        result.stdout,
+        format!("{}|package bytes|extra\n", logical.display()).as_bytes()
+    );
+    let without_path = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .arg("--cache-dir")
+        .arg(cache.path().join("cache"))
+        .args(["run", "--"])
+        .arg(&launcher)
+        .arg("without-path")
+        .output()
+        .unwrap();
+    assert_eq!(
+        without_path.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&without_path.stderr)
+    );
+    assert_eq!(
+        without_path.stdout,
+        format!("{}|package bytes|extra\n", logical.display()).as_bytes()
+    );
+    assert_eq!(
+        Command::new(&launcher)
+            .current_dir(root.path())
+            .arg("fd")
+            .status()
+            .unwrap()
+            .code(),
+        Some(43)
+    );
+    let by_fd = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .arg("--cache-dir")
+        .arg(cache.path().join("cache"))
+        .args(["run", "--"])
+        .arg(&launcher)
+        .arg("fd")
+        .output()
+        .unwrap();
+    assert_eq!(
+        by_fd.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&by_fd.stderr)
+    );
+    assert_eq!(
+        by_fd.stdout,
+        format!("{}|package bytes|extra\n", logical.display()).as_bytes()
+    );
+    assert!(!root.path().join("node_modules").exists());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_descendant_script_admission_returns_exec_errors_to_caller() {
+    use std::{
+        os::unix::fs::{symlink, PermissionsExt},
+        process::Command,
+    };
+    let root = fixture();
+    let interpreter = root.path().join("nonexec-interpreter");
+    fs::write(&interpreter, b"not executable\n").unwrap();
+    fs::set_permissions(&interpreter, fs::Permissions::from_mode(0o644)).unwrap();
+    let loop_a = root.path().join("interpreter-loop-a");
+    let loop_b = root.path().join("interpreter-loop-b");
+    symlink(&loop_b, &loop_a).unwrap();
+    symlink(&loop_a, &loop_b).unwrap();
+    let mut archive = zip::ZipWriter::new(fs::File::create(root.path().join("cache.zip")).unwrap());
+    for (name, body) in [
+        ("missing", "#!/pnport-missing-interpreter\n".to_string()),
+        ("denied", format!("#!{}\n", interpreter.display())),
+        ("malformed", "#!\n".to_string()),
+        ("valid", "#!/bin/sh\nexit 0\n".to_string()),
+        ("loop", format!("#!{}\n", loop_a.display())),
+    ] {
+        archive
+            .start_file(
+                format!("node_modules/dep/{name}"),
+                zip::write::SimpleFileOptions::default().unix_permissions(0o755),
+            )
+            .unwrap();
+        archive.write_all(body.as_bytes()).unwrap();
+    }
+    archive.finish().unwrap();
+    let source = root.path().join("script-errors.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <errno.h>
+#include <fcntl.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+int main(void) {
+    char *env[] = {0};
+    char *missing[] = {"node_modules/dep/missing", 0};
+    if (execve(missing[0], missing, env) != -1 || errno != ENOENT) return 41;
+    char *denied[] = {"node_modules/dep/denied", 0};
+    if (execve(denied[0], denied, env) != -1 || errno != EACCES) return 42;
+    char *malformed[] = {"node_modules/dep/malformed", 0};
+    if (execve(malformed[0], malformed, env) != -1 || errno != ENOEXEC) return 43;
+    char *loop[] = {"node_modules/dep/loop", 0};
+    if (execve(loop[0], loop, env) != -1 || errno != ELOOP) return 51;
+    int fd = open(missing[0], O_RDONLY);
+    if (fd < 0) return 44;
+    if (syscall(SYS_execveat, fd, "", missing, env, AT_EMPTY_PATH) != -1 || errno != ENOENT) return 45;
+    close(fd);
+    char *valid[] = {"node_modules/dep/valid", 0};
+    char **bad = (char **)(uintptr_t)1;
+    if (execve(valid[0], bad, env) != -1 || errno != EFAULT) return 46;
+    if (execve(valid[0], valid, bad) != -1 || errno != EFAULT) return 47;
+    fd = open(valid[0], O_RDONLY);
+    if (fd < 0) return 48;
+    if (syscall(SYS_execveat, fd, "", bad, env, AT_EMPTY_PATH) != -1 || errno != EFAULT) return 49;
+    if (syscall(SYS_execveat, fd, "", valid, bad, AT_EMPTY_PATH) != -1 || errno != EFAULT) return 50;
+    close(fd);
+    puts("continued");
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("script-errors");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(result.stdout, b"continued\n");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_virtual_script_accepts_long_exec_vectors() {
+    use std::process::Command;
+    let root = fixture();
+    let cache = tempfile::tempdir().unwrap();
+    let mut archive = zip::ZipWriter::new(fs::File::create(root.path().join("cache.zip")).unwrap());
+    archive
+        .start_file(
+            "node_modules/dep/script",
+            zip::write::SimpleFileOptions::default().unix_permissions(0o755),
+        )
+        .unwrap();
+    archive
+        .write_all(b"#!/usr/bin/env -S sh\nprintf '%s|%s|%s\\n' \"$0\" \"$#\" \"$1\"\n")
+        .unwrap();
+    archive.finish().unwrap();
+    let source = root.path().join("long-exec.c");
+    fs::write(
+        &source,
+        r#"
+#include <unistd.h>
+int main(void) {
+    char *args[602];
+    args[0] = "node_modules/dep/script";
+    for (int i = 1; i <= 600; ++i) args[i] = "arg";
+    args[601] = 0;
+    char *env[322];
+    for (int i = 0; i < 320; ++i) env[i] = "D=1";
+    env[320] = "PATH=/bin";
+    env[321] = 0;
+    execve(args[0], args, env);
+    return 42;
+}
+"#,
+    )
+    .unwrap();
+    let launcher = root.path().join("long-exec");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&launcher)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    assert_eq!(
+        Command::new(&launcher)
+            .current_dir(root.path())
+            .status()
+            .unwrap()
+            .code(),
+        Some(42)
+    );
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .arg("--cache-dir")
+        .arg(cache.path().join("cache"))
+        .args(["run", "--"])
+        .arg(&launcher)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let logical = root.path().join("cache.zip/node_modules/dep/script");
+    assert_eq!(
+        result.stdout,
+        format!("{}|600|arg\n", logical.display()).as_bytes()
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_nonleader_thread_exec_reaps_the_owned_tree() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("thread-exec.c");
+    fs::write(
+        &source,
+        r#"
+#include <pthread.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
+static void *replace(void *path) {
+    char *args[] = {(char *)path, "after", 0};
+    char *env[] = {0};
+    execve((char *)path, args, env);
+    _exit(42);
+}
+int main(int argc, char **argv) {
+    if (argc > 1 && !strcmp(argv[1], "after")) {
+        puts("thread-exec-ok");
+        return 0;
+    }
+    pthread_t thread;
+    if (pthread_create(&thread, 0, replace, argv[0])) return 41;
+    pause();
+    return 43;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("thread-exec");
+    assert!(Command::new("cc")
+        .args(["-static", "-pthread", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["--log-level", "debug", "run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(result.stdout, b"thread-exec-ok\n");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_waits_for_workers_after_the_main_thread_exits() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("thread-exit.c");
+    fs::write(
+        &source,
+        r#"
+#include <pthread.h>
+#include <stdio.h>
+#include <unistd.h>
+static void *worker(void *path) {
+    usleep(150000);
+    FILE *file = fopen((char *)path, "w");
+    if (!file) _exit(42);
+    fputs("worker-finished", file);
+    fclose(file);
+    return 0;
+}
+int main(int argc, char **argv) {
+    if (argc != 2) return 40;
+    pthread_t thread;
+    if (pthread_create(&thread, 0, worker, argv[1])) return 41;
+    pthread_exit(0);
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("thread-exit");
+    assert!(Command::new("cc")
+        .args(["-static", "-pthread", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let marker = root.path().join("worker.txt");
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .arg(&marker)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(fs::read(&marker).unwrap(), b"worker-finished");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_preserves_a_child_requested_sigstop_until_sigcont() {
+    use std::{
+        process::Command,
+        time::{Duration, Instant},
+    };
+    let root = fixture();
+    let source = root.path().join("stop.c");
+    fs::write(
+        &source,
+        r#"
+#include <signal.h>
+#include <stdio.h>
+#include <unistd.h>
+int main(int argc, char **argv) {
+    if (argc != 2) return 40;
+    FILE *file = fopen(argv[1], "w");
+    if (!file) return 41;
+    fprintf(file, "%d", getpid());
+    fclose(file);
+    raise(SIGSTOP);
+    puts("resumed");
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("stop");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let marker = root.path().join("stopped.pid");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .arg(&marker)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let tracee: i32 = loop {
+        if let Some(pid) = fs::read_to_string(&marker)
+            .ok()
+            .and_then(|value| value.parse().ok())
+        {
+            break pid;
+        }
+        assert!(Instant::now() < deadline, "tracee PID was not published");
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    let supervisor_stopped = loop {
+        let state = fs::read_to_string(format!("/proc/{}/status", child.id()))
+            .unwrap_or_default()
+            .lines()
+            .any(|line| line.starts_with("State:\tT"));
+        if state || child.try_wait().unwrap().is_some() || Instant::now() >= deadline {
+            break state;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    if !supervisor_stopped {
+        unsafe { libc::kill(tracee, libc::SIGKILL) };
+        child.kill().unwrap();
+        child.wait().unwrap();
+        panic!("pnport did not expose the child's job-control stop");
+    }
+    assert!(
+        child.try_wait().unwrap().is_none(),
+        "SIGSTOP was suppressed"
+    );
+    assert_eq!(unsafe { libc::kill(child.id() as i32, libc::SIGCONT) }, 0);
+    assert_eq!(unsafe { libc::kill(tracee, libc::SIGCONT) }, 0);
+    while child.try_wait().unwrap().is_none() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    if child.try_wait().unwrap().is_none() {
+        unsafe { libc::kill(tracee, libc::SIGKILL) };
+        child.kill().unwrap();
+        panic!("SIGCONT did not resume the traced child");
+    }
+    let output = child.wait_with_output().unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(output.stdout, b"resumed\n");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_gracefully_resumes_an_unsupported_syscall_stop() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("unsupported.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <fcntl.h>
+#include <signal.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+static const char *marker;
+static void terminated(int signal) {
+    (void)signal;
+    int preserved = fcntl(100, F_GETFD) >= 0;
+    int fd = open(marker, O_WRONLY | O_CREAT, 0600);
+    if (fd >= 0) {
+        if (preserved) write(fd, "handled", 7);
+        else write(fd, "mutated", 7);
+        close(fd);
+    }
+    _exit(0);
+}
+int main(int argc, char **argv) {
+    if (argc != 2) return 40;
+    marker = argv[1];
+    int source = open("/dev/null", O_RDONLY);
+    if (source < 0 || dup2(source, 100) != 100) return 42;
+    if (source != 100) close(source);
+    signal(SIGTERM, terminated);
+    syscall(SYS_close_range, 100, 100, 2);
+    return 41;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("unsupported");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let marker = root.path().join("terminated.txt");
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .arg(&marker)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(125),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(
+        fs::read(&marker)
+            .unwrap_or_else(|error| panic!("{error}: {}", String::from_utf8_lossy(&result.stderr))),
+        b"handled"
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_cleanup_cancels_a_failed_seccomp_entry_before_signals() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("failed-entry.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <errno.h>
+#include <fcntl.h>
+#include <linux/openat2.h>
+#include <signal.h>
+#include <stdio.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+static void ignored(int signal) { (void)signal; }
+int main(int argc, char **argv) {
+    if (argc != 2) return 40;
+    int marker = open(argv[1], O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    if (marker < 0 || write(marker, "ready", 5) != 5) return 43;
+    signal(SIGTERM, ignored);
+    struct open_how how = { .flags = O_RDONLY, .resolve = RESOLVE_BENEATH };
+    int result = syscall(SYS_openat2, AT_FDCWD,
+                         "node_modules/dep/file.txt", &how, sizeof(how));
+    if (result == -1 && errno == ENOSYS) write(marker, "denied", 6);
+    else {
+        char report[40];
+        int size = snprintf(report, sizeof(report), "native:%d:%d", result, errno);
+        write(marker, report, size);
+    }
+    close(marker);
+    return 44;
+}
+
+
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("failed-entry");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let marker = root.path().join("failed-entry-started");
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .arg(&marker)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(125),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(
+        fs::read(&marker).unwrap(),
+        b"readydenied",
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_invalid_path_pointers_keep_kernel_efault() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("path-fault.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <errno.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+int main(void) {
+    struct stat info;
+    if (syscall(SYS_openat, AT_FDCWD, 0, O_RDONLY) != -1 || errno != EFAULT) return 41;
+    if (syscall(SYS_newfstatat, AT_FDCWD, (char *)1, &info, 0) != -1 || errno != EFAULT) return 42;
+    if (syscall(SYS_renameat, AT_FDCWD, "path-fault",
+                AT_FDCWD, 0) != -1 || errno != EFAULT) return 43;
+    if (syscall(SYS_symlinkat, 0, AT_FDCWD, "link") != -1 || errno != EFAULT) return 44;
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("path-fault");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(!root.path().join("link").exists());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_inotify_dont_follow_watches_the_virtual_link_inode() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("watch-link.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/inotify.h>
+#include <sys/stat.h>
+#include <unistd.h>
+int main(void) {
+    int link = open("node_modules/dep", O_PATH | O_NOFOLLOW);
+    if (link < 0) return 41;
+    struct stat metadata;
+    if (fstat(link, &metadata) || !S_ISLNK(metadata.st_mode)) return 42;
+    int watcher = inotify_init1(IN_CLOEXEC);
+    if (watcher < 0) return 43;
+    if (inotify_add_watch(watcher, "node_modules/dep", IN_ATTRIB | IN_DONT_FOLLOW) < 0) return 44;
+    char name[64], details[4096];
+    snprintf(name, sizeof(name), "/proc/self/fdinfo/%d", watcher);
+    int info = open(name, O_RDONLY);
+    if (info < 0) return 45;
+    ssize_t length = read(info, details, sizeof(details) - 1);
+    if (length < 0) return 46;
+    details[length] = 0;
+    char *watch = strstr(details, "inotify wd:");
+    char *inode = watch ? strstr(watch, "ino:") : 0;
+    if (!inode) return 47;
+    unsigned long long watched = strtoull(inode + 4, 0, 16);
+    return watched == (unsigned long long)metadata.st_ino ? 0 : 48;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("watch-link");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_missing_entries_under_virtual_directories_are_readonly() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("missing-virtual.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <errno.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+int main(void) {
+    if (mkdir("node_modules/new-package", 0700) != -1 || errno != EROFS) return 41;
+    if (open("node_modules/dep/new.txt", O_WRONLY | O_CREAT, 0600) != -1 || errno != EROFS) return 42;
+    if (open("node_modules/dep/missing.txt", O_RDONLY) != -1 || errno != ENOENT) return 43;
+    int native = open("native-output", O_WRONLY | O_CREAT, 0600);
+    if (native < 0) return 44;
+    close(native);
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("missing-virtual");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(root.path().join("native-output").exists());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_reports_a_missing_elf_interpreter_as_command_not_found() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("missing-loader.c");
+    fs::write(&source, "int main(void) { return 0; }\n").unwrap();
+    let executable = root.path().join("missing-loader");
+    assert!(Command::new("cc")
+        .arg("-Wl,--dynamic-linker=/pnport-missing-loader.so")
+        .arg("-o")
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(result.status.code(), Some(127));
+    assert!(String::from_utf8_lossy(&result.stderr).contains("PNPORT_COMMAND_NOT_FOUND"));
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_openat2_preserves_dirfd_resolution_constraints() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("openat2.c");
+    fs::write(
+        &source,
+        r#"
+#define _GNU_SOURCE
+#include <errno.h>
+#include <fcntl.h>
+#include <linux/openat2.h>
+#include <stdio.h>
+#include <stdint.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+int main(void) {
+    errno = 0;
+    if (syscall(SYS_openat2, AT_FDCWD, "node_modules/dep/file.txt", NULL, 0) != -1 || errno != EINVAL) return 38;
+    errno = 0;
+    if (syscall(SYS_openat2, AT_FDCWD, "node_modules/dep/file.txt", NULL, 8) != -1 || errno != EINVAL) return 39;
+    int dir = open("node_modules/dep", O_PATH | O_DIRECTORY);
+    if (dir < 0) return 40;
+    struct open_how how = {.flags = O_RDONLY, .resolve = RESOLVE_BENEATH};
+    int fd = syscall(SYS_openat2, dir, "file.txt", &how, sizeof(how));
+    if (fd < 0) return 41;
+    char bytes[14] = {0};
+    if (read(fd, bytes, 13) != 13) return 42;
+    close(fd);
+    errno = 0;
+    if (syscall(SYS_openat2, dir, "../file.txt", &how, sizeof(how)) != -1 || errno != EXDEV) return 43;
+    how.resolve = RESOLVE_IN_ROOT;
+    fd = syscall(SYS_openat2, dir, "/file.txt", &how, sizeof(how));
+    if (fd < 0) return 44;
+    close(fd);
+    struct { struct open_how how; uint64_t extension; } extended = {
+        .how = {.flags = O_WRONLY}, .extension = 1
+    };
+    errno = 0;
+    if (syscall(SYS_openat2, AT_FDCWD, "node_modules/dep/file.txt", &extended, sizeof(extended)) != -1 || errno != E2BIG) return 45;
+    extended.extension = 0;
+    extended.how.flags = O_RDONLY;
+    fd = syscall(SYS_openat2, AT_FDCWD, "node_modules/dep/file.txt", &extended, sizeof(extended));
+    if (fd < 0) return 46;
+    close(fd);
+    errno = 0;
+    if (syscall(SYS_openat2, AT_FDCWD, "node_modules/dep/file.txt", (void *)1, sizeof(how)) != -1 || errno != EFAULT) return 47;
+    puts("openat2-ok");
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("openat2");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["--log-level", "debug", "run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(result.stdout, b"openat2-ok\n");
+    assert!(!root.path().join("node_modules").exists());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_forwards_child_sigtrap() {
+    use std::process::Command;
+    let root = fixture();
+    let source = root.path().join("trap.c");
+    fs::write(
+        &source,
+        r#"
+#include <signal.h>
+#include <stdio.h>
+#include <string.h>
+static volatile sig_atomic_t handled = 0;
+static void on_trap(int signal) { (void)signal; handled = 1; }
+int main(int argc, char **argv) {
+    if (argc == 1 || strcmp(argv[1], "default")) signal(SIGTRAP, on_trap);
+    raise(SIGTRAP);
+    if (!handled) return 51;
+    puts("trap-handled");
+    return 0;
+}
+"#,
+    )
+    .unwrap();
+    let executable = root.path().join("trap");
+    assert!(Command::new("cc")
+        .args(["-static", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .status()
+        .unwrap()
+        .success());
+    let handled = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        handled.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&handled.stderr)
+    );
+    assert_eq!(handled.stdout, b"trap-handled\n");
+    let default = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["run", "--"])
+        .arg(&executable)
+        .arg("default")
+        .output()
+        .unwrap();
+    assert_eq!(default.status.code(), Some(128 + libc::SIGTRAP));
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_private_helper_arguments_require_an_owner() {
+    use std::{
+        io::Read,
+        process::{Command, Stdio},
+        thread,
+        time::{Duration, Instant},
+    };
+
+    for args in [
+        vec!["__pnport_linux_probe"],
+        vec!["__pnport_linux_launch", "/bin/true"],
+    ] {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_pnport"))
+            .args(args)
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let status = loop {
+            if let Some(status) = child.try_wait().unwrap() {
+                break status;
+            }
+            if Instant::now() >= deadline {
+                child.kill().unwrap();
+                child.wait().unwrap();
+                panic!("private helper command stopped without an owner");
+            }
+            thread::sleep(Duration::from_millis(10));
+        };
+        let mut stderr = String::new();
+        child
+            .stderr
+            .take()
+            .unwrap()
+            .read_to_string(&mut stderr)
+            .unwrap();
+        assert_eq!(status.code(), Some(2), "{stderr}");
+        assert!(stderr.contains("unrecognized subcommand"), "{stderr}");
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_doctor_probes_a_mediated_pathname_syscall() {
+    use std::process::Command;
+    let root = fixture();
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .args(["doctor", "--json"])
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let report: Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(report["ready"], true);
+    let syscall = report["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["id"] == "linux-syscall")
+        .unwrap();
+    assert_eq!(syscall["status"], "pass");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_doctor_rejects_an_incompatible_companion_architecture() {
+    use std::process::Command;
+    let root = fixture();
+    let native = Path::new(env!("CARGO_BIN_EXE_pnport"));
+    let executable = root.path().join("pnport");
+    fs::copy(native, &executable).unwrap();
+    let companion = native.parent().unwrap().join("libpnport_preload.so");
+    let mut bytes = fs::read(companion).unwrap();
+    let other = if cfg!(target_arch = "aarch64") {
+        62u16
+    } else {
+        183u16
+    };
+    bytes[18..20].copy_from_slice(&other.to_le_bytes());
+    fs::write(root.path().join("libpnport_preload.so"), bytes).unwrap();
+    let result = Command::new(executable)
+        .current_dir(root.path())
+        .args(["doctor", "--json"])
+        .output()
+        .unwrap();
+    assert_eq!(result.status.code(), Some(125));
+    let report: Value = serde_json::from_slice(&result.stdout).unwrap();
+    let injection = report["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["id"] == "injection")
+        .unwrap();
+    assert_eq!(injection["status"], "fail");
+    assert_eq!(injection["code"], "PNPORT_INJECTION_FAILED");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_cache_lock_wait_observes_signal_and_graph_change() {
+    use std::{
+        process::{Command, Stdio},
+        thread,
+        time::{Duration, Instant},
+    };
+
+    use fs2::FileExt;
+
+    for mode in ["cancel", "graph"] {
+        let root = fixture();
+        let cache = tempfile::tempdir().unwrap();
+        let source = root.path().join("wait-for-cache.c");
+        fs::write(
+            &source,
+            r#"
+#include <fcntl.h>
+#include <stdio.h>
+#include <unistd.h>
+int main(int argc, char **argv) {
+    if (argc != 3) return 40;
+    FILE *ready = fopen(argv[1], "w");
+    if (!ready) return 41;
+    fprintf(ready, "%d", getpid());
+    fclose(ready);
+    while (access(argv[2], F_OK) != 0) usleep(10000);
+    int fd = open("node_modules/dep/file.txt", O_RDONLY);
+    if (fd < 0) return 42;
+    close(fd);
+    return 0;
+}
+"#,
+        )
+        .unwrap();
+        let executable = root.path().join("wait-for-cache");
+        assert!(Command::new("cc")
+            .args(["-static", "-o"])
+            .arg(&executable)
+            .arg(&source)
+            .status()
+            .unwrap()
+            .success());
+        let ready = root.path().join("ready.pid");
+        let proceed = root.path().join("proceed");
+        let cache_root = cache.path().join("cache");
+        let mut process = Command::new(env!("CARGO_BIN_EXE_pnport"))
+            .current_dir(root.path())
+            .arg("--cache-dir")
+            .arg(&cache_root)
+            .args(["run", "--"])
+            .arg(&executable)
+            .arg(&ready)
+            .arg(&proceed)
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let startup_deadline = Instant::now() + Duration::from_secs(5);
+        while fs::read_to_string(&ready)
+            .ok()
+            .and_then(|value| value.parse::<i32>().ok())
+            .is_none()
+            && Instant::now() < startup_deadline
+        {
+            thread::sleep(Duration::from_millis(10));
+        }
+        let child: i32 = fs::read_to_string(&ready)
+            .unwrap_or_default()
+            .parse()
+            .unwrap_or_else(|_| panic!("{mode} child did not reach the cache gate"));
+        let lock = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(cache_root.join(".lock"))
+            .unwrap();
+        lock.lock_exclusive().unwrap();
+        fs::write(&proceed, b"go").unwrap();
+        thread::sleep(Duration::from_millis(150));
+        assert!(
+            process.try_wait().unwrap().is_none(),
+            "{mode} did not wait for the held cache lock"
+        );
+        let started = Instant::now();
+        match mode {
+            "cancel" => assert_eq!(unsafe { libc::kill(process.id() as i32, libc::SIGINT) }, 0),
+            "graph" => fs::write(root.path().join(".pnp.cjs"), b"changed").unwrap(),
+            _ => unreachable!(),
+        }
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while process.try_wait().unwrap().is_none() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
+        if process.try_wait().unwrap().is_none() {
+            process.kill().unwrap();
+        }
+        let output = process.wait_with_output().unwrap();
+        drop(lock);
+        assert!(
+            started.elapsed() < Duration::from_secs(3),
+            "{mode} left the tracer blocked on the cache lock"
+        );
+        assert_eq!(
+            output.status.code(),
+            Some(if mode == "cancel" { 130 } else { 125 }),
+            "{mode}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        if mode == "graph" {
+            assert!(
+                String::from_utf8_lossy(&output.stderr).contains("PNPORT_GRAPH_CHANGED"),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        assert_eq!(
+            unsafe { libc::kill(child, 0) },
+            -1,
+            "{mode} left its child alive"
+        );
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_graph_conflict_and_injection_failures_reap_detached_descendants() {
+    use std::{
+        process::{Command, Stdio},
+        thread,
+        time::{Duration, Instant},
+    };
+    for mode in ["graph", "conflict", "failure", "cancel"] {
+        let root = fixture();
+        let cache = tempfile::tempdir().unwrap();
+        let executable = root.path().join("tree-fixture");
+        assert!(Command::new("cc")
+            .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/linux-tree.c"))
+            .arg("-o")
+            .arg(&executable)
+            .status()
+            .unwrap()
+            .success());
+        let mut command = Command::new(env!("CARGO_BIN_EXE_pnport"));
+        command
+            .current_dir(root.path())
+            .arg("--cache-dir")
+            .arg(cache.path().join("cache"))
+            .args(["run", "--"])
+            .arg(&executable)
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped());
+        if mode == "failure" {
+            command.arg("failure");
+        }
+        let mut process = command.spawn().unwrap();
+        let marker = root.path().join("detached.pid");
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while fs::read_to_string(&marker)
+            .ok()
+            .and_then(|value| value.trim().parse::<i32>().ok())
+            .is_none()
+            && Instant::now() < deadline
+        {
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(marker.exists(), "{mode} did not start a descendant");
+        let child: i32 = fs::read_to_string(marker).unwrap().trim().parse().unwrap();
+        match mode {
+            "graph" => fs::write(root.path().join(".pnp.cjs"), "changed").unwrap(),
+            "conflict" => fs::create_dir(root.path().join("node_modules")).unwrap(),
+            "failure" => {}
+            "cancel" => {
+                assert_eq!(unsafe { libc::kill(process.id() as i32, libc::SIGINT) }, 0);
+            }
+            _ => unreachable!(),
+        }
+        let deadline = Instant::now() + Duration::from_secs(7);
+        while process.try_wait().unwrap().is_none() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
+        if process.try_wait().unwrap().is_none() {
+            process.kill().unwrap();
+        }
+        let output = process.wait_with_output().unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(if mode == "cancel" { 130 } else { 125 }),
+            "{mode}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        if mode != "cancel" {
+            let code = if mode == "graph" {
+                "PNPORT_GRAPH_CHANGED"
+            } else if mode == "conflict" {
+                "PNPORT_FILESYSTEM_CONFLICT"
+            } else {
+                "PNPORT_INJECTION_FAILED"
+            };
+            assert!(
+                String::from_utf8_lossy(&output.stderr).contains(code),
+                "{mode}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while unsafe { libc::kill(child, 0) } == 0 && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(
+            unsafe { libc::kill(child, 0) },
+            -1,
+            "{mode} left a descendant alive"
+        );
+    }
 }
 
 #[test]
@@ -522,6 +4134,119 @@ fn missing_executables_and_interpreters_return_not_found() {
 
 #[cfg(target_os = "macos")]
 #[test]
+fn descendant_exec_and_spawn_prepare_script_interpreters() {
+    use std::{os::unix::fs::PermissionsExt, process::Command};
+
+    let root = fixture();
+    let interpreter_source = root.path().join("child-interpreter.c");
+    let interpreter = root.path().join("child-interpreter");
+    fs::write(
+        &interpreter_source,
+        r#"#include <stdio.h>
+#include <string.h>
+int main(int argc, char **argv) {
+  FILE *file = fopen("node_modules/dep/file.txt", "r");
+  if (!file) return 70;
+  fclose(file);
+  if (argc != 4 || strcmp(argv[1], "option") || !strstr(argv[2], "child-script") || strcmp(argv[3], "literal")) return 71;
+  puts("descendant-script-ok");
+  return 0;
+}
+"#,
+    )
+    .unwrap();
+    assert!(Command::new("cc")
+        .arg(&interpreter_source)
+        .arg("-o")
+        .arg(&interpreter)
+        .status()
+        .unwrap()
+        .success());
+    let script = root.path().join("child-script");
+    fs::write(&script, format!("#!{} option\n", interpreter.display())).unwrap();
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o700)).unwrap();
+
+    let launcher_source = root.path().join("child-launcher.c");
+    let launcher = root.path().join("child-launcher");
+    fs::write(
+        &launcher_source,
+        r#"#include <errno.h>
+#include <spawn.h>
+#include <string.h>
+#include <sys/wait.h>
+#include <unistd.h>
+extern char **environ;
+int main(int argc, char **argv) {
+  if (argc != 3) return 2;
+  char *args[] = {"child-script", "literal", 0};
+  if (strcmp(argv[1], "execve") == 0) {
+    execve(argv[2], args, environ);
+    return 30;
+  }
+  if (strcmp(argv[1], "posix_spawn_chdir") == 0) {
+    posix_spawn_file_actions_t actions;
+    if (posix_spawn_file_actions_init(&actions) != 0) return 34;
+    if (posix_spawn_file_actions_addchdir_np(&actions, ".") != 0) return 35;
+    int result = posix_spawn(0, "child-script", &actions, 0, args, environ);
+    posix_spawn_file_actions_destroy(&actions);
+    return result == ENOTSUP ? 0 : (result ? result : 36);
+  }
+  pid_t pid;
+  if (posix_spawn(&pid, argv[2], 0, 0, args, environ) != 0) return 31;
+  int status;
+  if (waitpid(pid, &status, 0) != pid) return 32;
+  return WIFEXITED(status) ? WEXITSTATUS(status) : 33;
+}
+"#,
+    )
+    .unwrap();
+    assert!(Command::new("cc")
+        .arg(&launcher_source)
+        .arg("-o")
+        .arg(&launcher)
+        .status()
+        .unwrap()
+        .success());
+
+    for method in ["execve", "posix_spawn"] {
+        let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+            .current_dir(root.path())
+            .arg("--cache-dir")
+            .arg(root.path().join("private-cache"))
+            .args(["run", "--"])
+            .arg(&launcher)
+            .arg(method)
+            .arg(&script)
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{method}: {}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert_eq!(result.stdout, b"descendant-script-ok\n", "{method}");
+    }
+    let result = Command::new(env!("CARGO_BIN_EXE_pnport"))
+        .current_dir(root.path())
+        .arg("--cache-dir")
+        .arg(root.path().join("private-cache"))
+        .args(["run", "--"])
+        .arg(&launcher)
+        .arg("posix_spawn_chdir")
+        .arg(&script)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(125),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(String::from_utf8_lossy(&result.stderr).contains("PNPORT_UNSUPPORTED_OPERATION"));
+}
+
+#[cfg(target_os = "macos")]
+#[test]
 fn script_interpreters_preserve_logical_arguments_and_reject_protection() {
     use std::{os::unix::fs::PermissionsExt, process::Command};
     let root = fixture();
@@ -635,4 +4360,20 @@ fn unplugged_installation_containers_are_not_dependency_conflicts() {
         .unwrap();
     assert!(file.readonly);
     assert!(file.physical.is_file());
+    #[cfg(target_os = "linux")]
+    {
+        let result = std::process::Command::new(env!("CARGO_BIN_EXE_pnport"))
+            .current_dir(root.path())
+            .args(["run", "--", "/bin/cat"])
+            .arg(canonical.join("node_modules/dep/package.json"))
+            .output()
+            .unwrap();
+        assert_eq!(
+            result.status.code(),
+            Some(0),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert_eq!(result.stdout, b"{\"name\":\"dep\"}");
+    }
 }

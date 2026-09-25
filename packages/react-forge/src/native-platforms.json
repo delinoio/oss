@@ -1,0 +1,8 @@
+[
+  { "id": "darwin-x64", "platform": "darwin", "architecture": "x64", "target": "x86_64-apple-darwin", "library": "libreact_forge_node.dylib" },
+  { "id": "darwin-arm64", "platform": "darwin", "architecture": "arm64", "target": "aarch64-apple-darwin", "library": "libreact_forge_node.dylib" },
+  { "id": "linux-x64-gnu", "platform": "linux", "architecture": "x64", "target": "x86_64-unknown-linux-gnu", "library": "libreact_forge_node.so" },
+  { "id": "linux-arm64-gnu", "platform": "linux", "architecture": "arm64", "target": "aarch64-unknown-linux-gnu", "library": "libreact_forge_node.so" },
+  { "id": "win32-x64-msvc", "platform": "win32", "architecture": "x64", "target": "x86_64-pc-windows-msvc", "library": "react_forge_node.dll" },
+  { "id": "win32-arm64-msvc", "platform": "win32", "architecture": "arm64", "target": "aarch64-pc-windows-msvc", "library": "react_forge_node.dll" }
+]

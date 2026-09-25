@@ -46,6 +46,14 @@ try {
     const help = execFileSync(process.execPath, [launcher, "--help"], { cwd: consumer, encoding: "utf8" });
     ensure(help.includes("Usage: clibox"), `${manager} help smoke failed`);
     const cli = (args, input) => execFileSync(process.execPath, [launcher, ...args], { cwd: consumer, encoding: "utf8", input });
+    const available = cli(["system", "cpus"]);
+    ensure(/^[1-9][0-9]*\n$/u.test(available), `${manager} available CPU smoke failed`);
+    const logical = cli(["system", "cpus", "--kind", "logical"]);
+    ensure(/^[1-9][0-9]*\n$/u.test(logical), `${manager} logical CPU smoke failed`);
+    ensure(cli(["system", "cpus", "--quiet"]) === "", `${manager} quiet CPU smoke failed`);
+    const logicalJson = cli(["system", "cpus", "--kind", "logical", "--json"]);
+    const logicalResult = JSON.parse(logicalJson);
+    ensure(logicalJson === `{"kind":"logical","count":${logicalResult.count}}\n` && Number.isSafeInteger(logicalResult.count) && logicalResult.count > 0, `${manager} JSON CPU smoke failed`);
     writeFileSync(path.join(consumer, ".env"), 'Z=base\nA="literal ${HOME}"\n');
     writeFileSync(path.join(consumer, "local.env"), "Z=local\n");
     ensure(cli(["dotenv", "list"]) === "A\nZ\n", `${manager} dotenv list smoke failed`);
@@ -93,6 +101,7 @@ try {
       ["yaml", "normalize", "--output", "-", "--force"],
       ["port", "list", "80", "--pids", "--quiet"],
       ["port", "kill", "80", "--quiet", "--json"],
+      ["system", "cpus", "--quiet", "--json"],
     ]) {
       const rejected = spawnSync(process.execPath, [launcher, ...args], { cwd: consumer, encoding: "utf8", input: "", env: { ...process.env, RUST_LOG: "off" } });
       ensure(rejected.status === 2 && rejected.stdout === "" && rejected.stderr.includes("--help"), `${manager} consistency rejection failed`);
@@ -116,7 +125,7 @@ try {
     } finally {
       await new Promise((resolve) => listener.close(resolve));
     }
-    for (const group of ["run", "port", "clipboard", "wait", "text", "time", "base64", "hash", "dotenv", "yaml"]) {
+    for (const group of ["run", "port", "clipboard", "system", "wait", "text", "time", "base64", "hash", "dotenv", "yaml"]) {
       const missing = spawnSync(process.execPath, [launcher, group], { cwd: consumer, encoding: "utf8" });
       ensure(missing.status === 2 && missing.stdout === "" && missing.stderr.includes(`Usage: ${target.binary} ${group}`) && missing.stderr.includes("Commands:"), `${manager} ${group} missing-subcommand help smoke failed`);
     }
@@ -133,6 +142,18 @@ try {
       execFileSync(process.execPath, [launcher, "run", "env", "CLIBOX_TEST_EXIT=1", "--", process.execPath, fixture], { cwd: consumer, stdio: "pipe" });
     } catch (error) { delegatedStatus = error.status; }
     ensure(delegatedStatus === 37, `${manager} utility exit propagation failed`);
+    const wrapperHome = path.join(consumer, "wrapper-state");
+    const wrapperEnv = { ...process.env, HOME: wrapperHome, XDG_STATE_HOME: path.join(wrapperHome, "xdg-state") };
+    // Windows coordination state is rooted in LocalAppData, not HOME/XDG_STATE_HOME.
+    // Do not create persistent user-profile state from a removable package fixture.
+    if (process.platform !== "win32") {
+      ensure(invoke(["run", "with-rate-limit", "--name", "consumer-rate", "--limit", "1", "--period", "1m", "--", process.execPath, "-e", "process.exit(0)"], { env: wrapperEnv }).length === 0, `${manager} rate-limit wrapper smoke failed`);
+      ensure(invoke(["run", "with-lock", "--name", "consumer-lock", "--", process.execPath, "-e", "process.exit(0)"], { env: wrapperEnv }).length === 0, `${manager} lock wrapper smoke failed`);
+    }
+    ensure(invoke(["run", "with-retry", "--max-attempts", "1", "--", process.execPath, "-e", "process.exit(0)"], { env: wrapperEnv }).length === 0, `${manager} retry wrapper smoke failed`);
+    ensure(invoke(["run", "with-timeout", "--timeout", "5s", "--", process.execPath, "-e", "process.exit(0)"], { env: wrapperEnv }).length === 0, `${manager} timeout wrapper smoke failed`);
+    const serviceSyntax = spawnSync(process.execPath, [launcher, "run", "with-service", "http://127.0.0.1:9", "--ready-timeout", "1ms", "--", process.execPath, "-e", "process.exit(0)"], { cwd: consumer, env: wrapperEnv, encoding: "utf8" });
+    ensure(serviceSyntax.status !== 2, `${manager} service wrapper parsing failed`);
     const installed = JSON.parse(readFileSync(path.join(consumer, "node_modules", native.name, "package.json"), "utf8"));
     ensure(installed.version === metadata().version, "Installed native version mismatch");
     event("consumer_smoke", { manager, target: target.suffix, version: installed.version });

@@ -2,7 +2,7 @@
 name = "nodeup"
 version = "0.2.0"
 edition = "2021"
-license = "MIT"
+license = "Apache-2.0"
 description = "Rustup-like Node.js version manager"
 readme = "README.md"
 repository = "https://github.com/delinoio/oss"

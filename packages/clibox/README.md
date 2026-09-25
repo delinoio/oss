@@ -37,6 +37,8 @@ The package provides the `clibox` command only, with no public JavaScript import
 
 ## Migrating older command syntax
 
+`system cpus` is implemented for the next release and is absent from published version 0.1.6.
+
 The examples below use `run env`, which is implemented for the next minor release. Published version **0.1.6** uses **`env run`** instead; substitute that spelling in the environment examples and use `clibox env --help` for its command group. Version 0.1.6 already includes `port list`, `hash compute`, and the output/cancellation behavior described here. Update scripts when upgrading to the corresponding interface; rejected old names return exit code 2 with migration guidance and are not aliases.
 
 | Previous use | New use |
@@ -64,9 +66,10 @@ clibox port kill PORT... [--protocol tcp|udp|all] [--json | --quiet]
 clibox open TARGET [--app APP] [--wait]
 clibox clipboard copy [TEXT]
 clibox clipboard paste
+clibox system cpus [--kind available|logical] [--json | --quiet]
 ```
 
-Use `--help` after any command for English help and examples. Root help (`clibox`, `--help`, or `-h`) also identifies the built version, Delino maintainer, repository, MIT license, and GitHub Issues support path; subcommand help stays focused on that command. Running `clibox` without arguments or using explicit `--help` prints help to stdout and returns exit code **0**. Running `clibox run`, `clibox port`, `clibox clipboard`, `clibox wait`, `clibox text`, `clibox time`, `clibox base64`, `clibox hash`, `clibox dotenv`, or `clibox yaml` without a subcommand prints that command's help to stderr and returns exit code **2**. Other invalid or missing arguments return exit code **2** with an error diagnostic; runtime failures return **1**. `run env` forwards the child program's exit status and supported termination signals.
+Use `--help` after any command for English help and examples. Root help (`clibox`, `--help`, or `-h`) also identifies the built version, Delino maintainer, repository, Apache-2.0 license, and GitHub Issues support path; subcommand help stays focused on that command. Running `clibox` without arguments or using explicit `--help` prints help to stdout and returns exit code **0**. Running `clibox run`, `clibox port`, `clibox clipboard`, `clibox system`, `clibox wait`, `clibox text`, `clibox time`, `clibox base64`, `clibox hash`, `clibox dotenv`, or `clibox yaml` without a subcommand prints that command's help to stderr and returns exit code **2**. Other invalid or missing arguments return exit code **2** with an error diagnostic; runtime failures return **1**. `run env` forwards the child program's exit status and supported termination signals.
 
 ### Run with environment variables
 
@@ -82,6 +85,33 @@ Assignment escaping, variable references, PATH/NODE_PATH lists and platform-spec
 Environment execution has no shell-expression mode, dotenv loading or stored command preset. The child is awaited, and signal termination (including SIGINT) is not reported as success. Windows console interruption uses supported process-group CTRL_BREAK delivery.
 
 On Windows, `run env` also treats `$1` as an environment-variable reference and removes it when unset. Invoke `clibox text replace` directly when passing regex capture references; wrapping it in `run env` applies that extra conversion even after shell quoting.
+
+### Execution wrappers
+
+The installed command forwards the Rust `run` group unchanged on every supported target:
+
+```sh
+pnpm exec clibox run with-rate-limit --name ci-publish --limit 1 --period 1m -- npm publish
+pnpm exec clibox run with-lock --name database --on-locked fail -- pnpm migrate
+pnpm exec clibox run with-service http://127.0.0.1:3000/health -- npm test
+pnpm exec clibox run with-service http://127.0.0.1:3000/health --service node server.js -- npm test
+pnpm exec clibox run with-retry --max-attempts 5 --jitter none -- npm install
+pnpm exec clibox run with-timeout --timeout 10m --idle-timeout 30s -- npm test
+```
+
+Options come before the literal `[KEY=VALUE ...] [--] COMMAND [ARG ...]` workload. The wrappers retain `run env` assignment expansion, literal argv, child-only environment, cwd, PATH/PATHEXT lookup, and no-shell behavior. All accept `--kill-after DURATION` (default `5s`); units are integer `ms`, `s`, `m`, or `h`. On Unix, workloads and managed services must stay in the wrapper's process group; do not daemonize or create a new session or process group unless that program manages its own lifecycle.
+
+Rate and lock names use case-sensitive ASCII `[A-Za-z0-9._-]` up to 128 characters. The default scope is the canonical current project directory; use `--scope user` for local user scope or `--project-dir DIR` for another existing project identity without changing cwd. The latter cannot combine with user scope. Lock/bucket state uses separate hashed filenames and never stores raw names, paths, argv, or environment values. It is private local state at `$XDG_STATE_HOME/clibox/run` (or `~/.local/state/clibox/run`) on Linux, `~/Library/Application Support/clibox/run` on macOS, and LocalAppData `clibox/run` on Windows. It is not cross-machine synchronization, FIFO queuing, a command history, or a service. Manually remove state only after all relevant invocations stop.
+
+`with-service` polls an external endpoint until it is ready and never owns it. With `--service`, its first standalone `--` separates the service from the workload; service output goes to stderr and is cleaned up after the workload. `--ready-timeout 0` disables only the overall readiness deadline, while polling and individual attempts stay positive and bounded. Retry or runtime/idle timeout values of `0` similarly disable that individual limit; lock/rate `--wait-timeout 0` instead makes the admission decision immediate.
+
+`with-rate-limit` requires `--name`, `--limit`, and `--period`; `--burst` defaults to one and is at most `9007199254740992`. A token is consumed immediately before execution and is not refunded. `--wait-timeout` limits admission, with `0` immediate; bucket configuration must match and a backward wall clock adds no tokens. `with-lock` waits by default; `skip` exits 0 and `fail` exits 75 without a workload. `--wait-timeout` is allowed only when waiting, and nested same-key locks contend normally.
+
+`with-service` observes HTTP headers only: GET/2xx by default, or `--method head`/exact `--status`. It never follows redirects, uses proxies, sends credentials/headers, reads a body, accepts custom CAs, or bypasses TLS validation. External endpoints are never terminated. A managed service starts only after retryable not-ready preflight; an already-ready endpoint fails with guidance to omit `--service`. The first standalone `--` after `--service` separates service/workload; another delimiter inside service argv is unsupported. Managed-service output uses stderr and its owned tree is cleaned up after completion, failure, timeout, or cancellation.
+
+`with-retry` defaults to three attempts, a 1 s delay, factor 2, 30 s cap, and full jitter. It retries nonzero numeric exits by default, or only repeated `--retry-exit-code` values; it does not replay stdin or retry spawn failures/Unix signal termination. `with-timeout` needs a positive total or idle limit. Any stdout/stderr bytes reset idle time and are forwarded promptly, but interactive TTY identity is not guaranteed. A wrapper stops owned work and returns a runtime failure if it cannot forward an owned stream.
+
+Natural child status is retained. Admission/readiness/overall/idle timeout exits 124; invalid arguments exit 2; wrapper failure exits 1; Ctrl+C/Ctrl+Break exits 130; Unix SIGTERM exits 143. Cleanup requests graceful termination, waits the configured grace, then forces owned process-tree termination and waits up to five seconds for confirmation. On Unix, the npm launcher forwards SIGINT, SIGTERM, and SIGHUP to the native command, including PID-targeted signals. Diagnostics remain redacted stderr output; the Node launcher does no parsing, state access, network request, or shell execution.
 
 ### Inspect and terminate port owners
 
@@ -134,6 +164,21 @@ The limit is **16 MiB (16,777,216 UTF-8 bytes)**. Invalid UTF-8, embedded NUL an
 Linux requires installed `wl-copy`/`wl-paste` from **wl-clipboard** on Wayland, or **xclip** on X11. Wayland takes precedence when both display environments are present; a failing Wayland session does not silently fall back to X11. Linux resource opening also requires **xdg-open** from xdg-utils. Tools are not installed automatically. Wayland copy requires writable tmpfs-backed shared memory or a tmpfs-backed XDG runtime directory, so tool buffering remains in memory.
 
 Linux copy returns after successful setup while an OS tool retains clipboard ownership in the background until replacement or session termination; the calling CLI need not stay in the foreground. Clibox-managed clipboard processing uses memory only. Existing desktop clipboard managers may retain content independently.
+
+### Query CPU counts
+
+```sh
+pnpm exec clibox system cpus
+pnpm exec clibox system cpus --kind logical
+pnpm exec clibox system cpus --json
+pnpm exec clibox system cpus --kind logical --quiet
+```
+
+The default `available` kind returns Rust's estimate of suitable parallelism. It is not an idle CPU count, physical core count, or guarantee of CPU capacity. Rust's estimate can undercount or overcount when affinity, cgroup quotas, VM limits, or Windows processor groups affect execution; see [Rust's limitations](https://doc.rust-lang.org/std/thread/fn.available_parallelism.html). `logical` reports online logical CPUs visible to the current OS or VM without clibox applying affinity or quota reductions. Each call queries only the selected kind, so separate calls are not an atomic snapshot. `OMP_*` variables do not override either result.
+
+Plain output is exactly one positive decimal integer and LF, with no label or formatting. `--json` prints one compact object and LF, such as `{"kind":"available","count":8}`. `--quiet` still performs the query and preserves its status but suppresses stdout; it conflicts with `--json`. This command does not read stdin, call external utilities, or write a file or persistent state.
+
+Invalid arguments exit 2. Query and output failures exit 1 with redacted stderr guidance and no query-result stdout; failed stdout writes can leave partial bytes. Handled Ctrl+C/Windows Ctrl+Break exits 130 and Unix SIGTERM exits 143. A failed query never substitutes `1` or the other kind. On Linux, an unavailable online-CPU interface makes `logical` fail; check that the current OS exposes online CPU information. Use `RUST_LOG=clibox=debug` for redacted operation, kind, backend, and classification diagnostics, including when the default warning/error level is insufficient.
 
 ## Text, time, Base64, and hash commands
 
@@ -465,7 +510,7 @@ English structured diagnostics go to stderr, with warnings/errors enabled by def
 
 For syntax errors, inspect the reported input/document ordinal and line/column in your local input. For file errors, check access permissions, the destination's link status, and free space. For limit errors, reduce the input, nesting, or expanded YAML result. Argument errors intentionally omit supplied values: use the command's `--help` to check syntax. Share redacted diagnostics when requesting support; avoid sharing secret configuration values.
 
-Licensed under MIT.
+Licensed under Apache-2.0.
 
 ## Linux APT and DNF
 
