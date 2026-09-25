@@ -65,6 +65,11 @@ Schedules have a dedicated desktop surface that remains mounted across navigatio
 
 Pause/resume changes future scheduling only. Run now explicitly confirms one independent occurrence, works while paused under ordinary server eligibility, and retains the original request after uncertain acknowledgment without enabling the future timer. Accepted occurrences are shown independently from native execution and current session state. Delete confirms future configuration removal, while the independent paginated history remains visible, refreshable and accessible by retained schedule ID. Every configuration/control mutation uses its captured revision, and stale edits preserve their draft. History and status reads do not replay side effects.
 
+### Session selection and recovery
+Session creation uses paginated project/Agent/Worker selectors with no first-option fallback, retains configured-empty Agent restrictions, and bounds the first prompt to 256 KiB UTF-8 before state retention. Project sessions allow independent starting overrides by repository without changing saved base references. General Chat clears project/Git selection and uses the selected Worker's isolated directory. Local creation still needs the separate native originating-Worker proof boundary.
+
+Session details expose revision-bound rename, retry of confirmed failed/canceled preparation, original-workspace inspection, separately confirmed incomplete-preparation cleanup, and original-execution reconciliation. A confirmation captures the original revision and execution identity; peer changes block new submission while preserving drafts and exact uncertain retries. Original preparation/recovery jobs remain inspectable independently. Recovery acknowledgment is not successful cleanup or renewed execution authority. Recovery never sends input or invokes Resume; successful reconciliation leaves the server's paused state intact.
+
 ## Security
 Only trusted app content receives native capabilities. Renderer/server calls require exact allowed origins and the explicitly selected connection. Account credentials and GitHub PATs must never enter read responses. Never expose a shell, arbitrary executable/file reader, network proxy, or secret-bearing diagnostic object to the renderer.
 

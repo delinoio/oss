@@ -35,10 +35,10 @@ function Check({ label, value, change }: { label: string; value: unknown; change
 
 // Selectors retain only one bounded page. An already selected identity outside
 // that page remains explicit rather than falling back to its first result.
-export function ResourceChoice({ label, kind, value, change, active, disabled = false, required = false }: { label: string; kind: EntityKind; value: string; change: (id: string, data?: Document) => void; active: boolean; disabled?: boolean; required?: boolean }) {
+export function ResourceChoice({ label, kind, value, change, active, disabled = false, required = false, allowed }: { label: string; kind: EntityKind; value: string; change: (id: string, data?: Document) => void; active: boolean; disabled?: boolean; required?: boolean; allowed?: readonly unknown[] }) {
   const [page, setPage] = useState("");
   const result = useQuery(ResourceQuery.listResources, { filter: { kind, pageSize: 50, pageToken: page } }, { enabled: active });
-  const rows = result.data?.resources ?? [];
+  const rows = (result.data?.resources ?? []).filter((row) => !allowed || allowed.includes(row.id));
   return <div className="resource-choice"><label>{label}<select disabled={disabled} required={required} value={value} onChange={(event) => change(event.target.value, document(rows.find((row) => row.id === event.target.value)))}><option value="">Select {label.toLowerCase()}</option>{value && !rows.some((row) => row.id === value) ? <option value={value}>Selected {kindNames[kind]} · {value}</option> : null}{rows.map((row) => <option key={row.id} value={row.id}>{resourceName(row)}{kind === EntityKind.ACCOUNT ? ` · ${text(document(row).health)}` : ""}</option>)}</select></label>
     {page || result.data?.nextPageToken ? <div className="actions"><button type="button" disabled={!page || result.isFetching || disabled} onClick={() => setPage("")}>First choices</button><button type="button" disabled={!result.data?.nextPageToken || result.isFetching || disabled} onClick={() => setPage(result.data!.nextPageToken)}>More choices</button></div> : null}<Problem error={result.error} />
   </div>;

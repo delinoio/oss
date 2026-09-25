@@ -7,6 +7,8 @@ import {
 import { document, encode, items, Mode, object, resourceName, text, Workspace } from "./documents";
 import { useRetainedMutation } from "./mutation";
 import { Modal, Problem } from "./ui";
+import { ResourceChoice } from "./configuration-fields";
+import { StartingReferences } from "./schedules";
 import { Interaction } from "./interactions";
 
 export enum Surface { Sessions = "sessions", Search = "search", Activity = "activity", Inbox = "inbox", Schedules = "schedules" }
@@ -57,29 +59,28 @@ export function Inbox({ open }: { open: (id: string) => void }) {
 export { Settings } from "./settings";
 
 export function CreateSession({ close, open, visible }: { close: () => void; open: (id: string) => void; visible: boolean }) {
-  const projects = useQuery(ResourceQuery.listResources, { filter: { kind: EntityKind.PROJECT, pageSize: 200 } }, { enabled: visible });
-  const agents = useQuery(ResourceQuery.listResources, { filter: { kind: EntityKind.AGENT, pageSize: 200 } }, { enabled: visible });
-  const machines = useQuery(ResourceQuery.listResources, { filter: { kind: EntityKind.MACHINE, pageSize: 200 } }, { enabled: visible });
   const [project, setProject] = useState("");
   const [agent, setAgent] = useState("");
   const [machine, setMachine] = useState("");
   const [name, setName] = useState("");
   const [prompt, setPrompt] = useState("");
   const [mode, setMode] = useState(Mode.Execute);
+  const [starting, setStarting] = useState<unknown[]>([]);
+  const [promptLimit, setPromptLimit] = useState(false);
+  const selectedProject = useQuery(ResourceQuery.getResource, { kind: EntityKind.PROJECT, id: project }, { enabled: visible && Boolean(project) });
   const mutation = useRetainedMutation("create-session", SessionQuery.createSession, (result) => { if (result.change?.session) { setPrompt(""); setName(""); open(result.change.session.id); close(); } });
-  const restrictions = object(document(projects.data?.resources.find((r) => r.id === project)).agents);
-  const available = agents.data?.resources.filter((r) => !restrictions.configured || items(restrictions.ids).includes(r.id)) ?? [];
+  const restrictions = object(document(selectedProject.data?.resource).agents);
   const blocked = mutation.busy || mutation.uncertain;
-  return <Modal title="New session" close={close} visible={visible}><form onSubmit={(event) => { event.preventDefault(); void mutation.send({ requestId: newRequestId(), documentJson: encode({ name, prompt, agent_id: agent, machine_id: machine, project_id: project || undefined, workspace: project ? Workspace.Worktree : Workspace.GeneralChat, mode, source: "MANUAL" }) }); }}>
+  return <Modal title="New session" close={close} visible={visible}><form onSubmit={(event) => { event.preventDefault(); void mutation.send({ requestId: newRequestId(), documentJson: encode({ name, prompt, agent_id: agent, machine_id: machine, project_id: project || undefined, workspace: project ? Workspace.Worktree : Workspace.GeneralChat, starting: project ? starting : undefined, mode, source: "MANUAL" }) }); }}>
     <fieldset disabled={blocked}><label>Name<input autoFocus required maxLength={256} value={name} onChange={(event) => setName(event.target.value)} /></label>
-      <label>Project<select value={project} onChange={(event) => { setProject(event.target.value); setAgent(""); }}><option value="">General Chat · isolated directory</option>{projects.data?.resources.map((r) => <option key={r.id} value={r.id}>{resourceName(r)}</option>)}</select></label>
-      {project ? <p>A detached worktree is prepared for each repository using its configured starting reference.</p> : null}
-      <label>Agent Worker<select required value={agent} onChange={(event) => setAgent(event.target.value)}><option value="">Select an Agent Worker</option>{available.map((r) => <option key={r.id} value={r.id}>{resourceName(r)}</option>)}</select></label>
-      <label>Execution Worker<select required value={machine} onChange={(event) => setMachine(event.target.value)}><option value="">Select a computer</option>{machines.data?.resources.map((r) => <option key={r.id} value={r.id}>{resourceName(r)}</option>)}</select></label>
+      <ResourceChoice label="Project" kind={EntityKind.PROJECT} value={project} active={visible} change={(id) => { setProject(id); setAgent(""); setStarting([]); }} />
+      {project ? <><p>A separate detached worktree is prepared for every project repository. Local creation requires the originating Worker's private proof through the CLI.</p><StartingReferences key={project} project={project} starting={starting} change={setStarting} active={visible} /></> : <p>General Chat uses an isolated projectless directory on the selected Worker.</p>}
+      <ResourceChoice label="Agent Worker" kind={EntityKind.AGENT} value={agent} active={visible} required allowed={restrictions.configured === true ? items(restrictions.ids) : undefined} change={setAgent} />
+      {restrictions.configured === true && items(restrictions.ids).length === 0 ? <p>This project explicitly allows no Agent Workers. Update its restrictions before creating a session.</p> : null}
+      <ResourceChoice label="Execution Worker" kind={EntityKind.MACHINE} value={machine} active={visible} required change={setMachine} />
       <label>Mode<select value={mode} onChange={(event) => setMode(event.target.value as Mode)}><option value={Mode.Execute}>Execute</option><option value={Mode.Plan}>Plan</option></select></label>
-      <label>First message<textarea required rows={5} value={prompt} onChange={(event) => setPrompt(event.target.value)} /></label><button className="primary" disabled={!agent || !machine || !name.trim() || !prompt.trim()}>Create session</button>
+      <label>First message<textarea required rows={5} maxLength={262144} value={prompt} onChange={(event) => { const value = event.target.value; if (new TextEncoder().encode(value).byteLength > 256 << 10) { setPromptLimit(true); return; } setPrompt(value); setPromptLimit(false); }} /></label><button className="primary" disabled={!agent || !machine || !name.trim() || !prompt.trim()}>Create session</button>
     </fieldset><Problem error={mutation.error} />{mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>Retry the same session creation</button> : null}
-    <Problem error={projects.error || agents.error || machines.error} />
-    {projects.data?.nextPageToken || agents.data?.nextPageToken || machines.data?.nextPageToken ? <p>The selector is bounded to 200 entries; use the CLI to select other entries.</p> : null}
+    <Problem error={selectedProject.error} />{promptLimit ? <p role="alert">The first message exceeds 256 KiB. The previous draft is retained.</p> : null}
   </form></Modal>;
 }

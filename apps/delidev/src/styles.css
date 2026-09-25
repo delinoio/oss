@@ -82,3 +82,5 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .interaction .checkbox small { display: block; margin-top: 3px; }
 .queue { max-height: 35vh; overflow: auto; flex-shrink: 0; }
 .queue-item { padding-block: 12px; }
+
+.session-tools { max-height: 45vh; overflow: auto; flex-shrink: 0; }

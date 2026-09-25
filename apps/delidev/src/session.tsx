@@ -9,6 +9,7 @@ import { document as readDocument, encode, items, Mode, object, resourceName, te
 import { useRetainedMutation } from "./mutation";
 import { Failure, Problem } from "./ui";
 import { Interaction } from "./interactions";
+import { SessionTools } from "./session-tools";
 import { QueuedInput } from "./queue";
 
 function useSessionStream(id: string) {
@@ -104,7 +105,9 @@ export function SessionView({ id, draft, setDraft }: { id: string; draft: string
   const messages = useQuery(ResourceQuery.listResources, { filter: { kind: EntityKind.MESSAGE, sessionId: id, pageSize: 50, pageToken: page } }, { enabled: live.generation > 0 });
   const queue = useQuery(SessionQuery.listQueue, { sessionId: id, pageSize: 50, pageToken: queuePage }, { enabled: live.generation > 0 });
   const interactions = useQuery(ResourceQuery.listResources, { filter: { kind: EntityKind.INTERACTION, sessionId: id, pageSize: 20, pageToken: interactionPage } }, { enabled: live.generation > 0 });
-  const session = live.resources.get(id);
+  const [acknowledged, setAcknowledged] = useState<Resource>();
+  const observed = live.resources.get(id);
+  const session = observed && acknowledged && acknowledged.revision > observed.revision ? acknowledged : observed;
   const data = readDocument(session);
   const rows = useMemo(() => {
     const result = currentRows(messages.data?.resources ?? [], live.resources, live.removed, EntityKind.MESSAGE);
@@ -121,7 +124,7 @@ export function SessionView({ id, draft, setDraft }: { id: string; draft: string
   }, [messages.data, live.resources, live.removed]);
   useEffect(() => { if (live.generation > 1) { void messages.refetch(); void queue.refetch(); void interactions.refetch(); } }, [live.generation]);
   const send = useRetainedMutation(`enqueue:${id}`, SessionQuery.enqueueInput, () => { setDraft(""); void queue.refetch(); });
-  const control = useRetainedMutation(`control:${id}`, SessionQuery.controlSession);
+  const control = useRetainedMutation(`control:${id}`, SessionQuery.controlSession, (value) => { if (value.change?.session) setAcknowledged(value.change.session); });
   const locked = send.busy || send.uncertain;
   const next = messages.data?.nextPageToken;
   const pending = currentRows(queue.data?.inputs ?? [], live.resources, live.removed, EntityKind.QUEUE);
@@ -143,6 +146,7 @@ export function SessionView({ id, draft, setDraft }: { id: string; draft: string
     {text(data.recovery) !== "none" && text(data.recovery) ? <p className="notice">Recovery: {text(data.recovery)}. Execution remains under server control.</p> : null}
     {object(data.problem).message ? <p className="notice">{text(object(data.problem).message)} {text(object(data.problem).guidance)}</p> : null}
     <Problem error={control.error} />{control.uncertain ? <button onClick={control.retry} disabled={control.busy}>Retry the same control request</button> : null}
+    {session ? <SessionTools resource={session} changed={setAcknowledged} /> : null}
     <details className="requests" open={requests.some((r) => readDocument(r).closure === "open")}><summary>Agent requests · {requests.length} on this page</summary><Problem error={interactions.error} />
       {requests.map((row) => <Interaction key={row.id} resource={row} refresh={() => void interactions.refetch()} />)}
       <nav aria-label="Request pages"><button disabled={!interactionPage || interactions.isFetching} onClick={() => setInteractionPage("")}>First page</button><button disabled={!interactions.data?.nextPageToken || interactions.isFetching} onClick={() => setInteractionPage(interactions.data!.nextPageToken)}>Next page</button></nav>
