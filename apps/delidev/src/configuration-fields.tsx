@@ -11,8 +11,8 @@ export enum Protocol { Responses = "openai-responses", Chat = "openai-chat", Ant
 export enum Authentication { Bearer = "bearer", Key = "api-key", Keyless = "keyless", Subscription = "subscription" }
 enum Routing { Fixed = "fixed", Priority = "priority", RoundRobin = "round-robin", Quota = "remaining-quota", Reset = "reset-window", Sequential = "sequential-exhaustion" }
 enum Permission { Default = "default", Read = "read-only", Workspace = "workspace-write", Full = "full-access" }
-export const editableKinds = [EntityKind.PROVIDER, EntityKind.MODEL, EntityKind.ACCOUNT, EntityKind.AGENT, EntityKind.TEMPLATE, EntityKind.PROJECT, EntityKind.REPOSITORY];
-export const kindNames: Partial<Record<EntityKind, string>> = { [EntityKind.PROVIDER]: "Provider", [EntityKind.MODEL]: "Model", [EntityKind.ACCOUNT]: "AI account", [EntityKind.AGENT]: "Agent Worker", [EntityKind.TEMPLATE]: "Instructions", [EntityKind.PROJECT]: "Project", [EntityKind.MACHINE]: "Execution Worker", [EntityKind.REPOSITORY]: "Repository" };
+export const editableKinds = [EntityKind.PROVIDER, EntityKind.MODEL, EntityKind.ACCOUNT, EntityKind.AGENT, EntityKind.TEMPLATE, EntityKind.PROJECT, EntityKind.REPOSITORY, EntityKind.SETTINGS];
+export const kindNames: Partial<Record<EntityKind, string>> = { [EntityKind.PROVIDER]: "Provider", [EntityKind.MODEL]: "Model", [EntityKind.ACCOUNT]: "AI account", [EntityKind.AGENT]: "Agent Worker", [EntityKind.TEMPLATE]: "Instructions", [EntityKind.PROJECT]: "Project", [EntityKind.MACHINE]: "Execution Worker", [EntityKind.REPOSITORY]: "Repository", [EntityKind.SETTINGS]: "Server preferences" };
 export function newConfiguration(kind: EntityKind): Document {
   switch (kind) {
     case EntityKind.PROVIDER: return { name: "", endpoint: "", protocol: Protocol.Responses, authentication: Authentication.Bearer, discovery: true };
@@ -22,6 +22,7 @@ export function newConfiguration(kind: EntityKind): Document {
     case EntityKind.PROJECT: return { name: "", repositories: [], primary_repository: "", agents: { configured: false, ids: [] }, accounts: { configured: false, ids: [] } };
     case EntityKind.REPOSITORY: return { name: "", checkouts: [], base: {}, starting: {}, auto_fetch: true };
     case EntityKind.TEMPLATE: return { name: "", contents: "" };
+    case EntityKind.SETTINGS: return { default_routing: Routing.Sequential, notifications: true, automatic_fetch: true, remediation: { ci_failure: false, review_feedback: false, merge_conflict: false, conflict_strategy: "merge", session_strategy: "reuse", attempt_limit: 3 } };
     default: throw new Error("Unsupported configuration editor");
   }
 }
@@ -69,6 +70,7 @@ interface FieldsProps { data: Document; change: (value: Document) => void; activ
 export function ConfigurationFields({ kind, ...props }: FieldsProps & { kind: EntityKind }) {
   const { data, change, active, existing } = props;
   const field = (key: string) => (value: unknown) => change({ ...data, [key]: value });
+  if (kind === EntityKind.SETTINGS) return <><Choice label="Default account routing" value={data.default_routing} choices={Object.values(Routing)} change={field("default_routing")} /><p>Used by Agent Workers that inherit the server default. Existing execution snapshots keep their original selection and routing.</p><Check label="Allow automatic fetch before Worktree preparation" value={data.automatic_fetch} change={field("automatic_fetch")} /><p>Fetching requires both this server preference and the repository's fetch preference. Disabling it uses retained remote-tracking references or reports missing references. Local checkouts remain unchanged.</p></>;
   if (kind === EntityKind.PROJECT) return <ProjectFields {...props} />;
   if (kind === EntityKind.REPOSITORY) return <RepositoryFields {...props} />;
   if (kind === EntityKind.PROVIDER) return <ProviderFields {...props} />;

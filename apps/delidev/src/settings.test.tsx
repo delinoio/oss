@@ -189,3 +189,24 @@ it("renders unknown quota and server candidate reasons without performing select
   expect(screen.getByText(/None eligible/)).toBeTruthy();
   expect(value.save).not.toHaveBeenCalled(); expect(value.connect).not.toHaveBeenCalled();
 });
+
+it("edits global routing and fetch preferences without rewriting unrelated policy or creating another singleton", async () => {
+  const original = { default_routing: "sequential-exhaustion", automatic_fetch: true, notifications: false, remediation: { ci_failure: true, review_feedback: false, merge_conflict: true, conflict_strategy: "rebase", session_strategy: "dedicated", attempt_limit: 9, agent_id: newRequestId(), machine_id: newRequestId() } };
+  const preferences = resource(EntityKind.SETTINGS, original, 8n);
+  const value = fixture([preferences]);
+  value.save.mockRejectedValueOnce(new ConnectError("lost response", Code.Unavailable));
+  render(value.view(<Settings close={() => {}} />));
+  fireEvent.click(screen.getByRole("button", { name: "Server preferences" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Edit Server preferences" }));
+  expect(screen.queryByRole("button", { name: "New Server preferences" })).toBeNull();
+  expect(screen.queryByRole("button", { name: /Delete Server preferences/ })).toBeNull();
+  fireEvent.change(screen.getByLabelText("Default account routing"), { target: { value: "priority" } });
+  fireEvent.click(screen.getByRole("checkbox", { name: "Allow automatic fetch before Worktree preparation" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save Server preferences" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Retry the same configuration" }));
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(2));
+  expect(value.save.mock.calls[0][0]).toEqual(value.save.mock.calls[1][0]);
+  const request = input(value.save.mock.calls[0][0]);
+  expect(request.mutation.expectedRevision).toBe(8n);
+  expect(JSON.parse(new TextDecoder().decode(request.documentJson))).toEqual({ ...original, default_routing: "priority", automatic_fetch: false });
+});
