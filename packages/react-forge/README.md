@@ -188,3 +188,35 @@ Caller code is trusted and runs with normal caller permissions. The execution pr
 Disconnect and process signals dispose sessions, with a five-second shutdown grace before terminating the execution process. Normal operations have no automatic timeout. Forced termination may prevent cleanup, and worker loss invalidates every in-memory session. `unknown_outcome` means to inspect any output or remote file before retrying. Server restart never automatically replays work. Closing sessions releases their owned resources; imported JavaScript modules remain cached until the process exits.
 
 Test renderers are not runtime dependencies. Direct Microsoft Office validation and PDF/UA certification are not claimed. React Forge is licensed under Apache-2.0. Report issues at https://github.com/delinoio/oss/issues.
+
+## Sprite authoring (unreleased)
+
+The next release adds `Format.Sprite` and `@delino/react-forge/sprite`. This feature is not included in npm 0.1.1.
+
+```tsx
+import React from "react";
+import { createSession, Format } from "@delino/react-forge";
+import { SpriteProject, Animation, Frame, PixelGrid } from "@delino/react-forge/sprite";
+
+export default async function () {
+  const session = createSession(Format.Sprite);
+  await session.render(
+    <SpriteProject width={16} height={16} scale={4} palette={{ R: "#e85d75" }}>
+      <Animation name="idle">
+        <Frame durationMs={200}>
+          <PixelGrid x={6} y={6} rows={[".RR.", "RRRR", ".RR."]} />
+        </Frame>
+      </Animation>
+    </SpriteProject>,
+  );
+  return session;
+}
+```
+
+Save your task as `hero.tsx` and run `react-forge run hero.tsx --output hero.sprite.zip`. Library callers use `exportBuffer()` or `exportFile()` and dispose their session in `finally`. MCP callers use the existing execute/inspect/measure/export tools.
+
+The atomic ZIP contains `sheet.png`, `sprite.json`, and `frames/0000.png` onwards. Extract the archive to use its images. JSON includes frame rectangles, millisecond durations, pivots, animation tags and loop flags. Metadata coordinates include output scale; measurement returns logical pixels with `coordinateSpace: "sprite_frame"` and `page` as the zero-based frame index. This follows the Aseprite JSON-array field layout; automatic engine import compatibility has not been verified.
+
+`Layer` provides integer translation and visibility. `Pixel`, `Rect` and `Ellipse` draw explicit `#RRGGBB`/`#RRGGBBAA` colors. `PixelGrid` uses equal-width ASCII rows, palette characters and transparent dots. `Image` uses a session-registered PNG/JPEG asset, explicit width/height, optional `source: {x, y, width, height}` crop and `flipX`/`flipY`. Drawing clips to the frame; enlargement uses nearest neighbor with no antialiasing. There is no automatic artwork generation, sprite-file import, rigging or trimming.
+
+Logical dimensions are 1–4096, scale 1–16, output-pixel padding 0–64 (default 1), and each frame lasts 1–60,000 ms. Up to 1024 frames share one canvas size. Optional columns default to a square grid; explicit columns must be 1–frame count. Animation names are unique, 1–64 ASCII letters/digits/underscore/hyphen; loops default true. Frame pivots default to bottom center and must lie within the logical canvas. Both sheet pixels and total scaled frame pixels are capped at 64 million, referenced decoded image pixels at 64 million, and raster work at 256 million visited pixels. Existing tree/image/archive limits also apply; `capabilities.formats.sprite.limits` exposes sprite limits. Unsupported props and nonempty leaf children fail export rather than silently dropping content.

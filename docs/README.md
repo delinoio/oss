@@ -60,6 +60,7 @@ Each project must have one project index document and one or more domain contrac
 - [Public documentation](apps-react-forge-docs-foundation.md) (`apps/public-docs/docs/react-forge`, canonical URL `https://oss.delino.io/react-forge/`, fourteen user-guide routes)
 - [Complete issue requirements](packages-react-forge-requirements.md)
 - [Node sessions and CLI](packages-react-forge-contract.md)
+- [Sprite authoring and export](packages-react-forge-sprite-contract.md) (unreleased)
 - [Session-based stdio MCP](packages-react-forge-mcp-contract.md)
 - [Native engines and preservation](crates-react-forge-contract.md)
 - [Validation and benchmarks](packages-react-forge-validation.md)

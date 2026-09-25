@@ -10,6 +10,7 @@ mod diagnostics;
 mod docx;
 mod pdf;
 mod pptx;
+mod sprite;
 mod xlsx;
 
 enum Format {
@@ -17,6 +18,7 @@ enum Format {
     Docx,
     Xlsx,
     Pdf,
+    Sprite,
 }
 use napi::{
     Env, Task,
@@ -133,6 +135,7 @@ impl Task for Operation {
             Format::Docx => "docx",
             Format::Xlsx => "xlsx",
             Format::Pdf => "pdf",
+            Format::Sprite => "sprite",
         };
         let operation = match self.kind {
             OperationKind::Generate => "generate",
@@ -149,7 +152,7 @@ impl Task for Operation {
             tracing::info!(target:"react_forge",format,operation,stage,revision=self.revision,status="started",duration_ms=0_u64);
             let mut result = forge_tree_doc::cancellation::with_cancellation(self.cancelled.clone(), || match self.format {
                 Format::Pptx => pptx::process(self), Format::Docx => docx::process(self),
-                Format::Xlsx => xlsx::process(self), Format::Pdf => pdf::process(self),
+                Format::Xlsx => xlsx::process(self), Format::Pdf => pdf::process(self), Format::Sprite => sprite::process(self),
             });
             if self.cancelled.load(Ordering::Acquire){result=Err(Diagnostic::new(ErrorCode::Cancelled,"","The native operation was cancelled"));}
             let code=result.as_ref().err().and_then(|e|serde_json::to_value(e.code).ok()).and_then(|v|v.as_str().map(str::to_owned)).unwrap_or_default();
@@ -214,6 +217,7 @@ pub fn process_document(
         "docx" => Format::Docx,
         "xlsx" => Format::Xlsx,
         "pdf" => Format::Pdf,
+        "sprite" => Format::Sprite,
         _ => {
             return Err(native_error(Diagnostic::new(
                 ErrorCode::UnsupportedPackage,

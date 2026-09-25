@@ -37,6 +37,11 @@
       "types": "./dist/figma.d.ts",
       "import": "./dist/figma.js",
       "require": "./dist/figma.js"
+    },
+    "./sprite": {
+      "types": "./dist/sprite.d.ts",
+      "import": "./dist/sprite.js",
+      "require": "./dist/sprite.js"
     }
   },
   "bin": {

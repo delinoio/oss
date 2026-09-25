@@ -5,6 +5,7 @@ import { ForgeError, abortable, checkSignal } from "./errors.js";
 import { digest, publish, withOutputReservation, readSource, type SourceFingerprint } from "./files.js";
 import { processDocument, type NativeOutput } from "./native.js";
 import { pptxModel, pptxNode } from "./pptx-model.js";
+import { spriteModel } from "./sprite-model.js";
 import { pdfModel } from "./pdf-model.js";
 import { xlsxModel, xlsxEdit } from "./xlsx-model.js";
 import type { Address, Range } from "./xlsx.js";
@@ -251,6 +252,7 @@ export class DocumentSession {
       if (this.format === Format.Pptx) model = pptxModel(this.root.snapshot(), this.documentId, this.assets);
       else if (this.format === Format.Docx) model = docxModel(this.root.snapshot(), this.documentId);
       else if (this.format === Format.Xlsx) model = xlsxModel(this.root.snapshot(), this.documentId);
+      else if (this.format === Format.Sprite) model = spriteModel(this.root.snapshot(), this.documentId);
       else if (this.format === Format.Pdf) model = pdfModel(this.root.snapshot(), this.documentId);
       else throw new ForgeError(ErrorCode.UnsupportedPackage, "This format is not connected to the native adapter yet.");
     }

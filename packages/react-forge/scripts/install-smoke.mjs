@@ -37,8 +37,8 @@ export function main() {
       if (Format.Figma !== "figma" || typeof Page !== "function" || typeof serve !== "function") throw new Error("Figma or MCP export unavailable");`;
     execFileSync(process.execPath, ["--input-type=module", "--eval", imported], { cwd: directory, encoding: "utf8" });
     cpSync(path.join(packageRoot, "examples"), path.join(directory, "tasks"), { recursive: true });
-    for (const [task, format] of [["presentation", "pptx"], ["document", "docx"], ["workbook", "xlsx"], ["pdf", "pdf"]]) {
-      const output = path.join(directory, `report.${format}`);
+    for (const [task, format] of [["presentation", "pptx"], ["document", "docx"], ["workbook", "xlsx"], ["pdf", "pdf"], ["sprite", "sprite"]]) {
+      const output = path.join(directory, `report.${format === "sprite" ? "sprite.zip" : format}`);
       const stdout = execFileSync(process.execPath, [path.join(installed, "bin/react-forge.mjs"), "run", path.join(directory, "tasks", `${task}.tsx`), "--output", output, "--json"], { cwd: directory, encoding: "utf8" });
       assert.equal(JSON.parse(stdout).format, format);
       const bytes = readFileSync(output);
