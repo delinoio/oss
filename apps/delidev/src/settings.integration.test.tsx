@@ -5,11 +5,12 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import processInfo from "node:process";
 import { promisify } from "node:util";
+import { webcrypto } from "node:crypto";
 import { createClient, type Transport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterAll, beforeAll, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 import { ConfigurationService, EntityKind, ResourceService, ScheduleService, SystemService, createDeliDevTransport, newRequestId } from "@delinoio/delidev-api-client";
 import { CreateSession } from "./views";
 import { Schedules } from "./schedules";
@@ -20,6 +21,7 @@ import { document, encode } from "./documents";
 let directory: string, transport: Transport, providerOrigin: string, binary: string, scope: string;
 let process: ChildProcess | undefined, worker: ChildProcess | undefined, provider: Server | undefined;
 const pause = () => new Promise((resolve) => setTimeout(resolve, 25));
+afterEach(() => vi.unstubAllGlobals());
 beforeAll(async () => {
   directory = await mkdtemp(join(tmpdir(), "delidev-settings-"));
   binary = join(directory, processInfo.platform === "win32" ? "delidev.exe" : "delidev");
@@ -266,6 +268,34 @@ it("revokes a real paired client through settings and reads bounded server diagn
   expect(screen.getByRole("region", { name: "Protected credential diagnostics" })).toBeTruthy();
   expect(screen.queryByText(/legacy report/)).toBeNull();
 }, 15000);
+
+for (const kind of ["client", "worker"] as const) it(`issues a real single-use ${kind} grant from Settings and observes consumption`, async () => {
+  vi.stubGlobal("crypto", webcrypto);
+  const endpoint = JSON.parse(await readFile(join(scope, "server.json"), "utf8"));
+  const authority = { endpoint: endpoint.url as string, serverId: (await createClient(SystemService, transport).getStatus({})).serverId };
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
+  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings pairingAuthority={authority} close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
+  fireEvent.click(screen.getByRole("button", { name: "Paired devices" }));
+  fireEvent.click(screen.getByRole("button", { name: "Create pairing document" }));
+  fireEvent.change(screen.getByLabelText("Device name"), { target: { value: `Disposable ${kind}` } });
+  fireEvent.change(screen.getByLabelText("Device type"), { target: { value: kind } });
+  fireEvent.click(screen.getByRole("button", { name: "Issue single-use document" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Reveal private document" }));
+  const raw = (screen.getByLabelText("Private pairing document") as HTMLTextAreaElement).value;
+  const grant = JSON.parse(raw);
+  const pair = (path: string) => runCLI([kind === "client" ? "device" : "worker", "pair", kind === "client" ? "--device-dir" : "--worker-dir", path, "--code-stdin", "--name", "Disposable UI grant"], raw);
+  const target = join(directory, `ui-pairing-${kind}`);
+  await pair(target);
+  const credential = JSON.parse(await readFile(join(target, "device.json"), "utf8"));
+  expect(credential.server_id).toBe(authority.serverId);
+  expect(credential.pairing_id).toBe(grant.pairing_id);
+  expect(credential.type).toBe(kind);
+  await expect(pair(join(directory, `ui-reused-${kind}`))).rejects.toThrow("Owned fixture CLI failed");
+  fireEvent.click(screen.getByRole("button", { name: "Refresh pairing status" }));
+  await screen.findByText("Pairing document was used. Its private code has been cleared.");
+  expect(screen.queryByLabelText("Private pairing document")).toBeNull();
+  expect(JSON.stringify(client.getQueryCache().getAll().map((query) => [query.queryKey, query.state.data]), (_key, value) => typeof value === "bigint" ? value.toString() : value)).not.toContain(grant.code);
+});
 
 it("creates and edits singleton server preferences with the exact Go defaults", async () => {
   const defaults = JSON.parse(await runCLI(["settings", "defaults"])).result;

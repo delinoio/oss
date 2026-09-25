@@ -12,8 +12,9 @@ import type { ReadLocalWorkerProof } from "./local-worker";
 import { Problem } from "./ui";
 import { MutationIntents } from "./mutation";
 import { connectionQueryClient } from "./cache";
+import type { PairingAuthority } from "./pairing-grant";
 
-function Shell({ localServer, readLocalWorker, controlLocalWorker, currentDeviceId }: { currentDeviceId?: string; controlLocalWorker?: ControlLocalWorker; localServer?: ReactNode; readLocalWorker?: ReadLocalWorkerProof }) {
+function Shell({ localServer, readLocalWorker, controlLocalWorker, currentDeviceId, pairingAuthority }: { pairingAuthority?: PairingAuthority; currentDeviceId?: string; controlLocalWorker?: ControlLocalWorker; localServer?: ReactNode; readLocalWorker?: ReadLocalWorkerProof }) {
   const [surface, setSurface] = useState(Surface.Sessions);
   const [selected, setSelected] = useState("");
   const [settings, setSettings] = useState(false);
@@ -44,15 +45,15 @@ function Shell({ localServer, readLocalWorker, controlLocalWorker, currentDevice
     <div hidden={surface !== Surface.Sessions} className="session-container">{selected ? <SessionView key={selected} id={selected} draft={drafts.get(selected) ?? ""} setDraft={(value) => saveDraft(selected, value)} /> : <section className="page welcome"><h2>Your sessions, in one place</h2><p>Select a retained session or start a new conversation.</p><h3>Before your first session</h3><ol><li>Connect to your DeliDev server.</li><li>Pair an execution Worker and verify its installed harness.</li><li>Connect an AI account and configure an Agent Worker.</li><li>Configure a project, or choose General Chat.</li></ol><button onClick={(event) => { event.currentTarget.focus(); setSettings(true); }}>View prerequisites in Settings</button><Problem error={status.error} /></section>}</div>
     {surface === Surface.Search ? <Search open={open} /> : surface === Surface.Activity ? <Activity open={open} /> : surface === Surface.Inbox ? <Inbox open={open} /> : null}
     <Schedules readLocalWorker={readLocalWorker} active={surface === Surface.Schedules} open={open} />
-  </main><Settings currentDeviceId={currentDeviceId} controlLocalWorker={controlLocalWorker} close={() => setSettings(false)} visible={settings} /><CreateSession readLocalWorker={readLocalWorker} visible={creating} close={() => { setCreating(false); void sessions.refetch(); }} open={open} /></div>;
+  </main><Settings pairingAuthority={pairingAuthority} currentDeviceId={currentDeviceId} controlLocalWorker={controlLocalWorker} close={() => setSettings(false)} visible={settings} /><CreateSession readLocalWorker={readLocalWorker} visible={creating} close={() => { setCreating(false); void sessions.refetch(); }} open={open} /></div>;
 }
 
 // The native caller mounts a new App per selected server/device. Query caches
 // and in-memory drafts never cross that identity boundary.
-export function App({ transport, localServer, connectionReady = true, connectionEpoch = 0, readLocalWorker, controlLocalWorker, currentDeviceId }: { currentDeviceId?: string; controlLocalWorker?: ControlLocalWorker; readLocalWorker?: ReadLocalWorkerProof; transport: Transport; localServer?: ReactNode; connectionReady?: boolean; connectionEpoch?: number }) {
+export function App({ transport, localServer, connectionReady = true, connectionEpoch = 0, readLocalWorker, controlLocalWorker, currentDeviceId, pairingAuthority }: { pairingAuthority?: PairingAuthority; currentDeviceId?: string; controlLocalWorker?: ControlLocalWorker; readLocalWorker?: ReadLocalWorkerProof; transport: Transport; localServer?: ReactNode; connectionReady?: boolean; connectionEpoch?: number }) {
   const connection = useMemo(() => ({ id: newRequestId(), ...connectionQueryClient() }), [transport]);
   const client = connection.client;
   useEffect(() => connection.activate(), [connection]);
   useEffect(() => { if (connectionReady) void client.invalidateQueries({ refetchType: "active" }); }, [client, connectionReady, connectionEpoch]);
-  return <TransportProvider transport={transport}><QueryClientProvider key={connection.id} client={client}><MutationIntents><Shell currentDeviceId={currentDeviceId} controlLocalWorker={controlLocalWorker} localServer={localServer} readLocalWorker={readLocalWorker} /></MutationIntents></QueryClientProvider></TransportProvider>;
+  return <TransportProvider transport={transport}><QueryClientProvider key={connection.id} client={client}><MutationIntents><Shell pairingAuthority={pairingAuthority} currentDeviceId={currentDeviceId} controlLocalWorker={controlLocalWorker} localServer={localServer} readLocalWorker={readLocalWorker} /></MutationIntents></QueryClientProvider></TransportProvider>;
 }
