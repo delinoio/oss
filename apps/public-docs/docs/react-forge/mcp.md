@@ -7,7 +7,7 @@ mkdir -p tasks
 react-forge mcp --cwd "$PWD/tasks"
 ```
 
-`react_forge_capabilities` reports supported formats and limits. Use `react_forge_execute` with exactly one of a TSX `code` string or an `entry` path and optional JSON `data`. A new task returns a session ID. Later calls pass that `sessionId` and can reuse an in-memory `state` Map for components, setters, refs, and mount handles. Inline TSX uses the automatic JSX runtime; a file entry may use its own TypeScript configuration.
+`react_forge_capabilities` reports supported formats and limits. Use `react_forge_execute` with exactly one of a TSX `code` string or an `entry` path and optional JSON `data`. A new task returns a session ID. Later calls pass that `sessionId` and can reuse an in-memory `state` Map for components, setters, refs, and mount handles. Both inline TSX and file entries use React's automatic JSX runtime; a file entry's `tsconfig` JSX settings do not change that transform.
 
 Create `report.tsx` in the task directory for the sequence below:
 
