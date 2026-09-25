@@ -43,7 +43,10 @@ export class SceneSession {
     this.operations.add(task); void task.finally(() => this.operations.delete(task)).catch(() => {}); return task;
   }
   onDiagnostic(listener: (event: Diagnostic) => void) { this.signal(); this.listeners.add(listener); return () => { this.listeners.delete(listener); }; }
-  render(children: ReactNode): Promise<void> { return this.track(Stage.Render, () => this.root.render(children)); }
+  render(children: ReactNode): Promise<void> {
+    const signal = this.signal();
+    return this.track(Stage.Render, () => this.ordered(signal, () => this.root.render(children)));
+  }
 
   private register(kind: SceneAssetKind, source: AssetSource, signal?: AbortSignal): Promise<GeometryHandle | TextureHandle> {
     const combined = this.signal(signal); checkSignal(combined);

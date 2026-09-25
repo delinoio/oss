@@ -386,3 +386,19 @@ affected suites then passed all four tests in an isolated Linux arm64
 clibox 0.1.6 tools. The repository mount was read-only and the test/tool copies
 were temporary. No source change was needed for those environment limitations.
 Generated repository-owned `dist` directories were removed after validation.
+
+
+## PR #988 scene render ordering repair (2026-09-25)
+
+The final review snapshot identified concurrent explicit scene renders bypassing
+the session operation queue. GLB and FBX renders now enter the same queue as
+snapshots, measurement and buffer exports, preserving independent commits and
+failures before a later recovery. A buffer export queued between two renders
+observes the first render.
+
+Four new regressions failed against the prior implementation: both formats
+coalesced the first render into the second and hid an earlier render failure.
+With the fix, all fifteen scene tests passed. macOS arm64/Node.js 24.17.0 package
+build/typecheck/lint and all **125 tests** passed, including installed-archive
+CLI/MCP coverage; standalone example type checks also passed. This JavaScript
+queue repair changes no native engine, asset bytes or prior visual evidence.

@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import React, { createElement, createRef, Suspense, use, useState } from "react";
+import React, { createElement, createRef, Suspense, use, useLayoutEffect, useState } from "react";
 import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,6 +12,40 @@ const validator = createRequire(import.meta.url)("gltf-validator") as { validate
 const geometry = (): GeometryInput => ({ positions: new Float32Array([0,0,0,1,0,0,0,1,0]), normals: new Float32Array([0,0,1,0,0,1,0,0,1]), indices: new Uint32Array([0,1,2]), uv: new Float32Array([0,0,1,0,0,1]), tangents: new Float32Array([1,0,0,1,1,0,0,1,1,0,0,1]) });
 const decode = (b: Buffer) => JSON.parse(b.subarray(20,20+b.readUInt32LE(12)).toString());
 for (const format of [Format.Glb, Format.Fbx] as const) {
+  test(`${format}: concurrent renders commit in order around an intervening export`, async () => {
+    const session = createSession(format);
+    const g = await session.registerGeometry(geometry());
+    const commits: string[] = [];
+    function Model({ name, x }: { name: string; x: number }) {
+      useLayoutEffect(() => { commits.push(name); }, [name]);
+      return <Scene><Mesh geometry={g} name={name} translation={[x, 0, 0]}/></Scene>;
+    }
+    try {
+      const first = session.render(<Model name="first" x={0}/>);
+      const intermediate = session.export();
+      const second = session.render(<Model name="second" x={5}/>);
+      const [, bytes] = await Promise.all([first, intermediate, second]);
+      assert.deepEqual(commits, ["first", "second"]);
+      const latest = await session.export();
+      assert.notDeepEqual(bytes, latest);
+      if (format === Format.Glb) {
+        assert.equal(decode(bytes).nodes[1].name, "first");
+        assert.equal(decode(latest).nodes[1].name, "second");
+      }
+    } finally { await session.dispose(); }
+  });
+  test(`${format}: a queued recovery does not hide an earlier render failure`, async () => {
+    const session = createSession(format);
+    const g = await session.registerGeometry(geometry());
+    function Broken(): React.ReactNode { throw Error("Synthetic queued render failure"); }
+    try {
+      const failed = assert.rejects(session.render(<Broken/>), { code: ErrorCode.Render });
+      const blocked = assert.rejects(session.export(), { code: ErrorCode.Render });
+      const recovered = session.render(<Scene><Mesh geometry={g}/></Scene>);
+      await Promise.all([failed, blocked, recovered]);
+      assert.ok((await session.export()).length > 0);
+    } finally { await session.dispose(); }
+  });
   test(`${format}: native measurement and export diagnostics retain their stages`, async () => {
     const session = createSession(format);
     const events: Diagnostic[] = [];
