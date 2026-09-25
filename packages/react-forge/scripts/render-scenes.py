@@ -112,14 +112,18 @@ for product in args.products.split(','):
         scene.render.image_settings.file_format = 'PNG'
         scene.view_settings.view_transform = 'AgX'
         for view in args.views.split(','):
+            # Orthographic front views keep every background ray below the
+            # horizon while preserving a directly comparable product silhouette.
+            camera_data.type = 'ORTHO' if view == 'front' else 'PERSP'
+            camera_data.ortho_scale = size * 1.3
             focus = target
             if view == 'hero': location=(cx+size*1.05,cy-size*1.85,cz+size*.90)
-            elif view == 'front': location=(cx,cy-size*2.7,cz+size*.35)
+            elif view == 'front': location=(cx,cy-size*8,cz+size*(.35/2.7*8))
             elif view == 'back': location=(cx-size*1.4,cy+size*2.1,cz+size*.9)
             else:
                 if product == 'studio': focus=(.29,-.065,.055);location=(.51,-.53,.33)
                 elif product == 'dac': focus=(.053,-.082,.04);location=(.24,-.43,.20)
-                elif product == 'headphones': focus=(.085,-.004,.204);location=(.45,-.40,.36)
+                elif product == 'headphones': focus=(.085,-.004,.204);location=(.45,-.40,.39)
                 else: focus=(cx,cy,hi[2]-.05);location=(cx+.23,cy-.44,hi[2]+.12)
             camera.location=location
             aim(camera,focus)

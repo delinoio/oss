@@ -11,3 +11,5 @@ The supported material profile targets Blender 4.5 LTS. It carries base color, m
 FBX applications do not agree on all material conventions. Check the actual exported file in your target application; identical shading in arbitrary FBX consumers is not promised. Basic transparency is supported; refraction, transmission, clearcoat, and layered/procedural materials are not. Unknown or unsupported authoring properties fail rather than disappearing silently.
 
 The accompanying GLB is useful for comparison because glTF defines a standard metallic-roughness model. Local acceptance checks use Blender 4.5.14 LTS for both exported formats, and an independent web viewer for GLB. These checks do not establish validation on every operating system or every FBX application. See [release and validation status](/react-forge/releases).
+
+Blender 4.5 ignores FBX mesh culling flags and shades both sides. Use closed surfaces when matching GLB appearance; a single-sided open surface can look different from its GLB counterpart.

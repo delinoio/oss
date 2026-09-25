@@ -14,7 +14,9 @@ function run(command,args,options={}) {const r=spawnSync(command,args,{cwd:pkg,s
 const version=run(blender,['--version'],{encoding:'utf8',stdio:'pipe'}).stdout;
 if(!version.includes('Blender 4.5.14'))throw Error('Scene evidence requires Blender 4.5.14 LTS');
 run(process.execPath,['--import','tsx','scripts/generate-scene-examples.mjs','--output',output]);
-const fixtures=['studio','headphones','dac','stand'].map(p=>join(output,`aura-${p}.fbx`));
+run(process.execPath,['--import','tsx','scripts/generate-scene-profile.mjs',join(output,'profile')]);
+run(blender,['--background','--factory-startup','--python-exit-code','1','--python',join(pkg,'scripts/inspect-scene-profile.py'),'--',join(output,'profile')]);
+const fixtures=[...['studio','headphones','dac','stand'].map(p=>join(output,`aura-${p}.fbx`)),join(output,'profile/profile.fbx')];
 const independent=run('cargo',['run','--locked','--quiet','-p','forge-fbx','--example','inspect','--',...fixtures],{cwd:root,stdio:['ignore','pipe','inherit'],encoding:'utf8'}).stdout;
 writeFileSync(join(output,'ufbx-report.json'),independent);
 run(blender,['--background','--factory-startup','--python-exit-code','1','--python',join(pkg,'scripts/inspect-scenes.py'),'--','--input',output]);
