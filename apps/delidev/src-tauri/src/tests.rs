@@ -12,7 +12,7 @@ fn metadata() -> DeviceMetadata {
     }
 }
 fn document(value: &DeviceMetadata) -> Vec<u8> {
-    serde_json::to_vec(&serde_json::json!({"version":value.version, "type":value.kind, "endpoint":value.endpoint, "server_id":value.server_id, "device_id":value.device_id, "pairing_id":value.pairing_id, "token":URL_SAFE_NO_PAD.encode([7;32])})).unwrap()
+    serde_json::to_vec(&serde_json::json!({"version":value.version, "type":value.kind, "endpoint":value.endpoint, "server_id":value.server_id, "device_id":value.device_id, "pairing_id":value.pairing_id, "machine_id":value.machine_id, "token":URL_SAFE_NO_PAD.encode([7;32])})).unwrap()
 }
 #[test]
 fn client_credential_has_separate_exact_authority() {
@@ -83,6 +83,51 @@ fn real_sidecar_connect_reuse_revocation_and_exit() {
     let owner: serde_json::Value =
         serde_json::from_slice(&fs::read(connector.root.join("owner.json")).unwrap()).unwrap();
     assert_ne!(first.token, owner["token"].as_str().unwrap());
+    assert!(connector.local_worker_proof().is_err());
+    let worker_root = connector.root.join("worker");
+    assert!(!worker_root.exists(), "proof reads cannot pair a Worker");
+    let grant = connector
+        .run(&[
+            "device".into(),
+            "create-pairing".into(),
+            "--type".into(),
+            "worker".into(),
+            "--name".into(),
+            "private proof fixture".into(),
+        ])
+        .unwrap();
+    let code = Zeroizing::new(fs::read(grant["code_file"].as_str().unwrap()).unwrap());
+    let mut pair = Command::new(&connector.executable)
+        .arg("--data-dir")
+        .arg(&connector.root)
+        .args(["worker", "pair", "--worker-dir"])
+        .arg(&worker_root)
+        .arg("--code-stdin")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    {
+        use std::io::Write;
+        pair.stdin.take().unwrap().write_all(&code).unwrap();
+    }
+    assert!(pair.wait().unwrap().success());
+    let proof = connector.local_worker_proof().unwrap();
+    assert_eq!(proof.server_id, first.server_id);
+    assert_eq!(proof.endpoint, first.endpoint);
+    assert_ne!(proof.token, first.token);
+    assert_ne!(proof.token, owner["token"].as_str().unwrap());
+    let path = worker_root.join("device.json");
+    let original = Zeroizing::new(fs::read(&path).unwrap());
+    let mut foreign: serde_json::Value = serde_json::from_slice(&original).unwrap();
+    foreign["server_id"] = uuid::Uuid::now_v7().to_string().into();
+    fs::write(&path, serde_json::to_vec(&foreign).unwrap()).unwrap();
+    assert!(matches!(
+        connector.local_worker_proof(),
+        Err(NativeFailure::InvalidEvidence)
+    ));
+    fs::write(&path, &original).unwrap();
     connector
         .run(&[
             "device".into(),
@@ -188,4 +233,22 @@ fn real_supervisor_recovers_crash_respects_stop_and_exits_without_stopping_serve
     drop(supervision);
     assert!(started.elapsed() < Duration::from_secs(2));
     assert!(cleanup.run(&["server".into(), "status".into()]).is_ok());
+}
+
+#[test]
+fn worker_proof_requires_a_distinct_canonical_machine_identity() {
+    let mut value = metadata();
+    value.kind = DeviceType::Worker;
+    assert!(verified_connection(&document(&value), &value, DeviceType::Worker).is_err());
+    value.machine_id = uuid::Uuid::now_v7().to_string();
+    assert!(verified_connection(&document(&value), &value, DeviceType::Worker).is_ok());
+    assert!(connection_from_bytes(&document(&value), &value).is_err());
+    for id in [
+        "",
+        "not-an-identity",
+        "00000000-0000-4000-8000-000000000000",
+    ] {
+        value.machine_id = id.into();
+        assert!(verified_connection(&document(&value), &value, DeviceType::Worker).is_err());
+    }
 }

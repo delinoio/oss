@@ -52,7 +52,13 @@ export function Desktop() {
       setConnectionEpoch((epoch) => epoch + 1);
     } catch (reason) { setError(reason); } finally { setBusy(false); }
   };
+  const readLocalWorker = async () => {
+    const selected = previous.current;
+    const proof = await invoke<{ endpoint: string; server_id: string; machine_id: string; token: string }>("local_worker_proof");
+    if (!selected || previous.current !== selected || proof.endpoint !== selected.endpoint || proof.server_id !== selected.server_id) throw new Error("Local Worker authority changed");
+    return { machineId: proof.machine_id, token: proof.token };
+  };
   const problem = typeof error === "string" && Object.hasOwn(nativeProblems, error) ? <p role="alert">{nativeProblems[error]}</p> : <Problem error={error} />;
-  if (transport) return <App transport={transport} connectionReady={status?.state === LocalServerState.Ready} connectionEpoch={connectionEpoch} localServer={<LocalServerControls status={status} restart={() => void connect()} busy={busy} problem={problem} />} />;
+  if (transport) return <App readLocalWorker={readLocalWorker} transport={transport} connectionReady={status?.state === LocalServerState.Ready} connectionEpoch={connectionEpoch} localServer={<LocalServerControls status={status} restart={() => void connect()} busy={busy} problem={problem} />} />;
   return <main className="connect-page"><h1>DeliDev</h1><h2>Connect to your local server</h2><p>The server and its sessions continue when you close DeliDev.</p>{isTauri() ? <button className="primary" disabled={busy} onClick={() => void connect()}>{busy ? "Connecting…" : "Start or connect"}</button> : <p>Open the DeliDev desktop app to connect. Browser clients are not supported.</p>}{isTauri() ? <LocalServerStatusText status={status} /> : null}{problem}</main>;
 }

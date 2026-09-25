@@ -11,6 +11,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { ConfigurationService, EntityKind, ResourceService, ScheduleService, SystemService, createDeliDevTransport, newRequestId } from "@delinoio/delidev-api-client";
+import { CreateSession } from "./views";
 import { Schedules } from "./schedules";
 import { Settings } from "./settings";
 import { MutationIntents } from "./mutation";
@@ -188,12 +189,31 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   await save(EntityKind.AGENT, { name: "Accountless schedule agent", harness: "codex", model_id: model.id, accounts: [], templates: [], options: { permission: "default" } });
   cleanup();
   const scheduleClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
-  render(<TransportProvider transport={transport}><QueryClientProvider client={scheduleClient}><MutationIntents><Schedules active open={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
+  const readLocalWorker = async () => {
+    const credential = JSON.parse(await readFile(join(workerRoot, "device.json"), "utf8"));
+    return { machineId: credential.machine_id as string, token: credential.token as string };
+  };
+  render(<TransportProvider transport={transport}><QueryClientProvider client={scheduleClient}><MutationIntents><CreateSession visible close={() => {}} open={() => {}} readLocalWorker={readLocalWorker} /></MutationIntents></QueryClientProvider></TransportProvider>);
+  change("Name", "Owned Local session");
+  change("Project", (await screen.findByRole("option", { name: "Owned project" }) as HTMLOptionElement).value);
+  fireEvent.click(screen.getByRole("button", { name: "Use this computer's Local checkouts" }));
+  await waitFor(() => expect((screen.getByLabelText("Execution Worker") as HTMLSelectElement).disabled).toBe(true));
+  change("Agent Worker", (await screen.findByRole("option", { name: "Accountless schedule agent" }) as HTMLOptionElement).value);
+  change("First message", "Local proof fixture without inference");
+  fireEvent.click(screen.getByRole("button", { name: "Create session" }));
+  await waitFor(async () => {
+    const sessions = await createClient(ResourceService, transport).listResources({ filter: { kind: EntityKind.SESSION } });
+    expect(sessions.resources.some((row) => document(row).workspace === "local" && document(row).name === "Owned Local session")).toBe(true);
+  });
+  cleanup();
+  render(<TransportProvider transport={transport}><QueryClientProvider client={scheduleClient}><MutationIntents><Schedules active open={() => {}} readLocalWorker={readLocalWorker} /></MutationIntents></QueryClientProvider></TransportProvider>);
   fireEvent.click(screen.getByRole("button", { name: "New schedule" }));
   change("Schedule name", "Owned schedule");
   change("Project", (await screen.findByRole("option", { name: "Owned project" }) as HTMLOptionElement).value);
   change("Agent Worker", (await screen.findByRole("option", { name: "Accountless schedule agent" }) as HTMLOptionElement).value);
   change("Execution Worker", (await screen.findByRole("option", { name: "Owned Git Worker" }) as HTMLOptionElement).value);
+  fireEvent.click(screen.getByRole("button", { name: "Use this computer's Local checkouts" }));
+  await waitFor(() => expect((screen.getByLabelText("Execution Worker") as HTMLSelectElement).disabled).toBe(true));
   change("Scheduled prompt", "Private schedule fixture prompt"); change("Cron expression", "0 0 1 1 *"); change("IANA timezone", "Asia/Seoul");
   fireEvent.click(screen.getByRole("button", { name: "Save schedule" }));
   fireEvent.click(await screen.findByRole("button", { name: "Resume future runs" }));
@@ -204,6 +224,7 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   await screen.findByText("Run now accepted");
   const schedules = await createClient(ScheduleService, transport).listSchedules({});
   const scheduleId = schedules.schedules[0].id;
+  expect(document(schedules.schedules[0])).toMatchObject({ definition: { workspace: "local" }, local_origin: { machine_id: (await readLocalWorker()).machineId } });
   expect((await createClient(ScheduleService, transport).listScheduleOccurrences({ scheduleId })).occurrences).toHaveLength(1);
   fireEvent.click(screen.getByRole("button", { name: "Delete schedule" }));
   fireEvent.click(screen.getByRole("button", { name: "Confirm schedule deletion" }));

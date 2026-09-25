@@ -95,3 +95,34 @@ it("selects an Agent from later pages and preserves an explicit per-repository s
   expect(JSON.parse(new TextDecoder().decode(request.documentJson))).toMatchObject({ source: "MANUAL", workspace: "worktree", project_id: value.project.id, agent_id: value.agent.id, starting: [{ repository_id: repository, reference: { type: "remote-branch", name: "feature/source", remote: "upstream" } }] });
   expect(request.localWorkerToken).toBe("");
 });
+
+it("reads fresh matching Local Worker proof for creation and retains that exact secret-bearing request on uncertainty", async () => {
+  const value = fixture();
+  const proof = vi.fn(async () => ({ machineId: value.machine.id, token: "A".repeat(43) }));
+  value.createSession.mockRejectedValueOnce(new ConnectError("ack lost", Code.Unavailable));
+  render(value.view(<CreateSession visible close={() => {}} open={() => {}} readLocalWorker={proof} />));
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Local session" } });
+  await screen.findByRole("option", { name: "Project" });
+  fireEvent.change(screen.getByLabelText("Project"), { target: { value: value.project.id } });
+  fireEvent.click(screen.getByRole("button", { name: "Use this computer's Local checkouts" }));
+  await waitFor(() => expect((screen.getByLabelText("Execution Worker") as HTMLSelectElement).value).toBe(value.machine.id));
+  expect((screen.getByLabelText("Execution Worker") as HTMLSelectElement).disabled).toBe(true);
+  const choices = within(screen.getByLabelText("Agent Worker").closest(".resource-choice")!);
+  fireEvent.click(await choices.findByRole("button", { name: "More choices" }));
+  await screen.findByRole("option", { name: "Later-page agent" });
+  fireEvent.change(screen.getByLabelText("Agent Worker"), { target: { value: value.agent.id } });
+  fireEvent.change(screen.getByLabelText("First message"), { target: { value: "Local prompt" } });
+  fireEvent.click(screen.getByRole("button", { name: "Create session" }));
+  await screen.findByRole("button", { name: "Retry the same session creation" });
+  expect(proof).toHaveBeenCalledTimes(2);
+  proof.mockResolvedValue({ machineId: newRequestId(), token: "B".repeat(42) + "A" });
+  fireEvent.click(screen.getByRole("button", { name: "Retry the same session creation" }));
+  await waitFor(() => expect(value.createSession).toHaveBeenCalledTimes(2));
+  expect(value.createSession.mock.calls[0][0]).toEqual(value.createSession.mock.calls[1][0]);
+  expect(proof).toHaveBeenCalledTimes(2);
+  const request = value.createSession.mock.calls[0][0] as { documentJson: Uint8Array; localWorkerToken: string };
+  expect(request.localWorkerToken).toBe("A".repeat(43));
+  expect(JSON.parse(new TextDecoder().decode(request.documentJson))).toMatchObject({ workspace: "local", machine_id: value.machine.id });
+  expect(new TextDecoder().decode(request.documentJson)).not.toContain(request.localWorkerToken);
+  expect(screen.queryByLabelText("Add repository override")).toBeNull();
+});

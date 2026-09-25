@@ -54,6 +54,20 @@ impl Drop for Connection {
     }
 }
 
+#[derive(Serialize)]
+pub struct LocalWorkerProof {
+    pub endpoint: String,
+    pub server_id: String,
+    pub machine_id: String,
+    pub token: String,
+}
+
+impl Drop for LocalWorkerProof {
+    fn drop(&mut self) {
+        self.token.zeroize();
+    }
+}
+
 #[derive(Clone, Copy, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 enum DeviceType {
@@ -130,6 +144,62 @@ impl Connector {
             Err(code) => tracing::warn!(operation = "local_connect", phase = "failed", ?code),
         }
         result
+    }
+
+    // This read-only boundary never pairs, starts or replaces a Worker. The Go
+    // inspector validates private files; product RPCs recheck current revocation.
+    // Only the fixed CLI-owned local Worker scope can prove this computer.
+    pub fn local_worker_proof(&self) -> Result<LocalWorkerProof> {
+        let _guard = self.gate.try_lock().map_err(|_| NativeFailure::Busy)?;
+        let result = self.local_worker_proof_inner();
+        match &result {
+            Ok(_) => tracing::info!(operation = "local_worker_proof", phase = "ready"),
+            Err(code) => tracing::warn!(operation = "local_worker_proof", phase = "failed", ?code),
+        }
+        result
+    }
+
+    fn local_worker_proof_inner(&self) -> Result<LocalWorkerProof> {
+        let client: DeviceMetadata = serde_json::from_value(self.run(&[
+            "device".into(),
+            "inspect".into(),
+            "--device-dir".into(),
+            self.root.join("desktop-client").into_os_string(),
+        ])?)
+        .map_err(|_| NativeFailure::InvalidEvidence)?;
+        let worker_root = self.root.join("worker");
+        let metadata: DeviceMetadata = serde_json::from_value(self.run(&[
+            "worker".into(),
+            "inspect".into(),
+            "--worker-dir".into(),
+            worker_root.clone().into_os_string(),
+        ])?)
+        .map_err(|_| NativeFailure::InvalidEvidence)?;
+        if client.kind != DeviceType::Client
+            || !client.machine_id.is_empty()
+            || metadata.kind != DeviceType::Worker
+            || metadata.endpoint != client.endpoint
+            || metadata.server_id != client.server_id
+        {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+        let path = worker_root.join("device.json");
+        let file_metadata =
+            fs::symlink_metadata(&path).map_err(|_| NativeFailure::CredentialUnavailable)?;
+        if !file_metadata.is_file() || file_metadata.len() > 16 << 10 {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+        let bytes = Zeroizing::new(read_bounded(
+            File::open(path).map_err(|_| NativeFailure::CredentialUnavailable)?,
+            16 << 10,
+        )?);
+        let verified = verified_connection(&bytes, &metadata, DeviceType::Worker)?;
+        Ok(LocalWorkerProof {
+            endpoint: verified.endpoint.clone(),
+            server_id: verified.server_id.clone(),
+            machine_id: metadata.machine_id,
+            token: verified.token.clone(),
+        })
     }
 
     fn connect_inner(&self) -> Result<Connection> {
@@ -317,13 +387,21 @@ fn read_bounded(mut reader: impl Read, limit: u64) -> Result<Vec<u8>> {
 }
 
 fn connection_from_bytes(bytes: &[u8], expected: &DeviceMetadata) -> Result<Connection> {
+    verified_connection(bytes, expected, DeviceType::Client)
+}
+
+fn verified_connection(
+    bytes: &[u8],
+    expected: &DeviceMetadata,
+    kind: DeviceType,
+) -> Result<Connection> {
     let credential: Credential =
         serde_json::from_slice(bytes).map_err(|_| NativeFailure::InvalidEvidence)?;
     let token = Zeroizing::new(credential.token);
     if credential.metadata != *expected
         || expected.version != 1
-        || expected.kind != DeviceType::Client
-        || !expected.machine_id.is_empty()
+        || expected.kind != kind
+        || (kind == DeviceType::Client && !expected.machine_id.is_empty())
     {
         return Err(NativeFailure::InvalidEvidence);
     }
@@ -334,6 +412,13 @@ fn connection_from_bytes(bytes: &[u8], expected: &DeviceMetadata) -> Result<Conn
     ] {
         let parsed = uuid::Uuid::parse_str(id).map_err(|_| NativeFailure::InvalidEvidence)?;
         if parsed.get_version_num() != 7 || parsed.to_string() != *id {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+    }
+    if kind == DeviceType::Worker {
+        let id = uuid::Uuid::parse_str(&expected.machine_id)
+            .map_err(|_| NativeFailure::InvalidEvidence)?;
+        if id.get_version_num() != 7 || id.to_string() != expected.machine_id {
             return Err(NativeFailure::InvalidEvidence);
         }
     }

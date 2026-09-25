@@ -9,6 +9,7 @@ import { useRetainedMutation } from "./mutation";
 import { Modal, Problem } from "./ui";
 import { ResourceChoice } from "./configuration-fields";
 import { StartingReferences } from "./schedules";
+import { useLocalWorkerProof, type ReadLocalWorkerProof } from "./local-worker";
 import { Interaction } from "./interactions";
 
 export enum Surface { Sessions = "sessions", Search = "search", Activity = "activity", Inbox = "inbox", Schedules = "schedules" }
@@ -58,7 +59,9 @@ export function Inbox({ open }: { open: (id: string) => void }) {
 
 export { Settings } from "./settings";
 
-export function CreateSession({ close, open, visible }: { close: () => void; open: (id: string) => void; visible: boolean }) {
+export function CreateSession({ close, open, visible, readLocalWorker }: { close: () => void; open: (id: string) => void; visible: boolean; readLocalWorker?: ReadLocalWorkerProof }) {
+  const local = useLocalWorkerProof(readLocalWorker);
+  const [workspace, setWorkspace] = useState(Workspace.Worktree);
   const [project, setProject] = useState("");
   const [agent, setAgent] = useState("");
   const [machine, setMachine] = useState("");
@@ -70,17 +73,24 @@ export function CreateSession({ close, open, visible }: { close: () => void; ope
   const selectedProject = useQuery(ResourceQuery.getResource, { kind: EntityKind.PROJECT, id: project }, { enabled: visible && Boolean(project) });
   const mutation = useRetainedMutation("create-session", SessionQuery.createSession, (result) => { if (result.change?.session) { setPrompt(""); setName(""); open(result.change.session.id); close(); } });
   const restrictions = object(document(selectedProject.data?.resource).agents);
-  const blocked = mutation.busy || mutation.uncertain;
-  return <Modal title="New session" close={close} visible={visible}><form onSubmit={(event) => { event.preventDefault(); void mutation.send({ requestId: newRequestId(), documentJson: encode({ name, prompt, agent_id: agent, machine_id: machine, project_id: project || undefined, workspace: project ? Workspace.Worktree : Workspace.GeneralChat, starting: project ? starting : undefined, mode, source: "MANUAL" }) }); }}>
+  const blocked = mutation.busy || mutation.uncertain || local.busy;
+  const submit = async () => {
+    if (blocked) return;
+    const selection = { name, prompt, agent_id: agent, machine_id: machine, project_id: project || undefined, workspace: project ? workspace : Workspace.GeneralChat, starting: project && workspace === Workspace.Worktree ? starting : undefined, mode, source: "MANUAL" };
+    const proof = selection.workspace === Workspace.Local ? await local.load(machine) : undefined;
+    if (selection.workspace === Workspace.Local && !proof) return;
+    void mutation.send({ requestId: newRequestId(), documentJson: encode(selection), localWorkerToken: proof?.token });
+  };
+  return <Modal title="New session" close={close} visible={visible}><form onSubmit={(event) => { event.preventDefault(); void submit(); }}>
     <fieldset disabled={blocked}><label>Name<input autoFocus required maxLength={256} value={name} onChange={(event) => setName(event.target.value)} /></label>
-      <ResourceChoice label="Project" kind={EntityKind.PROJECT} value={project} active={visible} change={(id) => { setProject(id); setAgent(""); setStarting([]); }} />
-      {project ? <><p>A separate detached worktree is prepared for every project repository. Local creation requires the originating Worker's private proof through the CLI.</p><StartingReferences key={project} project={project} starting={starting} change={setStarting} active={visible} /></> : <p>General Chat uses an isolated projectless directory on the selected Worker.</p>}
+      <ResourceChoice label="Project" kind={EntityKind.PROJECT} value={project} active={visible} change={(id) => { setProject(id); setAgent(""); setStarting([]); setWorkspace(Workspace.Worktree); }} />
+      {project ? <><p>A separate detached worktree is prepared for every project repository. Select Local explicitly to use this computer's original checkouts as-is.</p><div className="actions"><button type="button" aria-pressed={workspace === Workspace.Worktree} onClick={() => setWorkspace(Workspace.Worktree)}>Use separate Worktrees</button><button type="button" disabled={!local.available} aria-pressed={workspace === Workspace.Local} onClick={() => { void local.load().then((proof) => { if (proof) { setWorkspace(Workspace.Local); setMachine(proof.machineId); setStarting([]); } }); }}>Use this computer's Local checkouts</button></div>{workspace === Workspace.Local ? <p>Existing local checkouts are shared explicitly, including their current branches and uncommitted changes. No fetch or starting-reference selection occurs.</p> : <StartingReferences key={project} project={project} starting={starting} change={setStarting} active={visible} />}</> : <p>General Chat uses an isolated projectless directory on the selected Worker.</p>}
       <ResourceChoice label="Agent Worker" kind={EntityKind.AGENT} value={agent} active={visible} required allowed={restrictions.configured === true ? items(restrictions.ids) : undefined} change={setAgent} />
       {restrictions.configured === true && items(restrictions.ids).length === 0 ? <p>This project explicitly allows no Agent Workers. Update its restrictions before creating a session.</p> : null}
-      <ResourceChoice label="Execution Worker" kind={EntityKind.MACHINE} value={machine} active={visible} required change={setMachine} />
+      <ResourceChoice label="Execution Worker" kind={EntityKind.MACHINE} value={machine} active={visible} disabled={Boolean(project) && workspace === Workspace.Local} required change={setMachine} />
       <label>Mode<select value={mode} onChange={(event) => setMode(event.target.value as Mode)}><option value={Mode.Execute}>Execute</option><option value={Mode.Plan}>Plan</option></select></label>
       <label>First message<textarea required rows={5} maxLength={262144} value={prompt} onChange={(event) => { const value = event.target.value; if (new TextEncoder().encode(value).byteLength > 256 << 10) { setPromptLimit(true); return; } setPrompt(value); setPromptLimit(false); }} /></label><button className="primary" disabled={!agent || !machine || !name.trim() || !prompt.trim()}>Create session</button>
     </fieldset><Problem error={mutation.error} />{mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>Retry the same session creation</button> : null}
-    <Problem error={selectedProject.error} />{promptLimit ? <p role="alert">The first message exceeds 256 KiB. The previous draft is retained.</p> : null}
+    <Problem error={selectedProject.error} />{local.problem ? <p role="alert">{local.problem}</p> : null}{promptLimit ? <p role="alert">The first message exceeds 256 KiB. The previous draft is retained.</p> : null}
   </form></Modal>;
 }
