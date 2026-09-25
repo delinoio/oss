@@ -162,7 +162,8 @@ test("cancelled callbacks retain their session queue until they actually finish"
   const { sessionId } = await peer.call("execute", { code: pdf });
   const controller = new AbortController();
   const running = peer.raw("execute", { sessionId, code: `import {writeFile} from 'node:fs/promises'; export default async({state,signal})=>{
-    await writeFile('started','ready');await new Promise(resolve=>signal.addEventListener('abort',resolve,{once:true}));
+    const aborted=new Promise(resolve=>{if(signal.aborted)resolve();else signal.addEventListener('abort',resolve,{once:true});});
+    await writeFile('started','ready');await aborted;
     await new Promise(resolve=>setTimeout(resolve,100));state.set('finished',true);
   };` }, controller.signal);
   const rejected = assert.rejects(running);
@@ -176,9 +177,14 @@ test("cancelled callbacks retain their session queue until they actually finish"
 
 test("cancelled creation disposes a late returned session instead of registering it", async () => fixture(async (peer, cwd) => {
   const controller = new AbortController();
+  // A readiness file may be visible before writeFile's promise resumes. Retain
+  // cancellation before publishing it, then deliberately resume after abort to
+  // exercise the ordering that previously stranded this fixture on macOS CI.
   const running = peer.raw("execute", { code: `import {createSession,Format} from '@delino/react-forge';import {writeFile} from 'node:fs/promises';
     export default async({signal})=>{const session=createSession(Format.Pdf);const dispose=session.dispose.bind(session);session.dispose=async()=>{await dispose();await writeFile('disposed','yes');};
-      await writeFile('started','yes');await new Promise(resolve=>signal.addEventListener('abort',resolve,{once:true}));return session;};` }, controller.signal);
+      const aborted=new Promise(resolve=>{if(signal.aborted)resolve();else signal.addEventListener('abort',resolve,{once:true});});
+      await writeFile('started','yes');while(!signal.aborted)await new Promise(resolve=>setTimeout(resolve,10));
+      await aborted;return session;};` }, controller.signal);
   const rejected = assert.rejects(running);
   await waitFor(join(cwd, "started"));controller.abort();await rejected;
   await waitFor(join(cwd, "disposed"));

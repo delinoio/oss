@@ -54,6 +54,8 @@ Build the native binding and TypeScript output before server or packed-consumer 
 
 MCP coverage includes relative/inline imports, module singleton identity, fresh entry evaluation, actual React hook/Suspense state, mounted Office edits, exact revision measurement, original/output conflicts, filtered pagination, malformed/oversized source, latest-render errors, redaction, direct stdout writes, queued cancellation, late returned-session cleanup, EOF/signals, a blocked event loop, worker loss, and Figma complete/partial/unknown publication receipts without blind retries. Offline Figma tests use synthetic credentials/fake MCP only. Remove generated `dist` after validation.
 
+Cancellation fixtures register their abort waiter before publishing readiness and handle an already-aborted signal. The late-return fixture deliberately resumes after cancellation has arrived, proving cleanup does not depend on the timing of the readiness write's continuation.
+
 ## Dependencies and Integrations
 Reuse pinned `@modelcontextprotocol/sdk`, `tsx` and the existing native engines. Declare exact direct `esbuild` and `zod` dependencies matching the existing lockfile versions for virtual TSX transformation and shared runtime/advertised schemas. The parent alone owns protocol stdout; one execution child owns all sessions. No existing Forge CLI/MCP or native defaults change.
 
