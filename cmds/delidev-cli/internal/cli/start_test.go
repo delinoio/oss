@@ -30,7 +30,7 @@ import (
 // Only the test binary's explicit server re-exec path enters the CLI. Tests
 // never start an installed harness or load a user data directory.
 func init() {
-	if len(os.Args) >= 5 && os.Args[1] == "--data-dir" && os.Args[3] == "server" && os.Args[4] == "run" {
+	if len(os.Args) >= 5 && os.Args[1] == "--data-dir" && ((os.Args[3] == "server" && os.Args[4] == "run") || (os.Args[3] == "worker" && os.Args[4] == "start")) {
 		os.Exit(Run(context.Background(), os.Args[1:], IO{}))
 	}
 }

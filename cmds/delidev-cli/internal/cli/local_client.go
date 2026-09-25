@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -22,18 +23,24 @@ func credentialMetadata(c worker.Credential) any {
 	return map[string]any{"version": c.Version, "type": c.Type, "endpoint": c.Endpoint, "server_id": c.ServerID, "device_id": c.DeviceID, "machine_id": c.MachineID, "pairing_id": c.PairingID}
 }
 
-// pairLocalClient is an explicit local bootstrap operation, never server
+// pairLocalDevice is an explicit local bootstrap operation, never server
 // startup. It uses the existing owner authority only inside Go and retains the
 // exact grant request before contacting the server. A retry cannot silently
 // replace a revoked, damaged or differently paired client.
-func pairLocalClient(ctx context.Context, o options, root string) (any, error) {
+func pairLocalDevice(ctx context.Context, o options, root string, kind domain.DeviceType) (any, error) {
+	name := "DeliDev desktop"
+	if kind == domain.WorkerDevice {
+		name = "DeliDev local Worker"
+	} else if kind != domain.ClientDevice {
+		return nil, usage()
+	}
 	if o.server != "" || o.tokenStdin {
 		return nil, domain.Fail(domain.InvalidArgument, "Local pairing requires the selected local owner scope.", "Use device pair with an explicit private grant for a remote server.")
 	}
 	ownerPath, ownerErr := filepath.Abs(o.dataDir)
 	clientPath, clientErr := filepath.Abs(root)
 	if ownerErr != nil || clientErr != nil || ownerPath == clientPath {
-		return nil, domain.Fail(domain.InvalidArgument, "The client requires a separate private directory.", "Do not place a device credential in the server owner directory.")
+		return nil, domain.Fail(domain.InvalidArgument, "The device requires a separate private directory.", "Do not place a device credential in the server owner directory.")
 	}
 	if err := security.CheckPrivateDir(o.dataDir); err != nil {
 		return nil, err
@@ -64,10 +71,10 @@ func pairLocalClient(ctx context.Context, o options, root string) (any, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	if saved, err := worker.LoadCredential(root); err == nil {
-		if saved.Type != domain.ClientDevice || saved.ServerID != identity.ServerID || saved.Endpoint != endpoint.URL {
-			return nil, domain.Fail(domain.Conflict, "The client is paired to a different authority.", "Use its original server or explicitly select another client scope.")
+		if saved.Type != kind || saved.ServerID != identity.ServerID || saved.Endpoint != endpoint.URL {
+			return nil, domain.Fail(domain.Conflict, "The device is paired to a different authority.", "Use its original server or explicitly select another client scope.")
 		}
-		c, err := connectClient(options{dataDir: root}, nil)
+		c, err := connectClient(options{dataDir: o.dataDir, server: saved.Endpoint, tokenStdin: true}, strings.NewReader(saved.Token))
 		if err != nil {
 			return nil, err
 		}
@@ -109,7 +116,7 @@ func pairLocalClient(ctx context.Context, o options, root string) (any, error) {
 			return nil, err
 		}
 		if attempt.ServerID != identity.ServerID || attempt.Endpoint != endpoint.URL {
-			return nil, domain.Fail(domain.Conflict, "A different local pairing attempt is retained.", "Restore its original authority or explicitly select a separate client scope.")
+			return nil, domain.Fail(domain.Conflict, "A different local pairing attempt is retained.", "Restore its original authority or explicitly select a separate device scope.")
 		}
 	}
 	o.requestID = attempt.RequestID
@@ -125,7 +132,7 @@ func pairLocalClient(ctx context.Context, o options, root string) (any, error) {
 	if status.Msg.ServerId != string(identity.ServerID) || status.Msg.ProtocolVersion != rpc.ProtocolVersion || status.Msg.Version != rpc.Version {
 		return nil, domain.Fail(domain.Unsupported, "The local server is incompatible with this client.", "Preserve running work and select a compatible client.")
 	}
-	if _, err := deviceRemote(ctx, c, o, []string{"create-pairing", "--type", "client", "--name", "DeliDev desktop"}); err != nil {
+	if _, err := deviceRemote(ctx, c, o, []string{"create-pairing", "--type", string(kind), "--name", name}); err != nil {
 		return nil, err
 	}
 	raw, err = security.ReadPrivate(filepath.Join(o.dataDir, "pairing-codes", string(attempt.RequestID)+".json"), 32<<10)
@@ -139,7 +146,7 @@ func pairLocalClient(ctx context.Context, o options, root string) (any, error) {
 	if grant.ServerID != attempt.ServerID || grant.Endpoint != attempt.Endpoint {
 		return nil, domain.Fail(domain.Conflict, "The retained grant belongs to a different authority.", "Preserve the original local pairing attempt for inspection.")
 	}
-	credential, err := worker.Pair(ctx, root, grant, domain.ClientDevice, "")
+	credential, err := worker.Pair(ctx, root, grant, kind, name)
 	if err != nil {
 		return nil, err
 	}

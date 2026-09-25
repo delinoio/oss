@@ -685,8 +685,11 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   device inspect --device-dir PATH
   device revoke --id ID --revision N
   worker pair --worker-dir PATH --name NAME --code-stdin
+  worker pair-local --worker-dir PATH
   worker inspect --worker-dir PATH
-  worker start --worker-dir PATH
+  worker status --worker-dir PATH
+  worker stop --worker-dir PATH --generation UUID-V7
+  worker start --worker-dir PATH [--detach]
   repository inspect --machine-id ID --path PATH [--preferred-remote NAME] [--wait]
   machine discover --id ID --revision N [--input FILE|-] [--protocol] [--wait]
   account connect --id ID --revision N (--key-stdin | --keyless)

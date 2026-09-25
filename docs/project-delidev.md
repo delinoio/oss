@@ -7,7 +7,7 @@ Run personal AI sessions across projects, accounts, native harnesses, and execut
 `delidev`; the Go component is `delidev-cli` and its standalone/sidecar executable is `delidev`.
 
 ## Domain Ownership Map
-- `cmds/delidev-cli`: Go CLI, server, execution Worker, native adapters, storage, and service lifecycle.
+- `cmds/delidev-cli`: Go CLI, server, execution Worker, native adapters, storage, same-owner Worker bootstrap and generation-bound detached/foreground controller lifecycle; optional native OS services remain pending.
 - `protos/delidev/v1`: versioned Connect RPC schemas.
 - `protos/gen/go/delidev/v1`: generated Go messages and Connect bindings.
 - `packages/delidev-api-client`: generated TypeScript/Connect Query client, explicit transport and bounded read-only synchronization for the desktop client.

@@ -17,6 +17,11 @@ import (
 )
 
 func TestCLILocalClientPairingRetainsIdentityAndNeverReplacesRevocation(t *testing.T) {
+	for _, kind := range []string{"device", "worker"} {
+		t.Run(kind, func(t *testing.T) { testLocalPairing(t, kind) })
+	}
+}
+func testLocalPairing(t *testing.T, command string) {
 	root := filepath.Join(t.TempDir(), "server")
 	ctx, cancel := context.WithCancel(context.Background())
 	ready, done := make(chan struct{}), make(chan error, 1)
@@ -35,7 +40,11 @@ func TestCLILocalClientPairingRetainsIdentityAndNeverReplacesRevocation(t *testi
 		t.Fatal("server did not become ready")
 	}
 	clientRoot := filepath.Join(root, "desktop-client")
-	args := []string{"device", "pair-local", "--device-dir", clientRoot}
+	flag := "--device-dir"
+	if command == "worker" {
+		flag = "--worker-dir"
+	}
+	args := []string{command, "pair-local", flag, clientRoot}
 	code, first := cliRun(t, root, args, "")
 	if code != 0 {
 		t.Fatal(first)
@@ -51,7 +60,7 @@ func TestCLILocalClientPairingRetainsIdentityAndNeverReplacesRevocation(t *testi
 	if saved.Token == owner.Token {
 		t.Fatal("owner token escaped into client")
 	}
-	for _, command := range [][]string{args, {"device", "inspect", "--device-dir", clientRoot}} {
+	for _, command := range [][]string{args, {command, "inspect", flag, clientRoot}} {
 		code, result := cliRun(t, root, command, "")
 		if code != 0 || result["result"].(map[string]any)["device_id"] != string(saved.DeviceID) {
 			t.Fatal(result)
@@ -61,7 +70,11 @@ func TestCLILocalClientPairingRetainsIdentityAndNeverReplacesRevocation(t *testi
 			t.Fatal("secret in metadata")
 		}
 	}
-	if code, result := cliRun(t, root, []string{"worker", "inspect", "--worker-dir", clientRoot}, ""); code == 0 {
+	other, otherFlag := "worker", "--worker-dir"
+	if command == "worker" {
+		other, otherFlag = "device", "--device-dir"
+	}
+	if code, result := cliRun(t, root, []string{other, "inspect", otherFlag, clientRoot}, ""); code == 0 {
 		t.Fatal("wrong device type accepted", result)
 	}
 	if code, result := cliRun(t, root, []string{"device", "pair-local", "--device-dir", root}, ""); code == 0 {

@@ -147,13 +147,10 @@ func deviceLocal(ctx context.Context, o options, command string, args []string, 
 		}
 		return credentialMetadata(credential), nil
 	case "pair-local":
-		if command != "device" {
-			return nil, usage()
-		}
 		if err := parse(fs, args[1:]); err != nil {
 			return nil, err
 		}
-		return pairLocalClient(ctx, o, *root)
+		return pairLocalDevice(ctx, o, *root, kind)
 	case "pair":
 		input := fs.Bool("code-stdin", false, "read private pairing document from stdin")
 		name := fs.String("name", "local worker", "execution machine name")
@@ -179,17 +176,56 @@ func deviceLocal(ctx context.Context, o options, command string, args []string, 
 			return nil, err
 		}
 		return map[string]any{"device_id": credential.DeviceID, "machine_id": credential.MachineID, "server_id": credential.ServerID, "device_dir": *root, "paired": true}, nil
-	case "start":
+	case "status":
+		if o.server != "" || o.tokenStdin {
+			return nil, domain.Fail(domain.InvalidArgument, "Worker lifecycle is local to its private scope.", "Run this command on the Worker computer without remote connection flags.")
+		}
 		if command != "worker" {
 			return nil, usage()
 		}
 		if err := parse(fs, args[1:]); err != nil {
 			return nil, err
 		}
+		return worker.Status(*root)
+	case "stop":
+		if o.server != "" || o.tokenStdin {
+			return nil, domain.Fail(domain.InvalidArgument, "Worker lifecycle is local to its private scope.", "Run this command on the Worker computer without remote connection flags.")
+		}
+		if command != "worker" {
+			return nil, usage()
+		}
+		generation := fs.String("generation", "", "original Worker lifecycle generation")
+		if err := parse(fs, args[1:]); err != nil {
+			return nil, err
+		}
+		return stopLocalWorker(ctx, *root, domain.ID(*generation))
+	case "start":
+		if command != "worker" {
+			return nil, usage()
+		}
+		detached := fs.Bool("detach", false, "start a detached Worker and wait for readiness")
+		startupID := fs.String("startup-id", "", "original detached startup generation")
+		if err := parse(fs, args[1:]); err != nil {
+			return nil, err
+		}
 		if o.server != "" {
 			return nil, domain.Fail(domain.InvalidArgument, "Worker startup uses its paired endpoint.", "Select the private Worker directory.")
 		}
-		err := worker.Run(ctx, worker.Config{Root: *root, Logger: slog.New(slog.NewJSONHandler(streams.Err, nil)), Ready: func(id domain.ID) {
+		if o.tokenStdin {
+			return nil, usage()
+		}
+		if *detached {
+			if *startupID != "" {
+				return nil, usage()
+			}
+			return startDetachedWorker(ctx, o, *root)
+		}
+		if *startupID != "" {
+			if err := domain.ID(*startupID).Validate(); err != nil {
+				return nil, err
+			}
+		}
+		err := worker.Run(ctx, worker.Config{Root: *root, StartupID: domain.ID(*startupID), Logger: slog.New(slog.NewJSONHandler(streams.Err, nil)), Ready: func(id domain.ID) {
 			_ = json.NewEncoder(streams.Out).Encode(envelope{Version: 1, Result: map[string]any{"status": "ready", "machine_id": id}})
 		}})
 		return map[string]any{"status": "stopped"}, err
