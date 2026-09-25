@@ -246,9 +246,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if status < 400 || status > 599 {
 			outStatus = http.StatusBadGateway
 		}
+		body := errorBodyWithNativeCode(protocol, code, correlation, nativeCode)
+		if guard.contains(string(body)) {
+			// A permitted machine code can itself equal the protected key.
+			// Prefer the local classification; even that fixed body must pass
+			// the guard before delivery. HTTP status still reports failure.
+			body = errorBody(protocol, code, correlation)
+			if guard.contains(string(body)) {
+				body = nil
+			}
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(outStatus)
-		_, _ = w.Write(errorBodyWithNativeCode(protocol, code, correlation, nativeCode))
+		_, _ = w.Write(body)
 		return
 	}
 	responseType, _, err := mime.ParseMediaType(response.Header.Get("Content-Type"))

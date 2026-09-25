@@ -141,3 +141,5 @@
 - Git remote HEAD inspection treats only documented symbolic-ref status 1 as an unavailable default; propagate all ownership, timeout, launch and other exit failures.
 
 - Apply bounded cross-frame secret reflection checks to SSE comments and metadata as well as JSON deltas before delivering any original frame bytes.
+
+- Non-200 provider error bodies must pass secret reflection checks even when their native machine codes are allowlisted; retain failure status without reflecting a colliding protected value.

@@ -24,6 +24,7 @@ const fixtureKey = "proxy-upstream-private-fixture-key"
 var fixtureToken = TokenPrefix + base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{23}, 32))
 
 type fixtureAuthority struct {
+	key                      string
 	scope                    Scope
 	ctx                      context.Context
 	cancel                   context.CancelFunc
@@ -37,7 +38,14 @@ func (a *fixtureAuthority) Acquire(ctx context.Context, token string) (*Lease, e
 	if token != fixtureToken {
 		return nil, domain.Fail(domain.Unauthenticated, "private diagnostic must be discarded", "")
 	}
-	return &Lease{Scope: a.scope, Context: a.ctx, Release: func() { a.releases.Add(1) }, Key: func(ctx context.Context) ([]byte, error) { a.keys.Add(1); return []byte(fixtureKey), ctx.Err() }, AuthorizeReference: a.authorize, ObserveReference: a.observe}, nil
+	return &Lease{Scope: a.scope, Context: a.ctx, Release: func() { a.releases.Add(1) }, Key: func(ctx context.Context) ([]byte, error) {
+		a.keys.Add(1)
+		key := a.key
+		if key == "" {
+			key = fixtureKey
+		}
+		return []byte(key), ctx.Err()
+	}, AuthorizeReference: a.authorize, ObserveReference: a.observe}, nil
 }
 
 type lockedLog struct {
@@ -515,5 +523,28 @@ func TestProxyPreservesBenignSSEMetadata(t *testing.T) {
 	response, raw, err := f.request(t, "/chat/completions", `{"model":"fixed-model","stream":true}`, nil)
 	if err != nil || response.StatusCode != 200 || string(raw) != body {
 		t.Fatalf("benign metadata changed: %v %v %s", response, err, raw)
+	}
+}
+
+func TestProxyErrorMachineCodesCannotReflectSelectedKey(t *testing.T) {
+	for _, key := range []string{"invalid_api_key", "authentication_error", "rate_limit_exceeded", "api_error"} {
+		t.Run(key, func(t *testing.T) {
+			f := newProxyFixture(t, domain.OpenAIChat, []Operation{ChatCompletion}, func(w http.ResponseWriter, r *http.Request) {
+				if r.Header.Get("Authorization") != "Bearer "+key {
+					t.Error("incorrect key")
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnauthorized)
+				fmt.Fprintf(w, `{"error":{"code":%q}}`, key)
+			})
+			f.authority.key = key
+			response, raw, err := f.request(t, "/chat/completions", `{"model":"fixed-model"}`, nil)
+			if err != nil || response.StatusCode != http.StatusUnauthorized || bytes.Contains(raw, []byte(key)) {
+				t.Fatalf("error reflected protected machine code: %v %v %s", response, err, raw)
+			}
+			if strings.Contains(f.logs.String(), key) {
+				t.Fatal("native machine code key escaped into logs")
+			}
+		})
 	}
 }
