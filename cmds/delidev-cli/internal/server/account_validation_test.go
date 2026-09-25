@@ -96,6 +96,13 @@ func TestAccountValidationDistinguishesPublicCatalogAndFailures(t *testing.T) {
 			if body.Health != tc.health || body.Validation == nil || body.Validation.Problem == nil || body.Validation.Problem.Code != tc.code || body.ConfirmedExhausted {
 				t.Fatalf("failure state: %+v", body)
 			}
+			wantState := domain.ObservationFailed
+			if tc.code == domain.Unsupported {
+				wantState = domain.ObservationUnsupported
+			}
+			if body.Validation.State != wantState {
+				t.Fatalf("validation state = %s, want %s", body.Validation.State, wantState)
+			}
 			replay, err := f.accounts.ValidateAccount(context.Background(), ownerRequest(f.identity, input))
 			if err != nil || !replay.Msg.Replayed || calls.Load() != 1 {
 				t.Fatalf("failed accepted check retried network: %v", err)

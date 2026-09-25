@@ -50,3 +50,5 @@ Official interface sources checked for this implementation:
 - [xAI inference API authentication](https://docs.x.ai/developers/rest-api-reference/inference)
 - [DeepSeek model listing](https://api-docs.deepseek.com/api/list-models/)
 - [Ollama OpenAI compatibility](https://docs.ollama.com/api/openai-compatibility), [LM Studio model listing](https://lmstudio.ai/docs/developer/openai-compat/models), and [vLLM online serving](https://docs.vllm.ai/en/latest/serving/online_serving/)
+
+Successful model discovery with unobservable authentication records `state=unsupported` and an unsupported problem while leaving the account unverified; HTTP success alone never records successful credential validation.

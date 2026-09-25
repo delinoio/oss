@@ -31,6 +31,7 @@ func (s *Service) ValidateAccount(ctx context.Context, req *connect.Request[pb.V
 				account.Health = domain.AccountUnverified
 			}
 		} else if observation.Authentication == providers.AuthenticationUnknown {
+			validation.State = domain.ObservationUnsupported
 			account.Health = domain.AccountUnverified
 			validation.Problem = domain.Fail(domain.Unsupported, "The model endpoint responded, but credential validity is unobservable through this interface.", "Use a supported authenticated provider check; model discovery and manual model configuration remain separate.")
 			validation.Problem.CorrelationID = correlation
