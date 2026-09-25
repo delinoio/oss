@@ -515,7 +515,7 @@ func TestProxyDoesNotReleaseFragmentedSSEMetadata(t *testing.T) {
 }
 
 func TestProxyPreservesBenignSSEMetadata(t *testing.T) {
-	body := ": keepalive\n\nid: observation\nretry: 1000\ndata: {\"choices\":[]}\n\ndata: [DONE]\n\n"
+	body := ": keepalive\n\nid: observation\nretry: 1000\nextension: benign\nignored\ndata: {\"choices\":[]}\n\ndata: [DONE]\n\n"
 	f := newProxyFixture(t, domain.OpenAIChat, []Operation{ChatCompletion}, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		fmt.Fprint(w, body)
@@ -523,6 +523,29 @@ func TestProxyPreservesBenignSSEMetadata(t *testing.T) {
 	response, raw, err := f.request(t, "/chat/completions", `{"model":"fixed-model","stream":true}`, nil)
 	if err != nil || response.StatusCode != 200 || string(raw) != body {
 		t.Fatalf("benign metadata changed: %v %v %s", response, err, raw)
+	}
+}
+
+func TestProxyDoesNotReleaseFragmentedSSEFieldNames(t *testing.T) {
+	for _, separator := range []string{"\n", "\r\n"} {
+		for _, suffix := range []string{"", ": ignored"} {
+			t.Run(fmt.Sprintf("%q/%q", separator, suffix), func(t *testing.T) {
+				middle := len(fixtureKey) / 2
+				f := newProxyFixture(t, domain.OpenAIChat, []Operation{ChatCompletion}, func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "text/event-stream")
+					for _, part := range []string{fixtureKey[:middle], fixtureKey[middle:]} {
+						fmt.Fprint(w, part+suffix+separator+separator)
+						w.(http.Flusher).Flush()
+					}
+					fmt.Fprint(w, "data: [DONE]"+separator+separator)
+				})
+				response, raw, err := f.request(t, "/chat/completions", `{"model":"fixed-model","stream":true}`, nil)
+				if err != nil || response.StatusCode != http.StatusBadGateway || bytes.Contains(raw, []byte(fixtureKey[:middle])) || bytes.Contains(raw, []byte("[DONE]")) {
+					t.Fatalf("field-name prefix released: %v %v %s", response, err, raw)
+				}
+				assertNoProxySecrets(t, f, raw)
+			})
+		}
 	}
 }
 

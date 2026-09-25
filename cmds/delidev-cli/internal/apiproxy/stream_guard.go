@@ -180,6 +180,11 @@ func (s *streamGuard) inspectMetadata(frame []byte) error {
 		if string(field) == "data" {
 			continue
 		}
+		// Unknown field names are forwarded verbatim too. Keep their byte
+		// sequence separate from values so changing names cannot evade matching.
+		if err := s.check("@sse-field-names", string(field)); err != nil {
+			return err
+		}
 		value = bytes.TrimPrefix(value, []byte(" "))
 		if err := s.check("@sse/"+string(field), string(value)); err != nil {
 			return err

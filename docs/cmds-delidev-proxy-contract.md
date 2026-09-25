@@ -32,6 +32,8 @@ The private transport ignores ambient proxy variables, uses system TLS verificat
 
 Response checks reject literal, decoded JSON-string and Base64 representations of the upstream key and execution credential before delivery or reference persistence. A bounded linear stream matcher retains frames with unresolved protected prefixes at stable JSON string paths and SSE metadata fields (including comments and data-less frames), preventing a credential split across native delta frames from escaping incrementally. It allows at most 1,024 active paths, 4 KiB per path and 32 MiB pending frames; overflow fails closed. This is finite reflection protection, not a claim to recognize arbitrary provider transformations or covert encodings. Never use raw provider diagnostics for logs or public errors.
 
+SSE field-name bytes use a separate bounded cross-frame matcher, including unknown and colonless fields. Metadata values and JSON deltas retain their independent matchers; benign unknown fields preserve their original bytes.
+
 ## Logging
 Use structured `api_proxy_request_finished` metadata: correlation/execution/session/account/provider/model IDs, closed operation and phase, stream selection, submission uncertainty, HTTP status, typed failure code and duration. `submitted` means an HTTP attempt began, not proof that upstream accepted it. Native failed terminal events retain failure classification. Keys, endpoint URLs, native model strings, prompt/output bytes and provider diagnostic text are excluded.
 
