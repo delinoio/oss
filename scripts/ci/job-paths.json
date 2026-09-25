@@ -538,6 +538,7 @@
       "protos/gen/go/devhud/**",
       "scripts/release/*.test.mjs",
       "scripts/release/*devhud*",
+      "scripts/release/fixtures/**",
       "scripts/release/linux/**",
       "scripts/release/project.mjs",
       "scripts/release/runmoor.mjs",

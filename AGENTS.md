@@ -389,7 +389,7 @@ Coverage expectations:
 - `devhud-mobile-contracts`, `devhud-ios-simulator`, and `devhud-android-emulator`: validate iOS/Android app and widget generation and production/simulator/emulator builds.
 - `devhud-oci`: builds both API and sweeper OCI layouts for amd64/arm64 and validates non-root execution, embedded migrations, and SPDX SBOMs without pushing.
 - `devhud-supply-chain`: validates installer, Native Messaging host, extension ZIP, updater/key-rotation signature, SBOM, and provenance fixtures.
-- `devhud-release-contracts`: runs every top-level `scripts/release/*.test.mjs` fixture, including cross-project release tests, alongside deterministic static/dry DevHud candidate, identity, configuration, signing/preflight, review, rollback, and redaction contracts without exercising publication. Every such fixture change selects this job.
+- `devhud-release-contracts`: runs every top-level `scripts/release/*.test.mjs` fixture, including cross-project release tests, alongside deterministic static/dry DevHud candidate, identity, configuration, signing/preflight, review, rollback, and redaction contracts without exercising publication. Changes to those test files or committed data under `scripts/release/fixtures/` select this job.
 - `ci-result`: retains the `CI Result` status and checks every dependency against the exact `changes` plan; failed/cancelled jobs, missing dependencies, and unexpected skips or execution fail the aggregate.
 - The DevHud release-contract job also validates the internal operations runbook, repository workflow contract, and read-only CEF review workflow through `scripts/release/devhud-operations.test.mjs`.
 

@@ -125,6 +125,21 @@ test("every shared release fixture selects its executing CI job", () => {
   }
 });
 
+test("nested DevHud release fixtures select their consuming CI job", () => {
+  for (const event of [Event.PullRequest, Event.Push]) {
+    for (const path of [
+      "scripts/release/fixtures/devhud-cef-security-review.json",
+      "scripts/release/fixtures/devhud-public-release.json",
+    ]) {
+      const needs = results(event, [path]);
+      assert.equal(planJobs(event, [path]).jobs["devhud-release-contracts"], true, `${event}: ${path}`);
+      assert.equal(validateResults(needs), true);
+      needs["devhud-release-contracts"].result = "skipped";
+      assert.throws(() => validateResults(needs), /devhud-release-contracts/u);
+    }
+  }
+});
+
 test("integrated project docs select the public-docs workspace and shared inputs force it", () => {
   const id = "node-public-docs-test";
   for (const event of [Event.PullRequest, Event.Push]) {
