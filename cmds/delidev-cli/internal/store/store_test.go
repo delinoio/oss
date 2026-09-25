@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
 func openTest(t *testing.T) (*Store, string) {
@@ -267,7 +268,7 @@ func TestFreshInitializationPreservesPreexistingOrphanedSQLiteFiles(t *testing.T
 	for _, suffix := range []string{"-wal", "-shm", "-journal"} {
 		t.Run(suffix, func(t *testing.T) {
 			root := filepath.Join(t.TempDir(), "state")
-			if err := os.Mkdir(root, 0700); err != nil {
+			if err := security.PrivateDir(root); err != nil {
 				t.Fatal(err)
 			}
 			path := filepath.Join(root, "state.sqlite"+suffix)

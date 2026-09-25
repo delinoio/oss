@@ -9,13 +9,14 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
 func TestMigrationBacksUpOriginalAndRollsBackOnFailure(t *testing.T) {
 	for _, conflicting := range []bool{false, true} {
 		t.Run(map[bool]string{false: "success", true: "conflict"}[conflicting], func(t *testing.T) {
 			root := filepath.Join(t.TempDir(), "state")
-			if err := os.Mkdir(root, 0700); err != nil {
+			if err := security.PrivateDir(root); err != nil {
 				t.Fatal(err)
 			}
 			path := filepath.Join(root, "state.sqlite")
