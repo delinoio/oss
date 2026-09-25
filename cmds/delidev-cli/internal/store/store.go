@@ -81,7 +81,7 @@ type Tx struct {
 	readOnly  bool
 }
 
-func Open(ctx context.Context, root string) (*Store, error) {
+func Open(ctx context.Context, root string) (_ *Store, returned error) {
 	root, err := filepath.Abs(root)
 	if err != nil {
 		return nil, storageError(err)
@@ -106,6 +106,31 @@ func Open(ctx context.Context, root string) (*Store, error) {
 	}
 	path := filepath.Join(root, "state.sqlite")
 	created := false
+	var db *sql.DB
+	var freshArtifacts []string
+	defer func() {
+		if success {
+			return
+		}
+		if db != nil {
+			if err := db.Close(); err != nil {
+				returned = storageError(errors.Join(returned, err))
+				return // Never remove files while SQLite closure is uncertain.
+			}
+		}
+		if created {
+			// Only this first-start attempt owns these files. Existing databases
+			// and orphaned sidecars must remain untouched for recovery.
+			for _, artifact := range append(freshArtifacts, path) {
+				if err := os.Remove(artifact); err != nil && !errors.Is(err, os.ErrNotExist) {
+					returned = storageError(errors.Join(returned, err))
+				}
+			}
+			if err := security.SyncParent(path); err != nil {
+				returned = storageError(errors.Join(returned, err))
+			}
+		}
+	}()
 	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0600)
 	if err == nil {
 		created = true
@@ -116,12 +141,20 @@ func Open(ctx context.Context, root string) (*Store, error) {
 	if err != nil {
 		return nil, storageError(err)
 	}
-	db, err := sql.Open("sqlite", databaseURI(path, false))
+	if created {
+		for _, suffix := range []string{"-wal", "-shm", "-journal"} {
+			if _, err := os.Lstat(path + suffix); !errors.Is(err, os.ErrNotExist) {
+				return nil, corrupt()
+			}
+		}
+		freshArtifacts = []string{path + "-wal", path + "-shm", path + "-journal"}
+	}
+	db, err = sql.Open("sqlite", databaseURI(path, false))
 	if err != nil {
 		return nil, storageError(err)
 	}
 	db.SetMaxOpenConns(1)
-	fail := func(err error) (*Store, error) { db.Close(); return nil, storageError(err) }
+	fail := func(err error) (*Store, error) { return nil, storageError(err) }
 	if err := inspect(ctx, db, created); err != nil {
 		return fail(err)
 	}

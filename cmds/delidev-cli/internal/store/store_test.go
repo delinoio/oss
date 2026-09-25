@@ -243,6 +243,50 @@ func TestExclusiveScopeAndCorruptOrNewerDBPreserved(t *testing.T) {
 	}
 }
 
+func TestCanceledFirstInitializationDoesNotWedgeFreshScope(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "state")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if db, err := Open(ctx, root); err == nil || db != nil {
+		t.Fatal("canceled initialization succeeded")
+	}
+	for _, suffix := range []string{"", "-wal", "-shm", "-journal"} {
+		if _, err := os.Lstat(filepath.Join(root, "state.sqlite"+suffix)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatal("failed first startup left a database artifact", suffix, err)
+		}
+	}
+	db, err := Open(context.Background(), root)
+	if err != nil {
+		t.Fatal("fresh initialization could not be retried", err)
+	}
+	defer db.Close()
+	create(t, db, domain.NewID(), "accepted after retry")
+}
+
+func TestFreshInitializationPreservesPreexistingOrphanedSQLiteFiles(t *testing.T) {
+	for _, suffix := range []string{"-wal", "-shm", "-journal"} {
+		t.Run(suffix, func(t *testing.T) {
+			root := filepath.Join(t.TempDir(), "state")
+			if err := os.Mkdir(root, 0700); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(root, "state.sqlite"+suffix)
+			if err := os.WriteFile(path, []byte("prior SQLite recovery evidence"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			_, err := Open(context.Background(), root)
+			assertCode(t, err, domain.RecoveryRequired)
+			raw, err := os.ReadFile(path)
+			if err != nil || string(raw) != "prior SQLite recovery evidence" {
+				t.Fatal("preexisting recovery file changed", err)
+			}
+			if _, err := os.Lstat(filepath.Join(root, "state.sqlite")); !errors.Is(err, os.ErrNotExist) {
+				t.Fatal("failed first startup left its empty file")
+			}
+		})
+	}
+}
+
 func TestErrorsAndEventsExcludeRawSecretCause(t *testing.T) {
 	s, _ := openTest(t)
 	ctx := context.Background()
