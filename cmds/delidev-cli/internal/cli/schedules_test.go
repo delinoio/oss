@@ -1,11 +1,16 @@
 package cli
 
 import (
+	"connectrpc.com/connect"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
+	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
+	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 	"io"
 	"log/slog"
+	"net/http"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -30,6 +35,7 @@ func scheduleCLIFixture(t *testing.T) (string, string, domain.ScheduleDefinition
 		t.Fatal(err)
 	}
 	machine, device, model, provider, agent, repository, project := domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID()
+	instance := domain.NewID()
 	token, err := worker.RandomToken()
 	if err != nil {
 		t.Fatal(err)
@@ -57,7 +63,7 @@ func scheduleCLIFixture(t *testing.T) (string, string, domain.ScheduleDefinition
 		if err := tx.PutCredential(device, digest[:]); err != nil {
 			return nil, err
 		}
-		return nil, tx.SetWorkerInstance(machine, domain.NewID(), time.Now().UTC())
+		return nil, tx.SetWorkerInstance(machine, instance, time.Now().UTC())
 	})
 	closeErr := db.Close()
 	if err != nil || closeErr != nil {
@@ -83,6 +89,14 @@ func scheduleCLIFixture(t *testing.T) (string, string, domain.ScheduleDefinition
 		t.Fatal(err)
 	case <-time.After(10 * time.Second):
 		t.Fatal("schedule fixture server timeout")
+	}
+	// A persisted pre-start beat is no longer current availability. Exercise
+	// the authenticated attach boundary after this server process is ready.
+	workers := delidevv1connect.NewWorkerServiceClient(http.DefaultClient, endpoint.URL)
+	attach := connect.NewRequest(&pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: string(machine), InstanceId: string(instance), Version: rpc.Version})
+	attach.Header().Set("Authorization", "Bearer "+token)
+	if _, err := workers.AttachWorker(ctx, attach); err != nil {
+		t.Fatal(err)
 	}
 	workerRoot := filepath.Join(t.TempDir(), "worker")
 	if err := security.PrivateDir(workerRoot); err != nil {
