@@ -3,6 +3,7 @@ package domain
 import (
 	"net"
 	"net/url"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -170,7 +171,9 @@ func (r Repository) Validate() error {
 		if err := Text(c.Path, "checkout path", 4096, true); err != nil {
 			return err
 		}
-		if !filepath.IsAbs(c.Path) && !windowsAbsolute(c.Path) {
+		// Remote Unix checkouts must remain valid on a Windows server. Native
+		// canonicalization and filesystem validation belong to the owning Worker.
+		if !path.IsAbs(c.Path) && !filepath.IsAbs(c.Path) && !windowsAbsolute(c.Path) {
 			return Fail(InvalidArgument, "A checkout path must be absolute on its Worker.", "Use the canonical root returned by repository inspection.")
 		}
 	}
