@@ -49,8 +49,15 @@ func TestResourcePagesBoundBothEncodingsWithoutSkippingLargeTemplates(t *testing
 				seen[resource.Id], last = true, resource.Id
 			}
 			replay, err := resources.ListResources(context.Background(), ownerRequest(f.identity, input))
-			if err != nil || !proto.Equal(response.Msg, replay.Msg) {
+			if err != nil || len(response.Msg.Resources) != len(replay.Msg.Resources) {
 				t.Fatal("same cursor changed stable page", err)
+			}
+			// Cursor expiry is freshly signed for each response; retained
+			// resource identities and bytes, rather than token bytes, are stable.
+			for i, resource := range response.Msg.Resources {
+				if !proto.Equal(resource, replay.Msg.Resources[i]) {
+					t.Fatal("same cursor changed a retained resource")
+				}
 			}
 			if response.Msg.NextPageToken == "" {
 				break
