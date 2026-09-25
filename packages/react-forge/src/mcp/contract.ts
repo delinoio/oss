@@ -50,9 +50,9 @@ const descriptions: Record<Operation, string> = {
   execute: "Run trusted TSX code OR a local .tsx entry. Default export receives {session,state,data,signal}. New calls return a session; updates return void or the same session. state is a persistent Map. Code runs with your permissions and may explicitly write files or publish remotely; this is not a sandbox or a transaction. No automatic timeout. Does not automatically export or publish.",
   sessions: "List active in-memory sessions, their format, last revision and execution status. Sessions disappear when the server exits.",
   inspect: "Inspect settled local targets or cached Figma targets. Filter by nodeId/kind; offset/limit paginate. Text previews are capped at 4096 characters. view=receipt returns the last Figma receipt without publishing. Does not refresh Figma remotely.",
-  measure: "Measure a document-scoped node at an exact revision. For local documents first inspect to settle a revision; Figma measurement requires a completed publication. A changed revision returns conflict.",
+  measure: "Measure a document-scoped node at an exact revision (WAV timeline x/width are seconds). For local documents first inspect to settle a revision; Figma measurement requires a completed publication. A changed revision returns conflict.",
   refresh: "Refresh explicitly selected Figma page/nodes or resources using the existing host credential. Preserves external ownership. Figma only.",
-  export: "Export Office/PDF or a sprite .sprite.zip bundle to a local output. overwrite=true replaces an existing output, never an imported source or its aliases. Atomic publication pins a revision. Figma uses publish instead.",
+  export: "Export Office/PDF/WAV or a sprite .sprite.zip bundle to a local output. overwrite=true replaces an existing output, never an imported source or its aliases. Atomic publication pins a revision. Figma uses publish instead.",
   publish: "Explicitly publish a Figma revision remotely. Optionally save a .figma.json receipt; existing receipt requires overwrite=true. Partial/unknown outcomes include a receipt and must be reconciled before retrying. Never automatically retry this tool.",
   close: "Dispose a session after its prior operations finish and release its state Map. Does not delete exported files or undo remote changes.",
 };

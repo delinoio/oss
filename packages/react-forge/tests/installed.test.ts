@@ -9,7 +9,7 @@ import test from "node:test";
 import { connect } from "./mcp/client.js";
 import packageManifest from "../package.json" with { type: "json" };
 const exec = promisify(execFile);
-const cases = [["presentation", "pptx"], ["document", "docx"], ["workbook", "xlsx"], ["pdf", "pdf"], ["sprite", "sprite"]] as const;
+const cases = [["presentation", "pptx"], ["document", "docx"], ["workbook", "xlsx"], ["pdf", "pdf"], ["sprite", "sprite"], ["zombie-gunshot", "wav"]] as const;
 
 test("scoped workspace archive installs and its CLI generates local formats and an offline Figma receipt", async () => {
   const directory = await mkdtemp(join(tmpdir(), "react-forge installed-"));
@@ -34,7 +34,7 @@ test("scoped workspace archive installs and its CLI generates local formats and 
       const output = join(directory, `report.${format === "sprite" ? "sprite.zip" : format}`);
       const { stdout } = await exec(process.execPath, [cli, "run", join(directory, "tasks", `${task}.tsx`), "--output", output, "--json"], { cwd: directory, env });
       const result = JSON.parse(stdout); assert.equal(result.ok, true); assert.equal(result.format, format);
-      const bytes = await readFile(output); assert.equal(bytes.subarray(0, format === "pdf" ? 5 : 2).toString(), format === "pdf" ? "%PDF-" : "PK");
+      const bytes = await readFile(output); assert.equal(bytes.subarray(0, format === "pdf" ? 5 : format === "wav" ? 4 : 2).toString(), format === "pdf" ? "%PDF-" : format === "wav" ? "RIFF" : "PK");
     }
     assert.ok(manifest.exports["./figma"]);
     const fake=await readFile(join(packageRoot,"tests","figma","fake.ts"),"utf8");
@@ -53,7 +53,7 @@ test("scoped workspace archive installs and its CLI generates local formats and 
         assert.ok(snapshot.targets.length > 0);
         await mcp.call("export", { sessionId: created.sessionId, output: `mcp.${format === "sprite" ? "sprite.zip" : format}` });
         const bytes = await readFile(join(directory, `mcp.${format === "sprite" ? "sprite.zip" : format}`));
-        assert.equal(bytes.subarray(0, format === "pdf" ? 5 : 2).toString(), format === "pdf" ? "%PDF-" : "PK");
+        assert.equal(bytes.subarray(0, format === "pdf" ? 5 : format === "wav" ? 4 : 2).toString(), format === "pdf" ? "%PDF-" : format === "wav" ? "RIFF" : "PK");
         await mcp.call("close", { sessionId: created.sessionId });
       }
       const figma = await mcp.call("execute", { entry: "tasks/figma.tsx" });

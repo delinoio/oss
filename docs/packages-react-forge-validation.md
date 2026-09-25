@@ -196,3 +196,75 @@ The [darwin-x64 CI job](https://github.com/delinoio/oss/actions/runs/36124614014
 On macOS arm64 with Node.js 24.20.0, all three focused CLI tests and all 110 package tests passed after the native rebuild. Package typecheck, lint and standalone example checks also passed. This is local verification of the CI root cause; the repaired darwin-x64 job requires a new CI run.
 
 The accompanying sprite review repairs passed 11 native tests and sprite/adapter Clippy with warnings denied: hidden descendants retain translated geometry, frame and atlas work share one budget, and PNG cancellation interrupts compression within a wide scanline before a subsequent successful export. With the documented pnport preparation, root `TMPDIR=/private/tmp cargo test` passed 1,932 tests with three existing opt-in tests ignored. The regenerated slime archive preserves all nine PNGs' decoded RGBA pixels and the metadata byte-for-byte against the previously inspected artifact; bounded compression changes the encoded archive size to 25,793 bytes. The new sheet was visually inspected. The earlier committed fixture record remains evidence for its named implementation commit, and generated `dist` output was removed after this verification.
+
+## Procedural game SFX extension
+
+The SFX follow-up adds the independent `forge-sfx` engine and `Format.Wav` without
+changing Office/PDF engines or Figma publication. Local macOS arm64 verification
+used Node.js 24.20.0. Package build, typecheck, lint and standalone example checks
+passed, as did all 108 package tests. The new coverage exercises waveform timing,
+real React state and refs, invalid latest renders, native diagnostics, output
+preservation, cancellation, and the gunshot's attack/tail/silence. Workspace and
+installed-archive CLI and real SDK MCP clients generate WAV. The public main plus
+host-native candidate also passed `test:package` with five local output formats.
+No npm publication occurred; released `0.1.1` does not contain SFX.
+
+Five native synthesis tests passed, checking RIFF fields, PCM size, reference-tone
+frequency by zero crossings at both sample rates, seeded noise, left/right pan,
+peak attenuation, silence, model limits and cancellation. Native Clippy passed
+with warnings denied. Public-docs tests passed with the fifteenth React Forge
+route, and all 77 repository CI contracts plus workflow validation passed.
+The six-host jobs include the new native crate and installed SFX consumer checks;
+those other hosts were not executed locally.
+
+`examples/zombie-gunshot.tsx` was exported by the built one-shot CLI and decoded
+independently with Python's standard-library `wave` module. The compact record is
+`tests/evidence/zombie-gunshot-macos-arm64.json` under the package. The file has
+36,000 mono frames at 48 kHz/16-bit PCM (0.75 seconds, 72,044 bytes), SHA-256
+`fa750e6d70bc68f7a10fc327631355bc236e36a18cdb8d6a496b2bb0dc858198`.
+Peak is approximately -0.446 dBFS with no clipped samples. First and last samples
+are zero; the final 100 ms are silent. First-50-ms RMS is 0.24286 and the
+300–550-ms tail RMS is 0.00226. Repeated output matches, and changing the seed
+changes the PCM. This validates synthesis and file properties, not subjective
+listening quality or in-game acoustic realism. The playable artifact stays
+outside the repository, and no third-party recordings are used.
+
+The initial Node.js 24.11.0 run exposed the existing synchronous MCP loader's
+`ERR_INVALID_RETURN_PROPERTY_VALUE` even in a React-only task before importing
+React Forge. Repeating with
+24.20.0, the runtime used in earlier MCP evidence, passed the full package suite.
+The first root Cargo run under 24.11.0 stalled in the unrelated clibox npm-signal
+fixture; its orphaned test child was cleaned up. The 24.20.0 serial root rerun
+passed that fixture without changing clibox or the MCP loader behavior.
+
+The final root run passed 1,927 Rust tests with 3 existing opt-in tests
+ignored, using `TMPDIR=/private/tmp fnm exec --using 24.20.0 cargo test --no-fail-fast -- --test-threads=1`. Before that run, the documented macOS pnport
+injection companion was explicitly generated with
+`cargo build --locked -p pnport -p fspy_preload_unix --features fspy_preload_unix/pnport`;
+the previous run had stopped on its missing native artifact. No unrelated Rust
+source was changed. Generated repository-owned `dist` directories were removed
+after validation.
+
+### PR #987 CLI readiness repair
+
+The initial six-host CI run passed five React Forge hosts. The darwin-x64 job
+failed the CLI signal fixture before sending a signal: its fixed 200 polls at
+10 ms exhausted the startup budget before the React effect's readiness marker
+appeared. All SFX cases passed in that job. The fixture now uses a bounded
+30-second monotonic readiness deadline, stops early on process exit or signal,
+and includes exit state and captured output in readiness failures. Cancellation
+codes, effect cleanup and absence of partial exports remain required.
+
+A deliberate 2.5-second task startup delay reproduced the old assertion failure
+locally and passed after the repair for both SIGINT and SIGTERM. On macOS arm64
+with Node.js 24.20.0, the focused regression and all 108 package tests passed,
+along with build, typecheck, lint, standalone example checks and the public
+main/native installed-package smoke test for all five local output formats.
+No production code or public contract changed; native Intel Mac execution of the
+repair remains a CI validation step.
+
+### Combined sprite/SFX merge validation
+
+PR #989 merges `main` at `bcc35d49`, preserving the SFX extension and dependency-security updates while retaining sprites. Both component subpaths, native dispatch paths, measurement coordinate spaces and export extensions are registered together. Installed CLI/MCP fixtures cover all six local formats, including `.wav` and `.sprite.zip`. The shared signal fixture retains the upstream 2.5-second delayed start for both Unix signals and the 30-second readiness deadline.
+
+After resolving the merge, the macOS arm64 package build, typecheck, lint and standalone examples passed, as did all 115 package tests, all 77 repository CI contract tests, workflow validation and sprite/SFX/adapter Clippy with warnings denied. Historical evidence above remains tied to its recorded source state and format count.

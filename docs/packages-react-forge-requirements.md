@@ -238,3 +238,7 @@ The subsequent explicit request adds a local stdio `react-forge mcp` server for 
 
 ## Sprite Follow-up
 The explicit 2026-09-25 request extends React Forge to author game sprites and requires real implementation and tests. The [sprite contract](packages-react-forge-sprite-contract.md) defines React pixel/shape/image composition, palettes, frame animations, native rasterization, PNG atlas and individual PNG exports with JSON metadata in one atomic archive, and library/CLI/MCP integration. This additive, unreleased extension does not replace any Office/PDF/Figma requirements or claim a new npm release.
+
+## SFX follow-up
+
+The subsequent explicit game SFX request adds offline React-authored sound generation and WAV export, validated with a zombie-game gunshot. The [SFX contract](packages-react-forge-sfx-contract.md) specifies the additional components, independent native model, synthesis bounds, CLI/MCP behavior and evidence. This additive scope does not reduce any original document-format requirement.

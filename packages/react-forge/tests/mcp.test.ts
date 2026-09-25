@@ -60,6 +60,29 @@ async function waitFor(path: string) {
   assert.fail("Fixture did not become ready");
 }
 
+test("inline SFX shares the engine, measures time, updates state and exports PCM WAV", async () => fixture(async (peer, cwd) => {
+  const created = await peer.call("execute", { code: `import {createSession,Format} from '@delino/react-forge';
+    import {Sound,Noise} from '@delino/react-forge/sfx';
+    export default async ({state})=>{const s=createSession(Format.Wav);
+      state.set('render',seed=>s.render(<Sound duration={0.25}><Noise start={0.05} duration={0.15} seed={seed}/></Sound>));
+      await state.get('render')(815);return s;};` });
+  const args = { sessionId: created.sessionId };
+  const snapshot = await peer.call("inspect", args);
+  const layer = snapshot.targets.find((target: any) => target.kind === "noise");
+  const measured = await peer.call("measure", { ...args, nodeId: layer.nodeId, revision: snapshot.revision });
+  assert.equal(measured.geometry.coordinateSpace, "timeline"); assert.equal(measured.geometry.x, 0.05);
+  await errorCode(peer, "export", { ...args, output: "shot.mp3" }, "malformed_input");
+  await peer.call("export", { ...args, output: "shot.wav" });
+  const before = await readFile(join(cwd, "shot.wav"));
+  assert.equal(before.subarray(8, 12).toString(), "WAVE"); assert.equal(before.readUInt32LE(24), 48000);
+  assert.equal(before.length, 24044);
+  await peer.call("execute", { ...args, code: "export default async({state})=>{await state.get('render')(816);};" });
+  await errorCode(peer, "measure", { ...args, nodeId: layer.nodeId, revision: snapshot.revision }, "conflict");
+  await peer.call("export", { ...args, output: "shot.wav", overwrite: true });
+  assert.notDeepEqual(await readFile(join(cwd, "shot.wav")), before);
+  await peer.call("close", args);
+}));
+
 const simple = {
   pptx: { imports: "Presentation,Slide,Column,Text", view: '<Presentation><Slide><Column><Text>Original</Text></Column></Slide></Presentation>', kind: "text", edit: '<Text>{data}</Text>' },
   docx: { imports: "Document,Section,Paragraph", view: '<Document><Section><Paragraph>Original</Paragraph></Section></Document>', kind: "paragraph", edit: '<Paragraph>{data}</Paragraph>' },

@@ -44,7 +44,23 @@ func (f *threadFixture) handleTurn(id json.RawMessage, method string, raw json.R
 	reject := func() {
 		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"id": id, "error": map[string]any{"code": -32602, "message": "fixture-protected-rejection"}})
 	}
-	late := func() { time.Sleep(200 * time.Millisecond) }
+	late := func() {
+		marker := os.Getenv("DELIDEV_CODEX_CAPTURE") + ".turn-response"
+		if _, err := os.Stat(marker + ".hold"); os.IsNotExist(err) {
+			time.Sleep(200 * time.Millisecond)
+			return
+		} else if err != nil {
+			os.Exit(34)
+		}
+		if err := os.WriteFile(marker+".received", nil, 0o600); err != nil {
+			os.Exit(35)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := waitForTurnFixtureMarker(ctx, marker+".release"); err != nil {
+			os.Exit(36)
+		}
+	}
 	switch method {
 	case "fixture/metadata":
 		for key, value := range params {
@@ -347,28 +363,67 @@ func TestLateTurnAcknowledgmentsDoNotAuthorizeReplay(t *testing.T) {
 				nextKind(t, client, TurnStartedEvent)
 			}
 			requestID, inputID := domain.NewID(), domain.NewID()
-			ctx, cancel := context.WithTimeout(context.Background(), 70*time.Millisecond)
-			defer cancel()
-			var err error
-			switch action {
-			case "start":
-				_, err = client.StartTurn(ctx, requestID, inputID, input(domain.ExecuteMode))
-			case "steer":
-				_, err = client.Steer(ctx, requestID, inputID, turnID, input(domain.ExecuteMode))
-			case "interrupt":
-				_, err = client.Interrupt(ctx, requestID, turnID)
+			// A short timer can expire during the preflight thread/read on a busy
+			// Windows host, before any turn request is sent. Gate the fixture's
+			// acknowledgment so cancellation always follows receipt of the exact
+			// operation and the response always follows the uncertain return.
+			marker := capture + ".turn-response"
+			if err := os.WriteFile(marker+".hold", nil, 0o600); err != nil {
+				t.Fatal(err)
 			}
-			assertCode(t, err, domain.RecoveryRequired)
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			result := make(chan error, 1)
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				var err error
+				switch action {
+				case "start":
+					_, err = client.StartTurn(ctx, requestID, inputID, input(domain.ExecuteMode))
+				case "steer":
+					_, err = client.Steer(ctx, requestID, inputID, turnID, input(domain.ExecuteMode))
+				case "interrupt":
+					_, err = client.Interrupt(ctx, requestID, turnID)
+				}
+				result <- err
+			}()
+			defer func() {
+				cancel()
+				<-done
+			}()
+			if err := waitForTurnFixtureMarker(ctx, marker+".received"); err != nil {
+				t.Fatalf("fixture did not receive turn/%s: %v", action, err)
+			}
+			cancel()
+			assertCode(t, <-result, domain.RecoveryRequired)
+			if err := os.WriteFile(marker+".release", nil, 0o600); err != nil {
+				t.Fatal(err)
+			}
 			event := nextKind(t, client, LateTurnResponseEvent)
 			if event.RequestID != requestID || event.TurnID.Validate() != nil || event.Problem != nil || !event.Correlated {
 				t.Fatal("late acceptance lost original identity")
 			}
-			_, err = client.StartTurn(context.Background(), domain.NewID(), domain.NewID(), input(domain.ExecuteMode))
+			_, err := client.StartTurn(context.Background(), domain.NewID(), domain.NewID(), input(domain.ExecuteMode))
 			assertCode(t, err, domain.RecoveryRequired)
 			if len(requestsOf(t, capture, "turn/"+action)) != 1 {
 				t.Fatal("uncertain request was repeated")
 			}
 		})
+	}
+}
+
+func waitForTurnFixtureMarker(ctx context.Context, path string) error {
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
 	}
 }
 func TestNativeTurnFailureCannotBeReversedByLateIdleOrStartedEvents(t *testing.T) {

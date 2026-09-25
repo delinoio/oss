@@ -7,7 +7,7 @@ import { parseArgs } from "node:util";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { nativeName, packageRoot, platforms, sourceRevision, inspect, tarballName } from "./package.mjs";
 
-const localFormats = [["presentation", "pptx"], ["document", "docx"], ["workbook", "xlsx"], ["pdf", "pdf"], ["sprite", "sprite"]];
+const localFormats = [["presentation", "pptx"], ["document", "docx"], ["workbook", "xlsx"], ["pdf", "pdf"], ["sprite", "sprite"], ["zombie-gunshot", "wav"]];
 
 export function main() {
   const { values } = parseArgs({ options: { output: { type: "string", default: path.join(packageRoot, "dist/release") } } });
@@ -44,7 +44,7 @@ export function main() {
       const stdout = execFileSync(process.execPath, [path.join(installed, "bin/react-forge.mjs"), "run", path.join(directory, "tasks", `${task}.tsx`), "--output", output, "--json"], { cwd: directory, encoding: "utf8" });
       assert.equal(JSON.parse(stdout).format, format);
       const bytes = readFileSync(output);
-      assert.equal(bytes.subarray(0, format === "pdf" ? 5 : 2).toString(), format === "pdf" ? "%PDF-" : "PK");
+      assert.equal(bytes.subarray(0, format === "pdf" ? 5 : format === "wav" ? 4 : 2).toString(), format === "pdf" ? "%PDF-" : format === "wav" ? "RIFF" : "PK");
     }
     assert.equal(execFileSync(process.execPath, [path.join(installed, "bin/react-forge.mjs"), "--version"], { cwd: directory, encoding: "utf8" }).trim(), version);
     const nativeModule = pathToFileURL(path.join(installed, "dist/native.js")).href;

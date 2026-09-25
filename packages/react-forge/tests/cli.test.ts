@@ -18,7 +18,7 @@ test("workspace CLI runs TSX tasks and reports JSON, help, version and safe erro
     const { stdout } = await exec(process.execPath, [cli, "run", task, "--output", join(directory, "result.pptx"), "--data", '{"title":"CLI test"}', "--json"]);
     assert.equal(JSON.parse(stdout).ok, true);
     assert.equal((await readFile(join(directory, "result.pptx"))).subarray(0, 2).toString(), "PK");
-    for (const [name, format] of [["document", "docx"], ["workbook", "xlsx"], ["pdf", "pdf"]]) {
+    for (const [name, format] of [["document", "docx"], ["workbook", "xlsx"], ["pdf", "pdf"], ["zombie-gunshot", "wav"]]) {
       const task = fileURLToPath(new URL(`../examples/${name}.tsx`, import.meta.url));
       const { stdout } = await exec(process.execPath, [cli, "run", task, "--output", join(directory, `result.${format}`), "--json"]);
       assert.equal(JSON.parse(stdout).format, format);
@@ -72,9 +72,11 @@ test("CLI task failures stay redacted and SIGINT/SIGTERM dispose pending session
           useEffect(() => { writeFileSync(${quote(ready)}, "ready"); return () => writeFileSync(${quote(cleaned)}, "cleaned"); }, []);
           return React.createElement(Document, { language: "en" }, React.createElement(Page, null, React.createElement(Suspense, { fallback: React.createElement(Paragraph, null, "Pending") }, React.createElement(Pending))));
         }
-        // Exercise readiness after a slow task start, beyond the old two-second
-        // polling window, while still sending signals only after effects mount.
-        export default async function task() { await new Promise(resolve => setTimeout(resolve, ${signal === "SIGINT" ? 2100 : 0})); const s = createSession(Format.Pdf); await s.render(React.createElement(App)); return s; }
+        export default async function task() {
+          // Exercise startup beyond the former two-second readiness budget.
+          await new Promise(resolve => setTimeout(resolve, 2500));
+          const s = createSession(Format.Pdf); await s.render(React.createElement(App)); return s;
+        }
       `);
       const child = spawn(process.execPath, [cli, "run", entry, "--output", join(directory, `${signal}.pdf`), "--json"], { stdio: ["ignore", "pipe", "pipe"] });
       let stdout = ""; let stderr = "";
@@ -83,15 +85,15 @@ test("CLI task failures stay redacted and SIGINT/SIGTERM dispose pending session
       const exit = new Promise<number | null>((resolve, reject) => { child.once("error", reject); child.once("exit", resolve); });
       try {
         let started = false;
-        // Cold native/TSX startup competes with the six-host suite. Readiness
-        // is the mounted effect, not a two-second startup performance budget.
-        const deadline = performance.now() + 30_000;
-        while (performance.now() < deadline) {
+        // Native/TSX startup under parallel CI load can exceed two seconds.
+        // Bound only fixture readiness; keep signal and cleanup assertions intact.
+        const startupDeadline = performance.now() + 30_000;
+        while (performance.now() < startupDeadline) {
           if (await readFile(ready).then(() => true, () => false)) { started = true; break; }
           if (child.exitCode !== null || child.signalCode !== null) break;
-          await new Promise(resolve => setTimeout(resolve, 10));
+          await new Promise(resolve => setTimeout(resolve, 20));
         }
-        assert.ok(started, `CLI did not reach mounted readiness within 30 seconds (exit=${child.exitCode}, signal=${child.signalCode}): ${stderr}${stdout}`);
+        assert.ok(started, `CLI did not report readiness within 30 seconds (exit=${child.exitCode}, signal=${child.signalCode}).\n${stderr}${stdout}`);
         child.kill(signal);
         assert.equal(await exit, signal === "SIGINT" ? 130 : 143);
         assert.equal(JSON.parse(stdout).error.code, "cancelled");

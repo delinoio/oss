@@ -12,6 +12,7 @@ doctest = false
 
 [dependencies]
 forge-sprite = { path = "../forge-sprite" }
+forge-sfx = { path = "../forge-sfx" }
 forge-figma = { path = "../forge-figma" }
 napi = { version = "=3.13.0", default-features = false, features = ["napi8", "dyn-symbols"] }
 napi-derive = "=3.6.9"

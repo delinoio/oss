@@ -42,6 +42,11 @@
       "types": "./dist/sprite.d.ts",
       "import": "./dist/sprite.js",
       "require": "./dist/sprite.js"
+    },
+    "./sfx": {
+      "types": "./dist/sfx.d.ts",
+      "import": "./dist/sfx.js",
+      "require": "./dist/sfx.js"
     }
   },
   "bin": {

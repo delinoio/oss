@@ -104,6 +104,7 @@ const reactForgePages = [
   { text: "DOCX", link: "/react-forge/docx" },
   { text: "XLSX", link: "/react-forge/xlsx" },
   { text: "PDF", link: "/react-forge/pdf" },
+  { text: "Game SFX (Unreleased)", link: "/react-forge/sfx" },
   { text: "Office Editing", link: "/react-forge/office-editing" },
   { text: "Figma Design", link: "/react-forge/figma" },
   { text: "CLI", link: "/react-forge/cli" },
