@@ -8,12 +8,14 @@ from pathlib import Path
 import sys
 import bpy
 from mathutils import Vector
+from bpy_extras.object_utils import world_to_camera_view
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--input', required=True)
 parser.add_argument('--output', required=True)
 parser.add_argument('--resolution', type=int, default=2048)
 parser.add_argument('--samples', type=int, default=96)
+parser.add_argument('--hero-resolution', type=int, default=0)
 parser.add_argument('--device', choices=['CPU', 'METAL'], default='CPU')
 parser.add_argument('--products', default='studio,headphones,dac,stand')
 parser.add_argument('--views', default='hero,front,back,detail')
@@ -23,14 +25,15 @@ source = Path(args.input).resolve()
 out = Path(args.output).resolve()
 out.mkdir(parents=True, exist_ok=True)
 expected = {a['file']: a for a in json.loads((source / 'generation.json').read_text())['artifacts']}
-report = {'blender': bpy.app.version_string, 'device': args.device, 'resolution': args.resolution, 'samples': args.samples, 'imports': []}
+report = {'blender': bpy.app.version_string, 'device': args.device, 'resolution': args.resolution, 'heroResolution': args.hero_resolution, 'samples': args.samples, 'imports': []}
 
 def aim(obj, target):
     obj.rotation_euler = (Vector(target) - obj.location).to_track_quat('-Z', 'Y').to_euler()
 
-def area(name, location, target, energy, size, color):
+def area(name, location, target, energy, size, color, aspect=1):
     data = bpy.data.lights.new(name, 'AREA')
-    data.energy, data.shape, data.size, data.color = energy, 'DISK', size, color
+    data.energy, data.shape, data.size, data.color = energy, 'RECTANGLE', size, color
+    data.size_y = size * aspect
     obj = bpy.data.objects.new(name, data)
     bpy.context.collection.objects.link(obj)
     obj.location = location
@@ -75,24 +78,25 @@ for product in args.products.split(','):
         world = bpy.data.worlds.new('Verification studio world')
         scene.world = world
         world.use_nodes = True
-        world.node_tree.nodes['Background'].inputs['Color'].default_value = (.18,.21,.25,1)
-        world.node_tree.nodes['Background'].inputs['Strength'].default_value = .20
+        world.node_tree.nodes['Background'].inputs['Color'].default_value = (.16,.18,.21,1)
+        world.node_tree.nodes['Background'].inputs['Strength'].default_value = .12
         bpy.ops.mesh.primitive_plane_add(size=size*200, location=(cx,cy,lo[2]-.001))
         ground = bpy.context.object
         ground.name = 'Verification background only'
         mat = bpy.data.materials.new('Verification warm-gray backdrop')
         mat.use_nodes = True
-        mat.node_tree.nodes['Principled BSDF'].inputs['Base Color'].default_value = (.035,.043,.052,1)
-        mat.node_tree.nodes['Principled BSDF'].inputs['Roughness'].default_value = .78
+        mat.node_tree.nodes['Principled BSDF'].inputs['Base Color'].default_value = (.016,.021,.026,1)
+        mat.node_tree.nodes['Principled BSDF'].inputs['Roughness'].default_value = .52
         ground.data.materials.append(mat)
-        area('Verification key', (cx-size*.9,cy-size*1.3,cz+size*1.7), target, 100*size*size, size*1.0, (1,.92,.81))
-        area('Verification fill', (cx+size*1.1,cy-size*.4,cz+size*.9), target, 55*size*size, size*.85, (.78,.89,1))
-        area('Verification rim', (cx+size*.2,cy+size,cz+size*1.4), target, 180*size*size, size*.8, (1,1,1))
+        area('Verification tall key softbox', (cx-size*.8,cy-size*.9,cz+size*1.1), target, 85*size*size, size*.55, (1,.94,.85), 1.9)
+        area('Verification camera fill', (cx+size*.3,cy-size*1.4,cz+size*.5), target, 20*size*size, size*.9, (.84,.91,1), 1.2)
+        area('Verification overhead strip', (cx,cy+size*.2,cz+size*1.6), target, 95*size*size, size*1.4, (1,.93,.82), .3)
+        area('Verification edge strip', (cx+size*.9,cy+size*.4,cz+size*.7), target, 120*size*size, size*.35, (.82,.9,1), 2.5)
         camera_data = bpy.data.cameras.new('Verification camera')
         camera = bpy.data.objects.new('Verification camera', camera_data)
         scene.collection.objects.link(camera)
         scene.camera = camera
-        camera_data.lens = 60
+        camera_data.lens = 70
         camera_data.clip_start = .001
         scene.render.engine = 'CYCLES'
         if args.device == 'METAL':
@@ -106,31 +110,47 @@ for product in args.products.split(','):
         scene.cycles.samples = args.samples
         scene.cycles.use_denoising = True
         scene.cycles.seed = 0
+        scene.cycles.max_bounces = 12
         scene.render.resolution_x = args.resolution
         scene.render.resolution_y = args.resolution
         scene.render.resolution_percentage = 100
         scene.render.image_settings.file_format = 'PNG'
         scene.view_settings.view_transform = 'AgX'
         for view in args.views.split(','):
+            resolution = args.hero_resolution if view == 'hero' and args.hero_resolution else args.resolution
+            if product == 'studio' and view == 'hero': resolution = max(resolution, math.ceil(args.resolution * 1.5))
+            scene.render.resolution_x = resolution
+            scene.render.resolution_y = round(resolution * 2 / 3) if product == 'studio' and view == 'hero' else resolution
             # Orthographic front views keep every background ray below the
             # horizon while preserving a directly comparable product silhouette.
             camera_data.type = 'ORTHO' if view == 'front' else 'PERSP'
             camera_data.ortho_scale = size * 1.3
             focus = target
-            if view == 'hero': location=(cx+size*1.05,cy-size*1.85,cz+size*.90)
+            if view == 'hero':
+                location=(cx+size*1.05,cy-size*2.25,cz+size*.93)
+                if product == 'headphones': location=(cx+size*1.55,cy-size*1.90,cz+size*.65)
             elif view == 'front': location=(cx,cy-size*8,cz+size*(.35/2.7*8))
             elif view == 'back': location=(cx-size*1.4,cy+size*2.1,cz+size*.9)
             else:
-                if product == 'studio': focus=(.29,-.065,.055);location=(.51,-.53,.33)
-                elif product == 'dac': focus=(.053,-.082,.04);location=(.24,-.43,.20)
-                elif product == 'headphones': focus=(.085,-.004,.204);location=(.45,-.40,.39)
+                if product == 'studio': focus=(.31,-.12,.046);location=(.48,-.47,.24)
+                elif product == 'dac': focus=(.070,-.101,.035);location=(.19,-.35,.16)
+                elif product == 'headphones': focus=(.093,-.005,.20);location=(.33,-.27,.34)
                 else: focus=(cx,cy,hi[2]-.05);location=(cx+.23,cy-.44,hi[2]+.12)
             camera.location=location
             aim(camera,focus)
+            if view != 'detail':
+                # Fit the independently imported bounds, including the wide
+                # studio composition, before accepting a complete-product view.
+                for _ in range(24):
+                    bpy.context.view_layer.update()
+                    projected = [world_to_camera_view(scene, camera, p) for p in points]
+                    if all(.07 <= p.x <= .93 and .07 <= p.y <= .93 and p.z > 0 for p in projected): break
+                    camera.location = Vector(focus) + (camera.location - Vector(focus)) * 1.05
+                else: raise AssertionError((name, view, 'camera framing did not converge'))
             image_name=f'aura-{product}-{fmt}-{view}.png'
             scene.render.filepath=str(out/image_name)
             bpy.ops.render.render(write_still=True)
-            item['renders'].append({'file':image_name,'sha256':hashlib.sha256((out/image_name).read_bytes()).hexdigest()})
+            item['renders'].append({'file':image_name,'width':scene.render.resolution_x,'height':scene.render.resolution_y,'sha256':hashlib.sha256((out/image_name).read_bytes()).hexdigest()})
         report['imports'].append(item)
         (out/'render-report.json').write_text(json.dumps(report,indent=2)+'\n')
         print('FORGE_SCENE_VERIFIED',json.dumps({k:item[k] for k in ['file','meshes','triangles','images','boundsErrorMeters']}),flush=True)

@@ -201,3 +201,11 @@ node packages/react-forge/scripts/scene-viewer.mjs --input /tmp/aura
 ```
 
 `test:scenes` writes product/profile exports, Khronos results, ufbx summaries, camera/light/hierarchy checks, and render hashes. Pillow from `render-requirements.txt` produces comparison contact sheets. The compact committed record is `packages/react-forge/tests/evidence/audio-studio-macos-arm64.json`; generated models, full reports, 32 renders and web screenshots are delivered separately. Remove repository-owned `dist` after validation.
+
+### AURA presentation quality revision
+
+The subsequent quality revision preserves the original acceptance record as a historical baseline. It replaces the simplified product geometry with vertically oval machined earcups, displaced leather pads, actual tube stitching, supported adjustment rails and pivot hardware, integral encoder flutes, a closed perforated lid with 36 beveled through-slots, recessed dust screens, differentiated rear connectors and engraved identifiers. Seven deterministic texture sources include 2048px cellular leather and brushed metal maps, a woven liner normal, an OLED display and an original antialiased vector-glyph atlas. No generated image substitutes for an exported mesh, and no external font or art asset is required.
+
+The high-quality verification profile is `test:scenes --output <directory> --device METAL --samples 256 --hero-resolution 4096`. Individual heroes are 4096×4096, the studio hero is 4096×2731, and front/back/detail images are 2048×2048. The regular studio hero keeps a minimum 2048px short edge even without the high-resolution option. Framing fits independently imported bounds with a margin; intentional detail crops are excluded from complete-product framing. Each render records its own dimensions and hash. Key, fill, overhead and edge softboxes are identical for both importers. The web fixture adds only environment lighting, shadows and a floor, keeping imported mesh/material data unchanged.
+
+Procedural geometry regression checks validate finite attributes, outward triangle winding and orthonormal tangent frames, including thin boxes, rounded caps, leather displacement, bent tubes, stitching, fluted grips and perforated metal. Record this revision's executed results separately from the initial engine acceptance; do not re-label historical Rust/platform checks as fresh executions.
