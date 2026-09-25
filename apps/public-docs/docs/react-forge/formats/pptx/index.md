@@ -2,6 +2,10 @@
 
 Import components from `@delino/react-forge/pptx` and render them in a `Format.Pptx` session. `Presentation` contains `Slide` elements; `Row`, `Column`, and `Canvas` arrange content. `Text`, `Paragraph`, `Run`, and `List` provide text; `Image`, `Shape`, `Table`, `Chart`, and `Connector` add editable presentation elements.
 
+If this is your first React Forge task, [export a one-slide presentation](/react-forge/getting-started) before adding charts or images.
+
+## Build and export
+
 ```tsx
 import React from "react";
 import { createSession, Format } from "@delino/react-forge";
@@ -21,6 +25,8 @@ try {
   await session.dispose();
 }
 ```
+
+## Editable elements and layout
 
 The chart retains editable workbook data. Tables support row and column spans. Images accept registered PNG/JPEG assets and require alternative text. Connector anchors refer to keyed targets. Text style supports font family, size, bold, italic, underline, and color; paragraph alignment belongs to `Paragraph.align`, and table-cell fill belongs to `Cell.fill`. Unknown style fields fail instead of being ignored.
 

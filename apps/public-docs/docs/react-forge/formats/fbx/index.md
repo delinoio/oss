@@ -1,8 +1,8 @@
-# FBX static scenes — unreleased
+# FBX static scenes — Unreleased
 
 FBX authoring is an unreleased extension and is not included in npm `0.1.1`. It supports creation and export of static scenes using `createSession(Format.Fbx)` and the `@delino/react-forge/fbx` entry point. Existing FBX import/editing, animation, rigging, and advanced shaders are excluded.
 
-Use the same components, registered geometry/textures, transforms, measurement, and lifecycle as the [GLB guide](/react-forge/glb). Change the format to `Format.Fbx`, import the components from `@delino/react-forge/fbx`, and export to a `.fbx` destination. The result is binary FBX 7.4 with embedded textures. Generation needs no Blender, Autodesk SDK, or conversion process.
+Use the same components, registered geometry/textures, transforms, measurement, and lifecycle as the [GLB guide](/react-forge/formats/glb/). Change the format to `Format.Fbx`, import the components from `@delino/react-forge/fbx`, and export to a `.fbx` destination. The result is binary FBX 7.4 with embedded textures. Generation needs no Blender, Autodesk SDK, or conversion process.
 
 ## Compatibility profile
 

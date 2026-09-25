@@ -54,7 +54,7 @@ The explicit SFX follow-up adds offline procedural game effects exported as WAV,
 - Preserve unrelated Office parts/XML; reject unsafe or unprovable edits transactionally. Never flatten opaque imported content. Existing Forge CLI/MCP behavior and default fonts remain stable.
 - Registered assets and render-relevant asynchronous work must settle before export pins a revision. Later commits cannot change an export already pinned. Cancellation has no automatic timeout and cannot misreport an already completed atomic publication.
 - Source-backed requirements must remain intact. Track missing evidence honestly; do not close #968 until all acceptance criteria pass. Direct Microsoft Office validation and PDF/UA certification are not claimed.
-- Public user guides are owned by the consolidated documentation app at `https://oss.delino.io/react-forge/`; they cover the released library, CLI, MCP, four local document formats, and Figma, with explicitly unreleased GLB/FBX and SFX guides, without exposing internal implementation or overstating evidence.
+- Public user guides are owned by the consolidated documentation app at `https://oss.delino.io/react-forge/`; they cover the released library, CLI, MCP, four local document formats, Figma, and clearly marked unreleased GLB/FBX, SFX and Sprite previews without exposing internal implementation or overstating evidence.
 
 ## Change Policy
 Update the project index, affected domain contracts, relevant AGENTS rules, examples and validation together when interfaces or ownership change. Internal rollback uses source revision rollback and rebuild without rewriting exported files.
@@ -66,3 +66,5 @@ Update the project index, affected domain contracts, relevant AGENTS rules, exam
 
 ## Sprite Extension (Unreleased)
 The 2026-09-25 sprite request adds `Format.Sprite` and `/sprite` through the existing library, CLI and MCP. React declares layers, pixel grids, shapes, local images and timed animations. One `.sprite.zip` export contains a PNG atlas, individual frames and JSON metadata. This source implementation is not part of npm 0.1.1; it adds no hosted artwork generation or sprite import. Follow the sprite contract for bounds, geometry and evidence.
+
+The public `/react-forge/formats/sprite/` page previews this source capability with an explicit unreleased notice and separate validation claims; publication of the guide does not change npm availability.

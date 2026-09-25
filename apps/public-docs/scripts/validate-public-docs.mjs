@@ -57,7 +57,7 @@ async function exists(filePath) {
 }
 
 function artifactPath(slug, route) {
-  return path.join(outputDirectory, slug, route === "/" ? "index.html" : `${route.slice(1)}.html`);
+  return path.join(outputDirectory, slug, route.endsWith("/") ? route.slice(1) + "index.html" : `${route.slice(1)}.html`);
 }
 
 function publicRoute(slug, route) {
@@ -201,7 +201,14 @@ for (const file of [
   if (!(await exists(file))) failures.push(`${path.relative(outputDirectory, file)} is missing`);
 }
 const redirects = await readFile(path.join(outputDirectory, "_redirects"), "utf8").catch(() => "");
-if (redirects !== "/async-commit-hook/docs /async-commit-hook/docs/ 301\n") failures.push("aggregate async /docs redirect is missing or incorrect");
+const expectedRedirects = [
+  "/async-commit-hook/docs /async-commit-hook/docs/ 301",
+  ...["pptx", "docx", "xlsx", "pdf", "figma", "sfx", "sprite", "glb", "fbx"].flatMap((format) => [
+    `/react-forge/${format} /react-forge/formats/${format}/ 301`,
+    `/react-forge/${format}/ /react-forge/formats/${format}/ 301`,
+  ]),
+].join("\n") + "\n";
+if (redirects !== expectedRedirects) failures.push("public documentation redirects are missing or incorrect");
 const headers = await readFile(path.join(outputDirectory, "_headers"), "utf8").catch(() => "");
 const expectedAsyncHeaders = `/async-commit-hook/*
   Referrer-Policy: no-referrer

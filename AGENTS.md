@@ -116,7 +116,7 @@ enum ProjectId {
 - `react-forge` is the public npm Node.js 24 / React 19.2.8 cross-platform document project in issue #968. Follow `docs/project-react-forge.md` and its complete requirements. Keep JavaScript reconciliation outside native workers, format models independent, sessions in memory, exports revision-pinned and atomic, and imported opaque content preserved. All required formats and evidence are required before completion.
 
 - React Forge exposes a local session-based stdio MCP server through `react-forge mcp`; follow `docs/packages-react-forge-mcp-contract.md`. Keep execution output isolated from protocol stdout, share the existing engine and Figma scheduling across sessions, and preserve explicit export/publication and cancellation outcomes.
-- React Forge public guides are owned by `apps/public-docs/docs/react-forge` at `https://oss.delino.io/react-forge/`; follow `docs/apps-react-forge-docs-foundation.md` and keep the package README linked to them. Describe released user behavior and evidence limits without publishing repository internals.
+- React Forge public guides are owned by `apps/public-docs/docs/react-forge` at `https://oss.delino.io/react-forge/`; follow `docs/apps-react-forge-docs-foundation.md` and keep the package README linked to them. Describe released user behavior and clearly labeled source-backed SFX/Sprite previews with separate evidence limits, without publishing repository internals or claiming an unreleased extension is available on npm.
 
 - React Forge SFX follows `docs/packages-react-forge-sfx-contract.md`: bounded offline procedural WAV generation, native worker synthesis, and zombie-game gunshot acceptance. Keep generated audio untracked and distinguish source support from published availability.
 

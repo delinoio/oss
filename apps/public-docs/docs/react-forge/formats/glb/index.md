@@ -1,4 +1,4 @@
-# GLB static scenes — unreleased
+# GLB static scenes — Unreleased
 
 GLB authoring is an unreleased extension and is not included in npm `0.1.1`. These interfaces describe the upcoming static-scene API. Check [release status](/react-forge/releases) before using them with an installed version.
 
@@ -45,4 +45,4 @@ Use `snapshot()` for a settled revision and targets. `measure(handle, { revision
 
 Registered geometry/textures together and each output are capped at 256 MiB. Individual geometry/texture data is capped at 64 MiB; textures at 64 million pixels. The existing 16 MiB, 20,000-node, depth-48 React tree limits remain. Unsupported inputs produce errors instead of being silently dropped.
 
-For Blender's FBX material profile and interchange limitations, see [FBX](/react-forge/fbx). A successful structural validator does not replace checking your exported model in the application that will consume it.
+For Blender's FBX material profile and interchange limitations, see [FBX](/react-forge/formats/fbx/). A successful structural validator does not replace checking your exported model in the application that will consume it.

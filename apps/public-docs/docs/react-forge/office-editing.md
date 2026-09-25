@@ -2,6 +2,10 @@
 
 `importOffice()` accepts PPTX, DOCX, or XLSX bytes or an explicit local path. Inspect the imported file, choose a supported editable target, mount React content into that region, and export to a **different** path. Unselected Office package parts and XML remain preserved; unsupported regions remain opaque instead of being flattened.
 
+Use this flow for a targeted change to an existing file. For a new document, start with [Getting started](/react-forge/getting-started) and its format guide.
+
+## Choose a target and export
+
 ```tsx
 import React from "react";
 import { importOffice, Format } from "@delino/react-forge";
@@ -20,6 +24,8 @@ try {
   await session.dispose();
 }
 ```
+
+## Preservation and output conflicts
 
 Targets are session-scoped handles; do not reconstruct one from a serialized ID. Mounted regions cannot overlap. `region.unmount()` relinquishes that React region and restores its original imported model in the current session. It does not change an already exported file. New documents use root `session.render()`; imported documents use mounted regions. An edit that cannot prove preservation fails rather than publishing a partial replacement.
 

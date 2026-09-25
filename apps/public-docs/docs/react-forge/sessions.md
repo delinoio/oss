@@ -2,6 +2,10 @@
 
 `createSession(Format.Pptx | Format.Docx | Format.Xlsx | Format.Pdf)` creates an in-memory document session. `render()` commits a React tree, including stateful components, effects, Suspense, and transitions. Use ordinary React updates to change a newly authored document. Sessions serialize their own mutations, and an invalid latest render fails export instead of silently exporting an older revision.
 
+Start with the [one-shot presentation task](/react-forge/getting-started) if you need only one file. Keep a session when the same process needs to inspect or update the document before exporting it.
+
+## Render and export
+
 ```tsx
 import React from "react";
 import { createSession, Format } from "@delino/react-forge";
@@ -36,6 +40,8 @@ Refs expose typed node handles. After an export establishes a revision, call `me
 
 Pass an `AbortSignal` to operations that accept it; there is no automatic operation timeout. `dispose()` cancels and joins owned work. `subscribe(listener)` receives bounded operation diagnostics with stage, revision, duration, and stable classification; it does not include document contents, asset bytes, credentials, or host paths. `ForgeError.code`, `ErrorCode`, `limits`, and `capabilities` help classify failures. An in-memory session is not a durable revision archive. See [limits and troubleshooting](/react-forge/limits-and-troubleshooting).
 
+For the components and export behavior of a specific format, continue with [PPTX](/react-forge/formats/pptx/), [DOCX](/react-forge/formats/docx/), [XLSX](/react-forge/formats/xlsx/), or [PDF](/react-forge/formats/pdf/). Imported Office files use [mounted editing regions](/react-forge/office-editing) instead of a root render.
+
 ## Unreleased static 3D extension
 
-[GLB](/react-forge/glb) and [FBX](/react-forge/fbx) creation are documented as an unreleased extension, absent from npm 0.1.1. They use SceneSession with registered geometry/textures, explicit file export, and revision-bound world-space bounds. Existing-file editing, animation and rigging are excluded. The FBX material profile targets Blender 4.5; local verification does not establish results on other hosts or FBX applications.
+[GLB](/react-forge/formats/glb/) and [FBX](/react-forge/formats/fbx/) creation are documented as an unreleased extension, absent from npm 0.1.1. They use SceneSession with registered geometry/textures, explicit file export, and revision-bound world-space bounds. Existing-file editing, animation and rigging are excluded. The FBX material profile targets Blender 4.5; local verification does not establish results on other hosts or FBX applications.

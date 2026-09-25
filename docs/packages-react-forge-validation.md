@@ -513,3 +513,18 @@ adapter passed Clippy with warnings denied; repository formatting also passed.
 The root test used the documented frontend and separate generic/pnport preload
 preparation. Generated repository-owned `dist` directories were removed, and
 `git lfs fsck` passed before the single repair push.
+
+
+## PR #988 public-guide merge repair (2026-09-25)
+
+Merged `main` at `6b8b6cfe` (PR #991) without rebasing. The grouped navigation and
+Sprite preview remain intact, and GLB/FBX join the format-directory layout. All
+eighteen guides are retained, with permanent redirects for both spellings of
+each of the nine former format routes. The package README and internal route
+contracts use the new canonical GLB/FBX links. Rendered validation checks the
+unreleased npm `0.1.1` notices for all four preview formats.
+
+On macOS arm64/Node.js 24.17.0, `pnpm test` from `apps/public-docs` passed the
+**25 site-selector tests**, full Rspress build, both rendered-document validators,
+and **15 validator regressions**. This documentation-only merge changes no
+native engine, model, texture, or previously recorded rendering evidence.

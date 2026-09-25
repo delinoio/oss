@@ -34,7 +34,7 @@ Run root `cargo test`, targeted native renderer and Forge regression tests, pack
 Reuse the pinned `image` crate for PNG/JPEG decoding, `png` for PNG framing/checksums and `flate2` for bounded zlib encoding, `forge-package` for bounded deterministic ZIP output and `forge-tree-doc` cancellation/validation. `react-forge-node` remains the adapter. The PNG/JSON export pattern follows [Aseprite's CLI documentation](https://www.aseprite.org/docs/cli/); Aseprite is not a runtime dependency.
 
 ## Change Triggers
-Update the project/native/Node/MCP contracts, capabilities, package exports, examples, CI, relevant AGENTS rules and validation evidence together. Public guides describe the feature only when released.
+Update the project/native/Node/MCP contracts, capabilities, package exports, examples, CI, relevant AGENTS rules and validation evidence together. The public guide may preview this source-backed extension before release only with a prominent unreleased notice, the specific npm version where it is absent, and separate evidence boundaries. Release publication must update that status against the published package before claiming availability.
 
 ## References
 - [Project](project-react-forge.md).

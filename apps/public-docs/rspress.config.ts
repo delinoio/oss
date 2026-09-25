@@ -95,24 +95,35 @@ const pnportPages = [
   { text: "Releases and Rollback", link: "/pnport/releases" },
 ];
 
-const reactForgePages = [
-  { text: "Overview", link: "/react-forge/", activeMatch: "^/react-forge/$" },
-  { text: "Installation", link: "/react-forge/installation" },
-  { text: "Getting Started", link: "/react-forge/getting-started" },
-  { text: "Sessions and Common API", link: "/react-forge/sessions" },
-  { text: "PPTX", link: "/react-forge/pptx" },
-  { text: "DOCX", link: "/react-forge/docx" },
-  { text: "XLSX", link: "/react-forge/xlsx" },
-  { text: "PDF", link: "/react-forge/pdf" },
-  { text: "GLB (Unreleased)", link: "/react-forge/glb" },
-  { text: "FBX (Unreleased)", link: "/react-forge/fbx" },
-  { text: "Game SFX (Unreleased)", link: "/react-forge/sfx" },
-  { text: "Office Editing", link: "/react-forge/office-editing" },
-  { text: "Figma Design", link: "/react-forge/figma" },
-  { text: "CLI", link: "/react-forge/cli" },
-  { text: "Local MCP", link: "/react-forge/mcp" },
-  { text: "Limits and Troubleshooting", link: "/react-forge/limits-and-troubleshooting" },
-  { text: "Releases and Validation", link: "/react-forge/releases" },
+const reactForgeGroups = [
+  { text: "Start", items: [
+    { text: "Overview", link: "/react-forge/", activeMatch: "^/react-forge/$" },
+    { text: "Installation", link: "/react-forge/installation" },
+    { text: "Getting Started", link: "/react-forge/getting-started" },
+    { text: "Sessions and Common API", link: "/react-forge/sessions" },
+  ] },
+  { text: "Create Documents", items: [
+    { text: "PPTX", link: "/react-forge/formats/pptx/" },
+    { text: "DOCX", link: "/react-forge/formats/docx/" },
+    { text: "XLSX", link: "/react-forge/formats/xlsx/" },
+    { text: "PDF", link: "/react-forge/formats/pdf/" },
+  ] },
+  { text: "Edit and Automate", items: [
+    { text: "Office Editing", link: "/react-forge/office-editing" },
+    { text: "Figma Design", link: "/react-forge/formats/figma/" },
+    { text: "CLI", link: "/react-forge/cli" },
+    { text: "Local MCP", link: "/react-forge/mcp" },
+  ] },
+  { text: "Unreleased Previews", items: [
+    { text: "GLB", link: "/react-forge/formats/glb/" },
+    { text: "FBX", link: "/react-forge/formats/fbx/" },
+    { text: "Game SFX", link: "/react-forge/formats/sfx/" },
+    { text: "Pixel Sprites", link: "/react-forge/formats/sprite/" },
+  ] },
+  { text: "Help", items: [
+    { text: "Limits and Troubleshooting", link: "/react-forge/limits-and-troubleshooting" },
+    { text: "Releases and Validation", link: "/react-forge/releases" },
+  ] },
 ];
 
 const projectPages = [
@@ -172,7 +183,7 @@ export default defineConfig({
       ],
       "/clibox/": [{ text: "clibox", items: cliboxPages }],
       "/pnport/": [{ text: "pnport", items: pnportPages }],
-      "/react-forge/": [{ text: "React Forge", items: reactForgePages }],
+      "/react-forge/": reactForgeGroups,
       "/runmoor/": [{ text: "Runmoor", items: runmoorPages }],
       "/nodeup/": [{ text: "Nodeup", items: nodeupPages }],
       "/binpm/": [{ text: "binpm", items: binpmPages }],
