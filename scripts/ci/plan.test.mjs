@@ -30,6 +30,15 @@ test("PR never allocates native package jobs, including changes to CI itself", (
   assert.deepEqual(native, ["linux-packages", "pnport-native", ...devhudNative]);
 });
 
+test("shared affected runner changes exercise every eligible workspace job", () => {
+  for (const event of [Event.PullRequest, Event.Push]) {
+    const plan = planJobs(event, ["scripts/ci/run-affected.mjs"]);
+    const expected = Object.keys(jobPaths).filter((id) => id !== "devhud-ios-simulator" && (event !== Event.PullRequest || !native.includes(id)));
+    assert.deepEqual(Object.entries(plan.jobs).filter(([, run]) => run).map(([id]) => id), expected);
+    for (const id of expected) assert.equal(plan.forced[id], true, `${event}: ${id}`);
+  }
+});
+
 test("pnport installer changes select six-host native verification on main", () => {
   for (const installer of ["scripts/install/pnport.sh", "scripts/install/pnport.ps1"]) {
     assert.equal(planJobs(Event.Push, [installer]).jobs["pnport-native"], true, installer);
