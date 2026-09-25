@@ -20,7 +20,7 @@ The official TypeScript MCP SDK owns stdio framing and protocol negotiation. The
 | `inspect` | `sessionId`, optional `nodeId`/`kind`, `offset`, `limit`, and `view` (`targets` or `receipt`). Local targets come from a settled snapshot; Figma targets are cached. Receipt view never republishes. |
 | `measure` | `sessionId`, `nodeId`, exact `revision`. Local callers obtain the revision through inspect; Figma requires a completed published revision. |
 | `refresh` | Figma `sessionId`, optional `pageId`, up to 24 `nodeIds`, and `resources`. Delegates to the existing scoped remote reader. |
-| `export` | Local session, `output`, optional `overwrite` (default false). Extension must match PPTX/DOCX/XLSX/PDF/WAV. |
+| `export` | Local session, `output`, optional `overwrite` (default false). Extension must match PPTX/DOCX/XLSX/PDF/WAV, or `.sprite.zip` for sprites. |
 | `publish` | Figma session, optional `receiptPath` ending in `.figma.json`, optional `overwrite` (default false). Without a path, publishes without saving a local receipt. |
 | `close` | `sessionId`; serializes behind prior work, disposes the session, and clears its state. |
 
@@ -66,6 +66,9 @@ Keep this contract, Node/Figma contracts, original requirements follow-up, proje
 - [Figma publication](packages-react-forge-figma-contract.md).
 - [Repository defaults](repository-defaults.md).
 - [MCP server and stdio logging guidance](https://modelcontextprotocol.io/docs/2026-07-28/develop/build-server).
+
+## Sprite Follow-up (Unreleased)
+The sprite extension reuses `DocumentSession` and all existing tools: `execute` resolves `/sprite` to the canonical package, `inspect` exposes authored nodes, `measure` reports logical frame geometry, and `export` publishes one `.sprite.zip`. No additional tools or asset downloads are introduced. Both inline-source tests and installed-consumer CLI/MCP tests exercise it. See the [sprite contract](packages-react-forge-sprite-contract.md).
 
 ## SFX follow-up
 

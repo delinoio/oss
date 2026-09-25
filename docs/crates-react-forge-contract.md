@@ -101,6 +101,9 @@ PDF semantic headings and table headers default to bold only when bold is omitte
 
 Imported DOCX targets retain a source flow width in points. Body mounts use their enclosing section's page width minus horizontal margins; cell mounts and their nested paragraphs use the source preferred/grid width minus cell, row, table and inherited table-style margins. Omitted start/end margins follow the [Open XML 115-twip default](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.endmargin?view=openxml-3.0.1). Mounted geometry remains local authoring flow, not Word pagination or autofit. Unresolved widths (including multiple columns, gutter placement, conditional cell margins or headers shared by unequal sections) omit geometry, so measurement returns `InvalidTarget` while otherwise safe export remains available; they never receive a fabricated 468-point width.
 
+## Sprite Engine Extension
+`forge-sprite` adds an independent bounded pixel model, deterministic CPU RGBA rasterization, PNG encoding and ZIP assembly; `react-forge-node/src/sprite.rs` connects the shared generation worker and diagnostics. It reuses cancellation and bounded ZIP output while preserving Office models and all existing font behavior. It does not use the OOXML-specific package reader. Follow the [sprite contract](packages-react-forge-sprite-contract.md) for exact dimensions, work/memory bounds, color/sampling semantics and archive metadata. Raster output is authored only; sprite import is rejected.
+
 ## SFX extension
 
 `forge-sfx` independently validates and synthesizes the bounded sound model under the [SFX contract](packages-react-forge-sfx-contract.md). The N-API adapter dispatches format `wav` generation on an existing worker, emits operation-scoped diagnostics and returns PCM16 bytes plus timeline frames without font discovery. No React, audio device, filesystem or network I/O enters synthesis.

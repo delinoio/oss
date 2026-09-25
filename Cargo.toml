@@ -10,6 +10,7 @@ members = [
   "crates/forge-pdf",
     "crates/react-forge-node",
     "crates/forge-figma",
+    "crates/forge-sprite",
     "crates/forge-sfx",
     "crates/delino-forge",
     "apps/devhud/src-tauri",

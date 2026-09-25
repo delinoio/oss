@@ -9,6 +9,7 @@ The explicit SFX follow-up adds offline procedural game effects exported as WAV,
 `react-forge` (`ProjectId::ReactForge`). Product name: **React Forge**. The public npm package is `@delino/react-forge`; its CLI executable is `react-forge`.
 
 ## Domain Ownership Map
+- `crates/forge-sprite`: independent bounded pixel sprite model, native rasterization and deterministic archive generation.
 - `packages/react-forge`: TypeScript session library, React reconciler, components, CLI, stdio MCP server, examples and integration tests.
 - `packages/react-forge/examples/travel-ir.tsx` and `travel-ir-assets`: designed English ROAM investor-deck example, local concept imagery, source provenance and explicitly fictional financial model.
 - `crates/react-forge-node`: dedicated N-API adapter; JavaScript execution never moves into native workers.
@@ -24,6 +25,8 @@ The explicit SFX follow-up adds offline procedural game effects exported as WAV,
 - Existing `crates/forge-tree-doc` and `crates/forge-pptx`: presentation model, layout and PPTX engine reused from Forge.
 
 ## Domain Contract Documents
+
+- [Sprite authoring and export](packages-react-forge-sprite-contract.md) (unreleased).
 
 - [Game SFX and WAV export](packages-react-forge-sfx-contract.md).
 - [Figma creation and editing](packages-react-forge-figma-contract.md).
@@ -54,3 +57,6 @@ Update the project index, affected domain contracts, relevant AGENTS rules, exam
 - [Repository defaults](repository-defaults.md).
 - [Forge project](project-forge.md).
 - [Issue #968](https://github.com/delinoio/oss/issues/968).
+
+## Sprite Extension (Unreleased)
+The 2026-09-25 sprite request adds `Format.Sprite` and `/sprite` through the existing library, CLI and MCP. React declares layers, pixel grids, shapes, local images and timed animations. One `.sprite.zip` export contains a PNG atlas, individual frames and JSON metadata. This source implementation is not part of npm 0.1.1; it adds no hosted artwork generation or sprite import. Follow the sprite contract for bounds, geometry and evidence.

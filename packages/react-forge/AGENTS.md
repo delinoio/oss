@@ -11,5 +11,9 @@
 
 - Follow `docs/packages-react-forge-mcp-contract.md` for stdio MCP. Keep one shared execution process and canonical React/React Forge module identities; never forward task stdout/stderr to protocol or operational logs. Preserve per-session call order until cancelled callbacks actually settle, bound entry plus data to 16 MiB, retain Figma receipts on partial/unknown outcomes, and never retry writes automatically. Five-second forced cleanup applies only to server shutdown, never normal operations.
 - Keep real SDK and installed-archive MCP coverage in the six-host package suite, including entry-relative imports, state retention, source protection, cancellation, process cleanup and fake Figma. Run `typecheck:examples` after building.
+- CLI signal tests must wait for mounted-effect readiness with a bounded 30-second startup deadline, report early process exits, and cover delayed task startup before checking cancellation and effect cleanup.
+
+- Follow `docs/packages-react-forge-sprite-contract.md` for `/sprite`, `Format.Sprite`, strict component props, pixel geometry and atomic `.sprite.zip` exports. Hidden layers suppress drawing only; their drawing leaves retain translated measurement geometry. Keep sprites connected to common session/CLI/MCP lifecycle and installed-consumer tests; never publish the sheet and JSON as separate uncoordinated writes.
+
 
 - Follow `docs/packages-react-forge-sfx-contract.md` for `Format.Wav` and `/sfx`. Keep bounded procedural synthesis in `forge-sfx`, preserve shared revision/cancellation/atomic-publication behavior, and exercise the original zombie-game gunshot through workspace and installed CLI/MCP. Keep generated audio outside source and mark SFX unreleased until published.

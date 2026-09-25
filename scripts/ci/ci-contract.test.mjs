@@ -439,7 +439,7 @@ test("React Forge validates its supported runtime with uncached native and rende
   }
   assert.match(namedStep(job, "Validate native engine, installed CLI, renders, and benchmark").run, /validate-host\.sh/u);
   const commands = readFileSync(`${root}/packages/react-forge/scripts/validate-host.sh`, "utf8");
-  for (const command of ["forge-package", "forge-document", "forge-docx", "forge-xlsx", "forge-pdf", "react-forge-node", "turbo run build typecheck lint test --filter=@delino/react-forge", "test:render", "benchmark", "install-smoke.mjs"]) assert.ok(commands.includes(command), command);
+  for (const command of ["forge-package", "forge-document", "forge-docx", "forge-xlsx", "forge-pdf", "forge-sprite", "react-forge-node", "turbo run build typecheck lint test --filter=@delino/react-forge", "test:render", "benchmark", "install-smoke.mjs", "windows_console", "examples/travel-ir.tsx", "--include-ignored"]) assert.ok(commands.includes(command), command);
   assert.match(JSON.stringify(job.steps), /render-requirements\.txt/u);
   assert.equal(namedStep(job, "Remove generated package output").if, "always()");
   const evidence = namedStep(job, "Retain rendering and benchmark evidence");

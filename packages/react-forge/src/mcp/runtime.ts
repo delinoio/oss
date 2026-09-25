@@ -1,4 +1,5 @@
-import { resolve, extname } from "node:path";
+import { resolve } from "node:path";
+import { matchesOutputExtension } from "../output-extension.js";
 import { capabilities } from "../capabilities.js";
 import { ForgeError, checkSignal } from "../errors.js";
 import { DocumentSession } from "../session.js";
@@ -137,7 +138,7 @@ export class SessionRuntime {
       case Operation.Export: {
         if (!(session instanceof DocumentSession)) throw new ForgeError(ErrorCode.UnsupportedEdit, "Use publish for Figma sessions.");
         const { output, overwrite } = input as Input<Operation.Export>;
-        if (extname(output).toLowerCase() !== `.${session.format}`) throw new ForgeError(ErrorCode.MalformedInput, "Output extension must match the session format.");
+        if (!matchesOutputExtension(session.format, output)) throw new ForgeError(ErrorCode.MalformedInput, "Output extension must match the session format.");
         const result = await session.exportFile(resolve(this.cwd, output), { overwrite, signal });
         return { ...this.metadata(record), ...result };
       }
