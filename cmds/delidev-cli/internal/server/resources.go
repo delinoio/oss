@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"slices"
 	"time"
 
 	"connectrpc.com/connect"
@@ -374,6 +375,9 @@ func validateDeletion(tx *store.Tx, kind domain.Kind, id domain.ID) error {
 				if err != nil {
 					return err
 				}
+				if kind == domain.AccountKind && slices.Contains(project.Accounts.IDs, id) {
+					return conflict()
+				}
 				if kind == domain.RepositoryKind {
 					for _, ref := range project.Repositories {
 						if ref == id {
@@ -385,6 +389,13 @@ func validateDeletion(tx *store.Tx, kind domain.Kind, id domain.ID) error {
 				agent, err := store.Decode[domain.Agent](record)
 				if err != nil {
 					return err
+				}
+				if kind == domain.AccountKind {
+					for _, account := range agent.Accounts {
+						if account.ID == id {
+							return conflict()
+						}
+					}
 				}
 				if kind == domain.ModelKind && agent.ModelID == id {
 					return conflict()
@@ -413,6 +424,57 @@ func validateDeletion(tx *store.Tx, kind domain.Kind, id domain.ID) error {
 					return conflict()
 				}
 			}
+		}
+	}
+	if kind == domain.AccountKind {
+		filter := store.Filter{Kind: domain.SessionKind, Limit: store.MaxPage}
+		count := 0
+		for {
+			records, err := tx.List(filter)
+			if err != nil {
+				return err
+			}
+			count += len(records)
+			if count > 10000 {
+				return domain.Fail(domain.ResourceExhausted, "Account reference validation exceeded its session bound.", "Reduce the retained scope before deleting the account.")
+			}
+			for _, record := range records {
+				session, err := store.Decode[domain.Session](record)
+				if err != nil {
+					return err
+				}
+				if session.CurrentExecution != nil && session.CurrentExecution.AccountID == id {
+					return conflict()
+				}
+				if initial := session.InitialExecution; initial != nil {
+					if initial.InitialAccountID == id || initial.Route.Selected == id {
+						return conflict()
+					}
+					for _, account := range initial.Configuration.Accounts {
+						if account.ID == id {
+							return conflict()
+						}
+					}
+					for _, candidate := range initial.Route.Candidates {
+						if candidate.ID == id {
+							return conflict()
+						}
+					}
+					if session.ProjectID != "" {
+						policy, err := tx.ExecutionProjectPolicy(session)
+						if err != nil {
+							return err
+						}
+						if slices.Contains(policy.Accounts.IDs, id) {
+							return conflict()
+						}
+					}
+				}
+			}
+			if len(records) < filter.Limit {
+				break
+			}
+			filter.After = records[len(records)-1].ID
 		}
 	}
 	return nil
