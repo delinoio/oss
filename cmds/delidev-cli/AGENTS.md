@@ -135,3 +135,5 @@
 - Backup success requires a validated synchronized file and synchronized parent directory after publication, including exact retries after an uncertain directory sync.
 
 - Failed first SQLite initialization must close the database before removing only attempt-owned fresh files; preserve existing databases and orphaned sidecars, and keep the scope lock through cleanup.
+
+- Missing vault identity recovery may remove only validated initial-pin atomic scratch in an otherwise empty root under its exclusive lock; preserve all populated-vault evidence.

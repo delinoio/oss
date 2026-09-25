@@ -136,9 +136,33 @@ func open(root string, scope domain.ID, native nativeStore, logger *slog.Logger)
 		if e != nil {
 			return nil, domain.SafeError(e)
 		}
+		var scratch []string
 		for _, entry := range entries {
-			if entry.Name() != "vault.lock" {
+			if entry.Name() == "vault.lock" {
+				continue
+			}
+			// Only scope.json uses WriteAtomic at the vault root. Credential
+			// records live below owner directories, which still fail closed.
+			suffix, pending := strings.CutPrefix(entry.Name(), ".pending-")
+			if !pending || suffix == "" || strings.Trim(suffix, "0123456789") != "" {
 				return nil, recovery()
+			}
+			path := filepath.Join(root, entry.Name())
+			if _, err := security.ReadPrivate(path, 1024); err != nil {
+				return nil, recovery()
+			}
+			scratch = append(scratch, path)
+		}
+		// Validate the entire root before removing anything. A populated vault
+		// with a missing pin must never be rebound or have evidence discarded.
+		for _, path := range scratch {
+			if err := os.Remove(path); err != nil {
+				return nil, domain.SafeError(err)
+			}
+		}
+		if len(scratch) != 0 {
+			if err := security.SyncParent(identityPath); err != nil {
+				return nil, domain.SafeError(err)
 			}
 		}
 		identity, err = json.Marshal(struct {

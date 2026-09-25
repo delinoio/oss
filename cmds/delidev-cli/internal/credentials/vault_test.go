@@ -369,3 +369,61 @@ func TestCancelAfterNativeCommitRetainsExactRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestVaultRecoversOnlyUnpublishedInitialPinScratch(t *testing.T) {
+	for _, contents := range []string{"", `{"scope":`, `{"scope":"` + string(domain.NewID()) + `"}`} {
+		t.Run(contents, func(t *testing.T) {
+			root := filepath.Join(t.TempDir(), "vault")
+			if err := security.PrivateDir(root); err != nil {
+				t.Fatal(err)
+			}
+			scratch := filepath.Join(root, ".pending-123456789")
+			if err := os.WriteFile(scratch, []byte(contents), 0600); err != nil {
+				t.Fatal(err)
+			}
+			v, err := open(root, domain.NewID(), &memoryNative{}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			v.Close()
+			if _, err := os.Lstat(scratch); !errors.Is(err, os.ErrNotExist) {
+				t.Fatal("initial scratch retained", err)
+			}
+		})
+	}
+	for _, entry := range []string{"owner", "unknown", "linked", "oversized"} {
+		t.Run(entry, func(t *testing.T) {
+			root := filepath.Join(t.TempDir(), "vault")
+			if err := security.PrivateDir(root); err != nil {
+				t.Fatal(err)
+			}
+			scratch := filepath.Join(root, ".pending-123")
+			if err := os.WriteFile(scratch, nil, 0600); err != nil {
+				t.Fatal(err)
+			}
+			switch entry {
+			case "owner":
+				if err := os.Mkdir(filepath.Join(root, string(domain.NewID())), 0700); err != nil {
+					t.Fatal(err)
+				}
+			case "unknown":
+				if err := os.WriteFile(filepath.Join(root, ".pending-foreign"), nil, 0600); err != nil {
+					t.Fatal(err)
+				}
+			case "linked":
+				if err := os.Symlink(scratch, filepath.Join(root, ".pending-456")); err != nil {
+					t.Skip(err)
+				}
+			case "oversized":
+				if err := os.WriteFile(filepath.Join(root, ".pending-456"), make([]byte, 1025), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			_, err := open(root, domain.NewID(), &memoryNative{}, nil)
+			wantCode(t, err, domain.RecoveryRequired)
+			if _, err := os.Lstat(scratch); err != nil {
+				t.Fatal("recovery evidence removed", err)
+			}
+		})
+	}
+}
