@@ -9,4 +9,3 @@ publish = false
 forge-scene = { path = "../forge-scene" }
 forge-tree-doc = { path = "../forge-tree-doc" }
 serde_json = "1.0.149"
-
