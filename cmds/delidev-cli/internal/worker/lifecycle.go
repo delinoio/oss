@@ -188,6 +188,10 @@ func runtimeStatus(value Lifecycle, active bool) RuntimeStatus {
 		state = StateStopping
 	case value.Phase == RuntimeExited && !active:
 		state = StateExited
+	case value.Phase == RuntimeExited && active:
+		// The joined controller publishes exit before releasing its process lock.
+		// Keep this brief publication barrier pending instead of inventing a loss.
+		state = StateStopping
 	case value.Phase == RuntimeReserved:
 		state = StateStarting
 	case value.Phase == RuntimeStarting && active:

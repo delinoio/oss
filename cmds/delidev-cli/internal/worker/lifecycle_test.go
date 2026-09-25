@@ -177,3 +177,23 @@ func TestLifecycleRejectsCorruptForeignAndLinkedEvidence(t *testing.T) {
 		})
 	}
 }
+
+func TestLifecycleExitPublicationWaitsForOriginalProcessLock(t *testing.T) {
+	root, credential := lifecycleFixture(t)
+	status, _, err := PrepareStart(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lock, err := security.TryLock(filepath.Join(root, "worker.lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Close()
+	if err := setPhase(root, credential, status.Lifecycle.Generation, RuntimeExited); err != nil {
+		t.Fatal(err)
+	}
+	observed, err := Status(root)
+	if err != nil || observed.State != StateStopping || !observed.ControllerActive {
+		t.Fatal("exit publication was reported as lost ownership", observed, err)
+	}
+}

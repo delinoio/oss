@@ -486,3 +486,6 @@ The TypeScript direct-Connect integration boundary is now implemented in `packag
 ### Desktop singleton server preferences (2026-09-25)
 - Added default account routing and the global Worktree fetch gate to server preferences, preserving unrelated policy fields and captured revisions. The singleton exposes create only after an authoritative empty read, then edit without a duplicate-create/delete affordance.
 - All 52 package-local frontend tests, typecheck and production build pass. Router coverage verifies untouched notification/remediation fields and exact retries; real Go integration compares the complete initial document to CLI `settings defaults`, then edits the same ID with one monotonic revision while preserving all other defaults. This adds preference editing without claiming notification or remediation implementation.
+
+### Worker exit-publication barrier follow-up (2026-09-25)
+- A final lifecycle review identified the brief interval between durable controller-exit publication and release of its original process lock. Status now retains `stopping` during that interval instead of reporting lost ownership. A regression test holds the real private lock across publication, and the complete affected Worker/CLI race suites plus package vet pass. Session/native cleanup authority remains unchanged.
