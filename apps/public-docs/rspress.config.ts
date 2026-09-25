@@ -115,6 +115,8 @@ const reactForgeGroups = [
     { text: "Local MCP", link: "/react-forge/mcp" },
   ] },
   { text: "Unreleased Previews", items: [
+    { text: "GLB", link: "/react-forge/formats/glb/" },
+    { text: "FBX", link: "/react-forge/formats/fbx/" },
     { text: "Game SFX", link: "/react-forge/formats/sfx/" },
     { text: "Pixel Sprites", link: "/react-forge/formats/sprite/" },
   ] },

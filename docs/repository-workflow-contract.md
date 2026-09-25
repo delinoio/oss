@@ -6,9 +6,18 @@ Repository workflows are reviewed as source-backed contracts. Workflow IDs, job 
 
 ### Git LFS assets
 
-The six currently tracked assets of at least 512 KiB use exact-path entries in the root `.gitattributes`: the two identical Noto Sans KR fonts used by Forge and DevHud, the three React Forge ROAM example PNGs, and the DevHud API removal PNG. The fonts share one LFS object. Their source and license records remain beside the files. Future repository assets at or above this threshold require an explicit LFS entry and a hydrated checkout in every build, test, or packaging job that consumes them. Attribute changes force the CI job planner to select every event-eligible job; pull requests still defer native packaging.
+Thirteen tracked assets use exact-path entries in the root `.gitattributes`: the two identical Noto Sans KR fonts used by Forge and DevHud, the three React Forge ROAM example PNGs, the DevHud API removal PNG, and the seven AURA source PNGs. Nine files meet the 512 KiB threshold; the four smaller AURA textures remain in LFS with the rest of that texture set. The fonts share one LFS object. Their source and license records remain beside the files. Future repository assets at or above this threshold require an explicit LFS entry and a hydrated checkout in every build, test, or packaging job that consumes them. Attribute changes force the CI job planner to select every event-eligible job; pull requests still defer native packaging.
 
-CI and release jobs that consume these assets enable `actions/checkout` LFS downloading before building. In particular, the API image build must receive the actual removal PNG before Docker copies its context, and desktop builds must receive the font before compilation. Validate migrated files against their original SHA-256 values, inspect committed pointer blobs, and run `git lfs fsck` before publishing a branch. This migration adds a new commit without rewriting historical commits or tags; older Git blobs remain in history. `async-commit-hook` intentionally rejects LFS repositories, so this repository is no longer a supported execution source for that tool; its existing product contract is unchanged.
+CI and release jobs that consume these assets enable `actions/checkout` LFS downloading before building. In particular, the API image build must receive the actual removal PNG before Docker copies its context, and desktop builds must receive the font before compilation. Validate migrated files against their original SHA-256 values, inspect committed pointer blobs, and run `git lfs fsck` before publishing a branch. PR #990 migrated the six font/ROAM/removal assets with a new commit without rewriting historical commits or tags; their older Git blobs remain in history. PR #988 migrated its AURA textures throughout its own PR history before merging that policy, as recorded in the React Forge validation evidence. `async-commit-hook` intentionally rejects LFS repositories, so this repository is no longer a supported execution source for that tool; its existing product contract is unchanged.
+
+The schema-only `scripts/check-proto-breaking.sh` command scopes
+`GIT_LFS_SKIP_SMUDGE=1` to `pnpm exec buf breaking`. Buf creates a temporary local
+Git clone of the baseline; CI's pointer-only protocol checkout does not contain
+LFS payloads for that clone to fetch. Schemas and Buf configuration remain normal
+Git files, and incompatible schema changes must still fail comparison. This
+setting does not apply to asset-consuming build, test, or packaging commands.
+The CI regression uses a temporary repository with an unavailable LFS object and
+the installed Buf/Git LFS tools to verify both compatible and breaking schemas.
 
 ### Pinned repository utilities
 
@@ -126,4 +135,14 @@ Repository-wide Go quality/tests and ach-specific compilation must first generat
 
 ### React Forge validation
 
+Source-consuming React Forge CI and release build checkouts enable Git LFS to
+hydrate the seven AURA source PNG textures before package/example validation and
+scene preparation. Root `.gitattributes` changes select every event-eligible job,
+including both React Forge jobs.
+Product render shards consume the prepared GLB/FBX artifact and need no source
+texture download. AURA uses seven explicit attributes alongside the other
+repository assets listed above.
+
 The centrally planned `react-forge` job runs on affected pull requests and main pushes and is required by `CI Result`. Its ordinary four-host/Node 24 boundary follows `docs/packages-react-forge-contract.md`: package-owned uncached native build and integration, installed CLI, native/legacy Forge regressions, test-only LibreOffice/Poppler rendering and benchmarks on Windows/Linux x64/arm64. Manual CI adds both Darwin hosts. It retains evidence for seven days and removes generated package dist. Shared `forge-package` changes also select existing Forge validation/render jobs. PR CI verifies installed packages on each selected host without transferring native tarballs or assembling a complete release candidate. Seven external `0.0.1` npm name reservations preceded the first source release. `release-react-forge.yml` uses the same host validation command on all six native hosts, including mandatory Darwin rendering and benchmarks, and assembles the complete seven-package candidate on exact tags. Release Project prepared `0.1.0`, whose publish job failed before registry writes. The next patch tag, `0.1.1`, carried the publisher fix and became the first functional npm release through seven configured Trusted Publishers with OIDC; all seven registry versions, integrities, provenance markers and `latest` tags were confirmed.
+
+The required `react-forge-scenes` job follows the exact `react-forge` change plan and depends on its successful native matrix. Linux x64 generates and inspects the eight scene files with `test:scenes --prepare-only`, then uploads `react-forge-scene-inputs` from the same run. Four independent Linux product jobs download those inputs and render each GLB/FBX pair with the same pinned Blender, 96 samples, 2048px minimum, and four views. Each has a 120-minute CPU budget; the native matrix retains 60 minutes. Both preparation and every product render remain required by `CI Result`. Comparisons reject missing/duplicate imports or views, changed input/image hashes and reduced image dimensions before writing their observational statistics. Per-product render artifacts retain seven days of evidence; no native package or render cache is transferred.

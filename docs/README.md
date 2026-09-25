@@ -58,7 +58,7 @@ Each project must have one project index document and one or more domain contrac
 
 ### React Forge
 - [Project index](project-react-forge.md)
-- [Public documentation](apps-react-forge-docs-foundation.md) (`apps/public-docs/docs/react-forge`, canonical URL `https://oss.delino.io/react-forge/`, fifteen user-guide routes)
+- [Public documentation](apps-react-forge-docs-foundation.md) (`apps/public-docs/docs/react-forge`, canonical URL `https://oss.delino.io/react-forge/`, eighteen user-guide routes)
 - [Complete issue requirements](packages-react-forge-requirements.md)
 - [Game SFX and WAV export](packages-react-forge-sfx-contract.md)
 - [Node sessions and CLI](packages-react-forge-contract.md)
@@ -156,3 +156,5 @@ The deterministic bilingual frontend, target-isolated Tauri desktop CEF plus iOS
 - [Complete issue #958 requirements](crates-pnport-requirements.md)
 - [npm/native distribution](packages-pnport-distribution-contract.md)
 - [Public documentation](apps-pnport-docs-foundation.md) (ten guides under `/pnport`, with 0.1.0 marked unreleased)
+
+- [React Forge static GLB/FBX scenes](packages-react-forge-scene-contract.md): generation, materials, sessions and interoperability evidence requirements.

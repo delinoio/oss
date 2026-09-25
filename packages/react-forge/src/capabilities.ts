@@ -4,6 +4,8 @@ import { Format, limits } from "./types.js";
 export const capabilities = Object.freeze({
   runtime: Object.freeze({ node: "24", react: "19.2.8", reconciler: "0.33.0", hosts: Object.freeze(platforms.map(({ id, platform, architecture }) => Object.freeze({ id, platform, architecture }))) }),
   formats: Object.freeze({
+    [Format.Glb]: Object.freeze({ generate: true, import: false, coordinateSpace: "world", staticOnly: true, embeddedTextures: true }),
+    [Format.Fbx]: Object.freeze({ generate: true, import: false, coordinateSpace: "world", staticOnly: true, embeddedTextures: true, materialProfile: "blender-4.5" }),
     [Format.Pptx]: Object.freeze({ generate: true, import: true, coordinateSpace: "page" }),
     [Format.Docx]: Object.freeze({ generate: true, import: true, coordinateSpace: "word_flow" }),
     [Format.Xlsx]: Object.freeze({ generate: true, import: true, coordinateSpace: "worksheet" }),

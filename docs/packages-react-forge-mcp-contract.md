@@ -54,6 +54,8 @@ Build the native binding and TypeScript output before server or packed-consumer 
 
 MCP coverage includes relative/inline imports, module singleton identity, fresh entry evaluation, actual React hook/Suspense state, mounted Office edits, exact revision measurement, original/output conflicts, filtered pagination, malformed/oversized source, latest-render errors, redaction, direct stdout writes, queued cancellation, late returned-session cleanup, EOF/signals, a blocked event loop, worker loss, and Figma complete/partial/unknown publication receipts without blind retries. Offline Figma tests use synthetic credentials/fake MCP only. Remove generated `dist` after validation.
 
+Cancellation fixtures register their abort waiter before publishing readiness and handle an already-aborted signal. The late-return fixture deliberately resumes after cancellation has arrived, proving cleanup does not depend on the timing of the readiness write's continuation.
+
 ## Dependencies and Integrations
 Reuse pinned `@modelcontextprotocol/sdk`, `tsx` and the existing native engines. Declare exact direct `esbuild` and `zod` dependencies matching the existing lockfile versions for virtual TSX transformation and shared runtime/advertised schemas. The parent alone owns protocol stdout; one execution child owns all sessions. No existing Forge CLI/MCP or native defaults change.
 
@@ -66,6 +68,10 @@ Keep this contract, Node/Figma contracts, original requirements follow-up, proje
 - [Figma publication](packages-react-forge-figma-contract.md).
 - [Repository defaults](repository-defaults.md).
 - [MCP server and stdio logging guidance](https://modelcontextprotocol.io/docs/2026-07-28/develop/build-server).
+
+## Static 3D extension
+
+The generation-only GLB/FBX extension follows [the scene contract](packages-react-forge-scene-contract.md). `SceneSession` shares local publication and MCP lifecycle, uses independent world-space bounds and native scene engines, and introduces no runtime conversion dependency.
 
 ## Sprite Follow-up (Unreleased)
 The sprite extension reuses `DocumentSession` and all existing tools: `execute` resolves `/sprite` to the canonical package, `inspect` exposes authored nodes, `measure` reports logical frame geometry, and `export` publishes one `.sprite.zip`. No additional tools or asset downloads are introduced. Both inline-source tests and installed-consumer CLI/MCP tests exercise it. See the [sprite contract](packages-react-forge-sprite-contract.md).

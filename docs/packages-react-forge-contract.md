@@ -88,8 +88,12 @@ The explicit MCP follow-up supersedes the original new-MCP exclusion. `react-for
 
 The private source workspace generates a public `@delino/react-forge` package plus six `@delino/react-forge-<host-id>` native packages. Main optional dependencies pin the exact source version. Generated platform manifests use `os`, `cpu`, and Linux `libc` filters; the source workspace manifest stays host-neutral. Runtime loading selects the exact matching package and rejects a missing or mismatched binding without downloads or compilation. See [release contract](packages-react-forge-release-contract.md).
 
+## Static 3D extension
+
+The generation-only GLB/FBX extension follows [the scene contract](packages-react-forge-scene-contract.md). `SceneSession` shares local publication and MCP lifecycle, uses independent world-space bounds and native scene engines, and introduces no runtime conversion dependency.
+
 ## Sprite Extension (Unreleased)
-`Format.Sprite` uses `DocumentSession` and the `/sprite` components under the [sprite contract](packages-react-forge-sprite-contract.md). Alongside WAV, it brings the source package to six local authoring formats, preserving independent models and the existing export lifecycle. `exportBuffer` returns a ZIP bundle; CLI/MCP file output requires `.sprite.zip`. The bundle contains `sheet.png`, `sprite.json` and each frame PNG from one pinned revision. Measurement uses logical `sprite_frame` coordinates with `page` as the frame index; exported metadata uses scaled pixels. Import and mounted editing are unsupported. Native drawing uses no system fonts or converters. `examples/sprite.tsx` demonstrates reusable palette-based artwork and idle/hop animations; it and the installed consumers run in the six-host suite. The current npm 0.1.1 release does not contain this extension.
+`Format.Sprite` uses `DocumentSession` and the `/sprite` components under the [sprite contract](packages-react-forge-sprite-contract.md). Alongside WAV and GLB/FBX, it brings the source package to eight local authoring formats, preserving independent models and the existing export lifecycle. `exportBuffer` returns a ZIP bundle; CLI/MCP file output requires `.sprite.zip`. The bundle contains `sheet.png`, `sprite.json` and each frame PNG from one pinned revision. Measurement uses logical `sprite_frame` coordinates with `page` as the frame index; exported metadata uses scaled pixels. Import and mounted editing are unsupported. Native drawing uses no system fonts or converters. `examples/sprite.tsx` demonstrates reusable palette-based artwork and idle/hop animations; it and the installed consumers run in the six-host suite. The current npm 0.1.1 release does not contain this extension.
 
 ## SFX extension
 

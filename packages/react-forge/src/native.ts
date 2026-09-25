@@ -7,6 +7,7 @@ import { ErrorCode, Format, Stage, type Diagnostic } from "./types.js";
 interface Cancellation { cancel(): void }
 export interface NativeOutput { bytes: Buffer; model: string; geometry: string; diagnostics: string }
 interface Binding {
+  validateSceneAsset(kind: string, bytes: Buffer, cancellation: Cancellation): Promise<boolean>;
   validateFigmaImage(bytes:Buffer,cancellation:Cancellation):Promise<boolean>;
   planFigma(input: string, cancellation: Cancellation): Promise<string>;
   Cancellation: new () => Cancellation;
@@ -48,7 +49,7 @@ const codes: Record<string, ErrorCode> = {
 // Only model vocabulary and array indices may leave a native diagnostic.
 // In particular, a parser path or an arbitrary source node key is not a model
 // location and must never become a host path/content leak.
-const locationFields = new Set("id version theme font_family font_size fonts embedding text width height color background language direction align style runs paragraphs heading list blocks document sections header footer paragraph table rows row cells cell column columns sheets sheet workbook chart series categories data value values formula cached expression number_format image asset alt layers source sample_rate channels duration gain start pan attack release decay seed low_pass high_pass frequency end_frequency waveform geometry frame layout nodes slides children target address range merge validation conditional_format validations conditional_formats prompt error hyperlink shape points sprite scale padding frames animations duration_ms pivot palette".split(" "));
+const locationFields = new Set("id version theme font_family font_size fonts embedding text width height color background language direction align style runs paragraphs heading list blocks document sections header footer paragraph table rows row cells cell column columns sheets sheet workbook chart series categories data value values formula cached expression number_format image asset alt geometry positions normals tangents indices uv material texture transform camera light bounds scene fbx base_color metallic roughness emissive alpha_mode double_sided document_id translation rotation scale yfov aspect near far xmag ymag intensity inner_cone outer_cone frame layout nodes slides children target address range merge validation conditional_format validations conditional_formats prompt error hyperlink shape points layers source sample_rate channels duration gain start pan attack release decay seed low_pass high_pass frequency end_frequency waveform sprite padding frames animations duration_ms pivot palette".split(" "));
 function safeLocation(value: unknown): string | undefined {
   if (typeof value !== "string" || value.length > 256 || !value) return undefined;
   return value.split("/").every(part => part === "" || locationFields.has(part) || /^(0|[1-9][0-9]{0,5})$/.test(part)) ? value : undefined;
@@ -56,12 +57,17 @@ function safeLocation(value: unknown): string | undefined {
 
 export async function processDocument(format: Format, operation: "generate" | "inspect" | "update", model: unknown,
   source: Buffer, assets: Map<string, Buffer>, documentId: string, revision: number, signal: AbortSignal, fontOptions: { system: boolean; ids: string[] } = { system: true, ids: [] }, onDiagnostic?: (event: Diagnostic) => void): Promise<NativeOutput> {
+  // Scene inspection measures authored geometry; document inspection imports
+  // existing bytes. Derive the stage from trusted call metadata, not native text.
+  const stage = operation === "inspect"
+    ? (format === Format.Glb || format === Format.Fbx ? Stage.Layout : Stage.Import)
+    : Stage.Export;
   const emit = (events: unknown) => {
     if (!Array.isArray(events)) return;
     for (const event of events) {
       if (!event || typeof event !== "object") continue;
       const diagnostic: Diagnostic = Object.freeze({ source: "native", format, revision,
-        stage: operation === "inspect" ? Stage.Import : Stage.Export, operation,
+        stage, operation,
         status: ["started", "completed", "failed"].includes(event.status) ? event.status : undefined,
         durationMs: Number.isFinite(event.duration_ms) ? event.duration_ms : 0,
         code: event.code ? codes[event.code] ?? ErrorCode.MalformedInput : undefined });
@@ -92,7 +98,7 @@ export async function processDocument(format: Format, operation: "generate" | "i
     const message = code === ErrorCode.MissingFont
       ? "Required glyphs, color emoji, or embedding permissions are unavailable. Register a compatible font with registerFont() or install a system fallback, then retry."
       : `Native document processing failed (${code}). Correct the input and retry.`;
-    throw new ForgeError(code, message, { format, revision, location, stage: operation === "inspect" ? Stage.Import : Stage.Export });
+    throw new ForgeError(code, message, { format, revision, location, stage });
   } finally { signal.removeEventListener("abort", cancel); }
 }
 
@@ -112,4 +118,15 @@ export async function validateFigmaImage(bytes:Buffer,signal:AbortSignal):Promis
   try{await native.validateFigmaImage(bytes,cancellation);}
   catch(error){if(signal.aborted)throw new ForgeError(ErrorCode.Cancelled,"Image validation was cancelled.");let code=ErrorCode.MalformedInput;try{const data=JSON.parse((error as Error).message);code=codes[data.code]??code;}catch{}throw new ForgeError(code,"Figma image decoding or dimensions are invalid.");}
   finally{signal.removeEventListener("abort",cancel);}
+}
+
+export async function validateSceneAsset(kind: string, bytes: Buffer, signal: AbortSignal): Promise<void> {
+  const native = load(); const cancellation = new native.Cancellation(); const cancel = () => cancellation.cancel();
+  signal.addEventListener("abort", cancel, { once: true }); if (signal.aborted) cancel();
+  try { await native.validateSceneAsset(kind, bytes, cancellation); }
+  catch (error) {
+    let code = ErrorCode.MalformedInput;
+    try { const detail = JSON.parse((error as Error).message); code = codes[detail.code] ?? code; } catch { /* Redact native details. */ }
+    throw new ForgeError(code, "Scene asset validation failed.");
+  } finally { signal.removeEventListener("abort", cancel); }
 }

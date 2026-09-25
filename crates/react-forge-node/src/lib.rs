@@ -10,6 +10,8 @@ mod diagnostics;
 mod docx;
 mod pdf;
 mod pptx;
+mod scene;
+pub use scene::{SceneAssetOperation, validate_scene_asset};
 mod sfx;
 mod sprite;
 mod xlsx;
@@ -19,6 +21,8 @@ enum Format {
     Docx,
     Xlsx,
     Pdf,
+    Glb,
+    Fbx,
     Sprite,
     Wav,
 }
@@ -137,6 +141,8 @@ impl Task for Operation {
             Format::Docx => "docx",
             Format::Xlsx => "xlsx",
             Format::Pdf => "pdf",
+            Format::Glb => "glb",
+            Format::Fbx => "fbx",
             Format::Sprite => "sprite",
             Format::Wav => "wav",
         };
@@ -145,7 +151,11 @@ impl Task for Operation {
             OperationKind::Inspect => "inspect",
             OperationKind::Update => "update",
         };
-        let stage = if matches!(self.kind, OperationKind::Inspect) {
+        let stage = if matches!(self.kind, OperationKind::Inspect)
+            && matches!(self.format, Format::Glb | Format::Fbx)
+        {
+            "layout"
+        } else if matches!(self.kind, OperationKind::Inspect) {
             "import"
         } else {
             "export"
@@ -156,6 +166,7 @@ impl Task for Operation {
             let mut result = forge_tree_doc::cancellation::with_cancellation(self.cancelled.clone(), || match self.format {
                 Format::Pptx => pptx::process(self), Format::Docx => docx::process(self),
                 Format::Xlsx => xlsx::process(self), Format::Pdf => pdf::process(self),
+                Format::Glb | Format::Fbx => scene::process(self),
                 Format::Wav => sfx::process(self),
                 Format::Sprite => sprite::process(self),
             });
@@ -222,6 +233,8 @@ pub fn process_document(
         "docx" => Format::Docx,
         "xlsx" => Format::Xlsx,
         "pdf" => Format::Pdf,
+        "glb" => Format::Glb,
+        "fbx" => Format::Fbx,
         "sprite" => Format::Sprite,
         "wav" => Format::Wav,
         _ => {

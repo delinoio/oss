@@ -6,5 +6,5 @@ export const projectRoutes = {
   binpm: ["/", "/installation", "/getting-started", "/commands", "/local-tooling", "/cache-and-verification", "/releases", "/troubleshooting", "/reference"],
   "async-commit-hook": ["/", "/install", "/start", "/configuration", "/validation", "/commands", "/agents", "/web", "/privacy", "/recovery", "/compatibility", "/symlinks", "/existing-hooks"],
   pnport: ["/", "/installation", "/getting-started", "/commands", "/filesystem-and-processes", "/editors", "/cache", "/diagnostics", "/benchmarks", "/releases"],
-  "react-forge": ["/", "/installation", "/getting-started", "/sessions", "/formats/pptx/", "/formats/docx/", "/formats/xlsx/", "/formats/pdf/", "/office-editing", "/formats/figma/", "/cli", "/mcp", "/formats/sfx/", "/formats/sprite/", "/limits-and-troubleshooting", "/releases"],
+  "react-forge": ["/", "/installation", "/getting-started", "/sessions", "/formats/pptx/", "/formats/docx/", "/formats/xlsx/", "/formats/pdf/", "/office-editing", "/formats/figma/", "/cli", "/mcp", "/formats/glb/", "/formats/fbx/", "/formats/sfx/", "/formats/sprite/", "/limits-and-troubleshooting", "/releases"],
 };

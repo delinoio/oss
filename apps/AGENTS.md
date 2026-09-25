@@ -181,9 +181,11 @@
 
 ### React Forge public documentation Rules
 
-- `apps/public-docs/docs/react-forge` owns the sixteen English public guides at `https://oss.delino.io/react-forge/`. Follow `docs/apps-react-forge-docs-foundation.md`; expose every stable route in the grouped React Forge sidebar and React Forge as a peer in the shared site selector.
-- Keep the seven format guides in `react-forge/formats/<format>/index.md`, link to their `/react-forge/formats/<format>/` routes, and preserve permanent redirects from the former top-level format routes. Validate both route sets through the public-docs build.
+- `apps/public-docs/docs/react-forge` owns the eighteen English public guides at `https://oss.delino.io/react-forge/`. Follow `docs/apps-react-forge-docs-foundation.md`; expose every stable route in the grouped React Forge sidebar and React Forge as a peer in the shared site selector.
+- Keep the nine format guides in `react-forge/formats/<format>/index.md`, link to their `/react-forge/formats/<format>/` routes, and preserve permanent redirects from the former top-level format routes. Validate both route sets through the public-docs build.
 - Keep released installation and API examples aligned with the published `@delino/react-forge` package and public types; align clearly marked unreleased previews with source examples and exported types. Distinguish six-host local Office/PDF support from macOS Keychain Figma authentication; document explicit publication, receipts, preservation, and verification limits without exposing repository internals.
-- Validate all sixteen rendered routes, guide links, selector state, sidebar, social/footer links, clean URLs, and prohibited credentials and internal paths through `pnpm --filter public-docs test`.
+- Validate all eighteen rendered routes, guide links, selector state, sidebar, social/footer links, clean URLs, and prohibited credentials and internal paths through `pnpm --filter public-docs test`.
+
+- React Forge GLB/FBX public guides remain explicitly unreleased until a release includes them. Preserve the static-only scene boundary and Blender 4.5 FBX compatibility limits; source and CI coverage do not establish published availability or execution on untested hosts.
 
 - React Forge `/formats/sfx/` and `/formats/sprite/` preview unreleased procedural WAV and pixel-sprite extensions separately from published `0.1.1` behavior. Preserve each article's availability notice and separate their evidence from historical six-host document validation.

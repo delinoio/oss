@@ -731,7 +731,7 @@ for (const [routeId, headings] of requiredHeadings) {
   if (!/<main\b[^>]*>/iu.test(pageContents)) failures.push(`${routeId} is missing a main landmark`);
 }
 
-for (const routeId of ["/react-forge/formats/sfx/", "/react-forge/formats/sprite/"]) {
+for (const routeId of ["/react-forge/formats/glb/", "/react-forge/formats/fbx/", "/react-forge/formats/sfx/", "/react-forge/formats/sprite/"]) {
   const route = routeOutputFiles.find((entry) => entry.routeId === routeId);
   const contents = route ? await readFile(route.outputFile, "utf8") : "";
   const introduction = visibleText(articleContent(contents)).slice(0, 550);

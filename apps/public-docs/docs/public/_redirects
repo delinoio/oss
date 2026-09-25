@@ -13,3 +13,7 @@
 /react-forge/sfx/ /react-forge/formats/sfx/ 301
 /react-forge/sprite /react-forge/formats/sprite/ 301
 /react-forge/sprite/ /react-forge/formats/sprite/ 301
+/react-forge/glb /react-forge/formats/glb/ 301
+/react-forge/glb/ /react-forge/formats/glb/ 301
+/react-forge/fbx /react-forge/formats/fbx/ 301
+/react-forge/fbx/ /react-forge/formats/fbx/ 301

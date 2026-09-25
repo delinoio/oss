@@ -7,17 +7,27 @@ import yaml from "js-yaml";
 
 const minimumAssetSize = 512 * 1024;
 const assetExtensions = new Set([
-  ".docx", ".gif", ".ico", ".icns", ".jpeg", ".jpg", ".mp3",
+  ".docx", ".fbx", ".gif", ".glb", ".ico", ".icns", ".jpeg", ".jpg", ".mp3",
   ".mp4", ".otf", ".pdf", ".png", ".pptx", ".ttf", ".wav",
   ".webp", ".woff", ".woff2", ".xlsx", ".zip",
 ]);
 const lfsAssets = [
   "apps/devhud/src-tauri/assets/fonts/noto-sans-kr/NotoSansKR-VF.ttf",
   "crates/forge-tree-doc/assets/fonts/noto-sans-kr/NotoSansKR-VF.ttf",
+  "packages/react-forge/examples/audio-studio-assets/brushed-roughness.png",
+  "packages/react-forge/examples/audio-studio-assets/leather-normal.png",
+  "packages/react-forge/examples/audio-studio-assets/leather-roughness.png",
   "packages/react-forge/examples/travel-ir-assets/coast.png",
   "packages/react-forge/examples/travel-ir-assets/horizon.png",
   "packages/react-forge/examples/travel-ir-assets/product.png",
   "servers/devhud-api/internal/r2/removal.png",
+];
+// Keep the complete AURA texture set in LFS, including its smaller companions.
+const companionTextures = [
+  "packages/react-forge/examples/audio-studio-assets/brushed-normal.png",
+  "packages/react-forge/examples/audio-studio-assets/display.png",
+  "packages/react-forge/examples/audio-studio-assets/fabric-normal.png",
+  "packages/react-forge/examples/audio-studio-assets/wordmark.png",
 ];
 const hydratedJobs = {
   "CI.yml": [
@@ -39,11 +49,12 @@ test("large repository assets are stored as LFS pointers", () => {
     assert.ok(Number(match[1]) < minimumAssetSize, `large raw Git asset: ${match[2]}`);
   }
 
-  for (const path of lfsAssets) {
+  for (const path of [...lfsAssets, ...companionTextures]) {
     const pointer = execFileSync("git", ["show", `HEAD:${path}`], { encoding: "utf8" });
     const match = /^version https:\/\/git-lfs\.github\.com\/spec\/v1\noid sha256:([0-9a-f]{64})\nsize (\d+)\n$/u.exec(pointer);
     assert.ok(match, `invalid LFS pointer: ${path}`);
-    assert.ok(Number(match[2]) >= minimumAssetSize, `asset below LFS threshold: ${path}`);
+    assert.ok(Number(match[2]) > 0, `empty LFS asset: ${path}`);
+    if (lfsAssets.includes(path)) assert.ok(Number(match[2]) >= minimumAssetSize, `asset below LFS threshold: ${path}`);
     const attributes = execFileSync("git", ["check-attr", "filter", "diff", "merge", "text", "--", path], { encoding: "utf8" });
     assert.equal(attributes, `${path}: filter: lfs\n${path}: diff: lfs\n${path}: merge: lfs\n${path}: text: unset\n`);
   }

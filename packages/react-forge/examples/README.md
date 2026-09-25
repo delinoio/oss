@@ -35,6 +35,10 @@ The task selects the first supported text/paragraph/cell region. Use the library
 ## MCP session task
 `mcp-session.tsx` is a session-based MCP task, not a one-shot CLI entry. Run it through `react_forge_execute` with optional `{ "title": "..." }` data, retain its session ID for subsequent calls, inspect/measure the revision, export explicitly and close the session. Its render function remains in the MCP-owned state Map. See the package README for connection configuration and the complete tool sequence.
 
+## Static 3D product assets
+
+The [AURA audio studio](audio-studio-assets/README.md) creates headphones, a DAC/amplifier, a stand and the combined studio as GLB/FBX. Its original procedural geometry and seven deterministic PNG textures are included. The unreleased 3D API is also demonstrated by `scene-glb.tsx` and `scene-fbx.tsx`. The verification workflow reimports the actual files in Blender and a local GLB viewer; see the example provenance and reproduction commands.
+
 ## Zombie-game gunshot
 
 `zombie-gunshot.tsx` is original Apache-2.0 procedural audio, with no imported recordings or samples. Its reusable `Gunshot` component layers muzzle crack, low body, falling tone, mechanical click and a filtered room tail. It exports 0.75 seconds of 48000 Hz mono PCM16 WAV without fonts or networking. Pass `--data '{"seed":816}'` for a variation (seed range 1–4294967292). Reuse `Gunshot` with different starts/seeds inside a longer Sound for a sequence. Audio stays untracked. This source feature is not included in npm `0.1.1`; listen in the target game to assess the mix.

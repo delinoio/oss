@@ -11,6 +11,9 @@ test = false
 doctest = false
 
 [dependencies]
+forge-scene = { path = "../forge-scene" }
+forge-glb = { path = "../forge-glb" }
+forge-fbx = { path = "../forge-fbx" }
 forge-sprite = { path = "../forge-sprite" }
 forge-sfx = { path = "../forge-sfx" }
 forge-figma = { path = "../forge-figma" }

@@ -189,6 +189,14 @@ Disconnect and process signals dispose sessions, with a five-second shutdown gra
 
 Test renderers are not runtime dependencies. Direct Microsoft Office validation and PDF/UA certification are not claimed. React Forge is licensed under Apache-2.0. Report issues at https://github.com/delinoio/oss/issues.
 
+## Static GLB and FBX scenes (unreleased)
+
+This extension is not included in npm 0.1.1. `createSession(Format.Glb | Format.Fbx)` returns `SceneSession`; `/glb` and `/fbx` expose Scene, Group, Mesh, perspective/orthographic cameras and directional/point/spot lights. Register copied typed-array geometry and PNG/JPEG textures with `registerGeometry` and `registerTexture`, then render and explicitly export. Coordinates use meters and right-handed Y-up. Basic PBR maps, opacity, UVs, tangents, nonuniform/negative scales and hierarchy are supported. Existing scene import/editing, animation, rigging, refraction and advanced coatings are excluded.
+
+`inspect`, settled `snapshot`, revision-bound world-AABB `measure`, `exportBuffer`, atomic `exportFile`, `onDiagnostic` and `dispose` retain the local session lifecycle. GLB uses glTF 2.0; binary FBX 7.4 targets Blender 4.5 materials and embeds textures. Other FBX applications may shade differently. Registered assets and output each have a 256 MiB ceiling, individual geometry/textures 64 MiB, with existing image and React-tree limits. Generation has no Blender or viewer runtime dependency.
+
+See the [GLB guide](https://oss.delino.io/react-forge/formats/glb/), [FBX guide](https://oss.delino.io/react-forge/formats/fbx/), and original [AURA product example](examples/audio-studio-assets/README.md). The same CLI/MCP exports `.glb`/`.fbx` when running a build that includes this extension.
+
 ## Sprite authoring (unreleased)
 
 The next release adds `Format.Sprite` and `@delino/react-forge/sprite`. This feature is not included in npm 0.1.1. See the [Sprite guide](https://oss.delino.io/react-forge/formats/sprite/) for the preview workflow and limits.

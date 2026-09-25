@@ -33,3 +33,10 @@ test("release runs the same host validation before complete candidate assembly",
   assert.ok(!ci.jobs["react-forge"].steps.some((step) => String(step.with?.name).startsWith("react-forge-native-")));
   assert.ok(release.jobs.package.steps.some((step) => step.run?.includes("package.mjs verify")));
 });
+
+test("React Forge source consumers hydrate LFS textures before package and scene validation", () => {
+  for (const job of [ci.jobs["react-forge"], release.jobs.build]) {
+    const checkout = job.steps.find(step => step.uses?.startsWith("actions/checkout@"));
+    assert.equal(checkout.with.lfs, true);
+  }
+});

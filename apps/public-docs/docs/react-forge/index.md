@@ -21,8 +21,12 @@ Exports are explicit. Sessions exist in memory until disposed; starting a new pr
 - **Edit an Office file:** [Mount a supported region](/react-forge/office-editing) of an imported PPTX, DOCX, or XLSX while preserving unrelated content.
 - **Work in Figma:** [Create or edit Figma Design files](/react-forge/formats/figma/) with explicit publication and a receipt that records remote outcomes.
 - **Choose an entry point:** Run one-shot tasks with the [CLI](/react-forge/cli), or retain sessions through the [local stdio MCP server](/react-forge/mcp).
-- **Preview upcoming formats:** Read about [procedural game SFX](/react-forge/formats/sfx/) and [pixel sprites](/react-forge/formats/sprite/). Both are unreleased and absent from npm `0.1.1`.
+- **Preview upcoming formats:** Read about [GLB](/react-forge/formats/glb/), [FBX](/react-forge/formats/fbx/), [procedural game SFX](/react-forge/formats/sfx/) and [pixel sprites](/react-forge/formats/sprite/). All four are unreleased and absent from npm `0.1.1`.
 
 Before adopting a workflow, check its [limits and troubleshooting](/react-forge/limits-and-troubleshooting) and [release and validation status](/react-forge/releases).
 
 React Forge is Apache-2.0 licensed. Report problems through [Delino OSS issues](https://github.com/delinoio/oss/issues).
+
+## Unreleased static 3D extension
+
+[GLB](/react-forge/formats/glb/) and [FBX](/react-forge/formats/fbx/) creation are documented as an unreleased extension, absent from npm 0.1.1. They use SceneSession with registered geometry/textures, explicit file export, and revision-bound world-space bounds. Existing-file editing, animation and rigging are excluded. The FBX material profile targets Blender 4.5; local verification does not establish results on other hosts or FBX applications.

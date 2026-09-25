@@ -461,6 +461,26 @@ jobs:
           "$RUNNER_TEMP/react-forge-python/bin/pip" install -r packages/react-forge/scripts/render-requirements.txt
       - name: Validate native engine, installed CLI, renders, and benchmark
         run: bash packages/react-forge/scripts/validate-host.sh "${{ matrix.target }}"
+      - name: Install pinned test-only 3D renderer
+        if: matrix.id == 'linux-x64-gnu'
+        run: |
+          curl --fail --location --retry 3 https://download.blender.org/release/Blender4.5/blender-4.5.14-linux-x64.tar.xz --output "$RUNNER_TEMP/blender.tar.xz"
+          echo "9ba871ff2ecd36526b77432745980b7e6664ecd0c7ca11c48849073dcfe06da3  $RUNNER_TEMP/blender.tar.xz" | sha256sum --check
+          tar -xf "$RUNNER_TEMP/blender.tar.xz" -C "$RUNNER_TEMP"
+      - name: Prepare and inspect generated GLB and FBX scenes
+        if: matrix.id == 'linux-x64-gnu'
+        env:
+          REACT_FORGE_BLENDER: ${{ runner.temp }}/blender-4.5.14-linux-x64/blender
+        run: |
+          pnpm --filter @delino/react-forge test:scenes --output "$RUNNER_TEMP/react-forge-scenes" --prepare-only
+      - name: Retain prepared 3D inputs
+        if: matrix.id == 'linux-x64-gnu'
+        uses: actions/upload-artifact@v4
+        with:
+          name: react-forge-scene-inputs
+          path: ${{ runner.temp }}/react-forge-scenes
+          if-no-files-found: error
+          retention-days: 7
       - name: Retain rendering and benchmark evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -482,6 +502,52 @@ jobs:
         with:
           path: ${{ steps.ci-node.outputs.cache-path }}
           key: ${{ steps.ci-node.outputs.cache-key }}
+
+  react-forge-scenes:
+    needs: [changes, react-forge]
+    if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['react-forge-scenes'] }}
+    name: React Forge scene renders ${{ matrix.product }}
+    runs-on: ubuntu-22.04
+    # A studio GLB/FBX pair takes about 80 minutes on hosted CPU runners.
+    # Keep full-resolution coverage separate from the 60-minute native matrix.
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        product: [studio, headphones, dac, stand]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          name: react-forge-scene-inputs
+          path: ${{ runner.temp }}/react-forge-scenes
+      - name: Install pinned test-only render tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-venv libxi6 libxfixes3 libxrender1 libxxf86vm1 libgl1 libxkbcommon0
+          python3 -m venv "$RUNNER_TEMP/react-forge-python"
+          "$RUNNER_TEMP/react-forge-python/bin/pip" install -r packages/react-forge/scripts/render-requirements.txt
+          curl --fail --location --retry 3 https://download.blender.org/release/Blender4.5/blender-4.5.14-linux-x64.tar.xz --output "$RUNNER_TEMP/blender.tar.xz"
+          echo "9ba871ff2ecd36526b77432745980b7e6664ecd0c7ca11c48849073dcfe06da3  $RUNNER_TEMP/blender.tar.xz" | sha256sum --check
+          tar -xf "$RUNNER_TEMP/blender.tar.xz" -C "$RUNNER_TEMP"
+      - name: Render and compare both exported formats
+        env:
+          PRODUCT: ${{ matrix.product }}
+        run: |
+          "$RUNNER_TEMP/react-forge-python/bin/python" packages/react-forge/scripts/test-scene-comparison.py
+          "$RUNNER_TEMP/blender-4.5.14-linux-x64/blender" --background --factory-startup --python-exit-code 1 --python packages/react-forge/scripts/render-scenes.py -- --input "$RUNNER_TEMP/react-forge-scenes" --output "$RUNNER_TEMP/react-forge-scenes/renders" --products "$PRODUCT" --formats glb,fbx --views hero,front,back,detail --resolution 2048 --samples 96 --device CPU
+          "$RUNNER_TEMP/react-forge-python/bin/python" packages/react-forge/scripts/compare-scenes.py "$RUNNER_TEMP/react-forge-scenes" --product "$PRODUCT"
+      - name: Retain product render evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: react-forge-scene-${{ matrix.product }}
+          path: |
+            ${{ runner.temp }}/react-forge-scenes/renders
+            ${{ runner.temp }}/react-forge-scenes/comparison-*.jpg
+            ${{ runner.temp }}/react-forge-scenes/pixel-comparison.json
+          if-no-files-found: error
+          retention-days: 7
 
   linux-packages:
     needs: changes
@@ -1781,6 +1847,7 @@ jobs:
       - forge-test
       - forge-render
       - react-forge
+      - react-forge-scenes
       - node-public-docs-test
       - node-clibox-test
       - node-pnport-test

@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>AURA · Product studio</title>
+<style>
+:root { color-scheme: dark; font-family: system-ui, sans-serif; background: #151b20; color: #edf0ee; }
+* { box-sizing: border-box; } body { margin: 0; min-height: 100dvh; display: flex; flex-direction: column; } [hidden] { display: none !important; }
+header { padding: 24px 30px 18px; display: flex; align-items: center; justify-content: space-between; gap: 24px; border-bottom: 1px solid #ffffff15; }
+h1 { font-size: 25px; font-weight: 350; letter-spacing: .27em; margin: 0 0 4px; } p { color: #98a1a7; margin: 0; font-size: 11px; letter-spacing: .07em; }
+nav, .tools, .modes, .render-tools { display: flex; gap: 7px; flex-wrap: wrap; align-items: center; } button { cursor: pointer; border: 1px solid #ffffff24; border-radius: 3px; padding: 9px 12px; background: #151b20e8; color: #d6dcdf; font: inherit; font-size: 12px; transition: background .15s; }
+button:hover { background: #30383d; } button[aria-pressed=true] { background: #d2bc9b; color: #172028; border-color: #d2bc9b; } button:focus-visible { outline: 2px solid #d2bc9b; outline-offset: 4px; }
+.view-bar { padding: 12px 30px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; border-bottom: 1px solid #ffffff10; }
+main { position: relative; flex: 1; height: calc(100dvh - 190px); min-height: 380px; } canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; touch-action: none; }
+.render-frame { position: absolute; inset: 0; margin: 0; display: grid; place-items: center; background: #12171b; }
+.render-frame img { width: 100%; height: 100%; object-fit: contain; min-height: 0; }
+.render-frame figcaption { position: absolute; bottom: 16px; left: 30px; right: 30px; color: #c0c8ca; font-size: 11px; letter-spacing: .05em; text-shadow: 0 1px 4px #000; }
+.tools { position: absolute; bottom: 20px; left: 30px; } footer { padding: 13px 30px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 7px; border-top: 1px solid #ffffff10; font-size: 11px; color: #8c979e; }
+#status { color: #bec6cb; } .divider { width: 1px; height: 20px; background: #ffffff25; margin: 0 4px; }
+@media(max-width:680px) { header { align-items: flex-start; padding: 20px; gap: 15px; } header nav { justify-content: flex-end; } .view-bar { padding: 10px 20px; } header p { max-width: 150px; line-height: 1.5; } main { height: calc(100dvh - 230px); } footer { padding: 12px 20px; } }
+</style></head><body>
+<header><div><h1>AURA</h1><p>PRECISION AUDIO / OBJECT STUDIES</p></div><nav aria-label="Product selection"><button data-product="studio" aria-pressed="true">Studio</button><button data-product="headphones" aria-pressed="false">Headphones</button><button data-product="dac" aria-pressed="false">DAC / amp</button><button data-product="stand" aria-pressed="false">Stand</button></nav></header>
+<div class="view-bar"><div class="modes" aria-label="Presentation mode"><button data-mode="render" aria-pressed="true">Studio render</button><button data-mode="interactive" aria-pressed="false">Interactive 3D</button></div><div class="render-tools" aria-label="Render selection"><button data-view="hero" aria-pressed="true">Hero</button><button data-view="detail" aria-pressed="false">Detail</button><button data-view="back" aria-pressed="false">Rear</button><span class="divider"></span><button data-format="glb" aria-pressed="true">GLB</button><button data-format="fbx" aria-pressed="false">FBX</button></div></div>
+<main><canvas aria-label="Interactive 3D model. Drag to rotate and scroll to zoom."></canvas><figure class="render-frame"><img id="render-image" alt="Actual exported AURA studio GLB reimported and rendered in Blender"><figcaption id="render-caption" role="status">Loading actual-file studio render…</figcaption></figure><div class="tools" hidden><button id="rotate">Rotate 45°</button><button id="zoom">Zoom in</button><button id="reset">Reset view</button></div></main>
+<footer><span id="status" role="status">Loading actual exported file…</span><span id="mode-hint">Blender 4.5 LTS · actual-file reimport</span></footer><script type="module" src="/viewer.js"></script></body></html>

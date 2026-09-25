@@ -203,7 +203,7 @@ for (const file of [
 const redirects = await readFile(path.join(outputDirectory, "_redirects"), "utf8").catch(() => "");
 const expectedRedirects = [
   "/async-commit-hook/docs /async-commit-hook/docs/ 301",
-  ...["pptx", "docx", "xlsx", "pdf", "figma", "sfx", "sprite"].flatMap((format) => [
+  ...["pptx", "docx", "xlsx", "pdf", "figma", "sfx", "sprite", "glb", "fbx"].flatMap((format) => [
     `/react-forge/${format} /react-forge/formats/${format}/ 301`,
     `/react-forge/${format}/ /react-forge/formats/${format}/ 301`,
   ]),

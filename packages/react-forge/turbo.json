@@ -40,6 +40,17 @@
         "build"
       ],
       "cache": false
+    },
+    "test:scenes": {
+      "dependsOn": [
+        "build"
+      ],
+      "cache": false,
+      "passThroughEnv": [
+        "REACT_FORGE_BLENDER",
+        "CARGO_HOME",
+        "RUSTUP_HOME"
+      ]
     }
   }
 }

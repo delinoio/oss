@@ -177,6 +177,51 @@ The existing six-host job now runs the MCP tests through the package test comman
 
 The public package consists of the main library and six exact-version native optional packages. Seven external `0.0.1` packages reserved the npm names without runtime code. Local `package:main`, `package:native` and `test:package` check the installed candidate on the current host; PR CI checks installed consumers on each host. The exact-tag workflow combines all six native tarballs and repeats six-host build, installed-consumer and complete-set gates before OIDC publication. The `0.1.0` tag passed all six release hosts and the seven-package assembly on its second attempt, after one Linux x64 MCP fixture readiness timeout. Its publish job then failed before any registry write because the registry lookup callback received the array index as its request argument. The corrected `0.1.1` [release run](https://github.com/delinoio/oss/actions/runs/36048311720) passed all six hosts and published all seven packages. Downloaded candidate tarballs matched npm's SHA-512 integrity for every package; npm metadata reported SLSA provenance and `latest: 0.1.1` for each. See [release contract](packages-react-forge-release-contract.md).
 
+## Static GLB/FBX acceptance (2026-09-25)
+
+The generation-only scene extension was exercised locally on macOS 26.6.2 arm64 with Node 24.17.0, React 19.2.8, Rust 1.94.0-nightly (`8d670b93d`, pinned nightly-2026-01-01), Khronos gltf-validator 2.0.0-dev.3.10, ufbx 0.23.0 (Rust crate 0.11.4), Three.js 0.186.1 and Blender 4.5.14 LTS (`62c1db4208e8`). Blender's official macOS arm64 DMG SHA-256 was verified as `65134d9b07b20e2fa8d3c9e44f6f44ffb5c9774dd521b95f50387310241ca170`. Blender is mounted separately as a test tool; it is never part of a production generation path.
+
+The original AURA headphones, desktop DAC/amplifier, stand and combined studio produce eight product files. Each GLB passed the Khronos validator with zero errors. Each FBX passed independent ufbx parsing with embedded-texture, normal and meter-unit checks. Separate empty-scene Blender imports verified mesh counts, single UV/material bindings, hierarchy, cameras, lights and world bounds, with maximum world-bound error below 0.00001 meters. Unnamed nodes receive different Blender-generated labels across importers; the comparison normalizes only those invented names and checks the authored hierarchy without modifying either imported scene. A separate profile fixture verifies mirrored/nonuniform parent transforms using bidirectional world-vertex comparison, opacity, both camera projections and all three light types. Intermediate mesh/root matrices differ because importers place the axis conversion at different hierarchy levels; this is not a geometry discrepancy.
+
+All eight product files were rendered at 2048×2048 with Cycles, 96 samples, fixed seed, AgX, and identical fixture lighting/exposure on an explicitly selected Metal device. Front, back, oblique and detail views were inspected directly. Front views use an orthographic camera; other views use perspective. Imported meshes and materials were never repaired or replaced. A local loopback Three.js viewer loaded all four actual GLBs; interactive rotation/zoom and console checks passed. Browser build information was unavailable through the browser tool; the viewer's exact library version and screenshots are retained.
+
+Visual work corrected FBX enum flags rejected by Blender's camera reader, the FBX front-axis sign, baked FBX texture factors, rounded-surface UV spacing, headband end caps, the suspension bridge and stand contact height. Test-studio light levels and camera framing were also corrected after reviewing overexposure and background horizon/near-origin artifacts. GLB/FBX pixel differences are observational evidence rather than an automatic visual pass criterion. Closed product surfaces look consistent in the reviewed images; Blender 4.5 ignores FBX culling flags and shades both sides, which remains a documented importer limitation.
+
+Local verification passed root `TMPDIR=/private/tmp cargo test -- --test-threads=1` with **1,927 passed and three pre-existing opt-in tests ignored**, targeted scene/exporter/adapter Clippy with warnings denied, package build/typecheck/lint with **112 tests**, standalone example checks, public main/native candidate assembly and installed six-format CLI smoke, installed-archive six-format MCP inspection/measurement/export, **77 CI contract tests**, workflow validation, and `pnpm test` from `apps/public-docs` (all sixteen React Forge guide routes). Root test preparation followed the existing generic/pnport preload separation above. Earlier root attempts exposed existing path-alias/preload preparation requirements and transient clibox process-fixture failures; the final complete serial run passed. An initial Node 24.11.0 MCP loader issue was avoided by validating with Node 24.17.0; this does not establish compatibility for every Node 24 patch.
+
+The six-host native CI matrix includes the three scene crates, and Linux x64 additionally installs checksum-pinned Blender 4.5.14 and renders the fixtures. **Only macOS arm64 was executed locally for this change. Other host results and the new Linux rendering job have not been observed and are not marked passed.** GLB/FBX remain unreleased, absent from the historical npm 0.1.1 release.
+
+Reproduce after building:
+
+```sh
+REACT_FORGE_BLENDER=/path/to/blender pnpm --filter @delino/react-forge test:scenes --output /tmp/aura
+# Optional macOS acceleration: append --device METAL.
+python packages/react-forge/scripts/compare-scenes.py /tmp/aura
+node packages/react-forge/scripts/scene-viewer.mjs --input /tmp/aura
+```
+
+`test:scenes` writes product/profile exports, Khronos results, ufbx summaries, camera/light/hierarchy checks, and render hashes. Pillow from `render-requirements.txt` produces comparison contact sheets. The compact committed record is `packages/react-forge/tests/evidence/audio-studio-macos-arm64.json`; generated models, full reports, 32 renders and web screenshots are delivered separately. Remove repository-owned `dist` after validation.
+
+### AURA presentation quality revision
+
+The subsequent quality revision preserves the original acceptance record as a historical baseline. It replaces the simplified product geometry with vertically oval machined earcups, displaced leather pads, actual tube stitching, supported adjustment rails and pivot hardware, integral encoder flutes, a closed perforated lid with 36 beveled through-slots, recessed dust screens, differentiated rear connectors and engraved identifiers. Seven deterministic texture sources include 2048px cellular leather and brushed metal maps, a woven liner normal, an OLED display and an original antialiased vector-glyph atlas. No generated image substitutes for an exported mesh, and no external font or art asset is required.
+
+The high-quality verification profile is `test:scenes --output <directory> --device METAL --samples 256 --hero-resolution 4096`. Individual heroes are 4096×4096, the studio hero is 4096×2731, and front/back/detail images are 2048×2048. The regular studio hero keeps a minimum 2048px short edge even without the high-resolution option. Framing fits independently imported bounds with a margin; intentional detail crops are excluded from complete-product framing. Each render records its own dimensions and hash. Key, fill, overhead and edge softboxes are identical for both importers. The web fixture adds only environment lighting, shadows and a floor, keeping imported mesh/material data unchanged.
+
+Procedural geometry regression checks validate finite attributes, outward triangle winding and orthonormal tangent frames, including thin boxes, rounded caps, leather displacement, bent tubes, stitching, fluted grips and perforated metal. Close-up review exposed angular UV stretching on the woven acoustic liner; planar cap UVs and their matching tangent frames correct that issue in the authored geometry before export. Record this revision's executed results separately from the initial engine acceptance; do not re-label historical Rust/platform checks as fresh executions.
+
+The loopback gallery can show the actual imported GLB/FBX hero, rear and detail renders, with explicit format and pixel dimensions, or switch to interactive GLB inspection. Its server accepts only fixed product/render filenames under the selected artifact directory. Missing renders remain an explicit unavailable state. GPU rendering pauses while the gallery image is visible; mode switches retain the selected product.
+
+Final local macOS arm64 acceptance of this revision passed eight product imports and all 32 rendered views using the 256-sample/4K-hero profile above. All four product GLBs have zero Khronos errors and warnings; independent ufbx parsing and the Blender structure/profile checks passed. The largest product world-bound error is below 0.000000017 meters. Direct inspection of the four format-paired contact sheets and full-size material details found no missing textures, broken surfaces or unintended full-product clipping. The largest paired mean absolute RGB difference is 0.09294 on a 0–255 scale; this is observational evidence, not a visual pass threshold. All four final GLBs were rotated and zoomed in the local viewer, and GLB/FBX gallery switching passed with zero fresh console warnings or errors.
+
+The package build/typecheck/lint, **113 package tests** including installed six-format CLI/MCP checks, and standalone example type checks passed after the planar-UV correction. Regenerating all seven source textures with Node 24.17.0 produced identical bytes. The separate committed record is [audio-studio-quality-macos-arm64.json](../packages/react-forge/tests/evidence/audio-studio-quality-macos-arm64.json), containing source, model and image hashes, versions, checks and visual observations. Model/render archives and a labeled before/after presentation comparison are delivered outside the repository. Rust sources and public guides were unchanged in this refinement, so their earlier checks remain historical; other hosts and hosted CI were not executed or marked passed.
+
+### PR #988 render scheduling repair
+
+The first hosted run (`36115873712`) completed native/package checks on Linux x64 but reached the 60-minute job limit during sequential CPU scene rendering. The studio GLB alone took approximately 38 minutes for four views, leaving only five of 32 images complete when the job was cancelled. Preparation now remains in the native job, while four required product jobs consume its validated exports and render both formats independently with 120-minute budgets. Resolution, 96-sample CPU quality, scene geometry/materials and all 32 views remain unchanged. The comparison stage validates the complete requested product set and input/image hashes before producing evidence. The same run’s unrelated DevHud API OCI build failed on a Go module proxy connection reset; no application failure was reported, and the final repair push retries that job without changing its source. New hosted results remain pending.
+
+Local repair verification passed 78 CI contract tests, workflow/actionlint validation, six Python evidence regressions, package build/typecheck/lint with 113 tests, and standalone example checks. Fresh preparation generated and independently inspected all eight models, then a separate Blender 4.5.14 process rendered the stand's GLB/FBX pair at 2048px/96 samples on macOS Metal. All eight images and their contact sheet passed comparison and visual inspection. The new verifier also accepted the complete previous 32-image record without rewriting it. This verifies the preparation-to-render boundary locally; it is not a hosted Linux CPU timing result. Rust and frontend sources were unchanged, and their broader historical checks were not rerun.
+
 ## Sprite extension validation (2026-09-25)
 
 Local validation uses macOS arm64, Node.js 24.20.0 and the repository Rust nightly. Package build, typecheck, lint and standalone examples passed. `pnpm test` passed 110 tests, including seven sprite cases and installed workspace-archive CLI/MCP generation. The affected CI contract, planner and release contract suites passed 37 tests. The existing Forge engine regression selection passed 126 tests with one existing optional renderer test ignored. Native sprite/adapter Clippy passed with warnings denied. The final focused native sprite suite passed eight tests, including the deepest empty layer and a source-image crop wider than the logical canvas limit.
@@ -263,6 +308,121 @@ main/native installed-package smoke test for all five local output formats.
 No production code or public contract changed; native Intel Mac execution of the
 repair remains a CI validation step.
 
+
+## PR #988 merge and review repair (2026-09-25)
+
+Merged `origin/main` at `bcc35d49` without rebasing, preserving both the static
+GLB/FBX extension and the incoming WAV/SFX extension. The combined installation
+suite covers seven local formats, and the public guide inventory contains all
+seventeen routes.
+
+Two actionable review findings were repaired independently: native scene
+measurement events and errors now retain the layout stage, while document
+inspection and generation keep import/export; the app instruction now requires
+validation of the complete seventeen-route inventory. Regression tests cover
+successful and failed GLB/FBX measurements, exports, and failed native inspections
+across all seven formats. The old diagnostic mapping fails these regressions.
+
+The independent macOS x64 CI failure was a cancellation-fixture readiness race:
+a marker file could become visible before its write continuation installed the
+abort listener. Both fixtures now retain cancellation before publishing readiness
+and handle already-aborted signals. The late-return test deliberately continues
+after cancellation has arrived. The old late subscription fails deterministically
+at the disposal marker; the repaired fixture and all twelve MCP tests pass.
+Neither runtime cancellation semantics nor timeout budgets were changed.
+
+Final local macOS arm64 verification of implementation `8b18fce3`, using Node.js
+24.17.0 and the pinned Rust toolchain, passed:
+
+- Root `TMPDIR=/private/tmp cargo test --locked -- --test-threads=1`: **1,933 passed,
+  zero failed, three existing opt-in tests ignored**, after the documented frontend
+  and separate generic/pnport preload preparation.
+- Scene, GLB, FBX, SFX and native-adapter Clippy with warnings denied.
+- Package build/typecheck/lint and **121 tests**, including installed-archive
+  seven-format CLI/MCP coverage, plus standalone example type checks.
+- Public main/native candidate assembly and installed seven-format CLI smoke.
+- **78 CI contract tests**, workflow validation, and **six scene-comparison tests**.
+- `pnpm test` from `apps/public-docs`, including all **17** React Forge routes;
+  the rendered inventory also matches the corrected app validation instruction.
+
+The existing 4K product models and comparison renders remain unchanged; this
+repair does not claim a new visual render or execution on another host. Final
+push CI results are separate evidence. Generated repository-owned `dist`
+directories are removed after verification.
+
+
+## AURA source texture Git LFS migration (2026-09-25)
+
+PR #988 stores all seven AURA source PNGs in Git LFS through the exact
+`packages/react-forge/examples/audio-studio-assets/*.png` attribute pattern.
+Their combined original size is **10,760,286 bytes**; their seven Git pointers
+occupy **916 bytes**. The three source assets above 1 MiB were included, and no
+ordinary blob above 1 MiB remains in the PR-only history relative to `main`.
+
+The migration rewrote fifteen PR commits and preserved the base branch. All
+non-texture trees were compared against the pre-migration commits; only LFS
+pointers and their attribute declarations changed. Across those commits, **94
+texture entries** match their original SHA-256 and sizes, representing **12 unique
+historical LFS objects** (11,588,830 payload bytes). The original commit IDs in
+older acceptance records remain historical evidence; they are not rewritten to
+imply the earlier runs used the new storage layout.
+
+Git LFS 3.7.1 uploaded all twelve objects. A separate sparse checkout with an
+initially empty LFS cache downloaded the seven current textures from GitHub,
+verified their original hashes and sizes, and passed `git lfs fsck`. Using that
+checkout's downloaded textures with the validated local dependency/native build,
+the example generator produced all eight actual GLB/FBX files. All four GLBs had
+zero Khronos Validator errors. This is export and storage verification, not a new
+Blender visual render; texture pixels and prior visual evidence are unchanged.
+
+Local macOS arm64/Node.js 24.17.0 verification also passed package
+build/typecheck/lint with **121 tests**, installed-archive CLI/MCP coverage,
+standalone example type checks, **79 CI contract tests**, and workflow validation.
+Source-consuming CI and release build checkouts now enable LFS, and attribute
+changes select both native/package validation and scene-render jobs. Generated
+repository-owned `dist` directories were removed after these checks.
+
+
+## PR #988 shared LFS policy merge repair (2026-09-25)
+
+Merged `main` at `13391e4a` (PR #990) without rebasing. The resolved attribute file
+retains all thirteen LFS assets, including every AURA texture, using explicit file
+paths under the shared 512 KiB policy. The four smaller AURA companion textures
+remain tracked with their set. Removed a duplicate release-checkout `lfs` key
+introduced by the automatic merge, and extended the shared pointer inventory to
+cover AURA and the GLB/FBX asset extensions. Attribute changes retain the shared
+planner's selection of every event-eligible job.
+
+All thirteen hydrated assets matched the SHA-256 and size in their merged LFS
+pointers, and `git lfs fsck` passed. macOS arm64/Node.js 24.17.0 verification passed
+**81 CI contract tests**, workflow validation, the DevHud R2 tests (including its
+embedded PNG check), package build/typecheck/lint with **121 tests**, installed
+CLI/MCP coverage, and standalone example type checks.
+
+The broader release suite passed 246 of 248 tests on macOS; two Linux packaging
+tests could not run there because `dpkg-deb` and GNU tar were unavailable. Both
+affected suites then passed all four tests in an isolated Linux arm64
+`node:24-bookworm` container (Node.js 24.21.0), using the pinned pnpm 10.26.2 and
+clibox 0.1.6 tools. The repository mount was read-only and the test/tool copies
+were temporary. No source change was needed for those environment limitations.
+Generated repository-owned `dist` directories were removed after validation.
+
+
+## PR #988 scene render ordering repair (2026-09-25)
+
+The final review snapshot identified concurrent explicit scene renders bypassing
+the session operation queue. GLB and FBX renders now enter the same queue as
+snapshots, measurement and buffer exports, preserving independent commits and
+failures before a later recovery. A buffer export queued between two renders
+observes the first render.
+
+Four new regressions failed against the prior implementation: both formats
+coalesced the first render into the second and hid an earlier render failure.
+With the fix, all fifteen scene tests passed. macOS arm64/Node.js 24.17.0 package
+build/typecheck/lint and all **125 tests** passed, including installed-archive
+CLI/MCP coverage; standalone example type checks also passed. This JavaScript
+queue repair changes no native engine, asset bytes or prior visual evidence.
+
 ### Combined sprite/SFX merge validation
 
 PR #989 merges `main` at `bcc35d49`, preserving the SFX extension and dependency-security updates while retaining sprites. Both component subpaths, native dispatch paths, measurement coordinate spaces and export extensions are registered together. Installed CLI/MCP fixtures cover all six local formats, including `.wav` and `.sprite.zip`. The shared signal fixture retains the upstream 2.5-second delayed start for both Unix signals and the 30-second readiness deadline.
@@ -270,3 +430,101 @@ PR #989 merges `main` at `bcc35d49`, preserving the SFX extension and dependency
 After resolving the merge, the macOS arm64 package build, typecheck, lint and standalone examples passed, as did all 115 package tests, all 77 repository CI contract tests, workflow validation and sprite/SFX/adapter Clippy with warnings denied. Historical evidence above remains tied to its recorded source state and format count.
 
 On the merged code at `3e938a14`, public main/native candidate installation passed with six generated local formats. The final prepared root `TMPDIR=/private/tmp cargo test` run passed 1,938 tests with 3 existing opt-in tests ignored. Generated repository-owned `dist` output was removed after validation.
+
+
+## PR #988 sprite integration merge repair (2026-09-25)
+
+Merged `main` at `6debb999` (PR #989) without rebasing. Conflict resolution retains
+both static GLB/FBX engines and the sprite engine in Cargo, the native adapter,
+package subpaths, diagnostic vocabulary, CLI/MCP routing, installed consumers,
+and six-host CI/release checks. Sprite output retains its `.sprite.zip` compound
+extension; GLB/FBX retain their format signatures and world-bound MCP checks.
+All existing feature contracts and historical acceptance records are preserved.
+
+On macOS arm64 with Node.js 24.17.0, package build/typecheck/lint and all **132
+tests** passed, including installed-archive CLI/MCP generation for all eight local
+formats. Standalone example type checks, **81 CI contract tests**, and workflow
+validation also passed. These checks do not claim new visual renders or remote
+platform execution.
+
+
+## PR #988 scene file-export ordering repair (2026-09-25)
+
+File exports reserve both their session position and shared directory position
+at invocation, preserving the preceding operation even if directory reservation
+fails early. This prevents a later render from changing the exported tree or
+revision and preserves file order across sessions while an earlier render is
+still committing.
+
+All **22 scene tests** passed on macOS arm64/Node.js 24.17.0. Four new GLB/FBX
+regressions fail on the prior implementation with both free and occupied output
+directories. Two cross-session regressions also reject the incomplete fix that
+reserves a directory only after reaching the session queue. Two early-reservation
+failure regressions prove that a rejected file export must retain the preceding
+render's queue slot. Existing revision, disposal, cancellation and recovery tests
+remain passing.
+
+
+Final verification of implementation `cd7ac0a6` passed root
+`TMPDIR=/private/tmp cargo test --locked -- --test-threads=1` with **1,944 passed,
+zero failed and three existing opt-in tests ignored**, after the documented
+frontend and separate generic/pnport preload preparation. Scene/exporter,
+sprite/SFX and native-adapter Clippy passed with warnings denied. Package
+build/typecheck/lint and all **139 tests** passed, as did standalone example
+checks and public main/native candidate installation with eight CLI formats.
+The earlier **81 CI contract tests** and workflow validation cover the unchanged
+merged workflow configuration. Only macOS arm64 was run locally; the final push's
+CI results and new visual renders are not claimed. Generated repository-owned
+`dist` directories were removed after verification.
+
+
+## PR #988 schema CI and event-matrix repair (2026-09-25)
+
+Both failing jobs in run `36133345298` (DevHud Protocol and Client, and
+async-commit-hook contracts/integration) failed when Buf cloned a pointer-only
+local baseline and tried to smudge an unavailable, unrelated LFS font. The
+breaking-check command now scopes the LFS smudge skip to Buf. A real Buf/Git LFS
+fixture reproduces the old clone failure and verifies compatible schemas,
+breaking-field rejection, and the existing absent-baseline behavior. A temporary
+pointer-only clone of the full repository passed `proto:check`, Go binding tests,
+and client lint/build with **37 tests**, without fetching LFS payloads.
+
+The final status snapshot also discovered newly merged `main` commit `a00774d0`
+(PR #986). The merge retains the event-specific CI matrix: ordinary affected
+Windows/Linux validation, all six hosts in manual CI and release gates, and the
+shared host script. Scene/GLB/FBX tests and Clippy run through that script; Linux
+scene preparation and all four product render shards remain required. Both scene
+jobs share the narrowed source paths, so documentation-only changes do not start
+the native matrix or an orphaned render job. The protocol smudge fix independently
+arrived on `main` too; the merge retains its behavior and the new regression.
+
+Local macOS arm64/Node.js 24.17.0 merge validation passed **92 CI contract tests**,
+workflow and shell syntax validation, **22 affected release-contract tests**,
+React Forge build/typecheck/lint with **139 tests** and standalone example checks,
+and the full DevHud app `pnpm test` plus frontend build. The imported schedule
+coordinator lifecycle regression passed three consecutive runs. This evidence
+does not claim new renders or hosted results after the repair push.
+
+
+The final merged root `TMPDIR=/private/tmp cargo test --locked --
+--test-threads=1` run passed **1,944 tests**, with zero failures and three existing
+opt-in tests ignored. Clibox, the scene/exporter/sprite/SFX engines and the native
+adapter passed Clippy with warnings denied; repository formatting also passed.
+The root test used the documented frontend and separate generic/pnport preload
+preparation. Generated repository-owned `dist` directories were removed, and
+`git lfs fsck` passed before the single repair push.
+
+
+## PR #988 public-guide merge repair (2026-09-25)
+
+Merged `main` at `6b8b6cfe` (PR #991) without rebasing. The grouped navigation and
+Sprite preview remain intact, and GLB/FBX join the format-directory layout. All
+eighteen guides are retained, with permanent redirects for both spellings of
+each of the nine former format routes. The package README and internal route
+contracts use the new canonical GLB/FBX links. Rendered validation checks the
+unreleased npm `0.1.1` notices for all four preview formats.
+
+On macOS arm64/Node.js 24.17.0, `pnpm test` from `apps/public-docs` passed the
+**25 site-selector tests**, full Rspress build, both rendered-document validators,
+and **15 validator regressions**. This documentation-only merge changes no
+native engine, model, texture, or previously recorded rendering evidence.

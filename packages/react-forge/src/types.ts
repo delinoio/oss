@@ -8,6 +8,8 @@ export enum Format {
   Sprite = "sprite",
   Wav = "wav",
   Figma = "figma",
+  Glb = "glb",
+  Fbx = "fbx",
 }
 
 export enum ErrorCode {
@@ -102,6 +104,8 @@ export type AssetSource = Uint8Array | { path: string };
 export interface AssetHandle { readonly assetId: string; readonly documentId: string }
 
 export const limits = Object.freeze({
+  sceneBytes: 256 * 1024 * 1024,
+  geometryBytes: 64 * 1024 * 1024,
   sfxSeconds: 30,
   sfxLayers: 256,
   sfxVoiceSamples: 16_000_000,

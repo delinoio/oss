@@ -9,3 +9,6 @@ export type { TaskContext as McpTaskContext, SessionTask as McpSessionTask } fro
 export { FigmaSession, openFigma, PublishStatus, FigmaPublishError } from "./figma/session.js";
 export { CredentialSource } from "./figma/credentials.js";
 export type { FigmaOptions, FigmaReceipt, FigmaTarget } from "./figma/session.js";
+
+export { SceneSession } from "./scene/session.js";
+export type { SceneGeometry } from "./scene/session.js";

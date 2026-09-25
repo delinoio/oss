@@ -1,0 +1,15 @@
+[package]
+name = "forge-scene"
+version = "0.0.0"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+forge-tree-doc = { path = "../forge-tree-doc" }
+forge-document = { path = "../forge-document" }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+uuid = { version = "1.23.0", features = ["v7", "serde"] }
+glam = "=0.30.10"
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg"] }

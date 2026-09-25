@@ -58,3 +58,7 @@ For Figma, `react_forge_refresh` reads selected pages, nodes, or resources; `rea
 Sessions exist only in the server process. Disconnect, shutdown, or worker loss ends them; restart does not replay or restore work. Closing and disposal cancel owned work, but a callback that ignores cancellation or blocks synchronously cannot be forcibly interrupted per tool call. Task output is suppressed to protect protocol stdout and avoid logging document content; use structured results and safe diagnostics for troubleshooting. Caller code runs with normal permissions and is not sandboxed.
 
 The unreleased [SFX extension](/react-forge/formats/sfx/) uses the same execute, inspect, measure, export and close sequence with `Format.Wav` and `.wav` output; timeline measurements use seconds. The unreleased [Sprite extension](/react-forge/formats/sprite/) uses that sequence with `Format.Sprite` and `.sprite.zip` output; measurements use logical frame pixels. Both are absent from npm `0.1.1`.
+
+## Unreleased static 3D extension
+
+[GLB](/react-forge/formats/glb/) and [FBX](/react-forge/formats/fbx/) creation are documented as an unreleased extension, absent from npm 0.1.1. They use SceneSession with registered geometry/textures, explicit file export, and revision-bound world-space bounds. Existing-file editing, animation and rigging are excluded. The FBX material profile targets Blender 4.5; local verification does not establish results on other hosts or FBX applications.
