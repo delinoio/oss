@@ -31,6 +31,9 @@ export interface ResourceScope {
 }
 export interface SynchronizationOptions {
   signal: AbortSignal;
+  // Additional indexed kinds share the primary snapshot's event cursor. Their
+  // initial lists remain explicit paginated reads, never snapshot contents.
+  watchKinds?: readonly EntityKind[];
   // This is a bounded live scope, not an unbounded transcript archive. Larger
   // histories use explicit paginated reads and indexed per-message events.
   maxResources?: number;
@@ -88,6 +91,8 @@ export async function* synchronizeResources(
   options: SynchronizationOptions,
 ): AsyncGenerator<SyncUpdate> {
   const scope = { ...requestedScope };
+  const watchKinds = new Set([scope.kind, ...(options.watchKinds ?? [])]);
+  if ([...watchKinds].some((kind) => !knownKinds.has(kind))) throw new ConnectError("Select supported indexed resource kinds.", Code.InvalidArgument);
   if (!knownKinds.has(scope.kind)) throw new ConnectError("Select a resource kind.", Code.InvalidArgument);
   if (scope.sessionId) requireEntityId(scope.sessionId);
   if (scope.projectId) requireEntityId(scope.projectId);
@@ -157,7 +162,7 @@ export async function* synchronizeResources(
           }
           // An old duplicate must not rewind the opaque committed cursor.
           if (seen.has(event.id)) continue;
-          if (event.kind !== scope.kind) { remember(event); continue; }
+          if (!watchKinds.has(event.kind)) { remember(event); continue; }
           if ((revisions.get(event.entityId) ?? 0n) >= event.revision && event.action !== EventAction.DELETED) {
             remember(event); continue;
           }
@@ -168,7 +173,7 @@ export async function* synchronizeResources(
           } else {
             let resource: Resource | undefined;
             try {
-              const response = await client.getResource({ kind: scope.kind, id: event.entityId }, requestOptions);
+              const response = await client.getResource({ kind: event.kind, id: event.entityId }, requestOptions);
               resource = response.resource;
               if (!resource) invalid();
             } catch (reason) {
@@ -178,7 +183,7 @@ export async function* synchronizeResources(
             }
             if (signal.aborted) return;
             if (resource) {
-              validateResource(resource, scope.kind);
+              validateResource(resource, event.kind);
               if (resource.id !== event.entityId || resource.revision < event.revision) invalid();
             }
             if (resource && matches(resource, scope)) {

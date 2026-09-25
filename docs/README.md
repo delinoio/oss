@@ -44,6 +44,7 @@ Each project must have one project index document and one or more domain contrac
 - [CLI/server/Worker contract](cmds-delidev-contract.md)
 - [Connect protocol](protos-delidev-v1-contract.md)
 - [TypeScript client and synchronization](packages-delidev-api-client-contract.md)
+- [Desktop client](apps-delidev-desktop-contract.md)
 - [Worker workspace preparation](cmds-delidev-workspace-contract.md)
 - [Owned process contract](cmds-delidev-process-contract.md)
 - [Native harness adapter contract](cmds-delidev-harness-contract.md)

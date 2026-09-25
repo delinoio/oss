@@ -148,3 +148,26 @@ it.each(["foreign", "old", "oversized"])("refuses %s indexed content before publ
   expect(updates.some((v) => v.kind === SyncKind.Upsert)).toBe(false);
   expect(updates.at(-1)).toMatchObject({ kind: SyncKind.Connection, state: ConnectionState.Failed });
 });
+
+it("uses one session snapshot cursor for explicitly selected indexed message and queue updates", async () => {
+  const session = { ...resource(), kind: EntityKind.SESSION };
+  session.sessionId = session.id;
+  const message = { ...resource(), sessionId: session.id };
+  const queue = { ...resource(), kind: EntityKind.QUEUE, sessionId: session.id };
+  const unrelated = { ...resource(), kind: EntityKind.JOB, sessionId: session.id };
+  const controls = new AbortController();
+  const snapshots = vi.fn(() => ({ resources: [session], cursor: "coherent" }));
+  const reads = vi.fn((request: GetResourceRequest) => ({ resource: request.id === message.id ? message : queue }));
+  const client = createClient(ResourceService, createRouterTransport((router) => router.service(ResourceService, {
+    getSnapshot: snapshots, getResource: reads,
+    async *watchEvents() { yield event(unrelated); yield event(message); yield event(queue); },
+  })));
+  const updates: SyncUpdate[] = [];
+  for await (const value of synchronizeResources(client, { kind: EntityKind.SESSION, sessionId: session.id }, { signal: controls.signal, watchKinds: [EntityKind.MESSAGE, EntityKind.QUEUE] })) {
+    updates.push(value);
+    if (value.kind === SyncKind.Upsert && value.resource.id === queue.id) controls.abort();
+  }
+  expect(updates.filter((u) => u.kind === SyncKind.Snapshot)).toEqual([{ kind: SyncKind.Snapshot, resources: [session] }]);
+  expect(reads.mock.calls.map(([request]) => [request.kind, request.id])).toEqual([[EntityKind.MESSAGE, message.id], [EntityKind.QUEUE, queue.id]]);
+  expect(snapshots).toHaveBeenCalledTimes(1);
+});

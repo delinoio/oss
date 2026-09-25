@@ -22,6 +22,10 @@
 - `apps/devhud-chrome-extension`: implemented deterministic bilingual Chrome Manifest V3 DevHud context-picker extension.
 - `apps/devhud-admin`: implemented React/TypeScript Rsbuild administrator SPA embedded at `/admin`; it is the sole producer and validator of the ignored production administrator `dist`.
 
+### DeliDev Rules
+
+- `apps/delidev` owns DeliDev desktop presentation. Follow `docs/apps-delidev-desktop-contract.md` and scoped AGENTS. Keep direct Connect business flows, bounded in-memory connection state and exact mutation retries; frontend development uses fixed loopback port 46311. Component validation is separate from native desktop acceptance.
+
 ### DevHud Rules
 
 - Native widget search items must provide exact string `node_id`, string `title`, string `repository_url`, and integer `number` fields; malformed fields retain the last successful snapshot under the general error state. Android widget enablement cleans stale Deck state before reporting an absent selected PAT or scope marker as `not-configured`, and an unreadable authoritative PAT must durably remove or block the copied widget credential before returning; cleanup, persistence, Keystore, and ciphertext failures remain storage failures.

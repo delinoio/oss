@@ -410,8 +410,10 @@
     "paths": [
       ".npmrc",
       ".nvmrc",
+      "apps/delidev/**",
       "buf.gen.yaml",
       "buf.yaml",
+      "cmds/delidev-cli/**",
       "go.mod",
       "go.sum",
       "package.json",
@@ -420,8 +422,7 @@
       "pnpm-workspace.yaml",
       "protos/**",
       "scripts/check-proto-breaking.sh",
-      "turbo.json",
-      "cmds/delidev-cli/**"
+      "turbo.json"
     ]
   },
   "devhud-admin": {

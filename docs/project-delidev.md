@@ -11,13 +11,14 @@ Run personal AI sessions across projects, accounts, native harnesses, and execut
 - `protos/delidev/v1`: versioned Connect RPC schemas.
 - `protos/gen/go/delidev/v1`: generated Go messages and Connect bindings.
 - `packages/delidev-api-client`: generated TypeScript/Connect Query client, explicit transport and bounded read-only synchronization for the desktop client.
-- Desktop native presentation remains an unimplemented app component. On 2026-09-25 the owner explicitly expanded the active request to all of issue #964, including the desktop app; CLI-only acceptance is no longer the completion boundary.
+- `apps/delidev`: implemented React presentation for retained sessions, search, activity, inbox and read-only settings; native startup and the remaining desktop surfaces are in progress. On 2026-09-25 the owner explicitly expanded the active request to all of issue #964, including the desktop app; CLI-only acceptance is no longer the completion boundary.
 
 ## Domain Contract Documents
 - [CLI/server/Worker contract](cmds-delidev-contract.md)
 - [Complete issue #964 requirements](cmds-delidev-requirements.md)
 - [Protocol contract](protos-delidev-v1-contract.md)
 - [TypeScript client contract](packages-delidev-api-client-contract.md)
+- [Desktop client contract](apps-delidev-desktop-contract.md)
 - [Worker workspace contract](cmds-delidev-workspace-contract.md)
 - [Owned process contract](cmds-delidev-process-contract.md)
 - [Native harness adapter contract](cmds-delidev-harness-contract.md)
