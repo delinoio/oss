@@ -119,6 +119,26 @@ impl SavedConnection {
     }
 }
 impl Connector {
+    pub(crate) fn check_saved_profile(&self, expected: &SavedConnection) -> Result<()> {
+        expected.validate()?;
+        if expected.state != SavedConnectionState::Paired {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+        let current = Self::saved_result(
+            self.run(&[
+                "connection".into(),
+                "inspect".into(),
+                "--id".into(),
+                expected.id.as_str().into(),
+            ])?,
+            &expected.id,
+        )?;
+        if current != *expected {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+        Ok(())
+    }
+
     pub fn saved_connections(&self) -> Result<Vec<SavedConnection>> {
         let _guard = self.gate.try_lock().map_err(|_| NativeFailure::Busy)?;
         let values: Inventory =

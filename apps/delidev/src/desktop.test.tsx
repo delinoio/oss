@@ -4,6 +4,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { SessionService, SystemService, newRequestId } from "@delinoio/delidev-api-client";
 import { Desktop } from "./desktop";
 import { SavedConnectionState, type SavedConnection } from "./saved-connections";
+import { LocalWorkerAction, LocalWorkerState } from "./local-worker-controls";
 
 const bridge = vi.hoisted(() => ({ invoke: vi.fn(), createTransport: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => true, invoke: bridge.invoke }));
@@ -50,4 +51,29 @@ it("rejects a different native server before creating a renderer transport", asy
   expect(bridge.createTransport).not.toHaveBeenCalled();
   expect(value.status).not.toHaveBeenCalled();
   expect(screen.queryByText("Your sessions, in one place")).toBeNull();
+});
+
+it("registers and inspects this computer through only the saved window's fixed Worker boundary", async () => {
+  savedFixture();
+  const original = bridge.invoke.getMockImplementation()!;
+  const machine = newRequestId();
+  let registered = false;
+  bridge.invoke.mockImplementation(async (command: string, args?: { action: LocalWorkerAction }) => {
+    if (command !== "saved_worker_control") return original(command, args);
+    if (args?.action === LocalWorkerAction.Register) registered = true;
+    if (!registered) throw "credential-unavailable";
+    return { state: LocalWorkerState.NotStarted, machine_id: machine, controller_active: false };
+  });
+  render(<Desktop />);
+  await screen.findByText("Your sessions, in one place");
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Execution Workers" }));
+  await screen.findByText(/local Worker could not be inspected/);
+  fireEvent.click(screen.getByRole("button", { name: "Register this computer" }));
+  await screen.findByText(`Execution machine: ${machine}`);
+  await waitFor(() => expect((screen.getByRole("button", { name: "Start local Worker" }) as HTMLButtonElement).disabled).toBe(false));
+  const calls = bridge.invoke.mock.calls.filter(([command]) => command === "saved_worker_control");
+  expect(calls.filter(([, args]) => args.action === LocalWorkerAction.Register)).toHaveLength(1);
+  expect(calls.every(([, args]) => Object.keys(args).every((key) => ["action", "generation"].includes(key)))).toBe(true);
+  expect(bridge.invoke.mock.calls.some(([command]) => ["local_worker_control", "local_worker_proof", "connect_local"].includes(command))).toBe(false);
 });

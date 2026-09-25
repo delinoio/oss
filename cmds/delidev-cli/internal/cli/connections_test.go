@@ -75,12 +75,25 @@ func TestCLIConnectionCommandsPreservePrivatePairingAndRequireExplicitScope(t *t
 			t.Fatal("secret escaped connection output")
 		}
 	}
+	if code, _ := cliRun(t, root, []string{"connection", "worker-status", "--id", id}, ""); code == 0 {
+		t.Fatal("unregistered Worker reported status")
+	}
+	for _, action := range []string{"worker-register", "worker-inspect", "worker-status", "worker-register"} {
+		code, output := cliRun(t, root, []string{"connection", action, "--id", id}, "")
+		if code != 0 {
+			t.Fatal(output)
+		}
+		encoded, _ := json.Marshal(output)
+		if strings.Contains(string(encoded), grant.Code) || strings.Contains(string(encoded), `"token"`) || strings.Contains(string(encoded), `"code"`) {
+			t.Fatal("Worker credential escaped connection output")
+		}
+	}
 	for _, args := range [][]string{{"--server", grant.Endpoint, "connection", "list"}, {"--token-stdin", "connection", "verify", "--id", id}, {"connection", "pair", "--id", id, "--name", "replacement"}} {
 		if code, output := cliRun(t, root, args, ""); code != 2 {
 			t.Fatal("invalid connection authority/input accepted", output)
 		}
 	}
-	for _, name := range []string{"owner.json", "server.json", "state.sqlite"} {
+	for _, name := range []string{"owner.json", "server.json", "state.sqlite", "worker"} {
 		if _, err := os.Stat(filepath.Join(root, name)); !os.IsNotExist(err) {
 			t.Fatal("client profile created server authority")
 		}

@@ -28,6 +28,10 @@ func connectionCommand(ctx context.Context, o options, args []string, streams IO
 	id := fs.String("id", "", "saved connection UUID-v7")
 	var name *string
 	var input *bool
+	var generation *string
+	if args[0] == "worker-stop" {
+		generation = fs.String("generation", "", "original Worker lifecycle generation")
+	}
 	if args[0] == "pair" {
 		name = fs.String("name", "", "connection display name")
 		input = fs.Bool("code-stdin", false, "read the original private pairing document from stdin")
@@ -41,6 +45,33 @@ func connectionCommand(ctx context.Context, o options, args []string, streams IO
 	var value any
 	var err error
 	switch args[0] {
+	case "worker-register":
+		credential, registerErr := connections.RegisterWorker(ctx, o.dataDir, domain.ID(*id))
+		err = registerErr
+		if err == nil {
+			value = credentialMetadata(credential)
+		}
+	case "worker-inspect", "worker-status", "worker-start", "worker-stop":
+		credential, credentialErr := connections.WorkerCredential(o.dataDir, domain.ID(*id))
+		if credentialErr != nil {
+			err = credentialErr
+			break
+		}
+		root, rootErr := connections.WorkerRoot(o.dataDir, domain.ID(*id))
+		if rootErr != nil {
+			err = rootErr
+			break
+		}
+		switch args[0] {
+		case "worker-inspect":
+			value = credentialMetadata(credential)
+		case "worker-status":
+			value, err = worker.Status(root)
+		case "worker-start":
+			value, err = startDetachedWorker(ctx, o, root)
+		case "worker-stop":
+			value, err = stopLocalWorker(ctx, root, domain.ID(*generation))
+		}
 	case "inspect":
 		value, err = connections.Inspect(o.dataDir, domain.ID(*id))
 	case "verify":

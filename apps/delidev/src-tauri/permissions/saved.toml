@@ -5,5 +5,5 @@ commands.allow = ["connection_context", "saved_connections", "pair_connection", 
 
 [[permission]]
 identifier = "saved-use"
-description = "A trusted saved-server window can load only its original native pinned client authority and show the main window."
-commands.allow = ["connection_context", "connect_saved", "show_connection_manager"]
+description = "A trusted saved-server window can load its pinned client authority, manage only its profile's Worker on this computer, read that Worker's proof and show the main window."
+commands.allow = ["connection_context", "connect_saved", "saved_worker_proof", "saved_worker_control", "show_connection_manager"]

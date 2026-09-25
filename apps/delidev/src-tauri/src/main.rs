@@ -211,6 +211,47 @@ async fn connect_saved(
     }
     Ok(result)
 }
+#[tauri::command]
+async fn saved_worker_proof(
+    window: WebviewWindow<Wry>,
+    connector: tauri::State<'_, Arc<Connector>>,
+    windows: tauri::State<'_, Arc<SavedWindows>>,
+) -> Result<LocalWorkerProof, NativeFailure> {
+    let binding = saved_binding(&window, &windows)?;
+    let connector = Arc::clone(connector.inner());
+    let expected = binding.profile.clone();
+    let proof =
+        tauri::async_runtime::spawn_blocking(move || connector.saved_worker_proof(&expected))
+            .await
+            .map_err(|_| NativeFailure::SidecarFailed)??;
+    let current = saved_binding(&window, &windows)?;
+    if current.instance != binding.instance || current.profile != binding.profile {
+        return Err(NativeFailure::InvalidEvidence);
+    }
+    Ok(proof)
+}
+#[tauri::command]
+async fn saved_worker_control(
+    window: WebviewWindow<Wry>,
+    connector: tauri::State<'_, Arc<Connector>>,
+    windows: tauri::State<'_, Arc<SavedWindows>>,
+    action: LocalWorkerAction,
+    generation: Option<String>,
+) -> Result<LocalWorkerStatus, NativeFailure> {
+    let binding = saved_binding(&window, &windows)?;
+    let connector = Arc::clone(connector.inner());
+    let expected = binding.profile.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        connector.saved_worker(&expected, action, generation.as_deref())
+    })
+    .await
+    .map_err(|_| NativeFailure::SidecarFailed)??;
+    let current = saved_binding(&window, &windows)?;
+    if current.instance != binding.instance || current.profile != binding.profile {
+        return Err(NativeFailure::InvalidEvidence);
+    }
+    Ok(result)
+}
 fn show(window: &WebviewWindow<Wry>) -> Result<(), NativeFailure> {
     window
         .unminimize()
@@ -394,6 +435,8 @@ fn run() -> Result<(), NativeFailure> {
             retry_connection,
             open_connection,
             connect_saved,
+            saved_worker_proof,
+            saved_worker_control,
             show_connection_manager
         ])
         .setup(|app| {

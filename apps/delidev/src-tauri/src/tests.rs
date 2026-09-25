@@ -410,6 +410,81 @@ fn real_saved_connection_keeps_owner_local_and_remote_authority_separate() {
     for name in ["owner.json", "server.json", "state.sqlite", "worker"] {
         assert!(!client_root.join(name).exists());
     }
+    assert!(client.saved_worker_proof(&paired).is_err());
+    assert!(
+        client
+            .saved_worker(&paired, LocalWorkerAction::Status, None)
+            .is_err()
+    );
+    let registered = client
+        .saved_worker(&paired, LocalWorkerAction::Register, None)
+        .unwrap();
+    assert_eq!(registered.state, LocalWorkerState::NotStarted);
+    assert_eq!(
+        client
+            .saved_worker(&paired, LocalWorkerAction::Register, None)
+            .unwrap()
+            .machine_id,
+        registered.machine_id
+    );
+    let proof = client.saved_worker_proof(&paired).unwrap();
+    assert_eq!(proof.machine_id, registered.machine_id);
+    assert_eq!(proof.server_id, paired.server_id);
+    assert_eq!(proof.endpoint, paired.endpoint);
+    assert_ne!(proof.token, connected.token);
+    assert_ne!(proof.token, local.token);
+    assert!(client.saved_worker_proof(&foreign).is_err());
+    assert!(
+        client
+            .saved_worker(&foreign, LocalWorkerAction::Start, None)
+            .is_err()
+    );
+    let started = client
+        .saved_worker(&paired, LocalWorkerAction::Start, None)
+        .unwrap();
+    let generation = started.generation.as_deref().unwrap();
+    struct StopWorker<'a>(&'a Connector, &'a SavedConnection, &'a str);
+    impl Drop for StopWorker<'_> {
+        fn drop(&mut self) {
+            let _ = self
+                .0
+                .saved_worker(self.1, LocalWorkerAction::Stop, Some(self.2));
+        }
+    }
+    let _stop_worker = StopWorker(&client, &paired, generation);
+    assert_eq!(started.state, LocalWorkerState::Running);
+    assert!(
+        client
+            .saved_worker(
+                &paired,
+                LocalWorkerAction::Stop,
+                Some(&uuid::Uuid::now_v7().to_string())
+            )
+            .is_err()
+    );
+    assert_eq!(
+        client
+            .saved_worker(&paired, LocalWorkerAction::Status, None)
+            .unwrap()
+            .generation,
+        started.generation
+    );
+    let observer = Connector::new(client.executable.clone(), client.root.clone()).unwrap();
+    assert_eq!(
+        observer
+            .saved_worker(&paired, LocalWorkerAction::Status, None)
+            .unwrap()
+            .generation,
+        started.generation
+    );
+    drop(observer);
+    let stopped = client
+        .saved_worker(&paired, LocalWorkerAction::Stop, Some(generation))
+        .unwrap();
+    assert_eq!(stopped.state, LocalWorkerState::Exited);
+    assert!(!stopped.controller_active);
+    assert!(!client_root.join("worker").exists());
+    drop(_stop_worker);
     server
         .run(&[
             "device".into(),

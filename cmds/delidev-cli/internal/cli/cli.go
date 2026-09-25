@@ -684,6 +684,8 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   server ensure [--listen IP:PORT] [--allowed-origins ORIGIN,ORIGIN]
   doctor
   connection list
+  connection worker-register|worker-inspect|worker-status|worker-start --id UUID
+  connection worker-stop --id UUID --generation UUID
   connection pair --id UUID --name NAME --code-stdin
   connection inspect|verify|retry --id UUID
   device create-pairing --type worker|client --name NAME

@@ -12,6 +12,8 @@ fn main() {
             "retry_connection",
             "open_connection",
             "connect_saved",
+            "saved_worker_proof",
+            "saved_worker_control",
             "show_connection_manager",
         ]),
     ))

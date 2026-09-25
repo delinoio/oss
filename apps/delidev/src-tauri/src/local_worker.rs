@@ -65,19 +65,7 @@ impl Connector {
         action: LocalWorkerAction,
         generation: Option<&str>,
     ) -> Result<LocalWorkerStatus> {
-        match (action, generation) {
-            (LocalWorkerAction::Stop, Some(id)) => {
-                let parsed =
-                    uuid::Uuid::parse_str(id).map_err(|_| NativeFailure::InvalidEvidence)?;
-                if parsed.get_version_num() != 7 || parsed.to_string() != id {
-                    return Err(NativeFailure::InvalidEvidence);
-                }
-            }
-            (LocalWorkerAction::Stop, None) | (_, Some(_)) => {
-                return Err(NativeFailure::InvalidEvidence);
-            }
-            _ => {}
-        }
+        validate_action(action, generation)?;
         let client: DeviceMetadata = serde_json::from_value(self.run(&[
             "device".into(),
             "inspect".into(),
@@ -114,34 +102,147 @@ impl Connector {
             }
             LocalWorkerAction::Status | LocalWorkerAction::Register => {}
         }
-        let status: RuntimeStatus =
-            serde_json::from_value(self.run(&["worker".into(), "status".into()])?)
-                .map_err(|_| NativeFailure::InvalidEvidence)?;
-        let generation = if status.lifecycle.version == 0 {
-            if status.state != LocalWorkerState::NotStarted || status.controller_active {
-                return Err(NativeFailure::InvalidEvidence);
-            }
-            None
-        } else {
-            let value = &status.lifecycle;
-            let parsed = uuid::Uuid::parse_str(&value.generation)
-                .map_err(|_| NativeFailure::InvalidEvidence)?;
-            if value.version != 1
-                || parsed.get_version_num() != 7
-                || parsed.to_string() != value.generation
-                || value.server_id != proof.server_id
-                || value.endpoint != proof.endpoint
-                || value.machine_id != proof.machine_id
-            {
-                return Err(NativeFailure::InvalidEvidence);
-            }
-            Some(value.generation.clone())
-        };
-        Ok(LocalWorkerStatus {
-            state: status.state,
-            machine_id: proof.machine_id.clone(),
-            generation,
-            controller_active: status.controller_active,
+        worker_status(self.run(&["worker".into(), "status".into()])?, &proof)
+    }
+
+    pub fn saved_worker_proof(&self, expected: &SavedConnection) -> Result<LocalWorkerProof> {
+        let _guard = self.gate.try_lock().map_err(|_| NativeFailure::Busy)?;
+        self.saved_worker_proof_inner(expected)
+    }
+
+    fn saved_worker_proof_inner(&self, expected: &SavedConnection) -> Result<LocalWorkerProof> {
+        self.check_saved_profile(expected)?;
+        let metadata: DeviceMetadata = serde_json::from_value(self.run(&[
+            "connection".into(),
+            "worker-inspect".into(),
+            "--id".into(),
+            expected.id.as_str().into(),
+        ])?)
+        .map_err(|_| NativeFailure::InvalidEvidence)?;
+        if metadata.kind != DeviceType::Worker
+            || metadata.endpoint != expected.endpoint
+            || metadata.server_id != expected.server_id
+        {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+        let path = self
+            .root
+            .join("connections")
+            .join(&expected.id)
+            .join("worker/device.json");
+        let file = fs::symlink_metadata(&path).map_err(|_| NativeFailure::CredentialUnavailable)?;
+        if !file.is_file() || file.len() > 16 << 10 {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+        let bytes = Zeroizing::new(read_bounded(
+            File::open(path).map_err(|_| NativeFailure::CredentialUnavailable)?,
+            16 << 10,
+        )?);
+        let verified = validated_connection(&bytes, &metadata, DeviceType::Worker, true)?;
+        self.check_saved_profile(expected)?;
+        Ok(LocalWorkerProof {
+            endpoint: verified.endpoint.clone(),
+            server_id: verified.server_id.clone(),
+            machine_id: metadata.machine_id,
+            token: verified.token.clone(),
         })
     }
+
+    pub fn saved_worker(
+        &self,
+        expected: &SavedConnection,
+        action: LocalWorkerAction,
+        generation: Option<&str>,
+    ) -> Result<LocalWorkerStatus> {
+        let _guard = self.gate.try_lock().map_err(|_| NativeFailure::Busy)?;
+        validate_action(action, generation)?;
+        self.check_saved_profile(expected)?;
+        tracing::info!(operation = "saved_worker", ?action, phase = "start");
+        let result = (|| {
+            let command = match action {
+                LocalWorkerAction::Register => "worker-register",
+                LocalWorkerAction::Start => "worker-start",
+                LocalWorkerAction::Stop => "worker-stop",
+                LocalWorkerAction::Status => "worker-status",
+            };
+            let mut args = vec![
+                "connection".into(),
+                command.into(),
+                "--id".into(),
+                expected.id.as_str().into(),
+            ];
+            if let Some(id) = generation {
+                args.extend(["--generation".into(), id.into()]);
+            }
+            let observed = self.run(&args)?;
+            let proof = self.saved_worker_proof_inner(expected)?;
+            let status = if matches!(action, LocalWorkerAction::Register) {
+                self.run(&[
+                    "connection".into(),
+                    "worker-status".into(),
+                    "--id".into(),
+                    expected.id.as_str().into(),
+                ])?
+            } else {
+                observed
+            };
+            worker_status(status, &proof)
+        })();
+        match &result {
+            Ok(status) => {
+                tracing::info!(operation = "saved_worker", ?action, phase = "observed", state = ?status.state)
+            }
+            Err(code) => {
+                tracing::warn!(operation = "saved_worker", ?action, phase = "failed", ?code)
+            }
+        }
+        result
+    }
+}
+
+fn validate_action(action: LocalWorkerAction, generation: Option<&str>) -> Result<()> {
+    match (action, generation) {
+        (LocalWorkerAction::Stop, Some(id)) => {
+            let parsed = uuid::Uuid::parse_str(id).map_err(|_| NativeFailure::InvalidEvidence)?;
+            if parsed.get_version_num() != 7 || parsed.to_string() != id {
+                return Err(NativeFailure::InvalidEvidence);
+            }
+        }
+        (LocalWorkerAction::Stop, None) | (_, Some(_)) => {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn worker_status(value: serde_json::Value, proof: &LocalWorkerProof) -> Result<LocalWorkerStatus> {
+    let status: RuntimeStatus =
+        serde_json::from_value(value).map_err(|_| NativeFailure::InvalidEvidence)?;
+    let generation = if status.lifecycle.version == 0 {
+        if status.state != LocalWorkerState::NotStarted || status.controller_active {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+        None
+    } else {
+        let value = &status.lifecycle;
+        let parsed =
+            uuid::Uuid::parse_str(&value.generation).map_err(|_| NativeFailure::InvalidEvidence)?;
+        if value.version != 1
+            || parsed.get_version_num() != 7
+            || parsed.to_string() != value.generation
+            || value.server_id != proof.server_id
+            || value.endpoint != proof.endpoint
+            || value.machine_id != proof.machine_id
+        {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+        Some(value.generation.clone())
+    };
+    Ok(LocalWorkerStatus {
+        state: status.state,
+        machine_id: proof.machine_id.clone(),
+        generation,
+        controller_active: status.controller_active,
+    })
 }

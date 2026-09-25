@@ -98,8 +98,20 @@ function SavedDesktop({ profile }: { profile: SavedConnection }) {
   // Opening this native window is the explicit selection. Reconnecting verifies
   // its same saved identity; it never retries pairing or starts the server.
   useEffect(() => { void connect(); }, []);
+  const readLocalWorker = async () => {
+    const selected = previous.current;
+    const proof = await invoke<{ endpoint: string; server_id: string; machine_id: string; token: string }>("saved_worker_proof");
+    if (!selected || previous.current !== selected || proof.endpoint !== selected.endpoint || proof.server_id !== selected.server_id) throw new Error("Saved Worker authority changed");
+    return { machineId: proof.machine_id, token: proof.token };
+  };
+  const controlLocalWorker: ControlLocalWorker = async (action, generation) => {
+    const selected = previous.current;
+    const value = await invoke<LocalWorkerStatus>("saved_worker_control", { action, generation });
+    if (!selected || previous.current !== selected) throw new Error("Saved Worker connection changed");
+    return value;
+  };
   const controls = <><p>{profile.name}</p><small>{profile.endpoint}</small><button disabled={busy} onClick={() => void connect()}>Verify saved connection</button><button onClick={() => void invoke("show_connection_manager").catch(setError)}>Show local window</button><SavedConnectionProblem error={error} /></>;
-  return transport ? <App transport={transport} currentDeviceId={profile.device_id} connectionEpoch={epoch} localServer={controls} /> : <main className="connect-page"><h1>DeliDev</h1><h2>{busy ? "Connecting to saved server…" : "Saved server connection"}</h2><p>This window is pinned to server {profile.server_id}. Remote sessions continue when it closes.</p>{controls}</main>;
+  return transport ? <App transport={transport} readLocalWorker={readLocalWorker} controlLocalWorker={controlLocalWorker} currentDeviceId={profile.device_id} connectionEpoch={epoch} localServer={controls} /> : <main className="connect-page"><h1>DeliDev</h1><h2>{busy ? "Connecting to saved server…" : "Saved server connection"}</h2><p>This window is pinned to server {profile.server_id}. Remote sessions continue when it closes.</p>{controls}</main>;
 }
 export function Desktop() {
   const [context, setContext] = useState<{ ready: boolean; profile?: SavedConnection; error?: unknown }>({ ready: !isTauri() });
