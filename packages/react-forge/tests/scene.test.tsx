@@ -34,6 +34,55 @@ for (const format of [Format.Glb, Format.Fbx] as const) {
       }
     } finally { await session.dispose(); }
   });
+  for (const contended of [false, true]) {
+    test(`${format}: file export pins its invocation position with directory contention=${contended}`, async () => {
+      const session = createSession(format), blocker = createSession(format);
+      const directory = await mkdtemp(join(tmpdir(), "forge-scene-file-order-"));
+      let release!: () => void;
+      const pending = new Promise<void>(resolve => { release = resolve; });
+      function Pending() { use(pending); return null; }
+      try {
+        const g = await session.registerGeometry(geometry());
+        await session.render(<Scene><Mesh geometry={g} name="first"/></Scene>);
+        const expected = await session.export();
+        const revision = session.revision;
+        await blocker.render(<Scene><Suspense fallback={null}><Pending/></Suspense></Scene>);
+        const blocking = contended ? blocker.exportFile(join(directory, `blocker.${format}`)) : Promise.resolve();
+        const path = join(directory, `scene.${format}`);
+        const exported = session.exportFile(path);
+        const rendered = session.render(<Scene><Mesh geometry={g} name="second" translation={[5, 0, 0]}/></Scene>);
+        release();
+        const [result] = await Promise.all([exported, rendered, blocking]);
+        assert.equal(result.revision, revision);
+        assert.deepEqual(await readFile(path), expected);
+        assert.notDeepEqual(await session.export(), expected);
+      } finally {
+        release();
+        await Promise.all([session.dispose(), blocker.dispose()]);
+        await rm(directory, { recursive: true, force: true });
+      }
+    });
+  }
+  test(`${format}: failed file reservations retain the preceding render's queue slot`, async () => {
+    const session = createSession(format);
+    const directory = await mkdtemp(join(tmpdir(), "forge-scene-reservation-failure-"));
+    const commits: string[] = [];
+    function Model({ name }: { name: string }) {
+      useLayoutEffect(() => { commits.push(name); }, [name]);
+      return <Scene name={name}/>;
+    }
+    try {
+      const first = session.render(<Model name="first"/>);
+      const failed = assert.rejects(session.exportFile(join(directory, "missing", `scene.${format}`)), { code: ErrorCode.Io });
+      const last = session.render(<Model name="last"/>);
+      await Promise.all([first, failed, last]);
+      assert.deepEqual(commits, ["first", "last"]);
+      assert.ok((await session.export()).length > 0);
+    } finally {
+      await session.dispose();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
   test(`${format}: a queued recovery does not hide an earlier render failure`, async () => {
     const session = createSession(format);
     const g = await session.registerGeometry(geometry());
@@ -131,11 +180,24 @@ for (const format of [Format.Glb, Format.Fbx] as const) {
     } finally {await s.dispose();}
   });
 }
-test("scene output queue serializes overwrite and keeps pinned revision", async()=>{
-  const s=createSession(Format.Glb), t=createSession(Format.Glb);const dir=await mkdtemp(join(tmpdir(),"forge-scene-order-"));
-  try {const a=await s.registerGeometry(geometry()),b=await t.registerGeometry(geometry());await s.render(<Scene><Mesh geometry={a} name="first"/></Scene>);await t.render(<Scene><Mesh geometry={b} name="last"/></Scene>);const file=join(dir,"test.glb");await Promise.all([s.exportFile(file),t.exportFile(file,{overwrite:true})]);assert.equal(decode(await readFile(file)).nodes[1].name,"last");}
-  finally{await Promise.all([s.dispose(),t.dispose()]);await rm(dir,{recursive:true,force:true});}
-});
+for (const format of [Format.Glb, Format.Fbx] as const) {
+  test(`${format}: file exports preserve cross-session order behind an earlier render`, async () => {
+    const first = createSession(format), last = createSession(format);
+    const directory = await mkdtemp(join(tmpdir(), "forge-scene-order-"));
+    try {
+      const a = await first.registerGeometry(geometry()), b = await last.registerGeometry(geometry());
+      await last.render(<Scene><Mesh geometry={b} name="last"/></Scene>);
+      const expected = await last.export();
+      const render = first.render(<Scene><Mesh geometry={a} name="first"/></Scene>);
+      const path = join(directory, `test.${format}`);
+      await Promise.all([render, first.exportFile(path), last.exportFile(path, { overwrite: true })]);
+      assert.deepEqual(await readFile(path), expected);
+    } finally {
+      await Promise.all([first.dispose(), last.dispose()]);
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+}
 
 test("scene registrations reserve aggregate bytes before concurrent validation", async()=>{
   const s=createSession(Format.Glb);const bytes=Buffer.alloc(64*1024*1024);

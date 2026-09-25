@@ -446,3 +446,33 @@ tests** passed, including installed-archive CLI/MCP generation for all eight loc
 formats. Standalone example type checks, **81 CI contract tests**, and workflow
 validation also passed. These checks do not claim new visual renders or remote
 platform execution.
+
+
+## PR #988 scene file-export ordering repair (2026-09-25)
+
+File exports reserve both their session position and shared directory position
+at invocation, preserving the preceding operation even if directory reservation
+fails early. This prevents a later render from changing the exported tree or
+revision and preserves file order across sessions while an earlier render is
+still committing.
+
+All **22 scene tests** passed on macOS arm64/Node.js 24.17.0. Four new GLB/FBX
+regressions fail on the prior implementation with both free and occupied output
+directories. Two cross-session regressions also reject the incomplete fix that
+reserves a directory only after reaching the session queue. Two early-reservation
+failure regressions prove that a rejected file export must retain the preceding
+render's queue slot. Existing revision, disposal, cancellation and recovery tests
+remain passing.
+
+
+Final verification of implementation `cd7ac0a6` passed root
+`TMPDIR=/private/tmp cargo test --locked -- --test-threads=1` with **1,944 passed,
+zero failed and three existing opt-in tests ignored**, after the documented
+frontend and separate generic/pnport preload preparation. Scene/exporter,
+sprite/SFX and native-adapter Clippy passed with warnings denied. Package
+build/typecheck/lint and all **139 tests** passed, as did standalone example
+checks and public main/native candidate installation with eight CLI formats.
+The earlier **81 CI contract tests** and workflow validation cover the unchanged
+merged workflow configuration. Only macOS arm64 was run locally; the final push's
+CI results and new visual renders are not claimed. Generated repository-owned
+`dist` directories were removed after verification.

@@ -26,7 +26,10 @@ Explicit scene renders enter the per-session operation queue. Concurrent render
 calls commit independently in invocation order, including their layout effects;
 an intervening export observes that position in the queue. Failed renders reject
 their own calls and block queued exports until a later successful render, without
-preventing the queue from accepting that recovery.
+preventing the queue from accepting that recovery. File exports reserve their
+place in both the session queue and the shared output-directory queue at
+invocation. Waiting for either queue must not let later renders or file exports
+from another session overtake the operation.
 
 Registered assets and output are each capped at 256 MiB, individual geometry/texture payloads at 64 MiB, images at 64 million pixels, and the existing 16 MiB/20,000-node/depth-48 tree limits apply. Check malformed arrays, indices, numbers, transforms, references and resource budgets before output. Native cancellation checkpoints cover validation, traversal, texture conversion and serialization; bounded third-party decoding calls are indivisible. JavaScript never runs in workers.
 

@@ -123,9 +123,21 @@ export class SceneSession {
   }
   exportFile(output: string, options: { signal?: AbortSignal; overwrite?: boolean } = {}) {
     const signal = this.signal(options.signal);
-    return this.track(Stage.Export, context => withOutputReservation(output, signal, destination => this.ordered(signal, async () => {
-      const result = await this.process(signal, context); await publish(result.bytes, destination, { ...options, signal }); return { published: true as const, revision: result.revision };
-    })));
+    return this.track(Stage.Export, context => {
+      const previous = this.queue.catch(() => {});
+      // Reserve both queues at invocation: waiting for the directory before
+      // joining this queue lets later renders overtake the export; reserving the
+      // directory only inside this queue lets other sessions overtake it.
+      const task = withOutputReservation(output, signal, async destination => {
+        await previous; checkSignal(signal);
+        const result = await this.process(signal, context);
+        await publish(result.bytes, destination, { ...options, signal });
+        return { published: true as const, revision: result.revision };
+      });
+      // An early reservation failure must not release the preceding operation.
+      this.queue = Promise.allSettled([previous, task]);
+      return task;
+    });
   }
   measure(handle: NodeHandle, options: { revision: number; signal?: AbortSignal }): Promise<SceneGeometry> {
     const signal = this.signal(options.signal);
