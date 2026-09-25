@@ -243,6 +243,7 @@ func (s *Service) Handler(origins []string, loopback bool) http.Handler {
 	options := []connect.HandlerOption{connect.WithReadMaxBytes(2 << 20), connect.WithSendMaxBytes(5 << 20)}
 	mux.Handle(delidevv1connect.NewSystemServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewResourceServiceHandler(s, options...))
+	mux.Handle(delidevv1connect.NewSearchServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewConfigurationServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewDeviceServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewWorkerServiceHandler(s, options...))

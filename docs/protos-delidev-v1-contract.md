@@ -115,3 +115,6 @@ Protocol changes update this contract and [command contract](cmds-delidev-contra
 
 ### Referenced Project and Agent deletion
 `DeleteConfiguration` accepts revision-checked Project/Agent deletion even with retained sessions. Deletion atomically disables matching schedules and retains a tombstone; existing session/occurrence/snapshot records are unchanged. For established execution snapshots, the server privately retains final project selection restrictions so current-state authorization cannot become more permissive after deletion. No deleted configuration becomes a new selectable resource or first-dispatch source. This uses the existing configuration RPC and typed errors without new wire fields; ordinary session lifecycle and receipt joins remain independent.
+
+### Conversation search RPC
+`SearchService.SearchConversations` is owner/paired-client-only and reads complete current message resources with bounded session metadata. Literal query plus session/project/Agent/original-execution-account/outcome/archive filters follow the search contract; unknown enum values fail. Signed pages bind the actor, all normalized selectors and source epoch through a keyed query commitment. Reads recheck revocation within the same transaction; both protobuf and JSON pages are byte-bounded. Search never changes read state or execution.

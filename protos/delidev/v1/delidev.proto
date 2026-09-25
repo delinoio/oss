@@ -16,11 +16,13 @@ service ResourceService {
   rpc GetSnapshot(GetSnapshotRequest) returns (GetSnapshotResponse);
   rpc WatchEvents(WatchEventsRequest) returns (stream WatchEventsResponse);
 }
+
 service ConfigurationService {
   rpc SaveConfiguration(SaveConfigurationRequest) returns (SaveConfigurationResponse);
   rpc DeleteConfiguration(DeleteConfigurationRequest) returns (DeleteConfigurationResponse);
   rpc PreviewRouting(PreviewRoutingRequest) returns (PreviewRoutingResponse);
 }
+
 // Owner and paired-client responses use their own durable acceptance boundary.
 service InteractionService {
   rpc RespondQuestion(RespondQuestionRequest) returns (RespondQuestionResponse);
@@ -81,6 +83,7 @@ enum EntityKind {
   ENTITY_KIND_PAIRING = 25;
   ENTITY_KIND_STEER = 26;
 }
+
 // Resource documents are versioned, strictly validated UTF-8 JSON. Their closed
 // schemas live in the Go domain types. Unknown fields and enum values fail.
 // This envelope never permits arbitrary database writes: each mutation kind
@@ -784,4 +787,47 @@ message GetScheduleOccurrenceRequest {
 }
 message GetScheduleOccurrenceResponse {
   Resource occurrence = 1;
+}
+
+// Owner/paired-client reads of retained conversations, including Archive.
+service SearchService {
+  rpc SearchConversations(SearchConversationsRequest) returns (SearchConversationsResponse);
+}
+enum SearchExecutionOutcome {
+  SEARCH_EXECUTION_OUTCOME_UNSPECIFIED = 0;
+  SEARCH_EXECUTION_OUTCOME_NOT_STARTED = 1;
+  SEARCH_EXECUTION_OUTCOME_RUNNING = 2;
+  SEARCH_EXECUTION_OUTCOME_SUCCEEDED = 3;
+  SEARCH_EXECUTION_OUTCOME_FAILED = 4;
+  SEARCH_EXECUTION_OUTCOME_STOPPED = 5;
+}
+enum SearchArchiveState {
+  SEARCH_ARCHIVE_STATE_UNSPECIFIED = 0;
+  SEARCH_ARCHIVE_STATE_ACTIVE = 1;
+  SEARCH_ARCHIVE_STATE_ARCHIVING = 2;
+  SEARCH_ARCHIVE_STATE_ARCHIVED = 3;
+}
+message SearchConversationsRequest {
+  // Literal Unicode text; no SQL, wildcard or FTS expression syntax.
+  string query = 1;
+  string session_id = 2;
+  string project_id = 3;
+  string agent_id = 4;
+  // Original message execution account, not the Agent's current candidates.
+  string account_id = 5;
+  SearchExecutionOutcome outcome = 6;
+  SearchArchiveState archive = 7;
+  uint32 page_size = 8;
+  string page_token = 9;
+}
+message ConversationSearchHit {
+  Resource message = 1;
+  string session_name = 2;
+  string agent_id = 3;
+  SearchExecutionOutcome outcome = 4;
+  SearchArchiveState archive = 5;
+}
+message SearchConversationsResponse {
+  repeated ConversationSearchHit hits = 1;
+  string next_page_token = 2;
 }

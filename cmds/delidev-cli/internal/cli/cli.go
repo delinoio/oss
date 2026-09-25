@@ -44,6 +44,7 @@ type client struct {
 	transport     *http.Transport
 	system        delidevv1connect.SystemServiceClient
 	resources     delidevv1connect.ResourceServiceClient
+	search        delidevv1connect.SearchServiceClient
 	configuration delidevv1connect.ConfigurationServiceClient
 	devices       delidevv1connect.DeviceServiceClient
 	workers       delidevv1connect.WorkerServiceClient
@@ -141,6 +142,9 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		ctx = bounded
 	}
 	switch command {
+	case "search":
+		value, err := searchCommand(ctx, c, rest)
+		return emit(value, err)
 	case "schedule":
 		if len(rest) > 0 && rest[0] != "snapshot" {
 			switch rest[0] {
@@ -550,6 +554,7 @@ func connectClient(o options, input io.Reader) (client, error) {
 		workers:       delidevv1connect.NewWorkerServiceClient(httpClient, endpoint, opts...),
 		system:        delidevv1connect.NewSystemServiceClient(httpClient, endpoint, opts...),
 		resources:     delidevv1connect.NewResourceServiceClient(httpClient, endpoint, opts...),
+		search:        delidevv1connect.NewSearchServiceClient(httpClient, endpoint, opts...),
 		configuration: delidevv1connect.NewConfigurationServiceClient(httpClient, endpoint, opts...),
 	}, nil
 }
@@ -667,6 +672,9 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   schedule occurrence --id SCHEDULE --occurrence-id OCCURRENCE
   interaction respond --id ID --revision N --input FILE|-
   interaction approve --id ID --revision N --input FILE|-
+  search --query TEXT [--session-id ID] [--project-id ID] [--agent-id ID] [--account-id ID]
+    [--outcome all|not-started|running|succeeded|failed|stopped] [--archive all|active|archiving|archived]
+    [--limit N] [--page-token TOKEN]
   inbox list [--session-id ID] [--project-id ID] [--read-state all|read|unread]
     [--source all|interaction|execution-terminal] [--limit N] [--page-token TOKEN]
   inbox get|inspect --id ID

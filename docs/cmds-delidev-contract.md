@@ -123,3 +123,6 @@ The [schedule contract](cmds-delidev-schedules-contract.md) now defines five-fie
 Generic resource lists bound each page by both count and encoded bytes. The aggregate resource budget is 4 MiB using the larger of protobuf and protobuf-JSON sizes (including Base64 documents), with transport headroom for the cursor/envelope. A size-limited page resumes strictly after the last returned identity, including when fewer than the requested records fit.
 
 SQLite file URIs preserve percent-escaped path bytes and use `/X:/...` for absolute Windows drive paths, with an empty URI authority and explicit read/write or read-only mode ([SQLite URI rules](https://www.sqlite.org/uri.html)). Drive letters must never become host authorities.
+
+### Retained conversation search
+`delidev search --query TEXT` and owner/client `SearchService.SearchConversations` search canonical retained message, tool and artifact content, including Archive. Literal Unicode search, historical execution-account filtering, current session filters, protected query commitments and bounded coherent pages follow [the search contract](cmds-delidev-search-contract.md). Search does not dispatch work, read private native history or alter inbox state.

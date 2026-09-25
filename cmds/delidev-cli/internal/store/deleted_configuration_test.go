@@ -123,7 +123,7 @@ func TestDeletedConfigurationMigrationPreservesV11Schedules(t *testing.T) {
 			r, value := scheduleFixture(t, s)
 			occurrence, schedule, _ := appendWaiting(t, s, r, value)
 			if !conflict {
-				if _, err := s.db.Exec("DROP TABLE deleted_project_policies"); err != nil {
+				if _, err := s.db.Exec(dropSearchFixtureSchema + "DROP TABLE deleted_project_policies"); err != nil {
 					t.Fatal(err)
 				}
 			}

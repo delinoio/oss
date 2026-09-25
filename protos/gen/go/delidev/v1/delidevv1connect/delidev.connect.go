@@ -43,6 +43,8 @@ const (
 	InboxServiceName = "delidev.v1.InboxService"
 	// ScheduleServiceName is the fully-qualified name of the ScheduleService service.
 	ScheduleServiceName = "delidev.v1.ScheduleService"
+	// SearchServiceName is the fully-qualified name of the SearchService service.
+	SearchServiceName = "delidev.v1.SearchService"
 )
 
 // These constants are the fully-qualified names of the RPCs defined in this package. They're
@@ -220,6 +222,9 @@ const (
 	// ScheduleServiceGetScheduleOccurrenceProcedure is the fully-qualified name of the
 	// ScheduleService's GetScheduleOccurrence RPC.
 	ScheduleServiceGetScheduleOccurrenceProcedure = "/delidev.v1.ScheduleService/GetScheduleOccurrence"
+	// SearchServiceSearchConversationsProcedure is the fully-qualified name of the SearchService's
+	// SearchConversations RPC.
+	SearchServiceSearchConversationsProcedure = "/delidev.v1.SearchService/SearchConversations"
 )
 
 // SystemServiceClient is a client for the delidev.v1.SystemService service.
@@ -2186,4 +2191,74 @@ func (UnimplementedScheduleServiceHandler) ListScheduleOccurrences(context.Conte
 
 func (UnimplementedScheduleServiceHandler) GetScheduleOccurrence(context.Context, *connect.Request[v1.GetScheduleOccurrenceRequest]) (*connect.Response[v1.GetScheduleOccurrenceResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ScheduleService.GetScheduleOccurrence is not implemented"))
+}
+
+// SearchServiceClient is a client for the delidev.v1.SearchService service.
+type SearchServiceClient interface {
+	SearchConversations(context.Context, *connect.Request[v1.SearchConversationsRequest]) (*connect.Response[v1.SearchConversationsResponse], error)
+}
+
+// NewSearchServiceClient constructs a client for the delidev.v1.SearchService service. By default,
+// it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and
+// sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC()
+// or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewSearchServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) SearchServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	searchServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("SearchService").Methods()
+	return &searchServiceClient{
+		searchConversations: connect.NewClient[v1.SearchConversationsRequest, v1.SearchConversationsResponse](
+			httpClient,
+			baseURL+SearchServiceSearchConversationsProcedure,
+			connect.WithSchema(searchServiceMethods.ByName("SearchConversations")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// searchServiceClient implements SearchServiceClient.
+type searchServiceClient struct {
+	searchConversations *connect.Client[v1.SearchConversationsRequest, v1.SearchConversationsResponse]
+}
+
+// SearchConversations calls delidev.v1.SearchService.SearchConversations.
+func (c *searchServiceClient) SearchConversations(ctx context.Context, req *connect.Request[v1.SearchConversationsRequest]) (*connect.Response[v1.SearchConversationsResponse], error) {
+	return c.searchConversations.CallUnary(ctx, req)
+}
+
+// SearchServiceHandler is an implementation of the delidev.v1.SearchService service.
+type SearchServiceHandler interface {
+	SearchConversations(context.Context, *connect.Request[v1.SearchConversationsRequest]) (*connect.Response[v1.SearchConversationsResponse], error)
+}
+
+// NewSearchServiceHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewSearchServiceHandler(svc SearchServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	searchServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("SearchService").Methods()
+	searchServiceSearchConversationsHandler := connect.NewUnaryHandler(
+		SearchServiceSearchConversationsProcedure,
+		svc.SearchConversations,
+		connect.WithSchema(searchServiceMethods.ByName("SearchConversations")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/delidev.v1.SearchService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case SearchServiceSearchConversationsProcedure:
+			searchServiceSearchConversationsHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedSearchServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedSearchServiceHandler struct{}
+
+func (UnimplementedSearchServiceHandler) SearchConversations(context.Context, *connect.Request[v1.SearchConversationsRequest]) (*connect.Response[v1.SearchConversationsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SearchService.SearchConversations is not implemented"))
 }

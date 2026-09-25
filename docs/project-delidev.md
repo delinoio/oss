@@ -10,7 +10,7 @@ Run personal AI sessions across projects, accounts, native harnesses, and execut
 - `cmds/delidev-cli`: Go CLI, server, execution Worker, native adapters, storage, and service lifecycle.
 - `protos/delidev/v1`: versioned Connect RPC schemas.
 - `protos/gen/go/delidev/v1`: generated Go messages and Connect bindings.
-- Desktop native presentation is a separate future app component; this implementation request covers the CLI and its server/Worker product boundaries.
+- Desktop native presentation remains an unimplemented app component. On 2026-09-25 the owner explicitly expanded the active request to all of issue #964, including the desktop app; CLI-only acceptance is no longer the completion boundary.
 
 ## Domain Contract Documents
 - [CLI/server/Worker contract](cmds-delidev-contract.md)
@@ -26,6 +26,7 @@ Run personal AI sessions across projects, accounts, native harnesses, and execut
 - [Native API relay](cmds-delidev-proxy-contract.md)
 - [Session acceptance and input queue](cmds-delidev-sessions-contract.md)
 - [Retained inbox and read-state contract](cmds-delidev-inbox-contract.md)
+- [Retained conversation search](cmds-delidev-search-contract.md)
 - [Schedules and durable occurrences](cmds-delidev-schedules-contract.md)
 - [Implementation and evidence ledger](cmds-delidev-evidence.md)
 
