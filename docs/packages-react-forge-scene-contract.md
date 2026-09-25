@@ -29,7 +29,7 @@ Exports wait for relevant React work and registrations before pinning immutable 
 ## Validation
 
 AURA's seven source PNG textures under `packages/react-forge/examples/audio-studio-assets`
-are tracked by the exact directory pattern in the root `.gitattributes` using Git
+are tracked by seven explicit file paths in the root `.gitattributes` using Git
 LFS. Local source consumers run `git lfs install` and `git lfs pull` before example
 validation; source-consuming CI and release build checkouts enable LFS. Keep the
 texture generator, provenance, compact evidence, and TSX geometry in ordinary Git,

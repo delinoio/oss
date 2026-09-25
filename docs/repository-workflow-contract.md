@@ -4,6 +4,12 @@ Repository workflows are reviewed as source-backed contracts. Workflow IDs, job 
 
 ## Continuous integration
 
+### Git LFS assets
+
+Thirteen tracked assets use exact-path entries in the root `.gitattributes`: the two identical Noto Sans KR fonts used by Forge and DevHud, the three React Forge ROAM example PNGs, the DevHud API removal PNG, and the seven AURA source PNGs. Nine files meet the 512 KiB threshold; the four smaller AURA textures remain in LFS with the rest of that texture set. The fonts share one LFS object. Their source and license records remain beside the files. Future repository assets at or above this threshold require an explicit LFS entry and a hydrated checkout in every build, test, or packaging job that consumes them. Attribute changes force the CI job planner to select every event-eligible job; pull requests still defer native packaging.
+
+CI and release jobs that consume these assets enable `actions/checkout` LFS downloading before building. In particular, the API image build must receive the actual removal PNG before Docker copies its context, and desktop builds must receive the font before compilation. Validate migrated files against their original SHA-256 values, inspect committed pointer blobs, and run `git lfs fsck` before publishing a branch. PR #990 migrated the six font/ROAM/removal assets with a new commit without rewriting historical commits or tags; their older Git blobs remain in history. PR #988 migrated its AURA textures throughout its own PR history before merging that policy, as recorded in the React Forge validation evidence. `async-commit-hook` intentionally rejects LFS repositories, so this repository is no longer a supported execution source for that tool; its existing product contract is unchanged.
+
 ### Pinned repository utilities
 
 The root `clibox-prebuilt` dev dependency aliases the published `@delino/clibox@0.1.6` package. Its exact launcher and optional native packages are integrity-pinned in `pnpm-lock.yaml`; the private `packages/clibox` workspace is not an executable dependency. Ordinary `pnpm install` installs the prebuilt without Rust compilation. Run repository utility scripts from the repository root; they invoke `pnpm exec clibox` directly. There is no additional repository launcher or runtime download.
@@ -114,9 +120,11 @@ Repository-wide Go quality/tests and ach-specific compilation must first generat
 
 Source-consuming React Forge CI and release build checkouts enable Git LFS to
 hydrate the seven AURA source PNG textures before package/example validation and
-scene preparation. Root `.gitattributes` changes select both React Forge jobs.
+scene preparation. Root `.gitattributes` changes select every event-eligible job,
+including both React Forge jobs.
 Product render shards consume the prepared GLB/FBX artifact and need no source
-texture download. Other projects' assets are outside this LFS pattern.
+texture download. AURA uses seven explicit attributes alongside the other
+repository assets listed above.
 
 The centrally planned `react-forge` job runs on affected pull requests and main pushes and is required by `CI Result`. Its six-host/Node 24 boundary follows `docs/packages-react-forge-contract.md`: package-owned uncached native build and integration, installed CLI, native/legacy Forge regressions, test-only LibreOffice/Poppler rendering and benchmarks. It retains evidence for seven days and removes generated package dist. Shared `forge-package` changes also select existing Forge validation/render jobs. PR CI verifies installed packages on each host without transferring native tarballs or assembling a complete release candidate. Seven external `0.0.1` npm name reservations preceded the first source release. `release-react-forge.yml` builds and validates six native hosts and the complete seven-package candidate on exact tags. Release Project prepared `0.1.0`, whose publish job failed before registry writes. The next patch tag, `0.1.1`, carried the publisher fix and became the first functional npm release through seven configured Trusted Publishers with OIDC; all seven registry versions, integrities, provenance markers and `latest` tags were confirmed.
 

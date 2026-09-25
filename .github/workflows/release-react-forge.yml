@@ -73,9 +73,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
+          lfs: true
           ref: ${{ needs.prepare.outputs.revision }}
           persist-credentials: false
-          lfs: true
       - uses: actions/setup-node@v6
         with:
           node-version-file: .nvmrc

@@ -361,3 +361,28 @@ standalone example type checks, **79 CI contract tests**, and workflow validatio
 Source-consuming CI and release build checkouts now enable LFS, and attribute
 changes select both native/package validation and scene-render jobs. Generated
 repository-owned `dist` directories were removed after these checks.
+
+
+## PR #988 shared LFS policy merge repair (2026-09-25)
+
+Merged `main` at `13391e4a` (PR #990) without rebasing. The resolved attribute file
+retains all thirteen LFS assets, including every AURA texture, using explicit file
+paths under the shared 512 KiB policy. The four smaller AURA companion textures
+remain tracked with their set. Removed a duplicate release-checkout `lfs` key
+introduced by the automatic merge, and extended the shared pointer inventory to
+cover AURA and the GLB/FBX asset extensions. Attribute changes retain the shared
+planner's selection of every event-eligible job.
+
+All thirteen hydrated assets matched the SHA-256 and size in their merged LFS
+pointers, and `git lfs fsck` passed. macOS arm64/Node.js 24.17.0 verification passed
+**81 CI contract tests**, workflow validation, the DevHud R2 tests (including its
+embedded PNG check), package build/typecheck/lint with **121 tests**, installed
+CLI/MCP coverage, and standalone example type checks.
+
+The broader release suite passed 246 of 248 tests on macOS; two Linux packaging
+tests could not run there because `dpkg-deb` and GNU tar were unavailable. Both
+affected suites then passed all four tests in an isolated Linux arm64
+`node:24-bookworm` container (Node.js 24.21.0), using the pinned pnpm 10.26.2 and
+clibox 0.1.6 tools. The repository mount was read-only and the test/tool copies
+were temporary. No source change was needed for those environment limitations.
+Generated repository-owned `dist` directories were removed after validation.

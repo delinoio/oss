@@ -1,1 +1,13 @@
-packages/react-forge/examples/audio-studio-assets/*.png filter=lfs diff=lfs merge=lfs -text
+apps/devhud/src-tauri/assets/fonts/noto-sans-kr/NotoSansKR-VF.ttf filter=lfs diff=lfs merge=lfs -text
+crates/forge-tree-doc/assets/fonts/noto-sans-kr/NotoSansKR-VF.ttf filter=lfs diff=lfs merge=lfs -text
+packages/react-forge/examples/audio-studio-assets/brushed-normal.png filter=lfs diff=lfs merge=lfs -text
+packages/react-forge/examples/audio-studio-assets/brushed-roughness.png filter=lfs diff=lfs merge=lfs -text
+packages/react-forge/examples/audio-studio-assets/display.png filter=lfs diff=lfs merge=lfs -text
+packages/react-forge/examples/audio-studio-assets/fabric-normal.png filter=lfs diff=lfs merge=lfs -text
+packages/react-forge/examples/audio-studio-assets/leather-normal.png filter=lfs diff=lfs merge=lfs -text
+packages/react-forge/examples/audio-studio-assets/leather-roughness.png filter=lfs diff=lfs merge=lfs -text
+packages/react-forge/examples/audio-studio-assets/wordmark.png filter=lfs diff=lfs merge=lfs -text
+packages/react-forge/examples/travel-ir-assets/coast.png filter=lfs diff=lfs merge=lfs -text
+packages/react-forge/examples/travel-ir-assets/horizon.png filter=lfs diff=lfs merge=lfs -text
+packages/react-forge/examples/travel-ir-assets/product.png filter=lfs diff=lfs merge=lfs -text
+servers/devhud-api/internal/r2/removal.png filter=lfs diff=lfs merge=lfs -text
