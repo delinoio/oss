@@ -550,6 +550,15 @@ func TestProxyDoesNotReleaseFragmentedSSEFieldNames(t *testing.T) {
 }
 
 func TestProxyErrorMachineCodesCannotReflectSelectedKey(t *testing.T) {
+	testProxyErrorMachineCodesCannotReflectSelectedKey(t, http.StatusUnauthorized)
+}
+
+func TestProxySuccessfulStatusErrorEnvelopeCannotReflectSelectedKey(t *testing.T) {
+	testProxyErrorMachineCodesCannotReflectSelectedKey(t, http.StatusOK)
+}
+
+func testProxyErrorMachineCodesCannotReflectSelectedKey(t *testing.T, status int) {
+	t.Helper()
 	for _, key := range []string{"invalid_api_key", "authentication_error", "rate_limit_exceeded", "api_error"} {
 		t.Run(key, func(t *testing.T) {
 			f := newProxyFixture(t, domain.OpenAIChat, []Operation{ChatCompletion}, func(w http.ResponseWriter, r *http.Request) {
@@ -557,12 +566,16 @@ func TestProxyErrorMachineCodesCannotReflectSelectedKey(t *testing.T) {
 					t.Error("incorrect key")
 				}
 				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusUnauthorized)
+				w.WriteHeader(status)
 				fmt.Fprintf(w, `{"error":{"code":%q}}`, key)
 			})
 			f.authority.key = key
 			response, raw, err := f.request(t, "/chat/completions", `{"model":"fixed-model"}`, nil)
-			if err != nil || response.StatusCode != http.StatusUnauthorized || bytes.Contains(raw, []byte(key)) {
+			want := status
+			if status == http.StatusOK {
+				want = http.StatusBadGateway
+			}
+			if err != nil || response.StatusCode != want || bytes.Contains(raw, []byte(key)) {
 				t.Fatalf("error reflected protected machine code: %v %v %s", response, err, raw)
 			}
 			if strings.Contains(f.logs.String(), key) {

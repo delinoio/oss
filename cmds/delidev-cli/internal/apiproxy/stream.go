@@ -274,6 +274,19 @@ func errorBodyWithNativeCode(protocol domain.APIProtocol, code domain.Code, corr
 	return raw
 }
 
+func guardedErrorBody(protocol domain.APIProtocol, code domain.Code, correlation, nativeCode string, guard secretGuard) []byte {
+	body := errorBodyWithNativeCode(protocol, code, correlation, nativeCode)
+	if guard.contains(string(body)) {
+		// An allowlisted native code or even a fixed local field can equal the
+		// protected key. Retain HTTP failure status if neither body is safe.
+		body = errorBody(protocol, code, correlation)
+		if guard.contains(string(body)) {
+			return nil
+		}
+	}
+	return body
+}
+
 type nativeFailure struct{ code domain.Code }
 
 func (f *nativeFailure) Error() string { return "native API stream failure" }

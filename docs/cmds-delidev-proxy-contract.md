@@ -34,6 +34,8 @@ Response checks reject literal, decoded JSON-string and Base64 representations o
 
 SSE field-name bytes use a separate bounded cross-frame matcher, including unknown and colonless fields. Metadata values and JSON deltas retain their independent matchers; benign unknown fields preserve their original bytes.
 
+HTTP-200 standalone error envelopes use the same protected-code/local-body fallback as non-200 errors before returning a synthesized HTTP 502 response. A successful transport status cannot bypass protected-value checks.
+
 ## Logging
 Use structured `api_proxy_request_finished` metadata: correlation/execution/session/account/provider/model IDs, closed operation and phase, stream selection, submission uncertainty, HTTP status, typed failure code and duration. `submitted` means an HTTP attempt began, not proof that upstream accepted it. Native failed terminal events retain failure classification. Keys, endpoint URLs, native model strings, prompt/output bytes and provider diagnostic text are excluded.
 
