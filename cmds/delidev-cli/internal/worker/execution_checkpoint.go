@@ -65,6 +65,10 @@ func executionInputDigest(raw []byte) string {
 }
 
 func (r ExecutionCheckpointRef) validate() error {
+	return r.validateForHarness(domain.Codex)
+}
+
+func (r ExecutionCheckpointRef) validateForHarness(harness domain.Harness) error {
 	for _, id := range []domain.ID{r.JobID, r.SessionID, r.MachineID, r.HistoryExecutionID, r.AccountID, r.ConnectionID} {
 		if id.Validate() != nil {
 			return executionCheckpointUncertain()
@@ -84,7 +88,7 @@ func (r ExecutionCheckpointRef) validate() error {
 			return executionCheckpointUncertain()
 		}
 	}
-	if r.Completion.Validate() != nil || !r.InputMode.Valid() {
+	if r.Completion.ValidateForHarness(harness) != nil || !r.InputMode.Valid() {
 		return executionCheckpointUncertain()
 	}
 	if _, err := r.nativeInputs(); err != nil {

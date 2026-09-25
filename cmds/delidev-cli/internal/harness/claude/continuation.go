@@ -21,6 +21,22 @@ type ClosedAPISession struct {
 	requiresResume bool
 }
 
+// OriginalResult returns only the original input's native terminal classification.
+// It excludes usage, content and automatic/manual-action outcomes, which remain
+// independent facts. Reading it neither consumes nor grants a continuation.
+func (closed *ClosedAPISession) OriginalResult() (NativeResult, error) {
+	if closed == nil {
+		return NativeResult{}, historyUncertain()
+	}
+	closed.mu.Lock()
+	defer closed.mu.Unlock()
+	if closed.used || closed.previous == nil || !closed.previous.closed.Load() || closed.previous.problem != nil || closed.previous.current == nil || closed.previous.current.terminal == nil {
+		return NativeResult{}, historyUncertain()
+	}
+	r := closed.previous.current.terminal
+	return NativeResult{Kind: r.Kind, Reason: r.Reason, Error: r.Error}, nil
+}
+
 func continuationUnavailable() *domain.Error {
 	return domain.Fail(domain.Unsupported, "This Claude Code session needs additional native history evidence before process replacement.", "Preserve the native runtime and original task, tool and interaction records; do not replace the session or resend input.")
 }
