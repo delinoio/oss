@@ -58,12 +58,14 @@ try {
 }
 ```
 
-You can pass a Design URL or file key string directly instead of the parsed receipt. The export publishes the selected change and writes a new receipt; it does not create a binary `.fig` file.
+You can pass a Design URL or file key string directly instead of the parsed receipt. A receipt must contain a `fileKey` to reopen it this way. The export publishes the selected change and writes a new receipt; it does not create a binary `.fig` file.
 
 Pages, Auto Layout frames, text, vector shapes, images, components, variants/instances, variables, and styles are available. `nodeKey` links local component, style, and variable references. Use fonts actually available in the Figma file and register PNG/JPEG images explicitly; Figma image uploads have their own [resource limits](/react-forge/limits-and-troubleshooting).
 
 ## Publication outcomes and receipts
 
-Publication reports **complete**, **partial**, or **unknown**. A `.figma.json` receipt records the file URL, revision, confirmed node bindings, image hashes, and outcome; it is not a `.fig` export and contains no authentication token. Confirmed changes from a partial result can remain on the remote file. For an unknown outcome, inspect or reopen the file and reconcile the receipt before attempting another write. Never blindly repeat ambiguous file or node creation. Cancellation prevents later batches but does not undo completed remote changes. A receipt-save failure can happen after Figma changed, so inspect the attached receipt as well as any output file.
+Publication reports **complete**, **partial**, or **unknown**. A `.figma.json` receipt records the file key and URL when known, plus the revision, confirmed node bindings, image hashes, and outcome; it is not a `.fig` export and contains no authentication token. Confirmed changes from a partial result can remain on the remote file. A `FigmaPublishError` also carries its receipt, including when saving the receipt file fails after Figma changed.
+
+For an unknown outcome with a file key, reopen the file from the parsed receipt or its Design URL and inspect the remote result before another write. If `create_new_file` failed ambiguously, the receipt may have neither `fileKey` nor `url` and cannot be passed to `openFigma()`. Check the selected Figma account and destination for the intended file. Only after you identify the file reliably should you reopen it by its Design URL or key and inspect its contents. If you cannot establish whether creation succeeded, keep the outcome unknown and do not repeat the create operation. Never blindly repeat ambiguous file or node creation. Cancellation prevents later batches but does not undo completed remote changes.
 
 See [CLI](/react-forge/cli) and [MCP](/react-forge/mcp) for their explicit publication operations. No Figma file is created or changed by ordinary local Office/PDF exports.

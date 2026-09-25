@@ -14,7 +14,7 @@ The stable clean routes are `/react-forge/`, `/installation`, `/getting-started`
 
 - Installation and getting started cover Node.js 24, six local-document host combinations, optional native packages, fonts, and an executable TSX task.
 - Sessions and format guides cover the public React/session APIs, all four local document models, explicit exports, Office preservation, font/layout limits, and the absence of PDF import or Office conversion.
-- Figma explains its narrower macOS Keychain authentication boundary, official MCP connection, explicit remote publication, complete/partial/unknown receipts, and recovery without blind retries.
+- Figma explains its narrower macOS Keychain authentication boundary, official MCP connection, explicit remote publication, complete/partial/unknown receipts, and recovery without blind retries. Receipts may omit a file locator after ambiguous creation; guide readers to establish the remote file's identity before reopening or repeating any write.
 - CLI and MCP guides distinguish one-shot tasks from retained in-memory sessions and explain cancellation, trust, output isolation, and explicit publication.
 - Limits and releases document typed recovery, resource ceilings, first functional npm version `0.1.1`, six-host local-document validation, and the absence of direct Microsoft Office validation or PDF/UA certification. Current install guidance should resolve npm's published dist-tag instead of claiming an old version is perpetually latest.
 
