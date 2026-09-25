@@ -12,7 +12,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
 
-// Closed inline-tool profiles preserve Read and synchronous Bash results.
+// Closed inline-tool profiles preserve Read, synchronous Bash and file edits.
 // File-result references, children, media and other tools require independent
 // auxiliary-history evidence. Tool approvals have a separate exact-echo proof.
 type inlineToolEvidence struct {
@@ -23,14 +23,36 @@ type inlineToolEvidence struct {
 type inlineToolKind string
 
 const (
-	inlineReadTool inlineToolKind = "Read"
-	inlineBashTool inlineToolKind = "Bash"
+	inlineReadTool  inlineToolKind = "Read"
+	inlineBashTool  inlineToolKind = "Bash"
+	inlineWriteTool inlineToolKind = "Write"
+	inlineEditTool  inlineToolKind = "Edit"
 )
 
 type inlineToolProofs struct {
-	Read []checkpointInlineTool
-	Bash []checkpointInlineTool
+	Read  []checkpointInlineTool
+	Bash  []checkpointInlineTool
+	Write []checkpointInlineTool
+	Edit  []checkpointInlineTool
 }
+
+type inlineToolGroup struct {
+	Kind  inlineToolKind
+	Items []checkpointInlineTool
+}
+
+func (kind inlineToolKind) valid() bool {
+	switch kind {
+	case inlineReadTool, inlineBashTool, inlineWriteTool, inlineEditTool:
+		return true
+	default:
+		return false
+	}
+}
+func (p inlineToolProofs) groups() []inlineToolGroup {
+	return []inlineToolGroup{{inlineReadTool, p.Read}, {inlineBashTool, p.Bash}, {inlineWriteTool, p.Write}, {inlineEditTool, p.Edit}}
+}
+func (p inlineToolProofs) count() int { return len(p.Read) + len(p.Bash) + len(p.Write) + len(p.Edit) }
 
 type namedInlineTool struct {
 	checkpointInlineTool
@@ -38,12 +60,11 @@ type namedInlineTool struct {
 }
 
 func (p inlineToolProofs) all() []namedInlineTool {
-	result := make([]namedInlineTool, 0, len(p.Read)+len(p.Bash))
-	for _, item := range p.Read {
-		result = append(result, namedInlineTool{item, inlineReadTool})
-	}
-	for _, item := range p.Bash {
-		result = append(result, namedInlineTool{item, inlineBashTool})
+	result := make([]namedInlineTool, 0, p.count())
+	for _, group := range p.groups() {
+		for _, item := range group.Items {
+			result = append(result, namedInlineTool{item, group.Kind})
+		}
 	}
 	return result
 }
@@ -60,16 +81,28 @@ type checkpointInlineTool struct {
 	MetadataDigest string           `json:"result_metadata_sha256"`
 }
 
+type inlineReadFile struct {
+	Path    *string `json:"filePath"`
+	Content *string `json:"content"`
+	Lines   *uint32 `json:"numLines"`
+	Start   *uint32 `json:"startLine"`
+	Total   *uint32 `json:"totalLines"`
+}
+
+func (file *inlineReadFile) UnmarshalJSON(raw []byte) error {
+	type plain inlineReadFile
+	var value plain
+	if err := decodeNativeObject(raw, &value); err != nil {
+		return err
+	}
+	*file = inlineReadFile(value)
+	return nil
+}
+
 func inlineReadMetadata(raw []byte) ([sha256.Size]byte, bool) {
 	var value struct {
-		Type string `json:"type"`
-		File *struct {
-			Path    *string `json:"filePath"`
-			Content *string `json:"content"`
-			Lines   *uint32 `json:"numLines"`
-			Start   *uint32 `json:"startLine"`
-			Total   *uint32 `json:"totalLines"`
-		} `json:"file"`
+		Type string          `json:"type"`
+		File *inlineReadFile `json:"file"`
 	}
 	if decodeNativeObject(raw, &value) != nil || value.Type != "text" || value.File == nil || value.File.Path == nil || domain.Text(*value.File.Path, "native Read result path", 4096, true) != nil || value.File.Content == nil || value.File.Lines == nil || value.File.Start == nil || value.File.Total == nil {
 		return [sha256.Size]byte{}, false
@@ -99,6 +132,10 @@ func inlineMetadata(kind inlineToolKind, raw []byte) ([sha256.Size]byte, bool) {
 		return inlineReadMetadata(raw)
 	case inlineBashTool:
 		return inlineBashMetadata(raw)
+	case inlineWriteTool:
+		return inlineWriteMetadata(raw)
+	case inlineEditTool:
+		return inlineEditMetadata(raw)
 	default:
 		return [sha256.Size]byte{}, false
 	}
@@ -110,18 +147,23 @@ func (b *ExecutionBinding) closedInlineTools() (inlineToolProofs, error) {
 		return result, continuationUnavailable()
 	}
 	for id, tool := range b.content.tools {
-		if (tool.name != string(inlineReadTool) && tool.name != string(inlineBashTool)) || tool.parent != "" || !tool.finished || !tool.streamed || tool.inline == nil || tool.caller.ToolID != "" || (tool.caller.Kind != "" && tool.caller.Kind != DirectCaller) {
+		if !inlineToolKind(tool.name).valid() || tool.parent != "" || !tool.finished || !tool.streamed || tool.inline == nil || tool.caller.ToolID != "" || (tool.caller.Kind != "" && tool.caller.Kind != DirectCaller) {
 			return inlineToolProofs{}, continuationUnavailable()
 		}
 		proof := checkpointInlineTool{ID: id, Input: tool.ownerInput, Turn: tool.ownerTurn, Message: tool.message, Index: tool.index, InputDigest: hex.EncodeToString(tool.input[:]), Caller: tool.caller.Kind, Result: tool.inline.NativeID, MetadataDigest: hex.EncodeToString(tool.inline.Metadata[:])}
-		if tool.name == string(inlineReadTool) {
+		switch inlineToolKind(tool.name) {
+		case inlineReadTool:
 			result.Read = append(result.Read, proof)
-		} else {
+		case inlineBashTool:
 			result.Bash = append(result.Bash, proof)
+		case inlineWriteTool:
+			result.Write = append(result.Write, proof)
+		case inlineEditTool:
+			result.Edit = append(result.Edit, proof)
 		}
 	}
-	for _, items := range [][]checkpointInlineTool{result.Read, result.Bash} {
-		slices.SortFunc(items, func(a, b checkpointInlineTool) int { return strings.Compare(a.ID, b.ID) })
+	for _, group := range result.groups() {
+		slices.SortFunc(group.Items, func(a, b checkpointInlineTool) int { return strings.Compare(a.ID, b.ID) })
 	}
 	return result, nil
 }

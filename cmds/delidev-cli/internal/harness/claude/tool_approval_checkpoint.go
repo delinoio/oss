@@ -47,7 +47,7 @@ func (cp sessionCheckpoint) validateToolApprovals() error {
 		return historyUncertain()
 	}
 	tools := map[string]checkpointInlineTool{}
-	for _, tool := range (inlineToolProofs{cp.ReadTools, cp.BashTools}).all() {
+	for _, tool := range cp.inlineTools().all() {
 		tools[tool.ID] = tool.checkpointInlineTool
 	}
 	requests, approved := map[string]bool{}, map[string]bool{}

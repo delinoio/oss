@@ -38,6 +38,9 @@ func inlineContinuationFixture(t *testing.T, kind inlineToolKind) *APISession {
 	if kind == inlineBashTool {
 		input = map[string]any{"command": "printf private-original-bash"}
 	}
+	if kind == inlineWriteTool || kind == inlineEditTool {
+		input, _ = inlineFileFixtureValues(kind)
+	}
 	inputRaw, _ := json.Marshal(input)
 	inputHash, err := streamReplyDigest(inputRaw)
 	if err != nil {
@@ -46,6 +49,9 @@ func inlineContinuationFixture(t *testing.T, kind inlineToolKind) *APISession {
 	metadata := map[string]any{"type": "text", "file": map[string]any{"filePath": "/private/read-fixture.txt", "content": "Private original Read content", "numLines": 1, "startLine": 1, "totalLines": 1}}
 	if kind == inlineBashTool {
 		metadata = map[string]any{"stdout": "Private original Bash content", "stderr": "", "interrupted": false, "isImage": false, "noOutputExpected": false}
+	}
+	if kind == inlineWriteTool || kind == inlineEditTool {
+		_, metadata = inlineFileFixtureValues(kind)
 	}
 	metadataRaw, _ := json.Marshal(metadata)
 	metadataHash, valid := inlineMetadata(kind, metadataRaw)

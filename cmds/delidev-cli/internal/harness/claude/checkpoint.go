@@ -60,6 +60,8 @@ type sessionCheckpoint struct {
 	Authorities        []string                       `json:"credential_sha256"`
 	ReadTools          []checkpointInlineTool         `json:"inline_read_tools,omitempty"`
 	BashTools          []checkpointInlineTool         `json:"inline_bash_tools,omitempty"`
+	WriteTools         []checkpointInlineTool         `json:"inline_write_tools,omitempty"`
+	EditTools          []checkpointInlineTool         `json:"inline_edit_tools,omitempty"`
 	ToolApprovals      []checkpointToolApproval       `json:"tool_approvals,omitempty"`
 }
 
@@ -93,7 +95,7 @@ func (closed *ClosedAPISession) RetainCheckpoint(ctx context.Context) ([]byte, C
 	if err != nil {
 		return nil, CheckpointReference{}, err
 	}
-	cp.ReadTools, cp.BashTools = tools.Read, tools.Bash
+	cp.ReadTools, cp.BashTools, cp.WriteTools, cp.EditTools = tools.Read, tools.Bash, tools.Write, tools.Edit
 	cp.ToolApprovals, err = b.closedToolApprovals()
 	if err != nil {
 		return nil, CheckpointReference{}, err
@@ -187,10 +189,10 @@ func RestoreCheckpoint(ctx context.Context, config APIStreamConfig, raw []byte, 
 	for _, id := range cp.ProviderIDs {
 		b.content.seen["\x00"+id] = true
 	}
-	if len(cp.ReadTools)+len(cp.BashTools) != 0 {
+	if cp.inlineTools().count() != 0 {
 		b.content.tools = map[string]nativeToolState{}
 	}
-	for _, tool := range (inlineToolProofs{cp.ReadTools, cp.BashTools}).all() {
+	for _, tool := range cp.inlineTools().all() {
 		input, _ := hex.DecodeString(tool.InputDigest)
 		metadata, _ := hex.DecodeString(tool.MetadataDigest)
 		state := nativeToolState{ownerInput: tool.Input, ownerTurn: tool.Turn, name: string(tool.Kind), message: tool.Message, index: tool.Index, finished: true, streamed: true, caller: NativeToolCaller{Kind: tool.Caller}, inline: &inlineToolEvidence{NativeID: tool.Result}}
@@ -273,11 +275,12 @@ func (cp sessionCheckpoint) validate(config APIStreamConfig, origin string, ref 
 	if ref.RequiresResume != (!terminal.Successful() || cp.ContinuationFailed || cp.LastAction == CompactFailed) || !checkpointIDs(cp.Inputs, maxStreamIdentities) || !slices.Contains(cp.Inputs, cp.Input) || !checkpointIDs(cp.Owners, maxStreamIdentities) || !slices.Contains(cp.Owners, cp.Owner) || !checkpointStrings(cp.NativeIDs, domain.MaxExecutionEvents, nativeUUID) || !slices.Contains(cp.NativeIDs, cp.Turn) || !slices.Contains(cp.NativeIDs, string(cp.Input)) || !checkpointStrings(cp.ProviderIDs, maxStreamIdentities, func(id string) bool { return domain.Text(id, "native provider message", 1024, true) == nil }) || len(cp.Authorities) == 0 || !checkpointStrings(cp.Authorities, maxStreamIdentities, validHistoryDigest) || len(cp.Messages) == 0 || len(cp.Messages) > maxStreamIdentities || len(cp.Compactions) > maxStreamIdentities || len(cp.Actions) > maxStreamIdentities || len(cp.Resumes) > maxStreamIdentities {
 		return historyUncertain()
 	}
-	if len(cp.ReadTools)+len(cp.BashTools) > 4096 {
+	if cp.inlineTools().count() > 4096 {
 		return historyUncertain()
 	}
 	results, ids := map[string]bool{}, map[string]bool{}
-	for _, tools := range [][]checkpointInlineTool{cp.ReadTools, cp.BashTools} {
+	for _, group := range cp.inlineTools().groups() {
+		tools := group.Items
 		for i, tool := range tools {
 			if domain.Text(tool.ID, "native inline tool identity", 1024, true) != nil || (i > 0 && tools[i-1].ID >= tool.ID) || ids[tool.ID] || !slices.Contains(cp.Inputs, tool.Input) || !checkpointHasIdentity(cp.NativeIDs, tool.Turn) || !slices.Contains(cp.ProviderIDs, tool.Message) || !validHistoryDigest(tool.InputDigest) || !validHistoryDigest(tool.MetadataDigest) || !checkpointHasIdentity(cp.NativeIDs, tool.Result) || results[tool.Result] || (tool.Caller != "" && tool.Caller != DirectCaller) {
 				return historyUncertain()
@@ -328,4 +331,8 @@ func checkpointStrings(values []string, bound int, valid func(string) bool) bool
 		}
 	}
 	return true
+}
+
+func (cp sessionCheckpoint) inlineTools() inlineToolProofs {
+	return inlineToolProofs{Read: cp.ReadTools, Bash: cp.BashTools, Write: cp.WriteTools, Edit: cp.EditTools}
 }
