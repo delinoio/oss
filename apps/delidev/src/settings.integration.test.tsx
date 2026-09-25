@@ -260,6 +260,11 @@ it("revokes a real paired client through settings and reads bounded server diagn
   await screen.findByText("Server owner credential loaded");
   expect(screen.getByText("Read succeeded")).toBeTruthy();
   expect(screen.getByText("Not performed")).toBeTruthy();
+  expect(screen.getByRole("region", { name: "Storage diagnostics" })).toBeTruthy();
+  expect(screen.getByText("Logical database size").nextElementSibling?.textContent).toMatch(/^[0-9,]+ bytes$/);
+  expect(screen.getByRole("region", { name: "Worker diagnostics" })).toBeTruthy();
+  expect(screen.getByRole("region", { name: "Protected credential diagnostics" })).toBeTruthy();
+  expect(screen.queryByText(/legacy report/)).toBeNull();
 }, 15000);
 
 it("creates and edits singleton server preferences with the exact Go defaults", async () => {

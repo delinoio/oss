@@ -80,3 +80,30 @@ func TestRejectSymlinkAndSharedDirectory(t *testing.T) {
 		t.Fatal("mutated existing permissions")
 	}
 }
+
+func TestExistingLockCannotCreateMissingState(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "private")
+	if err := PrivateDir(root); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "existing.lock")
+	if _, err := TryLockExisting(path); err == nil {
+		t.Fatal("missing lock created")
+	}
+	if _, err := os.Lstat(path); !os.IsNotExist(err) {
+		t.Fatal("inspection wrote a lock", err)
+	}
+	lock, err := TryLock(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lock.Close()
+	lock, err = TryLockExisting(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := TryLockExisting(path); err == nil {
+		t.Fatal("exclusive lock bypassed")
+	}
+	lock.Close()
+}

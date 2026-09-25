@@ -1,0 +1,51 @@
+# DeliDev Read-Only Diagnostics
+
+## Scope
+`cmds/delidev-cli/internal/server/diagnostics.go`, the domain diagnostic report, store capacity measurements and credential inspection boundary implement `delidev doctor` and `SystemService.GetDoctor`. The desktop Settings presentation consumes the same server report. This contract implements bounded metadata and existing protected-reference observations; it does not claim the complete issue's remaining integrations or platform acceptance.
+
+## Runtime and Language
+Go owns observations and authorization. TypeScript renders the report through direct authenticated Connect RPC. Native credential and filesystem adapters use the existing server platform boundary; Rust does not inspect account secrets.
+
+## Users and Operators
+The single server owner and its authorized paired clients may request diagnostics. Workers supply retained installation/version metadata through their existing authenticated observations; doctor does not start or probe a Worker or an installed harness.
+
+## Interfaces and Contracts
+`GetDoctor` keeps its existing empty request and `report_json` response. `delidev doctor` emits the same JSON in the ordinary CLI result envelope. Version 2 adds `schema_version`, UTC observation time, running server/protocol/database schema versions, server platform, storage measurements, Worker observations and account credential observations. The original version, server identity, bound endpoint, database read result, loaded owner credential and `inference_probes: false` remain compatible with legacy consumers. A loaded owner credential is not proof of protected account-store availability.
+
+The request has a 20-second context budget and checks cancellation between native operations. Existing platform calls are synchronous and joined; the budget does not claim it can preempt an uninterruptible OS call. Return at most 1 MiB of JSON. Each inventory includes at most the first 50 canonical-ID-ordered records, with separate `more_machines`/`more_credentials` flags. These partial inventories are not whole-server health summaries; use individual settings/resource reads for remaining records. SQL snapshots, filesystem samples, native reads and stream presence are separate observations, not a globally atomic system snapshot.
+
+Worker records expose opaque machine identity, configured name, last reported version/OS/architecture/contact, disabled state and current server stream presence. An absent stream does not establish process exit; a present stream does not prove native execution health. Include all four harnesses, using `unchecked` for an absent retained observation. Project only version/installation state, retained capabilities, protocol state/verification, observation time and locally reconstructed stable problem code/guidance. Exclude selected/resolved paths and original error bodies. Version discovery, protocol handshake, selected-account readiness and owned cleanup remain distinct.
+
+Credential observations use closed states `observed`, `unavailable`, `unconfigured`, `not-applicable`, `failed` and `superseded`. A connected API account checks exactly its current account/connection/purpose reference and immediately clears the returned plaintext, including failure paths. Successful decryption means only that this saved credential was readable. Keyless connections require no native access; disconnected accounts are unconfigured; subscription inspection remains explicitly unsupported until its account adapter exists. Missing/locked/damaged storage returns a safe code and concrete manual recovery guidance, without key replacement, login, validation or inference. A changed/deleted connection at publication supersedes the original observation without relabeling it as the current connection.
+
+## Storage
+Doctor never creates mutation receipts/events, repairs SQLite, runs a checkpoint/vacuum, creates missing vault state, reconciles credential scratch files or writes/removes native keys. Read SQLite page count/page size and resource-kind counts in one read transaction. Outside the transaction, inspect private regular database/WAL file sizes and OS filesystem capacity/space available to the server user. A missing optional WAL is zero; failed/unavailable measurements remain absent. Preserve already observed fields after a subsequent measurement failure, with a failed/unavailable result. Counts may also be incomplete on failure. Physical database bytes, WAL bytes and logical database bytes overlap and must not be added or interpreted as reclaimable storage. Backups, workspace disk usage, native history and user files are not recursively scanned.
+
+All uint64 sizes/counts are canonical decimal JSON strings, including zero. The desktop validates their range and formats with BigInt; it must not convert them through floating-point numbers. Missing/invalid fields stay unavailable rather than becoming zero.
+
+## Security
+Revalidate paired-client authorization before database/native reads and again before report publication. Serialize each account inspection under the normal account gate, release SQLite transactions before native work and recheck all original connection identities at publication. Reuse the already open protected vault when available. Otherwise use `credentials.OpenExisting`: require the existing private directory, existing regular private lock, exclusive non-creating OS lock and matching server pin; never initialize or repair any state. The temporary vault is read-only and rejects Put/Delete, is closed after inspection, and is never installed as the normal writable server vault.
+
+The report/log boundary retains stable error codes and locally owned guidance only, not raw OS/provider diagnostics, executable paths, secret bytes, prompts or credential enumeration. Platform inspection never unlocks/prompts or accesses unrelated native entries. Ordinary tests use mock native storage, absent scopes or connected keyless fixture accounts; they do not read the user's credentials.
+
+## Logging
+`doctor_observed` logs correlation, storage classification, inventory counts and truncation flags. Existing credential-read failures log only their safe operation/reference/code fields. A diagnostic request may produce operational logs, but it cannot alter product state. No measured content or secret value belongs in logs.
+
+## Build and Test
+Run `go test -race ./cmds/delidev-cli/...` and `go vet ./cmds/delidev-cli/...`. Read-only credential tests cover exclusive scope locks, non-creating lock access, missing pins, preserved scratch files, failed writes/deletes and unchanged sealed bytes. Server/store tests cover real temporary SQLite/filesystem measurements, exact secret references and clearing, missing vault preservation, superseded connections, revocation after native access, explicit truncation, cancellation and metadata/secret leak checks. Windows/Linux cross-builds prove compilation only. Run `pnpm test` in `apps/delidev`; component tests cover partial/legacy/unknown reports, precision, stale refresh and inert guidance, and actual temporary Go integration checks the Settings report without user credentials or inference.
+
+## Dependencies and Integrations
+Uses existing Connect System service, single-authority store, Worker stream registry and native credential adapters. No external monitoring service/exporter or additional reporting credentials are introduced.
+
+## Change Triggers
+Update scoped CLI/desktop AGENTS, the protocol and desktop contracts, project index and evidence ledger when report schemas, scope, limits, native access or presentation guarantees change. New credential families require their own exact ownership and read-only inspection contract before doctor may access them.
+
+## References
+- [DeliDev project](project-delidev.md)
+- [Issue requirements](cmds-delidev-requirements.md)
+- [CLI/server contract](cmds-delidev-contract.md)
+- [Protected credential storage](cmds-delidev-credentials-contract.md)
+- [Protocol contract](protos-delidev-v1-contract.md)
+- [Desktop contract](apps-delidev-desktop-contract.md)
+- [Evidence ledger](cmds-delidev-evidence.md)
+- [Repository defaults](repository-defaults.md)

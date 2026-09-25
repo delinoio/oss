@@ -11,7 +11,7 @@ Run personal AI sessions across projects, accounts, native harnesses, and execut
 - `protos/delidev/v1`: versioned Connect RPC schemas.
 - `protos/gen/go/delidev/v1`: generated Go messages and Connect bindings.
 - `packages/delidev-api-client`: generated TypeScript/Connect Query client, explicit transport and bounded read-only synchronization for the desktop client.
-- `apps/delidev`: implemented React presentation for retained sessions, search, activity, inbox, question/approval responses, queue actions, editable provider/model/account/agent/instruction/project/repository settings, explicit account connection/validation/catalog refresh, Worker checkout inspection, configuration deletion, read-only routing previews, Worker harness discovery, paired-device authorization/revocation, bounded diagnostic observations, singleton routing/fetch preferences, schedule lifecycle/history, paginated session creation, native same-server Local Worker proof, explicit local Worker registration/controller lifecycle and explicit preparation/execution recovery; the native Tauri/Wry host starts/reuses and supervises a bundled Go server with durable explicit-stop coordination and a separate paired client. Remaining desktop surfaces and multi-platform acceptance are in progress. On 2026-09-25 the owner explicitly expanded the active request to all of issue #964, including the desktop app; CLI-only acceptance is no longer the completion boundary.
+- `apps/delidev`: implemented React presentation for retained sessions, search, activity, inbox, question/approval responses, queue actions, editable provider/model/account/agent/instruction/project/repository settings, explicit account connection/validation/catalog refresh, Worker checkout inspection, configuration deletion, read-only routing previews, Worker harness discovery, paired-device authorization/revocation, bounded read-only storage/Worker/protected-reference diagnostics, singleton routing/fetch preferences, schedule lifecycle/history, paginated session creation, native same-server Local Worker proof, explicit local Worker registration/controller lifecycle and explicit preparation/execution recovery; the native Tauri/Wry host starts/reuses and supervises a bundled Go server with durable explicit-stop coordination and a separate paired client. Remaining desktop surfaces and multi-platform acceptance are in progress. On 2026-09-25 the owner explicitly expanded the active request to all of issue #964, including the desktop app; CLI-only acceptance is no longer the completion boundary.
 
 ## Domain Contract Documents
 - [CLI/server/Worker contract](cmds-delidev-contract.md)
@@ -23,6 +23,7 @@ Run personal AI sessions across projects, accounts, native harnesses, and execut
 - [Owned process contract](cmds-delidev-process-contract.md)
 - [Native harness adapter contract](cmds-delidev-harness-contract.md)
 - [Protected credential storage](cmds-delidev-credentials-contract.md)
+- [Read-only diagnostics](cmds-delidev-diagnostics-contract.md)
 - [Account lifecycle](cmds-delidev-accounts-contract.md)
 - [Provider inspection](cmds-delidev-providers-contract.md)
 - [Provider and model catalog](cmds-delidev-catalog-contract.md)

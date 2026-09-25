@@ -92,16 +92,35 @@ type Lock struct {
 	over windows.Overlapped
 }
 
-func TryLock(path string) (*Lock, error) {
+func TryLock(path string) (*Lock, error)         { return tryLock(path, true) }
+func TryLockExisting(path string) (*Lock, error) { return tryLock(path, false) }
+func tryLock(path string, create bool) (*Lock, error) {
 	if info, err := os.Lstat(path); err == nil && !info.Mode().IsRegular() {
 		return nil, domain.Fail(domain.PermissionDenied, "Invalid lock file.", "Inspect the data scope.")
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
+	var f *os.File
+	var err error
+	if create {
+		f, err = os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
+	} else {
+		var p *uint16
+		p, err = windows.UTF16PtrFromString(path)
+		if err == nil {
+			var h windows.Handle
+			h, err = windows.CreateFile(p, windows.GENERIC_READ|windows.GENERIC_WRITE, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE, nil, windows.OPEN_EXISTING, windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
+			if err == nil {
+				f = os.NewFile(uintptr(h), path)
+			}
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
 	l := &Lock{f: f}
 	info, err := f.Stat()
+	if err == nil && !info.Mode().IsRegular() {
+		err = domain.Fail(domain.PermissionDenied, "Invalid lock file.", "Inspect the data scope.")
+	}
 	if err == nil {
 		err = checkPrivate(path, info)
 	}

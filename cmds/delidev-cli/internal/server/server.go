@@ -397,28 +397,6 @@ func (s *Service) StopServer(ctx context.Context, req *connect.Request[pb.StopSe
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil
 }
-func (s *Service) GetDoctor(ctx context.Context, req *connect.Request[pb.GetDoctorRequest]) (*connect.Response[pb.GetDoctorResponse], error) {
-	_, _, err := s.Store.Snapshot(ctx, store.Filter{Kind: domain.SettingsKind, Limit: 2})
-	state := "ready"
-	if err != nil {
-		state = "failed"
-	}
-	report := struct {
-		Version         string    `json:"version"`
-		ServerID        domain.ID `json:"server_id"`
-		Listener        string    `json:"listener"`
-		Database        string    `json:"database"`
-		CredentialStore string    `json:"credential_store"`
-		InferenceProbes bool      `json:"inference_probes"`
-	}{rpc.Version, s.Identity.ServerID, s.Endpoint.URL, state, "owner-credential-ready", false}
-	raw, err := json.Marshal(report)
-	if err != nil {
-		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
-	}
-	response := connect.NewResponse(&pb.GetDoctorResponse{ReportJson: raw})
-	rpc.CopyCorrelation(response, req.Header())
-	return response, nil
-}
 func scope(f store.Filter) string {
 	return fmt.Sprintf("page:%s:%s:%s", f.Kind, f.SessionID, f.ProjectID)
 }
