@@ -196,3 +196,9 @@ This extension is not included in npm 0.1.1. `createSession(Format.Glb | Format.
 `inspect`, settled `snapshot`, revision-bound world-AABB `measure`, `exportBuffer`, atomic `exportFile`, `onDiagnostic` and `dispose` retain the local session lifecycle. GLB uses glTF 2.0; binary FBX 7.4 targets Blender 4.5 materials and embeds textures. Other FBX applications may shade differently. Registered assets and output each have a 256 MiB ceiling, individual geometry/textures 64 MiB, with existing image and React-tree limits. Generation has no Blender or viewer runtime dependency.
 
 See the [GLB guide](https://oss.delino.io/react-forge/glb), [FBX guide](https://oss.delino.io/react-forge/fbx), and original [AURA product example](examples/audio-studio-assets/README.md). The same CLI/MCP exports `.glb`/`.fbx` when running a build that includes this extension.
+
+## Game SFX (unreleased)
+
+The source adds `createSession(Format.Wav)` and `Sound`, `Noise`, `Tone`, `SampleRate`, `Channels` and `Waveform` from `@delino/react-forge/sfx`. This extension is not included in npm `0.1.1`. See the [SFX guide](https://oss.delino.io/react-forge/sfx) for the complete parameters and a zombie-game gunshot.
+
+Compose timed seeded noise and sine/triangle sweeps, then use the existing buffer/file export or CLI/MCP with `.wav`. Output is mono/stereo PCM16 at 44100/48000 Hz. Durations, starts, fades and exponential decay are seconds; gains are linear, with automatic attenuation above 0.95 peak. Limits are 30 seconds, 256 layers and 16 million aggregate voice samples. Refs measure in seconds-based `timeline` coordinates. Image/font registration, audio import, recorded samples, live playback and MP3/OGG are unsupported. Generation needs no audio device, network, fonts or conversion tool.

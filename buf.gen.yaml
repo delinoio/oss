@@ -63,3 +63,4 @@ inputs:
     paths:
       - protos/devhud/v1
       - protos/async_commit_hook/v1
+      - protos/delidev/v1

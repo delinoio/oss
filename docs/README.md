@@ -9,6 +9,7 @@ Each project must have one project index document and one or more domain contrac
 ## Repository Defaults
 - Repository-wide default technology choices and workflow defaults are defined in `docs/repository-defaults.md`.
 - Repository licensing and third-party notice boundaries are defined in `docs/repository-license-contract.md`.
+- Dependency security updates, audit evidence, and unresolved upstream constraints are recorded in [the dependency security contract](repository-dependency-security-contract.md).
 - Repository configuration, stable root development commands, local development modes, environment ownership, startup-generation integrity, and secret classification are defined in `docs/repository-environment-contract.md`.
 - Project and domain contracts must document deviations from those defaults when a different language, ID format, search backend, build toolchain, static-site deployment platform, or file storage/access pattern is chosen.
 
@@ -37,10 +38,29 @@ Each project must have one project index document and one or more domain contrac
 
 ## Project Catalog
 
+### delidev
+- [Project index](project-delidev.md)
+- [CLI/server/Worker contract](cmds-delidev-contract.md)
+- [Connect protocol](protos-delidev-v1-contract.md)
+- [Worker workspace preparation](cmds-delidev-workspace-contract.md)
+- [Owned process contract](cmds-delidev-process-contract.md)
+- [Native harness adapter contract](cmds-delidev-harness-contract.md)
+- [Protected credential storage](cmds-delidev-credentials-contract.md)
+- [Account lifecycle](cmds-delidev-accounts-contract.md)
+- [Provider inspection](cmds-delidev-providers-contract.md)
+- [Provider and model catalog](cmds-delidev-catalog-contract.md)
+- [Native API relay](cmds-delidev-proxy-contract.md)
+- [Session acceptance and input queue](cmds-delidev-sessions-contract.md)
+- [Retained inbox and read-state contract](cmds-delidev-inbox-contract.md)
+- [Schedules and durable occurrences](cmds-delidev-schedules-contract.md)
+- [Complete issue #964 requirements](cmds-delidev-requirements.md)
+- [Implementation and evidence ledger](cmds-delidev-evidence.md)
+
 ### React Forge
 - [Project index](project-react-forge.md)
-- [Public documentation](apps-react-forge-docs-foundation.md) (`apps/public-docs/docs/react-forge`, canonical URL `https://oss.delino.io/react-forge/`, fourteen user-guide routes)
+- [Public documentation](apps-react-forge-docs-foundation.md) (`apps/public-docs/docs/react-forge`, canonical URL `https://oss.delino.io/react-forge/`, seventeen user-guide routes)
 - [Complete issue requirements](packages-react-forge-requirements.md)
+- [Game SFX and WAV export](packages-react-forge-sfx-contract.md)
 - [Node sessions and CLI](packages-react-forge-contract.md)
 - [Session-based stdio MCP](packages-react-forge-mcp-contract.md)
 - [Native engines and preservation](crates-react-forge-contract.md)

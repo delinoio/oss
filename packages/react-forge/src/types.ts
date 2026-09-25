@@ -5,6 +5,7 @@ export enum Format {
   Docx = "docx",
   Xlsx = "xlsx",
   Pdf = "pdf",
+  Wav = "wav",
   Figma = "figma",
   Glb = "glb",
   Fbx = "fbx",
@@ -64,7 +65,7 @@ export interface NodeHandle {
 }
 
 export interface Geometry {
-  readonly coordinateSpace?: "word_flow" | "worksheet" | "mounted_region" | "page";
+  readonly coordinateSpace?: "word_flow" | "worksheet" | "mounted_region" | "page" | "timeline";
   readonly x: number;
   readonly y: number;
   readonly width: number;
@@ -104,6 +105,9 @@ export interface AssetHandle { readonly assetId: string; readonly documentId: st
 export const limits = Object.freeze({
   sceneBytes: 256 * 1024 * 1024,
   geometryBytes: 64 * 1024 * 1024,
+  sfxSeconds: 30,
+  sfxLayers: 256,
+  sfxVoiceSamples: 16_000_000,
   officeBytes: 256 * 1024 * 1024,
   pdfBytes: 256 * 1024 * 1024,
   expandedOfficeBytes: 512 * 1024 * 1024,

@@ -23,6 +23,7 @@
 - After addressing pull request review comments and pushing updates, mark the corresponding review threads as resolved.
 - When no explicit scope is specified and you are currently working within a pull request scope, interpret instructions within the current pull request scope.
 - Do not guess; rather search for the web.
+- Follow `docs/repository-dependency-security-contract.md` for dependency security updates, validation evidence, and unresolved upstream constraints. Keep unresolved advisories visible; a fixed runtime pin or an unavailable patch is not a vulnerability fix.
 - Debug by logging. You should write enough logging code.
 - Write sufficient logs for debugging and operational troubleshooting.
 - Prefer structured logging libraries for business and system logs (Go: `log/slog`, Rust: `tracing`).
@@ -99,6 +100,7 @@ enum ProjectId {
   PublicDocs = "public-docs",
   DevHud = "devhud",
   AsyncCommitHook = "async-commit-hook",
+  DeliDev = "delidev",
   Forge = "forge",
   ReactForge = "react-forge",
 }
@@ -113,10 +115,13 @@ enum ProjectId {
 - React Forge exposes a local session-based stdio MCP server through `react-forge mcp`; follow `docs/packages-react-forge-mcp-contract.md`. Keep execution output isolated from protocol stdout, share the existing engine and Figma scheduling across sessions, and preserve explicit export/publication and cancellation outcomes.
 - React Forge public guides are owned by `apps/public-docs/docs/react-forge` at `https://oss.delino.io/react-forge/`; follow `docs/apps-react-forge-docs-foundation.md` and keep the package README linked to them. Describe released user behavior and evidence limits without publishing repository internals.
 
-- React Forge owns `packages/react-forge`, `crates/react-forge-node`, `crates/forge-package`, `crates/forge-document`, `crates/forge-docx`, `crates/forge-xlsx`, `crates/forge-pdf`, `crates/forge-figma`, and `apps/public-docs/docs/react-forge`; reuse existing Forge presentation engines without changing CLI/MCP defaults.
+- React Forge SFX follows `docs/packages-react-forge-sfx-contract.md`: bounded offline procedural WAV generation, native worker synthesis, and zombie-game gunshot acceptance. Keep generated audio untracked and distinguish source support from published availability.
+
+- React Forge owns `packages/react-forge`, `crates/react-forge-node`, `crates/forge-package`, `crates/forge-document`, `crates/forge-docx`, `crates/forge-xlsx`, `crates/forge-pdf`, `crates/forge-figma`, `crates/forge-sfx`, and `apps/public-docs/docs/react-forge`; reuse existing Forge presentation engines without changing CLI/MCP defaults.
 
 ### Project Domain Ownership
 
+- `delidev` -> `cmds/delidev-cli`, `protos/delidev/v1`, `protos/gen/go/delidev/v1`; follow `docs/project-delidev.md` and the complete issue #964 requirements. The executable is `delidev`; Go owns single-user server and Worker business logic. Keep implementation and real-environment evidence distinct in `docs/cmds-delidev-evidence.md`.
 - `forge` -> `crates/forge-tree-doc`, `crates/forge-pptx`, `crates/delino-forge`; follow `docs/project-forge.md` and `docs/crates-forge-foundation.md`. Keep all three packages private, local-only, and preserve unsupported PPTX content during supported edits. Opened documents export to a separate path; reject replacement of their tracked source even with explicit overwrite. CLI/MCP share one core; optional preview is not a generation dependency.
 
 - `nodeup` -> `crates/nodeup`, `apps/public-docs/docs/nodeup`
@@ -327,7 +332,9 @@ enum RustiaComponent {
 - `<description>` should be concise, specific, and start with a lowercase verb phrase when possible.
 - Do not create unscoped pull request titles or use bracket-style project prefixes like `[serde-feather]`.
 
-### Node Runtime Baseline
+### Runtime Baselines
+
+- Root `go.mod` selects the Go security baseline, currently Go `1.26.8`; keep the API/sweeper Docker build image on that exact version. CI reads the module selector.
 
 - Root `.nvmrc` is the canonical Node.js runtime selector for local development workflows.
 - The current required runtime is Node.js `24` (LTS major line).

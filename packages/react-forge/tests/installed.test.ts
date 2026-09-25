@@ -9,8 +9,8 @@ import test from "node:test";
 import { connect } from "./mcp/client.js";
 import packageManifest from "../package.json" with { type: "json" };
 const exec = promisify(execFile);
-const magic = { pptx: "PK", docx: "PK", xlsx: "PK", pdf: "%PDF-", glb: "glTF", fbx: "Kaydara FBX Binary" };
-const cases = [["presentation", "pptx"], ["document", "docx"], ["workbook", "xlsx"], ["pdf", "pdf"], ["scene-glb", "glb"], ["scene-fbx", "fbx"]] as const;
+const magic = { pptx: "PK", docx: "PK", xlsx: "PK", pdf: "%PDF-", glb: "glTF", fbx: "Kaydara FBX Binary", wav: "RIFF" };
+const cases = [["presentation", "pptx"], ["document", "docx"], ["workbook", "xlsx"], ["pdf", "pdf"], ["scene-glb", "glb"], ["scene-fbx", "fbx"], ["zombie-gunshot", "wav"]] as const;
 
 test("scoped workspace archive installs and its CLI generates local formats and an offline Figma receipt", async () => {
   const directory = await mkdtemp(join(tmpdir(), "react-forge installed-"));

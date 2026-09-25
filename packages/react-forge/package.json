@@ -47,6 +47,11 @@
       "types": "./dist/fbx.d.ts",
       "import": "./dist/fbx.js",
       "require": "./dist/fbx.js"
+    },
+    "./sfx": {
+      "types": "./dist/sfx.d.ts",
+      "import": "./dist/sfx.js",
+      "require": "./dist/sfx.js"
     }
   },
   "bin": {

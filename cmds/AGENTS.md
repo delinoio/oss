@@ -7,6 +7,7 @@
 
 ### Scope in This Domain
 
+- `cmds/delidev-cli`: DeliDev CLI, server, and execution Worker; follow scoped AGENTS and `docs/cmds-delidev-contract.md`. Product operations require authenticated Connect and an explicitly started server.
 - `cmds/runmoor`: local ephemeral GitHub Actions runner manager; follow its scoped AGENTS and `docs/cmds-runmoor-foundation.md`.
 
 - `cmds/derun`: Go tool for AI coding-agent workflow orchestration.

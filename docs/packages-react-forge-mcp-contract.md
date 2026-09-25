@@ -20,7 +20,7 @@ The official TypeScript MCP SDK owns stdio framing and protocol negotiation. The
 | `inspect` | `sessionId`, optional `nodeId`/`kind`, `offset`, `limit`, and `view` (`targets` or `receipt`). Local targets come from a settled snapshot; Figma targets are cached. Receipt view never republishes. |
 | `measure` | `sessionId`, `nodeId`, exact `revision`. Local callers obtain the revision through inspect; Figma requires a completed published revision. |
 | `refresh` | Figma `sessionId`, optional `pageId`, up to 24 `nodeIds`, and `resources`. Delegates to the existing scoped remote reader. |
-| `export` | Local session, `output`, optional `overwrite` (default false). Extension must match PPTX/DOCX/XLSX/PDF. |
+| `export` | Local session, `output`, optional `overwrite` (default false). Extension must match PPTX/DOCX/XLSX/PDF/WAV. |
 | `publish` | Figma session, optional `receiptPath` ending in `.figma.json`, optional `overwrite` (default false). Without a path, publishes without saving a local receipt. |
 | `close` | `sessionId`; serializes behind prior work, disposes the session, and clears its state. |
 
@@ -70,3 +70,7 @@ Keep this contract, Node/Figma contracts, original requirements follow-up, proje
 ## Static 3D extension
 
 The generation-only GLB/FBX extension follows [the scene contract](packages-react-forge-scene-contract.md). `SceneSession` shares local publication and MCP lifecycle, uses independent world-space bounds and native scene engines, and introduces no runtime conversion dependency.
+
+## SFX follow-up
+
+`Format.Wav` and canonical `@delino/react-forge/sfx` imports use existing execute/inspect/measure/export/close tools. Capabilities expose WAV encoding and synthesis bounds; measure returns timeline x/width in seconds at the pinned revision. The [SFX contract](packages-react-forge-sfx-contract.md) defines generation-only behavior. Installed CLI and SDK MCP consumers exercise the zombie-game gunshot without external samples or audio playback.

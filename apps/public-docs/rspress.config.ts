@@ -106,6 +106,7 @@ const reactForgePages = [
   { text: "PDF", link: "/react-forge/pdf" },
   { text: "GLB (Unreleased)", link: "/react-forge/glb" },
   { text: "FBX (Unreleased)", link: "/react-forge/fbx" },
+  { text: "Game SFX (Unreleased)", link: "/react-forge/sfx" },
   { text: "Office Editing", link: "/react-forge/office-editing" },
   { text: "Figma Design", link: "/react-forge/figma" },
   { text: "CLI", link: "/react-forge/cli" },

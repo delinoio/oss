@@ -24,6 +24,8 @@
 
 ### DevHud Rules
 
+- The September 2026 dependency security update advances shared `anyhow` to `1.0.103`. The six mobile closure hashes are rebaselined only after comparing each complete graph against its previous hash and proving that this version is the sole change; target definitions, features, Tauri/CEF pins, and mobile capability exclusions remain authoritative.
+
 - Native widget search items must provide exact string `node_id`, string `title`, string `repository_url`, and integer `number` fields; malformed fields retain the last successful snapshot under the general error state. Android widget enablement cleans stale Deck state before reporting an absent selected PAT or scope marker as `not-configured`, and an unreadable authoritative PAT must durably remove or block the copied widget credential before returning; cleanup, persistence, Keystore, and ciphertext failures remain storage failures.
 - Require every concrete Chrome origin to be covered by its URL mapping scheme, host, and normalized port before settings acceptance or extension publication.
 - Implemented DevHud foundations are the `apps/devhud` desktop/mobile/widget hosts and diagnostics boundary, `apps/devhud-chrome-extension`, `apps/devhud-admin`, `crates/devhud-native-messaging-host`, the `servers/devhud-api` Bootstrap/Settings/Upload/Account/Admin/Diagnostics API and account/retention sweeper, `protos/devhud/v1`, and `packages/devhud-api-client`. Desktop RealQA direct GitHub issue submission, direct official/BYO R2 image uploads, and native widgets are implemented; remaining product workflows stay documentation-first until their project/domain contracts are updated. Logto uses native callback `devhud://auth/callback`, keeps pending callbacks queued through issuer-policy reloads until the identity session is ready, platform client keys `desktop`/`ios`/`android`, an `admin` client key with the documented exact browser redirect, and Native Messaging host `io.delino.devhud.native_messaging` with one fixed release-configured extension ID. The desktop/mobile shell and administrator SPA retain the complete configured Logto issuer for validation but remove exactly one terminal `/oidc` segment when deriving the Logto SDK endpoint, because the SDK owns that discovery-path segment. The Native Messaging host uses the documented authenticated v1 user-scoped IPC contract owned by the app, retries Unix accept failures with capped backoff, and shares one absolute five-second deadline across host connection establishment and authentication.
@@ -179,8 +181,10 @@
 
 ### React Forge public documentation Rules
 
-- `apps/public-docs/docs/react-forge` owns the sixteen English public guides at `https://oss.delino.io/react-forge/`. Follow `docs/apps-react-forge-docs-foundation.md`; expose every stable route in the sidebar and React Forge as a peer in the shared site selector.
+- `apps/public-docs/docs/react-forge` owns the seventeen English public guides at `https://oss.delino.io/react-forge/`. Follow `docs/apps-react-forge-docs-foundation.md`; expose every stable route in the sidebar and React Forge as a peer in the shared site selector.
 - Keep installation and API examples aligned with the released `@delino/react-forge` package and public types. Distinguish six-host local Office/PDF support from macOS Keychain Figma authentication; document explicit publication, receipts, preservation, and verification limits without exposing repository internals.
 - Validate all fourteen rendered routes, guide links, selector state, sidebar, social/footer links, clean URLs, and prohibited credentials and internal paths through `pnpm --filter public-docs test`.
 
 - React Forge GLB/FBX public guides remain explicitly unreleased until a release includes them. Preserve the static-only scene boundary and Blender 4.5 FBX compatibility limits; source and CI coverage do not establish published availability or execution on untested hosts.
+
+- React Forge `/sfx` documents the unreleased procedural WAV extension separately from published `0.1.1` behavior. Preserve its availability notice and separate SFX evidence from historical six-host document validation.

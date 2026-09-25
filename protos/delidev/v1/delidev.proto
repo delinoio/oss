@@ -1,0 +1,787 @@
+syntax = "proto3";
+package delidev.v1;
+
+option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1";
+
+// All operations, including loopback, require authenticated owner authorization.
+service SystemService {
+  rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
+  rpc StopServer(StopServerRequest) returns (StopServerResponse);
+  rpc GetDoctor(GetDoctorRequest) returns (GetDoctorResponse);
+  rpc CreateBackup(CreateBackupRequest) returns (CreateBackupResponse);
+}
+service ResourceService {
+  rpc GetResource(GetResourceRequest) returns (GetResourceResponse);
+  rpc ListResources(ListResourcesRequest) returns (ListResourcesResponse);
+  rpc GetSnapshot(GetSnapshotRequest) returns (GetSnapshotResponse);
+  rpc WatchEvents(WatchEventsRequest) returns (stream WatchEventsResponse);
+}
+service ConfigurationService {
+  rpc SaveConfiguration(SaveConfigurationRequest) returns (SaveConfigurationResponse);
+  rpc DeleteConfiguration(DeleteConfigurationRequest) returns (DeleteConfigurationResponse);
+  rpc PreviewRouting(PreviewRoutingRequest) returns (PreviewRoutingResponse);
+}
+// Owner and paired-client responses use their own durable acceptance boundary.
+service InteractionService {
+  rpc RespondQuestion(RespondQuestionRequest) returns (RespondQuestionResponse);
+  rpc RespondApproval(RespondApprovalRequest) returns (RespondApprovalResponse);
+}
+message RespondQuestionRequest {
+  // The request ID also identifies the accepted response; the entity ID and
+  // revision refer to the original question interaction.
+  Mutation mutation = 1;
+  // Strict non-secret question-answer document, never an approval decision.
+  bytes response_json = 2;
+}
+message RespondQuestionResponse {
+  Resource interaction = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+
+message RespondApprovalRequest {
+  // The request ID also identifies the accepted response; the entity ID and
+  // revision refer to the original approval interaction.
+  Mutation mutation = 1;
+  // Strict original approval decision or permission-grant document, never a question answer.
+  bytes response_json = 2;
+}
+message RespondApprovalResponse {
+  Resource interaction = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+
+enum EntityKind {
+  ENTITY_KIND_UNSPECIFIED = 0;
+  ENTITY_KIND_PROJECT = 1;
+  ENTITY_KIND_REPOSITORY = 2;
+  ENTITY_KIND_AGENT = 3;
+  ENTITY_KIND_ACCOUNT = 4;
+  ENTITY_KIND_PROVIDER = 5;
+  ENTITY_KIND_MODEL = 6;
+  ENTITY_KIND_MACHINE = 7;
+  ENTITY_KIND_SESSION = 8;
+  ENTITY_KIND_TEMPLATE = 9;
+  ENTITY_KIND_SETTINGS = 10;
+  ENTITY_KIND_SCHEDULE = 11;
+  ENTITY_KIND_OCCURRENCE = 12;
+  ENTITY_KIND_MESSAGE = 13;
+  ENTITY_KIND_QUEUE = 14;
+  ENTITY_KIND_INTERACTION = 15;
+  ENTITY_KIND_REVIEW = 16;
+  ENTITY_KIND_SNAPSHOT = 17;
+  ENTITY_KIND_DEVICE = 18;
+  ENTITY_KIND_INTEGRATION = 19;
+  ENTITY_KIND_PULL_REQUEST = 20;
+  ENTITY_KIND_PROBLEM = 21;
+  ENTITY_KIND_INBOX = 22;
+  ENTITY_KIND_USAGE = 23;
+  ENTITY_KIND_JOB = 24;
+  ENTITY_KIND_PAIRING = 25;
+  ENTITY_KIND_STEER = 26;
+}
+// Resource documents are versioned, strictly validated UTF-8 JSON. Their closed
+// schemas live in the Go domain types. Unknown fields and enum values fail.
+// This envelope never permits arbitrary database writes: each mutation kind
+// passes its product validator, relationship checks, and authorization rules.
+message Resource {
+  string id = 1;
+  EntityKind kind = 2;
+  uint64 revision = 3;
+  string session_id = 4;
+  string project_id = 5;
+  uint32 schema_version = 6;
+  bytes document_json = 7;
+  string created_at = 8;
+  string updated_at = 9;
+}
+message Mutation {
+  string request_id = 1;
+  string id = 2;
+  uint64 expected_revision = 3;
+}
+message Filter {
+  EntityKind kind = 1;
+  string session_id = 2;
+  string project_id = 3;
+  uint32 page_size = 4;
+  string page_token = 5;
+}
+message ErrorDetail {
+  string code = 1;
+  string guidance = 2;
+  string cause = 3;
+  string correlation_id = 4;
+}
+message GetStatusRequest {}
+message GetStatusResponse {
+  string version = 1;
+  uint32 protocol_version = 2;
+  uint32 schema_version = 3;
+  string server_id = 4;
+  string listener = 5;
+  string started_at = 6;
+  bool stopping = 7;
+}
+message StopServerRequest {
+  string request_id = 1;
+}
+message StopServerResponse {
+  string request_id = 1;
+}
+message GetDoctorRequest {}
+message GetDoctorResponse {
+  bytes report_json = 1;
+}
+message CreateBackupRequest {
+  string request_id = 1;
+}
+message CreateBackupResponse {
+  string id = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message GetResourceRequest {
+  EntityKind kind = 1;
+  string id = 2;
+}
+message GetResourceResponse {
+  Resource resource = 1;
+}
+message ListResourcesRequest {
+  Filter filter = 1;
+}
+message ListResourcesResponse {
+  repeated Resource resources = 1;
+  string next_page_token = 2;
+}
+message GetSnapshotRequest {
+  Filter filter = 1;
+}
+message GetSnapshotResponse {
+  repeated Resource resources = 1;
+  string cursor = 2;
+}
+message WatchEventsRequest {
+  string cursor = 1;
+  string session_id = 2;
+}
+enum EventAction {
+  EVENT_ACTION_UNSPECIFIED = 0;
+  EVENT_ACTION_CREATED = 1;
+  EVENT_ACTION_UPDATED = 2;
+  EVENT_ACTION_DELETED = 3;
+}
+message WatchEventsResponse {
+  string cursor = 1;
+  string id = 2;
+  string entity_id = 3;
+  EntityKind kind = 4;
+  string session_id = 5;
+  uint64 revision = 6;
+  EventAction action = 7;
+  string time = 8;
+}
+message SaveConfigurationRequest {
+  Mutation mutation = 1;
+  EntityKind kind = 2;
+  uint32 schema_version = 3;
+  bytes document_json = 4;
+}
+message SaveConfigurationResponse {
+  Resource resource = 1;
+  string request_id = 2;
+  bool replayed = 3;
+  // Accepted asynchronous configuration validation. Inspect this job until done.
+  Resource job = 4;
+}
+message DeleteConfigurationRequest {
+  Mutation mutation = 1;
+  EntityKind kind = 2;
+}
+message DeleteConfigurationResponse {
+  string id = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message PreviewRoutingRequest {
+  string agent_id = 1;
+  string project_id = 2;
+}
+message PreviewRoutingResponse {
+  bytes route_json = 1;
+}
+
+service DeviceService {
+  rpc CreatePairing(CreatePairingRequest) returns (CreatePairingResponse);
+  rpc PairDevice(PairDeviceRequest) returns (PairDeviceResponse);
+  rpc RevokeDevice(RevokeDeviceRequest) returns (RevokeDeviceResponse);
+}
+service WorkerService {
+  rpc AttachWorker(AttachWorkerRequest) returns (AttachWorkerResponse);
+  rpc WatchWork(WatchWorkRequest) returns (stream WatchWorkResponse);
+  rpc ReportWork(ReportWorkRequest) returns (ReportWorkResponse);
+  rpc InspectRepository(InspectRepositoryRequest) returns (InspectRepositoryResponse);
+  rpc DiscoverHarnesses(DiscoverHarnessesRequest) returns (DiscoverHarnessesResponse);
+  rpc RegisterExecution(RegisterExecutionRequest) returns (RegisterExecutionResponse);
+  rpc PublishExecution(PublishExecutionRequest) returns (PublishExecutionResponse);
+  rpc ClaimQuestionResponse(ClaimQuestionResponseRequest) returns (ClaimQuestionResponseResponse);
+  rpc ClaimApprovalResponse(ClaimApprovalResponseRequest) returns (ClaimApprovalResponseResponse);
+  rpc ClaimSteerInput(ClaimSteerInputRequest) returns (ClaimSteerInputResponse);
+}
+message ClaimSteerInputRequest {
+  Mutation mutation = 1;
+  string machine_id = 2;
+  string instance_id = 3;
+  string job_id = 4;
+}
+message ClaimSteerInputResponse {
+  Resource steer = 1;
+  Resource input = 2;
+  bool replayed = 3;
+}
+message ClaimQuestionResponseRequest {
+  // Exact original interaction revision and durable Worker claim request ID.
+  Mutation mutation = 1;
+  string machine_id = 2;
+  string instance_id = 3;
+  string job_id = 4;
+  string response_id = 5;
+}
+message ClaimQuestionResponseResponse {
+  // Only the owning live Worker receives the retained non-secret response.
+  Resource interaction = 1;
+  bool replayed = 2;
+}
+message ClaimApprovalResponseRequest {
+  // Exact original interaction revision and durable Worker claim request ID.
+  Mutation mutation = 1;
+  string machine_id = 2;
+  string instance_id = 3;
+  string job_id = 4;
+  string response_id = 5;
+}
+message ClaimApprovalResponseResponse {
+  // Only the owning live Worker receives the retained non-secret response.
+  Resource interaction = 1;
+  bool replayed = 2;
+}
+message PublishExecutionRequest {
+  // Immutable claimed job/revision, with a durable event request identity.
+  Mutation mutation = 1;
+  string machine_id = 2;
+  string instance_id = 3;
+  // Closed normalized event, never a raw native extension or credential.
+  bytes event_json = 4;
+}
+message PublishExecutionResponse {
+  uint64 acknowledged_sequence = 1;
+  bool replayed = 2;
+}
+message RegisterExecutionRequest {
+  // Exact claimed execution job/revision and durable registration request ID.
+  Mutation mutation = 1;
+  string machine_id = 2;
+  string instance_id = 3;
+  // SHA-256 of the Worker-generated private execution token, never its value.
+  bytes credential_digest = 4;
+}
+message RegisterExecutionResponse {
+  // Fixed relative path on the already-paired authenticated server origin.
+  string proxy_path = 1;
+  bool replayed = 2;
+}
+enum DeviceType {
+  DEVICE_TYPE_UNSPECIFIED = 0;
+  DEVICE_TYPE_CLIENT = 1;
+  DEVICE_TYPE_WORKER = 2;
+}
+message CreatePairingRequest {
+  string request_id = 1;
+  string name = 2;
+  DeviceType type = 3;
+  // SHA-256 of a locally generated 256-bit one-time code. Never the code itself.
+  bytes code_digest = 4;
+}
+message CreatePairingResponse {
+  Resource pairing = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message PairDeviceRequest {
+  string request_id = 1;
+  string pairing_id = 2;
+  string code = 3;
+  string device_id = 4;
+  bytes credential_digest = 5;
+  string machine_id = 6;
+  bytes machine_json = 7;
+}
+message PairDeviceResponse {
+  Resource device = 1;
+  Resource machine = 2;
+  string server_id = 3;
+  bool replayed = 4;
+}
+message RevokeDeviceRequest {
+  Mutation mutation = 1;
+}
+message RevokeDeviceResponse {
+  Resource device = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message AttachWorkerRequest {
+  string request_id = 1;
+  string machine_id = 2;
+  string instance_id = 3;
+  string version = 4;
+}
+message AttachWorkerResponse {
+  Resource machine = 1;
+  string server_id = 2;
+}
+message WatchWorkRequest {
+  string machine_id = 1;
+  string instance_id = 2;
+}
+message WatchWorkResponse {
+  Resource job = 1;
+  bool heartbeat = 2;
+  // Bound to the included immutable assignment; no native operation may start.
+  bool cancel_requested = 3;
+  // A separate control for a previously delivered assignment on this stream.
+  string cancel_job_id = 4;
+  // Metadata-only control for the active assignment, independent of job order.
+  QuestionResponseControl question_response = 5;
+  SteerInputControl steer_input = 6;
+  ApprovalResponseControl approval_response = 7;
+}
+message SteerInputControl {
+  string job_id = 1;
+  string steer_id = 2;
+  uint64 revision = 3;
+}
+message QuestionResponseControl {
+  string job_id = 1;
+  string interaction_id = 2;
+  string response_id = 3;
+  uint64 revision = 4;
+}
+message ApprovalResponseControl {
+  string job_id = 1;
+  string interaction_id = 2;
+  string response_id = 3;
+  uint64 revision = 4;
+}
+message ReportWorkRequest {
+  Mutation mutation = 1;
+  string machine_id = 2;
+  string instance_id = 3;
+  bytes output_json = 4;
+  ErrorDetail problem = 5;
+}
+message ReportWorkResponse {
+  Resource job = 1;
+  bool replayed = 2;
+}
+message InspectRepositoryRequest {
+  string request_id = 1;
+  string machine_id = 2;
+  string path = 3;
+  string preferred_remote = 4;
+}
+message InspectRepositoryResponse {
+  Resource job = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message DiscoverHarnessesRequest {
+  // Machine identity and optimistic revision, plus durable request identity.
+  Mutation mutation = 1;
+  // Omit to refresh existing selections. Otherwise replace all selections with
+  // the closed ExecutableSelections document; omitted harnesses use Worker PATH.
+  bytes selections_json = 2;
+  // Validate the installed native protocol without login, inference, or sessions.
+  bool verify_protocol = 3;
+}
+message DiscoverHarnessesResponse {
+  Resource machine = 1;
+  Resource job = 2;
+  string request_id = 3;
+  bool replayed = 4;
+}
+
+// Write-only account credentials. Workers cannot invoke this owner/client API.
+service AccountService {
+  rpc ConnectAccount(ConnectAccountRequest) returns (ConnectAccountResponse);
+  rpc DisconnectAccount(DisconnectAccountRequest) returns (DisconnectAccountResponse);
+  rpc GetAccountStatus(GetAccountStatusRequest) returns (GetAccountStatusResponse);
+  rpc ValidateAccount(ValidateAccountRequest) returns (ValidateAccountResponse);
+}
+message ConnectAccountRequest {
+  Mutation mutation = 1;
+  // Bounded credential bytes, never included in receipts or ordinary output.
+  bytes api_key = 2;
+  // Explicit selection for a provider configured with keyless local authentication.
+  bool keyless = 3;
+}
+message ConnectAccountResponse {
+  Resource account = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message DisconnectAccountRequest {
+  Mutation mutation = 1;
+}
+message DisconnectAccountResponse {
+  Resource account = 1;
+  string request_id = 2;
+  bool replayed = 3;
+  // Accepted disconnection remains authoritative if native cleanup needs retry.
+  // Closed domain.Error JSON; never raw OS/provider text or credential material.
+  bytes cleanup_problem_json = 4;
+}
+message GetAccountStatusRequest {
+  string id = 1;
+}
+message GetAccountStatusResponse {
+  Resource account = 1;
+}
+message ValidateAccountRequest {
+  Mutation mutation = 1;
+}
+message ValidateAccountResponse {
+  Resource account = 1;
+  string request_id = 2;
+  bool replayed = 3;
+  // Accepted, sanitized non-inference observation. Does not expose model payloads
+  // or credentials and is not inference, quota recovery or harness capability.
+  bytes validation_json = 4;
+}
+
+service ProviderService {
+  rpc ListProviderPresets(ListProviderPresetsRequest) returns (ListProviderPresetsResponse);
+  rpc DiscoverModels(DiscoverModelsRequest) returns (DiscoverModelsResponse);
+  rpc SearchModels(SearchModelsRequest) returns (SearchModelsResponse);
+  rpc ResolveModel(ResolveModelRequest) returns (ResolveModelResponse);
+}
+message ListProviderPresetsRequest {}
+message ListProviderPresetsResponse {
+  bytes presets_json = 1;
+}
+message DiscoverModelsRequest {
+  // Explicit account identity/current revision; the provider is server-owned.
+  Mutation mutation = 1;
+}
+message DiscoverModelsResponse {
+  Resource account = 1;
+  string request_id = 2;
+  bool replayed = 3;
+  bytes observation_json = 4;
+}
+message SearchModelsRequest {
+  string query = 1;
+  string provider_id = 2;
+  bool include_hidden = 3;
+  uint32 page_size = 4;
+  string page_token = 5;
+}
+message SearchModelsResponse {
+  repeated Resource models = 1;
+  repeated Resource providers = 2;
+  string next_page_token = 3;
+}
+message ResolveModelRequest {
+  string selector = 1;
+  string provider_id = 2;
+}
+message ResolveModelResponse {
+  Resource model = 1;
+}
+
+// Owner/client session acceptance and ordered input. Native execution and
+// interactions are separately capability-checked; acceptance is not dispatch.
+service SessionService {
+  rpc SteerQueuedInput(SteerQueuedInputRequest) returns (SteerQueuedInputResponse);
+  rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
+  rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
+  rpc EnqueueInput(EnqueueInputRequest) returns (EnqueueInputResponse);
+  rpc EditQueuedInput(EditQueuedInputRequest) returns (EditQueuedInputResponse);
+  rpc RemoveQueuedInput(RemoveQueuedInputRequest) returns (RemoveQueuedInputResponse);
+  rpc ListQueue(ListQueueRequest) returns (ListQueueResponse);
+  rpc ControlSession(ControlSessionRequest) returns (ControlSessionResponse);
+  rpc RenameSession(RenameSessionRequest) returns (RenameSessionResponse);
+  rpc PrepareSessionWorkspace(PrepareSessionWorkspaceRequest) returns (PrepareSessionWorkspaceResponse);
+  rpc RecoverSessionExecution(RecoverSessionExecutionRequest) returns (RecoverSessionExecutionResponse);
+  rpc RecoverSessionWorkspace(RecoverSessionWorkspaceRequest) returns (RecoverSessionWorkspaceResponse);
+}
+message SteerQueuedInputRequest {
+  // Exact queue record revision; request_id also identifies the Steer attempt.
+  Mutation mutation = 1;
+  string session_id = 2;
+  string expected_execution_id = 3;
+  string expected_turn_id = 4;
+}
+message SteerQueuedInputResponse {
+  Resource steer = 1;
+  SessionChange change = 2;
+  string request_id = 3;
+  bool replayed = 4;
+}
+message SessionChange {
+  Resource session = 1;
+  Resource input = 2;
+  string request_id = 3;
+  bool replayed = 4;
+  Resource workspace_job = 5;
+  Resource recovery_job = 6;
+  Resource execution_job = 7;
+  Resource execution_recovery_job = 8;
+}
+message CreateSessionRequest {
+  string request_id = 1;
+  // Closed domain.CreateSession schema, including exactly one Agent Worker.
+  bytes document_json = 2;
+  // Additional paired Worker credential loaded locally for explicit Local creation.
+  // Authentication input only: never retain in resources, jobs, receipts or logs.
+  string local_worker_token = 3;
+}
+message CreateSessionResponse {
+  SessionChange change = 1;
+}
+message ListSessionsRequest {
+  string project_id = 1;
+  bool include_archived = 2;
+  uint32 page_size = 3;
+  string page_token = 4;
+}
+message ListSessionsResponse {
+  repeated Resource sessions = 1;
+  string next_page_token = 2;
+}
+message EnqueueInputRequest {
+  string request_id = 1;
+  string session_id = 2;
+  // Closed domain.SessionInput schema. Mode is immutable after acceptance.
+  bytes document_json = 3;
+}
+message EnqueueInputResponse {
+  SessionChange change = 1;
+}
+message EditQueuedInputRequest {
+  Mutation mutation = 1;
+  string session_id = 2;
+  string prompt = 3;
+}
+message EditQueuedInputResponse {
+  SessionChange change = 1;
+}
+message RemoveQueuedInputRequest {
+  Mutation mutation = 1;
+  string session_id = 2;
+}
+message RemoveQueuedInputResponse {
+  SessionChange change = 1;
+}
+message ListQueueRequest {
+  string session_id = 1;
+  uint32 page_size = 2;
+  string page_token = 3;
+}
+message ListQueueResponse {
+  repeated Resource inputs = 1;
+  string next_page_token = 2;
+}
+enum SessionAction {
+  SESSION_ACTION_UNSPECIFIED = 0;
+  SESSION_ACTION_STOP = 1;
+  SESSION_ACTION_ARCHIVE = 2;
+  SESSION_ACTION_RESTORE = 3;
+  SESSION_ACTION_RESUME = 4;
+}
+message ControlSessionRequest {
+  Mutation mutation = 1;
+  SessionAction action = 2;
+}
+message ControlSessionResponse {
+  SessionChange change = 1;
+}
+message RenameSessionRequest {
+  Mutation mutation = 1;
+  string name = 2;
+}
+message RenameSessionResponse {
+  SessionChange change = 1;
+}
+message PrepareSessionWorkspaceRequest {
+  Mutation mutation = 1;
+}
+message PrepareSessionWorkspaceResponse {
+  SessionChange change = 1;
+}
+
+message RecoverSessionWorkspaceRequest {
+  Mutation mutation = 1;
+  // Explicitly permits rollback of an incomplete preparation, never a ready workspace.
+  bool cleanup = 2;
+}
+message RecoverSessionWorkspaceResponse {
+  SessionChange change = 1;
+}
+
+// Inbox read state belongs to the server owner and is shared by paired clients.
+service InboxService {
+  rpc GetInboxEntry(GetInboxEntryRequest) returns (GetInboxEntryResponse);
+  rpc ListInbox(ListInboxRequest) returns (ListInboxResponse);
+  rpc SetInboxReadState(SetInboxReadStateRequest) returns (SetInboxReadStateResponse);
+}
+enum InboxReadState {
+  INBOX_READ_STATE_UNSPECIFIED = 0;
+  INBOX_READ_STATE_UNREAD = 1;
+  INBOX_READ_STATE_READ = 2;
+}
+enum InboxSource {
+  INBOX_SOURCE_UNSPECIFIED = 0;
+  INBOX_SOURCE_INTERACTION = 1;
+  INBOX_SOURCE_EXECUTION_TERMINAL = 2;
+}
+message InboxView {
+  Resource entry = 1;
+  Resource session = 2;
+  // Present only for an interaction source; always its current original record.
+  Resource interaction = 3;
+}
+message GetInboxEntryRequest {
+  string id = 1;
+}
+message GetInboxEntryResponse {
+  InboxView view = 1;
+}
+message ListInboxRequest {
+  string session_id = 1;
+  string project_id = 2;
+  // Unspecified means all read states or all source kinds respectively.
+  InboxReadState read_state = 3;
+  InboxSource source = 4;
+  uint32 page_size = 5;
+  string page_token = 6;
+}
+message ListInboxResponse {
+  repeated InboxView entries = 1;
+  string next_page_token = 2;
+}
+message SetInboxReadStateRequest {
+  // ID and expected revision refer only to the inbox entry.
+  Mutation mutation = 1;
+  InboxReadState read_state = 2;
+}
+message SetInboxReadStateResponse {
+  InboxView view = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+
+// Reconcile retained completion only; successful recovery leaves dispatch paused.
+message RecoverSessionExecutionRequest {
+  Mutation mutation = 1;
+  string expected_execution_id = 2;
+}
+message RecoverSessionExecutionResponse {
+  SessionChange change = 1;
+}
+
+// Owner and paired-client schedule lifecycle. Workers execute derived session
+// assignments and cannot write timer state or invoke these product operations.
+service ScheduleService {
+  rpc SaveSchedule(SaveScheduleRequest) returns (SaveScheduleResponse);
+  rpc GetSchedule(GetScheduleRequest) returns (GetScheduleResponse);
+  rpc ListSchedules(ListSchedulesRequest) returns (ListSchedulesResponse);
+  rpc DeleteSchedule(DeleteScheduleRequest) returns (DeleteScheduleResponse);
+  rpc ControlSchedule(ControlScheduleRequest) returns (ControlScheduleResponse);
+  rpc RunScheduleNow(RunScheduleNowRequest) returns (RunScheduleNowResponse);
+  rpc ListScheduleOccurrences(ListScheduleOccurrencesRequest) returns (ListScheduleOccurrencesResponse);
+  rpc GetScheduleOccurrence(GetScheduleOccurrenceRequest) returns (GetScheduleOccurrenceResponse);
+}
+enum ScheduleAction {
+  SCHEDULE_ACTION_UNSPECIFIED = 0;
+  SCHEDULE_ACTION_PAUSE = 1;
+  SCHEDULE_ACTION_RESUME = 2;
+}
+message SaveScheduleRequest {
+  // Expected revision zero creates a UUID-v7 identity; omit ID to allocate it.
+  Mutation mutation = 1;
+  // Strict ScheduleDefinition; no origin, occurrence or timer state.
+  bytes definition_json = 2;
+  uint32 schema_version = 3;
+  // Write-only secondary authentication for new or relocated Local selection.
+  // Omission on an unchanged Local machine retains its authenticated origin.
+  string local_worker_token = 4;
+}
+message SaveScheduleResponse {
+  Resource schedule = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message GetScheduleRequest {
+  string id = 1;
+}
+message GetScheduleResponse {
+  // Includes the authoritative enabled/next_run_at/configuration revision.
+  Resource schedule = 1;
+}
+message ListSchedulesRequest {
+  string project_id = 1;
+  optional bool enabled = 2;
+  uint32 page_size = 3;
+  string page_token = 4;
+}
+message ListSchedulesResponse {
+  repeated Resource schedules = 1;
+  string next_page_token = 2;
+}
+message DeleteScheduleRequest {
+  Mutation mutation = 1;
+}
+message DeleteScheduleResponse {
+  string id = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message ControlScheduleRequest {
+  Mutation mutation = 1;
+  ScheduleAction action = 2;
+}
+message ControlScheduleResponse {
+  Resource schedule = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message RunScheduleNowRequest {
+  Mutation mutation = 1;
+}
+message RunScheduleNowResponse {
+  Resource occurrence = 1;
+  // Present only when this occurrence already owns a retained session.
+  Resource session = 2;
+  string request_id = 3;
+  bool replayed = 4;
+}
+message ListScheduleOccurrencesRequest {
+  // History is retained independently of the configuration's lifetime.
+  string schedule_id = 1;
+  uint32 page_size = 2;
+  string page_token = 3;
+}
+message ListScheduleOccurrencesResponse {
+  repeated Resource occurrences = 1;
+  string next_page_token = 2;
+}
+message GetScheduleOccurrenceRequest {
+  string schedule_id = 1;
+  string id = 2;
+}
+message GetScheduleOccurrenceResponse {
+  Resource occurrence = 1;
+}

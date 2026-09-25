@@ -6,6 +6,7 @@ import { ForgeError, abortable, checkSignal } from "./errors.js";
 import { digest, publish, withOutputReservation, readSource, type SourceFingerprint } from "./files.js";
 import { processDocument, type NativeOutput } from "./native.js";
 import { pptxModel, pptxNode } from "./pptx-model.js";
+import { sfxModel } from "./sfx-model.js";
 import { pdfModel } from "./pdf-model.js";
 import { xlsxModel, xlsxEdit } from "./xlsx-model.js";
 import type { Address, Range } from "./xlsx.js";
@@ -103,6 +104,7 @@ export class DocumentSession {
 
   private registerAsset(source: AssetSource, font: boolean, options: { signal?: AbortSignal }): Promise<AssetHandle> {
     const signal = this.signal(options.signal);
+    if (this.format === Format.Wav) return Promise.reject(new ForgeError(ErrorCode.UnsupportedEdit, "Procedural SFX does not accept image or font assets."));
     const operation = this.track(Stage.Import, async () => {
       const { bytes } = await readSource(source, limits.imageBytes, signal);
       checkSignal(signal);
@@ -252,6 +254,7 @@ export class DocumentSession {
       if (this.format === Format.Pptx) model = pptxModel(this.root.snapshot(), this.documentId, this.assets);
       else if (this.format === Format.Docx) model = docxModel(this.root.snapshot(), this.documentId);
       else if (this.format === Format.Xlsx) model = xlsxModel(this.root.snapshot(), this.documentId);
+      else if (this.format === Format.Wav) model = sfxModel(this.root.snapshot());
       else if (this.format === Format.Pdf) model = pdfModel(this.root.snapshot(), this.documentId);
       else throw new ForgeError(ErrorCode.UnsupportedPackage, "This format is not connected to the native adapter yet.");
     }

@@ -176,6 +176,9 @@
 
 ### clibox Rules
 
+- YAML structural sharing uses `imbl` with `RcK`, preserving ordered-map diffing, bounded expansion accounting, and single-threaded reference sharing. Keep the panic-safe chunk dependency and the long shadowed-merge/resource-limit fixtures when updating collections.
+- Concurrent publication fixtures must preserve fail-closed destination validation: a Unix handle unlinked by another successful replacement may return `UnsafeDestination`. Require at least one successful writer, one complete successful payload, and clean staging; retain deterministic zero-link rejection coverage.
+
 - Keep the CLI README and `apps/public-docs/docs/clibox` aligned with user-facing behavior. Follow `docs/apps-clibox-docs-foundation.md`; the consolidated public guide covers all 25 next-release commands while version-specific guidance preserves the 19-command published 0.1.6 surface, including their limits, cancellation, and migration guidance.
 
 - clibox CLI consistency uses canonical `run env`, `port list`, and `hash compute` without old-name aliases. Report `--quiet` suppresses stdout; PID selection is only `port list --pids`. File-output commands interpret `--output -` as stdout and `./-` as a literal dash file; `--force` requires real file output or `--in-place`. Keep short/long help, static redacted migration guidance, numeric owned-operation cancellation (130/143), filtered-error visibility, and native/npm behavior synchronized.
@@ -273,3 +276,4 @@
 - Imported DOCX mounted measurements must use source section/cell flow constraints. Preserve unknown width as unavailable geometry while retaining safe edits; never substitute a default page width for ambiguous source layout.
 
 - `forge-scene`, `forge-glb` and `forge-fbx` own bounded static 3D validation and converter-free GLB/FBX generation under `docs/packages-react-forge-scene-contract.md`. Use cancellation checkpoints, preserve meter/Y-up semantics, embed textures, and verify FBX independently with ufbx. Never copy GPL exporter code into repository-owned engines.
+- `forge-sfx` owns independent bounded procedural game-audio synthesis and PCM16 WAV encoding under `docs/packages-react-forge-sfx-contract.md`. Validate before allocation, check cooperative cancellation during synthesis/encoding, and keep devices, files, networking and callbacks outside the engine. Add its tests and Clippy to the six-host React Forge gates.

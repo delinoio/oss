@@ -18,3 +18,5 @@ Figma tasks may publish remotely before their receipt is saved. A failure can th
 ## Unreleased static 3D extension
 
 [GLB](/react-forge/glb) and [FBX](/react-forge/fbx) creation are documented as an unreleased extension, absent from npm 0.1.1. They use SceneSession with registered geometry/textures, explicit file export, and revision-bound world-space bounds. Existing-file editing, animation and rigging are excluded. The FBX material profile targets Blender 4.5; local verification does not establish results on other hosts or FBX applications.
+
+The unreleased [SFX extension](/react-forge/sfx) adds `Format.Wav` tasks with `.wav` output. It is absent from npm `0.1.1`.

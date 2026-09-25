@@ -5,6 +5,8 @@ Provide publicly distributed React document sessions, a TSX task CLI and a local
 
 The 2026-09-25 follow-up adds static GLB/FBX generation, SceneSession, original audio-product examples, and actual-file Blender/web validation. This extension is unreleased and is not part of the historical 0.1.1 npm evidence.
 
+The explicit SFX follow-up adds offline procedural game effects exported as WAV, with zombie-game gunshot acceptance, under the [SFX contract](packages-react-forge-sfx-contract.md). It is implemented in source and not yet published.
+
 ## Project ID
 `react-forge` (`ProjectId::ReactForge`). Product name: **React Forge**. The public npm package is `@delino/react-forge`; its CLI executable is `react-forge`.
 
@@ -16,6 +18,8 @@ The 2026-09-25 follow-up adds static GLB/FBX generation, SceneSession, original 
 - `crates/forge-document`: shared text/style validation, image validation and editable chart/data primitives.
 - `crates/forge-docx`: word-processing model and DOCX engine.
 - `crates/forge-xlsx`: spreadsheet model and XLSX engine.
+- `crates/forge-sfx`: independent bounded synthesis and PCM WAV engine.
+- `packages/react-forge/examples/zombie-gunshot.tsx`: original procedural SFX acceptance example.
 - `crates/forge-pdf`: independent PDF model, pagination and semantic tagging.
 - `crates/forge-figma`: pure Figma model validation, diff and bounded publication plans; the Node package owns official MCP networking and host credentials.
 - `packages/react-forge/examples/travel-figma*.tsx`: editable ROAM mobile design and explicit reopened-file edits.
@@ -26,6 +30,8 @@ The 2026-09-25 follow-up adds static GLB/FBX generation, SceneSession, original 
 ## Domain Contract Documents
 
 - [Static GLB/FBX scenes](packages-react-forge-scene-contract.md).
+
+- [Game SFX and WAV export](packages-react-forge-sfx-contract.md).
 - [Figma creation and editing](packages-react-forge-figma-contract.md).
 - [Public documentation](apps-react-forge-docs-foundation.md).
 - [Complete requirements](packages-react-forge-requirements.md).
@@ -45,7 +51,7 @@ The 2026-09-25 follow-up adds static GLB/FBX generation, SceneSession, original 
 - Preserve unrelated Office parts/XML; reject unsafe or unprovable edits transactionally. Never flatten opaque imported content. Existing Forge CLI/MCP behavior and default fonts remain stable.
 - Registered assets and render-relevant asynchronous work must settle before export pins a revision. Later commits cannot change an export already pinned. Cancellation has no automatic timeout and cannot misreport an already completed atomic publication.
 - Source-backed requirements must remain intact. Track missing evidence honestly; do not close #968 until all acceptance criteria pass. Direct Microsoft Office validation and PDF/UA certification are not claimed.
-- Public user guides are owned by the consolidated documentation app at `https://oss.delino.io/react-forge/`; they cover the released library, CLI, MCP, four local formats, and Figma, with explicitly unreleased GLB/FBX guides, without exposing internal implementation or overstating evidence.
+- Public user guides are owned by the consolidated documentation app at `https://oss.delino.io/react-forge/`; they cover the released library, CLI, MCP, four local document formats, and Figma, with explicitly unreleased GLB/FBX and SFX guides, without exposing internal implementation or overstating evidence.
 
 ## Change Policy
 Update the project index, affected domain contracts, relevant AGENTS rules, examples and validation together when interfaces or ownership change. Internal rollback uses source revision rollback and rebuild without rewriting exported files.

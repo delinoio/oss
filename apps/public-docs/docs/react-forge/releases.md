@@ -22,3 +22,7 @@ See [Installation](/react-forge/installation) for supported hosts and [limits an
 ## Unreleased static 3D extension
 
 [GLB](/react-forge/glb) and [FBX](/react-forge/fbx) creation are documented as an unreleased extension, absent from npm 0.1.1. They use SceneSession with registered geometry/textures, explicit file export, and revision-bound world-space bounds. Existing-file editing, animation and rigging are excluded. The FBX material profile targets Blender 4.5; local verification does not establish results on other hosts or FBX applications.
+
+## Unreleased SFX extension
+
+Procedural game SFX authoring and PCM WAV export are implemented for the next release, but are absent from npm `0.1.1`. The [SFX guide](/react-forge/sfx) describes the planned public API and a zombie-game gunshot example. SFX has separate synthesis and CLI/MCP checks; the earlier six-host document release is not SFX acceptance evidence. No game-engine listening evaluation is claimed.

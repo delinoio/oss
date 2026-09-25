@@ -82,7 +82,7 @@ PPTX `PresentationTextStyle` exposes font family/size, bold, italic, underline a
 Each export/measurement operation retains its pinned revision for JavaScript completion diagnostics and error context, including publication failures after native processing. Concurrent later snapshots cannot relabel earlier results; failures before snapshot preparation report the operation's initial revision.
 
 ## MCP Extension
-The explicit MCP follow-up supersedes the original new-MCP exclusion. `react-forge mcp [--cwd <directory>]` exposes all five formats through memory-only sessions, inline/file TSX execution and explicit local export or remote publication. Follow the [MCP contract](packages-react-forge-mcp-contract.md) for tool inputs, retained state, cancellation, protocol isolation and failure outcomes. `McpTaskContext` and `McpSessionTask` are type-only exports; the existing library and one-shot CLI remain compatible.
+The explicit MCP follow-up supersedes the original new-MCP exclusion. `react-forge mcp [--cwd <directory>]` exposes the four document formats, Figma and the source WAV extension through memory-only sessions, inline/file TSX execution and explicit local export or remote publication. Follow the [MCP contract](packages-react-forge-mcp-contract.md) for tool inputs, retained state, cancellation, protocol isolation and failure outcomes. `McpTaskContext` and `McpSessionTask` are type-only exports; the existing library and one-shot CLI remain compatible.
 
 ## Public distribution
 
@@ -91,3 +91,7 @@ The private source workspace generates a public `@delino/react-forge` package pl
 ## Static 3D extension
 
 The generation-only GLB/FBX extension follows [the scene contract](packages-react-forge-scene-contract.md). `SceneSession` shares local publication and MCP lifecycle, uses independent world-space bounds and native scene engines, and introduces no runtime conversion dependency.
+
+## SFX extension
+
+The [SFX contract](packages-react-forge-sfx-contract.md) adds `Format.Wav`, the `/sfx` component subpath, generation-only PCM WAV exports and seconds-based `timeline` geometry. It shares the session, revision, cancellation, atomic-output, diagnostics and six-host native boundaries. SFX does not register image/font assets or import audio. The source feature is unreleased; preserve existing document/Figma behavior.
