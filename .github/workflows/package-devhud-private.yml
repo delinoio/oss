@@ -171,7 +171,7 @@ jobs:
       DEVHUD_WINDOWS_TIMESTAMP_URL: ${{ vars.DEVHUD_WINDOWS_TIMESTAMP_URL }}
     steps:
       - uses: actions/checkout@v6
-        with: { fetch-depth: 0, ref: "${{ inputs.revision || github.sha }}" }
+        with: { lfs: true, fetch-depth: 0, ref: "${{ inputs.revision || github.sha }}" }
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v6
         with: { node-version-file: .nvmrc, cache: pnpm }
@@ -540,7 +540,7 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@v6
-        with: { fetch-depth: 0, ref: "${{ inputs.revision || github.sha }}" }
+        with: { lfs: true, fetch-depth: 0, ref: "${{ inputs.revision || github.sha }}" }
       - uses: actions/setup-go@v6
         with: { go-version-file: go.mod, cache: true }
       - uses: pnpm/action-setup@v4

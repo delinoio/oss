@@ -87,6 +87,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          lfs: true
           fetch-depth: 0
 
       - name: Setup Go
@@ -147,6 +148,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          lfs: true
           fetch-depth: 0
 
       - name: Setup Go
@@ -245,6 +247,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          lfs: true
           fetch-depth: 0
 
       - name: Install Rust toolchain
@@ -293,6 +296,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          lfs: true
           fetch-depth: 0
 
       - name: Install Rust toolchain
@@ -346,6 +350,8 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v6
+        with:
+          lfs: true
       - uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: nightly-2026-01-01
@@ -368,6 +374,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          lfs: true
       - uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: nightly-2026-01-01
@@ -418,6 +426,8 @@ jobs:
           - { id: win32-arm64-msvc, runner: windows-11-arm, platform: win32, architecture: arm64, target: aarch64-pc-windows-msvc }
     steps:
       - uses: actions/checkout@v6
+        with:
+          lfs: true
       - uses: ./.github/actions/setup-ci-node
         id: ci-node
       - uses: dtolnay/rust-toolchain@v1
@@ -597,6 +607,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          lfs: true
           fetch-depth: 0
           persist-credentials: false
 
@@ -669,6 +680,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          lfs: true
           fetch-depth: 0
           persist-credentials: false
 
@@ -800,6 +812,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          lfs: true
           fetch-depth: 0
 
       - name: Setup Node.js
@@ -1103,6 +1116,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          lfs: true
           fetch-depth: 0
 
       - name: Setup Node.js
@@ -1388,6 +1402,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          lfs: true
           fetch-depth: 0
 
       - name: Setup Go
@@ -1477,6 +1492,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          lfs: true
           fetch-depth: 0
           persist-credentials: false
 

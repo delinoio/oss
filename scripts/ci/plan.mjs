@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 export const jobPaths = JSON.parse(readFileSync(new URL("./job-paths.json", import.meta.url), "utf8"));
 export const Event = Object.freeze({ PullRequest: "pull_request", Push: "push", Manual: "workflow_dispatch" });
-const configuration = [".github/workflows/CI.yml", ".github/actions/**", "scripts/ci/**"];
+const configuration = [".gitattributes", ".github/workflows/CI.yml", ".github/actions/**", "scripts/ci/**"];
 const matches = (path, patterns) => patterns.some((pattern) => matchesGlob(path, pattern));
 
 export function planJobs(event, paths) {
