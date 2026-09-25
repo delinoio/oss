@@ -137,3 +137,5 @@
 - Failed first SQLite initialization must close the database before removing only attempt-owned fresh files; preserve existing databases and orphaned sidecars, and keep the scope lock through cleanup.
 
 - Missing vault identity recovery may remove only validated initial-pin atomic scratch in an otherwise empty root under its exclusive lock; preserve all populated-vault evidence.
+
+- Git remote HEAD inspection treats only documented symbolic-ref status 1 as an unavailable default; propagate all ownership, timeout, launch and other exit failures.

@@ -158,15 +158,17 @@ func (g Git) Inspect(ctx context.Context, path string) (Inspection, error) {
 			return Inspection{}, domain.Fail(domain.InvalidArgument, "A Git remote has an unsupported name.", "Rename the remote to an unambiguous name before using this checkout.")
 		}
 		result.Remotes = append(result.Remotes, remote)
-		symbolic, err := g.run(ctx, root, "symbolic-ref", "--quiet", "refs/remotes/"+remote+"/HEAD")
+		symbolic, exit, err := g.runCommand(ctx, root, "symbolic-ref", "--quiet", "refs/remotes/"+remote+"/HEAD")
 		if err == nil {
 			ref := strings.TrimSpace(string(symbolic))
 			prefix := "refs/remotes/" + remote + "/"
 			if strings.HasPrefix(ref, prefix) {
 				result.DefaultRefs[remote] = strings.TrimPrefix(ref, prefix)
 			}
-		} else if ctx.Err() != nil {
-			return Inspection{}, domain.SafeError(ctx.Err())
+		} else if exit != 1 {
+			// symbolic-ref documents status 1 for a non-symbolic reference.
+			// Every other status, including unproven owned cleanup, is a failure.
+			return Inspection{}, err
 		}
 	}
 	return result, nil
