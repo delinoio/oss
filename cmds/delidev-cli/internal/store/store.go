@@ -707,6 +707,11 @@ func (s *Store) BackupID(ctx context.Context, id domain.ID) (domain.ID, error) {
 		if err := ValidateBackup(ctx, path); err != nil {
 			return "", err
 		}
+		// An earlier attempt may have renamed the file but failed to sync its
+		// directory. Exact retries must finish that durability boundary too.
+		if err := security.SyncParent(path); err != nil {
+			return "", storageError(err)
+		}
 		return id, nil
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return "", storageError(err)
@@ -747,6 +752,9 @@ func (s *Store) BackupID(ctx context.Context, id domain.ID) (domain.ID, error) {
 		return "", err
 	}
 	if err := os.Rename(pending, path); err != nil {
+		return "", storageError(err)
+	}
+	if err := security.SyncParent(path); err != nil {
 		return "", storageError(err)
 	}
 	return id, nil
