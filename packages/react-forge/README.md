@@ -2,6 +2,8 @@
 
 `@delino/react-forge` authors PPTX, DOCX, XLSX, independent tagged PDF and editable Figma Design files through persistent React sessions. It imports existing Office packages, exposes supported editable regions, and preserves unrelated XML and package parts when mounting React content into those regions. Its executable is named `react-forge`.
 
+The [React Forge guides](https://oss.delino.io/react-forge/) cover installation, each format, Office editing, Figma publication, the CLI, and local MCP sessions.
+
 Use Node.js 24 on macOS, Windows, or glibc Linux, on x64 or arm64. Install normally with npm or pnpm; the matching native package is selected as an optional dependency. Keep optional dependencies enabled. Installation does not compile native code or download binaries from a separate service.
 
 ```sh

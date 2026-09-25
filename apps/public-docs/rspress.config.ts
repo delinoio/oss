@@ -95,6 +95,23 @@ const pnportPages = [
   { text: "Releases and Rollback", link: "/pnport/releases" },
 ];
 
+const reactForgePages = [
+  { text: "Overview", link: "/react-forge/", activeMatch: "^/react-forge/$" },
+  { text: "Installation", link: "/react-forge/installation" },
+  { text: "Getting Started", link: "/react-forge/getting-started" },
+  { text: "Sessions and Common API", link: "/react-forge/sessions" },
+  { text: "PPTX", link: "/react-forge/pptx" },
+  { text: "DOCX", link: "/react-forge/docx" },
+  { text: "XLSX", link: "/react-forge/xlsx" },
+  { text: "PDF", link: "/react-forge/pdf" },
+  { text: "Office Editing", link: "/react-forge/office-editing" },
+  { text: "Figma Design", link: "/react-forge/figma" },
+  { text: "CLI", link: "/react-forge/cli" },
+  { text: "Local MCP", link: "/react-forge/mcp" },
+  { text: "Limits and Troubleshooting", link: "/react-forge/limits-and-troubleshooting" },
+  { text: "Releases and Validation", link: "/react-forge/releases" },
+];
+
 const projectPages = [
   { text: "Runmoor", link: "/runmoor/", activeMatch: "^/runmoor" },
   { text: "Nodeup", link: "/nodeup/", activeMatch: "^/nodeup" },
@@ -152,6 +169,7 @@ export default defineConfig({
       ],
       "/clibox/": [{ text: "clibox", items: cliboxPages }],
       "/pnport/": [{ text: "pnport", items: pnportPages }],
+      "/react-forge/": [{ text: "React Forge", items: reactForgePages }],
       "/runmoor/": [{ text: "Runmoor", items: runmoorPages }],
       "/nodeup/": [{ text: "Nodeup", items: nodeupPages }],
       "/binpm/": [{ text: "binpm", items: binpmPages }],

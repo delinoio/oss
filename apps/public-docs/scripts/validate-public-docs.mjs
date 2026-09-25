@@ -10,8 +10,8 @@ const retiredOrigins = [
   "https://ach.delino.io",
 ];
 
-const selectorDestinations = ["/", "/runmoor/", "/nodeup/", "/binpm/", "/async-commit-hook/", "/clibox/", "/pnport/"];
-const projectSecuritySlugs = new Set(["runmoor", "async-commit-hook", "pnport"]);
+const selectorDestinations = ["/", "/runmoor/", "/nodeup/", "/binpm/", "/async-commit-hook/", "/clibox/", "/pnport/", "/react-forge/"];
+const projectSecuritySlugs = new Set(["runmoor", "async-commit-hook", "pnport", "react-forge"]);
 const forbiddenProjectContent = [
   /(?:GH_TOKEN|DEVHUD_[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|KEY)|Authorization:\s*Bearer)/iu,
   /\b(?:ghp|github_pat)_[A-Za-z0-9_]+\b/iu,
@@ -19,6 +19,7 @@ const forbiddenProjectContent = [
   /(?:\/Users\/|\/home\/[a-z]|\.infisical)/iu,
   /(?:apps|cmds|servers|protos)\/(?:runmoor|async-commit-hook|devhud)(?:\/|\b)/iu,
   /(?:crates|packages)\/pnport(?:\/|\b)/iu,
+  /(?:crates|packages)\/react-forge(?:\/|\b)/iu,
 ];
 const rootRoutes = [
   "/",
@@ -101,7 +102,7 @@ for (const [slug, routes] of Object.entries(projectRoutes)) {
         failures.push(`${publicRoute(slug, route)} is missing selector destination ${destination}`);
       }
     }
-    if (slug === "clibox" || slug === "pnport") {
+    if (slug === "clibox" || slug === "pnport" || slug === "react-forge") {
       const sidebar = contents.match(/<aside\b[^>]*class="[^"]*rp-doc-layout__sidebar[^"]*"[^>]*>[\s\S]*?<\/aside>/iu)?.[0] ?? "";
       const menuItems = [...contents.matchAll(/<a\b[^>]*role="menuitem"[^>]*>/giu)].map(([tag]) => tag);
       for (const destination of selectorDestinations) {

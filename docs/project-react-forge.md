@@ -22,6 +22,7 @@ Provide publicly distributed React document sessions, a TSX task CLI and a local
 ## Domain Contract Documents
 
 - [Figma creation and editing](packages-react-forge-figma-contract.md).
+- [Public documentation](apps-react-forge-docs-foundation.md).
 - [Complete requirements](packages-react-forge-requirements.md).
 - [Session-based MCP contract](packages-react-forge-mcp-contract.md).
 - [Node session and CLI contract](packages-react-forge-contract.md).
@@ -39,6 +40,7 @@ Provide publicly distributed React document sessions, a TSX task CLI and a local
 - Preserve unrelated Office parts/XML; reject unsafe or unprovable edits transactionally. Never flatten opaque imported content. Existing Forge CLI/MCP behavior and default fonts remain stable.
 - Registered assets and render-relevant asynchronous work must settle before export pins a revision. Later commits cannot change an export already pinned. Cancellation has no automatic timeout and cannot misreport an already completed atomic publication.
 - Source-backed requirements must remain intact. Track missing evidence honestly; do not close #968 until all acceptance criteria pass. Direct Microsoft Office validation and PDF/UA certification are not claimed.
+- Public user guides are owned by the consolidated documentation app at `https://oss.delino.io/react-forge/`; they cover the released library, CLI, MCP, four local formats, and Figma without exposing internal implementation or overstating evidence.
 
 ## Change Policy
 Update the project index, affected domain contracts, relevant AGENTS rules, examples and validation together when interfaces or ownership change. Internal rollback uses source revision rollback and rebuild without rewriting exported files.

@@ -17,7 +17,7 @@
 
 ### Scope in This Domain
 
-- `apps/public-docs`: Rspress static public documentation app, including the `docs/binpm`, `docs/nodeup`, `docs/runmoor`, `docs/async-commit-hook`, `docs/clibox`, and `docs/pnport` content roots.
+- `apps/public-docs`: Rspress static public documentation app, including the `docs/binpm`, `docs/nodeup`, `docs/runmoor`, `docs/async-commit-hook`, `docs/clibox`, `docs/pnport`, and `docs/react-forge` content roots.
 - `apps/devhud`: implemented deterministic bilingual React/TypeScript shell, complete guest/Logto identity, synchronized Settings and opt-in diagnostics boundaries, direct-client GitHub.com provider/setup and issue submission, desktop RealQA capture/editor/encrypted drafts/direct official and BYO R2 uploads, populated Deck surface, desktop Native Messaging integration, target-isolated Rust/Tauri desktop CEF plus iOS/Android system-webview hosts, and production WidgetKit/AppWidgetProvider Deck widgets; other populated product surfaces remain planned.
 - `apps/devhud-chrome-extension`: implemented deterministic bilingual Chrome Manifest V3 DevHud context-picker extension.
 - `apps/devhud-admin`: implemented React/TypeScript Rsbuild administrator SPA embedded at `/admin`; it is the sole producer and validator of the ignored production administrator `dist`.
@@ -94,14 +94,14 @@
 
 - `public-docs` must remain Rspress-based and use Cloudflare Pages static output unless its project contract documents a replacement.
 - `public-docs` production is `https://oss.delino.io`, served by the Cloudflare Pages `public-docs` project from `main`; build at the repository root with the repository's Node and pnpm versions and publish only `apps/public-docs/doc_build`.
-- `public-docs` is the sole production documentation publisher. It builds the `docs/runmoor`, `docs/nodeup`, `docs/binpm`, `docs/async-commit-hook`, `docs/clibox`, and `docs/pnport` content roots directly below `/runmoor`, `/nodeup`, `/binpm`, `/async-commit-hook`, `/clibox`, and `/pnport`; no package-local documentation workspaces or output directories are independently published.
-- Every assembled documentation page must expose the shared site selector for Delino OSS, Runmoor, Nodeup, binpm, async-commit-hook, clibox, and pnport. Production and the consolidated development server at port `46302` use the same clean relative destinations; never remap project links to retired per-project ports. It must expose `aria-expanded` and `aria-current`, support keyboard selection, Escape/outside-click close, and focus return.
+- `public-docs` is the sole production documentation publisher. It builds the `docs/runmoor`, `docs/nodeup`, `docs/binpm`, `docs/async-commit-hook`, `docs/clibox`, `docs/pnport`, and `docs/react-forge` content roots directly below their same-name canonical subpaths; no package-local documentation workspaces or output directories are independently published.
+- Every assembled documentation page must expose the shared site selector for Delino OSS, Runmoor, Nodeup, binpm, async-commit-hook, clibox, pnport, and React Forge. Production and the consolidated development server at port `46302` use the same clean relative destinations; never remap project links to retired per-project ports. It must expose `aria-expanded` and `aria-current`, support keyboard selection, Escape/outside-click close, and focus return.
 - Rspress routes, navigation, and sidebar in `apps/public-docs/rspress.config.ts` must stay aligned with `docs/apps-public-docs-foundation.md`.
 - Public route exemptions in shared validators must come from one explicit project-route catalog; allow complete stable routes only, never arbitrary descendants of a project prefix.
 - `public-docs` must use clean URLs, write production output to `apps/public-docs/doc_build`, and validate stable route artifacts plus generated internal `.html` links through `pnpm --filter public-docs test`.
 - Current public-docs in-site top-level product page IDs are `devhud`, `cargo-mono`, `derun`, and `with-watch`.
 - The stable `/devhud` page documents public product availability and the coordinated all-channels GA rule without exposing release credentials, private workflow details, or deployment internals.
-- Nodeup, binpm, Runmoor, async-commit-hook, clibox, and pnport are exposed from `apps/public-docs/docs` through canonical same-origin subpaths `/nodeup`, `/binpm`, `/runmoor`, `/async-commit-hook`, `/clibox`, and `/pnport`. Their Markdown is owned directly by these content roots and must not be duplicated elsewhere. pnport's guides must retain the unreleased 0.1.0 availability notice until a complete distribution is verified.
+- Nodeup, binpm, Runmoor, async-commit-hook, clibox, pnport, and React Forge are exposed from `apps/public-docs/docs` through canonical same-origin subpaths `/nodeup`, `/binpm`, `/runmoor`, `/async-commit-hook`, `/clibox`, `/pnport`, and `/react-forge`. Their Markdown is owned directly by these content roots and must not be duplicated elsewhere. pnport's guides must retain the unreleased 0.1.0 availability notice until a complete distribution is verified.
 - Do not add legacy handoff pages, aliases, or redirects for the consolidated project subpaths. Operators decommission the former standalone Pages projects and DNS records only after the consolidated deployment, route, switcher, and installer checks pass.
 - `public-docs` must curate repository contracts into public guidance and must not document repository-internal implementation details unless the detail is a stable public interface, user-visible behavior, or explicitly public maintainer workflow.
 - When user-facing documentation behavior changes, update related `apps/public-docs` pages in the same change set.
@@ -168,7 +168,7 @@
 - Follow `docs/repository-linux-packages-contract.md`. The shared public `/linux-packages` route owns APT/DNF setup and key verification; standalone CLI installation pages retain product-specific guidance.
 - Public package documentation includes the exact public fingerprint, supported systems, stable/preview registration, installation/update/removal, and explicit Runmoor service ownership. Keep R2, signing secrets, CI and recovery internals in `docs/`.
 - Only the shared package registration page may show its exact contracted `/etc/apt`, `/etc/yum.repos.d` and `/usr/share/keyrings` installation paths; never broaden unrelated public filesystem-path exceptions.
-- The canonical public-docs production origin is `https://oss.delino.io`; shared Linux package guidance is `https://oss.delino.io/linux-packages`. Consolidated project documentation uses the same origin with `/runmoor`, `/nodeup`, `/binpm`, `/async-commit-hook`, `/clibox`, and `/pnport` prefixes.
+- The canonical public-docs production origin is `https://oss.delino.io`; shared Linux package guidance is `https://oss.delino.io/linux-packages`. Consolidated project documentation uses the same origin with `/runmoor`, `/nodeup`, `/binpm`, `/async-commit-hook`, `/clibox`, `/pnport`, and `/react-forge` prefixes.
 - Public native-package registration examples must spell out the complete repository configuration with a quoted heredoc, preserving APT Signed-By and both DNF signature checks. Do not bootstrap trust by installing an unverified configuration file downloaded from package storage.
 
 - Native package documentation must distinguish implemented release integration from published availability. No native packages have been published yet; mark every CLI package-manager example as unavailable until its own public installation verification completes. Runmoor and clibox use stable.
@@ -176,3 +176,9 @@
 ### pnport Rules
 
 - Public pnport guides belong to `apps/public-docs/docs/pnport` at https://oss.delino.io/pnport. Follow `docs/apps-pnport-docs-foundation.md`; use the shared accessible navigation and consolidated fixed-port development/publishing pipeline. Mark all pnport guides unreleased until all six native gates and distribution publication complete. Keep compatibility/release evidence truthful and internal details in docs/.
+
+### React Forge public documentation Rules
+
+- `apps/public-docs/docs/react-forge` owns the fourteen English public guides at `https://oss.delino.io/react-forge/`. Follow `docs/apps-react-forge-docs-foundation.md`; expose every stable route in the sidebar and React Forge as a peer in the shared site selector.
+- Keep installation and API examples aligned with the released `@delino/react-forge` package and public types. Distinguish six-host local Office/PDF support from macOS Keychain Figma authentication; document explicit publication, receipts, preservation, and verification limits without exposing repository internals.
+- Validate all fourteen rendered routes, guide links, selector state, sidebar, social/footer links, clean URLs, and prohibited credentials and internal paths through `pnpm --filter public-docs test`.
