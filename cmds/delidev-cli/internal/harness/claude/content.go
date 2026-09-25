@@ -30,6 +30,8 @@ const (
 	ProviderMessageStarted   ContentEventKind = "provider-message-started"
 	ProviderMessageUpdated   ContentEventKind = "provider-message-updated"
 	ProviderMessageFinished  ContentEventKind = "provider-message-finished"
+	ProviderMessageSnapshot  ContentEventKind = "provider-message-snapshot"
+	ChildInputObserved       ContentEventKind = "child-input-observed"
 	ContentStarted           ContentEventKind = "content-started"
 	ContentChanged           ContentEventKind = "content-changed"
 	ContentCompleted         ContentEventKind = "content-completed"
@@ -82,19 +84,22 @@ type NativeToolResult struct {
 }
 
 type ContentEvent struct {
-	Kind         ContentEventKind
-	MessageID    string
-	Model        string
-	ParentToolID string
-	Index        *uint32
-	Block        *NativeContentBlock
-	DeltaKind    ContentDeltaKind
-	Delta        *string
-	Usage        *ProviderUsage
-	StopReason   *NativeStopReason
-	StopSequence *string
-	ToolResult   *NativeToolResult
-	Problem      NativeAssistantProblem
+	Kind            ContentEventKind
+	MessageID       string
+	Model           string
+	ParentToolID    string
+	Index           *uint32
+	Block           *NativeContentBlock
+	Blocks          []NativeContentBlock
+	SubagentType    *string
+	TaskDescription *string
+	DeltaKind       ContentDeltaKind
+	Delta           *string
+	Usage           *ProviderUsage
+	StopReason      *NativeStopReason
+	StopSequence    *string
+	ToolResult      *NativeToolResult
+	Problem         NativeAssistantProblem
 }
 
 type contentBlockState struct {
@@ -116,12 +121,14 @@ type nativeToolState struct {
 	index                 uint32
 	input                 [sha256.Size]byte
 	finished              bool
+	streamed              bool
 }
 
 type contentState struct {
 	active        map[string]*providerMessageState
 	seen          map[string]bool
 	tools         map[string]nativeToolState
+	snapshots     map[string]string
 	openTools     int
 	bufferedBytes int
 }
@@ -182,8 +189,16 @@ func decodeContentBlock(raw []byte) (NativeContentBlock, error) {
 }
 
 func (b *ExecutionBinding) observeContent(event StreamEvent) ([]ContentEvent, error) {
-	if !b.initialized || !b.accepted || b.finished {
+	if !b.initialized || !b.accepted {
 		return nil, lifecycleUncertain()
+	}
+	if b.finished {
+		var header struct {
+			Parent *string `json:"parent_tool_use_id"`
+		}
+		if json.Unmarshal(event.Body, &header) != nil || header.Parent == nil || !b.activeChildTask(*header.Parent) {
+			return nil, lifecycleUncertain()
+		}
 	}
 	if b.content.active == nil {
 		b.content = contentState{active: map[string]*providerMessageState{}, seen: map[string]bool{}, tools: map[string]nativeToolState{}}
@@ -205,8 +220,13 @@ func (b *ExecutionBinding) contentParent(parent *string) (string, error) {
 		return "", nil
 	}
 	tool, ok := b.content.tools[*parent]
-	if !ok || tool.finished || (tool.name != "Agent" && tool.name != "Task") {
+	if !ok || (tool.finished && !b.activeChildTask(*parent)) || (tool.name != "Agent" && tool.name != "Task") {
 		return "", lifecycleUncertain()
+	}
+	for _, task := range b.tasks {
+		if task.tool == *parent && task.kind == LocalAgentTask && task.status.terminal() {
+			return "", lifecycleUncertain()
+		}
 	}
 	return *parent, nil
 }
@@ -432,15 +452,17 @@ func decodeContentDelta(raw []byte) (ContentDeltaKind, string, error) {
 
 func (b *ExecutionBinding) observeAssistant(raw []byte) ([]ContentEvent, error) {
 	var envelope struct {
-		Type      string                 `json:"type"`
-		Message   json.RawMessage        `json:"message"`
-		Session   domain.ID              `json:"session_id"`
-		Parent    *string                `json:"parent_tool_use_id"`
-		UUID      string                 `json:"uuid"`
-		Timestamp string                 `json:"timestamp"`
-		Error     NativeAssistantProblem `json:"error"`
-		APIError  bool                   `json:"is_api_error_message"`
-		RequestID *string                `json:"request_id"`
+		Type            string                 `json:"type"`
+		Message         json.RawMessage        `json:"message"`
+		Session         domain.ID              `json:"session_id"`
+		Parent          *string                `json:"parent_tool_use_id"`
+		UUID            string                 `json:"uuid"`
+		Timestamp       string                 `json:"timestamp"`
+		Error           NativeAssistantProblem `json:"error"`
+		APIError        bool                   `json:"is_api_error_message"`
+		RequestID       *string                `json:"request_id"`
+		SubagentType    *string                `json:"subagent_type"`
+		TaskDescription *string                `json:"task_description"`
 	}
 	if decodeNativeObject(raw, &envelope) != nil {
 		return nil, lifecycleUncertain()
@@ -450,6 +472,9 @@ func (b *ExecutionBinding) observeAssistant(raw []byte) ([]ContentEvent, error) 
 		return nil, err
 	}
 	if _, err := time.Parse(time.RFC3339Nano, envelope.Timestamp); err != nil {
+		return nil, lifecycleUncertain()
+	}
+	if !taskTexts(envelope.SubagentType, envelope.TaskDescription) || (parent == "" && (envelope.SubagentType != nil || envelope.TaskDescription != nil)) {
 		return nil, lifecycleUncertain()
 	}
 	if envelope.APIError || envelope.Error != "" {
@@ -463,6 +488,9 @@ func (b *ExecutionBinding) observeAssistant(raw []byte) ([]ContentEvent, error) 
 		return nil, err
 	}
 	active := b.content.active[parent]
+	if active == nil && parent != "" {
+		return b.observeChildSnapshot(parent, message, envelope.SubagentType, envelope.TaskDescription)
+	}
 	if active == nil || active.id != message.ID || active.model != message.Model || len(message.Content) != 1 || len(active.blocks) == 0 {
 		return nil, lifecycleUncertain()
 	}
@@ -504,7 +532,7 @@ func (b *ExecutionBinding) observeAssistant(raw []byte) ([]ContentEvent, error) 
 			return nil, lifecycleUncertain()
 		}
 		block.Tool.ProposedInput = bytes.Clone(input)
-		b.content.tools[block.Tool.ID] = nativeToolState{name: block.Tool.Name, parent: parent, message: active.id, index: index, input: observed}
+		b.content.tools[block.Tool.ID] = nativeToolState{name: block.Tool.Name, parent: parent, message: active.id, index: index, input: observed, streamed: true}
 		b.content.openTools++
 	}
 	state.completed = true
@@ -520,14 +548,16 @@ func (b *ExecutionBinding) observeAssistant(raw []byte) ([]ContentEvent, error) 
 
 func (b *ExecutionBinding) observeToolResult(raw []byte) ([]ContentEvent, error) {
 	var envelope struct {
-		Type       string          `json:"type"`
-		Message    json.RawMessage `json:"message"`
-		Session    domain.ID       `json:"session_id"`
-		Parent     *string         `json:"parent_tool_use_id"`
-		UUID       string          `json:"uuid"`
-		Timestamp  string          `json:"timestamp"`
-		Structured json.RawMessage `json:"tool_use_result"`
-		Synthetic  *bool           `json:"isSynthetic"`
+		Type            string          `json:"type"`
+		Message         json.RawMessage `json:"message"`
+		Session         domain.ID       `json:"session_id"`
+		Parent          *string         `json:"parent_tool_use_id"`
+		UUID            string          `json:"uuid"`
+		Timestamp       string          `json:"timestamp"`
+		Structured      json.RawMessage `json:"tool_use_result"`
+		Synthetic       *bool           `json:"isSynthetic"`
+		SubagentType    *string         `json:"subagent_type"`
+		TaskDescription *string         `json:"task_description"`
 	}
 	var message struct {
 		Role    string            `json:"role"`
@@ -542,6 +572,18 @@ func (b *ExecutionBinding) observeToolResult(raw []byte) ([]ContentEvent, error)
 	}
 	if _, err := time.Parse(time.RFC3339Nano, envelope.Timestamp); err != nil {
 		return nil, lifecycleUncertain()
+	}
+	if !taskTexts(envelope.SubagentType, envelope.TaskDescription) || (parent == "" && (envelope.SubagentType != nil || envelope.TaskDescription != nil)) {
+		return nil, lifecycleUncertain()
+	}
+	if parent != "" && len(envelope.Structured) == 0 {
+		var header struct {
+			Type string `json:"type"`
+		}
+		_ = json.Unmarshal(message.Content[0], &header)
+		if header.Type != "tool_result" {
+			return b.observeChildInput(parent, message.Content, envelope.SubagentType, envelope.TaskDescription)
+		}
 	}
 	if len(envelope.Structured) > 0 {
 		var object map[string]json.RawMessage
@@ -582,7 +624,11 @@ func (b *ExecutionBinding) observeToolResult(raw []byte) ([]ContentEvent, error)
 			return nil, err
 		}
 		index := tool.index
-		events = append(events, ContentEvent{Kind: ToolResultObserved, MessageID: tool.message, ParentToolID: parent, Index: &index, ToolResult: &NativeToolResult{ID: value.ID, Name: tool.name, Error: value.Error, Text: text, Blocks: blocks, Structured: bytes.Clone(envelope.Structured)}})
+		var position *uint32
+		if tool.streamed {
+			position = &index
+		}
+		events = append(events, ContentEvent{Kind: ToolResultObserved, MessageID: tool.message, ParentToolID: parent, Index: position, ToolResult: &NativeToolResult{ID: value.ID, Name: tool.name, Error: value.Error, Text: text, Blocks: blocks, Structured: bytes.Clone(envelope.Structured)}})
 	}
 	for id := range seen {
 		tool := b.content.tools[id]

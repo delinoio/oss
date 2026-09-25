@@ -122,10 +122,11 @@ const (
 )
 
 type NativeResult struct {
-	Kind   ResultKind
-	Reason TerminalReason
-	Error  bool
-	Usage  *ResultUsage
+	Kind      ResultKind
+	Reason    TerminalReason
+	Error     bool
+	Usage     *ResultUsage
+	KnownWork NativeWorkObservation
 }
 
 func (r NativeResult) Successful() bool {
@@ -214,7 +215,7 @@ func (b *ExecutionBinding) validateResult(raw []byte) (NativeResult, bool, error
 	if err != nil {
 		return NativeResult{}, false, err
 	}
-	value := NativeResult{Kind: result.Kind, Reason: result.Reason, Error: *result.Error, Usage: usage}
+	value := NativeResult{Kind: result.Kind, Reason: result.Reason, Error: *result.Error, Usage: usage, KnownWork: b.knownWork()}
 	if (b.command == CommandCompleted && value.cancelsCommand()) || (b.command == CommandCancelled && !value.cancelsCommand()) {
 		return NativeResult{}, false, lifecycleUncertain()
 	}

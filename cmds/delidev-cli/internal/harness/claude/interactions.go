@@ -170,7 +170,7 @@ func (b *ExecutionBinding) observeInteraction(event StreamEvent) (*InteractionOb
 		}
 		return result, nil
 	}
-	if !b.initialized || !b.accepted || b.finished || retained != nil || len(b.interactions) >= maxStreamIdentities {
+	if !b.initialized || !b.accepted || retained != nil || len(b.interactions) >= maxStreamIdentities {
 		return nil, lifecycleUncertain()
 	}
 	var request struct {
@@ -202,7 +202,7 @@ func (b *ExecutionBinding) observeInteraction(event StreamEvent) (*InteractionOb
 	}
 	tool, exists := b.content.tools[request.ID]
 	digest, err := streamReplyDigest(request.Input)
-	if !exists || tool.finished || tool.name != request.Tool || err != nil || digest != tool.input {
+	if !exists || tool.finished || tool.name != request.Tool || err != nil || digest != tool.input || (b.finished && !b.activeChildTask(tool.parent)) {
 		return nil, lifecycleUncertain()
 	}
 	open := 0
@@ -287,11 +287,11 @@ func (b *ExecutionBinding) PreparePermissionReply(arrival domain.ID, reply Permi
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	value := b.interactions[arrival]
-	if b.problem != nil || b.finished || value == nil || value.prepared || value.canceled {
+	if b.problem != nil || value == nil || value.prepared || value.canceled {
 		return StreamEvent{}, nil, lifecycleUncertain()
 	}
 	tool, exists := b.content.tools[value.request.ToolID]
-	if !exists || tool.finished {
+	if !exists || tool.finished || (b.finished && !b.activeChildTask(tool.parent)) {
 		return StreamEvent{}, nil, lifecycleUncertain()
 	}
 	var response any

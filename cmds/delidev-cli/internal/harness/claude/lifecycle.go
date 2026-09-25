@@ -22,6 +22,8 @@ const (
 	UncorrelatedTermination LifecycleKind = "uncorrelated-termination"
 	ContentObserved         LifecycleKind = "content-observed"
 	InteractionObserved     LifecycleKind = "interaction-observed"
+	TaskObserved            LifecycleKind = "task-observed"
+	ProgressObserved        LifecycleKind = "progress-observed"
 	PrivateObservation      LifecycleKind = "private-observation"
 )
 
@@ -37,6 +39,8 @@ const (
 	contentValidation     lifecyclePhase = "content"
 	resultValidation      lifecyclePhase = "result"
 	interactionValidation lifecyclePhase = "interaction"
+	taskValidation        lifecyclePhase = "task"
+	progressValidation    lifecyclePhase = "progress"
 )
 
 const (
@@ -60,6 +64,8 @@ type LifecycleObservation struct {
 	Accepted    bool
 	Result      *NativeResult
 	Interaction *InteractionObservation
+	Task        *NativeTaskObservation     `json:"-"`
+	Progress    *NativeProgressObservation `json:"-"`
 	Content     []ContentEvent
 	Native      *StreamEvent `json:"-"`
 }
@@ -90,6 +96,8 @@ type ExecutionBinding struct {
 	advertisedTools  map[string]bool
 	interactions     map[domain.ID]*interactionState
 	interactionBytes int
+	tasks            map[string]nativeTaskState
+	backgroundTasks  map[string]bool
 }
 
 func BindExecution(config APIStreamConfig, input domain.ID, text string) (*ExecutionBinding, error) {
@@ -200,7 +208,32 @@ func (b *ExecutionBinding) Observe(event StreamEvent) (observation LifecycleObse
 			}
 			b.initialized = true
 			observation.Kind = SessionInitialized
+		} else {
+			switch TaskEventKind(header.Subtype) {
+			case TaskStarted, TaskProgress, TaskUpdated, TaskNotification, BackgroundTasksChanged:
+				phase = taskValidation
+				value, err := b.observeTask(TaskEventKind(header.Subtype), event.Body)
+				if err != nil {
+					return LifecycleObservation{}, err
+				}
+				observation.Kind, observation.Task = TaskObserved, value
+			}
+			if header.Subtype == "status" {
+				phase = progressValidation
+				value, err := b.observeProgress(event)
+				if err != nil {
+					return LifecycleObservation{}, err
+				}
+				observation.Kind, observation.Progress = ProgressObserved, value
+			}
 		}
+	case "tool_progress", "tool_use_summary":
+		phase = progressValidation
+		value, err := b.observeProgress(event)
+		if err != nil {
+			return LifecycleObservation{}, err
+		}
+		observation.Kind, observation.Progress = ProgressObserved, value
 	case "user":
 		if header.Replay {
 			phase = replayValidation
