@@ -476,3 +476,40 @@ The earlier **81 CI contract tests** and workflow validation cover the unchanged
 merged workflow configuration. Only macOS arm64 was run locally; the final push's
 CI results and new visual renders are not claimed. Generated repository-owned
 `dist` directories were removed after verification.
+
+
+## PR #988 schema CI and event-matrix repair (2026-09-25)
+
+Both failing jobs in run `36133345298` (DevHud Protocol and Client, and
+async-commit-hook contracts/integration) failed when Buf cloned a pointer-only
+local baseline and tried to smudge an unavailable, unrelated LFS font. The
+breaking-check command now scopes the LFS smudge skip to Buf. A real Buf/Git LFS
+fixture reproduces the old clone failure and verifies compatible schemas,
+breaking-field rejection, and the existing absent-baseline behavior. A temporary
+pointer-only clone of the full repository passed `proto:check`, Go binding tests,
+and client lint/build with **37 tests**, without fetching LFS payloads.
+
+The final status snapshot also discovered newly merged `main` commit `a00774d0`
+(PR #986). The merge retains the event-specific CI matrix: ordinary affected
+Windows/Linux validation, all six hosts in manual CI and release gates, and the
+shared host script. Scene/GLB/FBX tests and Clippy run through that script; Linux
+scene preparation and all four product render shards remain required. Both scene
+jobs share the narrowed source paths, so documentation-only changes do not start
+the native matrix or an orphaned render job. The protocol smudge fix independently
+arrived on `main` too; the merge retains its behavior and the new regression.
+
+Local macOS arm64/Node.js 24.17.0 merge validation passed **92 CI contract tests**,
+workflow and shell syntax validation, **22 affected release-contract tests**,
+React Forge build/typecheck/lint with **139 tests** and standalone example checks,
+and the full DevHud app `pnpm test` plus frontend build. The imported schedule
+coordinator lifecycle regression passed three consecutive runs. This evidence
+does not claim new renders or hosted results after the repair push.
+
+
+The final merged root `TMPDIR=/private/tmp cargo test --locked --
+--test-threads=1` run passed **1,944 tests**, with zero failures and three existing
+opt-in tests ignored. Clibox, the scene/exporter/sprite/SFX engines and the native
+adapter passed Clippy with warnings denied; repository formatting also passed.
+The root test used the documented frontend and separate generic/pnport preload
+preparation. Generated repository-owned `dist` directories were removed, and
+`git lfs fsck` passed before the single repair push.

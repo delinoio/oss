@@ -88,6 +88,7 @@ jobs:
         with:
           toolchain: nightly-2026-01-01
           targets: ${{ matrix.target }}
+          components: clippy
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Install Linux font dependencies
         if: runner.os == 'Linux'
@@ -96,21 +97,33 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: ./packages/react-forge/scripts/install-ci-fonts.ps1
-      - name: Build and validate native engines
+      - name: Install test-only macOS renderers
+        if: runner.os == 'macOS'
         run: |
-          cargo test --locked --target ${{ matrix.target }} -p react-forge-node -p forge-package -p forge-document -p forge-docx -p forge-xlsx -p forge-pdf -p forge-sprite -p forge-sfx -p forge-figma -p forge-scene -p forge-glb -p forge-fbx -p forge-tree-doc -p forge-pptx -p delino-forge
-          pnpm --filter @delino/react-forge build
-          pnpm --filter @delino/react-forge test
-      - name: Verify Windows console cancellation
-        if: runner.os == 'Windows'
-        env:
-          REACT_FORGE_WINDOWS_CONSOLE_TEST: "1"
-        run: cargo test --locked --target ${{ matrix.target }} -p react-forge-node --test windows_console -- --nocapture
-      - name: Pack and run the installed public distribution
+          brew install --cask libreoffice
+          brew install poppler
+          python3 -m venv "$RUNNER_TEMP/react-forge-python"
+          "$RUNNER_TEMP/react-forge-python/bin/pip" install -r packages/react-forge/scripts/render-requirements.txt
+      - name: Install test-only Linux renderers
+        if: runner.os == 'Linux'
         run: |
-          node packages/react-forge/scripts/package.mjs main
-          node packages/react-forge/scripts/package.mjs native
-          node packages/react-forge/scripts/install-smoke.mjs
+          sudo apt-get install -y libreoffice poppler-utils python3-venv
+          python3 -m venv "$RUNNER_TEMP/react-forge-python"
+          "$RUNNER_TEMP/react-forge-python/bin/pip" install -r packages/react-forge/scripts/render-requirements.txt
+      - name: Validate native engine, installed CLI, renders, and benchmark
+        run: bash packages/react-forge/scripts/validate-host.sh "${{ matrix.target }}"
+      - name: Retain rendering and benchmark evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: react-forge-validation-${{ matrix.id }}
+          path: |
+            ${{ runner.temp }}/react-forge-turbo.log
+            ${{ runner.temp }}/react-forge-render
+            ${{ runner.temp }}/react-forge-benchmark.json
+            ${{ runner.temp }}/react-forge-travel-ir.pptx
+          if-no-files-found: ignore
+          retention-days: 7
       - uses: actions/upload-artifact@v7
         with:
           name: react-forge-native-${{ matrix.id }}

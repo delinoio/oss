@@ -23,6 +23,7 @@ const appCargo = readFileSync(join(appRoot, "src-tauri/Cargo.toml"), "utf8");
 const rootCargo = readFileSync(join(repoRoot, "Cargo.toml"), "utf8").replace(/\r\n?/gu, "\n");
 const cargoLock = readFileSync(join(repoRoot, "Cargo.lock"), "utf8").replace(/\r\n?/gu, "\n");
 const ciWorkflow = readFileSync(join(repoRoot, ".github/workflows/CI.yml"), "utf8");
+const ciMatrices = JSON.parse(readFileSync(join(repoRoot, "scripts/ci/native-matrices.json"), "utf8"));
 const packageJson = JSON.parse(readFileSync(join(appRoot, "package.json"), "utf8"));
 const pnpmLock = readFileSync(join(repoRoot, "pnpm-lock.yaml"), "utf8");
 const tauriConfig = JSON.parse(readFileSync(join(appRoot, "src-tauri/tauri.conf.json"), "utf8"));
@@ -304,7 +305,8 @@ assert(!updaterRust.toLowerCase().includes("bootstrap"), "bootstrap must not par
 assert(!tauriConfig.app.security.csp.includes("devhud.api.delino.io"), "frontend CSP must not receive updater network access");
 assert(!updaterRust.includes("AUTHORIZATION") && !updaterRust.includes("COOKIE"), "desktop updater must not ship credential headers");
 for (const [id, packageKind] of Object.entries({ "macos-x64": "macos-app", "macos-arm64": "macos-app", "windows-x64": "windows-nsis", "windows-arm64": "windows-nsis", "ubuntu-x64": "linux-deb", "ubuntu-arm64": "linux-deb" })) {
-  assert(new RegExp(`- id: ${id}[\\s\\S]{0,180}package: ${packageKind}`, "u").test(ciWorkflow), `${id} updater package kind is not fixed`);
+  const row = ciMatrices["devhud-desktop"].find((entry) => entry.id === id || entry.id === `${id}-nsis` || entry.id === `${id}-deb`);
+  assert(row?.package === packageKind, `${id} updater package kind is not fixed`);
 }
 assert(ciWorkflow.includes("DEVHUD_PACKAGE_KIND: ${{ matrix.package }}"), "desktop package builds do not compile the installed package kind");
 
@@ -448,7 +450,7 @@ for (const { id, os, arch, rustTarget, runner } of platforms.targets) {
   assert(["x64", "arm64"].includes(arch), `invalid architecture for ${id}`);
   assert(typeof runner === "string" && runner.length > 0, `missing native runner for ${id}`);
 }
-validateCiTargetMatrix(yaml.load(ciWorkflow), platforms.targets);
+validateCiTargetMatrix(yaml.load(ciWorkflow), platforms.targets, ciMatrices);
 
 for (const { os, rustTarget } of platforms.targets) {
   const targetMetadataResult = spawnSync(
