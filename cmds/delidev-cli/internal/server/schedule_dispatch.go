@@ -258,7 +258,7 @@ func scheduleSessionResult(tx *store.Tx, record store.Record, value domain.Sessi
 		return domain.OccurrenceStopped, nil, nil
 	}
 	progress := value.Execution
-	if progress == nil || !progress.CleanupVerified || progress.Waiting != (domain.NativeWaiting{}) || progress.UnconfirmedResponses != 0 || progress.ExecutionID != value.ExecutionSelection().ID || progress.Outcome != value.Outcome {
+	if progress == nil || !progress.CleanupVerified || progress.Waiting != (domain.NativeWaiting{}) || progress.UnconfirmedResponses != 0 || progress.ExecutionID != value.ExecutionSelection().ID {
 		return "", nil, nativeCompletionUncertain()
 	}
 	state := map[domain.ExecutionOutcome]domain.OccurrenceState{domain.ExecutionSucceeded: domain.OccurrenceSucceeded, domain.ExecutionFailed: domain.OccurrenceFailed, domain.ExecutionStopped: domain.OccurrenceStopped}[value.Outcome]
@@ -273,8 +273,10 @@ func scheduleSessionResult(tx *store.Tx, record store.Record, value domain.Sessi
 	if err != nil {
 		return "", nil, err
 	}
-	expected := map[domain.ExecutionOutcome]domain.JobState{domain.ExecutionSucceeded: domain.JobSucceeded, domain.ExecutionFailed: domain.JobFailed, domain.ExecutionStopped: domain.JobCanceled}[value.Outcome]
-	if r.ID != progress.JobID || job.State != expected || job.FinishedAt == nil {
+	// Stop/Archive can win before a late native success. The occurrence follows
+	// the retained product outcome; the owned job proves its native outcome.
+	expected := map[domain.ExecutionOutcome]domain.JobState{domain.ExecutionSucceeded: domain.JobSucceeded, domain.ExecutionFailed: domain.JobFailed, domain.ExecutionStopped: domain.JobCanceled}[progress.Outcome]
+	if expected == "" || r.ID != progress.JobID || job.State != expected || job.FinishedAt == nil {
 		return "", nil, nativeCompletionUncertain()
 	}
 	var assignment domain.ExecutionJobInput

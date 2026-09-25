@@ -17,6 +17,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
+	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 )
 
 type scheduleDispatchFixture struct {
@@ -544,23 +545,19 @@ func TestScheduleCoordinatorConcurrentWaitReleaseCreatesOneSession(t *testing.T)
 }
 
 func TestScheduleCoordinatorNativeCompletionRequiresOwnedCleanup(t *testing.T) {
-	for _, outcome := range []domain.ExecutionOutcome{domain.ExecutionSucceeded, domain.ExecutionFailed, domain.ExecutionStopped} {
-		t.Run(string(outcome), func(t *testing.T) {
+	for _, scenario := range []struct {
+		name    string
+		outcome domain.ExecutionOutcome
+		action  pb.SessionAction
+	}{
+		{"success", domain.ExecutionSucceeded, 0}, {"failure", domain.ExecutionFailed, 0}, {"stopped", domain.ExecutionStopped, 0},
+		{"stop-before-native-success", domain.ExecutionSucceeded, pb.SessionAction_SESSION_ACTION_STOP},
+		{"archive-before-native-success", domain.ExecutionSucceeded, pb.SessionAction_SESSION_ACTION_ARCHIVE},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			outcome := scenario.outcome
 			f := newPublicationFixture(t)
 			ctx := context.Background()
-			// This protocol fixture has no workspace runner. Supply only the
-			// previously prepared state; native completion still uses real RPCs.
-			_, err := f.service.Store.Mutate(ctx, domain.NewID(), "fixture.schedule-prepared", nil, func(tx *store.Tx) (any, error) {
-				r, v, err := sessionRecord(tx, f.input.SessionID)
-				if err != nil {
-					return nil, err
-				}
-				v.Preparation = &domain.SessionPreparation{JobID: domain.NewID(), State: domain.PreparationReady}
-				return tx.Put(r.Kind, r.ID, r.Revision, r.ID, r.ProjectID, v)
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
 			check := func(want domain.OccurrenceState) {
 				t.Helper()
 				err := f.service.Store.Read(ctx, func(tx *store.Tx) error {
@@ -581,6 +578,30 @@ func TestScheduleCoordinatorNativeCompletionRequiresOwnedCleanup(t *testing.T) {
 			f.publish(t, f.event(domain.ExecutionThreadBound, 1))
 			f.publish(t, f.event(domain.ExecutionInputAccepted, 2))
 			check(domain.OccurrenceActive)
+			if scenario.action != 0 {
+				r, err := f.service.Store.Get(ctx, domain.SessionKind, f.input.SessionID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				client := delidevv1connect.NewSessionServiceClient(f.http.Client(), f.http.URL)
+				_, err = client.ControlSession(ctx, ownerRequest(f.service.Identity, &pb.ControlSessionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(r.ID), ExpectedRevision: r.Revision}, Action: scenario.action}))
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			// This protocol fixture has no workspace runner. Supply only the
+			// previously prepared state; native completion still uses real RPCs.
+			_, err := f.service.Store.Mutate(ctx, domain.NewID(), "fixture.schedule-prepared", nil, func(tx *store.Tx) (any, error) {
+				r, v, err := sessionRecord(tx, f.input.SessionID)
+				if err != nil {
+					return nil, err
+				}
+				v.Preparation = &domain.SessionPreparation{JobID: domain.NewID(), State: domain.PreparationReady}
+				return tx.Put(r.Kind, r.ID, r.Revision, r.ID, r.ProjectID, v)
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
 			event := f.event(domain.ExecutionTurnFinished, 3)
 			event.Outcome = outcome
 			f.publish(t, event)
@@ -589,8 +610,12 @@ func TestScheduleCoordinatorNativeCompletionRequiresOwnedCleanup(t *testing.T) {
 			completion := f.completion()
 			completion.Outcome = outcome
 			f.reportCompletion(t, completion)
-			check(map[domain.ExecutionOutcome]domain.OccurrenceState{domain.ExecutionSucceeded: domain.OccurrenceSucceeded, domain.ExecutionFailed: domain.OccurrenceFailed, domain.ExecutionStopped: domain.OccurrenceStopped}[outcome])
-			if outcome == domain.ExecutionSucceeded {
+			want := map[domain.ExecutionOutcome]domain.OccurrenceState{domain.ExecutionSucceeded: domain.OccurrenceSucceeded, domain.ExecutionFailed: domain.OccurrenceFailed, domain.ExecutionStopped: domain.OccurrenceStopped}[outcome]
+			if scenario.action != 0 {
+				want = domain.OccurrenceStopped
+			}
+			check(want)
+			if outcome == domain.ExecutionSucceeded && scenario.action == 0 {
 				_, err := f.service.Store.Mutate(ctx, domain.NewID(), "fixture.schedule-followup", nil, func(tx *store.Tx) (any, error) {
 					r, v, err := sessionRecord(tx, f.input.SessionID)
 					if err != nil {
