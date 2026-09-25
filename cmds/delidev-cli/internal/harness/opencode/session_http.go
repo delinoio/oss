@@ -30,6 +30,16 @@ func (s *sessionAPI) request(ctx context.Context, method, path string, body []by
 	}
 	bounded, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
+	if method == http.MethodPost && s.events != nil {
+		if problem := s.events.status(); problem != nil {
+			return nil, 0, problem
+		}
+		// A lost native event subscription invalidates an in-flight execution
+		// attempt too. Cancellation retains the original durable mutation claim;
+		// it never asserts that the native server did not accept the request.
+		stop := context.AfterFunc(s.events.ctx, cancel)
+		defer stop()
+	}
 	request, err := http.NewRequestWithContext(bounded, method, s.origin+path, bytes.NewReader(body))
 	if err != nil {
 		return nil, 0, sessionInvalid()

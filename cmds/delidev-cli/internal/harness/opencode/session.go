@@ -72,18 +72,20 @@ type InputReceipt struct {
 // Discovery cannot create one or expose session mutations. The native fixtures
 // exercise this transport separately from that still-required integration.
 type sessionAPI struct {
-	client   *http.Client
-	origin   string
-	password string
-	cwd      string
-	claim    func(context.Context, SessionClaim) error
-	alive    func() error
-	logger   *slog.Logger
-	owner    domain.ID
-	gate     chan struct{}
-	creation *sessionCreation
-	input    *sessionInput
-	problem  *domain.Error
+	client       *http.Client
+	origin       string
+	password     string
+	cwd          string
+	claim        func(context.Context, SessionClaim) error
+	alive        func() error
+	logger       *slog.Logger
+	owner        domain.ID
+	gate         chan struct{}
+	creation     *sessionCreation
+	input        *sessionInput
+	problem      *domain.Error
+	events       *eventStream
+	eventAttempt bool
 }
 
 type sessionCreation struct {
@@ -269,6 +271,11 @@ func (s *sessionAPI) submit(ctx context.Context, request domain.ID, messageID, p
 	}
 	if s.problem != nil {
 		return InputReceipt{}, s.problem
+	}
+	if s.events != nil {
+		if problem := s.events.status(); problem != nil {
+			return InputReceipt{}, problem
+		}
 	}
 	if request.Validate() != nil || !nativeID(messageID, "msg") || !nativeID(partID, "prt") || domain.Text(text, "input", 256<<10, true) != nil || s.creation == nil || request == s.creation.request {
 		return InputReceipt{}, sessionInvalid()

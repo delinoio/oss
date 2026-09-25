@@ -1,0 +1,125 @@
+package opencode
+
+import (
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"sync/atomic"
+	"testing"
+
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+)
+
+func TestManualNativeOpenCodeEvents(t *testing.T) {
+	if os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE") == "" {
+		t.Skip("explicit private native OpenCode event fixture")
+	}
+	key := string(domain.NewID())
+	var calls atomic.Int32
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]json.RawMessage
+		raw, err := io.ReadAll(io.LimitReader(r.Body, maxHTTPBody+1))
+		if err != nil || domain.Decode(raw, &body) != nil || r.Method != http.MethodPost || r.URL.Path != "/v1/chat/completions" || r.Header.Get("Authorization") != "Bearer "+key || !scalar(body["model"], fixtureSettings().Model) || string(body["stream"]) != "true" {
+			t.Error("native event fixture provider scope mismatch")
+			w.WriteHeader(400)
+			return
+		}
+		calls.Add(1)
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, `data: {"id":"chatcmpl-private","object":"chat.completion.chunk","created":1,"model":"private-model","choices":[{"index":0,"delta":{"role":"assistant","content":"Private fixture response"},"finish_reason":null}]}`+"\n\n")
+		_, _ = io.WriteString(w, `data: {"id":"chatcmpl-private","object":"chat.completion.chunk","created":1,"model":"private-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":20,"completion_tokens":4,"total_tokens":24}}`+"\n\ndata: [DONE]\n\n")
+	}))
+	defer provider.Close()
+	api, ctx := nativeSessionFixture(t, provider.URL, key)
+	id, err := api.create(ctx, domain.NewID(), fixtureSettings())
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream, err := api.openEvents(ctx)
+	if err != nil {
+		t.Fatalf("native event connection: %v", err)
+	}
+	defer stream.Close()
+	if _, err := api.submit(ctx, domain.NewID(), fixtureMessageID, fixturePartID, "Reply with the private fixture response."); err != nil {
+		t.Fatal(err)
+	}
+	// These assertions inspect a scripted native fixture, not a production
+	// semantic observer. Transport recognition alone cannot publish these facts.
+	userSeen, partSeen, deltaSeen, assistantDone, idle := false, false, false, false, false
+	for count := 0; count < 256 && !idle; count++ {
+		event, err := stream.Next(ctx)
+		if err != nil {
+			t.Fatalf("native event read: %v", err)
+		}
+		properties, err := object(event.Properties)
+		if err != nil {
+			t.Fatal("native event property shape")
+		}
+		switch event.Kind {
+		case MessageUpdatedEvent:
+			info, err := object(properties["info"])
+			if err != nil || !scalar(properties["sessionID"], id) || !scalar(info["sessionID"], id) {
+				t.Fatal("native message escaped original session")
+			}
+			if scalar(info["role"], "user") {
+				userSeen = scalar(info["id"], fixtureMessageID)
+			} else if scalar(info["parentID"], fixtureMessageID) && scalar(info["finish"], "stop") {
+				times, err := object(info["time"])
+				if err == nil {
+					completed, ok := nativeCount(times["completed"])
+					assistantDone = completed > 0 && ok
+				}
+			}
+		case MessagePartUpdatedEvent:
+			part, err := object(properties["part"])
+			if err != nil || !scalar(properties["sessionID"], id) {
+				t.Fatal("native part escaped original session")
+			}
+			if scalar(part["id"], fixturePartID) {
+				partSeen = scalar(part["messageID"], fixtureMessageID)
+			}
+		case MessagePartDeltaEvent:
+			deltaSeen = scalar(properties["sessionID"], id) && scalar(properties["field"], "text") && scalar(properties["delta"], "Private fixture response")
+		case SessionIdleEvent:
+			idle = scalar(properties["sessionID"], id)
+		}
+	}
+	if !userSeen || !partSeen || !deltaSeen || !assistantDone || !idle || calls.Load() != 1 {
+		t.Fatalf("native event observations: user=%t, part=%t, delta=%t, assistant=%t, idle=%t, provider_calls=%d", userSeen, partSeen, deltaSeen, assistantDone, idle, calls.Load())
+	}
+	if receipt, err := api.inspectInput(ctx); err != nil || !receipt.Recorded {
+		t.Fatal("event observations did not retain independent original storage")
+	}
+}
+
+func TestManualNativeOpenCodeEventHeartbeat(t *testing.T) {
+	if os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE") == "" {
+		t.Skip("explicit private native OpenCode event heartbeat fixture")
+	}
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("heartbeat-only fixture invoked a provider")
+		w.WriteHeader(400)
+	}))
+	defer provider.Close()
+	api, ctx := nativeSessionFixture(t, provider.URL, string(domain.NewID()))
+	if _, err := api.create(ctx, domain.NewID(), fixtureSettings()); err != nil {
+		t.Fatal(err)
+	}
+	stream, err := api.openEvents(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
+	for count := 0; count < 256; count++ {
+		event, err := stream.Next(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if event.Kind == ServerHeartbeatEvent {
+			return
+		}
+	}
+	t.Fatal("native event stream did not emit its heartbeat")
+}
