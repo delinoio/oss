@@ -89,7 +89,8 @@ Pass `AbortSignal` to import, asset, measurement or export options. Unresolved w
 Figma creation and editing use the official remote Figma MCP server. Live authentication currently requires macOS Keychain and has been validated on macOS arm64 with Node.js 24. `render` updates the local React tree; `publish()` applies it to Figma. The same CLI writes a `.figma.json` receipt containing the file URL, revision, node bindings, image hashes and outcome. It is not a `.fig` file and contains no authentication token.
 
 ```tsx
-import { createSession, Format, CredentialSource, openFigma } from "@delino/react-forge";
+import { readFile } from "node:fs/promises";
+import { createSession, Format, CredentialSource, openFigma, type FigmaReceipt } from "@delino/react-forge";
 import { Document, Page, Frame, Text } from "@delino/react-forge/figma";
 
 const session = createSession(Format.Figma, {
@@ -109,7 +110,8 @@ try {
   await session.dispose();
 }
 
-const editing = await openFigma(fileUrlOrReceipt);
+const receipt = JSON.parse(await readFile("previous.figma.json", "utf8")) as FigmaReceipt;
+const editing = await openFigma(receipt);
 try {
   const page = editing.inspect().targets.find(t => t.kind === "PAGE");
   if (!page) throw new Error("Select a page first.");
@@ -123,7 +125,7 @@ try {
 }
 ```
 
-`openFigma` accepts a Design URL, file key or previous receipt. `refresh({ pageId, nodeIds })` narrows reads to up to 24 explicitly selected IDs and their ancestors; omit `nodeIds` to inspect the page. `refresh({ resources: true })` inspects local variables and paint/text styles. Use `target={remoteId}` to explicitly select existing children within a mounted frame. Their kind and parent stay fixed. Properties you omit and children you do not select remain under the original author's control. Removal of an owned container containing unselected children is rejected. Unmounting relinquishes the React region while preserving its last published state.
+`openFigma` accepts a Design URL or file key string, or a parsed receipt object. It does not read a receipt from a path string. `refresh({ pageId, nodeIds })` narrows reads to up to 24 explicitly selected IDs and their ancestors; omit `nodeIds` to inspect the page. `refresh({ resources: true })` inspects local variables and paint/text styles. Use `target={remoteId}` to explicitly select existing children within a mounted frame. Their kind and parent stay fixed. Properties you omit and children you do not select remain under the original author's control. Removal of an owned container containing unselected children is rejected. Unmounting relinquishes the React region while preserving its last published state.
 
 Components include pages, frames/Auto Layout, text, rectangles/ellipses/lines/vectors, registered PNG/JPEG images, components, component sets, instances, variable collections/variables, paint styles and text styles. `nodeKey` declares a local reference for instances, styles and variable bindings. Colors use `#RRGGBB`; `fontName` uses a font available in the Figma file, with its exact style spelling. Figma handles font availability and rendering; local font registration and binary export belong to the Office/PDF sessions. Images are limited to 10 MiB and 64 million pixels each.
 

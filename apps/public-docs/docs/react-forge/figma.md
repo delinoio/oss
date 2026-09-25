@@ -31,14 +31,18 @@ Here `selectedPlanKey` is the plan key you explicitly selected from the official
 
 ## Reopen and edit
 
-`openFigma()` accepts a Design URL, file key, or prior `.figma.json` receipt. `refresh({ pageId })` reads a page before inspection; `refresh({ pageId, nodeIds })` narrows reads to selected IDs and ancestors, and `refresh({ resources: true })` reads variables and styles. Choose an existing target from `inspect()`, mount only the intended region, then publish. Within a mounted frame, `target={remoteId}` explicitly selects an existing child. Properties you omit and children you do not select remain under the original author's control; removing an owned container that holds unselected children is rejected.
+`openFigma()` accepts a Design URL or file key string, or a parsed `.figma.json` receipt object. It does not read a receipt from a path string. `refresh({ pageId })` reads a page before inspection; `refresh({ pageId, nodeIds })` narrows reads to selected IDs and ancestors, and `refresh({ resources: true })` reads variables and styles. Choose an existing target from `inspect()`, mount only the intended region, then publish. Within a mounted frame, `target={remoteId}` explicitly selects an existing child. Properties you omit and children you do not select remain under the original author's control; removing an owned container that holds unselected children is rejected.
 
 ```tsx
 import React from "react";
-import { openFigma } from "@delino/react-forge";
+import { readFile } from "node:fs/promises";
+import { openFigma, type FigmaReceipt } from "@delino/react-forge";
 import { Text } from "@delino/react-forge/figma";
 
-const editing = await openFigma("YOUR_DESIGN_URL_OR_PREVIOUS_RECEIPT");
+const receipt = JSON.parse(
+  await readFile("previous.figma.json", "utf8"),
+) as FigmaReceipt;
+const editing = await openFigma(receipt);
 try {
   const page = editing.inspect().targets.find((target) => target.kind === "PAGE");
   if (!page) throw new Error("Select a page first.");
@@ -54,7 +58,7 @@ try {
 }
 ```
 
-Replace the input with your Design URL, file key, or prior receipt path. The export publishes the selected change and writes a new receipt; it does not create a binary `.fig` file.
+You can pass a Design URL or file key string directly instead of the parsed receipt. The export publishes the selected change and writes a new receipt; it does not create a binary `.fig` file.
 
 Pages, Auto Layout frames, text, vector shapes, images, components, variants/instances, variables, and styles are available. `nodeKey` links local component, style, and variable references. Use fonts actually available in the Figma file and register PNG/JPEG images explicitly; Figma image uploads have their own [resource limits](/react-forge/limits-and-troubleshooting).
 
