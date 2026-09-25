@@ -236,16 +236,7 @@ func startProcess(command *exec.Cmd, dir string, owner domain.ID) (_ *managedPro
 	var info windows.ProcessInformation
 	flags := uint32(windows.CREATE_SUSPENDED | windows.CREATE_UNICODE_ENVIRONMENT | windows.CREATE_NEW_PROCESS_GROUP | windows.EXTENDED_STARTUPINFO_PRESENT | windows.CREATE_NO_WINDOW)
 	if err := windows.CreateProcess(executable, arguments, nil, nil, true, flags, &env[0], cwd, &startup.StartupInfo, &info); err != nil {
-		code := domain.Unavailable
-		switch {
-		case errors.Is(err, windows.ERROR_FILE_NOT_FOUND), errors.Is(err, windows.ERROR_PATH_NOT_FOUND):
-			code = domain.NotFound
-		case errors.Is(err, windows.ERROR_ACCESS_DENIED):
-			code = domain.PermissionDenied
-		case errors.Is(err, windows.ERROR_BAD_EXE_FORMAT):
-			code = domain.Unsupported
-		}
-		return nil, launchFailure(code)
+		return nil, launchFailure(windowsLaunchCode(err))
 	}
 	runtime.KeepAlive(attributes)
 	runtime.KeepAlive(inherited)
@@ -441,4 +432,23 @@ func ReconcileProcess(identity Process) error {
 	}
 	scope.Complete = true
 	return saveWindowsScope(identity.ScopeDir, scope)
+}
+
+// Windows reports several loader failures for invalid or incompatible images,
+// including machine-type mismatch on 64-bit systems; none is a transient
+// process-resource failure. Do not retain the OS diagnostic or executable path.
+func windowsLaunchCode(err error) domain.Code {
+	switch {
+	case errors.Is(err, windows.ERROR_FILE_NOT_FOUND), errors.Is(err, windows.ERROR_PATH_NOT_FOUND):
+		return domain.NotFound
+	case errors.Is(err, windows.ERROR_ACCESS_DENIED):
+		return domain.PermissionDenied
+	case errors.Is(err, windows.ERROR_BAD_FORMAT), errors.Is(err, windows.ERROR_INVALID_MODULETYPE),
+		errors.Is(err, windows.ERROR_INVALID_EXE_SIGNATURE), errors.Is(err, windows.ERROR_EXE_MARKED_INVALID),
+		errors.Is(err, windows.ERROR_BAD_EXE_FORMAT), errors.Is(err, windows.ERROR_EXE_MACHINE_TYPE_MISMATCH),
+		errors.Is(err, windows.ERROR_IMAGE_SUBSYSTEM_NOT_PRESENT):
+		return domain.Unsupported
+	default:
+		return domain.Unavailable
+	}
 }

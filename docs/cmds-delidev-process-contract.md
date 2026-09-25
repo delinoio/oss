@@ -24,7 +24,7 @@ Owner-ID directories index process scopes directly, so session recovery does not
 ## Logging
 Log execution/owner identifiers, stable lifecycle states and typed safe failure causes only. Raw native stderr and command/environment dumps are excluded.
 
-Native executable launch failures distinguish missing files/interpreters, permission denial, incompatible executable formats and unavailable native resources through closed classifications. The private supervisor forwards only that classification, never an OS error string or command path; launch failure still requires the normal ownership reconciliation before dependent runtime cleanup.
+Windows classifies bad image format, invalid executable signatures/modules, marked-invalid images, machine-type mismatch and missing image subsystems as unsupported, using the [documented loader status codes](https://learn.microsoft.com/en-us/windows/win32/debug/system-error-codes--0-499-). Native executable launch failures distinguish missing files/interpreters, permission denial, incompatible executable formats and unavailable native resources through closed classifications. The private supervisor forwards only that classification, never an OS error string or command path; launch failure still requires the normal ownership reconciliation before dependent runtime cleanup.
 
 ## Build and Test
 Package race tests and vet; real temporary subprocesses must cover separate streams, stdin, partial bytes, natural exit, cancellation, daemonized descendants, start barriers, missing journals, unrelated processes, parent disconnect and crash recovery. Windows/Linux cross-compilation is not native lifecycle evidence. Native harness capability tests are separate from process-fixture tests.

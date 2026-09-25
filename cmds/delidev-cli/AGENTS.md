@@ -153,3 +153,5 @@
 - Keyless account cleanup/deletion must remain usable without an OS credential store. Skip vault access only with validated immutable keyless API provider ownership; preserve relay cancellation, cleanup generations, receipt replay and credential-bearing staged-intent reconciliation.
 
 - SQLite URI construction must preserve escaped local paths and represent Windows drive letters in the absolute path, never the URI authority.
+
+- Windows native launch classification must include documented incompatible-image, machine-type and missing-subsystem loader statuses without exposing OS diagnostic strings.
