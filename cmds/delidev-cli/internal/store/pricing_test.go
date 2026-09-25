@@ -9,7 +9,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
 
-const dropPricingFixtureSchema = `DROP TABLE response_estimates; DROP TABLE active_pricing; DROP TABLE pricing_versions; `
+const dropPricingFixtureSchema = `DROP TABLE session_estimate_totals; DROP TABLE response_estimates; DROP TABLE active_pricing; DROP TABLE pricing_versions; `
 
 func pricingFixture() domain.TokenPricing {
 	input, output := "2.5", "10"

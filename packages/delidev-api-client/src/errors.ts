@@ -14,6 +14,7 @@ export enum FailureCode {
   MissingInput = "missing_input",
   Unsupported = "unsupported",
   RecoveryRequired = "recovery_required",
+  BudgetReached = "budget_reached",
   ResourceExhausted = "resource_exhausted",
   CursorExpired = "cursor_expired",
   Canceled = "canceled",

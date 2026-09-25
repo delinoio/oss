@@ -1,3 +1,4 @@
+import { BudgetFields, budgetInput, emptyBudget } from "./session-budget";
 import { useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import {
@@ -70,13 +71,17 @@ export function CreateSession({ close, open, visible, readLocalWorker }: { close
   const [mode, setMode] = useState(Mode.Execute);
   const [starting, setStarting] = useState<unknown[]>([]);
   const [promptLimit, setPromptLimit] = useState(false);
+ const [budget,setBudget]=useState(emptyBudget);
+ const [budgetProblem,setBudgetProblem]=useState("");
   const selectedProject = useQuery(ResourceQuery.getResource, { kind: EntityKind.PROJECT, id: project }, { enabled: visible && Boolean(project) });
   const mutation = useRetainedMutation("create-session", SessionQuery.createSession, (result) => { if (result.change?.session) { setPrompt(""); setName(""); open(result.change.session.id); close(); } });
   const restrictions = object(document(selectedProject.data?.resource).agents);
   const blocked = mutation.busy || mutation.uncertain || local.busy;
   const submit = async () => {
     if (blocked) return;
-    const selection = { name, prompt, agent_id: agent, machine_id: machine, project_id: project || undefined, workspace: project ? workspace : Workspace.GeneralChat, starting: project && workspace === Workspace.Worktree ? starting : undefined, mode, source: "MANUAL" };
+    let estimatedBudget;
+    try {estimatedBudget=budgetInput(budget);setBudgetProblem("");} catch(error){setBudgetProblem(error instanceof Error ? error.message : "Review the budget.");return;}
+    const selection = { estimated_cost_budget: estimatedBudget, name, prompt, agent_id: agent, machine_id: machine, project_id: project || undefined, workspace: project ? workspace : Workspace.GeneralChat, starting: project && workspace === Workspace.Worktree ? starting : undefined, mode, source: "MANUAL" };
     const proof = selection.workspace === Workspace.Local ? await local.load(machine) : undefined;
     if (selection.workspace === Workspace.Local && !proof) return;
     void mutation.send({ requestId: newRequestId(), documentJson: encode(selection), localWorkerToken: proof?.token });
@@ -89,8 +94,9 @@ export function CreateSession({ close, open, visible, readLocalWorker }: { close
       {restrictions.configured === true && items(restrictions.ids).length === 0 ? <p>This project explicitly allows no Agent Workers. Update its restrictions before creating a session.</p> : null}
       <ResourceChoice label="Execution Worker" kind={EntityKind.MACHINE} value={machine} active={visible} disabled={Boolean(project) && workspace === Workspace.Local} required change={setMachine} />
       <label>Mode<select value={mode} onChange={(event) => setMode(event.target.value as Mode)}><option value={Mode.Execute}>Execute</option><option value={Mode.Plan}>Plan</option></select></label>
+      <details><summary>Optional estimated-cost budget</summary><BudgetFields draft={budget} change={setBudget} /></details>
       <label>First message<textarea required rows={5} maxLength={262144} value={prompt} onChange={(event) => { const value = event.target.value; if (new TextEncoder().encode(value).byteLength > 256 << 10) { setPromptLimit(true); return; } setPrompt(value); setPromptLimit(false); }} /></label><button className="primary" disabled={!agent || !machine || !name.trim() || !prompt.trim()}>Create session</button>
-    </fieldset><Problem error={mutation.error} />{mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>Retry the same session creation</button> : null}
+    </fieldset>{budgetProblem ? <p role="alert">{budgetProblem}</p> : null}<Problem error={mutation.error} />{mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>Retry the same session creation</button> : null}
     <Problem error={selectedProject.error} />{local.problem ? <p role="alert">{local.problem}</p> : null}{promptLimit ? <p role="alert">The first message exceeds 256 KiB. The previous draft is retained.</p> : null}
   </form></Modal>;
 }

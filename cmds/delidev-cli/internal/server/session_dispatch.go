@@ -23,6 +23,9 @@ func queueInitialExecution(tx *store.Tx, sr store.Record, session domain.Session
 	if session.InitialExecution != nil || session.CurrentExecution != nil || session.NextExecutionIntent != "" || session.ActiveExecutionID != "" || session.Outcome != domain.ExecutionNotStarted || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || session.Preparation == nil || session.Preparation.State != domain.PreparationReady || (session.Dispatch != domain.DispatchBlocked && session.Dispatch != domain.DispatchReady && !(explicitResume && session.Dispatch == domain.DispatchPaused)) {
 		return store.Record{}, firstDispatchConflict()
 	}
+	if err := tx.RequireSessionBudget(sr.ID, session.EstimatedCostBudget); err != nil {
+		return store.Record{}, err
+	}
 	_, machine, err := activeMachine(tx, session.MachineID)
 	if err != nil {
 		return store.Record{}, err

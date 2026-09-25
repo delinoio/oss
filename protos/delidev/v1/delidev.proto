@@ -507,6 +507,8 @@ message ResolveModelResponse {
 // Owner/client session acceptance and ordered input. Native execution and
 // interactions are separately capability-checked; acceptance is not dispatch.
 service SessionService {
+  rpc GetSessionBudget(GetSessionBudgetRequest) returns (GetSessionBudgetResponse);
+  rpc SetSessionBudget(SetSessionBudgetRequest) returns (SetSessionBudgetResponse);
   rpc SteerQueuedInput(SteerQueuedInputRequest) returns (SteerQueuedInputResponse);
   rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
   rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
@@ -1049,4 +1051,54 @@ message PricingUsage {
   EstimateMeasure input = 3;
   EstimateMeasure cached_input = 4;
   EstimateMeasure output = 5;
+}
+
+message EstimatedCostBudget {
+  string currency = 1;
+  // Exact nonnegative decimal currency amount; never a token-count budget.
+  string threshold = 2;
+}
+enum BudgetState {
+  BUDGET_STATE_UNSPECIFIED = 0;
+  BUDGET_STATE_DISABLED = 1;
+  // Known evidence is below the threshold or unavailable. Never verified spend.
+  BUDGET_STATE_ALLOW_INCOMPLETE = 2;
+  BUDGET_STATE_THRESHOLD_REACHED = 3;
+}
+message BudgetEvidence {
+  string currency = 1;
+  string known_amount = 2;
+  uint64 complete_responses = 3;
+  uint64 partial_responses = 4;
+  uint64 unavailable_responses = 5;
+}
+message SessionBudgetView {
+  Resource session = 1;
+  EstimatedCostBudget budget = 2;
+  BudgetState state = 3;
+  // Entire retained session lifetime, independent of dashboard time filters.
+  BudgetEvidence selected_currency = 4;
+  uint64 unpriced_responses = 5;
+  uint64 other_currency_responses = 6;
+  UsageCoverage coverage = 7;
+}
+message GetSessionBudgetRequest {
+  string session_id = 1;
+}
+message GetSessionBudgetResponse {
+  SessionBudgetView view = 1;
+}
+message SetSessionBudgetRequest {
+  Mutation mutation = 1;
+  oneof change {
+    EstimatedCostBudget budget = 2;
+    // Must be true; omission cannot disable a budget.
+    bool remove = 3;
+  }
+}
+message SetSessionBudgetResponse {
+  // Current authorized state on receipt replay; no execution is authorized.
+  SessionBudgetView view = 1;
+  string request_id = 2;
+  bool replayed = 3;
 }

@@ -155,7 +155,10 @@ func (t *Tx) snapshotResponseEstimate(id domain.ID, record domain.ResponseUsageR
 		return storageError(err)
 	}
 	_, err = t.tx.ExecContext(t.ctx, "INSERT INTO response_estimates(usage_id,pricing_id,body) VALUES(?,?,?)", id, pricingID, body)
-	return storageError(err)
+	if err != nil {
+		return storageError(err)
+	}
+	return t.addSessionEstimate(record.SessionID, estimate)
 }
 
 func (t *Tx) ResponseEstimate(id domain.ID) (domain.ResponseEstimate, *PricingVersion, error) {

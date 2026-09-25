@@ -65,6 +65,15 @@ func TestManualNativeCodexUsesRegisteredServerRelay(t *testing.T) {
 	if err != nil {
 		t.Fatal("native fixture price configuration", err)
 	}
+	sessionClient := delidevv1connect.NewSessionServiceClient(f.http.Client(), f.http.URL)
+	initialSession, err := f.service.Store.Get(ctx, domain.SessionKind, f.input.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	initialBudget, err := sessionClient.SetSessionBudget(ctx, ownerRequest(f.service.Identity, &pb.SetSessionBudgetRequest{Mutation: &pb.Mutation{Id: string(initialSession.ID), ExpectedRevision: initialSession.Revision, RequestId: string(domain.NewID())}, Change: &pb.SetSessionBudgetRequest_Budget{Budget: &pb.EstimatedCostBudget{Currency: "USD", Threshold: "0.0000125"}}}))
+	if err != nil || initialBudget.Msg.View.State != pb.BudgetState_BUDGET_STATE_ALLOW_INCOMPLETE {
+		t.Fatal("native fixture budget configuration", err)
+	}
 	f.registerGrant(t)
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -194,6 +203,10 @@ func TestManualNativeCodexUsesRegisteredServerRelay(t *testing.T) {
 	if err != nil || summary.Msg.ActualCost != pb.UsageCostState_USAGE_COST_STATE_UNAVAILABLE || len(summary.Msg.Estimates.Currencies) != 1 || summary.Msg.Estimates.Currencies[0].KnownAmount != "0.0000125" || len(summary.Msg.Pricing) != 1 || summary.Msg.Pricing[0].Pricing.Id != selectedPrice.Msg.Pricing.Id {
 		t.Fatal("native usage lost its immutable separate estimate", err)
 	}
+	budgetView, err := sessionClient.GetSessionBudget(ctx, ownerRequest(f.service.Identity, &pb.GetSessionBudgetRequest{SessionId: string(f.input.SessionID)}))
+	if err != nil || budgetView.Msg.View.State != pb.BudgetState_BUDGET_STATE_THRESHOLD_REACHED || budgetView.Msg.View.SelectedCurrency.KnownAmount != "0.0000125" {
+		t.Fatal("native estimate did not reach the inclusive budget threshold", err)
+	}
 	if err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -218,5 +231,5 @@ func TestManualNativeCodexUsesRegisteredServerRelay(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	t.Log("installed Codex -> registered server relay -> scripted local provider -> Worker durable event outbox -> server transcript, attributed native usage and immutable separate token-price estimate: every event in this simple turn handled, exact identities/counters, server-only key and owned closure; dispatch readiness simulated, other capability scopes unexercised")
+	t.Log("installed Codex -> registered server relay -> scripted local provider -> Worker durable event outbox -> server transcript, attributed native usage and immutable separate token-price estimate with an inclusive budget observation: every event in this simple turn handled, exact identities/counters, server-only key and owned closure; dispatch readiness simulated, other capability scopes unexercised")
 }

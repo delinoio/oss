@@ -89,10 +89,14 @@ it("selects an Agent from later pages and preserves an explicit per-repository s
   fireEvent.change(screen.getByLabelText(`Starting ${repository} name`), { target: { value: "feature/source" } });
   fireEvent.change(screen.getByLabelText(`Starting ${repository} remote`), { target: { value: "upstream" } });
   fireEvent.change(screen.getByLabelText("First message"), { target: { value: "Original selected work" } });
+  fireEvent.click(screen.getByText("Optional estimated-cost budget"));
+  fireEvent.click(screen.getByRole("checkbox", { name: "Enable estimated-cost budget" }));
+  fireEvent.change(screen.getByLabelText("Budget currency"), { target: { value: "USD" } });
+  fireEvent.change(screen.getByLabelText("Estimated-cost threshold"), { target: { value: "0.000000000000001" } });
   fireEvent.click(screen.getByRole("button", { name: "Create session" }));
   await waitFor(() => expect(value.createSession).toHaveBeenCalledTimes(1));
   const request = value.createSession.mock.calls[0][0] as { documentJson: Uint8Array; localWorkerToken: string };
-  expect(JSON.parse(new TextDecoder().decode(request.documentJson))).toMatchObject({ source: "MANUAL", workspace: "worktree", project_id: value.project.id, agent_id: value.agent.id, starting: [{ repository_id: repository, reference: { type: "remote-branch", name: "feature/source", remote: "upstream" } }] });
+  expect(JSON.parse(new TextDecoder().decode(request.documentJson))).toMatchObject({ source: "MANUAL", estimated_cost_budget: { currency: "USD", threshold: "0.000000000000001" }, workspace: "worktree", project_id: value.project.id, agent_id: value.agent.id, starting: [{ repository_id: repository, reference: { type: "remote-branch", name: "feature/source", remote: "upstream" } }] });
   expect(request.localWorkerToken).toBe("");
 });
 

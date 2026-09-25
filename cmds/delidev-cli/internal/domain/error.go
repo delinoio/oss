@@ -20,6 +20,7 @@ const (
 	MissingInput         Code = "missing_input"
 	Unsupported          Code = "unsupported"
 	RecoveryRequired     Code = "recovery_required"
+	BudgetReached        Code = "budget_reached"
 	ResourceExhausted    Code = "resource_exhausted"
 	CursorExpired        Code = "cursor_expired"
 	Canceled             Code = "canceled"
@@ -63,7 +64,7 @@ func (e *Error) ExitCode() int {
 		return 3
 	case ServerUnavailable, Unavailable:
 		return 4
-	case Conflict, ConfirmationRequired, RecoveryRequired, CursorExpired:
+	case Conflict, ConfirmationRequired, RecoveryRequired, CursorExpired, BudgetReached:
 		return 5
 	case Unsupported:
 		return 6

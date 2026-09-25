@@ -158,6 +158,12 @@ const (
 	// ProviderServiceResolveModelProcedure is the fully-qualified name of the ProviderService's
 	// ResolveModel RPC.
 	ProviderServiceResolveModelProcedure = "/delidev.v1.ProviderService/ResolveModel"
+	// SessionServiceGetSessionBudgetProcedure is the fully-qualified name of the SessionService's
+	// GetSessionBudget RPC.
+	SessionServiceGetSessionBudgetProcedure = "/delidev.v1.SessionService/GetSessionBudget"
+	// SessionServiceSetSessionBudgetProcedure is the fully-qualified name of the SessionService's
+	// SetSessionBudget RPC.
+	SessionServiceSetSessionBudgetProcedure = "/delidev.v1.SessionService/SetSessionBudget"
 	// SessionServiceSteerQueuedInputProcedure is the fully-qualified name of the SessionService's
 	// SteerQueuedInput RPC.
 	SessionServiceSteerQueuedInputProcedure = "/delidev.v1.SessionService/SteerQueuedInput"
@@ -1484,6 +1490,8 @@ func (UnimplementedProviderServiceHandler) ResolveModel(context.Context, *connec
 
 // SessionServiceClient is a client for the delidev.v1.SessionService service.
 type SessionServiceClient interface {
+	GetSessionBudget(context.Context, *connect.Request[v1.GetSessionBudgetRequest]) (*connect.Response[v1.GetSessionBudgetResponse], error)
+	SetSessionBudget(context.Context, *connect.Request[v1.SetSessionBudgetRequest]) (*connect.Response[v1.SetSessionBudgetResponse], error)
 	SteerQueuedInput(context.Context, *connect.Request[v1.SteerQueuedInputRequest]) (*connect.Response[v1.SteerQueuedInputResponse], error)
 	CreateSession(context.Context, *connect.Request[v1.CreateSessionRequest]) (*connect.Response[v1.CreateSessionResponse], error)
 	ListSessions(context.Context, *connect.Request[v1.ListSessionsRequest]) (*connect.Response[v1.ListSessionsResponse], error)
@@ -1509,6 +1517,18 @@ func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 	baseURL = strings.TrimRight(baseURL, "/")
 	sessionServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("SessionService").Methods()
 	return &sessionServiceClient{
+		getSessionBudget: connect.NewClient[v1.GetSessionBudgetRequest, v1.GetSessionBudgetResponse](
+			httpClient,
+			baseURL+SessionServiceGetSessionBudgetProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("GetSessionBudget")),
+			connect.WithClientOptions(opts...),
+		),
+		setSessionBudget: connect.NewClient[v1.SetSessionBudgetRequest, v1.SetSessionBudgetResponse](
+			httpClient,
+			baseURL+SessionServiceSetSessionBudgetProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("SetSessionBudget")),
+			connect.WithClientOptions(opts...),
+		),
 		steerQueuedInput: connect.NewClient[v1.SteerQueuedInputRequest, v1.SteerQueuedInputResponse](
 			httpClient,
 			baseURL+SessionServiceSteerQueuedInputProcedure,
@@ -1586,6 +1606,8 @@ func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 
 // sessionServiceClient implements SessionServiceClient.
 type sessionServiceClient struct {
+	getSessionBudget        *connect.Client[v1.GetSessionBudgetRequest, v1.GetSessionBudgetResponse]
+	setSessionBudget        *connect.Client[v1.SetSessionBudgetRequest, v1.SetSessionBudgetResponse]
 	steerQueuedInput        *connect.Client[v1.SteerQueuedInputRequest, v1.SteerQueuedInputResponse]
 	createSession           *connect.Client[v1.CreateSessionRequest, v1.CreateSessionResponse]
 	listSessions            *connect.Client[v1.ListSessionsRequest, v1.ListSessionsResponse]
@@ -1598,6 +1620,16 @@ type sessionServiceClient struct {
 	prepareSessionWorkspace *connect.Client[v1.PrepareSessionWorkspaceRequest, v1.PrepareSessionWorkspaceResponse]
 	recoverSessionExecution *connect.Client[v1.RecoverSessionExecutionRequest, v1.RecoverSessionExecutionResponse]
 	recoverSessionWorkspace *connect.Client[v1.RecoverSessionWorkspaceRequest, v1.RecoverSessionWorkspaceResponse]
+}
+
+// GetSessionBudget calls delidev.v1.SessionService.GetSessionBudget.
+func (c *sessionServiceClient) GetSessionBudget(ctx context.Context, req *connect.Request[v1.GetSessionBudgetRequest]) (*connect.Response[v1.GetSessionBudgetResponse], error) {
+	return c.getSessionBudget.CallUnary(ctx, req)
+}
+
+// SetSessionBudget calls delidev.v1.SessionService.SetSessionBudget.
+func (c *sessionServiceClient) SetSessionBudget(ctx context.Context, req *connect.Request[v1.SetSessionBudgetRequest]) (*connect.Response[v1.SetSessionBudgetResponse], error) {
+	return c.setSessionBudget.CallUnary(ctx, req)
 }
 
 // SteerQueuedInput calls delidev.v1.SessionService.SteerQueuedInput.
@@ -1662,6 +1694,8 @@ func (c *sessionServiceClient) RecoverSessionWorkspace(ctx context.Context, req 
 
 // SessionServiceHandler is an implementation of the delidev.v1.SessionService service.
 type SessionServiceHandler interface {
+	GetSessionBudget(context.Context, *connect.Request[v1.GetSessionBudgetRequest]) (*connect.Response[v1.GetSessionBudgetResponse], error)
+	SetSessionBudget(context.Context, *connect.Request[v1.SetSessionBudgetRequest]) (*connect.Response[v1.SetSessionBudgetResponse], error)
 	SteerQueuedInput(context.Context, *connect.Request[v1.SteerQueuedInputRequest]) (*connect.Response[v1.SteerQueuedInputResponse], error)
 	CreateSession(context.Context, *connect.Request[v1.CreateSessionRequest]) (*connect.Response[v1.CreateSessionResponse], error)
 	ListSessions(context.Context, *connect.Request[v1.ListSessionsRequest]) (*connect.Response[v1.ListSessionsResponse], error)
@@ -1683,6 +1717,18 @@ type SessionServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	sessionServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("SessionService").Methods()
+	sessionServiceGetSessionBudgetHandler := connect.NewUnaryHandler(
+		SessionServiceGetSessionBudgetProcedure,
+		svc.GetSessionBudget,
+		connect.WithSchema(sessionServiceMethods.ByName("GetSessionBudget")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sessionServiceSetSessionBudgetHandler := connect.NewUnaryHandler(
+		SessionServiceSetSessionBudgetProcedure,
+		svc.SetSessionBudget,
+		connect.WithSchema(sessionServiceMethods.ByName("SetSessionBudget")),
+		connect.WithHandlerOptions(opts...),
+	)
 	sessionServiceSteerQueuedInputHandler := connect.NewUnaryHandler(
 		SessionServiceSteerQueuedInputProcedure,
 		svc.SteerQueuedInput,
@@ -1757,6 +1803,10 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 	)
 	return "/delidev.v1.SessionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case SessionServiceGetSessionBudgetProcedure:
+			sessionServiceGetSessionBudgetHandler.ServeHTTP(w, r)
+		case SessionServiceSetSessionBudgetProcedure:
+			sessionServiceSetSessionBudgetHandler.ServeHTTP(w, r)
 		case SessionServiceSteerQueuedInputProcedure:
 			sessionServiceSteerQueuedInputHandler.ServeHTTP(w, r)
 		case SessionServiceCreateSessionProcedure:
@@ -1789,6 +1839,14 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 
 // UnimplementedSessionServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedSessionServiceHandler struct{}
+
+func (UnimplementedSessionServiceHandler) GetSessionBudget(context.Context, *connect.Request[v1.GetSessionBudgetRequest]) (*connect.Response[v1.GetSessionBudgetResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.GetSessionBudget is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) SetSessionBudget(context.Context, *connect.Request[v1.SetSessionBudgetRequest]) (*connect.Response[v1.SetSessionBudgetResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.SetSessionBudget is not implemented"))
+}
 
 func (UnimplementedSessionServiceHandler) SteerQueuedInput(context.Context, *connect.Request[v1.SteerQueuedInputRequest]) (*connect.Response[v1.SteerQueuedInputResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.SteerQueuedInput is not implemented"))

@@ -202,6 +202,13 @@ func Run(ctx context.Context, args []string, streams IO) int {
 			return emit(value, err)
 		}
 	case "session":
+		if len(rest) > 0 && rest[0] == "budget" {
+			if len(rest) > 1 && rest[1] != "get" {
+				ensureRequest(&o)
+			}
+			value, err := budgetCommand(ctx, c, o, rest[1:])
+			return emit(value, err)
+		}
 		if len(rest) > 0 && rest[0] != "get" && rest[0] != "inspect" && rest[0] != "snapshot" {
 			if rest[0] != "list" {
 				ensureRequest(&o)
@@ -742,6 +749,9 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   schedule occurrence --id SCHEDULE --occurrence-id OCCURRENCE
   interaction respond --id ID --revision N --input FILE|-
   interaction approve --id ID --revision N --input FILE|-
+  session budget get --id ID
+  session budget set --id ID --revision N --currency USD --threshold DECIMAL
+  session budget remove --id ID --revision N
   usage pricing get --model-id ID
   usage pricing version --id ID
   usage pricing set --model-id ID --model-revision M --revision N --input PATH [--request-id ID]

@@ -5,6 +5,16 @@
 import { SessionService } from "./delidev_pb.js";
 
 /**
+ * @generated from rpc delidev.v1.SessionService.GetSessionBudget
+ */
+export const getSessionBudget = SessionService.method.getSessionBudget;
+
+/**
+ * @generated from rpc delidev.v1.SessionService.SetSessionBudget
+ */
+export const setSessionBudget = SessionService.method.setSessionBudget;
+
+/**
  * @generated from rpc delidev.v1.SessionService.SteerQueuedInput
  */
 export const steerQueuedInput = SessionService.method.steerQueuedInput;

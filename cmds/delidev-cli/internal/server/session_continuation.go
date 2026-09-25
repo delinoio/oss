@@ -37,6 +37,9 @@ func queueContinuation(tx *store.Tx, sr store.Record, session domain.Session, ex
 	if intent != domain.ContinueExplicitly && (intent != domain.ContinueAutomatically || session.Outcome != domain.ExecutionSucceeded) {
 		return store.Record{}, continuationConflict()
 	}
+	if err := tx.RequireSessionBudget(sr.ID, session.EstimatedCostBudget); err != nil {
+		return store.Record{}, err
+	}
 	_, machine, err := activeMachine(tx, session.MachineID)
 	if err != nil {
 		return store.Record{}, err
