@@ -202,7 +202,7 @@ func (b *ExecutionBinding) observeInteraction(event StreamEvent) (*InteractionOb
 	}
 	tool, exists := b.content.tools[request.ID]
 	digest, err := streamReplyDigest(request.Input)
-	if !exists || tool.finished || tool.name != request.Tool || err != nil || digest != tool.input || (b.finished && !b.activeChildTask(tool.parent)) {
+	if !exists || tool.finished || tool.name != request.Tool || err != nil || digest != tool.input || (b.finished && !b.continuing && !b.activeChildTask(tool.parent)) {
 		return nil, lifecycleUncertain()
 	}
 	open := 0
@@ -291,7 +291,7 @@ func (b *ExecutionBinding) PreparePermissionReply(arrival domain.ID, reply Permi
 		return StreamEvent{}, nil, lifecycleUncertain()
 	}
 	tool, exists := b.content.tools[value.request.ToolID]
-	if !exists || tool.finished || (b.finished && !b.activeChildTask(tool.parent)) {
+	if !exists || tool.finished || (b.finished && !b.continuing && !b.activeChildTask(tool.parent)) {
 		return StreamEvent{}, nil, lifecycleUncertain()
 	}
 	var response any

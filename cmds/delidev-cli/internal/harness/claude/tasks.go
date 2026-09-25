@@ -240,7 +240,7 @@ func (b *ExecutionBinding) observeTask(kind TaskEventKind, raw []byte) (*NativeT
 		if exists || len(b.tasks) >= 4096 || value.Description == nil || (value.TaskType != nil && domain.Text(string(*value.TaskType), "native task type", 256, true) != nil) || (value.SpawnDepth != nil && (*value.SpawnDepth == 0 || *value.SpawnDepth > 128)) {
 			return nil, lifecycleUncertain()
 		}
-		if b.finished && (value.ToolID == nil || !b.activeChildTask(b.content.tools[*value.ToolID].parent)) {
+		if b.finished && !b.continuing && (value.ToolID == nil || !b.activeChildTask(b.content.tools[*value.ToolID].parent)) {
 			return nil, lifecycleUncertain()
 		}
 		open := 0

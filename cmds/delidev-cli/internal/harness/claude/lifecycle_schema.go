@@ -127,6 +127,7 @@ type NativeResult struct {
 	Error     bool
 	Usage     *ResultUsage
 	KnownWork NativeWorkObservation
+	Origin    *NativeTurnOrigin
 }
 
 func (r NativeResult) Successful() bool {
@@ -184,11 +185,19 @@ func (b *ExecutionBinding) validateResult(raw []byte) (NativeResult, bool, error
 		WarmSpareClaimed       *bool           `json:"warm_spare_claimed"`
 		TimeOrigin             *float64        `json:"time_origin_ms"`
 	}
-	if decodeNativeObject(raw, &result) != nil || b.finished || (result.Input != "" && result.Input != b.input) || result.Error == nil || result.Duration == nil || result.APIDuration == nil || result.Turns == nil || len(result.Origin) != 0 || result.FastMode != "off" || result.FastModeReason != "sdk_opt_in_required" ||
+	if decodeNativeObject(raw, &result) != nil || (b.finished && !b.continuing) || (result.Input != "" && result.Input != b.input) || result.Error == nil || result.Duration == nil || result.APIDuration == nil || result.Turns == nil || result.FastMode != "off" || result.FastModeReason != "sdk_opt_in_required" ||
 		!slices.Contains([]CommandState{CommandStarted, CommandCompleted, CommandCancelled}, b.command) || !slices.Contains([]ResultKind{ResultSuccess, ResultExecutionError, ResultMaxTurns, ResultMaxBudget, ResultStructuredOutput}, result.Kind) {
 		return NativeResult{}, false, lifecycleUncertain()
 	}
-	if result.Input == "" {
+	if b.continuing {
+		var fields map[string]json.RawMessage
+		_ = json.Unmarshal(raw, &fields)
+		if _, present := fields["user_message_uuid"]; present || !taskNotificationOrigin(result.Origin) {
+			return NativeResult{}, false, lifecycleUncertain()
+		}
+	} else if len(result.Origin) != 0 {
+		return NativeResult{}, false, lifecycleUncertain()
+	} else if result.Input == "" {
 		var fields map[string]json.RawMessage
 		_ = json.Unmarshal(raw, &fields)
 		if _, present := fields["user_message_uuid"]; present || !*result.Error {
@@ -216,7 +225,7 @@ func (b *ExecutionBinding) validateResult(raw []byte) (NativeResult, bool, error
 		return NativeResult{}, false, err
 	}
 	value := NativeResult{Kind: result.Kind, Reason: result.Reason, Error: *result.Error, Usage: usage, KnownWork: b.knownWork()}
-	if (b.command == CommandCompleted && value.cancelsCommand()) || (b.command == CommandCancelled && !value.cancelsCommand()) {
+	if !b.continuing && ((b.command == CommandCompleted && value.cancelsCommand()) || (b.command == CommandCancelled && !value.cancelsCommand())) {
 		return NativeResult{}, false, lifecycleUncertain()
 	}
 	if value.Successful() && (!b.initialized || !b.accepted || b.command == CommandCancelled || len(result.Errors) != 0 || len(result.DeferredTool) != 0 || len(b.content.active) != 0 || b.content.openTools != 0) {
@@ -228,6 +237,10 @@ func (b *ExecutionBinding) validateResult(raw []byte) (NativeResult, bool, error
 				return NativeResult{}, false, lifecycleUncertain()
 			}
 		}
+	}
+	if b.continuing {
+		origin := TaskNotificationOrigin
+		value.Origin = &origin
 	}
 	return value, result.Input == b.input, nil
 }

@@ -101,8 +101,8 @@ func TestManualNativeContentAndTurnUsage(t *testing.T) {
 		var completed []string
 		var nativeIDs []string
 		var result *NativeResult
-		var commandClosed, messageClosed bool
-		for result == nil || !commandClosed {
+		var commandClosed, messageClosed, runIdle bool
+		for result == nil || !commandClosed || !runIdle {
 			event, err := s.Next(ctx)
 			if err != nil {
 				t.Fatal(err)
@@ -125,6 +125,9 @@ func TestManualNativeContentAndTurnUsage(t *testing.T) {
 				if content.Kind == ProviderMessageFinished {
 					messageClosed = true
 				}
+			}
+			if observation.Kind == RunStateObserved && observation.Run.State == RunIdle {
+				runIdle = true
 			}
 			if observation.Kind == InputFinished {
 				result = observation.Result

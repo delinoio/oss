@@ -24,6 +24,9 @@ const (
 	InteractionObserved     LifecycleKind = "interaction-observed"
 	TaskObserved            LifecycleKind = "task-observed"
 	ProgressObserved        LifecycleKind = "progress-observed"
+	RunStateObserved        LifecycleKind = "run-state-observed"
+	ContinuationInitialized LifecycleKind = "continuation-initialized"
+	ContinuationFinished    LifecycleKind = "continuation-finished"
 	PrivateObservation      LifecycleKind = "private-observation"
 )
 
@@ -41,6 +44,7 @@ const (
 	interactionValidation lifecyclePhase = "interaction"
 	taskValidation        lifecyclePhase = "task"
 	progressValidation    lifecyclePhase = "progress"
+	runValidation         lifecyclePhase = "run"
 )
 
 const (
@@ -66,8 +70,12 @@ type LifecycleObservation struct {
 	Interaction *InteractionObservation
 	Task        *NativeTaskObservation     `json:"-"`
 	Progress    *NativeProgressObservation `json:"-"`
-	Content     []ContentEvent
-	Native      *StreamEvent `json:"-"`
+	Run         *NativeRunObservation      `json:"-"`
+	// TurnID is the original native init envelope identity. An automatic
+	// continuation has its own turn and never acknowledges a product input.
+	TurnID  string
+	Content []ContentEvent
+	Native  *StreamEvent `json:"-"`
 }
 
 // ExecutionBinding validates one immutable input attempt. It sends nothing,
@@ -75,29 +83,34 @@ type LifecycleObservation struct {
 // Worker must retain its durable claim before constructing this binding and
 // must still process every private observation through its dedicated adapter.
 type ExecutionBinding struct {
-	mu               sync.Mutex
-	session          domain.ID
-	input            domain.ID
-	digest           [sha256.Size]byte
-	model            string
-	workspace        string
-	home             string
-	permission       NativePermission
-	command          CommandState
-	initialized      bool
-	accepted         bool
-	finished         bool
-	terminal         *NativeResult
-	seen             map[string]bool
-	problem          *domain.Error
-	logger           *slog.Logger
-	owner            domain.ID
-	content          contentState
-	advertisedTools  map[string]bool
-	interactions     map[domain.ID]*interactionState
-	interactionBytes int
-	tasks            map[string]nativeTaskState
-	backgroundTasks  map[string]bool
+	mu                 sync.Mutex
+	session            domain.ID
+	input              domain.ID
+	digest             [sha256.Size]byte
+	model              string
+	workspace          string
+	home               string
+	permission         NativePermission
+	command            CommandState
+	initialized        bool
+	accepted           bool
+	finished           bool
+	terminal           *NativeResult
+	seen               map[string]bool
+	problem            *domain.Error
+	logger             *slog.Logger
+	owner              domain.ID
+	content            contentState
+	advertisedTools    map[string]bool
+	interactions       map[domain.ID]*interactionState
+	interactionBytes   int
+	tasks              map[string]nativeTaskState
+	backgroundTasks    map[string]bool
+	runState           NativeRunState
+	turnID             string
+	continuing         bool
+	continuationSeen   bool
+	continuationFailed bool
 }
 
 func BindExecution(config APIStreamConfig, input domain.ID, text string) (*ExecutionBinding, error) {
@@ -146,6 +159,10 @@ func (b *ExecutionBinding) Observe(event StreamEvent) (observation LifecycleObse
 		}
 	}()
 	observation = LifecycleObservation{Kind: PrivateObservation, SessionID: b.session, InputID: b.input, Accepted: b.accepted, Native: &event}
+	observation.TurnID = b.turnID
+	if b.continuing {
+		observation.InputID, observation.Accepted = "", false
+	}
 	if event.Kind != NativeMessage {
 		switch event.Kind {
 		case NativeRequest, NativeCancellation, NativeReplyEcho:
@@ -203,11 +220,30 @@ func (b *ExecutionBinding) Observe(event StreamEvent) (observation LifecycleObse
 	case "system":
 		if header.Subtype == "init" {
 			phase = initValidation
-			if b.initialized || b.finished || b.command != CommandStarted || b.validateSystemInit(event.Body) != nil {
+			if b.initialized {
+				if !b.canStartContinuation() || b.validateSystemInit(event.Body) != nil {
+					return LifecycleObservation{}, lifecycleUncertain()
+				}
+				b.continuing, b.continuationSeen = true, true
+				b.turnID = header.UUID
+				observation.Kind, observation.TurnID = ContinuationInitialized, b.turnID
+				observation.InputID, observation.Accepted = "", false
+				break
+			}
+			if b.finished || b.command != CommandStarted || b.validateSystemInit(event.Body) != nil {
 				return LifecycleObservation{}, lifecycleUncertain()
 			}
 			b.initialized = true
-			observation.Kind = SessionInitialized
+			b.turnID = header.UUID
+			observation.Kind, observation.TurnID = SessionInitialized, b.turnID
+		} else if header.Subtype == "session_state_changed" {
+			phase = runValidation
+			value, err := b.observeRunState(event.Body)
+			if err != nil {
+				return LifecycleObservation{}, err
+			}
+			observation.Kind, observation.Run = RunStateObserved, value
+			observation.InputID, observation.Accepted = "", false
 		} else {
 			switch TaskEventKind(header.Subtype) {
 			case TaskStarted, TaskProgress, TaskUpdated, TaskNotification, BackgroundTasksChanged:
@@ -264,7 +300,11 @@ func (b *ExecutionBinding) Observe(event StreamEvent) (observation LifecycleObse
 			return LifecycleObservation{}, err
 		}
 		observation.Result = &result
-		if correlated {
+		if b.continuing {
+			b.continuing = false
+			b.continuationFailed = b.continuationFailed || !result.Successful()
+			observation.Kind, observation.InputID, observation.Accepted = ContinuationFinished, "", false
+		} else if correlated {
 			b.finished = true
 			retained := NativeResult{Kind: result.Kind, Reason: result.Reason, Error: result.Error}
 			b.terminal = &retained

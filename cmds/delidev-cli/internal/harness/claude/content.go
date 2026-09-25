@@ -192,7 +192,7 @@ func (b *ExecutionBinding) observeContent(event StreamEvent) ([]ContentEvent, er
 	if !b.initialized || !b.accepted {
 		return nil, lifecycleUncertain()
 	}
-	if b.finished {
+	if b.finished && !b.continuing {
 		var header struct {
 			Parent *string `json:"parent_tool_use_id"`
 		}

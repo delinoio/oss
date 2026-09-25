@@ -28,7 +28,7 @@ func init() {
 			os.Exit(70)
 		}
 	}
-	if os.Getenv("ANTHROPIC_API_KEY") != nativeAPIFixtureToken || os.Getenv("ANTHROPIC_AUTH_TOKEN") != nativeAPIFixtureToken || os.Getenv("CLAUDE_SECURESTORAGE_CONFIG_DIR") != filepath.Join(root, "claude") || os.Getenv("ANTHROPIC_BASE_URL") != "https://relay.example/api-proxy" || os.Getenv("CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST") != "1" || os.Getenv("CLAUDE_CODE_RESUME_INTERRUPTED_TURN") != "0" || os.Getenv("CLAUDE_CODE_PROJECT_DIR_NAME") != "delidev" {
+	if os.Getenv("ANTHROPIC_API_KEY") != nativeAPIFixtureToken || os.Getenv("ANTHROPIC_AUTH_TOKEN") != nativeAPIFixtureToken || os.Getenv("CLAUDE_SECURESTORAGE_CONFIG_DIR") != filepath.Join(root, "claude") || os.Getenv("ANTHROPIC_BASE_URL") != "https://relay.example/api-proxy" || os.Getenv("CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST") != "1" || os.Getenv("CLAUDE_CODE_RESUME_INTERRUPTED_TURN") != "0" || os.Getenv("CLAUDE_CODE_PROJECT_DIR_NAME") != "delidev" || os.Getenv("CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS") != "1" {
 		os.Exit(71)
 	}
 	cwd, _ := os.Getwd()
@@ -130,7 +130,7 @@ func apiFixtureConfig(t *testing.T, mode string) (APIStreamConfig, *bytes.Buffer
 	if err := security.PrivateDir(workspace); err != nil {
 		t.Fatal(err)
 	}
-	cfg.Process.Env = append(cfg.Process.Env, "ANTHROPIC_AUTH_TOKEN=foreign-fixture-only", "CLAUDE_CODE_OAUTH_TOKEN=foreign-fixture-only", "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1", "ANTHROPIC_MODEL=foreign-model", "NODE_OPTIONS=foreign-loader", "HTTPS_PROXY=http://proxy.example", "BASH_ENV=foreign-shell")
+	cfg.Process.Env = append(cfg.Process.Env, "ANTHROPIC_AUTH_TOKEN=foreign-fixture-only", "CLAUDE_CODE_OAUTH_TOKEN=foreign-fixture-only", "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1", "ANTHROPIC_MODEL=foreign-model", "NODE_OPTIONS=foreign-loader", "HTTPS_PROXY=http://proxy.example", "BASH_ENV=foreign-shell", "CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS=0")
 	cfg.Process.Args = []string{"caller-arguments-must-not-survive"}
 	return APIStreamConfig{Process: cfg.Process, Version: SupportedVersion, Home: cfg.Home, Workspace: workspace, SessionID: domain.NewID(), Model: "fixed-model", Effort: "high", Permission: PlanPermission, Instructions: "private-api-instructions-sentinel", API: APIConfig{ServerOrigin: "https://relay.example", Token: nativeAPIFixtureToken}}, logs
 }
