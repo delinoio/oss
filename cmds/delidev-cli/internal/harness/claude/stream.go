@@ -478,8 +478,14 @@ func (s *Stream) receive(raw []byte) error {
 	default:
 		// Unknown message families stay private for their typed adapter to reject;
 		// they can never be interpreted as a control response or acknowledgement.
-		if _, exists := fields["request_id"]; exists {
-			return streamIncompatible()
+		if rawID, exists := fields["request_id"]; exists {
+			// Native assistant API failures carry the provider request identity.
+			// It is private diagnostic data, never a control acknowledgment,
+			// even if its spelling happens to match an outstanding operation.
+			var providerRequest string
+			if kind != "assistant" || json.Unmarshal(rawID, &providerRequest) != nil || domain.Text(providerRequest, "native provider request identity", 1024, true) != nil {
+				return streamIncompatible()
+			}
 		}
 		s.mu.Lock()
 		defer s.mu.Unlock()

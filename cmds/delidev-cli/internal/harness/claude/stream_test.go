@@ -452,3 +452,31 @@ func TestStreamEnforcesAggregateBoundsAndIdentityCapacity(t *testing.T) {
 		t.Fatal("identity bound was ignored")
 	}
 }
+
+func TestStreamAssistantProviderRequestIdentityCannotAcknowledgeControl(t *testing.T) {
+	id := domain.NewID()
+	pending := &streamPending{result: make(chan StreamResponse, 1)}
+	s := &Stream{notify: make(chan struct{}, 1), seen: map[domain.ID]bool{id: true}, pending: map[domain.ID]*streamPending{id: pending}}
+	raw, _ := json.Marshal(map[string]any{"type": "assistant", "request_id": id, "error": "authentication_failed", "message": map[string]any{"role": "assistant", "content": "private-native-error-sentinel"}})
+	if err := s.receive(raw); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.events) != 1 || s.events[0].Kind != NativeMessage || s.events[0].Type != "assistant" || s.events[0].RequestID != "" || s.pending[id] != pending || len(pending.result) != 0 {
+		t.Fatal("provider request identity acknowledged native control")
+	}
+	encoded, err := json.Marshal(s.events[0])
+	if err != nil || string(encoded) != "{}" {
+		t.Fatal("native diagnostic escaped private transport")
+	}
+	for _, fields := range []map[string]any{
+		{"type": "system", "request_id": id},
+		{"type": "assistant", "request_id": ""},
+		{"type": "assistant", "request_id": []string{string(id)}},
+		{"type": "assistant", "request_id": strings.Repeat("x", 1025)},
+	} {
+		raw, _ := json.Marshal(fields)
+		if err := s.receive(raw); err == nil {
+			t.Fatal("unsupported provider identity envelope accepted")
+		}
+	}
+}

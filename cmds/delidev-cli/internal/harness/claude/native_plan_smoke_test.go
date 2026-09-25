@@ -208,12 +208,20 @@ func TestManualNativePlanQuestionArtifactAndApproval(t *testing.T) {
 		}
 	}()
 	input := domain.NewID()
+	binding, err := BindExecution(cfg, input, "Plan the private fixture change.")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := s.SendInput(ctx, input, cfg.SessionID, "Plan the private fixture change."); err != nil {
 		t.Fatal(err)
 	}
 	answered, approved := false, false
 	for {
 		event, err := s.Next(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		observation, err := binding.Observe(event)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -251,6 +259,9 @@ func TestManualNativePlanQuestionArtifactAndApproval(t *testing.T) {
 			}
 		}
 		if event.Kind == NativeMessage && event.Type == "result" {
+			if observation.Kind != InputFinished || !observation.Accepted || observation.Result == nil || !observation.Result.Successful() {
+				t.Fatal("typed lifecycle did not retain original native acceptance and completion")
+			}
 			var result struct {
 				Session  domain.ID `json:"session_id"`
 				Input    domain.ID `json:"user_message_uuid"`
