@@ -19,16 +19,16 @@ import (
 
 func init() {
 	root := os.Getenv("HOME")
-	if len(os.Args) < 2 || os.Args[1] != "--bare" || !strings.HasPrefix(filepath.Base(root), "fixture-api-") {
+	if len(os.Args) < 2 || os.Args[1] != "--print" || !strings.HasPrefix(filepath.Base(root), "fixture-api-") {
 		return
 	}
 	mode := strings.TrimPrefix(filepath.Base(root), "fixture-api-")
-	for _, key := range []string{"ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB", "ANTHROPIC_MODEL", "NODE_OPTIONS", "HTTPS_PROXY", "BASH_ENV"} {
+	for _, key := range []string{"CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB", "ANTHROPIC_MODEL", "NODE_OPTIONS", "HTTPS_PROXY", "BASH_ENV"} {
 		if os.Getenv(key) != "" {
 			os.Exit(70)
 		}
 	}
-	if os.Getenv("ANTHROPIC_API_KEY") != nativeAPIFixtureToken || os.Getenv("ANTHROPIC_BASE_URL") != "https://relay.example/api-proxy" || os.Getenv("CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST") != "1" || os.Getenv("CLAUDE_CODE_RESUME_INTERRUPTED_TURN") != "0" || os.Getenv("CLAUDE_CODE_PROJECT_DIR_NAME") != "delidev" {
+	if os.Getenv("ANTHROPIC_API_KEY") != nativeAPIFixtureToken || os.Getenv("ANTHROPIC_AUTH_TOKEN") != nativeAPIFixtureToken || os.Getenv("CLAUDE_SECURESTORAGE_CONFIG_DIR") != filepath.Join(root, "claude") || os.Getenv("ANTHROPIC_BASE_URL") != "https://relay.example/api-proxy" || os.Getenv("CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST") != "1" || os.Getenv("CLAUDE_CODE_RESUME_INTERRUPTED_TURN") != "0" || os.Getenv("CLAUDE_CODE_PROJECT_DIR_NAME") != "delidev" {
 		os.Exit(71)
 	}
 	cwd, _ := os.Getwd()
@@ -41,7 +41,7 @@ func init() {
 		}
 	}
 	for _, arg := range os.Args {
-		if strings.Contains(arg, "private-api-instructions-sentinel") || strings.Contains(arg, nativeAPIFixtureToken) {
+		if arg == "--bare" || arg == "--disable-slash-commands" || strings.Contains(arg, "private-api-instructions-sentinel") || strings.Contains(arg, nativeAPIFixtureToken) {
 			os.Exit(74)
 		}
 	}
@@ -66,6 +66,8 @@ func init() {
 	}
 	result := fixtureResult()
 	result["current_permission_mode"] = "plan"
+	result["commands"] = []any{map[string]any{"name": "compact", "description": "Compact native context", "argumentHint": "[instructions]"}}
+	result["account"].(map[string]any)["tokenSource"] = "ANTHROPIC_AUTH_TOKEN"
 	result["account"].(map[string]any)["apiKeySource"] = "ANTHROPIC_API_KEY"
 	switch mode {
 	case "permission":
@@ -74,6 +76,10 @@ func init() {
 		result["account"].(map[string]any)["apiKeySource"] = "apiKeyHelper"
 	case "subscription":
 		result["account"].(map[string]any)["tokenSource"] = "oauth"
+	case "no-token-source":
+		result["account"].(map[string]any)["tokenSource"] = "none"
+	case "bare-commands":
+		result["commands"] = []any{}
 	case "remote":
 		result["remote_control_auto_enable"] = true
 	case "timeout":
@@ -101,7 +107,7 @@ func apiFixtureConfig(t *testing.T, mode string) (APIStreamConfig, *bytes.Buffer
 }
 
 func TestAPIStreamRebuildsPrivateRuntimeAndValidatesNativeAuthority(t *testing.T) {
-	for _, mode := range []string{"valid", "permission", "authority", "subscription", "remote", "timeout"} {
+	for _, mode := range []string{"valid", "permission", "authority", "subscription", "no-token-source", "bare-commands", "remote", "timeout"} {
 		t.Run(mode, func(t *testing.T) {
 			cfg, logs := apiFixtureConfig(t, mode)
 			duration := 5 * time.Second
@@ -129,6 +135,53 @@ func TestAPIStreamRebuildsPrivateRuntimeAndValidatesNativeAuthority(t *testing.T
 			}
 			if _, err := security.ReadPrivate(filepath.Join(filepath.Dir(cfg.Home), "instructions.txt"), 256<<10); err != nil {
 				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestFullNativeCommandProfileRejectsAmbiguousOrUnboundedDescriptors(t *testing.T) {
+	for _, change := range []string{"valid", "absent", "empty", "missing-compact", "duplicate-name", "duplicate-alias", "cross-command-alias", "unknown-field", "blank-description", "long-description", "long-hint", "too-many", "too-many-aliases"} {
+		t.Run(change, func(t *testing.T) {
+			result := fixtureResult()
+			result["account"].(map[string]any)["tokenSource"] = "ANTHROPIC_AUTH_TOKEN"
+			result["account"].(map[string]any)["apiKeySource"] = "ANTHROPIC_API_KEY"
+			command := map[string]any{"name": "compact", "description": "Compact native context", "argumentHint": "[instructions]", "aliases": []string{"summarize"}}
+			commands := []any{command}
+			switch change {
+			case "absent":
+				commands = nil
+			case "empty":
+				commands = []any{}
+			case "missing-compact":
+				command["name"] = "context"
+			case "duplicate-name":
+				commands = append(commands, command)
+			case "duplicate-alias":
+				command["aliases"] = []string{"summarize", "summarize"}
+			case "cross-command-alias":
+				commands = append(commands, map[string]any{"name": "summarize", "description": "Other command", "argumentHint": ""})
+			case "unknown-field":
+				command["privilege"] = "unsupported"
+			case "blank-description":
+				command["description"] = ""
+			case "long-description":
+				command["description"] = strings.Repeat("x", (16<<10)+1)
+			case "long-hint":
+				command["argumentHint"] = strings.Repeat("x", 2049)
+			case "too-many":
+				commands = make([]any, 257)
+			case "too-many-aliases":
+				command["aliases"] = make([]string, 17)
+			}
+			result["commands"] = commands
+			raw, err := json.Marshal(result)
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = validateInitializeProfile(raw, "dontAsk", "ANTHROPIC_API_KEY")
+			if (err == nil) != (change == "valid") {
+				t.Fatal("full native command profile was not enforced", err)
 			}
 		})
 	}

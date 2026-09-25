@@ -44,7 +44,7 @@ func TestManualNativeAPIChildEnvironment(t *testing.T) {
 	if binary == "" {
 		t.Skip("explicit native binary and private scripted provider required")
 	}
-	const command = `if test -z "${ANTHROPIC_API_KEY-}"; then printf 'isolated'; else printf 'inherited'; fi`
+	const command = `if test -z "${ANTHROPIC_API_KEY-}" && test -z "${ANTHROPIC_AUTH_TOKEN-}"; then printf 'isolated'; else printf 'inherited'; fi`
 	var requests atomic.Int64
 	var toolResult atomic.Bool
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -91,26 +91,14 @@ func TestManualNativeAPIChildEnvironment(t *testing.T) {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		var body struct {
-			Messages []struct {
-				Content json.RawMessage `json:"content"`
-			} `json:"messages"`
-		}
-		if json.Unmarshal(raw, &body) != nil || len(body.Messages) != 3 {
-			t.Error("missing native tool result")
+		results := nativeFixtureToolResults(t, raw)
+		observed, ok := results["toolu_fixture_isolation"]
+		if !ok || len(results) != 1 || observed.Error || nativeFixtureText(observed.Content) != "isolated" {
+			t.Error("child token isolation was not confirmed")
 		} else {
-			var content []struct {
-				Type    string          `json:"type"`
-				Tool    string          `json:"tool_use_id"`
-				Error   bool            `json:"is_error"`
-				Content json.RawMessage `json:"content"`
-			}
-			if json.Unmarshal(body.Messages[2].Content, &content) != nil || len(content) != 1 || content[0].Type != "tool_result" || content[0].Tool != "toolu_fixture_isolation" || content[0].Error || nativeFixtureText(content[0].Content) != "isolated" {
-				t.Error("child token isolation was not confirmed")
-			} else {
-				toolResult.Store(true)
-			}
+			toolResult.Store(true)
 		}
+
 		nativeFixtureTextResponse(w, n)
 	}))
 	defer provider.Close()

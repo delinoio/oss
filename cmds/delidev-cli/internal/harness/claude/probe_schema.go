@@ -11,19 +11,26 @@ import (
 // execution capabilities, pricing or permission authority. No raw descriptor
 // escapes the probe. Optional model features vary within this native profile.
 type initializeResult struct {
-	Commands                     []json.RawMessage `json:"commands"`
-	Agents                       []probeAgent      `json:"agents"`
-	OutputStyle                  string            `json:"output_style"`
-	AvailableOutputStyles        []string          `json:"available_output_styles"`
-	Models                       []probeModel      `json:"models"`
-	Account                      *probeAccount     `json:"account"`
-	PID                          int               `json:"pid"`
-	CurrentPermissionMode        string            `json:"current_permission_mode"`
-	RemoteControlAutoEnable      *bool             `json:"remote_control_auto_enable"`
-	RemoteControlAutoOnByDefault *bool             `json:"remote_control_auto_on_by_default"`
-	IDERCAutoEnableGate          *bool             `json:"ide_rc_auto_enable_gate"`
-	FastModeState                string            `json:"fast_mode_state"`
-	FastModeDisabledReason       string            `json:"fast_mode_disabled_reason"`
+	Commands                     []nativeCommand `json:"commands"`
+	Agents                       []probeAgent    `json:"agents"`
+	OutputStyle                  string          `json:"output_style"`
+	AvailableOutputStyles        []string        `json:"available_output_styles"`
+	Models                       []probeModel    `json:"models"`
+	Account                      *probeAccount   `json:"account"`
+	PID                          int             `json:"pid"`
+	CurrentPermissionMode        string          `json:"current_permission_mode"`
+	RemoteControlAutoEnable      *bool           `json:"remote_control_auto_enable"`
+	RemoteControlAutoOnByDefault *bool           `json:"remote_control_auto_on_by_default"`
+	IDERCAutoEnableGate          *bool           `json:"ide_rc_auto_enable_gate"`
+	FastModeState                string          `json:"fast_mode_state"`
+	FastModeDisabledReason       string          `json:"fast_mode_disabled_reason"`
+}
+
+type nativeCommand struct {
+	Name         string   `json:"name"`
+	Description  string   `json:"description"`
+	ArgumentHint string   `json:"argumentHint"`
+	Aliases      []string `json:"aliases,omitempty"`
 }
 
 type probeAccount struct {
@@ -81,12 +88,23 @@ func validateInitialize(raw []byte, expected domain.ID) error {
 
 func validateInitializeProfile(raw []byte, permission, apiKeySource string) error {
 	var result initializeResult
-	if domain.Decode(raw, &result) != nil || result.Commands == nil || len(result.Commands) != 0 ||
-		result.Account == nil || result.Account.TokenSource != "none" || result.Account.APIProvider != "firstParty" || result.Account.APIKeySource != apiKeySource ||
+	tokenSource := "none"
+	if apiKeySource != "" {
+		tokenSource = "ANTHROPIC_AUTH_TOKEN"
+	}
+	if domain.Decode(raw, &result) != nil || result.Commands == nil ||
+		result.Account == nil || result.Account.TokenSource != tokenSource || result.Account.APIProvider != "firstParty" || result.Account.APIKeySource != apiKeySource ||
 		result.PID <= 0 || result.CurrentPermissionMode != permission || result.OutputStyle != "default" ||
 		!explicitFalse(result.RemoteControlAutoEnable) || !explicitFalse(result.RemoteControlAutoOnByDefault) || !explicitFalse(result.IDERCAutoEnableGate) ||
 		result.FastModeState != "off" || result.FastModeDisabledReason != "sdk_opt_in_required" {
 		return incompatible()
+	}
+	if apiKeySource == "" {
+		if len(result.Commands) != 0 {
+			return incompatible()
+		}
+	} else if err := validateNativeCommands(result.Commands); err != nil {
+		return err
 	}
 	var fields struct {
 		Account map[string]json.RawMessage `json:"account"`
@@ -127,6 +145,28 @@ func validateInitializeProfile(raw []byte, permission, apiKeySource string) erro
 		} else if len(model.SupportedEffortLevels) != 0 {
 			return incompatible()
 		}
+	}
+	return nil
+}
+
+func validateNativeCommands(commands []nativeCommand) error {
+	if len(commands) == 0 || len(commands) > 256 {
+		return incompatible()
+	}
+	names := map[string]bool{}
+	for _, command := range commands {
+		if domain.Text(command.Name, "native command", 128, true) != nil || domain.Text(command.Description, "native command description", 16<<10, true) != nil || domain.Text(command.ArgumentHint, "native command argument hint", 2048, false) != nil || len(command.Aliases) > 16 {
+			return incompatible()
+		}
+		for _, name := range append([]string{command.Name}, command.Aliases...) {
+			if names[name] || domain.Text(name, "native command alias", 128, true) != nil {
+				return incompatible()
+			}
+			names[name] = true
+		}
+	}
+	if !names["compact"] {
+		return incompatible()
 	}
 	return nil
 }

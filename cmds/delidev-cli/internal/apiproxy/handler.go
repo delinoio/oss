@@ -3,6 +3,7 @@ package apiproxy
 import (
 	"bytes"
 	"context"
+	"crypto/subtle"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
@@ -94,7 +95,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusForbidden, domain.PermissionDenied)
 		return
 	}
-	token, err := executionToken(r.Header)
+	token, err := executionToken(r.Header, protocol)
 	if err != nil || h.authority == nil {
 		fail(http.StatusUnauthorized, domain.Unauthenticated)
 		return
@@ -333,7 +334,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func executionToken(header http.Header) (string, error) {
+func executionToken(header http.Header, protocol domain.APIProtocol) (string, error) {
 	var token string
 	authorization, apiKey := header.Values("Authorization"), header.Values("X-Api-Key")
 	switch {
@@ -343,6 +344,14 @@ func executionToken(header http.Header) (string, error) {
 		}
 		token = strings.TrimPrefix(authorization[0], "Bearer ")
 	case len(authorization) == 0 && len(apiKey) == 1:
+		token = apiKey[0]
+	case protocol == domain.AnthropicMessages && len(authorization) == 1 && len(apiKey) == 1:
+		// The full native Claude profile explicitly pins both authentication
+		// sources to the same execution credential so it cannot consult ambient
+		// subscription state. Two different credentials remain ambiguous.
+		if !strings.HasPrefix(authorization[0], "Bearer ") || subtle.ConstantTimeCompare([]byte(strings.TrimPrefix(authorization[0], "Bearer ")), []byte(apiKey[0])) != 1 {
+			return "", errors.New("ambiguous authorization")
+		}
 		token = apiKey[0]
 	default:
 		return "", errors.New("ambiguous authorization")

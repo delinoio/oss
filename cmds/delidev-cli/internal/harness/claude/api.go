@@ -101,8 +101,12 @@ func prepareAPIStream(config APIStreamConfig) (process.Config, error) {
 	// credentials from tool subprocesses and prevents configuration overrides.
 	// Do not use SUBPROCESS_ENV_SCRUB here: it also forces permission=default,
 	// silently discarding native Plan/acceptEdits/dontAsk/bypass selections.
-	env = append(env, "ANTHROPIC_API_KEY="+config.API.Token, "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST=1", "CLAUDE_CODE_RESUME_INTERRUPTED_TURN=0", "CLAUDE_CODE_PROJECT_DIR_NAME=delidev")
-	args := []string{"--bare", "--print", "--input-format=stream-json", "--output-format=stream-json", "--verbose", "--setting-sources=", "--strict-mcp-config", `--mcp-config={"mcpServers":{}}`, "--permission-mode=" + string(config.Permission), "--permission-prompt-tool=stdio", "--no-chrome", "--disable-slash-commands", "--replay-user-messages", "--include-partial-messages", "--model=" + config.Model, "--session-id=" + string(config.SessionID)}
+	// Full native mode needs both explicit auth sources to keep subscription
+	// lookup out of account initialization. Both hold one scoped credential;
+	// the relay accepts their equality only for the native Messages protocol.
+	// The secure-store namespace also remains bound to this private home.
+	env = append(env, "ANTHROPIC_API_KEY="+config.API.Token, "ANTHROPIC_AUTH_TOKEN="+config.API.Token, "CLAUDE_SECURESTORAGE_CONFIG_DIR="+config.Home, "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST=1", "CLAUDE_CODE_RESUME_INTERRUPTED_TURN=0", "CLAUDE_CODE_PROJECT_DIR_NAME=delidev")
+	args := []string{"--print", "--input-format=stream-json", "--output-format=stream-json", "--verbose", "--setting-sources=", "--strict-mcp-config", `--mcp-config={"mcpServers":{}}`, "--permission-mode=" + string(config.Permission), "--permission-prompt-tool=stdio", "--no-chrome", "--replay-user-messages", "--include-partial-messages", "--model=" + config.Model, "--session-id=" + string(config.SessionID)}
 	if config.Effort != "" {
 		args = append(args, "--effort="+string(config.Effort))
 	}
