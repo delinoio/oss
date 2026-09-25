@@ -76,7 +76,10 @@ func TestOwnerRecoveryPrunesOnlyReleasedCompletedScopesBeforeLimit(t *testing.T)
 
 func TestOwnerRecoveryPreservesIncompleteOrInvalidScopes(t *testing.T) {
 	for _, invalid := range []bool{false, true} {
-		root := t.TempDir()
+		root := filepath.Join(t.TempDir(), "processes")
+		if err := security.PrivateDir(root); err != nil {
+			t.Fatal(err)
+		}
 		owner := domain.NewID()
 		path := filepath.Join(root, string(owner), string(domain.NewID()))
 		if err := security.PrivateDir(path); err != nil {
@@ -100,7 +103,10 @@ func TestOwnerRecoveryPreservesIncompleteOrInvalidScopes(t *testing.T) {
 }
 
 func TestOwnerRecoveryFinishesInterruptedRetirement(t *testing.T) {
-	root := t.TempDir()
+	root := filepath.Join(t.TempDir(), "processes")
+	if err := security.PrivateDir(root); err != nil {
+		t.Fatal(err)
+	}
 	owner := domain.NewID()
 	path := filepath.Join(root, string(owner), ".retired-"+string(domain.NewID()))
 	if err := security.PrivateDir(path); err != nil {
