@@ -17,6 +17,18 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// Reserve 1 MiB of the 5 MiB transport limit for cursors and envelopes.
+// JSON expands document bytes to Base64, independently of the binary size.
+const maxResourcePageBytes = 4 << 20
+
+func resourceWireSize(resource *pb.Resource) (int, error) {
+	encoded, err := protojson.Marshal(resource)
+	if err != nil {
+		return 0, err
+	}
+	return max(proto.Size(resource), len(encoded)) + 16, nil
+}
+
 func (s *Service) filter(input *pb.Filter) (store.Filter, error) {
 	if input == nil {
 		return store.Filter{}, domain.Fail(domain.MissingInput, "A resource filter is required.", "Select a resource kind.")
@@ -65,18 +77,13 @@ func (s *Service) ListResources(ctx context.Context, req *connect.Request[pb.Lis
 		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
 	}
 	result := &pb.ListResourcesResponse{}
-	// Bound both supported wire encodings, including JSON's Base64 document
-	// expansion. Reserve 1 MiB of the 5 MiB transport limit for the cursor and
-	// envelope; count-based pagination alone cannot bound large resources.
-	const maxResourcePageBytes = 4 << 20
 	used := 0
 	for _, r := range records {
 		resource := rpc.Resource(r)
-		encoded, err := protojson.Marshal(resource)
+		size, err := resourceWireSize(resource)
 		if err != nil {
 			return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
 		}
-		size := max(proto.Size(resource), len(encoded)) + 16
 		if used+size > maxResourcePageBytes {
 			if len(result.Resources) == 0 {
 				return nil, rpc.Error(domain.Fail(domain.ResourceExhausted, "A resource exceeds the list response limit.", "Read the resource by its identity."), req.Header().Get(rpc.CorrelationHeader))
@@ -110,8 +117,18 @@ func (s *Service) GetSnapshot(ctx context.Context, req *connect.Request[pb.GetSn
 		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
 	}
 	result := &pb.GetSnapshotResponse{}
+	used := 0
 	for _, r := range records {
-		result.Resources = append(result.Resources, rpc.Resource(r))
+		resource := rpc.Resource(r)
+		size, err := resourceWireSize(resource)
+		if err != nil {
+			return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
+		}
+		if used+size > maxResourcePageBytes {
+			return nil, rpc.Error(domain.Fail(domain.ResourceExhausted, "The snapshot scope exceeds its response byte limit.", "Use a narrower session/project scope; do not treat partial state as a coherent snapshot."), req.Header().Get(rpc.CorrelationHeader))
+		}
+		result.Resources = append(result.Resources, resource)
+		used += size
 	}
 	result.Cursor, err = s.Identity.EncodeCursor(security.Cursor{Scope: "events:" + string(f.SessionID), Sequence: sequence})
 	if err != nil {

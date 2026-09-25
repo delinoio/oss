@@ -9,11 +9,54 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
+
+func TestSnapshotsRejectAggregateByteOverflowBeforeSerialization(t *testing.T) {
+	f := newAccountFixture(t)
+	content := strings.Repeat("x", 128<<10)
+	var expected []*pb.Resource
+	for i := 1; i <= 40; i++ {
+		expected = append(expected, f.save(pb.EntityKind_ENTITY_KIND_TEMPLATE, domain.Template{Name: fmt.Sprintf("snapshot-%d", i), Contents: content}))
+		if i != 10 && i != 30 && i != 40 {
+			continue
+		}
+		if i == 30 {
+			unbounded := &pb.GetSnapshotResponse{Resources: expected}
+			encoded, err := protojson.Marshal(unbounded)
+			if err != nil || proto.Size(unbounded) >= 5<<20 || len(encoded) <= 5<<20 {
+				t.Fatal("fixture must expose JSON-only transport overflow", err)
+			}
+		}
+		for _, jsonWire := range []bool{false, true} {
+			var opts []connect.ClientOption
+			if jsonWire {
+				opts = append(opts, connect.WithProtoJSON())
+			}
+			resources := delidevv1connect.NewResourceServiceClient(http.DefaultClient, f.endpoint.URL, opts...)
+			response, err := resources.GetSnapshot(context.Background(), ownerRequest(f.identity, &pb.GetSnapshotRequest{Filter: &pb.Filter{Kind: pb.EntityKind_ENTITY_KIND_TEMPLATE, PageSize: 50}}))
+			if i > 10 {
+				problem := rpc.ClientError(err)
+				if response != nil || connect.CodeOf(err) != connect.CodeResourceExhausted || problem.Code != domain.ResourceExhausted || !strings.Contains(problem.Guidance, "narrower") || problem.CorrelationID == "" {
+					t.Fatalf("count=%d json=%t: expected explicit narrower-scope failure without partial snapshot: %v", i, jsonWire, err)
+				}
+				continue
+			}
+			if err != nil || len(response.Msg.Resources) != len(expected) || response.Msg.Cursor == "" {
+				t.Fatal("bounded snapshot lost coherent state/cursor", err)
+			}
+			for j, resource := range response.Msg.Resources {
+				if !proto.Equal(resource, expected[j]) {
+					t.Fatal("snapshot changed retained resources")
+				}
+			}
+		}
+	}
+}
 
 func TestResourcePagesBoundBothEncodingsWithoutSkippingLargeTemplates(t *testing.T) {
 	f := newAccountFixture(t)
