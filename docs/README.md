@@ -50,6 +50,7 @@ Each project must have one project index document and one or more domain contrac
 - [Native harness adapter contract](cmds-delidev-harness-contract.md)
 - [Protected credential storage](cmds-delidev-credentials-contract.md)
 - [Read-only diagnostics](cmds-delidev-diagnostics-contract.md)
+- [Saved client connections](cmds-delidev-connections-contract.md)
 - [Account lifecycle](cmds-delidev-accounts-contract.md)
 - [Provider inspection](cmds-delidev-providers-contract.md)
 - [Provider and model catalog](cmds-delidev-catalog-contract.md)

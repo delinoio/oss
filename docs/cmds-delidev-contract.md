@@ -71,6 +71,8 @@ The private first-execution workspace lease verifies the exact prepared manifest
 
 `device inspect --device-dir PATH` and `worker inspect --worker-dir PATH` validate private storage and type offline. Their version/type/endpoint/server/device/machine/pairing metadata excludes the token; inspection never establishes current server authorization. Pair-local reuse checks live authorization separately.
 
+The local `connection list|pair|inspect|retry|verify` infrastructure manages separately pinned client profiles under the [saved connection contract](cmds-delidev-connections-contract.md). It retains original pairing identities through response loss and never initializes or supervises a server.
+
 The read-only `doctor` CLI and System RPC expose version-2 storage, retained Worker and exact protected-reference observations under the [diagnostics contract](cmds-delidev-diagnostics-contract.md). Partial inventories and unavailable measurements remain explicit; no repair, native discovery, credential initialization or inference is performed.
 
 ## Storage

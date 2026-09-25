@@ -117,6 +117,10 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		value, err := start(ctx, o, rest, streams)
 		return emit(value, err)
 	}
+	if command == "connection" {
+		value, err := connectionCommand(ctx, o, rest, streams)
+		return emit(value, err)
+	}
 	if command == "settings" && len(rest) == 1 && rest[0] == "defaults" {
 		return emit(domain.DefaultSettings(), nil)
 	}
@@ -679,6 +683,9 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   server status | stop
   server ensure [--listen IP:PORT] [--allowed-origins ORIGIN,ORIGIN]
   doctor
+  connection list
+  connection pair --id UUID --name NAME --code-stdin
+  connection inspect|verify|retry --id UUID
   device create-pairing --type worker|client --name NAME
   device pair --device-dir PATH --code-stdin
   device pair-local --device-dir PATH
