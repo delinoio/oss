@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { type Transport } from "@connectrpc/connect";
 import { TransportProvider, useQuery } from "@connectrpc/connect-query";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { SessionQuery, SystemQuery, newRequestId } from "@delinoio/delidev-api-client";
 import { document, resourceName, text, Workspace, workspaceNames } from "./documents";
 import { SessionView } from "./session";
 import { Activity, CreateSession, Inbox, Search, Settings, Surface } from "./views";
 import { Problem } from "./ui";
 import { MutationIntents } from "./mutation";
+import { connectionQueryClient } from "./cache";
 
 function Shell() {
   const [surface, setSurface] = useState(Surface.Sessions);
@@ -45,8 +46,8 @@ function Shell() {
 // The native caller mounts a new App per selected server/device. Query caches
 // and in-memory drafts never cross that identity boundary.
 export function App({ transport }: { transport: Transport }) {
-  const connection = useMemo(() => ({ id: newRequestId(), client: new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 1000, gcTime: 60000, refetchOnWindowFocus: false }, mutations: { retry: false, gcTime: 0 } } }) }), [transport]);
+  const connection = useMemo(() => ({ id: newRequestId(), ...connectionQueryClient() }), [transport]);
   const client = connection.client;
-  useEffect(() => () => { void client.cancelQueries(); client.clear(); }, [client]);
+  useEffect(() => connection.activate(), [connection]);
   return <TransportProvider transport={transport}><QueryClientProvider key={connection.id} client={client}><MutationIntents><Shell /></MutationIntents></QueryClientProvider></TransportProvider>;
 }

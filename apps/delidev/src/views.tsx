@@ -7,6 +7,7 @@ import {
 import { document, encode, items, Mode, object, resourceName, text, Workspace } from "./documents";
 import { useRetainedMutation } from "./mutation";
 import { Modal, Problem } from "./ui";
+import { Interaction } from "./interactions";
 
 export enum Surface { Sessions = "sessions", Search = "search", Activity = "activity", Inbox = "inbox" }
 function Pager({ page, next, setPage, busy }: { page: string; next?: string; setPage: (value: string) => void; busy: boolean }) {
@@ -41,12 +42,12 @@ function InboxRow({ view, open, refresh }: { view: InboxView; open: (id: string)
   const read = text(data.read_state) === "read";
   const mutation = useRetainedMutation(`inbox:${view.entry?.id}`, InboxQuery.setInboxReadState, refresh);
   return <article className="result"><strong>{resourceName(view.session)}</strong><p>{text(data.source) === "interaction" ? "Agent request" : `Execution ${text(object(data.terminal).outcome)}`}</p>
-    <p>{read ? "Read" : "Unread"}{view.interaction ? ` · ${text(document(view.interaction).closure)}` : ""}</p><div className="actions"><button onClick={() => open(view.entry!.sessionId)}>Open session</button><button disabled={mutation.busy || mutation.uncertain} onClick={() => void mutation.send({ mutation: { requestId: newRequestId(), id: view.entry!.id, expectedRevision: view.entry!.revision }, readState: read ? InboxReadState.UNREAD : InboxReadState.READ })}>{read ? "Mark unread" : "Mark read"}</button></div><Problem error={mutation.error} />{mutation.uncertain ? <button onClick={mutation.retry}>Retry the same read-state change</button> : null}
+    <p>{read ? "Read" : "Unread"}{view.interaction ? ` · ${text(document(view.interaction).closure)}` : ""}</p><div className="actions"><button onClick={() => open(view.entry!.sessionId)}>Open session</button><button disabled={mutation.busy || mutation.uncertain} onClick={() => void mutation.send({ mutation: { requestId: newRequestId(), id: view.entry!.id, expectedRevision: view.entry!.revision }, readState: read ? InboxReadState.UNREAD : InboxReadState.READ })}>{read ? "Mark unread" : "Mark read"}</button></div><Problem error={mutation.error} />{view.interaction ? <Interaction resource={view.interaction} refresh={refresh} /> : null}{mutation.uncertain ? <button onClick={mutation.retry}>Retry the same read-state change</button> : null}
   </article>;
 }
 export function Inbox({ open }: { open: (id: string) => void }) {
   const [page, setPage] = useState("");
-  const result = useQuery(InboxQuery.listInbox, { pageSize: 50, pageToken: page });
+  const result = useQuery(InboxQuery.listInbox, { pageSize: 20, pageToken: page }, { refetchInterval: 5000 });
   return <section className="page"><header><h2>Inbox</h2><button onClick={() => { setPage(""); void result.refetch(); }}>Refresh</button></header><p>Reading an item never approves or answers it.</p><Problem error={result.error} />
     {result.data?.entries.filter((view) => view.entry).map((view) => <InboxRow key={view.entry!.id} view={view} open={open} refresh={() => void result.refetch()} />)}
     {result.data?.entries.length === 0 ? <p>No retained requests or completions.</p> : null}<Pager page={page} setPage={setPage} next={result.data?.nextPageToken} busy={result.isFetching} />

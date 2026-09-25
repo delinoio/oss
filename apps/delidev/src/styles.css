@@ -75,3 +75,10 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .skip:focus { top: 10px; }
 @media (max-width: 850px) { .app { grid-template-columns: 210px minmax(0, 1fr); } .session { padding: 18px; } .session-header { align-items: start; flex-direction: column; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; } }
+.requests { max-height: 40vh; overflow: auto; flex-shrink: 0; }
+.interaction { background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-block: 12px; }
+.interaction h3 { margin: 0; }
+.interaction fieldset fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+.interaction .checkbox small { display: block; margin-top: 3px; }
+.queue { max-height: 35vh; overflow: auto; flex-shrink: 0; }
+.queue-item { padding-block: 12px; }

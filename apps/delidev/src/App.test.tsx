@@ -1,4 +1,5 @@
 import { create } from "@bufbuild/protobuf";
+import { StrictMode } from "react";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
@@ -32,7 +33,7 @@ function fixture() {
 
 it("keeps the draft and session mounted across settings and navigation, and renders native text inertly", async () => {
   const value = fixture();
-  render(<App transport={value.transport} />);
+  render(<StrictMode><App transport={value.transport} /></StrictMode>);
   fireEvent.click(await screen.findByRole("button", { name: /General Chat Retained session/ }));
   const composer = await screen.findByRole("textbox", { name: "Message" });
   fireEvent.change(composer, { target: { value: "Keep my unsent input" } });

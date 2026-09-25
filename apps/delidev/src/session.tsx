@@ -8,6 +8,8 @@ import {
 import { document as readDocument, encode, items, Mode, object, resourceName, text, Workspace, workspaceNames } from "./documents";
 import { useRetainedMutation } from "./mutation";
 import { Failure, Problem } from "./ui";
+import { Interaction } from "./interactions";
+import { QueuedInput } from "./queue";
 
 function useSessionStream(id: string) {
   const transport = useTransport();
@@ -16,6 +18,7 @@ function useSessionStream(id: string) {
   const [state, setState] = useState(ConnectionState.Connecting);
   const [error, setError] = useState<ClientFailure>();
   const [generation, setGeneration] = useState(0);
+  const [restart, setRestart] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
     const client = createClient(ResourceService, transport);
@@ -47,8 +50,8 @@ function useSessionStream(id: string) {
     };
     void run().catch((reason) => { if (!controller.signal.aborted) { setError(clientFailure(reason)); setState(ConnectionState.Failed); } });
     return () => controller.abort();
-  }, [id, transport]);
-  return { resources, removed, state, error, generation };
+  }, [id, transport, restart]);
+  return { resources, removed, state, error, generation, retry: () => setRestart((value) => value + 1) };
 }
 
 function currentRows(base: readonly Resource[], live: ReadonlyMap<string, Resource>, removed: ReadonlySet<string>, kind: EntityKind): Resource[] {
@@ -94,10 +97,13 @@ function TranscriptItem({ resource }: { resource: Resource }) {
 export function SessionView({ id, draft, setDraft }: { id: string; draft: string; setDraft: (value: string) => void }) {
   const live = useSessionStream(id);
   const [page, setPage] = useState("");
+  const [queuePage, setQueuePage] = useState("");
+  const [interactionPage, setInteractionPage] = useState("");
   const [previous, setPrevious] = useState<string[]>([]);
   const [mode, setMode] = useState(Mode.Execute);
   const messages = useQuery(ResourceQuery.listResources, { filter: { kind: EntityKind.MESSAGE, sessionId: id, pageSize: 50, pageToken: page } }, { enabled: live.generation > 0 });
-  const queue = useQuery(SessionQuery.listQueue, { sessionId: id, pageSize: 100 });
+  const queue = useQuery(SessionQuery.listQueue, { sessionId: id, pageSize: 50, pageToken: queuePage }, { enabled: live.generation > 0 });
+  const interactions = useQuery(ResourceQuery.listResources, { filter: { kind: EntityKind.INTERACTION, sessionId: id, pageSize: 20, pageToken: interactionPage } }, { enabled: live.generation > 0 });
   const session = live.resources.get(id);
   const data = readDocument(session);
   const rows = useMemo(() => {
@@ -113,13 +119,15 @@ export function SessionView({ id, draft, setDraft }: { id: string; draft: string
     }
     return result.sort((a, b) => a.id.localeCompare(b.id));
   }, [messages.data, live.resources, live.removed]);
-  useEffect(() => { if (live.generation > 1) { void messages.refetch(); void queue.refetch(); } }, [live.generation]);
+  useEffect(() => { if (live.generation > 1) { void messages.refetch(); void queue.refetch(); void interactions.refetch(); } }, [live.generation]);
   const send = useRetainedMutation(`enqueue:${id}`, SessionQuery.enqueueInput, () => { setDraft(""); void queue.refetch(); });
   const control = useRetainedMutation(`control:${id}`, SessionQuery.controlSession);
   const locked = send.busy || send.uncertain;
   const next = messages.data?.nextPageToken;
   const pending = currentRows(queue.data?.inputs ?? [], live.resources, live.removed, EntityKind.QUEUE);
-  for (const row of live.resources.values()) if (row.kind === EntityKind.QUEUE && !pending.some((r) => r.id === row.id)) pending.push(row);
+  if (queue.data && !queue.data.nextPageToken) for (const row of live.resources.values()) if (row.kind === EntityKind.QUEUE && !live.removed.has(row.id) && Number(readDocument(row).sequence) > Number(readDocument(queue.data.inputs.at(-1)).sequence ?? 0) && !pending.some((r) => r.id === row.id)) pending.push(row);
+  const requests = currentRows(interactions.data?.resources ?? [], live.resources, live.removed, EntityKind.INTERACTION);
+  if (interactions.data && !interactions.data.nextPageToken) for (const row of live.resources.values()) if (row.kind === EntityKind.INTERACTION && row.id > (interactions.data.resources.at(-1)?.id ?? "") && !live.removed.has(row.id) && !requests.some((r) => r.id === row.id)) requests.push(row);
   const queued = pending.filter((r) => text(readDocument(r).delivery) !== "removed");
   const action = (value: SessionAction) => {
     if (!session) return;
@@ -131,16 +139,20 @@ export function SessionView({ id, draft, setDraft }: { id: string; draft: string
         <button disabled={!session || control.busy || control.uncertain} onClick={() => action(text(data.archive) === "archived" ? SessionAction.RESTORE : SessionAction.ARCHIVE)}>{text(data.archive) === "archived" ? "Restore" : "Archive"}</button>
         <button disabled={!session || control.busy || control.uncertain || text(data.archive) !== "active"} onClick={() => action(SessionAction.RESUME)}>Resume</button></div></header>
     <p className="connection" role="status">{live.state === ConnectionState.Live ? "Connected" : live.state === ConnectionState.Reconnecting ? "Connection lost · Retained state shown" : live.state === ConnectionState.Failed ? "Connection requires attention" : "Connecting…"}</p>
-    <Failure failure={live.error} />
+    <Failure failure={live.error} />{live.state === ConnectionState.Failed ? <button onClick={live.retry}>Refresh connection</button> : null}
     {text(data.recovery) !== "none" && text(data.recovery) ? <p className="notice">Recovery: {text(data.recovery)}. Execution remains under server control.</p> : null}
     {object(data.problem).message ? <p className="notice">{text(object(data.problem).message)} {text(object(data.problem).guidance)}</p> : null}
     <Problem error={control.error} />{control.uncertain ? <button onClick={control.retry} disabled={control.busy}>Retry the same control request</button> : null}
+    <details className="requests" open={requests.some((r) => readDocument(r).closure === "open")}><summary>Agent requests · {requests.length} on this page</summary><Problem error={interactions.error} />
+      {requests.map((row) => <Interaction key={row.id} resource={row} refresh={() => void interactions.refetch()} />)}
+      <nav aria-label="Request pages"><button disabled={!interactionPage || interactions.isFetching} onClick={() => setInteractionPage("")}>First page</button><button disabled={!interactions.data?.nextPageToken || interactions.isFetching} onClick={() => setInteractionPage(interactions.data!.nextPageToken)}>Next page</button></nav>
+    </details>
     <div className="transcript" aria-label="Conversation"><Problem error={messages.error} />{messages.isPending ? <p>Loading conversation…</p> : rows.length ? rows.map((row) => <TranscriptItem key={row.id} resource={row} />) : <p className="empty">The conversation will appear here after the harness accepts input.</p>}
-      <nav aria-label="Conversation pages"><button disabled={previous.length === 0 || messages.isFetching} onClick={() => { setPage(previous.at(-1)!); setPrevious(previous.slice(0, -1)); }}>Previous</button><button disabled={!next || messages.isFetching} onClick={() => { setPrevious([...previous, page]); setPage(next!); }}>Next</button></nav>
+      <nav aria-label="Conversation pages"><button disabled={!page || messages.isFetching} onClick={() => { setPage(""); setPrevious([]); }}>First page</button><button disabled={previous.length === 0 || messages.isFetching} onClick={() => { setPage(previous.at(-1)!); setPrevious(previous.slice(0, -1)); }}>Previous</button><button disabled={!next || messages.isFetching} onClick={() => { setPrevious([...previous.slice(-99), page]); setPage(next!); }}>Next</button></nav>
     </div>
     <details className="queue"><summary>Input queue · {queued.filter((r) => text(readDocument(r).delivery) === "queued").length} waiting</summary><Problem error={queue.error} />
-      {queued.map((r) => { const value = readDocument(r); return <article key={r.id}><strong>{text(value.mode)} · {text(value.delivery)}</strong><p>{text(value.prompt)}</p></article>; })}
-      {queue.data?.nextPageToken ? <p>More retained input exists. Open queue history through the CLI.</p> : null}
+      {queued.map((r) => <QueuedInput key={r.id} resource={r} session={session} refresh={() => void queue.refetch()} />)}
+      <nav aria-label="Queue pages"><button disabled={!queuePage || queue.isFetching} onClick={() => setQueuePage("")}>First page</button><button disabled={!queue.data?.nextPageToken || queue.isFetching} onClick={() => setQueuePage(queue.data!.nextPageToken)}>Next page</button></nav>
     </details>
     <form className="composer" onSubmit={(event) => { event.preventDefault(); void send.send({ requestId: newRequestId(), sessionId: id, documentJson: encode({ prompt: draft, mode }) }); }}>
       <label htmlFor={`prompt-${id}`}>Message</label><textarea id={`prompt-${id}`} value={draft} onChange={(event) => setDraft(event.target.value)} disabled={locked} placeholder="Send a follow-up to this session" rows={3} />
