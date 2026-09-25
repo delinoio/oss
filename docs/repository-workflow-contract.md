@@ -10,6 +10,15 @@ Thirteen tracked assets use exact-path entries in the root `.gitattributes`: the
 
 CI and release jobs that consume these assets enable `actions/checkout` LFS downloading before building. In particular, the API image build must receive the actual removal PNG before Docker copies its context, and desktop builds must receive the font before compilation. Validate migrated files against their original SHA-256 values, inspect committed pointer blobs, and run `git lfs fsck` before publishing a branch. PR #990 migrated the six font/ROAM/removal assets with a new commit without rewriting historical commits or tags; their older Git blobs remain in history. PR #988 migrated its AURA textures throughout its own PR history before merging that policy, as recorded in the React Forge validation evidence. `async-commit-hook` intentionally rejects LFS repositories, so this repository is no longer a supported execution source for that tool; its existing product contract is unchanged.
 
+The schema-only `scripts/check-proto-breaking.sh` command scopes
+`GIT_LFS_SKIP_SMUDGE=1` to `pnpm exec buf breaking`. Buf creates a temporary local
+Git clone of the baseline; CI's pointer-only protocol checkout does not contain
+LFS payloads for that clone to fetch. Schemas and Buf configuration remain normal
+Git files, and incompatible schema changes must still fail comparison. This
+setting does not apply to asset-consuming build, test, or packaging commands.
+The CI regression uses a temporary repository with an unavailable LFS object and
+the installed Buf/Git LFS tools to verify both compatible and breaking schemas.
+
 ### Pinned repository utilities
 
 The root `clibox-prebuilt` dev dependency aliases the published `@delino/clibox@0.1.6` package. Its exact launcher and optional native packages are integrity-pinned in `pnpm-lock.yaml`; the private `packages/clibox` workspace is not an executable dependency. Ordinary `pnpm install` installs the prebuilt without Rust compilation. Run repository utility scripts from the repository root; they invoke `pnpm exec clibox` directly. There is no additional repository launcher or runtime download.
