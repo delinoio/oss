@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"path/filepath"
@@ -404,8 +405,14 @@ func TestScheduleCoordinatorSelectionFailureAndRevokedLocalOrigin(t *testing.T) 
 
 func TestScheduleCoordinatorLoopDrainsDueHistoryAndJoinsCancellation(t *testing.T) {
 	f := newScheduleDispatchFixture(t, domain.ScheduleAllowOverlap, false)
-	// Use real wall time only for this lifecycle test. Every retained due time
-	// precedes startup, so the loop must never queue provider/native work.
+	// Keep the next real due instant several minutes away, even when this test
+	// starts near a minute boundary. The two retained due times precede startup.
+	started := time.Now().UTC()
+	minute := (started.Minute() + 5) % 60
+	next := started.Truncate(time.Hour).Add(time.Duration(minute) * time.Minute)
+	if !next.After(started) {
+		next = next.Add(time.Hour)
+	}
 	f.mutate(t, func(tx *store.Tx) error {
 		r, err := tx.Get(domain.ScheduleKind, f.schedule)
 		if err != nil {
@@ -415,12 +422,14 @@ func TestScheduleCoordinatorLoopDrainsDueHistoryAndJoinsCancellation(t *testing.
 		if err != nil {
 			return err
 		}
-		due := time.Now().UTC().Truncate(time.Minute).Add(-time.Minute)
+		v.Definition.Cron = fmt.Sprintf("%d * * * *", minute)
+		v.ConfigurationRevision++
+		due := next.Add(-2 * time.Hour)
 		v.NextRunAt = &due
 		_, err = tx.PutSchedule(r.ID, r.Revision, v)
 		return err
 	})
-	f.service.Endpoint.StartedAt = time.Now().UTC()
+	f.service.Endpoint.StartedAt = started
 	ctx, cancel := context.WithCancel(f.ctx)
 	done := make(chan struct{})
 	go func() { defer close(done); f.service.runScheduleDispatch(ctx) }()

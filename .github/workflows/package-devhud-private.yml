@@ -368,6 +368,36 @@ jobs:
       - uses: actions/upload-artifact@v7
         with: { name: "devhud-${{ matrix.id }}", path: private-artifacts, if-no-files-found: error, retention-days: 7 }
 
+  ios-simulators:
+    name: iOS ${{ matrix.target }} native candidate check
+    if: ${{ inputs.mode == 'signed-private' }}
+    needs: preflight
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: aarch64-sim, runner: macos-15 }
+          - { target: x86_64, runner: macos-15-intel }
+    steps:
+      - uses: actions/checkout@v6
+        with: { fetch-depth: 0, ref: "${{ inputs.revision || github.sha }}", persist-credentials: false }
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v6
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      # The pinned Tauri bundler embeds a universal macOS CEF helper for iOS hosts.
+      - name: Install macOS Rust targets
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm --filter devhud mobile:generate -- --platform ios
+      - name: Initialize Intel iOS simulators
+        if: ${{ matrix.target == 'x86_64' }}
+        run: xcrun simctl list > /dev/null
+      - name: Build unsigned simulator host
+        working-directory: apps/devhud
+        run: node scripts/run-mobile.mjs ios build --target ${{ matrix.target }} --ci --no-sign
+
   extension:
     name: Reproducible Chrome extension inputs
     if: ${{ inputs.mode == 'signed-private' }}
@@ -577,7 +607,7 @@ jobs:
   assemble:
     name: Assemble, attest, and validate private candidate
     if: ${{ inputs.mode == 'signed-private' }}
-    needs: [plan, desktop, extension, mobile, oci]
+    needs: [plan, desktop, ios-simulators, extension, mobile, oci]
     runs-on: ubuntu-22.04
     environment: devhud-private-build
     permissions:

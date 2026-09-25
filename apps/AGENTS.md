@@ -152,7 +152,7 @@
 ### Testing and Validation
 
 - If frontend code changes in this domain, run `pnpm test` before finishing.
-- DevHud PR CI retains the complete frontend test command, script fixtures, clean desktop/mobile output verification, static widget checks, and CEF pin verification; native desktop/iOS/Android packaging runs on related main changes or full manual dispatch. The aggregate DevHud `test` task remains non-cacheable to exercise clean builds and external contract inputs.
+- DevHud PR CI retains the complete frontend test command, script fixtures, clean desktop/mobile output verification, static widget checks, and CEF pin verification. Related main changes run Windows/Linux desktop and Android native packaging; full manual CI runs Mac desktop and iOS too. The signed private candidate must validate both Mac desktop packages, signed iOS arm64, and arm64/x64 simulators before assembly. The aggregate DevHud `test` task remains non-cacheable to exercise clean builds and external contract inputs.
 - DevHud CI commands must remain package-local and usable through the committed Turbo binary. Cache only deterministic generated and frontend output; native packaging, mobile, smoke, signing, release, store, and deployment tasks remain non-cacheable and CI must not publish them.
 - If `apps/devhud` changes, run `pnpm --filter devhud test` and `pnpm --filter devhud verify:pins`; run its platform smoke on a supported native production artifact when the host is available.
 - If `apps/public-docs/docs/binpm` or `apps/public-docs/docs/nodeup` changes, run `pnpm --filter public-docs test` before finishing.
