@@ -75,6 +75,16 @@ func TestCLIConnectionCommandsPreservePrivatePairingAndRequireExplicitScope(t *t
 			t.Fatal("secret escaped connection output")
 		}
 	}
+	rename := []string{"--request-id", string(domain.NewID()), "connection", "rename", "--id", id, "--revision", "1", "--name", "Renamed CLI server"}
+	for range 2 {
+		code, output := cliRun(t, root, rename, "")
+		if code != 0 || output["result"].(map[string]any)["name"] != "Renamed CLI server" || output["result"].(map[string]any)["revision"] != float64(2) {
+			t.Fatal("name edit or exact retry failed", output)
+		}
+	}
+	if code, output := cliRun(t, root, pair, string(raw)); code != 0 || output["result"].(map[string]any)["name"] != "Renamed CLI server" {
+		t.Fatal("original pairing retry lost renamed display", output)
+	}
 	if code, _ := cliRun(t, root, []string{"connection", "worker-status", "--id", id}, ""); code == 0 {
 		t.Fatal("unregistered Worker reported status")
 	}

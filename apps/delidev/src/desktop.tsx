@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { type Transport } from "@connectrpc/connect";
 import { createDeliDevTransport } from "@delinoio/delidev-api-client";
 import { App } from "./App";
@@ -74,6 +75,7 @@ const savedActions: SavedConnectionActions = {
   list: () => invoke<SavedConnection[]>("saved_connections"),
   pair: (id, name, grant) => invoke<SavedConnection>("pair_connection", { id, name, grant }),
   retry: (id) => invoke<SavedConnection>("retry_connection", { id }),
+  rename: (id, requestId, revision, name) => invoke<SavedConnection>("rename_connection", { id, requestId, revision, name }),
   open: (id) => invoke<void>("open_connection", { id }),
 };
 function SavedDesktop({ profile }: { profile: SavedConnection }) {
@@ -120,6 +122,17 @@ export function Desktop() {
     catch (error) { setContext({ ready: false, error }); }
   };
   useEffect(() => { if (isTauri()) void read(); }, []);
+  useEffect(() => {
+    if (!isTauri()) return;
+    let canceled = false;
+    const subscription = listen("saved-connection-label", () => {
+      if (canceled) return;
+      void invoke<SavedConnection | null>("connection_context").then((profile) => {
+        if (!canceled && profile) setContext((previous) => previous.profile?.id === profile.id && profile.revision >= previous.profile.revision ? { ...previous, profile } : previous);
+      }).catch(() => { /* The original window, authorization and drafts remain active if label refresh fails. */ });
+    }).catch(() => () => {});
+    return () => { canceled = true; void subscription.then((unlisten) => unlisten()).catch(() => {}); };
+  }, []);
   if (!context.ready) return <main className="connect-page"><h1>DeliDev</h1><p>Reading this window's server identity…</p><SavedConnectionProblem error={context.error} />{context.error ? <button onClick={() => void read()}>Retry window context</button> : null}</main>;
   return context.profile ? <SavedDesktop profile={context.profile} /> : <LocalDesktop />;
 }

@@ -4,14 +4,15 @@ import { newRequestId } from "@delinoio/delidev-api-client";
 import { SavedConnections, SavedConnectionState, type SavedConnection, type SavedConnectionActions } from "./saved-connections";
 
 function fixture() {
-  const profile: SavedConnection = { version: 1, id: newRequestId(), name: "Saved server", endpoint: "https://fixture.example.test", server_id: newRequestId(), pairing_id: newRequestId(), device_id: newRequestId(), state: SavedConnectionState.Paired, created_at: "2026-09-25T00:00:00Z" };
+  const profile: SavedConnection = { version: 1, revision: 1, id: newRequestId(), name: "Saved server", endpoint: "https://fixture.example.test", server_id: newRequestId(), pairing_id: newRequestId(), device_id: newRequestId(), state: SavedConnectionState.Paired, created_at: "2026-09-25T00:00:00Z" };
   const grant = JSON.stringify({ version: 1, endpoint: profile.endpoint, server_id: profile.server_id, pairing_id: profile.pairing_id, code: "private-single-use-fixture-code" });
   const list = vi.fn(async () => [profile]);
   const pair = vi.fn(async (id: string, _name: string, _grant: string) => ({ ...profile, id }));
   const retry = vi.fn(async (_id: string) => profile);
   const open = vi.fn(async (_id: string) => {});
-  const actions: SavedConnectionActions = { list, pair, retry, open };
-  return { profile, grant, actions, list, pair, retry, open };
+  const rename = vi.fn(async (_id: string, _requestId: string, revision: number, name: string) => ({ ...profile, revision: revision + 1, name }));
+  const actions: SavedConnectionActions = { list, pair, retry, rename, open };
+  return { profile, grant, actions, list, pair, retry, rename, open };
 }
 it("retains an uncertain pairing and masked original input across dialog visibility", async () => {
   const value = fixture(); value.pair.mockRejectedValueOnce("timed-out");
@@ -65,4 +66,43 @@ it("does not let an older inventory read erase a new pairing failure", async () 
   release([value.profile]);
   await waitFor(() => expect(screen.getByText(/operation has not been confirmed/)).toBeTruthy());
   expect(value.pair).toHaveBeenCalledTimes(1);
+});
+
+it("retains an uncertain name edit and its revision across hiding and newer inventory", async () => {
+  const value = fixture();
+  value.rename.mockRejectedValueOnce("timed-out");
+  const view = render(<SavedConnections visible close={() => {}} actions={value.actions} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Rename Saved server" }));
+  fireEvent.change(screen.getByLabelText("New connection name"), { target: { value: "First edit" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save connection name" }));
+  await screen.findByText(/operation has not been confirmed/);
+  expect((screen.getByLabelText("New connection name") as HTMLInputElement).disabled).toBe(true);
+  const newer = { ...value.profile, revision: 3, name: "Later accepted name" };
+  value.list.mockResolvedValue([newer]);
+  value.rename.mockResolvedValue(newer);
+  view.rerender(<SavedConnections visible={false} close={() => {}} actions={value.actions} />);
+  view.rerender(<SavedConnections visible close={() => {}} actions={value.actions} />);
+  await screen.findByText(/This connection changed while you were editing/);
+  fireEvent.click(screen.getByRole("button", { name: "Retry original name edit" }));
+  await screen.findByText(/Current connection name: Later accepted name/);
+  expect(value.rename.mock.calls[0]).toEqual(value.rename.mock.calls[1]);
+  expect(value.rename.mock.calls[0]).toEqual([value.profile.id, expect.any(String), 1, "First edit"]);
+  expect(value.pair).not.toHaveBeenCalled();
+  expect(value.retry).not.toHaveBeenCalled();
+  expect(value.open).not.toHaveBeenCalled();
+});
+it("preserves stale unsubmitted names and requires a fresh explicit edit", async () => {
+  const value = fixture();
+  render(<SavedConnections visible close={() => {}} actions={value.actions} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Rename Saved server" }));
+  fireEvent.change(screen.getByLabelText("New connection name"), { target: { value: "My draft" } });
+  value.list.mockResolvedValue([{ ...value.profile, revision: 2, name: "Peer edit" }]);
+  fireEvent.click(screen.getByRole("button", { name: "Refresh saved servers" }));
+  await screen.findByText(/This connection changed while you were editing/);
+  expect((screen.getByLabelText("New connection name") as HTMLInputElement).value).toBe("My draft");
+  expect((screen.getByRole("button", { name: "Save connection name" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(value.rename).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Discard name edit" }));
+  fireEvent.click(screen.getByRole("button", { name: "Rename Peer edit" }));
+  expect((screen.getByLabelText("New connection name") as HTMLInputElement).value).toBe("Peer edit");
 });

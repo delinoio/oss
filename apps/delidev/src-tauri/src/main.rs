@@ -12,7 +12,7 @@ use delidev_desktop::{
     bundled_sidecar, canonical_id, connection_origin, default_data_root,
 };
 use tauri::{
-    AppHandle, Manager, WebviewWindow, WebviewWindowBuilder, WindowEvent, Wry,
+    AppHandle, Emitter, Manager, WebviewWindow, WebviewWindowBuilder, WindowEvent, Wry,
     utils::config::{Csp, CspDirectiveSources, WebviewUrl},
     webview::NewWindowResponse,
 };
@@ -194,6 +194,58 @@ async fn retry_connection(
         .map_err(|_| NativeFailure::SidecarFailed)?
 }
 #[tauri::command]
+async fn rename_connection(
+    window: WebviewWindow<Wry>,
+    app: AppHandle<Wry>,
+    connector: tauri::State<'_, Arc<Connector>>,
+    windows: tauri::State<'_, Arc<SavedWindows>>,
+    id: String,
+    request_id: String,
+    revision: u64,
+    name: String,
+) -> Result<SavedConnection, NativeFailure> {
+    trusted_main(&window)?;
+    let connector = Arc::clone(connector.inner());
+    let profile = tauri::async_runtime::spawn_blocking(move || {
+        connector.rename_saved(&id, &request_id, revision, &name)
+    })
+    .await
+    .map_err(|_| NativeFailure::SidecarFailed)??;
+    update_saved_label(&app, &windows, profile)
+}
+
+fn update_saved_label(
+    app: &AppHandle<Wry>,
+    windows: &SavedWindows,
+    mut profile: SavedConnection,
+) -> Result<SavedConnection, NativeFailure> {
+    let label = format!("server-{}", profile.id);
+    // Serialize presentation with the binding, including title publication.
+    // Out-of-order accepted edits cannot roll back a newer window label.
+    let mut values = windows.0.lock().map_err(|_| NativeFailure::SidecarFailed)?;
+    if let Some(binding) = values.get_mut(&label) {
+        if !binding.profile.same_authority(&profile) {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+        if profile.revision >= binding.profile.revision {
+            binding.profile = profile.clone();
+        } else {
+            profile = binding.profile.clone();
+        }
+        if let Some(saved) = app.get_webview_window(&label) {
+            saved
+                .set_title(&format!("DeliDev · {}", profile.name))
+                .map_err(|_| NativeFailure::SidecarFailed)?;
+            // No selectable identity or credential crosses this notification.
+            saved
+                .emit("saved-connection-label", ())
+                .map_err(|_| NativeFailure::SidecarFailed)?;
+        }
+    }
+    Ok(profile)
+}
+
+#[tauri::command]
 async fn connect_saved(
     window: WebviewWindow<Wry>,
     connector: tauri::State<'_, Arc<Connector>>,
@@ -206,7 +258,7 @@ async fn connect_saved(
         .await
         .map_err(|_| NativeFailure::SidecarFailed)??;
     let current = saved_binding(&window, &windows)?;
-    if current.instance != binding.instance || current.profile != binding.profile {
+    if current.instance != binding.instance || !current.profile.same_authority(&binding.profile) {
         return Err(NativeFailure::InvalidEvidence);
     }
     Ok(result)
@@ -225,7 +277,7 @@ async fn saved_worker_proof(
             .await
             .map_err(|_| NativeFailure::SidecarFailed)??;
     let current = saved_binding(&window, &windows)?;
-    if current.instance != binding.instance || current.profile != binding.profile {
+    if current.instance != binding.instance || !current.profile.same_authority(&binding.profile) {
         return Err(NativeFailure::InvalidEvidence);
     }
     Ok(proof)
@@ -247,7 +299,7 @@ async fn saved_worker_control(
     .await
     .map_err(|_| NativeFailure::SidecarFailed)??;
     let current = saved_binding(&window, &windows)?;
-    if current.instance != binding.instance || current.profile != binding.profile {
+    if current.instance != binding.instance || !current.profile.same_authority(&binding.profile) {
         return Err(NativeFailure::InvalidEvidence);
     }
     Ok(result)
@@ -335,11 +387,13 @@ async fn open_connection(
     let label = format!("server-{id}");
     if let Some(existing) = app.get_webview_window(&label) {
         let binding = saved_binding(&existing, &windows)?;
-        if binding.profile != profile {
+        if !binding.profile.same_authority(&profile) {
             return Err(NativeFailure::InvalidEvidence);
         }
+        update_saved_label(&app, &windows, profile)?;
         return show(&existing);
     }
+    let title = format!("DeliDev · {}", profile.name);
     let origin = connection_origin(&profile.endpoint)?;
     let instance = uuid::Uuid::now_v7().to_string();
     {
@@ -356,7 +410,7 @@ async fn open_connection(
         );
     }
     let created = WebviewWindowBuilder::new(&app, &label, WebviewUrl::App("index.html".into()))
-        .title("DeliDev · Saved server")
+        .title(title)
         .inner_size(1280.0, 820.0)
         .min_inner_size(960.0, 640.0)
         .incognito(true)
@@ -433,6 +487,7 @@ fn run() -> Result<(), NativeFailure> {
             saved_connections,
             pair_connection,
             retry_connection,
+            rename_connection,
             open_connection,
             connect_saved,
             saved_worker_proof,

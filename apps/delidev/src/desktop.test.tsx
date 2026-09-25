@@ -1,17 +1,18 @@
 import { createRouterTransport } from "@connectrpc/connect";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { SessionService, SystemService, newRequestId } from "@delinoio/delidev-api-client";
 import { Desktop } from "./desktop";
 import { SavedConnectionState, type SavedConnection } from "./saved-connections";
 import { LocalWorkerAction, LocalWorkerState } from "./local-worker-controls";
 
-const bridge = vi.hoisted(() => ({ invoke: vi.fn(), createTransport: vi.fn() }));
+const bridge = vi.hoisted(() => ({ invoke: vi.fn(), createTransport: vi.fn(), listen: vi.fn() }));
+vi.mock("@tauri-apps/api/event", () => ({ listen: bridge.listen }));
 vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => true, invoke: bridge.invoke }));
 vi.mock("@delinoio/delidev-api-client", async (original) => ({ ...await original<typeof import("@delinoio/delidev-api-client")>(), createDeliDevTransport: (...args: unknown[]) => bridge.createTransport(...args) }));
-beforeEach(() => { bridge.invoke.mockReset(); bridge.createTransport.mockReset(); });
+beforeEach(() => { bridge.invoke.mockReset(); bridge.createTransport.mockReset(); bridge.listen.mockReset().mockResolvedValue(() => {}); });
 function savedFixture() {
-  const profile: SavedConnection = { version: 1, id: newRequestId(), name: "Remote fixture", endpoint: "https://fixture.example.test", server_id: newRequestId(), device_id: newRequestId(), pairing_id: newRequestId(), state: SavedConnectionState.Paired, created_at: "2026-09-25T00:00:00Z" };
+  const profile: SavedConnection = { version: 1, revision: 1, id: newRequestId(), name: "Remote fixture", endpoint: "https://fixture.example.test", server_id: newRequestId(), device_id: newRequestId(), pairing_id: newRequestId(), state: SavedConnectionState.Paired, created_at: "2026-09-25T00:00:00Z" };
   const connection = { endpoint: profile.endpoint, server_id: profile.server_id, device_id: profile.device_id, token: "private-native-fixture-token" };
   const status = vi.fn(() => ({ version: "0.1.0", protocolVersion: 1, serverId: profile.server_id }));
   const transport = createRouterTransport((router) => {
@@ -76,4 +77,30 @@ it("registers and inspects this computer through only the saved window's fixed W
   expect(calls.filter(([, args]) => args.action === LocalWorkerAction.Register)).toHaveLength(1);
   expect(calls.every(([, args]) => Object.keys(args).every((key) => ["action", "generation"].includes(key)))).toBe(true);
   expect(bridge.invoke.mock.calls.some(([command]) => ["local_worker_control", "local_worker_proof", "connect_local"].includes(command))).toBe(false);
+});
+
+it("refreshes a window label without replacing transport or open settings and ignores older notifications", async () => {
+  const value = savedFixture();
+  let changed!: () => void;
+  const unlisten = vi.fn();
+  bridge.listen.mockImplementation(async (event: string, callback: () => void) => {
+    expect(event).toBe("saved-connection-label"); changed = callback; return unlisten;
+  });
+  const view = render(<Desktop />);
+  await screen.findByText("Your sessions, in one place");
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await screen.findByRole("dialog", { name: "Settings" });
+  const original = bridge.invoke.getMockImplementation()!;
+  bridge.invoke.mockImplementation(async (command: string) => command === "connection_context" ? { ...value.profile, revision: 3, name: "Renamed window" } : original(command));
+  await act(async () => changed());
+  await screen.findByText("Renamed window");
+  expect(screen.getByRole("dialog", { name: "Settings" })).toBeTruthy();
+  expect(bridge.createTransport).toHaveBeenCalledTimes(1);
+  expect(bridge.invoke.mock.calls.filter(([command]) => command === "connect_saved")).toHaveLength(1);
+  bridge.invoke.mockImplementation(async (command: string) => command === "connection_context" ? { ...value.profile, revision: 2, name: "Older result" } : original(command));
+  await act(async () => changed());
+  expect(screen.getByText("Renamed window")).toBeTruthy();
+  expect(screen.queryByText("Older result")).toBeNull();
+  view.unmount();
+  await waitFor(() => expect(unlisten).toHaveBeenCalledOnce());
 });

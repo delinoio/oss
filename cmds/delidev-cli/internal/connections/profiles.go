@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -36,6 +37,7 @@ const (
 
 type Metadata struct {
 	Version   uint32    `json:"version"`
+	Revision  uint64    `json:"revision"`
 	ID        domain.ID `json:"id"`
 	Name      string    `json:"name"`
 	Endpoint  string    `json:"endpoint"`
@@ -62,6 +64,7 @@ type record struct {
 	Grant     worker.PairingCode `json:"grant"`
 	DeviceID  domain.ID          `json:"device_id,omitempty"`
 	CreatedAt time.Time          `json:"created_at"`
+	Renames   []renameReceipt    `json:"renames,omitempty"`
 }
 
 func invalid() error {
@@ -140,18 +143,18 @@ func load(root string, id domain.ID) (record, error) {
 			return value, err
 		}
 	}
-	raw, err := security.ReadPrivate(filepath.Join(profileRoot(root, id), "connection.json"), 32<<10)
+	raw, err := security.ReadPrivate(filepath.Join(profileRoot(root, id), "connection.json"), maxProfileRecordBytes)
 	if err != nil {
 		return value, err
 	}
 	defer clear(raw)
-	if domain.Decode(raw, &value) != nil || value.Version != 1 || value.ID != id || validateName(value.Name) != nil || validateGrant(value.Grant) != nil || value.CreatedAt.IsZero() || (value.DeviceID != "" && value.DeviceID.Validate() != nil) {
+	if domain.Decode(raw, &value) != nil || value.Version != 1 || value.ID != id || validateName(value.Name) != nil || validateGrant(value.Grant) != nil || value.CreatedAt.IsZero() || (value.DeviceID != "" && value.DeviceID.Validate() != nil) || value.validateRenames() != nil {
 		return record{}, invalid()
 	}
 	return value, nil
 }
 func inspect(root string, value record) (Metadata, error) {
-	metadata := Metadata{Version: 1, ID: value.ID, Name: value.Name, Endpoint: value.Grant.Endpoint, ServerID: value.Grant.ServerID, PairingID: value.Grant.PairingID, State: Pending, CreatedAt: value.CreatedAt}
+	metadata := Metadata{Version: 1, Revision: uint64(len(value.Renames)) + 1, ID: value.ID, Name: value.displayName(), Endpoint: value.Grant.Endpoint, ServerID: value.Grant.ServerID, PairingID: value.Grant.PairingID, State: Pending, CreatedAt: value.CreatedAt}
 	credential, err := worker.LoadCredential(filepath.Join(profileRoot(root, value.ID), "client"))
 	if errors.Is(err, os.ErrNotExist) {
 		if value.DeviceID != "" {
@@ -292,7 +295,7 @@ func Retry(ctx context.Context, root string, id domain.ID) (Metadata, error) {
 	if err != nil {
 		return Metadata{}, err
 	}
-	if current != value {
+	if !reflect.DeepEqual(current, value) {
 		return Metadata{}, invalid()
 	}
 	return pairExisting(ctx, root, value, false)

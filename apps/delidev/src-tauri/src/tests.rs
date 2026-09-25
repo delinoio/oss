@@ -478,6 +478,49 @@ fn real_saved_connection_keeps_owner_local_and_remote_authority_separate() {
         started.generation
     );
     drop(observer);
+    let request = uuid::Uuid::now_v7().to_string();
+    let renamed = client
+        .rename_saved(&id, &request, paired.revision, "Renamed active Worker")
+        .unwrap();
+    assert_eq!(renamed.name, "Renamed active Worker");
+    assert_eq!(renamed.revision, paired.revision + 1);
+    assert!(renamed.same_authority(&paired));
+    assert_eq!(
+        client.connect_saved(&paired).unwrap().token,
+        connected.token
+    );
+    assert_eq!(
+        client.saved_worker_proof(&paired).unwrap().machine_id,
+        registered.machine_id
+    );
+    assert_eq!(
+        client
+            .saved_worker(&paired, LocalWorkerAction::Status, None)
+            .unwrap()
+            .generation,
+        started.generation
+    );
+    assert!(
+        client
+            .rename_saved(&id, &request, paired.revision, "Renamed active Worker")
+            .unwrap()
+            == renamed
+    );
+    assert!(
+        client
+            .rename_saved(&id, &request, paired.revision, "Changed retry")
+            .is_err()
+    );
+    assert!(
+        client
+            .rename_saved(
+                &id,
+                &uuid::Uuid::now_v7().to_string(),
+                paired.revision,
+                "Stale"
+            )
+            .is_err()
+    );
     let stopped = client
         .saved_worker(&paired, LocalWorkerAction::Stop, Some(generation))
         .unwrap();
@@ -499,7 +542,7 @@ fn real_saved_connection_keeps_owner_local_and_remote_authority_separate() {
         client.connect_saved(&paired),
         Err(NativeFailure::CredentialUnavailable)
     ));
-    assert!(client.inspect_saved(&id).unwrap() == paired);
+    assert!(client.inspect_saved(&id).unwrap() == renamed);
     fs::remove_file(
         client_root
             .join("connections")

@@ -10,6 +10,7 @@ fn main() {
             "saved_connections",
             "pair_connection",
             "retry_connection",
+            "rename_connection",
             "open_connection",
             "connect_saved",
             "saved_worker_proof",

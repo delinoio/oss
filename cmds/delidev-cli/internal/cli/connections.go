@@ -29,8 +29,13 @@ func connectionCommand(ctx context.Context, o options, args []string, streams IO
 	var name *string
 	var input *bool
 	var generation *string
+	var revision *uint64
 	if args[0] == "worker-stop" {
 		generation = fs.String("generation", "", "original Worker lifecycle generation")
+	}
+	if args[0] == "rename" {
+		name = fs.String("name", "", "new connection display name")
+		revision = fs.Uint64("revision", 0, "original saved connection revision")
 	}
 	if args[0] == "pair" {
 		name = fs.String("name", "", "connection display name")
@@ -45,6 +50,8 @@ func connectionCommand(ctx context.Context, o options, args []string, streams IO
 	var value any
 	var err error
 	switch args[0] {
+	case "rename":
+		value, err = connections.Rename(ctx, o.dataDir, domain.ID(*id), o.requestID, *revision, *name)
 	case "worker-register":
 		credential, registerErr := connections.RegisterWorker(ctx, o.dataDir, domain.ID(*id))
 		err = registerErr

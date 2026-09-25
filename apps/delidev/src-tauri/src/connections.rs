@@ -22,6 +22,8 @@ pub enum SavedConnectionState {
 #[serde(deny_unknown_fields)]
 pub struct SavedConnection {
     pub version: u32,
+    #[serde(default = "initial_revision")]
+    pub revision: u64,
     pub id: String,
     pub name: String,
     pub endpoint: String,
@@ -31,6 +33,10 @@ pub struct SavedConnection {
     pub device_id: String,
     pub state: SavedConnectionState,
     pub created_at: String,
+}
+
+fn initial_revision() -> u64 {
+    1
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -89,6 +95,7 @@ pub fn connection_origin(endpoint: &str) -> Result<String> {
 impl SavedConnection {
     pub fn validate(&self) -> Result<()> {
         if self.version != 1
+            || !(1..=1025).contains(&self.revision)
             || self.name.is_empty()
             || self.name.len() > 256
             || self.created_at.len() > 64
@@ -104,6 +111,19 @@ impl SavedConnection {
         }
         connection_origin(&self.endpoint)?;
         Ok(())
+    }
+
+    // Display edits never replace a saved window's credential, server or
+    // instance binding. Compare every original authority field independently.
+    pub fn same_authority(&self, other: &Self) -> bool {
+        self.version == other.version
+            && self.id == other.id
+            && self.endpoint == other.endpoint
+            && self.server_id == other.server_id
+            && self.pairing_id == other.pairing_id
+            && self.device_id == other.device_id
+            && self.state == other.state
+            && self.created_at == other.created_at
     }
 
     fn metadata(&self) -> DeviceMetadata {
@@ -133,7 +153,7 @@ impl Connector {
             ])?,
             &expected.id,
         )?;
-        if current != *expected {
+        if !current.same_authority(expected) {
             return Err(NativeFailure::InvalidEvidence);
         }
         Ok(())
@@ -197,6 +217,36 @@ impl Connector {
         )
     }
 
+    pub fn rename_saved(
+        &self,
+        id: &str,
+        request_id: &str,
+        revision: u64,
+        name: &str,
+    ) -> Result<SavedConnection> {
+        canonical_id(id)?;
+        canonical_id(request_id)?;
+        if !(1..=1025).contains(&revision) || name.is_empty() || name.len() > 256 {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+        let _guard = self.gate.try_lock().map_err(|_| NativeFailure::Busy)?;
+        Self::saved_result(
+            self.run(&[
+                "--request-id".into(),
+                request_id.into(),
+                "connection".into(),
+                "rename".into(),
+                "--id".into(),
+                id.into(),
+                "--revision".into(),
+                revision.to_string().into(),
+                "--name".into(),
+                name.into(),
+            ])?,
+            id,
+        )
+    }
+
     pub fn inspect_saved(&self, id: &str) -> Result<SavedConnection> {
         canonical_id(id)?;
         let _guard = self.gate.try_lock().map_err(|_| NativeFailure::Busy)?;
@@ -234,7 +284,7 @@ impl Connector {
             expected.id.as_str().into(),
         ])?)
         .map_err(|_| NativeFailure::InvalidEvidence)?;
-        if value.profile != *expected
+        if !value.profile.same_authority(expected)
             || value.server_version != "0.1.0"
             || value.protocol_version != 1
             || value.observed_at.is_empty()
