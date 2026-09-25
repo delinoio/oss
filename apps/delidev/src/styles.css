@@ -97,3 +97,7 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .usage-table caption { text-align: left; padding-block: 12px; color: var(--muted); }
 .usage-table th, .usage-table td { padding: 12px; border-bottom: 1px solid var(--border); vertical-align: top; min-width: 140px; }
 .usage-table .usage-stats { grid-template-columns: 1fr; }
+.pricing-basis dl { display: grid; grid-template-columns: minmax(8rem, auto) minmax(0, 1fr); gap: .4rem 1rem; }
+.pricing-basis dt { color: var(--muted); }
+.pricing-basis dd { margin: 0; overflow-wrap: anywhere; }
+.pricing-basis small { display: block; color: var(--muted); overflow-wrap: anywhere; margin-block: .3rem; }

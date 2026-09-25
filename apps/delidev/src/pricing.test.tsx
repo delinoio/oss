@@ -1,0 +1,70 @@
+import { create } from "@bufbuild/protobuf";
+import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
+import { TransportProvider } from "@connectrpc/connect-query";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { expect, it, vi } from "vitest";
+import { EntityKind, InputPricingMode, PricingVersionSchema, ResourceSchema, UsageService, newRequestId, type PricingVersion, type SetModelPricingRequest } from "@delinoio/delidev-api-client";
+import { MutationIntents } from "./mutation";
+import { ModelPricing } from "./pricing";
+import { encode } from "./documents";
+
+function fixture(initial = false) {
+  const model = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.MODEL, revision: 1n, documentJson: encode({ name: "Selected model" }) });
+  const version = (revision = 1n) => create(PricingVersionSchema, { id: newRequestId(), modelId: model.id, providerId: newRequestId(), revision, basis: { currency: "USD", source: "Explicit fixture source", asOf: "2026-09-25", inputMode: InputPricingMode.UNIFORM, inputPerMillion: "2.5", exclusions: [] } });
+  let pricing: PricingVersion | undefined = initial ? version() : undefined;
+  let modelRevision = 1n;
+  const read = vi.fn(() => ({ pricing, modelRevision }));
+  const write = vi.fn((request: SetModelPricingRequest) => { pricing = create(PricingVersionSchema, { ...version((request.mutation?.expectedRevision ?? 0n) + 1n), basis: request.basis }); return Promise.resolve({ pricing }); });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+  const transport = createRouterTransport((router) => router.service(UsageService, { getModelPricing: read, setModelPricing: write }));
+  const close = vi.fn();
+  const view = (active = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><ModelPricing model={model} active={active} close={close} /></MutationIntents></QueryClientProvider></TransportProvider>;
+  return { model, read, write, view, version, setPricing: (value: PricingVersion) => { pricing = value; }, setModelRevision: (value: bigint) => { modelRevision = value; } };
+}
+it("submits exact nullable decimal rates with both captured revisions", async () => {
+  const f = fixture(); render(f.view());
+  await screen.findByText(/No pricing basis has been configured/);
+  fireEvent.click(screen.getByRole("button", { name: "Edit token pricing" }));
+  fireEvent.change(screen.getByLabelText("Currency"), { target: { value: "USD" } });
+  fireEvent.change(screen.getByLabelText("Pricing source"), { target: { value: "Original published source" } });
+  fireEvent.change(screen.getByLabelText("As-of date"), { target: { value: "2026-09-25" } });
+  fireEvent.change(screen.getByLabelText("Input rate per million"), { target: { value: "0.000000001" } });
+  fireEvent.change(screen.getByLabelText("Output rate per million"), { target: { value: "0" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save pricing version" }));
+  await screen.findByText(/Accepted pricing version 1/);
+  expect(f.write).toHaveBeenCalledTimes(1);
+  expect(f.write.mock.calls[0][0]).toMatchObject({ expectedModelRevision: 1n, mutation: { id: f.model.id, expectedRevision: 0n }, basis: { currency: "USD", inputPerMillion: "0.000000001", outputPerMillion: "0", inputMode: InputPricingMode.UNIFORM } });
+  expect(f.write.mock.calls[0][0].basis?.cachedInputPerMillion).toBeUndefined();
+});
+it("retains an uncertain original price across hiding and a later peer change", async () => {
+  const f = fixture(true); const view = render(f.view());
+  await screen.findByText("Explicit fixture source");
+  fireEvent.click(screen.getByRole("button", { name: "Edit token pricing" }));
+  f.write.mockRejectedValueOnce(new ConnectError("Lost acceptance", Code.Unavailable));
+  fireEvent.change(screen.getByLabelText("Input rate per million"), { target: { value: "3" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save pricing version" }));
+  await screen.findByRole("button", { name: "Retry the same price" });
+  const original = f.write.mock.calls[0][0];
+  f.setPricing(f.version(3n)); f.setModelRevision(2n);
+  view.rerender(f.view(false)); view.rerender(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "Refresh pricing" }));
+  await screen.findByText(/The model or price changed elsewhere/);
+  expect((screen.getByLabelText("Input rate per million") as HTMLInputElement).value).toBe("3");
+  expect((screen.getByRole("button", { name: "Save pricing version" }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Retry the same price" }));
+  await waitFor(() => expect(f.write).toHaveBeenCalledTimes(2));
+  expect(f.write.mock.calls[1][0]).toEqual(original);
+});
+it("preserves a stale draft and rejects imprecise price syntax before submission", async () => {
+  const f = fixture(true); render(f.view()); await screen.findByText("Explicit fixture source");
+  fireEvent.click(screen.getByRole("button", { name: "Edit token pricing" }));
+  fireEvent.change(screen.getByLabelText("Input rate per million"), { target: { value: "1e-9" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save pricing version" }));
+  await screen.findByText(/Use nonnegative decimal rates/); expect(f.write).not.toHaveBeenCalled();
+  f.setPricing(f.version(2n));
+  fireEvent.click(screen.getByRole("button", { name: "Refresh pricing" }));
+  await screen.findByText(/The model or price changed elsewhere/);
+  expect((screen.getByLabelText("Input rate per million") as HTMLInputElement).value).toBe("1e-9");
+  expect((screen.getByRole("button", { name: "Save pricing version" }) as HTMLButtonElement).disabled).toBe(true);
+});

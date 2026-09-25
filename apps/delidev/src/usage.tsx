@@ -1,3 +1,4 @@
+import { EstimateAmounts, EstimateCosts } from "./estimate-costs";
 import { useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { EntityKind, UsageCoverage, UsageQuery, type UsageMeasure, type UsageTotals } from "@delinoio/delidev-api-client";
@@ -56,13 +57,13 @@ export function Usage({ active, open }: { active: boolean; open: (id: string) =>
       <div className="notice"><strong>Known subtotals · incomplete coverage</strong><p>{data.coverage === UsageCoverage.OBSERVED_ROOT_RESPONSES ? "Only observed root responses are included. Missing, older, resumed-conversation, child and unsupported harness telemetry is unavailable, not zero." : "This server's telemetry coverage is unknown."}</p><p>{data.acceptedExecutionsWithoutResponse.toLocaleString()} executions accepted in this range have no response usage recorded in the range.</p></div>
       <p>{data.totals?.responses.toLocaleString() ?? "0"} distinct responses recorded.</p><Measures value={data.totals} />
       <p>Cached input is part of input, and reasoning output is part of output. These breakdowns are not added again to total tokens.</p>
-      <div className="usage-costs"><p><strong>Actual API cost:</strong> Unavailable — no verified attributable charge is supplied by the current telemetry.</p><p><strong>Token-price estimate:</strong> Unavailable — no verified pricing basis is available for this usage. Token usage does not establish spend or budget compliance.</p></div>
+      <div className="usage-costs"><p><strong>Actual API cost:</strong> Unavailable — no verified attributable charge is supplied by the current telemetry.</p><EstimateCosts totals={data.estimates} pricing={data.pricing} /></div>
       <h3>By session, model and account</h3>
-      {data.groups.length ? <div className="usage-table"><table><caption>Known response subtotals with original account and model identities</caption><thead><tr><th scope="col">Session / project</th><th scope="col">Account</th><th scope="col">Model / API</th><th scope="col">Tokens</th></tr></thead><tbody>{data.groups.map((group) => <tr key={`${group.sessionId}:${group.accountId}:${group.providerId}:${group.modelId}`}>
+      {data.groups.length ? <div className="usage-table"><table><caption>Known response subtotals with original account and model identities</caption><thead><tr><th scope="col">Session / project</th><th scope="col">Account</th><th scope="col">Model / API</th><th scope="col">Tokens</th><th scope="col">Token-price estimate</th></tr></thead><tbody>{data.groups.map((group) => <tr key={`${group.sessionId}:${group.accountId}:${group.providerId}:${group.modelId}`}>
         <td><button onClick={() => open(group.sessionId)}>{group.sessionName || group.sessionId}</button><p>{group.projectId ? group.projectName || `Project ${group.projectId}` : "General Chat"}</p></td>
         <td><span>{group.accountName || "Retained account"}</span><small>{group.accountId}</small></td>
         <td><span>{group.modelName || "Retained model"}</span><small>{group.modelId}</small><p>{group.providerName || `API ${group.providerId}`}</p></td>
-        <td><strong>{measure(group.totals?.total)}</strong><p>{group.totals?.responses.toLocaleString()} responses{group.totals?.total?.unavailableResponses ? ` · ${group.totals.total.unavailableResponses} unavailable` : ""}</p><details><summary>Token breakdown</summary><Measures value={group.totals} /></details></td>
+        <td><strong>{measure(group.totals?.total)}</strong><p>{group.totals?.responses.toLocaleString()} responses{group.totals?.total?.unavailableResponses ? ` · ${group.totals.total.unavailableResponses} unavailable` : ""}</p><details><summary>Token breakdown</summary><Measures value={group.totals} /></details></td><td><EstimateAmounts value={group.estimates} /></td>
       </tr>)}</tbody></table></div> : <p>No exact response usage is recorded for these filters. This does not mean zero usage or zero cost.</p>}
     </> : null}
   </section>;

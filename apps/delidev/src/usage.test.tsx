@@ -4,7 +4,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { EntityKind, GetUsageSummaryResponseSchema, ResourceSchema, ResourceService, UsageCostState, UsageCoverage, UsageService, newRequestId, type GetUsageSummaryRequest } from "@delinoio/delidev-api-client";
+import { EstimateTotalsSchema, PricingUsageSchema, InputPricingMode, EntityKind, GetUsageSummaryResponseSchema, ResourceSchema, ResourceService, UsageCostState, UsageCoverage, UsageService, newRequestId, type GetUsageSummaryRequest } from "@delinoio/delidev-api-client";
 import { Usage } from "./usage";
 import { encode } from "./documents";
 
@@ -68,4 +68,18 @@ it("does not invent zero for empty telemetry and marks retained data stale after
   fireEvent.click(screen.getByRole("button", { name: "Refresh usage" }));
   await screen.findByText(/These are the last successfully retrieved values/);
   expect(f.read).toHaveBeenCalledTimes(2);
+});
+
+it("keeps historical currency subtotals, partial coverage and source basis separate from actual cost", async () => {
+  const f = fixture();
+  f.data.estimates = create(EstimateTotalsSchema, { unpricedResponses: 1, currencies: [{ currency: "USD", knownAmount: "9223.372036854775807", completeResponses: 1 }, { currency: "EUR", knownAmount: "0", partialResponses: 1 }] });
+  f.data.pricing = [create(PricingUsageSchema, { pricing: { id: newRequestId(), modelId: f.ids.model, providerId: f.ids.provider, revision: 1n, basis: { currency: "USD", source: "Retained original source", asOf: "2026-09-01", inputMode: InputPricingMode.UNIFORM, inputPerMillion: "0.000000001", exclusions: ["Fixture fee excluded"] } }, totals: { currency: "USD", knownAmount: "9223.372036854775807", completeResponses: 1 }, input: { knownTokens: "9223372036854775807", knownAmount: "9223.372036854775807", pricedResponses: 1 }, output: { missingPriceResponses: 1 } })];
+  render(f.view()); await screen.findByText("USD 9223.372036854775807");
+  expect(screen.getByText("EUR 0")).toBeTruthy();
+  expect(screen.getByText(/1 responses have no matching historical price/)).toBeTruthy();
+  expect(screen.getByText("Actual API cost:").parentElement!.textContent).toContain("Unavailable");
+  fireEvent.click(screen.getByText(/Historical basis · USD/));
+  expect(screen.getByText("Retained original source")).toBeTruthy();
+  expect(screen.getByText("Fixture fee excluded")).toBeTruthy();
+  expect(screen.getByText(BigInt("9223372036854775807").toLocaleString())).toBeTruthy();
 });
