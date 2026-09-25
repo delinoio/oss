@@ -13,6 +13,8 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 )
 
 func (s *Service) filter(input *pb.Filter) (store.Filter, error) {
@@ -63,11 +65,30 @@ func (s *Service) ListResources(ctx context.Context, req *connect.Request[pb.Lis
 		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
 	}
 	result := &pb.ListResourcesResponse{}
+	// Bound both supported wire encodings, including JSON's Base64 document
+	// expansion. Reserve 1 MiB of the 5 MiB transport limit for the cursor and
+	// envelope; count-based pagination alone cannot bound large resources.
+	const maxResourcePageBytes = 4 << 20
+	used := 0
 	for _, r := range records {
-		result.Resources = append(result.Resources, rpc.Resource(r))
+		resource := rpc.Resource(r)
+		encoded, err := protojson.Marshal(resource)
+		if err != nil {
+			return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
+		}
+		size := max(proto.Size(resource), len(encoded)) + 16
+		if used+size > maxResourcePageBytes {
+			if len(result.Resources) == 0 {
+				return nil, rpc.Error(domain.Fail(domain.ResourceExhausted, "A resource exceeds the list response limit.", "Read the resource by its identity."), req.Header().Get(rpc.CorrelationHeader))
+			}
+			break
+		}
+		result.Resources = append(result.Resources, resource)
+		used += size
 	}
-	if len(records) == f.Limit {
-		result.NextPageToken, err = s.Identity.EncodeCursor(security.Cursor{Scope: scope(f), After: records[len(records)-1].ID})
+	if len(result.Resources) < len(records) || len(records) == f.Limit {
+		last := result.Resources[len(result.Resources)-1]
+		result.NextPageToken, err = s.Identity.EncodeCursor(security.Cursor{Scope: scope(f), After: domain.ID(last.Id)})
 		if err != nil {
 			return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
 		}

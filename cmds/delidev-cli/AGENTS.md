@@ -147,3 +147,5 @@
 - Bounded CLI job waits retain the latest accepted job and return a typed nonzero failure on timeout, cancellation or uncertainty; never report those states as completed work.
 
 - Reset Worker schedule availability on each exclusive server-store open, preserve instance recovery identity, and require fresh current-process observation without backdating reconnects.
+
+- Generic resource pagination must fit both binary and JSON Connect encodings and resume after the last returned record when the byte budget truncates a count-bounded page.
