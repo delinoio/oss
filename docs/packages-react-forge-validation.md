@@ -268,3 +268,5 @@ repair remains a CI validation step.
 PR #989 merges `main` at `bcc35d49`, preserving the SFX extension and dependency-security updates while retaining sprites. Both component subpaths, native dispatch paths, measurement coordinate spaces and export extensions are registered together. Installed CLI/MCP fixtures cover all six local formats, including `.wav` and `.sprite.zip`. The shared signal fixture retains the upstream 2.5-second delayed start for both Unix signals and the 30-second readiness deadline.
 
 After resolving the merge, the macOS arm64 package build, typecheck, lint and standalone examples passed, as did all 115 package tests, all 77 repository CI contract tests, workflow validation and sprite/SFX/adapter Clippy with warnings denied. Historical evidence above remains tied to its recorded source state and format count.
+
+On the merged code at `3e938a14`, public main/native candidate installation passed with six generated local formats. The final prepared root `TMPDIR=/private/tmp cargo test` run passed 1,938 tests with 3 existing opt-in tests ignored. Generated repository-owned `dist` output was removed after validation.
