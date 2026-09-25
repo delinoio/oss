@@ -53,7 +53,7 @@ func (b *ExecutionBinding) observeChildSnapshot(parent string, message providerM
 		}
 		if block.Tool != nil {
 			tool := block.Tool
-			if !b.advertisedTools[tool.Name] || b.content.tools[tool.ID].name != "" || tools[tool.ID].name != "" {
+			if !b.advertisedTools[tool.Name] || b.content.tools[tool.ID].name != "" || b.content.serverTools[tool.ID].name != "" || tools[tool.ID].name != "" {
 				return nil, lifecycleUncertain()
 			}
 			digest, err := streamReplyDigest(tool.Input)
@@ -65,8 +65,12 @@ func (b *ExecutionBinding) observeChildSnapshot(parent string, message providerM
 		}
 		blocks = append(blocks, block)
 	}
-	if len(tools)+b.content.openTools > 128 || len(tools)+len(b.content.tools) > 4096 {
+	if len(tools)+b.content.openTools > 128 || len(tools)+len(b.content.tools)+len(b.content.serverTools) > 4096 {
 		return nil, lifecycleUncertain()
+	}
+	serverChanges, serverDelta, err := b.stageServerBlocks(blocks, parent, message.ID, tools)
+	if err != nil {
+		return nil, err
 	}
 	// All sibling content and ownership checks succeed before any child tool
 	// can become a callback target. Returned display values are independent.
@@ -74,6 +78,7 @@ func (b *ExecutionBinding) observeChildSnapshot(parent string, message providerM
 		b.content.tools[id] = tool
 	}
 	b.content.openTools += len(tools)
+	b.commitServerBlocks(serverChanges, serverDelta)
 	b.content.snapshots[key] = message.Model
 	b.content.seen[key] = true
 	if b.logger != nil {

@@ -74,7 +74,9 @@ type NativeContentBlock struct {
 	// Rich sources remain private adapter data until attachment publication
 	// supplies its own storage and display boundary. URLs/file IDs are data,
 	// never instructions to fetch a remote or local resource.
-	Media *NativeMediaBlock `json:"-"`
+	Media        *NativeMediaBlock   `json:"-"`
+	ServerTool   *NativeServerTool   `json:"-"`
+	ServerResult *NativeServerResult `json:"-"`
 	// Opaque signatures belong to native thinking continuity, not displayable
 	// reasoning. Compare stream bytes only; native persistence/verification owns
 	// their meaning. Never reconstruct hidden text from them.
@@ -125,6 +127,8 @@ type contentBlockState struct {
 	citations          [][sha256.Size]byte
 	initialCitations   int
 	cache              json.RawMessage
+	caller             json.RawMessage
+	staticDigest       *[sha256.Size]byte
 }
 
 type providerMessageState struct {
@@ -146,6 +150,7 @@ type contentState struct {
 	active        map[string]*providerMessageState
 	seen          map[string]bool
 	tools         map[string]nativeToolState
+	serverTools   map[string]serverToolState
 	snapshots     map[string]string
 	openTools     int
 	bufferedBytes int
@@ -210,6 +215,8 @@ func decodeContentBlock(raw []byte) (NativeContentBlock, error) {
 			return NativeContentBlock{}, err
 		}
 		block.Media = media
+	case ServerToolUseBlock, WebSearchResultBlock, WebFetchResultBlock:
+		return decodeServerBlock(raw, kind)
 	case ToolUseBlock:
 		var value struct {
 			Type  ContentBlockKind `json:"type"`
@@ -349,12 +356,27 @@ func (b *ExecutionBinding) observePartial(raw []byte) ([]ContentEvent, error) {
 		}
 		state.signature.WriteString(block.signature)
 		if block.Tool != nil {
-			if !b.advertisedTools[block.Tool.Name] || b.content.tools[block.Tool.ID].name != "" || b.content.openTools >= 128 || len(b.content.tools) >= 4096 {
+			if !b.advertisedTools[block.Tool.Name] || b.content.tools[block.Tool.ID].name != "" || b.content.serverTools[block.Tool.ID].name != "" || b.content.openTools >= 128 || len(b.content.tools)+len(b.content.serverTools) >= 4096 {
 				return nil, lifecycleUncertain()
 			}
 			state.toolID, state.toolName, state.initialInput = block.Tool.ID, block.Tool.Name, bytes.Clone(block.Tool.Input)
 		}
-		if err := b.content.retainBytes(state.text.Len() + state.signature.Len() + len(state.initialInput) + len(state.cache) + len(state.citations)*sha256.Size); err != nil {
+		if block.ServerTool != nil || block.ServerResult != nil {
+			if _, _, err := b.stageServerBlocks([]NativeContentBlock{block}, parent, active.id, nil); err != nil {
+				return nil, err
+			}
+			if tool := block.ServerTool; tool != nil {
+				state.toolID, state.toolName, state.initialInput = tool.ID, string(tool.Name), bytes.Clone(tool.Input)
+				state.cache, state.caller = bytes.Clone(tool.Cache), bytes.Clone(tool.Caller)
+			} else {
+				digest, err := streamReplyDigest(block.ServerResult.Native)
+				if err != nil {
+					return nil, err
+				}
+				state.staticDigest = &digest
+			}
+		}
+		if err := b.content.retainBytes(state.retainedBytes()); err != nil {
 			return nil, err
 		}
 		active.blocks = append(active.blocks, state)
@@ -405,7 +427,7 @@ func (b *ExecutionBinding) observePartial(raw []byte) ([]ContentEvent, error) {
 		if err != nil {
 			return nil, err
 		}
-		if (delta == TextDelta && state.kind != TextBlock) || ((delta == ThinkingDelta || delta == SignatureDelta) && state.kind != ThinkingBlock) || (delta == ToolInputDelta && state.kind != ToolUseBlock) {
+		if (delta == TextDelta && state.kind != TextBlock) || ((delta == ThinkingDelta || delta == SignatureDelta) && state.kind != ThinkingBlock) || (delta == ToolInputDelta && state.kind != ToolUseBlock && state.kind != ServerToolUseBlock) {
 			return nil, lifecycleUncertain()
 		}
 		if delta == SignatureDelta {
@@ -626,26 +648,49 @@ func (b *ExecutionBinding) observeAssistant(raw []byte) ([]ContentEvent, error) 
 		if err != nil {
 			return nil, err
 		}
-		if block.Tool.ID != state.toolID || block.Tool.Name != state.toolName || b.content.tools[block.Tool.ID].name != "" || b.content.openTools >= 128 || len(b.content.tools) >= 4096 {
+		if block.Tool.ID != state.toolID || block.Tool.Name != state.toolName || b.content.tools[block.Tool.ID].name != "" || b.content.serverTools[block.Tool.ID].name != "" || b.content.openTools >= 128 || len(b.content.tools)+len(b.content.serverTools) >= 4096 {
 			return nil, lifecycleUncertain()
 		}
 		block.Tool.ProposedInput = bytes.Clone(input)
 		ownerInput, ownerTurn := b.contentOwner(parent)
 		b.content.tools[block.Tool.ID] = nativeToolState{ownerInput: ownerInput, ownerTurn: ownerTurn, name: block.Tool.Name, parent: parent, message: active.id, index: index, input: observed, streamed: true}
 		b.content.openTools++
+	case ServerToolUseBlock:
+		input := state.initialInput
+		if state.text.Len() != 0 {
+			input = json.RawMessage(state.text.String())
+		}
+		proposed, err := streamReplyDigest(input)
+		observed, observedErr := streamReplyDigest(block.ServerTool.Input)
+		if err != nil || observedErr != nil || proposed != observed || block.ServerTool.ID != state.toolID || string(block.ServerTool.Name) != state.toolName || !bytes.Equal(block.ServerTool.Cache, state.cache) || !bytes.Equal(block.ServerTool.Caller, state.caller) {
+			return nil, lifecycleUncertain()
+		}
+	case WebSearchResultBlock, WebFetchResultBlock:
+		observed, err := streamReplyDigest(block.ServerResult.Native)
+		if err != nil || state.staticDigest == nil || observed != *state.staticDigest {
+			return nil, lifecycleUncertain()
+		}
 	default:
 		return nil, lifecycleUncertain()
+	}
+	if block.ServerTool != nil || block.ServerResult != nil {
+		changes, delta, err := b.stageServerBlocks([]NativeContentBlock{block}, parent, active.id, nil)
+		if err != nil {
+			return nil, err
+		}
+		b.commitServerBlocks(changes, delta)
 	}
 	state.completed = true
 	// Completion has been compared with the streamed bytes, preserving the
 	// separately classified native citation omission when applicable.
 	// Retain only identity/state for stop and later tool ownership, so long
 	// messages do not accumulate every completed block in the observer.
-	b.content.bufferedBytes -= state.text.Len() + state.signature.Len() + len(state.initialInput) + len(state.cache) + len(state.citations)*sha256.Size
+	b.content.bufferedBytes -= state.retainedBytes()
 	state.text.Reset()
 	state.signature.Reset()
 	state.initialInput = nil
 	state.cache, state.citations = nil, nil
+	state.caller, state.staticDigest = nil, nil
 	return []ContentEvent{{Kind: ContentCompleted, MessageID: active.id, Model: active.model, ParentToolID: parent, Index: &index, Block: &block, CitationCompletion: citationCompletion, Usage: message.Usage, StopReason: message.Stop, StopSequence: message.Sequence}}, nil
 }
 
@@ -741,7 +786,7 @@ func (b *ExecutionBinding) observeToolResult(raw []byte) ([]ContentEvent, error)
 		// A synchronous parent cannot finish while its observed descendants
 		// remain active. Background tasks need their separate native lifecycle
 		// adapter; a tool result alone cannot close or adopt those children.
-		if b.content.active[value.ID] != nil {
+		if b.content.active[value.ID] != nil || b.hasOpenServerChild(value.ID) {
 			return nil, lifecycleUncertain()
 		}
 		for _, child := range b.content.tools {
@@ -800,7 +845,15 @@ func decodeToolResultText(raw []byte) (*string, []NativeContentBlock, error) {
 }
 
 func assistantBlock(kind ContentBlockKind) bool {
-	return kind == TextBlock || kind == ThinkingBlock || kind == RedactedThinkingBlock || kind == ToolUseBlock
+	return kind == TextBlock || kind == ThinkingBlock || kind == RedactedThinkingBlock || kind == ToolUseBlock || kind == ServerToolUseBlock || kind == WebSearchResultBlock || kind == WebFetchResultBlock
+}
+
+func (s *contentBlockState) retainedBytes() int {
+	size := s.text.Len() + s.signature.Len() + len(s.initialInput) + len(s.cache) + len(s.caller) + len(s.citations)*sha256.Size
+	if s.staticDigest != nil {
+		size += sha256.Size
+	}
+	return size
 }
 
 func userContentBlock(kind ContentBlockKind) bool {

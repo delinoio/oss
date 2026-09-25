@@ -311,7 +311,7 @@ func (b *ExecutionBinding) observeTask(kind TaskEventKind, raw []byte) (*NativeT
 		}
 	}
 	if retained.status.terminal() && retained.tool != "" {
-		if b.content.active[retained.tool] != nil {
+		if b.content.active[retained.tool] != nil || b.hasOpenServerChild(retained.tool) {
 			return nil, lifecycleUncertain()
 		}
 		for _, child := range b.content.tools {
