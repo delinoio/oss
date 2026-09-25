@@ -107,6 +107,7 @@ type NativeInteraction struct {
 	ToolID                  string             `json:"-"`
 	ToolName                string             `json:"-"`
 	ParentToolID            string             `json:"-"`
+	CalledBy                NativeToolCaller   `json:"-"`
 	Input                   json.RawMessage    `json:"-"`
 	Suggestions             []PermissionUpdate `json:"-"`
 	BlockedPath             *string            `json:"-"`
@@ -221,7 +222,7 @@ func (b *ExecutionBinding) observeInteraction(event StreamEvent) (*InteractionOb
 	if open >= maxStreamPending || 2*len(request.Input) > maxBufferedContent-b.interactionBytes {
 		return nil, lifecycleUncertain()
 	}
-	value := NativeInteraction{DecisionReasonType: request.DecisionReasonType, RequiresUserInteraction: request.RequiresUserInteraction, Kind: ToolPermission, ArrivalID: event.ArrivalID, RequestID: event.RequestID, ToolID: request.ID, ToolName: request.Tool, ParentToolID: tool.parent, Input: bytes.Clone(request.Input), Suggestions: request.Suggestions, BlockedPath: request.BlockedPath, DecisionReason: request.DecisionReason, AgentID: request.AgentID, Title: request.Title, DisplayName: request.DisplayName, Description: request.Description}
+	value := NativeInteraction{DecisionReasonType: request.DecisionReasonType, RequiresUserInteraction: request.RequiresUserInteraction, Kind: ToolPermission, ArrivalID: event.ArrivalID, RequestID: event.RequestID, ToolID: request.ID, ToolName: request.Tool, ParentToolID: tool.parent, CalledBy: tool.caller, Input: bytes.Clone(request.Input), Suggestions: request.Suggestions, BlockedPath: request.BlockedPath, DecisionReason: request.DecisionReason, AgentID: request.AgentID, Title: request.Title, DisplayName: request.DisplayName, Description: request.Description}
 	switch request.Tool {
 	case "AskUserQuestion":
 		var questions struct {

@@ -61,7 +61,7 @@ func (b *ExecutionBinding) observeChildSnapshot(parent string, message providerM
 				return nil, err
 			}
 			ownerInput, ownerTurn := b.contentOwner(parent)
-			tools[tool.ID] = nativeToolState{ownerInput: ownerInput, ownerTurn: ownerTurn, name: tool.Name, parent: parent, message: message.ID, input: digest}
+			tools[tool.ID] = nativeToolState{ownerInput: ownerInput, ownerTurn: ownerTurn, name: tool.Name, parent: parent, message: message.ID, input: digest, caller: tool.CalledBy}
 		}
 		blocks = append(blocks, block)
 	}

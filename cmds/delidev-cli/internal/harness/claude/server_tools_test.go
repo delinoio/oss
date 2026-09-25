@@ -94,8 +94,7 @@ func TestServerToolRejectsLocalForeignDuplicateAndChangedResultOwnership(t *test
 				bad = contentPartial(t, b, "", map[string]any{"type": "content_block_start", "index": 1, "content_block": result})
 			case "foreign-message":
 				lifecycleObserve(t, b, contentPartial(t, b, "", map[string]any{"type": "message_stop"}))
-				contentStart(t, b, "", "msg_foreign")
-				bad = contentPartial(t, b, "", map[string]any{"type": "content_block_start", "index": 0, "content_block": result})
+				bad = contentPartial(t, b, "", map[string]any{"type": "message_start", "message": contentMessage("msg_foreign")})
 			case "duplicate-result":
 				serverRootBlock(t, b, "msg_server", 1, result)
 				bad = contentPartial(t, b, "", map[string]any{"type": "content_block_start", "index": 2, "content_block": result})
@@ -178,7 +177,7 @@ func TestServerToolParserRejectsUnverifiedFamiliesAndMalformedResults(t *testing
 				use["name"] = "unknown"
 				block = use
 			case "code-caller":
-				use["caller"] = map[string]any{"type": "code_execution_20260120", "tool_id": "unowned"}
+				use["caller"] = map[string]any{"type": "code_execution_unverified", "tool_id": "unowned"}
 				block = use
 			case "null-caller":
 				use["caller"] = nil

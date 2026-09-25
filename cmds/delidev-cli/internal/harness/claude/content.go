@@ -55,9 +55,11 @@ const (
 // object, not a command to execute or permission authority. Native interaction
 // replies require their separate original-arrival and policy validation.
 type NativeTool struct {
-	ID    string          `json:"id"`
-	Name  string          `json:"name"`
-	Input json.RawMessage `json:"input"`
+	ID       string           `json:"id"`
+	Name     string           `json:"name"`
+	Input    json.RawMessage  `json:"input"`
+	Caller   json.RawMessage  `json:"-"`
+	CalledBy NativeToolCaller `json:"caller"`
 	// Native completion can enrich a streamed proposal, e.g. ExitPlanMode
 	// resolves the actual plan text/path. Retain both without authorizing a
 	// reply from the proposal or discarding the native completion's contents.
@@ -84,11 +86,12 @@ type NativeContentBlock struct {
 }
 
 type NativeToolResult struct {
-	ID     string               `json:"id"`
-	Name   string               `json:"name"`
-	Error  *bool                `json:"is_error"`
-	Text   *string              `json:"text"`
-	Blocks []NativeContentBlock `json:"blocks"`
+	CalledBy NativeToolCaller     `json:"caller"`
+	ID       string               `json:"id"`
+	Name     string               `json:"name"`
+	Error    *bool                `json:"is_error"`
+	Text     *string              `json:"text"`
+	Blocks   []NativeContentBlock `json:"blocks"`
 	// Structured is Claude's original tool_use_result object. This explicit
 	// provider extension may duplicate binary media and remains private until
 	// its typed publication adapter exists. It grants no filesystem, process,
@@ -134,6 +137,7 @@ type contentBlockState struct {
 type providerMessageState struct {
 	id, model, parent string
 	blocks            []*contentBlockState
+	stop              *NativeStopReason
 }
 
 type nativeToolState struct {
@@ -144,6 +148,7 @@ type nativeToolState struct {
 	input                 [sha256.Size]byte
 	finished              bool
 	streamed              bool
+	caller                NativeToolCaller
 }
 
 type contentState struct {
@@ -219,16 +224,21 @@ func decodeContentBlock(raw []byte) (NativeContentBlock, error) {
 		return decodeServerBlock(raw, kind)
 	case ToolUseBlock:
 		var value struct {
-			Type  ContentBlockKind `json:"type"`
-			ID    string           `json:"id"`
-			Name  string           `json:"name"`
-			Input json.RawMessage  `json:"input"`
+			Type   ContentBlockKind `json:"type"`
+			ID     string           `json:"id"`
+			Name   string           `json:"name"`
+			Input  json.RawMessage  `json:"input"`
+			Caller json.RawMessage  `json:"caller"`
 		}
 		var input map[string]json.RawMessage
 		if decodeNativeObject(raw, &value) != nil || domain.Text(value.ID, "native tool identity", 1024, true) != nil || domain.Text(value.Name, "native tool name", 256, true) != nil || len(value.Input) > domain.MaxMessageText || domain.Decode(value.Input, &input) != nil || input == nil {
 			return NativeContentBlock{}, lifecycleUncertain()
 		}
-		block.Tool = &NativeTool{ID: value.ID, Name: value.Name, Input: bytes.Clone(value.Input)}
+		caller, err := decodeToolCaller(value.Caller)
+		if err != nil {
+			return NativeContentBlock{}, err
+		}
+		block.Tool = &NativeTool{ID: value.ID, Name: value.Name, Input: bytes.Clone(value.Input), Caller: bytes.Clone(value.Caller), CalledBy: caller}
 	default:
 		return NativeContentBlock{}, domain.Fail(domain.Unsupported, "The Claude Code content block needs its native extension adapter.", "Retain the original message without substituting or truncating its content.")
 	}
@@ -316,6 +326,9 @@ func (b *ExecutionBinding) observePartial(raw []byte) ([]ContentEvent, error) {
 		if len(message.Content) != 0 || b.content.seen[key] || len(b.content.seen) >= 4096 {
 			return nil, lifecycleUncertain()
 		}
+		if err := b.continueServerMessage(parent, message.ID); err != nil {
+			return nil, err
+		}
 		b.content.seen[key] = true
 		b.content.active[parent] = &providerMessageState{id: message.ID, model: message.Model, parent: parent}
 		return []ContentEvent{{Kind: ProviderMessageStarted, MessageID: message.ID, Model: message.Model, ParentToolID: parent, Usage: message.Usage, StopReason: message.Stop, StopSequence: message.Sequence}}, nil
@@ -360,6 +373,10 @@ func (b *ExecutionBinding) observePartial(raw []byte) ([]ContentEvent, error) {
 				return nil, lifecycleUncertain()
 			}
 			state.toolID, state.toolName, state.initialInput = block.Tool.ID, block.Tool.Name, bytes.Clone(block.Tool.Input)
+			if err := b.validateToolCaller(block.Tool.CalledBy, parent, active.id, nil); err != nil {
+				return nil, err
+			}
+			state.caller = bytes.Clone(block.Tool.Caller)
 		}
 		if block.ServerTool != nil || block.ServerResult != nil {
 			if _, _, err := b.stageServerBlocks([]NativeContentBlock{block}, parent, active.id, nil); err != nil {
@@ -481,6 +498,12 @@ func (b *ExecutionBinding) observePartial(raw []byte) ([]ContentEvent, error) {
 		// Preserve this native usage update as reported. It is not an additive
 		// token delta, and absent counters cannot be replaced with zero.
 		base.Kind, base.Usage, base.StopReason, base.StopSequence = ProviderMessageUpdated, update.Usage, delta.Stop, delta.Sequence
+		// Returned observations are mutable display data, not ownership state.
+		active.stop = nil
+		if delta.Stop != nil {
+			stop := *delta.Stop
+			active.stop = &stop
+		}
 	case "message_stop":
 		var stop struct {
 			Type string `json:"type"`
@@ -493,6 +516,7 @@ func (b *ExecutionBinding) observePartial(raw []byte) ([]ContentEvent, error) {
 				return nil, lifecycleUncertain()
 			}
 		}
+		b.suspendServerMessage(active)
 		delete(b.content.active, parent)
 		base.Kind = ProviderMessageFinished
 	default:
@@ -648,12 +672,15 @@ func (b *ExecutionBinding) observeAssistant(raw []byte) ([]ContentEvent, error) 
 		if err != nil {
 			return nil, err
 		}
-		if block.Tool.ID != state.toolID || block.Tool.Name != state.toolName || b.content.tools[block.Tool.ID].name != "" || b.content.serverTools[block.Tool.ID].name != "" || b.content.openTools >= 128 || len(b.content.tools)+len(b.content.serverTools) >= 4096 {
+		if block.Tool.ID != state.toolID || block.Tool.Name != state.toolName || !bytes.Equal(block.Tool.Caller, state.caller) || b.content.tools[block.Tool.ID].name != "" || b.content.serverTools[block.Tool.ID].name != "" || b.content.openTools >= 128 || len(b.content.tools)+len(b.content.serverTools) >= 4096 {
 			return nil, lifecycleUncertain()
+		}
+		if err := b.validateToolCaller(block.Tool.CalledBy, parent, active.id, nil); err != nil {
+			return nil, err
 		}
 		block.Tool.ProposedInput = bytes.Clone(input)
 		ownerInput, ownerTurn := b.contentOwner(parent)
-		b.content.tools[block.Tool.ID] = nativeToolState{ownerInput: ownerInput, ownerTurn: ownerTurn, name: block.Tool.Name, parent: parent, message: active.id, index: index, input: observed, streamed: true}
+		b.content.tools[block.Tool.ID] = nativeToolState{ownerInput: ownerInput, ownerTurn: ownerTurn, name: block.Tool.Name, parent: parent, message: active.id, index: index, input: observed, streamed: true, caller: block.Tool.CalledBy}
 		b.content.openTools++
 	case ServerToolUseBlock:
 		input := state.initialInput
@@ -804,7 +831,7 @@ func (b *ExecutionBinding) observeToolResult(raw []byte) ([]ContentEvent, error)
 		if tool.streamed {
 			position = &index
 		}
-		events = append(events, ContentEvent{Kind: ToolResultObserved, MessageID: tool.message, ParentToolID: parent, Index: position, ToolResult: &NativeToolResult{ID: value.ID, Name: tool.name, Error: value.Error, Text: text, Blocks: blocks, Structured: bytes.Clone(envelope.Structured)}})
+		events = append(events, ContentEvent{Kind: ToolResultObserved, MessageID: tool.message, ParentToolID: parent, Index: position, ToolResult: &NativeToolResult{ID: value.ID, Name: tool.name, CalledBy: tool.caller, Error: value.Error, Text: text, Blocks: blocks, Structured: bytes.Clone(envelope.Structured)}})
 	}
 	for id := range seen {
 		tool := b.content.tools[id]

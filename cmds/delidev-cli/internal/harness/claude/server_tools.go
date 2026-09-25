@@ -21,12 +21,13 @@ const (
 )
 
 type NativeServerTool struct {
-	ID     string
-	Name   ServerToolName
-	Input  json.RawMessage `json:"-"`
-	Caller json.RawMessage `json:"-"`
-	Cache  json.RawMessage `json:"-"`
-	Native json.RawMessage `json:"-"`
+	ID       string
+	Name     ServerToolName
+	Input    json.RawMessage `json:"-"`
+	Caller   json.RawMessage `json:"-"`
+	CalledBy NativeToolCaller
+	Cache    json.RawMessage `json:"-"`
+	Native   json.RawMessage `json:"-"`
 }
 
 type NativeWebSearchResult struct {
@@ -44,8 +45,9 @@ type NativeServerResult struct {
 	Search         []NativeWebSearchResult
 	URL            *string
 	RetrievedAt    *string
-	Document       *NativeMediaBlock      `json:"-"`
-	Caller         json.RawMessage        `json:"-"`
+	Document       *NativeMediaBlock `json:"-"`
+	Caller         json.RawMessage   `json:"-"`
+	CalledBy       NativeToolCaller
 	Native         json.RawMessage        `json:"-"`
 	Detail         *string                `json:"-"`
 	Execution      *NativeServerExecution `json:"-"`
@@ -58,19 +60,9 @@ type serverToolState struct {
 	name            ServerToolName
 	parent, message string
 	finished        bool
-}
-
-func decodeDirectServerCaller(raw json.RawMessage) error {
-	if len(raw) == 0 {
-		return nil
-	}
-	var caller struct {
-		Type string `json:"type"`
-	}
-	if decodeNativeObject(raw, &caller) != nil || caller.Type != "direct" {
-		return domain.Fail(domain.Unsupported, "The Claude Code server tool caller needs its native ownership adapter.", "Retain the original provider operation without granting local tool authority.")
-	}
-	return nil
+	caller          NativeToolCaller
+	activeMessage   string
+	continuation    bool
 }
 
 func decodeServerBlock(raw []byte, kind ContentBlockKind) (NativeContentBlock, error) {
@@ -91,10 +83,11 @@ func decodeServerBlock(raw []byte, kind ContentBlockKind) (NativeContentBlock, e
 		if !knownServerTool(value.Name) {
 			return NativeContentBlock{}, domain.Fail(domain.Unsupported, "The Claude Code server tool needs its native result adapter.", "Retain the original provider operation without substituting a local tool.")
 		}
-		if err := decodeDirectServerCaller(value.Caller); err != nil {
+		caller, err := decodeToolCaller(value.Caller)
+		if err != nil {
 			return NativeContentBlock{}, err
 		}
-		block.ServerTool = &NativeServerTool{ID: value.ID, Name: value.Name, Input: bytes.Clone(value.Input), Caller: bytes.Clone(value.Caller), Cache: bytes.Clone(value.Cache), Native: bytes.Clone(raw)}
+		block.ServerTool = &NativeServerTool{ID: value.ID, Name: value.Name, Input: bytes.Clone(value.Input), Caller: bytes.Clone(value.Caller), CalledBy: caller, Cache: bytes.Clone(value.Cache), Native: bytes.Clone(raw)}
 		return block, nil
 	}
 	var value struct {
@@ -107,10 +100,11 @@ func decodeServerBlock(raw []byte, kind ContentBlockKind) (NativeContentBlock, e
 	if decodeNativeObject(raw, &value) != nil || domain.Text(value.ID, "native server result identity", 1024, true) != nil || validateNativeCache(value.Cache) != nil {
 		return NativeContentBlock{}, lifecycleUncertain()
 	}
-	if err := decodeDirectServerCaller(value.Caller); err != nil {
+	caller, err := decodeToolCaller(value.Caller)
+	if err != nil {
 		return NativeContentBlock{}, err
 	}
-	result := &NativeServerResult{Kind: kind, ID: value.ID, Caller: bytes.Clone(value.Caller), Native: bytes.Clone(raw)}
+	result := &NativeServerResult{Kind: kind, ID: value.ID, Caller: bytes.Clone(value.Caller), CalledBy: caller, Native: bytes.Clone(raw)}
 	if kind != WebSearchResultBlock && kind != WebFetchResultBlock {
 		if len(value.Caller) != 0 {
 			return NativeContentBlock{}, lifecycleUncertain()
@@ -202,11 +196,19 @@ func (b *ExecutionBinding) stageServerBlocks(blocks []NativeContentBlock, parent
 	changes := map[string]serverToolState{}
 	delta, newIDs := 0, 0
 	for _, block := range blocks {
+		if block.Tool != nil {
+			if err := b.validateToolCaller(block.Tool.CalledBy, parent, message, changes); err != nil {
+				return nil, 0, err
+			}
+		}
 		if tool := block.ServerTool; tool != nil {
 			if b.content.tools[tool.ID].name != "" || local[tool.ID].name != "" || b.content.serverTools[tool.ID].name != "" || changes[tool.ID].name != "" {
 				return nil, 0, lifecycleUncertain()
 			}
-			changes[tool.ID] = serverToolState{name: tool.Name, parent: parent, message: message}
+			if err := b.validateToolCaller(tool.CalledBy, parent, message, changes); err != nil {
+				return nil, 0, err
+			}
+			changes[tool.ID] = serverToolState{name: tool.Name, parent: parent, message: message, caller: tool.CalledBy}
 			delta++
 			newIDs++
 			if b.content.openTools+len(local)+delta > 128 {
@@ -222,7 +224,15 @@ func (b *ExecutionBinding) stageServerBlocks(blocks []NativeContentBlock, parent
 			if result.Kind == ToolSearchResultBlock {
 				matches = tool.name == ServerToolSearchRegex || tool.name == ServerToolSearchBM25
 			}
-			if !ok || tool.finished || !matches || tool.parent != parent || tool.message != message || local[result.ID].name != "" {
+			if !ok || tool.finished || !matches || tool.parent != parent || tool.currentMessage() != message || tool.continuation || local[result.ID].name != "" {
+				return nil, 0, lifecycleUncertain()
+			}
+			// Only web result schemas carry caller metadata. Their explicit
+			// ancestry must match the call; omitted metadata cannot erase it.
+			if len(result.Caller) != 0 && ((result.CalledBy.ToolID != tool.caller.ToolID) || (result.CalledBy.ToolID != "" && result.CalledBy.Kind != tool.caller.Kind)) {
+				return nil, 0, lifecycleUncertain()
+			}
+			if b.hasOpenProgrammaticChild(result.ID, changes, local) {
 				return nil, 0, lifecycleUncertain()
 			}
 			tool.finished = true
