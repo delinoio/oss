@@ -30,6 +30,23 @@ impl<'a> Raster<'a> {
         self.geometry.insert(id.to_string(), json!({"frame":{"coordinate_space":"sprite_frame","x":x,"y":y,"width":width,"height":height,"page":page}}));
     }
 
+    pub fn copy_to_sheet(
+        &mut self,
+        bitmap: &RgbaImage,
+        sheet: &mut RgbaImage,
+        x: u32,
+        y: u32,
+    ) -> Result<()> {
+        self.charge(u64::from(bitmap.width()) * u64::from(bitmap.height()))?;
+        for row in 0..bitmap.height() {
+            checkpoint()?;
+            for column in 0..bitmap.width() {
+                sheet.put_pixel(x + column, y + row, *bitmap.get_pixel(column, row));
+            }
+        }
+        Ok(())
+    }
+
     pub fn frame(&mut self, frame: &Frame, page: u32) -> Result<RgbaImage> {
         let p = self.project;
         self.charge(u64::from(p.width) * u64::from(p.height) * u64::from(p.scale).pow(2))?;
@@ -197,5 +214,27 @@ mod tests {
         let mut raster = Raster::new(&p, &prepared);
         raster.charge(MAX_WORK).unwrap();
         assert_eq!(raster.charge(1).unwrap_err().code, ErrorCode::ResourceLimit);
+
+        let mut raster = Raster::new(&p, &prepared);
+        raster.charge(MAX_WORK - 2).unwrap();
+        let frame = Frame {
+            id: Uuid::now_v7(),
+            duration_ms: 100,
+            pivot: None,
+            children: vec![],
+        };
+        let bitmap = raster.frame(&frame, 0).unwrap();
+        let mut sheet = RgbaImage::from_pixel(1, 1, Rgba([255; 4]));
+        raster.copy_to_sheet(&bitmap, &mut sheet, 0, 0).unwrap();
+        assert_eq!(sheet, bitmap);
+        let replacement = RgbaImage::from_pixel(1, 1, Rgba([255; 4]));
+        assert_eq!(
+            raster
+                .copy_to_sheet(&replacement, &mut sheet, 0, 0)
+                .unwrap_err()
+                .code,
+            ErrorCode::ResourceLimit
+        );
+        assert_eq!(sheet, bitmap);
     }
 }

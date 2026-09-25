@@ -379,12 +379,7 @@ pub fn generate(project: &Project, assets: &Assets) -> Result<(Vec<u8>, Value)> 
                 + project.padding;
             let y = (index / prepared.columns) * (bitmap.height() + project.padding * 2)
                 + project.padding;
-            for row in 0..bitmap.height() {
-                checkpoint()?;
-                for column in 0..bitmap.width() {
-                    sheet.put_pixel(x + column, y + row, *bitmap.get_pixel(column, row));
-                }
-            }
+            raster.copy_to_sheet(&bitmap, &mut sheet, x, y)?;
             let path = format!("frames/{index:04}.png");
             add_png(&mut parts, &path, &bitmap, &mut part_bytes)?;
             let pivot = frame.pivot.unwrap_or(Pivot {
