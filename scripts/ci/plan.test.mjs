@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -73,14 +73,30 @@ test("Linux packages run on affected main pushes and manual dispatch, never on P
 });
 
 test("Runmoor source and release scripts do not rebuild DevHud desktop/mobile", () => {
-  for (const paths of [["cmds/runmoor/main.go"], ["scripts/release/runmoor.mjs", "scripts/release/runmoor.test.mjs"]]) {
+  for (const paths of [["cmds/runmoor/main.go"], ["scripts/release/runmoor.mjs"], ["scripts/release/runmoor.test.mjs"], ["scripts/release/runmoor.mjs", "scripts/release/runmoor.test.mjs"]]) {
     const jobs = selected(Event.Push, paths);
     for (const id of devhudNative) assert.ok(!jobs.includes(id), id);
     if (paths[0].startsWith("cmds/")) assert.ok(jobs.includes("go-test"));
+    else if (paths.some((path) => path.endsWith(".test.mjs"))) assert.ok(jobs.includes("devhud-release-contracts"));
     else assert.ok(!jobs.includes("devhud-release-contracts"));
   }
   for (const path of ["scripts/release/finalize-devhud-deb.sh", "scripts/release/linux/prerm.in", "scripts/release/generate-checksums.sh"]) {
     assert.ok(selected(Event.Push, [path]).includes("devhud-desktop"), path);
+  }
+});
+
+test("every shared release fixture selects its executing CI job", () => {
+  const fixtures = readdirSync(new URL("../release/", import.meta.url)).filter((name) => name.endsWith(".test.mjs"));
+  assert.ok(fixtures.length > 0);
+  for (const name of fixtures) {
+    const path = `scripts/release/${name}`;
+    for (const event of [Event.PullRequest, Event.Push]) {
+      const needs = results(event, [path]);
+      assert.equal(planJobs(event, [path]).jobs["devhud-release-contracts"], true, `${event}: ${path}`);
+      assert.equal(validateResults(needs), true);
+      needs["devhud-release-contracts"].result = "skipped";
+      assert.throws(() => validateResults(needs), /devhud-release-contracts/u);
+    }
   }
 });
 

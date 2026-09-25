@@ -535,6 +535,7 @@
       "pnpm-workspace.yaml",
       "protos/devhud/**",
       "protos/gen/go/devhud/**",
+      "scripts/release/*.test.mjs",
       "scripts/release/*devhud*",
       "scripts/release/linux/**",
       "scripts/release/devhud-operations.test.mjs",
