@@ -120,7 +120,7 @@ func Run(ctx context.Context, args []string, streams IO) int {
 	if command == "settings" && len(rest) == 1 && rest[0] == "defaults" {
 		return emit(domain.DefaultSettings(), nil)
 	}
-	if command == "worker" || (command == "device" && len(rest) > 0 && rest[0] == "pair") {
+	if command == "worker" || (command == "device" && len(rest) > 0 && (rest[0] == "pair" || rest[0] == "pair-local" || rest[0] == "inspect")) {
 		value, err := deviceLocal(ctx, o, command, rest, streams)
 		return emit(value, err)
 	}
@@ -645,8 +645,11 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   doctor
   device create-pairing --type worker|client --name NAME
   device pair --device-dir PATH --code-stdin
+  device pair-local --device-dir PATH
+  device inspect --device-dir PATH
   device revoke --id ID --revision N
   worker pair --worker-dir PATH --name NAME --code-stdin
+  worker inspect --worker-dir PATH
   worker start --worker-dir PATH
   repository inspect --machine-id ID --path PATH [--preferred-remote NAME] [--wait]
   machine discover --id ID --revision N [--input FILE|-] [--protocol] [--wait]

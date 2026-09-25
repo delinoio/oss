@@ -11,7 +11,7 @@ Run personal AI sessions across projects, accounts, native harnesses, and execut
 - `protos/delidev/v1`: versioned Connect RPC schemas.
 - `protos/gen/go/delidev/v1`: generated Go messages and Connect bindings.
 - `packages/delidev-api-client`: generated TypeScript/Connect Query client, explicit transport and bounded read-only synchronization for the desktop client.
-- `apps/delidev`: implemented React presentation for retained sessions, search, activity, inbox and read-only settings; native startup and the remaining desktop surfaces are in progress. On 2026-09-25 the owner explicitly expanded the active request to all of issue #964, including the desktop app; CLI-only acceptance is no longer the completion boundary.
+- `apps/delidev`: implemented React presentation for retained sessions, search, activity, inbox and read-only settings; the native Tauri/Wry host now starts/reuses a bundled Go server and bootstraps a separate paired client. Automatic supervision and the remaining desktop surfaces are in progress. On 2026-09-25 the owner explicitly expanded the active request to all of issue #964, including the desktop app; CLI-only acceptance is no longer the completion boundary.
 
 ## Domain Contract Documents
 - [CLI/server/Worker contract](cmds-delidev-contract.md)

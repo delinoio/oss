@@ -39,6 +39,7 @@ it("keeps the draft and session mounted across settings and navigation, and rend
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
   expect(screen.getByRole("dialog")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Close Settings" }));
+  expect(window.document.activeElement).toBe(screen.getByRole("button", { name: "Settings" }));
   expect((screen.getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement).value).toBe("Keep my unsent input");
   fireEvent.click(screen.getByRole("button", { name: "Inbox" }));
   await screen.findByText("No retained requests or completions.");

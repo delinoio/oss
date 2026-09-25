@@ -11,7 +11,10 @@
     "typecheck": "tsc --noEmit",
     "lint": "pnpm typecheck",
     "test": "pnpm --filter @delinoio/delidev-api-client build && pnpm typecheck && vitest run && pnpm build",
-    "test:unit": "vitest run"
+    "test:unit": "vitest run",
+    "prepare:sidecar": "node scripts/prepare-sidecar.mjs",
+    "build:native": "pnpm --filter @delinoio/delidev-api-client build && pnpm build && pnpm prepare:sidecar && cargo build --manifest-path src-tauri/Cargo.toml --features desktop-host,custom-protocol --bin delidev-desktop",
+    "dev:desktop": "pnpm build:native && cargo run --manifest-path src-tauri/Cargo.toml --features desktop-host,custom-protocol --bin delidev-desktop --"
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.14.0",

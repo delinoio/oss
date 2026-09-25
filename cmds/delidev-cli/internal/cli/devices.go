@@ -134,6 +134,26 @@ func deviceLocal(ctx context.Context, o options, command string, args []string, 
 	}
 	root := fs.String(rootName, defaultRoot, "private device scope")
 	switch args[0] {
+	case "inspect":
+		if err := parse(fs, args[1:]); err != nil {
+			return nil, err
+		}
+		credential, err := worker.LoadCredential(*root)
+		if err != nil {
+			return nil, err
+		}
+		if credential.Type != kind {
+			return nil, domain.Fail(domain.PermissionDenied, "The selected device has a different type.", "Select the original client or Worker scope.")
+		}
+		return credentialMetadata(credential), nil
+	case "pair-local":
+		if command != "device" {
+			return nil, usage()
+		}
+		if err := parse(fs, args[1:]); err != nil {
+			return nil, err
+		}
+		return pairLocalClient(ctx, o, *root)
 	case "pair":
 		input := fs.Bool("code-stdin", false, "read private pairing document from stdin")
 		name := fs.String("name", "local worker", "execution machine name")

@@ -1,0 +1,330 @@
+use std::{
+    ffi::OsString,
+    fs::{self, File},
+    io::Read,
+    path::{Path, PathBuf},
+    process::{Command, Stdio},
+    sync::Mutex,
+    thread,
+    time::{Duration, Instant},
+};
+
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use serde::{Deserialize, Serialize};
+use zeroize::{Zeroize, Zeroizing};
+
+const OUTPUT_LIMIT: u64 = 64 << 10;
+const COMMAND_TIMEOUT: Duration = Duration::from_secs(40);
+const ORIGINS: &str = "tauri://localhost,http://tauri.localhost,http://127.0.0.1:46311";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum NativeFailure {
+    Busy,
+    SidecarMissing,
+    SidecarFailed,
+    TimedOut,
+    Incompatible,
+    CredentialUnavailable,
+    PermissionDenied,
+    InvalidEvidence,
+    StorageUnavailable,
+}
+
+type Result<T> = std::result::Result<T, NativeFailure>;
+
+#[derive(Serialize)]
+pub struct Connection {
+    pub endpoint: String,
+    pub server_id: String,
+    pub device_id: String,
+    pub token: String,
+}
+
+impl Drop for Connection {
+    fn drop(&mut self) {
+        self.token.zeroize();
+    }
+}
+
+#[derive(Clone, Copy, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum DeviceType {
+    Client,
+    Worker,
+}
+
+#[derive(Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+struct DeviceMetadata {
+    version: u32,
+    #[serde(rename = "type")]
+    kind: DeviceType,
+    endpoint: String,
+    server_id: String,
+    device_id: String,
+    pairing_id: String,
+    #[serde(default)]
+    machine_id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Credential {
+    #[serde(flatten)]
+    metadata: DeviceMetadata,
+    token: String,
+}
+
+#[derive(Deserialize)]
+struct CliEnvelope {
+    version: u32,
+    result: Option<serde_json::Value>,
+    error: Option<CliFailure>,
+}
+#[derive(Deserialize)]
+struct CliFailure {
+    code: String,
+}
+
+pub struct Connector {
+    executable: PathBuf,
+    root: PathBuf,
+    gate: Mutex<()>,
+    listen: &'static str,
+}
+
+impl Connector {
+    pub fn new(executable: PathBuf, root: PathBuf) -> Result<Self> {
+        if !executable.is_absolute() || !root.is_absolute() {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+        let metadata =
+            fs::symlink_metadata(&executable).map_err(|_| NativeFailure::SidecarMissing)?;
+        if !metadata.is_file() || metadata.file_type().is_symlink() {
+            return Err(NativeFailure::SidecarMissing);
+        }
+        Ok(Self {
+            executable,
+            root,
+            gate: Mutex::new(()),
+            listen: "127.0.0.1:46310",
+        })
+    }
+
+    pub fn connect(&self) -> Result<Connection> {
+        let _guard = self.gate.try_lock().map_err(|_| NativeFailure::Busy)?;
+        tracing::info!(operation = "local_connect", phase = "start");
+        let result = self.connect_inner();
+        match &result {
+            Ok(_) => tracing::info!(operation = "local_connect", phase = "ready"),
+            Err(code) => tracing::warn!(operation = "local_connect", phase = "failed", ?code),
+        }
+        result
+    }
+
+    fn connect_inner(&self) -> Result<Connection> {
+        // The Go executable owns compatibility, startup locking and detachment.
+        // Dropping this client never invokes stop or assumes server ownership.
+        self.run(&[
+            "server".into(),
+            "start".into(),
+            "--listen".into(),
+            self.listen.into(),
+            "--allowed-origins".into(),
+            ORIGINS.into(),
+        ])?;
+        let client_root = self.root.join("desktop-client");
+        let metadata = self.run(&[
+            "device".into(),
+            "pair-local".into(),
+            "--device-dir".into(),
+            client_root.clone().into_os_string(),
+        ])?;
+        let metadata: DeviceMetadata =
+            serde_json::from_value(metadata).map_err(|_| NativeFailure::InvalidEvidence)?;
+        // Go enforces platform-specific privacy and strict credential validation
+        // before this fixed file is read. No owner material crosses the bridge.
+        let inspected = self.run(&[
+            "device".into(),
+            "inspect".into(),
+            "--device-dir".into(),
+            client_root.clone().into_os_string(),
+        ])?;
+        let inspected: DeviceMetadata =
+            serde_json::from_value(inspected).map_err(|_| NativeFailure::InvalidEvidence)?;
+        if metadata != inspected {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+        let path = client_root.join("device.json");
+        let file_metadata =
+            fs::symlink_metadata(&path).map_err(|_| NativeFailure::CredentialUnavailable)?;
+        if !file_metadata.is_file() || file_metadata.len() > 16 << 10 {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+        let bytes = Zeroizing::new(read_bounded(
+            File::open(path).map_err(|_| NativeFailure::CredentialUnavailable)?,
+            16 << 10,
+        )?);
+        connection_from_bytes(&bytes, &metadata)
+    }
+
+    fn run(&self, arguments: &[OsString]) -> Result<serde_json::Value> {
+        let mut command = Command::new(&self.executable);
+        command
+            .arg("--data-dir")
+            .arg(&self.root)
+            .args(arguments)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .env_clear();
+        for name in [
+            "HOME",
+            "USERPROFILE",
+            "APPDATA",
+            "LOCALAPPDATA",
+            "SystemRoot",
+            "WINDIR",
+            "XDG_CONFIG_HOME",
+            "XDG_DATA_HOME",
+            "XDG_RUNTIME_DIR",
+            "DBUS_SESSION_BUS_ADDRESS",
+            "TMPDIR",
+            "TEMP",
+            "TMP",
+        ] {
+            if let Some(value) = std::env::var_os(name) {
+                command.env(name, value);
+            }
+        }
+        #[cfg(unix)]
+        command.env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin");
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW applies only to the short CLI controller.
+        }
+        let mut child = command.spawn().map_err(|_| NativeFailure::SidecarFailed)?;
+        let stdout = child.stdout.take().ok_or(NativeFailure::SidecarFailed)?;
+        let stderr = child.stderr.take().ok_or(NativeFailure::SidecarFailed)?;
+        let out = thread::spawn(move || read_bounded(stdout, OUTPUT_LIMIT));
+        let err = thread::spawn(move || read_bounded(stderr, OUTPUT_LIMIT));
+        let started = Instant::now();
+        let result = loop {
+            match child.try_wait() {
+                Ok(Some(status)) => break Ok(status),
+                Ok(None) if started.elapsed() < COMMAND_TIMEOUT => {
+                    thread::sleep(Duration::from_millis(25))
+                }
+                Ok(None) => break Err(NativeFailure::TimedOut),
+                Err(_) => break Err(NativeFailure::SidecarFailed),
+            }
+        };
+        if result.is_err() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        // These closed CLI operations cannot leave descendants holding these
+        // pipes: detached servers redirect both streams to their private log.
+        let output = out.join().map_err(|_| NativeFailure::SidecarFailed)?;
+        let diagnostic = err.join().map_err(|_| NativeFailure::SidecarFailed)?;
+        let status = result?;
+        diagnostic?; // Drain and bound diagnostics, but never reflect their contents.
+        let envelope: CliEnvelope =
+            serde_json::from_slice(&output?).map_err(|_| NativeFailure::InvalidEvidence)?;
+        if envelope.version != 1 {
+            return Err(NativeFailure::Incompatible);
+        }
+        if let Some(error) = envelope.error {
+            return Err(match error.code.as_str() {
+                "unsupported" => NativeFailure::Incompatible,
+                "unauthenticated" => NativeFailure::CredentialUnavailable,
+                "permission_denied" => NativeFailure::PermissionDenied,
+                "recovery_required" | "conflict" => NativeFailure::InvalidEvidence,
+                _ => NativeFailure::SidecarFailed,
+            });
+        }
+        if !status.success() {
+            return Err(NativeFailure::SidecarFailed);
+        }
+        envelope.result.ok_or(NativeFailure::InvalidEvidence)
+    }
+}
+
+fn read_bounded(mut reader: impl Read, limit: u64) -> Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    reader
+        .by_ref()
+        .take(limit + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| NativeFailure::SidecarFailed)?;
+    if bytes.len() as u64 > limit {
+        return Err(NativeFailure::InvalidEvidence);
+    }
+    Ok(bytes)
+}
+
+fn connection_from_bytes(bytes: &[u8], expected: &DeviceMetadata) -> Result<Connection> {
+    let credential: Credential =
+        serde_json::from_slice(bytes).map_err(|_| NativeFailure::InvalidEvidence)?;
+    let token = Zeroizing::new(credential.token);
+    if credential.metadata != *expected
+        || expected.version != 1
+        || expected.kind != DeviceType::Client
+        || !expected.machine_id.is_empty()
+    {
+        return Err(NativeFailure::InvalidEvidence);
+    }
+    for id in [
+        &expected.server_id,
+        &expected.device_id,
+        &expected.pairing_id,
+    ] {
+        let parsed = uuid::Uuid::parse_str(id).map_err(|_| NativeFailure::InvalidEvidence)?;
+        if parsed.get_version_num() != 7 || parsed.to_string() != *id {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+    }
+    let decoded = Zeroizing::new(
+        URL_SAFE_NO_PAD
+            .decode(token.as_bytes())
+            .map_err(|_| NativeFailure::InvalidEvidence)?,
+    );
+    if decoded.len() != 32 || URL_SAFE_NO_PAD.encode(&*decoded) != *token {
+        return Err(NativeFailure::InvalidEvidence);
+    }
+    if !expected.endpoint.starts_with("http://127.0.0.1:")
+        || expected.endpoint[17..]
+            .parse::<u16>()
+            .ok()
+            .filter(|port| *port > 0)
+            .is_none()
+    {
+        return Err(NativeFailure::InvalidEvidence);
+    }
+    Ok(Connection {
+        endpoint: expected.endpoint.clone(),
+        server_id: expected.server_id.clone(),
+        device_id: expected.device_id.clone(),
+        token: token.to_string(),
+    })
+}
+
+pub fn default_data_root() -> Result<PathBuf> {
+    dirs::config_dir()
+        .map(|root| root.join("delidev"))
+        .ok_or(NativeFailure::StorageUnavailable)
+}
+
+pub fn bundled_sidecar(executable: &Path) -> Result<PathBuf> {
+    let parent = executable.parent().ok_or(NativeFailure::SidecarMissing)?;
+    Ok(parent.join(if cfg!(windows) {
+        "delidev.exe"
+    } else {
+        "delidev"
+    }))
+}
+
+#[cfg(test)]
+mod tests;

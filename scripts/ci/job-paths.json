@@ -151,6 +151,7 @@
       ".nvmrc",
       "Cargo.lock",
       "Cargo.toml",
+      "apps/delidev/src-tauri/**",
       "apps/devhud/src-tauri/**",
       "crates/**",
       "package.json",

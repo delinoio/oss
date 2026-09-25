@@ -12,6 +12,7 @@ members = [
     "crates/forge-figma",
     "crates/delino-forge",
     "apps/devhud/src-tauri",
+    "apps/delidev/src-tauri",
     "crates/devhud-native-messaging-host",
     "crates/binpm",
     "crates/cargo-mono",
