@@ -144,6 +144,7 @@
 - Apply bounded cross-frame secret reflection checks to SSE field names, comments and metadata values as well as JSON deltas before delivering any original frame bytes. Unknown or colonless fields cannot bypass these checks.
 
 - Provider error bodies, including HTTP-200 error envelopes, must pass secret reflection checks even when their native machine codes are allowlisted; retain failure status without reflecting a colliding protected value.
+- Model discovery must apply raw/Base64 credential reflection checks to the retained decimal spelling of numeric context limits as well as retained strings; reject the complete catalog before publication on a match.
 
 - Bounded CLI job waits retain the latest accepted job and return a typed nonzero failure on timeout, cancellation or uncertainty; never report those states as completed work.
 

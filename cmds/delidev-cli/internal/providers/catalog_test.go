@@ -111,6 +111,39 @@ func TestCatalogAdvisoryMetadataRejectsMalformedOrReflectedValues(t *testing.T) 
 	}
 }
 
+func TestCatalogContextLimitsCannotReflectNumericKeys(t *testing.T) {
+	for _, protocol := range []domain.APIProtocol{domain.OpenAIChat, domain.OpenAIResponses, domain.AnthropicMessages} {
+		field := "context_length"
+		if protocol == domain.AnthropicMessages {
+			field = "max_input_tokens"
+		}
+		for _, test := range []struct {
+			name, key, limit string
+			valid            bool
+		}{
+			{"exact", "1234", "1234", false},
+			{"embedded", "12345678", "9123456789", false},
+			{"maximum", "18446744073709551615", "18446744073709551615", false},
+			{"unrelated", "1234", "8192", true},
+			{"keyless", "", "1234", true},
+		} {
+			t.Run(string(protocol)+"/"+test.name, func(t *testing.T) {
+				raw := []byte(fmt.Sprintf(`{"data":[{"id":"safe-first"},{"id":"safe-second",%q: %s }]}`, field, test.limit))
+				models, next, err := parseModels(raw, protocol, []byte(test.key))
+				if !test.valid {
+					if err == nil || models != nil || next != "" {
+						t.Fatal("reflected numeric metadata returned a publishable catalog")
+					}
+					return
+				}
+				if err != nil || len(models) != 2 || models[1].ContextLimit == nil || strconv.FormatUint(*models[1].ContextLimit, 10) != test.limit {
+					t.Fatal("safe context metadata changed", err)
+				}
+			})
+		}
+	}
+}
+
 func TestProviderPresetsAreIndependentValidConfiguration(t *testing.T) {
 	items := Presets()
 	if len(items) != 9 {

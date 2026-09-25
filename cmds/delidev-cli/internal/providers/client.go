@@ -469,7 +469,7 @@ func parseModels(raw []byte, protocol domain.APIProtocol, key []byte) ([]Model, 
 		}
 		if len(item[contextField]) > 0 && string(item[contextField]) != "null" {
 			var limit uint64
-			if json.Unmarshal(item[contextField], &limit) != nil || limit == 0 {
+			if json.Unmarshal(item[contextField], &limit) != nil || limit == 0 || containsKey(strconv.FormatUint(limit, 10), key) {
 				return nil, "", errors.New("invalid context limit")
 			}
 			model.ContextLimit = &limit

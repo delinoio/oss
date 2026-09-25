@@ -16,6 +16,8 @@ The entire inspection has a 20-second context deadline, with bounded dial, TLS h
 
 Provider JSON may contain future fields, but known fields use exact names. Invalid UTF-8, duplicate keys, extra documents, excessive nesting, malformed model identity, duplicate identities and incomplete/looping pagination fail the whole inspection. Model identifiers and advisory display names are bounded; native IDs remain exact and are sorted only for stable output. Optional context limits, input/output modalities and supported tool/reasoning parameter evidence remain advisory. Missing/null fields remain unknown; an explicit supported-parameter list can establish an advisory false. Invalid known metadata rejects the complete response. Reflected raw/Base64 key strings in retained fields are rejected. Error bodies, arbitrary diagnostic headers, redirect locations, account labels and provider request IDs are discarded. Only typed failures, HTTP status and a parsed bounded Retry-After value leave the HTTP layer. The inspector never retries a request. The separate periodic catalog task uses an accepted retry delay as a minimum interval for its next new observation.
 
+Context limits use the same raw/Base64 key comparison as string metadata, applied to the exact decimal representation that will be retained. A reflected numeric credential rejects the whole model page without exposing a partial catalog.
+
 ## Authentication evidence
 
 Endpoint response and credential evidence are independent:
