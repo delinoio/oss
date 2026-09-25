@@ -24,7 +24,7 @@ FBX materials target Blender 4.5's legacy importer: metalness uses ReflectionFac
 
 Registered assets and output are each capped at 256 MiB, individual geometry/texture payloads at 64 MiB, images at 64 million pixels, and the existing 16 MiB/20,000-node/depth-48 tree limits apply. Check malformed arrays, indices, numbers, transforms, references and resource budgets before output. Native cancellation checkpoints cover validation, traversal, texture conversion and serialization; bounded third-party decoding calls are indivisible. JavaScript never runs in workers.
 
-Exports wait for relevant React work and registrations before pinning immutable model/assets. Existing directory-identity publication queues and same-filesystem atomic publication apply. Cancellation before publication preserves prior output; completed writes remain truthful. Sessions have no automatic timeout or recovery storage. Diagnostics contain only format, stage, revision, duration and stable classifications, never asset contents or host paths.
+Exports wait for relevant React work and registrations before pinning immutable model/assets. Existing directory-identity publication queues and same-filesystem atomic publication apply. Cancellation before publication preserves prior output; completed writes remain truthful. Sessions have no automatic timeout or recovery storage. Diagnostics contain only format, stage, revision, duration and stable classifications, never asset contents or host paths. Native scene measurement events and failures use the layout stage; document inspection retains import, and generation/update retains export. The Node bridge derives these stages from the operation and format rather than forwarding arbitrary native text.
 
 ## Validation
 

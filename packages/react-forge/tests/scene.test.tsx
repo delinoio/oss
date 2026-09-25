@@ -6,12 +6,42 @@ import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRequire } from "node:module";
-import { createSession, Format, ErrorCode, type NodeHandle } from "../src/index.js";
+import { createSession, Format, ErrorCode, Stage, type Diagnostic, type NodeHandle } from "../src/index.js";
 import { Scene, Group, Mesh, PointLight, PerspectiveCamera, AlphaMode, type GeometryInput } from "../src/glb.js";
 const validator = createRequire(import.meta.url)("gltf-validator") as { validateBytes(bytes: Uint8Array): Promise<{ issues: { numErrors: number; messages: unknown[] } }> };
 const geometry = (): GeometryInput => ({ positions: new Float32Array([0,0,0,1,0,0,0,1,0]), normals: new Float32Array([0,0,1,0,0,1,0,0,1]), indices: new Uint32Array([0,1,2]), uv: new Float32Array([0,0,1,0,0,1]), tangents: new Float32Array([1,0,0,1,1,0,0,1,1,0,0,1]) });
 const decode = (b: Buffer) => JSON.parse(b.subarray(20,20+b.readUInt32LE(12)).toString());
 for (const format of [Format.Glb, Format.Fbx] as const) {
+  test(`${format}: native measurement and export diagnostics retain their stages`, async () => {
+    const session = createSession(format);
+    const events: Diagnostic[] = [];
+    session.onDiagnostic(event => events.push(event));
+    try {
+      const mesh = geometry(); delete mesh.uv;
+      const registered = await session.registerGeometry(mesh);
+      await session.render(<Scene><Mesh geometry={registered}/></Scene>);
+      const snapshot = await session.snapshot();
+      const target = snapshot.targets.find(target => target.kind === "mesh")!;
+      events.length = 0;
+      await session.measure(target, { revision: snapshot.revision });
+      assert.deepEqual(events.filter(event => event.source === "native").map(event => [event.stage, event.status]),
+        [[Stage.Layout, "started"], [Stage.Layout, "completed"]]);
+      assert.ok(events.every(event => event.stage === Stage.Layout && event.revision === snapshot.revision));
+      events.length = 0;
+      await session.export();
+      assert.deepEqual(events.filter(event => event.source === "native").map(event => [event.stage, event.status]),
+        [[Stage.Export, "started"], [Stage.Export, "completed"]]);
+
+      const texture = await session.registerTexture({ path: fileURLToPath(new URL("../examples/sample.png", import.meta.url)) });
+      await session.render(<Scene><Mesh geometry={registered} material={{ baseColorTexture: texture }}/></Scene>);
+      const invalid = await session.snapshot();
+      events.length = 0;
+      await assert.rejects(session.measure(invalid.targets.find(target => target.kind === "mesh")!, { revision: invalid.revision }),
+        { code: ErrorCode.MalformedInput, context: { stage: Stage.Layout, format, revision: invalid.revision, location: "geometry/uv" } });
+      assert.deepEqual(events.filter(event => event.source === "native").map(event => [event.stage, event.status]),
+        [[Stage.Layout, "started"], [Stage.Layout, "failed"]]);
+    } finally { await session.dispose(); }
+  });
   test(`${format}: native scene, immutable geometry, world bounds and atomic output`, async () => {
     const s = createSession(format); const dir = await mkdtemp(join(tmpdir(),"forge-scene-"));
     try {

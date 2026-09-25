@@ -57,12 +57,17 @@ function safeLocation(value: unknown): string | undefined {
 
 export async function processDocument(format: Format, operation: "generate" | "inspect" | "update", model: unknown,
   source: Buffer, assets: Map<string, Buffer>, documentId: string, revision: number, signal: AbortSignal, fontOptions: { system: boolean; ids: string[] } = { system: true, ids: [] }, onDiagnostic?: (event: Diagnostic) => void): Promise<NativeOutput> {
+  // Scene inspection measures authored geometry; document inspection imports
+  // existing bytes. Derive the stage from trusted call metadata, not native text.
+  const stage = operation === "inspect"
+    ? (format === Format.Glb || format === Format.Fbx ? Stage.Layout : Stage.Import)
+    : Stage.Export;
   const emit = (events: unknown) => {
     if (!Array.isArray(events)) return;
     for (const event of events) {
       if (!event || typeof event !== "object") continue;
       const diagnostic: Diagnostic = Object.freeze({ source: "native", format, revision,
-        stage: operation === "inspect" ? Stage.Import : Stage.Export, operation,
+        stage, operation,
         status: ["started", "completed", "failed"].includes(event.status) ? event.status : undefined,
         durationMs: Number.isFinite(event.duration_ms) ? event.duration_ms : 0,
         code: event.code ? codes[event.code] ?? ErrorCode.MalformedInput : undefined });
@@ -93,7 +98,7 @@ export async function processDocument(format: Format, operation: "generate" | "i
     const message = code === ErrorCode.MissingFont
       ? "Required glyphs, color emoji, or embedding permissions are unavailable. Register a compatible font with registerFont() or install a system fallback, then retry."
       : `Native document processing failed (${code}). Correct the input and retry.`;
-    throw new ForgeError(code, message, { format, revision, location, stage: operation === "inspect" ? Stage.Import : Stage.Export });
+    throw new ForgeError(code, message, { format, revision, location, stage });
   } finally { signal.removeEventListener("abort", cancel); }
 }
 
