@@ -139,3 +139,5 @@
 - Missing vault identity recovery may remove only validated initial-pin atomic scratch in an otherwise empty root under its exclusive lock; preserve all populated-vault evidence.
 
 - Git remote HEAD inspection treats only documented symbolic-ref status 1 as an unavailable default; propagate all ownership, timeout, launch and other exit failures.
+
+- Apply bounded cross-frame secret reflection checks to SSE comments and metadata as well as JSON deltas before delivering any original frame bytes.

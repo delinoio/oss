@@ -478,3 +478,42 @@ func TestProxyDoesNotPersistReflectedNativeReferences(t *testing.T) {
 	}
 	assertNoProxySecrets(t, f, raw)
 }
+
+func TestProxyDoesNotReleaseFragmentedSSEMetadata(t *testing.T) {
+	for _, field := range []string{"", "id", "event", "retry", "extension"} {
+		for _, data := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/data=%t", field, data), func(t *testing.T) {
+				middle := len(fixtureKey) / 2
+				f := newProxyFixture(t, domain.OpenAIChat, []Operation{ChatCompletion}, func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "text/event-stream")
+					for _, part := range []string{fixtureKey[:middle], fixtureKey[middle:]} {
+						fmt.Fprintf(w, "%s: %s\n", field, part)
+						if data {
+							fmt.Fprint(w, "data: {}\n")
+						}
+						fmt.Fprint(w, "\n")
+						w.(http.Flusher).Flush()
+					}
+					fmt.Fprint(w, "data: [DONE]\n\n")
+				})
+				response, raw, err := f.request(t, "/chat/completions", `{"model":"fixed-model","stream":true}`, nil)
+				if err != nil || response.StatusCode != 502 || bytes.Contains(raw, []byte(fixtureKey[:middle])) || bytes.Contains(raw, []byte("[DONE]")) {
+					t.Fatalf("metadata prefix released: %v %v %s", response, err, raw)
+				}
+				assertNoProxySecrets(t, f, raw)
+			})
+		}
+	}
+}
+
+func TestProxyPreservesBenignSSEMetadata(t *testing.T) {
+	body := ": keepalive\n\nid: observation\nretry: 1000\ndata: {\"choices\":[]}\n\ndata: [DONE]\n\n"
+	f := newProxyFixture(t, domain.OpenAIChat, []Operation{ChatCompletion}, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, body)
+	})
+	response, raw, err := f.request(t, "/chat/completions", `{"model":"fixed-model","stream":true}`, nil)
+	if err != nil || response.StatusCode != 200 || string(raw) != body {
+		t.Fatalf("benign metadata changed: %v %v %s", response, err, raw)
+	}
+}

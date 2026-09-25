@@ -166,3 +166,27 @@ func (s *streamGuard) clear() {
 	}
 	s.pending = nil
 }
+
+// SSE comments and metadata can also reflect protected values across frames.
+// Track both each field and the metadata sequence, independently of JSON paths,
+// before any original frame bytes reach the client (including data-less frames).
+func (s *streamGuard) inspectMetadata(frame []byte) error {
+	for _, raw := range bytes.Split(frame, []byte("\n")) {
+		line := bytes.TrimSuffix(raw, []byte("\r"))
+		if len(line) == 0 {
+			continue
+		}
+		field, value, _ := bytes.Cut(line, []byte(":"))
+		if string(field) == "data" {
+			continue
+		}
+		value = bytes.TrimPrefix(value, []byte(" "))
+		if err := s.check("@sse/"+string(field), string(value)); err != nil {
+			return err
+		}
+		if err := s.check("@sse-metadata", string(value)); err != nil {
+			return err
+		}
+	}
+	return nil
+}

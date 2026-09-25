@@ -107,6 +107,9 @@ func relayStream(ctx context.Context, w http.ResponseWriter, body io.Reader, ope
 		if err != nil {
 			return started, err
 		}
+		if err := fragments.inspectMetadata(frame); err != nil {
+			return started, err
+		}
 		if len(data) == 0 {
 			if guard.contains(string(frame)) {
 				return started, errSecret
