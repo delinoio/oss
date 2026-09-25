@@ -8,7 +8,10 @@ const (
 	OpenCodeHTTP     NativeProtocol = "opencode-http"
 	GrokACP          NativeProtocol = "grok-acp"
 )
-const CodexProtocolVersion = "0.151.0"
+const (
+	CodexProtocolVersion  = "0.151.0"
+	ClaudeProtocolVersion = "2.1.236"
+)
 
 type ProtocolState string
 
@@ -60,7 +63,8 @@ func (i *Installation) validateProtocol(requested bool) error {
 	}
 	switch i.Protocol.State {
 	case ProtocolVerified:
-		if i.Harness != Codex || i.Version != CodexProtocolVersion || !i.ProtocolVerified || i.Protocol.Problem != nil {
+		supported := (i.Harness == Codex && i.Version == CodexProtocolVersion) || (i.Harness == ClaudeCode && i.Version == ClaudeProtocolVersion)
+		if !supported || !i.ProtocolVerified || i.Protocol.Problem != nil {
 			return Fail(InvalidArgument, "The reported native profile is not validated.", "Use a supported protocol profile; version detection alone cannot grant capabilities.")
 		}
 	case ProtocolFailed, ProtocolUnsupported:

@@ -168,6 +168,12 @@ func TestDiscoveryRevisionReceiptsAuthorizationAndAtomicPublication(t *testing.T
 		output.Installations[0].Problem = nil
 		output.Installations[0].ProtocolVerified = true
 		output.Installations[0].Protocol = &domain.ProtocolObservation{Protocol: domain.CodexAppServer, State: domain.ProtocolVerified}
+		output.Installations[1].State = domain.InstallationDetected
+		output.Installations[1].Version = domain.ClaudeProtocolVersion
+		output.Installations[1].ResolvedPath = "/selected/claude"
+		output.Installations[1].Problem = nil
+		output.Installations[1].ProtocolVerified = true
+		output.Installations[1].Protocol = &domain.ProtocolObservation{Protocol: domain.ClaudeStreamJSON, State: domain.ProtocolVerified}
 		raw, _ := json.Marshal(output)
 		return &pb.ReportWorkRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: job.Id, ExpectedRevision: job.Revision}, MachineId: device.Machine.Id, InstanceId: instance, OutputJson: raw}
 	}
@@ -236,6 +242,10 @@ func TestDiscoveryRevisionReceiptsAuthorizationAndAtomicPublication(t *testing.T
 	}
 	if machine.DiscoveryRevision != 2 || machine.Installations[0].ExplicitPath != "/selected/codex" || machine.Installations[0].ObservedAt == nil || machine.Installations[0].State != domain.InstallationDetected || !machine.Installations[0].ProtocolVerified {
 		t.Fatalf("incorrect observations: %+v", machine)
+	}
+	claude := machine.Installations[1]
+	if claude.Version != domain.ClaudeProtocolVersion || !claude.ProtocolVerified || claude.ObservedAt == nil || claude.Protocol == nil || claude.Protocol.Protocol != domain.ClaudeStreamJSON || len(claude.Capabilities) != 0 {
+		t.Fatal("Claude protocol publication changed scope or granted execution")
 	}
 	if strings.Contains(string(current.Msg.Resource.DocumentJson), "secret-") || strings.Contains(string(finished.Msg.Job.DocumentJson), "secret-") {
 		t.Fatal("Worker diagnostics persisted raw")

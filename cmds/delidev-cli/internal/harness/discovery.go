@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/claude"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
@@ -133,16 +134,23 @@ func Discover(ctx context.Context, config DiscoveryConfig, input domain.HarnessD
 		i.Problem = domain.InstallationProblem(i.State)
 		if input.VerifyProtocol && i.State == domain.InstallationDetected {
 			i.Protocol = &domain.ProtocolObservation{Protocol: domain.ProtocolFor(i.Harness), State: domain.ProtocolUnsupported}
-			if i.Harness == domain.Codex {
+			if i.Harness == domain.Codex || i.Harness == domain.ClaudeCode {
 				home := filepath.Join(directory, string(i.Harness))
 				env, err := probeEnvironment(home)
 				if err != nil {
 					return domain.HarnessDiscoveryOutput{}, err
 				}
 				bounded, cancel := context.WithTimeout(ctx, probeTimeout)
-				client, err := codex.Open(bounded, codex.Config{Process: process.Config{Directory: processRoot, OwnerID: owner, Executable: i.ResolvedPath, Env: env, Cwd: home, Logger: logger.With("harness", i.Harness)}, Version: i.Version, Home: filepath.Join(home, "codex")})
-				if err == nil {
-					err = client.Close()
+				config := process.Config{Directory: processRoot, OwnerID: owner, Executable: i.ResolvedPath, Env: env, Cwd: home, Logger: logger.With("harness", i.Harness)}
+				switch i.Harness {
+				case domain.Codex:
+					var client *codex.Client
+					client, err = codex.Open(bounded, codex.Config{Process: config, Version: i.Version, Home: filepath.Join(home, "codex")})
+					if err == nil {
+						err = client.Close()
+					}
+				case domain.ClaudeCode:
+					err = claude.Probe(bounded, claude.ProbeConfig{Process: config, Version: i.Version, Home: filepath.Join(home, "claude")})
 				}
 				cancel()
 				if err != nil && domain.SafeError(err).Code == domain.RecoveryRequired {
