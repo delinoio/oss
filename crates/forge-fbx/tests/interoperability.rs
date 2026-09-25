@@ -31,6 +31,15 @@ fn independent_fbx_reader_accepts_geometry_material_and_units() {
     assert_eq!(imported.materials.len(), 1);
     assert!((imported.settings.unit_meters - 1.0).abs() < 1e-9);
     assert!(imported.meshes[0].vertex_normal.exists);
+    assert_eq!(
+        imported.settings.axes.right,
+        ufbx::CoordinateAxis::PositiveX
+    );
+    assert_eq!(imported.settings.axes.up, ufbx::CoordinateAxis::PositiveY);
+    assert_eq!(
+        imported.settings.axes.front,
+        ufbx::CoordinateAxis::PositiveZ
+    );
 }
 #[test]
 fn malformed_geometry_and_nonfinite_transforms_fail_before_export() {

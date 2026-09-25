@@ -35,3 +35,7 @@ Refs expose typed node handles. After an export establishes a revision, call `me
 ## Lifecycle and diagnostics
 
 Pass an `AbortSignal` to operations that accept it; there is no automatic operation timeout. `dispose()` cancels and joins owned work. `subscribe(listener)` receives bounded operation diagnostics with stage, revision, duration, and stable classification; it does not include document contents, asset bytes, credentials, or host paths. `ForgeError.code`, `ErrorCode`, `limits`, and `capabilities` help classify failures. An in-memory session is not a durable revision archive. See [limits and troubleshooting](/react-forge/limits-and-troubleshooting).
+
+## Unreleased static 3D extension
+
+[GLB](/react-forge/glb) and [FBX](/react-forge/fbx) creation are documented as an unreleased extension, absent from npm 0.1.1. They use SceneSession with registered geometry/textures, explicit file export, and revision-bound world-space bounds. Existing-file editing, animation and rigging are excluded. The FBX material profile targets Blender 4.5; local verification does not establish results on other hosts or FBX applications.

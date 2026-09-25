@@ -3,6 +3,8 @@
 ## Goal
 Provide publicly distributed React document sessions, a TSX task CLI and a local session-based stdio MCP server for authoring and preservation-aware editing of PPTX, DOCX, XLSX, and independent tagged PDF. Issue [#968](https://github.com/delinoio/oss/issues/968) defines the original feature boundary; the explicit 2026-09-24 follow-up on PR #970 adds macOS x64 and Windows/Linux x64/arm64 support. The subsequent public npm distribution decision supersedes the original private-package boundary. Partial format support does not satisfy that issue. The Figma extension adds explicit remote creation and preservation-aware editing under its separate contract; authenticated acceptance targets Node.js 24 on macOS arm64.
 
+The 2026-09-25 follow-up adds static GLB/FBX generation, SceneSession, original audio-product examples, and actual-file Blender/web validation. This extension is unreleased and is not part of the historical 0.1.1 npm evidence.
+
 ## Project ID
 `react-forge` (`ProjectId::ReactForge`). Product name: **React Forge**. The public npm package is `@delino/react-forge`; its CLI executable is `react-forge`.
 
@@ -43,7 +45,7 @@ Provide publicly distributed React document sessions, a TSX task CLI and a local
 - Preserve unrelated Office parts/XML; reject unsafe or unprovable edits transactionally. Never flatten opaque imported content. Existing Forge CLI/MCP behavior and default fonts remain stable.
 - Registered assets and render-relevant asynchronous work must settle before export pins a revision. Later commits cannot change an export already pinned. Cancellation has no automatic timeout and cannot misreport an already completed atomic publication.
 - Source-backed requirements must remain intact. Track missing evidence honestly; do not close #968 until all acceptance criteria pass. Direct Microsoft Office validation and PDF/UA certification are not claimed.
-- Public user guides are owned by the consolidated documentation app at `https://oss.delino.io/react-forge/`; they cover the released library, CLI, MCP, four local formats, and Figma without exposing internal implementation or overstating evidence.
+- Public user guides are owned by the consolidated documentation app at `https://oss.delino.io/react-forge/`; they cover the released library, CLI, MCP, four local formats, and Figma, with explicitly unreleased GLB/FBX guides, without exposing internal implementation or overstating evidence.
 
 ## Change Policy
 Update the project index, affected domain contracts, relevant AGENTS rules, examples and validation together when interfaces or ownership change. Internal rollback uses source revision rollback and rebuild without rewriting exported files.

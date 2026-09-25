@@ -11,6 +11,7 @@ mod docx;
 mod pdf;
 mod pptx;
 mod scene;
+pub use scene::{SceneAssetOperation, validate_scene_asset};
 mod xlsx;
 
 enum Format {
@@ -144,7 +145,11 @@ impl Task for Operation {
             OperationKind::Inspect => "inspect",
             OperationKind::Update => "update",
         };
-        let stage = if matches!(self.kind, OperationKind::Inspect) {
+        let stage = if matches!(self.kind, OperationKind::Inspect)
+            && matches!(self.format, Format::Glb | Format::Fbx)
+        {
+            "layout"
+        } else if matches!(self.kind, OperationKind::Inspect) {
             "import"
         } else {
             "export"

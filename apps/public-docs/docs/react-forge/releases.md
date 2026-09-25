@@ -18,3 +18,7 @@ Office interoperability evidence uses structural checks and LibreOffice/Poppler 
 Pin a verified npm version in your project and install its matching optional native package. To roll back, select an earlier **functional** published version, reinstall, and verify `npm list @delino/react-forge` before running tasks. Do not select the name-reservation `0.0.1` or unpublished `0.1.0`. Existing exported documents remain separate files; React Forge does not migrate or replay an in-memory session after a package change.
 
 See [Installation](/react-forge/installation) for supported hosts and [limits and troubleshooting](/react-forge/limits-and-troubleshooting) for recoverable errors. Report reproducible problems through [Delino OSS issues](https://github.com/delinoio/oss/issues).
+
+## Unreleased static 3D extension
+
+[GLB](/react-forge/glb) and [FBX](/react-forge/fbx) creation are documented as an unreleased extension, absent from npm 0.1.1. They use SceneSession with registered geometry/textures, explicit file export, and revision-bound world-space bounds. Existing-file editing, animation and rigging are excluded. The FBX material profile targets Blender 4.5; local verification does not establish results on other hosts or FBX applications.

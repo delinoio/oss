@@ -23,7 +23,7 @@ export function sceneModel(tree: SerializedNode[], documentId: string, assets: R
   };
   const node = (n: SerializedNode, root: boolean): SceneNode => {
     const kind = n.type.startsWith("scene:") ? n.type.slice(6) : "";
-    if (!fields[kind] || root !== (kind === "scene") || Object.keys(n.props).some(k => !fields[kind]!.includes(k)) || (!["scene", "group"].includes(kind) && n.children.length)) throw fail();
+    if (!Object.hasOwn(fields, kind) || root !== (kind === "scene") || Object.keys(n.props).some(k => !fields[kind]!.includes(k)) || (!["scene", "group"].includes(kind) && n.children.length)) throw fail();
     const p = n.props;
     const out: SceneNode = { id: n.id, name: (p.name ?? "") as string, type: kind === "scene" ? "group" : kind, children: n.children.map(c => node(c, false)) };
     for (const k of ["translation", "rotation", "scale"]) if (p[k] !== undefined) out[k] = p[k];
@@ -32,7 +32,7 @@ export function sceneModel(tree: SerializedNode[], documentId: string, assets: R
       const m = p.material ?? {};
       if (!m || typeof m !== "object" || Array.isArray(m)) throw fail();
       const material: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(m)) { if (!materialFields[k]) throw fail(); material[materialFields[k]!] = k.endsWith("Texture") ? asset(v, SceneAssetKind.Texture) : v; }
+      for (const [k, v] of Object.entries(m)) { if (!Object.hasOwn(materialFields, k)) throw fail(); material[materialFields[k]!] = k.endsWith("Texture") ? asset(v, SceneAssetKind.Texture) : v; }
       out.material = material;
     } else if (kind.endsWith("camera")) {
       out.near = p.near ?? 0.01; out.far = p.far ?? 1000;

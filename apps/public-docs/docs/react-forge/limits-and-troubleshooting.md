@@ -30,3 +30,7 @@ An explicit font is bounded to 64 MiB. Existing PPTX constraints include 1,000 s
 ## Boundaries
 
 Local document work has no hosted service, telemetry, URL fetching, automatic recovery, runtime converter, or automatic timeout. Figma is the explicit remote exception and has [separate receipt and retry rules](/react-forge/figma#publication-outcomes-and-receipts). Integrators are responsible for authenticating their own callers and governing process-wide resources; task code is trusted and runs with caller permissions.
+
+## Unreleased static 3D extension
+
+[GLB](/react-forge/glb) and [FBX](/react-forge/fbx) creation are documented as an unreleased extension, absent from npm 0.1.1. They use SceneSession with registered geometry/textures, explicit file export, and revision-bound world-space bounds. Existing-file editing, animation and rigging are excluded. The FBX material profile targets Blender 4.5; local verification does not establish results on other hosts or FBX applications.

@@ -33,3 +33,7 @@ The task selects the first supported text/paragraph/cell region. Use the library
 
 ## MCP session task
 `mcp-session.tsx` is a session-based MCP task, not a one-shot CLI entry. Run it through `react_forge_execute` with optional `{ "title": "..." }` data, retain its session ID for subsequent calls, inspect/measure the revision, export explicitly and close the session. Its render function remains in the MCP-owned state Map. See the package README for connection configuration and the complete tool sequence.
+
+## Static 3D product assets
+
+The [AURA audio studio](audio-studio-assets/README.md) creates headphones, a DAC/amplifier, a stand and the combined studio as GLB/FBX. Its original procedural geometry and five deterministic PNG textures are included. The unreleased 3D API is also demonstrated by `scene-glb.tsx` and `scene-fbx.tsx`. The verification workflow reimports the actual files in Blender and a local GLB viewer; see the example provenance and reproduction commands.

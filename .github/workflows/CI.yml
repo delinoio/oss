@@ -443,9 +443,9 @@ jobs:
       - name: Verify supported host and native contracts
         run: |
           node -e 'if (process.platform !== "${{ matrix.platform }}" || process.arch !== "${{ matrix.architecture }}" || process.versions.node.split(".")[0] !== "24") process.exit(1)'
-          cargo test --target ${{ matrix.target }} -p forge-package -p forge-document -p forge-docx -p forge-xlsx -p forge-pdf -p forge-figma -p forge-tree-doc -p forge-pptx -p delino-forge
+          cargo test --target ${{ matrix.target }} -p forge-package -p forge-document -p forge-docx -p forge-xlsx -p forge-pdf -p forge-figma -p forge-scene -p forge-glb -p forge-fbx -p forge-tree-doc -p forge-pptx -p delino-forge
           cargo test --target ${{ matrix.target }} -p forge-document -p forge-pdf -- --include-ignored
-          cargo clippy --target ${{ matrix.target }} -p react-forge-node -p forge-package -p forge-document -p forge-docx -p forge-xlsx -p forge-pdf -p forge-figma --all-targets -- -D warnings
+          cargo clippy --target ${{ matrix.target }} -p react-forge-node -p forge-package -p forge-document -p forge-docx -p forge-xlsx -p forge-pdf -p forge-figma -p forge-scene -p forge-glb -p forge-fbx --all-targets -- -D warnings
       - name: Build and test library, installed CLI and stdio MCP
         run: |
           set -o pipefail
@@ -482,6 +482,17 @@ jobs:
         env:
           REACT_FORGE_PYTHON: ${{ runner.temp }}/react-forge-python/bin/python
         run: pnpm --filter @delino/react-forge test:render --output "$RUNNER_TEMP/react-forge-render"
+      - name: Install pinned test-only 3D renderer
+        if: matrix.id == 'linux-x64-gnu'
+        run: |
+          curl --fail --location --retry 3 https://download.blender.org/release/Blender4.5/blender-4.5.14-linux-x64.tar.xz --output "$RUNNER_TEMP/blender.tar.xz"
+          echo "9ba871ff2ecd36526b77432745980b7e6664ecd0c7ca11c48849073dcfe06da3  $RUNNER_TEMP/blender.tar.xz" | sha256sum --check
+          tar -xf "$RUNNER_TEMP/blender.tar.xz" -C "$RUNNER_TEMP"
+      - name: Re-import and render generated GLB and FBX scenes
+        if: matrix.id == 'linux-x64-gnu'
+        env:
+          REACT_FORGE_BLENDER: ${{ runner.temp }}/blender-4.5.14-linux-x64/blender
+        run: pnpm --filter @delino/react-forge test:scenes --output "$RUNNER_TEMP/react-forge-scenes"
       - name: Measure representative and near-limit workloads
         run: pnpm --filter @delino/react-forge benchmark --output "$RUNNER_TEMP/react-forge-benchmark.json"
       - name: Retain rendering and benchmark evidence
@@ -494,6 +505,7 @@ jobs:
             ${{ runner.temp }}/react-forge-render
             ${{ runner.temp }}/react-forge-benchmark.json
             ${{ runner.temp }}/react-forge-travel-ir.pptx
+            ${{ runner.temp }}/react-forge-scenes
           if-no-files-found: error
           retention-days: 7
       - name: Remove generated package output

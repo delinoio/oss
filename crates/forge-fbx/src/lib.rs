@@ -89,7 +89,12 @@ impl Fbx<'_> {
     }
 
     fn prop(&mut self, name: &str, kind: &str, sub: &str, values: &[A<'_>]) -> Result<()> {
-        let mut attrs = vec![A::S(name), A::S(kind), A::S(sub), A::S("A")];
+        let mut attrs = vec![
+            A::S(name),
+            A::S(kind),
+            A::S(sub),
+            A::S(if kind == "enum" { "" } else { "A" }),
+        ];
         self.open("P", &{
             attrs.extend(values.iter().map(|v| match v {
                 A::I(x) => A::I(*x),
@@ -483,11 +488,13 @@ pub fn export(p: &Prepared<'_>) -> Result<Vec<u8>> {
     w.open("GlobalSettings", &[])?;
     w.leaf("Version", &[A::I(1000)])?;
     w.open("Properties70", &[])?;
+    // FBX FrontAxis describes the view-facing axis, opposite the local -Z
+    // forward direction. A negative sign here declares a left-handed basis.
     for (name, v) in [
         ("UpAxis", 1),
         ("UpAxisSign", 1),
         ("FrontAxis", 2),
-        ("FrontAxisSign", -1),
+        ("FrontAxisSign", 1),
         ("CoordAxis", 0),
         ("CoordAxisSign", 1),
         ("OriginalUpAxis", 1),
@@ -541,4 +548,33 @@ pub fn export(p: &Prepared<'_>) -> Result<Vec<u8>> {
         .into_inner();
     checkpoint()?;
     Ok(bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, atomic::AtomicBool};
+
+    use super::*;
+
+    #[test]
+    fn output_limit_precedes_allocation_and_cancellation_precedes_writes() {
+        let mut sink = Sink(Cursor::new(Vec::new()));
+        sink.seek(SeekFrom::Start(MAX_BYTES as u64)).unwrap();
+        assert_eq!(
+            sink.write(&[1]).unwrap_err().kind(),
+            io::ErrorKind::OutOfMemory
+        );
+        assert!(sink.0.get_ref().is_empty());
+        let flag = Arc::new(AtomicBool::new(true));
+        forge_tree_doc::cancellation::with_cancellation(flag, || {
+            sink.seek(SeekFrom::Start(0)).unwrap();
+            assert_eq!(
+                sink.write(&[1]).unwrap_err().kind(),
+                io::ErrorKind::Interrupted
+            );
+            Ok::<(), Diagnostic>(())
+        })
+        .unwrap();
+        assert!(sink.0.get_ref().is_empty());
+    }
 }

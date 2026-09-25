@@ -31,3 +31,5 @@
 
 - Update this contract and `docs/README.md` when a documentation destination, public label, accessibility contract, or package ownership changes.
 - Update `docs/apps-public-docs-foundation.md` when the shared selector changes the consolidated documentation surface.
+
+React Forge now has sixteen clean guide routes, including unreleased `/react-forge/glb` and `/react-forge/fbx`. The shared selector destination remains `/react-forge/`; its active state and existing documentation hosts are unchanged. See `apps-react-forge-docs-foundation.md` for availability and validation boundaries.

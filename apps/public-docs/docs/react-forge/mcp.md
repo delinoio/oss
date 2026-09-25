@@ -50,3 +50,7 @@ export default async function task({ session, state, data, signal }: McpTaskCont
 For Figma, `react_forge_refresh` reads selected pages, nodes, or resources; `react_forge_inspect` reads cached targets. `react_forge_publish` explicitly applies changes remotely and can save a `.figma.json` receipt. Inspect a partial or unknown receipt, including an error result's attached receipt, before another publish. `react_forge_inspect` with `view: "receipt"` retrieves the latest receipt without writing. See [Figma](/react-forge/figma).
 
 Sessions exist only in the server process. Disconnect, shutdown, or worker loss ends them; restart does not replay or restore work. Closing and disposal cancel owned work, but a callback that ignores cancellation or blocks synchronously cannot be forcibly interrupted per tool call. Task output is suppressed to protect protocol stdout and avoid logging document content; use structured results and safe diagnostics for troubleshooting. Caller code runs with normal permissions and is not sandboxed.
+
+## Unreleased static 3D extension
+
+[GLB](/react-forge/glb) and [FBX](/react-forge/fbx) creation are documented as an unreleased extension, absent from npm 0.1.1. They use SceneSession with registered geometry/textures, explicit file export, and revision-bound world-space bounds. Existing-file editing, animation and rigging are excluded. The FBX material profile targets Blender 4.5; local verification does not establish results on other hosts or FBX applications.

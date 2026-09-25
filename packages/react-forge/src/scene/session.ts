@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { v7 } from "uuid";
-import { ForgeError, checkSignal } from "../errors.js";
+import { ForgeError, checkSignal, abortable } from "../errors.js";
 import { digest, publish, readSource, withOutputReservation } from "../files.js";
 import { processDocument, validateSceneAsset } from "../native.js";
 import { RenderRoot } from "../renderer.js";
@@ -37,7 +37,7 @@ export class SceneSession {
   private track<T>(stage: Stage, work: (context: { revision: number }) => Promise<T>): Promise<T> {
     this.signal(); const start = performance.now(); const context = { revision: this.revision };
     const task = (async () => { let code: ErrorCode | undefined;
-      try { return await work(context); } catch (e) { code = e instanceof ForgeError ? e.code : ErrorCode.Render; throw e; }
+      try { return await work(context); } catch (e) { code = e instanceof ForgeError ? e.code : ErrorCode.Render; if (e instanceof ForgeError) throw new ForgeError(e.code, e.message, { ...e.context, stage, format: this.format, revision: context.revision }); throw e; }
       finally { const d = Object.freeze({ source: "javascript" as const, stage, format: this.format, revision: context.revision, durationMs: performance.now() - start, code }); for (const f of this.listeners) { try { f(d); } catch { /* Observers cannot change outcomes. */ } } }
     })();
     this.operations.add(task); void task.finally(() => this.operations.delete(task)).catch(() => {}); return task;
@@ -47,6 +47,7 @@ export class SceneSession {
 
   private register(kind: SceneAssetKind, source: AssetSource, signal?: AbortSignal): Promise<GeometryHandle | TextureHandle> {
     const combined = this.signal(signal); checkSignal(combined);
+    if (!(source instanceof Uint8Array) && (!source || typeof source !== "object" || typeof source.path !== "string")) throw new ForgeError(ErrorCode.MalformedInput, "Scene assets require bytes or an explicit local path.");
     const reserve = source instanceof Uint8Array ? source.byteLength : 0;
     if (reserve > limits.geometryBytes || this.bytes + this.reserved + reserve > limits.sceneBytes) return Promise.reject(new ForgeError(ErrorCode.ResourceLimit, "Scene assets exceed their byte limit."));
     this.reserved += reserve;
@@ -69,6 +70,7 @@ export class SceneSession {
   registerTexture(source: AssetSource, options: { signal?: AbortSignal } = {}): Promise<TextureHandle> { return this.register(SceneAssetKind.Texture, source, options.signal) as Promise<TextureHandle>; }
   registerGeometry(input: GeometryInput, options: { signal?: AbortSignal } = {}): Promise<GeometryHandle> {
     this.signal(options.signal); checkSignal(options.signal);
+    if (!input || typeof input !== "object") throw new ForgeError(ErrorCode.MalformedInput, "Geometry requires typed position, normal and index arrays.");
     const arrays = [input.positions, input.normals, ...(input.tangents ? [input.tangents] : []), ...(input.uv ? [input.uv] : []), input.indices];
     const vertices = input.positions?.length / 3;
     if (Object.keys(input).some(k => !["positions", "normals", "tangents", "uv", "indices"].includes(k)) || !Number.isInteger(vertices) || vertices < 3 || !(input.positions instanceof Float32Array) || !(input.normals instanceof Float32Array) || !(input.indices instanceof Uint32Array) || input.normals.length !== vertices * 3 || (input.uv && (!(input.uv instanceof Float32Array) || input.uv.length !== vertices * 2)) || (input.tangents && (!(input.tangents instanceof Float32Array) || input.tangents.length !== vertices * 4))) throw new ForgeError(ErrorCode.MalformedInput, "Geometry requires matching typed position, normal, tangent and UV arrays.");
@@ -93,7 +95,7 @@ export class SceneSession {
   inspect(): Inspection { return this.inspection(this.model()); }
   private async pinned(signal: AbortSignal) {
     for (;;) {
-      checkSignal(signal); await this.root.settled(signal); await Promise.all([...this.pending]); checkSignal(signal);
+      checkSignal(signal); await this.root.settled(signal); await abortable(Promise.all([...this.pending]), signal); checkSignal(signal);
       if (this.root.isSettled() && this.pending.size === 0) break;
     }
     const model = this.model();

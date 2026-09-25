@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>AURA · React Forge GLB verification</title>
+<style>
+:root { color-scheme: dark; font-family: system-ui, sans-serif; background: #182128; color: #edf0ee; }
+body { margin: 0; } header { padding: 28px 36px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #47535b; }
+h1 { font-size: 25px; font-weight: 450; letter-spacing: .12em; margin: 0 0 5px; } p { color: #aebac2; margin: 0; font-size: 13px; }
+nav, .tools { display: flex; gap: 8px; flex-wrap: wrap; } button { cursor: pointer; border: 1px solid #687983; border-radius: 5px; padding: 10px 15px; background: #25323b; color: inherit; font: inherit; font-size: 13px; }
+button[aria-pressed=true] { background: #e2c4a0; color: #172028; border-color: #e2c4a0; } button:focus-visible { outline: 3px solid #83dbdb; outline-offset: 3px; }
+main { position: relative; height: calc(100vh - 180px); min-height: 380px; } canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.tools { position: absolute; bottom: 20px; left: 36px; } footer { padding: 16px 36px; display: flex; justify-content: space-between; gap: 20px; font-size: 13px; } #status { color: #9cd8cb; }
+</style></head><body>
+<header><div><h1>AURA / OBJECT STUDIES</h1><p>React Forge · exported GLB · independent Three.js viewer</p></div><nav aria-label="Product selection"><button data-product="studio" aria-pressed="true">Studio</button><button data-product="headphones" aria-pressed="false">Headphones</button><button data-product="dac" aria-pressed="false">DAC / amp</button><button data-product="stand" aria-pressed="false">Stand</button></nav></header>
+<main><canvas aria-label="Interactive 3D model. Drag to rotate and scroll to zoom."></canvas><div class="tools"><button id="rotate">Rotate 45°</button><button id="zoom">Zoom in</button><button id="reset">Reset view</button></div></main>
+<footer><span id="status" role="status">Loading actual exported file…</span><span>Drag to orbit · Scroll to zoom</span></footer><script type="module" src="/viewer.js"></script></body></html>

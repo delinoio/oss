@@ -44,3 +44,5 @@ The `/linux-packages` clean route owns shared key verification, APT/DNF registra
 The canonical public-docs production origin is `https://oss.delino.io`.
 
 The Cloudflare Pages `public-docs` project deploys `main` automatically with the build and custom-domain settings recorded in `apps-public-docs-foundation.md`. The project is the only production documentation publisher for the consolidated root and subpaths.
+
+React Forge now has sixteen clean guide routes, including unreleased `/react-forge/glb` and `/react-forge/fbx`. The shared selector destination remains `/react-forge/`; its active state and existing documentation hosts are unchanged. See `apps-react-forge-docs-foundation.md` for availability and validation boundaries.

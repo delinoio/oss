@@ -9,7 +9,8 @@ import test from "node:test";
 import { connect } from "./mcp/client.js";
 import packageManifest from "../package.json" with { type: "json" };
 const exec = promisify(execFile);
-const cases = [["presentation", "pptx"], ["document", "docx"], ["workbook", "xlsx"], ["pdf", "pdf"]] as const;
+const magic = { pptx: "PK", docx: "PK", xlsx: "PK", pdf: "%PDF-", glb: "glTF", fbx: "Kaydara FBX Binary" };
+const cases = [["presentation", "pptx"], ["document", "docx"], ["workbook", "xlsx"], ["pdf", "pdf"], ["scene-glb", "glb"], ["scene-fbx", "fbx"]] as const;
 
 test("scoped workspace archive installs and its CLI generates local formats and an offline Figma receipt", async () => {
   const directory = await mkdtemp(join(tmpdir(), "react-forge installed-"));
@@ -34,9 +35,9 @@ test("scoped workspace archive installs and its CLI generates local formats and 
       const output = join(directory, `report.${format}`);
       const { stdout } = await exec(process.execPath, [cli, "run", join(directory, "tasks", `${task}.tsx`), "--output", output, "--json"], { cwd: directory, env });
       const result = JSON.parse(stdout); assert.equal(result.ok, true); assert.equal(result.format, format);
-      const bytes = await readFile(output); assert.equal(bytes.subarray(0, format === "pdf" ? 5 : 2).toString(), format === "pdf" ? "%PDF-" : "PK");
+      const bytes = await readFile(output); assert.equal(bytes.subarray(0, magic[format].length).toString(), magic[format]);
     }
-    assert.ok(manifest.exports["./figma"]);
+    for (const entry of ["./figma", "./glb", "./fbx"]) assert.ok(manifest.exports[entry]);
     const fake=await readFile(join(packageRoot,"tests","figma","fake.ts"),"utf8");
     await writeFile(join(directory,"tasks","fake-figma.ts"),fake.replace(/import[^;]+;/,"const CallSafety={Read:'read',Write:'write'};"));
     await writeFile(join(directory,"tasks","figma.tsx"),`import React from 'react';import {FigmaSession} from '@delino/react-forge';import {Page,Text} from '@delino/react-forge/figma';import {FakeConnection} from './fake-figma.js';export default async function(){const session=new FigmaSession({fileName:'Fixture',planKey:'team::1'},new FakeConnection());await session.render(<Page name="Installed"><Text>Editable</Text></Page>);return session;}`);
@@ -51,9 +52,13 @@ test("scoped workspace archive installs and its CLI generates local formats and 
         const created = await mcp.call("execute", { entry: `tasks/${task}.tsx` });
         const snapshot = await mcp.call("inspect", { sessionId: created.sessionId });
         assert.ok(snapshot.targets.length > 0);
+        if (format === "glb" || format === "fbx") {
+          const measured = await mcp.call("measure", { sessionId: created.sessionId, nodeId: snapshot.targets[0].nodeId, revision: snapshot.revision });
+          assert.equal(measured.geometry.coordinateSpace, "world");
+        }
         await mcp.call("export", { sessionId: created.sessionId, output: `mcp.${format}` });
         const bytes = await readFile(join(directory, `mcp.${format}`));
-        assert.equal(bytes.subarray(0, format === "pdf" ? 5 : 2).toString(), format === "pdf" ? "%PDF-" : "PK");
+        assert.equal(bytes.subarray(0, magic[format].length).toString(), magic[format]);
         await mcp.call("close", { sessionId: created.sessionId });
       }
       const figma = await mcp.call("execute", { entry: "tasks/figma.tsx" });

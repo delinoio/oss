@@ -438,15 +438,13 @@ pub fn prepare<'a>(scene: &'a Scene, assets: &'a Assets) -> Result<Prepared<'a>>
                     outer_cone,
                     ..
                 } = &node.kind
-                {
-                    if !inner_cone.is_finite()
+                    && (!inner_cone.is_finite()
                         || !outer_cone.is_finite()
                         || *inner_cone < 0.0
                         || inner_cone >= outer_cone
-                        || *outer_cone > std::f64::consts::FRAC_PI_2
-                    {
-                        return Err(invalid("light"));
-                    }
+                        || *outer_cone > std::f64::consts::FRAC_PI_2)
+                {
+                    return Err(invalid("light"));
                 }
             }
         }
@@ -597,4 +595,70 @@ pub fn fbx_texture(bytes: &[u8], m: &Material, role: TextureRole) -> Result<Vec<
         }
     }
     png(&image)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn packed_scalar_channels_and_baked_color_factors_keep_their_transfer_space() {
+        let scene: Scene = serde_json::from_value(serde_json::json!({
+            "document_id": "01956e48-8f55-7000-8000-000000000001",
+            "nodes": [{"id":"01956e48-8f55-7000-8000-000000000002", "type":"group"}]
+        }))
+        .unwrap();
+        let color = image::RgbaImage::from_pixel(1, 1, image::Rgba([128, 64, 32, 128]));
+        let rough = image::RgbaImage::from_pixel(1, 1, image::Rgba([200, 7, 9, 255]));
+        let bytes = png(&color).unwrap();
+        let assets = Assets::from([
+            ("metal".into(), bytes.clone()),
+            ("rough".into(), png(&rough).unwrap()),
+        ]);
+        let prepared = prepare(&scene, &assets).unwrap();
+        let material = Material {
+            base_color: [0.5, 1.0, 1.0, 0.5],
+            metallic: 0.5,
+            roughness: 0.25,
+            alpha_mode: AlphaMode::Blend,
+            metallic_texture: Some("metal".into()),
+            roughness_texture: Some("rough".into()),
+            ..Default::default()
+        };
+        let packed = decode(&metallic_roughness(&prepared, &material).unwrap().unwrap()).unwrap();
+        assert_eq!(packed.get_pixel(0, 0).0, [255, 200, 128, 255]);
+        let baked =
+            decode(&fbx_texture(&bytes, &material, TextureRole::BaseColor).unwrap()).unwrap();
+        assert_eq!(baked.get_pixel(0, 0).0, [92, 64, 32, 64]);
+        let scalar =
+            decode(&fbx_texture(&bytes, &material, TextureRole::Metallic).unwrap()).unwrap();
+        assert_eq!(scalar.get_pixel(0, 0).0, [64, 64, 64, 255]);
+        let opaque = Material {
+            alpha_mode: AlphaMode::Opaque,
+            ..material
+        };
+        assert_eq!(
+            decode(&fbx_texture(&bytes, &opaque, TextureRole::BaseColor).unwrap())
+                .unwrap()
+                .get_pixel(0, 0)[3],
+            255
+        );
+        assert_eq!(decode(&bytes).unwrap(), color);
+    }
+
+    #[test]
+    fn malformed_transport_lengths_flags_and_nonunit_vectors_are_rejected() {
+        let mut bytes = b"FSG1".to_vec();
+        for n in [0u32, u32::MAX, u32::MAX] {
+            bytes.extend_from_slice(&n.to_le_bytes());
+        }
+        assert!(geometry(&bytes).is_err());
+        bytes[4..8].copy_from_slice(&4u32.to_le_bytes());
+        assert!(geometry(&bytes).is_err());
+        bytes[4..8].copy_from_slice(&0u32.to_le_bytes());
+        bytes[8..12].copy_from_slice(&3u32.to_le_bytes());
+        bytes[12..16].copy_from_slice(&3u32.to_le_bytes());
+        bytes.resize(16 + 3 * 24 + 3 * 4, 0);
+        assert!(geometry(&bytes).is_err());
+    }
 }

@@ -16,3 +16,7 @@ Local document work runs on Node.js 24 on macOS, Windows, and glibc Linux, on x6
 Exports are explicit. Sessions exist in memory until disposed; starting a new process does not restore them. React Forge does not fetch arbitrary asset URLs or require Office, LibreOffice, Python, or a conversion service at runtime. See [limits and troubleshooting](/react-forge/limits-and-troubleshooting) and [release and validation status](/react-forge/releases) before adopting a workflow.
 
 React Forge is Apache-2.0 licensed. Report problems through [Delino OSS issues](https://github.com/delinoio/oss/issues).
+
+## Unreleased static 3D extension
+
+[GLB](/react-forge/glb) and [FBX](/react-forge/fbx) creation are documented as an unreleased extension, absent from npm 0.1.1. They use SceneSession with registered geometry/textures, explicit file export, and revision-bound world-space bounds. Existing-file editing, animation and rigging are excluded. The FBX material profile targets Blender 4.5; local verification does not establish results on other hosts or FBX applications.

@@ -70,7 +70,9 @@
     "package:main": "node scripts/package.mjs main",
     "package:native": "node scripts/package.mjs native",
     "package:verify": "node scripts/package.mjs verify",
-    "test:package": "node scripts/install-smoke.mjs"
+    "test:package": "node scripts/install-smoke.mjs",
+    "test:scenes": "node scripts/render-scenes.mjs",
+    "example:scenes": "node --import tsx scripts/generate-scene-examples.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.1",
