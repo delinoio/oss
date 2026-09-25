@@ -10,7 +10,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
 
-const dropSearchFixtureSchema = `DROP TABLE response_usage; DROP TRIGGER transcript_search_insert; DROP TRIGGER transcript_search_delete; DROP TRIGGER transcript_search_update; DROP TABLE transcript_fts; DROP TABLE transcript_search; DROP INDEX search_execution_job; DROP INDEX search_epoch; `
+const dropSearchFixtureSchema = dropPricingFixtureSchema + `DROP TABLE response_usage; DROP TRIGGER transcript_search_insert; DROP TRIGGER transcript_search_delete; DROP TRIGGER transcript_search_update; DROP TABLE transcript_fts; DROP TABLE transcript_search; DROP INDEX search_execution_job; DROP INDEX search_epoch; `
 
 type searchFixture struct{ session, message, account, agent, project, execution domain.ID }
 

@@ -77,3 +77,5 @@
 - DeliDev schema generation includes `packages/delidev-api-client/src/gen` TypeScript/Connect Query output. Keep root freshness, Turbo source/output tracking and the shared protocol CI client/real-Go-server checks synchronized; never handwrite generated descriptors or move business authority into the client.
 
 - DeliDev `UsageService.GetUsageSummary` exposes bounded owner/client-only exact-response subtotals with original attribution, decimal-string counters, separate measured/unavailable counts and explicit coverage/cost enums. No native response digest, thread/turn identity or prompt enters the aggregate. Current labels are optional; reads recheck authorization and never return partial totals after capacity failure.
+
+- DeliDev pricing RPCs are owner/client-only with actor-bound exact receipts and independent pricing revisions. Keep nullable decimal rates, immutable historical source/date/currency/mode/exclusions, separate per-currency amounts and category evidence. A retry returns its accepted version without reselecting it, and estimates never establish actual spend or complete native telemetry.

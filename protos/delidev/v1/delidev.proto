@@ -896,6 +896,9 @@ message ListActivityResponse {
 
 service UsageService {
   rpc GetUsageSummary(GetUsageSummaryRequest) returns (GetUsageSummaryResponse);
+  rpc GetModelPricing(GetModelPricingRequest) returns (GetModelPricingResponse);
+  rpc GetPricingVersion(GetPricingVersionRequest) returns (GetPricingVersionResponse);
+  rpc SetModelPricing(SetModelPricingRequest) returns (SetModelPricingResponse);
 }
 message GetUsageSummaryRequest {
   // Half-open server retention-time range. Zero defaults to the last 30 days.
@@ -938,6 +941,7 @@ message UsageGroup {
   string account_name = 9;
   string provider_name = 10;
   string model_name = 11;
+  EstimateTotals estimates = 12;
 }
 enum UsageCoverage {
   USAGE_COVERAGE_UNSPECIFIED = 0;
@@ -947,6 +951,7 @@ enum UsageCoverage {
 enum UsageCostState {
   USAGE_COST_STATE_UNSPECIFIED = 0;
   USAGE_COST_STATE_UNAVAILABLE = 1;
+  USAGE_COST_STATE_KNOWN_SUBTOTAL = 2;
 }
 message GetUsageSummaryResponse {
   int64 from_unix_ms = 1;
@@ -959,4 +964,89 @@ message GetUsageSummaryResponse {
   // Accepted in this time range with no exact response retained in the range.
   // This does not assert that those executions made no calls.
   uint32 accepted_executions_without_response = 8;
+  EstimateTotals estimates = 9;
+  repeated PricingUsage pricing = 10;
+}
+
+// User-declared token prices only. No rate or result establishes actual spend.
+enum InputPricingMode {
+  INPUT_PRICING_MODE_UNSPECIFIED = 0;
+  INPUT_PRICING_MODE_UNIFORM = 1;
+  INPUT_PRICING_MODE_CACHED_DISCOUNT = 2;
+}
+message TokenPricing {
+  string currency = 1;
+  string source = 2;
+  string as_of = 3;
+  InputPricingMode input_mode = 4;
+  // Decimal currency units per million tokens, at most nine fractional digits.
+  // Omitted is unavailable; an explicit "0" is a zero rate.
+  optional string input_per_million = 5;
+  optional string cached_input_per_million = 6;
+  optional string output_per_million = 7;
+  repeated string exclusions = 8;
+}
+message PricingVersion {
+  string id = 1;
+  string model_id = 2;
+  string provider_id = 3;
+  uint64 revision = 4;
+  int64 created_at_unix_ms = 5;
+  TokenPricing basis = 6;
+}
+message GetModelPricingRequest {
+  string model_id = 1;
+}
+message GetModelPricingResponse {
+  uint64 model_revision = 2;
+  // Absent means no basis has been configured for the existing model.
+  PricingVersion pricing = 1;
+}
+message GetPricingVersionRequest {
+  string id = 1;
+}
+message GetPricingVersionResponse {
+  PricingVersion pricing = 1;
+}
+message SetModelPricingRequest {
+  // The model ID and independent pricing revision; zero creates its first basis.
+  Mutation mutation = 1;
+  TokenPricing basis = 2;
+  // Bind the model/provider selection read with GetModelPricing.
+  uint64 expected_model_revision = 3;
+}
+message SetModelPricingResponse {
+  // Immutable accepted basis, including on a retry after a later price change.
+  PricingVersion pricing = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+
+message CurrencyEstimate {
+  string currency = 1;
+  // Exact decimal currency units. Empty is unavailable, not zero.
+  string known_amount = 2;
+  uint32 complete_responses = 3;
+  uint32 partial_responses = 4;
+  uint32 unavailable_responses = 5;
+}
+message EstimateTotals {
+  repeated CurrencyEstimate currencies = 1;
+  uint32 unpriced_responses = 2;
+}
+message EstimateMeasure {
+  string known_amount = 1;
+  string known_tokens = 2;
+  uint32 priced_responses = 3;
+  uint32 missing_usage_responses = 4;
+  uint32 missing_price_responses = 5;
+  uint32 unsupported_breakdown_responses = 6;
+  uint32 not_applicable_responses = 7;
+}
+message PricingUsage {
+  PricingVersion pricing = 1;
+  CurrencyEstimate totals = 2;
+  EstimateMeasure input = 3;
+  EstimateMeasure cached_input = 4;
+  EstimateMeasure output = 5;
 }

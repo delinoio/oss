@@ -21,6 +21,8 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/worker"
+	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
+	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 )
 
 func TestManualNativeCodexUsesRegisteredServerRelay(t *testing.T) {
@@ -58,6 +60,11 @@ func TestManualNativeCodexUsesRegisteredServerRelay(t *testing.T) {
 	}))
 	defer upstream.Close()
 	f := publicationFixtureFromAuthority(t, newAuthorityFixture(t, upstream.URL))
+	usageClient := delidevv1connect.NewUsageServiceClient(f.http.Client(), f.http.URL)
+	selectedPrice, err := usageClient.SetModelPricing(ctx, ownerRequest(f.service.Identity, &pb.SetModelPricingRequest{Mutation: &pb.Mutation{Id: string(f.input.Configuration.ModelID), RequestId: string(domain.NewID())}, ExpectedModelRevision: 1, Basis: publicPrice("USD")}))
+	if err != nil {
+		t.Fatal("native fixture price configuration", err)
+	}
 	f.registerGrant(t)
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -183,6 +190,10 @@ func TestManualNativeCodexUsesRegisteredServerRelay(t *testing.T) {
 	if err != nil || responseUsage.Record.AccountID != f.input.AccountID || responseUsage.Record.ConnectionID != f.input.ConnectionID || responseUsage.Record.ModelID != configuration.ModelID || responseUsage.Record.ThreadID != string(bound.Thread.ID) || responseUsage.Record.TurnID != string(turn.TurnID) || responseUsage.Record.Usage.Counts == nil || *responseUsage.Record.Usage.Counts.Input != 1 || *responseUsage.Record.Usage.Counts.Output != 1 || *responseUsage.Record.Usage.Counts.Total != 2 || responseUsage.Record.Usage.CostEvidence != domain.UsageCostMissing {
 		t.Fatal("native exact response usage lost its counters or original attribution", err)
 	}
+	summary, err := usageClient.GetUsageSummary(ctx, ownerRequest(f.service.Identity, &pb.GetUsageSummaryRequest{SessionId: string(f.input.SessionID)}))
+	if err != nil || summary.Msg.ActualCost != pb.UsageCostState_USAGE_COST_STATE_UNAVAILABLE || len(summary.Msg.Estimates.Currencies) != 1 || summary.Msg.Estimates.Currencies[0].KnownAmount != "0.0000125" || len(summary.Msg.Pricing) != 1 || summary.Msg.Pricing[0].Pricing.Id != selectedPrice.Msg.Pricing.Id {
+		t.Fatal("native usage lost its immutable separate estimate", err)
+	}
 	if err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -207,5 +218,5 @@ func TestManualNativeCodexUsesRegisteredServerRelay(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	t.Log("installed Codex -> registered server relay -> scripted local provider -> Worker durable event outbox -> server transcript and attributed native usage: every event in this simple turn handled, exact identities/counters, server-only key and owned closure; dispatch readiness simulated, tools/interactions/populated quota unimplemented")
+	t.Log("installed Codex -> registered server relay -> scripted local provider -> Worker durable event outbox -> server transcript, attributed native usage and immutable separate token-price estimate: every event in this simple turn handled, exact identities/counters, server-only key and owned closure; dispatch readiness simulated, other capability scopes unexercised")
 }

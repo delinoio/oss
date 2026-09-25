@@ -79,6 +79,9 @@ func (t *Tx) PutResponseUsage(id domain.ID, record domain.ResponseUsageRecord) (
 	if err != nil {
 		return "", false, storageError(err)
 	}
+	if err := t.snapshotResponseEstimate(id, record); err != nil {
+		return "", false, err
+	}
 	return id, false, nil
 }
 

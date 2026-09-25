@@ -2,6 +2,7 @@ package store
 
 import (
 	"sort"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
@@ -21,26 +22,27 @@ func (t *Tx) UsageSummary(f domain.UsageSelection) (domain.UsageSummary, error) 
 	if err := f.Validate(); err != nil {
 		return result, err
 	}
-	where := "created_at>=? AND created_at<?"
+	where := "r.created_at>=? AND r.created_at<?"
 	args := []any{f.From.UnixMilli(), f.Until.UnixMilli()}
 	for _, part := range []struct {
 		column string
 		value  domain.ID
 	}{{"session_id", f.SessionID}, {"project_id", f.ProjectID}, {"account_id", f.AccountID}, {"provider_id", f.ProviderID}, {"model_id", f.ModelID}} {
 		if part.value != "" {
-			where += " AND " + part.column + "=?"
+			where += " AND r." + part.column + "=?"
 			args = append(args, part.value)
 		}
 	}
 	if f.GeneralChat {
-		where += " AND project_id=''"
+		where += " AND r.project_id=''"
 	}
-	rows, err := t.tx.QueryContext(t.ctx, "SELECT body FROM response_usage WHERE "+where+" ORDER BY created_at,id LIMIT ?", append(args, maxUsageResponses+1)...)
+	rows, err := t.tx.QueryContext(t.ctx, `SELECT r.body,e.body,COALESCE(e.pricing_id,''),COALESCE(p.model_id,''),COALESCE(p.provider_id,''),COALESCE(p.revision,0),COALESCE(p.body,''),COALESCE(p.created_at,0) FROM response_usage r LEFT JOIN response_estimates e ON e.usage_id=r.id LEFT JOIN pricing_versions p ON p.id=e.pricing_id WHERE `+where+" ORDER BY r.created_at,r.id LIMIT ?", append(args, maxUsageResponses+1)...)
 	if err != nil {
 		return result, storageError(err)
 	}
 	groups := map[string]*domain.UsageGroup{}
 	observed := map[domain.ID]bool{}
+	prices := map[domain.ID]*domain.PricingUsage{}
 	// Close before the second query so SQLite never needs a nested statement on
 	// an active result cursor. Nothing is published until both reads succeed.
 	err = func() error {
@@ -49,13 +51,42 @@ func (t *Tx) UsageSummary(f domain.UsageSelection) (domain.UsageSummary, error) 
 			if result.Totals.Responses >= maxUsageResponses {
 				return usageReadLimit()
 			}
-			var body []byte
-			if err := rows.Scan(&body); err != nil {
+			var body, estimateBody, priceBody []byte
+			var price PricingVersion
+			var created int64
+			if err := rows.Scan(&body, &estimateBody, &price.ID, &price.ModelID, &price.ProviderID, &price.Revision, &priceBody, &created); err != nil {
 				return storageError(err)
 			}
 			var record domain.ResponseUsageRecord
 			if len(body) > 16<<10 || domain.Decode(body, &record) != nil || record.Validate() != nil {
 				return corrupt()
+			}
+			var estimate domain.ResponseEstimate
+			if len(estimateBody) > 16<<10 || domain.Decode(estimateBody, &estimate) != nil {
+				return corrupt()
+			}
+			var basis *PricingVersion
+			if price.ID != "" {
+				retained := prices[price.ID]
+				if retained == nil {
+					if len(prices) >= maxUsageGroups {
+						return usageReadLimit()
+					}
+					if price.ID.Validate() != nil || price.ModelID.Validate() != nil || price.ProviderID.Validate() != nil || price.Revision == 0 || len(priceBody) > 16<<10 || domain.Decode(priceBody, &price.Basis) != nil || price.Basis.Validate() != nil {
+						return corrupt()
+					}
+					price.CreatedAt = time.UnixMilli(created).UTC()
+					retained = &domain.PricingUsage{Pricing: price}
+					prices[price.ID] = retained
+				}
+				basis = &retained.Pricing
+			}
+			if err := validateResponseEstimate(estimate, record, basis); err != nil {
+				return err
+			}
+			result.Estimates.Add(estimate)
+			if basis != nil {
+				prices[basis.ID].Add(estimate)
 			}
 			observed[record.ExecutionID] = true
 			key := string(record.SessionID) + ":" + string(record.AccountID) + ":" + string(record.ProviderID) + ":" + string(record.ModelID)
@@ -71,6 +102,7 @@ func (t *Tx) UsageSummary(f domain.UsageSelection) (domain.UsageSummary, error) 
 				return corrupt()
 			}
 			group.Totals.Add(record.Usage.Counts)
+			group.Estimates.Add(estimate)
 			result.Totals.Add(record.Usage.Counts)
 		}
 		return storageError(rows.Err())
@@ -85,6 +117,14 @@ func (t *Tx) UsageSummary(f domain.UsageSelection) (domain.UsageSummary, error) 
 	sort.Strings(keys)
 	for _, key := range keys {
 		result.Groups = append(result.Groups, *groups[key])
+	}
+	priceIDs := make([]domain.ID, 0, len(prices))
+	for id := range prices {
+		priceIDs = append(priceIDs, id)
+	}
+	sort.Slice(priceIDs, func(i, j int) bool { return priceIDs[i] < priceIDs[j] })
+	for _, id := range priceIDs {
+		result.Pricing = append(result.Pricing, *prices[id])
 	}
 	result.AcceptedExecutionsWithoutResponse, err = t.usageMissingExecutions(f, observed)
 	if err != nil {

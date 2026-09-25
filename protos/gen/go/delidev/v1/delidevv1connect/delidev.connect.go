@@ -235,6 +235,15 @@ const (
 	// UsageServiceGetUsageSummaryProcedure is the fully-qualified name of the UsageService's
 	// GetUsageSummary RPC.
 	UsageServiceGetUsageSummaryProcedure = "/delidev.v1.UsageService/GetUsageSummary"
+	// UsageServiceGetModelPricingProcedure is the fully-qualified name of the UsageService's
+	// GetModelPricing RPC.
+	UsageServiceGetModelPricingProcedure = "/delidev.v1.UsageService/GetModelPricing"
+	// UsageServiceGetPricingVersionProcedure is the fully-qualified name of the UsageService's
+	// GetPricingVersion RPC.
+	UsageServiceGetPricingVersionProcedure = "/delidev.v1.UsageService/GetPricingVersion"
+	// UsageServiceSetModelPricingProcedure is the fully-qualified name of the UsageService's
+	// SetModelPricing RPC.
+	UsageServiceSetModelPricingProcedure = "/delidev.v1.UsageService/SetModelPricing"
 )
 
 // SystemServiceClient is a client for the delidev.v1.SystemService service.
@@ -2346,6 +2355,9 @@ func (UnimplementedActivityServiceHandler) ListActivity(context.Context, *connec
 // UsageServiceClient is a client for the delidev.v1.UsageService service.
 type UsageServiceClient interface {
 	GetUsageSummary(context.Context, *connect.Request[v1.GetUsageSummaryRequest]) (*connect.Response[v1.GetUsageSummaryResponse], error)
+	GetModelPricing(context.Context, *connect.Request[v1.GetModelPricingRequest]) (*connect.Response[v1.GetModelPricingResponse], error)
+	GetPricingVersion(context.Context, *connect.Request[v1.GetPricingVersionRequest]) (*connect.Response[v1.GetPricingVersionResponse], error)
+	SetModelPricing(context.Context, *connect.Request[v1.SetModelPricingRequest]) (*connect.Response[v1.SetModelPricingResponse], error)
 }
 
 // NewUsageServiceClient constructs a client for the delidev.v1.UsageService service. By default, it
@@ -2365,12 +2377,33 @@ func NewUsageServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(usageServiceMethods.ByName("GetUsageSummary")),
 			connect.WithClientOptions(opts...),
 		),
+		getModelPricing: connect.NewClient[v1.GetModelPricingRequest, v1.GetModelPricingResponse](
+			httpClient,
+			baseURL+UsageServiceGetModelPricingProcedure,
+			connect.WithSchema(usageServiceMethods.ByName("GetModelPricing")),
+			connect.WithClientOptions(opts...),
+		),
+		getPricingVersion: connect.NewClient[v1.GetPricingVersionRequest, v1.GetPricingVersionResponse](
+			httpClient,
+			baseURL+UsageServiceGetPricingVersionProcedure,
+			connect.WithSchema(usageServiceMethods.ByName("GetPricingVersion")),
+			connect.WithClientOptions(opts...),
+		),
+		setModelPricing: connect.NewClient[v1.SetModelPricingRequest, v1.SetModelPricingResponse](
+			httpClient,
+			baseURL+UsageServiceSetModelPricingProcedure,
+			connect.WithSchema(usageServiceMethods.ByName("SetModelPricing")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // usageServiceClient implements UsageServiceClient.
 type usageServiceClient struct {
-	getUsageSummary *connect.Client[v1.GetUsageSummaryRequest, v1.GetUsageSummaryResponse]
+	getUsageSummary   *connect.Client[v1.GetUsageSummaryRequest, v1.GetUsageSummaryResponse]
+	getModelPricing   *connect.Client[v1.GetModelPricingRequest, v1.GetModelPricingResponse]
+	getPricingVersion *connect.Client[v1.GetPricingVersionRequest, v1.GetPricingVersionResponse]
+	setModelPricing   *connect.Client[v1.SetModelPricingRequest, v1.SetModelPricingResponse]
 }
 
 // GetUsageSummary calls delidev.v1.UsageService.GetUsageSummary.
@@ -2378,9 +2411,27 @@ func (c *usageServiceClient) GetUsageSummary(ctx context.Context, req *connect.R
 	return c.getUsageSummary.CallUnary(ctx, req)
 }
 
+// GetModelPricing calls delidev.v1.UsageService.GetModelPricing.
+func (c *usageServiceClient) GetModelPricing(ctx context.Context, req *connect.Request[v1.GetModelPricingRequest]) (*connect.Response[v1.GetModelPricingResponse], error) {
+	return c.getModelPricing.CallUnary(ctx, req)
+}
+
+// GetPricingVersion calls delidev.v1.UsageService.GetPricingVersion.
+func (c *usageServiceClient) GetPricingVersion(ctx context.Context, req *connect.Request[v1.GetPricingVersionRequest]) (*connect.Response[v1.GetPricingVersionResponse], error) {
+	return c.getPricingVersion.CallUnary(ctx, req)
+}
+
+// SetModelPricing calls delidev.v1.UsageService.SetModelPricing.
+func (c *usageServiceClient) SetModelPricing(ctx context.Context, req *connect.Request[v1.SetModelPricingRequest]) (*connect.Response[v1.SetModelPricingResponse], error) {
+	return c.setModelPricing.CallUnary(ctx, req)
+}
+
 // UsageServiceHandler is an implementation of the delidev.v1.UsageService service.
 type UsageServiceHandler interface {
 	GetUsageSummary(context.Context, *connect.Request[v1.GetUsageSummaryRequest]) (*connect.Response[v1.GetUsageSummaryResponse], error)
+	GetModelPricing(context.Context, *connect.Request[v1.GetModelPricingRequest]) (*connect.Response[v1.GetModelPricingResponse], error)
+	GetPricingVersion(context.Context, *connect.Request[v1.GetPricingVersionRequest]) (*connect.Response[v1.GetPricingVersionResponse], error)
+	SetModelPricing(context.Context, *connect.Request[v1.SetModelPricingRequest]) (*connect.Response[v1.SetModelPricingResponse], error)
 }
 
 // NewUsageServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -2396,10 +2447,34 @@ func NewUsageServiceHandler(svc UsageServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(usageServiceMethods.ByName("GetUsageSummary")),
 		connect.WithHandlerOptions(opts...),
 	)
+	usageServiceGetModelPricingHandler := connect.NewUnaryHandler(
+		UsageServiceGetModelPricingProcedure,
+		svc.GetModelPricing,
+		connect.WithSchema(usageServiceMethods.ByName("GetModelPricing")),
+		connect.WithHandlerOptions(opts...),
+	)
+	usageServiceGetPricingVersionHandler := connect.NewUnaryHandler(
+		UsageServiceGetPricingVersionProcedure,
+		svc.GetPricingVersion,
+		connect.WithSchema(usageServiceMethods.ByName("GetPricingVersion")),
+		connect.WithHandlerOptions(opts...),
+	)
+	usageServiceSetModelPricingHandler := connect.NewUnaryHandler(
+		UsageServiceSetModelPricingProcedure,
+		svc.SetModelPricing,
+		connect.WithSchema(usageServiceMethods.ByName("SetModelPricing")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/delidev.v1.UsageService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case UsageServiceGetUsageSummaryProcedure:
 			usageServiceGetUsageSummaryHandler.ServeHTTP(w, r)
+		case UsageServiceGetModelPricingProcedure:
+			usageServiceGetModelPricingHandler.ServeHTTP(w, r)
+		case UsageServiceGetPricingVersionProcedure:
+			usageServiceGetPricingVersionHandler.ServeHTTP(w, r)
+		case UsageServiceSetModelPricingProcedure:
+			usageServiceSetModelPricingHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -2411,4 +2486,16 @@ type UnimplementedUsageServiceHandler struct{}
 
 func (UnimplementedUsageServiceHandler) GetUsageSummary(context.Context, *connect.Request[v1.GetUsageSummaryRequest]) (*connect.Response[v1.GetUsageSummaryResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.UsageService.GetUsageSummary is not implemented"))
+}
+
+func (UnimplementedUsageServiceHandler) GetModelPricing(context.Context, *connect.Request[v1.GetModelPricingRequest]) (*connect.Response[v1.GetModelPricingResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.UsageService.GetModelPricing is not implemented"))
+}
+
+func (UnimplementedUsageServiceHandler) GetPricingVersion(context.Context, *connect.Request[v1.GetPricingVersionRequest]) (*connect.Response[v1.GetPricingVersionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.UsageService.GetPricingVersion is not implemented"))
+}
+
+func (UnimplementedUsageServiceHandler) SetModelPricing(context.Context, *connect.Request[v1.SetModelPricingRequest]) (*connect.Response[v1.SetModelPricingResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.UsageService.SetModelPricing is not implemented"))
 }

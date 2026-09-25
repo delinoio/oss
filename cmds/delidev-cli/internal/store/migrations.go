@@ -42,7 +42,7 @@ func migrate(ctx context.Context, db *sql.DB, root string) error {
 	if version == SchemaVersion {
 		return nil
 	}
-	if version < 1 || version > 13 {
+	if version < 1 || version > 14 {
 		return domain.Fail(domain.RecoveryRequired, "No supported migration exists for this database.", "Preserve the original and use a matching server version.")
 	}
 	if err := migrationBackup(ctx, db, root); err != nil {
@@ -138,7 +138,12 @@ func migrate(ctx context.Context, db *sql.DB, root string) error {
 			return err
 		}
 	}
-	if _, err := tx.ExecContext(ctx, responseUsageSchema); err != nil {
+	if version < 14 {
+		if _, err := tx.ExecContext(ctx, responseUsageSchema); err != nil {
+			return storageError(err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, pricingSchema); err != nil {
 		return storageError(err)
 	}
 	return storageError(tx.Commit())

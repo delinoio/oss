@@ -8,3 +8,18 @@ import { UsageService } from "./delidev_pb.js";
  * @generated from rpc delidev.v1.UsageService.GetUsageSummary
  */
 export const getUsageSummary = UsageService.method.getUsageSummary;
+
+/**
+ * @generated from rpc delidev.v1.UsageService.GetModelPricing
+ */
+export const getModelPricing = UsageService.method.getModelPricing;
+
+/**
+ * @generated from rpc delidev.v1.UsageService.GetPricingVersion
+ */
+export const getPricingVersion = UsageService.method.getPricingVersion;
+
+/**
+ * @generated from rpc delidev.v1.UsageService.SetModelPricing
+ */
+export const setModelPricing = UsageService.method.setModelPricing;

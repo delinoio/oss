@@ -3,9 +3,10 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"time"
+
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
-	"time"
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -50,10 +51,19 @@ func (s *Service) GetUsageSummary(ctx context.Context, req *connect.Request[pb.G
 			return err
 		}
 		result.Totals = usageTotals(summary.Totals)
+		result.Estimates = estimateTotals(summary.Estimates)
+		for _, value := range summary.Estimates.Currencies {
+			if value.KnownAmount != "" {
+				result.EstimatedCost = pb.UsageCostState_USAGE_COST_STATE_KNOWN_SUBTOTAL
+			}
+		}
+		for _, value := range summary.Pricing {
+			result.Pricing = append(result.Pricing, pricingUsage(value))
+		}
 		result.AcceptedExecutionsWithoutResponse = summary.AcceptedExecutionsWithoutResponse
 		labels := map[domain.ID]string{}
 		for _, group := range summary.Groups {
-			row := &pb.UsageGroup{SessionId: string(group.SessionID), ProjectId: string(group.ProjectID), AccountId: string(group.AccountID), ProviderId: string(group.ProviderID), ModelId: string(group.ModelID), Totals: usageTotals(group.Totals)}
+			row := &pb.UsageGroup{SessionId: string(group.SessionID), ProjectId: string(group.ProjectID), AccountId: string(group.AccountID), ProviderId: string(group.ProviderID), ModelId: string(group.ModelID), Totals: usageTotals(group.Totals), Estimates: estimateTotals(group.Estimates)}
 			for _, part := range []struct {
 				kind   domain.Kind
 				id     domain.ID

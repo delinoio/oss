@@ -76,16 +76,19 @@ func (t *UsageTotals) Add(counts *NativeTokenCounts) {
 }
 
 type UsageGroup struct {
-	SessionID  ID          `json:"session_id"`
-	ProjectID  ID          `json:"project_id,omitempty"`
-	AccountID  ID          `json:"account_id"`
-	ProviderID ID          `json:"provider_id"`
-	ModelID    ID          `json:"model_id"`
-	Totals     UsageTotals `json:"totals"`
+	SessionID  ID             `json:"session_id"`
+	ProjectID  ID             `json:"project_id,omitempty"`
+	AccountID  ID             `json:"account_id"`
+	ProviderID ID             `json:"provider_id"`
+	ModelID    ID             `json:"model_id"`
+	Totals     UsageTotals    `json:"totals"`
+	Estimates  EstimateTotals `json:"estimates"`
 }
 
 type UsageSummary struct {
-	Totals                            UsageTotals  `json:"totals"`
-	Groups                            []UsageGroup `json:"groups"`
-	AcceptedExecutionsWithoutResponse uint32       `json:"accepted_executions_without_response"`
+	Estimates                         EstimateTotals `json:"estimates"`
+	Pricing                           []PricingUsage `json:"pricing"`
+	Totals                            UsageTotals    `json:"totals"`
+	Groups                            []UsageGroup   `json:"groups"`
+	AcceptedExecutionsWithoutResponse uint32         `json:"accepted_executions_without_response"`
 }

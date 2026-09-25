@@ -156,6 +156,13 @@ func Run(ctx context.Context, args []string, streams IO) int {
 	}
 	switch command {
 	case "usage":
+		if len(rest) > 0 && rest[0] == "pricing" {
+			if len(rest) > 1 && rest[1] == "set" {
+				ensureRequest(&o)
+			}
+			value, err := pricingCommand(ctx, c, o, rest[1:], streams.In)
+			return emit(value, err)
+		}
 		if len(rest) > 0 && rest[0] == "summary" {
 			value, err := usageCommand(ctx, c, rest)
 			return emit(value, err)
@@ -735,6 +742,9 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   schedule occurrence --id SCHEDULE --occurrence-id OCCURRENCE
   interaction respond --id ID --revision N --input FILE|-
   interaction approve --id ID --revision N --input FILE|-
+  usage pricing get --model-id ID
+  usage pricing version --id ID
+  usage pricing set --model-id ID --model-revision M --revision N --input PATH [--request-id ID]
   usage summary [--from RFC3339] [--until RFC3339] [--session-id ID] [--project-id ID | --general-chat] [--account-id ID] [--provider-id ID] [--model-id ID]
   activity list [--session-id ID] [--project-id ID] [--limit N] [--page-token TOKEN]
   search --query TEXT [--session-id ID] [--project-id ID] [--agent-id ID] [--account-id ID]
