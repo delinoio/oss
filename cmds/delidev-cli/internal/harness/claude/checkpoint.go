@@ -58,6 +58,7 @@ type sessionCheckpoint struct {
 	ProviderIDs        []string                       `json:"provider_identities"`
 	Owners             []domain.ID                    `json:"process_owners"`
 	Authorities        []string                       `json:"credential_sha256"`
+	ReadTools          []checkpointReadTool           `json:"inline_read_tools,omitempty"`
 }
 
 // RetainCheckpoint consumes an original closed handoff and returns bounded
@@ -86,6 +87,10 @@ func (closed *ClosedAPISession) RetainCheckpoint(ctx context.Context) ([]byte, C
 		return nil, CheckpointReference{}, continuationUnavailable()
 	}
 	cp := sessionCheckpoint{Version: 1, Configuration: checkpointConfiguration(s.config, s.serverOrigin), Session: s.config.SessionID, Owner: s.config.Process.OwnerID, Input: b.input, InputDigest: hex.EncodeToString(b.digest[:]), Turn: b.turnID, Command: b.command, Kind: b.terminal.Kind, Reason: b.terminal.Reason, Error: b.terminal.Error, ContinuationFailed: b.continuationFailed, Applied: s.initial, Transcript: closed.transcript, Messages: h.messages, Compactions: h.compactions, Actions: h.actions}
+	cp.ReadTools, err = b.closedReadTools()
+	if err != nil {
+		return nil, CheckpointReference{}, err
+	}
 	if s.compaction != nil {
 		cp.LastAction = s.compaction.status
 	}
@@ -175,6 +180,17 @@ func RestoreCheckpoint(ctx context.Context, config APIStreamConfig, raw []byte, 
 	for _, id := range cp.ProviderIDs {
 		b.content.seen["\x00"+id] = true
 	}
+	if len(cp.ReadTools) != 0 {
+		b.content.tools = map[string]nativeToolState{}
+	}
+	for _, tool := range cp.ReadTools {
+		input, _ := hex.DecodeString(tool.InputDigest)
+		metadata, _ := hex.DecodeString(tool.MetadataDigest)
+		state := nativeToolState{ownerInput: tool.Input, ownerTurn: tool.Turn, name: "Read", message: tool.Message, index: tool.Index, finished: true, streamed: true, caller: NativeToolCaller{Kind: tool.Caller}, read: &inlineReadEvidence{NativeID: tool.Result}}
+		copy(state.input[:], input)
+		copy(state.read.Metadata[:], metadata)
+		b.content.tools[tool.ID] = state
+	}
 	s := &APISession{config: config, initial: cp.Applied, current: b, inputs: map[domain.ID]bool{}, history: h, authorities: map[[sha256.Size]byte]bool{}, owners: map[domain.ID]bool{}, serverOrigin: origin}
 	for _, id := range cp.Inputs {
 		s.inputs[id] = true
@@ -246,6 +262,16 @@ func (cp sessionCheckpoint) validate(config APIStreamConfig, origin string, ref 
 	}
 	if ref.RequiresResume != (!terminal.Successful() || cp.ContinuationFailed || cp.LastAction == CompactFailed) || !checkpointIDs(cp.Inputs, maxStreamIdentities) || !slices.Contains(cp.Inputs, cp.Input) || !checkpointIDs(cp.Owners, maxStreamIdentities) || !slices.Contains(cp.Owners, cp.Owner) || !checkpointStrings(cp.NativeIDs, domain.MaxExecutionEvents, nativeUUID) || !slices.Contains(cp.NativeIDs, cp.Turn) || !slices.Contains(cp.NativeIDs, string(cp.Input)) || !checkpointStrings(cp.ProviderIDs, maxStreamIdentities, func(id string) bool { return domain.Text(id, "native provider message", 1024, true) == nil }) || len(cp.Authorities) == 0 || !checkpointStrings(cp.Authorities, maxStreamIdentities, validHistoryDigest) || len(cp.Messages) == 0 || len(cp.Messages) > maxStreamIdentities || len(cp.Compactions) > maxStreamIdentities || len(cp.Actions) > maxStreamIdentities || len(cp.Resumes) > maxStreamIdentities {
 		return historyUncertain()
+	}
+	if len(cp.ReadTools) > 4096 {
+		return historyUncertain()
+	}
+	results := map[string]bool{}
+	for i, tool := range cp.ReadTools {
+		if domain.Text(tool.ID, "native Read tool identity", 1024, true) != nil || (i > 0 && cp.ReadTools[i-1].ID >= tool.ID) || !slices.Contains(cp.Inputs, tool.Input) || !checkpointHasIdentity(cp.NativeIDs, tool.Turn) || !slices.Contains(cp.ProviderIDs, tool.Message) || !validHistoryDigest(tool.InputDigest) || !validHistoryDigest(tool.MetadataDigest) || !checkpointHasIdentity(cp.NativeIDs, tool.Result) || results[tool.Result] || (tool.Caller != "" && tool.Caller != DirectCaller) {
+			return historyUncertain()
+		}
+		results[tool.Result] = true
 	}
 	for _, message := range cp.Messages {
 		if !checkpointHasIdentity(cp.NativeIDs, message.NativeID) {

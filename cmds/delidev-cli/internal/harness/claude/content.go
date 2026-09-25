@@ -149,6 +149,7 @@ type nativeToolState struct {
 	finished              bool
 	streamed              bool
 	caller                NativeToolCaller
+	read                  *inlineReadEvidence
 }
 
 type contentState struct {
@@ -257,8 +258,16 @@ func (b *ExecutionBinding) observeContent(event StreamEvent) ([]ContentEvent, er
 			return nil, lifecycleUncertain()
 		}
 	}
+	// Restored checkpoints have no active streams but retain original message
+	// and tool ownership. Initializing a new stream must not erase that ledger.
 	if b.content.active == nil {
-		b.content = contentState{active: map[string]*providerMessageState{}, seen: map[string]bool{}, tools: map[string]nativeToolState{}}
+		b.content.active = map[string]*providerMessageState{}
+	}
+	if b.content.seen == nil {
+		b.content.seen = map[string]bool{}
+	}
+	if b.content.tools == nil {
+		b.content.tools = map[string]nativeToolState{}
 	}
 	switch event.Type {
 	case "stream_event":
@@ -835,6 +844,11 @@ func (b *ExecutionBinding) observeToolResult(raw []byte) ([]ContentEvent, error)
 	}
 	for id := range seen {
 		tool := b.content.tools[id]
+		if tool.name == "Read" && tool.parent == "" && len(events) == 1 && events[0].ToolResult.Text != nil && (events[0].ToolResult.Error == nil || !*events[0].ToolResult.Error) && !strings.Contains(*events[0].ToolResult.Text, "<persisted-output>") {
+			if digest, valid := inlineReadMetadata(envelope.Structured); valid {
+				tool.read = &inlineReadEvidence{NativeID: envelope.UUID, Metadata: digest}
+			}
+		}
 		tool.finished = true
 		b.content.tools[id] = tool
 		b.content.openTools--

@@ -16,9 +16,10 @@ import (
 type historyFilePhase string
 
 const (
-	historyScopePhase historyFilePhase = "scope"
-	historyReadPhase  historyFilePhase = "read"
-	historyProofPhase historyFilePhase = "proof"
+	historyScopePhase    historyFilePhase = "scope"
+	historyReadPhase     historyFilePhase = "read"
+	historyProofPhase    historyFilePhase = "proof"
+	historyReadToolPhase historyFilePhase = "inline-read-proof"
 )
 
 // ReadMainTranscript reads the fixed native session path without creating or
@@ -30,6 +31,9 @@ func ReadMainTranscript(ctx context.Context, home string, session domain.ID, wor
 }
 
 func readMainTranscript(ctx context.Context, home string, session domain.ID, workspace string, messages []HistoryMessageProof, compactions []HistoryCompactionProof, actions []HistoryCompactionActionProof, resumes []historyResumeProof, logger *slog.Logger) (observation TranscriptObservation, returned error) {
+	return readMainTranscriptWithReadTools(ctx, home, session, workspace, messages, compactions, actions, resumes, nil, logger)
+}
+func readMainTranscriptWithReadTools(ctx context.Context, home string, session domain.ID, workspace string, messages []HistoryMessageProof, compactions []HistoryCompactionProof, actions []HistoryCompactionActionProof, resumes []historyResumeProof, tools *[]checkpointReadTool, logger *slog.Logger) (observation TranscriptObservation, returned error) {
 	phase := historyScopePhase
 	defer func() { logHistoryRead(ctx, logger, session, false, phase, returned) }()
 	if session.Validate() != nil {
@@ -46,7 +50,17 @@ func readMainTranscript(ctx context.Context, home string, session domain.ID, wor
 		return observation, err
 	}
 	phase = historyProofPhase
-	return verifyResumedTranscript(ctx, raw, session, workspace, messages, nil, compactions, actions, resumes)
+	observation, err = verifyResumedTranscript(ctx, raw, session, workspace, messages, nil, compactions, actions, resumes)
+	if err != nil {
+		return observation, err
+	}
+	if tools != nil {
+		phase = historyReadToolPhase
+		if err := verifyReadToolHistory(ctx, raw, *tools, messages); err != nil {
+			return TranscriptObservation{}, err
+		}
+	}
+	return observation, nil
 }
 
 // ReadChildTranscript derives filenames from the independently retained native

@@ -54,11 +54,13 @@ func (s *APISession) CloseForContinuation(ctx context.Context) (*ClosedAPISessio
 	if s.reading || s.permissionChanged || b == nil || b.problem != nil || !b.accepted || !b.finished || b.terminal == nil || b.runState != RunIdle || b.continuing || b.pendingCompaction != nil || (s.compaction != nil && !s.compaction.settled) {
 		return nil, sessionBusy()
 	}
-	// Root-only closed conversations have a complete transcript path. Native
-	// child/tool auxiliary files and callback recovery still need their own
-	// joined evidence before they can cross this process-replacement boundary.
-	if s.history == nil || !s.owners[s.config.Process.OwnerID] || len(s.authorities) == 0 || len(b.tasks) != 0 || len(b.backgroundTasks) != 0 || len(b.interactions) != 0 || len(b.content.tools) != 0 || len(b.content.serverTools) != 0 || len(b.content.active) != 0 || b.content.openTools != 0 || b.interactionBytes != 0 || s.history.boundary != nil || s.history.action != "" || len(s.history.messages) == 0 {
+	// Inline text Read results can be joined to original main history. Other
+	// tools, child/auxiliary files and callbacks retain their separate gates.
+	if s.history == nil || !s.owners[s.config.Process.OwnerID] || len(s.authorities) == 0 || len(b.tasks) != 0 || len(b.backgroundTasks) != 0 || len(b.interactions) != 0 || len(b.content.serverTools) != 0 || len(b.content.active) != 0 || b.content.openTools != 0 || b.interactionBytes != 0 || s.history.boundary != nil || s.history.action != "" || len(s.history.messages) == 0 {
 		return nil, continuationUnavailable()
+	}
+	if _, err := b.closedReadTools(); err != nil {
+		return nil, err
 	}
 	if err := s.stream.inputBarrier(); err != nil {
 		return nil, err
@@ -79,7 +81,14 @@ func (s *APISession) CloseForContinuation(ctx context.Context) (*ClosedAPISessio
 
 func (s *APISession) readRetainedTranscript(ctx context.Context) (TranscriptObservation, error) {
 	h := s.history
-	observed, err := readMainTranscript(ctx, s.config.Home, s.config.SessionID, s.config.Workspace, h.messages, h.compactions, h.actions, h.resumes, s.config.Process.Logger)
+	if h == nil || s.current == nil {
+		return TranscriptObservation{}, historyUncertain()
+	}
+	tools, err := s.current.closedReadTools()
+	if err != nil {
+		return TranscriptObservation{}, err
+	}
+	observed, err := readMainTranscriptWithReadTools(ctx, s.config.Home, s.config.SessionID, s.config.Workspace, h.messages, h.compactions, h.actions, h.resumes, &tools, s.config.Process.Logger)
 	if err != nil {
 		return TranscriptObservation{}, err
 	}

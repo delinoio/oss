@@ -272,3 +272,25 @@ func TestContentChildOwnershipAndAggregateBound(t *testing.T) {
 		}
 	})
 }
+
+func TestContentInitializationPreservesRestoredMessageAndToolOwnership(t *testing.T) {
+	for _, duplicate := range []bool{false, true} {
+		t.Run(fmt.Sprint(duplicate), func(t *testing.T) {
+			b := contentFixture(t)
+			previous := nativeToolState{name: "Read", ownerInput: domain.NewID(), ownerTurn: string(domain.NewID()), finished: true}
+			b.content.seen = map[string]bool{"\x00old-provider": true}
+			b.content.tools = map[string]nativeToolState{"old-tool": previous}
+			message := "new-provider"
+			if duplicate {
+				message = "old-provider"
+			}
+			_, err := b.Observe(contentPartial(t, b, "", map[string]any{"type": "message_start", "message": contentMessage(message)}))
+			if (err != nil) != duplicate {
+				t.Fatal("restored provider identity was forgotten or fresh input was refused", err)
+			}
+			if !b.content.seen["\x00old-provider"] || b.content.tools["old-tool"] != previous {
+				t.Fatal("first new stream erased restored native ownership")
+			}
+		})
+	}
+}
