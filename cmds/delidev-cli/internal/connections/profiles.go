@@ -28,24 +28,30 @@ import (
 
 const MaxProfiles = 32
 
+// Retain deletion and mutation ownership without unbounded directory scans.
+const MaxRetainedProfiles = 256
+
 type State string
 
 const (
-	Pending State = "pending"
-	Paired  State = "paired"
+	Pending  State = "pending"
+	Paired   State = "paired"
+	Removing State = "removing"
+	Removed  State = "removed"
 )
 
 type Metadata struct {
-	Version   uint32    `json:"version"`
-	Revision  uint64    `json:"revision"`
-	ID        domain.ID `json:"id"`
-	Name      string    `json:"name"`
-	Endpoint  string    `json:"endpoint"`
-	ServerID  domain.ID `json:"server_id"`
-	PairingID domain.ID `json:"pairing_id"`
-	DeviceID  domain.ID `json:"device_id,omitempty"`
-	State     State     `json:"state"`
-	CreatedAt time.Time `json:"created_at"`
+	Version   uint32           `json:"version"`
+	Revision  uint64           `json:"revision"`
+	ID        domain.ID        `json:"id"`
+	Name      string           `json:"name"`
+	Endpoint  string           `json:"endpoint"`
+	ServerID  domain.ID        `json:"server_id"`
+	PairingID domain.ID        `json:"pairing_id"`
+	DeviceID  domain.ID        `json:"device_id,omitempty"`
+	State     State            `json:"state"`
+	CreatedAt time.Time        `json:"created_at"`
+	Removal   *RemovalMetadata `json:"removal,omitempty"`
 }
 type Verification struct {
 	Profile         Metadata  `json:"profile"`
@@ -65,6 +71,7 @@ type record struct {
 	DeviceID  domain.ID          `json:"device_id,omitempty"`
 	CreatedAt time.Time          `json:"created_at"`
 	Renames   []renameReceipt    `json:"renames,omitempty"`
+	Removal   *removalReceipt    `json:"removal,omitempty"`
 }
 
 func invalid() error {
@@ -75,10 +82,16 @@ func validateGrant(grant worker.PairingCode) error {
 	if err := grant.Validate(); err != nil {
 		return err
 	}
+	return validateOrigin(grant.Endpoint)
+}
+func validateOrigin(endpoint string) error {
+	if err := rpc.ValidateEndpoint(endpoint); err != nil {
+		return err
+	}
 	// The desktop derives an exact CSP origin from this pin. Reject raw URL forms
 	// whose path/query/fragment normalization can differ between Go and WHATWG.
-	parsed, err := url.Parse(grant.Endpoint)
-	if err != nil || len(grant.Endpoint) > 2048 || parsed.RawPath != "" || parsed.ForceQuery || parsed.RawFragment != "" || parsed.Hostname() == "" || !safeAuthority(parsed) || strings.Contains(grant.Endpoint, "#") {
+	parsed, err := url.Parse(endpoint)
+	if err != nil || len(endpoint) > 2048 || parsed.RawPath != "" || parsed.ForceQuery || parsed.RawFragment != "" || parsed.Hostname() == "" || !safeAuthority(parsed) || strings.Contains(endpoint, "#") {
 		return domain.Fail(domain.InvalidArgument, "The pairing endpoint is not an unambiguous server origin.", "Create a grant using the exact HTTP loopback or HTTPS server origin, without escaped paths or an empty query.")
 	}
 	return nil
@@ -143,18 +156,28 @@ func load(root string, id domain.ID) (record, error) {
 			return value, err
 		}
 	}
-	raw, err := security.ReadPrivate(filepath.Join(profileRoot(root, id), "connection.json"), maxProfileRecordBytes)
+	raw, err := security.ReadPrivate(filepath.Join(profileRoot(root, id), "connection.json"), maxProfileRecordBytes+4096)
 	if err != nil {
 		return value, err
 	}
 	defer clear(raw)
-	if domain.Decode(raw, &value) != nil || value.Version != 1 || value.ID != id || validateName(value.Name) != nil || validateGrant(value.Grant) != nil || value.CreatedAt.IsZero() || (value.DeviceID != "" && value.DeviceID.Validate() != nil) || value.validateRenames() != nil {
+	if domain.Decode(raw, &value) != nil || value.Version != 1 || value.ID != id || validateName(value.Name) != nil || value.validateGrantState() != nil || value.CreatedAt.IsZero() || (value.DeviceID != "" && value.DeviceID.Validate() != nil) || value.validateRenames() != nil || (value.Removal == nil && len(raw) > maxProfileRecordBytes) {
 		return record{}, invalid()
 	}
 	return value, nil
 }
 func inspect(root string, value record) (Metadata, error) {
 	metadata := Metadata{Version: 1, Revision: uint64(len(value.Renames)) + 1, ID: value.ID, Name: value.displayName(), Endpoint: value.Grant.Endpoint, ServerID: value.Grant.ServerID, PairingID: value.Grant.PairingID, State: Pending, CreatedAt: value.CreatedAt}
+	if value.Removal != nil {
+		metadata.Revision++
+		metadata.DeviceID = value.DeviceID
+		metadata.State = Removing
+		if value.Removal.Complete {
+			metadata.State = Removed
+		}
+		metadata.Removal = &RemovalMetadata{RequestID: value.Removal.RequestID, ExpectedRevision: value.Removal.ExpectedRevision}
+		return metadata, nil
+	}
 	credential, err := worker.LoadCredential(filepath.Join(profileRoot(root, value.ID), "client"))
 	if errors.Is(err, os.ErrNotExist) {
 		if value.DeviceID != "" {
@@ -181,8 +204,8 @@ func Inspect(root string, id domain.ID) (Metadata, error) {
 	}
 	return inspect(root, value)
 }
-func List(root string) ([]Metadata, error) {
-	result := []Metadata{}
+func records(root string) ([]record, error) {
+	result := []record{}
 	if err := security.CheckPrivateDir(root); errors.Is(err, os.ErrNotExist) {
 		return result, nil
 	} else if err != nil {
@@ -200,11 +223,11 @@ func List(root string) ([]Metadata, error) {
 	}
 	defer directory.Close()
 	// Read one beyond the cap instead of allocating an unbounded directory list.
-	entries, err := directory.ReadDir(MaxProfiles + 1)
+	entries, err := directory.ReadDir(MaxRetainedProfiles + 1)
 	if err != nil && !errors.Is(err, io.EOF) {
 		return nil, err
 	}
-	if len(entries) > MaxProfiles {
+	if len(entries) > MaxRetainedProfiles {
 		return nil, domain.Fail(domain.ResourceExhausted, "Too many saved server connections.", "Inspect the private connection inventory before adding another profile.")
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
@@ -213,11 +236,32 @@ func List(root string) ([]Metadata, error) {
 		if id.Validate() != nil || !entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
 			return nil, invalid()
 		}
-		value, err := Inspect(root, id)
+		value, err := load(root, id)
 		if err != nil {
 			return nil, err
 		}
 		result = append(result, value)
+	}
+	return result, nil
+}
+func List(root string) ([]Metadata, error) {
+	values, err := records(root)
+	if err != nil {
+		return nil, err
+	}
+	result := []Metadata{}
+	for _, value := range values {
+		if value.Removal != nil && value.Removal.Complete {
+			continue
+		}
+		profile, err := inspect(root, value)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, profile)
+	}
+	if len(result) > MaxProfiles {
+		return nil, invalid()
 	}
 	return result, nil
 }
@@ -256,6 +300,13 @@ func Pair(ctx context.Context, root string, id domain.ID, name string, grant wor
 		if err != nil {
 			return Metadata{}, err
 		}
+		retained, err := records(root)
+		if err != nil {
+			return Metadata{}, err
+		}
+		if len(retained) >= MaxRetainedProfiles {
+			return Metadata{}, domain.Fail(domain.ResourceExhausted, "The retained connection history limit is reached.", "Preserve original removal and Worker evidence; no history was discarded.")
+		}
 		if len(profiles) >= MaxProfiles {
 			return Metadata{}, domain.Fail(domain.ResourceExhausted, "The saved connection limit is reached.", "Use an existing server connection.")
 		}
@@ -274,6 +325,8 @@ func Pair(ctx context.Context, root string, id domain.ID, name string, grant wor
 		}
 	} else if err != nil {
 		return Metadata{}, err
+	} else if value.Removal != nil {
+		return Metadata{}, removed()
 	} else if value.Name != name || value.Grant != grant {
 		return Metadata{}, domain.Fail(domain.Conflict, "This connection ID already belongs to another pairing intent.", "Retry the original connection by ID; a new server or grant requires a new connection ID.")
 	}
@@ -301,6 +354,9 @@ func Retry(ctx context.Context, root string, id domain.ID) (Metadata, error) {
 	return pairExisting(ctx, root, value, false)
 }
 func pairExisting(ctx context.Context, root string, value record, fresh bool) (Metadata, error) {
+	if value.Removal != nil {
+		return Metadata{}, removed()
+	}
 	if value.DeviceID != "" {
 		return inspect(root, value)
 	}
@@ -362,7 +418,7 @@ func Verify(ctx context.Context, root string, id domain.ID) (Verification, error
 	if err != nil {
 		return Verification{}, err
 	}
-	if current != metadata {
+	if !reflect.DeepEqual(current, metadata) {
 		return Verification{}, invalid()
 	}
 	return Verification{Profile: metadata, ServerVersion: response.Msg.Version, ProtocolVersion: response.Msg.ProtocolVersion, ObservedAt: time.Now().UTC()}, nil

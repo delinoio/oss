@@ -90,7 +90,7 @@ func WorkerCredential(root string, id domain.ID) (worker.Credential, error) {
 	if err != nil {
 		return worker.Credential{}, err
 	}
-	if profile.State != Paired {
+	if profile.State != Paired && profile.State != Removing && profile.State != Removed {
 		return worker.Credential{}, invalid()
 	}
 	value, err := readRegistration(root, profile)

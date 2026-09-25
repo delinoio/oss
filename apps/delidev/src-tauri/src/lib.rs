@@ -16,12 +16,15 @@ use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::{Deserialize, Serialize};
 use zeroize::{Zeroize, Zeroizing};
 
-const OUTPUT_LIMIT: u64 = 64 << 10;
+// Covers 32 bounded profile records, including JSON-escaped display names.
+const OUTPUT_LIMIT: u64 = 128 << 10;
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(40);
 const ORIGINS: &str = "tauri://localhost,http://tauri.localhost,http://127.0.0.1:46311";
 
 mod connections;
-pub use connections::{SavedConnection, SavedConnectionState, canonical_id, connection_origin};
+pub use connections::{
+    RemovedConnections, SavedConnection, SavedConnectionState, canonical_id, connection_origin,
+};
 
 mod local_worker;
 pub use local_worker::{LocalWorkerAction, LocalWorkerState, LocalWorkerStatus};

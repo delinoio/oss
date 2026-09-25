@@ -102,7 +102,91 @@ impl Connector {
             }
             LocalWorkerAction::Status | LocalWorkerAction::Register => {}
         }
-        worker_status(self.run(&["worker".into(), "status".into()])?, &proof)
+        worker_status(
+            self.run(&["worker".into(), "status".into()])?,
+            &proof.server_id,
+            &proof.endpoint,
+            &proof.machine_id,
+        )
+    }
+
+    // Retained Workers have independent authority after the client is forgotten.
+    // Return only lifecycle metadata; this boundary never reads/delivers a token.
+    pub fn retained_worker(
+        &self,
+        id: &str,
+        action: LocalWorkerAction,
+        generation: Option<&str>,
+    ) -> Result<LocalWorkerStatus> {
+        canonical_id(id)?;
+        validate_action(action, generation)?;
+        if matches!(action, LocalWorkerAction::Register) {
+            return Err(NativeFailure::PermissionDenied);
+        }
+        let _guard = self.gate.try_lock().map_err(|_| NativeFailure::Busy)?;
+        tracing::info!(operation = "retained_worker", ?action, phase = "start");
+        let result = (|| {
+            let profile: SavedConnection = serde_json::from_value(self.run(&[
+                "connection".into(),
+                "inspect".into(),
+                "--id".into(),
+                id.into(),
+            ])?)
+            .map_err(|_| NativeFailure::InvalidEvidence)?;
+            profile.validate()?;
+            if profile.id != id
+                || !matches!(
+                    profile.state,
+                    SavedConnectionState::Removing | SavedConnectionState::Removed
+                )
+            {
+                return Err(NativeFailure::PermissionDenied);
+            }
+            let metadata: DeviceMetadata = serde_json::from_value(self.run(&[
+                "connection".into(),
+                "worker-inspect".into(),
+                "--id".into(),
+                id.into(),
+            ])?)
+            .map_err(|_| NativeFailure::InvalidEvidence)?;
+            if metadata.kind != DeviceType::Worker
+                || metadata.endpoint != profile.endpoint
+                || metadata.server_id != profile.server_id
+            {
+                return Err(NativeFailure::InvalidEvidence);
+            }
+            canonical_id(&metadata.machine_id)?;
+            let command = match action {
+                LocalWorkerAction::Status => "worker-status",
+                LocalWorkerAction::Start => "worker-start",
+                LocalWorkerAction::Stop => "worker-stop",
+                LocalWorkerAction::Register => unreachable!(),
+            };
+            let mut args = vec![
+                "connection".into(),
+                command.into(),
+                "--id".into(),
+                id.into(),
+            ];
+            if let Some(generation) = generation {
+                args.extend(["--generation".into(), generation.into()]);
+            }
+            worker_status(
+                self.run(&args)?,
+                &metadata.server_id,
+                &metadata.endpoint,
+                &metadata.machine_id,
+            )
+        })();
+        if let Err(code) = &result {
+            tracing::warn!(
+                operation = "retained_worker",
+                ?action,
+                phase = "failed",
+                ?code
+            );
+        }
+        result
     }
 
     pub fn saved_worker_proof(&self, expected: &SavedConnection) -> Result<LocalWorkerProof> {
@@ -186,7 +270,7 @@ impl Connector {
             } else {
                 observed
             };
-            worker_status(status, &proof)
+            worker_status(status, &proof.server_id, &proof.endpoint, &proof.machine_id)
         })();
         match &result {
             Ok(status) => {
@@ -216,7 +300,12 @@ fn validate_action(action: LocalWorkerAction, generation: Option<&str>) -> Resul
     Ok(())
 }
 
-fn worker_status(value: serde_json::Value, proof: &LocalWorkerProof) -> Result<LocalWorkerStatus> {
+fn worker_status(
+    value: serde_json::Value,
+    server_id: &str,
+    endpoint: &str,
+    machine_id: &str,
+) -> Result<LocalWorkerStatus> {
     let status: RuntimeStatus =
         serde_json::from_value(value).map_err(|_| NativeFailure::InvalidEvidence)?;
     let generation = if status.lifecycle.version == 0 {
@@ -231,9 +320,9 @@ fn worker_status(value: serde_json::Value, proof: &LocalWorkerProof) -> Result<L
         if value.version != 1
             || parsed.get_version_num() != 7
             || parsed.to_string() != value.generation
-            || value.server_id != proof.server_id
-            || value.endpoint != proof.endpoint
-            || value.machine_id != proof.machine_id
+            || value.server_id != server_id
+            || value.endpoint != endpoint
+            || value.machine_id != machine_id
         {
             return Err(NativeFailure::InvalidEvidence);
         }
@@ -241,7 +330,7 @@ fn worker_status(value: serde_json::Value, proof: &LocalWorkerProof) -> Result<L
     };
     Ok(LocalWorkerStatus {
         state: status.state,
-        machine_id: proof.machine_id.clone(),
+        machine_id: machine_id.to_owned(),
         generation,
         controller_active: status.controller_active,
     })

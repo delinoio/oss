@@ -1,5 +1,6 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
+import { LocalWorkerAction, LocalWorkerState } from "./local-worker-controls";
 import { newRequestId } from "@delinoio/delidev-api-client";
 import { SavedConnections, SavedConnectionState, type SavedConnection, type SavedConnectionActions } from "./saved-connections";
 
@@ -11,8 +12,11 @@ function fixture() {
   const retry = vi.fn(async (_id: string) => profile);
   const open = vi.fn(async (_id: string) => {});
   const rename = vi.fn(async (_id: string, _requestId: string, revision: number, name: string) => ({ ...profile, revision: revision + 1, name }));
-  const actions: SavedConnectionActions = { list, pair, retry, rename, open };
-  return { profile, grant, actions, list, pair, retry, rename, open };
+  const removed = vi.fn(async (_after: string) => ({ connections: [] as SavedConnection[] }));
+  const remove = vi.fn(async (_id: string, requestId: string, revision: number) => ({ ...profile, revision: revision + 1, state: SavedConnectionState.Removed, removal: { request_id: requestId, expected_revision: revision } }));
+  const retainedWorker = vi.fn();
+  const actions: SavedConnectionActions = { list, pair, retry, rename, open, removed, remove, retainedWorker };
+  return { profile, grant, actions, list, pair, retry, rename, open, removed, remove, retainedWorker };
 }
 it("retains an uncertain pairing and masked original input across dialog visibility", async () => {
   const value = fixture(); value.pair.mockRejectedValueOnce("timed-out");
@@ -105,4 +109,73 @@ it("preserves stale unsubmitted names and requires a fresh explicit edit", async
   fireEvent.click(screen.getByRole("button", { name: "Discard name edit" }));
   fireEvent.click(screen.getByRole("button", { name: "Rename Peer edit" }));
   expect((screen.getByLabelText("New connection name") as HTMLInputElement).value).toBe("Peer edit");
+});
+
+it("requires removal confirmation, retains the original uncertain request, and clears only the selected client", async () => {
+  const value = fixture();
+  value.remove.mockRejectedValueOnce("timed-out");
+  const view = render(<SavedConnections visible close={() => {}} actions={value.actions} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Remove Saved server" }));
+  expect(value.remove).not.toHaveBeenCalled();
+  expect(screen.getByText(/discards its unsent drafts/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Confirm connection removal" }));
+  await screen.findByText(/operation has not been confirmed/);
+  view.rerender(<SavedConnections visible={false} close={() => {}} actions={value.actions} />);
+  view.rerender(<SavedConnections visible close={() => {}} actions={value.actions} />);
+  value.list.mockResolvedValue([]);
+  fireEvent.click(screen.getByRole("button", { name: "Retry original connection removal" }));
+  await screen.findByText(/This local client connection was removed/);
+  expect(value.remove.mock.calls[0]).toEqual(value.remove.mock.calls[1]);
+  expect(value.remove.mock.calls[0]).toEqual([value.profile.id, expect.any(String), 1]);
+  expect(value.open).not.toHaveBeenCalled();
+  expect(value.pair).not.toHaveBeenCalled();
+  expect(value.retainedWorker).not.toHaveBeenCalled();
+});
+it("recovers the accepted cleanup request from inventory after reopening the app", async () => {
+  const value = fixture();
+  const request = newRequestId();
+  value.list.mockResolvedValue([{ ...value.profile, state: SavedConnectionState.Removing, revision: 2, removal: { request_id: request, expected_revision: 1 } }]);
+  render(<SavedConnections visible close={() => {}} actions={value.actions} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Retry removal of Saved server" }));
+  expect(screen.queryByRole("button", { name: "Open Saved server" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Retry Saved server" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Retry original connection removal" }));
+  await screen.findByText(/This local client connection was removed/);
+  expect(value.remove).toHaveBeenCalledWith(value.profile.id, request, 1);
+  expect(value.retry).not.toHaveBeenCalled();
+});
+it("blocks a stale removal confirmation while keeping the selected connection visible", async () => {
+  const value = fixture();
+  render(<SavedConnections visible close={() => {}} actions={value.actions} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Remove Saved server" }));
+  value.list.mockResolvedValue([{ ...value.profile, revision: 2, name: "New name" }]);
+  fireEvent.click(screen.getByRole("button", { name: "Refresh saved servers" }));
+  await screen.findByText(/The connection changed. Keep it/);
+  expect((screen.getByRole("button", { name: "Confirm connection removal" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(value.remove).not.toHaveBeenCalled();
+});
+it("keeps independent Worker stop targeting its original generation after client removal", async () => {
+  const value = fixture(), request = newRequestId(), machine = newRequestId(), generation = newRequestId();
+  value.list.mockResolvedValue([]);
+  value.removed.mockResolvedValue({ connections: [{ ...value.profile, state: SavedConnectionState.Removed, revision: 2, removal: { request_id: request, expected_revision: 1 } }] });
+  value.retainedWorker.mockImplementation(async (_id, action) => {
+    if (action === LocalWorkerAction.Stop) throw "timed-out";
+    return { state: LocalWorkerState.Running, machine_id: machine, generation, controller_active: true };
+  });
+  const view = render(<SavedConnections visible close={() => {}} actions={value.actions} />);
+  fireEvent.click(screen.getByRole("button", { name: "Show removed connections" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Inspect retained Worker for Saved server" }));
+  const panel = await screen.findByRole("region", { name: "Retained Worker for Saved server" });
+  await within(panel).findByText(`Execution machine: ${machine}`);
+  expect(within(panel).queryByRole("button", { name: "Register this computer" })).toBeNull();
+  fireEvent.click(within(panel).getByRole("button", { name: "Stop local Worker" }));
+  fireEvent.click(within(panel).getByRole("button", { name: "Confirm Worker stop" }));
+  await within(panel).findByText(/original stop is unconfirmed/);
+  view.rerender(<SavedConnections visible={false} close={() => {}} actions={value.actions} />);
+  view.rerender(<SavedConnections visible close={() => {}} actions={value.actions} />);
+  await waitFor(() => expect((within(panel).getByRole("button", { name: "Retry original Worker stop" }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(within(panel).getByRole("button", { name: "Retry original Worker stop" }));
+  await waitFor(() => expect(value.retainedWorker.mock.calls.filter(([, action]) => action === LocalWorkerAction.Stop)).toHaveLength(2));
+  expect(value.retainedWorker.mock.calls.filter(([, action]) => action === LocalWorkerAction.Stop)).toEqual([[value.profile.id, LocalWorkerAction.Stop, generation], [value.profile.id, LocalWorkerAction.Stop, generation]]);
+  expect(value.open).not.toHaveBeenCalled();
 });

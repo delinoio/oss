@@ -72,23 +72,25 @@ func Rename(ctx context.Context, root string, id, request domain.ID, revision ui
 	if err != nil {
 		return Metadata{}, err
 	}
-	// Bind request identity across the bounded saved-profile inventory. An old
-	// retry returns current metadata without reapplying a superseded name.
-	profiles, err := List(root)
+	if value.Removal != nil {
+		return Metadata{}, removed()
+	}
+	// Bind requests across active and removed profiles; deletion cannot release
+	// an accepted mutation identity for reuse on a different connection.
+	values, err := records(root)
 	if err != nil {
 		return Metadata{}, err
 	}
-	for _, profile := range profiles {
-		other, err := load(root, profile.ID)
-		if err != nil {
-			return Metadata{}, err
+	for _, other := range values {
+		if other.Removal != nil && other.Removal.RequestID == request {
+			return Metadata{}, requestConflict()
 		}
 		for _, receipt := range other.Renames {
 			if receipt.RequestID != request {
 				continue
 			}
-			if profile.ID != id || receipt.ExpectedRevision != revision || receipt.Name != name {
-				return Metadata{}, domain.Fail(domain.Conflict, "This connection request already belongs to another name edit.", "Retry its exact original connection, revision and name.")
+			if other.ID != id || receipt.ExpectedRevision != revision || receipt.Name != name {
+				return Metadata{}, requestConflict()
 			}
 			return current, nil
 		}

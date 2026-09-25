@@ -18,6 +18,13 @@ func connectionCommand(ctx context.Context, o options, args []string, streams IO
 		return nil, domain.Fail(domain.InvalidArgument, "Saved connections use their own exact paired authority.", "Omit --server and --token-stdin; supply pairing material only through --code-stdin.")
 	}
 	fs := flags("connection " + args[0])
+	if args[0] == "removed" {
+		after := fs.String("after", "", "last removed connection ID from the previous page")
+		if err := parse(fs, args[1:]); err != nil {
+			return nil, err
+		}
+		return connections.ListRemoved(o.dataDir, domain.ID(*after))
+	}
 	if args[0] == "list" {
 		if err := parse(fs, args[1:]); err != nil {
 			return nil, err
@@ -37,6 +44,9 @@ func connectionCommand(ctx context.Context, o options, args []string, streams IO
 		name = fs.String("name", "", "new connection display name")
 		revision = fs.Uint64("revision", 0, "original saved connection revision")
 	}
+	if args[0] == "remove" {
+		revision = fs.Uint64("revision", 0, "original saved connection revision")
+	}
 	if args[0] == "pair" {
 		name = fs.String("name", "", "connection display name")
 		input = fs.Bool("code-stdin", false, "read the original private pairing document from stdin")
@@ -50,6 +60,8 @@ func connectionCommand(ctx context.Context, o options, args []string, streams IO
 	var value any
 	var err error
 	switch args[0] {
+	case "remove":
+		value, err = connections.Remove(ctx, o.dataDir, domain.ID(*id), o.requestID, *revision)
 	case "rename":
 		value, err = connections.Rename(ctx, o.dataDir, domain.ID(*id), o.requestID, *revision, *name)
 	case "worker-register":

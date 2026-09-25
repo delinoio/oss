@@ -13,12 +13,13 @@ const descriptions: Record<LocalWorkerState, string> = {
   [LocalWorkerState.Uncertain]: "Worker exit is unconfirmed. Inspect its private log and original session recovery before explicitly replacing the controller.",
 };
 
-export function LocalWorkerControls({ control, active, changed }: { control: ControlLocalWorker; active: boolean; changed: () => void }) {
+export function LocalWorkerControls({ control, active, changed, allowRegistration = true, pendingChanged }: { control: ControlLocalWorker; active: boolean; changed: () => void; allowRegistration?: boolean; pendingChanged?: (pending: boolean) => void }) {
   const [status, setStatus] = useState<LocalWorkerStatus>();
   const [problem, setProblem] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirmation, setConfirmation] = useState<string>();
   const [pendingStop, setPendingStop] = useState<string>();
+  useEffect(() => { pendingChanged?.(busy || Boolean(confirmation || pendingStop)); }, [busy, confirmation, pendingStop, pendingChanged]);
   const gate = useRef(false), alive = useRef(false), controlRef = useRef(control);
   controlRef.current = control;
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
@@ -26,7 +27,7 @@ export function LocalWorkerControls({ control, active, changed }: { control: Con
     if (gate.current) return;
     gate.current = true; setBusy(true);
     try { const value = await controlRef.current(LocalWorkerAction.Status); if (alive.current) { setStatus(value); if (clearProblem) setProblem(""); } }
-    catch { if (alive.current) setProblem("The local Worker could not be inspected. Register it if this computer has no Worker, or inspect its original private scope and device registration."); }
+    catch { if (alive.current) setProblem(allowRegistration ? "The local Worker could not be inspected. Register it if this computer has no Worker, or inspect its original private scope and device registration." : "No readable retained Worker was found. Preserve its original scope and inspect its device registration; removal does not create or replace a Worker."); }
     finally { gate.current = false; if (alive.current) setBusy(false); }
   };
   useEffect(() => {
@@ -60,7 +61,7 @@ export function LocalWorkerControls({ control, active, changed }: { control: Con
     {status ? <><p role="status">{descriptions[status.state]}</p><small>Execution machine: {status.machine_id}</small></> : null}
     {problem ? <p role="alert">{problem}</p> : null}
     <div className="actions"><button disabled={busy} onClick={() => void refresh(true)}>Refresh local Worker</button>
-      {!status ? <button disabled={busy} onClick={() => void perform(LocalWorkerAction.Register)}>Register this computer</button> : null}
+      {!status && allowRegistration ? <button disabled={busy} onClick={() => void perform(LocalWorkerAction.Register)}>Register this computer</button> : null}
       {canStart ? <button disabled={busy || Boolean(pendingStop || confirmation)} onClick={() => void perform(LocalWorkerAction.Start)}>Start local Worker</button> : null}
       {status?.generation && status.state !== LocalWorkerState.Exited && !confirmation && !pendingStop ? <button disabled={busy} onClick={() => setConfirmation(status.generation)}>Stop local Worker</button> : null}
     </div>

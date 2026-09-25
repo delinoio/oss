@@ -73,6 +73,9 @@ function LocalDesktop() {
 }
 const savedActions: SavedConnectionActions = {
   list: () => invoke<SavedConnection[]>("saved_connections"),
+  removed: (after) => invoke("removed_connections", { after }),
+  remove: (id, requestId, revision) => invoke("remove_connection", { id, requestId, revision }),
+  retainedWorker: (id, action, generation) => invoke("retained_worker_control", { id, action, generation }),
   pair: (id, name, grant) => invoke<SavedConnection>("pair_connection", { id, name, grant }),
   retry: (id) => invoke<SavedConnection>("retry_connection", { id }),
   rename: (id, requestId, revision, name) => invoke<SavedConnection>("rename_connection", { id, requestId, revision, name }),

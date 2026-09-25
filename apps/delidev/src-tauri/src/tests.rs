@@ -448,7 +448,11 @@ fn real_saved_connection_keeps_owner_local_and_remote_authority_separate() {
         fn drop(&mut self) {
             let _ = self
                 .0
-                .saved_worker(self.1, LocalWorkerAction::Stop, Some(self.2));
+                .saved_worker(self.1, LocalWorkerAction::Stop, Some(self.2))
+                .or_else(|_| {
+                    self.0
+                        .retained_worker(&self.1.id, LocalWorkerAction::Stop, Some(self.2))
+                });
         }
     }
     let _stop_worker = StopWorker(&client, &paired, generation);
@@ -521,13 +525,6 @@ fn real_saved_connection_keeps_owner_local_and_remote_authority_separate() {
             )
             .is_err()
     );
-    let stopped = client
-        .saved_worker(&paired, LocalWorkerAction::Stop, Some(generation))
-        .unwrap();
-    assert_eq!(stopped.state, LocalWorkerState::Exited);
-    assert!(!stopped.controller_active);
-    assert!(!client_root.join("worker").exists());
-    drop(_stop_worker);
     server
         .run(&[
             "device".into(),
@@ -543,13 +540,56 @@ fn real_saved_connection_keeps_owner_local_and_remote_authority_separate() {
         Err(NativeFailure::CredentialUnavailable)
     ));
     assert!(client.inspect_saved(&id).unwrap() == renamed);
-    fs::remove_file(
-        client_root
+    let removal_request = uuid::Uuid::now_v7().to_string();
+    let removed = client
+        .remove_saved(&id, &removal_request, renamed.revision)
+        .unwrap();
+    assert!(removed.state == SavedConnectionState::Removed);
+    assert!(client.saved_connections().unwrap().is_empty());
+    assert!(client.removed_connections("").unwrap().connections == vec![removed.clone()]);
+    assert!(
+        client
+            .remove_saved(&id, &removal_request, renamed.revision)
+            .unwrap()
+            == removed
+    );
+    assert!(client.connect_saved(&paired).is_err());
+    assert!(client.saved_worker_proof(&paired).is_err());
+    assert!(
+        client
+            .retained_worker(&id, LocalWorkerAction::Register, None)
+            .is_err()
+    );
+    assert_eq!(
+        client
+            .retained_worker(&id, LocalWorkerAction::Status, None)
+            .unwrap()
+            .generation,
+        started.generation
+    );
+    assert!(
+        client
+            .retained_worker(
+                &id,
+                LocalWorkerAction::Stop,
+                Some(&uuid::Uuid::now_v7().to_string())
+            )
+            .is_err()
+    );
+    let stopped = client
+        .retained_worker(&id, LocalWorkerAction::Stop, Some(generation))
+        .unwrap();
+    assert_eq!(stopped.state, LocalWorkerState::Exited);
+    assert!(!stopped.controller_active);
+    assert!(!client_root.join("worker").exists());
+    assert!(
+        !client_root
             .join("connections")
             .join(&id)
-            .join("client/device.json"),
-    )
-    .unwrap();
+            .join("client/device.json")
+            .exists()
+    );
+    drop(_stop_worker);
     assert!(client.retry_saved(&id).is_err());
     assert!(
         client

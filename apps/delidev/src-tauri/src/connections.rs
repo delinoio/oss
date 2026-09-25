@@ -16,6 +16,8 @@ use crate::{
 pub enum SavedConnectionState {
     Pending,
     Paired,
+    Removing,
+    Removed,
 }
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -33,6 +35,21 @@ pub struct SavedConnection {
     pub device_id: String,
     pub state: SavedConnectionState,
     pub created_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub removal: Option<RemovalMetadata>,
+}
+#[derive(Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct RemovalMetadata {
+    pub request_id: String,
+    pub expected_revision: u64,
+}
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RemovedConnections {
+    pub connections: Vec<SavedConnection>,
+    #[serde(default)]
+    pub next_after: String,
 }
 
 fn initial_revision() -> u64 {
@@ -95,13 +112,26 @@ pub fn connection_origin(endpoint: &str) -> Result<String> {
 impl SavedConnection {
     pub fn validate(&self) -> Result<()> {
         if self.version != 1
-            || !(1..=1025).contains(&self.revision)
+            || !(1..=1026).contains(&self.revision)
             || self.name.is_empty()
             || self.name.len() > 256
             || self.created_at.len() > 64
             || self.created_at.is_empty()
         {
             return Err(NativeFailure::InvalidEvidence);
+        }
+        match (&self.removal, self.state) {
+            (Some(removal), SavedConnectionState::Removing | SavedConnectionState::Removed) => {
+                canonical_id(&removal.request_id)?;
+                if removal.expected_revision == 0
+                    || removal.expected_revision.checked_add(1) != Some(self.revision)
+                {
+                    return Err(NativeFailure::InvalidEvidence);
+                }
+            }
+            (None, SavedConnectionState::Pending | SavedConnectionState::Paired)
+                if self.revision <= 1025 => {}
+            _ => return Err(NativeFailure::InvalidEvidence),
         }
         for id in [&self.id, &self.server_id, &self.pairing_id] {
             canonical_id(id)?;
@@ -124,6 +154,7 @@ impl SavedConnection {
             && self.device_id == other.device_id
             && self.state == other.state
             && self.created_at == other.created_at
+            && self.removal == other.removal
     }
 
     fn metadata(&self) -> DeviceMetadata {
@@ -175,6 +206,67 @@ impl Connector {
             }
         }
         Ok(values.connections)
+    }
+
+    pub fn removed_connections(&self, after: &str) -> Result<RemovedConnections> {
+        if !after.is_empty() {
+            canonical_id(after)?;
+        }
+        let _guard = self.gate.try_lock().map_err(|_| NativeFailure::Busy)?;
+        let values: RemovedConnections = serde_json::from_value(self.run(&[
+            "connection".into(),
+            "removed".into(),
+            "--after".into(),
+            after.into(),
+        ])?)
+        .map_err(|_| NativeFailure::InvalidEvidence)?;
+        if values.connections.len() > 16 {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+        let mut previous = after;
+        for value in &values.connections {
+            value.validate()?;
+            if value.state != SavedConnectionState::Removed || value.id.as_str() <= previous {
+                return Err(NativeFailure::InvalidEvidence);
+            }
+            previous = &value.id;
+        }
+        if !values.next_after.is_empty()
+            && (values.connections.len() != 16 || values.next_after != previous)
+        {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+        Ok(values)
+    }
+
+    pub fn remove_saved(&self, id: &str, request: &str, revision: u64) -> Result<SavedConnection> {
+        canonical_id(id)?;
+        canonical_id(request)?;
+        if !(1..=1025).contains(&revision) {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+        let _guard = self.gate.try_lock().map_err(|_| NativeFailure::Busy)?;
+        let profile = Self::saved_result(
+            self.run(&[
+                "--request-id".into(),
+                request.into(),
+                "connection".into(),
+                "remove".into(),
+                "--id".into(),
+                id.into(),
+                "--revision".into(),
+                revision.to_string().into(),
+            ])?,
+            id,
+        )?;
+        if profile.state != SavedConnectionState::Removed
+            || !profile.removal.as_ref().is_some_and(|value| {
+                value.request_id == request && value.expected_revision == revision
+            })
+        {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+        Ok(profile)
     }
 
     pub fn pair_saved(

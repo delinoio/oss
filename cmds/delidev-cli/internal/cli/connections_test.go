@@ -103,6 +103,26 @@ func TestCLIConnectionCommandsPreservePrivatePairingAndRequireExplicitScope(t *t
 			t.Fatal("invalid connection authority/input accepted", output)
 		}
 	}
+	remove := []string{"--request-id", string(domain.NewID()), "connection", "remove", "--id", id, "--revision", "2"}
+	for range 2 {
+		code, output := cliRun(t, root, remove, "")
+		if code != 0 || output["result"].(map[string]any)["state"] != "removed" {
+			t.Fatal("removal or exact retry failed", output)
+		}
+	}
+	for _, args := range [][]string{{"connection", "removed"}, {"connection", "inspect", "--id", id}, {"connection", "worker-status", "--id", id}} {
+		code, output := cliRun(t, root, args, "")
+		if code != 0 {
+			t.Fatal(output)
+		}
+		encoded, _ := json.Marshal(output)
+		if strings.Contains(string(encoded), grant.Code) || strings.Contains(string(encoded), `"token"`) || strings.Contains(string(encoded), `"code"`) {
+			t.Fatal("secret escaped removed inventory or retained Worker metadata")
+		}
+	}
+	if code, _ := cliRun(t, root, []string{"connection", "verify", "--id", id}, ""); code == 0 {
+		t.Fatal("removed client verified")
+	}
 	for _, name := range []string{"owner.json", "server.json", "state.sqlite", "worker"} {
 		if _, err := os.Stat(filepath.Join(root, name)); !os.IsNotExist(err) {
 			t.Fatal("client profile created server authority")

@@ -8,8 +8,8 @@ use std::{
 
 use delidev_desktop::{
     Connection, Connector, LocalServerStatus, LocalWorkerAction, LocalWorkerProof,
-    LocalWorkerStatus, NativeFailure, SavedConnection, SavedConnectionState, Supervision,
-    bundled_sidecar, canonical_id, connection_origin, default_data_root,
+    LocalWorkerStatus, NativeFailure, RemovedConnections, SavedConnection, SavedConnectionState,
+    Supervision, bundled_sidecar, canonical_id, connection_origin, default_data_root,
 };
 use tauri::{
     AppHandle, Emitter, Manager, WebviewWindow, WebviewWindowBuilder, WindowEvent, Wry,
@@ -114,6 +114,7 @@ async fn local_worker_control(
 struct SavedBinding {
     profile: SavedConnection,
     instance: String,
+    closing: bool,
 }
 #[derive(Default)]
 struct SavedWindows(Mutex<BTreeMap<String, SavedBinding>>);
@@ -141,6 +142,7 @@ fn saved_binding(
         .lock()
         .map_err(|_| NativeFailure::Busy)?
         .get(window.label())
+        .filter(|binding| !binding.closing)
         .cloned()
         .ok_or(NativeFailure::PermissionDenied)
 }
@@ -165,6 +167,111 @@ async fn saved_connections(
     tauri::async_runtime::spawn_blocking(move || connector.saved_connections())
         .await
         .map_err(|_| NativeFailure::SidecarFailed)?
+}
+#[tauri::command]
+async fn removed_connections(
+    window: WebviewWindow<Wry>,
+    connector: tauri::State<'_, Arc<Connector>>,
+    after: String,
+) -> Result<RemovedConnections, NativeFailure> {
+    trusted_main(&window)?;
+    let connector = Arc::clone(connector.inner());
+    tauri::async_runtime::spawn_blocking(move || connector.removed_connections(&after))
+        .await
+        .map_err(|_| NativeFailure::SidecarFailed)?
+}
+#[tauri::command]
+async fn retained_worker_control(
+    window: WebviewWindow<Wry>,
+    connector: tauri::State<'_, Arc<Connector>>,
+    id: String,
+    action: LocalWorkerAction,
+    generation: Option<String>,
+) -> Result<LocalWorkerStatus, NativeFailure> {
+    trusted_main(&window)?;
+    let connector = Arc::clone(connector.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        connector.retained_worker(&id, action, generation.as_deref())
+    })
+    .await
+    .map_err(|_| NativeFailure::SidecarFailed)?
+}
+#[tauri::command]
+async fn remove_connection(
+    window: WebviewWindow<Wry>,
+    app: AppHandle<Wry>,
+    connector: tauri::State<'_, Arc<Connector>>,
+    windows: tauri::State<'_, Arc<SavedWindows>>,
+    id: String,
+    request_id: String,
+    revision: u64,
+) -> Result<SavedConnection, NativeFailure> {
+    trusted_main(&window)?;
+    canonical_id(&id)?;
+    canonical_id(&request_id)?;
+    let connector = Arc::clone(connector.inner());
+    let lookup = Arc::clone(&connector);
+    let profile_id = id.clone();
+    let profile = tauri::async_runtime::spawn_blocking(move || lookup.inspect_saved(&profile_id))
+        .await
+        .map_err(|_| NativeFailure::SidecarFailed)??;
+    // Avoid closing a window from a stale confirmation. Go independently
+    // validates and claims the exact mutation at its durable commit boundary.
+    if let Some(removal) = &profile.removal {
+        if removal.request_id != request_id || removal.expected_revision != revision {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+    } else if profile.revision != revision {
+        return Err(NativeFailure::InvalidEvidence);
+    }
+    let label = format!("server-{id}");
+    let instance = uuid::Uuid::now_v7().to_string();
+    let original = {
+        let mut values = windows.0.lock().map_err(|_| NativeFailure::Busy)?;
+        if profile.state != SavedConnectionState::Removed
+            && values.get(&label).is_some_and(|binding| binding.closing)
+        {
+            return Err(NativeFailure::Busy);
+        }
+        values.insert(
+            label.clone(),
+            SavedBinding {
+                profile,
+                instance: instance.clone(),
+                closing: true,
+            },
+        )
+    };
+    // The explicit UI confirmation includes losing this window's unsent drafts.
+    // Block reopen and late token delivery before beginning private cleanup.
+    if let Some(saved) = app.get_webview_window(&label) {
+        if saved.destroy().is_err() {
+            let mut values = windows.0.lock().map_err(|_| NativeFailure::SidecarFailed)?;
+            if let Some(original) = original {
+                values.insert(label, original);
+            } else {
+                values.remove(&label);
+            }
+            return Err(NativeFailure::SidecarFailed);
+        }
+    }
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        connector.remove_saved(&id, &request_id, revision)
+    })
+    .await
+    .map_err(|_| NativeFailure::SidecarFailed)
+    .and_then(|value| value);
+    let mut values = windows.0.lock().map_err(|_| NativeFailure::SidecarFailed)?;
+    // Keep a completed deletion barrier for this app process. A previously
+    // started open can still carry pre-removal metadata after Go finishes.
+    if result.is_err()
+        && values
+            .get(&label)
+            .is_some_and(|binding| binding.instance == instance)
+    {
+        values.remove(&label);
+    }
+    result
 }
 #[tauri::command]
 async fn pair_connection(
@@ -224,7 +331,7 @@ fn update_saved_label(
     // Out-of-order accepted edits cannot roll back a newer window label.
     let mut values = windows.0.lock().map_err(|_| NativeFailure::SidecarFailed)?;
     if let Some(binding) = values.get_mut(&label) {
-        if !binding.profile.same_authority(&profile) {
+        if binding.closing || !binding.profile.same_authority(&profile) {
             return Err(NativeFailure::InvalidEvidence);
         }
         if profile.revision >= binding.profile.revision {
@@ -258,7 +365,10 @@ async fn connect_saved(
         .await
         .map_err(|_| NativeFailure::SidecarFailed)??;
     let current = saved_binding(&window, &windows)?;
-    if current.instance != binding.instance || !current.profile.same_authority(&binding.profile) {
+    if current.closing
+        || current.instance != binding.instance
+        || !current.profile.same_authority(&binding.profile)
+    {
         return Err(NativeFailure::InvalidEvidence);
     }
     Ok(result)
@@ -277,7 +387,10 @@ async fn saved_worker_proof(
             .await
             .map_err(|_| NativeFailure::SidecarFailed)??;
     let current = saved_binding(&window, &windows)?;
-    if current.instance != binding.instance || !current.profile.same_authority(&binding.profile) {
+    if current.closing
+        || current.instance != binding.instance
+        || !current.profile.same_authority(&binding.profile)
+    {
         return Err(NativeFailure::InvalidEvidence);
     }
     Ok(proof)
@@ -299,7 +412,10 @@ async fn saved_worker_control(
     .await
     .map_err(|_| NativeFailure::SidecarFailed)??;
     let current = saved_binding(&window, &windows)?;
-    if current.instance != binding.instance || !current.profile.same_authority(&binding.profile) {
+    if current.closing
+        || current.instance != binding.instance
+        || !current.profile.same_authority(&binding.profile)
+    {
         return Err(NativeFailure::InvalidEvidence);
     }
     Ok(result)
@@ -406,6 +522,7 @@ async fn open_connection(
             SavedBinding {
                 profile,
                 instance: instance.clone(),
+                closing: false,
             },
         );
     }
@@ -440,7 +557,7 @@ async fn open_connection(
                     if let Ok(mut values) = windows.0.lock() {
                         if values
                             .get(&label)
-                            .is_some_and(|binding| binding.instance == instance)
+                            .is_some_and(|binding| binding.instance == instance && !binding.closing)
                         {
                             values.remove(&label);
                         }
@@ -485,6 +602,9 @@ fn run() -> Result<(), NativeFailure> {
             local_worker_control,
             connection_context,
             saved_connections,
+            removed_connections,
+            remove_connection,
+            retained_worker_control,
             pair_connection,
             retry_connection,
             rename_connection,

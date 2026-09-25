@@ -1,7 +1,7 @@
 [[permission]]
 identifier = "saved-manage"
 description = "The trusted main window can manage saved private client pairings and open independently pinned server windows."
-commands.allow = ["connection_context", "saved_connections", "pair_connection", "retry_connection", "rename_connection", "open_connection", "show_connection_manager"]
+commands.allow = ["connection_context", "saved_connections", "removed_connections", "remove_connection", "retained_worker_control", "pair_connection", "retry_connection", "rename_connection", "open_connection", "show_connection_manager"]
 
 [[permission]]
 identifier = "saved-use"
