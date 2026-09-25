@@ -1,0 +1,22 @@
+{
+  "devhud-desktop": [
+    { "id": "macos-x64", "runner": "macos-15-intel", "os": "macos", "bundle": "dmg", "package": "macos-app" },
+    { "id": "macos-arm64", "runner": "macos-15", "os": "macos", "bundle": "dmg", "package": "macos-app" },
+    { "id": "windows-x64-nsis", "runner": "windows-2022", "os": "windows", "bundle": "nsis", "package": "windows-nsis" },
+    { "id": "windows-x64-msi", "runner": "windows-2022", "os": "windows", "bundle": "msi", "package": "windows-msi" },
+    { "id": "windows-arm64-nsis", "runner": "windows-11-arm", "os": "windows", "bundle": "nsis", "package": "windows-nsis" },
+    { "id": "windows-arm64-msi", "runner": "windows-11-arm", "os": "windows", "bundle": "msi", "package": "windows-msi" },
+    { "id": "ubuntu-x64-deb", "runner": "ubuntu-22.04", "os": "linux", "bundle": "deb", "package": "linux-deb" },
+    { "id": "ubuntu-x64-appimage", "runner": "ubuntu-22.04", "os": "linux", "bundle": "appimage", "package": "linux-appimage" },
+    { "id": "ubuntu-arm64-deb", "runner": "ubuntu-22.04-arm", "os": "linux", "bundle": "deb", "package": "linux-deb" },
+    { "id": "ubuntu-arm64-appimage", "runner": "ubuntu-22.04-arm", "os": "linux", "bundle": "appimage", "package": "linux-appimage" }
+  ],
+  "react-forge": [
+    { "id": "darwin-x64", "runner": "macos-15-intel", "platform": "darwin", "architecture": "x64", "target": "x86_64-apple-darwin" },
+    { "id": "darwin-arm64", "runner": "macos-15", "platform": "darwin", "architecture": "arm64", "target": "aarch64-apple-darwin" },
+    { "id": "linux-x64-gnu", "runner": "ubuntu-22.04", "platform": "linux", "architecture": "x64", "target": "x86_64-unknown-linux-gnu" },
+    { "id": "linux-arm64-gnu", "runner": "ubuntu-22.04-arm", "platform": "linux", "architecture": "arm64", "target": "aarch64-unknown-linux-gnu" },
+    { "id": "win32-x64-msvc", "runner": "windows-2022", "platform": "win32", "architecture": "x64", "target": "x86_64-pc-windows-msvc" },
+    { "id": "win32-arm64-msvc", "runner": "windows-11-arm", "platform": "win32", "architecture": "arm64", "target": "aarch64-pc-windows-msvc" }
+  ]
+}

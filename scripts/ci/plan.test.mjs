@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
-import { changedFiles, Event, jobPaths, planJobs } from "./plan.mjs";
+import { changedFiles, Event, jobPaths, matricesForEvent, nativeMatrices, planJobs, previousJobPaths } from "./plan.mjs";
 import { validateResults } from "./result.mjs";
 
 const native = Object.entries(jobPaths).filter(([, rule]) => rule.native).map(([id]) => id);
@@ -37,9 +37,10 @@ test("pnport installer changes select six-host native verification on main", () 
   }
 });
 
-test("main selects the existing full native matrix only when affected; manual selects every job", () => {
+test("main selects affected non-Mac native jobs; manual selects every job", () => {
   for (const path of ["apps/devhud/src/App.tsx", "apps/devhud/src-tauri/src/main.rs", "protos/devhud/v1/settings.proto", "pnpm-lock.yaml", ".github/workflows/CI.yml"]) {
-    for (const id of devhudNative) assert.ok(selected(Event.Push, [path]).includes(id), `${path}: ${id}`);
+    for (const id of ["devhud-desktop", "devhud-android-emulator"]) assert.ok(selected(Event.Push, [path]).includes(id), `${path}: ${id}`);
+    assert.ok(!selected(Event.Push, [path]).includes("devhud-ios-simulator"), path);
   }
   assert.deepEqual(selected(Event.Manual, []), Object.keys(jobPaths));
   assert.deepEqual(selected(Event.Push, ["docs/project-with-watch.md"]), []);
@@ -56,7 +57,7 @@ test("Linux packages run on affected main pushes and manual dispatch, never on P
     "scripts/release/linux-packages.test.mjs", "scripts/release/linux-packages/build-rust.sh",
     ".github/workflows/release-linux-packages.yml", "package.json", "pnpm-lock.yaml",
     ".github/workflows/CI.yml", ".github/actions/setup-ci-node/action.yml",
-    "scripts/ci/plan.mjs", "scripts/ci/job-paths.json",
+    "scripts/ci/plan.mjs", "scripts/ci/native-matrices.json",
   ]) {
     assert.equal(planJobs(Event.PullRequest, [path]).jobs["linux-packages"], false, path);
     assert.equal(planJobs(Event.Push, [path]).jobs["linux-packages"], true, path);
@@ -76,7 +77,7 @@ test("Runmoor source and release scripts do not rebuild DevHud desktop/mobile", 
     const jobs = selected(Event.Push, paths);
     for (const id of devhudNative) assert.ok(!jobs.includes(id), id);
     if (paths[0].startsWith("cmds/")) assert.ok(jobs.includes("go-test"));
-    else assert.ok(jobs.includes("devhud-release-contracts"));
+    else assert.ok(!jobs.includes("devhud-release-contracts"));
   }
   for (const path of ["scripts/release/finalize-devhud-deb.sh", "scripts/release/linux/prerm.in", "scripts/release/generate-checksums.sh"]) {
     assert.ok(selected(Event.Push, [path]).includes("devhud-desktop"), path);
@@ -228,12 +229,28 @@ test("missing, malformed, and unavailable revisions fail rather than skip checks
   }
   assert.throws(() => changedFiles(Event.PullRequest, {}, f.initial, f.cwd));
   assert.deepEqual(changedFiles(Event.Manual, {}, f.initial, f.cwd), { base: f.initial, head: f.initial, paths: [] });
+  assert.throws(() => previousJobPaths("bad", f.cwd), /40-character commit SHA/u);
+  assert.throws(() => previousJobPaths("f".repeat(40), f.cwd));
+});
+
+test("historical path rules are read from the exact comparison base", (t) => {
+  const f = fixture(t);
+  assert.deepEqual(previousJobPaths(f.initial, f.cwd), {});
+  f.write("scripts/ci/job-paths.json", JSON.stringify({ "go-test": { paths: ["cmds/**"] } }));
+  const base = f.commit();
+  f.write("scripts/ci/job-paths.json", JSON.stringify({ "go-test": { paths: ["cmds/**", "go.mod"] } }));
+  f.commit();
+  assert.deepEqual(previousJobPaths(base, f.cwd), { "go-test": { paths: ["cmds/**"] } });
+  f.write("scripts/ci/job-paths.json", "{");
+  const bad = f.commit();
+  assert.throws(() => previousJobPaths(bad, f.cwd), SyntaxError);
 });
 
 function results(event, paths) {
   const { jobs } = planJobs(event, paths);
+  const matrices = matricesForEvent(event);
   return {
-    changes: { result: "success", outputs: { jobs: JSON.stringify(jobs) } },
+    changes: { result: "success", outputs: { jobs: JSON.stringify(jobs), event, desktop_matrix: JSON.stringify(matrices.desktopMatrix), react_forge_matrix: JSON.stringify(matrices.reactForgeMatrix) } },
     "ci-contracts": { result: "success" },
     ...Object.fromEntries(Object.entries(jobs).map(([id, run]) => [id, { result: run ? "success" : "skipped" }])),
   };
@@ -280,15 +297,63 @@ test("aggregate accepts only success and skips explicitly authorized by the plan
   const unexpected = results(Event.PullRequest, []);
   unexpected["devhud-desktop"].result = "success";
   assert.throws(() => validateResults(unexpected), /expected skipped/u);
+  const wrongMatrix = results(Event.Push, ["apps/devhud/src/App.tsx"]);
+  wrongMatrix.changes.outputs.desktop_matrix = JSON.stringify({ include: nativeMatrices["devhud-desktop"] });
+  assert.throws(() => validateResults(wrongMatrix), /desktop_matrix/u);
 });
 
 
 test("React Forge runs on affected PRs and main, with shared package regression coverage", () => {
   for (const event of [Event.PullRequest, Event.Push]) {
-    for (const path of ["packages/react-forge/src/session.ts", "crates/react-forge-node/src/lib.rs", "crates/forge-pdf/src/lib.rs", "rust-toolchain", "pnpm-lock.yaml", "docs/packages-react-forge-contract.md"]) {
+    for (const path of ["packages/react-forge/src/session.ts", "packages/react-forge/tests/session.test.tsx", "packages/react-forge/bin/react-forge.mjs", "packages/react-forge/examples/travel-ir.tsx", "packages/react-forge/examples/travel-ir-assets/coast.png", "packages/react-forge/scripts/validate-host.sh", "crates/react-forge-node/src/lib.rs", "crates/forge-pdf/src/lib.rs", "crates/forge-tree-doc/assets/fonts/noto-sans-kr/NotoSansKR-VF.ttf", "rust-toolchain", "pnpm-lock.yaml"]) {
       assert.equal(planJobs(event, [path]).jobs["react-forge"], true, path);
     }
     for (const id of ["react-forge", "forge-test", "forge-render"]) assert.equal(planJobs(event, ["crates/forge-package/src/lib.rs"]).jobs[id], true, id);
     assert.equal(planJobs(event, ["docs/project-with-watch.md"]).jobs["react-forge"], false);
+    for (const path of ["packages/react-forge/README.md", "packages/react-forge/AGENTS.md", "packages/react-forge/examples/README.md", "packages/react-forge/examples/travel-ir-assets/README.md", "crates/forge-pdf/README.md", "crates/react-forge-node/AGENTS.md", "docs/packages-react-forge-contract.md", "docs/project-react-forge.md"]) {
+      assert.equal(planJobs(event, [path]).jobs["react-forge"], false, path);
+    }
+  }
+});
+
+test("event matrices retain only the authorized native hosts", () => {
+  for (const event of [Event.PullRequest, Event.Push]) {
+    const { desktopMatrix, reactForgeMatrix } = matricesForEvent(event);
+    assert.deepEqual(desktopMatrix.include.map(({ id }) => id), nativeMatrices["devhud-desktop"].filter(({ os }) => os !== "macos").map(({ id }) => id));
+    assert.deepEqual(reactForgeMatrix.include.map(({ id }) => id), nativeMatrices["react-forge"].filter(({ platform }) => platform !== "darwin").map(({ id }) => id));
+    assert.equal(planJobs(event, [".github/workflows/CI.yml"]).jobs["devhud-ios-simulator"], false);
+  }
+  assert.deepEqual(matricesForEvent(Event.Manual).desktopMatrix.include, nativeMatrices["devhud-desktop"]);
+  assert.deepEqual(matricesForEvent(Event.Manual).reactForgeMatrix.include, nativeMatrices["react-forge"]);
+  assert.equal(planJobs(Event.Manual, []).jobs["devhud-ios-simulator"], true);
+});
+
+test("path-rule edits force only changed eligible jobs", () => {
+  const previous = structuredClone(jobPaths);
+  previous["go-test"].paths = previous["go-test"].paths.filter((path) => path !== "cmds/**");
+  previous["devhud-frontend"].paths.push("packages/unrelated/**");
+  for (const event of [Event.PullRequest, Event.Push]) {
+    const plan = planJobs(event, ["scripts/ci/job-paths.json"], previous);
+    assert.equal(plan.jobs["go-test"], true);
+    assert.equal(plan.jobs["devhud-frontend"], true);
+    assert.equal(plan.jobs["react-forge"], false);
+    assert.equal(plan.jobs["devhud-desktop"], false);
+    assert.equal(plan.forced["go-test"], true);
+  }
+  assert.deepEqual(selected(Event.Push, ["scripts/ci/job-paths.json"]), []);
+  for (const path of [".github/workflows/CI.yml", "scripts/ci/plan.mjs", "scripts/ci/native-matrices.json"]) {
+    const plan = planJobs(Event.Push, [path]);
+    assert.equal(plan.jobs["react-forge"], true, path);
+    assert.equal(plan.jobs["devhud-ios-simulator"], false, path);
+  }
+});
+
+test("unrelated packages and protocols do not select DevHud jobs", () => {
+  for (const path of ["packages/react-forge/src/session.ts", "packages/docs-site-switcher/src/index.ts", "protos/async_commit_hook/v1/ach.proto", "servers/unrelated/main.go"]) {
+    const plan = planJobs(Event.Push, [path]);
+    for (const id of Object.keys(jobPaths).filter((name) => name.startsWith("devhud-"))) assert.equal(plan.jobs[id], false, `${path}: ${id}`);
+  }
+  for (const path of ["packages/devhud-api-client/src/index.ts", "protos/devhud/v1/settings.proto", "protos/gen/go/devhud/v1/settings.pb.go", "servers/devhud-api/internal/rpc/settings.go"]) {
+    assert.ok(Object.entries(planJobs(Event.Push, [path]).jobs).some(([id, run]) => id.startsWith("devhud-") && run), path);
   }
 });

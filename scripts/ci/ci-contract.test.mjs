@@ -4,7 +4,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { load } from "js-yaml";
-import { jobPaths } from "./plan.mjs";
+import { jobPaths, nativeMatrices } from "./plan.mjs";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const workflowSource = readFileSync(`${root}/.github/workflows/CI.yml`, "utf8");
@@ -77,7 +77,7 @@ test("one change plan gates every domain job before runner allocation", () => {
   }
   const filters = JSON.stringify(jobPaths);
   for (const path of [
-    "servers/**", "protos/**", "packages/**", "apps/devhud/**", "apps/devhud-admin/**",
+    "servers/**", "protos/**", "packages/devhud-api-client/**", "apps/devhud/**", "apps/devhud-admin/**",
     "apps/devhud-chrome-extension/**", "crates/devhud-native-messaging-host/**", "packaging/devhud/**",
     "apps/public-docs/**", ".github/workflows/package-devhud-private.yml", ".github/workflows/release-devhud.yml",
     ".github/workflows/devhud-cef-security-review.yml", "scripts/ci/check-go-format.mjs", ".dockerignore",
@@ -179,7 +179,8 @@ test("DevHud API PostgreSQL runs only inside its selected domain job", () => {
 });
 
 test("desktop and mobile matrices match the committed architecture contracts", () => {
-  const desktop = workflow.jobs["devhud-desktop"].strategy.matrix.include.map(({ id }) => id);
+  assert.equal(workflow.jobs["devhud-desktop"].strategy.matrix, "${{ fromJSON(needs.changes.outputs.desktop_matrix) }}");
+  const desktop = nativeMatrices["devhud-desktop"].map(({ id }) => id);
   assert.deepEqual(desktop, [
     "macos-x64", "macos-arm64", "windows-x64-nsis", "windows-x64-msi", "windows-arm64-nsis",
     "windows-arm64-msi", "ubuntu-x64-deb", "ubuntu-x64-appimage", "ubuntu-arm64-deb", "ubuntu-arm64-appimage",
@@ -428,22 +429,24 @@ test("React Forge validates its supported runtime with uncached native and rende
   assert.equal(job["runs-on"], "${{ matrix.runner }}");
   assert.equal(job.strategy["fail-fast"], false);
   const platforms = JSON.parse(readFileSync(`${root}/packages/react-forge/src/native-platforms.json`, "utf8"));
-  assert.deepEqual(job.strategy.matrix.include.map(({ id }) => id), platforms.map(({ id }) => id));
-  for (const host of job.strategy.matrix.include) {
+  assert.equal(job.strategy.matrix, "${{ fromJSON(needs.changes.outputs.react_forge_matrix) }}");
+  assert.deepEqual(nativeMatrices["react-forge"].map(({ id }) => id), platforms.map(({ id }) => id));
+  for (const host of nativeMatrices["react-forge"]) {
     const declared = platforms.find(({ id }) => id === host.id);
     assert.equal(host.platform, declared.platform);
     assert.equal(host.architecture, declared.architecture);
     assert.equal(host.target, declared.target);
   }
-  assert.match(namedStep(job, "Verify Windows console cancellation").run, /windows_console/u);
-  assert.match(namedStep(job, "Generate travel investor example").run, /examples\/travel-ir\.tsx/u);
-  assert.match(namedStep(job, "Verify supported host and native contracts").run, /--include-ignored/u);
-  const commands = job.steps.map(({ run }) => run ?? "").join("\n");
-  for (const command of ["forge-package", "forge-document", "forge-docx", "forge-xlsx", "forge-pdf", "react-forge-node", "turbo run build typecheck lint test --filter=@delino/react-forge", "test:render", "benchmark", "render-requirements.txt"]) assert.ok(commands.includes(command), command);
+  assert.match(namedStep(job, "Validate native engine, installed CLI, renders, and benchmark").run, /validate-host\.sh/u);
+  const commands = readFileSync(`${root}/packages/react-forge/scripts/validate-host.sh`, "utf8");
+  for (const command of ["forge-package", "forge-document", "forge-docx", "forge-xlsx", "forge-pdf", "react-forge-node", "turbo run build typecheck lint test --filter=@delino/react-forge", "test:render", "benchmark", "install-smoke.mjs"]) assert.ok(commands.includes(command), command);
+  assert.match(JSON.stringify(job.steps), /render-requirements\.txt/u);
   assert.equal(namedStep(job, "Remove generated package output").if, "always()");
   const evidence = namedStep(job, "Retain rendering and benchmark evidence");
   assert.equal(evidence.with["retention-days"], 7);
   assert.equal(evidence.if, "always()");
+  const release = load(readFileSync(`${root}/.github/workflows/release-react-forge.yml`, "utf8"));
+  assert.equal(release.jobs.build.steps.find(({ name }) => name === "Validate native engine, installed CLI, renders, and benchmark")?.run, namedStep(job, "Validate native engine, installed CLI, renders, and benchmark").run);
   const tasks = JSON.parse(readFileSync(`${root}/packages/react-forge/turbo.json`, "utf8")).tasks;
   for (const name of ["build", "test", "test:render", "benchmark"]) assert.equal(tasks[name].cache, false, name);
 });
