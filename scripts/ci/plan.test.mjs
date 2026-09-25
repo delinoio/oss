@@ -94,6 +94,14 @@ test("Runmoor source and release scripts do not rebuild DevHud desktop/mobile", 
   }
 });
 
+test("checksum generator changes select their DevHud supply-chain fixture job", () => {
+  for (const event of [Event.PullRequest, Event.Push]) {
+    for (const path of ["scripts/release/generate-checksums.sh", "scripts/release/generate-checksums.test.mjs"]) {
+      assert.equal(planJobs(event, [path]).jobs["devhud-supply-chain"], true, `${event}: ${path}`);
+    }
+  }
+});
+
 test("every shared release fixture selects its executing CI job", () => {
   const fixtures = readdirSync(new URL("../release/", import.meta.url)).filter((name) => name.endsWith(".test.mjs"));
   assert.ok(fixtures.length > 0);

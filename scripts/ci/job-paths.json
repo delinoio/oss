@@ -503,6 +503,7 @@
       "pnpm-lock.yaml",
       "pnpm-workspace.yaml",
       "scripts/release/*devhud*",
+      "scripts/release/generate-checksums*",
       "scripts/release/linux/**",
       "turbo.json"
     ]
