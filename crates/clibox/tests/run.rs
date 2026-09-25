@@ -1837,9 +1837,12 @@ fn managed_service_failure_stops_the_workload_before_service_cleanup_finishes() 
     let home = tempfile::tempdir().unwrap();
     let stopped = home.path().join("workload-stopped");
     let workload_started = home.path().join("workload-started");
+    let service_child_ready = home.path().join("service-child-ready");
     let service_exited = home.path().join("service-exited");
     let workload_marker = format!("WORKLOAD_MARKER={}", stopped.display());
     let workload_started_marker = format!("WORKLOAD_STARTED={}", workload_started.display());
+    let service_child_ready_marker =
+        format!("SERVICE_CHILD_READY={}", service_child_ready.display());
     let service_exited_marker = format!("SERVICE_EXITED={}", service_exited.display());
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
@@ -1864,17 +1867,23 @@ fn managed_service_failure_stops_the_workload_before_service_cleanup_finishes() 
             "--kill-after",
             "500ms",
             "--service",
+            &workload_started_marker,
+            &service_child_ready_marker,
             &service_exited_marker,
             "sh",
             "-c",
-            "sh -c 'trap \"\" TERM; while :; do sleep 1; done' & sleep 0.2; : > \
-             \"$SERVICE_EXITED\"",
+            // The service must fail only after both children are ready; a fixed
+            // delay can let a busy runner end it before the workload is spawned.
+            "sh -c 'trap \"\" TERM; : > \"$SERVICE_CHILD_READY\"; while :; do sleep 1; done' & \
+             attempts=0; until [ -f \"$WORKLOAD_STARTED\" ] && [ -f \"$SERVICE_CHILD_READY\" ]; \
+             do [ \"$attempts\" -lt 500 ] || exit 1; attempts=$((attempts + 1)); sleep 0.01; \
+             done; : > \"$SERVICE_EXITED\"",
             "--",
             &workload_marker,
             &workload_started_marker,
             "sh",
             "-c",
-            ": > \"$WORKLOAD_STARTED\"; trap ': > \"$WORKLOAD_MARKER\"; exit 0' TERM; while :; do \
+            "trap ': > \"$WORKLOAD_MARKER\"; exit 0' TERM; : > \"$WORKLOAD_STARTED\"; while :; do \
              :; done",
         ],
     )
