@@ -1338,6 +1338,9 @@ jobs:
           pnpm --filter @delinoio/devhud-api-client lint
           pnpm --filter @delinoio/devhud-api-client test
           pnpm --filter @delinoio/devhud-api-client build
+          pnpm --filter @delinoio/delidev-api-client lint
+          pnpm --filter @delinoio/delidev-api-client test
+          pnpm --filter @delinoio/delidev-api-client build
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}

@@ -420,7 +420,8 @@
       "pnpm-workspace.yaml",
       "protos/**",
       "scripts/check-proto-breaking.sh",
-      "turbo.json"
+      "turbo.json",
+      "cmds/delidev-cli/**"
     ]
   },
   "devhud-admin": {

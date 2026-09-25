@@ -73,3 +73,5 @@
 - DeliDev `SearchService` is owner/paired-client-only. Search current retained message resources, including Archive, with literal Unicode queries and original-execution account filters. Keep query contents out of logs and readable cursor payloads; bind actor/filter/source epoch, recheck revocation transactionally, reject unknown enum values and bound both wire encodings without truncating source messages. Search grants no response or execution authority.
 
 - DeliDev `ActivityService.ListActivity` returns only typed metadata from durable original sources. Preserve source UUID/revision/time and origin links, separate dispatch from native completion/cleanup, and retain original execution-account identity. Owner/client-only pages bind actor/filter/source epoch and recheck revocation; no source document or native conversation identity enters activity.
+
+- DeliDev schema generation includes `packages/delidev-api-client/src/gen` TypeScript/Connect Query output. Keep root freshness, Turbo source/output tracking and the shared protocol CI client/real-Go-server checks synchronized; never handwrite generated descriptors or move business authority into the client.

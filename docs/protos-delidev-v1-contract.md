@@ -1,7 +1,7 @@
 # DeliDev v1 Connect contract
 
 ## Scope
-`protos/delidev/v1` owns `delidev.v1`; generated Go bindings live in `protos/gen/go/delidev/v1`.
+`protos/delidev/v1` owns `delidev.v1`; generated Go bindings live in `protos/gen/go/delidev/v1`. Generated TypeScript messages and service-specific Connect Query descriptors live in `packages/delidev-api-client/src/gen`; its [client contract](packages-delidev-api-client-contract.md) preserves direct authenticated Connect and read-only bounded replay.
 
 ## Runtime and Language
 Protocol Buffers and Connect RPC, with Go server/CLI clients. Native harness protocols never escape the Worker adapter boundary.

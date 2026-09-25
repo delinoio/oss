@@ -154,6 +154,8 @@ test("workspace, shared, runtime, and external contract inputs select their owne
     ["packages/devhud-api-client/src/client.ts", ["devhud-frontend", "devhud-protocol", "devhud-admin", "devhud-api", "rust-test"]],
     ["apps/devhud/src-tauri/src/updater.rs", ["rust-fmt", "rust-clippy", "rust-test", "devhud-rust-conformance", "devhud-frontend"]],
     ["protos/devhud/v1/account.proto", ["devhud-protocol", "devhud-api", "devhud-frontend"]],
+    ["packages/delidev-api-client/src/synchronization.ts", ["devhud-protocol"]],
+    ["cmds/delidev-cli/internal/server/resources.go", ["devhud-protocol"]],
     [".nvmrc", ["node-public-docs-test", "devhud-frontend", "devhud-api", "repository-environment"]],
     ["pnpm-lock.yaml", ["node-public-docs-test", "devhud-admin", "devhud-api", "devhud-frontend"]],
     [".cargo/config.toml", ["rust-fmt", "rust-clippy", "rust-test", "devhud-rust-conformance"]],

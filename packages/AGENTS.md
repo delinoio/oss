@@ -28,6 +28,12 @@
 ### async-commit-hook
 - `packages/async-commit-hook-api-client` owns `@delinoio/async-commit-hook-api-client`, generated exclusively from `async_commit_hook.v1`. Follow `docs/packages-async-commit-hook-api-client-contract.md`; no client-side duplicate gate logic or persistence.
 
+### DeliDev
+
+- `packages/delidev-api-client` owns the private generated TypeScript/Connect Query bindings and bounded read-only synchronization helpers. Follow `docs/packages-delidev-api-client-contract.md`. Generate all descriptors from `delidev.v1`; never duplicate Go product validation or add implicit startup/mutation retry.
+- Bind each transport to one explicit HTTPS or exact HTTP loopback origin and fresh caller-owned credentials. Disable redirects/cookies/cache; never store credentials, documents or cursors in browser storage, logs or query keys. Identity changes cancel all old requests and discard their caches.
+- Apply coherent complete snapshots before their cursors, then fetch changed resources by identity/revision. Advance replay only after consumption, resnapshot on typed gaps, preserve retained state on disconnect, and bound memory/backoff. Resource streams cannot emit native notifications or execute work. The real temporary Go-server fixture is uncached and uses only test-owned credentials/processes.
+
 ### clibox Rules
 
 - Keep the npm README and `apps/public-docs/docs/clibox` aligned with user-facing command and installation behavior; link to `https://oss.delino.io/clibox`. The shared documentation selector uses clean same-origin paths on production and the consolidated development server, including clibox and pnport as destinations.

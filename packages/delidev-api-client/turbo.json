@@ -1,0 +1,7 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "test": {"cache": false},
+    "test:unit": {"cache": false}
+  }
+}

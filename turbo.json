@@ -8,12 +8,14 @@
         "protos/devhud/v1/**",
         "package.json",
         "pnpm-lock.yaml",
-        "protos/async_commit_hook/v1/**"
+        "protos/async_commit_hook/v1/**",
+        "protos/delidev/v1/**"
       ],
       "outputs": [
         "protos/gen/**",
         "packages/devhud-api-client/src/gen/**",
-        "packages/async-commit-hook-api-client/src/gen/**"
+        "packages/async-commit-hook-api-client/src/gen/**",
+        "packages/delidev-api-client/src/gen/**"
       ]
     },
     "dev": {
