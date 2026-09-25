@@ -2,6 +2,7 @@
 //! outside this engine; all returned files belong to one immutable revision.
 #![forbid(unsafe_code)]
 
+mod png;
 mod raster;
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -410,18 +411,7 @@ fn add_png(
     image: &RgbaImage,
     total: &mut usize,
 ) -> Result<()> {
-    use image::ImageEncoder;
-    checkpoint()?;
-    let mut bytes = Vec::new();
-    image::codecs::png::PngEncoder::new(&mut bytes)
-        .write_image(
-            image.as_raw(),
-            image.width(),
-            image.height(),
-            image::ExtendedColorType::Rgba8,
-        )
-        .map_err(|_| invalid("image"))?;
-    checkpoint()?;
+    let bytes = png::encode(image)?;
     *total += bytes.len();
     if bytes.len() > forge_package::MAX_PART_BYTES || *total > forge_package::MAX_EXPANDED_BYTES {
         return Err(limit());

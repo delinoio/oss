@@ -3998,9 +3998,11 @@ dependencies = [
 name = "forge-sprite"
 version = "0.0.0"
 dependencies = [
+ "flate2",
  "forge-package",
  "forge-tree-doc",
  "image",
+ "png 0.18.1",
  "serde",
  "serde_json",
  "uuid",

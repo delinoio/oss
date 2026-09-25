@@ -249,7 +249,7 @@
 
 ### React Forge Engine Rules
 
-- `forge-sprite` owns the independent sprite model and CPU pixel renderer under `docs/packages-react-forge-sprite-contract.md`. Validate hidden nodes, bound decoded images and combined frame/atlas raster work, poll cancellation, preserve deterministic alpha/nearest-neighbor output, and return one bounded archive without filesystem or network access.
+- `forge-sprite` owns the independent sprite model and CPU pixel renderer under `docs/packages-react-forge-sprite-contract.md`. Validate hidden nodes, bound decoded images and combined frame/atlas raster work, poll cancellation during rasterization and bounded PNG compression (including within wide scanlines), preserve deterministic alpha/nearest-neighbor output, and return one bounded archive without filesystem or network access.
 
 - `forge-figma` owns pure bounded Figma model validation, preservation-aware diff and batch planning. Keep OAuth, network I/O and JavaScript execution outside Rust workers. Follow `docs/packages-react-forge-figma-contract.md`.
 
