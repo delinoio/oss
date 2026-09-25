@@ -86,11 +86,19 @@ test("Runmoor source and release scripts do not rebuild DevHud desktop/mobile", 
     const jobs = selected(Event.Push, paths);
     for (const id of devhudNative) assert.ok(!jobs.includes(id), id);
     if (paths[0].startsWith("cmds/")) assert.ok(jobs.includes("go-test"));
-    else if (paths.some((path) => path.endsWith(".test.mjs"))) assert.ok(jobs.includes("devhud-release-contracts"));
+    else if (paths.some((path) => path === "scripts/release/runmoor.mjs" || path.endsWith(".test.mjs"))) assert.ok(jobs.includes("devhud-release-contracts"));
     else assert.ok(!jobs.includes("devhud-release-contracts"));
   }
   for (const path of ["scripts/release/finalize-devhud-deb.sh", "scripts/release/linux/prerm.in", "scripts/release/generate-checksums.sh"]) {
     assert.ok(selected(Event.Push, [path]).includes("devhud-desktop"), path);
+  }
+});
+
+test("shared release implementations select the fixture job that exercises them", () => {
+  for (const event of [Event.PullRequest, Event.Push]) {
+    for (const path of ["scripts/release/project.mjs", "scripts/release/runmoor.mjs", "scripts/release/update-homebrew.sh"]) {
+      assert.equal(planJobs(event, [path]).jobs["devhud-release-contracts"], true, `${event}: ${path}`);
+    }
   }
 });
 
