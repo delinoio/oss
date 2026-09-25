@@ -329,3 +329,35 @@ The existing 4K product models and comparison renders remain unchanged; this
 repair does not claim a new visual render or execution on another host. Final
 push CI results are separate evidence. Generated repository-owned `dist`
 directories are removed after verification.
+
+
+## AURA source texture Git LFS migration (2026-09-25)
+
+PR #988 stores all seven AURA source PNGs in Git LFS through the exact
+`packages/react-forge/examples/audio-studio-assets/*.png` attribute pattern.
+Their combined original size is **10,760,286 bytes**; their seven Git pointers
+occupy **916 bytes**. The three source assets above 1 MiB were included, and no
+ordinary blob above 1 MiB remains in the PR-only history relative to `main`.
+
+The migration rewrote fifteen PR commits and preserved the base branch. All
+non-texture trees were compared against the pre-migration commits; only LFS
+pointers and their attribute declarations changed. Across those commits, **94
+texture entries** match their original SHA-256 and sizes, representing **12 unique
+historical LFS objects** (11,588,830 payload bytes). The original commit IDs in
+older acceptance records remain historical evidence; they are not rewritten to
+imply the earlier runs used the new storage layout.
+
+Git LFS 3.7.1 uploaded all twelve objects. A separate sparse checkout with an
+initially empty LFS cache downloaded the seven current textures from GitHub,
+verified their original hashes and sizes, and passed `git lfs fsck`. Using that
+checkout's downloaded textures with the validated local dependency/native build,
+the example generator produced all eight actual GLB/FBX files. All four GLBs had
+zero Khronos Validator errors. This is export and storage verification, not a new
+Blender visual render; texture pixels and prior visual evidence are unchanged.
+
+Local macOS arm64/Node.js 24.17.0 verification also passed package
+build/typecheck/lint with **121 tests**, installed-archive CLI/MCP coverage,
+standalone example type checks, **79 CI contract tests**, and workflow validation.
+Source-consuming CI and release build checkouts now enable LFS, and attribute
+changes select both native/package validation and scene-render jobs. Generated
+repository-owned `dist` directories were removed after these checks.
