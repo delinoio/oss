@@ -192,7 +192,14 @@ func Open(ctx context.Context, root string) (_ *Store, returned error) {
 }
 
 func databaseURI(path string, readonly bool) string {
-	u := url.URL{Scheme: "file", Path: filepath.ToSlash(path)}
+	path = filepath.ToSlash(path)
+	// SQLite file URIs require / before an absolute Windows drive. Without
+	// it net/url emits file://C:/..., treating the drive as an authority and
+	// SQLite rejects the open before any schema query can run.
+	if len(path) >= 3 && path[1] == ':' && path[2] == '/' && ((path[0] >= 'A' && path[0] <= 'Z') || (path[0] >= 'a' && path[0] <= 'z')) {
+		path = "/" + path
+	}
+	u := url.URL{Scheme: "file", Path: path}
 	q := url.Values{"mode": {"rw"}, "_pragma": {"busy_timeout(5000)", "foreign_keys(1)"}}
 	if readonly {
 		q.Set("mode", "ro")
