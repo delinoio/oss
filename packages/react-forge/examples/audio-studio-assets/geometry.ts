@@ -191,3 +191,15 @@ export function perforatedLid():GeometryInput {
   }
   return {positions:new Float32Array(p),normals:new Float32Array(n),tangents:new Float32Array(t),uv:new Float32Array(uv),indices:new Uint32Array(idx)};
 }
+
+/** Planar end-cap UVs keep woven acoustic fabric from pinching at the lathe pole. */
+export function planarCaps(g:GeometryInput,radius:number,height:number):GeometryInput {
+  for(let i=0;i<g.positions.length/3;i++) {
+    if(Math.abs(Math.abs(g.positions[i*3+1]!)-height/2)>1e-8)continue;
+    const nx=g.normals[i*3]!,ny=g.normals[i*3+1]!,nz=g.normals[i*3+2]!;
+    g.uv![i*2]=.5+g.positions[i*3]!/(2*radius);
+    g.uv![i*2+1]=.5+g.positions[i*3+2]!/(2*radius);
+    g.tangents!.set([...unit([1-nx*nx,-nx*ny,-nx*nz]),ny>0?-1:1],i*4);
+  }
+  return g;
+}

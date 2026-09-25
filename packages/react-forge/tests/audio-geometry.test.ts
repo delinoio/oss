@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { cushion, machinedCylinder, roundedBox, stitches, tube, flutedGrip, perforatedLid } from '../examples/audio-studio-assets/geometry.js';
+import { cushion, machinedCylinder, roundedBox, stitches, tube, flutedGrip, perforatedLid, planarCaps } from '../examples/audio-studio-assets/geometry.js';
 
 test('curved audio geometry has outward winding and orthonormal tangent frames', () => {
   const shapes = {
     cushion: cushion(),
+    acousticLiner: planarCaps(machinedCylinder(.029,.002,.0008),.029,.002),
     ventedLid: perforatedLid(),
     encoder: machinedCylinder(.022, .017, .0015),
     thinPlate: roundedBox([.25, .002, .17], .007),

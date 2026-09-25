@@ -2,7 +2,7 @@ import React from "react";
 import { fileURLToPath } from "node:url";
 import { createSession, Format, type SceneSession } from "@delino/react-forge";
 import { Scene, Group, Mesh, PerspectiveCamera, PointLight, AlphaMode, type Material, type GeometryHandle } from "@delino/react-forge/glb";
-import { roundedBox, cylinder, ring, arc, plane, machinedCylinder, cushion, torus, flutedGrip, stitches, tube, merge, label, perforatedLid, quaternion as q } from "./audio-studio-assets/geometry.js";
+import { roundedBox, cylinder, ring, arc, plane, machinedCylinder, cushion, torus, flutedGrip, stitches, tube, merge, label, perforatedLid, planarCaps, quaternion as q } from "./audio-studio-assets/geometry.js";
 
 export enum Product { Studio="studio", Headphones="headphones", Dac="dac", Stand="stand" }
 type Assets = Awaited<ReturnType<typeof assets>>;
@@ -13,7 +13,7 @@ async function assets(session:SceneSession,signal?:AbortSignal) {
   const shapes={
     shell:machinedCylinder(.049,.019,.0035),cap:machinedCylinder(.045,.004,.0018),capInset:machinedCylinder(.0416,.001,.0004),
     rim:torus(.0467,.0007,1.22),capLine:torus(.042,.00020,1.22),cushion:cushion(),padSeam:torus(.047,.00045,1.24),padStitch:stitches(.047,1.24),
-    inner:machinedCylinder(.029,.002,.0008),hinge:machinedCylinder(.0062,.003,.0008),hingeInset:machinedCylinder(.004,.0008,.0003),
+    inner:planarCaps(machinedCylinder(.029,.002,.0008),.029,.002),hinge:machinedCylinder(.0062,.003,.0008),hingeInset:machinedCylinder(.004,.0008,.0003),
     headband:arc(.108,.138,.0032,.035,.025,Math.PI-.025,192),padding:arc(.103,.129,.009,.036,.10,Math.PI-.10,192),bandStitch,
     yoke:arc(.048,.064,.0034,.0055,.0,Math.PI,160),slider:roundedBox([.007,.053,.004],.0015,20),sleeve:roundedBox([.011,.025,.007],.0025,20),bridge:roundedBox([.026,.0045,.006],.002,16),
     adjustment:roundedBox([.004,.0005,.00025],.0001,4),
