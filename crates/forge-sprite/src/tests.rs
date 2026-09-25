@@ -94,6 +94,40 @@ fn pixels_alpha_order_scale_padding_metadata_and_geometry() {
 }
 
 #[test]
+fn hidden_descendants_retain_translated_geometry_without_drawing() {
+    let leaf = rect("#ff0000", 2, 2);
+    let leaf_id = leaf["id"].as_str().unwrap().to_owned();
+    let nested = node(
+        json!({"type":"layer","visible":true,"children":[leaf]}),
+        -2,
+        3,
+    );
+    let hidden = node(
+        json!({"type":"layer","visible":false,"children":[nested]}),
+        1,
+        -2,
+    );
+    let mut m = model(vec![]);
+    let mut second = m["animations"][0]["frames"][0].clone();
+    second["id"] = id();
+    second["children"] = json!([hidden]);
+    m["animations"][0]["frames"]
+        .as_array_mut()
+        .unwrap()
+        .push(second);
+    let (parts, geometry) = export(&m, &Assets::new());
+    assert_eq!(
+        geometry["nodes"][leaf_id]["frame"],
+        json!({"coordinate_space":"sprite_frame","x":-1,"y":1,"width":2,"height":2,"page":1})
+    );
+    assert!(
+        png(&parts, "frames/0001.png")
+            .pixels()
+            .all(|pixel| pixel.0 == [0; 4])
+    );
+}
+
+#[test]
 fn image_crop_nearest_flips_and_hidden_crop_validation() {
     let mut original = RgbaImage::new(3, 2);
     for (x, y, p) in original.enumerate_pixels_mut() {

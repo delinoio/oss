@@ -100,10 +100,10 @@ impl<'a> Raster<'a> {
             } else {
                 None
             };
+            self.geometry(id, x, y, width, height, page);
             if !visible {
                 continue;
             }
-            self.geometry(id, x, y, width, height, page);
             let left = x.clamp(0, i64::from(canvas.width()));
             let top = y.clamp(0, i64::from(canvas.height()));
             let right = (x + i64::from(width)).clamp(0, i64::from(canvas.width()));
