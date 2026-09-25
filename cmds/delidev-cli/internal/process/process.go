@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -37,12 +38,15 @@ type Config struct {
 	Logger     *slog.Logger
 }
 type Handle struct {
-	native  *managedProcess
-	mu      sync.Mutex
-	resumed bool
-	done    chan struct{}
-	result  error
-	logger  *slog.Logger
+	native     *managedProcess
+	mu         sync.Mutex
+	resumed    bool
+	done       chan struct{}
+	result     error
+	logger     *slog.Logger
+	controller *security.Lock
+	closeOnce  sync.Once
+	closeErr   error
 }
 type commandExitError int
 
@@ -102,6 +106,13 @@ func Start(ctx context.Context, config Config) (*Handle, error) {
 		return nil, err
 	}
 	scope := filepath.Join(directory, string(domain.NewID()))
+	if err := security.PrivateDir(scope); err != nil {
+		return nil, err
+	}
+	controller, err := security.TryLock(filepath.Join(scope, "controller.lock"))
+	if err != nil {
+		return nil, err
+	}
 	command := exec.Command(config.Executable, config.Args...)
 	command.Env = config.Env
 	command.Dir = config.Cwd
@@ -114,9 +125,10 @@ func Start(ctx context.Context, config Config) (*Handle, error) {
 	logger = logger.With("owner_id", config.OwnerID, "process_scope_id", filepath.Base(scope))
 	p, err := startProcess(command, scope, config.OwnerID)
 	if err != nil {
+		_ = controller.Close()
 		return nil, err
 	}
-	h := &Handle{native: p, done: make(chan struct{}), logger: logger}
+	h := &Handle{native: p, done: make(chan struct{}), logger: logger, controller: controller}
 	logger.InfoContext(ctx, "native process prepared", "pid", p.snapshot().PID)
 	go func() {
 		h.result = p.wait()
@@ -167,7 +179,14 @@ func (h *Handle) CloseInput() error     { return h.native.closeInput() }
 func (h *Handle) Wait() error           { <-h.done; return h.result }
 func (h *Handle) Done() <-chan struct{} { return h.done }
 func (h *Handle) Stop() error           { return h.native.terminate() }
-func (h *Handle) Close() error          { err := h.Stop(); h.native.close(); return err }
+func (h *Handle) Close() error {
+	h.closeOnce.Do(func() {
+		h.closeErr = h.Stop()
+		h.native.close()
+		h.closeErr = errors.Join(h.closeErr, h.controller.Close())
+	})
+	return h.closeErr
+}
 func Run(ctx context.Context, config Config) error {
 	h, err := Start(ctx, config)
 	if err != nil {
@@ -200,6 +219,10 @@ func ReconcileOwner(root string, owner domain.ID) error {
 // Cancellation interrupts between bounded native ownership checks; an in-flight
 // termination still finishes its confirmation before yielding.
 func ReconcileOwnerContext(ctx context.Context, root string, owner domain.ID) error {
+	return reconcileOwnerContext(ctx, root, owner, 10000)
+}
+
+func reconcileOwnerContext(ctx context.Context, root string, owner domain.ID, limit int) error {
 	if err := ctx.Err(); err != nil {
 		return domain.SafeError(err)
 	}
@@ -210,47 +233,117 @@ func ReconcileOwnerContext(ctx context.Context, root string, owner domain.ID) er
 	if err := security.CheckPrivateDir(directory); err != nil {
 		return ownershipError()
 	}
-	entries, err := os.ReadDir(directory)
+	// Serialize retirement independently of native handle ownership. The lock
+	// lives outside the owner index so a retained empty index stays meaningful.
+	maintenance, err := security.TryLock(filepath.Join(root, string(owner)+".recovery.lock"))
+	if err != nil {
+		return err
+	}
+	defer maintenance.Close()
+	index, err := os.Open(directory)
 	if err != nil {
 		return ownershipError()
 	}
-	if len(entries) > 10000 {
-		return domain.Fail(domain.ResourceExhausted, "Process recovery exceeds its bounded owner scope.", "Inspect and prune confirmed completed ownership journals before retrying.")
-	}
-	for _, entry := range entries {
+	defer index.Close()
+	var retained []Process
+	for {
 		if err := ctx.Err(); err != nil {
 			return domain.SafeError(err)
 		}
-		if !entry.IsDir() || domain.ID(entry.Name()).Validate() != nil {
+		entries, err := index.ReadDir(256)
+		if err != nil && !errors.Is(err, io.EOF) {
 			return ownershipError()
 		}
-		path := filepath.Join(directory, entry.Name())
-		if err := security.CheckPrivateDir(path); err != nil {
-			return ownershipError()
+		if len(entries) == 0 {
+			break
 		}
-		raw, err := security.ReadPrivate(filepath.Join(path, "ownership.json"), 1<<20)
-		if err != nil {
-			return ownershipError()
+		for _, entry := range entries {
+			if err := ctx.Err(); err != nil {
+				return domain.SafeError(err)
+			}
+			name := entry.Name()
+			retired := strings.HasPrefix(name, ".retired-")
+			if !entry.IsDir() || domain.ID(strings.TrimPrefix(name, ".retired-")).Validate() != nil {
+				return ownershipError()
+			}
+			path := filepath.Join(directory, name)
+			if err := security.CheckPrivateDir(path); err != nil {
+				return ownershipError()
+			}
+			if retired {
+				// This name is published only after completed ownership and released
+				// controller authority are verified. Retry interrupted removal without
+				// interpreting a partially removed journal as new completion proof.
+				if err := os.RemoveAll(path); err != nil {
+					return ownershipError()
+				}
+				if err := security.SyncParent(path); err != nil {
+					return ownershipError()
+				}
+				continue
+			}
+			raw, err := security.ReadPrivate(filepath.Join(path, "ownership.json"), 1<<20)
+			if err != nil {
+				return ownershipError()
+			}
+			// This superset contains metadata only and supports each native journal.
+			var scope struct {
+				Version   int       `json:"version"`
+				OwnerID   domain.ID `json:"owner_id"`
+				Owner     Process   `json:"owner"`
+				Boot      string    `json:"boot,omitempty"`
+				Coalition uint64    `json:"coalition,omitempty"`
+				Label     string    `json:"label,omitempty"`
+				Domain    string    `json:"domain,omitempty"`
+				Job       string    `json:"job,omitempty"`
+				Started   bool      `json:"started"`
+				Complete  bool      `json:"complete"`
+			}
+			if err := domain.Decode(raw, &scope); err != nil || scope.Version != 1 || scope.OwnerID != owner {
+				return ownershipError()
+			}
+			identity := scope.Owner
+			identity.ScopeDir = path
+			identity.OwnerID = owner
+			if scope.Complete {
+				controller, err := security.TryLock(filepath.Join(path, "controller.lock"))
+				if err == nil {
+					// Reuse the platform reader to validate this completion, never PID
+					// absence. A live Handle retains the journal until it has closed.
+					checked := ReconcileProcess(identity)
+					closed := controller.Close()
+					if checked != nil || closed != nil {
+						return ownershipError()
+					}
+					retiredPath := filepath.Join(directory, ".retired-"+name)
+					if err := os.Rename(path, retiredPath); err != nil {
+						return ownershipError()
+					}
+					if err := security.SyncParent(retiredPath); err != nil {
+						return ownershipError()
+					}
+					if err := os.RemoveAll(retiredPath); err != nil {
+						return ownershipError()
+					}
+					if err := security.SyncParent(retiredPath); err != nil {
+						return ownershipError()
+					}
+					continue
+				}
+				if domain.SafeError(err).Code != domain.Conflict {
+					return ownershipError()
+				}
+			}
+			retained = append(retained, identity)
+			if len(retained) > limit {
+				return domain.Fail(domain.ResourceExhausted, "Process recovery exceeds its bounded unresolved owner scope.", "Inspect the retained ownership journals before retrying.")
+			}
 		}
-		// This superset contains metadata only and supports each native journal.
-		var scope struct {
-			Version   int       `json:"version"`
-			OwnerID   domain.ID `json:"owner_id"`
-			Owner     Process   `json:"owner"`
-			Boot      string    `json:"boot,omitempty"`
-			Coalition uint64    `json:"coalition,omitempty"`
-			Label     string    `json:"label,omitempty"`
-			Domain    string    `json:"domain,omitempty"`
-			Job       string    `json:"job,omitempty"`
-			Started   bool      `json:"started"`
-			Complete  bool      `json:"complete"`
+	}
+	for _, identity := range retained {
+		if err := ctx.Err(); err != nil {
+			return domain.SafeError(err)
 		}
-		if err := domain.Decode(raw, &scope); err != nil || scope.Version != 1 || scope.OwnerID != owner {
-			return ownershipError()
-		}
-		identity := scope.Owner
-		identity.ScopeDir = path
-		identity.OwnerID = owner
 		if err := ReconcileProcess(identity); err != nil {
 			return err
 		}
