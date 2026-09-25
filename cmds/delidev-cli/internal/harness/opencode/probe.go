@@ -118,12 +118,13 @@ func Probe(ctx context.Context, config ProbeConfig) (returned error) {
 		}
 		// Closing joins both output drains. Late extra output invalidates an
 		// otherwise successful HTTP handshake rather than being discarded.
-		if returned == nil {
-			if problem := output.status(); problem != nil {
-				returned = problem
-			} else if len(output.buffer) != 0 {
-				returned = incompatible()
-			}
+		// A stream violation cancels HTTP concurrently. Preserve that original
+		// typed cause after joining drains instead of reporting the consequential
+		// generic network cancellation, even when HTTP noticed it first.
+		if problem := output.status(); problem != nil {
+			returned = problem
+		} else if returned == nil && len(output.buffer) != 0 {
+			returned = incompatible()
 		}
 	}()
 	if err := reservation.Close(); err != nil {
