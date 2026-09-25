@@ -224,3 +224,21 @@ injection companion was explicitly generated with
 the previous run had stopped on its missing native artifact. No unrelated Rust
 source was changed. Generated repository-owned `dist` directories were removed
 after validation.
+
+### PR #987 CLI readiness repair
+
+The initial six-host CI run passed five React Forge hosts. The darwin-x64 job
+failed the CLI signal fixture before sending a signal: its fixed 200 polls at
+10 ms exhausted the startup budget before the React effect's readiness marker
+appeared. All SFX cases passed in that job. The fixture now uses a bounded
+30-second monotonic readiness deadline, stops early on process exit or signal,
+and includes exit state and captured output in readiness failures. Cancellation
+codes, effect cleanup and absence of partial exports remain required.
+
+A deliberate 2.5-second task startup delay reproduced the old assertion failure
+locally and passed after the repair for both SIGINT and SIGTERM. On macOS arm64
+with Node.js 24.20.0, the focused regression and all 108 package tests passed,
+along with build, typecheck, lint, standalone example checks and the public
+main/native installed-package smoke test for all five local output formats.
+No production code or public contract changed; native Intel Mac execution of the
+repair remains a CI validation step.

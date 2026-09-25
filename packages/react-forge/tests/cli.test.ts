@@ -72,7 +72,11 @@ test("CLI task failures stay redacted and SIGINT/SIGTERM dispose pending session
           useEffect(() => { writeFileSync(${quote(ready)}, "ready"); return () => writeFileSync(${quote(cleaned)}, "cleaned"); }, []);
           return React.createElement(Document, { language: "en" }, React.createElement(Page, null, React.createElement(Suspense, { fallback: React.createElement(Paragraph, null, "Pending") }, React.createElement(Pending))));
         }
-        export default async function task() { const s = createSession(Format.Pdf); await s.render(React.createElement(App)); return s; }
+        export default async function task() {
+          // Exercise startup beyond the former two-second readiness budget.
+          await new Promise(resolve => setTimeout(resolve, 2500));
+          const s = createSession(Format.Pdf); await s.render(React.createElement(App)); return s;
+        }
       `);
       const child = spawn(process.execPath, [cli, "run", entry, "--output", join(directory, `${signal}.pdf`), "--json"], { stdio: ["ignore", "pipe", "pipe"] });
       let stdout = ""; let stderr = "";
@@ -81,12 +85,15 @@ test("CLI task failures stay redacted and SIGINT/SIGTERM dispose pending session
       const exit = new Promise<number | null>((resolve, reject) => { child.once("error", reject); child.once("exit", resolve); });
       try {
         let started = false;
-        for (let i = 0; i < 200; i++) {
+        // Native/TSX startup under parallel CI load can exceed two seconds.
+        // Bound only fixture readiness; keep signal and cleanup assertions intact.
+        const startupDeadline = performance.now() + 30_000;
+        while (performance.now() < startupDeadline) {
           if (await readFile(ready).then(() => true, () => false)) { started = true; break; }
-          if (child.exitCode !== null) break;
-          await new Promise(resolve => setTimeout(resolve, 10));
+          if (child.exitCode !== null || child.signalCode !== null) break;
+          await new Promise(resolve => setTimeout(resolve, 20));
         }
-        assert.ok(started, stderr + stdout);
+        assert.ok(started, `CLI did not report readiness within 30 seconds (exit=${child.exitCode}, signal=${child.signalCode}).\n${stderr}${stdout}`);
         child.kill(signal);
         assert.equal(await exit, signal === "SIGINT" ? 130 : 143);
         assert.equal(JSON.parse(stdout).error.code, "cancelled");
