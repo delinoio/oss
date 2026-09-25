@@ -155,3 +155,5 @@
 - SQLite URI construction must preserve escaped local paths and represent Windows drive letters in the absolute path, never the URI authority.
 
 - Windows native launch classification must include documented incompatible-image, machine-type and missing-subsystem loader statuses without exposing OS diagnostic strings.
+
+- A reported execution-claim publication failure before lease issuance may roll back only that attempt's empty private process owner and exact new claim, restoring the prior closed claim for continuation. Hold the session lock; retain history, workspace and all unexpected ownership evidence. Never apply this rollback to a returned lease or crash-recovered active claim.

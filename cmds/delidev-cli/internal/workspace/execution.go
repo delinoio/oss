@@ -221,19 +221,16 @@ func (m *Manager) claimExecution(ctx context.Context, jobID, executionID domain.
 	if err := ctx.Err(); err != nil {
 		return nil, domain.SafeError(err)
 	}
-	if err := security.PrivateDir(ownerDirectory); err != nil {
-		return nil, ResultUncertain()
-	}
-	if err := security.SyncParent(ownerDirectory); err != nil {
-		return nil, ResultUncertain()
-	}
 	claim := executionClaim{Version: 2, SessionID: input.SessionID, JobID: jobID, ExecutionID: executionID, ManifestDigest: manifestDigest, WorkspaceDigest: identityDigest, State: executionClaimActive}
 	if previous != nil {
 		claim.PreviousJobID, claim.PreviousExecutionID = previous.JobID, previous.ExecutionID
 	}
-	raw, err := json.Marshal(claim)
-	if err != nil || security.WriteAtomic(m.executionClaimPath(input.SessionID), raw) != nil {
-		return nil, ResultUncertain()
+	var original *executionClaim
+	if previous != nil {
+		original = &prior
+	}
+	if err := m.publishExecutionClaim(claim, original, security.WriteAtomic, security.SyncParent); err != nil {
+		return nil, err
 	}
 	m.Logger.InfoContext(ctx, "workspace_execution_claimed", "session_id", input.SessionID, "job_id", jobID, "execution_id", executionID, "continuation", previous != nil)
 	return &ExecutionLease{manager: m, claim: claim, cwd: manifest.PrimaryPath, release: lock.Close}, nil
@@ -332,4 +329,82 @@ func (m *Manager) requireNoExecutionHistory(session domain.ID) error {
 		return nil
 	}
 	return ResultUncertain()
+}
+
+// publishExecutionClaim runs while the session lock is held, before returning
+// any execution lease. On a reported publication failure no native launch is
+// possible through this attempt, so only its provably empty owner may roll back.
+// The injected operations let tests exercise pre/post-rename failure boundaries.
+func (m *Manager) publishExecutionClaim(claim executionClaim, prior *executionClaim, write func(string, []byte) error, syncParent func(string) error) (returned error) {
+	owner := filepath.Join(m.Git.ProcessRoot, string(claim.JobID))
+	if _, err := os.Lstat(owner); !errors.Is(err, os.ErrNotExist) {
+		return ResultUncertain()
+	}
+	if err := security.PrivateDir(owner); err != nil {
+		return ResultUncertain()
+	}
+	defer func() {
+		if returned != nil {
+			if err := m.rollbackUnlaunchedClaim(owner, claim, prior); err != nil {
+				m.Logger.Warn("workspace_execution_claim_rollback_failed", "session_id", claim.SessionID, "job_id", claim.JobID, "execution_id", claim.ExecutionID, "code", domain.SafeError(err).Code)
+			}
+		}
+	}()
+	if err := syncParent(owner); err != nil {
+		return ResultUncertain()
+	}
+	raw, err := json.Marshal(claim)
+	if err != nil || write(m.executionClaimPath(claim.SessionID), raw) != nil {
+		return ResultUncertain()
+	}
+	return nil
+}
+
+func (m *Manager) rollbackUnlaunchedClaim(owner string, claim executionClaim, prior *executionClaim) error {
+	if err := security.CheckPrivateDir(owner); err != nil {
+		return ResultUncertain()
+	}
+	dir, err := os.Open(owner)
+	if err != nil {
+		return ResultUncertain()
+	}
+	names, readErr := dir.Readdirnames(1)
+	closeErr := dir.Close()
+	if len(names) != 0 || !errors.Is(readErr, io.EOF) || closeErr != nil {
+		return ResultUncertain()
+	}
+	current, err := m.readExecutionClaim(claim.SessionID)
+	path := m.executionClaimPath(claim.SessionID)
+	switch {
+	case err == nil && current == claim:
+		if prior == nil {
+			if err := os.Remove(path); err != nil {
+				return ResultUncertain()
+			}
+			if err := security.SyncParent(path); err != nil {
+				return ResultUncertain()
+			}
+		} else {
+			raw, err := json.Marshal(prior)
+			if err != nil || security.WriteAtomic(path, raw) != nil {
+				return ResultUncertain()
+			}
+		}
+	case err == nil && prior != nil && current == *prior:
+		// The failed writer did not replace the exact retained predecessor.
+	case errors.Is(err, os.ErrNotExist) && prior == nil:
+		// The initial claim was never published.
+	default:
+		// Unknown or changed ownership can never be removed based on an empty index.
+		return ResultUncertain()
+	}
+	// Remove only the empty directory created by this attempt, never a process
+	// scope or workspace. Rollback failures remain uncertain and keep evidence.
+	if err := os.Remove(owner); err != nil {
+		return ResultUncertain()
+	}
+	if err := security.SyncParent(owner); err != nil {
+		return ResultUncertain()
+	}
+	return nil
 }
