@@ -287,3 +287,45 @@ along with build, typecheck, lint, standalone example checks and the public
 main/native installed-package smoke test for all five local output formats.
 No production code or public contract changed; native Intel Mac execution of the
 repair remains a CI validation step.
+
+
+## PR #988 merge and review repair (2026-09-25)
+
+Merged `origin/main` at `bcc35d49` without rebasing, preserving both the static
+GLB/FBX extension and the incoming WAV/SFX extension. The combined installation
+suite covers seven local formats, and the public guide inventory contains all
+seventeen routes.
+
+Two actionable review findings were repaired independently: native scene
+measurement events and errors now retain the layout stage, while document
+inspection and generation keep import/export; the app instruction now requires
+validation of the complete seventeen-route inventory. Regression tests cover
+successful and failed GLB/FBX measurements, exports, and failed native inspections
+across all seven formats. The old diagnostic mapping fails these regressions.
+
+The independent macOS x64 CI failure was a cancellation-fixture readiness race:
+a marker file could become visible before its write continuation installed the
+abort listener. Both fixtures now retain cancellation before publishing readiness
+and handle already-aborted signals. The late-return test deliberately continues
+after cancellation has arrived. The old late subscription fails deterministically
+at the disposal marker; the repaired fixture and all twelve MCP tests pass.
+Neither runtime cancellation semantics nor timeout budgets were changed.
+
+Final local macOS arm64 verification of implementation `8b18fce3`, using Node.js
+24.17.0 and the pinned Rust toolchain, passed:
+
+- Root `TMPDIR=/private/tmp cargo test --locked -- --test-threads=1`: **1,933 passed,
+  zero failed, three existing opt-in tests ignored**, after the documented frontend
+  and separate generic/pnport preload preparation.
+- Scene, GLB, FBX, SFX and native-adapter Clippy with warnings denied.
+- Package build/typecheck/lint and **121 tests**, including installed-archive
+  seven-format CLI/MCP coverage, plus standalone example type checks.
+- Public main/native candidate assembly and installed seven-format CLI smoke.
+- **78 CI contract tests**, workflow validation, and **six scene-comparison tests**.
+- `pnpm test` from `apps/public-docs`, including all **17** React Forge routes;
+  the rendered inventory also matches the corrected app validation instruction.
+
+The existing 4K product models and comparison renders remain unchanged; this
+repair does not claim a new visual render or execution on another host. Final
+push CI results are separate evidence. Generated repository-owned `dist`
+directories are removed after verification.
