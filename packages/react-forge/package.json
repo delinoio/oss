@@ -37,6 +37,16 @@
       "types": "./dist/figma.d.ts",
       "import": "./dist/figma.js",
       "require": "./dist/figma.js"
+    },
+    "./glb": {
+      "types": "./dist/glb.d.ts",
+      "import": "./dist/glb.js",
+      "require": "./dist/glb.js"
+    },
+    "./fbx": {
+      "types": "./dist/fbx.d.ts",
+      "import": "./dist/fbx.js",
+      "require": "./dist/fbx.js"
     }
   },
   "bin": {
@@ -75,6 +85,8 @@
     "@types/node": "24.10.1",
     "@types/react": "19.2.14",
     "@types/react-reconciler": "0.32.3",
+    "gltf-validator": "2.0.0-dev.3.10",
+    "three": "0.186.1",
     "typescript": "5.9.3"
   }
 }

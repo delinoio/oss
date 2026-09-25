@@ -271,3 +271,5 @@
 - Presentation text editability must validate paragraph/run semantics as well as body geometry, including table-cell text. Preserve unmodeled fields, links, bullets, defaults and extensions as opaque content.
 - Imported PPTX update envelopes must contain replacements and source identity, not a serialized copy of untouched Office content. Apply the React-tree input ceiling to authored work without making successfully imported large documents unexportable.
 - Imported DOCX mounted measurements must use source section/cell flow constraints. Preserve unknown width as unavailable geometry while retaining safe edits; never substitute a default page width for ambiguous source layout.
+
+- `forge-scene`, `forge-glb` and `forge-fbx` own bounded static 3D validation and converter-free GLB/FBX generation under `docs/packages-react-forge-scene-contract.md`. Use cancellation checkpoints, preserve meter/Y-up semantics, embed textures, and verify FBX independently with ufbx. Never copy GPL exporter code into repository-owned engines.

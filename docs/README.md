@@ -135,3 +135,5 @@ The deterministic bilingual frontend, target-isolated Tauri desktop CEF plus iOS
 - [Complete issue #958 requirements](crates-pnport-requirements.md)
 - [npm/native distribution](packages-pnport-distribution-contract.md)
 - [Public documentation](apps-pnport-docs-foundation.md) (ten guides under `/pnport`, with 0.1.0 marked unreleased)
+
+- [React Forge static GLB/FBX scenes](packages-react-forge-scene-contract.md): generation, materials, sessions and interoperability evidence requirements.

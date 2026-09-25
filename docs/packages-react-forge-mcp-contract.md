@@ -66,3 +66,7 @@ Keep this contract, Node/Figma contracts, original requirements follow-up, proje
 - [Figma publication](packages-react-forge-figma-contract.md).
 - [Repository defaults](repository-defaults.md).
 - [MCP server and stdio logging guidance](https://modelcontextprotocol.io/docs/2026-07-28/develop/build-server).
+
+## Static 3D extension
+
+The generation-only GLB/FBX extension follows [the scene contract](packages-react-forge-scene-contract.md). `SceneSession` shares local publication and MCP lifecycle, uses independent world-space bounds and native scene engines, and introduces no runtime conversion dependency.

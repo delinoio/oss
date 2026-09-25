@@ -6,6 +6,8 @@ export enum Format {
   Xlsx = "xlsx",
   Pdf = "pdf",
   Figma = "figma",
+  Glb = "glb",
+  Fbx = "fbx",
 }
 
 export enum ErrorCode {
@@ -100,6 +102,8 @@ export type AssetSource = Uint8Array | { path: string };
 export interface AssetHandle { readonly assetId: string; readonly documentId: string }
 
 export const limits = Object.freeze({
+  sceneBytes: 256 * 1024 * 1024,
+  geometryBytes: 64 * 1024 * 1024,
   officeBytes: 256 * 1024 * 1024,
   pdfBytes: 256 * 1024 * 1024,
   expandedOfficeBytes: 512 * 1024 * 1024,

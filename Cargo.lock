@@ -25,6 +25,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
+name = "adler32"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aae1277d39aeec15cb388266ecc24b11c80469deae6067e17a1a7aa9e5c1f234"
+
+[[package]]
 name = "aead"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3655,6 +3661,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "caf1079563223d5d59d83c85886a56e586cfd5c1a26292e971a0fa266531ac5a"
 
 [[package]]
+name = "fbxcel"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1f9e966e38cb462819635792e0a9ee1d6cc5fff9bcdbf7baefb350221a7ae3df"
+dependencies = [
+ "libflate",
+ "log",
+]
+
+[[package]]
 name = "fdeflate"
 version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3943,12 +3959,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-fbx"
+version = "0.0.0"
+dependencies = [
+ "fbxcel",
+ "forge-scene",
+ "forge-tree-doc",
+ "glam",
+ "serde_json",
+ "ufbx",
+]
+
+[[package]]
 name = "forge-figma"
 version = "0.0.0"
 dependencies = [
  "serde",
  "serde_json",
  "uuid",
+]
+
+[[package]]
+name = "forge-glb"
+version = "0.0.0"
+dependencies = [
+ "forge-scene",
+ "forge-tree-doc",
+ "serde_json",
 ]
 
 [[package]]
@@ -3992,6 +4029,19 @@ dependencies = [
  "tempfile",
  "uuid",
  "zip 8.6.0",
+]
+
+[[package]]
+name = "forge-scene"
+version = "0.0.0"
+dependencies = [
+ "forge-document",
+ "forge-tree-doc",
+ "glam",
+ "image",
+ "serde",
+ "serde_json",
+ "uuid",
 ]
 
 [[package]]
@@ -4647,6 +4697,12 @@ dependencies = [
  "system-deps",
  "winapi",
 ]
+
+[[package]]
+name = "glam"
+version = "0.30.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "19fc433e8437a212d1b6f1e68c7824af3aed907da60afa994e7f542d18d12aa9"
 
 [[package]]
 name = "glib"
@@ -6316,6 +6372,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "328c4789d42200f1eeec05bd86c9c13c7f091d2ba9a6ea35acdf51f31bc0f043"
 dependencies = [
  "pkg-config",
+]
+
+[[package]]
+name = "libflate"
+version = "1.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5ff4ae71b685bbad2f2f391fe74f6b7659a34871c08b210fdc039e43bee07d18"
+dependencies = [
+ "adler32",
+ "crc32fast",
+ "libflate_lz77",
+]
+
+[[package]]
+name = "libflate_lz77"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a52d3a8bfc85f250440e4424db7d857e241a3aebbbe301f3eb606ab15c39acbf"
+dependencies = [
+ "rle-decode-fast",
 ]
 
 [[package]]
@@ -9727,10 +9803,13 @@ version = "0.0.0"
 dependencies = [
  "forge-document",
  "forge-docx",
+ "forge-fbx",
  "forge-figma",
+ "forge-glb",
  "forge-package",
  "forge-pdf",
  "forge-pptx",
+ "forge-scene",
  "forge-tree-doc",
  "forge-xlsx",
  "napi",
@@ -10100,6 +10179,12 @@ checksum = "bd124222d17ad93a644ed9d011a40f4fb64aa54275c08cc216524a9ea82fb09f"
 dependencies = [
  "digest 0.10.7",
 ]
+
+[[package]]
+name = "rle-decode-fast"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3582f63211428f83597b51b2ddb88e2a91a9d52d12831f9d08f5e624e8977422"
 
 [[package]]
 name = "rmcp"
@@ -13363,6 +13448,15 @@ dependencies = [
  "memoffset",
  "tempfile",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "ufbx"
+version = "0.11.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "40e2ed9a04df77d43de59675bcc4e667702589df0fd77c80a99061049142397a"
+dependencies = [
+ "cc",
 ]
 
 [[package]]

@@ -10,6 +10,7 @@ mod diagnostics;
 mod docx;
 mod pdf;
 mod pptx;
+mod scene;
 mod xlsx;
 
 enum Format {
@@ -17,6 +18,8 @@ enum Format {
     Docx,
     Xlsx,
     Pdf,
+    Glb,
+    Fbx,
 }
 use napi::{
     Env, Task,
@@ -133,6 +136,8 @@ impl Task for Operation {
             Format::Docx => "docx",
             Format::Xlsx => "xlsx",
             Format::Pdf => "pdf",
+            Format::Glb => "glb",
+            Format::Fbx => "fbx",
         };
         let operation = match self.kind {
             OperationKind::Generate => "generate",
@@ -150,6 +155,7 @@ impl Task for Operation {
             let mut result = forge_tree_doc::cancellation::with_cancellation(self.cancelled.clone(), || match self.format {
                 Format::Pptx => pptx::process(self), Format::Docx => docx::process(self),
                 Format::Xlsx => xlsx::process(self), Format::Pdf => pdf::process(self),
+                Format::Glb | Format::Fbx => scene::process(self),
             });
             if self.cancelled.load(Ordering::Acquire){result=Err(Diagnostic::new(ErrorCode::Cancelled,"","The native operation was cancelled"));}
             let code=result.as_ref().err().and_then(|e|serde_json::to_value(e.code).ok()).and_then(|v|v.as_str().map(str::to_owned)).unwrap_or_default();
@@ -214,6 +220,8 @@ pub fn process_document(
         "docx" => Format::Docx,
         "xlsx" => Format::Xlsx,
         "pdf" => Format::Pdf,
+        "glb" => Format::Glb,
+        "fbx" => Format::Fbx,
         _ => {
             return Err(native_error(Diagnostic::new(
                 ErrorCode::UnsupportedPackage,

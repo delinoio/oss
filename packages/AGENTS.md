@@ -73,3 +73,5 @@
 - Keep the ROAM travel IR example's reusable React source, local image assets, generation prompts and provenance together. Resolve its assets relative to the task module, retain explicit fictional-metric labels and calculation consistency, and keep exported decks/previews untracked. The example must run without network access or image-generation/conversion tools and must generate successfully on all six native CI hosts with their installed fonts.
 
 - Word list components must carry stable list-instance identity into the native model. Separate numbered lists restart independently; items within a list share numbering, and imported numbering definitions remain untouched.
+
+- React Forge static GLB/FBX sessions follow `docs/packages-react-forge-scene-contract.md`; preserve the shared React, atomic export and MCP lifecycle while keeping the 3D model independent from Office/PDF.

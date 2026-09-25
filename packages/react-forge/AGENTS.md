@@ -10,3 +10,5 @@
 
 - Follow `docs/packages-react-forge-mcp-contract.md` for stdio MCP. Keep one shared execution process and canonical React/React Forge module identities; never forward task stdout/stderr to protocol or operational logs. Preserve per-session call order until cancelled callbacks actually settle, bound entry plus data to 16 MiB, retain Figma receipts on partial/unknown outcomes, and never retry writes automatically. Five-second forced cleanup applies only to server shutdown, never normal operations.
 - Keep real SDK and installed-archive MCP coverage in the six-host package suite, including entry-relative imports, state retention, source protection, cancellation, process cleanup and fake Figma. Run `typecheck:examples` after building.
+
+- Static GLB/FBX creation follows `docs/packages-react-forge-scene-contract.md`. Keep binary geometry outside React JSON, 3D bounds separate from 2D geometry, aggregate admission bounded, and source assets immutable across pinned exports. Blender/web viewers are verification tools only; never repair imported validation assets to conceal exporter faults.

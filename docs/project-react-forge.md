@@ -19,8 +19,11 @@ Provide publicly distributed React document sessions, a TSX task CLI and a local
 - `packages/react-forge/examples/travel-figma*.tsx`: editable ROAM mobile design and explicit reopened-file edits.
 - Existing `crates/forge-tree-doc` and `crates/forge-pptx`: presentation model, layout and PPTX engine reused from Forge.
 
+- `crates/forge-scene`, `crates/forge-glb`, `crates/forge-fbx`: generation-only static 3D scenes, GLB and FBX exporters.
+
 ## Domain Contract Documents
 
+- [Static GLB/FBX scenes](packages-react-forge-scene-contract.md).
 - [Figma creation and editing](packages-react-forge-figma-contract.md).
 - [Public documentation](apps-react-forge-docs-foundation.md).
 - [Complete requirements](packages-react-forge-requirements.md).

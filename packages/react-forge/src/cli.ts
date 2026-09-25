@@ -1,3 +1,4 @@
+import type { SceneSession } from "./scene/session.js";
 import { extname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { tsImport } from "tsx/esm/api";
@@ -44,7 +45,7 @@ export async function main(args: string[]): Promise<number> {
   let cancelled = 0;
   const interrupt = () => { cancelled = 130; controller.abort(); };
   const terminate = () => { cancelled = 143; controller.abort(); };
-  let session: DocumentSession | FigmaSession | undefined;
+  let session: DocumentSession | FigmaSession | SceneSession | undefined;
   process.on("SIGINT", interrupt);
   process.on("SIGTERM", terminate);
   if (process.platform === "win32") process.on("SIGBREAK", interrupt);
@@ -82,7 +83,7 @@ export async function main(args: string[]): Promise<number> {
     const run = typeof candidate === "function" ? candidate
       : candidate && typeof candidate === "object" && "default" in candidate ? candidate.default : undefined;
     if (typeof run !== "function") throw new ForgeError(ErrorCode.MalformedInput, "TSX module must default-export a task function.");
-    const task = Promise.resolve(run({ data, signal: controller.signal })) as Promise<DocumentSession | FigmaSession>;
+    const task = Promise.resolve(run({ data, signal: controller.signal })) as Promise<DocumentSession | FigmaSession | SceneSession>;
     void task.then(async result => { if (controller.signal.aborted && !session && typeof result?.dispose === "function") await result.dispose(); }).catch(() => {});
     const returned = await abortable(task, controller.signal);
     if (!returned || typeof returned.exportFile !== "function" || typeof returned.dispose !== "function") throw new ForgeError(ErrorCode.MalformedInput, "Task must return a document session.");

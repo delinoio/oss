@@ -7,6 +7,7 @@ import { ErrorCode, Format, Stage, type Diagnostic } from "./types.js";
 interface Cancellation { cancel(): void }
 export interface NativeOutput { bytes: Buffer; model: string; geometry: string; diagnostics: string }
 interface Binding {
+  validateSceneAsset(kind: string, bytes: Buffer, cancellation: Cancellation): Promise<boolean>;
   validateFigmaImage(bytes:Buffer,cancellation:Cancellation):Promise<boolean>;
   planFigma(input: string, cancellation: Cancellation): Promise<string>;
   Cancellation: new () => Cancellation;
@@ -48,7 +49,7 @@ const codes: Record<string, ErrorCode> = {
 // Only model vocabulary and array indices may leave a native diagnostic.
 // In particular, a parser path or an arbitrary source node key is not a model
 // location and must never become a host path/content leak.
-const locationFields = new Set("id version theme font_family font_size fonts embedding text width height color background language direction align style runs paragraphs heading list blocks document sections header footer paragraph table rows row cells cell column columns sheets sheet workbook chart series categories data value values formula cached expression number_format image asset alt geometry frame layout nodes slides children target address range merge validation conditional_format validations conditional_formats prompt error hyperlink shape points".split(" "));
+const locationFields = new Set("id version theme font_family font_size fonts embedding text width height color background language direction align style runs paragraphs heading list blocks document sections header footer paragraph table rows row cells cell column columns sheets sheet workbook chart series categories data value values formula cached expression number_format image asset alt geometry positions normals tangents indices uv material texture transform camera light bounds scene fbx base_color metallic roughness emissive alpha_mode double_sided document_id translation rotation scale yfov aspect near far xmag ymag intensity inner_cone outer_cone frame layout nodes slides children target address range merge validation conditional_format validations conditional_formats prompt error hyperlink shape points".split(" "));
 function safeLocation(value: unknown): string | undefined {
   if (typeof value !== "string" || value.length > 256 || !value) return undefined;
   return value.split("/").every(part => part === "" || locationFields.has(part) || /^(0|[1-9][0-9]{0,5})$/.test(part)) ? value : undefined;
@@ -112,4 +113,15 @@ export async function validateFigmaImage(bytes:Buffer,signal:AbortSignal):Promis
   try{await native.validateFigmaImage(bytes,cancellation);}
   catch(error){if(signal.aborted)throw new ForgeError(ErrorCode.Cancelled,"Image validation was cancelled.");let code=ErrorCode.MalformedInput;try{const data=JSON.parse((error as Error).message);code=codes[data.code]??code;}catch{}throw new ForgeError(code,"Figma image decoding or dimensions are invalid.");}
   finally{signal.removeEventListener("abort",cancel);}
+}
+
+export async function validateSceneAsset(kind: string, bytes: Buffer, signal: AbortSignal): Promise<void> {
+  const native = load(); const cancellation = new native.Cancellation(); const cancel = () => cancellation.cancel();
+  signal.addEventListener("abort", cancel, { once: true }); if (signal.aborted) cancel();
+  try { await native.validateSceneAsset(kind, bytes, cancellation); }
+  catch (error) {
+    let code = ErrorCode.MalformedInput;
+    try { const detail = JSON.parse((error as Error).message); code = codes[detail.code] ?? code; } catch { /* Redact native details. */ }
+    throw new ForgeError(code, "Scene asset validation failed.");
+  } finally { signal.removeEventListener("abort", cancel); }
 }

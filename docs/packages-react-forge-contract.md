@@ -87,3 +87,7 @@ The explicit MCP follow-up supersedes the original new-MCP exclusion. `react-for
 ## Public distribution
 
 The private source workspace generates a public `@delino/react-forge` package plus six `@delino/react-forge-<host-id>` native packages. Main optional dependencies pin the exact source version. Generated platform manifests use `os`, `cpu`, and Linux `libc` filters; the source workspace manifest stays host-neutral. Runtime loading selects the exact matching package and rejects a missing or mismatched binding without downloads or compilation. See [release contract](packages-react-forge-release-contract.md).
+
+## Static 3D extension
+
+The generation-only GLB/FBX extension follows [the scene contract](packages-react-forge-scene-contract.md). `SceneSession` shares local publication and MCP lifecycle, uses independent world-space bounds and native scene engines, and introduces no runtime conversion dependency.
