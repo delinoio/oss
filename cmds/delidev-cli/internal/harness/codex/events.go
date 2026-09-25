@@ -23,6 +23,7 @@ const (
 	NativeExtensionEvent      EventKind = "native-extension"
 	MetadataEvent             EventKind = "metadata"
 	UsageEvent                EventKind = "usage"
+	ResponseUsageEvent        EventKind = "response-usage"
 	NoticeEvent               EventKind = "notice"
 	ToolStartedEvent          EventKind = "tool-started"
 	ToolCompletedEvent        EventKind = "tool-completed"
@@ -81,6 +82,7 @@ type Event struct {
 	EmittedAtMS      *int64
 	Metadata         MetadataKind
 	Usage            *domain.NativeTokenUsage
+	ResponseUsage    *domain.NativeResponseUsage
 	Notice           domain.NativeNotice
 	Tool             *Tool
 	ToolInput        *ToolInput
@@ -166,7 +168,9 @@ func (c *Client) observeEventLocked(native nativewire.Event) (Event, error) {
 		return privateNative(native), nil
 	}
 	switch native.Method {
-	case "rawResponseItem/completed", "rawResponse/completed":
+	case "rawResponse/completed":
+		return c.observeResponseUsageLocked(native)
+	case "rawResponseItem/completed":
 		return c.observeRawInteractionEvidenceLocked(native)
 	case "turn/started", "turn/completed":
 		var params struct {

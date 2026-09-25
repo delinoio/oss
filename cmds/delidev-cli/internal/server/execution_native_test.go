@@ -179,6 +179,10 @@ func TestManualNativeCodexUsesRegisteredServerRelay(t *testing.T) {
 	if err != nil || usage.AccountID != f.input.AccountID || usage.ConnectionID != f.input.ConnectionID || usage.ModelID != configuration.ModelID || usage.ThreadID != string(bound.Thread.ID) || usage.TurnID != string(turn.TurnID) || *usage.Usage.Last.Total != 2 || *usage.Usage.Total.Input != 1 || *usage.Usage.Total.Output != 1 {
 		t.Fatal("native usage observation lost its exact counters or event-time attribution")
 	}
+	responseUsage, err := f.service.Store.ResponseUsage(ctx, session.Execution.LatestResponseUsageID)
+	if err != nil || responseUsage.Record.AccountID != f.input.AccountID || responseUsage.Record.ConnectionID != f.input.ConnectionID || responseUsage.Record.ModelID != configuration.ModelID || responseUsage.Record.ThreadID != string(bound.Thread.ID) || responseUsage.Record.TurnID != string(turn.TurnID) || responseUsage.Record.Usage.Counts == nil || *responseUsage.Record.Usage.Counts.Input != 1 || *responseUsage.Record.Usage.Counts.Output != 1 || *responseUsage.Record.Usage.Counts.Total != 2 || responseUsage.Record.Usage.CostEvidence != domain.UsageCostMissing {
+		t.Fatal("native exact response usage lost its counters or original attribution", err)
+	}
 	if err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr

@@ -10,8 +10,8 @@ import (
 
 // Raw notifications supplement the canonical item/usage stream. They include
 // private instructions and diagnostic metadata, so only exact owned question
-// or permission outputs may create product observations. Discard all other bounded supplement
-// content; its canonical event still requires the appropriate typed adapter.
+// or permission item outputs may create product observations here. Per-response
+// usage has a separate closed adapter; other item content remains private.
 func (c *Client) observeRawInteractionEvidenceLocked(native nativewire.Event) (Event, error) {
 	var envelope struct {
 		ThreadID      domain.ID       `json:"threadId"`
@@ -33,12 +33,6 @@ func (c *Client) observeRawInteractionEvidenceLocked(native nativewire.Event) (E
 	}
 	discarded := c.metadata(RawSupplementDiscarded)
 	discarded.TurnID, discarded.Late = envelope.TurnID, turn.Turn.Status.terminal()
-	if native.Method == "rawResponse/completed" {
-		if len(envelope.Item) != 0 || envelope.ResponseID == nil || domain.Text(*envelope.ResponseID, "native response identity", 1024, true) != nil {
-			return Event{}, incompatible()
-		}
-		return discarded, nil
-	}
 	if envelope.ResponseID != nil || len(envelope.Usage) != 0 || len(envelope.UsageMetadata) != 0 {
 		return Event{}, incompatible()
 	}

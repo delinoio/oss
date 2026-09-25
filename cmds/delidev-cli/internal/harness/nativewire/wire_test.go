@@ -275,11 +275,40 @@ func TestNativeWireProtocolFailuresAndBoundsStopOwnedScope(t *testing.T) {
 }
 func TestNativeWireBlockedInputIsBounded(t *testing.T) {
 	c, config, _ := startFixture(t, "blocked-input")
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	_, err := c.Call(ctx, domain.NewID(), "blocked", map[string]string{"text": strings.Repeat("x", 900<<10)})
-	if err == nil || domain.SafeError(err).Code != domain.RecoveryRequired {
-		t.Fatalf("blocked write result: %v", err)
+	id := domain.NewID()
+	result := make(chan error, 1)
+	go func() {
+		_, err := c.Call(ctx, id, "blocked", map[string]string{"text": strings.Repeat("x", 900<<10)})
+		result <- err
+	}()
+	// Wait for ownership to cross the send barrier before canceling. A short
+	// wall-clock deadline can expire during race-instrumented JSON validation,
+	// which correctly reports not-sent instead of exercising a blocked pipe.
+	for {
+		c.mu.Lock()
+		sending := c.seen[id]
+		c.mu.Unlock()
+		if sending {
+			break
+		}
+		select {
+		case err := <-result:
+			t.Fatalf("call ended before send ownership: %v", err)
+		case <-ctx.Done():
+			t.Fatal("call never reached send ownership")
+		case <-time.After(time.Millisecond):
+		}
+	}
+	cancel()
+	select {
+	case err := <-result:
+		if err == nil || domain.SafeError(err).Code != domain.RecoveryRequired {
+			t.Fatalf("blocked write result: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("blocked write did not join owned cleanup")
 	}
 	if err := c.Close(); err != nil {
 		t.Fatal(err)

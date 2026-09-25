@@ -102,7 +102,7 @@ func (s *Service) PublishExecution(ctx context.Context, req *connect.Request[pb.
 	if err := domain.Decode(result.Data, &receipt); err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
-	if event.Kind == domain.ExecutionThreadBound || event.Kind == domain.ExecutionInputAccepted || event.Kind == domain.ExecutionTurnFinished || event.Kind.IsInteraction() || event.Kind == domain.ExecutionWaitingChanged || event.Kind == domain.ExecutionQuestionDeliveryObserved || event.Kind == domain.ExecutionApprovalDeliveryObserved || event.Kind == domain.ExecutionQuestionAccepted || event.Kind == domain.ExecutionApprovalAccepted || event.Kind == domain.ExecutionSteerObserved {
+	if event.Kind == domain.ExecutionThreadBound || event.Kind == domain.ExecutionInputAccepted || event.Kind == domain.ExecutionTurnFinished || event.Kind.IsInteraction() || event.Kind == domain.ExecutionWaitingChanged || event.Kind == domain.ExecutionQuestionDeliveryObserved || event.Kind == domain.ExecutionApprovalDeliveryObserved || event.Kind == domain.ExecutionQuestionAccepted || event.Kind == domain.ExecutionApprovalAccepted || event.Kind == domain.ExecutionSteerObserved || event.Kind == domain.ExecutionResponseUsageObserved {
 		s.logger.InfoContext(ctx, "execution_event_committed", "job_id", identity.Job, "execution_id", event.ExecutionID, "kind", event.Kind, "sequence", event.Sequence, "replayed", result.Replayed)
 	}
 	response := connect.NewResponse(&pb.PublishExecutionResponse{AcknowledgedSequence: receipt.Sequence, Replayed: result.Replayed})
@@ -259,6 +259,15 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 					}
 				}
 				progress.Waiting = *event.Waiting
+			} else if event.Kind == domain.ExecutionResponseUsageObserved {
+				observation := domain.ResponseUsageRecord{SessionID: sr.ID, ProjectID: sr.ProjectID, ExecutionID: input.ExecutionID, AccountID: input.AccountID, ConnectionID: input.ConnectionID, ProviderID: input.Configuration.ProviderID, ModelID: input.Configuration.ModelID, Harness: input.Configuration.Harness, Version: input.Installation.Version, ThreadID: event.NativeThreadID, TurnID: event.NativeTurnID, Sequence: event.Sequence, Usage: *event.ResponseUsage}
+				id, _, err := tx.PutResponseUsage(event.ObservationID, observation)
+				if err != nil {
+					return err
+				}
+				progress.LatestResponseUsageID = id
+				// Counts, native response digests and provider metadata never enter
+				// logs. Publication acknowledgments retain the original event identity.
 			} else if event.Kind == domain.ExecutionUsageObserved {
 				observation := domain.ExecutionUsageObservation{ExecutionID: input.ExecutionID, AccountID: input.AccountID, ConnectionID: input.ConnectionID, ProviderID: input.Configuration.ProviderID, ModelID: input.Configuration.ModelID, Harness: input.Configuration.Harness, Version: input.Installation.Version, ThreadID: event.NativeThreadID, TurnID: event.NativeTurnID, Sequence: event.Sequence, Usage: *event.Usage}
 				if _, err := tx.Put(domain.UsageKind, event.ObservationID, 0, sr.ID, sr.ProjectID, observation); err != nil {

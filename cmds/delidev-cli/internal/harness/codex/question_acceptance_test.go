@@ -132,18 +132,11 @@ func TestQuestionAcceptanceRetainsExplicitEmptyAnswersAndRejectsCallReuse(t *tes
 	assertCode(t, err, domain.RecoveryRequired)
 }
 
-func TestRawSupplementsNeverPublishPrivateContentsOrInventUsage(t *testing.T) {
+func TestRawItemsNeverPublishPrivateContentsOrInventUsage(t *testing.T) {
 	c, turn := observationClient()
-	for _, method := range []string{"rawResponseItem/completed", "rawResponse/completed"} {
-		params := map[string]any{"threadId": c.thread, "turnId": turn}
-		if method == "rawResponseItem/completed" {
-			params["item"] = map[string]any{"type": "message", "content": "private-instructions"}
-		} else {
-			params["responseId"], params["usage"], params["usageMetadata"] = "native-response", map[string]any{"inputTokens": 10}, map[string]any{"amount": "private-amount"}
-		}
-		e, err := c.observeEventLocked(nativewire.Event{Kind: nativewire.Notification, Method: method, Params: mustJSON(t, params)})
-		if err != nil || e.Kind != MetadataEvent || e.Metadata != RawSupplementDiscarded || e.Usage != nil || e.Native != nil || strings.Contains(string(mustJSON(t, e)), "private-") {
-			t.Fatal("private supplement escaped or invented product usage", err)
-		}
+	params := map[string]any{"threadId": c.thread, "turnId": turn, "item": map[string]any{"type": "message", "content": "private-instructions"}}
+	e, err := c.observeEventLocked(nativewire.Event{Kind: nativewire.Notification, Method: "rawResponseItem/completed", Params: mustJSON(t, params)})
+	if err != nil || e.Kind != MetadataEvent || e.Metadata != RawSupplementDiscarded || e.Usage != nil || e.ResponseUsage != nil || e.Native != nil || strings.Contains(string(mustJSON(t, e)), "private-") {
+		t.Fatal("private supplement escaped or invented product usage", err)
 	}
 }

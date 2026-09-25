@@ -41,6 +41,7 @@ Each project must have one project index document and one or more domain contrac
 - [Project index](project-delidev.md)
 - [Retained conversation search](cmds-delidev-search-contract.md)
 - [Retained activity](cmds-delidev-activity-contract.md)
+- [Exact native response usage](cmds-delidev-usage-contract.md)
 - [CLI/server/Worker contract](cmds-delidev-contract.md)
 - [Connect protocol](protos-delidev-v1-contract.md)
 - [TypeScript client and synchronization](packages-delidev-api-client-contract.md)
