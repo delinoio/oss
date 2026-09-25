@@ -107,14 +107,14 @@ const reactForgeHeadings = {
   "/react-forge/installation": ["Install React Forge", "Requirements", "Verify the installation"],
   "/react-forge/getting-started": ["Getting started", "Next steps"],
   "/react-forge/sessions": ["Sessions and common API", "Fonts and assets", "Inspection and measurement", "Lifecycle and diagnostics"],
-  "/react-forge/pptx": ["Author PPTX presentations"],
-  "/react-forge/docx": ["Author DOCX documents"],
-  "/react-forge/xlsx": ["Author XLSX workbooks"],
-  "/react-forge/pdf": ["Author tagged PDF"],
-  "/react-forge/sfx": ["Game sound effects (WAV)"],
-  "/react-forge/sprite": ["Pixel sprites and animation", "Create an animated sprite", "Limits and boundaries"],
+  "/react-forge/formats/pptx/": ["Author PPTX presentations"],
+  "/react-forge/formats/docx/": ["Author DOCX documents"],
+  "/react-forge/formats/xlsx/": ["Author XLSX workbooks"],
+  "/react-forge/formats/pdf/": ["Author tagged PDF"],
+  "/react-forge/formats/sfx/": ["Game sound effects (WAV)"],
+  "/react-forge/formats/sprite/": ["Pixel sprites and animation", "Create an animated sprite", "Limits and boundaries"],
   "/react-forge/office-editing": ["Edit existing Office files"],
-  "/react-forge/figma": ["Figma Design creation and editing", "Reopen and edit", "Publication outcomes and receipts"],
+  "/react-forge/formats/figma/": ["Figma Design creation and editing", "Reopen and edit", "Publication outcomes and receipts"],
   "/react-forge/cli": ["One-shot CLI tasks"],
   "/react-forge/mcp": ["Local MCP sessions", "Typical local document sequence", "Figma and failure recovery"],
   "/react-forge/limits-and-troubleshooting": ["Limits and troubleshooting", "Common failures", "Boundaries"],
@@ -236,10 +236,10 @@ const requiredLinks = new Map([
   ["/pnport/", ["/pnport/installation", "/pnport/getting-started", "/pnport/commands", "/pnport/filesystem-and-processes", "/pnport/editors", "/pnport/cache", "/pnport/diagnostics", "/pnport/benchmarks", "/pnport/releases"]],
   ["/pnport/installation", ["/pnport/getting-started", "/pnport/commands", "/pnport/releases"]],
   ["/pnport/diagnostics", ["/pnport/cache"]],
-  ["/react-forge/", ["/react-forge/installation", "/react-forge/getting-started", "/react-forge/sessions", "/react-forge/pptx", "/react-forge/docx", "/react-forge/xlsx", "/react-forge/pdf", "/react-forge/office-editing", "/react-forge/figma", "/react-forge/cli", "/react-forge/mcp", "/react-forge/sfx", "/react-forge/sprite", "/react-forge/limits-and-troubleshooting", "/react-forge/releases"]],
-  ["/react-forge/installation", ["/react-forge/getting-started", "/react-forge/releases", "/react-forge/figma"]],
-  ["/react-forge/figma", ["/react-forge/cli", "/react-forge/mcp", "/react-forge/limits-and-troubleshooting"]],
-  ["/react-forge/mcp", ["/react-forge/figma"]],
+  ["/react-forge/", ["/react-forge/installation", "/react-forge/getting-started", "/react-forge/sessions", "/react-forge/formats/pptx/", "/react-forge/formats/docx/", "/react-forge/formats/xlsx/", "/react-forge/formats/pdf/", "/react-forge/office-editing", "/react-forge/formats/figma/", "/react-forge/cli", "/react-forge/mcp", "/react-forge/formats/sfx/", "/react-forge/formats/sprite/", "/react-forge/limits-and-troubleshooting", "/react-forge/releases"]],
+  ["/react-forge/installation", ["/react-forge/getting-started", "/react-forge/releases", "/react-forge/formats/figma/"]],
+  ["/react-forge/formats/figma/", ["/react-forge/cli", "/react-forge/mcp", "/react-forge/limits-and-troubleshooting"]],
+  ["/react-forge/mcp", ["/react-forge/formats/figma/"]],
   ["/", ["https://oss.delino.io/runmoor/", "https://oss.delino.io/nodeup/", "https://oss.delino.io/binpm/", "https://oss.delino.io/async-commit-hook/", "https://oss.delino.io/clibox/", "https://oss.delino.io/pnport/", "https://oss.delino.io/react-forge/"]],
   ["/projects-overview", ["https://oss.delino.io/runmoor/", "https://oss.delino.io/nodeup/", "https://oss.delino.io/binpm/", "https://oss.delino.io/async-commit-hook/", "https://oss.delino.io/clibox/", "https://oss.delino.io/pnport/", "https://oss.delino.io/react-forge/"]],
   ["/devhud", ["/devhud/install", "/devhud/privacy", "/devhud/security", "/devhud/support"]],
@@ -731,7 +731,7 @@ for (const [routeId, headings] of requiredHeadings) {
   if (!/<main\b[^>]*>/iu.test(pageContents)) failures.push(`${routeId} is missing a main landmark`);
 }
 
-for (const routeId of ["/react-forge/sfx", "/react-forge/sprite"]) {
+for (const routeId of ["/react-forge/formats/sfx/", "/react-forge/formats/sprite/"]) {
   const route = routeOutputFiles.find((entry) => entry.routeId === routeId);
   const contents = route ? await readFile(route.outputFile, "utf8") : "";
   const introduction = visibleText(articleContent(contents)).slice(0, 550);

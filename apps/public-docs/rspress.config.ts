@@ -103,20 +103,20 @@ const reactForgeGroups = [
     { text: "Sessions and Common API", link: "/react-forge/sessions" },
   ] },
   { text: "Create Documents", items: [
-    { text: "PPTX", link: "/react-forge/pptx" },
-    { text: "DOCX", link: "/react-forge/docx" },
-    { text: "XLSX", link: "/react-forge/xlsx" },
-    { text: "PDF", link: "/react-forge/pdf" },
+    { text: "PPTX", link: "/react-forge/formats/pptx/" },
+    { text: "DOCX", link: "/react-forge/formats/docx/" },
+    { text: "XLSX", link: "/react-forge/formats/xlsx/" },
+    { text: "PDF", link: "/react-forge/formats/pdf/" },
   ] },
   { text: "Edit and Automate", items: [
     { text: "Office Editing", link: "/react-forge/office-editing" },
-    { text: "Figma Design", link: "/react-forge/figma" },
+    { text: "Figma Design", link: "/react-forge/formats/figma/" },
     { text: "CLI", link: "/react-forge/cli" },
     { text: "Local MCP", link: "/react-forge/mcp" },
   ] },
   { text: "Unreleased Previews", items: [
-    { text: "Game SFX", link: "/react-forge/sfx" },
-    { text: "Pixel Sprites", link: "/react-forge/sprite" },
+    { text: "Game SFX", link: "/react-forge/formats/sfx/" },
+    { text: "Pixel Sprites", link: "/react-forge/formats/sprite/" },
   ] },
   { text: "Help", items: [
     { text: "Limits and Troubleshooting", link: "/react-forge/limits-and-troubleshooting" },

@@ -10,7 +10,9 @@ Node.js 24 developers using the public `@delino/react-forge` library or CLI and 
 
 ## Routes and content
 
-The stable clean routes are `/react-forge/`, `/installation`, `/getting-started`, `/sessions`, `/pptx`, `/docx`, `/xlsx`, `/pdf`, `/office-editing`, `/figma`, `/cli`, `/mcp`, `/sfx`, `/sprite`, `/limits-and-troubleshooting`, and `/releases`, all under `/react-forge`.
+The stable clean routes are `/react-forge/`, `/installation`, `/getting-started`, `/sessions`, `/formats/pptx/`, `/formats/docx/`, `/formats/xlsx/`, `/formats/pdf/`, `/office-editing`, `/formats/figma/`, `/cli`, `/mcp`, `/formats/sfx/`, `/formats/sprite/`, `/limits-and-troubleshooting`, and `/releases`, all under `/react-forge`. The seven format guides live in `apps/public-docs/docs/react-forge/formats/<format>/index.md`; each format has its own directory.
+
+The former format routes `/pptx`, `/docx`, `/xlsx`, `/pdf`, `/figma`, `/sfx`, and `/sprite` under `/react-forge` redirect permanently to their matching `/formats/<format>/` routes, including trailing-slash variants. New links and navigation use only the new routes. This same-origin migration does not add retired standalone-host aliases.
 
 - The landing, installation, and getting-started pages give new developers a direct path from package installation to a first PPTX export, then to a format or workflow guide. The React Forge sidebar groups start, document formats, editing/automation, unreleased previews, and help without changing other project navigation.
 - Installation and getting started cover Node.js 24, six local-document host combinations, optional native packages, fonts, and an executable TSX task.
@@ -25,7 +27,7 @@ Every route appears in the Rspress sidebar and the shared selector identifies `/
 
 ## Build and validation
 
-Use the consolidated `pnpm dev:public-docs` loopback server on port `46302` and the existing Cloudflare Pages publication. Run `pnpm test` from `apps/public-docs`. Rendered validation checks all 16 artifacts, headings and guide links, sidebar entries, exact selector state, repository links, clean routes, and prohibited credential/internal-path content. Validate that the SFX and Sprite article introductions explicitly identify their absence from npm `0.1.1`. Keep public examples aligned with compiled source examples and exported types; no live Figma write is part of documentation validation. Changes to this contract alone select and force `node-public-docs-test`.
+Use the consolidated `pnpm dev:public-docs` loopback server on port `46302` and the existing Cloudflare Pages publication. Run `pnpm test` from `apps/public-docs`. Rendered validation checks all 16 artifacts, headings and guide links, sidebar entries, exact selector state, repository links, clean routes, the seven format redirects, and prohibited credential/internal-path content. Validate that the SFX and Sprite article introductions explicitly identify their absence from npm `0.1.1`. Keep public examples aligned with compiled source examples and exported types; no live Figma write is part of documentation validation. Changes to this contract alone select and force `node-public-docs-test`.
 
 ## Change policy
 

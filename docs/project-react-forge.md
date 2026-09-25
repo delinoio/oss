@@ -61,4 +61,4 @@ Update the project index, affected domain contracts, relevant AGENTS rules, exam
 ## Sprite Extension (Unreleased)
 The 2026-09-25 sprite request adds `Format.Sprite` and `/sprite` through the existing library, CLI and MCP. React declares layers, pixel grids, shapes, local images and timed animations. One `.sprite.zip` export contains a PNG atlas, individual frames and JSON metadata. This source implementation is not part of npm 0.1.1; it adds no hosted artwork generation or sprite import. Follow the sprite contract for bounds, geometry and evidence.
 
-The public `/react-forge/sprite` page previews this source capability with an explicit unreleased notice and separate validation claims; publication of the guide does not change npm availability.
+The public `/react-forge/formats/sprite/` page previews this source capability with an explicit unreleased notice and separate validation claims; publication of the guide does not change npm availability.

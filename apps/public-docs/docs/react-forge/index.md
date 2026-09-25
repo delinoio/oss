@@ -16,12 +16,12 @@ Exports are explicit. Sessions exist in memory until disposed; starting a new pr
 
 ## Choose a workflow
 
-- **Create a local document:** Choose [PPTX](/react-forge/pptx), [DOCX](/react-forge/docx), [XLSX](/react-forge/xlsx), or [PDF](/react-forge/pdf). Each format has its own components and model.
+- **Create a local document:** Choose [PPTX](/react-forge/formats/pptx/), [DOCX](/react-forge/formats/docx/), [XLSX](/react-forge/formats/xlsx/), or [PDF](/react-forge/formats/pdf/). Each format has its own components and model.
 - **Keep working in one process:** Use [sessions](/react-forge/sessions) for React updates, inspection, assets, fonts, measurement, and explicit exports.
 - **Edit an Office file:** [Mount a supported region](/react-forge/office-editing) of an imported PPTX, DOCX, or XLSX while preserving unrelated content.
-- **Work in Figma:** [Create or edit Figma Design files](/react-forge/figma) with explicit publication and a receipt that records remote outcomes.
+- **Work in Figma:** [Create or edit Figma Design files](/react-forge/formats/figma/) with explicit publication and a receipt that records remote outcomes.
 - **Choose an entry point:** Run one-shot tasks with the [CLI](/react-forge/cli), or retain sessions through the [local stdio MCP server](/react-forge/mcp).
-- **Preview upcoming formats:** Read about [procedural game SFX](/react-forge/sfx) and [pixel sprites](/react-forge/sprite). Both are unreleased and absent from npm `0.1.1`.
+- **Preview upcoming formats:** Read about [procedural game SFX](/react-forge/formats/sfx/) and [pixel sprites](/react-forge/formats/sprite/). Both are unreleased and absent from npm `0.1.1`.
 
 Before adopting a workflow, check its [limits and troubleshooting](/react-forge/limits-and-troubleshooting) and [release and validation status](/react-forge/releases).
 

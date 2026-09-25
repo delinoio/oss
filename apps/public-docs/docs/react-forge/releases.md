@@ -8,7 +8,7 @@
 | --- | --- |
 | Local PPTX, DOCX, XLSX, PDF, CLI, and MCP | Published in `0.1.1` for the six supported native hosts. |
 | Figma creation and editing | Published in `0.1.1`; live authentication has the narrower macOS arm64 validation described below. |
-| [Game SFX](/react-forge/sfx) and [pixel sprites](/react-forge/sprite) | Unreleased source previews, absent from npm `0.1.1`. |
+| [Game SFX](/react-forge/formats/sfx/) and [pixel sprites](/react-forge/formats/sprite/) | Unreleased source previews, absent from npm `0.1.1`. |
 
 ```sh
 npm install @delino/react-forge
@@ -29,8 +29,8 @@ See [Installation](/react-forge/installation) for supported hosts and [limits an
 
 ## Unreleased SFX extension
 
-Procedural game SFX authoring and PCM WAV export are implemented for the next release, but are absent from npm `0.1.1`. The [SFX guide](/react-forge/sfx) describes the planned public API and a zombie-game gunshot example. SFX has separate synthesis and CLI/MCP checks; the earlier six-host document release is not SFX acceptance evidence. No game-engine listening evaluation is claimed.
+Procedural game SFX authoring and PCM WAV export are implemented for the next release, but are absent from npm `0.1.1`. The [SFX guide](/react-forge/formats/sfx/) describes the planned public API and a zombie-game gunshot example. SFX has separate synthesis and CLI/MCP checks; the earlier six-host document release is not SFX acceptance evidence. No game-engine listening evaluation is claimed.
 
 ## Unreleased Sprite extension
 
-Pixel sprite authoring and `.sprite.zip` export are implemented in source but absent from npm `0.1.1`. The [Sprite guide](/react-forge/sprite) previews the API, archive contents, and resource limits. The earlier six-host document release is not Sprite acceptance evidence, and no game-engine importer compatibility is claimed. Check the current npm dist-tag and package capabilities before using the preview's imports.
+Pixel sprite authoring and `.sprite.zip` export are implemented in source but absent from npm `0.1.1`. The [Sprite guide](/react-forge/formats/sprite/) previews the API, archive contents, and resource limits. The earlier six-host document release is not Sprite acceptance evidence, and no game-engine importer compatibility is claimed. Check the current npm dist-tag and package capabilities before using the preview's imports.

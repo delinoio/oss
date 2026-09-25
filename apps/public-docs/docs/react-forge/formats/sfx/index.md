@@ -103,4 +103,4 @@ image and font registration. Six-host document validation does not by itself
 establish SFX validation on those hosts; see [validation scope](/react-forge/releases).
 
 For animated pixel artwork instead of audio, see the separately unreleased
-[Sprite preview](/react-forge/sprite).
+[Sprite preview](/react-forge/formats/sprite/).

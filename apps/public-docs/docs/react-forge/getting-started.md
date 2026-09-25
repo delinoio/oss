@@ -43,4 +43,4 @@ The command writes `hello.pptx` in the current directory. Open it in a presentat
 
 ## Next steps
 
-Use the [PPTX guide](/react-forge/pptx) to add layouts, tables, images, and charts to this task. The [DOCX](/react-forge/docx), [XLSX](/react-forge/xlsx), and [PDF](/react-forge/pdf) guides use different component sets and models. For repeated updates in one process, use the [session library](/react-forge/sessions); for tool-driven retained sessions, use [MCP](/react-forge/mcp). To modify an imported presentation, document, or workbook, follow [Office editing](/react-forge/office-editing).
+Use the [PPTX guide](/react-forge/formats/pptx/) to add layouts, tables, images, and charts to this task. The [DOCX](/react-forge/formats/docx/), [XLSX](/react-forge/formats/xlsx/), and [PDF](/react-forge/formats/pdf/) guides use different component sets and models. For repeated updates in one process, use the [session library](/react-forge/sessions); for tool-driven retained sessions, use [MCP](/react-forge/mcp). To modify an imported presentation, document, or workbook, follow [Office editing](/react-forge/office-editing).

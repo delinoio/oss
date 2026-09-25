@@ -14,7 +14,7 @@ Start with `ForgeError.code` when an operation fails, then use the recovery tabl
 
 An explicit font is bounded to 64 MiB. Existing PPTX constraints include 1,000 slides and tables up to 1,000 rows by 128 columns. Chart expansion is bounded to 200,000 cells and XLSX merge expansion to 250,000 cells. Figma images are limited to 10 MiB and 64 million pixels each. Check the installed package's `limits` and `capabilities` for the applicable full set.
 
-The unreleased [SFX](/react-forge/sfx#sessions-mcp-and-limits) and [Sprite](/react-forge/sprite#limits-and-boundaries) previews have their own bounds. They are absent from npm `0.1.1`; do not use their source-only APIs with that installed version.
+The unreleased [SFX](/react-forge/formats/sfx/#sessions-mcp-and-limits) and [Sprite](/react-forge/formats/sprite/#limits-and-boundaries) previews have their own bounds. They are absent from npm `0.1.1`; do not use their source-only APIs with that installed version.
 
 ## Common failures
 
@@ -31,4 +31,4 @@ The unreleased [SFX](/react-forge/sfx#sessions-mcp-and-limits) and [Sprite](/rea
 
 ## Boundaries
 
-Local document work has no hosted service, telemetry, URL fetching, automatic recovery, runtime converter, or automatic timeout. Figma is the explicit remote exception and has [separate receipt and retry rules](/react-forge/figma#publication-outcomes-and-receipts). Integrators are responsible for authenticating their own callers and governing process-wide resources; task code is trusted and runs with caller permissions.
+Local document work has no hosted service, telemetry, URL fetching, automatic recovery, runtime converter, or automatic timeout. Figma is the explicit remote exception and has [separate receipt and retry rules](/react-forge/formats/figma/#publication-outcomes-and-receipts). Integrators are responsible for authenticating their own callers and governing process-wide resources; task code is trusted and runs with caller permissions.

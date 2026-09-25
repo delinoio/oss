@@ -191,7 +191,7 @@ Test renderers are not runtime dependencies. Direct Microsoft Office validation 
 
 ## Sprite authoring (unreleased)
 
-The next release adds `Format.Sprite` and `@delino/react-forge/sprite`. This feature is not included in npm 0.1.1. See the [Sprite guide](https://oss.delino.io/react-forge/sprite) for the preview workflow and limits.
+The next release adds `Format.Sprite` and `@delino/react-forge/sprite`. This feature is not included in npm 0.1.1. See the [Sprite guide](https://oss.delino.io/react-forge/formats/sprite/) for the preview workflow and limits.
 
 ```tsx
 import React from "react";
@@ -223,6 +223,6 @@ Logical dimensions are 1–4096, scale 1–16, output-pixel padding 0–64 (defa
 
 ## Game SFX (unreleased)
 
-The source adds `createSession(Format.Wav)` and `Sound`, `Noise`, `Tone`, `SampleRate`, `Channels` and `Waveform` from `@delino/react-forge/sfx`. This extension is not included in npm `0.1.1`. See the [SFX guide](https://oss.delino.io/react-forge/sfx) for the complete parameters and a zombie-game gunshot.
+The source adds `createSession(Format.Wav)` and `Sound`, `Noise`, `Tone`, `SampleRate`, `Channels` and `Waveform` from `@delino/react-forge/sfx`. This extension is not included in npm `0.1.1`. See the [SFX guide](https://oss.delino.io/react-forge/formats/sfx/) for the complete parameters and a zombie-game gunshot.
 
 Compose timed seeded noise and sine/triangle sweeps, then use the existing buffer/file export or CLI/MCP with `.wav`. Output is mono/stereo PCM16 at 44100/48000 Hz. Durations, starts, fades and exponential decay are seconds; gains are linear, with automatic attenuation above 0.95 peak. Limits are 30 seconds, 256 layers and 16 million aggregate voice samples. Refs measure in seconds-based `timeline` coordinates. Image/font registration, audio import, recorded samples, live playback and MP3/OGG are unsupported. Generation needs no audio device, network, fonts or conversion tool.
