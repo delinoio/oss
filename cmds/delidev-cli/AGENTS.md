@@ -149,3 +149,5 @@
 - Reset Worker schedule availability on each exclusive server-store open, preserve instance recovery identity, and require fresh current-process observation without backdating reconnects.
 
 - Generic resource pagination must fit both binary and JSON Connect encodings and resume after the last returned record when the byte budget truncates a count-bounded page.
+
+- Keyless account cleanup/deletion must remain usable without an OS credential store. Skip vault access only with validated immutable keyless API provider ownership; preserve relay cancellation, cleanup generations, receipt replay and credential-bearing staged-intent reconciliation.

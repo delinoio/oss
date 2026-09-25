@@ -319,25 +319,36 @@ func (s *Service) DeleteConfiguration(ctx context.Context, req *connect.Request[
 			return nil, rpc.Error(err, correlation)
 		}
 		if !replayed {
+			var keyless bool
 			err = s.Store.Read(ctx, func(tx *store.Tx) error {
 				if err := tx.Authorize(); err != nil {
 					return err
 				}
-				return validateDeletion(tx, kind, domain.ID(meta.Id))
+				if err := validateDeletion(tx, kind, domain.ID(meta.Id)); err != nil {
+					return err
+				}
+				_, account, err := accountFromTx(tx, domain.ID(meta.Id), meta.ExpectedRevision)
+				if err != nil {
+					return err
+				}
+				keyless, err = accountWithoutCredentials(tx, account)
+				return err
 			})
 			if err != nil {
 				return nil, rpc.Error(err, correlation)
 			}
-			vault, err := s.secrets()
-			if err != nil {
-				return nil, rpc.Error(err, correlation)
-			}
-			refs, err := vault.UnremovedReferences(ctx, domain.ID(meta.Id))
-			if err != nil {
-				return nil, rpc.Error(err, correlation)
-			}
-			if len(refs) != 0 {
-				return nil, rpc.Error(domain.Fail(domain.Conflict, "The account retains protected credential intents.", "Disconnect the account and complete credential cleanup before deleting it."), correlation)
+			if !keyless {
+				vault, err := s.secrets()
+				if err != nil {
+					return nil, rpc.Error(err, correlation)
+				}
+				refs, err := vault.UnremovedReferences(ctx, domain.ID(meta.Id))
+				if err != nil {
+					return nil, rpc.Error(err, correlation)
+				}
+				if len(refs) != 0 {
+					return nil, rpc.Error(domain.Fail(domain.Conflict, "The account retains protected credential intents.", "Disconnect the account and complete credential cleanup before deleting it."), correlation)
+				}
 			}
 		}
 	}

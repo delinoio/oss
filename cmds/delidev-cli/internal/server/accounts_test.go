@@ -25,12 +25,13 @@ import (
 )
 
 type accountTestSecrets struct {
-	mu                    sync.Mutex
-	values                map[credentials.Ref][]byte
-	removed               map[credentials.Ref]bool
-	putError, deleteError error
-	afterPut              func()
-	puts, deletes         int
+	mu                                    sync.Mutex
+	values                                map[credentials.Ref][]byte
+	removed                               map[credentials.Ref]bool
+	putError, deleteError, referenceError error
+	enumerations                          int
+	afterPut                              func()
+	puts, deletes                         int
 }
 
 func (v *accountTestSecrets) Put(ctx context.Context, ref credentials.Ref, key []byte) (string, error) {
@@ -74,6 +75,10 @@ func (v *accountTestSecrets) Get(ctx context.Context, ref credentials.Ref) ([]by
 func (v *accountTestSecrets) UnremovedReferences(ctx context.Context, owner domain.ID) ([]credentials.Ref, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
+	v.enumerations++
+	if v.referenceError != nil {
+		return nil, v.referenceError
+	}
 	refs := []credentials.Ref{}
 	for ref := range v.values {
 		if ref.Owner == owner {
@@ -478,5 +483,54 @@ func TestClientRevocationDuringNativeWriteCannotConnect(t *testing.T) {
 	_, _, active := f.secrets.counts()
 	if active != 0 {
 		t.Fatal("revoked staging leaked an active credential")
+	}
+}
+
+func TestKeylessLifecycleNeverRequiresUnavailableCredentialStore(t *testing.T) {
+	f := newAccountFixture(t)
+	ctx := context.Background()
+	account := f.newAccount(domain.KeylessAuth)
+	connected, err := connectAccount(f, account, domain.NewID(), "", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.secrets.mu.Lock()
+	f.secrets.referenceError = domain.Fail(domain.Unavailable, "Fixture credential service unavailable.", "")
+	f.secrets.mu.Unlock()
+	input := &pb.DisconnectAccountRequest{Mutation: acctMutation(connected.Msg.Account, domain.NewID())}
+	removed, err := f.accounts.DisconnectAccount(ctx, ownerRequest(f.identity, input))
+	if err != nil || len(removed.Msg.CleanupProblemJson) != 0 || accountBody(t, removed.Msg.Account).Removal != nil {
+		t.Fatalf("keyless cleanup needed vault: %v", err)
+	}
+	f.shutdown()
+	f.start()
+	newer, err := connectAccount(f, removed.Msg.Account, domain.NewID(), "", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replay, err := f.accounts.DisconnectAccount(ctx, ownerRequest(f.identity, input))
+	if err != nil || !replay.Msg.Replayed || accountBody(t, replay.Msg.Account).Connection.ID != accountBody(t, newer.Msg.Account).Connection.ID {
+		t.Fatal("old keyless removal changed newer connection", err)
+	}
+	removed, err = f.accounts.DisconnectAccount(ctx, ownerRequest(f.identity, &pb.DisconnectAccountRequest{Mutation: acctMutation(newer.Msg.Account, domain.NewID())}))
+	if err != nil || len(removed.Msg.CleanupProblemJson) != 0 {
+		t.Fatal("second keyless cleanup failed", err)
+	}
+	_, err = f.config.DeleteConfiguration(ctx, ownerRequest(f.identity, &pb.DeleteConfigurationRequest{Kind: pb.EntityKind_ENTITY_KIND_ACCOUNT, Mutation: acctMutation(removed.Msg.Account, domain.NewID())}))
+	if err != nil {
+		t.Fatal("keyless deletion needed vault", err)
+	}
+	f.secrets.mu.Lock()
+	calls := f.secrets.enumerations + f.secrets.puts + f.secrets.deletes
+	f.secrets.mu.Unlock()
+	if calls != 0 {
+		t.Fatal("keyless lifecycle touched credential store", calls)
+	}
+	// A credential-bearing account still retains its cleanup marker when vault
+	// access is unavailable, including a never-connected account with intents.
+	bearer := f.newAccount(domain.BearerAuth)
+	pending, err := f.accounts.DisconnectAccount(ctx, ownerRequest(f.identity, &pb.DisconnectAccountRequest{Mutation: acctMutation(bearer, domain.NewID())}))
+	if err != nil || len(pending.Msg.CleanupProblemJson) == 0 || accountBody(t, pending.Msg.Account).Removal == nil {
+		t.Fatal("credential cleanup bypassed unavailable vault", err)
 	}
 }

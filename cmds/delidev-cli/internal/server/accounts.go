@@ -147,6 +147,31 @@ func accountConnectPreflight(tx *store.Tx, input connectAccountInput) (domain.Ac
 	}
 	return account, provider, nil
 }
+
+// Account provider/type and a referenced provider's authentication are immutable.
+// A validated keyless API provider therefore proves this account could never
+// stage a credential, even after connection metadata was cleared or on retry.
+func accountWithoutCredentials(tx *store.Tx, account domain.Account) (bool, error) {
+	if account.Type != domain.APIAccount {
+		return false, nil
+	}
+	record, err := tx.Get(domain.ProviderKind, account.ProviderID)
+	if err != nil {
+		return false, err
+	}
+	provider, err := store.Decode[domain.Provider](record)
+	if err != nil {
+		return false, err
+	}
+	if err := provider.Validate(); err != nil {
+		return false, err
+	}
+	if account.Connection != nil && account.Connection.Authentication != provider.Authentication {
+		return false, domain.Fail(domain.RecoveryRequired, "Account authentication ownership is inconsistent.", "Preserve the account and reconcile its provider and connection metadata.")
+	}
+	return provider.Authentication == domain.KeylessAuth, nil
+}
+
 func (s *Service) accountRecord(ctx context.Context, id domain.ID) (store.Record, error) {
 	var record store.Record
 	err := s.Store.Read(ctx, func(tx *store.Tx) error { var err error; record, _, err = accountFromTx(tx, id, 0); return err })
@@ -297,14 +322,17 @@ func (s *Service) DisconnectAccount(ctx context.Context, req *connect.Request[pb
 	return response, nil
 }
 func (s *Service) finishAccountRemoval(ctx context.Context, accepted accountReceipt, requestID domain.ID) error {
-	var pending bool
+	var pending, keyless bool
 	err := s.Store.Read(ctx, func(tx *store.Tx) error {
 		_, account, err := accountFromTx(tx, accepted.ID, 0)
 		if err != nil {
 			return err
 		}
 		pending = account.Removal != nil && account.Removal.RequestID == requestID
-		return nil
+		if pending {
+			keyless, err = accountWithoutCredentials(tx, account)
+		}
+		return err
 	})
 	if err != nil || !pending {
 		return err
@@ -313,17 +341,19 @@ func (s *Service) finishAccountRemoval(ctx context.Context, accepted accountRece
 	if err := s.executionAuthority.stopAccount(ctx, accepted.ID); err != nil {
 		return err
 	}
-	vault, err := s.secrets()
-	if err != nil {
-		return err
-	}
-	refs, err := vault.UnremovedReferences(ctx, accepted.ID)
-	if err != nil {
-		return err
-	}
-	for _, ref := range refs {
-		if err = vault.Delete(ctx, ref); err != nil {
+	if !keyless {
+		vault, err := s.secrets()
+		if err != nil {
 			return err
+		}
+		refs, err := vault.UnremovedReferences(ctx, accepted.ID)
+		if err != nil {
+			return err
+		}
+		for _, ref := range refs {
+			if err = vault.Delete(ctx, ref); err != nil {
+				return err
+			}
 		}
 	}
 	_, err = s.Store.Mutate(ctx, accepted.CompletionID, "account.cleanup", struct{ ID, RequestID domain.ID }{accepted.ID, requestID}, func(tx *store.Tx) (any, error) {
