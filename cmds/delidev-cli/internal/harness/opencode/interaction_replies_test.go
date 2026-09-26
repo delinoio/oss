@@ -24,6 +24,8 @@ type replyFixture struct {
 	claimError        bool
 	beforeClaimReturn func()
 	onReply           func()
+	pendingBody       []byte
+	onPending         func()
 	id                string
 	response          InteractionResponse
 }
@@ -55,6 +57,17 @@ func newReplyFixture(t *testing.T, kind InteractionKind) *replyFixture {
 		w.Header().Set("Content-Type", "application/json")
 		if request.Method == http.MethodGet && request.URL.Path == "/session/"+fixtureSessionID {
 			_ = json.NewEncoder(w).Encode(fixtureSession(f.o.cwd, f.o.creation.request, f.o.creation.settings))
+			return
+		}
+		if request.Method == http.MethodGet && request.URL.Path == "/"+string(kind) {
+			raw := r.pendingBody
+			if raw == nil {
+				raw, _ = json.Marshal([]json.RawMessage{f.o.interactions[r.id].raw})
+			}
+			if r.onPending != nil {
+				r.onPending()
+			}
+			_, _ = w.Write(raw)
 			return
 		}
 		body, _ := io.ReadAll(request.Body)

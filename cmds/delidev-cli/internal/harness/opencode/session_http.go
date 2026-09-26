@@ -18,6 +18,9 @@ func (s *sessionAPI) request(ctx context.Context, method, path string, body []by
 	if s.replyAttempt != nil {
 		valid = valid || method == http.MethodPost && path == s.replyAttempt.path && mutationDigest(body) == s.replyAttempt.digest
 	}
+	if s.observer != nil {
+		valid = valid || method == http.MethodGet && (path == "/permission" || path == "/question")
+	}
 	if s.creation != nil && nativeID(s.creation.identity.id, "ses") {
 		base := "/session/" + s.creation.identity.id
 		valid = valid || method == http.MethodGet && path == base

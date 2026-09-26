@@ -58,6 +58,7 @@ var operations = []operationProfile{
 	{"/session/{sessionID}/abort", "post", "session.abort", "200", "application/json"},
 	{"/question", "get", "question.list", "200", "application/json"},
 	{"/question/{requestID}/reply", "post", "question.reply", "200", "application/json"},
+	{"/question/{requestID}/reject", "post", "question.reject", "200", "application/json"},
 	{"/permission", "get", "permission.list", "200", "application/json"},
 	{"/permission/{requestID}/reply", "post", "permission.reply", "200", "application/json"},
 	{"/event", "get", "event.subscribe", "200", "text/event-stream"},

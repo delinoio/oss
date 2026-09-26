@@ -20,12 +20,14 @@ const StopOnInteractionRejection RejectionPolicy = "stop-on-rejection"
 
 type observedInteraction struct {
 	value             NativeInteraction
+	raw               []byte
 	arrival           string
 	closed            bool
 	attempt           *interactionAttempt
 	rejected          bool
 	rejectionSources  []string
 	rejectionReserved bool
+	pendingAbsent     bool
 }
 
 type interactionAttempt struct {
@@ -73,7 +75,7 @@ func (o *inputObserver) interaction(event NativeEvent) (*NativeInteraction, erro
 	if value.Kind == QuestionInteraction && part.value.Tool.Name != "question" {
 		return nil, observerProblem()
 	}
-	o.interactions[value.ID] = &observedInteraction{value: value, arrival: event.ID}
+	o.interactions[value.ID] = &observedInteraction{value: value, raw: canonicalNative(event.Properties), arrival: event.ID}
 	copy, _ := decodeNativeInteraction(event.Kind, event.Properties)
 	return &copy, nil
 }
@@ -166,6 +168,9 @@ func (o *inputObserver) prepareInteraction(request domain.ID, id string, respons
 	interaction := o.interactions[id]
 	if request.Validate() != nil || request == o.creation.request || request == o.input.receipt.RequestID || o.responseIDs[request] || interaction == nil {
 		return nil, "", sessionInvalid()
+	}
+	if interaction.pendingAbsent {
+		return nil, "", sessionUncertain()
 	}
 	if interaction.closed || interaction.attempt != nil || interaction.rejectionReserved {
 		return nil, "", sessionConflict()
@@ -289,6 +294,9 @@ func (s *sessionAPI) replyInteraction(ctx context.Context, observer *inputObserv
 		return InteractionReceipt{}, problem
 	}
 	if _, err := s.readSession(ctx); err != nil {
+		return InteractionReceipt{}, err
+	}
+	if _, err := s.pendingInteraction(ctx, observer, id); err != nil {
 		return InteractionReceipt{}, err
 	}
 	attempt, path, err := observer.prepareInteraction(request, id, response)
