@@ -363,6 +363,20 @@ func encodeTextInput(settings SessionSettings, messageID, partID, text string) (
 	return body, nil
 }
 
+// TextInputClaimDigest lets the owning Worker compare the native mutation
+// against its immutable assignment before sending or publishing acceptance.
+// A matching digest alone grants no native ownership or execution authority.
+func TextInputClaimDigest(settings SessionSettings, messageID, partID, text string) (string, error) {
+	if !validSessionSettings(settings) || !nativeID(messageID, "msg") || !nativeID(partID, "prt") || domain.Text(text, "input", 256<<10, true) != nil {
+		return "", sessionInvalid()
+	}
+	body, err := encodeTextInput(settings, messageID, partID, text)
+	if err != nil {
+		return "", err
+	}
+	return mutationDigest(body), nil
+}
+
 // inspectInput may establish the original user message's exact native storage
 // fact after a lost HTTP response. Absence never proves rejection. This cannot
 // complete an assistant turn, clear unrelated recovery or permit another send.

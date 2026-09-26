@@ -43,13 +43,41 @@ func (a *nativeOpenCodeWorkerAuthority) Acquire(ctx context.Context, token strin
 // real. Account registration and upstream inference remain isolated fixtures;
 // no public execution event or report is asserted by this integration.
 func TestManualNativeOpenCodeWorkerOriginalClaims(t *testing.T) {
+	nativeOpenCodeWorkerFixture(t, false, false)
+}
+
+func TestManualNativeOpenCodeWorkerBindings(t *testing.T) {
+	nativeOpenCodeWorkerFixture(t, true, false)
+}
+
+func TestManualNativeOpenCodeWorkerRejectsChangedInput(t *testing.T) {
+	nativeOpenCodeWorkerFixture(t, false, true)
+}
+
+func nativeOpenCodeWorkerFixture(t *testing.T, publishBindings, changedInput bool) {
+	t.Helper()
 	executable := os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE")
 	if executable == "" {
 		t.Skip("explicit pinned native binary and private runtime required")
 	}
-	for _, mode := range []domain.SessionMode{domain.ExecuteMode, domain.PlanMode} {
+	modes := []domain.SessionMode{domain.ExecuteMode, domain.PlanMode}
+	if changedInput {
+		modes = modes[:1]
+	}
+	for _, mode := range modes {
 		t.Run(string(mode), func(t *testing.T) {
 			p, journal, _ := newOpenCodeClaimsFixtureMode(t, mode)
+			var bindings *openCodeBindingPublisher
+			var bindingRPC *openCodeBindingRPC
+			if publishBindings {
+				bindingRPC = &openCodeBindingRPC{t: t, publisher: p}
+				p.config.Client = bindingRPC
+				var err error
+				bindings, err = newOpenCodeBindingPublisher(p, journal)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
 			settings, err := openCodeExecutionSettings(p.input.Configuration, mode, "Private original Worker session")
 			if err != nil {
 				t.Fatal(err)
@@ -134,6 +162,16 @@ func TestManualNativeOpenCodeWorkerOriginalClaims(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			if publishBindings {
+				bindingRPC.lose = true
+				if bindings.BindSession(ctx, p.input.ThreadRequestID, session, observed) == nil {
+					t.Fatal("expected uncertain original binding acknowledgement")
+				}
+				bindingRPC.lose = false
+				if err := bindings.ReplayPending(ctx); err != nil {
+					t.Fatal(err)
+				}
+			}
 			if _, err := api.StartText(ctx, p.input.ThreadRequestID, p.input.Input.Prompt); err == nil {
 				t.Fatal("original creation identity was reused for native input")
 			}
@@ -142,6 +180,19 @@ func TestManualNativeOpenCodeWorkerOriginalClaims(t *testing.T) {
 			}
 			if _, err := api.StartText(ctx, domain.NewID(), strings.Repeat("\x01", 256<<10)); err == nil {
 				t.Fatal("JSON-expanded input consumed original subscription authority")
+			}
+			if changedInput {
+				if _, err := api.StartText(ctx, p.input.TurnRequestID, p.input.Input.Prompt+" changed input"); err == nil || !journal.failed || upstream.Load() != 0 || authority.requests.Load() != 0 {
+					t.Fatal("changed immutable input reached native inference authority")
+				}
+				if _, err := api.StartText(ctx, p.input.TurnRequestID, p.input.Input.Prompt); err == nil {
+					t.Fatal("failed original input claim regained send authority")
+				}
+				claims, err := readOpenCodeClaims(p.config.Root, journal.state.Reference)
+				if err != nil || len(claims) != 1 || claims[0].Kind != opencode.CreateSessionMutation || p.state.LastSequence != 0 {
+					t.Fatal("failed input claim rewrote native creation or invented publication")
+				}
+				return
 			}
 			if _, err := api.StartText(ctx, p.input.TurnRequestID, p.input.Input.Prompt); err != nil {
 				t.Fatal(err)
@@ -164,7 +215,22 @@ func TestManualNativeOpenCodeWorkerOriginalClaims(t *testing.T) {
 			if err != nil || !receipt.Recorded || receipt.SessionID != session || receipt.MessageID != claims[1].MessageID || receipt.PartID != claims[1].PartID {
 				t.Fatal("Worker claims did not retain exact actual native storage")
 			}
-			if p.state.LastSequence != 0 || p.state.Pending != nil || upstream.Load() != 1 || authority.requests.Load() != 1 || authority.releases.Load() != 1 {
+			expectedSequence := uint64(0)
+			if publishBindings {
+				bindingRPC.lose = true
+				if bindings.AcceptInput(ctx, receipt) == nil {
+					t.Fatal("expected uncertain original acceptance acknowledgement")
+				}
+				bindingRPC.lose = false
+				if err := bindings.ReplayPending(ctx); err != nil {
+					t.Fatal(err)
+				}
+				expectedSequence = 2
+				if len(bindingRPC.requests) != 4 || bindingRPC.requests[0] != bindingRPC.requests[1] || bindingRPC.requests[2] != bindingRPC.requests[3] || !bytes.Equal(bindingRPC.events[0], bindingRPC.events[1]) || !bytes.Equal(bindingRPC.events[2], bindingRPC.events[3]) {
+					t.Fatal("actual native binding replaced an uncertain outbox request")
+				}
+			}
+			if p.state.LastSequence != expectedSequence || p.state.Pending != nil || upstream.Load() != 1 || authority.requests.Load() != 1 || authority.releases.Load() != 1 {
 				t.Fatal("private integration replayed inference or invented public publication")
 			}
 			if _, err := api.StartText(ctx, domain.NewID(), "unrequested replacement"); err == nil {

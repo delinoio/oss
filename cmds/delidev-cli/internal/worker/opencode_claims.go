@@ -47,15 +47,16 @@ type openCodeClaimState struct {
 }
 
 type openCodeClaimJournal struct {
-	mu       sync.Mutex
-	path     string
-	state    openCodeClaimState
-	saved    []byte
-	release  func() error
-	closed   bool
-	closeErr error
-	failed   bool
-	logger   *slog.Logger
+	mu          sync.Mutex
+	path        string
+	state       openCodeClaimState
+	saved       []byte
+	release     func() error
+	closed      bool
+	closeErr    error
+	failed      bool
+	logger      *slog.Logger
+	inputDigest func(opencode.SessionClaim) (string, error)
 }
 
 func (r openCodeClaimReference) validate() error {
@@ -94,6 +95,10 @@ func openOpenCodeClaims(p *ExecutionPublisher) (*openCodeClaimJournal, error) {
 	if ref.validate() != nil {
 		return nil, openCodeClaimUncertain()
 	}
+	requested, err := openCodeExecutionSettings(i.Configuration, i.Input.Mode, "Original native input claim")
+	if err != nil {
+		return nil, err
+	}
 	path, err := openCodeClaimsPath(p.config.Root, ref.JobID)
 	if err != nil {
 		return nil, err
@@ -114,7 +119,9 @@ func openOpenCodeClaims(p *ExecutionPublisher) (*openCodeClaimJournal, error) {
 		_ = lock.Close()
 		return nil, openCodeClaimUncertain()
 	}
-	return &openCodeClaimJournal{path: path, state: state, saved: raw, release: lock.Close, logger: p.config.Logger}, nil
+	return &openCodeClaimJournal{path: path, state: state, saved: raw, release: lock.Close, logger: p.config.Logger, inputDigest: func(c opencode.SessionClaim) (string, error) {
+		return opencode.TextInputClaimDigest(requested.Session, c.MessageID, c.PartID, i.Input.Prompt)
+	}}, nil
 }
 
 func openCodeClaimsPath(root string, job domain.ID) (string, error) {
@@ -201,6 +208,18 @@ func (j *openCodeClaimJournal) Claim(ctx context.Context, c opencode.SessionClai
 	}
 	if err := j.state.validateNext(c); err != nil {
 		return err
+	}
+	if c.Kind == opencode.SubmitInputMutation {
+		phase = "immutable-input"
+		if j.inputDigest == nil {
+			j.failed = true
+			return openCodeClaimUncertain()
+		}
+		expected, err := j.inputDigest(c)
+		if err != nil || expected != c.BodyDigest {
+			j.failed = true
+			return openCodeClaimUncertain()
+		}
 	}
 	phase = "original-journal"
 	prior, err := security.ReadPrivate(j.path, maxOpenCodeClaimBytes)

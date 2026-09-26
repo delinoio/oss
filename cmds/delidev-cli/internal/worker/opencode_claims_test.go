@@ -60,6 +60,14 @@ func newOpenCodeClaimsFixtureMode(t *testing.T, mode domain.SessionMode) (*Execu
 		{RequestID: domain.NewID(), Kind: opencode.ReplyPermissionMutation, SessionID: "ses_01960dcbe1faabcdefghijklmn", MessageID: "msg_01960dcbe1fbABCDEFGHIJKLMN", PartID: "prt_01960dcbe1fb1234567890ABCD", InputRequestID: f.input.TurnRequestID, InteractionID: "per_01960dcbe1faabcdefghijklmn", ArrivalID: "evt_01960dcbe1faabcdefghijklmn", CallID: "private-call", BodyDigest: strings.Repeat("ef", 32)},
 		{RequestID: domain.NewID(), Kind: opencode.StopOwnedRuntimeMutation, SessionID: "ses_01960dcbe1faabcdefghijklmn", MessageID: "msg_01960dcbe1faABCDEFGHIJKLMN", PartID: "prt_01960dcbe1fa1234567890ABCD", InputRequestID: f.input.TurnRequestID, BodyDigest: hex.EncodeToString(empty[:])},
 	}
+	requested, err := openCodeExecutionSettings(p.input.Configuration, p.input.Input.Mode, "Original native input claim")
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims[1].BodyDigest, err = opencode.TextInputClaimDigest(requested.Session, claims[1].MessageID, claims[1].PartID, p.input.Input.Prompt)
+	if err != nil {
+		t.Fatal(err)
+	}
 	recovery := claims[3]
 	recovery.Kind, recovery.RequestID, recovery.StopRequestID = opencode.RecoverStoppedRuntimeMutation, domain.NewID(), claims[3].RequestID
 	return p, j, append(claims, recovery)
@@ -94,6 +102,46 @@ func TestOpenCodeClaimsAreDurableBoundedOriginalOperations(t *testing.T) {
 	}
 	if _, err := readOpenCodeClaims(p.config.Root, j.state.Reference); err != nil {
 		t.Fatal("read-only original metadata was lost on closure")
+	}
+}
+
+func TestOpenCodeInputClaimMustMatchImmutablePayloadBeforeMutation(t *testing.T) {
+	for _, change := range []string{"prompt", "model", "provider", "agent"} {
+		t.Run(change, func(t *testing.T) {
+			p, journal, claims := newOpenCodeClaimsFixture(t)
+			ctx := context.Background()
+			if err := journal.Claim(ctx, claims[0]); err != nil {
+				t.Fatal(err)
+			}
+			before, _ := security.ReadPrivate(journal.path, maxOpenCodeClaimBytes)
+			settings, err := openCodeExecutionSettings(p.input.Configuration, p.input.Input.Mode, "Original native input claim")
+			if err != nil {
+				t.Fatal(err)
+			}
+			prompt := p.input.Input.Prompt
+			switch change {
+			case "prompt":
+				prompt += " changed input"
+			case "model":
+				settings.Session.Model = "foreign-model"
+			case "provider":
+				settings.Session.Provider = "foreign-provider"
+			case "agent":
+				settings.Session.Agent = opencode.PlanAgent
+			}
+			wrong := claims[1]
+			wrong.BodyDigest, err = opencode.TextInputClaimDigest(settings.Session, wrong.MessageID, wrong.PartID, prompt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if journal.Claim(ctx, wrong) == nil || !journal.failed || len(journal.state.Claims) != 1 || journal.Claim(ctx, claims[1]) == nil {
+				t.Fatal("changed immutable payload gained mutation or replacement authority")
+			}
+			after, _ := security.ReadPrivate(journal.path, maxOpenCodeClaimBytes)
+			if !bytes.Equal(before, after) {
+				t.Fatal("rejected payload changed the original synchronized claims")
+			}
+		})
 	}
 }
 
