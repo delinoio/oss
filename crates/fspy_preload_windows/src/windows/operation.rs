@@ -18,8 +18,11 @@ use ntapi::ntpsapi::{
 };
 use winapi::{
     shared::ntdef::NT_SUCCESS,
-    um::processthreadsapi::{
-        GetCurrentProcess, GetCurrentProcessId, GetCurrentThreadId, TerminateProcess,
+    um::{
+        processthreadsapi::{
+            GetCurrentProcess, GetCurrentProcessId, GetCurrentThreadId, TerminateProcess,
+        },
+        winsock2::{WSADATA, WSAStartup},
     },
 };
 
@@ -46,6 +49,21 @@ impl State {
 
     fn stream(&mut self) -> std::io::Result<&mut TcpStream> {
         if self.stream.is_none() {
+            // Keep one transport-owned Winsock reference for the injected
+            // process lifetime. The host runtime may release its own reference
+            // before its final file operations; pairing must still work then.
+            // Process teardown releases this reference. Do not call WSAStartup
+            // from DllMain, where loader-lock reentrancy can deadlock.
+            static WINSOCK: OnceLock<i32> = OnceLock::new();
+            let status = *WINSOCK.get_or_init(|| {
+                // SAFETY: WSAStartup initializes this process and writes the
+                // provided exact WSADATA buffer on success.
+                let mut data: WSADATA = unsafe { std::mem::zeroed() };
+                unsafe { WSAStartup(0x0202, &mut data) }
+            });
+            if status != 0 {
+                return Err(std::io::Error::from_raw_os_error(status));
+            }
             let address = std::env::var("CLIBOX_FSPY_ENDPOINT")
                 .map_err(|_| std::io::Error::other("missing_endpoint"))?
                 .parse::<SocketAddr>()
