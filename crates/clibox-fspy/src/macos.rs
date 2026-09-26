@@ -6,6 +6,7 @@
 #[cfg(test)]
 mod tests {
     use std::{
+        collections::HashMap,
         fs,
         io::{self, Read, Write},
         os::unix::net::{UnixListener, UnixStream},
@@ -22,7 +23,12 @@ mod tests {
     struct Frame {
         kind: u8,
         operation: u8,
+        pid: u32,
+        tid: u64,
+        id: u64,
+        monotonic_ns: u64,
         result: i64,
+        error: i32,
         path: Vec<u8>,
     }
 
@@ -54,7 +60,12 @@ mod tests {
             frames.lock().unwrap().push(Frame {
                 kind: header[0],
                 operation: header[1],
+                pid: u32::from_le_bytes(header[2..6].try_into().unwrap()),
+                tid: u64::from_le_bytes(header[10..18].try_into().unwrap()),
+                id: u64::from_le_bytes(header[18..26].try_into().unwrap()),
+                monotonic_ns: u64::from_le_bytes(header[26..34].try_into().unwrap()),
                 result: i64::from_le_bytes(header[34..42].try_into().unwrap()),
+                error: i32::from_le_bytes(header[42..46].try_into().unwrap()),
                 path,
             });
             if header[0] == b's' {
@@ -121,6 +132,20 @@ mod tests {
         accept.join().unwrap();
         let frames = frames.lock().unwrap();
         assert!(status.path_accesses.is_ok(), "frames: {frames:?}");
+        let mut pending = HashMap::new();
+        for frame in frames.iter() {
+            let key = (frame.pid, frame.tid, frame.id);
+            if frame.kind == b's' {
+                assert!(pending.insert(key, frame).is_none());
+            } else {
+                assert_eq!(frame.kind, b'e');
+                let entry = pending.remove(&key).expect("completion has a start");
+                assert_eq!(entry.operation, frame.operation);
+                assert!(frame.monotonic_ns >= entry.monotonic_ns);
+                assert_eq!(frame.error != 0, frame.result < 0);
+            }
+        }
+        assert!(pending.is_empty(), "unpaired entries: {pending:?}");
         assert!(frames.iter().any(|frame| {
             frame.kind == b's' && frame.operation == 3 && frame.path.ends_with(b"input.txt")
         }));
