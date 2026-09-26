@@ -2,15 +2,15 @@
 
 ## Install and check the version
 
-After checking the requirements in [Install clibox](/clibox/install), pin published version 0.1.6 for these examples, then check its help:
+After checking the requirements in [Install clibox](/clibox/install), pin published version 0.2.0 for these examples, then check its help:
 
 ```sh
-pnpm add -D -E @delino/clibox@0.1.6
+pnpm add -D -E @delino/clibox@0.2.0
 pnpm exec clibox --version
 pnpm exec clibox --help
 ```
 
-These examples use the published 0.1.6 command names. The upcoming release renames `env run` to `run env`; change the environment script below only when upgrading to a release with that interface. See [Migrating older command syntax](/clibox/migration).
+These examples use the published 0.2.0 command names. See [Migrating older command syntax](/clibox/migration) if upgrading from 0.1.6.
 
 ## Try commands without changing files
 
@@ -28,14 +28,14 @@ Text replacement prints `hi world`; Base64 prints `aGVsbG8=`. Neither adds a new
 ```json
 {
   "scripts": {
-    "build:production": "clibox env run NODE_ENV=production node build.js",
+    "build:production": "clibox run env NODE_ENV=production node build.js",
     "check:port": "clibox port list 3000",
     "wait:server": "clibox wait tcp localhost:3000 --timeout 30s"
   }
 }
 ```
 
-Replace `build.js` with your project's existing entrypoint. `env run` changes only the child environment and preserves the child's exit status. `port list` observes owners without terminating them. Start your own server before running `wait:server`; a successful TCP connection only proves connectivity.
+Replace `build.js` with your project's existing entrypoint. `run env` changes only the child environment and preserves the child's exit status. `port list` observes owners without terminating them. Start your own server before running `wait:server`; a successful TCP connection only proves connectivity.
 
 ## Process local configuration
 

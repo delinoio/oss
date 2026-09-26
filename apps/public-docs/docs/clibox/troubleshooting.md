@@ -23,7 +23,7 @@ For port permission errors, inspect the returned partial results and use the app
 
 ## CPU counts
 
-`system cpus` is available in the next release, not in published version 0.1.6. Check `clibox --version` if the command is unknown. If `--kind logical` fails on Linux, confirm that the environment exposes online CPU information and that the current user can read it. A failed `available` or `logical` query never falls back to a substitute count. Use the stable failure code in stderr and `RUST_LOG=clibox=debug` for redacted details; do not assume that two invocations observe the same CPU state.
+`system cpus` is available in published version 0.2.0, not in version 0.1.6. Check `clibox --version` if the command is unknown. If `--kind logical` fails on Linux, confirm that the environment exposes online CPU information and that the current user can read it. A failed `available` or `logical` query never falls back to a substitute count. Use the stable failure code in stderr and `RUST_LOG=clibox=debug` for redacted details; do not assume that two invocations observe the same CPU state.
 
 ## Waits and configuration
 
@@ -33,7 +33,11 @@ For dotenv or YAML syntax errors, inspect the reported input/document ordinal an
 
 ## Execution wrappers
 
-The `run with-*` commands are available in the next release, not in published version 0.1.6. If a pinned installation reports an unknown `run` subcommand, check `clibox --version` and upgrade the exact package version before changing the script. Use `env run` rather than `run env` while remaining on 0.1.6.
+The `run with-*` commands are available in published version 0.2.0, not in version 0.1.6. If a pinned installation reports an unknown `run` subcommand, check `clibox --version` and upgrade the exact package version before changing the script. Use `env run` rather than `run env` while remaining on 0.1.6.
+
+## File access workflows
+
+The `fspy` commands are implemented in source for a future release and are absent from published version 0.2.0. If a later installation rejects `clibox fspy`, check its version and command help. If tracing is unavailable, use the stable failure classification and verify that the current user may run the selected child. macOS protected executables can reject injection. A lost or incomplete trace cannot produce successful comparison, coverage, or reproduction output. See [File access workflows](/clibox/fspy).
 
 For a rate limit or lock failure, confirm that all callers use the same case-sensitive name and, for a rate limit, the same limit, period, and burst. Choose `--scope project` for one project or `--scope user` for coordination across projects. `--wait-timeout 0` is an immediate decision, not unlimited waiting. A lock with `--on-locked fail` exits 75; `skip` exits 0 without starting its workload.
 

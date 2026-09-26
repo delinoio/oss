@@ -19,7 +19,7 @@ npm install --save-dev --save-exact @delino/clibox
 npm exec -- clibox --version
 ```
 
-Use `clibox` commands in `package.json` scripts, for example `clibox port list 3000`. The [getting started guide](/clibox/getting-started) pins version 0.1.6 and shows its environment execution syntax.
+Use `clibox` commands in `package.json` scripts, for example `clibox port list 3000`. The [getting started guide](/clibox/getting-started) pins version 0.2.0 and shows its environment execution syntax.
 
 ## Requirements
 
