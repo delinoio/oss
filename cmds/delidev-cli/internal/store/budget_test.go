@@ -107,7 +107,7 @@ func TestBudgetMigrationPreservesHistoricalPricesAndBackup(t *testing.T) {
 			if _, _, err := writeResponse(s, id, record); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := s.db.Exec("DROP TABLE session_estimate_totals; PRAGMA user_version=15"); err != nil {
+			if _, err := s.db.Exec(dropNotificationFixtureSchema + "DROP TABLE session_estimate_totals; PRAGMA user_version=15"); err != nil {
 				t.Fatal(err)
 			}
 			if corrupted {

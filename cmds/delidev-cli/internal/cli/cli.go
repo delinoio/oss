@@ -182,6 +182,12 @@ func Run(ctx context.Context, args []string, streams IO) int {
 			value, err := scheduleCommand(ctx, c, o, rest, streams)
 			return emit(value, err)
 		}
+	case "notification":
+		if len(rest) > 0 && (rest[0] == "configure" || rest[0] == "claim" || rest[0] == "report") {
+			ensureRequest(&o)
+		}
+		value, err := notificationCommand(ctx, c, o, rest)
+		return emit(value, err)
 	case "inbox":
 		if len(rest) > 0 && rest[0] != "snapshot" {
 			if rest[0] == "mark-read" || rest[0] == "mark-unread" {
@@ -766,6 +772,9 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   search --query TEXT [--session-id ID] [--project-id ID] [--agent-id ID] [--account-id ID]
     [--outcome all|not-started|running|succeeded|failed|stopped] [--archive all|active|archiving|archived]
     [--limit N] [--page-token TOKEN]
+  notification preferences | configure --revision N --interactions on|off --terminals on|off
+  notification list [--limit N] | inspect|claim --id INBOX_ID
+  notification report --id INBOX_ID --claim-id CLAIM_ID --state submitted|denied|failed|uncertain
   inbox list [--session-id ID] [--project-id ID] [--read-state all|read|unread]
     [--source all|interaction|execution-terminal] [--limit N] [--page-token TOKEN]
   inbox get|inspect --id ID

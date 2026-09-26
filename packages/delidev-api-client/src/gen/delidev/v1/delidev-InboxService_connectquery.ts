@@ -18,3 +18,33 @@ export const listInbox = InboxService.method.listInbox;
  * @generated from rpc delidev.v1.InboxService.SetInboxReadState
  */
 export const setInboxReadState = InboxService.method.setInboxReadState;
+
+/**
+ * @generated from rpc delidev.v1.InboxService.GetNotificationPreferences
+ */
+export const getNotificationPreferences = InboxService.method.getNotificationPreferences;
+
+/**
+ * @generated from rpc delidev.v1.InboxService.SetNotificationPreferences
+ */
+export const setNotificationPreferences = InboxService.method.setNotificationPreferences;
+
+/**
+ * @generated from rpc delidev.v1.InboxService.ListNotificationCandidates
+ */
+export const listNotificationCandidates = InboxService.method.listNotificationCandidates;
+
+/**
+ * @generated from rpc delidev.v1.InboxService.ClaimNotification
+ */
+export const claimNotification = InboxService.method.claimNotification;
+
+/**
+ * @generated from rpc delidev.v1.InboxService.GetNotificationDelivery
+ */
+export const getNotificationDelivery = InboxService.method.getNotificationDelivery;
+
+/**
+ * @generated from rpc delidev.v1.InboxService.ReportNotification
+ */
+export const reportNotification = InboxService.method.reportNotification;
