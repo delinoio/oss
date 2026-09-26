@@ -73,6 +73,18 @@ func TestManualNativeOpenCodeOwnedAPIProxyRejectedCredential(t *testing.T) {
 	nativeOwnedAPISessionWithRelay(t, true, false, nativeServerRelayRejectedCredential)
 }
 
+func TestManualNativeOpenCodeOwnedAPIUnknownLimits(t *testing.T) {
+	nativeOwnedAPISessionWithProfile(t, true, false, nativeServerRelay, func(c *apiSessionConfig) {
+		c.ContextLimit, c.OutputLimit = 0, 0
+	})
+}
+
+func TestManualNativeOpenCodeOwnedAPIDefaultPermissions(t *testing.T) {
+	nativeOwnedAPISessionWithProfile(t, true, false, nativeServerRelay, func(c *apiSessionConfig) {
+		c.Settings.Permission = []PermissionRule{}
+	})
+}
+
 // Only the lease authority is a fixture here. Native OpenCode and the actual
 // server relay handler perform their real HTTP/auth/body/stream boundaries.
 type nativeAPIProxyAuthority struct {
@@ -96,6 +108,11 @@ func (a *nativeAPIProxyAuthority) Acquire(ctx context.Context, token string) (*a
 
 func nativeOwnedAPISessionWithRelay(t *testing.T, input, mismatch bool, relayMode nativeRelayFixtureMode) {
 	t.Helper()
+	nativeOwnedAPISessionWithProfile(t, input, mismatch, relayMode, nil)
+}
+
+func nativeOwnedAPISessionWithProfile(t *testing.T, input, mismatch bool, relayMode nativeRelayFixtureMode, configure func(*apiSessionConfig)) {
+	t.Helper()
 	realRelay := relayMode != nativeDirectScriptedAPI
 	executable := os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE")
 	if executable == "" {
@@ -103,6 +120,9 @@ func nativeOwnedAPISessionWithRelay(t *testing.T, input, mismatch bool, relayMod
 	}
 	requireNoManagedOpenCodeConfig(t)
 	config := fixtureOwnedAPIConfig(t)
+	if configure != nil {
+		configure(&config)
+	}
 	var logs bytes.Buffer
 	config.Probe.Process.Logger = slog.New(slog.NewJSONHandler(&logs, nil))
 	defer func() {
@@ -221,7 +241,7 @@ func nativeOwnedAPISessionWithRelay(t *testing.T, input, mismatch bool, relayMod
 		t.Fatal(err)
 	}
 	defer stream.Close()
-	if _, err := api.submit(ctx, domain.NewID(), fixtureMessageID, fixturePartID, "Reply using the private owned fixture response."); err != nil {
+	if _, err := api.submitText(ctx, domain.NewID(), "Reply using the private owned fixture response."); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := api.observeInput(ctx, config.Workspace); err == nil {
@@ -243,6 +263,9 @@ func nativeOwnedAPISessionWithRelay(t *testing.T, input, mismatch bool, relayMod
 	progress := observer.snapshot()
 	if !progress.SettledObserved || !progress.UserSeen || !progress.InputPartSeen || requests.Load() != 1 || len(claims) != 2 {
 		t.Fatal("owned native input did not settle with exact original claims")
+	}
+	if receipt, err := api.inspectInput(ctx); err != nil || !receipt.Recorded || receipt.MessageID != claims[1].MessageID || receipt.PartID != claims[1].PartID {
+		t.Fatal("fresh native IDs did not retain the exact originally claimed stored input")
 	}
 	assistant := observer.messages[progress.AssistantID]
 	if assistant == nil || assistant.value.Assistant == nil || assistant.value.Assistant.Completed == nil {

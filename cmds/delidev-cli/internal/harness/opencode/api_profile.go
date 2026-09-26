@@ -27,7 +27,9 @@ type nativeAPIProfile struct {
 }
 
 func (p nativeAPIProfile) config() (map[string]any, error) {
-	if !validSessionSettings(p.Settings) || domain.Text(p.BaseURL, "relay", 8192, true) != nil || domain.Text(p.Token, "credential", 16384, true) != nil || !validRejectionPolicy(p.Rejection) || p.ContextLimit <= 0 || p.ContextLimit > 9007199254740991 || p.OutputLimit <= 0 || p.OutputLimit > p.ContextLimit {
+	// Zero retains the pinned native unknown-limit representation. Native
+	// output fallback remains native policy, not catalog capability evidence.
+	if !validSessionSettings(p.Settings) || domain.Text(p.BaseURL, "relay", 8192, true) != nil || domain.Text(p.Token, "credential", 16384, true) != nil || !validRejectionPolicy(p.Rejection) || p.ContextLimit < 0 || p.ContextLimit > 9007199254740991 || p.OutputLimit < 0 || p.OutputLimit > 9007199254740991 || p.ContextLimit > 0 && p.OutputLimit > p.ContextLimit {
 		return nil, sessionInvalid()
 	}
 	model := p.Settings.Provider + "/" + p.Settings.Model

@@ -67,7 +67,7 @@ func TestOwnedAPIInvalidSettingsFailBeforeNativeLaunch(t *testing.T) {
 		{"native-root", func(c *apiSessionConfig) { c.NativeRoot = filepath.Dir(c.Probe.Home) }},
 		{"private-workspace-overlap", func(c *apiSessionConfig) { c.Workspace = c.Probe.Home }},
 		{"unclean-workspace", func(c *apiSessionConfig) { c.Workspace += string(filepath.Separator) + "." }},
-		{"context", func(c *apiSessionConfig) { c.ContextLimit = 0 }},
+		{"context", func(c *apiSessionConfig) { c.ContextLimit = -1 }},
 		{"output", func(c *apiSessionConfig) { c.OutputLimit = c.ContextLimit + 1 }},
 		{"policy", func(c *apiSessionConfig) { c.Rejection = "" }},
 	} {

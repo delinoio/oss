@@ -164,7 +164,7 @@ func (s *sessionAPI) diagnostic(ctx context.Context, kind SessionMutation, err e
 }
 
 func validSessionSettings(settings SessionSettings) bool {
-	if domain.Text(settings.Title, "title", 1024, true) != nil || domain.Text(settings.Agent, "agent", 128, true) != nil || domain.Text(settings.Provider, "provider", 256, true) != nil || domain.Text(settings.Model, "model", 256, true) != nil || len(settings.Permission) == 0 || len(settings.Permission) > 128 {
+	if domain.Text(settings.Title, "title", 1024, true) != nil || domain.Text(settings.Agent, "agent", 128, true) != nil || domain.Text(settings.Provider, "provider", 256, true) != nil || domain.Text(settings.Model, "model", 256, true) != nil || settings.Permission == nil || len(settings.Permission) > 128 {
 		return false
 	}
 	for _, rule := range settings.Permission {

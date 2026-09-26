@@ -24,6 +24,20 @@ func fixtureEffectiveConfig(p *nativeAPIProfile) map[string]any {
 	return value
 }
 
+func TestAPIProfileRetainsNativeUnknownLimitsAndExplicitEmptyRules(t *testing.T) {
+	p := fixtureAPIProfile()
+	p.Settings.Permission = []PermissionRule{}
+	p.ContextLimit, p.OutputLimit = 0, 0
+	raw, err := p.configBytes()
+	if err != nil || !strings.Contains(string(raw), `"context":0`) || !strings.Contains(string(raw), `"output":0`) {
+		t.Fatal("native unknown model limits were invented or rejected")
+	}
+	p.Settings.Permission = nil
+	if _, err := p.configBytes(); err == nil {
+		t.Fatal("missing permission selection became an explicit native default")
+	}
+}
+
 func TestEffectiveAPIProfileRejectsAuthorityAndCapabilityDrift(t *testing.T) {
 	p := fixtureAPIProfile()
 	for _, test := range []struct {
