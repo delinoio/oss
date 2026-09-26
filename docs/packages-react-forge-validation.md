@@ -648,3 +648,18 @@ stills retain fractional frame times rather than rounding the FBX importer's
 25 fps timeline. All 24 stills and six playback videos were inspected. Generated
 repository-owned dist output was removed after validation; the local preview
 serves only artifacts outside the checkout.
+
+### 2026-09-26 PR #999 FBX key-interval repair
+
+The new regression first reproduced acceptance of Float32 key times near
+`1e-11` and `2e-11` seconds, which round to distinct FBX ticks despite being less
+than one tick apart. Export now rejects adjacent source intervals below
+`1 / 46,186,158,000` seconds before baking or quantization. Local tests cover
+STEP, LINEAR and CUBIC, both same-tick and distinct-tick rejection, and valid
+fractional-tick timestamps independently evaluated with ufbx. The three scene
+crates passed 13 tests, and scene/exporter/N-API Clippy passed with warnings
+denied. This validation repair preserves the existing local-only scene policy.
+
+Prepared root `TMPDIR=/private/tmp cargo test --locked -- --test-threads=1`
+passed 1,952 tests with zero failures and three existing opt-in tests ignored.
+Generated repository-owned dist output was removed after validation.

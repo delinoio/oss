@@ -73,6 +73,62 @@ fn sampler(
     bytes
 }
 
+#[test]
+fn fbx_rejects_sub_tick_key_intervals_before_rounding() {
+    let ticks_per_second = 46_186_158_000.;
+    for mode in 0..=2 {
+        for (times, valid) in [
+            ([1e-11f32, 2e-11], false), // Distinct rounded ticks, but less than one tick apart.
+            ([0., 1e-11], false),       // Both keys round to the same tick.
+            ([3e-11, 6e-11], true),     // Fractional tick times are valid with sufficient spacing.
+        ] {
+            let (mut scene, mut assets) = fixture();
+            let id = scene.nodes[0].children[0].id;
+            assets.insert(
+                "move".into(),
+                sampler(
+                    0,
+                    mode,
+                    3,
+                    &times,
+                    &[0., 0., 0., 1., 0., 0.],
+                    (mode == 2).then_some(&[0.; 6]),
+                ),
+            );
+            scene.animations = serde_json::from_value(json!([{
+                "id":"01956e48-8f55-7000-8000-000000000006", "name":"move",
+                "tracks":[{"target":id,"sampler":"move"}]
+            }]))
+            .unwrap();
+            let prepared = forge_scene::prepare(&scene, &assets).unwrap();
+            let result = forge_fbx::export(&prepared);
+            if valid {
+                let imported = ufbx::load_memory(&result.unwrap(), Default::default()).unwrap();
+                let node = imported
+                    .nodes
+                    .iter()
+                    .find(|n| n.element.name.as_ref() == "Triangle")
+                    .unwrap();
+                for (time, expected) in times.into_iter().zip([0., 1.]) {
+                    let rounded = (time as f64 * ticks_per_second).round() / ticks_per_second;
+                    let actual =
+                        ufbx::evaluate_transform(&imported.anim_stacks[0].anim, node, rounded);
+                    assert!((actual.translation.x - expected).abs() < 1e-6);
+                }
+            } else {
+                assert_eq!(
+                    result
+                        .map(|_| ())
+                        .expect_err("sub-tick source intervals must fail")
+                        .code,
+                    forge_tree_doc::ErrorCode::InvalidField,
+                    "mode={mode} times={times:?}"
+                );
+            }
+        }
+    }
+}
+
 fn animated_fixture() -> (Scene, Assets) {
     let (mut scene, mut assets) = fixture();
     let base = assets.remove("g").unwrap();

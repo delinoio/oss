@@ -304,6 +304,14 @@ fn sample_times(
     baked: bool,
     remaining: &mut usize,
 ) -> Result<Vec<f64>> {
+    // Distinct rounded ticks can still conceal a source interval shorter than
+    // one tick. Check the original seconds before baking or quantization.
+    if s.times
+        .windows(2)
+        .any(|p| p[1] as f64 - (p[0] as f64) < 1. / TICKS_PER_SECOND)
+    {
+        return Err(forge_scene::invalid("animations/times"));
+    }
     let frames = if baked {
         (s.duration() * fps as f64).ceil()
     } else {

@@ -70,7 +70,9 @@ linear scalar curves retain their interpolation; Euler conversion follows the
 existing camera/light basis adjustments and unwraps consecutive orientations.
 FBX rotation/CUBIC values between baked samples are approximations. The complete
 baked export is preflight-bounded, and sub-tick or overflowing FBX key times fail
-instead of merging keys. Runtime generation requires no external converter.
+instead of merging keys. Validate adjacent source-time intervals before baking
+or tick rounding, even when rounding would produce distinct ticks. Runtime
+generation requires no external converter.
 
 The existing 64 MiB per-asset, 256 MiB aggregate/output and React tree limits also
 cover skin, morph and sampler bytes. Per-mesh bind-palette expansion is independently capped at 256 MiB before allocation. Private FSG2 and FSA1 worker envelopes carry
