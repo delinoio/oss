@@ -183,6 +183,16 @@ func nativeSessionFixtureWithPolicy(t *testing.T, providerURL, key string, polic
 			return nil
 		}
 	}
+	api.closeOwned = func(ctx context.Context) error {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if err := handle.Close(); err != nil {
+			return err
+		}
+		_ = handle.Wait()
+		return process.ReconcileOwner(config.Process.Directory, config.Process.OwnerID)
+	}
 	var claims []SessionClaim
 	api.claim = func(_ context.Context, claim SessionClaim) error {
 		for _, existing := range claims {

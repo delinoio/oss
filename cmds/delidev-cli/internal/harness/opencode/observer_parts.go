@@ -104,7 +104,9 @@ func (o *inputObserver) tool(value NativePart, old *observedPart) error {
 	if tool.State == ToolCompleted || tool.State == ToolError {
 		for _, interaction := range o.interactions {
 			if interaction.value.Tool.CallID == tool.CallID && !interaction.closed {
-				return observerProblem()
+				if o.stop == nil || !o.stop.sent || !interruptedTool(tool) {
+					return observerProblem()
+				}
 			}
 		}
 	}

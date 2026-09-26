@@ -104,6 +104,7 @@ type inputObserver struct {
 	interactions    map[string]*observedInteraction
 	responseIDs     map[domain.ID]bool
 	rejectionPolicy RejectionPolicy
+	stop            *inputStopAttempt
 }
 
 func observerProblem() *domain.Error {
@@ -469,7 +470,7 @@ func contentFilterRefinement(before, after []byte) bool {
 
 func (o *inputObserver) messageClosed(value NativeMessage, state *observedMessage) bool {
 	for _, interaction := range o.interactions {
-		if interaction.value.Tool.MessageID == value.ID && !interaction.closed {
+		if interaction.value.Tool.MessageID == value.ID && !interaction.closed && !o.interactionInterrupted(interaction) {
 			return false
 		}
 	}

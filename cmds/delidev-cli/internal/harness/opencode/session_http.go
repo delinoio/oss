@@ -19,10 +19,11 @@ func (s *sessionAPI) request(ctx context.Context, method, path string, body []by
 		valid = valid || method == http.MethodPost && path == s.replyAttempt.path && mutationDigest(body) == s.replyAttempt.digest
 	}
 	if s.observer != nil {
-		valid = valid || method == http.MethodGet && (path == "/permission" || path == "/question")
+		valid = valid || method == http.MethodGet && (path == "/permission" || path == "/question" || path == "/session/status")
 	}
 	if s.creation != nil && nativeID(s.creation.identity.id, "ses") {
 		base := "/session/" + s.creation.identity.id
+		valid = valid || s.abortAttempt && method == http.MethodPost && path == base+"/abort" && len(body) == 0
 		valid = valid || method == http.MethodGet && path == base
 		if s.input != nil {
 			valid = valid || method == http.MethodPost && path == base+"/prompt_async" || method == http.MethodGet && path == base+"/message/"+s.input.receipt.MessageID

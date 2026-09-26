@@ -44,6 +44,7 @@ const (
 	ReplyPermissionMutation SessionMutation = "reply-permission"
 	ReplyQuestionMutation   SessionMutation = "reply-question"
 	RejectQuestionMutation  SessionMutation = "reject-question"
+	StopInputMutation       SessionMutation = "stop-input"
 )
 
 // SessionClaim contains no prompt, credentials or workspace paths. The owning
@@ -85,6 +86,7 @@ type sessionAPI struct {
 	cwd             string
 	claim           func(context.Context, SessionClaim) error
 	alive           func() error
+	closeOwned      func(context.Context) error
 	logger          *slog.Logger
 	owner           domain.ID
 	gate            chan struct{}
@@ -95,6 +97,7 @@ type sessionAPI struct {
 	eventAttempt    bool
 	observer        *inputObserver
 	replyAttempt    *interactionHTTPAttempt
+	abortAttempt    bool
 	rejectionPolicy RejectionPolicy
 }
 
@@ -334,6 +337,11 @@ func (s *sessionAPI) inspectInput(ctx context.Context) (InputReceipt, error) {
 	if _, err := s.readSession(ctx); err != nil {
 		return receipt, err
 	}
+	return s.readStoredInput(ctx)
+}
+
+func (s *sessionAPI) readStoredInput(ctx context.Context) (InputReceipt, error) {
+	receipt := s.input.receipt
 	raw, status, err := s.request(ctx, http.MethodGet, "/session/"+receipt.SessionID+"/message/"+receipt.MessageID, nil, http.StatusOK)
 	if err != nil {
 		return receipt, err

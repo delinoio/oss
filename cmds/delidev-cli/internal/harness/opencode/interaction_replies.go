@@ -37,6 +37,7 @@ type observedInteraction struct {
 	pendingAbsent      bool
 	alwaysAccepted     bool
 	alwaysObservations []string
+	canceled           bool
 }
 
 type interactionAttempt struct {
@@ -107,9 +108,12 @@ func (o *inputObserver) interactionReply(event NativeEvent) (*NativeInteractionR
 		return nil, observerProblem()
 	}
 	interaction := o.interactions[value.RequestID]
-	if interaction == nil || interaction.closed || interaction.value.Kind != value.Kind {
+	if interaction == nil || interaction.closed && !interaction.canceled || interaction.value.Kind != value.Kind {
 		return nil, observerProblem()
 	}
+	// Stop can retire a pending request before an already-buffered original
+	// closure is consumed. That retirement cannot erase actual late acceptance;
+	// all original claim/body/source checks below still apply without replay.
 	if interaction.attempt == nil {
 		// Native permission policy closes other pending requests in this
 		// original session. Preserve observations without inventing a direct
@@ -137,6 +141,7 @@ func (o *inputObserver) interactionReply(event NativeEvent) (*NativeInteractionR
 		slices.Sort(interaction.rejectionSources)
 		slices.Sort(interaction.alwaysObservations)
 		interaction.closed, interaction.rejected = true, value.Rejected
+		interaction.canceled = false
 		return &value, nil
 	}
 	if !interaction.attempt.sent {
@@ -172,6 +177,7 @@ func (o *inputObserver) interactionReply(event NativeEvent) (*NativeInteractionR
 		return nil, observerProblem()
 	}
 	interaction.closed = true
+	interaction.canceled = false
 	interaction.rejected = value.Rejected
 	interaction.alwaysAccepted = value.Decision != nil && *value.Decision == PermissionAlways
 	interaction.attempt.receipt.NativeAccepted = true
@@ -200,6 +206,9 @@ func (o *inputObserver) prepareInteraction(request domain.ID, id string, respons
 	defer o.mu.Unlock()
 	if o.problem != nil {
 		return nil, "", o.problem
+	}
+	if o.stop != nil {
+		return nil, "", sessionConflict()
 	}
 	interaction := o.interactions[id]
 	if request.Validate() != nil || request == o.creation.request || request == o.input.receipt.RequestID || o.responseIDs[request] || interaction == nil {
