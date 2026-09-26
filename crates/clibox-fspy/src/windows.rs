@@ -224,6 +224,26 @@ fn classify_path(root: &Path, bytes: &[u8]) -> io::Result<AccessPath> {
     };
     let path = fs_path(units);
     if !path.is_absolute() {
+        let kind = if units.starts_with(&[b'\\' as u16, b'?' as u16, b'?' as u16, b'\\' as u16]) {
+            "nt_dos"
+        } else if units.starts_with(&[b'\\' as u16, b'\\' as u16, b'?' as u16, b'\\' as u16]) {
+            "win32_extended"
+        } else if units.starts_with(&[b'\\' as u16, b'\\' as u16]) {
+            "unc"
+        } else if units.starts_with(&[b'\\' as u16]) {
+            "root_relative_or_device"
+        } else if units.len() >= 3 && units[1] == b':' as u16 {
+            "drive"
+        } else if units.is_empty() {
+            "empty"
+        } else {
+            "relative"
+        };
+        let _ = writeln!(
+            io::stderr(),
+            "clibox fspy receiver: stage=non_absolute_path kind={kind} units={}",
+            units.len()
+        );
         return Err(invalid("non_absolute_path"));
     }
     let resolved = resolve_even_if_absent(&path)?;

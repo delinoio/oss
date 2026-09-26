@@ -9,7 +9,7 @@ pub mod paths;
 
 use std::{
     collections::{HashMap, HashSet, VecDeque},
-    io,
+    io::{self, Write},
     os::unix::process::CommandExt,
     process::Command,
     sync::{
@@ -71,7 +71,10 @@ fn supervision(stage: &'static str) -> TraceFailure {
         classification = "trace_supervision",
         "file trace failed"
     );
-    eprintln!("clibox fspy tracer: stage={stage} classification=trace_supervision");
+    let _ = writeln!(
+        io::stderr(),
+        "clibox fspy tracer: stage={stage} classification=trace_supervision"
+    );
     TraceFailure::Supervision(stage)
 }
 
