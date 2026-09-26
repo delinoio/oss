@@ -955,6 +955,121 @@ fn execute_repro_capture(
 }
 
 #[cfg(target_os = "linux")]
+fn repro_capture(
+    command: &[OsString],
+    root: &Path,
+    cwd: Option<&Path>,
+    args: &ExecutionArgs,
+    expected_stderr: &str,
+) -> Result<(CompleteRecord, bool), i32> {
+    execute_repro_capture(command, root, cwd, args, expected_stderr)
+        .map_err(|failure| capture_status(failure, "min-repro"))
+}
+
+#[cfg(target_os = "macos")]
+fn repro_capture(
+    command: &[OsString],
+    root: &Path,
+    cwd: Option<&Path>,
+    args: &ExecutionArgs,
+    expected_stderr: &str,
+) -> Result<(CompleteRecord, bool), i32> {
+    use std::{
+        os::{fd::OwnedFd, unix::net::UnixStream},
+        process::Stdio,
+        sync::{
+            atomic::{AtomicBool, Ordering},
+            Arc,
+        },
+        thread,
+    };
+
+    use crate::macos::supervise::{CaptureFailure, Limits};
+
+    let mut child = fspy::Command::new(&command[0]);
+    child.args(&command[1..]).envs(std::env::vars_os());
+    if let Some(cwd) = cwd {
+        child.current_dir(cwd);
+    }
+    child.stdout(Stdio::inherit());
+    let (mut reader, writer) = UnixStream::pair().map_err(|_| {
+        eprintln!("clibox fspy reproduction: stage=stderr_channel");
+        macos_capture_status((CaptureFailure::Spawn, 0), "min-repro")
+    })?;
+    reader
+        .set_read_timeout(Some(Duration::from_millis(100)))
+        .map_err(|_| {
+            eprintln!("clibox fspy reproduction: stage=stderr_timeout");
+            macos_capture_status((CaptureFailure::Spawn, 0), "min-repro")
+        })?;
+    child.stderr(Stdio::from(OwnedFd::from(writer)));
+    let signals =
+        MacSignals::new().map_err(|error| macos_capture_status((error, 0), "min-repro"))?;
+    let finished = Arc::new(AtomicBool::new(false));
+    let reader_finished = Arc::clone(&finished);
+    let needle = expected_stderr.as_bytes().to_vec();
+    let forwarder = thread::Builder::new()
+        .name("clibox-fspy-stderr".into())
+        .spawn(move || {
+            let mut matched = false;
+            let mut tail = Vec::new();
+            let mut buffer = [0_u8; 8192];
+            loop {
+                match std::io::Read::read(&mut reader, &mut buffer) {
+                    Ok(0) => return Ok(matched),
+                    Ok(count) => {
+                        io::stderr()
+                            .write_all(&buffer[..count])
+                            .map_err(|_| "output_forward")?;
+                        let mut combined = tail;
+                        combined.extend_from_slice(&buffer[..count]);
+                        matched |= combined
+                            .windows(needle.len())
+                            .any(|window| window == needle);
+                        let keep = needle.len().saturating_sub(1).min(combined.len());
+                        tail = combined[combined.len() - keep..].to_vec();
+                    }
+                    Err(error)
+                        if matches!(
+                            error.kind(),
+                            io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+                        ) =>
+                    {
+                        if reader_finished.load(Ordering::SeqCst) {
+                            return Err("output_incomplete");
+                        }
+                    }
+                    Err(_) => return Err("output_forward"),
+                }
+            }
+        })
+        .map_err(|_| {
+            eprintln!("clibox fspy reproduction: stage=stderr_thread");
+            macos_capture_status((CaptureFailure::Spawn, 0), "min-repro")
+        })?;
+    let result = crate::macos::supervise::capture(
+        child,
+        root,
+        Limits {
+            max_events: args.max_events,
+            max_bytes: args.max_bytes,
+            timeout: args.timeout,
+            kill_after: args.kill_after,
+        },
+        &signals.cancelled,
+    );
+    finished.store(true, Ordering::SeqCst);
+    let matched = forwarder
+        .join()
+        .map_err(|_| macos_capture_status((CaptureFailure::TraceLoss, 0), "min-repro"))?
+        .map_err(|_| macos_capture_status((CaptureFailure::TraceLoss, 0), "min-repro"))?;
+    let record = result.map_err(|error| {
+        macos_capture_status((error, signals.signal.load(Ordering::SeqCst)), "min-repro")
+    })?;
+    Ok((record, matched))
+}
+
+#[cfg(target_os = "linux")]
 fn capture_status(failure: CaptureFailure, action: &'static str) -> i32 {
     match failure.error {
         crate::linux::TraceFailure::Timeout => {
@@ -1331,7 +1446,7 @@ where
     0
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn logical_relative(root: &Path, path: &record::AccessPath) -> Option<PathBuf> {
     use std::os::unix::ffi::OsStrExt;
     let NativePath::UnixBytes(bytes) = &path.logical else {
@@ -1349,13 +1464,13 @@ fn logical_relative(root: &Path, path: &record::AccessPath) -> Option<PathBuf> {
     Some(relative.to_path_buf())
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn unix_native(path: &Path) -> NativePath {
     use std::os::unix::ffi::OsStrExt;
     NativePath::UnixBytes(path.as_os_str().as_bytes().to_vec())
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn collect_required(
     record: &CompleteRecord,
     root: &Path,
@@ -1411,7 +1526,7 @@ fn collect_required(
     Ok(required)
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn tree_limits(root: &Path, max_bytes: u64, max_files: usize) -> Result<(), &'static str> {
     let mut bytes = 0_u64;
     let mut files = 0_usize;
@@ -1470,7 +1585,24 @@ fn publish_new_directory(temporary: &Path, destination: &Path) -> Result<(), &'s
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(target_os = "macos")]
+fn publish_new_directory(temporary: &Path, destination: &Path) -> Result<(), &'static str> {
+    use std::{ffi::CString, os::unix::ffi::OsStrExt};
+    let source = CString::new(temporary.as_os_str().as_bytes()).map_err(|_| "bundle_path")?;
+    let destination =
+        CString::new(destination.as_os_str().as_bytes()).map_err(|_| "bundle_path")?;
+    // SAFETY: RENAME_EXCL atomically publishes this private directory only
+    // when no destination exists, including under a concurrent creator.
+    let result =
+        unsafe { libc::renamex_np(source.as_ptr(), destination.as_ptr(), libc::RENAME_EXCL) };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err("bundle_publish")
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn min_repro(args: MinReproArgs) -> i32 {
     use std::collections::BTreeSet;
     let root = match execution_root(&args.execution) {
@@ -1510,7 +1642,7 @@ fn min_repro(args: MinReproArgs) -> i32 {
         Ok(snapshot) => snapshot,
         Err(error) => return diagnostic(&error.to_string(), "min-repro"),
     };
-    let (original, original_matches) = match execute_repro_capture(
+    let (original, original_matches) = match repro_capture(
         &args.command,
         &root,
         None,
@@ -1518,7 +1650,7 @@ fn min_repro(args: MinReproArgs) -> i32 {
         &args.expect_stderr,
     ) {
         Ok(result) => result,
-        Err(error) => return capture_status(error, "min-repro"),
+        Err(status) => return status,
     };
     if original.summary.child_exit_code != Some(args.expect_exit) || !original_matches {
         return diagnostic("original_mismatch", "min-repro");
@@ -1542,7 +1674,7 @@ fn min_repro(args: MinReproArgs) -> i32 {
         .iter()
         .map(|file| file.relative.clone())
         .collect::<BTreeSet<_>>();
-    let (rerun, rerun_matches) = match execute_repro_capture(
+    let (rerun, rerun_matches) = match repro_capture(
         &args.command,
         candidate.path(),
         Some(candidate.path()),
@@ -1550,7 +1682,7 @@ fn min_repro(args: MinReproArgs) -> i32 {
         &args.expect_stderr,
     ) {
         Ok(result) => result,
-        Err(error) => return capture_status(error, "min-repro"),
+        Err(status) => return status,
     };
     if rerun.summary.child_exit_code != Some(args.expect_exit) || !rerun_matches {
         return diagnostic("reproduction_mismatch", "min-repro");
@@ -2491,6 +2623,71 @@ fn windows_latencylab(args: LatencyArgs) -> i32 {
     })
 }
 
+#[cfg(target_os = "windows")]
+fn windows_autowatch(args: AutowatchArgs) -> i32 {
+    use std::{process::Stdio, sync::atomic::Ordering};
+
+    let root = match execution_root(&args.execution) {
+        Ok(root) => root,
+        Err(error) => return diagnostic(error, "autowatch"),
+    };
+    let selector = match coverage::Selector::new(&args.include, &args.exclude) {
+        Ok(selector) => selector,
+        Err(error) => return diagnostic(&error.to_string(), "autowatch"),
+    };
+    let _signals = match WindowsSignals::new() {
+        Ok(signals) => signals,
+        Err(error) => return windows_capture_status(error, "autowatch"),
+    };
+    let mut watcher = crate::watch::WatchSession::new(root.clone());
+    let mut previous = crate::watch::Dependencies::default();
+    loop {
+        if let Err(error) = watcher.start_discovery() {
+            return diagnostic(&error.to_string(), "autowatch");
+        }
+        let mut child = fspy::Command::new(&args.command[0]);
+        child
+            .args(&args.command[1..])
+            .envs(std::env::vars_os())
+            .stdin(Stdio::inherit())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit());
+        let record = crate::windows::supervise::capture(
+            child,
+            &root,
+            crate::windows::supervise::Limits {
+                max_events: args.execution.max_events,
+                max_bytes: args.execution.max_bytes,
+                timeout: args.execution.timeout,
+                kill_after: args.execution.kill_after,
+            },
+            &WINDOWS_CANCELLED,
+        );
+        let record = match record {
+            Ok(record) => record,
+            Err(error) => return windows_capture_status(error, "autowatch"),
+        };
+        let mut dependencies = crate::watch::Dependencies::from_record(&record, &selector);
+        if child_status(&record) != 0 {
+            dependencies.merge(previous);
+        }
+        if let Err(error) = watcher.install(&dependencies) {
+            return diagnostic(&error.to_string(), "autowatch");
+        }
+        previous = dependencies;
+        loop {
+            if WINDOWS_CANCELLED.load(Ordering::SeqCst) {
+                return 130;
+            }
+            match watcher.collect(&previous, args.debounce, Duration::from_millis(100)) {
+                Ok(true) => break,
+                Ok(false) => {}
+                Err(error) => return diagnostic(&error.to_string(), "autowatch"),
+            }
+        }
+    }
+}
+
 pub fn execute(command: Command) -> i32 {
     match command {
         Command::Compare(args) => compare(args),
@@ -2503,7 +2700,11 @@ pub fn execute(command: Command) -> i32 {
             {
                 macos_autowatch(args)
             }
-            #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+            #[cfg(target_os = "windows")]
+            {
+                windows_autowatch(args)
+            }
+            #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
             {
                 let _ = args;
                 diagnostic("unsupported_target", "autowatch")
@@ -2567,11 +2768,11 @@ pub fn execute(command: Command) -> i32 {
             }
         }
         Command::MinRepro(args) => {
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
             {
                 min_repro(args)
             }
-            #[cfg(not(target_os = "linux"))]
+            #[cfg(not(any(target_os = "linux", target_os = "macos")))]
             {
                 let _ = args;
                 diagnostic("unsupported_target", "min-repro")
@@ -2727,9 +2928,10 @@ mod tests {
         assert!(report["runs"][1]["matching_operations"].as_u64().unwrap() > 0);
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
     fn verified_reproduction_uses_a_separate_working_directory() {
+        #[cfg(target_os = "linux")]
         let _trace_lock = crate::linux::TRACE_LOCK.lock().unwrap();
         let directory = tempfile::tempdir().unwrap();
         let root = directory.path().join("project");
@@ -2761,7 +2963,7 @@ mod tests {
         }
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
     fn reproduction_child_process() {
         let Some(case) = std::env::var_os("CLIBOX_FSPY_REPRO_CHILD") else {
@@ -2783,9 +2985,20 @@ mod tests {
             OsString::from("EXPECTED"),
             OsString::from("--quiet"),
             OsString::from("--"),
-            OsString::from("/bin/sh"),
-            OsString::from("-c"),
         ];
+        #[cfg(target_os = "linux")]
+        arguments.extend([OsString::from("/bin/sh"), OsString::from("-c")]);
+        #[cfg(target_os = "macos")]
+        {
+            std::env::set_var("CLIBOX_FSPY_REPRO_ROOT", &root);
+            arguments.extend([
+                std::env::current_exe().unwrap().into_os_string(),
+                OsString::from("--exact"),
+                OsString::from("cli::tests::repro_workload_fixture"),
+                OsString::from("--nocapture"),
+            ]);
+        }
+        #[cfg(target_os = "linux")]
         if case == "original" || case == "metadata" {
             arguments.push(OsString::from(if case == "metadata" {
                 "test -f \"$1\"; echo EXPECTED >&2; exit 42"
@@ -2803,6 +3016,27 @@ mod tests {
         }
         let cli = TestCli::try_parse_from(arguments).unwrap();
         assert_eq!(execute(cli.command), if case == "verified" { 0 } else { 1 });
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn repro_workload_fixture() {
+        let Some(case) = std::env::var_os("CLIBOX_FSPY_REPRO_CHILD") else {
+            return;
+        };
+        let root = PathBuf::from(std::env::var_os("CLIBOX_FSPY_REPRO_ROOT").unwrap());
+        let path = match case.to_str().unwrap() {
+            "blocked" => PathBuf::from(".env"),
+            "original" | "metadata" => root.join("input.txt"),
+            _ => PathBuf::from("input.txt"),
+        };
+        if case == "metadata" {
+            fs::metadata(path).unwrap();
+        } else {
+            fs::read(path).unwrap();
+        }
+        eprintln!("EXPECTED");
+        std::process::exit(42);
     }
 
     #[cfg(target_os = "linux")]
@@ -2928,7 +3162,11 @@ mod tests {
             while fs::read(&runs).unwrap_or_default().len() < expected {
                 if Instant::now() >= deadline {
                     child.kill().unwrap();
-                    panic!("autowatch did not complete run {expected}");
+                    let output = child.wait_with_output().unwrap();
+                    panic!(
+                        "autowatch did not complete run {expected}: {}",
+                        String::from_utf8_lossy(&output.stderr)
+                    );
                 }
                 thread::sleep(Duration::from_millis(10));
             }
@@ -2966,7 +3204,11 @@ mod tests {
             while fs::read(&runs).unwrap_or_default().len() < expected {
                 if Instant::now() >= deadline {
                     child.kill().unwrap();
-                    panic!("autowatch missed absent input on run {expected}");
+                    let output = child.wait_with_output().unwrap();
+                    panic!(
+                        "autowatch missed absent input on run {expected}: {}",
+                        String::from_utf8_lossy(&output.stderr)
+                    );
                 }
                 thread::sleep(Duration::from_millis(10));
             }

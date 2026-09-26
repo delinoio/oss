@@ -4,7 +4,10 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fs::{self, File},
     io::{self, Read, Write},
-    os::{fd::AsRawFd, unix::fs::symlink},
+    os::{
+        fd::AsRawFd,
+        unix::fs::{symlink, MetadataExt},
+    },
     path::{Component, Path, PathBuf},
 };
 
@@ -85,10 +88,32 @@ fn valid_relative(relative: &Path) -> bool {
             .all(|component| matches!(component, Component::Normal(_)))
 }
 
+#[cfg(target_os = "linux")]
+fn opened_path(file: &File) -> Result<PathBuf, ReproFailure> {
+    fs::read_link(format!("/proc/self/fd/{}", file.as_raw_fd()))
+        .map_err(|_| ReproFailure::Unavailable)
+}
+
+#[cfg(target_os = "macos")]
+fn opened_path(file: &File) -> Result<PathBuf, ReproFailure> {
+    use std::{ffi::OsString, os::unix::ffi::OsStringExt};
+
+    let mut path = [0_u8; libc::MAXPATHLEN as usize];
+    // SAFETY: F_GETPATH writes a NUL-terminated absolute pathname into this
+    // exact buffer for the still-open descriptor.
+    if unsafe { libc::fcntl(file.as_raw_fd(), libc::F_GETPATH, path.as_mut_ptr()) } != 0 {
+        return Err(ReproFailure::Unavailable);
+    }
+    let end = path
+        .iter()
+        .position(|byte| *byte == 0)
+        .ok_or(ReproFailure::Unavailable)?;
+    Ok(PathBuf::from(OsString::from_vec(path[..end].to_vec())))
+}
+
 fn hash_file(path: &Path, root: &Path) -> Result<(String, u64), ReproFailure> {
     let mut file = File::open(path).map_err(|_| ReproFailure::Unavailable)?;
-    let opened = fs::read_link(format!("/proc/self/fd/{}", file.as_raw_fd()))
-        .map_err(|_| ReproFailure::Unavailable)?;
+    let opened = opened_path(&file)?;
     if !opened.starts_with(root) {
         return Err(ReproFailure::ExternalLink);
     }
@@ -303,15 +328,15 @@ impl Snapshot {
                 fs::create_dir_all(parent).map_err(|_| ReproFailure::Unavailable)?;
             }
             let mut input = File::open(&source).map_err(|_| ReproFailure::Unavailable)?;
-            let opened = fs::read_link(format!("/proc/self/fd/{}", input.as_raw_fd()))
-                .map_err(|_| ReproFailure::Unavailable)?;
+            let opened = opened_path(&input)?;
             if !opened.starts_with(&self.root) {
                 return Err(ReproFailure::ExternalLink);
             }
-            let identity = FileIdentity::from(
-                file_id::get_file_id(format!("/proc/self/fd/{}", input.as_raw_fd()))
-                    .map_err(|_| ReproFailure::Unavailable)?,
-            );
+            let metadata = input.metadata().map_err(|_| ReproFailure::Unavailable)?;
+            let identity = FileIdentity::Inode {
+                device: metadata.dev(),
+                inode: metadata.ino(),
+            };
             let mut output = File::create(&destination).map_err(|_| ReproFailure::Unavailable)?;
             let mut digest = Sha256::new();
             let mut size = 0_u64;

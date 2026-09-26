@@ -218,11 +218,11 @@ fn set_options(tid: pid_t) -> Result<(), TraceFailure> {
         | libc::PTRACE_O_TRACEVFORK
         | libc::PTRACE_O_TRACEEXEC
         | libc::PTRACE_O_EXITKILL) as usize;
-    ptrace_control(libc::PTRACE_SETOPTIONS, tid, options)
+    ptrace_control(libc::PTRACE_SETOPTIONS as _, tid, options)
 }
 
 fn continue_syscall(tid: pid_t, signal: i32) -> Result<(), TraceFailure> {
-    ptrace_control(libc::PTRACE_SYSCALL, tid, signal as usize)
+    ptrace_control(libc::PTRACE_SYSCALL as _, tid, signal as usize)
 }
 
 fn event_child(tid: pid_t) -> Result<pid_t, TraceFailure> {
@@ -231,7 +231,7 @@ fn event_child(tid: pid_t) -> Result<pid_t, TraceFailure> {
     // the tracee is stopped at a fork/clone/vfork event.
     let result = unsafe {
         libc::ptrace(
-            libc::PTRACE_GETEVENTMSG,
+            libc::PTRACE_GETEVENTMSG as _,
             tid,
             std::ptr::null_mut::<c_void>(),
             (&raw mut child).cast::<c_void>(),
@@ -368,7 +368,7 @@ where
             if libc::setsid() < 0 {
                 return Err(io::Error::last_os_error());
             }
-            if libc::ptrace(libc::PTRACE_TRACEME, 0, 0, 0) < 0 {
+            if libc::ptrace(libc::PTRACE_TRACEME as _, 0, 0, 0) < 0 {
                 return Err(io::Error::last_os_error());
             }
             Ok(())

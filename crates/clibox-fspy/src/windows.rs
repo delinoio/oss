@@ -68,7 +68,10 @@ pub fn read_frame(reader: &mut impl Read) -> io::Result<Option<Frame>> {
         b'h' => FrameKind::Hello,
         b's' => FrameKind::Start,
         b'e' => FrameKind::Completion,
-        _ => return Err(invalid("frame_kind")),
+        value => {
+            eprintln!("clibox fspy receiver: stage=frame_kind value={value}");
+            return Err(invalid("frame_kind"));
+        }
     };
     let operation = header[1];
     let pid = u32::from_le_bytes(header[2..6].try_into().unwrap());

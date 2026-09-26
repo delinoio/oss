@@ -180,7 +180,21 @@ where
     let token = CancellationToken::new();
     let child = match runtime.block_on(command.spawn(token.clone())) {
         Ok(child) => child,
-        Err(_) => {
+        Err(error) => {
+            let (kind, os_code) = match &error {
+                fspy::error::SpawnError::SpyInitialization(cause) => {
+                    ("spy_initialization", cause.raw_os_error())
+                }
+                fspy::error::SpawnError::Which { .. } => ("program_resolution", None),
+                fspy::error::SpawnError::Supervisor(cause) => ("supervisor", cause.raw_os_error()),
+                fspy::error::SpawnError::ChannelCreation(cause) => {
+                    ("channel", cause.raw_os_error())
+                }
+                fspy::error::SpawnError::Injection(cause) => ("injection", cause.raw_os_error()),
+                fspy::error::SpawnError::OsSpawn(cause) => ("os_spawn", cause.raw_os_error()),
+            };
+            tracing::error!(stage = "spawn", kind, os_code, "file trace failed");
+            eprintln!("clibox fspy supervisor: stage=spawn kind={kind} os_code={os_code:?}");
             let _ = receiver.finish();
             return Err(CaptureFailure::Spawn);
         }

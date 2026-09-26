@@ -8,10 +8,10 @@ pub mod cli;
 pub mod coverage;
 pub mod record;
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 pub mod watch;
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub mod repro;
 
 #[cfg(target_os = "linux")]

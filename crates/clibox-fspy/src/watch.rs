@@ -94,7 +94,7 @@ impl Dependencies {
             if matches!(
                 operation,
                 Operation::Open | Operation::Metadata | Operation::Directory
-            ) && matches!(native_error, Some(libc::ENOENT | libc::ENOTDIR))
+            ) && missing_path_error(native_error)
             {
                 self.absent.insert(relative);
             }
@@ -186,6 +186,21 @@ impl Dependencies {
         }
         anchors
     }
+}
+
+#[cfg(unix)]
+fn missing_path_error(error: Option<i32>) -> bool {
+    matches!(error, Some(libc::ENOENT | libc::ENOTDIR))
+}
+
+#[cfg(windows)]
+fn missing_path_error(error: Option<i32>) -> bool {
+    // STATUS_OBJECT_NAME_NOT_FOUND, STATUS_OBJECT_PATH_NOT_FOUND, and
+    // STATUS_OBJECT_PATH_SYNTAX_BAD are the NT equivalents of an absent input.
+    matches!(
+        error.map(|status| status as u32),
+        Some(0xc0000034 | 0xc000003a | 0xc000003b)
+    )
 }
 
 type WatchEvent = notify::Result<Event>;
