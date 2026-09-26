@@ -519,7 +519,10 @@ fn compare(args: CompareArgs) -> i32 {
                 "project_details": aggregate_details(before.header.platform, &record::aggregate_project(&before), &record::aggregate_project(&after)),
                 "external_details": aggregate_details(before.header.platform, &record::aggregate_external(&before), &record::aggregate_external(&after)),
             });
-            serde_json::to_vec_pretty(&result).unwrap_or_default()
+            match serde_json::to_vec_pretty(&result) {
+                Ok(bytes) => bytes,
+                Err(_) => return diagnostic("report_encode", "compare"),
+            }
         } else {
             let mut report = String::new();
             for (label, keys) in [
@@ -997,6 +1000,46 @@ fn child_status(record: &CompleteRecord) -> i32 {
 }
 
 #[cfg(target_os = "linux")]
+fn incomplete_record(root: &Path, failure: crate::linux::TraceFailure) -> CompleteRecord {
+    use std::os::unix::ffi::OsStrExt;
+
+    let classification = match failure {
+        crate::linux::TraceFailure::Permission => record::FailureClass::Permission,
+        crate::linux::TraceFailure::UnsupportedKernel => record::FailureClass::UnsupportedTarget,
+        crate::linux::TraceFailure::EventLimit => record::FailureClass::EventLimit,
+        crate::linux::TraceFailure::ByteLimit => record::FailureClass::ByteLimit,
+        crate::linux::TraceFailure::Timeout => record::FailureClass::Timeout,
+        crate::linux::TraceFailure::Cancellation => record::FailureClass::Cancellation,
+        crate::linux::TraceFailure::Cleanup => record::FailureClass::Cleanup,
+        crate::linux::TraceFailure::Spawn | crate::linux::TraceFailure::ControlUnavailable => {
+            record::FailureClass::TraceInitialization
+        }
+        crate::linux::TraceFailure::Supervision(_) | crate::linux::TraceFailure::ControlLoss => {
+            record::FailureClass::TraceLoss
+        }
+    };
+    CompleteRecord {
+        header: record::Header {
+            schema_version: record::SCHEMA_VERSION,
+            execution_id: uuid::Uuid::now_v7(),
+            platform: record::Platform::Linux,
+            backend: record::Backend::Ptrace,
+            root: NativePath::UnixBytes(root.as_os_str().as_bytes().to_vec()),
+            coverage: record::CoverageBoundary::SynchronousFileOperationsV1,
+        },
+        operations: Vec::new(),
+        summary: record::Summary {
+            complete: false,
+            child_exit_code: None,
+            child_signal: None,
+            operation_count: 0,
+            failure_count: 0,
+            failure: Some(classification),
+        },
+    }
+}
+
+#[cfg(target_os = "linux")]
 fn record(args: RecordArgs) -> i32 {
     let root = match execution_root(&args.execution) {
         Ok(root) => root,
@@ -1004,7 +1047,23 @@ fn record(args: RecordArgs) -> i32 {
     };
     let record = match execute_capture(&args.command, &root, &args.execution) {
         Ok(record) => record,
-        Err(error) => return capture_status(error, "record"),
+        Err(error) => {
+            let incomplete = incomplete_record(&root, error.error);
+            let mut encoded = Vec::new();
+            if record::serialize(
+                &incomplete,
+                &mut encoded,
+                args.execution.max_events,
+                args.execution.max_bytes,
+            )
+            .is_ok()
+            {
+                if let Err(publication) = publish(&args.output, &encoded) {
+                    diagnostic(publication, "record");
+                }
+            }
+            return capture_status(error, "record");
+        }
     };
     let mut encoded = Vec::new();
     if let Err(error) = record::serialize(
@@ -1041,7 +1100,7 @@ fn assetcov(args: AssetcovArgs) -> i32 {
     };
     if !args.quiet {
         let mut encoded = if args.json {
-            serde_json::to_vec_pretty(&serde_json::json!({
+            match serde_json::to_vec_pretty(&serde_json::json!({
                 "covered": report.covered.iter().map(|file| &file.logical).collect::<Vec<_>>(),
                 "uncovered": report.uncovered.iter().map(|file| &file.logical).collect::<Vec<_>>(),
                 "covered_count": report.covered.len(),
@@ -1049,8 +1108,10 @@ fn assetcov(args: AssetcovArgs) -> i32 {
                 "percentage": report.percentage,
                 "child_exit_code": record.summary.child_exit_code,
                 "child_signal": record.summary.child_signal,
-            }))
-            .unwrap_or_default()
+            })) {
+                Ok(bytes) => bytes,
+                Err(_) => return diagnostic("report_encode", "assetcov"),
+            }
         } else {
             let mut text = format!(
                 "Covered: {}/{} ({:.2}%)\n",
@@ -1209,14 +1270,16 @@ fn latencylab(args: LatencyArgs) -> i32 {
     let slowdown_ratio = delayed_median_ns as f64 / baseline_median_ns.max(1) as f64;
     if !args.quiet {
         let mut report = if args.json {
-            serde_json::to_vec_pretty(&serde_json::json!({
+            match serde_json::to_vec_pretty(&serde_json::json!({
                 "runs": runs,
                 "baseline_median_ns": baseline_median_ns,
                 "delayed_median_ns": delayed_median_ns,
                 "slowdown_ratio": slowdown_ratio,
                 "requested_delay_ns": args.delay.as_nanos(),
-            }))
-            .unwrap_or_default()
+            })) {
+                Ok(bytes) => bytes,
+                Err(_) => return diagnostic("report_encode", "latencylab"),
+            }
         } else {
             let mut text = format!(
                 "Requested per-operation delay: {} ns\nBaseline median: {baseline_median_ns} \
@@ -1607,7 +1670,11 @@ fn min_repro(args: MinReproArgs) -> i32 {
         })).collect::<Vec<_>>(),
         "external_dependencies": external,
     });
-    if fs::write(metadata_dir.join("manifest.json"), serde_json::to_vec_pretty(&manifest).unwrap_or_default()).is_err()
+    let manifest_bytes = match serde_json::to_vec_pretty(&manifest) {
+        Ok(bytes) => bytes,
+        Err(_) => return diagnostic("bundle_encode", "min-repro"),
+    };
+    if fs::write(metadata_dir.join("manifest.json"), manifest_bytes).is_err()
         || fs::write(metadata_dir.join("README.md"), b"Run the original command from this bundle directory and check its expected exit status and stderr substring. The command and environment were intentionally not saved. External runtime and system dependencies are listed in manifest.json and were not bundled. This reproduction is verified only on the originating machine under the current environment. Delete the bundle directory manually when finished.\n").is_err()
     { return diagnostic("bundle_write", "min-repro"); }
     if let Err(error) = tree_limits(bundle.path(), args.max_result_bytes, args.max_result_files) {
@@ -1618,13 +1685,15 @@ fn min_repro(args: MinReproArgs) -> i32 {
     }
     if !args.quiet {
         let mut report = if args.json {
-            serde_json::to_vec_pretty(&serde_json::json!({
+            match serde_json::to_vec_pretty(&serde_json::json!({
                 "verified": true,
                 "bundle_dir": bundle_path,
                 "collected_files": staged.len(),
                 "external_accesses": external.len(),
-            }))
-            .unwrap_or_default()
+            })) {
+                Ok(bytes) => bytes,
+                Err(_) => return diagnostic("report_encode", "min-repro"),
+            }
         } else {
             format!(
                 "Verified reproduction: {}\nCollected files: {}\nExternal accesses: {}\n",
@@ -1895,6 +1964,35 @@ mod tests {
         assert!(
             TestCli::try_parse_from(["fspy", "record", "--timeout", "0s", "--", "true"]).is_err()
         );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn failed_record_publishes_framed_incomplete_result() {
+        let directory = tempfile::tempdir().unwrap();
+        let output = directory.path().join("failed.ndjson");
+        let cli = TestCli::try_parse_from([
+            OsString::from("fspy"),
+            OsString::from("record"),
+            OsString::from("--root"),
+            directory.path().as_os_str().to_os_string(),
+            OsString::from("--output"),
+            output.as_os_str().to_os_string(),
+            OsString::from("--"),
+            OsString::from("./missing-command"),
+        ])
+        .unwrap();
+        assert_eq!(execute(cli.command), 1);
+        let bytes = fs::read(output).unwrap();
+        assert_eq!(bytes.iter().filter(|byte| **byte == b'\n').count(), 2);
+        assert!(matches!(
+            record::parse(
+                BufReader::new(bytes.as_slice()),
+                record::DEFAULT_EVENT_LIMIT,
+                record::DEFAULT_BYTE_LIMIT
+            ),
+            Err(record::ParseFailure::Incomplete)
+        ));
     }
 
     #[cfg(target_os = "linux")]
