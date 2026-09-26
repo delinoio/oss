@@ -67,6 +67,11 @@ func nativeSessionFixture(t *testing.T, providerURL, key string) (*sessionAPI, c
 
 func nativeSessionFixtureWithPolicy(t *testing.T, providerURL, key string, policy RejectionPolicy) (*sessionAPI, context.Context) {
 	t.Helper()
+	return nativeSessionFixtureWithSettings(t, providerURL, key, policy, fixtureSettings())
+}
+
+func nativeSessionFixtureWithSettings(t *testing.T, providerURL, key string, policy RejectionPolicy, settings SessionSettings) (*sessionAPI, context.Context) {
+	t.Helper()
 	if !validRejectionPolicy(policy) {
 		t.Fatal("fixture requires an explicit native rejection policy")
 	}
@@ -88,15 +93,11 @@ func nativeSessionFixtureWithPolicy(t *testing.T, providerURL, key string, polic
 	if err := security.PrivateDir(cwd); err != nil {
 		t.Fatal(err)
 	}
-	settings := fixtureSettings()
-	nativeConfig, _ := json.Marshal(map[string]any{
-		"autoupdate": false, "share": "disabled", "model": settings.Provider + "/" + settings.Model, "small_model": settings.Provider + "/" + settings.Model,
-		"experimental": map[string]any{"continue_loop_on_deny": policy == ContinueOnInteractionRejection},
-		"provider": map[string]any{settings.Provider: map[string]any{
-			"npm": "@ai-sdk/openai-compatible", "name": "Private fixture", "options": map[string]any{"baseURL": providerURL + "/v1", "apiKey": key},
-			"models": map[string]any{settings.Model: map[string]any{"name": "Private fixture", "limit": map[string]any{"context": 32000, "output": 1000}}},
-		}},
-	})
+	profile := &nativeAPIProfile{Settings: settings, BaseURL: providerURL + "/v1", Token: key, ContextLimit: 32000, OutputLimit: 1000, Rejection: policy}
+	nativeConfig, err := profile.configBytes()
+	if err != nil {
+		t.Fatal(err)
+	}
 	for i, value := range env {
 		if strings.HasPrefix(value, "OPENCODE_CONFIG_CONTENT=") {
 			env[i] = "OPENCODE_CONFIG_CONTENT=" + string(nativeConfig)
@@ -171,7 +172,7 @@ func nativeSessionFixtureWithPolicy(t *testing.T, providerURL, key string, polic
 	if err != nil || validateHealth(health) != nil {
 		t.Fatal("native profile health mismatch")
 	}
-	api := &sessionAPI{client: client, origin: origin, password: password, cwd: cwd, gate: make(chan struct{}, 1), owner: config.Process.OwnerID, logger: config.Process.Logger, rejectionPolicy: policy}
+	api := &sessionAPI{client: client, origin: origin, password: password, cwd: cwd, gate: make(chan struct{}, 1), owner: config.Process.OwnerID, logger: config.Process.Logger, rejectionPolicy: policy, apiProfile: profile}
 	api.alive = func() error {
 		select {
 		case <-handle.Done():
@@ -224,6 +225,9 @@ func nativeSessionFixtureWithPolicy(t *testing.T, providerURL, key string, polic
 		claims = append(claims, claim)
 		raw, _ := json.Marshal(claims)
 		return security.WriteAtomic(filepath.Join(filepath.Dir(root), "native-session-claims.json"), raw)
+	}
+	if err := api.verifyAPIProfile(ctx); err != nil {
+		t.Fatal(err)
 	}
 	return api, ctx
 }

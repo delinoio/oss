@@ -103,6 +103,9 @@ type sessionAPI struct {
 	replyAttempt    *interactionHTTPAttempt
 	abortAttempt    bool
 	rejectionPolicy RejectionPolicy
+	apiProfile      *nativeAPIProfile
+	apiVerified     bool
+	runtimeRead     bool
 }
 
 type sessionCreation struct {
@@ -209,6 +212,12 @@ func (s *sessionAPI) create(ctx context.Context, request domain.ID, settings Ses
 	defer s.leave()
 	if s.creation != nil {
 		return "", sessionConflict()
+	}
+	if s.problem != nil {
+		return "", s.problem
+	}
+	if s.apiProfile != nil && (!s.apiVerified || s.rejectionPolicy != s.apiProfile.Rejection || !equalSessionSettings(settings, s.apiProfile.Settings)) {
+		return "", sessionInvalid()
 	}
 	if request.Validate() != nil || !validSessionSettings(settings) || s.claim == nil || s.alive == nil || !filepath.IsAbs(s.cwd) || strings.ContainsAny(s.cwd, "\r\n\x00") {
 		return "", sessionInvalid()

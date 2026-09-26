@@ -91,7 +91,9 @@ func nativeReadToolFixture(t *testing.T, missing bool, toolFinish string) {
 		_, _ = io.WriteString(w, "data: [DONE]\n\n")
 	}))
 	defer provider.Close()
-	api, ctx := nativeSessionFixture(t, provider.URL, key)
+	settings := fixtureSettings()
+	settings.Permission = append(settings.Permission, PermissionRule{Permission: "read", Pattern: "*", Action: PermissionAllow})
+	api, ctx := nativeSessionFixtureWithSettings(t, provider.URL, key, StopOnInteractionRejection, settings)
 	path := filepath.Join(api.cwd, sentinel+".txt")
 	if !missing {
 		if err := os.WriteFile(path, []byte(sentinel+"\n"), 0600); err != nil {
@@ -99,8 +101,6 @@ func nativeReadToolFixture(t *testing.T, missing bool, toolFinish string) {
 		}
 	}
 	file.Store(path)
-	settings := fixtureSettings()
-	settings.Permission = append(settings.Permission, PermissionRule{Permission: "read", Pattern: "*", Action: PermissionAllow})
 	id, err := api.create(ctx, domain.NewID(), settings)
 	if err != nil {
 		t.Fatal(err)
