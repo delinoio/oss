@@ -99,10 +99,12 @@ func validCheckpointInteractions(value nativeCheckpoint) bool {
 	}
 	seen := map[string]bool{}
 	always := map[string]SessionClaim{}
+	alwaysPermissions := map[string]string{}
 	claims := append([]SessionClaim(nil), p.Once...)
 	for _, approval := range p.Always {
 		claims = append(claims, approval.Claim)
 		always[approval.Claim.InteractionID] = approval.Claim
+		alwaysPermissions[approval.Claim.InteractionID] = approval.Rules[0].Permission
 	}
 	questionStart := len(claims)
 	questionParts := map[string]bool{}
@@ -136,7 +138,7 @@ func validCheckpointInteractions(value nativeCheckpoint) bool {
 			}
 			seen[reply.ReplyEventID], questionParts[claim.PartID] = true, true
 		} else if index >= len(p.Once) {
-			if names[claim.PartID] != checkpointReadTool {
+			if !checkpointAllowancePermission(p.Always[index-len(p.Once)].Rules[0].Permission).supports(names[claim.PartID]) {
 				return false
 			}
 			digest = mutationDigest([]byte(checkpointAlwaysBody))
@@ -157,14 +159,23 @@ func validCheckpointInteractions(value nativeCheckpoint) bool {
 	}
 	for index, policy := range p.Policy {
 		owner, found := owners[policy.PartID]
-		if !policy.valid() || !found || names[policy.PartID] != checkpointReadTool || owner.request != policy.InputRequestID || owner.message != policy.MessageID || owner.session != policy.SessionID || seen[policy.InteractionID] || seen[policy.ArrivalID] || seen[policy.ReplyEventID] || index > 0 && p.Policy[index-1].InteractionID >= policy.InteractionID {
+		if !policy.valid() || !found || !policy.Permission.validStored(names[policy.PartID]) || owner.request != policy.InputRequestID || owner.message != policy.MessageID || owner.session != policy.SessionID || seen[policy.InteractionID] || seen[policy.ArrivalID] || seen[policy.ReplyEventID] || index > 0 && p.Policy[index-1].InteractionID >= policy.InteractionID {
 			return false
 		}
+		permission := policy.Permission
+		if permission == "" {
+			permission = checkpointAllowRead
+		}
+		matchingPermission := false
 		for _, id := range policy.Sources {
+			matchingPermission = matchingPermission || alwaysPermissions[id] == string(permission)
 			claim, exists := always[id]
 			if !exists || claim.InputRequestID != policy.InputRequestID || claim.SessionID != policy.SessionID {
 				return false
 			}
+		}
+		if !matchingPermission {
+			return false
 		}
 		seen[policy.InteractionID], seen[policy.ArrivalID], seen[policy.ReplyEventID] = true, true, true
 	}

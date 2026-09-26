@@ -39,7 +39,7 @@ func checkpointPolicyFixture(t *testing.T) (nativeCheckpoint, *sessionAPI, *obse
 }
 
 func TestCheckpointPolicyCaptureRequiresOriginalReadClosure(t *testing.T) {
-	for _, fault := range []string{"pending", "attempt", "always", "rejected", "canceled", "missing", "reserved", "rejection", "name", "event", "proposal", "sources", "source-http", "source-native", "source-event", "source-unknown", "source-duplicate", "owner", "call", "incomplete", "shell"} {
+	for _, fault := range []string{"pending", "attempt", "always", "rejected", "canceled", "missing", "reserved", "rejection", "name", "name-empty", "event", "proposal", "sources", "source-http", "source-native", "source-event", "source-unknown", "source-duplicate", "owner", "call", "incomplete", "shell"} {
 		t.Run(fault, func(t *testing.T) {
 			value, s, i := checkpointPolicyFixture(t)
 			prior := s.observer.interactions[i.alwaysObservations[0]]
@@ -61,8 +61,10 @@ func TestCheckpointPolicyCaptureRequiresOriginalReadClosure(t *testing.T) {
 				i.rejectionReserved = true
 			case "rejection":
 				i.rejectionSources = []string{prior.value.ID}
+			case "name-empty":
+				i.value.Permission.Name = ""
 			case "name":
-				i.value.Permission.Name = "external_directory"
+				i.value.Permission.Name = "future"
 			case "event":
 				i.replyEvent = ""
 			case "proposal":

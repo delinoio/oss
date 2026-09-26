@@ -108,6 +108,14 @@ func TestManualNativeOpenCodePublicExternalCorrectionContinuation(t *testing.T) 
 	}
 }
 
+func TestManualNativeOpenCodePublicExternalAllowanceContinuation(t *testing.T) {
+	for _, tool := range []string{"read", "bash", "glob", "grep", "write", "edit", "apply_patch", "read-cascade"} {
+		t.Run(tool, func(t *testing.T) {
+			nativeOpenCodePublicDispatchProfile(t, 3, false, "", "always-external-"+tool, true)
+		})
+	}
+}
+
 func TestManualNativeOpenCodePublicReadErrorContinuation(t *testing.T) {
 	for _, profile := range []string{"read-missing", "read-missing-once", "read-missing-always"} {
 		t.Run(profile, func(t *testing.T) { nativeOpenCodePublicDispatchProfile(t, 3, false, "", profile, true) })
@@ -135,6 +143,10 @@ func nativeOpenCodePublicDispatch(t *testing.T, turns int, failedFirst bool, fau
 }
 
 func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bool, fault, tool string, switchModes ...bool) {
+	externalAllowance := strings.HasPrefix(tool, "always-external-")
+	if externalAllowance {
+		tool = strings.TrimPrefix(tool, "always-external-")
+	}
 	externalCorrection := strings.HasPrefix(tool, "correct-external-")
 	externalRejection := strings.HasPrefix(tool, "reject-external-") || externalCorrection
 	if externalRejection {
@@ -167,13 +179,16 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 	}
 	question := tool == "question"
 	cascade := tool == "read-cascade" || rejectionCascade
-	permission := tool == "read-missing-once" || tool == "read-missing-always" || tool == "read-once" || tool == "read-always" || tool == "read-loaded-always" || cascade || rejection
-	always := tool == "read-missing-always" || tool == "read-always" || tool == "read-loaded-always" || cascade && !rejection
+	permission := externalAllowance || tool == "read-missing-once" || tool == "read-missing-always" || tool == "read-once" || tool == "read-always" || tool == "read-loaded-always" || cascade || rejection
+	always := externalAllowance || tool == "read-missing-always" || tool == "read-always" || tool == "read-loaded-always" || cascade && !rejection
 	permissionCount := 1
 	if cascade {
 		permissionCount = 2
 	}
-	if (permission || loadedInstructions || missingRead) && !externalRejection {
+	if (permission || loadedInstructions || missingRead) && !externalRejection && !externalAllowance {
+		tool = "read"
+	}
+	if externalAllowance && cascade {
 		tool = "read"
 	}
 	binary := os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE")
@@ -255,7 +270,7 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 						completeTools++
 					}
 					providerTurn = (providerTurn + 1) / 2
-					results := verifyOpenCodeRepeatedRead(t, raw, toolPath.Load().(string), completeTools, permissionCount)
+					results := verifyOpenCodeRepeatedTools(t, raw, toolPath.Load().(string), completeTools, permissionCount, tool)
 					for id, result := range results {
 						if loadedInstructions {
 							verifyOpenCodeLoadedInstructions(t, result, toolPath.Load().(string), id == continuationToolCall+"_0")
@@ -270,7 +285,19 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 						if cascade && providerTurn == 1 {
 							ids = append(ids, fmt.Sprintf("%s_1", continuationToolCall))
 						}
-						serveOpenCodeContinuationTool(t, w, tool, toolPath.Load().(string), ids...)
+						if externalAllowance {
+							nextTool := tool
+							if completeTools >= permissionCount {
+								nextTool = "read"
+							}
+							requests := make([]openCodeFixtureToolCall, 0, len(ids))
+							for _, id := range ids {
+								requests = append(requests, openCodeFixtureToolCall{nextTool, openCodeContinuationToolArguments(nextTool, toolPath.Load().(string)), id})
+							}
+							serveOpenCodeContinuationCallsModel(t, w, requests, fixtureModel)
+						} else {
+							serveOpenCodeContinuationTool(t, w, tool, toolPath.Load().(string), ids...)
+						}
 						return
 					}
 				} else if rejection {
@@ -343,8 +370,13 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 			f := newFirstDispatchFixtureProfile(t, domain.OpenCode, mode, binary, upstream.URL, fixtureModel)
 			if missingRead {
 				toolPath.Store(prepareOpenCodeMissingRead(t, f, permission))
-			} else if externalRejection {
-				toolPath.Store(prepareOpenCodeExternalRejection(t, tool))
+			} else if externalRejection || externalAllowance {
+				toolPath.Store(prepareOpenCodeExternalTool(t, tool))
+				if externalAllowance && tool == "bash" {
+					if err := os.Remove(toolPath.Load().(string)); err != nil {
+						t.Fatal(err)
+					}
+				}
 			} else if loadedInstructions {
 				toolPath.Store(prepareOpenCodeLoadedRead(t, f, permission))
 			} else if tool != "" {
@@ -501,13 +533,13 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 							if tool == "edit" || tool == "apply_patch" {
 								expected = "original-inline-tool-sentinel edited\n"
 							}
-							if (tool == "read" || openCodeContinuationFileTool(tool)) && turn > 0 {
+							if (tool == "read" || openCodeContinuationFileTool(tool) || externalAllowance && tool == "bash") && turn > 0 {
 								expected = "changed-source-after-original-tool\n"
 							}
 							if err != nil || string(content) != expected {
 								t.Fatal("original tool was replayed or its workspace output changed")
 							}
-							if turn == 0 && (tool == "read" || openCodeContinuationFileTool(tool)) {
+							if turn == 0 && (tool == "read" || openCodeContinuationFileTool(tool) || externalAllowance && tool == "bash") {
 								if err := os.WriteFile(path, []byte("changed-source-after-original-tool\n"), 0600); err != nil {
 									t.Fatal(err)
 								}
@@ -539,7 +571,7 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 								if err != nil || retained.Closure == domain.InteractionOpen {
 									t.Fatal("original permission closure lost")
 								}
-								if externalRejection && (retained.OpenCode == nil || retained.OpenCode.Permission == nil || retained.OpenCode.Permission.Name != "external_directory") {
+								if (externalRejection || externalAllowance) && (retained.OpenCode == nil || retained.OpenCode.Permission == nil || retained.OpenCode.Permission.Name != "external_directory") {
 									t.Fatal("fixture did not retain the original external-directory request")
 								}
 								if question {

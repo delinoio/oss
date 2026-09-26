@@ -38,7 +38,7 @@ func (s *sessionAPI) restoreCheckpointPermissions(ctx context.Context, source na
 		if returned != nil {
 			s.problem = sessionProblem()
 			if s.logger != nil {
-				s.logger.WarnContext(ctx, "opencode_remembered_read_permission_restore_failed", "owner_id", s.owner, "phase", phase)
+				s.logger.WarnContext(ctx, "opencode_remembered_permission_restore_failed", "owner_id", s.owner, "phase", phase)
 			}
 		}
 	}()
@@ -59,7 +59,7 @@ func (s *sessionAPI) restoreCheckpointPermissions(ctx context.Context, source na
 	}
 	s.restoredAlways = uint32(len(p.Always))
 	if s.logger != nil {
-		s.logger.InfoContext(ctx, "opencode_remembered_read_permissions_restored", "owner_id", s.owner, "original_request_id", source.Reference.InputRequestID, "approvals", s.restoredAlways, "rules", len(next))
+		s.logger.InfoContext(ctx, "opencode_remembered_permissions_restored", "owner_id", s.owner, "original_request_id", source.Reference.InputRequestID, "approvals", s.restoredAlways, "rules", len(next))
 	}
 	return nil
 }

@@ -113,7 +113,11 @@ type openCodeFixtureToolCall struct{ name, arguments, id string }
 
 func serveOpenCodeContinuationCalls(t *testing.T, w http.ResponseWriter, tools []openCodeFixtureToolCall) {
 	t.Helper()
-	tool := tools[0].name
+	serveOpenCodeContinuationCallsModel(t, w, tools, openCodeContinuationModel(tools[0].name))
+}
+
+func serveOpenCodeContinuationCallsModel(t *testing.T, w http.ResponseWriter, tools []openCodeFixtureToolCall, model string) {
+	t.Helper()
 	w.Header().Set("Content-Type", "text/event-stream")
 	calls := []any{}
 	for index, call := range tools {
@@ -121,8 +125,8 @@ func serveOpenCodeContinuationCalls(t *testing.T, w http.ResponseWriter, tools [
 	}
 	delta := map[string]any{"role": "assistant", "tool_calls": calls}
 	for _, chunk := range []map[string]any{
-		{"id": "chatcmpl-original-tool", "object": "chat.completion.chunk", "created": 1, "model": openCodeContinuationModel(tool), "choices": []any{map[string]any{"index": 0, "delta": delta, "finish_reason": nil}}},
-		{"id": "chatcmpl-original-tool", "object": "chat.completion.chunk", "created": 1, "model": openCodeContinuationModel(tool), "choices": []any{map[string]any{"index": 0, "delta": map[string]any{}, "finish_reason": "tool_calls"}}, "usage": map[string]any{"prompt_tokens": 20, "completion_tokens": 4, "total_tokens": 24}},
+		{"id": "chatcmpl-original-tool", "object": "chat.completion.chunk", "created": 1, "model": model, "choices": []any{map[string]any{"index": 0, "delta": delta, "finish_reason": nil}}},
+		{"id": "chatcmpl-original-tool", "object": "chat.completion.chunk", "created": 1, "model": model, "choices": []any{map[string]any{"index": 0, "delta": map[string]any{}, "finish_reason": "tool_calls"}}, "usage": map[string]any{"prompt_tokens": 20, "completion_tokens": 4, "total_tokens": 24}},
 	} {
 		raw, _ := json.Marshal(chunk)
 		_, _ = fmt.Fprintf(w, "data: %s\n\n", raw)
@@ -191,6 +195,15 @@ func verifyOpenCodeContinuationResult(t *testing.T, raw []byte, tool, path, mark
 
 func verifyOpenCodeRepeatedRead(t *testing.T, raw []byte, path string, expected int, originalCounts ...int) map[string]string {
 	t.Helper()
+	originalCount := 1
+	if len(originalCounts) == 1 {
+		originalCount = originalCounts[0]
+	}
+	return verifyOpenCodeRepeatedTools(t, raw, path, expected, originalCount, "read")
+}
+
+func verifyOpenCodeRepeatedTools(t *testing.T, raw []byte, path string, expected, originalCount int, firstTool string) map[string]string {
+	t.Helper()
 	var body struct {
 		Messages []struct {
 			Role    string          `json:"role"`
@@ -208,17 +221,19 @@ func verifyOpenCodeRepeatedRead(t *testing.T, raw []byte, path string, expected 
 	}
 	results := map[string]string{}
 	proposalIDs := map[string]int{}
-	originalCount := 1
-	if len(originalCounts) == 1 {
-		originalCount = originalCounts[0]
-	}
 	proposals := 0
 	for _, message := range body.Messages {
 		for _, call := range message.Calls {
-			var args struct {
-				FilePath string `json:"filePath"`
+			tool := "read"
+			if proposals < originalCount {
+				tool = firstTool
 			}
-			if message.Role != "assistant" || call.ID != fmt.Sprintf("%s_%d", continuationToolCall, proposals) || call.Function.Name != "read" || json.Unmarshal([]byte(call.Function.Arguments), &args) != nil || args.FilePath != path {
+			var args map[string]any
+			if json.Unmarshal([]byte(call.Function.Arguments), &args) != nil {
+				t.Error("invalid original tool arguments")
+			}
+			canonical, _ := json.Marshal(args)
+			if message.Role != "assistant" || call.ID != fmt.Sprintf("%s_%d", continuationToolCall, proposals) || call.Function.Name != tool || string(canonical) != openCodeContinuationToolArguments(tool, path) {
 				t.Error("changed remembered Read proposal")
 			}
 			proposalIDs[call.ID] = proposals
@@ -227,7 +242,7 @@ func verifyOpenCodeRepeatedRead(t *testing.T, raw []byte, path string, expected 
 		if message.Role == "tool" {
 			index, found := proposalIDs[message.CallID]
 			var result string
-			want := "original-inline-tool-sentinel"
+			want := openCodeContinuationResultMarker(firstTool)
 			if index >= originalCount {
 				want = "changed-source-after-original-tool"
 			}
@@ -478,7 +493,7 @@ func updateOpenCodeContinuationInstructions(t *testing.T, path string, replace b
 	}
 }
 
-func prepareOpenCodeExternalRejection(t *testing.T, tool string) string {
+func prepareOpenCodeExternalTool(t *testing.T, tool string) string {
 	t.Helper()
 	// This private sibling directory is deliberately outside the session's
 	// prepared workspace, exercising the native external-directory permission.
@@ -486,7 +501,11 @@ func prepareOpenCodeExternalRejection(t *testing.T, tool string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(root, "original-tool-result.txt")
+	name := "original-tool-result.txt"
+	if tool == "glob" || tool == "grep" {
+		name = "original-inline-tool-sentinel.txt"
+	}
+	path := filepath.Join(root, name)
 	paths := []string{path}
 	if tool == "apply_patch" {
 		paths = append(paths, path+".move", path+".delete")

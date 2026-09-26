@@ -9,14 +9,13 @@ type checkpointAlwaysPermission struct {
 	Rules []PermissionRule `json:"rules"`
 }
 
-// The verified native Build and Plan agents both advertise Read and have no
-// Read-deny rule. Appending these exact Read allowances to session permission
-// preserves the native last-match behavior and tool availability. Other
-// permissions require their separate precedence/advertisement profile.
+// The verified native Build and Plan agents preserve Read and external-directory
+// checks independently. Only these original allowances can be materialized;
+// tool-specific write/command rules and native advertisement stay unchanged.
 func (o *inputObserver) checkpointAlways(value *observedInteraction) (checkpointAlwaysPermission, bool) {
 	var result checkpointAlwaysPermission
 	claim, valid := o.checkpointPermission(value, PermissionAlways)
-	if !valid || value.value.Permission.Name != "read" || len(value.value.Permission.Always) == 0 || len(value.value.Permission.Always) > 128 || o.parts[claim.PartID].value.Tool.Name != "read" {
+	if !valid || len(value.value.Permission.Always) == 0 || len(value.value.Permission.Always) > 128 || !checkpointAllowancePermission(value.value.Permission.Name).supports(checkpointToolName(o.parts[claim.PartID].value.Tool.Name)) {
 		return result, false
 	}
 	result.Claim = claim
@@ -24,7 +23,7 @@ func (o *inputObserver) checkpointAlways(value *observedInteraction) (checkpoint
 		if domain.Text(pattern, "native remembered permission", 4096, true) != nil {
 			return checkpointAlwaysPermission{}, false
 		}
-		result.Rules = append(result.Rules, PermissionRule{Permission: "read", Pattern: pattern, Action: PermissionAllow})
+		result.Rules = append(result.Rules, PermissionRule{Permission: value.value.Permission.Name, Pattern: pattern, Action: PermissionAllow})
 	}
 	return result, true
 }
@@ -32,6 +31,9 @@ func (o *inputObserver) checkpointAlways(value *observedInteraction) (checkpoint
 func validCheckpointInteractionProfile(p *checkpointToolHistory) bool {
 	interactions := len(p.Once) + len(p.Always) + len(p.Policy) + len(p.Questions) + len(p.Rejections) + len(p.RejectionPolicy)
 	if interactions > maxObservedInteractions || p.Version < 6 && p.InteractionFree || p.Version >= 6 && p.InteractionFree != (interactions == 0) {
+		return false
+	}
+	if p.Version < 13 && checkpointHasExternalAllowance(p) {
 		return false
 	}
 	if p.Version < 11 && checkpointHasNamedRejection(p) {
@@ -58,7 +60,7 @@ func validCheckpointInteractionProfile(p *checkpointToolHistory) bool {
 		if len(p.Questions) == 0 || len(p.Policy) != 0 && len(p.Always) == 0 {
 			return false
 		}
-	case 6, 7, 8, 9, 10, 11, 12:
+	case 6, 7, 8, 9, 10, 11, 12, 13:
 		if len(p.Policy) != 0 && len(p.Always) == 0 {
 			return false
 		}
@@ -71,7 +73,7 @@ func validCheckpointInteractionProfile(p *checkpointToolHistory) bool {
 			return false
 		}
 		for _, rule := range approval.Rules {
-			if rule.Permission != "read" || rule.Action != PermissionAllow || domain.Text(rule.Pattern, "native remembered permission", 4096, true) != nil {
+			if (rule.Permission != string(checkpointAllowRead) && rule.Permission != string(checkpointAllowExternal)) || rule.Permission != approval.Rules[0].Permission || rule.Action != PermissionAllow || domain.Text(rule.Pattern, "native remembered permission", 4096, true) != nil {
 				return false
 			}
 			rules++

@@ -39,6 +39,7 @@ type checkpointToolPart struct {
 // Version 10 adds completed Read's original loaded-instruction history.
 // Version 11 binds other original inline tool rejections to permission names.
 // Version 12 retains independently ended Read errors without rejection replay.
+// Version 13 retains original external-directory allowances and policy closures.
 type checkpointToolHistory struct {
 	Version         uint32                          `json:"version"`
 	InteractionFree bool                            `json:"interaction_free"`
@@ -113,7 +114,7 @@ func validCheckpointTools(value nativeCheckpoint) bool {
 			}
 		}
 	}
-	return index == len(proof.Parts) && (proof.Version != 7 || fileTool) && (proof.Version != 6 || searchOrTodo) && (proof.Version != 8 || checkpointHasQuestionDismissal(proof)) && (proof.Version != 9 || len(proof.Rejections) != 0) && (proof.Version != 10 || instructionsLoaded) && (proof.Version != 11 || checkpointHasNamedRejection(proof)) && (proof.Version != 12 || checkpointHasReadError(proof))
+	return index == len(proof.Parts) && (proof.Version != 7 || fileTool) && (proof.Version != 6 || searchOrTodo) && (proof.Version != 8 || checkpointHasQuestionDismissal(proof)) && (proof.Version != 9 || len(proof.Rejections) != 0) && (proof.Version != 10 || instructionsLoaded) && (proof.Version != 11 || checkpointHasNamedRejection(proof)) && (proof.Version != 12 || checkpointHasReadError(proof)) && (proof.Version != 13 || checkpointHasExternalAllowance(proof))
 }
 
 func (s *sessionAPI) checkpointToolHistory(value nativeCheckpoint) *checkpointToolHistory {
@@ -296,6 +297,9 @@ func (s *sessionAPI) checkpointToolHistory(value nativeCheckpoint) *checkpointTo
 	}
 	if checkpointHasReadError(proof) {
 		proof.Version = 12
+	}
+	if checkpointHasExternalAllowance(proof) {
+		proof.Version = 13
 	}
 	if !validCheckpointTools(value) {
 		return nil

@@ -27,7 +27,7 @@ func TestCheckpointAlwaysCapturePreservesOnlyOriginalReadAllowance(t *testing.T)
 			case "body":
 				i.attempt.body = []byte(checkpointOnceBody)
 			case "permission":
-				i.value.Permission.Name = "external_directory"
+				i.value.Permission.Name = "future"
 			case "empty":
 				i.value.Permission.Always = nil
 			case "base":
@@ -119,9 +119,16 @@ func TestCheckpointAlwaysSuccessorPinsAppliedPrefixWithoutChangingOriginal(t *te
 }
 
 func TestCheckpointPermissionRestorationAppendsOnceWithoutReplay(t *testing.T) {
-	for _, scenario := range []string{"valid", "append-suffix", "lost", "changed-response", "wrong-prefix", "active", "base", "failed"} {
+	for _, scenario := range []string{"valid", "append-suffix", "lost", "changed-response", "wrong-prefix", "active", "base", "failed", "external-valid", "external-append-suffix", "external-lost"} {
 		t.Run(scenario, func(t *testing.T) {
 			value, s, _ := checkpointPermissionFixture(t, PermissionAlways)
+			if strings.HasPrefix(scenario, "external-") {
+				scenario = strings.TrimPrefix(scenario, "external-")
+				value.Tools.Version = 13
+				for index := range value.Tools.Always[0].Rules {
+					value.Tools.Always[0].Rules[index].Permission = "external_directory"
+				}
+			}
 			value.Reference.SessionID = value.History.SessionID
 			s.creation.recorded, s.input, s.events, s.observer = false, nil, nil, nil
 			s.apiVerified, s.apiProfile = true, &nativeAPIProfile{Settings: s.creation.settings}
@@ -131,7 +138,7 @@ func TestCheckpointPermissionRestorationAppendsOnceWithoutReplay(t *testing.T) {
 				second.Claim.RequestID = domain.NewID()
 				second.Claim.InteractionID = "per_01960dcbe1ffABCDEFGHIJKLMN"
 				second.Claim.ArrivalID = "evt_01960dcbe1ffABCDEFGHIJKLMN"
-				second.Rules = []PermissionRule{{"read", "private-next-pattern", PermissionAllow}}
+				second.Rules = []PermissionRule{{value.Tools.Always[0].Rules[0].Permission, "private-next-pattern", PermissionAllow}}
 				value.Tools.Always = append(value.Tools.Always, second)
 				value.Tools.AppliedAlways, s.restoredAlways = 1, 1
 				s.sessionPermissions = checkpointAppliedPermissions(value.Tools, 1)
