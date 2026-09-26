@@ -28,6 +28,7 @@ func recoverExecution(ctx context.Context, config Config, job domain.Job) (json.
 	copy(promptDigest[:], digest)
 	manager := &workspace.Manager{Root: config.Root, Logger: config.Logger}
 	evidence, err := InspectCompletedExecution(ctx, manager, CompletedExecutionRef{
+		Harness: request.Harness, OpenCode: request.OpenCode,
 		ServerID: request.ServerID, DeviceID: request.DeviceID, InstanceID: request.InstanceID, AssignmentRevision: request.AssignmentRevision, AssignmentDigest: request.AssignmentDigest,
 		Checkpoint:  ExecutionCheckpointRef{JobID: request.JobID, SessionID: request.SessionID, MachineID: request.MachineID, HistoryExecutionID: request.HistoryExecutionID, AssignmentInputDigest: request.AssignmentInputDigest, ConfigurationDigest: request.ConfigurationDigest, AccountID: request.AccountID, ConnectionID: request.ConnectionID, Completion: request.Completion, InputMode: request.InputMode, PromptDigest: promptDigest, AcceptedInputs: request.AcceptedInputs},
 		Preparation: preparation, Manifest: manifest,

@@ -18,6 +18,8 @@ import (
 // comparison target, not cleanup proof. No prompt, answer or credential is
 // needed to inspect the original private Worker records after instance change.
 type CompletedExecutionRef struct {
+	Harness            domain.Harness
+	OpenCode           *domain.OpenCodeRecoveryReference
 	ServerID           domain.ID
 	DeviceID           domain.ID
 	InstanceID         domain.ID
@@ -48,7 +50,11 @@ const (
 // It neither reconstructs missing terminal evidence nor replays an RPC/native
 // operation. The caller still needs a dedicated server recovery transaction.
 func InspectCompletedExecution(ctx context.Context, manager *workspace.Manager, ref CompletedExecutionRef) (evidence CompletedExecutionEvidence, returned error) {
-	if manager == nil || ref.Checkpoint.validate() != nil || ref.Checkpoint.Completion.Version != 1 || ref.AssignmentRevision == 0 || !canonicalDigest(ref.AssignmentDigest) || domain.UniqueIDs([]domain.ID{ref.ServerID, ref.DeviceID, ref.InstanceID}) != nil || ref.Preparation.SessionID != ref.Checkpoint.SessionID || ref.Preparation.MachineID != ref.Checkpoint.MachineID {
+	harness := domain.ExecutionRecoveryRequest{Harness: ref.Harness}.NativeHarness()
+	if (harness != domain.Codex && harness != domain.OpenCode) || (harness == domain.OpenCode) != (ref.OpenCode != nil) || ref.OpenCode != nil && ref.OpenCode.Validate() != nil {
+		return evidence, executionCheckpointUncertain()
+	}
+	if manager == nil || ref.Checkpoint.validateForHarness(harness) != nil || ref.Checkpoint.Completion.Version != 1 || ref.AssignmentRevision == 0 || !canonicalDigest(ref.AssignmentDigest) || domain.UniqueIDs([]domain.ID{ref.ServerID, ref.DeviceID, ref.InstanceID}) != nil || ref.Preparation.SessionID != ref.Checkpoint.SessionID || ref.Preparation.MachineID != ref.Checkpoint.MachineID {
 		return evidence, executionCheckpointUncertain()
 	}
 	logger := manager.Logger
@@ -107,9 +113,15 @@ func InspectCompletedExecution(ctx context.Context, manager *workspace.Manager, 
 	checkpointRef := ref.Checkpoint
 	checkpointRef.Completion = completion
 	checkpointRef.WorkspaceRoots = nativeWorkspaceRoots(ref.Manifest)
-	checkpoint, err := ReadCodexExecutionCheckpoint(root, checkpointRef)
-	if err != nil || filepath.Clean(checkpoint.Native.Effective.Cwd) != filepath.Clean(inspection.WorkingDirectory()) {
-		return evidence, executionCheckpointUncertain()
+	if harness == domain.OpenCode {
+		if err := inspectCompletedOpenCodeCheckpoint(bounded, root, ref, completion, inspection.WorkingDirectory()); err != nil {
+			return evidence, err
+		}
+	} else {
+		checkpoint, err := ReadCodexExecutionCheckpoint(root, checkpointRef)
+		if err != nil || filepath.Clean(checkpoint.Native.Effective.Cwd) != filepath.Clean(inspection.WorkingDirectory()) {
+			return evidence, executionCheckpointUncertain()
+		}
 	}
 	// Reported may advance after Finished without changing original result or
 	// receipt. Any other journal/outbox change invalidates this observation.
@@ -130,7 +142,7 @@ func readCompletedExecution(root string, ref CompletedExecutionRef) (journal, do
 	raw, err := security.ReadPrivate(filepath.Join(root, "jobs", string(job)+".json"), 2<<20)
 	var prior journal
 	var completion domain.ExecutionCompletion
-	if err != nil || domain.Decode(raw, &prior) != nil || prior.Version != 1 || prior.JobID != job || prior.InstanceID != ref.InstanceID || prior.Revision != ref.AssignmentRevision || prior.Digest != ref.AssignmentDigest || (prior.State != journalFinished && prior.State != journalReported) || prior.Problem != nil || prior.ReportID.Validate() != nil || domain.Decode(prior.Output, &completion) != nil || completion.Version != 2 || completion.Validate() != nil {
+	if err != nil || domain.Decode(raw, &prior) != nil || prior.Version != 1 || prior.JobID != job || prior.InstanceID != ref.InstanceID || prior.Revision != ref.AssignmentRevision || prior.Digest != ref.AssignmentDigest || (prior.State != journalFinished && prior.State != journalReported) || prior.Problem != nil || prior.ReportID.Validate() != nil || domain.Decode(prior.Output, &completion) != nil || completion.Version != 2 || completion.ValidateForHarness(domain.ExecutionRecoveryRequest{Harness: ref.Harness}.NativeHarness()) != nil {
 		return prior, completion, executionCheckpointUncertain()
 	}
 	terminal := completion

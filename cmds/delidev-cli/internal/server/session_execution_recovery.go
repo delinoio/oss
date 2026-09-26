@@ -161,6 +161,28 @@ func executionRecoveryRequest(tx *store.Tx, serverID domain.ID, sr store.Record,
 		AccountID: input.AccountID, ConnectionID: input.ConnectionID, HistoryExecutionID: history, InputMode: input.Input.Mode, PromptDigest: continuationDigest([]byte(input.Input.Prompt)), AcceptedInputs: progress.AcceptedInputs, Preparation: input.Preparation, Manifest: input.Manifest,
 		Completion: domain.ExecutionCompletion{Version: 1, ExecutionID: input.ExecutionID, InputID: input.InputID, NativeThreadID: domain.NativeIdentity(progress.NativeThreadID), NativeTurnID: domain.NativeIdentity(progress.NativeTurnID), LastSequence: progress.LastSequence, Outcome: progress.Outcome, CleanupVerified: true},
 	}
+	if input.Configuration.Harness == domain.OpenCode {
+		if session.Workspace != domain.GeneralChat || len(bindings) != 1 {
+			return domain.ExecutionRecoveryRequest{}, domain.ExecutionRecoveryUncertain()
+		}
+		creation := input.ThreadRequestID
+		if input.Continuation != nil {
+			first, err := tx.SessionExecutionJob(sr.ID, history)
+			if err != nil {
+				return result, err
+			}
+			initial, err := store.Decode[domain.Job](first)
+			var original domain.ExecutionJobInput
+			if err != nil || domain.Decode(initial.Input, &original) != nil || original.Validate() != nil || original.Version != 1 || original.Configuration.Harness != domain.OpenCode || original.ExecutionID != history || original.SessionID != sr.ID || original.MachineID != input.MachineID || original.ConfigurationDigest != input.ConfigurationDigest || original.AccountID != input.AccountID || original.ConnectionID != input.ConnectionID {
+				return domain.ExecutionRecoveryRequest{}, domain.ExecutionRecoveryUncertain()
+			}
+			creation = original.ThreadRequestID
+		}
+		result.Harness = domain.OpenCode
+		result.OpenCode = &domain.OpenCodeRecoveryReference{ClaimVersion: input.Version, CreationRequestID: creation, BindingRequestID: input.ThreadRequestID, InputRequestID: input.TurnRequestID}
+	} else if input.Configuration.Harness != domain.Codex {
+		return domain.ExecutionRecoveryRequest{}, domain.ExecutionRecoveryUncertain()
+	}
 	return result, result.Validate()
 }
 

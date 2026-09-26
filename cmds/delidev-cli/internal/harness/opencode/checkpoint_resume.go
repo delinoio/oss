@@ -169,3 +169,13 @@ func CheckpointResumeClaim(config APIExecutionConfig, ref CheckpointReference, r
 	}
 	return claim, nil
 }
+
+// InspectReplacementWorkspace joins independent closed workspace ownership
+// with the native checkpoint without launching or changing original state.
+func InspectReplacementWorkspace(ctx context.Context, home string, raw []byte, ref CheckpointReference, workspace, root string) error {
+	value, err := decodeCheckpoint(raw, ref, home)
+	if err != nil || value.Workspace != workspace || value.NativeRoot != root {
+		return sessionUncertain()
+	}
+	return InspectReplacementCheckpoint(ctx, home, raw, ref)
+}
