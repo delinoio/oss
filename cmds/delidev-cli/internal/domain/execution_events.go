@@ -15,6 +15,7 @@ const (
 	ExecutionResponseUsageObserved    ExecutionEventKind = "response-usage-observed"
 	ExecutionNoticeObserved           ExecutionEventKind = "notice-observed"
 	ExecutionToolStarted              ExecutionEventKind = "tool-started"
+	ExecutionToolUpdated              ExecutionEventKind = "tool-updated"
 	ExecutionToolCompleted            ExecutionEventKind = "tool-completed"
 	ExecutionToolOutput               ExecutionEventKind = "tool-output"
 	ExecutionToolInput                ExecutionEventKind = "tool-input"
@@ -279,7 +280,7 @@ func (e ExecutionEvent) Validate() error {
 		} else if m.InputID != "" || (m.Phase != nil && *m.Phase != CommentaryMessage && *m.Phase != FinalMessage) {
 			return Fail(InvalidArgument, "Invalid native assistant message metadata.", "Preserve its typed phase without borrowing input ownership.")
 		}
-	case ExecutionToolStarted, ExecutionToolCompleted, ExecutionToolOutput, ExecutionToolInput, ExecutionToolPatch:
+	case ExecutionToolStarted, ExecutionToolUpdated, ExecutionToolCompleted, ExecutionToolOutput, ExecutionToolInput, ExecutionToolPatch:
 		if e.Tool == nil {
 			return invalidTool()
 		}

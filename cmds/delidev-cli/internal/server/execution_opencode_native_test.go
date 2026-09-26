@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -52,6 +53,9 @@ const (
 	nativeBindingPublication
 	nativeTextPublication
 	nativeReasoningPublication
+	nativeReadPublication
+	nativeReadFailurePublication
+	nativeReadDirectoryPublication
 )
 
 func TestManualNativeOpenCodePublishesRegisteredText(t *testing.T) {
@@ -64,8 +68,21 @@ func TestManualNativeOpenCodePublishesRegisteredReasoning(t *testing.T) {
 	nativeRegisteredOpenCode(t, domain.ExecuteMode, false, nativeReasoningPublication)
 }
 
+func TestManualNativeOpenCodePublishesRegisteredRead(t *testing.T) {
+	for _, scenario := range []nativeOpenCodePublication{nativeReadPublication, nativeReadFailurePublication, nativeReadDirectoryPublication} {
+		t.Run(fmt.Sprint(scenario), func(t *testing.T) { nativeRegisteredOpenCode(t, domain.ExecuteMode, false, scenario) })
+	}
+}
+
 func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool, publication nativeOpenCodePublication) {
 	publish := publication != nativeNoPublication
+	readTool := publication >= nativeReadPublication
+	expectedCalls := int32(1)
+	if readTool {
+		expectedCalls = 2
+	}
+	var readPath atomic.Value
+	const readSentinel = "Original native Read fixture."
 	t.Helper()
 	binary := os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE")
 	if binary == "" {
@@ -79,7 +96,8 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 	var calls atomic.Int32
 	started, ended := make(chan struct{}), make(chan struct{})
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if calls.Add(1) != 1 {
+		call := calls.Add(1)
+		if call > expectedCalls {
 			t.Error("native registered input repeated inference")
 			w.WriteHeader(http.StatusBadRequest)
 			return
@@ -89,8 +107,9 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 			Model    string
 			Stream   bool
 			Messages []struct {
-				Role    string
-				Content json.RawMessage
+				Role       string
+				Content    json.RawMessage
+				ToolCallID string `json:"tool_call_id"`
 			}
 		}
 		if err != nil || json.Unmarshal(raw, &body) != nil || body.Model != "fixture-model" || !body.Stream || r.URL.Path != "/chat/completions" || r.Header.Get("Authorization") != "Bearer temporary-upstream-fixture-key" || r.Header.Get("HTTP-Referer") != "https://deli.dev" {
@@ -124,8 +143,10 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 		if originalInputs != 1 {
 			t.Error("native registered request changed or repeated its original input")
 		}
-		close(started)
-		defer close(ended)
+		if call == 1 {
+			close(started)
+			defer close(ended)
+		}
 		if revoke {
 			select {
 			case <-r.Context().Done():
@@ -135,6 +156,33 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 			return
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
+		if readTool && call == 1 {
+			args, _ := json.Marshal(map[string]any{"filePath": readPath.Load().(string)})
+			delta := map[string]any{"role": "assistant", "tool_calls": []any{map[string]any{"index": 0, "id": "call_registered_read", "type": "function", "function": map[string]any{"name": "read", "arguments": string(args)}}}}
+			for _, choice := range []map[string]any{{"index": 0, "delta": delta, "finish_reason": nil}, {"index": 0, "delta": map[string]any{}, "finish_reason": "tool_calls"}} {
+				raw, _ := json.Marshal(map[string]any{"id": "chatcmpl-registered-read", "object": "chat.completion.chunk", "created": 1, "model": "fixture-model", "choices": []any{choice}})
+				_, _ = fmt.Fprintf(w, "data: %s\n\n", raw)
+			}
+			_, _ = io.WriteString(w, "data: [DONE]\n\n")
+			return
+		}
+		if readTool {
+			results := 0
+			for _, message := range body.Messages {
+				if message.Role != "tool" || message.ToolCallID != "call_registered_read" {
+					continue
+				}
+				var result string
+				if json.Unmarshal(message.Content, &result) != nil || !strings.Contains(result, readSentinel) {
+					t.Error("original Read result did not reach the next native provider request")
+				}
+				results++
+			}
+			if results != 1 {
+				t.Error("native Read result was missing or duplicated")
+			}
+		}
+
 		if publication == nativeReasoningPublication {
 			_, _ = io.WriteString(w, `data: {"id":"chatcmpl-registered","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"Native reasoning fixture."},"finish_reason":null}]}`+"\n\n")
 		}
@@ -155,6 +203,19 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 	}
 	if err := security.PrivateDir(workspace); err != nil {
 		t.Fatal(err)
+	}
+	if readTool {
+		path := filepath.Join(workspace, readSentinel)
+		if publication == nativeReadDirectoryPublication {
+			if err := os.Mkdir(path, 0700); err != nil {
+				t.Fatal(err)
+			}
+		} else if publication != nativeReadFailurePublication {
+			if err := os.WriteFile(path, []byte(readSentinel+"\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		readPath.Store(path)
 	}
 	agent, err := f.input.Configuration.Options.OpenCodePrimaryForInput(mode)
 	if err != nil {
@@ -293,7 +354,7 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 		return
 	}
 	var textPublisher *worker.OpenCodeTextPublisher
-	if publication == nativeTextPublication || publication == nativeReasoningPublication {
+	if publication >= nativeTextPublication {
 		// Preserve the original prefix until both live input ownership and
 		// independent native storage establish acceptance for publication.
 		var prefix []opencode.Observation
@@ -358,7 +419,7 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 		}
 	}
 	progress, err := api.Progress(ctx)
-	if err != nil || !progress.SettledObserved || progress.NeedsRecovery || final == nil || final.Assistant == nil || final.Assistant.Error != nil || result != "Registered OpenCode fixture completed." || calls.Load() != 1 || len(claims) != 2 {
+	if err != nil || !progress.SettledObserved || progress.NeedsRecovery || final == nil || final.Assistant == nil || final.Assistant.Error != nil || result != "Registered OpenCode fixture completed." || calls.Load() != expectedCalls || len(claims) != 2 {
 		t.Fatal("registered native original input did not settle with its exact result")
 	}
 	receipt, err := api.InspectInput(ctx)
@@ -389,7 +450,7 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 	if textPublisher != nil {
 		rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.MessageKind, SessionID: f.input.SessionID, Limit: 10})
 		expected := 2
-		if publication == nativeReasoningPublication {
+		if publication == nativeReasoningPublication || readTool {
 			expected = 3
 		}
 		if err != nil || len(rows) != expected {
@@ -402,7 +463,26 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 				t.Fatal("native text publication lost original part identity or closure")
 			}
 			roles[message.Role] = true
-			if message.Role == domain.ArtifactMessage {
+			if message.Role == domain.ToolMessage {
+				if !readTool || message.Tool == nil || message.NativeParentID == "" || message.NativeParentID == receipt.MessageID || message.NativeParentID == progress.AssistantID || message.Tool.Started.Status != domain.ToolPending || message.Tool.Started.Kind != domain.OpenCodeReadTool || message.Tool.Completed == nil || len(message.Tool.States) != 1 || message.Tool.States[0].Snapshot.Status != domain.ToolRunning {
+					t.Fatal("original Read proposal/running/result ownership was not preserved")
+				}
+				completed := message.Tool.Completed
+				read := completed.Read
+				if read == nil || read.CallID != "call_registered_read" || read.Input.FilePath == nil || *read.Input.FilePath != readPath.Load().(string) {
+					t.Fatal("original Read operation was replaced")
+				}
+				if publication == nativeReadFailurePublication {
+					if completed.Status != domain.ToolFailed || read.Error == nil || !strings.Contains(*read.Error, readSentinel) || read.Output != nil {
+						t.Fatal("native Read failure became invented output")
+					}
+				} else if completed.Status != domain.ToolCompleted || read.Output == nil || !strings.Contains(*read.Output, readSentinel) || read.Error != nil || read.Metadata == nil || read.Metadata.Display == nil {
+					t.Fatal("native Read result lost original metadata or content")
+				}
+				if publication == nativeReadDirectoryPublication && (read.Metadata.Display.Kind != domain.OpenCodeReadDirectory || read.Metadata.Display.Entries == nil || len(read.Metadata.Display.Entries) != 0) {
+					t.Fatal("empty native directory entries were lost")
+				}
+			} else if message.Role == domain.ArtifactMessage {
 				if publication != nativeReasoningPublication || message.NativeParentID != progress.AssistantID || message.Artifact == nil || message.Artifact.Started.Kind != domain.ReasoningTextArtifact || message.Artifact.Completed == nil || message.Artifact.Completed.Text != "Native reasoning fixture." || message.Artifact.Completed.Summary != nil || message.Artifact.Completed.Content != nil {
 					t.Fatal("native reasoning became an invented indexed summary or answer")
 				}
@@ -415,8 +495,12 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 			}
 		}
 	}
+	expectedMessages := 2
+	if readTool {
+		expectedMessages = 3
+	}
 	history, err := api.InspectHistory(ctx)
-	if err != nil || history.InputID != receipt.MessageID || history.AssistantID != progress.AssistantID || len(history.Messages) != 2 {
+	if err != nil || history.InputID != receipt.MessageID || history.AssistantID != progress.AssistantID || len(history.Messages) != expectedMessages {
 		t.Fatalf("registered native conversation lost its original stored comparison: %v", err)
 	}
 	raw, err := os.ReadFile(claimsPath)

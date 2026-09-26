@@ -121,7 +121,7 @@ func supportsExecutionPublication(input domain.ExecutionJobInput, kind domain.Ex
 	case domain.Codex:
 		return true
 	case domain.OpenCode:
-		return (kind == domain.ExecutionThreadBound || kind == domain.ExecutionInputAccepted || kind == domain.ExecutionMessageStarted || kind == domain.ExecutionTextAppended || kind == domain.ExecutionMessageCompleted || kind.IsArtifact()) && len(executionAPIOperations(input, domain.OpenAIChat)) != 0
+		return (kind == domain.ExecutionThreadBound || kind == domain.ExecutionInputAccepted || kind == domain.ExecutionMessageStarted || kind == domain.ExecutionTextAppended || kind == domain.ExecutionMessageCompleted || kind.IsArtifact() || kind == domain.ExecutionToolStarted || kind == domain.ExecutionToolUpdated || kind == domain.ExecutionToolCompleted) && len(executionAPIOperations(input, domain.OpenAIChat)) != 0
 	}
 	return false
 }
@@ -130,6 +130,15 @@ func supportsExecutionPublication(input domain.ExecutionJobInput, kind domain.Ex
 // their parent message explicitly instead of flattening several parts into a
 // fabricated message identity or using the assistant as the execution turn.
 func validateNativeMessageOrigin(input domain.ExecutionJobInput, event domain.ExecutionEvent) error {
+	if tool := event.Tool; tool != nil {
+		if input.Configuration.Harness == domain.OpenCode {
+			if tool.Snapshot == nil || tool.Snapshot.Kind != domain.OpenCodeReadTool || domain.NativeIdentity(tool.NativeID).Validate(domain.OpenCode, domain.NativePartIdentity) != nil || domain.NativeIdentity(tool.NativeParentID).Validate(domain.OpenCode, domain.NativeMessageIdentity) != nil || tool.NativeParentID == event.NativeTurnID {
+				return executionEventConflict()
+			}
+		} else if tool.NativeParentID != "" || tool.Snapshot != nil && tool.Snapshot.Kind == domain.OpenCodeReadTool {
+			return executionEventConflict()
+		}
+	}
 	if artifact := event.Artifact; artifact != nil {
 		textReasoning := artifact.Snapshot != nil && artifact.Snapshot.Kind == domain.ReasoningTextArtifact || artifact.Delta != nil && artifact.Delta.Kind == domain.ReasoningTextDelta
 		if input.Configuration.Harness == domain.OpenCode {

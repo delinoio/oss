@@ -13,7 +13,16 @@ func publishExecutionTool(tx *store.Tx, input domain.ExecutionJobInput, session 
 	var value domain.ExecutionMessage
 	var revision uint64
 	if event.Kind == domain.ExecutionToolStarted {
-		value = domain.ExecutionMessage{ExecutionID: input.ExecutionID, NativeThreadID: event.NativeThreadID, NativeTurnID: event.NativeTurnID, NativeID: update.NativeID, Role: domain.ToolMessage, State: domain.MessageStreaming, FirstSequence: event.Sequence, Tool: &domain.ExecutionTool{Started: *update.Snapshot}}
+		if update.Snapshot.Kind == domain.OpenCodeReadTool {
+			exists, err := tx.HasOpenCodeReadCall(input.ExecutionID, update.Snapshot.Read.CallID)
+			if err != nil {
+				return err
+			}
+			if exists {
+				return executionEventConflict()
+			}
+		}
+		value = domain.ExecutionMessage{ExecutionID: input.ExecutionID, NativeThreadID: event.NativeThreadID, NativeTurnID: event.NativeTurnID, NativeID: update.NativeID, NativeParentID: update.NativeParentID, Role: domain.ToolMessage, State: domain.MessageStreaming, FirstSequence: event.Sequence, Tool: &domain.ExecutionTool{Started: *update.Snapshot}}
 	} else {
 		r, err := tx.Get(domain.MessageKind, update.ID)
 		if err != nil {
@@ -23,12 +32,26 @@ func publishExecutionTool(tx *store.Tx, input domain.ExecutionJobInput, session 
 		if err != nil {
 			return err
 		}
-		if r.SessionID != session.ID || value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeID != update.NativeID || value.Role != domain.ToolMessage || value.State != domain.MessageStreaming || value.Tool == nil || value.Tool.Completed != nil {
+		if r.SessionID != session.ID || value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeID != update.NativeID || value.NativeParentID != update.NativeParentID || value.Role != domain.ToolMessage || value.State != domain.MessageStreaming || value.Tool == nil || value.Tool.Completed != nil {
 			return executionEventConflict()
 		}
 		revision = r.Revision
 		tool := value.Tool
+		if tool.Started.Kind == domain.OpenCodeReadTool {
+			prior := tool.Started
+			if len(tool.States) > 0 {
+				prior = tool.States[len(tool.States)-1].Snapshot
+			}
+			if update.Snapshot == nil || domain.ValidateOpenCodeReadTransition(prior, *update.Snapshot) != nil {
+				return executionEventConflict()
+			}
+		}
 		switch event.Kind {
+		case domain.ExecutionToolUpdated:
+			if tool.Started.Kind != domain.OpenCodeReadTool || len(tool.States) >= 1024 {
+				return executionEventConflict()
+			}
+			tool.States = append(tool.States, domain.SequencedToolState{Sequence: event.Sequence, Snapshot: *update.Snapshot})
 		case domain.ExecutionToolCompleted:
 			if update.Snapshot.Kind != tool.Started.Kind {
 				return executionEventConflict()

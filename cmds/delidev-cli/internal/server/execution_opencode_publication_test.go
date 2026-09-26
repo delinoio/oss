@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -233,5 +234,80 @@ func TestOpenCodeReasoningRequiresOriginalPlainTextArtifactAndMonotonicCompletio
 	message, err := store.Decode[domain.ExecutionMessage](r)
 	if err != nil || message.NativeParentID != update.NativeParentID || message.Role != domain.ArtifactMessage || message.State != domain.MessageComplete || message.Artifact == nil || message.Artifact.Completed == nil || message.Artifact.Completed.Text != update.Snapshot.Text || len(message.Artifact.Deltas) != 1 {
 		t.Fatal("original reasoning record lost exact stream and completion")
+	}
+}
+
+func TestOpenCodeReadPublicationKeepsOriginalLifecycleAndCallOwnership(t *testing.T) {
+	f := newOpenCodePublicationFixture(t, domain.ExecuteMode)
+	f.publish(t, f.event(domain.ExecutionThreadBound, 1))
+	f.publish(t, f.event(domain.ExecutionInputAccepted, 2))
+	raw, path, output, title, preview := "", "/fixture/original", "original read output", "original", "preview"
+	end, truncated := uint64(200), false
+	started := domain.ToolSnapshot{Kind: domain.OpenCodeReadTool, Status: domain.ToolPending, Read: &domain.OpenCodeReadObservation{CallID: "call-original", Raw: &raw}}
+	running := domain.ToolSnapshot{Kind: domain.OpenCodeReadTool, Status: domain.ToolRunning, Read: &domain.OpenCodeReadObservation{CallID: "call-original", Input: domain.OpenCodeReadInput{FilePath: &path}, Timing: &domain.OpenCodeToolTiming{Start: 100}}}
+	completed := domain.ToolSnapshot{Kind: domain.OpenCodeReadTool, Status: domain.ToolCompleted, Read: &domain.OpenCodeReadObservation{CallID: "call-original", Input: running.Read.Input, Timing: &domain.OpenCodeToolTiming{Start: 100, End: &end}, Title: &title, Output: &output, Metadata: &domain.OpenCodeReadMetadata{Preview: &preview, Truncated: &truncated, Loaded: []string{}}}}
+	update := domain.ExecutionToolUpdate{ID: domain.NewID(), NativeID: "prt_01960dcbe1fbABCDEFGHIJKLMN", NativeParentID: "msg_01960dcbe1fbABCDEFGHIJKLMN", Snapshot: &started}
+	makeEvent := func(kind domain.ExecutionEventKind, sequence uint64, value domain.ExecutionToolUpdate) domain.ExecutionEvent {
+		e := f.event(kind, sequence)
+		e.Tool = &value
+		return e
+	}
+	request := f.publish(t, makeEvent(domain.ExecutionToolStarted, 3, update))
+	if response, err := f.call(request); err != nil || !response.Msg.Replayed {
+		t.Fatal("Read proposal replay duplicated publication")
+	}
+	duplicate := update
+	duplicate.ID = domain.NewID()
+	duplicate.NativeID = "prt_01960dcbe1fcABCDEFGHIJKLMN"
+	if _, err := f.call(f.requestEvent(t, makeEvent(domain.ExecutionToolStarted, 4, duplicate))); err == nil {
+		t.Fatal("one native call acquired a second part")
+	}
+	update.Snapshot = &completed
+	if _, err := f.call(f.requestEvent(t, makeEvent(domain.ExecutionToolCompleted, 4, update))); err == nil {
+		t.Fatal("pending proposal fabricated successful execution")
+	}
+	update.Snapshot = &running
+	request = f.publish(t, makeEvent(domain.ExecutionToolUpdated, 4, update))
+	if response, err := f.call(request); err != nil || !response.Msg.Replayed {
+		t.Fatal("Read running replay duplicated publication")
+	}
+	for _, name := range []string{"parent", "call", "input", "start", "kind"} {
+		bad := update
+		body, _ := json.Marshal(completed)
+		var snapshot domain.ToolSnapshot
+		if domain.Decode(body, &snapshot) != nil {
+			t.Fatal("invalid fixture")
+		}
+		bad.Snapshot = &snapshot
+		switch name {
+		case "parent":
+			bad.NativeParentID = "msg_01960dcbe1fcABCDEFGHIJKLMN"
+		case "call":
+			snapshot.Read.CallID = "changed"
+		case "input":
+			value := "changed"
+			snapshot.Read.Input.FilePath = &value
+		case "start":
+			snapshot.Read.Timing.Start++
+		case "kind":
+			snapshot.Kind = domain.CommandTool
+		}
+		if _, err := f.call(f.requestEvent(t, makeEvent(domain.ExecutionToolCompleted, 5, bad))); err == nil {
+			t.Fatal("Read completion substituted original ownership", name)
+		}
+	}
+	update.Snapshot = &completed
+	f.publish(t, makeEvent(domain.ExecutionToolCompleted, 5, update))
+	update.Snapshot = &running
+	if _, err := f.call(f.requestEvent(t, makeEvent(domain.ExecutionToolUpdated, 6, update))); err == nil {
+		t.Fatal("completed Read returned to running")
+	}
+	r, err := f.service.Store.Get(context.Background(), domain.MessageKind, update.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := store.Decode[domain.ExecutionMessage](r)
+	if err != nil || value.State != domain.MessageComplete || value.NativeParentID != update.NativeParentID || value.Tool == nil || len(value.Tool.States) != 1 || value.Tool.States[0].Sequence != 4 || value.Tool.Started.Read.Raw == nil || value.Tool.Started.Read.Input.FilePath != nil || value.Tool.Completed == nil || *value.Tool.Completed.Read.Output != output {
+		t.Fatal("retained Read lost original proposal, applied input or result")
 	}
 }

@@ -70,3 +70,17 @@ func (t *Tx) ExecutionMessagesComplete(execution domain.ID) (bool, error) {
 	err := t.tx.QueryRowContext(t.ctx, "SELECT EXISTS(SELECT 1 FROM execution_messages WHERE execution_id=? AND state='streaming')", execution).Scan(&pending)
 	return !pending, storageError(err)
 }
+
+// The native part identity and provider call identity are different namespaces.
+// Check both within the same serialized publication transaction; an OpenCode
+// call cannot be relabeled as a second part. The execution index bounds this
+// scan to the existing 10,000-item retention limit without a schema migration.
+func (t *Tx) HasOpenCodeReadCall(execution domain.ID, call string) (bool, error) {
+	if execution.Validate() != nil || domain.Text(call, "native read call", 1024, true) != nil {
+		return false, domain.Fail(domain.InvalidArgument, "Invalid native Read ownership.", "Preserve the original execution and call identity.")
+	}
+	var exists bool
+	err := t.tx.QueryRowContext(t.ctx, `SELECT EXISTS(SELECT 1 FROM execution_messages m JOIN entities e ON e.id=m.message_id
+ WHERE m.execution_id=? AND json_extract(e.body,'$.tool.started.kind')='opencode-read' AND json_extract(e.body,'$.tool.started.read.call_id')=?)`, execution, call).Scan(&exists)
+	return exists, storageError(err)
+}

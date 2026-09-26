@@ -168,6 +168,9 @@ func TestOpenCodeTextDoesNotReinterpretOtherNativeFamilies(t *testing.T) {
 	for _, kind := range []opencode.PartKind{opencode.FilePartKind, opencode.ToolPartKind, opencode.StepFinishPartKind, opencode.CompactionPartKind} {
 		observation := f.part(textPartOneID, "private unhandled content", false)
 		observation.Part.Kind = kind
+		if kind == opencode.ToolPartKind {
+			observation.Part.Tool = &opencode.NativeToolPart{Name: "bash"}
+		}
 		if handled, err := f.c.PublishObservation(context.Background(), f.observation(observation)); err != nil || handled {
 			t.Fatal("other native family was normalized as assistant text")
 		}
