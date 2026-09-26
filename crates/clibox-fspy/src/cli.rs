@@ -2459,13 +2459,13 @@ impl WindowsBreakTerminal {
     fn decision(
         &mut self,
         frame: &crate::windows::Frame,
+        path: &crate::record::AccessPath,
         cancelled: &std::sync::atomic::AtomicBool,
     ) -> Result<u8, &'static str> {
         use std::{io::Read, os::windows::io::AsRawHandle, sync::atomic::Ordering};
 
         use winapi::um::{synchapi::WaitForSingleObject, winbase::WAIT_OBJECT_0};
 
-        let path = frame.access_path.as_ref().ok_or("control_channel_loss")?;
         let operation =
             crate::windows::operation_id(frame.operation).ok_or("control_channel_loss")?;
         writeln!(
@@ -2516,6 +2516,20 @@ impl Drop for WindowsBreakTerminal {
 }
 
 #[cfg(target_os = "windows")]
+fn windows_matching_path<'a>(
+    frame: &'a crate::windows::Frame,
+    selector: &coverage::Selector,
+    operations: &[crate::record::Operation],
+) -> Option<&'a crate::record::AccessPath> {
+    let operation = crate::windows::operation_id(frame.operation)?;
+    frame
+        .access_path
+        .iter()
+        .chain(frame.second_access_path.iter())
+        .find(|path| matches_selected(operation, std::slice::from_ref(*path), selector, operations))
+}
+
+#[cfg(target_os = "windows")]
 fn windows_fbreak(args: BreakArgs) -> i32 {
     use std::{
         process::Stdio,
@@ -2551,21 +2565,11 @@ fn windows_fbreak(args: BreakArgs) -> i32 {
         let control_loss = Arc::clone(&control_loss);
         move |frame: &crate::windows::Frame| {
             use crate::windows::Admission;
-            let Some(operation) = crate::windows::operation_id(frame.operation) else {
-                return Admission::Proceed(Duration::ZERO);
-            };
-            if continue_all.load(Ordering::SeqCst)
-                || !frame.access_path.as_ref().is_some_and(|path| {
-                    matches_selected(
-                        operation,
-                        std::slice::from_ref(path),
-                        &selector,
-                        &args.operations,
-                    )
-                })
-            {
+            let matching = windows_matching_path(frame, &selector, &args.operations);
+            if continue_all.load(Ordering::SeqCst) || matching.is_none() {
                 return Admission::Proceed(Duration::ZERO);
             }
+            let matching = matching.expect("matched path exists");
             let decision = terminal
                 .lock()
                 .map_err(|_| "control_channel_loss")
@@ -2796,7 +2800,7 @@ fn macos_fbreak(args: BreakArgs) -> i32 {
                     } else if cancelled.load(Ordering::SeqCst) {
                         Ok(0)
                     } else {
-                        terminal.decision(frame, &cancelled)
+                        terminal.decision(frame, matching, &cancelled)
                     }
                 });
             match decision {
@@ -3246,13 +3250,7 @@ fn windows_latencylab(args: LatencyArgs) -> i32 {
         let selector = std::sync::Arc::clone(&selector);
         let kinds = kinds.to_vec();
         windows_capture_with(command, root, execution, move |frame| {
-            let Some(operation) = crate::windows::operation_id(frame.operation) else {
-                return Duration::ZERO;
-            };
-            let Some(path) = frame.access_path.as_ref() else {
-                return Duration::ZERO;
-            };
-            if matches_selected(operation, std::slice::from_ref(path), &selector, &kinds) {
+            if windows_matching_path(frame, &selector, &kinds).is_some() {
                 delay
             } else {
                 Duration::ZERO
@@ -4298,6 +4296,34 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(execute(cli.command), 0);
+
+        let experiment = directory.path().join("latency.json");
+        let cli = TestCli::try_parse_from([
+            OsString::from("fspy"),
+            OsString::from("latencylab"),
+            OsString::from("--root"),
+            directory.path().as_os_str().to_owned(),
+            OsString::from("--include"),
+            OsString::from("input.txt"),
+            OsString::from("--delay"),
+            OsString::from("1ms"),
+            OsString::from("--runs"),
+            OsString::from("1"),
+            OsString::from("--json"),
+            OsString::from("--output"),
+            experiment.as_os_str().to_owned(),
+            OsString::from("--"),
+            std::env::current_exe().unwrap().into_os_string(),
+            OsString::from("--exact"),
+            OsString::from("cli::tests::windows_cli_read_fixture"),
+        ])
+        .unwrap();
+        assert_eq!(execute(cli.command), 0);
+        let report: serde_json::Value =
+            serde_json::from_slice(&fs::read(experiment).unwrap()).unwrap();
+        assert_eq!(report["runs"][0]["condition"], "baseline");
+        assert_eq!(report["runs"][1]["condition"], "delayed");
+        assert!(report["runs"][1]["observed_delay_ns"].as_u64().unwrap() > 0);
         unsafe { std::env::remove_var("CLIBOX_FSPY_CLI_WIN_INPUT") };
     }
 
