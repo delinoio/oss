@@ -23,6 +23,9 @@ pub enum Command {
                       file-access paths."
     )]
     Record(RecordArgs),
+    /// Rerun when inputs discovered from a traced execution change.
+    #[command(after_help = "Example: clibox fspy autowatch --include 'src/**' -- cargo test")]
+    Autowatch(AutowatchArgs),
     /// Compare two complete, compatible execution records.
     #[command(
         after_help = "Example: clibox fspy compare before.ndjson after.ndjson --fail-on-change"
@@ -120,6 +123,24 @@ pub struct RecordArgs {
     execution: ExecutionArgs,
     #[command(flatten)]
     output: OutputArgs,
+    /// Child program and tokenized arguments.
+    #[arg(last = true, required = true, num_args = 1..)]
+    command: Vec<OsString>,
+}
+
+#[derive(Debug, Args)]
+pub struct AutowatchArgs {
+    #[command(flatten)]
+    execution: ExecutionArgs,
+    /// Select project inputs; repeat for a union.
+    #[arg(long, required = true)]
+    include: Vec<String>,
+    /// Exclude project inputs.
+    #[arg(long)]
+    exclude: Vec<String>,
+    /// Coalesce changes before a rerun (default: 200ms).
+    #[arg(long, default_value = "200ms", value_parser = parse_positive_duration)]
+    debounce: Duration,
     /// Child program and tokenized arguments.
     #[arg(last = true, required = true, num_args = 1..)]
     command: Vec<OsString>,
@@ -1689,9 +1710,102 @@ fn fbreak(args: BreakArgs) -> i32 {
     }
 }
 
+#[cfg(target_os = "linux")]
+fn autowatch(args: AutowatchArgs) -> i32 {
+    use std::{
+        process::{Command as ProcessCommand, Stdio},
+        sync::atomic::Ordering,
+    };
+
+    let root = match execution_root(&args.execution) {
+        Ok(root) => root,
+        Err(error) => return diagnostic(error, "autowatch"),
+    };
+    let selector = match coverage::Selector::new(&args.include, &args.exclude) {
+        Ok(selector) => selector,
+        Err(error) => return diagnostic(&error.to_string(), "autowatch"),
+    };
+    let signals = match SignalHandlers::new() {
+        Ok(signals) => signals,
+        Err(error) => {
+            return capture_status(CaptureFailure { error, signal: 0 }, "autowatch");
+        }
+    };
+    let mut watcher = crate::watch::WatchSession::new(root.clone());
+    let mut previous = crate::watch::Dependencies::default();
+    loop {
+        if let Err(error) = watcher.start_discovery() {
+            return diagnostic(&error.to_string(), "autowatch");
+        }
+        let mut child = ProcessCommand::new(&args.command[0]);
+        child
+            .args(&args.command[1..])
+            .stdin(Stdio::inherit())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit());
+        let record = crate::linux::capture::capture(
+            &mut child,
+            &root,
+            crate::linux::Limits {
+                max_events: args.execution.max_events,
+                max_bytes: args.execution.max_bytes,
+                timeout: args.execution.timeout,
+                kill_after: args.execution.kill_after,
+            },
+            &signals.cancelled,
+            |_| Duration::ZERO,
+        );
+        let record = match record {
+            Ok(record) => record,
+            Err(error) => {
+                return capture_status(
+                    CaptureFailure {
+                        error,
+                        signal: signals.signal.load(Ordering::SeqCst),
+                    },
+                    "autowatch",
+                );
+            }
+        };
+        let mut dependencies = crate::watch::Dependencies::from_record(&record, &selector);
+        if child_status(&record) != 0 {
+            dependencies.merge(previous);
+        }
+        if let Err(error) = watcher.install(&dependencies) {
+            return diagnostic(&error.to_string(), "autowatch");
+        }
+        previous = dependencies;
+        loop {
+            if signals.cancelled.load(Ordering::SeqCst) {
+                return if signals.signal.load(Ordering::SeqCst) == libc::SIGTERM as usize {
+                    143
+                } else {
+                    130
+                };
+            }
+            match watcher.collect(&previous, args.debounce, Duration::from_millis(100)) {
+                Ok(true) => break,
+                Ok(false) => {}
+                Err(error) => return diagnostic(&error.to_string(), "autowatch"),
+            }
+        }
+    }
+}
+
 pub fn execute(command: Command) -> i32 {
     match command {
         Command::Compare(args) => compare(args),
+        Command::Autowatch(args) => {
+            #[cfg(target_os = "linux")]
+            {
+                autowatch(args)
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                let _ = args;
+                diagnostic("unsupported_target", "autowatch")
+            }
+        }
         Command::Record(args) => {
             #[cfg(target_os = "linux")]
             {
@@ -2034,5 +2148,106 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(execute(cli.command), if case == "quit" { 130 } else { 0 });
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn autowatch_reruns_after_an_observed_input_changes() {
+        use std::{process::Stdio, thread, time::Instant};
+        let _trace_lock = crate::linux::TRACE_LOCK.lock().unwrap();
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(directory.path().join("input.txt"), b"first").unwrap();
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("cli::tests::autowatch_child_process")
+            .env("CLIBOX_FSPY_WATCH_CHILD", "1")
+            .current_dir(directory.path())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let runs = directory.path().join("runs.txt");
+        for expected in [1, 2] {
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while fs::read(&runs).unwrap_or_default().len() < expected {
+                if Instant::now() >= deadline {
+                    child.kill().unwrap();
+                    panic!("autowatch did not complete run {expected}");
+                }
+                thread::sleep(Duration::from_millis(10));
+            }
+            if expected == 1 {
+                thread::sleep(Duration::from_millis(400));
+                fs::write(directory.path().join("input.txt"), b"second").unwrap();
+            }
+        }
+        thread::sleep(Duration::from_millis(400));
+        assert_eq!(fs::read(&runs).unwrap().len(), 2);
+        // SAFETY: the child process is still owned by this test.
+        unsafe { libc::kill(child.id() as i32, libc::SIGINT) };
+        let status = child.wait().unwrap();
+        assert!(status.success());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn autowatch_reruns_when_a_missing_input_is_created() {
+        use std::{process::Stdio, thread, time::Instant};
+        let _trace_lock = crate::linux::TRACE_LOCK.lock().unwrap();
+        let directory = tempfile::tempdir().unwrap();
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("cli::tests::autowatch_child_process")
+            .env("CLIBOX_FSPY_WATCH_CHILD", "missing")
+            .current_dir(directory.path())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let runs = directory.path().join("runs.txt");
+        for expected in [1, 2] {
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while fs::read(&runs).unwrap_or_default().len() < expected {
+                if Instant::now() >= deadline {
+                    child.kill().unwrap();
+                    panic!("autowatch missed absent input on run {expected}");
+                }
+                thread::sleep(Duration::from_millis(10));
+            }
+            if expected == 1 {
+                thread::sleep(Duration::from_millis(400));
+                fs::write(directory.path().join("missing.txt"), b"created").unwrap();
+            }
+        }
+        // SAFETY: the child process is still owned by this test.
+        unsafe { libc::kill(child.id() as i32, libc::SIGINT) };
+        assert!(child.wait().unwrap().success());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn autowatch_child_process() {
+        let Some(case) = std::env::var_os("CLIBOX_FSPY_WATCH_CHILD") else {
+            return;
+        };
+        let missing = case == "missing";
+        let cli = TestCli::try_parse_from([
+            "fspy",
+            "autowatch",
+            "--include",
+            if missing { "missing.txt" } else { "input.txt" },
+            "--debounce",
+            "50ms",
+            "--",
+            "/bin/sh",
+            "-c",
+            if missing {
+                "test -e missing.txt; printf x >> runs.txt"
+            } else {
+                "cat input.txt >/dev/null; printf x >> runs.txt"
+            },
+        ])
+        .unwrap();
+        assert_eq!(execute(cli.command), 130);
     }
 }

@@ -1828,6 +1828,7 @@ dependencies = [
  "file-id",
  "globset",
  "libc",
+ "notify",
  "pathdiff",
  "serde",
  "serde_json",

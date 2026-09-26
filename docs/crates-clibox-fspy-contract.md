@@ -10,7 +10,7 @@ The current fspy `PathAccess` result is an attempted path-access classification.
 
 The Linux ptrace supervisor uses `PTRACE_GET_SYSCALL_INFO` to pair selected syscall entries and completions, follows fork/clone/vfork descendants, serializes local sessions sharing `waitpid`, and bounds cancellation, timeout, and surviving-descendant cleanup. Its callback may hold the calling thread before a syscall. The Linux capture layer decodes selected syscall paths while the tracee is stopped and pairs native results into version-one records, including actual read bytes and descriptor identity. This remains a private backend foundation: operation coverage, exceptional paths, event byte limits, and GNU/musl target validation must be completed before the command family can expose it as a complete tracer.
 
-The private command module currently has Linux implementations of `record`, `assetcov`, `latencylab`, `min-repro`, and `fbreak`, plus platform-neutral `compare`. It is deliberately not composed into `clibox` while `autowatch`, macOS/Windows tracing, and remaining validation are incomplete. Integration tests may invoke the private module directly; no release or user-facing availability is implied.
+The private command module currently has Linux implementations of `record`, `assetcov`, `latencylab`, `min-repro`, `fbreak`, and an initial `autowatch` path, plus platform-neutral `compare`. It is deliberately not composed into `clibox` while macOS/Windows tracing and remaining validation are incomplete. Integration tests may invoke the private module directly; no release or user-facing availability is implied.
 
 ## Record and analysis
 
@@ -27,6 +27,8 @@ The Linux reproduction path copies eligible selected regular files before execut
 ## Workflow semantics
 
 - `autowatch` runs once immediately, then watches observed project inputs, directory queries, and absent paths. It runs serially, debounces by 200 ms by default, replaces dependencies after success, unions new dependencies after child failure, and rejects an empty or unsafe watch set. Confirmed self-writes alone cannot trigger a rerun.
+
+The current Linux watch path installs a temporary recursive discovery watch during each child execution and replaces an idle watch with nonrecursive anchors of observed dependencies. It has real-process tests for changed and newly created inputs. A path with both an observed child write and an overlapping native change event is classified as ambiguous and fails instead of claiming that the child alone caused it; causal self-write suppression remains to be completed.
 - `assetcov` fixes the selected existing-file denominator before execution. Only a successful positive-byte read, or a successful EOF read of an initially empty file, covers a file. It deduplicates resolved aliases and preserves child failure separately from a threshold failure.
 - `compare` accepts only complete compatible records, compares project-relative paths across roots, separates external accesses, and gates only added/removed files and changed operation kinds when requested. Counts and timing remain informational.
 - `latencylab` alternates equally traced baseline and delayed runs, three pairs by default. Delay occurs before selected operations on their calling threads. It reports requested delay, observed injection, operation time, and execution time separately, stopping at the first failed execution.

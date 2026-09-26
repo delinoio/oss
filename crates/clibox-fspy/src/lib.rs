@@ -9,6 +9,9 @@ pub mod coverage;
 pub mod record;
 
 #[cfg(target_os = "linux")]
+pub mod watch;
+
+#[cfg(target_os = "linux")]
 pub mod repro;
 
 #[cfg(target_os = "linux")]
