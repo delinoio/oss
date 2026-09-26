@@ -82,6 +82,9 @@ func (s *Service) PublishExecution(ctx context.Context, req *connect.Request[pb.
 		if ir.SessionID != sr.ID || queued.ExecutionID != input.ExecutionID || queued.NativeRequestID != input.TurnRequestID || queued.Prompt != input.Input.Prompt || queued.Mode != input.Input.Mode || (queued.Delivery != domain.InputClaimed && queued.Delivery != domain.InputAccepted && queued.Delivery != domain.InputUncertain) {
 			return nil, executionEventConflict()
 		}
+		if err := validateNativeMessageOrigin(input, event); err != nil {
+			return nil, err
+		}
 		if err := applyExecutionEvent(tx, jobRecord, input, actor.DeviceID, sr, &session, ir, &queued, event); err != nil {
 			return nil, err
 		}
@@ -118,9 +121,27 @@ func supportsExecutionPublication(input domain.ExecutionJobInput, kind domain.Ex
 	case domain.Codex:
 		return true
 	case domain.OpenCode:
-		return (kind == domain.ExecutionThreadBound || kind == domain.ExecutionInputAccepted) && len(executionAPIOperations(input, domain.OpenAIChat)) != 0
+		return (kind == domain.ExecutionThreadBound || kind == domain.ExecutionInputAccepted || kind == domain.ExecutionMessageStarted || kind == domain.ExecutionTextAppended || kind == domain.ExecutionMessageCompleted) && len(executionAPIOperations(input, domain.OpenAIChat)) != 0
 	}
 	return false
+}
+
+// OpenCode transcript records represent individual native text parts. Preserve
+// their parent message explicitly instead of flattening several parts into a
+// fabricated message identity or using the assistant as the execution turn.
+func validateNativeMessageOrigin(input domain.ExecutionJobInput, event domain.ExecutionEvent) error {
+	message := event.Message
+	if message == nil {
+		return nil
+	}
+	if input.Configuration.Harness == domain.OpenCode {
+		if domain.NativeIdentity(message.NativeID).Validate(domain.OpenCode, domain.NativePartIdentity) != nil || domain.NativeIdentity(message.NativeParentID).Validate(domain.OpenCode, domain.NativeMessageIdentity) != nil || message.Phase != nil || (message.Role == domain.UserMessage && message.NativeParentID != event.NativeTurnID) || (message.Role == domain.AssistantMessage && message.NativeParentID == event.NativeTurnID) {
+			return executionEventConflict()
+		}
+	} else if message.NativeParentID != "" {
+		return executionEventConflict()
+	}
+	return nil
 }
 
 func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJobInput, actor domain.ID, sr store.Record, session *domain.Session, ir store.Record, queued *domain.QueuedInput, event domain.ExecutionEvent) error {
@@ -346,7 +367,7 @@ func publishExecutionMessage(tx *store.Tx, input domain.ExecutionJobInput, sessi
 	var value domain.ExecutionMessage
 	var revision uint64
 	if event.Kind == domain.ExecutionMessageStarted {
-		value = domain.ExecutionMessage{ExecutionID: input.ExecutionID, NativeThreadID: event.NativeThreadID, NativeTurnID: event.NativeTurnID, NativeID: update.NativeID, Role: update.Role, Phase: update.Phase, InputID: update.InputID, Text: update.Text, State: domain.MessageStreaming, FirstSequence: event.Sequence}
+		value = domain.ExecutionMessage{ExecutionID: input.ExecutionID, NativeThreadID: event.NativeThreadID, NativeTurnID: event.NativeTurnID, NativeID: update.NativeID, NativeParentID: update.NativeParentID, Role: update.Role, Phase: update.Phase, InputID: update.InputID, Text: update.Text, State: domain.MessageStreaming, FirstSequence: event.Sequence}
 	} else {
 		r, err := tx.Get(domain.MessageKind, update.ID)
 		if err != nil {
@@ -357,7 +378,7 @@ func publishExecutionMessage(tx *store.Tx, input domain.ExecutionJobInput, sessi
 			return err
 		}
 		phaseMatches := value.Phase == nil || (update.Phase != nil && *value.Phase == *update.Phase)
-		if r.SessionID != session.ID || value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeID != update.NativeID || value.Role != update.Role || value.InputID != update.InputID || !phaseMatches || value.State != domain.MessageStreaming {
+		if r.SessionID != session.ID || value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeID != update.NativeID || value.NativeParentID != update.NativeParentID || value.Role != update.Role || value.InputID != update.InputID || !phaseMatches || value.State != domain.MessageStreaming {
 			return executionEventConflict()
 		}
 		revision = r.Revision

@@ -81,3 +81,5 @@
 - DeliDev pricing RPCs are owner/client-only with actor-bound exact receipts and independent pricing revisions. Keep nullable decimal rates, immutable historical source/date/currency/mode/exclusions, separate per-currency amounts and category evidence. A retry returns its accepted version without reselecting it, and estimates never establish actual spend or complete native telemetry.
 
 - DeliDev SessionService budget reads/writes are owner/client-only, revision-bound and transactionally authorized. Keep optional decimal-string budgets, explicit oneof removal, exact actor-bound current-state receipts, lifetime per-currency evidence and incomplete coverage. The typed budget_reached failed precondition cannot consume pending input or cancel accepted execution.
+
+- DeliDev normalized OpenCode text JSON keeps the original part ID and an immutable native_parent_id message owner, separately from the original input turn. Other current profiles omit/reject that field; preserve historical Codex encoding and unchanged protobuf envelopes. Text-part support cannot grant rich-event, terminal or continuation authority.

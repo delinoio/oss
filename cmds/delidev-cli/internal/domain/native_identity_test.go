@@ -6,6 +6,30 @@ import (
 	"testing"
 )
 
+func TestOpenCodeMessagePartAndArrivalNamespacesStayDistinct(t *testing.T) {
+	for _, test := range []struct {
+		kind   NativeIdentityKind
+		prefix string
+	}{
+		{NativeMessageIdentity, "msg_"}, {NativePartIdentity, "prt_"}, {NativeEventIdentity, "evt_"},
+	} {
+		identity := NativeIdentity(test.prefix + "01960dcbe1faABCDEFGHIJKLMN")
+		if identity.Validate(OpenCode, test.kind) != nil {
+			t.Fatal("original native content identity was rejected")
+		}
+		for _, kind := range []NativeIdentityKind{NativeThreadIdentity, NativeMessageIdentity, NativePartIdentity, NativeEventIdentity} {
+			if kind != test.kind && identity.Validate(OpenCode, kind) == nil {
+				t.Fatal("native identity escaped its original namespace")
+			}
+		}
+		for _, harness := range []Harness{Codex, ClaudeCode, GrokBuild} {
+			if identity.Validate(harness, test.kind) == nil || NativeIdentity(NewID()).Validate(harness, test.kind) == nil {
+				t.Fatal("native content support granted another harness's identity profile")
+			}
+		}
+	}
+}
+
 func TestNativeCompletionPreservesSelectedHarnessIdentityFormat(t *testing.T) {
 	turn := NativeIdentity("93ce72f1-5a6e-4181-9b3d-219cbb424a24")
 	completion := ExecutionCompletion{Version: 2, ExecutionID: NewID(), InputID: NewID(), NativeThreadID: NativeIdentity(NewID()), NativeTurnID: turn, LastSequence: 3, Outcome: ExecutionSucceeded, CleanupVerified: true, NativeCheckpointDigest: strings.Repeat("ab", 32)}

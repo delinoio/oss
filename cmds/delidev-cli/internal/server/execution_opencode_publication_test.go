@@ -35,10 +35,10 @@ func TestOpenCodePublicationRetainsOnlyOriginalBindings(t *testing.T) {
 			if err != nil || session.Execution == nil || session.Execution.NativeThreadID != string(f.thread) || session.Execution.NativeTurnID != string(f.turn) || session.Execution.LastSequence != 2 || session.PendingInputs != 0 || session.PendingInputBytes != 0 || session.Execution.Observed.ValidateForInput(f.input.Configuration, mode) != nil {
 				t.Fatal("OpenCode publication lost exact ownership/settings or duplicated queue accounting")
 			}
-			for _, kind := range []domain.ExecutionEventKind{domain.ExecutionMessageStarted, domain.ExecutionTurnFinished} {
+			for _, kind := range []domain.ExecutionEventKind{domain.ExecutionNoticeObserved, domain.ExecutionTurnFinished} {
 				event := f.event(kind, 3)
-				if kind == domain.ExecutionMessageStarted {
-					event.Message = &domain.ExecutionMessageUpdate{ID: domain.NewID(), NativeID: "original-user-part", Role: domain.UserMessage, InputID: f.input.InputID, Text: f.input.Input.Prompt}
+				if kind == domain.ExecutionNoticeObserved {
+					event.Notice = domain.NativeWarning
 				} else {
 					event.Outcome = domain.ExecutionSucceeded
 				}
@@ -131,5 +131,58 @@ func TestLateOpenCodeAcceptanceCannotClearRecoveryOrAuthorizeRelay(t *testing.T)
 	if lease, err := f.service.executionAuthority.Acquire(context.Background(), f.token); err == nil {
 		lease.Release()
 		t.Fatal("late original acceptance restored revoked execution authority")
+	}
+}
+
+func TestOpenCodeTranscriptRetainsSeparatePartAndParentOwnership(t *testing.T) {
+	f := newOpenCodePublicationFixture(t, domain.ExecuteMode)
+	f.publish(t, f.event(domain.ExecutionThreadBound, 1))
+	f.publish(t, f.event(domain.ExecutionInputAccepted, 2))
+	parent := "msg_01960dcbe1fbABCDEFGHIJKLMN"
+	message := domain.ExecutionMessageUpdate{ID: domain.NewID(), NativeID: "prt_01960dcbe1fbABCDEFGHIJKLMN", NativeParentID: parent, Role: domain.AssistantMessage, Text: "original"}
+	start := f.event(domain.ExecutionMessageStarted, 3)
+	start.Message = &message
+	f.publish(t, start)
+	for _, name := range []string{"parent", "part", "namespace", "phase", "user-owner"} {
+		bad := message
+		bad.Text = " addition"
+		switch name {
+		case "parent":
+			bad.NativeParentID = "msg_01960dcbe1fcABCDEFGHIJKLMN"
+		case "part":
+			bad.NativeID = "prt_01960dcbe1fcABCDEFGHIJKLMN"
+		case "namespace":
+			bad.NativeParentID = string(f.thread)
+		case "phase":
+			phase := domain.FinalMessage
+			bad.Phase = &phase
+		case "user-owner":
+			bad.NativeParentID = string(f.turn)
+		}
+		event := f.event(domain.ExecutionTextAppended, 4)
+		event.Message = &bad
+		if _, err := f.call(f.requestEvent(t, event)); err == nil {
+			t.Fatal("changed native parent/part acquired transcript ownership", name)
+		}
+	}
+	delta := message
+	delta.Text = " addition"
+	event := f.event(domain.ExecutionTextAppended, 4)
+	event.Message = &delta
+	request := f.publish(t, event)
+	if response, err := f.call(request); err != nil || !response.Msg.Replayed {
+		t.Fatal("text retry lost its exact original receipt")
+	}
+	message.Text += delta.Text
+	event = f.event(domain.ExecutionMessageCompleted, 5)
+	event.Message = &message
+	f.publish(t, event)
+	r, err := f.service.Store.Get(context.Background(), domain.MessageKind, message.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	retained, err := store.Decode[domain.ExecutionMessage](r)
+	if err != nil || retained.NativeParentID != parent || retained.NativeID != message.NativeID || retained.Text != "original addition" || retained.State != domain.MessageComplete || retained.FirstSequence != 3 || retained.LastSequence != 5 {
+		t.Fatal("transcript lost original part ownership or duplicated a delta")
 	}
 }

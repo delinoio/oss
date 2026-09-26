@@ -14,15 +14,18 @@ type NativeIdentity string
 type NativeIdentityKind string
 
 const (
-	NativeThreadIdentity NativeIdentityKind = "thread"
-	NativeTurnIdentity   NativeIdentityKind = "turn"
+	NativeThreadIdentity  NativeIdentityKind = "thread"
+	NativeTurnIdentity    NativeIdentityKind = "turn"
+	NativeMessageIdentity NativeIdentityKind = "message"
+	NativePartIdentity    NativeIdentityKind = "part"
+	NativeEventIdentity   NativeIdentityKind = "event"
 )
 
 func (id NativeIdentity) Validate(harness Harness, kind NativeIdentityKind) error {
 	invalid := func() error {
 		return Fail(RecoveryRequired, "The original native identity does not match its selected harness profile.", "Retain the exact native session and turn identity; do not replace or reinterpret it.")
 	}
-	if kind != NativeThreadIdentity && kind != NativeTurnIdentity {
+	if kind != NativeThreadIdentity && kind != NativeTurnIdentity && (harness != OpenCode || kind != NativeMessageIdentity && kind != NativePartIdentity && kind != NativeEventIdentity) {
 		return invalid()
 	}
 	switch harness {
@@ -45,11 +48,17 @@ func (id NativeIdentity) Validate(harness Harness, kind NativeIdentityKind) erro
 		}
 	case OpenCode:
 		prefix := "ses_"
-		if kind == NativeTurnIdentity {
+		if kind == NativeTurnIdentity || kind == NativeMessageIdentity {
 			// OpenCode has no separate turn UUID. The original claimed input's
 			// message owns this execution boundary, even across successor
 			// assistant messages. Format alone cannot prove that ownership.
 			prefix = "msg_"
+		}
+		if kind == NativePartIdentity {
+			prefix = "prt_"
+		}
+		if kind == NativeEventIdentity {
+			prefix = "evt_"
 		}
 		value := string(id)
 		if len(value) != len(prefix)+26 || !strings.HasPrefix(value, prefix) {

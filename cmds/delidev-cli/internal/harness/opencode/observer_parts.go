@@ -160,7 +160,7 @@ func (o *inputObserver) tool(value NativePart, old *observedPart) error {
 	return nil
 }
 
-func (o *inputObserver) delta(fields map[string]json.RawMessage) (*nativeDelta, error) {
+func (o *inputObserver) delta(fields map[string]json.RawMessage) (*NativeTextDelta, error) {
 	messageID, valid := boundedString(fields["messageID"], 30, true)
 	partID, ok := boundedString(fields["partID"], 30, true)
 	text, good := boundedString(fields["delta"], maxHTTPBody, false)
@@ -173,7 +173,7 @@ func (o *inputObserver) delta(fields map[string]json.RawMessage) (*nativeDelta, 
 		return nil, eventBound()
 	}
 	part.text += text
-	return &nativeDelta{MessageID: messageID, PartID: partID, Text: text}, nil
+	return &NativeTextDelta{MessageID: messageID, PartID: partID, Text: text}, nil
 }
 
 // Step and assistant observations overlap, so this equality only verifies the

@@ -128,12 +128,13 @@ func (o ObservedExecutionSettings) ValidateForInput(configuration ExecutionConfi
 }
 
 type ExecutionMessageUpdate struct {
-	ID       ID            `json:"id"`
-	NativeID string        `json:"native_id"`
-	Role     MessageRole   `json:"role"`
-	Phase    *MessagePhase `json:"phase,omitempty"`
-	InputID  ID            `json:"input_id,omitempty"`
-	Text     string        `json:"text"`
+	ID             ID            `json:"id"`
+	NativeID       string        `json:"native_id"`
+	NativeParentID string        `json:"native_parent_id,omitempty"`
+	Role           MessageRole   `json:"role"`
+	Phase          *MessagePhase `json:"phase,omitempty"`
+	InputID        ID            `json:"input_id,omitempty"`
+	Text           string        `json:"text"`
 }
 
 // ExecutionEvent is a closed normalized Worker publication, not a native wire
@@ -262,6 +263,9 @@ func (e ExecutionEvent) Validate() error {
 		if err := Text(m.NativeID, "native message identity", 1024, true); err != nil {
 			return err
 		}
+		if err := Text(m.NativeParentID, "native parent message identity", 1024, false); err != nil {
+			return err
+		}
 		if err := Text(m.Text, "native message text", MaxMessageText, false); err != nil {
 			return err
 		}
@@ -345,6 +349,7 @@ type ExecutionMessage struct {
 	NativeThreadID string             `json:"native_thread_id"`
 	NativeTurnID   string             `json:"native_turn_id"`
 	NativeID       string             `json:"native_id"`
+	NativeParentID string             `json:"native_parent_id,omitempty"`
 	Role           MessageRole        `json:"role"`
 	Phase          *MessagePhase      `json:"phase,omitempty"`
 	InputID        ID                 `json:"input_id,omitempty"`

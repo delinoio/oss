@@ -38,6 +38,7 @@ type OpenCodeBindingPublisher struct {
 	requested      openCodeRequestedSettings
 	creationClaim  opencode.SessionClaim
 	inputClaim     opencode.SessionClaim
+	textAttached   bool
 }
 
 // OpenOpenCodeBindingPublisher owns a fresh mutation journal for this original

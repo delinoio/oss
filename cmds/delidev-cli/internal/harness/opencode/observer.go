@@ -31,9 +31,9 @@ const (
 type inputObservation struct {
 	EventID            string
 	Kind               EventKind
-	Message            *NativeMessage `json:"-"`
-	Part               *NativePart    `json:"-"`
-	Delta              *nativeDelta   `json:"-"`
+	Message            *NativeMessage   `json:"-"`
+	Part               *NativePart      `json:"-"`
+	Delta              *NativeTextDelta `json:"-"`
 	Error              *NativeError
 	Repeated           bool
 	MessageFinalized   bool
@@ -44,7 +44,9 @@ type inputObservation struct {
 	AlwaysObservations []string
 }
 
-type nativeDelta struct {
+// NativeTextDelta preserves the original message and part owner. Its text is
+// private observation content, never a serialized diagnostic field.
+type NativeTextDelta struct {
 	MessageID string
 	PartID    string
 	Text      string `json:"-"`
