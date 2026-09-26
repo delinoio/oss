@@ -602,7 +602,10 @@ mod tests {
             &AtomicBool::new(false),
         );
         assert!(matches!(result, Err(CaptureFailure::DescendantSurvived)));
-        assert!(began.elapsed() < Duration::from_secs(5));
+        // This measures injection startup as well as the owned-group cleanup.
+        // The ten-second execution deadline plus forced cleanup confirmation
+        // can legitimately exceed five seconds under a loaded test runner.
+        assert!(began.elapsed() < Duration::from_secs(16));
     }
 
     #[test]
