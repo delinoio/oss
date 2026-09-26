@@ -379,6 +379,14 @@ fn diagnostic(classification: &str, action: &'static str) -> i32 {
     1
 }
 
+fn gated_status(quiet: bool, classification: &'static str, action: &'static str) -> i32 {
+    if quiet {
+        diagnostic(classification, action)
+    } else {
+        1
+    }
+}
+
 fn invalid_argument(classification: &'static str, action: &'static str) -> i32 {
     tracing::error!(
         command = action,
@@ -672,7 +680,7 @@ fn compare(args: CompareArgs) -> i32 {
         }
     }
     if args.fail_on_change && difference.gated_change() {
-        1
+        gated_status(args.quiet, "comparison_changed", "compare")
     } else {
         0
     }
@@ -1442,7 +1450,7 @@ fn assetcov(args: AssetcovArgs) -> i32 {
         .fail_under
         .is_some_and(|threshold| report.fails_threshold(threshold))
     {
-        1
+        gated_status(args.quiet, "coverage_below_threshold", "assetcov")
     } else {
         0
     }
@@ -3154,7 +3162,7 @@ fn macos_assetcov(args: AssetcovArgs) -> i32 {
         .fail_under
         .is_some_and(|threshold| report.fails_threshold(threshold))
     {
-        1
+        gated_status(args.quiet, "coverage_below_threshold", "assetcov")
     } else {
         0
     }
@@ -3395,7 +3403,7 @@ fn windows_assetcov(args: AssetcovArgs) -> i32 {
         .fail_under
         .is_some_and(|threshold| report.fails_threshold(threshold))
     {
-        1
+        gated_status(args.quiet, "coverage_below_threshold", "assetcov")
     } else {
         0
     }
