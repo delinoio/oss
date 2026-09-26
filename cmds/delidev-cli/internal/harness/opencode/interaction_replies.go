@@ -29,6 +29,7 @@ type observedInteraction struct {
 	value              NativeInteraction
 	raw                []byte
 	arrival            string
+	replyEvent         string
 	closed             bool
 	attempt            *interactionAttempt
 	rejected           bool
@@ -141,6 +142,7 @@ func (o *inputObserver) interactionReply(event NativeEvent) (*NativeInteractionR
 		slices.Sort(interaction.rejectionSources)
 		slices.Sort(interaction.alwaysObservations)
 		interaction.closed, interaction.rejected = true, value.Rejected
+		interaction.replyEvent = event.ID
 		interaction.canceled = false
 		return &value, nil
 	}
@@ -177,6 +179,7 @@ func (o *inputObserver) interactionReply(event NativeEvent) (*NativeInteractionR
 		return nil, observerProblem()
 	}
 	interaction.closed = true
+	interaction.replyEvent = event.ID
 	interaction.canceled = false
 	interaction.rejected = value.Rejected
 	interaction.alwaysAccepted = value.Decision != nil && *value.Decision == PermissionAlways

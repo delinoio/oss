@@ -56,11 +56,15 @@ func openCodeContinuationToolArguments(tool, path string) string {
 func serveOpenCodeContinuationTool(t *testing.T, w http.ResponseWriter, tool, path string, ids ...string) {
 	t.Helper()
 	callID := continuationToolCall
-	if len(ids) == 1 {
-		callID = ids[0]
+	if len(ids) == 0 {
+		ids = []string{callID}
 	}
 	w.Header().Set("Content-Type", "text/event-stream")
-	delta := map[string]any{"role": "assistant", "tool_calls": []any{map[string]any{"index": 0, "id": callID, "type": "function", "function": map[string]any{"name": tool, "arguments": openCodeContinuationToolArguments(tool, path)}}}}
+	calls := []any{}
+	for index, id := range ids {
+		calls = append(calls, map[string]any{"index": index, "id": id, "type": "function", "function": map[string]any{"name": tool, "arguments": openCodeContinuationToolArguments(tool, path)}})
+	}
+	delta := map[string]any{"role": "assistant", "tool_calls": calls}
 	for _, chunk := range []map[string]any{
 		{"id": "chatcmpl-original-tool", "object": "chat.completion.chunk", "created": 1, "model": "fixture-model", "choices": []any{map[string]any{"index": 0, "delta": delta, "finish_reason": nil}}},
 		{"id": "chatcmpl-original-tool", "object": "chat.completion.chunk", "created": 1, "model": "fixture-model", "choices": []any{map[string]any{"index": 0, "delta": map[string]any{}, "finish_reason": "tool_calls"}}, "usage": map[string]any{"prompt_tokens": 20, "completion_tokens": 4, "total_tokens": 24}},
@@ -121,7 +125,7 @@ func verifyOpenCodeContinuationTool(t *testing.T, raw []byte, tool, path string)
 	return result
 }
 
-func verifyOpenCodeRepeatedRead(t *testing.T, raw []byte, path string, expected int) map[string]string {
+func verifyOpenCodeRepeatedRead(t *testing.T, raw []byte, path string, expected int, originalCounts ...int) map[string]string {
 	t.Helper()
 	var body struct {
 		Messages []struct {
@@ -139,6 +143,11 @@ func verifyOpenCodeRepeatedRead(t *testing.T, raw []byte, path string, expected 
 		return nil
 	}
 	results := map[string]string{}
+	proposalIDs := map[string]int{}
+	originalCount := 1
+	if len(originalCounts) == 1 {
+		originalCount = originalCounts[0]
+	}
 	proposals := 0
 	for _, message := range body.Messages {
 		for _, call := range message.Calls {
@@ -148,16 +157,17 @@ func verifyOpenCodeRepeatedRead(t *testing.T, raw []byte, path string, expected 
 			if message.Role != "assistant" || call.ID != fmt.Sprintf("%s_%d", continuationToolCall, proposals) || call.Function.Name != "read" || json.Unmarshal([]byte(call.Function.Arguments), &args) != nil || args.FilePath != path {
 				t.Error("changed remembered Read proposal")
 			}
+			proposalIDs[call.ID] = proposals
 			proposals++
 		}
 		if message.Role == "tool" {
-			index := len(results)
+			index, found := proposalIDs[message.CallID]
 			var result string
 			want := "original-inline-tool-sentinel"
-			if index > 0 {
+			if index >= originalCount {
 				want = "changed-source-after-original-tool"
 			}
-			if index >= proposals || message.CallID != fmt.Sprintf("%s_%d", continuationToolCall, index) || json.Unmarshal(message.Content, &result) != nil || !strings.Contains(result, want) {
+			if !found || index >= proposals || results[message.CallID] != "" || json.Unmarshal(message.Content, &result) != nil || !strings.Contains(result, want) {
 				t.Error("lost or replayed remembered Read result")
 			}
 			results[message.CallID] = result

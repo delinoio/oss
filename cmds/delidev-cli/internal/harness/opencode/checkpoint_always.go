@@ -30,13 +30,13 @@ func (o *inputObserver) checkpointAlways(value *observedInteraction) (checkpoint
 }
 
 func validCheckpointPermissionProfile(p *checkpointToolHistory) bool {
-	if p.InteractionFree || len(p.Once)+len(p.Always) > maxObservedInteractions {
+	if p.InteractionFree || len(p.Once)+len(p.Always)+len(p.Policy) > maxObservedInteractions {
 		return false
 	}
 	if p.Version == 2 {
-		return len(p.Once) != 0 && len(p.Always) == 0 && p.AppliedAlways == 0
+		return len(p.Once) != 0 && len(p.Always) == 0 && len(p.Policy) == 0 && p.AppliedAlways == 0
 	}
-	if p.Version != 3 || len(p.Always) == 0 || p.AppliedAlways > uint32(len(p.Always)) {
+	if (p.Version != 3 && p.Version != 4) || (p.Version == 4) != (len(p.Policy) != 0) || len(p.Always) == 0 || p.AppliedAlways > uint32(len(p.Always)) {
 		return false
 	}
 	rules := 0

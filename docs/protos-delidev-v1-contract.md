@@ -179,3 +179,6 @@ The private OpenCode tool-proof version 2 additionally admits exact originally a
 
 
 Private OpenCode tool-proof version 3 additionally binds confirmed direct Read `always` claims, exact ordered native allowance rules and their already-materialized prefix. The existing predecessor-bound resume claim owns the native append; public protobuf/approval/completion envelopes remain unchanged. Completion recovery stays read-only, and failed native append responses grant neither retry nor continuation authority.
+
+
+Private OpenCode tool-proof version 4 additionally retains original automatic Read policy closures and their independently verified direct source context. This introduces no protobuf or public response/claim shape change. Existing `opencode_closure` documents remain distinct from direct accepted approvals and are not republished or rewritten during replacement or completed-report recovery.

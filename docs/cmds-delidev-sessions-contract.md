@@ -311,3 +311,6 @@ Completed one-time OpenCode permissions may now accompany eligible inline Read/S
 
 
 Direct accepted Read `always` decisions now survive eligible General Chat process replacement and mode changes. The original checkpoint retains exact ordered allowances and the materialized prefix; Resume uses the original durable restoration claim to append only missing rules through the native session API, then independently verifies native metadata and complete history. Product configuration, original approval/inbox state and prior input settings are preserved. Completed-report recovery never changes native rules; uncertain/lost restoration replies cannot be retried or converted into successful input.
+
+
+Original automatic Read closures can now accompany those direct remembered allowances. The private version-4 tool proof retains each original proposal/closure and its prior same-input direct acceptance context, without another response claim or inferred target acceptance. Subsequent processes and completed-report recovery preserve both original product records unchanged; only the existing direct rule suffix can be materialized. Other automatic permission families remain gated.

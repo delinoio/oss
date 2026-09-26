@@ -26,6 +26,7 @@ type checkpointToolPart struct {
 // Native v1 remembered permissions are process-local. Version 2 admits only
 // independently accepted one-time permissions, which retain no allowance.
 // Version 3 preserves exact observed Read allowances and their applied prefix.
+// Version 4 additionally retains original automatic Read policy closures.
 type checkpointToolHistory struct {
 	Version         uint32                       `json:"version"`
 	InteractionFree bool                         `json:"interaction_free"`
@@ -33,6 +34,7 @@ type checkpointToolHistory struct {
 	Once            []SessionClaim               `json:"once_permissions,omitempty"`
 	Always          []checkpointAlwaysPermission `json:"always_permissions,omitempty"`
 	AppliedAlways   uint32                       `json:"applied_always,omitempty"`
+	Policy          []checkpointPolicyPermission `json:"policy_permissions,omitempty"`
 }
 
 func validCheckpointTools(value nativeCheckpoint) bool {
@@ -83,6 +85,10 @@ func (s *sessionAPI) checkpointToolHistory(value nativeCheckpoint) *checkpointTo
 				original.Rules = slices.Clone(original.Rules)
 				proof.Always = append(proof.Always, original)
 			}
+			for _, original := range s.predecessor.Tools.Policy {
+				original.Sources = slices.Clone(original.Sources)
+				proof.Policy = append(proof.Policy, original)
+			}
 		}
 	}
 	always := map[string]checkpointAlwaysPermission{}
@@ -93,6 +99,14 @@ func (s *sessionAPI) checkpointToolHistory(value nativeCheckpoint) *checkpointTo
 				return nil
 			}
 			always[id] = approval
+			continue
+		}
+		if interaction != nil && len(interaction.alwaysObservations) != 0 {
+			policy, valid := o.checkpointPolicy(interaction)
+			if !valid {
+				return nil
+			}
+			proof.Policy = append(proof.Policy, policy)
 			continue
 		}
 		claim, valid := o.checkpointOnce(interaction)
@@ -125,6 +139,10 @@ func (s *sessionAPI) checkpointToolHistory(value nativeCheckpoint) *checkpointTo
 			return nil
 		}
 		proof.Version, proof.InteractionFree, proof.AppliedAlways = 3, false, s.restoredAlways
+	}
+	if len(proof.Policy) != 0 {
+		proof.Version, proof.InteractionFree = 4, false
+		slices.SortFunc(proof.Policy, func(a, b checkpointPolicyPermission) int { return strings.Compare(a.InteractionID, b.InteractionID) })
 	}
 	for _, message := range value.History.Messages {
 		for _, part := range message.Parts {

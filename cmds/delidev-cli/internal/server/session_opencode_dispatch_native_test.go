@@ -59,6 +59,10 @@ func TestManualNativeOpenCodePublicAlwaysPermissionContinuation(t *testing.T) {
 	nativeOpenCodePublicDispatchProfile(t, 3, false, "", "read-always", true)
 }
 
+func TestManualNativeOpenCodePublicPolicyPermissionContinuation(t *testing.T) {
+	nativeOpenCodePublicDispatchProfile(t, 3, false, "", "read-cascade", true)
+}
+
 func TestManualNativeOpenCodePublicInlineToolContinuation(t *testing.T) {
 	for _, tool := range []string{"read", "bash"} {
 		t.Run(tool, func(t *testing.T) { nativeOpenCodePublicDispatchProfile(t, 3, false, "", tool, true) })
@@ -70,8 +74,13 @@ func nativeOpenCodePublicDispatch(t *testing.T, turns int, failedFirst bool, fau
 }
 
 func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bool, fault, tool string, switchModes ...bool) {
-	permission := tool == "read-once" || tool == "read-always"
-	always := tool == "read-always"
+	cascade := tool == "read-cascade"
+	permission := tool == "read-once" || tool == "read-always" || cascade
+	always := tool == "read-always" || cascade
+	permissionCount := 1
+	if cascade {
+		permissionCount = 2
+	}
 	if permission {
 		tool = "read"
 	}
@@ -141,8 +150,11 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 				providerTurn := int(calls.Load())
 				if always {
 					completeTools := providerTurn / 2
+					if cascade && providerTurn > 1 {
+						completeTools++
+					}
 					providerTurn = (providerTurn + 1) / 2
-					results := verifyOpenCodeRepeatedRead(t, raw, toolPath.Load().(string), completeTools)
+					results := verifyOpenCodeRepeatedRead(t, raw, toolPath.Load().(string), completeTools, permissionCount)
 					for id, result := range results {
 						if old, found := retainedTools[id]; found && old != result {
 							t.Error("replacement altered original remembered Read result")
@@ -150,7 +162,11 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 						retainedTools[id] = result
 					}
 					if calls.Load()%2 == 1 {
-						serveOpenCodeContinuationTool(t, w, tool, toolPath.Load().(string), fmt.Sprintf("%s_%d", continuationToolCall, providerTurn-1))
+						ids := []string{fmt.Sprintf("%s_%d", continuationToolCall, completeTools)}
+						if cascade && providerTurn == 1 {
+							ids = append(ids, fmt.Sprintf("%s_1", continuationToolCall))
+						}
+						serveOpenCodeContinuationTool(t, w, tool, toolPath.Load().(string), ids...)
 						return
 					}
 				} else if tool != "" {
@@ -228,7 +244,7 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 			var firstThread domain.NativeIdentity
 			var previous domain.ExecutionCompletion
 			responded := false
-			var originalPermission []byte
+			originalPermissions := map[domain.ID][]byte{}
 			for turn := 0; turn < turns; turn++ {
 				var job domain.Job
 				var input domain.ExecutionJobInput
@@ -241,11 +257,11 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 				for {
 					changed := f.service.Store.Changed()
 					if permission && !responded {
-						rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.InteractionKind, SessionID: domain.ID(f.change.Session.Id), Limit: 2})
-						if err != nil || len(rows) > 1 {
+						rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.InteractionKind, SessionID: domain.ID(f.change.Session.Id), Limit: 3})
+						if err != nil || len(rows) > permissionCount {
 							t.Fatal("unexpected original permission inventory", err)
 						}
-						if len(rows) == 1 {
+						if len(rows) == permissionCount {
 							client := delidevv1connect.NewInteractionServiceClient(http.DefaultClient, f.endpoint.URL)
 							decision := domain.OpenCodePermissionOnce
 							if always {
@@ -316,18 +332,35 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 							}
 						}
 						if permission {
-							rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.InteractionKind, SessionID: domain.ID(f.change.Session.Id), Limit: 2})
-							if err != nil || len(rows) != 1 || !responded {
+							rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.InteractionKind, SessionID: domain.ID(f.change.Session.Id), Limit: 3})
+							if err != nil || len(rows) != permissionCount || !responded {
 								t.Fatal("original permission missing or duplicated")
 							}
-							retained, err := store.Decode[domain.ExecutionInteraction](rows[0])
-							if err != nil || retained.Closure == domain.InteractionOpen || retained.ApprovalResponse == nil || retained.ApprovalResponse.State != domain.ApprovalResponseAccepted {
-								t.Fatal("original permission acceptance lost")
+							direct, policy := 0, 0
+							for _, row := range rows {
+								retained, err := store.Decode[domain.ExecutionInteraction](row)
+								if err != nil || retained.Closure == domain.InteractionOpen {
+									t.Fatal("original permission closure lost")
+								}
+								if retained.ApprovalResponse != nil {
+									if retained.ApprovalResponse.State != domain.ApprovalResponseAccepted {
+										t.Fatal("original direct acceptance lost")
+									}
+									direct++
+								} else {
+									if !cascade || retained.OpenCodeClosure == nil {
+										t.Fatal("original native policy closure lost")
+									}
+									policy++
+								}
+								if turn == 0 {
+									originalPermissions[row.ID] = bytes.Clone(row.Data)
+								} else if !bytes.Equal(originalPermissions[row.ID], row.Data) {
+									t.Fatal("replacement rewrote original approval or policy closure")
+								}
 							}
-							if turn == 0 {
-								originalPermission = bytes.Clone(rows[0].Data)
-							} else if !bytes.Equal(originalPermission, rows[0].Data) {
-								t.Fatal("replacement rewrote original approval")
+							if direct != 1 || policy != permissionCount-1 {
+								t.Fatal("policy closure acquired a direct response")
 							}
 						}
 						previous = proof

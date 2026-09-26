@@ -41,7 +41,7 @@ func (o *inputObserver) checkpointPermission(value *observedInteraction, decisio
 func validCheckpointOnce(value nativeCheckpoint) bool {
 	p := value.Tools
 	if p.Version == 1 {
-		return p.InteractionFree && len(p.Once) == 0 && len(p.Always) == 0 && p.AppliedAlways == 0
+		return p.InteractionFree && len(p.Once) == 0 && len(p.Always) == 0 && len(p.Policy) == 0 && p.AppliedAlways == 0
 	}
 	if !validCheckpointPermissionProfile(p) {
 		return false
@@ -67,9 +67,11 @@ func validCheckpointOnce(value nativeCheckpoint) bool {
 		names[part.ID] = part.Name
 	}
 	seen := map[string]bool{}
+	always := map[string]SessionClaim{}
 	claims := append([]SessionClaim(nil), p.Once...)
 	for _, approval := range p.Always {
 		claims = append(claims, approval.Claim)
+		always[approval.Claim.InteractionID] = approval.Claim
 	}
 	for index, claim := range claims {
 		body := checkpointOnceBody
@@ -85,6 +87,19 @@ func validCheckpointOnce(value nativeCheckpoint) bool {
 		}
 		requests[claim.RequestID] = true
 		seen[claim.InteractionID], seen[claim.ArrivalID] = true, true
+	}
+	for index, policy := range p.Policy {
+		owner, found := owners[policy.PartID]
+		if !policy.valid() || !found || names[policy.PartID] != checkpointReadTool || owner.request != policy.InputRequestID || owner.message != policy.MessageID || owner.session != policy.SessionID || seen[policy.InteractionID] || seen[policy.ArrivalID] || seen[policy.ReplyEventID] || index > 0 && p.Policy[index-1].InteractionID >= policy.InteractionID {
+			return false
+		}
+		for _, id := range policy.Sources {
+			claim, exists := always[id]
+			if !exists || claim.InputRequestID != policy.InputRequestID || claim.SessionID != policy.SessionID {
+				return false
+			}
+		}
+		seen[policy.InteractionID], seen[policy.ArrivalID], seen[policy.ReplyEventID] = true, true, true
 	}
 	return true
 }

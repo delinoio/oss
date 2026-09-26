@@ -38,7 +38,7 @@ func TestManualNativeOpenCodeCompletedExecutionRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, mode := range []domain.SessionMode{domain.ExecuteMode, domain.PlanMode} {
-		for _, scenario := range []string{"first", "resumed", "switched", "failed", "missing-checkpoint", "read", "bash", "read-once", "read-always", "read-always-resumed"} {
+		for _, scenario := range []string{"first", "resumed", "switched", "failed", "missing-checkpoint", "read", "bash", "read-once", "read-always", "read-always-resumed", "read-cascade", "read-cascade-resumed"} {
 			t.Run(string(mode)+"/"+scenario, func(t *testing.T) { nativeOpenCodeRecovery(t, binary, mode, scenario) })
 		}
 	}
@@ -50,7 +50,12 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 	}
 	tool := ""
 	toolCalls := int64(0)
-	remembered := strings.HasPrefix(scenario, "read-always")
+	cascade := strings.HasPrefix(scenario, "read-cascade")
+	remembered := strings.HasPrefix(scenario, "read-always") || cascade
+	permissionCount := 1
+	if cascade {
+		permissionCount = 2
+	}
 	permission := scenario == "read-once" || remembered
 	if scenario == "read" || scenario == "bash" || permission {
 		tool, toolCalls = scenario, 1
@@ -64,7 +69,7 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 	defer cancel()
 	var calls atomic.Int64
 	lostTurn := int64(1)
-	if scenario == "resumed" || scenario == "switched" || scenario == "read-always-resumed" {
+	if scenario == "resumed" || scenario == "switched" || scenario == "read-always-resumed" || scenario == "read-cascade-resumed" {
 		lostTurn = 2
 	}
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -84,10 +89,21 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 		}
 		if tool != "" {
 			if calls.Load() == 1 {
-				serveOpenCodeContinuationTool(t, w, tool, toolPath.Load().(string))
+				if cascade {
+					serveOpenCodeContinuationTool(t, w, tool, toolPath.Load().(string), continuationToolCall+"_0", continuationToolCall+"_1")
+				} else {
+					serveOpenCodeContinuationTool(t, w, tool, toolPath.Load().(string))
+				}
 				return
 			}
-			result := verifyOpenCodeContinuationTool(t, raw, tool, toolPath.Load().(string))
+			result := ""
+			if cascade {
+				results := verifyOpenCodeRepeatedRead(t, raw, toolPath.Load().(string), 2, 2)
+				encoded, _ := json.Marshal(results)
+				result = string(encoded)
+			} else {
+				result = verifyOpenCodeContinuationTool(t, raw, tool, toolPath.Load().(string))
+			}
 			if originalToolResult == "" {
 				originalToolResult = result
 			} else if result != originalToolResult {
@@ -215,15 +231,15 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 	}
 	assignment := resume()
 
-	var originalPermission []byte
+	originalPermissions := map[domain.ID][]byte{}
 	if permission {
 		for {
 			changed := f.service.Store.Changed()
-			rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.InteractionKind, SessionID: domain.ID(f.change.Session.Id), Limit: 2})
-			if err != nil || len(rows) > 1 {
+			rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.InteractionKind, SessionID: domain.ID(f.change.Session.Id), Limit: 3})
+			if err != nil || len(rows) > permissionCount {
 				t.Fatal("unexpected original permission inventory", err)
 			}
-			if len(rows) == 1 {
+			if len(rows) == permissionCount {
 				client := delidevv1connect.NewInteractionServiceClient(http.DefaultClient, f.endpoint.URL)
 				decision := domain.OpenCodePermissionOnce
 				if remembered {
@@ -255,15 +271,32 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 		t.Fatal("original completion never reached report fault")
 	}
 	if permission {
-		rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.InteractionKind, SessionID: domain.ID(f.change.Session.Id), Limit: 2})
-		if err != nil || len(rows) != 1 {
+		rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.InteractionKind, SessionID: domain.ID(f.change.Session.Id), Limit: 3})
+		if err != nil || len(rows) != permissionCount {
 			t.Fatal("original permission missing")
 		}
-		retained, err := store.Decode[domain.ExecutionInteraction](rows[0])
-		if err != nil || retained.Closure == domain.InteractionOpen || retained.ApprovalResponse == nil || retained.ApprovalResponse.State != domain.ApprovalResponseAccepted {
-			t.Fatal("original permission acceptance missing")
+		direct, policy := 0, 0
+		for _, row := range rows {
+			retained, err := store.Decode[domain.ExecutionInteraction](row)
+			if err != nil || retained.Closure == domain.InteractionOpen {
+				t.Fatal("original permission closure missing")
+			}
+			if retained.ApprovalResponse != nil {
+				if retained.ApprovalResponse.State != domain.ApprovalResponseAccepted {
+					t.Fatal("original permission acceptance missing")
+				}
+				direct++
+			} else {
+				if !cascade || retained.OpenCodeClosure == nil {
+					t.Fatal("original automatic policy closure missing")
+				}
+				policy++
+			}
+			originalPermissions[row.ID] = bytes.Clone(row.Data)
 		}
-		originalPermission = bytes.Clone(rows[0].Data)
+		if direct != 1 || policy != permissionCount-1 {
+			t.Fatal("automatic policy acquired a direct response")
+		}
 	}
 	stop()
 	expire()
@@ -353,9 +386,14 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 		t.Fatal("explicit Resume failed after recovered completion", next.Problem)
 	}
 	if permission {
-		rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.InteractionKind, SessionID: domain.ID(f.change.Session.Id), Limit: 2})
-		if err != nil || len(rows) != 1 || !bytes.Equal(originalPermission, rows[0].Data) {
+		rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.InteractionKind, SessionID: domain.ID(f.change.Session.Id), Limit: 3})
+		if err != nil || len(rows) != permissionCount {
 			t.Fatal("recovery or replacement changed original accepted permission")
+		}
+		for _, row := range rows {
+			if !bytes.Equal(originalPermissions[row.ID], row.Data) {
+				t.Fatal("recovery rewrote original approval or policy closure")
+			}
 		}
 	}
 	t.Log("lost original native report -> joined old Worker -> replacement inspection -> exact paused recovery -> explicit same-session Resume; no inference or mutation replay during recovery")
