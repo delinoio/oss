@@ -1926,6 +1926,27 @@ fn external_native_from_key(bytes: Vec<u8>) -> NativePath {
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+fn generated_before_read(
+    operations: &[record::OperationPair],
+    relative: &NativePath,
+    read_start_sequence: u64,
+) -> bool {
+    operations.iter().any(|write| {
+        write.completion.sequence < read_start_sequence
+            && matches!(
+                write.start.operation,
+                record::Operation::Write | record::Operation::PositionalWrite
+            )
+            && write.completion.native_error.is_none()
+            && write
+                .start
+                .paths
+                .iter()
+                .any(|path| path.project_relative.as_ref() == Some(relative))
+    })
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 fn min_repro(args: MinReproArgs) -> i32 {
     use std::collections::BTreeSet;
     let root = match execution_root(&args.execution) {
@@ -2027,26 +2048,18 @@ fn min_repro(args: MinReproArgs) -> i32 {
                 && pair.start.operation.is_content_read()
                 && pair.completion.native_error.is_none()
             {
-                let Some(relative) = path
-                    .project_relative
-                    .as_ref()
-                    .and_then(repro_relative_native)
-                else {
+                let Some(project_relative) = path.project_relative.as_ref() else {
+                    return diagnostic("reproduction_uncollected_input", "min-repro");
+                };
+                let Some(relative) = repro_relative_native(project_relative) else {
                     return diagnostic("reproduction_uncollected_input", "min-repro");
                 };
                 if !staged_paths.contains(&relative) {
-                    let generated = rerun.operations.iter().any(|earlier| {
-                        earlier.start.monotonic_ns < pair.start.monotonic_ns
-                            && matches!(
-                                earlier.start.operation,
-                                record::Operation::Write | record::Operation::PositionalWrite
-                            )
-                            && earlier.completion.native_error.is_none()
-                            && earlier.start.paths.iter().any(|write_path| {
-                                write_path.project_relative.as_ref()
-                                    == path.project_relative.as_ref()
-                            })
-                    });
+                    let generated = generated_before_read(
+                        &rerun.operations,
+                        project_relative,
+                        pair.start.sequence,
+                    );
                     if !generated {
                         return diagnostic("reproduction_uncollected_input", "min-repro");
                     }
@@ -3652,6 +3665,52 @@ mod tests {
     struct TestCli {
         #[command(subcommand)]
         command: Command,
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    #[test]
+    fn generated_input_uses_global_completion_sequence() {
+        #[cfg(unix)]
+        let relative = NativePath::UnixBytes(b"generated.txt".to_vec());
+        #[cfg(windows)]
+        let relative = NativePath::WindowsUtf16("generated.txt".encode_utf16().collect());
+        let write = record::OperationPair {
+            start: record::Start {
+                sequence: 1,
+                correlation_id: 1,
+                pid: 1,
+                tid: 1,
+                parent_pid: None,
+                operation: record::Operation::Write,
+                paths: vec![record::AccessPath {
+                    class: record::PathClass::Project,
+                    logical: relative.clone(),
+                    resolved: None,
+                    project_relative: Some(relative.clone()),
+                    identity: None,
+                }],
+                path_unavailable: false,
+                descriptor: None,
+                monotonic_ns: 100,
+                requested_delay_ns: 0,
+            },
+            completion: record::Completion {
+                sequence: 4,
+                correlation_id: 1,
+                pid: 1,
+                tid: 1,
+                monotonic_ns: 101,
+                native_result: 1,
+                native_error: None,
+                byte_count: Some(1),
+                observed_delay_ns: 0,
+            },
+        };
+        // A second process can start its clock later and report a lower value.
+        let reader_monotonic_ns = 1;
+        assert!(write.start.monotonic_ns > reader_monotonic_ns);
+        assert!(generated_before_read(&[write.clone()], &relative, 5));
+        assert!(!generated_before_read(&[write], &relative, 3));
     }
 
     #[test]
