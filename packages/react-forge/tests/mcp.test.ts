@@ -216,6 +216,11 @@ test("MCP reports bounded compiler, module and uncaught render diagnostics witho
   assert.ok(!JSON.stringify(unknownExtension).includes(cwd));
 
   const { sessionId } = await peer.call("execute", { code: pdf });
+  const dynamicImport = await errorCode(peer, "execute", { sessionId, code: "export default async () => { await import('./missing-dynamic.js'); };" }, "malformed_input");
+  assert.equal(dynamicImport.error.diagnostics[0].phase, "compile");
+  assert.match(dynamicImport.error.message, /missing-dynamic/);
+  assert.ok(!JSON.stringify(dynamicImport).includes(cwd));
+
   const failed = await errorCode(peer, "execute", { sessionId, code: `import {createElement} from 'react';
     function Broken() { throw Error('PRIVATE-RENDER-DETAIL'); }
     export default async ({session}) => { await session.render(createElement(Broken)); };` }, "render");

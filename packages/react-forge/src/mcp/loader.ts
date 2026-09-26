@@ -124,6 +124,15 @@ export class TaskLoader {
     return typeof error === "string" || this.stackLocation(error).source !== undefined;
   }
 
+  resolutionFailure(error: unknown): TaskError | undefined {
+    if (error instanceof SafeResolutionError) return new TaskError(ErrorCode.MalformedInput, TaskPhase.Compile, error);
+    const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
+    if (resolutionCodes.has(code as string)) {
+      return new TaskError(ErrorCode.MalformedInput, TaskPhase.Compile, new SafeResolutionError(undefined, code as string));
+    }
+    return undefined;
+  }
+
   diagnose(error: unknown): TaskDetails | undefined {
     let phase: TaskPhase;
     let original: unknown;
@@ -158,12 +167,8 @@ export class TaskLoader {
       try { imported = await import(url.href) as { default?: unknown }; }
       catch (error) {
         if (error instanceof ForgeError) throw error;
-        if (error instanceof SafeResolutionError) throw new TaskError(ErrorCode.MalformedInput, TaskPhase.Compile, error);
-        const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
-        if (resolutionCodes.has(code as string)) {
-          throw new TaskError(ErrorCode.MalformedInput, TaskPhase.Compile,
-            error instanceof SafeResolutionError ? error : new SafeResolutionError(undefined, code as string));
-        }
+        const resolution = this.resolutionFailure(error);
+        if (resolution) throw resolution;
         if (this.isCallerException(error)) throw new TaskError(ErrorCode.Render, TaskPhase.Task, error);
         throw new ForgeError(ErrorCode.Render, "Task execution failed. Correct the task and retry.");
       }

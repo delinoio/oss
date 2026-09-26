@@ -106,7 +106,10 @@ export class SessionRuntime {
       if ((returned instanceof DocumentSession || returned instanceof FigmaSession || returned instanceof SceneSession) && !this.sessions.has(returned.documentId)) {
         await returned.dispose().catch(() => {});
       }
-      throw error instanceof ForgeError ? error : this.loader.isCallerException(error)
+      if (error instanceof ForgeError) throw error;
+      const resolution = this.loader.resolutionFailure(error);
+      if (resolution) throw resolution;
+      throw this.loader.isCallerException(error)
         ? new TaskError(ErrorCode.Render, TaskPhase.Task, error)
         : new ForgeError(ErrorCode.Render, "Task execution failed. Correct the task and retry.");
     }
