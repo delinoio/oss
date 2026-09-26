@@ -70,7 +70,15 @@ export class TaskLoader {
       // package scope loses named exports across a synchronous virtual entry.
       const typed = url.startsWith("file:") && /\.(?:tsx?|mts|cts)$/.test(new URL(url).pathname);
       const source = this.sources.get(url) ?? (typed ? readFileSync(new URL(url), "utf8") : undefined);
-      if (source === undefined) return nextLoad(url, context);
+      if (source === undefined) {
+        if (url.startsWith("file:") && context.format === "commonjs") {
+          // tsx's async load hook can return an undefined CommonJS source to
+          // this synchronous chain. Read the resolved URL directly until the
+          // hooks compose; this also covers react/jsx-runtime's CJS children.
+          return { format: "commonjs", source: readFileSync(new URL(url), "utf8"), shortCircuit: true };
+        }
+        return nextLoad(url, context);
+      }
       const path = fileURLToPath(url);
       if (!this.known.has(path)) this.register(path, this.sources.has(url) ? TaskSource.Entry : TaskSource.Import);
       try {
