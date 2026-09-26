@@ -41,12 +41,12 @@ jobs:
       tag: ${{ steps.prepare.outputs.tag }}
       revision: ${{ steps.prepare.outputs.revision }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: main
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
       - name: Validate configuration before committing
@@ -91,12 +91,12 @@ jobs:
     env:
       RELEASE_REVISION: ${{ needs.prepare.outputs.revision }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ needs.prepare.outputs.revision }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
       - name: Validate immutable release source
@@ -105,12 +105,12 @@ jobs:
         run: node scripts/release/project.mjs validate
       - name: Install Rust toolchain
         if: needs.prepare.outputs.kind == 'rust' && inputs.project != 'clibox' && inputs.project != 'pnport'
-        uses: dtolnay/rust-toolchain@v1
+        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
         with:
           toolchain: nightly-2026-01-01
       - name: Cache Rust dependencies
         if: needs.prepare.outputs.kind == 'rust' && inputs.project != 'clibox' && inputs.project != 'pnport'
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - name: Publish only the selected crate
         if: needs.prepare.outputs.kind == 'rust' && inputs.project != 'clibox' && inputs.project != 'pnport'
         env:
@@ -124,12 +124,12 @@ jobs:
     env:
       RELEASE_REVISION: ${{ needs.prepare.outputs.revision }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ needs.prepare.outputs.revision }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
       - name: Create fresh source repository token

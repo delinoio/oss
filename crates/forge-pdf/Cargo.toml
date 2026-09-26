@@ -16,4 +16,4 @@ parley = "=0.9.0"
 ttf-parser = "=0.25.1"
 
 [dev-dependencies]
-lopdf = "0.42.0"
+lopdf = "=0.42.0"

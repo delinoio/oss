@@ -19,17 +19,17 @@ clibox-transform = { path = "../clibox-transform" }
 clibox-wait = { path = "../clibox-wait" }
 
 [dev-dependencies]
-base64 = "0.22.1"
+base64 = "=0.22.1"
 clibox-system = { path = "../clibox-system", features = ["test"] }
-sha2 = "0.10"
-rustls = { version = "0.23.36", default-features = false, features = ["ring", "std", "tls12"] }
-serde_json = "1.0.149"
-tempfile = "3.25.0"
-socket2 = "0.6.2"
-rcgen = "0.14"
+sha2 = "=0.10.9"
+rustls = { version = "=0.23.45", default-features = false, features = ["ring", "std", "tls12"] }
+serde_json = "=1.0.149"
+tempfile = "=3.25.0"
+socket2 = "=0.6.2"
+rcgen = "=0.14.10"
 
 [target.'cfg(unix)'.dev-dependencies]
-libc = "0.2.182"
+libc = "=0.2.182"
 
 [target.'cfg(windows)'.dev-dependencies]
-windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_System_Console", "Win32_System_Threading", "Win32_Storage_FileSystem", "Win32_Security", "Win32_Security_Authorization"] }
+windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_System_Console", "Win32_System_Threading", "Win32_Storage_FileSystem", "Win32_Security", "Win32_Security_Authorization"] }
