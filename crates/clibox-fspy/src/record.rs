@@ -135,8 +135,35 @@ pub struct AccessPath {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum FileIdentity {
-    Inode { device: u64, inode: u64 },
-    Windows { volume: u64, file_id: u128 },
+    Inode {
+        device: u64,
+        inode: u64,
+    },
+    Windows {
+        volume: u64,
+        #[serde(with = "windows_file_id")]
+        file_id: u128,
+    },
+}
+
+mod windows_file_id {
+    use serde::{de::Error as _, Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(value: &u128, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&format!("{value:032x}"))
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u128, D::Error> {
+        let value = String::deserialize(deserializer)?;
+        if value.len() != 32
+            || !value
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        {
+            return Err(D::Error::custom("invalid windows file ID"));
+        }
+        u128::from_str_radix(&value, 16).map_err(D::Error::custom)
+    }
 }
 
 impl From<file_id::FileId> for FileIdentity {
@@ -818,6 +845,24 @@ mod tests {
 
     fn parse_fixture(bytes: &[u8]) -> Result<CompleteRecord, ParseFailure> {
         parse(Cursor::new(bytes), DEFAULT_EVENT_LIMIT, DEFAULT_BYTE_LIMIT)
+    }
+
+    #[test]
+    fn windows_high_resolution_file_identity_round_trips() {
+        let identity = FileIdentity::Windows {
+            volume: 1,
+            file_id: u128::MAX - 7,
+        };
+        let encoded = serde_json::to_vec(&identity).unwrap();
+        assert!(String::from_utf8_lossy(&encoded).contains("fffffffffffffffffffffffffffffff8"));
+        assert_eq!(
+            serde_json::from_slice::<FileIdentity>(&encoded).unwrap(),
+            identity
+        );
+        assert!(serde_json::from_str::<FileIdentity>(
+            r#"{"kind":"windows","volume":1,"file_id":340282366920938463463374607431768211448}"#
+        )
+        .is_err());
     }
 
     #[test]

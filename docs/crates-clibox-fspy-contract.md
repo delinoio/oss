@@ -23,6 +23,7 @@ Records are explicit, versioned NDJSON outputs, bounded by event count and encod
 The private Linux `record` handler publishes a two-line, validly framed incomplete header and terminal failure summary when capture fails and the output limit permits it. The parser rejects that artifact for analysis. If the configured byte limit cannot fit even those two lines, the handler reports failure without emitting a truncated record.
 
 Paths are encoded as native Unix bytes or Windows UTF-16 code units; a display string must never replace the native identity. Project paths retain both logical and resolved identities so internal aliases can be counted once. External accesses remain distinguishable. Records never contain file contents, full argv, or environment values. Product artifacts intentionally contain access paths; `tracing` diagnostics must not.
+Windows high-resolution file IDs use exactly 32 lowercase hexadecimal digits in records. JSON numeric encoding cannot round-trip the full 128-bit identity through the strict parser, so numeric Windows file IDs are rejected.
 
 A failed native call may supply a null, invalid, or overlong pathname pointer, or an invalid relative directory descriptor. The Linux decoder records the paired native result with an explicit `path_unavailable` marker instead of inventing a path or turning that ordinary failed call into an incomplete trace. Path-based workflows cannot select such an operation as a project input.
 
