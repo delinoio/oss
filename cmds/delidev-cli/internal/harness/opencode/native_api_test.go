@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -65,6 +66,7 @@ const (
 	nativeServerRelay
 	nativeServerRelayRejectedCredential
 	nativeServerRelayPlanEditDenied
+	nativeServerRelayLostCreation
 )
 
 func TestManualNativeOpenCodeOwnedAPIProxy(t *testing.T) {
@@ -73,6 +75,29 @@ func TestManualNativeOpenCodeOwnedAPIProxy(t *testing.T) {
 
 func TestManualNativeOpenCodeOwnedAPIProxyRejectedCredential(t *testing.T) {
 	nativeOwnedAPISessionWithRelay(t, true, false, nativeServerRelayRejectedCredential)
+}
+
+func TestManualNativeOpenCodeOwnedAPILostCreation(t *testing.T) {
+	nativeOwnedAPISessionWithRelay(t, true, false, nativeServerRelayLostCreation)
+}
+
+type lostCreationResponse struct {
+	http.RoundTripper
+	posts atomic.Int32
+}
+
+func (l *lostCreationResponse) RoundTrip(request *http.Request) (*http.Response, error) {
+	creation := request.Method == http.MethodPost && request.URL.Path == "/session"
+	if creation {
+		l.posts.Add(1)
+	}
+	response, err := l.RoundTripper.RoundTrip(request)
+	if err == nil && creation {
+		_, _ = io.Copy(io.Discard, response.Body)
+		_ = response.Body.Close()
+		return nil, errors.New("fixture lost native creation response")
+	}
+	return response, err
 }
 
 func TestManualNativeOpenCodeOwnedAPIUnknownLimits(t *testing.T) {
@@ -388,8 +413,25 @@ func nativeOwnedAPISessionWithRequestCheck(t *testing.T, input, mismatch bool, r
 	} else if observationErr == nil {
 		t.Fatal("custom native rules were misreported as native defaults")
 	}
-	if _, err := api.create(ctx, domain.NewID(), config.Settings); err != nil {
-		t.Fatal(err)
+	if relayMode == nativeServerRelayLostCreation {
+		lost := &lostCreationResponse{RoundTripper: api.client.Transport}
+		api.client.Transport = lost
+		request := domain.NewID()
+		if id, err := api.create(ctx, request, config.Settings); err == nil || domain.SafeError(err).Code != domain.RecoveryRequired || id != "" {
+			t.Fatal("native creation response was not lost")
+		}
+		owned := &OwnedAPI{session: api, reading: make(chan struct{}, 1)}
+		receipt, err := owned.InspectSession(ctx)
+		if err != nil || !receipt.Recorded || receipt.HTTPAccepted || receipt.RequestID != request || !nativeID(receipt.SessionID, "ses") || lost.posts.Load() != 1 {
+			t.Fatalf("original native creation reconciliation failed: %v", err)
+		}
+		if _, err := api.create(ctx, domain.NewID(), config.Settings); err == nil || lost.posts.Load() != 1 {
+			t.Fatal("reconciliation repeated actual native creation")
+		}
+	} else {
+		if _, err := api.create(ctx, domain.NewID(), config.Settings); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if len(claims) != 1 || claims[0].Kind != CreateSessionMutation || requests.Load() != 0 {
 		t.Fatal("owned initialization or creation performed unrequested inference")

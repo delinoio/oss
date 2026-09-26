@@ -53,6 +53,16 @@ func (a *OwnedAPI) CreateSession(ctx context.Context, request domain.ID) (string
 	return a.session.create(ctx, request, a.session.apiProfile.Settings)
 }
 
+// InspectSession reconciles only this original live creation attempt. Native
+// identity can be discovered after response loss without repeating creation;
+// missing evidence never authorizes replacement or reconstructs an HTTP ack.
+func (a *OwnedAPI) InspectSession(ctx context.Context) (SessionReceipt, error) {
+	if !a.valid() {
+		return SessionReceipt{}, sessionInvalid()
+	}
+	return a.session.reconcileCreation(ctx)
+}
+
 // StartText allocates original IDs and validates the complete body, then
 // subscribes before once-claiming native input. The context owns that subscription's
 // lifetime. A lost HTTP reply still binds an observer to the original claim;

@@ -16,6 +16,13 @@ func (s *sessionAPI) request(ctx context.Context, method, path string, body []by
 	// login, provider switch, fork, deletion or prompt retry is available here.
 	valid := method == http.MethodPost && path == "/session" && s.creation != nil
 	valid = valid || s.runtimeRead && s.creation == nil && method == http.MethodGet && (path == "/config" || path == "/provider" || path == "/path" || path == "/agent") && len(body) == 0
+	if s.creationLookup && s.creation != nil && s.creation.attempted && s.input == nil && method == http.MethodGet && len(body) == 0 {
+		valid = valid || path == "/session?limit=2"
+		if nativeID(s.creationCandidate, "ses") {
+			base := "/session/" + s.creationCandidate
+			valid = valid || path == base || path == base+"/message?limit=1" || path == "/session/status"
+		}
+	}
 	if s.replyAttempt != nil {
 		valid = valid || method == http.MethodPost && path == s.replyAttempt.path && mutationDigest(body) == s.replyAttempt.digest
 	}

@@ -84,41 +84,53 @@ type InputReceipt struct {
 	Recorded     bool
 }
 
+type SessionReceipt struct {
+	RequestID    domain.ID
+	SessionID    string
+	HTTPAccepted bool
+	Recorded     bool
+}
+
 // sessionAPI is deliberately not constructible outside this package. Its
 // private owned API initializer proves managed configuration, effective native
 // providers/context and original server ownership. Discovery cannot create one
 // or expose session mutations. Durable Worker/account integration is separate.
 type sessionAPI struct {
-	client          *http.Client
-	origin          string
-	password        string
-	cwd             string
-	claim           func(context.Context, SessionClaim) error
-	alive           func() error
-	closeOwned      func(context.Context) error
-	reconcileOwned  func(context.Context) error
-	logger          *slog.Logger
-	owner           domain.ID
-	gate            chan struct{}
-	creation        *sessionCreation
-	input           *sessionInput
-	problem         *domain.Error
-	events          *eventStream
-	eventAttempt    bool
-	observer        *inputObserver
-	replyAttempt    *interactionHTTPAttempt
-	abortAttempt    bool
-	rejectionPolicy RejectionPolicy
-	apiProfile      *nativeAPIProfile
-	apiVerified     bool
-	runtimeRead     bool
-	runtimeRoot     string
+	client            *http.Client
+	origin            string
+	password          string
+	cwd               string
+	claim             func(context.Context, SessionClaim) error
+	alive             func() error
+	closeOwned        func(context.Context) error
+	reconcileOwned    func(context.Context) error
+	logger            *slog.Logger
+	owner             domain.ID
+	gate              chan struct{}
+	creation          *sessionCreation
+	input             *sessionInput
+	problem           *domain.Error
+	events            *eventStream
+	eventAttempt      bool
+	observer          *inputObserver
+	replyAttempt      *interactionHTTPAttempt
+	abortAttempt      bool
+	rejectionPolicy   RejectionPolicy
+	apiProfile        *nativeAPIProfile
+	apiVerified       bool
+	runtimeRead       bool
+	runtimeRoot       string
+	creationLookup    bool
+	creationCandidate string
 }
 
 type sessionCreation struct {
-	request  domain.ID
-	settings SessionSettings
-	identity sessionIdentity
+	request      domain.ID
+	settings     SessionSettings
+	identity     sessionIdentity
+	attempted    bool
+	acknowledged bool
+	recorded     bool
 }
 
 type sessionIdentity struct {
@@ -261,13 +273,16 @@ func (s *sessionAPI) create(ctx context.Context, request domain.ID, settings Ses
 		s.diagnostic(ctx, CreateSessionMutation, err, "phase", "claim")
 		return "", sessionUncertain()
 	}
+	s.creation.attempted = true
 	raw, status, err := s.request(ctx, http.MethodPost, "/session", body, http.StatusOK)
 	if err != nil {
 		s.diagnostic(ctx, CreateSessionMutation, err, "phase", "http", "http_status", status)
 		return "", sessionUncertain()
 	}
+	s.creation.acknowledged = true
 	identity, err := validateSession(raw, s.cwd, s.creation, true)
 	if err != nil {
+		s.problem = sessionProblem()
 		s.diagnostic(ctx, CreateSessionMutation, err, "phase", "native-identity")
 		return "", sessionUncertain()
 	}
