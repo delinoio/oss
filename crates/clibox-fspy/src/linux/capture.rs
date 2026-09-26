@@ -178,7 +178,7 @@ where
         ChildOutcome::Exit(code) => (Some(code), None),
         ChildOutcome::Signal(signal) => (None, Some(signal)),
     };
-    Ok(CompleteRecord {
+    let record = CompleteRecord {
         header: Header {
             schema_version: SCHEMA_VERSION,
             execution_id: uuid::Uuid::now_v7(),
@@ -196,7 +196,19 @@ where
             failure: None,
         },
         operations,
-    })
+    };
+    crate::record::serialize(
+        &record,
+        &mut std::io::sink(),
+        limits.max_events,
+        limits.max_bytes,
+    )
+    .map_err(|error| match error {
+        crate::record::ParseFailure::ByteLimit => TraceFailure::ByteLimit,
+        crate::record::ParseFailure::EventLimit => TraceFailure::EventLimit,
+        _ => supervision("capture_encoding"),
+    })?;
+    Ok(record)
 }
 
 #[cfg(test)]
@@ -244,5 +256,23 @@ mod tests {
             restored.summary.operation_count,
             record.summary.operation_count
         );
+    }
+
+    #[test]
+    fn refuses_a_trace_larger_than_the_encoded_byte_budget() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut command = Command::new("/bin/true");
+        command.stdout(Stdio::null());
+        let result = capture(
+            &mut command,
+            directory.path(),
+            Limits {
+                max_bytes: 10,
+                ..Limits::default()
+            },
+            &AtomicBool::new(false),
+            |_| Duration::ZERO,
+        );
+        assert!(matches!(result, Err(TraceFailure::ByteLimit)));
     }
 }

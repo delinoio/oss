@@ -497,11 +497,60 @@ fn execution_root(args: &ExecutionArgs) -> Result<PathBuf, &'static str> {
 }
 
 #[cfg(target_os = "linux")]
+struct SignalHandlers {
+    cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    signal: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    registrations: Vec<signal_hook::SigId>,
+}
+
+#[cfg(target_os = "linux")]
+impl SignalHandlers {
+    fn new() -> Result<Self, crate::linux::TraceFailure> {
+        use std::sync::{
+            atomic::{AtomicBool, AtomicUsize},
+            Arc,
+        };
+
+        let mut handlers = Self {
+            cancelled: Arc::new(AtomicBool::new(false)),
+            signal: Arc::new(AtomicUsize::new(0)),
+            registrations: Vec::new(),
+        };
+        for signal in [signal_hook::consts::SIGINT, signal_hook::consts::SIGTERM] {
+            handlers.registrations.push(
+                signal_hook::flag::register(signal, handlers.cancelled.clone())
+                    .map_err(|_| crate::linux::TraceFailure::Spawn)?,
+            );
+            handlers.registrations.push(
+                signal_hook::flag::register_usize(signal, handlers.signal.clone(), signal as usize)
+                    .map_err(|_| crate::linux::TraceFailure::Spawn)?,
+            );
+        }
+        Ok(handlers)
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl Drop for SignalHandlers {
+    fn drop(&mut self) {
+        for registration in self.registrations.drain(..) {
+            signal_hook::low_level::unregister(registration);
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+struct CaptureFailure {
+    error: crate::linux::TraceFailure,
+    signal: usize,
+}
+
+#[cfg(target_os = "linux")]
 fn execute_capture(
     command: &[OsString],
     root: &Path,
     args: &ExecutionArgs,
-) -> Result<CompleteRecord, crate::linux::TraceFailure> {
+) -> Result<CompleteRecord, CaptureFailure> {
     execute_capture_with(command, root, args, |_| Duration::ZERO)
 }
 
@@ -511,65 +560,72 @@ fn execute_capture_with<F>(
     root: &Path,
     args: &ExecutionArgs,
     delay_for: F,
-) -> Result<CompleteRecord, crate::linux::TraceFailure>
+) -> Result<CompleteRecord, CaptureFailure>
 where
     F: FnMut(&crate::linux::paths::DecodedOperation) -> Duration,
 {
     use std::{
         os::fd::AsFd,
         process::{Command as ProcessCommand, Stdio},
-        sync::{atomic::AtomicBool, Arc},
+        sync::atomic::Ordering,
     };
 
     if command.is_empty() {
-        return Err(crate::linux::TraceFailure::Spawn);
+        return Err(CaptureFailure {
+            error: crate::linux::TraceFailure::Spawn,
+            signal: 0,
+        });
     }
     let mut child = ProcessCommand::new(&command[0]);
     child.args(&command[1..]);
     let stderr = io::stderr()
         .as_fd()
         .try_clone_to_owned()
-        .map_err(|_| crate::linux::TraceFailure::Spawn)?;
+        .map_err(|_| CaptureFailure {
+            error: crate::linux::TraceFailure::Spawn,
+            signal: 0,
+        })?;
     child.stdout(Stdio::from(stderr)).stderr(Stdio::inherit());
-    let cancelled = Arc::new(AtomicBool::new(false));
-    let signal = signal_hook::flag::register(signal_hook::consts::SIGINT, cancelled.clone())
-        .map_err(|_| crate::linux::TraceFailure::Spawn)?;
-    #[cfg(unix)]
-    let term = signal_hook::flag::register(signal_hook::consts::SIGTERM, cancelled.clone())
-        .map_err(|_| crate::linux::TraceFailure::Spawn)?;
+    let signals = SignalHandlers::new().map_err(|error| CaptureFailure { error, signal: 0 })?;
     let result = crate::linux::capture::capture(
         &mut child,
         root,
         crate::linux::Limits {
             max_events: args.max_events,
+            max_bytes: args.max_bytes,
             timeout: args.timeout,
             kill_after: args.kill_after,
         },
-        &cancelled,
+        &signals.cancelled,
         delay_for,
     );
-    signal_hook::low_level::unregister(signal);
-    #[cfg(unix)]
-    signal_hook::low_level::unregister(term);
-    result
+    result.map_err(|error| CaptureFailure {
+        error,
+        signal: signals.signal.load(Ordering::SeqCst),
+    })
 }
 
 #[cfg(target_os = "linux")]
-fn capture_status(error: crate::linux::TraceFailure, action: &'static str) -> i32 {
-    match error {
+fn capture_status(failure: CaptureFailure, action: &'static str) -> i32 {
+    match failure.error {
         crate::linux::TraceFailure::Timeout => {
             diagnostic("timeout", action);
             124
         }
         crate::linux::TraceFailure::Cancellation => {
             diagnostic("cancellation", action);
-            130
+            if failure.signal == signal_hook::consts::SIGTERM as usize {
+                143
+            } else {
+                130
+            }
         }
         other => diagnostic(
             match other {
                 crate::linux::TraceFailure::Permission => "trace_permission",
                 crate::linux::TraceFailure::UnsupportedKernel => "unsupported_trace_kernel",
                 crate::linux::TraceFailure::EventLimit => "event_limit",
+                crate::linux::TraceFailure::ByteLimit => "byte_limit",
                 crate::linux::TraceFailure::Cleanup => "cleanup_failure",
                 crate::linux::TraceFailure::Spawn => "spawn_failure",
                 crate::linux::TraceFailure::Supervision(_) => "trace_supervision",

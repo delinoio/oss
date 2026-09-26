@@ -37,6 +37,7 @@ pub enum TraceFailure {
     UnsupportedKernel,
     Supervision(&'static str),
     EventLimit,
+    ByteLimit,
     Timeout,
     Cancellation,
     Cleanup,
@@ -50,6 +51,7 @@ impl std::fmt::Display for TraceFailure {
             Self::UnsupportedKernel => "unsupported_trace_kernel",
             Self::Supervision(_) => "trace_supervision",
             Self::EventLimit => "event_limit",
+            Self::ByteLimit => "byte_limit",
             Self::Timeout => "timeout",
             Self::Cancellation => "cancellation",
             Self::Cleanup => "cleanup_failure",
@@ -102,6 +104,7 @@ pub struct TraceResult {
 #[derive(Debug, Clone, Copy)]
 pub struct Limits {
     pub max_events: usize,
+    pub max_bytes: u64,
     pub timeout: Option<Duration>,
     pub kill_after: Duration,
 }
@@ -110,6 +113,7 @@ impl Default for Limits {
     fn default() -> Self {
         Self {
             max_events: 1_000_000,
+            max_bytes: crate::record::DEFAULT_BYTE_LIMIT,
             timeout: None,
             kill_after: Duration::from_secs(5),
         }
@@ -292,7 +296,7 @@ where
     // Serialize local trace sessions so their supervisors cannot consume each
     // other's stops; the command workflows already execute their runs serially.
     let _trace_lock = TRACE_LOCK.lock().map_err(|_| supervision("trace_lock"))?;
-    if limits.max_events == 0 || limits.kill_after.is_zero() {
+    if limits.max_events == 0 || limits.max_bytes == 0 || limits.kill_after.is_zero() {
         return Err(supervision("limits"));
     }
     // SAFETY: pre_exec calls only async-signal-safe C functions. A failed
