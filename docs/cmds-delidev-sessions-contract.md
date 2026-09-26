@@ -269,3 +269,8 @@ Local preparation also accepts a valid unborn Git branch. Its explicit `local_he
 
 ## Scheduled session integration
 The schedule coordinator creates independent sessions through the same queued-input and workspace-preparation path. It derives `SCHEDULED` source and reference-only schedule/occurrence/configuration/trigger provenance; ordinary CreateSession input cannot select that source. Schedule deletion never owns or deletes the retained session. Account routing, templates and native settings remain resolved at actual first execution. Overlap/Skip/Wait consult current session activity and exact owned cleanup, including subsequent explicit resumption of a historically completed run. See the [schedule contract](cmds-delidev-schedules-contract.md) for acceptance, FIFO/offline behavior and the owner/client public lifecycle API.
+
+### Original OpenCode session and input binding
+The authenticated Worker publication RPC now accepts the pinned OpenCode first-session binding and separately observed stored-input acceptance. Native identities retain their own `ses_`/`msg_` namespace; default Build/Plan observation must match the immutable input mode. The original claimed job revision, Worker instance, ordered event sequence, queued input and configuration remain mandatory. Atomic acceptance consumes queue count/bytes once, including after a lost response. Late original facts preserve existing Stop/pause/recovery and cannot issue another execution credential.
+
+All other OpenCode event families, completion reports, public first dispatch and continuation remain gated. The desktop can render these retained binding/settings documents through existing authenticated reads; this narrow server integration does not advertise OpenCode execution capability.

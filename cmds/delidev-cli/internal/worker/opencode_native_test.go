@@ -67,7 +67,7 @@ func nativeOpenCodeWorkerFixture(t *testing.T, publishBindings, changedInput boo
 	for _, mode := range modes {
 		t.Run(string(mode), func(t *testing.T) {
 			p, journal, _ := newOpenCodeClaimsFixtureMode(t, mode)
-			var bindings *openCodeBindingPublisher
+			var bindings *OpenCodeBindingPublisher
 			var bindingRPC *openCodeBindingRPC
 			if publishBindings {
 				bindingRPC = &openCodeBindingRPC{t: t, publisher: p}

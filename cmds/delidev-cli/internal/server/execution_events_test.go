@@ -63,6 +63,10 @@ func (f *publicationFixture) event(kind domain.ExecutionEventKind, sequence uint
 	if kind == domain.ExecutionThreadBound {
 		e.NativeTurnID = ""
 		e.Observed = &domain.ObservedExecutionSettings{Model: f.input.Configuration.NativeModel, Permission: domain.PermissionReadOnly, ApprovalPolicy: "on-request"}
+		if f.input.Configuration.Harness == domain.OpenCode {
+			agent, _ := f.input.Configuration.Options.OpenCodePrimaryForInput(f.input.Input.Mode)
+			e.Observed = &domain.ObservedExecutionSettings{Model: f.input.Configuration.NativeModel, Permission: domain.PermissionDefault, OpenCodeAgent: agent}
+		}
 	}
 	return e
 }

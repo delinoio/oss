@@ -24,9 +24,10 @@ const (
 // This initial publication adapter owns only session binding and original
 // stored-input acceptance. It never starts native work, interprets transcript
 // content, reports completion or enables public OpenCode dispatch.
-type openCodeBindingPublisher struct {
+type OpenCodeBindingPublisher struct {
 	mu             sync.Mutex
 	publisher      *ExecutionPublisher
+	journal        *openCodeClaimJournal
 	reference      openCodeClaimReference
 	stage          openCodeBindingStage
 	thread         string
@@ -39,7 +40,50 @@ type openCodeBindingPublisher struct {
 	inputClaim     opencode.SessionClaim
 }
 
-func newOpenCodeBindingPublisher(p *ExecutionPublisher, journal *openCodeClaimJournal) (*openCodeBindingPublisher, error) {
+// OpenOpenCodeBindingPublisher owns a fresh mutation journal for this original
+// execution publisher. A retained journal cannot be reopened as send authority.
+// Close the native process first, then this adapter, then the shared publisher.
+func OpenOpenCodeBindingPublisher(p *ExecutionPublisher) (*OpenCodeBindingPublisher, error) {
+	journal, err := openOpenCodeClaims(p)
+	if err != nil {
+		return nil, err
+	}
+	binding, err := newOpenCodeBindingPublisher(p, journal)
+	if err != nil {
+		if closeErr := journal.Close(); closeErr != nil {
+			return nil, closeErr
+		}
+		return nil, err
+	}
+	return binding, nil
+}
+
+// Claim is supplied directly to the original owned native API initializer.
+// First input cannot cross the native boundary while session publication is
+// still unconfirmed. Cleanup/recovery claims retain their separate authority.
+func (c *OpenCodeBindingPublisher) Claim(ctx context.Context, claim opencode.SessionClaim) error {
+	if c == nil || c.journal == nil {
+		return openCodeClaimUncertain()
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if claim.Kind == opencode.CreateSessionMutation && c.stage != openCodeUnbound || claim.Kind == opencode.SubmitInputMutation && c.stage != openCodeBound {
+		return openCodeClaimUncertain()
+	}
+	return c.journal.Claim(ctx, claim)
+}
+
+func (c *OpenCodeBindingPublisher) Close() error {
+	if c == nil || c.journal == nil {
+		return openCodeClaimUncertain()
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.stage = openCodeBindingBlocked
+	return c.journal.Close()
+}
+
+func newOpenCodeBindingPublisher(p *ExecutionPublisher, journal *openCodeClaimJournal) (*OpenCodeBindingPublisher, error) {
 	if p == nil || journal == nil {
 		return nil, publicationUncertain()
 	}
@@ -66,10 +110,10 @@ func newOpenCodeBindingPublisher(p *ExecutionPublisher, journal *openCodeClaimJo
 	if _, err := readOpenCodeClaims(p.config.Root, ref); err != nil {
 		return nil, err
 	}
-	return &openCodeBindingPublisher{publisher: p, reference: ref, requested: requested}, nil
+	return &OpenCodeBindingPublisher{publisher: p, journal: journal, reference: ref, requested: requested}, nil
 }
 
-func (c *openCodeBindingPublisher) block() error {
+func (c *OpenCodeBindingPublisher) block() error {
 	prior := c.stage
 	c.stage = openCodeBindingBlocked
 	if c.publisher.config.Logger != nil {
@@ -78,7 +122,12 @@ func (c *openCodeBindingPublisher) block() error {
 	return publicationUncertain()
 }
 
-func (c *openCodeBindingPublisher) readClaims() ([]opencode.SessionClaim, error) {
+func (c *OpenCodeBindingPublisher) readClaims() ([]opencode.SessionClaim, error) {
+	c.journal.mu.Lock()
+	defer c.journal.mu.Unlock()
+	if c.journal.closed || c.journal.failed || c.journal.release == nil || c.journal.state.Reference != c.reference {
+		return nil, openCodeClaimUncertain()
+	}
 	claims, err := readOpenCodeClaims(c.publisher.config.Root, c.reference)
 	if err != nil || c.creationClaim.RequestID != "" && (len(claims) < 1 || claims[0] != c.creationClaim) || c.inputClaim.RequestID != "" && (len(claims) < 2 || claims[1] != c.inputClaim) {
 		return nil, openCodeClaimUncertain()
@@ -92,7 +141,7 @@ func (c *openCodeBindingPublisher) readClaims() ([]opencode.SessionClaim, error)
 	return claims, nil
 }
 
-func (c *openCodeBindingPublisher) publish(ctx context.Context, event domain.ExecutionEvent) error {
+func (c *OpenCodeBindingPublisher) publish(ctx context.Context, event domain.ExecutionEvent) error {
 	event.Version, event.ExecutionID = 1, c.reference.ExecutionID
 	raw, err := json.Marshal(event)
 	if err != nil {
@@ -117,7 +166,10 @@ func (c *openCodeBindingPublisher) publish(ctx context.Context, event domain.Exe
 	return err
 }
 
-func (c *openCodeBindingPublisher) BindSession(ctx context.Context, request domain.ID, session string, observed domain.ObservedExecutionSettings) error {
+func (c *OpenCodeBindingPublisher) BindSession(ctx context.Context, request domain.ID, session string, observed domain.ObservedExecutionSettings) error {
+	if c == nil || c.journal == nil {
+		return publicationUncertain()
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.stage != openCodeUnbound {
@@ -140,7 +192,10 @@ func (c *openCodeBindingPublisher) BindSession(ctx context.Context, request doma
 	return nil
 }
 
-func (c *openCodeBindingPublisher) AcceptInput(ctx context.Context, receipt opencode.InputReceipt) error {
+func (c *OpenCodeBindingPublisher) AcceptInput(ctx context.Context, receipt opencode.InputReceipt) error {
+	if c == nil || c.journal == nil {
+		return publicationUncertain()
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.stage != openCodeBound {
@@ -167,7 +222,10 @@ func (c *openCodeBindingPublisher) AcceptInput(ctx context.Context, receipt open
 // Explicit outbox replay has no native API or mutation-journal callback. It
 // retries only the exact retained publication identity after an uncertain RPC
 // or persistence result, then advances this same live binding state once.
-func (c *openCodeBindingPublisher) ReplayPending(ctx context.Context) error {
+func (c *OpenCodeBindingPublisher) ReplayPending(ctx context.Context) error {
+	if c == nil || c.journal == nil {
+		return publicationUncertain()
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.stage != openCodeBindingPending && c.stage != openCodeAcceptancePending {

@@ -68,7 +68,7 @@ func (s *Service) PublishExecution(ctx context.Context, req *connect.Request[pb.
 		if !session.OwnsExecution(input) || session.ActiveExecutionID != input.ExecutionID {
 			return nil, executionEventConflict()
 		}
-		if input.Configuration.Harness != domain.Codex || domain.NativeIdentity(event.NativeThreadID).Validate(input.Configuration.Harness, domain.NativeThreadIdentity) != nil || (event.NativeTurnID != "" && domain.NativeIdentity(event.NativeTurnID).Validate(input.Configuration.Harness, domain.NativeTurnIdentity) != nil) {
+		if !supportsExecutionPublication(input, event.Kind) || domain.NativeIdentity(event.NativeThreadID).Validate(input.Configuration.Harness, domain.NativeThreadIdentity) != nil || (event.NativeTurnID != "" && domain.NativeIdentity(event.NativeTurnID).Validate(input.Configuration.Harness, domain.NativeTurnIdentity) != nil) {
 			return nil, domain.Fail(domain.Unsupported, "This native event identity has no supported publication profile.", "Validate the installed harness adapter before publishing events.")
 		}
 		ir, err := tx.Get(domain.QueueKind, input.InputID)
@@ -108,6 +108,19 @@ func (s *Service) PublishExecution(ctx context.Context, req *connect.Request[pb.
 	response := connect.NewResponse(&pb.PublishExecutionResponse{AcknowledgedSequence: receipt.Sequence, Replayed: result.Replayed})
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil
+}
+
+// Profile-specific publication stays closed as adapters are composed. Native
+// identity syntax and relay registration cannot authorize unimplemented event
+// families, terminal reports or another native input.
+func supportsExecutionPublication(input domain.ExecutionJobInput, kind domain.ExecutionEventKind) bool {
+	switch input.Configuration.Harness {
+	case domain.Codex:
+		return true
+	case domain.OpenCode:
+		return (kind == domain.ExecutionThreadBound || kind == domain.ExecutionInputAccepted) && len(executionAPIOperations(input, domain.OpenAIChat)) != 0
+	}
+	return false
 }
 
 func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJobInput, actor domain.ID, sr store.Record, session *domain.Session, ir store.Record, queued *domain.QueuedInput, event domain.ExecutionEvent) error {

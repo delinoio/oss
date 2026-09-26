@@ -19,6 +19,8 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/opencode"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/worker"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 )
@@ -29,15 +31,21 @@ import (
 // does not exercise public dispatch, Worker publication or hosted inference.
 func TestManualNativeOpenCodeUsesRegisteredServerRelay(t *testing.T) {
 	for _, mode := range []domain.SessionMode{domain.ExecuteMode, domain.PlanMode} {
-		t.Run(string(mode), func(t *testing.T) { nativeRegisteredOpenCode(t, mode, false) })
+		t.Run(string(mode), func(t *testing.T) { nativeRegisteredOpenCode(t, mode, false, false) })
 	}
 }
 
 func TestManualNativeOpenCodeRegisteredRelayRevocation(t *testing.T) {
-	nativeRegisteredOpenCode(t, domain.ExecuteMode, true)
+	nativeRegisteredOpenCode(t, domain.ExecuteMode, true, false)
 }
 
-func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool) {
+func TestManualNativeOpenCodePublishesRegisteredBindings(t *testing.T) {
+	for _, mode := range []domain.SessionMode{domain.ExecuteMode, domain.PlanMode} {
+		t.Run(string(mode), func(t *testing.T) { nativeRegisteredOpenCode(t, mode, false, true) })
+	}
+}
+
+func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke, publish bool) {
 	t.Helper()
 	binary := os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE")
 	if binary == "" {
@@ -111,7 +119,7 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 		_, _ = io.WriteString(w, `data: {"id":"chatcmpl-registered","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":20,"completion_tokens":4,"total_tokens":24}}`+"\n\ndata: [DONE]\n\n")
 	}))
 	defer upstream.Close()
-	f := newProfileAuthorityFixture(t, upstream.URL, domain.OpenCode, domain.OpenAIChat, func(input *domain.ExecutionJobInput) { input.Input.Mode = mode }, false)
+	f := publicationFixtureFromAuthority(t, newProfileAuthorityFixture(t, upstream.URL, domain.OpenCode, domain.OpenAIChat, func(input *domain.ExecutionJobInput) { input.Input.Mode = mode }, false))
 	f.registerGrant(t)
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -159,6 +167,27 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 		}
 		return security.WriteAtomic(filepath.Join(root, "claims.json"), raw)
 	}
+	var bindings *worker.OpenCodeBindingPublisher
+	var publicationClient *losePublicationAck
+	claimsPath := filepath.Join(root, "claims.json")
+	if publish {
+		cfg := publicationWorkerConfig(t, f)
+		cfg.Root = filepath.Join(root, "worker")
+		publicationClient = &losePublicationAck{WorkerServiceClient: f.client, t: t, path: filepath.Join(cfg.Root, "jobs", string(f.job), "publication.json")}
+		cfg.Client = publicationClient
+		publisher, err := worker.OpenExecutionPublisher(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer publisher.Close()
+		bindings, err = worker.OpenOpenCodeBindingPublisher(publisher)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer bindings.Close()
+		claim = bindings.Claim
+		claimsPath = filepath.Join(cfg.Root, "jobs", string(f.job), "opencode-claims.json")
+	}
 	config := opencode.APIExecutionConfig{
 		Probe:     opencode.ProbeConfig{Process: process.Config{Directory: filepath.Join(root, "processes"), OwnerID: f.job, Executable: binary, Cwd: runtimeRoot, Env: env, Logger: f.service.logger}, Version: opencode.SupportedVersion, Home: filepath.Join(runtimeRoot, "opencode")},
 		Workspace: workspace, NativeRoot: filepath.VolumeName(workspace) + string(filepath.Separator), ServerOrigin: f.http.URL, Token: f.token,
@@ -186,8 +215,27 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 	if err != nil {
 		t.Fatal(err)
 	}
+	if publish {
+		if bindings.BindSession(ctx, f.input.ThreadRequestID, session, observed) == nil {
+			t.Fatal("expected lost original binding acknowledgement")
+		}
+		if err := bindings.ReplayPending(ctx); err != nil {
+			t.Fatal(err)
+		}
+		publicationClient.dropAt = 3
+	}
 	if _, err := api.StartText(ctx, f.input.TurnRequestID, f.input.Input.Prompt); err != nil {
 		t.Fatal(err)
+	}
+	if publish {
+		raw, err := security.ReadPrivate(claimsPath, 1<<20)
+		var retained struct {
+			Claims []opencode.SessionClaim `json:"claims"`
+		}
+		if err != nil || json.Unmarshal(raw, &retained) != nil {
+			t.Fatal("original Worker claims are unavailable")
+		}
+		claims = retained.Claims
 	}
 	if revoke {
 		select {
@@ -250,11 +298,30 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 	if err != nil || !receipt.Recorded || receipt.SessionID != session || receipt.RequestID != f.input.TurnRequestID || receipt.MessageID != claims[1].MessageID || receipt.PartID != claims[1].PartID {
 		t.Fatal("registered native input lost its separately verified original storage")
 	}
+	if publish {
+		if bindings.AcceptInput(ctx, receipt) == nil {
+			t.Fatal("expected lost original acceptance acknowledgement")
+		}
+		if err := bindings.ReplayPending(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if len(publicationClient.calls) != 4 || publicationClient.calls[0] != publicationClient.calls[1] || publicationClient.calls[2] != publicationClient.calls[3] {
+			t.Fatal("original native publication replaced an uncertain RPC identity")
+		}
+		r, err := f.service.Store.Get(ctx, domain.SessionKind, f.input.SessionID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		retained, err := store.Decode[domain.Session](r)
+		if err != nil || retained.Execution == nil || retained.Execution.LastSequence != 2 || retained.Execution.NativeThreadID != session || retained.Execution.NativeTurnID != receipt.MessageID || retained.PendingInputs != 0 || retained.PendingInputBytes != 0 || retained.Execution.Observed.OpenCodeAgent != agent || retained.Execution.Outcome != domain.ExecutionRunning {
+			t.Fatal("server binding did not preserve exact native ownership and independent unfinished publication")
+		}
+	}
 	history, err := api.InspectHistory(ctx)
 	if err != nil || history.InputID != receipt.MessageID || history.AssistantID != progress.AssistantID || len(history.Messages) != 2 {
 		t.Fatalf("registered native conversation lost its original stored comparison: %v", err)
 	}
-	raw, err := os.ReadFile(filepath.Join(root, "claims.json"))
+	raw, err := os.ReadFile(claimsPath)
 	if err != nil || bytes.Contains(raw, []byte(f.token)) || bytes.Contains(raw, []byte("temporary-upstream-fixture-key")) || bytes.Contains(raw, []byte(f.input.Input.Prompt)) || strings.Contains(result, f.token) {
 		t.Fatal("registered native metadata claims or result disclosed protected content")
 	}

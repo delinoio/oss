@@ -48,7 +48,7 @@ func (f *openCodeBindingRPC) PublishExecution(_ context.Context, request *connec
 	return connect.NewResponse(&pb.PublishExecutionResponse{AcknowledgedSequence: event.Sequence}), nil
 }
 
-func newOpenCodeBindingFixture(t *testing.T) (*openCodeBindingPublisher, *openCodeClaimJournal, []opencode.SessionClaim, *openCodeBindingRPC) {
+func newOpenCodeBindingFixture(t *testing.T) (*OpenCodeBindingPublisher, *openCodeClaimJournal, []opencode.SessionClaim, *openCodeBindingRPC) {
 	t.Helper()
 	p, journal, claims := newOpenCodeClaimsFixture(t)
 	rpc := &openCodeBindingRPC{t: t, publisher: p}
@@ -60,12 +60,74 @@ func newOpenCodeBindingFixture(t *testing.T) (*openCodeBindingPublisher, *openCo
 	return c, journal, claims, rpc
 }
 
-func openCodeBindingObservation(c *openCodeBindingPublisher) domain.ObservedExecutionSettings {
+func openCodeBindingObservation(c *OpenCodeBindingPublisher) domain.ObservedExecutionSettings {
 	return domain.ObservedExecutionSettings{Model: c.publisher.input.Configuration.NativeModel, Permission: domain.PermissionDefault, OpenCodeAgent: domain.OpenCodeBuildAgent}
 }
 
 func openCodeBindingReceipt(claim opencode.SessionClaim) opencode.InputReceipt {
 	return opencode.InputReceipt{RequestID: claim.RequestID, SessionID: claim.SessionID, MessageID: claim.MessageID, PartID: claim.PartID, Recorded: true}
+}
+
+func TestOpenCodeBindingCoordinatorBlocksInputUntilOriginalPublicationAcknowledged(t *testing.T) {
+	c, journal, claims, rpc := newOpenCodeBindingFixture(t)
+	ctx := context.Background()
+	if err := c.Claim(ctx, claims[0]); err != nil {
+		t.Fatal(err)
+	}
+	if c.Claim(ctx, claims[1]) == nil || len(journal.state.Claims) != 1 {
+		t.Fatal("unbound original session gained native input authority")
+	}
+	rpc.lose = true
+	if c.BindSession(ctx, claims[0].RequestID, claims[1].SessionID, openCodeBindingObservation(c)) == nil || c.Claim(ctx, claims[1]) == nil || len(journal.state.Claims) != 1 {
+		t.Fatal("uncertain session publication authorized a native input claim")
+	}
+	rpc.lose = false
+	if err := c.ReplayPending(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Claim(ctx, claims[1]); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.AcceptInput(ctx, openCodeBindingReceipt(claims[1])); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if c.Claim(ctx, claims[3]) == nil || c.ReplayPending(ctx) == nil || c.AcceptInput(ctx, openCodeBindingReceipt(claims[1])) == nil || c.BindSession(ctx, claims[0].RequestID, claims[1].SessionID, openCodeBindingObservation(c)) == nil {
+		t.Fatal("closed native publication coordinator regained authority")
+	}
+	if err := c.Close(); err != nil {
+		t.Fatal("coordinator closure was not idempotent", err)
+	}
+	if another, err := OpenOpenCodeBindingPublisher(c.publisher); err == nil {
+		_ = another.Close()
+		t.Fatal("retained native claims were reopened as fresh publication authority")
+	}
+}
+
+func TestOpenCodePublicationRejectsClosedOrFailedLiveJournal(t *testing.T) {
+	for _, failed := range []bool{false, true} {
+		t.Run(map[bool]string{false: "closed", true: "failed"}[failed], func(t *testing.T) {
+			c, journal, claims, rpc := newOpenCodeBindingFixture(t)
+			ctx := context.Background()
+			if err := journal.Claim(ctx, claims[0]); err != nil {
+				t.Fatal(err)
+			}
+			if failed {
+				wrong := claims[1]
+				wrong.BodyDigest = claims[0].BodyDigest
+				if journal.Claim(ctx, wrong) == nil || !journal.failed {
+					t.Fatal("changed original input did not latch its journal failure")
+				}
+			} else if err := journal.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if c.BindSession(ctx, claims[0].RequestID, claims[1].SessionID, openCodeBindingObservation(c)) == nil || len(rpc.requests) != 0 {
+				t.Fatal("unchanged retained bytes erased original journal uncertainty")
+			}
+		})
+	}
 }
 
 func TestOpenCodeBindingAndAcceptanceUseOriginalOutboxAndStorage(t *testing.T) {
