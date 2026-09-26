@@ -223,6 +223,44 @@ pub struct OperationGuard {
 /// Send the start frame and wait for the parent's decision before forwarding
 /// the native call. A recursive call made by this transport is excluded.
 pub fn begin(operation: u8, path: &[u16]) -> Option<OperationGuard> {
+    let mut encoded = Vec::with_capacity(path.len().saturating_mul(2));
+    for unit in path {
+        encoded.extend_from_slice(&unit.to_le_bytes());
+    }
+    begin_encoded(operation, &encoded)
+}
+
+/// Mutation starts carry both native paths as byte-counted UTF-16. A length
+/// prefix keeps either pathname lossless even when it contains separator-like
+/// code units; the receiving side validates both lengths before admission.
+pub fn begin_paths(source: &[u16], destination: &[u16]) -> Option<OperationGuard> {
+    let Some(source_bytes) = source.len().checked_mul(2) else {
+        mark_loss("mutation_source_length");
+        return None;
+    };
+    let Some(destination_bytes) = destination.len().checked_mul(2) else {
+        mark_loss("mutation_destination_length");
+        return None;
+    };
+    if source_bytes == 0
+        || destination_bytes == 0
+        || source_bytes > u16::MAX as usize
+        || destination_bytes > u16::MAX as usize
+        || source_bytes + destination_bytes + 4 > MAX_PATH_BYTES
+    {
+        mark_loss("mutation_path_limit");
+        return None;
+    }
+    let mut encoded = Vec::with_capacity(source_bytes + destination_bytes + 4);
+    encoded.extend_from_slice(&(source_bytes as u16).to_le_bytes());
+    encoded.extend_from_slice(&(destination_bytes as u16).to_le_bytes());
+    for unit in source.iter().chain(destination) {
+        encoded.extend_from_slice(&unit.to_le_bytes());
+    }
+    begin_encoded(9, &encoded)
+}
+
+fn begin_encoded(operation: u8, encoded: &[u8]) -> Option<OperationGuard> {
     let handle = state_handle();
     // Socket I/O can recursively enter an NT detour. A nonblocking lock
     // excludes those internal calls without blocking another native thread.
@@ -234,12 +272,8 @@ pub fn begin(operation: u8, path: &[u16]) -> Option<OperationGuard> {
     }
     let id = state.next_id.saturating_add(1);
     state.next_id = id;
-    let mut encoded = Vec::with_capacity(path.len().saturating_mul(2));
-    for unit in path {
-        encoded.extend_from_slice(&unit.to_le_bytes());
-    }
     let result = state.stream().and_then(|stream| {
-        write_frame(stream, b's', operation, id, 0, 0, &encoded)?;
+        write_frame(stream, b's', operation, id, 0, 0, encoded)?;
         let mut ack = [0_u8; 1];
         stream.read_exact(&mut ack)?;
         match ack[0] {

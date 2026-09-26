@@ -4,8 +4,9 @@ use fspy_shared::ipc::{AccessMode, IpcPath, PathAccess};
 use ntapi::{
     ntioapi::{
         FILE_CREATE, FILE_INFORMATION_CLASS, FILE_OPEN_IF, FILE_OVERWRITE, FILE_OVERWRITE_IF,
-        FILE_SUPERSEDE, FileLinkInformation, FileLinkInformationBypassAccessCheck,
-        FileLinkInformationEx, FileLinkInformationExBypassAccessCheck, FileRenameInformation,
+        FILE_RENAME_INFORMATION, FILE_SUPERSEDE, FileLinkInformation,
+        FileLinkInformationBypassAccessCheck, FileLinkInformationEx,
+        FileLinkInformationExBypassAccessCheck, FileRenameInformation,
         FileRenameInformationBypassAccessCheck, FileRenameInformationEx,
         FileRenameInformationExBypassAccessCheck, NtQueryDirectoryFile, NtQueryFullAttributesFile,
         NtQueryInformationByName, NtQueryInformationFile, NtReadFile, NtSetInformationFile,
@@ -27,6 +28,8 @@ use winapi::{
     },
     um::{
         fileapi::GetFileType,
+        memoryapi::ReadProcessMemory,
+        processthreadsapi::GetCurrentProcess,
         winbase::{FILE_TYPE_CHAR, FILE_TYPE_DISK, FILE_TYPE_PIPE},
         winnt::{ACCESS_MASK, GENERIC_READ},
     },
@@ -37,6 +40,7 @@ use crate::windows::{
     convert::{ToAbsolutePath, ToAccessMode},
     detour::{Detour, DetourAny},
     operation,
+    winapi_utils::get_path_name,
 };
 
 unsafe fn begin_path_operation(
@@ -758,6 +762,97 @@ fn changes_destination_name(class: FILE_INFORMATION_CLASS) -> bool {
     )
 }
 
+unsafe fn read_mutation_paths(
+    file_handle: HANDLE,
+    file_information: PVOID,
+    length: ULONG,
+) -> Option<(Vec<u16>, Vec<u16>)> {
+    let prefix_len = offset_of!(FILE_RENAME_INFORMATION, FileName);
+    if file_information.is_null() || (length as usize) < prefix_len {
+        return None;
+    }
+    // ReadProcessMemory probes the caller-owned buffer without dereferencing
+    // an invalid pointer from an ordinary failed NtSetInformationFile call.
+    let mut prefix = vec![0_u8; prefix_len];
+    let mut copied = 0;
+    // SAFETY: the destination buffer is writable and the source belongs to
+    // this process; failure is treated as an unavailable pathname.
+    if unsafe {
+        ReadProcessMemory(
+            GetCurrentProcess(),
+            file_information,
+            prefix.as_mut_ptr().cast(),
+            prefix_len,
+            &mut copied,
+        )
+    } == 0
+        || copied != prefix_len
+    {
+        return None;
+    }
+    let root_offset = offset_of!(FILE_RENAME_INFORMATION, RootDirectory);
+    let root = usize::from_le_bytes(
+        prefix
+            .get(root_offset..root_offset + size_of::<usize>())?
+            .try_into()
+            .ok()?,
+    ) as HANDLE;
+    let name_offset = offset_of!(FILE_RENAME_INFORMATION, FileNameLength);
+    let name_bytes =
+        u32::from_le_bytes(prefix.get(name_offset..name_offset + 4)?.try_into().ok()?) as usize;
+    if name_bytes == 0
+        || !name_bytes.is_multiple_of(2)
+        || name_bytes > 4096
+        || prefix_len.checked_add(name_bytes)? > length as usize
+    {
+        return None;
+    }
+    let mut name = vec![0_u8; name_bytes];
+    // SAFETY: wrapping_add only forms a candidate address. ReadProcessMemory
+    // validates it before copying to the allocated destination.
+    let address = file_information.cast::<u8>().wrapping_add(prefix_len);
+    if unsafe {
+        ReadProcessMemory(
+            GetCurrentProcess(),
+            address.cast(),
+            name.as_mut_ptr().cast(),
+            name_bytes,
+            &mut copied,
+        )
+    } == 0
+        || copied != name_bytes
+    {
+        return None;
+    }
+    let mut destination = name
+        .chunks_exact(2)
+        .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+        .collect::<Vec<_>>();
+    if destination.contains(&0) {
+        return None;
+    }
+    // SAFETY: NtSetInformationFile's live source handle remains valid until
+    // the original syscall returns.
+    let source = unsafe { get_path_name(file_handle) }.ok()?;
+    let absolute =
+        destination.first() == Some(&(b'\\' as u16)) || destination.get(1) == Some(&(b':' as u16));
+    if !absolute {
+        let mut base = if root.is_null() {
+            let parent_end = source.iter().rposition(|unit| *unit == b'\\' as u16)?;
+            source[..parent_end].to_vec()
+        } else {
+            // SAFETY: RootDirectory is a caller-owned directory handle.
+            unsafe { get_path_name(root) }.ok()?
+        };
+        if !base.ends_with(&[b'\\' as u16]) {
+            base.push(b'\\' as u16);
+        }
+        base.append(&mut destination);
+        destination = base;
+    }
+    Some((source, destination))
+}
+
 static DETOUR_NT_SET_INFORMATION_FILE: Detour<
     unsafe extern "system" fn(
         file_handle: HANDLE,
@@ -777,6 +872,21 @@ static DETOUR_NT_SET_INFORMATION_FILE: Detour<
                 length: ULONG,
                 file_information_class: FILE_INFORMATION_CLASS,
             ) -> NTSTATUS {
+                let observation = if changes_destination_name(file_information_class) {
+                    operation::with_resolution(|| {
+                        // SAFETY: the caller retains these arguments for the
+                        // duration of NtSetInformationFile.
+                        if let Some((source, destination)) =
+                            unsafe { read_mutation_paths(file_handle, file_information, length) }
+                        {
+                            (operation::begin_paths(&source, &destination), true)
+                        } else {
+                            (operation::begin(9, &[]), false)
+                        }
+                    })
+                } else {
+                    None
+                };
                 // SAFETY: forward all caller-owned arguments unchanged.
                 let status = unsafe {
                     (DETOUR_NT_SET_INFORMATION_FILE.real())(
@@ -787,12 +897,11 @@ static DETOUR_NT_SET_INFORMATION_FILE: Detour<
                         file_information_class,
                     )
                 };
-                if NT_SUCCESS(status) && changes_destination_name(file_information_class) {
-                    // The destination may be relative to an opaque root handle in
-                    // FILE_RENAME_INFORMATION. Until that structure is resolved,
-                    // a successful rename or link cannot be reported as complete.
-                    // SAFETY: the DLL client was initialized before detours.
-                    operation::mark_loss("unobserved_mutation_destination");
+                if let Some((guard, resolved)) = observation {
+                    complete_path_operation(guard, status);
+                    if NT_SUCCESS(status) && !resolved {
+                        operation::mark_loss("mutation_path_unavailable");
+                    }
                 }
                 status
             }

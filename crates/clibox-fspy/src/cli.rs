@@ -4199,6 +4199,54 @@ mod tests {
 
     #[cfg(target_os = "windows")]
     #[test]
+    fn windows_rename_and_link_record_both_paths() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(directory.path().join("source.txt"), b"fixture").unwrap();
+        let output = directory.path().join("mutation.ndjson");
+        let executable = std::env::current_exe().unwrap();
+        unsafe { std::env::set_var("CLIBOX_FSPY_WIN_MUTATION_ROOT", directory.path()) };
+        let cli = TestCli::try_parse_from([
+            OsString::from("fspy"),
+            OsString::from("record"),
+            OsString::from("--root"),
+            directory.path().as_os_str().to_owned(),
+            OsString::from("--output"),
+            output.as_os_str().to_owned(),
+            OsString::from("--"),
+            executable.into_os_string(),
+            OsString::from("--exact"),
+            OsString::from("cli::tests::windows_mutation_worker"),
+        ])
+        .unwrap();
+        assert_eq!(execute(cli.command), 0);
+        unsafe { std::env::remove_var("CLIBOX_FSPY_WIN_MUTATION_ROOT") };
+        let record = load(&output).unwrap();
+        let relative = |name: &str| NativePath::WindowsUtf16(name.encode_utf16().collect());
+        for (source, destination) in [("source.txt", "renamed.txt"), ("renamed.txt", "linked.txt")]
+        {
+            assert!(record.operations.iter().any(|pair| {
+                pair.start.operation == Operation::Mutation
+                    && pair.completion.native_error.is_none()
+                    && pair.start.paths.len() == 2
+                    && pair.start.paths[0].project_relative.as_ref() == Some(&relative(source))
+                    && pair.start.paths[1].project_relative.as_ref() == Some(&relative(destination))
+            }));
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_mutation_worker() {
+        let Some(root) = std::env::var_os("CLIBOX_FSPY_WIN_MUTATION_ROOT") else {
+            return;
+        };
+        let root = std::path::PathBuf::from(root);
+        fs::rename(root.join("source.txt"), root.join("renamed.txt")).unwrap();
+        fs::hard_link(root.join("renamed.txt"), root.join("linked.txt")).unwrap();
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
     fn windows_record_and_coverage_observe_native_reads() {
         let directory = tempfile::tempdir().unwrap();
         let input = directory.path().join("input.txt");

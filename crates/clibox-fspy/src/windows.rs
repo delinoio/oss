@@ -57,8 +57,10 @@ pub struct Frame {
     pub result: i64,
     pub error: i32,
     pub path: Vec<u8>,
+    pub second_path: Option<Vec<u8>>,
     pub sequence: u64,
     pub access_path: Option<AccessPath>,
+    pub second_access_path: Option<AccessPath>,
     pub requested_delay_ns: u64,
     pub observed_delay_ns: u64,
 }
@@ -118,6 +120,26 @@ pub fn read_frame(reader: &mut impl Read) -> io::Result<Option<Frame>> {
     }
     let mut path = vec![0_u8; length];
     reader.read_exact(&mut path)?;
+    let second_path = if kind == FrameKind::Start && operation == 9 && !path.is_empty() {
+        if path.len() < 8 {
+            return Err(invalid("mutation_paths"));
+        }
+        let source_len = u16::from_le_bytes([path[0], path[1]]) as usize;
+        let destination_len = u16::from_le_bytes([path[2], path[3]]) as usize;
+        if source_len == 0
+            || destination_len == 0
+            || !source_len.is_multiple_of(2)
+            || !destination_len.is_multiple_of(2)
+            || source_len + destination_len + 4 != path.len()
+        {
+            return Err(invalid("mutation_paths"));
+        }
+        let destination = path.split_off(4 + source_len);
+        path.drain(..4);
+        Some(destination)
+    } else {
+        None
+    };
     Ok(Some(Frame {
         kind,
         operation,
@@ -129,8 +151,10 @@ pub fn read_frame(reader: &mut impl Read) -> io::Result<Option<Frame>> {
         result,
         error,
         path,
+        second_path,
         sequence: 0,
         access_path: None,
+        second_access_path: None,
         requested_delay_ns: 0,
         observed_delay_ns: 0,
     }))
@@ -350,7 +374,12 @@ impl Ledger {
     ) -> io::Result<()> {
         self.byte_count = self
             .byte_count
-            .checked_add((HEADER_BYTES + frame.path.len()) as u64)
+            .checked_add(
+                (HEADER_BYTES
+                    + frame.path.len()
+                    + frame.second_path.as_ref().map_or(0, |path| path.len() + 4))
+                    as u64,
+            )
             .ok_or_else(|| invalid("byte_limit"))?;
         if self.byte_count > max_bytes {
             return Err(invalid("byte_limit"));
@@ -367,6 +396,11 @@ impl Ledger {
                 let mut frame = frame;
                 if !frame.path.is_empty() && frame.access_path.is_none() {
                     frame.access_path = Some(classify_path(root, &frame.path)?);
+                }
+                if let Some(second) = &frame.second_path {
+                    if frame.second_access_path.is_none() {
+                        frame.second_access_path = Some(classify_path(root, second)?);
+                    }
                 }
                 let key = (frame.pid, frame.tid, frame.id);
                 if self.starts.insert(key, frame).is_some() {
@@ -501,6 +535,9 @@ where
         if frame.kind == FrameKind::Start {
             if !frame.path.is_empty() {
                 frame.access_path = Some(classify_path(&context.root, &frame.path)?);
+            }
+            if let Some(second) = &frame.second_path {
+                frame.second_access_path = Some(classify_path(&context.root, second)?);
             }
             let began = Instant::now();
             let requested = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -699,13 +736,16 @@ pub fn assemble_candidate_record(
     for (start, completion) in pairs {
         let kind = operation_id(start.operation).ok_or_else(|| invalid("operation_kind"))?;
         let path_unavailable = start.path.is_empty();
-        let paths = if path_unavailable {
+        let mut paths = if path_unavailable {
             Vec::new()
         } else {
             vec![start
                 .access_path
                 .ok_or_else(|| invalid("unclassified_path"))?]
         };
+        if let Some(second) = start.second_access_path {
+            paths.push(second);
+        }
         let byte_count = if completion.result >= 0
             && matches!(
                 kind,
