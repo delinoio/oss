@@ -216,10 +216,7 @@ impl FrameLedger {
                     .pending
                     .remove(&key)
                     .ok_or_else(|| invalid("unpaired_completion"))?;
-                if start.operation != frame.operation
-                    || start.parent_pid != frame.parent_pid
-                    || frame.monotonic_ns < start.monotonic_ns
-                {
+                if start.operation != frame.operation || frame.monotonic_ns < start.monotonic_ns {
                     return Err(invalid("mismatched_completion"));
                 }
                 self.completed.push((start, frame));
@@ -838,6 +835,23 @@ mod tests {
             )
             .unwrap();
         assert!(ledger.push(completion).is_err());
+    }
+
+    #[test]
+    fn ledger_keeps_start_ancestry_after_reparenting() {
+        let start = read_frame(&mut frame_bytes(b's', b"/tmp/input").as_slice())
+            .unwrap()
+            .unwrap();
+        let mut completion = read_frame(&mut frame_bytes(b'e', b"").as_slice())
+            .unwrap()
+            .unwrap();
+        completion.parent_pid = 42;
+        let mut ledger = FrameLedger::new(2, 256);
+        ledger.push(start).unwrap();
+        ledger.push(completion).unwrap();
+        let pair = &ledger.finish().unwrap().pairs[0];
+        assert_eq!(pair.0.parent_pid, 1);
+        assert_eq!(pair.1.parent_pid, 42);
     }
 
     #[test]
