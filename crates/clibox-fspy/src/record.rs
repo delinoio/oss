@@ -363,8 +363,11 @@ pub fn parse<R: BufRead>(
         if !line.ends_with(b"\n") {
             return Err(ParseFailure::Incomplete);
         }
-        let item: RecordLine =
-            serde_json::from_slice(&line).map_err(|_| ParseFailure::InvalidStructure)?;
+        let item: RecordLine = serde_json::from_slice(&line).map_err(|_| {
+            #[cfg(target_os = "windows")]
+            eprintln!("clibox fspy parser: stage=json_decode");
+            ParseFailure::InvalidStructure
+        })?;
         match item {
             RecordLine::Header(value)
                 if header.is_none()
@@ -384,6 +387,8 @@ pub fn parse<R: BufRead>(
                             | (Platform::Macos | Platform::Windows, Backend::Injection)
                     )
                 {
+                    #[cfg(target_os = "windows")]
+                    eprintln!("clibox fspy parser: stage=header_validation");
                     return Err(ParseFailure::InvalidStructure);
                 }
                 header = Some(value);
@@ -406,6 +411,8 @@ pub fn parse<R: BufRead>(
                         .insert(value.correlation_id, value.clone())
                         .is_some()
                 {
+                    #[cfg(target_os = "windows")]
+                    eprintln!("clibox fspy parser: stage=start_validation");
                     return Err(ParseFailure::InvalidStructure);
                 }
                 previous_sequence = value.sequence;
@@ -443,6 +450,8 @@ pub fn parse<R: BufRead>(
                         )
                         && value.byte_count.is_none())
                 {
+                    #[cfg(target_os = "windows")]
+                    eprintln!("clibox fspy parser: stage=completion_validation");
                     return Err(ParseFailure::InvalidStructure);
                 }
                 if let Some(bytes) = value.byte_count {
@@ -474,11 +483,17 @@ pub fn parse<R: BufRead>(
                         && value.child_signal.is_none())
                     || value.child_signal.is_some_and(|signal| signal <= 0)
                 {
+                    #[cfg(target_os = "windows")]
+                    eprintln!("clibox fspy parser: stage=summary_validation");
                     return Err(ParseFailure::InvalidStructure);
                 }
                 summary = Some(value);
             }
-            _ => return Err(ParseFailure::InvalidStructure),
+            _ => {
+                #[cfg(target_os = "windows")]
+                eprintln!("clibox fspy parser: stage=event_order");
+                return Err(ParseFailure::InvalidStructure);
+            }
         }
     }
     let header = header.ok_or(ParseFailure::InvalidStructure)?;
