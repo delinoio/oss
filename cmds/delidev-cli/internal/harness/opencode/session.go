@@ -133,6 +133,7 @@ type sessionAPI struct {
 	sessionPermissions []PermissionRule
 	restoredAlways     uint32
 	permissionRestore  *interactionHTTPAttempt
+	todoRead           bool
 }
 
 type sessionCreation struct {

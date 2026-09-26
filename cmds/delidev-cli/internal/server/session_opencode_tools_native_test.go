@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -34,7 +35,10 @@ func prepareOpenCodeContinuationTool(t *testing.T, f *firstDispatchFixture, tool
 		name = ".env.original-tool-result"
 	}
 	path := filepath.Join(manifest.PrimaryPath, name)
-	if tool == "read" {
+	if tool == "glob" || tool == "grep" {
+		path = filepath.Join(manifest.PrimaryPath, "original-inline-tool-sentinel.txt")
+	}
+	if tool == "read" || tool == "glob" || tool == "grep" {
 		if err := os.WriteFile(path, []byte("original-inline-tool-sentinel\n"), 0600); err != nil {
 			t.Fatal(err)
 		}
@@ -44,6 +48,15 @@ func prepareOpenCodeContinuationTool(t *testing.T, f *firstDispatchFixture, tool
 
 func openCodeContinuationToolArguments(tool, path string) string {
 	args := map[string]any{"filePath": path}
+	if tool == "glob" {
+		args = map[string]any{"pattern": "*.txt", "path": filepath.Dir(path)}
+	}
+	if tool == "grep" {
+		args = map[string]any{"pattern": "original-inline-tool-sentinel", "include": "*.txt", "path": filepath.Dir(path)}
+	}
+	if tool == "todowrite" {
+		args = map[string]any{"todos": []domain.OpenCodeTodo{{Content: "original-inline-tool-sentinel", Status: domain.OpenCodeTodoRunning, Priority: domain.OpenCodeTodoHigh}, {Content: "Original second task", Status: "waiting", Priority: "urgent"}}}
+	}
 	if tool == "question" {
 		args = map[string]any{"questions": []any{
 			map[string]any{"question": "original-inline-tool-sentinel", "header": "Order", "multiple": true, "custom": false, "options": []any{map[string]any{"label": "First", "description": "First option"}, map[string]any{"label": "Second", "description": "Second option"}}},
@@ -64,6 +77,11 @@ func openCodeContinuationAnswers() [][]string { return [][]string{{"Second", "Fi
 
 func serveOpenCodeContinuationTool(t *testing.T, w http.ResponseWriter, tool, path string, ids ...string) {
 	t.Helper()
+	serveOpenCodeContinuationArguments(t, w, tool, openCodeContinuationToolArguments(tool, path), ids...)
+}
+
+func serveOpenCodeContinuationArguments(t *testing.T, w http.ResponseWriter, tool, arguments string, ids ...string) {
+	t.Helper()
 	callID := continuationToolCall
 	if len(ids) == 0 {
 		ids = []string{callID}
@@ -71,7 +89,7 @@ func serveOpenCodeContinuationTool(t *testing.T, w http.ResponseWriter, tool, pa
 	w.Header().Set("Content-Type", "text/event-stream")
 	calls := []any{}
 	for index, id := range ids {
-		calls = append(calls, map[string]any{"index": index, "id": id, "type": "function", "function": map[string]any{"name": tool, "arguments": openCodeContinuationToolArguments(tool, path)}})
+		calls = append(calls, map[string]any{"index": index, "id": id, "type": "function", "function": map[string]any{"name": tool, "arguments": arguments}})
 	}
 	delta := map[string]any{"role": "assistant", "tool_calls": calls}
 	for _, chunk := range []map[string]any{
@@ -184,6 +202,67 @@ func verifyOpenCodeRepeatedRead(t *testing.T, raw []byte, path string, expected 
 	}
 	if proposals != expected || len(results) != expected {
 		t.Error("repeated or omitted remembered Read conversation", proposals, len(results), expected)
+	}
+	return results
+}
+
+func openCodeTodoArguments(turn int) string {
+	todos := openCodeTodoList(turn)
+	raw, _ := json.Marshal(domain.OpenCodeTodoInput{Todos: todos})
+	return string(raw)
+}
+
+func openCodeTodoList(turn int) []domain.OpenCodeTodo {
+	if turn == 1 {
+		return []domain.OpenCodeTodo{}
+	}
+	state := domain.OpenCodeTodoRunning
+	if turn > 1 {
+		state = domain.OpenCodeTodoCompleted
+	}
+	return []domain.OpenCodeTodo{{Content: "original-inline-tool-sentinel", Status: state, Priority: domain.OpenCodeTodoHigh}, {Content: "Original second task", Status: "waiting", Priority: "urgent"}}
+}
+
+func verifyOpenCodeRepeatedTodo(t *testing.T, raw []byte, expected int) map[string]string {
+	t.Helper()
+	var body struct {
+		Messages []struct {
+			Role    string          `json:"role"`
+			Content json.RawMessage `json:"content"`
+			CallID  string          `json:"tool_call_id"`
+			Calls   []struct {
+				ID       string                           `json:"id"`
+				Function struct{ Name, Arguments string } `json:"function"`
+			} `json:"tool_calls"`
+		} `json:"messages"`
+	}
+	if json.Unmarshal(raw, &body) != nil {
+		t.Error("invalid Todo conversation")
+		return nil
+	}
+	proposals := map[string]int{}
+	results := map[string]string{}
+	for _, message := range body.Messages {
+		for _, call := range message.Calls {
+			index := len(proposals)
+			var input domain.OpenCodeTodoInput
+			if message.Role != "assistant" || call.ID != fmt.Sprintf("%s_%d", continuationToolCall, index) || call.Function.Name != "todowrite" || domain.Decode([]byte(call.Function.Arguments), &input) != nil || domain.ValidateOpenCodeTodos(input.Todos) != nil || !slices.Equal(input.Todos, openCodeTodoList(index)) {
+				t.Error("changed original Todo proposal or explicit clear")
+			}
+			proposals[call.ID] = index
+		}
+		if message.Role == "tool" {
+			index, found := proposals[message.CallID]
+			var result string
+			var todos []domain.OpenCodeTodo
+			if !found || results[message.CallID] != "" || json.Unmarshal(message.Content, &result) != nil || domain.Decode([]byte(result), &todos) != nil || domain.ValidateOpenCodeTodos(todos) != nil || !slices.Equal(todos, openCodeTodoList(index)) {
+				t.Error("changed original Todo result or explicit clear")
+			}
+			results[message.CallID] = result
+		}
+	}
+	if len(proposals) != expected || len(results) != expected {
+		t.Error("repeated or omitted original Todo history", len(proposals), len(results), expected)
 	}
 	return results
 }

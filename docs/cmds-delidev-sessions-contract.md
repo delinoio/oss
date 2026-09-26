@@ -317,3 +317,6 @@ Original automatic Read closures can now accompany those direct remembered allow
 
 
 Completed answered OpenCode Question history also supports this continuation/recovery boundary through original tool-proof version 5. Native result metadata must exactly match the originally claimed and accepted answer matrix, including ordered multiple choices and explicit empty rows/strings. Existing accepted product response records remain unchanged, no answer text enters checkpoint metadata, and subsequent processes cannot reissue an old question or answer. Dismissed, incomplete, clipped or otherwise unsupported Question history remains gated.
+
+
+Eligible OpenCode General Chat continuation also preserves completed inline Glob/Grep and TodoWrite history through original tool-proof version 6. Search restoration keeps the old result even when files later change and does not rerun a search. Todo restoration retains a separate original list-update observation, verifies the actual native session list before closure and after replacement, and preserves explicit clearing plus original ordered/custom fields. Native list comparison grants no list mutation or automatic recovery Resume. The public response and completion envelopes remain unchanged.

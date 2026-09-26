@@ -35,6 +35,7 @@ type HistoryObservation struct {
 	AssistantID string
 	Messages    []HistoryMessage
 	Digest      string
+	Todo        *TodoHistoryObservation `json:",omitempty"`
 }
 
 type historyPageRead struct {
@@ -192,6 +193,21 @@ func (s *sessionAPI) readHistoryAt(ctx context.Context, o *inputObserver, bounda
 	}
 	if err := s.events.status(); err != nil {
 		return fail(err)
+	}
+	phase = "todo-state"
+	expectedTodo := o.todo
+	if expectedTodo == nil && s.predecessor != nil {
+		expectedTodo = latestCheckpointTodo(*s.predecessor)
+	}
+	if err := s.compareTodoHistory(ctx, expectedTodo); err != nil {
+		return fail(err)
+	}
+	if err := s.events.status(); err != nil {
+		return fail(err)
+	}
+	if o.todo != nil {
+		value := *o.todo
+		result.Todo = &value
 	}
 	raw, err := json.Marshal(result)
 	if err != nil || len(raw) > maxObservedBytes {

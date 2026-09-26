@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -38,7 +39,7 @@ func TestManualNativeOpenCodeCompletedExecutionRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, mode := range []domain.SessionMode{domain.ExecuteMode, domain.PlanMode} {
-		for _, scenario := range []string{"first", "resumed", "switched", "failed", "missing-checkpoint", "read", "bash", "read-once", "read-always", "read-always-resumed", "read-cascade", "read-cascade-resumed", "question", "question-resumed"} {
+		for _, scenario := range []string{"first", "resumed", "switched", "failed", "missing-checkpoint", "read", "bash", "read-once", "read-always", "read-always-resumed", "read-cascade", "read-cascade-resumed", "question", "question-resumed", "glob", "grep", "todowrite", "todowrite-resumed"} {
 			t.Run(string(mode)+"/"+scenario, func(t *testing.T) { nativeOpenCodeRecovery(t, binary, mode, scenario) })
 		}
 	}
@@ -48,6 +49,13 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 	if scenario == "bash" && mode == domain.PlanMode {
 		t.Skip("native Plan shell policy needs separate interaction restoration")
 	}
+	search := scenario == "glob" || scenario == "grep"
+	if search {
+		if _, err := exec.LookPath("rg"); err != nil {
+			t.Skip("native search requires existing ripgrep; no automatic download")
+		}
+	}
+	todo := strings.HasPrefix(scenario, "todowrite")
 	question := strings.HasPrefix(scenario, "question")
 	tool := ""
 	toolCalls := int64(0)
@@ -58,8 +66,11 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 		permissionCount = 2
 	}
 	permission := scenario == "read-once" || remembered
-	if scenario == "read" || scenario == "bash" || permission || question {
+	if scenario == "read" || scenario == "bash" || permission || question || search || todo {
 		tool, toolCalls = scenario, 1
+		if todo {
+			tool = "todowrite"
+		}
 		if question {
 			tool = "question"
 		}
@@ -73,7 +84,7 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 	defer cancel()
 	var calls atomic.Int64
 	lostTurn := int64(1)
-	if scenario == "resumed" || scenario == "switched" || scenario == "read-always-resumed" || scenario == "read-cascade-resumed" || scenario == "question-resumed" {
+	if scenario == "resumed" || scenario == "switched" || scenario == "read-always-resumed" || scenario == "read-cascade-resumed" || scenario == "question-resumed" || scenario == "todowrite-resumed" {
 		lostTurn = 2
 	}
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

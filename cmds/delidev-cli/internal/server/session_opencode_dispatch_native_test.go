@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -67,6 +68,16 @@ func TestManualNativeOpenCodePublicQuestionContinuation(t *testing.T) {
 	nativeOpenCodePublicDispatchProfile(t, 3, false, "", "question", true)
 }
 
+func TestManualNativeOpenCodePublicTodoClearContinuation(t *testing.T) {
+	nativeOpenCodePublicDispatchProfile(t, 3, false, "", "todo-clear", true)
+}
+
+func TestManualNativeOpenCodePublicSearchTodoContinuation(t *testing.T) {
+	for _, tool := range []string{"glob", "grep", "todowrite"} {
+		t.Run(tool, func(t *testing.T) { nativeOpenCodePublicDispatchProfile(t, 3, false, "", tool, true) })
+	}
+}
+
 func TestManualNativeOpenCodePublicInlineToolContinuation(t *testing.T) {
 	for _, tool := range []string{"read", "bash"} {
 		t.Run(tool, func(t *testing.T) { nativeOpenCodePublicDispatchProfile(t, 3, false, "", tool, true) })
@@ -78,6 +89,16 @@ func nativeOpenCodePublicDispatch(t *testing.T, turns int, failedFirst bool, fau
 }
 
 func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bool, fault, tool string, switchModes ...bool) {
+	repeatTodo := tool == "todo-clear"
+	if repeatTodo {
+		tool = "todowrite"
+	}
+	search := tool == "glob" || tool == "grep"
+	if search {
+		if _, err := exec.LookPath("rg"); err != nil {
+			t.Skip("native search requires existing ripgrep; no automatic download")
+		}
+	}
 	question := tool == "question"
 	cascade := tool == "read-cascade"
 	permission := tool == "read-once" || tool == "read-always" || cascade
@@ -112,7 +133,7 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 			if tool != "" {
 				expectedCalls++
 			}
-			if always {
+			if always || repeatTodo {
 				expectedCalls = turns * 2
 			}
 			modeAt := func(turn int) domain.SessionMode {
@@ -153,7 +174,21 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 					return
 				}
 				providerTurn := int(calls.Load())
-				if always {
+				if repeatTodo {
+					completed := providerTurn / 2
+					providerTurn = (providerTurn + 1) / 2
+					results := verifyOpenCodeRepeatedTodo(t, raw, completed)
+					for id, result := range results {
+						if prior, exists := retainedTools[id]; exists && prior != result {
+							t.Error("replacement altered original Todo result")
+						}
+						retainedTools[id] = result
+					}
+					if calls.Load()%2 == 1 {
+						serveOpenCodeContinuationArguments(t, w, tool, openCodeTodoArguments(providerTurn-1), fmt.Sprintf("%s_%d", continuationToolCall, providerTurn-1))
+						return
+					}
+				} else if always {
 					completeTools := providerTurn / 2
 					if cascade && providerTurn > 1 {
 						completeTools++
@@ -308,7 +343,7 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 						expectedState, expectedOutcome, expectedDispatch := domain.JobSucceeded, domain.ExecutionSucceeded, domain.DispatchReady
 						expectedVersion := uint32(2)
 						wantCalls := turn + 1 + expectedCalls - turns
-						if always {
+						if always || repeatTodo {
 							wantCalls = (turn + 1) * 2
 						}
 						if failedFirst && turn == 0 {
@@ -340,6 +375,15 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 								if err := os.WriteFile(path, []byte("changed-source-after-original-tool\n"), 0600); err != nil {
 									t.Fatal(err)
 								}
+							}
+						}
+						if search && turn == 0 {
+							path := toolPath.Load().(string)
+							if err := os.WriteFile(path, []byte("changed-source-after-original-tool\n"), 0600); err != nil {
+								t.Fatal(err)
+							}
+							if err := os.WriteFile(filepath.Join(filepath.Dir(path), "changed-source-after-original-tool.txt"), []byte("changed"), 0600); err != nil {
+								t.Fatal(err)
 							}
 						}
 						if permission || question {

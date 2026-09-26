@@ -29,6 +29,7 @@ type checkpointToolPart struct {
 // Version 3 preserves exact observed Read allowances and their applied prefix.
 // Version 4 additionally retains original automatic Read policy closures.
 // Version 5 adds independently answered, completed native Question history.
+// Version 6 adds native inline search and independently compared Todo state.
 type checkpointToolHistory struct {
 	Version         uint32                       `json:"version"`
 	InteractionFree bool                         `json:"interaction_free"`
@@ -49,7 +50,14 @@ func validCheckpointTools(value nativeCheckpoint) bool {
 		return false
 	}
 	index := 0
+	searchOrTodo := false
 	for _, history := range checkpointHistories(value) {
+		if history.Todo != nil {
+			if proof.Version != 6 || !nativeID(history.Todo.EventID, "evt") || !checkpointDigest(history.Todo.Digest) {
+				return false
+			}
+			searchOrTodo = true
+		}
 		for _, message := range history.Messages {
 			for _, part := range message.Parts {
 				if part.Kind != ToolPartKind {
@@ -59,14 +67,28 @@ func validCheckpointTools(value nativeCheckpoint) bool {
 					return false
 				}
 				tool := proof.Parts[index]
-				if tool.ID != part.ID || tool.Digest != part.Digest || (tool.Name != checkpointReadTool && tool.Name != checkpointShellTool && (tool.Name != checkpointQuestionTool || proof.Version != 5)) {
+				if tool.ID != part.ID || tool.Digest != part.Digest {
+					return false
+				}
+				switch tool.Name {
+				case checkpointReadTool, checkpointShellTool:
+				case checkpointQuestionTool:
+					if proof.Version < 5 {
+						return false
+					}
+				case checkpointGlobTool, checkpointGrepTool, checkpointTodoTool:
+					if proof.Version != 6 || tool.Name == checkpointTodoTool && history.Todo == nil {
+						return false
+					}
+					searchOrTodo = true
+				default:
 					return false
 				}
 				index++
 			}
 		}
 	}
-	return index == len(proof.Parts)
+	return index == len(proof.Parts) && (proof.Version == 6) == searchOrTodo
 }
 
 func (s *sessionAPI) checkpointToolHistory(value nativeCheckpoint) *checkpointToolHistory {
@@ -74,6 +96,9 @@ func (s *sessionAPI) checkpointToolHistory(value nativeCheckpoint) *checkpointTo
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	if o.problem != nil {
+		return nil
+	}
+	if (o.todo == nil) != (value.History.Todo == nil) || o.todo != nil && *o.todo != *value.History.Todo {
 		return nil
 	}
 	proof := &checkpointToolHistory{Version: 1, InteractionFree: true}
@@ -178,6 +203,14 @@ func (s *sessionAPI) checkpointToolHistory(value nativeCheckpoint) *checkpointTo
 		return nil
 	}
 	value.Tools = proof
+	for _, part := range proof.Parts {
+		if checkpointSearchOrTodo(part.Name) {
+			proof.Version = 6
+		}
+	}
+	if latestCheckpointTodo(value) != nil {
+		proof.Version = 6
+	}
 	if !validCheckpointTools(value) {
 		return nil
 	}
@@ -215,6 +248,10 @@ func checkpointInlineTool(tool *NativeToolPart) bool {
 	case checkpointQuestionTool:
 		_, valid := checkpointQuestionAnswers(tool.Metadata)
 		return valid
+	case checkpointGlobTool, checkpointGrepTool:
+		return checkpointSearchMetadata(tool.Metadata, checkpointToolName(tool.Name))
+	case checkpointTodoTool:
+		return checkpointInlineTodo(tool)
 	default:
 		return false
 	}

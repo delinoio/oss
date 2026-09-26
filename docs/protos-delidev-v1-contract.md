@@ -185,3 +185,6 @@ Private OpenCode tool-proof version 4 additionally retains original automatic Re
 
 
 Private OpenCode tool-proof version 5 additionally retains independently accepted completed Question response claims and original closure identities. It introduces no protobuf/public question-response/completion change and contains no question or answer text. The original public accepted response remains distinct from later native restoration; historical report versions cannot be upgraded.
+
+
+Private OpenCode tool-proof version 6 adds eligible inline search/Todo parts and optional content-free original Todo history observations. Public protobuf, tool/progress, response and completion envelopes are unchanged. An original Todo event/digest remains separate from tool ownership and native list mutation; old reports and absent legacy observations cannot be reconstructed into new authority.

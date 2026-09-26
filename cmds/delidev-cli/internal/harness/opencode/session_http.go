@@ -38,6 +38,7 @@ func (s *sessionAPI) request(ctx context.Context, method, path string, body []by
 		base := "/session/" + s.creation.identity.id
 		valid = valid || s.abortAttempt && method == http.MethodPost && path == base+"/abort" && len(body) == 0
 		valid = valid || method == http.MethodGet && path == base
+		valid = valid || s.todoRead && method == http.MethodGet && path == base+"/todo" && len(body) == 0
 		if s.input != nil {
 			valid = valid || method == http.MethodPost && path == base+"/prompt_async" || method == http.MethodGet && path == base+"/message/"+s.input.receipt.MessageID
 		}

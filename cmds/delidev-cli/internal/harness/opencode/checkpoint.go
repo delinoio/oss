@@ -150,7 +150,7 @@ func (a *OwnedAPI) RetainCheckpoint(ctx context.Context) (raw []byte, reference 
 			toolParts, oncePermissions = len(value.Tools.Parts), len(value.Tools.Once)
 			alwaysPermissions, policyClosures, questionReplies = len(value.Tools.Always), len(value.Tools.Policy), len(value.Tools.Questions)
 		}
-		s.logger.InfoContext(ctx, "opencode_original_checkpoint_observed", "owner_id", s.owner, "request_id", i.receipt.RequestID, "messages", len(history.Messages), "entries", len(files), "restorable_inline_tool_parts", toolParts, "restorable_once_permissions", oncePermissions, "restorable_always_permissions", alwaysPermissions, "restorable_policy_closures", policyClosures, "restorable_question_replies", questionReplies)
+		s.logger.InfoContext(ctx, "opencode_original_checkpoint_observed", "owner_id", s.owner, "request_id", i.receipt.RequestID, "messages", len(history.Messages), "entries", len(files), "restorable_inline_tool_parts", toolParts, "restorable_once_permissions", oncePermissions, "restorable_always_permissions", alwaysPermissions, "restorable_policy_closures", policyClosures, "restorable_question_replies", questionReplies, "restorable_todo_state", latestCheckpointTodo(value) != nil)
 	}
 	return raw, ref, nil
 }
@@ -214,6 +214,12 @@ func validCheckpointLineage(value nativeCheckpoint) bool {
 			return false
 		}
 		requests[history.RequestID] = true
+		if history.Todo != nil {
+			if seen[history.Todo.EventID] {
+				return false
+			}
+			seen[history.Todo.EventID] = true
+		}
 		for _, message := range history.Messages {
 			if seen[message.ID] {
 				return false
@@ -237,6 +243,9 @@ func checkpointPath(path string) bool {
 }
 
 func validCheckpointHistory(h HistoryObservation) bool {
+	if h.Todo != nil && (!nativeID(h.Todo.EventID, "evt") || !checkpointDigest(h.Todo.Digest)) {
+		return false
+	}
 	if h.RequestID.Validate() != nil || !nativeID(h.SessionID, "ses") || !nativeID(h.InputID, "msg") || !nativeID(h.AssistantID, "msg") || len(h.Messages) < 2 || len(h.Messages) > maxObservedMessages || h.Messages[0].ID != h.InputID || h.Messages[0].Role != UserMessageRole || h.Messages[len(h.Messages)-1].ID != h.AssistantID || !checkpointDigest(h.Digest) {
 		return false
 	}

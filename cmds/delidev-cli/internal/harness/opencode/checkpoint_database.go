@@ -11,10 +11,10 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
-// The initial non-VCS text replacement profile needs only SQLite state. Copy
-// the exact database plus any original WAL/SHM; never copy account/config/cache
-// files, discard a WAL, rewrite native rows or mutate the original runtime.
-// Auxiliary/tool/project histories are refused before this staging boundary.
+// Eligible non-VCS conversation, tool and Todo profiles need only SQLite
+// state. Copy the exact database plus any original WAL/SHM; never copy account/
+// config/cache files, discard a WAL, rewrite rows or mutate the original runtime.
+// Unsupported auxiliary/tool/project state is refused before this boundary.
 func copyCheckpointDatabase(ctx context.Context, source nativeCheckpoint, home string) error {
 	if !canonicalDirectory(home) || security.CheckPrivateDir(home) != nil || !validateCheckpointFiles(source.Files) {
 		return sessionUncertain()

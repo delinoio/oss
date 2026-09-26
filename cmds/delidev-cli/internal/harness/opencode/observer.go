@@ -122,6 +122,7 @@ type inputObserver struct {
 	stop               *inputStopAttempt
 	retries            []observedRetry
 	currentRetry       *observedRetry
+	todo               *TodoHistoryObservation
 }
 
 func observerProblem() *domain.Error {
@@ -323,6 +324,7 @@ func (o *inputObserver) observe(ctx context.Context, event NativeEvent) (inputOb
 			err = observerProblem()
 		} else {
 			result.Todo = &NativeTodoUpdate{SessionID: o.input.receipt.SessionID, Todos: todos}
+			o.todo = &TodoHistoryObservation{EventID: event.ID, Digest: mutationDigest(canonicalNative(fields["todos"]))}
 		}
 	case SessionDiffEvent:
 		if !session([]string{"diff"}, nil) || !validateDiffs(fields["diff"]) {

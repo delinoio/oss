@@ -30,10 +30,11 @@ func (o *inputObserver) checkpointAlways(value *observedInteraction) (checkpoint
 }
 
 func validCheckpointInteractionProfile(p *checkpointToolHistory) bool {
-	if p.InteractionFree || len(p.Once)+len(p.Always)+len(p.Policy)+len(p.Questions) > maxObservedInteractions {
+	interactions := len(p.Once) + len(p.Always) + len(p.Policy) + len(p.Questions)
+	if interactions > maxObservedInteractions || p.Version != 6 && p.InteractionFree || p.Version == 6 && p.InteractionFree != (interactions == 0) {
 		return false
 	}
-	if p.Version != 5 && len(p.Questions) != 0 || p.AppliedAlways > uint32(len(p.Always)) {
+	if p.Version < 5 && len(p.Questions) != 0 || p.AppliedAlways > uint32(len(p.Always)) {
 		return false
 	}
 	switch p.Version {
@@ -49,6 +50,10 @@ func validCheckpointInteractionProfile(p *checkpointToolHistory) bool {
 		}
 	case 5:
 		if len(p.Questions) == 0 || len(p.Policy) != 0 && len(p.Always) == 0 {
+			return false
+		}
+	case 6:
+		if len(p.Policy) != 0 && len(p.Always) == 0 {
 			return false
 		}
 	default:

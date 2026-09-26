@@ -14,7 +14,18 @@ func checkpointInlineToolFixture(name checkpointToolName) *NativeToolPart {
 	if name == checkpointQuestionTool {
 		metadata = json.RawMessage(`{"answers":[["private original result"]],"truncated":false}`)
 	}
-	return &NativeToolPart{Name: string(name), State: ToolCompleted, Output: &output, Timing: &NativeTiming{Start: 1, End: &end}, Metadata: metadata}
+	input := json.RawMessage(`{}`)
+	if name == checkpointGlobTool {
+		metadata = json.RawMessage(`{"count":1,"truncated":false}`)
+	}
+	if name == checkpointGrepTool {
+		metadata = json.RawMessage(`{"matches":1,"truncated":false}`)
+	}
+	if name == checkpointTodoTool {
+		input = json.RawMessage(`{"todos":[{"content":"private original result","status":"waiting","priority":"urgent"}]}`)
+		metadata = json.RawMessage(`{"todos":[{"content":"private original result","status":"waiting","priority":"urgent"}],"truncated":false}`)
+	}
+	return &NativeToolPart{Input: input, Name: string(name), State: ToolCompleted, Output: &output, Timing: &NativeTiming{Start: 1, End: &end}, Metadata: metadata}
 }
 
 func TestCheckpointInlineToolsRequireCompleteIndependentState(t *testing.T) {

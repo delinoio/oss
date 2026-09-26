@@ -18,6 +18,7 @@ const (
 	checkpointIdlePhase      checkpointReadPhase = "idle"
 	checkpointMessagesPhase  checkpointReadPhase = "messages"
 	checkpointRecheckPhase   checkpointReadPhase = "recheck"
+	checkpointTodoPhase      checkpointReadPhase = "todo"
 )
 
 // This read compares all original message/part bytes through the pinned native
@@ -82,6 +83,10 @@ func (s *sessionAPI) inspectCheckpointHistory(ctx context.Context, checkpoint na
 		return err
 	}
 	if _, err := s.readSession(ctx); err != nil {
+		return err
+	}
+	phase = checkpointTodoPhase
+	if err := s.compareTodoHistory(ctx, latestCheckpointTodo(checkpoint)); err != nil {
 		return err
 	}
 	if s.logger != nil {

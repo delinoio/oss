@@ -8,6 +8,10 @@ import (
 )
 
 func copyHistoryObservation(value HistoryObservation) HistoryObservation {
+	if value.Todo != nil {
+		todo := *value.Todo
+		value.Todo = &todo
+	}
 	value.Messages = slices.Clone(value.Messages)
 	for i := range value.Messages {
 		value.Messages[i].Parts = slices.Clone(value.Messages[i].Parts)
