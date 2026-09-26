@@ -1789,6 +1789,7 @@ dependencies = [
  "base64 0.22.1",
  "clap",
  "clibox-config",
+ "clibox-fspy",
  "clibox-system",
  "clibox-transform",
  "clibox-wait",
