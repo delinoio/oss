@@ -93,7 +93,7 @@ impl Dependencies {
             // creation can change the command's behavior.
             if matches!(
                 operation,
-                Operation::Open | Operation::Metadata | Operation::Directory
+                Operation::Open | Operation::Metadata | Operation::Directory | Operation::Exec
             ) && missing_path_error(native_error)
             {
                 self.absent.insert(relative);
@@ -101,7 +101,11 @@ impl Dependencies {
             return;
         }
         match operation {
-            Operation::Read | Operation::PositionalRead | Operation::Open | Operation::Metadata => {
+            Operation::Read
+            | Operation::PositionalRead
+            | Operation::Open
+            | Operation::Metadata
+            | Operation::Exec => {
                 self.files.insert(relative);
             }
             Operation::Directory => {
@@ -110,8 +114,7 @@ impl Dependencies {
             Operation::Close
             | Operation::Write
             | Operation::PositionalWrite
-            | Operation::Mutation
-            | Operation::Exec => {}
+            | Operation::Mutation => {}
         }
     }
 
@@ -310,6 +313,34 @@ impl WatchSession {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn project_executable_is_a_watchable_dependency() {
+        #[cfg(unix)]
+        let native = NativePath::UnixBytes(b"tool".to_vec());
+        #[cfg(windows)]
+        let native = NativePath::WindowsUtf16("tool".encode_utf16().collect());
+        let path = AccessPath {
+            class: PathClass::Project,
+            logical: native.clone(),
+            resolved: None,
+            project_relative: Some(native),
+            identity: None,
+        };
+        let selector = Selector::new(&["**".to_owned()], &[]).unwrap();
+        let mut dependencies = Dependencies::default();
+        dependencies.include_path(&path, &selector, Operation::Exec, 0, None);
+        assert!(dependencies.files.contains(Path::new("tool")));
+        assert!(!dependencies.is_empty());
+
+        let mut missing = Dependencies::default();
+        #[cfg(unix)]
+        let missing_error = libc::ENOENT;
+        #[cfg(windows)]
+        let missing_error = 0xc0000034_u32 as i32;
+        missing.include_path(&path, &selector, Operation::Exec, -1, Some(missing_error));
+        assert!(missing.absent.contains(Path::new("tool")));
+    }
 
     #[test]
     fn failed_run_dependency_union_preserves_old_inputs() {
