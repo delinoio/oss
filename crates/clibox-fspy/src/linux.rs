@@ -71,6 +71,7 @@ fn supervision(stage: &'static str) -> TraceFailure {
         classification = "trace_supervision",
         "file trace failed"
     );
+    eprintln!("clibox fspy tracer: stage={stage} classification=trace_supervision");
     TraceFailure::Supervision(stage)
 }
 
