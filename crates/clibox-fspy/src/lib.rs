@@ -8,7 +8,7 @@ pub mod cli;
 pub mod coverage;
 pub mod record;
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub mod watch;
 
 #[cfg(target_os = "linux")]

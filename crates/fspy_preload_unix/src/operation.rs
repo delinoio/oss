@@ -42,6 +42,7 @@ pub fn init_ready() {
 thread_local! {
     static STREAM: RefCell<Option<(u32, UnixStream)>> = const { RefCell::new(None) };
     static ACTIVE: Cell<bool> = const { Cell::new(false) };
+    static RESOLVING: Cell<bool> = const { Cell::new(false) };
     static NEXT_ID: Cell<u64> = const { Cell::new(1) };
     static MUTATIONS: RefCell<Vec<Vec<Token>>> = const { RefCell::new(Vec::new()) };
 }
@@ -86,6 +87,19 @@ fn preserve_errno<T>(action: impl FnOnce() -> T) -> T {
     // SAFETY: instrumentation before the native call must not change errno.
     unsafe { *libc::__error() = saved };
     result
+}
+
+fn with_resolution<T>(action: impl FnOnce() -> Option<T>) -> Option<T> {
+    // macOS may bind pathname-resolution helpers back through an interposed
+    // libc entry point. Exclude only these instrumentation-created nested
+    // calls; remove the guard if resolution becomes raw-syscall-only.
+    RESOLVING.with(|resolving| {
+        if resolving.replace(true) {
+            return None;
+        }
+        let _reset = Reset(resolving);
+        action()
+    })
 }
 
 fn monotonic_ns() -> u64 {
@@ -230,7 +244,7 @@ fn send_frame(
 
 pub unsafe fn enter_path(kind: Kind, path: *const c_char) -> Option<Token> {
     socket_path()?;
-    preserve_errno(|| {
+    with_resolution(|| preserve_errno(|| {
         let bytes = if path.is_null() {
             &[][..]
         } else {
@@ -238,12 +252,12 @@ pub unsafe fn enter_path(kind: Kind, path: *const c_char) -> Option<Token> {
             unsafe { CStr::from_ptr(path) }.to_bytes()
         };
         enter(kind, &absolute_path(libc::AT_FDCWD, bytes))
-    })
+    }))
 }
 
 pub unsafe fn enter_at(kind: Kind, dirfd: c_int, path: *const c_char) -> Option<Token> {
     socket_path()?;
-    preserve_errno(|| {
+    with_resolution(|| preserve_errno(|| {
         let bytes = if path.is_null() {
             &[][..]
         } else {
@@ -251,7 +265,7 @@ pub unsafe fn enter_at(kind: Kind, dirfd: c_int, path: *const c_char) -> Option<
             unsafe { CStr::from_ptr(path) }.to_bytes()
         };
         enter(kind, &absolute_path(dirfd, bytes))
-    })
+    }))
 }
 
 fn absolute_path(dirfd: c_int, path: &[u8]) -> Vec<u8> {
@@ -285,7 +299,7 @@ fn absolute_path(dirfd: c_int, path: &[u8]) -> Vec<u8> {
 
 pub fn enter_fd(kind: Kind, fd: c_int) -> Option<Token> {
     socket_path()?;
-    preserve_errno(|| {
+    with_resolution(|| preserve_errno(|| {
         let mut bytes = [0_u8; MAX_PATH];
         // SAFETY: F_GETPATH writes a NUL-terminated pathname into this buffer
         // on success and does not call an interposed file operation.
@@ -303,7 +317,7 @@ pub fn enter_fd(kind: Kind, fd: c_int) -> Option<Token> {
         // a pathless event for every child stdout write would exhaust the
         // bounded record without adding file evidence.
         path.and_then(|path| enter(kind, path))
-    })
+    }))
 }
 
 fn enter(kind: Kind, path: &[u8]) -> Option<Token> {

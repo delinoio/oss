@@ -2001,6 +2001,80 @@ fn macos_latencylab(args: LatencyArgs) -> i32 {
 }
 
 #[cfg(target_os = "macos")]
+fn macos_autowatch(args: AutowatchArgs) -> i32 {
+    use std::{process::Stdio, sync::atomic::Ordering};
+
+    let root = match execution_root(&args.execution) {
+        Ok(root) => root,
+        Err(error) => return diagnostic(error, "autowatch"),
+    };
+    let selector = match coverage::Selector::new(&args.include, &args.exclude) {
+        Ok(selector) => selector,
+        Err(error) => return diagnostic(&error.to_string(), "autowatch"),
+    };
+    let signals = match MacSignals::new() {
+        Ok(signals) => signals,
+        Err(error) => return macos_capture_status((error, 0), "autowatch"),
+    };
+    let mut watcher = crate::watch::WatchSession::new(root.clone());
+    let mut previous = crate::watch::Dependencies::default();
+    loop {
+        if let Err(error) = watcher.start_discovery() {
+            return diagnostic(&error.to_string(), "autowatch");
+        }
+        let mut child = fspy::Command::new(&args.command[0]);
+        child
+            .args(&args.command[1..])
+            .envs(std::env::vars_os())
+            .stdin(Stdio::inherit())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit());
+        let record = crate::macos::supervise::capture(
+            child,
+            &root,
+            crate::macos::supervise::Limits {
+                max_events: args.execution.max_events,
+                max_bytes: args.execution.max_bytes,
+                timeout: args.execution.timeout,
+                kill_after: args.execution.kill_after,
+            },
+            &signals.cancelled,
+        );
+        let record = match record {
+            Ok(record) => record,
+            Err(error) => {
+                return macos_capture_status(
+                    (error, signals.signal.load(Ordering::SeqCst)),
+                    "autowatch",
+                );
+            }
+        };
+        let mut dependencies = crate::watch::Dependencies::from_record(&record, &selector);
+        if child_status(&record) != 0 {
+            dependencies.merge(previous);
+        }
+        if let Err(error) = watcher.install(&dependencies) {
+            return diagnostic(&error.to_string(), "autowatch");
+        }
+        previous = dependencies;
+        loop {
+            if signals.cancelled.load(Ordering::SeqCst) {
+                return if signals.signal.load(Ordering::SeqCst) == libc::SIGTERM as usize {
+                    143
+                } else {
+                    130
+                };
+            }
+            match watcher.collect(&previous, args.debounce, Duration::from_millis(100)) {
+                Ok(true) => break,
+                Ok(false) => {}
+                Err(error) => return diagnostic(&error.to_string(), "autowatch"),
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
 fn macos_capture_status(
     failure: (crate::macos::supervise::CaptureFailure, usize),
     action: &'static str,
@@ -2425,7 +2499,11 @@ pub fn execute(command: Command) -> i32 {
             {
                 autowatch(args)
             }
-            #[cfg(not(target_os = "linux"))]
+            #[cfg(target_os = "macos")]
+            {
+                macos_autowatch(args)
+            }
+            #[cfg(not(any(target_os = "linux", target_os = "macos")))]
             {
                 let _ = args;
                 diagnostic("unsupported_target", "autowatch")
@@ -3019,6 +3097,87 @@ mod tests {
             return;
         };
         assert_eq!(fs::read(input).unwrap(), b"fixture");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_autowatch_reruns_on_observed_input_change() {
+        use std::{process::Stdio, thread, time::Instant};
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(directory.path().join("input.txt"), b"first").unwrap();
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("cli::tests::macos_autowatch_child")
+            .env("CLIBOX_FSPY_MAC_WATCH_ROOT", directory.path())
+            .current_dir(directory.path())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let runs = directory.path().join("runs.txt");
+        for expected in [1, 2] {
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while fs::read(&runs).unwrap_or_default().len() < expected {
+                if Instant::now() >= deadline {
+                    child.kill().unwrap();
+                    let output = child.wait_with_output().unwrap();
+                    panic!(
+                        "macOS autowatch missed run {expected}: {}",
+                        String::from_utf8_lossy(&output.stderr)
+                    );
+                }
+                thread::sleep(Duration::from_millis(10));
+            }
+            if expected == 1 {
+                thread::sleep(Duration::from_millis(300));
+                fs::write(directory.path().join("input.txt"), b"second").unwrap();
+            }
+        }
+        // SAFETY: this PID is the owned test child, not an arbitrary process.
+        unsafe { libc::kill(child.id() as i32, libc::SIGINT) };
+        assert!(child.wait().unwrap().success());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_autowatch_child() {
+        let Some(root) = std::env::var_os("CLIBOX_FSPY_MAC_WATCH_ROOT") else {
+            return;
+        };
+        let executable = std::env::current_exe().unwrap();
+        let cli = TestCli::try_parse_from([
+            OsString::from("fspy"),
+            OsString::from("autowatch"),
+            OsString::from("--include"),
+            OsString::from("input.txt"),
+            OsString::from("--debounce"),
+            OsString::from("50ms"),
+            OsString::from("--root"),
+            root,
+            OsString::from("--"),
+            executable.into_os_string(),
+            OsString::from("--exact"),
+            OsString::from("cli::tests::macos_watch_worker"),
+        ])
+        .unwrap();
+        assert_eq!(execute(cli.command), 130);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_watch_worker() {
+        if std::env::var_os("CLIBOX_FSPY_MAC_WATCH_ROOT").is_none() {
+            return;
+        }
+        assert!(!fs::read("input.txt").unwrap().is_empty());
+        use std::io::Write;
+        fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("runs.txt")
+            .unwrap()
+            .write_all(b"x")
+            .unwrap();
     }
 
     #[cfg(target_os = "windows")]
