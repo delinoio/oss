@@ -150,7 +150,7 @@ static DETOUR_NT_CREATE_USER_PROCESS: Detour<
                 attribute_list: PPS_ATTRIBUTE_LIST,
             ) -> NTSTATUS {
                 // SAFETY: observing caller memory without changing the forwarded arguments
-                unsafe { handle_process_image(attribute_list) };
+                let operation = unsafe { handle_process_image(attribute_list) };
 
                 // SAFETY: calling the original NtCreateUserProcess with all original arguments
                 let status = unsafe {
@@ -168,6 +168,7 @@ static DETOUR_NT_CREATE_USER_PROCESS: Detour<
                         attribute_list,
                     )
                 };
+                complete_path_operation(operation, status);
                 if NT_SUCCESS(status) && !super::create_process::is_hooking_create_process() {
                     // Direct NT creation bypasses the CreateProcess callbacks
                     // that copy the payload and inject the DLL. Its child can
@@ -181,7 +182,9 @@ static DETOUR_NT_CREATE_USER_PROCESS: Detour<
         })
     };
 
-unsafe fn handle_process_image(attribute_list: PPS_ATTRIBUTE_LIST) {
+unsafe fn handle_process_image(
+    attribute_list: PPS_ATTRIBUTE_LIST,
+) -> Option<operation::OperationGuard> {
     // SAFETY: NtCreateUserProcess requires its attribute list to remain valid for
     // this call.
     if let Some(image_path) = unsafe { read_process_image_attribute(attribute_list) } {
@@ -193,6 +196,9 @@ unsafe fn handle_process_image(attribute_list: PPS_ATTRIBUTE_LIST) {
             mode: AccessMode::READ,
             path: IpcPath::from_wide(image_path),
         });
+        operation::begin(10, image_path)
+    } else {
+        operation::begin(10, &[])
     }
 }
 
