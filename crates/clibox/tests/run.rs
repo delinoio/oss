@@ -2112,12 +2112,10 @@ fn managed_service_does_not_start_after_the_preflight_exhausts_its_deadline() {
 #[test]
 fn external_service_waits_for_delayed_readiness() {
     let home = tempfile::tempdir().unwrap();
-    let reservation = TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = reservation.local_addr().unwrap();
-    drop(reservation);
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
     let server = thread::spawn(move || {
         thread::sleep(Duration::from_millis(100));
-        let listener = TcpListener::bind(address).unwrap();
         let (mut stream, _) = listener.accept().unwrap();
         let mut request = [0u8; 1024];
         let _ = stream.read(&mut request);

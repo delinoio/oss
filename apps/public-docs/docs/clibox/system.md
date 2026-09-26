@@ -1,6 +1,6 @@
 # System commands
 
-The upcoming release names environment execution `run env` and adds `system cpus`, as shown below. Published version **0.1.6** uses **`env run`** instead and does not include CPU queries; substitute that spelling in the environment examples and use `clibox env --help` for its command group. See [Migration](/clibox/migration).
+Published version **0.2.0** names environment execution `run env` and includes `system cpus`, as shown below. Version 0.1.6 uses `env run` instead and does not include CPU queries. See [Migration](/clibox/migration).
 
 ```text
 clibox run env [KEY=VALUE ...] [--] COMMAND [ARG ...]
@@ -46,7 +46,7 @@ On Windows, `run env` also treats `$1` as an environment-variable reference and 
 
 ## Coordinate execution
 
-The following wrappers are available in the next release, alongside `run env`; they are not present in published version 0.1.6. Each wrapper accepts one workload using the same environment-assignment grammar as `run env`:
+The following wrappers are available in published version 0.2.0, alongside `run env`; they are not present in version 0.1.6. Each wrapper accepts one workload using the same environment-assignment grammar as `run env`:
 
 ```text
 [KEY=VALUE ...] [--] COMMAND [ARG ...]

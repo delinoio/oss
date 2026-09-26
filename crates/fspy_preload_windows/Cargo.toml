@@ -25,9 +25,11 @@ winapi = { workspace = true, features = [
   "namedpipeapi",
   "memoryapi",
   "errhandlingapi",
+  "fileapi",
   "handleapi",
   "processthreadsapi",
   "std",
+  "winsock2",
 ] }
 windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_UI_Shell"] }
 winsafe = { workspace = true, features = ["kernel"] }

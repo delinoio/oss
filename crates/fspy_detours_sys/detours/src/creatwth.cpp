@@ -11,6 +11,16 @@
 #define DETOURS_INTERNAL
 #include "detours.h"
 #include <stddef.h>
+#include <stdio.h>
+
+// The private fspy injector needs a stable failure stage on native targets.
+// This reports only the stage and Win32 code; never process paths or payloads.
+static void FspyReportDetourFailure(const char *stage)
+{
+    const DWORD error = GetLastError();
+    fprintf(stderr, "fspy detours: stage=%s os_code=%lu\n", stage, error);
+    SetLastError(error);
+}
 
 #if DETOURS_VERSION != 0x4c0c1   // 0xMAJORcMINORcPATCH
 #error detours.h version mismatch
@@ -388,6 +398,7 @@ static BOOL RecordExeRestore(HANDLE hProcess, HMODULE hModule, DETOUR_EXE_RESTOR
     if (!ReadProcessMemory(hProcess, der.pidh, &der.idh, sizeof(der.idh), NULL)) {
         DETOUR_TRACE(("ReadProcessMemory(idh@%p..%p) failed: %lu\n",
                       der.pidh, der.pidh + der.cbidh, GetLastError()));
+        FspyReportDetourFailure("restore_read_dos_header");
         return FALSE;
     }
     DETOUR_TRACE(("IDH: %p..%p\n", der.pidh, der.pidh + der.cbidh));
@@ -399,6 +410,7 @@ static BOOL RecordExeRestore(HANDLE hProcess, HMODULE hModule, DETOUR_EXE_RESTOR
     if (!ReadProcessMemory(hProcess, der.pinh, &der.inh, der.cbinh, NULL)) {
         DETOUR_TRACE(("ReadProcessMemory(inh@%p..%p) failed: %lu\n",
                       der.pinh, der.pinh + der.cbinh, GetLastError()));
+        FspyReportDetourFailure("restore_read_nt_prefix");
         return FALSE;
     }
 
@@ -408,12 +420,16 @@ static BOOL RecordExeRestore(HANDLE hProcess, HMODULE hModule, DETOUR_EXE_RESTOR
                  der.inh.FileHeader.NumberOfSections * sizeof(IMAGE_SECTION_HEADER));
 
     if (der.cbinh > sizeof(der.raw)) {
+        fprintf(stderr, "fspy detours: stage=restore_header_limit bytes=%lu limit=%zu sections=%u\n",
+                der.cbinh, sizeof(der.raw), der.inh.FileHeader.NumberOfSections);
+        SetLastError(ERROR_BAD_EXE_FORMAT);
         return FALSE;
     }
 
     if (!ReadProcessMemory(hProcess, der.pinh, &der.inh, der.cbinh, NULL)) {
         DETOUR_TRACE(("ReadProcessMemory(inh@%p..%p) failed: %lu\n",
                       der.pinh, der.pinh + der.cbinh, GetLastError()));
+        FspyReportDetourFailure("restore_read_full_nt_header");
         return FALSE;
     }
     DETOUR_TRACE(("INH: %p..%p\n", der.pinh, der.pinh + der.cbinh));
@@ -448,6 +464,7 @@ static BOOL RecordExeRestore(HANDLE hProcess, HMODULE hModule, DETOUR_EXE_RESTOR
         if (!ReadProcessMemory(hProcess, der.pclr, &der.clr, der.cbclr, NULL)) {
             DETOUR_TRACE(("ReadProcessMemory(clr@%p..%p) failed: %lu\n",
                           der.pclr, der.pclr + der.cbclr, GetLastError()));
+            FspyReportDetourFailure("restore_read_clr_header");
             return FALSE;
         }
         DETOUR_TRACE(("CLR: %p..%p\n", der.pclr, der.pclr + der.cbclr));
@@ -705,6 +722,7 @@ BOOL WINAPI DetourUpdateProcessWithDll(_In_ HANDLE hProcess,
 
     if (hModule == NULL) {
         SetLastError(ERROR_INVALID_OPERATION);
+        FspyReportDetourFailure("find_executable_module");
         return FALSE;
     }
 
@@ -732,6 +750,7 @@ BOOL WINAPI DetourUpdateProcessWithDll(_In_ HANDLE hProcess,
     //
     if (bIs64BitOS) {
         if (!IsWow64ProcessHelper(hProcess, &bIs32BitProcess)) {
+            FspyReportDetourFailure("query_target_bitness");
             return FALSE;
         }
     } else {
@@ -763,6 +782,7 @@ BOOL WINAPI DetourUpdateProcessWithDllEx(_In_ HANDLE hProcess,
 
     if (hModule == NULL || !LoadNtHeaderFromProcess(hProcess, hModule, &inh)) {
         SetLastError(ERROR_INVALID_OPERATION);
+        FspyReportDetourFailure("load_target_header");
         return FALSE;
     }
 
@@ -784,6 +804,7 @@ BOOL WINAPI DetourUpdateProcessWithDllEx(_In_ HANDLE hProcess,
     DETOUR_EXE_RESTORE der;
 
     if (!RecordExeRestore(hProcess, hModule, der)) {
+        FspyReportDetourFailure("record_executable_restore");
         return FALSE;
     }
 
@@ -843,6 +864,7 @@ BOOL WINAPI DetourUpdateProcessWithDllEx(_In_ HANDLE hProcess,
     else {
         // 64-bit native or 64-bit managed process on any platform.
         if (!UpdateImports64(hProcess, hModule, rlpDlls, nDlls)) {
+            FspyReportDetourFailure("update_imports64");
             return FALSE;
         }
     }
@@ -889,6 +911,7 @@ BOOL WINAPI DetourUpdateProcessWithDllEx(_In_ HANDLE hProcess,
     //
     if (!DetourCopyPayloadToProcess(hProcess, DETOUR_EXE_RESTORE_GUID, &der, sizeof(der))) {
         DETOUR_TRACE(("DetourCopyPayloadToProcess failed: %lu\n", GetLastError()));
+        FspyReportDetourFailure("copy_restore_payload");
         return FALSE;
     }
     return TRUE;

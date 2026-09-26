@@ -110,10 +110,10 @@
 
 ### clibox-docs Rules
 
-- `apps/public-docs/docs/clibox` owns the twelve English public guide routes in `docs/apps-clibox-docs-foundation.md`, with `https://oss.delino.io/clibox` as the canonical destination. Use the existing public-docs build, deployment, theme, and fixed development port.
+- `apps/public-docs/docs/clibox` owns the thirteen English public guide routes in `docs/apps-clibox-docs-foundation.md`, including `/clibox/fspy`, with `https://oss.delino.io/clibox` as the canonical destination. Use the existing public-docs build, deployment, theme, and fixed development port.
 - Expose clibox as a peer of Runmoor in the shared project selector, with every clibox route in its desktop/mobile sidebar and visible repository social/footer links. Keep the root top navbar empty.
 - Explain the dotenv `export` prefix separately from the ordinary `export` assignment key, including the immediate ASCII-space boundary.
-- Preserve all 25 next-release commands, input/output limits, file-publication behavior, cancellation, platform prerequisites, migration, and verification limits from the clibox contracts and READMEs. Document that Unix execution-wrapper ownership is limited to its process group, so daemonizing workloads and managed services must manage their own lifecycle. Keep the published 0.1.6 command count at 19 in version-specific guidance. Do not claim unpublished APT/DNF availability or describe already released syntax as a future feature.
+- Preserve all 25 commands in published 0.2.0, input/output limits, file-publication behavior, cancellation, platform prerequisites, migration, and verification limits from the clibox contracts and READMEs. Document that Unix execution-wrapper ownership is limited to its process group, so daemonizing workloads and managed services must manage their own lifecycle. Keep the seven issue #971 file-access workflows identified as source-only until a later manual release, with a public guide to their behavior and limits. Do not claim unpublished APT/DNF availability or describe already released syntax as a future feature.
 - Validate every clibox route, required article heading/link, exact selector state, sidebar link, and repository region. Apply clean-URL, credential, and private-path checks to clibox HTML and shared stylesheets, with regression fixtures for removed links and rejected content.
 - When command or installation behavior changes, synchronize these guides, both clibox READMEs, and the clibox project/domain contracts.
 

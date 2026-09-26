@@ -29,7 +29,7 @@ test('repository-owned manifests declare Apache-2.0 and imported crates retain M
 });
 
 test('owned archive licenses and upstream notices remain distinct', () => {
-  for (const name of ['clibox', 'clibox-config', 'clibox-system', 'clibox-transform', 'clibox-wait', 'pnport', 'pnport-core', 'pnport-preload']) {
+  for (const name of ['clibox', 'clibox-config', 'clibox-fspy', 'clibox-system', 'clibox-transform', 'clibox-wait', 'pnport', 'pnport-core', 'pnport-preload']) {
     assert.equal(read(`crates/${name}/LICENSE`), read('LICENSE'), name);
   }
   for (const name of ['fspy', 'fspy_detours_sys', 'materialized_artifact', 'vt_str']) {

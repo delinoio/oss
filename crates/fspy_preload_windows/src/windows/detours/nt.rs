@@ -4,12 +4,14 @@ use fspy_shared::ipc::{AccessMode, IpcPath, PathAccess};
 use ntapi::{
     ntioapi::{
         FILE_CREATE, FILE_INFORMATION_CLASS, FILE_OPEN_IF, FILE_OVERWRITE, FILE_OVERWRITE_IF,
-        FILE_SUPERSEDE, FileLinkInformation, FileLinkInformationBypassAccessCheck,
-        FileLinkInformationEx, FileLinkInformationExBypassAccessCheck, FileRenameInformation,
+        FILE_RENAME_INFORMATION, FILE_SUPERSEDE, FileLinkInformation,
+        FileLinkInformationBypassAccessCheck, FileLinkInformationEx,
+        FileLinkInformationExBypassAccessCheck, FileRenameInformation,
         FileRenameInformationBypassAccessCheck, FileRenameInformationEx,
         FileRenameInformationExBypassAccessCheck, NtQueryDirectoryFile, NtQueryFullAttributesFile,
-        NtQueryInformationByName, NtSetInformationFile, PFILE_BASIC_INFORMATION,
-        PFILE_NETWORK_OPEN_INFORMATION, PIO_APC_ROUTINE, PIO_STATUS_BLOCK,
+        NtQueryInformationByName, NtQueryInformationFile, NtReadFile, NtSetInformationFile,
+        NtWriteFile, PFILE_BASIC_INFORMATION, PFILE_NETWORK_OPEN_INFORMATION, PIO_APC_ROUTINE,
+        PIO_STATUS_BLOCK,
     },
     ntpsapi::{
         NtCreateUserProcess, PPS_ATTRIBUTE_LIST, PPS_CREATE_INFO, PS_ATTRIBUTE,
@@ -21,17 +23,115 @@ use winapi::{
         minwindef::HFILE,
         ntdef::{
             BOOLEAN, HANDLE, NT_SUCCESS, NTSTATUS, PHANDLE, PLARGE_INTEGER, POBJECT_ATTRIBUTES,
-            PUNICODE_STRING, PVOID, ULONG,
+            PULONG, PUNICODE_STRING, PVOID, ULONG,
         },
     },
-    um::winnt::{ACCESS_MASK, GENERIC_READ},
+    um::{
+        fileapi::GetFileType,
+        memoryapi::ReadProcessMemory,
+        processthreadsapi::GetCurrentProcess,
+        winbase::{FILE_TYPE_CHAR, FILE_TYPE_DISK, FILE_TYPE_PIPE},
+        winnt::{ACCESS_MASK, GENERIC_READ},
+    },
 };
 
 use crate::windows::{
     client::global_client,
     convert::{ToAbsolutePath, ToAccessMode},
     detour::{Detour, DetourAny},
+    operation,
+    winapi_utils::get_path_name,
 };
+
+unsafe fn begin_path_operation(
+    kind: u8,
+    path: impl ToAbsolutePath,
+) -> Option<operation::OperationGuard> {
+    // SAFETY: the native caller owns this path or handle through the intercepted
+    // call.
+    unsafe { begin_path_operation_with_intent(kind, path, false) }
+}
+
+unsafe fn begin_path_operation_with_intent(
+    kind: u8,
+    path: impl ToAbsolutePath,
+    mutates: bool,
+) -> Option<operation::OperationGuard> {
+    // SAFETY: the native caller owns this path or handle through the intercepted
+    // call.
+    operation::with_resolution(|| unsafe { begin_path_operation_inner(kind, path, mutates) })
+        .flatten()
+}
+
+unsafe fn begin_path_operation_inner(
+    kind: u8,
+    path: impl ToAbsolutePath,
+    mutates: bool,
+) -> Option<operation::OperationGuard> {
+    // SAFETY: the native caller owns the path or handle throughout the
+    // intercepted call. A failed resolution remains an observed failed call
+    // with an unavailable path instead of inventing a pathname.
+    unsafe {
+        path.to_absolute_path(|path| {
+            let path = path.map_or(&[][..], |value| value.as_slice());
+            Ok(if kind == 1 {
+                operation::begin_open(path, mutates)
+            } else {
+                operation::begin(kind, path)
+            })
+        })
+    }
+    .unwrap_or_else(|_| {
+        if kind == 1 {
+            operation::begin_open(&[], mutates)
+        } else {
+            operation::begin(kind, &[])
+        }
+    })
+}
+
+fn complete_path_operation(guard: Option<operation::OperationGuard>, status: NTSTATUS) {
+    if let Some(guard) = guard {
+        guard.complete(
+            if NT_SUCCESS(status) { 0 } else { -1 },
+            if NT_SUCCESS(status) { 0 } else { status },
+        );
+    }
+}
+
+unsafe fn begin_handle_operation(kind: u8, handle: HANDLE) -> Option<operation::OperationGuard> {
+    operation::with_resolution(|| {
+        // SAFETY: GetFileType accepts a native handle and does not take ownership.
+        match unsafe { GetFileType(handle) } {
+            FILE_TYPE_DISK => unsafe { begin_path_operation_inner(kind, handle, false) },
+            FILE_TYPE_PIPE | FILE_TYPE_CHAR => None,
+            _ => operation::begin(kind, &[]),
+        }
+    })
+    .flatten()
+}
+
+unsafe fn io_result(status: NTSTATUS, block: PIO_STATUS_BLOCK) -> i64 {
+    if !NT_SUCCESS(status) {
+        return -1;
+    }
+    if status == 0x103 {
+        // STATUS_PENDING means completion occurs asynchronously and cannot
+        // supply the actual byte count at this interception boundary.
+        operation::mark_loss("pending_io");
+        return 0;
+    }
+    if block.is_null() {
+        operation::mark_loss("missing_io_status_block");
+        return 0;
+    }
+    // SAFETY: the native call returned success and the caller supplied a
+    // writable IO_STATUS_BLOCK for its result.
+    i64::try_from(unsafe { (*block).Information }).unwrap_or_else(|_| {
+        operation::mark_loss("io_count_overflow");
+        0
+    })
+}
 
 // CreateProcess ultimately asks NtCreateUserProcess to open the executable
 // image. Some Windows versions perform that open entirely inside the syscall,
@@ -76,7 +176,7 @@ static DETOUR_NT_CREATE_USER_PROCESS: Detour<
                 attribute_list: PPS_ATTRIBUTE_LIST,
             ) -> NTSTATUS {
                 // SAFETY: observing caller memory without changing the forwarded arguments
-                unsafe { handle_process_image(attribute_list) };
+                let operation = unsafe { handle_process_image(attribute_list) };
 
                 // SAFETY: calling the original NtCreateUserProcess with all original arguments
                 let status = unsafe {
@@ -94,12 +194,13 @@ static DETOUR_NT_CREATE_USER_PROCESS: Detour<
                         attribute_list,
                     )
                 };
+                complete_path_operation(operation, status);
                 if NT_SUCCESS(status) && !super::create_process::is_hooking_create_process() {
                     // Direct NT creation bypasses the CreateProcess callbacks
                     // that copy the payload and inject the DLL. Its child can
                     // run, but this trace cannot claim to cover that child.
                     // SAFETY: the DLL client was initialized before detours.
-                    unsafe { global_client() }.mark_incomplete();
+                    operation::mark_loss("direct_nt_process_creation");
                 }
                 status
             }
@@ -107,7 +208,9 @@ static DETOUR_NT_CREATE_USER_PROCESS: Detour<
         })
     };
 
-unsafe fn handle_process_image(attribute_list: PPS_ATTRIBUTE_LIST) {
+unsafe fn handle_process_image(
+    attribute_list: PPS_ATTRIBUTE_LIST,
+) -> Option<operation::OperationGuard> {
     // SAFETY: NtCreateUserProcess requires its attribute list to remain valid for
     // this call.
     if let Some(image_path) = unsafe { read_process_image_attribute(attribute_list) } {
@@ -119,6 +222,9 @@ unsafe fn handle_process_image(attribute_list: PPS_ATTRIBUTE_LIST) {
             mode: AccessMode::READ,
             path: IpcPath::from_wide(image_path),
         });
+        operation::begin(10, image_path)
+    } else {
+        operation::begin(10, &[])
     }
 }
 
@@ -243,6 +349,15 @@ static DETOUR_NT_CREATE_FILE: Detour<
                 ea_buffer: PVOID,
                 ea_length: ULONG,
             ) -> HFILE {
+                // SAFETY: the object attributes remain valid until the native
+                // call returns; the ack precedes the operation.
+                let operation = unsafe {
+                    begin_path_operation_with_intent(
+                        1,
+                        object_attributes,
+                        create_disposition_mutates(create_disposition),
+                    )
+                };
                 // SAFETY: intercepting file open to record access before forwarding to real
                 // function
                 unsafe {
@@ -253,7 +368,7 @@ static DETOUR_NT_CREATE_FILE: Detour<
                 };
 
                 // SAFETY: calling the original NtCreateFile with all original arguments
-                unsafe {
+                let status = unsafe {
                     (DETOUR_NT_CREATE_FILE.real())(
                         file_handle,
                         desired_access,
@@ -267,7 +382,9 @@ static DETOUR_NT_CREATE_FILE: Detour<
                         ea_buffer,
                         ea_length,
                     )
-                }
+                };
+                complete_path_operation(operation, status);
+                status
             }
             new_nt_create_file
         })
@@ -275,12 +392,18 @@ static DETOUR_NT_CREATE_FILE: Detour<
 
 fn create_file_access_mode(desired_access: ACCESS_MASK, disposition: ULONG) -> AccessMode {
     let mode = crate::windows::winapi_utils::access_mask_to_mode(desired_access);
-    match disposition {
-        FILE_SUPERSEDE | FILE_CREATE | FILE_OPEN_IF | FILE_OVERWRITE | FILE_OVERWRITE_IF => {
-            mode.union(AccessMode::WRITE)
-        }
-        _ => mode,
+    if create_disposition_mutates(disposition) {
+        mode.union(AccessMode::WRITE)
+    } else {
+        mode
     }
+}
+
+const fn create_disposition_mutates(disposition: ULONG) -> bool {
+    matches!(
+        disposition,
+        FILE_SUPERSEDE | FILE_CREATE | FILE_OPEN_IF | FILE_OVERWRITE | FILE_OVERWRITE_IF
+    )
 }
 
 #[cfg(test)]
@@ -329,6 +452,8 @@ static DETOUR_NT_OPEN_FILE: Detour<
                 share_access: ULONG,
                 open_options: ULONG,
             ) -> HFILE {
+                // SAFETY: the object attributes remain valid throughout the call.
+                let operation = unsafe { begin_path_operation(1, object_attributes) };
                 // SAFETY: intercepting file open to record access before forwarding to real
                 // function
                 unsafe {
@@ -336,7 +461,7 @@ static DETOUR_NT_OPEN_FILE: Detour<
                 }
 
                 // SAFETY: calling the original NtOpenFile with all original arguments
-                unsafe {
+                let status = unsafe {
                     (DETOUR_NT_OPEN_FILE.real())(
                         file_handle,
                         desired_access,
@@ -345,7 +470,9 @@ static DETOUR_NT_OPEN_FILE: Detour<
                         share_access,
                         open_options,
                     )
-                }
+                };
+                complete_path_operation(operation, status);
+                status
             }
             new_nt_open_file
         })
@@ -368,16 +495,20 @@ static DETOUR_NT_QUERY_ATTRIBUTES_FILE: Detour<
                     object_attributes: POBJECT_ATTRIBUTES,
                     file_information: PFILE_BASIC_INFORMATION,
                 ) -> HFILE {
+                    // SAFETY: object attributes remain valid through this call.
+                    let operation = unsafe { begin_path_operation(7, object_attributes) };
                     // SAFETY: intercepting attribute query to record read access
                     unsafe { handle_open(AccessMode::READ, object_attributes) };
                     // SAFETY: calling the original NtQueryAttributesFile with all original
                     // arguments
-                    unsafe {
+                    let status = unsafe {
                         (DETOUR_NT_QUERY_ATTRIBUTES_FILE.real())(
                             object_attributes,
                             file_information,
                         )
-                    }
+                    };
+                    complete_path_operation(operation, status);
+                    status
                 }
                 new_nt_query_attrs
             },
@@ -427,7 +558,7 @@ unsafe fn handle_open(access_mode: impl ToAccessMode, path: impl ToAbsolutePath)
     {
         // The native call still receives its original arguments. Its access
         // cannot be represented in the trace after path resolution fails.
-        client.mark_incomplete();
+        operation::mark_loss("legacy_path_resolution");
     }
 }
 
@@ -444,15 +575,19 @@ static DETOUR_NT_FULL_QUERY_ATTRIBUTES_FILE: Detour<
                 object_attributes: POBJECT_ATTRIBUTES,
                 file_information: PFILE_NETWORK_OPEN_INFORMATION,
             ) -> HFILE {
+                // SAFETY: object attributes remain valid through this call.
+                let operation = unsafe { begin_path_operation(7, object_attributes) };
                 // SAFETY: intercepting attribute query to record read access
                 unsafe { handle_open(GENERIC_READ, object_attributes) };
                 // SAFETY: calling the original NtQueryFullAttributesFile
-                unsafe {
+                let status = unsafe {
                     (DETOUR_NT_FULL_QUERY_ATTRIBUTES_FILE.real())(
                         object_attributes,
                         file_information,
                     )
-                }
+                };
+                complete_path_operation(operation, status);
+                status
             }
             new_fn
         })
@@ -511,10 +646,12 @@ static DETOUR_NT_QUERY_INFORMATION_BY_NAME: Detour<
                 length: ULONG,
                 file_information_class: FILE_INFORMATION_CLASS,
             ) -> HFILE {
+                // SAFETY: object attributes remain valid through this call.
+                let operation = unsafe { begin_path_operation(7, object_attributes) };
                 // SAFETY: intercepting information query to record read access
                 unsafe { handle_open(GENERIC_READ, object_attributes) };
                 // SAFETY: calling the original NtQueryInformationByName
-                unsafe {
+                let status = unsafe {
                     (DETOUR_NT_QUERY_INFORMATION_BY_NAME.real())(
                         object_attributes,
                         io_status_block,
@@ -522,7 +659,9 @@ static DETOUR_NT_QUERY_INFORMATION_BY_NAME: Detour<
                         length,
                         file_information_class,
                     )
-                }
+                };
+                complete_path_operation(operation, status);
+                status
             }
             new_fn
         })
@@ -559,10 +698,12 @@ static DETOUR_NT_QUERY_DIRECTORY_FILE: Detour<
                 file_name: PUNICODE_STRING,
                 restart_scan: BOOLEAN,
             ) -> NTSTATUS {
+                // SAFETY: the directory handle remains valid until return.
+                let operation = unsafe { begin_handle_operation(8, file_handle) };
                 // SAFETY: intercepting directory query to record directory read access
                 unsafe { handle_open(AccessMode::READ_DIR, file_handle) };
                 // SAFETY: calling the original NtQueryDirectoryFile
-                unsafe {
+                let status = unsafe {
                     (DETOUR_NT_QUERY_DIRECTORY_FILE.real())(
                         file_handle,
                         event,
@@ -576,7 +717,9 @@ static DETOUR_NT_QUERY_DIRECTORY_FILE: Detour<
                         file_name,
                         restart_scan,
                     )
-                }
+                };
+                complete_path_operation(operation, status);
+                status
             }
             new_fn
         })
@@ -613,10 +756,12 @@ static DETOUR_NT_QUERY_DIRECTORY_FILE_EX: Detour<NtQueryDirectoryFileExFn> =
                 query_flags: ULONG,
                 file_name: PUNICODE_STRING,
             ) -> NTSTATUS {
+                // SAFETY: the directory handle remains valid until return.
+                let operation = unsafe { begin_handle_operation(8, file_handle) };
                 // SAFETY: intercepting directory query to record directory read access
                 unsafe { handle_open(AccessMode::READ_DIR, file_handle) };
                 // SAFETY: calling the original NtQueryDirectoryFileEx
-                unsafe {
+                let status = unsafe {
                     (DETOUR_NT_QUERY_DIRECTORY_FILE_EX.real())(
                         file_handle,
                         event,
@@ -629,7 +774,9 @@ static DETOUR_NT_QUERY_DIRECTORY_FILE_EX: Detour<NtQueryDirectoryFileExFn> =
                         query_flags,
                         file_name,
                     )
-                }
+                };
+                complete_path_operation(operation, status);
+                status
             }
             new_fn
         })
@@ -647,6 +794,97 @@ fn changes_destination_name(class: FILE_INFORMATION_CLASS) -> bool {
             | FileLinkInformationEx
             | FileLinkInformationExBypassAccessCheck
     )
+}
+
+unsafe fn read_mutation_paths(
+    file_handle: HANDLE,
+    file_information: PVOID,
+    length: ULONG,
+) -> Option<(Vec<u16>, Vec<u16>)> {
+    let prefix_len = offset_of!(FILE_RENAME_INFORMATION, FileName);
+    if file_information.is_null() || (length as usize) < prefix_len {
+        return None;
+    }
+    // ReadProcessMemory probes the caller-owned buffer without dereferencing
+    // an invalid pointer from an ordinary failed NtSetInformationFile call.
+    let mut prefix = vec![0_u8; prefix_len];
+    let mut copied = 0;
+    // SAFETY: the destination buffer is writable and the source belongs to
+    // this process; failure is treated as an unavailable pathname.
+    if unsafe {
+        ReadProcessMemory(
+            GetCurrentProcess(),
+            file_information,
+            prefix.as_mut_ptr().cast(),
+            prefix_len,
+            &mut copied,
+        )
+    } == 0
+        || copied != prefix_len
+    {
+        return None;
+    }
+    let root_offset = offset_of!(FILE_RENAME_INFORMATION, RootDirectory);
+    let root = usize::from_le_bytes(
+        prefix
+            .get(root_offset..root_offset + size_of::<usize>())?
+            .try_into()
+            .ok()?,
+    ) as HANDLE;
+    let name_offset = offset_of!(FILE_RENAME_INFORMATION, FileNameLength);
+    let name_bytes =
+        u32::from_le_bytes(prefix.get(name_offset..name_offset + 4)?.try_into().ok()?) as usize;
+    if name_bytes == 0
+        || !name_bytes.is_multiple_of(2)
+        || name_bytes > 4096
+        || prefix_len.checked_add(name_bytes)? > length as usize
+    {
+        return None;
+    }
+    let mut name = vec![0_u8; name_bytes];
+    // SAFETY: wrapping_add only forms a candidate address. ReadProcessMemory
+    // validates it before copying to the allocated destination.
+    let address = file_information.cast::<u8>().wrapping_add(prefix_len);
+    if unsafe {
+        ReadProcessMemory(
+            GetCurrentProcess(),
+            address.cast(),
+            name.as_mut_ptr().cast(),
+            name_bytes,
+            &mut copied,
+        )
+    } == 0
+        || copied != name_bytes
+    {
+        return None;
+    }
+    let mut destination = name
+        .chunks_exact(2)
+        .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+        .collect::<Vec<_>>();
+    if destination.contains(&0) {
+        return None;
+    }
+    // SAFETY: NtSetInformationFile's live source handle remains valid until
+    // the original syscall returns.
+    let source = unsafe { get_path_name(file_handle) }.ok()?.to_vec();
+    let absolute =
+        destination.first() == Some(&(b'\\' as u16)) || destination.get(1) == Some(&(b':' as u16));
+    if !absolute {
+        let mut base = if root.is_null() {
+            let parent_end = source.iter().rposition(|unit| *unit == b'\\' as u16)?;
+            source[..parent_end].to_vec()
+        } else {
+            // SAFETY: RootDirectory is a caller-owned directory handle.
+            unsafe { get_path_name(root) }.ok()?.to_vec()
+        };
+        if !base.ends_with(&[b'\\' as u16]) {
+            base.push(b'\\' as u16);
+        }
+        base.append(&mut destination);
+        destination = base;
+    }
+    Some((source, destination))
 }
 
 static DETOUR_NT_SET_INFORMATION_FILE: Detour<
@@ -668,6 +906,21 @@ static DETOUR_NT_SET_INFORMATION_FILE: Detour<
                 length: ULONG,
                 file_information_class: FILE_INFORMATION_CLASS,
             ) -> NTSTATUS {
+                let observation = if changes_destination_name(file_information_class) {
+                    operation::with_resolution(|| {
+                        // SAFETY: the caller retains these arguments for the
+                        // duration of NtSetInformationFile.
+                        if let Some((source, destination)) =
+                            unsafe { read_mutation_paths(file_handle, file_information, length) }
+                        {
+                            (operation::begin_paths(&source, &destination), true)
+                        } else {
+                            (operation::begin(9, &[]), false)
+                        }
+                    })
+                } else {
+                    None
+                };
                 // SAFETY: forward all caller-owned arguments unchanged.
                 let status = unsafe {
                     (DETOUR_NT_SET_INFORMATION_FILE.real())(
@@ -678,13 +931,182 @@ static DETOUR_NT_SET_INFORMATION_FILE: Detour<
                         file_information_class,
                     )
                 };
-                if NT_SUCCESS(status) && changes_destination_name(file_information_class) {
-                    // The destination may be relative to an opaque root handle in
-                    // FILE_RENAME_INFORMATION. Until that structure is resolved,
-                    // a successful rename or link cannot be reported as complete.
-                    // SAFETY: the DLL client was initialized before detours.
-                    unsafe { global_client() }.mark_incomplete();
+                if let Some((guard, resolved)) = observation {
+                    complete_path_operation(guard, status);
+                    if NT_SUCCESS(status) && !resolved {
+                        operation::mark_loss("mutation_path_unavailable");
+                    }
                 }
+                status
+            }
+            new_fn
+        })
+    };
+
+static DETOUR_NT_QUERY_INFORMATION_FILE: Detour<
+    unsafe extern "system" fn(
+        HANDLE,
+        PIO_STATUS_BLOCK,
+        PVOID,
+        ULONG,
+        FILE_INFORMATION_CLASS,
+    ) -> NTSTATUS,
+> =
+    // SAFETY: the detour signature exactly matches NtQueryInformationFile.
+    unsafe {
+        Detour::new(c"NtQueryInformationFile", NtQueryInformationFile, {
+            unsafe extern "system" fn new_fn(
+                file_handle: HANDLE,
+                io_status_block: PIO_STATUS_BLOCK,
+                file_information: PVOID,
+                length: ULONG,
+                file_information_class: FILE_INFORMATION_CLASS,
+            ) -> NTSTATUS {
+                // SAFETY: the handle remains owned by the caller.
+                let operation = unsafe { begin_handle_operation(7, file_handle) };
+                // SAFETY: forwarding the original arguments unchanged.
+                let status = unsafe {
+                    (DETOUR_NT_QUERY_INFORMATION_FILE.real())(
+                        file_handle,
+                        io_status_block,
+                        file_information,
+                        length,
+                        file_information_class,
+                    )
+                };
+                complete_path_operation(operation, status);
+                status
+            }
+            new_fn
+        })
+    };
+
+static DETOUR_NT_READ_FILE: Detour<
+    unsafe extern "system" fn(
+        HANDLE,
+        HANDLE,
+        PIO_APC_ROUTINE,
+        PVOID,
+        PIO_STATUS_BLOCK,
+        PVOID,
+        ULONG,
+        PLARGE_INTEGER,
+        PULONG,
+    ) -> NTSTATUS,
+> =
+    // SAFETY: the detour signature exactly matches NtReadFile.
+    unsafe {
+        Detour::new(c"NtReadFile", NtReadFile, {
+            unsafe extern "system" fn new_fn(
+                file_handle: HANDLE,
+                event: HANDLE,
+                apc_routine: PIO_APC_ROUTINE,
+                apc_context: PVOID,
+                io_status_block: PIO_STATUS_BLOCK,
+                buffer: PVOID,
+                length: ULONG,
+                byte_offset: PLARGE_INTEGER,
+                key: PULONG,
+            ) -> NTSTATUS {
+                let kind = if byte_offset.is_null() { 3 } else { 5 };
+                // SAFETY: file_handle remains owned by the native caller.
+                let operation = unsafe { begin_handle_operation(kind, file_handle) };
+                // SAFETY: forwarding the original arguments unchanged.
+                let status = unsafe {
+                    (DETOUR_NT_READ_FILE.real())(
+                        file_handle,
+                        event,
+                        apc_routine,
+                        apc_context,
+                        io_status_block,
+                        buffer,
+                        length,
+                        byte_offset,
+                        key,
+                    )
+                };
+                if let Some(operation) = operation {
+                    // SAFETY: successful synchronous calls initialize the
+                    // caller's IO_STATUS_BLOCK before returning.
+                    operation.complete(
+                        unsafe { io_result(status, io_status_block) },
+                        if NT_SUCCESS(status) { 0 } else { status },
+                    );
+                }
+                status
+            }
+            new_fn
+        })
+    };
+
+static DETOUR_NT_WRITE_FILE: Detour<
+    unsafe extern "system" fn(
+        HANDLE,
+        HANDLE,
+        PIO_APC_ROUTINE,
+        PVOID,
+        PIO_STATUS_BLOCK,
+        PVOID,
+        ULONG,
+        PLARGE_INTEGER,
+        PULONG,
+    ) -> NTSTATUS,
+> =
+    // SAFETY: the detour signature exactly matches NtWriteFile.
+    unsafe {
+        Detour::new(c"NtWriteFile", NtWriteFile, {
+            unsafe extern "system" fn new_fn(
+                file_handle: HANDLE,
+                event: HANDLE,
+                apc_routine: PIO_APC_ROUTINE,
+                apc_context: PVOID,
+                io_status_block: PIO_STATUS_BLOCK,
+                buffer: PVOID,
+                length: ULONG,
+                byte_offset: PLARGE_INTEGER,
+                key: PULONG,
+            ) -> NTSTATUS {
+                let kind = if byte_offset.is_null() { 4 } else { 6 };
+                // SAFETY: file_handle remains owned by the native caller.
+                let operation = unsafe { begin_handle_operation(kind, file_handle) };
+                // SAFETY: forwarding the original arguments unchanged.
+                let status = unsafe {
+                    (DETOUR_NT_WRITE_FILE.real())(
+                        file_handle,
+                        event,
+                        apc_routine,
+                        apc_context,
+                        io_status_block,
+                        buffer,
+                        length,
+                        byte_offset,
+                        key,
+                    )
+                };
+                if let Some(operation) = operation {
+                    // SAFETY: successful synchronous calls initialize the
+                    // caller's IO_STATUS_BLOCK before returning.
+                    operation.complete(
+                        unsafe { io_result(status, io_status_block) },
+                        if NT_SUCCESS(status) { 0 } else { status },
+                    );
+                }
+                status
+            }
+            new_fn
+        })
+    };
+
+static DETOUR_NT_CLOSE: Detour<unsafe extern "system" fn(HANDLE) -> NTSTATUS> =
+    // SAFETY: the detour signature exactly matches NtClose.
+    unsafe {
+        Detour::new(c"NtClose", ntapi::ntobapi::NtClose, {
+            unsafe extern "system" fn new_fn(handle: HANDLE) -> NTSTATUS {
+                // SAFETY: resolve a disk handle before the native close.
+                let operation = unsafe { begin_handle_operation(2, handle) };
+                // SAFETY: forwarding the original handle unchanged.
+                let status = unsafe { (DETOUR_NT_CLOSE.real())(handle) };
+                complete_path_operation(operation, status);
                 status
             }
             new_fn
@@ -726,4 +1148,8 @@ pub const DETOURS: &[DetourAny] = &[
     DETOUR_NT_QUERY_DIRECTORY_FILE.as_any(),
     DETOUR_NT_QUERY_DIRECTORY_FILE_EX.as_any(),
     DETOUR_NT_SET_INFORMATION_FILE.as_any(),
+    DETOUR_NT_READ_FILE.as_any(),
+    DETOUR_NT_QUERY_INFORMATION_FILE.as_any(),
+    DETOUR_NT_WRITE_FILE.as_any(),
+    DETOUR_NT_CLOSE.as_any(),
 ];

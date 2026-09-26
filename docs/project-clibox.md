@@ -1,7 +1,7 @@
 # Project: clibox
 
 ## Goal
-Provide a Rust CLI that JavaScript projects can pin through npm and their lockfiles. Issue #916 defines cross-platform environment execution, local port inspection/termination, resource opening, and text clipboard commands; issue #917 adds offline text replacement, time formatting/arithmetic, Base64 transformation, and hash generation/verification. Issue #919 adds stateless TCP, HTTP, and regular-file readiness waits. Issue #920 adds local configuration commands to list dotenv keys, merge dotenv layers, and normalize YAML references. Issue #951 adds portable CPU counts. Issue #953 adds local execution wrappers for rate limits, locks, HTTP service readiness, retries, and runtime/idle timeouts. All command sets coexist with help/version.
+Provide a Rust CLI that JavaScript projects can pin through npm and their lockfiles. Issue #916 defines cross-platform environment execution, local port inspection/termination, resource opening, and text clipboard commands; issue #917 adds offline text replacement, time formatting/arithmetic, Base64 transformation, and hash generation/verification. Issue #919 adds stateless TCP, HTTP, and regular-file readiness waits. Issue #920 adds local configuration commands to list dotenv keys, merge dotenv layers, and normalize YAML references. Issue #951 adds portable CPU counts. Issue #953 adds local execution wrappers for rate limits, locks, HTTP service readiness, retries, and runtime/idle timeouts. Issue #971 adds seven file-access workflows in source; they are not part of the published 0.2.0 packages. All command sets coexist with help/version in the source CLI.
 
 ## Project ID
 `clibox`
@@ -12,11 +12,13 @@ Provide a Rust CLI that JavaScript projects can pin through npm and their lockfi
 - `crates/clibox-system`: OS command definitions, runtime, errors, and adapters.
 - `crates/clibox-transform`: offline command definitions, transformations, cancellation, and atomic publication.
 - `crates/clibox-wait`: readiness command definitions, validation, probes, polling, and reporting.
+- `crates/clibox-fspy`: private file-access records, native capture backends, and seven issue #971 workflow handlers connected to the source CLI.
 - `packages/clibox`: private source workspace for the public npm launcher, platform packages, packaging, and publication tooling.
 - `apps/public-docs/docs/clibox`: English public guides published at `https://oss.delino.io/clibox`.
 
 ## Domain Contract Documents
 - [Rust foundation](crates-clibox-foundation.md)
+- [File-access workflow contract](crates-clibox-fspy-contract.md)
 - [npm distribution](packages-clibox-distribution-contract.md)
 - [Public documentation](apps-clibox-docs-foundation.md)
 
@@ -29,10 +31,10 @@ Provide a Rust CLI that JavaScript projects can pin through npm and their lockfi
 - macOS and Windows MSVC support x64/arm64; Linux supports x64/arm64 with separate glibc and musl packages.
 - Consumers never compile Rust or run installation/download scripts. The npm launcher executes only its exact-version platform dependency.
 - Manual `Release Project` versioning and immutable release-source validation precede the `clibox@v<version>` tag and downstream npm/native workflow. clibox does not publish to crates.io or require a Cargo registry token. Main CI runs independently and does not gate the coordinator; downstream native builds, tests, and package validation remain required.
-- All five Rust crates use `publish = false`. Only `clibox` depends on the four companions, through path dependencies. Companion versions begin at `0.1.0` and are not automatically bumped with product releases; no public Rust library API is added.
+- All six Rust crates use `publish = false`. Only `clibox` depends on the five companions, through path dependencies. Companion versions begin at `0.1.0` and are not automatically bumped with product releases; no public Rust library API is added.
 - npm publication uses GitHub Actions OIDC and provenance from the complete verified CI artifact; setup and dry-run validation do not publish.
-- The public commands are `run env`, `run with-rate-limit`, `run with-lock`, `run with-service`, `run with-retry`, `run with-timeout`, `port list`, `port kill`, `open`, `clipboard copy`, `clipboard paste`, `system cpus`, `dotenv list`, `dotenv merge`, `yaml normalize`, `wait tcp`, `wait http`, `wait file`, `text replace`, `time format`, `time add`, `base64 encode`, `base64 decode`, `hash compute`, and `hash verify`; no public Rust/JavaScript library API is provided.
-- `system cpus` defaults to Rust's unadjusted available-parallelism estimate; `--kind logical` reads online logical CPUs from the current OS. It has exact integer/JSON/quiet output, redacted classified failures, no substitute count, no stdin or external utility use, and no persistent state. The new command is implemented but not in published version 0.1.6.
+- The published 0.2.0 commands are `run env`, `run with-rate-limit`, `run with-lock`, `run with-service`, `run with-retry`, `run with-timeout`, `port list`, `port kill`, `open`, `clipboard copy`, `clipboard paste`, `system cpus`, `dotenv list`, `dotenv merge`, `yaml normalize`, `wait tcp`, `wait http`, `wait file`, `text replace`, `time format`, `time add`, `base64 encode`, `base64 decode`, `hash compute`, and `hash verify`. The seven `fspy` commands are source-only until a separate release; no public Rust/JavaScript library API is provided.
+- `system cpus` defaults to Rust's unadjusted available-parallelism estimate; `--kind logical` reads online logical CPUs from the current OS. It has exact integer/JSON/quiet output, redacted classified failures, no substitute count, no stdin or external utility use, and no persistent state.
 - Configuration commands are offline Rust operations with 64 MiB input/output limits, private atomic file publication, cancellation, and redacted diagnostics. They introduce no application state or shell execution.
 - Environment, port, open, and clipboard OS effects use current-user/session permissions without elevation, application persistence, automatic retries, or telemetry. Diagnostics omit clipboard text, environment values, complete argv, URLs, and paths.
 - `wait tcp`, `wait http`, and `wait file` share immediate nonoverlapping polling, unlimited default waiting, monotonic bounded attempts, handled cancellation, and redacted human/quiet/JSON results.

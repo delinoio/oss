@@ -1789,6 +1789,7 @@ dependencies = [
  "base64 0.22.1",
  "clap",
  "clibox-config",
+ "clibox-fspy",
  "clibox-system",
  "clibox-transform",
  "clibox-wait",
@@ -1818,6 +1819,31 @@ dependencies = [
  "tracing",
  "windows-sys 0.61.2",
  "yaml-rust2",
+]
+
+[[package]]
+name = "clibox-fspy"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "file-id",
+ "fspy",
+ "futures-util",
+ "globset",
+ "libc",
+ "notify",
+ "pathdiff",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "signal-hook",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "uuid",
+ "walkdir",
+ "winapi",
 ]
 
 [[package]]

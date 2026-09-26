@@ -23,8 +23,9 @@ use winapi::{
     shared::{minwindef::TRUE, ntdef::NT_SUCCESS},
     um::{
         fileapi::GetShortPathNameW,
+        jobapi2::AssignProcessToJobObject,
         stringapiset::{MultiByteToWideChar, WideCharToMultiByte},
-        winbase::CREATE_SUSPENDED,
+        winbase::{CREATE_NEW_PROCESS_GROUP, CREATE_SUSPENDED},
         winnls::CP_ACP,
     },
 };
@@ -100,6 +101,7 @@ impl SpyImpl {
         cancellation_token: CancellationToken,
     ) -> Result<TrackedChild, SpawnError> {
         let ansi_dll_path_with_nul = &self.ansi_dll_path_with_nul;
+        let windows_job = command.windows_job.take();
         let resolution_accesses = command
             .resolution_accesses
             .iter()
@@ -118,7 +120,14 @@ impl SpyImpl {
         let payload_len = payload_bytes.len().try_into().unwrap();
 
         let mut command = command.into_tokio_command();
-        command.creation_flags(CREATE_SUSPENDED);
+        command.creation_flags(
+            CREATE_SUSPENDED
+                | if windows_job.is_some() {
+                    CREATE_NEW_PROCESS_GROUP
+                } else {
+                    0
+                },
+        );
         let mut child = command.spawn().map_err(SpawnError::OsSpawn)?;
 
         let preparation = (|| {
@@ -135,7 +144,12 @@ impl SpyImpl {
             // dll_paths points to a valid null-terminated ANSI string.
             let success = unsafe { DetourUpdateProcessWithDll(raw_process, &raw mut dll_paths, 1) };
             if success != TRUE {
-                return Err(SpawnError::Injection(io::Error::last_os_error()));
+                let error = io::Error::last_os_error();
+                eprintln!(
+                    "fspy injection: stage=detour_import_update os_code={:?}",
+                    error.raw_os_error()
+                );
+                return Err(SpawnError::Injection(error));
             }
 
             // SAFETY: raw_process is valid, PAYLOAD_ID is a static GUID,
@@ -149,7 +163,27 @@ impl SpyImpl {
                 )
             };
             if success != TRUE {
-                return Err(SpawnError::Injection(io::Error::last_os_error()));
+                let error = io::Error::last_os_error();
+                eprintln!(
+                    "fspy injection: stage=payload_copy os_code={:?}",
+                    error.raw_os_error()
+                );
+                return Err(SpawnError::Injection(error));
+            }
+
+            if let Some(job) = windows_job.as_ref() {
+                // Assign the suspended root before it can launch descendants.
+                // The caller retains a separate handle for the full capture.
+                let assigned =
+                    unsafe { AssignProcessToJobObject(job.as_raw_handle().cast(), raw_process) };
+                if assigned != TRUE {
+                    let error = io::Error::last_os_error();
+                    eprintln!(
+                        "fspy injection: stage=job_assignment os_code={:?}",
+                        error.raw_os_error()
+                    );
+                    return Err(SpawnError::Injection(error));
+                }
             }
 
             // Resume using the process handle, without the nightly main-thread handle API.
@@ -157,6 +191,7 @@ impl SpyImpl {
             // PROCESS_SUSPEND_RESUME access.
             let status = unsafe { NtResumeProcess(raw_process) };
             if !NT_SUCCESS(status) {
+                eprintln!("fspy injection: stage=process_resume ntstatus={status}");
                 // SAFETY: RtlNtStatusToDosError accepts any NTSTATUS value. Native APIs
                 // return their status directly; GetLastError would report a stale error.
                 let error = unsafe { RtlNtStatusToDosError(status) };
@@ -174,6 +209,9 @@ impl SpyImpl {
         })?;
 
         Ok(TrackedChild {
+            root_pid: child
+                .id()
+                .ok_or_else(|| SpawnError::OsSpawn(io::Error::other("child_pid_unavailable")))?,
             stdin: child.stdin.take(),
             stdout: child.stdout.take(),
             stderr: child.stderr.take(),

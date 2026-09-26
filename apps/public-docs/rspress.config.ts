@@ -72,6 +72,7 @@ const cliboxPages = [
   { text: "Install", link: "/clibox/install" },
   { text: "Getting Started", link: "/clibox/getting-started" },
   { text: "Command Index", link: "/clibox/commands" },
+  { text: "File Access", link: "/clibox/fspy" },
   { text: "System Commands", link: "/clibox/system" },
   { text: "Text, Time, Base64, and Hashes", link: "/clibox/transformations" },
   { text: "Readiness Waits", link: "/clibox/wait" },

@@ -5,6 +5,8 @@ use fspy_shared_unix::exec::ExecResolveConfig;
 use libc::{c_char, c_int};
 use with_argv::with_argv;
 
+#[cfg(target_os = "macos")]
+use crate::operation::{self, Kind};
 use crate::{
     client::{global_client, raw_exec::RawExec},
     macros::intercept,
@@ -47,8 +49,14 @@ fn handle_exec(
                 if let Some(pre_exec) = pre_exec.as_ref() {
                     pre_exec.run()?;
                 }
+                #[cfg(target_os = "macos")]
+                // The successor image's hello completes a successful replacement;
+                // only a failed execve returns to complete in this image.
+                let operation = operation::enter_path(Kind::ExecReplace, raw_command.prog);
                 let result =
                     execve::original()(raw_command.prog, raw_command.argv, raw_command.envp);
+                #[cfg(target_os = "macos")]
+                operation::finish(operation, i64::from(result));
                 // A Linux image can be named through an inspected descriptor.
                 // Keep it alive until the kernel has attempted execve.
                 #[cfg(target_os = "linux")]
