@@ -1,6 +1,7 @@
+import { NativeReasoning } from "./native-reasoning";
 import { SessionBudget } from "./session-budget";
 import { ExecutionConfiguration } from "./execution-configuration";
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { Code, ConnectError, createClient } from "@connectrpc/connect";
 import { useQuery, useTransport } from "@connectrpc/connect-query";
 import {
@@ -64,7 +65,7 @@ function currentRows(base: readonly Resource[], live: ReadonlyMap<string, Resour
   });
 }
 
-function TranscriptItem({ resource }: { resource: Resource }) {
+const TranscriptItem = memo(function TranscriptItem({ resource }: { resource: Resource }) {
   const data = readDocument(resource);
   const tool = object(data.tool);
   const toolStarted = object(tool.started);
@@ -87,7 +88,7 @@ function TranscriptItem({ resource }: { resource: Resource }) {
       {items(tool.patches).map((patch, index) => <details key={index}><summary>Patch observation {index + 1}</summary>{items(object(patch).changes).map((item, part) => <pre key={part}>{text(object(item).path)}{"\n"}{text(object(item).diff)}</pre>)}</details>)}
       {items(tool.inputs).map((input, index) => <pre key={index}>Tool input: {text(object(object(input).input).text)}</pre>)}
     </details> : null}
-    {Object.keys(artifact).length ? <details open><summary>{text(started.kind) || "Native artifact"}</summary>
+    {started.kind === "reasoning-text" ? <NativeReasoning artifact={artifact} state={text(data.state)} /> : Object.keys(artifact).length ? <details open><summary>{text(started.kind) || "Native artifact"}</summary>
       {text(started.text) ? <pre>{text(started.text)}</pre> : null}
       {[...items(started.summary), ...items(started.content)].map((part, index) => <pre key={index}>{text(part)}</pre>)}
       {items(artifact.deltas).length ? <details><summary>Streamed observations</summary>{items(artifact.deltas).map((item, index) => { const delta = object(object(item).delta); return <pre key={index}>{text(delta.kind)}{typeof delta.index === "number" ? ` ${delta.index}` : ""}: {text(delta.text)}</pre>; })}</details> : null}
@@ -95,7 +96,7 @@ function TranscriptItem({ resource }: { resource: Resource }) {
     </details> : null}
     {Object.keys(progress).length ? <details open><summary>Progress · {text(progress.kind)}</summary><pre>{text(progress.diff) || text(plan.explanation)}</pre><ol>{items(plan.steps).map((step, index) => <li key={index}>{text(object(step).step)} · {text(object(step).status)}</li>)}</ol></details> : null}
   </article>;
-}
+});
 
 export function SessionView({ id, draft, setDraft }: { id: string; draft: string; setDraft: (value: string) => void }) {
   const live = useSessionStream(id);

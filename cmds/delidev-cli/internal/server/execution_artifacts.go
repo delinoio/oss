@@ -3,6 +3,7 @@ package server
 import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
+	"strings"
 )
 
 func publishExecutionArtifact(tx *store.Tx, input domain.ExecutionJobInput, session store.Record, event domain.ExecutionEvent) error {
@@ -13,7 +14,7 @@ func publishExecutionArtifact(tx *store.Tx, input domain.ExecutionJobInput, sess
 	var value domain.ExecutionMessage
 	var revision uint64
 	if event.Kind == domain.ExecutionArtifactStarted {
-		value = domain.ExecutionMessage{ExecutionID: input.ExecutionID, NativeThreadID: event.NativeThreadID, NativeTurnID: event.NativeTurnID, NativeID: update.NativeID, Role: domain.ArtifactMessage, State: domain.MessageStreaming, FirstSequence: event.Sequence, Artifact: &domain.ExecutionArtifact{Started: *update.Snapshot}}
+		value = domain.ExecutionMessage{ExecutionID: input.ExecutionID, NativeThreadID: event.NativeThreadID, NativeTurnID: event.NativeTurnID, NativeID: update.NativeID, NativeParentID: update.NativeParentID, Role: domain.ArtifactMessage, State: domain.MessageStreaming, FirstSequence: event.Sequence, Artifact: &domain.ExecutionArtifact{Started: *update.Snapshot}}
 	} else {
 		r, err := tx.Get(domain.MessageKind, update.ID)
 		if err != nil {
@@ -23,7 +24,7 @@ func publishExecutionArtifact(tx *store.Tx, input domain.ExecutionJobInput, sess
 		if err != nil {
 			return err
 		}
-		if r.SessionID != session.ID || value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeID != update.NativeID || value.Role != domain.ArtifactMessage || value.State != domain.MessageStreaming || value.Artifact == nil || value.Artifact.Completed != nil {
+		if r.SessionID != session.ID || value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeID != update.NativeID || value.NativeParentID != update.NativeParentID || value.Role != domain.ArtifactMessage || value.State != domain.MessageStreaming || value.Artifact == nil || value.Artifact.Completed != nil {
 			return executionEventConflict()
 		}
 		revision = r.Revision
@@ -33,6 +34,12 @@ func publishExecutionArtifact(tx *store.Tx, input domain.ExecutionJobInput, sess
 			if update.Snapshot.Kind != artifact.Started.Kind {
 				return executionEventConflict()
 			}
+			if artifact.Started.Kind == domain.ReasoningTextArtifact {
+				text, err := retainedReasoningText(*artifact)
+				if err != nil || update.Snapshot.Text != text {
+					return executionEventConflict()
+				}
+			}
 			// Authoritative plan completion may replace its streamed draft. Keep
 			// both observations; no prefix check, concatenation or inferred text.
 			artifact.Completed = update.Snapshot
@@ -40,6 +47,12 @@ func publishExecutionArtifact(tx *store.Tx, input domain.ExecutionJobInput, sess
 		case domain.ExecutionArtifactDelta:
 			if update.Delta.ArtifactKind() != artifact.Started.Kind {
 				return executionEventConflict()
+			}
+			if artifact.Started.Kind == domain.ReasoningTextArtifact {
+				text, err := retainedReasoningText(*artifact)
+				if err != nil || len(update.Delta.Text) > domain.MaxMessageText-len(text) {
+					return executionEventConflict()
+				}
 			}
 			if len(artifact.Deltas) >= 10000 {
 				return domain.Fail(domain.ResourceExhausted, "Artifact stream retention reached its bound.", "Retain native history for reconciliation without truncating evidence.")
@@ -54,6 +67,24 @@ func publishExecutionArtifact(tx *store.Tx, input domain.ExecutionJobInput, sess
 		return err
 	}
 	return tx.BindExecutionMessage(session.ID, input.ExecutionID, update.ID, event.NativeThreadID, event.NativeTurnID, update.NativeID, value.State)
+}
+
+// This native family is one plain-text reasoning part. Its snapshots and
+// suffixes are a monotonic stream, unlike an authoritative replacement plan.
+func retainedReasoningText(artifact domain.ExecutionArtifact) (string, error) {
+	if artifact.Started.Kind != domain.ReasoningTextArtifact || artifact.Started.Validate() != nil {
+		return "", executionEventConflict()
+	}
+	var text strings.Builder
+	text.WriteString(artifact.Started.Text)
+	for _, observation := range artifact.Deltas {
+		delta := observation.Delta
+		if delta.Kind != domain.ReasoningTextDelta || delta.Validate() != nil || len(delta.Text) > domain.MaxMessageText-text.Len() {
+			return "", executionEventConflict()
+		}
+		text.WriteString(delta.Text)
+	}
+	return text.String(), nil
 }
 
 func publishExecutionProgress(tx *store.Tx, input domain.ExecutionJobInput, session store.Record, progress *domain.ExecutionProgress, event domain.ExecutionEvent) error {

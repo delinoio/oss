@@ -124,6 +124,9 @@ Display the exact combined DeliDev instructions and each original template's con
 
 Native settings remain separate observations attributed to their recorded execution/input. Empty values and unavailable/null values are distinct; never fill a missing observation from the requested setting. Retained preceding-execution observations cannot be labeled as the newly selected execution's settings. Keep Codex sandbox/approval, Claude tool permission and OpenCode Build/Plan primary-agent observations separate. Displaying supported observation fields does not enable an unfinished harness dispatcher or establish current account readiness.
 
+### Retained native reasoning
+The transcript renders original `reasoning-text` artifacts in a collapsed, keyboard-accessible Reasoning disclosure, separately from assistant answers and indexed summaries. Combine the initial text and strictly ordered, exactly representable index-free delta sequence once. Enforce the 256 KiB UTF-8 and 10,000-delta bounds, valid Unicode and closed state/kind shapes; complete content must equal that exact stream. Inconsistent or missing evidence displays Unavailable without partial output. Preserve empty text, whitespace and Unicode as inert text. Memoized transcript rows avoid reparsing unchanged records on unrelated stream updates. This read-only display cannot enable unfinished harness dispatch or infer a reasoning capability.
+
 ## Security
 Only trusted app content receives native capabilities. Renderer/server calls require exact allowed origins and the explicitly selected connection. Account credentials and GitHub PATs must never enter read responses. Never expose a shell, arbitrary executable/file reader, network proxy, or secret-bearing diagnostic object to the renderer.
 

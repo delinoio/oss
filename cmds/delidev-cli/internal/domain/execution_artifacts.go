@@ -11,12 +11,14 @@ type ProgressKind string
 type PlanStepStatus string
 
 const (
-	PlanArtifact      ArtifactKind = "plan"
-	ReasoningArtifact ArtifactKind = "reasoning"
+	PlanArtifact          ArtifactKind = "plan"
+	ReasoningArtifact     ArtifactKind = "reasoning"
+	ReasoningTextArtifact ArtifactKind = "reasoning-text"
 
 	PlanTextDelta         ArtifactDeltaKind = "plan-text"
 	ReasoningSummaryDelta ArtifactDeltaKind = "reasoning-summary"
 	ReasoningContentDelta ArtifactDeltaKind = "reasoning-content"
+	ReasoningTextDelta    ArtifactDeltaKind = "reasoning-text"
 	ReasoningSummaryAdded ArtifactDeltaKind = "reasoning-summary-added"
 
 	PlanProgress ProgressKind = "plan"
@@ -79,8 +81,8 @@ func invalidArtifact() error {
 
 func (s ArtifactSnapshot) Validate() error {
 	switch s.Kind {
-	case PlanArtifact:
-		if s.Summary != nil || s.Content != nil || Text(s.Text, "native plan", MaxMessageText, false) != nil {
+	case PlanArtifact, ReasoningTextArtifact:
+		if s.Summary != nil || s.Content != nil || Text(s.Text, "native artifact text", MaxMessageText, false) != nil {
 			return invalidArtifact()
 		}
 	case ReasoningArtifact:
@@ -104,6 +106,8 @@ func (d ArtifactDelta) ArtifactKind() ArtifactKind {
 	switch d.Kind {
 	case PlanTextDelta:
 		return PlanArtifact
+	case ReasoningTextDelta:
+		return ReasoningTextArtifact
 	case ReasoningSummaryDelta, ReasoningContentDelta, ReasoningSummaryAdded:
 		return ReasoningArtifact
 	default:
@@ -115,7 +119,7 @@ func (d ArtifactDelta) Validate() error {
 	if d.ArtifactKind() == "" || Text(d.Text, "native artifact delta", MaxMessageText, false) != nil {
 		return invalidArtifact()
 	}
-	if d.Kind == PlanTextDelta {
+	if d.Kind == PlanTextDelta || d.Kind == ReasoningTextDelta {
 		if d.Index != nil {
 			return invalidArtifact()
 		}
@@ -126,10 +130,11 @@ func (d ArtifactDelta) Validate() error {
 }
 
 type ExecutionArtifactUpdate struct {
-	ID       ID                `json:"id"`
-	NativeID string            `json:"native_id"`
-	Snapshot *ArtifactSnapshot `json:"snapshot,omitempty"`
-	Delta    *ArtifactDelta    `json:"delta,omitempty"`
+	ID             ID                `json:"id"`
+	NativeID       string            `json:"native_id"`
+	NativeParentID string            `json:"native_parent_id,omitempty"`
+	Snapshot       *ArtifactSnapshot `json:"snapshot,omitempty"`
+	Delta          *ArtifactDelta    `json:"delta,omitempty"`
 }
 
 func (k ExecutionEventKind) IsArtifact() bool {
@@ -137,7 +142,7 @@ func (k ExecutionEventKind) IsArtifact() bool {
 }
 
 func (u ExecutionArtifactUpdate) Validate(kind ExecutionEventKind) error {
-	if u.ID.Validate() != nil || Text(u.NativeID, "native artifact identity", 1024, true) != nil {
+	if u.ID.Validate() != nil || Text(u.NativeID, "native artifact identity", 1024, true) != nil || Text(u.NativeParentID, "native artifact parent", 1024, false) != nil {
 		return invalidArtifact()
 	}
 	switch kind {

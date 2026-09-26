@@ -186,3 +186,52 @@ func TestOpenCodeTranscriptRetainsSeparatePartAndParentOwnership(t *testing.T) {
 		t.Fatal("transcript lost original part ownership or duplicated a delta")
 	}
 }
+
+func TestOpenCodeReasoningRequiresOriginalPlainTextArtifactAndMonotonicCompletion(t *testing.T) {
+	f := newOpenCodePublicationFixture(t, domain.ExecuteMode)
+	f.publish(t, f.event(domain.ExecutionThreadBound, 1))
+	f.publish(t, f.event(domain.ExecutionInputAccepted, 2))
+	update := domain.ExecutionArtifactUpdate{ID: domain.NewID(), NativeID: "prt_01960dcbe1fbABCDEFGHIJKLMN", NativeParentID: "msg_01960dcbe1fbABCDEFGHIJKLMN", Snapshot: &domain.ArtifactSnapshot{Kind: domain.ReasoningTextArtifact, Text: "original"}}
+	event := f.event(domain.ExecutionArtifactStarted, 3)
+	event.Artifact = &update
+	f.publish(t, event)
+	delta := update
+	delta.Snapshot, delta.Delta = nil, &domain.ArtifactDelta{Kind: domain.ReasoningTextDelta, Text: " continuation"}
+	event = f.event(domain.ExecutionArtifactDelta, 4)
+	event.Artifact = &delta
+	request := f.publish(t, event)
+	if response, err := f.call(request); err != nil || !response.Msg.Replayed {
+		t.Fatal("reasoning delta retry did not preserve its receipt")
+	}
+	for _, name := range []string{"replacement", "parent", "indexed-summary", "plan"} {
+		bad := update
+		bad.Snapshot = &domain.ArtifactSnapshot{Kind: domain.ReasoningTextArtifact, Text: "original continuation"}
+		switch name {
+		case "replacement":
+			bad.Snapshot.Text = "replaced reasoning"
+		case "parent":
+			bad.NativeParentID = "msg_01960dcbe1fcABCDEFGHIJKLMN"
+		case "indexed-summary":
+			bad.Snapshot = &domain.ArtifactSnapshot{Kind: domain.ReasoningArtifact, Summary: []string{}, Content: []string{"original continuation"}}
+		case "plan":
+			bad.Snapshot.Kind = domain.PlanArtifact
+		}
+		event = f.event(domain.ExecutionArtifactCompleted, 5)
+		event.Artifact = &bad
+		if _, err := f.call(f.requestEvent(t, event)); err == nil {
+			t.Fatal("original reasoning acquired foreign content/owner/semantics", name)
+		}
+	}
+	update.Snapshot.Text = "original continuation"
+	event = f.event(domain.ExecutionArtifactCompleted, 5)
+	event.Artifact = &update
+	f.publish(t, event)
+	r, err := f.service.Store.Get(context.Background(), domain.MessageKind, update.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	message, err := store.Decode[domain.ExecutionMessage](r)
+	if err != nil || message.NativeParentID != update.NativeParentID || message.Role != domain.ArtifactMessage || message.State != domain.MessageComplete || message.Artifact == nil || message.Artifact.Completed == nil || message.Artifact.Completed.Text != update.Snapshot.Text || len(message.Artifact.Deltas) != 1 {
+		t.Fatal("original reasoning record lost exact stream and completion")
+	}
+}

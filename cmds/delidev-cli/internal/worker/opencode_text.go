@@ -20,14 +20,15 @@ type openCodeTextMessage struct {
 
 type openCodeTextPart struct {
 	message  domain.ExecutionMessageUpdate
+	kind     opencode.PartKind
 	ended    bool
 	complete bool
 }
 
 // OpenCodeTextPublisher consumes only original typed OwnedAPI observations.
-// Message/part identity, streaming text and message finalization stay separate.
+// Message/part identity, assistant versus reasoning text and message finalization stay separate.
 // False means another adapter must handle the observation; it never authorizes
-// dropping native tools, reasoning, usage, interactions or terminal evidence.
+// dropping native tools, usage, interactions or terminal evidence.
 type OpenCodeTextPublisher struct {
 	binding  *OpenCodeBindingPublisher
 	messages map[string]*openCodeTextMessage
@@ -56,8 +57,26 @@ func OpenOpenCodeTextPublisher(binding *OpenCodeBindingPublisher) (*OpenCodeText
 	return &OpenCodeTextPublisher{binding: binding, messages: map[string]*openCodeTextMessage{}, parts: map[string]*openCodeTextPart{}, seen: map[string]bool{}}, nil
 }
 
-func (c *OpenCodeTextPublisher) publish(ctx context.Context, kind domain.ExecutionEventKind, message domain.ExecutionMessageUpdate) error {
+func (c *OpenCodeTextPublisher) publish(ctx context.Context, kind domain.ExecutionEventKind, message domain.ExecutionMessageUpdate, partKind opencode.PartKind) error {
 	b := c.binding
+	if partKind == opencode.ReasoningPartKind {
+		update := domain.ExecutionArtifactUpdate{ID: message.ID, NativeID: message.NativeID, NativeParentID: message.NativeParentID}
+		switch kind {
+		case domain.ExecutionMessageStarted, domain.ExecutionMessageCompleted:
+			update.Snapshot = &domain.ArtifactSnapshot{Kind: domain.ReasoningTextArtifact, Text: message.Text}
+			if kind == domain.ExecutionMessageStarted {
+				kind = domain.ExecutionArtifactStarted
+			} else {
+				kind = domain.ExecutionArtifactCompleted
+			}
+		case domain.ExecutionTextAppended:
+			update.Delta = &domain.ArtifactDelta{Kind: domain.ReasoningTextDelta, Text: message.Text}
+			kind = domain.ExecutionArtifactDelta
+		default:
+			return publicationUncertain()
+		}
+		return b.publisher.Publish(ctx, domain.ExecutionEvent{Kind: kind, NativeThreadID: b.thread, NativeTurnID: b.turn, Artifact: &update})
+	}
 	return b.publisher.Publish(ctx, domain.ExecutionEvent{Kind: kind, NativeThreadID: b.thread, NativeTurnID: b.turn, Message: &message})
 }
 
@@ -100,7 +119,7 @@ func (c *OpenCodeTextPublisher) PublishObservation(ctx context.Context, observat
 		if observation.Part == nil {
 			return false, publicationUncertain()
 		}
-		if observation.Part.Kind != opencode.TextPartKind {
+		if observation.Part.Kind != opencode.TextPartKind && observation.Part.Kind != opencode.ReasoningPartKind {
 			return false, nil
 		}
 		return true, c.observePart(ctx, *observation.Part)
@@ -111,8 +130,8 @@ func (c *OpenCodeTextPublisher) PublishObservation(ctx context.Context, observat
 		delta := observation.Delta
 		part := c.parts[delta.PartID]
 		if part == nil {
-			// Other text-bearing native families (for example reasoning)
-			// need their own typed adapter and must not become assistant text.
+			// An unowned delta needs its original part observation and a
+			// matching adapter; it cannot create assistant or reasoning text.
 			return false, nil
 		}
 		if part.message.NativeParentID != delta.MessageID || part.message.Role != domain.AssistantMessage || part.complete || part.ended {
@@ -168,7 +187,7 @@ func (c *OpenCodeTextPublisher) observeMessage(ctx context.Context, observation 
 		}
 		for _, id := range message.parts {
 			part := c.parts[id]
-			if err := c.publish(ctx, domain.ExecutionMessageCompleted, part.message); err != nil {
+			if err := c.publish(ctx, domain.ExecutionMessageCompleted, part.message, part.kind); err != nil {
 				return err
 			}
 			part.complete = true
@@ -181,7 +200,7 @@ func (c *OpenCodeTextPublisher) observeMessage(ctx context.Context, observation 
 func (c *OpenCodeTextPublisher) observePart(ctx context.Context, native opencode.NativePart) error {
 	b := c.binding
 	owner := c.messages[native.MessageID]
-	if native.SessionID != b.thread || owner == nil || native.Text == nil || native.Kind != opencode.TextPartKind || domain.NativeIdentity(native.ID).Validate(domain.OpenCode, domain.NativePartIdentity) != nil {
+	if native.SessionID != b.thread || owner == nil || native.Text == nil || (native.Kind != opencode.TextPartKind && native.Kind != opencode.ReasoningPartKind) || domain.NativeIdentity(native.ID).Validate(domain.OpenCode, domain.NativePartIdentity) != nil {
 		return publicationUncertain()
 	}
 	text := native.Text
@@ -196,27 +215,27 @@ func (c *OpenCodeTextPublisher) observePart(ctx context.Context, native opencode
 		}
 		message := domain.ExecutionMessageUpdate{ID: domain.NewID(), NativeID: native.ID, NativeParentID: native.MessageID, Role: owner.role, Text: text.Text}
 		if owner.role == domain.UserMessage {
-			if native.MessageID != b.turn || native.ID != b.inputClaim.PartID || text.Text != b.publisher.input.Input.Prompt || len(owner.parts) != 0 {
+			if native.Kind != opencode.TextPartKind || native.MessageID != b.turn || native.ID != b.inputClaim.PartID || text.Text != b.publisher.input.Input.Prompt || len(owner.parts) != 0 {
 				return publicationUncertain()
 			}
 			message.InputID = b.publisher.input.InputID
 		}
-		if err := c.publish(ctx, domain.ExecutionMessageStarted, message); err != nil {
+		if err := c.publish(ctx, domain.ExecutionMessageStarted, message, native.Kind); err != nil {
 			return err
 		}
-		part = &openCodeTextPart{message: message, ended: ended}
+		part = &openCodeTextPart{message: message, kind: native.Kind, ended: ended}
 		c.parts[native.ID] = part
 		owner.parts = append(owner.parts, native.ID)
 		c.bytes += len(text.Text)
 		if owner.role == domain.UserMessage {
-			if err := c.publish(ctx, domain.ExecutionMessageCompleted, message); err != nil {
+			if err := c.publish(ctx, domain.ExecutionMessageCompleted, message, native.Kind); err != nil {
 				return err
 			}
 			part.complete = true
 		}
 		return nil
 	}
-	if part.message.NativeParentID != native.MessageID || part.message.Role != owner.role || !strings.HasPrefix(text.Text, part.message.Text) || part.ended && !ended {
+	if part.kind != native.Kind || part.message.NativeParentID != native.MessageID || part.message.Role != owner.role || !strings.HasPrefix(text.Text, part.message.Text) || part.ended && !ended {
 		return publicationUncertain()
 	}
 	if part.complete {
@@ -246,7 +265,7 @@ func (c *OpenCodeTextPublisher) append(ctx context.Context, part *openCodeTextPa
 	}
 	message := part.message
 	message.Text = delta
-	if err := c.publish(ctx, domain.ExecutionTextAppended, message); err != nil {
+	if err := c.publish(ctx, domain.ExecutionTextAppended, message, part.kind); err != nil {
 		return err
 	}
 	part.message.Text += delta

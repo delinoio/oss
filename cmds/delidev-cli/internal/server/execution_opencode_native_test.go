@@ -51,12 +51,17 @@ const (
 	nativeNoPublication nativeOpenCodePublication = iota
 	nativeBindingPublication
 	nativeTextPublication
+	nativeReasoningPublication
 )
 
 func TestManualNativeOpenCodePublishesRegisteredText(t *testing.T) {
 	for _, mode := range []domain.SessionMode{domain.ExecuteMode, domain.PlanMode} {
 		t.Run(string(mode), func(t *testing.T) { nativeRegisteredOpenCode(t, mode, false, nativeTextPublication) })
 	}
+}
+
+func TestManualNativeOpenCodePublishesRegisteredReasoning(t *testing.T) {
+	nativeRegisteredOpenCode(t, domain.ExecuteMode, false, nativeReasoningPublication)
 }
 
 func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool, publication nativeOpenCodePublication) {
@@ -130,6 +135,9 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 			return
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
+		if publication == nativeReasoningPublication {
+			_, _ = io.WriteString(w, `data: {"id":"chatcmpl-registered","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"Native reasoning fixture."},"finish_reason":null}]}`+"\n\n")
+		}
 		_, _ = io.WriteString(w, `data: {"id":"chatcmpl-registered","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{"role":"assistant","content":"Registered OpenCode fixture completed."},"finish_reason":null}]}`+"\n\n")
 		_, _ = io.WriteString(w, `data: {"id":"chatcmpl-registered","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":20,"completion_tokens":4,"total_tokens":24}}`+"\n\ndata: [DONE]\n\n")
 	}))
@@ -285,7 +293,7 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 		return
 	}
 	var textPublisher *worker.OpenCodeTextPublisher
-	if publication == nativeTextPublication {
+	if publication == nativeTextPublication || publication == nativeReasoningPublication {
 		// Preserve the original prefix until both live input ownership and
 		// independent native storage establish acceptance for publication.
 		var prefix []opencode.Observation
@@ -335,7 +343,7 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 				t.Fatal(err)
 			}
 		}
-		if observation.Part != nil && observation.Part.Text != nil {
+		if observation.Part != nil && observation.Part.Kind == opencode.TextPartKind && observation.Part.Text != nil {
 			result = observation.Part.Text.Text
 		}
 		if observation.MessageFinalized {
@@ -380,8 +388,12 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 	}
 	if textPublisher != nil {
 		rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.MessageKind, SessionID: f.input.SessionID, Limit: 10})
-		if err != nil || len(rows) != 2 {
-			t.Fatal("native text publication lost original user/assistant records")
+		expected := 2
+		if publication == nativeReasoningPublication {
+			expected = 3
+		}
+		if err != nil || len(rows) != expected {
+			t.Fatal("native text publication lost original user/assistant/reasoning records")
 		}
 		roles := map[domain.MessageRole]bool{}
 		for _, row := range rows {
@@ -390,7 +402,11 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 				t.Fatal("native text publication lost original part identity or closure")
 			}
 			roles[message.Role] = true
-			if message.Role == domain.UserMessage {
+			if message.Role == domain.ArtifactMessage {
+				if publication != nativeReasoningPublication || message.NativeParentID != progress.AssistantID || message.Artifact == nil || message.Artifact.Started.Kind != domain.ReasoningTextArtifact || message.Artifact.Completed == nil || message.Artifact.Completed.Text != "Native reasoning fixture." || message.Artifact.Completed.Summary != nil || message.Artifact.Completed.Content != nil {
+					t.Fatal("native reasoning became an invented indexed summary or answer")
+				}
+			} else if message.Role == domain.UserMessage {
 				if message.Text != f.input.Input.Prompt || message.NativeParentID != receipt.MessageID || message.NativeID != receipt.PartID {
 					t.Fatal("original user text was replaced")
 				}

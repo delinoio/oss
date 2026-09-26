@@ -165,7 +165,7 @@ func TestOpenCodeTextDoesNotReinterpretOtherNativeFamilies(t *testing.T) {
 	f := newOpenCodeTextFixture(t)
 	f.user(t)
 	f.publish(t, f.assistant(false))
-	for _, kind := range []opencode.PartKind{opencode.ReasoningPartKind, opencode.ToolPartKind, opencode.StepFinishPartKind, opencode.CompactionPartKind} {
+	for _, kind := range []opencode.PartKind{opencode.FilePartKind, opencode.ToolPartKind, opencode.StepFinishPartKind, opencode.CompactionPartKind} {
 		observation := f.part(textPartOneID, "private unhandled content", false)
 		observation.Part.Kind = kind
 		if handled, err := f.c.PublishObservation(context.Background(), f.observation(observation)); err != nil || handled {
@@ -195,5 +195,61 @@ func TestOpenCodeTextLostAcknowledgmentRetainsFactWithoutMapperReplay(t *testing
 	}
 	if _, err := f.c.PublishObservation(context.Background(), f.observation(f.part(textPartOneID, "original response", true))); err == nil || len(f.rpc.events) != last+2 {
 		t.Fatal("acknowledged outbox fact reconstructed a blocked native mapper")
+	}
+}
+
+func TestOpenCodeReasoningRetainsItsOwnArtifactWithoutInventedSummary(t *testing.T) {
+	f := newOpenCodeTextFixture(t)
+	f.user(t)
+	f.publish(t, f.assistant(false))
+	reasoning := f.part(textPartOneID, "original reasoning", false)
+	reasoning.Part.Kind = opencode.ReasoningPartKind
+	f.publish(t, reasoning)
+	f.publish(t, opencode.Observation{Kind: opencode.MessagePartDeltaEvent, Delta: &opencode.NativeTextDelta{MessageID: textAssistantID, PartID: textPartOneID, Text: " continuation"}})
+	reasoning = f.part(textPartOneID, "original reasoning continuation", true)
+	reasoning.Part.Kind = opencode.ReasoningPartKind
+	f.publish(t, reasoning)
+	f.publish(t, f.part(textPartTwoID, "separate answer", true))
+	f.publish(t, f.assistant(true))
+	var artifacts []domain.ExecutionEvent
+	for _, raw := range f.rpc.events {
+		var event domain.ExecutionEvent
+		if err := domain.Decode(raw, &event); err != nil {
+			t.Fatal(err)
+		}
+		if event.Artifact != nil {
+			artifacts = append(artifacts, event)
+		}
+	}
+	if len(artifacts) != 3 {
+		t.Fatal("reasoning lost start/delta/completion or became assistant text")
+	}
+	for index, event := range artifacts {
+		if event.Artifact.NativeID != textPartOneID || event.Artifact.NativeParentID != textAssistantID || event.NativeTurnID != f.input.MessageID || event.Message != nil {
+			t.Fatal("reasoning lost its original part and parent")
+		}
+		if index == 1 {
+			if event.Kind != domain.ExecutionArtifactDelta || event.Artifact.Delta.Kind != domain.ReasoningTextDelta || event.Artifact.Delta.Index != nil || event.Artifact.Delta.Text != " continuation" {
+				t.Fatal("native reasoning acquired a synthetic content index")
+			}
+		} else if event.Artifact.Snapshot.Kind != domain.ReasoningTextArtifact || event.Artifact.Snapshot.Summary != nil || event.Artifact.Snapshot.Content != nil {
+			t.Fatal("native reasoning acquired an indexed summary/content model")
+		}
+	}
+	if artifacts[2].Artifact.Snapshot.Text != "original reasoning continuation" || artifacts[2].Kind != domain.ExecutionArtifactCompleted {
+		t.Fatal("native reasoning completion changed original text")
+	}
+}
+
+func TestOpenCodeTextCannotChangeIntoReasoning(t *testing.T) {
+	f := newOpenCodeTextFixture(t)
+	f.user(t)
+	f.publish(t, f.assistant(false))
+	f.publish(t, f.part(textPartOneID, "original", false))
+	changed := f.part(textPartOneID, "original", false)
+	changed.Part.Kind = opencode.ReasoningPartKind
+	before := len(f.rpc.events)
+	if _, err := f.c.PublishObservation(context.Background(), f.observation(changed)); err == nil || len(f.rpc.events) != before {
+		t.Fatal("an original answer part changed into reasoning")
 	}
 }
