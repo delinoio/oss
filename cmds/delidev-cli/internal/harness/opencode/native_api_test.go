@@ -289,6 +289,19 @@ func nativeOwnedAPISessionWithProfile(t *testing.T, input, mismatch bool, relayM
 	if !api.apiVerified || api.runtimeRoot != config.NativeRoot || api.runtimeRead || len(claims) != 0 || api.alive() != nil {
 		t.Fatal("owned native initialization did not preserve its exact live context")
 	}
+	observed, observationErr := api.initialObservedSettings(ctx)
+	if len(config.Settings.Permission) == 0 {
+		mode := domain.ExecuteMode
+		if config.Settings.Agent == PlanAgent {
+			mode = domain.PlanMode
+		}
+		original := domain.ExecutionConfiguration{Harness: domain.OpenCode, NativeModel: config.Settings.Model, Options: domain.AgentOptions{Permission: domain.PermissionDefault}}
+		if observationErr != nil || observed.OpenCodeAgent != config.Settings.Agent || observed.ValidateForInput(original, mode) != nil {
+			t.Fatal("verified native initialization lost its exact primary-agent observation")
+		}
+	} else if observationErr == nil {
+		t.Fatal("custom native rules were misreported as native defaults")
+	}
 	if _, err := api.create(ctx, domain.NewID(), config.Settings); err != nil {
 		t.Fatal(err)
 	}

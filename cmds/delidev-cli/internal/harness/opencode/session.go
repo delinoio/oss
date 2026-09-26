@@ -28,11 +28,11 @@ type PermissionRule struct {
 	Action     PermissionAction `json:"action"`
 }
 
-type PrimaryAgent string
+type PrimaryAgent = domain.OpenCodePrimaryAgent
 
 const (
-	BuildAgent PrimaryAgent = "build"
-	PlanAgent  PrimaryAgent = "plan"
+	BuildAgent PrimaryAgent = domain.OpenCodeBuildAgent
+	PlanAgent  PrimaryAgent = domain.OpenCodePlanAgent
 )
 
 type SessionSettings struct {
