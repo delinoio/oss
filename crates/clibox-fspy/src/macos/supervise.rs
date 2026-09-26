@@ -223,13 +223,21 @@ where
         }
         Ok(false) => {}
     }
-    let pairs = receiver.finish().map_err(|_| CaptureFailure::TraceLoss)?;
+    let collected = receiver.finish().map_err(|_| CaptureFailure::TraceLoss)?;
+    if !collected.hello_pids.contains(&pid)
+        || collected
+            .pairs
+            .iter()
+            .any(|(start, _)| !collected.hello_pids.contains(&start.pid))
+    {
+        return Err(CaptureFailure::TraceLoss);
+    }
     if termination.path_accesses.is_err() {
         return Err(CaptureFailure::TraceLoss);
     }
     assemble_candidate_record(
         root,
-        pairs,
+        collected.pairs,
         termination.status,
         limits.max_events,
         limits.max_bytes,

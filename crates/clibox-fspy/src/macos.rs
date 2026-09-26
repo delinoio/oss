@@ -7,7 +7,7 @@
 pub mod supervise;
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     ffi::OsString,
     fs,
     io::{self, Read},
@@ -37,6 +37,7 @@ const MAX_CONNECTIONS: usize = 4096;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FrameKind {
+    Hello,
     Start,
     Completion,
 }
@@ -71,12 +72,15 @@ pub fn read_frame(reader: &mut impl Read) -> io::Result<Option<Frame>> {
         _ => unreachable!("one-byte read exceeded its buffer"),
     }
     let kind = match header[0] {
+        b'h' => FrameKind::Hello,
         b's' => FrameKind::Start,
         b'e' => FrameKind::Completion,
         _ => return Err(invalid("frame_kind")),
     };
     let operation = header[1];
-    if !(1..=9).contains(&operation) {
+    if (kind == FrameKind::Hello && operation != 0)
+        || (kind != FrameKind::Hello && !(1..=9).contains(&operation))
+    {
         return Err(invalid("operation_kind"));
     }
     let pid = u32::from_le_bytes(header[2..6].try_into().expect("fixed header"));
@@ -92,7 +96,8 @@ pub fn read_frame(reader: &mut impl Read) -> io::Result<Option<Frame>> {
         || tid == 0
         || id == 0
         || monotonic_ns == 0
-        || (kind == FrameKind::Start && (result != 0 || error != 0))
+        || (matches!(kind, FrameKind::Hello | FrameKind::Start) && (result != 0 || error != 0))
+        || (kind == FrameKind::Hello && length != 0)
         || (kind == FrameKind::Completion
             && (length != 0 || (result < 0) != (error != 0) || error < 0))
     {
@@ -127,6 +132,7 @@ type DelayPolicy = dyn Fn(&Frame) -> Duration + Send + Sync;
 pub struct FrameLedger {
     pending: HashMap<(u32, u64, u64), Frame>,
     completed: Vec<(Frame, Frame)>,
+    hello_pids: HashSet<u32>,
     event_count: usize,
     max_events: usize,
     max_bytes: u64,
@@ -157,6 +163,9 @@ impl FrameLedger {
         frame.sequence = u64::try_from(self.event_count).map_err(|_| invalid("event_limit"))?;
         let key = (frame.pid, frame.tid, frame.id);
         match frame.kind {
+            FrameKind::Hello => {
+                self.hello_pids.insert(frame.pid);
+            }
             FrameKind::Start => {
                 if self.pending.insert(key, frame).is_some() {
                     return Err(invalid("duplicate_start"));
@@ -179,12 +188,20 @@ impl FrameLedger {
         Ok(())
     }
 
-    pub fn finish(self) -> io::Result<Vec<(Frame, Frame)>> {
+    pub fn finish(self) -> io::Result<CollectedOperations> {
         if !self.pending.is_empty() {
             return Err(invalid("unpaired_start"));
         }
-        Ok(self.completed)
+        Ok(CollectedOperations {
+            pairs: self.completed,
+            hello_pids: self.hello_pids,
+        })
     }
+}
+
+pub struct CollectedOperations {
+    pub pairs: Vec<(Frame, Frame)>,
+    pub hello_pids: HashSet<u32>,
 }
 
 struct RetryRead<'a> {
@@ -274,7 +291,7 @@ pub struct OperationReceiver {
     socket_path: PathBuf,
     stopping: Arc<AtomicBool>,
     failed: Arc<AtomicBool>,
-    receiver: Option<thread::JoinHandle<io::Result<FramePairs>>>,
+    receiver: Option<thread::JoinHandle<io::Result<CollectedOperations>>>,
 }
 
 type FramePairs = Vec<(Frame, Frame)>;
@@ -407,7 +424,7 @@ impl OperationReceiver {
         self.failed.load(Ordering::Acquire)
     }
 
-    pub fn finish(mut self) -> io::Result<Vec<(Frame, Frame)>> {
+    pub fn finish(mut self) -> io::Result<CollectedOperations> {
         self.stopping.store(true, Ordering::Release);
         self.receiver
             .take()
@@ -661,6 +678,16 @@ mod tests {
         assert!(read_frame(&mut invalid.as_slice()).is_err());
         let with_nul = frame_bytes(b's', b"/tmp/a\0b");
         assert!(read_frame(&mut with_nul.as_slice()).is_err());
+        assert!(read_frame(&mut frame_bytes(b'h', b"").as_slice()).is_err());
+        let mut hello_with_path = frame_bytes(b'h', b"/tmp/input");
+        hello_with_path[1] = 0;
+        assert!(read_frame(&mut hello_with_path.as_slice()).is_err());
+        let mut hello = frame_bytes(b'h', b"");
+        hello[1] = 0;
+        let frame = read_frame(&mut hello.as_slice()).unwrap().unwrap();
+        let mut ledger = FrameLedger::new(2, 256);
+        ledger.push(frame).unwrap();
+        assert!(ledger.finish().unwrap().hello_pids.contains(&123));
     }
 
     #[test]
@@ -734,7 +761,9 @@ mod tests {
         let root_pid = child.root_pid;
         let status = runtime.block_on(child.wait_handle).unwrap();
         assert!(status.status.success(), "{:?}", status.status);
-        let pairs = receiver.finish().unwrap();
+        let collected = receiver.finish().unwrap();
+        assert!(collected.hello_pids.contains(&root_pid));
+        let pairs = collected.pairs;
         let frames = pairs
             .iter()
             .flat_map(|(start, completion)| [start, completion])

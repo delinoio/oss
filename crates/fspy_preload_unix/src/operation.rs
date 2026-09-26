@@ -24,14 +24,23 @@ const MAX_PATH: usize = 4096;
 static SOCKET: OnceLock<Option<PathBuf>> = OnceLock::new();
 static READY: AtomicBool = AtomicBool::new(false);
 
-#[ctor::ctor(unsafe)]
-fn init_operation_channel() {
+#[cfg_attr(
+    test,
+    expect(
+        dead_code,
+        reason = "the production client constructor is disabled in unit tests"
+    )
+)]
+pub fn init_ready() {
     let _ = SOCKET.set(std::env::var_os("CLIBOX_FSPY_SOCKET").map(PathBuf::from));
     READY.store(true, Ordering::Release);
+    if socket_path().is_some() && !matches!(preserve_errno(|| with_stream(|_| true)), Some(true)) {
+        mark_incomplete();
+    }
 }
 
 thread_local! {
-    static STREAM: RefCell<Option<UnixStream>> = const { RefCell::new(None) };
+    static STREAM: RefCell<Option<(u32, UnixStream)>> = const { RefCell::new(None) };
     static ACTIVE: Cell<bool> = const { Cell::new(false) };
     static NEXT_ID: Cell<u64> = const { Cell::new(1) };
     static MUTATIONS: RefCell<Vec<Vec<Token>>> = const { RefCell::new(Vec::new()) };
@@ -39,6 +48,7 @@ thread_local! {
 
 #[derive(Clone, Copy)]
 pub enum Kind {
+    Hello = 0,
     Open = 1,
     Close = 2,
     Read = 3,
@@ -149,6 +159,14 @@ fn with_stream<R>(callback: impl FnOnce(&UnixStream) -> R) -> Option<R> {
         let _reset = Reset(active);
         STREAM.with(|slot| {
             let mut stream = slot.borrow_mut();
+            let pid = std::process::id();
+            if stream.as_ref().is_some_and(|(owner, _)| *owner != pid) {
+                // A fork inherits thread-local descriptors, but both processes
+                // must have separate framing streams and correlation counters.
+                *stream = None;
+                NEXT_ID.with(|next| next.set(1));
+                MUTATIONS.with(|stack| stack.borrow_mut().clear());
+            }
             if stream.is_none() {
                 let socket = UnixStream::connect(path).ok()?;
                 let enabled: c_int = 1;
@@ -169,9 +187,12 @@ fn with_stream<R>(callback: impl FnOnce(&UnixStream) -> R) -> Option<R> {
                 {
                     return None;
                 }
-                *stream = Some(socket);
+                if !send_frame(&socket, b'h', Kind::Hello, 1, 0, 0, &[]) {
+                    return None;
+                }
+                *stream = Some((pid, socket));
             }
-            Some(callback(stream.as_ref()?))
+            Some(callback(&stream.as_ref()?.1))
         })
     })
 }
