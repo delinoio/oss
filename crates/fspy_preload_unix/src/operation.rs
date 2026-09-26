@@ -69,6 +69,15 @@ fn mark_incomplete() {
     }
 }
 
+fn preserve_errno<T>(action: impl FnOnce() -> T) -> T {
+    // SAFETY: __error provides the current injected thread's errno slot.
+    let saved = unsafe { *libc::__error() };
+    let result = action();
+    // SAFETY: instrumentation before the native call must not change errno.
+    unsafe { *libc::__error() = saved };
+    result
+}
+
 fn monotonic_ns() -> u64 {
     let mut time = libc::timespec {
         tv_sec: 0,
@@ -200,24 +209,28 @@ fn send_frame(
 
 pub unsafe fn enter_path(kind: Kind, path: *const c_char) -> Option<Token> {
     socket_path()?;
-    let bytes = if path.is_null() {
-        &[][..]
-    } else {
-        // SAFETY: the caller supplies the same valid pathname pointer to libc.
-        unsafe { CStr::from_ptr(path) }.to_bytes()
-    };
-    enter(kind, &absolute_path(libc::AT_FDCWD, bytes))
+    preserve_errno(|| {
+        let bytes = if path.is_null() {
+            &[][..]
+        } else {
+            // SAFETY: the caller supplies the same valid pathname pointer to libc.
+            unsafe { CStr::from_ptr(path) }.to_bytes()
+        };
+        enter(kind, &absolute_path(libc::AT_FDCWD, bytes))
+    })
 }
 
 pub unsafe fn enter_at(kind: Kind, dirfd: c_int, path: *const c_char) -> Option<Token> {
     socket_path()?;
-    let bytes = if path.is_null() {
-        &[][..]
-    } else {
-        // SAFETY: the caller supplies the same valid pathname pointer to libc.
-        unsafe { CStr::from_ptr(path) }.to_bytes()
-    };
-    enter(kind, &absolute_path(dirfd, bytes))
+    preserve_errno(|| {
+        let bytes = if path.is_null() {
+            &[][..]
+        } else {
+            // SAFETY: the caller supplies the same valid pathname pointer to libc.
+            unsafe { CStr::from_ptr(path) }.to_bytes()
+        };
+        enter(kind, &absolute_path(dirfd, bytes))
+    })
 }
 
 fn absolute_path(dirfd: c_int, path: &[u8]) -> Vec<u8> {
@@ -251,19 +264,21 @@ fn absolute_path(dirfd: c_int, path: &[u8]) -> Vec<u8> {
 
 pub fn enter_fd(kind: Kind, fd: c_int) -> Option<Token> {
     socket_path()?;
-    let mut bytes = [0_u8; MAX_PATH];
-    // SAFETY: F_GETPATH writes a NUL-terminated pathname into this buffer on
-    // success and does not call an interposed file operation.
-    let status = unsafe { libc::fcntl(fd, libc::F_GETPATH, bytes.as_mut_ptr()) };
-    let path = if status == 0 {
-        bytes
-            .iter()
-            .position(|byte| *byte == 0)
-            .map(|end| &bytes[..end])
-    } else {
-        None
-    };
-    enter(kind, path.unwrap_or_default())
+    preserve_errno(|| {
+        let mut bytes = [0_u8; MAX_PATH];
+        // SAFETY: F_GETPATH writes a NUL-terminated pathname into this buffer
+        // on success and does not call an interposed file operation.
+        let status = unsafe { libc::fcntl(fd, libc::F_GETPATH, bytes.as_mut_ptr()) };
+        let path = if status == 0 {
+            bytes
+                .iter()
+                .position(|byte| *byte == 0)
+                .map(|end| &bytes[..end])
+        } else {
+            None
+        };
+        enter(kind, path.unwrap_or_default())
+    })
 }
 
 fn enter(kind: Kind, path: &[u8]) -> Option<Token> {
