@@ -39,7 +39,7 @@ func TestManualNativeOpenCodeCompletedExecutionRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, mode := range []domain.SessionMode{domain.ExecuteMode, domain.PlanMode} {
-		for _, scenario := range []string{"first", "resumed", "switched", "failed", "missing-checkpoint", "read", "bash", "read-once", "read-always", "read-always-resumed", "read-cascade", "read-cascade-resumed", "question", "question-resumed", "glob", "grep", "todowrite", "todowrite-resumed", "write", "write-resumed", "edit", "edit-resumed", "apply_patch", "apply_patch-resumed", "question-dismissed", "question-dismissed-resumed", "read-reject", "read-reject-resumed", "read-correction", "read-correction-resumed", "read-correction-cascade", "read-correction-cascade-resumed", "read-loaded", "read-loaded-resumed"} {
+		for _, scenario := range []string{"first", "resumed", "switched", "failed", "missing-checkpoint", "read", "bash", "read-once", "read-always", "read-always-resumed", "read-cascade", "read-cascade-resumed", "question", "question-resumed", "glob", "grep", "todowrite", "todowrite-resumed", "write", "write-resumed", "edit", "edit-resumed", "apply_patch", "apply_patch-resumed", "question-dismissed", "question-dismissed-resumed", "read-reject", "read-reject-resumed", "read-correction", "read-correction-resumed", "read-correction-cascade", "read-correction-cascade-resumed", "read-loaded", "read-loaded-resumed", "reject-external-read", "reject-external-read-resumed", "reject-external-bash", "reject-external-bash-resumed", "reject-external-glob", "reject-external-glob-resumed", "reject-external-grep", "reject-external-grep-resumed", "reject-external-write", "reject-external-write-resumed", "reject-external-edit", "reject-external-edit-resumed", "reject-external-apply_patch", "reject-external-apply_patch-resumed"} {
 			t.Run(string(mode)+"/"+scenario, func(t *testing.T) { nativeOpenCodeRecovery(t, binary, mode, scenario) })
 		}
 	}
@@ -48,13 +48,17 @@ func TestManualNativeOpenCodeCompletedExecutionRecovery(t *testing.T) {
 func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode, scenario string) {
 	loadedInstructions := strings.HasPrefix(scenario, "read-loaded")
 	fileTool := strings.TrimSuffix(scenario, "-resumed")
-	rejection := strings.HasPrefix(scenario, "read-reject") || strings.HasPrefix(scenario, "read-correction")
+	externalRejection := strings.HasPrefix(fileTool, "reject-external-")
+	if externalRejection {
+		fileTool = strings.TrimPrefix(fileTool, "reject-external-")
+	}
+	rejection := externalRejection || strings.HasPrefix(scenario, "read-reject") || strings.HasPrefix(scenario, "read-correction")
 	correction := strings.HasPrefix(scenario, "read-correction")
 	rejectionCascade := rejection && strings.HasSuffix(fileTool, "-cascade")
-	if (scenario == "bash" || openCodeContinuationFileTool(fileTool)) && mode == domain.PlanMode {
+	if (fileTool == "bash" || openCodeContinuationFileTool(fileTool)) && mode == domain.PlanMode {
 		t.Skip("native Plan shell/file policy needs separate interaction restoration")
 	}
-	search := scenario == "glob" || scenario == "grep"
+	search := fileTool == "glob" || fileTool == "grep"
 	if search {
 		if _, err := exec.LookPath("rg"); err != nil {
 			t.Skip("native search requires existing ripgrep; no automatic download")
@@ -89,6 +93,9 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 		}
 		if permission || loadedInstructions {
 			tool = "read"
+		}
+		if externalRejection {
+			tool = fileTool
 		}
 	}
 	fixtureModel := openCodeContinuationModel(tool)
@@ -127,7 +134,7 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 			}
 			result := ""
 			if rejection {
-				result = verifyOpenCodeRejectedReads(t, raw, toolPath.Load().(string), permissionCount, correction)
+				result = verifyOpenCodeRejectedTools(t, raw, tool, toolPath.Load().(string), permissionCount, correction)
 			} else if cascade {
 				results := verifyOpenCodeRepeatedRead(t, raw, toolPath.Load().(string), 2, 2)
 				encoded, _ := json.Marshal(results)
@@ -158,7 +165,9 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 	}))
 	defer upstream.Close()
 	f := newFirstDispatchFixtureProfile(t, domain.OpenCode, mode, binary, upstream.URL, fixtureModel)
-	if loadedInstructions {
+	if externalRejection {
+		toolPath.Store(prepareOpenCodeExternalRejection(t, tool))
+	} else if loadedInstructions {
 		toolPath.Store(prepareOpenCodeLoadedRead(t, f, false))
 	} else if tool != "" {
 		toolPath.Store(prepareOpenCodeContinuationTool(t, f, tool, permission))
@@ -336,6 +345,9 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 			if err != nil || retained.Closure == domain.InteractionOpen {
 				t.Fatal("original permission closure missing")
 			}
+			if externalRejection && (retained.OpenCode == nil || retained.OpenCode.Permission == nil || retained.OpenCode.Permission.Name != "external_directory") {
+				t.Fatal("missing original external-directory rejection")
+			}
 			if question {
 				if retained.Response == nil || retained.Response.State != domain.QuestionResponseAccepted || retained.ApprovalResponse != nil {
 					t.Fatal("original question acceptance missing")
@@ -362,7 +374,13 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 	if loadedInstructions {
 		updateOpenCodeContinuationInstructions(t, toolPath.Load().(string), true)
 	}
-	if openCodeContinuationFileTool(tool) {
+	if externalRejection {
+		path := toolPath.Load().(string)
+		verifyOpenCodeExternalRejectionFiles(t, path, tool, false)
+		if err := os.WriteFile(path, []byte("changed-source-after-original-tool\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	} else if openCodeContinuationFileTool(tool) {
 		path := toolPath.Load().(string)
 		expected := "original-inline-tool-sentinel edited\n"
 		if tool == "write" {
@@ -470,12 +488,14 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 	if loadedInstructions {
 		updateOpenCodeContinuationInstructions(t, toolPath.Load().(string), false)
 	}
-	if rejection {
+	if externalRejection {
+		verifyOpenCodeExternalRejectionFiles(t, toolPath.Load().(string), tool, true)
+	} else if rejection {
 		if value, err := os.ReadFile(toolPath.Load().(string)); err != nil || string(value) != "original-inline-tool-sentinel\n" {
 			t.Fatal("recovery changed rejected Read source", err)
 		}
 	}
-	if openCodeContinuationFileTool(tool) {
+	if openCodeContinuationFileTool(tool) && !externalRejection {
 		path := toolPath.Load().(string)
 		if value, err := os.ReadFile(path); err != nil || string(value) != "changed-source-after-original-tool\n" {
 			t.Fatal("recovery or replacement replayed original file mutation", err)

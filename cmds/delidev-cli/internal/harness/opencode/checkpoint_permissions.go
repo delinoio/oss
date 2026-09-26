@@ -119,7 +119,7 @@ func validCheckpointInteractions(value nativeCheckpoint) bool {
 		digest := mutationDigest([]byte(body))
 		if index >= rejectionStart {
 			rejection := p.Rejections[index-rejectionStart]
-			if names[claim.PartID] != checkpointReadTool || !failed[claim.PartID] || !nativeID(rejection.ReplyEventID, "evt") || rejection.ReplyEventID == claim.ArrivalID || seen[rejection.ReplyEventID] || index > rejectionStart && p.Rejections[index-rejectionStart-1].Claim.RequestID >= claim.RequestID {
+			if !rejection.Permission.validStored(names[claim.PartID]) || !failed[claim.PartID] || !nativeID(rejection.ReplyEventID, "evt") || rejection.ReplyEventID == claim.ArrivalID || seen[rejection.ReplyEventID] || index > rejectionStart && p.Rejections[index-rejectionStart-1].Claim.RequestID >= claim.RequestID {
 				return false
 			}
 			digest = claim.BodyDigest
@@ -170,7 +170,7 @@ func validCheckpointInteractions(value nativeCheckpoint) bool {
 	}
 	for index, policy := range p.RejectionPolicy {
 		owner, found := owners[policy.PartID]
-		if !policy.identity().valid() || !found || names[policy.PartID] != checkpointReadTool || !failed[policy.PartID] || owner.request != policy.InputRequestID || owner.message != policy.MessageID || owner.session != policy.SessionID || seen[policy.InteractionID] || seen[policy.ArrivalID] || seen[policy.ReplyEventID] || index > 0 && p.RejectionPolicy[index-1].InteractionID >= policy.InteractionID {
+		if !policy.identity().valid() || !found || !policy.Permission.validStored(names[policy.PartID]) || !failed[policy.PartID] || owner.request != policy.InputRequestID || owner.message != policy.MessageID || owner.session != policy.SessionID || seen[policy.InteractionID] || seen[policy.ArrivalID] || seen[policy.ReplyEventID] || index > 0 && p.RejectionPolicy[index-1].InteractionID >= policy.InteractionID {
 			return false
 		}
 		for _, id := range policy.Sources {

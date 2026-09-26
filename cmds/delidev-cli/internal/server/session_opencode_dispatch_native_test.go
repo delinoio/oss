@@ -94,6 +94,20 @@ func TestManualNativeOpenCodePublicFileToolContinuation(t *testing.T) {
 	}
 }
 
+func TestManualNativeOpenCodePublicExternalRejectionContinuation(t *testing.T) {
+	for _, tool := range []string{"read", "bash", "glob", "grep", "write", "edit", "apply_patch"} {
+		t.Run(tool, func(t *testing.T) {
+			nativeOpenCodePublicDispatchProfile(t, 3, false, "", "reject-external-"+tool, true)
+		})
+	}
+}
+
+func TestManualNativeOpenCodePublicExternalCorrectionContinuation(t *testing.T) {
+	for _, profile := range []string{"reject-external-read-mixed", "correct-external-read-mixed", "correct-external-write"} {
+		t.Run(profile, func(t *testing.T) { nativeOpenCodePublicDispatchProfile(t, 3, false, "", profile, true) })
+	}
+}
+
 func TestManualNativeOpenCodePublicLoadedInstructionsContinuation(t *testing.T) {
 	for _, profile := range []string{"read-loaded", "read-loaded-always"} {
 		t.Run(profile, func(t *testing.T) { nativeOpenCodePublicDispatchProfile(t, 3, false, "", profile, true) })
@@ -111,10 +125,19 @@ func nativeOpenCodePublicDispatch(t *testing.T, turns int, failedFirst bool, fau
 }
 
 func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bool, fault, tool string, switchModes ...bool) {
+	externalCorrection := strings.HasPrefix(tool, "correct-external-")
+	externalRejection := strings.HasPrefix(tool, "reject-external-") || externalCorrection
+	if externalRejection {
+		tool = strings.TrimPrefix(strings.TrimPrefix(tool, "reject-external-"), "correct-external-")
+	}
+	externalMixed := externalRejection && strings.HasSuffix(tool, "-mixed")
+	if externalMixed {
+		tool = strings.TrimSuffix(tool, "-mixed")
+	}
 	loadedInstructions := strings.HasPrefix(tool, "read-loaded")
-	rejection := strings.HasPrefix(tool, "read-reject") || strings.HasPrefix(tool, "read-correction")
-	correction := strings.HasPrefix(tool, "read-correction")
-	rejectionCascade := rejection && strings.HasSuffix(tool, "-cascade")
+	rejection := externalRejection || strings.HasPrefix(tool, "read-reject") || strings.HasPrefix(tool, "read-correction")
+	correction := externalCorrection || strings.HasPrefix(tool, "read-correction")
+	rejectionCascade := externalMixed || rejection && strings.HasSuffix(tool, "-cascade")
 	emptyFeedback := tool == "read-reject-empty"
 	dismissed := tool == "question-dismissed"
 	stoppedFirst := dismissed || rejection && (!correction || rejectionCascade)
@@ -139,7 +162,7 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 	if cascade {
 		permissionCount = 2
 	}
-	if permission || loadedInstructions {
+	if (permission || loadedInstructions) && !externalRejection {
 		tool = "read"
 	}
 	binary := os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE")
@@ -251,13 +274,22 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 						if cascade {
 							ids = []string{continuationToolCall + "_0", continuationToolCall + "_1"}
 						}
-						serveOpenCodeContinuationTool(t, w, tool, toolPath.Load().(string), ids...)
+						if externalMixed {
+							path := toolPath.Load().(string)
+							serveOpenCodeContinuationCalls(t, w, []openCodeFixtureToolCall{{"read", openCodeContinuationToolArguments("read", path), ids[0]}, {"write", openCodeContinuationToolArguments("write", path), ids[1]}})
+						} else {
+							serveOpenCodeContinuationTool(t, w, tool, toolPath.Load().(string), ids...)
+						}
 						return
 					}
 					if !stoppedFirst {
 						providerTurn--
 					}
-					result := verifyOpenCodeRejectedReads(t, raw, toolPath.Load().(string), permissionCount, correction)
+					var secondTool []string
+					if externalMixed {
+						secondTool = []string{"write"}
+					}
+					result := verifyOpenCodeRejectedTools(t, raw, tool, toolPath.Load().(string), permissionCount, correction, secondTool...)
 					if originalToolResult == "" {
 						originalToolResult = result
 					} else if result != originalToolResult {
@@ -293,7 +325,9 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 			// protocol discovery is a pinned reported fixture; actual initialization is
 			// independently revalidated by the original installed native process.
 			f := newFirstDispatchFixtureProfile(t, domain.OpenCode, mode, binary, upstream.URL, fixtureModel)
-			if loadedInstructions {
+			if externalRejection {
+				toolPath.Store(prepareOpenCodeExternalRejection(t, tool))
+			} else if loadedInstructions {
 				toolPath.Store(prepareOpenCodeLoadedRead(t, f, permission))
 			} else if tool != "" {
 				toolPath.Store(prepareOpenCodeContinuationTool(t, f, tool, permission))
@@ -433,7 +467,14 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 						} else if proof.NativeThreadID != firstThread || proof.NativeTurnID == previous.NativeTurnID || proof.ExecutionID == previous.ExecutionID || proof.NativeCheckpointDigest == previous.NativeCheckpointDigest {
 							t.Fatal("continuation recreated native history or reused execution authority")
 						}
-						if tool == "read" || tool == "bash" || openCodeContinuationFileTool(tool) {
+						if externalRejection {
+							verifyOpenCodeExternalRejectionFiles(t, toolPath.Load().(string), tool, turn > 0)
+							if turn == 0 {
+								if err := os.WriteFile(toolPath.Load().(string), []byte("changed-source-after-original-tool\n"), 0600); err != nil {
+									t.Fatal(err)
+								}
+							}
+						} else if tool == "read" || tool == "bash" || openCodeContinuationFileTool(tool) {
 							path := toolPath.Load().(string)
 							content, err := os.ReadFile(path)
 							expected := "original-inline-tool-sentinel\n"
@@ -455,10 +496,10 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 						if loadedInstructions {
 							updateOpenCodeContinuationInstructions(t, toolPath.Load().(string), turn == 0)
 						}
-						if tool == "apply_patch" {
+						if tool == "apply_patch" && !externalRejection {
 							verifyOpenCodeContinuationPatchFiles(t, toolPath.Load().(string), turn)
 						}
-						if search && turn == 0 {
+						if search && !externalRejection && turn == 0 {
 							path := toolPath.Load().(string)
 							if err := os.WriteFile(path, []byte("changed-source-after-original-tool\n"), 0600); err != nil {
 								t.Fatal(err)
@@ -477,6 +518,9 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 								retained, err := store.Decode[domain.ExecutionInteraction](row)
 								if err != nil || retained.Closure == domain.InteractionOpen {
 									t.Fatal("original permission closure lost")
+								}
+								if externalRejection && (retained.OpenCode == nil || retained.OpenCode.Permission == nil || retained.OpenCode.Permission.Name != "external_directory") {
+									t.Fatal("fixture did not retain the original external-directory request")
 								}
 								if question {
 									if retained.Response == nil || retained.Response.State != domain.QuestionResponseAccepted || retained.ApprovalResponse != nil {

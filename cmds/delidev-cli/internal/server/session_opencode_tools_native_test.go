@@ -102,10 +102,22 @@ func serveOpenCodeContinuationArguments(t *testing.T, w http.ResponseWriter, too
 	if len(ids) == 0 {
 		ids = []string{callID}
 	}
+	tools := make([]openCodeFixtureToolCall, 0, len(ids))
+	for _, id := range ids {
+		tools = append(tools, openCodeFixtureToolCall{tool, arguments, id})
+	}
+	serveOpenCodeContinuationCalls(t, w, tools)
+}
+
+type openCodeFixtureToolCall struct{ name, arguments, id string }
+
+func serveOpenCodeContinuationCalls(t *testing.T, w http.ResponseWriter, tools []openCodeFixtureToolCall) {
+	t.Helper()
+	tool := tools[0].name
 	w.Header().Set("Content-Type", "text/event-stream")
 	calls := []any{}
-	for index, id := range ids {
-		calls = append(calls, map[string]any{"index": index, "id": id, "type": "function", "function": map[string]any{"name": tool, "arguments": arguments}})
+	for index, call := range tools {
+		calls = append(calls, map[string]any{"index": index, "id": call.id, "type": "function", "function": map[string]any{"name": call.name, "arguments": call.arguments}})
 	}
 	delta := map[string]any{"role": "assistant", "tool_calls": calls}
 	for _, chunk := range []map[string]any{
@@ -346,7 +358,7 @@ func openCodeContinuationQuestionResponse(dismissed bool) domain.QuestionRespons
 
 const openCodeContinuationCorrection = "Private original correction: leave the file unread and continue."
 
-func verifyOpenCodeRejectedReads(t *testing.T, raw []byte, path string, count int, correction bool) string {
+func verifyOpenCodeRejectedTools(t *testing.T, raw []byte, tool, path string, count int, correction bool, secondTool ...string) string {
 	t.Helper()
 	var body struct {
 		Messages []struct {
@@ -360,7 +372,7 @@ func verifyOpenCodeRejectedReads(t *testing.T, raw []byte, path string, count in
 		} `json:"messages"`
 	}
 	if json.Unmarshal(raw, &body) != nil {
-		t.Error("invalid original rejected Read conversation")
+		t.Error("invalid original rejected tool conversation")
 		return ""
 	}
 	proposals := map[string]bool{}
@@ -368,22 +380,28 @@ func verifyOpenCodeRejectedReads(t *testing.T, raw []byte, path string, count in
 	corrections := 0
 	for _, message := range body.Messages {
 		for _, call := range message.Calls {
-			var input struct {
-				FilePath string `json:"filePath"`
+			name := tool
+			if len(secondTool) == 1 && len(proposals) == 1 {
+				name = secondTool[0]
 			}
+			var input, expected map[string]any
+			_ = json.Unmarshal([]byte(openCodeContinuationToolArguments(name, path)), &expected)
+			err := json.Unmarshal([]byte(call.Function.Arguments), &input)
+			actualJSON, _ := json.Marshal(input)
+			expectedJSON, _ := json.Marshal(expected)
 			id := continuationToolCall
 			if count > 1 {
 				id = fmt.Sprintf("%s_%d", continuationToolCall, len(proposals))
 			}
-			if message.Role != "assistant" || call.ID != id || proposals[call.ID] || call.Function.Name != "read" || domain.Decode([]byte(call.Function.Arguments), &input) != nil || input.FilePath != path {
-				t.Error("changed rejected Read proposal")
+			if message.Role != "assistant" || call.ID != id || proposals[call.ID] || call.Function.Name != name || err != nil || string(actualJSON) != string(expectedJSON) {
+				t.Error("changed rejected tool proposal")
 			}
 			proposals[call.ID] = true
 		}
 		if message.Role == "tool" {
 			var result string
 			if !proposals[message.CallID] || results[message.CallID] != "" || json.Unmarshal(message.Content, &result) != nil || result == "" || strings.Contains(result, "original-inline-tool-sentinel") || strings.Contains(result, "changed-source-after-original-tool") {
-				t.Error("rejected Read acquired output or lost original error")
+				t.Error("rejected tool acquired output or lost original error")
 			}
 			if strings.Contains(result, openCodeContinuationCorrection) {
 				corrections++
@@ -451,6 +469,50 @@ func updateOpenCodeContinuationInstructions(t *testing.T, path string, replace b
 		}
 		if raw, err := os.ReadFile(instruction); err != nil || string(raw) != expected {
 			t.Fatal("replacement rewrote later instruction-file changes", err)
+		}
+	}
+}
+
+func prepareOpenCodeExternalRejection(t *testing.T, tool string) string {
+	t.Helper()
+	// This private sibling directory is deliberately outside the session's
+	// prepared workspace, exercising the native external-directory permission.
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "original-tool-result.txt")
+	paths := []string{path}
+	if tool == "apply_patch" {
+		paths = append(paths, path+".move", path+".delete")
+	}
+	for _, file := range paths {
+		if err := os.WriteFile(file, []byte("original-inline-tool-sentinel\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return path
+}
+
+func verifyOpenCodeExternalRejectionFiles(t *testing.T, path, tool string, changed bool) {
+	t.Helper()
+	expected := "original-inline-tool-sentinel\n"
+	if changed {
+		expected = "changed-source-after-original-tool\n"
+	}
+	if raw, err := os.ReadFile(path); err != nil || string(raw) != expected {
+		t.Fatal("rejected external tool changed or replayed source", err)
+	}
+	if tool == "apply_patch" {
+		for _, suffix := range []string{".move", ".delete"} {
+			if raw, err := os.ReadFile(path + suffix); err != nil || string(raw) != "original-inline-tool-sentinel\n" {
+				t.Fatal("rejected patch changed original file", err)
+			}
+		}
+		for _, suffix := range []string{".moved", ".added"} {
+			if _, err := os.Lstat(path + suffix); !os.IsNotExist(err) {
+				t.Fatal("rejected patch created or moved a file", err)
+			}
 		}
 	}
 }

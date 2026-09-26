@@ -34,6 +34,9 @@ func validCheckpointInteractionProfile(p *checkpointToolHistory) bool {
 	if interactions > maxObservedInteractions || p.Version < 6 && p.InteractionFree || p.Version >= 6 && p.InteractionFree != (interactions == 0) {
 		return false
 	}
+	if p.Version < 11 && checkpointHasNamedRejection(p) {
+		return false
+	}
 	if p.Version < 9 && (len(p.Rejections) != 0 || len(p.RejectionPolicy) != 0) {
 		return false
 	}
@@ -55,7 +58,7 @@ func validCheckpointInteractionProfile(p *checkpointToolHistory) bool {
 		if len(p.Questions) == 0 || len(p.Policy) != 0 && len(p.Always) == 0 {
 			return false
 		}
-	case 6, 7, 8, 9, 10:
+	case 6, 7, 8, 9, 10, 11:
 		if len(p.Policy) != 0 && len(p.Always) == 0 {
 			return false
 		}

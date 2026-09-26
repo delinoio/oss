@@ -100,7 +100,7 @@ func TestCheckpointRejectionCaptureRefusesContradictoryEvidence(t *testing.T) {
 			case "event":
 				i.replyEvent = i.arrival
 			case "name":
-				i.value.Permission.Name = "external_directory"
+				i.value.Permission.Name = "unverified_permission"
 			case "pending":
 				i.closed = false
 			case "canceled":

@@ -148,7 +148,9 @@ func (a *OwnedAPI) RetainCheckpoint(ctx context.Context) (raw []byte, reference 
 		toolParts, oncePermissions, alwaysPermissions, policyClosures, questionReplies := 0, 0, 0, 0, 0
 		questionDismissals, permissionRejections, rejectionPolicies := 0, 0, 0
 		loadedInstructionReads := 0
+		var toolProfileVersion uint32
 		if value.Tools != nil {
+			toolProfileVersion = value.Tools.Version
 			for _, part := range value.Tools.Parts {
 				if part.InstructionsLoaded {
 					loadedInstructionReads++
@@ -163,7 +165,7 @@ func (a *OwnedAPI) RetainCheckpoint(ctx context.Context) (raw []byte, reference 
 				}
 			}
 		}
-		s.logger.InfoContext(ctx, "opencode_original_checkpoint_observed", "owner_id", s.owner, "request_id", i.receipt.RequestID, "messages", len(history.Messages), "entries", len(files), "restorable_inline_tool_parts", toolParts, "restorable_once_permissions", oncePermissions, "restorable_always_permissions", alwaysPermissions, "restorable_policy_closures", policyClosures, "restorable_question_replies", questionReplies, "restorable_question_dismissals", questionDismissals, "restorable_permission_rejections", permissionRejections, "restorable_rejection_closures", rejectionPolicies, "restorable_instruction_reads", loadedInstructionReads, "restorable_todo_state", latestCheckpointTodo(value) != nil)
+		s.logger.InfoContext(ctx, "opencode_original_checkpoint_observed", "owner_id", s.owner, "request_id", i.receipt.RequestID, "messages", len(history.Messages), "entries", len(files), "restorable_tool_profile_version", toolProfileVersion, "restorable_inline_tool_parts", toolParts, "restorable_once_permissions", oncePermissions, "restorable_always_permissions", alwaysPermissions, "restorable_policy_closures", policyClosures, "restorable_question_replies", questionReplies, "restorable_question_dismissals", questionDismissals, "restorable_permission_rejections", permissionRejections, "restorable_rejection_closures", rejectionPolicies, "restorable_instruction_reads", loadedInstructionReads, "restorable_todo_state", latestCheckpointTodo(value) != nil)
 	}
 	return raw, ref, nil
 }
