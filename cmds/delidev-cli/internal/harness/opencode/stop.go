@@ -33,6 +33,7 @@ type inputStopAttempt struct {
 	claim            SessionClaim
 	sent             bool
 	cleanupAttempted bool
+	recoveryAttempts int
 }
 
 func interruptedTool(tool *NativeToolPart) bool {
@@ -308,11 +309,14 @@ func (s *sessionAPI) closeStoppedRuntime(ctx context.Context, observer *inputObs
 		result, _ := observer.stopReceipt()
 		return result, sessionUncertain()
 	}
+	return s.recordStopCleanup(observer)
+}
+
+func (s *sessionAPI) recordStopCleanup(observer *inputObserver) (StopReceipt, error) {
 	s.events.Close()
 	observer.mu.Lock()
 	defer observer.mu.Unlock()
-	observer.stop.receipt.CleanupVerified = true
-	observer.stop.receipt.PendingCleared = true
+	observer.stop.receipt.CleanupVerified, observer.stop.receipt.PendingCleared = true, true
 	for _, value := range observer.interactions {
 		if !value.closed {
 			value.closed, value.canceled = true, true

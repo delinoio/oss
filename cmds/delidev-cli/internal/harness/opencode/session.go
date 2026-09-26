@@ -39,13 +39,14 @@ type SessionSettings struct {
 type SessionMutation string
 
 const (
-	CreateSessionMutation    SessionMutation = "create-session"
-	SubmitInputMutation      SessionMutation = "submit-input"
-	ReplyPermissionMutation  SessionMutation = "reply-permission"
-	ReplyQuestionMutation    SessionMutation = "reply-question"
-	RejectQuestionMutation   SessionMutation = "reject-question"
-	StopInputMutation        SessionMutation = "stop-input"
-	StopOwnedRuntimeMutation SessionMutation = "stop-owned-runtime"
+	CreateSessionMutation         SessionMutation = "create-session"
+	SubmitInputMutation           SessionMutation = "submit-input"
+	ReplyPermissionMutation       SessionMutation = "reply-permission"
+	ReplyQuestionMutation         SessionMutation = "reply-question"
+	RejectQuestionMutation        SessionMutation = "reject-question"
+	StopInputMutation             SessionMutation = "stop-input"
+	StopOwnedRuntimeMutation      SessionMutation = "stop-owned-runtime"
+	RecoverStoppedRuntimeMutation SessionMutation = "recover-stopped-runtime"
 )
 
 // SessionClaim contains no prompt, credentials or workspace paths. The owning
@@ -64,6 +65,7 @@ type SessionClaim struct {
 	InteractionID  string          `json:"interaction_id,omitempty"`
 	ArrivalID      string          `json:"arrival_id,omitempty"`
 	CallID         string          `json:"call_id,omitempty"`
+	StopRequestID  domain.ID       `json:"stop_request_id,omitempty"`
 }
 
 type InputReceipt struct {
@@ -88,6 +90,7 @@ type sessionAPI struct {
 	claim           func(context.Context, SessionClaim) error
 	alive           func() error
 	closeOwned      func(context.Context) error
+	reconcileOwned  func(context.Context) error
 	logger          *slog.Logger
 	owner           domain.ID
 	gate            chan struct{}

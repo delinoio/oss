@@ -20,9 +20,11 @@ import (
 type nativeStopIntent string
 
 const (
-	liveStopIntent       nativeStopIntent = "live"
-	unobservedStopIntent nativeStopIntent = "unobserved"
-	lostStreamStopIntent nativeStopIntent = "lost-stream"
+	liveStopIntent             nativeStopIntent = "live"
+	unobservedStopIntent       nativeStopIntent = "unobserved"
+	lostStreamStopIntent       nativeStopIntent = "lost-stream"
+	recoverCompletedStopIntent nativeStopIntent = "recover-completed-cleanup"
+	recoverUnstartedStopIntent nativeStopIntent = "recover-unstarted-cleanup"
 )
 
 type lostStopResponse struct{ http.RoundTripper }
@@ -52,6 +54,15 @@ func TestManualNativeOpenCodeOwnedStop(t *testing.T) {
 		t.Skip("explicit private native OpenCode original owned Stop")
 	}
 	for _, intent := range []nativeStopIntent{unobservedStopIntent, lostStreamStopIntent} {
+		t.Run(string(intent), func(t *testing.T) { nativeStopFixture(t, "text", false, intent) })
+	}
+}
+
+func TestManualNativeOpenCodeStopRecovery(t *testing.T) {
+	if os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE") == "" {
+		t.Skip("explicit private native OpenCode original Stop recovery")
+	}
+	for _, intent := range []nativeStopIntent{recoverCompletedStopIntent, recoverUnstartedStopIntent} {
 		t.Run(string(intent), func(t *testing.T) { nativeStopFixture(t, "text", false, intent) })
 	}
 }
@@ -115,7 +126,7 @@ func nativeStopFixture(t *testing.T, mode string, lost bool, intent nativeStopIn
 	if err != nil {
 		t.Fatal(err)
 	}
-	if intent == unobservedStopIntent {
+	if intent == unobservedStopIntent || intent == recoverCompletedStopIntent || intent == recoverUnstartedStopIntent {
 		nativeOwnedStopCleanup(t, api, observer, ctx, intent, &calls)
 		return
 	}
@@ -183,15 +194,33 @@ func nativeOwnedStopCleanup(t *testing.T, api *sessionAPI, observer *inputObserv
 	t.Helper()
 	refuse := &refuseOwnedStopHTTP{}
 	api.client.Transport = refuse
+	recovering := intent == recoverCompletedStopIntent || intent == recoverUnstartedStopIntent
+	if recovering {
+		original := api.closeOwned
+		api.closeOwned = func(ctx context.Context) error {
+			if intent == recoverCompletedStopIntent {
+				if err := original(ctx); err != nil {
+					return err
+				}
+			}
+			return errors.New("private injected cleanup result loss")
+		}
+	}
 	receipt, err := api.claimOwnedStop(ctx, observer, domain.NewID())
 	if err != nil || receipt.RequestID.Validate() != nil || receipt.NativeAttempted || receipt.HTTPAccepted || receipt.CleanupVerified {
 		t.Fatalf("native owned Stop claim: %+v %v", receipt, err)
 	}
 	receipt, err = api.closeStoppedRuntime(ctx, observer)
+	if recovering {
+		if err == nil || receipt.CleanupVerified || receipt.PendingCleared {
+			t.Fatal("injected cleanup uncertainty disappeared")
+		}
+		receipt, err = api.recoverStoppedRuntime(ctx, observer, domain.NewID())
+	}
 	if err != nil || !receipt.CleanupVerified || !receipt.PendingCleared || receipt.NativeAttempted || receipt.HTTPAccepted || receipt.InterruptedObserved || receipt.TerminalObserved || receipt.IdleVerified || refuse.calls.Load() != 0 || calls.Load() > 1 {
 		t.Fatalf("native owner-only cleanup: %+v %v", receipt, err)
 	}
-	if intent == unobservedStopIntent && (observer.snapshot().AssistantID != "" || observer.snapshot().UserSeen) || intent == lostStreamStopIntent && !observer.snapshot().NeedsRecovery {
+	if intent != lostStreamStopIntent && (observer.snapshot().AssistantID != "" || observer.snapshot().UserSeen) || intent == lostStreamStopIntent && !observer.snapshot().NeedsRecovery {
 		t.Fatal("owned cleanup invented missed native observations or repaired an event gap")
 	}
 	if _, err := api.claimOwnedStop(ctx, observer, domain.NewID()); err == nil {

@@ -193,6 +193,27 @@ func nativeSessionFixtureWithPolicy(t *testing.T, providerURL, key string, polic
 		_ = handle.Wait()
 		return process.ReconcileOwner(config.Process.Directory, config.Process.OwnerID)
 	}
+	api.reconcileOwned = func(ctx context.Context) error {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		// Close is once-guarded on the original Handle. A cancellation may
+		// have prevented the first callback from reaching it; otherwise this
+		// only releases the same controller and retains any original error.
+		_ = handle.Close()
+		if err := process.ReconcileOwnerContext(ctx, config.Process.Directory, config.Process.OwnerID); err != nil {
+			return err
+		}
+		// Recovery is bound to the original Handle; it cannot attach to a
+		// replacement process or turn journal absence into completion.
+		select {
+		case <-handle.Done():
+			_ = handle.Wait()
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 	var claims []SessionClaim
 	api.claim = func(_ context.Context, claim SessionClaim) error {
 		for _, existing := range claims {

@@ -14,11 +14,13 @@ import (
 )
 
 type stopFixture struct {
-	r          *replyFixture
-	pending    []byte
-	status     []byte
-	closeCalls int
-	closeError bool
+	r             *replyFixture
+	pending       []byte
+	status        []byte
+	closeCalls    int
+	closeError    bool
+	recoveryCalls int
+	recoveryError bool
 }
 
 func newStopFixture(t *testing.T, kind InteractionKind) *stopFixture {
@@ -85,6 +87,13 @@ func newStopFixture(t *testing.T, kind InteractionKind) *stopFixture {
 		f.closeCalls++
 		if f.closeError {
 			return errors.New("private cleanup failure")
+		}
+		return nil
+	}
+	r.api.reconcileOwned = func(context.Context) error {
+		f.recoveryCalls++
+		if f.recoveryError {
+			return errors.New("private original-owner recovery failure")
 		}
 		return nil
 	}
