@@ -1,0 +1,256 @@
+package opencode
+
+import (
+	"bytes"
+	"context"
+	"encoding/hex"
+	"encoding/json"
+	"path/filepath"
+	"strings"
+
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+)
+
+const maxCheckpointBytes = 8 << 20
+
+// CheckpointReference must be retained with independent Worker assignment and
+// cleanup evidence. Neither the descriptor nor private bytes grant a process,
+// account, publication, resumed binding or new input authority.
+type CheckpointReference struct {
+	SHA256            string    `json:"sha256"`
+	OwnerID           domain.ID `json:"owner_id"`
+	CreationRequestID domain.ID `json:"creation_request_id"`
+	InputRequestID    domain.ID `json:"input_request_id"`
+	SessionID         string    `json:"session_id"`
+	InputID           string    `json:"input_id"`
+	PartID            string    `json:"part_id"`
+	InputSHA256       string    `json:"input_sha256"`
+	HistorySHA256     string    `json:"history_sha256"`
+	RequiresResume    bool      `json:"requires_resume"`
+}
+
+type nativeCheckpoint struct {
+	Version          uint32              `json:"version"`
+	NativeVersion    string              `json:"native_version"`
+	Reference        CheckpointReference `json:"reference"`
+	RuntimeHome      string              `json:"runtime_home"`
+	Workspace        string              `json:"workspace"`
+	NativeRoot       string              `json:"native_root"`
+	Project          string              `json:"project"`
+	Slug             string              `json:"slug"`
+	Created          int64               `json:"created"`
+	SettingsSHA256   string              `json:"settings_sha256"`
+	CredentialSHA256 string              `json:"credential_sha256"`
+	History          HistoryObservation  `json:"history"`
+	Stop             *StopReceipt        `json:"stop,omitempty"`
+	Files            []checkpointFile    `json:"files"`
+}
+
+// RetainCheckpoint is available only after original complete-history and
+// joined process cleanup succeeded. Ordinary Close, owned-stop cleanup and a
+// failed completion attempt cannot be upgraded into this evidence. Private
+// bytes contain comparison metadata/digests, never prompts, answers or tokens.
+func (a *OwnedAPI) RetainCheckpoint(ctx context.Context) (raw []byte, reference CheckpointReference, returned error) {
+	if !a.valid() {
+		return nil, CheckpointReference{}, sessionInvalid()
+	}
+	select {
+	case a.reading <- struct{}{}:
+		defer func() { <-a.reading }()
+	case <-ctx.Done():
+		return nil, CheckpointReference{}, unavailable()
+	}
+	s := a.session
+	phase := "eligibility"
+	defer func() {
+		if returned != nil && s.logger != nil {
+			s.logger.WarnContext(ctx, "opencode_original_checkpoint_uncertain", "owner_id", s.owner, "phase", phase, "code", domain.SafeError(returned).Code)
+		}
+	}()
+	if err := s.enter(ctx); err != nil {
+		return nil, CheckpointReference{}, err
+	}
+	defer s.leave()
+	if ctx.Err() != nil {
+		return nil, CheckpointReference{}, unavailable()
+	}
+	if a.checkpointAttempted {
+		phase = "retained-files"
+		if len(a.checkpointBytes) == 0 || InspectCheckpoint(ctx, s.runtimeHome, a.checkpointBytes, a.checkpointReference) != nil {
+			a.checkpointBytes = nil
+			return nil, CheckpointReference{}, sessionUncertain()
+		}
+		return bytes.Clone(a.checkpointBytes), a.checkpointReference, nil
+	}
+	if !a.completionAttempted || (a.completed == nil) == (a.stoppedCompletion == nil) || s.problem != nil || s.creation == nil || s.input == nil || s.apiProfile == nil || !s.apiVerified || s.observer == nil || !canonicalDirectory(s.runtimeHome) {
+		return nil, CheckpointReference{}, sessionUncertain()
+	}
+	var history HistoryObservation
+	var stop *StopReceipt
+	if a.completed != nil {
+		history = copyHistoryObservation(*a.completed)
+	} else {
+		history = copyHistoryObservation(a.stoppedCompletion.History)
+		value := a.stoppedCompletion.Stop
+		if !value.CleanupVerified || !value.NativeAttempted || value.RepliesUncertain {
+			return nil, CheckpointReference{}, sessionUncertain()
+		}
+		stop = &value
+	}
+	c, i := s.creation, s.input
+	if history.RequestID != i.receipt.RequestID || history.SessionID != c.identity.id || history.InputID != i.receipt.MessageID || !validCheckpointHistory(history) {
+		return nil, CheckpointReference{}, sessionUncertain()
+	}
+	// Once inspection starts, a later call cannot replace a failed or changed
+	// original file observation with newly accepted runtime contents.
+	a.checkpointAttempted = true
+	phase = "settings"
+	settings, err := checkpointSettings(s)
+	if err != nil {
+		return nil, CheckpointReference{}, err
+	}
+	phase = "runtime-files"
+	files, err := checkpointFiles(ctx, s.runtimeHome)
+	if err != nil {
+		return nil, CheckpointReference{}, err
+	}
+	s.observer.mu.Lock()
+	last := s.observer.messages[history.AssistantID]
+	if last == nil || last.value.Assistant == nil || s.observer.problem != nil || s.observer.progress.NeedsRecovery {
+		s.observer.mu.Unlock()
+		return nil, CheckpointReference{}, sessionUncertain()
+	}
+	requiresResume := stop != nil || s.observer.progress.StoppedOnRejection || last.value.Assistant.Error != nil
+	s.observer.mu.Unlock()
+	ref := CheckpointReference{OwnerID: s.owner, CreationRequestID: c.request, InputRequestID: i.receipt.RequestID, SessionID: history.SessionID, InputID: history.InputID, PartID: i.receipt.PartID, InputSHA256: hex.EncodeToString(i.digest[:]), HistorySHA256: history.Digest, RequiresResume: requiresResume}
+	value := nativeCheckpoint{Version: 1, NativeVersion: SupportedVersion, Reference: ref, RuntimeHome: s.runtimeHome, Workspace: s.cwd, NativeRoot: s.runtimeRoot, Project: c.identity.project, Slug: c.identity.slug, Created: c.identity.created, SettingsSHA256: settings, CredentialSHA256: mutationDigest([]byte(s.apiProfile.Token)), History: history, Stop: stop, Files: files}
+	phase = "metadata"
+	raw, err = json.Marshal(value)
+	if err != nil || len(raw) > maxCheckpointBytes {
+		return nil, CheckpointReference{}, sessionUncertain()
+	}
+	ref.SHA256 = mutationDigest(raw)
+	if _, err := decodeCheckpoint(raw, ref, s.runtimeHome); err != nil {
+		return nil, CheckpointReference{}, err
+	}
+	a.checkpointBytes, a.checkpointReference = bytes.Clone(raw), ref
+	if s.logger != nil {
+		s.logger.InfoContext(ctx, "opencode_original_checkpoint_observed", "owner_id", s.owner, "request_id", i.receipt.RequestID, "messages", len(history.Messages), "entries", len(files))
+	}
+	return raw, ref, nil
+}
+
+// InspectCheckpoint is read-only. Caller-supplied home and reference must come
+// from original durable ownership, not from the bytes being checked. Matching
+// files cannot establish a new process/lease or original report acceptance.
+func InspectCheckpoint(ctx context.Context, home string, raw []byte, ref CheckpointReference) error {
+	value, err := decodeCheckpoint(raw, ref, home)
+	if err != nil {
+		return err
+	}
+	files, err := checkpointFiles(ctx, home)
+	if err != nil || !sameCheckpointFiles(files, value.Files) {
+		return sessionUncertain()
+	}
+	return nil
+}
+
+func decodeCheckpoint(raw []byte, ref CheckpointReference, home string) (nativeCheckpoint, error) {
+	var value nativeCheckpoint
+	if len(raw) == 0 || len(raw) > maxCheckpointBytes || !checkpointDigest(ref.SHA256) || mutationDigest(raw) != ref.SHA256 || domain.UniqueIDs([]domain.ID{ref.OwnerID, ref.CreationRequestID, ref.InputRequestID}) != nil || !nativeID(ref.SessionID, "ses") || !nativeID(ref.InputID, "msg") || !nativeID(ref.PartID, "prt") || !checkpointDigest(ref.InputSHA256) || !checkpointDigest(ref.HistorySHA256) || domain.Decode(raw, &value) != nil {
+		return nativeCheckpoint{}, sessionUncertain()
+	}
+	expected := ref
+	expected.SHA256 = ""
+	if value.Version != 1 || value.NativeVersion != SupportedVersion || value.Reference != expected || value.RuntimeHome != home || !checkpointPath(home) || !checkpointPath(value.Workspace) || !checkpointPath(value.NativeRoot) || !directoryContains(value.NativeRoot, value.Workspace) || directoryContains(home, value.Workspace) || directoryContains(value.Workspace, home) || !checkpointDigest(value.SettingsSHA256) || !checkpointDigest(value.CredentialSHA256) || domain.Text(value.Project, "native project", 256, true) != nil || domain.Text(value.Slug, "native slug", 256, true) != nil || value.Created <= 0 || value.Created > 9007199254740991 || !validateCheckpointFiles(value.Files) || !validCheckpointHistory(value.History) || value.History.RequestID != ref.InputRequestID || value.History.SessionID != ref.SessionID || value.History.InputID != ref.InputID || value.History.Digest != ref.HistorySHA256 {
+		return nativeCheckpoint{}, sessionUncertain()
+	}
+	input := value.History.Messages[0]
+	if len(input.Parts) != 1 || input.Parts[0].ID != ref.PartID || input.Parts[0].Kind != TextPartKind {
+		return nativeCheckpoint{}, sessionUncertain()
+	}
+	if stop := value.Stop; stop != nil {
+		if !ref.RequiresResume || stop.RequestID.Validate() != nil || stop.InputRequestID != ref.InputRequestID || stop.SessionID != ref.SessionID || stop.MessageID != ref.InputID || !stop.NativeAttempted || !stop.CleanupVerified || !stop.TerminalObserved || !stop.IdleObserved || !stop.PendingCleared || stop.RepliesUncertain || !stop.InterruptedObserved && !stop.HTTPAccepted {
+			return nativeCheckpoint{}, sessionUncertain()
+		}
+	}
+	canonical, err := json.Marshal(value)
+	if err != nil || !bytes.Equal(canonical, raw) {
+		return nativeCheckpoint{}, sessionUncertain()
+	}
+	return value, nil
+}
+
+func checkpointPath(path string) bool {
+	return filepath.IsAbs(path) && filepath.Clean(path) == path && !strings.ContainsAny(path, "\r\n") && domain.Text(path, "private checkpoint path", 32768, true) == nil
+}
+
+func validCheckpointHistory(h HistoryObservation) bool {
+	if h.RequestID.Validate() != nil || !nativeID(h.SessionID, "ses") || !nativeID(h.InputID, "msg") || !nativeID(h.AssistantID, "msg") || len(h.Messages) < 2 || len(h.Messages) > maxObservedMessages || h.Messages[0].ID != h.InputID || h.Messages[0].Role != UserMessageRole || h.Messages[len(h.Messages)-1].ID != h.AssistantID || !checkpointDigest(h.Digest) {
+		return false
+	}
+	seen := map[string]bool{}
+	parts := 0
+	for index, m := range h.Messages {
+		if !nativeID(m.ID, "msg") || seen[m.ID] || !checkpointDigest(m.Digest) || index > 0 && m.Role != AssistantMessageRole || m.Parts == nil {
+			return false
+		}
+		seen[m.ID] = true
+		for _, p := range m.Parts {
+			if !nativeID(p.ID, "prt") || seen[p.ID] || !checkpointDigest(p.Digest) || !validCheckpointPart(p.Kind) {
+				return false
+			}
+			seen[p.ID] = true
+			parts++
+		}
+	}
+	if parts > maxObservedParts {
+		return false
+	}
+	digest := h.Digest
+	h.Digest = ""
+	raw, err := json.Marshal(h)
+	return err == nil && mutationDigest(raw) == digest
+}
+
+func validCheckpointPart(kind PartKind) bool {
+	switch kind {
+	case TextPartKind, ReasoningPartKind, FilePartKind, ToolPartKind, StepStartPartKind, StepFinishPartKind, SnapshotPartKind, PatchPartKind, AgentPartKind, RetryPartKind, CompactionPartKind, SubtaskPartKind:
+		return true
+	default:
+		return false
+	}
+}
+
+func checkpointSettings(s *sessionAPI) (string, error) {
+	p := s.apiProfile
+	if p == nil || s.creation == nil || !equalSessionSettings(p.Settings, s.creation.settings) || p.ProjectInstructions == nil {
+		return "", sessionUncertain()
+	}
+	if err := p.inspectInstructions(); err != nil {
+		return "", err
+	}
+	type instruction struct {
+		Path   string
+		SHA256 string
+		Size   int64
+	}
+	var sources []instruction
+	for _, source := range p.ProjectInstructions.Sources {
+		sources = append(sources, instruction{source.Path, hex.EncodeToString(source.Digest[:]), source.Size})
+	}
+	raw, err := json.Marshal(struct {
+		Agent                     PrimaryAgent
+		Provider, Model           string
+		Permission                []PermissionRule
+		ContextLimit, OutputLimit int64
+		Rejection                 RejectionPolicy
+		InstructionsSHA256        string
+		TitleSHA256, RelaySHA256  string
+		Sources                   []instruction
+	}{p.Settings.Agent, p.Settings.Provider, p.Settings.Model, p.Settings.Permission, p.ContextLimit, p.OutputLimit, p.Rejection, mutationDigest([]byte(p.Instructions)), mutationDigest([]byte(p.Settings.Title)), mutationDigest([]byte(p.BaseURL)), sources})
+	if err != nil {
+		return "", sessionUncertain()
+	}
+	return mutationDigest(raw), nil
+}

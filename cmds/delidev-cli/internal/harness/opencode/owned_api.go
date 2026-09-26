@@ -26,6 +26,9 @@ type OwnedAPI struct {
 	completionAttempted bool
 	completed           *HistoryObservation
 	stoppedCompletion   *StoppedHistoryObservation
+	checkpointAttempted bool
+	checkpointBytes     []byte
+	checkpointReference CheckpointReference
 }
 
 func OpenOwnedAPI(ctx context.Context, config APIExecutionConfig) (*OwnedAPI, error) {

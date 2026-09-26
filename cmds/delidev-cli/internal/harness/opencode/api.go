@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"net"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"time"
@@ -122,7 +123,8 @@ func openAPISession(ctx context.Context, config apiSessionConfig) (api *sessionA
 	}
 	api = &sessionAPI{
 		client: client, origin: origin, password: password, cwd: config.Workspace,
-		claim: config.Claim, logger: prepared.Logger, owner: prepared.OwnerID, gate: make(chan struct{}, 1),
+		runtimeHome: filepath.Dir(config.Probe.Home),
+		claim:       config.Claim, logger: prepared.Logger, owner: prepared.OwnerID, gate: make(chan struct{}, 1),
 		apiProfile: profile, rejectionPolicy: config.Rejection,
 		closeOwned:     func(ctx context.Context) error { return closeOwned(ctx, false) },
 		reconcileOwned: func(ctx context.Context) error { return closeOwned(ctx, true) },

@@ -120,6 +120,7 @@ type sessionAPI struct {
 	apiVerified       bool
 	runtimeRead       bool
 	runtimeRoot       string
+	runtimeHome       string
 	creationLookup    bool
 	creationCandidate string
 	historyRead       *historyPageRead

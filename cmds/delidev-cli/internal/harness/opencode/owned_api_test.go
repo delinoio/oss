@@ -30,6 +30,9 @@ func TestOwnedAPIEmptyValuesHaveNoAuthority(t *testing.T) {
 		if _, err := api.CloseCompleted(ctx); err == nil {
 			t.Fatal("empty owner gained completed cleanup authority")
 		}
+		if _, _, err := api.RetainCheckpoint(ctx); err == nil {
+			t.Fatal("empty owner gained checkpoint authority")
+		}
 	}
 }
 
