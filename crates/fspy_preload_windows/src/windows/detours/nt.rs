@@ -833,7 +833,7 @@ unsafe fn read_mutation_paths(
     }
     // SAFETY: NtSetInformationFile's live source handle remains valid until
     // the original syscall returns.
-    let source = unsafe { get_path_name(file_handle) }.ok()?;
+    let source = unsafe { get_path_name(file_handle) }.ok()?.to_vec();
     let absolute =
         destination.first() == Some(&(b'\\' as u16)) || destination.get(1) == Some(&(b':' as u16));
     if !absolute {
@@ -842,7 +842,7 @@ unsafe fn read_mutation_paths(
             source[..parent_end].to_vec()
         } else {
             // SAFETY: RootDirectory is a caller-owned directory handle.
-            unsafe { get_path_name(root) }.ok()?
+            unsafe { get_path_name(root) }.ok()?.to_vec()
         };
         if !base.ends_with(&[b'\\' as u16]) {
             base.push(b'\\' as u16);
