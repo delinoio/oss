@@ -50,6 +50,9 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			logger.InfoContext(ctx, "native_execution_cleanup_verified")
 		}
 	}()
+	if input.Configuration.Harness == domain.OpenCode {
+		return executeOpenCodeSession(ctx, config, owner, input, logger)
+	}
 	if input.Configuration.Harness != domain.Codex || input.Installation.Version != codex.SupportedVersion {
 		return nil, domain.Fail(domain.Unsupported, "This native execution profile is not implemented.", "Select a verified installed Codex profile; no fallback harness is used.")
 	}
