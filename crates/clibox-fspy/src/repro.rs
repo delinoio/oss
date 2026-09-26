@@ -11,7 +11,7 @@ use std::{
 use sha2::{Digest, Sha256};
 use walkdir::WalkDir;
 
-use crate::coverage::Selector;
+use crate::{coverage::Selector, record::FileIdentity};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReproFailure {
@@ -45,12 +45,14 @@ pub struct SnapshotFile {
     pub relative: PathBuf,
     pub sha256: String,
     pub size: u64,
+    pub identity: FileIdentity,
 }
 
 pub struct Snapshot {
     root: PathBuf,
     private: tempfile::TempDir,
     eligible: BTreeSet<PathBuf>,
+    selected_identities: BTreeMap<FileIdentity, PathBuf>,
     files: BTreeMap<PathBuf, SnapshotFile>,
     links: BTreeMap<PathBuf, PathBuf>,
     directories: BTreeSet<PathBuf>,
@@ -109,6 +111,24 @@ fn hash_file(path: &Path, root: &Path) -> Result<(String, u64), ReproFailure> {
 }
 
 impl Snapshot {
+    pub fn selected_alias_for_identity(&self, identity: FileIdentity) -> Option<&Path> {
+        self.selected_identities
+            .get(&identity)
+            .map(PathBuf::as_path)
+    }
+
+    pub fn contains_selected(&self, relative: &Path) -> bool {
+        self.eligible.contains(relative)
+    }
+
+    pub fn is_blocked(relative: &Path) -> bool {
+        denied(relative)
+    }
+
+    pub fn links(&self) -> &BTreeMap<PathBuf, PathBuf> {
+        &self.links
+    }
+
     /// Copy all selected eligible files before running the original command.
     /// Only observed requirements are staged into the eventual candidate.
     pub fn take(
@@ -135,6 +155,7 @@ impl Snapshot {
             root: root.clone(),
             private,
             eligible: BTreeSet::new(),
+            selected_identities: BTreeMap::new(),
             files: BTreeMap::new(),
             links: BTreeMap::new(),
             directories: BTreeSet::new(),
@@ -202,6 +223,18 @@ impl Snapshot {
             }
             snapshot.eligible.insert(relative.to_path_buf());
             snapshot.add_path(relative)?;
+            let resolved = fs::canonicalize(entry.path()).map_err(|_| ReproFailure::Unavailable)?;
+            let target = resolved
+                .strip_prefix(&root)
+                .map_err(|_| ReproFailure::ExternalLink)?;
+            let file = snapshot
+                .files
+                .get(target)
+                .ok_or(ReproFailure::Unavailable)?;
+            snapshot
+                .selected_identities
+                .entry(file.identity)
+                .or_insert_with(|| relative.to_path_buf());
         }
         if external_selected {
             return Err(ReproFailure::ExternalLink);
@@ -210,7 +243,7 @@ impl Snapshot {
     }
 
     fn claim_entry(&self) -> Result<(), ReproFailure> {
-        if self.files.len() + self.links.len() + self.directories.len() >= self.max_files {
+        if self.files.len() + self.links.len() >= self.max_files {
             Err(ReproFailure::FileLimit)
         } else {
             Ok(())
@@ -250,7 +283,6 @@ impl Snapshot {
             }
             if metadata.is_dir() {
                 if !self.directories.contains(&prefix) {
-                    self.claim_entry()?;
                     self.directories.insert(prefix.clone());
                 }
                 continue;
@@ -276,6 +308,10 @@ impl Snapshot {
             if !opened.starts_with(&self.root) {
                 return Err(ReproFailure::ExternalLink);
             }
+            let identity = FileIdentity::from(
+                file_id::get_file_id(format!("/proc/self/fd/{}", input.as_raw_fd()))
+                    .map_err(|_| ReproFailure::Unavailable)?,
+            );
             let mut output = File::create(&destination).map_err(|_| ReproFailure::Unavailable)?;
             let mut digest = Sha256::new();
             let mut size = 0_u64;
@@ -317,6 +353,7 @@ impl Snapshot {
                     relative: prefix.clone(),
                     sha256,
                     size,
+                    identity,
                 },
             );
         }

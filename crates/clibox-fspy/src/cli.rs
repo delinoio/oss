@@ -38,6 +38,14 @@ pub enum Command {
                       storage-device prediction."
     )]
     Latencylab(LatencyArgs),
+    /// Collect and verify observed project inputs for a failing command.
+    #[command(
+        after_help = "Example: clibox fspy min-repro --include 'src/**' --bundle-dir repro \
+                      --expect-exit 1 --expect-stderr 'failed' -- cargo test\nThe bundle is \
+                      verified in a separate cwd; it is not an OS sandbox or a cross-machine \
+                      guarantee."
+    )]
+    MinRepro(MinReproArgs),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -187,6 +195,50 @@ pub struct LatencyArgs {
     command: Vec<OsString>,
 }
 
+#[derive(Debug, Args)]
+pub struct MinReproArgs {
+    #[command(flatten)]
+    execution: ExecutionArgs,
+    /// Select project inputs eligible for collection.
+    #[arg(long, required = true)]
+    include: Vec<String>,
+    /// Exclude selected project inputs.
+    #[arg(long)]
+    exclude: Vec<String>,
+    /// New bundle directory; existing paths are never overwritten.
+    #[arg(long)]
+    bundle_dir: PathBuf,
+    /// Required nonzero numeric child exit status.
+    #[arg(long, value_parser = parse_nonzero_exit)]
+    expect_exit: i64,
+    /// Required fixed substring of child stderr.
+    #[arg(long, value_parser = parse_nonempty_text)]
+    expect_stderr: String,
+    /// Maximum snapshot bytes (default: 1 GiB).
+    #[arg(long, default_value_t = 1_073_741_824_u64, value_parser = parse_positive_u64)]
+    max_snapshot_bytes: u64,
+    /// Maximum snapshot files and links (default: 100000).
+    #[arg(long, default_value_t = 100_000, value_parser = parse_positive_usize)]
+    max_snapshot_files: usize,
+    /// Maximum candidate result bytes (default: 1 GiB).
+    #[arg(long, default_value_t = 1_073_741_824_u64, value_parser = parse_positive_u64)]
+    max_result_bytes: u64,
+    /// Maximum candidate result files and links (default: 100000).
+    #[arg(long, default_value_t = 100_000, value_parser = parse_positive_usize)]
+    max_result_files: usize,
+    /// Emit machine-readable JSON.
+    #[arg(long, conflicts_with = "quiet")]
+    json: bool,
+    /// Suppress report output (failures still have diagnostics).
+    #[arg(long)]
+    quiet: bool,
+    #[command(flatten)]
+    output: OutputArgs,
+    /// Child program and tokenized arguments.
+    #[arg(last = true, required = true, num_args = 1..)]
+    command: Vec<OsString>,
+}
+
 fn parse_positive_usize(value: &str) -> Result<usize, &'static str> {
     value
         .parse()
@@ -201,6 +253,22 @@ fn parse_positive_u64(value: &str) -> Result<u64, &'static str> {
         .ok()
         .filter(|number| *number > 0)
         .ok_or("Use a positive integer.")
+}
+
+fn parse_nonzero_exit(value: &str) -> Result<i64, &'static str> {
+    value
+        .parse()
+        .ok()
+        .filter(|code| *code != 0)
+        .ok_or("Use a nonzero numeric exit code.")
+}
+
+fn parse_nonempty_text(value: &str) -> Result<String, &'static str> {
+    if value.is_empty() {
+        Err("Use a nonempty stderr substring.")
+    } else {
+        Ok(value.to_owned())
+    }
 }
 
 fn parse_percent(value: &str) -> Result<f64, &'static str> {
@@ -606,6 +674,125 @@ where
 }
 
 #[cfg(target_os = "linux")]
+fn execute_repro_capture(
+    command: &[OsString],
+    root: &Path,
+    cwd: Option<&Path>,
+    args: &ExecutionArgs,
+    expected_stderr: &str,
+) -> Result<(CompleteRecord, bool), CaptureFailure> {
+    use std::{
+        os::{
+            fd::{AsFd, OwnedFd},
+            unix::net::UnixStream,
+        },
+        process::{Command as ProcessCommand, Stdio},
+        sync::{
+            atomic::{AtomicBool, Ordering},
+            Arc,
+        },
+        thread,
+    };
+
+    let mut child = ProcessCommand::new(&command[0]);
+    child.args(&command[1..]);
+    if let Some(cwd) = cwd {
+        child.current_dir(cwd);
+    }
+    let stdout_stderr = io::stderr()
+        .as_fd()
+        .try_clone_to_owned()
+        .map_err(|_| CaptureFailure {
+            error: crate::linux::TraceFailure::Spawn,
+            signal: 0,
+        })?;
+    child.stdout(Stdio::from(stdout_stderr));
+    let (mut reader, writer) = UnixStream::pair().map_err(|_| CaptureFailure {
+        error: crate::linux::TraceFailure::Spawn,
+        signal: 0,
+    })?;
+    reader
+        .set_read_timeout(Some(Duration::from_millis(100)))
+        .map_err(|_| CaptureFailure {
+            error: crate::linux::TraceFailure::Spawn,
+            signal: 0,
+        })?;
+    child.stderr(Stdio::from(OwnedFd::from(writer)));
+    let signals = SignalHandlers::new().map_err(|error| CaptureFailure { error, signal: 0 })?;
+    let finished = Arc::new(AtomicBool::new(false));
+    let reader_finished = finished.clone();
+    let needle = expected_stderr.as_bytes().to_vec();
+    let forwarder = thread::Builder::new()
+        .name("clibox-fspy-stderr".into())
+        .spawn(move || {
+            let mut matched = false;
+            let mut tail = Vec::new();
+            let mut buffer = [0_u8; 8192];
+            loop {
+                match std::io::Read::read(&mut reader, &mut buffer) {
+                    Ok(0) => return Ok(matched),
+                    Ok(count) => {
+                        io::stderr()
+                            .write_all(&buffer[..count])
+                            .map_err(|_| "output_forward")?;
+                        let mut combined = tail;
+                        combined.extend_from_slice(&buffer[..count]);
+                        matched |= combined
+                            .windows(needle.len())
+                            .any(|window| window == needle);
+                        let keep = needle.len().saturating_sub(1).min(combined.len());
+                        tail = combined[combined.len() - keep..].to_vec();
+                    }
+                    Err(error)
+                        if matches!(
+                            error.kind(),
+                            io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+                        ) =>
+                    {
+                        if reader_finished.load(Ordering::SeqCst) {
+                            return Err("output_incomplete");
+                        }
+                    }
+                    Err(_) => return Err("output_forward"),
+                }
+            }
+        })
+        .map_err(|_| CaptureFailure {
+            error: crate::linux::TraceFailure::Spawn,
+            signal: 0,
+        })?;
+    let result = crate::linux::capture::capture(
+        &mut child,
+        root,
+        crate::linux::Limits {
+            max_events: args.max_events,
+            max_bytes: args.max_bytes,
+            timeout: args.timeout,
+            kill_after: args.kill_after,
+        },
+        &signals.cancelled,
+        |_| Duration::ZERO,
+    );
+    // Command keeps its configured descriptor after spawn. Closing it lets
+    // the forwarding thread observe EOF once all owned tracees have exited.
+    child.stderr(Stdio::null());
+    finished.store(true, Ordering::SeqCst);
+    let forwarded = forwarder.join().map_err(|_| CaptureFailure {
+        error: crate::linux::TraceFailure::Supervision("output_thread"),
+        signal: 0,
+    })?;
+    let matched = forwarded.map_err(|_| CaptureFailure {
+        error: crate::linux::TraceFailure::Supervision("output_forward"),
+        signal: 0,
+    })?;
+    let record = result.map_err(|error| CaptureFailure {
+        error,
+        signal: signals.signal.load(Ordering::SeqCst),
+    })?;
+    Ok((record, matched))
+}
+
+#[cfg(target_os = "linux")]
 fn capture_status(failure: CaptureFailure, action: &'static str) -> i32 {
     match failure.error {
         crate::linux::TraceFailure::Timeout => {
@@ -901,6 +1088,401 @@ fn latencylab(args: LatencyArgs) -> i32 {
     0
 }
 
+#[cfg(target_os = "linux")]
+fn logical_relative(root: &Path, path: &record::AccessPath) -> Option<PathBuf> {
+    use std::os::unix::ffi::OsStrExt;
+    let NativePath::UnixBytes(bytes) = &path.logical else {
+        return None;
+    };
+    let absolute = Path::new(std::ffi::OsStr::from_bytes(bytes));
+    let relative = absolute.strip_prefix(root).ok()?;
+    if relative.as_os_str().is_empty()
+        || !relative
+            .components()
+            .all(|component| matches!(component, std::path::Component::Normal(_)))
+    {
+        return None;
+    }
+    Some(relative.to_path_buf())
+}
+
+#[cfg(target_os = "linux")]
+fn unix_native(path: &Path) -> NativePath {
+    use std::os::unix::ffi::OsStrExt;
+    NativePath::UnixBytes(path.as_os_str().as_bytes().to_vec())
+}
+
+#[cfg(target_os = "linux")]
+fn collect_required(
+    record: &CompleteRecord,
+    root: &Path,
+    selector: &coverage::Selector,
+    snapshot: &crate::repro::Snapshot,
+) -> Result<std::collections::BTreeSet<PathBuf>, crate::repro::ReproFailure> {
+    use crate::repro::ReproFailure;
+    let mut required = std::collections::BTreeSet::new();
+    for pair in &record.operations {
+        let input_operation = matches!(
+            pair.start.operation,
+            record::Operation::Read
+                | record::Operation::PositionalRead
+                | record::Operation::Open
+                | record::Operation::Metadata
+                | record::Operation::Directory
+                | record::Operation::Exec
+        );
+        if !input_operation {
+            continue;
+        }
+        for path in &pair.start.paths {
+            if path.class != record::PathClass::Project {
+                continue;
+            }
+            let alias = path
+                .identity
+                .and_then(|identity| snapshot.selected_alias_for_identity(identity))
+                .map(Path::to_path_buf)
+                .or_else(|| logical_relative(root, path));
+            let Some(alias) = alias else {
+                if pair.start.operation.is_content_read() && pair.completion.native_error.is_none()
+                {
+                    return Err(ReproFailure::UncollectedInput);
+                }
+                continue;
+            };
+            if crate::repro::Snapshot::is_blocked(&alias) {
+                return Err(ReproFailure::BlockedInput);
+            }
+            let selected = selector.matches(&unix_native(&alias));
+            if !selected || !snapshot.contains_selected(&alias) {
+                if pair.start.operation.is_content_read() && pair.completion.native_error.is_none()
+                {
+                    return Err(ReproFailure::UncollectedInput);
+                }
+                continue;
+            }
+            required.insert(alias);
+        }
+    }
+    snapshot.verify_required(&required)?;
+    Ok(required)
+}
+
+#[cfg(target_os = "linux")]
+fn tree_limits(root: &Path, max_bytes: u64, max_files: usize) -> Result<(), &'static str> {
+    let mut bytes = 0_u64;
+    let mut files = 0_usize;
+    for entry in walkdir::WalkDir::new(root)
+        .follow_links(false)
+        .into_iter()
+        .skip(1)
+    {
+        let entry = entry.map_err(|_| "result_unavailable")?;
+        if entry.file_type().is_file() || entry.path_is_symlink() {
+            files = files.checked_add(1).ok_or("result_file_limit")?;
+            if files > max_files {
+                return Err("result_file_limit");
+            }
+        }
+        if entry.path_is_symlink() {
+            let resolved = fs::canonicalize(entry.path()).map_err(|_| "result_external_link")?;
+            if !resolved.starts_with(root) {
+                return Err("result_external_link");
+            }
+        }
+        if entry.file_type().is_file() {
+            bytes = bytes
+                .checked_add(entry.metadata().map_err(|_| "result_unavailable")?.len())
+                .ok_or("result_byte_limit")?;
+            if bytes > max_bytes {
+                return Err("result_byte_limit");
+            }
+        }
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn publish_new_directory(temporary: &Path, destination: &Path) -> Result<(), &'static str> {
+    use std::{ffi::CString, os::unix::ffi::OsStrExt};
+    let source = CString::new(temporary.as_os_str().as_bytes()).map_err(|_| "bundle_path")?;
+    let destination =
+        CString::new(destination.as_os_str().as_bytes()).map_err(|_| "bundle_path")?;
+    // SAFETY: both paths are NUL-terminated, the temp directory is owned by
+    // this process, and RENAME_NOREPLACE prevents a concurrent replacement.
+    let result = unsafe {
+        libc::syscall(
+            libc::SYS_renameat2,
+            libc::AT_FDCWD,
+            source.as_ptr(),
+            libc::AT_FDCWD,
+            destination.as_ptr(),
+            libc::RENAME_NOREPLACE,
+        )
+    };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err("bundle_publish")
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn min_repro(args: MinReproArgs) -> i32 {
+    use std::collections::BTreeSet;
+    let root = match execution_root(&args.execution) {
+        Ok(root) => root,
+        Err(error) => return diagnostic(error, "min-repro"),
+    };
+    let selector = match coverage::Selector::new(&args.include, &args.exclude) {
+        Ok(selector) => selector,
+        Err(error) => return diagnostic(&error.to_string(), "min-repro"),
+    };
+    if fs::symlink_metadata(&args.bundle_dir).is_ok() {
+        return diagnostic("bundle_exists", "min-repro");
+    }
+    let parent = args
+        .bundle_dir
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let parent = match fs::canonicalize(parent) {
+        Ok(path) if path.is_dir() => path,
+        _ => return diagnostic("bundle_parent", "min-repro"),
+    };
+    let bundle_name = match args.bundle_dir.file_name() {
+        Some(name) if name != "." && name != ".." => name,
+        _ => return diagnostic("bundle_path", "min-repro"),
+    };
+    let bundle_path = parent.join(bundle_name);
+    if fs::symlink_metadata(&bundle_path).is_ok() {
+        return diagnostic("bundle_exists", "min-repro");
+    }
+    let snapshot = match crate::repro::Snapshot::take(
+        &root,
+        &selector,
+        args.max_snapshot_bytes,
+        args.max_snapshot_files,
+    ) {
+        Ok(snapshot) => snapshot,
+        Err(error) => return diagnostic(&error.to_string(), "min-repro"),
+    };
+    let (original, original_matches) = match execute_repro_capture(
+        &args.command,
+        &root,
+        None,
+        &args.execution,
+        &args.expect_stderr,
+    ) {
+        Ok(result) => result,
+        Err(error) => return capture_status(error, "min-repro"),
+    };
+    if original.summary.child_exit_code != Some(args.expect_exit) || !original_matches {
+        return diagnostic("original_mismatch", "min-repro");
+    }
+    let required = match collect_required(&original, &root, &selector, &snapshot) {
+        Ok(required) => required,
+        Err(error) => return diagnostic(&error.to_string(), "min-repro"),
+    };
+    let candidate = match tempfile::Builder::new()
+        .prefix(".clibox-fspy-candidate-")
+        .tempdir_in(&parent)
+    {
+        Ok(candidate) => candidate,
+        Err(_) => return diagnostic("candidate_prepare", "min-repro"),
+    };
+    let staged = match snapshot.stage_required(&required, candidate.path()) {
+        Ok(staged) => staged,
+        Err(error) => return diagnostic(&error.to_string(), "min-repro"),
+    };
+    let staged_paths = staged
+        .iter()
+        .map(|file| file.relative.clone())
+        .collect::<BTreeSet<_>>();
+    let (rerun, rerun_matches) = match execute_repro_capture(
+        &args.command,
+        candidate.path(),
+        Some(candidate.path()),
+        &args.execution,
+        &args.expect_stderr,
+    ) {
+        Ok(result) => result,
+        Err(error) => return capture_status(error, "min-repro"),
+    };
+    if rerun.summary.child_exit_code != Some(args.expect_exit) || !rerun_matches {
+        return diagnostic("reproduction_mismatch", "min-repro");
+    }
+    for pair in &rerun.operations {
+        if !matches!(
+            pair.start.operation,
+            record::Operation::Open
+                | record::Operation::Read
+                | record::Operation::PositionalRead
+                | record::Operation::Metadata
+                | record::Operation::Directory
+                | record::Operation::Exec
+        ) {
+            continue;
+        }
+        for path in &pair.start.paths {
+            if path.class == record::PathClass::Project
+                && pair.start.operation.is_content_read()
+                && pair.completion.native_error.is_none()
+            {
+                let Some(relative) = path.project_relative.as_ref().and_then(|path| {
+                    use std::os::unix::ffi::OsStringExt;
+                    match path {
+                        NativePath::UnixBytes(bytes) => {
+                            Some(PathBuf::from(OsString::from_vec(bytes.clone())))
+                        }
+                        _ => None,
+                    }
+                }) else {
+                    return diagnostic("reproduction_uncollected_input", "min-repro");
+                };
+                if !staged_paths.contains(&relative) {
+                    let generated = rerun.operations.iter().any(|earlier| {
+                        earlier.start.monotonic_ns < pair.start.monotonic_ns
+                            && matches!(
+                                earlier.start.operation,
+                                record::Operation::Write | record::Operation::PositionalWrite
+                            )
+                            && earlier.completion.native_error.is_none()
+                            && earlier.start.paths.iter().any(|write_path| {
+                                write_path.project_relative.as_ref()
+                                    == path.project_relative.as_ref()
+                            })
+                    });
+                    if !generated {
+                        return diagnostic("reproduction_uncollected_input", "min-repro");
+                    }
+                }
+            } else if path.class == record::PathClass::External {
+                let original_access = [
+                    &path.logical,
+                    path.resolved.as_ref().unwrap_or(&path.logical),
+                ]
+                .into_iter()
+                .any(|native| {
+                    use std::os::unix::ffi::OsStrExt;
+                    match native {
+                        NativePath::UnixBytes(bytes) => {
+                            let path = Path::new(std::ffi::OsStr::from_bytes(bytes));
+                            path.starts_with(&root) && !path.starts_with(candidate.path())
+                        }
+                        _ => false,
+                    }
+                });
+                if original_access {
+                    return diagnostic("reproduction_original_dependency", "min-repro");
+                }
+            }
+        }
+    }
+    if let Err(error) = tree_limits(
+        candidate.path(),
+        args.max_result_bytes,
+        args.max_result_files,
+    ) {
+        return diagnostic(error, "min-repro");
+    }
+    let bundle = match tempfile::Builder::new()
+        .prefix(".clibox-fspy-bundle-")
+        .tempdir_in(&parent)
+    {
+        Ok(bundle) => bundle,
+        Err(_) => return diagnostic("bundle_prepare", "min-repro"),
+    };
+    let staged = match snapshot.stage_required(&required, bundle.path()) {
+        Ok(staged) => staged,
+        Err(error) => return diagnostic(&error.to_string(), "min-repro"),
+    };
+    let metadata_dir = bundle.path().join(".clibox-fspy-repro");
+    if fs::symlink_metadata(&metadata_dir).is_ok() {
+        return diagnostic("bundle_reserved_path", "min-repro");
+    }
+    if fs::create_dir(&metadata_dir).is_err() {
+        return diagnostic("bundle_prepare", "min-repro");
+    }
+    let external = original
+        .operations
+        .iter()
+        .filter(|pair| {
+            matches!(
+                pair.start.operation,
+                record::Operation::Open
+                    | record::Operation::Read
+                    | record::Operation::PositionalRead
+                    | record::Operation::Metadata
+                    | record::Operation::Directory
+                    | record::Operation::Exec
+            )
+        })
+        .flat_map(|pair| pair.start.paths.iter())
+        .filter(|path| path.class == record::PathClass::External)
+        .filter_map(|path| match &path.logical {
+            NativePath::UnixBytes(bytes) => Some(bytes.clone()),
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .map(NativePath::UnixBytes)
+        .collect::<Vec<_>>();
+    let staged_links = snapshot
+        .links()
+        .iter()
+        .filter(|(path, _)| bundle.path().join(path).is_symlink())
+        .collect::<Vec<_>>();
+    let manifest = serde_json::json!({
+        "schema_version": 1,
+        "files": staged.iter().map(|file| serde_json::json!({
+            "path": unix_native(&file.relative),
+            "sha256": file.sha256,
+            "size": file.size,
+        })).collect::<Vec<_>>(),
+        "internal_links": staged_links.iter().map(|(path, target)| serde_json::json!({
+            "path": unix_native(path),
+            "target": unix_native(target),
+        })).collect::<Vec<_>>(),
+        "external_dependencies": external,
+    });
+    if fs::write(metadata_dir.join("manifest.json"), serde_json::to_vec_pretty(&manifest).unwrap_or_default()).is_err()
+        || fs::write(metadata_dir.join("README.md"), b"Run the original command from this bundle directory and check its expected exit status and stderr substring. The command and environment were intentionally not saved. External runtime and system dependencies are listed in manifest.json and were not bundled. This reproduction is verified only on the originating machine under the current environment. Delete the bundle directory manually when finished.\n").is_err()
+    { return diagnostic("bundle_write", "min-repro"); }
+    if let Err(error) = tree_limits(bundle.path(), args.max_result_bytes, args.max_result_files) {
+        return diagnostic(error, "min-repro");
+    }
+    if let Err(error) = publish_new_directory(bundle.path(), &bundle_path) {
+        return diagnostic(error, "min-repro");
+    }
+    if !args.quiet {
+        let mut report = if args.json {
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "verified": true,
+                "bundle_dir": bundle_path,
+                "collected_files": staged.len(),
+                "external_accesses": external.len(),
+            }))
+            .unwrap_or_default()
+        } else {
+            format!(
+                "Verified reproduction: {}\nCollected files: {}\nExternal accesses: {}\n",
+                bundle_path.display(),
+                staged.len(),
+                external.len()
+            )
+            .into_bytes()
+        };
+        if !report.ends_with(b"\n") {
+            report.push(b'\n');
+        }
+        if let Err(error) = publish(&args.output, &report) {
+            return diagnostic(error, "min-repro");
+        }
+    }
+    0
+}
+
 pub fn execute(command: Command) -> i32 {
     match command {
         Command::Compare(args) => compare(args),
@@ -935,6 +1517,17 @@ pub fn execute(command: Command) -> i32 {
             {
                 let _ = args;
                 diagnostic("unsupported_target", "latencylab")
+            }
+        }
+        Command::MinRepro(args) => {
+            #[cfg(target_os = "linux")]
+            {
+                min_repro(args)
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                let _ = args;
+                diagnostic("unsupported_target", "min-repro")
             }
         }
     }
@@ -1045,5 +1638,82 @@ mod tests {
             serde_json::from_slice(&fs::read(latency_report).unwrap()).unwrap();
         assert_eq!(report["runs"].as_array().unwrap().len(), 2);
         assert!(report["runs"][1]["matching_operations"].as_u64().unwrap() > 0);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn verified_reproduction_uses_a_separate_working_directory() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("project");
+        fs::create_dir(&root).unwrap();
+        fs::write(root.join("input.txt"), b"fixture").unwrap();
+        fs::write(root.join(".env"), b"secret").unwrap();
+        for case in ["verified", "blocked", "original", "metadata"] {
+            let bundle = directory.path().join(format!("{case}-bundle"));
+            let status = std::process::Command::new(std::env::current_exe().unwrap())
+                .arg("--exact")
+                .arg("cli::tests::reproduction_child_process")
+                .env("CLIBOX_FSPY_REPRO_CHILD", case)
+                .env("CLIBOX_FSPY_REPRO_BUNDLE", &bundle)
+                .current_dir(&root)
+                .output()
+                .unwrap();
+            assert!(
+                status.status.success(),
+                "{case}: {}",
+                String::from_utf8_lossy(&status.stderr)
+            );
+            if case == "verified" {
+                assert_eq!(fs::read(bundle.join("input.txt")).unwrap(), b"fixture");
+                assert!(bundle.join(".clibox-fspy-repro/manifest.json").exists());
+                assert!(!bundle.join(".env").exists());
+            } else {
+                assert!(!bundle.exists());
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn reproduction_child_process() {
+        let Some(case) = std::env::var_os("CLIBOX_FSPY_REPRO_CHILD") else {
+            return;
+        };
+        let bundle = std::env::var_os("CLIBOX_FSPY_REPRO_BUNDLE").unwrap();
+        let root = std::env::current_dir().unwrap();
+        let include = if case == "blocked" { "*" } else { "input.txt" };
+        let mut arguments = vec![
+            OsString::from("fspy"),
+            OsString::from("min-repro"),
+            OsString::from("--include"),
+            OsString::from(include),
+            OsString::from("--bundle-dir"),
+            bundle,
+            OsString::from("--expect-exit"),
+            OsString::from("42"),
+            OsString::from("--expect-stderr"),
+            OsString::from("EXPECTED"),
+            OsString::from("--quiet"),
+            OsString::from("--"),
+            OsString::from("/bin/sh"),
+            OsString::from("-c"),
+        ];
+        if case == "original" || case == "metadata" {
+            arguments.push(OsString::from(if case == "metadata" {
+                "test -f \"$1\"; echo EXPECTED >&2; exit 42"
+            } else {
+                "cat \"$1\" >/dev/null; echo EXPECTED >&2; exit 42"
+            }));
+            arguments.push(OsString::from("sh"));
+            arguments.push(root.join("input.txt").into_os_string());
+        } else {
+            arguments.push(OsString::from(if case == "blocked" {
+                "cat .env >/dev/null; echo EXPECTED >&2; exit 42"
+            } else {
+                "cat input.txt >/dev/null; echo EXPECTED >&2; exit 42"
+            }));
+        }
+        let cli = TestCli::try_parse_from(arguments).unwrap();
+        assert_eq!(execute(cli.command), if case == "verified" { 0 } else { 1 });
     }
 }

@@ -10,7 +10,7 @@ The current fspy `PathAccess` result is an attempted path-access classification.
 
 The Linux ptrace supervisor uses `PTRACE_GET_SYSCALL_INFO` to pair selected syscall entries and completions, follows fork/clone/vfork descendants, serializes local sessions sharing `waitpid`, and bounds cancellation, timeout, and surviving-descendant cleanup. Its callback may hold the calling thread before a syscall. The Linux capture layer decodes selected syscall paths while the tracee is stopped and pairs native results into version-one records, including actual read bytes and descriptor identity. This remains a private backend foundation: operation coverage, exceptional paths, event byte limits, and GNU/musl target validation must be completed before the command family can expose it as a complete tracer.
 
-The private command module currently has Linux implementations of `record`, `assetcov`, and `latencylab`, plus platform-neutral `compare`. It is deliberately not composed into `clibox` while `autowatch`, `min-repro`, `fbreak`, and macOS/Windows tracing remain incomplete. Integration tests may invoke the private module directly; no release or user-facing availability is implied.
+The private command module currently has Linux implementations of `record`, `assetcov`, `latencylab`, and an initial verified `min-repro` path, plus platform-neutral `compare`. It is deliberately not composed into `clibox` while `autowatch`, `fbreak`, macOS/Windows tracing, and remaining validation are incomplete. Integration tests may invoke the private module directly; no release or user-facing availability is implied.
 
 ## Record and analysis
 
@@ -22,7 +22,7 @@ A failed native call may supply a null, invalid, or overlong pathname pointer, o
 
 The pre-execution asset denominator walks the selected root, follows only internal symlinks, and deduplicates file identities, including hard links, without holding one open descriptor per file. A read completion must carry the opened file's identity and actual byte count; the analyzer cannot recover it reliably from a pathname after the execution. A missing identity cannot cover a selected file.
 
-The in-progress Linux reproduction snapshot copies eligible selected regular files before execution into a private directory, retaining only internal link mappings and their targets. It applies the fixed credential-like path denylist, file/byte limits, source-descriptor containment checks, and hashes required inputs again before staging an observed subset. Candidate execution, stderr verification, external-dependency checks, result limits, and atomic bundle publication are not yet connected; the snapshot alone does not satisfy `min-repro`.
+The Linux reproduction path copies eligible selected regular files before execution into a private directory, retaining only internal link mappings and their targets. It applies the fixed credential-like path denylist, file/byte limits, source-descriptor containment checks, and hashes required inputs again before staging an observed subset. The private handler checks the original failure, reruns a candidate in a separate working directory, rejects original-tree and uncollected content reads, checks result limits, and atomically publishes a clean bundle with a file/hash manifest, link map, external accesses, and rerun guidance. More failure and cross-platform validation is required before this workflow can be exposed.
 
 ## Workflow semantics
 
