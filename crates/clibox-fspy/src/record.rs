@@ -678,6 +678,55 @@ pub fn write_line<W: io::Write>(writer: &mut W, line: &RecordLine) -> io::Result
     writer.write_all(b"\n")
 }
 
+/// Encode an in-memory completed execution in receipt order. Build within the
+/// byte bound before touching the caller's writer, so an exceeded limit never
+/// publishes a truncated record that could look successful.
+pub fn serialize<W: io::Write>(
+    record: &CompleteRecord,
+    writer: &mut W,
+    event_limit: usize,
+    byte_limit: u64,
+) -> Result<(), ParseFailure> {
+    let event_count = record
+        .operations
+        .len()
+        .checked_mul(2)
+        .ok_or(ParseFailure::EventLimit)?;
+    if event_limit == 0 || event_count > event_limit {
+        return Err(ParseFailure::EventLimit);
+    }
+    if byte_limit == 0 {
+        return Err(ParseFailure::ByteLimit);
+    }
+    let mut events = Vec::with_capacity(event_count);
+    for pair in &record.operations {
+        events.push((pair.start.sequence, RecordLine::Start(pair.start.clone())));
+        events.push((
+            pair.completion.sequence,
+            RecordLine::Completion(pair.completion.clone()),
+        ));
+    }
+    events.sort_by_key(|(sequence, _)| *sequence);
+    let mut encoded = Vec::new();
+    write_line(&mut encoded, &RecordLine::Header(record.header.clone()))
+        .map_err(|_| ParseFailure::Io)?;
+    if encoded.len() as u64 > byte_limit {
+        return Err(ParseFailure::ByteLimit);
+    }
+    for (_, event) in events {
+        write_line(&mut encoded, &event).map_err(|_| ParseFailure::Io)?;
+        if encoded.len() as u64 > byte_limit {
+            return Err(ParseFailure::ByteLimit);
+        }
+    }
+    write_line(&mut encoded, &RecordLine::Summary(record.summary.clone()))
+        .map_err(|_| ParseFailure::Io)?;
+    if encoded.len() as u64 > byte_limit {
+        return Err(ParseFailure::ByteLimit);
+    }
+    writer.write_all(&encoded).map_err(|_| ParseFailure::Io)
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::Cursor;

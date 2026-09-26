@@ -4,6 +4,9 @@
 //! decode paths and results and must not report a complete file trace solely
 //! because this supervisor observed syscall stops.
 
+pub mod capture;
+pub mod paths;
+
 use std::{
     collections::{HashMap, HashSet},
     io,
@@ -67,8 +70,10 @@ fn supervision(stage: &'static str) -> TraceFailure {
 
 #[derive(Debug, Clone, Copy)]
 pub struct RawEntry {
+    pub ordinal: u64,
     pub pid: u32,
     pub tid: u32,
+    pub parent_pid: Option<u32>,
     pub syscall: u64,
     pub args: [u64; 6],
     pub monotonic_ns: u64,
@@ -215,15 +220,21 @@ fn event_child(tid: pid_t) -> Result<pid_t, TraceFailure> {
     Ok(child as pid_t)
 }
 
-fn task_pid(tid: pid_t) -> Result<u32, TraceFailure> {
+fn task_identity(tid: pid_t) -> Result<(u32, Option<u32>), TraceFailure> {
     let text = std::fs::read_to_string(format!("/proc/{tid}/status"))
         .map_err(|_| supervision("thread_status_read"))?;
-    text.lines()
+    let pid = text
+        .lines()
         .find_map(|line| {
             line.strip_prefix("Tgid:")
                 .and_then(|value| value.trim().parse().ok())
         })
-        .ok_or(supervision("thread_group_id"))
+        .ok_or(supervision("thread_group_id"))?;
+    let parent = text.lines().find_map(|line| {
+        line.strip_prefix("PPid:")
+            .and_then(|value| value.trim().parse::<u32>().ok())
+    });
+    Ok((pid, parent.filter(|value| *value != 0)))
 }
 
 fn request_signal(tasks: &HashSet<pid_t>, signal: i32) {
@@ -309,8 +320,9 @@ where
         tasks: HashSet::from([root_tid]),
     };
     let mut configured = HashSet::new();
-    let mut process_ids = HashMap::<pid_t, u32>::new();
+    let mut process_ids = HashMap::<pid_t, (u32, Option<u32>)>::new();
     let mut pending = HashMap::<pid_t, Option<RawEntry>>::new();
+    let mut ordinal = 0_u64;
     let mut operations = Vec::new();
     let mut outcome = None;
     let began = Instant::now();
@@ -384,7 +396,7 @@ where
         if !configured.contains(&tid) {
             set_options(tid)?;
             configured.insert(tid);
-            process_ids.insert(tid, task_pid(tid)?);
+            process_ids.insert(tid, task_identity(tid)?);
             continue_syscall(tid, 0)?;
             continue;
         }
@@ -416,7 +428,7 @@ where
                 owned.tasks.remove(&old_tid);
                 configured.remove(&old_tid);
                 process_ids.remove(&old_tid);
-                process_ids.insert(tid, task_pid(tid)?);
+                process_ids.insert(tid, task_identity(tid)?);
             }
             continue_syscall(tid, 0)?;
             continue;
@@ -427,9 +439,14 @@ where
                     if pending.contains_key(&tid) {
                         return Err(supervision("duplicate_entry"));
                     }
+                    let (pid, parent_pid) =
+                        *process_ids.get(&tid).ok_or(supervision("missing_tgid"))?;
+                    ordinal = ordinal.checked_add(1).ok_or(TraceFailure::EventLimit)?;
                     let entry = RawEntry {
-                        pid: *process_ids.get(&tid).ok_or(supervision("missing_tgid"))?,
+                        ordinal,
+                        pid,
                         tid: tid as u32,
+                        parent_pid,
                         syscall,
                         args,
                         monotonic_ns: began.elapsed().as_nanos() as u64,
@@ -491,6 +508,40 @@ mod tests {
             .operations
             .iter()
             .any(|operation| !operation.failed && operation.result > 0));
+    }
+
+    #[test]
+    fn decodes_content_read_path_and_identity() {
+        let mut input = tempfile::NamedTempFile::new().unwrap();
+        input.write_all(b"path fixture\n").unwrap();
+        let root = input.path().parent().unwrap().canonicalize().unwrap();
+        let expected = input.path().canonicalize().unwrap();
+        let mut command = Command::new("/bin/cat");
+        command.arg(input.path()).stdout(Stdio::null());
+        let cancelled = AtomicBool::new(false);
+        let mut reads = Vec::new();
+        let result = trace(&mut command, Limits::default(), &cancelled, |entry| {
+            let decoded = paths::decode(entry, &root)?;
+            if let Some(decoded) = decoded {
+                if decoded.operation == crate::record::Operation::Read {
+                    reads.push(decoded);
+                }
+                Ok(true)
+            } else {
+                Ok(false)
+            }
+        })
+        .unwrap();
+        assert!(matches!(result.outcome, ChildOutcome::Exit(0)));
+        assert!(reads.iter().any(|read| {
+            read.paths.iter().any(|path| {
+                path.resolved.as_ref()
+                    == Some(&crate::record::NativePath::UnixBytes(
+                        std::os::unix::ffi::OsStrExt::as_bytes(expected.as_os_str()).to_vec(),
+                    ))
+                    && path.identity.is_some()
+            })
+        }));
     }
 
     #[test]
