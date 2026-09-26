@@ -502,7 +502,8 @@ pub struct PathAggregate {
     pub total_duration_ns: u128,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum OperationKey {
     Open,
     Close,

@@ -12,7 +12,7 @@ use clap::{Args, Subcommand, ValueEnum};
 
 #[cfg(target_os = "linux")]
 use crate::coverage;
-use crate::record::{self, CompleteRecord, DEFAULT_BYTE_LIMIT, DEFAULT_EVENT_LIMIT};
+use crate::record::{self, CompleteRecord, NativePath, DEFAULT_BYTE_LIMIT, DEFAULT_EVENT_LIMIT};
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
@@ -246,6 +246,36 @@ fn diagnostic(classification: &str, action: &'static str) -> i32 {
     1
 }
 
+fn display_path(path: &NativePath) -> String {
+    match path {
+        NativePath::UnixBytes(bytes) => bytes
+            .iter()
+            .flat_map(|byte| std::ascii::escape_default(*byte))
+            .map(char::from)
+            .collect(),
+        NativePath::WindowsUtf16(units) => char::decode_utf16(units.iter().copied())
+            .map(|character| match character {
+                Ok(character) if !character.is_control() => character.to_string(),
+                Ok(character) => character.escape_default().to_string(),
+                Err(error) => format!("\\u{:04x}", error.unpaired_surrogate()),
+            })
+            .collect(),
+    }
+}
+
+fn display_key(platform: record::Platform, key: &record::ProjectKey) -> String {
+    let native = match platform {
+        record::Platform::Linux | record::Platform::Macos => NativePath::UnixBytes(key.0.clone()),
+        record::Platform::Windows => NativePath::WindowsUtf16(
+            key.0
+                .chunks_exact(2)
+                .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+                .collect(),
+        ),
+    };
+    display_path(&native)
+}
+
 fn destination(output: &OutputArgs) -> Result<Option<&Path>, &'static str> {
     let Some(path) = output.output.as_deref() else {
         return Ok(None);
@@ -309,6 +339,36 @@ fn load(path: &Path) -> Result<CompleteRecord, record::ParseFailure> {
     )
 }
 
+fn aggregate_details(
+    platform: record::Platform,
+    before: &std::collections::BTreeMap<record::ProjectKey, record::PathAggregate>,
+    after: &std::collections::BTreeMap<record::ProjectKey, record::PathAggregate>,
+) -> Vec<serde_json::Value> {
+    let keys = before
+        .keys()
+        .chain(after.keys())
+        .collect::<std::collections::BTreeSet<_>>();
+    keys.into_iter()
+        .map(|key| {
+            let describe = |aggregate: Option<&record::PathAggregate>| {
+                aggregate.map(|value| {
+                    serde_json::json!({
+                        "operations": value.operations,
+                        "count": value.count,
+                        "failures": value.failures,
+                        "total_duration_ns": value.total_duration_ns,
+                    })
+                })
+            };
+            serde_json::json!({
+                "path": display_key(platform, key),
+                "before": describe(before.get(key)),
+                "after": describe(after.get(key)),
+            })
+        })
+        .collect()
+}
+
 fn compare(args: CompareArgs) -> i32 {
     let before = match load(&args.before) {
         Ok(record) => record,
@@ -324,32 +384,89 @@ fn compare(args: CompareArgs) -> i32 {
     };
     if !args.quiet {
         let report = if args.json {
+            let path_list = |keys: &[record::ProjectKey]| {
+                keys.iter()
+                    .map(|key| display_key(before.header.platform, key))
+                    .collect::<Vec<_>>()
+            };
             let result = serde_json::json!({
-                "added": difference.added.iter().map(|key| &key.0).collect::<Vec<_>>(),
-                "removed": difference.removed.iter().map(|key| &key.0).collect::<Vec<_>>(),
-                "changed_operations": difference.changed_operations.iter().map(|key| &key.0).collect::<Vec<_>>(),
-                "changed_counts": difference.changed_counts.iter().map(|key| &key.0).collect::<Vec<_>>(),
-                "changed_failures": difference.changed_failures.iter().map(|key| &key.0).collect::<Vec<_>>(),
-                "changed_timing": difference.changed_timing.iter().map(|key| &key.0).collect::<Vec<_>>(),
-                "external_added": difference.external_added.iter().map(|key| &key.0).collect::<Vec<_>>(),
-                "external_removed": difference.external_removed.iter().map(|key| &key.0).collect::<Vec<_>>(),
+                "added": path_list(&difference.added),
+                "removed": path_list(&difference.removed),
+                "changed_operations": path_list(&difference.changed_operations),
+                "changed_counts": path_list(&difference.changed_counts),
+                "changed_failures": path_list(&difference.changed_failures),
+                "changed_timing": path_list(&difference.changed_timing),
+                "external_added": path_list(&difference.external_added),
+                "external_removed": path_list(&difference.external_removed),
+                "external_changed_operations": path_list(&difference.external_changed_operations),
+                "external_changed_counts": path_list(&difference.external_changed_counts),
+                "external_changed_failures": path_list(&difference.external_changed_failures),
+                "external_changed_timing": path_list(&difference.external_changed_timing),
+                "project_details": aggregate_details(before.header.platform, &record::aggregate_project(&before), &record::aggregate_project(&after)),
+                "external_details": aggregate_details(before.header.platform, &record::aggregate_external(&before), &record::aggregate_external(&after)),
             });
             serde_json::to_vec_pretty(&result).unwrap_or_default()
         } else {
-            format!(
-                "Added project files: {}\nRemoved project files: {}\nChanged operation kinds: \
-                 {}\nChanged counts: {}\nChanged failures: {}\nChanged timings: {}\nExternal \
-                 added: {}\nExternal removed: {}\n",
-                difference.added.len(),
-                difference.removed.len(),
-                difference.changed_operations.len(),
-                difference.changed_counts.len(),
-                difference.changed_failures.len(),
-                difference.changed_timing.len(),
-                difference.external_added.len(),
-                difference.external_removed.len()
-            )
-            .into_bytes()
+            let mut report = String::new();
+            for (label, keys) in [
+                ("Added project files", &difference.added),
+                ("Removed project files", &difference.removed),
+                ("Changed operation kinds", &difference.changed_operations),
+                ("Changed operation counts", &difference.changed_counts),
+                ("Changed failures", &difference.changed_failures),
+                ("Changed operation timings", &difference.changed_timing),
+                ("Added external accesses", &difference.external_added),
+                ("Removed external accesses", &difference.external_removed),
+                (
+                    "Changed external operation kinds",
+                    &difference.external_changed_operations,
+                ),
+                (
+                    "Changed external counts",
+                    &difference.external_changed_counts,
+                ),
+                (
+                    "Changed external failures",
+                    &difference.external_changed_failures,
+                ),
+                (
+                    "Changed external timings",
+                    &difference.external_changed_timing,
+                ),
+            ] {
+                report.push_str(label);
+                report.push_str(":\n");
+                for key in keys {
+                    report.push_str("  ");
+                    report.push_str(&display_key(before.header.platform, key));
+                    report.push('\n');
+                }
+            }
+            for (label, old, new) in [
+                (
+                    "Project",
+                    record::aggregate_project(&before),
+                    record::aggregate_project(&after),
+                ),
+                (
+                    "External",
+                    record::aggregate_external(&before),
+                    record::aggregate_external(&after),
+                ),
+            ] {
+                report.push_str(label);
+                report.push_str(" operation totals:\n");
+                for value in aggregate_details(before.header.platform, &old, &new) {
+                    report.push_str("  ");
+                    report.push_str(value["path"].as_str().unwrap_or("?"));
+                    report.push_str(": before ");
+                    report.push_str(&value["before"].to_string());
+                    report.push_str(", after ");
+                    report.push_str(&value["after"].to_string());
+                    report.push('\n');
+                }
+            }
+            report.into_bytes()
         };
         let mut report = report;
         if !report.ends_with(b"\n") {
@@ -531,13 +648,25 @@ fn assetcov(args: AssetcovArgs) -> i32 {
             }))
             .unwrap_or_default()
         } else {
-            format!(
+            let mut text = format!(
                 "Covered: {}/{} ({:.2}%)\n",
                 report.covered.len(),
                 denominator.files.len(),
                 report.percentage
-            )
-            .into_bytes()
+            );
+            text.push_str("Covered files:\n");
+            for file in &report.covered {
+                text.push_str("  ");
+                text.push_str(&display_path(&file.logical));
+                text.push('\n');
+            }
+            text.push_str("Uncovered files:\n");
+            for file in &report.uncovered {
+                text.push_str("  ");
+                text.push_str(&display_path(&file.logical));
+                text.push('\n');
+            }
+            text.into_bytes()
         };
         if !encoded.ends_with(b"\n") {
             encoded.push(b'\n');
@@ -685,12 +814,26 @@ fn latencylab(args: LatencyArgs) -> i32 {
             }))
             .unwrap_or_default()
         } else {
-            format!(
-                "Baseline median: {baseline_median_ns} ns\nDelayed median: {delayed_median_ns} \
-                 ns\nSlowdown: {slowdown_ratio:.3}x\nMatched operations observed in {} runs\n",
-                runs.len()
-            )
-            .into_bytes()
+            let mut text = format!(
+                "Requested per-operation delay: {} ns\nBaseline median: {baseline_median_ns} \
+                 ns\nDelayed median: {delayed_median_ns} ns\nSlowdown: \
+                 {slowdown_ratio:.3}x\nRuns:\n",
+                args.delay.as_nanos()
+            );
+            for run in &runs {
+                text.push_str(&format!(
+                    "  pair {} {}: matches={}, requested={} ns, observed={} ns, operation={} ns, \
+                     execution={} ns\n",
+                    run["pair"],
+                    run["condition"].as_str().unwrap_or("?"),
+                    run["matching_operations"],
+                    run["requested_delay_ns"],
+                    run["observed_delay_ns"],
+                    run["operation_ns"],
+                    run["execution_ns"]
+                ));
+            }
+            text.into_bytes()
         };
         if !report.ends_with(b"\n") {
             report.push(b'\n');
