@@ -29,6 +29,7 @@ A failed native call may supply a null, invalid, or overlong pathname pointer, o
 When a path cannot be resolved because an ancestor denies search permission, all three native backends retain the paired operation with `path_unavailable` instead of aborting the trace or guessing whether a symlink escapes the project. Other classified paths in a multi-path mutation remain available; the unresolved path is not eligible for selection.
 
 `compare` uses the default event and byte parse limits unless its positive `--max-events` and `--max-bytes` overrides are supplied. The overrides apply independently to both input records so a valid record created with raised capture limits remains analyzable without removing parser bounds.
+All result-producing commands reject `--force` with stdout (`--output -`) at entry with invalid-input status 2, before launching a child or publishing a reproduction bundle. Only a real file output may be replaced.
 
 The pre-execution asset denominator walks the selected root, follows only internal symlinks, and deduplicates file identities, including hard links, without holding one open descriptor per file. A read completion must carry the opened file's identity and actual byte count; the analyzer cannot recover it reliably from a pathname after the execution. A missing identity cannot cover a selected file.
 

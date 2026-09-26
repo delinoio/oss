@@ -379,6 +379,16 @@ fn diagnostic(classification: &str, action: &'static str) -> i32 {
     1
 }
 
+fn invalid_argument(classification: &'static str, action: &'static str) -> i32 {
+    tracing::error!(
+        command = action,
+        classification,
+        "invalid file-access option"
+    );
+    let _ = writeln!(io::stderr(), "error: fspy {action}: {classification}");
+    2
+}
+
 fn display_path(path: &NativePath) -> String {
     match path {
         NativePath::UnixBytes(bytes) => bytes
@@ -411,7 +421,11 @@ fn display_key(platform: record::Platform, key: &record::ProjectKey) -> String {
 
 fn destination(output: &OutputArgs) -> Result<Option<&Path>, &'static str> {
     let Some(path) = output.output.as_deref() else {
-        return Ok(None);
+        return if output.force {
+            Err("invalid_force_stdout")
+        } else {
+            Ok(None)
+        };
     };
     if path.as_os_str() == "-" {
         if output.force {
@@ -3332,6 +3346,19 @@ fn windows_autowatch(args: AutowatchArgs) -> i32 {
 }
 
 pub fn execute(command: Command) -> i32 {
+    let output = match &command {
+        Command::Compare(args) => Some((&args.output, "compare")),
+        Command::Record(args) => Some((&args.output, "record")),
+        Command::Assetcov(args) => Some((&args.output, "assetcov")),
+        Command::Latencylab(args) => Some((&args.output, "latencylab")),
+        Command::MinRepro(args) => Some((&args.output, "min-repro")),
+        Command::Autowatch(_) | Command::Fbreak(_) => None,
+    };
+    if let Some((output, action)) = output {
+        if let Err(classification) = destination(output) {
+            return invalid_argument(classification, action);
+        }
+    }
     match command {
         Command::Compare(args) => compare(args),
         Command::Autowatch(args) => {
@@ -3499,6 +3526,55 @@ mod tests {
         };
         assert_eq!(compare.max_events, 2_000_000);
         assert_eq!(compare.max_bytes, 536_870_912);
+    }
+
+    #[test]
+    fn force_stdout_is_rejected_before_execution_or_bundle_creation() {
+        let directory = tempfile::tempdir().unwrap();
+        let bundle = directory.path().join("repro");
+        let bundle_string = bundle.to_str().unwrap();
+        let commands = [
+            vec![
+                "fspy",
+                "record",
+                "--output",
+                "-",
+                "--force",
+                "--",
+                "missing-command",
+            ],
+            vec![
+                "fspy",
+                "compare",
+                "missing-before",
+                "missing-after",
+                "--output",
+                "-",
+                "--force",
+            ],
+            vec![
+                "fspy",
+                "min-repro",
+                "--include",
+                "*",
+                "--bundle-dir",
+                bundle_string,
+                "--expect-exit",
+                "1",
+                "--expect-stderr",
+                "failed",
+                "--output",
+                "-",
+                "--force",
+                "--",
+                "missing-command",
+            ],
+        ];
+        for args in commands {
+            let parsed = TestCli::try_parse_from(args).unwrap();
+            assert_eq!(execute(parsed.command), 2);
+        }
+        assert!(!bundle.exists());
     }
 
     #[cfg(target_os = "linux")]

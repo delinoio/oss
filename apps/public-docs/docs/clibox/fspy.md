@@ -54,7 +54,7 @@ The bundle includes collected files, required internal links, a file and hash ma
 
 ## Outputs and failure handling
 
-`record` writes NDJSON. `compare`, `assetcov`, `latencylab`, and `min-repro` offer human and `--json` reports, with `--quiet` to suppress successful reports. Report output defaults to stdout. Use `--output FILE` for atomic file output, `--force` to replace an existing regular output file, `--output -` for stdout, or `--output ./-` for a file literally named `-`. Reproduction bundles always use a new `--bundle-dir`, independent of report output.
+`record` writes NDJSON. `compare`, `assetcov`, `latencylab`, and `min-repro` offer human and `--json` reports, with `--quiet` to suppress successful reports. Report output defaults to stdout. Use `--output FILE` for atomic file output, `--force` to replace an existing regular output file, `--output -` for stdout, or `--output ./-` for a file literally named `-`. Combining `--force` with stdout is rejected before the command runs. Reproduction bundles always use a new `--bundle-dir`, independent of report output.
 
 Default limits are 1,000,000 events and 256 MiB of encoded trace per execution. Reproduction snapshots and results each default to 1 GiB and 100,000 files. Positive overrides are available in command help. `--timeout` is optional; there is no default execution deadline. Cleanup waits five seconds by default before forcing termination and confirms that owned processes exited.
 
