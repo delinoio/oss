@@ -11,6 +11,16 @@
 #define DETOURS_INTERNAL
 #include "detours.h"
 #include <stddef.h>
+#include <stdio.h>
+
+// The private fspy injector needs a stable failure stage on native targets.
+// This reports only the stage and Win32 code; never process paths or payloads.
+static void FspyReportDetourFailure(const char *stage)
+{
+    const DWORD error = GetLastError();
+    fprintf(stderr, "fspy detours: stage=%s os_code=%lu\n", stage, error);
+    SetLastError(error);
+}
 
 #if DETOURS_VERSION != 0x4c0c1   // 0xMAJORcMINORcPATCH
 #error detours.h version mismatch
@@ -705,6 +715,7 @@ BOOL WINAPI DetourUpdateProcessWithDll(_In_ HANDLE hProcess,
 
     if (hModule == NULL) {
         SetLastError(ERROR_INVALID_OPERATION);
+        FspyReportDetourFailure("find_executable_module");
         return FALSE;
     }
 
@@ -732,6 +743,7 @@ BOOL WINAPI DetourUpdateProcessWithDll(_In_ HANDLE hProcess,
     //
     if (bIs64BitOS) {
         if (!IsWow64ProcessHelper(hProcess, &bIs32BitProcess)) {
+            FspyReportDetourFailure("query_target_bitness");
             return FALSE;
         }
     } else {
@@ -763,6 +775,7 @@ BOOL WINAPI DetourUpdateProcessWithDllEx(_In_ HANDLE hProcess,
 
     if (hModule == NULL || !LoadNtHeaderFromProcess(hProcess, hModule, &inh)) {
         SetLastError(ERROR_INVALID_OPERATION);
+        FspyReportDetourFailure("load_target_header");
         return FALSE;
     }
 
@@ -784,6 +797,7 @@ BOOL WINAPI DetourUpdateProcessWithDllEx(_In_ HANDLE hProcess,
     DETOUR_EXE_RESTORE der;
 
     if (!RecordExeRestore(hProcess, hModule, der)) {
+        FspyReportDetourFailure("record_executable_restore");
         return FALSE;
     }
 
@@ -843,6 +857,7 @@ BOOL WINAPI DetourUpdateProcessWithDllEx(_In_ HANDLE hProcess,
     else {
         // 64-bit native or 64-bit managed process on any platform.
         if (!UpdateImports64(hProcess, hModule, rlpDlls, nDlls)) {
+            FspyReportDetourFailure("update_imports64");
             return FALSE;
         }
     }
@@ -889,6 +904,7 @@ BOOL WINAPI DetourUpdateProcessWithDllEx(_In_ HANDLE hProcess,
     //
     if (!DetourCopyPayloadToProcess(hProcess, DETOUR_EXE_RESTORE_GUID, &der, sizeof(der))) {
         DETOUR_TRACE(("DetourCopyPayloadToProcess failed: %lu\n", GetLastError()));
+        FspyReportDetourFailure("copy_restore_payload");
         return FALSE;
     }
     return TRUE;

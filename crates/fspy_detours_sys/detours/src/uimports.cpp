@@ -27,6 +27,7 @@ static BOOL UPDATE_IMPORTS_XX(HANDLE hProcess,
     DWORD i;
     SIZE_T cbRead;
     DWORD n;
+    const char *failureStage = "read_dos_header";
 
     PBYTE pbModule = (PBYTE)hModule;
 
@@ -39,6 +40,9 @@ static BOOL UPDATE_IMPORTS_XX(HANDLE hProcess,
                       pbModule, pbModule + sizeof(idh), GetLastError()));
 
       finish:
+        if (!fSucceeded) {
+            FspyReportDetourFailure(failureStage);
+        }
         if (pbNew != NULL) {
             delete[] pbNew;
             pbNew = NULL;
@@ -49,6 +53,7 @@ static BOOL UPDATE_IMPORTS_XX(HANDLE hProcess,
     IMAGE_NT_HEADERS_XX inh;
     ZeroMemory(&inh, sizeof(inh));
 
+    failureStage = "read_nt_header";
     if (!ReadProcessMemory(hProcess, pbModule + idh.e_lfanew, &inh, sizeof(inh), &cbRead)
         || cbRead < sizeof(inh)) {
         DETOUR_TRACE(("ReadProcessMemory(inh@%p..%p) failed: %lu\n",
@@ -78,6 +83,7 @@ static BOOL UPDATE_IMPORTS_XX(HANDLE hProcess,
         IMAGE_SECTION_HEADER ish;
         ZeroMemory(&ish, sizeof(ish));
 
+        failureStage = "read_section_header";
         if (!ReadProcessMemory(hProcess, pbModule + dwSec + sizeof(ish) * i, &ish,
                                sizeof(ish), &cbRead)
             || cbRead < sizeof(ish)) {
@@ -116,6 +122,7 @@ static BOOL UPDATE_IMPORTS_XX(HANDLE hProcess,
 
         do {
             IMAGE_IMPORT_DESCRIPTOR ImageImport;
+            failureStage = "read_import_descriptor";
             if (!ReadProcessMemory(hProcess, pImageImport, &ImageImport, sizeof(ImageImport), NULL)) {
                 DETOUR_TRACE(("ReadProcessMemory failed: %lu\n", GetLastError()));
                 goto finish;
@@ -196,6 +203,7 @@ static BOOL UPDATE_IMPORTS_XX(HANDLE hProcess,
     }
     DETOUR_TRACE(("pbBase = %p\n", pbBase));
 
+    failureStage = "allocate_import_table";
     PBYTE pbNewIid = FindAndAllocateNearBase(hProcess, pbModule, pbBase, cbNew);
     if (pbNewIid == NULL) {
         DETOUR_TRACE(("FindAndAllocateNearBase failed.\n"));
@@ -212,6 +220,7 @@ static BOOL UPDATE_IMPORTS_XX(HANDLE hProcess,
         // Read the old import directory if it exists.
         DETOUR_TRACE(("IMPORT_DIRECTORY perms=%lx\n", dwProtect));
 
+        failureStage = "read_old_imports";
         if (!ReadProcessMemory(hProcess,
                                pbModule + inh.IMPORT_DIRECTORY.VirtualAddress,
                                &piid[nDlls],
@@ -276,6 +285,7 @@ static BOOL UPDATE_IMPORTS_XX(HANDLE hProcess,
     }
 #endif
 
+    failureStage = "write_import_table";
     if (!WriteProcessMemory(hProcess, pbNewIid, pbNew, obStr, NULL)) {
         DETOUR_TRACE(("WriteProcessMemory(iid) failed: %lu\n", GetLastError()));
         goto finish;
@@ -300,6 +310,7 @@ static BOOL UPDATE_IMPORTS_XX(HANDLE hProcess,
 
     /////////////////////// Update the NT header for the new import directory.
     //
+    failureStage = "unprotect_nt_header";
     if (!DetourVirtualProtectSameExecuteEx(hProcess, pbModule, inh.OptionalHeader.SizeOfHeaders,
                                            PAGE_EXECUTE_READWRITE, &dwProtect)) {
         DETOUR_TRACE(("VirtualProtectEx(inh) write failed: %lu\n", GetLastError()));
@@ -308,12 +319,14 @@ static BOOL UPDATE_IMPORTS_XX(HANDLE hProcess,
 
     inh.OptionalHeader.CheckSum = 0;
 
+    failureStage = "write_dos_header";
     if (!WriteProcessMemory(hProcess, pbModule, &idh, sizeof(idh), NULL)) {
         DETOUR_TRACE(("WriteProcessMemory(idh) failed: %lu\n", GetLastError()));
         goto finish;
     }
     DETOUR_TRACE(("WriteProcessMemory(idh:%p..%p)\n", pbModule, pbModule + sizeof(idh)));
 
+    failureStage = "write_nt_header";
     if (!WriteProcessMemory(hProcess, pbModule + idh.e_lfanew, &inh, sizeof(inh), NULL)) {
         DETOUR_TRACE(("WriteProcessMemory(inh) failed: %lu\n", GetLastError()));
         goto finish;
@@ -322,6 +335,7 @@ static BOOL UPDATE_IMPORTS_XX(HANDLE hProcess,
                   pbModule + idh.e_lfanew,
                   pbModule + idh.e_lfanew + sizeof(inh)));
 
+    failureStage = "restore_nt_header_protection";
     if (!VirtualProtectEx(hProcess, pbModule, inh.OptionalHeader.SizeOfHeaders,
                           dwProtect, &dwProtect)) {
         DETOUR_TRACE(("VirtualProtectEx(idh) restore failed: %lu\n", GetLastError()));

@@ -299,6 +299,18 @@ where
             return Err(cleanup.err().unwrap_or(failure));
         }
     };
+    tracing::debug!(
+        stage = "child_termination",
+        exit_code = ?termination.status.code(),
+        legacy_complete = termination.path_accesses.is_ok(),
+        "file trace child exited"
+    );
+    if !termination.status.success() {
+        eprintln!(
+            "clibox fspy supervisor: stage=child_termination exit_code={:?}",
+            termination.status.code()
+        );
+    }
     match job.active() {
         Ok(0) => {}
         Ok(_) => {
