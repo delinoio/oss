@@ -268,6 +268,25 @@ fn request_signal(tasks: &HashSet<pid_t>, signal: i32) {
     }
 }
 
+fn wait_owned(tasks: &HashSet<pid_t>) -> Result<Option<(pid_t, i32)>, TraceFailure> {
+    for &tid in tasks {
+        let mut status = 0;
+        // SAFETY: tid came from our traced root or a ptrace fork/clone event.
+        // Waiting by TID avoids consuming an unrelated child of this process.
+        let result = unsafe { libc::waitpid(tid, &raw mut status, libc::__WALL | libc::WNOHANG) };
+        if result > 0 {
+            return Ok(Some((result, status)));
+        }
+        if result < 0 {
+            if io::Error::last_os_error().raw_os_error() == Some(libc::EINTR) {
+                return Ok(None);
+            }
+            return Err(supervision("waitpid"));
+        }
+    }
+    Ok(None)
+}
+
 struct OwnedTasks {
     tasks: HashSet<pid_t>,
 }
@@ -280,11 +299,7 @@ impl Drop for OwnedTasks {
         request_signal(&self.tasks, libc::SIGKILL);
         let deadline = Instant::now() + FORCE_CONFIRM;
         while !self.tasks.is_empty() && Instant::now() < deadline {
-            let mut status = 0;
-            // SAFETY: waitpid observes only children traced by this process;
-            // WNOHANG keeps cleanup bounded when a tracee cannot be reaped.
-            let tid = unsafe { libc::waitpid(-1, &raw mut status, libc::__WALL | libc::WNOHANG) };
-            if tid > 0 {
+            if let Ok(Some((tid, status))) = wait_owned(&self.tasks) {
                 if libc::WIFEXITED(status) || libc::WIFSIGNALED(status) {
                     self.tasks.remove(&tid);
                 } else if libc::WIFSTOPPED(status) {
@@ -340,9 +355,8 @@ where
     F: FnMut(&RawEntry) -> Result<EntryAction, TraceFailure>,
     C: FnMut(&RawEntry) -> Result<ControlDirective, TraceFailure>,
 {
-    // waitpid(__WALL) receives stops from every tracee owned by this process.
-    // Serialize local trace sessions so their supervisors cannot consume each
-    // other's stops; the command workflows already execute their runs serially.
+    // Keep local sessions serialized so process-supervision state remains
+    // deterministic. wait_owned selects only this session's tracee TIDs.
     let _trace_lock = TRACE_LOCK.lock().map_err(|_| supervision("trace_lock"))?;
     if limits.max_events == 0 || limits.max_bytes == 0 || limits.kill_after.is_zero() {
         return Err(supervision("limits"));
@@ -436,20 +450,10 @@ where
         if forced_at.is_some_and(|time| time.elapsed() >= FORCE_CONFIRM) {
             return Err(TraceFailure::Cleanup);
         }
-        let mut status = 0;
-        // SAFETY: WNOHANG allows cancellation and cleanup deadlines to be
-        // enforced even while every tracee is running or blocked.
-        let tid = unsafe { libc::waitpid(-1, &raw mut status, libc::__WALL | libc::WNOHANG) };
-        if tid == 0 {
+        let Some((tid, status)) = wait_owned(&owned.tasks)? else {
             thread::sleep(WAIT_POLL);
             continue;
-        }
-        if tid < 0 {
-            if io::Error::last_os_error().raw_os_error() == Some(libc::EINTR) {
-                continue;
-            }
-            return Err(supervision("waitpid"));
-        }
+        };
         if libc::WIFEXITED(status) || libc::WIFSIGNALED(status) {
             owned.tasks.remove(&tid);
             held.retain(|waiting| *waiting != tid);
