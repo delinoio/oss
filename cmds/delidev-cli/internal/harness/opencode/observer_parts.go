@@ -1,0 +1,169 @@
+package opencode
+
+import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/json"
+	"reflect"
+	"strings"
+)
+
+func (o *inputObserver) part(raw []byte) (*NativePart, bool, error) {
+	value, err := decodeNativePart(raw)
+	if err != nil || value.SessionID != o.input.receipt.SessionID {
+		return nil, false, observerProblem()
+	}
+	message := o.messages[value.MessageID]
+	if message == nil || o.attachments[value.ID] != "" {
+		return nil, false, observerProblem()
+	}
+	raw = canonicalNative(raw)
+	old := o.parts[value.ID]
+	if old != nil && (old.value.MessageID != value.MessageID || old.value.Kind != value.Kind) {
+		return nil, false, observerProblem()
+	}
+	if old != nil && bytes.Equal(old.raw, raw) {
+		if old.value.Text != nil && old.text != value.Text.Text {
+			return nil, false, observerProblem()
+		}
+		copy, _ := decodeNativePart(raw)
+		return &copy, true, nil
+	}
+	if old == nil && len(o.parts)+len(o.attachments) >= maxObservedParts {
+		return nil, false, eventBound()
+	}
+	if message.value.User != nil {
+		if value.ID != o.input.receipt.PartID || value.Kind != TextPartKind || value.Text.Timing != nil || value.Text.Synthetic != nil || value.Text.Ignored != nil || value.Text.Metadata != nil || sha256.Sum256([]byte(value.Text.Text)) != o.input.digest || old != nil {
+			return nil, false, observerProblem()
+		}
+	} else {
+		if message.finalized || value.MessageID != o.progress.AssistantID {
+			return nil, false, observerProblem()
+		}
+		if old == nil && (value.Text != nil || value.Tool != nil) && message.openStep == "" {
+			return nil, false, observerProblem()
+		}
+		switch value.Kind {
+		case TextPartKind, ReasoningPartKind:
+			if value.Text.Timing == nil || value.Text.Synthetic != nil || value.Text.Ignored != nil {
+				return nil, false, observerProblem()
+			}
+			if old != nil && (old.value.Text.Timing.End != nil || old.value.Text.Timing.Start != value.Text.Timing.Start || !strings.HasPrefix(value.Text.Text, old.text)) {
+				// Native completion plugins may rewrite text. This profile has
+				// no such authority; retain uncertainty instead of losing deltas.
+				return nil, false, observerProblem()
+			}
+		case ToolPartKind:
+			if err := o.tool(value, old); err != nil {
+				return nil, false, err
+			}
+		case StepStartPartKind:
+			if old != nil || message.openStep != "" {
+				return nil, false, observerProblem()
+			}
+		case StepFinishPartKind:
+			if old != nil || message.openStep == "" {
+				return nil, false, observerProblem()
+			}
+		case SnapshotPartKind, PatchPartKind:
+			if old != nil {
+				return nil, false, observerProblem()
+			}
+		default:
+			// Decoding media/child/retry/compaction forms does not establish
+			// their execution owner, completion or restoration semantics.
+			return nil, false, observerProblem()
+		}
+	}
+	state := &observedPart{raw: raw, value: value}
+	if value.Text != nil {
+		state.text = value.Text.Text
+	}
+	o.parts[value.ID] = state
+	if message.value.User != nil {
+		o.progress.InputPartSeen = true
+	}
+	if value.Tool != nil {
+		o.calls[value.Tool.CallID] = value.ID
+		for _, attachment := range value.Tool.Attachments {
+			o.attachments[attachment.ID] = value.ID
+		}
+	}
+	if value.Kind == StepStartPartKind {
+		message.openStep = value.ID
+	}
+	if value.Kind == StepFinishPartKind {
+		message.openStep, message.lastStep = "", value.ID
+	}
+	copy, _ := decodeNativePart(raw)
+	return &copy, false, nil
+}
+
+func (o *inputObserver) tool(value NativePart, old *observedPart) error {
+	tool := value.Tool
+	for _, item := range []struct {
+		raw json.RawMessage
+		key string
+	}{{tool.PartMetadata, "providerExecuted"}, {tool.Metadata, "interrupted"}} {
+		fields, _ := object(item.raw)
+		if raw, exists := fields[item.key]; exists {
+			if _, valid := boolPointer(raw); !valid {
+				return observerProblem()
+			}
+		}
+	}
+	if owner := o.calls[tool.CallID]; owner != "" && owner != value.ID {
+		return observerProblem()
+	}
+	if tool.Timing != nil && tool.Timing.Compacted != nil {
+		return observerProblem()
+	}
+	if old == nil {
+		if tool.State != ToolPending {
+			return observerProblem()
+		}
+	} else {
+		prior := old.value.Tool
+		if prior.CallID != tool.CallID || prior.Name != tool.Name || prior.State == ToolCompleted || prior.State == ToolError {
+			return observerProblem()
+		}
+		if prior.State == ToolPending {
+			// Native cleanup can terminate a pending call before running. A
+			// successful result still requires its applied running input.
+			if tool.State == ToolCompleted {
+				return observerProblem()
+			}
+		} else if tool.State == ToolPending || !bytes.Equal(canonicalNative(prior.Input), canonicalNative(tool.Input)) || prior.Timing.Start != tool.Timing.Start {
+			return observerProblem()
+		}
+	}
+	if len(o.parts)+len(o.attachments)+len(tool.Attachments)+1 > maxObservedParts {
+		return eventBound()
+	}
+	for _, attachment := range tool.Attachments {
+		if o.parts[attachment.ID] != nil || o.attachments[attachment.ID] != "" {
+			return observerProblem()
+		}
+	}
+	return nil
+}
+
+func (o *inputObserver) delta(fields map[string]json.RawMessage) (*nativeDelta, error) {
+	messageID, valid := boundedString(fields["messageID"], 30, true)
+	partID, ok := boundedString(fields["partID"], 30, true)
+	text, good := boundedString(fields["delta"], maxHTTPBody, false)
+	part := o.parts[partID]
+	message := o.messages[messageID]
+	if !valid || !ok || !good || !scalar(fields["field"], "text") || part == nil || message == nil || messageID != o.progress.AssistantID || message.value.Assistant == nil || message.finalized || part.value.MessageID != messageID || part.value.Text == nil || part.value.Text.Timing == nil || part.value.Text.Timing.End != nil {
+		return nil, observerProblem()
+	}
+	if len(text) > maxHTTPBody-len(part.text) {
+		return nil, eventBound()
+	}
+	part.text += text
+	return &nativeDelta{MessageID: messageID, PartID: partID, Text: text}, nil
+}
+
+// Step and assistant observations overlap, so this equality only verifies the
+// source's latest-step assignment. It does not add either snapshot to a ledger.
+func sameUsage(a, b NativeUsage) bool { return reflect.DeepEqual(a, b) }

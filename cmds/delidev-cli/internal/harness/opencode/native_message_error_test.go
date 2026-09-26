@@ -45,6 +45,10 @@ func TestManualNativeOpenCodeMessageError(t *testing.T) {
 	if _, err := api.submit(ctx, domain.NewID(), fixtureMessageID, fixturePartID, "Exercise the private error fixture."); err != nil {
 		t.Fatal(err)
 	}
+	observer, err := api.observeInput(ctx, "/")
+	if err != nil {
+		t.Fatal(err)
+	}
 	messageError, eventError, idle := false, false, false
 	check := func(native *NativeError) {
 		if native == nil || native.Kind != APIErrorKind || native.StatusCode == nil || *native.StatusCode != 401 || native.Retryable == nil || *native.Retryable {
@@ -55,10 +59,13 @@ func TestManualNativeOpenCodeMessageError(t *testing.T) {
 			t.Fatal("native error diagnostics escaped typed classification")
 		}
 	}
-	for count := 0; count < 256 && !(idle && messageError && eventError); count++ {
+	for count := 0; count < 256 && !(idle && messageError && eventError && observer.snapshot().SettledObserved); count++ {
 		event, err := stream.Next(ctx)
 		if err != nil {
 			t.Fatal(err)
+		}
+		if _, err := observer.observe(ctx, event); err != nil {
+			t.Fatalf("native owned error event %s: %v", event.Kind, err)
 		}
 		properties, err := object(event.Properties)
 		if err != nil {
@@ -93,6 +100,9 @@ func TestManualNativeOpenCodeMessageError(t *testing.T) {
 	}
 	if !messageError || !eventError || !idle || calls.Load() != 1 {
 		t.Fatalf("native error observations: message=%t event=%t idle=%t requests=%d", messageError, eventError, idle, calls.Load())
+	}
+	if progress := observer.snapshot(); !progress.SettledObserved || progress.NeedsRecovery {
+		t.Fatal("native failed input lost original terminal and idle ownership")
 	}
 	if receipt, err := api.inspectInput(ctx); err != nil || !receipt.Recorded {
 		t.Fatal("native failure erased original input storage")

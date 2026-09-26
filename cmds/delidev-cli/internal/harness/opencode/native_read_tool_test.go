@@ -21,11 +21,18 @@ func TestManualNativeOpenCodeReadTool(t *testing.T) {
 		t.Skip("explicit private native OpenCode tool fixture")
 	}
 	for _, missing := range []bool{false, true} {
-		t.Run(fmt.Sprintf("missing=%t", missing), func(t *testing.T) { nativeReadToolFixture(t, missing) })
+		t.Run(fmt.Sprintf("missing=%t", missing), func(t *testing.T) { nativeReadToolFixture(t, missing, "tool_calls") })
 	}
 }
 
-func nativeReadToolFixture(t *testing.T, missing bool) {
+func TestManualNativeOpenCodeReadStopFinish(t *testing.T) {
+	if os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE") == "" {
+		t.Skip("explicit private native OpenCode provider-stop tool fixture")
+	}
+	nativeReadToolFixture(t, false, "stop")
+}
+
+func nativeReadToolFixture(t *testing.T, missing bool, toolFinish string) {
 	const sentinel = "private-read-result-sentinel"
 	const callID = "call_private_native_read"
 	key := string(domain.NewID())
@@ -63,7 +70,7 @@ func nativeReadToolFixture(t *testing.T, missing bool) {
 			}
 			args, _ := json.Marshal(map[string]any{"filePath": file.Load().(string)})
 			delta["tool_calls"] = []any{map[string]any{"index": 0, "id": callID, "type": "function", "function": map[string]any{"name": "read", "arguments": string(args)}}}
-			finish = "tool_calls"
+			finish = toolFinish
 		case 2:
 			if !bytes.Contains(body["messages"], []byte(sentinel)) || !bytes.Contains(body["messages"], []byte(callID)) {
 				t.Error("native Read result was not preserved in the original provider conversation")
@@ -106,6 +113,10 @@ func nativeReadToolFixture(t *testing.T, missing bool) {
 	if _, err := api.submit(ctx, domain.NewID(), fixtureMessageID, fixturePartID, "Read the private fixture file and report completion."); err != nil {
 		t.Fatal(err)
 	}
+	observer, err := api.observeInput(ctx, "/")
+	if err != nil {
+		t.Fatal(err)
+	}
 	states := map[ToolState]bool{}
 	var toolPart, toolMessage string
 	finished, idle := false, false
@@ -113,10 +124,25 @@ func nativeReadToolFixture(t *testing.T, missing bool) {
 	if missing {
 		terminal = ToolError
 	}
-	for count := 0; count < 512 && !(finished && idle && states[terminal]); count++ {
+	for count := 0; count < 512 && !(finished && idle && states[terminal] && observer.snapshot().SettledObserved); count++ {
 		event, err := stream.Next(ctx)
 		if err != nil {
 			t.Fatal(err)
+		}
+		if _, err := observer.observe(ctx, event); err != nil {
+			if event.Kind == MessageUpdatedEvent {
+				fields, _ := object(event.Properties)
+				message, problem := decodeNativeMessage(fields["info"])
+				if problem == nil && message.Assistant != nil {
+					current, _ := json.Marshal(message.Assistant)
+					t.Logf("failed native assistant public facts: %s", current)
+					if prior := observer.messages[message.ID]; prior != nil {
+						old, _ := json.Marshal(prior.value.Assistant)
+						t.Logf("prior native assistant public facts: %s; step open=%t finished=%t", old, prior.openStep != "", prior.lastStep != "")
+					}
+				}
+			}
+			t.Fatalf("native owned tool event %s: %v", event.Kind, err)
 		}
 		properties, err := object(event.Properties)
 		if err != nil {
@@ -166,6 +192,9 @@ func nativeReadToolFixture(t *testing.T, missing bool) {
 	}
 	if !states[ToolPending] || !states[ToolRunning] || !states[terminal] || !finished || !idle || calls.Load() != 2 {
 		t.Fatalf("native tool observations: pending=%t running=%t completed=%t error=%t finished=%t idle=%t requests=%d", states[ToolPending], states[ToolRunning], states[ToolCompleted], states[ToolError], finished, idle, calls.Load())
+	}
+	if progress := observer.snapshot(); !progress.SettledObserved || progress.NeedsRecovery {
+		t.Fatal("native tool loop did not preserve original terminal and idle ownership")
 	}
 	if receipt, err := api.inspectInput(ctx); err != nil || !receipt.Recorded {
 		t.Fatal("native tool activity lost original input storage")
