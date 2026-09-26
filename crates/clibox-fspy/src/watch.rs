@@ -63,6 +63,46 @@ fn native_relative(path: &NativePath) -> Option<PathBuf> {
     }
 }
 
+#[cfg(windows)]
+fn same_component(left: &std::ffi::OsStr, right: &std::ffi::OsStr) -> bool {
+    use std::os::windows::ffi::OsStrExt;
+
+    let left = left.encode_wide().collect::<Vec<_>>();
+    let right = right.encode_wide().collect::<Vec<_>>();
+    let (Ok(left_len), Ok(right_len)) = (i32::try_from(left.len()), i32::try_from(right.len()))
+    else {
+        return false;
+    };
+    // CompareStringOrdinal follows Windows' case-insensitive filesystem spelling.
+    unsafe {
+        winapi::um::stringapiset::CompareStringOrdinal(
+            left.as_ptr(),
+            left_len,
+            right.as_ptr(),
+            right_len,
+            1,
+        ) == 2
+    }
+}
+
+#[cfg(windows)]
+fn path_prefix(prefix: &Path, path: &Path) -> bool {
+    let mut path = path.components();
+    prefix.components().all(|component| {
+        path.next()
+            .is_some_and(|other| same_component(component.as_os_str(), other.as_os_str()))
+    })
+}
+
+#[cfg(not(windows))]
+fn path_prefix(prefix: &Path, path: &Path) -> bool {
+    path.starts_with(prefix)
+}
+
+fn same_path(left: &Path, right: &Path) -> bool {
+    path_prefix(left, right) && path_prefix(right, left)
+}
+
 impl Dependencies {
     fn include_path(
         &mut self,
@@ -148,21 +188,21 @@ impl Dependencies {
     }
 
     fn relevant(&self, path: &Path) -> bool {
-        self.files.contains(path)
+        self.files.iter().any(|file| same_path(file, path))
             || self
                 .directories
                 .iter()
-                .any(|directory| path.starts_with(directory) || directory.starts_with(path))
+                .any(|directory| path_prefix(directory, path) || path_prefix(path, directory))
             || self
                 .absent
                 .iter()
-                .any(|missing| path.starts_with(missing) || missing.starts_with(path))
+                .any(|missing| path_prefix(missing, path) || path_prefix(path, missing))
     }
 
     fn self_written(&self, path: &Path) -> bool {
-        self.writes.iter().any(|written| {
-            written == path || written.starts_with(path) || path.starts_with(written)
-        })
+        self.writes
+            .iter()
+            .any(|written| path_prefix(written, path) || path_prefix(path, written))
     }
 
     fn anchors(&self, root: &Path) -> BTreeSet<PathBuf> {
@@ -376,6 +416,16 @@ mod tests {
         next.merge(previous);
         assert!(next.files.contains(Path::new("new.txt")));
         assert!(next.files.contains(Path::new("old.txt")));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn missing_dependency_matches_created_path_with_different_case() {
+        let mut dependencies = Dependencies::default();
+        dependencies.absent.insert(PathBuf::from("Config.json"));
+        assert!(dependencies.relevant(Path::new("config.json")));
+        dependencies.writes.insert(PathBuf::from("Output.txt"));
+        assert!(dependencies.self_written(Path::new("output.txt")));
     }
 
     #[test]

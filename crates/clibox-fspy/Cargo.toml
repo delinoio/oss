@@ -36,4 +36,4 @@ fspy = { path = "../fspy" }
 futures-util = "0.3.31"
 tokio = { version = "1.49.0", features = ["rt", "time"] }
 tokio-util = "0.7.18"
-winapi = { version = "0.3.9", features = ["consoleapi", "fileapi", "handleapi", "jobapi2", "namedpipeapi", "synchapi", "winbase", "wincon", "winnt"] }
+winapi = { version = "0.3.9", features = ["consoleapi", "fileapi", "handleapi", "jobapi2", "namedpipeapi", "stringapiset", "synchapi", "winbase", "wincon", "winnls", "winnt"] }
