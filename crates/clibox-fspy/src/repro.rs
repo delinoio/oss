@@ -1,13 +1,16 @@
 //! Private pre-execution snapshot for a verified observed-input reproduction.
 
+#[cfg(windows)]
+use std::os::windows::{ffi::OsStringExt, io::AsRawHandle};
+#[cfg(unix)]
+use std::os::{
+    fd::AsRawFd,
+    unix::fs::{symlink, MetadataExt},
+};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs::{self, File},
     io::{self, Read, Write},
-    os::{
-        fd::AsRawFd,
-        unix::fs::{symlink, MetadataExt},
-    },
     path::{Component, Path, PathBuf},
 };
 
@@ -109,6 +112,60 @@ fn opened_path(file: &File) -> Result<PathBuf, ReproFailure> {
         .position(|byte| *byte == 0)
         .ok_or(ReproFailure::Unavailable)?;
     Ok(PathBuf::from(OsString::from_vec(path[..end].to_vec())))
+}
+
+#[cfg(windows)]
+fn opened_path(file: &File) -> Result<PathBuf, ReproFailure> {
+    use std::ffi::OsString;
+
+    use winapi::um::fileapi::GetFinalPathNameByHandleW;
+
+    let mut path = vec![0_u16; 32768];
+    // SAFETY: the file owns a valid handle and this buffer holds the maximum
+    // Windows extended path length plus its terminating code unit.
+    let length = unsafe {
+        GetFinalPathNameByHandleW(
+            file.as_raw_handle().cast(),
+            path.as_mut_ptr(),
+            path.len() as u32,
+            0,
+        )
+    } as usize;
+    if length == 0 || length >= path.len() {
+        return Err(ReproFailure::Unavailable);
+    }
+    path.truncate(length);
+    Ok(PathBuf::from(OsString::from_wide(&path)))
+}
+
+#[cfg(unix)]
+fn source_identity(_path: &Path, metadata: &fs::Metadata) -> Result<FileIdentity, ReproFailure> {
+    Ok(FileIdentity::Inode {
+        device: metadata.dev(),
+        inode: metadata.ino(),
+    })
+}
+
+#[cfg(windows)]
+fn source_identity(path: &Path, _metadata: &fs::Metadata) -> Result<FileIdentity, ReproFailure> {
+    file_id::get_file_id(path)
+        .map(FileIdentity::from)
+        .map_err(|_| ReproFailure::Unavailable)
+}
+
+#[cfg(unix)]
+fn stage_symlink(source: &Path, target: &Path, link: &Path) -> io::Result<()> {
+    let _ = source;
+    symlink(target, link)
+}
+
+#[cfg(windows)]
+fn stage_symlink(source: &Path, target: &Path, link: &Path) -> io::Result<()> {
+    if source.is_dir() {
+        std::os::windows::fs::symlink_dir(target, link)
+    } else {
+        std::os::windows::fs::symlink_file(target, link)
+    }
 }
 
 fn hash_file(path: &Path, root: &Path) -> Result<(String, u64), ReproFailure> {
@@ -333,10 +390,7 @@ impl Snapshot {
                 return Err(ReproFailure::ExternalLink);
             }
             let metadata = input.metadata().map_err(|_| ReproFailure::Unavailable)?;
-            let identity = FileIdentity::Inode {
-                device: metadata.dev(),
-                inode: metadata.ino(),
-            };
+            let identity = source_identity(&source, &metadata)?;
             let mut output = File::create(&destination).map_err(|_| ReproFailure::Unavailable)?;
             let mut digest = Sha256::new();
             let mut size = 0_u64;
@@ -470,7 +524,8 @@ impl Snapshot {
                     let relative_target =
                         pathdiff::diff_paths(target, prefix.parent().unwrap_or(Path::new(".")))
                             .ok_or(ReproFailure::Unavailable)?;
-                    symlink(relative_target, link).map_err(|_| ReproFailure::Unavailable)?;
+                    stage_symlink(&self.root.join(&prefix), &relative_target, &link)
+                        .map_err(|_| ReproFailure::Unavailable)?;
                 }
                 return Ok(());
             }
@@ -490,15 +545,23 @@ impl Snapshot {
     }
 }
 
+#[cfg(unix)]
 fn native_relative(path: &Path) -> crate::record::NativePath {
     use std::os::unix::ffi::OsStrExt;
     crate::record::NativePath::UnixBytes(path.as_os_str().as_bytes().to_vec())
+}
+
+#[cfg(windows)]
+fn native_relative(path: &Path) -> crate::record::NativePath {
+    use std::os::windows::ffi::OsStrExt;
+    crate::record::NativePath::WindowsUtf16(path.as_os_str().encode_wide().collect())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    #[cfg(unix)]
     #[test]
     fn stages_observed_internal_link_and_target_without_unobserved_files() {
         let directory = tempfile::tempdir().unwrap();

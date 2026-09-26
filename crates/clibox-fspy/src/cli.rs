@@ -1069,6 +1069,94 @@ fn repro_capture(
     Ok((record, matched))
 }
 
+#[cfg(target_os = "windows")]
+fn repro_capture(
+    command: &[OsString],
+    root: &Path,
+    cwd: Option<&Path>,
+    args: &ExecutionArgs,
+    expected_stderr: &str,
+) -> Result<(CompleteRecord, bool), i32> {
+    use std::{
+        io::Read,
+        os::windows::io::{FromRawHandle, OwnedHandle},
+        process::Stdio,
+        thread,
+    };
+
+    use winapi::um::namedpipeapi::CreatePipe;
+
+    use crate::windows::supervise::{CaptureFailure, Limits};
+
+    let mut read_handle = std::ptr::null_mut();
+    let mut write_handle = std::ptr::null_mut();
+    // SAFETY: CreatePipe initializes both handles on success. OwnedHandle
+    // takes each exactly once and closes it on every subsequent exit path.
+    if unsafe {
+        CreatePipe(
+            &raw mut read_handle,
+            &raw mut write_handle,
+            std::ptr::null_mut(),
+            0,
+        )
+    } == 0
+    {
+        return Err(windows_capture_status(CaptureFailure::Spawn, "min-repro"));
+    }
+    let mut reader = unsafe { fs::File::from_raw_handle(read_handle.cast()) };
+    let writer = unsafe { OwnedHandle::from_raw_handle(write_handle.cast()) };
+    let mut child = fspy::Command::new(&command[0]);
+    child.args(&command[1..]).envs(std::env::vars_os());
+    if let Some(cwd) = cwd {
+        child.current_dir(cwd);
+    }
+    child.stdout(Stdio::inherit()).stderr(Stdio::from(writer));
+    let _signals =
+        WindowsSignals::new().map_err(|failure| windows_capture_status(failure, "min-repro"))?;
+    let needle = expected_stderr.as_bytes().to_vec();
+    let forwarder = thread::Builder::new()
+        .name("clibox-fspy-stderr".into())
+        .spawn(move || {
+            let mut matched = false;
+            let mut tail = Vec::new();
+            let mut buffer = [0_u8; 8192];
+            loop {
+                match reader.read(&mut buffer) {
+                    Ok(0) => return Ok(matched),
+                    Ok(count) => {
+                        io::stderr()
+                            .write_all(&buffer[..count])
+                            .map_err(|_| "output_forward")?;
+                        let mut combined = tail;
+                        combined.extend_from_slice(&buffer[..count]);
+                        matched |= combined.windows(needle.len()).any(|part| part == needle);
+                        let keep = needle.len().saturating_sub(1).min(combined.len());
+                        tail = combined[combined.len() - keep..].to_vec();
+                    }
+                    Err(_) => return Err("output_forward"),
+                }
+            }
+        })
+        .map_err(|_| windows_capture_status(CaptureFailure::Spawn, "min-repro"))?;
+    let record = crate::windows::supervise::capture(
+        child,
+        root,
+        Limits {
+            max_events: args.max_events,
+            max_bytes: args.max_bytes,
+            timeout: args.timeout,
+            kill_after: args.kill_after,
+        },
+        &WINDOWS_CANCELLED,
+    );
+    let matched = forwarder
+        .join()
+        .map_err(|_| windows_capture_status(CaptureFailure::TraceLoss, "min-repro"))?
+        .map_err(|_| windows_capture_status(CaptureFailure::TraceLoss, "min-repro"))?;
+    let record = record.map_err(|failure| windows_capture_status(failure, "min-repro"))?;
+    Ok((record, matched))
+}
+
 #[cfg(target_os = "linux")]
 fn capture_status(failure: CaptureFailure, action: &'static str) -> i32 {
     match failure.error {
@@ -1464,13 +1552,37 @@ fn logical_relative(root: &Path, path: &record::AccessPath) -> Option<PathBuf> {
     Some(relative.to_path_buf())
 }
 
+#[cfg(target_os = "windows")]
+fn logical_relative(_root: &Path, path: &record::AccessPath) -> Option<PathBuf> {
+    use std::os::windows::ffi::OsStringExt;
+
+    let NativePath::WindowsUtf16(units) = path.project_relative.as_ref()? else {
+        return None;
+    };
+    let relative = PathBuf::from(OsString::from_wide(units));
+    if relative.as_os_str().is_empty()
+        || !relative
+            .components()
+            .all(|component| matches!(component, std::path::Component::Normal(_)))
+    {
+        return None;
+    }
+    Some(relative)
+}
+
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-fn unix_native(path: &Path) -> NativePath {
+fn selection_native(path: &Path) -> NativePath {
     use std::os::unix::ffi::OsStrExt;
     NativePath::UnixBytes(path.as_os_str().as_bytes().to_vec())
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(target_os = "windows")]
+fn selection_native(path: &Path) -> NativePath {
+    use std::os::windows::ffi::OsStrExt;
+    NativePath::WindowsUtf16(path.as_os_str().encode_wide().collect())
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 fn collect_required(
     record: &CompleteRecord,
     root: &Path,
@@ -1511,7 +1623,7 @@ fn collect_required(
             if crate::repro::Snapshot::is_blocked(&alias) {
                 return Err(ReproFailure::BlockedInput);
             }
-            let selected = selector.matches(&unix_native(&alias));
+            let selected = selector.matches(&selection_native(&alias));
             if !selected || !snapshot.contains_selected(&alias) {
                 if pair.start.operation.is_content_read() && pair.completion.native_error.is_none()
                 {
@@ -1526,7 +1638,7 @@ fn collect_required(
     Ok(required)
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 fn tree_limits(root: &Path, max_bytes: u64, max_files: usize) -> Result<(), &'static str> {
     let mut bytes = 0_u64;
     let mut files = 0_usize;
@@ -1602,7 +1714,98 @@ fn publish_new_directory(temporary: &Path, destination: &Path) -> Result<(), &'s
     }
 }
 
+#[cfg(target_os = "windows")]
+fn publish_new_directory(temporary: &Path, destination: &Path) -> Result<(), &'static str> {
+    use std::os::windows::ffi::OsStrExt;
+
+    use winapi::um::{
+        winbase::{MoveFileExW, MOVEFILE_WRITE_THROUGH},
+        winnt::LPCWSTR,
+    };
+
+    let source = temporary
+        .as_os_str()
+        .encode_wide()
+        .chain([0])
+        .collect::<Vec<_>>();
+    let target = destination
+        .as_os_str()
+        .encode_wide()
+        .chain([0])
+        .collect::<Vec<_>>();
+    // SAFETY: both buffers are terminated wide paths on the same volume.
+    // Without REPLACE_EXISTING, MoveFileExW rejects a concurrent destination.
+    let moved = unsafe {
+        MoveFileExW(
+            source.as_ptr() as LPCWSTR,
+            target.as_ptr() as LPCWSTR,
+            MOVEFILE_WRITE_THROUGH,
+        )
+    };
+    if moved != 0 {
+        Ok(())
+    } else {
+        Err("bundle_publish")
+    }
+}
+
 #[cfg(any(target_os = "linux", target_os = "macos"))]
+fn repro_relative_native(path: &NativePath) -> Option<PathBuf> {
+    use std::os::unix::ffi::OsStringExt;
+    match path {
+        NativePath::UnixBytes(bytes) => Some(PathBuf::from(OsString::from_vec(bytes.clone()))),
+        _ => None,
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn repro_relative_native(path: &NativePath) -> Option<PathBuf> {
+    use std::os::windows::ffi::OsStringExt;
+    match path {
+        NativePath::WindowsUtf16(units) => Some(PathBuf::from(OsString::from_wide(units))),
+        _ => None,
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+fn repro_native_under(path: &NativePath, root: &Path) -> bool {
+    repro_relative_native(path).is_some_and(|path| path.starts_with(root))
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn external_native_key(path: &NativePath) -> Option<Vec<u8>> {
+    match path {
+        NativePath::UnixBytes(bytes) => Some(bytes.clone()),
+        _ => None,
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn external_native_key(path: &NativePath) -> Option<Vec<u8>> {
+    match path {
+        NativePath::WindowsUtf16(units) => {
+            Some(units.iter().flat_map(|unit| unit.to_le_bytes()).collect())
+        }
+        _ => None,
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn external_native_from_key(bytes: Vec<u8>) -> NativePath {
+    NativePath::UnixBytes(bytes)
+}
+
+#[cfg(target_os = "windows")]
+fn external_native_from_key(bytes: Vec<u8>) -> NativePath {
+    NativePath::WindowsUtf16(
+        bytes
+            .chunks_exact(2)
+            .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+            .collect(),
+    )
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 fn min_repro(args: MinReproArgs) -> i32 {
     use std::collections::BTreeSet;
     let root = match execution_root(&args.execution) {
@@ -1704,15 +1907,11 @@ fn min_repro(args: MinReproArgs) -> i32 {
                 && pair.start.operation.is_content_read()
                 && pair.completion.native_error.is_none()
             {
-                let Some(relative) = path.project_relative.as_ref().and_then(|path| {
-                    use std::os::unix::ffi::OsStringExt;
-                    match path {
-                        NativePath::UnixBytes(bytes) => {
-                            Some(PathBuf::from(OsString::from_vec(bytes.clone())))
-                        }
-                        _ => None,
-                    }
-                }) else {
+                let Some(relative) = path
+                    .project_relative
+                    .as_ref()
+                    .and_then(repro_relative_native)
+                else {
                     return diagnostic("reproduction_uncollected_input", "min-repro");
                 };
                 if !staged_paths.contains(&relative) {
@@ -1739,14 +1938,8 @@ fn min_repro(args: MinReproArgs) -> i32 {
                 ]
                 .into_iter()
                 .any(|native| {
-                    use std::os::unix::ffi::OsStrExt;
-                    match native {
-                        NativePath::UnixBytes(bytes) => {
-                            let path = Path::new(std::ffi::OsStr::from_bytes(bytes));
-                            path.starts_with(&root) && !path.starts_with(candidate.path())
-                        }
-                        _ => false,
-                    }
+                    repro_native_under(native, &root)
+                        && !repro_native_under(native, candidate.path())
                 });
                 if original_access {
                     return diagnostic("reproduction_original_dependency", "min-repro");
@@ -1795,13 +1988,10 @@ fn min_repro(args: MinReproArgs) -> i32 {
         })
         .flat_map(|pair| pair.start.paths.iter())
         .filter(|path| path.class == record::PathClass::External)
-        .filter_map(|path| match &path.logical {
-            NativePath::UnixBytes(bytes) => Some(bytes.clone()),
-            _ => None,
-        })
+        .filter_map(|path| external_native_key(&path.logical))
         .collect::<BTreeSet<_>>()
         .into_iter()
-        .map(NativePath::UnixBytes)
+        .map(external_native_from_key)
         .collect::<Vec<_>>();
     let staged_links = snapshot
         .links()
@@ -1811,13 +2001,13 @@ fn min_repro(args: MinReproArgs) -> i32 {
     let manifest = serde_json::json!({
         "schema_version": 1,
         "files": staged.iter().map(|file| serde_json::json!({
-            "path": unix_native(&file.relative),
+            "path": selection_native(&file.relative),
             "sha256": file.sha256,
             "size": file.size,
         })).collect::<Vec<_>>(),
         "internal_links": staged_links.iter().map(|(path, target)| serde_json::json!({
-            "path": unix_native(path),
-            "target": unix_native(target),
+            "path": selection_native(path),
+            "target": selection_native(target),
         })).collect::<Vec<_>>(),
         "external_dependencies": external,
     });
@@ -3204,11 +3394,11 @@ pub fn execute(command: Command) -> i32 {
             }
         }
         Command::MinRepro(args) => {
-            #[cfg(any(target_os = "linux", target_os = "macos"))]
+            #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
             {
                 min_repro(args)
             }
-            #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+            #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
             {
                 let _ = args;
                 diagnostic("unsupported_target", "min-repro")

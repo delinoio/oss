@@ -11,7 +11,7 @@ pub mod record;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 pub mod watch;
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 pub mod repro;
 
 #[cfg(target_os = "linux")]
