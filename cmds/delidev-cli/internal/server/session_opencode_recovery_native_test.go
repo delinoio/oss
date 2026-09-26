@@ -39,15 +39,16 @@ func TestManualNativeOpenCodeCompletedExecutionRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, mode := range []domain.SessionMode{domain.ExecuteMode, domain.PlanMode} {
-		for _, scenario := range []string{"first", "resumed", "switched", "failed", "missing-checkpoint", "read", "bash", "read-once", "read-always", "read-always-resumed", "read-cascade", "read-cascade-resumed", "question", "question-resumed", "glob", "grep", "todowrite", "todowrite-resumed"} {
+		for _, scenario := range []string{"first", "resumed", "switched", "failed", "missing-checkpoint", "read", "bash", "read-once", "read-always", "read-always-resumed", "read-cascade", "read-cascade-resumed", "question", "question-resumed", "glob", "grep", "todowrite", "todowrite-resumed", "write", "write-resumed", "edit", "edit-resumed", "apply_patch", "apply_patch-resumed"} {
 			t.Run(string(mode)+"/"+scenario, func(t *testing.T) { nativeOpenCodeRecovery(t, binary, mode, scenario) })
 		}
 	}
 }
 
 func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode, scenario string) {
-	if scenario == "bash" && mode == domain.PlanMode {
-		t.Skip("native Plan shell policy needs separate interaction restoration")
+	fileTool := strings.TrimSuffix(scenario, "-resumed")
+	if (scenario == "bash" || openCodeContinuationFileTool(fileTool)) && mode == domain.PlanMode {
+		t.Skip("native Plan shell/file policy needs separate interaction restoration")
 	}
 	search := scenario == "glob" || scenario == "grep"
 	if search {
@@ -66,8 +67,11 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 		permissionCount = 2
 	}
 	permission := scenario == "read-once" || remembered
-	if scenario == "read" || scenario == "bash" || permission || question || search || todo {
+	if scenario == "read" || scenario == "bash" || permission || question || search || todo || openCodeContinuationFileTool(fileTool) {
 		tool, toolCalls = scenario, 1
+		if openCodeContinuationFileTool(fileTool) {
+			tool = fileTool
+		}
 		if todo {
 			tool = "todowrite"
 		}
@@ -78,13 +82,14 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 			tool = "read"
 		}
 	}
+	fixtureModel := openCodeContinuationModel(tool)
 	var toolPath atomic.Value
 	var originalToolResult string
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	var calls atomic.Int64
 	lostTurn := int64(1)
-	if scenario == "resumed" || scenario == "switched" || scenario == "read-always-resumed" || scenario == "read-cascade-resumed" || scenario == "question-resumed" || scenario == "todowrite-resumed" {
+	if scenario == "resumed" || scenario == "switched" || scenario == "read-always-resumed" || scenario == "read-cascade-resumed" || scenario == "question-resumed" || scenario == "todowrite-resumed" || openCodeContinuationFileTool(fileTool) && strings.HasSuffix(scenario, "-resumed") {
 		lostTurn = 2
 	}
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -93,7 +98,7 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 		}
 		w.Header().Set("Content-Type", "application/json")
 		if r.Method == http.MethodGet && r.URL.Path == "/models" {
-			_, _ = io.WriteString(w, `{"data":[{"id":"fixture-model","object":"model"}]}`)
+			_, _ = io.WriteString(w, strings.ReplaceAll(`{"data":[{"id":"fixture-model","object":"model"}]}`, "fixture-model", fixtureModel))
 			return
 		}
 		raw, err := io.ReadAll(io.LimitReader(r.Body, 2<<20))
@@ -134,11 +139,11 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 			return
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = io.WriteString(w, `data: {"id":"chatcmpl-recovery","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{"role":"assistant","content":"Original recovery completion."},"finish_reason":null}]}`+"\n\n")
-		_, _ = io.WriteString(w, `data: {"id":"chatcmpl-recovery","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":20,"completion_tokens":4,"total_tokens":24}}`+"\n\ndata: [DONE]\n\n")
+		_, _ = io.WriteString(w, strings.ReplaceAll(`data: {"id":"chatcmpl-recovery","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{"role":"assistant","content":"Original recovery completion."},"finish_reason":null}]}`+"\n\n", "fixture-model", fixtureModel))
+		_, _ = io.WriteString(w, strings.ReplaceAll(`data: {"id":"chatcmpl-recovery","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":20,"completion_tokens":4,"total_tokens":24}}`+"\n\ndata: [DONE]\n\n", "fixture-model", fixtureModel))
 	}))
 	defer upstream.Close()
-	f := newFirstDispatchFixtureProfile(t, domain.OpenCode, mode, binary, upstream.URL)
+	f := newFirstDispatchFixtureProfile(t, domain.OpenCode, mode, binary, upstream.URL, fixtureModel)
 	if tool != "" {
 		toolPath.Store(prepareOpenCodeContinuationTool(t, f, tool, permission))
 	}
@@ -326,6 +331,22 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 		}
 	}
 	stop()
+	if openCodeContinuationFileTool(tool) {
+		path := toolPath.Load().(string)
+		expected := "original-inline-tool-sentinel edited\n"
+		if tool == "write" {
+			expected = "original-inline-tool-sentinel\n"
+		}
+		if value, err := os.ReadFile(path); err != nil || string(value) != expected {
+			t.Fatal("original file mutation missing before recovery", err)
+		}
+		if err := os.WriteFile(path, []byte("changed-source-after-original-tool\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if tool == "apply_patch" {
+			verifyOpenCodeContinuationPatchFiles(t, path, 0)
+		}
+	}
 	expire()
 	originalID := domain.ID(assignment.Id)
 	operationPath := filepath.Join(f.workerRoot, "jobs", assignment.Id+".json")
@@ -411,6 +432,15 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 	var continued domain.ExecutionCompletion
 	if next.State != domain.JobSucceeded || domain.Decode(next.Output, &continued) != nil || continued.NativeThreadID != completion.NativeThreadID || continued.NativeTurnID == completion.NativeTurnID || calls.Load() != lostTurn+1+toolCalls {
 		t.Fatal("explicit Resume failed after recovered completion", next.Problem)
+	}
+	if openCodeContinuationFileTool(tool) {
+		path := toolPath.Load().(string)
+		if value, err := os.ReadFile(path); err != nil || string(value) != "changed-source-after-original-tool\n" {
+			t.Fatal("recovery or replacement replayed original file mutation", err)
+		}
+		if tool == "apply_patch" {
+			verifyOpenCodeContinuationPatchFiles(t, path, 1)
+		}
 	}
 	if permission || question {
 		rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.InteractionKind, SessionID: domain.ID(f.change.Session.Id), Limit: 3})

@@ -25,11 +25,20 @@ func checkpointInlineToolFixture(name checkpointToolName) *NativeToolPart {
 		input = json.RawMessage(`{"todos":[{"content":"private original result","status":"waiting","priority":"urgent"}]}`)
 		metadata = json.RawMessage(`{"todos":[{"content":"private original result","status":"waiting","priority":"urgent"}],"truncated":false}`)
 	}
+	if name == checkpointWriteTool {
+		metadata = json.RawMessage(`{"diagnostics":{},"filepath":"/private/file.txt","exists":false,"truncated":false}`)
+	}
+	if name == checkpointEditTool {
+		metadata = json.RawMessage(`{"diagnostics":{},"diff":"private original diff","filediff":{"file":"/private/file.txt","patch":"private original patch","additions":1,"deletions":1},"truncated":false}`)
+	}
+	if name == checkpointApplyPatchTool {
+		metadata = json.RawMessage(`{"diagnostics":{},"diff":"private original diff","files":[{"filePath":"/private/file.txt","relativePath":"file.txt","type":"update","patch":"private original patch","additions":1,"deletions":1}],"truncated":false}`)
+	}
 	return &NativeToolPart{Input: input, Name: string(name), State: ToolCompleted, Output: &output, Timing: &NativeTiming{Start: 1, End: &end}, Metadata: metadata}
 }
 
 func TestCheckpointInlineToolsRequireCompleteIndependentState(t *testing.T) {
-	for _, name := range []checkpointToolName{checkpointReadTool, checkpointShellTool, checkpointQuestionTool} {
+	for _, name := range []checkpointToolName{checkpointReadTool, checkpointShellTool, checkpointQuestionTool, checkpointWriteTool, checkpointEditTool, checkpointApplyPatchTool} {
 		for _, fault := range []string{"valid", "running", "failed", "output", "timing", "end", "compacted", "attachments", "provider", "metadata", "truncated", "interrupted", "missing-fields", "auxiliary"} {
 			t.Run(string(name)+"/"+fault, func(t *testing.T) {
 				tool := checkpointInlineToolFixture(name)

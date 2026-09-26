@@ -108,7 +108,7 @@ func validCheckpointInteractions(value nativeCheckpoint) bool {
 				return false
 			}
 			digest = mutationDigest([]byte(checkpointAlwaysBody))
-		} else if names[claim.PartID] != checkpointReadTool && names[claim.PartID] != checkpointShellTool && !checkpointSearchOrTodo(names[claim.PartID]) {
+		} else if names[claim.PartID] != checkpointReadTool && names[claim.PartID] != checkpointShellTool && !checkpointSearchOrTodo(names[claim.PartID]) && !checkpointFileTool(names[claim.PartID]) {
 			return false
 		}
 		owner, found := owners[claim.PartID]

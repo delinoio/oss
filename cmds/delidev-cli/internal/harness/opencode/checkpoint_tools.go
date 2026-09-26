@@ -30,6 +30,7 @@ type checkpointToolPart struct {
 // Version 4 additionally retains original automatic Read policy closures.
 // Version 5 adds independently answered, completed native Question history.
 // Version 6 adds native inline search and independently compared Todo state.
+// Version 7 adds original completed inline Write/Edit/Apply Patch results.
 type checkpointToolHistory struct {
 	Version         uint32                       `json:"version"`
 	InteractionFree bool                         `json:"interaction_free"`
@@ -50,10 +51,10 @@ func validCheckpointTools(value nativeCheckpoint) bool {
 		return false
 	}
 	index := 0
-	searchOrTodo := false
+	searchOrTodo, fileTool := false, false
 	for _, history := range checkpointHistories(value) {
 		if history.Todo != nil {
-			if proof.Version != 6 || !nativeID(history.Todo.EventID, "evt") || !checkpointDigest(history.Todo.Digest) {
+			if proof.Version < 6 || !nativeID(history.Todo.EventID, "evt") || !checkpointDigest(history.Todo.Digest) {
 				return false
 			}
 			searchOrTodo = true
@@ -77,10 +78,15 @@ func validCheckpointTools(value nativeCheckpoint) bool {
 						return false
 					}
 				case checkpointGlobTool, checkpointGrepTool, checkpointTodoTool:
-					if proof.Version != 6 || tool.Name == checkpointTodoTool && history.Todo == nil {
+					if proof.Version < 6 || tool.Name == checkpointTodoTool && history.Todo == nil {
 						return false
 					}
 					searchOrTodo = true
+				case checkpointWriteTool, checkpointEditTool, checkpointApplyPatchTool:
+					if proof.Version != 7 {
+						return false
+					}
+					fileTool = true
 				default:
 					return false
 				}
@@ -88,7 +94,7 @@ func validCheckpointTools(value nativeCheckpoint) bool {
 			}
 		}
 	}
-	return index == len(proof.Parts) && (proof.Version == 6) == searchOrTodo
+	return index == len(proof.Parts) && (proof.Version == 7) == fileTool && (proof.Version != 6 || searchOrTodo)
 }
 
 func (s *sessionAPI) checkpointToolHistory(value nativeCheckpoint) *checkpointToolHistory {
@@ -211,6 +217,11 @@ func (s *sessionAPI) checkpointToolHistory(value nativeCheckpoint) *checkpointTo
 	if latestCheckpointTodo(value) != nil {
 		proof.Version = 6
 	}
+	for _, part := range proof.Parts {
+		if checkpointFileTool(part.Name) {
+			proof.Version = 7
+		}
+	}
 	if !validCheckpointTools(value) {
 		return nil
 	}
@@ -219,7 +230,7 @@ func (s *sessionAPI) checkpointToolHistory(value nativeCheckpoint) *checkpointTo
 
 // Complete inline results need no restored artifact path or dynamic native
 // instruction-loader state. Other tool states remain retained but cannot
-// acquire replacement authority through this initial Read/Shell profile.
+// acquire replacement authority through the closed inline tool profiles.
 func checkpointInlineTool(tool *NativeToolPart) bool {
 	if tool == nil || tool.State != ToolCompleted || tool.Timing == nil || tool.Timing.End == nil || tool.Timing.Compacted != nil || tool.Output == nil || len(tool.Attachments) != 0 {
 		return false
@@ -252,6 +263,8 @@ func checkpointInlineTool(tool *NativeToolPart) bool {
 		return checkpointSearchMetadata(tool.Metadata, checkpointToolName(tool.Name))
 	case checkpointTodoTool:
 		return checkpointInlineTodo(tool)
+	case checkpointWriteTool, checkpointEditTool, checkpointApplyPatchTool:
+		return checkpointFileMetadata(tool.Metadata, checkpointToolName(tool.Name))
 	default:
 		return false
 	}

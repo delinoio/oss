@@ -56,8 +56,12 @@ func newFirstDispatchFixtureForHarness(t *testing.T, harness domain.Harness, mod
 	return newFirstDispatchFixtureProfile(t, harness, mode, "/fixture/"+string(harness), "")
 }
 
-func newFirstDispatchFixtureProfile(t *testing.T, harness domain.Harness, mode domain.SessionMode, executable, upstreamURL string) *firstDispatchFixture {
+func newFirstDispatchFixtureProfile(t *testing.T, harness domain.Harness, mode domain.SessionMode, executable, upstreamURL string, nativeModels ...string) *firstDispatchFixture {
 	t.Helper()
+	nativeModel := "fixture-model"
+	if len(nativeModels) == 1 {
+		nativeModel = nativeModels[0]
+	}
 	protocol, permission, version := domain.OpenAIResponses, domain.PermissionReadOnly, domain.CodexProtocolVersion
 	if harness == domain.OpenCode {
 		protocol, permission, version = domain.OpenAIChat, domain.PermissionDefault, domain.OpenCodeProtocolVersion
@@ -84,7 +88,7 @@ func newFirstDispatchFixtureProfile(t *testing.T, harness domain.Harness, mode d
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
-			io.WriteString(w, `{"data":[{"id":"fixture-model","object":"model"}]}`)
+			json.NewEncoder(w).Encode(map[string]any{"data": []any{map[string]any{"id": nativeModel, "object": "model"}}})
 		}))
 		t.Cleanup(upstream.Close)
 		upstreamURL = upstream.URL
@@ -100,7 +104,7 @@ func newFirstDispatchFixtureProfile(t *testing.T, harness domain.Harness, mode d
 		t.Fatal(err)
 	}
 	f.account = validated.Msg.Account
-	model := base.save(pb.EntityKind_ENTITY_KIND_MODEL, domain.Model{Name: "Fixture", NativeID: "fixture-model", ProviderID: domain.ID(provider.Id), Harnesses: []domain.Harness{harness}, MetadataSource: domain.UserDeclared})
+	model := base.save(pb.EntityKind_ENTITY_KIND_MODEL, domain.Model{Name: "Fixture", NativeID: nativeModel, ProviderID: domain.ID(provider.Id), Harnesses: []domain.Harness{harness}, MetadataSource: domain.UserDeclared})
 	routing := domain.RoundRobin
 	f.agent = base.save(pb.EntityKind_ENTITY_KIND_AGENT, domain.Agent{Name: "Fixture", Harness: harness, ModelID: domain.ID(model.Id), Accounts: []domain.WeightedAccount{{ID: domain.ID(account.Id), Weight: 1}}, Options: domain.AgentOptions{Permission: permission}, Routing: &routing})
 	f.selection = domain.CreateSession{Name: "Fixture", AgentID: domain.ID(f.agent.Id), MachineID: domain.ID(f.machine.Id), Workspace: domain.GeneralChat, Prompt: "first retained input", Mode: mode, Source: domain.ExternalCLISession}

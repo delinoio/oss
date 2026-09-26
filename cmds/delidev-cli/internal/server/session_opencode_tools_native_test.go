@@ -38,9 +38,16 @@ func prepareOpenCodeContinuationTool(t *testing.T, f *firstDispatchFixture, tool
 	if tool == "glob" || tool == "grep" {
 		path = filepath.Join(manifest.PrimaryPath, "original-inline-tool-sentinel.txt")
 	}
-	if tool == "read" || tool == "glob" || tool == "grep" {
+	if tool == "read" || tool == "glob" || tool == "grep" || tool == "edit" || tool == "apply_patch" {
 		if err := os.WriteFile(path, []byte("original-inline-tool-sentinel\n"), 0600); err != nil {
 			t.Fatal(err)
+		}
+	}
+	if tool == "apply_patch" {
+		for _, suffix := range []string{".move", ".delete"} {
+			if err := os.WriteFile(path+suffix, []byte("original-inline-tool-sentinel\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 	return path
@@ -48,6 +55,15 @@ func prepareOpenCodeContinuationTool(t *testing.T, f *firstDispatchFixture, tool
 
 func openCodeContinuationToolArguments(tool, path string) string {
 	args := map[string]any{"filePath": path}
+	if tool == "write" {
+		args = map[string]any{"filePath": path, "content": "original-inline-tool-sentinel\n"}
+	}
+	if tool == "edit" {
+		args = map[string]any{"filePath": path, "oldString": "original-inline-tool-sentinel", "newString": "original-inline-tool-sentinel edited"}
+	}
+	if tool == "apply_patch" {
+		args = map[string]any{"patchText": "*** Begin Patch\n*** Update File: " + path + "\n@@\n-original-inline-tool-sentinel\n+original-inline-tool-sentinel edited\n*** Add File: " + path + ".added\n+original added file\n*** Update File: " + path + ".move\n*** Move to: " + path + ".moved\n@@\n-original-inline-tool-sentinel\n+original moved file\n*** Delete File: " + path + ".delete\n*** End Patch"}
+	}
 	if tool == "glob" {
 		args = map[string]any{"pattern": "*.txt", "path": filepath.Dir(path)}
 	}
@@ -93,8 +109,8 @@ func serveOpenCodeContinuationArguments(t *testing.T, w http.ResponseWriter, too
 	}
 	delta := map[string]any{"role": "assistant", "tool_calls": calls}
 	for _, chunk := range []map[string]any{
-		{"id": "chatcmpl-original-tool", "object": "chat.completion.chunk", "created": 1, "model": "fixture-model", "choices": []any{map[string]any{"index": 0, "delta": delta, "finish_reason": nil}}},
-		{"id": "chatcmpl-original-tool", "object": "chat.completion.chunk", "created": 1, "model": "fixture-model", "choices": []any{map[string]any{"index": 0, "delta": map[string]any{}, "finish_reason": "tool_calls"}}, "usage": map[string]any{"prompt_tokens": 20, "completion_tokens": 4, "total_tokens": 24}},
+		{"id": "chatcmpl-original-tool", "object": "chat.completion.chunk", "created": 1, "model": openCodeContinuationModel(tool), "choices": []any{map[string]any{"index": 0, "delta": delta, "finish_reason": nil}}},
+		{"id": "chatcmpl-original-tool", "object": "chat.completion.chunk", "created": 1, "model": openCodeContinuationModel(tool), "choices": []any{map[string]any{"index": 0, "delta": map[string]any{}, "finish_reason": "tool_calls"}}, "usage": map[string]any{"prompt_tokens": 20, "completion_tokens": 4, "total_tokens": 24}},
 	} {
 		raw, _ := json.Marshal(chunk)
 		_, _ = fmt.Fprintf(w, "data: %s\n\n", raw)
@@ -141,7 +157,7 @@ func verifyOpenCodeContinuationTool(t *testing.T, raw []byte, tool, path string)
 		}
 		if message.Role == "tool" {
 			results++
-			if proposals != 1 || message.CallID != continuationToolCall || json.Unmarshal(message.Content, &result) != nil || !strings.Contains(result, "original-inline-tool-sentinel") || strings.Contains(result, "changed-source-after-original-tool") {
+			if proposals != 1 || message.CallID != continuationToolCall || json.Unmarshal(message.Content, &result) != nil || !strings.Contains(result, openCodeContinuationResultMarker(tool)) || strings.Contains(result, "changed-source-after-original-tool") {
 				t.Error("replacement altered original native tool output or ordering")
 			}
 		}
@@ -265,4 +281,53 @@ func verifyOpenCodeRepeatedTodo(t *testing.T, raw []byte, expected int) map[stri
 		t.Error("repeated or omitted original Todo history", len(proposals), len(results), expected)
 	}
 	return results
+}
+
+func openCodeContinuationFileTool(tool string) bool {
+	return tool == "write" || tool == "edit" || tool == "apply_patch"
+}
+
+func openCodeContinuationResultMarker(tool string) string {
+	switch tool {
+	case "write":
+		return "Wrote file successfully."
+	case "edit":
+		return "Edit applied successfully."
+	case "apply_patch":
+		return "Success. Updated the following files:"
+	default:
+		return "original-inline-tool-sentinel"
+	}
+}
+
+func openCodeContinuationModel(tool string) string {
+	// The pinned native registry selects Apply Patch instead of Write/Edit for
+	// this model family. Use the original registry; do not expose hidden tools.
+	if tool == "apply_patch" {
+		return "gpt-5-fixture"
+	}
+	return "fixture-model"
+}
+
+func verifyOpenCodeContinuationPatchFiles(t *testing.T, path string, turn int) {
+	t.Helper()
+	for suffix, expected := range map[string]string{".added": "original added file\n", ".moved": "original moved file\n"} {
+		value, err := os.ReadFile(path + suffix)
+		if err != nil || string(value) != expected {
+			t.Fatal("original patch add/move lost", suffix, err)
+		}
+	}
+	if _, err := os.Stat(path + ".move"); !os.IsNotExist(err) {
+		t.Fatal("original moved file was recreated", err)
+	}
+	if turn == 0 {
+		if _, err := os.Stat(path + ".delete"); !os.IsNotExist(err) {
+			t.Fatal("native patch did not delete original file", err)
+		}
+		if err := os.WriteFile(path+".delete", []byte("later recreated file\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	} else if value, err := os.ReadFile(path + ".delete"); err != nil || string(value) != "later recreated file\n" {
+		t.Fatal("replacement replayed original deletion", err)
+	}
 }

@@ -78,6 +78,12 @@ func TestManualNativeOpenCodePublicSearchTodoContinuation(t *testing.T) {
 	}
 }
 
+func TestManualNativeOpenCodePublicFileToolContinuation(t *testing.T) {
+	for _, tool := range []string{"write", "edit", "apply_patch"} {
+		t.Run(tool, func(t *testing.T) { nativeOpenCodePublicDispatchProfile(t, 3, false, "", tool, true) })
+	}
+}
+
 func TestManualNativeOpenCodePublicInlineToolContinuation(t *testing.T) {
 	for _, tool := range []string{"read", "bash"} {
 		t.Run(tool, func(t *testing.T) { nativeOpenCodePublicDispatchProfile(t, 3, false, "", tool, true) })
@@ -123,9 +129,10 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 	}
 	for _, mode := range []domain.SessionMode{domain.ExecuteMode, domain.PlanMode} {
 		t.Run(string(mode), func(t *testing.T) {
-			if tool == "bash" && mode == domain.PlanMode {
-				t.Skip("native Plan shell policy is a separate interaction profile")
+			if (tool == "bash" || openCodeContinuationFileTool(tool)) && mode == domain.PlanMode {
+				t.Skip("native Plan shell/file policy is a separate interaction profile")
 			}
+			fixtureModel := openCodeContinuationModel(tool)
 			var toolPath atomic.Value
 			var originalToolResult string
 			retainedTools := map[string]string{}
@@ -154,7 +161,7 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 				}
 				if r.Method == http.MethodGet && r.URL.Path == "/models" {
 					w.Header().Set("Content-Type", "application/json")
-					_, _ = io.WriteString(w, `{"data":[{"id":"fixture-model","object":"model"}]}`)
+					_, _ = io.WriteString(w, strings.ReplaceAll(`{"data":[{"id":"fixture-model","object":"model"}]}`, "fixture-model", fixtureModel))
 					return
 				}
 				raw, err := io.ReadAll(io.LimitReader(r.Body, 2<<20))
@@ -162,7 +169,7 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 					Model  string `json:"model"`
 					Stream bool   `json:"stream"`
 				}
-				if r.Method != http.MethodPost || r.URL.Path != "/chat/completions" || err != nil || json.Unmarshal(raw, &request) != nil || request.Model != "fixture-model" || !request.Stream || !strings.Contains(string(raw), "first retained input") || calls.Add(1) > int64(expectedCalls) {
+				if r.Method != http.MethodPost || r.URL.Path != "/chat/completions" || err != nil || json.Unmarshal(raw, &request) != nil || request.Model != fixtureModel || !request.Stream || !strings.Contains(string(raw), "first retained input") || calls.Add(1) > int64(expectedCalls) {
 					t.Error("public dispatch changed original native request")
 					http.Error(w, "unsupported", 400)
 					return
@@ -228,15 +235,15 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 					}
 				}
 				w.Header().Set("Content-Type", "text/event-stream")
-				_, _ = io.WriteString(w, `data: {"id":"chatcmpl-public","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{"role":"assistant","content":"Public original completion."},"finish_reason":null}]}`+"\n\n")
-				_, _ = io.WriteString(w, `data: {"id":"chatcmpl-public","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":20,"completion_tokens":4,"total_tokens":24}}`+"\n\ndata: [DONE]\n\n")
+				_, _ = io.WriteString(w, strings.ReplaceAll(`data: {"id":"chatcmpl-public","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{"role":"assistant","content":"Public original completion."},"finish_reason":null}]}`+"\n\n", "fixture-model", fixtureModel))
+				_, _ = io.WriteString(w, strings.ReplaceAll(`data: {"id":"chatcmpl-public","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":20,"completion_tokens":4,"total_tokens":24}}`+"\n\ndata: [DONE]\n\n", "fixture-model", fixtureModel))
 			}))
 			defer upstream.Close()
 			// Configuration, pairing, keyless account validation, session creation,
 			// preparation report and explicit first Resume use their public APIs. Only
 			// protocol discovery is a pinned reported fixture; actual initialization is
 			// independently revalidated by the original installed native process.
-			f := newFirstDispatchFixtureProfile(t, domain.OpenCode, mode, binary, upstream.URL)
+			f := newFirstDispatchFixtureProfile(t, domain.OpenCode, mode, binary, upstream.URL, fixtureModel)
 			if tool != "" {
 				toolPath.Store(prepareOpenCodeContinuationTool(t, f, tool, permission))
 			}
@@ -361,21 +368,27 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 						} else if proof.NativeThreadID != firstThread || proof.NativeTurnID == previous.NativeTurnID || proof.ExecutionID == previous.ExecutionID || proof.NativeCheckpointDigest == previous.NativeCheckpointDigest {
 							t.Fatal("continuation recreated native history or reused execution authority")
 						}
-						if tool == "read" || tool == "bash" {
+						if tool == "read" || tool == "bash" || openCodeContinuationFileTool(tool) {
 							path := toolPath.Load().(string)
 							content, err := os.ReadFile(path)
 							expected := "original-inline-tool-sentinel\n"
-							if tool == "read" && turn > 0 {
+							if tool == "edit" || tool == "apply_patch" {
+								expected = "original-inline-tool-sentinel edited\n"
+							}
+							if (tool == "read" || openCodeContinuationFileTool(tool)) && turn > 0 {
 								expected = "changed-source-after-original-tool\n"
 							}
 							if err != nil || string(content) != expected {
 								t.Fatal("original tool was replayed or its workspace output changed")
 							}
-							if turn == 0 && tool == "read" {
+							if turn == 0 && (tool == "read" || openCodeContinuationFileTool(tool)) {
 								if err := os.WriteFile(path, []byte("changed-source-after-original-tool\n"), 0600); err != nil {
 									t.Fatal(err)
 								}
 							}
+						}
+						if tool == "apply_patch" {
+							verifyOpenCodeContinuationPatchFiles(t, toolPath.Load().(string), turn)
 						}
 						if search && turn == 0 {
 							path := toolPath.Load().(string)
