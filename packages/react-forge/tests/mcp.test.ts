@@ -177,6 +177,11 @@ test("MCP reports bounded compiler, module and uncaught render diagnostics witho
   assert.match(missingPackage.error.message, /react-forge-uninstalled-package/);
   assert.ok(!JSON.stringify(missingPackage).includes(cwd));
 
+  const undefinedPackageImport = await errorCode(peer, "execute", { code: "import '#missing'; export default () => {};" }, "malformed_input");
+  assert.equal(undefinedPackageImport.error.diagnostics[0].phase, "compile");
+  assert.match(undefinedPackageImport.error.message, /#missing/);
+  assert.ok(!JSON.stringify(undefinedPackageImport).includes(cwd));
+
   await writeFile(join(cwd, "unknown.react-forge-extension"), "content");
   const unknownExtension = await errorCode(peer, "execute", { code: "import './unknown.react-forge-extension'; export default () => {};" }, "malformed_input");
   assert.equal(unknownExtension.error.diagnostics[0].phase, "compile");

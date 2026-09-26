@@ -13,7 +13,7 @@ import { TaskError, TaskPhase, TaskSource, taskMessage, type CompilerIssue, type
 const resolutionCodes = new Set(["ERR_MODULE_NOT_FOUND", "MODULE_NOT_FOUND", "ERR_PACKAGE_PATH_NOT_EXPORTED", "ERR_UNKNOWN_FILE_EXTENSION", "ERR_UNSUPPORTED_DIR_IMPORT"]);
 
 class SafeResolutionError extends Error {
-  constructor(specifier: string | undefined, readonly code: string) {
+  constructor(specifier: string | undefined, readonly code?: string) {
     super(`Unable to resolve import${specifier ? ` ${JSON.stringify(specifier.slice(0, 900))}` : ""}.`);
   }
 }
@@ -50,12 +50,11 @@ export class TaskLoader {
         return nextResolve(specifier, context);
       } catch (error) {
         const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
-        if (!resolutionCodes.has(code as string)) throw error;
         // Node's resolver embeds host paths in its messages. Keep only the
         // caller's relative or package specifier in MCP task diagnostics.
         const safe = !isAbsolute(specifier) && !specifier.startsWith("file:") && !/^[a-zA-Z]:[\\/]/.test(specifier)
           ? specifier : undefined;
-        throw new SafeResolutionError(safe, code as string);
+        throw new SafeResolutionError(safe, typeof code === "string" ? code : undefined);
       }
     },
     load: (url, context, nextLoad) => {
@@ -151,6 +150,7 @@ export class TaskLoader {
       try { imported = await import(url.href) as { default?: unknown }; }
       catch (error) {
         if (error instanceof ForgeError) throw error;
+        if (error instanceof SafeResolutionError) throw new TaskError(ErrorCode.MalformedInput, TaskPhase.Compile, error);
         const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
         if (resolutionCodes.has(code as string)) {
           throw new TaskError(ErrorCode.MalformedInput, TaskPhase.Compile,
