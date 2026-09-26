@@ -17,7 +17,7 @@ import { ErrorCode, Format, Stage, limits, type AssetHandle, type AssetSource, t
 
 type Model = Record<string, unknown>;
 interface ModelNode extends Model { id: string; type: string; children?: ModelNode[] }
-export interface TargetHandle extends NodeHandle { readonly kind: string; readonly editable: boolean; readonly text?: string; readonly sheet?: string; readonly address?: Address; readonly range?: Range }
+export interface TargetHandle extends NodeHandle { readonly kind: string; readonly editable: boolean; readonly name?: string; readonly text?: string; readonly sheet?: string; readonly address?: Address; readonly range?: Range }
 interface NativeRegion { id: string; kind: string; target_index: number; part: string; start: number; end: number; text?: string; sheet?: string; address?: Address; range?: Range }
 export interface Inspection { readonly revision: number; readonly targets: readonly TargetHandle[] }
 export interface MountedRegion {

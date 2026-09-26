@@ -278,3 +278,63 @@ fn distinct_mesh_instances_keep_independent_deformers_and_bake_expansion_is_boun
         forge_tree_doc::ErrorCode::ResourceLimit
     );
 }
+
+#[test]
+fn animated_camera_and_light_rotations_keep_the_export_basis() {
+    use glam::DQuat;
+    let (mut scene, mut assets) = fixture();
+    let id = scene.nodes[0].children[0].id;
+    let end = DQuat::from_euler(glam::EulerRot::XYZEx, 0.4, 1.2, -0.3);
+    let values: Vec<f32> = DQuat::IDENTITY
+        .to_array()
+        .into_iter()
+        .chain(end.to_array())
+        .map(|v| v as f32)
+        .collect();
+    assets.insert(
+        "rotation".into(),
+        sampler(1, 1, 4, &[0., 1.], &values, None),
+    );
+    scene.animations = serde_json::from_value(json!([{
+        "id":"01956e48-8f55-7000-8000-000000000006", "name":"rotate",
+        "tracks":[{"target":id,"sampler":"rotation"}]
+    }]))
+    .unwrap();
+    for (kind, basis) in [
+        (
+            forge_scene::Kind::PerspectiveCamera {
+                yfov: 0.6,
+                aspect: 1.5,
+                near: 0.1,
+                far: 100.,
+            },
+            DQuat::from_rotation_y(std::f64::consts::FRAC_PI_2),
+        ),
+        (
+            forge_scene::Kind::SpotLight {
+                color: [1.; 3],
+                intensity: 100.,
+                inner_cone: 0.1,
+                outer_cone: 0.3,
+            },
+            DQuat::from_rotation_x(std::f64::consts::FRAC_PI_2),
+        ),
+    ] {
+        scene.nodes[0].children[0].kind = kind;
+        let p = forge_scene::prepare(&scene, &assets).unwrap();
+        let imported =
+            ufbx::load_memory(&forge_fbx::export(&p).unwrap(), Default::default()).unwrap();
+        let node = imported
+            .nodes
+            .iter()
+            .find(|n| n.element.name.as_ref() == "Triangle")
+            .unwrap();
+        for time in [0., 0.25, 0.5, 0.75, 1.] {
+            let actual =
+                ufbx::evaluate_transform(&imported.anim_stacks[0].anim, node, time).rotation;
+            let actual = DQuat::from_xyzw(actual.x, actual.y, actual.z, actual.w);
+            let expected = DQuat::IDENTITY.slerp(end, time) * basis;
+            assert!((actual.dot(expected).abs() - 1.).abs() < 1e-8);
+        }
+    }
+}

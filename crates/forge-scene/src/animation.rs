@@ -308,6 +308,7 @@ pub(crate) fn prepare_animation(p: &mut Prepared<'_>) -> Result<()> {
     if !(1..=240).contains(&p.scene.animation_bake_fps) {
         return Err(invalid("animations/fps"));
     }
+    let mut bind_bytes = 0usize;
     for node in p.nodes.values() {
         checkpoint()?;
         if let Kind::Mesh {
@@ -334,6 +335,19 @@ pub(crate) fn prepare_animation(p: &mut Prepared<'_>) -> Result<()> {
                     || skin.joints.iter().collect::<BTreeSet<_>>().len() != skin.joints.len()
                 {
                     return Err(invalid("skin/joints"));
+                }
+                // Instancing a small shared mesh can expand into many independent
+                // bind palettes. Bound that expansion before allocating each one.
+                bind_bytes = bind_bytes
+                    .checked_add(
+                        skin.joints
+                            .len()
+                            .checked_mul(std::mem::size_of::<DMat4>() + std::mem::size_of::<Uuid>())
+                            .ok_or_else(limited)?,
+                    )
+                    .ok_or_else(limited)?;
+                if bind_bytes > MAX_BYTES {
+                    return Err(limited());
                 }
                 let mut inverse_bind_matrices = Vec::with_capacity(skin.joints.len());
                 for joint in &skin.joints {
@@ -579,5 +593,91 @@ impl Prepared<'_> {
         }
         aggregate(&self.scene.nodes[0], &mut bounds)?;
         Ok(bounds)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sampler(path: AnimationPath, width: usize, values: Vec<f32>) -> AnimationSampler {
+        AnimationSampler {
+            path,
+            width,
+            values,
+            interpolation: Interpolation::Linear,
+            times: vec![1., 3.],
+            in_tangents: vec![],
+            out_tangents: vec![],
+        }
+    }
+
+    #[test]
+    fn vector_keys_clamping_steps_and_derivatives_use_seconds() {
+        let mut s = sampler(AnimationPath::Translation, 3, vec![0., 0., 0., 2., 4., 6.]);
+        assert_eq!(s.evaluate(-1.).unwrap(), [0., 0., 0.]);
+        assert_eq!(s.evaluate(2.).unwrap(), [1., 2., 3.]);
+        assert_eq!(s.evaluate(4.).unwrap(), [2., 4., 6.]);
+        s.interpolation = Interpolation::Step;
+        assert_eq!(s.evaluate(2.999).unwrap(), [0., 0., 0.]);
+        assert_eq!(s.evaluate(3.).unwrap(), [2., 4., 6.]);
+        s.interpolation = Interpolation::Cubic;
+        s.in_tangents = vec![0.; 6];
+        s.out_tangents = vec![2., 0., 0., 0., 0., 0.];
+        assert_eq!(s.evaluate(2.).unwrap(), [1.5, 2., 3.]);
+    }
+
+    #[test]
+    fn quaternion_sign_wrap_and_cubic_normalization_preserve_orientation() {
+        let a = DQuat::from_rotation_z(170f64.to_radians());
+        let b = -DQuat::from_rotation_z(190f64.to_radians());
+        let mut s = sampler(
+            AnimationPath::Rotation,
+            4,
+            a.to_array()
+                .into_iter()
+                .chain(b.to_array())
+                .map(|v| v as f32)
+                .collect(),
+        );
+        let mid = DQuat::from_array(s.evaluate(2.).unwrap().try_into().unwrap());
+        assert!((mid.dot(DQuat::from_rotation_z(std::f64::consts::PI)).abs() - 1.).abs() < 1e-8);
+        s.values = DQuat::IDENTITY
+            .to_array()
+            .into_iter()
+            .chain(DQuat::from_rotation_y(std::f64::consts::FRAC_PI_2).to_array())
+            .map(|v| v as f32)
+            .collect();
+        s.interpolation = Interpolation::Cubic;
+        s.in_tangents = vec![0.; 8];
+        s.out_tangents = vec![0.; 8];
+        s.validate_segments().unwrap();
+        let mid = DQuat::from_array(s.evaluate(2.).unwrap().try_into().unwrap());
+        assert!((mid.length() - 1.).abs() < 1e-12);
+        assert!(
+            (mid.dot(DQuat::from_rotation_y(std::f64::consts::FRAC_PI_4))
+                .abs()
+                - 1.)
+                .abs()
+                < 1e-8
+        );
+    }
+
+    #[test]
+    fn cubic_interior_scale_and_rotation_singularities_are_rejected() {
+        let mut s = sampler(AnimationPath::Scale, 3, vec![1.; 6]);
+        s.interpolation = Interpolation::Cubic;
+        s.in_tangents = vec![0., 0., 0., 4., 0., 0.];
+        s.out_tangents = vec![-4., 0., 0., 0., 0., 0.];
+        assert!(s.validate_segments().is_err());
+        s = sampler(
+            AnimationPath::Rotation,
+            4,
+            vec![0., 0., 0., 1., 0., 0., 0., -1.],
+        );
+        s.interpolation = Interpolation::Cubic;
+        s.in_tangents = vec![0.; 8];
+        s.out_tangents = vec![0.; 8];
+        assert!(s.validate_segments().is_err());
     }
 }

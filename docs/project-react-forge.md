@@ -7,6 +7,14 @@ The 2026-09-25 follow-up adds static GLB/FBX generation, SceneSession, original 
 
 The explicit SFX follow-up adds offline procedural game effects exported as WAV, with zombie-game gunshot acceptance, under the [SFX contract](packages-react-forge-sfx-contract.md). It was included in the published `0.2.0` release.
 
+The 2026-09-26 animation follow-up adds object keyframes, explicit joints/skinning,
+position/normal morphs, callback baking and sampled bounds to both scene formats.
+It remains **unreleased** and does not change the static format's 0.2.0 history.
+Original `animated-character*.tsx` examples cover idle/walk/wave clips; local
+acceptance uses Khronos, Three.js, ufbx and Blender 4.5.14. No npm publication,
+scene import, automatic rigging, IK, retargeting, physics or playback runtime is
+part of this extension.
+
 ## Project ID
 `react-forge` (`ProjectId::ReactForge`). Product name: **React Forge**. The public npm package is `@delino/react-forge`; its CLI executable is `react-forge`.
 
@@ -26,11 +34,11 @@ The explicit SFX follow-up adds offline procedural game effects exported as WAV,
 - `packages/react-forge/examples/travel-figma*.tsx`: editable ROAM mobile design and explicit reopened-file edits.
 - Existing `crates/forge-tree-doc` and `crates/forge-pptx`: presentation model, layout and PPTX engine reused from Forge.
 
-- `crates/forge-scene`, `crates/forge-glb`, `crates/forge-fbx`: generation-only static 3D scenes, GLB and FBX exporters.
+- `crates/forge-scene`, `crates/forge-glb`, `crates/forge-fbx`: generation-only 3D scenes, animation evaluation, GLB and FBX exporters.
 
 ## Domain Contract Documents
 
-- [Static GLB/FBX scenes](packages-react-forge-scene-contract.md).
+- [GLB/FBX scenes and animation](packages-react-forge-scene-contract.md).
 
 - [Sprite authoring and export](packages-react-forge-sprite-contract.md) (published in npm `0.2.0`).
 

@@ -30,7 +30,7 @@ Scale curves cannot cross zero, and cubic quaternion singularities are rejected.
 Named nonempty clips contain tracks targeting the same session's NodeHandle or
 React object ref, resolved after the commit. Null, removed, foreign, non-spatial,
 or duplicate target/property references fail. Clip names are unique, NUL-free and
-at most 256 UTF-8 bytes. Inspection includes non-mountable clip handles. Clip
+at most 256 UTF-8 bytes. Inspection includes optional authored spatial names and non-mountable clip handles; names never resolve target identity. Clip
 length is the largest last-key time. Each track clamps outside its own key range;
 looping and automatic playback are consumer decisions.
 
@@ -73,7 +73,7 @@ baked export is preflight-bounded, and sub-tick or overflowing FBX key times fai
 instead of merging keys. Runtime generation requires no external converter.
 
 The existing 64 MiB per-asset, 256 MiB aggregate/output and React tree limits also
-cover skin, morph and sampler bytes. Private FSG2 and FSA1 worker envelopes carry
+cover skin, morph and sampler bytes. Per-mesh bind-palette expansion is independently capped at 256 MiB before allocation. Private FSG2 and FSA1 worker envelopes carry
 binary data outside React JSON; FSG1 static geometry remains accepted. Native
 validation and evaluation poll cancellation and emit only the existing redacted
 stage/classification diagnostics, never callback data, names, or array contents.

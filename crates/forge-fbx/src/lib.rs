@@ -128,9 +128,15 @@ impl Fbx<'_> {
         self.next += 1;
         let id = self.next;
         *self.counts.entry(kind).or_default() += 1;
+        // FBX object categories and name classes differ for animation objects
+        // (AnimationStack versus AnimStack). Blender validates this distinction.
+        let class = kind
+            .strip_prefix("Animation")
+            .map(|suffix| format!("Anim{suffix}"));
+        let class = class.as_deref().unwrap_or(kind);
         self.open(
             kind,
-            &[A::L(id), A::S(&format!("{name}\0\u{1}{kind}")), A::S(sub)],
+            &[A::L(id), A::S(&format!("{name}\0\u{1}{class}")), A::S(sub)],
         )?;
         Ok(id)
     }

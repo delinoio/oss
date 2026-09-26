@@ -44,4 +44,16 @@ For the components and export behavior of a specific format, continue with [PPTX
 
 ## Static 3D sessions
 
-[GLB](/react-forge/formats/glb/) and [FBX](/react-forge/formats/fbx/) creation are available in npm `0.2.0`. They use SceneSession with registered geometry/textures, explicit file export, and revision-bound world-space bounds. Existing-file editing, animation and rigging are excluded. The FBX material profile targets Blender 4.5; local verification does not establish results on other hosts or FBX applications.
+[GLB](/react-forge/formats/glb/) and [FBX](/react-forge/formats/fbx/) creation are available in npm `0.2.0`. They use SceneSession with registered geometry/textures, explicit file export, and revision-bound world-space bounds. The released static API excludes existing-file editing, animation and rigging. The FBX material profile targets Blender 4.5; local verification does not establish results on other hosts or FBX applications.
+
+## Animated scene sessions (unreleased)
+
+The unreleased GLB/FBX extension adds copied `registerAnimationSampler()` assets
+and cancellable `bakeAnimationSampler()` callbacks. Exports wait for both before
+pinning a revision. `snapshot()` includes clip handles with kind `animation_clip`
+and authored names; updates still use React refs/handles rather than name lookup.
+Use `measure(handle, { revision, animation: { clip, time } })` for a world AABB
+after morphing and skinning at a time in seconds. Omitting animation measures the
+base pose; out-of-range times hold each track's endpoints. Measurement does not
+change the revision. Existing export queues, atomic saving, diagnostics and
+disposal apply. See the [animation API](/react-forge/formats/glb/#animation-authoring-unreleased).

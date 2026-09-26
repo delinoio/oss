@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import React, { createRef } from "react";
 import { createRequire } from "node:module";
-import { createSession, Format, ErrorCode, type NodeHandle } from "../src/index.js";
+import { createSession, Format, ErrorCode, capabilities, type NodeHandle } from "../src/index.js";
 import { Scene, Group, Joint, Mesh, AnimationClip, AnimationTrack, AnimationPath as Path, AnimationInterpolation as Interpolation, type GeometryInput } from "../src/glb.js";
 
 const sceneTest = process.env.REACT_FORGE_SKIP_SCENE_TESTS === "1" ? test.skip : test;
@@ -15,7 +15,34 @@ const geometry = (): GeometryInput => ({
 const near = (actual: readonly number[], expected: readonly number[]) => actual.forEach((v,i) => assert.ok(Math.abs(v-expected[i]!)<1e-5, `${actual} != ${expected}`));
 
 for (const format of [Format.Glb, Format.Fbx] as const) {
+  sceneTest(`${format}: pending bakes settle before an export pins its ordered render`, async () => {
+    const s=createSession(format), group=createRef<NodeHandle>();
+    try {
+      const input=geometry(); delete input.skin; delete input.morphTargets;
+      const g=await s.registerGeometry(input);
+      const sampler=await s.registerAnimationSampler({path:Path.Translation,times:new Float32Array([0,1]),values:new Float32Array([0,0,0,1,0,0])});
+      const tree=(name:string)=><Scene><Group ref={group}><Mesh geometry={g}/></Group><AnimationClip name={name}><AnimationTrack target={group} sampler={sampler}/></AnimationClip></Scene>;
+      await s.render(tree("Before"));
+      let callbacks=0;
+      const pending=s.bakeAnimationSampler({path:Path.Translation,duration:10,sample:t=>{callbacks++;return [t,0,0];}});
+      const exported=s.exportBuffer();
+      const rendered=s.render(tree("After"));
+      const bytes=await exported;
+      assert.equal(callbacks,601); await pending;
+      assert.ok(bytes.includes(Buffer.from("Before")));
+      assert.ok(!bytes.includes(Buffer.from("After")));
+      await rendered;
+      assert.ok((await s.exportBuffer()).includes(Buffer.from("After")));
+      await assert.rejects(s.bakeAnimationSampler({path:Path.Translation,duration:1,sample:()=>{throw Error("PRIVATE_CALLBACK_DATA");}}), (error: unknown)=>{
+        assert.equal((error as {code:string}).code,ErrorCode.Render);
+        assert.doesNotMatch(JSON.stringify(error),/PRIVATE_CALLBACK_DATA/); return true;
+      });
+      assert.ok((await s.exportBuffer()).length>0);
+    } finally {await s.dispose();}
+  });
   sceneTest(`${format}: refs resolve in one render, clips combine skinning and morphs, bounds clamp time`, async () => {
+    assert.equal(capabilities.formats[format].staticOnly, false);
+    assert.equal(capabilities.formats[format].animation, true);
     const s = createSession(format); const joint = createRef<NodeHandle>(), mesh = createRef<NodeHandle>(), clip = createRef<NodeHandle>();
     try {
       const input=geometry(); const pending=s.registerGeometry(input); input.morphTargets![0]!.positions.fill(10); input.skin!.weights.fill(0);

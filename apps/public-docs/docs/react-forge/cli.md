@@ -25,4 +25,15 @@ The [SFX format](/react-forge/formats/sfx/) adds `Format.Wav` tasks with `.wav` 
 
 ## Static 3D formats
 
-[GLB](/react-forge/formats/glb/) and [FBX](/react-forge/formats/fbx/) creation are available in npm `0.2.0`. They use SceneSession with registered geometry/textures, explicit file export, and revision-bound world-space bounds. Existing-file editing, animation and rigging are excluded. The FBX material profile targets Blender 4.5; local verification does not establish results on other hosts or FBX applications.
+[GLB](/react-forge/formats/glb/) and [FBX](/react-forge/formats/fbx/) creation are available in npm `0.2.0`. They use SceneSession with registered geometry/textures, explicit file export, and revision-bound world-space bounds. The released static API excludes existing-file editing, animation and rigging. The FBX material profile targets Blender 4.5; local verification does not establish results on other hosts or FBX applications.
+
+## Animated scene tasks (unreleased)
+
+With the unreleased animation extension, return a `SceneSession` from the same
+TSX task interface after registering samplers and rendering clips/joints/morphs.
+Run `react-forge run character.tsx --output character.glb` (or `.fbx` for a task
+using `Format.Fbx`). No extra animation command or external converter is needed;
+the CLI waits for pending work, exports one revision and disposes the session.
+The [GLB animation example](/react-forge/formats/glb/#animation-authoring-unreleased)
+uses this task shape; [FBX](/react-forge/formats/fbx/#animation-authoring-unreleased)
+explains curve sampling. These additions are not in the released static API.

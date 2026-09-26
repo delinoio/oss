@@ -186,6 +186,6 @@
 - Keep installation and API examples aligned with the published `@delino/react-forge` package and public types. Document the release version for each available format and retain distinct evidence limits. Distinguish six-host local format support from macOS Keychain Figma authentication; document explicit publication, receipts, preservation, and verification limits without exposing repository internals.
 - Validate all eighteen rendered routes, guide links, selector state, sidebar, social/footer links, clean URLs, and prohibited credentials and internal paths through `pnpm --filter public-docs test`.
 
-- React Forge GLB/FBX public guides document availability from npm `0.2.0`. Preserve the static-only scene boundary and Blender 4.5 FBX compatibility limits; package availability does not establish identical results in every FBX application.
+- React Forge GLB/FBX public guides document availability from npm `0.2.0`. Keep the released static API separate from the unreleased animation extension, document FBX rotation/CUBIC sampling limits, and preserve Blender 4.5 compatibility limits; package availability does not establish identical results in every FBX application.
 
 - React Forge `/formats/sfx/` and `/formats/sprite/` document availability from npm `0.2.0`. Preserve each article's scope and evidence limits, including the absence of game-engine listening and importer compatibility claims.

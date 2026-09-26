@@ -60,6 +60,7 @@ Each project must have one project index document and one or more domain contrac
 - [Project index](project-react-forge.md)
 - [Public documentation](apps-react-forge-docs-foundation.md) (`apps/public-docs/docs/react-forge`, canonical URL `https://oss.delino.io/react-forge/`, eighteen user-guide routes)
 - [Complete issue requirements](packages-react-forge-requirements.md)
+- [GLB/FBX scenes and animation](packages-react-forge-scene-contract.md) (static scenes released; animation unreleased)
 - [Game SFX and WAV export](packages-react-forge-sfx-contract.md)
 - [Node sessions and CLI](packages-react-forge-contract.md)
 - [Sprite authoring and export](packages-react-forge-sprite-contract.md) (unreleased)

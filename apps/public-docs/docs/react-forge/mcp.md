@@ -63,4 +63,25 @@ The [SFX format](/react-forge/formats/sfx/) uses the same execute, inspect, meas
 
 ## Static 3D formats
 
-[GLB](/react-forge/formats/glb/) and [FBX](/react-forge/formats/fbx/) creation are available in npm `0.2.0`. They use SceneSession with registered geometry/textures, explicit file export, and revision-bound world-space bounds. Existing-file editing, animation and rigging are excluded. The FBX material profile targets Blender 4.5; local verification does not establish results on other hosts or FBX applications.
+[GLB](/react-forge/formats/glb/) and [FBX](/react-forge/formats/fbx/) creation are available in npm `0.2.0`. They use SceneSession with registered geometry/textures, explicit file export, and revision-bound world-space bounds. The released static API excludes existing-file editing, animation and rigging. The FBX material profile targets Blender 4.5; local verification does not establish results on other hosts or FBX applications.
+
+## Animated scenes (unreleased)
+
+The unreleased extension uses the same nine tools. Execute authors scenes with
+the [animation API](/react-forge/formats/glb/#animation-authoring-unreleased);
+inspect returns named `animation_clip` handles as well as spatial targets. Pass
+the inspected clip's node ID to `react_forge_measure`:
+
+```json
+{
+  "sessionId": "<session-id>",
+  "nodeId": "<mesh-or-group-node-id>",
+  "revision": 1,
+  "animation": { "clip": "<clip-node-id>", "time": 0.5 }
+}
+```
+
+Use the actual revision and IDs from inspect. Animation sampling is valid only
+for GLB/FBX sessions, does not mutate the revision, and returns deformed world
+bounds. Export includes authored clips without starting playback. Callback
+baking stays in Node and participates in cancellation and pending-work settling.

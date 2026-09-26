@@ -94,7 +94,7 @@ pub enum Kind {
     Joint,
     Mesh {
         geometry: String,
-        material: Material,
+        material: Box<Material>,
         #[serde(default)]
         skin: Option<Skin>,
         #[serde(default)]

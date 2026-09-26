@@ -129,9 +129,9 @@ export class SceneSession {
   }
   private inspection(model: SceneModel): Inspection {
     const targets: TargetHandle[] = [];
-    const visit = (node: SceneNode) => { targets.push(Object.freeze({ documentId: this.documentId, nodeId: node.id, kind: node.type, editable: false })); node.children.forEach(visit); };
+    const visit = (node: SceneNode) => { targets.push(Object.freeze({ documentId: this.documentId, nodeId: node.id, kind: node.type, name: node.name, editable: false })); node.children.forEach(visit); };
     model.nodes.forEach(visit);
-    for (const clip of model.animations) targets.push(Object.freeze({ documentId: this.documentId, nodeId: clip.id, kind: "animation_clip", editable: false }));
+    for (const clip of model.animations) targets.push(Object.freeze({ documentId: this.documentId, nodeId: clip.id, kind: "animation_clip", name: clip.name, editable: false }));
     return Object.freeze({ revision: this.revision, targets: Object.freeze(targets) });
   }
   inspect(): Inspection { return this.inspection(this.model()); }

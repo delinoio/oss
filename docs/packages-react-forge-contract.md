@@ -98,3 +98,15 @@ The generation-only GLB/FBX extension follows [the scene contract](packages-reac
 ## SFX extension
 
 The [SFX contract](packages-react-forge-sfx-contract.md) adds `Format.Wav`, the `/sfx` component subpath, generation-only PCM WAV exports and seconds-based `timeline` geometry. It shares the session, revision, cancellation, atomic-output, diagnostics and six-host native boundaries. SFX does not register image/font assets or import audio. It is included in npm `0.2.0`; preserve existing document/Figma behavior.
+
+## 3D animation follow-up (Unreleased)
+
+SceneSession gains registerAnimationSampler and cancellable bakeAnimationSampler,
+common Joint/AnimationClip/AnimationTrack authoring, and optional clip/time
+measurement under the [scene contract](packages-react-forge-scene-contract.md).
+Sampler assets are copied immediately, participate in the pending-work and
+revision barriers, and use the existing registration and output budgets. Scene
+options accept integer animationBakeFps (1–240, default 60) for FBX approximation.
+Original animated-character GLB/FBX tasks return the same session type to CLI/MCP;
+no new command, tool, runtime dependency or automatic publication is introduced.
+Static scene availability since 0.2.0 remains distinct from this unreleased API.

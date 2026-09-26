@@ -35,4 +35,17 @@ Local document work has no hosted service, telemetry, URL fetching, automatic re
 
 ## Static 3D format limits
 
-[GLB](/react-forge/formats/glb/) and [FBX](/react-forge/formats/fbx/) creation are available in npm `0.2.0`. They use SceneSession with registered geometry/textures, explicit file export, and revision-bound world-space bounds. Existing-file editing, animation and rigging are excluded. The FBX material profile targets Blender 4.5; visual checks do not establish identical results in other FBX applications.
+[GLB](/react-forge/formats/glb/) and [FBX](/react-forge/formats/fbx/) creation are available in npm `0.2.0`. They use SceneSession with registered geometry/textures, explicit file export, and revision-bound world-space bounds. The released static API excludes existing-file editing, animation and rigging. The FBX material profile targets Blender 4.5; visual checks do not establish identical results in other FBX applications.
+
+## Animation extension limits (unreleased)
+
+The unreleased scene extension adds at most four joint influences per vertex and
+64 position/optional-normal morphs per geometry. Sampler and deformation arrays
+share existing scene asset/output limits. Sampler times must be finite,
+nonnegative and strictly increasing; scale curves cannot cross zero. Invalid or
+removed refs, foreign-session handles, duplicate target/path tracks and singular
+rotations fail validation. Animate a group containing the mesh and joints instead
+of placing TRS tracks directly on a skinned mesh. Failed/cancelled sampler work
+releases its budget; callbacks cannot be interrupted while synchronously running.
+For FBX rotation/CUBIC approximation and its 1–240 fps setting, see the
+[FBX guide](/react-forge/formats/fbx/#animation-authoring-unreleased).
