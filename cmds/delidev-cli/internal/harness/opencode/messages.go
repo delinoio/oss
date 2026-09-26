@@ -328,12 +328,10 @@ func decodeNativeMessage(raw []byte) (NativeMessage, error) {
 		assistant.Completed = &completed
 	}
 	if raw, exists := fields["finish"]; exists {
-		value, ok := boundedString(raw, 32, true)
-		finish := FinishReason(value)
-		if !ok || !slices.Contains([]FinishReason{FinishStop, FinishLength, FinishContentFilter, FinishToolCalls, FinishError, FinishUnknown}, finish) {
+		assistant.Finish, ok = nativeFinish(raw)
+		if !ok {
 			return bad()
 		}
-		assistant.Finish = &finish
 	}
 	if raw, exists := fields["summary"]; exists {
 		assistant.Summary, ok = boolPointer(raw)

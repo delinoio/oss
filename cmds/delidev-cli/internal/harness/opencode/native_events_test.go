@@ -84,6 +84,9 @@ func TestManualNativeOpenCodeEvents(t *testing.T) {
 			if err != nil || !scalar(properties["sessionID"], id) {
 				t.Fatal("native part escaped original session")
 			}
+			if typed, err := decodeNativePart(properties["part"]); err != nil || typed.SessionID != id {
+				t.Fatalf("native typed part: %v", err)
+			}
 			if scalar(part["id"], fixturePartID) {
 				partSeen = scalar(part["messageID"], fixtureMessageID)
 			}
