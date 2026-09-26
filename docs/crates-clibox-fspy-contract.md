@@ -22,6 +22,8 @@ A failed native call may supply a null, invalid, or overlong pathname pointer, o
 
 The pre-execution asset denominator walks the selected root, follows only internal symlinks, and deduplicates file identities, including hard links, without holding one open descriptor per file. A read completion must carry the opened file's identity and actual byte count; the analyzer cannot recover it reliably from a pathname after the execution. A missing identity cannot cover a selected file.
 
+The in-progress Linux reproduction snapshot copies eligible selected regular files before execution into a private directory, retaining only internal link mappings and their targets. It applies the fixed credential-like path denylist, file/byte limits, source-descriptor containment checks, and hashes required inputs again before staging an observed subset. Candidate execution, stderr verification, external-dependency checks, result limits, and atomic bundle publication are not yet connected; the snapshot alone does not satisfy `min-repro`.
+
 ## Workflow semantics
 
 - `autowatch` runs once immediately, then watches observed project inputs, directory queries, and absent paths. It runs serially, debounces by 200 ms by default, replaces dependencies after success, unions new dependencies after child failure, and rejects an empty or unsafe watch set. Confirmed self-writes alone cannot trigger a rerun.
