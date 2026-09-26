@@ -1,8 +1,8 @@
 # React Forge
 
-`@delino/react-forge` authors PPTX, DOCX, XLSX, independent tagged PDF and editable Figma Design files through persistent React sessions. It imports existing Office packages, exposes supported editable regions, and preserves unrelated XML and package parts when mounting React content into those regions. Its executable is named `react-forge`.
+`@delino/react-forge` authors PPTX, DOCX, XLSX, tagged PDF, static GLB/FBX scenes, WAV sound effects, and pixel sprites through React sessions. It also creates and edits Figma Design files through explicit publication. It imports existing Office packages, exposes supported editable regions, and preserves unrelated XML and package parts when mounting React content into those regions. Its executable is named `react-forge`.
 
-The [React Forge guides](https://oss.delino.io/react-forge/) cover installation, each released format, Office editing, Figma publication, the CLI, local MCP sessions, and clearly marked unreleased SFX and Sprite previews.
+The [React Forge guides](https://oss.delino.io/react-forge/) cover installation, all eight local formats, Office editing, Figma publication, the CLI, and local MCP sessions.
 
 Use Node.js 24 on macOS, Windows, or glibc Linux, on x64 or arm64. Install normally with npm or pnpm; the matching native package is selected as an optional dependency. Keep optional dependencies enabled. Installation does not compile native code or download binaries from a separate service.
 
@@ -189,17 +189,17 @@ Disconnect and process signals dispose sessions, with a five-second shutdown gra
 
 Test renderers are not runtime dependencies. Direct Microsoft Office validation and PDF/UA certification are not claimed. React Forge is licensed under Apache-2.0. Report issues at https://github.com/delinoio/oss/issues.
 
-## Static GLB and FBX scenes (unreleased)
+## Static GLB and FBX scenes (available in npm 0.2.0)
 
-This extension is not included in npm 0.1.1. `createSession(Format.Glb | Format.Fbx)` returns `SceneSession`; `/glb` and `/fbx` expose Scene, Group, Mesh, perspective/orthographic cameras and directional/point/spot lights. Register copied typed-array geometry and PNG/JPEG textures with `registerGeometry` and `registerTexture`, then render and explicitly export. Coordinates use meters and right-handed Y-up. Basic PBR maps, opacity, UVs, tangents, nonuniform/negative scales and hierarchy are supported. Existing scene import/editing, animation, rigging, refraction and advanced coatings are excluded.
+`createSession(Format.Glb | Format.Fbx)` returns `SceneSession`; `/glb` and `/fbx` expose Scene, Group, Mesh, perspective/orthographic cameras and directional/point/spot lights. Register copied typed-array geometry and PNG/JPEG textures with `registerGeometry` and `registerTexture`, then render and explicitly export. Coordinates use meters and right-handed Y-up. Basic PBR maps, opacity, UVs, tangents, nonuniform/negative scales and hierarchy are supported. Existing scene import/editing, animation, rigging, refraction and advanced coatings are excluded.
 
 `inspect`, settled `snapshot`, revision-bound world-AABB `measure`, `exportBuffer`, atomic `exportFile`, `onDiagnostic` and `dispose` retain the local session lifecycle. GLB uses glTF 2.0; binary FBX 7.4 targets Blender 4.5 materials and embeds textures. Other FBX applications may shade differently. Registered assets and output each have a 256 MiB ceiling, individual geometry/textures 64 MiB, with existing image and React-tree limits. Generation has no Blender or viewer runtime dependency.
 
-See the [GLB guide](https://oss.delino.io/react-forge/formats/glb/), [FBX guide](https://oss.delino.io/react-forge/formats/fbx/), and original [AURA product example](examples/audio-studio-assets/README.md). The same CLI/MCP exports `.glb`/`.fbx` when running a build that includes this extension.
+See the [GLB guide](https://oss.delino.io/react-forge/formats/glb/), [FBX guide](https://oss.delino.io/react-forge/formats/fbx/), and original [AURA product example](examples/audio-studio-assets/README.md). The CLI/MCP exports `.glb`/`.fbx` in npm `0.2.0` and later.
 
-## Sprite authoring (unreleased)
+## Sprite authoring (available in npm 0.2.0)
 
-The next release adds `Format.Sprite` and `@delino/react-forge/sprite`. This feature is not included in npm 0.1.1. See the [Sprite guide](https://oss.delino.io/react-forge/formats/sprite/) for the preview workflow and limits.
+`Format.Sprite` and `@delino/react-forge/sprite` are available in npm `0.2.0`. See the [Sprite guide](https://oss.delino.io/react-forge/formats/sprite/) for the workflow and limits.
 
 ```tsx
 import React from "react";
@@ -229,8 +229,8 @@ The atomic ZIP contains `sheet.png`, `sprite.json`, and `frames/0000.png` onward
 
 Logical dimensions are 1–4096, scale 1–16, output-pixel padding 0–64 (default 1), and each frame lasts 1–60,000 ms. Up to 1024 frames share one canvas size. Optional columns default to a square grid; explicit columns must be 1–frame count. Animation names are unique, 1–64 ASCII letters/digits/underscore/hyphen; loops default true. Frame pivots default to bottom center and must lie within the logical canvas. Both sheet pixels and total scaled frame pixels are capped at 64 million, referenced decoded image pixels at 64 million, and raster work at 256 million visited pixels. Existing tree/image/archive limits also apply; `capabilities.formats.sprite.limits` exposes sprite limits. Unsupported props and nonempty leaf children fail export rather than silently dropping content.
 
-## Game SFX (unreleased)
+## Game SFX (available in npm 0.2.0)
 
-The source adds `createSession(Format.Wav)` and `Sound`, `Noise`, `Tone`, `SampleRate`, `Channels` and `Waveform` from `@delino/react-forge/sfx`. This extension is not included in npm `0.1.1`. See the [SFX guide](https://oss.delino.io/react-forge/formats/sfx/) for the complete parameters and a zombie-game gunshot.
+The package adds `createSession(Format.Wav)` and `Sound`, `Noise`, `Tone`, `SampleRate`, `Channels` and `Waveform` from `@delino/react-forge/sfx`. See the [SFX guide](https://oss.delino.io/react-forge/formats/sfx/) for the complete parameters and a zombie-game gunshot.
 
 Compose timed seeded noise and sine/triangle sweeps, then use the existing buffer/file export or CLI/MCP with `.wav`. Output is mono/stereo PCM16 at 44100/48000 Hz. Durations, starts, fades and exponential decay are seconds; gains are linear, with automatic attenuation above 0.95 peak. Limits are 30 seconds, 256 layers and 16 million aggregate voice samples. Refs measure in seconds-based `timeline` coordinates. Image/font registration, audio import, recorded samples, live playback and MP3/OGG are unsupported. Generation needs no audio device, network, fonts or conversion tool.

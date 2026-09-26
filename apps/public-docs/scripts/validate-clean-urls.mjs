@@ -735,8 +735,11 @@ for (const routeId of ["/react-forge/formats/glb/", "/react-forge/formats/fbx/",
   const route = routeOutputFiles.find((entry) => entry.routeId === routeId);
   const contents = route ? await readFile(route.outputFile, "utf8") : "";
   const introduction = visibleText(articleContent(contents)).slice(0, 550);
-  if (!/\bUnreleased\b/u.test(introduction) || !/\bnot included in npm 0\.1\.1\b/iu.test(introduction)) {
-    failures.push(`${routeId} is missing its main-content npm 0.1.1 unreleased notice`);
+  if (!/\bAvailable in npm 0\.2\.0\b/iu.test(introduction)) {
+    failures.push(`${routeId} is missing its main-content npm 0.2.0 availability notice`);
+  }
+  if (/\bUnreleased\b|not included in npm/iu.test(introduction)) {
+    failures.push(`${routeId} still identifies the format as unreleased or unavailable`);
   }
 }
 

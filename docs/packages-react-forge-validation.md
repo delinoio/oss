@@ -177,6 +177,8 @@ The existing six-host job now runs the MCP tests through the package test comman
 
 The public package consists of the main library and six exact-version native optional packages. Seven external `0.0.1` packages reserved the npm names without runtime code. Local `package:main`, `package:native` and `test:package` check the installed candidate on the current host; PR CI checks installed consumers on each host. The exact-tag workflow combines all six native tarballs and repeats six-host build, installed-consumer and complete-set gates before OIDC publication. The `0.1.0` tag passed all six release hosts and the seven-package assembly on its second attempt, after one Linux x64 MCP fixture readiness timeout. Its publish job then failed before any registry write because the registry lookup callback received the array index as its request argument. The corrected `0.1.1` [release run](https://github.com/delinoio/oss/actions/runs/36048311720) passed all six hosts and published all seven packages. Downloaded candidate tarballs matched npm's SHA-512 integrity for every package; npm metadata reported SLSA provenance and `latest: 0.1.1` for each. See [release contract](packages-react-forge-release-contract.md).
 
+The exact-tag [`react-forge@v0.2.0` release run](https://github.com/delinoio/oss/actions/runs/36206600514) completed successfully, including all six native build jobs, package assembly, and npm publication. Registry metadata reports package version `0.2.0`, `latest: 0.2.0`, and exports for `/glb`, `/fbx`, `/sfx`, and `/sprite`. This release makes all documented React Forge formats available in the public package; it does not expand the separately recorded visual, interoperability, or perceptual validation claims.
+
 ## Static GLB/FBX acceptance (2026-09-25)
 
 The generation-only scene extension was exercised locally on macOS 26.6.2 arm64 with Node 24.17.0, React 19.2.8, Rust 1.94.0-nightly (`8d670b93d`, pinned nightly-2026-01-01), Khronos gltf-validator 2.0.0-dev.3.10, ufbx 0.23.0 (Rust crate 0.11.4), Three.js 0.186.1 and Blender 4.5.14 LTS (`62c1db4208e8`). Blender's official macOS arm64 DMG SHA-256 was verified as `65134d9b07b20e2fa8d3c9e44f6f44ffb5c9774dd521b95f50387310241ca170`. Blender is mounted separately as a test tool; it is never part of a production generation path.
@@ -189,7 +191,7 @@ Visual work corrected FBX enum flags rejected by Blender's camera reader, the FB
 
 Local verification passed root `TMPDIR=/private/tmp cargo test -- --test-threads=1` with **1,927 passed and three pre-existing opt-in tests ignored**, targeted scene/exporter/adapter Clippy with warnings denied, package build/typecheck/lint with **112 tests**, standalone example checks, public main/native candidate assembly and installed six-format CLI smoke, installed-archive six-format MCP inspection/measurement/export, **77 CI contract tests**, workflow validation, and `pnpm test` from `apps/public-docs` (all sixteen React Forge guide routes). Root test preparation followed the existing generic/pnport preload separation above. Earlier root attempts exposed existing path-alias/preload preparation requirements and transient clibox process-fixture failures; the final complete serial run passed. An initial Node 24.11.0 MCP loader issue was avoided by validating with Node 24.17.0; this does not establish compatibility for every Node 24 patch.
 
-The six-host native CI matrix includes the three scene crates, and Linux x64 additionally installs checksum-pinned Blender 4.5.14 and renders the fixtures. **Only macOS arm64 was executed locally for this change. Other host results and the new Linux rendering job have not been observed and are not marked passed.** GLB/FBX remain unreleased, absent from the historical npm 0.1.1 release.
+The six-host native CI matrix includes the three scene crates, and Linux x64 additionally installs checksum-pinned Blender 4.5.14 and renders the fixtures. **Only macOS arm64 was executed locally for this acceptance record.** The later `0.2.0` release workflow passed all six native build and installed-consumer jobs; that evidence is distinct from the local Blender visual review recorded above and does not imply identical results in arbitrary FBX applications. GLB/FBX were absent from the historical npm `0.1.1` release and were included in `0.2.0`.
 
 Reproduce after building:
 
@@ -252,7 +254,8 @@ real React state and refs, invalid latest renders, native diagnostics, output
 preservation, cancellation, and the gunshot's attack/tail/silence. Workspace and
 installed-archive CLI and real SDK MCP clients generate WAV. The public main plus
 host-native candidate also passed `test:package` with five local output formats.
-No npm publication occurred; released `0.1.1` does not contain SFX.
+No npm publication had occurred at this source-validation checkpoint; the later
+`0.2.0` release includes SFX.
 
 Five native synthesis tests passed, checking RIFF fields, PCM size, reference-tone
 frequency by zero crossings at both sample rates, seeded noise, left/right pan,
@@ -518,11 +521,12 @@ preparation. Generated repository-owned `dist` directories were removed, and
 ## PR #988 public-guide merge repair (2026-09-25)
 
 Merged `main` at `6b8b6cfe` (PR #991) without rebasing. The grouped navigation and
-Sprite preview remain intact, and GLB/FBX join the format-directory layout. All
+The Sprite guide remains intact, and GLB/FBX join the format-directory layout. All
 eighteen guides are retained, with permanent redirects for both spellings of
 each of the nine former format routes. The package README and internal route
-contracts use the new canonical GLB/FBX links. Rendered validation checks the
-unreleased npm `0.1.1` notices for all four preview formats.
+contracts use the new canonical GLB/FBX links. At that checkpoint, rendered
+validation checked the npm `0.1.1` unavailability notices for all four formats;
+the current public-docs validation checks their availability from npm `0.2.0`.
 
 On macOS arm64/Node.js 24.17.0, `pnpm test` from `apps/public-docs` passed the
 **25 site-selector tests**, full Rspress build, both rendered-document validators,

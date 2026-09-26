@@ -119,6 +119,12 @@ for (const [slug, routes] of Object.entries(projectRoutes)) {
           failures.push(`${publicRoute(slug, route)} is missing a sidebar link`);
         }
       }
+      if (slug === "react-forge") {
+        const sidebarText = visibleProjectText(sidebar);
+        if (!sidebarText.includes("More Formats") || sidebarText.includes("Unreleased Previews")) {
+          failures.push(`${publicRoute(slug, route)} has an incorrect React Forge format group label`);
+        }
+      }
       const socialLinks = [...contents.matchAll(/<a\b[^>]*class="[^"]*rp-social-links__item[^"]*"[^>]*>/giu)].map(([tag]) => tag);
       if (!socialLinks.some((tag) => tag.includes('href="https://github.com/delinoio/oss"'))) {
         failures.push(`${publicRoute(slug, route)} is missing the repository social link`);

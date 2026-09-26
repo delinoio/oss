@@ -109,16 +109,16 @@ enum ProjectId {
 
 ### React Forge Contract
 
-- React Forge sprites follow `docs/packages-react-forge-sprite-contract.md`: use an independent bounded pixel renderer and one revision-pinned `.sprite.zip` archive for sheet PNG, frame PNGs and metadata. Keep image generation services, sprite import and engine-specific compatibility outside this extension; do not describe it as released before npm publication.
+- React Forge sprites follow `docs/packages-react-forge-sprite-contract.md`: use an independent bounded pixel renderer and one revision-pinned `.sprite.zip` archive for sheet PNG, frame PNGs and metadata. Keep image generation services, sprite import and engine-specific compatibility outside this extension; describe its availability from npm `0.2.0` and retain the engine-compatibility limits.
 
 - Figma creation/editing follows `docs/packages-react-forge-figma-contract.md`. Figma alone permits explicit official-MCP networking and remote publication. Reuse matching MCP Keychain credentials without refreshing/writing them. Preserve unselected external content; report partial/unknown writes and never blindly retry creation.
 
 - `react-forge` is the public npm Node.js 24 / React 19.2.8 cross-platform document project in issue #968. Follow `docs/project-react-forge.md` and its complete requirements. Keep JavaScript reconciliation outside native workers, format models independent, sessions in memory, exports revision-pinned and atomic, and imported opaque content preserved. All required formats and evidence are required before completion.
 
 - React Forge exposes a local session-based stdio MCP server through `react-forge mcp`; follow `docs/packages-react-forge-mcp-contract.md`. Keep execution output isolated from protocol stdout, share the existing engine and Figma scheduling across sessions, and preserve explicit export/publication and cancellation outcomes.
-- React Forge public guides are owned by `apps/public-docs/docs/react-forge` at `https://oss.delino.io/react-forge/`; follow `docs/apps-react-forge-docs-foundation.md` and keep the package README linked to them. Describe released user behavior and clearly labeled source-backed SFX/Sprite previews with separate evidence limits, without publishing repository internals or claiming an unreleased extension is available on npm.
+- React Forge public guides are owned by `apps/public-docs/docs/react-forge` at `https://oss.delino.io/react-forge/`; follow `docs/apps-react-forge-docs-foundation.md` and keep the package README linked to them. Describe released user behavior and preserve each format's evidence limits without publishing repository internals or misstating availability.
 
-- React Forge SFX follows `docs/packages-react-forge-sfx-contract.md`: bounded offline procedural WAV generation, native worker synthesis, and zombie-game gunshot acceptance. Keep generated audio untracked and distinguish source support from published availability.
+- React Forge SFX follows `docs/packages-react-forge-sfx-contract.md`: bounded offline procedural WAV generation, native worker synthesis, and zombie-game gunshot acceptance. It is available in npm `0.2.0`; keep generated audio untracked and distinguish package availability from perceptual/game-engine validation.
 
 - React Forge owns `packages/react-forge`, `crates/react-forge-node`, `crates/forge-package`, `crates/forge-document`, `crates/forge-docx`, `crates/forge-xlsx`, `crates/forge-pdf`, `crates/forge-figma`, `crates/forge-sfx`, `crates/forge-sprite`, and `apps/public-docs/docs/react-forge`; reuse existing Forge presentation engines without changing CLI/MCP defaults.
 

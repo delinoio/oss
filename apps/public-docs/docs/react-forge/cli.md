@@ -21,8 +21,8 @@ The CLI executes task code with ordinary caller permissions. It is not a sandbox
 
 Figma tasks may publish remotely before their receipt is saved. A failure can therefore carry a partial or unknown outcome even if the output path does not exist. Follow the [Figma receipt guidance](/react-forge/formats/figma/#publication-outcomes-and-receipts), rather than replaying the task blindly. For repeated updates to the same in-memory document, use the [library session API](/react-forge/sessions) or [local MCP sessions](/react-forge/mcp).
 
-The unreleased [SFX extension](/react-forge/formats/sfx/) adds `Format.Wav` tasks with `.wav` output. The unreleased [Sprite extension](/react-forge/formats/sprite/) adds `Format.Sprite` tasks with `.sprite.zip` output. Both are absent from npm `0.1.1`; check [release status](/react-forge/releases) before using their imports.
+The [SFX format](/react-forge/formats/sfx/) adds `Format.Wav` tasks with `.wav` output. The [Sprite format](/react-forge/formats/sprite/) adds `Format.Sprite` tasks with `.sprite.zip` output. Both are available in npm `0.2.0`.
 
-## Unreleased static 3D extension
+## Static 3D formats
 
-[GLB](/react-forge/formats/glb/) and [FBX](/react-forge/formats/fbx/) creation are documented as an unreleased extension, absent from npm 0.1.1. They use SceneSession with registered geometry/textures, explicit file export, and revision-bound world-space bounds. Existing-file editing, animation and rigging are excluded. The FBX material profile targets Blender 4.5; local verification does not establish results on other hosts or FBX applications.
+[GLB](/react-forge/formats/glb/) and [FBX](/react-forge/formats/fbx/) creation are available in npm `0.2.0`. They use SceneSession with registered geometry/textures, explicit file export, and revision-bound world-space bounds. Existing-file editing, animation and rigging are excluded. The FBX material profile targets Blender 4.5; local verification does not establish results on other hosts or FBX applications.

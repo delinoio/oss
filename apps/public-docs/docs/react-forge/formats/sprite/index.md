@@ -1,6 +1,6 @@
 # Pixel sprites and animation
 
-**Unreleased:** Sprite authoring is implemented in source but is not included in npm `0.1.1`. Check [release status](/react-forge/releases) and the installed package's capabilities before using these imports. The example below requires a version that includes Sprite.
+Available in npm `0.2.0`. Check [release status](/react-forge/releases) and the installed package's capabilities for the current version and complete limits.
 
 Use `Format.Sprite` and components from `@delino/react-forge/sprite` to draw pixel artwork and timed frames with React. Export one `.sprite.zip` archive containing a sprite sheet, individual frame PNGs, and JSON metadata. Generation is local and needs no browser, GPU, system fonts, network service, or external converter.
 
@@ -77,4 +77,4 @@ Logical width and height are each 1–4096 pixels; scale is 1–16 and output-pi
 
 Sessions, snapshots, React updates, cancellation, diagnostics, and disposal follow the [common session API](/react-forge/sessions). The [CLI](/react-forge/cli) and [MCP](/react-forge/mcp) use the same task and `.sprite.zip` output. Measurements use logical pixels in `sprite_frame` coordinates, with `page` identifying the zero-based flattened frame index; metadata coordinates use scaled output pixels.
 
-Sprite supports generation only. To change an archive, update the React source and export again; archive import and mounted editing are unavailable. There is no automatic artwork generation, rigging, trimming, atlas rotation, or confirmed engine-specific importer compatibility. Sprite validation is separate from the published Office/PDF six-host evidence; see [Releases and validation](/react-forge/releases).
+Sprite supports generation only. To change an archive, update the React source and export again; archive import and mounted editing are unavailable. There is no automatic artwork generation, rigging, trimming, atlas rotation, or confirmed engine-specific importer compatibility. The `0.2.0` release workflow exercised installed consumers on all six supported native hosts; it does not establish game-engine importer compatibility. See [Releases and validation](/react-forge/releases).
