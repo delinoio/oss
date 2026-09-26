@@ -134,9 +134,12 @@ export class SessionRuntime {
           }), total: targets.length, truncated: offset + limit < targets.length, nextOffset: offset + limit < targets.length ? offset + limit : null };
       }
       case Operation.Measure: {
-        const { nodeId, revision } = input as Input<Operation.Measure>;
+        const { nodeId, revision, animation } = input as Input<Operation.Measure>;
+        if (animation && !(session instanceof SceneSession)) throw new ForgeError(ErrorCode.UnsupportedEdit, "Animation measurement requires a scene session.");
         const handle = { documentId: session.documentId, nodeId };
-        const geometry = await session.measure(handle, { revision, signal });
+        const geometry = session instanceof SceneSession
+          ? await session.measure(handle, { revision, signal, animation: animation ? { clip: { documentId: session.documentId, nodeId: animation.clip }, time: animation.time } : undefined })
+          : await session.measure(handle, { revision, signal });
         return { ...this.metadata(record), revision: geometry.revision, geometry };
       }
       case Operation.Refresh: {

@@ -1,4 +1,4 @@
-import { SceneSession } from "./scene/session.js";
+import { SceneSession, type SceneSessionOptions } from "./scene/session.js";
 import { FigmaSession, type FigmaOptions } from "./figma/session.js";
 import type { ReactNode } from "react";
 import { v7 } from "uuid";
@@ -329,10 +329,10 @@ export class DocumentSession {
 }
 
 export function createSession(format: Format.Figma, options: FigmaOptions): FigmaSession;
-export function createSession(format: Format.Glb | Format.Fbx): SceneSession;
+export function createSession(format: Format.Glb | Format.Fbx, options?: SceneSessionOptions): SceneSession;
 export function createSession(format: Exclude<Format, Format.Figma | Format.Glb | Format.Fbx>, options?: { systemFonts?: boolean }): DocumentSession;
-export function createSession(format: Format, options: FigmaOptions & {systemFonts?: boolean} = {}): DocumentSession | FigmaSession | SceneSession {
-  if (format === Format.Glb || format === Format.Fbx) return new SceneSession(format);
+export function createSession(format: Format, options: FigmaOptions & SceneSessionOptions & {systemFonts?: boolean} = {}): DocumentSession | FigmaSession | SceneSession {
+  if (format === Format.Glb || format === Format.Fbx) return new SceneSession(format, options);
   return format === Format.Figma ? new FigmaSession(options) : new DocumentSession(format, options);
 }
 export const importOffice = DocumentSession.import;

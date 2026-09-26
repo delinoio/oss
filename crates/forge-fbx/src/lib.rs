@@ -1,6 +1,7 @@
-//! FBX 7.4 binary static-scene writer. Blender-compatible material mapping is
+//! FBX 7.4 binary scene writer. Blender-compatible material mapping is
 //! deliberately bounded; this is not a general Autodesk shader interchange.
 #![forbid(unsafe_code)]
+mod animation;
 use std::{
     collections::BTreeMap,
     io::{self, Cursor, Seek, SeekFrom, Write},
@@ -50,6 +51,8 @@ enum A<'a> {
     B(&'a [u8]),
     Ints(Vec<i32>),
     Doubles(Vec<f64>),
+    Floats(Vec<f32>),
+    Longs(Vec<i64>),
 }
 struct Fbx<'a> {
     writer: Writer<Sink>,
@@ -59,6 +62,9 @@ struct Fbx<'a> {
     counts: BTreeMap<&'static str, i32>,
     geometries: BTreeMap<String, i64>,
     materials: BTreeMap<String, i64>,
+    model_ids: BTreeMap<String, i64>,
+    mesh_ids: BTreeMap<String, i64>,
+    blend_channels: BTreeMap<String, Vec<i64>>,
 }
 impl Fbx<'_> {
     fn open(&mut self, name: &str, attrs: &[A<'_>]) -> Result<()> {
@@ -73,6 +79,8 @@ impl Fbx<'_> {
                 A::B(v) => a.append_binary_direct(v),
                 A::Ints(v) => a.append_arr_i32_from_iter(None, v.iter().copied()),
                 A::Doubles(v) => a.append_arr_f64_from_iter(None, v.iter().copied()),
+                A::Floats(v) => a.append_arr_f32_from_iter(None, v.iter().copied()),
+                A::Longs(v) => a.append_arr_i64_from_iter(None, v.iter().copied()),
             }
             .map_err(failure)?;
         }
@@ -140,8 +148,9 @@ impl Fbx<'_> {
         self.leaf("ReferenceInformationType", &[A::S("Direct")])
     }
 
-    fn geometry(&mut self, key: &str) -> Result<i64> {
-        if let Some(id) = self.geometries.get(key) {
+    fn geometry(&mut self, key: &str, owner: Option<&str>) -> Result<i64> {
+        let cache_key = owner.map_or_else(|| key.to_owned(), |owner| format!("{key}:{owner}"));
+        if let Some(id) = self.geometries.get(&cache_key) {
             return Ok(*id);
         }
         let g = &self.p.geometries[key];
@@ -247,7 +256,7 @@ impl Fbx<'_> {
         }
         self.close()?;
         self.close()?;
-        self.geometries.insert(key.into(), id);
+        self.geometries.insert(cache_key, id);
         Ok(id)
     }
 
@@ -339,11 +348,13 @@ impl Fbx<'_> {
         checkpoint()?;
         let sub = match n.kind {
             Kind::Group => "Null",
+            Kind::Joint => "LimbNode",
             Kind::Mesh { .. } => "Mesh",
             Kind::PerspectiveCamera { .. } | Kind::OrthographicCamera { .. } => "Camera",
             _ => "Light",
         };
         let id = self.object("Model", &n.name, sub)?;
+        self.model_ids.insert(n.id.to_string(), id);
         self.leaf("Version", &[A::I(232)])?;
         self.open("Properties70", &[])?;
         self.vector("Lcl Translation", "Lcl Translation", n.translation)?;
@@ -378,8 +389,23 @@ impl Fbx<'_> {
         self.link(id, parent, None);
         match &n.kind {
             Kind::Group => {}
-            Kind::Mesh { geometry, material } => {
-                let g = self.geometry(geometry)?;
+            Kind::Joint => {
+                let attribute = self.object("NodeAttribute", &n.name, "LimbNode")?;
+                self.leaf("TypeFlags", &[A::S("Skeleton")])?;
+                self.open("Properties70", &[])?;
+                self.number("Size", 1.)?;
+                self.close()?;
+                self.close()?;
+                self.link(attribute, id, None);
+            }
+            Kind::Mesh {
+                geometry, material, ..
+            } => {
+                let deformed = self.p.skins.contains_key(&n.id)
+                    || !self.p.geometries[geometry].morph_targets.is_empty();
+                let owner = n.id.to_string();
+                let g = self.geometry(geometry, if deformed { Some(&owner) } else { None })?;
+                self.mesh_ids.insert(owner, g);
                 let m = self.material(material)?;
                 self.link(g, id, None);
                 self.link(m, id, None);
@@ -478,6 +504,9 @@ pub fn export(p: &Prepared<'_>) -> Result<Vec<u8>> {
         counts: BTreeMap::new(),
         geometries: BTreeMap::new(),
         materials: BTreeMap::new(),
+        model_ids: BTreeMap::new(),
+        mesh_ids: BTreeMap::new(),
+        blend_channels: BTreeMap::new(),
     };
     w.open("FBXHeaderExtension", &[])?;
     w.leaf("FBXHeaderVersion", &[A::I(1003)])?;
@@ -521,6 +550,8 @@ pub fn export(p: &Prepared<'_>) -> Result<Vec<u8>> {
     for n in &p.scene.nodes {
         w.node(n, 0)?;
     }
+    w.deformation()?;
+    w.animations()?;
     w.close()?;
     w.open("Definitions", &[])?;
     w.leaf("Version", &[A::I(100)])?;

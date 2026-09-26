@@ -35,6 +35,8 @@ impl Task for SceneAssetOperation {
             forge_tree_doc::cancellation::checkpoint()?;
             if self.kind == "geometry" {
                 forge_scene::geometry(&self.bytes)?;
+            } else if self.kind == "animation_sampler" {
+                forge_scene::animation_sampler(&self.bytes)?;
             } else {
                 forge_document::image(&self.bytes)?;
             }
@@ -58,7 +60,7 @@ pub fn validate_scene_asset(
     bytes: Buffer,
     cancellation: &Cancellation,
 ) -> napi::Result<AsyncTask<SceneAssetOperation>> {
-    if !matches!(kind.as_str(), "geometry" | "texture") {
+    if !matches!(kind.as_str(), "geometry" | "texture" | "animation_sampler") {
         return Err(native_error(forge_scene::invalid("asset")));
     }
     if bytes.len() > forge_scene::MAX_GEOMETRY_BYTES {

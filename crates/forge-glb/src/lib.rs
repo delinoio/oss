@@ -1,4 +1,4 @@
-//! Self-contained glTF 2.0 binary export of validated static scenes.
+//! Self-contained glTF 2.0 binary export of validated scenes.
 #![forbid(unsafe_code)]
 use std::collections::BTreeMap;
 
@@ -18,6 +18,9 @@ struct Writer<'a> {
     nodes: Vec<Value>,
     cameras: Vec<Value>,
     lights: Vec<Value>,
+    skins: Vec<Value>,
+    animations: Vec<Value>,
+    node_ids: BTreeMap<String, usize>,
     image_ids: BTreeMap<String, usize>,
     material_ids: BTreeMap<String, usize>,
     geometry_ids: BTreeMap<String, (Value, usize)>,
@@ -65,7 +68,14 @@ impl Writer<'_> {
                 max[k] = max[k].max(v[k]);
             }
         }
-        let view = self.bytes(&bytes, Some(34962))?;
+        let view = self.bytes(
+            &bytes,
+            if matches!(kind, "MAT4" | "SCALAR") {
+                None
+            } else {
+                Some(34962)
+            },
+        )?;
         let id = self.accessors.len();
         let mut a =
             json!({"bufferView":view,"componentType":5126,"count":values.len(),"type":kind});
@@ -87,6 +97,21 @@ impl Writer<'_> {
         }
         if let Some(t) = &g.tangents {
             attr["TANGENT"] = self.floats(t, "VEC4", false)?.into();
+        }
+        if let Some(skin) = &g.skin {
+            let mut bytes = Vec::with_capacity(skin.joints.len() * 8);
+            for (i, joints) in skin.joints.iter().enumerate() {
+                if i % 4096 == 0 {
+                    checkpoint()?;
+                }
+                for joint in joints {
+                    bytes.extend_from_slice(&joint.to_le_bytes());
+                }
+            }
+            let view = self.bytes(&bytes, Some(34962))?;
+            attr["JOINTS_0"] = self.accessors.len().into();
+            self.accessors.push(json!({"bufferView":view,"componentType":5123,"count":skin.joints.len(),"type":"VEC4"}));
+            attr["WEIGHTS_0"] = self.floats(&skin.weights, "VEC4", false)?.into();
         }
         let mut bytes = Vec::with_capacity(g.indices.len() * 4);
         for (i, index) in g.indices.iter().enumerate() {
@@ -156,15 +181,53 @@ impl Writer<'_> {
         checkpoint()?;
         let id = self.nodes.len();
         self.nodes.push(Value::Null);
+        self.node_ids.insert(node.id.to_string(), id);
         let mut value = json!({"name":node.name,"translation":node.translation,"rotation":node.rotation,"scale":node.scale,"extras":{"reactForgeId":node.id}});
         match &node.kind {
-            Kind::Group => {}
-            Kind::Mesh { geometry, material } => {
+            Kind::Group | Kind::Joint => {}
+            Kind::Mesh {
+                geometry,
+                material,
+                morph_weights,
+                skin,
+                ..
+            } => {
                 let (attributes, indices) =
                     self.geometry(geometry, &self.prepared.geometries[geometry])?;
                 let m = self.material(material)?;
                 value["mesh"] = self.meshes.len().into();
-                self.meshes.push(json!({"primitives":[{"attributes":attributes,"indices":indices,"material":m,"mode":4}]}));
+                let mut primitive =
+                    json!({"attributes":attributes,"indices":indices,"material":m,"mode":4});
+                let g = &self.prepared.geometries[geometry];
+                if !g.morph_targets.is_empty() {
+                    let mut targets = vec![];
+                    for morph in &g.morph_targets {
+                        let mut target =
+                            json!({"POSITION":self.floats(&morph.positions,"VEC3",true)?});
+                        if let Some(normals) = &morph.normals {
+                            target["NORMAL"] = self.floats(normals, "VEC3", false)?.into();
+                        }
+                        targets.push(target);
+                    }
+                    primitive["targets"] = json!(targets);
+                    value["weights"] = if morph_weights.is_empty() {
+                        json!(vec![0.; g.morph_targets.len()])
+                    } else {
+                        json!(morph_weights)
+                    };
+                }
+                let mut mesh = json!({"primitives":[primitive]});
+                if !g.morph_targets.is_empty() {
+                    mesh["extras"] = json!({"targetNames":g.morph_targets.iter().map(|m|&m.name).collect::<Vec<_>>()});
+                }
+                self.meshes.push(mesh);
+                if skin.is_some() {
+                    // glTF ignores a skinned mesh node's transform. Bind matrices
+                    // already contain its authored mesh-to-world rest transform.
+                    for key in ["translation", "rotation", "scale"] {
+                        value.as_object_mut().unwrap().remove(key);
+                    }
+                }
             }
             Kind::PerspectiveCamera {
                 yfov,
@@ -219,6 +282,81 @@ impl Writer<'_> {
         self.nodes[id] = value;
         Ok(id)
     }
+
+    fn deformation(&mut self) -> Result<()> {
+        for (id, skin) in &self.prepared.skins {
+            checkpoint()?;
+            let matrices: Vec<[f32; 16]> = skin
+                .inverse_bind_matrices
+                .iter()
+                .map(|m| m.to_cols_array().map(|v| v as f32))
+                .collect();
+            let accessor = self.floats(&matrices, "MAT4", false)?;
+            let node = self.node_ids[&id.to_string()];
+            self.nodes[node]["skin"] = self.skins.len().into();
+            self.skins.push(json!({"joints":skin.joints.iter().map(|j|self.node_ids[&j.to_string()]).collect::<Vec<_>>(),"inverseBindMatrices":accessor}));
+        }
+        for clip in &self.prepared.scene.animations {
+            let mut samplers = vec![];
+            let mut channels = vec![];
+            for track in &clip.tracks {
+                checkpoint()?;
+                let s = &self.prepared.samplers[&track.sampler];
+                let times: Vec<[f32; 1]> = s.times.iter().map(|v| [*v]).collect();
+                let input = self.floats(&times, "SCALAR", true)?;
+                let multiplier = if s.interpolation == forge_scene::Interpolation::Cubic {
+                    3
+                } else {
+                    1
+                };
+                let size = s
+                    .values
+                    .len()
+                    .checked_mul(multiplier * 4)
+                    .ok_or_else(limited)?;
+                if size > MAX_BYTES || self.bin.len().saturating_add(size) > MAX_BYTES {
+                    return Err(limited());
+                }
+                let mut bytes = Vec::with_capacity(size);
+                for i in 0..s.times.len() {
+                    if i % 1024 == 0 {
+                        checkpoint()?;
+                    }
+                    let range = i * s.width..(i + 1) * s.width;
+                    if multiplier == 3 {
+                        for v in &s.in_tangents[range.clone()] {
+                            bytes.extend_from_slice(&v.to_le_bytes());
+                        }
+                    }
+                    for v in &s.values[range.clone()] {
+                        bytes.extend_from_slice(&v.to_le_bytes());
+                    }
+                    if multiplier == 3 {
+                        for v in &s.out_tangents[range] {
+                            bytes.extend_from_slice(&v.to_le_bytes());
+                        }
+                    }
+                }
+                let view = self.bytes(&bytes, None)?;
+                let output = self.accessors.len();
+                let (kind, count) = match s.path {
+                    forge_scene::AnimationPath::Weights => ("SCALAR", s.values.len() * multiplier),
+                    forge_scene::AnimationPath::Rotation => ("VEC4", s.times.len() * multiplier),
+                    _ => ("VEC3", s.times.len() * multiplier),
+                };
+                self.accessors.push(
+                    json!({"bufferView":view,"componentType":5126,"count":count,"type":kind}),
+                );
+                channels.push(json!({"sampler":samplers.len(),"target":{"node":self.node_ids[&track.target.to_string()],"path":s.path.name()}}));
+                samplers.push(
+                    json!({"input":input,"output":output,"interpolation":s.interpolation.name()}),
+                );
+            }
+            self.animations
+                .push(json!({"name":clip.name,"channels":channels,"samplers":samplers}));
+        }
+        Ok(())
+    }
 }
 pub fn export(prepared: &Prepared<'_>) -> Result<Vec<u8>> {
     let mut w = Writer {
@@ -233,6 +371,9 @@ pub fn export(prepared: &Prepared<'_>) -> Result<Vec<u8>> {
         nodes: vec![],
         cameras: vec![],
         lights: vec![],
+        skins: vec![],
+        animations: vec![],
+        node_ids: BTreeMap::new(),
         image_ids: BTreeMap::new(),
         material_ids: BTreeMap::new(),
         geometry_ids: BTreeMap::new(),
@@ -243,6 +384,7 @@ pub fn export(prepared: &Prepared<'_>) -> Result<Vec<u8>> {
         .iter()
         .map(|n| w.node(n))
         .collect::<Result<Vec<_>>>()?;
+    w.deformation()?;
     let mut root = json!({"asset":{"version":"2.0","generator":"React Forge"},"scene":0,"scenes":[{"nodes":roots}],"nodes":w.nodes,"extras":{"reactForgeDocumentId":prepared.scene.document_id}});
     for (name, values) in [
         ("bufferViews", w.views),
@@ -252,6 +394,8 @@ pub fn export(prepared: &Prepared<'_>) -> Result<Vec<u8>> {
         ("materials", w.materials),
         ("meshes", w.meshes),
         ("cameras", w.cameras),
+        ("skins", w.skins),
+        ("animations", w.animations),
     ] {
         if !values.is_empty() {
             root[name] = json!(values);
