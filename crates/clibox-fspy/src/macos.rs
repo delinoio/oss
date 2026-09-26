@@ -66,7 +66,13 @@ fn invalid(reason: &'static str) -> io::Error {
 
 pub fn read_frame(reader: &mut impl Read) -> io::Result<Option<Frame>> {
     let mut header = [0_u8; HEADER_BYTES];
-    match reader.read(&mut header[..1])? {
+    let first = loop {
+        match reader.read(&mut header[..1]) {
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            result => break result?,
+        }
+    };
+    match first {
         0 => return Ok(None),
         1 => reader.read_exact(&mut header[1..])?,
         _ => unreachable!("one-byte read exceeded its buffer"),
@@ -634,7 +640,7 @@ pub fn assemble_candidate_record(
 mod tests {
     use std::{
         fs,
-        io::Write,
+        io::{self, Read, Write},
         os::{
             fd::AsRawFd,
             unix::{ffi::OsStrExt, fs::symlink, net::UnixStream},
@@ -664,6 +670,21 @@ mod tests {
         frame
     }
 
+    struct InterruptOnce<'a> {
+        bytes: &'a [u8],
+        interrupted: bool,
+    }
+
+    impl Read for InterruptOnce<'_> {
+        fn read(&mut self, output: &mut [u8]) -> io::Result<usize> {
+            if !self.interrupted {
+                self.interrupted = true;
+                return Err(io::ErrorKind::Interrupted.into());
+            }
+            self.bytes.read(output)
+        }
+    }
+
     #[test]
     fn wire_rejects_truncation_oversize_and_malformed_outcome() {
         let complete = frame_bytes(b's', b"/tmp/input");
@@ -688,6 +709,13 @@ mod tests {
         let mut ledger = FrameLedger::new(2, 256);
         ledger.push(frame).unwrap();
         assert!(ledger.finish().unwrap().hello_pids.contains(&123));
+        let bytes = frame_bytes(b's', b"/tmp/input");
+        assert!(read_frame(&mut InterruptOnce {
+            bytes: &bytes,
+            interrupted: false,
+        })
+        .unwrap()
+        .is_some());
     }
 
     #[test]
