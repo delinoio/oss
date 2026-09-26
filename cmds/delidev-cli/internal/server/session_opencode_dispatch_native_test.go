@@ -143,6 +143,7 @@ func nativeOpenCodePublicDispatch(t *testing.T, turns int, failedFirst bool, fau
 }
 
 func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bool, fault, tool string, switchModes ...bool) {
+	workspaceType, tool := openCodeProjectFixtureProfile(tool)
 	externalAllowance := strings.HasPrefix(tool, "always-external-")
 	if externalAllowance {
 		tool = strings.TrimPrefix(tool, "always-external-")
@@ -367,7 +368,7 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 			// preparation report and explicit first Resume use their public APIs. Only
 			// protocol discovery is a pinned reported fixture; actual initialization is
 			// independently revalidated by the original installed native process.
-			f := newFirstDispatchFixtureProfile(t, domain.OpenCode, mode, binary, upstream.URL, fixtureModel)
+			f := newFirstDispatchFixtureWorkspaceProfile(t, domain.OpenCode, mode, binary, upstream.URL, fixtureModel, workspaceType)
 			if missingRead {
 				toolPath.Store(prepareOpenCodeMissingRead(t, f, permission))
 			} else if externalRejection || externalAllowance {
@@ -670,6 +671,8 @@ func alterOpenCodeContinuationEvidence(t *testing.T, ctx context.Context, root s
 	switch fault {
 	case "database":
 		path = filepath.Join(root, "runtimes", string(execution), "data", "opencode", "opencode.db")
+	case "snapshot":
+		path = filepath.Join(root, "runtimes", string(execution), "snapshot-checkpoint", "index")
 	case "claims":
 		path = filepath.Join(root, "jobs", string(job), "opencode-claims.json")
 	case "report":

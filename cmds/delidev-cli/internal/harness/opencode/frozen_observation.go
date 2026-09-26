@@ -105,7 +105,7 @@ func (f *FrozenObservation) Thaw() (inputObservation, error) {
 		} else if scalar(status["type"], "retry") {
 			result.Retry, err = decodeNativeRetry(fields["status"])
 		}
-	case SessionUpdatedEvent, SessionDiffEvent, PluginAddedEvent, IntegrationConnectionUpdatedEvent:
+	case SessionUpdatedEvent, SessionDiffEvent, PluginAddedEvent, IntegrationConnectionUpdatedEvent, ProjectDirectoriesUpdatedEvent:
 		result.Ancillary = slices.Clone(event.Properties)
 	case SessionIdleEvent, LspUpdatedEvent, ServerHeartbeatEvent, ModelsDevRefreshedEvent, CatalogUpdatedEvent, ReferenceUpdatedEvent, IntegrationUpdatedEvent:
 	default:

@@ -353,6 +353,14 @@ func (o *inputObserver) observe(ctx context.Context, event NativeEvent) (inputOb
 		} else {
 			result.Error, err = decodeNativeError(fields["error"])
 		}
+	case ProjectDirectoriesUpdatedEvent:
+		// The pinned directory inventory is ancillary. It cannot supply roots or
+		// replace independently prepared Git ownership and session identity.
+		_, err = shape(event.Properties, []string{"projectID"}, nil)
+		if !scalar(fields["projectID"], o.creation.identity.project) {
+			err = observerProblem()
+		}
+		result.Ancillary = slices.Clone(event.Properties)
 	case LspUpdatedEvent, ServerHeartbeatEvent, ModelsDevRefreshedEvent, CatalogUpdatedEvent, ReferenceUpdatedEvent, IntegrationUpdatedEvent:
 		_, err = shape(event.Properties, nil, nil)
 	case PluginAddedEvent, IntegrationConnectionUpdatedEvent:

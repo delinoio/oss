@@ -515,3 +515,18 @@ func TestInputObserverPreservesArrivalOrderAndCopiedSelection(t *testing.T) {
 	f.user["summary"] = map[string]any{"title": "Private changed summary", "diffs": []any{}}
 	f.message(f.user)
 }
+
+func TestProjectDirectoryNotificationKeepsOriginalProjectAuthority(t *testing.T) {
+	f := newObserverFixture(t)
+	f.o.creation.identity.project = "original-project"
+	observation := f.observe(ProjectDirectoriesUpdatedEvent, map[string]any{"projectID": "original-project"})
+	if observation.Message != nil || observation.Part != nil || observation.WorkspaceEvent != nil || !bytes.Equal(observation.Ancillary, []byte(`{"projectID":"original-project"}`)) {
+		t.Fatal("directory inventory acquired content or workspace authority")
+	}
+	for _, properties := range []map[string]any{{}, {"projectID": "foreign"}, {"projectID": nil}, {"projectID": "global", "directory": "/foreign"}} {
+		other := newObserverFixture(t)
+		if _, err := other.o.observe(context.Background(), other.event(ProjectDirectoriesUpdatedEvent, properties)); err == nil {
+			t.Fatal("foreign directory inventory accepted")
+		}
+	}
+}

@@ -82,8 +82,8 @@ func openCodeCheckpointPath(root string, job domain.ID) (string, error) {
 	return filepath.Join(filepath.Dir(claims), "opencode-checkpoint.json"), nil
 }
 
-// RetainCheckpoint follows Complete and the separately closed workspace lease
-// in the production runner. It rechecks the same live publisher, original
+// RetainCheckpoint follows Complete while the production runner still holds
+// its workspace lease through owned snapshot export. It rechecks the publisher,
 // acknowledged terminal and exact claims around native retention. This private
 // digest alone does not upgrade version-1 completion or authorize Resume.
 func (c *OpenCodeEventPublisher) RetainCheckpoint(ctx context.Context) (string, error) {

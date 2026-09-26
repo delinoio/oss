@@ -62,6 +62,11 @@ func newFirstDispatchFixtureProfile(t *testing.T, harness domain.Harness, mode d
 	if len(nativeModels) == 1 {
 		nativeModel = nativeModels[0]
 	}
+	return newFirstDispatchFixtureWorkspaceProfile(t, harness, mode, executable, upstreamURL, nativeModel, domain.GeneralChat)
+}
+
+func newFirstDispatchFixtureWorkspaceProfile(t *testing.T, harness domain.Harness, mode domain.SessionMode, executable, upstreamURL, nativeModel string, workspaceType domain.WorkspaceType) *firstDispatchFixture {
+	t.Helper()
 	protocol, permission, version := domain.OpenAIResponses, domain.PermissionReadOnly, domain.CodexProtocolVersion
 	if harness == domain.OpenCode {
 		protocol, permission, version = domain.OpenAIChat, domain.PermissionDefault, domain.OpenCodeProtocolVersion
@@ -145,7 +150,20 @@ func newFirstDispatchFixtureProfile(t *testing.T, harness domain.Harness, mode d
 		t.Fatal(err)
 	}
 	f.machine = currentCatalogResource(t, base, f.machine)
-	f.request, f.change = createSessionFixture(t, base, f.selection)
+	if workspaceType != domain.GeneralChat {
+		prepareOpenCodeProjectFixture(t, f, workspaceType)
+	}
+	if workspaceType == domain.Local {
+		raw, _ := json.Marshal(f.selection)
+		f.request = &pb.CreateSessionRequest{RequestId: string(domain.NewID()), DocumentJson: raw, LocalWorkerToken: identity.Token}
+		response, err := sessionClient(base).CreateSession(ctx, ownerRequest(base.identity, f.request))
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.change = response.Msg.Change
+	} else {
+		f.request, f.change = createSessionFixture(t, base, f.selection)
+	}
 	if !stream.Receive() || stream.Msg().Job == nil || stream.Msg().Job.Id != f.change.WorkspaceJob.Id {
 		t.Fatal("missing preparation", stream.Err())
 	}

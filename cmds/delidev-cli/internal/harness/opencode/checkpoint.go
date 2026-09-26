@@ -44,6 +44,7 @@ type nativeCheckpoint struct {
 	History           HistoryObservation     `json:"history"`
 	Previous          []HistoryObservation   `json:"previous,omitempty"`
 	PredecessorSHA256 string                 `json:"predecessor_sha256,omitempty"`
+	Snapshot          *checkpointSnapshot    `json:"snapshot_restoration,omitempty"`
 	Tools             *checkpointToolHistory `json:"tool_restoration,omitempty"`
 	Stop              *StopReceipt           `json:"stop,omitempty"`
 	Files             []checkpointFile       `json:"files"`
@@ -134,6 +135,19 @@ func (a *OwnedAPI) RetainCheckpoint(ctx context.Context) (raw []byte, reference 
 		}
 	}
 	value.Tools = s.checkpointToolHistory(value)
+	phase = "snapshot"
+	if value.NativeRoot == value.Workspace && checkpointHasSnapshotFiles(value) {
+		value.Snapshot, err = s.retainCheckpointSnapshot(ctx, value)
+		if err != nil {
+			return nil, CheckpointReference{}, err
+		}
+		// Snapshot export creates only its own private archive after native
+		// cleanup. Pin the final inventory only after all export children join.
+		value.Files, err = checkpointFiles(ctx, s.runtimeHome)
+		if err != nil {
+			return nil, CheckpointReference{}, err
+		}
+	}
 	phase = "metadata"
 	raw, err = json.Marshal(value)
 	if err != nil || len(raw) > maxCheckpointBytes {
@@ -141,6 +155,9 @@ func (a *OwnedAPI) RetainCheckpoint(ctx context.Context) (raw []byte, reference 
 	}
 	ref.SHA256 = mutationDigest(raw)
 	if _, err := decodeCheckpoint(raw, ref, s.runtimeHome); err != nil {
+		if s.logger != nil {
+			s.logger.WarnContext(ctx, "opencode_checkpoint_metadata_invalid", "owner_id", s.owner, "snapshot_valid", validCheckpointSnapshot(value), "files_valid", validateCheckpointFiles(value.Files), "lineage_valid", validCheckpointLineage(value))
+		}
 		return nil, CheckpointReference{}, err
 	}
 	a.checkpointBytes, a.checkpointReference = bytes.Clone(raw), ref
@@ -165,7 +182,7 @@ func (a *OwnedAPI) RetainCheckpoint(ctx context.Context) (raw []byte, reference 
 				}
 			}
 		}
-		s.logger.InfoContext(ctx, "opencode_original_checkpoint_observed", "owner_id", s.owner, "request_id", i.receipt.RequestID, "messages", len(history.Messages), "entries", len(files), "restorable_tool_profile_version", toolProfileVersion, "restorable_inline_tool_parts", toolParts, "restorable_once_permissions", oncePermissions, "restorable_always_permissions", alwaysPermissions, "restorable_policy_closures", policyClosures, "restorable_question_replies", questionReplies, "restorable_question_dismissals", questionDismissals, "restorable_permission_rejections", permissionRejections, "restorable_rejection_closures", rejectionPolicies, "restorable_instruction_reads", loadedInstructionReads, "restorable_todo_state", latestCheckpointTodo(value) != nil)
+		s.logger.InfoContext(ctx, "opencode_original_checkpoint_observed", "owner_id", s.owner, "request_id", i.receipt.RequestID, "messages", len(history.Messages), "entries", len(value.Files), "restorable_tool_profile_version", toolProfileVersion, "restorable_inline_tool_parts", toolParts, "restorable_once_permissions", oncePermissions, "restorable_always_permissions", alwaysPermissions, "restorable_policy_closures", policyClosures, "restorable_question_replies", questionReplies, "restorable_question_dismissals", questionDismissals, "restorable_permission_rejections", permissionRejections, "restorable_rejection_closures", rejectionPolicies, "restorable_instruction_reads", loadedInstructionReads, "restorable_todo_state", latestCheckpointTodo(value) != nil)
 	}
 	return raw, ref, nil
 }
@@ -196,7 +213,7 @@ func decodeCheckpoint(raw []byte, ref CheckpointReference, home string) (nativeC
 		return nativeCheckpoint{}, sessionUncertain()
 	}
 	input := value.History.Messages[0]
-	if len(input.Parts) != 1 || input.Parts[0].ID != ref.PartID || input.Parts[0].Kind != TextPartKind || !validCheckpointLineage(value) {
+	if len(input.Parts) != 1 || input.Parts[0].ID != ref.PartID || input.Parts[0].Kind != TextPartKind || !validCheckpointLineage(value) || !validCheckpointSnapshot(value) {
 		return nativeCheckpoint{}, sessionUncertain()
 	}
 	if stop := value.Stop; stop != nil {

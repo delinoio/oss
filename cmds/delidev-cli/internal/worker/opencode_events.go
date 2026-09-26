@@ -98,7 +98,7 @@ func (c *OpenCodeEventPublisher) publishObservation(ctx context.Context, o openc
 		switch o.Kind {
 		case opencode.SessionStatusEvent, opencode.SessionIdleEvent, opencode.SessionUpdatedEvent,
 			opencode.LspUpdatedEvent, opencode.ServerHeartbeatEvent, opencode.ModelsDevRefreshedEvent, opencode.CatalogUpdatedEvent,
-			opencode.ReferenceUpdatedEvent, opencode.IntegrationUpdatedEvent,
+			opencode.ReferenceUpdatedEvent, opencode.IntegrationUpdatedEvent, opencode.ProjectDirectoriesUpdatedEvent,
 			opencode.PluginAddedEvent, opencode.IntegrationConnectionUpdatedEvent:
 			// These already validated lifecycle/registry observations do not
 			// themselves establish configuration, terminal or billing authority.

@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 )
 
 type PermissionAction string
@@ -122,6 +123,7 @@ type sessionAPI struct {
 	runtimeRead        bool
 	runtimeRoot        string
 	runtimeHome        string
+	checkpointProcess  process.Config
 	creationLookup     bool
 	creationCandidate  string
 	historyRead        *historyPageRead

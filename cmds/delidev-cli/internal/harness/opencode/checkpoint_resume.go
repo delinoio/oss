@@ -22,12 +22,13 @@ type checkpointResume struct {
 // hold the continuation workspace lease, prove original report acceptance and
 // register fresh account authority. Claim must durably consume this exact
 // predecessor before staging or launch. It never creates another session or
-// replays input. The profile accepts native Build/Plan non-VCS text and
-// positively captured closed inline Read/Shell history. Other tool/auxiliary
-// and project history needs separate native replacement evidence.
+// replays input. Native Build/Plan accepts non-VCS conversation and positive
+// single-root Git snapshot evidence with the independently eligible closed
+// inline tool/interaction profiles. Other auxiliary/child histories need their
+// own original native replacement evidence.
 func OpenResumedAPI(ctx context.Context, config APIExecutionConfig, home string, raw []byte, ref CheckpointReference, request domain.ID, previousAgent PrimaryAgent, explicitResume bool) (result *OwnedAPI, returned error) {
 	source, err := decodeCheckpoint(raw, ref, home)
-	if err != nil || (previousAgent != BuildAgent && previousAgent != PlanAgent) || ctx.Err() != nil || request.Validate() != nil || request == ref.CreationRequestID || request == ref.InputRequestID || request == ref.OwnerID || config.Probe.Process.OwnerID == ref.OwnerID || source.Reference.RequiresResume && !explicitResume || config.Workspace != source.Workspace || config.NativeRoot != source.NativeRoot || source.Project != "global" || filepath.Dir(source.NativeRoot) != source.NativeRoot {
+	if err != nil || (previousAgent != BuildAgent && previousAgent != PlanAgent) || ctx.Err() != nil || request.Validate() != nil || request == ref.CreationRequestID || request == ref.InputRequestID || request == ref.OwnerID || config.Probe.Process.OwnerID == ref.OwnerID || source.Reference.RequiresResume && !explicitResume || config.Workspace != source.Workspace || config.NativeRoot != source.NativeRoot {
 		return nil, sessionUncertain()
 	}
 	if checkpointReplacementProfile(source) != nil || request == config.Probe.Process.OwnerID || config.Probe.Process.OwnerID == ref.CreationRequestID || config.Probe.Process.OwnerID == ref.InputRequestID {
@@ -169,6 +170,9 @@ func (r *checkpointResume) stage(ctx context.Context, config apiSessionConfig, p
 	if err := copyCheckpointDatabase(ctx, r.source, home); err != nil {
 		return err
 	}
+	if err := stageCheckpointSnapshot(ctx, r.source, home); err != nil {
+		return err
+	}
 	return InspectCheckpoint(ctx, r.source.RuntimeHome, r.raw, r.ref)
 }
 
@@ -187,7 +191,7 @@ func InspectReplacementCheckpoint(ctx context.Context, home string, raw []byte, 
 }
 
 func checkpointReplacementProfile(value nativeCheckpoint) error {
-	if value.Project != "global" || filepath.Dir(value.NativeRoot) != value.NativeRoot || !validCheckpointTools(value) {
+	if !validCheckpointTools(value) || !validCheckpointSnapshot(value) || value.Snapshot == nil && (value.Project != "global" || filepath.Dir(value.NativeRoot) != value.NativeRoot) {
 		return incompatible()
 	}
 	for _, history := range checkpointHistories(value) {
@@ -195,6 +199,10 @@ func checkpointReplacementProfile(value nativeCheckpoint) error {
 			for _, part := range message.Parts {
 				switch part.Kind {
 				case TextPartKind, ReasoningPartKind, StepStartPartKind, StepFinishPartKind:
+				case SnapshotPartKind, PatchPartKind:
+					if value.Snapshot == nil {
+						return incompatible()
+					}
 				case ToolPartKind:
 					if value.Tools == nil {
 						return incompatible()

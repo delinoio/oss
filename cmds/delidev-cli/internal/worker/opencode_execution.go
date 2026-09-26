@@ -47,9 +47,6 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 	manager := &workspace.Manager{Root: config.Root, Logger: config.Logger}
 	var lease *workspace.ExecutionLease
 	if c := input.Continuation; c != nil {
-		if preparation.Type != domain.GeneralChat {
-			return nil, domain.Fail(domain.Unsupported, "This OpenCode continuation requires a General Chat workspace.", "Retain the original workspace and input until the selected native continuation profile is supported.")
-		}
 		lease, err = manager.ClaimContinuation(ctx, owner, input.ExecutionID, workspace.ExecutionPredecessor{JobID: c.Previous.JobID, ExecutionID: c.Previous.ExecutionID}, preparation, manifest)
 	} else {
 		lease, err = manager.ClaimFirstExecution(ctx, owner, input.ExecutionID, preparation, manifest)
@@ -276,11 +273,13 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 			if err != nil {
 				return nil, err
 			}
-			if err := lease.Close(); err != nil {
-				return nil, err
-			}
+			// Keep workspace ownership through the original snapshot export and
+			// join its separately journaled Git children before closing the lease.
 			completion, err := mapper.RetainCompletion(publicationContext)
 			if err != nil {
+				return nil, err
+			}
+			if err := lease.Close(); err != nil {
 				return nil, err
 			}
 			return json.Marshal(completion)

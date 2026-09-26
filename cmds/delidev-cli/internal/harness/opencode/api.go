@@ -132,8 +132,9 @@ func openAPISessionRestoring(ctx context.Context, config apiSessionConfig, resto
 	}
 	api = &sessionAPI{
 		client: client, origin: origin, password: password, cwd: config.Workspace,
-		runtimeHome: filepath.Dir(config.Probe.Home),
-		claim:       config.Claim, logger: prepared.Logger, owner: prepared.OwnerID, gate: make(chan struct{}, 1),
+		runtimeHome:       filepath.Dir(config.Probe.Home),
+		checkpointProcess: checkpointProcessScope(config.Probe.Process),
+		claim:             config.Claim, logger: prepared.Logger, owner: prepared.OwnerID, gate: make(chan struct{}, 1),
 		apiProfile: profile, rejectionPolicy: config.Rejection,
 		closeOwned:     func(ctx context.Context) error { return closeOwned(ctx, false) },
 		reconcileOwned: func(ctx context.Context) error { return closeOwned(ctx, true) },

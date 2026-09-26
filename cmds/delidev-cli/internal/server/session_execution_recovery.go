@@ -162,7 +162,7 @@ func executionRecoveryRequest(tx *store.Tx, serverID domain.ID, sr store.Record,
 		Completion: domain.ExecutionCompletion{Version: 1, ExecutionID: input.ExecutionID, InputID: input.InputID, NativeThreadID: domain.NativeIdentity(progress.NativeThreadID), NativeTurnID: domain.NativeIdentity(progress.NativeTurnID), LastSequence: progress.LastSequence, Outcome: progress.Outcome, CleanupVerified: true},
 	}
 	if input.Configuration.Harness == domain.OpenCode {
-		if session.Workspace != domain.GeneralChat || len(bindings) != 1 {
+		if len(bindings) != 1 {
 			return domain.ExecutionRecoveryRequest{}, domain.ExecutionRecoveryUncertain()
 		}
 		creation := input.ThreadRequestID

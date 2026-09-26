@@ -11,10 +11,10 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
-// Eligible non-VCS conversation, tool and Todo profiles need only SQLite
-// state. Copy the exact database plus any original WAL/SHM; never copy account/
-// config/cache files, discard a WAL, rewrite rows or mutate the original runtime.
-// Unsupported auxiliary/tool/project state is refused before this boundary.
+// Copy exact SQLite database/WAL/SHM for every eligible conversation profile.
+// The positive Git snapshot profile stages its separate self-contained archive.
+// Never import account/config/cache files, discard a WAL, rewrite rows or mutate
+// the original runtime; other auxiliary state needs its own positive profile.
 func copyCheckpointDatabase(ctx context.Context, source nativeCheckpoint, home string) error {
 	if !canonicalDirectory(home) || security.CheckPrivateDir(home) != nil || !validateCheckpointFiles(source.Files) {
 		return sessionUncertain()
@@ -63,6 +63,10 @@ func copyCheckpointDatabase(ctx context.Context, source nativeCheckpoint, home s
 }
 
 func copyCheckpointDatabaseFile(ctx context.Context, source, target *os.Root, entry checkpointFile) error {
+	return copyCheckpointFileTo(ctx, source, target, entry, filepath.Base(entry.Path))
+}
+
+func copyCheckpointFileTo(ctx context.Context, source, target *os.Root, entry checkpointFile, name string) error {
 	before, err := source.Lstat(entry.Path)
 	if err != nil || !before.Mode().IsRegular() || before.Size() != entry.Size || uint32(before.Mode().Perm()) != entry.Mode {
 		return sessionUncertain()
@@ -73,10 +77,9 @@ func copyCheckpointDatabaseFile(ctx context.Context, source, target *os.Root, en
 	}
 	defer input.Close()
 	opened, err := input.Stat()
-	if err != nil || !sameCheckpointFile(before, opened) || !ownedCheckpointOpenFile(input) {
+	if err != nil || !sameCheckpointFile(before, opened) || !ownedCheckpointOpenFile(input) || before.Size() != entry.Size || uint32(before.Mode().Perm()) != entry.Mode {
 		return sessionUncertain()
 	}
-	name := filepath.Base(entry.Path)
 	output, err := target.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {
 		return sessionUncertain()

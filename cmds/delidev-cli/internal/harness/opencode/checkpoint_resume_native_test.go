@@ -3,7 +3,9 @@ package opencode
 import (
 	"bytes"
 	"context"
+	"crypto/sha1"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -31,7 +33,7 @@ func TestManualNativeOpenCodeCheckpointProcessReplacement(t *testing.T) {
 	}
 }
 
-func nativeCheckpointReplacement(t *testing.T, binary string, mode string) {
+func nativeCheckpointReplacement(t *testing.T, binary string, mode string, project ...bool) {
 	t.Helper()
 	requireNoManagedOpenCodeConfig(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -147,6 +149,9 @@ func nativeCheckpointReplacement(t *testing.T, binary string, mode string) {
 		if turn > 0 {
 			config.Workspace, config.NativeRoot = original.Workspace, original.NativeRoot
 		} else {
+			if len(project) == 1 && project[0] {
+				prepareNativeCheckpointGit(t, &config)
+			}
 			original = config
 		}
 		var claims []SessionClaim
@@ -241,6 +246,30 @@ func nativeCheckpointReplacement(t *testing.T, binary string, mode string) {
 		value, err := decodeCheckpoint(raw, current, home)
 		if err != nil || len(value.Previous) != turn || InspectCheckpoint(ctx, home, raw, current) != nil {
 			t.Fatal("replacement lost full history checkpoint", turn, err)
+		}
+		if len(project) == 1 && project[0] {
+			if value.Snapshot == nil || !validCheckpointSnapshot(value) {
+				t.Fatal("project lost original snapshot proof", turn)
+			}
+			if turn == 0 {
+				inspectNativeProjectSnapshot(t, config, value)
+				content := []byte("Original private snapshot fixture.\n")
+				hash := sha1.Sum(append([]byte(fmt.Sprintf("blob %d\x00", len(content))), content...))
+				object := hex.EncodeToString(hash[:])
+				if err := os.Remove(filepath.Join(config.Workspace, ".git", "objects", object[:2], object[2:])); err != nil {
+					t.Fatal("remove original fixture object", err)
+				}
+			}
+			if turn > 0 {
+				content, err := os.ReadFile(filepath.Join(config.Workspace, "original.txt"))
+				if err != nil || string(content) != fmt.Sprintf("Later independent workspace change %d.\n", turn-1) {
+					t.Fatal("replacement restored an old workspace snapshot", err)
+				}
+			}
+			if err := os.WriteFile(filepath.Join(config.Workspace, "original.txt"), []byte(fmt.Sprintf("Later independent workspace change %d.\n", turn)), 0600); err != nil {
+				t.Fatal(err)
+			}
+
 		}
 		prior, ref = raw, current
 	}

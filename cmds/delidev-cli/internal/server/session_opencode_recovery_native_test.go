@@ -64,6 +64,7 @@ func TestManualNativeOpenCodeCompletedExecutionRecovery(t *testing.T) {
 }
 
 func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode, scenario string) {
+	workspaceType, scenario := openCodeProjectFixtureProfile(scenario)
 	missingRead := strings.HasPrefix(scenario, "read-missing")
 	loadedInstructions := strings.HasPrefix(scenario, "read-loaded")
 	fileTool := strings.TrimSuffix(scenario, "-resumed")
@@ -192,7 +193,7 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 		_, _ = io.WriteString(w, strings.ReplaceAll(`data: {"id":"chatcmpl-recovery","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":20,"completion_tokens":4,"total_tokens":24}}`+"\n\ndata: [DONE]\n\n", "fixture-model", fixtureModel))
 	}))
 	defer upstream.Close()
-	f := newFirstDispatchFixtureProfile(t, domain.OpenCode, mode, binary, upstream.URL, fixtureModel)
+	f := newFirstDispatchFixtureWorkspaceProfile(t, domain.OpenCode, mode, binary, upstream.URL, fixtureModel, workspaceType)
 	if missingRead {
 		toolPath.Store(prepareOpenCodeMissingRead(t, f, permission))
 	} else if externalRejection || externalAllowance {
