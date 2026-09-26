@@ -1642,20 +1642,23 @@ fn collect_required(
                 continue;
             }
             let logical = logical_relative(root, path);
-            let alias = logical
+            let alias = if logical
                 .as_ref()
-                .filter(|relative| {
-                    path.identity.is_some_and(|identity| {
-                        snapshot.selected_path_has_identity(relative, identity)
-                    })
-                })
-                .cloned()
-                .or_else(|| {
-                    path.identity
-                        .and_then(|identity| snapshot.selected_alias_for_identity(identity))
-                        .map(Path::to_path_buf)
-                })
-                .or(logical);
+                .is_some_and(|relative| snapshot.contains_selected(relative))
+            {
+                let relative = logical.expect("selected logical path exists");
+                if path.identity.is_some_and(|identity| {
+                    !snapshot.selected_path_has_identity(&relative, identity)
+                }) {
+                    return Err(ReproFailure::UnstableInput);
+                }
+                Some(relative)
+            } else {
+                path.identity
+                    .and_then(|identity| snapshot.selected_alias_for_identity(identity))
+                    .map(Path::to_path_buf)
+                    .or(logical)
+            };
             let Some(alias) = alias else {
                 if pair.start.operation.is_content_read() && pair.completion.native_error.is_none()
                 {
@@ -3670,6 +3673,12 @@ mod tests {
             required,
             std::collections::BTreeSet::from([PathBuf::from("b.txt")])
         );
+        fs::remove_file(root.join("b.txt")).unwrap();
+        fs::write(root.join("b.txt"), b"changed").unwrap();
+        assert!(matches!(
+            collect_required(&record, &root, &selector, &snapshot),
+            Err(crate::repro::ReproFailure::UnstableInput)
+        ));
     }
 
     #[cfg(target_os = "macos")]
