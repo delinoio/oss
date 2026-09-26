@@ -67,12 +67,24 @@ export class TaskLoader {
       }
     },
     load: (url, context, nextLoad) => {
+      const callerPath = url.startsWith("file:") ? fileURLToPath(url) : undefined;
+      let callerJavaScript: string | undefined;
+      if (callerPath && this.known.has(callerPath) && /\.(?:[cm]?js|jsx)$/.test(callerPath)) {
+        callerJavaScript = readFileSync(new URL(url), "utf8");
+        try {
+          // Node's parser errors have only internal frames. Validate the
+          // caller's source before evaluation so its origin remains provable.
+          transformSync(callerJavaScript, { loader: callerPath.endsWith(".jsx") ? "jsx" : "js", target: "node24", sourcefile: callerPath, logLevel: "silent" });
+        } catch (error) {
+          throw new TaskError(ErrorCode.MalformedInput, TaskPhase.Compile, error, callerPath, compilerIssues(error));
+        }
+      }
       // Node 24 rejects an undefined CommonJS source from tsx's synchronous
       // hook (notably React's jsx-runtime). Load ordinary CJS files directly;
       // typed .cts files still take the transform path below. Remove this when
       // the Node/tsx hook combination returns a valid CJS source on every host.
       if (context.format === "commonjs" && url.startsWith("file:") && /\.c?js$/.test(new URL(url).pathname)) {
-        return { format: "commonjs", source: readFileSync(new URL(url), "utf8"), shortCircuit: true };
+        return { format: "commonjs", source: callerJavaScript ?? readFileSync(new URL(url), "utf8"), shortCircuit: true };
       }
       // tsx supplies extension/tsconfig resolution. Compile typed dependencies
       // here too: delegating a temporary caller's .ts module to its CommonJS

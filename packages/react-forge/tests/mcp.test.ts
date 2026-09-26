@@ -261,6 +261,29 @@ test("MCP reports bounded compiler, module and uncaught render diagnostics witho
   assert.equal(jsxHelper.error.diagnostics[0].file, "tasks/throwing-helper.jsx");
   assert.equal(jsxHelper.error.diagnostics[0].line, 1);
 
+  for (const extension of ["js", "mjs", "cjs", "jsx"]) {
+    await writeFile(join(cwd, "tasks", `syntax-helper.${extension}`), "const PRIVATE_JAVASCRIPT_SOURCE = ;");
+    await writeFile(join(cwd, "tasks", `syntax-${extension}.tsx`), `import './syntax-helper.${extension}'; export default () => {};`);
+    const syntax = await errorCode(peer, "execute", { entry: `tasks/syntax-${extension}.tsx` }, "malformed_input");
+    assert.match(syntax.error.message, /Unexpected/);
+    assert.equal(syntax.error.diagnostics[0].phase, "compile");
+    assert.equal(syntax.error.diagnostics[0].source, "import");
+    assert.equal(syntax.error.diagnostics[0].file, `tasks/syntax-helper.${extension}`);
+    assert.equal(syntax.error.diagnostics[0].line, 1);
+    assert.ok(syntax.error.diagnostics[0].column > 0);
+    assert.ok(!JSON.stringify(syntax).includes("PRIVATE_JAVASCRIPT_SOURCE"));
+    assert.ok(!JSON.stringify(syntax).includes(cwd));
+  }
+
+  const externalSyntaxDirectory = join(cwd, "node_modules", "rf-private-syntax");
+  await mkdir(externalSyntaxDirectory, { recursive: true });
+  await writeFile(join(externalSyntaxDirectory, "package.json"), JSON.stringify({ name: "rf-private-syntax", type: "module", exports: "./index.mjs" }));
+  await writeFile(join(externalSyntaxDirectory, "index.mjs"), "const PRIVATE_EXTERNAL_SYNTAX = ;");
+  const externalSyntax = await errorCode(peer, "execute", { code: "import 'rf-private-syntax'; export default () => {};" }, "render");
+  assert.equal(externalSyntax.error.message, "Task execution failed. Correct the task and retry.");
+  assert.equal(externalSyntax.error.diagnostics, undefined);
+  assert.ok(!JSON.stringify(externalSyntax).includes("PRIVATE_EXTERNAL_SYNTAX"));
+
   const unresolved = await errorCode(peer, "execute", { code: "import './absent-local-module.js'; export default () => {};" }, "malformed_input");
   assert.equal(unresolved.error.diagnostics[0].phase, "compile");
   assert.match(unresolved.error.message, /absent-local-module/);
