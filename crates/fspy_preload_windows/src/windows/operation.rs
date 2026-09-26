@@ -5,10 +5,11 @@
 //! a completion result without changing the vendor channel's public shape.
 
 use std::{
-    cell::{Cell, RefCell},
+    cell::Cell,
+    collections::HashSet,
     io::{Read, Write},
     net::{SocketAddr, TcpStream},
-    sync::OnceLock,
+    sync::{Arc, Mutex, OnceLock},
     time::{Duration, Instant},
 };
 
@@ -29,7 +30,6 @@ const MAX_PATH_BYTES: usize = 4096;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
 struct State {
-    busy: bool,
     enabled: bool,
     stream: Option<TcpStream>,
     next_id: u64,
@@ -38,7 +38,6 @@ struct State {
 impl State {
     fn new() -> Self {
         Self {
-            busy: false,
             enabled: std::env::var_os("CLIBOX_FSPY_ENDPOINT").is_some(),
             stream: None,
             next_id: 0,
@@ -77,12 +76,13 @@ impl State {
 }
 
 thread_local! {
-    static STATE: RefCell<State> = RefCell::new(State::new());
+    static STATE: Arc<Mutex<State>> = Arc::new(Mutex::new(State::new()));
     static RESOLVING: Cell<bool> = const { Cell::new(false) };
 }
 
 pub(crate) fn with_resolution<R>(work: impl FnOnce() -> R) -> Option<R> {
-    RESOLVING.with(|resolving| {
+    let mut work = Some(work);
+    match RESOLVING.try_with(|resolving| {
         if resolving.replace(true) {
             return None;
         }
@@ -93,8 +93,40 @@ pub(crate) fn with_resolution<R>(work: impl FnOnce() -> R) -> Option<R> {
             }
         }
         let _reset = Reset(resolving);
-        Some(work())
-    })
+        Some(work.take().expect("work is available")())
+    }) {
+        Ok(result) => result,
+        Err(_) => {
+            // Rust TLS is inaccessible from native detours during thread
+            // teardown. Keep a separate native-thread reentrancy guard so
+            // those final operations still receive paired observations.
+            static ACTIVE: OnceLock<Mutex<HashSet<u32>>> = OnceLock::new();
+            let active = ACTIVE.get_or_init(|| Mutex::new(HashSet::new()));
+            let tid = unsafe { GetCurrentThreadId() };
+            {
+                let mut active = active.lock().ok()?;
+                if !active.insert(tid) {
+                    return None;
+                }
+            }
+            struct ResetLate<'a>(&'a Mutex<HashSet<u32>>, u32);
+            impl Drop for ResetLate<'_> {
+                fn drop(&mut self) {
+                    if let Ok(mut active) = self.0.lock() {
+                        active.remove(&self.1);
+                    }
+                }
+            }
+            let _reset = ResetLate(active, tid);
+            Some(work.take().expect("work is available")())
+        }
+    }
+}
+
+fn state_handle() -> Arc<Mutex<State>> {
+    STATE
+        .try_with(Arc::clone)
+        .unwrap_or_else(|_| Arc::new(Mutex::new(State::new())))
 }
 
 fn monotonic_ns() -> u64 {
@@ -158,79 +190,74 @@ pub(crate) fn mark_loss() {
 pub struct OperationGuard {
     id: u64,
     operation: u8,
+    state: Arc<Mutex<State>>,
 }
 
 /// Send the start frame and wait for the parent's decision before forwarding
 /// the native call. A recursive call made by this transport is excluded.
 pub fn begin(operation: u8, path: &[u16]) -> Option<OperationGuard> {
-    STATE.with(|state| {
-        // Socket creation and I/O may internally touch NT handles. Exclude
-        // those recursive detours instead of borrowing the TLS state twice.
-        let Ok(mut state) = state.try_borrow_mut() else {
-            return None;
-        };
-        if !state.enabled || state.busy {
-            return None;
-        }
-        state.busy = true;
-        let id = state.next_id.saturating_add(1);
-        state.next_id = id;
-        let mut encoded = Vec::with_capacity(path.len().saturating_mul(2));
-        for unit in path {
-            encoded.extend_from_slice(&unit.to_le_bytes());
-        }
-        let result = state.stream().and_then(|stream| {
-            write_frame(stream, b's', operation, id, 0, 0, &encoded)?;
-            let mut ack = [0_u8; 1];
-            stream.read_exact(&mut ack)?;
-            match ack[0] {
-                b'g' => Ok(()),
-                b'q' => {
-                    // The supervisor has already decided to stop this exact
-                    // operation. End the process without forwarding the call.
-                    unsafe { TerminateProcess(GetCurrentProcess(), 130) };
-                    Err(std::io::Error::other("operation_cancelled"))
-                }
-                _ => Err(std::io::Error::other("start_rejected")),
+    let handle = state_handle();
+    // Socket I/O can recursively enter an NT detour. A nonblocking lock
+    // excludes those internal calls without blocking another native thread.
+    let Ok(mut state) = handle.try_lock() else {
+        return None;
+    };
+    if !state.enabled {
+        return None;
+    }
+    let id = state.next_id.saturating_add(1);
+    state.next_id = id;
+    let mut encoded = Vec::with_capacity(path.len().saturating_mul(2));
+    for unit in path {
+        encoded.extend_from_slice(&unit.to_le_bytes());
+    }
+    let result = state.stream().and_then(|stream| {
+        write_frame(stream, b's', operation, id, 0, 0, &encoded)?;
+        let mut ack = [0_u8; 1];
+        stream.read_exact(&mut ack)?;
+        match ack[0] {
+            b'g' => Ok(()),
+            b'q' => {
+                // The supervisor has already decided to stop this exact
+                // operation. End the process without forwarding the call.
+                unsafe { TerminateProcess(GetCurrentProcess(), 130) };
+                Err(std::io::Error::other("operation_cancelled"))
             }
-        });
-        state.busy = false;
-        if result.is_err() {
-            state.stream = None;
-            mark_loss();
-            None
-        } else {
-            Some(OperationGuard { id, operation })
+            _ => Err(std::io::Error::other("start_rejected")),
         }
-    })
+    });
+    if result.is_err() {
+        state.stream = None;
+        mark_loss();
+        None
+    } else {
+        drop(state);
+        Some(OperationGuard {
+            id,
+            operation,
+            state: handle,
+        })
+    }
 }
 
 impl OperationGuard {
     /// The result is a successful byte count or zero for other successful
     /// calls. NTSTATUS failures are recorded as their stable native value.
     pub fn complete(self, result: i64, status: i32) {
-        STATE.with(|state| {
-            let Ok(mut state) = state.try_borrow_mut() else {
-                mark_loss();
-                return;
-            };
-            if state.busy {
-                mark_loss();
-                return;
-            }
-            state.busy = true;
-            let outcome = state.stream().and_then(|stream| {
-                write_frame(stream, b'e', self.operation, self.id, result, status, &[])?;
-                // Complete frames do not require an acknowledgment.
-                Ok(())
-            });
-            state.busy = false;
-            if outcome.is_err() {
-                // A native failure is still a complete observation. Only the
-                // transport failure poisons the legacy trace channel.
-                state.stream = None;
-                mark_loss();
-            }
+        let Ok(mut state) = self.state.try_lock() else {
+            mark_loss();
+            return;
+        };
+        let outcome = state.stream().and_then(|stream| {
+            write_frame(stream, b'e', self.operation, self.id, result, status, &[])?;
+            // Complete frames do not require an acknowledgment.
+            Ok(())
         });
+        if outcome.is_err() {
+            // A native failure is still a complete observation. Only the
+            // transport failure poisons the legacy trace channel.
+            state.stream = None;
+            mark_loss();
+        }
     }
 }

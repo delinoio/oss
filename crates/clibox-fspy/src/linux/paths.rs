@@ -235,7 +235,12 @@ fn resolve_even_if_absent(path: &Path) -> Result<PathBuf, TraceFailure> {
                 }
                 return Ok(lexical_normalize(&resolved));
             }
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
+                ) =>
+            {
                 let component = cursor
                     .components()
                     .next_back()
@@ -400,6 +405,19 @@ mod tests {
         assert_eq!(
             decoded.project_relative,
             Some(NativePath::UnixBytes(b"inside/absent".to_vec()))
+        );
+    }
+
+    #[test]
+    fn regular_file_ancestor_keeps_a_failed_path_observable() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().canonicalize().unwrap();
+        fs::write(root.join("parent.txt"), b"content").unwrap();
+        let decoded = access_path(&root, root.join("parent.txt/child"), None).unwrap();
+        assert_eq!(decoded.class, PathClass::Project);
+        assert_eq!(
+            decoded.project_relative,
+            Some(NativePath::UnixBytes(b"parent.txt/child".to_vec()))
         );
     }
 

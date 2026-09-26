@@ -181,6 +181,20 @@ fn syscall_stop(tid: pid_t) -> Result<Stop, TraceFailure> {
             supervision("syscall_info_request")
         });
     }
+    #[cfg(target_arch = "x86_64")]
+    const EXPECTED_ARCH: u32 = 0xc000_003e;
+    #[cfg(target_arch = "aarch64")]
+    const EXPECTED_ARCH: u32 = 0xc000_00b7;
+    if info.arch != EXPECTED_ARCH {
+        // A foreign syscall ABI cannot be decoded using this build's libc
+        // numbers or register layout. This occurs under user-mode emulation.
+        tracing::error!(
+            observed_arch = info.arch,
+            expected_arch = EXPECTED_ARCH,
+            "unsupported trace ABI"
+        );
+        return Err(TraceFailure::UnsupportedKernel);
+    }
     let stop = match info.op {
         SYSCALL_INFO_ENTRY if size as usize >= 80 => Stop::Entry {
             syscall: info.data[0],
@@ -361,7 +375,11 @@ where
 {
     // Keep local sessions serialized so process-supervision state remains
     // deterministic. wait_owned selects only this session's tracee TIDs.
-    let _trace_lock = TRACE_LOCK.lock().map_err(|_| supervision("trace_lock"))?;
+    // The mutex serializes sessions but protects no persistent trace state.
+    // A failed test or caller panic cannot corrupt a later session.
+    let _trace_lock = TRACE_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     if limits.max_events == 0 || limits.max_bytes == 0 || limits.kill_after.is_zero() {
         return Err(supervision("limits"));
     }
@@ -598,15 +616,20 @@ mod tests {
         let mut command = Command::new("/bin/cat");
         command.arg(input.path()).stdout(Stdio::null());
         let cancelled = AtomicBool::new(false);
+        let mut observed_syscalls = HashSet::new();
         let result = trace(&mut command, Limits::default(), &cancelled, |entry| {
+            observed_syscalls.insert(entry.syscall);
             Ok(entry.syscall == libc::SYS_read as u64)
         })
         .unwrap();
         assert!(matches!(result.outcome, ChildOutcome::Exit(0)));
-        assert!(result
-            .operations
-            .iter()
-            .any(|operation| !operation.failed && operation.result > 0));
+        assert!(
+            result
+                .operations
+                .iter()
+                .any(|operation| !operation.failed && operation.result > 0),
+            "observed syscall numbers: {observed_syscalls:?}"
+        );
     }
 
     #[test]

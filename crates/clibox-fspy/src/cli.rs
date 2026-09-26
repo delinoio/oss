@@ -3566,7 +3566,9 @@ mod tests {
     #[test]
     fn verified_reproduction_uses_a_separate_working_directory() {
         #[cfg(target_os = "linux")]
-        let _trace_lock = crate::linux::TRACE_LOCK.lock().unwrap();
+        let _trace_lock = crate::linux::TRACE_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let directory = tempfile::tempdir().unwrap();
         let root = directory.path().join("project");
         fs::create_dir(&root).unwrap();
@@ -3684,7 +3686,9 @@ mod tests {
         };
         // Linux ptrace waitpid(-1) can consume another test's child status.
         // Keep the fixture process outside concurrent in-process trace sessions.
-        let _trace_lock = crate::linux::TRACE_LOCK.lock().unwrap();
+        let _trace_lock = crate::linux::TRACE_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let directory = tempfile::tempdir().unwrap();
         fs::write(directory.path().join("input.txt"), b"fixture").unwrap();
         for (case, key) in [("continue", b'c'), ("quit", b'q')] {
@@ -3778,7 +3782,9 @@ mod tests {
     #[test]
     fn autowatch_reruns_after_an_observed_input_changes() {
         use std::{process::Stdio, thread, time::Instant};
-        let _trace_lock = crate::linux::TRACE_LOCK.lock().unwrap();
+        let _trace_lock = crate::linux::TRACE_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let directory = tempfile::tempdir().unwrap();
         fs::write(directory.path().join("input.txt"), b"first").unwrap();
         let mut child = std::process::Command::new(std::env::current_exe().unwrap())
@@ -3821,7 +3827,9 @@ mod tests {
     #[test]
     fn autowatch_reruns_when_a_missing_input_is_created() {
         use std::{process::Stdio, thread, time::Instant};
-        let _trace_lock = crate::linux::TRACE_LOCK.lock().unwrap();
+        let _trace_lock = crate::linux::TRACE_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let directory = tempfile::tempdir().unwrap();
         let mut child = std::process::Command::new(std::env::current_exe().unwrap())
             .arg("--exact")
