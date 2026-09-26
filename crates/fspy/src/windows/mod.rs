@@ -174,6 +174,9 @@ impl SpyImpl {
         })?;
 
         Ok(TrackedChild {
+            root_pid: child
+                .id()
+                .ok_or_else(|| SpawnError::OsSpawn(io::Error::other("child_pid_unavailable")))?,
             stdin: child.stdin.take(),
             stdout: child.stdout.take(),
             stderr: child.stderr.take(),

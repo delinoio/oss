@@ -1826,6 +1826,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "file-id",
+ "fspy",
  "globset",
  "libc",
  "notify",
@@ -1835,6 +1836,8 @@ dependencies = [
  "sha2 0.10.9",
  "signal-hook",
  "tempfile",
+ "tokio",
+ "tokio-util",
  "tracing",
  "uuid",
  "walkdir",

@@ -22,3 +22,9 @@ walkdir = "2.5.0"
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2.182"
 signal-hook = "0.3.18"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+fspy = { path = "../fspy" }
+libc = "0.2.182"
+tokio = { version = "1.49.0", features = ["rt", "time"] }
+tokio-util = "0.7.18"
