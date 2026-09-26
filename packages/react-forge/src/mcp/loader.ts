@@ -130,7 +130,10 @@ export class TaskLoader {
     } catch { return {}; }
     for (const line of stack.split("\n").slice(1)) {
       const frame = framePath(line);
-      if (frame && this.known.has(frame.path)) return this.location(frame.path, frame.line, frame.column - 1);
+      if (!frame || !isAbsolute(frame.path)) continue;
+      // A later caller frame is only a call site. The first file-backed frame
+      // must itself belong to the task before its exception can be disclosed.
+      return this.location(frame.path, frame.line, frame.column - 1);
     }
     return {};
   }

@@ -206,6 +206,17 @@ test("MCP reports bounded compiler, module and uncaught render diagnostics witho
   assert.ok(!JSON.stringify(dependency).includes("PRIVATE_TYPED_DEPENDENCY"));
   assert.ok(!JSON.stringify(dependency).includes(cwd));
 
+  const runtimeDependencyDirectory = join(cwd, "node_modules", "rf-private-runtime");
+  await mkdir(runtimeDependencyDirectory, { recursive: true });
+  await writeFile(join(runtimeDependencyDirectory, "package.json"), JSON.stringify({ name: "rf-private-runtime", type: "module", exports: "./index.mjs" }));
+  await writeFile(join(runtimeDependencyDirectory, "index.mjs"), "export function fail() { throw Error('PRIVATE_EXTERNAL_DEPENDENCY'); }");
+  const externalException = await errorCode(peer, "execute", {
+    code: "import {fail} from 'rf-private-runtime'; export default () => { fail(); };",
+  }, "render");
+  assert.equal(externalException.error.message, "Task execution failed. Correct the task and retry.");
+  assert.equal(externalException.error.diagnostics, undefined);
+  assert.ok(!JSON.stringify(externalException).includes("PRIVATE_EXTERNAL_DEPENDENCY"));
+
   for (const extension of ["js", "mjs"]) {
     await writeFile(join(cwd, "tasks", `throwing-helper.${extension}`), `throw Error('PRIVATE-${extension.toUpperCase()}-HELPER');`);
     await writeFile(join(cwd, "tasks", `javascript-${extension}.tsx`), `import './throwing-helper.${extension}'; export default () => {};`);
@@ -265,6 +276,7 @@ test("MCP reports bounded compiler, module and uncaught render diagnostics witho
   assert.ok(!peer.stderr().includes("PRIVATE-RENDER-DETAIL"));
   assert.ok(!peer.stderr().includes("PRIVATE-JS-HELPER"));
   assert.ok(!peer.stderr().includes("PRIVATE-MJS-HELPER"));
+  assert.ok(!peer.stderr().includes("PRIVATE_EXTERNAL_DEPENDENCY"));
   assert.ok(!peer.stderr().includes("HANDLED-RENDER-DETAIL"));
   assert.ok(!peer.stderr().includes("tasks/broken.tsx"));
   for (const line of peer.stderr().trim().split("\n").filter(Boolean)) assert.equal(JSON.parse(line).source, "mcp");
