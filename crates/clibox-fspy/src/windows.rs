@@ -836,9 +836,42 @@ pub fn assemble_candidate_record(
                             .saturating_sub(pair.start.monotonic_ns)
             })
             .count();
+        let invalid_outcome = record
+            .operations
+            .iter()
+            .filter(|pair| {
+                (pair.completion.native_error.is_some() != (pair.completion.native_result < 0))
+                    || (pair.completion.byte_count.is_some()
+                        != (pair.completion.native_result >= 0
+                            && matches!(
+                                pair.start.operation,
+                                Operation::Read
+                                    | Operation::Write
+                                    | Operation::PositionalRead
+                                    | Operation::PositionalWrite
+                            )))
+                    || pair.completion.byte_count.is_some_and(|bytes| {
+                        u64::try_from(pair.completion.native_result).ok() != Some(bytes)
+                    })
+            })
+            .count();
+        let invalid_identity = record
+            .operations
+            .iter()
+            .filter(|pair| {
+                pair.start.pid == 0
+                    || pair.start.tid == 0
+                    || pair.start.pid != pair.completion.pid
+                    || pair.start.tid != pair.completion.tid
+                    || (pair.start.paths.is_empty()
+                        && pair.start.descriptor.is_none()
+                        && !pair.start.path_unavailable)
+            })
+            .count();
         eprintln!(
             "clibox fspy receiver: stage=record_parse reason={error} pairs={} \
-             invalid_paths={invalid_path} invalid_timing={invalid_timing}",
+             invalid_paths={invalid_path} invalid_timing={invalid_timing} \
+             invalid_outcome={invalid_outcome} invalid_identity={invalid_identity}",
             record.operations.len()
         );
         invalid("candidate_record")
