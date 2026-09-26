@@ -68,3 +68,63 @@ func TestNativeCompletionStillRequiresOriginalTerminalAndCleanupEvidence(t *test
 		}
 	}
 }
+
+func TestOpenCodeCompletionRetainsOriginalSessionAndInputMessage(t *testing.T) {
+	thread := NativeIdentity("ses_01960dcbe1faabcdefghijklmn")
+	input := NativeIdentity("msg_01960dcbe1faABCDEFGHIJKLMN")
+	completion := ExecutionCompletion{Version: 2, ExecutionID: NewID(), InputID: NewID(), NativeThreadID: thread, NativeTurnID: input, LastSequence: 3, Outcome: ExecutionSucceeded, CleanupVerified: true, NativeCheckpointDigest: strings.Repeat("ab", 32)}
+	if err := completion.ValidateForHarness(OpenCode); err != nil {
+		t.Fatal("original OpenCode identities were replaced with product UUIDs", err)
+	}
+	for _, harness := range []Harness{Codex, ClaudeCode, GrokBuild, "future"} {
+		if completion.ValidateForHarness(harness) == nil {
+			t.Fatal("OpenCode identity was interpreted using another harness")
+		}
+	}
+	if completion.Validate() == nil || ID(thread).Validate() == nil || ID(input).Validate() == nil {
+		t.Fatal("OpenCode support widened context-free or product identity authority")
+	}
+	raw, _ := json.Marshal(completion)
+	var restored ExecutionCompletion
+	if Decode(raw, &restored) != nil || restored != completion || !strings.Contains(string(raw), string(input)) {
+		t.Fatal("OpenCode input identity changed during persistence")
+	}
+	for _, change := range []func(*ExecutionCompletion){
+		func(c *ExecutionCompletion) { c.NativeThreadID = input },
+		func(c *ExecutionCompletion) { c.NativeTurnID = thread },
+		func(c *ExecutionCompletion) { c.NativeTurnID = NativeIdentity(NewID()) },
+		func(c *ExecutionCompletion) { c.CleanupVerified = false },
+		func(c *ExecutionCompletion) { c.LastSequence = 2 },
+		func(c *ExecutionCompletion) { c.Outcome = ExecutionRunning },
+		func(c *ExecutionCompletion) { c.NativeCheckpointDigest = "" },
+		func(c *ExecutionCompletion) { c.ExecutionID = ID(thread) },
+		func(c *ExecutionCompletion) { c.InputID = ID(input) },
+	} {
+		next := completion
+		change(&next)
+		if next.ValidateForHarness(OpenCode) == nil {
+			t.Fatal("native identifier syntax replaced original completion/cleanup proof")
+		}
+	}
+}
+
+func TestOpenCodeIdentityRejectsAliasesAndForeignNamespaces(t *testing.T) {
+	valid := "msg_01960dcbe1faAbCdEfGh123456"
+	if NativeIdentity(valid).Validate(OpenCode, NativeTurnIdentity) != nil {
+		t.Fatal("native mixed-case random suffix was normalized")
+	}
+	for _, value := range []string{
+		"", " " + valid, valid + "\n", valid[:len(valid)-1], valid + "x", strings.Replace(valid, "msg_", "MSG_", 1),
+		strings.Replace(valid, "e1fa", "E1FA", 1), strings.Replace(valid, "e1fa", "g1fa", 1),
+		strings.Replace(valid, "AbCd", "Ab_d", 1), strings.Replace(valid, "AbCd", "Ab-d", 1),
+		strings.Replace(valid, "msg_", "prt_", 1), strings.Replace(valid, "msg_", "evt_", 1),
+		strings.Replace(valid, "msg_", "per_", 1), strings.Replace(valid, "msg_", "que_", 1), string(NewID()),
+	} {
+		if NativeIdentity(value).Validate(OpenCode, NativeTurnIdentity) == nil {
+			t.Fatal("changed native identity spelling or namespace accepted")
+		}
+	}
+	if NativeIdentity(valid).Validate(OpenCode, "future") == nil {
+		t.Fatal("unknown native identity kind accepted")
+	}
+}

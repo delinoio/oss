@@ -1,6 +1,10 @@
 package domain
 
-import "github.com/google/uuid"
+import (
+	"strings"
+
+	"github.com/google/uuid"
+)
 
 // NativeIdentity is owned by the selected harness. It is not a DeliDev object
 // ID and must never be regenerated or normalized into a UUID-v7 surrogate.
@@ -38,6 +42,27 @@ func (id NativeIdentity) Validate(harness Harness, kind NativeIdentityKind) erro
 		value, err := uuid.Parse(string(id))
 		if err != nil || value == uuid.Nil || value.Variant() != uuid.RFC4122 || (value.Version() != 4 && value.Version() != 7) || value.String() != string(id) {
 			return invalid()
+		}
+	case OpenCode:
+		prefix := "ses_"
+		if kind == NativeTurnIdentity {
+			// OpenCode has no separate turn UUID. The original claimed input's
+			// message owns this execution boundary, even across successor
+			// assistant messages. Format alone cannot prove that ownership.
+			prefix = "msg_"
+		}
+		value := string(id)
+		if len(value) != len(prefix)+26 || !strings.HasPrefix(value, prefix) {
+			return invalid()
+		}
+		for index, c := range value[len(prefix):] {
+			if index < 12 {
+				if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+					return invalid()
+				}
+			} else if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z') {
+				return invalid()
+			}
 		}
 	default:
 		return Fail(Unsupported, "This harness native identity profile is not implemented.", "Retain the original installed-harness evidence; do not apply another harness identity format.")

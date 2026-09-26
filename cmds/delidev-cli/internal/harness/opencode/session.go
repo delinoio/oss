@@ -185,6 +185,14 @@ func validSessionSettings(settings SessionSettings) bool {
 // and fourteen base-62 random characters after the typed prefix. Native session
 // IDs are never fabricated from a DeliDev UUID or selected by create callers.
 func nativeID(value, prefix string) bool {
+	// Share the durable execution identity boundary. Auxiliary event/part/
+	// interaction identifiers remain private to this native protocol adapter.
+	switch prefix {
+	case "ses":
+		return domain.NativeIdentity(value).Validate(domain.OpenCode, domain.NativeThreadIdentity) == nil
+	case "msg":
+		return domain.NativeIdentity(value).Validate(domain.OpenCode, domain.NativeTurnIdentity) == nil
+	}
 	if len(value) != len(prefix)+27 || !strings.HasPrefix(value, prefix+"_") {
 		return false
 	}
