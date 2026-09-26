@@ -2,6 +2,10 @@ package worker
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -112,5 +116,56 @@ func TestOpenCodeRejectionRequiresOriginalFailedToolAndFinalAssistant(t *testing
 	c.final, f.c.binding.requested.Rejection = textAssistantID, opencode.ContinueOnInteractionRejection
 	if rejected, stopped := c.rejectionState(); !rejected || stopped {
 		t.Fatal("rejection bypassed the verified effective policy")
+	}
+}
+
+func TestOpenCodeLateResponseControlPreservesOriginalPolicyClosure(t *testing.T) {
+	for _, rejected := range []bool{false, true} {
+		for _, changed := range []string{"original", "foreign-job", "unknown-request", "wrong-kind", "uncertain-closure"} {
+			t.Run(fmt.Sprintf("%t/%s", rejected, changed), func(t *testing.T) {
+				f, c, o, _ := openCodePolicyClosureFixture(t, rejected)
+				original := c.interactions[o.InteractionReply.RequestID]
+				if err := c.PublishObservation(context.Background(), o); err != nil {
+					t.Fatal(err)
+				}
+				before := len(f.rpc.events)
+				claimCount, err := f.c.binding.readClaims()
+				if err != nil {
+					t.Fatal(err)
+				}
+				identity := responseControlIdentity{JobID: f.c.binding.publisher.job, InteractionID: original.ID, ResponseID: domain.NewID(), Revision: 1}
+				kind := domain.NativeApprovalInteraction
+				switch changed {
+				case "foreign-job":
+					identity.JobID = domain.NewID()
+				case "unknown-request":
+					identity.InteractionID = domain.NewID()
+				case "wrong-kind":
+					kind = domain.UserQuestionInteraction
+				case "uncertain-closure":
+					c.blocked = true
+				}
+				err = c.deliverOpenCodeResponse(context.Background(), context.Background(), identity, kind)
+				if changed == "original" {
+					if err != nil || c.blocked || c.text.blocked {
+						t.Fatal("late original control invalidated already published closure", err)
+					}
+					// Repeated metadata cannot manufacture a response or reopen the request.
+					if err := c.deliverOpenCodeResponse(context.Background(), context.Background(), identity, kind); err != nil {
+						t.Fatal(err)
+					}
+				} else if err == nil {
+					t.Fatal("foreign or uncertain control was adopted as original closure")
+				}
+				after, err := f.c.binding.readClaims()
+				if err != nil || len(after) != len(claimCount) || len(f.rpc.events) != before || len(c.interactions) != 0 || len(c.responses) != 1 || c.closedInteractions[o.InteractionReply.RequestID].original.ID != original.ID {
+					t.Fatal("late control changed original native or publication ownership")
+				}
+				directory := filepath.Join(f.c.binding.publisher.config.Root, "jobs", string(identity.JobID), "opencode-responses")
+				if _, err := os.Lstat(directory); !errors.Is(err, os.ErrNotExist) {
+					t.Fatal("closed request created a new response journal")
+				}
+			})
+		}
 	}
 }

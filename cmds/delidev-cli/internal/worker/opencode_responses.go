@@ -80,6 +80,16 @@ func (c *OpenCodeEventPublisher) deliverOpenCodeResponse(ctx, publicationCtx con
 			break
 		}
 	}
+	if original.ID == "" {
+		for _, closed := range c.closedInteractions {
+			if closed.original.ID == identity.InteractionID && closed.original.Type == kind && closed.original.OpenCode != nil {
+				// A server control emitted before original native policy closure
+				// may arrive afterwards. Positive original closure is authoritative:
+				// do not claim, send or publish another response to that request.
+				return nil
+			}
+		}
+	}
 	if original.ID == "" || original.Type != kind || original.OpenCode == nil || c.responses[original.NativeRequestID.Text] != nil {
 		return c.fail(publicationUncertain())
 	}
