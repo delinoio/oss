@@ -147,6 +147,9 @@ pub fn capture_with_delay<F>(
 where
     F: Fn(&Frame) -> Duration + Send + Sync + 'static,
 {
+    if cancelled.load(Ordering::Acquire) {
+        return Err(CaptureFailure::Cancellation);
+    }
     let deadline = limits
         .timeout
         .map(|duration| {
@@ -393,5 +396,23 @@ mod tests {
         );
         assert!(matches!(result, Err(CaptureFailure::DescendantSurvived)));
         assert!(began.elapsed() < Duration::from_secs(5));
+    }
+
+    #[test]
+    fn cancellation_before_spawn_has_no_child_side_effect() {
+        let directory = tempfile::tempdir().unwrap();
+        let command = fspy::Command::new(directory.path().join("missing-executable"));
+        let result = capture(
+            command,
+            directory.path(),
+            Limits {
+                max_events: 100,
+                max_bytes: 1024,
+                timeout: None,
+                kill_after: Duration::from_millis(100),
+            },
+            &AtomicBool::new(true),
+        );
+        assert!(matches!(result, Err(CaptureFailure::Cancellation)));
     }
 }
