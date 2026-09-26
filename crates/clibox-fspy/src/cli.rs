@@ -10,7 +10,7 @@ use std::{
 
 use clap::{Args, Subcommand, ValueEnum};
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 use crate::coverage;
 use crate::record::{self, CompleteRecord, NativePath, DEFAULT_BYTE_LIMIT, DEFAULT_EVENT_LIMIT};
 
@@ -600,7 +600,7 @@ fn compare(args: CompareArgs) -> i32 {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn execution_root(args: &ExecutionArgs) -> Result<PathBuf, &'static str> {
     let root = match &args.root {
         Some(root) => root.clone(),
@@ -987,7 +987,7 @@ fn capture_status(failure: CaptureFailure, action: &'static str) -> i32 {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn child_status(record: &CompleteRecord) -> i32 {
     if let Some(signal) = record.summary.child_signal {
         return 128_i32.saturating_add(signal);
@@ -1861,6 +1861,236 @@ fn autowatch(args: AutowatchArgs) -> i32 {
     }
 }
 
+#[cfg(target_os = "macos")]
+struct MacSignals {
+    cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    signal: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    registrations: Vec<signal_hook::SigId>,
+}
+
+#[cfg(target_os = "macos")]
+impl MacSignals {
+    fn new() -> Result<Self, crate::macos::supervise::CaptureFailure> {
+        use std::sync::{
+            atomic::{AtomicBool, AtomicUsize},
+            Arc,
+        };
+
+        let mut signals = Self {
+            cancelled: Arc::new(AtomicBool::new(false)),
+            signal: Arc::new(AtomicUsize::new(0)),
+            registrations: Vec::new(),
+        };
+        for number in [signal_hook::consts::SIGINT, signal_hook::consts::SIGTERM] {
+            signals.registrations.push(
+                signal_hook::flag::register(number, Arc::clone(&signals.cancelled))
+                    .map_err(|_| crate::macos::supervise::CaptureFailure::Initialization)?,
+            );
+            signals.registrations.push(
+                signal_hook::flag::register_usize(
+                    number,
+                    Arc::clone(&signals.signal),
+                    number as usize,
+                )
+                .map_err(|_| crate::macos::supervise::CaptureFailure::Initialization)?,
+            );
+        }
+        Ok(signals)
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl Drop for MacSignals {
+    fn drop(&mut self) {
+        for registration in self.registrations.drain(..) {
+            signal_hook::low_level::unregister(registration);
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn macos_capture(
+    command: &[OsString],
+    root: &Path,
+    args: &ExecutionArgs,
+) -> Result<CompleteRecord, (crate::macos::supervise::CaptureFailure, usize)> {
+    use std::{os::fd::AsFd, process::Stdio, sync::atomic::Ordering};
+
+    let Some(program) = command.first() else {
+        return Err((crate::macos::supervise::CaptureFailure::Spawn, 0));
+    };
+    let mut child = fspy::Command::new(program);
+    child.args(&command[1..]).envs(std::env::vars_os());
+    let stderr = io::stderr()
+        .as_fd()
+        .try_clone_to_owned()
+        .map_err(|_| (crate::macos::supervise::CaptureFailure::Spawn, 0))?;
+    child.stdout(Stdio::from(stderr)).stderr(Stdio::inherit());
+    let signals = MacSignals::new().map_err(|error| (error, 0))?;
+    crate::macos::supervise::capture(
+        child,
+        root,
+        crate::macos::supervise::Limits {
+            max_events: args.max_events,
+            max_bytes: args.max_bytes,
+            timeout: args.timeout,
+            kill_after: args.kill_after,
+        },
+        &signals.cancelled,
+    )
+    .map_err(|error| (error, signals.signal.load(Ordering::SeqCst)))
+}
+
+#[cfg(target_os = "macos")]
+fn macos_capture_status(
+    failure: (crate::macos::supervise::CaptureFailure, usize),
+    action: &'static str,
+) -> i32 {
+    use crate::macos::supervise::CaptureFailure;
+
+    let (error, signal) = failure;
+    diagnostic(&error.to_string(), action);
+    match error {
+        CaptureFailure::Timeout => 124,
+        CaptureFailure::Cancellation if signal == signal_hook::consts::SIGTERM as usize => 143,
+        CaptureFailure::Cancellation => 130,
+        _ => 1,
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn macos_incomplete_record(
+    root: &Path,
+    failure: crate::macos::supervise::CaptureFailure,
+) -> CompleteRecord {
+    use std::os::unix::ffi::OsStrExt;
+
+    use crate::{
+        macos::supervise::CaptureFailure,
+        record::{Backend, CoverageBoundary, FailureClass, Header, Platform, Summary},
+    };
+
+    let classification = match failure {
+        CaptureFailure::Initialization | CaptureFailure::Spawn => FailureClass::TraceInitialization,
+        CaptureFailure::TraceLoss | CaptureFailure::DescendantSurvived | CaptureFailure::Record => {
+            FailureClass::TraceLoss
+        }
+        CaptureFailure::Timeout => FailureClass::Timeout,
+        CaptureFailure::Cancellation => FailureClass::Cancellation,
+        CaptureFailure::Cleanup => FailureClass::Cleanup,
+    };
+    CompleteRecord {
+        header: Header {
+            schema_version: record::SCHEMA_VERSION,
+            execution_id: uuid::Uuid::now_v7(),
+            platform: Platform::Macos,
+            backend: Backend::Injection,
+            root: NativePath::UnixBytes(root.as_os_str().as_bytes().to_vec()),
+            coverage: CoverageBoundary::SynchronousFileOperationsV1,
+        },
+        operations: Vec::new(),
+        summary: Summary {
+            complete: false,
+            child_exit_code: None,
+            child_signal: None,
+            operation_count: 0,
+            failure_count: 0,
+            failure: Some(classification),
+        },
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn macos_record(args: RecordArgs) -> i32 {
+    let root = match execution_root(&args.execution) {
+        Ok(root) => root,
+        Err(error) => return diagnostic(error, "record"),
+    };
+    let capture = macos_capture(&args.command, &root, &args.execution);
+    let (record, failure) = match capture {
+        Ok(record) => (record, None),
+        Err(failure) => (macos_incomplete_record(&root, failure.0), Some(failure)),
+    };
+    let mut encoded = Vec::new();
+    if let Err(error) = record::serialize(
+        &record,
+        &mut encoded,
+        args.execution.max_events,
+        args.execution.max_bytes,
+    ) {
+        return diagnostic(&error.to_string(), "record");
+    }
+    if let Err(error) = publish(&args.output, &encoded) {
+        return diagnostic(error, "record");
+    }
+    failure.map_or_else(
+        || child_status(&record),
+        |failure| macos_capture_status(failure, "record"),
+    )
+}
+
+#[cfg(target_os = "macos")]
+fn macos_assetcov(args: AssetcovArgs) -> i32 {
+    let root = match execution_root(&args.execution) {
+        Ok(root) => root,
+        Err(error) => return diagnostic(error, "assetcov"),
+    };
+    let denominator = match coverage::select_existing(&root, &args.include, &args.exclude) {
+        Ok(value) => value,
+        Err(error) => return diagnostic(&error.to_string(), "assetcov"),
+    };
+    let record = match macos_capture(&args.command, &root, &args.execution) {
+        Ok(record) => record,
+        Err(error) => return macos_capture_status(error, "assetcov"),
+    };
+    let report = match coverage::analyze(&denominator, &record) {
+        Ok(report) => report,
+        Err(error) => return diagnostic(&error.to_string(), "assetcov"),
+    };
+    if !args.quiet {
+        let mut encoded = if args.json {
+            match serde_json::to_vec_pretty(&serde_json::json!({
+                "covered": report.covered.iter().map(|file| &file.logical).collect::<Vec<_>>(),
+                "uncovered": report.uncovered.iter().map(|file| &file.logical).collect::<Vec<_>>(),
+                "covered_count": report.covered.len(),
+                "total_count": denominator.files.len(),
+                "percentage": report.percentage,
+                "child_exit_code": record.summary.child_exit_code,
+                "child_signal": record.summary.child_signal,
+            })) {
+                Ok(bytes) => bytes,
+                Err(_) => return diagnostic("report_encode", "assetcov"),
+            }
+        } else {
+            format!(
+                "Covered: {}/{} ({:.2}%)\n",
+                report.covered.len(),
+                denominator.files.len(),
+                report.percentage
+            )
+            .into_bytes()
+        };
+        if !encoded.ends_with(b"\n") {
+            encoded.push(b'\n');
+        }
+        if let Err(error) = publish(&args.output, &encoded) {
+            return diagnostic(error, "assetcov");
+        }
+    }
+    let status = child_status(&record);
+    if status != 0 {
+        return status;
+    }
+    if args
+        .fail_under
+        .is_some_and(|threshold| report.fails_threshold(threshold))
+    {
+        1
+    } else {
+        0
+    }
+}
+
 pub fn execute(command: Command) -> i32 {
     match command {
         Command::Compare(args) => compare(args),
@@ -1880,7 +2110,11 @@ pub fn execute(command: Command) -> i32 {
             {
                 record(args)
             }
-            #[cfg(not(target_os = "linux"))]
+            #[cfg(target_os = "macos")]
+            {
+                macos_record(args)
+            }
+            #[cfg(not(any(target_os = "linux", target_os = "macos")))]
             {
                 let _ = args;
                 diagnostic("unsupported_target", "record")
@@ -1891,7 +2125,11 @@ pub fn execute(command: Command) -> i32 {
             {
                 assetcov(args)
             }
-            #[cfg(not(target_os = "linux"))]
+            #[cfg(target_os = "macos")]
+            {
+                macos_assetcov(args)
+            }
+            #[cfg(not(any(target_os = "linux", target_os = "macos")))]
             {
                 let _ = args;
                 diagnostic("unsupported_target", "assetcov")
@@ -2347,5 +2585,70 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(execute(cli.command), 130);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_record_and_asset_coverage_observe_child_reads() {
+        let directory = tempfile::tempdir().unwrap();
+        let input = directory.path().join("input.txt");
+        fs::write(&input, b"fixture").unwrap();
+        let executable = std::env::current_exe().unwrap();
+        // This fixture uses our own test binary because macOS system binaries
+        // may reject dynamic-library injection under platform protections.
+        unsafe { std::env::set_var("CLIBOX_FSPY_CLI_MAC_INPUT", &input) };
+        let output = directory.path().join("trace.ndjson");
+        let cli = TestCli::try_parse_from([
+            OsString::from("fspy"),
+            OsString::from("record"),
+            OsString::from("--root"),
+            directory.path().as_os_str().to_owned(),
+            OsString::from("--output"),
+            output.as_os_str().to_owned(),
+            OsString::from("--"),
+            executable.as_os_str().to_owned(),
+            OsString::from("--exact"),
+            OsString::from("cli::tests::macos_cli_read_fixture"),
+        ])
+        .unwrap();
+        assert_eq!(execute(cli.command), 0);
+        let record = load(&output).unwrap();
+        assert!(record.operations.iter().any(|pair| {
+            pair.start.operation.is_content_read()
+                && pair.completion.byte_count.is_some_and(|count| count > 0)
+                && pair.start.paths.iter().any(|path| {
+                    path.project_relative
+                        .as_ref()
+                        == Some(&NativePath::UnixBytes(b"input.txt".to_vec()))
+                })
+        }));
+
+        let cli = TestCli::try_parse_from([
+            OsString::from("fspy"),
+            OsString::from("assetcov"),
+            OsString::from("--root"),
+            directory.path().as_os_str().to_owned(),
+            OsString::from("--include"),
+            OsString::from("input.txt"),
+            OsString::from("--fail-under"),
+            OsString::from("100"),
+            OsString::from("--quiet"),
+            OsString::from("--"),
+            executable.into_os_string(),
+            OsString::from("--exact"),
+            OsString::from("cli::tests::macos_cli_read_fixture"),
+        ])
+        .unwrap();
+        assert_eq!(execute(cli.command), 0);
+        unsafe { std::env::remove_var("CLIBOX_FSPY_CLI_MAC_INPUT") };
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_cli_read_fixture() {
+        let Some(input) = std::env::var_os("CLIBOX_FSPY_CLI_MAC_INPUT") else {
+            return;
+        };
+        assert_eq!(fs::read(input).unwrap(), b"fixture");
     }
 }
