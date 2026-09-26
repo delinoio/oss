@@ -509,5 +509,6 @@ pub fn bundled_sidecar(executable: &Path) -> Result<PathBuf> {
     }))
 }
 
+pub mod presentation;
 #[cfg(test)]
 mod tests;

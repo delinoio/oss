@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod tray_host;
 use std::{
     collections::{BTreeMap, HashMap},
     path::PathBuf,
@@ -16,6 +17,7 @@ use tauri::{
     utils::config::{Csp, CspDirectiveSources, WebviewUrl},
     webview::NewWindowResponse,
 };
+use tray_host::{TrayHost, acknowledge_tray_action, begin_tray, publish_tray, read_tray_action};
 
 fn trusted_url(url: &tauri::Url) -> bool {
     let origin =
@@ -565,6 +567,7 @@ async fn open_connection(
                 }
             });
             tracing::info!(operation = "saved_window", state = "opened");
+            tray_host::schedule(&app);
             Ok(())
         }
         Err(_) => {
@@ -591,8 +594,10 @@ fn run() -> Result<(), NativeFailure> {
     let executable = std::env::current_exe().map_err(|_| NativeFailure::SidecarMissing)?;
     let connector = Arc::new(Connector::new(bundled_sidecar(&executable)?, root)?);
     let supervision = Arc::new(Supervision::new(Arc::clone(&connector)));
-    tauri::Builder::<Wry>::new()
+    let tray = Arc::new(TrayHost::default());
+    let app = tauri::Builder::<Wry>::new()
         .manage(Arc::new(SavedWindows::default()))
+        .manage(Arc::clone(&tray))
         .manage(connector)
         .manage(Arc::clone(&supervision))
         .invoke_handler(tauri::generate_handler![
@@ -612,11 +617,38 @@ fn run() -> Result<(), NativeFailure> {
             connect_saved,
             saved_worker_proof,
             saved_worker_control,
-            show_connection_manager
+            show_connection_manager,
+            begin_tray,
+            publish_tray,
+            read_tray_action,
+            acknowledge_tray_action
         ])
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                if window
+                    .state::<Arc<TrayHost>>()
+                    .available
+                    .load(std::sync::atomic::Ordering::Acquire)
+                {
+                    if window.hide().is_ok() {
+                        api.prevent_close();
+                    } else {
+                        tracing::warn!(operation = "window_hide", code = "window-unavailable");
+                    }
+                }
+            } else if matches!(event, WindowEvent::Destroyed) {
+                tray_host::remove(window.app_handle(), window.label());
+            }
+        })
         .setup(|app| {
             let result = (|| -> tauri::Result<()> {
                 create_main(app.handle())?;
+                if app.state::<Arc<TrayHost>>().install(app.handle()).is_err() {
+                    tracing::warn!(
+                        operation = "tray_install",
+                        code = "presentation-unavailable"
+                    );
+                }
                 Ok(())
             })();
             if result.is_err() {
@@ -625,8 +657,16 @@ fn run() -> Result<(), NativeFailure> {
             }
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .map_err(|_| NativeFailure::SidecarFailed)
+        .build(tauri::generate_context!())
+        .map_err(|_| NativeFailure::SidecarFailed)?;
+    let exiting = Arc::clone(&tray);
+    app.run(move |_, event| {
+        if matches!(event, tauri::RunEvent::Exit) {
+            exiting.stop();
+        }
+    });
+    tray.stop();
+    Ok(())
 }
 
 fn main() {

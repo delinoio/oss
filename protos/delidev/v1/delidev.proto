@@ -6,6 +6,7 @@ option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1"
 // All operations, including loopback, require authenticated owner authorization.
 service SystemService {
   rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
+  rpc GetOverview(GetOverviewRequest) returns (GetOverviewResponse);
   rpc StopServer(StopServerRequest) returns (StopServerResponse);
   rpc GetDoctor(GetDoctorRequest) returns (GetDoctorResponse);
   rpc CreateBackup(CreateBackupRequest) returns (CreateBackupResponse);
@@ -118,6 +119,16 @@ message ErrorDetail {
   string correlation_id = 4;
 }
 message GetStatusRequest {}
+message GetOverviewRequest {}
+message GetOverviewResponse {
+  string observed_at = 1;
+  uint64 active_sessions = 2;
+  uint64 pending_interactions = 3;
+  uint64 registered_workers = 4;
+  uint64 connected_workers = 5;
+  int64 today_from_unix_ms = 6;
+  int64 today_until_unix_ms = 7;
+}
 message GetStatusResponse {
   string version = 1;
   uint32 protocol_version = 2;

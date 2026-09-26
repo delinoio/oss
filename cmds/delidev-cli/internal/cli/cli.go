@@ -277,6 +277,12 @@ func Run(ctx context.Context, args []string, streams IO) int {
 			return emit(nil, usage())
 		}
 		switch rest[0] {
+		case "overview":
+			response, err := c.system.GetOverview(ctx, request(c, &pb.GetOverviewRequest{}))
+			if err != nil {
+				return emit(nil, rpc.ClientError(err))
+			}
+			return emit(overviewOutput(response.Msg), nil)
 		case "status":
 			response, err := c.system.GetStatus(ctx, request(c, &pb.GetStatusRequest{}))
 			if err != nil {
@@ -701,7 +707,7 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
 
   server start [--foreground] [--listen IP:PORT] [--tls-cert FILE --tls-key FILE]
                [--allowed-origins ORIGIN,ORIGIN]
-  server status | stop
+  server status | overview | stop
   server ensure [--listen IP:PORT] [--allowed-origins ORIGIN,ORIGIN]
   doctor
   connection list

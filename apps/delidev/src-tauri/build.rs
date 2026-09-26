@@ -19,6 +19,10 @@ fn main() {
             "saved_worker_proof",
             "saved_worker_control",
             "show_connection_manager",
+            "begin_tray",
+            "publish_tray",
+            "read_tray_action",
+            "acknowledge_tray_action",
         ]),
     ))
     .expect("DeliDev native build configuration must be valid");

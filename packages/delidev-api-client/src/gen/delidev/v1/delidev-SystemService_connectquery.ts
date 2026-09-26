@@ -10,6 +10,11 @@ import { SystemService } from "./delidev_pb.js";
 export const getStatus = SystemService.method.getStatus;
 
 /**
+ * @generated from rpc delidev.v1.SystemService.GetOverview
+ */
+export const getOverview = SystemService.method.getOverview;
+
+/**
  * @generated from rpc delidev.v1.SystemService.StopServer
  */
 export const stopServer = SystemService.method.stopServer;
