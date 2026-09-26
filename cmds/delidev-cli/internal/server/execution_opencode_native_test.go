@@ -56,6 +56,7 @@ const (
 	nativeReadPublication
 	nativeReadFailurePublication
 	nativeReadDirectoryPublication
+	nativeUsagePublication
 )
 
 func TestManualNativeOpenCodePublishesRegisteredText(t *testing.T) {
@@ -72,6 +73,10 @@ func TestManualNativeOpenCodePublishesRegisteredRead(t *testing.T) {
 	for _, scenario := range []nativeOpenCodePublication{nativeReadPublication, nativeReadFailurePublication, nativeReadDirectoryPublication} {
 		t.Run(fmt.Sprint(scenario), func(t *testing.T) { nativeRegisteredOpenCode(t, domain.ExecuteMode, false, scenario) })
 	}
+}
+
+func TestManualNativeOpenCodePublishesRegisteredUsage(t *testing.T) {
+	nativeRegisteredOpenCode(t, domain.ExecuteMode, false, nativeUsagePublication)
 }
 
 func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool, publication nativeOpenCodePublication) {
@@ -354,6 +359,7 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 		return
 	}
 	var textPublisher *worker.OpenCodeTextPublisher
+	var usagePublisher *worker.OpenCodeUsagePublisher
 	if publication >= nativeTextPublication {
 		// Preserve the original prefix until both live input ownership and
 		// independent native storage establish acceptance for publication.
@@ -386,9 +392,20 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 		if err != nil {
 			t.Fatal(err)
 		}
+		if publication == nativeUsagePublication {
+			usagePublisher, err = worker.OpenOpenCodeUsagePublisher(textPublisher)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
 		for _, observation := range prefix {
 			if _, err := textPublisher.PublishObservation(ctx, observation); err != nil {
 				t.Fatal(err)
+			}
+			if usagePublisher != nil {
+				if _, err := usagePublisher.PublishObservation(ctx, observation); err != nil {
+					t.Fatal(err)
+				}
 			}
 		}
 	}
@@ -402,6 +419,11 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 		if textPublisher != nil {
 			if _, err := textPublisher.PublishObservation(ctx, observation); err != nil {
 				t.Fatal(err)
+			}
+			if usagePublisher != nil {
+				if _, err := usagePublisher.PublishObservation(ctx, observation); err != nil {
+					t.Fatal(err)
+				}
 			}
 		}
 		if observation.Part != nil && observation.Part.Kind == opencode.TextPartKind && observation.Part.Text != nil {
@@ -493,6 +515,31 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 			} else if message.Role != domain.AssistantMessage || message.Text != result || message.NativeParentID != progress.AssistantID {
 				t.Fatal("original assistant text/parent was replaced")
 			}
+		}
+	}
+	if usagePublisher != nil {
+		rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.UsageKind, SessionID: f.input.SessionID, Limit: 10})
+		if err != nil || len(rows) != 4 {
+			t.Fatal("original step and final-message observations were omitted or duplicated")
+		}
+		sourceCounts := map[domain.OpenCodeUsageSource]int{}
+		for _, row := range rows {
+			observation, err := store.Decode[domain.OpenCodeUsageRecord](row)
+			if err != nil || observation.Usage.Validate() != nil || observation.Harness != domain.OpenCode || observation.ExecutionID != f.input.ExecutionID || observation.AccountID != f.input.AccountID || observation.TurnID != receipt.MessageID || observation.Usage.NativeEstimate != "0" {
+				t.Fatal("native usage lost original source, estimate or account attribution")
+			}
+			sourceCounts[observation.Usage.Source]++
+			counts := observation.Usage.Counts
+			if observation.Usage.NativeParentID == progress.AssistantID {
+				if counts.Input != "20" || counts.Output != "4" || counts.Total == nil || *counts.Total != "24" {
+					t.Fatal("final step/message usage lost original counters")
+				}
+			} else if counts.Input != "0" || counts.Output != "0" || counts.Total != nil {
+				t.Fatal("native defaulted zero or missing total was reinterpreted")
+			}
+		}
+		if sourceCounts[domain.OpenCodeStepUsage] != 2 || sourceCounts[domain.OpenCodeMessageUsage] != 2 {
+			t.Fatal("overlapping native usage sources were merged")
 		}
 	}
 	expectedMessages := 2

@@ -3,7 +3,6 @@ package opencode
 import (
 	"crypto/sha256"
 	"encoding/json"
-	"math/big"
 	"slices"
 	"strconv"
 
@@ -88,20 +87,7 @@ func validateCounters(raw json.RawMessage) bool {
 }
 
 func nonnegativeDecimal(raw json.RawMessage) bool {
-	if len(raw) == 0 || len(raw) > 128 {
-		return false
-	}
-	// Validate the JSON number token before parsing its exact value. JSON
-	// strings, null and fractions spelled as non-JSON rationals cannot pass.
-	var value any
-	if json.Unmarshal(raw, &value) != nil {
-		return false
-	}
-	if _, ok := value.(float64); !ok {
-		return false
-	}
-	number, ok := new(big.Rat).SetString(string(raw))
-	return ok && number.Sign() >= 0
+	return domain.NativeNonnegativeDecimal(string(raw))
 }
 
 func validateDiffs(raw json.RawMessage) bool {

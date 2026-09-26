@@ -12,6 +12,7 @@ const (
 	ExecutionMessageCompleted         ExecutionEventKind = "message-completed"
 	ExecutionTurnFinished             ExecutionEventKind = "turn-finished"
 	ExecutionUsageObserved            ExecutionEventKind = "usage-observed"
+	ExecutionOpenCodeUsageObserved    ExecutionEventKind = "opencode-usage-observed"
 	ExecutionResponseUsageObserved    ExecutionEventKind = "response-usage-observed"
 	ExecutionNoticeObserved           ExecutionEventKind = "notice-observed"
 	ExecutionToolStarted              ExecutionEventKind = "tool-started"
@@ -152,6 +153,7 @@ type ExecutionEvent struct {
 	Message            *ExecutionMessageUpdate            `json:"message,omitempty"`
 	Outcome            ExecutionOutcome                   `json:"outcome,omitempty"`
 	ProblemCode        Code                               `json:"problem_code,omitempty"`
+	OpenCodeUsage      *OpenCodeUsageObservation          `json:"opencode_usage,omitempty"`
 	Usage              *NativeTokenUsage                  `json:"usage,omitempty"`
 	ResponseUsage      *NativeResponseUsage               `json:"response_usage,omitempty"`
 	ObservationID      ID                                 `json:"observation_id,omitempty"`
@@ -235,6 +237,10 @@ func (e ExecutionEvent) Validate() error {
 			return Fail(InvalidArgument, "Thread binding requires only observed settings and its native identity.", "Retain the actual native observation before accepting input.")
 		}
 	case ExecutionInputAccepted:
+	case ExecutionOpenCodeUsageObserved:
+		if e.OpenCodeUsage == nil || e.OpenCodeUsage.Validate() != nil || e.ObservationID.Validate() != nil {
+			return invalidObservation()
+		}
 	case ExecutionUsageObserved:
 		if e.Usage == nil || e.ObservationID.Validate() != nil {
 			return invalidObservation()
@@ -314,7 +320,7 @@ func (e ExecutionEvent) Validate() error {
 	default:
 		return Fail(Unsupported, "Unknown normalized execution event.", "Use a dedicated supported native event adapter.")
 	}
-	if (e.Kind != ExecutionApprovalAccepted && e.ApprovalAcceptance != nil) || (e.Kind != ExecutionApprovalDeliveryObserved && e.ApprovalResponse != nil) || (e.Kind != ExecutionSteerObserved && e.Steer != nil) || (e.Kind != ExecutionQuestionAccepted && e.QuestionAcceptance != nil) || (e.Kind != ExecutionQuestionDeliveryObserved && e.QuestionResponse != nil) || (!e.Kind.IsInteraction() && e.Interaction != nil) || (e.Kind != ExecutionWaitingChanged && e.Waiting != nil) || (!e.Kind.IsArtifact() && e.Artifact != nil) || (e.Kind != ExecutionProgressObserved && e.Progress != nil) || (!e.Kind.IsTool() && e.Tool != nil) || (e.Kind != ExecutionThreadBound && e.Observed != nil) || (e.Kind != ExecutionMessageStarted && e.Kind != ExecutionTextAppended && e.Kind != ExecutionMessageCompleted && e.Message != nil) || (e.Kind != ExecutionTurnFinished && (e.Outcome != "" || e.ProblemCode != "")) || (e.Kind != ExecutionUsageObserved && e.Usage != nil) || (e.Kind != ExecutionResponseUsageObserved && e.ResponseUsage != nil) || (e.Kind != ExecutionUsageObserved && e.Kind != ExecutionResponseUsageObserved && e.ObservationID != "") || (e.Kind != ExecutionNoticeObserved && e.Notice != "") {
+	if (e.Kind != ExecutionOpenCodeUsageObserved && e.OpenCodeUsage != nil) || (e.Kind != ExecutionApprovalAccepted && e.ApprovalAcceptance != nil) || (e.Kind != ExecutionApprovalDeliveryObserved && e.ApprovalResponse != nil) || (e.Kind != ExecutionSteerObserved && e.Steer != nil) || (e.Kind != ExecutionQuestionAccepted && e.QuestionAcceptance != nil) || (e.Kind != ExecutionQuestionDeliveryObserved && e.QuestionResponse != nil) || (!e.Kind.IsInteraction() && e.Interaction != nil) || (e.Kind != ExecutionWaitingChanged && e.Waiting != nil) || (!e.Kind.IsArtifact() && e.Artifact != nil) || (e.Kind != ExecutionProgressObserved && e.Progress != nil) || (!e.Kind.IsTool() && e.Tool != nil) || (e.Kind != ExecutionThreadBound && e.Observed != nil) || (e.Kind != ExecutionMessageStarted && e.Kind != ExecutionTextAppended && e.Kind != ExecutionMessageCompleted && e.Message != nil) || (e.Kind != ExecutionTurnFinished && (e.Outcome != "" || e.ProblemCode != "")) || (e.Kind != ExecutionUsageObserved && e.Usage != nil) || (e.Kind != ExecutionResponseUsageObserved && e.ResponseUsage != nil) || (e.Kind != ExecutionOpenCodeUsageObserved && e.Kind != ExecutionUsageObserved && e.Kind != ExecutionResponseUsageObserved && e.ObservationID != "") || (e.Kind != ExecutionNoticeObserved && e.Notice != "") {
 		return Fail(InvalidArgument, "An execution event contains another kind's payload.", "Publish one unambiguous typed event.")
 	}
 	return nil

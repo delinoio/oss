@@ -30,14 +30,15 @@ type openCodeTextPart struct {
 // False means another adapter must handle the observation; it never authorizes
 // dropping native tools, usage, interactions or terminal evidence.
 type OpenCodeTextPublisher struct {
-	binding  *OpenCodeBindingPublisher
-	messages map[string]*openCodeTextMessage
-	parts    map[string]*openCodeTextPart
-	reads    map[string]*openCodeReadPart
-	calls    map[string]string
-	bytes    int
-	blocked  bool
-	seen     map[string]bool
+	binding       *OpenCodeBindingPublisher
+	messages      map[string]*openCodeTextMessage
+	parts         map[string]*openCodeTextPart
+	reads         map[string]*openCodeReadPart
+	calls         map[string]string
+	bytes         int
+	blocked       bool
+	usageAttached bool
+	seen          map[string]bool
 }
 
 func OpenOpenCodeTextPublisher(binding *OpenCodeBindingPublisher) (*OpenCodeTextPublisher, error) {
