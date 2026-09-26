@@ -237,6 +237,9 @@ fn write_frame(
 }
 
 pub(crate) fn mark_loss(stage: &'static str) {
+    if PROCESS_EXITING.load(Ordering::Acquire) {
+        return;
+    }
     #[cfg(debug_assertions)]
     {
         let _ = writeln!(

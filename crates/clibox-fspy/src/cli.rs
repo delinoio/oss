@@ -2519,7 +2519,7 @@ impl Drop for WindowsBreakTerminal {
 fn windows_matching_path<'a>(
     frame: &'a crate::windows::Frame,
     selector: &coverage::Selector,
-    operations: &[crate::record::Operation],
+    operations: &[OperationKind],
 ) -> Option<&'a crate::record::AccessPath> {
     let operation = crate::windows::operation_id(frame.operation)?;
     frame
@@ -4186,6 +4186,89 @@ mod tests {
         }
         assert!(!fs::read("input.txt").unwrap().is_empty());
         use std::io::Write;
+        fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("runs.txt")
+            .unwrap()
+            .write_all(b"x")
+            .unwrap();
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_autowatch_reruns_on_observed_input_change() {
+        use std::{process::Stdio, thread, time::Instant};
+
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(directory.path().join("input.txt"), b"first").unwrap();
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("cli::tests::windows_autowatch_child")
+            .env("CLIBOX_FSPY_WIN_WATCH_ROOT", directory.path())
+            .current_dir(directory.path())
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let runs = directory.path().join("runs.txt");
+        for expected in [1, 2] {
+            let deadline = Instant::now() + Duration::from_secs(15);
+            while fs::read(&runs).unwrap_or_default().len() < expected {
+                if Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let output = child.wait_with_output().unwrap();
+                    panic!(
+                        "Windows autowatch missed run {expected}: {}",
+                        String::from_utf8_lossy(&output.stderr)
+                    );
+                }
+                thread::sleep(Duration::from_millis(10));
+            }
+            if expected == 1 {
+                thread::sleep(Duration::from_millis(350));
+                assert_eq!(fs::read(&runs).unwrap(), b"x");
+                fs::write(directory.path().join("input.txt"), b"second").unwrap();
+            }
+        }
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_autowatch_child() {
+        let Some(root) = std::env::var_os("CLIBOX_FSPY_WIN_WATCH_ROOT") else {
+            return;
+        };
+        let executable = std::env::current_exe().unwrap();
+        let cli = TestCli::try_parse_from([
+            OsString::from("fspy"),
+            OsString::from("autowatch"),
+            OsString::from("--include"),
+            OsString::from("input.txt"),
+            OsString::from("--debounce"),
+            OsString::from("50ms"),
+            OsString::from("--root"),
+            root,
+            OsString::from("--"),
+            executable.into_os_string(),
+            OsString::from("--exact"),
+            OsString::from("cli::tests::windows_watch_worker"),
+        ])
+        .unwrap();
+        assert_eq!(execute(cli.command), 130);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_watch_worker() {
+        if std::env::var_os("CLIBOX_FSPY_WIN_WATCH_ROOT").is_none() {
+            return;
+        }
+        use std::io::Write;
+        assert!(!fs::read("input.txt").unwrap().is_empty());
         fs::OpenOptions::new()
             .create(true)
             .append(true)
