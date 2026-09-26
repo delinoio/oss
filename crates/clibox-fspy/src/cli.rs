@@ -8,7 +8,7 @@ use std::{
     time::Duration,
 };
 
-use clap::{Args, Subcommand};
+use clap::{Args, Subcommand, ValueEnum};
 
 #[cfg(target_os = "linux")]
 use crate::coverage;
@@ -31,6 +31,42 @@ pub enum Command {
     /// Report selected existing resources actually read by a command.
     #[command(after_help = "Example: clibox fspy assetcov --include 'assets/**' -- cargo test")]
     Assetcov(AssetcovArgs),
+    /// Alternate baseline and delayed runs of matching file operations.
+    #[command(
+        after_help = "Example: clibox fspy latencylab --include 'src/**' --delay 10ms -- cargo \
+                      test\nTiming is an observation under current conditions, not a \
+                      storage-device prediction."
+    )]
+    Latencylab(LatencyArgs),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum OperationKind {
+    Read,
+    Write,
+    Open,
+    Close,
+    Metadata,
+    Directory,
+    Mutation,
+    Exec,
+}
+
+#[cfg(target_os = "linux")]
+impl OperationKind {
+    fn matches(self, operation: record::Operation) -> bool {
+        use record::Operation;
+        match self {
+            Self::Read => matches!(operation, Operation::Read | Operation::PositionalRead),
+            Self::Write => matches!(operation, Operation::Write | Operation::PositionalWrite),
+            Self::Open => operation == Operation::Open,
+            Self::Close => operation == Operation::Close,
+            Self::Metadata => operation == Operation::Metadata,
+            Self::Directory => operation == Operation::Directory,
+            Self::Mutation => operation == Operation::Mutation,
+            Self::Exec => operation == Operation::Exec,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Args)]
@@ -106,6 +142,38 @@ pub struct AssetcovArgs {
     /// Fail when actual-read coverage is below 0..100 percent.
     #[arg(long, value_parser = parse_percent)]
     fail_under: Option<f64>,
+    /// Emit machine-readable JSON.
+    #[arg(long, conflicts_with = "quiet")]
+    json: bool,
+    /// Suppress report output (failures still have diagnostics).
+    #[arg(long)]
+    quiet: bool,
+    #[command(flatten)]
+    output: OutputArgs,
+    /// Child program and tokenized arguments.
+    #[arg(last = true, required = true, num_args = 1..)]
+    command: Vec<OsString>,
+}
+
+#[derive(Debug, Args)]
+pub struct LatencyArgs {
+    #[command(flatten)]
+    execution: ExecutionArgs,
+    /// Select matching project paths; repeat for a union.
+    #[arg(long, required = true)]
+    include: Vec<String>,
+    /// Exclude matching project paths.
+    #[arg(long)]
+    exclude: Vec<String>,
+    /// Delay before every matching operation.
+    #[arg(long, value_parser = parse_positive_duration)]
+    delay: Duration,
+    /// Match operation kinds; default is read and positional read.
+    #[arg(long = "op", value_enum)]
+    operations: Vec<OperationKind>,
+    /// Number of baseline/delayed pairs (default: 3).
+    #[arg(long, default_value_t = 3, value_parser = parse_positive_usize)]
+    runs: usize,
     /// Emit machine-readable JSON.
     #[arg(long, conflicts_with = "quiet")]
     json: bool,
@@ -317,6 +385,19 @@ fn execute_capture(
     root: &Path,
     args: &ExecutionArgs,
 ) -> Result<CompleteRecord, crate::linux::TraceFailure> {
+    execute_capture_with(command, root, args, |_| Duration::ZERO)
+}
+
+#[cfg(target_os = "linux")]
+fn execute_capture_with<F>(
+    command: &[OsString],
+    root: &Path,
+    args: &ExecutionArgs,
+    delay_for: F,
+) -> Result<CompleteRecord, crate::linux::TraceFailure>
+where
+    F: FnMut(&crate::linux::paths::DecodedOperation) -> Duration,
+{
     use std::{
         os::fd::AsFd,
         process::{Command as ProcessCommand, Stdio},
@@ -348,7 +429,7 @@ fn execute_capture(
             kill_after: args.kill_after,
         },
         &cancelled,
-        |_| Duration::ZERO,
+        delay_for,
     );
     signal_hook::low_level::unregister(signal);
     #[cfg(unix)]
@@ -479,6 +560,148 @@ fn assetcov(args: AssetcovArgs) -> i32 {
     }
 }
 
+#[cfg(target_os = "linux")]
+fn matches_selected(
+    operation: record::Operation,
+    paths: &[record::AccessPath],
+    selector: &coverage::Selector,
+    kinds: &[OperationKind],
+) -> bool {
+    let operation_matches = if kinds.is_empty() {
+        OperationKind::Read.matches(operation)
+    } else {
+        kinds.iter().any(|kind| kind.matches(operation))
+    };
+    operation_matches
+        && paths.iter().any(|path| {
+            path.project_relative
+                .as_ref()
+                .is_some_and(|relative| selector.matches(relative))
+        })
+}
+
+#[cfg(target_os = "linux")]
+fn median(values: &[u128]) -> u128 {
+    let mut sorted = values.to_vec();
+    sorted.sort_unstable();
+    let middle = sorted.len() / 2;
+    if sorted.len().is_multiple_of(2) {
+        (sorted[middle - 1] + sorted[middle]) / 2
+    } else {
+        sorted[middle]
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn latencylab(args: LatencyArgs) -> i32 {
+    let root = match execution_root(&args.execution) {
+        Ok(root) => root,
+        Err(error) => return diagnostic(error, "latencylab"),
+    };
+    let selector = match coverage::Selector::new(&args.include, &args.exclude) {
+        Ok(selector) => selector,
+        Err(error) => return diagnostic(&error.to_string(), "latencylab"),
+    };
+    let mut runs = Vec::with_capacity(args.runs.saturating_mul(2));
+    let mut baseline = Vec::with_capacity(args.runs);
+    let mut delayed = Vec::with_capacity(args.runs);
+    let mut any_match = false;
+    for pair in 0..args.runs {
+        for injected in [false, true] {
+            let delay = if injected { args.delay } else { Duration::ZERO };
+            let began = std::time::Instant::now();
+            let record =
+                match execute_capture_with(&args.command, &root, &args.execution, |operation| {
+                    if matches_selected(
+                        operation.operation,
+                        &operation.paths,
+                        &selector,
+                        &args.operations,
+                    ) {
+                        delay
+                    } else {
+                        Duration::ZERO
+                    }
+                }) {
+                    Ok(record) => record,
+                    Err(error) => return capture_status(error, "latencylab"),
+                };
+            let execution_ns = began.elapsed().as_nanos();
+            if child_status(&record) != 0 {
+                return diagnostic("child_failure", "latencylab");
+            }
+            let matching = record
+                .operations
+                .iter()
+                .filter(|pair| {
+                    matches_selected(
+                        pair.start.operation,
+                        &pair.start.paths,
+                        &selector,
+                        &args.operations,
+                    )
+                })
+                .collect::<Vec<_>>();
+            any_match |= !matching.is_empty();
+            let operation_ns = matching
+                .iter()
+                .map(|pair| u128::from(pair.completion.monotonic_ns - pair.start.monotonic_ns))
+                .sum::<u128>();
+            let observed_delay_ns = matching
+                .iter()
+                .map(|pair| u128::from(pair.completion.observed_delay_ns))
+                .sum::<u128>();
+            let requested_delay_ns = matching.len() as u128 * delay.as_nanos();
+            runs.push(serde_json::json!({
+                "pair": pair + 1,
+                "condition": if injected { "delayed" } else { "baseline" },
+                "matching_operations": matching.len(),
+                "requested_delay_ns": requested_delay_ns,
+                "observed_delay_ns": observed_delay_ns,
+                "operation_ns": operation_ns,
+                "execution_ns": execution_ns,
+            }));
+            if injected {
+                delayed.push(execution_ns);
+            } else {
+                baseline.push(execution_ns);
+            }
+        }
+    }
+    if !any_match {
+        return diagnostic("no_matching_operations", "latencylab");
+    }
+    let baseline_median_ns = median(&baseline);
+    let delayed_median_ns = median(&delayed);
+    let slowdown_ratio = delayed_median_ns as f64 / baseline_median_ns.max(1) as f64;
+    if !args.quiet {
+        let mut report = if args.json {
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "runs": runs,
+                "baseline_median_ns": baseline_median_ns,
+                "delayed_median_ns": delayed_median_ns,
+                "slowdown_ratio": slowdown_ratio,
+                "requested_delay_ns": args.delay.as_nanos(),
+            }))
+            .unwrap_or_default()
+        } else {
+            format!(
+                "Baseline median: {baseline_median_ns} ns\nDelayed median: {delayed_median_ns} \
+                 ns\nSlowdown: {slowdown_ratio:.3}x\nMatched operations observed in {} runs\n",
+                runs.len()
+            )
+            .into_bytes()
+        };
+        if !report.ends_with(b"\n") {
+            report.push(b'\n');
+        }
+        if let Err(error) = publish(&args.output, &report) {
+            return diagnostic(error, "latencylab");
+        }
+    }
+    0
+}
+
 pub fn execute(command: Command) -> i32 {
     match command {
         Command::Compare(args) => compare(args),
@@ -502,6 +725,17 @@ pub fn execute(command: Command) -> i32 {
             {
                 let _ = args;
                 diagnostic("unsupported_target", "assetcov")
+            }
+        }
+        Command::Latencylab(args) => {
+            #[cfg(target_os = "linux")]
+            {
+                latencylab(args)
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                let _ = args;
+                diagnostic("unsupported_target", "latencylab")
             }
         }
     }
@@ -587,5 +821,30 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(execute(coverage.command), 0);
+        let latency_report = directory.path().join("latency.json");
+        let latency = TestCli::try_parse_from([
+            OsString::from("fspy"),
+            OsString::from("latencylab"),
+            OsString::from("--root"),
+            directory.path().as_os_str().to_os_string(),
+            OsString::from("--include"),
+            OsString::from("input.txt"),
+            OsString::from("--delay"),
+            OsString::from("1ms"),
+            OsString::from("--runs"),
+            OsString::from("1"),
+            OsString::from("--json"),
+            OsString::from("--output"),
+            latency_report.as_os_str().to_os_string(),
+            OsString::from("--"),
+            OsString::from("/bin/cat"),
+            input.as_os_str().to_os_string(),
+        ])
+        .unwrap();
+        assert_eq!(execute(latency.command), 0);
+        let report: serde_json::Value =
+            serde_json::from_slice(&fs::read(latency_report).unwrap()).unwrap();
+        assert_eq!(report["runs"].as_array().unwrap().len(), 2);
+        assert!(report["runs"][1]["matching_operations"].as_u64().unwrap() > 0);
     }
 }

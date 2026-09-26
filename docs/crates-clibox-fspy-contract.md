@@ -10,7 +10,7 @@ The current fspy `PathAccess` result is an attempted path-access classification.
 
 The Linux ptrace supervisor uses `PTRACE_GET_SYSCALL_INFO` to pair selected syscall entries and completions, follows fork/clone/vfork descendants, serializes local sessions sharing `waitpid`, and bounds cancellation, timeout, and surviving-descendant cleanup. Its callback may hold the calling thread before a syscall. The Linux capture layer decodes selected syscall paths while the tracee is stopped and pairs native results into version-one records, including actual read bytes and descriptor identity. This remains a private backend foundation: operation coverage, exceptional paths, event byte limits, and GNU/musl target validation must be completed before the command family can expose it as a complete tracer.
 
-The private command module currently has Linux implementations of `record` and `assetcov`, plus platform-neutral `compare`. It is deliberately not composed into `clibox` while `autowatch`, `latencylab`, `min-repro`, `fbreak`, and macOS/Windows tracing remain incomplete. Integration tests may invoke the private module directly; no release or user-facing availability is implied.
+The private command module currently has Linux implementations of `record`, `assetcov`, and `latencylab`, plus platform-neutral `compare`. It is deliberately not composed into `clibox` while `autowatch`, `min-repro`, `fbreak`, and macOS/Windows tracing remain incomplete. Integration tests may invoke the private module directly; no release or user-facing availability is implied.
 
 ## Record and analysis
 

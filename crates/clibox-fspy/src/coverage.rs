@@ -87,6 +87,45 @@ fn glob_set(patterns: &[String]) -> Result<GlobSet, CoverageFailure> {
         .map_err(|_| CoverageFailure::InvalidSelector)
 }
 
+/// Select only paths already classified as project-relative. The caller must
+/// never apply these globs to an untrusted absolute or external path.
+pub struct Selector {
+    include: GlobSet,
+    exclude: GlobSet,
+}
+
+impl Selector {
+    pub fn new(includes: &[String], excludes: &[String]) -> Result<Self, CoverageFailure> {
+        if includes.is_empty() {
+            return Err(CoverageFailure::InvalidSelector);
+        }
+        Ok(Self {
+            include: glob_set(includes)?,
+            exclude: glob_set(excludes)?,
+        })
+    }
+
+    pub fn matches(&self, relative: &NativePath) -> bool {
+        #[cfg(unix)]
+        let relative = match relative {
+            NativePath::UnixBytes(bytes) => {
+                use std::os::unix::ffi::OsStrExt;
+                PathBuf::from(std::ffi::OsStr::from_bytes(bytes))
+            }
+            NativePath::WindowsUtf16(_) => return false,
+        };
+        #[cfg(windows)]
+        let relative = match relative {
+            NativePath::WindowsUtf16(units) => {
+                use std::os::windows::ffi::OsStringExt;
+                PathBuf::from(std::ffi::OsString::from_wide(units))
+            }
+            NativePath::UnixBytes(_) => return false,
+        };
+        self.include.is_match(&relative) && !self.exclude.is_match(&relative)
+    }
+}
+
 fn native_path(path: &Path) -> NativePath {
     #[cfg(unix)]
     {
