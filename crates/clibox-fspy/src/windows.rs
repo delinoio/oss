@@ -260,7 +260,7 @@ fn normalize(path: &Path) -> PathBuf {
     normalized
 }
 
-fn resolve_even_if_absent(path: &Path) -> io::Result<PathBuf> {
+fn resolve_even_if_absent(path: &Path) -> io::Result<Option<PathBuf>> {
     let mut cursor = path;
     let mut tail = Vec::<OsString>::new();
     loop {
@@ -269,7 +269,7 @@ fn resolve_even_if_absent(path: &Path) -> io::Result<PathBuf> {
                 for component in tail.iter().rev() {
                     resolved.push(component);
                 }
-                return Ok(normalize(&resolved));
+                return Ok(Some(normalize(&resolved)));
             }
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
                 let component = cursor
@@ -281,12 +281,13 @@ fn resolve_even_if_absent(path: &Path) -> io::Result<PathBuf> {
                     .parent()
                     .ok_or_else(|| invalid("missing_path_parent"))?;
             }
+            Err(error) if error.kind() == io::ErrorKind::PermissionDenied => return Ok(None),
             Err(error) => return Err(error),
         }
     }
 }
 
-fn classify_path(root: &Path, bytes: &[u8]) -> io::Result<AccessPath> {
+fn classify_path(root: &Path, bytes: &[u8]) -> io::Result<Option<AccessPath>> {
     let logical = native_path(bytes)?;
     let NativePath::WindowsUtf16(units) = &logical else {
         unreachable!()
@@ -296,13 +297,13 @@ fn classify_path(root: &Path, bytes: &[u8]) -> io::Result<AccessPath> {
     let path = if units.starts_with(&nt_volume) {
         nt_volume_path(units)?
     } else if units.starts_with(&nt_device) {
-        return Ok(AccessPath {
+        return Ok(Some(AccessPath {
             class: PathClass::External,
             logical,
             resolved: None,
             project_relative: None,
             identity: None,
-        });
+        }));
     } else {
         fs_path(units)
     };
@@ -329,11 +330,13 @@ fn classify_path(root: &Path, bytes: &[u8]) -> io::Result<AccessPath> {
         );
         return Err(invalid("non_absolute_path"));
     }
-    let resolved = resolve_even_if_absent(&path)?;
+    let Some(resolved) = resolve_even_if_absent(&path)? else {
+        return Ok(None);
+    };
     let relative = resolved.strip_prefix(root).ok();
     let identity = file_id::get_file_id(&path).ok().map(FileIdentity::from);
     use std::os::windows::ffi::OsStrExt;
-    Ok(AccessPath {
+    Ok(Some(AccessPath {
         class: if relative.is_some() {
             PathClass::Project
         } else {
@@ -352,7 +355,7 @@ fn classify_path(root: &Path, bytes: &[u8]) -> io::Result<AccessPath> {
             })
         }),
         identity,
-    })
+    }))
 }
 
 #[derive(Default)]
@@ -395,11 +398,11 @@ impl Ledger {
                 }
                 let mut frame = frame;
                 if !frame.path.is_empty() && frame.access_path.is_none() {
-                    frame.access_path = Some(classify_path(root, &frame.path)?);
+                    frame.access_path = classify_path(root, &frame.path)?;
                 }
                 if let Some(second) = &frame.second_path {
                     if frame.second_access_path.is_none() {
-                        frame.second_access_path = Some(classify_path(root, second)?);
+                        frame.second_access_path = classify_path(root, second)?;
                     }
                 }
                 let key = (frame.pid, frame.tid, frame.id);
@@ -534,10 +537,10 @@ where
         }
         if frame.kind == FrameKind::Start {
             if !frame.path.is_empty() {
-                frame.access_path = Some(classify_path(&context.root, &frame.path)?);
+                frame.access_path = classify_path(&context.root, &frame.path)?;
             }
             if let Some(second) = &frame.second_path {
-                frame.second_access_path = Some(classify_path(&context.root, second)?);
+                frame.second_access_path = classify_path(&context.root, second)?;
             }
             let began = Instant::now();
             let requested = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -735,8 +738,10 @@ pub fn assemble_candidate_record(
     let mut operations = Vec::with_capacity(pairs.len());
     for (start, completion) in pairs {
         let kind = operation_id(start.operation).ok_or_else(|| invalid("operation_kind"))?;
-        let path_unavailable = start.path.is_empty();
-        let mut paths = if path_unavailable {
+        let path_unavailable = start.path.is_empty()
+            || start.access_path.is_none()
+            || (start.second_path.is_some() && start.second_access_path.is_none());
+        let mut paths = if start.path.is_empty() || start.access_path.is_none() {
             Vec::new()
         } else {
             vec![start

@@ -26,6 +26,7 @@ Paths are encoded as native Unix bytes or Windows UTF-16 code units; a display s
 Windows high-resolution file IDs use exactly 32 lowercase hexadecimal digits in records. JSON numeric encoding cannot round-trip the full 128-bit identity through the strict parser, so numeric Windows file IDs are rejected.
 
 A failed native call may supply a null, invalid, or overlong pathname pointer, or an invalid relative directory descriptor. The Linux decoder records the paired native result with an explicit `path_unavailable` marker instead of inventing a path or turning that ordinary failed call into an incomplete trace. Path-based workflows cannot select such an operation as a project input.
+When a path cannot be resolved because an ancestor denies search permission, all three native backends retain the paired operation with `path_unavailable` instead of aborting the trace or guessing whether a symlink escapes the project. Other classified paths in a multi-path mutation remain available; the unresolved path is not eligible for selection.
 
 The pre-execution asset denominator walks the selected root, follows only internal symlinks, and deduplicates file identities, including hard links, without holding one open descriptor per file. A read completion must carry the opened file's identity and actual byte count; the analyzer cannot recover it reliably from a pathname after the execution. A missing identity cannot cover a selected file.
 

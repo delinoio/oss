@@ -258,7 +258,7 @@ fn receive_connection(
         let start = frame.kind == FrameKind::Start;
         if start && !frame.path.is_empty() {
             if let Some(root) = root {
-                frame.access_path = Some(classify_path(root, &frame.path)?);
+                frame.access_path = classify_path(root, &frame.path)?;
             }
         }
         if start {
@@ -501,7 +501,7 @@ fn normalize(path: &Path) -> PathBuf {
     normalized
 }
 
-fn resolve_even_if_absent(path: &Path) -> io::Result<PathBuf> {
+fn resolve_even_if_absent(path: &Path) -> io::Result<Option<PathBuf>> {
     let mut cursor = path;
     let mut tail = Vec::<OsString>::new();
     loop {
@@ -510,7 +510,7 @@ fn resolve_even_if_absent(path: &Path) -> io::Result<PathBuf> {
                 for component in tail.iter().rev() {
                     resolved.push(component);
                 }
-                return Ok(normalize(&resolved));
+                return Ok(Some(normalize(&resolved)));
             }
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
                 let component = cursor
@@ -522,20 +522,23 @@ fn resolve_even_if_absent(path: &Path) -> io::Result<PathBuf> {
                     .parent()
                     .ok_or_else(|| invalid("missing_path_parent"))?;
             }
+            Err(error) if error.kind() == io::ErrorKind::PermissionDenied => return Ok(None),
             Err(error) => return Err(error),
         }
     }
 }
 
-fn classify_path(root: &Path, bytes: &[u8]) -> io::Result<AccessPath> {
+fn classify_path(root: &Path, bytes: &[u8]) -> io::Result<Option<AccessPath>> {
     let logical = PathBuf::from(OsString::from_vec(bytes.to_vec()));
     if !logical.is_absolute() {
         return Err(invalid("non_absolute_path"));
     }
-    let resolved = resolve_even_if_absent(&logical)?;
+    let Some(resolved) = resolve_even_if_absent(&logical)? else {
+        return Ok(None);
+    };
     let relative = resolved.strip_prefix(root).ok();
     let identity = file_id::get_file_id(&logical).ok().map(FileIdentity::from);
-    Ok(AccessPath {
+    Ok(Some(AccessPath {
         class: if relative.is_some() {
             PathClass::Project
         } else {
@@ -554,7 +557,7 @@ fn classify_path(root: &Path, bytes: &[u8]) -> io::Result<AccessPath> {
             })
         }),
         identity,
-    })
+    }))
 }
 
 pub(crate) fn operation(kind: u8) -> Option<Operation> {
@@ -589,7 +592,7 @@ pub fn assemble_candidate_record(
     let mut operations = Vec::with_capacity(pairs.len());
     for (start, completion) in pairs {
         let kind = operation(start.operation).ok_or_else(|| invalid("operation_kind"))?;
-        let path_unavailable = start.path.is_empty();
+        let path_unavailable = start.path.is_empty() || start.access_path.is_none();
         let paths = if path_unavailable {
             Vec::new()
         } else {
@@ -691,7 +694,30 @@ mod tests {
 
     use tokio_util::sync::CancellationToken;
 
-    use super::{assemble_candidate_record, read_frame, FrameKind, FrameLedger, OperationReceiver};
+    use super::{
+        assemble_candidate_record, classify_path, read_frame, FrameKind, FrameLedger,
+        OperationReceiver,
+    };
+
+    #[test]
+    fn inaccessible_ancestor_does_not_abort_path_classification() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().canonicalize().unwrap();
+        let hidden = root.join("hidden");
+        fs::create_dir(&hidden).unwrap();
+        fs::set_permissions(&hidden, fs::Permissions::from_mode(0o000)).unwrap();
+        let target = hidden.join("input.txt");
+        let denied = fs::canonicalize(&target)
+            .is_err_and(|error| error.kind() == io::ErrorKind::PermissionDenied);
+        if denied {
+            assert!(classify_path(&root, target.as_os_str().as_bytes())
+                .unwrap()
+                .is_none());
+        }
+        fs::set_permissions(&hidden, fs::Permissions::from_mode(0o700)).unwrap();
+    }
 
     fn frame_bytes(kind: u8, path: &[u8]) -> Vec<u8> {
         let mut frame = Vec::new();

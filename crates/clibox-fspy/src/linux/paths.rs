@@ -224,7 +224,7 @@ fn absolute_path(
     }
 }
 
-fn resolve_even_if_absent(path: &Path) -> Result<PathBuf, TraceFailure> {
+fn resolve_even_if_absent(path: &Path) -> Result<Option<PathBuf>, TraceFailure> {
     let mut cursor = path;
     let mut tail = Vec::<OsString>::new();
     loop {
@@ -233,7 +233,7 @@ fn resolve_even_if_absent(path: &Path) -> Result<PathBuf, TraceFailure> {
                 for component in tail.iter().rev() {
                     resolved.push(component);
                 }
-                return Ok(lexical_normalize(&resolved));
+                return Ok(Some(lexical_normalize(&resolved)));
             }
             Err(error)
                 if matches!(
@@ -249,6 +249,9 @@ fn resolve_even_if_absent(path: &Path) -> Result<PathBuf, TraceFailure> {
                 cursor = cursor
                     .parent()
                     .ok_or_else(|| supervision("missing_path_parent"))?;
+            }
+            Err(error) if error.kind() == io::ErrorKind::PermissionDenied => {
+                return Ok(None);
             }
             Err(error) => {
                 use std::io::Write;
@@ -284,10 +287,12 @@ fn access_path(
     root: &Path,
     logical: PathBuf,
     identity: Option<FileIdentity>,
-) -> Result<AccessPath, TraceFailure> {
-    let resolved = resolve_even_if_absent(&logical)?;
+) -> Result<Option<AccessPath>, TraceFailure> {
+    let Some(resolved) = resolve_even_if_absent(&logical)? else {
+        return Ok(None);
+    };
     let project_relative = resolved.strip_prefix(root).ok();
-    Ok(AccessPath {
+    Ok(Some(AccessPath {
         class: if project_relative.is_some() {
             PathClass::Project
         } else {
@@ -306,7 +311,7 @@ fn access_path(
             })
         }),
         identity,
-    })
+    }))
 }
 
 fn from_source(
@@ -340,7 +345,9 @@ fn from_source(
     let Some(path) = path else {
         return Ok((None, !matches!(source, Source::Descriptor(_))));
     };
-    Ok((Some(access_path(root, path, identity)?), false))
+    let classified = access_path(root, path, identity)?;
+    let unavailable = classified.is_none();
+    Ok((classified, unavailable))
 }
 
 /// Decode a selected file syscall at entry, before the tracee resumes. A
@@ -389,7 +396,7 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let root = directory.path().canonicalize().unwrap();
         let path = root.join("missing/../../outside");
-        let decoded = access_path(&root, path, None).unwrap();
+        let decoded = access_path(&root, path, None).unwrap().unwrap();
         assert_eq!(decoded.class, PathClass::External);
         assert!(decoded.project_relative.is_none());
     }
@@ -400,7 +407,9 @@ mod tests {
         let root = directory.path().canonicalize().unwrap();
         fs::create_dir(root.join("inside")).unwrap();
         symlink(root.join("inside"), root.join("alias")).unwrap();
-        let decoded = access_path(&root, root.join("alias/absent"), None).unwrap();
+        let decoded = access_path(&root, root.join("alias/absent"), None)
+            .unwrap()
+            .unwrap();
         assert_eq!(decoded.class, PathClass::Project);
         assert_eq!(
             decoded.project_relative,
@@ -413,7 +422,9 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let root = directory.path().canonicalize().unwrap();
         fs::write(root.join("parent.txt"), b"content").unwrap();
-        let decoded = access_path(&root, root.join("parent.txt/child"), None).unwrap();
+        let decoded = access_path(&root, root.join("parent.txt/child"), None)
+            .unwrap()
+            .unwrap();
         assert_eq!(decoded.class, PathClass::Project);
         assert_eq!(
             decoded.project_relative,
@@ -437,5 +448,23 @@ mod tests {
         assert_eq!(decoded.operation, Operation::Open);
         assert!(decoded.paths.is_empty());
         assert!(decoded.path_unavailable);
+    }
+
+    #[test]
+    fn inaccessible_ancestor_keeps_failed_path_unavailable() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().canonicalize().unwrap();
+        let hidden = root.join("hidden");
+        fs::create_dir(&hidden).unwrap();
+        fs::set_permissions(&hidden, fs::Permissions::from_mode(0o000)).unwrap();
+        let target = hidden.join("input.txt");
+        let denied = fs::canonicalize(&target)
+            .is_err_and(|error| error.kind() == io::ErrorKind::PermissionDenied);
+        if denied {
+            assert!(access_path(&root, target, None).unwrap().is_none());
+        }
+        fs::set_permissions(&hidden, fs::Permissions::from_mode(0o700)).unwrap();
     }
 }
