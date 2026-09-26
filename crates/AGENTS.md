@@ -28,6 +28,7 @@
 - `crates/cargo-mono`: Cargo-based Rust monorepo management CLI.
 - `crates/clibox`: non-publishable Rust executable distributed through npm and native packages.
 - `crates/clibox-config`, `crates/clibox-system`, `crates/clibox-transform`, `crates/clibox-wait`: non-publishable clibox command-family implementations.
+- `crates/clibox-fspy`: private, non-publishable issue #971 file-access workflow crate. Treat legacy fspy path-access hints as attempts only; never infer a successful content read or complete operation trace from them. Follow `docs/crates-clibox-fspy-contract.md`.
 - `crates/nodeup`: Rust-based Node.js version manager.
 - `crates/with-watch`: Rust-based filesystem-watching command wrapper.
 - `crates/serde-feather`: Size-first serde runtime-facing core crate.

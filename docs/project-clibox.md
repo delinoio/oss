@@ -1,7 +1,7 @@
 # Project: clibox
 
 ## Goal
-Provide a Rust CLI that JavaScript projects can pin through npm and their lockfiles. Issue #916 defines cross-platform environment execution, local port inspection/termination, resource opening, and text clipboard commands; issue #917 adds offline text replacement, time formatting/arithmetic, Base64 transformation, and hash generation/verification. Issue #919 adds stateless TCP, HTTP, and regular-file readiness waits. Issue #920 adds local configuration commands to list dotenv keys, merge dotenv layers, and normalize YAML references. Issue #951 adds portable CPU counts. Issue #953 adds local execution wrappers for rate limits, locks, HTTP service readiness, retries, and runtime/idle timeouts. All command sets coexist with help/version.
+Provide a Rust CLI that JavaScript projects can pin through npm and their lockfiles. Issue #916 defines cross-platform environment execution, local port inspection/termination, resource opening, and text clipboard commands; issue #917 adds offline text replacement, time formatting/arithmetic, Base64 transformation, and hash generation/verification. Issue #919 adds stateless TCP, HTTP, and regular-file readiness waits. Issue #920 adds local configuration commands to list dotenv keys, merge dotenv layers, and normalize YAML references. Issue #951 adds portable CPU counts. Issue #953 adds local execution wrappers for rate limits, locks, HTTP service readiness, retries, and runtime/idle timeouts. Issue #971 specifies seven file-access workflows; the private record-validation foundation is in progress and the commands are not implemented yet. All command sets coexist with help/version when complete.
 
 ## Project ID
 `clibox`
@@ -12,11 +12,13 @@ Provide a Rust CLI that JavaScript projects can pin through npm and their lockfi
 - `crates/clibox-system`: OS command definitions, runtime, errors, and adapters.
 - `crates/clibox-transform`: offline command definitions, transformations, cancellation, and atomic publication.
 - `crates/clibox-wait`: readiness command definitions, validation, probes, polling, and reporting.
+- `crates/clibox-fspy`: private file-access record validation foundation; issue #971 execution and command workflows remain to be implemented.
 - `packages/clibox`: private source workspace for the public npm launcher, platform packages, packaging, and publication tooling.
 - `apps/public-docs/docs/clibox`: English public guides published at `https://oss.delino.io/clibox`.
 
 ## Domain Contract Documents
 - [Rust foundation](crates-clibox-foundation.md)
+- [File-access workflow contract](crates-clibox-fspy-contract.md)
 - [npm distribution](packages-clibox-distribution-contract.md)
 - [Public documentation](apps-clibox-docs-foundation.md)
 
