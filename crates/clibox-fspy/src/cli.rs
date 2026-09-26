@@ -20,25 +20,36 @@ pub enum Command {
     #[command(
         after_help = "Example: clibox fspy record --output trace.ndjson -- cargo test\nThe \
                       declared boundary excludes mmap and asynchronous I/O. Records contain \
-                      file-access paths."
+                      file-access paths.\nExit codes: 0 success, 1 failure, 2 invalid input, 124 \
+                      timeout, 130 interrupt, 143 Unix SIGTERM."
     )]
     Record(RecordArgs),
     /// Rerun when inputs discovered from a traced execution change.
-    #[command(after_help = "Example: clibox fspy autowatch --include 'src/**' -- cargo test")]
+    #[command(
+        after_help = "Example: clibox fspy autowatch --include 'src/**' -- cargo test\nExit \
+                      codes: 0 success, 1 failure, 2 invalid input, 124 timeout, 130 interrupt, \
+                      143 Unix SIGTERM."
+    )]
     Autowatch(AutowatchArgs),
     /// Compare two complete, compatible execution records.
     #[command(
-        after_help = "Example: clibox fspy compare before.ndjson after.ndjson --fail-on-change"
+        after_help = "Example: clibox fspy compare before.ndjson after.ndjson \
+                      --fail-on-change\nExit codes: 0 success, 1 failure, 2 invalid input."
     )]
     Compare(CompareArgs),
     /// Report selected existing resources actually read by a command.
-    #[command(after_help = "Example: clibox fspy assetcov --include 'assets/**' -- cargo test")]
+    #[command(
+        after_help = "Example: clibox fspy assetcov --include 'assets/**' -- cargo test\nExit \
+                      codes: 0 success, 1 failure, 2 invalid input, 124 timeout, 130 interrupt, \
+                      143 Unix SIGTERM."
+    )]
     Assetcov(AssetcovArgs),
     /// Alternate baseline and delayed runs of matching file operations.
     #[command(
         after_help = "Example: clibox fspy latencylab --include 'src/**' --delay 10ms -- cargo \
                       test\nTiming is an observation under current conditions, not a \
-                      storage-device prediction."
+                      storage-device prediction.\nExit codes: 0 success, 1 failure, 2 invalid \
+                      input, 124 timeout, 130 interrupt, 143 Unix SIGTERM."
     )]
     Latencylab(LatencyArgs),
     /// Collect and verify observed project inputs for a failing command.
@@ -46,14 +57,16 @@ pub enum Command {
         after_help = "Example: clibox fspy min-repro --include 'src/**' --bundle-dir repro \
                       --expect-exit 1 --expect-stderr 'failed' -- cargo test\nThe bundle is \
                       verified in a separate cwd; it is not an OS sandbox or a cross-machine \
-                      guarantee."
+                      guarantee.\nExit codes: 0 success, 1 failure, 2 invalid input, 124 timeout, \
+                      130 interrupt, 143 Unix SIGTERM."
     )]
     MinRepro(MinReproArgs),
     /// Pause matching calling threads before a file operation.
     #[command(
         after_help = "Example: clibox fspy fbreak --include 'config/**' --op read -- \
                       ./app\nControls on the required terminal: n next, c continue all, q quit. \
-                      Child stdin is closed."
+                      Child stdin is closed.\nExit codes: 0 success, 1 failure, 2 invalid input, \
+                      124 timeout, 130 interrupt, 143 Unix SIGTERM."
     )]
     Fbreak(BreakArgs),
 }

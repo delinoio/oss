@@ -476,6 +476,22 @@ where
                 }
                 continue;
             }
+            Err(error) if error.kind() == io::ErrorKind::ConnectionReset && !reader.consumed => {
+                // Windows can reset a DLL-owned loopback socket during normal
+                // process teardown. Accept that reset only at a frame boundary
+                // after the supervisor confirms the entire owned job exited.
+                // Pair validation and the legacy trace completeness check still
+                // reject a lost operation. Remove this exception if the sender
+                // starts closing its socket gracefully before process exit.
+                let until = Instant::now() + Duration::from_secs(5);
+                while !context.stop.load(Ordering::Acquire) && Instant::now() < until {
+                    thread::sleep(POLL);
+                }
+                if context.stop.load(Ordering::Acquire) {
+                    return Ok(());
+                }
+                return Err(error);
+            }
             Err(error) => return Err(error),
         };
         frame.sequence = context.sequence.fetch_add(1, Ordering::AcqRel) + 1;

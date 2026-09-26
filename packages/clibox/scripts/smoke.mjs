@@ -46,6 +46,10 @@ try {
     const help = execFileSync(process.execPath, [launcher, "--help"], { cwd: consumer, encoding: "utf8" });
     ensure(help.includes("Usage: clibox"), `${manager} help smoke failed`);
     const cli = (args, input) => execFileSync(process.execPath, [launcher, ...args], { cwd: consumer, encoding: "utf8", input });
+    const fspyHelp = cli(["fspy", "--help"]);
+    for (const command of ["record", "compare", "autowatch", "assetcov", "latencylab", "min-repro", "fbreak"]) {
+      ensure(fspyHelp.includes(command), `${manager} installed fspy ${command} help is missing`);
+    }
     const available = cli(["system", "cpus"]);
     ensure(/^[1-9][0-9]*\n$/u.test(available), `${manager} available CPU smoke failed`);
     const logical = cli(["system", "cpus", "--kind", "logical"]);
@@ -125,7 +129,7 @@ try {
     } finally {
       await new Promise((resolve) => listener.close(resolve));
     }
-    for (const group of ["run", "port", "clipboard", "system", "wait", "text", "time", "base64", "hash", "dotenv", "yaml"]) {
+    for (const group of ["run", "port", "clipboard", "system", "wait", "fspy", "text", "time", "base64", "hash", "dotenv", "yaml"]) {
       const missing = spawnSync(process.execPath, [launcher, group], { cwd: consumer, encoding: "utf8" });
       ensure(missing.status === 2 && missing.stdout === "" && missing.stderr.includes(`Usage: ${target.binary} ${group}`) && missing.stderr.includes("Commands:"), `${manager} ${group} missing-subcommand help smoke failed`);
     }

@@ -398,6 +398,7 @@ static BOOL RecordExeRestore(HANDLE hProcess, HMODULE hModule, DETOUR_EXE_RESTOR
     if (!ReadProcessMemory(hProcess, der.pidh, &der.idh, sizeof(der.idh), NULL)) {
         DETOUR_TRACE(("ReadProcessMemory(idh@%p..%p) failed: %lu\n",
                       der.pidh, der.pidh + der.cbidh, GetLastError()));
+        FspyReportDetourFailure("restore_read_dos_header");
         return FALSE;
     }
     DETOUR_TRACE(("IDH: %p..%p\n", der.pidh, der.pidh + der.cbidh));
@@ -409,6 +410,7 @@ static BOOL RecordExeRestore(HANDLE hProcess, HMODULE hModule, DETOUR_EXE_RESTOR
     if (!ReadProcessMemory(hProcess, der.pinh, &der.inh, der.cbinh, NULL)) {
         DETOUR_TRACE(("ReadProcessMemory(inh@%p..%p) failed: %lu\n",
                       der.pinh, der.pinh + der.cbinh, GetLastError()));
+        FspyReportDetourFailure("restore_read_nt_prefix");
         return FALSE;
     }
 
@@ -418,12 +420,16 @@ static BOOL RecordExeRestore(HANDLE hProcess, HMODULE hModule, DETOUR_EXE_RESTOR
                  der.inh.FileHeader.NumberOfSections * sizeof(IMAGE_SECTION_HEADER));
 
     if (der.cbinh > sizeof(der.raw)) {
+        fprintf(stderr, "fspy detours: stage=restore_header_limit bytes=%lu limit=%zu sections=%u\n",
+                der.cbinh, sizeof(der.raw), der.inh.FileHeader.NumberOfSections);
+        SetLastError(ERROR_BAD_EXE_FORMAT);
         return FALSE;
     }
 
     if (!ReadProcessMemory(hProcess, der.pinh, &der.inh, der.cbinh, NULL)) {
         DETOUR_TRACE(("ReadProcessMemory(inh@%p..%p) failed: %lu\n",
                       der.pinh, der.pinh + der.cbinh, GetLastError()));
+        FspyReportDetourFailure("restore_read_full_nt_header");
         return FALSE;
     }
     DETOUR_TRACE(("INH: %p..%p\n", der.pinh, der.pinh + der.cbinh));
@@ -458,6 +464,7 @@ static BOOL RecordExeRestore(HANDLE hProcess, HMODULE hModule, DETOUR_EXE_RESTOR
         if (!ReadProcessMemory(hProcess, der.pclr, &der.clr, der.cbclr, NULL)) {
             DETOUR_TRACE(("ReadProcessMemory(clr@%p..%p) failed: %lu\n",
                           der.pclr, der.pclr + der.cbclr, GetLastError()));
+            FspyReportDetourFailure("restore_read_clr_header");
             return FALSE;
         }
         DETOUR_TRACE(("CLR: %p..%p\n", der.pclr, der.pclr + der.cbclr));
