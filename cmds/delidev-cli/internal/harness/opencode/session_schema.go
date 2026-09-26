@@ -175,7 +175,10 @@ func validateSession(raw []byte, cwd string, creation *sessionCreation, fresh bo
 	}
 	created, ok := nativeCount(times["created"])
 	updated, valid := nativeCount(times["updated"])
-	if !ok || !valid || created == 0 || updated < created || fresh && updated != created {
+	// The pinned native constructor reads Date.now() separately for each
+	// timestamp. Crossing a millisecond boundary is valid even on creation;
+	// equality is not an ownership or freshness guarantee.
+	if !ok || !valid || created == 0 || updated < created {
 		return bad()
 	}
 	var permissions []json.RawMessage

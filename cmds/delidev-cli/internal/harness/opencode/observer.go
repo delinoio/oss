@@ -29,18 +29,19 @@ const (
 // notifications and step/message accounting keep their original event owners.
 // Recognized registry notifications do not establish effective configuration.
 type inputObservation struct {
-	EventID          string
-	Kind             EventKind
-	Message          *NativeMessage `json:"-"`
-	Part             *NativePart    `json:"-"`
-	Delta            *nativeDelta   `json:"-"`
-	Error            *NativeError
-	Repeated         bool
-	MessageFinalized bool
-	Ancillary        json.RawMessage         `json:"-"`
-	Interaction      *NativeInteraction      `json:"-"`
-	InteractionReply *NativeInteractionReply `json:"-"`
-	RejectionSources []string
+	EventID            string
+	Kind               EventKind
+	Message            *NativeMessage `json:"-"`
+	Part               *NativePart    `json:"-"`
+	Delta              *nativeDelta   `json:"-"`
+	Error              *NativeError
+	Repeated           bool
+	MessageFinalized   bool
+	Ancillary          json.RawMessage         `json:"-"`
+	Interaction        *NativeInteraction      `json:"-"`
+	InteractionReply   *NativeInteractionReply `json:"-"`
+	RejectionSources   []string
+	AlwaysObservations []string
 }
 
 type nativeDelta struct {
@@ -230,6 +231,7 @@ func (o *inputObserver) observe(ctx context.Context, event NativeEvent) (inputOb
 		result.InteractionReply, err = o.interactionReply(event)
 		if err == nil {
 			result.RejectionSources = slices.Clone(o.interactions[result.InteractionReply.RequestID].rejectionSources)
+			result.AlwaysObservations = slices.Clone(o.interactions[result.InteractionReply.RequestID].alwaysObservations)
 		}
 	case MessageUpdatedEvent:
 		stage = "message"

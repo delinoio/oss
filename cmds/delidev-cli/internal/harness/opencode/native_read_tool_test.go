@@ -72,7 +72,7 @@ func nativeReadToolFixture(t *testing.T, missing bool, toolFinish string) {
 			delta["tool_calls"] = []any{map[string]any{"index": 0, "id": callID, "type": "function", "function": map[string]any{"name": "read", "arguments": string(args)}}}
 			finish = toolFinish
 		case 2:
-			if !bytes.Contains(body["messages"], []byte(sentinel)) || !bytes.Contains(body["messages"], []byte(callID)) {
+			if result, valid := providerToolResult(body["messages"], callID); !valid || !strings.Contains(result, sentinel) {
 				t.Error("native Read result was not preserved in the original provider conversation")
 			}
 			delta["content"] = "Private read complete."
@@ -199,4 +199,26 @@ func nativeReadToolFixture(t *testing.T, missing bool, toolFinish string) {
 	if receipt, err := api.inspectInput(ctx); err != nil || !receipt.Recorded {
 		t.Fatal("native tool activity lost original input storage")
 	}
+}
+
+// Inspect the original provider tool-result message, not matching text from an
+// earlier assistant tool proposal, whose arguments can contain the same path.
+func providerToolResult(raw []byte, callID string) (string, bool) {
+	var messages []map[string]json.RawMessage
+	if domain.Decode(raw, &messages) != nil {
+		return "", false
+	}
+	var result string
+	count := 0
+	for _, message := range messages {
+		if scalar(message["role"], "tool") && scalar(message["tool_call_id"], callID) {
+			text, valid := boundedString(message["content"], maxHTTPBody, false)
+			if !valid {
+				return "", false
+			}
+			result = text
+			count++
+		}
+	}
+	return result, count == 1
 }

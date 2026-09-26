@@ -19,15 +19,17 @@ type RejectionPolicy string
 const StopOnInteractionRejection RejectionPolicy = "stop-on-rejection"
 
 type observedInteraction struct {
-	value             NativeInteraction
-	raw               []byte
-	arrival           string
-	closed            bool
-	attempt           *interactionAttempt
-	rejected          bool
-	rejectionSources  []string
-	rejectionReserved bool
-	pendingAbsent     bool
+	value              NativeInteraction
+	raw                []byte
+	arrival            string
+	closed             bool
+	attempt            *interactionAttempt
+	rejected           bool
+	rejectionSources   []string
+	rejectionReserved  bool
+	pendingAbsent      bool
+	alwaysAccepted     bool
+	alwaysObservations []string
 }
 
 type interactionAttempt struct {
@@ -90,22 +92,32 @@ func (o *inputObserver) interactionReply(event NativeEvent) (*NativeInteractionR
 		return nil, observerProblem()
 	}
 	if interaction.attempt == nil {
-		// The native rejection service closes other pending permissions in
-		// this original session. Preserve all observed possible direct causes;
-		// never invent a response claim for a cascaded closure.
-		if value.Kind != PermissionInteraction || !value.Rejected {
+		// Native permission policy closes other pending requests in this
+		// original session. Preserve observations without inventing a direct
+		// response claim or replaying native wildcard matching ourselves.
+		if value.Kind != PermissionInteraction || value.Decision == nil || *value.Decision != PermissionReject && *value.Decision != PermissionAlways {
 			return nil, observerProblem()
 		}
 		for id, prior := range o.interactions {
-			if prior.value.Kind == PermissionInteraction && prior.closed && prior.rejected && prior.attempt != nil && prior.attempt.receipt.NativeAccepted {
+			if prior.value.Kind != PermissionInteraction || !prior.closed || prior.attempt == nil || !prior.attempt.receipt.NativeAccepted {
+				continue
+			}
+			if value.Rejected && prior.rejected {
 				interaction.rejectionSources = append(interaction.rejectionSources, id)
 			}
+			if *value.Decision == PermissionAlways && prior.alwaysAccepted && len(prior.value.Permission.Always) != 0 {
+				// The native event establishes this original request's policy
+				// closure. Retain prior direct always observations as context,
+				// not a guessed exact wildcard-rule or direct response owner.
+				interaction.alwaysObservations = append(interaction.alwaysObservations, id)
+			}
 		}
-		if len(interaction.rejectionSources) == 0 {
+		if value.Rejected && len(interaction.rejectionSources) == 0 || *value.Decision == PermissionAlways && len(interaction.alwaysObservations) == 0 {
 			return nil, observerProblem()
 		}
 		slices.Sort(interaction.rejectionSources)
-		interaction.closed, interaction.rejected = true, true
+		slices.Sort(interaction.alwaysObservations)
+		interaction.closed, interaction.rejected = true, value.Rejected
 		return &value, nil
 	}
 	if !interaction.attempt.sent {
@@ -113,7 +125,7 @@ func (o *inputObserver) interactionReply(event NativeEvent) (*NativeInteractionR
 	}
 	var body []byte
 	if value.Kind == PermissionInteraction {
-		if value.Decision == nil || *value.Decision != PermissionOnce && *value.Decision != PermissionReject {
+		if value.Decision == nil || *value.Decision != PermissionOnce && *value.Decision != PermissionReject && *value.Decision != PermissionAlways {
 			return nil, observerProblem()
 		}
 		body, _ = json.Marshal(struct {
@@ -138,6 +150,7 @@ func (o *inputObserver) interactionReply(event NativeEvent) (*NativeInteractionR
 	}
 	interaction.closed = true
 	interaction.rejected = value.Rejected
+	interaction.alwaysAccepted = value.Decision != nil && *value.Decision == PermissionAlways
 	interaction.attempt.receipt.NativeAccepted = true
 	if value.Kind == PermissionInteraction && value.Rejected {
 		for _, pending := range o.interactions {
@@ -184,8 +197,7 @@ func (o *inputObserver) prepareInteraction(request domain.ID, id string, respons
 	var kind SessionMutation
 	var path string
 	if interaction.value.Kind == PermissionInteraction {
-		if response.Decision == nil || *response.Decision != PermissionOnce && *response.Decision != PermissionReject || response.Answers != nil || response.Reject {
-			// Always extends native process rules and requires its own profile.
+		if response.Decision == nil || *response.Decision != PermissionOnce && *response.Decision != PermissionReject && *response.Decision != PermissionAlways || response.Answers != nil || response.Reject {
 			return nil, "", interactionProblem()
 		}
 		if *response.Decision == PermissionReject && o.rejectionPolicy != StopOnInteractionRejection {

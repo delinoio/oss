@@ -282,7 +282,7 @@ func TestQuestionAnswerValidationDoesNotRewriteNativeOptions(t *testing.T) {
 }
 
 func TestInteractionReplyInvalidSelectionDoesNotConsumeOrSend(t *testing.T) {
-	for _, decision := range []PermissionDecision{PermissionAlways, PermissionReject, "unknown"} {
+	for _, decision := range []PermissionDecision{PermissionReject, "unknown"} {
 		r := newReplyFixture(t, PermissionInteraction)
 		if _, err := r.api.replyInteraction(context.Background(), r.f.o, domain.NewID(), r.id, InteractionResponse{Decision: &decision}); err == nil {
 			t.Fatal("unimplemented decision gained single-use authority")

@@ -146,9 +146,10 @@ func (s *sessionAPI) enter(ctx context.Context) error {
 
 func (s *sessionAPI) leave() { <-s.gate }
 
-func (s *sessionAPI) diagnostic(ctx context.Context, kind SessionMutation, err error) {
+func (s *sessionAPI) diagnostic(ctx context.Context, kind SessionMutation, err error, facts ...any) {
 	if s.logger != nil {
-		s.logger.WarnContext(ctx, "OpenCode session operation needs reconciliation", "owner_id", s.owner, "operation", kind, "code", domain.SafeError(err).Code)
+		fields := []any{"owner_id", s.owner, "operation", kind, "code", domain.SafeError(err).Code}
+		s.logger.WarnContext(ctx, "OpenCode session operation needs reconciliation", append(fields, facts...)...)
 	}
 }
 
@@ -223,17 +224,17 @@ func (s *sessionAPI) create(ctx context.Context, request domain.ID, settings Ses
 	// cancellation nor failure proves that its claim was not synchronized.
 	s.creation = &sessionCreation{request: request, settings: settings}
 	if err := s.claim(ctx, SessionClaim{RequestID: request, Kind: CreateSessionMutation, BodyDigest: mutationDigest(body)}); err != nil {
-		s.diagnostic(ctx, CreateSessionMutation, err)
+		s.diagnostic(ctx, CreateSessionMutation, err, "phase", "claim")
 		return "", sessionUncertain()
 	}
-	raw, _, err := s.request(ctx, http.MethodPost, "/session", body, http.StatusOK)
+	raw, status, err := s.request(ctx, http.MethodPost, "/session", body, http.StatusOK)
 	if err != nil {
-		s.diagnostic(ctx, CreateSessionMutation, err)
+		s.diagnostic(ctx, CreateSessionMutation, err, "phase", "http", "http_status", status)
 		return "", sessionUncertain()
 	}
 	identity, err := validateSession(raw, s.cwd, s.creation, true)
 	if err != nil {
-		s.diagnostic(ctx, CreateSessionMutation, err)
+		s.diagnostic(ctx, CreateSessionMutation, err, "phase", "native-identity")
 		return "", sessionUncertain()
 	}
 	s.creation.identity = identity

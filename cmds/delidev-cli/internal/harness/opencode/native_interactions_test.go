@@ -1,7 +1,6 @@
 package opencode
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -77,7 +77,8 @@ func nativeInteractionProposalFixture(t *testing.T, kind InteractionKind, mode i
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		if index == 2 {
-			if !bytes.Contains(body["messages"], []byte(callID)) || !bytes.Contains(body["messages"], []byte(sentinel)) || kind == QuestionInteraction && (!bytes.Contains(body["messages"], []byte("First, Second"))) {
+			result, valid := providerToolResult(body["messages"], callID)
+			if !valid || !strings.Contains(result, sentinel) || kind == QuestionInteraction && !strings.Contains(result, "First, Second") {
 				t.Error("native continuation lost original interaction result")
 			}
 			_, _ = io.WriteString(w, `data: {"id":"chatcmpl-private-second","object":"chat.completion.chunk","created":1,"model":"private-model","choices":[{"index":0,"delta":{"role":"assistant","content":"Private interaction complete."},"finish_reason":null}]}`+"\n\n")

@@ -70,7 +70,7 @@ func nativeSessionFixture(t *testing.T, providerURL, key string) (*sessionAPI, c
 		t.Fatal("select an absolute native executable")
 	}
 	requireNoManagedOpenCodeConfig(t)
-	config, _ := fixtureConfig(t, "native-session")
+	config, logs := fixtureConfig(t, "native-session")
 	env, err := probeEnvironment(config)
 	if err != nil {
 		t.Fatal(err)
@@ -132,6 +132,11 @@ func nativeSessionFixture(t *testing.T, providerURL, key string) (*sessionAPI, c
 		}
 		if output.status() != nil || len(output.buffer) != 0 {
 			t.Error("unhandled native process output")
+		}
+		if t.Failed() {
+			// Only structured owner/phase/error-code facts are captured here;
+			// native stdout, stderr and HTTP bodies remain private.
+			t.Logf("owned native phase diagnostics: %s", logs.String())
 		}
 	})
 	if err := reservation.Close(); err != nil {

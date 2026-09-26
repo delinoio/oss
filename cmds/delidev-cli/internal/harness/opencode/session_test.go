@@ -335,6 +335,19 @@ func TestSessionRejectsChangedNativeSettingsAndMetadata(t *testing.T) {
 	}
 }
 
+func TestNativeSessionCreationPreservesIndependentClockReads(t *testing.T) {
+	creation := &sessionCreation{request: domain.NewID(), settings: fixtureSettings()}
+	for _, updated := range []int{1233, 1234, 1235} {
+		value := fixtureSession("/private/workspace", creation.request, creation.settings)
+		value["time"] = map[string]any{"created": 1234, "updated": updated}
+		raw, _ := json.Marshal(value)
+		identity, err := validateSession(raw, "/private/workspace", creation, true)
+		if (err == nil) != (updated >= 1234) || err == nil && identity.created != 1234 {
+			t.Fatal("independent creation timestamps changed original ownership or accepted regression")
+		}
+	}
+}
+
 func TestStoredInputPreservesExactOriginalOwnership(t *testing.T) {
 	input := sessionInput{receipt: InputReceipt{SessionID: fixtureSessionID, MessageID: fixtureMessageID, PartID: fixturePartID}, digest: sha256.Sum256([]byte("private input"))}
 	for _, mutate := range []func(map[string]any){
