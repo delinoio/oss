@@ -424,7 +424,7 @@ test("Forge retains three-platform interoperability and mandatory Linux renderin
 });
 
 
-test("React Forge validates its supported runtime with uncached native and rendering work", () => {
+test("React Forge validates its supported runtime without scene-specific CI tests", () => {
   const job = workflow.jobs["react-forge"];
   assert.equal(job["runs-on"], "${{ matrix.runner }}");
   assert.equal(job.strategy["fail-fast"], false);
@@ -440,11 +440,10 @@ test("React Forge validates its supported runtime with uncached native and rende
   assert.match(namedStep(job, "Validate native engine, installed CLI, renders, and benchmark").run, /validate-host\.sh/u);
   const commands = readFileSync(`${root}/packages/react-forge/scripts/validate-host.sh`, "utf8");
   for (const command of ["forge-package", "forge-document", "forge-docx", "forge-xlsx", "forge-pdf", "forge-sprite", "react-forge-node", "turbo run build typecheck lint test --filter=@delino/react-forge", "test:render", "benchmark", "install-smoke.mjs", "windows_console", "examples/travel-ir.tsx", "--include-ignored"]) assert.ok(commands.includes(command), command);
-  for (const engine of ["forge-scene", "forge-glb", "forge-fbx"]) {
-    for (const command of ["cargo test", "cargo clippy"]) {
-      assert.ok(commands.split("\n").some(line => line.startsWith(command) && line.includes(`-p ${engine}`)), `${command}: ${engine}`);
-    }
-  }
+  assert.doesNotMatch(commands, /-p forge-(?:scene|glb|fbx)\b/u);
+  assert.match(commands, /export REACT_FORGE_SKIP_SCENE_TESTS=1/u);
+  const sceneTests = readFileSync(`${root}/packages/react-forge/tests/scene.test.tsx`, "utf8");
+  assert.match(sceneTests, /process\.env\.REACT_FORGE_SKIP_SCENE_TESTS === "1" \? test\.skip : test/u);
   assert.match(JSON.stringify(job.steps), /render-requirements\.txt/u);
   assert.equal(namedStep(job, "Remove generated package output").if, "always()");
   const evidence = namedStep(job, "Retain rendering and benchmark evidence");
@@ -454,9 +453,10 @@ test("React Forge validates its supported runtime with uncached native and rende
   assert.equal(release.jobs.build.steps.find(({ name }) => name === "Validate native engine, installed CLI, renders, and benchmark")?.run, namedStep(job, "Validate native engine, installed CLI, renders, and benchmark").run);
   const tasks = JSON.parse(readFileSync(`${root}/packages/react-forge/turbo.json`, "utf8")).tasks;
   for (const name of ["build", "test", "test:render", "benchmark"]) assert.equal(tasks[name].cache, false, name);
+  assert.ok(tasks.test.passThroughEnv.includes("REACT_FORGE_SKIP_SCENE_TESTS"));
 });
 
-test("React Forge hosted CI keeps broad regressions without dedicated scene-render jobs", () => {
+test("React Forge CI removes scene-engine and visual jobs while retaining document regressions", () => {
   const native = workflow.jobs["react-forge"];
   assert.equal(native["timeout-minutes"], 60);
   assert.equal(workflow.jobs["react-forge-scenes"], undefined);
@@ -464,4 +464,17 @@ test("React Forge hosted CI keeps broad regressions without dedicated scene-rend
   assert.equal(workflow.jobs["ci-result"].needs.includes("react-forge-scenes"), false);
   assert.doesNotMatch(JSON.stringify(native.steps), /test:scenes|react-forge-scene-inputs|blender\.tar\.xz/u);
   assert.doesNotMatch(JSON.stringify(workflow), /react-forge-scenes|react-forge-scene-inputs|render-scenes\.py|compare-scenes\.py/u);
+});
+
+test("workspace Rust CI excludes React Forge scene engines", () => {
+  for (const [jobId, stepName, command] of [
+    ["rust-clippy", "Run clippy", "cargo clippy"],
+    ["rust-test", "Run cargo test", "cargo test"],
+  ]) {
+    const run = namedStep(workflow.jobs[jobId], stepName).run;
+    assert.ok(run.startsWith(command), `${jobId}: ${run}`);
+    for (const engine of ["forge-scene", "forge-glb", "forge-fbx"]) {
+      assert.ok(run.includes(`--exclude ${engine}`), `${jobId} must exclude ${engine}`);
+    }
+  }
 });

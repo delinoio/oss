@@ -21,7 +21,8 @@
       ],
       "cache": false,
       "passThroughEnv": [
-        "npm_execpath"
+        "npm_execpath",
+        "REACT_FORGE_SKIP_SCENE_TESTS"
       ]
     },
     "test:render": {

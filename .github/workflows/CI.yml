@@ -281,7 +281,7 @@ jobs:
           cache-on-failure: false
 
       - name: Run clippy
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+        run: cargo clippy --workspace --exclude forge-scene --exclude forge-glb --exclude forge-fbx --all-targets --all-features -- -D warnings
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
@@ -332,7 +332,7 @@ jobs:
         run: cargo build --locked -p pnport -p pnport-preload
 
       - name: Run cargo test
-        run: cargo test --workspace --all-targets
+        run: cargo test --workspace --exclude forge-scene --exclude forge-glb --exclude forge-fbx --all-targets
 
 
       - name: Save pnpm cache after successful main validation

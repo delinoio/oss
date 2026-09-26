@@ -244,12 +244,14 @@ Deliver original reusable TSX audio-product examples (headphones, DAC/amplifier,
 
 ### CI scope follow-up (2026-09-26)
 
-The explicit request for this PR authorizes removing React Forge scene CI. It
-supersedes the Linux visual CI requirement above for this extension: the
-workflow no longer prepares scene inputs or runs Blender product-render jobs.
-The six-platform native engine coverage remains in the React Forge manual and
-release matrices. Khronos/ufbx interoperability, Blender re-imports and product
-image inspection remain local acceptance evidence.
+The explicit request for this PR authorizes removing all React Forge scene CI.
+It supersedes the six-platform engine and Linux visual CI requirements above
+for this extension: React Forge host validation skips its scene test suite and
+excludes the three scene crates from native tests and Clippy; workspace Rust
+tests and Clippy exclude them as well. No CI or release host job prepares scene
+inputs, runs Blender product renders, or performs scene interoperability
+checks. Khronos/ufbx interoperability, Blender re-imports and product image
+inspection remain local acceptance evidence.
 
 ## Sprite Follow-up
 The explicit 2026-09-25 request extends React Forge to author game sprites and requires real implementation and tests. The [sprite contract](packages-react-forge-sprite-contract.md) defines React pixel/shape/image composition, palettes, frame animations, native rasterization, PNG atlas and individual PNG exports with JSON metadata in one atomic archive, and library/CLI/MCP integration. This additive extension was included in npm `0.2.0`; it does not replace any Office/PDF/Figma requirements.
