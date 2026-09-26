@@ -23,7 +23,7 @@ use std::{
         Arc, Mutex,
     },
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use crate::record::{
@@ -55,6 +55,8 @@ pub struct Frame {
     pub error: i32,
     pub path: Vec<u8>,
     pub access_path: Option<AccessPath>,
+    pub requested_delay_ns: u64,
+    pub observed_delay_ns: u64,
 }
 
 fn invalid(reason: &'static str) -> io::Error {
@@ -114,8 +116,12 @@ pub fn read_frame(reader: &mut impl Read) -> io::Result<Option<Frame>> {
         error,
         path,
         access_path: None,
+        requested_delay_ns: 0,
+        observed_delay_ns: 0,
     }))
 }
+
+type DelayPolicy = dyn Fn(&Frame) -> Duration + Send + Sync;
 
 #[derive(Default)]
 pub struct FrameLedger {
@@ -206,6 +212,7 @@ fn receive_connection(
     ledger: &Mutex<FrameLedger>,
     stopping: &AtomicBool,
     root: Option<&Path>,
+    delay_for: &DelayPolicy,
 ) -> io::Result<()> {
     use std::io::Write;
 
@@ -223,6 +230,31 @@ fn receive_connection(
         if start && !frame.path.is_empty() {
             if let Some(root) = root {
                 frame.access_path = Some(classify_path(root, &frame.path)?);
+            }
+        }
+        if start {
+            let requested =
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| delay_for(&frame)))
+                    .map_err(|_| invalid("delay_policy"))?;
+            frame.requested_delay_ns =
+                u64::try_from(requested.as_nanos()).map_err(|_| invalid("delay_limit"))?;
+            if !requested.is_zero() {
+                let began = Instant::now();
+                let deadline = began
+                    .checked_add(requested)
+                    .ok_or_else(|| invalid("delay_limit"))?;
+                while Instant::now() < deadline {
+                    if stopping.load(Ordering::Acquire) {
+                        return Err(invalid("delay_cancelled"));
+                    }
+                    thread::sleep(
+                        deadline
+                            .saturating_duration_since(Instant::now())
+                            .min(Duration::from_millis(20)),
+                    );
+                }
+                frame.observed_delay_ns = u64::try_from(began.elapsed().as_nanos())
+                    .map_err(|_| invalid("delay_limit"))?;
             }
         }
         ledger
@@ -249,18 +281,35 @@ type FramePairs = Vec<(Frame, Frame)>;
 
 impl OperationReceiver {
     pub fn bind(max_events: usize, max_bytes: u64) -> io::Result<Self> {
-        Self::bind_inner(None, max_events, max_bytes)
+        Self::bind_inner(None, max_events, max_bytes, Arc::new(|_| Duration::ZERO))
     }
 
     pub fn bind_for_root(root: &Path, max_events: usize, max_bytes: u64) -> io::Result<Self> {
+        Self::bind_with_delay(root, max_events, max_bytes, |_| Duration::ZERO)
+    }
+
+    pub fn bind_with_delay<F>(
+        root: &Path,
+        max_events: usize,
+        max_bytes: u64,
+        delay_for: F,
+    ) -> io::Result<Self>
+    where
+        F: Fn(&Frame) -> Duration + Send + Sync + 'static,
+    {
         let root = fs::canonicalize(root)?;
         if !root.is_dir() {
             return Err(invalid("root_not_directory"));
         }
-        Self::bind_inner(Some(root), max_events, max_bytes)
+        Self::bind_inner(Some(root), max_events, max_bytes, Arc::new(delay_for))
     }
 
-    fn bind_inner(root: Option<PathBuf>, max_events: usize, max_bytes: u64) -> io::Result<Self> {
+    fn bind_inner(
+        root: Option<PathBuf>,
+        max_events: usize,
+        max_bytes: u64,
+        delay_for: Arc<DelayPolicy>,
+    ) -> io::Result<Self> {
         if max_events == 0 || max_bytes == 0 {
             return Err(invalid("receiver_limit"));
         }
@@ -292,9 +341,15 @@ impl OperationReceiver {
                         let stop = Arc::clone(&stop);
                         let failure = Arc::clone(&failure);
                         let root = root.clone();
+                        let delay_for = Arc::clone(&delay_for);
                         connections.push(thread::spawn(move || {
-                            let result =
-                                receive_connection(stream, &ledger, &stop, root.as_deref());
+                            let result = receive_connection(
+                                stream,
+                                &ledger,
+                                &stop,
+                                root.as_deref(),
+                                delay_for.as_ref(),
+                            );
                             if result.is_err() {
                                 failure.store(true, Ordering::Release);
                             }
@@ -504,7 +559,7 @@ pub fn assemble_candidate_record(
                 path_unavailable,
                 descriptor: None,
                 monotonic_ns: start.monotonic_ns,
-                requested_delay_ns: 0,
+                requested_delay_ns: start.requested_delay_ns,
             },
             completion: Completion {
                 sequence: completion.sequence,
@@ -515,7 +570,7 @@ pub fn assemble_candidate_record(
                 native_result: completion.result,
                 native_error: (completion.error != 0).then_some(completion.error),
                 byte_count,
-                observed_delay_ns: 0,
+                observed_delay_ns: start.observed_delay_ns,
             },
         });
     }

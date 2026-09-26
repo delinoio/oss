@@ -12,7 +12,7 @@ use std::{
 use futures_util::future::BoxFuture;
 use tokio_util::sync::CancellationToken;
 
-use super::{assemble_candidate_record, OperationReceiver};
+use super::{assemble_candidate_record, Frame, OperationReceiver};
 use crate::record::CompleteRecord;
 
 const POLL: Duration = Duration::from_millis(20);
@@ -129,11 +129,24 @@ fn cleanup_group(
 /// cwd, and stdio configured. This does not assert the final macOS operation
 /// coverage boundary; callers must keep it private until every hook is proven.
 pub fn capture(
-    mut command: fspy::Command,
+    command: fspy::Command,
     root: &Path,
     limits: Limits,
     cancelled: &AtomicBool,
 ) -> Result<CompleteRecord, CaptureFailure> {
+    capture_with_delay(command, root, limits, cancelled, |_| Duration::ZERO)
+}
+
+pub fn capture_with_delay<F>(
+    mut command: fspy::Command,
+    root: &Path,
+    limits: Limits,
+    cancelled: &AtomicBool,
+    delay_for: F,
+) -> Result<CompleteRecord, CaptureFailure>
+where
+    F: Fn(&Frame) -> Duration + Send + Sync + 'static,
+{
     let deadline = limits
         .timeout
         .map(|duration| {
@@ -142,8 +155,9 @@ pub fn capture(
                 .ok_or(CaptureFailure::Timeout)
         })
         .transpose()?;
-    let receiver = OperationReceiver::bind_for_root(root, limits.max_events, limits.max_bytes)
-        .map_err(|_| CaptureFailure::Initialization)?;
+    let receiver =
+        OperationReceiver::bind_with_delay(root, limits.max_events, limits.max_bytes, delay_for)
+            .map_err(|_| CaptureFailure::Initialization)?;
     command.env("CLIBOX_FSPY_SOCKET", receiver.socket_path().as_os_str());
     // SAFETY: setsid is async-signal-safe and isolates only this fresh child
     // and its inherited descendants before the tracked image is executed.
@@ -271,6 +285,55 @@ mod tests {
                     .iter()
                     .any(|other| other.start.pid == parent && other.start.pid != pair.start.pid)
             })
+        }));
+    }
+
+    #[test]
+    fn injects_delay_before_matching_file_reads() {
+        let directory = tempfile::tempdir().unwrap();
+        let input = directory.path().join("input.txt");
+        fs::write(&input, b"fixture").unwrap();
+        let mut command = fspy::Command::new(std::env::current_exe().unwrap());
+        command
+            .args(["--exact", "macos::tests::read_fixture_child"])
+            .envs(std::env::vars_os())
+            .env("CLIBOX_FSPY_TEST_INPUT", input.as_os_str())
+            .env("CLIBOX_FSPY_TEST_DESCENDANT", "1")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let record = capture_with_delay(
+            command,
+            directory.path(),
+            Limits {
+                max_events: 100_000,
+                max_bytes: 64 * 1024 * 1024,
+                timeout: Some(Duration::from_secs(10)),
+                kill_after: Duration::from_millis(500),
+            },
+            &AtomicBool::new(false),
+            |frame| {
+                if frame.operation == 3 && frame.path.ends_with(b"input.txt") {
+                    Duration::from_millis(10)
+                } else {
+                    Duration::ZERO
+                }
+            },
+        )
+        .unwrap();
+        let delayed = record
+            .operations
+            .iter()
+            .filter(|pair| pair.start.requested_delay_ns == 10_000_000)
+            .collect::<Vec<_>>();
+        assert!(!delayed.is_empty());
+        assert!(delayed.iter().all(|pair| {
+            pair.start.operation == crate::record::Operation::Read
+                && pair.completion.observed_delay_ns >= pair.start.requested_delay_ns
+                && pair.completion.monotonic_ns - pair.start.monotonic_ns
+                    >= pair.completion.observed_delay_ns
+        }));
+        assert!(record.operations.iter().all(|pair| {
+            pair.start.requested_delay_ns != 0 || pair.completion.observed_delay_ns == 0
         }));
     }
 
