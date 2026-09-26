@@ -1301,6 +1301,14 @@ fn child_status(record: &CompleteRecord) -> i32 {
         .unwrap_or(1)
 }
 
+#[cfg(unix)]
+fn final_child_status(record: &CompleteRecord) -> i32 {
+    if let Some(signal) = record.summary.child_signal {
+        let _ = signal_hook::low_level::emulate_default_handler(signal);
+    }
+    child_status(record)
+}
+
 #[cfg(target_os = "linux")]
 fn incomplete_record(root: &Path, failure: crate::linux::TraceFailure) -> CompleteRecord {
     use std::os::unix::ffi::OsStrExt;
@@ -1379,7 +1387,7 @@ fn record(args: RecordArgs) -> i32 {
     if let Err(error) = publish(&args.output, &encoded) {
         return diagnostic(error, "record");
     }
-    child_status(&record)
+    final_child_status(&record)
 }
 
 #[cfg(target_os = "linux")]
@@ -1444,7 +1452,7 @@ fn assetcov(args: AssetcovArgs) -> i32 {
     }
     let status = child_status(&record);
     if status != 0 {
-        return status;
+        return final_child_status(&record);
     }
     if args
         .fail_under
@@ -2221,7 +2229,7 @@ fn fbreak(args: BreakArgs) -> i32 {
         |entry| terminal.poll(entry, &root, &selector),
     );
     match result {
-        Ok(record) => child_status(&record),
+        Ok(record) => final_child_status(&record),
         Err(error) => capture_status(
             CaptureFailure {
                 error,
@@ -3021,7 +3029,7 @@ fn macos_fbreak(args: BreakArgs) -> i32 {
         );
     }
     match result {
-        Ok(record) => child_status(&record),
+        Ok(record) => final_child_status(&record),
         Err(error) => {
             macos_capture_status((error, signals.signal.load(Ordering::SeqCst)), "fbreak")
         }
@@ -3111,7 +3119,7 @@ fn macos_record(args: RecordArgs) -> i32 {
         return diagnostic(error, "record");
     }
     failure.map_or_else(
-        || child_status(&record),
+        || final_child_status(&record),
         |failure| macos_capture_status(failure, "record"),
     )
 }
@@ -3166,7 +3174,7 @@ fn macos_assetcov(args: AssetcovArgs) -> i32 {
     }
     let status = child_status(&record);
     if status != 0 {
-        return status;
+        return final_child_status(&record);
     }
     if args
         .fail_under
