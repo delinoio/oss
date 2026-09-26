@@ -4,6 +4,8 @@
 //! channel. A caller must validate both channels and owned-process cleanup
 //! before it may publish a complete execution.
 
+pub mod supervise;
+
 use std::{
     collections::HashMap,
     ffi::OsString,
@@ -541,14 +543,19 @@ pub fn assemble_candidate_record(
         operations,
     };
     let mut encoded = Vec::new();
-    record::serialize(&record, &mut encoded, max_events, max_bytes)
-        .map_err(|_| invalid("record_limit"))?;
+    record::serialize(&record, &mut encoded, max_events, max_bytes).map_err(|error| {
+        tracing::error!(stage = "macos_candidate_serialize", classification = %error, "candidate record limit reached");
+        invalid("record_limit")
+    })?;
     record::parse(
         io::BufReader::new(encoded.as_slice()),
         max_events,
         max_bytes,
     )
-    .map_err(|_| invalid("candidate_record"))
+    .map_err(|error| {
+        tracing::error!(stage = "macos_candidate_parse", classification = %error, "candidate record rejected");
+        invalid("candidate_record")
+    })
 }
 
 #[cfg(test)]
@@ -738,10 +745,30 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::zombie_processes,
+        reason = "this fixture deliberately leaves a descendant running after root exit to test \
+                  owned-group cleanup"
+    )]
     fn read_fixture_child() {
         let Some(path) = std::env::var_os("CLIBOX_FSPY_TEST_INPUT") else {
             return;
         };
+        if std::env::var_os("CLIBOX_FSPY_TEST_SLEEP").is_some() {
+            std::thread::sleep(Duration::from_secs(5));
+            return;
+        }
+        if std::env::var_os("CLIBOX_FSPY_TEST_ORPHAN").is_some() {
+            std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "macos::tests::read_fixture_child"])
+                .env_remove("CLIBOX_FSPY_TEST_ORPHAN")
+                .env("CLIBOX_FSPY_TEST_SLEEP", "1")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap();
+            return;
+        }
         let path = PathBuf::from(path);
         assert_eq!(fs::read(&path).unwrap(), b"fixture");
         if std::env::var_os("CLIBOX_FSPY_TEST_DESCENDANT").as_deref()

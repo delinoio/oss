@@ -1827,6 +1827,7 @@ dependencies = [
  "clap",
  "file-id",
  "fspy",
+ "futures-util",
  "globset",
  "libc",
  "notify",
