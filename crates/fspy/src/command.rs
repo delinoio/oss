@@ -1,3 +1,5 @@
+#[cfg(windows)]
+use std::os::windows::io::{BorrowedHandle, OwnedHandle};
 use std::{
     borrow::Cow,
     cell::RefCell,
@@ -25,6 +27,8 @@ pub struct Command {
     envs: FxHashMap<OsString, OsString>,
     cwd: Option<PathBuf>,
     pub(crate) resolution_accesses: Vec<PathBuf>,
+    #[cfg(windows)]
+    pub(crate) windows_job: Option<OwnedHandle>,
     #[cfg(unix)]
     arg0: Option<OsString>,
 
@@ -48,6 +52,8 @@ impl Command {
             envs: FxHashMap::default(),
             cwd: None,
             resolution_accesses: Vec::new(),
+            #[cfg(windows)]
+            windows_job: None,
             #[cfg(unix)]
             arg0: None,
             stderr: None,
@@ -159,6 +165,12 @@ impl Command {
     pub fn current_dir<P: AsRef<Path>>(&mut self, dir: P) -> &mut Self {
         self.cwd = Some(dir.as_ref().to_owned());
         self
+    }
+
+    #[cfg(windows)]
+    pub fn windows_job_handle(&mut self, job: BorrowedHandle<'_>) -> io::Result<&mut Self> {
+        self.windows_job = Some(job.try_clone_to_owned()?);
+        Ok(self)
     }
 
     pub fn arg<S: AsRef<OsStr>>(&mut self, arg: S) -> &mut Self {

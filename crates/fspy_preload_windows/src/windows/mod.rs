@@ -2,6 +2,7 @@ pub(crate) mod client;
 mod convert;
 pub(crate) mod detour;
 mod detours;
+mod operation;
 mod winapi_utils;
 
 use std::slice;

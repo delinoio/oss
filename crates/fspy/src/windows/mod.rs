@@ -23,8 +23,9 @@ use winapi::{
     shared::{minwindef::TRUE, ntdef::NT_SUCCESS},
     um::{
         fileapi::GetShortPathNameW,
+        jobapi2::AssignProcessToJobObject,
         stringapiset::{MultiByteToWideChar, WideCharToMultiByte},
-        winbase::CREATE_SUSPENDED,
+        winbase::{CREATE_NEW_PROCESS_GROUP, CREATE_SUSPENDED},
         winnls::CP_ACP,
     },
 };
@@ -100,6 +101,7 @@ impl SpyImpl {
         cancellation_token: CancellationToken,
     ) -> Result<TrackedChild, SpawnError> {
         let ansi_dll_path_with_nul = &self.ansi_dll_path_with_nul;
+        let windows_job = command.windows_job.take();
         let resolution_accesses = command
             .resolution_accesses
             .iter()
@@ -118,7 +120,14 @@ impl SpyImpl {
         let payload_len = payload_bytes.len().try_into().unwrap();
 
         let mut command = command.into_tokio_command();
-        command.creation_flags(CREATE_SUSPENDED);
+        command.creation_flags(
+            CREATE_SUSPENDED
+                | if windows_job.is_some() {
+                    CREATE_NEW_PROCESS_GROUP
+                } else {
+                    0
+                },
+        );
         let mut child = command.spawn().map_err(SpawnError::OsSpawn)?;
 
         let preparation = (|| {
@@ -150,6 +159,16 @@ impl SpyImpl {
             };
             if success != TRUE {
                 return Err(SpawnError::Injection(io::Error::last_os_error()));
+            }
+
+            if let Some(job) = windows_job.as_ref() {
+                // Assign the suspended root before it can launch descendants.
+                // The caller retains a separate handle for the full capture.
+                let assigned =
+                    unsafe { AssignProcessToJobObject(job.as_raw_handle().cast(), raw_process) };
+                if assigned != TRUE {
+                    return Err(SpawnError::Injection(io::Error::last_os_error()));
+                }
             }
 
             // Resume using the process handle, without the nightly main-thread handle API.

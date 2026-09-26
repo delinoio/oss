@@ -25,6 +25,7 @@ winapi = { workspace = true, features = [
   "namedpipeapi",
   "memoryapi",
   "errhandlingapi",
+  "fileapi",
   "handleapi",
   "processthreadsapi",
   "std",
