@@ -182,7 +182,16 @@ fn write_frame(
     stream.write_all(path)
 }
 
-pub(crate) fn mark_loss() {
+pub(crate) fn mark_loss(stage: &'static str) {
+    #[cfg(debug_assertions)]
+    {
+        let _ = writeln!(
+            std::io::stderr(),
+            "fspy preload: stage={stage} trace_incomplete"
+        );
+    }
+    #[cfg(not(debug_assertions))]
+    let _ = stage;
     // SAFETY: detours are installed only after the global fspy client is set.
     unsafe { global_client() }.mark_incomplete();
 }
@@ -226,9 +235,17 @@ pub fn begin(operation: u8, path: &[u16]) -> Option<OperationGuard> {
             _ => Err(std::io::Error::other("start_rejected")),
         }
     });
-    if result.is_err() {
+    if let Err(error) = result {
+        #[cfg(debug_assertions)]
+        let _ = writeln!(
+            std::io::stderr(),
+            "fspy preload: stage=transport_begin kind={:?}",
+            error.kind()
+        );
+        #[cfg(not(debug_assertions))]
+        let _ = error;
         state.stream = None;
-        mark_loss();
+        mark_loss("transport_begin");
         None
     } else {
         drop(state);
@@ -245,7 +262,7 @@ impl OperationGuard {
     /// calls. NTSTATUS failures are recorded as their stable native value.
     pub fn complete(self, result: i64, status: i32) {
         let Ok(mut state) = self.state.try_lock() else {
-            mark_loss();
+            mark_loss("transport_complete_lock");
             return;
         };
         let outcome = state.stream().and_then(|stream| {
@@ -253,11 +270,19 @@ impl OperationGuard {
             // Complete frames do not require an acknowledgment.
             Ok(())
         });
-        if outcome.is_err() {
+        if let Err(error) = outcome {
+            #[cfg(debug_assertions)]
+            let _ = writeln!(
+                std::io::stderr(),
+                "fspy preload: stage=transport_complete kind={:?}",
+                error.kind()
+            );
+            #[cfg(not(debug_assertions))]
+            let _ = error;
             // A native failure is still a complete observation. Only the
             // transport failure poisons the legacy trace channel.
             state.stream = None;
-            mark_loss();
+            mark_loss("transport_complete");
         }
     }
 }

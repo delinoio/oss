@@ -92,17 +92,17 @@ unsafe fn io_result(status: NTSTATUS, block: PIO_STATUS_BLOCK) -> i64 {
     if status == 0x103 {
         // STATUS_PENDING means completion occurs asynchronously and cannot
         // supply the actual byte count at this interception boundary.
-        operation::mark_loss();
+        operation::mark_loss("pending_io");
         return 0;
     }
     if block.is_null() {
-        operation::mark_loss();
+        operation::mark_loss("missing_io_status_block");
         return 0;
     }
     // SAFETY: the native call returned success and the caller supplied a
     // writable IO_STATUS_BLOCK for its result.
     i64::try_from(unsafe { (*block).Information }).unwrap_or_else(|_| {
-        operation::mark_loss();
+        operation::mark_loss("io_count_overflow");
         0
     })
 }
@@ -174,7 +174,7 @@ static DETOUR_NT_CREATE_USER_PROCESS: Detour<
                     // that copy the payload and inject the DLL. Its child can
                     // run, but this trace cannot claim to cover that child.
                     // SAFETY: the DLL client was initialized before detours.
-                    unsafe { global_client() }.mark_incomplete();
+                    operation::mark_loss("direct_nt_process_creation");
                 }
                 status
             }
@@ -520,7 +520,7 @@ unsafe fn handle_open(access_mode: impl ToAccessMode, path: impl ToAbsolutePath)
     {
         // The native call still receives its original arguments. Its access
         // cannot be represented in the trace after path resolution fails.
-        client.mark_incomplete();
+        operation::mark_loss("legacy_path_resolution");
     }
 }
 
@@ -792,7 +792,7 @@ static DETOUR_NT_SET_INFORMATION_FILE: Detour<
                     // FILE_RENAME_INFORMATION. Until that structure is resolved,
                     // a successful rename or link cannot be reported as complete.
                     // SAFETY: the DLL client was initialized before detours.
-                    unsafe { global_client() }.mark_incomplete();
+                    operation::mark_loss("unobserved_mutation_destination");
                 }
                 status
             }
