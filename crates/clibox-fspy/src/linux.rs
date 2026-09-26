@@ -107,6 +107,7 @@ pub enum ChildOutcome {
 pub struct TraceResult {
     pub operations: Vec<RawCompletion>,
     pub outcome: ChildOutcome,
+    pub root_pid: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -130,6 +131,23 @@ pub struct Limits {
     pub max_bytes: u64,
     pub timeout: Option<Duration>,
     pub kill_after: Duration,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct TraceClock {
+    pub began: Instant,
+    pub deadline: Option<Instant>,
+}
+
+impl TraceClock {
+    pub fn start(limits: Limits) -> Result<Self, TraceFailure> {
+        let began = Instant::now();
+        let deadline = limits
+            .timeout
+            .map(|timeout| began.checked_add(timeout).ok_or(TraceFailure::Timeout))
+            .transpose()?;
+        Ok(Self { began, deadline })
+    }
 }
 
 impl Default for Limits {
@@ -366,8 +384,8 @@ pub fn trace_controlled<F, C>(
     command: &mut Command,
     limits: Limits,
     cancelled: &AtomicBool,
-    mut before: F,
-    mut control: C,
+    before: F,
+    control: C,
 ) -> Result<TraceResult, TraceFailure>
 where
     F: FnMut(&RawEntry) -> Result<EntryAction, TraceFailure>,
@@ -380,8 +398,34 @@ where
     let _trace_lock = TRACE_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let clock = TraceClock::start(limits)?;
+    trace_controlled_locked(command, limits, cancelled, clock, false, before, control)
+}
+
+/// The caller holds TRACE_LOCK so admission and the supervised process use
+/// the same exclusive session and execution deadline.
+pub(crate) fn trace_controlled_locked<F, C>(
+    command: &mut Command,
+    limits: Limits,
+    cancelled: &AtomicBool,
+    clock: TraceClock,
+    continue_all_initial: bool,
+    mut before: F,
+    mut control: C,
+) -> Result<TraceResult, TraceFailure>
+where
+    F: FnMut(&RawEntry) -> Result<EntryAction, TraceFailure>,
+    C: FnMut(&RawEntry) -> Result<ControlDirective, TraceFailure>,
+{
+    let TraceClock { began, deadline } = clock;
     if limits.max_events == 0 || limits.max_bytes == 0 || limits.kill_after.is_zero() {
         return Err(supervision("limits"));
+    }
+    if cancelled.load(Ordering::SeqCst) {
+        return Err(TraceFailure::Cancellation);
+    }
+    if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+        return Err(TraceFailure::Timeout);
     }
     // SAFETY: pre_exec calls only async-signal-safe C functions. A failed
     // ptrace admission returns through Command's error pipe before exec.
@@ -411,11 +455,10 @@ where
     let mut process_ids = HashMap::<pid_t, (u32, Option<u32>)>::new();
     let mut pending = HashMap::<pid_t, Option<RawEntry>>::new();
     let mut held = VecDeque::<pid_t>::new();
-    let mut continue_all = false;
+    let mut continue_all = continue_all_initial;
     let mut ordinal = 0_u64;
     let mut operations = Vec::new();
     let mut outcome = None;
-    let began = Instant::now();
     let mut failure = None;
     let mut graceful_at = None;
     let mut forced_at = None;
@@ -447,10 +490,7 @@ where
         if failure.is_none() {
             if cancelled.load(Ordering::SeqCst) {
                 failure = Some(TraceFailure::Cancellation);
-            } else if limits
-                .timeout
-                .is_some_and(|timeout| began.elapsed() >= timeout)
-            {
+            } else if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
                 failure = Some(TraceFailure::Timeout);
             } else if outcome.is_some() {
                 failure = Some(TraceFailure::Cleanup);
@@ -610,6 +650,7 @@ where
     Ok(TraceResult {
         operations,
         outcome: outcome.ok_or_else(|| supervision("missing_root_outcome"))?,
+        root_pid: root_tid as u32,
     })
 }
 

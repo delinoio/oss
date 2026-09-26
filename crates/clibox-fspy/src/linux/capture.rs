@@ -2,17 +2,20 @@
 
 use std::{
     collections::HashMap,
+    env,
+    ffi::{CString, OsString},
     fs,
-    os::unix::ffi::OsStrExt,
-    path::Path,
+    os::unix::{ffi::OsStrExt, fs::PermissionsExt},
+    path::{Path, PathBuf},
     process::Command,
-    sync::atomic::AtomicBool,
+    sync::atomic::{AtomicBool, Ordering},
+    thread,
     time::{Duration, Instant},
 };
 
 use super::{
-    paths, supervision, trace_controlled, ChildOutcome, ControlDirective, EntryAction, Limits,
-    RawEntry, TraceFailure,
+    paths, supervision, trace_controlled_locked, ChildOutcome, ControlDirective, EntryAction,
+    Limits, RawEntry, TraceClock, TraceFailure, TRACE_LOCK,
 };
 use crate::record::{
     Backend, CompleteRecord, Completion, CoverageBoundary, Header, NativePath, Operation,
@@ -53,6 +56,42 @@ impl Event {
     }
 }
 
+fn root_program(command: &Command) -> Result<PathBuf, TraceFailure> {
+    let cwd = command.get_current_dir().unwrap_or_else(|| Path::new("."));
+    let cwd = std::path::absolute(cwd).map_err(|_| TraceFailure::Spawn)?;
+    let program = Path::new(command.get_program());
+    let executable = |path: &Path| {
+        fs::metadata(path)
+            .is_ok_and(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
+    };
+    if program.as_os_str().as_bytes().contains(&b'/') {
+        let path = if program.is_absolute() {
+            program.to_path_buf()
+        } else {
+            cwd.join(program)
+        };
+        return executable(&path).then_some(path).ok_or(TraceFailure::Spawn);
+    }
+    let path_env = command
+        .get_envs()
+        .find(|(key, _)| *key == "PATH")
+        .map(|(_, value)| value.map(OsString::from))
+        .unwrap_or_else(|| env::var_os("PATH"))
+        .unwrap_or_else(|| OsString::from("/bin:/usr/bin"));
+    for directory in env::split_paths(&path_env) {
+        let base = if directory.is_absolute() {
+            directory
+        } else {
+            cwd.join(directory)
+        };
+        let candidate = base.join(program);
+        if executable(&candidate) {
+            return Ok(candidate);
+        }
+    }
+    Err(TraceFailure::Spawn)
+}
+
 /// Record all selected synchronous file operations. The optional policy runs
 /// while the calling tracee thread is stopped at syscall entry. It may select
 /// a bounded per-operation delay; every baseline run still uses the same
@@ -85,7 +124,7 @@ pub fn capture_controlled<F, C>(
     limits: Limits,
     cancelled: &AtomicBool,
     mut action_for: F,
-    control: C,
+    mut control: C,
 ) -> Result<CompleteRecord, TraceFailure>
 where
     F: FnMut(&paths::DecodedOperation) -> CaptureAction,
@@ -95,28 +134,107 @@ where
     if !root.is_dir() {
         return Err(supervision("root_directory"));
     }
-    let deadline = limits
-        .timeout
-        .map(|timeout| {
-            Instant::now()
-                .checked_add(timeout)
-                .ok_or(TraceFailure::Timeout)
-        })
-        .transpose()?;
-    let mut starts = HashMap::<u64, CapturedEntry>::new();
-    // Charge a generous upper bound before retaining each decoded path. This
-    // bounds both the start map and the supervisor's completion buffer while
-    // the child runs, before final NDJSON serialization checks exact bytes.
+    // Root exec happens in Command::spawn before ptrace can observe a syscall
+    // entry. Serialize admission with the trace session and account for its
+    // delay and breakpoint against the same execution deadline.
+    let _trace_lock = TRACE_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if limits.max_events < 2 || limits.max_bytes == 0 || limits.kill_after.is_zero() {
+        return Err(supervision("limits"));
+    }
+    let clock = TraceClock::start(limits)?;
+    let TraceClock { began, deadline } = clock;
+    if cancelled.load(Ordering::SeqCst) {
+        return Err(TraceFailure::Cancellation);
+    }
+    let program = root_program(command)?;
+    let encoded_program =
+        CString::new(program.as_os_str().as_bytes()).map_err(|_| TraceFailure::Spawn)?;
+    let root_entry = RawEntry {
+        ordinal: 0,
+        pid: std::process::id(),
+        tid: unsafe { libc::gettid() as u32 },
+        parent_pid: None,
+        syscall: libc::SYS_execve as u64,
+        args: [encoded_program.as_ptr() as usize as u64, 0, 0, 0, 0, 0],
+        monotonic_ns: u64::try_from(began.elapsed().as_nanos())
+            .map_err(|_| supervision("time_limit"))?,
+    };
+    let mut root_operation =
+        paths::decode(&root_entry, &root)?.ok_or_else(|| supervision("root_exec_decode"))?;
+    if root_operation.path_unavailable || root_operation.paths.len() != 1 {
+        return Err(supervision("root_exec_path"));
+    }
+    root_operation.paths[0].identity = file_id::get_file_id(&program)
+        .ok()
+        .map(crate::record::FileIdentity::from);
+    let root_charge = serde_json::to_vec(&root_operation.paths)
+        .map_err(|_| supervision("capture_encoding"))?
+        .len() as u64
+        + 1024;
     let mut retained_bytes = root
         .as_os_str()
         .as_bytes()
         .len()
         .saturating_mul(4)
-        .saturating_add(1024) as u64;
-    let result = trace_controlled(
+        .saturating_add(1024) as u64
+        + root_charge;
+    if retained_bytes > limits.max_bytes {
+        return Err(TraceFailure::ByteLimit);
+    }
+    let root_action = action_for(&root_operation);
+    let root_delay = match root_action {
+        CaptureAction::Proceed(delay) => delay,
+        CaptureAction::Hold => Duration::ZERO,
+    };
+    let requested_delay_ns =
+        u64::try_from(root_delay.as_nanos()).map_err(|_| supervision("delay_limit"))?;
+    let observed_delay_ns = if root_delay.is_zero() {
+        0
+    } else {
+        u64::try_from(
+            crate::delay::wait(root_delay, cancelled, deadline)
+                .map_err(|failure| match failure {
+                    crate::delay::DelayFailure::Cancelled => TraceFailure::Cancellation,
+                    crate::delay::DelayFailure::Timeout => TraceFailure::Timeout,
+                })?
+                .as_nanos(),
+        )
+        .map_err(|_| supervision("delay_limit"))?
+    };
+    let mut continue_all = false;
+    if matches!(root_action, CaptureAction::Hold) {
+        loop {
+            if cancelled.load(Ordering::SeqCst) {
+                return Err(TraceFailure::Cancellation);
+            }
+            if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+                return Err(TraceFailure::Timeout);
+            }
+            match control(&root_entry)? {
+                ControlDirective::Wait => thread::sleep(Duration::from_millis(2)),
+                ControlDirective::ReleaseOne => break,
+                ControlDirective::ContinueAll => {
+                    continue_all = true;
+                    break;
+                }
+                ControlDirective::Quit => return Err(TraceFailure::Cancellation),
+            }
+        }
+    }
+    let root_completion_ns =
+        u64::try_from(began.elapsed().as_nanos()).map_err(|_| supervision("time_limit"))?;
+    let mut starts = HashMap::<u64, CapturedEntry>::new();
+    // Charge a generous upper bound before retaining each decoded path. This
+    // bounds both the start map and the supervisor's completion buffer while
+    // the child runs, before final NDJSON serialization checks exact bytes.
+    let result = trace_controlled_locked(
         command,
         limits,
         cancelled,
+        clock,
+        continue_all,
         |entry| {
             let Some(decoded) = paths::decode(entry, &root)? else {
                 return Ok(EntryAction::Ignore);
@@ -128,7 +246,7 @@ where
             if retained_bytes.saturating_add(charge) > limits.max_bytes {
                 return Err(TraceFailure::ByteLimit);
             }
-            if starts.len().saturating_add(1).saturating_mul(2) > limits.max_events {
+            if starts.len().saturating_add(2).saturating_mul(2) > limits.max_events {
                 return Err(TraceFailure::EventLimit);
             }
             retained_bytes += charge;
@@ -172,9 +290,39 @@ where
     if starts.len() != result.operations.len() {
         return Err(supervision("unpaired_capture"));
     }
-    let mut events = Vec::<Event>::with_capacity(result.operations.len().saturating_mul(2));
+    let mut events =
+        Vec::<Event>::with_capacity(result.operations.len().saturating_add(1).saturating_mul(2));
+    events.push(Event::Start(Start {
+        sequence: 0,
+        correlation_id: 1,
+        pid: result.root_pid,
+        tid: result.root_pid,
+        parent_pid: Some(std::process::id()),
+        operation: Operation::Exec,
+        open_mutates: false,
+        paths: root_operation.paths,
+        path_unavailable: false,
+        descriptor: None,
+        monotonic_ns: root_entry.monotonic_ns,
+        requested_delay_ns,
+    }));
+    events.push(Event::Completion(Completion {
+        sequence: 0,
+        correlation_id: 1,
+        pid: result.root_pid,
+        tid: result.root_pid,
+        monotonic_ns: root_completion_ns,
+        native_result: 0,
+        native_error: None,
+        byte_count: None,
+        observed_delay_ns,
+    }));
     for completed in result.operations {
         let entry = completed.entry;
+        let correlation_id = entry
+            .ordinal
+            .checked_add(1)
+            .ok_or(TraceFailure::EventLimit)?;
         let captured = starts
             .remove(&entry.ordinal)
             .ok_or_else(|| supervision("missing_capture"))?;
@@ -196,7 +344,7 @@ where
             .then(|| i32::try_from(-completed.result).unwrap_or(libc::EIO));
         events.push(Event::Start(Start {
             sequence: 0,
-            correlation_id: entry.ordinal,
+            correlation_id,
             pid: entry.pid,
             tid: entry.tid,
             parent_pid: entry.parent_pid,
@@ -210,7 +358,7 @@ where
         }));
         events.push(Event::Completion(Completion {
             sequence: 0,
-            correlation_id: entry.ordinal,
+            correlation_id,
             pid: entry.pid,
             tid: entry.tid,
             monotonic_ns: completed.monotonic_ns,
@@ -295,6 +443,79 @@ mod tests {
 
     use super::*;
     use crate::record::{parse, serialize, DEFAULT_BYTE_LIMIT, DEFAULT_EVENT_LIMIT};
+
+    #[test]
+    fn root_executable_is_recorded_before_child_operations() {
+        let directory = tempfile::tempdir().unwrap();
+        let program = directory.path().join("tool");
+        fs::copy("/bin/true", &program).unwrap();
+        let mut command = Command::new("./tool");
+        command.current_dir(directory.path()).stdout(Stdio::null());
+        let record = capture(
+            &mut command,
+            directory.path(),
+            Limits::default(),
+            &AtomicBool::new(false),
+            |operation| {
+                if operation.operation == Operation::Exec {
+                    Duration::from_millis(10)
+                } else {
+                    Duration::ZERO
+                }
+            },
+        )
+        .unwrap();
+        let first = &record.operations[0];
+        assert_eq!(first.start.operation, Operation::Exec);
+        assert_eq!(first.start.sequence, 1);
+        assert_eq!(first.completion.sequence, 2);
+        assert_eq!(first.start.correlation_id, 1);
+        assert_eq!(first.start.pid, first.completion.pid);
+        assert_eq!(first.start.requested_delay_ns, 10_000_000);
+        assert!(first.completion.observed_delay_ns > 0);
+        assert!(first.start.paths.iter().any(|path| {
+            path.project_relative == Some(NativePath::UnixBytes(b"tool".to_vec()))
+                && path.identity.is_some()
+        }));
+        let mut encoded = Vec::new();
+        serialize(
+            &record,
+            &mut encoded,
+            DEFAULT_EVENT_LIMIT,
+            DEFAULT_BYTE_LIMIT,
+        )
+        .unwrap();
+        parse(
+            std::io::Cursor::new(encoded),
+            DEFAULT_EVENT_LIMIT,
+            DEFAULT_BYTE_LIMIT,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn root_breakpoint_quit_prevents_launch() {
+        let directory = tempfile::tempdir().unwrap();
+        let marker = directory.path().join("launched");
+        let mut command = Command::new("/bin/sh");
+        command.arg("-c").arg(format!("touch {}", marker.display()));
+        let result = capture_controlled(
+            &mut command,
+            directory.path(),
+            Limits::default(),
+            &AtomicBool::new(false),
+            |operation| {
+                if operation.operation == Operation::Exec {
+                    CaptureAction::Hold
+                } else {
+                    CaptureAction::Proceed(Duration::ZERO)
+                }
+            },
+            |_| Ok(ControlDirective::Quit),
+        );
+        assert!(matches!(result, Err(TraceFailure::Cancellation)));
+        assert!(!marker.exists());
+    }
 
     #[test]
     fn pairs_actual_read_with_native_identity_and_result() {

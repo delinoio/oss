@@ -4008,6 +4008,40 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
+    fn linux_root_executable_is_a_required_reproduction_input() {
+        use std::{process::Stdio, sync::atomic::AtomicBool};
+
+        let directory = tempfile::tempdir().unwrap();
+        let root = fs::canonicalize(directory.path()).unwrap();
+        let executable = root.join("tool");
+        fs::copy("/bin/false", &executable).unwrap();
+        let selector = coverage::Selector::new(&["tool".into()], &[]).unwrap();
+        let snapshot = crate::repro::Snapshot::take(
+            &root,
+            &selector,
+            fs::metadata(&executable).unwrap().len() + 1024,
+            10,
+        )
+        .unwrap();
+        let mut command = std::process::Command::new("./tool");
+        command
+            .current_dir(&root)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let record = crate::linux::capture::capture(
+            &mut command,
+            &root,
+            crate::linux::Limits::default(),
+            &AtomicBool::new(false),
+            |_| Duration::ZERO,
+        )
+        .unwrap();
+        let required = collect_required(&record, &root, &selector, &snapshot).unwrap();
+        assert!(required.contains(Path::new("tool")));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
     fn failed_record_publishes_framed_incomplete_result() {
         let directory = tempfile::tempdir().unwrap();
         let output = directory.path().join("failed.ndjson");
