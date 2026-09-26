@@ -18,6 +18,8 @@ Records are explicit, versioned NDJSON outputs, bounded by event count and encod
 
 Paths are encoded as native Unix bytes or Windows UTF-16 code units; a display string must never replace the native identity. Project paths retain both logical and resolved identities so internal aliases can be counted once. External accesses remain distinguishable. Records never contain file contents, full argv, or environment values. Product artifacts intentionally contain access paths; `tracing` diagnostics must not.
 
+A failed native call may supply a null, invalid, or overlong pathname pointer, or an invalid relative directory descriptor. The Linux decoder records the paired native result with an explicit `path_unavailable` marker instead of inventing a path or turning that ordinary failed call into an incomplete trace. Path-based workflows cannot select such an operation as a project input.
+
 The pre-execution asset denominator walks the selected root, follows only internal symlinks, and deduplicates file identities, including hard links, without holding one open descriptor per file. A read completion must carry the opened file's identity and actual byte count; the analyzer cannot recover it reliably from a pathname after the execution. A missing identity cannot cover a selected file.
 
 ## Workflow semantics

@@ -126,6 +126,7 @@ where
             parent_pid: entry.parent_pid,
             operation,
             paths: captured.operation.paths,
+            path_unavailable: captured.operation.path_unavailable,
             descriptor: captured.operation.descriptor,
             monotonic_ns: entry.monotonic_ns,
             requested_delay_ns: captured.requested_delay_ns,

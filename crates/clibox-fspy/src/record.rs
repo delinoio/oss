@@ -181,6 +181,9 @@ pub struct Start {
     pub parent_pid: Option<u32>,
     pub operation: Operation,
     pub paths: Vec<AccessPath>,
+    /// True when a failed native call supplied an unreadable or unresolvable
+    /// pathname argument; the operation result is still observed.
+    pub path_unavailable: bool,
     pub descriptor: Option<i32>,
     pub monotonic_ns: u64,
     pub requested_delay_ns: u64,
@@ -388,7 +391,9 @@ pub fn parse<R: BufRead>(
                     || value.correlation_id == 0
                     || value.pid == 0
                     || value.tid == 0
-                    || (value.paths.is_empty() && value.descriptor.is_none())
+                    || (value.paths.is_empty()
+                        && value.descriptor.is_none()
+                        && !value.path_unavailable)
                     || !value.paths.iter().all(|path| valid_path(path, platform))
                     || pending
                         .insert(value.correlation_id, value.clone())
@@ -758,6 +763,7 @@ mod tests {
                 project_relative: Some(NativePath::UnixBytes(relative.to_vec())),
                 identity: None,
             }],
+            path_unavailable: false,
             descriptor: None,
             monotonic_ns: 100,
             requested_delay_ns: 0,

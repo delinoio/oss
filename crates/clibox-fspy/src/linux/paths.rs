@@ -19,6 +19,7 @@ const MAX_PATH_BYTES: usize = 4096;
 pub struct DecodedOperation {
     pub operation: Operation,
     pub paths: Vec<AccessPath>,
+    pub path_unavailable: bool,
     pub descriptor: Option<i32>,
 }
 
@@ -148,9 +149,9 @@ fn x64_spec(_: u64) -> Option<(Operation, Source, Option<Source>)> {
     None
 }
 
-fn read_path(tid: u32, pointer: u64) -> Result<PathBuf, TraceFailure> {
+fn read_path(tid: u32, pointer: u64) -> Result<Option<PathBuf>, TraceFailure> {
     if pointer == 0 {
-        return Err(supervision("null_path_pointer"));
+        return Ok(None);
     }
     let mut bytes = [0_u8; MAX_PATH_BYTES];
     let local = iovec {
@@ -166,13 +167,19 @@ fn read_path(tid: u32, pointer: u64) -> Result<PathBuf, TraceFailure> {
     let count =
         unsafe { libc::process_vm_readv(tid as i32, &raw const local, 1, &raw const remote, 1, 0) };
     if count <= 0 {
+        if io::Error::last_os_error().raw_os_error() == Some(libc::EFAULT) {
+            return Ok(None);
+        }
         return Err(supervision("path_memory_read"));
     }
-    let length = bytes[..count as usize]
-        .iter()
-        .position(|byte| *byte == 0)
-        .ok_or_else(|| supervision("path_too_long"))?;
-    Ok(PathBuf::from(OsString::from_vec(bytes[..length].to_vec())))
+    let Some(length) = bytes[..count as usize].iter().position(|byte| *byte == 0) else {
+        // A path crossing an unreadable page or exceeding PATH_MAX remains an
+        // observed failed operation, without inventing pathname bytes.
+        return Ok(None);
+    };
+    Ok(Some(PathBuf::from(OsString::from_vec(
+        bytes[..length].to_vec(),
+    ))))
 }
 
 fn descriptor_path(
@@ -195,21 +202,25 @@ fn descriptor_path(
     Ok(Some((path, Some(identity))))
 }
 
-fn base_path(tid: u32, descriptor: i32) -> Result<PathBuf, TraceFailure> {
+fn base_path(tid: u32, descriptor: i32) -> Result<Option<PathBuf>, TraceFailure> {
     if descriptor == libc::AT_FDCWD {
-        fs::read_link(format!("/proc/{tid}/cwd")).map_err(|_| supervision("cwd_read"))
+        fs::read_link(format!("/proc/{tid}/cwd"))
+            .map(Some)
+            .map_err(|_| supervision("cwd_read"))
     } else {
-        descriptor_path(tid, descriptor)?
-            .map(|(path, _)| path)
-            .ok_or_else(|| supervision("directory_descriptor"))
+        Ok(descriptor_path(tid, descriptor)?.map(|(path, _)| path))
     }
 }
 
-fn absolute_path(tid: u32, path: PathBuf, descriptor: i32) -> Result<PathBuf, TraceFailure> {
+fn absolute_path(
+    tid: u32,
+    path: PathBuf,
+    descriptor: i32,
+) -> Result<Option<PathBuf>, TraceFailure> {
     if path.is_absolute() {
-        Ok(path)
+        Ok(Some(path))
     } else {
-        Ok(base_path(tid, descriptor)?.join(path))
+        Ok(base_path(tid, descriptor)?.map(|base| base.join(path)))
     }
 }
 
@@ -288,32 +299,34 @@ fn from_source(
     entry: &RawEntry,
     root: &Path,
     source: Source,
-) -> Result<Option<AccessPath>, TraceFailure> {
+) -> Result<(Option<AccessPath>, bool), TraceFailure> {
     let (path, identity) = match source {
         Source::Path(index) => (
-            absolute_path(
-                entry.tid,
-                read_path(entry.tid, entry.args[index])?,
-                libc::AT_FDCWD,
-            )?,
+            read_path(entry.tid, entry.args[index])?
+                .map(|path| absolute_path(entry.tid, path, libc::AT_FDCWD))
+                .transpose()?
+                .flatten(),
             None,
         ),
         Source::At(dir_index, path_index) => {
-            let path = read_path(entry.tid, entry.args[path_index])?;
-            (
-                absolute_path(entry.tid, path, entry.args[dir_index] as i32)?,
-                None,
-            )
+            let path = read_path(entry.tid, entry.args[path_index])?
+                .map(|path| absolute_path(entry.tid, path, entry.args[dir_index] as i32))
+                .transpose()?
+                .flatten();
+            (path, None)
         }
         Source::Descriptor(index) => {
             let descriptor = entry.args[index] as i32;
             let Some((path, identity)) = descriptor_path(entry.tid, descriptor)? else {
-                return Ok(None);
+                return Ok((None, false));
             };
-            (path, identity)
+            (Some(path), identity)
         }
     };
-    Ok(Some(access_path(root, path, identity)?))
+    let Some(path) = path else {
+        return Ok((None, !matches!(source, Source::Descriptor(_))));
+    };
+    Ok((Some(access_path(root, path, identity)?), false))
 }
 
 /// Decode a selected file syscall at entry, before the tracee resumes. A
@@ -328,20 +341,25 @@ pub fn decode(entry: &RawEntry, root: &Path) -> Result<Option<DecodedOperation>,
         _ => None,
     };
     let mut paths = Vec::with_capacity(2);
-    if let Some(path) = from_source(entry, root, first)? {
+    let (first_path, first_unavailable) = from_source(entry, root, first)?;
+    if let Some(path) = first_path {
         paths.push(path);
     }
+    let mut path_unavailable = first_unavailable;
     if let Some(second) = second {
-        if let Some(path) = from_source(entry, root, second)? {
+        let (second_path, second_unavailable) = from_source(entry, root, second)?;
+        path_unavailable |= second_unavailable;
+        if let Some(path) = second_path {
             paths.push(path);
         }
     }
-    if paths.is_empty() && descriptor.is_none() {
+    if paths.is_empty() && descriptor.is_none() && !path_unavailable {
         return Err(supervision("missing_operation_paths"));
     }
     Ok(Some(DecodedOperation {
         operation,
         paths,
+        path_unavailable,
         descriptor,
     }))
 }
@@ -374,5 +392,23 @@ mod tests {
             decoded.project_relative,
             Some(NativePath::UnixBytes(b"inside/absent".to_vec()))
         );
+    }
+
+    #[test]
+    fn invalid_native_path_pointer_keeps_the_failed_operation_observable() {
+        let directory = tempfile::tempdir().unwrap();
+        let entry = RawEntry {
+            ordinal: 1,
+            pid: std::process::id(),
+            tid: std::process::id(),
+            parent_pid: None,
+            syscall: libc::SYS_openat as u64,
+            args: [libc::AT_FDCWD as u64, 0, 0, 0, 0, 0],
+            monotonic_ns: 1,
+        };
+        let decoded = decode(&entry, directory.path()).unwrap().unwrap();
+        assert_eq!(decoded.operation, Operation::Open);
+        assert!(decoded.paths.is_empty());
+        assert!(decoded.path_unavailable);
     }
 }
