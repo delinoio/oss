@@ -199,6 +199,18 @@ fn fs_path(units: &[u16]) -> PathBuf {
     PathBuf::from(OsString::from_wide(units))
 }
 
+pub(crate) fn watch_logical_path(logical: &NativePath) -> Option<PathBuf> {
+    let NativePath::WindowsUtf16(units) = logical else {
+        return None;
+    };
+    let nt_volume = r"\Device\HarddiskVolume".encode_utf16().collect::<Vec<_>>();
+    if units.starts_with(&nt_volume) {
+        nt_volume_path(units).ok()
+    } else {
+        Some(fs_path(units))
+    }
+}
+
 fn nt_volume_path(units: &[u16]) -> io::Result<PathBuf> {
     use winapi::um::fileapi::QueryDosDeviceW;
 

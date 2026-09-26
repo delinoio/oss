@@ -103,6 +103,28 @@ fn same_path(left: &Path, right: &Path) -> bool {
     path_prefix(left, right) && path_prefix(right, left)
 }
 
+fn logical_relative(path: &AccessPath, root: &Path) -> Option<PathBuf> {
+    #[cfg(not(windows))]
+    let logical = native_relative(&path.logical)?;
+    #[cfg(windows)]
+    let logical = crate::windows::watch_logical_path(&path.logical)?;
+    if !path_prefix(root, &logical) {
+        return None;
+    }
+    let relative = logical
+        .components()
+        .skip(root.components().count())
+        .collect::<PathBuf>();
+    if relative.as_os_str().is_empty()
+        || !relative
+            .components()
+            .all(|component| matches!(component, std::path::Component::Normal(_)))
+    {
+        return None;
+    }
+    Some(relative)
+}
+
 impl Dependencies {
     fn include_path(
         &mut self,
@@ -111,6 +133,7 @@ impl Dependencies {
         operation: Operation,
         native_result: i64,
         native_error: Option<i32>,
+        root: Option<&Path>,
     ) {
         if path.class != PathClass::Project {
             return;
@@ -124,6 +147,7 @@ impl Dependencies {
         let Some(relative) = native_relative(relative) else {
             return;
         };
+        let alias = root.and_then(|root| logical_relative(path, root));
         if matches!(
             operation,
             Operation::Write | Operation::PositionalWrite | Operation::Mutation
@@ -140,6 +164,9 @@ impl Dependencies {
             ) && missing_path_error(native_error)
             {
                 self.absent.insert(relative);
+                if let Some(alias) = alias {
+                    self.absent.insert(alias);
+                }
             }
             return;
         }
@@ -150,6 +177,9 @@ impl Dependencies {
             | Operation::Metadata
             | Operation::Exec => {
                 self.files.insert(relative);
+                if let Some(alias) = alias {
+                    self.files.insert(alias);
+                }
             }
             Operation::Directory => {
                 self.directories.insert(relative);
@@ -163,6 +193,7 @@ impl Dependencies {
 
     pub fn from_record(record: &CompleteRecord, selector: &Selector) -> Self {
         let mut dependencies = Self::default();
+        let root = native_relative(&record.header.root);
         for pair in &record.operations {
             for path in &pair.start.paths {
                 dependencies.include_path(
@@ -171,6 +202,7 @@ impl Dependencies {
                     pair.start.operation,
                     pair.completion.native_result,
                     pair.completion.native_error,
+                    root.as_deref(),
                 );
             }
         }
@@ -379,6 +411,41 @@ impl WatchSession {
 mod tests {
     use super::*;
 
+    #[cfg(unix)]
+    fn native(path: &Path) -> NativePath {
+        use std::os::unix::ffi::OsStrExt;
+        NativePath::UnixBytes(path.as_os_str().as_bytes().to_vec())
+    }
+
+    #[cfg(windows)]
+    fn native(path: &Path) -> NativePath {
+        use std::os::windows::ffi::OsStrExt;
+        NativePath::WindowsUtf16(path.as_os_str().encode_wide().collect())
+    }
+
+    #[test]
+    fn internal_link_alias_and_target_are_both_dependencies() {
+        #[cfg(unix)]
+        let root = Path::new("/project");
+        #[cfg(windows)]
+        let root = Path::new(r"C:\project");
+        let alias = Path::new("config");
+        let target = Path::new("configs/dev.json");
+        let access = AccessPath {
+            class: PathClass::Project,
+            logical: native(&root.join(alias)),
+            resolved: Some(native(&root.join(target))),
+            project_relative: Some(native(target)),
+            identity: None,
+        };
+        let selector = Selector::new(&["**".to_owned()], &[]).unwrap();
+        let mut dependencies = Dependencies::default();
+        dependencies.include_path(&access, &selector, Operation::Read, 1, None, Some(root));
+        assert!(dependencies.files.contains(alias));
+        assert!(dependencies.files.contains(target));
+        assert!(dependencies.relevant(alias));
+    }
+
     #[test]
     fn project_executable_is_a_watchable_dependency() {
         #[cfg(unix)]
@@ -394,7 +461,7 @@ mod tests {
         };
         let selector = Selector::new(&["**".to_owned()], &[]).unwrap();
         let mut dependencies = Dependencies::default();
-        dependencies.include_path(&path, &selector, Operation::Exec, 0, None);
+        dependencies.include_path(&path, &selector, Operation::Exec, 0, None, None);
         assert!(dependencies.files.contains(Path::new("tool")));
         assert!(!dependencies.is_empty());
 
@@ -403,7 +470,14 @@ mod tests {
         let missing_error = libc::ENOENT;
         #[cfg(windows)]
         let missing_error = 0xc0000034_u32 as i32;
-        missing.include_path(&path, &selector, Operation::Exec, -1, Some(missing_error));
+        missing.include_path(
+            &path,
+            &selector,
+            Operation::Exec,
+            -1,
+            Some(missing_error),
+            None,
+        );
         assert!(missing.absent.contains(Path::new("tool")));
     }
 

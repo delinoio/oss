@@ -42,6 +42,7 @@ For a selected observed path, reproduction stages that logical alias when its cu
 ## Workflow semantics
 
 - `autowatch` runs once immediately, then watches observed project inputs, including successful executable accesses, directory queries, and absent paths, including failed executable lookups. It runs serially, debounces by 200 ms by default, checks cancellation throughout a configured debounce wait, replaces dependencies after success, unions new dependencies after child failure, and rejects an empty or unsafe watch set. Confirmed self-writes alone cannot trigger a rerun.
+  Internal logical aliases and their resolved project targets are both watched so a symlink replacement invalidates the recorded input.
 
 The current Linux watch path installs a temporary recursive discovery watch during each child execution and replaces an idle watch with nonrecursive anchors of observed dependencies. It has real-process tests for changed and newly created inputs. A path with both an observed child write and an overlapping native change event is classified as ambiguous and fails instead of claiming that the child alone caused it; causal self-write suppression remains to be completed.
 Windows watch relevance and self-write checks compare path components with Windows ordinal case-insensitive semantics, so a created file can satisfy a differently cased missing lookup.
