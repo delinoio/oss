@@ -239,8 +239,8 @@ pub fn begin(operation: u8, path: &[u16]) -> Option<OperationGuard> {
         #[cfg(debug_assertions)]
         let _ = writeln!(
             std::io::stderr(),
-            "fspy preload: stage=transport_begin kind={:?}",
-            error.kind()
+            "fspy preload: stage=transport_begin kind={:?} reason={error}",
+            error.kind(),
         );
         #[cfg(not(debug_assertions))]
         let _ = error;
