@@ -145,6 +145,12 @@ func (s *eventStream) Close() {
 }
 
 func (s *eventStream) Next(ctx context.Context) (NativeEvent, error) {
+	// A consumer may stop waiting while the original subscription remains
+	// owned by another context. Do not consume an already queued arrival or
+	// cancel that stream solely because this read was canceled.
+	if ctx.Err() != nil {
+		return NativeEvent{}, unavailable()
+	}
 	// Already validated queued observations remain readable after a later stream
 	// failure; that failure still blocks new input and is returned after draining.
 	select {
@@ -157,7 +163,6 @@ func (s *eventStream) Next(ctx context.Context) (NativeEvent, error) {
 		s.mu.Unlock()
 		return event, nil
 	case <-ctx.Done():
-		s.fail(unavailable())
 		return NativeEvent{}, unavailable()
 	}
 }

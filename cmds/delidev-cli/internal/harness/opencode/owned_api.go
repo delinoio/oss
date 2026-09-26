@@ -155,7 +155,12 @@ func (a *OwnedAPI) Next(ctx context.Context) (Observation, error) {
 	}
 	event, err := stream.Next(ctx)
 	if err != nil {
-		_ = observer.interruption(ctx)
+		// Only the original subscription's failure can invalidate its event
+		// evidence. Canceling a waiting consumer grants no reconnect/replay
+		// authority and does not turn a healthy original stream into a gap.
+		if ctx.Err() == nil || stream.status() != nil || stream.ctx != nil && stream.ctx.Err() != nil {
+			_ = observer.interruption(ctx)
+		}
 		return Observation{}, err
 	}
 	return observer.observe(ctx, event)
