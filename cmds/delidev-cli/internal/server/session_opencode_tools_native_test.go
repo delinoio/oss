@@ -118,7 +118,7 @@ func serveOpenCodeContinuationArguments(t *testing.T, w http.ResponseWriter, too
 	_, _ = io.WriteString(w, "data: [DONE]\n\n")
 }
 
-func verifyOpenCodeContinuationTool(t *testing.T, raw []byte, tool, path string) string {
+func verifyOpenCodeContinuationTool(t *testing.T, raw []byte, tool, path string, dismissed ...bool) string {
 	t.Helper()
 	var body struct {
 		Messages []struct {
@@ -139,6 +139,10 @@ func verifyOpenCodeContinuationTool(t *testing.T, raw []byte, tool, path string)
 		t.Error("invalid provider conversation")
 		return ""
 	}
+	marker := openCodeContinuationResultMarker(tool)
+	if len(dismissed) == 1 && dismissed[0] {
+		marker = "The user dismissed this question"
+	}
 	proposals, results := 0, 0
 	var result string
 	for _, message := range body.Messages {
@@ -157,7 +161,7 @@ func verifyOpenCodeContinuationTool(t *testing.T, raw []byte, tool, path string)
 		}
 		if message.Role == "tool" {
 			results++
-			if proposals != 1 || message.CallID != continuationToolCall || json.Unmarshal(message.Content, &result) != nil || !strings.Contains(result, openCodeContinuationResultMarker(tool)) || strings.Contains(result, "changed-source-after-original-tool") {
+			if proposals != 1 || message.CallID != continuationToolCall || json.Unmarshal(message.Content, &result) != nil || !strings.Contains(result, marker) || strings.Contains(result, "changed-source-after-original-tool") {
 				t.Error("replacement altered original native tool output or ordering")
 			}
 		}
@@ -330,4 +334,12 @@ func verifyOpenCodeContinuationPatchFiles(t *testing.T, path string, turn int) {
 	} else if value, err := os.ReadFile(path + ".delete"); err != nil || string(value) != "later recreated file\n" {
 		t.Fatal("replacement replayed original deletion", err)
 	}
+}
+
+func openCodeContinuationQuestionResponse(dismissed bool) domain.QuestionResponseInput {
+	response := &domain.OpenCodeQuestionResponse{Answers: openCodeContinuationAnswers()}
+	if dismissed {
+		response = &domain.OpenCodeQuestionResponse{Reject: true}
+	}
+	return domain.QuestionResponseInput{OpenCode: response}
 }

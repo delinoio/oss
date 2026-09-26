@@ -68,6 +68,10 @@ func TestManualNativeOpenCodePublicQuestionContinuation(t *testing.T) {
 	nativeOpenCodePublicDispatchProfile(t, 3, false, "", "question", true)
 }
 
+func TestManualNativeOpenCodePublicQuestionDismissalContinuation(t *testing.T) {
+	nativeOpenCodePublicDispatchProfile(t, 3, false, "", "question-dismissed", true)
+}
+
 func TestManualNativeOpenCodePublicTodoClearContinuation(t *testing.T) {
 	nativeOpenCodePublicDispatchProfile(t, 3, false, "", "todo-clear", true)
 }
@@ -95,6 +99,10 @@ func nativeOpenCodePublicDispatch(t *testing.T, turns int, failedFirst bool, fau
 }
 
 func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bool, fault, tool string, switchModes ...bool) {
+	dismissed := tool == "question-dismissed"
+	if dismissed {
+		tool = "question"
+	}
 	repeatTodo := tool == "todo-clear"
 	if repeatTodo {
 		tool = "todowrite"
@@ -137,7 +145,7 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 			var originalToolResult string
 			retainedTools := map[string]string{}
 			expectedCalls := turns
-			if tool != "" {
+			if tool != "" && !dismissed {
 				expectedCalls++
 			}
 			if always || repeatTodo {
@@ -221,8 +229,10 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 						serveOpenCodeContinuationTool(t, w, tool, toolPath.Load().(string))
 						return
 					}
-					providerTurn--
-					result := verifyOpenCodeContinuationTool(t, raw, tool, toolPath.Load().(string))
+					if !dismissed {
+						providerTurn--
+					}
+					result := verifyOpenCodeContinuationTool(t, raw, tool, toolPath.Load().(string), dismissed)
 					if originalToolResult == "" {
 						originalToolResult = result
 					} else if result != originalToolResult {
@@ -316,7 +326,7 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 							}
 							meta := &pb.Mutation{RequestId: string(domain.NewID()), Id: string(rows[0].ID), ExpectedRevision: rows[0].Revision}
 							if question {
-								body, _ := json.Marshal(domain.QuestionResponseInput{OpenCode: &domain.OpenCodeQuestionResponse{Answers: openCodeContinuationAnswers()}})
+								body, _ := json.Marshal(openCodeContinuationQuestionResponse(dismissed))
 								_, err = client.RespondQuestion(ctx, ownerRequest(f.identity, &pb.RespondQuestionRequest{Mutation: meta, ResponseJson: body}))
 							} else {
 								body, _ := json.Marshal(domain.ApprovalResponseInput{OpenCode: &domain.OpenCodePermissionResponse{Decision: decision}})
@@ -355,6 +365,9 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 						}
 						if failedFirst && turn == 0 {
 							expectedState, expectedOutcome, expectedDispatch = domain.JobFailed, domain.ExecutionFailed, domain.DispatchPaused
+						}
+						if dismissed && turn == 0 {
+							expectedState, expectedOutcome, expectedDispatch = domain.JobCanceled, domain.ExecutionStopped, domain.DispatchPaused
 						}
 						if completed.State != expectedState || domain.Decode(completed.Output, &proof) != nil || proof.ValidateForHarness(domain.OpenCode) != nil || proof.Version != expectedVersion || proof.ExecutionID != input.ExecutionID || proof.InputID != input.InputID || !proof.CleanupVerified || calls.Load() != int64(wantCalls) {
 							t.Fatalf("public native execution did not retain original completion: %s %v", completed.State, completed.Problem)
@@ -452,7 +465,7 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 					if fault != "" && turn == 0 {
 						alterOpenCodeContinuationEvidence(t, ctx, f.workerRoot, domain.ID(assignment.Id), input.ExecutionID, fault)
 					}
-					if failedFirst && turn == 0 {
+					if (failedFirst || dismissed) && turn == 0 {
 						if f.service.dispatchExecution(ctx, f.refresh(t)) == nil {
 							t.Fatal("failed input gained automatic continuation")
 						}

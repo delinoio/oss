@@ -34,7 +34,7 @@ func (o *inputObserver) checkpointPermission(value *observedInteraction, decisio
 
 func (o *inputObserver) checkpointDirectClaim(value *observedInteraction, kind SessionMutation, body []byte) (SessionClaim, bool) {
 	var empty SessionClaim
-	if value == nil || value.value.Tool == nil || !value.closed || value.rejected || value.canceled || value.pendingAbsent || value.rejectionReserved || len(value.rejectionSources) != 0 || len(value.alwaysObservations) != 0 {
+	if value == nil || value.value.Tool == nil || !value.closed || value.rejected != (kind == RejectQuestionMutation) || value.canceled || value.pendingAbsent || value.rejectionReserved || len(value.rejectionSources) != 0 || len(value.alwaysObservations) != 0 {
 		return empty, false
 	}
 	a := value.attempt
@@ -102,6 +102,9 @@ func validCheckpointInteractions(value nativeCheckpoint) bool {
 				return false
 			}
 			kind, digest = ReplyQuestionMutation, claim.BodyDigest
+			if claim.Kind == RejectQuestionMutation && p.Version == 8 {
+				kind, digest = RejectQuestionMutation, mutationDigest(nil)
+			}
 			seen[reply.ReplyEventID], questionParts[claim.PartID] = true, true
 		} else if index >= len(p.Once) {
 			if names[claim.PartID] != checkpointReadTool {

@@ -31,6 +31,7 @@ type checkpointToolPart struct {
 // Version 5 adds independently answered, completed native Question history.
 // Version 6 adds native inline search and independently compared Todo state.
 // Version 7 adds original completed inline Write/Edit/Apply Patch results.
+// Version 8 adds originally accepted, closed Question dismissals.
 type checkpointToolHistory struct {
 	Version         uint32                       `json:"version"`
 	InteractionFree bool                         `json:"interaction_free"`
@@ -83,7 +84,7 @@ func validCheckpointTools(value nativeCheckpoint) bool {
 					}
 					searchOrTodo = true
 				case checkpointWriteTool, checkpointEditTool, checkpointApplyPatchTool:
-					if proof.Version != 7 {
+					if proof.Version < 7 {
 						return false
 					}
 					fileTool = true
@@ -94,7 +95,7 @@ func validCheckpointTools(value nativeCheckpoint) bool {
 			}
 		}
 	}
-	return index == len(proof.Parts) && (proof.Version == 7) == fileTool && (proof.Version != 6 || searchOrTodo)
+	return index == len(proof.Parts) && (proof.Version != 7 || fileTool) && (proof.Version != 6 || searchOrTodo) && (proof.Version == 8) == checkpointHasQuestionDismissal(proof)
 }
 
 func (s *sessionAPI) checkpointToolHistory(value nativeCheckpoint) *checkpointToolHistory {
@@ -222,6 +223,9 @@ func (s *sessionAPI) checkpointToolHistory(value nativeCheckpoint) *checkpointTo
 			proof.Version = 7
 		}
 	}
+	if checkpointHasQuestionDismissal(proof) {
+		proof.Version = 8
+	}
 	if !validCheckpointTools(value) {
 		return nil
 	}
@@ -232,7 +236,7 @@ func (s *sessionAPI) checkpointToolHistory(value nativeCheckpoint) *checkpointTo
 // instruction-loader state. Other tool states remain retained but cannot
 // acquire replacement authority through the closed inline tool profiles.
 func checkpointInlineTool(tool *NativeToolPart) bool {
-	if tool == nil || tool.State != ToolCompleted || tool.Timing == nil || tool.Timing.End == nil || tool.Timing.Compacted != nil || tool.Output == nil || len(tool.Attachments) != 0 {
+	if tool == nil || tool.Timing == nil || tool.Timing.End == nil || tool.Timing.Compacted != nil || len(tool.Attachments) != 0 {
 		return false
 	}
 	if tool.PartMetadata != nil {
@@ -242,6 +246,12 @@ func checkpointInlineTool(tool *NativeToolPart) bool {
 		if domain.Decode(tool.PartMetadata, &metadata) != nil || metadata.ProviderExecuted != nil && *metadata.ProviderExecuted {
 			return false
 		}
+	}
+	if tool.State == ToolError {
+		return checkpointDismissedQuestionTool(tool)
+	}
+	if tool.State != ToolCompleted || tool.Output == nil {
+		return false
 	}
 	switch checkpointToolName(tool.Name) {
 	case checkpointReadTool:

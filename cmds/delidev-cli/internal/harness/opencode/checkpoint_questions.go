@@ -23,8 +23,18 @@ func (o *inputObserver) checkpointQuestion(value *observedInteraction) (checkpoi
 	if part == nil || part.value.Tool == nil || part.value.Tool.Name != "question" || !checkpointInlineTool(part.value.Tool) {
 		return empty, false
 	}
+	if value.attempt == nil || value.attempt.permission != nil {
+		return empty, false
+	}
+	if value.rejected {
+		if !checkpointDismissedQuestionTool(part.value.Tool) {
+			return empty, false
+		}
+		claim, valid := o.checkpointDirectClaim(value, RejectQuestionMutation, nil)
+		return checkpointQuestionReply{Claim: claim, ReplyEventID: value.replyEvent}, valid
+	}
 	answers, valid := checkpointQuestionAnswers(part.value.Tool.Metadata)
-	if !valid || !validQuestionAnswers(value.value.Questions, answers) || value.attempt == nil || value.attempt.permission != nil {
+	if !valid || !validQuestionAnswers(value.value.Questions, answers) {
 		return empty, false
 	}
 	body, err := json.Marshal(struct {
@@ -58,4 +68,27 @@ func checkpointQuestionAnswers(raw json.RawMessage) ([][]string, bool) {
 		}
 	}
 	return answers, true
+}
+
+// A native failed Question has no answer or auxiliary result state. This shape
+// alone never proves dismissal: checkpointQuestion requires the original exact
+// reject claim, HTTP/native acceptance and independent closure event as well.
+func checkpointDismissedQuestionTool(tool *NativeToolPart) bool {
+	if tool == nil || tool.Name != string(checkpointQuestionTool) || tool.State != ToolError || tool.Error == nil || tool.Output != nil {
+		return false
+	}
+	if tool.Metadata == nil {
+		return true
+	}
+	_, err := shape(tool.Metadata, nil, nil)
+	return err == nil
+}
+
+func checkpointHasQuestionDismissal(proof *checkpointToolHistory) bool {
+	for _, reply := range proof.Questions {
+		if reply.Claim.Kind == RejectQuestionMutation {
+			return true
+		}
+	}
+	return false
 }

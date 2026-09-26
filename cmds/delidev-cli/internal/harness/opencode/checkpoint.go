@@ -146,11 +146,17 @@ func (a *OwnedAPI) RetainCheckpoint(ctx context.Context) (raw []byte, reference 
 	a.checkpointBytes, a.checkpointReference = bytes.Clone(raw), ref
 	if s.logger != nil {
 		toolParts, oncePermissions, alwaysPermissions, policyClosures, questionReplies := 0, 0, 0, 0, 0
+		questionDismissals := 0
 		if value.Tools != nil {
 			toolParts, oncePermissions = len(value.Tools.Parts), len(value.Tools.Once)
 			alwaysPermissions, policyClosures, questionReplies = len(value.Tools.Always), len(value.Tools.Policy), len(value.Tools.Questions)
+			for _, reply := range value.Tools.Questions {
+				if reply.Claim.Kind == RejectQuestionMutation {
+					questionDismissals++
+				}
+			}
 		}
-		s.logger.InfoContext(ctx, "opencode_original_checkpoint_observed", "owner_id", s.owner, "request_id", i.receipt.RequestID, "messages", len(history.Messages), "entries", len(files), "restorable_inline_tool_parts", toolParts, "restorable_once_permissions", oncePermissions, "restorable_always_permissions", alwaysPermissions, "restorable_policy_closures", policyClosures, "restorable_question_replies", questionReplies, "restorable_todo_state", latestCheckpointTodo(value) != nil)
+		s.logger.InfoContext(ctx, "opencode_original_checkpoint_observed", "owner_id", s.owner, "request_id", i.receipt.RequestID, "messages", len(history.Messages), "entries", len(files), "restorable_inline_tool_parts", toolParts, "restorable_once_permissions", oncePermissions, "restorable_always_permissions", alwaysPermissions, "restorable_policy_closures", policyClosures, "restorable_question_replies", questionReplies, "restorable_question_dismissals", questionDismissals, "restorable_todo_state", latestCheckpointTodo(value) != nil)
 	}
 	return raw, ref, nil
 }
