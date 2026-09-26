@@ -253,6 +253,14 @@ test("MCP reports bounded compiler, module and uncaught render diagnostics witho
     assert.ok(!JSON.stringify(helper).includes(cwd));
   }
 
+  await writeFile(join(cwd, "tasks", "throwing-helper.jsx"), "throw Error('PRIVATE-JSX-HELPER');");
+  await writeFile(join(cwd, "tasks", "javascript-jsx.tsx"), "import './throwing-helper.jsx'; export default () => {};");
+  const jsxHelper = await errorCode(peer, "execute", { entry: "tasks/javascript-jsx.tsx" }, "render");
+  assert.equal(jsxHelper.error.message, "PRIVATE-JSX-HELPER");
+  assert.equal(jsxHelper.error.diagnostics[0].source, "import");
+  assert.equal(jsxHelper.error.diagnostics[0].file, "tasks/throwing-helper.jsx");
+  assert.equal(jsxHelper.error.diagnostics[0].line, 1);
+
   const unresolved = await errorCode(peer, "execute", { code: "import './absent-local-module.js'; export default () => {};" }, "malformed_input");
   assert.equal(unresolved.error.diagnostics[0].phase, "compile");
   assert.match(unresolved.error.message, /absent-local-module/);

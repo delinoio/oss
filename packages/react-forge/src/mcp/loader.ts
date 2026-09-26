@@ -51,7 +51,7 @@ export class TaskLoader {
           const path = fileURLToPath(resolved.url);
           // Only local modules reached from caller code establish provenance.
           // Third-party and engine errors retain their redacted error surface.
-          if (this.known.has(parent) && /\.(?:[cm]?js|[cm]?tsx?)$/.test(path) && this.isCallerOwnedImport(path)) {
+          if (this.known.has(parent) && /\.(?:[cm]?js|jsx|[cm]?tsx?)$/.test(path) && this.isCallerOwnedImport(path)) {
             this.register(path, TaskSource.Import);
           }
         }
