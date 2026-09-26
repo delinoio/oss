@@ -162,7 +162,16 @@ export class DocumentSession {
     if (!this.imported) {
       const targets: TargetHandle[] = [];
       const visit = (node: SerializedNode) => {
-        if (node.type !== "#text") targets.push(Object.freeze({ documentId: this.documentId, nodeId: node.id, kind: node.type.split(":")[1] ?? node.type, editable: false }));
+        if (node.type !== "#text") {
+          const text = node.type === "pdf:paragraph" ? node.children.map(run => {
+            if (run.type === "#text") return String(run.props.text ?? "");
+            if (run.type === "pdf:run" || run.type === "pdf:link") {
+              return run.children.filter(child => child.type === "#text").map(child => String(child.props.text ?? "")).join("");
+            }
+            return "";
+          }).join("") : undefined;
+          targets.push(Object.freeze({ documentId: this.documentId, nodeId: node.id, kind: node.type.split(":")[1] ?? node.type, editable: false, text }));
+        }
         node.children.forEach(visit);
       };
       this.root.snapshot().forEach(visit);
