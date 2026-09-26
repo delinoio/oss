@@ -29,6 +29,9 @@ func (p *nativeAPIProfile) writeInstructions() error {
 }
 
 func (p *nativeAPIProfile) inspectInstructions() error {
+	if err := p.ProjectInstructions.inspect(); err != nil {
+		return err
+	}
 	if p.InstructionsPath == "" {
 		return nil
 	}

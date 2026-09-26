@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -92,6 +93,83 @@ func TestManualNativeOpenCodeOwnedAPIAdditiveInstructions(t *testing.T) {
 	})
 }
 
+func TestManualNativeOpenCodeOwnedAPIProjectInstructions(t *testing.T) {
+	for _, selection := range []string{"agents", "fallback", "empty-agents"} {
+		t.Run(selection, func(t *testing.T) {
+			var paths, contents []string
+			const ignoredContext = "Private fallback must remain absent when AGENTS exists."
+			const ignoredClaude = "Private disabled Claude compatibility instructions."
+			configure := func(c *apiSessionConfig) {
+				root, directory := projectInstructionFixture(t)
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				cmd := exec.CommandContext(ctx, "git", "init", "--quiet", root)
+				cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + root, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=" + os.DevNull}
+				if err := cmd.Run(); err != nil {
+					t.Fatal("cannot initialize isolated native instruction repository")
+				}
+				c.NativeRoot, c.Workspace, c.Instructions = root, directory, privateInstructionsFixture
+				filename := "AGENTS.md"
+				if selection == "fallback" {
+					filename = "CONTEXT.md"
+				}
+				for index, dir := range []string{directory, root} {
+					path := filepath.Join(dir, filename)
+					text := []string{"Private nested project 지침.\r\n", "Private repository root instruction.\n"}[index]
+					if selection == "empty-agents" {
+						text = ""
+					}
+					writeProjectInstruction(t, path, text)
+					paths, contents = append(paths, path), append(contents, text)
+					writeProjectInstruction(t, filepath.Join(dir, "CLAUDE.md"), ignoredClaude)
+					if filename != "CONTEXT.md" {
+						writeProjectInstruction(t, filepath.Join(dir, "CONTEXT.md"), ignoredContext)
+					}
+				}
+				// Loading repository configuration would change the verified
+				// model and fail before inference; only selected instructions load.
+				writeProjectInstruction(t, filepath.Join(root, "opencode.json"), `{"model":"foreign/ignored"}`)
+			}
+			check := func(body map[string]json.RawMessage) {
+				var messages []map[string]json.RawMessage
+				if json.Unmarshal(body["messages"], &messages) != nil {
+					t.Error("native provider messages unavailable")
+					return
+				}
+				var system strings.Builder
+				for _, message := range messages {
+					if scalar(message["role"], "system") {
+						var content string
+						if json.Unmarshal(message["content"], &content) != nil {
+							t.Error("native system message is not text")
+						}
+						system.WriteString(content)
+					}
+				}
+				value, prior := system.String(), -1
+				for index, text := range contents {
+					if text == "" {
+						if strings.Contains(value, "Instructions from: "+paths[index]) {
+							t.Error("native empty project instruction acquired content")
+						}
+						continue
+					}
+					original := "Instructions from: " + paths[index] + "\n" + text
+					position := strings.Index(value, original)
+					if strings.Count(value, original) != 1 || position <= prior {
+						t.Error("native project instruction bytes, source or order changed")
+					}
+					prior = position
+				}
+				if strings.Contains(value, ignoredContext) || strings.Contains(value, ignoredClaude) || strings.Index(value, privateInstructionsFixture) <= prior {
+					t.Error("native instruction precedence or additive template order changed")
+				}
+			}
+			nativeOwnedAPISessionWithRequestCheck(t, true, false, nativeServerRelay, configure, check)
+		})
+	}
+}
+
 func TestManualNativeOpenCodeOwnedAPIPlan(t *testing.T) {
 	nativeOwnedAPISessionWithProfile(t, true, false, nativeServerRelay, func(c *apiSessionConfig) {
 		c.Settings.Agent = PlanAgent
@@ -135,6 +213,11 @@ func nativeOwnedAPISessionWithRelay(t *testing.T, input, mismatch bool, relayMod
 
 func nativeOwnedAPISessionWithProfile(t *testing.T, input, mismatch bool, relayMode nativeRelayFixtureMode, configure func(*apiSessionConfig)) {
 	t.Helper()
+	nativeOwnedAPISessionWithRequestCheck(t, input, mismatch, relayMode, configure, nil)
+}
+
+func nativeOwnedAPISessionWithRequestCheck(t *testing.T, input, mismatch bool, relayMode nativeRelayFixtureMode, configure func(*apiSessionConfig), check func(map[string]json.RawMessage)) {
+	t.Helper()
 	realRelay := relayMode != nativeDirectScriptedAPI
 	executable := os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE")
 	if executable == "" {
@@ -176,6 +259,9 @@ func nativeOwnedAPISessionWithProfile(t *testing.T, input, mismatch bool, relayM
 			t.Error("owned native request escaped the fixed scripted relay scope")
 			w.WriteHeader(http.StatusForbidden)
 			return
+		}
+		if check != nil {
+			check(body)
 		}
 		if config.Instructions != "" {
 			var messages []map[string]json.RawMessage

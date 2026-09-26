@@ -20,14 +20,15 @@ const nativeAPIProviderPackage = "@ai-sdk/openai-compatible"
 // readiness. Its production owner must separately validate the registered
 // execution relay, managed policy and canonical private runtime/workspace.
 type nativeAPIProfile struct {
-	Settings         SessionSettings `json:"-"`
-	BaseURL          string          `json:"-"`
-	Token            string          `json:"-"`
-	ContextLimit     int64           `json:"-"`
-	OutputLimit      int64           `json:"-"`
-	Rejection        RejectionPolicy `json:"-"`
-	Instructions     string          `json:"-"`
-	InstructionsPath string          `json:"-"`
+	Settings            SessionSettings      `json:"-"`
+	BaseURL             string               `json:"-"`
+	Token               string               `json:"-"`
+	ContextLimit        int64                `json:"-"`
+	OutputLimit         int64                `json:"-"`
+	Rejection           RejectionPolicy      `json:"-"`
+	Instructions        string               `json:"-"`
+	InstructionsPath    string               `json:"-"`
+	ProjectInstructions *projectInstructions `json:"-"`
 }
 
 func (p nativeAPIProfile) config() (map[string]any, error) {
@@ -54,10 +55,19 @@ func (p nativeAPIProfile) config() (map[string]any, error) {
 			}},
 		}},
 	}
+	var instructionPaths []string
+	if p.ProjectInstructions != nil {
+		for _, source := range p.ProjectInstructions.Sources {
+			instructionPaths = append(instructionPaths, source.Path)
+		}
+	}
 	if p.InstructionsPath != "" {
 		// Native instructions are additive. Do not replace the native agent's
 		// prompt or the system field of an individual user message.
-		result["instructions"] = []string{p.InstructionsPath}
+		instructionPaths = append(instructionPaths, p.InstructionsPath)
+	}
+	if len(instructionPaths) > 0 {
+		result["instructions"] = instructionPaths
 	}
 	return result, nil
 }

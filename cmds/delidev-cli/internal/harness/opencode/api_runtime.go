@@ -83,6 +83,11 @@ func prepareAPISession(config apiSessionConfig) ([]string, *nativeAPIProfile, er
 	if config.Instructions != "" {
 		profile.InstructionsPath = filepath.Join(root, "instructions.txt")
 	}
+	project, err := collectProjectInstructions(config.Workspace, config.NativeRoot)
+	if err != nil {
+		return nil, nil, err
+	}
+	profile.ProjectInstructions = project
 	raw, err := profile.configBytes()
 	if err != nil {
 		return nil, nil, err
