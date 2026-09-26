@@ -228,6 +228,13 @@ func (w *startupOutput) Write(data []byte) (int, error) {
 	}
 	w.count = min(maxOutput, w.count+min(maxOutput, len(data)))
 	for len(data) > 0 && w.status() == nil {
+		// After the sole startup record, even an unterminated extra byte is
+		// a violation. A long-lived owned server cannot defer that check until
+		// shutdown and continue granting HTTP authority in the meantime.
+		if w.seen {
+			w.fail(incompatible())
+			break
+		}
 		end := bytes.IndexByte(data, '\n')
 		size := len(data)
 		if end >= 0 {

@@ -15,7 +15,7 @@ func (s *sessionAPI) request(ctx context.Context, method, path string, body []by
 	// discovery. Its route set is separate: no arbitrary URL/query, config write,
 	// login, provider switch, fork, deletion or prompt retry is available here.
 	valid := method == http.MethodPost && path == "/session" && s.creation != nil
-	valid = valid || s.runtimeRead && s.creation == nil && method == http.MethodGet && (path == "/config" || path == "/provider") && len(body) == 0
+	valid = valid || s.runtimeRead && s.creation == nil && method == http.MethodGet && (path == "/config" || path == "/provider" || path == "/path" || path == "/agent") && len(body) == 0
 	if s.replyAttempt != nil {
 		valid = valid || method == http.MethodPost && path == s.replyAttempt.path && mutationDigest(body) == s.replyAttempt.digest
 	}

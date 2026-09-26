@@ -77,11 +77,10 @@ type InputReceipt struct {
 	Recorded     bool
 }
 
-// sessionAPI is deliberately not constructible outside this package. Before a
-// production owner may supply these fields, its execution initializer must
-// prove managed configuration, effective providers and owned server authority.
-// Discovery cannot create one or expose session mutations. The native fixtures
-// exercise this transport separately from that still-required integration.
+// sessionAPI is deliberately not constructible outside this package. Its
+// private owned API initializer proves managed configuration, effective native
+// providers/context and original server ownership. Discovery cannot create one
+// or expose session mutations. Durable Worker/account integration is separate.
 type sessionAPI struct {
 	client          *http.Client
 	origin          string
@@ -106,6 +105,7 @@ type sessionAPI struct {
 	apiProfile      *nativeAPIProfile
 	apiVerified     bool
 	runtimeRead     bool
+	runtimeRoot     string
 }
 
 type sessionCreation struct {

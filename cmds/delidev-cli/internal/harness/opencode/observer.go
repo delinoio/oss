@@ -119,6 +119,9 @@ func (s *sessionAPI) observeInput(ctx context.Context, root string) (*inputObser
 		return nil, err
 	}
 	defer s.leave()
+	if s.runtimeRoot != "" && root != s.runtimeRoot {
+		return nil, sessionInvalid()
+	}
 	if s.creation == nil || s.input == nil || s.events == nil || s.events.ctx == nil || !filepath.IsAbs(root) || domain.Text(root, "native root", 32768, true) != nil {
 		return nil, sessionInvalid()
 	}

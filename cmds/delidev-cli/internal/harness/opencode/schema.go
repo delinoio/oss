@@ -68,6 +68,10 @@ var operations = []operationProfile{
 // schemas, applied execution settings and actual API calls need their separate
 // adapters; neither OpenAPI security metadata nor this document proves auth.
 func validateSchema(raw []byte) error {
+	return validateSchemaOperations(raw, operations)
+}
+
+func validateSchemaOperations(raw []byte, required []operationProfile) error {
 	schema, err := object(raw)
 	if err != nil || len(schema) != 6 || !scalar(schema["openapi"], "3.1.0") {
 		return incompatible()
@@ -92,7 +96,7 @@ func validateSchema(raw []byte) error {
 	if err != nil || len(paths) > 256 {
 		return incompatible()
 	}
-	for _, expected := range operations {
+	for _, expected := range required {
 		path, err := object(paths[expected.path])
 		if err != nil {
 			return incompatible()
