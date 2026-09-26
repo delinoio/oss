@@ -145,7 +145,13 @@ fn send_all(socket: &UnixStream, bytes: &[u8]) -> bool {
     true
 }
 
-fn receive_ack(socket: &UnixStream) -> bool {
+enum Ack {
+    Proceed,
+    Quit,
+    Lost,
+}
+
+fn receive_ack(socket: &UnixStream) -> Ack {
     let mut ack = 0_u8;
     loop {
         // SAFETY: socket is valid and ack is writable.
@@ -153,7 +159,11 @@ fn receive_ack(socket: &UnixStream) -> bool {
         if count < 0 && std::io::Error::last_os_error().raw_os_error() == Some(libc::EINTR) {
             continue;
         }
-        return count == 1 && ack == b'g';
+        return match (count, ack) {
+            (1, b'g') => Ack::Proceed,
+            (1, b'q') => Ack::Quit,
+            _ => Ack::Lost,
+        };
     }
 }
 
@@ -335,9 +345,20 @@ fn enter(kind: Kind, path: &[u8]) -> Option<Token> {
         next.set(id.wrapping_add(1));
         id
     });
-    let outcome =
-        with_stream(|socket| send_frame(socket, b's', kind, id, 0, 0, path) && receive_ack(socket));
-    if matches!(outcome, Some(true)) {
+    let outcome = with_stream(|socket| {
+        if send_frame(socket, b's', kind, id, 0, 0, path) {
+            receive_ack(socket)
+        } else {
+            Ack::Lost
+        }
+    });
+    if matches!(outcome, Some(Ack::Quit)) {
+        // The supervisor explicitly rejected this start before its native
+        // call. Terminate the calling process so the operation cannot run.
+        // SAFETY: _exit is async-signal-safe and does not return.
+        unsafe { libc::_exit(130) };
+    }
+    if matches!(outcome, Some(Ack::Proceed)) {
         Some(Token { id, kind })
     } else {
         if socket_path().is_some() {

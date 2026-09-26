@@ -327,6 +327,31 @@ struct ReceiveContext<F> {
     delay_for: Arc<F>,
 }
 
+struct RetryRead<'a> {
+    stream: &'a mut TcpStream,
+    stopping: &'a AtomicBool,
+    consumed: bool,
+}
+
+impl Read for RetryRead<'_> {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        loop {
+            match self.stream.read(buffer) {
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock
+                    ) && !self.stopping.load(Ordering::Acquire) => {}
+                Ok(length) => {
+                    self.consumed |= length != 0;
+                    return Ok(length);
+                }
+                result => return result,
+            }
+        }
+    }
+}
+
 fn receive_connection<F>(mut stream: TcpStream, context: &ReceiveContext<F>) -> io::Result<()>
 where
     F: Fn(&Frame) -> Duration,
@@ -344,14 +369,22 @@ where
         .push(hello, &context.root, context.max_events, context.max_bytes)?;
     stream.write_all(b"g")?;
     loop {
-        let mut frame = match read_frame(&mut stream) {
+        // Keep the framing cursor across short socket timeouts. Retrying a
+        // partially read frame at its next boundary would interpret UTF-16
+        // path bytes as a new header and silently lose observations.
+        let mut reader = RetryRead {
+            stream: &mut stream,
+            stopping: &context.stop,
+            consumed: false,
+        };
+        let mut frame = match read_frame(&mut reader) {
             Ok(Some(frame)) => frame,
             Ok(None) => return Ok(()),
             Err(error)
                 if matches!(
                     error.kind(),
                     io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock
-                ) =>
+                ) && !reader.consumed =>
             {
                 if context.stop.load(Ordering::Acquire) {
                     return Ok(());

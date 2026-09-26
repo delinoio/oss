@@ -2207,6 +2207,222 @@ fn macos_autowatch(args: AutowatchArgs) -> i32 {
 }
 
 #[cfg(target_os = "macos")]
+struct MacBreakTerminal {
+    file: fs::File,
+    original: libc::termios,
+    flags: i32,
+}
+
+#[cfg(target_os = "macos")]
+impl MacBreakTerminal {
+    fn new() -> Result<Self, &'static str> {
+        use std::os::fd::AsRawFd;
+
+        let file = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open("/dev/tty")
+            .map_err(|_| "control_terminal_unavailable")?;
+        let fd = file.as_raw_fd();
+        // SAFETY: the descriptor belongs to this terminal and the struct is
+        // writable for the exact native terminal configuration size.
+        let mut original: libc::termios = unsafe { std::mem::zeroed() };
+        if unsafe { libc::isatty(fd) } != 1
+            || unsafe { libc::tcgetattr(fd, &raw mut original) } != 0
+        {
+            return Err("control_terminal_unavailable");
+        }
+        // SAFETY: F_GETFL reads flags from the live descriptor.
+        let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+        if flags < 0 {
+            return Err("control_terminal_unavailable");
+        }
+        let terminal = Self {
+            file,
+            original,
+            flags,
+        };
+        let mut immediate = original;
+        immediate.c_lflag &= !(libc::ICANON | libc::ECHO);
+        immediate.c_cc[libc::VMIN] = 1;
+        immediate.c_cc[libc::VTIME] = 0;
+        // SAFETY: Drop restores both settings if either mutation fails.
+        if unsafe { libc::tcsetattr(fd, libc::TCSANOW, &raw const immediate) } != 0
+            || unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0
+        {
+            return Err("control_terminal_unavailable");
+        }
+        Ok(terminal)
+    }
+
+    fn decision(
+        &mut self,
+        frame: &crate::macos::Frame,
+        cancelled: &std::sync::atomic::AtomicBool,
+    ) -> Result<u8, &'static str> {
+        use std::{io::Read, sync::atomic::Ordering};
+
+        let path = frame.access_path.as_ref().ok_or("control_channel_loss")?;
+        let operation = crate::macos::operation(frame.operation).ok_or("control_channel_loss")?;
+        writeln!(
+            self.file,
+            "break: {} {:?} pid={} tid={} [n/c/q]",
+            display_path(&path.logical),
+            operation,
+            frame.pid,
+            frame.tid
+        )
+        .map_err(|_| "control_channel_loss")?;
+        self.file.flush().map_err(|_| "control_channel_loss")?;
+        loop {
+            if cancelled.load(Ordering::SeqCst) {
+                return Ok(0);
+            }
+            let mut key = [0_u8; 1];
+            match self.file.read(&mut key) {
+                Ok(1) if matches!(key[0], b'n' | b'c' | b'q') => return Ok(key[0]),
+                Ok(1) => {}
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+                _ => return Err("control_channel_loss"),
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl Drop for MacBreakTerminal {
+    fn drop(&mut self) {
+        use std::os::fd::AsRawFd;
+        let fd = self.file.as_raw_fd();
+        // SAFETY: this descriptor remains owned until Drop completes.
+        unsafe {
+            libc::tcsetattr(fd, libc::TCSANOW, &raw const self.original);
+            libc::fcntl(fd, libc::F_SETFL, self.flags);
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn macos_fbreak(args: BreakArgs) -> i32 {
+    use std::{
+        process::Stdio,
+        sync::{
+            atomic::{AtomicBool, Ordering},
+            Arc, Mutex,
+        },
+    };
+
+    let root = match execution_root(&args.execution) {
+        Ok(root) => root,
+        Err(error) => return diagnostic(error, "fbreak"),
+    };
+    let selector = match coverage::Selector::new(&args.include, &args.exclude) {
+        Ok(selector) => selector,
+        Err(error) => return diagnostic(&error.to_string(), "fbreak"),
+    };
+    let terminal = match MacBreakTerminal::new() {
+        Ok(terminal) => Arc::new(Mutex::new(terminal)),
+        Err(error) => return diagnostic(error, "fbreak"),
+    };
+    let signals = match MacSignals::new() {
+        Ok(signals) => signals,
+        Err(error) => return macos_capture_status((error, 0), "fbreak"),
+    };
+    let mut child = fspy::Command::new(&args.command[0]);
+    child
+        .args(&args.command[1..])
+        .envs(std::env::vars_os())
+        .stdin(Stdio::null())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit());
+    let continue_all = Arc::new(AtomicBool::new(false));
+    let user_quit = Arc::new(AtomicBool::new(false));
+    let control_loss = Arc::new(AtomicBool::new(false));
+    let admission = {
+        let terminal = Arc::clone(&terminal);
+        let cancelled = Arc::clone(&signals.cancelled);
+        let continue_all = Arc::clone(&continue_all);
+        let user_quit = Arc::clone(&user_quit);
+        let control_loss = Arc::clone(&control_loss);
+        move |frame: &crate::macos::Frame| {
+            use crate::macos::Admission;
+            let Some(operation) = crate::macos::operation(frame.operation) else {
+                return Admission::Proceed(Duration::ZERO);
+            };
+            if continue_all.load(Ordering::SeqCst)
+                || !frame.access_path.as_ref().is_some_and(|path| {
+                    matches_selected(
+                        operation,
+                        std::slice::from_ref(path),
+                        &selector,
+                        &args.operations,
+                    )
+                })
+            {
+                return Admission::Proceed(Duration::ZERO);
+            }
+            let decision = terminal
+                .lock()
+                .map_err(|_| "control_channel_loss")
+                .and_then(|mut terminal| {
+                    if continue_all.load(Ordering::SeqCst) {
+                        Ok(b'c')
+                    } else if cancelled.load(Ordering::SeqCst) {
+                        Ok(0)
+                    } else {
+                        terminal.decision(frame, &cancelled)
+                    }
+                });
+            match decision {
+                Ok(0) => Admission::Quit,
+                Ok(b'n') => Admission::Proceed(Duration::ZERO),
+                Ok(b'c') => {
+                    continue_all.store(true, Ordering::SeqCst);
+                    Admission::Proceed(Duration::ZERO)
+                }
+                Ok(b'q') => {
+                    user_quit.store(true, Ordering::SeqCst);
+                    cancelled.store(true, Ordering::SeqCst);
+                    Admission::Quit
+                }
+                _ => {
+                    control_loss.store(true, Ordering::SeqCst);
+                    cancelled.store(true, Ordering::SeqCst);
+                    Admission::Quit
+                }
+            }
+        }
+    };
+    let result = crate::macos::supervise::capture_with_admission(
+        child,
+        &root,
+        crate::macos::supervise::Limits {
+            max_events: args.execution.max_events,
+            max_bytes: args.execution.max_bytes,
+            timeout: args.execution.timeout,
+            kill_after: args.execution.kill_after,
+        },
+        &signals.cancelled,
+        admission,
+    );
+    if control_loss.load(Ordering::SeqCst) {
+        return diagnostic("control_channel_loss", "fbreak");
+    }
+    if user_quit.load(Ordering::SeqCst) {
+        return 130;
+    }
+    match result {
+        Ok(record) => child_status(&record),
+        Err(error) => {
+            macos_capture_status((error, signals.signal.load(Ordering::SeqCst)), "fbreak")
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
 fn macos_capture_status(
     failure: (crate::macos::supervise::CaptureFailure, usize),
     action: &'static str,
@@ -2783,7 +2999,11 @@ pub fn execute(command: Command) -> i32 {
             {
                 fbreak(args)
             }
-            #[cfg(not(target_os = "linux"))]
+            #[cfg(target_os = "macos")]
+            {
+                macos_fbreak(args)
+            }
+            #[cfg(not(any(target_os = "linux", target_os = "macos")))]
             {
                 let _ = args;
                 diagnostic("unsupported_target", "fbreak")
@@ -3063,8 +3283,8 @@ mod tests {
                         &raw mut master,
                         &raw mut slave,
                         std::ptr::null_mut(),
-                        std::ptr::null(),
-                        std::ptr::null(),
+                        std::ptr::null_mut(),
+                        std::ptr::null_mut(),
                     )
                 },
                 0
@@ -3087,7 +3307,7 @@ mod tests {
             // the test child its own controlling pseudoterminal.
             unsafe {
                 child.pre_exec(|| {
-                    if libc::setsid() < 0 || libc::ioctl(0, libc::TIOCSCTTY, 0) < 0 {
+                    if libc::setsid() < 0 || libc::ioctl(0, libc::TIOCSCTTY as _, 0) < 0 {
                         return Err(io::Error::last_os_error());
                     }
                     Ok(())
@@ -3339,6 +3559,126 @@ mod tests {
             return;
         };
         assert_eq!(fs::read(input).unwrap(), b"fixture");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_breakpoint_controls_a_real_injected_child() {
+        use std::{
+            io::{Read, Write},
+            os::{fd::FromRawFd, unix::process::CommandExt},
+            thread,
+            time::{Duration, Instant},
+        };
+
+        let directory = tempfile::tempdir().unwrap();
+        let input = directory.path().join("input.txt");
+        fs::write(&input, b"fixture").unwrap();
+        for (case, key) in [("continue", b'c'), ("quit", b'q')] {
+            let mut master = 0_i32;
+            let mut slave = 0_i32;
+            // SAFETY: openpty initializes both descriptors on success.
+            assert_eq!(
+                unsafe {
+                    libc::openpty(
+                        &raw mut master,
+                        &raw mut slave,
+                        std::ptr::null_mut(),
+                        std::ptr::null_mut(),
+                        std::ptr::null_mut(),
+                    )
+                },
+                0
+            );
+            // SAFETY: ownership transfers from openpty to File.
+            let mut master = unsafe { fs::File::from_raw_fd(master) };
+            let slave = unsafe { fs::File::from_raw_fd(slave) };
+            let stdout = slave.try_clone().unwrap();
+            let stderr = slave.try_clone().unwrap();
+            let mut child = std::process::Command::new(std::env::current_exe().unwrap());
+            child
+                .arg("--exact")
+                .arg("cli::tests::macos_breakpoint_child")
+                .env("CLIBOX_FSPY_MAC_BREAK_CHILD", case)
+                .env("CLIBOX_FSPY_CLI_MAC_INPUT", &input)
+                .current_dir(directory.path())
+                .stdin(std::process::Stdio::from(slave))
+                .stdout(std::process::Stdio::from(stdout))
+                .stderr(std::process::Stdio::from(stderr));
+            // SAFETY: setsid and TIOCSCTTY are async-signal-safe and attach
+            // only this child to the new pseudoterminal.
+            unsafe {
+                child.pre_exec(|| {
+                    if libc::setsid() < 0 || libc::ioctl(0, libc::TIOCSCTTY as _, 0) < 0 {
+                        return Err(io::Error::last_os_error());
+                    }
+                    Ok(())
+                });
+            }
+            let mut child = child.spawn().unwrap();
+            let fd = std::os::fd::AsRawFd::as_raw_fd(&master);
+            // SAFETY: fcntl reads and then updates status flags on this owned
+            // pseudoterminal master without changing descriptor ownership.
+            let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+            assert!(flags >= 0);
+            assert!(unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } >= 0);
+            let mut output = Vec::new();
+            let mut sent = false;
+            let deadline = Instant::now() + Duration::from_secs(10);
+            let status = loop {
+                let mut buffer = [0_u8; 4096];
+                if let Ok(count) = master.read(&mut buffer) {
+                    output.extend_from_slice(&buffer[..count]);
+                }
+                if !sent
+                    && output
+                        .windows(b"break:".len())
+                        .any(|text| text == b"break:")
+                {
+                    master.write_all(&[key]).unwrap();
+                    sent = true;
+                }
+                if let Some(status) = child.try_wait().unwrap() {
+                    break status;
+                }
+                if Instant::now() >= deadline {
+                    child.kill().unwrap();
+                    panic!(
+                        "macOS breakpoint child did not finish in {case}: {}",
+                        String::from_utf8_lossy(&output)
+                    );
+                }
+                thread::sleep(Duration::from_millis(10));
+            };
+            assert!(
+                status.success(),
+                "{case}: {}",
+                String::from_utf8_lossy(&output)
+            );
+            assert!(sent, "{case} did not reach a breakpoint");
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_breakpoint_child() {
+        let Some(case) = std::env::var_os("CLIBOX_FSPY_MAC_BREAK_CHILD") else {
+            return;
+        };
+        let executable = std::env::current_exe().unwrap();
+        let cli = TestCli::try_parse_from([
+            OsString::from("fspy"),
+            OsString::from("fbreak"),
+            OsString::from("--include"),
+            OsString::from("input.txt"),
+            OsString::from("--"),
+            executable.into_os_string(),
+            OsString::from("--exact"),
+            OsString::from("cli::tests::macos_cli_read_fixture"),
+            OsString::from("--nocapture"),
+        ])
+        .unwrap();
+        assert_eq!(execute(cli.command), if case == "quit" { 130 } else { 0 });
     }
 
     #[cfg(target_os = "macos")]

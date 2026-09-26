@@ -132,7 +132,13 @@ pub fn read_frame(reader: &mut impl Read) -> io::Result<Option<Frame>> {
     }))
 }
 
-type DelayPolicy = dyn Fn(&Frame) -> Duration + Send + Sync;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Admission {
+    Proceed(Duration),
+    Quit,
+}
+
+type AdmissionPolicy = dyn Fn(&Frame) -> Admission + Send + Sync;
 
 #[derive(Default)]
 pub struct FrameLedger {
@@ -235,7 +241,7 @@ fn receive_connection(
     ledger: &Mutex<FrameLedger>,
     stopping: &AtomicBool,
     root: Option<&Path>,
-    delay_for: &DelayPolicy,
+    admission: &AdmissionPolicy,
 ) -> io::Result<()> {
     use std::io::Write;
 
@@ -256,9 +262,16 @@ fn receive_connection(
             }
         }
         if start {
-            let requested =
-                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| delay_for(&frame)))
-                    .map_err(|_| invalid("delay_policy"))?;
+            let decision =
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| admission(&frame)))
+                    .map_err(|_| invalid("admission_policy"))?;
+            let requested = match decision {
+                Admission::Proceed(delay) => delay,
+                Admission::Quit => {
+                    stream.write_all(b"q")?;
+                    return Ok(());
+                }
+            };
             frame.requested_delay_ns =
                 u64::try_from(requested.as_nanos()).map_err(|_| invalid("delay_limit"))?;
             if !requested.is_zero() {
@@ -304,7 +317,12 @@ type FramePairs = Vec<(Frame, Frame)>;
 
 impl OperationReceiver {
     pub fn bind(max_events: usize, max_bytes: u64) -> io::Result<Self> {
-        Self::bind_inner(None, max_events, max_bytes, Arc::new(|_| Duration::ZERO))
+        Self::bind_inner(
+            None,
+            max_events,
+            max_bytes,
+            Arc::new(|_| Admission::Proceed(Duration::ZERO)),
+        )
     }
 
     pub fn bind_for_root(root: &Path, max_events: usize, max_bytes: u64) -> io::Result<Self> {
@@ -324,14 +342,35 @@ impl OperationReceiver {
         if !root.is_dir() {
             return Err(invalid("root_not_directory"));
         }
-        Self::bind_inner(Some(root), max_events, max_bytes, Arc::new(delay_for))
+        Self::bind_inner(
+            Some(root),
+            max_events,
+            max_bytes,
+            Arc::new(move |frame| Admission::Proceed(delay_for(frame))),
+        )
+    }
+
+    pub fn bind_with_admission<F>(
+        root: &Path,
+        max_events: usize,
+        max_bytes: u64,
+        admission: F,
+    ) -> io::Result<Self>
+    where
+        F: Fn(&Frame) -> Admission + Send + Sync + 'static,
+    {
+        let root = fs::canonicalize(root)?;
+        if !root.is_dir() {
+            return Err(invalid("root_not_directory"));
+        }
+        Self::bind_inner(Some(root), max_events, max_bytes, Arc::new(admission))
     }
 
     fn bind_inner(
         root: Option<PathBuf>,
         max_events: usize,
         max_bytes: u64,
-        delay_for: Arc<DelayPolicy>,
+        admission: Arc<AdmissionPolicy>,
     ) -> io::Result<Self> {
         if max_events == 0 || max_bytes == 0 {
             return Err(invalid("receiver_limit"));
@@ -364,14 +403,14 @@ impl OperationReceiver {
                         let stop = Arc::clone(&stop);
                         let failure = Arc::clone(&failure);
                         let root = root.clone();
-                        let delay_for = Arc::clone(&delay_for);
+                        let admission = Arc::clone(&admission);
                         connections.push(thread::spawn(move || {
                             let result = receive_connection(
                                 stream,
                                 &ledger,
                                 &stop,
                                 root.as_deref(),
-                                delay_for.as_ref(),
+                                admission.as_ref(),
                             );
                             if result.is_err() {
                                 failure.store(true, Ordering::Release);
