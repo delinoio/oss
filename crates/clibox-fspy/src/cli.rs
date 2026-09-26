@@ -4225,7 +4225,7 @@ mod tests {
         for (source, destination) in [("source.txt", "renamed.txt"), ("renamed.txt", "linked.txt")]
         {
             assert!(record.operations.iter().any(|pair| {
-                pair.start.operation == Operation::Mutation
+                pair.start.operation == crate::record::Operation::Mutation
                     && pair.completion.native_error.is_none()
                     && pair.start.paths.len() == 2
                     && pair.start.paths[0].project_relative.as_ref() == Some(&relative(source))

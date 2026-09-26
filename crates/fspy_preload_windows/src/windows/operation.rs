@@ -8,7 +8,7 @@ use std::{
     cell::Cell,
     collections::HashSet,
     io::{Read, Write},
-    net::{SocketAddr, TcpStream},
+    net::{Shutdown, SocketAddr, TcpStream},
     sync::{Arc, Mutex, OnceLock},
     time::{Duration, Instant},
 };
@@ -22,7 +22,7 @@ use winapi::{
         processthreadsapi::{
             GetCurrentProcess, GetCurrentProcessId, GetCurrentThreadId, TerminateProcess,
         },
-        winsock2::{WSADATA, WSAStartup},
+        winsock2::{WSACleanup, WSADATA, WSAStartup},
     },
 };
 
@@ -34,25 +34,34 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const WSAENOTSOCK: i32 = 10038;
 const WSANOTINITIALISED: i32 = 10093;
 
-fn acquire_transport_winsock() -> std::io::Result<()> {
-    // The host can call WSACleanup after its main body but before late file
-    // operations finish. Acquire a transport reference for every observed
-    // operation so a subsequent operation can reinitialize Winsock after that
-    // cleanup. The process releases these references at exit. Remove this
-    // workaround if the paired channel moves off Winsock.
-    // Never run WSAStartup from DllMain under the loader lock.
-    let mut data: WSADATA = unsafe { std::mem::zeroed() };
-    // SAFETY: the writable buffer has the exact WSADATA size.
-    let status = unsafe { WSAStartup(0x0202, &mut data) };
-    if status == 0 {
-        Ok(())
-    } else {
-        Err(std::io::Error::from_raw_os_error(status))
+struct WinsockLease;
+
+impl WinsockLease {
+    fn acquire() -> std::io::Result<Self> {
+        // TLS teardown can outlive the host's last Winsock user. A late
+        // fallback State acquires its own balanced reference before opening a
+        // fresh connection. Never call WSAStartup from DllMain.
+        let mut data: WSADATA = unsafe { std::mem::zeroed() };
+        // SAFETY: the writable buffer has the exact WSADATA size.
+        let status = unsafe { WSAStartup(0x0202, &mut data) };
+        if status == 0 {
+            Ok(Self)
+        } else {
+            Err(std::io::Error::from_raw_os_error(status))
+        }
+    }
+}
+
+impl Drop for WinsockLease {
+    fn drop(&mut self) {
+        // SAFETY: this lease represents one successful WSAStartup call.
+        unsafe { WSACleanup() };
     }
 }
 
 struct State {
     enabled: bool,
+    winsock: Option<WinsockLease>,
     stream: Option<TcpStream>,
     next_id: u64,
 }
@@ -61,12 +70,16 @@ impl State {
     fn new() -> Self {
         Self {
             enabled: std::env::var_os("CLIBOX_FSPY_ENDPOINT").is_some(),
+            winsock: None,
             stream: None,
             next_id: 0,
         }
     }
 
     fn stream(&mut self) -> std::io::Result<&mut TcpStream> {
+        if self.winsock.is_none() {
+            self.winsock = Some(WinsockLease::acquire()?);
+        }
         if self.stream.is_none() {
             let address = std::env::var("CLIBOX_FSPY_ENDPOINT")
                 .map_err(|_| std::io::Error::other("missing_endpoint"))?
@@ -94,6 +107,17 @@ impl State {
         self.stream
             .as_mut()
             .ok_or_else(|| std::io::Error::other("stream_unavailable"))
+    }
+}
+
+impl Drop for State {
+    fn drop(&mut self) {
+        if let Some(stream) = self.stream.take() {
+            let _ = stream.shutdown(Shutdown::Write);
+            drop(stream);
+        }
+        // Release the balanced Winsock lease only after its socket closes.
+        self.winsock = None;
     }
 }
 
@@ -274,18 +298,6 @@ fn begin_encoded(operation: u8, encoded: &[u8]) -> Option<OperationGuard> {
     if !state.enabled {
         return None;
     }
-    if let Err(error) = acquire_transport_winsock() {
-        #[cfg(debug_assertions)]
-        let _ = writeln!(
-            std::io::stderr(),
-            "fspy preload: stage=winsock kind={:?}",
-            error.kind()
-        );
-        #[cfg(not(debug_assertions))]
-        let _ = error;
-        mark_loss("winsock_startup");
-        return None;
-    }
     let id = state.next_id.saturating_add(1);
     state.next_id = id;
     let mut send = |state: &mut State| {
@@ -315,6 +327,7 @@ fn begin_encoded(operation: u8, encoded: &[u8]) -> Option<OperationGuard> {
         // A host cleanup invalidates the prior socket before it can send a
         // byte. Reconnect with a fresh hello and retry this exact start once.
         state.stream = None;
+        state.winsock = None;
         result = send(&mut state);
     }
     if let Err(error) = result {
