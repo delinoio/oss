@@ -17,6 +17,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/opencode"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
@@ -29,23 +30,24 @@ import (
 type openCodeWorkerScenario string
 
 const (
-	openCodeWorkerBuild          openCodeWorkerScenario = "build"
-	openCodeWorkerPlan           openCodeWorkerScenario = "plan"
-	openCodeWorkerStop           openCodeWorkerScenario = "stop"
-	openCodeWorkerArchive        openCodeWorkerScenario = "archive"
-	openCodeWorkerQuestion       openCodeWorkerScenario = "question"
-	openCodeWorkerPermission     openCodeWorkerScenario = "permission"
-	openCodeWorkerQuestionStop   openCodeWorkerScenario = "question-stop"
-	openCodeWorkerPermissionStop openCodeWorkerScenario = "permission-stop"
-	openCodeWorkerReportLoss     openCodeWorkerScenario = "report-loss"
-	openCodeWorkerRevocation     openCodeWorkerScenario = "worker-revocation"
+	openCodeWorkerBuild              openCodeWorkerScenario = "build"
+	openCodeWorkerPlan               openCodeWorkerScenario = "plan"
+	openCodeWorkerStop               openCodeWorkerScenario = "stop"
+	openCodeWorkerArchive            openCodeWorkerScenario = "archive"
+	openCodeWorkerQuestion           openCodeWorkerScenario = "question"
+	openCodeWorkerPermission         openCodeWorkerScenario = "permission"
+	openCodeWorkerQuestionStop       openCodeWorkerScenario = "question-stop"
+	openCodeWorkerPermissionStop     openCodeWorkerScenario = "permission-stop"
+	openCodeWorkerReportLoss         openCodeWorkerScenario = "report-loss"
+	openCodeWorkerRevocation         openCodeWorkerScenario = "worker-revocation"
+	openCodeWorkerCheckpointConflict openCodeWorkerScenario = "checkpoint-conflict"
 )
 
 // These fixtures execute worker.Run and its real outbound job/control stream.
 // Account readiness and initial assignment are seeded; no hosted inference or
 // user account is used, and first-dispatch acceptance needs its own evidence.
 func TestManualNativeOpenCodeWorkerExecutesOriginalAssignment(t *testing.T) {
-	for _, scenario := range []openCodeWorkerScenario{openCodeWorkerBuild, openCodeWorkerPlan, openCodeWorkerStop, openCodeWorkerArchive, openCodeWorkerQuestion, openCodeWorkerPermission, openCodeWorkerQuestionStop, openCodeWorkerPermissionStop, openCodeWorkerReportLoss, openCodeWorkerRevocation} {
+	for _, scenario := range []openCodeWorkerScenario{openCodeWorkerBuild, openCodeWorkerPlan, openCodeWorkerStop, openCodeWorkerArchive, openCodeWorkerQuestion, openCodeWorkerPermission, openCodeWorkerQuestionStop, openCodeWorkerPermissionStop, openCodeWorkerReportLoss, openCodeWorkerRevocation, openCodeWorkerCheckpointConflict} {
 		t.Run(string(scenario), func(t *testing.T) { nativeOpenCodeWorker(t, scenario) })
 	}
 }
@@ -193,6 +195,16 @@ func nativeOpenCodeWorker(t *testing.T, scenario openCodeWorkerScenario) {
 	if err := security.WriteAtomic(filepath.Join(manager.Root, "device.json"), raw); err != nil {
 		t.Fatal(err)
 	}
+	checkpointPath := filepath.Join(manager.Root, "jobs", string(f.job), "opencode-checkpoint.json")
+	const conflictingCheckpoint = `{"original":"preserved fixture evidence"}`
+	if scenario == openCodeWorkerCheckpointConflict {
+		if err := security.PrivateDir(filepath.Dir(checkpointPath)); err != nil {
+			t.Fatal(err)
+		}
+		if err := security.WriteAtomic(checkpointPath, []byte(conflictingCheckpoint)); err != nil {
+			t.Fatal(err)
+		}
+	}
 	running, stopWorker := context.WithCancel(ctx)
 	done := make(chan struct{})
 	var workerErr error
@@ -213,6 +225,27 @@ func nativeOpenCodeWorker(t *testing.T, scenario openCodeWorkerScenario) {
 			t.Fatal(err)
 		}
 		if job.State.Terminal() || job.State == domain.JobUncertain {
+			if scenario == openCodeWorkerCheckpointConflict {
+				if job.State != domain.JobUncertain || job.Problem == nil || job.Problem.Code != domain.RecoveryRequired || len(job.Output) != 0 || calls.Load() != 1 {
+					t.Fatal("conflicting checkpoint was overwritten or granted completion", job.State, job.Problem)
+				}
+				original, err := security.ReadPrivate(checkpointPath, 9<<20)
+				if err != nil || string(original) != conflictingCheckpoint {
+					t.Fatal("checkpoint conflict replaced original retained bytes")
+				}
+				sr, err := f.service.Store.Get(ctx, domain.SessionKind, f.input.SessionID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				session, err := store.Decode[domain.Session](sr)
+				if err != nil || session.Recovery != domain.NeedsRecovery || session.Execution == nil || session.Execution.CleanupVerified || session.Outcome != domain.ExecutionSucceeded {
+					t.Fatal("checkpoint failure erased native outcome or fabricated cleanup acceptance")
+				}
+				if err := process.ReconcileOwnerContext(ctx, filepath.Join(manager.Root, "processes"), f.job); err != nil {
+					t.Fatal("checkpoint conflict abandoned original process cleanup", err)
+				}
+				return
+			}
 			if !stopping && (job.State != domain.JobSucceeded || job.Problem != nil) || stopping && (job.State != domain.JobCanceled || job.Problem == nil || job.Problem.Code != domain.Canceled) {
 				t.Fatalf("original Worker failed: %s %v", job.State, job.Problem)
 			}
@@ -247,6 +280,20 @@ func nativeOpenCodeWorker(t *testing.T, scenario openCodeWorkerScenario) {
 			}
 			if err := process.ReconcileOwnerContext(ctx, filepath.Join(manager.Root, "processes"), f.job); err != nil {
 				t.Fatal(err)
+			}
+			checkpoint, err := security.ReadPrivate(filepath.Join(manager.Root, "jobs", string(f.job), "opencode-checkpoint.json"), 9<<20)
+			var retainedCheckpoint struct {
+				Reference struct {
+					Completion domain.ExecutionCompletion `json:"completion"`
+				} `json:"reference"`
+				NativeReference opencode.CheckpointReference `json:"native_reference"`
+				Native          json.RawMessage              `json:"native"`
+			}
+			if err != nil || json.Unmarshal(checkpoint, &retainedCheckpoint) != nil || retainedCheckpoint.Reference.Completion != completion || retainedCheckpoint.NativeReference.OwnerID != f.job || retainedCheckpoint.NativeReference.RequiresResume != stopping || strings.Contains(string(checkpoint), f.input.Input.Prompt) || strings.Contains(string(checkpoint), fixtureKey) {
+				t.Fatal("Worker checkpoint lost original completion or disclosed private content")
+			}
+			if err := opencode.InspectCheckpoint(ctx, filepath.Join(manager.Root, "runtimes", string(f.input.ExecutionID)), retainedCheckpoint.Native, retainedCheckpoint.NativeReference); err != nil {
+				t.Fatal("Worker envelope changed the closed original runtime inventory", err)
 			}
 			if scenario == openCodeWorkerReportLoss {
 				select {
@@ -347,6 +394,9 @@ func nativeOpenCodeWorker(t *testing.T, scenario openCodeWorkerScenario) {
 					session, err := store.Decode[domain.Session](sr)
 					if err != nil || session.Recovery != domain.NeedsRecovery || session.Execution == nil || session.Execution.CleanupVerified || session.ActiveExecutionID != f.input.ExecutionID || calls.Load() != 1 {
 						t.Fatal("revocation fabricated acknowledged completion or repeated input")
+					}
+					if _, err := os.Lstat(checkpointPath); !os.IsNotExist(err) {
+						t.Fatal("revoked execution manufactured a closed checkpoint")
 					}
 					return
 				}

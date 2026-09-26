@@ -236,6 +236,9 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 			if err := lease.Close(); err != nil {
 				return nil, err
 			}
+			if _, err := mapper.RetainCheckpoint(publicationContext); err != nil {
+				return nil, err
+			}
 			return json.Marshal(completion)
 		}
 		observation, err := api.Next(readContext)
