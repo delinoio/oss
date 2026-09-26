@@ -559,7 +559,17 @@ where
                         args,
                         monotonic_ns: began.elapsed().as_nanos() as u64,
                     };
-                    let action = before(&entry)?;
+                    let action = match before(&entry) {
+                        Ok(action) => action,
+                        Err(error) => {
+                            // Keep the entry/exit state paired while the
+                            // owned-process cleanup terminates every task.
+                            pending.insert(tid, None);
+                            failure = Some(error);
+                            continue_syscall(tid, 0)?;
+                            continue;
+                        }
+                    };
                     pending.insert(
                         tid,
                         (!matches!(action, EntryAction::Ignore)).then_some(entry),
@@ -581,7 +591,7 @@ where
                             failed,
                         });
                         if operations.len().saturating_mul(2) > limits.max_events {
-                            return Err(TraceFailure::EventLimit);
+                            failure = Some(TraceFailure::EventLimit);
                         }
                     }
                 }

@@ -97,6 +97,15 @@ where
         return Err(supervision("root_directory"));
     }
     let mut starts = HashMap::<u64, CapturedEntry>::new();
+    // Charge a generous upper bound before retaining each decoded path. This
+    // bounds both the start map and the supervisor's completion buffer while
+    // the child runs, before final NDJSON serialization checks exact bytes.
+    let mut retained_bytes = root
+        .as_os_str()
+        .as_bytes()
+        .len()
+        .saturating_mul(4)
+        .saturating_add(1024) as u64;
     let result = trace_controlled(
         command,
         limits,
@@ -105,6 +114,17 @@ where
             let Some(decoded) = paths::decode(entry, &root)? else {
                 return Ok(EntryAction::Ignore);
             };
+            let path_bytes = serde_json::to_vec(&decoded.paths)
+                .map_err(|_| supervision("capture_encoding"))?
+                .len() as u64;
+            let charge = path_bytes.saturating_add(1024);
+            if retained_bytes.saturating_add(charge) > limits.max_bytes {
+                return Err(TraceFailure::ByteLimit);
+            }
+            if starts.len().saturating_add(1).saturating_mul(2) > limits.max_events {
+                return Err(TraceFailure::EventLimit);
+            }
+            retained_bytes += charge;
             let action = action_for(&decoded);
             let delay = match action {
                 CaptureAction::Proceed(delay) => delay,
