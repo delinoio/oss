@@ -138,7 +138,7 @@ pub enum Admission {
     Quit,
 }
 
-type AdmissionPolicy = dyn Fn(&Frame) -> Admission + Send + Sync;
+type AdmissionPolicy = dyn Fn(&Frame, &AtomicBool) -> Admission + Send + Sync;
 
 #[derive(Default)]
 pub struct FrameLedger {
@@ -287,9 +287,10 @@ fn receive_connection(
             }
         }
         if start {
-            let decision =
-                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| admission(&frame)))
-                    .map_err(|_| invalid("admission_policy"))?;
+            let decision = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                admission(&frame, stopping)
+            }))
+            .map_err(|_| invalid("admission_policy"))?;
             let requested = match decision {
                 Admission::Proceed(delay) => delay,
                 Admission::Quit => {
@@ -346,7 +347,7 @@ impl OperationReceiver {
             None,
             max_events,
             max_bytes,
-            Arc::new(|_| Admission::Proceed(Duration::ZERO)),
+            Arc::new(|_, _| Admission::Proceed(Duration::ZERO)),
         )
     }
 
@@ -371,7 +372,7 @@ impl OperationReceiver {
             Some(root),
             max_events,
             max_bytes,
-            Arc::new(move |frame| Admission::Proceed(delay_for(frame))),
+            Arc::new(move |frame, _| Admission::Proceed(delay_for(frame))),
         )
     }
 
@@ -382,7 +383,7 @@ impl OperationReceiver {
         admission: F,
     ) -> io::Result<Self>
     where
-        F: Fn(&Frame) -> Admission + Send + Sync + 'static,
+        F: Fn(&Frame, &AtomicBool) -> Admission + Send + Sync + 'static,
     {
         let root = fs::canonicalize(root)?;
         if !root.is_dir() {

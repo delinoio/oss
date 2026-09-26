@@ -476,7 +476,7 @@ impl Read for RetryRead<'_> {
 
 fn receive_connection<F>(mut stream: TcpStream, context: &ReceiveContext<F>) -> io::Result<()>
 where
-    F: Fn(&Frame) -> Admission,
+    F: Fn(&Frame, &AtomicBool) -> Admission,
 {
     stream.set_read_timeout(Some(Duration::from_millis(100)))?;
     stream.set_write_timeout(Some(Duration::from_secs(5)))?;
@@ -544,7 +544,7 @@ where
             }
             let began = Instant::now();
             let requested = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                (context.admission)(&frame)
+                (context.admission)(&frame, &context.stop)
             }))
             .map_err(|_| invalid("admission_policy"))?
             {
@@ -591,7 +591,7 @@ impl OperationReceiver {
     where
         F: Fn(&Frame) -> Duration + Send + Sync + 'static,
     {
-        Self::bind_with_admission(root, max_events, max_bytes, move |frame| {
+        Self::bind_with_admission(root, max_events, max_bytes, move |frame, _| {
             Admission::Proceed(delay_for(frame))
         })
     }
@@ -603,7 +603,7 @@ impl OperationReceiver {
         admission: F,
     ) -> io::Result<Self>
     where
-        F: Fn(&Frame) -> Admission + Send + Sync + 'static,
+        F: Fn(&Frame, &AtomicBool) -> Admission + Send + Sync + 'static,
     {
         if max_events == 0 || max_bytes == 0 {
             return Err(invalid("receiver_limit"));

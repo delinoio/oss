@@ -166,7 +166,7 @@ pub fn capture_with_delay<F>(
 where
     F: Fn(&Frame) -> Duration + Send + Sync + 'static,
 {
-    capture_with_admission(command, root, limits, cancelled, move |frame| {
+    capture_with_admission(command, root, limits, cancelled, move |frame, _| {
         Admission::Proceed(delay_for(frame))
     })
 }
@@ -179,7 +179,7 @@ pub fn capture_with_admission<F>(
     admission: F,
 ) -> Result<CompleteRecord, CaptureFailure>
 where
-    F: Fn(&Frame) -> Admission + Send + Sync + 'static,
+    F: Fn(&Frame, &AtomicBool) -> Admission + Send + Sync + 'static,
 {
     if cancelled.load(Ordering::Acquire) {
         return Err(CaptureFailure::Cancellation);
@@ -214,9 +214,17 @@ where
         requested_delay_ns: 0,
         observed_delay_ns: 0,
     };
-    let delay = match admission(&root_start) {
+    let delay = match admission(&root_start, cancelled) {
         Admission::Proceed(delay) => delay,
-        Admission::Quit => return Err(CaptureFailure::Cancellation),
+        Admission::Quit => {
+            return Err(
+                if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+                    CaptureFailure::Timeout
+                } else {
+                    CaptureFailure::Cancellation
+                },
+            );
+        }
     };
     root_start.requested_delay_ns =
         u64::try_from(delay.as_nanos()).map_err(|_| CaptureFailure::Record)?;
@@ -455,7 +463,7 @@ mod tests {
                 kill_after: Duration::from_millis(500),
             },
             &AtomicBool::new(false),
-            move |frame| {
+            move |frame, _| {
                 if frame.operation == 10 && frame.pid == 0 {
                     observed.store(true, Ordering::SeqCst);
                     Admission::Quit

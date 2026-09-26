@@ -2554,6 +2554,8 @@ impl WindowsBreakTerminal {
         frame: &crate::windows::Frame,
         path: &crate::record::AccessPath,
         cancelled: &std::sync::atomic::AtomicBool,
+        stopping: &std::sync::atomic::AtomicBool,
+        deadline: Option<std::time::Instant>,
     ) -> Result<u8, &'static str> {
         use std::{io::Read, os::windows::io::AsRawHandle, sync::atomic::Ordering};
 
@@ -2572,7 +2574,10 @@ impl WindowsBreakTerminal {
         .map_err(|_| "control_channel_loss")?;
         self.output.flush().map_err(|_| "control_channel_loss")?;
         loop {
-            if cancelled.load(Ordering::SeqCst) {
+            if cancelled.load(Ordering::SeqCst)
+                || stopping.load(Ordering::Acquire)
+                || deadline.is_some_and(|deadline| std::time::Instant::now() >= deadline)
+            {
                 return Ok(0);
             }
             // SAFETY: the owned console input handle remains open for this
@@ -2648,15 +2653,29 @@ fn windows_fbreak(args: BreakArgs) -> i32 {
         Ok(signals) => signals,
         Err(error) => return windows_capture_status(error, "fbreak"),
     };
+    let deadline = match args.execution.timeout {
+        Some(timeout) => match std::time::Instant::now().checked_add(timeout) {
+            Some(deadline) => Some(deadline),
+            None => {
+                return windows_capture_status(
+                    crate::windows::supervise::CaptureFailure::Timeout,
+                    "fbreak",
+                )
+            }
+        },
+        None => None,
+    };
     let continue_all = Arc::new(AtomicBool::new(false));
     let user_quit = Arc::new(AtomicBool::new(false));
     let control_loss = Arc::new(AtomicBool::new(false));
+    let timed_out = Arc::new(AtomicBool::new(false));
     let admission = {
         let terminal = Arc::clone(&terminal);
         let continue_all = Arc::clone(&continue_all);
         let user_quit = Arc::clone(&user_quit);
         let control_loss = Arc::clone(&control_loss);
-        move |frame: &crate::windows::Frame| {
+        let timed_out = Arc::clone(&timed_out);
+        move |frame: &crate::windows::Frame, stopping: &AtomicBool| {
             use crate::windows::Admission;
             let matching = windows_matching_path(frame, &selector, &args.operations);
             if continue_all.load(Ordering::SeqCst) || matching.is_none() {
@@ -2669,14 +2688,22 @@ fn windows_fbreak(args: BreakArgs) -> i32 {
                 .and_then(|mut terminal| {
                     if continue_all.load(Ordering::SeqCst) {
                         Ok(b'c')
-                    } else if WINDOWS_CANCELLED.load(Ordering::SeqCst) {
+                    } else if WINDOWS_CANCELLED.load(Ordering::SeqCst)
+                        || stopping.load(Ordering::Acquire)
+                        || deadline.is_some_and(|deadline| std::time::Instant::now() >= deadline)
+                    {
                         Ok(0)
                     } else {
-                        terminal.decision(frame, matching, &WINDOWS_CANCELLED)
+                        terminal.decision(frame, matching, &WINDOWS_CANCELLED, stopping, deadline)
                     }
                 });
             match decision {
-                Ok(0) => Admission::Quit,
+                Ok(0) => {
+                    if deadline.is_some_and(|deadline| std::time::Instant::now() >= deadline) {
+                        timed_out.store(true, Ordering::SeqCst);
+                    }
+                    Admission::Quit
+                }
                 Ok(b'n') => Admission::Proceed(Duration::ZERO),
                 Ok(b'c') => {
                     continue_all.store(true, Ordering::SeqCst);
@@ -2719,6 +2746,12 @@ fn windows_fbreak(args: BreakArgs) -> i32 {
     }
     if user_quit.load(Ordering::SeqCst) {
         return 130;
+    }
+    if timed_out.load(Ordering::SeqCst) {
+        return windows_capture_status(
+            crate::windows::supervise::CaptureFailure::Timeout,
+            "fbreak",
+        );
     }
     match result {
         Ok(record) => child_status(&record),
@@ -2779,6 +2812,8 @@ impl MacBreakTerminal {
         &mut self,
         frame: &crate::macos::Frame,
         cancelled: &std::sync::atomic::AtomicBool,
+        stopping: &std::sync::atomic::AtomicBool,
+        deadline: Option<std::time::Instant>,
     ) -> Result<u8, &'static str> {
         use std::{io::Read, sync::atomic::Ordering};
 
@@ -2799,7 +2834,10 @@ impl MacBreakTerminal {
         .map_err(|_| "control_channel_loss")?;
         self.file.flush().map_err(|_| "control_channel_loss")?;
         loop {
-            if cancelled.load(Ordering::SeqCst) {
+            if cancelled.load(Ordering::SeqCst)
+                || stopping.load(Ordering::Acquire)
+                || deadline.is_some_and(|deadline| std::time::Instant::now() >= deadline)
+            {
                 return Ok(0);
             }
             let mut key = [0_u8; 1];
@@ -2855,6 +2893,18 @@ fn macos_fbreak(args: BreakArgs) -> i32 {
         Ok(signals) => signals,
         Err(error) => return macos_capture_status((error, 0), "fbreak"),
     };
+    let deadline = match args.execution.timeout {
+        Some(timeout) => match std::time::Instant::now().checked_add(timeout) {
+            Some(deadline) => Some(deadline),
+            None => {
+                return macos_capture_status(
+                    (crate::macos::supervise::CaptureFailure::Timeout, 0),
+                    "fbreak",
+                )
+            }
+        },
+        None => None,
+    };
     let mut child = fspy::Command::new(&args.command[0]);
     child
         .args(&args.command[1..])
@@ -2865,13 +2915,15 @@ fn macos_fbreak(args: BreakArgs) -> i32 {
     let continue_all = Arc::new(AtomicBool::new(false));
     let user_quit = Arc::new(AtomicBool::new(false));
     let control_loss = Arc::new(AtomicBool::new(false));
+    let timed_out = Arc::new(AtomicBool::new(false));
     let admission = {
         let terminal = Arc::clone(&terminal);
         let cancelled = Arc::clone(&signals.cancelled);
         let continue_all = Arc::clone(&continue_all);
         let user_quit = Arc::clone(&user_quit);
         let control_loss = Arc::clone(&control_loss);
-        move |frame: &crate::macos::Frame| {
+        let timed_out = Arc::clone(&timed_out);
+        move |frame: &crate::macos::Frame, stopping: &AtomicBool| {
             use crate::macos::Admission;
             let Some(operation) = crate::macos::operation(frame.operation) else {
                 return Admission::Proceed(Duration::ZERO);
@@ -2894,14 +2946,22 @@ fn macos_fbreak(args: BreakArgs) -> i32 {
                 .and_then(|mut terminal| {
                     if continue_all.load(Ordering::SeqCst) {
                         Ok(b'c')
-                    } else if cancelled.load(Ordering::SeqCst) {
+                    } else if cancelled.load(Ordering::SeqCst)
+                        || stopping.load(Ordering::Acquire)
+                        || deadline.is_some_and(|deadline| std::time::Instant::now() >= deadline)
+                    {
                         Ok(0)
                     } else {
-                        terminal.decision(frame, &cancelled)
+                        terminal.decision(frame, &cancelled, stopping, deadline)
                     }
                 });
             match decision {
-                Ok(0) => Admission::Quit,
+                Ok(0) => {
+                    if deadline.is_some_and(|deadline| std::time::Instant::now() >= deadline) {
+                        timed_out.store(true, Ordering::SeqCst);
+                    }
+                    Admission::Quit
+                }
                 Ok(b'n') => Admission::Proceed(Duration::ZERO),
                 Ok(b'c') => {
                     continue_all.store(true, Ordering::SeqCst);
@@ -2937,6 +2997,12 @@ fn macos_fbreak(args: BreakArgs) -> i32 {
     }
     if user_quit.load(Ordering::SeqCst) {
         return 130;
+    }
+    if timed_out.load(Ordering::SeqCst) {
+        return macos_capture_status(
+            (crate::macos::supervise::CaptureFailure::Timeout, 0),
+            "fbreak",
+        );
     }
     match result {
         Ok(record) => child_status(&record),
@@ -4362,7 +4428,12 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let input = directory.path().join("input.txt");
         fs::write(&input, b"fixture").unwrap();
-        for (case, key) in [("continue", b'c'), ("quit", b'q')] {
+        for (case, key) in [
+            ("continue", Some(b'c')),
+            ("quit", Some(b'q')),
+            ("timeout", None),
+            ("root-timeout", None),
+        ] {
             let mut master = 0_i32;
             let mut slave = 0_i32;
             // SAFETY: openpty initializes both descriptors on success.
@@ -4423,7 +4494,9 @@ mod tests {
                         .windows(b"break:".len())
                         .any(|text| text == b"break:")
                 {
-                    master.write_all(&[key]).unwrap();
+                    if let Some(key) = key {
+                        master.write_all(&[key]).unwrap();
+                    }
                     sent = true;
                 }
                 if let Some(status) = child.try_wait().unwrap() {
@@ -4454,19 +4527,36 @@ mod tests {
             return;
         };
         let executable = std::env::current_exe().unwrap();
-        let cli = TestCli::try_parse_from([
-            OsString::from("fspy"),
-            OsString::from("fbreak"),
-            OsString::from("--include"),
-            OsString::from("input.txt"),
+        let mut arguments = vec![OsString::from("fspy"), OsString::from("fbreak")];
+        if case == "root-timeout" {
+            arguments.extend([
+                OsString::from("--root"),
+                executable.parent().unwrap().as_os_str().to_os_string(),
+                OsString::from("--include"),
+                executable.file_name().unwrap().to_os_string(),
+                OsString::from("--op"),
+                OsString::from("exec"),
+            ]);
+        } else {
+            arguments.extend([OsString::from("--include"), OsString::from("input.txt")]);
+        }
+        if case == "timeout" || case == "root-timeout" {
+            arguments.extend([OsString::from("--timeout"), OsString::from("2s")]);
+        }
+        arguments.extend([
             OsString::from("--"),
             executable.into_os_string(),
             OsString::from("--exact"),
             OsString::from("cli::tests::macos_cli_read_fixture"),
             OsString::from("--nocapture"),
-        ])
-        .unwrap();
-        assert_eq!(execute(cli.command), if case == "quit" { 130 } else { 0 });
+        ]);
+        let cli = TestCli::try_parse_from(arguments).unwrap();
+        let expected = match case.to_str().unwrap() {
+            "quit" => 130,
+            "timeout" | "root-timeout" => 124,
+            _ => 0,
+        };
+        assert_eq!(execute(cli.command), expected);
     }
 
     #[cfg(target_os = "macos")]
