@@ -22,8 +22,9 @@ type checkpointResume struct {
 // hold the continuation workspace lease, prove original report acceptance and
 // register fresh account authority. Claim must durably consume this exact
 // predecessor before staging or launch. It never creates another session or
-// replays input. The replacement profile is native Build/Plan, non-VCS text;
-// auxiliary/tool/project history needs separate native replacement evidence.
+// replays input. The profile accepts native Build/Plan non-VCS text and
+// positively captured closed inline Read/Shell history. Other tool/auxiliary
+// and project history needs separate native replacement evidence.
 func OpenResumedAPI(ctx context.Context, config APIExecutionConfig, home string, raw []byte, ref CheckpointReference, request domain.ID, previousAgent PrimaryAgent, explicitResume bool) (result *OwnedAPI, returned error) {
 	source, err := decodeCheckpoint(raw, ref, home)
 	if err != nil || (previousAgent != BuildAgent && previousAgent != PlanAgent) || ctx.Err() != nil || request.Validate() != nil || request == ref.CreationRequestID || request == ref.InputRequestID || request == ref.OwnerID || config.Probe.Process.OwnerID == ref.OwnerID || source.Reference.RequiresResume && !explicitResume || config.Workspace != source.Workspace || config.NativeRoot != source.NativeRoot || source.Project != "global" || filepath.Dir(source.NativeRoot) != source.NativeRoot {
@@ -123,7 +124,7 @@ func (r *checkpointResume) stage(ctx context.Context, config apiSessionConfig, p
 }
 
 // InspectReplacementCheckpoint is a read-only eligibility check for the
-// current native text profile. It supplies neither accepted report authority
+// current native history profile. It supplies neither accepted report authority
 // nor a lease, account grant or permission to launch a replacement.
 func InspectReplacementCheckpoint(ctx context.Context, home string, raw []byte, ref CheckpointReference) error {
 	value, err := decodeCheckpoint(raw, ref, home)
@@ -137,7 +138,7 @@ func InspectReplacementCheckpoint(ctx context.Context, home string, raw []byte, 
 }
 
 func checkpointReplacementProfile(value nativeCheckpoint) error {
-	if value.Project != "global" || filepath.Dir(value.NativeRoot) != value.NativeRoot {
+	if value.Project != "global" || filepath.Dir(value.NativeRoot) != value.NativeRoot || !validCheckpointTools(value) {
 		return incompatible()
 	}
 	for _, history := range checkpointHistories(value) {
@@ -145,6 +146,10 @@ func checkpointReplacementProfile(value nativeCheckpoint) error {
 			for _, part := range message.Parts {
 				switch part.Kind {
 				case TextPartKind, ReasoningPartKind, StepStartPartKind, StepFinishPartKind:
+				case ToolPartKind:
+					if value.Tools == nil {
+						return incompatible()
+					}
 				default:
 					return incompatible()
 				}

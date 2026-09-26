@@ -48,7 +48,7 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 	var lease *workspace.ExecutionLease
 	if c := input.Continuation; c != nil {
 		if preparation.Type != domain.GeneralChat {
-			return nil, domain.Fail(domain.Unsupported, "This OpenCode continuation requires a text-mode General Chat workspace.", "Retain the original workspace and input until the selected native continuation profile is supported.")
+			return nil, domain.Fail(domain.Unsupported, "This OpenCode continuation requires a General Chat workspace.", "Retain the original workspace and input until the selected native continuation profile is supported.")
 		}
 		lease, err = manager.ClaimContinuation(ctx, owner, input.ExecutionID, workspace.ExecutionPredecessor{JobID: c.Previous.JobID, ExecutionID: c.Previous.ExecutionID}, preparation, manifest)
 	} else {

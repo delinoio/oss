@@ -49,7 +49,17 @@ func TestManualNativeOpenCodePublicContinuationRefusesChangedEvidence(t *testing
 	}
 }
 
+func TestManualNativeOpenCodePublicInlineToolContinuation(t *testing.T) {
+	for _, tool := range []string{"read", "bash"} {
+		t.Run(tool, func(t *testing.T) { nativeOpenCodePublicDispatchProfile(t, 3, false, "", tool, true) })
+	}
+}
+
 func nativeOpenCodePublicDispatch(t *testing.T, turns int, failedFirst bool, fault string, switchModes ...bool) {
+	nativeOpenCodePublicDispatchProfile(t, turns, failedFirst, fault, "", switchModes...)
+}
+
+func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bool, fault, tool string, switchModes ...bool) {
 	binary := os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE")
 	if binary == "" {
 		t.Skip("explicit installed OpenCode with public APIs and generated loopback provider only")
@@ -63,6 +73,15 @@ func nativeOpenCodePublicDispatch(t *testing.T, turns int, failedFirst bool, fau
 	}
 	for _, mode := range []domain.SessionMode{domain.ExecuteMode, domain.PlanMode} {
 		t.Run(string(mode), func(t *testing.T) {
+			if tool == "bash" && mode == domain.PlanMode {
+				t.Skip("native Plan shell policy is a separate interaction profile")
+			}
+			var toolPath atomic.Value
+			var originalToolResult string
+			expectedCalls := turns
+			if tool != "" {
+				expectedCalls++
+			}
 			modeAt := func(turn int) domain.SessionMode {
 				if len(switchModes) == 1 && switchModes[0] && turn%2 == 1 {
 					if mode == domain.ExecuteMode {
@@ -89,7 +108,7 @@ func nativeOpenCodePublicDispatch(t *testing.T, turns int, failedFirst bool, fau
 					Model  string `json:"model"`
 					Stream bool   `json:"stream"`
 				}
-				if r.Method != http.MethodPost || r.URL.Path != "/chat/completions" || err != nil || json.Unmarshal(raw, &request) != nil || request.Model != "fixture-model" || !request.Stream || !strings.Contains(string(raw), "first retained input") || calls.Add(1) > int64(turns) {
+				if r.Method != http.MethodPost || r.URL.Path != "/chat/completions" || err != nil || json.Unmarshal(raw, &request) != nil || request.Model != "fixture-model" || !request.Stream || !strings.Contains(string(raw), "first retained input") || calls.Add(1) > int64(expectedCalls) {
 					t.Error("public dispatch changed original native request")
 					http.Error(w, "unsupported", 400)
 					return
@@ -100,7 +119,21 @@ func nativeOpenCodePublicDispatch(t *testing.T, turns int, failedFirst bool, fau
 					_, _ = io.WriteString(w, `{"error":{"message":"Private fixture failure","type":"invalid_api_key"}}`)
 					return
 				}
-				for prior := 1; prior < int(calls.Load()); prior++ {
+				providerTurn := int(calls.Load())
+				if tool != "" {
+					if providerTurn == 1 {
+						serveOpenCodeContinuationTool(t, w, tool, toolPath.Load().(string))
+						return
+					}
+					providerTurn--
+					result := verifyOpenCodeContinuationTool(t, raw, tool, toolPath.Load().(string))
+					if originalToolResult == "" {
+						originalToolResult = result
+					} else if result != originalToolResult {
+						t.Error("replacement changed original tool result")
+					}
+				}
+				for prior := 1; prior < providerTurn; prior++ {
 					if !strings.Contains(string(raw), fmt.Sprintf("continuation input %d", prior)) {
 						t.Error("native provider omitted queued original input", prior)
 					}
@@ -115,6 +148,9 @@ func nativeOpenCodePublicDispatch(t *testing.T, turns int, failedFirst bool, fau
 			// protocol discovery is a pinned reported fixture; actual initialization is
 			// independently revalidated by the original installed native process.
 			f := newFirstDispatchFixtureProfile(t, domain.OpenCode, mode, binary, upstream.URL)
+			if tool != "" {
+				toolPath.Store(prepareOpenCodeContinuationTool(t, f, tool))
+			}
 			f.workerStream.Close()
 			_, err := f.service.Store.Mutate(ctx, domain.NewID(), "fixture.release-setup-worker", nil, func(tx *store.Tx) (any, error) {
 				return nil, tx.SetWorkerInstance(f.selection.MachineID, domain.ID(f.workerInstance), time.Now().Add(-2*time.Minute))
@@ -192,7 +228,7 @@ func nativeOpenCodePublicDispatch(t *testing.T, turns int, failedFirst bool, fau
 						if failedFirst && turn == 0 {
 							expectedState, expectedOutcome, expectedDispatch = domain.JobFailed, domain.ExecutionFailed, domain.DispatchPaused
 						}
-						if completed.State != expectedState || domain.Decode(completed.Output, &proof) != nil || proof.ValidateForHarness(domain.OpenCode) != nil || proof.Version != 2 || proof.ExecutionID != input.ExecutionID || proof.InputID != input.InputID || !proof.CleanupVerified || calls.Load() != int64(turn+1) {
+						if completed.State != expectedState || domain.Decode(completed.Output, &proof) != nil || proof.ValidateForHarness(domain.OpenCode) != nil || proof.Version != 2 || proof.ExecutionID != input.ExecutionID || proof.InputID != input.InputID || !proof.CleanupVerified || calls.Load() != int64(turn+1+expectedCalls-turns) {
 							t.Fatalf("public native execution did not retain original completion: %s %v", completed.State, completed.Problem)
 						}
 						session, err := store.Decode[domain.Session](f.refresh(t))
@@ -203,6 +239,22 @@ func nativeOpenCodePublicDispatch(t *testing.T, turns int, failedFirst bool, fau
 							firstThread = proof.NativeThreadID
 						} else if proof.NativeThreadID != firstThread || proof.NativeTurnID == previous.NativeTurnID || proof.ExecutionID == previous.ExecutionID || proof.NativeCheckpointDigest == previous.NativeCheckpointDigest {
 							t.Fatal("continuation recreated native history or reused execution authority")
+						}
+						if tool != "" {
+							path := toolPath.Load().(string)
+							content, err := os.ReadFile(path)
+							expected := "original-inline-tool-sentinel\n"
+							if tool == "read" && turn > 0 {
+								expected = "changed-source-after-original-tool\n"
+							}
+							if err != nil || string(content) != expected {
+								t.Fatal("original tool was replayed or its workspace output changed")
+							}
+							if turn == 0 && tool == "read" {
+								if err := os.WriteFile(path, []byte("changed-source-after-original-tool\n"), 0600); err != nil {
+									t.Fatal(err)
+								}
+							}
 						}
 						previous = proof
 						if err := process.ReconcileOwnerContext(ctx, filepath.Join(f.workerRoot, "processes"), domain.ID(assignment.Id)); err != nil {

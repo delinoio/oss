@@ -38,13 +38,23 @@ func TestManualNativeOpenCodeCompletedExecutionRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, mode := range []domain.SessionMode{domain.ExecuteMode, domain.PlanMode} {
-		for _, scenario := range []string{"first", "resumed", "switched", "failed", "missing-checkpoint"} {
+		for _, scenario := range []string{"first", "resumed", "switched", "failed", "missing-checkpoint", "read", "bash"} {
 			t.Run(string(mode)+"/"+scenario, func(t *testing.T) { nativeOpenCodeRecovery(t, binary, mode, scenario) })
 		}
 	}
 }
 
 func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode, scenario string) {
+	if scenario == "bash" && mode == domain.PlanMode {
+		t.Skip("native Plan shell policy needs separate interaction restoration")
+	}
+	tool := ""
+	toolCalls := int64(0)
+	if scenario == "read" || scenario == "bash" {
+		tool, toolCalls = scenario, 1
+	}
+	var toolPath atomic.Value
+	var originalToolResult string
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	var calls atomic.Int64
@@ -62,12 +72,24 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 			return
 		}
 		raw, err := io.ReadAll(io.LimitReader(r.Body, 2<<20))
-		if r.Method != http.MethodPost || r.URL.Path != "/chat/completions" || err != nil || !strings.Contains(string(raw), "first retained input") || calls.Add(1) > lostTurn+1 {
+		if r.Method != http.MethodPost || r.URL.Path != "/chat/completions" || err != nil || !strings.Contains(string(raw), "first retained input") || calls.Add(1) > lostTurn+1+toolCalls {
 			t.Error("recovery repeated or changed native inference")
 			http.Error(w, "unsupported", http.StatusBadRequest)
 			return
 		}
-		if calls.Load() > 1 && !strings.Contains(string(raw), "following retained input") {
+		if tool != "" {
+			if calls.Load() == 1 {
+				serveOpenCodeContinuationTool(t, w, tool, toolPath.Load().(string))
+				return
+			}
+			result := verifyOpenCodeContinuationTool(t, raw, tool, toolPath.Load().(string))
+			if originalToolResult == "" {
+				originalToolResult = result
+			} else if result != originalToolResult {
+				t.Error("recovery altered original tool result")
+			}
+		}
+		if calls.Load() > 1+toolCalls && !strings.Contains(string(raw), "following retained input") {
 			t.Error("native continuation lost input history")
 		}
 		if scenario == "failed" && calls.Load() == 1 {
@@ -81,6 +103,9 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 	}))
 	defer upstream.Close()
 	f := newFirstDispatchFixtureProfile(t, domain.OpenCode, mode, binary, upstream.URL)
+	if tool != "" {
+		toolPath.Store(prepareOpenCodeContinuationTool(t, f, tool))
+	}
 	f.workerStream.Close()
 	expire := func() {
 		_, err := f.service.Store.Mutate(ctx, domain.NewID(), "fixture.expire-recovery-worker", nil, func(tx *store.Tx) (any, error) {
@@ -99,7 +124,7 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 	var allowReports atomic.Bool
 	originalHandler := f.service.Handler(nil, true)
 	fault := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == delidevv1connect.WorkerServiceReportWorkProcedure && calls.Load() >= lostTurn && !allowReports.Load() {
+		if r.URL.Path == delidevv1connect.WorkerServiceReportWorkProcedure && calls.Load() >= lostTurn+toolCalls && !allowReports.Load() {
 			select {
 			case lostReport <- struct{}{}:
 			default:
@@ -239,7 +264,7 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 	if scenario == "failed" {
 		expectedOutcome, expectedState = domain.ExecutionFailed, domain.JobFailed
 	}
-	if err != nil || calls.Load() != lostTurn || session.Outcome != expectedOutcome || session.Dispatch != domain.DispatchPaused || session.NextExecutionIntent != "" {
+	if err != nil || calls.Load() != lostTurn+toolCalls || session.Outcome != expectedOutcome || session.Dispatch != domain.DispatchPaused || session.NextExecutionIntent != "" {
 		t.Fatal("recovery changed outcome, resumed, or repeated input")
 	}
 	after, err := security.ReadPrivate(operationPath, 2<<20)
@@ -280,7 +305,7 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 	assignment = resume()
 	next := waitJob(domain.ID(assignment.Id))
 	var continued domain.ExecutionCompletion
-	if next.State != domain.JobSucceeded || domain.Decode(next.Output, &continued) != nil || continued.NativeThreadID != completion.NativeThreadID || continued.NativeTurnID == completion.NativeTurnID || calls.Load() != lostTurn+1 {
+	if next.State != domain.JobSucceeded || domain.Decode(next.Output, &continued) != nil || continued.NativeThreadID != completion.NativeThreadID || continued.NativeTurnID == completion.NativeTurnID || calls.Load() != lostTurn+1+toolCalls {
 		t.Fatal("explicit Resume failed after recovered completion", next.Problem)
 	}
 	t.Log("lost original native report -> joined old Worker -> replacement inspection -> exact paused recovery -> explicit same-session Resume; no inference or mutation replay during recovery")
