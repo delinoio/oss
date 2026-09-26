@@ -34,6 +34,7 @@ fn dll_main(_hinstance: HINSTANCE, reason: u32) -> winsafe::SysResult<()> {
 
     match reason {
         winnt::DLL_PROCESS_ATTACH => {
+            operation::set_process_exiting(false);
             // dbg!((current_exe(), std::process::id()));
             // SAFETY: FFI call to restore Detours state after DLL injection
             ck(unsafe { DetourRestoreAfterWith() })?;
@@ -70,6 +71,7 @@ fn dll_main(_hinstance: HINSTANCE, reason: u32) -> winsafe::SysResult<()> {
             ck_long(unsafe { DetourTransactionCommit() })?;
         }
         winnt::DLL_PROCESS_DETACH => {
+            operation::set_process_exiting(true);
             // SAFETY: FFI call to begin a Detours transaction for detaching
             ck_long(unsafe { DetourTransactionBegin() })?;
             // SAFETY: FFI call to update the current thread in the Detours transaction

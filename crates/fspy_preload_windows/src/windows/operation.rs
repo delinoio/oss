@@ -9,7 +9,10 @@ use std::{
     collections::HashSet,
     io::{Read, Write},
     net::{Shutdown, SocketAddr, TcpStream},
-    sync::{Arc, Mutex, OnceLock},
+    sync::{
+        Arc, Mutex, OnceLock,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, Instant},
 };
 
@@ -33,6 +36,11 @@ const MAX_PATH_BYTES: usize = 4096;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const WSAENOTSOCK: i32 = 10038;
 const WSANOTINITIALISED: i32 = 10093;
+static PROCESS_EXITING: AtomicBool = AtomicBool::new(false);
+
+pub(crate) fn set_process_exiting(exiting: bool) {
+    PROCESS_EXITING.store(exiting, Ordering::Release);
+}
 
 struct WinsockLease;
 
@@ -289,6 +297,12 @@ pub fn begin_paths(source: &[u16], destination: &[u16]) -> Option<OperationGuard
 }
 
 fn begin_encoded(operation: u8, encoded: &[u8]) -> Option<OperationGuard> {
+    // ExitProcess runs DLL detach routines after user execution has ended.
+    // Their file hooks can run after Winsock is unavailable. They are outside
+    // this execution's observation interval and must not open a new channel.
+    if PROCESS_EXITING.load(Ordering::Acquire) {
+        return None;
+    }
     let handle = state_handle();
     // Socket I/O can recursively enter an NT detour. A nonblocking lock
     // excludes those internal calls without blocking another native thread.
