@@ -58,18 +58,38 @@ func validHistoryCursor(cursor string) bool {
 	return ok && nativeID(id, "msg") && valid
 }
 
+type historyBoundary uint8
+
+const (
+	completedHistoryBoundary historyBoundary = iota
+	stoppedHistoryBoundary
+)
+
+func (s *sessionAPI) readHistory(ctx context.Context, o *inputObserver) (HistoryObservation, error) {
+	return s.readHistoryAt(ctx, o, completedHistoryBoundary)
+}
+
 // Called under the session gate and original observer lock. History uses the
 // native newest-first one-message pages, comparing them to reverse original
 // observation order; native ID timestamps are never treated as replay cursors.
-func (s *sessionAPI) readHistory(ctx context.Context, o *inputObserver) (HistoryObservation, error) {
+func (s *sessionAPI) readHistoryAt(ctx context.Context, o *inputObserver, boundary historyBoundary) (HistoryObservation, error) {
 	var result HistoryObservation
-	if o == nil || o != s.observer || s.input == nil || s.creation == nil || s.historyRead != nil || s.events == nil || s.problem != nil {
+	if boundary != completedHistoryBoundary && boundary != stoppedHistoryBoundary || o == nil || o != s.observer || s.input == nil || s.creation == nil || s.historyRead != nil || s.events == nil || s.problem != nil {
 		return result, sessionUncertain()
 	}
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	if o.problem != nil || o.stop != nil || !o.progress.SettledObserved || o.progress.NeedsRecovery || o.creation.request != s.creation.request || o.creation.identity != s.creation.identity || !equalSessionSettings(o.creation.settings, s.creation.settings) || o.cwd != s.cwd || o.input.digest != s.input.digest || o.progress.RequestID != s.input.receipt.RequestID || o.progress.SessionID != s.input.receipt.SessionID || len(o.messageOrder) < 2 || len(o.messageOrder) != len(o.messages) || o.messageOrder[0] != s.input.receipt.MessageID || o.messageOrder[len(o.messageOrder)-1] != o.progress.AssistantID {
+	if o.problem != nil || boundary == completedHistoryBoundary && o.stop != nil || boundary == stoppedHistoryBoundary && !o.stoppedHistoryReady() || !o.progress.SettledObserved || o.progress.NeedsRecovery || o.creation.request != s.creation.request || o.creation.identity != s.creation.identity || !equalSessionSettings(o.creation.settings, s.creation.settings) || o.cwd != s.cwd || o.input.digest != s.input.digest || o.progress.RequestID != s.input.receipt.RequestID || o.progress.SessionID != s.input.receipt.SessionID || len(o.messageOrder) < 2 || len(o.messageOrder) != len(o.messages) || o.messageOrder[0] != s.input.receipt.MessageID || o.messageOrder[len(o.messageOrder)-1] != o.progress.AssistantID {
 		return result, sessionUncertain()
+	}
+	idle := func() error {
+		if boundary == completedHistoryBoundary {
+			return s.historyIdle(ctx)
+		}
+		if boundary == stoppedHistoryBoundary {
+			return s.stoppedHistoryIdle(ctx, o)
+		}
+		return sessionUncertain()
 	}
 	phase := "original-state"
 	fail := func(err error) (HistoryObservation, error) {
@@ -93,7 +113,7 @@ func (s *sessionAPI) readHistory(ctx context.Context, o *inputObserver) (History
 		return fail(sessionUncertain())
 	}
 	phase = "pending"
-	if err := s.historyIdle(ctx); err != nil {
+	if err := idle(); err != nil {
 		return fail(err)
 	}
 	result = HistoryObservation{RequestID: receipt.RequestID, SessionID: receipt.SessionID, InputID: receipt.MessageID, AssistantID: o.progress.AssistantID, Messages: make([]HistoryMessage, len(o.messageOrder))}
@@ -153,7 +173,7 @@ func (s *sessionAPI) readHistory(ctx context.Context, o *inputObserver) (History
 	}
 	s.historyRead = nil
 	phase = "settled-after-history"
-	if err := s.historyIdle(ctx); err != nil {
+	if err := idle(); err != nil {
 		return fail(err)
 	}
 	if _, err := s.readSession(ctx); err != nil {

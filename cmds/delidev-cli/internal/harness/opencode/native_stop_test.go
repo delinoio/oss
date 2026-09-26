@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
@@ -25,6 +26,7 @@ const (
 	lostStreamStopIntent       nativeStopIntent = "lost-stream"
 	recoverCompletedStopIntent nativeStopIntent = "recover-completed-cleanup"
 	recoverUnstartedStopIntent nativeStopIntent = "recover-unstarted-cleanup"
+	verifiedHistoryStopIntent  nativeStopIntent = "verified-stopped-history"
 )
 
 type lostStopResponse struct{ http.RoundTripper }
@@ -67,7 +69,20 @@ func TestManualNativeOpenCodeStopRecovery(t *testing.T) {
 	}
 }
 
+func TestManualNativeOpenCodeStoppedHistory(t *testing.T) {
+	if os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE") == "" {
+		t.Skip("explicit private native OpenCode stopped history")
+	}
+	for _, mode := range []string{"text", "permission", "question", "completed-race"} {
+		for _, lost := range []bool{false, true} {
+			t.Run(mode+"/lost="+fmtBool(lost), func(t *testing.T) { nativeStopFixture(t, mode, lost, verifiedHistoryStopIntent) })
+		}
+	}
+}
+
 func nativeStopFixture(t *testing.T, mode string, lost bool, intent nativeStopIntent) {
+	natural := mode == "completed-race"
+	text := mode == "text" || natural
 	key := string(domain.NewID())
 	var args atomic.Value
 	var calls atomic.Int32
@@ -80,8 +95,12 @@ func nativeStopFixture(t *testing.T, mode string, lost bool, intent nativeStopIn
 			return
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
-		if mode == "text" {
+		if text {
 			_, _ = io.WriteString(w, `data: {"id":"chatcmpl-private","object":"chat.completion.chunk","created":1,"model":"private-model","choices":[{"index":0,"delta":{"role":"assistant","content":"Private stream awaiting Stop."},"finish_reason":null}]}`+"\n\n")
+			if natural {
+				_, _ = io.WriteString(w, `data: {"id":"chatcmpl-private","object":"chat.completion.chunk","created":1,"model":"private-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`+"\n\ndata: [DONE]\n\n")
+				return
+			}
 			w.(http.Flusher).Flush()
 			<-r.Context().Done()
 			return
@@ -143,12 +162,32 @@ func nativeStopFixture(t *testing.T, mode string, lost bool, intent nativeStopIn
 		if err != nil {
 			t.Fatalf("native Stop event %s: %v", event.Kind, err)
 		}
-		if !requested && (observation.Interaction != nil || mode == "text" && observation.Part != nil && observation.Part.Kind == TextPartKind && observation.Part.MessageID != fixtureMessageID) {
+		if !requested && (observation.Interaction != nil || text && observation.Part != nil && observation.Part.Kind == TextPartKind && observation.Part.MessageID != fixtureMessageID) {
 			if intent == lostStreamStopIntent {
 				stream.Close()
 				_ = observer.interruption(ctx)
 				nativeOwnedStopCleanup(t, api, observer, ctx, intent, &calls)
 				return
+			}
+			if natural {
+				// Let native completion win without consuming the queued original
+				// final events. The original live observer still owns this Stop;
+				// an accepted abort cannot rewrite the completed native result.
+				for {
+					raw, _, err := api.request(ctx, http.MethodGet, "/session/status", nil, http.StatusOK)
+					status, decodeErr := object(raw)
+					if err != nil || decodeErr != nil {
+						t.Fatal("native completion race status unavailable", err, decodeErr)
+					}
+					if len(status) == 0 {
+						break
+					}
+					select {
+					case <-ctx.Done():
+						t.Fatal("native completion race did not reach idle")
+					case <-time.After(10 * time.Millisecond):
+					}
+				}
 			}
 			receipt, err := api.stopInput(ctx, observer, domain.NewID())
 			if (err != nil) != lost || receipt.RequestID.Validate() != nil || receipt.HTTPAccepted == lost || receipt.TerminalObserved || receipt.IdleVerified || receipt.PendingCleared {
@@ -158,15 +197,42 @@ func nativeStopFixture(t *testing.T, mode string, lost bool, intent nativeStopIn
 		}
 		if requested && observer.snapshot().SettledObserved {
 			receipt, err := api.verifyStop(ctx, observer)
-			pending := mode != "text"
-			if (err != nil) != pending || receipt.HTTPAccepted == lost || !receipt.InterruptedObserved || !receipt.TerminalObserved || !receipt.IdleObserved || receipt.IdleVerified == pending || receipt.PendingCleared == pending || receipt.RepliesUncertain || receipt.CleanupVerified || calls.Load() != 1 {
+			pending := !text
+			unproven := natural && lost
+			if (err != nil) != (pending || unproven) || receipt.HTTPAccepted == lost || receipt.InterruptedObserved == natural || !receipt.TerminalObserved || !receipt.IdleObserved || receipt.IdleVerified == (pending || unproven) || receipt.PendingCleared == (pending || unproven) || receipt.RepliesUncertain || receipt.CleanupVerified || calls.Load() != 1 {
 				t.Fatalf("native verified Stop: %+v %v", receipt, err)
 			}
 			// In this pinned version /abort ends the assistant but leaves native
 			// permission/question effects pending. Retain that evidence until
 			// real joined process cleanup, never synthesize reject/answer calls.
-			receipt, err = api.closeStoppedRuntime(ctx, observer)
-			if err != nil || !receipt.CleanupVerified || !receipt.PendingCleared || receipt.HTTPAccepted == lost || !receipt.InterruptedObserved || receipt.IdleVerified == pending || calls.Load() != 1 {
+			if intent == verifiedHistoryStopIntent {
+				owned := &OwnedAPI{session: api, reading: make(chan struct{}, 1)}
+				proof, e := owned.CloseAfterStop(ctx)
+				if unproven {
+					if e == nil || proof.History.Digest != "" || owned.completionAttempted {
+						t.Fatal("normal completion fabricated missing Stop acknowledgment")
+					}
+					receipt, err = owned.FinishStopCleanup(ctx)
+					if err != nil || !receipt.CleanupVerified || receipt.HTTPAccepted || receipt.InterruptedObserved {
+						t.Fatal("owner cleanup rewrote an unproven native Stop")
+					}
+					if proof, err := owned.CloseAfterStop(ctx); err == nil || proof.History.Digest != "" {
+						t.Fatal("later owner cleanup fabricated stopped history")
+					}
+					return
+				}
+				if e != nil || proof.History.RequestID != observer.input.receipt.RequestID || proof.History.SessionID != observer.input.receipt.SessionID || proof.History.InputID != observer.input.receipt.MessageID || proof.History.AssistantID != observer.progress.AssistantID || len(proof.History.Messages) != len(observer.messages) || len(proof.History.Digest) != 64 {
+					t.Fatalf("original stopped history/cleanup: %v", e)
+				}
+				receipt, err = proof.Stop, e
+				again, e := owned.CloseAfterStop(ctx)
+				if e != nil || again.Stop != receipt || again.History.Digest != proof.History.Digest || calls.Load() != 1 {
+					t.Fatal("stopped history repeated native work or changed original proof")
+				}
+			} else {
+				receipt, err = api.closeStoppedRuntime(ctx, observer)
+			}
+			if err != nil || !receipt.CleanupVerified || !receipt.PendingCleared || receipt.HTTPAccepted == lost || receipt.InterruptedObserved == natural || receipt.IdleVerified == pending || calls.Load() != 1 {
 				t.Fatalf("native Stop ownership cleanup: %+v %v", receipt, err)
 			}
 			for _, interaction := range observer.interactions {

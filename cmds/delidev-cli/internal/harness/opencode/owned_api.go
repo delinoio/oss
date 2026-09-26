@@ -25,6 +25,7 @@ type OwnedAPI struct {
 	reading             chan struct{}
 	completionAttempted bool
 	completed           *HistoryObservation
+	stoppedCompletion   *StoppedHistoryObservation
 }
 
 func OpenOwnedAPI(ctx context.Context, config APIExecutionConfig) (*OwnedAPI, error) {
