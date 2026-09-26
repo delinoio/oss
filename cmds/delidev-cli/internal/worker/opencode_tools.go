@@ -27,6 +27,8 @@ func (c *OpenCodeTextPublisher) observeTool(ctx context.Context, native opencode
 		snapshot, err = openCodeShellSnapshot(native.Tool)
 	} else if native.Tool != nil && native.Tool.Name == "todowrite" {
 		snapshot, err = openCodeTodoSnapshot(native.Tool)
+	} else if native.Tool != nil && domain.OpenCodeBuiltinName(native.Tool.Name).Valid() {
+		snapshot, err = openCodeBuiltinSnapshot(native.Tool)
 	} else {
 		snapshot, err = openCodeReadSnapshot(native.Tool)
 	}

@@ -81,7 +81,7 @@ func (t *Tx) HasOpenCodeToolCall(execution domain.ID, call string) (bool, error)
 	}
 	var exists bool
 	err := t.tx.QueryRowContext(t.ctx, `SELECT EXISTS(SELECT 1 FROM execution_messages m JOIN entities e ON e.id=m.message_id
- WHERE m.execution_id=? AND ((json_extract(e.body,'$.tool.started.kind')='opencode-read' AND json_extract(e.body,'$.tool.started.read.call_id')=?) OR (json_extract(e.body,'$.tool.started.kind')='opencode-shell' AND json_extract(e.body,'$.tool.started.shell.call_id')=?) OR (json_extract(e.body,'$.tool.started.kind')='opencode-todo' AND json_extract(e.body,'$.tool.started.todo.call_id')=?)))`, execution, call, call, call).Scan(&exists)
+ WHERE m.execution_id=? AND ((json_extract(e.body,'$.tool.started.kind')='opencode-read' AND json_extract(e.body,'$.tool.started.read.call_id')=?) OR (json_extract(e.body,'$.tool.started.kind')='opencode-shell' AND json_extract(e.body,'$.tool.started.shell.call_id')=?) OR (json_extract(e.body,'$.tool.started.kind')='opencode-todo' AND json_extract(e.body,'$.tool.started.todo.call_id')=?) OR (json_extract(e.body,'$.tool.started.kind')='opencode-builtin' AND json_extract(e.body,'$.tool.started.builtin.call_id')=?)))`, execution, call, call, call, call).Scan(&exists)
 	return exists, storageError(err)
 }
 

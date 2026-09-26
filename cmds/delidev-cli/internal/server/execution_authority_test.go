@@ -52,7 +52,7 @@ func newConfiguredAuthorityFixture(t *testing.T, upstream string, configure func
 	return newProfileAuthorityFixture(t, upstream, domain.Codex, domain.OpenAIResponses, configure, queued)
 }
 
-func newProfileAuthorityFixture(t *testing.T, upstream string, harness domain.Harness, protocol domain.APIProtocol, configure func(*domain.ExecutionJobInput), queued bool) *authorityFixture {
+func newProfileAuthorityFixture(t *testing.T, upstream string, harness domain.Harness, protocol domain.APIProtocol, configure func(*domain.ExecutionJobInput), queued bool, nativeModels ...string) *authorityFixture {
 	t.Helper()
 	s, err := store.Open(context.Background(), filepath.Join(t.TempDir(), "state"))
 	if err != nil {
@@ -69,7 +69,14 @@ func newProfileAuthorityFixture(t *testing.T, upstream string, harness domain.Ha
 	}
 	f := &authorityFixture{workerToken: workerToken, token: apiproxy.TokenPrefix + rawToken, job: domain.NewID(), device: domain.NewID(), instance: domain.NewID()}
 	providerID, modelID, agentID, accountID, connectionID := domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID()
-	model := domain.Model{Name: "Fixture", NativeID: "fixture-model", ProviderID: providerID, Harnesses: []domain.Harness{harness}, MetadataSource: domain.UserDeclared}
+	nativeModel := "fixture-model"
+	if len(nativeModels) > 1 {
+		t.Fatal("fixture accepts one explicit native model")
+	}
+	if len(nativeModels) == 1 {
+		nativeModel = nativeModels[0]
+	}
+	model := domain.Model{Name: "Fixture", NativeID: nativeModel, ProviderID: providerID, Harnesses: []domain.Harness{harness}, MetadataSource: domain.UserDeclared}
 	permission, version := domain.PermissionReadOnly, domain.CodexProtocolVersion
 	if harness == domain.OpenCode {
 		permission, version = domain.PermissionDefault, domain.OpenCodeProtocolVersion

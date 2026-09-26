@@ -78,13 +78,17 @@ func (c *OpenCodeEventPublisher) PublishObservation(ctx context.Context, o openc
 	if !text && !usage {
 		switch o.Kind {
 		case opencode.SessionStatusEvent, opencode.SessionIdleEvent, opencode.SessionUpdatedEvent,
-			opencode.ServerHeartbeatEvent, opencode.ModelsDevRefreshedEvent, opencode.CatalogUpdatedEvent,
+			opencode.LspUpdatedEvent, opencode.ServerHeartbeatEvent, opencode.ModelsDevRefreshedEvent, opencode.CatalogUpdatedEvent,
 			opencode.ReferenceUpdatedEvent, opencode.IntegrationUpdatedEvent,
 			opencode.PluginAddedEvent, opencode.IntegrationConnectionUpdatedEvent:
 			// These already validated lifecycle/registry observations do not
 			// themselves establish configuration, terminal or billing authority.
 			// The pinned core registry also emits plugin.added for native
 			// built-ins; it is not proof of a newly enabled external plugin.
+		case opencode.FileEditedEvent, opencode.FileWatcherUpdatedEvent:
+			if err := c.publishWorkspaceEvent(ctx, o); err != nil {
+				return c.fail(err)
+			}
 		case opencode.TodoUpdatedEvent:
 			if err := c.publishTodo(ctx, o); err != nil {
 				return c.fail(err)
@@ -320,6 +324,33 @@ func (c *OpenCodeEventPublisher) publishTodo(ctx context.Context, o opencode.Obs
 		return publicationUncertain()
 	}
 	update := domain.ExecutionProgressUpdate{ID: domain.NewID(), Progress: domain.NativeProgress{Kind: domain.OpenCodeTodoProgressKind, Todo: &domain.OpenCodeTodoProgress{NativeEventID: o.EventID, Todos: o.Todo.Todos}}}
+	if err := update.Validate(); err != nil {
+		return err
+	}
+	raw, err := json.Marshal(update)
+	if err != nil || len(raw) > maxOpenCodeTextBytes-c.text.bytes {
+		return publicationUncertain()
+	}
+	if err := b.publisher.Publish(ctx, domain.ExecutionEvent{Kind: domain.ExecutionProgressObserved, NativeThreadID: b.thread, NativeTurnID: b.turn, Progress: &update}); err != nil {
+		return err
+	}
+	c.text.bytes += len(raw)
+	return nil
+}
+
+func (c *OpenCodeEventPublisher) publishWorkspaceEvent(ctx context.Context, o opencode.Observation) error {
+	b := c.text.binding
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	claims, err := b.readClaims()
+	if err != nil || len(claims) != 2 || b.stage != openCodeAccepted || c.text.blocked || o.WorkspaceEvent == nil || o.WorkspaceEvent.NativeEventID != o.EventID {
+		return publicationUncertain()
+	}
+	value := *o.WorkspaceEvent
+	if (o.Kind == opencode.FileEditedEvent) != (value.Kind == domain.OpenCodeFileEdited) {
+		return publicationUncertain()
+	}
+	update := domain.ExecutionProgressUpdate{ID: domain.NewID(), Progress: domain.NativeProgress{Kind: domain.OpenCodeWorkspaceProgressKind, Workspace: &value}}
 	if err := update.Validate(); err != nil {
 		return err
 	}

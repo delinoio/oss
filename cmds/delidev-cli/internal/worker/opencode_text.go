@@ -130,7 +130,7 @@ func (c *OpenCodeTextPublisher) PublishObservation(ctx context.Context, observat
 			if observation.Part.Tool == nil {
 				return false, publicationUncertain()
 			}
-			if observation.Part.Tool.Name != "read" && observation.Part.Tool.Name != "bash" && observation.Part.Tool.Name != "todowrite" {
+			if observation.Part.Tool.Name != "read" && observation.Part.Tool.Name != "bash" && observation.Part.Tool.Name != "todowrite" && !domain.OpenCodeBuiltinName(observation.Part.Tool.Name).Valid() {
 				return false, nil
 			}
 			return true, c.observeTool(ctx, *observation.Part)

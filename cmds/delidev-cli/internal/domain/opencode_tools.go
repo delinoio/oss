@@ -8,7 +8,7 @@ type OpenCodeToolTiming struct {
 }
 
 func (k ToolKind) IsOpenCode() bool {
-	return k == OpenCodeReadTool || k == OpenCodeShellTool || k == OpenCodeTodoTool
+	return k == OpenCodeReadTool || k == OpenCodeShellTool || k == OpenCodeTodoTool || k == OpenCodeBuiltinTool
 }
 
 func (s ToolSnapshot) OpenCodeCallID() string {
@@ -21,10 +21,16 @@ func (s ToolSnapshot) OpenCodeCallID() string {
 	if s.Kind == OpenCodeTodoTool && s.Todo != nil {
 		return s.Todo.CallID
 	}
+	if s.Kind == OpenCodeBuiltinTool && s.Builtin != nil {
+		return s.Builtin.CallID
+	}
 	return ""
 }
 
 func ValidateOpenCodeToolTransition(prior, next ToolSnapshot) error {
+	if prior.Kind == OpenCodeBuiltinTool {
+		return ValidateOpenCodeBuiltinTransition(prior, next)
+	}
 	if prior.Kind == OpenCodeTodoTool {
 		return ValidateOpenCodeTodoTransition(prior, next)
 	}

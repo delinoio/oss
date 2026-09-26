@@ -17,7 +17,7 @@ function allowed(value: Record<string, unknown>, names: string[]): boolean { ret
 function snapshot(value: unknown): ShellSnapshot | undefined {
   const s = object(value), shell = object(s.shell), input = object(shell.input), timing = object(shell.time), metadata = object(shell.metadata);
   const status = s.status as ShellStatus;
-  if (s.kind !== "opencode-shell" || s.read != null || s.todo != null || s.command != null || s.changes != null || !Object.values(ShellStatus).includes(status) || !bounded(shell.call_id) || !shell.call_id || encoder.encode(shell.call_id).length > 1024 || shell.provider_executed != null && shell.provider_executed !== false) return;
+  if (s.kind !== "opencode-shell" || s.read != null || s.todo != null || s.builtin != null || s.command != null || s.changes != null || !Object.values(ShellStatus).includes(status) || !bounded(shell.call_id) || !shell.call_id || encoder.encode(shell.call_id).length > 1024 || shell.provider_executed != null && shell.provider_executed !== false) return;
   if (!allowed(shell, ["call_id", "input", "raw", "title", "output", "error", "metadata", "time", "provider_executed"]) || !allowed(input, ["command", "workdir", "timeout"]) || !allowed(timing, ["start", "end"]) || !allowed(metadata, ["output", "exit", "exit_observed", "truncated", "outputPath", "interrupted"])) return;
   for (const field of [input.command, input.workdir, shell.raw, shell.title, shell.output, shell.error, metadata.output, metadata.outputPath]) if (field != null && !bounded(field)) return;
   if (input.timeout != null && (!count(input.timeout) || input.timeout === 0)) return;

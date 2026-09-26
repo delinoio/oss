@@ -22,10 +22,11 @@ const (
 	ReasoningTextDelta    ArtifactDeltaKind = "reasoning-text"
 	ReasoningSummaryAdded ArtifactDeltaKind = "reasoning-summary-added"
 
-	OpenCodeChangesProgressKind ProgressKind = "opencode-changes"
-	OpenCodeTodoProgressKind    ProgressKind = "opencode-todo"
-	PlanProgress                ProgressKind = "plan"
-	DiffProgress                ProgressKind = "diff"
+	OpenCodeWorkspaceProgressKind ProgressKind = "opencode-workspace"
+	OpenCodeChangesProgressKind   ProgressKind = "opencode-changes"
+	OpenCodeTodoProgressKind      ProgressKind = "opencode-todo"
+	PlanProgress                  ProgressKind = "plan"
+	DiffProgress                  ProgressKind = "diff"
 
 	PlanPending   PlanStepStatus = "pending"
 	PlanRunning   PlanStepStatus = "running"
@@ -200,11 +201,12 @@ type NativePlan struct {
 // Turn progress has no native item identity. A diff is only an observation,
 // not repository/file-review ownership or permission to read/write a path.
 type NativeProgress struct {
-	Changes *OpenCodeChanges      `json:"changes,omitempty"`
-	Todo    *OpenCodeTodoProgress `json:"todo,omitempty"`
-	Kind    ProgressKind          `json:"kind"`
-	Plan    *NativePlan           `json:"plan,omitempty"`
-	Diff    *string               `json:"diff,omitempty"`
+	Workspace *OpenCodeWorkspaceEvent `json:"workspace,omitempty"`
+	Changes   *OpenCodeChanges        `json:"changes,omitempty"`
+	Todo      *OpenCodeTodoProgress   `json:"todo,omitempty"`
+	Kind      ProgressKind            `json:"kind"`
+	Plan      *NativePlan             `json:"plan,omitempty"`
+	Diff      *string                 `json:"diff,omitempty"`
 }
 type ExecutionProgressUpdate struct {
 	ID       ID             `json:"id"`
@@ -218,7 +220,7 @@ func (u ExecutionProgressUpdate) Validate() error {
 	p := u.Progress
 	switch p.Kind {
 	case PlanProgress:
-		if p.Changes != nil || p.Todo != nil || p.Plan == nil || p.Diff != nil || p.Plan.Steps == nil || len(p.Plan.Steps) > MaxArtifactParts || (p.Plan.Explanation != nil && Text(*p.Plan.Explanation, "native plan explanation", MaxMessageText, false) != nil) {
+		if p.Workspace != nil || p.Changes != nil || p.Todo != nil || p.Plan == nil || p.Diff != nil || p.Plan.Steps == nil || len(p.Plan.Steps) > MaxArtifactParts || (p.Plan.Explanation != nil && Text(*p.Plan.Explanation, "native plan explanation", MaxMessageText, false) != nil) {
 			return invalidArtifact()
 		}
 		for _, step := range p.Plan.Steps {
@@ -226,16 +228,20 @@ func (u ExecutionProgressUpdate) Validate() error {
 				return invalidArtifact()
 			}
 		}
+	case OpenCodeWorkspaceProgressKind:
+		if p.Workspace == nil || p.Changes != nil || p.Todo != nil || p.Plan != nil || p.Diff != nil || p.Workspace.Validate() != nil {
+			return invalidArtifact()
+		}
 	case OpenCodeChangesProgressKind:
-		if p.Changes == nil || p.Todo != nil || p.Plan != nil || p.Diff != nil || p.Changes.Validate() != nil {
+		if p.Workspace != nil || p.Changes == nil || p.Todo != nil || p.Plan != nil || p.Diff != nil || p.Changes.Validate() != nil {
 			return invalidArtifact()
 		}
 	case OpenCodeTodoProgressKind:
-		if p.Changes != nil || p.Todo == nil || p.Plan != nil || p.Diff != nil || NativeIdentity(p.Todo.NativeEventID).Validate(OpenCode, NativeEventIdentity) != nil || ValidateOpenCodeTodos(p.Todo.Todos) != nil {
+		if p.Workspace != nil || p.Changes != nil || p.Todo == nil || p.Plan != nil || p.Diff != nil || NativeIdentity(p.Todo.NativeEventID).Validate(OpenCode, NativeEventIdentity) != nil || ValidateOpenCodeTodos(p.Todo.Todos) != nil {
 			return invalidArtifact()
 		}
 	case DiffProgress:
-		if p.Changes != nil || p.Todo != nil || p.Diff == nil || p.Plan != nil || Text(*p.Diff, "native turn diff", MaxMessageText, false) != nil {
+		if p.Workspace != nil || p.Changes != nil || p.Todo != nil || p.Diff == nil || p.Plan != nil || Text(*p.Diff, "native turn diff", MaxMessageText, false) != nil {
 			return invalidArtifact()
 		}
 	default:

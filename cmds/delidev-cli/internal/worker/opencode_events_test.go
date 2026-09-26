@@ -72,7 +72,7 @@ func TestOpenCodeEventsBlockUnimplementedFamiliesAndChangedArrivals(t *testing.T
 			switch name {
 			case "tool":
 				o.Part.Kind = opencode.ToolPartKind
-				o.Part.Tool = &opencode.NativeToolPart{Name: "write"}
+				o.Part.Tool = &opencode.NativeToolPart{Name: "unimplemented_external"}
 			case "file":
 				o.Part.Kind = opencode.FilePartKind
 			case "snapshot":

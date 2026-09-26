@@ -25,7 +25,7 @@ function same(a: Todo[] | undefined, b: Todo[] | undefined): boolean {
 function snapshot(value: unknown): Snapshot | undefined {
   const s = object(value), todo = object(s.todo), input = object(todo.input), time = object(todo.time), metadata = object(todo.metadata);
   const status = s.status as ToolState;
-  if (s.kind !== "opencode-todo" || s.read != null || s.shell != null || s.command != null || s.changes != null || !Object.values(ToolState).includes(status) || !bounded(todo.call_id) || !todo.call_id.trim() || encoder.encode(todo.call_id).length > 1024 || todo.provider_executed != null && todo.provider_executed !== false) return;
+  if (s.kind !== "opencode-todo" || s.read != null || s.shell != null || s.builtin != null || s.command != null || s.changes != null || !Object.values(ToolState).includes(status) || !bounded(todo.call_id) || !todo.call_id.trim() || encoder.encode(todo.call_id).length > 1024 || todo.provider_executed != null && todo.provider_executed !== false) return;
   if (!shape(todo, ["call_id", "input", "raw", "title", "output", "error", "metadata", "time", "provider_executed"]) || !shape(todo.input, ["todos"]) || todo.time != null && !shape(todo.time, ["start", "end"]) || todo.metadata != null && !shape(todo.metadata, ["todos", "truncated", "outputPath", "interrupted"])) return;
   if ("todos" in input && !list(input.todos) || "todos" in metadata && !list(metadata.todos)) return;
   for (const v of [todo.raw, todo.title, todo.output, todo.error, metadata.outputPath]) if (v != null && !bounded(v)) return;
@@ -78,7 +78,7 @@ function TodoList({ todos }: { todos: Todo[] }) {
 // or a synthesized completion percentage. Unknown string values stay visible.
 export function NativeTodoProgress({ progress, state }: { progress: Record<string, unknown>; state: string }) {
   const todo = object(progress.todo);
-  if (state !== "complete" || progress.kind !== "opencode-todo" || progress.changes != null || progress.plan != null || progress.diff != null || !shape(progress.todo, ["native_event_id", "todos"]) || typeof todo.native_event_id !== "string" || !/^evt_[0-9a-f]{12}[a-zA-Z0-9]{14}$/.test(todo.native_event_id) || !list(todo.todos)) return <details><summary>Todo progress · Unavailable</summary><p>The retained Todo progress is unavailable or inconsistent.</p></details>;
+  if (state !== "complete" || progress.kind !== "opencode-todo" || progress.workspace != null || progress.changes != null || progress.plan != null || progress.diff != null || !shape(progress.todo, ["native_event_id", "todos"]) || typeof todo.native_event_id !== "string" || !/^evt_[0-9a-f]{12}[a-zA-Z0-9]{14}$/.test(todo.native_event_id) || !list(todo.todos)) return <details><summary>Todo progress · Unavailable</summary><p>The retained Todo progress is unavailable or inconsistent.</p></details>;
   return <details open><summary>Todo progress</summary><TodoList todos={todo.todos} /><p>This list is an original native observation; it does not establish session completion.</p></details>;
 }
 

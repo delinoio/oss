@@ -72,6 +72,12 @@ const (
 	nativeTodoPublication
 	nativeTodoClearPublication
 	nativeShellChangesPublication
+	nativeWritePublication
+	nativeEditPublication
+	nativeApplyPatchPublication
+	nativeGlobPublication
+	nativeGrepPublication
+	nativeEditFailurePublication
 )
 
 func TestManualNativeOpenCodePublishesRegisteredText(t *testing.T) {
@@ -126,7 +132,34 @@ func TestManualNativeOpenCodePublishesRegisteredChanges(t *testing.T) {
 	nativeRegisteredOpenCode(t, domain.ExecuteMode, false, nativeShellChangesPublication)
 }
 
+func TestManualNativeOpenCodePublishesRegisteredBuiltins(t *testing.T) {
+	for _, publication := range []nativeOpenCodePublication{nativeWritePublication, nativeEditPublication, nativeApplyPatchPublication, nativeGlobPublication, nativeGrepPublication, nativeEditFailurePublication} {
+		t.Run(fmt.Sprint(publication), func(t *testing.T) { nativeRegisteredOpenCode(t, domain.ExecuteMode, false, publication) })
+	}
+}
+
 func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool, publication nativeOpenCodePublication) {
+	builtinName := domain.OpenCodeBuiltinName("")
+	switch publication {
+	case nativeWritePublication:
+		builtinName = domain.OpenCodeWrite
+	case nativeEditPublication, nativeEditFailurePublication:
+		builtinName = domain.OpenCodeEdit
+	case nativeApplyPatchPublication:
+		builtinName = domain.OpenCodeApplyPatch
+	case nativeGlobPublication:
+		builtinName = domain.OpenCodeGlob
+	case nativeGrepPublication:
+		builtinName = domain.OpenCodeGrep
+	}
+	builtinTool := builtinName.Valid()
+	builtinFailure := publication == nativeEditFailurePublication
+	fixtureModel := "fixture-model"
+	if builtinName == domain.OpenCodeApplyPatch {
+		fixtureModel = "gpt-5-fixture"
+	}
+	var builtinPath atomic.Value
+	var builtinInput atomic.Value
 	todoTool := publication == nativeTodoPublication || publication == nativeTodoClearPublication
 	todos := []domain.OpenCodeTodo{{Content: "Original native Todo fixture.", Status: domain.OpenCodeTodoRunning, Priority: domain.OpenCodeTodoHigh}, {Content: "Preserve native cancellation", Status: domain.OpenCodeTodoCancelled, Priority: domain.OpenCodeTodoLow}, {Content: "Native extension", Status: "waiting", Priority: "urgent"}}
 	if publication == nativeTodoClearPublication {
@@ -156,7 +189,7 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 		shellCommand = `i=0; while [ "$i" -lt 3000 ]; do printf 'Original native Shell fixture.\n'; i=$((i + 1)); done; printf 'Original stderr fixture.' >&2`
 	}
 	expectedCalls := int32(1)
-	if readTool || shellTool || todoTool {
+	if readTool || shellTool || todoTool || builtinTool {
 		expectedCalls = 2
 	}
 	var readPath atomic.Value
@@ -190,7 +223,7 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 				ToolCallID string `json:"tool_call_id"`
 			}
 		}
-		if err != nil || json.Unmarshal(raw, &body) != nil || body.Model != "fixture-model" || !body.Stream || r.URL.Path != "/chat/completions" || r.Header.Get("Authorization") != "Bearer temporary-upstream-fixture-key" || r.Header.Get("HTTP-Referer") != "https://deli.dev" {
+		if err != nil || json.Unmarshal(raw, &body) != nil || body.Model != fixtureModel || !body.Stream || r.URL.Path != "/chat/completions" || r.Header.Get("Authorization") != "Bearer temporary-upstream-fixture-key" || r.Header.Get("HTTP-Referer") != "https://deli.dev" {
 			t.Error("native registered request lost its exact model or server-owned account key")
 		}
 		originalInputs := 0
@@ -241,10 +274,13 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 			return
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
-		if (readTool || shellTool || todoTool) && call == 1 {
+		if (readTool || shellTool || todoTool || builtinTool) && call == 1 {
 			name, callID := "read", "call_registered_read"
 			var args []byte
-			if todoTool {
+			if builtinTool {
+				name, callID = string(builtinName), "call_registered_builtin"
+				args = builtinInput.Load().([]byte)
+			} else if todoTool {
 				name, callID = "todowrite", "call_registered_todo"
 				args, _ = json.Marshal(map[string]any{"todos": todos})
 			} else if shellTool {
@@ -259,13 +295,13 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 			}
 			delta := map[string]any{"role": "assistant", "tool_calls": []any{map[string]any{"index": 0, "id": callID, "type": "function", "function": map[string]any{"name": name, "arguments": string(args)}}}}
 			for _, choice := range []map[string]any{{"index": 0, "delta": delta, "finish_reason": nil}, {"index": 0, "delta": map[string]any{}, "finish_reason": "tool_calls"}} {
-				raw, _ := json.Marshal(map[string]any{"id": "chatcmpl-registered-read", "object": "chat.completion.chunk", "created": 1, "model": "fixture-model", "choices": []any{choice}})
+				raw, _ := json.Marshal(map[string]any{"id": "chatcmpl-registered-read", "object": "chat.completion.chunk", "created": 1, "model": fixtureModel, "choices": []any{choice}})
 				_, _ = fmt.Fprintf(w, "data: %s\n\n", raw)
 			}
 			_, _ = io.WriteString(w, "data: [DONE]\n\n")
 			return
 		}
-		if readTool || shellTool || todoTool {
+		if readTool || shellTool || todoTool || builtinTool {
 			callID, sentinel := "call_registered_read", readSentinel
 			if shellTool {
 				callID, sentinel = "call_registered_shell", shellSentinel
@@ -276,6 +312,24 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 					sentinel = "[]"
 				}
 			}
+			if builtinTool {
+				callID = "call_registered_builtin"
+				switch builtinName {
+				case domain.OpenCodeWrite:
+					sentinel = "Wrote file successfully"
+				case domain.OpenCodeEdit:
+					sentinel = "Edit applied successfully"
+					if builtinFailure {
+						sentinel = "Could not find oldString"
+					}
+				case domain.OpenCodeApplyPatch:
+					sentinel = "Success"
+				case domain.OpenCodeGlob:
+					sentinel = "builtin.txt"
+				case domain.OpenCodeGrep:
+					sentinel = "before builtin fixture"
+				}
+			}
 			results := 0
 			for _, message := range body.Messages {
 				if message.Role != "tool" || message.ToolCallID != callID {
@@ -283,23 +337,23 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 				}
 				var result string
 				if json.Unmarshal(message.Content, &result) != nil || !strings.Contains(result, sentinel) {
-					t.Error("original Read result did not reach the next native provider request")
+					t.Error("original tool result did not reach the next native provider request")
 				}
 				results++
 			}
 			if results != 1 {
-				t.Error("native Read result was missing or duplicated")
+				t.Error("native tool result was missing or duplicated")
 			}
 		}
 
 		if publication == nativeReasoningPublication {
-			_, _ = io.WriteString(w, `data: {"id":"chatcmpl-registered","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"Native reasoning fixture."},"finish_reason":null}]}`+"\n\n")
+			_, _ = io.WriteString(w, strings.ReplaceAll(`data: {"id":"chatcmpl-registered","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"Native reasoning fixture."},"finish_reason":null}]}`+"\n\n", "fixture-model", fixtureModel))
 		}
-		_, _ = io.WriteString(w, `data: {"id":"chatcmpl-registered","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{"role":"assistant","content":"Registered OpenCode fixture completed."},"finish_reason":null}]}`+"\n\n")
-		_, _ = io.WriteString(w, `data: {"id":"chatcmpl-registered","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":20,"completion_tokens":4,"total_tokens":24}}`+"\n\ndata: [DONE]\n\n")
+		_, _ = io.WriteString(w, strings.ReplaceAll(`data: {"id":"chatcmpl-registered","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{"role":"assistant","content":"Registered OpenCode fixture completed."},"finish_reason":null}]}`+"\n\n", "fixture-model", fixtureModel))
+		_, _ = io.WriteString(w, strings.ReplaceAll(`data: {"id":"chatcmpl-registered","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":20,"completion_tokens":4,"total_tokens":24}}`+"\n\ndata: [DONE]\n\n", "fixture-model", fixtureModel))
 	}))
 	defer upstream.Close()
-	f := publicationFixtureFromAuthority(t, newProfileAuthorityFixture(t, upstream.URL, domain.OpenCode, domain.OpenAIChat, func(input *domain.ExecutionJobInput) { input.Input.Mode = mode }, false))
+	f := publicationFixtureFromAuthority(t, newProfileAuthorityFixture(t, upstream.URL, domain.OpenCode, domain.OpenAIChat, func(input *domain.ExecutionJobInput) { input.Input.Mode = mode }, false, fixtureModel))
 	f.registerGrant(t)
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -331,6 +385,36 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 			cmd.Env = env
 			if out, err := cmd.CombinedOutput(); err != nil {
 				t.Fatalf("private git fixture: %v %s", err, out)
+			}
+		}
+	}
+	if builtinTool {
+		path := filepath.Join(workspace, "builtin.txt")
+		builtinPath.Store(path)
+		if err := os.WriteFile(path, []byte("before builtin fixture\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		var input map[string]any
+		switch builtinName {
+		case domain.OpenCodeWrite:
+			input = map[string]any{"filePath": path, "content": "after builtin fixture\n"}
+		case domain.OpenCodeEdit:
+			input = map[string]any{"filePath": path, "oldString": "before builtin fixture", "newString": "after builtin fixture"}
+			if builtinFailure {
+				input["oldString"] = "Missing unique content 876512 from this file"
+			}
+		case domain.OpenCodeApplyPatch:
+			input = map[string]any{"patchText": "*** Begin Patch\n*** Update File: " + path + "\n@@\n-before builtin fixture\n+after builtin fixture\n*** End Patch"}
+		case domain.OpenCodeGlob:
+			input = map[string]any{"pattern": "*.txt"}
+		case domain.OpenCodeGrep:
+			input = map[string]any{"pattern": "before builtin fixture", "include": "*.txt"}
+		}
+		encoded, _ := json.Marshal(input)
+		builtinInput.Store(encoded)
+		if builtinName == domain.OpenCodeGlob || builtinName == domain.OpenCodeGrep {
+			if _, err := exec.LookPath("rg"); err != nil {
+				t.Skip("native search fixture requires an existing ripgrep; no automatic download")
 			}
 		}
 	}
@@ -673,6 +757,7 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 		rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.MessageKind, SessionID: f.input.SessionID, Limit: 100})
 		var filtered []store.Record
 		revisions, patches, changedFiles := 0, 0, 0
+		workspaceEvents := 0
 		for _, row := range rows {
 			m, decodeErr := store.Decode[domain.ExecutionMessage](row)
 			if decodeErr != nil {
@@ -686,6 +771,13 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 				if m.Artifact.Started.Revision.Source == domain.OpenCodePatchRevision {
 					patches++
 				}
+				continue
+			}
+			if m.Progress != nil && m.Progress.Kind == domain.OpenCodeWorkspaceProgressKind {
+				if !builtinTool || m.NativeID != "" || m.NativeParentID != "" || m.Progress.Workspace == nil || m.Progress.Workspace.Validate() != nil || m.Progress.Workspace.File != builtinPath.Load().(string) {
+					t.Fatal("native workspace notification gained an invented tool owner or path")
+				}
+				workspaceEvents++
 				continue
 			}
 			if m.Progress != nil && m.Progress.Kind == domain.OpenCodeChangesProgressKind {
@@ -705,12 +797,26 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 		if publication == nativeShellChangesPublication && (revisions < 4 || patches == 0 || changedFiles == 0) {
 			t.Fatalf("native Git change evidence incomplete: revisions=%d patches=%d diffs=%d", revisions, patches, changedFiles)
 		}
+		if builtinFailure {
+			content, readErr := os.ReadFile(builtinPath.Load().(string))
+			if workspaceEvents != 0 || readErr != nil || string(content) != "before builtin fixture\n" {
+				t.Fatal("failed native edit changed the file or invented an edit notification")
+			}
+		} else if builtinTool && builtinName != domain.OpenCodeGlob && builtinName != domain.OpenCodeGrep {
+			if workspaceEvents < 2 {
+				t.Fatal("native file notifications were omitted")
+			}
+			content, readErr := os.ReadFile(builtinPath.Load().(string))
+			if readErr != nil || string(content) != "after builtin fixture\n" {
+				t.Fatal("original native builtin did not perform the fixture edit")
+			}
+		}
 		rows = filtered
 		expected := 2
 		if authFailure {
 			expected = 1
 		}
-		if publication == nativeReasoningPublication || readTool || shellTool || todoTool {
+		if publication == nativeReasoningPublication || readTool || shellTool || todoTool || builtinTool {
 			expected = 3
 		}
 		if todoTool {
@@ -726,7 +832,20 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 				t.Fatal("native text publication lost original part identity or closure")
 			}
 			roles[message.Role] = true
-			if message.Role == domain.ProgressMessage && todoTool {
+			if message.Role == domain.ToolMessage && builtinTool {
+				status := domain.ToolCompleted
+				if builtinFailure {
+					status = domain.ToolFailed
+				}
+				if message.Tool == nil || message.Tool.Started.Kind != domain.OpenCodeBuiltinTool || message.Tool.Completed == nil || message.Tool.Completed.Status != status || message.NativeParentID == receipt.MessageID {
+					t.Fatal("native builtin lost lifecycle or parent")
+				}
+				value := message.Tool.Completed.Builtin
+				var actual, expected map[string]any
+				if value == nil || value.Name != builtinName || value.CallID != "call_registered_builtin" || !builtinFailure && value.MetadataJSON == nil || builtinFailure && (value.Error == nil || value.Output != nil) || json.Unmarshal([]byte(value.InputJSON), &actual) != nil || json.Unmarshal(builtinInput.Load().([]byte), &expected) != nil || !reflect.DeepEqual(actual, expected) {
+					t.Fatal("native builtin input/metadata was replaced")
+				}
+			} else if message.Role == domain.ProgressMessage && todoTool {
 				if message.NativeID != "" || message.NativeParentID != "" || message.Progress == nil || message.Progress.Kind != domain.OpenCodeTodoProgressKind || message.Progress.Todo == nil || !reflect.DeepEqual(message.Progress.Todo.Todos, todos) || domain.NativeIdentity(message.Progress.Todo.NativeEventID).Validate(domain.OpenCode, domain.NativeEventIdentity) != nil {
 					t.Fatal("native todo event lost its independent identity or exact list")
 				}
@@ -834,7 +953,7 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 		}
 	}
 	expectedMessages := 2
-	if readTool || shellTool || todoTool {
+	if readTool || shellTool || todoTool || builtinTool {
 		expectedMessages = 3
 	}
 	history, err := api.InspectHistory(ctx)

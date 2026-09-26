@@ -40,7 +40,7 @@ function fileDiff(value: unknown): value is FileDiff {
 // files, applies a patch, navigates to a path, or treats snapshots as backups.
 export function NativeChanges({ progress, state, turn }: { progress: Record<string, unknown>; state: string; turn: string }) {
   const c = object(progress.changes);
-  const valid = state === "complete" && progress.kind === "opencode-changes" && progress.plan == null && progress.diff == null && progress.todo == null
+  const valid = state === "complete" && progress.kind === "opencode-changes" && progress.workspace == null && progress.plan == null && progress.diff == null && progress.todo == null
     && shape(progress.changes, ["source", "native_event_id", "native_message_id", "title", "body", "diffs"])
     && typeof c.native_event_id === "string" && /^evt_[0-9a-f]{12}[a-zA-Z0-9]{14}$/.test(c.native_event_id)
     && (c.source === ChangeSource.Session && c.native_message_id === undefined && c.title == null && c.body == null || c.source === ChangeSource.Input && typeof c.native_message_id === "string" && /^msg_[0-9a-f]{12}[a-zA-Z0-9]{14}$/.test(c.native_message_id) && c.native_message_id === turn)

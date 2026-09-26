@@ -330,26 +330,27 @@ func (e ExecutionEvent) Validate() error {
 // original immutable account/configuration selection. Only a separately
 // verified completion report may set CleanupVerified after terminal publication.
 type ExecutionProgress struct {
-	JobID                 ID                        `json:"job_id"`
-	ExecutionID           ID                        `json:"execution_id"`
-	InputID               ID                        `json:"input_id"`
-	AcceptedInputs        []ExecutionInputBinding   `json:"accepted_inputs,omitempty"`
-	SteerAttempts         uint32                    `json:"steer_attempts,omitempty"`
-	LastSequence          uint64                    `json:"last_sequence"`
-	NativeThreadID        string                    `json:"native_thread_id"`
-	NativeTurnID          string                    `json:"native_turn_id,omitempty"`
-	Observed              ObservedExecutionSettings `json:"observed"`
-	Outcome               ExecutionOutcome          `json:"outcome"`
-	LatestTodoID          ID                        `json:"latest_todo_id,omitempty"`
-	LatestPlanID          ID                        `json:"latest_plan_id,omitempty"`
-	LatestDiffID          ID                        `json:"latest_diff_id,omitempty"`
-	LatestUsageID         ID                        `json:"latest_usage_id,omitempty"`
-	LatestResponseUsageID ID                        `json:"latest_response_usage_id,omitempty"`
-	NoticeCount           uint64                    `json:"notice_count,omitempty"`
-	LastNotice            NativeNotice              `json:"last_notice,omitempty"`
-	CleanupVerified       bool                      `json:"cleanup_verified,omitempty"`
-	Waiting               NativeWaiting             `json:"waiting"`
-	UnconfirmedResponses  uint32                    `json:"unconfirmed_responses,omitempty"`
+	JobID                  ID                        `json:"job_id"`
+	ExecutionID            ID                        `json:"execution_id"`
+	InputID                ID                        `json:"input_id"`
+	AcceptedInputs         []ExecutionInputBinding   `json:"accepted_inputs,omitempty"`
+	SteerAttempts          uint32                    `json:"steer_attempts,omitempty"`
+	LastSequence           uint64                    `json:"last_sequence"`
+	NativeThreadID         string                    `json:"native_thread_id"`
+	NativeTurnID           string                    `json:"native_turn_id,omitempty"`
+	Observed               ObservedExecutionSettings `json:"observed"`
+	Outcome                ExecutionOutcome          `json:"outcome"`
+	LatestWorkspaceEventID ID                        `json:"latest_workspace_event_id,omitempty"`
+	LatestTodoID           ID                        `json:"latest_todo_id,omitempty"`
+	LatestPlanID           ID                        `json:"latest_plan_id,omitempty"`
+	LatestDiffID           ID                        `json:"latest_diff_id,omitempty"`
+	LatestUsageID          ID                        `json:"latest_usage_id,omitempty"`
+	LatestResponseUsageID  ID                        `json:"latest_response_usage_id,omitempty"`
+	NoticeCount            uint64                    `json:"notice_count,omitempty"`
+	LastNotice             NativeNotice              `json:"last_notice,omitempty"`
+	CleanupVerified        bool                      `json:"cleanup_verified,omitempty"`
+	Waiting                NativeWaiting             `json:"waiting"`
+	UnconfirmedResponses   uint32                    `json:"unconfirmed_responses,omitempty"`
 }
 
 type ExecutionMessage struct {

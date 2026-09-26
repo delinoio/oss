@@ -106,6 +106,9 @@ func publishExecutionProgress(tx *store.Tx, input domain.ExecutionJobInput, sess
 	if update.Progress.Kind == domain.OpenCodeChangesProgressKind {
 		nativeEvent = update.Progress.Changes.NativeEventID
 	}
+	if update.Progress.Kind == domain.OpenCodeWorkspaceProgressKind {
+		nativeEvent = update.Progress.Workspace.NativeEventID
+	}
 	if nativeEvent != "" {
 		if err := tx.CheckOpenCodeProgressEvent(session.ID, input.ExecutionID, nativeEvent); err != nil {
 			return err
@@ -115,6 +118,8 @@ func publishExecutionProgress(tx *store.Tx, input domain.ExecutionJobInput, sess
 		return err
 	}
 	switch update.Progress.Kind {
+	case domain.OpenCodeWorkspaceProgressKind:
+		progress.LatestWorkspaceEventID = update.ID
 	case domain.OpenCodeTodoProgressKind:
 		progress.LatestTodoID = update.ID
 	case domain.PlanProgress:

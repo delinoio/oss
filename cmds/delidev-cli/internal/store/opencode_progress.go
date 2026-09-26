@@ -16,7 +16,7 @@ func (t *Tx) CheckOpenCodeProgressEvent(session, execution domain.ID, event stri
 		return domain.Fail(domain.ResourceExhausted, "Native progress retention reached its session bound.", "Retain original evidence without truncation.")
 	}
 	var exists bool
-	err := t.tx.QueryRowContext(t.ctx, `SELECT EXISTS(SELECT 1 FROM entities WHERE kind=? AND session_id=? AND json_extract(body,'$.execution_id')=? AND (json_extract(body,'$.progress.todo.native_event_id')=? OR json_extract(body,'$.progress.changes.native_event_id')=?))`, domain.MessageKind, session, execution, event, event).Scan(&exists)
+	err := t.tx.QueryRowContext(t.ctx, `SELECT EXISTS(SELECT 1 FROM entities WHERE kind=? AND session_id=? AND json_extract(body,'$.execution_id')=? AND (json_extract(body,'$.progress.todo.native_event_id')=? OR json_extract(body,'$.progress.changes.native_event_id')=? OR json_extract(body,'$.progress.workspace.native_event_id')=?))`, domain.MessageKind, session, execution, event, event, event).Scan(&exists)
 	if err != nil {
 		return storageError(err)
 	}

@@ -37,10 +37,11 @@ type inputObservation struct {
 	Error              *NativeError
 	Repeated           bool
 	MessageFinalized   bool
-	Todo               *NativeTodoUpdate       `json:"-"`
-	Ancillary          json.RawMessage         `json:"-"`
-	Interaction        *NativeInteraction      `json:"-"`
-	InteractionReply   *NativeInteractionReply `json:"-"`
+	WorkspaceEvent     *domain.OpenCodeWorkspaceEvent `json:"-"`
+	Todo               *NativeTodoUpdate              `json:"-"`
+	Ancillary          json.RawMessage                `json:"-"`
+	Interaction        *NativeInteraction             `json:"-"`
+	InteractionReply   *NativeInteractionReply        `json:"-"`
 	RejectionSources   []string
 	AlwaysObservations []string
 }
@@ -280,6 +281,35 @@ func (o *inputObserver) observe(ctx context.Context, event NativeEvent) (inputOb
 		} else {
 			result.Ancillary = slices.Clone(event.Properties)
 		}
+	case FileEditedEvent, FileWatcherUpdatedEvent:
+		required := []string{"file"}
+		if event.Kind == FileWatcherUpdatedEvent {
+			required = append(required, "event")
+		}
+		if _, problem := shape(event.Properties, required, nil); problem != nil {
+			err = observerProblem()
+			break
+		}
+		file, valid := boundedString(fields["file"], 32768, true)
+		kind := domain.OpenCodeFileEdited
+		if event.Kind == FileWatcherUpdatedEvent {
+			switch {
+			case scalar(fields["event"], "add"):
+				kind = domain.OpenCodeFileAdded
+			case scalar(fields["event"], "change"):
+				kind = domain.OpenCodeFileChanged
+			case scalar(fields["event"], "unlink"):
+				kind = domain.OpenCodeFileUnlinked
+			default:
+				err = observerProblem()
+			}
+		}
+		if !valid {
+			err = observerProblem()
+		}
+		if err == nil {
+			result.WorkspaceEvent = &domain.OpenCodeWorkspaceEvent{Kind: kind, NativeEventID: event.ID, File: file}
+		}
 	case TodoUpdatedEvent:
 		stage = "todo"
 		var todos []domain.OpenCodeTodo
@@ -315,7 +345,7 @@ func (o *inputObserver) observe(ctx context.Context, event NativeEvent) (inputOb
 		} else {
 			result.Error, err = decodeNativeError(fields["error"])
 		}
-	case ServerHeartbeatEvent, ModelsDevRefreshedEvent, CatalogUpdatedEvent, ReferenceUpdatedEvent, IntegrationUpdatedEvent:
+	case LspUpdatedEvent, ServerHeartbeatEvent, ModelsDevRefreshedEvent, CatalogUpdatedEvent, ReferenceUpdatedEvent, IntegrationUpdatedEvent:
 		_, err = shape(event.Properties, nil, nil)
 	case PluginAddedEvent, IntegrationConnectionUpdatedEvent:
 		key := "id"
