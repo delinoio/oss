@@ -1,12 +1,19 @@
 use fspy_shared::ipc::AccessMode;
 use libc::{c_char, c_int, dev_t, mode_t, off_t, timespec, timeval, utimbuf};
 
+#[cfg(target_os = "macos")]
+use crate::operation;
 use crate::{
     client::{convert::PathAt, handle_open},
     macros::intercept,
 };
 
 unsafe fn track_path(path: *const c_char) {
+    #[cfg(target_os = "macos")]
+    // SAFETY: path is the caller's pathname passed unchanged to libc.
+    unsafe {
+        operation::mutation_path(libc::AT_FDCWD, path);
+    }
     if !path.is_null() {
         // SAFETY: a non-null path passed to the intercepted libc call is a C string.
         unsafe { handle_open(fspy_nostd::CStr::from_ptr(path.cast()), AccessMode::WRITE) };
@@ -14,6 +21,11 @@ unsafe fn track_path(path: *const c_char) {
 }
 
 unsafe fn track_path_at(dirfd: c_int, path: *const c_char) {
+    #[cfg(target_os = "macos")]
+    // SAFETY: path and descriptor are passed unchanged to libc.
+    unsafe {
+        operation::mutation_path(dirfd, path);
+    }
     if !path.is_null() {
         // SAFETY: the descriptor and non-null path are forwarded from the caller.
         unsafe { handle_open(PathAt::borrow_raw(dirfd, path), AccessMode::WRITE) };
@@ -31,11 +43,16 @@ macro_rules! intercept_mutation {
     };
     (@function $name:ident($($arg:ident: $ty:ty),*), $record:block) => {
         unsafe extern "C" fn $name($($arg: $ty),*) -> c_int {
+            #[cfg(target_os = "macos")]
+            operation::begin_mutation();
             // SAFETY: each path comes from the intercepted libc call and is
             // inspected only while that call's arguments remain alive.
             unsafe { $record }
             // SAFETY: forward every original argument without modification.
-            unsafe { $name::original()($($arg),*) }
+            let result = unsafe { $name::original()($($arg),*) };
+            #[cfg(target_os = "macos")]
+            operation::end_mutation(i64::from(result));
+            result
         }
     };
 }

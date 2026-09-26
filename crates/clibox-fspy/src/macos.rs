@@ -133,6 +133,9 @@ mod tests {
         assert!(frames
             .iter()
             .any(|frame| { frame.kind == b'e' && frame.operation == 8 && frame.result >= 0 }));
+        assert!(frames
+            .iter()
+            .any(|frame| { frame.kind == b'e' && frame.operation == 9 && frame.result == 0 }));
     }
 
     #[test]
@@ -144,5 +147,6 @@ mod tests {
         assert_eq!(fs::read(&path).unwrap(), b"fixture");
         assert_eq!(fs::metadata(&path).unwrap().len(), 7);
         assert!(fs::read_dir(path.parent().unwrap()).unwrap().count() > 0);
+        fs::rename(&path, path.with_extension("moved")).unwrap();
     }
 }

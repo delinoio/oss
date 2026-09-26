@@ -34,6 +34,7 @@ thread_local! {
     static STREAM: RefCell<Option<UnixStream>> = const { RefCell::new(None) };
     static ACTIVE: Cell<bool> = const { Cell::new(false) };
     static NEXT_ID: Cell<u64> = const { Cell::new(1) };
+    static MUTATIONS: RefCell<Vec<Vec<Token>>> = const { RefCell::new(Vec::new()) };
 }
 
 #[derive(Clone, Copy)]
@@ -46,6 +47,7 @@ pub enum Kind {
     PositionalWrite = 6,
     Metadata = 7,
     Directory = 8,
+    Mutation = 9,
 }
 
 pub struct Token {
@@ -303,4 +305,40 @@ pub fn finish(token: Option<Token>, result: i64) {
     leave(token, result, if result < 0 { error } else { 0 });
     // SAFETY: side-channel I/O must not alter the intercepted call's errno.
     unsafe { *libc::__error() = error };
+}
+
+pub fn begin_mutation() {
+    if socket_path().is_some() {
+        MUTATIONS.with(|stack| stack.borrow_mut().push(Vec::new()));
+    }
+}
+
+pub unsafe fn mutation_path(dirfd: c_int, path: *const c_char) {
+    if socket_path().is_none() {
+        return;
+    }
+    // SAFETY: this is the caller's pathname passed unchanged to libc.
+    if let Some(token) = unsafe { enter_at(Kind::Mutation, dirfd, path) } {
+        MUTATIONS.with(|stack| {
+            if let Some(tokens) = stack.borrow_mut().last_mut() {
+                tokens.push(token);
+            } else {
+                mark_incomplete();
+            }
+        });
+    }
+}
+
+pub fn end_mutation(result: i64) {
+    if socket_path().is_none() {
+        return;
+    }
+    let tokens = MUTATIONS.with(|stack| stack.borrow_mut().pop());
+    if let Some(tokens) = tokens {
+        for token in tokens {
+            finish(Some(token), result);
+        }
+    } else {
+        mark_incomplete();
+    }
 }
