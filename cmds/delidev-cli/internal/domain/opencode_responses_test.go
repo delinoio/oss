@@ -64,7 +64,7 @@ func TestOpenCodeResponseDecodeRejectsAmbiguousOrMixedShapes(t *testing.T) {
 			t.Fatal("invalid native answer was accepted")
 		}
 	}
-	for _, raw := range []string{`{"opencode":{"decision":"always"}}`, `{"opencode":{"decision":"reject"}}`, `{"opencode":{"decision":"once","feedback":"text"}}`, `{"opencode":{"Decision":"once"}}`} {
+	for _, raw := range []string{`{"opencode":{"decision":"unknown"}}`, `{"opencode":{"decision":"once","feedback":"text"}}`, `{"opencode":{"Decision":"once"}}`} {
 		var response ApprovalResponseInput
 		if Decode([]byte(raw), &response) == nil {
 			t.Fatal("unimplemented native permission profile was accepted")

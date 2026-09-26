@@ -85,3 +85,28 @@ it("refuses a closed permission request", () => {
   fireEvent.submit(screen.getByRole("button", { name: "Allow once" }).closest("form")!);
   expect(f.send).not.toHaveBeenCalled();
 });
+
+it("rejects a question through its dedicated native response without inventing empty answers", async () => {
+  const f = fixture(); render(f.questions());
+  fireEvent.click(screen.getByRole("button", { name: "Reject question request" }));
+  await waitFor(() => expect(f.send).toHaveBeenCalledTimes(1));
+  expect(decoded(f.send.mock.calls[0][0])).toEqual({ opencode: { reject: true } });
+});
+
+it("keeps correction feedback exclusive to an explicit rejection", async () => {
+  const f = fixture(); render(f.permission());
+  fireEvent.click(screen.getByRole("checkbox", { name: "Include correction feedback with rejection" }));
+  fireEvent.change(screen.getByRole("textbox"), { target: { value: " Original correction\n" } });
+  fireEvent.click(screen.getByRole("button", { name: "Reject permission request" }));
+  await waitFor(() => expect(f.send).toHaveBeenCalledTimes(1));
+  expect(decoded(f.send.mock.calls[0][0])).toEqual({ opencode: { decision: "reject", feedback: " Original correction\n" } });
+});
+
+it("does not attach entered feedback to a native session allowance", async () => {
+  const f = fixture(); render(f.permission());
+  fireEvent.click(screen.getByRole("checkbox", { name: "Include correction feedback with rejection" }));
+  fireEvent.change(screen.getByRole("textbox"), { target: { value: "Not rejection" } });
+  fireEvent.click(screen.getByRole("button", { name: "Allow for this native session" }));
+  await waitFor(() => expect(f.send).toHaveBeenCalledTimes(1));
+  expect(decoded(f.send.mock.calls[0][0])).toEqual({ opencode: { decision: "always" } });
+});

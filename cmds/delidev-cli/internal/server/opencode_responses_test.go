@@ -10,13 +10,23 @@ import (
 )
 
 func openCodeResponseFixture(t *testing.T, question bool) (*publicationFixture, domain.ExecutionEvent, domain.ExecutionEvent) {
+	return openCodeResponsePolicyFixture(t, question, domain.OpenCodePermissionResponse{Decision: domain.OpenCodePermissionOnce}, false)
+}
+
+func openCodeResponsePolicyFixture(t *testing.T, question bool, permission domain.OpenCodePermissionResponse, rejectQuestion bool) (*publicationFixture, domain.ExecutionEvent, domain.ExecutionEvent) {
 	t.Helper()
 	f, proposal, _ := openCodeInteractionPublicationFixture(t, question)
+	if !question && permission.Decision == domain.OpenCodePermissionAlways {
+		proposal.Interaction.OpenCode.Permission.Always = []string{"original/*"}
+	}
 	f.registerGrant(t)
 	f.publish(t, proposal)
 	id, response, claim := proposal.Interaction.ID, domain.NewID(), domain.NewID()
 	qi := domain.QuestionResponseInput{OpenCode: &domain.OpenCodeQuestionResponse{Answers: [][]string{{"Original reply"}}}}
-	ai := domain.ApprovalResponseInput{OpenCode: &domain.OpenCodePermissionResponse{Decision: domain.OpenCodePermissionOnce}}
+	if rejectQuestion {
+		qi.OpenCode = &domain.OpenCodeQuestionResponse{Reject: true}
+	}
+	ai := domain.ApprovalResponseInput{OpenCode: &permission}
 	var err error
 	var digest string
 	if question {
@@ -44,6 +54,9 @@ func openCodeResponseFixture(t *testing.T, question bool) (*publicationFixture, 
 	if question {
 		delivery.QuestionResponse = &domain.ExecutionQuestionResponseUpdate{InteractionID: id, ResponseID: response, ClaimID: claim, NativeItemID: proposal.Interaction.NativeItemID, Delivery: domain.QuestionTransmitted}
 		accepted.QuestionAcceptance = &domain.ExecutionQuestionAcceptanceUpdate{InteractionID: id, ResponseID: response, ClaimID: claim, NativeItemID: proposal.Interaction.NativeItemID, Evidence: domain.NativeOpenCodeQuestionReply, OpenCode: evidence}
+		if rejectQuestion {
+			accepted.QuestionAcceptance.Evidence = domain.NativeOpenCodeQuestionRejected
+		}
 	} else {
 		delivery.Kind = domain.ExecutionApprovalDeliveryObserved
 		delivery.ApprovalResponse = &domain.ExecutionApprovalResponseUpdate{InteractionID: id, ResponseID: response, ClaimID: claim, NativeItemID: proposal.Interaction.NativeItemID, Delivery: domain.ApprovalTransmitted}

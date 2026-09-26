@@ -84,6 +84,14 @@ const (
 	nativeQuestionResponsePublication
 	nativePermissionResponseLostAckPublication
 	nativeQuestionResponseLostAckPublication
+	nativePermissionAlwaysPublication
+	nativePermissionRejectPublication
+	nativeQuestionRejectPublication
+	nativePermissionCorrectionPublication
+	nativePermissionEmptyCorrectionPublication
+	nativePermissionAlwaysCascadePublication
+	nativePermissionRejectCascadePublication
+	nativePermissionCorrectionCascadePublication
 )
 
 func TestManualNativeOpenCodePublishesRegisteredText(t *testing.T) {
@@ -151,6 +159,9 @@ func TestManualNativeOpenCodePublishesOriginalInteractionProposals(t *testing.T)
 }
 
 func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool, publication nativeOpenCodePublication) {
+	policyProfile := isNativeOpenCodePolicy(publication)
+	cascadeProfile := isNativeOpenCodeCascade(publication)
+	var cascadePaths atomic.Value
 	builtinName := domain.OpenCodeBuiltinName("")
 	switch publication {
 	case nativeWritePublication:
@@ -163,11 +174,11 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 		builtinName = domain.OpenCodeGlob
 	case nativeGrepPublication:
 		builtinName = domain.OpenCodeGrep
-	case nativeQuestionProposalPublication, nativeQuestionResponsePublication, nativeQuestionResponseLostAckPublication:
+	case nativeQuestionProposalPublication, nativeQuestionResponsePublication, nativeQuestionResponseLostAckPublication, nativeQuestionRejectPublication:
 		builtinName = domain.OpenCodeQuestionTool
 	}
 	responseLostAck := publication == nativePermissionResponseLostAckPublication || publication == nativeQuestionResponseLostAckPublication
-	interactionResponse := publication == nativePermissionResponsePublication || publication == nativeQuestionResponsePublication || responseLostAck
+	interactionResponse := publication == nativePermissionResponsePublication || publication == nativeQuestionResponsePublication || responseLostAck || policyProfile
 	interactionProposal := publication == nativePermissionProposalPublication || publication == nativeQuestionProposalPublication || interactionResponse
 	builtinTool := builtinName.Valid()
 	builtinFailure := publication == nativeEditFailurePublication
@@ -202,12 +213,21 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 	case nativeReadPublication, nativeReadFailurePublication, nativeReadDirectoryPublication, nativeUsagePublication, nativeTerminalPublication, nativeTerminalLostAckPublication, nativeCompletionPublication, nativePermissionProposalPublication, nativePermissionResponsePublication, nativePermissionResponseLostAckPublication:
 		readTool = true
 	}
+	if policyProfile && publication != nativeQuestionRejectPublication {
+		readTool = true
+	}
 	if publication == nativeShellTruncatedPublication {
 		shellCommand = `i=0; while [ "$i" -lt 3000 ]; do printf 'Original native Shell fixture.\n'; i=$((i + 1)); done; printf 'Original stderr fixture.' >&2`
 	}
 	expectedCalls := int32(1)
 	if readTool || shellTool || todoTool || builtinTool {
 		expectedCalls = 2
+	}
+	if nativeOpenCodePolicyStops(publication) {
+		expectedCalls = 1
+	}
+	if publication == nativePermissionAlwaysCascadePublication {
+		expectedCalls = 3
 	}
 	if interactionProposal && !interactionResponse {
 		expectedCalls = 1
@@ -237,11 +257,7 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 		var body struct {
 			Model    string
 			Stream   bool
-			Messages []struct {
-				Role       string
-				Content    json.RawMessage
-				ToolCallID string `json:"tool_call_id"`
-			}
+			Messages []nativeOpenCodeProviderMessage
 		}
 		if err != nil || json.Unmarshal(raw, &body) != nil || body.Model != fixtureModel || !body.Stream || r.URL.Path != "/chat/completions" || r.Header.Get("Authorization") != "Bearer temporary-upstream-fixture-key" || r.Header.Get("HTTP-Referer") != "https://deli.dev" {
 			t.Error("native registered request lost its exact model or server-owned account key")
@@ -294,6 +310,10 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 			return
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
+		if cascadeProfile {
+			serveNativeOpenCodeCascade(t, w, body.Messages, cascadePaths.Load().([]string), publication, call)
+			return
+		}
 		if (readTool || shellTool || todoTool || builtinTool) && call == 1 {
 			name, callID := "read", "call_registered_read"
 			var args []byte
@@ -351,6 +371,9 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 				case domain.OpenCodeQuestionTool:
 					sentinel = "First"
 				}
+			}
+			if publication == nativePermissionCorrectionPublication {
+				sentinel = nativePolicyCorrection
 			}
 			results := 0
 			for _, message := range body.Messages {
@@ -444,7 +467,7 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 	}
 	if readTool {
 		path := filepath.Join(workspace, readSentinel)
-		if publication == nativePermissionProposalPublication || publication == nativePermissionResponsePublication || publication == nativePermissionResponseLostAckPublication {
+		if publication == nativePermissionProposalPublication || publication == nativePermissionResponsePublication || publication == nativePermissionResponseLostAckPublication || policyProfile {
 			path = filepath.Join(workspace, ".env.private-fixture")
 		}
 		if publication == nativeReadDirectoryPublication {
@@ -457,6 +480,17 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 			}
 		}
 		readPath.Store(path)
+	}
+	if cascadeProfile {
+		paths := []string{}
+		for i := 0; i < 3; i++ {
+			path := filepath.Join(workspace, fmt.Sprintf(".env.cascade-%d", i))
+			if err := os.WriteFile(path, []byte(readSentinel), 0600); err != nil {
+				t.Fatal(err)
+			}
+			paths = append(paths, path)
+		}
+		cascadePaths.Store(paths)
 	}
 	agent, err := f.input.Configuration.Options.OpenCodePrimaryForInput(mode)
 	if err != nil {
@@ -686,6 +720,7 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 	}
 	var result string
 	var final *opencode.NativeMessage
+	var cascadeRequests []store.Record
 	for count := 0; count < 256; count++ {
 		observation, err := api.Next(ctx)
 		if err != nil {
@@ -694,7 +729,9 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 		if err := publishObservation(observation); err != nil {
 			t.Fatal(err)
 		}
-		if interactionProposal && observation.Interaction != nil {
+		if cascadeProfile && observation.Interaction != nil {
+			cascadeRequests = observeNativeOpenCodeCascade(t, ctx, f, eventPublisher, observation, cascadeRequests, publication)
+		} else if interactionProposal && observation.Interaction != nil {
 			rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.InteractionKind, SessionID: f.input.SessionID, Limit: 10})
 			if err != nil || len(rows) != 1 {
 				t.Fatal("original native proposal did not retain one interaction")
@@ -724,7 +761,7 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 			if responseLostAck {
 				publicationClient.dropAt = len(publicationClient.calls) + 1
 			}
-			respondOriginalOpenCodeFixture(t, ctx, f, eventPublisher, rows[0], retained, responseLostAck)
+			respondOriginalOpenCodeFixture(t, ctx, f, eventPublisher, rows[0], retained, responseLostAck, publication)
 			if responseLostAck {
 				original := publicationClient.calls[len(publicationClient.calls)-1]
 				if err := executionPublisher.ReplayPending(ctx); err != nil {
@@ -762,6 +799,10 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 		if progress.SettledObserved {
 			break
 		}
+	}
+	if policyProfile {
+		verifyNativeOpenCodePolicy(t, ctx, f, api, eventPublisher, claimsPath, publication, calls.Load(), expectedCalls)
+		return
 	}
 	progress, err := api.Progress(ctx)
 	if err != nil || !progress.SettledObserved || progress.NeedsRecovery || final == nil || final.Assistant == nil || (!authFailure && (final.Assistant.Error != nil || result != "Registered OpenCode fixture completed.")) || calls.Load() != expectedCalls || len(claims) != 2 {

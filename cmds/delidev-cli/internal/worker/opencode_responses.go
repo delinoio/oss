@@ -32,8 +32,13 @@ type openCodeResponseJournal struct {
 }
 
 type openCodeResponseAttempt struct {
-	journal  openCodeResponseJournal
-	accepted bool
+	journal           openCodeResponseJournal
+	accepted          bool
+	original          domain.ExecutionInteractionUpdate
+	decision          domain.OpenCodePermissionDecision
+	rejected          bool
+	correction        bool
+	feedbackRequested bool
 }
 
 func (c *OpenCodeEventPublisher) DeliverQuestionResponse(ctx, publicationCtx context.Context, control *pb.QuestionResponseControl) error {
@@ -127,14 +132,18 @@ func (c *OpenCodeEventPublisher) deliverOpenCodeResponse(ctx, publicationCtx con
 			return c.fail(publicationUncertain())
 		}
 		claim, question, native.Answers = r.Claim, r.Input.OpenCode, r.Input.OpenCode.Answers
+		native.Reject = question.Reject
+		if native.Reject {
+			mutation = opencode.RejectQuestionMutation
+		}
 	} else {
 		r := value.ApprovalResponse
 		if value.Response != nil || r == nil || r.ID != identity.ResponseID || r.State != domain.ApprovalResponseClaimed || r.Delivery != nil || r.Acceptance != nil || r.Input.ValidateInteraction(value) != nil {
 			return c.fail(publicationUncertain())
 		}
 		claim, permission = r.Claim, r.Input.OpenCode
-		decision := opencode.PermissionOnce
-		native.Decision, mutation = &decision, opencode.ReplyPermissionMutation
+		decision := opencode.PermissionDecision(permission.Decision)
+		native.Decision, native.Feedback, mutation = &decision, permission.Feedback, opencode.ReplyPermissionMutation
 	}
 	if claim == nil || claim.ID != journal.ClaimID || claim.JobID != identity.JobID || claim.MachineID != config.Credential.MachineID || claim.InstanceID != config.Instance || claim.DeviceID != config.Credential.DeviceID {
 		return c.fail(publicationUncertain())
@@ -162,7 +171,13 @@ func (c *OpenCodeEventPublisher) deliverOpenCodeResponse(ctx, publicationCtx con
 	if !valid {
 		return c.fail(publicationUncertain())
 	}
-	attempt := &openCodeResponseAttempt{journal: journal}
+	attempt := &openCodeResponseAttempt{journal: journal, original: original, rejected: question != nil && question.Reject}
+	if permission != nil {
+		attempt.decision = permission.Decision
+		attempt.rejected = permission.Decision == domain.OpenCodePermissionReject
+		attempt.feedbackRequested = permission.Feedback != nil
+		attempt.correction = permission.Feedback != nil && *permission.Feedback != ""
+	}
 	if c.responses == nil {
 		c.responses = map[string]*openCodeResponseAttempt{}
 	}
@@ -174,7 +189,7 @@ func (c *OpenCodeEventPublisher) deliverOpenCodeResponse(ctx, publicationCtx con
 	claims, err = b.readClaims()
 	valid = err == nil && b.validPublicationClaims(claims) && b.expectedReply == nil && len(b.replyClaims) != 0 && b.replyClaims[len(b.replyClaims)-1] == journal.Native
 	b.mu.Unlock()
-	delivered := valid && receipt.RequestID == identity.ResponseID && receipt.InputRequestID == b.reference.InputRequestID && receipt.InteractionID == original.NativeRequestID.Text && receipt.ArrivalID == original.OpenCode.NativeEventID && receipt.HTTPAccepted && !receipt.FeedbackRequested
+	delivered := valid && receipt.RequestID == identity.ResponseID && receipt.InputRequestID == b.reference.InputRequestID && receipt.InteractionID == original.NativeRequestID.Text && receipt.ArrivalID == original.OpenCode.NativeEventID && receipt.HTTPAccepted && receipt.FeedbackRequested == attempt.feedbackRequested
 	attempt.journal.State, attempt.journal.HTTPAccepted = responseObserved, delivered
 	if writeJSON(path, attempt.journal) != nil {
 		return c.fail(publicationUncertain())

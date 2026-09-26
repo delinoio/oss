@@ -15,7 +15,7 @@ func (c *OpenCodeEventPublisher) publishInteractionRequest(ctx context.Context, 
 	defer b.mu.Unlock()
 	claims, err := b.readClaims()
 	n := o.Interaction
-	if err != nil || !b.validPublicationClaims(claims) || b.stage != openCodeAccepted || c.text.blocked || n == nil || n.SessionID != b.thread || n.Tool == nil || c.interactions[n.ID].ID != "" || c.responses[n.ID] != nil || len(c.interactions) >= domain.MaxExecutionInteractions {
+	if err != nil || !b.validPublicationClaims(claims) || b.stage != openCodeAccepted || c.text.blocked || n == nil || n.SessionID != b.thread || n.Tool == nil || c.interactions[n.ID].ID != "" || c.responses[n.ID] != nil || c.closedInteractions[n.ID].original.ID != "" || len(c.interactions) >= domain.MaxExecutionInteractions {
 		return publicationUncertain()
 	}
 	part := c.text.tools[c.text.calls[n.Tool.CallID]]

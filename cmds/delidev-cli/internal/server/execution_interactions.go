@@ -69,7 +69,12 @@ func publishExecutionInteraction(tx *store.Tx, input domain.ExecutionJobInput, s
 	if keyErr != nil || newErr != nil || key != newKey || r.SessionID != session.ID || value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeItemID != u.NativeItemID || value.Type != u.Type || value.Closure != domain.InteractionOpen {
 		return false, executionEventConflict()
 	}
-	if value.OpenCode != nil && !((value.Response != nil && value.Response.State == domain.QuestionResponseAccepted) || (value.ApprovalResponse != nil && value.ApprovalResponse.State == domain.ApprovalResponseAccepted)) {
+	if u.OpenCodeClosure != nil {
+		if err := validateOpenCodePolicyClosure(tx, input, value, u.OpenCodeClosure); err != nil {
+			return false, err
+		}
+		value.OpenCodeClosure = u.OpenCodeClosure
+	} else if value.OpenCode != nil && !((value.Response != nil && value.Response.State == domain.QuestionResponseAccepted) || (value.ApprovalResponse != nil && value.ApprovalResponse.State == domain.ApprovalResponseAccepted)) {
 		return false, executionEventConflict()
 	}
 	return closePublishedInteraction(tx, r, value, u.Closure, event.Sequence)

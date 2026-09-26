@@ -53,7 +53,7 @@ func (r *QuestionResponseInput) UnmarshalJSON(raw []byte) error {
 }
 
 func invalidQuestionResponse() error {
-	return Fail(InvalidArgument, "The response does not match its original questions.", "Answer every original question identity with offered options or supported free text, using an explicit empty array for no answer; do not add approval or policy fields.")
+	return Fail(InvalidArgument, "The response does not match its original questions.", "Preserve every original question in its native response structure, using offered options or supported text and explicit empty arrays for unanswered questions.")
 }
 
 func (r QuestionResponseInput) Validate(original *QuestionRequest) error {
@@ -164,6 +164,7 @@ type QuestionAcceptanceEvidence string
 
 const NativeQuestionOutput QuestionAcceptanceEvidence = "native-question-output"
 const NativeOpenCodeQuestionReply QuestionAcceptanceEvidence = "native-opencode-question-reply"
+const NativeOpenCodeQuestionRejected QuestionAcceptanceEvidence = "native-opencode-question-rejected"
 
 type QuestionAcceptanceObservation struct {
 	OpenCode *OpenCodeReplyEvidence     `json:"opencode,omitempty"`
@@ -188,7 +189,7 @@ func (u ExecutionQuestionAcceptanceUpdate) Validate() error {
 	if err := Text(u.NativeItemID, "native question item", 1024, true); err != nil {
 		return err
 	}
-	if u.Evidence == NativeOpenCodeQuestionReply && u.OpenCode != nil {
+	if (u.Evidence == NativeOpenCodeQuestionReply || u.Evidence == NativeOpenCodeQuestionRejected) && u.OpenCode != nil {
 		return u.OpenCode.Validate(UserQuestionInteraction)
 	}
 	if u.OpenCode != nil || u.Evidence != NativeQuestionOutput {

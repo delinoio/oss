@@ -38,19 +38,30 @@ func (e OpenCodeReplyEvidence) Validate(kind InteractionType) error {
 // answers in delivery/acceptance metadata. The native adapter independently
 // compares this digest before its single HTTP mutation.
 func OpenCodeResponseDigest(question *OpenCodeQuestionResponse, permission *OpenCodePermissionResponse) (string, error) {
-	var value any
-	if question != nil && permission == nil && question.Answers != nil {
-		value = struct {
-			Answers [][]string `json:"answers"`
-		}{question.Answers}
-	} else if permission != nil && question == nil && permission.Decision == OpenCodePermissionOnce {
-		value = struct {
-			Reply OpenCodePermissionDecision `json:"reply"`
-		}{permission.Decision}
+	var raw []byte
+	var err error
+	if question != nil && permission == nil {
+		if question.Reject {
+			if question.Answers != nil {
+				return "", invalidInteraction()
+			}
+			// The native rejection endpoint receives no JSON body.
+		} else {
+			if question.Answers == nil {
+				return "", invalidInteraction()
+			}
+			raw, err = json.Marshal(struct {
+				Answers [][]string `json:"answers"`
+			}{question.Answers})
+		}
+	} else if permission != nil && question == nil && permission.validateValue() == nil {
+		raw, err = json.Marshal(struct {
+			Reply   OpenCodePermissionDecision `json:"reply"`
+			Message *string                    `json:"message,omitempty"`
+		}{permission.Decision, permission.Feedback})
 	} else {
 		return "", invalidInteraction()
 	}
-	raw, err := json.Marshal(value)
 	if err != nil {
 		return "", invalidInteraction()
 	}

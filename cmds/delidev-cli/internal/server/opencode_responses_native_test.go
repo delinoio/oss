@@ -21,14 +21,14 @@ func TestManualNativeOpenCodeDeliversOriginalResponses(t *testing.T) {
 	}
 }
 
-func respondOriginalOpenCodeFixture(t *testing.T, ctx context.Context, f *publicationFixture, publisher *worker.OpenCodeEventPublisher, row store.Record, original domain.ExecutionInteraction, lostAck bool) {
+func respondOriginalOpenCodeFixture(t *testing.T, ctx context.Context, f *publicationFixture, publisher *worker.OpenCodeEventPublisher, row store.Record, original domain.ExecutionInteraction, lostAck bool, publication nativeOpenCodePublication) {
 	t.Helper()
 	client := delidevv1connect.NewInteractionServiceClient(f.http.Client(), f.http.URL)
 	responseID := domain.NewID()
 	meta := &pb.Mutation{RequestId: string(responseID), Id: string(row.ID), ExpectedRevision: row.Revision}
 	var err error
 	if original.Type == domain.UserQuestionInteraction {
-		raw, _ := json.Marshal(domain.QuestionResponseInput{OpenCode: &domain.OpenCodeQuestionResponse{Answers: [][]string{{"Second", "First"}}}})
+		raw, _ := json.Marshal(nativePolicyQuestionResponse(publication))
 		response, e := client.RespondQuestion(ctx, ownerRequest(f.service.Identity, &pb.RespondQuestionRequest{Mutation: meta, ResponseJson: raw}))
 		if e != nil {
 			t.Fatal(e)
@@ -36,7 +36,7 @@ func respondOriginalOpenCodeFixture(t *testing.T, ctx context.Context, f *public
 		control := &pb.QuestionResponseControl{JobId: string(f.job), InteractionId: string(row.ID), ResponseId: string(responseID), Revision: response.Msg.Interaction.Revision}
 		err = publisher.DeliverQuestionResponse(ctx, ctx, control)
 	} else {
-		raw, _ := json.Marshal(domain.ApprovalResponseInput{OpenCode: &domain.OpenCodePermissionResponse{Decision: domain.OpenCodePermissionOnce}})
+		raw, _ := json.Marshal(nativePolicyPermissionResponse(publication))
 		response, e := client.RespondApproval(ctx, ownerRequest(f.service.Identity, &pb.RespondApprovalRequest{Mutation: meta, ResponseJson: raw}))
 		if e != nil {
 			t.Fatal(e)

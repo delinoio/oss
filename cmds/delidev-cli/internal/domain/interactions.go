@@ -134,6 +134,7 @@ func (r QuestionRequest) Validate() error {
 // closure only. Response claims/delivery require a separate coordinator path;
 // a Worker cannot fabricate owner authorization by adding answer fields here.
 type ExecutionInteractionUpdate struct {
+	OpenCodeClosure *OpenCodePolicyClosure      `json:"opencode_closure,omitempty"`
 	OpenCode        *OpenCodeInteractionRequest `json:"opencode,omitempty"`
 	ID              ID                          `json:"id"`
 	NativeItemID    string                      `json:"native_item_id"`
@@ -157,7 +158,7 @@ func (u ExecutionInteractionUpdate) Validate(kind ExecutionEventKind) error {
 	}
 	switch kind {
 	case ExecutionInteractionRequested:
-		if u.Closure != "" {
+		if u.Closure != "" || u.OpenCodeClosure != nil {
 			return invalidInteraction()
 		}
 		if u.OpenCode != nil {
@@ -172,6 +173,9 @@ func (u ExecutionInteractionUpdate) Validate(kind ExecutionEventKind) error {
 			return invalidInteraction()
 		}
 	case ExecutionInteractionClosed:
+		if u.OpenCodeClosure != nil && (u.Type != NativeApprovalInteraction || u.NativeRequestID.Kind != InteractionTextID || NativeIdentity(u.NativeRequestID.Text).Validate(OpenCode, NativePermissionIdentity) != nil || u.OpenCodeClosure.Validate() != nil) {
+			return invalidInteraction()
+		}
 		if u.OpenCode != nil || u.Questions != nil || u.Approval != nil || u.Closure != InteractionNativeClosed {
 			return invalidInteraction()
 		}
@@ -186,6 +190,7 @@ func (u ExecutionInteractionUpdate) Validate(kind ExecutionEventKind) error {
 }
 
 type ExecutionInteraction struct {
+	OpenCodeClosure  *OpenCodePolicyClosure      `json:"opencode_closure,omitempty"`
 	OpenCode         *OpenCodeInteractionRequest `json:"opencode,omitempty"`
 	ExecutionID      ID                          `json:"execution_id"`
 	NativeThreadID   string                      `json:"native_thread_id"`

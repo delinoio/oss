@@ -63,3 +63,31 @@ it("retains original content after its matching response is queued", () => {
   expect(screen.queryByText(/unavailable or inconsistent/)).toBeNull();
   expect(container.querySelector("input, button")).toBeNull();
 });
+
+function policyFixture() {
+  return { ...fixture(true), closure: "native-closed", opencode_closure: { native_event_id: "evt_01960dcbe1fcABCDEFGHIJKLMN", proposal_event_id: "evt_01960dcbe1faABCDEFGHIJKLMN", decision: "always", sources: [{ interaction_id: "01960dcb-e1fa-7000-8000-000000000001", native_request_id: "per_01960dcbe1fbABCDEFGHIJKLMN" }] } };
+}
+
+it.each(["always", "reject"])("shows automatic native %s without implying another direct response", (decision) => {
+  const data = policyFixture(); data.opencode_closure.decision = decision;
+  const { container } = render(<NativeInteraction data={data} />);
+  expect(screen.getByText(/No native response was sent for this request/)).toBeTruthy();
+  expect(screen.getByText(decision === "always" ? /automatically allowed/ : /automatically rejected/)).toBeTruthy();
+  expect(container.querySelector("button, input, textarea")).toBeNull();
+});
+
+it.each(["open", "proposal", "duplicate", "self", "namespace", "direct"])("refuses inconsistent native policy closure: %s", (changed) => {
+  const data: Record<string, unknown> = policyFixture();
+  const proof = data.opencode_closure as ReturnType<typeof policyFixture>["opencode_closure"];
+  switch (changed) {
+    case "open": data.closure = "open"; break;
+    case "proposal": proof.proposal_event_id = "evt_01960dcbe1ffABCDEFGHIJKLMN"; break;
+    case "duplicate": proof.sources.push({ ...proof.sources[0]! }); break;
+    case "self": proof.sources[0]!.native_request_id = fixture(true).native_request_id.text; break;
+    case "namespace": proof.sources[0]!.native_request_id = "que_01960dcbe1fbABCDEFGHIJKLMN"; break;
+    case "direct": data.approval_response = { state: "accepted", input: { opencode: { decision: "always" } } }; break;
+  }
+  const { container } = render(<NativeInteraction data={data} />);
+  expect(screen.getByText(/unavailable or inconsistent/)).toBeTruthy();
+  expect(container.querySelector("button, input, pre")).toBeNull();
+});

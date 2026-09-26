@@ -5,7 +5,7 @@ import { useRetainedMutation } from "./mutation";
 import { Problem } from "./ui";
 
 type NativeQuestion = { text: string; header: string; options: { label: string; description: string }[]; multiple?: boolean; custom?: boolean };
-enum NativePermissionDecision { Once = "once" }
+enum NativePermissionDecision { Once = "once", Always = "always", Reject = "reject" }
 const encoder = new TextEncoder();
 const validText = (v: string) => !v.includes("\0") && !/[\uD800-\uDFFF]/u.test(v) && encoder.encode(v).length <= 64 * 1024;
 
@@ -34,6 +34,7 @@ export function NativeQuestionResponse({ resource, questions, closed, accepted }
         <label className="checkbox"><input type="checkbox" checked={unanswered[i] ?? false} onChange={(event) => { setUnanswered({ ...unanswered, [i]: event.target.checked }); if (event.target.checked) { setSelected(selected.map((row, index) => index === i ? [] : row)); setCustomEnabled({ ...customEnabled, [i]: false }); } }} />Leave question {i + 1} unanswered</label>
       </fieldset>)}
       <button className="primary" disabled={missing || invalid || oversized}>Send answers</button>
+      <button type="button" onClick={() => { if (blocked) return; void mutation.send({ mutation: { id: resource.id, expectedRevision: resource.revision, requestId: newRequestId() }, responseJson: encode({ opencode: { reject: true } }) }); }}>Reject question request</button>
     </fieldset>
     {invalid ? <p role="alert">Use valid, distinct answers that match each original question.</p> : null}
     {oversized ? <p role="alert">The complete response is too large. Shorten it without omitting question rows.</p> : null}
@@ -43,11 +44,27 @@ export function NativeQuestionResponse({ resource, questions, closed, accepted }
 }
 
 export function NativePermissionResponse({ resource, closed, accepted }: { resource: Resource; closed: boolean; accepted: (value?: Resource) => void }) {
+  const [feedbackEnabled, setFeedbackEnabled] = useState(false);
+  const [feedback, setFeedback] = useState("");
   const mutation = useRetainedMutation(`opencode-approve:${resource.id}`, InteractionQuery.respondApproval, (r) => accepted(r.interaction));
   const blocked = closed || mutation.busy || mutation.uncertain;
-  return <form aria-label="Respond to original OpenCode permission" onSubmit={(event) => { event.preventDefault(); if (blocked) return; void mutation.send({ mutation: { id: resource.id, expectedRevision: resource.revision, requestId: newRequestId() }, responseJson: encode({ opencode: { decision: NativePermissionDecision.Once } }) }); }}>
-    <p>This allows only the original permission request. Other native decisions are not supported yet.</p>
-    <button className="primary" disabled={blocked}>Allow once</button><Problem error={mutation.error} />
+  const rejection = { opencode: { decision: NativePermissionDecision.Reject, ...(feedbackEnabled ? { feedback } : {}) } };
+  const invalidFeedback = feedbackEnabled && (!validText(feedback) || encode(rejection).byteLength > 256 * 1024);
+  const send = (decision: NativePermissionDecision) => {
+    if (blocked || decision === NativePermissionDecision.Reject && invalidFeedback) return;
+    void mutation.send({ mutation: { id: resource.id, expectedRevision: resource.revision, requestId: newRequestId() }, responseJson: encode(decision === NativePermissionDecision.Reject ? rejection : { opencode: { decision } }) });
+  };
+  return <form aria-label="Respond to original OpenCode permission" onSubmit={(event) => event.preventDefault()}>
+    <p>Session allowance uses the native patterns listed above and applies only to this native session.</p>
+    <fieldset disabled={blocked}>
+      <button type="button" className="primary" onClick={() => send(NativePermissionDecision.Once)}>Allow once</button>
+      <button type="button" onClick={() => send(NativePermissionDecision.Always)}>Allow for this native session</button>
+      <label className="checkbox"><input type="checkbox" checked={feedbackEnabled} onChange={(event) => setFeedbackEnabled(event.target.checked)} />Include correction feedback with rejection</label>
+      {feedbackEnabled ? <label>Correction feedback<textarea value={feedback} onChange={(event) => setFeedback(event.target.value)} /><small>Nonempty feedback lets this tool rejection continue. Other pending requests may also be rejected and stop the native run.</small></label> : null}
+      <button type="button" disabled={invalidFeedback} onClick={() => send(NativePermissionDecision.Reject)}>Reject permission request</button>
+    </fieldset>
+    {invalidFeedback ? <p role="alert">Keep valid correction feedback within 64 KiB and the complete response within 256 KiB.</p> : null}
+    <Problem error={mutation.error} />
     {mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>Retry the same response request</button> : null}
   </form>;
 }

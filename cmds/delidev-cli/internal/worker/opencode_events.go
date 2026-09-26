@@ -13,21 +13,22 @@ import (
 // unimplemented family blocks terminal publication instead of disappearing from
 // an apparently complete transcript. Native cleanup/reporting remains separate.
 type OpenCodeEventPublisher struct {
-	mu               sync.Mutex
-	api              *opencode.OwnedAPI
-	text             *OpenCodeTextPublisher
-	usage            *OpenCodeUsagePublisher
-	seen             map[string]bool
-	final            string
-	finish           *opencode.FinishReason
-	problem          *opencode.NativeError
-	blocked          bool
-	finished         bool
-	terminalSequence uint64
-	terminalOutcome  domain.ExecutionOutcome
-	completion       *domain.ExecutionCompletion
-	interactions     map[string]domain.ExecutionInteractionUpdate
-	responses        map[string]*openCodeResponseAttempt
+	mu                 sync.Mutex
+	api                *opencode.OwnedAPI
+	text               *OpenCodeTextPublisher
+	usage              *OpenCodeUsagePublisher
+	seen               map[string]bool
+	final              string
+	finish             *opencode.FinishReason
+	problem            *opencode.NativeError
+	blocked            bool
+	finished           bool
+	terminalSequence   uint64
+	terminalOutcome    domain.ExecutionOutcome
+	completion         *domain.ExecutionCompletion
+	interactions       map[string]domain.ExecutionInteractionUpdate
+	responses          map[string]*openCodeResponseAttempt
+	closedInteractions map[string]openCodeClosedInteraction
 }
 
 func OpenOpenCodeEventPublisher(binding *OpenCodeBindingPublisher, api *opencode.OwnedAPI) (*OpenCodeEventPublisher, error) {
@@ -91,7 +92,7 @@ func (c *OpenCodeEventPublisher) PublishObservation(ctx context.Context, o openc
 			if err := c.publishWorkspaceEvent(ctx, o); err != nil {
 				return c.fail(err)
 			}
-		case opencode.PermissionRepliedEvent, opencode.QuestionRepliedEvent:
+		case opencode.PermissionRepliedEvent, opencode.QuestionRepliedEvent, opencode.QuestionRejectedEvent:
 			if err := c.publishInteractionReply(ctx, o); err != nil {
 				return c.fail(err)
 			}
@@ -211,7 +212,7 @@ func (c *OpenCodeEventPublisher) PublishTerminal(ctx context.Context) (domain.Ex
 	if err != nil {
 		return fail(err)
 	}
-	if len(c.interactions) != 0 || !progress.SettledObserved || !progress.TerminalObserved || !progress.UserSeen || !progress.InputPartSeen || !progress.IdleNotification || progress.Status != opencode.NativeStatusIdle || progress.NeedsRecovery || progress.RejectedInteraction || progress.StoppedOnRejection || progress.SessionID != b.thread || progress.MessageID != b.turn || progress.RequestID != b.reference.InputRequestID || progress.AssistantID != c.final {
+	if len(c.interactions) != 0 || !progress.SettledObserved || !progress.TerminalObserved || !progress.UserSeen || !progress.InputPartSeen || !progress.IdleNotification || progress.Status != opencode.NativeStatusIdle || progress.NeedsRecovery || progress.SessionID != b.thread || progress.MessageID != b.turn || progress.RequestID != b.reference.InputRequestID || progress.AssistantID != c.final {
 		return fail(publicationUncertain())
 	}
 	history, err := c.api.InspectHistory(ctx)
@@ -226,7 +227,14 @@ func (c *OpenCodeEventPublisher) PublishTerminal(ctx context.Context) (domain.Ex
 	if !valid {
 		return fail(publicationUncertain())
 	}
+	rejected, stopped := c.rejectionState()
+	if progress.RejectedInteraction != rejected || progress.StoppedOnRejection != stopped {
+		return fail(publicationUncertain())
+	}
 	outcome, code, err := openCodeTerminalOutcome(c.finish, c.problem)
+	if stopped && c.problem == nil {
+		outcome, code, err = domain.ExecutionStopped, domain.PermissionDenied, nil
+	}
 	if err != nil {
 		return fail(err)
 	}
