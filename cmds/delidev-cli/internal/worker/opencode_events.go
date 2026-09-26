@@ -111,8 +111,13 @@ func (c *OpenCodeEventPublisher) PublishObservation(ctx context.Context, o openc
 			c.finish = &value
 		}
 		if o.Message.Assistant.Error != nil {
-			value := *o.Message.Assistant.Error
-			value.Provider = ""
+			// Retain only classification inputs with owned values. Later caller
+			// mutation of an observation cannot change the terminal decision.
+			value := opencode.NativeError{Kind: o.Message.Assistant.Error.Kind}
+			if o.Message.Assistant.Error.StatusCode != nil {
+				status := *o.Message.Assistant.Error.StatusCode
+				value.StatusCode = &status
+			}
 			c.problem = &value
 		}
 	}
@@ -133,7 +138,19 @@ func openCodeTerminalOutcome(finish *opencode.FinishReason, problem *opencode.Na
 			return domain.ExecutionFailed, domain.ResourceExhausted, nil
 		case opencode.ContentErrorKind:
 			return domain.ExecutionFailed, domain.PermissionDenied, nil
-		case opencode.UnknownErrorKind, opencode.StructuredErrorKind, opencode.APIErrorKind:
+		case opencode.APIErrorKind:
+			if problem.StatusCode != nil {
+				switch *problem.StatusCode {
+				case 401:
+					return domain.ExecutionFailed, domain.Unauthenticated, nil
+				case 403:
+					return domain.ExecutionFailed, domain.PermissionDenied, nil
+				case 429:
+					return domain.ExecutionFailed, domain.ResourceExhausted, nil
+				}
+			}
+			return domain.ExecutionFailed, domain.Unavailable, nil
+		case opencode.UnknownErrorKind, opencode.StructuredErrorKind:
 			return domain.ExecutionFailed, domain.Unavailable, nil
 		default:
 			return "", "", unsupportedOpenCodeEvent() // Native interruption needs its original Stop adapter.

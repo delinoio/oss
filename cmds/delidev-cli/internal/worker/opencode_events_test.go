@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -134,5 +135,42 @@ func TestOpenCodeTerminalClassificationDoesNotInferSuccessfulTruncationOrStop(t 
 		if (err == nil) != (test.outcome != "") || outcome != test.outcome || code != test.code {
 			t.Fatal("native terminal classification changed", test.finish, test.problem)
 		}
+	}
+}
+
+func TestOpenCodeTerminalAPIStatusClassification(t *testing.T) {
+	for _, test := range []struct {
+		status uint64
+		code   domain.Code
+	}{
+		{http.StatusUnauthorized, domain.Unauthenticated},
+		{http.StatusForbidden, domain.PermissionDenied},
+		{http.StatusTooManyRequests, domain.ResourceExhausted},
+		{http.StatusBadRequest, domain.Unavailable},
+		{http.StatusInternalServerError, domain.Unavailable},
+	} {
+		status := test.status
+		finish := opencode.FinishStop
+		outcome, code, err := openCodeTerminalOutcome(&finish, &opencode.NativeError{Kind: opencode.APIErrorKind, StatusCode: &status})
+		if err != nil || outcome != domain.ExecutionFailed || code != test.code {
+			t.Fatalf("native API status %d lost failure precedence or classification", status)
+		}
+	}
+}
+
+func TestOpenCodeEventsOwnNativeFailureClassification(t *testing.T) {
+	f, c := newOpenCodeEventsFixture(t)
+	publishOpenCodeFixtureEvent(t, f, c, f.assistant(false))
+	publishOpenCodeFixtureEvent(t, f, c, usageStep(f, false))
+	final := f.assistant(true)
+	status := uint64(http.StatusUnauthorized)
+	final.Message.Assistant.Cost = "0"
+	final.Message.Assistant.Error = &opencode.NativeError{Kind: opencode.APIErrorKind, StatusCode: &status, Provider: "private-provider"}
+	publishOpenCodeFixtureEvent(t, f, c, final)
+	status = http.StatusInternalServerError
+	final.Message.Assistant.Error.Kind = opencode.UnknownErrorKind
+	outcome, code, err := openCodeTerminalOutcome(c.finish, c.problem)
+	if err != nil || outcome != domain.ExecutionFailed || code != domain.Unauthenticated || c.problem.Provider != "" {
+		t.Fatal("caller mutation changed the original native failure classification")
 	}
 }

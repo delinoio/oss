@@ -59,6 +59,7 @@ const (
 	nativeUsagePublication
 	nativeTerminalPublication
 	nativeTerminalLostAckPublication
+	nativeTerminalAuthFailurePublication
 )
 
 func TestManualNativeOpenCodePublishesRegisteredText(t *testing.T) {
@@ -87,10 +88,19 @@ func TestManualNativeOpenCodePublishesRegisteredTerminal(t *testing.T) {
 	}
 }
 
+func TestManualNativeOpenCodePublishesRegisteredAuthenticationFailure(t *testing.T) {
+	nativeRegisteredOpenCode(t, domain.ExecuteMode, false, nativeTerminalAuthFailurePublication)
+}
+
 func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool, publication nativeOpenCodePublication) {
 	publish := publication != nativeNoPublication
 	hasTranscript := publication >= nativeTextPublication
-	readTool := publication >= nativeReadPublication
+	authFailure := publication == nativeTerminalAuthFailurePublication
+	readTool := false
+	switch publication {
+	case nativeReadPublication, nativeReadFailurePublication, nativeReadDirectoryPublication, nativeUsagePublication, nativeTerminalPublication, nativeTerminalLostAckPublication:
+		readTool = true
+	}
 	expectedCalls := int32(1)
 	if readTool {
 		expectedCalls = 2
@@ -167,6 +177,13 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 			case <-ctx.Done():
 				t.Error("account revocation did not cancel the actual provider request")
 			}
+			return
+		}
+		if authFailure {
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("X-Request-Id", "temporary-upstream-fixture-key")
+			w.WriteHeader(http.StatusUnauthorized)
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"type": "invalid_api_key", "message": "temporary-upstream-fixture-key"}})
 			return
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -467,14 +484,24 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 		}
 	}
 	progress, err := api.Progress(ctx)
-	if err != nil || !progress.SettledObserved || progress.NeedsRecovery || final == nil || final.Assistant == nil || final.Assistant.Error != nil || result != "Registered OpenCode fixture completed." || calls.Load() != expectedCalls || len(claims) != 2 {
+	if err != nil || !progress.SettledObserved || progress.NeedsRecovery || final == nil || final.Assistant == nil || (!authFailure && (final.Assistant.Error != nil || result != "Registered OpenCode fixture completed.")) || calls.Load() != expectedCalls || len(claims) != 2 {
 		t.Fatal("registered native original input did not settle with its exact result")
+	}
+	if authFailure {
+		problem := final.Assistant.Error
+		if problem == nil || problem.Kind != opencode.APIErrorKind || problem.StatusCode == nil || *problem.StatusCode != http.StatusUnauthorized || result != "" {
+			t.Fatal("native credential rejection lost its original typed error or fabricated assistant text")
+		}
 	}
 	receipt, err := api.InspectInput(ctx)
 	if err != nil || !receipt.Recorded || receipt.SessionID != session || receipt.RequestID != f.input.TurnRequestID || receipt.MessageID != claims[1].MessageID || receipt.PartID != claims[1].PartID {
 		t.Fatal("registered native input lost its separately verified original storage")
 	}
 	expectedOutcome := domain.ExecutionRunning
+	terminalOutcome := domain.ExecutionSucceeded
+	if authFailure {
+		terminalOutcome = domain.ExecutionFailed
+	}
 	if eventPublisher != nil {
 		if publication == nativeTerminalLostAckPublication {
 			publicationClient.dropAt = len(publicationClient.calls) + 1
@@ -491,7 +518,7 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 			if publicationClient.calls[len(publicationClient.calls)-1] != original {
 				t.Fatal("terminal acknowledgment replay changed request identity")
 			}
-		} else if err != nil || outcome != domain.ExecutionSucceeded {
+		} else if err != nil || outcome != terminalOutcome {
 			t.Fatalf("original terminal publication failed: %v", err)
 		}
 		job, err := f.service.Store.Get(ctx, domain.JobKind, f.job)
@@ -499,7 +526,7 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 		if err != nil || decodeErr != nil || value.State != domain.JobClaimed {
 			t.Fatal("native terminal observation fabricated owned cleanup or completion reporting")
 		}
-		expectedOutcome = domain.ExecutionSucceeded
+		expectedOutcome = terminalOutcome
 		if _, err := eventPublisher.PublishTerminal(ctx); err == nil {
 			t.Fatal("terminal publication was repeated")
 		}
@@ -521,13 +548,16 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 			t.Fatal(err)
 		}
 		retained, err := store.Decode[domain.Session](r)
-		if err != nil || retained.Execution == nil || (!hasTranscript && retained.Execution.LastSequence != 2 || hasTranscript && retained.Execution.LastSequence < 6) || retained.Execution.NativeThreadID != session || retained.Execution.NativeTurnID != receipt.MessageID || retained.PendingInputs != 0 || retained.PendingInputBytes != 0 || retained.Execution.Observed.OpenCodeAgent != agent || retained.Execution.Outcome != expectedOutcome {
+		if err != nil || retained.Execution == nil || (!hasTranscript && retained.Execution.LastSequence != 2 || hasTranscript && retained.Execution.LastSequence < 6) || retained.Execution.NativeThreadID != session || retained.Execution.NativeTurnID != receipt.MessageID || retained.PendingInputs != 0 || retained.PendingInputBytes != 0 || retained.Execution.Observed.OpenCodeAgent != agent || retained.Execution.Outcome != expectedOutcome || retained.Execution.CleanupVerified || authFailure && (retained.Problem == nil || retained.Problem.Code != domain.Unauthenticated) {
 			t.Fatal("server binding did not preserve exact native ownership and independent unfinished publication")
 		}
 	}
 	if hasTranscript {
 		rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.MessageKind, SessionID: f.input.SessionID, Limit: 10})
 		expected := 2
+		if authFailure {
+			expected = 1
+		}
 		if publication == nativeReasoningPublication || readTool {
 			expected = 3
 		}
@@ -575,7 +605,11 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 	}
 	if usagePublisher != nil || eventPublisher != nil {
 		rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.UsageKind, SessionID: f.input.SessionID, Limit: 10})
-		if err != nil || len(rows) != 4 {
+		expected := 4
+		if authFailure {
+			expected = 1
+		}
+		if err != nil || len(rows) != expected {
 			t.Fatal("original step and final-message observations were omitted or duplicated")
 		}
 		sourceCounts := map[domain.OpenCodeUsageSource]int{}
@@ -586,7 +620,7 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 			}
 			sourceCounts[observation.Usage.Source]++
 			counts := observation.Usage.Counts
-			if observation.Usage.NativeParentID == progress.AssistantID {
+			if observation.Usage.NativeParentID == progress.AssistantID && !authFailure {
 				if counts.Input != "20" || counts.Output != "4" || counts.Total == nil || *counts.Total != "24" {
 					t.Fatal("final step/message usage lost original counters")
 				}
@@ -594,7 +628,11 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 				t.Fatal("native defaulted zero or missing total was reinterpreted")
 			}
 		}
-		if sourceCounts[domain.OpenCodeStepUsage] != 2 || sourceCounts[domain.OpenCodeMessageUsage] != 2 {
+		expectedSteps, expectedMessages := 2, 2
+		if authFailure {
+			expectedSteps, expectedMessages = 0, 1
+		}
+		if sourceCounts[domain.OpenCodeStepUsage] != expectedSteps || sourceCounts[domain.OpenCodeMessageUsage] != expectedMessages {
 			t.Fatal("overlapping native usage sources were merged")
 		}
 	}
@@ -609,5 +647,17 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 	raw, err := os.ReadFile(claimsPath)
 	if err != nil || bytes.Contains(raw, []byte(f.token)) || bytes.Contains(raw, []byte("temporary-upstream-fixture-key")) || bytes.Contains(raw, []byte(f.input.Input.Prompt)) || strings.Contains(result, f.token) {
 		t.Fatal("registered native metadata claims or result disclosed protected content")
+	}
+	if authFailure {
+		for _, kind := range []domain.Kind{domain.SessionKind, domain.MessageKind, domain.UsageKind, domain.InboxKind} {
+			rows, err := f.service.Store.List(ctx, store.Filter{Kind: kind, Limit: 100})
+			if err != nil {
+				t.Fatal(err)
+			}
+			encoded, err := json.Marshal(rows)
+			if err != nil || bytes.Contains(encoded, []byte(f.token)) || bytes.Contains(encoded, []byte("temporary-upstream-fixture-key")) {
+				t.Fatal("native authentication failure persisted reflected protected content")
+			}
+		}
 	}
 }
