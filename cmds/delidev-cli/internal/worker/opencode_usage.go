@@ -108,7 +108,7 @@ func (c *OpenCodeUsagePublisher) PublishObservation(ctx context.Context, o openc
 			return true, publicationUncertain()
 		}
 		owner := t.messages[m.ID]
-		if owner == nil || owner.role != domain.AssistantMessage || !owner.finalized || c.steps[m.ID] != "" {
+		if owner == nil || owner.role != domain.AssistantMessage || !owner.finalized || c.steps[m.ID] != "" && m.Assistant.Error == nil {
 			return true, publicationUncertain()
 		}
 		value = domain.OpenCodeUsageObservation{Source: domain.OpenCodeMessageUsage, NativeID: m.ID, NativeParentID: m.ID, NativeEstimate: string(m.Assistant.Cost)}
@@ -146,6 +146,9 @@ func (c *OpenCodeUsagePublisher) PublishObservation(ctx context.Context, o openc
 		return true, err
 	}
 	c.values[value.NativeID] = value
+	if value.Source == domain.OpenCodeMessageUsage && o.Message.Assistant.Error != nil {
+		delete(c.steps, value.NativeParentID)
+	}
 	if value.Source == domain.OpenCodeStepUsage {
 		delete(c.steps, value.NativeParentID)
 		c.last[value.NativeParentID] = value

@@ -84,3 +84,12 @@ func (t *Tx) HasOpenCodeReadCall(execution domain.ID, call string) (bool, error)
  WHERE m.execution_id=? AND json_extract(e.body,'$.tool.started.kind')='opencode-read' AND json_extract(e.body,'$.tool.started.read.call_id')=?)`, execution, call).Scan(&exists)
 	return exists, storageError(err)
 }
+
+func (t *Tx) HasCompletedOpenCodeInput(execution, input domain.ID, turn string) (bool, error) {
+	if execution.Validate() != nil || input.Validate() != nil || domain.NativeIdentity(turn).Validate(domain.OpenCode, domain.NativeTurnIdentity) != nil {
+		return false, domain.Fail(domain.InvalidArgument, "Invalid original input ownership.", "Retain the execution's original native input.")
+	}
+	var exists bool
+	err := t.tx.QueryRowContext(t.ctx, `SELECT EXISTS(SELECT 1 FROM execution_messages m JOIN entities e ON e.id=m.message_id WHERE m.execution_id=? AND m.native_turn_id=? AND m.state='complete' AND json_extract(e.body,'$.role')='user' AND json_extract(e.body,'$.input_id')=? AND json_extract(e.body,'$.native_parent_id')=?)`, execution, turn, input, turn).Scan(&exists)
+	return exists, storageError(err)
+}

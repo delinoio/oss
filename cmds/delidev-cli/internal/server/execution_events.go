@@ -121,7 +121,7 @@ func supportsExecutionPublication(input domain.ExecutionJobInput, kind domain.Ex
 	case domain.Codex:
 		return kind != domain.ExecutionOpenCodeUsageObserved
 	case domain.OpenCode:
-		return (kind == domain.ExecutionThreadBound || kind == domain.ExecutionInputAccepted || kind == domain.ExecutionMessageStarted || kind == domain.ExecutionTextAppended || kind == domain.ExecutionMessageCompleted || kind.IsArtifact() || kind == domain.ExecutionToolStarted || kind == domain.ExecutionToolUpdated || kind == domain.ExecutionToolCompleted || kind == domain.ExecutionOpenCodeUsageObserved) && len(executionAPIOperations(input, domain.OpenAIChat)) != 0
+		return (kind == domain.ExecutionThreadBound || kind == domain.ExecutionInputAccepted || kind == domain.ExecutionMessageStarted || kind == domain.ExecutionTextAppended || kind == domain.ExecutionMessageCompleted || kind.IsArtifact() || kind == domain.ExecutionToolStarted || kind == domain.ExecutionToolUpdated || kind == domain.ExecutionToolCompleted || kind == domain.ExecutionOpenCodeUsageObserved || kind == domain.ExecutionTurnFinished) && len(executionAPIOperations(input, domain.OpenAIChat)) != 0
 	}
 	return false
 }
@@ -220,6 +220,23 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 				return executionEventConflict()
 			}
 			if event.Kind == domain.ExecutionTurnFinished {
+				if input.Configuration.Harness == domain.OpenCode {
+					complete, err := tx.HasCompletedOpenCodeInput(input.ExecutionID, input.InputID, event.NativeTurnID)
+					if err != nil {
+						return err
+					}
+					if !complete || progress.LatestUsageID == "" {
+						return executionEventConflict()
+					}
+					record, err := tx.Get(domain.UsageKind, progress.LatestUsageID)
+					if err != nil {
+						return err
+					}
+					usage, err := store.Decode[domain.OpenCodeUsageRecord](record)
+					if err != nil || usage.ExecutionID != input.ExecutionID || usage.ThreadID != event.NativeThreadID || usage.TurnID != event.NativeTurnID || usage.Usage.Source != domain.OpenCodeMessageUsage || usage.Usage.Validate() != nil {
+						return executionEventConflict()
+					}
+				}
 				if err := retireSteer(tx, sr, session, true); err != nil {
 					return err
 				}

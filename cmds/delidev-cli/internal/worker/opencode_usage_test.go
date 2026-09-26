@@ -128,3 +128,15 @@ func TestOpenCodeUsageRejectsMissingChangedOrUnownedEvidence(t *testing.T) {
 		})
 	}
 }
+
+func TestOpenCodeUsageNativeErrorClosesAnUnfinishedStepWithoutInventingStepUsage(t *testing.T) {
+	f, u := newUsageFixture(t)
+	usagePublish(t, f, u, usageStep(f, false))
+	message := f.assistant(true)
+	message.Message.Assistant.Cost = "0"
+	message.Message.Assistant.Error = &opencode.NativeError{Kind: opencode.APIErrorKind}
+	usagePublish(t, f, u, message)
+	if len(u.steps) != 0 || len(u.starts) != 1 || len(u.values) != 1 || len(f.rpc.events) != 5 || u.values[textAssistantID].Source != domain.OpenCodeMessageUsage {
+		t.Fatal("native error fabricated completed-step usage or lost its original step")
+	}
+}

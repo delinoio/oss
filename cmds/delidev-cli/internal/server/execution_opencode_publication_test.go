@@ -46,7 +46,11 @@ func TestOpenCodePublicationRetainsOnlyOriginalBindings(t *testing.T) {
 				if err := event.Validate(); err != nil {
 					t.Fatal(err)
 				}
-				if _, err := f.call(f.requestEvent(t, event)); connect.CodeOf(err) != connect.CodeUnimplemented {
+				expected := connect.CodeUnimplemented
+				if kind == domain.ExecutionTurnFinished {
+					expected = connect.CodeAborted
+				}
+				if _, err := f.call(f.requestEvent(t, event)); connect.CodeOf(err) != expected {
 					t.Fatalf("binding support granted an unimplemented OpenCode event family: %v", err)
 				}
 			}

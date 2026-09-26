@@ -57,6 +57,8 @@ const (
 	nativeReadFailurePublication
 	nativeReadDirectoryPublication
 	nativeUsagePublication
+	nativeTerminalPublication
+	nativeTerminalLostAckPublication
 )
 
 func TestManualNativeOpenCodePublishesRegisteredText(t *testing.T) {
@@ -79,8 +81,15 @@ func TestManualNativeOpenCodePublishesRegisteredUsage(t *testing.T) {
 	nativeRegisteredOpenCode(t, domain.ExecuteMode, false, nativeUsagePublication)
 }
 
+func TestManualNativeOpenCodePublishesRegisteredTerminal(t *testing.T) {
+	for _, scenario := range []nativeOpenCodePublication{nativeTerminalPublication, nativeTerminalLostAckPublication} {
+		t.Run(fmt.Sprint(scenario), func(t *testing.T) { nativeRegisteredOpenCode(t, domain.ExecuteMode, false, scenario) })
+	}
+}
+
 func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool, publication nativeOpenCodePublication) {
 	publish := publication != nativeNoPublication
+	hasTranscript := publication >= nativeTextPublication
 	readTool := publication >= nativeReadPublication
 	expectedCalls := int32(1)
 	if readTool {
@@ -257,6 +266,7 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 		return security.WriteAtomic(filepath.Join(root, "claims.json"), raw)
 	}
 	var bindings *worker.OpenCodeBindingPublisher
+	var executionPublisher *worker.ExecutionPublisher
 	var publicationClient *losePublicationAck
 	claimsPath := filepath.Join(root, "claims.json")
 	if publish {
@@ -268,6 +278,7 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 		if err != nil {
 			t.Fatal(err)
 		}
+		executionPublisher = publisher
 		defer publisher.Close()
 		bindings, err = worker.OpenOpenCodeBindingPublisher(publisher)
 		if err != nil {
@@ -360,6 +371,30 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 	}
 	var textPublisher *worker.OpenCodeTextPublisher
 	var usagePublisher *worker.OpenCodeUsagePublisher
+	var eventPublisher *worker.OpenCodeEventPublisher
+	publishObservation := func(observation opencode.Observation) error {
+		if eventPublisher != nil {
+			err := eventPublisher.PublishObservation(ctx, observation)
+			if err != nil {
+				t.Logf("native fixture event kind=%s", observation.Kind)
+				if observation.Part != nil {
+					t.Logf("native fixture part kind=%s", observation.Part.Kind)
+				}
+			}
+			return err
+		}
+		if textPublisher != nil {
+			if _, err := textPublisher.PublishObservation(ctx, observation); err != nil {
+				return err
+			}
+		}
+		if usagePublisher != nil {
+			if _, err := usagePublisher.PublishObservation(ctx, observation); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	if publication >= nativeTextPublication {
 		// Preserve the original prefix until both live input ownership and
 		// independent native storage establish acceptance for publication.
@@ -388,26 +423,24 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 		if err := bindings.ReplayPending(ctx); err != nil {
 			t.Fatal(err)
 		}
-		textPublisher, err = worker.OpenOpenCodeTextPublisher(bindings)
+
+		if publication >= nativeTerminalPublication {
+			eventPublisher, err = worker.OpenOpenCodeEventPublisher(bindings, api)
+		} else {
+			textPublisher, err = worker.OpenOpenCodeTextPublisher(bindings)
+			if err == nil && publication == nativeUsagePublication {
+				usagePublisher, err = worker.OpenOpenCodeUsagePublisher(textPublisher)
+			}
+		}
 		if err != nil {
 			t.Fatal(err)
 		}
-		if publication == nativeUsagePublication {
-			usagePublisher, err = worker.OpenOpenCodeUsagePublisher(textPublisher)
-			if err != nil {
-				t.Fatal(err)
-			}
-		}
 		for _, observation := range prefix {
-			if _, err := textPublisher.PublishObservation(ctx, observation); err != nil {
+			if err := publishObservation(observation); err != nil {
 				t.Fatal(err)
 			}
-			if usagePublisher != nil {
-				if _, err := usagePublisher.PublishObservation(ctx, observation); err != nil {
-					t.Fatal(err)
-				}
-			}
 		}
+
 	}
 	var result string
 	var final *opencode.NativeMessage
@@ -416,15 +449,8 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 		if err != nil {
 			t.Fatal(err)
 		}
-		if textPublisher != nil {
-			if _, err := textPublisher.PublishObservation(ctx, observation); err != nil {
-				t.Fatal(err)
-			}
-			if usagePublisher != nil {
-				if _, err := usagePublisher.PublishObservation(ctx, observation); err != nil {
-					t.Fatal(err)
-				}
-			}
+		if err := publishObservation(observation); err != nil {
+			t.Fatal(err)
 		}
 		if observation.Part != nil && observation.Part.Kind == opencode.TextPartKind && observation.Part.Text != nil {
 			result = observation.Part.Text.Text
@@ -448,8 +474,38 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 	if err != nil || !receipt.Recorded || receipt.SessionID != session || receipt.RequestID != f.input.TurnRequestID || receipt.MessageID != claims[1].MessageID || receipt.PartID != claims[1].PartID {
 		t.Fatal("registered native input lost its separately verified original storage")
 	}
+	expectedOutcome := domain.ExecutionRunning
+	if eventPublisher != nil {
+		if publication == nativeTerminalLostAckPublication {
+			publicationClient.dropAt = len(publicationClient.calls) + 1
+		}
+		outcome, err := eventPublisher.PublishTerminal(ctx)
+		if publication == nativeTerminalLostAckPublication {
+			if err == nil || outcome != "" {
+				t.Fatal("lost terminal acknowledgment became confirmed completion")
+			}
+			original := publicationClient.calls[len(publicationClient.calls)-1]
+			if err := executionPublisher.ReplayPending(ctx); err != nil {
+				t.Fatal(err)
+			}
+			if publicationClient.calls[len(publicationClient.calls)-1] != original {
+				t.Fatal("terminal acknowledgment replay changed request identity")
+			}
+		} else if err != nil || outcome != domain.ExecutionSucceeded {
+			t.Fatalf("original terminal publication failed: %v", err)
+		}
+		job, err := f.service.Store.Get(ctx, domain.JobKind, f.job)
+		value, decodeErr := store.Decode[domain.Job](job)
+		if err != nil || decodeErr != nil || value.State != domain.JobClaimed {
+			t.Fatal("native terminal observation fabricated owned cleanup or completion reporting")
+		}
+		expectedOutcome = domain.ExecutionSucceeded
+		if _, err := eventPublisher.PublishTerminal(ctx); err == nil {
+			t.Fatal("terminal publication was repeated")
+		}
+	}
 	if publish {
-		if textPublisher == nil {
+		if !hasTranscript {
 			if bindings.AcceptInput(ctx, receipt) == nil {
 				t.Fatal("expected lost original acceptance acknowledgement")
 			}
@@ -457,7 +513,7 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 				t.Fatal(err)
 			}
 		}
-		if len(publicationClient.calls) < 4 || textPublisher == nil && len(publicationClient.calls) != 4 || publicationClient.calls[0] != publicationClient.calls[1] || publicationClient.calls[2] != publicationClient.calls[3] {
+		if len(publicationClient.calls) < 4 || !hasTranscript && len(publicationClient.calls) != 4 || publicationClient.calls[0] != publicationClient.calls[1] || publicationClient.calls[2] != publicationClient.calls[3] {
 			t.Fatal("original native publication replaced an uncertain RPC identity")
 		}
 		r, err := f.service.Store.Get(ctx, domain.SessionKind, f.input.SessionID)
@@ -465,11 +521,11 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 			t.Fatal(err)
 		}
 		retained, err := store.Decode[domain.Session](r)
-		if err != nil || retained.Execution == nil || (textPublisher == nil && retained.Execution.LastSequence != 2 || textPublisher != nil && retained.Execution.LastSequence < 6) || retained.Execution.NativeThreadID != session || retained.Execution.NativeTurnID != receipt.MessageID || retained.PendingInputs != 0 || retained.PendingInputBytes != 0 || retained.Execution.Observed.OpenCodeAgent != agent || retained.Execution.Outcome != domain.ExecutionRunning {
+		if err != nil || retained.Execution == nil || (!hasTranscript && retained.Execution.LastSequence != 2 || hasTranscript && retained.Execution.LastSequence < 6) || retained.Execution.NativeThreadID != session || retained.Execution.NativeTurnID != receipt.MessageID || retained.PendingInputs != 0 || retained.PendingInputBytes != 0 || retained.Execution.Observed.OpenCodeAgent != agent || retained.Execution.Outcome != expectedOutcome {
 			t.Fatal("server binding did not preserve exact native ownership and independent unfinished publication")
 		}
 	}
-	if textPublisher != nil {
+	if hasTranscript {
 		rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.MessageKind, SessionID: f.input.SessionID, Limit: 10})
 		expected := 2
 		if publication == nativeReasoningPublication || readTool {
@@ -517,7 +573,7 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 			}
 		}
 	}
-	if usagePublisher != nil {
+	if usagePublisher != nil || eventPublisher != nil {
 		rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.UsageKind, SessionID: f.input.SessionID, Limit: 10})
 		if err != nil || len(rows) != 4 {
 			t.Fatal("original step and final-message observations were omitted or duplicated")
