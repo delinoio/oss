@@ -4240,4 +4240,73 @@ mod tests {
         };
         assert_eq!(fs::read(input).unwrap(), b"fixture");
     }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_verified_reproduction_uses_a_separate_working_directory() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("project");
+        fs::create_dir(&root).unwrap();
+        fs::write(root.join("input.txt"), b"fixture").unwrap();
+        fs::write(root.join(".env"), b"secret").unwrap();
+        let bundle = directory.path().join("bundle");
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("cli::tests::windows_reproduction_cli_child")
+            .env("CLIBOX_FSPY_WIN_REPRO_ROOT", &root)
+            .env("CLIBOX_FSPY_WIN_REPRO_BUNDLE", &bundle)
+            .current_dir(&root)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(fs::read(bundle.join("input.txt")).unwrap(), b"fixture");
+        assert!(bundle.join(".clibox-fspy-repro/manifest.json").exists());
+        assert!(!bundle.join(".env").exists());
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_reproduction_cli_child() {
+        let Some(root) = std::env::var_os("CLIBOX_FSPY_WIN_REPRO_ROOT") else {
+            return;
+        };
+        let bundle = std::env::var_os("CLIBOX_FSPY_WIN_REPRO_BUNDLE").unwrap();
+        let cli = TestCli::try_parse_from([
+            OsString::from("fspy"),
+            OsString::from("min-repro"),
+            OsString::from("--root"),
+            root,
+            OsString::from("--include"),
+            OsString::from("input.txt"),
+            OsString::from("--bundle-dir"),
+            bundle,
+            OsString::from("--expect-exit"),
+            OsString::from("42"),
+            OsString::from("--expect-stderr"),
+            OsString::from("EXPECTED"),
+            OsString::from("--quiet"),
+            OsString::from("--"),
+            std::env::current_exe().unwrap().into_os_string(),
+            OsString::from("--exact"),
+            OsString::from("cli::tests::windows_reproduction_workload"),
+            OsString::from("--nocapture"),
+        ])
+        .unwrap();
+        assert_eq!(execute(cli.command), 0);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_reproduction_workload() {
+        if std::env::var_os("CLIBOX_FSPY_WIN_REPRO_ROOT").is_none() {
+            return;
+        }
+        assert_eq!(fs::read("input.txt").unwrap(), b"fixture");
+        eprintln!("EXPECTED");
+        std::process::exit(42);
+    }
 }
