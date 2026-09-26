@@ -43,6 +43,7 @@ const (
 	SubmitInputMutation     SessionMutation = "submit-input"
 	ReplyPermissionMutation SessionMutation = "reply-permission"
 	ReplyQuestionMutation   SessionMutation = "reply-question"
+	RejectQuestionMutation  SessionMutation = "reject-question"
 )
 
 // SessionClaim contains no prompt, credentials or workspace paths. The owning
@@ -78,22 +79,23 @@ type InputReceipt struct {
 // Discovery cannot create one or expose session mutations. The native fixtures
 // exercise this transport separately from that still-required integration.
 type sessionAPI struct {
-	client       *http.Client
-	origin       string
-	password     string
-	cwd          string
-	claim        func(context.Context, SessionClaim) error
-	alive        func() error
-	logger       *slog.Logger
-	owner        domain.ID
-	gate         chan struct{}
-	creation     *sessionCreation
-	input        *sessionInput
-	problem      *domain.Error
-	events       *eventStream
-	eventAttempt bool
-	observer     *inputObserver
-	replyAttempt *interactionHTTPAttempt
+	client          *http.Client
+	origin          string
+	password        string
+	cwd             string
+	claim           func(context.Context, SessionClaim) error
+	alive           func() error
+	logger          *slog.Logger
+	owner           domain.ID
+	gate            chan struct{}
+	creation        *sessionCreation
+	input           *sessionInput
+	problem         *domain.Error
+	events          *eventStream
+	eventAttempt    bool
+	observer        *inputObserver
+	replyAttempt    *interactionHTTPAttempt
+	rejectionPolicy RejectionPolicy
 }
 
 type sessionCreation struct {

@@ -12,11 +12,20 @@ import (
 
 const maxObservedInteractions = 1024
 
+type RejectionPolicy string
+
+// Only a separately verified effective native setting can establish this
+// policy. An omitted policy grants no rejection-based terminal inference.
+const StopOnInteractionRejection RejectionPolicy = "stop-on-rejection"
+
 type observedInteraction struct {
-	value   NativeInteraction
-	arrival string
-	closed  bool
-	attempt *interactionAttempt
+	value             NativeInteraction
+	arrival           string
+	closed            bool
+	attempt           *interactionAttempt
+	rejected          bool
+	rejectionSources  []string
+	rejectionReserved bool
 }
 
 type interactionAttempt struct {
@@ -45,6 +54,7 @@ type InteractionReceipt struct {
 type InteractionResponse struct {
 	Decision *PermissionDecision
 	Answers  [][]string `json:"-"`
+	Reject   bool
 }
 
 func (o *inputObserver) interaction(event NativeEvent) (*NativeInteraction, error) {
@@ -74,14 +84,34 @@ func (o *inputObserver) interactionReply(event NativeEvent) (*NativeInteractionR
 		return nil, observerProblem()
 	}
 	interaction := o.interactions[value.RequestID]
-	if interaction == nil || interaction.closed || interaction.value.Kind != value.Kind || interaction.attempt == nil || !interaction.attempt.sent {
-		// Cascade closures and unclaimed/foreign native answers need their
-		// own causal adapter. A native request ID alone is not our response.
+	if interaction == nil || interaction.closed || interaction.value.Kind != value.Kind {
+		return nil, observerProblem()
+	}
+	if interaction.attempt == nil {
+		// The native rejection service closes other pending permissions in
+		// this original session. Preserve all observed possible direct causes;
+		// never invent a response claim for a cascaded closure.
+		if value.Kind != PermissionInteraction || !value.Rejected {
+			return nil, observerProblem()
+		}
+		for id, prior := range o.interactions {
+			if prior.value.Kind == PermissionInteraction && prior.closed && prior.rejected && prior.attempt != nil && prior.attempt.receipt.NativeAccepted {
+				interaction.rejectionSources = append(interaction.rejectionSources, id)
+			}
+		}
+		if len(interaction.rejectionSources) == 0 {
+			return nil, observerProblem()
+		}
+		slices.Sort(interaction.rejectionSources)
+		interaction.closed, interaction.rejected = true, true
+		return &value, nil
+	}
+	if !interaction.attempt.sent {
 		return nil, observerProblem()
 	}
 	var body []byte
 	if value.Kind == PermissionInteraction {
-		if value.Decision == nil || *value.Decision != PermissionOnce {
+		if value.Decision == nil || *value.Decision != PermissionOnce && *value.Decision != PermissionReject {
 			return nil, observerProblem()
 		}
 		body, _ = json.Marshal(struct {
@@ -89,17 +119,31 @@ func (o *inputObserver) interactionReply(event NativeEvent) (*NativeInteractionR
 		}{*value.Decision})
 	} else {
 		if value.Rejected {
-			return nil, observerProblem()
+			if interaction.attempt.claim.Kind != RejectQuestionMutation {
+				return nil, observerProblem()
+			}
+		} else {
+			if interaction.attempt.claim.Kind != ReplyQuestionMutation {
+				return nil, observerProblem()
+			}
+			body, _ = json.Marshal(struct {
+				Answers [][]string `json:"answers"`
+			}{value.Answers})
 		}
-		body, _ = json.Marshal(struct {
-			Answers [][]string `json:"answers"`
-		}{value.Answers})
 	}
 	if !bytes.Equal(body, interaction.attempt.body) {
 		return nil, observerProblem()
 	}
 	interaction.closed = true
+	interaction.rejected = value.Rejected
 	interaction.attempt.receipt.NativeAccepted = true
+	if value.Kind == PermissionInteraction && value.Rejected {
+		for _, pending := range o.interactions {
+			if pending.value.Kind == PermissionInteraction && !pending.closed {
+				pending.rejectionReserved = true
+			}
+		}
+	}
 	return &value, nil
 }
 
@@ -123,17 +167,23 @@ func (o *inputObserver) prepareInteraction(request domain.ID, id string, respons
 	if request.Validate() != nil || request == o.creation.request || request == o.input.receipt.RequestID || o.responseIDs[request] || interaction == nil {
 		return nil, "", sessionInvalid()
 	}
-	if interaction.closed || interaction.attempt != nil {
+	if interaction.closed || interaction.attempt != nil || interaction.rejectionReserved {
 		return nil, "", sessionConflict()
+	}
+	for _, prior := range o.interactions {
+		if prior.attempt != nil && !prior.closed {
+			return nil, "", sessionConflict()
+		}
 	}
 	var body []byte
 	var kind SessionMutation
 	var path string
 	if interaction.value.Kind == PermissionInteraction {
-		if response.Decision == nil || *response.Decision != PermissionOnce || response.Answers != nil {
-			// Always/reject can close other callbacks and alter continuation.
-			// They remain unavailable until their original causal profile is
-			// implemented; never reinterpret them as a single-use approval.
+		if response.Decision == nil || *response.Decision != PermissionOnce && *response.Decision != PermissionReject || response.Answers != nil || response.Reject {
+			// Always extends native process rules and requires its own profile.
+			return nil, "", interactionProblem()
+		}
+		if *response.Decision == PermissionReject && o.rejectionPolicy != StopOnInteractionRejection {
 			return nil, "", interactionProblem()
 		}
 		body, _ = json.Marshal(struct {
@@ -141,13 +191,23 @@ func (o *inputObserver) prepareInteraction(request domain.ID, id string, respons
 		}{*response.Decision})
 		kind, path = ReplyPermissionMutation, "/permission/"+id+"/reply"
 	} else {
-		if response.Decision != nil || !validQuestionAnswers(interaction.value.Questions, response.Answers) {
+		if response.Decision != nil {
 			return nil, "", sessionInvalid()
 		}
-		body, _ = json.Marshal(struct {
-			Answers [][]string `json:"answers"`
-		}{response.Answers})
-		kind, path = ReplyQuestionMutation, "/question/"+id+"/reply"
+		if response.Reject {
+			if response.Answers != nil || o.rejectionPolicy != StopOnInteractionRejection {
+				return nil, "", interactionProblem()
+			}
+			kind, path = RejectQuestionMutation, "/question/"+id+"/reject"
+		} else {
+			if !validQuestionAnswers(interaction.value.Questions, response.Answers) {
+				return nil, "", sessionInvalid()
+			}
+			body, _ = json.Marshal(struct {
+				Answers [][]string `json:"answers"`
+			}{response.Answers})
+			kind, path = ReplyQuestionMutation, "/question/"+id+"/reply"
+		}
 	}
 	if len(body) > maxHTTPBody {
 		return nil, "", sessionInvalid()
@@ -167,6 +227,22 @@ func (o *inputObserver) prepareInteraction(request domain.ID, id string, respons
 	o.responseIDs[request] = true
 	o.bytes += len(body)
 	return attempt, path, nil
+}
+
+func (o *inputObserver) rejectedMessage(id string) bool {
+	if o.rejectionPolicy != StopOnInteractionRejection {
+		return false
+	}
+	for _, interaction := range o.interactions {
+		if !interaction.closed || !interaction.rejected || interaction.value.Tool.MessageID != id {
+			continue
+		}
+		part := o.parts[o.calls[interaction.value.Tool.CallID]]
+		if part != nil && part.value.Tool.State == ToolError {
+			return true
+		}
+	}
+	return false
 }
 
 func validQuestionAnswers(questions []NativeQuestion, answers [][]string) bool {

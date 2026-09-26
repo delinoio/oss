@@ -40,6 +40,7 @@ type inputObservation struct {
 	Ancillary        json.RawMessage         `json:"-"`
 	Interaction      *NativeInteraction      `json:"-"`
 	InteractionReply *NativeInteractionReply `json:"-"`
+	RejectionSources []string
 }
 
 type nativeDelta struct {
@@ -49,17 +50,18 @@ type nativeDelta struct {
 }
 
 type inputProgress struct {
-	RequestID        domain.ID
-	SessionID        string
-	MessageID        string
-	UserSeen         bool
-	InputPartSeen    bool
-	AssistantID      string
-	Status           NativeSessionStatus
-	IdleNotification bool
-	TerminalObserved bool
-	SettledObserved  bool
-	NeedsRecovery    bool
+	RequestID           domain.ID
+	SessionID           string
+	MessageID           string
+	UserSeen            bool
+	InputPartSeen       bool
+	AssistantID         string
+	Status              NativeSessionStatus
+	IdleNotification    bool
+	TerminalObserved    bool
+	SettledObserved     bool
+	NeedsRecovery       bool
+	RejectedInteraction bool
 }
 
 type observedMessage struct {
@@ -81,24 +83,25 @@ type observedPart struct {
 // order. It does not reconnect, authorize another input, establish persisted
 // history, publish product outcomes or prove owned process cleanup.
 type inputObserver struct {
-	mu           sync.Mutex
-	creation     sessionCreation
-	input        sessionInput
-	cwd, root    string
-	logger       *slog.Logger
-	owner        domain.ID
-	seen         map[string]bool
-	bytes        int
-	messages     map[string]*observedMessage
-	parts        map[string]*observedPart
-	attachments  map[string]string
-	calls        map[string]string
-	progress     inputProgress
-	problem      *domain.Error
-	ctx          context.Context
-	cancel       context.CancelFunc
-	interactions map[string]*observedInteraction
-	responseIDs  map[domain.ID]bool
+	mu              sync.Mutex
+	creation        sessionCreation
+	input           sessionInput
+	cwd, root       string
+	logger          *slog.Logger
+	owner           domain.ID
+	seen            map[string]bool
+	bytes           int
+	messages        map[string]*observedMessage
+	parts           map[string]*observedPart
+	attachments     map[string]string
+	calls           map[string]string
+	progress        inputProgress
+	problem         *domain.Error
+	ctx             context.Context
+	cancel          context.CancelFunc
+	interactions    map[string]*observedInteraction
+	responseIDs     map[domain.ID]bool
+	rejectionPolicy RejectionPolicy
 }
 
 func observerProblem() *domain.Error {
@@ -129,7 +132,8 @@ func (s *sessionAPI) observeInput(ctx context.Context, root string) (*inputObser
 	s.observer = &inputObserver{
 		creation: creation, input: input, cwd: s.cwd, root: root, logger: s.logger, owner: s.owner,
 		ctx: observerContext, cancel: cancel, interactions: map[string]*observedInteraction{}, responseIDs: map[domain.ID]bool{},
-		seen: map[string]bool{}, messages: map[string]*observedMessage{}, parts: map[string]*observedPart{}, attachments: map[string]string{}, calls: map[string]string{},
+		rejectionPolicy: s.rejectionPolicy,
+		seen:            map[string]bool{}, messages: map[string]*observedMessage{}, parts: map[string]*observedPart{}, attachments: map[string]string{}, calls: map[string]string{},
 		progress: inputProgress{RequestID: input.receipt.RequestID, SessionID: input.receipt.SessionID, MessageID: input.receipt.MessageID, Status: NativeStatusUnknown},
 	}
 	return s.observer, nil
@@ -224,6 +228,9 @@ func (o *inputObserver) observe(ctx context.Context, event NativeEvent) (inputOb
 	case PermissionRepliedEvent, QuestionRepliedEvent, QuestionRejectedEvent:
 		stage = "interaction-reply"
 		result.InteractionReply, err = o.interactionReply(event)
+		if err == nil {
+			result.RejectionSources = slices.Clone(o.interactions[result.InteractionReply.RequestID].rejectionSources)
+		}
 	case MessageUpdatedEvent:
 		stage = "message"
 		if !session([]string{"info"}, nil) {
@@ -345,6 +352,7 @@ func (o *inputObserver) refresh() {
 		terminal = message.finalized && a.Completed != nil && (a.Error != nil || a.Finish != nil && !o.needsSuccessor(message.value.ID))
 	}
 	o.progress.TerminalObserved = o.progress.UserSeen && o.progress.InputPartSeen && terminal
+	o.progress.RejectedInteraction = message != nil && o.rejectedMessage(message.value.ID)
 	o.progress.SettledObserved = o.progress.TerminalObserved && o.progress.Status == NativeStatusIdle && o.progress.IdleNotification
 }
 
@@ -474,6 +482,9 @@ func (o *inputObserver) messageClosed(value NativeMessage, state *observedMessag
 func (o *inputObserver) needsSuccessor(id string) bool {
 	a := o.messages[id].value.Assistant
 	if a.Error != nil || a.Finish == nil {
+		return false
+	}
+	if o.rejectedMessage(id) {
 		return false
 	}
 	if *a.Finish == FinishToolCalls || *a.Finish == FinishUnknown {

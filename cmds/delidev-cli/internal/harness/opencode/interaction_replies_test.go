@@ -62,7 +62,11 @@ func newReplyFixture(t *testing.T, kind InteractionKind) *replyFixture {
 		r.posts++
 		claims := append([]SessionClaim(nil), r.claims...)
 		r.mu.Unlock()
-		if request.Method != http.MethodPost || request.URL.Path != "/"+string(kind)+"/"+r.id+"/reply" || len(claims) != 1 || claims[0].BodyDigest != mutationDigest(body) || claims[0].InteractionID != r.id || claims[0].ArrivalID == "" || claims[0].InputRequestID != f.o.input.receipt.RequestID || claims[0].MessageID != f.a["id"] || claims[0].CallID != "call_private" || claims[0].PartID != part["id"] {
+		action := "/reply"
+		if r.response.Reject {
+			action = "/reject"
+		}
+		if request.Method != http.MethodPost || request.URL.Path != "/"+string(kind)+"/"+r.id+action || len(claims) != 1 || claims[0].BodyDigest != mutationDigest(body) || claims[0].InteractionID != r.id || claims[0].ArrivalID == "" || claims[0].InputRequestID != f.o.input.receipt.RequestID || claims[0].MessageID != f.a["id"] || claims[0].CallID != "call_private" || claims[0].PartID != part["id"] {
 			t.Error("native reply preceded or changed its original durable claim")
 			w.WriteHeader(400)
 			return
@@ -106,7 +110,13 @@ func (r *replyFixture) closure() NativeEvent {
 	if r.response.Decision == nil {
 		kind = QuestionRepliedEvent
 		delete(fields, "reply")
-		fields["answers"] = r.response.Answers
+		if r.response.Reject {
+			kind = QuestionRejectedEvent
+		} else {
+			fields["answers"] = r.response.Answers
+		}
+	} else {
+		fields["reply"] = *r.response.Decision
 	}
 	raw, _ := json.Marshal(fields)
 	return NativeEvent{ID: "evt_01960dcbe1feABCDEFGHIJKLMN", Kind: kind, Properties: raw}

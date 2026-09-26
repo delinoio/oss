@@ -15,12 +15,20 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
 
+type interactionFixtureMode string
+
+const (
+	interactionProposalFixture  interactionFixtureMode = "proposal"
+	interactionReplyFixture     interactionFixtureMode = "reply"
+	interactionRejectionFixture interactionFixtureMode = "reject"
+)
+
 func TestManualNativeOpenCodeInteractionProposals(t *testing.T) {
 	if os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE") == "" {
 		t.Skip("explicit private native OpenCode interaction proposals")
 	}
 	for _, kind := range []InteractionKind{PermissionInteraction, QuestionInteraction} {
-		t.Run(string(kind), func(t *testing.T) { nativeInteractionProposalFixture(t, kind, false) })
+		t.Run(string(kind), func(t *testing.T) { nativeInteractionProposalFixture(t, kind, interactionProposalFixture) })
 	}
 }
 
@@ -29,11 +37,21 @@ func TestManualNativeOpenCodeInteractionReplies(t *testing.T) {
 		t.Skip("explicit private native OpenCode interaction replies")
 	}
 	for _, kind := range []InteractionKind{PermissionInteraction, QuestionInteraction} {
-		t.Run(string(kind), func(t *testing.T) { nativeInteractionProposalFixture(t, kind, true) })
+		t.Run(string(kind), func(t *testing.T) { nativeInteractionProposalFixture(t, kind, interactionReplyFixture) })
 	}
 }
 
-func nativeInteractionProposalFixture(t *testing.T, kind InteractionKind, respond bool) {
+func TestManualNativeOpenCodeInteractionRejections(t *testing.T) {
+	if os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE") == "" {
+		t.Skip("explicit private native OpenCode interaction rejection")
+	}
+	for _, kind := range []InteractionKind{PermissionInteraction, QuestionInteraction} {
+		t.Run(string(kind), func(t *testing.T) { nativeInteractionProposalFixture(t, kind, interactionRejectionFixture) })
+	}
+}
+
+func nativeInteractionProposalFixture(t *testing.T, kind InteractionKind, mode interactionFixtureMode) {
+	respond, reject := mode != interactionProposalFixture, mode == interactionRejectionFixture
 	key := string(domain.NewID())
 	const callID = "call_private_interaction"
 	const sentinel = "private-interaction-sentinel"
@@ -52,7 +70,7 @@ func nativeInteractionProposalFixture(t *testing.T, kind InteractionKind, respon
 			return
 		}
 		index := calls.Add(1)
-		if index > 2 || index == 2 && !respond {
+		if index > 2 || index == 2 && (!respond || reject) {
 			t.Error("native interaction continued without an original response")
 			w.WriteHeader(400)
 			return
@@ -115,7 +133,11 @@ func nativeInteractionProposalFixture(t *testing.T, kind InteractionKind, respon
 		}
 		if respond && interactionID != "" && observer.snapshot().SettledObserved {
 			receipt, err := observer.interactionReceipt(interactionID)
-			if err != nil || !receipt.HTTPAccepted || !receipt.NativeAccepted || calls.Load() != 2 || observer.snapshot().NeedsRecovery {
+			expectedCalls := int32(2)
+			if reject {
+				expectedCalls = 1
+			}
+			if err != nil || !receipt.HTTPAccepted || !receipt.NativeAccepted || calls.Load() != expectedCalls || observer.snapshot().NeedsRecovery || observer.snapshot().RejectedInteraction != reject {
 				t.Fatal("native response did not preserve independent HTTP, acceptance and terminal observations")
 			}
 			if _, err := api.replyInteraction(ctx, observer, domain.NewID(), interactionID, InteractionResponse{}); err == nil {
@@ -162,8 +184,14 @@ func nativeInteractionProposalFixture(t *testing.T, kind InteractionKind, respon
 		}
 		interactionID = request.ID
 		response := InteractionResponse{Answers: [][]string{{"First", "Second"}}}
+		if reject {
+			response = InteractionResponse{Reject: true}
+		}
 		if kind == PermissionInteraction {
 			decision := PermissionOnce
+			if reject {
+				decision = PermissionReject
+			}
 			response = InteractionResponse{Decision: &decision}
 		}
 		receipt, err := api.replyInteraction(ctx, observer, domain.NewID(), request.ID, response)
