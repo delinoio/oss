@@ -332,15 +332,9 @@ func (s *sessionAPI) submit(ctx context.Context, request domain.ID, messageID, p
 	if err != nil {
 		return InputReceipt{}, err
 	}
-	settings := s.creation.settings
-	body, _ := json.Marshal(struct {
-		MessageID string       `json:"messageID"`
-		Model     inputModel   `json:"model"`
-		Agent     PrimaryAgent `json:"agent"`
-		Parts     []inputPart  `json:"parts"`
-	}{messageID, inputModel{settings.Provider, settings.Model}, settings.Agent, []inputPart{{partID, "text", text}}})
-	if len(body) > maxHTTPBody {
-		return InputReceipt{}, sessionInvalid()
+	body, err := encodeTextInput(s.creation.settings, messageID, partID, text)
+	if err != nil {
+		return InputReceipt{}, err
 	}
 	s.input = &sessionInput{receipt: InputReceipt{RequestID: request, SessionID: id, MessageID: messageID, PartID: partID}, digest: sha256.Sum256([]byte(text))}
 	claim := SessionClaim{RequestID: request, Kind: SubmitInputMutation, SessionID: id, MessageID: messageID, PartID: partID, BodyDigest: mutationDigest(body)}
@@ -354,6 +348,19 @@ func (s *sessionAPI) submit(ctx context.Context, request domain.ID, messageID, p
 	}
 	s.input.receipt.HTTPAccepted = true
 	return s.input.receipt, nil
+}
+
+func encodeTextInput(settings SessionSettings, messageID, partID, text string) ([]byte, error) {
+	body, err := json.Marshal(struct {
+		MessageID string       `json:"messageID"`
+		Model     inputModel   `json:"model"`
+		Agent     PrimaryAgent `json:"agent"`
+		Parts     []inputPart  `json:"parts"`
+	}{messageID, inputModel{settings.Provider, settings.Model}, settings.Agent, []inputPart{{partID, "text", text}}})
+	if err != nil || len(body) > maxHTTPBody {
+		return nil, sessionInvalid()
+	}
+	return body, nil
 }
 
 // inspectInput may establish the original user message's exact native storage

@@ -63,9 +63,13 @@ func (g *inputIDGenerator) pair(milliseconds int64, entropy io.Reader) (string, 
 // once-claimed transport. A response error retains its actual receipt/claim;
 // this method never recreates a session or substitutes IDs for an earlier send.
 func (s *sessionAPI) submitText(ctx context.Context, request domain.ID, text string) (InputReceipt, error) {
-	message, part, err := originalInputIDs.pair(time.Now().UnixMilli(), rand.Reader)
+	message, part, err := freshInputIDPair()
 	if err != nil {
 		return InputReceipt{}, err
 	}
 	return s.submit(ctx, request, message, part, text)
+}
+
+func freshInputIDPair() (string, string, error) {
+	return originalInputIDs.pair(time.Now().UnixMilli(), rand.Reader)
 }

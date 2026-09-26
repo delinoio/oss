@@ -26,13 +26,19 @@ import (
 
 func newOpenCodeClaimsFixture(t *testing.T) (*ExecutionPublisher, *openCodeClaimJournal, []opencode.SessionClaim) {
 	t.Helper()
+	return newOpenCodeClaimsFixtureMode(t, domain.ExecuteMode)
+}
+
+func newOpenCodeClaimsFixtureMode(t *testing.T, mode domain.SessionMode) (*ExecutionPublisher, *openCodeClaimJournal, []opencode.SessionClaim) {
+	t.Helper()
 	f := newCheckpointFixture(t)
 	f.input.Configuration.Harness = domain.OpenCode
-	f.input.Configuration.Options.Permission = domain.PermissionDefault
+	f.input.Configuration.Effort = ""
+	f.input.Configuration.Options = domain.AgentOptions{Permission: domain.PermissionDefault}
 	f.input.ConfigurationDigest, _ = f.input.Configuration.Digest()
 	f.input.Installation.Harness, f.input.Installation.Version = domain.OpenCode, opencode.SupportedVersion
 	f.input.Installation.Protocol = &domain.ProtocolObservation{Protocol: domain.OpenCodeHTTP, State: domain.ProtocolVerified}
-	f.input.Input.Mode = domain.ExecuteMode
+	f.input.Input.Mode = mode
 	f.job.Input, _ = json.Marshal(f.input)
 	f.job.InstanceID, f.job.AcceptedAt = domain.NewID(), time.Now().UTC()
 	raw, _ := json.Marshal(f.job)
