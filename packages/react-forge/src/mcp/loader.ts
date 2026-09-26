@@ -44,10 +44,18 @@ export class TaskLoader {
         // Caller projects may have their own React or no React Forge installation.
         // Pin only the engine's public imports; ordinary caller imports keep Node
         // resolution. A second engine would split React and Figma rate/file queues.
-        if (/^(?:react(?:\/.*)?|react-reconciler(?:\/.*)?|@delino\/react-forge(?:\/(?:pptx|docx|xlsx|pdf|figma|sprite|sfx|glb|fbx))?)$/.test(specifier)) {
-          return nextResolve(specifier, { ...context, parentURL: import.meta.url });
+        const engineImport = /^(?:react(?:\/.*)?|react-reconciler(?:\/.*)?|@delino\/react-forge(?:\/(?:pptx|docx|xlsx|pdf|figma|sprite|sfx|glb|fbx))?)$/.test(specifier);
+        const resolved = nextResolve(specifier, engineImport ? { ...context, parentURL: import.meta.url } : context);
+        if (!engineImport && context.parentURL?.startsWith("file:") && resolved.url.startsWith("file:")) {
+          const parent = fileURLToPath(context.parentURL);
+          const path = fileURLToPath(resolved.url);
+          const file = relative(this.cwd, path);
+          // Only a caller-owned local JavaScript import can establish task
+          // provenance. Dependency and engine errors remain redacted.
+          if (this.known.has(parent) && /\.(?:c|m)?js$/.test(path) && file !== ".." && !file.startsWith(`..${sep}`)
+            && !isAbsolute(file) && !file.split(sep).includes("node_modules")) this.register(path, TaskSource.Import);
         }
-        return nextResolve(specifier, context);
+        return resolved;
       } catch (error) {
         const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
         // Node's resolver embeds host paths in its messages. Keep only the

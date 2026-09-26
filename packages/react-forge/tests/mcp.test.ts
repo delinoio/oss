@@ -196,6 +196,19 @@ test("MCP reports bounded compiler, module and uncaught render diagnostics witho
   assert.equal(imported.error.diagnostics[0].file, "tasks/helper.ts");
   assert.equal(imported.error.diagnostics[0].line, 1);
 
+  for (const extension of ["js", "mjs"]) {
+    await writeFile(join(cwd, "tasks", `throwing-helper.${extension}`), `throw Error('PRIVATE-${extension.toUpperCase()}-HELPER');`);
+    await writeFile(join(cwd, "tasks", `javascript-${extension}.tsx`), `import './throwing-helper.${extension}'; export default () => {};`);
+    const helper = await errorCode(peer, "execute", { entry: `tasks/javascript-${extension}.tsx` }, "render");
+    assert.equal(helper.error.message, `PRIVATE-${extension.toUpperCase()}-HELPER`);
+    assert.equal(helper.error.diagnostics[0].phase, "task");
+    assert.equal(helper.error.diagnostics[0].source, "import");
+    assert.equal(helper.error.diagnostics[0].file, `tasks/throwing-helper.${extension}`);
+    assert.equal(helper.error.diagnostics[0].line, 1);
+    assert.ok(helper.error.diagnostics[0].column > 0);
+    assert.ok(!JSON.stringify(helper).includes(cwd));
+  }
+
   const unresolved = await errorCode(peer, "execute", { code: "import './absent-local-module.js'; export default () => {};" }, "malformed_input");
   assert.equal(unresolved.error.diagnostics[0].phase, "compile");
   assert.match(unresolved.error.message, /absent-local-module/);
@@ -240,6 +253,8 @@ test("MCP reports bounded compiler, module and uncaught render diagnostics witho
   await peer.call("close", { sessionId });
 
   assert.ok(!peer.stderr().includes("PRIVATE-RENDER-DETAIL"));
+  assert.ok(!peer.stderr().includes("PRIVATE-JS-HELPER"));
+  assert.ok(!peer.stderr().includes("PRIVATE-MJS-HELPER"));
   assert.ok(!peer.stderr().includes("HANDLED-RENDER-DETAIL"));
   assert.ok(!peer.stderr().includes("tasks/broken.tsx"));
   for (const line of peer.stderr().trim().split("\n").filter(Boolean)) assert.equal(JSON.parse(line).source, "mcp");
