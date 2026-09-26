@@ -17,6 +17,7 @@ func (s *sessionAPI) request(ctx context.Context, method, path string, body []by
 	valid := method == http.MethodPost && path == "/session" && s.creation != nil
 	valid = valid || s.runtimeRead && s.creation == nil && method == http.MethodGet && (path == "/config" || path == "/provider" || path == "/path" || path == "/agent") && len(body) == 0
 	valid = valid || s.historyRead != nil && method == http.MethodGet && path == s.historyRead.path && len(body) == 0
+	valid = valid || s.checkpointRead && method == http.MethodGet && len(body) == 0 && (path == "/session?limit=2" || path == "/permission" || path == "/question" || path == "/session/status")
 	if s.creationLookup && s.creation != nil && s.creation.attempted && s.input == nil && method == http.MethodGet && len(body) == 0 {
 		valid = valid || path == "/session?limit=2"
 		if nativeID(s.creationCandidate, "ses") {

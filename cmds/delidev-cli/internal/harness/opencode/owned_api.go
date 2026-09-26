@@ -84,7 +84,7 @@ func (a *OwnedAPI) StartText(ctx context.Context, request domain.ID, text string
 		return InputReceipt{}, err
 	}
 	creation := a.session.creation
-	validRequest := creation != nil && request != creation.request
+	validRequest := creation != nil && request != creation.request && a.session.freshCheckpointInput(request, "", "")
 	a.session.leave()
 	if !validRequest {
 		return InputReceipt{}, sessionInvalid()

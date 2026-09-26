@@ -47,6 +47,7 @@ type SessionMutation string
 
 const (
 	CreateSessionMutation         SessionMutation = "create-session"
+	ResumeSessionMutation         SessionMutation = "resume-session"
 	SubmitInputMutation           SessionMutation = "submit-input"
 	ReplyPermissionMutation       SessionMutation = "reply-permission"
 	ReplyQuestionMutation         SessionMutation = "reply-question"
@@ -124,6 +125,10 @@ type sessionAPI struct {
 	creationLookup    bool
 	creationCandidate string
 	historyRead       *historyPageRead
+	checkpointRead    bool
+	predecessor       *nativeCheckpoint
+	predecessorDigest string
+	resumeRequest     domain.ID
 }
 
 type sessionCreation struct {
@@ -340,6 +345,9 @@ func (s *sessionAPI) submit(ctx context.Context, request domain.ID, messageID, p
 		}
 	}
 	if request.Validate() != nil || !nativeID(messageID, "msg") || !nativeID(partID, "prt") || domain.Text(text, "input", 256<<10, true) != nil || s.creation == nil || request == s.creation.request {
+		return InputReceipt{}, sessionInvalid()
+	}
+	if !s.freshCheckpointInput(request, messageID, partID) {
 		return InputReceipt{}, sessionInvalid()
 	}
 	if err := s.verifyInstructions(ctx, "submit-input"); err != nil {

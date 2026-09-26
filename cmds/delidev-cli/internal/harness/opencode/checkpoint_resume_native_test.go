@@ -1,0 +1,235 @@
+package opencode
+
+import (
+	"bytes"
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
+)
+
+func TestManualNativeOpenCodeCheckpointProcessReplacement(t *testing.T) {
+	binary := os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE")
+	if binary == "" {
+		t.Skip("explicit private pinned OpenCode process replacement fixture")
+	}
+	for _, mode := range []string{"build", "plan", "failed", "stopped"} {
+		t.Run(mode, func(t *testing.T) { nativeCheckpointReplacement(t, binary, mode) })
+	}
+}
+
+func nativeCheckpointReplacement(t *testing.T, binary string, mode string) {
+	t.Helper()
+	requireNoManagedOpenCodeConfig(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	agent := BuildAgent
+	if mode == "plan" {
+		agent = PlanAgent
+	}
+	failedFirst := mode == "failed" || mode == "stopped"
+	const turns = 3
+	var requests atomic.Int32
+	tokens := make([]string, turns)
+	for index := range tokens {
+		tokens[index] = apiproxy.TokenPrefix + base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{byte(index)}, 32))
+	}
+	prompt := func(index int) string { return fmt.Sprintf("Private original input %d.", index) }
+	answer := func(index int) string { return fmt.Sprintf("Private original response %d.", index) }
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		index := int(requests.Add(1)) - 1
+		var body struct {
+			Model    string `json:"model"`
+			Stream   bool   `json:"stream"`
+			Messages []struct {
+				Role    string          `json:"role"`
+				Content json.RawMessage `json:"content"`
+			} `json:"messages"`
+		}
+		if index >= turns || json.NewDecoder(io.LimitReader(r.Body, maxHTTPBody)).Decode(&body) != nil || body.Model != fixtureSettings().Model || !body.Stream || r.URL.Path != apiproxy.Prefix+"/chat/completions" || r.Header.Get("Authorization") != "Bearer "+tokens[index] {
+			t.Error("replacement changed original provider/model/credential authority")
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		type providerMessage struct{ role, text string }
+		var expected []providerMessage
+		for input := 0; input <= index; input++ {
+			expected = append(expected, providerMessage{"user", prompt(input)})
+			if input < index && !(input == 0 && failedFirst) {
+				expected = append(expected, providerMessage{"assistant", answer(input)})
+			}
+		}
+		seen := 0
+		for _, message := range body.Messages {
+			if message.Role == "system" {
+				continue
+			}
+			if seen >= len(expected) {
+				t.Error("replacement repeated original conversation")
+				break
+			}
+			role, text := expected[seen].role, expected[seen].text
+			var content string
+			decoded := json.Unmarshal(message.Content, &content) == nil
+			matches := content == text
+			if agent == PlanAgent && seen == len(expected)-1 {
+				// The pinned native SessionReminders.apply appends plan.txt to
+				// the latest provider input only. Pin its exact bytes without
+				// importing that upstream prompt into repository-owned code.
+				var parts []struct {
+					Type string `json:"type"`
+					Text string `json:"text"`
+				}
+				decoded = domain.Decode(message.Content, &parts) == nil
+				matches = decoded && len(parts) == 2 && parts[0].Type == "text" && parts[0].Text == text && parts[1].Type == "text" && mutationDigest([]byte(parts[1].Text)) == "455db97e0d21e8097c2afb539d167b4b2483e99b585dbc4fff23cafd4a3029b8"
+			}
+			if !decoded || message.Role != role || !matches {
+				t.Error("replacement lost, changed or repeated original conversation", index, seen)
+			}
+			seen++
+		}
+		if seen != len(expected) {
+			t.Error("replacement omitted original conversation", index, seen)
+		}
+		if index == 0 && failedFirst {
+			w.Header().Set("Content-Type", "application/json")
+			status, errorType := http.StatusUnauthorized, "invalid_api_key"
+			if mode == "stopped" {
+				status, errorType = http.StatusServiceUnavailable, "server_error"
+				w.Header().Set("Retry-After", "60")
+			}
+			w.WriteHeader(status)
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"message": "Private original fixture error", "type": errorType}})
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprintf(w, "data: {\"id\":\"chatcmpl-private-%d\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"private-model\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":%q},\"finish_reason\":null}]}\n\n", index, answer(index))
+		_, _ = fmt.Fprintf(w, "data: {\"id\":\"chatcmpl-private-%d\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"private-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":20,\"completion_tokens\":4,\"total_tokens\":24}}\n\ndata: [DONE]\n\n", index)
+	}))
+	defer provider.Close()
+	var original apiSessionConfig
+	var prior []byte
+	var ref CheckpointReference
+	var home string
+	for turn := 0; turn < turns; turn++ {
+		config := fixtureOwnedAPIConfig(t)
+		config.Probe.Process.Executable = binary
+		config.ServerOrigin, config.Token = provider.URL, tokens[turn]
+		config.Settings.Agent, config.Settings.Permission = agent, []PermissionRule{}
+		config.Instructions = "Private immutable additive checkpoint instruction."
+		if turn > 0 {
+			config.Workspace, config.NativeRoot = original.Workspace, original.NativeRoot
+		} else {
+			original = config
+		}
+		var claims []SessionClaim
+		config.Claim = func(_ context.Context, claim SessionClaim) error {
+			if err := claim.Validate(); err != nil {
+				return err
+			}
+			for _, old := range claims {
+				if old.RequestID == claim.RequestID {
+					return sessionConflict()
+				}
+			}
+			claims = append(claims, claim)
+			raw, _ := json.Marshal(claims)
+			return security.WriteAtomic(filepath.Join(filepath.Dir(filepath.Dir(config.Probe.Home)), "claims.json"), raw)
+		}
+		var api *OwnedAPI
+		var err error
+		if turn == 0 {
+			api, err = OpenOwnedAPI(ctx, config)
+		} else {
+			if ref.RequiresResume {
+				if api, err := OpenResumedAPI(ctx, config, home, prior, ref, domain.NewID(), false); err == nil || api != nil || len(claims) != 0 {
+					t.Fatal("failed/stopped predecessor gained implicit continuation")
+				}
+			}
+			api, err = OpenResumedAPI(ctx, config, home, prior, ref, domain.NewID(), ref.RequiresResume)
+		}
+		if err != nil {
+			t.Fatal("original checkpoint replacement unavailable", turn, err)
+		}
+		defer func(api *OwnedAPI) {
+			cleanup, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			if err := api.Close(cleanup); err != nil {
+				t.Error(err)
+			}
+		}(api)
+		if turn == 0 {
+			if _, err := api.CreateSession(ctx, domain.NewID()); err != nil {
+				t.Fatal(err)
+			}
+		} else {
+			if _, err := api.CreateSession(ctx, domain.NewID()); err == nil || len(claims) != 1 || claims[0].Kind != ResumeSessionMutation {
+				t.Fatal("replacement recreated the original session")
+			}
+			if _, err := api.StartText(ctx, ref.InputRequestID, prompt(turn-1)); err == nil || api.session.eventAttempt || len(claims) != 1 {
+				t.Fatal("original input replay consumed a new listener or claim")
+			}
+		}
+		if _, err := api.StartText(ctx, domain.NewID(), prompt(turn)); err != nil {
+			t.Fatal(err)
+		}
+		for count := 0; count < 512; count++ {
+			observation, err := api.Next(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if turn == 0 && mode == "stopped" && observation.Retry != nil {
+				if _, err := api.Interrupt(ctx, domain.NewID()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			progress, err := api.Progress(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if progress.SettledObserved {
+				break
+			}
+		}
+		if turn == 0 && mode == "stopped" {
+			_, err = api.CloseAfterStop(ctx)
+		} else {
+			_, err = api.CloseCompleted(ctx)
+		}
+		if err != nil {
+			t.Fatal("replacement history or cleanup failed", turn, err)
+		}
+		if turn > 0 && InspectCheckpoint(ctx, home, prior, ref) != nil {
+			t.Fatal("replacement modified original closed files")
+		}
+		raw, current, err := api.RetainCheckpoint(ctx)
+		wantClaims := 2
+		if turn == 0 && mode == "stopped" {
+			wantClaims++
+		}
+		if err != nil || len(claims) != wantClaims || current.RequiresResume != (turn == 0 && failedFirst) || turn > 0 && (current.SessionID != ref.SessionID || current.CreationRequestID != ref.CreationRequestID || current.InputID == ref.InputID || current.OwnerID == ref.OwnerID) {
+			t.Fatal("replacement lost immutable native lineage", turn, err)
+		}
+		home = filepath.Dir(config.Probe.Home)
+		value, err := decodeCheckpoint(raw, current, home)
+		if err != nil || len(value.Previous) != turn || InspectCheckpoint(ctx, home, raw, current) != nil {
+			t.Fatal("replacement lost full history checkpoint", turn, err)
+		}
+		prior, ref = raw, current
+	}
+	if requests.Load() != turns {
+		t.Fatal("replacement repeated or omitted original input")
+	}
+}

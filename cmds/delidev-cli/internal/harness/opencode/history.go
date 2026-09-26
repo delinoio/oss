@@ -157,8 +157,18 @@ func (s *sessionAPI) readHistoryAt(ctx context.Context, o *inputObserver, bounda
 		result.Messages[index] = message
 		cursor := s.historyRead.cursor
 		if index == 0 {
-			if cursor != "" || partsRead != len(o.parts) {
+			if partsRead != len(o.parts) || (s.predecessor == nil) != (cursor == "") {
 				return fail(observerProblem())
+			}
+			if s.predecessor != nil {
+				if seen[cursor] {
+					return fail(observerProblem())
+				}
+				seen[cursor] = true
+				s.historyRead = nil
+				if err := s.readCheckpointMessages(ctx, *s.predecessor, cursor, bytesRead, seen); err != nil {
+					return fail(err)
+				}
 			}
 		} else {
 			if cursor == "" || seen[cursor] {

@@ -34,6 +34,10 @@ func (c SessionClaim) Validate() error {
 		return sessionInvalid()
 	}
 	switch c.Kind {
+	case ResumeSessionMutation:
+		if c.StopRequestID != "" || c.InteractionID != "" || c.ArrivalID != "" || c.CallID != "" {
+			return sessionInvalid()
+		}
 	case StopInputMutation, StopOwnedRuntimeMutation, RecoverStoppedRuntimeMutation:
 		if c.InteractionID != "" || c.ArrivalID != "" || c.CallID != "" || c.BodyDigest != mutationDigest(nil) {
 			return sessionInvalid()

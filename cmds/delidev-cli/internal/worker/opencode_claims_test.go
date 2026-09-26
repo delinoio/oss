@@ -195,6 +195,32 @@ func TestOpenCodeClaimOwnershipCannotChangeOrReorder(t *testing.T) {
 	}
 }
 
+func TestOpenCodeFirstAssignmentCannotAcquirePrivateReplacementAuthority(t *testing.T) {
+	for _, initialized := range []bool{false, true} {
+		p, journal, claims := newOpenCodeClaimsFixture(t)
+		if initialized {
+			for _, claim := range claims[:2] {
+				if err := journal.Claim(context.Background(), claim); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+		before, err := security.ReadPrivate(journal.path, maxOpenCodeClaimBytes)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resume := claims[3]
+		resume.Kind = opencode.ResumeSessionMutation
+		if resume.Validate() != nil || journal.Claim(context.Background(), resume) == nil {
+			t.Fatal("first assignment authorized an unrelated replacement process")
+		}
+		after, err := security.ReadPrivate(journal.path, maxOpenCodeClaimBytes)
+		if err != nil || !bytes.Equal(before, after) || p.input.Continuation != nil {
+			t.Fatal("private replacement changed the original first-assignment journal")
+		}
+	}
+}
+
 func TestOpenCodeClaimsKeepUncertaintyAfterTamperingAndCancellation(t *testing.T) {
 	p, j, claims := newOpenCodeClaimsFixture(t)
 	canceled, cancel := context.WithCancel(context.Background())

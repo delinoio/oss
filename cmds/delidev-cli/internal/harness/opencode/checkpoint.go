@@ -30,20 +30,22 @@ type CheckpointReference struct {
 }
 
 type nativeCheckpoint struct {
-	Version          uint32              `json:"version"`
-	NativeVersion    string              `json:"native_version"`
-	Reference        CheckpointReference `json:"reference"`
-	RuntimeHome      string              `json:"runtime_home"`
-	Workspace        string              `json:"workspace"`
-	NativeRoot       string              `json:"native_root"`
-	Project          string              `json:"project"`
-	Slug             string              `json:"slug"`
-	Created          int64               `json:"created"`
-	SettingsSHA256   string              `json:"settings_sha256"`
-	CredentialSHA256 string              `json:"credential_sha256"`
-	History          HistoryObservation  `json:"history"`
-	Stop             *StopReceipt        `json:"stop,omitempty"`
-	Files            []checkpointFile    `json:"files"`
+	Version           uint32               `json:"version"`
+	NativeVersion     string               `json:"native_version"`
+	Reference         CheckpointReference  `json:"reference"`
+	RuntimeHome       string               `json:"runtime_home"`
+	Workspace         string               `json:"workspace"`
+	NativeRoot        string               `json:"native_root"`
+	Project           string               `json:"project"`
+	Slug              string               `json:"slug"`
+	Created           int64                `json:"created"`
+	SettingsSHA256    string               `json:"settings_sha256"`
+	CredentialSHA256  string               `json:"credential_sha256"`
+	History           HistoryObservation   `json:"history"`
+	Previous          []HistoryObservation `json:"previous,omitempty"`
+	PredecessorSHA256 string               `json:"predecessor_sha256,omitempty"`
+	Stop              *StopReceipt         `json:"stop,omitempty"`
+	Files             []checkpointFile     `json:"files"`
 }
 
 // RetainCheckpoint is available only after original complete-history and
@@ -124,6 +126,12 @@ func (a *OwnedAPI) RetainCheckpoint(ctx context.Context) (raw []byte, reference 
 	s.observer.mu.Unlock()
 	ref := CheckpointReference{OwnerID: s.owner, CreationRequestID: c.request, InputRequestID: i.receipt.RequestID, SessionID: history.SessionID, InputID: history.InputID, PartID: i.receipt.PartID, InputSHA256: hex.EncodeToString(i.digest[:]), HistorySHA256: history.Digest, RequiresResume: requiresResume}
 	value := nativeCheckpoint{Version: 1, NativeVersion: SupportedVersion, Reference: ref, RuntimeHome: s.runtimeHome, Workspace: s.cwd, NativeRoot: s.runtimeRoot, Project: c.identity.project, Slug: c.identity.slug, Created: c.identity.created, SettingsSHA256: settings, CredentialSHA256: mutationDigest([]byte(s.apiProfile.Token)), History: history, Stop: stop, Files: files}
+	if s.predecessor != nil {
+		value.PredecessorSHA256 = s.predecessorDigest
+		for _, prior := range checkpointHistories(*s.predecessor) {
+			value.Previous = append(value.Previous, copyHistoryObservation(prior))
+		}
+	}
 	phase = "metadata"
 	raw, err = json.Marshal(value)
 	if err != nil || len(raw) > maxCheckpointBytes {
@@ -166,7 +174,7 @@ func decodeCheckpoint(raw []byte, ref CheckpointReference, home string) (nativeC
 		return nativeCheckpoint{}, sessionUncertain()
 	}
 	input := value.History.Messages[0]
-	if len(input.Parts) != 1 || input.Parts[0].ID != ref.PartID || input.Parts[0].Kind != TextPartKind {
+	if len(input.Parts) != 1 || input.Parts[0].ID != ref.PartID || input.Parts[0].Kind != TextPartKind || !validCheckpointLineage(value) {
 		return nativeCheckpoint{}, sessionUncertain()
 	}
 	if stop := value.Stop; stop != nil {
@@ -179,6 +187,42 @@ func decodeCheckpoint(raw []byte, ref CheckpointReference, home string) (nativeC
 		return nativeCheckpoint{}, sessionUncertain()
 	}
 	return value, nil
+}
+
+func checkpointHistories(value nativeCheckpoint) []HistoryObservation {
+	history := make([]HistoryObservation, 0, len(value.Previous)+1)
+	history = append(history, value.Previous...)
+	return append(history, value.History)
+}
+
+func validCheckpointLineage(value nativeCheckpoint) bool {
+	if len(value.Previous) >= maxObservedMessages/2 || (len(value.Previous) == 0) != (value.PredecessorSHA256 == "") || len(value.Previous) > 0 && !checkpointDigest(value.PredecessorSHA256) {
+		return false
+	}
+	requests := map[domain.ID]bool{value.Reference.CreationRequestID: true, value.Reference.OwnerID: true}
+	seen := map[string]bool{}
+	messages, parts := 0, 0
+	for _, history := range checkpointHistories(value) {
+		if !validCheckpointHistory(history) || history.SessionID != value.Reference.SessionID || requests[history.RequestID] {
+			return false
+		}
+		requests[history.RequestID] = true
+		for _, message := range history.Messages {
+			if seen[message.ID] {
+				return false
+			}
+			seen[message.ID] = true
+			messages++
+			for _, part := range message.Parts {
+				if seen[part.ID] {
+					return false
+				}
+				seen[part.ID] = true
+				parts++
+			}
+		}
+	}
+	return messages <= maxObservedMessages && parts <= maxObservedParts
 }
 
 func checkpointPath(path string) bool {

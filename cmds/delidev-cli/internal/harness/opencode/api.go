@@ -18,6 +18,10 @@ import (
 // It remains private until durable Worker/account/publication integration can
 // supply its claims and handle every native lifecycle and recovery outcome.
 func openAPISession(ctx context.Context, config apiSessionConfig) (api *sessionAPI, returned error) {
+	return openAPISessionRestoring(ctx, config, nil)
+}
+
+func openAPISessionRestoring(ctx context.Context, config apiSessionConfig, restore *checkpointResume) (api *sessionAPI, returned error) {
 	phase := runtimePhase
 	defer func() {
 		if config.Probe.Process.Logger != nil {
@@ -41,6 +45,11 @@ func openAPISession(ctx context.Context, config apiSessionConfig) (api *sessionA
 	}
 	if err := inspectManagedConfig(managed); err != nil {
 		return nil, err
+	}
+	if restore != nil {
+		if err := restore.stage(ctx, config, profile); err != nil {
+			return nil, err
+		}
 	}
 	secret := make([]byte, 32)
 	if _, err := rand.Read(secret); err != nil {
