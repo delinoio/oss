@@ -61,3 +61,12 @@ unsafe extern "C" fn close(fd: c_int) -> c_int {
     operation::finish(token, i64::from(result));
     result
 }
+
+intercept!(fstat: unsafe extern "C" fn(c_int, *mut libc::stat) -> c_int);
+unsafe extern "C" fn fstat(fd: c_int, buffer: *mut libc::stat) -> c_int {
+    let token = operation::enter_fd(Kind::Metadata, fd);
+    // SAFETY: forwards the caller's original descriptor and buffer.
+    let result = unsafe { fstat::original()(fd, buffer) };
+    operation::finish(token, i64::from(result));
+    result
+}

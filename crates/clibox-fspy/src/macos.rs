@@ -127,6 +127,12 @@ mod tests {
         assert!(frames
             .iter()
             .any(|frame| { frame.kind == b'e' && frame.operation == 3 && frame.result == 7 }));
+        assert!(frames
+            .iter()
+            .any(|frame| { frame.kind == b'e' && frame.operation == 7 && frame.result >= 0 }));
+        assert!(frames
+            .iter()
+            .any(|frame| { frame.kind == b'e' && frame.operation == 8 && frame.result >= 0 }));
     }
 
     #[test]
@@ -134,6 +140,9 @@ mod tests {
         let Some(path) = std::env::var_os("CLIBOX_FSPY_TEST_INPUT") else {
             return;
         };
-        assert_eq!(fs::read(PathBuf::from(path)).unwrap(), b"fixture");
+        let path = PathBuf::from(path);
+        assert_eq!(fs::read(&path).unwrap(), b"fixture");
+        assert_eq!(fs::metadata(&path).unwrap().len(), 7);
+        assert!(fs::read_dir(path.parent().unwrap()).unwrap().count() > 0);
     }
 }

@@ -44,6 +44,8 @@ pub enum Kind {
     Write = 4,
     PositionalRead = 5,
     PositionalWrite = 6,
+    Metadata = 7,
+    Directory = 8,
 }
 
 pub struct Token {
