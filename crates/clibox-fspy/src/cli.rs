@@ -168,6 +168,12 @@ pub struct CompareArgs {
     /// Fail on added/removed project files or changed operation kinds.
     #[arg(long)]
     fail_on_change: bool,
+    /// Maximum start/completion events in each input record.
+    #[arg(long, default_value_t = DEFAULT_EVENT_LIMIT, value_parser = parse_positive_usize)]
+    max_events: usize,
+    /// Maximum encoded bytes in each input record.
+    #[arg(long, default_value_t = DEFAULT_BYTE_LIMIT, value_parser = parse_positive_u64)]
+    max_bytes: u64,
     /// Emit machine-readable JSON.
     #[arg(long, conflicts_with = "quiet")]
     json: bool,
@@ -457,13 +463,13 @@ fn publish(output: &OutputArgs, bytes: &[u8]) -> Result<(), &'static str> {
     Ok(())
 }
 
-fn load(path: &Path) -> Result<CompleteRecord, record::ParseFailure> {
+fn load(
+    path: &Path,
+    max_events: usize,
+    max_bytes: u64,
+) -> Result<CompleteRecord, record::ParseFailure> {
     let file = fs::File::open(path).map_err(|_| record::ParseFailure::Io)?;
-    record::parse(
-        BufReader::new(file),
-        DEFAULT_EVENT_LIMIT,
-        DEFAULT_BYTE_LIMIT,
-    )
+    record::parse(BufReader::new(file), max_events, max_bytes)
 }
 
 fn aggregate_details(
@@ -497,11 +503,11 @@ fn aggregate_details(
 }
 
 fn compare(args: CompareArgs) -> i32 {
-    let before = match load(&args.before) {
+    let before = match load(&args.before, args.max_events, args.max_bytes) {
         Ok(record) => record,
         Err(error) => return diagnostic(&error.to_string(), "compare"),
     };
-    let after = match load(&args.after) {
+    let after = match load(&args.after, args.max_events, args.max_bytes) {
         Ok(record) => record,
         Err(error) => return diagnostic(&error.to_string(), "compare"),
     };
@@ -3468,6 +3474,31 @@ mod tests {
         assert!(
             TestCli::try_parse_from(["fspy", "record", "--timeout", "0s", "--", "true"]).is_err()
         );
+        assert!(TestCli::try_parse_from([
+            "fspy",
+            "compare",
+            "before.ndjson",
+            "after.ndjson",
+            "--max-events",
+            "0"
+        ])
+        .is_err());
+        let parsed = TestCli::try_parse_from([
+            "fspy",
+            "compare",
+            "before.ndjson",
+            "after.ndjson",
+            "--max-events",
+            "2000000",
+            "--max-bytes",
+            "536870912",
+        ])
+        .unwrap();
+        let Command::Compare(compare) = parsed.command else {
+            panic!("expected compare command");
+        };
+        assert_eq!(compare.max_events, 2_000_000);
+        assert_eq!(compare.max_bytes, 536_870_912);
     }
 
     #[cfg(target_os = "linux")]
@@ -3519,7 +3550,7 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(execute(record.command), 0);
-        let restored = load(&trace_path).unwrap();
+        let restored = load(&trace_path, DEFAULT_EVENT_LIMIT, DEFAULT_BYTE_LIMIT).unwrap();
         assert!(restored.summary.operation_count > 0);
         let compare = TestCli::try_parse_from([
             OsString::from("fspy"),
@@ -3927,7 +3958,7 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(execute(cli.command), 0);
-        let record = load(&output).unwrap();
+        let record = load(&output, DEFAULT_EVENT_LIMIT, DEFAULT_BYTE_LIMIT).unwrap();
         assert!(record.operations.iter().any(|pair| {
             pair.start.operation.is_content_read()
                 && pair.completion.byte_count.is_some_and(|count| count > 0)
@@ -4346,7 +4377,7 @@ mod tests {
         .unwrap();
         assert_eq!(execute(cli.command), 0);
         unsafe { std::env::remove_var("CLIBOX_FSPY_WIN_MUTATION_ROOT") };
-        let record = load(&output).unwrap();
+        let record = load(&output, DEFAULT_EVENT_LIMIT, DEFAULT_BYTE_LIMIT).unwrap();
         let relative = |name: &str| NativePath::WindowsUtf16(name.encode_utf16().collect());
         for (source, destination) in [("source.txt", "renamed.txt"), ("renamed.txt", "linked.txt")]
         {
@@ -4395,7 +4426,7 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(execute(cli.command), 0);
-        let record = load(&output).unwrap();
+        let record = load(&output, DEFAULT_EVENT_LIMIT, DEFAULT_BYTE_LIMIT).unwrap();
         assert!(record.operations.iter().any(|pair| {
             pair.start.operation.is_content_read()
                 && pair.completion.byte_count.is_some_and(|count| count > 0)

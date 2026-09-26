@@ -36,7 +36,7 @@ The observation boundary includes synchronous opens, closes, reads, writes, posi
 
 `assetcov` fixes its denominator before running the child. A selected existing file counts as covered only after a successful read of at least one byte, or a successful EOF read of an initially empty file. Opens and metadata checks alone do not count. Aliases of the same file count once. `--fail-under` accepts 0 through 100 percent.
 
-`compare` reports added and removed project files, changed operation kinds, counts, failures, timing differences, and external accesses. `--fail-on-change` gates path and operation-kind changes; count and timing differences remain informational. Neither command compares file contents.
+`compare` reports added and removed project files, changed operation kinds, counts, failures, timing differences, and external accesses. `--fail-on-change` gates path and operation-kind changes; count and timing differences remain informational. Use `--max-events` and `--max-bytes` when reading records captured with higher limits. Neither command compares file contents.
 
 ## Watches, delays, and breakpoints
 
