@@ -64,6 +64,8 @@ const (
 	nativeShellNonzeroPublication
 	nativeShellTimeoutPublication
 	nativeShellTruncatedPublication
+	nativeCompletionPublication
+	nativeCompletionAuthFailurePublication
 )
 
 func TestManualNativeOpenCodePublishesRegisteredText(t *testing.T) {
@@ -102,10 +104,16 @@ func TestManualNativeOpenCodePublishesRegisteredShell(t *testing.T) {
 	}
 }
 
+func TestManualNativeOpenCodeReportsOriginalCompletion(t *testing.T) {
+	for _, publication := range []nativeOpenCodePublication{nativeCompletionPublication, nativeCompletionAuthFailurePublication} {
+		t.Run(fmt.Sprint(publication), func(t *testing.T) { nativeRegisteredOpenCode(t, domain.ExecuteMode, false, publication) })
+	}
+}
+
 func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool, publication nativeOpenCodePublication) {
 	publish := publication != nativeNoPublication
 	hasTranscript := publication >= nativeTextPublication
-	authFailure := publication == nativeTerminalAuthFailurePublication
+	authFailure := publication == nativeTerminalAuthFailurePublication || publication == nativeCompletionAuthFailurePublication
 	shellTool := publication == nativeShellPublication || publication == nativeShellNonzeroPublication || publication == nativeShellTimeoutPublication || publication == nativeShellTruncatedPublication
 	const shellSentinel = "Original native Shell fixture."
 	shellCommand := "printf 'Original native Shell fixture.'; printf 'Original stderr fixture.' >&2"
@@ -117,7 +125,7 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 	}
 	readTool := false
 	switch publication {
-	case nativeReadPublication, nativeReadFailurePublication, nativeReadDirectoryPublication, nativeUsagePublication, nativeTerminalPublication, nativeTerminalLostAckPublication:
+	case nativeReadPublication, nativeReadFailurePublication, nativeReadDirectoryPublication, nativeUsagePublication, nativeTerminalPublication, nativeTerminalLostAckPublication, nativeCompletionPublication:
 		readTool = true
 	}
 	if publication == nativeShellTruncatedPublication {
@@ -480,6 +488,11 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 
 		if publication >= nativeTerminalPublication {
 			eventPublisher, err = worker.OpenOpenCodeEventPublisher(bindings, api)
+			if err == nil {
+				if _, err := eventPublisher.Complete(ctx); err == nil {
+					t.Fatal("unsettled input acquired cleanup completion")
+				}
+			}
 		} else {
 			textPublisher, err = worker.OpenOpenCodeTextPublisher(bindings)
 			if err == nil && publication == nativeUsagePublication {
@@ -545,6 +558,9 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 		}
 		outcome, err := eventPublisher.PublishTerminal(ctx)
 		if publication == nativeTerminalLostAckPublication {
+			if _, err := eventPublisher.Complete(ctx); err == nil {
+				t.Fatal("lost terminal acknowledgment acquired cleanup completion")
+			}
 			if err == nil || outcome != "" {
 				t.Fatal("lost terminal acknowledgment became confirmed completion")
 			}
@@ -722,4 +738,38 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 			}
 		}
 	}
+	if publication == nativeCompletionPublication || publication == nativeCompletionAuthFailurePublication {
+		completion, err := eventPublisher.Complete(ctx)
+		if err != nil || completion.ValidateForHarness(domain.OpenCode) != nil || completion.Version != 1 || completion.NativeCheckpointDigest != "" || completion.Outcome != terminalOutcome || completion.ExecutionID != f.input.ExecutionID || completion.InputID != f.input.InputID || string(completion.NativeThreadID) != session || string(completion.NativeTurnID) != receipt.MessageID {
+			t.Fatalf("original completion did not join acknowledged terminal and owned cleanup: %v", err)
+		}
+		again, err := eventPublisher.Complete(ctx)
+		if err != nil || again != completion || calls.Load() != expectedCalls {
+			t.Fatal("original completion was replaced or repeated native input")
+		}
+		request, response := f.reportCompletion(t, completion)
+		if response.Msg.Replayed {
+			t.Fatal("first completion report was fabricated as replay")
+		}
+		repeated, err := f.client.ReportWork(ctx, ownerRequest(security.Identity{Token: f.workerToken}, request))
+		if err != nil || !repeated.Msg.Replayed {
+			t.Fatal("original completion receipt was not replayed")
+		}
+		record, err := f.service.Store.Get(ctx, domain.SessionKind, f.input.SessionID)
+		retained, decodeErr := store.Decode[domain.Session](record)
+		if err != nil || decodeErr != nil || retained.Execution == nil || !retained.Execution.CleanupVerified || retained.Execution.Outcome != terminalOutcome || retained.ActiveExecutionID != "" || retained.Dispatch != domain.DispatchPaused || retained.NextExecutionIntent != "" {
+			t.Fatal("completion lost original terminal facts or fabricated continuation readiness")
+		}
+		record, err = f.service.Store.Get(ctx, domain.JobKind, f.job)
+		job, decodeErr := store.Decode[domain.Job](record)
+		expectedState := domain.JobSucceeded
+		if authFailure {
+			expectedState = domain.JobFailed
+		}
+		var reported domain.ExecutionCompletion
+		if err != nil || decodeErr != nil || job.State != expectedState || domain.Decode(job.Output, &reported) != nil || reported != completion || authFailure && (job.Problem == nil || job.Problem.Code != domain.Unauthenticated) {
+			t.Fatal("original report lost completion ownership or native failure")
+		}
+	}
+
 }

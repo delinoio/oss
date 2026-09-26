@@ -13,16 +13,19 @@ import (
 // unimplemented family blocks terminal publication instead of disappearing from
 // an apparently complete transcript. Native cleanup/reporting remains separate.
 type OpenCodeEventPublisher struct {
-	mu       sync.Mutex
-	api      *opencode.OwnedAPI
-	text     *OpenCodeTextPublisher
-	usage    *OpenCodeUsagePublisher
-	seen     map[string]bool
-	final    string
-	finish   *opencode.FinishReason
-	problem  *opencode.NativeError
-	blocked  bool
-	finished bool
+	mu               sync.Mutex
+	api              *opencode.OwnedAPI
+	text             *OpenCodeTextPublisher
+	usage            *OpenCodeUsagePublisher
+	seen             map[string]bool
+	final            string
+	finish           *opencode.FinishReason
+	problem          *opencode.NativeError
+	blocked          bool
+	finished         bool
+	terminalSequence uint64
+	terminalOutcome  domain.ExecutionOutcome
+	completion       *domain.ExecutionCompletion
 }
 
 func OpenOpenCodeEventPublisher(binding *OpenCodeBindingPublisher, api *opencode.OwnedAPI) (*OpenCodeEventPublisher, error) {
@@ -212,6 +215,11 @@ func (c *OpenCodeEventPublisher) PublishTerminal(ctx context.Context) (domain.Ex
 		return fail(err)
 	}
 	c.finished = true
+	c.terminalSequence, err = b.publisher.acknowledgedSequence()
+	if err != nil {
+		return fail(err)
+	}
+	c.terminalOutcome = outcome
 	return outcome, nil
 }
 

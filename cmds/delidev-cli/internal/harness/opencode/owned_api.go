@@ -21,8 +21,10 @@ type Progress = inputProgress
 // authority. Next serializes consumption through observation so concurrent
 // callers cannot reorder the original stream after dequeueing its events.
 type OwnedAPI struct {
-	session *sessionAPI
-	reading chan struct{}
+	session             *sessionAPI
+	reading             chan struct{}
+	completionAttempted bool
+	completed           *HistoryObservation
 }
 
 func OpenOwnedAPI(ctx context.Context, config APIExecutionConfig) (*OwnedAPI, error) {
@@ -142,6 +144,9 @@ func (a *OwnedAPI) Next(ctx context.Context) (Observation, error) {
 		defer func() { <-a.reading }()
 	case <-ctx.Done():
 		return Observation{}, unavailable()
+	}
+	if a.completionAttempted {
+		return Observation{}, sessionConflict()
 	}
 	observer, stream, err := a.observer(ctx)
 	if err != nil {

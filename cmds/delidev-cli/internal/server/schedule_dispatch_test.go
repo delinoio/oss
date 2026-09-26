@@ -404,8 +404,10 @@ func TestScheduleCoordinatorSelectionFailureAndRevokedLocalOrigin(t *testing.T) 
 
 func TestScheduleCoordinatorLoopDrainsDueHistoryAndJoinsCancellation(t *testing.T) {
 	f := newScheduleDispatchFixture(t, domain.ScheduleAllowOverlap, false)
-	// Use real wall time only for this lifecycle test. Every retained due time
-	// precedes startup, so the loop must never queue provider/native work.
+	// Use real wall time for timer/cancellation lifecycle. The initially due
+	// instants predate startup and cannot queue work. A minute boundary during
+	// the real timer wait may additionally create a legitimate online instant;
+	// classify it separately instead of treating it as missed-history replay.
 	f.mutate(t, func(tx *store.Tx) error {
 		r, err := tx.Get(domain.ScheduleKind, f.schedule)
 		if err != nil {
@@ -439,13 +441,23 @@ func TestScheduleCoordinatorLoopDrainsDueHistoryAndJoinsCancellation(t *testing.
 			t.Fatal(err)
 		}
 		if len(rows) >= 2 {
+			missed := 0
 			for _, r := range rows {
-				v, _ := store.Decode[domain.ScheduleOccurrence](r)
-				if v.State != domain.OccurrenceSkipped || v.Reason != domain.ServerOfflineOccurrence {
-					t.Fatal("catch-up execution created")
+				v, err := store.Decode[domain.ScheduleOccurrence](r)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !v.DueAt.Before(f.service.Endpoint.StartedAt) {
+					continue
+				}
+				missed++
+				if v.State != domain.OccurrenceSkipped || v.Reason != domain.ServerOfflineOccurrence || v.SessionID != "" {
+					t.Fatalf("missed instant %s (startup %s) created execution: state=%s reason=%s", v.DueAt, f.service.Endpoint.StartedAt, v.State, v.Reason)
 				}
 			}
-			break
+			if missed >= 2 {
+				break
+			}
 		}
 		if time.Now().After(deadline) {
 			t.Fatal("scheduler did not advance missed history")
