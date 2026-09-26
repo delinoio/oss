@@ -31,6 +31,25 @@ use super::client::global_client;
 const HEADER_BYTES: usize = 50;
 const MAX_PATH_BYTES: usize = 4096;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+const WSAENOTSOCK: i32 = 10038;
+const WSANOTINITIALISED: i32 = 10093;
+
+fn acquire_transport_winsock() -> std::io::Result<()> {
+    // The host can call WSACleanup after its main body but before late file
+    // operations finish. Acquire a transport reference for every observed
+    // operation so a subsequent operation can reinitialize Winsock after that
+    // cleanup. The process releases these references at exit. Remove this
+    // workaround if the paired channel moves off Winsock.
+    // Never run WSAStartup from DllMain under the loader lock.
+    let mut data: WSADATA = unsafe { std::mem::zeroed() };
+    // SAFETY: the writable buffer has the exact WSADATA size.
+    let status = unsafe { WSAStartup(0x0202, &mut data) };
+    if status == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::from_raw_os_error(status))
+    }
+}
 
 struct State {
     enabled: bool,
@@ -49,21 +68,6 @@ impl State {
 
     fn stream(&mut self) -> std::io::Result<&mut TcpStream> {
         if self.stream.is_none() {
-            // Keep one transport-owned Winsock reference for the injected
-            // process lifetime. The host runtime may release its own reference
-            // before its final file operations; pairing must still work then.
-            // Process teardown releases this reference. Do not call WSAStartup
-            // from DllMain, where loader-lock reentrancy can deadlock.
-            static WINSOCK: OnceLock<i32> = OnceLock::new();
-            let status = *WINSOCK.get_or_init(|| {
-                // SAFETY: WSAStartup initializes this process and writes the
-                // provided exact WSADATA buffer on success.
-                let mut data: WSADATA = unsafe { std::mem::zeroed() };
-                unsafe { WSAStartup(0x0202, &mut data) }
-            });
-            if status != 0 {
-                return Err(std::io::Error::from_raw_os_error(status));
-            }
             let address = std::env::var("CLIBOX_FSPY_ENDPOINT")
                 .map_err(|_| std::io::Error::other("missing_endpoint"))?
                 .parse::<SocketAddr>()
@@ -270,23 +274,49 @@ fn begin_encoded(operation: u8, encoded: &[u8]) -> Option<OperationGuard> {
     if !state.enabled {
         return None;
     }
+    if let Err(error) = acquire_transport_winsock() {
+        #[cfg(debug_assertions)]
+        let _ = writeln!(
+            std::io::stderr(),
+            "fspy preload: stage=winsock kind={:?}",
+            error.kind()
+        );
+        #[cfg(not(debug_assertions))]
+        let _ = error;
+        mark_loss("winsock_startup");
+        return None;
+    }
     let id = state.next_id.saturating_add(1);
     state.next_id = id;
-    let result = state.stream().and_then(|stream| {
-        write_frame(stream, b's', operation, id, 0, 0, encoded)?;
-        let mut ack = [0_u8; 1];
-        stream.read_exact(&mut ack)?;
-        match ack[0] {
-            b'g' => Ok(()),
-            b'q' => {
-                // The supervisor has already decided to stop this exact
-                // operation. End the process without forwarding the call.
-                unsafe { TerminateProcess(GetCurrentProcess(), 130) };
-                Err(std::io::Error::other("operation_cancelled"))
+    let mut send = |state: &mut State| {
+        state.stream().and_then(|stream| {
+            write_frame(stream, b's', operation, id, 0, 0, encoded)?;
+            let mut ack = [0_u8; 1];
+            stream.read_exact(&mut ack)?;
+            match ack[0] {
+                b'g' => Ok(()),
+                b'q' => {
+                    // The supervisor has already decided to stop this exact
+                    // operation. End the process without forwarding the call.
+                    unsafe { TerminateProcess(GetCurrentProcess(), 130) };
+                    Err(std::io::Error::other("operation_cancelled"))
+                }
+                _ => Err(std::io::Error::other("start_rejected")),
             }
-            _ => Err(std::io::Error::other("start_rejected")),
-        }
-    });
+        })
+    };
+    let mut result = send(&mut state);
+    if result
+        .as_ref()
+        .err()
+        .and_then(std::io::Error::raw_os_error)
+        .is_some_and(|code| code == WSAENOTSOCK || code == WSANOTINITIALISED)
+    {
+        // A host cleanup invalidates the prior socket before it can send a
+        // byte. Reconnect with a fresh hello and retry this exact start once.
+        state.stream = None;
+        result = send(&mut state);
+    }
     if let Err(error) = result {
         #[cfg(debug_assertions)]
         let _ = writeln!(
