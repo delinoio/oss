@@ -556,14 +556,15 @@ where
             };
             frame.requested_delay_ns =
                 u64::try_from(requested.as_nanos()).map_err(|_| invalid("delay_limit"))?;
-            if !requested.is_zero() {
-                thread::sleep(requested);
-            }
+            let observed = if requested.is_zero() {
+                Duration::ZERO
+            } else {
+                crate::delay::wait(requested, &context.stop, None)
+                    .map_err(|_| invalid("delay_cancelled"))?;
+                began.elapsed()
+            };
             frame.observed_delay_ns =
-                u64::try_from(began.elapsed().as_nanos()).map_err(|_| invalid("delay_limit"))?;
-            if requested.is_zero() {
-                frame.observed_delay_ns = 0;
-            }
+                u64::try_from(observed.as_nanos()).map_err(|_| invalid("delay_limit"))?;
         }
         let start = frame.kind == FrameKind::Start;
         context

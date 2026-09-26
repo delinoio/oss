@@ -9,6 +9,9 @@ pub mod coverage;
 pub mod record;
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+mod delay;
+
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 pub mod watch;
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]

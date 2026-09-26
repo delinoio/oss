@@ -7,7 +7,6 @@ use std::{
     path::Path,
     process::Command,
     sync::atomic::AtomicBool,
-    thread,
     time::{Duration, Instant},
 };
 
@@ -96,6 +95,14 @@ where
     if !root.is_dir() {
         return Err(supervision("root_directory"));
     }
+    let deadline = limits
+        .timeout
+        .map(|timeout| {
+            Instant::now()
+                .checked_add(timeout)
+                .ok_or(TraceFailure::Timeout)
+        })
+        .transpose()?;
     let mut starts = HashMap::<u64, CapturedEntry>::new();
     // Charge a generous upper bound before retaining each decoded path. This
     // bounds both the start map and the supervisor's completion buffer while
@@ -132,12 +139,16 @@ where
             };
             let requested_delay_ns =
                 u64::try_from(delay.as_nanos()).map_err(|_| supervision("delay_limit"))?;
-            let began = Instant::now();
-            if !delay.is_zero() {
-                thread::sleep(delay);
-            }
-            let observed_delay_ns = u64::try_from(began.elapsed().as_nanos())
-                .map_err(|_| supervision("delay_limit"))?;
+            let observed = if delay.is_zero() {
+                Duration::ZERO
+            } else {
+                crate::delay::wait(delay, cancelled, deadline).map_err(|failure| match failure {
+                    crate::delay::DelayFailure::Cancelled => TraceFailure::Cancellation,
+                    crate::delay::DelayFailure::Timeout => TraceFailure::Timeout,
+                })?
+            };
+            let observed_delay_ns =
+                u64::try_from(observed.as_nanos()).map_err(|_| supervision("delay_limit"))?;
             if starts
                 .insert(
                     entry.ordinal,
@@ -340,5 +351,33 @@ mod tests {
             |_| Duration::ZERO,
         );
         assert!(matches!(result, Err(TraceFailure::ByteLimit)));
+    }
+
+    #[test]
+    fn injected_delay_obeys_execution_timeout() {
+        let mut input = tempfile::NamedTempFile::new().unwrap();
+        input.write_all(b"fixture").unwrap();
+        let mut command = Command::new("/bin/cat");
+        command.arg(input.path()).stdout(Stdio::null());
+        let began = Instant::now();
+        let result = capture(
+            &mut command,
+            input.path().parent().unwrap(),
+            Limits {
+                timeout: Some(Duration::from_millis(200)),
+                kill_after: Duration::from_millis(100),
+                ..Limits::default()
+            },
+            &AtomicBool::new(false),
+            |operation| {
+                if operation.operation == Operation::Read {
+                    Duration::from_secs(60)
+                } else {
+                    Duration::ZERO
+                }
+            },
+        );
+        assert!(matches!(result, Err(TraceFailure::Timeout)));
+        assert!(began.elapsed() < Duration::from_secs(2));
     }
 }

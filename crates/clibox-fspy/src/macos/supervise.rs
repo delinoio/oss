@@ -220,13 +220,14 @@ where
     };
     root_start.requested_delay_ns =
         u64::try_from(delay.as_nanos()).map_err(|_| CaptureFailure::Record)?;
-    let delay_began = Instant::now();
     if !delay.is_zero() {
-        thread::sleep(delay);
-    }
-    if !delay.is_zero() {
+        let observed =
+            crate::delay::wait(delay, cancelled, deadline).map_err(|failure| match failure {
+                crate::delay::DelayFailure::Cancelled => CaptureFailure::Cancellation,
+                crate::delay::DelayFailure::Timeout => CaptureFailure::Timeout,
+            })?;
         root_start.observed_delay_ns =
-            u64::try_from(delay_began.elapsed().as_nanos()).map_err(|_| CaptureFailure::Record)?;
+            u64::try_from(observed.as_nanos()).map_err(|_| CaptureFailure::Record)?;
     }
     if cancelled.load(Ordering::Acquire) {
         return Err(CaptureFailure::Cancellation);
@@ -465,6 +466,33 @@ mod tests {
         );
         assert!(matches!(result, Err(CaptureFailure::Cancellation)));
         assert!(admitted.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn root_exec_delay_obeys_execution_timeout() {
+        let directory = tempfile::tempdir().unwrap();
+        let command = fspy::Command::new(std::env::current_exe().unwrap());
+        let began = Instant::now();
+        let result = capture_with_delay(
+            command,
+            directory.path(),
+            Limits {
+                max_events: 100,
+                max_bytes: 1024 * 1024,
+                timeout: Some(Duration::from_millis(100)),
+                kill_after: Duration::from_millis(500),
+            },
+            &AtomicBool::new(false),
+            |frame| {
+                if frame.operation == 10 && frame.pid == 0 {
+                    Duration::from_secs(60)
+                } else {
+                    Duration::ZERO
+                }
+            },
+        );
+        assert!(matches!(result, Err(CaptureFailure::Timeout)));
+        assert!(began.elapsed() < Duration::from_secs(2));
     }
 
     #[test]
