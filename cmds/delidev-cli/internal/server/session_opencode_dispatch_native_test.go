@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -21,6 +22,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/worker"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
+	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 )
 
 func TestManualNativeOpenCodePublicFirstDispatch(t *testing.T) {
@@ -49,6 +51,14 @@ func TestManualNativeOpenCodePublicContinuationRefusesChangedEvidence(t *testing
 	}
 }
 
+func TestManualNativeOpenCodePublicOncePermissionContinuation(t *testing.T) {
+	nativeOpenCodePublicDispatchProfile(t, 3, false, "", "read-once", true)
+}
+
+func TestManualNativeOpenCodePublicAlwaysPermissionStaysPaused(t *testing.T) {
+	nativeOpenCodePublicDispatchProfile(t, 1, false, "", "read-always")
+}
+
 func TestManualNativeOpenCodePublicInlineToolContinuation(t *testing.T) {
 	for _, tool := range []string{"read", "bash"} {
 		t.Run(tool, func(t *testing.T) { nativeOpenCodePublicDispatchProfile(t, 3, false, "", tool, true) })
@@ -60,6 +70,11 @@ func nativeOpenCodePublicDispatch(t *testing.T, turns int, failedFirst bool, fau
 }
 
 func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bool, fault, tool string, switchModes ...bool) {
+	permission := tool == "read-once" || tool == "read-always"
+	always := tool == "read-always"
+	if permission {
+		tool = "read"
+	}
 	binary := os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE")
 	if binary == "" {
 		t.Skip("explicit installed OpenCode with public APIs and generated loopback provider only")
@@ -149,7 +164,7 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 			// independently revalidated by the original installed native process.
 			f := newFirstDispatchFixtureProfile(t, domain.OpenCode, mode, binary, upstream.URL)
 			if tool != "" {
-				toolPath.Store(prepareOpenCodeContinuationTool(t, f, tool))
+				toolPath.Store(prepareOpenCodeContinuationTool(t, f, tool, permission))
 			}
 			f.workerStream.Close()
 			_, err := f.service.Store.Mutate(ctx, domain.NewID(), "fixture.release-setup-worker", nil, func(tx *store.Tx) (any, error) {
@@ -194,6 +209,8 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 			}
 			var firstThread domain.NativeIdentity
 			var previous domain.ExecutionCompletion
+			responded := false
+			var originalPermission []byte
 			for turn := 0; turn < turns; turn++ {
 				var job domain.Job
 				var input domain.ExecutionJobInput
@@ -205,6 +222,25 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 				}
 				for {
 					changed := f.service.Store.Changed()
+					if permission && !responded {
+						rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.InteractionKind, SessionID: domain.ID(f.change.Session.Id), Limit: 2})
+						if err != nil || len(rows) > 1 {
+							t.Fatal("unexpected original permission inventory", err)
+						}
+						if len(rows) == 1 {
+							client := delidevv1connect.NewInteractionServiceClient(http.DefaultClient, f.endpoint.URL)
+							decision := domain.OpenCodePermissionOnce
+							if always {
+								decision = domain.OpenCodePermissionAlways
+							}
+							body, _ := json.Marshal(domain.ApprovalResponseInput{OpenCode: &domain.OpenCodePermissionResponse{Decision: decision}})
+							_, err := client.RespondApproval(ctx, ownerRequest(f.identity, &pb.RespondApprovalRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(rows[0].ID), ExpectedRevision: rows[0].Revision}, ResponseJson: body}))
+							if err != nil {
+								t.Fatal(err)
+							}
+							responded = true
+						}
+					}
 					record, err := f.service.Store.Get(ctx, domain.JobKind, domain.ID(assignment.Id))
 					if err != nil {
 						t.Fatal(err)
@@ -225,10 +261,14 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 						}
 						var proof domain.ExecutionCompletion
 						expectedState, expectedOutcome, expectedDispatch := domain.JobSucceeded, domain.ExecutionSucceeded, domain.DispatchReady
+						expectedVersion := uint32(2)
+						if always {
+							expectedVersion, expectedDispatch = 1, domain.DispatchPaused
+						}
 						if failedFirst && turn == 0 {
 							expectedState, expectedOutcome, expectedDispatch = domain.JobFailed, domain.ExecutionFailed, domain.DispatchPaused
 						}
-						if completed.State != expectedState || domain.Decode(completed.Output, &proof) != nil || proof.ValidateForHarness(domain.OpenCode) != nil || proof.Version != 2 || proof.ExecutionID != input.ExecutionID || proof.InputID != input.InputID || !proof.CleanupVerified || calls.Load() != int64(turn+1+expectedCalls-turns) {
+						if completed.State != expectedState || domain.Decode(completed.Output, &proof) != nil || proof.ValidateForHarness(domain.OpenCode) != nil || proof.Version != expectedVersion || proof.ExecutionID != input.ExecutionID || proof.InputID != input.InputID || !proof.CleanupVerified || calls.Load() != int64(turn+1+expectedCalls-turns) {
 							t.Fatalf("public native execution did not retain original completion: %s %v", completed.State, completed.Problem)
 						}
 						session, err := store.Decode[domain.Session](f.refresh(t))
@@ -254,6 +294,21 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 								if err := os.WriteFile(path, []byte("changed-source-after-original-tool\n"), 0600); err != nil {
 									t.Fatal(err)
 								}
+							}
+						}
+						if permission {
+							rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.InteractionKind, SessionID: domain.ID(f.change.Session.Id), Limit: 2})
+							if err != nil || len(rows) != 1 || !responded {
+								t.Fatal("original permission missing or duplicated")
+							}
+							retained, err := store.Decode[domain.ExecutionInteraction](rows[0])
+							if err != nil || retained.Closure == domain.InteractionOpen || retained.ApprovalResponse == nil || retained.ApprovalResponse.State != domain.ApprovalResponseAccepted {
+								t.Fatal("original permission acceptance lost")
+							}
+							if turn == 0 {
+								originalPermission = bytes.Clone(rows[0].Data)
+							} else if !bytes.Equal(originalPermission, rows[0].Data) {
+								t.Fatal("replacement rewrote original approval")
 							}
 						}
 						previous = proof

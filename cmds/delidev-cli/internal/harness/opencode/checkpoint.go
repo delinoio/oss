@@ -145,11 +145,11 @@ func (a *OwnedAPI) RetainCheckpoint(ctx context.Context) (raw []byte, reference 
 	}
 	a.checkpointBytes, a.checkpointReference = bytes.Clone(raw), ref
 	if s.logger != nil {
-		toolParts := 0
+		toolParts, oncePermissions := 0, 0
 		if value.Tools != nil {
-			toolParts = len(value.Tools.Parts)
+			toolParts, oncePermissions = len(value.Tools.Parts), len(value.Tools.Once)
 		}
-		s.logger.InfoContext(ctx, "opencode_original_checkpoint_observed", "owner_id", s.owner, "request_id", i.receipt.RequestID, "messages", len(history.Messages), "entries", len(files), "restorable_inline_tool_parts", toolParts)
+		s.logger.InfoContext(ctx, "opencode_original_checkpoint_observed", "owner_id", s.owner, "request_id", i.receipt.RequestID, "messages", len(history.Messages), "entries", len(files), "restorable_inline_tool_parts", toolParts, "restorable_once_permissions", oncePermissions)
 	}
 	return raw, ref, nil
 }

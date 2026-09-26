@@ -18,7 +18,7 @@ import (
 
 const continuationToolCall = "call_original_continuation_tool"
 
-func prepareOpenCodeContinuationTool(t *testing.T, f *firstDispatchFixture, tool string) string {
+func prepareOpenCodeContinuationTool(t *testing.T, f *firstDispatchFixture, tool string, permission ...bool) string {
 	t.Helper()
 	record, err := f.service.Store.Get(context.Background(), domain.JobKind, domain.ID(f.change.WorkspaceJob.Id))
 	if err != nil {
@@ -29,7 +29,11 @@ func prepareOpenCodeContinuationTool(t *testing.T, f *firstDispatchFixture, tool
 	if err != nil || domain.Decode(job.Output, &manifest) != nil {
 		t.Fatal("missing prepared fixture workspace")
 	}
-	path := filepath.Join(manifest.PrimaryPath, "original-tool-result.txt")
+	name := "original-tool-result.txt"
+	if len(permission) == 1 && permission[0] {
+		name = ".env.original-tool-result"
+	}
+	path := filepath.Join(manifest.PrimaryPath, name)
 	if tool == "read" {
 		if err := os.WriteFile(path, []byte("original-inline-tool-sentinel\n"), 0600); err != nil {
 			t.Fatal(err)

@@ -38,6 +38,13 @@ func OpenResumedAPI(ctx context.Context, config APIExecutionConfig, home string,
 			return nil, sessionUncertain()
 		}
 	}
+	if source.Tools != nil {
+		for _, claim := range source.Tools.Once {
+			if request == claim.RequestID || config.Probe.Process.OwnerID == claim.RequestID {
+				return nil, sessionUncertain()
+			}
+		}
+	}
 	resume := &checkpointResume{source: source, raw: bytes.Clone(raw), ref: ref, request: request, previousAgent: previousAgent}
 	if err := InspectCheckpoint(ctx, home, resume.raw, ref); err != nil {
 		return nil, err
@@ -82,6 +89,13 @@ func (s *sessionAPI) freshCheckpointInput(request domain.ID, message, part strin
 	}
 	if request == s.resumeRequest || request == s.owner {
 		return false
+	}
+	if s.predecessor.Tools != nil {
+		for _, claim := range s.predecessor.Tools.Once {
+			if request == claim.RequestID {
+				return false
+			}
+		}
 	}
 	for _, prior := range checkpointHistories(*s.predecessor) {
 		if request == prior.RequestID {

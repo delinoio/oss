@@ -2,6 +2,8 @@ package opencode
 
 import (
 	"encoding/json"
+	"slices"
+	"strings"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
@@ -21,12 +23,13 @@ type checkpointToolPart struct {
 
 // This positive observation comes from the original closed live observer. A
 // legacy tool checkpoint cannot infer it from absent optional JSON fields.
-// Native v1 remembered permissions are process-local, so any interaction keeps
-// restoration gated until its separate permission/history adapter exists.
+// Native v1 remembered permissions are process-local. Version 2 admits only
+// independently accepted one-time permissions, which retain no allowance.
 type checkpointToolHistory struct {
 	Version         uint32               `json:"version"`
 	InteractionFree bool                 `json:"interaction_free"`
 	Parts           []checkpointToolPart `json:"parts"`
+	Once            []SessionClaim       `json:"once_permissions,omitempty"`
 }
 
 func validCheckpointTools(value nativeCheckpoint) bool {
@@ -34,7 +37,7 @@ func validCheckpointTools(value nativeCheckpoint) bool {
 	if proof == nil {
 		return true
 	}
-	if proof.Version != 1 || !proof.InteractionFree || len(proof.Parts) == 0 || len(proof.Parts) > maxObservedParts {
+	if len(proof.Parts) == 0 || len(proof.Parts) > maxObservedParts || !validCheckpointOnce(value) {
 		return false
 	}
 	index := 0
@@ -62,7 +65,7 @@ func (s *sessionAPI) checkpointToolHistory(value nativeCheckpoint) *checkpointTo
 	o := s.observer
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	if o.problem != nil || len(o.interactions) != 0 {
+	if o.problem != nil {
 		return nil
 	}
 	proof := &checkpointToolHistory{Version: 1, InteractionFree: true}
@@ -72,7 +75,19 @@ func (s *sessionAPI) checkpointToolHistory(value nativeCheckpoint) *checkpointTo
 		}
 		if s.predecessor.Tools != nil {
 			proof.Parts = append(proof.Parts, s.predecessor.Tools.Parts...)
+			proof.Once = append(proof.Once, s.predecessor.Tools.Once...)
 		}
+	}
+	for _, interaction := range o.interactions {
+		claim, valid := o.checkpointOnce(interaction)
+		if !valid {
+			return nil
+		}
+		proof.Once = append(proof.Once, claim)
+	}
+	if len(proof.Once) != 0 {
+		proof.Version, proof.InteractionFree = 2, false
+		slices.SortFunc(proof.Once, func(a, b SessionClaim) int { return strings.Compare(string(a.RequestID), string(b.RequestID)) })
 	}
 	for _, message := range value.History.Messages {
 		for _, part := range message.Parts {

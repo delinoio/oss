@@ -173,3 +173,6 @@ The existing `recover-execution` job input adds optional `harness` and disjoint 
 
 ### OpenCode inline-tool checkpoint eligibility
 The existing version-2 completion and explicit OpenCode recovery comparison envelopes also apply to newly captured eligible closed inline Read/Shell histories. Eligibility remains private checkpoint evidence, bound by the original report digest and complete native history; no new protobuf field or generated binding is introduced. It cannot promote historical version-1 reports, infer restored permissions from SQLite, or use retained tool metadata as execution authority. Public events and retained original tool records remain unchanged across resumed executions and completed-report recovery.
+
+
+The private OpenCode tool-proof version 2 additionally admits exact originally accepted one-time permission claims. This changes checkpoint eligibility, not the protobuf/public response envelope or retained product interaction shape. Historical version-1 reports cannot be promoted, old replies cannot be resent, and remembered permissions require their own restoration contract.

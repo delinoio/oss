@@ -38,7 +38,7 @@ func TestManualNativeOpenCodeCompletedExecutionRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, mode := range []domain.SessionMode{domain.ExecuteMode, domain.PlanMode} {
-		for _, scenario := range []string{"first", "resumed", "switched", "failed", "missing-checkpoint", "read", "bash"} {
+		for _, scenario := range []string{"first", "resumed", "switched", "failed", "missing-checkpoint", "read", "bash", "read-once"} {
 			t.Run(string(mode)+"/"+scenario, func(t *testing.T) { nativeOpenCodeRecovery(t, binary, mode, scenario) })
 		}
 	}
@@ -50,8 +50,12 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 	}
 	tool := ""
 	toolCalls := int64(0)
-	if scenario == "read" || scenario == "bash" {
+	permission := scenario == "read-once"
+	if scenario == "read" || scenario == "bash" || permission {
 		tool, toolCalls = scenario, 1
+		if permission {
+			tool = "read"
+		}
 	}
 	var toolPath atomic.Value
 	var originalToolResult string
@@ -104,7 +108,7 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 	defer upstream.Close()
 	f := newFirstDispatchFixtureProfile(t, domain.OpenCode, mode, binary, upstream.URL)
 	if tool != "" {
-		toolPath.Store(prepareOpenCodeContinuationTool(t, f, tool))
+		toolPath.Store(prepareOpenCodeContinuationTool(t, f, tool, permission))
 	}
 	f.workerStream.Close()
 	expire := func() {
@@ -216,10 +220,44 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 		enqueue()
 		assignment = resume()
 	}
+	var originalPermission []byte
+	if permission {
+		for {
+			changed := f.service.Store.Changed()
+			rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.InteractionKind, SessionID: domain.ID(f.change.Session.Id), Limit: 2})
+			if err != nil || len(rows) > 1 {
+				t.Fatal("unexpected original permission inventory", err)
+			}
+			if len(rows) == 1 {
+				client := delidevv1connect.NewInteractionServiceClient(http.DefaultClient, f.endpoint.URL)
+				body, _ := json.Marshal(domain.ApprovalResponseInput{OpenCode: &domain.OpenCodePermissionResponse{Decision: domain.OpenCodePermissionOnce}})
+				if _, err := client.RespondApproval(ctx, ownerRequest(f.identity, &pb.RespondApprovalRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(rows[0].ID), ExpectedRevision: rows[0].Revision}, ResponseJson: body})); err != nil {
+					t.Fatal(err)
+				}
+				break
+			}
+			select {
+			case <-changed:
+			case <-ctx.Done():
+				t.Fatal("original permission did not arrive")
+			}
+		}
+	}
 	select {
 	case <-lostReport:
 	case <-ctx.Done():
 		t.Fatal("original completion never reached report fault")
+	}
+	if permission {
+		rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.InteractionKind, SessionID: domain.ID(f.change.Session.Id), Limit: 2})
+		if err != nil || len(rows) != 1 {
+			t.Fatal("original permission missing")
+		}
+		retained, err := store.Decode[domain.ExecutionInteraction](rows[0])
+		if err != nil || retained.Closure == domain.InteractionOpen || retained.ApprovalResponse == nil || retained.ApprovalResponse.State != domain.ApprovalResponseAccepted {
+			t.Fatal("original permission acceptance missing")
+		}
+		originalPermission = bytes.Clone(rows[0].Data)
 	}
 	stop()
 	expire()
@@ -307,6 +345,12 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 	var continued domain.ExecutionCompletion
 	if next.State != domain.JobSucceeded || domain.Decode(next.Output, &continued) != nil || continued.NativeThreadID != completion.NativeThreadID || continued.NativeTurnID == completion.NativeTurnID || calls.Load() != lostTurn+1+toolCalls {
 		t.Fatal("explicit Resume failed after recovered completion", next.Problem)
+	}
+	if permission {
+		rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.InteractionKind, SessionID: domain.ID(f.change.Session.Id), Limit: 2})
+		if err != nil || len(rows) != 1 || !bytes.Equal(originalPermission, rows[0].Data) {
+			t.Fatal("recovery or replacement changed original accepted permission")
+		}
 	}
 	t.Log("lost original native report -> joined old Worker -> replacement inspection -> exact paused recovery -> explicit same-session Resume; no inference or mutation replay during recovery")
 }

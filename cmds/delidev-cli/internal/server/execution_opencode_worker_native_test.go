@@ -251,7 +251,7 @@ func nativeOpenCodeWorker(t *testing.T, scenario openCodeWorkerScenario) {
 			}
 			var completion domain.ExecutionCompletion
 			wantVersion := uint32(2)
-			if interaction {
+			if interaction && (!permission || stopping) {
 				wantVersion = 1
 			}
 			if domain.Decode(job.Output, &completion) != nil || completion.ValidateForHarness(domain.OpenCode) != nil || completion.Version != wantVersion || !completion.CleanupVerified {
