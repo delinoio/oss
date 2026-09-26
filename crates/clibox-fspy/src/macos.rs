@@ -556,7 +556,10 @@ mod tests {
     use std::{
         fs,
         io::Write,
-        os::{fd::AsRawFd, unix::net::UnixStream},
+        os::{
+            fd::AsRawFd,
+            unix::{ffi::OsStrExt, fs::symlink, net::UnixStream},
+        },
         path::PathBuf,
         process::Stdio,
         time::{Duration, Instant},
@@ -699,6 +702,9 @@ mod tests {
         assert!(frames.iter().any(|frame| {
             frame.kind == FrameKind::Completion && frame.operation == 6 && frame.result == 3
         }));
+        assert!(pairs.iter().any(|(start, completion)| {
+            start.operation == 7 && start.path.ends_with(b"alias.txt") && completion.result == 9
+        }));
         assert!(!frames.iter().any(|frame| {
             frame.kind == FrameKind::Start
                 && matches!(frame.operation, 2..=6)
@@ -743,6 +749,29 @@ mod tests {
         {
             return;
         }
+        let alias = path.with_file_name("alias.txt");
+        symlink("input.txt", &alias).unwrap();
+        let native_alias = std::ffi::CString::new(alias.as_os_str().as_bytes()).unwrap();
+        let native_path = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+        // SAFETY: both NUL-terminated paths and the output buffer are live.
+        assert_eq!(unsafe { libc::access(native_path.as_ptr(), libc::R_OK) }, 0);
+        let mut target = [0_u8; 32];
+        assert_eq!(
+            unsafe {
+                libc::readlink(
+                    native_alias.as_ptr(),
+                    target.as_mut_ptr().cast(),
+                    target.len(),
+                )
+            },
+            9
+        );
+        assert_eq!(&target[..9], b"input.txt");
+        // SAFETY: the path and mode are valid C strings, and fclose receives
+        // only the non-null stream returned by fopen.
+        let stream = unsafe { libc::fopen(native_path.as_ptr(), c"rb".as_ptr()) };
+        assert!(!stream.is_null());
+        assert_eq!(unsafe { libc::fclose(stream) }, 0);
         let mut pipe = [0_i32; 2];
         // SAFETY: pipe points to two writable descriptor slots.
         assert_eq!(unsafe { libc::pipe(pipe.as_mut_ptr()) }, 0);

@@ -152,6 +152,9 @@ unsafe extern "C" fn openat_nocancel(
 
 intercept!(fopen(64): unsafe extern "C" fn(path: *const c_char, mode: *const c_char) -> *mut FILE);
 unsafe extern "C" fn fopen(path: *const c_char, mode: *const c_char) -> *mut libc::FILE {
+    #[cfg(target_os = "macos")]
+    // SAFETY: the caller's pathname is forwarded unchanged to libc.
+    let operation = unsafe { operation::enter_path(Kind::Open, path) };
     // SAFETY: path and mode are valid C string pointers provided by the caller of
     // the interposed function
     if !path.is_null() {
@@ -160,7 +163,10 @@ unsafe extern "C" fn fopen(path: *const c_char, mode: *const c_char) -> *mut lib
     }
     // SAFETY: calling the original libc fopen() with the same arguments forwarded
     // from the interposed function
-    unsafe { fopen::original()(path, mode) }
+    let result = unsafe { fopen::original()(path, mode) };
+    #[cfg(target_os = "macos")]
+    operation::finish(operation, if result.is_null() { -1 } else { 0 });
+    result
 }
 
 intercept!(freopen(64): unsafe extern "C" fn(path: *const c_char, mode: *const c_char, stream: *mut FILE) -> *mut FILE);
@@ -169,6 +175,9 @@ unsafe extern "C" fn freopen(
     mode: *const c_char,
     stream: *mut FILE,
 ) -> *mut FILE {
+    #[cfg(target_os = "macos")]
+    // SAFETY: the caller's pathname is forwarded unchanged to libc.
+    let operation = unsafe { operation::enter_path(Kind::Open, path) };
     // SAFETY: path and mode are valid C string pointers provided by the caller of
     // the interposed function
     if path.is_null() {
@@ -184,5 +193,8 @@ unsafe extern "C" fn freopen(
     }
     // SAFETY: calling the original libc freopen() with the same arguments forwarded
     // from the interposed function
-    unsafe { freopen::original()(path, mode, stream) }
+    let result = unsafe { freopen::original()(path, mode, stream) };
+    #[cfg(target_os = "macos")]
+    operation::finish(operation, if result.is_null() { -1 } else { 0 });
+    result
 }
