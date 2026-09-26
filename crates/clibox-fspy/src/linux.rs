@@ -8,7 +8,7 @@ pub mod capture;
 pub mod paths;
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     io,
     os::unix::process::CommandExt,
     process::Command,
@@ -28,7 +28,7 @@ const GET_SYSCALL_INFO: libc::c_uint = 0x420e;
 const SYSCALL_INFO_ENTRY: u8 = 1;
 const SYSCALL_INFO_EXIT: u8 = 2;
 const SYSCALL_INFO_SECCOMP: u8 = 3;
-static TRACE_LOCK: Mutex<()> = Mutex::new(());
+pub(crate) static TRACE_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TraceFailure {
@@ -41,6 +41,8 @@ pub enum TraceFailure {
     Timeout,
     Cancellation,
     Cleanup,
+    ControlUnavailable,
+    ControlLoss,
 }
 
 impl std::fmt::Display for TraceFailure {
@@ -55,6 +57,8 @@ impl std::fmt::Display for TraceFailure {
             Self::Timeout => "timeout",
             Self::Cancellation => "cancellation",
             Self::Cleanup => "cleanup_failure",
+            Self::ControlUnavailable => "control_terminal_unavailable",
+            Self::ControlLoss => "control_channel_loss",
         })
     }
 }
@@ -99,6 +103,21 @@ pub enum ChildOutcome {
 pub struct TraceResult {
     pub operations: Vec<RawCompletion>,
     pub outcome: ChildOutcome,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EntryAction {
+    Ignore,
+    Record,
+    Hold,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ControlDirective {
+    Wait,
+    ReleaseOne,
+    ContinueAll,
+    Quit,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -292,6 +311,35 @@ pub fn trace<F>(
 where
     F: FnMut(&RawEntry) -> Result<bool, TraceFailure>,
 {
+    trace_controlled(
+        command,
+        limits,
+        cancelled,
+        |entry| {
+            Ok(if before(entry)? {
+                EntryAction::Record
+            } else {
+                EntryAction::Ignore
+            })
+        },
+        |_| Ok(ControlDirective::Wait),
+    )
+}
+
+/// The control callback runs with a matching calling thread held at syscall
+/// entry. Other tracees continue through the supervisor. Returning Quit starts
+/// the same owned-process cleanup used by cancellation and timeout.
+pub fn trace_controlled<F, C>(
+    command: &mut Command,
+    limits: Limits,
+    cancelled: &AtomicBool,
+    mut before: F,
+    mut control: C,
+) -> Result<TraceResult, TraceFailure>
+where
+    F: FnMut(&RawEntry) -> Result<EntryAction, TraceFailure>,
+    C: FnMut(&RawEntry) -> Result<ControlDirective, TraceFailure>,
+{
     // waitpid(__WALL) receives stops from every tracee owned by this process.
     // Serialize local trace sessions so their supervisors cannot consume each
     // other's stops; the command workflows already execute their runs serially.
@@ -326,6 +374,8 @@ where
     let mut configured = HashSet::new();
     let mut process_ids = HashMap::<pid_t, (u32, Option<u32>)>::new();
     let mut pending = HashMap::<pid_t, Option<RawEntry>>::new();
+    let mut held = VecDeque::<pid_t>::new();
+    let mut continue_all = false;
     let mut ordinal = 0_u64;
     let mut operations = Vec::new();
     let mut outcome = None;
@@ -335,6 +385,29 @@ where
     let mut forced_at = None;
 
     while !owned.tasks.is_empty() {
+        if failure.is_none() {
+            if let Some(tid) = held.front().copied() {
+                let entry = pending
+                    .get(&tid)
+                    .and_then(|entry| *entry)
+                    .ok_or_else(|| supervision("held_entry_missing"))?;
+                match control(&entry) {
+                    Ok(ControlDirective::Wait) => {}
+                    Ok(ControlDirective::ReleaseOne) => {
+                        held.pop_front();
+                        continue_syscall(tid, 0)?;
+                    }
+                    Ok(ControlDirective::ContinueAll) => {
+                        continue_all = true;
+                        while let Some(tid) = held.pop_front() {
+                            continue_syscall(tid, 0)?;
+                        }
+                    }
+                    Ok(ControlDirective::Quit) => failure = Some(TraceFailure::Cancellation),
+                    Err(error) => failure = Some(error),
+                }
+            }
+        }
         if failure.is_none() {
             if cancelled.load(Ordering::SeqCst) {
                 failure = Some(TraceFailure::Cancellation);
@@ -346,9 +419,12 @@ where
             } else if outcome.is_some() {
                 failure = Some(TraceFailure::Cleanup);
             }
-            if failure.is_some() {
-                request_signal(&owned.tasks, libc::SIGTERM);
-                graceful_at = Some(Instant::now());
+        }
+        if failure.is_some() && graceful_at.is_none() {
+            request_signal(&owned.tasks, libc::SIGTERM);
+            graceful_at = Some(Instant::now());
+            while let Some(tid) = held.pop_front() {
+                let _ = continue_syscall(tid, libc::SIGTERM);
             }
         }
         if graceful_at.is_some_and(|time| time.elapsed() >= limits.kill_after)
@@ -376,6 +452,7 @@ where
         }
         if libc::WIFEXITED(status) || libc::WIFSIGNALED(status) {
             owned.tasks.remove(&tid);
+            held.retain(|waiting| *waiting != tid);
             configured.remove(&tid);
             process_ids.remove(&tid);
             if pending
@@ -456,8 +533,15 @@ where
                         args,
                         monotonic_ns: began.elapsed().as_nanos() as u64,
                     };
-                    let keep = before(&entry)?;
-                    pending.insert(tid, keep.then_some(entry));
+                    let action = before(&entry)?;
+                    pending.insert(
+                        tid,
+                        (!matches!(action, EntryAction::Ignore)).then_some(entry),
+                    );
+                    if matches!(action, EntryAction::Hold) && !continue_all {
+                        held.push_back(tid);
+                        continue;
+                    }
                 }
                 Stop::Exit { result, failed } => {
                     let entry = pending
@@ -586,6 +670,59 @@ mod tests {
                 .len()
                 >= 2
         );
+    }
+
+    #[test]
+    fn holds_one_thread_without_stopping_another_matching_descendant() {
+        use std::{cell::Cell, rc::Rc};
+
+        let mut input = tempfile::NamedTempFile::new().unwrap();
+        input.write_all(b"concurrent reads\n").unwrap();
+        let root = input.path().parent().unwrap().canonicalize().unwrap();
+        let mut command = Command::new("/bin/sh");
+        command
+            .arg("-c")
+            .arg("cat \"$1\" >/dev/null & cat \"$1\" >/dev/null & wait")
+            .arg("sh")
+            .arg(input.path())
+            .stdout(Stdio::null());
+        let matched = Rc::new(Cell::new(0_usize));
+        let before_matched = matched.clone();
+        let control_matched = matched.clone();
+        let result = trace_controlled(
+            &mut command,
+            Limits {
+                timeout: Some(Duration::from_secs(5)),
+                ..Limits::default()
+            },
+            &AtomicBool::new(false),
+            |entry| {
+                let Some(decoded) = paths::decode(entry, &root)? else {
+                    return Ok(EntryAction::Ignore);
+                };
+                let reads_input = decoded.operation == crate::record::Operation::Read
+                    && decoded
+                        .paths
+                        .iter()
+                        .any(|path| path.class == crate::record::PathClass::Project);
+                if reads_input {
+                    before_matched.set(before_matched.get() + 1);
+                    Ok(EntryAction::Hold)
+                } else {
+                    Ok(EntryAction::Record)
+                }
+            },
+            |_| {
+                Ok(if control_matched.get() >= 2 {
+                    ControlDirective::ReleaseOne
+                } else {
+                    ControlDirective::Wait
+                })
+            },
+        )
+        .unwrap();
+        assert!(matches!(result.outcome, ChildOutcome::Exit(0)));
+        assert!(matched.get() >= 2);
     }
 
     #[test]

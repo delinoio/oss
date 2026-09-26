@@ -46,6 +46,13 @@ pub enum Command {
                       guarantee."
     )]
     MinRepro(MinReproArgs),
+    /// Pause matching calling threads before a file operation.
+    #[command(
+        after_help = "Example: clibox fspy fbreak --include 'config/**' --op read -- \
+                      ./app\nControls on the required terminal: n next, c continue all, q quit. \
+                      Child stdin is closed."
+    )]
+    Fbreak(BreakArgs),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -235,6 +242,24 @@ pub struct MinReproArgs {
     #[command(flatten)]
     output: OutputArgs,
     /// Child program and tokenized arguments.
+    #[arg(last = true, required = true, num_args = 1..)]
+    command: Vec<OsString>,
+}
+
+#[derive(Debug, Args)]
+pub struct BreakArgs {
+    #[command(flatten)]
+    execution: ExecutionArgs,
+    /// Select matching project paths.
+    #[arg(long, required = true)]
+    include: Vec<String>,
+    /// Exclude matching project paths.
+    #[arg(long)]
+    exclude: Vec<String>,
+    /// Match operation kinds; default is read and positional read.
+    #[arg(long = "op", value_enum)]
+    operations: Vec<OperationKind>,
+    /// Child program and tokenized arguments; its stdin is closed.
     #[arg(last = true, required = true, num_args = 1..)]
     command: Vec<OsString>,
 }
@@ -614,6 +639,119 @@ struct CaptureFailure {
 }
 
 #[cfg(target_os = "linux")]
+struct ControlTerminal {
+    file: fs::File,
+    original: libc::termios,
+    flags: i32,
+    displayed: Option<u64>,
+}
+
+#[cfg(target_os = "linux")]
+impl ControlTerminal {
+    fn new() -> Result<Self, crate::linux::TraceFailure> {
+        use std::os::fd::AsRawFd;
+        let file = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open("/dev/tty")
+            .map_err(|_| crate::linux::TraceFailure::ControlUnavailable)?;
+        let fd = file.as_raw_fd();
+        // SAFETY: fd is the owned control terminal descriptor and original is
+        // writable storage for tcgetattr.
+        let mut original: libc::termios = unsafe { std::mem::zeroed() };
+        if unsafe { libc::isatty(fd) } != 1
+            || unsafe { libc::tcgetattr(fd, &raw mut original) } != 0
+        {
+            return Err(crate::linux::TraceFailure::ControlUnavailable);
+        }
+        // SAFETY: F_GETFL reads status flags from the valid terminal fd.
+        let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+        if flags < 0 {
+            return Err(crate::linux::TraceFailure::ControlUnavailable);
+        }
+        let terminal = Self {
+            file,
+            original,
+            flags,
+            displayed: None,
+        };
+        let mut immediate = terminal.original;
+        immediate.c_lflag &= !(libc::ICANON | libc::ECHO);
+        immediate.c_cc[libc::VMIN] = 1;
+        immediate.c_cc[libc::VTIME] = 0;
+        // SAFETY: tcsetattr/fcntl update only the owned terminal descriptor;
+        // Drop restores both settings on success and every later failure.
+        if unsafe { libc::tcsetattr(fd, libc::TCSANOW, &raw const immediate) } != 0
+            || unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0
+        {
+            return Err(crate::linux::TraceFailure::ControlUnavailable);
+        }
+        Ok(terminal)
+    }
+
+    fn poll(
+        &mut self,
+        entry: &crate::linux::RawEntry,
+        root: &Path,
+        selector: &coverage::Selector,
+    ) -> Result<crate::linux::ControlDirective, crate::linux::TraceFailure> {
+        use std::io::Read;
+        if self.displayed != Some(entry.ordinal) {
+            let decoded = crate::linux::paths::decode(entry, root)?
+                .ok_or(crate::linux::TraceFailure::ControlLoss)?;
+            let matching = decoded
+                .paths
+                .iter()
+                .find(|path| {
+                    path.project_relative
+                        .as_ref()
+                        .is_some_and(|relative| selector.matches(relative))
+                })
+                .ok_or(crate::linux::TraceFailure::ControlLoss)?;
+            writeln!(
+                self.file,
+                "break: {} {:?} pid={} tid={} [n/c/q]",
+                display_path(&matching.logical),
+                decoded.operation,
+                entry.pid,
+                entry.tid
+            )
+            .map_err(|_| crate::linux::TraceFailure::ControlLoss)?;
+            self.file
+                .flush()
+                .map_err(|_| crate::linux::TraceFailure::ControlLoss)?;
+            self.displayed = Some(entry.ordinal);
+        }
+        let mut key = [0_u8; 1];
+        match self.file.read(&mut key) {
+            Ok(1) => Ok(match key[0] {
+                b'n' => crate::linux::ControlDirective::ReleaseOne,
+                b'c' => crate::linux::ControlDirective::ContinueAll,
+                b'q' => crate::linux::ControlDirective::Quit,
+                _ => crate::linux::ControlDirective::Wait,
+            }),
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                Ok(crate::linux::ControlDirective::Wait)
+            }
+            _ => Err(crate::linux::TraceFailure::ControlLoss),
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl Drop for ControlTerminal {
+    fn drop(&mut self) {
+        use std::os::fd::AsRawFd;
+        let fd = self.file.as_raw_fd();
+        // SAFETY: this descriptor still belongs to self until Drop completes.
+        unsafe {
+            libc::tcsetattr(fd, libc::TCSANOW, &raw const self.original);
+            libc::fcntl(fd, libc::F_SETFL, self.flags);
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
 fn execute_capture(
     command: &[OsString],
     root: &Path,
@@ -814,6 +952,8 @@ fn capture_status(failure: CaptureFailure, action: &'static str) -> i32 {
                 crate::linux::TraceFailure::EventLimit => "event_limit",
                 crate::linux::TraceFailure::ByteLimit => "byte_limit",
                 crate::linux::TraceFailure::Cleanup => "cleanup_failure",
+                crate::linux::TraceFailure::ControlUnavailable => "control_terminal_unavailable",
+                crate::linux::TraceFailure::ControlLoss => "control_channel_loss",
                 crate::linux::TraceFailure::Spawn => "spawn_failure",
                 crate::linux::TraceFailure::Supervision(_) => "trace_supervision",
                 _ => "trace_failure",
@@ -1483,6 +1623,72 @@ fn min_repro(args: MinReproArgs) -> i32 {
     0
 }
 
+#[cfg(target_os = "linux")]
+fn fbreak(args: BreakArgs) -> i32 {
+    use std::{
+        process::{Command as ProcessCommand, Stdio},
+        sync::atomic::Ordering,
+    };
+    let root = match execution_root(&args.execution) {
+        Ok(root) => root,
+        Err(error) => return diagnostic(error, "fbreak"),
+    };
+    let selector = match coverage::Selector::new(&args.include, &args.exclude) {
+        Ok(selector) => selector,
+        Err(error) => return diagnostic(&error.to_string(), "fbreak"),
+    };
+    // Admission precedes launch. A missing or unusable control terminal must
+    // never leave the child blocked at an operation entry.
+    let mut terminal = match ControlTerminal::new() {
+        Ok(terminal) => terminal,
+        Err(error) => return capture_status(CaptureFailure { error, signal: 0 }, "fbreak"),
+    };
+    let signals = match SignalHandlers::new() {
+        Ok(signals) => signals,
+        Err(error) => return capture_status(CaptureFailure { error, signal: 0 }, "fbreak"),
+    };
+    let mut child = ProcessCommand::new(&args.command[0]);
+    child
+        .args(&args.command[1..])
+        .stdin(Stdio::null())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit());
+    let result = crate::linux::capture::capture_controlled(
+        &mut child,
+        &root,
+        crate::linux::Limits {
+            max_events: args.execution.max_events,
+            max_bytes: args.execution.max_bytes,
+            timeout: args.execution.timeout,
+            kill_after: args.execution.kill_after,
+        },
+        &signals.cancelled,
+        |operation| {
+            if matches_selected(
+                operation.operation,
+                &operation.paths,
+                &selector,
+                &args.operations,
+            ) {
+                crate::linux::capture::CaptureAction::Hold
+            } else {
+                crate::linux::capture::CaptureAction::Proceed(Duration::ZERO)
+            }
+        },
+        |entry| terminal.poll(entry, &root, &selector),
+    );
+    match result {
+        Ok(record) => child_status(&record),
+        Err(error) => capture_status(
+            CaptureFailure {
+                error,
+                signal: signals.signal.load(Ordering::SeqCst),
+            },
+            "fbreak",
+        ),
+    }
+}
+
 pub fn execute(command: Command) -> i32 {
     match command {
         Command::Compare(args) => compare(args),
@@ -1528,6 +1734,17 @@ pub fn execute(command: Command) -> i32 {
             {
                 let _ = args;
                 diagnostic("unsupported_target", "min-repro")
+            }
+        }
+        Command::Fbreak(args) => {
+            #[cfg(target_os = "linux")]
+            {
+                fbreak(args)
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                let _ = args;
+                diagnostic("unsupported_target", "fbreak")
             }
         }
     }
@@ -1643,6 +1860,7 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn verified_reproduction_uses_a_separate_working_directory() {
+        let _trace_lock = crate::linux::TRACE_LOCK.lock().unwrap();
         let directory = tempfile::tempdir().unwrap();
         let root = directory.path().join("project");
         fs::create_dir(&root).unwrap();
@@ -1715,5 +1933,106 @@ mod tests {
         }
         let cli = TestCli::try_parse_from(arguments).unwrap();
         assert_eq!(execute(cli.command), if case == "verified" { 0 } else { 1 });
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn breakpoint_controls_release_or_cancel_a_real_traced_child() {
+        use std::{
+            io::{Read, Write},
+            os::{fd::FromRawFd, unix::process::CommandExt},
+            thread,
+            time::{Duration, Instant},
+        };
+        // Linux ptrace waitpid(-1) can consume another test's child status.
+        // Keep the fixture process outside concurrent in-process trace sessions.
+        let _trace_lock = crate::linux::TRACE_LOCK.lock().unwrap();
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(directory.path().join("input.txt"), b"fixture").unwrap();
+        for (case, key) in [("continue", b'c'), ("quit", b'q')] {
+            let mut master = 0_i32;
+            let mut slave = 0_i32;
+            // SAFETY: openpty fills both descriptors or returns an error.
+            assert_eq!(
+                unsafe {
+                    libc::openpty(
+                        &raw mut master,
+                        &raw mut slave,
+                        std::ptr::null_mut(),
+                        std::ptr::null(),
+                        std::ptr::null(),
+                    )
+                },
+                0
+            );
+            // SAFETY: openpty returned owned descriptors, transferred to File.
+            let mut master = unsafe { fs::File::from_raw_fd(master) };
+            let slave = unsafe { fs::File::from_raw_fd(slave) };
+            let stdout = slave.try_clone().unwrap();
+            let stderr = slave.try_clone().unwrap();
+            let mut child = std::process::Command::new(std::env::current_exe().unwrap());
+            child
+                .arg("--exact")
+                .arg("cli::tests::breakpoint_child_process")
+                .env("CLIBOX_FSPY_BREAK_CHILD", case)
+                .current_dir(directory.path())
+                .stdin(std::process::Stdio::from(slave))
+                .stdout(std::process::Stdio::from(stdout))
+                .stderr(std::process::Stdio::from(stderr));
+            // SAFETY: pre_exec uses only async-signal-safe libc calls to give
+            // the test child its own controlling pseudoterminal.
+            unsafe {
+                child.pre_exec(|| {
+                    if libc::setsid() < 0 || libc::ioctl(0, libc::TIOCSCTTY, 0) < 0 {
+                        return Err(io::Error::last_os_error());
+                    }
+                    Ok(())
+                });
+            }
+            let mut child = child.spawn().unwrap();
+            thread::sleep(Duration::from_millis(200));
+            master.write_all(&[key]).unwrap();
+            let deadline = Instant::now() + Duration::from_secs(5);
+            let status = loop {
+                if let Some(status) = child.try_wait().unwrap() {
+                    break status;
+                }
+                if Instant::now() >= deadline {
+                    child.kill().unwrap();
+                    panic!("breakpoint child did not finish");
+                }
+                thread::sleep(Duration::from_millis(10));
+            };
+            let fd = std::os::fd::AsRawFd::as_raw_fd(&master);
+            // SAFETY: fcntl operates on the owned pty master descriptor.
+            unsafe {
+                libc::fcntl(fd, libc::F_SETFL, libc::O_NONBLOCK);
+            }
+            let mut output = Vec::new();
+            let _ = master.read_to_end(&mut output);
+            assert!(status.success(), "{}", String::from_utf8_lossy(&output));
+            assert!(output
+                .windows(b"break:".len())
+                .any(|window| window == b"break:"));
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn breakpoint_child_process() {
+        let Some(case) = std::env::var_os("CLIBOX_FSPY_BREAK_CHILD") else {
+            return;
+        };
+        let cli = TestCli::try_parse_from([
+            OsString::from("fspy"),
+            OsString::from("fbreak"),
+            OsString::from("--include"),
+            OsString::from("input.txt"),
+            OsString::from("--"),
+            OsString::from("/bin/cat"),
+            OsString::from("input.txt"),
+        ])
+        .unwrap();
+        assert_eq!(execute(cli.command), if case == "quit" { 130 } else { 0 });
     }
 }

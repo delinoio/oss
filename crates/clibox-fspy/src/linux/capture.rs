@@ -11,7 +11,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-use super::{paths, supervision, trace, ChildOutcome, Limits, TraceFailure};
+use super::{
+    paths, supervision, trace_controlled, ChildOutcome, ControlDirective, EntryAction, Limits,
+    RawEntry, TraceFailure,
+};
 use crate::record::{
     Backend, CompleteRecord, Completion, CoverageBoundary, Header, NativePath, Operation,
     OperationPair, Platform, Start, Summary, SCHEMA_VERSION,
@@ -22,6 +25,11 @@ struct CapturedEntry {
     operation: paths::DecodedOperation,
     requested_delay_ns: u64,
     observed_delay_ns: u64,
+}
+
+pub enum CaptureAction {
+    Proceed(Duration),
+    Hold,
 }
 
 #[derive(Debug, Clone)]
@@ -60,39 +68,76 @@ pub fn capture<F>(
 where
     F: FnMut(&paths::DecodedOperation) -> Duration,
 {
+    capture_controlled(
+        command,
+        root,
+        limits,
+        cancelled,
+        |operation| CaptureAction::Proceed(delay_for(operation)),
+        |_| Ok(ControlDirective::Wait),
+    )
+}
+
+/// Capture while allowing a selected calling thread to remain stopped at
+/// operation entry until the controller releases it. Other tracees continue.
+pub fn capture_controlled<F, C>(
+    command: &mut Command,
+    root: &Path,
+    limits: Limits,
+    cancelled: &AtomicBool,
+    mut action_for: F,
+    control: C,
+) -> Result<CompleteRecord, TraceFailure>
+where
+    F: FnMut(&paths::DecodedOperation) -> CaptureAction,
+    C: FnMut(&RawEntry) -> Result<ControlDirective, TraceFailure>,
+{
     let root = fs::canonicalize(root).map_err(|_| supervision("root_resolution"))?;
     if !root.is_dir() {
         return Err(supervision("root_directory"));
     }
     let mut starts = HashMap::<u64, CapturedEntry>::new();
-    let result = trace(command, limits, cancelled, |entry| {
-        let Some(decoded) = paths::decode(entry, &root)? else {
-            return Ok(false);
-        };
-        let delay = delay_for(&decoded);
-        let requested_delay_ns =
-            u64::try_from(delay.as_nanos()).map_err(|_| supervision("delay_limit"))?;
-        let began = Instant::now();
-        if !delay.is_zero() {
-            thread::sleep(delay);
-        }
-        let observed_delay_ns =
-            u64::try_from(began.elapsed().as_nanos()).map_err(|_| supervision("delay_limit"))?;
-        if starts
-            .insert(
-                entry.ordinal,
-                CapturedEntry {
-                    operation: decoded,
-                    requested_delay_ns,
-                    observed_delay_ns,
-                },
-            )
-            .is_some()
-        {
-            return Err(supervision("duplicate_capture"));
-        }
-        Ok(true)
-    })?;
+    let result = trace_controlled(
+        command,
+        limits,
+        cancelled,
+        |entry| {
+            let Some(decoded) = paths::decode(entry, &root)? else {
+                return Ok(EntryAction::Ignore);
+            };
+            let action = action_for(&decoded);
+            let delay = match action {
+                CaptureAction::Proceed(delay) => delay,
+                CaptureAction::Hold => Duration::ZERO,
+            };
+            let requested_delay_ns =
+                u64::try_from(delay.as_nanos()).map_err(|_| supervision("delay_limit"))?;
+            let began = Instant::now();
+            if !delay.is_zero() {
+                thread::sleep(delay);
+            }
+            let observed_delay_ns = u64::try_from(began.elapsed().as_nanos())
+                .map_err(|_| supervision("delay_limit"))?;
+            if starts
+                .insert(
+                    entry.ordinal,
+                    CapturedEntry {
+                        operation: decoded,
+                        requested_delay_ns,
+                        observed_delay_ns,
+                    },
+                )
+                .is_some()
+            {
+                return Err(supervision("duplicate_capture"));
+            }
+            Ok(match action {
+                CaptureAction::Proceed(_) => EntryAction::Record,
+                CaptureAction::Hold => EntryAction::Hold,
+            })
+        },
+        control,
+    )?;
     if starts.len() != result.operations.len() {
         return Err(supervision("unpaired_capture"));
     }
