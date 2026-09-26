@@ -30,7 +30,7 @@ See [Installation](/react-forge/installation) for supported hosts and [limits an
 
 ## Static 3D formats
 
-[GLB](/react-forge/formats/glb/) and [FBX](/react-forge/formats/fbx/) creation are available starting in npm `0.2.0`. They use SceneSession with registered geometry/textures, explicit file export, and revision-bound world-space bounds. Existing-file editing, animation and rigging are excluded. The FBX material profile targets Blender 4.5; local visual checks do not establish identical results in other FBX applications.
+[GLB](/react-forge/formats/glb/) and [FBX](/react-forge/formats/fbx/) creation are available starting in npm `0.2.0`. They use SceneSession with registered geometry/textures, explicit file export, and revision-bound world-space bounds. The released static API excludes existing-file editing, animation and rigging. The FBX material profile targets Blender 4.5; local visual checks do not establish identical results in other FBX applications.
 
 ## Game SFX
 
@@ -39,3 +39,13 @@ Procedural game SFX authoring and PCM WAV export are available starting in npm `
 ## Pixel sprites
 
 Pixel sprite authoring and `.sprite.zip` export are available starting in npm `0.2.0`. The [Sprite guide](/react-forge/formats/sprite/) describes the API, archive contents, and resource limits. The release workflow exercises installed consumers on all six supported native hosts. Game-engine importer compatibility is not claimed. Check the current npm dist-tag and package capabilities before using these imports.
+
+## 3D animation extension: unreleased
+
+Object keyframes, joints/skinning, morph targets, callback baking and clip/time
+measurement are implemented but have not been published to npm. This does not
+change GLB/FBX static availability since `0.2.0`. Local acceptance covers Khronos
+zero-error GLB validation, web playback, ufbx and Blender 4.5.14 deformation and
+rendering of an original three-clip character. FBX rotation/CUBIC export remains
+a sampled approximation. No new cross-platform animation acceptance, Unity/Unreal
+validation or npm publication is claimed.

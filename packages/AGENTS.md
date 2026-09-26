@@ -74,5 +74,5 @@
 
 - Word list components must carry stable list-instance identity into the native model. Separate numbered lists restart independently; items within a list share numbering, and imported numbering definitions remain untouched.
 
-- React Forge static GLB/FBX sessions follow `docs/packages-react-forge-scene-contract.md`; preserve the shared React, atomic export and MCP lifecycle while keeping the 3D model independent from Office/PDF.
+- React Forge GLB/FBX scene and animation sessions follow `docs/packages-react-forge-scene-contract.md`; preserve the shared React, atomic export and MCP lifecycle while keeping the 3D model independent from Office/PDF.
 - React Forge `/sfx` adds generation-only WAV sessions under `docs/packages-react-forge-sfx-contract.md`; preserve original procedural-example provenance, expose synthesis limits, and distinguish this unreleased extension from npm `0.1.1`.

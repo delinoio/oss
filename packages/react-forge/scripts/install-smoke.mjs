@@ -7,7 +7,7 @@ import { parseArgs } from "node:util";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { nativeName, packageRoot, platforms, sourceRevision, inspect, tarballName } from "./package.mjs";
 
-const localFormats = [["presentation", "pptx"], ["document", "docx"], ["workbook", "xlsx"], ["pdf", "pdf"], ["scene-glb", "glb"], ["scene-fbx", "fbx"], ["sprite", "sprite"], ["zombie-gunshot", "wav"]];
+const localFormats = [["presentation", "pptx"], ["document", "docx"], ["workbook", "xlsx"], ["pdf", "pdf"], ["scene-glb", "glb"], ["scene-fbx", "fbx"], ["sprite", "sprite"], ["zombie-gunshot", "wav"], ...(process.env.REACT_FORGE_SKIP_SCENE_TESTS === "1" ? [] : [["animated-character-glb", "glb"], ["animated-character-fbx", "fbx"]])];
 
 export function main() {
   const { values } = parseArgs({ options: { output: { type: "string", default: path.join(packageRoot, "dist/release") } } });
@@ -40,7 +40,7 @@ export function main() {
     execFileSync(process.execPath, ["--input-type=module", "--eval", imported], { cwd: directory, encoding: "utf8" });
     cpSync(path.join(packageRoot, "examples"), path.join(directory, "tasks"), { recursive: true });
     for (const [task, format] of localFormats) {
-      const output = path.join(directory, `report.${format === "sprite" ? "sprite.zip" : format}`);
+      const output = path.join(directory, `report-${task}.${format === "sprite" ? "sprite.zip" : format}`);
       const stdout = execFileSync(process.execPath, [path.join(installed, "bin/react-forge.mjs"), "run", path.join(directory, "tasks", `${task}.tsx`), "--output", output, "--json"], { cwd: directory, encoding: "utf8" });
       assert.equal(JSON.parse(stdout).format, format);
       const bytes = readFileSync(output);

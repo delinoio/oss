@@ -6,7 +6,7 @@
 
 ## Audience and source of truth
 
-Node.js 24 developers using the public `@delino/react-forge` library or CLI and trusted local MCP clients are the primary audience. Curate from `docs/project-react-forge.md`, the package, Figma, static-scene, MCP, release, and validation contracts, the public types, and the npm README. Preserve source-backed behavior and limitations. Keep architecture, repository paths, release operations, and evidence reproduction commands in `docs/`; public pages describe supported user workflows, stable interfaces, availability, and honest validation limits.
+Node.js 24 developers using the public `@delino/react-forge` library or CLI and trusted local MCP clients are the primary audience. Curate from `docs/project-react-forge.md`, the package, Figma, scene/animation, MCP, release, and validation contracts, the public types, and the npm README. Preserve source-backed behavior and limitations. Keep architecture, repository paths, release operations, and evidence reproduction commands in `docs/`; public pages describe supported user workflows, stable interfaces, availability, and honest validation limits.
 
 ## Routes and content
 
@@ -17,7 +17,7 @@ The former format routes `/pptx`, `/docx`, `/xlsx`, `/pdf`, `/figma`, `/sfx`, `/
 - The landing, installation, and getting-started pages give new developers a direct path from package installation to a first PPTX export, then to a format or workflow guide. The React Forge sidebar groups start, document formats, editing/automation, more formats, and help without changing other project navigation.
 - Installation and getting started cover Node.js 24, six local-document host combinations, optional native packages, fonts, and an executable TSX task.
 - Sessions and format guides cover the public React/session APIs, all four local document models, explicit exports, Office preservation, font/layout limits, and the absence of PDF import or Office conversion.
-- GLB and FBX guides describe the released generation-only SceneSession API, registered binary assets, world-space bounds, Blender 4.5 material profile, resource limits, and exclusions. They state availability from npm `0.2.0`; hosted-platform and arbitrary FBX application results are not implied by the documented checks.
+- GLB and FBX guides separately identify the unreleased animation API (joints/skin/morphs, samplers, callback baking, clip/time bounds and FBX sampling limits) while preserving the released generation-only SceneSession API, registered binary assets, world-space bounds, Blender 4.5 material profile, resource limits, and exclusions. They state availability from npm `0.2.0`; hosted-platform and arbitrary FBX application results are not implied by the documented checks.
 - SFX documents offline procedural WAV generation, bounded layers, timing and seeded variation with a zombie-game gunshot example. State availability from npm `0.2.0`; keep the absence of game-engine listening evaluation clear.
 - Sprite documents source-backed pixel drawing and animation, the revision-pinned `.sprite.zip` archive, bounds, and generation-only limits. State availability from npm `0.2.0`; do not imply engine importer compatibility.
 - Figma explains its narrower macOS Keychain authentication boundary, official MCP connection, explicit remote publication, complete/partial/unknown receipts, and recovery without blind retries. Receipts may omit a file locator after ambiguous creation; guide readers to establish the remote file's identity before reopening or repeating any write.

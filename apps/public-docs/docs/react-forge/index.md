@@ -28,4 +28,11 @@ React Forge is Apache-2.0 licensed. Report problems through [Delino OSS issues](
 
 ## Static 3D scene exports
 
-[GLB](/react-forge/formats/glb/) and [FBX](/react-forge/formats/fbx/) creation are available in npm `0.2.0`. They use SceneSession with registered geometry/textures, explicit file export, and revision-bound world-space bounds. Existing-file editing, animation and rigging are excluded. The FBX material profile targets Blender 4.5; local verification does not establish results on other hosts or FBX applications.
+[GLB](/react-forge/formats/glb/) and [FBX](/react-forge/formats/fbx/) creation are available in npm `0.2.0`. They use SceneSession with registered geometry/textures, explicit file export, and revision-bound world-space bounds. The released static API excludes existing-file editing, animation and rigging. The FBX material profile targets Blender 4.5; local verification does not establish results on other hosts or FBX applications.
+
+## 3D animation preview
+
+Object keyframes, joints/skinning and expression morphs are implemented as an
+**unreleased extension**. See the [GLB animation guide](/react-forge/formats/glb/#animation-authoring-unreleased)
+and [FBX sampling limits](/react-forge/formats/fbx/#animation-authoring-unreleased).
+Static scene creation remains available since npm `0.2.0`.

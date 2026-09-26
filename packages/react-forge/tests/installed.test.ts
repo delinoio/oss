@@ -10,7 +10,7 @@ import { connect } from "./mcp/client.js";
 import packageManifest from "../package.json" with { type: "json" };
 const exec = promisify(execFile);
 const magic = { pptx: "PK", docx: "PK", xlsx: "PK", pdf: "%PDF-", glb: "glTF", fbx: "Kaydara FBX Binary", sprite: "PK", wav: "RIFF" };
-const cases = [["presentation", "pptx"], ["document", "docx"], ["workbook", "xlsx"], ["pdf", "pdf"], ["scene-glb", "glb"], ["scene-fbx", "fbx"], ["sprite", "sprite"], ["zombie-gunshot", "wav"]] as const;
+const cases: readonly (readonly [string, keyof typeof magic])[] = [["presentation", "pptx"], ["document", "docx"], ["workbook", "xlsx"], ["pdf", "pdf"], ["scene-glb", "glb"], ["scene-fbx", "fbx"], ["sprite", "sprite"], ["zombie-gunshot", "wav"], ...(process.env.REACT_FORGE_SKIP_SCENE_TESTS === "1" ? [] : [["animated-character-glb", "glb"], ["animated-character-fbx", "fbx"]] as const)];
 
 test("scoped workspace archive installs and its CLI generates local formats and an offline Figma receipt", async () => {
   const directory = await mkdtemp(join(tmpdir(), "react-forge installed-"));
@@ -32,7 +32,7 @@ test("scoped workspace archive installs and its CLI generates local formats and 
     assert.equal(manifest.name, "@delino/react-forge");
     const cli = join(installedRoot, "bin", "react-forge.mjs");
     for (const [task, format] of cases) {
-      const output = join(directory, `report.${format === "sprite" ? "sprite.zip" : format}`);
+      const output = join(directory, `report-${task}.${format === "sprite" ? "sprite.zip" : format}`);
       const { stdout } = await exec(process.execPath, [cli, "run", join(directory, "tasks", `${task}.tsx`), "--output", output, "--json"], { cwd: directory, env });
       const result = JSON.parse(stdout); assert.equal(result.ok, true); assert.equal(result.format, format);
       const bytes = await readFile(output); assert.equal(bytes.subarray(0, magic[format].length).toString(), magic[format]);
@@ -74,9 +74,18 @@ test("scoped workspace archive installs and its CLI generates local formats and 
         if (format === "glb" || format === "fbx") {
           const measured = await mcp.call("measure", { sessionId: created.sessionId, nodeId: snapshot.targets[0].nodeId, revision: snapshot.revision });
           assert.equal(measured.geometry.coordinateSpace, "world");
+          if (task.startsWith("animated-character")) {
+            const character = snapshot.targets.find((t: { name?: string }) => t.name === "Character");
+            const wave = snapshot.targets.find((t: { name?: string }) => t.name === "wave");
+            assert.ok(character && wave);
+            const animated = await mcp.call("measure", { sessionId: created.sessionId, nodeId: character.nodeId,
+              revision: snapshot.revision, animation: { clip: wave.nodeId, time: 0.5 } });
+            assert.ok(animated.geometry.max[0] > measured.geometry.max[0] + 0.5);
+            assert.equal(animated.revision, measured.revision);
+          }
         }
-        await mcp.call("export", { sessionId: created.sessionId, output: `mcp.${format === "sprite" ? "sprite.zip" : format}` });
-        const bytes = await readFile(join(directory, `mcp.${format === "sprite" ? "sprite.zip" : format}`));
+        await mcp.call("export", { sessionId: created.sessionId, output: `mcp-${task}.${format === "sprite" ? "sprite.zip" : format}` });
+        const bytes = await readFile(join(directory, `mcp-${task}.${format === "sprite" ? "sprite.zip" : format}`));
         assert.equal(bytes.subarray(0, magic[format].length).toString(), magic[format]);
         await mcp.call("close", { sessionId: created.sessionId });
       }

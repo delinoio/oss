@@ -259,3 +259,33 @@ The explicit 2026-09-25 request extends React Forge to author game sprites and r
 ## SFX follow-up
 
 The subsequent explicit game SFX request adds offline React-authored sound generation and WAV export, validated with a zombie-game gunshot. The [SFX contract](packages-react-forge-sfx-contract.md) specifies the additional components, independent native model, synthesis bounds, CLI/MCP behavior and evidence. This additive scope does not reduce any original document-format requirement.
+
+## 3D animation follow-up (2026-09-26, Unreleased)
+
+The approved animation plan supersedes the original static extension's animation
+and rigging exclusions for newly authored scenes only. Both GLB and FBX support
+object TRS, explicit Joint hierarchies with four influences per vertex, named
+position/optional-normal morphs, and same-session handle/object-ref tracks. Add
+STEP, vector LINEAR, shortest-path quaternion interpolation, normalized cubic
+Hermite, bounded cancellable Node callback baking (1–240 fps, default 60), and
+revision-pinned clip/time world AABBs. Keep base-pose semantics and clamp track
+endpoints. Validate arrays, references, duplicate target paths, weights, singular
+transforms and preallocation budgets. GLB uses standard glTF structures and
+rejects TRS tracks directly on skinned meshes. FBX emits native animation, bone,
+bind-pose, skin and morph data with independent bindings per mesh instance;
+rotation/CUBIC baking retains original times and documents between-sample error.
+
+Preserve registration/export ordering, recovery, cancellation, atomic output,
+disposal, redacted diagnostics and shared library/CLI/MCP behavior. Local
+acceptance requires Khronos zero errors, independent web playback, ufbx time
+evaluation and Blender 4.5.14 import/deformation/playback. An original rigged
+character with expression morphs and idle/walk/wave must cover callback and
+manual cubic tracks, group movement, camera and light tracks. Record versions,
+hashes, sampled comparisons, start/middle/end renders, package and installed
+consumer regressions, root Rust tests and public-doc tests. Keep scene validation
+local under the existing CI exclusion. Generated models, renders and dist stay
+untracked and are removed from the final worktree. Update contracts, AGENTS,
+README and public guides together; preserve static release history and identify
+animation as unreleased. Existing-file import, automatic rigging/weights, IK,
+retargeting, physics, clip blending/playback runtime, Unity/Unreal acceptance and
+npm publication are excluded. Looping belongs to consumers.

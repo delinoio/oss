@@ -111,3 +111,18 @@ The generation-only GLB/FBX extension follows [the scene contract](packages-reac
 ## SFX extension
 
 `forge-sfx` independently validates and synthesizes the bounded sound model under the [SFX contract](packages-react-forge-sfx-contract.md). The N-API adapter dispatches format `wav` generation on an existing worker, emits operation-scoped diagnostics and returns PCM16 bytes plus timeline frames without font discovery. No React, audio device, filesystem or network I/O enters synthesis.
+
+## 3D animation follow-up (Unreleased)
+
+`forge-scene` owns joints, per-mesh inverse bind palettes, morph targets, clips
+and the shared STEP/LINEAR/CUBIC evaluator. Morphs precede linear blend skinning;
+measurement and FBX baking share validated sampler evaluation. The worker accepts
+bounded copied FSG2 geometry and FSA1 sampler assets, retaining FSG1 compatibility.
+Bind-palette expansion is checked against 256 MiB before each allocation. GLB
+writes standard skin/animation/morph structures. FBX writes stacks/layers/curves,
+LimbNode/Cluster bind data and BlendShape channels; importer-facing object names
+use FBX's AnimStack/AnimLayer/AnimCurve class names. Rotation/CUBIC export uses
+bounded frequency-controlled samples plus original keys, with Euler continuity
+and the existing camera/light basis conversion. There is no JavaScript callback,
+networking or external converter in native workers. Follow the complete
+[scene contract](packages-react-forge-scene-contract.md).

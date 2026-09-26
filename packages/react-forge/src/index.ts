@@ -11,4 +11,4 @@ export { CredentialSource } from "./figma/credentials.js";
 export type { FigmaOptions, FigmaReceipt, FigmaTarget } from "./figma/session.js";
 
 export { SceneSession } from "./scene/session.js";
-export type { SceneGeometry } from "./scene/session.js";
+export type { SceneGeometry, SceneSessionOptions, AnimationSample } from "./scene/session.js";

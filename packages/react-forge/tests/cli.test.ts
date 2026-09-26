@@ -18,7 +18,7 @@ test("workspace CLI runs TSX tasks and reports JSON, help, version and safe erro
     const { stdout } = await exec(process.execPath, [cli, "run", task, "--output", join(directory, "result.pptx"), "--data", '{"title":"CLI test"}', "--json"]);
     assert.equal(JSON.parse(stdout).ok, true);
     assert.equal((await readFile(join(directory, "result.pptx"))).subarray(0, 2).toString(), "PK");
-    for (const [name, format] of [["document", "docx"], ["workbook", "xlsx"], ["pdf", "pdf"], ["zombie-gunshot", "wav"]]) {
+    for (const [name, format] of [["document", "docx"], ["workbook", "xlsx"], ["pdf", "pdf"], ["zombie-gunshot", "wav"], ...(process.env.REACT_FORGE_SKIP_SCENE_TESTS === "1" ? [] : [["animated-character-glb", "glb"], ["animated-character-fbx", "fbx"]])]) {
       const task = fileURLToPath(new URL(`../examples/${name}.tsx`, import.meta.url));
       const { stdout } = await exec(process.execPath, [cli, "run", task, "--output", join(directory, `result.${format}`), "--json"]);
       assert.equal(JSON.parse(stdout).format, format);

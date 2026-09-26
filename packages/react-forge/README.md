@@ -191,7 +191,7 @@ Test renderers are not runtime dependencies. Direct Microsoft Office validation 
 
 ## Static GLB and FBX scenes (available in npm 0.2.0)
 
-`createSession(Format.Glb | Format.Fbx)` returns `SceneSession`; `/glb` and `/fbx` expose Scene, Group, Mesh, perspective/orthographic cameras and directional/point/spot lights. Register copied typed-array geometry and PNG/JPEG textures with `registerGeometry` and `registerTexture`, then render and explicitly export. Coordinates use meters and right-handed Y-up. Basic PBR maps, opacity, UVs, tangents, nonuniform/negative scales and hierarchy are supported. Existing scene import/editing, animation, rigging, refraction and advanced coatings are excluded.
+`createSession(Format.Glb | Format.Fbx)` returns `SceneSession`; `/glb` and `/fbx` expose Scene, Group, Mesh, perspective/orthographic cameras and directional/point/spot lights. Register copied typed-array geometry and PNG/JPEG textures with `registerGeometry` and `registerTexture`, then render and explicitly export. Coordinates use meters and right-handed Y-up. Basic PBR maps, opacity, UVs, tangents, nonuniform/negative scales and hierarchy are supported. The released static API excludes scene import/editing, animation, rigging, refraction and advanced coatings.
 
 `inspect`, settled `snapshot`, revision-bound world-AABB `measure`, `exportBuffer`, atomic `exportFile`, `onDiagnostic` and `dispose` retain the local session lifecycle. GLB uses glTF 2.0; binary FBX 7.4 targets Blender 4.5 materials and embeds textures. Other FBX applications may shade differently. Registered assets and output each have a 256 MiB ceiling, individual geometry/textures 64 MiB, with existing image and React-tree limits. Generation has no Blender or viewer runtime dependency.
 
@@ -234,3 +234,31 @@ Logical dimensions are 1–4096, scale 1–16, output-pixel padding 0–64 (defa
 The package adds `createSession(Format.Wav)` and `Sound`, `Noise`, `Tone`, `SampleRate`, `Channels` and `Waveform` from `@delino/react-forge/sfx`. See the [SFX guide](https://oss.delino.io/react-forge/formats/sfx/) for the complete parameters and a zombie-game gunshot.
 
 Compose timed seeded noise and sine/triangle sweeps, then use the existing buffer/file export or CLI/MCP with `.wav`. Output is mono/stereo PCM16 at 44100/48000 Hz. Durations, starts, fades and exponential decay are seconds; gains are linear, with automatic attenuation above 0.95 peak. Limits are 30 seconds, 256 layers and 16 million aggregate voice samples. Refs measure in seconds-based `timeline` coordinates. Image/font registration, audio import, recorded samples, live playback and MP3/OGG are unsupported. Generation needs no audio device, network, fonts or conversion tool.
+
+## GLB/FBX animation (unreleased)
+
+The source adds common `Joint`, `AnimationClip` and `AnimationTrack` components,
+`AnimationPath`/`AnimationInterpolation` enums, copied
+`registerAnimationSampler()` assets and cancellable `bakeAnimationSampler()`.
+This extension is not yet on npm; static scenes remain available since `0.2.0`.
+Tracks use same-session node handles or React object refs. Geometry supports four
+joint influences per vertex and up to 64 named position/optional-normal morphs;
+meshes supply ordered skin joints and initial morph weights. Morphing precedes
+skinning. `measure(handle, { revision, animation: { clip, time } })` evaluates
+world bounds in seconds, holding endpoints outside the track range.
+
+Callback baking runs only in Node, defaults to 60 fps (integer 1–240), includes
+both endpoints and creates LINEAR data. Manual STEP/LINEAR/CUBIC samplers use
+Float32 times/values and optional Hermite derivatives. FBX separately accepts
+`createSession(Format.Fbx, { animationBakeFps: 60 })`: rotation/CUBIC conversion
+retains original keys and approximates motion between samples. Animate a group
+containing mesh and joints for whole-rig movement; skinned-mesh TRS tracks fail.
+Pending samplers share export/revision, cancellation, disposal and byte limits.
+
+See the [GLB animation guide](https://oss.delino.io/react-forge/formats/glb/#animation-authoring-unreleased),
+[FBX limits](https://oss.delino.io/react-forge/formats/fbx/#animation-authoring-unreleased),
+and original [character example](examples/animated-character.tsx) with idle,
+walk and wave clips. CLI/MCP use the same API and explicit exports. Local checks
+cover Khronos, Three.js, ufbx and Blender 4.5.14. Import, automatic rigging/weights,
+IK, retargeting, physics, runtime clip blending/playback and Unity/Unreal
+compatibility are outside this extension; consumers decide looping.

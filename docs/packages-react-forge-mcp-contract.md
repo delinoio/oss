@@ -18,13 +18,13 @@ The official TypeScript MCP SDK owns stdio framing and protocol negotiation. The
 | `execute` | Exactly one of `code` or `entry`, optional `sessionId` and JSON `data`. Evaluates a fresh TSX entry, then calls its default export with `{ session, state, data, signal }`. |
 | `sessions` | `offset` and `limit`; lists active session IDs, formats, current revisions and idle/running/closing status. |
 | `inspect` | `sessionId`, optional `nodeId`/`kind`, `offset`, `limit`, and `view` (`targets` or `receipt`). Local targets come from a settled snapshot; Figma targets are cached. Receipt view never republishes. |
-| `measure` | `sessionId`, `nodeId`, exact `revision`. Local callers obtain the revision through inspect; Figma requires a completed published revision. |
+| `measure` | `sessionId`, `nodeId`, exact `revision`, optional scene-only `animation: { clip: clipNodeId, time }`. Local callers obtain the revision through inspect; Figma requires a completed published revision. |
 | `refresh` | Figma `sessionId`, optional `pageId`, up to 24 `nodeIds`, and `resources`. Delegates to the existing scoped remote reader. |
-| `export` | Local session, `output`, optional `overwrite` (default false). Extension must match PPTX/DOCX/XLSX/PDF/WAV, or `.sprite.zip` for sprites. |
+| `export` | Local session, `output`, optional `overwrite` (default false). Extension must match PPTX/DOCX/XLSX/PDF/GLB/FBX/WAV, or `.sprite.zip` for sprites. |
 | `publish` | Figma session, optional `receiptPath` ending in `.figma.json`, optional `overwrite` (default false). Without a path, publishes without saving a local receipt. |
 | `close` | `sessionId`; serializes behind prior work, disposes the session, and clears its state. |
 
-`sessionId` is the session's lowercase UUID-v7 `documentId`. A new execute call must return a live `DocumentSession` or `FigmaSession`; an update returns void or that same object. Returning another session never replaces the selected one; an unregistered rejected replacement is disposed. Session-owned `state` is a persistent `Map<string, unknown>` for components, setters, refs, mount handles and caller state. It is never serialized. `McpTaskContext` and `McpSessionTask` are type-only package exports. Tasks own cleanup for resources they create and throw away before returning a session.
+`sessionId` is the session's lowercase UUID-v7 `documentId`. A new execute call must return a live `DocumentSession`, `SceneSession` or `FigmaSession`; an update returns void or that same object. Returning another session never replaces the selected one; an unregistered rejected replacement is disposed. Session-owned `state` is a persistent `Map<string, unknown>` for components, setters, refs, mount handles and caller state. It is never serialized. `McpTaskContext` and `McpSessionTask` are type-only package exports. Tasks own cleanup for resources they create and throw away before returning a session.
 
 Inline imports and tool-relative paths resolve against the fixed working directory; file-relative imports and `import.meta.url` resolve against the entry's directory. The loader evaluates each entry under a fresh virtual file URL without writing code to disk. Inline entries, file entries and typed helpers use the automatic React JSX runtime; the loader does not apply caller `tsconfig` JSX settings during compilation. tsx supplies dependency resolution. Imported dependencies remain cached for the process lifetime; this is not a watch/reload service. The loader pins public React/React Forge imports to the running package to prevent duplicate reconciler and Figma scheduler instances. Arbitrary caller dependencies retain normal Node resolution and permissions.
 
@@ -86,3 +86,20 @@ The sprite extension reuses `DocumentSession` and all existing tools: `execute` 
 ## SFX follow-up (Published in npm 0.2.0)
 
 `Format.Wav` and canonical `@delino/react-forge/sfx` imports use existing execute/inspect/measure/export/close tools. Capabilities expose WAV encoding and synthesis bounds; measure returns timeline x/width in seconds at the pinned revision. The [SFX contract](packages-react-forge-sfx-contract.md) defines generation-only behavior. Installed CLI and SDK MCP consumers exercise the zombie-game gunshot without external samples or audio playback.
+
+## 3D animation follow-up (Unreleased)
+
+The existing nine tools also serve animated scenes. Execute uses the same public
+Joint/AnimationClip/AnimationTrack and sampler registration/baking APIs as the
+library and CLI. Inspect includes optional authored spatial names and unique clip
+names with non-mountable `animation_clip` handles. Names aid selection only;
+measurement and authoring resolve same-session UUID-v7 handles, never name guesses.
+Measure accepts optional `animation: { clip: clipNodeId, time }` in seconds for
+SceneSession only, returns exact-revision world AABBs after morphing/skinning, and
+does not mutate the revision. It rejects this argument for other formats.
+Capabilities retain `staticOnly` as false for GLB/FBX and expose animation,
+skinning and morphTargets. Pending animation registrations/bakes participate in
+export settling, cancellation and disposal. Callbacks remain in the execution
+child; workers receive copied data only. Local installed-consumer tests exercise
+both animated formats through CLI and MCP, including time-specific measurement;
+`REACT_FORGE_SKIP_SCENE_TESTS=1` retains the hosted scene-validation exclusion.

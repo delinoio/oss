@@ -1,4 +1,4 @@
-//! Bounded, format-independent static scenes. No renderer, network, or file
+//! Bounded, format-independent animated scenes. No renderer, network, or file
 //! I/O.
 #![forbid(unsafe_code)]
 use std::{
@@ -6,6 +6,10 @@ use std::{
     io::Cursor,
 };
 
+mod animation;
+mod assets;
+pub use animation::*;
+pub use assets::{MAX_MORPHS, MorphTarget, VertexSkin};
 pub use forge_document::Assets;
 use forge_tree_doc::{Diagnostic, ErrorCode, Result, cancellation::checkpoint};
 use glam::{DMat4, DQuat, DVec3};
@@ -16,13 +20,13 @@ pub const MAX_BYTES: usize = 256 * 1024 * 1024;
 pub const MAX_GEOMETRY_BYTES: usize = 64 * 1024 * 1024;
 pub const MAX_PIXELS: u64 = 64_000_000;
 pub fn invalid(path: &str) -> Diagnostic {
-    Diagnostic::new(ErrorCode::InvalidField, path, "Invalid static scene data")
+    Diagnostic::new(ErrorCode::InvalidField, path, "Invalid scene data")
 }
 pub fn limited() -> Diagnostic {
     Diagnostic::new(
         ErrorCode::ResourceLimit,
         "",
-        "Static scene resource limit exceeded",
+        "Scene resource limit exceeded",
     )
 }
 fn one() -> f64 {
@@ -87,9 +91,14 @@ impl Material {
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Kind {
     Group,
+    Joint,
     Mesh {
         geometry: String,
-        material: Material,
+        material: Box<Material>,
+        #[serde(default)]
+        skin: Option<Skin>,
+        #[serde(default)]
+        morph_weights: Vec<f64>,
     },
     PerspectiveCamera {
         yfov: f64,
@@ -139,6 +148,12 @@ pub struct Node {
 pub struct Scene {
     pub document_id: Uuid,
     pub nodes: Vec<Node>,
+    #[serde(default)]
+    pub animations: Vec<AnimationClip>,
+    #[serde(default = "default_bake_fps")]
+    pub animation_bake_fps: u32,
+    #[serde(default)]
+    pub sample: Option<AnimationSample>,
 }
 #[derive(Clone, Debug)]
 pub struct Geometry {
@@ -147,6 +162,8 @@ pub struct Geometry {
     pub tangents: Option<Vec<[f32; 4]>>,
     pub uv: Option<Vec<[f32; 2]>>,
     pub indices: Vec<u32>,
+    pub skin: Option<VertexSkin>,
+    pub morph_targets: Vec<MorphTarget>,
 }
 #[derive(Clone, Copy, Debug, Serialize)]
 pub struct Bounds {
@@ -174,6 +191,10 @@ pub struct Prepared<'a> {
     pub geometries: BTreeMap<String, Geometry>,
     pub textures: BTreeMap<String, (&'static str, u32, u32)>,
     pub bounds: BTreeMap<Uuid, Bounds>,
+    pub nodes: BTreeMap<Uuid, &'a Node>,
+    pub rest_world: BTreeMap<Uuid, DMat4>,
+    pub skins: BTreeMap<Uuid, PreparedSkin>,
+    pub samplers: BTreeMap<String, AnimationSampler>,
 }
 fn in_unit(v: f64) -> bool {
     v.is_finite() && (0.0..=1.0).contains(&v)
@@ -190,6 +211,9 @@ pub fn geometry(bytes: &[u8]) -> Result<Geometry> {
     checkpoint()?;
     if bytes.len() > MAX_GEOMETRY_BYTES {
         return Err(limited());
+    }
+    if bytes.starts_with(b"FSG2") {
+        return assets::extended_geometry(bytes);
     }
     if bytes.len() < 16 || &bytes[..4] != b"FSG1" {
         return Err(invalid("geometry"));
@@ -277,6 +301,8 @@ pub fn geometry(bytes: &[u8]) -> Result<Geometry> {
         tangents,
         uv,
         indices,
+        skin: None,
+        morph_targets: vec![],
     })
 }
 
@@ -298,11 +324,15 @@ pub fn prepare<'a>(scene: &'a Scene, assets: &'a Assets) -> Result<Prepared<'a>>
         geometries: BTreeMap::new(),
         textures: BTreeMap::new(),
         bounds: BTreeMap::new(),
+        nodes: BTreeMap::new(),
+        rest_world: BTreeMap::new(),
+        skins: BTreeMap::new(),
+        samplers: BTreeMap::new(),
     };
     let mut seen = BTreeSet::new();
-    fn visit(
-        p: &mut Prepared<'_>,
-        node: &Node,
+    fn visit<'a>(
+        p: &mut Prepared<'a>,
+        node: &'a Node,
         parent: DMat4,
         depth: usize,
         seen: &mut BTreeSet<Uuid>,
@@ -329,7 +359,7 @@ pub fn prepare<'a>(scene: &'a Scene, assets: &'a Assets) -> Result<Prepared<'a>>
         {
             return Err(invalid("nodes/transform"));
         }
-        if !matches!(node.kind, Kind::Group) && !node.children.is_empty() {
+        if !matches!(node.kind, Kind::Group | Kind::Joint) && !node.children.is_empty() {
             return Err(invalid("nodes/children"));
         }
         let world = parent
@@ -341,12 +371,15 @@ pub fn prepare<'a>(scene: &'a Scene, assets: &'a Assets) -> Result<Prepared<'a>>
         if !world.is_finite() {
             return Err(invalid("nodes/transform"));
         }
+        p.nodes.insert(node.id, node);
+        p.rest_world.insert(node.id, world);
         let mut bound = None;
         match &node.kind {
-            Kind::Group => {}
+            Kind::Group | Kind::Joint => {}
             Kind::Mesh {
                 geometry: id,
                 material: m,
+                ..
             } => {
                 if !p.geometries.contains_key(id) {
                     let g = geometry(p.assets.get(id).ok_or_else(|| invalid("geometry"))?)?;
@@ -463,6 +496,8 @@ pub fn prepare<'a>(scene: &'a Scene, assets: &'a Assets) -> Result<Prepared<'a>>
         Ok(bound)
     }
     visit(&mut p, &scene.nodes[0], DMat4::IDENTITY, 1, &mut seen)?;
+    prepare_animation(&mut p)?;
+    p.bounds = p.evaluate(scene.sample.as_ref())?;
     Ok(p)
 }
 fn valid_planes(near: f64, far: f64) -> bool {
