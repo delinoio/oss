@@ -233,6 +233,9 @@ func (s *sessionAPI) create(ctx context.Context, request domain.ID, settings Ses
 	if err := s.alive(); err != nil {
 		return "", launchError(err)
 	}
+	if err := s.verifyInstructions(ctx, "create-session"); err != nil {
+		return "", err
+	}
 	settings.Permission = slices.Clone(settings.Permission)
 	body, _ := json.Marshal(struct {
 		Title      string           `json:"title"`
@@ -314,6 +317,9 @@ func (s *sessionAPI) submit(ctx context.Context, request domain.ID, messageID, p
 	}
 	if request.Validate() != nil || !nativeID(messageID, "msg") || !nativeID(partID, "prt") || domain.Text(text, "input", 256<<10, true) != nil || s.creation == nil || request == s.creation.request {
 		return InputReceipt{}, sessionInvalid()
+	}
+	if err := s.verifyInstructions(ctx, "submit-input"); err != nil {
+		return InputReceipt{}, err
 	}
 	id, err := s.readSession(ctx)
 	if err != nil {

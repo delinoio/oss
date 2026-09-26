@@ -29,6 +29,7 @@ type apiSessionConfig struct {
 	ServerOrigin string                                    `json:"-"`
 	Token        string                                    `json:"-"`
 	Settings     SessionSettings                           `json:"-"`
+	Instructions string                                    `json:"-"`
 	ContextLimit int64                                     `json:"-"`
 	OutputLimit  int64                                     `json:"-"`
 	Rejection    RejectionPolicy                           `json:"-"`
@@ -78,7 +79,10 @@ func prepareAPISession(config apiSessionConfig) ([]string, *nativeAPIProfile, er
 	origin.Path = apiproxy.Prefix
 	settings := config.Settings
 	settings.Permission = slices.Clone(settings.Permission)
-	profile := &nativeAPIProfile{Settings: settings, BaseURL: origin.String(), Token: config.Token, ContextLimit: config.ContextLimit, OutputLimit: config.OutputLimit, Rejection: config.Rejection}
+	profile := &nativeAPIProfile{Settings: settings, BaseURL: origin.String(), Token: config.Token, ContextLimit: config.ContextLimit, OutputLimit: config.OutputLimit, Rejection: config.Rejection, Instructions: config.Instructions}
+	if config.Instructions != "" {
+		profile.InstructionsPath = filepath.Join(root, "instructions.txt")
+	}
 	raw, err := profile.configBytes()
 	if err != nil {
 		return nil, nil, err
@@ -105,6 +109,9 @@ func prepareAPISession(config apiSessionConfig) ([]string, *nativeAPIProfile, er
 			return nil, nil, err
 		}
 		env = append(env, "ProgramData="+programData)
+	}
+	if err := profile.writeInstructions(); err != nil {
+		return nil, nil, err
 	}
 	return env, profile, nil
 }

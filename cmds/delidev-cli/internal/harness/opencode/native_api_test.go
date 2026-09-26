@@ -85,6 +85,12 @@ func TestManualNativeOpenCodeOwnedAPIDefaultPermissions(t *testing.T) {
 	})
 }
 
+func TestManualNativeOpenCodeOwnedAPIAdditiveInstructions(t *testing.T) {
+	nativeOwnedAPISessionWithProfile(t, true, false, nativeServerRelay, func(c *apiSessionConfig) {
+		c.Instructions = "Private first template 지침.\nPrivate second template: preserve order."
+	})
+}
+
 // Only the lease authority is a fixture here. Native OpenCode and the actual
 // server relay handler perform their real HTTP/auth/body/stream boundaries.
 type nativeAPIProxyAuthority struct {
@@ -154,6 +160,26 @@ func nativeOwnedAPISessionWithProfile(t *testing.T, input, mismatch bool, relayM
 			t.Error("owned native request escaped the fixed scripted relay scope")
 			w.WriteHeader(http.StatusForbidden)
 			return
+		}
+		if config.Instructions != "" {
+			var messages []map[string]json.RawMessage
+			if json.Unmarshal(body["messages"], &messages) != nil {
+				t.Error("native provider messages are unavailable")
+			}
+			var system strings.Builder
+			for _, message := range messages {
+				if !scalar(message["role"], "system") {
+					continue
+				}
+				var content string
+				if json.Unmarshal(message["content"], &content) != nil {
+					t.Error("native system message is not text")
+				}
+				system.WriteString(content)
+			}
+			if strings.Count(system.String(), config.Instructions) != 1 || !strings.Contains(system.String(), "You are opencode, an interactive CLI tool") || !strings.Contains(system.String(), "Working directory: "+config.Workspace) {
+				t.Error("additive instructions replaced native base/environment or lost original template bytes/order")
+			}
 		}
 		if relayMode == nativeServerRelayRejectedCredential {
 			// The real relay must not forward this deliberately reflected

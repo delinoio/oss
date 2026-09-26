@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
@@ -18,12 +20,14 @@ const nativeAPIProviderPackage = "@ai-sdk/openai-compatible"
 // readiness. Its production owner must separately validate the registered
 // execution relay, managed policy and canonical private runtime/workspace.
 type nativeAPIProfile struct {
-	Settings     SessionSettings `json:"-"`
-	BaseURL      string          `json:"-"`
-	Token        string          `json:"-"`
-	ContextLimit int64           `json:"-"`
-	OutputLimit  int64           `json:"-"`
-	Rejection    RejectionPolicy `json:"-"`
+	Settings         SessionSettings `json:"-"`
+	BaseURL          string          `json:"-"`
+	Token            string          `json:"-"`
+	ContextLimit     int64           `json:"-"`
+	OutputLimit      int64           `json:"-"`
+	Rejection        RejectionPolicy `json:"-"`
+	Instructions     string          `json:"-"`
+	InstructionsPath string          `json:"-"`
 }
 
 func (p nativeAPIProfile) config() (map[string]any, error) {
@@ -32,8 +36,11 @@ func (p nativeAPIProfile) config() (map[string]any, error) {
 	if !validSessionSettings(p.Settings) || domain.Text(p.BaseURL, "relay", 8192, true) != nil || domain.Text(p.Token, "credential", 16384, true) != nil || !validRejectionPolicy(p.Rejection) || p.ContextLimit < 0 || p.ContextLimit > 9007199254740991 || p.OutputLimit < 0 || p.OutputLimit > 9007199254740991 || p.ContextLimit > 0 && p.OutputLimit > p.ContextLimit {
 		return nil, sessionInvalid()
 	}
+	if domain.Text(p.Instructions, "native instructions", 256<<10, false) != nil || (p.Instructions == "") != (p.InstructionsPath == "") || p.InstructionsPath != "" && (!filepath.IsAbs(p.InstructionsPath) || filepath.Clean(p.InstructionsPath) != p.InstructionsPath || strings.ContainsAny(p.InstructionsPath, "\r\n\x00") || filepath.Base(p.InstructionsPath) != "instructions.txt") {
+		return nil, sessionInvalid()
+	}
 	model := p.Settings.Provider + "/" + p.Settings.Model
-	return map[string]any{
+	result := map[string]any{
 		"autoupdate": false, "share": "disabled", "username": "delidev",
 		"model": model, "small_model": model, "enabled_providers": []string{p.Settings.Provider},
 		"experimental": map[string]any{"continue_loop_on_deny": p.Rejection == ContinueOnInteractionRejection},
@@ -46,7 +53,13 @@ func (p nativeAPIProfile) config() (map[string]any, error) {
 				"modalities": map[string]any{"input": []string{"text"}, "output": []string{"text"}},
 			}},
 		}},
-	}, nil
+	}
+	if p.InstructionsPath != "" {
+		// Native instructions are additive. Do not replace the native agent's
+		// prompt or the system field of an individual user message.
+		result["instructions"] = []string{p.InstructionsPath}
+	}
+	return result, nil
 }
 
 func (p nativeAPIProfile) configBytes() ([]byte, error) {
@@ -129,6 +142,9 @@ func (s *sessionAPI) verifyAPIProfile(ctx context.Context) error {
 		return sessionInvalid()
 	}
 	s.apiVerified = false
+	if err := s.verifyInstructions(ctx, "initialization"); err != nil {
+		return err
+	}
 	s.runtimeRead = true
 	defer func() { s.runtimeRead = false }()
 	for _, step := range []struct {
