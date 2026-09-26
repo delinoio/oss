@@ -1,0 +1,31 @@
+import { object } from "./documents";
+
+const encoder = new TextEncoder();
+function bounded(value: unknown, max: number): value is string { return typeof value === "string" && value.length <= max && !value.includes("\0") && !/[\uD800-\uDFFF]/u.test(value) && encoder.encode(value).length <= max; }
+function shape(value: unknown, keys: string[]): boolean { return value !== null && typeof value === "object" && !Array.isArray(value) && Object.keys(value).every((key) => keys.includes(key)); }
+function native(value: unknown, prefix: string): boolean { return typeof value === "string" && new RegExp(`^${prefix}_[0-9a-f]{12}[a-zA-Z0-9]{14}$`).test(value); }
+function strings(value: unknown): value is string[] { return Array.isArray(value) && value.length <= 1024 && value.every((v) => bounded(v, 32768)); }
+type Question = { text: string; header: string; options: { label: string; description: string }[]; multiple?: boolean; custom?: boolean };
+function questions(value: unknown): value is Question[] {
+  return Array.isArray(value) && value.length <= 128 && value.every((entry) => {
+    const q = object(entry);
+    return shape(entry, ["text", "header", "options", "multiple", "custom"]) && bounded(q.text, 64 * 1024) && bounded(q.header, 4096) && (q.multiple === undefined || typeof q.multiple === "boolean") && (q.custom === undefined || typeof q.custom === "boolean") && Array.isArray(q.options) && q.options.length <= 256 && q.options.every((entry) => { const v = object(entry); return shape(entry, ["label", "description"]) && bounded(v.label, 4096) && bounded(v.description, 64 * 1024); });
+  });
+}
+function objectJSON(value: unknown): value is string { if (!bounded(value, 256 * 1024)) return false; try { const v: unknown = JSON.parse(value); return v !== null && typeof v === "object" && !Array.isArray(v); } catch { return false; } }
+
+// Questions keep original matrix order and optional flags. This component has
+// no mutation hook: displaying native scopes cannot authorize a response.
+export function NativeInteraction({ data }: { data: Record<string, unknown> }) {
+  const r = object(data.opencode), id = object(data.native_request_id), permission = object(r.permission);
+  const question = data.type === "user-question", approval = data.type === "native-approval";
+  const valid = (question || approval) && r.version === "1.18.32" && shape(data.opencode, ["version", "native_event_id", "native_message_id", "call_id", "permission", "questions"]) && data.questions == null && data.approval == null && data.response == null && data.approval_response == null && native(r.native_event_id, "evt") && native(r.native_message_id, "msg") && native(data.native_item_id, "prt") && native(data.native_thread_id, "ses") && native(data.native_turn_id, "msg") && r.native_message_id !== data.native_turn_id && bounded(r.call_id, 1024) && r.call_id.trim() && id.kind === "text" && id.number == null && native(id.text, question ? "que" : "per") && ["open", "native-closed", "turn-ended"].includes(String(data.closure)) &&
+    (question ? r.permission == null && questions(r.questions) : r.questions == null && shape(r.permission, ["name", "patterns", "always", "metadata_json"]) && bounded(permission.name, 256) && permission.name.trim() && strings(permission.patterns) && strings(permission.always) && objectJSON(permission.metadata_json));
+  if (!valid) return <p>The retained OpenCode request is unavailable or inconsistent.</p>;
+  return <section aria-label="Original OpenCode request">
+    <p>OpenCode {String(r.version)}</p>
+    {question ? <ol>{(r.questions as Question[]).map((q, i) => <li key={i}><h4>{q.header || `Question ${i + 1}`}</h4><pre>{q.text}</pre><p>Multiple choices: {q.multiple === undefined ? "Native default" : q.multiple ? "Allowed" : "Not allowed"} · Custom answers: {q.custom === undefined ? "Native default" : q.custom ? "Allowed" : "Not allowed"}</p><ul>{q.options.map((o, j) => <li key={j}><strong>{o.label}</strong><pre>{o.description}</pre></li>)}</ul></li>)}</ol> : <><p>Requested permission: {String(permission.name)}</p><details><summary>Requested patterns</summary><ol>{(permission.patterns as string[]).map((v, i) => <li key={i}><pre>{v}</pre></li>)}</ol></details><details><summary>Native “always” patterns</summary><ol>{(permission.always as string[]).map((v, i) => <li key={i}><pre>{v}</pre></li>)}</ol></details><details><summary>Original native metadata</summary><pre>{String(permission.metadata_json)}</pre></details></>}
+    {question && (r.questions as Question[]).length === 0 ? <p>The original question list is empty.</p> : null}
+    <p>{data.closure === "open" ? "This request is pending. Sending OpenCode responses is not available yet; an ordinary message cannot answer or approve it." : "This retained request is closed."}</p>
+  </section>;
+}

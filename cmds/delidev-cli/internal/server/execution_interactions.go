@@ -13,16 +13,38 @@ func publishExecutionInteraction(tx *store.Tx, input domain.ExecutionJobInput, s
 		return false, executionEventConflict()
 	}
 	if event.Kind == domain.ExecutionInteractionRequested {
+		if u.OpenCode != nil {
+			tool, err := tx.OpenCodeInteractionTool(session.ID, input.ExecutionID, event.NativeThreadID, event.NativeTurnID, u.NativeItemID)
+			if err != nil {
+				return false, err
+			}
+			if tool.Role != domain.ToolMessage || tool.State != domain.MessageStreaming || tool.NativeParentID != u.OpenCode.NativeMessageID || tool.Tool == nil || tool.Tool.Completed != nil || tool.Tool.Started.OpenCodeCallID() != u.OpenCode.CallID {
+				return false, executionEventConflict()
+			}
+			if u.Type == domain.UserQuestionInteraction && (tool.Tool.Started.Kind != domain.OpenCodeBuiltinTool || tool.Tool.Started.Builtin.Name != domain.OpenCodeQuestionTool) {
+				return false, executionEventConflict()
+			}
+			exists, err := tx.HasOpenCodeInteractionEvent(session.ID, input.ExecutionID, u.OpenCode.NativeEventID)
+			if err != nil {
+				return false, err
+			}
+			if exists {
+				return false, executionEventConflict()
+			}
+		}
 		if u.Approval != nil && (u.Approval.Harness != input.Configuration.Harness || u.Approval.Version != input.Installation.Version) {
 			return false, executionEventConflict()
 		}
-		value := domain.ExecutionInteraction{ExecutionID: input.ExecutionID, NativeThreadID: event.NativeThreadID, NativeTurnID: event.NativeTurnID, NativeItemID: u.NativeItemID, NativeRequestID: u.NativeRequestID, Type: u.Type, Questions: u.Questions, Approval: u.Approval, Closure: domain.InteractionOpen, FirstSequence: event.Sequence, LastSequence: event.Sequence}
+		value := domain.ExecutionInteraction{ExecutionID: input.ExecutionID, NativeThreadID: event.NativeThreadID, NativeTurnID: event.NativeTurnID, NativeItemID: u.NativeItemID, NativeRequestID: u.NativeRequestID, Type: u.Type, Questions: u.Questions, Approval: u.Approval, OpenCode: u.OpenCode, Closure: domain.InteractionOpen, FirstSequence: event.Sequence, LastSequence: event.Sequence}
 		if _, err := tx.Put(domain.InteractionKind, u.ID, 0, session.ID, session.ProjectID, value); err != nil {
 			return false, err
 		}
 		var payload any = u.Questions
 		if u.Type == domain.NativeApprovalInteraction {
 			payload = u.Approval
+		}
+		if u.OpenCode != nil {
+			payload = u.OpenCode
 		}
 		raw, err := json.Marshal(payload)
 		if err != nil {

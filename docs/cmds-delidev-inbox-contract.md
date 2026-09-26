@@ -22,6 +22,9 @@ The CLI exposes `inbox list [--session-id ID] [--project-id ID] [--read-state al
 
 Pages are ordered by stable inbox UUID and bounded to 200 entries and 3 MiB of joined protobuf views including per-entry framing; complete source content is never truncated. Signed cursors bind session/project/source/read-state filters and the inbox event epoch. A source insertion/deletion or read-state change requires restarting pagination. Source/session details are current in each page's read transaction; response/closure changes that leave inbox membership unchanged do not by themselves expire its cursor. Existing session event streams announce source changes so clients can refresh current views. Desktop notification delivery/deduplication remains separate from these server read APIs.
 
+### Original OpenCode proposals
+Original OpenCode permission and question proposals now share the retained interaction inbox. Their separate native payload preserves request/event/tool ownership, ordered question matrices and permission scopes without conversion into Codex questions or approvals. Exact publication receipts create one unread entry, and read-state changes retain the original pending request. Product response delivery remains explicitly unsupported for this proposal profile. Actual registered native proposal evidence is recorded separately from deterministic inbox reads and full notification acceptance in the evidence ledger.
+
 ## Storage
 Schema v10 adds unique source-kind/source-ID ownership and read-state/session indexes over `inbox` entities. Creation, source publication, state/events and request receipts are atomic. Source IDs are interaction UUIDs or execution UUIDs; every terminal record also binds its original queue input. Existing source records remain authoritative and are never rewritten by inbox backfill or read-state changes.
 

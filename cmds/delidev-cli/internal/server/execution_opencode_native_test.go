@@ -78,6 +78,8 @@ const (
 	nativeGlobPublication
 	nativeGrepPublication
 	nativeEditFailurePublication
+	nativePermissionProposalPublication
+	nativeQuestionProposalPublication
 )
 
 func TestManualNativeOpenCodePublishesRegisteredText(t *testing.T) {
@@ -138,6 +140,12 @@ func TestManualNativeOpenCodePublishesRegisteredBuiltins(t *testing.T) {
 	}
 }
 
+func TestManualNativeOpenCodePublishesOriginalInteractionProposals(t *testing.T) {
+	for _, publication := range []nativeOpenCodePublication{nativePermissionProposalPublication, nativeQuestionProposalPublication} {
+		t.Run(fmt.Sprint(publication), func(t *testing.T) { nativeRegisteredOpenCode(t, domain.ExecuteMode, false, publication) })
+	}
+}
+
 func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool, publication nativeOpenCodePublication) {
 	builtinName := domain.OpenCodeBuiltinName("")
 	switch publication {
@@ -151,7 +159,10 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 		builtinName = domain.OpenCodeGlob
 	case nativeGrepPublication:
 		builtinName = domain.OpenCodeGrep
+	case nativeQuestionProposalPublication:
+		builtinName = domain.OpenCodeQuestionTool
 	}
+	interactionProposal := publication == nativePermissionProposalPublication || publication == nativeQuestionProposalPublication
 	builtinTool := builtinName.Valid()
 	builtinFailure := publication == nativeEditFailurePublication
 	fixtureModel := "fixture-model"
@@ -182,7 +193,7 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 	}
 	readTool := false
 	switch publication {
-	case nativeReadPublication, nativeReadFailurePublication, nativeReadDirectoryPublication, nativeUsagePublication, nativeTerminalPublication, nativeTerminalLostAckPublication, nativeCompletionPublication:
+	case nativeReadPublication, nativeReadFailurePublication, nativeReadDirectoryPublication, nativeUsagePublication, nativeTerminalPublication, nativeTerminalLostAckPublication, nativeCompletionPublication, nativePermissionProposalPublication:
 		readTool = true
 	}
 	if publication == nativeShellTruncatedPublication {
@@ -191,6 +202,9 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 	expectedCalls := int32(1)
 	if readTool || shellTool || todoTool || builtinTool {
 		expectedCalls = 2
+	}
+	if interactionProposal {
+		expectedCalls = 1
 	}
 	var readPath atomic.Value
 	const readSentinel = "Original native Read fixture."
@@ -409,6 +423,8 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 			input = map[string]any{"pattern": "*.txt"}
 		case domain.OpenCodeGrep:
 			input = map[string]any{"pattern": "before builtin fixture", "include": "*.txt"}
+		case domain.OpenCodeQuestionTool:
+			input = map[string]any{"questions": []any{map[string]any{"question": "Original registered native question.", "header": "Choice", "options": []any{map[string]any{"label": "First", "description": "Original choice"}, map[string]any{"label": "Second", "description": "Another choice"}}, "multiple": true}}}
 		}
 		encoded, _ := json.Marshal(input)
 		builtinInput.Store(encoded)
@@ -420,6 +436,9 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 	}
 	if readTool {
 		path := filepath.Join(workspace, readSentinel)
+		if publication == nativePermissionProposalPublication {
+			path = filepath.Join(workspace, ".env.private-fixture")
+		}
 		if publication == nativeReadDirectoryPublication {
 			if err := os.Mkdir(path, 0700); err != nil {
 				t.Fatal(err)
@@ -666,6 +685,32 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 		}
 		if err := publishObservation(observation); err != nil {
 			t.Fatal(err)
+		}
+		if interactionProposal && observation.Interaction != nil {
+			rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.InteractionKind, SessionID: f.input.SessionID, Limit: 10})
+			if err != nil || len(rows) != 1 {
+				t.Fatal("original native proposal did not retain one interaction")
+			}
+			retained, err := store.Decode[domain.ExecutionInteraction](rows[0])
+			n := observation.Interaction
+			if err != nil || retained.OpenCode == nil || retained.NativeRequestID.Text != n.ID || retained.OpenCode.NativeEventID != observation.EventID || retained.OpenCode.NativeMessageID != n.Tool.MessageID || retained.OpenCode.CallID != n.Tool.CallID || retained.Closure != domain.InteractionOpen || retained.Response != nil || retained.ApprovalResponse != nil || calls.Load() != 1 {
+				t.Fatal("native proposal changed ownership or fabricated a response")
+			}
+			if n.Kind == opencode.PermissionInteraction && (retained.OpenCode.Permission == nil || retained.OpenCode.Permission.Name != "read" || !reflect.DeepEqual(retained.OpenCode.Permission.Patterns, n.Permission.Patterns) || !reflect.DeepEqual(retained.OpenCode.Permission.Always, n.Permission.Always)) {
+				t.Fatal("native permission scope changed")
+			}
+			if n.Kind == opencode.QuestionInteraction && (len(retained.OpenCode.Questions) != 1 || retained.OpenCode.Questions[0].Text != "Original registered native question." || retained.OpenCode.Questions[0].Multiple == nil || !*retained.OpenCode.Questions[0].Multiple || retained.OpenCode.Questions[0].Custom != nil) {
+				t.Fatal("native question matrix changed")
+			}
+			inbox, err := inboxClient(f).ListInbox(ctx, ownerRequest(f.service.Identity, &pb.ListInboxRequest{SessionId: string(f.input.SessionID)}))
+			if err != nil || len(inbox.Msg.Entries) != 1 || inbox.Msg.Entries[0].Interaction == nil || inbox.Msg.Entries[0].Interaction.Id != string(rows[0].ID) {
+				t.Fatal("original proposal did not reach authenticated inbox reads")
+			}
+			progress, err := api.Progress(ctx)
+			if err != nil || progress.SettledObserved || progress.TerminalObserved {
+				t.Fatal("unanswered proposal fabricated native completion")
+			}
+			return // Deferred owned cleanup is independent of the retained unanswered request.
 		}
 		if observation.Part != nil && observation.Part.Kind == opencode.TextPartKind && observation.Part.Text != nil {
 			result = observation.Part.Text.Text

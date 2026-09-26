@@ -121,7 +121,7 @@ func supportsExecutionPublication(input domain.ExecutionJobInput, kind domain.Ex
 	case domain.Codex:
 		return kind != domain.ExecutionOpenCodeUsageObserved
 	case domain.OpenCode:
-		return (kind == domain.ExecutionThreadBound || kind == domain.ExecutionInputAccepted || kind == domain.ExecutionMessageStarted || kind == domain.ExecutionTextAppended || kind == domain.ExecutionMessageCompleted || kind.IsArtifact() || kind == domain.ExecutionToolStarted || kind == domain.ExecutionToolUpdated || kind == domain.ExecutionToolCompleted || kind == domain.ExecutionOpenCodeUsageObserved || kind == domain.ExecutionProgressObserved || kind == domain.ExecutionTurnFinished) && len(executionAPIOperations(input, domain.OpenAIChat)) != 0
+		return (kind == domain.ExecutionThreadBound || kind == domain.ExecutionInputAccepted || kind == domain.ExecutionMessageStarted || kind == domain.ExecutionTextAppended || kind == domain.ExecutionMessageCompleted || kind.IsArtifact() || kind == domain.ExecutionToolStarted || kind == domain.ExecutionToolUpdated || kind == domain.ExecutionToolCompleted || kind == domain.ExecutionOpenCodeUsageObserved || kind == domain.ExecutionProgressObserved || kind == domain.ExecutionInteractionRequested || kind == domain.ExecutionTurnFinished) && len(executionAPIOperations(input, domain.OpenAIChat)) != 0
 	}
 	return false
 }
@@ -130,6 +130,11 @@ func supportsExecutionPublication(input domain.ExecutionJobInput, kind domain.Ex
 // their parent message explicitly instead of flattening several parts into a
 // fabricated message identity or using the assistant as the execution turn.
 func validateNativeMessageOrigin(input domain.ExecutionJobInput, event domain.ExecutionEvent) error {
+	if u := event.Interaction; u != nil && event.Kind == domain.ExecutionInteractionRequested {
+		if (input.Configuration.Harness == domain.OpenCode) != (u.OpenCode != nil) || u.OpenCode != nil && u.OpenCode.NativeMessageID == event.NativeTurnID {
+			return executionEventConflict()
+		}
+	}
 	if event.Progress != nil && (input.Configuration.Harness == domain.OpenCode) != (event.Progress.Progress.Kind == domain.OpenCodeTodoProgressKind || event.Progress.Progress.Kind == domain.OpenCodeChangesProgressKind || event.Progress.Progress.Kind == domain.OpenCodeWorkspaceProgressKind) {
 		return executionEventConflict()
 	}
@@ -245,6 +250,15 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 				}
 				if err := retireSteer(tx, sr, session, true); err != nil {
 					return err
+				}
+				if input.Configuration.Harness == domain.OpenCode {
+					pending, err := tx.OpenExecutionInteractions(input.ExecutionID)
+					if err != nil {
+						return err
+					}
+					if len(pending) != 0 {
+						return executionEventConflict()
+					}
 				}
 				responseUncertain, responseErr = endPublishedInteractions(tx, input, event)
 				if responseErr != nil {

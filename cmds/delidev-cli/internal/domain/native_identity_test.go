@@ -11,13 +11,13 @@ func TestOpenCodeMessagePartAndArrivalNamespacesStayDistinct(t *testing.T) {
 		kind   NativeIdentityKind
 		prefix string
 	}{
-		{NativeMessageIdentity, "msg_"}, {NativePartIdentity, "prt_"}, {NativeEventIdentity, "evt_"},
+		{NativeMessageIdentity, "msg_"}, {NativePartIdentity, "prt_"}, {NativeEventIdentity, "evt_"}, {NativePermissionIdentity, "per_"}, {NativeQuestionIdentity, "que_"},
 	} {
 		identity := NativeIdentity(test.prefix + "01960dcbe1faABCDEFGHIJKLMN")
 		if identity.Validate(OpenCode, test.kind) != nil {
 			t.Fatal("original native content identity was rejected")
 		}
-		for _, kind := range []NativeIdentityKind{NativeThreadIdentity, NativeMessageIdentity, NativePartIdentity, NativeEventIdentity} {
+		for _, kind := range []NativeIdentityKind{NativeThreadIdentity, NativeMessageIdentity, NativePartIdentity, NativeEventIdentity, NativePermissionIdentity, NativeQuestionIdentity} {
 			if kind != test.kind && identity.Validate(OpenCode, kind) == nil {
 				t.Fatal("native identity escaped its original namespace")
 			}

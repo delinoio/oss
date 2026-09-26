@@ -30,6 +30,9 @@ func (s *Service) acceptQuestionResponse(tx *store.Tx, responseID, interactionID
 	if r.Revision != revision || value.Closure != domain.InteractionOpen || value.Response != nil || value.ApprovalResponse != nil || value.Type != domain.UserQuestionInteraction {
 		return store.Record{}, domain.Fail(domain.Conflict, "The question changed, closed or already has a response.", "Reload its original request and current response state before responding; do not replay native input.")
 	}
+	if value.OpenCode != nil {
+		return store.Record{}, domain.OpenCodeResponseUnavailable()
+	}
 	if err := input.Validate(value.Questions); err != nil {
 		return store.Record{}, err
 	}

@@ -1,6 +1,6 @@
 import { object } from "./documents";
 
-enum Builtin { Write = "write", Edit = "edit", ApplyPatch = "apply_patch", Glob = "glob", Grep = "grep" }
+enum Builtin { Write = "write", Edit = "edit", ApplyPatch = "apply_patch", Glob = "glob", Grep = "grep", Question = "question" }
 enum ToolState { Pending = "pending", Running = "running", Completed = "completed", Failed = "failed" }
 enum FileEvent { Edited = "file-edited", Added = "file-added", Changed = "file-changed", Unlinked = "file-unlinked" }
 const encoder = new TextEncoder();
@@ -47,7 +47,7 @@ function retained(tool: Record<string, unknown>, state: string): Snapshot[] | un
   }
   return values;
 }
-const labels: Record<Builtin, string> = { write: "Write", edit: "Edit", apply_patch: "Apply Patch", glob: "Glob", grep: "Grep" };
+const labels: Record<Builtin, string> = { write: "Write", edit: "Edit", apply_patch: "Apply Patch", glob: "Glob", grep: "Grep", question: "Question tool" };
 
 // JSON stays original text: do not round native numbers, discard metadata, or
 // convert parameters into a new executable command or file-reading action.

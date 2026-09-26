@@ -1,0 +1,58 @@
+import { render, screen } from "@testing-library/react";
+import { expect, it } from "vitest";
+import { NativeInteraction } from "./native-interaction";
+
+const question = { text: "Original <script>question()</script>🙂", header: "Choice", options: [{ label: "First", description: "Original description" }, { label: "Second", description: "Another choice" }], multiple: true };
+function fixture(approval = false) {
+  return {
+    type: approval ? "native-approval" : "user-question", closure: "open",
+    native_request_id: { kind: "text", text: `${approval ? "per" : "que"}_01960dcbe1faABCDEFGHIJKLMN` },
+    native_thread_id: "ses_01960dcbe1faABCDEFGHIJKLMN", native_turn_id: "msg_01960dcbe1faABCDEFGHIJKLMN", native_item_id: "prt_01960dcbe1fbABCDEFGHIJKLMN",
+    opencode: { version: "1.18.32", native_event_id: "evt_01960dcbe1faABCDEFGHIJKLMN", native_message_id: "msg_01960dcbe1fbABCDEFGHIJKLMN", call_id: "original-call", permission: approval ? { name: "read", patterns: ["original/*.env", ""], always: ["*.env"], metadata_json: '{"exact":9007199254740993,"content":"<script>metadata()</script>"}' } : undefined, questions: approval ? undefined : [structuredClone(question)] },
+  };
+}
+
+it("retains original question order and optional flags without exposing unsupported sends", () => {
+  const { container } = render(<NativeInteraction data={fixture()} />);
+  expect(screen.getByText(question.text)).toBeTruthy();
+  expect(screen.getByText("Multiple choices: Allowed · Custom answers: Native default")).toBeTruthy();
+  expect([...container.querySelectorAll("strong")].map((e) => e.textContent)).toEqual(["First", "Second"]);
+  expect(container.querySelector("button, input, textarea, script, a")).toBeNull();
+  expect(screen.getByText(/This request is pending/)).toBeTruthy();
+});
+
+it("preserves native permission patterns and exact JSON metadata as inert content", () => {
+  const data = fixture(true);
+  const { container } = render(<NativeInteraction data={data} />);
+  expect(screen.getByText("Requested permission: read")).toBeTruthy();
+  expect([...container.querySelectorAll("pre")].map((e) => e.textContent)).toEqual([...data.opencode.permission!.patterns, ...data.opencode.permission!.always, data.opencode.permission!.metadata_json]);
+  expect(container.querySelector("button, input, textarea, script, a")).toBeNull();
+});
+
+it("keeps an explicitly empty original matrix distinct from missing questions", () => {
+  const data = fixture(); data.opencode.questions = [];
+  const { rerender } = render(<NativeInteraction data={data} />);
+  expect(screen.getByText("The original question list is empty.")).toBeTruthy();
+  data.opencode.questions = undefined;
+  rerender(<NativeInteraction data={data} />);
+  expect(screen.getByText(/unavailable or inconsistent/)).toBeTruthy();
+});
+
+it.each([
+  { name: "foreign request namespace", change: (d: ReturnType<typeof fixture>) => { d.native_request_id.text = "per_01960dcbe1faABCDEFGHIJKLMN"; } },
+  { name: "input used as assistant", change: (d: ReturnType<typeof fixture>) => { d.opencode.native_message_id = d.native_turn_id; } },
+  { name: "changed version", change: (d: ReturnType<typeof fixture>) => { d.opencode.version = "unknown"; } },
+  { name: "missing tool", change: (d: ReturnType<typeof fixture>) => { d.opencode.call_id = ""; } },
+  { name: "invalid Unicode", change: (d: ReturnType<typeof fixture>) => { d.opencode.questions![0]!.text = "\uD800"; } },
+])("refuses $name before presenting native content", ({ change }) => {
+  const data = fixture(); change(data);
+  const { container } = render(<NativeInteraction data={data} />);
+  expect(screen.getByText(/unavailable or inconsistent/)).toBeTruthy();
+  expect(container.querySelector("pre, input, button")).toBeNull();
+});
+
+it("refuses mixed response authority rather than rendering another harness form", () => {
+  const { container } = render(<NativeInteraction data={{ ...fixture(), approval_response: { state: "queued" } }} />);
+  expect(screen.getByText(/unavailable or inconsistent/)).toBeTruthy();
+  expect(container.querySelector("input, button")).toBeNull();
+});

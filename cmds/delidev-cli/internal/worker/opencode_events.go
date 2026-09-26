@@ -26,6 +26,7 @@ type OpenCodeEventPublisher struct {
 	terminalSequence uint64
 	terminalOutcome  domain.ExecutionOutcome
 	completion       *domain.ExecutionCompletion
+	interactions     map[string]domain.ExecutionInteractionUpdate
 }
 
 func OpenOpenCodeEventPublisher(binding *OpenCodeBindingPublisher, api *opencode.OwnedAPI) (*OpenCodeEventPublisher, error) {
@@ -87,6 +88,10 @@ func (c *OpenCodeEventPublisher) PublishObservation(ctx context.Context, o openc
 			// built-ins; it is not proof of a newly enabled external plugin.
 		case opencode.FileEditedEvent, opencode.FileWatcherUpdatedEvent:
 			if err := c.publishWorkspaceEvent(ctx, o); err != nil {
+				return c.fail(err)
+			}
+		case opencode.PermissionAskedEvent, opencode.QuestionAskedEvent:
+			if err := c.publishInteractionRequest(ctx, o); err != nil {
 				return c.fail(err)
 			}
 		case opencode.TodoUpdatedEvent:
@@ -201,7 +206,7 @@ func (c *OpenCodeEventPublisher) PublishTerminal(ctx context.Context) (domain.Ex
 	if err != nil {
 		return fail(err)
 	}
-	if !progress.SettledObserved || !progress.TerminalObserved || !progress.UserSeen || !progress.InputPartSeen || !progress.IdleNotification || progress.Status != opencode.NativeStatusIdle || progress.NeedsRecovery || progress.RejectedInteraction || progress.StoppedOnRejection || progress.SessionID != b.thread || progress.MessageID != b.turn || progress.RequestID != b.reference.InputRequestID || progress.AssistantID != c.final {
+	if len(c.interactions) != 0 || !progress.SettledObserved || !progress.TerminalObserved || !progress.UserSeen || !progress.InputPartSeen || !progress.IdleNotification || progress.Status != opencode.NativeStatusIdle || progress.NeedsRecovery || progress.RejectedInteraction || progress.StoppedOnRejection || progress.SessionID != b.thread || progress.MessageID != b.turn || progress.RequestID != b.reference.InputRequestID || progress.AssistantID != c.final {
 		return fail(publicationUncertain())
 	}
 	history, err := c.api.InspectHistory(ctx)

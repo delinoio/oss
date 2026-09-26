@@ -14,18 +14,20 @@ type NativeIdentity string
 type NativeIdentityKind string
 
 const (
-	NativeThreadIdentity  NativeIdentityKind = "thread"
-	NativeTurnIdentity    NativeIdentityKind = "turn"
-	NativeMessageIdentity NativeIdentityKind = "message"
-	NativePartIdentity    NativeIdentityKind = "part"
-	NativeEventIdentity   NativeIdentityKind = "event"
+	NativeThreadIdentity     NativeIdentityKind = "thread"
+	NativeTurnIdentity       NativeIdentityKind = "turn"
+	NativeMessageIdentity    NativeIdentityKind = "message"
+	NativePartIdentity       NativeIdentityKind = "part"
+	NativeEventIdentity      NativeIdentityKind = "event"
+	NativePermissionIdentity NativeIdentityKind = "permission"
+	NativeQuestionIdentity   NativeIdentityKind = "question"
 )
 
 func (id NativeIdentity) Validate(harness Harness, kind NativeIdentityKind) error {
 	invalid := func() error {
 		return Fail(RecoveryRequired, "The original native identity does not match its selected harness profile.", "Retain the exact native session and turn identity; do not replace or reinterpret it.")
 	}
-	if kind != NativeThreadIdentity && kind != NativeTurnIdentity && (harness != OpenCode || kind != NativeMessageIdentity && kind != NativePartIdentity && kind != NativeEventIdentity) {
+	if kind != NativeThreadIdentity && kind != NativeTurnIdentity && (harness != OpenCode || kind != NativeMessageIdentity && kind != NativePartIdentity && kind != NativeEventIdentity && kind != NativePermissionIdentity && kind != NativeQuestionIdentity) {
 		return invalid()
 	}
 	switch harness {
@@ -59,6 +61,12 @@ func (id NativeIdentity) Validate(harness Harness, kind NativeIdentityKind) erro
 		}
 		if kind == NativeEventIdentity {
 			prefix = "evt_"
+		}
+		if kind == NativePermissionIdentity {
+			prefix = "per_"
+		}
+		if kind == NativeQuestionIdentity {
+			prefix = "que_"
 		}
 		value := string(id)
 		if len(value) != len(prefix)+26 || !strings.HasPrefix(value, prefix) {

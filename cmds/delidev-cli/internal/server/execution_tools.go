@@ -53,6 +53,25 @@ func publishExecutionTool(tx *store.Tx, input domain.ExecutionJobInput, session 
 			}
 			tool.States = append(tool.States, domain.SequencedToolState{Sequence: event.Sequence, Snapshot: *update.Snapshot})
 		case domain.ExecutionToolCompleted:
+			if tool.Started.Kind.IsOpenCode() {
+				ids, err := tx.ExecutionItemInteractions(input.ExecutionID, event.NativeThreadID, event.NativeTurnID, update.NativeID)
+				if err != nil {
+					return err
+				}
+				for _, id := range ids {
+					r, err := tx.Get(domain.InteractionKind, id)
+					if err != nil {
+						return err
+					}
+					interaction, err := store.Decode[domain.ExecutionInteraction](r)
+					if err != nil {
+						return err
+					}
+					if interaction.Closure == domain.InteractionOpen {
+						return executionEventConflict()
+					}
+				}
+			}
 			if update.Snapshot.Kind != tool.Started.Kind {
 				return executionEventConflict()
 			}

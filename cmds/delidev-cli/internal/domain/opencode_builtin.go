@@ -9,15 +9,16 @@ import (
 type OpenCodeBuiltinName string
 
 const (
-	OpenCodeWrite      OpenCodeBuiltinName = "write"
-	OpenCodeEdit       OpenCodeBuiltinName = "edit"
-	OpenCodeApplyPatch OpenCodeBuiltinName = "apply_patch"
-	OpenCodeGlob       OpenCodeBuiltinName = "glob"
-	OpenCodeGrep       OpenCodeBuiltinName = "grep"
+	OpenCodeWrite        OpenCodeBuiltinName = "write"
+	OpenCodeEdit         OpenCodeBuiltinName = "edit"
+	OpenCodeApplyPatch   OpenCodeBuiltinName = "apply_patch"
+	OpenCodeGlob         OpenCodeBuiltinName = "glob"
+	OpenCodeGrep         OpenCodeBuiltinName = "grep"
+	OpenCodeQuestionTool OpenCodeBuiltinName = "question"
 )
 
 func (n OpenCodeBuiltinName) Valid() bool {
-	return slices.Contains([]OpenCodeBuiltinName{OpenCodeWrite, OpenCodeEdit, OpenCodeApplyPatch, OpenCodeGlob, OpenCodeGrep}, n)
+	return slices.Contains([]OpenCodeBuiltinName{OpenCodeWrite, OpenCodeEdit, OpenCodeApplyPatch, OpenCodeGlob, OpenCodeGrep, OpenCodeQuestionTool}, n)
 }
 
 // This closed builtin family retains complete original input/metadata JSON as

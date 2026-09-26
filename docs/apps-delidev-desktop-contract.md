@@ -149,6 +149,11 @@ The closed OpenCode Write/Edit/Apply Patch/Glob/Grep family has separate collaps
 
 Original file-edited, file-added, file-changed and file-unlinked notifications appear independently with their reported path. Validate their original native event identity and closed kind; they have instance scope without a native session/message/tool owner. Explain that they neither identify a tool nor prove current file state. Notifications cannot grant navigation, filesystem reads or editing. Render all original content as inert text with no automatic links or execution.
 
+### Retained OpenCode questions and permissions
+The shared inbox/session interaction surface renders the separate original OpenCode payload after validating its pinned version, original request namespace, assistant/part/call/event and disjoint content. Preserve question/option order, empty matrices and optional multiple/custom flags; display absent flags as native defaults without fabricating per-question identities or user selections. Permission names, requested patterns, native always patterns and original metadata JSON remain separately inspectable as inert text, with exact numeric spelling. Requested scope cannot imply a grant.
+
+The original `question` tool has its own collapsed native lifecycle disclosure, separate from the interaction request. Inbox reading changes only read state. Product response delivery is explicitly unavailable in this initial display profile: expose no enabled Codex response form, answer field or approval button and never suggest ordinary input as an answer. Missing/mixed/contradictory ownership or payloads remain Unavailable without partial display; observed closed requests retain their historical content.
+
 ## Security
 Only trusted app content receives native capabilities. Renderer/server calls require exact allowed origins and the explicitly selected connection. Account credentials and GitHub PATs must never enter read responses. Never expose a shell, arbitrary executable/file reader, network proxy, or secret-bearing diagnostic object to the renderer.
 

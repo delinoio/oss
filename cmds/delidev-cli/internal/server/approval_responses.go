@@ -30,6 +30,9 @@ func (s *Service) acceptApprovalResponse(tx *store.Tx, responseID, interactionID
 	if r.Revision != revision || value.Closure != domain.InteractionOpen || (value.ApprovalResponse != nil || value.Response != nil) || value.Type != domain.NativeApprovalInteraction {
 		return store.Record{}, domain.Fail(domain.Conflict, "The approval changed, closed or already has a response.", "Reload its original request and current response state before responding; do not replay native input.")
 	}
+	if value.OpenCode != nil {
+		return store.Record{}, domain.OpenCodeResponseUnavailable()
+	}
 	if err := input.Validate(value.Approval); err != nil {
 		return store.Record{}, err
 	}
