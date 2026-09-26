@@ -6,3 +6,6 @@
 
 pub mod coverage;
 pub mod record;
+
+#[cfg(target_os = "linux")]
+pub mod linux;

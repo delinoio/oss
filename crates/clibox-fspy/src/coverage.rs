@@ -274,6 +274,7 @@ mod tests {
                         project_relative: Some(file.logical.clone()),
                         identity: Some(file.identity),
                     }],
+                    descriptor: None,
                     monotonic_ns: 1,
                     requested_delay_ns: 0,
                 },

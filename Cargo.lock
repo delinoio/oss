@@ -1826,9 +1826,11 @@ version = "0.1.0"
 dependencies = [
  "file-id",
  "globset",
+ "libc",
  "serde",
  "serde_json",
  "tempfile",
+ "tracing",
  "uuid",
  "walkdir",
 ]
