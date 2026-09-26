@@ -91,3 +91,49 @@ it.each(["open", "proposal", "duplicate", "self", "namespace", "direct"])("refus
   expect(screen.getByText(/unavailable or inconsistent/)).toBeTruthy();
   expect(container.querySelector("button, input, pre")).toBeNull();
 });
+
+function stopFixture(approval = false) {
+  return { ...fixture(approval), closure: "turn-ended", opencode_stop: { proposal_event_id: "evt_01960dcbe1faABCDEFGHIJKLMN", tool_interrupted: true, stop: { request_id: "01960dcb-e1fa-7000-8000-000000000001", input_request_id: "01960dcb-e1fa-7000-8000-000000000002", input_part_id: "prt_01960dcbe1faABCDEFGHIJKLMN", assistant_id: "msg_01960dcbe1fbABCDEFGHIJKLMN", history_digest: "ab".repeat(32), http_accepted: false, interrupted_observed: true, terminal_observed: true, idle_observed: true, pending_cleared: true, cleanup_verified: true } } };
+}
+
+it.each([false, true])("shows unanswered Stop cancellation independently of native replies: approval=%s", (approval) => {
+  const { container } = render(<NativeInteraction data={stopFixture(approval)} />);
+  expect(screen.getByText(/canceled after Stop and verified process cleanup/)).toBeTruthy();
+  expect(screen.getByText(/No answer or rejection was sent/)).toBeTruthy();
+  expect(container.querySelector("button, input, textarea")).toBeNull();
+});
+
+it.each(["open", "proposal", "cleanup", "idle", "terminal", "pending", "tool", "unobserved", "digest", "self", "direct", "mixed"])("refuses inconsistent original Stop closure: %s", (changed) => {
+  const data: Record<string, unknown> = stopFixture();
+  const proof = data.opencode_stop as ReturnType<typeof stopFixture>["opencode_stop"];
+  switch (changed) {
+    case "open": data.closure = "open"; break;
+    case "proposal": proof.proposal_event_id = "evt_01960dcbe1ffABCDEFGHIJKLMN"; break;
+    case "cleanup": proof.stop.cleanup_verified = false; break;
+    case "idle": proof.stop.idle_observed = false; break;
+    case "terminal": proof.stop.terminal_observed = false; break;
+    case "pending": proof.stop.pending_cleared = false; break;
+    case "tool": proof.tool_interrupted = false; break;
+    case "unobserved": proof.stop.interrupted_observed = false; break;
+    case "digest": proof.stop.history_digest = "AB".repeat(32); break;
+    case "self": proof.stop.request_id = proof.stop.input_request_id; break;
+    case "direct": data.response = { state: "accepted", input: { opencode: { answers: [["First"]] } } }; break;
+    case "mixed": data.opencode_closure = policyFixture().opencode_closure; break;
+  }
+  const { container } = render(<NativeInteraction data={data} />);
+  expect(screen.getByText(/unavailable or inconsistent/)).toBeTruthy();
+  expect(container.querySelector("button, input, pre")).toBeNull();
+});
+
+it.each(["original", "duplicate", "fraction", "missing", "both"])("validates native retry cancellation separately: %s", (changed) => {
+  const data = stopFixture();
+  const retry = { native_event_id: "evt_01960dcbe1fcABCDEFGHIJKLMN", attempt: 1, next: 12345 };
+  const stop = { ...data.opencode_stop.stop, http_accepted: true, interrupted_observed: false, retry_canceled_observed: true, retry_observations: [retry] };
+  if (changed === "duplicate") stop.retry_observations.push({ ...retry });
+  if (changed === "fraction") retry.attempt = 1.5;
+  if (changed === "missing") stop.retry_observations = [];
+  if (changed === "both") stop.interrupted_observed = true;
+  render(<NativeInteraction data={{ ...data, opencode_stop: { ...data.opencode_stop, stop } }} />);
+  if (changed === "original") expect(screen.getByText(/canceled after Stop and verified process cleanup/)).toBeTruthy();
+  else expect(screen.getByText(/unavailable or inconsistent/)).toBeTruthy();
+});

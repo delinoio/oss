@@ -13,13 +13,14 @@ import (
 // mapper. It publishes overlapping native step/final-message observations, not
 // charges, inferred totals, exact response coverage or cumulative differences.
 type OpenCodeUsagePublisher struct {
-	transcript *OpenCodeTextPublisher
-	seen       map[string]bool
-	steps      map[string]string
-	starts     map[string]string
-	last       map[string]domain.OpenCodeUsageObservation
-	values     map[string]domain.OpenCodeUsageObservation
-	blocked    bool
+	transcript              *OpenCodeTextPublisher
+	seen                    map[string]bool
+	steps                   map[string]string
+	starts                  map[string]string
+	last                    map[string]domain.OpenCodeUsageObservation
+	values                  map[string]domain.OpenCodeUsageObservation
+	blocked                 bool
+	stoppedBackoffAssistant string
 }
 
 func OpenOpenCodeUsagePublisher(transcript *OpenCodeTextPublisher) (*OpenCodeUsagePublisher, error) {
@@ -114,7 +115,7 @@ func (c *OpenCodeUsagePublisher) PublishObservation(ctx context.Context, o openc
 			return true, publicationUncertain()
 		}
 		owner := t.messages[m.ID]
-		if owner == nil || owner.role != domain.AssistantMessage || !owner.finalized || c.steps[m.ID] != "" && m.Assistant.Error == nil {
+		if owner == nil || owner.role != domain.AssistantMessage || !owner.finalized || c.steps[m.ID] != "" && m.Assistant.Error == nil && !c.stoppedBackoff(o) {
 			return true, publicationUncertain()
 		}
 		value = domain.OpenCodeUsageObservation{Source: domain.OpenCodeMessageUsage, NativeID: m.ID, NativeParentID: m.ID, NativeEstimate: string(m.Assistant.Cost)}
@@ -142,7 +143,7 @@ func (c *OpenCodeUsagePublisher) PublishObservation(ctx context.Context, o openc
 	if value.Source == domain.OpenCodeStepUsage && (c.steps[value.NativeParentID] == "" || t.messages[value.NativeParentID].finalized || c.starts[value.NativeID] != "" || t.parts[value.NativeID] != nil || t.tools[value.NativeID] != nil) {
 		return true, publicationUncertain()
 	}
-	if value.Source == domain.OpenCodeMessageUsage && o.Message.Assistant.Error == nil {
+	if value.Source == domain.OpenCodeMessageUsage && o.Message.Assistant.Error == nil && !c.stoppedBackoff(o) {
 		last, ok := c.last[value.NativeParentID]
 		if !ok || !reflect.DeepEqual(last.Counts, value.Counts) {
 			return true, publicationUncertain()
@@ -152,7 +153,7 @@ func (c *OpenCodeUsagePublisher) PublishObservation(ctx context.Context, o openc
 		return true, err
 	}
 	c.values[value.NativeID] = value
-	if value.Source == domain.OpenCodeMessageUsage && o.Message.Assistant.Error != nil {
+	if value.Source == domain.OpenCodeMessageUsage && (o.Message.Assistant.Error != nil || c.stoppedBackoff(o)) {
 		delete(c.steps, value.NativeParentID)
 	}
 	if value.Source == domain.OpenCodeStepUsage {
@@ -160,4 +161,9 @@ func (c *OpenCodeUsagePublisher) PublishObservation(ctx context.Context, o openc
 		c.last[value.NativeParentID] = value
 	}
 	return true, nil
+}
+
+func (c *OpenCodeUsagePublisher) stoppedBackoff(o opencode.Observation) bool {
+	m := o.Message
+	return c.stoppedBackoffAssistant != "" && c.transcript.binding.stopClaim != nil && m != nil && m.ID == c.stoppedBackoffAssistant && m.Assistant != nil && m.Assistant.Completed != nil && m.Assistant.Error == nil && m.Assistant.Finish == nil
 }

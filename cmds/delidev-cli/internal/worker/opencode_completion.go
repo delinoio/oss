@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/opencode"
 )
 
 // Complete closes only the original acknowledged input's native process scope.
@@ -32,7 +33,16 @@ func (c *OpenCodeEventPublisher) Complete(ctx context.Context) (domain.Execution
 	if c.completion != nil {
 		return *c.completion, nil
 	}
-	history, err := c.api.CloseCompleted(ctx)
+	var history opencode.HistoryObservation
+	var err error
+	if c.stopRequest != "" {
+		if c.stopped == nil || c.stopObservation == nil || c.stopObservation.Validate() != nil || c.stopped.Stop.RequestID != c.stopRequest || !c.stopped.Stop.CleanupVerified {
+			return fail(publicationUncertain())
+		}
+		history = c.stopped.History
+	} else {
+		history, err = c.api.CloseCompleted(ctx)
+	}
 	if err != nil {
 		return fail(err)
 	}

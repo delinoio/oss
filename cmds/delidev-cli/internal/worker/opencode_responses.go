@@ -65,7 +65,7 @@ func (c *OpenCodeEventPublisher) deliverOpenCodeResponse(ctx, publicationCtx con
 	// delivery before consuming that queued native observation under this lock.
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if ctx.Err() != nil || c.finished {
+	if ctx.Err() != nil || c.finished || c.stopRequest != "" {
 		return nil
 	}
 	b := c.text.binding

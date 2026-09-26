@@ -154,6 +154,7 @@ type ExecutionEvent struct {
 	Outcome            ExecutionOutcome                   `json:"outcome,omitempty"`
 	ProblemCode        Code                               `json:"problem_code,omitempty"`
 	OpenCodeUsage      *OpenCodeUsageObservation          `json:"opencode_usage,omitempty"`
+	OpenCodeStop       *OpenCodeStopObservation           `json:"opencode_stop,omitempty"`
 	Usage              *NativeTokenUsage                  `json:"usage,omitempty"`
 	ResponseUsage      *NativeResponseUsage               `json:"response_usage,omitempty"`
 	ObservationID      ID                                 `json:"observation_id,omitempty"`
@@ -308,6 +309,9 @@ func (e ExecutionEvent) Validate() error {
 			return err
 		}
 	case ExecutionTurnFinished:
+		if e.OpenCodeStop != nil && (e.OpenCodeStop.Validate() != nil || (e.OpenCodeStop.InterruptedObserved || e.OpenCodeStop.RetryCanceledObserved) && (e.Outcome != ExecutionStopped || e.ProblemCode != Canceled)) {
+			return Fail(InvalidArgument, "OpenCode Stop contradicts its native outcome.", "Preserve the original native interruption and completion separately.")
+		}
 		if !slices.Contains([]ExecutionOutcome{ExecutionSucceeded, ExecutionFailed, ExecutionStopped}, e.Outcome) {
 			return Fail(InvalidArgument, "A terminal event requires a definitive native outcome.", "Keep uncertain acceptance separate from native completion.")
 		}
@@ -323,6 +327,9 @@ func (e ExecutionEvent) Validate() error {
 	if (e.Kind != ExecutionOpenCodeUsageObserved && e.OpenCodeUsage != nil) || (e.Kind != ExecutionApprovalAccepted && e.ApprovalAcceptance != nil) || (e.Kind != ExecutionApprovalDeliveryObserved && e.ApprovalResponse != nil) || (e.Kind != ExecutionSteerObserved && e.Steer != nil) || (e.Kind != ExecutionQuestionAccepted && e.QuestionAcceptance != nil) || (e.Kind != ExecutionQuestionDeliveryObserved && e.QuestionResponse != nil) || (!e.Kind.IsInteraction() && e.Interaction != nil) || (e.Kind != ExecutionWaitingChanged && e.Waiting != nil) || (!e.Kind.IsArtifact() && e.Artifact != nil) || (e.Kind != ExecutionProgressObserved && e.Progress != nil) || (!e.Kind.IsTool() && e.Tool != nil) || (e.Kind != ExecutionThreadBound && e.Observed != nil) || (e.Kind != ExecutionMessageStarted && e.Kind != ExecutionTextAppended && e.Kind != ExecutionMessageCompleted && e.Message != nil) || (e.Kind != ExecutionTurnFinished && (e.Outcome != "" || e.ProblemCode != "")) || (e.Kind != ExecutionUsageObserved && e.Usage != nil) || (e.Kind != ExecutionResponseUsageObserved && e.ResponseUsage != nil) || (e.Kind != ExecutionOpenCodeUsageObserved && e.Kind != ExecutionUsageObserved && e.Kind != ExecutionResponseUsageObserved && e.ObservationID != "") || (e.Kind != ExecutionNoticeObserved && e.Notice != "") {
 		return Fail(InvalidArgument, "An execution event contains another kind's payload.", "Publish one unambiguous typed event.")
 	}
+	if e.OpenCodeStop != nil && e.Kind != ExecutionTurnFinished {
+		return Fail(InvalidArgument, "OpenCode Stop evidence requires a terminal event.", "Keep request cancellation in its dedicated interaction closure.")
+	}
 	return nil
 }
 
@@ -330,6 +337,7 @@ func (e ExecutionEvent) Validate() error {
 // original immutable account/configuration selection. Only a separately
 // verified completion report may set CleanupVerified after terminal publication.
 type ExecutionProgress struct {
+	OpenCodeStop           *OpenCodeStopObservation  `json:"opencode_stop,omitempty"`
 	JobID                  ID                        `json:"job_id"`
 	ExecutionID            ID                        `json:"execution_id"`
 	InputID                ID                        `json:"input_id"`

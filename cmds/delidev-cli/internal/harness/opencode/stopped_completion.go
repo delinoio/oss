@@ -2,6 +2,8 @@ package opencode
 
 import (
 	"context"
+	"slices"
+	"strings"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
@@ -10,12 +12,27 @@ import (
 // racing Stop), exact original history and joined cleanup as separate facts.
 // It cannot adopt owner-only Stop, missing observations or a replacement runtime.
 type StoppedHistoryObservation struct {
-	History HistoryObservation
-	Stop    StopReceipt
+	History  HistoryObservation
+	Stop     StopReceipt
+	Canceled []StoppedInteractionObservation
+	Retries  []domain.OpenCodeStopRetryObservation
+}
+
+// These original requests were still unanswered at the independently observed
+// interrupted tool boundary. They become canceled only after owned cleanup.
+type StoppedInteractionObservation struct {
+	RequestID string
+	ArrivalID string
+	Kind      InteractionKind
+	MessageID string
+	PartID    string
+	CallID    string
 }
 
 func copyStoppedHistory(value StoppedHistoryObservation) StoppedHistoryObservation {
 	value.History = copyHistoryObservation(value.History)
+	value.Canceled = slices.Clone(value.Canceled)
+	value.Retries = slices.Clone(value.Retries)
 	return value
 }
 
@@ -54,7 +71,16 @@ func (a *OwnedAPI) CloseAfterStop(ctx context.Context) (StoppedHistoryObservatio
 	// original attempt's comparison proof. Failure is latched before cleanup.
 	s.observer.mu.Lock()
 	ready := s.observer.stoppedHistoryReady()
+	canceled := []StoppedInteractionObservation{}
+	var retries []domain.OpenCodeStopRetryObservation
 	if ready {
+		retries = slices.Clone(s.observer.stop.retries)
+		for _, interaction := range s.observer.interactions {
+			if !interaction.closed {
+				tool := interaction.value.Tool
+				canceled = append(canceled, StoppedInteractionObservation{RequestID: interaction.value.ID, ArrivalID: interaction.arrival, Kind: interaction.value.Kind, MessageID: tool.MessageID, PartID: s.observer.calls[tool.CallID], CallID: tool.CallID})
+			}
+		}
 		s.observer.stop.cleanupAttempted = true
 		a.completionAttempted = true
 	}
@@ -73,7 +99,9 @@ func (a *OwnedAPI) CloseAfterStop(ctx context.Context) (StoppedHistoryObservatio
 	if err != nil || !receipt.CleanupVerified || !receipt.PendingCleared || receipt.RepliesUncertain || !receipt.NativeAttempted || !receipt.TerminalObserved || !receipt.IdleObserved || receipt.InputRequestID != history.RequestID || receipt.SessionID != history.SessionID || receipt.MessageID != history.InputID {
 		return StoppedHistoryObservation{}, sessionUncertain()
 	}
-	value := StoppedHistoryObservation{History: history, Stop: receipt}
+	// Stable output order is not native event ordering or a replay cursor.
+	slices.SortFunc(canceled, func(a, b StoppedInteractionObservation) int { return strings.Compare(a.RequestID, b.RequestID) })
+	value := StoppedHistoryObservation{History: history, Stop: receipt, Canceled: canceled, Retries: retries}
 	a.stoppedCompletion = &value
 	if s.logger != nil {
 		s.logger.InfoContext(ctx, "opencode_original_stopped_history_verified", "owner_id", s.owner, "request_id", receipt.RequestID, "interrupted", receipt.InterruptedObserved, "http_accepted", receipt.HTTPAccepted)

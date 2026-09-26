@@ -29,6 +29,12 @@ type OpenCodeEventPublisher struct {
 	interactions       map[string]domain.ExecutionInteractionUpdate
 	responses          map[string]*openCodeResponseAttempt
 	closedInteractions map[string]openCodeClosedInteraction
+	stopRequest        domain.ID
+	stopBuffer         []*opencode.FrozenObservation
+	stopSeen           map[string]bool
+	stopBytes          int
+	stopped            *opencode.StoppedHistoryObservation
+	stopObservation    *domain.OpenCodeStopObservation
 }
 
 func OpenOpenCodeEventPublisher(binding *OpenCodeBindingPublisher, api *opencode.OwnedAPI) (*OpenCodeEventPublisher, error) {
@@ -67,6 +73,14 @@ func (c *OpenCodeEventPublisher) PublishObservation(ctx context.Context, o openc
 	if c.blocked || c.finished {
 		return publicationUncertain()
 	}
+	if c.stopRequest != "" {
+		return c.bufferStoppedObservation(o)
+	}
+	return c.publishObservation(ctx, o)
+}
+
+// The composer lock is held across both immediate and deferred publication.
+func (c *OpenCodeEventPublisher) publishObservation(ctx context.Context, o opencode.Observation) error {
 	if domain.NativeIdentity(o.EventID).Validate(domain.OpenCode, domain.NativeEventIdentity) != nil || c.seen[o.EventID] || len(c.seen) >= 65536 {
 		return c.fail(publicationUncertain())
 	}
@@ -212,12 +226,20 @@ func (c *OpenCodeEventPublisher) PublishTerminal(ctx context.Context) (domain.Ex
 	if err != nil {
 		return fail(err)
 	}
-	if len(c.interactions) != 0 || !progress.SettledObserved || !progress.TerminalObserved || !progress.UserSeen || !progress.InputPartSeen || !progress.IdleNotification || progress.Status != opencode.NativeStatusIdle || progress.NeedsRecovery || progress.SessionID != b.thread || progress.MessageID != b.turn || progress.RequestID != b.reference.InputRequestID || progress.AssistantID != c.final {
+	if !progress.SettledObserved || !progress.TerminalObserved || !progress.UserSeen || !progress.InputPartSeen || !progress.IdleNotification || progress.Status != opencode.NativeStatusIdle || progress.NeedsRecovery || progress.SessionID != b.thread || progress.MessageID != b.turn || progress.RequestID != b.reference.InputRequestID {
 		return fail(publicationUncertain())
 	}
-	history, err := c.api.InspectHistory(ctx)
+	var history opencode.HistoryObservation
+	if c.stopRequest != "" {
+		history, err = c.finishStoppedPublication(ctx)
+	} else {
+		history, err = c.api.InspectHistory(ctx)
+	}
 	if err != nil {
 		return fail(err)
+	}
+	if len(c.interactions) != 0 || progress.AssistantID != c.final {
+		return fail(publicationUncertain())
 	}
 	b.mu.Lock()
 	valid := !c.text.blocked && !c.usage.blocked && b.stage == openCodeAccepted
@@ -232,13 +254,25 @@ func (c *OpenCodeEventPublisher) PublishTerminal(ctx context.Context) (domain.Ex
 		return fail(publicationUncertain())
 	}
 	outcome, code, err := openCodeTerminalOutcome(c.finish, c.problem)
+	if c.stopObservation != nil && c.stopObservation.InterruptedObserved {
+		if c.problem == nil || c.problem.Kind != opencode.AbortedErrorKind {
+			return fail(publicationUncertain())
+		}
+		outcome, code, err = domain.ExecutionStopped, domain.Canceled, nil
+	}
+	if c.stopObservation != nil && c.stopObservation.RetryCanceledObserved {
+		if c.problem != nil || c.finish != nil {
+			return fail(publicationUncertain())
+		}
+		outcome, code, err = domain.ExecutionStopped, domain.Canceled, nil
+	}
 	if stopped && c.problem == nil {
 		outcome, code, err = domain.ExecutionStopped, domain.PermissionDenied, nil
 	}
 	if err != nil {
 		return fail(err)
 	}
-	if err := b.publisher.Publish(ctx, domain.ExecutionEvent{Kind: domain.ExecutionTurnFinished, NativeThreadID: b.thread, NativeTurnID: b.turn, Outcome: outcome, ProblemCode: code}); err != nil {
+	if err := b.publisher.Publish(ctx, domain.ExecutionEvent{Kind: domain.ExecutionTurnFinished, NativeThreadID: b.thread, NativeTurnID: b.turn, Outcome: outcome, ProblemCode: code, OpenCodeStop: c.stopObservation}); err != nil {
 		return fail(err)
 	}
 	c.finished = true

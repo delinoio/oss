@@ -13,22 +13,24 @@ import (
 // Neither grants continuation. An accepted abort can race normal completion;
 // InterruptedObserved must never be inferred from HTTP success or idle.
 type StopReceipt struct {
-	RequestID           domain.ID
-	InputRequestID      domain.ID
-	SessionID           string
-	MessageID           string
-	HTTPAccepted        bool
-	NativeAttempted     bool
-	TerminalObserved    bool
-	InterruptedObserved bool
-	IdleObserved        bool
-	IdleVerified        bool
-	PendingCleared      bool
-	RepliesUncertain    bool
-	CleanupVerified     bool
+	RequestID             domain.ID
+	InputRequestID        domain.ID
+	SessionID             string
+	MessageID             string
+	HTTPAccepted          bool
+	NativeAttempted       bool
+	TerminalObserved      bool
+	InterruptedObserved   bool
+	RetryCanceledObserved bool
+	IdleObserved          bool
+	IdleVerified          bool
+	PendingCleared        bool
+	RepliesUncertain      bool
+	CleanupVerified       bool
 }
 
 type inputStopAttempt struct {
+	retries          []domain.OpenCodeStopRetryObservation
 	receipt          StopReceipt
 	claim            SessionClaim
 	sent             bool
@@ -96,12 +98,30 @@ func (o *inputObserver) stopReceiptLocked() (StopReceipt, error) {
 	result.IdleObserved = o.progress.Status == NativeStatusIdle && o.progress.IdleNotification
 	message := o.messages[o.progress.AssistantID]
 	result.InterruptedObserved = result.TerminalObserved && message != nil && message.value.Assistant.Error != nil && message.value.Assistant.Error.Kind == AbortedErrorKind
+	result.RetryCanceledObserved = result.TerminalObserved && result.IdleObserved && message != nil && o.stoppedBackoffMessage(message.value)
 	for _, value := range o.interactions {
 		if value.attempt != nil && value.attempt.sent && !value.attempt.receipt.NativeAccepted {
 			result.RepliesUncertain = true
 		}
 	}
 	return result, nil
+}
+
+// In 1.18.32 the retry policy wraps the stream's onInterrupt handler. Aborting
+// backoff therefore runs processor cleanup with completed time but no finish or
+// error; the outer prompt finalizer leaves that completed message unchanged.
+// Bind this separate cancellation shape to the original acknowledged Stop and
+// observed retry, never fabricate MessageAbortedError or accept it ordinarily.
+func (o *inputObserver) stoppedBackoffMessage(value NativeMessage) bool {
+	return o.stoppedBackoffCandidate(value) && o.stop.receipt.HTTPAccepted
+}
+
+// The event reader can receive completed metadata before the original abort
+// HTTP response. Retain this provisional shape without granting terminal or
+// cleanup authority; only that original response can confirm the boundary.
+func (o *inputObserver) stoppedBackoffCandidate(value NativeMessage) bool {
+	a := value.Assistant
+	return o.stop != nil && o.stop.sent && len(o.stop.retries) != 0 && value.ID == o.progress.AssistantID && a != nil && a.Completed != nil && a.Error == nil && a.Finish == nil
 }
 
 func (s *sessionAPI) stopInput(ctx context.Context, observer *inputObserver, request domain.ID) (StopReceipt, error) {
@@ -155,6 +175,7 @@ func (s *sessionAPI) stopInput(ctx context.Context, observer *inputObserver, req
 	}
 	observer.mu.Lock()
 	attempt.receipt.HTTPAccepted = true
+	observer.refresh()
 	observer.mu.Unlock()
 	return current(), nil
 }

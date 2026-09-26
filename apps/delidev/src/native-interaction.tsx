@@ -36,17 +36,36 @@ function nativePolicyClosure(data: Record<string, unknown>): boolean {
   });
 }
 
+function nativeStopClosure(data: Record<string, unknown>): boolean {
+  if (data.opencode_stop == null) return true;
+  const p = object(data.opencode_stop), stop = object(p.stop), original = object(data.opencode);
+  const uuid = (value: unknown) => typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value);
+  if (data.closure !== "turn-ended" || data.opencode_closure != null || !shape(data.opencode_stop, ["stop", "proposal_event_id", "tool_interrupted"]) || p.tool_interrupted !== true || p.proposal_event_id !== original.native_event_id || !shape(p.stop, ["request_id", "input_request_id", "input_part_id", "assistant_id", "history_digest", "http_accepted", "interrupted_observed", "terminal_observed", "idle_observed", "pending_cleared", "cleanup_verified", "retry_observations", "retry_canceled_observed"]) || !uuid(stop.request_id) || !uuid(stop.input_request_id) || stop.request_id === stop.input_request_id || !native(stop.input_part_id, "prt") || !native(stop.assistant_id, "msg") || stop.assistant_id === data.native_turn_id || typeof stop.history_digest !== "string" || !/^[0-9a-f]{64}$/.test(stop.history_digest) || typeof stop.http_accepted !== "boolean" || typeof stop.interrupted_observed !== "boolean" || !stop.http_accepted && !stop.interrupted_observed || stop.terminal_observed !== true || stop.idle_observed !== true || stop.pending_cleared !== true || stop.cleanup_verified !== true) return false;
+  if (stop.retry_observations !== undefined) {
+    if (!Array.isArray(stop.retry_observations) || stop.retry_observations.length > 1024) return false;
+    const events = new Set<string>();
+    for (const value of stop.retry_observations) {
+      const retry = object(value);
+      if (!shape(value, ["native_event_id", "attempt", "next"]) || typeof retry.native_event_id !== "string" || !native(retry.native_event_id, "evt") || events.has(retry.native_event_id) || typeof retry.attempt !== "number" || !Number.isSafeInteger(retry.attempt) || retry.attempt < 0 || typeof retry.next !== "number" || !Number.isSafeInteger(retry.next) || retry.next < 0) return false;
+      events.add(retry.native_event_id);
+    }
+  }
+  if (stop.retry_canceled_observed !== undefined && (stop.retry_canceled_observed !== true || stop.http_accepted !== true || stop.interrupted_observed !== false || !Array.isArray(stop.retry_observations) || stop.retry_observations.length === 0)) return false;
+  return [data.response, data.approval_response].every((value) => { const r = object(value); return value == null || r.state === "canceled" && r.claim == null && r.delivery == null && r.acceptance == null; });
+}
+
 export function NativeInteraction({ data, resource, accepted = () => {} }: { data: Record<string, unknown>; resource?: Resource; accepted?: (value?: Resource) => void }) {
   const r = object(data.opencode), id = object(data.native_request_id), permission = object(r.permission);
   const question = data.type === "user-question", approval = data.type === "native-approval";
   const valid = (question || approval) && r.version === "1.18.32" && shape(data.opencode, ["version", "native_event_id", "native_message_id", "call_id", "permission", "questions"]) && data.questions == null && data.approval == null && (question ? data.approval_response == null && nativeResponse(data.response, true) : data.response == null && nativeResponse(data.approval_response, false)) && native(r.native_event_id, "evt") && native(r.native_message_id, "msg") && native(data.native_item_id, "prt") && native(data.native_thread_id, "ses") && native(data.native_turn_id, "msg") && r.native_message_id !== data.native_turn_id && bounded(r.call_id, 1024) && r.call_id.trim() && id.kind === "text" && id.number == null && native(id.text, question ? "que" : "per") && ["open", "native-closed", "turn-ended"].includes(String(data.closure)) &&
     (question ? r.permission == null && questions(r.questions) : r.questions == null && shape(r.permission, ["name", "patterns", "always", "metadata_json"]) && bounded(permission.name, 256) && permission.name.trim() && strings(permission.patterns) && strings(permission.always) && objectJSON(permission.metadata_json));
-  if (!valid || !nativePolicyClosure(data)) return <p>The retained OpenCode request is unavailable or inconsistent.</p>;
+  if (!valid || !nativePolicyClosure(data) || !nativeStopClosure(data)) return <p>The retained OpenCode request is unavailable or inconsistent.</p>;
   return <section aria-label="Original OpenCode request">
     <p>OpenCode {String(r.version)}</p>
     {question ? <ol>{(r.questions as Question[]).map((q, i) => <li key={i}><h4>{q.header || `Question ${i + 1}`}</h4><pre>{q.text}</pre><p>Multiple choices: {q.multiple === undefined ? "Native default" : q.multiple ? "Allowed" : "Not allowed"} · Custom answers: {q.custom === undefined ? "Native default" : q.custom ? "Allowed" : "Not allowed"}</p><ul>{q.options.map((o, j) => <li key={j}><strong>{o.label}</strong><pre>{o.description}</pre></li>)}</ul></li>)}</ol> : <><p>Requested permission: {String(permission.name)}</p><details><summary>Requested patterns</summary><ol>{(permission.patterns as string[]).map((v, i) => <li key={i}><pre>{v}</pre></li>)}</ol></details><details><summary>Native “always” patterns</summary><ol>{(permission.always as string[]).map((v, i) => <li key={i}><pre>{v}</pre></li>)}</ol></details><details><summary>Original native metadata</summary><pre>{String(permission.metadata_json)}</pre></details></>}
     {question && (r.questions as Question[]).length === 0 ? <p>The original question list is empty.</p> : null}
     {data.opencode_closure != null ? <p>{object(data.opencode_closure).decision === "always" ? "OpenCode automatically allowed this pending request after an earlier session allowance." : "OpenCode automatically rejected this pending request after another permission request was rejected."} No native response was sent for this request.</p> : null}
+    {data.opencode_stop != null ? <p>This unanswered request was canceled after Stop and verified process cleanup. No answer or rejection was sent.</p> : null}
     {resource ? question ? <NativeQuestionResponse key={resource.id} resource={resource} questions={r.questions as Question[]} closed={data.closure !== "open" || data.response != null} accepted={accepted} /> : <NativePermissionResponse key={resource.id} resource={resource} closed={data.closure !== "open" || data.approval_response != null} accepted={accepted} /> : null}
     <p>{resource ? data.closure === "open" ? "The original request remains pending until its native response is confirmed." : "This retained request is closed." : data.closure === "open" ? "This request is pending. Open its original interaction to respond." : "This retained request is closed."}</p>
   </section>;

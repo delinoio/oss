@@ -29,6 +29,7 @@ const (
 // notifications and step/message accounting keep their original event owners.
 // Recognized registry notifications do not establish effective configuration.
 type inputObservation struct {
+	frozen             *FrozenObservation
 	EventID            string
 	Kind               EventKind
 	Message            *NativeMessage   `json:"-"`
@@ -328,7 +329,7 @@ func (o *inputObserver) observe(ctx context.Context, event NativeEvent) (inputOb
 		if !session([]string{"status"}, nil) {
 			err = observerProblem()
 		} else {
-			err = o.status(fields["status"])
+			err = o.status(fields["status"], event.ID)
 			result.Ancillary = slices.Clone(event.Properties)
 		}
 	case SessionIdleEvent:
@@ -363,15 +364,19 @@ func (o *inputObserver) observe(ctx context.Context, event NativeEvent) (inputOb
 		err = observerProblem()
 	}
 	if err != nil {
+		if o.logger != nil && event.Kind.valid() {
+			o.logger.WarnContext(ctx, "opencode_original_event_rejected", "owner_id", o.owner, "request_id", o.input.receipt.RequestID, "event_kind", event.Kind, "code", domain.SafeError(err).Code)
+		}
 		return inputObservation{}, o.fail(ctx, stage, err)
 	}
 	o.bytes += len(event.Properties)
 	o.seen[event.ID] = true
 	o.refresh()
+	result.frozen = freezeObservation(event, result)
 	return result, nil
 }
 
-func (o *inputObserver) status(raw []byte) error {
+func (o *inputObserver) status(raw []byte, eventID string) error {
 	fields, err := object(raw)
 	if err != nil {
 		return observerProblem()
@@ -382,9 +387,24 @@ func (o *inputObserver) status(raw []byte) error {
 		return observerProblem()
 	}
 	if status == NativeStatusRetry {
-		// A retry may change the native step/error lifecycle. Keep it outside
-		// this first uninterrupted-input profile until independently bound.
-		return observerProblem()
+		// Revoking the registered relay can queue native backoff just before
+		// the original abort arrives. Preserve its bounded scheduling facts
+		// only inside that already-sent Stop; ordinary retry/action execution
+		// still needs its independent adapter. Never publish provider prose.
+		if o.stop == nil || !o.stop.sent || o.stop.claim.Kind != StopInputMutation || o.progress.SettledObserved || len(o.stop.retries) >= 1024 {
+			return observerProblem()
+		}
+		if _, err := shape(raw, []string{"type", "attempt", "message", "next"}, nil); err != nil {
+			return observerProblem()
+		}
+		attempt, ok := nativeCount(fields["attempt"])
+		next, valid := nativeCount(fields["next"])
+		if _, message := boundedString(fields["message"], 64<<10, false); !ok || !valid || !message {
+			return observerProblem()
+		}
+		o.stop.retries = append(o.stop.retries, domain.OpenCodeStopRetryObservation{NativeEventID: eventID, Attempt: uint64(attempt), Next: uint64(next)})
+		o.progress.Status, o.progress.IdleNotification = status, false
+		return nil
 	}
 	if _, err := shape(raw, []string{"type"}, nil); err != nil {
 		return observerProblem()
@@ -404,7 +424,7 @@ func (o *inputObserver) refresh() {
 	terminal := false
 	if message != nil {
 		a := message.value.Assistant
-		terminal = message.finalized && a.Completed != nil && (a.Error != nil || a.Finish != nil && !o.needsSuccessor(message.value.ID))
+		terminal = message.finalized && a.Completed != nil && (a.Error != nil || a.Finish != nil && !o.needsSuccessor(message.value.ID) || o.stoppedBackoffMessage(message.value))
 	}
 	o.progress.TerminalObserved = o.progress.UserSeen && o.progress.InputPartSeen && terminal
 	for _, interaction := range o.interactions {
@@ -416,7 +436,7 @@ func (o *inputObserver) refresh() {
 	o.progress.SettledObserved = o.progress.TerminalObserved && o.progress.Status == NativeStatusIdle && o.progress.IdleNotification
 }
 
-func (o *inputObserver) message(raw []byte) (*NativeMessage, bool, error) {
+func (o *inputObserver) message(raw []byte) (_ *NativeMessage, _ bool, problem error) {
 	value, err := decodeNativeMessage(raw)
 	if err != nil || value.SessionID != o.input.receipt.SessionID {
 		return nil, false, observerProblem()
@@ -424,6 +444,19 @@ func (o *inputObserver) message(raw []byte) (*NativeMessage, bool, error) {
 	raw = canonicalNative(raw)
 	base := messageBase(raw, value.Role)
 	old := o.messages[value.ID]
+	defer func() {
+		if problem == nil || o.logger == nil || value.Assistant == nil {
+			return
+		}
+		priorError, nextError := NativeErrorKind(""), NativeErrorKind("")
+		if old != nil && old.value.Assistant != nil && old.value.Assistant.Error != nil {
+			priorError = old.value.Assistant.Error.Kind
+		}
+		if value.Assistant.Error != nil {
+			nextError = value.Assistant.Error.Kind
+		}
+		o.logger.WarnContext(o.ctx, "opencode_original_message_rejected", "owner_id", o.owner, "request_id", o.input.receipt.RequestID, "prior_error", priorError, "next_error", nextError, "completed", value.Assistant.Completed != nil, "prior_finalized", old != nil && old.finalized, "parts_closed", old != nil && o.messageClosed(value, old), "code", domain.SafeError(problem).Code)
+	}()
 	existing := old != nil
 	if old != nil && !bytes.Equal(base, old.base) {
 		return nil, false, observerProblem()
@@ -526,7 +559,7 @@ func (o *inputObserver) messageClosed(value NativeMessage, state *observedMessag
 			return false
 		}
 	}
-	if state.openStep != "" && value.Assistant.Error == nil {
+	if state.openStep != "" && value.Assistant.Error == nil && !o.stoppedBackoffCandidate(value) {
 		return false
 	}
 	for _, part := range o.parts {

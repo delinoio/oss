@@ -5,6 +5,10 @@ import "github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 // Resolve only the retained original part under the existing execution index.
 // Reported call IDs and paths cannot select an unrelated transcript record.
 func (t *Tx) OpenCodeInteractionTool(session, execution domain.ID, thread, turn, part string) (domain.ExecutionMessage, error) {
+	return t.OpenCodeExecutionPart(session, execution, thread, turn, part)
+}
+
+func (t *Tx) OpenCodeExecutionPart(session, execution domain.ID, thread, turn, part string) (domain.ExecutionMessage, error) {
 	if session.Validate() != nil || execution.Validate() != nil || domain.NativeIdentity(thread).Validate(domain.OpenCode, domain.NativeThreadIdentity) != nil || domain.NativeIdentity(turn).Validate(domain.OpenCode, domain.NativeTurnIdentity) != nil || domain.NativeIdentity(part).Validate(domain.OpenCode, domain.NativePartIdentity) != nil {
 		return domain.ExecutionMessage{}, domain.Fail(domain.InvalidArgument, "Invalid native interaction tool scope.", "Retain the original session, input and tool part.")
 	}

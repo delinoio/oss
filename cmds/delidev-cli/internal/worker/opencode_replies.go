@@ -9,7 +9,11 @@ import (
 )
 
 func (b *OpenCodeBindingPublisher) validPublicationClaims(claims []opencode.SessionClaim) bool {
-	if b.expectedReply != nil || len(claims) != 2+len(b.replyClaims) {
+	want := 2 + len(b.replyClaims)
+	if b.stopClaim != nil {
+		want++
+	}
+	if b.expectedReply != nil || b.expectedStop != nil || len(claims) != want || b.stopClaim != nil && claims[want-1] != *b.stopClaim {
 		return false
 	}
 	for i, claim := range b.replyClaims {

@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/opencode"
@@ -92,6 +93,11 @@ const (
 	nativePermissionAlwaysCascadePublication
 	nativePermissionRejectCascadePublication
 	nativePermissionCorrectionCascadePublication
+	nativeTextStopPublication
+	nativePermissionStopPublication
+	nativeQuestionStopPublication
+	nativePermissionStopLostAckPublication
+	nativeTextArchivePublication
 )
 
 func TestManualNativeOpenCodePublishesRegisteredText(t *testing.T) {
@@ -159,6 +165,18 @@ func TestManualNativeOpenCodePublishesOriginalInteractionProposals(t *testing.T)
 }
 
 func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool, publication nativeOpenCodePublication) {
+	stopProfile := isNativeOpenCodeStop(publication)
+	stopQuestion := publication == nativeQuestionStopPublication
+	stopPermission := publication == nativePermissionStopPublication || publication == nativePermissionStopLostAckPublication
+	fixtureKey := "temporary-upstream-fixture-key"
+	if stopProfile {
+		// The generic fixture key begins with the suffix of the static native
+		// role "assistant". The relay correctly holds that possible reflected
+		// prefix until stream end. Use an isolated nonoverlapping key here to
+		// exercise interruption of an actively delivered partial text stream;
+		// the separate relay tests own fragmented-key withholding behavior.
+		fixtureKey = "Z" + string(domain.NewID())
+	}
 	policyProfile := isNativeOpenCodePolicy(publication)
 	cascadeProfile := isNativeOpenCodeCascade(publication)
 	var cascadePaths atomic.Value
@@ -174,7 +192,7 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 		builtinName = domain.OpenCodeGlob
 	case nativeGrepPublication:
 		builtinName = domain.OpenCodeGrep
-	case nativeQuestionProposalPublication, nativeQuestionResponsePublication, nativeQuestionResponseLostAckPublication, nativeQuestionRejectPublication:
+	case nativeQuestionProposalPublication, nativeQuestionResponsePublication, nativeQuestionResponseLostAckPublication, nativeQuestionRejectPublication, nativeQuestionStopPublication:
 		builtinName = domain.OpenCodeQuestionTool
 	}
 	responseLostAck := publication == nativePermissionResponseLostAckPublication || publication == nativeQuestionResponseLostAckPublication
@@ -216,6 +234,9 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 	if policyProfile && publication != nativeQuestionRejectPublication {
 		readTool = true
 	}
+	if stopPermission {
+		readTool = true
+	}
 	if publication == nativeShellTruncatedPublication {
 		shellCommand = `i=0; while [ "$i" -lt 3000 ]; do printf 'Original native Shell fixture.\n'; i=$((i + 1)); done; printf 'Original stderr fixture.' >&2`
 	}
@@ -230,6 +251,9 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 		expectedCalls = 3
 	}
 	if interactionProposal && !interactionResponse {
+		expectedCalls = 1
+	}
+	if stopProfile {
 		expectedCalls = 1
 	}
 	var readPath atomic.Value
@@ -259,7 +283,7 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 			Stream   bool
 			Messages []nativeOpenCodeProviderMessage
 		}
-		if err != nil || json.Unmarshal(raw, &body) != nil || body.Model != fixtureModel || !body.Stream || r.URL.Path != "/chat/completions" || r.Header.Get("Authorization") != "Bearer temporary-upstream-fixture-key" || r.Header.Get("HTTP-Referer") != "https://deli.dev" {
+		if err != nil || json.Unmarshal(raw, &body) != nil || body.Model != fixtureModel || !body.Stream || r.URL.Path != "/chat/completions" || r.Header.Get("Authorization") != "Bearer "+fixtureKey || r.Header.Get("HTTP-Referer") != "https://deli.dev" {
 			t.Error("native registered request lost its exact model or server-owned account key")
 		}
 		originalInputs := 0
@@ -310,6 +334,16 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 			return
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
+		if stopProfile && !stopPermission && !stopQuestion {
+			_, _ = io.WriteString(w, `data: {"id":"chatcmpl-private-stop","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{"role":"assistant","content":"Original registered text before Stop."},"finish_reason":null}]}`+"\n\n")
+			w.(http.Flusher).Flush()
+			select {
+			case <-r.Context().Done():
+			case <-ctx.Done():
+				t.Error("original Stop did not join provider cancellation")
+			}
+			return
+		}
 		if cascadeProfile {
 			serveNativeOpenCodeCascade(t, w, body.Messages, cascadePaths.Load().([]string), publication, call)
 			return
@@ -399,6 +433,12 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 	}))
 	defer upstream.Close()
 	f := publicationFixtureFromAuthority(t, newProfileAuthorityFixture(t, upstream.URL, domain.OpenCode, domain.OpenAIChat, func(input *domain.ExecutionJobInput) { input.Input.Mode = mode }, false, fixtureModel))
+	if stopProfile {
+		secrets := f.service.accountSecrets.(*accountTestSecrets)
+		secrets.mu.Lock()
+		secrets.values[credentials.Ref{Owner: f.input.AccountID, ID: f.input.ConnectionID, Purpose: credentials.AccountAPI}] = []byte(fixtureKey)
+		secrets.mu.Unlock()
+	}
 	f.registerGrant(t)
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -467,7 +507,7 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 	}
 	if readTool {
 		path := filepath.Join(workspace, readSentinel)
-		if publication == nativePermissionProposalPublication || publication == nativePermissionResponsePublication || publication == nativePermissionResponseLostAckPublication || policyProfile {
+		if publication == nativePermissionProposalPublication || publication == nativePermissionResponsePublication || publication == nativePermissionResponseLostAckPublication || policyProfile || stopPermission {
 			path = filepath.Join(workspace, ".env.private-fixture")
 		}
 		if publication == nativeReadDirectoryPublication {
@@ -595,7 +635,8 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 		}
 		publicationClient.dropAt = 3
 	}
-	if _, err := api.StartText(ctx, f.input.TurnRequestID, f.input.Input.Prompt); err != nil {
+	startedInput, err := api.StartText(ctx, f.input.TurnRequestID, f.input.Input.Prompt)
+	if err != nil {
 		t.Fatalf("start original input: %v", err)
 	}
 	if publish {
@@ -728,6 +769,10 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 		}
 		if err := publishObservation(observation); err != nil {
 			t.Fatal(err)
+		}
+		if stopProfile && (observation.Interaction != nil || !stopPermission && !stopQuestion && observation.Part != nil && observation.Part.Kind == opencode.TextPartKind && observation.Part.MessageID != startedInput.MessageID) {
+			finishNativeOpenCodeStop(t, ctx, f, api, eventPublisher, executionPublisher, publicationClient, &calls, publication)
+			return
 		}
 		if cascadeProfile && observation.Interaction != nil {
 			cascadeRequests = observeNativeOpenCodeCascade(t, ctx, f, eventPublisher, observation, cascadeRequests, publication)

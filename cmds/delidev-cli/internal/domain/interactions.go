@@ -134,6 +134,7 @@ func (r QuestionRequest) Validate() error {
 // closure only. Response claims/delivery require a separate coordinator path;
 // a Worker cannot fabricate owner authorization by adding answer fields here.
 type ExecutionInteractionUpdate struct {
+	OpenCodeStop    *OpenCodeStopClosure        `json:"opencode_stop,omitempty"`
 	OpenCodeClosure *OpenCodePolicyClosure      `json:"opencode_closure,omitempty"`
 	OpenCode        *OpenCodeInteractionRequest `json:"opencode,omitempty"`
 	ID              ID                          `json:"id"`
@@ -158,7 +159,7 @@ func (u ExecutionInteractionUpdate) Validate(kind ExecutionEventKind) error {
 	}
 	switch kind {
 	case ExecutionInteractionRequested:
-		if u.Closure != "" || u.OpenCodeClosure != nil {
+		if u.Closure != "" || u.OpenCodeClosure != nil || u.OpenCodeStop != nil {
 			return invalidInteraction()
 		}
 		if u.OpenCode != nil {
@@ -173,10 +174,21 @@ func (u ExecutionInteractionUpdate) Validate(kind ExecutionEventKind) error {
 			return invalidInteraction()
 		}
 	case ExecutionInteractionClosed:
+		closure := InteractionNativeClosed
+		if u.OpenCodeStop != nil {
+			identity := NativeQuestionIdentity
+			if u.Type == NativeApprovalInteraction {
+				identity = NativePermissionIdentity
+			}
+			if u.OpenCodeClosure != nil || u.OpenCodeStop.Validate() != nil || u.NativeRequestID.Kind != InteractionTextID || NativeIdentity(u.NativeRequestID.Text).Validate(OpenCode, identity) != nil || NativeIdentity(u.NativeItemID).Validate(OpenCode, NativePartIdentity) != nil {
+				return invalidInteraction()
+			}
+			closure = InteractionTurnEnded
+		}
 		if u.OpenCodeClosure != nil && (u.Type != NativeApprovalInteraction || u.NativeRequestID.Kind != InteractionTextID || NativeIdentity(u.NativeRequestID.Text).Validate(OpenCode, NativePermissionIdentity) != nil || u.OpenCodeClosure.Validate() != nil) {
 			return invalidInteraction()
 		}
-		if u.OpenCode != nil || u.Questions != nil || u.Approval != nil || u.Closure != InteractionNativeClosed {
+		if u.OpenCode != nil || u.Questions != nil || u.Approval != nil || u.Closure != closure {
 			return invalidInteraction()
 		}
 	default:
@@ -190,6 +202,7 @@ func (u ExecutionInteractionUpdate) Validate(kind ExecutionEventKind) error {
 }
 
 type ExecutionInteraction struct {
+	OpenCodeStop     *OpenCodeStopClosure        `json:"opencode_stop,omitempty"`
 	OpenCodeClosure  *OpenCodePolicyClosure      `json:"opencode_closure,omitempty"`
 	OpenCode         *OpenCodeInteractionRequest `json:"opencode,omitempty"`
 	ExecutionID      ID                          `json:"execution_id"`

@@ -7,7 +7,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 )
 
-func publishExecutionInteraction(tx *store.Tx, input domain.ExecutionJobInput, session store.Record, event domain.ExecutionEvent) (bool, error) {
+func publishExecutionInteraction(tx *store.Tx, input domain.ExecutionJobInput, session store.Record, progress *domain.ExecutionProgress, event domain.ExecutionEvent) (bool, error) {
 	u := event.Interaction
 	if u == nil {
 		return false, executionEventConflict()
@@ -69,7 +69,12 @@ func publishExecutionInteraction(tx *store.Tx, input domain.ExecutionJobInput, s
 	if keyErr != nil || newErr != nil || key != newKey || r.SessionID != session.ID || value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeItemID != u.NativeItemID || value.Type != u.Type || value.Closure != domain.InteractionOpen {
 		return false, executionEventConflict()
 	}
-	if u.OpenCodeClosure != nil {
+	if u.OpenCodeStop != nil {
+		if err := validateOpenCodeStopClosure(tx, input, progress, value, u.OpenCodeStop); err != nil {
+			return false, err
+		}
+		value.OpenCodeStop = u.OpenCodeStop
+	} else if u.OpenCodeClosure != nil {
 		if err := validateOpenCodePolicyClosure(tx, input, value, u.OpenCodeClosure); err != nil {
 			return false, err
 		}

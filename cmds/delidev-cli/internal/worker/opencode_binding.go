@@ -42,6 +42,8 @@ type OpenCodeBindingPublisher struct {
 	textAttached   bool
 	expectedReply  *opencode.SessionClaim
 	replyClaims    []opencode.SessionClaim
+	expectedStop   *opencode.SessionClaim
+	stopClaim      *opencode.SessionClaim
 }
 
 // OpenOpenCodeBindingPublisher owns a fresh mutation journal for this original
@@ -75,13 +77,21 @@ func (c *OpenCodeBindingPublisher) Claim(ctx context.Context, claim opencode.Ses
 		return openCodeClaimUncertain()
 	}
 	reply := claim.Kind == opencode.ReplyPermissionMutation || claim.Kind == opencode.ReplyQuestionMutation || claim.Kind == opencode.RejectQuestionMutation
-	if reply && (c.stage != openCodeAccepted || c.expectedReply == nil || *c.expectedReply != claim) {
+	if reply && (c.stage != openCodeAccepted || c.expectedReply == nil || *c.expectedReply != claim || c.expectedStop != nil || c.stopClaim != nil) {
+		return openCodeClaimUncertain()
+	}
+	stop := claim.Kind == opencode.StopInputMutation
+	if stop && (c.stage != openCodeAccepted || c.expectedStop == nil || *c.expectedStop != claim || c.stopClaim != nil || c.expectedReply != nil) {
 		return openCodeClaimUncertain()
 	}
 	err := c.journal.Claim(ctx, claim)
 	if reply && err == nil {
 		c.replyClaims = append(c.replyClaims, claim)
 		c.expectedReply = nil
+	}
+	if stop && err == nil {
+		copy := claim
+		c.stopClaim, c.expectedStop = &copy, nil
 	}
 	return err
 }

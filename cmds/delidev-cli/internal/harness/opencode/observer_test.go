@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -46,6 +47,14 @@ func (f *observerFixture) observe(kind EventKind, properties any) inputObservati
 	result, err := f.o.observe(context.Background(), f.event(kind, properties))
 	if err != nil {
 		f.t.Fatalf("observe %s: %v", kind, err)
+	}
+	frozen, err := result.Freeze()
+	if err != nil || frozen.Bytes() < len(result.EventID) {
+		f.t.Fatal("original observation could not retain deferred publication", err)
+	}
+	copy, err := frozen.Thaw()
+	if err != nil || !reflect.DeepEqual(result, copy) {
+		f.t.Fatalf("deferred %s lost original private typed fields: %v", kind, err)
 	}
 	return result
 }
