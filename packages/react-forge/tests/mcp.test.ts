@@ -196,6 +196,16 @@ test("MCP reports bounded compiler, module and uncaught render diagnostics witho
   assert.equal(imported.error.diagnostics[0].file, "tasks/helper.ts");
   assert.equal(imported.error.diagnostics[0].line, 1);
 
+  const dependencyDirectory = join(cwd, "node_modules", "rf-private-typed");
+  await mkdir(dependencyDirectory, { recursive: true });
+  await writeFile(join(dependencyDirectory, "package.json"), JSON.stringify({ name: "rf-private-typed", type: "module", exports: "./index.ts" }));
+  await writeFile(join(dependencyDirectory, "index.ts"), "export const PRIVATE_TYPED_DEPENDENCY = ;");
+  const dependency = await errorCode(peer, "execute", { code: "import 'rf-private-typed'; export default () => {};" }, "malformed_input");
+  assert.equal(dependency.error.message, "Unable to compile a task dependency.");
+  assert.equal(dependency.error.diagnostics, undefined);
+  assert.ok(!JSON.stringify(dependency).includes("PRIVATE_TYPED_DEPENDENCY"));
+  assert.ok(!JSON.stringify(dependency).includes(cwd));
+
   for (const extension of ["js", "mjs"]) {
     await writeFile(join(cwd, "tasks", `throwing-helper.${extension}`), `throw Error('PRIVATE-${extension.toUpperCase()}-HELPER');`);
     await writeFile(join(cwd, "tasks", `javascript-${extension}.tsx`), `import './throwing-helper.${extension}'; export default () => {};`);

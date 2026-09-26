@@ -49,11 +49,11 @@ export class TaskLoader {
         if (!engineImport && context.parentURL?.startsWith("file:") && resolved.url.startsWith("file:")) {
           const parent = fileURLToPath(context.parentURL);
           const path = fileURLToPath(resolved.url);
-          const file = relative(this.cwd, path);
-          // Only a caller-owned local JavaScript import can establish task
-          // provenance. Dependency and engine errors remain redacted.
-          if (this.known.has(parent) && /\.(?:c|m)?js$/.test(path) && file !== ".." && !file.startsWith(`..${sep}`)
-            && !isAbsolute(file) && !file.split(sep).includes("node_modules")) this.register(path, TaskSource.Import);
+          // Only local modules reached from caller code establish provenance.
+          // Third-party and engine errors retain their redacted error surface.
+          if (this.known.has(parent) && /\.(?:[cm]?js|[cm]?tsx?)$/.test(path) && this.isCallerOwnedImport(path)) {
+            this.register(path, TaskSource.Import);
+          }
         }
         return resolved;
       } catch (error) {
@@ -88,16 +88,23 @@ export class TaskLoader {
         return nextLoad(url, context);
       }
       const path = fileURLToPath(url);
-      if (!this.known.has(path)) this.register(path, this.sources.has(url) ? TaskSource.Entry : TaskSource.Import);
       try {
         const commonjs = new URL(url).pathname.endsWith(".cts");
         const compiled = transformSync(source, { loader: "tsx", format: commonjs ? "cjs" : "esm", target: "node24", jsx: "automatic", sourcefile: path, sourcemap: "inline", logLevel: "silent" });
         return { format: commonjs ? "commonjs" : "module", source: compiled.code, shortCircuit: true };
-      } catch (error) { throw new TaskError(ErrorCode.MalformedInput, TaskPhase.Compile, error, path, compilerIssues(error)); }
+      } catch (error) {
+        if (!this.known.has(path)) throw new ForgeError(ErrorCode.MalformedInput, "Unable to compile a task dependency.");
+        throw new TaskError(ErrorCode.MalformedInput, TaskPhase.Compile, error, path, compilerIssues(error));
+      }
     },
   });
 
   constructor(private readonly cwd: string) {}
+
+  private isCallerOwnedImport(path: string): boolean {
+    const file = relative(this.cwd, path);
+    return file !== ".." && !file.startsWith(`..${sep}`) && !isAbsolute(file) && !file.split(sep).includes("node_modules");
+  }
 
   private register(path: string, source: TaskSource): void {
     const file = relative(this.cwd, path);
