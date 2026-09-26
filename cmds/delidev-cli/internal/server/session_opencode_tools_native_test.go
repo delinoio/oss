@@ -343,3 +343,57 @@ func openCodeContinuationQuestionResponse(dismissed bool) domain.QuestionRespons
 	}
 	return domain.QuestionResponseInput{OpenCode: response}
 }
+
+const openCodeContinuationCorrection = "Private original correction: leave the file unread and continue."
+
+func verifyOpenCodeRejectedReads(t *testing.T, raw []byte, path string, count int, correction bool) string {
+	t.Helper()
+	var body struct {
+		Messages []struct {
+			Role    string          `json:"role"`
+			Content json.RawMessage `json:"content"`
+			CallID  string          `json:"tool_call_id"`
+			Calls   []struct {
+				ID       string                           `json:"id"`
+				Function struct{ Name, Arguments string } `json:"function"`
+			} `json:"tool_calls"`
+		} `json:"messages"`
+	}
+	if json.Unmarshal(raw, &body) != nil {
+		t.Error("invalid original rejected Read conversation")
+		return ""
+	}
+	proposals := map[string]bool{}
+	results := map[string]string{}
+	corrections := 0
+	for _, message := range body.Messages {
+		for _, call := range message.Calls {
+			var input struct {
+				FilePath string `json:"filePath"`
+			}
+			id := continuationToolCall
+			if count > 1 {
+				id = fmt.Sprintf("%s_%d", continuationToolCall, len(proposals))
+			}
+			if message.Role != "assistant" || call.ID != id || proposals[call.ID] || call.Function.Name != "read" || domain.Decode([]byte(call.Function.Arguments), &input) != nil || input.FilePath != path {
+				t.Error("changed rejected Read proposal")
+			}
+			proposals[call.ID] = true
+		}
+		if message.Role == "tool" {
+			var result string
+			if !proposals[message.CallID] || results[message.CallID] != "" || json.Unmarshal(message.Content, &result) != nil || result == "" || strings.Contains(result, "original-inline-tool-sentinel") || strings.Contains(result, "changed-source-after-original-tool") {
+				t.Error("rejected Read acquired output or lost original error")
+			}
+			if strings.Contains(result, openCodeContinuationCorrection) {
+				corrections++
+			}
+			results[message.CallID] = result
+		}
+	}
+	if len(proposals) != count || len(results) != count || (!correction && corrections != 0) || (correction && corrections != 1) {
+		t.Error("repeated, omitted or changed original rejection/correction", len(proposals), len(results), corrections)
+	}
+	encoded, _ := json.Marshal(results)
+	return string(encoded)
+}

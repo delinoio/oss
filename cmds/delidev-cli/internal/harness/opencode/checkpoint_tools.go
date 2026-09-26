@@ -20,6 +20,7 @@ type checkpointToolPart struct {
 	ID     string             `json:"id"`
 	Name   checkpointToolName `json:"name"`
 	Digest string             `json:"digest"`
+	Failed bool               `json:"failed,omitempty"`
 }
 
 // This positive observation comes from the original closed live observer. A
@@ -32,15 +33,18 @@ type checkpointToolPart struct {
 // Version 6 adds native inline search and independently compared Todo state.
 // Version 7 adds original completed inline Write/Edit/Apply Patch results.
 // Version 8 adds originally accepted, closed Question dismissals.
+// Version 9 adds original Read rejection/correction and automatic closures.
 type checkpointToolHistory struct {
-	Version         uint32                       `json:"version"`
-	InteractionFree bool                         `json:"interaction_free"`
-	Parts           []checkpointToolPart         `json:"parts"`
-	Once            []SessionClaim               `json:"once_permissions,omitempty"`
-	Always          []checkpointAlwaysPermission `json:"always_permissions,omitempty"`
-	AppliedAlways   uint32                       `json:"applied_always,omitempty"`
-	Policy          []checkpointPolicyPermission `json:"policy_permissions,omitempty"`
-	Questions       []checkpointQuestionReply    `json:"question_replies,omitempty"`
+	Version         uint32                          `json:"version"`
+	InteractionFree bool                            `json:"interaction_free"`
+	Parts           []checkpointToolPart            `json:"parts"`
+	Once            []SessionClaim                  `json:"once_permissions,omitempty"`
+	Always          []checkpointAlwaysPermission    `json:"always_permissions,omitempty"`
+	AppliedAlways   uint32                          `json:"applied_always,omitempty"`
+	Policy          []checkpointPolicyPermission    `json:"policy_permissions,omitempty"`
+	Questions       []checkpointQuestionReply       `json:"question_replies,omitempty"`
+	Rejections      []checkpointPermissionRejection `json:"rejected_permissions,omitempty"`
+	RejectionPolicy []checkpointPolicyRejection     `json:"rejected_policy_permissions,omitempty"`
 }
 
 func validCheckpointTools(value nativeCheckpoint) bool {
@@ -69,7 +73,7 @@ func validCheckpointTools(value nativeCheckpoint) bool {
 					return false
 				}
 				tool := proof.Parts[index]
-				if tool.ID != part.ID || tool.Digest != part.Digest {
+				if tool.ID != part.ID || tool.Digest != part.Digest || tool.Failed && (proof.Version < 9 || tool.Name != checkpointReadTool) {
 					return false
 				}
 				switch tool.Name {
@@ -95,7 +99,7 @@ func validCheckpointTools(value nativeCheckpoint) bool {
 			}
 		}
 	}
-	return index == len(proof.Parts) && (proof.Version != 7 || fileTool) && (proof.Version != 6 || searchOrTodo) && (proof.Version == 8) == checkpointHasQuestionDismissal(proof)
+	return index == len(proof.Parts) && (proof.Version != 7 || fileTool) && (proof.Version != 6 || searchOrTodo) && (proof.Version != 8 || checkpointHasQuestionDismissal(proof)) && (proof.Version != 9 || len(proof.Rejections) != 0)
 }
 
 func (s *sessionAPI) checkpointToolHistory(value nativeCheckpoint) *checkpointToolHistory {
@@ -117,6 +121,11 @@ func (s *sessionAPI) checkpointToolHistory(value nativeCheckpoint) *checkpointTo
 			proof.Parts = append(proof.Parts, s.predecessor.Tools.Parts...)
 			proof.Once = append(proof.Once, s.predecessor.Tools.Once...)
 			proof.Questions = append(proof.Questions, s.predecessor.Tools.Questions...)
+			proof.Rejections = append(proof.Rejections, s.predecessor.Tools.Rejections...)
+			for _, original := range s.predecessor.Tools.RejectionPolicy {
+				original.Sources = slices.Clone(original.Sources)
+				proof.RejectionPolicy = append(proof.RejectionPolicy, original)
+			}
 			for _, original := range s.predecessor.Tools.Always {
 				original.Rules = slices.Clone(original.Rules)
 				proof.Always = append(proof.Always, original)
@@ -135,6 +144,22 @@ func (s *sessionAPI) checkpointToolHistory(value nativeCheckpoint) *checkpointTo
 				return nil
 			}
 			proof.Questions = append(proof.Questions, reply)
+			continue
+		}
+		if interaction != nil && interaction.rejected {
+			if interaction.attempt == nil {
+				policy, valid := o.checkpointRejectedPolicy(interaction)
+				if !valid {
+					return nil
+				}
+				proof.RejectionPolicy = append(proof.RejectionPolicy, policy)
+			} else {
+				rejection, valid := o.checkpointRejectedPermission(interaction)
+				if !valid {
+					return nil
+				}
+				proof.Rejections = append(proof.Rejections, rejection)
+			}
 			continue
 		}
 		if interaction != nil && interaction.alwaysAccepted {
@@ -203,7 +228,7 @@ func (s *sessionAPI) checkpointToolHistory(value nativeCheckpoint) *checkpointTo
 			if observed == nil || mutationDigest(observed.raw) != part.Digest || !checkpointInlineTool(observed.value.Tool) {
 				return nil
 			}
-			proof.Parts = append(proof.Parts, checkpointToolPart{ID: part.ID, Name: checkpointToolName(observed.value.Tool.Name), Digest: part.Digest})
+			proof.Parts = append(proof.Parts, checkpointToolPart{ID: part.ID, Name: checkpointToolName(observed.value.Tool.Name), Digest: part.Digest, Failed: checkpointRejectedReadTool(observed.value.Tool)})
 		}
 	}
 	if len(proof.Parts) == 0 {
@@ -225,6 +250,13 @@ func (s *sessionAPI) checkpointToolHistory(value nativeCheckpoint) *checkpointTo
 	}
 	if checkpointHasQuestionDismissal(proof) {
 		proof.Version = 8
+	}
+	if len(proof.Rejections) != 0 || len(proof.RejectionPolicy) != 0 {
+		proof.Version, proof.InteractionFree = 9, false
+		slices.SortFunc(proof.Rejections, func(a, b checkpointPermissionRejection) int {
+			return strings.Compare(string(a.Claim.RequestID), string(b.Claim.RequestID))
+		})
+		slices.SortFunc(proof.RejectionPolicy, func(a, b checkpointPolicyRejection) int { return strings.Compare(a.InteractionID, b.InteractionID) })
 	}
 	if !validCheckpointTools(value) {
 		return nil
@@ -248,7 +280,7 @@ func checkpointInlineTool(tool *NativeToolPart) bool {
 		}
 	}
 	if tool.State == ToolError {
-		return checkpointDismissedQuestionTool(tool)
+		return checkpointDismissedQuestionTool(tool) || checkpointRejectedReadTool(tool)
 	}
 	if tool.State != ToolCompleted || tool.Output == nil {
 		return false

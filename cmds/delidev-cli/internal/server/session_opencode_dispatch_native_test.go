@@ -64,6 +64,12 @@ func TestManualNativeOpenCodePublicPolicyPermissionContinuation(t *testing.T) {
 	nativeOpenCodePublicDispatchProfile(t, 3, false, "", "read-cascade", true)
 }
 
+func TestManualNativeOpenCodePublicRejectionContinuation(t *testing.T) {
+	for _, profile := range []string{"read-reject", "read-reject-empty", "read-correction", "read-reject-cascade", "read-correction-cascade"} {
+		t.Run(profile, func(t *testing.T) { nativeOpenCodePublicDispatchProfile(t, 3, false, "", profile, true) })
+	}
+}
+
 func TestManualNativeOpenCodePublicQuestionContinuation(t *testing.T) {
 	nativeOpenCodePublicDispatchProfile(t, 3, false, "", "question", true)
 }
@@ -99,7 +105,12 @@ func nativeOpenCodePublicDispatch(t *testing.T, turns int, failedFirst bool, fau
 }
 
 func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bool, fault, tool string, switchModes ...bool) {
+	rejection := strings.HasPrefix(tool, "read-reject") || strings.HasPrefix(tool, "read-correction")
+	correction := strings.HasPrefix(tool, "read-correction")
+	rejectionCascade := rejection && strings.HasSuffix(tool, "-cascade")
+	emptyFeedback := tool == "read-reject-empty"
 	dismissed := tool == "question-dismissed"
+	stoppedFirst := dismissed || rejection && (!correction || rejectionCascade)
 	if dismissed {
 		tool = "question"
 	}
@@ -114,9 +125,9 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 		}
 	}
 	question := tool == "question"
-	cascade := tool == "read-cascade"
-	permission := tool == "read-once" || tool == "read-always" || cascade
-	always := tool == "read-always" || cascade
+	cascade := tool == "read-cascade" || rejectionCascade
+	permission := tool == "read-once" || tool == "read-always" || cascade || rejection
+	always := tool == "read-always" || cascade && !rejection
 	permissionCount := 1
 	if cascade {
 		permissionCount = 2
@@ -145,7 +156,7 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 			var originalToolResult string
 			retainedTools := map[string]string{}
 			expectedCalls := turns
-			if tool != "" && !dismissed {
+			if tool != "" && !stoppedFirst {
 				expectedCalls++
 			}
 			if always || repeatTodo {
@@ -223,6 +234,24 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 						}
 						serveOpenCodeContinuationTool(t, w, tool, toolPath.Load().(string), ids...)
 						return
+					}
+				} else if rejection {
+					if providerTurn == 1 {
+						ids := []string{continuationToolCall}
+						if cascade {
+							ids = []string{continuationToolCall + "_0", continuationToolCall + "_1"}
+						}
+						serveOpenCodeContinuationTool(t, w, tool, toolPath.Load().(string), ids...)
+						return
+					}
+					if !stoppedFirst {
+						providerTurn--
+					}
+					result := verifyOpenCodeRejectedReads(t, raw, toolPath.Load().(string), permissionCount, correction)
+					if originalToolResult == "" {
+						originalToolResult = result
+					} else if result != originalToolResult {
+						t.Error("replacement changed original rejection/correction")
 					}
 				} else if tool != "" {
 					if providerTurn == 1 {
@@ -324,12 +353,23 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 							if always {
 								decision = domain.OpenCodePermissionAlways
 							}
+							if rejection {
+								decision = domain.OpenCodePermissionReject
+							}
 							meta := &pb.Mutation{RequestId: string(domain.NewID()), Id: string(rows[0].ID), ExpectedRevision: rows[0].Revision}
 							if question {
 								body, _ := json.Marshal(openCodeContinuationQuestionResponse(dismissed))
 								_, err = client.RespondQuestion(ctx, ownerRequest(f.identity, &pb.RespondQuestionRequest{Mutation: meta, ResponseJson: body}))
 							} else {
-								body, _ := json.Marshal(domain.ApprovalResponseInput{OpenCode: &domain.OpenCodePermissionResponse{Decision: decision}})
+								response := &domain.OpenCodePermissionResponse{Decision: decision}
+								if correction {
+									feedback := openCodeContinuationCorrection
+									response.Feedback = &feedback
+								} else if emptyFeedback {
+									feedback := ""
+									response.Feedback = &feedback
+								}
+								body, _ := json.Marshal(domain.ApprovalResponseInput{OpenCode: response})
 								_, err = client.RespondApproval(ctx, ownerRequest(f.identity, &pb.RespondApprovalRequest{Mutation: meta, ResponseJson: body}))
 							}
 							if err != nil {
@@ -366,7 +406,7 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 						if failedFirst && turn == 0 {
 							expectedState, expectedOutcome, expectedDispatch = domain.JobFailed, domain.ExecutionFailed, domain.DispatchPaused
 						}
-						if dismissed && turn == 0 {
+						if stoppedFirst && turn == 0 {
 							expectedState, expectedOutcome, expectedDispatch = domain.JobCanceled, domain.ExecutionStopped, domain.DispatchPaused
 						}
 						if completed.State != expectedState || domain.Decode(completed.Output, &proof) != nil || proof.ValidateForHarness(domain.OpenCode) != nil || proof.Version != expectedVersion || proof.ExecutionID != input.ExecutionID || proof.InputID != input.InputID || !proof.CleanupVerified || calls.Load() != int64(wantCalls) {
@@ -465,7 +505,7 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 					if fault != "" && turn == 0 {
 						alterOpenCodeContinuationEvidence(t, ctx, f.workerRoot, domain.ID(assignment.Id), input.ExecutionID, fault)
 					}
-					if (failedFirst || dismissed) && turn == 0 {
+					if (failedFirst || stoppedFirst) && turn == 0 {
 						if f.service.dispatchExecution(ctx, f.refresh(t)) == nil {
 							t.Fatal("failed input gained automatic continuation")
 						}
