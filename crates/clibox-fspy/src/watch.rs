@@ -3,7 +3,10 @@
 use std::{
     collections::BTreeSet,
     path::{Path, PathBuf},
-    sync::mpsc::{self, Receiver, RecvTimeoutError, Sender},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc::{self, Receiver, RecvTimeoutError, Sender},
+    },
     time::{Duration, Instant},
 };
 
@@ -264,29 +267,51 @@ impl WatchSession {
         Ok(())
     }
 
+    fn receive_until(
+        &self,
+        until: Instant,
+        cancelled: &AtomicBool,
+    ) -> Result<Option<WatchEvent>, WatchFailure> {
+        loop {
+            if cancelled.load(Ordering::SeqCst) {
+                return Ok(None);
+            }
+            let remaining = until.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return Ok(None);
+            }
+            match self
+                .rx
+                .recv_timeout(remaining.min(Duration::from_millis(20)))
+            {
+                Ok(event) => return Ok(Some(event)),
+                Err(RecvTimeoutError::Timeout) => {}
+                Err(RecvTimeoutError::Disconnected) => return Err(WatchFailure::WatchLoss),
+            }
+        }
+    }
+
     pub fn collect(
         &self,
         dependencies: &Dependencies,
         debounce: Duration,
         deadline: Duration,
+        cancelled: &AtomicBool,
     ) -> Result<bool, WatchFailure> {
-        let first = match self.rx.recv_timeout(deadline) {
-            Ok(event) => event,
-            Err(RecvTimeoutError::Timeout) => return Ok(false),
-            Err(RecvTimeoutError::Disconnected) => return Err(WatchFailure::WatchLoss),
+        let first = match self.receive_until(Instant::now() + deadline, cancelled)? {
+            Some(event) => event,
+            None => return Ok(false),
         };
         let mut events = vec![first];
         let until = Instant::now() + debounce;
         loop {
-            let remaining = until.saturating_duration_since(Instant::now());
-            if remaining.is_zero() {
-                break;
+            match self.receive_until(until, cancelled)? {
+                Some(event) => events.push(event),
+                None => break,
             }
-            match self.rx.recv_timeout(remaining) {
-                Ok(event) => events.push(event),
-                Err(RecvTimeoutError::Timeout) => break,
-                Err(RecvTimeoutError::Disconnected) => return Err(WatchFailure::WatchLoss),
-            }
+        }
+        if cancelled.load(Ordering::SeqCst) {
+            return Ok(false);
         }
         let mut relevant = false;
         for event in events {
@@ -366,9 +391,41 @@ mod tests {
             session.collect(
                 &Dependencies::default(),
                 Duration::from_millis(1),
-                Duration::from_millis(1)
+                Duration::from_millis(1),
+                &AtomicBool::new(false),
             ),
             Err(WatchFailure::WatchLoss)
         );
+    }
+
+    #[test]
+    fn long_debounce_observes_cancellation() {
+        use notify::EventKind;
+
+        let session = WatchSession::new(PathBuf::from("/project"));
+        session
+            .tx
+            .send(Ok(
+                Event::new(EventKind::Other).add_path(PathBuf::from("/project/input"))
+            ))
+            .unwrap();
+        let cancelled = AtomicBool::new(false);
+        let began = Instant::now();
+        std::thread::scope(|scope| {
+            scope.spawn(|| {
+                std::thread::sleep(Duration::from_millis(30));
+                cancelled.store(true, Ordering::SeqCst);
+            });
+            assert_eq!(
+                session.collect(
+                    &Dependencies::default(),
+                    Duration::from_secs(3600),
+                    Duration::from_millis(100),
+                    &cancelled,
+                ),
+                Ok(false),
+            );
+        });
+        assert!(began.elapsed() < Duration::from_secs(1));
     }
 }

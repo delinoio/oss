@@ -2305,7 +2305,12 @@ fn autowatch(args: AutowatchArgs) -> i32 {
                     130
                 };
             }
-            match watcher.collect(&previous, args.debounce, Duration::from_millis(100)) {
+            match watcher.collect(
+                &previous,
+                args.debounce,
+                Duration::from_millis(100),
+                &signals.cancelled,
+            ) {
                 Ok(true) => break,
                 Ok(false) => {}
                 Err(error) => return diagnostic(&error.to_string(), "autowatch"),
@@ -2499,7 +2504,12 @@ fn macos_autowatch(args: AutowatchArgs) -> i32 {
                     130
                 };
             }
-            match watcher.collect(&previous, args.debounce, Duration::from_millis(100)) {
+            match watcher.collect(
+                &previous,
+                args.debounce,
+                Duration::from_millis(100),
+                &signals.cancelled,
+            ) {
                 Ok(true) => break,
                 Ok(false) => {}
                 Err(error) => return diagnostic(&error.to_string(), "autowatch"),
@@ -3485,7 +3495,12 @@ fn windows_autowatch(args: AutowatchArgs) -> i32 {
             if WINDOWS_CANCELLED.load(Ordering::SeqCst) {
                 return 130;
             }
-            match watcher.collect(&previous, args.debounce, Duration::from_millis(100)) {
+            match watcher.collect(
+                &previous,
+                args.debounce,
+                Duration::from_millis(100),
+                &WINDOWS_CANCELLED,
+            ) {
                 Ok(true) => break,
                 Ok(false) => {}
                 Err(error) => return diagnostic(&error.to_string(), "autowatch"),
