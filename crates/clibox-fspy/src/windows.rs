@@ -809,8 +809,38 @@ pub fn assemble_candidate_record(
         operations,
     };
     let mut bytes = Vec::new();
-    record::serialize(&record, &mut bytes, max_events, max_bytes)
-        .map_err(|_| invalid("record_limit"))?;
-    record::parse(io::BufReader::new(bytes.as_slice()), max_events, max_bytes)
-        .map_err(|_| invalid("candidate_record"))
+    record::serialize(&record, &mut bytes, max_events, max_bytes).map_err(|error| {
+        eprintln!("clibox fspy receiver: stage=record_serialize reason={error}");
+        invalid("record_limit")
+    })?;
+    record::parse(io::BufReader::new(bytes.as_slice()), max_events, max_bytes).map_err(|error| {
+        let invalid_path = record
+            .operations
+            .iter()
+            .filter(|pair| {
+                pair.start
+                    .paths
+                    .iter()
+                    .any(|path| !record::valid_path(path, Platform::Windows))
+            })
+            .count();
+        let invalid_timing = record
+            .operations
+            .iter()
+            .filter(|pair| {
+                pair.completion.monotonic_ns < pair.start.monotonic_ns
+                    || pair.completion.observed_delay_ns
+                        > pair
+                            .completion
+                            .monotonic_ns
+                            .saturating_sub(pair.start.monotonic_ns)
+            })
+            .count();
+        eprintln!(
+            "clibox fspy receiver: stage=record_parse reason={error} pairs={} \
+             invalid_paths={invalid_path} invalid_timing={invalid_timing}",
+            record.operations.len()
+        );
+        invalid("candidate_record")
+    })
 }

@@ -16,8 +16,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use ntapi::ntpsapi::{
-    NtQueryInformationProcess, PROCESS_BASIC_INFORMATION, ProcessBasicInformation,
+use ntapi::{
+    ntpsapi::{NtQueryInformationProcess, PROCESS_BASIC_INFORMATION, ProcessBasicInformation},
+    ntrtl::RtlDllShutdownInProgress,
 };
 use winapi::{
     shared::ntdef::NT_SUCCESS,
@@ -37,6 +38,14 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const WSAENOTSOCK: i32 = 10038;
 const WSANOTINITIALISED: i32 = 10093;
 static PROCESS_EXITING: AtomicBool = AtomicBool::new(false);
+
+fn process_exiting() -> bool {
+    PROCESS_EXITING.load(Ordering::Acquire)
+        // SAFETY: the supported Windows 10+ targets export this read-only
+        // ntdll shutdown query. It covers direct native exit paths that do not
+        // enter the intercepted kernel32 ExitProcess export.
+        || unsafe { RtlDllShutdownInProgress() != 0 }
+}
 
 pub(crate) fn set_process_exiting(exiting: bool) {
     PROCESS_EXITING.store(exiting, Ordering::Release);
@@ -237,7 +246,7 @@ fn write_frame(
 }
 
 pub(crate) fn mark_loss(stage: &'static str) {
-    if PROCESS_EXITING.load(Ordering::Acquire) {
+    if process_exiting() {
         return;
     }
     #[cfg(debug_assertions)]
@@ -303,7 +312,7 @@ fn begin_encoded(operation: u8, encoded: &[u8]) -> Option<OperationGuard> {
     // ExitProcess runs DLL detach routines after user execution has ended.
     // Their file hooks can run after Winsock is unavailable. They are outside
     // this execution's observation interval and must not open a new channel.
-    if PROCESS_EXITING.load(Ordering::Acquire) {
+    if process_exiting() {
         return None;
     }
     let handle = state_handle();

@@ -290,7 +290,7 @@ impl std::fmt::Display for ParseFailure {
 
 impl std::error::Error for ParseFailure {}
 
-fn valid_path(path: &AccessPath, platform: Platform) -> bool {
+pub(crate) fn valid_path(path: &AccessPath, platform: Platform) -> bool {
     if !path.logical.is_valid(platform)
         || path
             .resolved

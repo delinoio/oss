@@ -4197,6 +4197,51 @@ mod tests {
 
     #[cfg(target_os = "windows")]
     #[test]
+    fn windows_fbreak_rejects_missing_control_console() {
+        use std::os::windows::process::CommandExt;
+
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("cli::tests::windows_fbreak_without_console_child")
+            .env("CLIBOX_FSPY_WIN_BREAK_NO_CONSOLE", "1")
+            .creation_flags(winapi::um::winbase::DETACHED_PROCESS)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("control_terminal_unavailable"),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_fbreak_without_console_child() {
+        if std::env::var_os("CLIBOX_FSPY_WIN_BREAK_NO_CONSOLE").is_none() {
+            return;
+        }
+        let executable = std::env::current_exe().unwrap();
+        let cli = TestCli::try_parse_from([
+            OsString::from("fspy"),
+            OsString::from("fbreak"),
+            OsString::from("--include"),
+            OsString::from("input.txt"),
+            OsString::from("--"),
+            executable.into_os_string(),
+            OsString::from("--exact"),
+            OsString::from("cli::tests::windows_cli_read_fixture"),
+        ])
+        .unwrap();
+        assert_eq!(execute(cli.command), 1);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
     fn windows_autowatch_reruns_on_observed_input_change() {
         use std::{process::Stdio, thread, time::Instant};
 

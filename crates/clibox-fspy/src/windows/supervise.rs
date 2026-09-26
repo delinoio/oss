@@ -355,5 +355,11 @@ where
         limits.max_events,
         limits.max_bytes,
     )
-    .map_err(|_| CaptureFailure::Record)
+    .map_err(|error| {
+        eprintln!(
+            "clibox fspy supervisor: stage=assemble_record kind={:?} reason={error}",
+            error.kind()
+        );
+        CaptureFailure::Record
+    })
 }
