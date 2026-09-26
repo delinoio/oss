@@ -85,6 +85,10 @@ func (c *OpenCodeEventPublisher) PublishObservation(ctx context.Context, o openc
 			// themselves establish configuration, terminal or billing authority.
 			// The pinned core registry also emits plugin.added for native
 			// built-ins; it is not proof of a newly enabled external plugin.
+		case opencode.TodoUpdatedEvent:
+			if err := c.publishTodo(ctx, o); err != nil {
+				return c.fail(err)
+			}
 		case opencode.SessionDiffEvent:
 			var payload struct {
 				SessionID string            `json:"sessionID"`
@@ -289,4 +293,29 @@ func (c *OpenCodeEventPublisher) completeHistory(history opencode.HistoryObserva
 		}
 	}
 	return true
+}
+
+// The original session event carries no tool owner. Retain its identity as
+// progress, including explicit list clearing and repeated values in new events.
+func (c *OpenCodeEventPublisher) publishTodo(ctx context.Context, o opencode.Observation) error {
+	b := c.text.binding
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	claims, err := b.readClaims()
+	if err != nil || len(claims) != 2 || b.stage != openCodeAccepted || c.text.blocked || o.Todo == nil || o.Todo.SessionID != b.thread {
+		return publicationUncertain()
+	}
+	update := domain.ExecutionProgressUpdate{ID: domain.NewID(), Progress: domain.NativeProgress{Kind: domain.OpenCodeTodoProgressKind, Todo: &domain.OpenCodeTodoProgress{NativeEventID: o.EventID, Todos: o.Todo.Todos}}}
+	if err := update.Validate(); err != nil {
+		return err
+	}
+	raw, err := json.Marshal(update)
+	if err != nil || len(raw) > maxOpenCodeTextBytes-c.text.bytes {
+		return publicationUncertain()
+	}
+	if err := b.publisher.Publish(ctx, domain.ExecutionEvent{Kind: domain.ExecutionProgressObserved, NativeThreadID: b.thread, NativeTurnID: b.turn, Progress: &update}); err != nil {
+		return err
+	}
+	c.text.bytes += len(raw)
+	return nil
 }

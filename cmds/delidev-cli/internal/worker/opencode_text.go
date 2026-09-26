@@ -126,7 +126,7 @@ func (c *OpenCodeTextPublisher) PublishObservation(ctx context.Context, observat
 			if observation.Part.Tool == nil {
 				return false, publicationUncertain()
 			}
-			if observation.Part.Tool.Name != "read" && observation.Part.Tool.Name != "bash" {
+			if observation.Part.Tool.Name != "read" && observation.Part.Tool.Name != "bash" && observation.Part.Tool.Name != "todowrite" {
 				return false, nil
 			}
 			return true, c.observeTool(ctx, *observation.Part)

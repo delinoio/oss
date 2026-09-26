@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -66,6 +67,8 @@ const (
 	nativeShellTruncatedPublication
 	nativeCompletionPublication
 	nativeCompletionAuthFailurePublication
+	nativeTodoPublication
+	nativeTodoClearPublication
 )
 
 func TestManualNativeOpenCodePublishesRegisteredText(t *testing.T) {
@@ -110,7 +113,18 @@ func TestManualNativeOpenCodeReportsOriginalCompletion(t *testing.T) {
 	}
 }
 
+func TestManualNativeOpenCodePublishesRegisteredTodos(t *testing.T) {
+	for _, publication := range []nativeOpenCodePublication{nativeTodoPublication, nativeTodoClearPublication} {
+		t.Run(fmt.Sprint(publication), func(t *testing.T) { nativeRegisteredOpenCode(t, domain.ExecuteMode, false, publication) })
+	}
+}
+
 func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool, publication nativeOpenCodePublication) {
+	todoTool := publication == nativeTodoPublication || publication == nativeTodoClearPublication
+	todos := []domain.OpenCodeTodo{{Content: "Original native Todo fixture.", Status: domain.OpenCodeTodoRunning, Priority: domain.OpenCodeTodoHigh}, {Content: "Preserve native cancellation", Status: domain.OpenCodeTodoCancelled, Priority: domain.OpenCodeTodoLow}, {Content: "Native extension", Status: "waiting", Priority: "urgent"}}
+	if publication == nativeTodoClearPublication {
+		todos = []domain.OpenCodeTodo{}
+	}
 	publish := publication != nativeNoPublication
 	hasTranscript := publication >= nativeTextPublication
 	authFailure := publication == nativeTerminalAuthFailurePublication || publication == nativeCompletionAuthFailurePublication
@@ -132,7 +146,7 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 		shellCommand = `i=0; while [ "$i" -lt 3000 ]; do printf 'Original native Shell fixture.\n'; i=$((i + 1)); done; printf 'Original stderr fixture.' >&2`
 	}
 	expectedCalls := int32(1)
-	if readTool || shellTool {
+	if readTool || shellTool || todoTool {
 		expectedCalls = 2
 	}
 	var readPath atomic.Value
@@ -217,10 +231,13 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 			return
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
-		if (readTool || shellTool) && call == 1 {
+		if (readTool || shellTool || todoTool) && call == 1 {
 			name, callID := "read", "call_registered_read"
 			var args []byte
-			if shellTool {
+			if todoTool {
+				name, callID = "todowrite", "call_registered_todo"
+				args, _ = json.Marshal(map[string]any{"todos": todos})
+			} else if shellTool {
 				name, callID = "bash", "call_registered_shell"
 				input := map[string]any{"command": shellCommand}
 				if publication == nativeShellTimeoutPublication {
@@ -238,10 +255,16 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 			_, _ = io.WriteString(w, "data: [DONE]\n\n")
 			return
 		}
-		if readTool || shellTool {
+		if readTool || shellTool || todoTool {
 			callID, sentinel := "call_registered_read", readSentinel
 			if shellTool {
 				callID, sentinel = "call_registered_shell", shellSentinel
+			}
+			if todoTool {
+				callID, sentinel = "call_registered_todo", "Original native Todo fixture."
+				if len(todos) == 0 {
+					sentinel = "[]"
+				}
 			}
 			results := 0
 			for _, message := range body.Messages {
@@ -611,8 +634,11 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 		if authFailure {
 			expected = 1
 		}
-		if publication == nativeReasoningPublication || readTool || shellTool {
+		if publication == nativeReasoningPublication || readTool || shellTool || todoTool {
 			expected = 3
+		}
+		if todoTool {
+			expected = 4
 		}
 		if err != nil || len(rows) != expected {
 			t.Fatal("native text publication lost original user/assistant/reasoning records")
@@ -620,11 +646,28 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 		roles := map[domain.MessageRole]bool{}
 		for _, row := range rows {
 			message, err := store.Decode[domain.ExecutionMessage](row)
-			if err != nil || message.State != domain.MessageComplete || message.NativeTurnID != receipt.MessageID || message.Phase != nil || roles[message.Role] || domain.NativeIdentity(message.NativeID).Validate(domain.OpenCode, domain.NativePartIdentity) != nil {
+			if err != nil || message.State != domain.MessageComplete || message.NativeTurnID != receipt.MessageID || message.Phase != nil || roles[message.Role] || (message.Role != domain.ProgressMessage && domain.NativeIdentity(message.NativeID).Validate(domain.OpenCode, domain.NativePartIdentity) != nil) {
 				t.Fatal("native text publication lost original part identity or closure")
 			}
 			roles[message.Role] = true
-			if message.Role == domain.ToolMessage && shellTool {
+			if message.Role == domain.ProgressMessage && todoTool {
+				if message.NativeID != "" || message.NativeParentID != "" || message.Progress == nil || message.Progress.Kind != domain.OpenCodeTodoProgressKind || message.Progress.Todo == nil || !reflect.DeepEqual(message.Progress.Todo.Todos, todos) || domain.NativeIdentity(message.Progress.Todo.NativeEventID).Validate(domain.OpenCode, domain.NativeEventIdentity) != nil {
+					t.Fatal("native todo event lost its independent identity or exact list")
+				}
+				record, _ := f.service.Store.Get(ctx, domain.SessionKind, f.input.SessionID)
+				retained, _ := store.Decode[domain.Session](record)
+				if retained.Execution.LatestTodoID != row.ID {
+					t.Fatal("latest todo reference was not retained")
+				}
+			} else if message.Role == domain.ToolMessage && todoTool {
+				if message.Tool == nil || message.NativeParentID == "" || message.NativeParentID == receipt.MessageID || message.NativeParentID == progress.AssistantID || message.Tool.Started.Kind != domain.OpenCodeTodoTool || message.Tool.Started.Status != domain.ToolPending || message.Tool.Completed == nil || len(message.Tool.States) < 1 {
+					t.Fatal("native todo tool lost its original lifecycle")
+				}
+				completed := message.Tool.Completed
+				if completed.Status != domain.ToolCompleted || completed.Todo == nil || completed.Todo.CallID != "call_registered_todo" || !reflect.DeepEqual(completed.Todo.Input.Todos, todos) || completed.Todo.Metadata == nil || !reflect.DeepEqual(completed.Todo.Metadata.Todos, todos) {
+					t.Fatal("native todo tool replaced its applied or result list")
+				}
+			} else if message.Role == domain.ToolMessage && shellTool {
 				if message.Tool == nil || message.NativeParentID == "" || message.NativeParentID == receipt.MessageID || message.NativeParentID == progress.AssistantID || message.Tool.Started.Kind != domain.OpenCodeShellTool || message.Tool.Started.Status != domain.ToolPending || message.Tool.Completed == nil || len(message.Tool.States) < 1 {
 					t.Fatal("original Shell lifecycle lost its ownership or observations")
 				}
@@ -715,7 +758,7 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 		}
 	}
 	expectedMessages := 2
-	if readTool || shellTool {
+	if readTool || shellTool || todoTool {
 		expectedMessages = 3
 	}
 	history, err := api.InspectHistory(ctx)

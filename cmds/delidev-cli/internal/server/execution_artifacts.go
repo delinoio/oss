@@ -95,10 +95,17 @@ func publishExecutionProgress(tx *store.Tx, input domain.ExecutionJobInput, sess
 	// Turn-level observations have their own immutable product identity and no
 	// native item. They must not occupy a fabricated native-message index entry.
 	value := domain.ExecutionMessage{ExecutionID: input.ExecutionID, NativeThreadID: event.NativeThreadID, NativeTurnID: event.NativeTurnID, Role: domain.ProgressMessage, State: domain.MessageComplete, FirstSequence: event.Sequence, LastSequence: event.Sequence, Progress: &update.Progress}
+	if update.Progress.Kind == domain.OpenCodeTodoProgressKind {
+		if err := tx.CheckOpenCodeTodoEvent(session.ID, input.ExecutionID, update.Progress.Todo.NativeEventID); err != nil {
+			return err
+		}
+	}
 	if _, err := tx.Put(domain.MessageKind, update.ID, 0, session.ID, session.ProjectID, value); err != nil {
 		return err
 	}
 	switch update.Progress.Kind {
+	case domain.OpenCodeTodoProgressKind:
+		progress.LatestTodoID = update.ID
 	case domain.PlanProgress:
 		progress.LatestPlanID = update.ID
 	case domain.DiffProgress:

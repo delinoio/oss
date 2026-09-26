@@ -21,8 +21,9 @@ const (
 	ReasoningTextDelta    ArtifactDeltaKind = "reasoning-text"
 	ReasoningSummaryAdded ArtifactDeltaKind = "reasoning-summary-added"
 
-	PlanProgress ProgressKind = "plan"
-	DiffProgress ProgressKind = "diff"
+	OpenCodeTodoProgressKind ProgressKind = "opencode-todo"
+	PlanProgress             ProgressKind = "plan"
+	DiffProgress             ProgressKind = "diff"
 
 	PlanPending   PlanStepStatus = "pending"
 	PlanRunning   PlanStepStatus = "running"
@@ -186,9 +187,10 @@ type NativePlan struct {
 // Turn progress has no native item identity. A diff is only an observation,
 // not repository/file-review ownership or permission to read/write a path.
 type NativeProgress struct {
-	Kind ProgressKind `json:"kind"`
-	Plan *NativePlan  `json:"plan,omitempty"`
-	Diff *string      `json:"diff,omitempty"`
+	Todo *OpenCodeTodoProgress `json:"todo,omitempty"`
+	Kind ProgressKind          `json:"kind"`
+	Plan *NativePlan           `json:"plan,omitempty"`
+	Diff *string               `json:"diff,omitempty"`
 }
 type ExecutionProgressUpdate struct {
 	ID       ID             `json:"id"`
@@ -202,7 +204,7 @@ func (u ExecutionProgressUpdate) Validate() error {
 	p := u.Progress
 	switch p.Kind {
 	case PlanProgress:
-		if p.Plan == nil || p.Diff != nil || p.Plan.Steps == nil || len(p.Plan.Steps) > MaxArtifactParts || (p.Plan.Explanation != nil && Text(*p.Plan.Explanation, "native plan explanation", MaxMessageText, false) != nil) {
+		if p.Todo != nil || p.Plan == nil || p.Diff != nil || p.Plan.Steps == nil || len(p.Plan.Steps) > MaxArtifactParts || (p.Plan.Explanation != nil && Text(*p.Plan.Explanation, "native plan explanation", MaxMessageText, false) != nil) {
 			return invalidArtifact()
 		}
 		for _, step := range p.Plan.Steps {
@@ -210,8 +212,12 @@ func (u ExecutionProgressUpdate) Validate() error {
 				return invalidArtifact()
 			}
 		}
+	case OpenCodeTodoProgressKind:
+		if p.Todo == nil || p.Plan != nil || p.Diff != nil || NativeIdentity(p.Todo.NativeEventID).Validate(OpenCode, NativeEventIdentity) != nil || ValidateOpenCodeTodos(p.Todo.Todos) != nil {
+			return invalidArtifact()
+		}
 	case DiffProgress:
-		if p.Diff == nil || p.Plan != nil || Text(*p.Diff, "native turn diff", MaxMessageText, false) != nil {
+		if p.Todo != nil || p.Diff == nil || p.Plan != nil || Text(*p.Diff, "native turn diff", MaxMessageText, false) != nil {
 			return invalidArtifact()
 		}
 	default:

@@ -7,7 +7,9 @@ type OpenCodeToolTiming struct {
 	End   *uint64 `json:"end,omitempty"`
 }
 
-func (k ToolKind) IsOpenCode() bool { return k == OpenCodeReadTool || k == OpenCodeShellTool }
+func (k ToolKind) IsOpenCode() bool {
+	return k == OpenCodeReadTool || k == OpenCodeShellTool || k == OpenCodeTodoTool
+}
 
 func (s ToolSnapshot) OpenCodeCallID() string {
 	if s.Kind == OpenCodeReadTool && s.Read != nil {
@@ -16,10 +18,16 @@ func (s ToolSnapshot) OpenCodeCallID() string {
 	if s.Kind == OpenCodeShellTool && s.Shell != nil {
 		return s.Shell.CallID
 	}
+	if s.Kind == OpenCodeTodoTool && s.Todo != nil {
+		return s.Todo.CallID
+	}
 	return ""
 }
 
 func ValidateOpenCodeToolTransition(prior, next ToolSnapshot) error {
+	if prior.Kind == OpenCodeTodoTool {
+		return ValidateOpenCodeTodoTransition(prior, next)
+	}
 	if prior.Kind == OpenCodeReadTool {
 		return ValidateOpenCodeReadTransition(prior, next)
 	}

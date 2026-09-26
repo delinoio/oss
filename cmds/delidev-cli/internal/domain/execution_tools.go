@@ -16,6 +16,7 @@ const (
 	PatchTool         ToolKind = "patch"
 	OpenCodeReadTool  ToolKind = "opencode-read"
 	OpenCodeShellTool ToolKind = "opencode-shell"
+	OpenCodeTodoTool  ToolKind = "opencode-todo"
 
 	ToolPending   ToolStatus = "pending"
 	ToolRunning   ToolStatus = "running"
@@ -68,6 +69,7 @@ type FileChangeObservation struct {
 }
 
 type ToolSnapshot struct {
+	Todo    *OpenCodeTodoObservation  `json:"todo,omitempty"`
 	Kind    ToolKind                  `json:"kind"`
 	Status  ToolStatus                `json:"status"`
 	Command *CommandObservation       `json:"command,omitempty"`
@@ -168,18 +170,24 @@ func (u ExecutionToolUpdate) Validate(kind ExecutionEventKind) error {
 
 func (s ToolSnapshot) Validate() error {
 	if s.Kind == OpenCodeReadTool {
-		if s.Command != nil || s.Changes != nil || s.Read == nil || s.Shell != nil {
+		if s.Command != nil || s.Changes != nil || s.Read == nil || s.Shell != nil || s.Todo != nil {
 			return invalidTool()
 		}
 		return s.Read.Validate(s.Status)
 	}
 	if s.Kind == OpenCodeShellTool {
-		if s.Command != nil || s.Changes != nil || s.Read != nil || s.Shell == nil {
+		if s.Command != nil || s.Changes != nil || s.Read != nil || s.Shell == nil || s.Todo != nil {
 			return invalidTool()
 		}
 		return s.Shell.Validate(s.Status)
 	}
-	if s.Read != nil || s.Shell != nil {
+	if s.Kind == OpenCodeTodoTool {
+		if s.Command != nil || s.Changes != nil || s.Read != nil || s.Shell != nil || s.Todo == nil {
+			return invalidTool()
+		}
+		return s.Todo.Validate(s.Status)
+	}
+	if s.Read != nil || s.Shell != nil || s.Todo != nil {
 		return invalidTool()
 	}
 	if !slices.Contains([]ToolStatus{ToolRunning, ToolCompleted, ToolFailed, ToolDeclined}, s.Status) {

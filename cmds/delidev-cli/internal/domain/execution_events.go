@@ -340,6 +340,7 @@ type ExecutionProgress struct {
 	NativeTurnID          string                    `json:"native_turn_id,omitempty"`
 	Observed              ObservedExecutionSettings `json:"observed"`
 	Outcome               ExecutionOutcome          `json:"outcome"`
+	LatestTodoID          ID                        `json:"latest_todo_id,omitempty"`
 	LatestPlanID          ID                        `json:"latest_plan_id,omitempty"`
 	LatestDiffID          ID                        `json:"latest_diff_id,omitempty"`
 	LatestUsageID         ID                        `json:"latest_usage_id,omitempty"`

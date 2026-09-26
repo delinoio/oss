@@ -37,6 +37,7 @@ type inputObservation struct {
 	Error              *NativeError
 	Repeated           bool
 	MessageFinalized   bool
+	Todo               *NativeTodoUpdate       `json:"-"`
 	Ancillary          json.RawMessage         `json:"-"`
 	Interaction        *NativeInteraction      `json:"-"`
 	InteractionReply   *NativeInteractionReply `json:"-"`
@@ -46,6 +47,11 @@ type inputObservation struct {
 
 // NativeTextDelta preserves the original message and part owner. Its text is
 // private observation content, never a serialized diagnostic field.
+type NativeTodoUpdate struct {
+	SessionID string
+	Todos     []domain.OpenCodeTodo `json:"-"`
+}
+
 type NativeTextDelta struct {
 	MessageID string
 	PartID    string
@@ -273,6 +279,14 @@ func (o *inputObserver) observe(ctx context.Context, event NativeEvent) (inputOb
 			err = observerProblem()
 		} else {
 			result.Ancillary = slices.Clone(event.Properties)
+		}
+	case TodoUpdatedEvent:
+		stage = "todo"
+		var todos []domain.OpenCodeTodo
+		if !session([]string{"todos"}, nil) || domain.Decode(fields["todos"], &todos) != nil || domain.ValidateOpenCodeTodos(todos) != nil {
+			err = observerProblem()
+		} else {
+			result.Todo = &NativeTodoUpdate{SessionID: o.input.receipt.SessionID, Todos: todos}
 		}
 	case SessionDiffEvent:
 		if !session([]string{"diff"}, nil) || !validateDiffs(fields["diff"]) {
