@@ -97,7 +97,15 @@ func (f *FrozenObservation) Thaw() (inputObservation, error) {
 			}
 		}
 		result.WorkspaceEvent = &domain.OpenCodeWorkspaceEvent{Kind: kind, NativeEventID: event.ID, File: file}
-	case SessionUpdatedEvent, SessionDiffEvent, SessionStatusEvent, PluginAddedEvent, IntegrationConnectionUpdatedEvent:
+	case SessionStatusEvent:
+		result.Ancillary = slices.Clone(event.Properties)
+		status, problem := object(fields["status"])
+		if problem != nil {
+			err = problem
+		} else if scalar(status["type"], "retry") {
+			result.Retry, err = decodeNativeRetry(fields["status"])
+		}
+	case SessionUpdatedEvent, SessionDiffEvent, PluginAddedEvent, IntegrationConnectionUpdatedEvent:
 		result.Ancillary = slices.Clone(event.Properties)
 	case SessionIdleEvent, LspUpdatedEvent, ServerHeartbeatEvent, ModelsDevRefreshedEvent, CatalogUpdatedEvent, ReferenceUpdatedEvent, IntegrationUpdatedEvent:
 	default:

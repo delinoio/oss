@@ -30,6 +30,7 @@ type StopReceipt struct {
 }
 
 type inputStopAttempt struct {
+	backoff          bool
 	retries          []domain.OpenCodeStopRetryObservation
 	receipt          StopReceipt
 	claim            SessionClaim
@@ -69,13 +70,24 @@ func (o *inputObserver) prepareStop(request domain.ID) (*inputStopAttempt, error
 	// This live profile requires the original input to have reached its native
 	// assistant loop. Aborting a merely scheduled prompt can race runner setup;
 	// idle alone cannot establish cancellation of that different lifecycle.
-	if !o.progress.UserSeen || !o.progress.InputPartSeen || o.progress.AssistantID == "" || o.progress.Status != NativeStatusBusy || o.progress.TerminalObserved {
+	if !o.progress.UserSeen || !o.progress.InputPartSeen || o.progress.AssistantID == "" || o.progress.Status != NativeStatusBusy && o.progress.Status != NativeStatusRetry || o.progress.TerminalObserved {
 		return nil, sessionConflict()
 	}
 	r := o.input.receipt
 	attempt := &inputStopAttempt{
 		receipt: StopReceipt{RequestID: request, InputRequestID: r.RequestID, SessionID: r.SessionID, MessageID: r.MessageID},
 		claim:   SessionClaim{RequestID: request, Kind: StopInputMutation, SessionID: r.SessionID, MessageID: r.MessageID, PartID: r.PartID, InputRequestID: r.RequestID, BodyDigest: mutationDigest(nil)},
+	}
+	if o.progress.Status == NativeStatusRetry {
+		if o.currentRetry == nil || o.currentRetry.assistant != o.progress.AssistantID {
+			return nil, sessionUncertain()
+		}
+		attempt.backoff = true
+		for _, retry := range o.retries {
+			if retry.assistant == o.progress.AssistantID {
+				attempt.retries = append(attempt.retries, retry.stopObservation())
+			}
+		}
 	}
 	o.stop = attempt
 	o.responseIDs[request] = true
@@ -121,7 +133,7 @@ func (o *inputObserver) stoppedBackoffMessage(value NativeMessage) bool {
 // cleanup authority; only that original response can confirm the boundary.
 func (o *inputObserver) stoppedBackoffCandidate(value NativeMessage) bool {
 	a := value.Assistant
-	return o.stop != nil && o.stop.sent && len(o.stop.retries) != 0 && value.ID == o.progress.AssistantID && a != nil && a.Completed != nil && a.Error == nil && a.Finish == nil
+	return o.stop != nil && o.stop.sent && o.stop.backoff && len(o.stop.retries) != 0 && value.ID == o.progress.AssistantID && a != nil && a.Completed != nil && a.Error == nil && a.Finish == nil
 }
 
 func (s *sessionAPI) stopInput(ctx context.Context, observer *inputObserver, request domain.ID) (StopReceipt, error) {

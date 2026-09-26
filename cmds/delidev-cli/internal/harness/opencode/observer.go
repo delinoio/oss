@@ -36,6 +36,7 @@ type inputObservation struct {
 	Part               *NativePart      `json:"-"`
 	Delta              *NativeTextDelta `json:"-"`
 	Error              *NativeError
+	Retry              *NativeRetry
 	Repeated           bool
 	MessageFinalized   bool
 	WorkspaceEvent     *domain.OpenCodeWorkspaceEvent `json:"-"`
@@ -117,6 +118,8 @@ type inputObserver struct {
 	responseIDs     map[domain.ID]bool
 	rejectionPolicy RejectionPolicy
 	stop            *inputStopAttempt
+	retries         []observedRetry
+	currentRetry    *observedRetry
 }
 
 func observerProblem() *domain.Error {
@@ -329,7 +332,7 @@ func (o *inputObserver) observe(ctx context.Context, event NativeEvent) (inputOb
 		if !session([]string{"status"}, nil) {
 			err = observerProblem()
 		} else {
-			err = o.status(fields["status"], event.ID)
+			result.Retry, err = o.status(fields["status"], event.ID)
 			result.Ancillary = slices.Clone(event.Properties)
 		}
 	case SessionIdleEvent:
@@ -376,47 +379,34 @@ func (o *inputObserver) observe(ctx context.Context, event NativeEvent) (inputOb
 	return result, nil
 }
 
-func (o *inputObserver) status(raw []byte, eventID string) error {
+func (o *inputObserver) status(raw []byte, eventID string) (*NativeRetry, error) {
 	fields, err := object(raw)
 	if err != nil {
-		return observerProblem()
+		return nil, observerProblem()
 	}
 	value, valid := boundedString(fields["type"], 16, true)
 	status := NativeSessionStatus(value)
 	if !valid || status != NativeStatusIdle && status != NativeStatusBusy && status != NativeStatusRetry {
-		return observerProblem()
+		return nil, observerProblem()
 	}
 	if status == NativeStatusRetry {
-		// Revoking the registered relay can queue native backoff just before
-		// the original abort arrives. Preserve its bounded scheduling facts
-		// only inside that already-sent Stop; ordinary retry/action execution
-		// still needs its independent adapter. Never publish provider prose.
-		if o.stop == nil || !o.stop.sent || o.stop.claim.Kind != StopInputMutation || o.progress.SettledObserved || len(o.stop.retries) >= 1024 {
-			return observerProblem()
-		}
-		if _, err := shape(raw, []string{"type", "attempt", "message", "next"}, nil); err != nil {
-			return observerProblem()
-		}
-		attempt, ok := nativeCount(fields["attempt"])
-		next, valid := nativeCount(fields["next"])
-		if _, message := boundedString(fields["message"], 64<<10, false); !ok || !valid || !message {
-			return observerProblem()
-		}
-		o.stop.retries = append(o.stop.retries, domain.OpenCodeStopRetryObservation{NativeEventID: eventID, Attempt: uint64(attempt), Next: uint64(next)})
-		o.progress.Status, o.progress.IdleNotification = status, false
-		return nil
+		return o.observeRetry(raw, eventID)
 	}
 	if _, err := shape(raw, []string{"type"}, nil); err != nil {
-		return observerProblem()
+		return nil, observerProblem()
 	}
 	if o.progress.SettledObserved && status != NativeStatusIdle {
-		return observerProblem()
+		return nil, observerProblem()
 	}
 	o.progress.Status = status
 	if status != NativeStatusIdle {
 		o.progress.IdleNotification = false
+		o.currentRetry = nil
+		if o.stop != nil {
+			o.stop.backoff = false
+		}
 	}
-	return nil
+	return nil, nil
 }
 
 func (o *inputObserver) refresh() {

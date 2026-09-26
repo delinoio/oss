@@ -77,17 +77,19 @@ func TestOriginalStopDuringRetryPreservesMissingNativeError(t *testing.T) {
 	}
 }
 
-func TestOriginalStopRetryCannotAuthorizeOrdinaryRetryOrUnknownActions(t *testing.T) {
-	for _, name := range []string{"unclaimed", "unsent", "action", "fraction", "missing-message", "settled", "lost-http"} {
+func TestOriginalStopRetryRejectsUnownedStateAndUnknownActions(t *testing.T) {
+	for _, name := range []string{"no-assistant", "unsent", "action", "fraction", "missing-message", "settled", "lost-http"} {
 		t.Run(name, func(t *testing.T) {
 			f := newStopFixture(t, PermissionInteraction)
 			r := f.r
-			if name != "unclaimed" {
+			if name != "no-assistant" {
 				r.lost = name == "lost-http"
 				_, _ = r.api.stopInput(context.Background(), r.f.o, domain.NewID())
 			}
 			status := map[string]any{"type": "retry", "attempt": 1, "next": 1300, "message": "private diagnostic"}
 			switch name {
+			case "no-assistant":
+				r.f.o.progress.AssistantID = ""
 			case "unsent":
 				r.f.o.stop.sent = false
 			case "action":
