@@ -7,10 +7,19 @@
 use std::{
     collections::HashMap,
     io::{self, Read},
+    os::unix::net::{UnixListener, UnixStream},
+    path::{Path, PathBuf},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
+    thread,
+    time::Duration,
 };
 
 const HEADER_BYTES: usize = 50;
 const MAX_PATH_BYTES: usize = 4096;
+const MAX_CONNECTIONS: usize = 4096;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FrameKind {
@@ -153,25 +162,187 @@ impl FrameLedger {
     }
 }
 
+struct RetryRead<'a> {
+    stream: &'a mut UnixStream,
+    stopping: &'a AtomicBool,
+}
+
+impl Read for RetryRead<'_> {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        loop {
+            match self.stream.read(buffer) {
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock
+                    ) && !self.stopping.load(Ordering::Acquire) => {}
+                result => return result,
+            }
+        }
+    }
+}
+
+fn receive_connection(
+    mut stream: UnixStream,
+    ledger: &Mutex<FrameLedger>,
+    stopping: &AtomicBool,
+) -> io::Result<()> {
+    use std::io::Write;
+
+    stream.set_nonblocking(false)?;
+    stream.set_read_timeout(Some(Duration::from_millis(100)))?;
+    loop {
+        let mut reader = RetryRead {
+            stream: &mut stream,
+            stopping,
+        };
+        let Some(frame) = read_frame(&mut reader)? else {
+            return Ok(());
+        };
+        let start = frame.kind == FrameKind::Start;
+        ledger
+            .lock()
+            .map_err(|_| invalid("collector_lock"))?
+            .push(frame)?;
+        if start {
+            stream.write_all(b"g")?;
+        }
+    }
+}
+
+/// Bounded receiver for an explicitly launched macOS injected process tree.
+/// The caller must keep it alive until every owned process has exited.
+pub struct OperationReceiver {
+    _directory: tempfile::TempDir,
+    socket_path: PathBuf,
+    stopping: Arc<AtomicBool>,
+    failed: Arc<AtomicBool>,
+    receiver: Option<thread::JoinHandle<io::Result<FramePairs>>>,
+}
+
+type FramePairs = Vec<(Frame, Frame)>;
+
+impl OperationReceiver {
+    pub fn bind(max_events: usize, max_bytes: u64) -> io::Result<Self> {
+        if max_events == 0 || max_bytes == 0 {
+            return Err(invalid("receiver_limit"));
+        }
+        let directory = tempfile::Builder::new().prefix("clibox-fspy-").tempdir()?;
+        let socket_path = directory.path().join("operation.sock");
+        let listener = UnixListener::bind(&socket_path)?;
+        listener.set_nonblocking(true)?;
+        let stopping = Arc::new(AtomicBool::new(false));
+        let stop = Arc::clone(&stopping);
+        let failed = Arc::new(AtomicBool::new(false));
+        let failure = Arc::clone(&failed);
+        let receiver = thread::spawn(move || {
+            let ledger = Arc::new(Mutex::new(FrameLedger::new(max_events, max_bytes)));
+            let mut connections = Vec::new();
+            let mut idle_after_stop = 0;
+            let mut accept_failure = None;
+            loop {
+                match listener.accept() {
+                    Ok((stream, _)) => {
+                        if connections.len() >= MAX_CONNECTIONS {
+                            failure.store(true, Ordering::Release);
+                            accept_failure = Some(invalid("connection_limit"));
+                            stop.store(true, Ordering::Release);
+                            drop(stream);
+                            break;
+                        }
+                        idle_after_stop = 0;
+                        let ledger = Arc::clone(&ledger);
+                        let stop = Arc::clone(&stop);
+                        let failure = Arc::clone(&failure);
+                        connections.push(thread::spawn(move || {
+                            let result = receive_connection(stream, &ledger, &stop);
+                            if result.is_err() {
+                                failure.store(true, Ordering::Release);
+                            }
+                            result
+                        }));
+                    }
+                    Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                        if stop.load(Ordering::Acquire) {
+                            idle_after_stop += 1;
+                            if idle_after_stop >= 2 {
+                                break;
+                            }
+                        }
+                        thread::sleep(Duration::from_millis(10));
+                    }
+                    Err(error) => {
+                        failure.store(true, Ordering::Release);
+                        accept_failure = Some(error);
+                        stop.store(true, Ordering::Release);
+                        break;
+                    }
+                }
+            }
+            let mut connection_failure = None;
+            for connection in connections {
+                let result = connection.join().map_err(|_| invalid("receiver_panic"));
+                if let Err(error) = result.and_then(|result| result) {
+                    failure.store(true, Ordering::Release);
+                    connection_failure.get_or_insert(error);
+                }
+            }
+            if let Some(error) = accept_failure.or(connection_failure) {
+                return Err(error);
+            }
+            Arc::try_unwrap(ledger)
+                .map_err(|_| invalid("receiver_references"))?
+                .into_inner()
+                .map_err(|_| invalid("collector_lock"))?
+                .finish()
+        });
+        Ok(Self {
+            _directory: directory,
+            socket_path,
+            stopping,
+            failed,
+            receiver: Some(receiver),
+        })
+    }
+
+    pub fn socket_path(&self) -> &Path {
+        &self.socket_path
+    }
+
+    pub fn failed(&self) -> bool {
+        self.failed.load(Ordering::Acquire)
+    }
+
+    pub fn finish(mut self) -> io::Result<Vec<(Frame, Frame)>> {
+        self.stopping.store(true, Ordering::Release);
+        self.receiver
+            .take()
+            .expect("receiver exists before finish")
+            .join()
+            .map_err(|_| invalid("receiver_panic"))?
+    }
+}
+
+impl Drop for OperationReceiver {
+    fn drop(&mut self) {
+        self.stopping.store(true, Ordering::Release);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
         fs,
-        io::{self, Write},
-        os::{
-            fd::AsRawFd,
-            unix::net::{UnixListener, UnixStream},
-        },
+        io::Write,
+        os::{fd::AsRawFd, unix::net::UnixStream},
         path::PathBuf,
         process::Stdio,
-        sync::{Arc, Mutex},
-        thread,
-        time::Duration,
+        time::{Duration, Instant},
     };
 
     use tokio_util::sync::CancellationToken;
 
-    use super::{read_frame, Frame, FrameKind, FrameLedger};
+    use super::{read_frame, FrameKind, FrameLedger, OperationReceiver};
 
     fn frame_bytes(kind: u8, path: &[u8]) -> Vec<u8> {
         let mut frame = Vec::new();
@@ -232,29 +403,18 @@ mod tests {
         assert!(ledger.push(completion).is_err());
     }
 
-    fn receive_frames(mut stream: UnixStream, frames: Arc<Mutex<Vec<Frame>>>) -> io::Result<()> {
-        stream.set_nonblocking(false)?;
-        stream.set_read_timeout(Some(Duration::from_secs(10)))?;
-        loop {
-            let frame = match read_frame(&mut stream) {
-                Ok(Some(frame)) => frame,
-                Ok(None) => return Ok(()),
-                Err(error)
-                    if matches!(
-                        error.kind(),
-                        io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock
-                    ) =>
-                {
-                    return Ok(());
-                }
-                Err(error) => return Err(error),
-            };
-            let start = frame.kind == FrameKind::Start;
-            frames.lock().unwrap().push(frame);
-            if start {
-                stream.write_all(b"g")?;
-            }
+    #[test]
+    fn receiver_reports_corrupt_injected_input() {
+        let receiver = OperationReceiver::bind(2, 256).unwrap();
+        let mut stream = UnixStream::connect(receiver.socket_path()).unwrap();
+        stream.write_all(&frame_bytes(b'x', b"/tmp/input")).unwrap();
+        drop(stream);
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while !receiver.failed() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
         }
+        assert!(receiver.failed());
+        assert!(receiver.finish().is_err());
     }
 
     #[test]
@@ -263,42 +423,14 @@ mod tests {
             .prefix("clibox-fspy-mac-")
             .tempdir_in("/tmp")
             .unwrap();
-        let socket = directory.path().join("trace.sock");
-        let listener = UnixListener::bind(&socket).unwrap();
-        listener.set_nonblocking(true).unwrap();
         let input = directory.path().join("input.txt");
         fs::write(&input, b"fixture").unwrap();
-        let frames = Arc::new(Mutex::new(Vec::<Frame>::new()));
-        let observed = Arc::clone(&frames);
-        let accept = thread::spawn(move || {
-            let mut connections = Vec::new();
-            let deadline = std::time::Instant::now() + Duration::from_secs(10);
-            while std::time::Instant::now() < deadline {
-                match listener.accept() {
-                    Ok((stream, _)) => {
-                        let frames = Arc::clone(&observed);
-                        connections.push(thread::spawn(move || receive_frames(stream, frames)));
-                    }
-                    Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
-                        thread::sleep(Duration::from_millis(10));
-                    }
-                    Err(error) => panic!("accept failed: {error}"),
-                }
-                if observed.lock().unwrap().iter().any(|frame| {
-                    frame.kind == FrameKind::Completion && frame.operation == 3 && frame.result == 7
-                }) {
-                    break;
-                }
-            }
-            for connection in connections {
-                connection.join().unwrap().unwrap();
-            }
-        });
+        let receiver = OperationReceiver::bind(1_000_000, 256 * 1024 * 1024).unwrap();
         let mut command = fspy::Command::new(std::env::current_exe().unwrap());
         command
             .args(["--exact", "macos::tests::read_fixture_child"])
             .envs(std::env::vars_os())
-            .env("CLIBOX_FSPY_SOCKET", socket.as_os_str())
+            .env("CLIBOX_FSPY_SOCKET", receiver.socket_path().as_os_str())
             .env("CLIBOX_FSPY_TEST_INPUT", input.as_os_str())
             .stdout(Stdio::null())
             .stderr(Stdio::inherit());
@@ -311,14 +443,13 @@ mod tests {
             .unwrap();
         let status = runtime.block_on(child.wait_handle).unwrap();
         assert!(status.status.success(), "{:?}", status.status);
-        accept.join().unwrap();
-        let frames = frames.lock().unwrap();
+        let pairs = receiver.finish().unwrap();
+        let frames = pairs
+            .iter()
+            .flat_map(|(start, completion)| [start, completion])
+            .collect::<Vec<_>>();
         assert!(status.path_accesses.is_ok(), "frames: {frames:?}");
-        let mut ledger = FrameLedger::new(1_000_000, 256 * 1024 * 1024);
-        for frame in frames.iter() {
-            ledger.push(frame.clone()).unwrap();
-        }
-        assert!(!ledger.finish().unwrap().is_empty());
+        assert!(!pairs.is_empty());
         assert!(frames.iter().any(|frame| {
             frame.kind == FrameKind::Start
                 && frame.operation == 3
