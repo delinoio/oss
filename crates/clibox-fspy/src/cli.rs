@@ -1947,10 +1947,23 @@ fn generated_before_read(
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+fn reproduction_cwd(root: &Path) -> Result<PathBuf, &'static str> {
+    let cwd = std::env::current_dir().map_err(|_| "working_directory")?;
+    let cwd = fs::canonicalize(cwd).map_err(|_| "working_directory")?;
+    cwd.strip_prefix(root)
+        .map(Path::to_path_buf)
+        .map_err(|_| "working_directory_outside_root")
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 fn min_repro(args: MinReproArgs) -> i32 {
     use std::collections::BTreeSet;
     let root = match execution_root(&args.execution) {
         Ok(root) => root,
+        Err(error) => return diagnostic(error, "min-repro"),
+    };
+    let cwd_relative = match reproduction_cwd(&root) {
+        Ok(relative) => relative,
         Err(error) => return diagnostic(error, "min-repro"),
     };
     let selector = match coverage::Selector::new(&args.include, &args.exclude) {
@@ -2018,10 +2031,14 @@ fn min_repro(args: MinReproArgs) -> i32 {
         .iter()
         .map(|file| file.relative.clone())
         .collect::<BTreeSet<_>>();
+    let candidate_cwd = candidate.path().join(&cwd_relative);
+    if fs::create_dir_all(&candidate_cwd).is_err() {
+        return diagnostic("candidate_prepare", "min-repro");
+    }
     let (rerun, rerun_matches) = match repro_capture(
         &args.command,
         candidate.path(),
-        Some(candidate.path()),
+        Some(&candidate_cwd),
         &args.execution,
         &args.expect_stderr,
     ) {
@@ -2098,6 +2115,9 @@ fn min_repro(args: MinReproArgs) -> i32 {
         Ok(staged) => staged,
         Err(error) => return diagnostic(&error.to_string(), "min-repro"),
     };
+    if fs::create_dir_all(bundle.path().join(&cwd_relative)).is_err() {
+        return diagnostic("bundle_prepare", "min-repro");
+    }
     let metadata_dir = bundle.path().join(".clibox-fspy-repro");
     if fs::symlink_metadata(&metadata_dir).is_ok() {
         return diagnostic("bundle_reserved_path", "min-repro");
@@ -2133,6 +2153,11 @@ fn min_repro(args: MinReproArgs) -> i32 {
         .collect::<Vec<_>>();
     let manifest = serde_json::json!({
         "schema_version": 1,
+        "working_directory": selection_native(if cwd_relative.as_os_str().is_empty() {
+            Path::new(".")
+        } else {
+            &cwd_relative
+        }),
         "files": staged.iter().map(|file| serde_json::json!({
             "path": selection_native(&file.relative),
             "sha256": file.sha256,
@@ -2149,7 +2174,7 @@ fn min_repro(args: MinReproArgs) -> i32 {
         Err(_) => return diagnostic("bundle_encode", "min-repro"),
     };
     if fs::write(metadata_dir.join("manifest.json"), manifest_bytes).is_err()
-        || fs::write(metadata_dir.join("README.md"), b"Run the original command from this bundle directory and check its expected exit status and stderr substring. The command and environment were intentionally not saved. External runtime and system dependencies are listed in manifest.json and were not bundled. This reproduction is verified only on the originating machine under the current environment. Delete the bundle directory manually when finished.\n").is_err()
+        || fs::write(metadata_dir.join("README.md"), b"Run the original command from the working_directory listed in manifest.json, relative to this bundle directory, and check its expected exit status and stderr substring. The command and environment were intentionally not saved. External runtime and system dependencies are listed in manifest.json and were not bundled. This reproduction is verified only on the originating machine under the current environment. Delete the bundle directory manually when finished.\n").is_err()
     { return diagnostic("bundle_write", "min-repro"); }
     if let Err(error) = tree_limits(bundle.path(), args.max_result_bytes, args.max_result_files) {
         return diagnostic(error, "min-repro");
@@ -3713,6 +3738,16 @@ mod tests {
         assert!(!generated_before_read(&[write], &relative, 3));
     }
 
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    #[test]
+    fn reproduction_rejects_cwd_outside_selected_root() {
+        let root = tempfile::tempdir().unwrap();
+        assert_eq!(
+            reproduction_cwd(root.path()),
+            Err("working_directory_outside_root")
+        );
+    }
+
     #[test]
     fn forced_report_rejects_multiply_linked_destination() {
         let directory = tempfile::tempdir().unwrap();
@@ -4079,15 +4114,22 @@ mod tests {
         let root = directory.path().join("project");
         fs::create_dir(&root).unwrap();
         fs::write(root.join("input.txt"), b"fixture").unwrap();
+        fs::create_dir(root.join("subdir")).unwrap();
+        fs::write(root.join("subdir/input.txt"), b"fixture").unwrap();
         fs::write(root.join(".env"), b"secret").unwrap();
-        for case in ["verified", "blocked", "original", "metadata"] {
+        for case in ["verified", "nested", "blocked", "original", "metadata"] {
             let bundle = directory.path().join(format!("{case}-bundle"));
+            let cwd = if case == "nested" {
+                root.join("subdir")
+            } else {
+                root.clone()
+            };
             let status = std::process::Command::new(std::env::current_exe().unwrap())
                 .arg("--exact")
                 .arg("cli::tests::reproduction_child_process")
                 .env("CLIBOX_FSPY_REPRO_CHILD", case)
                 .env("CLIBOX_FSPY_REPRO_BUNDLE", &bundle)
-                .current_dir(&root)
+                .current_dir(&cwd)
                 .output()
                 .unwrap();
             assert!(
@@ -4106,9 +4148,23 @@ mod tests {
                     .windows(b"FSPY_REPRO_STDOUT_MARKER".len())
                     .any(|part| part == b"FSPY_REPRO_STDOUT_MARKER"));
             }
-            if case == "verified" {
-                assert_eq!(fs::read(bundle.join("input.txt")).unwrap(), b"fixture");
-                assert!(bundle.join(".clibox-fspy-repro/manifest.json").exists());
+            if case == "verified" || case == "nested" {
+                let input = if case == "nested" {
+                    bundle.join("subdir/input.txt")
+                } else {
+                    bundle.join("input.txt")
+                };
+                assert_eq!(fs::read(input).unwrap(), b"fixture");
+                let manifest: serde_json::Value = serde_json::from_slice(
+                    &fs::read(bundle.join(".clibox-fspy-repro/manifest.json")).unwrap(),
+                )
+                .unwrap();
+                let working_directory: NativePath =
+                    serde_json::from_value(manifest["working_directory"].clone()).unwrap();
+                assert_eq!(
+                    working_directory,
+                    selection_native(Path::new(if case == "nested" { "subdir" } else { "." }))
+                );
                 assert!(!bundle.join(".env").exists());
             } else {
                 assert!(!bundle.exists());
@@ -4123,11 +4179,22 @@ mod tests {
             return;
         };
         let bundle = std::env::var_os("CLIBOX_FSPY_REPRO_BUNDLE").unwrap();
-        let root = std::env::current_dir().unwrap();
-        let include = if case == "blocked" { "*" } else { "input.txt" };
+        let cwd = std::env::current_dir().unwrap();
+        let root = if case == "nested" {
+            cwd.parent().unwrap().to_path_buf()
+        } else {
+            cwd
+        };
+        let include = match case.to_str().unwrap() {
+            "blocked" => "*",
+            "nested" => "subdir/input.txt",
+            _ => "input.txt",
+        };
         let mut arguments = vec![
             OsString::from("fspy"),
             OsString::from("min-repro"),
+            OsString::from("--root"),
+            root.as_os_str().to_owned(),
             OsString::from("--include"),
             OsString::from(include),
             OsString::from("--bundle-dir"),
@@ -4168,7 +4235,14 @@ mod tests {
             }));
         }
         let cli = TestCli::try_parse_from(arguments).unwrap();
-        assert_eq!(execute(cli.command), if case == "verified" { 0 } else { 1 });
+        assert_eq!(
+            execute(cli.command),
+            if case == "verified" || case == "nested" {
+                0
+            } else {
+                1
+            }
+        );
     }
 
     #[cfg(target_os = "macos")]
@@ -5004,16 +5078,23 @@ mod tests {
         let root = directory.path().join("project");
         fs::create_dir(&root).unwrap();
         fs::write(root.join("input.txt"), b"fixture").unwrap();
+        fs::create_dir(root.join("subdir")).unwrap();
+        fs::write(root.join("subdir/input.txt"), b"fixture").unwrap();
         fs::write(root.join(".env"), b"secret").unwrap();
-        for case in ["verified", "blocked", "original", "metadata"] {
+        for case in ["verified", "nested", "blocked", "original", "metadata"] {
             let bundle = directory.path().join(format!("{case}-bundle"));
+            let cwd = if case == "nested" {
+                root.join("subdir")
+            } else {
+                root.clone()
+            };
             let output = std::process::Command::new(std::env::current_exe().unwrap())
                 .arg("--exact")
                 .arg("cli::tests::windows_reproduction_cli_child")
                 .env("CLIBOX_FSPY_WIN_REPRO_ROOT", &root)
                 .env("CLIBOX_FSPY_WIN_REPRO_BUNDLE", &bundle)
                 .env("CLIBOX_FSPY_WIN_REPRO_CASE", case)
-                .current_dir(&root)
+                .current_dir(&cwd)
                 .output()
                 .unwrap();
             assert!(
@@ -5029,9 +5110,23 @@ mod tests {
                 .stderr
                 .windows(b"FSPY_REPRO_STDOUT_MARKER".len())
                 .any(|part| part == b"FSPY_REPRO_STDOUT_MARKER"));
-            if case == "verified" {
-                assert_eq!(fs::read(bundle.join("input.txt")).unwrap(), b"fixture");
-                assert!(bundle.join(".clibox-fspy-repro/manifest.json").exists());
+            if case == "verified" || case == "nested" {
+                let input = if case == "nested" {
+                    bundle.join("subdir/input.txt")
+                } else {
+                    bundle.join("input.txt")
+                };
+                assert_eq!(fs::read(input).unwrap(), b"fixture");
+                let manifest: serde_json::Value = serde_json::from_slice(
+                    &fs::read(bundle.join(".clibox-fspy-repro/manifest.json")).unwrap(),
+                )
+                .unwrap();
+                let working_directory: NativePath =
+                    serde_json::from_value(manifest["working_directory"].clone()).unwrap();
+                assert_eq!(
+                    working_directory,
+                    selection_native(Path::new(if case == "nested" { "subdir" } else { "." }))
+                );
                 assert!(!bundle.join(".env").exists());
             } else {
                 assert!(!bundle.exists());
@@ -5053,7 +5148,11 @@ mod tests {
             OsString::from("--root"),
             root,
             OsString::from("--include"),
-            OsString::from(if case == "blocked" { "*" } else { "input.txt" }),
+            OsString::from(match case.as_str() {
+                "blocked" => "*",
+                "nested" => "subdir/input.txt",
+                _ => "input.txt",
+            }),
             OsString::from("--bundle-dir"),
             bundle,
             OsString::from("--expect-exit"),
@@ -5068,7 +5167,14 @@ mod tests {
             OsString::from("--nocapture"),
         ])
         .unwrap();
-        assert_eq!(execute(cli.command), if case == "verified" { 0 } else { 1 });
+        assert_eq!(
+            execute(cli.command),
+            if case == "verified" || case == "nested" {
+                0
+            } else {
+                1
+            }
+        );
     }
 
     #[cfg(target_os = "windows")]
