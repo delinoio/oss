@@ -44,6 +44,14 @@ pub struct Dependencies {
     writes: BTreeSet<PathBuf>,
 }
 
+#[derive(Clone, Copy)]
+struct Observed {
+    operation: Operation,
+    open_mutates: bool,
+    native_result: i64,
+    native_error: Option<i32>,
+}
+
 fn native_relative(path: &NativePath) -> Option<PathBuf> {
     #[cfg(unix)]
     {
@@ -130,11 +138,15 @@ impl Dependencies {
         &mut self,
         path: &AccessPath,
         selector: &Selector,
-        operation: Operation,
-        native_result: i64,
-        native_error: Option<i32>,
+        observed: Observed,
         root: Option<&Path>,
     ) {
+        let Observed {
+            operation,
+            open_mutates,
+            native_result,
+            native_error,
+        } = observed;
         if path.class != PathClass::Project {
             return;
         }
@@ -170,6 +182,13 @@ impl Dependencies {
             }
             return;
         }
+        if operation == Operation::Open && open_mutates {
+            self.writes.insert(relative);
+            if let Some(alias) = alias {
+                self.writes.insert(alias);
+            }
+            return;
+        }
         match operation {
             Operation::Read
             | Operation::PositionalRead
@@ -199,9 +218,12 @@ impl Dependencies {
                 dependencies.include_path(
                     path,
                     selector,
-                    pair.start.operation,
-                    pair.completion.native_result,
-                    pair.completion.native_error,
+                    Observed {
+                        operation: pair.start.operation,
+                        open_mutates: pair.start.open_mutates,
+                        native_result: pair.completion.native_result,
+                        native_error: pair.completion.native_error,
+                    },
                     root.as_deref(),
                 );
             }
@@ -376,11 +398,8 @@ impl WatchSession {
         };
         let mut events = vec![first];
         let until = Instant::now() + debounce;
-        loop {
-            match self.receive_until(until, cancelled)? {
-                Some(event) => events.push(event),
-                None => break,
-            }
+        while let Some(event) = self.receive_until(until, cancelled)? {
+            events.push(event);
         }
         if cancelled.load(Ordering::SeqCst) {
             return Ok(false);
@@ -440,7 +459,17 @@ mod tests {
         };
         let selector = Selector::new(&["**".to_owned()], &[]).unwrap();
         let mut dependencies = Dependencies::default();
-        dependencies.include_path(&access, &selector, Operation::Read, 1, None, Some(root));
+        dependencies.include_path(
+            &access,
+            &selector,
+            Observed {
+                operation: Operation::Read,
+                open_mutates: false,
+                native_result: 1,
+                native_error: None,
+            },
+            Some(root),
+        );
         assert!(dependencies.files.contains(alias));
         assert!(dependencies.files.contains(target));
         assert!(dependencies.relevant(alias));
@@ -461,7 +490,17 @@ mod tests {
         };
         let selector = Selector::new(&["**".to_owned()], &[]).unwrap();
         let mut dependencies = Dependencies::default();
-        dependencies.include_path(&path, &selector, Operation::Exec, 0, None, None);
+        dependencies.include_path(
+            &path,
+            &selector,
+            Observed {
+                operation: Operation::Exec,
+                open_mutates: false,
+                native_result: 0,
+                native_error: None,
+            },
+            None,
+        );
         assert!(dependencies.files.contains(Path::new("tool")));
         assert!(!dependencies.is_empty());
 
@@ -473,12 +512,41 @@ mod tests {
         missing.include_path(
             &path,
             &selector,
-            Operation::Exec,
-            -1,
-            Some(missing_error),
+            Observed {
+                operation: Operation::Exec,
+                open_mutates: false,
+                native_result: -1,
+                native_error: Some(missing_error),
+            },
             None,
         );
         assert!(missing.absent.contains(Path::new("tool")));
+    }
+
+    #[test]
+    fn mutating_open_without_a_write_is_an_output() {
+        let path = AccessPath {
+            class: PathClass::Project,
+            logical: native(Path::new("stamp")),
+            resolved: None,
+            project_relative: Some(native(Path::new("stamp"))),
+            identity: None,
+        };
+        let selector = Selector::new(&["**".to_owned()], &[]).unwrap();
+        let mut dependencies = Dependencies::default();
+        dependencies.include_path(
+            &path,
+            &selector,
+            Observed {
+                operation: Operation::Open,
+                open_mutates: true,
+                native_result: 0,
+                native_error: None,
+            },
+            None,
+        );
+        assert!(dependencies.writes.contains(Path::new("stamp")));
+        assert!(!dependencies.relevant(Path::new("stamp")));
     }
 
     #[test]

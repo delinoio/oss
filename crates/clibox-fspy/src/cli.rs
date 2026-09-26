@@ -3707,6 +3707,7 @@ mod tests {
                 tid: 1,
                 parent_pid: None,
                 operation: record::Operation::Write,
+                open_mutates: false,
                 paths: vec![record::AccessPath {
                     class: record::PathClass::Project,
                     logical: relative.clone(),
@@ -3734,7 +3735,11 @@ mod tests {
         // A second process can start its clock later and report a lower value.
         let reader_monotonic_ns = 1;
         assert!(write.start.monotonic_ns > reader_monotonic_ns);
-        assert!(generated_before_read(&[write.clone()], &relative, 5));
+        assert!(generated_before_read(
+            std::slice::from_ref(&write),
+            &relative,
+            5
+        ));
         assert!(!generated_before_read(&[write], &relative, 3));
     }
 
@@ -3907,6 +3912,7 @@ mod tests {
                     tid: 1,
                     parent_pid: None,
                     operation: record::Operation::Read,
+                    open_mutates: false,
                     paths: vec![record::AccessPath {
                         class: record::PathClass::Project,
                         logical: NativePath::UnixBytes(
@@ -4460,16 +4466,59 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
+    fn autowatch_does_not_rerun_on_a_write_only_open() {
+        use std::{process::Stdio, thread, time::Instant};
+
+        let _trace_lock = crate::linux::TRACE_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(directory.path().join("input.txt"), b"fixture").unwrap();
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("cli::tests::autowatch_child_process")
+            .env("CLIBOX_FSPY_WATCH_CHILD", "output")
+            .current_dir(directory.path())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let runs = directory.path().join("runs.txt");
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while fs::read(&runs).unwrap_or_default().is_empty() {
+            if Instant::now() >= deadline {
+                child.kill().unwrap();
+                panic!("autowatch did not complete its initial run");
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        thread::sleep(Duration::from_millis(500));
+        assert!(child.try_wait().unwrap().is_none());
+        assert_eq!(fs::read(&runs).unwrap().len(), 1);
+        // SAFETY: the child process is still owned by this test.
+        unsafe { libc::kill(child.id() as i32, libc::SIGINT) };
+        assert!(child.wait().unwrap().success());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
     fn autowatch_child_process() {
         let Some(case) = std::env::var_os("CLIBOX_FSPY_WATCH_CHILD") else {
             return;
         };
         let missing = case == "missing";
+        let output = case == "output";
         let cli = TestCli::try_parse_from([
             "fspy",
             "autowatch",
             "--include",
-            if missing { "missing.txt" } else { "input.txt" },
+            if missing {
+                "missing.txt"
+            } else if output {
+                "**"
+            } else {
+                "input.txt"
+            },
             "--debounce",
             "50ms",
             "--",
@@ -4477,6 +4526,8 @@ mod tests {
             "-c",
             if missing {
                 "test -e missing.txt; printf x >> runs.txt"
+            } else if output {
+                "cat input.txt >/dev/null; : > stamp; printf x >> runs.txt"
             } else {
                 "cat input.txt >/dev/null; printf x >> runs.txt"
             },

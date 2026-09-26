@@ -271,11 +271,19 @@ pub struct OperationGuard {
 /// Send the start frame and wait for the parent's decision before forwarding
 /// the native call. A recursive call made by this transport is excluded.
 pub fn begin(operation: u8, path: &[u16]) -> Option<OperationGuard> {
+    begin_with_intent(operation, path, false)
+}
+
+pub fn begin_open(path: &[u16], mutates: bool) -> Option<OperationGuard> {
+    begin_with_intent(1, path, mutates)
+}
+
+fn begin_with_intent(operation: u8, path: &[u16], mutates: bool) -> Option<OperationGuard> {
     let mut encoded = Vec::with_capacity(path.len().saturating_mul(2));
     for unit in path {
         encoded.extend_from_slice(&unit.to_le_bytes());
     }
-    begin_encoded(operation, &encoded)
+    begin_encoded(operation, &encoded, mutates)
 }
 
 /// Mutation starts carry both native paths as byte-counted UTF-16. A length
@@ -305,10 +313,10 @@ pub fn begin_paths(source: &[u16], destination: &[u16]) -> Option<OperationGuard
     for unit in source.iter().chain(destination) {
         encoded.extend_from_slice(&unit.to_le_bytes());
     }
-    begin_encoded(9, &encoded)
+    begin_encoded(9, &encoded, false)
 }
 
-fn begin_encoded(operation: u8, encoded: &[u8]) -> Option<OperationGuard> {
+fn begin_encoded(operation: u8, encoded: &[u8], mutates: bool) -> Option<OperationGuard> {
     // ExitProcess runs DLL detach routines after user execution has ended.
     // Their file hooks can run after Winsock is unavailable. They are outside
     // this execution's observation interval and must not open a new channel.
@@ -328,7 +336,7 @@ fn begin_encoded(operation: u8, encoded: &[u8]) -> Option<OperationGuard> {
     state.next_id = id;
     let mut send = |state: &mut State| {
         state.stream().and_then(|stream| {
-            write_frame(stream, b's', operation, id, 0, 0, encoded)?;
+            write_frame(stream, b's', operation, id, i64::from(mutates), 0, encoded)?;
             let mut ack = [0_u8; 1];
             stream.read_exact(&mut ack)?;
             match ack[0] {

@@ -102,7 +102,7 @@ pub fn read_frame(reader: &mut impl Read) -> io::Result<Option<Frame>> {
         FrameKind::Start
             if operation_id(operation).is_none()
                 || id == 0
-                || result != 0
+                || (result != 0 && !(operation == 1 && result == 1))
                 || error != 0
                 || !length.is_multiple_of(2) =>
         {
@@ -784,6 +784,7 @@ pub fn assemble_candidate_record(
                 tid: u32::try_from(start.tid).map_err(|_| invalid("thread_id"))?,
                 parent_pid: (start.parent_pid != 0).then_some(start.parent_pid),
                 operation: kind,
+                open_mutates: kind == Operation::Open && start.result == 1,
                 paths,
                 path_unavailable,
                 descriptor: None,

@@ -47,25 +47,47 @@ unsafe fn begin_path_operation(
     kind: u8,
     path: impl ToAbsolutePath,
 ) -> Option<operation::OperationGuard> {
-    operation::with_resolution(|| unsafe { begin_path_operation_inner(kind, path) }).flatten()
+    // SAFETY: the native caller owns this path or handle through the intercepted
+    // call.
+    unsafe { begin_path_operation_with_intent(kind, path, false) }
+}
+
+unsafe fn begin_path_operation_with_intent(
+    kind: u8,
+    path: impl ToAbsolutePath,
+    mutates: bool,
+) -> Option<operation::OperationGuard> {
+    // SAFETY: the native caller owns this path or handle through the intercepted
+    // call.
+    operation::with_resolution(|| unsafe { begin_path_operation_inner(kind, path, mutates) })
+        .flatten()
 }
 
 unsafe fn begin_path_operation_inner(
     kind: u8,
     path: impl ToAbsolutePath,
+    mutates: bool,
 ) -> Option<operation::OperationGuard> {
     // SAFETY: the native caller owns the path or handle throughout the
     // intercepted call. A failed resolution remains an observed failed call
     // with an unavailable path instead of inventing a pathname.
     unsafe {
         path.to_absolute_path(|path| {
-            Ok(operation::begin(
-                kind,
-                path.map_or(&[], |value| value.as_slice()),
-            ))
+            let path = path.map_or(&[][..], |value| value.as_slice());
+            Ok(if kind == 1 {
+                operation::begin_open(path, mutates)
+            } else {
+                operation::begin(kind, path)
+            })
         })
     }
-    .unwrap_or_else(|_| operation::begin(kind, &[]))
+    .unwrap_or_else(|_| {
+        if kind == 1 {
+            operation::begin_open(&[], mutates)
+        } else {
+            operation::begin(kind, &[])
+        }
+    })
 }
 
 fn complete_path_operation(guard: Option<operation::OperationGuard>, status: NTSTATUS) {
@@ -81,7 +103,7 @@ unsafe fn begin_handle_operation(kind: u8, handle: HANDLE) -> Option<operation::
     operation::with_resolution(|| {
         // SAFETY: GetFileType accepts a native handle and does not take ownership.
         match unsafe { GetFileType(handle) } {
-            FILE_TYPE_DISK => unsafe { begin_path_operation_inner(kind, handle) },
+            FILE_TYPE_DISK => unsafe { begin_path_operation_inner(kind, handle, false) },
             FILE_TYPE_PIPE | FILE_TYPE_CHAR => None,
             _ => operation::begin(kind, &[]),
         }
@@ -329,7 +351,13 @@ static DETOUR_NT_CREATE_FILE: Detour<
             ) -> HFILE {
                 // SAFETY: the object attributes remain valid until the native
                 // call returns; the ack precedes the operation.
-                let operation = unsafe { begin_path_operation(1, object_attributes) };
+                let operation = unsafe {
+                    begin_path_operation_with_intent(
+                        1,
+                        object_attributes,
+                        create_disposition_mutates(create_disposition),
+                    )
+                };
                 // SAFETY: intercepting file open to record access before forwarding to real
                 // function
                 unsafe {
@@ -364,12 +392,18 @@ static DETOUR_NT_CREATE_FILE: Detour<
 
 fn create_file_access_mode(desired_access: ACCESS_MASK, disposition: ULONG) -> AccessMode {
     let mode = crate::windows::winapi_utils::access_mask_to_mode(desired_access);
-    match disposition {
-        FILE_SUPERSEDE | FILE_CREATE | FILE_OPEN_IF | FILE_OVERWRITE | FILE_OVERWRITE_IF => {
-            mode.union(AccessMode::WRITE)
-        }
-        _ => mode,
+    if create_disposition_mutates(disposition) {
+        mode.union(AccessMode::WRITE)
+    } else {
+        mode
     }
+}
+
+const fn create_disposition_mutates(disposition: ULONG) -> bool {
+    matches!(
+        disposition,
+        FILE_SUPERSEDE | FILE_CREATE | FILE_OPEN_IF | FILE_OVERWRITE | FILE_OVERWRITE_IF
+    )
 }
 
 #[cfg(test)]

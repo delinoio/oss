@@ -1,7 +1,7 @@
 use libc::FILE;
 
 #[cfg(target_os = "macos")]
-use crate::operation::{self, Kind};
+use crate::operation;
 use crate::{
     client::{
         convert::{ModeStr, OpenFlags, PathAt},
@@ -22,6 +22,17 @@ const fn has_mode_arg(o_flags: c_int) -> bool {
     false
 }
 
+#[cfg(target_os = "macos")]
+const fn mutates_at_open(flags: c_int) -> bool {
+    flags & (libc::O_CREAT | libc::O_TRUNC) != 0
+}
+
+#[cfg(target_os = "macos")]
+const unsafe fn stdio_mutates_at_open(mode: *const c_char) -> bool {
+    // SAFETY: an interposed stdio call supplies the same valid mode string to libc.
+    !mode.is_null() && matches!(unsafe { *mode.cast::<u8>() }, b'w' | b'a')
+}
+
 #[cfg(not(target_os = "macos"))]
 type Mode = libc::mode_t;
 #[cfg(target_os = "macos")] // https://github.com/tailhook/openat/issues/21#issuecomment-535914957
@@ -31,7 +42,7 @@ intercept!(open(64): unsafe extern "C" fn(*const c_char, c_int, args: ...) -> c_
 unsafe extern "C" fn open(path: *const c_char, flags: c_int, mut args: ...) -> c_int {
     #[cfg(target_os = "macos")]
     // SAFETY: the pointer is the caller's pathname passed unchanged to libc.
-    let operation = unsafe { operation::enter_path(Kind::Open, path) };
+    let operation = unsafe { operation::enter_open_path(path, mutates_at_open(flags)) };
     // SAFETY: path is a valid C string pointer provided by the caller of the
     // interposed function
     if !path.is_null() {
@@ -64,7 +75,7 @@ unsafe extern "C" fn openat(
 ) -> c_int {
     #[cfg(target_os = "macos")]
     // SAFETY: the pointer is the caller's pathname passed unchanged to libc.
-    let operation = unsafe { operation::enter_at(Kind::Open, dirfd, path) };
+    let operation = unsafe { operation::enter_open_at(dirfd, path, mutates_at_open(flags)) };
     // SAFETY: dirfd and path are valid arguments provided by the caller of the
     // interposed function
     if !path.is_null() {
@@ -95,7 +106,7 @@ intercept!(open_nocancel: unsafe extern "C" fn(*const c_char, c_int, ...) -> c_i
 #[cfg(target_os = "macos")]
 unsafe extern "C" fn open_nocancel(path: *const c_char, flags: c_int, mut args: ...) -> c_int {
     // SAFETY: the pointer is the caller's pathname passed unchanged to libc.
-    let operation = unsafe { operation::enter_path(Kind::Open, path) };
+    let operation = unsafe { operation::enter_open_path(path, mutates_at_open(flags)) };
     // SAFETY: path is a valid C string pointer provided by the caller of
     // open$NOCANCEL
     if !path.is_null() {
@@ -127,7 +138,7 @@ unsafe extern "C" fn openat_nocancel(
     mut args: ...
 ) -> c_int {
     // SAFETY: the pointer is the caller's pathname passed unchanged to libc.
-    let operation = unsafe { operation::enter_at(Kind::Open, dirfd, path) };
+    let operation = unsafe { operation::enter_open_at(dirfd, path, mutates_at_open(flags)) };
     // SAFETY: dirfd and path are valid arguments provided by the caller of
     // openat$NOCANCEL
     if !path.is_null() {
@@ -154,7 +165,7 @@ intercept!(fopen(64): unsafe extern "C" fn(path: *const c_char, mode: *const c_c
 unsafe extern "C" fn fopen(path: *const c_char, mode: *const c_char) -> *mut libc::FILE {
     #[cfg(target_os = "macos")]
     // SAFETY: the caller's pathname is forwarded unchanged to libc.
-    let operation = unsafe { operation::enter_path(Kind::Open, path) };
+    let operation = unsafe { operation::enter_open_path(path, stdio_mutates_at_open(mode)) };
     // SAFETY: path and mode are valid C string pointers provided by the caller of
     // the interposed function
     if !path.is_null() {
@@ -177,7 +188,7 @@ unsafe extern "C" fn freopen(
 ) -> *mut FILE {
     #[cfg(target_os = "macos")]
     // SAFETY: the caller's pathname is forwarded unchanged to libc.
-    let operation = unsafe { operation::enter_path(Kind::Open, path) };
+    let operation = unsafe { operation::enter_open_path(path, stdio_mutates_at_open(mode)) };
     // SAFETY: path and mode are valid C string pointers provided by the caller of
     // the interposed function
     if path.is_null() {

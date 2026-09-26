@@ -201,6 +201,7 @@ where
             tid: entry.tid,
             parent_pid: entry.parent_pid,
             operation,
+            open_mutates: captured.operation.open_mutates,
             paths: captured.operation.paths,
             path_unavailable: captured.operation.path_unavailable,
             descriptor: captured.operation.descriptor,

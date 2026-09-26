@@ -102,7 +102,9 @@ pub fn read_frame(reader: &mut impl Read) -> io::Result<Option<Frame>> {
         || tid == 0
         || id == 0
         || monotonic_ns == 0
-        || (matches!(kind, FrameKind::Hello | FrameKind::Start) && (result != 0 || error != 0))
+        || (kind == FrameKind::Hello && (result != 0 || error != 0))
+        || (kind == FrameKind::Start
+            && (error != 0 || (result != 0 && !(operation == 1 && result == 1))))
         || (kind == FrameKind::Hello && length != 0)
         || (kind == FrameKind::Completion
             && (length != 0 || (result < 0) != (error != 0) || error < 0))
@@ -648,6 +650,7 @@ pub fn assemble_candidate_record(
                 tid: u32::try_from(start.tid).map_err(|_| invalid("thread_id"))?,
                 parent_pid: (start.parent_pid != 0).then_some(start.parent_pid),
                 operation: kind,
+                open_mutates: kind == Operation::Open && start.result == 1,
                 paths,
                 path_unavailable,
                 descriptor: None,

@@ -319,6 +319,7 @@ mod tests {
                     tid: 1,
                     parent_pid: None,
                     operation: Operation::Read,
+                    open_mutates: false,
                     paths: vec![AccessPath {
                         class: PathClass::Project,
                         logical: file.logical.clone(),

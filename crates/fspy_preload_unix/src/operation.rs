@@ -255,6 +255,16 @@ fn send_frame(
 }
 
 pub unsafe fn enter_path(kind: Kind, path: *const c_char) -> Option<Token> {
+    // SAFETY: the caller passes the intercepted libc pathname unchanged.
+    unsafe { enter_path_with_intent(kind, path, false) }
+}
+
+pub unsafe fn enter_open_path(path: *const c_char, mutates: bool) -> Option<Token> {
+    // SAFETY: the caller passes the intercepted libc pathname unchanged.
+    unsafe { enter_path_with_intent(Kind::Open, path, mutates) }
+}
+
+unsafe fn enter_path_with_intent(kind: Kind, path: *const c_char, mutates: bool) -> Option<Token> {
     socket_path()?;
     with_resolution(|| {
         preserve_errno(|| {
@@ -264,12 +274,29 @@ pub unsafe fn enter_path(kind: Kind, path: *const c_char) -> Option<Token> {
                 // SAFETY: the caller supplies the same valid pathname pointer to libc.
                 unsafe { CStr::from_ptr(path) }.to_bytes()
             };
-            enter(kind, &absolute_path(libc::AT_FDCWD, bytes))
+            enter_with_intent(kind, &absolute_path(libc::AT_FDCWD, bytes), mutates)
         })
     })
 }
 
 pub unsafe fn enter_at(kind: Kind, dirfd: c_int, path: *const c_char) -> Option<Token> {
+    // SAFETY: the caller passes the intercepted libc descriptor and pathname
+    // unchanged.
+    unsafe { enter_at_with_intent(kind, dirfd, path, false) }
+}
+
+pub unsafe fn enter_open_at(dirfd: c_int, path: *const c_char, mutates: bool) -> Option<Token> {
+    // SAFETY: the caller passes the intercepted libc descriptor and pathname
+    // unchanged.
+    unsafe { enter_at_with_intent(Kind::Open, dirfd, path, mutates) }
+}
+
+unsafe fn enter_at_with_intent(
+    kind: Kind,
+    dirfd: c_int,
+    path: *const c_char,
+    mutates: bool,
+) -> Option<Token> {
     socket_path()?;
     with_resolution(|| {
         preserve_errno(|| {
@@ -279,7 +306,7 @@ pub unsafe fn enter_at(kind: Kind, dirfd: c_int, path: *const c_char) -> Option<
                 // SAFETY: the caller supplies the same valid pathname pointer to libc.
                 unsafe { CStr::from_ptr(path) }.to_bytes()
             };
-            enter(kind, &absolute_path(dirfd, bytes))
+            enter_with_intent(kind, &absolute_path(dirfd, bytes), mutates)
         })
     })
 }
@@ -339,6 +366,10 @@ pub fn enter_fd(kind: Kind, fd: c_int) -> Option<Token> {
 }
 
 fn enter(kind: Kind, path: &[u8]) -> Option<Token> {
+    enter_with_intent(kind, path, false)
+}
+
+fn enter_with_intent(kind: Kind, path: &[u8], mutates: bool) -> Option<Token> {
     if ACTIVE.with(Cell::get) {
         return None;
     }
@@ -348,7 +379,7 @@ fn enter(kind: Kind, path: &[u8]) -> Option<Token> {
         id
     });
     let outcome = with_stream(|socket| {
-        if send_frame(socket, b's', kind, id, 0, 0, path) {
+        if send_frame(socket, b's', kind, id, i64::from(mutates), 0, path) {
             receive_ack(socket)
         } else {
             Ack::Lost

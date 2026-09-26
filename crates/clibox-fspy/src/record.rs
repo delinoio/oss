@@ -214,6 +214,8 @@ pub struct Start {
     pub tid: u32,
     pub parent_pid: Option<u32>,
     pub operation: Operation,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub open_mutates: bool,
     pub paths: Vec<AccessPath>,
     /// True when a failed native call supplied an unreadable or unresolvable
     /// pathname argument; the operation result is still observed.
@@ -221,6 +223,10 @@ pub struct Start {
     pub descriptor: Option<i32>,
     pub monotonic_ns: u64,
     pub requested_delay_ns: u64,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -430,6 +436,7 @@ pub fn parse<R: BufRead>(
                     || value.correlation_id == 0
                     || value.pid == 0
                     || value.tid == 0
+                    || (value.open_mutates && value.operation != Operation::Open)
                     || (value.paths.is_empty()
                         && value.descriptor.is_none()
                         && !value.path_unavailable)
@@ -805,6 +812,7 @@ mod tests {
             tid: 101,
             parent_pid: None,
             operation,
+            open_mutates: false,
             paths: vec![AccessPath {
                 class: PathClass::Project,
                 logical: NativePath::UnixBytes([b"/project/".as_slice(), relative].concat()),

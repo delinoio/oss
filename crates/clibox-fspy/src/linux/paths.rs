@@ -18,9 +18,52 @@ const MAX_PATH_BYTES: usize = 4096;
 #[derive(Debug, Clone)]
 pub struct DecodedOperation {
     pub operation: Operation,
+    pub open_mutates: bool,
     pub paths: Vec<AccessPath>,
     pub path_unavailable: bool,
     pub descriptor: Option<i32>,
+}
+
+fn open_mutates(entry: &RawEntry) -> bool {
+    #[cfg(target_arch = "x86_64")]
+    if entry.syscall == libc::SYS_creat as u64 {
+        return true;
+    }
+    let flags = if entry.syscall == libc::SYS_openat2 as u64 {
+        if entry.args[3] < 8 || entry.args[2] == 0 {
+            return true;
+        }
+        let mut flags = 0_u64;
+        let local = iovec {
+            iov_base: (&raw mut flags).cast::<c_void>(),
+            iov_len: 8,
+        };
+        let remote = iovec {
+            iov_base: entry.args[2] as usize as *mut c_void,
+            iov_len: 8,
+        };
+        // SAFETY: the tracee is stopped and both vectors cover eight bytes.
+        if unsafe {
+            libc::process_vm_readv(
+                entry.tid as i32,
+                &raw const local,
+                1,
+                &raw const remote,
+                1,
+                0,
+            )
+        } != 8
+        {
+            return true;
+        }
+        flags
+    } else if entry.syscall == libc::SYS_openat as u64 {
+        entry.args[2]
+    } else {
+        entry.args[1]
+    };
+    flags & (libc::O_CREAT as u64 | libc::O_TRUNC as u64) != 0
+        || flags & libc::O_TMPFILE as u64 == libc::O_TMPFILE as u64
 }
 
 #[derive(Clone, Copy)]
@@ -379,6 +422,7 @@ pub fn decode(entry: &RawEntry, root: &Path) -> Result<Option<DecodedOperation>,
     }
     Ok(Some(DecodedOperation {
         operation,
+        open_mutates: operation == Operation::Open && open_mutates(entry),
         paths,
         path_unavailable,
         descriptor,
