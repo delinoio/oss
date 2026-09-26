@@ -518,7 +518,7 @@ fn classify_path(root: &Path, bytes: &[u8]) -> io::Result<AccessPath> {
     })
 }
 
-fn operation(kind: u8) -> Option<Operation> {
+pub(crate) fn operation(kind: u8) -> Option<Operation> {
     Some(match kind {
         1 => Operation::Open,
         2 => Operation::Close,

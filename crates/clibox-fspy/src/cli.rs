@@ -70,7 +70,7 @@ pub enum OperationKind {
     Exec,
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 impl OperationKind {
     fn matches(self, operation: record::Operation) -> bool {
         use record::Operation;
@@ -1154,7 +1154,7 @@ fn assetcov(args: AssetcovArgs) -> i32 {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn matches_selected(
     operation: record::Operation,
     paths: &[record::AccessPath],
@@ -1174,7 +1174,7 @@ fn matches_selected(
         })
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn median(values: &[u128]) -> u128 {
     let mut sorted = values.to_vec();
     sorted.sort_unstable();
@@ -1188,6 +1188,30 @@ fn median(values: &[u128]) -> u128 {
 
 #[cfg(target_os = "linux")]
 fn latencylab(args: LatencyArgs) -> i32 {
+    latencylab_with(args, |command, root, execution, selector, kinds, delay| {
+        execute_capture_with(command, root, execution, |operation| {
+            if matches_selected(operation.operation, &operation.paths, selector, kinds) {
+                delay
+            } else {
+                Duration::ZERO
+            }
+        })
+        .map_err(|failure| capture_status(failure, "latencylab"))
+    })
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn latencylab_with<F>(args: LatencyArgs, mut capture: F) -> i32
+where
+    F: FnMut(
+        &[OsString],
+        &Path,
+        &ExecutionArgs,
+        &coverage::Selector,
+        &[OperationKind],
+        Duration,
+    ) -> Result<CompleteRecord, i32>,
+{
     let root = match execution_root(&args.execution) {
         Ok(root) => root,
         Err(error) => return diagnostic(error, "latencylab"),
@@ -1204,22 +1228,17 @@ fn latencylab(args: LatencyArgs) -> i32 {
         for injected in [false, true] {
             let delay = if injected { args.delay } else { Duration::ZERO };
             let began = std::time::Instant::now();
-            let record =
-                match execute_capture_with(&args.command, &root, &args.execution, |operation| {
-                    if matches_selected(
-                        operation.operation,
-                        &operation.paths,
-                        &selector,
-                        &args.operations,
-                    ) {
-                        delay
-                    } else {
-                        Duration::ZERO
-                    }
-                }) {
-                    Ok(record) => record,
-                    Err(error) => return capture_status(error, "latencylab"),
-                };
+            let record = match capture(
+                &args.command,
+                &root,
+                &args.execution,
+                &selector,
+                &args.operations,
+                delay,
+            ) {
+                Ok(record) => record,
+                Err(status) => return status,
+            };
             let execution_ns = began.elapsed().as_nanos();
             if child_status(&record) != 0 {
                 return diagnostic("child_failure", "latencylab");
@@ -1914,6 +1933,19 @@ fn macos_capture(
     root: &Path,
     args: &ExecutionArgs,
 ) -> Result<CompleteRecord, (crate::macos::supervise::CaptureFailure, usize)> {
+    macos_capture_with(command, root, args, |_| Duration::ZERO)
+}
+
+#[cfg(target_os = "macos")]
+fn macos_capture_with<F>(
+    command: &[OsString],
+    root: &Path,
+    args: &ExecutionArgs,
+    delay_for: F,
+) -> Result<CompleteRecord, (crate::macos::supervise::CaptureFailure, usize)>
+where
+    F: Fn(&crate::macos::Frame) -> Duration + Send + Sync + 'static,
+{
     use std::{os::fd::AsFd, process::Stdio, sync::atomic::Ordering};
 
     let Some(program) = command.first() else {
@@ -1927,7 +1959,7 @@ fn macos_capture(
         .map_err(|_| (crate::macos::supervise::CaptureFailure::Spawn, 0))?;
     child.stdout(Stdio::from(stderr)).stderr(Stdio::inherit());
     let signals = MacSignals::new().map_err(|error| (error, 0))?;
-    crate::macos::supervise::capture(
+    crate::macos::supervise::capture_with_delay(
         child,
         root,
         crate::macos::supervise::Limits {
@@ -1937,8 +1969,35 @@ fn macos_capture(
             kill_after: args.kill_after,
         },
         &signals.cancelled,
+        delay_for,
     )
     .map_err(|error| (error, signals.signal.load(Ordering::SeqCst)))
+}
+
+#[cfg(target_os = "macos")]
+fn macos_latencylab(args: LatencyArgs) -> i32 {
+    let selector = match coverage::Selector::new(&args.include, &args.exclude) {
+        Ok(selector) => std::sync::Arc::new(selector),
+        Err(error) => return diagnostic(&error.to_string(), "latencylab"),
+    };
+    latencylab_with(args, move |command, root, execution, _, kinds, delay| {
+        let selector = std::sync::Arc::clone(&selector);
+        let kinds = kinds.to_vec();
+        macos_capture_with(command, root, execution, move |frame| {
+            let Some(operation) = crate::macos::operation(frame.operation) else {
+                return Duration::ZERO;
+            };
+            let Some(path) = frame.access_path.as_ref() else {
+                return Duration::ZERO;
+            };
+            if matches_selected(operation, std::slice::from_ref(path), &selector, &kinds) {
+                delay
+            } else {
+                Duration::ZERO
+            }
+        })
+        .map_err(|failure| macos_capture_status(failure, "latencylab"))
+    })
 }
 
 #[cfg(target_os = "macos")]
@@ -2140,7 +2199,11 @@ pub fn execute(command: Command) -> i32 {
             {
                 latencylab(args)
             }
-            #[cfg(not(target_os = "linux"))]
+            #[cfg(target_os = "macos")]
+            {
+                macos_latencylab(args)
+            }
+            #[cfg(not(any(target_os = "linux", target_os = "macos")))]
             {
                 let _ = args;
                 diagnostic("unsupported_target", "latencylab")
@@ -2589,7 +2652,7 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
-    fn macos_record_and_asset_coverage_observe_child_reads() {
+    fn macos_record_coverage_and_latency_observe_child_reads() {
         let directory = tempfile::tempdir().unwrap();
         let input = directory.path().join("input.txt");
         fs::write(&input, b"fixture").unwrap();
@@ -2617,8 +2680,7 @@ mod tests {
             pair.start.operation.is_content_read()
                 && pair.completion.byte_count.is_some_and(|count| count > 0)
                 && pair.start.paths.iter().any(|path| {
-                    path.project_relative
-                        .as_ref()
+                    path.project_relative.as_ref()
                         == Some(&NativePath::UnixBytes(b"input.txt".to_vec()))
                 })
         }));
@@ -2634,12 +2696,40 @@ mod tests {
             OsString::from("100"),
             OsString::from("--quiet"),
             OsString::from("--"),
+            executable.as_os_str().to_owned(),
+            OsString::from("--exact"),
+            OsString::from("cli::tests::macos_cli_read_fixture"),
+        ])
+        .unwrap();
+        assert_eq!(execute(cli.command), 0);
+
+        let experiment = directory.path().join("latency.json");
+        let cli = TestCli::try_parse_from([
+            OsString::from("fspy"),
+            OsString::from("latencylab"),
+            OsString::from("--root"),
+            directory.path().as_os_str().to_owned(),
+            OsString::from("--include"),
+            OsString::from("input.txt"),
+            OsString::from("--delay"),
+            OsString::from("1ms"),
+            OsString::from("--runs"),
+            OsString::from("1"),
+            OsString::from("--json"),
+            OsString::from("--output"),
+            experiment.as_os_str().to_owned(),
+            OsString::from("--"),
             executable.into_os_string(),
             OsString::from("--exact"),
             OsString::from("cli::tests::macos_cli_read_fixture"),
         ])
         .unwrap();
         assert_eq!(execute(cli.command), 0);
+        let report: serde_json::Value =
+            serde_json::from_slice(&fs::read(experiment).unwrap()).unwrap();
+        assert_eq!(report["runs"][0]["condition"], "baseline");
+        assert_eq!(report["runs"][1]["condition"], "delayed");
+        assert!(report["runs"][1]["observed_delay_ns"].as_u64().unwrap() > 0);
         unsafe { std::env::remove_var("CLIBOX_FSPY_CLI_MAC_INPUT") };
     }
 
