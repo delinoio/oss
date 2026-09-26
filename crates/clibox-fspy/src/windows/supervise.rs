@@ -240,13 +240,20 @@ where
             break Err(CaptureFailure::Cancellation);
         }
         if receiver.failed() {
+            eprintln!("clibox fspy supervisor: stage=receiver_failed");
             break Err(CaptureFailure::TraceLoss);
         }
         if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
             break Err(CaptureFailure::Timeout);
         }
         if let Some(result) = poll_wait(&runtime, &mut wait) {
-            break result.map_err(|_| CaptureFailure::TraceLoss);
+            break result.map_err(|error| {
+                eprintln!(
+                    "clibox fspy supervisor: stage=child_wait kind={:?}",
+                    error.kind()
+                );
+                CaptureFailure::TraceLoss
+            });
         }
     };
     let termination = match result {
@@ -271,7 +278,13 @@ where
             return Err(CaptureFailure::Cleanup);
         }
     }
-    let collected = receiver.finish().map_err(|_| CaptureFailure::TraceLoss)?;
+    let collected = receiver.finish().map_err(|error| {
+        eprintln!(
+            "clibox fspy supervisor: stage=receiver_finish kind={:?} reason={error}",
+            error.kind()
+        );
+        CaptureFailure::TraceLoss
+    })?;
     if !collected.hello_pids.contains(&pid)
         || collected
             .pairs
@@ -279,6 +292,14 @@ where
             .any(|(start, _)| !collected.hello_pids.contains(&start.pid))
         || termination.path_accesses.is_err()
     {
+        eprintln!(
+            "clibox fspy supervisor: stage=completeness root_hello={} hello_count={} pairs={} \
+             legacy_complete={}",
+            collected.hello_pids.contains(&pid),
+            collected.hello_pids.len(),
+            collected.pairs.len(),
+            termination.path_accesses.is_ok(),
+        );
         return Err(CaptureFailure::TraceLoss);
     }
     assemble_candidate_record(

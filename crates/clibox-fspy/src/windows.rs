@@ -443,7 +443,12 @@ impl OperationReceiver {
                         };
                         connections.push(thread::spawn(move || {
                             let result = receive_connection(stream, &context);
-                            if result.is_err() {
+                            if let Err(error) = &result {
+                                eprintln!(
+                                    "clibox fspy receiver: stage=connection kind={:?} \
+                                     reason={error}",
+                                    error.kind()
+                                );
                                 failure.store(true, Ordering::Release);
                             }
                             result
@@ -472,6 +477,10 @@ impl OperationReceiver {
                 .into_inner()
                 .map_err(|_| invalid("collector_lock"))?;
             if !ledger.starts.is_empty() {
+                eprintln!(
+                    "clibox fspy receiver: stage=unpaired_start count={}",
+                    ledger.starts.len()
+                );
                 return Err(invalid("unpaired_start"));
             }
             Ok(CollectedOperations {

@@ -163,7 +163,7 @@ fn syscall_stop(tid: pid_t) -> Result<Stop, TraceFailure> {
     // the fixed C-compatible buffer while this tracee is stopped.
     let size = unsafe {
         libc::ptrace(
-            GET_SYSCALL_INFO,
+            GET_SYSCALL_INFO as _,
             tid,
             std::mem::size_of::<SyscallInfo>(),
             (&raw mut info).cast::<c_void>(),
@@ -198,7 +198,7 @@ fn syscall_stop(tid: pid_t) -> Result<Stop, TraceFailure> {
 fn ptrace_control(request: libc::c_uint, tid: pid_t, data: usize) -> Result<(), TraceFailure> {
     // SAFETY: all requests used here take a null address and an integer data
     // argument, and the caller owns a stopped tracee with this TID.
-    let result = unsafe { libc::ptrace(request, tid, std::ptr::null_mut::<c_void>(), data) };
+    let result = unsafe { libc::ptrace(request as _, tid, std::ptr::null_mut::<c_void>(), data) };
     if result < 0 {
         let error = io::Error::last_os_error();
         return Err(if error.raw_os_error() == Some(libc::EPERM) {
