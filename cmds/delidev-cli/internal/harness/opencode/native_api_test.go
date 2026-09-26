@@ -54,6 +54,49 @@ func TestManualNativeOpenCodeOwnedAPIContextMismatch(t *testing.T) {
 
 func nativeOwnedAPISession(t *testing.T, input, mismatch bool) {
 	t.Helper()
+	nativeOwnedAPISessionWithRelay(t, input, mismatch, nativeDirectScriptedAPI)
+}
+
+type nativeRelayFixtureMode uint8
+
+const (
+	nativeDirectScriptedAPI nativeRelayFixtureMode = iota
+	nativeServerRelay
+	nativeServerRelayRejectedCredential
+)
+
+func TestManualNativeOpenCodeOwnedAPIProxy(t *testing.T) {
+	nativeOwnedAPISessionWithRelay(t, true, false, nativeServerRelay)
+}
+
+func TestManualNativeOpenCodeOwnedAPIProxyRejectedCredential(t *testing.T) {
+	nativeOwnedAPISessionWithRelay(t, true, false, nativeServerRelayRejectedCredential)
+}
+
+// Only the lease authority is a fixture here. Native OpenCode and the actual
+// server relay handler perform their real HTTP/auth/body/stream boundaries.
+type nativeAPIProxyAuthority struct {
+	token, key string
+	scope      apiproxy.Scope
+	acquired   atomic.Int32
+	keys       atomic.Int32
+	released   atomic.Int32
+}
+
+func (a *nativeAPIProxyAuthority) Acquire(ctx context.Context, token string) (*apiproxy.Lease, error) {
+	if token != a.token {
+		return nil, domain.Fail(domain.Unauthenticated, "Unknown fixture execution authority.", "")
+	}
+	a.acquired.Add(1)
+	return &apiproxy.Lease{Scope: a.scope, Context: ctx, Release: func() { a.released.Add(1) }, Key: func(ctx context.Context) ([]byte, error) {
+		a.keys.Add(1)
+		return []byte(a.key), ctx.Err()
+	}}, nil
+}
+
+func nativeOwnedAPISessionWithRelay(t *testing.T, input, mismatch bool, relayMode nativeRelayFixtureMode) {
+	t.Helper()
+	realRelay := relayMode != nativeDirectScriptedAPI
 	executable := os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE")
 	if executable == "" {
 		t.Skip("explicit isolated native OpenCode owned API initializer")
@@ -68,14 +111,38 @@ func nativeOwnedAPISession(t *testing.T, input, mismatch bool) {
 		}
 	}()
 	config.Probe.Process.Executable = executable
+	upstreamKey := "private-upstream-only-" + string(domain.NewID())
+	t.Cleanup(func() {
+		// All original native/HTTP cleanup defers have joined before Cleanup.
+		if strings.Contains(logs.String(), upstreamKey) || strings.Contains(logs.String(), config.Token) {
+			t.Error("native/relay diagnostics disclosed protected credentials")
+		}
+	})
 	var requests atomic.Int32
 	relay := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
 		var body map[string]json.RawMessage
 		raw, err := io.ReadAll(io.LimitReader(r.Body, maxHTTPBody+1))
-		if !input || err != nil || domain.Decode(raw, &body) != nil || r.Method != http.MethodPost || r.URL.Path != apiproxy.Prefix+"/chat/completions" || r.Header.Get("Authorization") != "Bearer "+config.Token || !scalar(body["model"], config.Settings.Model) || string(body["stream"]) != "true" {
+		path, key := apiproxy.Prefix+"/chat/completions", config.Token
+		if realRelay {
+			path, key = "/provider/chat/completions", upstreamKey
+			if r.Header.Get("HTTP-Referer") != "https://deli.dev" || strings.Contains(string(raw), config.Token) || strings.Contains(string(raw), upstreamKey) {
+				t.Error("actual relay leaked credentials or changed the required referer")
+			}
+		}
+		if !input || err != nil || domain.Decode(raw, &body) != nil || r.Method != http.MethodPost || r.URL.Path != path || r.Header.Get("Authorization") != "Bearer "+key || !scalar(body["model"], config.Settings.Model) || string(body["stream"]) != "true" {
 			t.Error("owned native request escaped the fixed scripted relay scope")
 			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		if relayMode == nativeServerRelayRejectedCredential {
+			// The real relay must not forward this deliberately reflected
+			// upstream key in the provider's diagnostic body or headers.
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("X-Request-Id", upstreamKey)
+			w.Header().Set("Set-Cookie", upstreamKey)
+			w.WriteHeader(http.StatusUnauthorized)
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"message": upstreamKey, "type": "invalid_api_key"}})
 			return
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -84,6 +151,16 @@ func nativeOwnedAPISession(t *testing.T, input, mismatch bool) {
 	}))
 	defer relay.Close()
 	config.ServerOrigin = relay.URL
+	var authority *nativeAPIProxyAuthority
+	if realRelay {
+		authority = &nativeAPIProxyAuthority{token: config.Token, key: upstreamKey, scope: apiproxy.Scope{
+			ExecutionID: domain.NewID(), SessionID: domain.NewID(), AccountID: domain.NewID(), ConnectionID: domain.NewID(), ProviderID: domain.NewID(), ModelID: domain.NewID(),
+			NativeModel: config.Settings.Model, Provider: domain.Provider{Name: "Private native relay fixture", Endpoint: relay.URL + "/provider", Protocol: domain.OpenAIChat, Authentication: domain.BearerAuth}, Operations: []apiproxy.Operation{apiproxy.ChatCompletion},
+		}}
+		proxy := httptest.NewServer(apiproxy.New(authority, config.Probe.Process.Logger))
+		defer proxy.Close()
+		config.ServerOrigin = proxy.URL
+	}
 	var claims []SessionClaim
 	config.Claim = func(_ context.Context, claim SessionClaim) error {
 		claims = append(claims, claim)
@@ -163,5 +240,32 @@ func nativeOwnedAPISession(t *testing.T, input, mismatch bool) {
 	progress := observer.snapshot()
 	if !progress.SettledObserved || !progress.UserSeen || !progress.InputPartSeen || requests.Load() != 1 || len(claims) != 2 {
 		t.Fatal("owned native input did not settle with exact original claims")
+	}
+	assistant := observer.messages[progress.AssistantID]
+	if assistant == nil || assistant.value.Assistant == nil || assistant.value.Assistant.Completed == nil {
+		t.Fatal("owned input did not retain its final native assistant")
+	}
+	if relayMode == nativeServerRelayRejectedCredential {
+		problem := assistant.value.Assistant.Error
+		if problem == nil || problem.Kind != APIErrorKind || problem.StatusCode == nil || *problem.StatusCode != http.StatusUnauthorized || problem.Retryable == nil || *problem.Retryable {
+			t.Fatal("upstream credential rejection lost its native error classification")
+		}
+	} else if assistant.value.Assistant.Error != nil || assistant.value.Assistant.Finish == nil || *assistant.value.Assistant.Finish != FinishStop {
+		t.Fatal("owned native scripted success became a settled error")
+	}
+	if realRelay {
+		if authority.acquired.Load() != 1 || authority.keys.Load() != 1 || authority.released.Load() != 1 {
+			t.Fatal("actual relay did not preserve one scoped request/key/release lifecycle")
+		}
+		for _, message := range observer.messages {
+			if bytes.Contains(message.raw, []byte(upstreamKey)) {
+				t.Fatal("server-only upstream key reached native retained message evidence")
+			}
+		}
+		for _, part := range observer.parts {
+			if bytes.Contains(part.raw, []byte(upstreamKey)) || strings.Contains(part.text, upstreamKey) {
+				t.Fatal("server-only upstream key reached native retained part evidence")
+			}
+		}
 	}
 }
