@@ -120,7 +120,8 @@ for file in reference['files']:
         for clip in file['clips']:
             select_clip(objects, clip['name'], file['format'])
             for time in [0, 0.25, 1, 2]:
-                scene.frame_set(round(time * scene.render.fps / scene.render.fps_base))
+                frame = time * scene.render.fps / scene.render.fps_base
+                scene.frame_set(math.floor(frame), subframe=frame - math.floor(frame))
                 name = f"{file['format']}-{clip['name']}-{time}.png"
                 scene.render.filepath = str(root / name)
                 bpy.ops.render.render(write_still=True)

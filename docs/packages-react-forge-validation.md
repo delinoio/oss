@@ -537,8 +537,9 @@ native engine, model, texture, or previously recorded rendering evidence.
 ## Scene CI scope update (2026-09-26)
 
 The current workflow no longer prepares GLB/FBX scene inputs or runs dedicated
-Blender product-render jobs. The affected React Forge host matrix still runs its
-native scene-engine and package regressions. Khronos/ufbx checks, Blender
+Blender product-render jobs. The affected React Forge host matrix retains non-scene native and package
+regressions; scene engines, React scene suites and animated consumer cases are
+excluded from hosted validation. Khronos/ufbx checks, Blender
 re-imports, local GLB viewing and product image inspection remain reproducible
 local acceptance evidence. Earlier hosted render results in this file are
 historical records and do not describe current CI jobs.
@@ -555,3 +556,95 @@ passed eight local formats. Public-docs validation passed the **25 selector
 tests**, rendered route/build checks and **15 validator regressions**. The font
 fixture was hydrated through Git LFS before the passing package run. This is
 local host evidence; other hosts and new visual renders were not run.
+
+
+## GLB/FBX animation acceptance (2026-09-26, Unreleased)
+
+The implementation at `5bb5179f` adds common object/Joint TRS tracks, skinning,
+position/normal morphs, STEP/LINEAR/CUBIC samplers, callback baking and clip/time
+bounds. The subsequent verification script correction retains exact fractional
+Blender frame times for stills. Static GLB/FBX availability since npm `0.2.0`
+remains unchanged; this animation extension was not published.
+
+The original procedural character has three skinned meshes, seven joints and one
+expression morph, with two-second idle/walk/wave clips. Shoulder vertices combine
+two joints. Tracks cover baked hip/limb/morph/camera/light motion and manually
+registered cubic group movement. No imported model, rig, motion or texture assets
+are used. The nonidentity-bind and camera/light rotation cases also have
+independent ufbx regression fixtures.
+
+Local acceptance ran on macOS 26.6.2 arm64 with Node.js 24.11.0, pnpm 10.26.2,
+React 19.2.8, Rust 1.94.0-nightly (`8d670b93d`), Three.js 0.186.1,
+`gltf-validator` 2.0.0-dev.3.10, ufbx Rust 0.11.4, and official Blender 4.5.14 LTS
+(build `62c1db4208e8`). The committed
+`packages/react-forge/examples/animated-character-evidence.json` records the
+export hashes, sizes, sample errors and render/playback hashes. Generated GLB,
+FBX, PNG and MP4 files stay outside the repository.
+
+- Khronos reported **zero errors**, three `NODE_SKINNED_MESH_NON_ROOT` warnings,
+  and no other issues. These warnings describe glTF ignoring a skinned mesh's
+  parent transform. The authored group contains both meshes and joints; group
+  movement therefore reaches the meshes through the joints. Native, Three.js,
+  ufbx and Blender comparisons explicitly verify that path. No validator warning
+  is filtered out or misreported as zero warnings.
+- Three.js independently evaluated three clips at nine times (0–2 seconds in
+  0.25-second steps), with maximum world-AABB error **7.4251e-8 m**. Interactive
+  WebGL inspection covered idle/walk/wave, playback, clip switching, scrubbing,
+  hand movement, moving legs, group translation and the changing mouth shape.
+- ufbx imported the actual FBX and evaluated all 27 samples with maximum bound
+  error **6.2677e-8 m**. It found three meshes, seven bones and one blend shape.
+- Blender re-imported both untouched files and compared 54 samples, with maximum
+  errors **1.6213e-7 m** (GLB) and **1.7882e-7 m** (FBX). The script selects each
+  imported action/slot without repairing materials, curves, meshes or rigs.
+  Importer-created bone display shapes are excluded from mesh counts only.
+  Twenty-four 2048×2048 stills cover time 0, 0.25, 1 and 2 per clip/format.
+  Six 384×384 H.264 playback videos retain each importer's frame rate. Added
+  studio lights/camera are presentation-only. The actual stills and playback
+  were visually inspected; both imports retain the moving limbs and smile.
+
+The Blender importer initially rejected FBX AnimationStack name classes. The
+exporter now uses FBX's AnimStack/AnimLayer/AnimCurve class names and the unmodified
+files import successfully. Review also added a preallocation bound for repeated
+skin palettes and reduced the native node enum's memory footprint. Tests cover
+ref resolution/rerenders, copied input mutations, endpoint/STEP/CUBIC math,
+quaternion sign/wrap/singularity, combined morph/skinning and nonidentity binds,
+independent instances, baked expansion limits, native basis conversions,
+cancel/dispose, pending bake/export ordering and recovery after callback failure.
+
+Package build, typecheck, lint, standalone example typechecks and **150 package
+tests** passed. Workspace and installed-archive CLI/MCP generated both animated
+formats, and installed MCP sampled clip/time bounds at the inspected revision.
+Public main/native candidate installation passed ten task fixtures across eight
+local formats, including the two animation fixtures. Targeted scene/exporter/
+N-API Clippy passed with warnings denied; public-docs `pnpm test` passed the site
+build, eighteen React Forge routes, 25 selector tests and 15 validator regressions.
+Repository CI contracts passed 93 tests and workflow validation. These are local
+results; other hosts, Unity/Unreal and npm publication are not claimed. FBX
+rotation/CUBIC motion between export samples remains an approximation.
+
+Reproduce after `pnpm install`, LFS hydration and the package build, using an
+explicit output directory outside the source tree:
+
+```sh
+pnpm --filter @delino/react-forge build
+pnpm --filter @delino/react-forge exec node --import tsx scripts/verify-animation.mjs "$ANIMATION_OUTPUT"
+cargo run --locked -p forge-fbx --example inspect_animation -- "$ANIMATION_OUTPUT"
+"$BLENDER" --background --factory-startup --python-exit-code 1 --python packages/react-forge/scripts/inspect-animation.py -- --input "$ANIMATION_OUTPUT" --render --playback
+pnpm --filter @delino/react-forge exec node scripts/scene-viewer.mjs --animation --input "$ANIMATION_OUTPUT"
+```
+
+The loopback viewer uses port 46319; `/` plays the actual GLB and `/playback`
+shows Blender's six imported-clip videos. Tests and visual scripts are local only,
+preserving the scene CI exclusion. Root Rust validation uses the documented
+DevHud frontend and separate generic/pnport preload preparation above. Remove
+generated repository-owned dist directories after the complete validation run.
+
+
+After the final native changes, prepared root
+`TMPDIR=/private/tmp cargo test --locked -- --test-threads=1` passed **1,951 tests**,
+with zero failures and three pre-existing opt-in tests ignored. The targeted
+scene engines passed 12 tests, including independent ufbx cases. Final 2048px
+stills retain fractional frame times rather than rounding the FBX importer's
+25 fps timeline. All 24 stills and six playback videos were inspected. Generated
+repository-owned dist output was removed after validation; the local preview
+serves only artifacts outside the checkout.

@@ -112,3 +112,22 @@ not only pointer syntax. The existing async-commit-hook execution limitation for
 LFS repositories still applies; this does not add LFS support to that tool.
 
 Require Khronos GLB validation, independent ufbx FBX parsing, and Blender re-imports with no material/mesh repair as local acceptance evidence. Product samples additionally require independent local web GLB viewing and actual image inspection. Evidence records exact tool versions, output hashes, structure checks and observed differences. React, installed CLI/MCP and existing document regressions remain part of the React Forge host matrix; the React scene test suite is skipped there. Scene engine tests/Clippy, interoperability, visual inspection, and render jobs are removed from React Forge CI and release host validation by PR #992. Render tools are local acceptance dependencies; generated exports, screenshots and dist are untracked. GLB and FBX were included in the published `@delino/react-forge` `0.2.0` release; the successful release workflow does not claim identical behavior in every FBX application.
+
+
+Animation acceptance uses the original `examples/animated-character*.tsx` tasks:
+seven explicit joints, three skinned meshes, an expression morph, idle/walk/wave,
+callback sampling, manual cubic group motion, and camera/light tracks. Use
+`scripts/verify-animation.mjs` for native/Khronos/Three.js comparisons,
+`forge-fbx --example inspect_animation` for ufbx time evaluation, and
+`scripts/inspect-animation.py` for Blender imports, sampled geometry, 2048px
+start/middle/end and motion-extreme stills, plus compact playback videos. Inspect
+the real artifacts in the local animation viewer. Keep generated assets outside
+the checkout and commit only source and compact evidence. Local animated tests
+and installed CLI/MCP animation cases honor `REACT_FORGE_SKIP_SCENE_TESTS`; no
+hosted scene-validation gate is added. See the dated validation entry for the
+actual executed host, exact versions, warnings and errors.
+
+## Animation references
+
+- [glTF 2.0 skin, morph and animation specification](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html).
+- [ufbx independent animation evaluation](https://ufbx.github.io/elements/animation/).
