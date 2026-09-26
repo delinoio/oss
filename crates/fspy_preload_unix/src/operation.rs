@@ -277,7 +277,11 @@ pub fn enter_fd(kind: Kind, fd: c_int) -> Option<Token> {
         } else {
             None
         };
-        enter(kind, path.unwrap_or_default())
+        // F_GETPATH is unavailable for pipes, sockets, and invalid file
+        // descriptors. They are outside this file-operation boundary; sending
+        // a pathless event for every child stdout write would exhaust the
+        // bounded record without adding file evidence.
+        path.and_then(|path| enter(kind, path))
     })
 }
 

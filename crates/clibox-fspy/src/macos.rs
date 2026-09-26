@@ -699,6 +699,11 @@ mod tests {
         assert!(frames.iter().any(|frame| {
             frame.kind == FrameKind::Completion && frame.operation == 6 && frame.result == 3
         }));
+        assert!(!frames.iter().any(|frame| {
+            frame.kind == FrameKind::Start
+                && matches!(frame.operation, 2..=6)
+                && frame.path.is_empty()
+        }));
         assert!(frames.iter().any(|frame| {
             frame.kind == FrameKind::Start
                 && frame.pid != root_pid
@@ -737,6 +742,23 @@ mod tests {
             == Some(std::ffi::OsStr::new("2"))
         {
             return;
+        }
+        let mut pipe = [0_i32; 2];
+        // SAFETY: pipe points to two writable descriptor slots.
+        assert_eq!(unsafe { libc::pipe(pipe.as_mut_ptr()) }, 0);
+        let mut pipe_byte = 0_u8;
+        // SAFETY: the descriptors belong to this process and the byte lives
+        // through both calls.
+        assert_eq!(unsafe { libc::write(pipe[1], b"p".as_ptr().cast(), 1) }, 1);
+        assert_eq!(
+            unsafe { libc::read(pipe[0], (&raw mut pipe_byte).cast(), 1) },
+            1
+        );
+        assert_eq!(pipe_byte, b'p');
+        // SAFETY: both descriptors remain open after the completed transfer.
+        unsafe {
+            libc::close(pipe[0]);
+            libc::close(pipe[1]);
         }
         let file = fs::File::open(&path).unwrap();
         let mut buffer = [0_u8; 7];
