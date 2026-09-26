@@ -217,6 +217,9 @@ func nativeSessionFixtureWithSettings(t *testing.T, providerURL, key string, pol
 	}
 	var claims []SessionClaim
 	api.claim = func(_ context.Context, claim SessionClaim) error {
+		if err := claim.Validate(); err != nil {
+			return err
+		}
 		for _, existing := range claims {
 			if existing.RequestID == claim.RequestID {
 				return sessionConflict()

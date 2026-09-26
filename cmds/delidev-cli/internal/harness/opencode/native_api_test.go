@@ -163,6 +163,9 @@ func nativeOwnedAPISessionWithRelay(t *testing.T, input, mismatch bool, relayMod
 	}
 	var claims []SessionClaim
 	config.Claim = func(_ context.Context, claim SessionClaim) error {
+		if err := claim.Validate(); err != nil {
+			return err
+		}
 		claims = append(claims, claim)
 		raw, _ := json.Marshal(claims)
 		return security.WriteAtomic(filepath.Join(filepath.Dir(config.Probe.Home), "claims.json"), raw)
