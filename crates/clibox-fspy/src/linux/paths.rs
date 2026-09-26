@@ -245,7 +245,16 @@ fn resolve_even_if_absent(path: &Path) -> Result<PathBuf, TraceFailure> {
                     .parent()
                     .ok_or_else(|| supervision("missing_path_parent"))?;
             }
-            Err(_) => return Err(supervision("path_resolution")),
+            Err(error) => {
+                use std::io::Write;
+                let _ = writeln!(
+                    io::stderr(),
+                    "clibox fspy tracer: stage=path_resolution_error kind={:?} os_code={:?}",
+                    error.kind(),
+                    error.raw_os_error()
+                );
+                return Err(supervision("path_resolution"));
+            }
         }
     }
 }

@@ -175,6 +175,51 @@ fn fs_path(units: &[u16]) -> PathBuf {
     PathBuf::from(OsString::from_wide(units))
 }
 
+fn nt_volume_path(units: &[u16]) -> io::Result<PathBuf> {
+    use winapi::um::fileapi::QueryDosDeviceW;
+
+    for letter in b'A'..=b'Z' {
+        let device_name = [u16::from(letter), b':' as u16, 0];
+        let mut target = [0_u16; 1024];
+        // SAFETY: both buffers are valid and the device name is NUL-terminated.
+        let length = unsafe {
+            QueryDosDeviceW(
+                device_name.as_ptr(),
+                target.as_mut_ptr(),
+                target.len() as u32,
+            )
+        };
+        if length == 0 {
+            continue;
+        }
+        let Some(end) = target.iter().position(|unit| *unit == 0) else {
+            continue;
+        };
+        let prefix = &target[..end];
+        if units.len() < prefix.len()
+            || !units[..prefix.len()]
+                .iter()
+                .zip(prefix)
+                .all(|(left, right)| {
+                    left == right
+                        || (*left <= 127
+                            && *right <= 127
+                            && (*left as u8).eq_ignore_ascii_case(&(*right as u8)))
+                })
+            || units
+                .get(prefix.len())
+                .is_some_and(|unit| *unit != b'\\' as u16)
+        {
+            continue;
+        }
+        let mut dos = vec![b'\\' as u16, b'\\' as u16, b'?' as u16, b'\\' as u16];
+        dos.extend_from_slice(&[u16::from(letter), b':' as u16]);
+        dos.extend_from_slice(&units[prefix.len()..]);
+        return Ok(PathBuf::from(OsString::from_wide(&dos)));
+    }
+    Err(invalid("unmapped_volume_device"))
+}
+
 fn normalize(path: &Path) -> PathBuf {
     let mut normalized = PathBuf::new();
     for component in path.components() {
@@ -222,7 +267,21 @@ fn classify_path(root: &Path, bytes: &[u8]) -> io::Result<AccessPath> {
     let NativePath::WindowsUtf16(units) = &logical else {
         unreachable!()
     };
-    let path = fs_path(units);
+    let nt_device = r"\Device\".encode_utf16().collect::<Vec<_>>();
+    let nt_volume = r"\Device\HarddiskVolume".encode_utf16().collect::<Vec<_>>();
+    let path = if units.starts_with(&nt_volume) {
+        nt_volume_path(units)?
+    } else if units.starts_with(&nt_device) {
+        return Ok(AccessPath {
+            class: PathClass::External,
+            logical,
+            resolved: None,
+            project_relative: None,
+            identity: None,
+        });
+    } else {
+        fs_path(units)
+    };
     if !path.is_absolute() {
         let kind = if units.starts_with(&[b'\\' as u16, b'?' as u16, b'?' as u16, b'\\' as u16]) {
             "nt_dos"
