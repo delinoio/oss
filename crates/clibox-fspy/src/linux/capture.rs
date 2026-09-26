@@ -359,18 +359,20 @@ mod tests {
         input.write_all(b"fixture").unwrap();
         let mut command = Command::new("/bin/cat");
         command.arg(input.path()).stdout(Stdio::null());
-        let began = Instant::now();
+        // Capture sessions share a lock, so unrelated tests may run before this read.
+        let mut read_started = None;
         let result = capture(
             &mut command,
             input.path().parent().unwrap(),
             Limits {
-                timeout: Some(Duration::from_millis(200)),
+                timeout: Some(Duration::from_secs(3)),
                 kill_after: Duration::from_millis(100),
                 ..Limits::default()
             },
             &AtomicBool::new(false),
             |operation| {
                 if operation.operation == Operation::Read {
+                    read_started.get_or_insert_with(Instant::now);
                     Duration::from_secs(60)
                 } else {
                     Duration::ZERO
@@ -378,6 +380,6 @@ mod tests {
             },
         );
         assert!(matches!(result, Err(TraceFailure::Timeout)));
-        assert!(began.elapsed() < Duration::from_secs(2));
+        assert!(read_started.is_some_and(|began| began.elapsed() < Duration::from_secs(4)));
     }
 }
