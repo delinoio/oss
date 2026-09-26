@@ -59,6 +59,8 @@ pub enum Kind {
     Metadata = 7,
     Directory = 8,
     Mutation = 9,
+    Exec = 10,
+    ExecReplace = 11,
 }
 
 pub struct Token {
@@ -386,6 +388,18 @@ pub fn finish(token: Option<Token>, result: i64) {
     leave(token, result, if result < 0 { error } else { 0 });
     // SAFETY: side-channel I/O must not alter the intercepted call's errno.
     unsafe { *libc::__error() = error };
+}
+
+pub fn finish_spawn(token: Option<Token>, status: c_int) {
+    // posix_spawn returns an errno value instead of setting errno. Preserve
+    // the caller's errno while recording the equivalent signed native result.
+    preserve_errno(|| {
+        leave(
+            token,
+            if status == 0 { 0 } else { -i64::from(status) },
+            status,
+        );
+    });
 }
 
 pub fn begin_mutation() {

@@ -85,7 +85,7 @@ pub fn read_frame(reader: &mut impl Read) -> io::Result<Option<Frame>> {
     };
     let operation = header[1];
     if (kind == FrameKind::Hello && operation != 0)
-        || (kind != FrameKind::Hello && !(1..=9).contains(&operation))
+        || (kind != FrameKind::Hello && !(1..=11).contains(&operation))
     {
         return Err(invalid("operation_kind"));
     }
@@ -145,6 +145,7 @@ pub struct FrameLedger {
     pending: HashMap<(u32, u64, u64), Frame>,
     completed: Vec<(Frame, Frame)>,
     hello_pids: HashSet<u32>,
+    replacing: HashMap<u32, (u32, u64, u64)>,
     frame_count: u64,
     event_count: usize,
     max_events: usize,
@@ -184,13 +185,33 @@ impl FrameLedger {
         match frame.kind {
             FrameKind::Hello => {
                 self.hello_pids.insert(frame.pid);
+                if let Some(key) = self.replacing.get(&frame.pid).copied() {
+                    let start = self
+                        .pending
+                        .get(&key)
+                        .ok_or_else(|| invalid("missing_exec"))?;
+                    let mut completion = start.clone();
+                    completion.kind = FrameKind::Completion;
+                    completion.monotonic_ns = frame.monotonic_ns;
+                    completion.result = 0;
+                    completion.error = 0;
+                    completion.path.clear();
+                    completion.access_path = None;
+                    self.push(completion)?;
+                }
             }
             FrameKind::Start => {
+                if frame.operation == 11 && self.replacing.insert(frame.pid, key).is_some() {
+                    return Err(invalid("duplicate_exec"));
+                }
                 if self.pending.insert(key, frame).is_some() {
                     return Err(invalid("duplicate_start"));
                 }
             }
             FrameKind::Completion => {
+                if frame.operation == 11 && self.replacing.remove(&frame.pid) != Some(key) {
+                    return Err(invalid("missing_exec"));
+                }
                 let start = self
                     .pending
                     .remove(&key)
@@ -535,7 +556,7 @@ fn resolve_even_if_absent(path: &Path) -> io::Result<Option<PathBuf>> {
     }
 }
 
-fn classify_path(root: &Path, bytes: &[u8]) -> io::Result<Option<AccessPath>> {
+pub(super) fn classify_path(root: &Path, bytes: &[u8]) -> io::Result<Option<AccessPath>> {
     let logical = PathBuf::from(OsString::from_vec(bytes.to_vec()));
     if !logical.is_absolute() {
         return Err(invalid("non_absolute_path"));
@@ -578,6 +599,8 @@ pub(crate) fn operation(kind: u8) -> Option<Operation> {
         7 => Operation::Metadata,
         8 => Operation::Directory,
         9 => Operation::Mutation,
+        10 => Operation::Exec,
+        11 => Operation::Exec,
         _ => return None,
     })
 }
@@ -839,6 +862,25 @@ mod tests {
     }
 
     #[test]
+    fn replacement_hello_completes_the_pending_exec() {
+        let mut start = frame_bytes(b's', b"/tmp/tool");
+        start[1] = 11;
+        let start = read_frame(&mut start.as_slice()).unwrap().unwrap();
+        let mut hello = frame_bytes(b'h', b"");
+        hello[1] = 0;
+        hello[26..34].copy_from_slice(&123_457_u64.to_le_bytes());
+        let hello = read_frame(&mut hello.as_slice()).unwrap().unwrap();
+        let mut ledger = FrameLedger::new(2, 256);
+        ledger.push(start).unwrap();
+        ledger.push(hello).unwrap();
+        let collected = ledger.finish().unwrap();
+        assert_eq!(collected.pairs.len(), 1);
+        assert_eq!(collected.pairs[0].0.operation, 11);
+        assert_eq!(collected.pairs[0].1.result, 0);
+        assert_eq!(collected.pairs[0].1.sequence, 3);
+    }
+
+    #[test]
     fn receiver_reports_corrupt_injected_input() {
         let receiver = OperationReceiver::bind(2, 256).unwrap();
         let mut stream = UnixStream::connect(receiver.socket_path()).unwrap();
@@ -1054,5 +1096,33 @@ mod tests {
             .unwrap();
         assert!(status.success());
         fs::rename(&path, path.with_extension("moved")).unwrap();
+    }
+
+    #[test]
+    fn exec_replacement_child() {
+        let Some(stage) = std::env::var_os("CLIBOX_FSPY_TEST_REPLACE") else {
+            return;
+        };
+        if stage == "done" {
+            return;
+        }
+        use std::ffi::CString;
+        let executable =
+            CString::new(std::env::current_exe().unwrap().as_os_str().as_bytes()).unwrap();
+        let exact = c"--exact";
+        let test = c"macos::tests::exec_replacement_child";
+        let args = [
+            executable.as_ptr(),
+            exact.as_ptr(),
+            test.as_ptr(),
+            std::ptr::null(),
+        ];
+        // SAFETY: this isolated fixture is the only test running in its child
+        // process, and the replacement inherits the marker.
+        unsafe { std::env::set_var("CLIBOX_FSPY_TEST_REPLACE", "done") };
+        // SAFETY: the executable and argv C strings live until exec replaces
+        // the process; the final argv slot is null.
+        unsafe { libc::execv(executable.as_ptr(), args.as_ptr()) };
+        panic!("execv failed: {}", io::Error::last_os_error());
     }
 }

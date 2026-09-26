@@ -2721,13 +2721,17 @@ impl MacBreakTerminal {
 
         let path = frame.access_path.as_ref().ok_or("control_channel_loss")?;
         let operation = crate::macos::operation(frame.operation).ok_or("control_channel_loss")?;
+        let owner = if frame.pid == 0 {
+            "root launch pending".to_owned()
+        } else {
+            format!("pid={} tid={}", frame.pid, frame.tid)
+        };
         writeln!(
             self.file,
-            "break: {} {:?} pid={} tid={} [n/c/q]",
+            "break: {} {:?} {} [n/c/q]",
             display_path(&path.logical),
             operation,
-            frame.pid,
-            frame.tid
+            owner
         )
         .map_err(|_| "control_channel_loss")?;
         self.file.flush().map_err(|_| "control_channel_loss")?;
@@ -3666,6 +3670,57 @@ mod tests {
             required,
             std::collections::BTreeSet::from([PathBuf::from("b.txt")])
         );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_root_executable_is_a_required_reproduction_input() {
+        use std::{process::Stdio, sync::atomic::AtomicBool};
+
+        let directory = tempfile::tempdir().unwrap();
+        let root = fs::canonicalize(directory.path()).unwrap();
+        let executable = root.join("tool");
+        fs::copy(std::env::current_exe().unwrap(), &executable).unwrap();
+        let selector = coverage::Selector::new(&["tool".into()], &[]).unwrap();
+        let snapshot = crate::repro::Snapshot::take(
+            &root,
+            &selector,
+            fs::metadata(&executable).unwrap().len() + 1024,
+            10,
+        )
+        .unwrap();
+        let mut command = fspy::Command::new(&executable);
+        command
+            .args(["--exact", "cli::tests::macos_cli_read_fixture"])
+            .envs(std::env::vars_os())
+            .current_dir(&root)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let record = crate::macos::supervise::capture(
+            command,
+            &root,
+            crate::macos::supervise::Limits {
+                max_events: 100_000,
+                max_bytes: 64 * 1024 * 1024,
+                timeout: Some(Duration::from_secs(10)),
+                kill_after: Duration::from_millis(500),
+            },
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        assert!(record.operations.iter().any(|pair| {
+            pair.start.operation == record::Operation::Exec
+                && pair.start.paths.iter().any(|path| {
+                    path.project_relative == Some(NativePath::UnixBytes(b"tool".to_vec()))
+                })
+        }));
+        let required = collect_required(&record, &root, &selector, &snapshot).unwrap();
+        assert!(required.contains(Path::new("tool")));
+        let candidate = tempfile::tempdir().unwrap();
+        snapshot
+            .stage_required(&required, candidate.path())
+            .unwrap();
+        assert!(candidate.path().join("tool").is_file());
     }
 
     #[cfg(target_os = "linux")]

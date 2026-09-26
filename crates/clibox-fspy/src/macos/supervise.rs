@@ -3,6 +3,7 @@
 use std::{
     future::Future,
     io,
+    os::unix::ffi::OsStrExt,
     path::Path,
     sync::atomic::{AtomicBool, Ordering},
     thread,
@@ -12,11 +13,29 @@ use std::{
 use futures_util::future::BoxFuture;
 use tokio_util::sync::CancellationToken;
 
-use super::{assemble_candidate_record, Admission, Frame, OperationReceiver};
+use super::{
+    assemble_candidate_record, classify_path, Admission, Frame, FrameKind, OperationReceiver,
+};
 use crate::record::CompleteRecord;
 
 const POLL: Duration = Duration::from_millis(20);
 const FORCE_CONFIRM: Duration = Duration::from_secs(5);
+
+fn monotonic_ns() -> Result<u64, CaptureFailure> {
+    let mut time = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
+    // SAFETY: the stack value is writable for the duration of this clock call.
+    if unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &raw mut time) } != 0 {
+        return Err(CaptureFailure::Initialization);
+    }
+    u64::try_from(time.tv_sec)
+        .ok()
+        .and_then(|seconds| seconds.checked_mul(1_000_000_000))
+        .and_then(|base| u64::try_from(time.tv_nsec).ok()?.checked_add(base))
+        .ok_or(CaptureFailure::Initialization)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CaptureFailure {
@@ -173,6 +192,48 @@ where
                 .ok_or(CaptureFailure::Timeout)
         })
         .transpose()?;
+    command
+        .resolve_program()
+        .map_err(|_| CaptureFailure::Spawn)?;
+    let program =
+        std::path::absolute(Path::new(command.program())).map_err(|_| CaptureFailure::Spawn)?;
+    let path = program.as_os_str().as_bytes().to_vec();
+    let mut root_start = Frame {
+        sequence: 1,
+        kind: FrameKind::Start,
+        operation: 10,
+        pid: 0,
+        parent_pid: std::process::id(),
+        tid: 0,
+        id: 1,
+        monotonic_ns: monotonic_ns()?,
+        result: 0,
+        error: 0,
+        access_path: classify_path(root, &path).map_err(|_| CaptureFailure::Record)?,
+        path,
+        requested_delay_ns: 0,
+        observed_delay_ns: 0,
+    };
+    let delay = match admission(&root_start) {
+        Admission::Proceed(delay) => delay,
+        Admission::Quit => return Err(CaptureFailure::Cancellation),
+    };
+    root_start.requested_delay_ns =
+        u64::try_from(delay.as_nanos()).map_err(|_| CaptureFailure::Record)?;
+    let delay_began = Instant::now();
+    if !delay.is_zero() {
+        thread::sleep(delay);
+    }
+    if !delay.is_zero() {
+        root_start.observed_delay_ns =
+            u64::try_from(delay_began.elapsed().as_nanos()).map_err(|_| CaptureFailure::Record)?;
+    }
+    if cancelled.load(Ordering::Acquire) {
+        return Err(CaptureFailure::Cancellation);
+    }
+    if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+        return Err(CaptureFailure::Timeout);
+    }
     let receiver = OperationReceiver::bind_with_admission(
         root,
         limits.max_events,
@@ -220,6 +281,22 @@ where
     };
     let pid = child.root_pid;
     let mut wait = child.wait_handle;
+    root_start.pid = pid;
+    root_start.tid = u64::from(pid);
+    let mut root_completion = root_start.clone();
+    root_completion.sequence = 2;
+    root_completion.kind = FrameKind::Completion;
+    root_completion.path.clear();
+    root_completion.access_path = None;
+    root_completion.monotonic_ns = match monotonic_ns() {
+        Ok(time) => time,
+        Err(failure) => {
+            let cleanup = cleanup_group(pid, &mut wait, &runtime, limits.kill_after, false);
+            token.cancel();
+            let _ = receiver.finish();
+            return Err(cleanup.err().unwrap_or(failure));
+        }
+    };
     let result = loop {
         if cancelled.load(Ordering::Acquire) {
             break Err(CaptureFailure::Cancellation);
@@ -256,7 +333,7 @@ where
         }
         Ok(false) => {}
     }
-    let collected = receiver.finish().map_err(|_| CaptureFailure::TraceLoss)?;
+    let mut collected = receiver.finish().map_err(|_| CaptureFailure::TraceLoss)?;
     if !collected.hello_pids.contains(&pid)
         || collected
             .pairs
@@ -268,6 +345,17 @@ where
     if termination.path_accesses.is_err() {
         return Err(CaptureFailure::TraceLoss);
     }
+    for (start, completion) in &mut collected.pairs {
+        start.sequence = start
+            .sequence
+            .checked_add(2)
+            .ok_or(CaptureFailure::Record)?;
+        completion.sequence = completion
+            .sequence
+            .checked_add(2)
+            .ok_or(CaptureFailure::Record)?;
+    }
+    collected.pairs.insert(0, (root_start, root_completion));
     assemble_candidate_record(
         root,
         collected.pairs,
@@ -319,6 +407,22 @@ mod tests {
         .unwrap();
         assert_eq!(record.summary.child_exit_code, Some(0));
         assert!(record.operations.iter().any(|pair| {
+            pair.start.operation == crate::record::Operation::Exec
+                && pair.start.parent_pid == Some(std::process::id())
+                && pair.completion.native_error.is_none()
+        }));
+        assert!(
+            record
+                .operations
+                .iter()
+                .filter(
+                    |pair| pair.start.operation == crate::record::Operation::Exec
+                        && pair.completion.native_error.is_none()
+                )
+                .count()
+                >= 2
+        );
+        assert!(record.operations.iter().any(|pair| {
             pair.start.operation == crate::record::Operation::PositionalRead
                 && pair.completion.byte_count == Some(7)
         }));
@@ -329,6 +433,68 @@ mod tests {
                     .iter()
                     .any(|other| other.start.pid == parent && other.start.pid != pair.start.pid)
             })
+        }));
+    }
+
+    #[test]
+    fn root_exec_is_admitted_before_launch() {
+        use std::sync::{atomic::Ordering, Arc};
+
+        let directory = tempfile::tempdir().unwrap();
+        let admitted = Arc::new(AtomicBool::new(false));
+        let observed = Arc::clone(&admitted);
+        let command = fspy::Command::new(std::env::current_exe().unwrap());
+        let result = capture_with_admission(
+            command,
+            directory.path(),
+            Limits {
+                max_events: 100,
+                max_bytes: 1024 * 1024,
+                timeout: Some(Duration::from_secs(5)),
+                kill_after: Duration::from_millis(500),
+            },
+            &AtomicBool::new(false),
+            move |frame| {
+                if frame.operation == 10 && frame.pid == 0 {
+                    observed.store(true, Ordering::SeqCst);
+                    Admission::Quit
+                } else {
+                    Admission::Proceed(Duration::ZERO)
+                }
+            },
+        );
+        assert!(matches!(result, Err(CaptureFailure::Cancellation)));
+        assert!(admitted.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn successful_exec_replacement_pairs_with_successor_hello() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut command = fspy::Command::new(std::env::current_exe().unwrap());
+        command
+            .args(["--exact", "macos::tests::exec_replacement_child"])
+            .envs(std::env::vars_os())
+            .env("CLIBOX_FSPY_TEST_REPLACE", "first")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let record = capture(
+            command,
+            directory.path(),
+            Limits {
+                max_events: 100_000,
+                max_bytes: 64 * 1024 * 1024,
+                timeout: Some(Duration::from_secs(10)),
+                kill_after: Duration::from_millis(500),
+            },
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        assert_eq!(record.summary.child_exit_code, Some(0));
+        assert!(record.operations.iter().any(|pair| {
+            pair.start.operation == crate::record::Operation::Exec
+                && pair.start.pid == pair.completion.pid
+                && pair.completion.native_error.is_none()
+                && pair.start.sequence > 2
         }));
     }
 

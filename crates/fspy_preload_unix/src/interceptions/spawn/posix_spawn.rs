@@ -8,6 +8,8 @@ use std::{
 use fspy_shared_unix::exec::ExecResolveConfig;
 use libc::{c_char, c_int};
 
+#[cfg(target_os = "macos")]
+use crate::operation::{self, Kind};
 use crate::{
     client::{global_client, raw_exec::RawExec},
     macros::intercept,
@@ -79,14 +81,21 @@ unsafe fn handle_posix_spawn(
             fspy_nostd_alloc::pooled_bump(),
             |raw_command, pre_exec| {
                 let call_original = move || {
-                    original(
+                    #[cfg(target_os = "macos")]
+                    // The resolved program pointer remains valid for the
+                    // entire native spawn call under the enclosing unsafe block.
+                    let operation = operation::enter_path(Kind::Exec, raw_command.prog);
+                    let result = original(
                         pid,
                         raw_command.prog,
                         file_actions,
                         attrp,
                         raw_command.argv.cast(),
                         raw_command.envp.cast(),
-                    )
+                    );
+                    #[cfg(target_os = "macos")]
+                    operation::finish_spawn(operation, result);
+                    result
                 };
                 if let Some(pre_exec) = pre_exec {
                     thread::scope(move |s| {

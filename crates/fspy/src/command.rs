@@ -42,6 +42,12 @@ pub struct Command {
 }
 
 impl Command {
+    /// Return the configured program path, including any prior resolution.
+    #[must_use]
+    pub fn program(&self) -> &OsStr {
+        &self.program
+    }
+
     /// Create a new command to spy on the given program.
     /// Initially, environment variables are not inherited from the parent.
     /// To inherit, explicitly use `.envs(std::env::vars_os())`.
