@@ -29,7 +29,7 @@ require (
 	github.com/prometheus/client_golang v1.24.1
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/sigstore/sigstore-go v1.3.0
-	github.com/tailscale/hujson v0.0.0-20241010212012-29efb4a0184b
+	github.com/tailscale/hujson v0.0.0-20260727124030-b80ff77dac4f
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.70.0
 	go.opentelemetry.io/otel v1.45.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.45.0
