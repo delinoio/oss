@@ -150,7 +150,3 @@ func (r OpenCodeInteractionRequest) MarshalJSON() ([]byte, error) {
 	}
 	return json.Marshal(plain(r))
 }
-
-func OpenCodeResponseUnavailable() error {
-	return Fail(Unsupported, "This OpenCode request is retained, but its product response delivery is not implemented.", "Keep the original request pending; an ordinary message or another harness response cannot answer or approve it.")
-}

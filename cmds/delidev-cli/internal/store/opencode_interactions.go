@@ -25,6 +25,6 @@ func (t *Tx) HasOpenCodeInteractionEvent(session, execution domain.ID, event str
 		return false, domain.Fail(domain.InvalidArgument, "Invalid native interaction event.", "Retain its original identity.")
 	}
 	var exists bool
-	err := t.tx.QueryRowContext(t.ctx, `SELECT EXISTS(SELECT 1 FROM execution_interactions i JOIN entities e ON e.id=i.interaction_id WHERE i.execution_id=? AND e.session_id=? AND json_extract(e.body,'$.opencode.native_event_id')=?)`, execution, session, event).Scan(&exists)
+	err := t.tx.QueryRowContext(t.ctx, `SELECT EXISTS(SELECT 1 FROM execution_interactions i JOIN entities e ON e.id=i.interaction_id WHERE i.execution_id=? AND e.session_id=? AND (json_extract(e.body,'$.opencode.native_event_id')=? OR json_extract(e.body,'$.response.acceptance.opencode.native_event_id')=? OR json_extract(e.body,'$.approval_response.acceptance.opencode.native_event_id')=?))`, execution, session, event, event, event).Scan(&exists)
 	return exists, storageError(err)
 }

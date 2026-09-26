@@ -30,20 +30,19 @@ func (s *Service) acceptQuestionResponse(tx *store.Tx, responseID, interactionID
 	if r.Revision != revision || value.Closure != domain.InteractionOpen || value.Response != nil || value.ApprovalResponse != nil || value.Type != domain.UserQuestionInteraction {
 		return store.Record{}, domain.Fail(domain.Conflict, "The question changed, closed or already has a response.", "Reload its original request and current response state before responding; do not replay native input.")
 	}
-	if value.OpenCode != nil {
-		return store.Record{}, domain.OpenCodeResponseUnavailable()
-	}
-	if err := input.Validate(value.Questions); err != nil {
+	if err := input.ValidateInteraction(value); err != nil {
 		return store.Record{}, err
 	}
 	if _, err := s.questionResponseScope(tx, r, value); err != nil {
 		return store.Record{}, err
 	}
-	// The current live scope accepts the pinned Codex profile only. Account for
-	// its per-question native answer wrapper before acceptance, not after the
+	// The Codex branch additionally accounts for its pinned native wrapper;
+	// check its size before acceptance, not after the
 	// Worker has claimed a response that cannot fit on the native wire.
-	if err := codex.ValidateQuestionResponseSize(codex.QuestionAnswers{Answers: input.Answers}); err != nil {
-		return store.Record{}, err
+	if value.OpenCode == nil {
+		if err := codex.ValidateQuestionResponseSize(codex.QuestionAnswers{Answers: input.Answers}); err != nil {
+			return store.Record{}, err
+		}
 	}
 	value.Response = &domain.QuestionResponse{ID: responseID, State: domain.QuestionResponseQueued, Input: input, AcceptedAt: time.Now().UTC()}
 	return tx.Put(r.Kind, r.ID, r.Revision, r.SessionID, r.ProjectID, value)

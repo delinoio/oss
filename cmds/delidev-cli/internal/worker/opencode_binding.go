@@ -21,8 +21,9 @@ const (
 	openCodeBindingBlocked
 )
 
-// This initial publication adapter owns only session binding and original
-// stored-input acceptance. It never starts native work, interprets transcript
+// This publication adapter owns session binding, original stored-input
+// acceptance and exact product-authorized reply claims. It never starts native
+// work, interprets transcript
 // content, reports completion or enables public OpenCode dispatch.
 type OpenCodeBindingPublisher struct {
 	mu             sync.Mutex
@@ -39,6 +40,8 @@ type OpenCodeBindingPublisher struct {
 	creationClaim  opencode.SessionClaim
 	inputClaim     opencode.SessionClaim
 	textAttached   bool
+	expectedReply  *opencode.SessionClaim
+	replyClaims    []opencode.SessionClaim
 }
 
 // OpenOpenCodeBindingPublisher owns a fresh mutation journal for this original
@@ -71,7 +74,16 @@ func (c *OpenCodeBindingPublisher) Claim(ctx context.Context, claim opencode.Ses
 	if claim.Kind == opencode.CreateSessionMutation && c.stage != openCodeUnbound || claim.Kind == opencode.SubmitInputMutation && c.stage != openCodeBound {
 		return openCodeClaimUncertain()
 	}
-	return c.journal.Claim(ctx, claim)
+	reply := claim.Kind == opencode.ReplyPermissionMutation || claim.Kind == opencode.ReplyQuestionMutation || claim.Kind == opencode.RejectQuestionMutation
+	if reply && (c.stage != openCodeAccepted || c.expectedReply == nil || *c.expectedReply != claim) {
+		return openCodeClaimUncertain()
+	}
+	err := c.journal.Claim(ctx, claim)
+	if reply && err == nil {
+		c.replyClaims = append(c.replyClaims, claim)
+		c.expectedReply = nil
+	}
+	return err
 }
 
 func (c *OpenCodeBindingPublisher) Close() error {

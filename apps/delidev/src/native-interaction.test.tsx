@@ -56,3 +56,10 @@ it("refuses mixed response authority rather than rendering another harness form"
   expect(screen.getByText(/unavailable or inconsistent/)).toBeTruthy();
   expect(container.querySelector("input, button")).toBeNull();
 });
+
+it("retains original content after its matching response is queued", () => {
+  const { container } = render(<NativeInteraction data={{ ...fixture(), response: { state: "queued", input: { opencode: { answers: [["First"]] } } } }} />);
+  expect(screen.getByText(question.text)).toBeTruthy();
+  expect(screen.queryByText(/unavailable or inconsistent/)).toBeNull();
+  expect(container.querySelector("input, button")).toBeNull();
+});

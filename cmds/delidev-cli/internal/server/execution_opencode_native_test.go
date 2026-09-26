@@ -80,6 +80,10 @@ const (
 	nativeEditFailurePublication
 	nativePermissionProposalPublication
 	nativeQuestionProposalPublication
+	nativePermissionResponsePublication
+	nativeQuestionResponsePublication
+	nativePermissionResponseLostAckPublication
+	nativeQuestionResponseLostAckPublication
 )
 
 func TestManualNativeOpenCodePublishesRegisteredText(t *testing.T) {
@@ -159,10 +163,12 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 		builtinName = domain.OpenCodeGlob
 	case nativeGrepPublication:
 		builtinName = domain.OpenCodeGrep
-	case nativeQuestionProposalPublication:
+	case nativeQuestionProposalPublication, nativeQuestionResponsePublication, nativeQuestionResponseLostAckPublication:
 		builtinName = domain.OpenCodeQuestionTool
 	}
-	interactionProposal := publication == nativePermissionProposalPublication || publication == nativeQuestionProposalPublication
+	responseLostAck := publication == nativePermissionResponseLostAckPublication || publication == nativeQuestionResponseLostAckPublication
+	interactionResponse := publication == nativePermissionResponsePublication || publication == nativeQuestionResponsePublication || responseLostAck
+	interactionProposal := publication == nativePermissionProposalPublication || publication == nativeQuestionProposalPublication || interactionResponse
 	builtinTool := builtinName.Valid()
 	builtinFailure := publication == nativeEditFailurePublication
 	fixtureModel := "fixture-model"
@@ -193,7 +199,7 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 	}
 	readTool := false
 	switch publication {
-	case nativeReadPublication, nativeReadFailurePublication, nativeReadDirectoryPublication, nativeUsagePublication, nativeTerminalPublication, nativeTerminalLostAckPublication, nativeCompletionPublication, nativePermissionProposalPublication:
+	case nativeReadPublication, nativeReadFailurePublication, nativeReadDirectoryPublication, nativeUsagePublication, nativeTerminalPublication, nativeTerminalLostAckPublication, nativeCompletionPublication, nativePermissionProposalPublication, nativePermissionResponsePublication, nativePermissionResponseLostAckPublication:
 		readTool = true
 	}
 	if publication == nativeShellTruncatedPublication {
@@ -203,7 +209,7 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 	if readTool || shellTool || todoTool || builtinTool {
 		expectedCalls = 2
 	}
-	if interactionProposal {
+	if interactionProposal && !interactionResponse {
 		expectedCalls = 1
 	}
 	var readPath atomic.Value
@@ -342,6 +348,8 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 					sentinel = "builtin.txt"
 				case domain.OpenCodeGrep:
 					sentinel = "before builtin fixture"
+				case domain.OpenCodeQuestionTool:
+					sentinel = "First"
 				}
 			}
 			results := 0
@@ -436,7 +444,7 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 	}
 	if readTool {
 		path := filepath.Join(workspace, readSentinel)
-		if publication == nativePermissionProposalPublication {
+		if publication == nativePermissionProposalPublication || publication == nativePermissionResponsePublication || publication == nativePermissionResponseLostAckPublication {
 			path = filepath.Join(workspace, ".env.private-fixture")
 		}
 		if publication == nativeReadDirectoryPublication {
@@ -710,7 +718,36 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 			if err != nil || progress.SettledObserved || progress.TerminalObserved {
 				t.Fatal("unanswered proposal fabricated native completion")
 			}
-			return // Deferred owned cleanup is independent of the retained unanswered request.
+			if !interactionResponse {
+				return
+			} // Proposal-only cleanup does not fabricate native closure.
+			if responseLostAck {
+				publicationClient.dropAt = len(publicationClient.calls) + 1
+			}
+			respondOriginalOpenCodeFixture(t, ctx, f, eventPublisher, rows[0], retained, responseLostAck)
+			if responseLostAck {
+				original := publicationClient.calls[len(publicationClient.calls)-1]
+				if err := executionPublisher.ReplayPending(ctx); err != nil {
+					t.Fatal(err)
+				}
+				if publicationClient.calls[len(publicationClient.calls)-1] != original {
+					t.Fatal("delivery publication replay changed original identity")
+				}
+				if _, err := eventPublisher.PublishTerminal(ctx); err == nil {
+					t.Fatal("delivery outbox replay revived blocked native authority")
+				}
+				if _, err := eventPublisher.Complete(ctx); err == nil {
+					t.Fatal("uncertain response acquired completion authority")
+				}
+				raw, err := security.ReadPrivate(claimsPath, 1<<20)
+				var journal struct {
+					Claims []opencode.SessionClaim `json:"claims"`
+				}
+				if err != nil || json.Unmarshal(raw, &journal) != nil || len(journal.Claims) != 3 {
+					t.Fatal("uncertain response was resent or lost its original claim")
+				}
+				return
+			}
 		}
 		if observation.Part != nil && observation.Part.Kind == opencode.TextPartKind && observation.Part.Text != nil {
 			result = observation.Part.Text.Text
@@ -847,7 +884,7 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 			if workspaceEvents != 0 || readErr != nil || string(content) != "before builtin fixture\n" {
 				t.Fatal("failed native edit changed the file or invented an edit notification")
 			}
-		} else if builtinTool && builtinName != domain.OpenCodeGlob && builtinName != domain.OpenCodeGrep {
+		} else if builtinName == domain.OpenCodeWrite || builtinName == domain.OpenCodeEdit || builtinName == domain.OpenCodeApplyPatch {
 			if workspaceEvents < 2 {
 				t.Fatal("native file notifications were omitted")
 			}
@@ -964,6 +1001,9 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 			}
 		}
 	}
+	if interactionResponse {
+		verifyOriginalOpenCodeResponse(t, ctx, f, claimsPath)
+	}
 	if usagePublisher != nil || eventPublisher != nil {
 		rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.UsageKind, SessionID: f.input.SessionID, Limit: 10})
 		expected := 4
@@ -1021,7 +1061,7 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 			}
 		}
 	}
-	if publication == nativeCompletionPublication || publication == nativeCompletionAuthFailurePublication {
+	if publication == nativeCompletionPublication || publication == nativeCompletionAuthFailurePublication || interactionResponse {
 		completion, err := eventPublisher.Complete(ctx)
 		if err != nil || completion.ValidateForHarness(domain.OpenCode) != nil || completion.Version != 1 || completion.NativeCheckpointDigest != "" || completion.Outcome != terminalOutcome || completion.ExecutionID != f.input.ExecutionID || completion.InputID != f.input.InputID || string(completion.NativeThreadID) != session || string(completion.NativeTurnID) != receipt.MessageID {
 			t.Fatalf("original completion did not join acknowledged terminal and owned cleanup: %v", err)

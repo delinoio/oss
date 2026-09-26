@@ -13,8 +13,9 @@ const MaxApprovalResponseBytes = 256 << 10
 // selects one original decision or a bounded native permission grant, never
 // another request, command, question answer or execution policy.
 type ApprovalResponseInput struct {
-	Decision *CodexApprovalDecision `json:"decision,omitempty"`
-	Grant    *CodexPermissionGrant  `json:"grant,omitempty"`
+	OpenCode *OpenCodePermissionResponse `json:"opencode,omitempty"`
+	Decision *CodexApprovalDecision      `json:"decision,omitempty"`
+	Grant    *CodexPermissionGrant       `json:"grant,omitempty"`
 }
 
 func invalidApprovalResponse() error {
@@ -22,7 +23,7 @@ func invalidApprovalResponse() error {
 }
 
 func (r ApprovalResponseInput) Validate(original *ApprovalRequest) error {
-	if original == nil || original.Validate() != nil {
+	if r.OpenCode != nil || original == nil || original.Validate() != nil {
 		return invalidApprovalResponse()
 	}
 	a := original.Codex
@@ -115,16 +116,19 @@ func (u ExecutionApprovalResponseUpdate) Validate() error {
 type ApprovalAcceptanceEvidence string
 
 const (
-	NativePermissionsOutput ApprovalAcceptanceEvidence = "native-permissions-output"
-	NativeApprovedCommand   ApprovalAcceptanceEvidence = "native-approved-command"
-	NativeApprovedPatch     ApprovalAcceptanceEvidence = "native-approved-patch"
+	NativeOpenCodePermissionReply ApprovalAcceptanceEvidence = "native-opencode-permission-reply"
+	NativePermissionsOutput       ApprovalAcceptanceEvidence = "native-permissions-output"
+	NativeApprovedCommand         ApprovalAcceptanceEvidence = "native-approved-command"
+	NativeApprovedPatch           ApprovalAcceptanceEvidence = "native-approved-patch"
 )
 
 type ApprovalAcceptanceObservation struct {
+	OpenCode *OpenCodeReplyEvidence     `json:"opencode,omitempty"`
 	Evidence ApprovalAcceptanceEvidence `json:"evidence"`
 	Sequence uint64                     `json:"sequence"`
 }
 type ExecutionApprovalAcceptanceUpdate struct {
+	OpenCode      *OpenCodeReplyEvidence     `json:"opencode,omitempty"`
 	InteractionID ID                         `json:"interaction_id"`
 	ResponseID    ID                         `json:"response_id"`
 	ClaimID       ID                         `json:"claim_id"`
@@ -138,7 +142,13 @@ func (u ExecutionApprovalAcceptanceUpdate) Validate() error {
 			return err
 		}
 	}
-	if Text(u.NativeItemID, "native approval item", 1024, true) != nil || u.Evidence != NativePermissionsOutput {
+	if Text(u.NativeItemID, "native approval item", 1024, true) != nil {
+		return invalidApprovalResponse()
+	}
+	if u.Evidence == NativeOpenCodePermissionReply && u.OpenCode != nil {
+		return u.OpenCode.Validate(NativeApprovalInteraction)
+	}
+	if u.OpenCode != nil || u.Evidence != NativePermissionsOutput {
 		return Fail(InvalidArgument, "Unknown native approval acceptance evidence.", "Retain exact owned permission-tool output; transmission, closure and tool completion cannot replace it.")
 	}
 	return nil

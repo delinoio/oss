@@ -42,10 +42,7 @@ func respondApproval(ctx context.Context, c client, o options, args []string, st
 	if original.Msg.Resource == nil || original.Msg.Resource.Id != *id || original.Msg.Resource.Kind != pb.EntityKind_ENTITY_KIND_INTERACTION || original.Msg.Resource.SchemaVersion != 1 || domain.Decode(original.Msg.Resource.DocumentJson, &approval) != nil || approval.Type != domain.NativeApprovalInteraction {
 		return nil, domain.Fail(domain.Unsupported, "This interaction is not a supported user approval.", "Use its dedicated native interaction operation; approval responses cannot answer questions.")
 	}
-	if approval.OpenCode != nil {
-		return nil, domain.OpenCodeResponseUnavailable()
-	}
-	if err := value.Validate(approval.Approval); err != nil {
+	if err := value.ValidateInteraction(approval); err != nil {
 		return nil, err
 	}
 	raw, err = json.Marshal(value)

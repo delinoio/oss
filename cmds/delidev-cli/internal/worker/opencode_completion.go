@@ -24,7 +24,7 @@ func (c *OpenCodeEventPublisher) Complete(ctx context.Context) (domain.Execution
 	b.mu.Lock()
 	claims, claimErr := b.readClaims()
 	sequence, sequenceErr := b.publisher.acknowledgedSequence()
-	valid := !c.text.blocked && !c.usage.blocked && b.stage == openCodeAccepted && claimErr == nil && len(claims) == 2 && sequenceErr == nil && sequence == c.terminalSequence
+	valid := !c.text.blocked && !c.usage.blocked && b.stage == openCodeAccepted && claimErr == nil && b.validPublicationClaims(claims) && sequenceErr == nil && sequence == c.terminalSequence
 	b.mu.Unlock()
 	if !valid {
 		return fail(publicationUncertain())
@@ -43,7 +43,7 @@ func (c *OpenCodeEventPublisher) Complete(ctx context.Context) (domain.Execution
 	b.mu.Lock()
 	claims, claimErr = b.readClaims()
 	sequence, sequenceErr = b.publisher.acknowledgedSequence()
-	valid = !c.text.blocked && !c.usage.blocked && b.stage == openCodeAccepted && claimErr == nil && len(claims) == 2 && sequenceErr == nil && sequence == c.terminalSequence
+	valid = !c.text.blocked && !c.usage.blocked && b.stage == openCodeAccepted && claimErr == nil && b.validPublicationClaims(claims) && sequenceErr == nil && sequence == c.terminalSequence
 	b.mu.Unlock()
 	if !valid {
 		return fail(publicationUncertain())

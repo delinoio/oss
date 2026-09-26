@@ -23,7 +23,7 @@ export function Interaction({ resource, refresh }: { resource: Resource; refresh
   const changed = (result?: Resource) => { if (result) setAccepted(result); refresh(); };
   return <article className="interaction"><header><h3>{text(data.type) === InteractionType.Question ? "Agent question" : "Native approval"}</h3><small>{text(data.closure)}</small></header>
     <p>Response: {text(object(data.response ?? data.approval_response).state) || "Not submitted"}</p>
-    {data.opencode != null ? <NativeInteraction data={data} /> : text(data.type) === InteractionType.Question ? <Questions resource={current} accepted={changed} /> : text(data.type) === InteractionType.Approval ? <Approval resource={current} accepted={changed} /> : <p>This native request type is not supported by this client.</p>}
+    {data.opencode != null ? <NativeInteraction data={data} resource={current} accepted={changed} /> : text(data.type) === InteractionType.Question ? <Questions resource={current} accepted={changed} /> : text(data.type) === InteractionType.Approval ? <Approval resource={current} accepted={changed} /> : <p>This native request type is not supported by this client.</p>}
   </article>;
 }
 

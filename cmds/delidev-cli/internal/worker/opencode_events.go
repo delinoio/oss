@@ -27,6 +27,7 @@ type OpenCodeEventPublisher struct {
 	terminalOutcome  domain.ExecutionOutcome
 	completion       *domain.ExecutionCompletion
 	interactions     map[string]domain.ExecutionInteractionUpdate
+	responses        map[string]*openCodeResponseAttempt
 }
 
 func OpenOpenCodeEventPublisher(binding *OpenCodeBindingPublisher, api *opencode.OwnedAPI) (*OpenCodeEventPublisher, error) {
@@ -88,6 +89,10 @@ func (c *OpenCodeEventPublisher) PublishObservation(ctx context.Context, o openc
 			// built-ins; it is not proof of a newly enabled external plugin.
 		case opencode.FileEditedEvent, opencode.FileWatcherUpdatedEvent:
 			if err := c.publishWorkspaceEvent(ctx, o); err != nil {
+				return c.fail(err)
+			}
+		case opencode.PermissionRepliedEvent, opencode.QuestionRepliedEvent:
+			if err := c.publishInteractionReply(ctx, o); err != nil {
 				return c.fail(err)
 			}
 		case opencode.PermissionAskedEvent, opencode.QuestionAskedEvent:
@@ -216,7 +221,7 @@ func (c *OpenCodeEventPublisher) PublishTerminal(ctx context.Context) (domain.Ex
 	b.mu.Lock()
 	valid := !c.text.blocked && !c.usage.blocked && b.stage == openCodeAccepted
 	claims, claimErr := b.readClaims()
-	valid = valid && claimErr == nil && len(claims) == 2 && history.RequestID == b.reference.InputRequestID && history.SessionID == b.thread && history.InputID == b.turn && history.AssistantID == c.final && c.completeHistory(history)
+	valid = valid && claimErr == nil && b.validPublicationClaims(claims) && history.RequestID == b.reference.InputRequestID && history.SessionID == b.thread && history.InputID == b.turn && history.AssistantID == c.final && c.completeHistory(history)
 	b.mu.Unlock()
 	if !valid {
 		return fail(publicationUncertain())
@@ -325,7 +330,7 @@ func (c *OpenCodeEventPublisher) publishTodo(ctx context.Context, o opencode.Obs
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	claims, err := b.readClaims()
-	if err != nil || len(claims) != 2 || b.stage != openCodeAccepted || c.text.blocked || o.Todo == nil || o.Todo.SessionID != b.thread {
+	if err != nil || !b.validPublicationClaims(claims) || b.stage != openCodeAccepted || c.text.blocked || o.Todo == nil || o.Todo.SessionID != b.thread {
 		return publicationUncertain()
 	}
 	update := domain.ExecutionProgressUpdate{ID: domain.NewID(), Progress: domain.NativeProgress{Kind: domain.OpenCodeTodoProgressKind, Todo: &domain.OpenCodeTodoProgress{NativeEventID: o.EventID, Todos: o.Todo.Todos}}}
@@ -348,7 +353,7 @@ func (c *OpenCodeEventPublisher) publishWorkspaceEvent(ctx context.Context, o op
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	claims, err := b.readClaims()
-	if err != nil || len(claims) != 2 || b.stage != openCodeAccepted || c.text.blocked || o.WorkspaceEvent == nil || o.WorkspaceEvent.NativeEventID != o.EventID {
+	if err != nil || !b.validPublicationClaims(claims) || b.stage != openCodeAccepted || c.text.blocked || o.WorkspaceEvent == nil || o.WorkspaceEvent.NativeEventID != o.EventID {
 		return publicationUncertain()
 	}
 	value := *o.WorkspaceEvent

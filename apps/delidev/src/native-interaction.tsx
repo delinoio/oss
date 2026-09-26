@@ -1,3 +1,5 @@
+import type { Resource } from "@delinoio/delidev-api-client";
+import { NativePermissionResponse, NativeQuestionResponse } from "./native-interaction-response";
 import { object } from "./documents";
 
 const encoder = new TextEncoder();
@@ -15,17 +17,24 @@ function questions(value: unknown): value is Question[] {
 function objectJSON(value: unknown): value is string { if (!bounded(value, 256 * 1024)) return false; try { const v: unknown = JSON.parse(value); return v !== null && typeof v === "object" && !Array.isArray(v); } catch { return false; } }
 
 // Questions keep original matrix order and optional flags. This component has
-// no mutation hook: displaying native scopes cannot authorize a response.
-export function NativeInteraction({ data }: { data: Record<string, unknown> }) {
+// separate response forms: displaying native scopes cannot authorize a response.
+function nativeResponse(value: unknown, question: boolean): boolean {
+  if (value == null) return true;
+  const r = object(value), input = object(r.input), native = object(input.opencode);
+  return ["queued", "claimed", "transmitted", "uncertain", "canceled", "accepted"].includes(String(r.state)) && shape(r.input, ["opencode"]) && (question ? shape(input.opencode, ["answers"]) && Array.isArray(native.answers) && native.answers.every((row) => Array.isArray(row) && row.every((v) => bounded(v, 64 * 1024))) : shape(input.opencode, ["decision"]) && native.decision === "once");
+}
+
+export function NativeInteraction({ data, resource, accepted = () => {} }: { data: Record<string, unknown>; resource?: Resource; accepted?: (value?: Resource) => void }) {
   const r = object(data.opencode), id = object(data.native_request_id), permission = object(r.permission);
   const question = data.type === "user-question", approval = data.type === "native-approval";
-  const valid = (question || approval) && r.version === "1.18.32" && shape(data.opencode, ["version", "native_event_id", "native_message_id", "call_id", "permission", "questions"]) && data.questions == null && data.approval == null && data.response == null && data.approval_response == null && native(r.native_event_id, "evt") && native(r.native_message_id, "msg") && native(data.native_item_id, "prt") && native(data.native_thread_id, "ses") && native(data.native_turn_id, "msg") && r.native_message_id !== data.native_turn_id && bounded(r.call_id, 1024) && r.call_id.trim() && id.kind === "text" && id.number == null && native(id.text, question ? "que" : "per") && ["open", "native-closed", "turn-ended"].includes(String(data.closure)) &&
+  const valid = (question || approval) && r.version === "1.18.32" && shape(data.opencode, ["version", "native_event_id", "native_message_id", "call_id", "permission", "questions"]) && data.questions == null && data.approval == null && (question ? data.approval_response == null && nativeResponse(data.response, true) : data.response == null && nativeResponse(data.approval_response, false)) && native(r.native_event_id, "evt") && native(r.native_message_id, "msg") && native(data.native_item_id, "prt") && native(data.native_thread_id, "ses") && native(data.native_turn_id, "msg") && r.native_message_id !== data.native_turn_id && bounded(r.call_id, 1024) && r.call_id.trim() && id.kind === "text" && id.number == null && native(id.text, question ? "que" : "per") && ["open", "native-closed", "turn-ended"].includes(String(data.closure)) &&
     (question ? r.permission == null && questions(r.questions) : r.questions == null && shape(r.permission, ["name", "patterns", "always", "metadata_json"]) && bounded(permission.name, 256) && permission.name.trim() && strings(permission.patterns) && strings(permission.always) && objectJSON(permission.metadata_json));
   if (!valid) return <p>The retained OpenCode request is unavailable or inconsistent.</p>;
   return <section aria-label="Original OpenCode request">
     <p>OpenCode {String(r.version)}</p>
     {question ? <ol>{(r.questions as Question[]).map((q, i) => <li key={i}><h4>{q.header || `Question ${i + 1}`}</h4><pre>{q.text}</pre><p>Multiple choices: {q.multiple === undefined ? "Native default" : q.multiple ? "Allowed" : "Not allowed"} · Custom answers: {q.custom === undefined ? "Native default" : q.custom ? "Allowed" : "Not allowed"}</p><ul>{q.options.map((o, j) => <li key={j}><strong>{o.label}</strong><pre>{o.description}</pre></li>)}</ul></li>)}</ol> : <><p>Requested permission: {String(permission.name)}</p><details><summary>Requested patterns</summary><ol>{(permission.patterns as string[]).map((v, i) => <li key={i}><pre>{v}</pre></li>)}</ol></details><details><summary>Native “always” patterns</summary><ol>{(permission.always as string[]).map((v, i) => <li key={i}><pre>{v}</pre></li>)}</ol></details><details><summary>Original native metadata</summary><pre>{String(permission.metadata_json)}</pre></details></>}
     {question && (r.questions as Question[]).length === 0 ? <p>The original question list is empty.</p> : null}
-    <p>{data.closure === "open" ? "This request is pending. Sending OpenCode responses is not available yet; an ordinary message cannot answer or approve it." : "This retained request is closed."}</p>
+    {resource ? question ? <NativeQuestionResponse key={resource.id} resource={resource} questions={r.questions as Question[]} closed={data.closure !== "open" || data.response != null} accepted={accepted} /> : <NativePermissionResponse key={resource.id} resource={resource} closed={data.closure !== "open" || data.approval_response != null} accepted={accepted} /> : null}
+    <p>{resource ? data.closure === "open" ? "The original request remains pending until its native response is confirmed." : "This retained request is closed." : data.closure === "open" ? "This request is pending. Open its original interaction to respond." : "This retained request is closed."}</p>
   </section>;
 }

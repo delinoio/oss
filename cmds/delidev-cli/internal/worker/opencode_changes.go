@@ -82,7 +82,7 @@ func (c *OpenCodeEventPublisher) publishChanges(ctx context.Context, o opencode.
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	claims, err := b.readClaims()
-	if err != nil || len(claims) != 2 || b.stage != openCodeAccepted || c.text.blocked {
+	if err != nil || !b.validPublicationClaims(claims) || b.stage != openCodeAccepted || c.text.blocked {
 		return publicationUncertain()
 	}
 	changes := domain.OpenCodeChanges{NativeEventID: o.EventID}

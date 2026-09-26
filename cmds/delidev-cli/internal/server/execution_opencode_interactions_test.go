@@ -56,7 +56,7 @@ func TestOpenCodeOriginalProposalsReachInboxOnceWithoutResponseAuthority(t *test
 			}
 			return f.service.acceptApprovalResponse(tx, domain.NewID(), event.Interaction.ID, 1, domain.ApprovalResponseInput{Decision: &domain.CodexApprovalDecision{Kind: domain.CodexApprovalAccept}})
 		})
-		if domain.SafeError(err).Code != domain.Unsupported {
+		if domain.SafeError(err).Code != domain.InvalidArgument {
 			t.Fatal("another harness response acquired native authority", err)
 		}
 		// Even an original failed tool cannot consume the still-open request.
