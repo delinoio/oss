@@ -84,6 +84,11 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .queue-item { padding-block: 12px; }
 
 .session-tools { max-height: 45vh; overflow: auto; flex-shrink: 0; }
+.execution-configuration { max-height: 55vh; overflow: auto; flex-shrink: 0; }
+.execution-configuration dl { display: grid; grid-template-columns: minmax(8rem, 1fr) minmax(0, 2fr); gap: .5rem 1rem; }
+.execution-configuration dt { color: var(--muted); }
+.execution-configuration dd { margin: 0; overflow-wrap: anywhere; }
+.execution-configuration li { margin-block: .5rem; overflow-wrap: anywhere; }
 
 .usage-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 0 16px; margin-block: 24px; }
 .usage-filters .actions { grid-column: 1 / -1; }
