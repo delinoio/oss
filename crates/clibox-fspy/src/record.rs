@@ -91,6 +91,21 @@ impl NativePath {
             }
         }
     }
+
+    fn is_absolute(&self) -> bool {
+        match self {
+            Self::UnixBytes(bytes) => bytes.starts_with(b"/"),
+            Self::WindowsUtf16(units) => {
+                let is_separator = |unit: u16| unit == b'\\' as u16 || unit == b'/' as u16;
+                (units.len() >= 2 && is_separator(units[0]) && is_separator(units[1]))
+                    || (units.len() >= 3
+                        && units[0] <= 127
+                        && (units[0] as u8).is_ascii_alphabetic()
+                        && units[1] == b':' as u16
+                        && is_separator(units[2]))
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -204,7 +219,7 @@ pub enum FailureClass {
 #[serde(deny_unknown_fields)]
 pub struct Summary {
     pub complete: bool,
-    pub child_exit_code: Option<i32>,
+    pub child_exit_code: Option<i64>,
     pub child_signal: Option<i32>,
     pub operation_count: u64,
     pub failure_count: u64,
@@ -212,7 +227,12 @@ pub struct Summary {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", content = "data", rename_all = "snake_case")]
+#[serde(
+    tag = "type",
+    content = "data",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 pub enum RecordLine {
     Header(Header),
     Start(Start),
@@ -346,6 +366,7 @@ pub fn parse<R: BufRead>(
                 }
                 if value.execution_id.get_version_num() != 7
                     || !value.root.is_valid(value.platform)
+                    || !value.root.is_absolute()
                     || !matches!(
                         (value.platform, value.backend),
                         (Platform::Linux, Backend::Ptrace)
@@ -434,7 +455,11 @@ pub fn parse<R: BufRead>(
                             .count() as u64
                     || (value.complete && value.failure.is_some())
                     || (!value.complete && value.failure.is_none())
-                    || (value.child_exit_code.is_some() == value.child_signal.is_some())
+                    || (value.child_exit_code.is_some() && value.child_signal.is_some())
+                    || (value.complete
+                        && value.child_exit_code.is_none()
+                        && value.child_signal.is_none())
+                    || value.child_signal.is_some_and(|signal| signal <= 0)
                 {
                     return Err(ParseFailure::InvalidStructure);
                 }
@@ -767,6 +792,44 @@ mod tests {
 
         values[0]["data"]["schema_version"] = 1.into();
         values[2]["data"]["correlation_id"] = 6.into();
+        let encoded = values
+            .iter()
+            .flat_map(|value| {
+                let mut bytes = serde_json::to_vec(value).unwrap();
+                bytes.push(b'\n');
+                bytes
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            parse_fixture(&encoded).unwrap_err(),
+            ParseFailure::InvalidStructure
+        );
+    }
+
+    #[test]
+    fn rejects_extra_fields_and_escaping_project_paths() {
+        let bytes = fixture(b"input", Operation::Read);
+        let mut values = bytes
+            .split_inclusive(|byte| *byte == b'\n')
+            .map(|line| serde_json::from_slice::<serde_json::Value>(line).unwrap())
+            .collect::<Vec<_>>();
+        values[1]["unexpected"] = true.into();
+        let encoded = values
+            .iter()
+            .flat_map(|value| {
+                let mut bytes = serde_json::to_vec(value).unwrap();
+                bytes.push(b'\n');
+                bytes
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            parse_fixture(&encoded).unwrap_err(),
+            ParseFailure::InvalidStructure
+        );
+
+        values[1].as_object_mut().unwrap().remove("unexpected");
+        values[1]["data"]["paths"][0]["project_relative"]["units"] =
+            serde_json::json!([46, 46, 47, 115, 101, 99, 114, 101, 116]);
         let encoded = values
             .iter()
             .flat_map(|value| {

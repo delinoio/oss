@@ -146,7 +146,10 @@ pub fn select_existing(
                 Err(_) => {
                     // A dangling link is not an existing regular file. Other
                     // enumeration failures make the denominator unknowable.
-                    if !entry.path_is_symlink() || entry.path().exists() {
+                    let missing_link = entry.path_is_symlink()
+                        && fs::metadata(entry.path())
+                            .is_err_and(|error| error.kind() == io::ErrorKind::NotFound);
+                    if !missing_link {
                         unavailable = true;
                     }
                     false
