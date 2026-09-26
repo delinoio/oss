@@ -1,6 +1,8 @@
 package opencode
 
 import (
+	"bytes"
+
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
 
@@ -20,15 +22,27 @@ func (o *inputObserver) checkpointPermission(value *observedInteraction, decisio
 	} else if decision != PermissionOnce {
 		return empty, false
 	}
-	if value == nil || value.value.Kind != PermissionInteraction || value.value.Tool == nil || value.value.Permission == nil || !value.closed || value.rejected || value.canceled || value.pendingAbsent || value.alwaysAccepted != (decision == PermissionAlways) || value.rejectionReserved || len(value.rejectionSources) != 0 || len(value.alwaysObservations) != 0 {
+	if value == nil || value.value.Kind != PermissionInteraction || value.value.Permission == nil || value.alwaysAccepted != (decision == PermissionAlways) || value.attempt == nil || value.attempt.permission == nil || *value.attempt.permission != decision {
+		return empty, false
+	}
+	claim, valid := o.checkpointDirectClaim(value, ReplyPermissionMutation, []byte(body))
+	if !valid || o.parts[claim.PartID].value.Tool.Name == "question" {
+		return empty, false
+	}
+	return claim, true
+}
+
+func (o *inputObserver) checkpointDirectClaim(value *observedInteraction, kind SessionMutation, body []byte) (SessionClaim, bool) {
+	var empty SessionClaim
+	if value == nil || value.value.Tool == nil || !value.closed || value.rejected || value.canceled || value.pendingAbsent || value.rejectionReserved || len(value.rejectionSources) != 0 || len(value.alwaysObservations) != 0 {
 		return empty, false
 	}
 	a := value.attempt
-	if a == nil || !a.sent || a.permission == nil || *a.permission != decision || a.correction || !a.receipt.HTTPAccepted || !a.receipt.NativeAccepted || a.receipt.FeedbackRequested || string(a.body) != body {
+	if a == nil || !a.sent || a.correction || !a.receipt.HTTPAccepted || !a.receipt.NativeAccepted || a.receipt.FeedbackRequested || !bytes.Equal(a.body, body) {
 		return empty, false
 	}
 	c, r, tool := a.claim, a.receipt, value.value.Tool
-	if c.Validate() != nil || c.Kind != ReplyPermissionMutation || c.RequestID != r.RequestID || c.InputRequestID != r.InputRequestID || c.InputRequestID != o.input.receipt.RequestID || c.InteractionID != r.InteractionID || c.InteractionID != value.value.ID || c.ArrivalID != r.ArrivalID || c.ArrivalID != value.arrival || c.SessionID != value.value.SessionID || c.SessionID != o.input.receipt.SessionID || c.MessageID != tool.MessageID || c.CallID != tool.CallID || c.PartID != o.calls[tool.CallID] || c.BodyDigest != mutationDigest([]byte(body)) {
+	if c.Validate() != nil || c.Kind != kind || c.RequestID != r.RequestID || c.InputRequestID != r.InputRequestID || c.InputRequestID != o.input.receipt.RequestID || c.InteractionID != r.InteractionID || c.InteractionID != value.value.ID || c.ArrivalID != r.ArrivalID || c.ArrivalID != value.arrival || c.SessionID != value.value.SessionID || c.SessionID != o.input.receipt.SessionID || c.MessageID != tool.MessageID || c.CallID != tool.CallID || c.PartID != o.calls[tool.CallID] || c.BodyDigest != mutationDigest(body) {
 		return empty, false
 	}
 	part := o.parts[c.PartID]
@@ -38,12 +52,12 @@ func (o *inputObserver) checkpointPermission(value *observedInteraction, decisio
 	return c, true
 }
 
-func validCheckpointOnce(value nativeCheckpoint) bool {
+func validCheckpointInteractions(value nativeCheckpoint) bool {
 	p := value.Tools
 	if p.Version == 1 {
-		return p.InteractionFree && len(p.Once) == 0 && len(p.Always) == 0 && len(p.Policy) == 0 && p.AppliedAlways == 0
+		return p.InteractionFree && len(p.Once) == 0 && len(p.Always) == 0 && len(p.Policy) == 0 && len(p.Questions) == 0 && p.AppliedAlways == 0
 	}
-	if !validCheckpointPermissionProfile(p) {
+	if !validCheckpointInteractionProfile(p) {
 		return false
 	}
 	requests := map[domain.ID]bool{value.Reference.CreationRequestID: true, value.Reference.OwnerID: true}
@@ -73,20 +87,41 @@ func validCheckpointOnce(value nativeCheckpoint) bool {
 		claims = append(claims, approval.Claim)
 		always[approval.Claim.InteractionID] = approval.Claim
 	}
+	questionStart := len(claims)
+	questionParts := map[string]bool{}
+	for _, reply := range p.Questions {
+		claims = append(claims, reply.Claim)
+	}
 	for index, claim := range claims {
 		body := checkpointOnceBody
-		if index >= len(p.Once) {
+		kind := ReplyPermissionMutation
+		digest := mutationDigest([]byte(body))
+		if index >= questionStart {
+			reply := p.Questions[index-questionStart]
+			if names[claim.PartID] != checkpointQuestionTool || questionParts[claim.PartID] || !nativeID(reply.ReplyEventID, "evt") || reply.ReplyEventID == claim.ArrivalID || seen[reply.ReplyEventID] || index > questionStart && p.Questions[index-questionStart-1].Claim.RequestID >= claim.RequestID {
+				return false
+			}
+			kind, digest = ReplyQuestionMutation, claim.BodyDigest
+			seen[reply.ReplyEventID], questionParts[claim.PartID] = true, true
+		} else if index >= len(p.Once) {
 			if names[claim.PartID] != checkpointReadTool {
 				return false
 			}
-			body = checkpointAlwaysBody
+			digest = mutationDigest([]byte(checkpointAlwaysBody))
+		} else if names[claim.PartID] != checkpointReadTool && names[claim.PartID] != checkpointShellTool {
+			return false
 		}
 		owner, found := owners[claim.PartID]
-		if claim.Validate() != nil || claim.Kind != ReplyPermissionMutation || claim.BodyDigest != mutationDigest([]byte(body)) || !found || owner.request != claim.InputRequestID || owner.message != claim.MessageID || owner.session != claim.SessionID || requests[claim.RequestID] || seen[claim.InteractionID] || seen[claim.ArrivalID] || index > 0 && index < len(p.Once) && p.Once[index-1].RequestID >= claim.RequestID {
+		if claim.Validate() != nil || claim.Kind != kind || claim.BodyDigest != digest || !found || owner.request != claim.InputRequestID || owner.message != claim.MessageID || owner.session != claim.SessionID || requests[claim.RequestID] || seen[claim.InteractionID] || seen[claim.ArrivalID] || index > 0 && index < len(p.Once) && p.Once[index-1].RequestID >= claim.RequestID {
 			return false
 		}
 		requests[claim.RequestID] = true
 		seen[claim.InteractionID], seen[claim.ArrivalID] = true, true
+	}
+	for _, part := range p.Parts {
+		if part.Name == checkpointQuestionTool && !questionParts[part.ID] {
+			return false
+		}
 	}
 	for index, policy := range p.Policy {
 		owner, found := owners[policy.PartID]

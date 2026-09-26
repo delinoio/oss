@@ -40,6 +40,9 @@ func OpenResumedAPI(ctx context.Context, config APIExecutionConfig, home string,
 	}
 	if source.Tools != nil {
 		claims := append([]SessionClaim(nil), source.Tools.Once...)
+		for _, reply := range source.Tools.Questions {
+			claims = append(claims, reply.Claim)
+		}
 		for _, approval := range source.Tools.Always {
 			claims = append(claims, approval.Claim)
 		}
@@ -111,6 +114,9 @@ func (s *sessionAPI) freshCheckpointInput(request domain.ID, message, part strin
 	}
 	if s.predecessor.Tools != nil {
 		claims := append([]SessionClaim(nil), s.predecessor.Tools.Once...)
+		for _, reply := range s.predecessor.Tools.Questions {
+			claims = append(claims, reply.Claim)
+		}
 		for _, approval := range s.predecessor.Tools.Always {
 			claims = append(claims, approval.Claim)
 		}

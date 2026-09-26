@@ -314,3 +314,6 @@ Direct accepted Read `always` decisions now survive eligible General Chat proces
 
 
 Original automatic Read closures can now accompany those direct remembered allowances. The private version-4 tool proof retains each original proposal/closure and its prior same-input direct acceptance context, without another response claim or inferred target acceptance. Subsequent processes and completed-report recovery preserve both original product records unchanged; only the existing direct rule suffix can be materialized. Other automatic permission families remain gated.
+
+
+Completed answered OpenCode Question history also supports this continuation/recovery boundary through original tool-proof version 5. Native result metadata must exactly match the originally claimed and accepted answer matrix, including ordered multiple choices and explicit empty rows/strings. Existing accepted product response records remain unchanged, no answer text enters checkpoint metadata, and subsequent processes cannot reissue an old question or answer. Dismissed, incomplete, clipped or otherwise unsupported Question history remains gated.

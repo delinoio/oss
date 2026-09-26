@@ -38,7 +38,7 @@ func TestManualNativeOpenCodeCompletedExecutionRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, mode := range []domain.SessionMode{domain.ExecuteMode, domain.PlanMode} {
-		for _, scenario := range []string{"first", "resumed", "switched", "failed", "missing-checkpoint", "read", "bash", "read-once", "read-always", "read-always-resumed", "read-cascade", "read-cascade-resumed"} {
+		for _, scenario := range []string{"first", "resumed", "switched", "failed", "missing-checkpoint", "read", "bash", "read-once", "read-always", "read-always-resumed", "read-cascade", "read-cascade-resumed", "question", "question-resumed"} {
 			t.Run(string(mode)+"/"+scenario, func(t *testing.T) { nativeOpenCodeRecovery(t, binary, mode, scenario) })
 		}
 	}
@@ -48,6 +48,7 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 	if scenario == "bash" && mode == domain.PlanMode {
 		t.Skip("native Plan shell policy needs separate interaction restoration")
 	}
+	question := strings.HasPrefix(scenario, "question")
 	tool := ""
 	toolCalls := int64(0)
 	cascade := strings.HasPrefix(scenario, "read-cascade")
@@ -57,8 +58,11 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 		permissionCount = 2
 	}
 	permission := scenario == "read-once" || remembered
-	if scenario == "read" || scenario == "bash" || permission {
+	if scenario == "read" || scenario == "bash" || permission || question {
 		tool, toolCalls = scenario, 1
+		if question {
+			tool = "question"
+		}
 		if permission {
 			tool = "read"
 		}
@@ -69,7 +73,7 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 	defer cancel()
 	var calls atomic.Int64
 	lostTurn := int64(1)
-	if scenario == "resumed" || scenario == "switched" || scenario == "read-always-resumed" || scenario == "read-cascade-resumed" {
+	if scenario == "resumed" || scenario == "switched" || scenario == "read-always-resumed" || scenario == "read-cascade-resumed" || scenario == "question-resumed" {
 		lostTurn = 2
 	}
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -232,7 +236,7 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 	assignment := resume()
 
 	originalPermissions := map[domain.ID][]byte{}
-	if permission {
+	if permission || question {
 		for {
 			changed := f.service.Store.Changed()
 			rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.InteractionKind, SessionID: domain.ID(f.change.Session.Id), Limit: 3})
@@ -245,8 +249,15 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 				if remembered {
 					decision = domain.OpenCodePermissionAlways
 				}
-				body, _ := json.Marshal(domain.ApprovalResponseInput{OpenCode: &domain.OpenCodePermissionResponse{Decision: decision}})
-				if _, err := client.RespondApproval(ctx, ownerRequest(f.identity, &pb.RespondApprovalRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(rows[0].ID), ExpectedRevision: rows[0].Revision}, ResponseJson: body})); err != nil {
+				meta := &pb.Mutation{RequestId: string(domain.NewID()), Id: string(rows[0].ID), ExpectedRevision: rows[0].Revision}
+				if question {
+					body, _ := json.Marshal(domain.QuestionResponseInput{OpenCode: &domain.OpenCodeQuestionResponse{Answers: openCodeContinuationAnswers()}})
+					_, err = client.RespondQuestion(ctx, ownerRequest(f.identity, &pb.RespondQuestionRequest{Mutation: meta, ResponseJson: body}))
+				} else {
+					body, _ := json.Marshal(domain.ApprovalResponseInput{OpenCode: &domain.OpenCodePermissionResponse{Decision: decision}})
+					_, err = client.RespondApproval(ctx, ownerRequest(f.identity, &pb.RespondApprovalRequest{Mutation: meta, ResponseJson: body}))
+				}
+				if err != nil {
 					t.Fatal(err)
 				}
 				break
@@ -270,7 +281,7 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 	case <-ctx.Done():
 		t.Fatal("original completion never reached report fault")
 	}
-	if permission {
+	if permission || question {
 		rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.InteractionKind, SessionID: domain.ID(f.change.Session.Id), Limit: 3})
 		if err != nil || len(rows) != permissionCount {
 			t.Fatal("original permission missing")
@@ -281,7 +292,12 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 			if err != nil || retained.Closure == domain.InteractionOpen {
 				t.Fatal("original permission closure missing")
 			}
-			if retained.ApprovalResponse != nil {
+			if question {
+				if retained.Response == nil || retained.Response.State != domain.QuestionResponseAccepted || retained.ApprovalResponse != nil {
+					t.Fatal("original question acceptance missing")
+				}
+				direct++
+			} else if retained.ApprovalResponse != nil {
 				if retained.ApprovalResponse.State != domain.ApprovalResponseAccepted {
 					t.Fatal("original permission acceptance missing")
 				}
@@ -385,7 +401,7 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 	if next.State != domain.JobSucceeded || domain.Decode(next.Output, &continued) != nil || continued.NativeThreadID != completion.NativeThreadID || continued.NativeTurnID == completion.NativeTurnID || calls.Load() != lostTurn+1+toolCalls {
 		t.Fatal("explicit Resume failed after recovered completion", next.Problem)
 	}
-	if permission {
+	if permission || question {
 		rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.InteractionKind, SessionID: domain.ID(f.change.Session.Id), Limit: 3})
 		if err != nil || len(rows) != permissionCount {
 			t.Fatal("recovery or replacement changed original accepted permission")

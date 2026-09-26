@@ -182,3 +182,6 @@ Private OpenCode tool-proof version 3 additionally binds confirmed direct Read `
 
 
 Private OpenCode tool-proof version 4 additionally retains original automatic Read policy closures and their independently verified direct source context. This introduces no protobuf or public response/claim shape change. Existing `opencode_closure` documents remain distinct from direct accepted approvals and are not republished or rewritten during replacement or completed-report recovery.
+
+
+Private OpenCode tool-proof version 5 additionally retains independently accepted completed Question response claims and original closure identities. It introduces no protobuf/public question-response/completion change and contains no question or answer text. The original public accepted response remains distinct from later native restoration; historical report versions cannot be upgraded.

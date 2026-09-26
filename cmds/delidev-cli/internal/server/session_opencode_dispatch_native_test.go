@@ -63,6 +63,10 @@ func TestManualNativeOpenCodePublicPolicyPermissionContinuation(t *testing.T) {
 	nativeOpenCodePublicDispatchProfile(t, 3, false, "", "read-cascade", true)
 }
 
+func TestManualNativeOpenCodePublicQuestionContinuation(t *testing.T) {
+	nativeOpenCodePublicDispatchProfile(t, 3, false, "", "question", true)
+}
+
 func TestManualNativeOpenCodePublicInlineToolContinuation(t *testing.T) {
 	for _, tool := range []string{"read", "bash"} {
 		t.Run(tool, func(t *testing.T) { nativeOpenCodePublicDispatchProfile(t, 3, false, "", tool, true) })
@@ -74,6 +78,7 @@ func nativeOpenCodePublicDispatch(t *testing.T, turns int, failedFirst bool, fau
 }
 
 func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bool, fault, tool string, switchModes ...bool) {
+	question := tool == "question"
 	cascade := tool == "read-cascade"
 	permission := tool == "read-once" || tool == "read-always" || cascade
 	always := tool == "read-always" || cascade
@@ -256,7 +261,7 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 				}
 				for {
 					changed := f.service.Store.Changed()
-					if permission && !responded {
+					if (permission || question) && !responded {
 						rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.InteractionKind, SessionID: domain.ID(f.change.Session.Id), Limit: 3})
 						if err != nil || len(rows) > permissionCount {
 							t.Fatal("unexpected original permission inventory", err)
@@ -267,8 +272,14 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 							if always {
 								decision = domain.OpenCodePermissionAlways
 							}
-							body, _ := json.Marshal(domain.ApprovalResponseInput{OpenCode: &domain.OpenCodePermissionResponse{Decision: decision}})
-							_, err := client.RespondApproval(ctx, ownerRequest(f.identity, &pb.RespondApprovalRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(rows[0].ID), ExpectedRevision: rows[0].Revision}, ResponseJson: body}))
+							meta := &pb.Mutation{RequestId: string(domain.NewID()), Id: string(rows[0].ID), ExpectedRevision: rows[0].Revision}
+							if question {
+								body, _ := json.Marshal(domain.QuestionResponseInput{OpenCode: &domain.OpenCodeQuestionResponse{Answers: openCodeContinuationAnswers()}})
+								_, err = client.RespondQuestion(ctx, ownerRequest(f.identity, &pb.RespondQuestionRequest{Mutation: meta, ResponseJson: body}))
+							} else {
+								body, _ := json.Marshal(domain.ApprovalResponseInput{OpenCode: &domain.OpenCodePermissionResponse{Decision: decision}})
+								_, err = client.RespondApproval(ctx, ownerRequest(f.identity, &pb.RespondApprovalRequest{Mutation: meta, ResponseJson: body}))
+							}
 							if err != nil {
 								t.Fatal(err)
 							}
@@ -315,7 +326,7 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 						} else if proof.NativeThreadID != firstThread || proof.NativeTurnID == previous.NativeTurnID || proof.ExecutionID == previous.ExecutionID || proof.NativeCheckpointDigest == previous.NativeCheckpointDigest {
 							t.Fatal("continuation recreated native history or reused execution authority")
 						}
-						if tool != "" {
+						if tool == "read" || tool == "bash" {
 							path := toolPath.Load().(string)
 							content, err := os.ReadFile(path)
 							expected := "original-inline-tool-sentinel\n"
@@ -331,7 +342,7 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 								}
 							}
 						}
-						if permission {
+						if permission || question {
 							rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.InteractionKind, SessionID: domain.ID(f.change.Session.Id), Limit: 3})
 							if err != nil || len(rows) != permissionCount || !responded {
 								t.Fatal("original permission missing or duplicated")
@@ -342,7 +353,12 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 								if err != nil || retained.Closure == domain.InteractionOpen {
 									t.Fatal("original permission closure lost")
 								}
-								if retained.ApprovalResponse != nil {
+								if question {
+									if retained.Response == nil || retained.Response.State != domain.QuestionResponseAccepted || retained.ApprovalResponse != nil {
+										t.Fatal("original question acceptance lost")
+									}
+									direct++
+								} else if retained.ApprovalResponse != nil {
 									if retained.ApprovalResponse.State != domain.ApprovalResponseAccepted {
 										t.Fatal("original direct acceptance lost")
 									}

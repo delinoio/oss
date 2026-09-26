@@ -11,8 +11,9 @@ import (
 type checkpointToolName string
 
 const (
-	checkpointReadTool  checkpointToolName = "read"
-	checkpointShellTool checkpointToolName = "bash"
+	checkpointReadTool     checkpointToolName = "read"
+	checkpointShellTool    checkpointToolName = "bash"
+	checkpointQuestionTool checkpointToolName = "question"
 )
 
 type checkpointToolPart struct {
@@ -27,6 +28,7 @@ type checkpointToolPart struct {
 // independently accepted one-time permissions, which retain no allowance.
 // Version 3 preserves exact observed Read allowances and their applied prefix.
 // Version 4 additionally retains original automatic Read policy closures.
+// Version 5 adds independently answered, completed native Question history.
 type checkpointToolHistory struct {
 	Version         uint32                       `json:"version"`
 	InteractionFree bool                         `json:"interaction_free"`
@@ -35,6 +37,7 @@ type checkpointToolHistory struct {
 	Always          []checkpointAlwaysPermission `json:"always_permissions,omitempty"`
 	AppliedAlways   uint32                       `json:"applied_always,omitempty"`
 	Policy          []checkpointPolicyPermission `json:"policy_permissions,omitempty"`
+	Questions       []checkpointQuestionReply    `json:"question_replies,omitempty"`
 }
 
 func validCheckpointTools(value nativeCheckpoint) bool {
@@ -42,7 +45,7 @@ func validCheckpointTools(value nativeCheckpoint) bool {
 	if proof == nil {
 		return true
 	}
-	if len(proof.Parts) == 0 || len(proof.Parts) > maxObservedParts || !validCheckpointOnce(value) {
+	if len(proof.Parts) == 0 || len(proof.Parts) > maxObservedParts || !validCheckpointInteractions(value) {
 		return false
 	}
 	index := 0
@@ -56,7 +59,7 @@ func validCheckpointTools(value nativeCheckpoint) bool {
 					return false
 				}
 				tool := proof.Parts[index]
-				if tool.ID != part.ID || tool.Digest != part.Digest || (tool.Name != checkpointReadTool && tool.Name != checkpointShellTool) {
+				if tool.ID != part.ID || tool.Digest != part.Digest || (tool.Name != checkpointReadTool && tool.Name != checkpointShellTool && (tool.Name != checkpointQuestionTool || proof.Version != 5)) {
 					return false
 				}
 				index++
@@ -81,6 +84,7 @@ func (s *sessionAPI) checkpointToolHistory(value nativeCheckpoint) *checkpointTo
 		if s.predecessor.Tools != nil {
 			proof.Parts = append(proof.Parts, s.predecessor.Tools.Parts...)
 			proof.Once = append(proof.Once, s.predecessor.Tools.Once...)
+			proof.Questions = append(proof.Questions, s.predecessor.Tools.Questions...)
 			for _, original := range s.predecessor.Tools.Always {
 				original.Rules = slices.Clone(original.Rules)
 				proof.Always = append(proof.Always, original)
@@ -93,6 +97,14 @@ func (s *sessionAPI) checkpointToolHistory(value nativeCheckpoint) *checkpointTo
 	}
 	always := map[string]checkpointAlwaysPermission{}
 	for id, interaction := range o.interactions {
+		if interaction != nil && interaction.value.Kind == QuestionInteraction {
+			reply, valid := o.checkpointQuestion(interaction)
+			if !valid {
+				return nil
+			}
+			proof.Questions = append(proof.Questions, reply)
+			continue
+		}
 		if interaction != nil && interaction.alwaysAccepted {
 			approval, valid := o.checkpointAlways(interaction)
 			if !valid {
@@ -144,6 +156,12 @@ func (s *sessionAPI) checkpointToolHistory(value nativeCheckpoint) *checkpointTo
 		proof.Version, proof.InteractionFree = 4, false
 		slices.SortFunc(proof.Policy, func(a, b checkpointPolicyPermission) int { return strings.Compare(a.InteractionID, b.InteractionID) })
 	}
+	if len(proof.Questions) != 0 {
+		proof.Version, proof.InteractionFree = 5, false
+		slices.SortFunc(proof.Questions, func(a, b checkpointQuestionReply) int {
+			return strings.Compare(string(a.Claim.RequestID), string(b.Claim.RequestID))
+		})
+	}
 	for _, message := range value.History.Messages {
 		for _, part := range message.Parts {
 			if part.Kind != ToolPartKind {
@@ -194,6 +212,9 @@ func checkpointInlineTool(tool *NativeToolPart) bool {
 		}
 		var exit *int64
 		return domain.Decode(tool.Metadata, &metadata) == nil && metadata.Output != nil && len(metadata.Exit) != 0 && json.Unmarshal(metadata.Exit, &exit) == nil && exit != nil && *exit >= -9007199254740991 && *exit <= 9007199254740991 && metadata.Truncated != nil && !*metadata.Truncated && (metadata.Interrupted == nil || !*metadata.Interrupted)
+	case checkpointQuestionTool:
+		_, valid := checkpointQuestionAnswers(tool.Metadata)
+		return valid
 	default:
 		return false
 	}

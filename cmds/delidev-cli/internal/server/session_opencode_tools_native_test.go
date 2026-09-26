@@ -44,6 +44,13 @@ func prepareOpenCodeContinuationTool(t *testing.T, f *firstDispatchFixture, tool
 
 func openCodeContinuationToolArguments(tool, path string) string {
 	args := map[string]any{"filePath": path}
+	if tool == "question" {
+		args = map[string]any{"questions": []any{
+			map[string]any{"question": "original-inline-tool-sentinel", "header": "Order", "multiple": true, "custom": false, "options": []any{map[string]any{"label": "First", "description": "First option"}, map[string]any{"label": "Second", "description": "Second option"}}},
+			map[string]any{"question": "Original unanswered row", "header": "Optional", "custom": true, "options": []any{map[string]any{"label": "First", "description": "First option"}}},
+			map[string]any{"question": "Original empty answer", "header": "Empty", "custom": true, "options": []any{map[string]any{"label": "First", "description": "First option"}}},
+		}}
+	}
 	if tool == "bash" {
 		// The path is a generated fixture path, but quote it as shell data.
 		quoted := "'" + strings.ReplaceAll(path, "'", "'\"'\"'") + "'"
@@ -52,6 +59,8 @@ func openCodeContinuationToolArguments(tool, path string) string {
 	raw, _ := json.Marshal(args)
 	return string(raw)
 }
+
+func openCodeContinuationAnswers() [][]string { return [][]string{{"Second", "First"}, {}, {""}} }
 
 func serveOpenCodeContinuationTool(t *testing.T, w http.ResponseWriter, tool, path string, ids ...string) {
 	t.Helper()
