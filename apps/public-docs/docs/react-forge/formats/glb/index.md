@@ -1,6 +1,6 @@
-# GLB static scenes — Unreleased
+# GLB static scenes
 
-GLB authoring is an unreleased extension and is not included in npm `0.1.1`. These interfaces describe the upcoming static-scene API. Check [release status](/react-forge/releases) before using them with an installed version.
+Available in npm `0.2.0`. Check [release status](/react-forge/releases) for the current package version and validation scope.
 
 `createSession(Format.Glb)` returns a `SceneSession`. Its `@delino/react-forge/glb` components are `Scene`, `Group`, `Mesh`, `PerspectiveCamera`, `OrthographicCamera`, `DirectionalLight`, `PointLight`, and `SpotLight`. A scene has one root; groups carry reusable hierarchies and transforms. Existing GLB import/editing, animation, skinning, and morph targets are outside this version.
 

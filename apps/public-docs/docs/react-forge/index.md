@@ -1,6 +1,6 @@
 # React Forge
 
-Build PowerPoint presentations, Word documents, Excel workbooks, and independently generated tagged PDFs with React components. React Forge keeps your work in an in-memory session until you export it. Install the public `@delino/react-forge` npm package; its command is `react-forge`.
+Build PowerPoint presentations, Word documents, Excel workbooks, tagged PDFs, static 3D scenes, WAV sound effects, and pixel sprites with React components. React Forge keeps your work in an in-memory session until you export it. Install the public `@delino/react-forge` npm package; its command is `react-forge`.
 
 ## Start with a presentation
 
@@ -10,23 +10,22 @@ Build PowerPoint presentations, Word documents, Excel workbooks, and independent
 
 ## Where it runs
 
-Local document work runs on Node.js 24 on macOS, Windows, and glibc Linux, on x64 and arm64. React Forge can also create and edit Figma Design files through explicit remote publication. Figma publication needs an existing official Figma MCP connection; live authentication currently uses macOS Keychain and has been validated on macOS arm64.
+Local formats run on Node.js 24 on macOS, Windows, and glibc Linux, on x64 and arm64. React Forge can also create and edit Figma Design files through explicit remote publication. Figma publication needs an existing official Figma MCP connection; live authentication currently uses macOS Keychain and has been validated on macOS arm64.
 
 Exports are explicit. Sessions exist in memory until disposed; starting a new process does not restore them. There is no hosted React Forge service. Local document work does not fetch arbitrary asset URLs or require Office, LibreOffice, Python, or a conversion service at runtime.
 
 ## Choose a workflow
 
 - **Create a local document:** Choose [PPTX](/react-forge/formats/pptx/), [DOCX](/react-forge/formats/docx/), [XLSX](/react-forge/formats/xlsx/), or [PDF](/react-forge/formats/pdf/). Each format has its own components and model.
+- **Create other local formats:** Use [GLB](/react-forge/formats/glb/) or [FBX](/react-forge/formats/fbx/) for static scenes, [SFX](/react-forge/formats/sfx/) for procedural WAV audio, or [Sprite](/react-forge/formats/sprite/) for pixel art and frame animation. All four are available in npm `0.2.0`.
 - **Keep working in one process:** Use [sessions](/react-forge/sessions) for React updates, inspection, assets, fonts, measurement, and explicit exports.
 - **Edit an Office file:** [Mount a supported region](/react-forge/office-editing) of an imported PPTX, DOCX, or XLSX while preserving unrelated content.
 - **Work in Figma:** [Create or edit Figma Design files](/react-forge/formats/figma/) with explicit publication and a receipt that records remote outcomes.
 - **Choose an entry point:** Run one-shot tasks with the [CLI](/react-forge/cli), or retain sessions through the [local stdio MCP server](/react-forge/mcp).
-- **Preview upcoming formats:** Read about [GLB](/react-forge/formats/glb/), [FBX](/react-forge/formats/fbx/), [procedural game SFX](/react-forge/formats/sfx/) and [pixel sprites](/react-forge/formats/sprite/). All four are unreleased and absent from npm `0.1.1`.
-
 Before adopting a workflow, check its [limits and troubleshooting](/react-forge/limits-and-troubleshooting) and [release and validation status](/react-forge/releases).
 
 React Forge is Apache-2.0 licensed. Report problems through [Delino OSS issues](https://github.com/delinoio/oss/issues).
 
-## Unreleased static 3D extension
+## Static 3D scene exports
 
-[GLB](/react-forge/formats/glb/) and [FBX](/react-forge/formats/fbx/) creation are documented as an unreleased extension, absent from npm 0.1.1. They use SceneSession with registered geometry/textures, explicit file export, and revision-bound world-space bounds. Existing-file editing, animation and rigging are excluded. The FBX material profile targets Blender 4.5; local verification does not establish results on other hosts or FBX applications.
+[GLB](/react-forge/formats/glb/) and [FBX](/react-forge/formats/fbx/) creation are available in npm `0.2.0`. They use SceneSession with registered geometry/textures, explicit file export, and revision-bound world-space bounds. Existing-file editing, animation and rigging are excluded. The FBX material profile targets Blender 4.5; local verification does not establish results on other hosts or FBX applications.

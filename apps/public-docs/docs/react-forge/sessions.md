@@ -42,6 +42,6 @@ Pass an `AbortSignal` to operations that accept it; there is no automatic operat
 
 For the components and export behavior of a specific format, continue with [PPTX](/react-forge/formats/pptx/), [DOCX](/react-forge/formats/docx/), [XLSX](/react-forge/formats/xlsx/), or [PDF](/react-forge/formats/pdf/). Imported Office files use [mounted editing regions](/react-forge/office-editing) instead of a root render.
 
-## Unreleased static 3D extension
+## Static 3D sessions
 
-[GLB](/react-forge/formats/glb/) and [FBX](/react-forge/formats/fbx/) creation are documented as an unreleased extension, absent from npm 0.1.1. They use SceneSession with registered geometry/textures, explicit file export, and revision-bound world-space bounds. Existing-file editing, animation and rigging are excluded. The FBX material profile targets Blender 4.5; local verification does not establish results on other hosts or FBX applications.
+[GLB](/react-forge/formats/glb/) and [FBX](/react-forge/formats/fbx/) creation are available in npm `0.2.0`. They use SceneSession with registered geometry/textures, explicit file export, and revision-bound world-space bounds. Existing-file editing, animation and rigging are excluded. The FBX material profile targets Blender 4.5; local verification does not establish results on other hosts or FBX applications.

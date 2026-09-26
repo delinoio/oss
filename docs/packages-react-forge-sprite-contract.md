@@ -1,7 +1,7 @@
 # React Forge Sprite Contract
 
 ## Scope
-`packages/react-forge/src/sprite.ts` owns the `/sprite` components; `crates/forge-sprite` owns the independent pixel model and renderer. The existing session, N-API, CLI and MCP interfaces expose `Format.Sprite`. This extension is unreleased and does not change the original Office/PDF or Figma requirements.
+`packages/react-forge/src/sprite.ts` owns the `/sprite` components; `crates/forge-sprite` owns the independent pixel model and renderer. The existing session, N-API, CLI and MCP interfaces expose `Format.Sprite`. Sprite was included in npm `0.2.0` and does not change the original Office/PDF or Figma requirements.
 
 ## Runtime and Language
 Use the existing Node.js 24, React 19.2.8 and six-host Rust native matrix. JavaScript runs React; Rust performs bounded rasterization without a browser, GPU, system fonts or external converters.
@@ -34,7 +34,7 @@ Run root `cargo test`, targeted native renderer and Forge regression tests, pack
 Reuse the pinned `image` crate for PNG/JPEG decoding, `png` for PNG framing/checksums and `flate2` for bounded zlib encoding, `forge-package` for bounded deterministic ZIP output and `forge-tree-doc` cancellation/validation. `react-forge-node` remains the adapter. The PNG/JSON export pattern follows [Aseprite's CLI documentation](https://www.aseprite.org/docs/cli/); Aseprite is not a runtime dependency.
 
 ## Change Triggers
-Update the project/native/Node/MCP contracts, capabilities, package exports, examples, CI, relevant AGENTS rules and validation evidence together. The public guide may preview this source-backed extension before release only with a prominent unreleased notice, the specific npm version where it is absent, and separate evidence boundaries. Release publication must update that status against the published package before claiming availability.
+Update the project/native/Node/MCP contracts, capabilities, package exports, examples, CI, relevant AGENTS rules and validation evidence together. Public guides state the published version that first includes Sprite and preserve separate evidence boundaries. The public guide does not claim automatic artwork generation or engine importer compatibility.
 
 ## References
 - [Project](project-react-forge.md).

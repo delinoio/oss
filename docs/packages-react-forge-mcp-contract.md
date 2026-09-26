@@ -69,13 +69,13 @@ Keep this contract, Node/Figma contracts, original requirements follow-up, proje
 - [Repository defaults](repository-defaults.md).
 - [MCP server and stdio logging guidance](https://modelcontextprotocol.io/docs/2026-07-28/develop/build-server).
 
-## Static 3D extension
+## Static 3D extension (Published in npm 0.2.0)
 
 The generation-only GLB/FBX extension follows [the scene contract](packages-react-forge-scene-contract.md). `SceneSession` shares local publication and MCP lifecycle, uses independent world-space bounds and native scene engines, and introduces no runtime conversion dependency.
 
-## Sprite Follow-up (Unreleased)
+## Sprite Follow-up (Published in npm 0.2.0)
 The sprite extension reuses `DocumentSession` and all existing tools: `execute` resolves `/sprite` to the canonical package, `inspect` exposes authored nodes, `measure` reports logical frame geometry, and `export` publishes one `.sprite.zip`. No additional tools or asset downloads are introduced. Both inline-source tests and installed-consumer CLI/MCP tests exercise it. See the [sprite contract](packages-react-forge-sprite-contract.md).
 
-## SFX follow-up
+## SFX follow-up (Published in npm 0.2.0)
 
 `Format.Wav` and canonical `@delino/react-forge/sfx` imports use existing execute/inspect/measure/export/close tools. Capabilities expose WAV encoding and synthesis bounds; measure returns timeline x/width in seconds at the pinned revision. The [SFX contract](packages-react-forge-sfx-contract.md) defines generation-only behavior. Installed CLI and SDK MCP consumers exercise the zombie-game gunshot without external samples or audio playback.

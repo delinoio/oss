@@ -1,8 +1,7 @@
 # Game sound effects (WAV)
 
-**Unreleased:** SFX generation is implemented for the next release and is not
-included in npm `0.1.1`. Check [release status](/react-forge/releases) before using
-these imports with an installed version.
+Available in npm `0.2.0`. Check [release status](/react-forge/releases) for the
+current package version and validation scope.
 
 Use `Format.Wav` and components from `@delino/react-forge/sfx` to compose procedural
 game effects. Export a WAV buffer or file for your game engine. Generation is
@@ -10,7 +9,7 @@ offline and does not need recordings, audio devices, fonts or a conversion tool.
 
 ## A zombie-game gunshot
 
-Save this as `gunshot.tsx` with a version that supports SFX:
+Save this as `gunshot.tsx`:
 
 ```tsx
 import React from "react";
@@ -99,8 +98,8 @@ overwrite. Library callers should dispose sessions in `finally`.
 
 SFX supports generation only. Audio import, recorded samples, MP3/OGG, MIDI,
 microphone capture and live playback are not supported. WAV sessions reject
-image and font registration. Six-host document validation does not by itself
-establish SFX validation on those hosts; see [validation scope](/react-forge/releases).
+image and font registration. The `0.2.0` release workflow exercised installed
+consumers on all six supported native hosts. No game-engine listening evaluation
+is claimed; see [validation scope](/react-forge/releases).
 
-For animated pixel artwork instead of audio, see the separately unreleased
-[Sprite preview](/react-forge/formats/sprite/).
+For animated pixel artwork instead of audio, see [Sprite](/react-forge/formats/sprite/).

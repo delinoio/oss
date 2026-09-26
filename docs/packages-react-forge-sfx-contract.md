@@ -9,8 +9,9 @@ lowering, sessions, CLI/MCP integration and the zombie-game gunshot example.
 synthesis and PCM encoding. `crates/react-forge-node` runs it on the existing
 native worker boundary. Existing Office/PDF and Figma contracts remain intact.
 
-This source feature is unreleased; npm `0.1.1` does not contain SFX. Do not claim
-publication or six-host SFX acceptance from the historical document release.
+SFX was not part of npm `0.1.1`; it was included in the published npm `0.2.0`
+release. Do not claim game-engine listening evaluation from package availability
+or six-host installed-consumer checks.
 
 ## Runtime and users
 

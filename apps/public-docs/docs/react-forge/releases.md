@@ -1,15 +1,15 @@
 # Releases and validation
 
-`@delino/react-forge` is public on npm. Version `0.1.1` is its first functional release; `0.0.1` only reserved package names, and `0.1.0` was not published. Check the [npm package](https://www.npmjs.com/package/@delino/react-forge) for the current dist-tag before installing or pinning a version. The main package uses matching native optional packages for macOS, Windows, and glibc Linux on x64 and arm64. Keep optional dependencies enabled and versions matched; there is no runtime binary download or compile step.
+`@delino/react-forge` is public on npm. Version `0.1.1` was its first functional release; `0.0.1` only reserved package names, and `0.1.0` was not published. Version `0.2.0` added GLB, FBX, SFX, and Sprite, so every format documented here is now available from the package. Check the [npm package](https://www.npmjs.com/package/@delino/react-forge) for the current dist-tag before installing or pinning a version. The main package uses matching native optional packages for macOS, Windows, and glibc Linux on x64 and arm64. Keep optional dependencies enabled and versions matched; there is no runtime binary download or compile step.
 
 ## Choose by availability
 
 | Workflow | Availability |
 | --- | --- |
-| Local PPTX, DOCX, XLSX, PDF, CLI, and MCP | Published in `0.1.1` for the six supported native hosts. |
-| Figma creation and editing | Published in `0.1.1`; live authentication has the narrower macOS arm64 validation described below. |
-| [GLB](/react-forge/formats/glb/) and [FBX](/react-forge/formats/fbx/) | Unreleased source previews, absent from npm `0.1.1`. |
-| [Game SFX](/react-forge/formats/sfx/) and [pixel sprites](/react-forge/formats/sprite/) | Unreleased source previews, absent from npm `0.1.1`. |
+| Local PPTX, DOCX, XLSX, PDF, CLI, and MCP | Available since `0.1.1` for the six supported native hosts. |
+| Figma creation and editing | Available since `0.1.1`; live authentication has the narrower macOS arm64 validation described below. |
+| [GLB](/react-forge/formats/glb/) and [FBX](/react-forge/formats/fbx/) | Available since `0.2.0` for the six supported native hosts. |
+| [Game SFX](/react-forge/formats/sfx/) and [pixel sprites](/react-forge/formats/sprite/) | Available since `0.2.0` for the six supported native hosts. |
 
 ```sh
 npm install @delino/react-forge
@@ -28,14 +28,14 @@ Pin a verified npm version in your project and install its matching optional nat
 
 See [Installation](/react-forge/installation) for supported hosts and [limits and troubleshooting](/react-forge/limits-and-troubleshooting) for recoverable errors. Report reproducible problems through [Delino OSS issues](https://github.com/delinoio/oss/issues).
 
-## Unreleased static 3D extension
+## Static 3D formats
 
-[GLB](/react-forge/formats/glb/) and [FBX](/react-forge/formats/fbx/) creation are documented as an unreleased extension, absent from npm 0.1.1. They use SceneSession with registered geometry/textures, explicit file export, and revision-bound world-space bounds. Existing-file editing, animation and rigging are excluded. The FBX material profile targets Blender 4.5; local verification does not establish results on other hosts or FBX applications.
+[GLB](/react-forge/formats/glb/) and [FBX](/react-forge/formats/fbx/) creation are available starting in npm `0.2.0`. They use SceneSession with registered geometry/textures, explicit file export, and revision-bound world-space bounds. Existing-file editing, animation and rigging are excluded. The FBX material profile targets Blender 4.5; local visual checks do not establish identical results in other FBX applications.
 
-## Unreleased SFX extension
+## Game SFX
 
-Procedural game SFX authoring and PCM WAV export are implemented for the next release, but are absent from npm `0.1.1`. The [SFX guide](/react-forge/formats/sfx/) describes the planned public API and a zombie-game gunshot example. SFX has separate synthesis and CLI/MCP checks; the earlier six-host document release is not SFX acceptance evidence. No game-engine listening evaluation is claimed.
+Procedural game SFX authoring and PCM WAV export are available starting in npm `0.2.0`. The [SFX guide](/react-forge/formats/sfx/) describes the public API and a zombie-game gunshot example. The release workflow exercises installed consumers on all six supported native hosts. No game-engine listening evaluation is claimed.
 
-## Unreleased Sprite extension
+## Pixel sprites
 
-Pixel sprite authoring and `.sprite.zip` export are implemented in source but absent from npm `0.1.1`. The [Sprite guide](/react-forge/formats/sprite/) previews the API, archive contents, and resource limits. The earlier six-host document release is not Sprite acceptance evidence, and no game-engine importer compatibility is claimed. Check the current npm dist-tag and package capabilities before using the preview's imports.
+Pixel sprite authoring and `.sprite.zip` export are available starting in npm `0.2.0`. The [Sprite guide](/react-forge/formats/sprite/) describes the API, archive contents, and resource limits. The release workflow exercises installed consumers on all six supported native hosts. Game-engine importer compatibility is not claimed. Check the current npm dist-tag and package capabilities before using these imports.
