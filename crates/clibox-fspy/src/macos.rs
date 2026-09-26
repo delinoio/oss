@@ -6,15 +6,27 @@
 
 use std::{
     collections::HashMap,
+    ffi::OsString,
+    fs,
     io::{self, Read},
-    os::unix::net::{UnixListener, UnixStream},
-    path::{Path, PathBuf},
+    os::unix::{
+        ffi::{OsStrExt, OsStringExt},
+        net::{UnixListener, UnixStream},
+        process::ExitStatusExt,
+    },
+    path::{Component, Path, PathBuf},
+    process::ExitStatus,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
     },
     thread,
     time::Duration,
+};
+
+use crate::record::{
+    self, AccessPath, Backend, CompleteRecord, Completion, CoverageBoundary, FileIdentity, Header,
+    NativePath, Operation, OperationPair, PathClass, Platform, Start, Summary, SCHEMA_VERSION,
 };
 
 const HEADER_BYTES: usize = 50;
@@ -29,6 +41,7 @@ pub enum FrameKind {
 
 #[derive(Debug, Clone)]
 pub struct Frame {
+    pub sequence: u64,
     pub kind: FrameKind,
     pub operation: u8,
     pub pid: u32,
@@ -39,6 +52,7 @@ pub struct Frame {
     pub result: i64,
     pub error: i32,
     pub path: Vec<u8>,
+    pub access_path: Option<AccessPath>,
 }
 
 fn invalid(reason: &'static str) -> io::Error {
@@ -86,6 +100,7 @@ pub fn read_frame(reader: &mut impl Read) -> io::Result<Option<Frame>> {
         return Err(invalid("path_nul"));
     }
     Ok(Some(Frame {
+        sequence: 0,
         kind,
         operation,
         pid,
@@ -96,6 +111,7 @@ pub fn read_frame(reader: &mut impl Read) -> io::Result<Option<Frame>> {
         result,
         error,
         path,
+        access_path: None,
     }))
 }
 
@@ -118,7 +134,7 @@ impl FrameLedger {
         }
     }
 
-    pub fn push(&mut self, frame: Frame) -> io::Result<()> {
+    pub fn push(&mut self, mut frame: Frame) -> io::Result<()> {
         self.event_count = self
             .event_count
             .checked_add(1)
@@ -130,6 +146,7 @@ impl FrameLedger {
         if self.event_count > self.max_events || self.received_bytes > self.max_bytes {
             return Err(invalid("frame_limit"));
         }
+        frame.sequence = u64::try_from(self.event_count).map_err(|_| invalid("event_limit"))?;
         let key = (frame.pid, frame.tid, frame.id);
         match frame.kind {
             FrameKind::Start => {
@@ -186,6 +203,7 @@ fn receive_connection(
     mut stream: UnixStream,
     ledger: &Mutex<FrameLedger>,
     stopping: &AtomicBool,
+    root: Option<&Path>,
 ) -> io::Result<()> {
     use std::io::Write;
 
@@ -196,10 +214,15 @@ fn receive_connection(
             stream: &mut stream,
             stopping,
         };
-        let Some(frame) = read_frame(&mut reader)? else {
+        let Some(mut frame) = read_frame(&mut reader)? else {
             return Ok(());
         };
         let start = frame.kind == FrameKind::Start;
+        if start && !frame.path.is_empty() {
+            if let Some(root) = root {
+                frame.access_path = Some(classify_path(root, &frame.path)?);
+            }
+        }
         ledger
             .lock()
             .map_err(|_| invalid("collector_lock"))?
@@ -224,6 +247,18 @@ type FramePairs = Vec<(Frame, Frame)>;
 
 impl OperationReceiver {
     pub fn bind(max_events: usize, max_bytes: u64) -> io::Result<Self> {
+        Self::bind_inner(None, max_events, max_bytes)
+    }
+
+    pub fn bind_for_root(root: &Path, max_events: usize, max_bytes: u64) -> io::Result<Self> {
+        let root = fs::canonicalize(root)?;
+        if !root.is_dir() {
+            return Err(invalid("root_not_directory"));
+        }
+        Self::bind_inner(Some(root), max_events, max_bytes)
+    }
+
+    fn bind_inner(root: Option<PathBuf>, max_events: usize, max_bytes: u64) -> io::Result<Self> {
         if max_events == 0 || max_bytes == 0 {
             return Err(invalid("receiver_limit"));
         }
@@ -254,8 +289,10 @@ impl OperationReceiver {
                         let ledger = Arc::clone(&ledger);
                         let stop = Arc::clone(&stop);
                         let failure = Arc::clone(&failure);
+                        let root = root.clone();
                         connections.push(thread::spawn(move || {
-                            let result = receive_connection(stream, &ledger, &stop);
+                            let result =
+                                receive_connection(stream, &ledger, &stop, root.as_deref());
                             if result.is_err() {
                                 failure.store(true, Ordering::Release);
                             }
@@ -329,6 +366,191 @@ impl Drop for OperationReceiver {
     }
 }
 
+fn normalize(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            Component::CurDir => {}
+            Component::RootDir | Component::Normal(_) | Component::Prefix(_) => {
+                normalized.push(component.as_os_str());
+            }
+        }
+    }
+    normalized
+}
+
+fn resolve_even_if_absent(path: &Path) -> io::Result<PathBuf> {
+    let mut cursor = path;
+    let mut tail = Vec::<OsString>::new();
+    loop {
+        match fs::canonicalize(cursor) {
+            Ok(mut resolved) => {
+                for component in tail.iter().rev() {
+                    resolved.push(component);
+                }
+                return Ok(normalize(&resolved));
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                let component = cursor
+                    .components()
+                    .next_back()
+                    .ok_or_else(|| invalid("missing_path_ancestor"))?;
+                tail.push(component.as_os_str().to_os_string());
+                cursor = cursor
+                    .parent()
+                    .ok_or_else(|| invalid("missing_path_parent"))?;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+}
+
+fn classify_path(root: &Path, bytes: &[u8]) -> io::Result<AccessPath> {
+    let logical = PathBuf::from(OsString::from_vec(bytes.to_vec()));
+    if !logical.is_absolute() {
+        return Err(invalid("non_absolute_path"));
+    }
+    let resolved = resolve_even_if_absent(&logical)?;
+    let relative = resolved.strip_prefix(root).ok();
+    let identity = file_id::get_file_id(&logical).ok().map(FileIdentity::from);
+    Ok(AccessPath {
+        class: if relative.is_some() {
+            PathClass::Project
+        } else {
+            PathClass::External
+        },
+        logical: NativePath::UnixBytes(bytes.to_vec()),
+        resolved: Some(NativePath::UnixBytes(
+            resolved.as_os_str().as_bytes().to_vec(),
+        )),
+        project_relative: relative.map(|path| {
+            let bytes = path.as_os_str().as_bytes();
+            NativePath::UnixBytes(if bytes.is_empty() {
+                b".".to_vec()
+            } else {
+                bytes.to_vec()
+            })
+        }),
+        identity,
+    })
+}
+
+fn operation(kind: u8) -> Option<Operation> {
+    Some(match kind {
+        1 => Operation::Open,
+        2 => Operation::Close,
+        3 => Operation::Read,
+        4 => Operation::Write,
+        5 => Operation::PositionalRead,
+        6 => Operation::PositionalWrite,
+        7 => Operation::Metadata,
+        8 => Operation::Directory,
+        9 => Operation::Mutation,
+        _ => return None,
+    })
+}
+
+/// Build a candidate record from paired side-channel events. The caller must
+/// independently prove complete injection, coverage, and process cleanup
+/// before publishing it as a complete execution.
+pub fn assemble_candidate_record(
+    root: &Path,
+    pairs: FramePairs,
+    status: ExitStatus,
+    max_events: usize,
+    max_bytes: u64,
+) -> io::Result<CompleteRecord> {
+    let root = fs::canonicalize(root)?;
+    if !root.is_dir() {
+        return Err(invalid("root_not_directory"));
+    }
+    let mut operations = Vec::with_capacity(pairs.len());
+    for (start, completion) in pairs {
+        let kind = operation(start.operation).ok_or_else(|| invalid("operation_kind"))?;
+        let path_unavailable = start.path.is_empty();
+        let paths = if path_unavailable {
+            Vec::new()
+        } else {
+            vec![start
+                .access_path
+                .ok_or_else(|| invalid("unclassified_path"))?]
+        };
+        let byte_count = if completion.result >= 0
+            && matches!(
+                kind,
+                Operation::Read
+                    | Operation::Write
+                    | Operation::PositionalRead
+                    | Operation::PositionalWrite
+            ) {
+            Some(u64::try_from(completion.result).map_err(|_| invalid("byte_count"))?)
+        } else {
+            None
+        };
+        operations.push(OperationPair {
+            start: Start {
+                sequence: start.sequence,
+                correlation_id: start.sequence,
+                pid: start.pid,
+                tid: u32::try_from(start.tid).map_err(|_| invalid("thread_id"))?,
+                parent_pid: (start.parent_pid != 0).then_some(start.parent_pid),
+                operation: kind,
+                paths,
+                path_unavailable,
+                descriptor: None,
+                monotonic_ns: start.monotonic_ns,
+                requested_delay_ns: 0,
+            },
+            completion: Completion {
+                sequence: completion.sequence,
+                correlation_id: start.sequence,
+                pid: completion.pid,
+                tid: u32::try_from(completion.tid).map_err(|_| invalid("thread_id"))?,
+                monotonic_ns: completion.monotonic_ns,
+                native_result: completion.result,
+                native_error: (completion.error != 0).then_some(completion.error),
+                byte_count,
+                observed_delay_ns: 0,
+            },
+        });
+    }
+    let failure_count = operations
+        .iter()
+        .filter(|pair| pair.completion.native_error.is_some())
+        .count() as u64;
+    let record = CompleteRecord {
+        header: Header {
+            schema_version: SCHEMA_VERSION,
+            execution_id: uuid::Uuid::now_v7(),
+            platform: Platform::Macos,
+            backend: Backend::Injection,
+            root: NativePath::UnixBytes(root.as_os_str().as_bytes().to_vec()),
+            coverage: CoverageBoundary::SynchronousFileOperationsV1,
+        },
+        summary: Summary {
+            complete: true,
+            child_exit_code: status.code().map(i64::from),
+            child_signal: status.signal(),
+            operation_count: operations.len() as u64,
+            failure_count,
+            failure: None,
+        },
+        operations,
+    };
+    let mut encoded = Vec::new();
+    record::serialize(&record, &mut encoded, max_events, max_bytes)
+        .map_err(|_| invalid("record_limit"))?;
+    record::parse(
+        io::BufReader::new(encoded.as_slice()),
+        max_events,
+        max_bytes,
+    )
+    .map_err(|_| invalid("candidate_record"))
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -342,7 +564,7 @@ mod tests {
 
     use tokio_util::sync::CancellationToken;
 
-    use super::{read_frame, FrameKind, FrameLedger, OperationReceiver};
+    use super::{assemble_candidate_record, read_frame, FrameKind, FrameLedger, OperationReceiver};
 
     fn frame_bytes(kind: u8, path: &[u8]) -> Vec<u8> {
         let mut frame = Vec::new();
@@ -425,7 +647,9 @@ mod tests {
             .unwrap();
         let input = directory.path().join("input.txt");
         fs::write(&input, b"fixture").unwrap();
-        let receiver = OperationReceiver::bind(1_000_000, 256 * 1024 * 1024).unwrap();
+        let receiver =
+            OperationReceiver::bind_for_root(directory.path(), 1_000_000, 256 * 1024 * 1024)
+                .unwrap();
         let mut command = fspy::Command::new(std::env::current_exe().unwrap());
         command
             .args(["--exact", "macos::tests::read_fixture_child"])
@@ -481,6 +705,24 @@ mod tests {
                 && frame.parent_pid == root_pid
                 && frame.operation == 3
                 && frame.path.ends_with(b"input.txt")
+        }));
+        let record = assemble_candidate_record(
+            directory.path(),
+            pairs,
+            status.status,
+            1_000_000,
+            256 * 1024 * 1024,
+        )
+        .unwrap();
+        assert!(record.operations.iter().any(|pair| {
+            pair.start.operation == crate::record::Operation::PositionalRead
+                && pair.completion.byte_count == Some(7)
+        }));
+        assert!(record.operations.iter().any(|pair| {
+            pair.start.pid != root_pid
+                && pair.start.parent_pid == Some(root_pid)
+                && pair.start.operation == crate::record::Operation::Read
+                && pair.completion.byte_count == Some(7)
         }));
     }
 
