@@ -5,7 +5,7 @@
 //! a completion result without changing the vendor channel's public shape.
 
 use std::{
-    cell::RefCell,
+    cell::{Cell, RefCell},
     io::{Read, Write},
     net::{SocketAddr, TcpStream},
     sync::OnceLock,
@@ -76,6 +76,23 @@ impl State {
 
 thread_local! {
     static STATE: RefCell<State> = RefCell::new(State::new());
+    static RESOLVING: Cell<bool> = const { Cell::new(false) };
+}
+
+pub(crate) fn with_resolution<R>(work: impl FnOnce() -> R) -> Option<R> {
+    RESOLVING.with(|resolving| {
+        if resolving.replace(true) {
+            return None;
+        }
+        struct Reset<'a>(&'a Cell<bool>);
+        impl Drop for Reset<'_> {
+            fn drop(&mut self) {
+                self.0.set(false);
+            }
+        }
+        let _reset = Reset(resolving);
+        Some(work())
+    })
 }
 
 fn monotonic_ns() -> u64 {

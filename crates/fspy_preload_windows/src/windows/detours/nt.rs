@@ -8,8 +8,9 @@ use ntapi::{
         FileLinkInformationEx, FileLinkInformationExBypassAccessCheck, FileRenameInformation,
         FileRenameInformationBypassAccessCheck, FileRenameInformationEx,
         FileRenameInformationExBypassAccessCheck, NtQueryDirectoryFile, NtQueryFullAttributesFile,
-        NtQueryInformationByName, NtReadFile, NtSetInformationFile, NtWriteFile,
-        PFILE_BASIC_INFORMATION, PFILE_NETWORK_OPEN_INFORMATION, PIO_APC_ROUTINE, PIO_STATUS_BLOCK,
+        NtQueryInformationByName, NtQueryInformationFile, NtReadFile, NtSetInformationFile,
+        NtWriteFile, PFILE_BASIC_INFORMATION, PFILE_NETWORK_OPEN_INFORMATION, PIO_APC_ROUTINE,
+        PIO_STATUS_BLOCK,
     },
     ntpsapi::{
         NtCreateUserProcess, PPS_ATTRIBUTE_LIST, PPS_CREATE_INFO, PS_ATTRIBUTE,
@@ -42,6 +43,13 @@ unsafe fn begin_path_operation(
     kind: u8,
     path: impl ToAbsolutePath,
 ) -> Option<operation::OperationGuard> {
+    operation::with_resolution(|| unsafe { begin_path_operation_inner(kind, path) }).flatten()
+}
+
+unsafe fn begin_path_operation_inner(
+    kind: u8,
+    path: impl ToAbsolutePath,
+) -> Option<operation::OperationGuard> {
     // SAFETY: the native caller owns the path or handle throughout the
     // intercepted call. A failed resolution remains an observed failed call
     // with an unavailable path instead of inventing a pathname.
@@ -66,12 +74,15 @@ fn complete_path_operation(guard: Option<operation::OperationGuard>, status: NTS
 }
 
 unsafe fn begin_handle_operation(kind: u8, handle: HANDLE) -> Option<operation::OperationGuard> {
-    // SAFETY: GetFileType accepts a native handle and does not take ownership.
-    match unsafe { GetFileType(handle) } {
-        FILE_TYPE_DISK => unsafe { begin_path_operation(kind, handle) },
-        FILE_TYPE_PIPE | FILE_TYPE_CHAR => None,
-        _ => operation::begin(kind, &[]),
-    }
+    operation::with_resolution(|| {
+        // SAFETY: GetFileType accepts a native handle and does not take ownership.
+        match unsafe { GetFileType(handle) } {
+            FILE_TYPE_DISK => unsafe { begin_path_operation_inner(kind, handle) },
+            FILE_TYPE_PIPE | FILE_TYPE_CHAR => None,
+            _ => operation::begin(kind, &[]),
+        }
+    })
+    .flatten()
 }
 
 unsafe fn io_result(status: NTSTATUS, block: PIO_STATUS_BLOCK) -> i64 {
@@ -440,16 +451,20 @@ static DETOUR_NT_QUERY_ATTRIBUTES_FILE: Detour<
                     object_attributes: POBJECT_ATTRIBUTES,
                     file_information: PFILE_BASIC_INFORMATION,
                 ) -> HFILE {
+                    // SAFETY: object attributes remain valid through this call.
+                    let operation = unsafe { begin_path_operation(7, object_attributes) };
                     // SAFETY: intercepting attribute query to record read access
                     unsafe { handle_open(AccessMode::READ, object_attributes) };
                     // SAFETY: calling the original NtQueryAttributesFile with all original
                     // arguments
-                    unsafe {
+                    let status = unsafe {
                         (DETOUR_NT_QUERY_ATTRIBUTES_FILE.real())(
                             object_attributes,
                             file_information,
                         )
-                    }
+                    };
+                    complete_path_operation(operation, status);
+                    status
                 }
                 new_nt_query_attrs
             },
@@ -516,15 +531,19 @@ static DETOUR_NT_FULL_QUERY_ATTRIBUTES_FILE: Detour<
                 object_attributes: POBJECT_ATTRIBUTES,
                 file_information: PFILE_NETWORK_OPEN_INFORMATION,
             ) -> HFILE {
+                // SAFETY: object attributes remain valid through this call.
+                let operation = unsafe { begin_path_operation(7, object_attributes) };
                 // SAFETY: intercepting attribute query to record read access
                 unsafe { handle_open(GENERIC_READ, object_attributes) };
                 // SAFETY: calling the original NtQueryFullAttributesFile
-                unsafe {
+                let status = unsafe {
                     (DETOUR_NT_FULL_QUERY_ATTRIBUTES_FILE.real())(
                         object_attributes,
                         file_information,
                     )
-                }
+                };
+                complete_path_operation(operation, status);
+                status
             }
             new_fn
         })
@@ -583,10 +602,12 @@ static DETOUR_NT_QUERY_INFORMATION_BY_NAME: Detour<
                 length: ULONG,
                 file_information_class: FILE_INFORMATION_CLASS,
             ) -> HFILE {
+                // SAFETY: object attributes remain valid through this call.
+                let operation = unsafe { begin_path_operation(7, object_attributes) };
                 // SAFETY: intercepting information query to record read access
                 unsafe { handle_open(GENERIC_READ, object_attributes) };
                 // SAFETY: calling the original NtQueryInformationByName
-                unsafe {
+                let status = unsafe {
                     (DETOUR_NT_QUERY_INFORMATION_BY_NAME.real())(
                         object_attributes,
                         io_status_block,
@@ -594,7 +615,9 @@ static DETOUR_NT_QUERY_INFORMATION_BY_NAME: Detour<
                         length,
                         file_information_class,
                     )
-                }
+                };
+                complete_path_operation(operation, status);
+                status
             }
             new_fn
         })
@@ -631,10 +654,12 @@ static DETOUR_NT_QUERY_DIRECTORY_FILE: Detour<
                 file_name: PUNICODE_STRING,
                 restart_scan: BOOLEAN,
             ) -> NTSTATUS {
+                // SAFETY: the directory handle remains valid until return.
+                let operation = unsafe { begin_handle_operation(8, file_handle) };
                 // SAFETY: intercepting directory query to record directory read access
                 unsafe { handle_open(AccessMode::READ_DIR, file_handle) };
                 // SAFETY: calling the original NtQueryDirectoryFile
-                unsafe {
+                let status = unsafe {
                     (DETOUR_NT_QUERY_DIRECTORY_FILE.real())(
                         file_handle,
                         event,
@@ -648,7 +673,9 @@ static DETOUR_NT_QUERY_DIRECTORY_FILE: Detour<
                         file_name,
                         restart_scan,
                     )
-                }
+                };
+                complete_path_operation(operation, status);
+                status
             }
             new_fn
         })
@@ -685,10 +712,12 @@ static DETOUR_NT_QUERY_DIRECTORY_FILE_EX: Detour<NtQueryDirectoryFileExFn> =
                 query_flags: ULONG,
                 file_name: PUNICODE_STRING,
             ) -> NTSTATUS {
+                // SAFETY: the directory handle remains valid until return.
+                let operation = unsafe { begin_handle_operation(8, file_handle) };
                 // SAFETY: intercepting directory query to record directory read access
                 unsafe { handle_open(AccessMode::READ_DIR, file_handle) };
                 // SAFETY: calling the original NtQueryDirectoryFileEx
-                unsafe {
+                let status = unsafe {
                     (DETOUR_NT_QUERY_DIRECTORY_FILE_EX.real())(
                         file_handle,
                         event,
@@ -701,7 +730,9 @@ static DETOUR_NT_QUERY_DIRECTORY_FILE_EX: Detour<NtQueryDirectoryFileExFn> =
                         query_flags,
                         file_name,
                     )
-                }
+                };
+                complete_path_operation(operation, status);
+                status
             }
             new_fn
         })
@@ -757,6 +788,44 @@ static DETOUR_NT_SET_INFORMATION_FILE: Detour<
                     // SAFETY: the DLL client was initialized before detours.
                     unsafe { global_client() }.mark_incomplete();
                 }
+                status
+            }
+            new_fn
+        })
+    };
+
+static DETOUR_NT_QUERY_INFORMATION_FILE: Detour<
+    unsafe extern "system" fn(
+        HANDLE,
+        PIO_STATUS_BLOCK,
+        PVOID,
+        ULONG,
+        FILE_INFORMATION_CLASS,
+    ) -> NTSTATUS,
+> =
+    // SAFETY: the detour signature exactly matches NtQueryInformationFile.
+    unsafe {
+        Detour::new(c"NtQueryInformationFile", NtQueryInformationFile, {
+            unsafe extern "system" fn new_fn(
+                file_handle: HANDLE,
+                io_status_block: PIO_STATUS_BLOCK,
+                file_information: PVOID,
+                length: ULONG,
+                file_information_class: FILE_INFORMATION_CLASS,
+            ) -> NTSTATUS {
+                // SAFETY: the handle remains owned by the caller.
+                let operation = unsafe { begin_handle_operation(7, file_handle) };
+                // SAFETY: forwarding the original arguments unchanged.
+                let status = unsafe {
+                    (DETOUR_NT_QUERY_INFORMATION_FILE.real())(
+                        file_handle,
+                        io_status_block,
+                        file_information,
+                        length,
+                        file_information_class,
+                    )
+                };
+                complete_path_operation(operation, status);
                 status
             }
             new_fn
@@ -931,6 +1000,7 @@ pub const DETOURS: &[DetourAny] = &[
     DETOUR_NT_QUERY_DIRECTORY_FILE_EX.as_any(),
     DETOUR_NT_SET_INFORMATION_FILE.as_any(),
     DETOUR_NT_READ_FILE.as_any(),
+    DETOUR_NT_QUERY_INFORMATION_FILE.as_any(),
     DETOUR_NT_WRITE_FILE.as_any(),
     DETOUR_NT_CLOSE.as_any(),
 ];
