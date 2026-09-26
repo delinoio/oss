@@ -42,11 +42,11 @@ importers:
         specifier: 1.72.0
         version: 1.72.0
       '@bufbuild/protoc-gen-es':
-        specifier: 2.14.0
-        version: 2.14.0(@bufbuild/protobuf@2.14.0)
+        specifier: 2.15.0
+        version: 2.15.0(@bufbuild/protobuf@2.15.0)
       '@connectrpc/protoc-gen-connect-query':
         specifier: 2.3.1
-        version: 2.3.1(@bufbuild/protoc-gen-es@2.14.0(@bufbuild/protobuf@2.14.0))
+        version: 2.3.1(@bufbuild/protoc-gen-es@2.15.0(@bufbuild/protobuf@2.15.0))
       clibox-prebuilt:
         specifier: npm:@delino/clibox@0.1.6
         version: '@delino/clibox@0.1.6'
@@ -253,7 +253,7 @@ importers:
         version: link:../../packages/docs-site-switcher
       '@rspress/core':
         specifier: ^2.0.14
-        version: 2.0.14(@types/mdast@4.0.4)(@types/react@19.2.14)(micromark-util-types@2.0.2)(micromark@4.0.2)
+        version: 2.0.14(@rspack/core@2.1.8(@swc/helpers@0.5.23))(@types/mdast@4.0.4)(@types/react@19.2.14)(micromark-util-types@2.0.2)(micromark@4.0.2)
       entities:
         specifier: 6.0.1
         version: 6.0.1
@@ -541,18 +541,24 @@ packages:
   '@bufbuild/protobuf@2.14.0':
     resolution: {integrity: sha512-C3UGsiCwSprE2NKIIFA3hCDlpXTMCAXRZuEVp88L1GY36Y41+rYL5fryE+nOFhp4p4JPQvdV8PQ4DWgHgeTE+w==}
 
-  '@bufbuild/protoc-gen-es@2.14.0':
-    resolution: {integrity: sha512-/Rrui0BJWSRONiKGYzqWq9ivGN3+cYkmc47QWITufr7K6yDb8HfssuJUSQZeptyg/rHbHrfDzCUjzoJ2pwuafg==}
+  '@bufbuild/protobuf@2.15.0':
+    resolution: {integrity: sha512-DAheWUkVr/SJTWCc+lg9dhY0eN4SaWlf4+bG1KzHeXbnqt0AfB/NX0Z+VunGlM1ki1B4zVvye27MpKh/svySUA==}
+
+  '@bufbuild/protoc-gen-es@2.15.0':
+    resolution: {integrity: sha512-FRhNTAZEXW6arWx2JxgtpuazhmewYctXugu5SfXGpXpLLCInDT1005fSKDzEM/70Es2oIn07PM4RvpwvDvR/fg==}
     engines: {node: '>=22'}
     hasBin: true
     peerDependencies:
-      '@bufbuild/protobuf': 2.14.0
+      '@bufbuild/protobuf': 2.15.0
     peerDependenciesMeta:
       '@bufbuild/protobuf':
         optional: true
 
   '@bufbuild/protoplugin@2.14.0':
     resolution: {integrity: sha512-S0TvZhVtTEkZQRj2JsXBCXiib/b0+bLQtJCcn+hj9O/usgbcgxHn4D+ii22Ao3qj0/kKxVYeo7BtAI2dMk+iig==}
+
+  '@bufbuild/protoplugin@2.15.0':
+    resolution: {integrity: sha512-vZhRoqB/jTHATqItRvJQf1zbxdrGRRhiusGty4+lKcfEFODG0PMXky2Ezv4WHHS6oSxq+5qShITuE7K1/82SuQ==}
 
   '@connectrpc/connect-query-core@2.3.1':
     resolution: {integrity: sha512-zFnNzvX+ao9/w1GoDOSRtKcejfAS1bF1XH7HpDPnnzINoXQ/wVz5lhLIdgekhYgkbsw8to6whw4/tUxMKwlaiA==}
@@ -3175,17 +3181,27 @@ snapshots:
 
   '@bufbuild/protobuf@2.14.0': {}
 
-  '@bufbuild/protoc-gen-es@2.14.0(@bufbuild/protobuf@2.14.0)':
+  '@bufbuild/protobuf@2.15.0': {}
+
+  '@bufbuild/protoc-gen-es@2.15.0(@bufbuild/protobuf@2.15.0)':
     dependencies:
-      '@bufbuild/protoplugin': 2.14.0
+      '@bufbuild/protoplugin': 2.15.0
     optionalDependencies:
-      '@bufbuild/protobuf': 2.14.0
+      '@bufbuild/protobuf': 2.15.0
     transitivePeerDependencies:
       - supports-color
 
   '@bufbuild/protoplugin@2.14.0':
     dependencies:
       '@bufbuild/protobuf': 2.14.0
+      '@typescript/vfs': 1.6.4(typescript@5.4.5)
+      typescript: 5.4.5
+    transitivePeerDependencies:
+      - supports-color
+
+  '@bufbuild/protoplugin@2.15.0':
+    dependencies:
+      '@bufbuild/protobuf': 2.15.0
       '@typescript/vfs': 1.6.4(typescript@5.4.5)
       typescript: 5.4.5
     transitivePeerDependencies:
@@ -3228,12 +3244,12 @@ snapshots:
     dependencies:
       '@bufbuild/protobuf': 2.14.0
 
-  '@connectrpc/protoc-gen-connect-query@2.3.1(@bufbuild/protoc-gen-es@2.14.0(@bufbuild/protobuf@2.14.0))':
+  '@connectrpc/protoc-gen-connect-query@2.3.1(@bufbuild/protoc-gen-es@2.15.0(@bufbuild/protobuf@2.15.0))':
     dependencies:
       '@bufbuild/protobuf': 2.14.0
       '@bufbuild/protoplugin': 2.14.0
     optionalDependencies:
-      '@bufbuild/protoc-gen-es': 2.14.0(@bufbuild/protobuf@2.14.0)
+      '@bufbuild/protoc-gen-es': 2.15.0(@bufbuild/protobuf@2.15.0)
     transitivePeerDependencies:
       - supports-color
 
@@ -3617,7 +3633,7 @@ snapshots:
     optionalDependencies:
       '@rspack/core': 2.1.8(@swc/helpers@0.5.23)
 
-  '@rspress/core@2.0.14(@types/mdast@4.0.4)(@types/react@19.2.14)(micromark-util-types@2.0.2)(micromark@4.0.2)':
+  '@rspress/core@2.0.14(@rspack/core@2.1.8(@swc/helpers@0.5.23))(@types/mdast@4.0.4)(@types/react@19.2.14)(micromark-util-types@2.0.2)(micromark@4.0.2)':
     dependencies:
       '@mdx-js/mdx': 3.1.1
       '@mdx-js/react': 3.1.1(@types/react@19.2.14)(react@19.2.8)
