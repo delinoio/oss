@@ -25,11 +25,14 @@ type checkpointToolPart struct {
 // legacy tool checkpoint cannot infer it from absent optional JSON fields.
 // Native v1 remembered permissions are process-local. Version 2 admits only
 // independently accepted one-time permissions, which retain no allowance.
+// Version 3 preserves exact observed Read allowances and their applied prefix.
 type checkpointToolHistory struct {
-	Version         uint32               `json:"version"`
-	InteractionFree bool                 `json:"interaction_free"`
-	Parts           []checkpointToolPart `json:"parts"`
-	Once            []SessionClaim       `json:"once_permissions,omitempty"`
+	Version         uint32                       `json:"version"`
+	InteractionFree bool                         `json:"interaction_free"`
+	Parts           []checkpointToolPart         `json:"parts"`
+	Once            []SessionClaim               `json:"once_permissions,omitempty"`
+	Always          []checkpointAlwaysPermission `json:"always_permissions,omitempty"`
+	AppliedAlways   uint32                       `json:"applied_always,omitempty"`
 }
 
 func validCheckpointTools(value nativeCheckpoint) bool {
@@ -76,9 +79,22 @@ func (s *sessionAPI) checkpointToolHistory(value nativeCheckpoint) *checkpointTo
 		if s.predecessor.Tools != nil {
 			proof.Parts = append(proof.Parts, s.predecessor.Tools.Parts...)
 			proof.Once = append(proof.Once, s.predecessor.Tools.Once...)
+			for _, original := range s.predecessor.Tools.Always {
+				original.Rules = slices.Clone(original.Rules)
+				proof.Always = append(proof.Always, original)
+			}
 		}
 	}
-	for _, interaction := range o.interactions {
+	always := map[string]checkpointAlwaysPermission{}
+	for id, interaction := range o.interactions {
+		if interaction != nil && interaction.alwaysAccepted {
+			approval, valid := o.checkpointAlways(interaction)
+			if !valid {
+				return nil
+			}
+			always[id] = approval
+			continue
+		}
 		claim, valid := o.checkpointOnce(interaction)
 		if !valid {
 			return nil
@@ -88,6 +104,27 @@ func (s *sessionAPI) checkpointToolHistory(value nativeCheckpoint) *checkpointTo
 	if len(proof.Once) != 0 {
 		proof.Version, proof.InteractionFree = 2, false
 		slices.SortFunc(proof.Once, func(a, b SessionClaim) int { return strings.Compare(string(a.RequestID), string(b.RequestID)) })
+	}
+	for _, id := range o.alwaysOrder {
+		approval, exists := always[id]
+		if !exists {
+			return nil
+		}
+		proof.Always = append(proof.Always, approval)
+		delete(always, id)
+	}
+	if len(always) != 0 {
+		return nil
+	}
+	if len(proof.Always) != 0 {
+		applied := uint32(0)
+		if s.predecessor != nil && s.predecessor.Tools != nil {
+			applied = uint32(len(s.predecessor.Tools.Always))
+		}
+		if s.creation == nil || len(s.creation.settings.Permission) != 0 || s.restoredAlways != applied || !slices.Equal(s.sessionPermissions, checkpointAppliedPermissions(proof, applied)) {
+			return nil
+		}
+		proof.Version, proof.InteractionFree, proof.AppliedAlways = 3, false, s.restoredAlways
 	}
 	for _, message := range value.History.Messages {
 		for _, part := range message.Parts {

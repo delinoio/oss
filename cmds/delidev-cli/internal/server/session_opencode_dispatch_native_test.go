@@ -55,8 +55,8 @@ func TestManualNativeOpenCodePublicOncePermissionContinuation(t *testing.T) {
 	nativeOpenCodePublicDispatchProfile(t, 3, false, "", "read-once", true)
 }
 
-func TestManualNativeOpenCodePublicAlwaysPermissionStaysPaused(t *testing.T) {
-	nativeOpenCodePublicDispatchProfile(t, 1, false, "", "read-always")
+func TestManualNativeOpenCodePublicAlwaysPermissionContinuation(t *testing.T) {
+	nativeOpenCodePublicDispatchProfile(t, 3, false, "", "read-always", true)
 }
 
 func TestManualNativeOpenCodePublicInlineToolContinuation(t *testing.T) {
@@ -93,9 +93,13 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 			}
 			var toolPath atomic.Value
 			var originalToolResult string
+			retainedTools := map[string]string{}
 			expectedCalls := turns
 			if tool != "" {
 				expectedCalls++
+			}
+			if always {
+				expectedCalls = turns * 2
 			}
 			modeAt := func(turn int) domain.SessionMode {
 				if len(switchModes) == 1 && switchModes[0] && turn%2 == 1 {
@@ -135,7 +139,21 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 					return
 				}
 				providerTurn := int(calls.Load())
-				if tool != "" {
+				if always {
+					completeTools := providerTurn / 2
+					providerTurn = (providerTurn + 1) / 2
+					results := verifyOpenCodeRepeatedRead(t, raw, toolPath.Load().(string), completeTools)
+					for id, result := range results {
+						if old, found := retainedTools[id]; found && old != result {
+							t.Error("replacement altered original remembered Read result")
+						}
+						retainedTools[id] = result
+					}
+					if calls.Load()%2 == 1 {
+						serveOpenCodeContinuationTool(t, w, tool, toolPath.Load().(string), fmt.Sprintf("%s_%d", continuationToolCall, providerTurn-1))
+						return
+					}
+				} else if tool != "" {
 					if providerTurn == 1 {
 						serveOpenCodeContinuationTool(t, w, tool, toolPath.Load().(string))
 						return
@@ -262,13 +280,14 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 						var proof domain.ExecutionCompletion
 						expectedState, expectedOutcome, expectedDispatch := domain.JobSucceeded, domain.ExecutionSucceeded, domain.DispatchReady
 						expectedVersion := uint32(2)
+						wantCalls := turn + 1 + expectedCalls - turns
 						if always {
-							expectedVersion, expectedDispatch = 1, domain.DispatchPaused
+							wantCalls = (turn + 1) * 2
 						}
 						if failedFirst && turn == 0 {
 							expectedState, expectedOutcome, expectedDispatch = domain.JobFailed, domain.ExecutionFailed, domain.DispatchPaused
 						}
-						if completed.State != expectedState || domain.Decode(completed.Output, &proof) != nil || proof.ValidateForHarness(domain.OpenCode) != nil || proof.Version != expectedVersion || proof.ExecutionID != input.ExecutionID || proof.InputID != input.InputID || !proof.CleanupVerified || calls.Load() != int64(turn+1+expectedCalls-turns) {
+						if completed.State != expectedState || domain.Decode(completed.Output, &proof) != nil || proof.ValidateForHarness(domain.OpenCode) != nil || proof.Version != expectedVersion || proof.ExecutionID != input.ExecutionID || proof.InputID != input.InputID || !proof.CleanupVerified || calls.Load() != int64(wantCalls) {
 							t.Fatalf("public native execution did not retain original completion: %s %v", completed.State, completed.Problem)
 						}
 						session, err := store.Decode[domain.Session](f.refresh(t))

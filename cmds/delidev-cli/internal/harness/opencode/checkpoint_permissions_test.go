@@ -7,9 +7,14 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
 
-func checkpointPermissionFixture(t *testing.T) (nativeCheckpoint, *sessionAPI, *observedInteraction) {
+func checkpointPermissionFixture(t *testing.T, decisions ...PermissionDecision) (nativeCheckpoint, *sessionAPI, *observedInteraction) {
 	t.Helper()
 	r := newReplyFixture(t, PermissionInteraction)
+	always := len(decisions) == 1 && decisions[0] == PermissionAlways
+	if always {
+		*r.response.Decision = PermissionAlways
+		r.api.creation.settings.Permission = []PermissionRule{}
+	}
 	if _, err := r.api.replyInteraction(context.Background(), r.f.o, domain.NewID(), r.id, r.response); err != nil {
 		t.Fatal(err)
 	}
@@ -24,7 +29,13 @@ func checkpointPermissionFixture(t *testing.T) (nativeCheckpoint, *sessionAPI, *
 	part.value.Tool.CallID = claim.CallID
 	value := nativeCheckpoint{Project: "global", NativeRoot: "/", History: HistoryObservation{RequestID: claim.InputRequestID, SessionID: claim.SessionID, Messages: []HistoryMessage{{ID: claim.MessageID, Parts: []HistoryPart{{ID: claim.PartID, Kind: ToolPartKind, Digest: mutationDigest(part.raw)}}}}}}
 	value.Tools = r.api.checkpointToolHistory(value)
-	if value.Tools == nil || value.Tools.Version != 2 || value.Tools.InteractionFree || len(value.Tools.Once) != 1 || value.Tools.Once[0] != claim || checkpointReplacementProfile(value) != nil {
+	valid := value.Tools != nil && !value.Tools.InteractionFree && checkpointReplacementProfile(value) == nil
+	if valid && always {
+		valid = value.Tools.Version == 3 && len(value.Tools.Always) == 1 && value.Tools.Always[0].Claim == claim
+	} else if valid {
+		valid = value.Tools.Version == 2 && len(value.Tools.Once) == 1 && value.Tools.Once[0] == claim
+	}
+	if !valid {
 		t.Fatal("independent original one-time acceptance missing")
 	}
 	return value, r.api, i

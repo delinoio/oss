@@ -97,39 +97,42 @@ type SessionReceipt struct {
 // providers/context and original server ownership. Discovery cannot create one
 // or expose session mutations. Durable Worker/account integration is separate.
 type sessionAPI struct {
-	client            *http.Client
-	origin            string
-	password          string
-	cwd               string
-	claim             func(context.Context, SessionClaim) error
-	alive             func() error
-	closeOwned        func(context.Context) error
-	reconcileOwned    func(context.Context) error
-	logger            *slog.Logger
-	owner             domain.ID
-	gate              chan struct{}
-	creation          *sessionCreation
-	input             *sessionInput
-	problem           *domain.Error
-	events            *eventStream
-	eventAttempt      bool
-	observer          *inputObserver
-	replyAttempt      *interactionHTTPAttempt
-	abortAttempt      bool
-	rejectionPolicy   RejectionPolicy
-	apiProfile        *nativeAPIProfile
-	apiVerified       bool
-	runtimeRead       bool
-	runtimeRoot       string
-	runtimeHome       string
-	creationLookup    bool
-	creationCandidate string
-	historyRead       *historyPageRead
-	checkpointRead    bool
-	predecessor       *nativeCheckpoint
-	predecessorDigest string
-	resumeRequest     domain.ID
-	sessionAgent      PrimaryAgent
+	client             *http.Client
+	origin             string
+	password           string
+	cwd                string
+	claim              func(context.Context, SessionClaim) error
+	alive              func() error
+	closeOwned         func(context.Context) error
+	reconcileOwned     func(context.Context) error
+	logger             *slog.Logger
+	owner              domain.ID
+	gate               chan struct{}
+	creation           *sessionCreation
+	input              *sessionInput
+	problem            *domain.Error
+	events             *eventStream
+	eventAttempt       bool
+	observer           *inputObserver
+	replyAttempt       *interactionHTTPAttempt
+	abortAttempt       bool
+	rejectionPolicy    RejectionPolicy
+	apiProfile         *nativeAPIProfile
+	apiVerified        bool
+	runtimeRead        bool
+	runtimeRoot        string
+	runtimeHome        string
+	creationLookup     bool
+	creationCandidate  string
+	historyRead        *historyPageRead
+	checkpointRead     bool
+	predecessor        *nativeCheckpoint
+	predecessorDigest  string
+	resumeRequest      domain.ID
+	sessionAgent       PrimaryAgent
+	sessionPermissions []PermissionRule
+	restoredAlways     uint32
+	permissionRestore  *interactionHTTPAttempt
 }
 
 type sessionCreation struct {
@@ -323,7 +326,8 @@ func (s *sessionAPI) readSession(ctx context.Context) (string, error) {
 		// Native createUserMessage updates session metadata before storing the
 		// new user message. Permit that one original-input-owned transition,
 		// then reject any rollback to the predecessor's agent.
-		identity, err = validateSession(raw, s.cwd, s.creation, false)
+		creation.settings.Agent = s.creation.settings.Agent
+		identity, err = validateSession(raw, s.cwd, &creation, false)
 		if err == nil {
 			s.sessionAgent = s.creation.settings.Agent
 		}
@@ -337,6 +341,9 @@ func (s *sessionAPI) readSession(ctx context.Context) (string, error) {
 
 func (s *sessionAPI) sessionMetadataCreation() sessionCreation {
 	creation := *s.creation
+	if s.sessionPermissions != nil {
+		creation.settings.Permission = append(append([]PermissionRule{}, creation.settings.Permission...), s.sessionPermissions...)
+	}
 	if s.sessionAgent != "" {
 		creation.settings.Agent = s.sessionAgent
 	}

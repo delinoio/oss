@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"slices"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
@@ -79,7 +80,7 @@ func (s *sessionAPI) readHistoryAt(ctx context.Context, o *inputObserver, bounda
 	}
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	if o.problem != nil || boundary == completedHistoryBoundary && o.stop != nil || boundary == stoppedHistoryBoundary && !o.stoppedHistoryReady() || !o.progress.SettledObserved || o.progress.NeedsRecovery || o.creation.request != s.creation.request || o.creation.identity != s.creation.identity || !equalSessionSettings(o.creation.settings, s.creation.settings) || o.cwd != s.cwd || o.input.digest != s.input.digest || o.progress.RequestID != s.input.receipt.RequestID || o.progress.SessionID != s.input.receipt.SessionID || len(o.messageOrder) < 2 || len(o.messageOrder) != len(o.messages) || o.messageOrder[0] != s.input.receipt.MessageID || o.messageOrder[len(o.messageOrder)-1] != o.progress.AssistantID {
+	if o.problem != nil || boundary == completedHistoryBoundary && o.stop != nil || boundary == stoppedHistoryBoundary && !o.stoppedHistoryReady() || !o.progress.SettledObserved || o.progress.NeedsRecovery || o.creation.request != s.creation.request || o.creation.identity != s.creation.identity || !equalSessionSettings(o.creation.settings, s.creation.settings) || !slices.Equal(o.sessionPermissions, s.sessionPermissions) || o.cwd != s.cwd || o.input.digest != s.input.digest || o.progress.RequestID != s.input.receipt.RequestID || o.progress.SessionID != s.input.receipt.SessionID || len(o.messageOrder) < 2 || len(o.messageOrder) != len(o.messages) || o.messageOrder[0] != s.input.receipt.MessageID || o.messageOrder[len(o.messageOrder)-1] != o.progress.AssistantID {
 		return result, sessionUncertain()
 	}
 	idle := func() error {

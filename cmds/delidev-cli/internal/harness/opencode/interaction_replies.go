@@ -181,6 +181,9 @@ func (o *inputObserver) interactionReply(event NativeEvent) (*NativeInteractionR
 	interaction.rejected = value.Rejected
 	interaction.alwaysAccepted = value.Decision != nil && *value.Decision == PermissionAlways
 	interaction.attempt.receipt.NativeAccepted = true
+	if interaction.alwaysAccepted {
+		o.alwaysOrder = append(o.alwaysOrder, interaction.value.ID)
+	}
 	if value.Kind == PermissionInteraction && value.Rejected {
 		for _, pending := range o.interactions {
 			if pending.value.Kind == PermissionInteraction && !pending.closed {

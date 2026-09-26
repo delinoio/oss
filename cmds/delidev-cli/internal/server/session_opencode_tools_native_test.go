@@ -53,10 +53,14 @@ func openCodeContinuationToolArguments(tool, path string) string {
 	return string(raw)
 }
 
-func serveOpenCodeContinuationTool(t *testing.T, w http.ResponseWriter, tool, path string) {
+func serveOpenCodeContinuationTool(t *testing.T, w http.ResponseWriter, tool, path string, ids ...string) {
 	t.Helper()
+	callID := continuationToolCall
+	if len(ids) == 1 {
+		callID = ids[0]
+	}
 	w.Header().Set("Content-Type", "text/event-stream")
-	delta := map[string]any{"role": "assistant", "tool_calls": []any{map[string]any{"index": 0, "id": continuationToolCall, "type": "function", "function": map[string]any{"name": tool, "arguments": openCodeContinuationToolArguments(tool, path)}}}}
+	delta := map[string]any{"role": "assistant", "tool_calls": []any{map[string]any{"index": 0, "id": callID, "type": "function", "function": map[string]any{"name": tool, "arguments": openCodeContinuationToolArguments(tool, path)}}}}
 	for _, chunk := range []map[string]any{
 		{"id": "chatcmpl-original-tool", "object": "chat.completion.chunk", "created": 1, "model": "fixture-model", "choices": []any{map[string]any{"index": 0, "delta": delta, "finish_reason": nil}}},
 		{"id": "chatcmpl-original-tool", "object": "chat.completion.chunk", "created": 1, "model": "fixture-model", "choices": []any{map[string]any{"index": 0, "delta": map[string]any{}, "finish_reason": "tool_calls"}}, "usage": map[string]any{"prompt_tokens": 20, "completion_tokens": 4, "total_tokens": 24}},
@@ -115,4 +119,52 @@ func verifyOpenCodeContinuationTool(t *testing.T, raw []byte, tool, path string)
 		t.Error("replacement repeated or omitted original tool conversation", proposals, results)
 	}
 	return result
+}
+
+func verifyOpenCodeRepeatedRead(t *testing.T, raw []byte, path string, expected int) map[string]string {
+	t.Helper()
+	var body struct {
+		Messages []struct {
+			Role    string          `json:"role"`
+			Content json.RawMessage `json:"content"`
+			CallID  string          `json:"tool_call_id"`
+			Calls   []struct {
+				ID       string                           `json:"id"`
+				Function struct{ Name, Arguments string } `json:"function"`
+			} `json:"tool_calls"`
+		} `json:"messages"`
+	}
+	if json.Unmarshal(raw, &body) != nil {
+		t.Error("invalid native remembered Read conversation")
+		return nil
+	}
+	results := map[string]string{}
+	proposals := 0
+	for _, message := range body.Messages {
+		for _, call := range message.Calls {
+			var args struct {
+				FilePath string `json:"filePath"`
+			}
+			if message.Role != "assistant" || call.ID != fmt.Sprintf("%s_%d", continuationToolCall, proposals) || call.Function.Name != "read" || json.Unmarshal([]byte(call.Function.Arguments), &args) != nil || args.FilePath != path {
+				t.Error("changed remembered Read proposal")
+			}
+			proposals++
+		}
+		if message.Role == "tool" {
+			index := len(results)
+			var result string
+			want := "original-inline-tool-sentinel"
+			if index > 0 {
+				want = "changed-source-after-original-tool"
+			}
+			if index >= proposals || message.CallID != fmt.Sprintf("%s_%d", continuationToolCall, index) || json.Unmarshal(message.Content, &result) != nil || !strings.Contains(result, want) {
+				t.Error("lost or replayed remembered Read result")
+			}
+			results[message.CallID] = result
+		}
+	}
+	if proposals != expected || len(results) != expected {
+		t.Error("repeated or omitted remembered Read conversation", proposals, len(results), expected)
+	}
+	return results
 }

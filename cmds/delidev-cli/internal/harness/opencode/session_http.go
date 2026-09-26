@@ -28,6 +28,9 @@ func (s *sessionAPI) request(ctx context.Context, method, path string, body []by
 	if s.replyAttempt != nil {
 		valid = valid || method == http.MethodPost && path == s.replyAttempt.path && mutationDigest(body) == s.replyAttempt.digest
 	}
+	if s.permissionRestore != nil {
+		valid = valid || method == http.MethodPatch && path == s.permissionRestore.path && mutationDigest(body) == s.permissionRestore.digest
+	}
 	if s.observer != nil {
 		valid = valid || method == http.MethodGet && (path == "/permission" || path == "/question" || path == "/session/status")
 	}
@@ -47,7 +50,7 @@ func (s *sessionAPI) request(ctx context.Context, method, path string, body []by
 	}
 	bounded, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	if method == http.MethodPost && s.events != nil {
+	if (method == http.MethodPost || method == http.MethodPatch) && s.events != nil {
 		if problem := s.events.status(); problem != nil {
 			return nil, 0, problem
 		}
@@ -64,7 +67,7 @@ func (s *sessionAPI) request(ctx context.Context, method, path string, body []by
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("x-opencode-directory", s.cwd)
 	request.SetBasicAuth("delidev", s.password)
-	if method == http.MethodPost {
+	if method == http.MethodPost || method == http.MethodPatch {
 		request.Header.Set("Content-Type", "application/json")
 		// Prevent automatic transport replay, including for a body that net/http
 		// could otherwise reconstruct. The transport also disables keep-alives.

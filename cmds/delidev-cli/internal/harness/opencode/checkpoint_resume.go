@@ -39,7 +39,11 @@ func OpenResumedAPI(ctx context.Context, config APIExecutionConfig, home string,
 		}
 	}
 	if source.Tools != nil {
-		for _, claim := range source.Tools.Once {
+		claims := append([]SessionClaim(nil), source.Tools.Once...)
+		for _, approval := range source.Tools.Always {
+			claims = append(claims, approval.Claim)
+		}
+		for _, claim := range claims {
 			if request == claim.RequestID || config.Probe.Process.OwnerID == claim.RequestID {
 				return nil, sessionUncertain()
 			}
@@ -71,8 +75,23 @@ func OpenResumedAPI(ctx context.Context, config APIExecutionConfig, home string,
 	// creation claim or HTTP acknowledgment on this replacement process.
 	session.creation = &sessionCreation{request: ref.CreationRequestID, settings: session.apiProfile.Settings, identity: sessionIdentity{ref.SessionID, source.Project, source.Slug, source.Created}}
 	session.sessionAgent = previousAgent
+	if source.Tools != nil && len(source.Tools.Always) != 0 {
+		if len(session.creation.settings.Permission) != 0 {
+			return nil, incompatible()
+		}
+		session.sessionPermissions = checkpointAppliedPermissions(source.Tools, source.Tools.AppliedAlways)
+		session.restoredAlways = source.Tools.AppliedAlways
+	}
 	if err := session.inspectCheckpointHistory(ctx, source, previousAgent); err != nil {
 		return nil, err
+	}
+	if source.Tools != nil && uint32(len(source.Tools.Always)) > source.Tools.AppliedAlways {
+		if err := session.restoreCheckpointPermissions(ctx, source); err != nil {
+			return nil, err
+		}
+		if err := session.inspectCheckpointHistory(ctx, source, previousAgent); err != nil {
+			return nil, err
+		}
 	}
 	session.creation.recorded = true
 	session.predecessor, session.predecessorDigest, session.resumeRequest = &resume.source, ref.SHA256, request
@@ -91,7 +110,11 @@ func (s *sessionAPI) freshCheckpointInput(request domain.ID, message, part strin
 		return false
 	}
 	if s.predecessor.Tools != nil {
-		for _, claim := range s.predecessor.Tools.Once {
+		claims := append([]SessionClaim(nil), s.predecessor.Tools.Once...)
+		for _, approval := range s.predecessor.Tools.Always {
+			claims = append(claims, approval.Claim)
+		}
+		for _, claim := range claims {
 			if request == claim.RequestID {
 				return false
 			}

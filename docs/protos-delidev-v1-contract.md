@@ -176,3 +176,6 @@ The existing version-2 completion and explicit OpenCode recovery comparison enve
 
 
 The private OpenCode tool-proof version 2 additionally admits exact originally accepted one-time permission claims. This changes checkpoint eligibility, not the protobuf/public response envelope or retained product interaction shape. Historical version-1 reports cannot be promoted, old replies cannot be resent, and remembered permissions require their own restoration contract.
+
+
+Private OpenCode tool-proof version 3 additionally binds confirmed direct Read `always` claims, exact ordered native allowance rules and their already-materialized prefix. The existing predecessor-bound resume claim owns the native append; public protobuf/approval/completion envelopes remain unchanged. Completion recovery stays read-only, and failed native append responses grant neither retry nor continuation authority.

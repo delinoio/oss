@@ -97,29 +97,31 @@ type observedPart struct {
 // order. It does not reconnect, authorize another input, establish persisted
 // history, publish product outcomes or prove owned process cleanup.
 type inputObserver struct {
-	mu              sync.Mutex
-	creation        sessionCreation
-	input           sessionInput
-	cwd, root       string
-	logger          *slog.Logger
-	owner           domain.ID
-	seen            map[string]bool
-	bytes           int
-	messages        map[string]*observedMessage
-	messageOrder    []string
-	parts           map[string]*observedPart
-	attachments     map[string]string
-	calls           map[string]string
-	progress        inputProgress
-	problem         *domain.Error
-	ctx             context.Context
-	cancel          context.CancelFunc
-	interactions    map[string]*observedInteraction
-	responseIDs     map[domain.ID]bool
-	rejectionPolicy RejectionPolicy
-	stop            *inputStopAttempt
-	retries         []observedRetry
-	currentRetry    *observedRetry
+	mu                 sync.Mutex
+	creation           sessionCreation
+	input              sessionInput
+	cwd, root          string
+	logger             *slog.Logger
+	owner              domain.ID
+	seen               map[string]bool
+	bytes              int
+	messages           map[string]*observedMessage
+	messageOrder       []string
+	parts              map[string]*observedPart
+	attachments        map[string]string
+	calls              map[string]string
+	progress           inputProgress
+	problem            *domain.Error
+	ctx                context.Context
+	cancel             context.CancelFunc
+	interactions       map[string]*observedInteraction
+	responseIDs        map[domain.ID]bool
+	alwaysOrder        []string
+	sessionPermissions []PermissionRule
+	rejectionPolicy    RejectionPolicy
+	stop               *inputStopAttempt
+	retries            []observedRetry
+	currentRetry       *observedRetry
 }
 
 func observerProblem() *domain.Error {
@@ -151,7 +153,7 @@ func (s *sessionAPI) observeInput(ctx context.Context, root string) (*inputObser
 	input := *s.input
 	observerContext, cancel := context.WithCancel(s.events.ctx)
 	s.observer = &inputObserver{
-		creation: creation, input: input, cwd: s.cwd, root: root, logger: s.logger, owner: s.owner,
+		creation: creation, input: input, sessionPermissions: slices.Clone(s.sessionPermissions), cwd: s.cwd, root: root, logger: s.logger, owner: s.owner,
 		ctx: observerContext, cancel: cancel, interactions: map[string]*observedInteraction{}, responseIDs: map[domain.ID]bool{},
 		rejectionPolicy: s.rejectionPolicy,
 		seen:            map[string]bool{}, messages: map[string]*observedMessage{}, parts: map[string]*observedPart{}, attachments: map[string]string{}, calls: map[string]string{},
@@ -280,7 +282,7 @@ func (o *inputObserver) observe(ctx context.Context, event NativeEvent) (inputOb
 	case SessionUpdatedEvent:
 		if !session([]string{"info"}, nil) {
 			err = observerProblem()
-		} else if identity, problem := validateSession(fields["info"], o.cwd, &o.creation, false); problem != nil || identity != o.creation.identity {
+		} else if identity, problem := validateSession(fields["info"], o.cwd, o.sessionMetadataCreation(), false); problem != nil || identity != o.creation.identity {
 			err = observerProblem()
 		} else {
 			result.Ancillary = slices.Clone(event.Properties)
@@ -589,4 +591,12 @@ func (o *inputObserver) needsSuccessor(id string) bool {
 		}
 	}
 	return false
+}
+
+// Session metadata includes independently restored Read allowances; immutable
+// input settings remain separate for original message/configuration checks.
+func (o *inputObserver) sessionMetadataCreation() *sessionCreation {
+	creation := o.creation
+	creation.settings.Permission = append(append([]PermissionRule{}, creation.settings.Permission...), o.sessionPermissions...)
+	return &creation
 }

@@ -38,7 +38,7 @@ func TestManualNativeOpenCodeCompletedExecutionRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, mode := range []domain.SessionMode{domain.ExecuteMode, domain.PlanMode} {
-		for _, scenario := range []string{"first", "resumed", "switched", "failed", "missing-checkpoint", "read", "bash", "read-once"} {
+		for _, scenario := range []string{"first", "resumed", "switched", "failed", "missing-checkpoint", "read", "bash", "read-once", "read-always", "read-always-resumed"} {
 			t.Run(string(mode)+"/"+scenario, func(t *testing.T) { nativeOpenCodeRecovery(t, binary, mode, scenario) })
 		}
 	}
@@ -50,7 +50,8 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 	}
 	tool := ""
 	toolCalls := int64(0)
-	permission := scenario == "read-once"
+	remembered := strings.HasPrefix(scenario, "read-always")
+	permission := scenario == "read-once" || remembered
 	if scenario == "read" || scenario == "bash" || permission {
 		tool, toolCalls = scenario, 1
 		if permission {
@@ -63,7 +64,7 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 	defer cancel()
 	var calls atomic.Int64
 	lostTurn := int64(1)
-	if scenario == "resumed" || scenario == "switched" {
+	if scenario == "resumed" || scenario == "switched" || scenario == "read-always-resumed" {
 		lostTurn = 2
 	}
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -213,13 +214,7 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 		}
 	}
 	assignment := resume()
-	if lostTurn == 2 {
-		if job := waitJob(domain.ID(assignment.Id)); job.State != domain.JobSucceeded {
-			t.Fatal("first execution failed", job.Problem)
-		}
-		enqueue()
-		assignment = resume()
-	}
+
 	var originalPermission []byte
 	if permission {
 		for {
@@ -230,7 +225,11 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 			}
 			if len(rows) == 1 {
 				client := delidevv1connect.NewInteractionServiceClient(http.DefaultClient, f.endpoint.URL)
-				body, _ := json.Marshal(domain.ApprovalResponseInput{OpenCode: &domain.OpenCodePermissionResponse{Decision: domain.OpenCodePermissionOnce}})
+				decision := domain.OpenCodePermissionOnce
+				if remembered {
+					decision = domain.OpenCodePermissionAlways
+				}
+				body, _ := json.Marshal(domain.ApprovalResponseInput{OpenCode: &domain.OpenCodePermissionResponse{Decision: decision}})
 				if _, err := client.RespondApproval(ctx, ownerRequest(f.identity, &pb.RespondApprovalRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(rows[0].ID), ExpectedRevision: rows[0].Revision}, ResponseJson: body})); err != nil {
 					t.Fatal(err)
 				}
@@ -242,6 +241,13 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 				t.Fatal("original permission did not arrive")
 			}
 		}
+	}
+	if lostTurn == 2 {
+		if job := waitJob(domain.ID(assignment.Id)); job.State != domain.JobSucceeded {
+			t.Fatal("first execution failed", job.Problem)
+		}
+		enqueue()
+		assignment = resume()
 	}
 	select {
 	case <-lostReport:
