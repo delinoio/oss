@@ -48,7 +48,7 @@ The current Linux watch path installs a temporary recursive discovery watch duri
 
 ## Limits and publication
 
-Defaults are 1,000,000 events, 256 MiB trace, and 1 GiB/100,000 files for both reproduction snapshot and result. All overrides are positive. There is no default execution timeout. Cleanup requests graceful termination, waits five seconds by default, then forces termination and verifies cleanup within five additional seconds. Explicit file outputs use the clibox atomic publication and `--force` rules; a failed publication preserves the prior destination. Temporary private state is removed after handled failures and cancellation. No automatic history, artifact retention, or release publication is added.
+Defaults are 1,000,000 events, 256 MiB trace, and 1 GiB/100,000 files for both reproduction snapshot and result. All overrides are positive. macOS hello frames consume byte and connection capacity but do not count as start/completion events; receipt sequence still reflects every frame. There is no default execution timeout. Cleanup requests graceful termination, waits five seconds by default, then forces termination and verifies cleanup within five additional seconds. Explicit file outputs use the clibox atomic publication and `--force` rules; a failed publication preserves the prior destination. Temporary private state is removed after handled failures and cancellation. No automatic history, artifact retention, or release publication is added.
 
 ## Validation
 

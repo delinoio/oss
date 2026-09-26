@@ -145,6 +145,7 @@ pub struct FrameLedger {
     pending: HashMap<(u32, u64, u64), Frame>,
     completed: Vec<(Frame, Frame)>,
     hello_pids: HashSet<u32>,
+    frame_count: u64,
     event_count: usize,
     max_events: usize,
     max_bytes: u64,
@@ -161,10 +162,16 @@ impl FrameLedger {
     }
 
     pub fn push(&mut self, mut frame: Frame) -> io::Result<()> {
-        self.event_count = self
-            .event_count
+        self.frame_count = self
+            .frame_count
             .checked_add(1)
-            .ok_or_else(|| invalid("event_limit"))?;
+            .ok_or_else(|| invalid("frame_limit"))?;
+        if frame.kind != FrameKind::Hello {
+            self.event_count = self
+                .event_count
+                .checked_add(1)
+                .ok_or_else(|| invalid("event_limit"))?;
+        }
         self.received_bytes = self
             .received_bytes
             .checked_add((HEADER_BYTES + frame.path.len()) as u64)
@@ -172,7 +179,7 @@ impl FrameLedger {
         if self.event_count > self.max_events || self.received_bytes > self.max_bytes {
             return Err(invalid("frame_limit"));
         }
-        frame.sequence = u64::try_from(self.event_count).map_err(|_| invalid("event_limit"))?;
+        frame.sequence = self.frame_count;
         let key = (frame.pid, frame.tid, frame.id);
         match frame.kind {
             FrameKind::Hello => {
@@ -808,6 +815,27 @@ mod tests {
             )
             .unwrap();
         assert!(ledger.push(completion).is_err());
+    }
+
+    #[test]
+    fn hello_does_not_consume_the_operation_event_limit() {
+        let mut hello = frame_bytes(b'h', b"");
+        hello[1] = 0;
+        let hello = read_frame(&mut hello.as_slice()).unwrap().unwrap();
+        let start = read_frame(&mut frame_bytes(b's', b"/tmp/input").as_slice())
+            .unwrap()
+            .unwrap();
+        let completion = read_frame(&mut frame_bytes(b'e', b"").as_slice())
+            .unwrap()
+            .unwrap();
+        let mut ledger = FrameLedger::new(2, 256);
+        ledger.push(hello).unwrap();
+        ledger.push(start).unwrap();
+        ledger.push(completion).unwrap();
+        let result = ledger.finish().unwrap();
+        assert_eq!(result.pairs.len(), 1);
+        assert_eq!(result.pairs[0].0.sequence, 2);
+        assert_eq!(result.pairs[0].1.sequence, 3);
     }
 
     #[test]
