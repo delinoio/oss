@@ -30,11 +30,11 @@ jobs:
       revision: ${{ steps.source.outputs.revision }}
       dry_run: ${{ steps.source.outputs.dry_run }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
           package-manager-cache: false
@@ -71,20 +71,20 @@ jobs:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target/react-forge
       REACT_FORGE_NATIVE_PROFILE: release
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           lfs: true
           ref: ${{ needs.prepare.outputs.revision }}
           persist-credentials: false
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
           architecture: ${{ matrix.architecture }}
           package-manager-cache: false
-      - uses: pnpm/action-setup@v5
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
         with:
           version: 10.26.2
-      - uses: dtolnay/rust-toolchain@v1
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
         with:
           toolchain: nightly-2026-01-01
           targets: ${{ matrix.target }}
@@ -114,7 +114,7 @@ jobs:
         run: bash packages/react-forge/scripts/validate-host.sh "${{ matrix.target }}"
       - name: Retain rendering and benchmark evidence
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: react-forge-validation-${{ matrix.id }}
           path: |
@@ -124,7 +124,7 @@ jobs:
             ${{ runner.temp }}/react-forge-travel-ir.pptx
           if-no-files-found: ignore
           retention-days: 7
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: react-forge-native-${{ matrix.id }}
           path: packages/react-forge/dist/release/tarballs/delino-react-forge-${{ matrix.id }}-${{ needs.prepare.outputs.version }}.tgz
@@ -138,20 +138,20 @@ jobs:
     needs: [prepare, build]
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ needs.prepare.outputs.revision }}
           persist-credentials: false
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
           package-manager-cache: false
-      - uses: pnpm/action-setup@v5
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
         with:
           version: 10.26.2
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm --filter @delino/react-forge exec tsc -p tsconfig.json
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           pattern: react-forge-native-*
           path: packages/react-forge/dist/release/tarballs
@@ -161,7 +161,7 @@ jobs:
           node packages/react-forge/scripts/package.mjs main
           node packages/react-forge/scripts/package.mjs verify
           node packages/react-forge/scripts/publish.mjs
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: react-forge-complete-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.revision }}
           path: packages/react-forge/dist/release/tarballs/
@@ -179,22 +179,22 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ needs.prepare.outputs.revision }}
           persist-credentials: false
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
-      - uses: pnpm/action-setup@v5
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
         with:
           version: 10.26.2
       - run: npm install --global npm@11.15.0 --ignore-scripts --no-audit --no-fund
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm --filter @delino/react-forge exec tsc -p tsconfig.json
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: react-forge-complete-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.revision }}
           path: packages/react-forge/dist/release/tarballs

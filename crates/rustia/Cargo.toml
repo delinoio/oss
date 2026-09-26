@@ -28,4 +28,4 @@ url = "2.5.7"
 uuid = { version = "1.18.1", features = ["std"] }
 
 [dev-dependencies]
-trybuild = "1.0.114"
+trybuild = "=1.0.116"
