@@ -432,6 +432,7 @@ mod tests {
             .envs(std::env::vars_os())
             .env("CLIBOX_FSPY_SOCKET", receiver.socket_path().as_os_str())
             .env("CLIBOX_FSPY_TEST_INPUT", input.as_os_str())
+            .env("CLIBOX_FSPY_TEST_DESCENDANT", "1")
             .stdout(Stdio::null())
             .stderr(Stdio::inherit());
         let runtime = tokio::runtime::Builder::new_current_thread()
@@ -441,6 +442,7 @@ mod tests {
         let child = runtime
             .block_on(command.spawn(CancellationToken::new()))
             .unwrap();
+        let root_pid = child.root_pid;
         let status = runtime.block_on(child.wait_handle).unwrap();
         assert!(status.status.success(), "{:?}", status.status);
         let pairs = receiver.finish().unwrap();
@@ -473,6 +475,13 @@ mod tests {
         assert!(frames.iter().any(|frame| {
             frame.kind == FrameKind::Completion && frame.operation == 6 && frame.result == 3
         }));
+        assert!(frames.iter().any(|frame| {
+            frame.kind == FrameKind::Start
+                && frame.pid != root_pid
+                && frame.parent_pid == root_pid
+                && frame.operation == 3
+                && frame.path.ends_with(b"input.txt")
+        }));
     }
 
     #[test]
@@ -482,6 +491,11 @@ mod tests {
         };
         let path = PathBuf::from(path);
         assert_eq!(fs::read(&path).unwrap(), b"fixture");
+        if std::env::var_os("CLIBOX_FSPY_TEST_DESCENDANT").as_deref()
+            == Some(std::ffi::OsStr::new("2"))
+        {
+            return;
+        }
         let file = fs::File::open(&path).unwrap();
         let mut buffer = [0_u8; 7];
         let vector = libc::iovec {
@@ -508,6 +522,12 @@ mod tests {
         );
         assert_eq!(fs::metadata(&path).unwrap().len(), 7);
         assert!(fs::read_dir(path.parent().unwrap()).unwrap().count() > 0);
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "macos::tests::read_fixture_child"])
+            .env("CLIBOX_FSPY_TEST_DESCENDANT", "2")
+            .status()
+            .unwrap();
+        assert!(status.success());
         fs::rename(&path, path.with_extension("moved")).unwrap();
     }
 }
