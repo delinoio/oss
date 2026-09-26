@@ -436,16 +436,63 @@ fn destination(output: &OutputArgs) -> Result<Option<&Path>, &'static str> {
     Ok(Some(path))
 }
 
+fn existing_report_destination(path: &Path) -> Result<Option<fs::Metadata>, &'static str> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(_) => return Err("output_metadata"),
+    };
+    if !metadata.file_type().is_file() {
+        return Err("output_not_regular");
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if metadata.nlink() != 1 {
+            return Err("output_multiple_links");
+        }
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::{fs::OpenOptionsExt, io::AsRawHandle};
+
+        use winapi::um::{
+            fileapi::{GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION},
+            winbase::FILE_FLAG_OPEN_REPARSE_POINT,
+            winnt::{FILE_ATTRIBUTE_REPARSE_POINT, FILE_READ_ATTRIBUTES},
+        };
+
+        let file = fs::OpenOptions::new()
+            .access_mode(FILE_READ_ATTRIBUTES)
+            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+            .open(path)
+            .map_err(|_| "output_metadata")?;
+        // SAFETY: the handle remains live and info points to writable storage.
+        let mut info = std::mem::MaybeUninit::<BY_HANDLE_FILE_INFORMATION>::uninit();
+        if unsafe { GetFileInformationByHandle(file.as_raw_handle().cast(), info.as_mut_ptr()) }
+            == 0
+        {
+            return Err("output_metadata");
+        }
+        // SAFETY: the successful call initialized the full output structure.
+        let info = unsafe { info.assume_init() };
+        if info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+            return Err("output_not_regular");
+        }
+        if info.nNumberOfLinks != 1 {
+            return Err("output_multiple_links");
+        }
+    }
+    Ok(Some(metadata))
+}
+
 fn publish(output: &OutputArgs, bytes: &[u8]) -> Result<(), &'static str> {
     let Some(path) = destination(output)? else {
         return io::stdout().write_all(bytes).map_err(|_| "output_write");
     };
-    if let Ok(metadata) = fs::symlink_metadata(path) {
+    if existing_report_destination(path)?.is_some() {
         if !output.force {
             return Err("output_exists");
-        }
-        if !metadata.file_type().is_file() {
-            return Err("output_not_regular");
         }
     }
     let parent = path
@@ -458,8 +505,8 @@ fn publish(output: &OutputArgs, bytes: &[u8]) -> Result<(), &'static str> {
         .map_err(|_| "output_prepare")?;
     temporary.write_all(bytes).map_err(|_| "output_write")?;
     temporary.as_file().sync_all().map_err(|_| "output_sync")?;
-    if let Ok(metadata) = fs::symlink_metadata(path) {
-        if !output.force || !metadata.file_type().is_file() {
+    if let Some(metadata) = existing_report_destination(path)? {
+        if !output.force {
             return Err("output_exists");
         }
         temporary
@@ -3510,6 +3557,25 @@ mod tests {
     struct TestCli {
         #[command(subcommand)]
         command: Command,
+    }
+
+    #[test]
+    fn forced_report_rejects_multiply_linked_destination() {
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("report.json");
+        let alias = directory.path().join("alias.json");
+        fs::write(&destination, b"original").unwrap();
+        fs::hard_link(&destination, &alias).unwrap();
+        let output = OutputArgs {
+            output: Some(destination.clone()),
+            force: true,
+        };
+        assert_eq!(
+            publish(&output, b"replacement"),
+            Err("output_multiple_links")
+        );
+        assert_eq!(fs::read(destination).unwrap(), b"original");
+        assert_eq!(fs::read(alias).unwrap(), b"original");
     }
 
     #[test]
