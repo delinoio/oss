@@ -397,3 +397,60 @@ func verifyOpenCodeRejectedReads(t *testing.T, raw []byte, path string, count in
 	encoded, _ := json.Marshal(results)
 	return string(encoded)
 }
+
+const openCodeOriginalInstructions = "original-loaded-instructions-sentinel"
+const openCodeChangedInstructions = "changed-loaded-instructions-sentinel"
+
+func openCodeContinuationInstructionPaths(path string) []string {
+	return []string{filepath.Join(filepath.Dir(path), "AGENTS.md"), filepath.Join(filepath.Dir(filepath.Dir(path)), "AGENTS.md")}
+}
+
+func prepareOpenCodeLoadedRead(t *testing.T, f *firstDispatchFixture, permission bool) string {
+	t.Helper()
+	original := prepareOpenCodeContinuationTool(t, f, "read", permission)
+	path := filepath.Join(filepath.Dir(original), "instruction-outer", "instruction-inner", filepath.Base(original))
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(original, path); err != nil {
+		t.Fatal(err)
+	}
+	for index, instruction := range openCodeContinuationInstructionPaths(path) {
+		if err := os.WriteFile(instruction, []byte(fmt.Sprintf("%s-%d\n", openCodeOriginalInstructions, index)), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return path
+}
+
+func verifyOpenCodeLoadedInstructions(t *testing.T, result, path string, first bool) {
+	t.Helper()
+	paths := openCodeContinuationInstructionPaths(path)
+	count := 0
+	if first {
+		count = len(paths)
+		for index, instruction := range paths {
+			if !strings.Contains(result, fmt.Sprintf("Instructions from: %s\n%s-%d\n", instruction, openCodeOriginalInstructions, index)) {
+				t.Error("original loaded instruction path/content missing from native Read result")
+			}
+		}
+	}
+	if strings.Count(result, openCodeOriginalInstructions) != count || strings.Contains(result, openCodeChangedInstructions) || !first && strings.Contains(result, "Instructions from:") {
+		t.Error("replacement reloaded, duplicated or altered original instructions")
+	}
+}
+
+func updateOpenCodeContinuationInstructions(t *testing.T, path string, replace bool) {
+	t.Helper()
+	for index, instruction := range openCodeContinuationInstructionPaths(path) {
+		expected := fmt.Sprintf("%s-%d\n", openCodeChangedInstructions, index)
+		if replace {
+			if err := os.WriteFile(instruction, []byte(expected), 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if raw, err := os.ReadFile(instruction); err != nil || string(raw) != expected {
+			t.Fatal("replacement rewrote later instruction-file changes", err)
+		}
+	}
+}

@@ -70,11 +70,7 @@ func TestCheckpointInlineToolsRequireCompleteIndependentState(t *testing.T) {
 				case "missing-fields":
 					delete(metadata, "truncated")
 				case "auxiliary":
-					if name == checkpointReadTool {
-						metadata["loaded"] = []string{"/private/AGENTS.md"}
-					} else {
-						metadata["outputPath"] = "/private/tool-output"
-					}
+					metadata["outputPath"] = "/private/tool-output"
 				}
 				tool.Metadata, _ = json.Marshal(metadata)
 				if checkpointInlineTool(tool) != (fault == "valid") {

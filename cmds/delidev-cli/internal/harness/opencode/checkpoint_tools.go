@@ -17,10 +17,11 @@ const (
 )
 
 type checkpointToolPart struct {
-	ID     string             `json:"id"`
-	Name   checkpointToolName `json:"name"`
-	Digest string             `json:"digest"`
-	Failed bool               `json:"failed,omitempty"`
+	ID                 string             `json:"id"`
+	Name               checkpointToolName `json:"name"`
+	Digest             string             `json:"digest"`
+	Failed             bool               `json:"failed,omitempty"`
+	InstructionsLoaded bool               `json:"instructions_loaded,omitempty"`
 }
 
 // This positive observation comes from the original closed live observer. A
@@ -34,6 +35,7 @@ type checkpointToolPart struct {
 // Version 7 adds original completed inline Write/Edit/Apply Patch results.
 // Version 8 adds originally accepted, closed Question dismissals.
 // Version 9 adds original Read rejection/correction and automatic closures.
+// Version 10 adds completed Read's original loaded-instruction history.
 type checkpointToolHistory struct {
 	Version         uint32                          `json:"version"`
 	InteractionFree bool                            `json:"interaction_free"`
@@ -56,7 +58,7 @@ func validCheckpointTools(value nativeCheckpoint) bool {
 		return false
 	}
 	index := 0
-	searchOrTodo, fileTool := false, false
+	searchOrTodo, fileTool, instructionsLoaded := false, false, false
 	for _, history := range checkpointHistories(value) {
 		if history.Todo != nil {
 			if proof.Version < 6 || !nativeID(history.Todo.EventID, "evt") || !checkpointDigest(history.Todo.Digest) {
@@ -75,6 +77,12 @@ func validCheckpointTools(value nativeCheckpoint) bool {
 				tool := proof.Parts[index]
 				if tool.ID != part.ID || tool.Digest != part.Digest || tool.Failed && (proof.Version < 9 || tool.Name != checkpointReadTool) {
 					return false
+				}
+				if tool.InstructionsLoaded {
+					if proof.Version < 10 || tool.Name != checkpointReadTool || tool.Failed {
+						return false
+					}
+					instructionsLoaded = true
 				}
 				switch tool.Name {
 				case checkpointReadTool, checkpointShellTool:
@@ -99,7 +107,7 @@ func validCheckpointTools(value nativeCheckpoint) bool {
 			}
 		}
 	}
-	return index == len(proof.Parts) && (proof.Version != 7 || fileTool) && (proof.Version != 6 || searchOrTodo) && (proof.Version != 8 || checkpointHasQuestionDismissal(proof)) && (proof.Version != 9 || len(proof.Rejections) != 0)
+	return index == len(proof.Parts) && (proof.Version != 7 || fileTool) && (proof.Version != 6 || searchOrTodo) && (proof.Version != 8 || checkpointHasQuestionDismissal(proof)) && (proof.Version != 9 || len(proof.Rejections) != 0) && (proof.Version != 10 || instructionsLoaded)
 }
 
 func (s *sessionAPI) checkpointToolHistory(value nativeCheckpoint) *checkpointToolHistory {
@@ -228,7 +236,7 @@ func (s *sessionAPI) checkpointToolHistory(value nativeCheckpoint) *checkpointTo
 			if observed == nil || mutationDigest(observed.raw) != part.Digest || !checkpointInlineTool(observed.value.Tool) {
 				return nil
 			}
-			proof.Parts = append(proof.Parts, checkpointToolPart{ID: part.ID, Name: checkpointToolName(observed.value.Tool.Name), Digest: part.Digest, Failed: checkpointRejectedReadTool(observed.value.Tool)})
+			proof.Parts = append(proof.Parts, checkpointToolPart{ID: part.ID, Name: checkpointToolName(observed.value.Tool.Name), Digest: part.Digest, Failed: checkpointRejectedReadTool(observed.value.Tool), InstructionsLoaded: checkpointLoadedInstructions(observed.value.Tool)})
 		}
 	}
 	if len(proof.Parts) == 0 {
@@ -258,14 +266,20 @@ func (s *sessionAPI) checkpointToolHistory(value nativeCheckpoint) *checkpointTo
 		})
 		slices.SortFunc(proof.RejectionPolicy, func(a, b checkpointPolicyRejection) int { return strings.Compare(a.InteractionID, b.InteractionID) })
 	}
+	for _, part := range proof.Parts {
+		if part.InstructionsLoaded {
+			proof.Version = 10
+		}
+	}
 	if !validCheckpointTools(value) {
 		return nil
 	}
 	return proof
 }
 
-// Complete inline results need no restored artifact path or dynamic native
-// instruction-loader state. Other tool states remain retained but cannot
+// Complete inline results need no restored artifact path. Completed Read's
+// loaded instructions are native history, not a separately restored cache.
+// Other tool states remain retained but cannot
 // acquire replacement authority through the closed inline tool profiles.
 func checkpointInlineTool(tool *NativeToolPart) bool {
 	if tool == nil || tool.Timing == nil || tool.Timing.End == nil || tool.Timing.Compacted != nil || len(tool.Attachments) != 0 {
@@ -287,8 +301,8 @@ func checkpointInlineTool(tool *NativeToolPart) bool {
 	}
 	switch checkpointToolName(tool.Name) {
 	case checkpointReadTool:
-		var metadata domain.OpenCodeReadMetadata
-		return domain.Decode(tool.Metadata, &metadata) == nil && metadata.Preview != nil && metadata.Truncated != nil && !*metadata.Truncated && metadata.Loaded != nil && len(metadata.Loaded) == 0 && (metadata.Interrupted == nil || !*metadata.Interrupted)
+		_, valid := checkpointReadMetadata(tool.Metadata)
+		return valid
 	case checkpointShellTool:
 		var metadata struct {
 			Output      *string         `json:"output"`

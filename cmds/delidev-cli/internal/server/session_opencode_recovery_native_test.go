@@ -39,13 +39,14 @@ func TestManualNativeOpenCodeCompletedExecutionRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, mode := range []domain.SessionMode{domain.ExecuteMode, domain.PlanMode} {
-		for _, scenario := range []string{"first", "resumed", "switched", "failed", "missing-checkpoint", "read", "bash", "read-once", "read-always", "read-always-resumed", "read-cascade", "read-cascade-resumed", "question", "question-resumed", "glob", "grep", "todowrite", "todowrite-resumed", "write", "write-resumed", "edit", "edit-resumed", "apply_patch", "apply_patch-resumed", "question-dismissed", "question-dismissed-resumed", "read-reject", "read-reject-resumed", "read-correction", "read-correction-resumed", "read-correction-cascade", "read-correction-cascade-resumed"} {
+		for _, scenario := range []string{"first", "resumed", "switched", "failed", "missing-checkpoint", "read", "bash", "read-once", "read-always", "read-always-resumed", "read-cascade", "read-cascade-resumed", "question", "question-resumed", "glob", "grep", "todowrite", "todowrite-resumed", "write", "write-resumed", "edit", "edit-resumed", "apply_patch", "apply_patch-resumed", "question-dismissed", "question-dismissed-resumed", "read-reject", "read-reject-resumed", "read-correction", "read-correction-resumed", "read-correction-cascade", "read-correction-cascade-resumed", "read-loaded", "read-loaded-resumed"} {
 			t.Run(string(mode)+"/"+scenario, func(t *testing.T) { nativeOpenCodeRecovery(t, binary, mode, scenario) })
 		}
 	}
 }
 
 func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode, scenario string) {
+	loadedInstructions := strings.HasPrefix(scenario, "read-loaded")
 	fileTool := strings.TrimSuffix(scenario, "-resumed")
 	rejection := strings.HasPrefix(scenario, "read-reject") || strings.HasPrefix(scenario, "read-correction")
 	correction := strings.HasPrefix(scenario, "read-correction")
@@ -72,7 +73,7 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 		permissionCount = 2
 	}
 	permission := scenario == "read-once" || remembered || rejection
-	if scenario == "read" || scenario == "bash" || permission || question || search || todo || openCodeContinuationFileTool(fileTool) {
+	if scenario == "read" || scenario == "bash" || loadedInstructions || permission || question || search || todo || openCodeContinuationFileTool(fileTool) {
 		tool, toolCalls = scenario, 1
 		if stoppedFirst {
 			toolCalls = 0
@@ -86,7 +87,7 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 		if question {
 			tool = "question"
 		}
-		if permission {
+		if permission || loadedInstructions {
 			tool = "read"
 		}
 	}
@@ -97,7 +98,7 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 	defer cancel()
 	var calls atomic.Int64
 	lostTurn := int64(1)
-	if scenario == "resumed" || scenario == "switched" || scenario == "read-always-resumed" || scenario == "read-cascade-resumed" || scenario == "question-resumed" || scenario == "question-dismissed-resumed" || scenario == "todowrite-resumed" || (openCodeContinuationFileTool(fileTool) || rejection) && strings.HasSuffix(scenario, "-resumed") {
+	if scenario == "resumed" || scenario == "switched" || scenario == "read-always-resumed" || scenario == "read-cascade-resumed" || scenario == "question-resumed" || scenario == "question-dismissed-resumed" || scenario == "todowrite-resumed" || (openCodeContinuationFileTool(fileTool) || rejection || loadedInstructions) && strings.HasSuffix(scenario, "-resumed") {
 		lostTurn = 2
 	}
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -134,6 +135,9 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 			} else {
 				result = verifyOpenCodeContinuationTool(t, raw, tool, toolPath.Load().(string), dismissed)
 			}
+			if loadedInstructions {
+				verifyOpenCodeLoadedInstructions(t, result, toolPath.Load().(string), true)
+			}
 			if originalToolResult == "" {
 				originalToolResult = result
 			} else if result != originalToolResult {
@@ -154,7 +158,9 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 	}))
 	defer upstream.Close()
 	f := newFirstDispatchFixtureProfile(t, domain.OpenCode, mode, binary, upstream.URL, fixtureModel)
-	if tool != "" {
+	if loadedInstructions {
+		toolPath.Store(prepareOpenCodeLoadedRead(t, f, false))
+	} else if tool != "" {
 		toolPath.Store(prepareOpenCodeContinuationTool(t, f, tool, permission))
 	}
 	f.workerStream.Close()
@@ -353,6 +359,9 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 		}
 	}
 	stop()
+	if loadedInstructions {
+		updateOpenCodeContinuationInstructions(t, toolPath.Load().(string), true)
+	}
 	if openCodeContinuationFileTool(tool) {
 		path := toolPath.Load().(string)
 		expected := "original-inline-tool-sentinel edited\n"
@@ -457,6 +466,9 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 	var continued domain.ExecutionCompletion
 	if next.State != domain.JobSucceeded || domain.Decode(next.Output, &continued) != nil || continued.NativeThreadID != completion.NativeThreadID || continued.NativeTurnID == completion.NativeTurnID || calls.Load() != lostTurn+1+toolCalls {
 		t.Fatal("explicit Resume failed after recovered completion", next.Problem)
+	}
+	if loadedInstructions {
+		updateOpenCodeContinuationInstructions(t, toolPath.Load().(string), false)
 	}
 	if rejection {
 		if value, err := os.ReadFile(toolPath.Load().(string)); err != nil || string(value) != "original-inline-tool-sentinel\n" {

@@ -94,6 +94,12 @@ func TestManualNativeOpenCodePublicFileToolContinuation(t *testing.T) {
 	}
 }
 
+func TestManualNativeOpenCodePublicLoadedInstructionsContinuation(t *testing.T) {
+	for _, profile := range []string{"read-loaded", "read-loaded-always"} {
+		t.Run(profile, func(t *testing.T) { nativeOpenCodePublicDispatchProfile(t, 3, false, "", profile, true) })
+	}
+}
+
 func TestManualNativeOpenCodePublicInlineToolContinuation(t *testing.T) {
 	for _, tool := range []string{"read", "bash"} {
 		t.Run(tool, func(t *testing.T) { nativeOpenCodePublicDispatchProfile(t, 3, false, "", tool, true) })
@@ -105,6 +111,7 @@ func nativeOpenCodePublicDispatch(t *testing.T, turns int, failedFirst bool, fau
 }
 
 func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bool, fault, tool string, switchModes ...bool) {
+	loadedInstructions := strings.HasPrefix(tool, "read-loaded")
 	rejection := strings.HasPrefix(tool, "read-reject") || strings.HasPrefix(tool, "read-correction")
 	correction := strings.HasPrefix(tool, "read-correction")
 	rejectionCascade := rejection && strings.HasSuffix(tool, "-cascade")
@@ -126,13 +133,13 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 	}
 	question := tool == "question"
 	cascade := tool == "read-cascade" || rejectionCascade
-	permission := tool == "read-once" || tool == "read-always" || cascade || rejection
-	always := tool == "read-always" || cascade && !rejection
+	permission := tool == "read-once" || tool == "read-always" || tool == "read-loaded-always" || cascade || rejection
+	always := tool == "read-always" || tool == "read-loaded-always" || cascade && !rejection
 	permissionCount := 1
 	if cascade {
 		permissionCount = 2
 	}
-	if permission {
+	if permission || loadedInstructions {
 		tool = "read"
 	}
 	binary := os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE")
@@ -159,7 +166,7 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 			if tool != "" && !stoppedFirst {
 				expectedCalls++
 			}
-			if always || repeatTodo {
+			if always || loadedInstructions || repeatTodo {
 				expectedCalls = turns * 2
 			}
 			modeAt := func(turn int) domain.SessionMode {
@@ -214,7 +221,7 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 						serveOpenCodeContinuationArguments(t, w, tool, openCodeTodoArguments(providerTurn-1), fmt.Sprintf("%s_%d", continuationToolCall, providerTurn-1))
 						return
 					}
-				} else if always {
+				} else if always || loadedInstructions {
 					completeTools := providerTurn / 2
 					if cascade && providerTurn > 1 {
 						completeTools++
@@ -222,6 +229,9 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 					providerTurn = (providerTurn + 1) / 2
 					results := verifyOpenCodeRepeatedRead(t, raw, toolPath.Load().(string), completeTools, permissionCount)
 					for id, result := range results {
+						if loadedInstructions {
+							verifyOpenCodeLoadedInstructions(t, result, toolPath.Load().(string), id == continuationToolCall+"_0")
+						}
 						if old, found := retainedTools[id]; found && old != result {
 							t.Error("replacement altered original remembered Read result")
 						}
@@ -283,7 +293,9 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 			// protocol discovery is a pinned reported fixture; actual initialization is
 			// independently revalidated by the original installed native process.
 			f := newFirstDispatchFixtureProfile(t, domain.OpenCode, mode, binary, upstream.URL, fixtureModel)
-			if tool != "" {
+			if loadedInstructions {
+				toolPath.Store(prepareOpenCodeLoadedRead(t, f, permission))
+			} else if tool != "" {
 				toolPath.Store(prepareOpenCodeContinuationTool(t, f, tool, permission))
 			}
 			f.workerStream.Close()
@@ -400,7 +412,7 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 						expectedState, expectedOutcome, expectedDispatch := domain.JobSucceeded, domain.ExecutionSucceeded, domain.DispatchReady
 						expectedVersion := uint32(2)
 						wantCalls := turn + 1 + expectedCalls - turns
-						if always || repeatTodo {
+						if always || loadedInstructions || repeatTodo {
 							wantCalls = (turn + 1) * 2
 						}
 						if failedFirst && turn == 0 {
@@ -439,6 +451,9 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 									t.Fatal(err)
 								}
 							}
+						}
+						if loadedInstructions {
+							updateOpenCodeContinuationInstructions(t, toolPath.Load().(string), turn == 0)
 						}
 						if tool == "apply_patch" {
 							verifyOpenCodeContinuationPatchFiles(t, toolPath.Load().(string), turn)
