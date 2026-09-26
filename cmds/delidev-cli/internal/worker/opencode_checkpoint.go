@@ -20,11 +20,14 @@ const maxOpenCodeExecutionCheckpointBytes = 9 << 20
 // publication and mutation journals. A checkpoint cannot supply these facts
 // for itself or resolve a missing server report.
 type openCodeCheckpointReference struct {
-	Claim        openCodeClaimReference     `json:"claim"`
-	Completion   domain.ExecutionCompletion `json:"completion"`
-	InputMode    domain.SessionMode         `json:"input_mode"`
-	PromptSHA256 string                     `json:"prompt_sha256"`
-	ClaimsSHA256 string                     `json:"claims_sha256"`
+	Claim                 openCodeClaimReference     `json:"claim"`
+	Completion            domain.ExecutionCompletion `json:"completion"`
+	InputMode             domain.SessionMode         `json:"input_mode"`
+	PromptSHA256          string                     `json:"prompt_sha256"`
+	ClaimsSHA256          string                     `json:"claims_sha256"`
+	AssignmentInputSHA256 string                     `json:"assignment_input_sha256,omitempty"`
+	HistoryExecutionID    domain.ID                  `json:"history_execution_id,omitempty"`
+	CreationRequestID     domain.ID                  `json:"creation_request_id,omitempty"`
 }
 
 type openCodeExecutionCheckpoint struct {
@@ -45,13 +48,25 @@ func (r openCodeCheckpointReference) validate() error {
 			return executionCheckpointUncertain()
 		}
 	}
+	if r.AssignmentInputSHA256 != "" || r.HistoryExecutionID != "" || r.CreationRequestID != "" {
+		if !canonicalDigest(r.AssignmentInputSHA256) || r.HistoryExecutionID.Validate() != nil || r.CreationRequestID.Validate() != nil {
+			return executionCheckpointUncertain()
+		}
+	}
 	return nil
 }
 
 func (p openCodeExecutionCheckpoint) matches(ref openCodeCheckpointReference) bool {
 	native, original, completion := p.NativeReference, ref.Claim, ref.Completion
-	return ref.validate() == nil && p.Version == 1 && p.Reference == ref &&
-		native.OwnerID == original.JobID && native.CreationRequestID == original.ThreadRequestID && native.InputRequestID == original.InputRequestID &&
+	creation := original.ThreadRequestID
+	validVersion := p.Version == 1 && ref.AssignmentInputSHA256 == "" && ref.HistoryExecutionID == "" && ref.CreationRequestID == "" && original.Version == 1
+	if p.Version == 2 {
+		validVersion = canonicalDigest(ref.AssignmentInputSHA256) && ref.HistoryExecutionID.Validate() == nil && ref.CreationRequestID.Validate() == nil
+		creation = ref.CreationRequestID
+		validVersion = validVersion && (original.Version != 1 || creation == original.ThreadRequestID && ref.HistoryExecutionID == original.ExecutionID)
+	}
+	return ref.validate() == nil && validVersion && p.Reference == ref &&
+		native.OwnerID == original.JobID && native.CreationRequestID == creation && native.InputRequestID == original.InputRequestID &&
 		native.SessionID == string(completion.NativeThreadID) && native.InputID == string(completion.NativeTurnID) && native.InputSHA256 == ref.PromptSHA256 &&
 		(completion.Outcome == domain.ExecutionSucceeded || native.RequiresResume) && len(p.Native) > 0 && len(p.Native) <= 8<<20 &&
 		json.Valid(p.Native) && executionInputDigest(p.Native) == native.SHA256
@@ -105,7 +120,7 @@ func (c *OpenCodeEventPublisher) RetainCheckpoint(ctx context.Context) (string, 
 		return fail(err)
 	}
 	input := b.publisher.input
-	if input.Continuation != nil || input.Configuration.Harness != domain.OpenCode || input.Installation.Version != opencode.SupportedVersion {
+	if input.Configuration.Harness != domain.OpenCode || input.Installation.Version != opencode.SupportedVersion {
 		return fail(executionCheckpointUncertain())
 	}
 	claimBytes, err := json.Marshal(claims)
@@ -113,6 +128,17 @@ func (c *OpenCodeEventPublisher) RetainCheckpoint(ctx context.Context) (string, 
 		return fail(executionCheckpointUncertain())
 	}
 	ref := openCodeCheckpointReference{Claim: b.reference, Completion: *c.completion, InputMode: input.Input.Mode, PromptSHA256: executionInputDigest([]byte(input.Input.Prompt)), ClaimsSHA256: executionInputDigest(claimBytes)}
+	var assignment domain.Job
+	if domain.Decode(b.publisher.config.Assignment.DocumentJson, &assignment) != nil {
+		return fail(executionCheckpointUncertain())
+	}
+	ref.AssignmentInputSHA256, ref.HistoryExecutionID, ref.CreationRequestID = executionInputDigest(assignment.Input), input.ExecutionID, input.ThreadRequestID
+	if input.Continuation != nil {
+		if b.predecessor == nil {
+			return fail(executionCheckpointUncertain())
+		}
+		ref.HistoryExecutionID, ref.CreationRequestID = input.Continuation.HistoryExecutionID, b.predecessor.NativeReference.CreationRequestID
+	}
 	if ref.validate() != nil {
 		return fail(executionCheckpointUncertain())
 	}
@@ -120,7 +146,7 @@ func (c *OpenCodeEventPublisher) RetainCheckpoint(ctx context.Context) (string, 
 	if err != nil {
 		return fail(err)
 	}
-	value := openCodeExecutionCheckpoint{Version: 1, Reference: ref, NativeReference: nativeRef, Native: native}
+	value := openCodeExecutionCheckpoint{Version: 2, Reference: ref, NativeReference: nativeRef, Native: native}
 	if !value.matches(ref) || nativeRef.PartID != b.inputClaim.PartID {
 		return fail(executionCheckpointUncertain())
 	}
@@ -155,6 +181,13 @@ func (c *OpenCodeEventPublisher) RetainCheckpoint(ctx context.Context) (string, 
 	if _, err := check(); err != nil {
 		return fail(err)
 	}
+	// Eligibility cannot be inferred from a metadata-only checkpoint. Only the
+	// implemented complete native restoration profile may produce version 2.
+	eligible := opencode.InspectReplacementCheckpoint(ctx, home, native, nativeRef)
+	if eligible != nil && domain.SafeError(eligible).Code != domain.Unsupported {
+		return fail(eligible)
+	}
+	c.checkpointDigest, c.checkpointResumable = digest, eligible == nil
 	if b.publisher.config.Logger != nil {
 		b.publisher.config.Logger.InfoContext(ctx, "opencode_original_worker_checkpoint_retained", "job_id", ref.Claim.JobID, "execution_id", ref.Claim.ExecutionID, "sequence", ref.Completion.LastSequence)
 	}
@@ -189,4 +222,22 @@ func readOpenCodeExecutionCheckpoint(ctx context.Context, root string, ref openC
 		return openCodeExecutionCheckpoint{}, executionCheckpointUncertain()
 	}
 	return value, nil
+}
+
+// RetainCompletion binds only a newly retained eligible native checkpoint to
+// version 2. Historical version-1 server reports are never rewritten.
+func (c *OpenCodeEventPublisher) RetainCompletion(ctx context.Context) (domain.ExecutionCompletion, error) {
+	if _, err := c.RetainCheckpoint(ctx); err != nil {
+		return domain.ExecutionCompletion{}, err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.blocked || c.completion == nil || !canonicalDigest(c.checkpointDigest) {
+		return domain.ExecutionCompletion{}, executionCheckpointUncertain()
+	}
+	completion := *c.completion
+	if c.checkpointResumable {
+		completion.Version, completion.NativeCheckpointDigest = 2, c.checkpointDigest
+	}
+	return completion, nil
 }

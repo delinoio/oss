@@ -133,8 +133,8 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 }
 
 // Relay compatibility is narrower than native protocol discovery. In particular,
-// OpenCode's original owned API profile cannot authorize replacement-process
-// continuation, a different SDK protocol or silently omitted native options.
+// OpenCode continuation requires its exact accepted predecessor profile; no
+// different SDK protocol or silently omitted native options is authorized.
 func executionAPIOperations(input domain.ExecutionJobInput, protocol domain.APIProtocol) []apiproxy.Operation {
 	switch input.Configuration.Harness {
 	case domain.Codex:
@@ -143,7 +143,8 @@ func executionAPIOperations(input domain.ExecutionJobInput, protocol domain.APIP
 		}
 	case domain.OpenCode:
 		o := input.Configuration.Options
-		if input.Version != 1 || input.Continuation != nil || input.Installation.Version != domain.OpenCodeProtocolVersion || protocol != domain.OpenAIChat || input.Configuration.Effort != "" || o.SubagentModel != "" || o.SubagentEffort != "" || o.MaxConcurrency != 0 || o.ApprovalReviewModel != "" || o.ServiceTier != "" {
+		validGeneration := input.Version == 1 && input.Continuation == nil || input.Version == 2 && input.Continuation != nil && input.Validate() == nil && input.Input.Mode == input.Continuation.InputMode
+		if !validGeneration || input.Installation.Version != domain.OpenCodeProtocolVersion || protocol != domain.OpenAIChat || input.Configuration.Effort != "" || o.SubagentModel != "" || o.SubagentEffort != "" || o.MaxConcurrency != 0 || o.ApprovalReviewModel != "" || o.ServiceTier != "" {
 			return nil
 		}
 		if _, err := o.OpenCodePrimaryForInput(input.Input.Mode); err == nil {

@@ -250,7 +250,11 @@ func nativeOpenCodeWorker(t *testing.T, scenario openCodeWorkerScenario) {
 				t.Fatalf("original Worker failed: %s %v", job.State, job.Problem)
 			}
 			var completion domain.ExecutionCompletion
-			if domain.Decode(job.Output, &completion) != nil || completion.ValidateForHarness(domain.OpenCode) != nil || completion.Version != 1 || !completion.CleanupVerified || completion.NativeCheckpointDigest != "" {
+			wantVersion := uint32(2)
+			if interaction {
+				wantVersion = 1
+			}
+			if domain.Decode(job.Output, &completion) != nil || completion.ValidateForHarness(domain.OpenCode) != nil || completion.Version != wantVersion || !completion.CleanupVerified {
 				t.Fatal("Worker completion lost original cleanup or invented continuation")
 			}
 			expected := domain.ExecutionSucceeded
@@ -289,7 +293,9 @@ func nativeOpenCodeWorker(t *testing.T, scenario openCodeWorkerScenario) {
 				NativeReference opencode.CheckpointReference `json:"native_reference"`
 				Native          json.RawMessage              `json:"native"`
 			}
-			if err != nil || json.Unmarshal(checkpoint, &retainedCheckpoint) != nil || retainedCheckpoint.Reference.Completion != completion || retainedCheckpoint.NativeReference.OwnerID != f.job || retainedCheckpoint.NativeReference.RequiresResume != stopping || strings.Contains(string(checkpoint), f.input.Input.Prompt) || strings.Contains(string(checkpoint), fixtureKey) {
+			originalCompletion := completion
+			originalCompletion.Version, originalCompletion.NativeCheckpointDigest = 1, ""
+			if err != nil || json.Unmarshal(checkpoint, &retainedCheckpoint) != nil || retainedCheckpoint.Reference.Completion != originalCompletion || retainedCheckpoint.NativeReference.OwnerID != f.job || retainedCheckpoint.NativeReference.RequiresResume != stopping || strings.Contains(string(checkpoint), f.input.Input.Prompt) || strings.Contains(string(checkpoint), fixtureKey) {
 				t.Fatal("Worker checkpoint lost original completion or disclosed private content")
 			}
 			if err := opencode.InspectCheckpoint(ctx, filepath.Join(manager.Root, "runtimes", string(f.input.ExecutionID)), retainedCheckpoint.Native, retainedCheckpoint.NativeReference); err != nil {

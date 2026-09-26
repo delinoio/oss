@@ -44,6 +44,7 @@ type openCodeClaimReference struct {
 type openCodeClaimState struct {
 	Reference openCodeClaimReference  `json:"reference"`
 	Claims    []opencode.SessionClaim `json:"claims"`
+	Resume    *opencode.SessionClaim  `json:"resume,omitempty"`
 }
 
 type openCodeClaimJournal struct {
@@ -60,7 +61,7 @@ type openCodeClaimJournal struct {
 }
 
 func (r openCodeClaimReference) validate() error {
-	if r.Version != 1 || r.Revision == 0 || r.ThreadRequestID == r.InputRequestID {
+	if (r.Version != 1 && r.Version != 2) || r.Revision == 0 || r.ThreadRequestID == r.InputRequestID {
 		return openCodeClaimUncertain()
 	}
 	for _, id := range []domain.ID{r.JobID, r.InstanceID, r.ServerID, r.DeviceID, r.MachineID, r.ExecutionID, r.SessionID, r.InputID, r.AccountID, r.ConnectionID, r.ThreadRequestID, r.InputRequestID} {
@@ -82,16 +83,26 @@ func openCodeClaimUncertain() *domain.Error {
 }
 
 func openOpenCodeClaims(p *ExecutionPublisher) (*openCodeClaimJournal, error) {
+	return openOpenCodeClaimsWithResume(p, nil)
+}
+
+func openOpenCodeClaimsWithResume(p *ExecutionPublisher, resume *opencode.SessionClaim) (*openCodeClaimJournal, error) {
 	if p == nil {
 		return nil, openCodeClaimUncertain()
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	i, publication := p.input, p.state
-	if p.closed || p.release == nil || i.Validate() != nil || i.Configuration.Harness != domain.OpenCode || i.Installation.Version != opencode.SupportedVersion || i.Continuation != nil || publication.Pending != nil || publication.LastSequence != 0 || publication.JobID != p.job || i.ExecutionID != p.execution || publication.InstanceID != p.config.Instance || publication.ServerID != p.config.Credential.ServerID || publication.DeviceID != p.config.Credential.DeviceID || i.MachineID != p.config.Credential.MachineID {
+	if p.closed || p.release == nil || i.Validate() != nil || i.Configuration.Harness != domain.OpenCode || i.Installation.Version != opencode.SupportedVersion || (i.Continuation != nil) != (resume != nil) || publication.Pending != nil || publication.LastSequence != 0 || publication.JobID != p.job || i.ExecutionID != p.execution || publication.InstanceID != p.config.Instance || publication.ServerID != p.config.Credential.ServerID || publication.DeviceID != p.config.Credential.DeviceID || i.MachineID != p.config.Credential.MachineID {
 		return nil, openCodeClaimUncertain()
 	}
 	ref := openCodeClaimReference{Version: 1, JobID: p.job, InstanceID: publication.InstanceID, ServerID: publication.ServerID, DeviceID: publication.DeviceID, MachineID: i.MachineID, ExecutionID: i.ExecutionID, SessionID: i.SessionID, InputID: i.InputID, AccountID: i.AccountID, ConnectionID: i.ConnectionID, ThreadRequestID: i.ThreadRequestID, InputRequestID: i.TurnRequestID, Revision: publication.Revision, AssignmentDigest: publication.AssignmentDigest, ConfigurationDigest: i.ConfigurationDigest}
+	if resume != nil {
+		if resume.Validate() != nil || resume.Kind != opencode.ResumeSessionMutation || resume.RequestID != i.ThreadRequestID || resume.SessionID != i.Continuation.Previous.NativeThreadID || resume.MessageID != i.Continuation.Previous.NativeTurnID {
+			return nil, openCodeClaimUncertain()
+		}
+		ref.Version = 2
+	}
 	if ref.validate() != nil {
 		return nil, openCodeClaimUncertain()
 	}
@@ -114,6 +125,10 @@ func openOpenCodeClaims(p *ExecutionPublisher) (*openCodeClaimJournal, error) {
 		return nil, openCodeClaimUncertain()
 	}
 	state := openCodeClaimState{Reference: ref, Claims: []opencode.SessionClaim{}}
+	if resume != nil {
+		copy := *resume
+		state.Resume = &copy
+	}
 	raw, err := json.Marshal(state)
 	if err != nil || security.WriteAtomic(path, raw) != nil {
 		_ = lock.Close()
@@ -138,7 +153,7 @@ func openCodeClaimsPath(root string, job domain.ID) (string, error) {
 }
 
 func (s openCodeClaimState) validateNext(c opencode.SessionClaim) error {
-	if c.Validate() != nil || len(s.Claims) >= maxOpenCodeClaims {
+	if (s.Reference.Version == 2) != (s.Resume != nil) || s.Resume != nil && (s.Resume.Validate() != nil || s.Resume.Kind != opencode.ResumeSessionMutation || s.Resume.RequestID != s.Reference.ThreadRequestID) || c.Validate() != nil || len(s.Claims) >= maxOpenCodeClaims {
 		return openCodeClaimUncertain()
 	}
 	for _, prior := range s.Claims {
@@ -147,13 +162,19 @@ func (s openCodeClaimState) validateNext(c opencode.SessionClaim) error {
 		}
 	}
 	if len(s.Claims) == 0 {
+		if s.Resume != nil {
+			if c != *s.Resume {
+				return openCodeClaimUncertain()
+			}
+			return nil
+		}
 		if c.Kind != opencode.CreateSessionMutation || c.RequestID != s.Reference.ThreadRequestID {
 			return openCodeClaimUncertain()
 		}
 		return nil
 	}
 	if len(s.Claims) == 1 {
-		if c.Kind != opencode.SubmitInputMutation || c.RequestID != s.Reference.InputRequestID {
+		if c.Kind != opencode.SubmitInputMutation || c.RequestID != s.Reference.InputRequestID || s.Resume != nil && (c.SessionID != s.Resume.SessionID || c.MessageID == s.Resume.MessageID || c.PartID == s.Resume.PartID || c.RequestID == s.Resume.InputRequestID) {
 			return openCodeClaimUncertain()
 		}
 		return nil
@@ -270,7 +291,10 @@ func readOpenCodeClaims(root string, ref openCodeClaimReference) ([]opencode.Ses
 	if err != nil || !bytes.Equal(raw, canonical) {
 		return nil, openCodeClaimUncertain()
 	}
-	checked := openCodeClaimState{Reference: ref}
+	if (ref.Version == 2) != (state.Resume != nil) || state.Resume != nil && (state.Resume.Validate() != nil || state.Resume.Kind != opencode.ResumeSessionMutation || state.Resume.RequestID != ref.ThreadRequestID) {
+		return nil, openCodeClaimUncertain()
+	}
+	checked := openCodeClaimState{Reference: ref, Resume: state.Resume}
 	for _, claim := range state.Claims {
 		if err := checked.validateNext(claim); err != nil {
 			return nil, err

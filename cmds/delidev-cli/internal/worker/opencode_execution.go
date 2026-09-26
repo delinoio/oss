@@ -24,7 +24,7 @@ import (
 )
 
 func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID, input domain.ExecutionJobInput, logger *slog.Logger) (output json.RawMessage, returned error) {
-	if input.Continuation != nil || input.Installation.Version != opencode.SupportedVersion {
+	if input.Installation.Version != opencode.SupportedVersion {
 		return nil, domain.Fail(domain.Unsupported, "This OpenCode execution requires a separately verified continuation profile.", "Retain the original native history; do not start a replacement input.")
 	}
 	requested, err := openCodeExecutionSettings(input.Configuration, input.Input.Mode, "DeliDev session")
@@ -45,7 +45,15 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 		return nil, domain.Fail(domain.RecoveryRequired, "The selected native executable identity changed.", "Refresh Worker discovery before another execution; no PATH fallback is used.")
 	}
 	manager := &workspace.Manager{Root: config.Root, Logger: config.Logger}
-	lease, err := manager.ClaimFirstExecution(ctx, owner, input.ExecutionID, preparation, manifest)
+	var lease *workspace.ExecutionLease
+	if c := input.Continuation; c != nil {
+		if preparation.Type != domain.GeneralChat || input.Input.Mode != c.InputMode {
+			return nil, domain.Fail(domain.Unsupported, "This OpenCode continuation requires an unchanged text-mode General Chat workspace.", "Retain the original workspace and input until the selected native continuation profile is supported.")
+		}
+		lease, err = manager.ClaimContinuation(ctx, owner, input.ExecutionID, workspace.ExecutionPredecessor{JobID: c.Previous.JobID, ExecutionID: c.Previous.ExecutionID}, preparation, manifest)
+	} else {
+		lease, err = manager.ClaimFirstExecution(ctx, owner, input.ExecutionID, preparation, manifest)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -57,6 +65,16 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 	nativeRoot, err := openCodeWorkspaceRoot(manifest, lease.WorkingDirectory())
 	if err != nil {
 		return nil, err
+	}
+	var checkpoint *openCodeExecutionCheckpoint
+	if input.Continuation != nil {
+		value, err := readOpenCodeContinuationCheckpoint(ctx, manager.Root, config.execution.Credential, input)
+		if err != nil {
+			logger.WarnContext(ctx, "opencode_continuation_checkpoint_failed", "execution_id", input.ExecutionID, "code", domain.SafeError(err).Code)
+			return nil, err
+		}
+		checkpoint = &value
+		logger.InfoContext(ctx, "opencode_continuation_checkpoint_verified", "execution_id", input.ExecutionID, "previous_execution_id", input.Continuation.Previous.ExecutionID)
 	}
 	runtimeRoot := filepath.Join(manager.Root, "runtimes")
 	if err := security.PrivateDir(runtimeRoot); err != nil {
@@ -80,15 +98,6 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 	defer func() {
 		if err := publisher.Close(); err != nil {
 			output, returned = nil, publicationUncertain()
-		}
-	}()
-	binding, err := OpenOpenCodeBindingPublisher(publisher)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if err := binding.Close(); err != nil {
-			output, returned = nil, err
 		}
 	}()
 	rawToken, err := security.RandomToken()
@@ -125,11 +134,36 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 	defer cancelNative()
 	cancelBeforeAcceptance := context.AfterFunc(ctx, cancelNative)
 	defer cancelBeforeAcceptance()
-	api, err := opencode.OpenOwnedAPI(nativeCtx, opencode.APIExecutionConfig{
+	nativeConfig := opencode.APIExecutionConfig{
 		Probe:     opencode.ProbeConfig{Process: process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: home, Env: env, Logger: logger}, Version: input.Installation.Version, Home: filepath.Join(home, "opencode")},
 		Workspace: lease.WorkingDirectory(), NativeRoot: nativeRoot, ServerOrigin: connection.Credential.Endpoint, Token: token,
-		Settings: requested.Session, Instructions: requested.Instructions, Rejection: requested.Rejection, Claim: binding.Claim,
-	})
+		Settings: requested.Session, Instructions: requested.Instructions, Rejection: requested.Rejection,
+	}
+	var resumeClaim *opencode.SessionClaim
+	if checkpoint != nil {
+		claim, err := opencode.CheckpointResumeClaim(nativeConfig, checkpoint.NativeReference, input.ThreadRequestID)
+		if err != nil {
+			return nil, err
+		}
+		resumeClaim = &claim
+	}
+	binding, err := openOpenCodeBinding(publisher, checkpoint, resumeClaim)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := binding.Close(); err != nil {
+			output, returned = nil, err
+		}
+	}()
+	nativeConfig.Claim = binding.Claim
+	var api *opencode.OwnedAPI
+	if checkpoint != nil {
+		previousHome := filepath.Join(runtimeRoot, string(checkpoint.Reference.Claim.ExecutionID))
+		api, err = opencode.OpenResumedAPI(nativeCtx, nativeConfig, previousHome, checkpoint.Native, checkpoint.NativeReference, input.ThreadRequestID, input.Continuation.Intent == domain.ContinueExplicitly)
+	} else {
+		api, err = opencode.OpenOwnedAPI(nativeCtx, nativeConfig)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -144,9 +178,14 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 	if err != nil {
 		return nil, err
 	}
-	session, err := api.CreateSession(ctx, input.ThreadRequestID)
-	if err != nil {
-		return nil, err
+	var session string
+	if checkpoint != nil {
+		session = checkpoint.NativeReference.SessionID
+	} else {
+		session, err = api.CreateSession(ctx, input.ThreadRequestID)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if err := binding.BindSession(ctx, input.ThreadRequestID, session, observed); err != nil {
 		return nil, err
@@ -229,14 +268,15 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 			if err := finishControls(); err != nil {
 				return nil, err
 			}
-			completion, err := mapper.Complete(publicationContext)
+			_, err := mapper.Complete(publicationContext)
 			if err != nil {
 				return nil, err
 			}
 			if err := lease.Close(); err != nil {
 				return nil, err
 			}
-			if _, err := mapper.RetainCheckpoint(publicationContext); err != nil {
+			completion, err := mapper.RetainCompletion(publicationContext)
+			if err != nil {
 				return nil, err
 			}
 			return json.Marshal(completion)

@@ -13,28 +13,30 @@ import (
 // unimplemented family blocks terminal publication instead of disappearing from
 // an apparently complete transcript. Native cleanup/reporting remains separate.
 type OpenCodeEventPublisher struct {
-	mu                 sync.Mutex
-	api                *opencode.OwnedAPI
-	text               *OpenCodeTextPublisher
-	usage              *OpenCodeUsagePublisher
-	seen               map[string]bool
-	final              string
-	finish             *opencode.FinishReason
-	problem            *opencode.NativeError
-	blocked            bool
-	finished           bool
-	terminalSequence   uint64
-	terminalOutcome    domain.ExecutionOutcome
-	completion         *domain.ExecutionCompletion
-	interactions       map[string]domain.ExecutionInteractionUpdate
-	responses          map[string]*openCodeResponseAttempt
-	closedInteractions map[string]openCodeClosedInteraction
-	stopRequest        domain.ID
-	stopBuffer         []*opencode.FrozenObservation
-	stopSeen           map[string]bool
-	stopBytes          int
-	stopped            *opencode.StoppedHistoryObservation
-	stopObservation    *domain.OpenCodeStopObservation
+	mu                  sync.Mutex
+	api                 *opencode.OwnedAPI
+	text                *OpenCodeTextPublisher
+	usage               *OpenCodeUsagePublisher
+	seen                map[string]bool
+	final               string
+	finish              *opencode.FinishReason
+	problem             *opencode.NativeError
+	blocked             bool
+	finished            bool
+	terminalSequence    uint64
+	terminalOutcome     domain.ExecutionOutcome
+	completion          *domain.ExecutionCompletion
+	checkpointDigest    string
+	checkpointResumable bool
+	interactions        map[string]domain.ExecutionInteractionUpdate
+	responses           map[string]*openCodeResponseAttempt
+	closedInteractions  map[string]openCodeClosedInteraction
+	stopRequest         domain.ID
+	stopBuffer          []*opencode.FrozenObservation
+	stopSeen            map[string]bool
+	stopBytes           int
+	stopped             *opencode.StoppedHistoryObservation
+	stopObservation     *domain.OpenCodeStopObservation
 }
 
 func OpenOpenCodeEventPublisher(binding *OpenCodeBindingPublisher, api *opencode.OwnedAPI) (*OpenCodeEventPublisher, error) {

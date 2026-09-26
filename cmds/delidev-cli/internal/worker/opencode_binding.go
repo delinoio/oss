@@ -44,13 +44,25 @@ type OpenCodeBindingPublisher struct {
 	replyClaims    []opencode.SessionClaim
 	expectedStop   *opencode.SessionClaim
 	stopClaim      *opencode.SessionClaim
+	resumeClaim    *opencode.SessionClaim
+	predecessor    *openCodeExecutionCheckpoint
 }
 
 // OpenOpenCodeBindingPublisher owns a fresh mutation journal for this original
 // execution publisher. A retained journal cannot be reopened as send authority.
 // Close the native process first, then this adapter, then the shared publisher.
 func OpenOpenCodeBindingPublisher(p *ExecutionPublisher) (*OpenCodeBindingPublisher, error) {
-	journal, err := openOpenCodeClaims(p)
+	return openOpenCodeBinding(p, nil, nil)
+}
+
+func openOpenCodeBinding(p *ExecutionPublisher, predecessor *openCodeExecutionCheckpoint, resume *opencode.SessionClaim) (*OpenCodeBindingPublisher, error) {
+	if (predecessor != nil) != (resume != nil) {
+		return nil, publicationUncertain()
+	}
+	if predecessor != nil && (p == nil || p.input.Continuation == nil || predecessor.NativeReference.SessionID != resume.SessionID || predecessor.NativeReference.InputID != resume.MessageID || predecessor.NativeReference.PartID != resume.PartID || predecessor.NativeReference.InputRequestID != resume.InputRequestID || predecessor.NativeReference.CreationRequestID.Validate() != nil) {
+		return nil, publicationUncertain()
+	}
+	journal, err := openOpenCodeClaimsWithResume(p, resume)
 	if err != nil {
 		return nil, err
 	}
@@ -61,6 +73,7 @@ func OpenOpenCodeBindingPublisher(p *ExecutionPublisher) (*OpenCodeBindingPublis
 		}
 		return nil, err
 	}
+	binding.predecessor = predecessor
 	return binding, nil
 }
 
@@ -73,7 +86,7 @@ func (c *OpenCodeBindingPublisher) Claim(ctx context.Context, claim opencode.Ses
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if claim.Kind == opencode.CreateSessionMutation && c.stage != openCodeUnbound || claim.Kind == opencode.SubmitInputMutation && c.stage != openCodeBound {
+	if claim.Kind == opencode.ResumeSessionMutation && (c.stage != openCodeUnbound || c.resumeClaim == nil || *c.resumeClaim != claim) || claim.Kind == opencode.CreateSessionMutation && (c.stage != openCodeUnbound || c.resumeClaim != nil) || claim.Kind == opencode.SubmitInputMutation && c.stage != openCodeBound {
 		return openCodeClaimUncertain()
 	}
 	reply := claim.Kind == opencode.ReplyPermissionMutation || claim.Kind == opencode.ReplyQuestionMutation || claim.Kind == opencode.RejectQuestionMutation
@@ -113,7 +126,7 @@ func newOpenCodeBindingPublisher(p *ExecutionPublisher, journal *openCodeClaimJo
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	i, state := p.input, p.state
-	if p.closed || p.release == nil || state.Pending != nil || state.LastSequence != 0 || i.Validate() != nil || i.Continuation != nil || i.Configuration.Harness != domain.OpenCode || i.Installation.Version != opencode.SupportedVersion {
+	if p.closed || p.release == nil || state.Pending != nil || state.LastSequence != 0 || i.Validate() != nil || i.Configuration.Harness != domain.OpenCode || i.Installation.Version != opencode.SupportedVersion {
 		return nil, publicationUncertain()
 	}
 	requested, err := openCodeExecutionSettings(i.Configuration, i.Input.Mode, "Native publication selection")
@@ -121,19 +134,27 @@ func newOpenCodeBindingPublisher(p *ExecutionPublisher, journal *openCodeClaimJo
 		return nil, err
 	}
 	ref := openCodeClaimReference{Version: 1, JobID: p.job, InstanceID: state.InstanceID, ServerID: state.ServerID, DeviceID: state.DeviceID, MachineID: i.MachineID, ExecutionID: i.ExecutionID, SessionID: i.SessionID, InputID: i.InputID, AccountID: i.AccountID, ConnectionID: i.ConnectionID, ThreadRequestID: i.ThreadRequestID, InputRequestID: i.TurnRequestID, Revision: state.Revision, AssignmentDigest: state.AssignmentDigest, ConfigurationDigest: i.ConfigurationDigest}
+	if i.Continuation != nil {
+		ref.Version = 2
+	}
 	path, err := openCodeClaimsPath(p.config.Root, p.job)
 	if err != nil || ref.validate() != nil || state.JobID != p.job || i.ExecutionID != p.execution || state.InstanceID != p.config.Instance || state.ServerID != p.config.Credential.ServerID || state.DeviceID != p.config.Credential.DeviceID || i.MachineID != p.config.Credential.MachineID {
 		return nil, publicationUncertain()
 	}
 	journal.mu.Lock()
 	defer journal.mu.Unlock()
-	if journal.closed || journal.failed || journal.release == nil || journal.path != path || journal.state.Reference != ref {
+	if journal.closed || journal.failed || journal.release == nil || journal.path != path || journal.state.Reference != ref || (i.Continuation != nil) != (journal.state.Resume != nil) {
 		return nil, publicationUncertain()
 	}
 	if _, err := readOpenCodeClaims(p.config.Root, ref); err != nil {
 		return nil, err
 	}
-	return &OpenCodeBindingPublisher{publisher: p, journal: journal, reference: ref, requested: requested}, nil
+	binding := &OpenCodeBindingPublisher{publisher: p, journal: journal, reference: ref, requested: requested}
+	if journal.state.Resume != nil {
+		copy := *journal.state.Resume
+		binding.resumeClaim = &copy
+	}
+	return binding, nil
 }
 
 func (c *OpenCodeBindingPublisher) block() error {
@@ -148,7 +169,7 @@ func (c *OpenCodeBindingPublisher) block() error {
 func (c *OpenCodeBindingPublisher) readClaims() ([]opencode.SessionClaim, error) {
 	c.journal.mu.Lock()
 	defer c.journal.mu.Unlock()
-	if c.journal.closed || c.journal.failed || c.journal.release == nil || c.journal.state.Reference != c.reference {
+	if c.journal.closed || c.journal.failed || c.journal.release == nil || c.journal.state.Reference != c.reference || (c.journal.state.Resume == nil) != (c.resumeClaim == nil) || c.resumeClaim != nil && *c.journal.state.Resume != *c.resumeClaim {
 		return nil, openCodeClaimUncertain()
 	}
 	claims, err := readOpenCodeClaims(c.publisher.config.Root, c.reference)
@@ -203,7 +224,14 @@ func (c *OpenCodeBindingPublisher) BindSession(ctx context.Context, request doma
 		return c.block()
 	}
 	claims, err := c.readClaims()
-	if err != nil || len(claims) == 0 || claims[0].RequestID != request || claims[0].Kind != opencode.CreateSessionMutation || len(claims) > 1 && claims[1].SessionID != session {
+	kind := opencode.CreateSessionMutation
+	if c.resumeClaim != nil {
+		kind = opencode.ResumeSessionMutation
+		if c.predecessor == nil || c.predecessor.NativeReference.SessionID != session || len(claims) == 0 || claims[0] != *c.resumeClaim {
+			return c.block()
+		}
+	}
+	if err != nil || len(claims) == 0 || claims[0].RequestID != request || claims[0].Kind != kind || len(claims) > 1 && claims[1].SessionID != session {
 		return c.block()
 	}
 	c.creationClaim = claims[0]

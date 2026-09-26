@@ -92,6 +92,9 @@ func queueContinuation(tx *store.Tx, sr store.Record, session domain.Session, ex
 	if !bytes.Equal(input.Preparation, assignment.Preparation) || !bytes.Equal(input.Manifest, assignment.Manifest) {
 		return store.Record{}, nativeCompletionUncertain()
 	}
+	if input.Configuration.Harness == domain.OpenCode && session.Workspace != domain.GeneralChat {
+		return store.Record{}, domain.Fail(domain.Unsupported, "OpenCode continuation requires a verified General Chat checkpoint.", "Preserve the original project workspace until its native continuation profile is supported.")
+	}
 	input.Version, input.ExecutionID, input.InputID = 2, domain.NewID(), domain.NewID()
 	input.ThreadRequestID, input.TurnRequestID = domain.NewID(), domain.NewID()
 	input.Continuation = &domain.ExecutionContinuation{HistoryExecutionID: session.InitialExecution.ID, HistoryRequestID: domain.NewID(), Previous: *session.Execution, Completion: completion, AssignmentInputDigest: continuationDigest(job.Input), InputMode: assignment.Input.Mode, PromptDigest: continuationDigest([]byte(assignment.Input.Prompt)), Intent: intent}
@@ -115,6 +118,9 @@ func queueContinuation(tx *store.Tx, sr store.Record, session domain.Session, ex
 		return store.Record{}, continuationConflict()
 	}
 	input.InputID, input.Input = ir.ID, domain.SessionInput{Prompt: next.Prompt, Mode: next.Mode}
+	if input.Configuration.Harness == domain.OpenCode && (session.Workspace != domain.GeneralChat || input.Input.Mode != input.Continuation.InputMode) {
+		return store.Record{}, domain.Fail(domain.Unsupported, "This OpenCode continuation requires an unchanged General Chat mode.", "Preserve the queued input and original history until the selected continuation profile is supported.")
+	}
 	if err := input.Validate(); err != nil {
 		return store.Record{}, err
 	}

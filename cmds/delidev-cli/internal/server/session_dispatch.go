@@ -80,8 +80,8 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 	switch c.Harness {
 	case domain.Codex:
 	case domain.OpenCode:
-		if input.Continuation != nil {
-			return empty, domain.Fail(domain.Unsupported, "OpenCode continuation requires an original native checkpoint profile.", "Preserve the completed history and queued input; do not create another first execution.")
+		if input.Continuation != nil && input.Input.Mode != input.Continuation.InputMode {
+			return empty, domain.Fail(domain.Unsupported, "OpenCode continuation requires the preceding native mode.", "Keep the input queued until mode-switch history is supported.")
 		}
 		if _, err := c.OpenCodePrimaryForInput(input.Input.Mode); err != nil {
 			return empty, err
@@ -168,7 +168,7 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 		return empty, workspace.ResultUncertain()
 	}
 	if c.Harness == domain.OpenCode {
-		if len(manifest.Repositories) > 1 || request.Type == domain.GeneralChat && machine.OS == "windows" {
+		if len(manifest.Repositories) > 1 || request.Type == domain.GeneralChat && machine.OS == "windows" || input.Continuation != nil && request.Type != domain.GeneralChat {
 			return empty, domain.Fail(domain.Unsupported, "This OpenCode workspace requires an additional native identity/settings profile.", "Preserve every repository and its prepared ownership; do not omit roots or infer Windows non-VCS identity.")
 		}
 	} else {

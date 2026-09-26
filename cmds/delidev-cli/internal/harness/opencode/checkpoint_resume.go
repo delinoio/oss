@@ -28,18 +28,12 @@ func OpenResumedAPI(ctx context.Context, config APIExecutionConfig, home string,
 	if err != nil || ctx.Err() != nil || request.Validate() != nil || request == ref.CreationRequestID || request == ref.InputRequestID || request == ref.OwnerID || config.Probe.Process.OwnerID == ref.OwnerID || source.Reference.RequiresResume && !explicitResume || config.Workspace != source.Workspace || config.NativeRoot != source.NativeRoot || source.Project != "global" || filepath.Dir(source.NativeRoot) != source.NativeRoot {
 		return nil, sessionUncertain()
 	}
+	if checkpointReplacementProfile(source) != nil || request == config.Probe.Process.OwnerID || config.Probe.Process.OwnerID == ref.CreationRequestID || config.Probe.Process.OwnerID == ref.InputRequestID {
+		return nil, incompatible()
+	}
 	for _, history := range checkpointHistories(source) {
-		if request == history.RequestID {
+		if request == history.RequestID || config.Probe.Process.OwnerID == history.RequestID {
 			return nil, sessionUncertain()
-		}
-		for _, message := range history.Messages {
-			for _, part := range message.Parts {
-				switch part.Kind {
-				case TextPartKind, ReasoningPartKind, StepStartPartKind, StepFinishPartKind:
-				default:
-					return nil, incompatible()
-				}
-			}
 		}
 	}
 	resume := &checkpointResume{source: source, raw: bytes.Clone(raw), ref: ref, request: request}
@@ -80,7 +74,7 @@ func (s *sessionAPI) freshCheckpointInput(request domain.ID, message, part strin
 	if s.predecessor == nil {
 		return true
 	}
-	if request == s.resumeRequest {
+	if request == s.resumeRequest || request == s.owner {
 		return false
 	}
 	for _, prior := range checkpointHistories(*s.predecessor) {
@@ -110,16 +104,10 @@ func (r *checkpointResume) stage(ctx context.Context, config apiSessionConfig, p
 	if err != nil || settings != r.source.SettingsSHA256 || InspectCheckpoint(ctx, r.source.RuntimeHome, r.raw, r.ref) != nil {
 		return sessionUncertain()
 	}
-	intent, err := json.Marshal(struct {
-		CheckpointSHA256 string
-		OwnerID          domain.ID
-		RuntimeSHA256    string
-		CredentialSHA256 string
-	}{r.ref.SHA256, config.Probe.Process.OwnerID, mutationDigest([]byte(home)), mutationDigest([]byte(profile.Token))})
+	claim, err := CheckpointResumeClaim(config, r.ref, r.request)
 	if err != nil {
-		return sessionUncertain()
+		return err
 	}
-	claim := SessionClaim{RequestID: r.request, Kind: ResumeSessionMutation, SessionID: r.ref.SessionID, MessageID: r.ref.InputID, PartID: r.ref.PartID, InputRequestID: r.ref.InputRequestID, BodyDigest: mutationDigest(intent)}
 	if claim.Validate() != nil || config.Claim(ctx, claim) != nil {
 		return sessionUncertain()
 	}
@@ -127,4 +115,57 @@ func (r *checkpointResume) stage(ctx context.Context, config apiSessionConfig, p
 		return err
 	}
 	return InspectCheckpoint(ctx, r.source.RuntimeHome, r.raw, r.ref)
+}
+
+// InspectReplacementCheckpoint is a read-only eligibility check for the
+// current native text profile. It supplies neither accepted report authority
+// nor a lease, account grant or permission to launch a replacement.
+func InspectReplacementCheckpoint(ctx context.Context, home string, raw []byte, ref CheckpointReference) error {
+	value, err := decodeCheckpoint(raw, ref, home)
+	if err != nil {
+		return err
+	}
+	if err := checkpointReplacementProfile(value); err != nil {
+		return err
+	}
+	return InspectCheckpoint(ctx, home, raw, ref)
+}
+
+func checkpointReplacementProfile(value nativeCheckpoint) error {
+	if value.Project != "global" || filepath.Dir(value.NativeRoot) != value.NativeRoot {
+		return incompatible()
+	}
+	for _, history := range checkpointHistories(value) {
+		for _, message := range history.Messages {
+			for _, part := range message.Parts {
+				switch part.Kind {
+				case TextPartKind, ReasoningPartKind, StepStartPartKind, StepFinishPartKind:
+				default:
+					return incompatible()
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// CheckpointResumeClaim derives only the exact metadata intent that an owning
+// Worker must synchronize. Calling it performs no mutation or native launch;
+// OpenResumedAPI independently validates the original closed evidence.
+func CheckpointResumeClaim(config APIExecutionConfig, ref CheckpointReference, request domain.ID) (SessionClaim, error) {
+	home := filepath.Dir(config.Probe.Home)
+	if !checkpointDigest(ref.SHA256) || config.Probe.Process.OwnerID.Validate() != nil || !checkpointPath(home) || config.Token == "" {
+		return SessionClaim{}, sessionInvalid()
+	}
+	intent, err := json.Marshal(struct {
+		CheckpointSHA256 string
+		OwnerID          domain.ID
+		RuntimeSHA256    string
+		CredentialSHA256 string
+	}{ref.SHA256, config.Probe.Process.OwnerID, mutationDigest([]byte(home)), mutationDigest([]byte(config.Token))})
+	claim := SessionClaim{RequestID: request, Kind: ResumeSessionMutation, SessionID: ref.SessionID, MessageID: ref.InputID, PartID: ref.PartID, InputRequestID: ref.InputRequestID, BodyDigest: mutationDigest(intent)}
+	if err != nil || claim.Validate() != nil {
+		return SessionClaim{}, sessionInvalid()
+	}
+	return claim, nil
 }
