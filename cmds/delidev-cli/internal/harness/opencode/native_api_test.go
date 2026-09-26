@@ -63,6 +63,7 @@ const (
 	nativeDirectScriptedAPI nativeRelayFixtureMode = iota
 	nativeServerRelay
 	nativeServerRelayRejectedCredential
+	nativeServerRelayPlanEditDenied
 )
 
 func TestManualNativeOpenCodeOwnedAPIProxy(t *testing.T) {
@@ -88,6 +89,21 @@ func TestManualNativeOpenCodeOwnedAPIDefaultPermissions(t *testing.T) {
 func TestManualNativeOpenCodeOwnedAPIAdditiveInstructions(t *testing.T) {
 	nativeOwnedAPISessionWithProfile(t, true, false, nativeServerRelay, func(c *apiSessionConfig) {
 		c.Instructions = "Private first template 지침.\nPrivate second template: preserve order."
+	})
+}
+
+func TestManualNativeOpenCodeOwnedAPIPlan(t *testing.T) {
+	nativeOwnedAPISessionWithProfile(t, true, false, nativeServerRelay, func(c *apiSessionConfig) {
+		c.Settings.Agent = PlanAgent
+		c.Settings.Permission = []PermissionRule{}
+		c.Instructions = privateInstructionsFixture
+	})
+}
+
+func TestManualNativeOpenCodeOwnedAPIPlanDeniesOrdinaryWrite(t *testing.T) {
+	nativeOwnedAPISessionWithProfile(t, true, false, nativeServerRelayPlanEditDenied, func(c *apiSessionConfig) {
+		c.Settings.Agent = PlanAgent
+		c.Settings.Permission = []PermissionRule{}
 	})
 }
 
@@ -146,7 +162,7 @@ func nativeOwnedAPISessionWithProfile(t *testing.T, input, mismatch bool, relayM
 	})
 	var requests atomic.Int32
 	relay := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests.Add(1)
+		number := requests.Add(1)
 		var body map[string]json.RawMessage
 		raw, err := io.ReadAll(io.LimitReader(r.Body, maxHTTPBody+1))
 		path, key := apiproxy.Prefix+"/chat/completions", config.Token
@@ -179,6 +195,29 @@ func nativeOwnedAPISessionWithProfile(t *testing.T, input, mismatch bool, relayM
 			}
 			if strings.Count(system.String(), config.Instructions) != 1 || !strings.Contains(system.String(), "You are opencode, an interactive CLI tool") || !strings.Contains(system.String(), "Working directory: "+config.Workspace) {
 				t.Error("additive instructions replaced native base/environment or lost original template bytes/order")
+			}
+		}
+		if relayMode == nativeServerRelayPlanEditDenied {
+			if number > 2 {
+				t.Error("native Plan fixture repeated provider work")
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			if number == 1 {
+				arguments, _ := json.Marshal(map[string]any{"filePath": filepath.Join(config.Workspace, "forbidden.txt"), "content": "private refused write"})
+				w.Header().Set("Content-Type", "text/event-stream")
+				for _, chunk := range []map[string]any{
+					{"id": "chatcmpl-private", "object": "chat.completion.chunk", "created": 1, "model": "private-model", "choices": []any{map[string]any{"index": 0, "delta": map[string]any{"role": "assistant", "tool_calls": []any{map[string]any{"index": 0, "id": "call_private_plan_write", "type": "function", "function": map[string]any{"name": "write", "arguments": string(arguments)}}}}, "finish_reason": nil}}},
+					{"id": "chatcmpl-private", "object": "chat.completion.chunk", "created": 1, "model": "private-model", "choices": []any{map[string]any{"index": 0, "delta": map[string]any{}, "finish_reason": "tool_calls"}}},
+				} {
+					encoded, _ := json.Marshal(chunk)
+					_, _ = io.WriteString(w, "data: "+string(encoded)+"\n\n")
+				}
+				_, _ = io.WriteString(w, "data: [DONE]\n\n")
+				return
+			}
+			if result, ok := providerToolResult(body["messages"], "call_private_plan_write"); !ok || !strings.Contains(result, "The user has specified a rule which prevents you") {
+				t.Error("native Plan continuation omitted its original write error")
 			}
 		}
 		if relayMode == nativeServerRelayRejectedCredential {
@@ -287,7 +326,30 @@ func nativeOwnedAPISessionWithProfile(t *testing.T, input, mismatch bool, relayM
 		}
 	}
 	progress := observer.snapshot()
-	if !progress.SettledObserved || !progress.UserSeen || !progress.InputPartSeen || requests.Load() != 1 || len(claims) != 2 {
+	expectedRequests := int32(1)
+	if relayMode == nativeServerRelayPlanEditDenied {
+		expectedRequests = 2
+		if _, err := os.Lstat(filepath.Join(config.Workspace, "forbidden.txt")); !os.IsNotExist(err) {
+			t.Fatal("native Plan changed an ordinary workspace file")
+		}
+		found := false
+		for _, part := range observer.parts {
+			if tool := part.value.Tool; tool != nil && tool.CallID == "call_private_plan_write" {
+				if found || tool.State != ToolError || tool.Name != "write" || tool.Error == nil || !strings.Contains(*tool.Error, "The user has specified a rule which prevents you") {
+					t.Fatal("native Plan refusal lost its original failed tool identity")
+				}
+				var original map[string]json.RawMessage
+				if domain.Decode(tool.Input, &original) != nil || !scalar(original["filePath"], filepath.Join(config.Workspace, "forbidden.txt")) || !scalar(original["content"], "private refused write") {
+					t.Fatal("native Plan refusal lost the exact original write input")
+				}
+				found = true
+			}
+		}
+		if !found {
+			t.Fatal("native Plan did not retain its original write failure")
+		}
+	}
+	if !progress.SettledObserved || !progress.UserSeen || !progress.InputPartSeen || requests.Load() != expectedRequests || len(claims) != 2 {
 		t.Fatal("owned native input did not settle with exact original claims")
 	}
 	if receipt, err := api.inspectInput(ctx); err != nil || !receipt.Recorded || receipt.MessageID != claims[1].MessageID || receipt.PartID != claims[1].PartID {
@@ -306,7 +368,7 @@ func nativeOwnedAPISessionWithProfile(t *testing.T, input, mismatch bool, relayM
 		t.Fatal("owned native scripted success became a settled error")
 	}
 	if realRelay {
-		if authority.acquired.Load() != 1 || authority.keys.Load() != 1 || authority.released.Load() != 1 {
+		if authority.acquired.Load() != expectedRequests || authority.keys.Load() != expectedRequests || authority.released.Load() != expectedRequests {
 			t.Fatal("actual relay did not preserve one scoped request/key/release lifecycle")
 		}
 		for _, message := range observer.messages {

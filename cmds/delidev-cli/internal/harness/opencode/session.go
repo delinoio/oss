@@ -28,9 +28,16 @@ type PermissionRule struct {
 	Action     PermissionAction `json:"action"`
 }
 
+type PrimaryAgent string
+
+const (
+	BuildAgent PrimaryAgent = "build"
+	PlanAgent  PrimaryAgent = "plan"
+)
+
 type SessionSettings struct {
 	Title      string           `json:"-"`
-	Agent      string           `json:"-"`
+	Agent      PrimaryAgent     `json:"-"`
 	Provider   string           `json:"-"`
 	Model      string           `json:"-"`
 	Permission []PermissionRule `json:"-"`
@@ -164,7 +171,7 @@ func (s *sessionAPI) diagnostic(ctx context.Context, kind SessionMutation, err e
 }
 
 func validSessionSettings(settings SessionSettings) bool {
-	if domain.Text(settings.Title, "title", 1024, true) != nil || domain.Text(settings.Agent, "agent", 128, true) != nil || domain.Text(settings.Provider, "provider", 256, true) != nil || domain.Text(settings.Model, "model", 256, true) != nil || settings.Permission == nil || len(settings.Permission) > 128 {
+	if domain.Text(settings.Title, "title", 1024, true) != nil || settings.Agent != BuildAgent && settings.Agent != PlanAgent || domain.Text(settings.Provider, "provider", 256, true) != nil || domain.Text(settings.Model, "model", 256, true) != nil || settings.Permission == nil || len(settings.Permission) > 128 {
 		return false
 	}
 	for _, rule := range settings.Permission {
@@ -239,7 +246,7 @@ func (s *sessionAPI) create(ctx context.Context, request domain.ID, settings Ses
 	settings.Permission = slices.Clone(settings.Permission)
 	body, _ := json.Marshal(struct {
 		Title      string           `json:"title"`
-		Agent      string           `json:"agent"`
+		Agent      PrimaryAgent     `json:"agent"`
 		Model      sessionModel     `json:"model"`
 		Permission []PermissionRule `json:"permission"`
 		Metadata   sessionMetadata  `json:"metadata"`
@@ -327,10 +334,10 @@ func (s *sessionAPI) submit(ctx context.Context, request domain.ID, messageID, p
 	}
 	settings := s.creation.settings
 	body, _ := json.Marshal(struct {
-		MessageID string      `json:"messageID"`
-		Model     inputModel  `json:"model"`
-		Agent     string      `json:"agent"`
-		Parts     []inputPart `json:"parts"`
+		MessageID string       `json:"messageID"`
+		Model     inputModel   `json:"model"`
+		Agent     PrimaryAgent `json:"agent"`
+		Parts     []inputPart  `json:"parts"`
 	}{messageID, inputModel{settings.Provider, settings.Model}, settings.Agent, []inputPart{{partID, "text", text}}})
 	if len(body) > maxHTTPBody {
 		return InputReceipt{}, sessionInvalid()

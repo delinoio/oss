@@ -60,9 +60,9 @@ func prepareAPISession(config apiSessionConfig) ([]string, *nativeAPIProfile, er
 	if config.Probe.Process.OwnerID.Validate() != nil || !filepath.IsAbs(config.Probe.Process.Executable) || config.Claim == nil || !apiproxy.ValidToken(config.Token) || !canonicalDirectory(config.Workspace) || !canonicalDirectory(config.NativeRoot) || !directoryContains(config.NativeRoot, config.Workspace) {
 		return nil, nil, sessionInvalid()
 	}
-	// This first owned API initializer proves the native build agent. Other
-	// agents need their own effective policy evidence before launch authority.
-	if config.Settings.Agent != "build" {
+	// Only the two native primary profiles have effective-policy evidence.
+	// This does not grant agent switching, subagent execution or Plan approval.
+	if config.Settings.Agent != BuildAgent && config.Settings.Agent != PlanAgent {
 		return nil, nil, incompatible()
 	}
 	root := filepath.Dir(config.Probe.Home)
@@ -189,7 +189,9 @@ func (s *sessionAPI) verifyNativeContext(ctx context.Context, config apiSessionC
 		validate func([]byte) error
 	}{
 		{"/path", func(raw []byte) error { return exactPrivateJSON(raw, paths) }},
-		{"/agent", func(raw []byte) error { return validateBuildAgent(raw, root) }},
+		{"/agent", func(raw []byte) error {
+			return validatePrimaryAgent(raw, config.Settings.Agent, root, config.NativeRoot)
+		}},
 	} {
 		raw, status, err := s.request(ctx, http.MethodGet, step.path, nil, http.StatusOK)
 		if err == nil {
@@ -208,7 +210,11 @@ func (s *sessionAPI) verifyNativeContext(ctx context.Context, config apiSessionC
 	return nil
 }
 
-func validateBuildAgent(raw []byte, root string) error {
+func validatePrimaryAgent(raw []byte, selected PrimaryAgent, root, worktree string) error {
+	expected, err := expectedPrimaryAgent(selected, root, worktree)
+	if err != nil {
+		return err
+	}
 	var agents []json.RawMessage
 	if domain.Decode(raw, &agents) != nil || len(agents) != 7 {
 		return sessionProblem()
@@ -224,10 +230,9 @@ func validateBuildAgent(raw []byte, root string) error {
 			return sessionProblem()
 		}
 		seen[name] = true
-		if name != "build" {
+		if name != string(selected) {
 			continue // Their policies do not grant a launch or child capability.
 		}
-		expected := expectedBuildAgent(root)
 		if err := exactPrivateJSON(raw, expected); err != nil {
 			return err
 		}
@@ -235,7 +240,7 @@ func validateBuildAgent(raw []byte, root string) error {
 	return nil
 }
 
-func expectedBuildAgent(root string) map[string]any {
+func expectedPrimaryAgent(agent PrimaryAgent, root, worktree string) (map[string]any, error) {
 	glob := filepath.Join(root, "data", "opencode", "tool-output", "*")
 	rules := []PermissionRule{
 		{"*", "*", PermissionAllow}, {"doom_loop", "*", PermissionAsk},
@@ -243,7 +248,30 @@ func expectedBuildAgent(root string) map[string]any {
 		{"external_directory", filepath.Join(root, "tmp", "opencode", "*"), PermissionAllow},
 		{"question", "*", PermissionDeny}, {"plan_enter", "*", PermissionDeny}, {"plan_exit", "*", PermissionDeny},
 		{"read", "*", PermissionAllow}, {"read", "*.env", PermissionAsk}, {"read", "*.env.*", PermissionAsk}, {"read", "*.env.example", PermissionAllow},
-		{"question", "*", PermissionAllow}, {"plan_enter", "*", PermissionAllow}, {"external_directory", glob, PermissionAllow},
 	}
-	return map[string]any{"name": "build", "description": "The default agent. Executes tools based on configured permissions.", "mode": "primary", "native": true, "options": map[string]any{}, "permission": rules}
+	var description string
+	switch agent {
+	case BuildAgent:
+		description = "The default agent. Executes tools based on configured permissions."
+		rules = append(rules, PermissionRule{"question", "*", PermissionAllow}, PermissionRule{"plan_enter", "*", PermissionAllow})
+	case PlanAgent:
+		description = "Plan mode. Disallows all edit tools."
+		plans := filepath.Join(root, "data", "opencode", "plans")
+		relative, err := filepath.Rel(worktree, filepath.Join(plans, "*.md"))
+		if err != nil {
+			return nil, incompatible()
+		}
+		// Preserve native rules and order verbatim; do not interpret globs,
+		// synthesize a read-only sandbox or remove native plan-file exceptions.
+		rules = append(rules,
+			PermissionRule{"question", "*", PermissionAllow}, PermissionRule{"plan_exit", "*", PermissionAllow},
+			PermissionRule{"task", "general", PermissionDeny}, PermissionRule{"external_directory", filepath.Join(plans, "*"), PermissionAllow},
+			PermissionRule{"edit", "*", PermissionDeny}, PermissionRule{"edit", filepath.Join(".opencode", "plans", "*.md"), PermissionAllow},
+			PermissionRule{"edit", relative, PermissionAllow},
+		)
+	default:
+		return nil, incompatible()
+	}
+	rules = append(rules, PermissionRule{"external_directory", glob, PermissionAllow})
+	return map[string]any{"name": agent, "description": description, "mode": "primary", "native": true, "options": map[string]any{}, "permission": rules}, nil
 }

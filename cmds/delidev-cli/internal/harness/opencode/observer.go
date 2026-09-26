@@ -386,13 +386,13 @@ func (o *inputObserver) message(raw []byte) (*NativeMessage, bool, error) {
 	if value.User != nil {
 		u := value.User
 		settings := o.creation.settings
-		if value.ID != o.input.receipt.MessageID || u.Agent != settings.Agent || u.Model != settings.Model || u.Provider != settings.Provider || u.Variant != nil || u.System != nil || u.Tools != nil || u.Format != nil {
+		if value.ID != o.input.receipt.MessageID || u.Agent != string(settings.Agent) || u.Model != settings.Model || u.Provider != settings.Provider || u.Variant != nil || u.System != nil || u.Tools != nil || u.Format != nil {
 			return nil, false, observerProblem()
 		}
 	} else {
 		a := value.Assistant
 		settings := o.creation.settings
-		if !o.progress.UserSeen || !o.progress.InputPartSeen || a.ParentID != o.input.receipt.MessageID || a.Agent != settings.Agent || a.Mode != settings.Agent || a.Provider != settings.Provider || a.Model != settings.Model || a.Cwd != o.cwd || a.Root != o.root || a.Variant != nil || a.Summary != nil || a.Structured != nil {
+		if !o.progress.UserSeen || !o.progress.InputPartSeen || a.ParentID != o.input.receipt.MessageID || a.Agent != string(settings.Agent) || a.Mode != string(settings.Agent) || a.Provider != settings.Provider || a.Model != settings.Model || a.Cwd != o.cwd || a.Root != o.root || a.Variant != nil || a.Summary != nil || a.Structured != nil {
 			return nil, false, observerProblem()
 		}
 		if old == nil {

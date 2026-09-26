@@ -136,7 +136,7 @@ func validateDiffs(raw json.RawMessage) bool {
 func validateSession(raw []byte, cwd string, creation *sessionCreation, fresh bool) (sessionIdentity, error) {
 	bad := func() (sessionIdentity, error) { return sessionIdentity{}, sessionProblem() }
 	fields, err := shape(raw, []string{"id", "slug", "projectID", "directory", "path", "cost", "tokens", "title", "agent", "model", "version", "metadata", "time", "permission"}, []string{"summary"})
-	if err != nil || !scalar(fields["directory"], cwd) || !scalar(fields["agent"], creation.settings.Agent) || !scalar(fields["version"], SupportedVersion) || !nonnegativeDecimal(fields["cost"]) || !validateCounters(fields["tokens"]) {
+	if err != nil || !scalar(fields["directory"], cwd) || !scalar(fields["agent"], string(creation.settings.Agent)) || !scalar(fields["version"], SupportedVersion) || !nonnegativeDecimal(fields["cost"]) || !validateCounters(fields["tokens"]) {
 		return bad()
 	}
 	id, ok := boundedString(fields["id"], 30, true)
@@ -219,7 +219,7 @@ func validateStoredInput(raw []byte, settings SessionSettings, input sessionInpu
 		return false, sessionProblem()
 	}
 	user := message.User
-	if user.Agent != settings.Agent || user.Provider != settings.Provider || user.Model != settings.Model || user.Variant != nil || user.System != nil || user.Tools != nil || user.Format != nil {
+	if user.Agent != string(settings.Agent) || user.Provider != settings.Provider || user.Model != settings.Model || user.Variant != nil || user.System != nil || user.Tools != nil || user.Format != nil {
 		return false, sessionProblem()
 	}
 	var parts []json.RawMessage

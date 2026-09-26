@@ -63,7 +63,7 @@ func TestOwnedAPIInvalidSettingsFailBeforeNativeLaunch(t *testing.T) {
 		{"origin-path", func(c *apiSessionConfig) { c.ServerOrigin += "/upstream" }},
 		{"origin-credentials", func(c *apiSessionConfig) { c.ServerOrigin = "https://user:private-secret@server.invalid" }},
 		{"origin-query", func(c *apiSessionConfig) { c.ServerOrigin += "?" }},
-		{"native-agent", func(c *apiSessionConfig) { c.Settings.Agent = "plan" }},
+		{"native-agent", func(c *apiSessionConfig) { c.Settings.Agent = "general" }},
 		{"native-root", func(c *apiSessionConfig) { c.NativeRoot = filepath.Dir(c.Probe.Home) }},
 		{"private-workspace-overlap", func(c *apiSessionConfig) { c.Workspace = c.Probe.Home }},
 		{"unclean-workspace", func(c *apiSessionConfig) { c.Workspace += string(filepath.Separator) + "." }},
@@ -116,7 +116,8 @@ func TestManagedPolicyInspectionNeverReadsOrOverridesContent(t *testing.T) {
 }
 
 func fixtureAgentInventory(root string) []any {
-	agents := []any{expectedBuildAgent(root)}
+	build, _ := expectedPrimaryAgent(BuildAgent, root, root)
+	agents := []any{build}
 	for _, name := range []string{"plan", "general", "explore", "compaction", "title", "summary"} {
 		agents = append(agents, map[string]any{"name": name, "mode": "primary", "native": true, "permission": []any{}, "options": map[string]any{}})
 	}
@@ -140,13 +141,58 @@ func TestSelectedNativeBuildPolicyCannotGainOverrides(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			agents := fixtureAgentInventory(root)
 			raw, _ := json.Marshal(agents)
-			if err := validateBuildAgent(raw, root); err != nil {
+			if err := validatePrimaryAgent(raw, BuildAgent, root, root); err != nil {
 				t.Fatal(err)
 			}
 			test.change(agents[0].(map[string]any))
 			raw, _ = json.Marshal(agents)
-			if err := validateBuildAgent(raw, root); err == nil || domain.SafeError(err).Code != domain.Unsupported {
+			if err := validatePrimaryAgent(raw, BuildAgent, root, root); err == nil || domain.SafeError(err).Code != domain.Unsupported {
 				t.Fatal("changed native agent policy gained initialization authority")
+			}
+		})
+	}
+}
+
+func TestSelectedNativePlanPolicyPreservesExceptionsAndOrder(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "private-runtime")
+	worktree := filepath.Join(t.TempDir(), "workspace")
+	for _, change := range []string{"none", "missing-edit-deny", "different-native-root", "absolute-relative-plan", "reordered-rules", "build-policy", "system-prompt", "model", "extra-rule", "hidden"} {
+		t.Run(change, func(t *testing.T) {
+			selected, err := expectedPrimaryAgent(PlanAgent, root, worktree)
+			if err != nil {
+				t.Fatal(err)
+			}
+			agents := fixtureAgentInventory(root)
+			agents[1] = selected
+			rules := selected["permission"].([]PermissionRule)
+			switch change {
+			case "missing-edit-deny":
+				for i := range rules {
+					if rules[i].Permission == "edit" && rules[i].Pattern == "*" {
+						rules[i].Action = PermissionAllow
+					}
+				}
+			case "different-native-root":
+				agents[1], _ = expectedPrimaryAgent(PlanAgent, root, filepath.Join(worktree, "foreign"))
+			case "absolute-relative-plan":
+				rules[len(rules)-2].Pattern = filepath.Join(root, "data", "opencode", "plans", "*.md")
+			case "reordered-rules":
+				rules[0], rules[1] = rules[1], rules[0]
+			case "build-policy":
+				build, _ := expectedPrimaryAgent(BuildAgent, root, worktree)
+				selected["permission"] = build["permission"]
+			case "system-prompt":
+				selected["prompt"] = "foreign private override"
+			case "model":
+				selected["model"] = map[string]any{"providerID": "foreign", "modelID": "foreign"}
+			case "extra-rule":
+				selected["permission"] = append(rules, PermissionRule{"edit", "*", PermissionAllow})
+			case "hidden":
+				selected["hidden"] = true
+			}
+			raw, _ := json.Marshal(agents)
+			if err := validatePrimaryAgent(raw, PlanAgent, root, worktree); (err == nil) != (change == "none") {
+				t.Fatal("native Plan selection ignored exact original ordered policy")
 			}
 		})
 	}
