@@ -4472,23 +4472,30 @@ mod tests {
         fs::create_dir(&root).unwrap();
         fs::write(root.join("input.txt"), b"fixture").unwrap();
         fs::write(root.join(".env"), b"secret").unwrap();
-        let bundle = directory.path().join("bundle");
-        let output = std::process::Command::new(std::env::current_exe().unwrap())
-            .arg("--exact")
-            .arg("cli::tests::windows_reproduction_cli_child")
-            .env("CLIBOX_FSPY_WIN_REPRO_ROOT", &root)
-            .env("CLIBOX_FSPY_WIN_REPRO_BUNDLE", &bundle)
-            .current_dir(&root)
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        assert_eq!(fs::read(bundle.join("input.txt")).unwrap(), b"fixture");
-        assert!(bundle.join(".clibox-fspy-repro/manifest.json").exists());
-        assert!(!bundle.join(".env").exists());
+        for case in ["verified", "blocked", "original", "metadata"] {
+            let bundle = directory.path().join(format!("{case}-bundle"));
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .arg("--exact")
+                .arg("cli::tests::windows_reproduction_cli_child")
+                .env("CLIBOX_FSPY_WIN_REPRO_ROOT", &root)
+                .env("CLIBOX_FSPY_WIN_REPRO_BUNDLE", &bundle)
+                .env("CLIBOX_FSPY_WIN_REPRO_CASE", case)
+                .current_dir(&root)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{case}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            if case == "verified" {
+                assert_eq!(fs::read(bundle.join("input.txt")).unwrap(), b"fixture");
+                assert!(bundle.join(".clibox-fspy-repro/manifest.json").exists());
+                assert!(!bundle.join(".env").exists());
+            } else {
+                assert!(!bundle.exists());
+            }
+        }
     }
 
     #[cfg(target_os = "windows")]
@@ -4498,13 +4505,14 @@ mod tests {
             return;
         };
         let bundle = std::env::var_os("CLIBOX_FSPY_WIN_REPRO_BUNDLE").unwrap();
+        let case = std::env::var("CLIBOX_FSPY_WIN_REPRO_CASE").unwrap();
         let cli = TestCli::try_parse_from([
             OsString::from("fspy"),
             OsString::from("min-repro"),
             OsString::from("--root"),
             root,
             OsString::from("--include"),
-            OsString::from("input.txt"),
+            OsString::from(if case == "blocked" { "*" } else { "input.txt" }),
             OsString::from("--bundle-dir"),
             bundle,
             OsString::from("--expect-exit"),
@@ -4519,7 +4527,7 @@ mod tests {
             OsString::from("--nocapture"),
         ])
         .unwrap();
-        assert_eq!(execute(cli.command), 0);
+        assert_eq!(execute(cli.command), if case == "verified" { 0 } else { 1 });
     }
 
     #[cfg(target_os = "windows")]
@@ -4528,7 +4536,18 @@ mod tests {
         if std::env::var_os("CLIBOX_FSPY_WIN_REPRO_ROOT").is_none() {
             return;
         }
-        assert_eq!(fs::read("input.txt").unwrap(), b"fixture");
+        let case = std::env::var("CLIBOX_FSPY_WIN_REPRO_CASE").unwrap();
+        let root = PathBuf::from(std::env::var_os("CLIBOX_FSPY_WIN_REPRO_ROOT").unwrap());
+        let path = match case.as_str() {
+            "blocked" => PathBuf::from(".env"),
+            "original" | "metadata" => root.join("input.txt"),
+            _ => PathBuf::from("input.txt"),
+        };
+        if case == "metadata" {
+            fs::metadata(path).unwrap();
+        } else {
+            fs::read(path).unwrap();
+        }
         eprintln!("EXPECTED");
         std::process::exit(42);
     }
