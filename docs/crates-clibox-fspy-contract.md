@@ -35,6 +35,8 @@ The pre-execution asset denominator walks the selected root, follows only intern
 
 The reproduction path copies eligible selected regular files before execution into a private directory, retaining only internal link mappings and their targets. It applies the fixed credential-like path denylist, file/byte limits, source-descriptor containment checks, and hashes required inputs again before staging an observed subset. The private handler checks the original failure, reruns a candidate in a separate working directory, rejects original-tree and uncollected content reads, checks result limits, and atomically publishes a clean bundle with a file/hash manifest, link map, external accesses, and rerun guidance. Native Linux, macOS, and Windows tests cover verified, blocked, original-tree, and metadata outcomes. Publication of the command family remains a separate release action.
 
+For a selected observed path, reproduction stages that logical alias when its current file identity matches the captured identity. Identity-only alias selection is a fallback, so an unrelated selected hard link cannot replace the path actually used by the command.
+
 ## Workflow semantics
 
 - `autowatch` runs once immediately, then watches observed project inputs, directory queries, and absent paths. It runs serially, debounces by 200 ms by default, replaces dependencies after success, unions new dependencies after child failure, and rejects an empty or unsafe watch set. Confirmed self-writes alone cannot trigger a rerun.

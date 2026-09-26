@@ -203,6 +203,17 @@ impl Snapshot {
         self.eligible.contains(relative)
     }
 
+    pub fn selected_path_has_identity(&self, relative: &Path, identity: FileIdentity) -> bool {
+        if !valid_relative(relative) || !self.eligible.contains(relative) {
+            return false;
+        }
+        let source = self.root.join(relative);
+        fs::metadata(&source)
+            .ok()
+            .and_then(|metadata| source_identity(&source, &metadata).ok())
+            == Some(identity)
+    }
+
     pub fn is_blocked(relative: &Path) -> bool {
         denied(relative)
     }

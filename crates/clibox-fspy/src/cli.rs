@@ -1641,11 +1641,21 @@ fn collect_required(
             if path.class != record::PathClass::Project {
                 continue;
             }
-            let alias = path
-                .identity
-                .and_then(|identity| snapshot.selected_alias_for_identity(identity))
-                .map(Path::to_path_buf)
-                .or_else(|| logical_relative(root, path));
+            let logical = logical_relative(root, path);
+            let alias = logical
+                .as_ref()
+                .filter(|relative| {
+                    path.identity.is_some_and(|identity| {
+                        snapshot.selected_path_has_identity(relative, identity)
+                    })
+                })
+                .cloned()
+                .or_else(|| {
+                    path.identity
+                        .and_then(|identity| snapshot.selected_alias_for_identity(identity))
+                        .map(Path::to_path_buf)
+                })
+                .or(logical);
             let Some(alias) = alias else {
                 if pair.start.operation.is_content_read() && pair.completion.native_error.is_none()
                 {
@@ -3575,6 +3585,87 @@ mod tests {
             assert_eq!(execute(parsed.command), 2);
         }
         assert!(!bundle.exists());
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn reproduction_keeps_the_observed_selected_hardlink() {
+        use std::os::unix::{ffi::OsStrExt, fs::MetadataExt};
+
+        let directory = tempfile::tempdir().unwrap();
+        let root = fs::canonicalize(directory.path()).unwrap();
+        fs::write(root.join("a.txt"), b"input").unwrap();
+        fs::hard_link(root.join("a.txt"), root.join("b.txt")).unwrap();
+        let selector = coverage::Selector::new(&["*.txt".into()], &[]).unwrap();
+        let snapshot = crate::repro::Snapshot::take(&root, &selector, 1024, 10).unwrap();
+        let metadata = fs::metadata(root.join("b.txt")).unwrap();
+        let identity = record::FileIdentity::Inode {
+            device: metadata.dev(),
+            inode: metadata.ino(),
+        };
+        let record = CompleteRecord {
+            header: record::Header {
+                schema_version: record::SCHEMA_VERSION,
+                execution_id: uuid::Uuid::now_v7(),
+                platform: if cfg!(target_os = "macos") {
+                    record::Platform::Macos
+                } else {
+                    record::Platform::Linux
+                },
+                backend: record::Backend::Injection,
+                root: NativePath::UnixBytes(root.as_os_str().as_bytes().to_vec()),
+                coverage: record::CoverageBoundary::SynchronousFileOperationsV1,
+            },
+            summary: record::Summary {
+                complete: true,
+                child_exit_code: Some(0),
+                child_signal: None,
+                operation_count: 1,
+                failure_count: 0,
+                failure: None,
+            },
+            operations: vec![record::OperationPair {
+                start: record::Start {
+                    sequence: 1,
+                    correlation_id: 1,
+                    pid: 1,
+                    tid: 1,
+                    parent_pid: None,
+                    operation: record::Operation::Read,
+                    paths: vec![record::AccessPath {
+                        class: record::PathClass::Project,
+                        logical: NativePath::UnixBytes(
+                            root.join("b.txt").as_os_str().as_bytes().to_vec(),
+                        ),
+                        resolved: Some(NativePath::UnixBytes(
+                            root.join("b.txt").as_os_str().as_bytes().to_vec(),
+                        )),
+                        project_relative: Some(NativePath::UnixBytes(b"b.txt".to_vec())),
+                        identity: Some(identity),
+                    }],
+                    path_unavailable: false,
+                    descriptor: None,
+                    monotonic_ns: 1,
+                    requested_delay_ns: 0,
+                },
+                completion: record::Completion {
+                    sequence: 2,
+                    correlation_id: 1,
+                    pid: 1,
+                    tid: 1,
+                    monotonic_ns: 2,
+                    native_result: 5,
+                    native_error: None,
+                    byte_count: Some(5),
+                    observed_delay_ns: 0,
+                },
+            }],
+        };
+        let required = collect_required(&record, &root, &selector, &snapshot).unwrap();
+        assert_eq!(
+            required,
+            std::collections::BTreeSet::from([PathBuf::from("b.txt")])
+        );
     }
 
     #[cfg(target_os = "linux")]
