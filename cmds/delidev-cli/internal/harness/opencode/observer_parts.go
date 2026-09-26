@@ -101,6 +101,13 @@ func (o *inputObserver) part(raw []byte) (*NativePart, bool, error) {
 
 func (o *inputObserver) tool(value NativePart, old *observedPart) error {
 	tool := value.Tool
+	if tool.State == ToolCompleted || tool.State == ToolError {
+		for _, interaction := range o.interactions {
+			if interaction.value.Tool.CallID == tool.CallID && !interaction.closed {
+				return observerProblem()
+			}
+		}
+	}
 	for _, item := range []struct {
 		raw json.RawMessage
 		key string

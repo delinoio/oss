@@ -15,6 +15,9 @@ func (s *sessionAPI) request(ctx context.Context, method, path string, body []by
 	// discovery. Its route set is separate: no arbitrary URL/query, config write,
 	// login, provider switch, fork, deletion or prompt retry is available here.
 	valid := method == http.MethodPost && path == "/session" && s.creation != nil
+	if s.replyAttempt != nil {
+		valid = valid || method == http.MethodPost && path == s.replyAttempt.path && mutationDigest(body) == s.replyAttempt.digest
+	}
 	if s.creation != nil && nativeID(s.creation.identity.id, "ses") {
 		base := "/session/" + s.creation.identity.id
 		valid = valid || method == http.MethodGet && path == base

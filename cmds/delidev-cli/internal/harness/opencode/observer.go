@@ -37,7 +37,9 @@ type inputObservation struct {
 	Error            *NativeError
 	Repeated         bool
 	MessageFinalized bool
-	Ancillary        json.RawMessage `json:"-"`
+	Ancillary        json.RawMessage         `json:"-"`
+	Interaction      *NativeInteraction      `json:"-"`
+	InteractionReply *NativeInteractionReply `json:"-"`
 }
 
 type nativeDelta struct {
@@ -79,20 +81,24 @@ type observedPart struct {
 // order. It does not reconnect, authorize another input, establish persisted
 // history, publish product outcomes or prove owned process cleanup.
 type inputObserver struct {
-	mu          sync.Mutex
-	creation    sessionCreation
-	input       sessionInput
-	cwd, root   string
-	logger      *slog.Logger
-	owner       domain.ID
-	seen        map[string]bool
-	bytes       int
-	messages    map[string]*observedMessage
-	parts       map[string]*observedPart
-	attachments map[string]string
-	calls       map[string]string
-	progress    inputProgress
-	problem     *domain.Error
+	mu           sync.Mutex
+	creation     sessionCreation
+	input        sessionInput
+	cwd, root    string
+	logger       *slog.Logger
+	owner        domain.ID
+	seen         map[string]bool
+	bytes        int
+	messages     map[string]*observedMessage
+	parts        map[string]*observedPart
+	attachments  map[string]string
+	calls        map[string]string
+	progress     inputProgress
+	problem      *domain.Error
+	ctx          context.Context
+	cancel       context.CancelFunc
+	interactions map[string]*observedInteraction
+	responseIDs  map[domain.ID]bool
 }
 
 func observerProblem() *domain.Error {
@@ -107,17 +113,26 @@ func (s *sessionAPI) observeInput(ctx context.Context, root string) (*inputObser
 		return nil, err
 	}
 	defer s.leave()
-	if s.creation == nil || s.input == nil || s.events == nil || !filepath.IsAbs(root) || domain.Text(root, "native root", 32768, true) != nil {
+	if s.creation == nil || s.input == nil || s.events == nil || s.events.ctx == nil || !filepath.IsAbs(root) || domain.Text(root, "native root", 32768, true) != nil {
 		return nil, sessionInvalid()
+	}
+	if s.observer != nil {
+		if s.observer.root != root {
+			return nil, sessionConflict()
+		}
+		return s.observer, nil
 	}
 	creation := *s.creation
 	creation.settings.Permission = slices.Clone(creation.settings.Permission)
 	input := *s.input
-	return &inputObserver{
+	observerContext, cancel := context.WithCancel(s.events.ctx)
+	s.observer = &inputObserver{
 		creation: creation, input: input, cwd: s.cwd, root: root, logger: s.logger, owner: s.owner,
+		ctx: observerContext, cancel: cancel, interactions: map[string]*observedInteraction{}, responseIDs: map[domain.ID]bool{},
 		seen: map[string]bool{}, messages: map[string]*observedMessage{}, parts: map[string]*observedPart{}, attachments: map[string]string{}, calls: map[string]string{},
 		progress: inputProgress{RequestID: input.receipt.RequestID, SessionID: input.receipt.SessionID, MessageID: input.receipt.MessageID, Status: NativeStatusUnknown},
-	}, nil
+	}
+	return s.observer, nil
 }
 
 // canonicalNative retains JSON number spellings, including reported cost. Do
@@ -153,6 +168,9 @@ func (o *inputObserver) fail(ctx context.Context, stage string, err error) error
 	if o.problem == nil {
 		o.problem = domain.SafeError(err)
 		o.progress.NeedsRecovery = true
+		if o.cancel != nil {
+			o.cancel()
+		}
 		if o.logger != nil {
 			o.logger.WarnContext(ctx, "OpenCode input observation needs reconciliation", "owner_id", o.owner, "request_id", o.input.receipt.RequestID, "stage", stage, "code", o.problem.Code)
 		}
@@ -200,6 +218,12 @@ func (o *inputObserver) observe(ctx context.Context, event NativeEvent) (inputOb
 	}
 	stage := "notification"
 	switch event.Kind {
+	case PermissionAskedEvent, QuestionAskedEvent:
+		stage = "interaction"
+		result.Interaction, err = o.interaction(event)
+	case PermissionRepliedEvent, QuestionRepliedEvent, QuestionRejectedEvent:
+		stage = "interaction-reply"
+		result.InteractionReply, err = o.interactionReply(event)
 	case MessageUpdatedEvent:
 		stage = "message"
 		if !session([]string{"info"}, nil) {
@@ -428,6 +452,11 @@ func contentFilterRefinement(before, after []byte) bool {
 }
 
 func (o *inputObserver) messageClosed(value NativeMessage, state *observedMessage) bool {
+	for _, interaction := range o.interactions {
+		if interaction.value.Tool.MessageID == value.ID && !interaction.closed {
+			return false
+		}
+	}
 	if state.openStep != "" && value.Assistant.Error == nil {
 		return false
 	}

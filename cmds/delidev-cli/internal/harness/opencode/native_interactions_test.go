@@ -1,6 +1,7 @@
 package opencode
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -19,11 +20,20 @@ func TestManualNativeOpenCodeInteractionProposals(t *testing.T) {
 		t.Skip("explicit private native OpenCode interaction proposals")
 	}
 	for _, kind := range []InteractionKind{PermissionInteraction, QuestionInteraction} {
-		t.Run(string(kind), func(t *testing.T) { nativeInteractionProposalFixture(t, kind) })
+		t.Run(string(kind), func(t *testing.T) { nativeInteractionProposalFixture(t, kind, false) })
 	}
 }
 
-func nativeInteractionProposalFixture(t *testing.T, kind InteractionKind) {
+func TestManualNativeOpenCodeInteractionReplies(t *testing.T) {
+	if os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE") == "" {
+		t.Skip("explicit private native OpenCode interaction replies")
+	}
+	for _, kind := range []InteractionKind{PermissionInteraction, QuestionInteraction} {
+		t.Run(string(kind), func(t *testing.T) { nativeInteractionProposalFixture(t, kind, true) })
+	}
+}
+
+func nativeInteractionProposalFixture(t *testing.T, kind InteractionKind, respond bool) {
 	key := string(domain.NewID())
 	const callID = "call_private_interaction"
 	const sentinel = "private-interaction-sentinel"
@@ -36,12 +46,26 @@ func nativeInteractionProposalFixture(t *testing.T, kind InteractionKind) {
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, err := io.ReadAll(io.LimitReader(r.Body, maxHTTPBody+1))
 		var body map[string]json.RawMessage
-		if err != nil || domain.Decode(raw, &body) != nil || r.Method != http.MethodPost || r.URL.Path != "/v1/chat/completions" || r.Header.Get("Authorization") != "Bearer "+key || !scalar(body["model"], fixtureSettings().Model) || string(body["stream"]) != "true" || calls.Add(1) != 1 {
+		if err != nil || domain.Decode(raw, &body) != nil || r.Method != http.MethodPost || r.URL.Path != "/v1/chat/completions" || r.Header.Get("Authorization") != "Bearer "+key || !scalar(body["model"], fixtureSettings().Model) || string(body["stream"]) != "true" {
 			t.Error("native proposal provider scope mismatch or unapproved continuation")
 			w.WriteHeader(400)
 			return
 		}
+		index := calls.Add(1)
+		if index > 2 || index == 2 && !respond {
+			t.Error("native interaction continued without an original response")
+			w.WriteHeader(400)
+			return
+		}
 		w.Header().Set("Content-Type", "text/event-stream")
+		if index == 2 {
+			if !bytes.Contains(body["messages"], []byte(callID)) || !bytes.Contains(body["messages"], []byte(sentinel)) || kind == QuestionInteraction && (!bytes.Contains(body["messages"], []byte("First, Second"))) {
+				t.Error("native continuation lost original interaction result")
+			}
+			_, _ = io.WriteString(w, `data: {"id":"chatcmpl-private-second","object":"chat.completion.chunk","created":1,"model":"private-model","choices":[{"index":0,"delta":{"role":"assistant","content":"Private interaction complete."},"finish_reason":null}]}`+"\n\n")
+			_, _ = io.WriteString(w, `data: {"id":"chatcmpl-private-second","object":"chat.completion.chunk","created":1,"model":"private-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":20,"completion_tokens":4,"total_tokens":24}}`+"\n\ndata: [DONE]\n\n")
+			return
+		}
 		for _, chunk := range []map[string]any{
 			{"id": "chatcmpl-private", "object": "chat.completion.chunk", "created": 1, "model": "private-model", "choices": []any{map[string]any{"index": 0, "delta": map[string]any{"role": "assistant", "tool_calls": []any{map[string]any{"index": 0, "id": callID, "type": "function", "function": map[string]any{"name": tool, "arguments": args.Load().(string)}}}}, "finish_reason": nil}}},
 			{"id": "chatcmpl-private", "object": "chat.completion.chunk", "created": 1, "model": "private-model", "choices": []any{map[string]any{"index": 0, "delta": map[string]any{}, "finish_reason": "tool_calls"}}},
@@ -79,19 +103,31 @@ func nativeInteractionProposalFixture(t *testing.T, kind InteractionKind) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	var interactionID string
 	for i := 0; i < 512; i++ {
 		event, err := stream.Next(ctx)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if event.Kind != expected {
-			if _, err := observer.observe(ctx, event); err != nil {
-				t.Fatalf("native proposal precursor %s: %v", event.Kind, err)
+		observation, err := observer.observe(ctx, event)
+		if err != nil {
+			t.Fatalf("native interaction event %s: %v", event.Kind, err)
+		}
+		if respond && interactionID != "" && observer.snapshot().SettledObserved {
+			receipt, err := observer.interactionReceipt(interactionID)
+			if err != nil || !receipt.HTTPAccepted || !receipt.NativeAccepted || calls.Load() != 2 || observer.snapshot().NeedsRecovery {
+				t.Fatal("native response did not preserve independent HTTP, acceptance and terminal observations")
 			}
+			if _, err := api.replyInteraction(ctx, observer, domain.NewID(), interactionID, InteractionResponse{}); err == nil {
+				t.Fatal("completed native interaction granted a second send")
+			}
+			return
+		}
+		if event.Kind != expected {
 			continue
 		}
-		request, err := decodeNativeInteraction(event.Kind, event.Properties)
-		if err != nil || request.Kind != kind || request.SessionID != id || request.Tool == nil || request.Tool.CallID != callID {
+		request := observation.Interaction
+		if request == nil || request.Kind != kind || request.SessionID != id || request.Tool == nil || request.Tool.CallID != callID || interactionID != "" {
 			t.Fatalf("native original interaction proposal: %v", err)
 		}
 		part := observer.parts[observer.calls[callID]]
@@ -119,9 +155,21 @@ func nativeInteractionProposalFixture(t *testing.T, kind InteractionKind) {
 		if receipt, err := api.inspectInput(ctx); err != nil || !receipt.Recorded {
 			t.Fatal("pending native interaction lost original input storage")
 		}
-		// This proposal-only fixture sends no answer. The existing owned
-		// process cleanup cancels pending native work without claiming success.
-		return
+		if !respond {
+			// Owned process cleanup cancels this proposal-only fixture's
+			// pending request without claiming successful tool completion.
+			return
+		}
+		interactionID = request.ID
+		response := InteractionResponse{Answers: [][]string{{"First", "Second"}}}
+		if kind == PermissionInteraction {
+			decision := PermissionOnce
+			response = InteractionResponse{Decision: &decision}
+		}
+		receipt, err := api.replyInteraction(ctx, observer, domain.NewID(), request.ID, response)
+		if err != nil || !receipt.HTTPAccepted || receipt.NativeAccepted || receipt.ArrivalID != event.ID || receipt.InteractionID != request.ID {
+			t.Fatalf("native original reply delivery: %v", err)
+		}
 	}
-	t.Fatal("native harness did not expose the original interaction proposal")
+	t.Fatal("native harness did not settle the requested interaction scenario")
 }

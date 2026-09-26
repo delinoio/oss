@@ -39,8 +39,10 @@ type SessionSettings struct {
 type SessionMutation string
 
 const (
-	CreateSessionMutation SessionMutation = "create-session"
-	SubmitInputMutation   SessionMutation = "submit-input"
+	CreateSessionMutation   SessionMutation = "create-session"
+	SubmitInputMutation     SessionMutation = "submit-input"
+	ReplyPermissionMutation SessionMutation = "reply-permission"
+	ReplyQuestionMutation   SessionMutation = "reply-question"
 )
 
 // SessionClaim contains no prompt, credentials or workspace paths. The owning
@@ -49,12 +51,16 @@ const (
 // Claim persistence, account authority and native process ownership remain
 // mandatory integrations; this private transport cannot substitute for them.
 type SessionClaim struct {
-	RequestID  domain.ID       `json:"request_id"`
-	Kind       SessionMutation `json:"kind"`
-	SessionID  string          `json:"session_id,omitempty"`
-	MessageID  string          `json:"message_id,omitempty"`
-	PartID     string          `json:"part_id,omitempty"`
-	BodyDigest string          `json:"body_digest"`
+	RequestID      domain.ID       `json:"request_id"`
+	Kind           SessionMutation `json:"kind"`
+	SessionID      string          `json:"session_id,omitempty"`
+	MessageID      string          `json:"message_id,omitempty"`
+	PartID         string          `json:"part_id,omitempty"`
+	BodyDigest     string          `json:"body_digest"`
+	InputRequestID domain.ID       `json:"input_request_id,omitempty"`
+	InteractionID  string          `json:"interaction_id,omitempty"`
+	ArrivalID      string          `json:"arrival_id,omitempty"`
+	CallID         string          `json:"call_id,omitempty"`
 }
 
 type InputReceipt struct {
@@ -86,6 +92,8 @@ type sessionAPI struct {
 	problem      *domain.Error
 	events       *eventStream
 	eventAttempt bool
+	observer     *inputObserver
+	replyAttempt *interactionHTTPAttempt
 }
 
 type sessionCreation struct {
