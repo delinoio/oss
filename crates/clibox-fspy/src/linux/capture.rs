@@ -101,7 +101,7 @@ where
         let entry = completed.entry;
         let captured = starts
             .remove(&entry.ordinal)
-            .ok_or(supervision("missing_capture"))?;
+            .ok_or_else(|| supervision("missing_capture"))?;
         let operation = captured.operation.operation;
         let byte_count = if !completed.failed
             && matches!(
@@ -162,7 +162,7 @@ where
                 completion.sequence = sequence;
                 let start = in_flight
                     .remove(&completion.correlation_id)
-                    .ok_or(supervision("capture_event_order"))?;
+                    .ok_or_else(|| supervision("capture_event_order"))?;
                 operations.push(OperationPair { start, completion });
             }
         }

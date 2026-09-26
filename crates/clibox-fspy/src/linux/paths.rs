@@ -5,7 +5,7 @@ use std::{
     ffi::OsString,
     fs, io,
     os::unix::ffi::{OsStrExt, OsStringExt},
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
 };
 
 use libc::{c_void, iovec};
@@ -222,13 +222,14 @@ fn resolve_even_if_absent(path: &Path) -> Result<PathBuf, TraceFailure> {
                 for component in tail.iter().rev() {
                     resolved.push(component);
                 }
-                return Ok(resolved);
+                return Ok(lexical_normalize(&resolved));
             }
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
                 let component = cursor
-                    .file_name()
+                    .components()
+                    .next_back()
                     .ok_or_else(|| supervision("missing_path_ancestor"))?;
-                tail.push(component.to_os_string());
+                tail.push(component.as_os_str().to_os_string());
                 cursor = cursor
                     .parent()
                     .ok_or_else(|| supervision("missing_path_parent"))?;
@@ -236,6 +237,22 @@ fn resolve_even_if_absent(path: &Path) -> Result<PathBuf, TraceFailure> {
             Err(_) => return Err(supervision("path_resolution")),
         }
     }
+}
+
+fn lexical_normalize(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            Component::CurDir => {}
+            Component::RootDir | Component::Normal(_) | Component::Prefix(_) => {
+                normalized.push(component.as_os_str());
+            }
+        }
+    }
+    normalized
 }
 
 fn access_path(
@@ -255,8 +272,14 @@ fn access_path(
         resolved: Some(NativePath::UnixBytes(
             resolved.as_os_str().as_bytes().to_vec(),
         )),
-        project_relative: project_relative
-            .map(|relative| NativePath::UnixBytes(relative.as_os_str().as_bytes().to_vec())),
+        project_relative: project_relative.map(|relative| {
+            let bytes = relative.as_os_str().as_bytes();
+            NativePath::UnixBytes(if bytes.is_empty() {
+                b".".to_vec()
+            } else {
+                bytes.to_vec()
+            })
+        }),
         identity,
     })
 }
@@ -321,4 +344,35 @@ pub fn decode(entry: &RawEntry, root: &Path) -> Result<Option<DecodedOperation>,
         paths,
         descriptor,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::os::unix::fs::symlink;
+
+    use super::*;
+
+    #[test]
+    fn missing_path_parent_components_do_not_escape_classification() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().canonicalize().unwrap();
+        let path = root.join("missing/../../outside");
+        let decoded = access_path(&root, path, None).unwrap();
+        assert_eq!(decoded.class, PathClass::External);
+        assert!(decoded.project_relative.is_none());
+    }
+
+    #[test]
+    fn existing_symlink_is_resolved_before_missing_suffix() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().canonicalize().unwrap();
+        fs::create_dir(root.join("inside")).unwrap();
+        symlink(root.join("inside"), root.join("alias")).unwrap();
+        let decoded = access_path(&root, root.join("alias/absent"), None).unwrap();
+        assert_eq!(decoded.class, PathClass::Project);
+        assert_eq!(
+            decoded.project_relative,
+            Some(NativePath::UnixBytes(b"inside/absent".to_vec()))
+        );
+    }
 }

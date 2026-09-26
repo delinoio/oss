@@ -12,7 +12,7 @@ Provide a Rust CLI that JavaScript projects can pin through npm and their lockfi
 - `crates/clibox-system`: OS command definitions, runtime, errors, and adapters.
 - `crates/clibox-transform`: offline command definitions, transformations, cancellation, and atomic publication.
 - `crates/clibox-wait`: readiness command definitions, validation, probes, polling, and reporting.
-- `crates/clibox-fspy`: private file-access record validation foundation; issue #971 execution and command workflows remain to be implemented.
+- `crates/clibox-fspy`: private file-access records, Linux capture backend, and in-progress workflow handlers for issue #971. The command family is not connected to the published CLI until all seven workflows and eight native targets satisfy the issue contract.
 - `packages/clibox`: private source workspace for the public npm launcher, platform packages, packaging, and publication tooling.
 - `apps/public-docs/docs/clibox`: English public guides published at `https://oss.delino.io/clibox`.
 

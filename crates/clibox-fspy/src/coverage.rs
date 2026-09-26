@@ -157,7 +157,20 @@ pub fn select_existing(
             }
         });
     for entry in walker {
-        let entry = entry.map_err(|_| CoverageFailure::Unavailable)?;
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error)
+                if error.path().is_some_and(|path| {
+                    path.is_symlink()
+                        && fs::metadata(path)
+                            .is_err_and(|error| error.kind() == io::ErrorKind::NotFound)
+                }) =>
+            {
+                // A dangling link is not an existing regular resource.
+                continue;
+            }
+            Err(_) => return Err(CoverageFailure::Unavailable),
+        };
         if !entry.file_type().is_file() {
             continue;
         }

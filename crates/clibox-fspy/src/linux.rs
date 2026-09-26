@@ -229,7 +229,7 @@ fn task_identity(tid: pid_t) -> Result<(u32, Option<u32>), TraceFailure> {
             line.strip_prefix("Tgid:")
                 .and_then(|value| value.trim().parse().ok())
         })
-        .ok_or(supervision("thread_group_id"))?;
+        .ok_or_else(|| supervision("thread_group_id"))?;
     let parent = text.lines().find_map(|line| {
         line.strip_prefix("PPid:")
             .and_then(|value| value.trim().parse::<u32>().ok())
@@ -439,8 +439,9 @@ where
                     if pending.contains_key(&tid) {
                         return Err(supervision("duplicate_entry"));
                     }
-                    let (pid, parent_pid) =
-                        *process_ids.get(&tid).ok_or(supervision("missing_tgid"))?;
+                    let (pid, parent_pid) = *process_ids
+                        .get(&tid)
+                        .ok_or_else(|| supervision("missing_tgid"))?;
                     ordinal = ordinal.checked_add(1).ok_or(TraceFailure::EventLimit)?;
                     let entry = RawEntry {
                         ordinal,
@@ -455,7 +456,9 @@ where
                     pending.insert(tid, keep.then_some(entry));
                 }
                 Stop::Exit { result, failed } => {
-                    let entry = pending.remove(&tid).ok_or(supervision("missing_entry"))?;
+                    let entry = pending
+                        .remove(&tid)
+                        .ok_or_else(|| supervision("missing_entry"))?;
                     if let Some(entry) = entry {
                         operations.push(RawCompletion {
                             entry,
@@ -482,7 +485,7 @@ where
     }
     Ok(TraceResult {
         operations,
-        outcome: outcome.ok_or(supervision("missing_root_outcome"))?,
+        outcome: outcome.ok_or_else(|| supervision("missing_root_outcome"))?,
     })
 }
 

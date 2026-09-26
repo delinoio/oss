@@ -1824,11 +1824,13 @@ dependencies = [
 name = "clibox-fspy"
 version = "0.1.0"
 dependencies = [
+ "clap",
  "file-id",
  "globset",
  "libc",
  "serde",
  "serde_json",
+ "signal-hook",
  "tempfile",
  "tracing",
  "uuid",
