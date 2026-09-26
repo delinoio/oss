@@ -61,7 +61,7 @@
   "devDependencies": {
     "@aws-sdk/client-s3": "3.1136.0",
     "@bufbuild/buf": "1.72.0",
-    "@bufbuild/protoc-gen-es": "2.14.0",
+    "@bufbuild/protoc-gen-es": "2.15.0",
     "@connectrpc/protoc-gen-connect-query": "2.3.1",
     "clibox-prebuilt": "npm:@delino/clibox@0.1.6",
     "js-yaml": "4.3.2",
