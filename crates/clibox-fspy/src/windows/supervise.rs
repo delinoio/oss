@@ -3,7 +3,10 @@
 use std::{
     future::Future,
     io,
-    os::windows::io::{AsHandle, AsRawHandle, FromRawHandle, OwnedHandle},
+    os::windows::{
+        ffi::OsStrExt,
+        io::{AsHandle, AsRawHandle, FromRawHandle, OwnedHandle},
+    },
     path::Path,
     sync::atomic::{AtomicBool, Ordering},
     thread,
@@ -28,7 +31,9 @@ use winapi::{
     },
 };
 
-use super::{assemble_candidate_record, Admission, Frame, OperationReceiver};
+use super::{
+    assemble_candidate_record, classify_path, Admission, Frame, FrameKind, OperationReceiver,
+};
 use crate::record::CompleteRecord;
 
 const POLL: Duration = Duration::from_millis(20);
@@ -219,6 +224,13 @@ where
     if cancelled.load(Ordering::Acquire) {
         return Err(CaptureFailure::Cancellation);
     }
+    if limits.max_events < 2 {
+        return Err(CaptureFailure::Record);
+    }
+    let root = std::fs::canonicalize(root).map_err(|_| CaptureFailure::Initialization)?;
+    if !root.is_dir() {
+        return Err(CaptureFailure::Initialization);
+    }
     let deadline = limits
         .timeout
         .map(|duration| {
@@ -227,9 +239,62 @@ where
                 .ok_or(CaptureFailure::Timeout)
         })
         .transpose()?;
+    command
+        .resolve_program()
+        .map_err(|_| CaptureFailure::Spawn)?;
+    let program =
+        std::path::absolute(Path::new(command.program())).map_err(|_| CaptureFailure::Spawn)?;
+    let path = program
+        .as_os_str()
+        .encode_wide()
+        .flat_map(u16::to_le_bytes)
+        .collect::<Vec<_>>();
+    if path.is_empty() || path.len() > super::MAX_PATH_BYTES {
+        return Err(CaptureFailure::Record);
+    }
+    let began = Instant::now();
+    let mut root_start = Frame {
+        kind: FrameKind::Start,
+        operation: 10,
+        pid: 0,
+        parent_pid: std::process::id(),
+        tid: 0,
+        id: 1,
+        monotonic_ns: 1,
+        result: 0,
+        error: 0,
+        access_path: classify_path(&root, &path).map_err(|_| CaptureFailure::Record)?,
+        path,
+        second_path: None,
+        sequence: 1,
+        second_access_path: None,
+        requested_delay_ns: 0,
+        observed_delay_ns: 0,
+    };
+    let delay = match admission(&root_start) {
+        Admission::Proceed(delay) => delay,
+        Admission::Quit => return Err(CaptureFailure::Cancellation),
+    };
+    root_start.requested_delay_ns =
+        u64::try_from(delay.as_nanos()).map_err(|_| CaptureFailure::Record)?;
+    if !delay.is_zero() {
+        let observed =
+            crate::delay::wait(delay, cancelled, deadline).map_err(|failure| match failure {
+                crate::delay::DelayFailure::Cancelled => CaptureFailure::Cancellation,
+                crate::delay::DelayFailure::Timeout => CaptureFailure::Timeout,
+            })?;
+        root_start.observed_delay_ns =
+            u64::try_from(observed.as_nanos()).map_err(|_| CaptureFailure::Record)?;
+    }
+    if cancelled.load(Ordering::Acquire) {
+        return Err(CaptureFailure::Cancellation);
+    }
+    if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+        return Err(CaptureFailure::Timeout);
+    }
     let receiver = OperationReceiver::bind_with_admission(
-        root,
-        limits.max_events,
+        &root,
+        limits.max_events.saturating_sub(2).max(1),
         limits.max_bytes,
         admission,
     )
@@ -269,6 +334,16 @@ where
     };
     let pid = child.root_pid;
     let mut wait = child.wait_handle;
+    root_start.pid = pid;
+    root_start.tid = u64::from(pid);
+    let mut root_completion = root_start.clone();
+    root_completion.kind = FrameKind::Completion;
+    root_completion.path.clear();
+    root_completion.access_path = None;
+    root_completion.sequence = 2;
+    root_completion.monotonic_ns = u64::try_from(began.elapsed().as_nanos())
+        .unwrap_or(u64::MAX - 1)
+        .saturating_add(1);
     let result = loop {
         if cancelled.load(Ordering::Acquire) {
             break Err(CaptureFailure::Cancellation);
@@ -324,7 +399,7 @@ where
             return Err(CaptureFailure::Cleanup);
         }
     }
-    let collected = receiver.finish().map_err(|error| {
+    let mut collected = receiver.finish().map_err(|error| {
         eprintln!(
             "clibox fspy supervisor: stage=receiver_finish kind={:?} reason={error}",
             error.kind()
@@ -348,8 +423,19 @@ where
         );
         return Err(CaptureFailure::TraceLoss);
     }
+    for (start, completion) in &mut collected.pairs {
+        start.sequence = start
+            .sequence
+            .checked_add(2)
+            .ok_or(CaptureFailure::Record)?;
+        completion.sequence = completion
+            .sequence
+            .checked_add(2)
+            .ok_or(CaptureFailure::Record)?;
+    }
+    collected.pairs.insert(0, (root_start, root_completion));
     assemble_candidate_record(
-        root,
+        &root,
         collected.pairs,
         termination.status.code().map(i64::from),
         limits.max_events,
@@ -362,4 +448,86 @@ where
         );
         CaptureFailure::Record
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{fs, process::Stdio, sync::Arc};
+
+    use super::*;
+    use crate::record::{NativePath, Operation, PathClass};
+
+    #[test]
+    fn root_executable_is_admitted_before_launch() {
+        let directory = tempfile::tempdir().unwrap();
+        let seen = Arc::new(AtomicBool::new(false));
+        let observed = Arc::clone(&seen);
+        let result = capture_with_admission(
+            fspy::Command::new(std::env::current_exe().unwrap()),
+            directory.path(),
+            Limits {
+                max_events: 100,
+                max_bytes: 1024 * 1024,
+                timeout: Some(Duration::from_secs(5)),
+                kill_after: Duration::from_millis(500),
+            },
+            &AtomicBool::new(false),
+            move |frame| {
+                assert_eq!(frame.operation, 10);
+                assert_eq!(frame.pid, 0);
+                observed.store(true, Ordering::Release);
+                Admission::Quit
+            },
+        );
+        assert!(matches!(result, Err(CaptureFailure::Cancellation)));
+        assert!(seen.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn records_project_local_root_executable_before_injected_events() {
+        let directory = tempfile::tempdir().unwrap();
+        let executable = directory.path().join("tool.exe");
+        fs::copy(std::env::current_exe().unwrap(), &executable).unwrap();
+        let mut command = fspy::Command::new(&executable);
+        command
+            .args([
+                "--exact",
+                "windows::supervise::tests::root_executable_fixture",
+            ])
+            .envs(std::env::vars_os())
+            .env("CLIBOX_FSPY_ROOT_EXE_FIXTURE", "1")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let record = capture(
+            command,
+            directory.path(),
+            Limits {
+                max_events: 100_000,
+                max_bytes: 64 * 1024 * 1024,
+                timeout: Some(Duration::from_secs(10)),
+                kill_after: Duration::from_millis(500),
+            },
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        let root = &record.operations[0];
+        assert_eq!(root.start.sequence, 1);
+        assert_eq!(root.completion.sequence, 2);
+        assert_eq!(root.start.operation, Operation::Exec);
+        assert_eq!(root.start.paths[0].class, PathClass::Project);
+        assert_eq!(
+            root.start.paths[0].project_relative,
+            Some(NativePath::WindowsUtf16(
+                "tool.exe".encode_utf16().collect()
+            ))
+        );
+        assert!(root.completion.native_error.is_none());
+    }
+
+    #[test]
+    fn root_executable_fixture() {
+        if std::env::var_os("CLIBOX_FSPY_ROOT_EXE_FIXTURE").is_none() {
+            return;
+        }
+    }
 }
