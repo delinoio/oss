@@ -263,6 +263,17 @@ test("MCP reports bounded compiler, module and uncaught render diagnostics witho
   assert.equal(failed.error.diagnostics[0].source, "inline");
   assert.equal(failed.error.diagnostics[0].line, 2);
 
+  const renderDependencyDirectory = join(cwd, "node_modules", "rf-private-render");
+  await mkdir(renderDependencyDirectory, { recursive: true });
+  await writeFile(join(renderDependencyDirectory, "package.json"), JSON.stringify({ name: "rf-private-render", type: "module", exports: "./index.mjs" }));
+  await writeFile(join(renderDependencyDirectory, "index.mjs"), "export function Broken() { throw Error('PRIVATE_EXTERNAL_RENDER'); }");
+  const externalRender = await errorCode(peer, "execute", { sessionId, code: `import {createElement} from 'react';
+    import {Broken} from 'rf-private-render';
+    export default async ({session}) => { await session.render(createElement(Broken)); };` }, "render");
+  assert.equal(externalRender.error.message, "React rendering failed. Correct the component and render again.");
+  assert.equal(externalRender.error.diagnostics, undefined);
+  assert.ok(!JSON.stringify(externalRender).includes("PRIVATE_EXTERNAL_RENDER"));
+
   await peer.call("execute", { sessionId, code: `import {createElement,Component} from 'react';
     class Boundary extends Component { state={failed:false}; static getDerivedStateFromError(){return {failed:true};} render(){return this.state.failed?createElement('text',null,'recovered'):this.props.children;} }
     function Broken(){throw Error('HANDLED-RENDER-DETAIL');}

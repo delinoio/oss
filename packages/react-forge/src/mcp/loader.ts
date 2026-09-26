@@ -156,6 +156,7 @@ export class TaskLoader {
     let original: unknown;
     if (error instanceof TaskError) { phase = error.phase; original = error.cause; }
     else if (error instanceof ForgeError && error.code === ErrorCode.Render && error.cause !== undefined) {
+      if (this.stackLocation(error.cause).source === undefined) return undefined;
       phase = TaskPhase.Render; original = error.cause;
     } else return undefined;
     const compiler = error instanceof TaskError ? error.compilerIssues : undefined;
