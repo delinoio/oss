@@ -39,6 +39,12 @@ pub enum FrameKind {
     Completion,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum Admission {
+    Proceed(Duration),
+    Quit,
+}
+
 #[derive(Debug, Clone)]
 pub struct Frame {
     pub kind: FrameKind,
@@ -324,7 +330,7 @@ struct ReceiveContext<F> {
     stop: Arc<AtomicBool>,
     max_events: usize,
     max_bytes: u64,
-    delay_for: Arc<F>,
+    admission: Arc<F>,
 }
 
 struct RetryRead<'a> {
@@ -354,7 +360,7 @@ impl Read for RetryRead<'_> {
 
 fn receive_connection<F>(mut stream: TcpStream, context: &ReceiveContext<F>) -> io::Result<()>
 where
-    F: Fn(&Frame) -> Duration,
+    F: Fn(&Frame) -> Admission,
 {
     stream.set_read_timeout(Some(Duration::from_millis(100)))?;
     stream.set_write_timeout(Some(Duration::from_secs(5)))?;
@@ -402,7 +408,17 @@ where
                 frame.access_path = Some(classify_path(&context.root, &frame.path)?);
             }
             let began = Instant::now();
-            let requested = (context.delay_for)(&frame);
+            let requested = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                (context.admission)(&frame)
+            }))
+            .map_err(|_| invalid("admission_policy"))?
+            {
+                Admission::Proceed(delay) => delay,
+                Admission::Quit => {
+                    stream.write_all(b"q")?;
+                    return Ok(());
+                }
+            };
             frame.requested_delay_ns =
                 u64::try_from(requested.as_nanos()).map_err(|_| invalid("delay_limit"))?;
             if !requested.is_zero() {
@@ -439,6 +455,20 @@ impl OperationReceiver {
     where
         F: Fn(&Frame) -> Duration + Send + Sync + 'static,
     {
+        Self::bind_with_admission(root, max_events, max_bytes, move |frame| {
+            Admission::Proceed(delay_for(frame))
+        })
+    }
+
+    pub fn bind_with_admission<F>(
+        root: &Path,
+        max_events: usize,
+        max_bytes: u64,
+        admission: F,
+    ) -> io::Result<Self>
+    where
+        F: Fn(&Frame) -> Admission + Send + Sync + 'static,
+    {
         if max_events == 0 || max_bytes == 0 {
             return Err(invalid("receiver_limit"));
         }
@@ -452,7 +482,7 @@ impl OperationReceiver {
         let failed = Arc::new(AtomicBool::new(false));
         let worker_stop = Arc::clone(&stop);
         let worker_failed = Arc::clone(&failed);
-        let delay_for = Arc::new(delay_for);
+        let admission = Arc::new(admission);
         let receiver = thread::spawn(move || {
             let ledger = Arc::new(Mutex::new(Ledger::default()));
             let sequence = Arc::new(AtomicU64::new(0));
@@ -475,7 +505,7 @@ impl OperationReceiver {
                             stop: Arc::clone(&worker_stop),
                             max_events,
                             max_bytes,
-                            delay_for: Arc::clone(&delay_for),
+                            admission: Arc::clone(&admission),
                         };
                         connections.push(thread::spawn(move || {
                             let result = receive_connection(stream, &context);

@@ -2206,6 +2206,226 @@ fn macos_autowatch(args: AutowatchArgs) -> i32 {
     }
 }
 
+#[cfg(target_os = "windows")]
+struct WindowsBreakTerminal {
+    input: fs::File,
+    output: fs::File,
+    original_mode: u32,
+}
+
+#[cfg(target_os = "windows")]
+impl WindowsBreakTerminal {
+    fn new() -> Result<Self, &'static str> {
+        use std::os::windows::io::AsRawHandle;
+
+        use winapi::{
+            shared::minwindef::TRUE,
+            um::{
+                consoleapi::{GetConsoleMode, SetConsoleMode},
+                wincon::{ENABLE_ECHO_INPUT, ENABLE_LINE_INPUT, ENABLE_PROCESSED_INPUT},
+            },
+        };
+
+        let input = fs::OpenOptions::new()
+            .read(true)
+            .open("CONIN$")
+            .map_err(|_| "control_terminal_unavailable")?;
+        let output = fs::OpenOptions::new()
+            .write(true)
+            .open("CONOUT$")
+            .map_err(|_| "control_terminal_unavailable")?;
+        let handle = input.as_raw_handle().cast();
+        let mut original_mode = 0;
+        // SAFETY: this live console handle and writable mode field belong to
+        // the owned CONIN$ descriptor, independent of redirected child I/O.
+        if unsafe { GetConsoleMode(handle, &raw mut original_mode) } != TRUE {
+            return Err("control_terminal_unavailable");
+        }
+        let immediate =
+            original_mode & !(ENABLE_ECHO_INPUT | ENABLE_LINE_INPUT | ENABLE_PROCESSED_INPUT);
+        if unsafe { SetConsoleMode(handle, immediate) } != TRUE {
+            return Err("control_terminal_unavailable");
+        }
+        Ok(Self {
+            input,
+            output,
+            original_mode,
+        })
+    }
+
+    fn decision(
+        &mut self,
+        frame: &crate::windows::Frame,
+        cancelled: &std::sync::atomic::AtomicBool,
+    ) -> Result<u8, &'static str> {
+        use std::{io::Read, os::windows::io::AsRawHandle, sync::atomic::Ordering};
+
+        use winapi::um::{synchapi::WaitForSingleObject, winbase::WAIT_OBJECT_0};
+
+        let path = frame.access_path.as_ref().ok_or("control_channel_loss")?;
+        let operation =
+            crate::windows::operation_id(frame.operation).ok_or("control_channel_loss")?;
+        writeln!(
+            self.output,
+            "break: {} {:?} pid={} tid={} [n/c/q]",
+            display_path(&path.logical),
+            operation,
+            frame.pid,
+            frame.tid
+        )
+        .map_err(|_| "control_channel_loss")?;
+        self.output.flush().map_err(|_| "control_channel_loss")?;
+        loop {
+            if cancelled.load(Ordering::SeqCst) {
+                return Ok(0);
+            }
+            // SAFETY: the owned console input handle remains open for this
+            // bounded wait; timeout lets supervision cancel waiting callers.
+            let ready = unsafe { WaitForSingleObject(self.input.as_raw_handle().cast(), 100) };
+            if ready == winapi::shared::winerror::WAIT_TIMEOUT {
+                continue;
+            }
+            if ready != WAIT_OBJECT_0 {
+                return Err("control_channel_loss");
+            }
+            let mut key = [0_u8; 1];
+            match self.input.read(&mut key) {
+                Ok(1) if matches!(key[0], b'n' | b'c' | b'q') => return Ok(key[0]),
+                Ok(1) => {}
+                _ => return Err("control_channel_loss"),
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+impl Drop for WindowsBreakTerminal {
+    fn drop(&mut self) {
+        use std::os::windows::io::AsRawHandle;
+        // SAFETY: the owned input handle is valid until Drop completes.
+        unsafe {
+            winapi::um::consoleapi::SetConsoleMode(
+                self.input.as_raw_handle().cast(),
+                self.original_mode,
+            );
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn windows_fbreak(args: BreakArgs) -> i32 {
+    use std::{
+        process::Stdio,
+        sync::{
+            atomic::{AtomicBool, Ordering},
+            Arc, Mutex,
+        },
+    };
+
+    let root = match execution_root(&args.execution) {
+        Ok(root) => root,
+        Err(error) => return diagnostic(error, "fbreak"),
+    };
+    let selector = match coverage::Selector::new(&args.include, &args.exclude) {
+        Ok(selector) => selector,
+        Err(error) => return diagnostic(&error.to_string(), "fbreak"),
+    };
+    let terminal = match WindowsBreakTerminal::new() {
+        Ok(terminal) => Arc::new(Mutex::new(terminal)),
+        Err(error) => return diagnostic(error, "fbreak"),
+    };
+    let _signals = match WindowsSignals::new() {
+        Ok(signals) => signals,
+        Err(error) => return windows_capture_status(error, "fbreak"),
+    };
+    let continue_all = Arc::new(AtomicBool::new(false));
+    let user_quit = Arc::new(AtomicBool::new(false));
+    let control_loss = Arc::new(AtomicBool::new(false));
+    let admission = {
+        let terminal = Arc::clone(&terminal);
+        let continue_all = Arc::clone(&continue_all);
+        let user_quit = Arc::clone(&user_quit);
+        let control_loss = Arc::clone(&control_loss);
+        move |frame: &crate::windows::Frame| {
+            use crate::windows::Admission;
+            let Some(operation) = crate::windows::operation_id(frame.operation) else {
+                return Admission::Proceed(Duration::ZERO);
+            };
+            if continue_all.load(Ordering::SeqCst)
+                || !frame.access_path.as_ref().is_some_and(|path| {
+                    matches_selected(
+                        operation,
+                        std::slice::from_ref(path),
+                        &selector,
+                        &args.operations,
+                    )
+                })
+            {
+                return Admission::Proceed(Duration::ZERO);
+            }
+            let decision = terminal
+                .lock()
+                .map_err(|_| "control_channel_loss")
+                .and_then(|mut terminal| {
+                    if continue_all.load(Ordering::SeqCst) {
+                        Ok(b'c')
+                    } else if WINDOWS_CANCELLED.load(Ordering::SeqCst) {
+                        Ok(0)
+                    } else {
+                        terminal.decision(frame, &WINDOWS_CANCELLED)
+                    }
+                });
+            match decision {
+                Ok(0) => Admission::Quit,
+                Ok(b'n') => Admission::Proceed(Duration::ZERO),
+                Ok(b'c') => {
+                    continue_all.store(true, Ordering::SeqCst);
+                    Admission::Proceed(Duration::ZERO)
+                }
+                Ok(b'q') => {
+                    user_quit.store(true, Ordering::SeqCst);
+                    WINDOWS_CANCELLED.store(true, Ordering::SeqCst);
+                    Admission::Quit
+                }
+                _ => {
+                    control_loss.store(true, Ordering::SeqCst);
+                    WINDOWS_CANCELLED.store(true, Ordering::SeqCst);
+                    Admission::Quit
+                }
+            }
+        }
+    };
+    let mut child = fspy::Command::new(&args.command[0]);
+    child
+        .args(&args.command[1..])
+        .envs(std::env::vars_os())
+        .stdin(Stdio::null())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit());
+    let result = crate::windows::supervise::capture_with_admission(
+        child,
+        &root,
+        crate::windows::supervise::Limits {
+            max_events: args.execution.max_events,
+            max_bytes: args.execution.max_bytes,
+            timeout: args.execution.timeout,
+            kill_after: args.execution.kill_after,
+        },
+        &WINDOWS_CANCELLED,
+        admission,
+    );
+    if control_loss.load(Ordering::SeqCst) {
+        return diagnostic("control_channel_loss", "fbreak");
+    }
+    if user_quit.load(Ordering::SeqCst) {
+        return 130;
+    }
+    match result {
+        Ok(record) => child_status(&record),
+        Err(error) => windows_capture_status(error, "fbreak"),
+    }
+}
+
 #[cfg(target_os = "macos")]
 struct MacBreakTerminal {
     file: fs::File,
@@ -3003,7 +3223,11 @@ pub fn execute(command: Command) -> i32 {
             {
                 macos_fbreak(args)
             }
-            #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+            #[cfg(target_os = "windows")]
+            {
+                windows_fbreak(args)
+            }
+            #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
             {
                 let _ = args;
                 diagnostic("unsupported_target", "fbreak")

@@ -28,7 +28,7 @@ use winapi::{
     },
 };
 
-use super::{assemble_candidate_record, Frame, OperationReceiver};
+use super::{assemble_candidate_record, Admission, Frame, OperationReceiver};
 use crate::record::CompleteRecord;
 
 const POLL: Duration = Duration::from_millis(20);
@@ -192,7 +192,7 @@ pub fn capture(
 }
 
 pub fn capture_with_delay<F>(
-    mut command: fspy::Command,
+    command: fspy::Command,
     root: &Path,
     limits: Limits,
     cancelled: &AtomicBool,
@@ -200,6 +200,21 @@ pub fn capture_with_delay<F>(
 ) -> Result<CompleteRecord, CaptureFailure>
 where
     F: Fn(&Frame) -> Duration + Send + Sync + 'static,
+{
+    capture_with_admission(command, root, limits, cancelled, move |frame| {
+        Admission::Proceed(delay_for(frame))
+    })
+}
+
+pub fn capture_with_admission<F>(
+    mut command: fspy::Command,
+    root: &Path,
+    limits: Limits,
+    cancelled: &AtomicBool,
+    admission: F,
+) -> Result<CompleteRecord, CaptureFailure>
+where
+    F: Fn(&Frame) -> Admission + Send + Sync + 'static,
 {
     if cancelled.load(Ordering::Acquire) {
         return Err(CaptureFailure::Cancellation);
@@ -212,8 +227,13 @@ where
                 .ok_or(CaptureFailure::Timeout)
         })
         .transpose()?;
-    let receiver = OperationReceiver::bind(root, limits.max_events, limits.max_bytes, delay_for)
-        .map_err(|_| CaptureFailure::Initialization)?;
+    let receiver = OperationReceiver::bind_with_admission(
+        root,
+        limits.max_events,
+        limits.max_bytes,
+        admission,
+    )
+    .map_err(|_| CaptureFailure::Initialization)?;
     let job = Job::new()?;
     command
         .windows_job_handle(job.0.as_handle())

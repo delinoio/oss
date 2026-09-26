@@ -17,7 +17,9 @@ use ntapi::ntpsapi::{
 };
 use winapi::{
     shared::ntdef::NT_SUCCESS,
-    um::processthreadsapi::{GetCurrentProcess, GetCurrentProcessId, GetCurrentThreadId},
+    um::processthreadsapi::{
+        GetCurrentProcess, GetCurrentProcessId, GetCurrentThreadId, TerminateProcess,
+    },
 };
 
 use super::client::global_client;
@@ -181,10 +183,15 @@ pub fn begin(operation: u8, path: &[u16]) -> Option<OperationGuard> {
             write_frame(stream, b's', operation, id, 0, 0, &encoded)?;
             let mut ack = [0_u8; 1];
             stream.read_exact(&mut ack)?;
-            if ack == [b'g'] {
-                Ok(())
-            } else {
-                Err(std::io::Error::other("start_rejected"))
+            match ack[0] {
+                b'g' => Ok(()),
+                b'q' => {
+                    // The supervisor has already decided to stop this exact
+                    // operation. End the process without forwarding the call.
+                    unsafe { TerminateProcess(GetCurrentProcess(), 130) };
+                    Err(std::io::Error::other("operation_cancelled"))
+                }
+                _ => Err(std::io::Error::other("start_rejected")),
             }
         });
         state.busy = false;
