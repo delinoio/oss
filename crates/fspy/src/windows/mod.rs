@@ -144,7 +144,12 @@ impl SpyImpl {
             // dll_paths points to a valid null-terminated ANSI string.
             let success = unsafe { DetourUpdateProcessWithDll(raw_process, &raw mut dll_paths, 1) };
             if success != TRUE {
-                return Err(SpawnError::Injection(io::Error::last_os_error()));
+                let error = io::Error::last_os_error();
+                eprintln!(
+                    "fspy injection: stage=detour_import_update os_code={:?}",
+                    error.raw_os_error()
+                );
+                return Err(SpawnError::Injection(error));
             }
 
             // SAFETY: raw_process is valid, PAYLOAD_ID is a static GUID,
@@ -158,7 +163,12 @@ impl SpyImpl {
                 )
             };
             if success != TRUE {
-                return Err(SpawnError::Injection(io::Error::last_os_error()));
+                let error = io::Error::last_os_error();
+                eprintln!(
+                    "fspy injection: stage=payload_copy os_code={:?}",
+                    error.raw_os_error()
+                );
+                return Err(SpawnError::Injection(error));
             }
 
             if let Some(job) = windows_job.as_ref() {
@@ -167,7 +177,12 @@ impl SpyImpl {
                 let assigned =
                     unsafe { AssignProcessToJobObject(job.as_raw_handle().cast(), raw_process) };
                 if assigned != TRUE {
-                    return Err(SpawnError::Injection(io::Error::last_os_error()));
+                    let error = io::Error::last_os_error();
+                    eprintln!(
+                        "fspy injection: stage=job_assignment os_code={:?}",
+                        error.raw_os_error()
+                    );
+                    return Err(SpawnError::Injection(error));
                 }
             }
 
@@ -176,6 +191,7 @@ impl SpyImpl {
             // PROCESS_SUSPEND_RESUME access.
             let status = unsafe { NtResumeProcess(raw_process) };
             if !NT_SUCCESS(status) {
+                eprintln!("fspy injection: stage=process_resume ntstatus={status}");
                 // SAFETY: RtlNtStatusToDosError accepts any NTSTATUS value. Native APIs
                 // return their status directly; GetLastError would report a stale error.
                 let error = unsafe { RtlNtStatusToDosError(status) };
