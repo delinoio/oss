@@ -18,6 +18,7 @@ type StopReceipt struct {
 	SessionID           string
 	MessageID           string
 	HTTPAccepted        bool
+	NativeAttempted     bool
 	TerminalObserved    bool
 	InterruptedObserved bool
 	IdleObserved        bool
@@ -89,6 +90,7 @@ func (o *inputObserver) stopReceiptLocked() (StopReceipt, error) {
 		return StopReceipt{}, sessionInvalid()
 	}
 	result := o.stop.receipt
+	result.NativeAttempted = o.stop.sent
 	result.TerminalObserved = o.progress.TerminalObserved
 	result.IdleObserved = o.progress.Status == NativeStatusIdle && o.progress.IdleNotification
 	message := o.messages[o.progress.AssistantID]

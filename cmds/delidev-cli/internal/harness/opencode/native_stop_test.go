@@ -1,6 +1,7 @@
 package opencode
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +15,14 @@ import (
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+)
+
+type nativeStopIntent string
+
+const (
+	liveStopIntent       nativeStopIntent = "live"
+	unobservedStopIntent nativeStopIntent = "unobserved"
+	lostStreamStopIntent nativeStopIntent = "lost-stream"
 )
 
 type lostStopResponse struct{ http.RoundTripper }
@@ -33,12 +42,21 @@ func TestManualNativeOpenCodeStop(t *testing.T) {
 	}
 	for _, mode := range []string{"text", "permission", "question"} {
 		for _, lost := range []bool{false, true} {
-			t.Run(mode+"/lost="+fmtBool(lost), func(t *testing.T) { nativeStopFixture(t, mode, lost) })
+			t.Run(mode+"/lost="+fmtBool(lost), func(t *testing.T) { nativeStopFixture(t, mode, lost, liveStopIntent) })
 		}
 	}
 }
 
-func nativeStopFixture(t *testing.T, mode string, lost bool) {
+func TestManualNativeOpenCodeOwnedStop(t *testing.T) {
+	if os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE") == "" {
+		t.Skip("explicit private native OpenCode original owned Stop")
+	}
+	for _, intent := range []nativeStopIntent{unobservedStopIntent, lostStreamStopIntent} {
+		t.Run(string(intent), func(t *testing.T) { nativeStopFixture(t, "text", false, intent) })
+	}
+}
+
+func nativeStopFixture(t *testing.T, mode string, lost bool, intent nativeStopIntent) {
 	key := string(domain.NewID())
 	var args atomic.Value
 	var calls atomic.Int32
@@ -97,6 +115,10 @@ func nativeStopFixture(t *testing.T, mode string, lost bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if intent == unobservedStopIntent {
+		nativeOwnedStopCleanup(t, api, observer, ctx, intent, &calls)
+		return
+	}
 	if lost {
 		api.client.Transport = lostStopResponse{api.client.Transport}
 	}
@@ -111,6 +133,12 @@ func nativeStopFixture(t *testing.T, mode string, lost bool) {
 			t.Fatalf("native Stop event %s: %v", event.Kind, err)
 		}
 		if !requested && (observation.Interaction != nil || mode == "text" && observation.Part != nil && observation.Part.Kind == TextPartKind && observation.Part.MessageID != fixtureMessageID) {
+			if intent == lostStreamStopIntent {
+				stream.Close()
+				_ = observer.interruption(ctx)
+				nativeOwnedStopCleanup(t, api, observer, ctx, intent, &calls)
+				return
+			}
 			receipt, err := api.stopInput(ctx, observer, domain.NewID())
 			if (err != nil) != lost || receipt.RequestID.Validate() != nil || receipt.HTTPAccepted == lost || receipt.TerminalObserved || receipt.IdleVerified || receipt.PendingCleared {
 				t.Fatalf("native stop claim/delivery/observation: %+v %v", receipt, err)
@@ -142,4 +170,31 @@ func nativeStopFixture(t *testing.T, mode string, lost bool) {
 		}
 	}
 	t.Fatal("native Stop did not settle original input")
+}
+
+type refuseOwnedStopHTTP struct{ calls atomic.Int32 }
+
+func (r *refuseOwnedStopHTTP) RoundTrip(*http.Request) (*http.Response, error) {
+	r.calls.Add(1)
+	return nil, errors.New("owned cleanup must not use native HTTP")
+}
+
+func nativeOwnedStopCleanup(t *testing.T, api *sessionAPI, observer *inputObserver, ctx context.Context, intent nativeStopIntent, calls *atomic.Int32) {
+	t.Helper()
+	refuse := &refuseOwnedStopHTTP{}
+	api.client.Transport = refuse
+	receipt, err := api.claimOwnedStop(ctx, observer, domain.NewID())
+	if err != nil || receipt.RequestID.Validate() != nil || receipt.NativeAttempted || receipt.HTTPAccepted || receipt.CleanupVerified {
+		t.Fatalf("native owned Stop claim: %+v %v", receipt, err)
+	}
+	receipt, err = api.closeStoppedRuntime(ctx, observer)
+	if err != nil || !receipt.CleanupVerified || !receipt.PendingCleared || receipt.NativeAttempted || receipt.HTTPAccepted || receipt.InterruptedObserved || receipt.TerminalObserved || receipt.IdleVerified || refuse.calls.Load() != 0 || calls.Load() > 1 {
+		t.Fatalf("native owner-only cleanup: %+v %v", receipt, err)
+	}
+	if intent == unobservedStopIntent && (observer.snapshot().AssistantID != "" || observer.snapshot().UserSeen) || intent == lostStreamStopIntent && !observer.snapshot().NeedsRecovery {
+		t.Fatal("owned cleanup invented missed native observations or repaired an event gap")
+	}
+	if _, err := api.claimOwnedStop(ctx, observer, domain.NewID()); err == nil {
+		t.Fatal("owned Stop consumed another mutation claim")
+	}
 }

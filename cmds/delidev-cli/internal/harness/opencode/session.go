@@ -39,12 +39,13 @@ type SessionSettings struct {
 type SessionMutation string
 
 const (
-	CreateSessionMutation   SessionMutation = "create-session"
-	SubmitInputMutation     SessionMutation = "submit-input"
-	ReplyPermissionMutation SessionMutation = "reply-permission"
-	ReplyQuestionMutation   SessionMutation = "reply-question"
-	RejectQuestionMutation  SessionMutation = "reject-question"
-	StopInputMutation       SessionMutation = "stop-input"
+	CreateSessionMutation    SessionMutation = "create-session"
+	SubmitInputMutation      SessionMutation = "submit-input"
+	ReplyPermissionMutation  SessionMutation = "reply-permission"
+	ReplyQuestionMutation    SessionMutation = "reply-question"
+	RejectQuestionMutation   SessionMutation = "reject-question"
+	StopInputMutation        SessionMutation = "stop-input"
+	StopOwnedRuntimeMutation SessionMutation = "stop-owned-runtime"
 )
 
 // SessionClaim contains no prompt, credentials or workspace paths. The owning
