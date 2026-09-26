@@ -39,13 +39,14 @@ func TestManualNativeOpenCodeCompletedExecutionRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, mode := range []domain.SessionMode{domain.ExecuteMode, domain.PlanMode} {
-		for _, scenario := range []string{"first", "resumed", "switched", "failed", "missing-checkpoint", "read", "bash", "read-once", "read-always", "read-always-resumed", "read-cascade", "read-cascade-resumed", "question", "question-resumed", "glob", "grep", "todowrite", "todowrite-resumed", "write", "write-resumed", "edit", "edit-resumed", "apply_patch", "apply_patch-resumed", "question-dismissed", "question-dismissed-resumed", "read-reject", "read-reject-resumed", "read-correction", "read-correction-resumed", "read-correction-cascade", "read-correction-cascade-resumed", "read-loaded", "read-loaded-resumed", "reject-external-read", "reject-external-read-resumed", "reject-external-bash", "reject-external-bash-resumed", "reject-external-glob", "reject-external-glob-resumed", "reject-external-grep", "reject-external-grep-resumed", "reject-external-write", "reject-external-write-resumed", "reject-external-edit", "reject-external-edit-resumed", "reject-external-apply_patch", "reject-external-apply_patch-resumed"} {
+		for _, scenario := range []string{"first", "resumed", "switched", "failed", "missing-checkpoint", "read", "bash", "read-once", "read-always", "read-always-resumed", "read-cascade", "read-cascade-resumed", "question", "question-resumed", "glob", "grep", "todowrite", "todowrite-resumed", "write", "write-resumed", "edit", "edit-resumed", "apply_patch", "apply_patch-resumed", "question-dismissed", "question-dismissed-resumed", "read-reject", "read-reject-resumed", "read-correction", "read-correction-resumed", "read-correction-cascade", "read-correction-cascade-resumed", "read-loaded", "read-loaded-resumed", "reject-external-read", "reject-external-read-resumed", "reject-external-bash", "reject-external-bash-resumed", "reject-external-glob", "reject-external-glob-resumed", "reject-external-grep", "reject-external-grep-resumed", "reject-external-write", "reject-external-write-resumed", "reject-external-edit", "reject-external-edit-resumed", "reject-external-apply_patch", "reject-external-apply_patch-resumed", "read-missing", "read-missing-resumed", "read-missing-once", "read-missing-once-resumed", "read-missing-always", "read-missing-always-resumed"} {
 			t.Run(string(mode)+"/"+scenario, func(t *testing.T) { nativeOpenCodeRecovery(t, binary, mode, scenario) })
 		}
 	}
 }
 
 func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode, scenario string) {
+	missingRead := strings.HasPrefix(scenario, "read-missing")
 	loadedInstructions := strings.HasPrefix(scenario, "read-loaded")
 	fileTool := strings.TrimSuffix(scenario, "-resumed")
 	externalRejection := strings.HasPrefix(fileTool, "reject-external-")
@@ -71,13 +72,13 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 	tool := ""
 	toolCalls := int64(0)
 	cascade := strings.HasPrefix(scenario, "read-cascade") || rejectionCascade
-	remembered := strings.HasPrefix(scenario, "read-always") || cascade && !rejection
+	remembered := strings.HasPrefix(scenario, "read-missing-always") || strings.HasPrefix(scenario, "read-always") || cascade && !rejection
 	permissionCount := 1
 	if cascade {
 		permissionCount = 2
 	}
-	permission := scenario == "read-once" || remembered || rejection
-	if scenario == "read" || scenario == "bash" || loadedInstructions || permission || question || search || todo || openCodeContinuationFileTool(fileTool) {
+	permission := fileTool == "read-missing-once" || scenario == "read-once" || remembered || rejection
+	if scenario == "read" || scenario == "bash" || missingRead || loadedInstructions || permission || question || search || todo || openCodeContinuationFileTool(fileTool) {
 		tool, toolCalls = scenario, 1
 		if stoppedFirst {
 			toolCalls = 0
@@ -91,7 +92,7 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 		if question {
 			tool = "question"
 		}
-		if permission || loadedInstructions {
+		if permission || loadedInstructions || missingRead {
 			tool = "read"
 		}
 		if externalRejection {
@@ -105,7 +106,7 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 	defer cancel()
 	var calls atomic.Int64
 	lostTurn := int64(1)
-	if scenario == "resumed" || scenario == "switched" || scenario == "read-always-resumed" || scenario == "read-cascade-resumed" || scenario == "question-resumed" || scenario == "question-dismissed-resumed" || scenario == "todowrite-resumed" || (openCodeContinuationFileTool(fileTool) || rejection || loadedInstructions) && strings.HasSuffix(scenario, "-resumed") {
+	if scenario == "resumed" || scenario == "switched" || scenario == "read-always-resumed" || scenario == "read-cascade-resumed" || scenario == "question-resumed" || scenario == "question-dismissed-resumed" || scenario == "todowrite-resumed" || (openCodeContinuationFileTool(fileTool) || rejection || loadedInstructions || missingRead) && strings.HasSuffix(scenario, "-resumed") {
 		lostTurn = 2
 	}
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -139,6 +140,8 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 				results := verifyOpenCodeRepeatedRead(t, raw, toolPath.Load().(string), 2, 2)
 				encoded, _ := json.Marshal(results)
 				result = string(encoded)
+			} else if missingRead {
+				result = verifyOpenCodeContinuationResult(t, raw, tool, toolPath.Load().(string), "File not found: "+toolPath.Load().(string))
 			} else {
 				result = verifyOpenCodeContinuationTool(t, raw, tool, toolPath.Load().(string), dismissed)
 			}
@@ -165,7 +168,9 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 	}))
 	defer upstream.Close()
 	f := newFirstDispatchFixtureProfile(t, domain.OpenCode, mode, binary, upstream.URL, fixtureModel)
-	if externalRejection {
+	if missingRead {
+		toolPath.Store(prepareOpenCodeMissingRead(t, f, permission))
+	} else if externalRejection {
 		toolPath.Store(prepareOpenCodeExternalRejection(t, tool))
 	} else if loadedInstructions {
 		toolPath.Store(prepareOpenCodeLoadedRead(t, f, false))
@@ -371,6 +376,9 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 		}
 	}
 	stop()
+	if missingRead {
+		verifyOpenCodeMissingReadFile(t, toolPath.Load().(string), true)
+	}
 	if loadedInstructions {
 		updateOpenCodeContinuationInstructions(t, toolPath.Load().(string), true)
 	}
@@ -487,6 +495,9 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 	}
 	if loadedInstructions {
 		updateOpenCodeContinuationInstructions(t, toolPath.Load().(string), false)
+	}
+	if missingRead {
+		verifyOpenCodeMissingReadFile(t, toolPath.Load().(string), false)
 	}
 	if externalRejection {
 		verifyOpenCodeExternalRejectionFiles(t, toolPath.Load().(string), tool, true)

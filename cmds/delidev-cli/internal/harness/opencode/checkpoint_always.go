@@ -58,7 +58,7 @@ func validCheckpointInteractionProfile(p *checkpointToolHistory) bool {
 		if len(p.Questions) == 0 || len(p.Policy) != 0 && len(p.Always) == 0 {
 			return false
 		}
-	case 6, 7, 8, 9, 10, 11:
+	case 6, 7, 8, 9, 10, 11, 12:
 		if len(p.Policy) != 0 && len(p.Always) == 0 {
 			return false
 		}

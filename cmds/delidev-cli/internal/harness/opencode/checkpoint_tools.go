@@ -17,11 +17,12 @@ const (
 )
 
 type checkpointToolPart struct {
-	ID                 string             `json:"id"`
-	Name               checkpointToolName `json:"name"`
-	Digest             string             `json:"digest"`
-	Failed             bool               `json:"failed,omitempty"`
-	InstructionsLoaded bool               `json:"instructions_loaded,omitempty"`
+	ID                 string                     `json:"id"`
+	Name               checkpointToolName         `json:"name"`
+	Digest             string                     `json:"digest"`
+	Failed             bool                       `json:"failed,omitempty"`
+	InstructionsLoaded bool                       `json:"instructions_loaded,omitempty"`
+	ErrorProfile       checkpointToolErrorProfile `json:"error_profile,omitempty"`
 }
 
 // This positive observation comes from the original closed live observer. A
@@ -37,6 +38,7 @@ type checkpointToolPart struct {
 // Version 9 adds original Read rejection/correction and automatic closures.
 // Version 10 adds completed Read's original loaded-instruction history.
 // Version 11 binds other original inline tool rejections to permission names.
+// Version 12 retains independently ended Read errors without rejection replay.
 type checkpointToolHistory struct {
 	Version         uint32                          `json:"version"`
 	InteractionFree bool                            `json:"interaction_free"`
@@ -79,6 +81,9 @@ func validCheckpointTools(value nativeCheckpoint) bool {
 				if tool.ID != part.ID || tool.Digest != part.Digest || tool.Failed && (proof.Version < 9 || !checkpointRejectableTool(tool.Name) || proof.Version < 11 && tool.Name != checkpointReadTool) {
 					return false
 				}
+				if tool.ErrorProfile != "" && (proof.Version < 12 || tool.ErrorProfile != checkpointReadError || tool.Name != checkpointReadTool || tool.Failed || tool.InstructionsLoaded || value.Stop != nil && history.RequestID == value.History.RequestID) {
+					return false
+				}
 				if tool.InstructionsLoaded {
 					if proof.Version < 10 || tool.Name != checkpointReadTool || tool.Failed {
 						return false
@@ -108,7 +113,7 @@ func validCheckpointTools(value nativeCheckpoint) bool {
 			}
 		}
 	}
-	return index == len(proof.Parts) && (proof.Version != 7 || fileTool) && (proof.Version != 6 || searchOrTodo) && (proof.Version != 8 || checkpointHasQuestionDismissal(proof)) && (proof.Version != 9 || len(proof.Rejections) != 0) && (proof.Version != 10 || instructionsLoaded) && (proof.Version != 11 || checkpointHasNamedRejection(proof))
+	return index == len(proof.Parts) && (proof.Version != 7 || fileTool) && (proof.Version != 6 || searchOrTodo) && (proof.Version != 8 || checkpointHasQuestionDismissal(proof)) && (proof.Version != 9 || len(proof.Rejections) != 0) && (proof.Version != 10 || instructionsLoaded) && (proof.Version != 11 || checkpointHasNamedRejection(proof)) && (proof.Version != 12 || checkpointHasReadError(proof))
 }
 
 func (s *sessionAPI) checkpointToolHistory(value nativeCheckpoint) *checkpointToolHistory {
@@ -228,6 +233,13 @@ func (s *sessionAPI) checkpointToolHistory(value nativeCheckpoint) *checkpointTo
 			return strings.Compare(string(a.Claim.RequestID), string(b.Claim.RequestID))
 		})
 	}
+	rejectedParts := make(map[string]bool)
+	for _, rejection := range proof.Rejections {
+		rejectedParts[rejection.Claim.PartID] = true
+	}
+	for _, rejection := range proof.RejectionPolicy {
+		rejectedParts[rejection.PartID] = true
+	}
 	for _, message := range value.History.Messages {
 		for _, part := range message.Parts {
 			if part.Kind != ToolPartKind {
@@ -237,7 +249,14 @@ func (s *sessionAPI) checkpointToolHistory(value nativeCheckpoint) *checkpointTo
 			if observed == nil || mutationDigest(observed.raw) != part.Digest || !checkpointInlineTool(observed.value.Tool) {
 				return nil
 			}
-			proof.Parts = append(proof.Parts, checkpointToolPart{ID: part.ID, Name: checkpointToolName(observed.value.Tool.Name), Digest: part.Digest, Failed: checkpointRejectedTool(observed.value.Tool), InstructionsLoaded: checkpointLoadedInstructions(observed.value.Tool)})
+			retained := checkpointToolPart{ID: part.ID, Name: checkpointToolName(observed.value.Tool.Name), Digest: part.Digest, Failed: checkpointRejectedTool(observed.value.Tool), InstructionsLoaded: checkpointLoadedInstructions(observed.value.Tool)}
+			if retained.Failed && retained.Name == checkpointReadTool && !rejectedParts[part.ID] {
+				if value.Stop != nil {
+					return nil
+				}
+				retained.Failed, retained.ErrorProfile = false, checkpointReadError
+			}
+			proof.Parts = append(proof.Parts, retained)
 		}
 	}
 	if len(proof.Parts) == 0 {
@@ -274,6 +293,9 @@ func (s *sessionAPI) checkpointToolHistory(value nativeCheckpoint) *checkpointTo
 	}
 	if checkpointHasNamedRejection(proof) {
 		proof.Version = 11
+	}
+	if checkpointHasReadError(proof) {
+		proof.Version = 12
 	}
 	if !validCheckpointTools(value) {
 		return nil

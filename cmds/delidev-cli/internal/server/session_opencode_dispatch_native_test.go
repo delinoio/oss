@@ -108,6 +108,16 @@ func TestManualNativeOpenCodePublicExternalCorrectionContinuation(t *testing.T) 
 	}
 }
 
+func TestManualNativeOpenCodePublicReadErrorContinuation(t *testing.T) {
+	for _, profile := range []string{"read-missing", "read-missing-once", "read-missing-always"} {
+		t.Run(profile, func(t *testing.T) { nativeOpenCodePublicDispatchProfile(t, 3, false, "", profile, true) })
+	}
+}
+
+func TestManualNativeOpenCodePublicReadErrorAfterFailure(t *testing.T) {
+	nativeOpenCodePublicDispatchProfile(t, 3, true, "", "read-missing", true)
+}
+
 func TestManualNativeOpenCodePublicLoadedInstructionsContinuation(t *testing.T) {
 	for _, profile := range []string{"read-loaded", "read-loaded-always"} {
 		t.Run(profile, func(t *testing.T) { nativeOpenCodePublicDispatchProfile(t, 3, false, "", profile, true) })
@@ -134,6 +144,7 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 	if externalMixed {
 		tool = strings.TrimSuffix(tool, "-mixed")
 	}
+	missingRead := strings.HasPrefix(tool, "read-missing")
 	loadedInstructions := strings.HasPrefix(tool, "read-loaded")
 	rejection := externalRejection || strings.HasPrefix(tool, "read-reject") || strings.HasPrefix(tool, "read-correction")
 	correction := externalCorrection || strings.HasPrefix(tool, "read-correction")
@@ -156,13 +167,13 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 	}
 	question := tool == "question"
 	cascade := tool == "read-cascade" || rejectionCascade
-	permission := tool == "read-once" || tool == "read-always" || tool == "read-loaded-always" || cascade || rejection
-	always := tool == "read-always" || tool == "read-loaded-always" || cascade && !rejection
+	permission := tool == "read-missing-once" || tool == "read-missing-always" || tool == "read-once" || tool == "read-always" || tool == "read-loaded-always" || cascade || rejection
+	always := tool == "read-missing-always" || tool == "read-always" || tool == "read-loaded-always" || cascade && !rejection
 	permissionCount := 1
 	if cascade {
 		permissionCount = 2
 	}
-	if (permission || loadedInstructions) && !externalRejection {
+	if (permission || loadedInstructions || missingRead) && !externalRejection {
 		tool = "read"
 	}
 	binary := os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE")
@@ -189,7 +200,7 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 			if tool != "" && !stoppedFirst {
 				expectedCalls++
 			}
-			if always || loadedInstructions || repeatTodo {
+			if always && !missingRead || loadedInstructions || repeatTodo {
 				expectedCalls = turns * 2
 			}
 			modeAt := func(turn int) domain.SessionMode {
@@ -223,12 +234,6 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 					http.Error(w, "unsupported", 400)
 					return
 				}
-				if failedFirst && calls.Load() == 1 {
-					w.Header().Set("Content-Type", "application/json")
-					w.WriteHeader(http.StatusUnauthorized)
-					_, _ = io.WriteString(w, `{"error":{"message":"Private fixture failure","type":"invalid_api_key"}}`)
-					return
-				}
 				providerTurn := int(calls.Load())
 				if repeatTodo {
 					completed := providerTurn / 2
@@ -244,7 +249,7 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 						serveOpenCodeContinuationArguments(t, w, tool, openCodeTodoArguments(providerTurn-1), fmt.Sprintf("%s_%d", continuationToolCall, providerTurn-1))
 						return
 					}
-				} else if always || loadedInstructions {
+				} else if always && !missingRead || loadedInstructions {
 					completeTools := providerTurn / 2
 					if cascade && providerTurn > 1 {
 						completeTools++
@@ -303,12 +308,23 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 					if !dismissed {
 						providerTurn--
 					}
-					result := verifyOpenCodeContinuationTool(t, raw, tool, toolPath.Load().(string), dismissed)
+					var result string
+					if missingRead {
+						result = verifyOpenCodeContinuationResult(t, raw, tool, toolPath.Load().(string), "File not found: "+toolPath.Load().(string))
+					} else {
+						result = verifyOpenCodeContinuationTool(t, raw, tool, toolPath.Load().(string), dismissed)
+					}
 					if originalToolResult == "" {
 						originalToolResult = result
 					} else if result != originalToolResult {
 						t.Error("replacement changed original tool result")
 					}
+				}
+				if failedFirst && providerTurn == 1 {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusUnauthorized)
+					_, _ = io.WriteString(w, `{"error":{"message":"Private fixture failure","type":"invalid_api_key"}}`)
+					return
 				}
 				for prior := 1; prior < providerTurn; prior++ {
 					if !strings.Contains(string(raw), fmt.Sprintf("continuation input %d", prior)) {
@@ -325,7 +341,9 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 			// protocol discovery is a pinned reported fixture; actual initialization is
 			// independently revalidated by the original installed native process.
 			f := newFirstDispatchFixtureProfile(t, domain.OpenCode, mode, binary, upstream.URL, fixtureModel)
-			if externalRejection {
+			if missingRead {
+				toolPath.Store(prepareOpenCodeMissingRead(t, f, permission))
+			} else if externalRejection {
 				toolPath.Store(prepareOpenCodeExternalRejection(t, tool))
 			} else if loadedInstructions {
 				toolPath.Store(prepareOpenCodeLoadedRead(t, f, permission))
@@ -446,7 +464,7 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 						expectedState, expectedOutcome, expectedDispatch := domain.JobSucceeded, domain.ExecutionSucceeded, domain.DispatchReady
 						expectedVersion := uint32(2)
 						wantCalls := turn + 1 + expectedCalls - turns
-						if always || loadedInstructions || repeatTodo {
+						if always && !missingRead || loadedInstructions || repeatTodo {
 							wantCalls = (turn + 1) * 2
 						}
 						if failedFirst && turn == 0 {
@@ -467,7 +485,9 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 						} else if proof.NativeThreadID != firstThread || proof.NativeTurnID == previous.NativeTurnID || proof.ExecutionID == previous.ExecutionID || proof.NativeCheckpointDigest == previous.NativeCheckpointDigest {
 							t.Fatal("continuation recreated native history or reused execution authority")
 						}
-						if externalRejection {
+						if missingRead {
+							verifyOpenCodeMissingReadFile(t, toolPath.Load().(string), turn == 0)
+						} else if externalRejection {
 							verifyOpenCodeExternalRejectionFiles(t, toolPath.Load().(string), tool, turn > 0)
 							if turn == 0 {
 								if err := os.WriteFile(toolPath.Load().(string), []byte("changed-source-after-original-tool\n"), 0600); err != nil {

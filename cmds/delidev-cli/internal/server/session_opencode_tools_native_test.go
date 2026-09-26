@@ -132,6 +132,15 @@ func serveOpenCodeContinuationCalls(t *testing.T, w http.ResponseWriter, tools [
 
 func verifyOpenCodeContinuationTool(t *testing.T, raw []byte, tool, path string, dismissed ...bool) string {
 	t.Helper()
+	marker := openCodeContinuationResultMarker(tool)
+	if len(dismissed) == 1 && dismissed[0] {
+		marker = "The user dismissed this question"
+	}
+	return verifyOpenCodeContinuationResult(t, raw, tool, path, marker)
+}
+
+func verifyOpenCodeContinuationResult(t *testing.T, raw []byte, tool, path, marker string) string {
+	t.Helper()
 	var body struct {
 		Messages []struct {
 			Role    string          `json:"role"`
@@ -150,10 +159,6 @@ func verifyOpenCodeContinuationTool(t *testing.T, raw []byte, tool, path string,
 	if json.Unmarshal(raw, &body) != nil {
 		t.Error("invalid provider conversation")
 		return ""
-	}
-	marker := openCodeContinuationResultMarker(tool)
-	if len(dismissed) == 1 && dismissed[0] {
-		marker = "The user dismissed this question"
 	}
 	proposals, results := 0, 0
 	var result string
@@ -514,5 +519,29 @@ func verifyOpenCodeExternalRejectionFiles(t *testing.T, path, tool string, chang
 				t.Fatal("rejected patch created or moved a file", err)
 			}
 		}
+	}
+}
+
+func prepareOpenCodeMissingRead(t *testing.T, f *firstDispatchFixture, permission bool) string {
+	t.Helper()
+	path := prepareOpenCodeContinuationTool(t, f, "read", permission)
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func verifyOpenCodeMissingReadFile(t *testing.T, path string, create bool) {
+	t.Helper()
+	if create {
+		if _, err := os.Lstat(path); !os.IsNotExist(err) {
+			t.Fatal("original missing Read acquired file contents", err)
+		}
+		if err := os.WriteFile(path, []byte("changed-source-after-original-tool\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if raw, err := os.ReadFile(path); err != nil || string(raw) != "changed-source-after-original-tool\n" {
+		t.Fatal("Read error recovery changed a later file", err)
 	}
 }
