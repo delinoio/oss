@@ -461,3 +461,25 @@ func TestNativeInputRowBeforePartIsUnconfirmed(t *testing.T) {
 		t.Fatal("regressed parts erased original confirmed storage")
 	}
 }
+
+func TestOriginalSessionAtGitRootHasEmptyRelativePath(t *testing.T) {
+	request := domain.NewID()
+	settings := fixtureSettings()
+	value := fixtureSession("/private/workspace", request, settings)
+	value["path"] = ""
+	raw, _ := json.Marshal(value)
+	creation := &sessionCreation{request: request, settings: settings}
+	if _, err := validateSession(raw, "/private/workspace", creation, true); err != nil {
+		t.Fatal("native Git root path was rejected", err)
+	}
+	delete(value, "path")
+	raw, _ = json.Marshal(value)
+	if _, err := validateSession(raw, "/private/workspace", creation, true); err == nil {
+		t.Fatal("missing native path was accepted")
+	}
+	value["path"] = nil
+	raw, _ = json.Marshal(value)
+	if _, err := validateSession(raw, "/private/workspace", creation, true); err == nil {
+		t.Fatal("null native path became empty")
+	}
+}

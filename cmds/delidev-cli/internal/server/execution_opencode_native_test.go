@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -69,6 +71,7 @@ const (
 	nativeCompletionAuthFailurePublication
 	nativeTodoPublication
 	nativeTodoClearPublication
+	nativeShellChangesPublication
 )
 
 func TestManualNativeOpenCodePublishesRegisteredText(t *testing.T) {
@@ -119,6 +122,10 @@ func TestManualNativeOpenCodePublishesRegisteredTodos(t *testing.T) {
 	}
 }
 
+func TestManualNativeOpenCodePublishesRegisteredChanges(t *testing.T) {
+	nativeRegisteredOpenCode(t, domain.ExecuteMode, false, nativeShellChangesPublication)
+}
+
 func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool, publication nativeOpenCodePublication) {
 	todoTool := publication == nativeTodoPublication || publication == nativeTodoClearPublication
 	todos := []domain.OpenCodeTodo{{Content: "Original native Todo fixture.", Status: domain.OpenCodeTodoRunning, Priority: domain.OpenCodeTodoHigh}, {Content: "Preserve native cancellation", Status: domain.OpenCodeTodoCancelled, Priority: domain.OpenCodeTodoLow}, {Content: "Native extension", Status: "waiting", Priority: "urgent"}}
@@ -128,7 +135,7 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 	publish := publication != nativeNoPublication
 	hasTranscript := publication >= nativeTextPublication
 	authFailure := publication == nativeTerminalAuthFailurePublication || publication == nativeCompletionAuthFailurePublication
-	shellTool := publication == nativeShellPublication || publication == nativeShellNonzeroPublication || publication == nativeShellTimeoutPublication || publication == nativeShellTruncatedPublication
+	shellTool := publication == nativeShellPublication || publication == nativeShellNonzeroPublication || publication == nativeShellTimeoutPublication || publication == nativeShellTruncatedPublication || publication == nativeShellChangesPublication
 	const shellSentinel = "Original native Shell fixture."
 	shellCommand := "printf 'Original native Shell fixture.'; printf 'Original stderr fixture.' >&2"
 	if publication == nativeShellNonzeroPublication {
@@ -136,6 +143,9 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 	}
 	if publication == nativeShellTimeoutPublication {
 		shellCommand += "; sleep 2"
+	}
+	if publication == nativeShellChangesPublication {
+		shellCommand += "; printf 'after native edit\\n' > changed.txt; printf 'new native file\\n' > new.txt"
 	}
 	readTool := false
 	switch publication {
@@ -303,6 +313,27 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 	if err := security.PrivateDir(workspace); err != nil {
 		t.Fatal(err)
 	}
+	if publication == nativeShellChangesPublication {
+		for _, args := range [][]string{{"init", "-q", "--initial-branch=main"}, {"config", "core.hooksPath", filepath.Join(root, "no-hooks")}} {
+			cmd := exec.CommandContext(ctx, "git", args...)
+			cmd.Dir = workspace
+			cmd.Env = env
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("private git fixture: %v %s", err, out)
+			}
+		}
+		if err := os.WriteFile(filepath.Join(workspace, "changed.txt"), []byte("before native edit\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		for _, args := range [][]string{{"add", "changed.txt"}, {"-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "-qm", "Private fixture"}} {
+			cmd := exec.CommandContext(ctx, "git", args...)
+			cmd.Dir = workspace
+			cmd.Env = env
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("private git fixture: %v %s", err, out)
+			}
+		}
+	}
 	if readTool {
 		path := filepath.Join(workspace, readSentinel)
 		if publication == nativeReadDirectoryPublication {
@@ -373,14 +404,24 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 		claim = bindings.Claim
 		claimsPath = filepath.Join(cfg.Root, "jobs", string(f.job), "opencode-claims.json")
 	}
+	var nativeLogs bytes.Buffer
+	nativeLogger := slog.New(slog.NewTextHandler(&nativeLogs, nil))
+	t.Cleanup(func() {
+		if t.Failed() {
+			t.Log(nativeLogs.String())
+		}
+	})
 	config := opencode.APIExecutionConfig{
-		Probe:     opencode.ProbeConfig{Process: process.Config{Directory: filepath.Join(root, "processes"), OwnerID: f.job, Executable: binary, Cwd: runtimeRoot, Env: env, Logger: f.service.logger}, Version: opencode.SupportedVersion, Home: filepath.Join(runtimeRoot, "opencode")},
+		Probe:     opencode.ProbeConfig{Process: process.Config{Directory: filepath.Join(root, "processes"), OwnerID: f.job, Executable: binary, Cwd: runtimeRoot, Env: env, Logger: nativeLogger}, Version: opencode.SupportedVersion, Home: filepath.Join(runtimeRoot, "opencode")},
 		Workspace: workspace, NativeRoot: filepath.VolumeName(workspace) + string(filepath.Separator), ServerOrigin: f.http.URL, Token: f.token,
 		Settings: settings, Rejection: opencode.StopOnInteractionRejection, Claim: claim,
 	}
+	if publication == nativeShellChangesPublication {
+		config.NativeRoot = workspace
+	}
 	api, err := opencode.OpenOwnedAPI(ctx, config)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("open original API: %v", err)
 	}
 	defer func() {
 		cleanup, stop := context.WithTimeout(context.Background(), 15*time.Second)
@@ -398,7 +439,7 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 	}
 	session, err := api.CreateSession(ctx, f.input.ThreadRequestID)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("create original session: %v", err)
 	}
 	if publish {
 		if bindings.BindSession(ctx, f.input.ThreadRequestID, session, observed) == nil {
@@ -410,7 +451,7 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 		publicationClient.dropAt = 3
 	}
 	if _, err := api.StartText(ctx, f.input.TurnRequestID, f.input.Input.Prompt); err != nil {
-		t.Fatal(err)
+		t.Fatalf("start original input: %v", err)
 	}
 	if publish {
 		raw, err := security.ReadPrivate(claimsPath, 1<<20)
@@ -629,7 +670,42 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 		}
 	}
 	if hasTranscript {
-		rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.MessageKind, SessionID: f.input.SessionID, Limit: 10})
+		rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.MessageKind, SessionID: f.input.SessionID, Limit: 100})
+		var filtered []store.Record
+		revisions, patches, changedFiles := 0, 0, 0
+		for _, row := range rows {
+			m, decodeErr := store.Decode[domain.ExecutionMessage](row)
+			if decodeErr != nil {
+				t.Fatal(decodeErr)
+			}
+			if m.Artifact != nil && m.Artifact.Started.Kind == domain.OpenCodeRevisionArtifact {
+				if m.State != domain.MessageComplete || m.Artifact.Completed == nil || !reflect.DeepEqual(m.Artifact.Started, *m.Artifact.Completed) || m.NativeParentID == receipt.MessageID {
+					t.Fatal("native revision lost immutable original closure")
+				}
+				revisions++
+				if m.Artifact.Started.Revision.Source == domain.OpenCodePatchRevision {
+					patches++
+				}
+				continue
+			}
+			if m.Progress != nil && m.Progress.Kind == domain.OpenCodeChangesProgressKind {
+				changes := m.Progress.Changes
+				if m.NativeID != "" || m.NativeParentID != "" || changes == nil || changes.Validate() != nil || changes.Source == domain.OpenCodeInputSummary && changes.NativeMessageID != receipt.MessageID {
+					t.Fatal("native diff lost its original source")
+				}
+				for _, diff := range changes.Diffs {
+					if diff.File != nil && *diff.File == "changed.txt" && diff.Patch != nil && strings.Contains(*diff.Patch, "before native edit") && strings.Contains(*diff.Patch, "after native edit") {
+						changedFiles++
+					}
+				}
+				continue
+			}
+			filtered = append(filtered, row)
+		}
+		if publication == nativeShellChangesPublication && (revisions < 4 || patches == 0 || changedFiles == 0) {
+			t.Fatalf("native Git change evidence incomplete: revisions=%d patches=%d diffs=%d", revisions, patches, changedFiles)
+		}
+		rows = filtered
 		expected := 2
 		if authFailure {
 			expected = 1

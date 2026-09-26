@@ -78,7 +78,7 @@ function TodoList({ todos }: { todos: Todo[] }) {
 // or a synthesized completion percentage. Unknown string values stay visible.
 export function NativeTodoProgress({ progress, state }: { progress: Record<string, unknown>; state: string }) {
   const todo = object(progress.todo);
-  if (state !== "complete" || progress.kind !== "opencode-todo" || progress.plan != null || progress.diff != null || !shape(progress.todo, ["native_event_id", "todos"]) || typeof todo.native_event_id !== "string" || !/^evt_[0-9a-f]{12}[a-zA-Z0-9]{14}$/.test(todo.native_event_id) || !list(todo.todos)) return <details><summary>Todo progress · Unavailable</summary><p>The retained Todo progress is unavailable or inconsistent.</p></details>;
+  if (state !== "complete" || progress.kind !== "opencode-todo" || progress.changes != null || progress.plan != null || progress.diff != null || !shape(progress.todo, ["native_event_id", "todos"]) || typeof todo.native_event_id !== "string" || !/^evt_[0-9a-f]{12}[a-zA-Z0-9]{14}$/.test(todo.native_event_id) || !list(todo.todos)) return <details><summary>Todo progress · Unavailable</summary><p>The retained Todo progress is unavailable or inconsistent.</p></details>;
   return <details open><summary>Todo progress</summary><TodoList todos={todo.todos} /><p>This list is an original native observation; it does not establish session completion.</p></details>;
 }
 

@@ -7,7 +7,7 @@ enum ReasoningState {
 
 function snapshot(value: unknown): string | undefined {
   const data = object(value);
-  if (data.kind !== "reasoning-text" || typeof data.text !== "string" || data.summary != null || data.content != null) return undefined;
+  if (data.kind !== "reasoning-text" || typeof data.text !== "string" || data.summary != null || data.content != null || data.revision != null) return undefined;
   return data.text;
 }
 

@@ -90,12 +90,8 @@ func (c *OpenCodeEventPublisher) PublishObservation(ctx context.Context, o openc
 				return c.fail(err)
 			}
 		case opencode.SessionDiffEvent:
-			var payload struct {
-				SessionID string            `json:"sessionID"`
-				Diff      []json.RawMessage `json:"diff"`
-			}
-			if domain.Decode(o.Ancillary, &payload) != nil || payload.SessionID != c.text.binding.thread || payload.Diff == nil || len(payload.Diff) != 0 {
-				return c.fail(unsupportedOpenCodeEvent())
+			if err := c.publishChanges(ctx, o); err != nil {
+				return c.fail(err)
 			}
 		case opencode.SessionErrorEvent:
 			// A session error is diagnostic only. The final original assistant
@@ -105,6 +101,11 @@ func (c *OpenCodeEventPublisher) PublishObservation(ctx context.Context, o openc
 			}
 		default:
 			return c.fail(unsupportedOpenCodeEvent())
+		}
+	}
+	if o.Kind == opencode.MessageUpdatedEvent && o.Message != nil && o.Message.User != nil && o.Message.User.Summary != nil {
+		if err := c.publishChanges(ctx, o); err != nil {
+			return c.fail(err)
 		}
 	}
 	if o.MessageFinalized {
@@ -248,6 +249,9 @@ func (c *OpenCodeEventPublisher) completeHistory(history opencode.HistoryObserva
 				return false
 			}
 			seen[part.ID] = true
+			if revision := t.revisions[part.ID]; revision != nil && (revision.parent != message.ID || revision.kind != part.Kind) {
+				return false
+			}
 			switch part.Kind {
 			case opencode.TextPartKind, opencode.ReasoningPartKind:
 				p := t.parts[part.ID]
@@ -257,6 +261,11 @@ func (c *OpenCodeEventPublisher) completeHistory(history opencode.HistoryObserva
 			case opencode.ToolPartKind:
 				p := t.tools[part.ID]
 				if p == nil || p.update.NativeParentID != message.ID || p.latest.Status != domain.ToolCompleted && p.latest.Status != domain.ToolFailed {
+					return false
+				}
+			case opencode.SnapshotPartKind, opencode.PatchPartKind:
+				revision := t.revisions[part.ID]
+				if revision == nil || revision.parent != message.ID || revision.kind != part.Kind {
 					return false
 				}
 			case opencode.StepStartPartKind:
@@ -273,6 +282,11 @@ func (c *OpenCodeEventPublisher) completeHistory(history opencode.HistoryObserva
 		}
 	}
 	for id := range t.parts {
+		if !seen[id] {
+			return false
+		}
+	}
+	for id := range t.revisions {
 		if !seen[id] {
 			return false
 		}

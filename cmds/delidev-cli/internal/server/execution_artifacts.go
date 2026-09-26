@@ -3,6 +3,7 @@ package server
 import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
+	"reflect"
 	"strings"
 )
 
@@ -32,6 +33,9 @@ func publishExecutionArtifact(tx *store.Tx, input domain.ExecutionJobInput, sess
 		switch event.Kind {
 		case domain.ExecutionArtifactCompleted:
 			if update.Snapshot.Kind != artifact.Started.Kind {
+				return executionEventConflict()
+			}
+			if artifact.Started.Kind == domain.OpenCodeRevisionArtifact && !reflect.DeepEqual(artifact.Started, *update.Snapshot) {
 				return executionEventConflict()
 			}
 			if artifact.Started.Kind == domain.ReasoningTextArtifact {
@@ -95,8 +99,15 @@ func publishExecutionProgress(tx *store.Tx, input domain.ExecutionJobInput, sess
 	// Turn-level observations have their own immutable product identity and no
 	// native item. They must not occupy a fabricated native-message index entry.
 	value := domain.ExecutionMessage{ExecutionID: input.ExecutionID, NativeThreadID: event.NativeThreadID, NativeTurnID: event.NativeTurnID, Role: domain.ProgressMessage, State: domain.MessageComplete, FirstSequence: event.Sequence, LastSequence: event.Sequence, Progress: &update.Progress}
+	nativeEvent := ""
 	if update.Progress.Kind == domain.OpenCodeTodoProgressKind {
-		if err := tx.CheckOpenCodeTodoEvent(session.ID, input.ExecutionID, update.Progress.Todo.NativeEventID); err != nil {
+		nativeEvent = update.Progress.Todo.NativeEventID
+	}
+	if update.Progress.Kind == domain.OpenCodeChangesProgressKind {
+		nativeEvent = update.Progress.Changes.NativeEventID
+	}
+	if nativeEvent != "" {
+		if err := tx.CheckOpenCodeProgressEvent(session.ID, input.ExecutionID, nativeEvent); err != nil {
 			return err
 		}
 	}
@@ -108,7 +119,7 @@ func publishExecutionProgress(tx *store.Tx, input domain.ExecutionJobInput, sess
 		progress.LatestTodoID = update.ID
 	case domain.PlanProgress:
 		progress.LatestPlanID = update.ID
-	case domain.DiffProgress:
+	case domain.DiffProgress, domain.OpenCodeChangesProgressKind:
 		progress.LatestDiffID = update.ID
 	default:
 		return executionEventConflict()

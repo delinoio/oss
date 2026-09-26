@@ -137,7 +137,10 @@ func validateSession(raw []byte, cwd string, creation *sessionCreation, fresh bo
 	if !ok {
 		return bad()
 	}
-	if _, ok := boundedString(fields["path"], 32768, true); !ok {
+	// Native sessionPath is relative to the worktree and is exactly empty when
+	// cwd is the Git root. Absolute directory/context checks retain authority;
+	// this descriptive relative value cannot require a fabricated nonempty path.
+	if _, ok := boundedString(fields["path"], 32768, false); !ok {
 		return bad()
 	}
 	if _, ok := boundedString(fields["title"], 4096, true); !ok || fresh && !scalar(fields["title"], creation.settings.Title) {

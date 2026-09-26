@@ -11,9 +11,10 @@ type ProgressKind string
 type PlanStepStatus string
 
 const (
-	PlanArtifact          ArtifactKind = "plan"
-	ReasoningArtifact     ArtifactKind = "reasoning"
-	ReasoningTextArtifact ArtifactKind = "reasoning-text"
+	OpenCodeRevisionArtifact ArtifactKind = "opencode-revision"
+	PlanArtifact             ArtifactKind = "plan"
+	ReasoningArtifact        ArtifactKind = "reasoning"
+	ReasoningTextArtifact    ArtifactKind = "reasoning-text"
 
 	PlanTextDelta         ArtifactDeltaKind = "plan-text"
 	ReasoningSummaryDelta ArtifactDeltaKind = "reasoning-summary"
@@ -21,9 +22,10 @@ const (
 	ReasoningTextDelta    ArtifactDeltaKind = "reasoning-text"
 	ReasoningSummaryAdded ArtifactDeltaKind = "reasoning-summary-added"
 
-	OpenCodeTodoProgressKind ProgressKind = "opencode-todo"
-	PlanProgress             ProgressKind = "plan"
-	DiffProgress             ProgressKind = "diff"
+	OpenCodeChangesProgressKind ProgressKind = "opencode-changes"
+	OpenCodeTodoProgressKind    ProgressKind = "opencode-todo"
+	PlanProgress                ProgressKind = "plan"
+	DiffProgress                ProgressKind = "diff"
 
 	PlanPending   PlanStepStatus = "pending"
 	PlanRunning   PlanStepStatus = "running"
@@ -33,25 +35,27 @@ const (
 const MaxArtifactParts = 1024
 
 type ArtifactSnapshot struct {
-	Kind    ArtifactKind `json:"kind"`
-	Text    string       `json:"text"`
-	Summary []string     `json:"summary"`
-	Content []string     `json:"content"`
+	Revision *OpenCodeRevision `json:"revision,omitempty"`
+	Kind     ArtifactKind      `json:"kind"`
+	Text     string            `json:"text"`
+	Summary  []string          `json:"summary"`
+	Content  []string          `json:"content"`
 }
 
 func (s *ArtifactSnapshot) UnmarshalJSON(raw []byte) error {
 	// encoding/json otherwise turns null string elements into empty strings,
 	// which would manufacture native content at an observed reasoning index.
 	var wire struct {
-		Kind    ArtifactKind `json:"kind"`
-		Text    *string      `json:"text"`
-		Summary []*string    `json:"summary"`
-		Content []*string    `json:"content"`
+		Revision *OpenCodeRevision `json:"revision,omitempty"`
+		Kind     ArtifactKind      `json:"kind"`
+		Text     *string           `json:"text"`
+		Summary  []*string         `json:"summary"`
+		Content  []*string         `json:"content"`
 	}
 	if Decode(raw, &wire) != nil || wire.Text == nil {
 		return invalidArtifact()
 	}
-	*s = ArtifactSnapshot{Kind: wire.Kind, Text: *wire.Text}
+	*s = ArtifactSnapshot{Kind: wire.Kind, Text: *wire.Text, Revision: wire.Revision}
 	for _, pair := range []struct {
 		source []*string
 		target *[]string
@@ -81,6 +85,15 @@ func invalidArtifact() error {
 }
 
 func (s ArtifactSnapshot) Validate() error {
+	if s.Kind == OpenCodeRevisionArtifact {
+		if s.Revision == nil || s.Text != "" || s.Summary != nil || s.Content != nil || s.Revision.Validate() != nil {
+			return invalidArtifact()
+		}
+		return nil
+	}
+	if s.Revision != nil {
+		return invalidArtifact()
+	}
 	switch s.Kind {
 	case PlanArtifact, ReasoningTextArtifact:
 		if s.Summary != nil || s.Content != nil || Text(s.Text, "native artifact text", MaxMessageText, false) != nil {
@@ -187,10 +200,11 @@ type NativePlan struct {
 // Turn progress has no native item identity. A diff is only an observation,
 // not repository/file-review ownership or permission to read/write a path.
 type NativeProgress struct {
-	Todo *OpenCodeTodoProgress `json:"todo,omitempty"`
-	Kind ProgressKind          `json:"kind"`
-	Plan *NativePlan           `json:"plan,omitempty"`
-	Diff *string               `json:"diff,omitempty"`
+	Changes *OpenCodeChanges      `json:"changes,omitempty"`
+	Todo    *OpenCodeTodoProgress `json:"todo,omitempty"`
+	Kind    ProgressKind          `json:"kind"`
+	Plan    *NativePlan           `json:"plan,omitempty"`
+	Diff    *string               `json:"diff,omitempty"`
 }
 type ExecutionProgressUpdate struct {
 	ID       ID             `json:"id"`
@@ -204,7 +218,7 @@ func (u ExecutionProgressUpdate) Validate() error {
 	p := u.Progress
 	switch p.Kind {
 	case PlanProgress:
-		if p.Todo != nil || p.Plan == nil || p.Diff != nil || p.Plan.Steps == nil || len(p.Plan.Steps) > MaxArtifactParts || (p.Plan.Explanation != nil && Text(*p.Plan.Explanation, "native plan explanation", MaxMessageText, false) != nil) {
+		if p.Changes != nil || p.Todo != nil || p.Plan == nil || p.Diff != nil || p.Plan.Steps == nil || len(p.Plan.Steps) > MaxArtifactParts || (p.Plan.Explanation != nil && Text(*p.Plan.Explanation, "native plan explanation", MaxMessageText, false) != nil) {
 			return invalidArtifact()
 		}
 		for _, step := range p.Plan.Steps {
@@ -212,12 +226,16 @@ func (u ExecutionProgressUpdate) Validate() error {
 				return invalidArtifact()
 			}
 		}
+	case OpenCodeChangesProgressKind:
+		if p.Changes == nil || p.Todo != nil || p.Plan != nil || p.Diff != nil || p.Changes.Validate() != nil {
+			return invalidArtifact()
+		}
 	case OpenCodeTodoProgressKind:
-		if p.Todo == nil || p.Plan != nil || p.Diff != nil || NativeIdentity(p.Todo.NativeEventID).Validate(OpenCode, NativeEventIdentity) != nil || ValidateOpenCodeTodos(p.Todo.Todos) != nil {
+		if p.Changes != nil || p.Todo == nil || p.Plan != nil || p.Diff != nil || NativeIdentity(p.Todo.NativeEventID).Validate(OpenCode, NativeEventIdentity) != nil || ValidateOpenCodeTodos(p.Todo.Todos) != nil {
 			return invalidArtifact()
 		}
 	case DiffProgress:
-		if p.Todo != nil || p.Diff == nil || p.Plan != nil || Text(*p.Diff, "native turn diff", MaxMessageText, false) != nil {
+		if p.Changes != nil || p.Todo != nil || p.Diff == nil || p.Plan != nil || Text(*p.Diff, "native turn diff", MaxMessageText, false) != nil {
 			return invalidArtifact()
 		}
 	default:

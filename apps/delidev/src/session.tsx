@@ -1,3 +1,4 @@
+import { NativeChanges, NativeRevision } from "./native-changes";
 import { NativeTodo, NativeTodoProgress } from "./native-todo";
 import { NativeUsage } from "./native-usage";
 import { NativeRead } from "./native-read";
@@ -92,13 +93,13 @@ const TranscriptItem = memo(function TranscriptItem({ resource }: { resource: Re
       {items(tool.patches).map((patch, index) => <details key={index}><summary>Patch observation {index + 1}</summary>{items(object(patch).changes).map((item, part) => <pre key={part}>{text(object(item).path)}{"\n"}{text(object(item).diff)}</pre>)}</details>)}
       {items(tool.inputs).map((input, index) => <pre key={index}>Tool input: {text(object(object(input).input).text)}</pre>)}
     </details> : null}
-    {started.kind === "reasoning-text" ? <NativeReasoning artifact={artifact} state={text(data.state)} /> : Object.keys(artifact).length ? <details open><summary>{text(started.kind) || "Native artifact"}</summary>
+    {started.kind === "opencode-revision" ? <NativeRevision artifact={artifact} state={text(data.state)} /> : started.kind === "reasoning-text" ? <NativeReasoning artifact={artifact} state={text(data.state)} /> : Object.keys(artifact).length ? <details open><summary>{text(started.kind) || "Native artifact"}</summary>
       {text(started.text) ? <pre>{text(started.text)}</pre> : null}
       {[...items(started.summary), ...items(started.content)].map((part, index) => <pre key={index}>{text(part)}</pre>)}
       {items(artifact.deltas).length ? <details><summary>Streamed observations</summary>{items(artifact.deltas).map((item, index) => { const delta = object(object(item).delta); return <pre key={index}>{text(delta.kind)}{typeof delta.index === "number" ? ` ${delta.index}` : ""}: {text(delta.text)}</pre>; })}</details> : null}
       {artifact.completed ? <section aria-label="Completed artifact"><h3>Completed artifact</h3><pre>{text(completed.text)}</pre>{[...items(completed.summary), ...items(completed.content)].map((part, index) => <pre key={index}>{text(part)}</pre>)}</section> : null}
     </details> : null}
-    {progress.kind === "opencode-todo" ? <NativeTodoProgress progress={progress} state={text(data.state)} /> : Object.keys(progress).length ? <details open><summary>Progress · {text(progress.kind)}</summary><pre>{text(progress.diff) || text(plan.explanation)}</pre><ol>{items(plan.steps).map((step, index) => <li key={index}>{text(object(step).step)} · {text(object(step).status)}</li>)}</ol></details> : null}
+    {progress.kind === "opencode-changes" ? <NativeChanges progress={progress} state={text(data.state)} turn={text(data.native_turn_id)} /> : progress.kind === "opencode-todo" ? <NativeTodoProgress progress={progress} state={text(data.state)} /> : Object.keys(progress).length ? <details open><summary>Progress · {text(progress.kind)}</summary><pre>{text(progress.diff) || text(plan.explanation)}</pre><ol>{items(plan.steps).map((step, index) => <li key={index}>{text(object(step).step)} · {text(object(step).status)}</li>)}</ol></details> : null}
   </article>;
 });
 

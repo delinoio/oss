@@ -18,7 +18,7 @@ type openCodeToolPart struct {
 func (c *OpenCodeTextPublisher) observeTool(ctx context.Context, native opencode.NativePart) error {
 	b := c.binding
 	owner := c.messages[native.MessageID]
-	if native.SessionID != b.thread || owner == nil || owner.role != domain.AssistantMessage || c.parts[native.ID] != nil || domain.NativeIdentity(native.ID).Validate(domain.OpenCode, domain.NativePartIdentity) != nil {
+	if native.SessionID != b.thread || owner == nil || owner.role != domain.AssistantMessage || c.revisions[native.ID] != nil || c.parts[native.ID] != nil || domain.NativeIdentity(native.ID).Validate(domain.OpenCode, domain.NativePartIdentity) != nil {
 		return publicationUncertain()
 	}
 	var snapshot domain.ToolSnapshot
@@ -42,7 +42,7 @@ func (c *OpenCodeTextPublisher) observeTool(ctx context.Context, native opencode
 	}
 	kind := domain.ExecutionToolUpdated
 	if prior == nil {
-		if snapshot.Status != domain.ToolPending || len(c.parts)+len(c.tools) >= maxOpenCodeTextParts || c.calls[snapshot.OpenCodeCallID()] != "" {
+		if snapshot.Status != domain.ToolPending || len(c.parts)+len(c.tools)+len(c.revisions) >= maxOpenCodeTextParts || c.calls[snapshot.OpenCodeCallID()] != "" {
 			return publicationUncertain()
 		}
 		prior = &openCodeToolPart{update: domain.ExecutionToolUpdate{ID: domain.NewID(), NativeID: native.ID, NativeParentID: native.MessageID}}

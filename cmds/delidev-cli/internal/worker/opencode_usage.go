@@ -82,6 +82,9 @@ func (c *OpenCodeUsagePublisher) PublishObservation(ctx context.Context, o openc
 		if p.SessionID != b.thread || owner == nil || owner.role != domain.AssistantMessage || p.Step == nil || domain.NativeIdentity(p.ID).Validate(domain.OpenCode, domain.NativePartIdentity) != nil {
 			return true, publicationUncertain()
 		}
+		if revision := t.revisions[p.ID]; revision != nil && (revision.parent != p.MessageID || revision.kind != p.Kind) {
+			return true, publicationUncertain()
+		}
 		if parent := c.starts[p.ID]; parent != "" {
 			if parent != p.MessageID {
 				return true, publicationUncertain()
@@ -98,6 +101,9 @@ func (c *OpenCodeUsagePublisher) PublishObservation(ctx context.Context, o openc
 		p := o.Part
 		owner := t.messages[p.MessageID]
 		if p.SessionID != b.thread || owner == nil || owner.role != domain.AssistantMessage || p.Step == nil || p.Step.Usage == nil || p.Step.Cost == nil || p.Step.Reason == nil {
+			return true, publicationUncertain()
+		}
+		if revision := t.revisions[p.ID]; revision != nil && (revision.parent != p.MessageID || revision.kind != p.Kind) {
 			return true, publicationUncertain()
 		}
 		value = domain.OpenCodeUsageObservation{Source: domain.OpenCodeStepUsage, NativeID: p.ID, NativeParentID: p.MessageID, NativeEstimate: string(*p.Step.Cost)}

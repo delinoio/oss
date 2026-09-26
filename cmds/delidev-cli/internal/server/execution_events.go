@@ -130,7 +130,10 @@ func supportsExecutionPublication(input domain.ExecutionJobInput, kind domain.Ex
 // their parent message explicitly instead of flattening several parts into a
 // fabricated message identity or using the assistant as the execution turn.
 func validateNativeMessageOrigin(input domain.ExecutionJobInput, event domain.ExecutionEvent) error {
-	if event.Progress != nil && (input.Configuration.Harness == domain.OpenCode) != (event.Progress.Progress.Kind == domain.OpenCodeTodoProgressKind) {
+	if event.Progress != nil && (input.Configuration.Harness == domain.OpenCode) != (event.Progress.Progress.Kind == domain.OpenCodeTodoProgressKind || event.Progress.Progress.Kind == domain.OpenCodeChangesProgressKind) {
+		return executionEventConflict()
+	}
+	if event.Progress != nil && event.Progress.Progress.Changes != nil && event.Progress.Progress.Changes.Source == domain.OpenCodeInputSummary && event.Progress.Progress.Changes.NativeMessageID != event.NativeTurnID {
 		return executionEventConflict()
 	}
 	if event.OpenCodeUsage != nil && (input.Configuration.Harness != domain.OpenCode || event.OpenCodeUsage.NativeParentID == event.NativeTurnID) {
@@ -148,10 +151,10 @@ func validateNativeMessageOrigin(input domain.ExecutionJobInput, event domain.Ex
 	if artifact := event.Artifact; artifact != nil {
 		textReasoning := artifact.Snapshot != nil && artifact.Snapshot.Kind == domain.ReasoningTextArtifact || artifact.Delta != nil && artifact.Delta.Kind == domain.ReasoningTextDelta
 		if input.Configuration.Harness == domain.OpenCode {
-			if !textReasoning || domain.NativeIdentity(artifact.NativeID).Validate(domain.OpenCode, domain.NativePartIdentity) != nil || domain.NativeIdentity(artifact.NativeParentID).Validate(domain.OpenCode, domain.NativeMessageIdentity) != nil || artifact.NativeParentID == event.NativeTurnID {
+			if !(textReasoning || artifact.Snapshot != nil && artifact.Snapshot.Kind == domain.OpenCodeRevisionArtifact) || domain.NativeIdentity(artifact.NativeID).Validate(domain.OpenCode, domain.NativePartIdentity) != nil || domain.NativeIdentity(artifact.NativeParentID).Validate(domain.OpenCode, domain.NativeMessageIdentity) != nil || artifact.NativeParentID == event.NativeTurnID {
 				return executionEventConflict()
 			}
-		} else if artifact.NativeParentID != "" || textReasoning {
+		} else if artifact.NativeParentID != "" || textReasoning || artifact.Snapshot != nil && artifact.Snapshot.Kind == domain.OpenCodeRevisionArtifact {
 			return executionEventConflict()
 		}
 	}
