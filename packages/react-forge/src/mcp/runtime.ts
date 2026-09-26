@@ -7,6 +7,7 @@ import { DocumentSession } from "../session.js";
 import { FigmaSession } from "../figma/session.js";
 import { ErrorCode, Format, limits } from "../types.js";
 import { TaskLoader } from "./loader.js";
+import { TaskError, TaskPhase, type TaskDetails } from "./diagnostics.js";
 import { InspectionView, Operation, SessionStatus, parse, type Input, type ToolValue } from "./contract.js";
 
 export type McpSession = DocumentSession | FigmaSession | SceneSession;
@@ -32,6 +33,8 @@ export class SessionRuntime {
 
   constructor(private readonly cwd: string) { this.loader = new TaskLoader(cwd); }
 
+  diagnose(error: unknown): TaskDetails | undefined { return this.loader.diagnose(error); }
+
   private metadata(record: RecordEntry): ToolValue {
     return { sessionId: record.session.documentId, format: record.session.format, revision: record.session.revision };
   }
@@ -53,6 +56,7 @@ export class SessionRuntime {
         callback: "A default-exported function receives { session, state, data, signal }. state is a Map; signal is an AbortSignal.",
         creation: "Return a new DocumentSession, SceneSession or FigmaSession.", update: "Return void or the same session. state is a session-owned Map.",
         inlineImports: "Relative to --cwd; automatic React JSX runtime. File imports are relative to the entry. Dependencies are cached; entries are reevaluated.",
+        errorDiagnostics: "Compile, task and uncaught render failures include bounded caller messages and known one-based source positions in tool error results, never operational stderr.",
         cancellation: "Cooperative; the same session remains queued until its callback finishes. No rollback of completed side effects.",
         figmaAuthentication: "Existing macOS Keychain support only; no new credentials or platform expansion.",
       },
@@ -102,7 +106,12 @@ export class SessionRuntime {
       if ((returned instanceof DocumentSession || returned instanceof FigmaSession || returned instanceof SceneSession) && !this.sessions.has(returned.documentId)) {
         await returned.dispose().catch(() => {});
       }
-      throw error;
+      if (error instanceof ForgeError) throw error;
+      const resolution = this.loader.resolutionFailure(error);
+      if (resolution) throw resolution;
+      throw this.loader.isCallerException(error)
+        ? new TaskError(ErrorCode.Render, TaskPhase.Task, error)
+        : new ForgeError(ErrorCode.Render, "Task execution failed. Correct the task and retry.");
     }
   }
 

@@ -542,3 +542,16 @@ native scene-engine and package regressions. Khronos/ufbx checks, Blender
 re-imports, local GLB viewing and product image inspection remain reproducible
 local acceptance evidence. Earlier hosted render results in this file are
 historical records and do not describe current CI jobs.
+
+## MCP task-error diagnostics (2026-09-26)
+
+Local macOS arm64/Node.js 24 validation of the MCP error-reporting change passed
+the React Forge build, typecheck/lint, example typecheck and all **141 package
+tests**, including real SDK stdio and installed-archive MCP tests. Inline, file
+and imported-helper syntax errors, module-resolution failures, caller exceptions,
+uncaught React renders, error-boundary recovery, diagnostic bounds and stderr
+isolation were exercised. The public main/native tarball installation smoke
+passed eight local formats. Public-docs validation passed the **25 selector
+tests**, rendered route/build checks and **15 validator regressions**. The font
+fixture was hydrated through Git LFS before the passing package run. This is
+local host evidence; other hosts and new visual renders were not run.

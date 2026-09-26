@@ -3,6 +3,7 @@ import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
 import { ForgeError } from "../errors.js";
 import { FigmaPublishError } from "../figma/session.js";
 import { ErrorCode, limits } from "../types.js";
+import type { TaskDetails } from "./diagnostics.js";
 
 export enum Operation {
   Capabilities = "capabilities",
@@ -47,7 +48,7 @@ export type ChildMessage = { kind: MessageKind.Result; id: number; result: CallT
 
 const descriptions: Record<Operation, string> = {
   capabilities: "Describe supported formats, hosts, resource limits and the trusted TSX callback contract. No I/O.",
-  execute: "Run trusted TSX code OR a local .tsx entry. Default export receives {session,state,data,signal}. New calls return a session; updates return void or the same session. state is a persistent Map. Code runs with your permissions and may explicitly write files or publish remotely; this is not a sandbox or a transaction. No automatic timeout. Does not automatically export or publish.",
+  execute: "Run trusted TSX code OR a local .tsx entry. Default export receives {session,state,data,signal}. New calls return a session; updates return void or the same session. state is a persistent Map. Compile, task and uncaught render failures return bounded caller messages and source positions when known. Code runs with your permissions and may explicitly write files or publish remotely; this is not a sandbox or a transaction. No automatic timeout. Does not automatically export or publish.",
   sessions: "List active in-memory sessions, their format, last revision and execution status. Sessions disappear when the server exits.",
   inspect: "Inspect settled local targets or cached Figma targets. Filter by nodeId/kind; offset/limit paginate. Text previews are capped at 4096 characters. view=receipt returns the last Figma receipt without publishing. Does not refresh Figma remotely.",
   measure: "Measure a document-scoped node at an exact revision (WAV timeline x/width are seconds). For local documents first inspect to settle a revision; Figma measurement requires a completed publication. A changed revision returns conflict.",
@@ -83,8 +84,8 @@ export function parse<O extends Operation>(operation: O, input: unknown): Input<
 export function success(value: ToolValue): CallToolResult {
   return { content: [{ type: "text", text: JSON.stringify(value) }], structuredContent: value };
 }
-export function failure(error: unknown): CallToolResult {
+export function failure(error: unknown, details?: TaskDetails): CallToolResult {
   const safe = error instanceof ForgeError ? error : new ForgeError(ErrorCode.Render, "Task execution failed. Correct the task and retry.");
-  const value = { error: safe.toJSON(), ...(error instanceof FigmaPublishError ? { receipt: error.receipt } : {}) };
+  const value = { error: { ...safe.toJSON(), ...(details ? { message: details.diagnostics[0]?.message ?? safe.message, ...details } : {}) }, ...(error instanceof FigmaPublishError ? { receipt: error.receipt } : {}) };
   return { ...success(value), isError: true };
 }

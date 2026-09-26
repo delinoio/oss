@@ -14,7 +14,8 @@ export class ForgeError extends Error {
     readonly code: ErrorCode,
     message: string,
     readonly context: { stage?: Stage; format?: Format; revision?: number; location?: string; published?: boolean } = {},
-  ) { super(message); }
+    cause?: unknown,
+  ) { super(message, cause === undefined ? undefined : { cause }); }
 
   toJSON() { return { code: this.code, message: this.message, ...this.context }; }
 }
