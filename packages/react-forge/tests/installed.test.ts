@@ -48,6 +48,19 @@ test("scoped workspace archive installs and its CLI generates local formats and 
     const mcp = await connect(directory, cli);
     try {
       assert.equal((await mcp.client.listTools()).tools.length, 9);
+      const inline = await mcp.call("execute", { code: `import {createSession,Format} from '@delino/react-forge';
+        import {Document,Page,Text} from '@delino/react-forge/pdf';
+        export default async ({state})=>{const session=createSession(Format.Pdf);
+          state.set('render',content=>session.render(<Document language="en-US"><Page>{content}</Page></Document>));
+          await state.get('render')(<Text>INSTALLED_JSX_OK</Text>);return session;};` });
+      const first = await mcp.call("inspect", { sessionId: inline.sessionId });
+      assert.equal(first.targets.find((target: { kind: string; text?: string }) => target.kind === "paragraph")?.text, "INSTALLED_JSX_OK");
+      await mcp.call("execute", { sessionId: inline.sessionId, code: `import {Text} from '@delino/react-forge/pdf';
+        export default async ({state})=>{await state.get('render')(<Text>INSTALLED_JSX_UPDATED</Text>);};` });
+      const updated = await mcp.call("inspect", { sessionId: inline.sessionId });
+      assert.ok(updated.revision > first.revision);
+      assert.equal(updated.targets.find((target: { kind: string; text?: string }) => target.kind === "paragraph")?.text, "INSTALLED_JSX_UPDATED");
+      await mcp.call("close", { sessionId: inline.sessionId });
       for (const [task, format] of cases) {
         const created = await mcp.call("execute", { entry: `tasks/${task}.tsx` });
         const snapshot = await mcp.call("inspect", { sessionId: created.sessionId });

@@ -13,6 +13,14 @@ export default async ({state}) => {
  await state.get('render')('Hello MCP'); return session;
 };`;
 
+const jsxPdf = `import {createSession, Format} from '@delino/react-forge';
+import {Document, Page, Text} from '@delino/react-forge/pdf';
+export default async ({state}) => {
+ const session=createSession(Format.Pdf);
+ state.set('render', async content => session.render(<Document language="en-US"><Page>{content}</Page></Document>));
+ await state.get('render')(<Text>JSX_OK</Text>); return session;
+};`;
+
 test("stdio tools keep a session across inline calls and export an exact inspected revision", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "react-forge-mcp-"));
   const peer = await connect(cwd);
@@ -21,17 +29,20 @@ test("stdio tools keep a session across inline calls and export an exact inspect
     assert.equal(tools.tools.length, 9);
     const capabilities = await peer.call("capabilities");
     assert.equal(capabilities.mcp.transport, "stdio");
-    const { sessionId } = await peer.call("execute", { code: pdf });
+    const { sessionId } = await peer.call("execute", { code: jsxPdf });
     const inspected = await peer.call("inspect", { sessionId });
     assert.ok(inspected.revision > 0);
     assert.ok(inspected.targets.length > 0);
     const text = inspected.targets.find((target: any) => target.kind === "paragraph");
     assert.ok(text);
+    assert.equal(text.text, "JSX_OK");
     const measured = await peer.call("measure", { sessionId, nodeId: text.nodeId, revision: inspected.revision });
     assert.equal(measured.geometry.coordinateSpace, "page");
-    await peer.call("execute", { sessionId, code: "export default async ({state}) => { await state.get('render')('Updated MCP'); };" });
+    await peer.call("execute", { sessionId, code: `import {Text} from '@delino/react-forge/pdf';
+      export default async ({state}) => { await state.get('render')(<Text>JSX_UPDATED</Text>); };` });
     const next = await peer.call("inspect", { sessionId });
     assert.ok(next.revision > inspected.revision);
+    assert.equal(next.targets.find((target: any) => target.kind === "paragraph")?.text, "JSX_UPDATED");
     const exported = await peer.call("export", { sessionId, output: "report.pdf" });
     assert.equal(exported.revision, next.revision);
     assert.equal((await readFile(join(cwd, "report.pdf"))).subarray(0, 5).toString(), "%PDF-");
@@ -40,6 +51,23 @@ test("stdio tools keep a session across inline calls and export an exact inspect
     assert.equal((await peer.call("sessions")).sessions.length, 0);
   } finally { await peer.close(); await rm(cwd, { recursive: true, force: true }); }
 });
+
+test("CommonJS caller dependencies and createElement share the canonical React instance", async () => fixture(async (peer, cwd) => {
+  await writeFile(join(cwd, "helper.cjs"), "module.exports = { label: 'CREATE_ELEMENT_OK' };");
+  const { sessionId } = await peer.call("execute", { code: `import React, {createElement} from 'react';
+    import helper from './helper.cjs';
+    import {createSession, Format} from '@delino/react-forge';
+    import {Document, Page, Text} from '@delino/react-forge/pdf';
+    export default async () => {
+      if (React.createElement !== createElement) throw Error('React identity split');
+      const session = createSession(Format.Pdf);
+      await session.render(createElement(Document, {language: 'en-US'},
+        createElement(Page, null, createElement(Text, null, helper.label))));
+      return session;
+    };` });
+  const inspected = await peer.call("inspect", { sessionId });
+  assert.equal(inspected.targets.find((target: any) => target.kind === "paragraph")?.text, "CREATE_ELEMENT_OK");
+}));
 
 async function fixture(work: (peer: Awaited<ReturnType<typeof connect>>, cwd: string) => Promise<void>) {
   const cwd = await mkdtemp(join(tmpdir(), "react-forge-mcp-"));

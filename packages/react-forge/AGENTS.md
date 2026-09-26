@@ -10,6 +10,7 @@
 - Keep the npm README linked to `https://oss.delino.io/react-forge/` and synchronize released user-facing behavior with `apps/public-docs/docs/react-forge` under `docs/apps-react-forge-docs-foundation.md`.
 
 - Follow `docs/packages-react-forge-mcp-contract.md` for stdio MCP. Keep one shared execution process and canonical React/React Forge module identities; never forward task stdout/stderr to protocol or operational logs. Preserve per-session call order until cancelled callbacks actually settle, bound entry plus data to 16 MiB, retain Figma receipts on partial/unknown outcomes, and never retry writes automatically. Five-second forced cleanup applies only to server shutdown, never normal operations.
+- Keep automatic JSX and `React.createElement` rendering working through real stdio MCP calls, with generated PDF paragraph text visible in settled inspection and higher revisions after updates. Preserve ordinary caller dependency resolution and safe error redaction.
 - Keep real SDK and installed-archive MCP coverage in the six-host package suite, including entry-relative imports, state retention, source protection, cancellation, process cleanup and fake Figma. Run `typecheck:examples` after building.
 - MCP cancellation fixtures must install abort waiters before publishing readiness and handle signals that are already aborted; exercise late continuation without widening timeouts to hide missed cancellation.
 
