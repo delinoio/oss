@@ -1008,7 +1008,10 @@ fn repro_capture(
     expected_stderr: &str,
 ) -> Result<(CompleteRecord, bool), i32> {
     use std::{
-        os::{fd::OwnedFd, unix::net::UnixStream},
+        os::{
+            fd::{AsFd, OwnedFd},
+            unix::net::UnixStream,
+        },
         process::Stdio,
         sync::{
             atomic::{AtomicBool, Ordering},
@@ -1024,7 +1027,11 @@ fn repro_capture(
     if let Some(cwd) = cwd {
         child.current_dir(cwd);
     }
-    child.stdout(Stdio::inherit());
+    let stderr = io::stderr()
+        .as_fd()
+        .try_clone_to_owned()
+        .map_err(|_| macos_capture_status((CaptureFailure::Spawn, 0), "min-repro"))?;
+    child.stdout(Stdio::from(stderr));
     let (mut reader, writer) = UnixStream::pair().map_err(|_| {
         eprintln!("clibox fspy reproduction: stage=stderr_channel");
         macos_capture_status((CaptureFailure::Spawn, 0), "min-repro")
@@ -1112,7 +1119,7 @@ fn repro_capture(
 ) -> Result<(CompleteRecord, bool), i32> {
     use std::{
         io::Read,
-        os::windows::io::{FromRawHandle, OwnedHandle},
+        os::windows::io::{AsHandle, FromRawHandle, OwnedHandle},
         process::Stdio,
         thread,
     };
@@ -1143,7 +1150,13 @@ fn repro_capture(
     if let Some(cwd) = cwd {
         child.current_dir(cwd);
     }
-    child.stdout(Stdio::inherit()).stderr(Stdio::from(writer));
+    let stderr = io::stderr()
+        .as_handle()
+        .try_clone_to_owned()
+        .map_err(|_| windows_capture_status(CaptureFailure::Spawn, "min-repro"))?;
+    child
+        .stdout(Stdio::from(stderr))
+        .stderr(Stdio::from(writer));
     let _signals =
         WindowsSignals::new().map_err(|failure| windows_capture_status(failure, "min-repro"))?;
     let needle = expected_stderr.as_bytes().to_vec();
@@ -3862,6 +3875,17 @@ mod tests {
                 "{case}: {}",
                 String::from_utf8_lossy(&status.stderr)
             );
+            #[cfg(target_os = "macos")]
+            {
+                assert!(!status
+                    .stdout
+                    .windows(b"FSPY_REPRO_STDOUT_MARKER".len())
+                    .any(|part| part == b"FSPY_REPRO_STDOUT_MARKER"));
+                assert!(status
+                    .stderr
+                    .windows(b"FSPY_REPRO_STDOUT_MARKER".len())
+                    .any(|part| part == b"FSPY_REPRO_STDOUT_MARKER"));
+            }
             if case == "verified" {
                 assert_eq!(fs::read(bundle.join("input.txt")).unwrap(), b"fixture");
                 assert!(bundle.join(".clibox-fspy-repro/manifest.json").exists());
@@ -3944,6 +3968,9 @@ mod tests {
         } else {
             fs::read(path).unwrap();
         }
+        io::stdout()
+            .write_all(b"FSPY_REPRO_STDOUT_MARKER\n")
+            .unwrap();
         eprintln!("EXPECTED");
         std::process::exit(42);
     }
@@ -4750,6 +4777,14 @@ mod tests {
                 "{case}: {}",
                 String::from_utf8_lossy(&output.stderr)
             );
+            assert!(!output
+                .stdout
+                .windows(b"FSPY_REPRO_STDOUT_MARKER".len())
+                .any(|part| part == b"FSPY_REPRO_STDOUT_MARKER"));
+            assert!(output
+                .stderr
+                .windows(b"FSPY_REPRO_STDOUT_MARKER".len())
+                .any(|part| part == b"FSPY_REPRO_STDOUT_MARKER"));
             if case == "verified" {
                 assert_eq!(fs::read(bundle.join("input.txt")).unwrap(), b"fixture");
                 assert!(bundle.join(".clibox-fspy-repro/manifest.json").exists());
@@ -4810,6 +4845,9 @@ mod tests {
         } else {
             fs::read(path).unwrap();
         }
+        io::stdout()
+            .write_all(b"FSPY_REPRO_STDOUT_MARKER\n")
+            .unwrap();
         eprintln!("EXPECTED");
         std::process::exit(42);
     }
