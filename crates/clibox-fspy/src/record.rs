@@ -107,6 +107,42 @@ pub struct AccessPath {
     pub logical: NativePath,
     pub resolved: Option<NativePath>,
     pub project_relative: Option<NativePath>,
+    pub identity: Option<FileIdentity>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum FileIdentity {
+    Inode { device: u64, inode: u64 },
+    Windows { volume: u64, file_id: u128 },
+}
+
+impl From<file_id::FileId> for FileIdentity {
+    fn from(value: file_id::FileId) -> Self {
+        match value {
+            file_id::FileId::Inode {
+                device_id,
+                inode_number,
+            } => Self::Inode {
+                device: device_id,
+                inode: inode_number,
+            },
+            file_id::FileId::LowRes {
+                volume_serial_number,
+                file_index,
+            } => Self::Windows {
+                volume: u64::from(volume_serial_number),
+                file_id: u128::from(file_index),
+            },
+            file_id::FileId::HighRes {
+                volume_serial_number,
+                file_id,
+            } => Self::Windows {
+                volume: volume_serial_number,
+                file_id,
+            },
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -230,6 +266,17 @@ fn valid_path(path: &AccessPath, platform: Platform) -> bool {
             .as_ref()
             .is_some_and(|resolved| !resolved.is_valid(platform))
     {
+        return false;
+    }
+    if path.identity.is_some_and(|identity| {
+        !matches!(
+            (platform, identity),
+            (
+                Platform::Linux | Platform::Macos,
+                FileIdentity::Inode { .. }
+            ) | (Platform::Windows, FileIdentity::Windows { .. })
+        )
+    }) {
         return false;
     }
     match path.class {
@@ -633,6 +680,7 @@ mod tests {
                 logical: NativePath::UnixBytes([b"/project/".as_slice(), relative].concat()),
                 resolved: None,
                 project_relative: Some(NativePath::UnixBytes(relative.to_vec())),
+                identity: None,
             }],
             monotonic_ns: 100,
             requested_delay_ns: 0,

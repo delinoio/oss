@@ -4,4 +4,5 @@
 //! Record consumers must validate the complete operation stream before
 //! analysis.
 
+pub mod coverage;
 pub mod record;
