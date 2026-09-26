@@ -30,7 +30,24 @@ func TestManualNativeOpenCodePermissionAlwaysCascade(t *testing.T) {
 }
 
 func nativePermissionCascadeFixture(t *testing.T, decision PermissionDecision) {
+	t.Helper()
+	nativePermissionCascadeWithPolicy(t, decision, StopOnInteractionRejection, nil)
+}
+
+func TestManualNativeOpenCodeCorrectionCascade(t *testing.T) {
+	if os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE") == "" {
+		t.Skip("explicit private native OpenCode correction cascade")
+	}
+	feedback := "Private cascade correction: leave both files unread."
+	for _, policy := range []RejectionPolicy{StopOnInteractionRejection, ContinueOnInteractionRejection} {
+		t.Run(string(policy), func(t *testing.T) { nativePermissionCascadeWithPolicy(t, PermissionReject, policy, &feedback) })
+	}
+}
+
+func nativePermissionCascadeWithPolicy(t *testing.T, decision PermissionDecision, policy RejectionPolicy, feedback *string) {
+	t.Helper()
 	reject := decision == PermissionReject
+	stopped := reject && policy == StopOnInteractionRejection
 	key := string(domain.NewID())
 	var arguments atomic.Value
 	var calls atomic.Int32
@@ -43,7 +60,7 @@ func nativePermissionCascadeFixture(t *testing.T, decision PermissionDecision) {
 			return
 		}
 		index := calls.Add(1)
-		if index > 3 || reject && index != 1 {
+		if index > 3 || stopped && index != 1 || reject && index > 2 {
 			t.Error("native cascade continued beyond its original scope")
 			w.WriteHeader(400)
 			return
@@ -51,17 +68,24 @@ func nativePermissionCascadeFixture(t *testing.T, decision PermissionDecision) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		if index > 1 {
 			resultCount := 2
+			corrections := 0
 			if index == 3 {
 				resultCount = 3
 			}
 			for i := 0; i < resultCount; i++ {
 				result, valid := providerToolResult(body["messages"], fmt.Sprintf("call_private_cascade_%d", i))
-				if !valid || !strings.Contains(result, "private fixture") {
+				if !valid || result == "" || !reject && !strings.Contains(result, "private fixture") {
 					t.Error("native cascade lost an original tool-result message")
 				}
+				if feedback != nil && *feedback != "" && strings.Contains(result, *feedback) {
+					corrections++
+				}
+			}
+			if reject && feedback != nil && *feedback != "" && corrections != 1 {
+				t.Error("native correction was lost or copied to a cascaded plain rejection")
 			}
 		}
-		if index == 3 {
+		if index == 3 || reject && index == 2 {
 			_, _ = io.WriteString(w, `data: {"id":"chatcmpl-private-final","object":"chat.completion.chunk","created":1,"model":"private-model","choices":[{"index":0,"delta":{"role":"assistant","content":"Private always scope complete."},"finish_reason":null}]}`+"\n\n")
 			_, _ = io.WriteString(w, `data: {"id":"chatcmpl-private-final","object":"chat.completion.chunk","created":1,"model":"private-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":20,"completion_tokens":4,"total_tokens":24}}`+"\n\ndata: [DONE]\n\n")
 			return
@@ -83,7 +107,7 @@ func nativePermissionCascadeFixture(t *testing.T, decision PermissionDecision) {
 		_, _ = io.WriteString(w, "data: [DONE]\n\n")
 	}))
 	defer provider.Close()
-	api, ctx := nativeSessionFixture(t, provider.URL, key)
+	api, ctx := nativeSessionFixtureWithPolicy(t, provider.URL, key, policy)
 	args := []string{}
 	fileCount := 2
 	if !reject {
@@ -132,7 +156,7 @@ func nativePermissionCascadeFixture(t *testing.T, decision PermissionDecision) {
 				t.Fatal("unexpected additional native permission")
 			}
 			if len(requests) == 2 {
-				if receipt, err := api.replyInteraction(ctx, observer, domain.NewID(), requests[0], InteractionResponse{Decision: &decision}); err != nil || !receipt.HTTPAccepted {
+				if receipt, err := api.replyInteraction(ctx, observer, domain.NewID(), requests[0], InteractionResponse{Decision: &decision, Feedback: feedback}); err != nil || !receipt.HTTPAccepted {
 					t.Fatalf("native rejection delivery: %v", err)
 				}
 			}
@@ -141,9 +165,12 @@ func nativePermissionCascadeFixture(t *testing.T, decision PermissionDecision) {
 			first, second := observer.interactions[requests[0]], observer.interactions[requests[1]]
 			expectedCalls := int32(3)
 			if reject {
-				expectedCalls = 1
+				expectedCalls = 2
+				if stopped {
+					expectedCalls = 1
+				}
 			}
-			if observer.snapshot().RejectedInteraction != reject || observer.snapshot().NeedsRecovery || calls.Load() != expectedCalls || first.attempt == nil || !first.attempt.receipt.NativeAccepted || !first.closed || first.rejected != reject || second.attempt != nil || !second.closed || second.rejected != reject {
+			if observer.snapshot().RejectedInteraction != reject || observer.snapshot().StoppedOnRejection != stopped || observer.snapshot().NeedsRecovery || calls.Load() != expectedCalls || first.attempt == nil || !first.attempt.receipt.NativeAccepted || !first.closed || first.rejected != reject || second.attempt != nil || !second.closed || second.rejected != reject {
 				t.Fatal("cascade fabricated a second response or lost original rejection outcome")
 			}
 			if reject && (len(second.rejectionSources) != 1 || second.rejectionSources[0] != requests[0]) {

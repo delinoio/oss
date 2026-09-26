@@ -51,7 +51,37 @@ func TestManualNativeOpenCodeInteractionRejections(t *testing.T) {
 }
 
 func nativeInteractionProposalFixture(t *testing.T, kind InteractionKind, mode interactionFixtureMode) {
+	t.Helper()
+	nativeInteractionFixtureWithPolicy(t, kind, mode, StopOnInteractionRejection, nil)
+}
+
+func TestManualNativeOpenCodeInteractionContinuation(t *testing.T) {
+	if os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE") == "" {
+		t.Skip("explicit private native OpenCode rejection/feedback continuation")
+	}
+	feedback, empty := "Private correction: leave this file unread and explain.", ""
+	for _, test := range []struct {
+		name     string
+		kind     InteractionKind
+		policy   RejectionPolicy
+		feedback *string
+	}{
+		{"permission-continue", PermissionInteraction, ContinueOnInteractionRejection, nil},
+		{"question-continue", QuestionInteraction, ContinueOnInteractionRejection, nil},
+		{"correction-stop-policy", PermissionInteraction, StopOnInteractionRejection, &feedback},
+		{"correction-continue-policy", PermissionInteraction, ContinueOnInteractionRejection, &feedback},
+		{"empty-feedback-stop", PermissionInteraction, StopOnInteractionRejection, &empty},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			nativeInteractionFixtureWithPolicy(t, test.kind, interactionRejectionFixture, test.policy, test.feedback)
+		})
+	}
+}
+
+func nativeInteractionFixtureWithPolicy(t *testing.T, kind InteractionKind, mode interactionFixtureMode, policy RejectionPolicy, feedback *string) {
+	t.Helper()
 	respond, reject := mode != interactionProposalFixture, mode == interactionRejectionFixture
+	continued := respond && (!reject || policy == ContinueOnInteractionRejection || feedback != nil && *feedback != "")
 	key := string(domain.NewID())
 	const callID = "call_private_interaction"
 	const sentinel = "private-interaction-sentinel"
@@ -70,7 +100,7 @@ func nativeInteractionProposalFixture(t *testing.T, kind InteractionKind, mode i
 			return
 		}
 		index := calls.Add(1)
-		if index > 2 || index == 2 && (!respond || reject) {
+		if index > 2 || index == 2 && !continued {
 			t.Error("native interaction continued without an original response")
 			w.WriteHeader(400)
 			return
@@ -78,7 +108,7 @@ func nativeInteractionProposalFixture(t *testing.T, kind InteractionKind, mode i
 		w.Header().Set("Content-Type", "text/event-stream")
 		if index == 2 {
 			result, valid := providerToolResult(body["messages"], callID)
-			if !valid || !strings.Contains(result, sentinel) || kind == QuestionInteraction && !strings.Contains(result, "First, Second") {
+			if !valid || result == "" || !reject && (!strings.Contains(result, sentinel) || kind == QuestionInteraction && !strings.Contains(result, "First, Second")) || feedback != nil && *feedback != "" && !strings.Contains(result, *feedback) {
 				t.Error("native continuation lost original interaction result")
 			}
 			_, _ = io.WriteString(w, `data: {"id":"chatcmpl-private-second","object":"chat.completion.chunk","created":1,"model":"private-model","choices":[{"index":0,"delta":{"role":"assistant","content":"Private interaction complete."},"finish_reason":null}]}`+"\n\n")
@@ -95,7 +125,7 @@ func nativeInteractionProposalFixture(t *testing.T, kind InteractionKind, mode i
 		_, _ = io.WriteString(w, "data: [DONE]\n\n")
 	}))
 	defer provider.Close()
-	api, ctx := nativeSessionFixture(t, provider.URL, key)
+	api, ctx := nativeSessionFixtureWithPolicy(t, provider.URL, key, policy)
 	path := filepath.Join(api.cwd, sentinel+".txt")
 	if err := os.WriteFile(path, []byte(sentinel), 0600); err != nil {
 		t.Fatal(err)
@@ -135,10 +165,10 @@ func nativeInteractionProposalFixture(t *testing.T, kind InteractionKind, mode i
 		if respond && interactionID != "" && observer.snapshot().SettledObserved {
 			receipt, err := observer.interactionReceipt(interactionID)
 			expectedCalls := int32(2)
-			if reject {
+			if !continued {
 				expectedCalls = 1
 			}
-			if err != nil || !receipt.HTTPAccepted || !receipt.NativeAccepted || calls.Load() != expectedCalls || observer.snapshot().NeedsRecovery || observer.snapshot().RejectedInteraction != reject {
+			if err != nil || !receipt.HTTPAccepted || !receipt.NativeAccepted || receipt.FeedbackRequested != (feedback != nil) || calls.Load() != expectedCalls || observer.snapshot().NeedsRecovery || observer.snapshot().RejectedInteraction != reject || observer.snapshot().StoppedOnRejection != (reject && !continued) {
 				t.Fatal("native response did not preserve independent HTTP, acceptance and terminal observations")
 			}
 			if _, err := api.replyInteraction(ctx, observer, domain.NewID(), interactionID, InteractionResponse{}); err == nil {
@@ -193,7 +223,7 @@ func nativeInteractionProposalFixture(t *testing.T, kind InteractionKind, mode i
 			if reject {
 				decision = PermissionReject
 			}
-			response = InteractionResponse{Decision: &decision}
+			response = InteractionResponse{Decision: &decision, Feedback: feedback}
 		}
 		receipt, err := api.replyInteraction(ctx, observer, domain.NewID(), request.ID, response)
 		if err != nil || !receipt.HTTPAccepted || receipt.NativeAccepted || receipt.ArrivalID != event.ID || receipt.InteractionID != request.ID {

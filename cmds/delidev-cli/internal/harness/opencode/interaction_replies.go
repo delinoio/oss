@@ -16,7 +16,14 @@ type RejectionPolicy string
 
 // Only a separately verified effective native setting can establish this
 // policy. An omitted policy grants no rejection-based terminal inference.
-const StopOnInteractionRejection RejectionPolicy = "stop-on-rejection"
+const (
+	StopOnInteractionRejection     RejectionPolicy = "stop-on-rejection"
+	ContinueOnInteractionRejection RejectionPolicy = "continue-on-rejection"
+)
+
+func validRejectionPolicy(value RejectionPolicy) bool {
+	return value == StopOnInteractionRejection || value == ContinueOnInteractionRejection
+}
 
 type observedInteraction struct {
 	value              NativeInteraction
@@ -33,10 +40,12 @@ type observedInteraction struct {
 }
 
 type interactionAttempt struct {
-	receipt InteractionReceipt
-	body    []byte
-	claim   SessionClaim
-	sent    bool
+	receipt    InteractionReceipt
+	body       []byte
+	claim      SessionClaim
+	sent       bool
+	permission *PermissionDecision
+	correction bool
 }
 
 type interactionHTTPAttempt struct {
@@ -45,20 +54,30 @@ type interactionHTTPAttempt struct {
 }
 
 // InteractionReceipt distinguishes the HTTP result from the original native
-// reply event. Neither fact completes its tool or permits repeating the answer.
+// reply event. Permission events echo only the decision, never correction
+// feedback. HTTPAccepted covers the exact original body; NativeAccepted alone
+// cannot prove feedback delivery. Neither fact completes its tool or permits
+// repeating the answer.
 type InteractionReceipt struct {
-	RequestID      domain.ID
-	InputRequestID domain.ID
-	InteractionID  string
-	ArrivalID      string
-	HTTPAccepted   bool
-	NativeAccepted bool
+	RequestID         domain.ID
+	InputRequestID    domain.ID
+	InteractionID     string
+	ArrivalID         string
+	HTTPAccepted      bool
+	NativeAccepted    bool
+	FeedbackRequested bool
 }
 
 type InteractionResponse struct {
 	Decision *PermissionDecision
 	Answers  [][]string `json:"-"`
 	Reject   bool
+	Feedback *string `json:"-"`
+}
+
+type permissionResponse struct {
+	Reply   PermissionDecision `json:"reply"`
+	Message *string            `json:"message,omitempty"`
 }
 
 func (o *inputObserver) interaction(event NativeEvent) (*NativeInteraction, error) {
@@ -128,9 +147,13 @@ func (o *inputObserver) interactionReply(event NativeEvent) (*NativeInteractionR
 		if value.Decision == nil || *value.Decision != PermissionOnce && *value.Decision != PermissionReject && *value.Decision != PermissionAlways {
 			return nil, observerProblem()
 		}
-		body, _ = json.Marshal(struct {
-			Reply PermissionDecision `json:"reply"`
-		}{*value.Decision})
+		if interaction.attempt.permission == nil || *interaction.attempt.permission != *value.Decision {
+			return nil, observerProblem()
+		}
+		// The original claim retains the complete body's digest, including
+		// feedback. Native permission events acknowledge only the decision.
+		// Do not fabricate a feedback echo from this narrower observation.
+		body = interaction.attempt.body
 	} else {
 		if value.Rejected {
 			if interaction.attempt.claim.Kind != RejectQuestionMutation {
@@ -200,19 +223,20 @@ func (o *inputObserver) prepareInteraction(request domain.ID, id string, respons
 		if response.Decision == nil || *response.Decision != PermissionOnce && *response.Decision != PermissionReject && *response.Decision != PermissionAlways || response.Answers != nil || response.Reject {
 			return nil, "", interactionProblem()
 		}
-		if *response.Decision == PermissionReject && o.rejectionPolicy != StopOnInteractionRejection {
+		if *response.Decision == PermissionReject && !validRejectionPolicy(o.rejectionPolicy) {
 			return nil, "", interactionProblem()
 		}
-		body, _ = json.Marshal(struct {
-			Reply PermissionDecision `json:"reply"`
-		}{*response.Decision})
+		if response.Feedback != nil && (*response.Decision != PermissionReject || domain.Text(*response.Feedback, "correction feedback", 64<<10, false) != nil) {
+			return nil, "", sessionInvalid()
+		}
+		body, _ = json.Marshal(permissionResponse{Reply: *response.Decision, Message: response.Feedback})
 		kind, path = ReplyPermissionMutation, "/permission/"+id+"/reply"
 	} else {
-		if response.Decision != nil {
+		if response.Decision != nil || response.Feedback != nil {
 			return nil, "", sessionInvalid()
 		}
 		if response.Reject {
-			if response.Answers != nil || o.rejectionPolicy != StopOnInteractionRejection {
+			if response.Answers != nil || !validRejectionPolicy(o.rejectionPolicy) {
 				return nil, "", interactionProblem()
 			}
 			kind, path = RejectQuestionMutation, "/question/"+id+"/reject"
@@ -238,6 +262,12 @@ func (o *inputObserver) prepareInteraction(request domain.ID, id string, respons
 		receipt: InteractionReceipt{RequestID: request, InputRequestID: o.input.receipt.RequestID, InteractionID: id, ArrivalID: interaction.arrival},
 		claim:   SessionClaim{RequestID: request, Kind: kind, SessionID: interaction.value.SessionID, MessageID: tool.MessageID, PartID: o.calls[tool.CallID], BodyDigest: mutationDigest(body), InputRequestID: o.input.receipt.RequestID, InteractionID: id, ArrivalID: interaction.arrival, CallID: tool.CallID},
 	}
+	if response.Decision != nil {
+		decision := *response.Decision
+		attempt.permission = &decision
+		attempt.correction = response.Feedback != nil && *response.Feedback != ""
+		attempt.receipt.FeedbackRequested = response.Feedback != nil
+	}
 	// Consume this scope before the durable callback: even a failed callback
 	// can have synchronized its original claim before losing the response.
 	interaction.attempt = attempt
@@ -246,16 +276,26 @@ func (o *inputObserver) prepareInteraction(request domain.ID, id string, respons
 	return attempt, path, nil
 }
 
-func (o *inputObserver) rejectedMessage(id string) bool {
+func (o *inputObserver) rejectedTool(interaction *observedInteraction) bool {
+	if !interaction.closed || !interaction.rejected {
+		return false
+	}
+	part := o.parts[o.calls[interaction.value.Tool.CallID]]
+	return part != nil && part.value.Tool.State == ToolError
+}
+
+func (o *inputObserver) rejectionStopsMessage(id string) bool {
 	if o.rejectionPolicy != StopOnInteractionRejection {
 		return false
 	}
 	for _, interaction := range o.interactions {
-		if !interaction.closed || !interaction.rejected || interaction.value.Tool.MessageID != id {
+		if interaction.value.Tool.MessageID != id || !o.rejectedTool(interaction) {
 			continue
 		}
-		part := o.parts[o.calls[interaction.value.Tool.CallID]]
-		if part != nil && part.value.Tool.State == ToolError {
+		// Direct nonempty correction raises native CorrectedError and keeps
+		// the loop active. Cascaded rejections always raise RejectedError,
+		// even when their source included feedback, and can stop this step.
+		if interaction.attempt == nil || !interaction.attempt.correction {
 			return true
 		}
 	}

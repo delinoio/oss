@@ -62,6 +62,14 @@ func requireNoManagedOpenCodeConfig(t *testing.T) {
 
 func nativeSessionFixture(t *testing.T, providerURL, key string) (*sessionAPI, context.Context) {
 	t.Helper()
+	return nativeSessionFixtureWithPolicy(t, providerURL, key, StopOnInteractionRejection)
+}
+
+func nativeSessionFixtureWithPolicy(t *testing.T, providerURL, key string, policy RejectionPolicy) (*sessionAPI, context.Context) {
+	t.Helper()
+	if !validRejectionPolicy(policy) {
+		t.Fatal("fixture requires an explicit native rejection policy")
+	}
 	executable := os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE")
 	if executable == "" {
 		t.Skip("explicit private native OpenCode session fixture")
@@ -83,7 +91,7 @@ func nativeSessionFixture(t *testing.T, providerURL, key string) (*sessionAPI, c
 	settings := fixtureSettings()
 	nativeConfig, _ := json.Marshal(map[string]any{
 		"autoupdate": false, "share": "disabled", "model": settings.Provider + "/" + settings.Model, "small_model": settings.Provider + "/" + settings.Model,
-		"experimental": map[string]any{"continue_loop_on_deny": false},
+		"experimental": map[string]any{"continue_loop_on_deny": policy == ContinueOnInteractionRejection},
 		"provider": map[string]any{settings.Provider: map[string]any{
 			"npm": "@ai-sdk/openai-compatible", "name": "Private fixture", "options": map[string]any{"baseURL": providerURL + "/v1", "apiKey": key},
 			"models": map[string]any{settings.Model: map[string]any{"name": "Private fixture", "limit": map[string]any{"context": 32000, "output": 1000}}},
@@ -163,7 +171,7 @@ func nativeSessionFixture(t *testing.T, providerURL, key string) (*sessionAPI, c
 	if err != nil || validateHealth(health) != nil {
 		t.Fatal("native profile health mismatch")
 	}
-	api := &sessionAPI{client: client, origin: origin, password: password, cwd: cwd, gate: make(chan struct{}, 1), owner: config.Process.OwnerID, logger: config.Process.Logger, rejectionPolicy: StopOnInteractionRejection}
+	api := &sessionAPI{client: client, origin: origin, password: password, cwd: cwd, gate: make(chan struct{}, 1), owner: config.Process.OwnerID, logger: config.Process.Logger, rejectionPolicy: policy}
 	api.alive = func() error {
 		select {
 		case <-handle.Done():

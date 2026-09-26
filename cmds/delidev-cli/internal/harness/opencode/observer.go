@@ -63,6 +63,7 @@ type inputProgress struct {
 	SettledObserved     bool
 	NeedsRecovery       bool
 	RejectedInteraction bool
+	StoppedOnRejection  bool
 }
 
 type observedMessage struct {
@@ -354,7 +355,12 @@ func (o *inputObserver) refresh() {
 		terminal = message.finalized && a.Completed != nil && (a.Error != nil || a.Finish != nil && !o.needsSuccessor(message.value.ID))
 	}
 	o.progress.TerminalObserved = o.progress.UserSeen && o.progress.InputPartSeen && terminal
-	o.progress.RejectedInteraction = message != nil && o.rejectedMessage(message.value.ID)
+	for _, interaction := range o.interactions {
+		if o.rejectedTool(interaction) {
+			o.progress.RejectedInteraction = true
+		}
+	}
+	o.progress.StoppedOnRejection = message != nil && o.rejectionStopsMessage(message.value.ID)
 	o.progress.SettledObserved = o.progress.TerminalObserved && o.progress.Status == NativeStatusIdle && o.progress.IdleNotification
 }
 
@@ -486,7 +492,7 @@ func (o *inputObserver) needsSuccessor(id string) bool {
 	if a.Error != nil || a.Finish == nil {
 		return false
 	}
-	if o.rejectedMessage(id) {
+	if o.rejectionStopsMessage(id) {
 		return false
 	}
 	if *a.Finish == FinishToolCalls || *a.Finish == FinishUnknown {
