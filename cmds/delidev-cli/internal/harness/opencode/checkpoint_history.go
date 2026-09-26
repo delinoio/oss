@@ -23,7 +23,7 @@ const (
 // This read compares all original message/part bytes through the pinned native
 // API after independent runtime/configuration ownership. It cannot discover a
 // session, reconstruct observations, acknowledge creation or authorize input.
-func (s *sessionAPI) inspectCheckpointHistory(ctx context.Context, checkpoint nativeCheckpoint) (returned error) {
+func (s *sessionAPI) inspectCheckpointHistory(ctx context.Context, checkpoint nativeCheckpoint, previousAgent PrimaryAgent) (returned error) {
 	if err := s.enter(ctx); err != nil {
 		return err
 	}
@@ -38,7 +38,7 @@ func (s *sessionAPI) inspectCheckpointHistory(ctx context.Context, checkpoint na
 		return sessionUncertain()
 	}
 	phase = checkpointSettingsPhase
-	settings, err := checkpointSettings(s)
+	settings, err := checkpointSettingsForAgent(s, previousAgent)
 	if err != nil || settings != checkpoint.SettingsSHA256 {
 		return sessionUncertain()
 	}
@@ -61,7 +61,8 @@ func (s *sessionAPI) inspectCheckpointHistory(ctx context.Context, checkpoint na
 	if domain.Decode(raw, &sessions) != nil || len(sessions) != 1 {
 		return sessionUncertain()
 	}
-	identity, err := validateSession(sessions[0], s.cwd, s.creation, false)
+	creation := s.sessionMetadataCreation()
+	identity, err := validateSession(sessions[0], s.cwd, &creation, false)
 	if err != nil || identity != s.creation.identity {
 		return sessionUncertain()
 	}

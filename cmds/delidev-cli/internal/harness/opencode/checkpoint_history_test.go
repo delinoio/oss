@@ -63,14 +63,14 @@ func TestCheckpointHistoryRequiresCompleteOriginalReadOnlyEvidence(t *testing.T)
 			var logs bytes.Buffer
 			s := &sessionAPI{creation: original.creation, cwd: checkpoint.Workspace, runtimeRoot: checkpoint.NativeRoot, apiProfile: original.apiProfile, apiVerified: true, gate: make(chan struct{}, 1), owner: domain.NewID(), password: original.password, origin: original.origin, alive: func() error { return nil }, logger: slog.New(slog.NewJSONHandler(&logs, nil))}
 			s.client = &http.Client{Transport: &checkpointHistoryTransport{f, mode}}
-			err = s.inspectCheckpointHistory(context.Background(), checkpoint)
+			err = s.inspectCheckpointHistory(context.Background(), checkpoint, original.apiProfile.Settings.Agent)
 			if (err == nil) != (mode == "valid") || s.checkpointRead || s.historyRead != nil || s.input != nil || s.observer != nil || s.events != nil {
 				t.Fatal("historical comparison changed live execution or read authority", err)
 			}
 			if mode != "valid" {
 				f.mode = ""
 				before := len(f.reads)
-				if s.problem == nil || s.inspectCheckpointHistory(context.Background(), checkpoint) == nil || len(f.reads) != before || !strings.Contains(logs.String(), "opencode_retained_history_comparison_failed") {
+				if s.problem == nil || s.inspectCheckpointHistory(context.Background(), checkpoint, original.apiProfile.Settings.Agent) == nil || len(f.reads) != before || !strings.Contains(logs.String(), "opencode_retained_history_comparison_failed") {
 					t.Fatal("later matching reads erased original replacement uncertainty")
 				}
 			}

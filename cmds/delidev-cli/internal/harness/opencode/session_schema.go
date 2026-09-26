@@ -146,8 +146,14 @@ func validateSession(raw []byte, cwd string, creation *sessionCreation, fresh bo
 	if _, ok := boundedString(fields["title"], 4096, true); !ok || fresh && !scalar(fields["title"], creation.settings.Title) {
 		return bad()
 	}
-	model, err := shape(fields["model"], []string{"id", "providerID"}, nil)
+	model, err := shape(fields["model"], []string{"id", "providerID"}, []string{"variant"})
 	if err != nil || !scalar(model["id"], creation.settings.Model) || !scalar(model["providerID"], creation.settings.Provider) {
+		return bad()
+	}
+	// The pinned native setAgentModel stores the literal default variant on
+	// a per-input agent transition. This is its absent-variant equivalent,
+	// never permission to accept an explicit alternate model variant.
+	if variant, ok := model["variant"]; ok && !scalar(variant, "default") {
 		return bad()
 	}
 	metadata, err := shape(fields["metadata"], []string{"delidev"}, nil)

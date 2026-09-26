@@ -191,8 +191,20 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 		if err := event.Observed.ValidateForInput(input.Configuration, input.Input.Mode); err != nil {
 			return err
 		}
-		if c := input.Continuation; c != nil && (c.Previous.NativeThreadID != event.NativeThreadID || !reflect.DeepEqual(c.Previous.Observed, *event.Observed)) {
-			return executionEventConflict()
+		if c := input.Continuation; c != nil {
+			previous := c.Previous.Observed
+			if input.Configuration.Harness == domain.OpenCode {
+				// Both agents are independently validated against their own
+				// immutable queued-input modes. All other native settings stay
+				// identical; the predecessor observation itself is never changed.
+				if err := previous.ValidateForInput(input.Configuration, c.InputMode); err != nil {
+					return err
+				}
+				previous.OpenCodeAgent = event.Observed.OpenCodeAgent
+			}
+			if c.Previous.NativeThreadID != event.NativeThreadID || !reflect.DeepEqual(previous, *event.Observed) {
+				return executionEventConflict()
+			}
 		}
 		progress = &domain.ExecutionProgress{JobID: job.ID, ExecutionID: input.ExecutionID, InputID: input.InputID, NativeThreadID: event.NativeThreadID, Observed: *event.Observed, Outcome: domain.ExecutionNotStarted}
 		session.Execution = progress

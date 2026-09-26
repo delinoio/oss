@@ -118,8 +118,10 @@ func queueContinuation(tx *store.Tx, sr store.Record, session domain.Session, ex
 		return store.Record{}, continuationConflict()
 	}
 	input.InputID, input.Input = ir.ID, domain.SessionInput{Prompt: next.Prompt, Mode: next.Mode}
-	if input.Configuration.Harness == domain.OpenCode && (session.Workspace != domain.GeneralChat || input.Input.Mode != input.Continuation.InputMode) {
-		return store.Record{}, domain.Fail(domain.Unsupported, "This OpenCode continuation requires an unchanged General Chat mode.", "Preserve the queued input and original history until the selected continuation profile is supported.")
+	if input.Configuration.Harness == domain.OpenCode {
+		if _, err := input.Configuration.OpenCodePrimaryForInput(input.Input.Mode); err != nil {
+			return store.Record{}, err
+		}
 	}
 	if err := input.Validate(); err != nil {
 		return store.Record{}, err

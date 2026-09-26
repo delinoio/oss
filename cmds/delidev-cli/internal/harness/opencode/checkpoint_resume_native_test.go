@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -25,7 +26,7 @@ func TestManualNativeOpenCodeCheckpointProcessReplacement(t *testing.T) {
 	if binary == "" {
 		t.Skip("explicit private pinned OpenCode process replacement fixture")
 	}
-	for _, mode := range []string{"build", "plan", "failed", "stopped"} {
+	for _, mode := range []string{"build", "plan", "failed", "stopped", "build-plan-build", "plan-build-plan"} {
 		t.Run(mode, func(t *testing.T) { nativeCheckpointReplacement(t, binary, mode) })
 	}
 }
@@ -35,9 +36,11 @@ func nativeCheckpointReplacement(t *testing.T, binary string, mode string) {
 	requireNoManagedOpenCodeConfig(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	agent := BuildAgent
-	if mode == "plan" {
-		agent = PlanAgent
+	agentAt := func(turn int) PrimaryAgent {
+		if mode == "plan" || mode == "build-plan-build" && turn%2 == 1 || mode == "plan-build-plan" && turn%2 == 0 {
+			return PlanAgent
+		}
+		return BuildAgent
 	}
 	failedFirst := mode == "failed" || mode == "stopped"
 	const turns = 3
@@ -84,16 +87,27 @@ func nativeCheckpointReplacement(t *testing.T, binary string, mode string) {
 			var content string
 			decoded := json.Unmarshal(message.Content, &content) == nil
 			matches := content == text
-			if agent == PlanAgent && seen == len(expected)-1 {
+			reminder := ""
+			if agentAt(index) == PlanAgent {
+				reminder = "455db97e0d21e8097c2afb539d167b4b2483e99b585dbc4fff23cafd4a3029b8"
+			} else {
+				for turn := 0; turn < index; turn++ {
+					if agentAt(turn) == PlanAgent {
+						reminder = "5e3db616a685a3dfaaf95fb86ae6e2acfbdf520bda60f7b27f727d2a88ba8a25"
+					}
+				}
+			}
+			if reminder != "" && seen == len(expected)-1 {
 				// The pinned native SessionReminders.apply appends plan.txt to
-				// the latest provider input only. Pin its exact bytes without
+				// or the Build transition to the latest provider input only.
+				// Pin its exact bytes without
 				// importing that upstream prompt into repository-owned code.
 				var parts []struct {
 					Type string `json:"type"`
 					Text string `json:"text"`
 				}
 				decoded = domain.Decode(message.Content, &parts) == nil
-				matches = decoded && len(parts) == 2 && parts[0].Type == "text" && parts[0].Text == text && parts[1].Type == "text" && mutationDigest([]byte(parts[1].Text)) == "455db97e0d21e8097c2afb539d167b4b2483e99b585dbc4fff23cafd4a3029b8"
+				matches = decoded && len(parts) == 2 && parts[0].Type == "text" && parts[0].Text == text && parts[1].Type == "text" && mutationDigest([]byte(parts[1].Text)) == reminder
 			}
 			if !decoded || message.Role != role || !matches {
 				t.Error("replacement lost, changed or repeated original conversation", index, seen)
@@ -125,9 +139,10 @@ func nativeCheckpointReplacement(t *testing.T, binary string, mode string) {
 	var home string
 	for turn := 0; turn < turns; turn++ {
 		config := fixtureOwnedAPIConfig(t)
+		config.Probe.Process.Logger = slog.New(slog.NewJSONHandler(os.Stderr, nil))
 		config.Probe.Process.Executable = binary
 		config.ServerOrigin, config.Token = provider.URL, tokens[turn]
-		config.Settings.Agent, config.Settings.Permission = agent, []PermissionRule{}
+		config.Settings.Agent, config.Settings.Permission = agentAt(turn), []PermissionRule{}
 		config.Instructions = "Private immutable additive checkpoint instruction."
 		if turn > 0 {
 			config.Workspace, config.NativeRoot = original.Workspace, original.NativeRoot
@@ -154,11 +169,11 @@ func nativeCheckpointReplacement(t *testing.T, binary string, mode string) {
 			api, err = OpenOwnedAPI(ctx, config)
 		} else {
 			if ref.RequiresResume {
-				if api, err := OpenResumedAPI(ctx, config, home, prior, ref, domain.NewID(), false); err == nil || api != nil || len(claims) != 0 {
+				if api, err := OpenResumedAPI(ctx, config, home, prior, ref, domain.NewID(), agentAt(turn-1), false); err == nil || api != nil || len(claims) != 0 {
 					t.Fatal("failed/stopped predecessor gained implicit continuation")
 				}
 			}
-			api, err = OpenResumedAPI(ctx, config, home, prior, ref, domain.NewID(), ref.RequiresResume)
+			api, err = OpenResumedAPI(ctx, config, home, prior, ref, domain.NewID(), agentAt(turn-1), ref.RequiresResume)
 		}
 		if err != nil {
 			t.Fatal("original checkpoint replacement unavailable", turn, err)

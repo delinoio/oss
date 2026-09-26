@@ -129,6 +129,7 @@ type sessionAPI struct {
 	predecessor       *nativeCheckpoint
 	predecessorDigest string
 	resumeRequest     domain.ID
+	sessionAgent      PrimaryAgent
 }
 
 type sessionCreation struct {
@@ -316,12 +317,30 @@ func (s *sessionAPI) readSession(ctx context.Context) (string, error) {
 		}
 		return "", err
 	}
-	identity, err := validateSession(raw, s.cwd, s.creation, false)
+	creation := s.sessionMetadataCreation()
+	identity, err := validateSession(raw, s.cwd, &creation, false)
+	if err != nil && s.input != nil && creation.settings.Agent != s.creation.settings.Agent {
+		// Native createUserMessage updates session metadata before storing the
+		// new user message. Permit that one original-input-owned transition,
+		// then reject any rollback to the predecessor's agent.
+		identity, err = validateSession(raw, s.cwd, s.creation, false)
+		if err == nil {
+			s.sessionAgent = s.creation.settings.Agent
+		}
+	}
 	if err != nil || identity != s.creation.identity {
 		s.problem = sessionProblem()
 		return "", sessionProblem()
 	}
 	return identity.id, nil
+}
+
+func (s *sessionAPI) sessionMetadataCreation() sessionCreation {
+	creation := *s.creation
+	if s.sessionAgent != "" {
+		creation.settings.Agent = s.sessionAgent
+	}
+	return creation
 }
 
 // submit uses the native API's explicit client-provided message/part IDs. The
@@ -443,6 +462,14 @@ func (s *sessionAPI) readStoredInput(ctx context.Context) (InputReceipt, error) 
 			return receipt, sessionProblem()
 		}
 		return receipt, nil
+	}
+	if s.sessionAgent != "" && s.sessionAgent != s.creation.settings.Agent {
+		// Exact stored input uses the new native agent and must follow its
+		// original setAgentModel update. Missing metadata cannot be invented.
+		s.sessionAgent = s.creation.settings.Agent
+		if _, err := s.readSession(ctx); err != nil {
+			return receipt, err
+		}
 	}
 	s.input.receipt.Recorded = true
 	return s.input.receipt, nil

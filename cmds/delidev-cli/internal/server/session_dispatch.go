@@ -80,9 +80,6 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 	switch c.Harness {
 	case domain.Codex:
 	case domain.OpenCode:
-		if input.Continuation != nil && input.Input.Mode != input.Continuation.InputMode {
-			return empty, domain.Fail(domain.Unsupported, "OpenCode continuation requires the preceding native mode.", "Keep the input queued until mode-switch history is supported.")
-		}
 		if _, err := c.OpenCodePrimaryForInput(input.Input.Mode); err != nil {
 			return empty, err
 		}

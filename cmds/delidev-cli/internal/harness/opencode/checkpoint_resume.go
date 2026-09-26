@@ -11,21 +11,22 @@ import (
 )
 
 type checkpointResume struct {
-	source  nativeCheckpoint
-	raw     []byte
-	ref     CheckpointReference
-	request domain.ID
+	source        nativeCheckpoint
+	raw           []byte
+	ref           CheckpointReference
+	request       domain.ID
+	previousAgent PrimaryAgent
 }
 
 // OpenResumedAPI is a private native profile. The caller must independently
 // hold the continuation workspace lease, prove original report acceptance and
 // register fresh account authority. Claim must durably consume this exact
 // predecessor before staging or launch. It never creates another session or
-// replays input. The initial replacement profile is same-mode, non-VCS text;
+// replays input. The replacement profile is native Build/Plan, non-VCS text;
 // auxiliary/tool/project history needs separate native replacement evidence.
-func OpenResumedAPI(ctx context.Context, config APIExecutionConfig, home string, raw []byte, ref CheckpointReference, request domain.ID, explicitResume bool) (result *OwnedAPI, returned error) {
+func OpenResumedAPI(ctx context.Context, config APIExecutionConfig, home string, raw []byte, ref CheckpointReference, request domain.ID, previousAgent PrimaryAgent, explicitResume bool) (result *OwnedAPI, returned error) {
 	source, err := decodeCheckpoint(raw, ref, home)
-	if err != nil || ctx.Err() != nil || request.Validate() != nil || request == ref.CreationRequestID || request == ref.InputRequestID || request == ref.OwnerID || config.Probe.Process.OwnerID == ref.OwnerID || source.Reference.RequiresResume && !explicitResume || config.Workspace != source.Workspace || config.NativeRoot != source.NativeRoot || source.Project != "global" || filepath.Dir(source.NativeRoot) != source.NativeRoot {
+	if err != nil || (previousAgent != BuildAgent && previousAgent != PlanAgent) || ctx.Err() != nil || request.Validate() != nil || request == ref.CreationRequestID || request == ref.InputRequestID || request == ref.OwnerID || config.Probe.Process.OwnerID == ref.OwnerID || source.Reference.RequiresResume && !explicitResume || config.Workspace != source.Workspace || config.NativeRoot != source.NativeRoot || source.Project != "global" || filepath.Dir(source.NativeRoot) != source.NativeRoot {
 		return nil, sessionUncertain()
 	}
 	if checkpointReplacementProfile(source) != nil || request == config.Probe.Process.OwnerID || config.Probe.Process.OwnerID == ref.CreationRequestID || config.Probe.Process.OwnerID == ref.InputRequestID {
@@ -36,7 +37,7 @@ func OpenResumedAPI(ctx context.Context, config APIExecutionConfig, home string,
 			return nil, sessionUncertain()
 		}
 	}
-	resume := &checkpointResume{source: source, raw: bytes.Clone(raw), ref: ref, request: request}
+	resume := &checkpointResume{source: source, raw: bytes.Clone(raw), ref: ref, request: request, previousAgent: previousAgent}
 	if err := InspectCheckpoint(ctx, home, resume.raw, ref); err != nil {
 		return nil, err
 	}
@@ -61,11 +62,15 @@ func OpenResumedAPI(ctx context.Context, config APIExecutionConfig, home string,
 	// Retain the original creation marker and identity without inventing a new
 	// creation claim or HTTP acknowledgment on this replacement process.
 	session.creation = &sessionCreation{request: ref.CreationRequestID, settings: session.apiProfile.Settings, identity: sessionIdentity{ref.SessionID, source.Project, source.Slug, source.Created}}
-	if err := session.inspectCheckpointHistory(ctx, source); err != nil {
+	session.sessionAgent = previousAgent
+	if err := session.inspectCheckpointHistory(ctx, source, previousAgent); err != nil {
 		return nil, err
 	}
 	session.creation.recorded = true
 	session.predecessor, session.predecessorDigest, session.resumeRequest = &resume.source, ref.SHA256, request
+	if session.logger != nil {
+		session.logger.InfoContext(ctx, "opencode_checkpoint_mode_verified", "owner_id", session.owner, "previous_agent", previousAgent, "input_agent", session.apiProfile.Settings.Agent)
+	}
 	ready = true
 	return api, nil
 }
@@ -100,7 +105,7 @@ func (r *checkpointResume) stage(ctx context.Context, config apiSessionConfig, p
 	if r == nil || profile == nil || home == r.source.RuntimeHome || directoryContains(home, r.source.RuntimeHome) || directoryContains(r.source.RuntimeHome, home) || mutationDigest([]byte(profile.Token)) == r.source.CredentialSHA256 {
 		return sessionUncertain()
 	}
-	settings, err := checkpointSettings(&sessionAPI{apiProfile: profile, creation: &sessionCreation{settings: config.Settings}})
+	settings, err := checkpointSettingsForAgent(&sessionAPI{apiProfile: profile, creation: &sessionCreation{settings: config.Settings}}, r.previousAgent)
 	if err != nil || settings != r.source.SettingsSHA256 || InspectCheckpoint(ctx, r.source.RuntimeHome, r.raw, r.ref) != nil {
 		return sessionUncertain()
 	}

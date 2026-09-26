@@ -38,7 +38,7 @@ func TestManualNativeOpenCodeCompletedExecutionRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, mode := range []domain.SessionMode{domain.ExecuteMode, domain.PlanMode} {
-		for _, scenario := range []string{"first", "resumed", "failed", "missing-checkpoint"} {
+		for _, scenario := range []string{"first", "resumed", "switched", "failed", "missing-checkpoint"} {
 			t.Run(string(mode)+"/"+scenario, func(t *testing.T) { nativeOpenCodeRecovery(t, binary, mode, scenario) })
 		}
 	}
@@ -49,7 +49,7 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 	defer cancel()
 	var calls atomic.Int64
 	lostTurn := int64(1)
-	if scenario == "resumed" {
+	if scenario == "resumed" || scenario == "switched" {
 		lostTurn = 2
 	}
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -140,8 +140,16 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 	}
 	stop := start()
 	client := sessionClient(f.accountFixture)
+	inputMode := mode
 	enqueue := func() {
-		raw, _ := json.Marshal(domain.SessionInput{Prompt: "following retained input", Mode: mode})
+		if scenario == "switched" {
+			if inputMode == domain.ExecuteMode {
+				inputMode = domain.PlanMode
+			} else {
+				inputMode = domain.ExecuteMode
+			}
+		}
+		raw, _ := json.Marshal(domain.SessionInput{Prompt: "following retained input", Mode: inputMode})
 		if _, err := client.EnqueueInput(ctx, ownerRequest(f.identity, &pb.EnqueueInputRequest{RequestId: string(domain.NewID()), SessionId: f.change.Session.Id, DocumentJson: raw})); err != nil {
 			t.Fatal(err)
 		}
@@ -176,7 +184,7 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 		}
 	}
 	assignment := resume()
-	if scenario == "resumed" {
+	if lostTurn == 2 {
 		if job := waitJob(domain.ID(assignment.Id)); job.State != domain.JobSucceeded {
 			t.Fatal("first execution failed", job.Problem)
 		}
@@ -222,7 +230,7 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 	}
 	var recoveryJob domain.Job
 	var comparison domain.ExecutionRecoveryRequest
-	if domain.Decode(response.Msg.Change.ExecutionRecoveryJob.DocumentJson, &recoveryJob) != nil || domain.Decode(recoveryJob.Input, &comparison) != nil || comparison.Validate() != nil || comparison.Harness != domain.OpenCode || comparison.OpenCode.ClaimVersion != uint32(lostTurn) {
+	if domain.Decode(response.Msg.Change.ExecutionRecoveryJob.DocumentJson, &recoveryJob) != nil || domain.Decode(recoveryJob.Input, &comparison) != nil || comparison.Validate() != nil || comparison.Harness != domain.OpenCode || comparison.InputMode != inputMode || comparison.OpenCode.ClaimVersion != uint32(lostTurn) {
 		t.Fatal("recovery changed native comparison authority")
 	}
 	job := waitJob(domain.ID(response.Msg.Change.ExecutionRecoveryJob.Id))

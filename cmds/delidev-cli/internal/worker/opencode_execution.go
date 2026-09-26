@@ -47,8 +47,8 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 	manager := &workspace.Manager{Root: config.Root, Logger: config.Logger}
 	var lease *workspace.ExecutionLease
 	if c := input.Continuation; c != nil {
-		if preparation.Type != domain.GeneralChat || input.Input.Mode != c.InputMode {
-			return nil, domain.Fail(domain.Unsupported, "This OpenCode continuation requires an unchanged text-mode General Chat workspace.", "Retain the original workspace and input until the selected native continuation profile is supported.")
+		if preparation.Type != domain.GeneralChat {
+			return nil, domain.Fail(domain.Unsupported, "This OpenCode continuation requires a text-mode General Chat workspace.", "Retain the original workspace and input until the selected native continuation profile is supported.")
 		}
 		lease, err = manager.ClaimContinuation(ctx, owner, input.ExecutionID, workspace.ExecutionPredecessor{JobID: c.Previous.JobID, ExecutionID: c.Previous.ExecutionID}, preparation, manifest)
 	} else {
@@ -160,7 +160,11 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 	var api *opencode.OwnedAPI
 	if checkpoint != nil {
 		previousHome := filepath.Join(runtimeRoot, string(checkpoint.Reference.Claim.ExecutionID))
-		api, err = opencode.OpenResumedAPI(nativeCtx, nativeConfig, previousHome, checkpoint.Native, checkpoint.NativeReference, input.ThreadRequestID, input.Continuation.Intent == domain.ContinueExplicitly)
+		previousAgent, err := input.Configuration.OpenCodePrimaryForInput(input.Continuation.InputMode)
+		if err != nil {
+			return nil, err
+		}
+		api, err = opencode.OpenResumedAPI(nativeCtx, nativeConfig, previousHome, checkpoint.Native, checkpoint.NativeReference, input.ThreadRequestID, previousAgent, input.Continuation.Intent == domain.ContinueExplicitly)
 	} else {
 		api, err = opencode.OpenOwnedAPI(nativeCtx, nativeConfig)
 	}

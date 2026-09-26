@@ -39,7 +39,7 @@ func checkpointStageFixture(t *testing.T) (*checkpointResume, apiSessionConfig, 
 	if InspectCheckpoint(context.Background(), home, raw, ref) != nil {
 		t.Fatal("invalid independent source fixture")
 	}
-	return &checkpointResume{source: source, raw: raw, ref: ref, request: domain.NewID()}, config, profile
+	return &checkpointResume{source: source, raw: raw, ref: ref, request: domain.NewID(), previousAgent: config.Settings.Agent}, config, profile
 }
 
 func TestCheckpointStagingCopiesExactDatabaseAndWALKeepsSourceImmutable(t *testing.T) {
@@ -78,8 +78,51 @@ func TestCheckpointStagingCopiesExactDatabaseAndWALKeepsSourceImmutable(t *testi
 	}
 }
 
+func TestCheckpointModeTransitionPreservesEveryOtherSetting(t *testing.T) {
+	for _, scenario := range []string{"valid", "wrong-predecessor", "unknown-predecessor", "model", "permission", "instructions", "relay", "limits", "rejection", "title"} {
+		t.Run(scenario, func(t *testing.T) {
+			r, config, profile := checkpointStageFixture(t)
+			config.Settings.Agent, profile.Settings.Agent = PlanAgent, PlanAgent
+			claims := 0
+			config.Claim = func(context.Context, SessionClaim) error { claims++; return nil }
+			switch scenario {
+			case "wrong-predecessor":
+				r.previousAgent = PlanAgent
+			case "unknown-predecessor":
+				r.previousAgent = "future"
+			case "model":
+				config.Settings.Model, profile.Settings.Model = "changed", "changed"
+			case "permission":
+				config.Settings.Permission = []PermissionRule{{Permission: "read", Pattern: "*", Action: PermissionAllow}}
+				profile.Settings.Permission = config.Settings.Permission
+			case "instructions":
+				profile.Instructions += "changed"
+			case "relay":
+				profile.BaseURL += "/changed"
+			case "limits":
+				profile.ContextLimit++
+			case "rejection":
+				profile.Rejection = ContinueOnInteractionRejection
+			case "title":
+				config.Settings.Title, profile.Settings.Title = "changed", "changed"
+			}
+			err := r.stage(context.Background(), config, profile)
+			if scenario == "valid" {
+				if err != nil || claims != 1 {
+					t.Fatal("explicit native agent transition failed", err)
+				}
+			} else if err == nil || claims != 0 {
+				t.Fatal("mode transition changed immutable native authority")
+			}
+			if InspectCheckpoint(context.Background(), r.source.RuntimeHome, r.raw, r.ref) != nil {
+				t.Fatal("transition changed predecessor bytes")
+			}
+		})
+	}
+}
+
 func TestCheckpointStagingRejectsChangedAuthorityAndPreservesPartialState(t *testing.T) {
-	for _, mode := range []string{"credential", "settings", "origin", "instructions", "source", "claim-failure", "source-after-claim", "occupied-target", "canceled"} {
+	for _, mode := range []string{"credential", "settings", "preceding-agent", "origin", "instructions", "source", "claim-failure", "source-after-claim", "occupied-target", "canceled"} {
 		t.Run(mode, func(t *testing.T) {
 			r, config, profile := checkpointStageFixture(t)
 			home := filepath.Dir(config.Probe.Home)
@@ -101,6 +144,8 @@ func TestCheckpointStagingRejectsChangedAuthorityAndPreservesPartialState(t *tes
 				r.source.CredentialSHA256 = mutationDigest([]byte(profile.Token))
 			case "settings":
 				profile.Settings.Agent = PlanAgent
+			case "preceding-agent":
+				r.previousAgent = PlanAgent
 			case "origin":
 				profile.BaseURL = "http://127.0.0.1:2/api-proxy/v1"
 			case "instructions":
@@ -186,7 +231,7 @@ func TestCheckpointReplacementRefusesReplayBeforeClaimsOrLaunch(t *testing.T) {
 			}
 			claims := 0
 			config.Claim = func(context.Context, SessionClaim) error { claims++; return nil }
-			if api, err := OpenResumedAPI(ctx, config, r.source.RuntimeHome, r.raw, r.ref, r.request, false); api != nil || err == nil || claims != 0 {
+			if api, err := OpenResumedAPI(ctx, config, r.source.RuntimeHome, r.raw, r.ref, r.request, r.previousAgent, false); api != nil || err == nil || claims != 0 {
 				t.Fatal("invalid original authority consumed a native claim")
 			}
 		})

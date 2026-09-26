@@ -267,8 +267,18 @@ func validCheckpointPart(kind PartKind) bool {
 }
 
 func checkpointSettings(s *sessionAPI) (string, error) {
+	if s.apiProfile == nil {
+		return "", sessionUncertain()
+	}
+	return checkpointSettingsForAgent(s, s.apiProfile.Settings.Agent)
+}
+
+// Only the native per-input Build/Plan selector may differ on restoration.
+// The caller supplies the preceding selector from its immutable assignment;
+// every model, permission, instruction and relay fact must still match.
+func checkpointSettingsForAgent(s *sessionAPI, agent PrimaryAgent) (string, error) {
 	p := s.apiProfile
-	if p == nil || s.creation == nil || !equalSessionSettings(p.Settings, s.creation.settings) || p.ProjectInstructions == nil {
+	if p == nil || s.creation == nil || !equalSessionSettings(p.Settings, s.creation.settings) || p.ProjectInstructions == nil || (agent != BuildAgent && agent != PlanAgent) {
 		return "", sessionUncertain()
 	}
 	if err := p.inspectInstructions(); err != nil {
@@ -292,7 +302,7 @@ func checkpointSettings(s *sessionAPI) (string, error) {
 		InstructionsSHA256        string
 		TitleSHA256, RelaySHA256  string
 		Sources                   []instruction
-	}{p.Settings.Agent, p.Settings.Provider, p.Settings.Model, p.Settings.Permission, p.ContextLimit, p.OutputLimit, p.Rejection, mutationDigest([]byte(p.Instructions)), mutationDigest([]byte(p.Settings.Title)), mutationDigest([]byte(p.BaseURL)), sources})
+	}{agent, p.Settings.Provider, p.Settings.Model, p.Settings.Permission, p.ContextLimit, p.OutputLimit, p.Rejection, mutationDigest([]byte(p.Instructions)), mutationDigest([]byte(p.Settings.Title)), mutationDigest([]byte(p.BaseURL)), sources})
 	if err != nil {
 		return "", sessionUncertain()
 	}

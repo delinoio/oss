@@ -16,7 +16,7 @@ import (
 func readOpenCodeContinuationCheckpoint(ctx context.Context, root string, credential Credential, input domain.ExecutionJobInput) (openCodeExecutionCheckpoint, error) {
 	var empty openCodeExecutionCheckpoint
 	c := input.Continuation
-	if c == nil || input.Validate() != nil || input.Configuration.Harness != domain.OpenCode || c.InputMode != input.Input.Mode || credential.MachineID != input.MachineID || c.Completion.Version != 2 {
+	if c == nil || input.Validate() != nil || input.Configuration.Harness != domain.OpenCode || credential.MachineID != input.MachineID || c.Completion.Version != 2 {
 		return empty, executionCheckpointUncertain()
 	}
 	bindings, err := domain.CheckedExecutionInputs(c.Previous.InputID, c.PromptDigest, c.Previous.AcceptedInputs)

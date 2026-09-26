@@ -31,6 +31,14 @@ func TestManualNativeOpenCodePublicContinuation(t *testing.T) {
 	nativeOpenCodePublicDispatch(t, 3, false, "")
 }
 
+func TestManualNativeOpenCodePublicModeTransitions(t *testing.T) {
+	nativeOpenCodePublicDispatch(t, 3, false, "", true)
+}
+
+func TestManualNativeOpenCodePublicModeTransitionAfterFailure(t *testing.T) {
+	nativeOpenCodePublicDispatch(t, 3, true, "", true)
+}
+
 func TestManualNativeOpenCodePublicResumeAfterFailure(t *testing.T) {
 	nativeOpenCodePublicDispatch(t, 3, true, "")
 }
@@ -41,7 +49,7 @@ func TestManualNativeOpenCodePublicContinuationRefusesChangedEvidence(t *testing
 	}
 }
 
-func nativeOpenCodePublicDispatch(t *testing.T, turns int, failedFirst bool, fault string) {
+func nativeOpenCodePublicDispatch(t *testing.T, turns int, failedFirst bool, fault string, switchModes ...bool) {
 	binary := os.Getenv("DELIDEV_NATIVE_OPENCODE_EXECUTABLE")
 	if binary == "" {
 		t.Skip("explicit installed OpenCode with public APIs and generated loopback provider only")
@@ -55,6 +63,15 @@ func nativeOpenCodePublicDispatch(t *testing.T, turns int, failedFirst bool, fau
 	}
 	for _, mode := range []domain.SessionMode{domain.ExecuteMode, domain.PlanMode} {
 		t.Run(string(mode), func(t *testing.T) {
+			modeAt := func(turn int) domain.SessionMode {
+				if len(switchModes) == 1 && switchModes[0] && turn%2 == 1 {
+					if mode == domain.ExecuteMode {
+						return domain.PlanMode
+					}
+					return domain.ExecuteMode
+				}
+				return mode
+			}
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer cancel()
 			var calls atomic.Int64
@@ -125,7 +142,7 @@ func nativeOpenCodePublicDispatch(t *testing.T, turns int, failedFirst bool, fau
 				t.Fatal("original Worker did not attach")
 			}
 			for next := 1; next < turns; next++ {
-				body, _ := json.Marshal(domain.SessionInput{Prompt: fmt.Sprintf("continuation input %d", next), Mode: mode})
+				body, _ := json.Marshal(domain.SessionInput{Prompt: fmt.Sprintf("continuation input %d", next), Mode: modeAt(next)})
 				if _, err := sessionClient(f.accountFixture).EnqueueInput(ctx, ownerRequest(f.identity, &pb.EnqueueInputRequest{RequestId: string(domain.NewID()), SessionId: f.change.Session.Id, DocumentJson: body})); err != nil {
 					t.Fatal(err)
 				}
@@ -144,7 +161,7 @@ func nativeOpenCodePublicDispatch(t *testing.T, turns int, failedFirst bool, fau
 			for turn := 0; turn < turns; turn++ {
 				var job domain.Job
 				var input domain.ExecutionJobInput
-				if domain.Decode(assignment.DocumentJson, &job) != nil || domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.Input.Mode != mode || input.Configuration.Harness != domain.OpenCode || (input.Continuation != nil) != (turn > 0) {
+				if domain.Decode(assignment.DocumentJson, &job) != nil || domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.Input.Mode != modeAt(turn) || input.Configuration.Harness != domain.OpenCode || (input.Continuation != nil) != (turn > 0) {
 					t.Fatal("public assignment changed exact native input")
 				}
 				if turn > 0 && (input.Continuation.Completion != previous || input.Continuation.Previous.NativeThreadID != string(firstThread)) {
