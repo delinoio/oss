@@ -30,3 +30,10 @@ libc = "0.2.182"
 signal-hook = "0.3.18"
 tokio = { version = "1.49.0", features = ["rt", "time"] }
 tokio-util = "0.7.18"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+fspy = { path = "../fspy" }
+futures-util = "0.3.31"
+tokio = { version = "1.49.0", features = ["rt", "time"] }
+tokio-util = "0.7.18"
+winapi = { version = "0.3.9", features = ["consoleapi", "handleapi", "jobapi2", "wincon", "winnt"] }

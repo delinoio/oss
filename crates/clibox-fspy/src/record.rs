@@ -103,6 +103,13 @@ impl NativePath {
                         && (units[0] as u8).is_ascii_alphabetic()
                         && units[1] == b':' as u16
                         && is_separator(units[2]))
+                    // NT object paths returned by the intercepted APIs are
+                    // rooted in the object namespace, even with one leading
+                    // slash. Keep their exact UTF-16 spelling in the record.
+                    || units.starts_with(&[b'\\' as u16, b'?' as u16, b'?' as u16, b'\\' as u16])
+                    || units.starts_with(
+                        &r"\Device\".encode_utf16().collect::<Vec<_>>(),
+                    )
             }
         }
     }

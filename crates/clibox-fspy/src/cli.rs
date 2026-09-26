@@ -10,7 +10,7 @@ use std::{
 
 use clap::{Args, Subcommand, ValueEnum};
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 use crate::coverage;
 use crate::record::{self, CompleteRecord, NativePath, DEFAULT_BYTE_LIMIT, DEFAULT_EVENT_LIMIT};
 
@@ -70,7 +70,7 @@ pub enum OperationKind {
     Exec,
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 impl OperationKind {
     fn matches(self, operation: record::Operation) -> bool {
         use record::Operation;
@@ -600,7 +600,7 @@ fn compare(args: CompareArgs) -> i32 {
     }
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 fn execution_root(args: &ExecutionArgs) -> Result<PathBuf, &'static str> {
     let root = match &args.root {
         Some(root) => root.clone(),
@@ -987,7 +987,7 @@ fn capture_status(failure: CaptureFailure, action: &'static str) -> i32 {
     }
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 fn child_status(record: &CompleteRecord) -> i32 {
     if let Some(signal) = record.summary.child_signal {
         return 128_i32.saturating_add(signal);
@@ -1154,7 +1154,7 @@ fn assetcov(args: AssetcovArgs) -> i32 {
     }
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 fn matches_selected(
     operation: record::Operation,
     paths: &[record::AccessPath],
@@ -1174,7 +1174,7 @@ fn matches_selected(
         })
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 fn median(values: &[u128]) -> u128 {
     let mut sorted = values.to_vec();
     sorted.sort_unstable();
@@ -1200,7 +1200,7 @@ fn latencylab(args: LatencyArgs) -> i32 {
     })
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 fn latencylab_with<F>(args: LatencyArgs, mut capture: F) -> i32
 where
     F: FnMut(
@@ -2150,6 +2150,273 @@ fn macos_assetcov(args: AssetcovArgs) -> i32 {
     }
 }
 
+#[cfg(target_os = "windows")]
+static WINDOWS_CANCELLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+#[cfg(target_os = "windows")]
+unsafe extern "system" fn windows_ctrl_handler(code: u32) -> i32 {
+    use winapi::um::wincon::{CTRL_BREAK_EVENT, CTRL_C_EVENT};
+    if matches!(code, CTRL_C_EVENT | CTRL_BREAK_EVENT) {
+        WINDOWS_CANCELLED.store(true, std::sync::atomic::Ordering::SeqCst);
+        1
+    } else {
+        0
+    }
+}
+
+#[cfg(target_os = "windows")]
+struct WindowsSignals {
+    _lock: std::sync::MutexGuard<'static, ()>,
+}
+
+#[cfg(target_os = "windows")]
+impl WindowsSignals {
+    fn new() -> Result<Self, crate::windows::supervise::CaptureFailure> {
+        use std::sync::Mutex;
+
+        use winapi::um::consoleapi::SetConsoleCtrlHandler;
+        static LOCK: Mutex<()> = Mutex::new(());
+        let lock = LOCK
+            .lock()
+            .map_err(|_| crate::windows::supervise::CaptureFailure::Initialization)?;
+        WINDOWS_CANCELLED.store(false, std::sync::atomic::Ordering::SeqCst);
+        // SAFETY: this fixed process-wide handler only updates an atomic flag.
+        if unsafe { SetConsoleCtrlHandler(Some(windows_ctrl_handler), 1) } == 0 {
+            return Err(crate::windows::supervise::CaptureFailure::Initialization);
+        }
+        Ok(Self { _lock: lock })
+    }
+}
+
+#[cfg(target_os = "windows")]
+impl Drop for WindowsSignals {
+    fn drop(&mut self) {
+        use winapi::um::consoleapi::SetConsoleCtrlHandler;
+        // SAFETY: the matching registration was made while holding the lock.
+        unsafe { SetConsoleCtrlHandler(Some(windows_ctrl_handler), 0) };
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn windows_capture(
+    command: &[OsString],
+    root: &Path,
+    args: &ExecutionArgs,
+) -> Result<CompleteRecord, crate::windows::supervise::CaptureFailure> {
+    windows_capture_with(command, root, args, |_| Duration::ZERO)
+}
+
+#[cfg(target_os = "windows")]
+fn windows_capture_with<F>(
+    command: &[OsString],
+    root: &Path,
+    args: &ExecutionArgs,
+    delay_for: F,
+) -> Result<CompleteRecord, crate::windows::supervise::CaptureFailure>
+where
+    F: Fn(&crate::windows::Frame) -> Duration + Send + Sync + 'static,
+{
+    use std::{os::windows::io::AsHandle, process::Stdio};
+
+    use crate::windows::supervise::{CaptureFailure, Limits};
+
+    let Some(program) = command.first() else {
+        return Err(CaptureFailure::Spawn);
+    };
+    let mut child = fspy::Command::new(program);
+    child.args(&command[1..]).envs(std::env::vars_os());
+    let stderr = io::stderr()
+        .as_handle()
+        .try_clone_to_owned()
+        .map_err(|_| CaptureFailure::Spawn)?;
+    child.stdout(Stdio::from(stderr)).stderr(Stdio::inherit());
+    let _signals = WindowsSignals::new()?;
+    crate::windows::supervise::capture_with_delay(
+        child,
+        root,
+        Limits {
+            max_events: args.max_events,
+            max_bytes: args.max_bytes,
+            timeout: args.timeout,
+            kill_after: args.kill_after,
+        },
+        &WINDOWS_CANCELLED,
+        delay_for,
+    )
+}
+
+#[cfg(target_os = "windows")]
+fn windows_capture_status(
+    failure: crate::windows::supervise::CaptureFailure,
+    action: &'static str,
+) -> i32 {
+    use crate::windows::supervise::CaptureFailure;
+    diagnostic(&failure.to_string(), action);
+    match failure {
+        CaptureFailure::Timeout => 124,
+        CaptureFailure::Cancellation => 130,
+        _ => 1,
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn windows_incomplete_record(
+    root: &Path,
+    failure: crate::windows::supervise::CaptureFailure,
+) -> CompleteRecord {
+    use std::os::windows::ffi::OsStrExt;
+
+    use crate::{
+        record::{Backend, CoverageBoundary, FailureClass, Header, Platform, Summary},
+        windows::supervise::CaptureFailure,
+    };
+
+    let classification = match failure {
+        CaptureFailure::Initialization | CaptureFailure::Spawn => FailureClass::TraceInitialization,
+        CaptureFailure::TraceLoss | CaptureFailure::DescendantSurvived | CaptureFailure::Record => {
+            FailureClass::TraceLoss
+        }
+        CaptureFailure::Timeout => FailureClass::Timeout,
+        CaptureFailure::Cancellation => FailureClass::Cancellation,
+        CaptureFailure::Cleanup => FailureClass::Cleanup,
+    };
+    CompleteRecord {
+        header: Header {
+            schema_version: record::SCHEMA_VERSION,
+            execution_id: uuid::Uuid::now_v7(),
+            platform: Platform::Windows,
+            backend: Backend::Injection,
+            root: NativePath::WindowsUtf16(root.as_os_str().encode_wide().collect()),
+            coverage: CoverageBoundary::SynchronousFileOperationsV1,
+        },
+        operations: Vec::new(),
+        summary: Summary {
+            complete: false,
+            child_exit_code: None,
+            child_signal: None,
+            operation_count: 0,
+            failure_count: 0,
+            failure: Some(classification),
+        },
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn windows_record(args: RecordArgs) -> i32 {
+    let root = match execution_root(&args.execution) {
+        Ok(root) => root,
+        Err(error) => return diagnostic(error, "record"),
+    };
+    let capture = windows_capture(&args.command, &root, &args.execution);
+    let (record, failure) = match capture {
+        Ok(record) => (record, None),
+        Err(failure) => (windows_incomplete_record(&root, failure), Some(failure)),
+    };
+    let mut encoded = Vec::new();
+    if let Err(error) = record::serialize(
+        &record,
+        &mut encoded,
+        args.execution.max_events,
+        args.execution.max_bytes,
+    ) {
+        return diagnostic(&error.to_string(), "record");
+    }
+    if let Err(error) = publish(&args.output, &encoded) {
+        return diagnostic(error, "record");
+    }
+    failure.map_or_else(
+        || child_status(&record),
+        |failure| windows_capture_status(failure, "record"),
+    )
+}
+
+#[cfg(target_os = "windows")]
+fn windows_assetcov(args: AssetcovArgs) -> i32 {
+    let root = match execution_root(&args.execution) {
+        Ok(root) => root,
+        Err(error) => return diagnostic(error, "assetcov"),
+    };
+    let denominator = match coverage::select_existing(&root, &args.include, &args.exclude) {
+        Ok(value) => value,
+        Err(error) => return diagnostic(&error.to_string(), "assetcov"),
+    };
+    let record = match windows_capture(&args.command, &root, &args.execution) {
+        Ok(record) => record,
+        Err(failure) => return windows_capture_status(failure, "assetcov"),
+    };
+    let report = match coverage::analyze(&denominator, &record) {
+        Ok(report) => report,
+        Err(error) => return diagnostic(&error.to_string(), "assetcov"),
+    };
+    if !args.quiet {
+        let mut encoded = if args.json {
+            match serde_json::to_vec_pretty(&serde_json::json!({
+                "covered": report.covered.iter().map(|file| &file.logical).collect::<Vec<_>>(),
+                "uncovered": report.uncovered.iter().map(|file| &file.logical).collect::<Vec<_>>(),
+                "covered_count": report.covered.len(),
+                "total_count": denominator.files.len(),
+                "percentage": report.percentage,
+                "child_exit_code": record.summary.child_exit_code,
+            })) {
+                Ok(bytes) => bytes,
+                Err(_) => return diagnostic("report_encode", "assetcov"),
+            }
+        } else {
+            format!(
+                "Covered: {}/{} ({:.2}%)\n",
+                report.covered.len(),
+                denominator.files.len(),
+                report.percentage
+            )
+            .into_bytes()
+        };
+        if !encoded.ends_with(b"\n") {
+            encoded.push(b'\n');
+        }
+        if let Err(error) = publish(&args.output, &encoded) {
+            return diagnostic(error, "assetcov");
+        }
+    }
+    let status = child_status(&record);
+    if status != 0 {
+        return status;
+    }
+    if args
+        .fail_under
+        .is_some_and(|threshold| report.fails_threshold(threshold))
+    {
+        1
+    } else {
+        0
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn windows_latencylab(args: LatencyArgs) -> i32 {
+    let selector = match coverage::Selector::new(&args.include, &args.exclude) {
+        Ok(selector) => std::sync::Arc::new(selector),
+        Err(error) => return diagnostic(&error.to_string(), "latencylab"),
+    };
+    latencylab_with(args, move |command, root, execution, _, kinds, delay| {
+        let selector = std::sync::Arc::clone(&selector);
+        let kinds = kinds.to_vec();
+        windows_capture_with(command, root, execution, move |frame| {
+            let Some(operation) = crate::windows::operation_id(frame.operation) else {
+                return Duration::ZERO;
+            };
+            let Some(path) = frame.access_path.as_ref() else {
+                return Duration::ZERO;
+            };
+            if matches_selected(operation, std::slice::from_ref(path), &selector, &kinds) {
+                delay
+            } else {
+                Duration::ZERO
+            }
+        })
+        .map_err(|failure| windows_capture_status(failure, "latencylab"))
+    })
+}
+
 pub fn execute(command: Command) -> i32 {
     match command {
         Command::Compare(args) => compare(args),
@@ -2173,7 +2440,11 @@ pub fn execute(command: Command) -> i32 {
             {
                 macos_record(args)
             }
-            #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+            #[cfg(target_os = "windows")]
+            {
+                windows_record(args)
+            }
+            #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
             {
                 let _ = args;
                 diagnostic("unsupported_target", "record")
@@ -2188,7 +2459,11 @@ pub fn execute(command: Command) -> i32 {
             {
                 macos_assetcov(args)
             }
-            #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+            #[cfg(target_os = "windows")]
+            {
+                windows_assetcov(args)
+            }
+            #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
             {
                 let _ = args;
                 diagnostic("unsupported_target", "assetcov")
@@ -2203,7 +2478,11 @@ pub fn execute(command: Command) -> i32 {
             {
                 macos_latencylab(args)
             }
-            #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+            #[cfg(target_os = "windows")]
+            {
+                windows_latencylab(args)
+            }
+            #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
             {
                 let _ = args;
                 diagnostic("unsupported_target", "latencylab")
@@ -2737,6 +3016,71 @@ mod tests {
     #[test]
     fn macos_cli_read_fixture() {
         let Some(input) = std::env::var_os("CLIBOX_FSPY_CLI_MAC_INPUT") else {
+            return;
+        };
+        assert_eq!(fs::read(input).unwrap(), b"fixture");
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_record_and_coverage_observe_native_reads() {
+        let directory = tempfile::tempdir().unwrap();
+        let input = directory.path().join("input.txt");
+        fs::write(&input, b"fixture").unwrap();
+        let executable = std::env::current_exe().unwrap();
+        // The self-owned test binary is reliably injectable on CI runners.
+        unsafe { std::env::set_var("CLIBOX_FSPY_CLI_WIN_INPUT", &input) };
+        let output = directory.path().join("trace.ndjson");
+        let cli = TestCli::try_parse_from([
+            OsString::from("fspy"),
+            OsString::from("record"),
+            OsString::from("--root"),
+            directory.path().as_os_str().to_owned(),
+            OsString::from("--output"),
+            output.as_os_str().to_owned(),
+            OsString::from("--"),
+            executable.as_os_str().to_owned(),
+            OsString::from("--exact"),
+            OsString::from("cli::tests::windows_cli_read_fixture"),
+        ])
+        .unwrap();
+        assert_eq!(execute(cli.command), 0);
+        let record = load(&output).unwrap();
+        assert!(record.operations.iter().any(|pair| {
+            pair.start.operation.is_content_read()
+                && pair.completion.byte_count.is_some_and(|count| count > 0)
+                && pair.start.paths.iter().any(|path| {
+                    path.project_relative.as_ref()
+                        == Some(&NativePath::WindowsUtf16(
+                            "input.txt".encode_utf16().collect(),
+                        ))
+                })
+        }));
+
+        let cli = TestCli::try_parse_from([
+            OsString::from("fspy"),
+            OsString::from("assetcov"),
+            OsString::from("--root"),
+            directory.path().as_os_str().to_owned(),
+            OsString::from("--include"),
+            OsString::from("input.txt"),
+            OsString::from("--fail-under"),
+            OsString::from("100"),
+            OsString::from("--quiet"),
+            OsString::from("--"),
+            executable.into_os_string(),
+            OsString::from("--exact"),
+            OsString::from("cli::tests::windows_cli_read_fixture"),
+        ])
+        .unwrap();
+        assert_eq!(execute(cli.command), 0);
+        unsafe { std::env::remove_var("CLIBOX_FSPY_CLI_WIN_INPUT") };
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_cli_read_fixture() {
+        let Some(input) = std::env::var_os("CLIBOX_FSPY_CLI_WIN_INPUT") else {
             return;
         };
         assert_eq!(fs::read(input).unwrap(), b"fixture");
