@@ -369,4 +369,37 @@ mod tests {
             CoverageFailure::EmptySelection,
         );
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn follows_internal_links_without_selecting_external_targets() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().unwrap();
+        let external = tempfile::tempdir().unwrap();
+        fs::create_dir(root.path().join("nested")).unwrap();
+        fs::write(root.path().join("nested/input.txt"), b"inside").unwrap();
+        fs::write(external.path().join("outside.txt"), b"outside").unwrap();
+        symlink("nested", root.path().join("alias")).unwrap();
+        symlink(external.path(), root.path().join("outside")).unwrap();
+        let selected = select_existing(root.path(), &["**/*.txt".into()], &[]).unwrap();
+        assert_eq!(selected.files.len(), 1);
+    }
+
+    #[test]
+    fn a_file_open_and_external_read_do_not_cover_project_input() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(directory.path().join("input"), b"x").unwrap();
+        let selected = select_existing(directory.path(), &["*".into()], &[]).unwrap();
+        let file = selected.files.values().next().unwrap();
+        let mut record = read_record(&selected, file, 1);
+        record.operations[0].start.operation = Operation::Open;
+        record.operations[0].completion.byte_count = None;
+        assert_eq!(analyze(&selected, &record).unwrap().covered.len(), 0);
+        record.operations[0].start.operation = Operation::Read;
+        record.operations[0].completion.byte_count = Some(1);
+        record.operations[0].start.paths[0].class = PathClass::External;
+        record.operations[0].start.paths[0].project_relative = None;
+        assert_eq!(analyze(&selected, &record).unwrap().covered.len(), 0);
+    }
 }
