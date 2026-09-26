@@ -8,6 +8,7 @@ import { Event, jobPaths, planJobs } from "./plan.mjs";
 const source = (file) => readFileSync(new URL(`../../${file}`, import.meta.url), "utf8");
 const release = yaml.load(source(".github/workflows/release-clibox.yml"));
 const ci = yaml.load(source(".github/workflows/CI.yml"));
+const nativeCrates = ["clibox", "clibox-config", "clibox-fspy", "clibox-system", "clibox-transform", "clibox-wait"];
 
 test("clibox release covers all eight native targets and Alpine consumer execution", () => {
   assert.deepEqual(release.on.push.tags, ["clibox@v*"]);
@@ -18,6 +19,7 @@ test("clibox release covers all eight native targets and Alpine consumer executi
   assert.deepEqual(matrix.map(({ target }) => target).sort(), platforms.targets.map(({ rust }) => rust).sort());
   for (const target of platforms.targets) assert.equal(matrix.find((entry) => entry.target === target.rust).suffix, target.suffix);
   const steps = release.jobs.build.steps;
+  assert.equal(steps.flatMap(({ run }) => run?.split("\n") ?? []).filter((line) => line.trim() === 'cargo test --locked -p clibox-fspy --target "$CLIBOX_TARGET" -- --test-threads=1').length, 1);
   assert.equal(steps.flatMap(({ run }) => run?.split("\n") ?? []).filter((line) => line.trim() === 'cargo test --locked -p clibox -p clibox-config -p clibox-system -p clibox-transform -p clibox-wait --target "$CLIBOX_TARGET"').length, 1);
   const alpine = steps.find(({ name }) => name === "Smoke-test musl consumers in Alpine");
   assert.equal(alpine.if, "endsWith(matrix.target, '-musl')");
@@ -77,11 +79,11 @@ test("clibox input changes select its aggregated consumer checks and force exter
   assert.equal(jobPaths[id].workspace, "@delino/clibox");
   assert.ok(ci.jobs["ci-result"].needs.includes(id));
   assert.deepEqual(ci.jobs[id].strategy.matrix.os, ["ubuntu-22.04", "macos-14", "windows-latest"]);
-  assert.equal(ci.jobs[id].steps.filter(({ run }) => run === "cargo test --locked -p clibox -p clibox-config -p clibox-system -p clibox-transform -p clibox-wait").length, 1);
+  assert.equal(ci.jobs[id].steps.filter(({ run }) => run === "cargo test --locked -p clibox -p clibox-config -p clibox-fspy -p clibox-system -p clibox-transform -p clibox-wait").length, 1);
   const smoke = source("packages/clibox/scripts/smoke.mjs");
   for (const command of ["text", "time", "base64", "hash"]) assert.ok(smoke.includes('invoke(["' + command + '"'));
   for (const event of [Event.Push, Event.PullRequest]) {
-    for (const file of ["packages/clibox/src/launcher.cjs", "crates/clibox/src/main.rs", "crates/clibox-config/src/lib.rs", "crates/clibox-system/src/lib.rs", "crates/clibox-transform/src/lib.rs", "crates/clibox-wait/src/lib.rs", ".github/workflows/release-clibox.yml", "scripts/release/project.mjs"]) {
+    for (const file of ["packages/clibox/src/launcher.cjs", "crates/clibox/src/main.rs", "crates/clibox-config/src/lib.rs", "crates/clibox-fspy/src/lib.rs", "crates/fspy/src/lib.rs", "crates/clibox-system/src/lib.rs", "crates/clibox-transform/src/lib.rs", "crates/clibox-wait/src/lib.rs", ".github/workflows/release-clibox.yml", "scripts/release/project.mjs"]) {
       const plan = planJobs(event, [file]);
       assert.equal(plan.jobs[id], true, file);
       assert.equal(plan.forced[id], !file.startsWith("packages/clibox/"), file);
@@ -92,7 +94,7 @@ test("clibox input changes select its aggregated consumer checks and force exter
   assert.equal(turbo.tasks["test:package"].cache, false);
   assert.equal(turbo.tasks["publish:npm"].cache, false);
   for (const task of ["test", "test:package"]) {
-    for (const crate of ["clibox", "clibox-config", "clibox-system", "clibox-transform", "clibox-wait"]) {
+    for (const crate of nativeCrates) {
       assert.ok(turbo.tasks[task].inputs.includes(`$TURBO_ROOT$/crates/${crate}/**`));
     }
   }
@@ -109,7 +111,7 @@ test("native publication follows the independently guarded signed GNU release", 
   assert.equal(gnu.if, "endsWith(matrix.target, '-linux-gnu')");
   assert.match(gnu.run, /build-rust.sh clibox/u);
   assert.deepEqual(release.jobs["linux-packages"].needs, ["prepare", "publish-release"]);
-  for (const file of ["crates/clibox/src/main.rs", "crates/clibox-config/src/lib.rs", "crates/clibox-system/src/lib.rs", "crates/clibox-transform/src/lib.rs", "crates/clibox-wait/src/lib.rs", "packages/clibox/scripts/github-release.mjs"]) {
+  for (const file of ["crates/clibox/src/main.rs", "crates/clibox-config/src/lib.rs", "crates/clibox-fspy/src/lib.rs", "crates/clibox-system/src/lib.rs", "crates/clibox-transform/src/lib.rs", "crates/clibox-wait/src/lib.rs", "packages/clibox/scripts/github-release.mjs"]) {
     assert.equal(planJobs(Event.PullRequest, [file]).jobs["linux-packages"], false);
     assert.equal(planJobs(Event.Push, [file]).jobs["linux-packages"], true);
   }
@@ -119,7 +121,7 @@ test("clibox workspace crates cannot be published and publishers have no crates.
   const workspace = source("Cargo.toml");
   const tags = workspace.split("[workspace.metadata.cargo-mono.publish.tag]")[1].split("\n\n")[0];
   assert.doesNotMatch(tags, /"clibox"/u);
-  for (const crate of ["clibox", "clibox-config", "clibox-system", "clibox-transform", "clibox-wait"]) {
+  for (const crate of nativeCrates) {
     assert.ok(workspace.includes(`"crates/${crate}"`));
     const manifest = source(`crates/${crate}/Cargo.toml`);
     assert.match(manifest, /^publish = false$/mu);

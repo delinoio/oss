@@ -2,12 +2,12 @@
   "extends": ["//"],
   "tasks": {
     "test": {
-      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/crates/clibox/**", "$TURBO_ROOT$/crates/clibox-config/**", "$TURBO_ROOT$/crates/clibox-system/**", "$TURBO_ROOT$/crates/clibox-transform/**", "$TURBO_ROOT$/crates/clibox-wait/**", "$TURBO_ROOT$/Cargo.toml", "$TURBO_ROOT$/Cargo.lock", "$TURBO_ROOT$/rust-toolchain", "$TURBO_ROOT$/scripts/release/linux-packages/**", "$TURBO_ROOT$/packaging/linux/**"],
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/crates/clibox/**", "$TURBO_ROOT$/crates/clibox-config/**", "$TURBO_ROOT$/crates/clibox-fspy/**", "$TURBO_ROOT$/crates/clibox-system/**", "$TURBO_ROOT$/crates/clibox-transform/**", "$TURBO_ROOT$/crates/clibox-wait/**", "$TURBO_ROOT$/crates/fspy*/**", "$TURBO_ROOT$/crates/materialized_artifact*/**", "$TURBO_ROOT$/crates/vt_*/**", "$TURBO_ROOT$/crates/pnport-core/**", "$TURBO_ROOT$/Cargo.toml", "$TURBO_ROOT$/Cargo.lock", "$TURBO_ROOT$/rust-toolchain", "$TURBO_ROOT$/scripts/release/linux-packages/**", "$TURBO_ROOT$/packaging/linux/**"],
       "outputs": []
     },
     "test:package": {
       "cache": false,
-      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/crates/clibox/**", "$TURBO_ROOT$/crates/clibox-config/**", "$TURBO_ROOT$/crates/clibox-system/**", "$TURBO_ROOT$/crates/clibox-transform/**", "$TURBO_ROOT$/crates/clibox-wait/**", "$TURBO_ROOT$/Cargo.toml", "$TURBO_ROOT$/Cargo.lock", "$TURBO_ROOT$/rust-toolchain", "$TURBO_ROOT$/scripts/release/linux-packages/**", "$TURBO_ROOT$/packaging/linux/**"],
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/crates/clibox/**", "$TURBO_ROOT$/crates/clibox-config/**", "$TURBO_ROOT$/crates/clibox-fspy/**", "$TURBO_ROOT$/crates/clibox-system/**", "$TURBO_ROOT$/crates/clibox-transform/**", "$TURBO_ROOT$/crates/clibox-wait/**", "$TURBO_ROOT$/crates/fspy*/**", "$TURBO_ROOT$/crates/materialized_artifact*/**", "$TURBO_ROOT$/crates/vt_*/**", "$TURBO_ROOT$/crates/pnport-core/**", "$TURBO_ROOT$/Cargo.toml", "$TURBO_ROOT$/Cargo.lock", "$TURBO_ROOT$/rust-toolchain", "$TURBO_ROOT$/scripts/release/linux-packages/**", "$TURBO_ROOT$/packaging/linux/**"],
       "passThroughEnv": ["CARGO_HOME", "RUSTUP_HOME", "npm_execpath"],
       "outputs": []
     },
