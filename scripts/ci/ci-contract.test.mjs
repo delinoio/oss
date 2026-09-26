@@ -26,7 +26,7 @@ const devhudTauri = JSON.parse(readFileSync(`${root}/apps/devhud/src-tauri/tauri
 
 const legacyJobs = [
   "go-quality", "go-test", "repository-environment", "rust-fmt", "rust-clippy", "rust-test",
-  "forge-test", "forge-render", "react-forge", "react-forge-scenes", "linux-packages", "node-public-docs-test", "node-clibox-test", "node-pnport-test", "pnport-native",
+  "forge-test", "forge-render", "react-forge", "linux-packages", "node-public-docs-test", "node-clibox-test", "node-pnport-test", "pnport-native",
 ];
 const devhudJobs = [
   "devhud-frontend", "devhud-extension", "devhud-rust-conformance", "devhud-security", "devhud-desktop",
@@ -70,7 +70,7 @@ test("one change plan gates every domain job before runner allocation", () => {
   assert.deepEqual(Object.keys(jobPaths).sort(), [...legacyJobs, ...devhudJobs, ...achJobs].sort());
   for (const id of [...legacyJobs, ...devhudJobs, ...achJobs]) {
     const job = workflow.jobs[id];
-    assert.deepEqual(job.needs, id === "react-forge-scenes" ? ["changes", "react-forge"] : "changes", id);
+    assert.deepEqual(job.needs, "changes", id);
     assert.equal(job.if, "${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['" + id + "'] }}", id);
     assert.equal(step(job, "filter"), undefined, id);
     assert.equal(step(job, "gate"), undefined, id);
@@ -424,7 +424,7 @@ test("Forge retains three-platform interoperability and mandatory Linux renderin
 });
 
 
-test("React Forge validates its supported runtime with uncached native and rendering work", () => {
+test("React Forge validates its supported runtime without scene-specific CI tests", () => {
   const job = workflow.jobs["react-forge"];
   assert.equal(job["runs-on"], "${{ matrix.runner }}");
   assert.equal(job.strategy["fail-fast"], false);
@@ -440,11 +440,10 @@ test("React Forge validates its supported runtime with uncached native and rende
   assert.match(namedStep(job, "Validate native engine, installed CLI, renders, and benchmark").run, /validate-host\.sh/u);
   const commands = readFileSync(`${root}/packages/react-forge/scripts/validate-host.sh`, "utf8");
   for (const command of ["forge-package", "forge-document", "forge-docx", "forge-xlsx", "forge-pdf", "forge-sprite", "react-forge-node", "turbo run build typecheck lint test --filter=@delino/react-forge", "test:render", "benchmark", "install-smoke.mjs", "windows_console", "examples/travel-ir.tsx", "--include-ignored"]) assert.ok(commands.includes(command), command);
-  for (const engine of ["forge-scene", "forge-glb", "forge-fbx"]) {
-    for (const command of ["cargo test", "cargo clippy"]) {
-      assert.ok(commands.split("\n").some(line => line.startsWith(command) && line.includes(`-p ${engine}`)), `${command}: ${engine}`);
-    }
-  }
+  assert.doesNotMatch(commands, /-p forge-(?:scene|glb|fbx)\b/u);
+  assert.match(commands, /export REACT_FORGE_SKIP_SCENE_TESTS=1/u);
+  const sceneTests = readFileSync(`${root}/packages/react-forge/tests/scene.test.tsx`, "utf8");
+  assert.match(sceneTests, /process\.env\.REACT_FORGE_SKIP_SCENE_TESTS === "1" \? test\.skip : test/u);
   assert.match(JSON.stringify(job.steps), /render-requirements\.txt/u);
   assert.equal(namedStep(job, "Remove generated package output").if, "always()");
   const evidence = namedStep(job, "Retain rendering and benchmark evidence");
@@ -454,34 +453,28 @@ test("React Forge validates its supported runtime with uncached native and rende
   assert.equal(release.jobs.build.steps.find(({ name }) => name === "Validate native engine, installed CLI, renders, and benchmark")?.run, namedStep(job, "Validate native engine, installed CLI, renders, and benchmark").run);
   const tasks = JSON.parse(readFileSync(`${root}/packages/react-forge/turbo.json`, "utf8")).tasks;
   for (const name of ["build", "test", "test:render", "benchmark"]) assert.equal(tasks[name].cache, false, name);
+  assert.ok(tasks.test.passThroughEnv.includes("REACT_FORGE_SKIP_SCENE_TESTS"));
 });
 
-test("React Forge renders every product pair independently without reducing image quality", () => {
+test("React Forge CI removes scene-engine and visual jobs while retaining document regressions", () => {
   const native = workflow.jobs["react-forge"];
-  const renders = workflow.jobs["react-forge-scenes"];
-  assert.deepEqual(jobPaths["react-forge-scenes"], jobPaths["react-forge"]);
   assert.equal(native["timeout-minutes"], 60);
-  const prepare = namedStep(native, "Prepare and inspect generated GLB and FBX scenes");
-  assert.equal(prepare.if, "matrix.id == 'linux-x64-gnu'");
-  assert.match(prepare.run, /test:scenes.*--prepare-only/u);
-  const inputs = namedStep(native, "Retain prepared 3D inputs");
-  assert.equal(inputs.if, prepare.if);
-  assert.equal(inputs.with.name, "react-forge-scene-inputs");
-  assert.equal(inputs.with["if-no-files-found"], "error");
-  assert.deepEqual(renders.needs, ["changes", "react-forge"]);
-  assert.equal(renders["timeout-minutes"], 120);
-  assert.equal(renders.strategy["fail-fast"], false);
-  assert.deepEqual(renders.strategy.matrix.product, ["studio", "headphones", "dac", "stand"]);
-  assert.equal(renders.steps.find(({ uses }) => uses === "actions/download-artifact@v4").with.name, inputs.with.name);
-  const render = namedStep(renders, "Render and compare both exported formats");
-  assert.match(render.run, /test-scene-comparison\.py/u);
-  assert.match(render.run, /--python-exit-code 1.*render-scenes\.py.*--products "\$PRODUCT" --formats glb,fbx --views hero,front,back,detail --resolution 2048 --samples 96 --device CPU/u);
-  assert.match(render.run, /compare-scenes\.py.*--product "\$PRODUCT"/u);
-  assert.equal(render.env.PRODUCT, "${{ matrix.product }}");
-  assert.match(namedStep(renders, "Install pinned test-only render tools").run, /9ba871ff2ecd36526b77432745980b7e6664ecd0c7ca11c48849073dcfe06da3/u);
-  const evidence = namedStep(renders, "Retain product render evidence");
-  assert.equal(evidence.if, "always()");
-  assert.equal(evidence.with.name, "react-forge-scene-${{ matrix.product }}");
-  assert.equal(evidence.with["retention-days"], 7);
-  assert.equal(evidence.with["if-no-files-found"], "error");
+  assert.equal(workflow.jobs["react-forge-scenes"], undefined);
+  assert.equal(jobPaths["react-forge-scenes"], undefined);
+  assert.equal(workflow.jobs["ci-result"].needs.includes("react-forge-scenes"), false);
+  assert.doesNotMatch(JSON.stringify(native.steps), /test:scenes|react-forge-scene-inputs|blender\.tar\.xz/u);
+  assert.doesNotMatch(JSON.stringify(workflow), /react-forge-scenes|react-forge-scene-inputs|render-scenes\.py|compare-scenes\.py/u);
+});
+
+test("workspace Rust CI excludes React Forge scene engines", () => {
+  for (const [jobId, stepName, command] of [
+    ["rust-clippy", "Run clippy", "cargo clippy"],
+    ["rust-test", "Run cargo test", "cargo test"],
+  ]) {
+    const run = namedStep(workflow.jobs[jobId], stepName).run;
+    assert.ok(run.startsWith(command), `${jobId}: ${run}`);
+    for (const engine of ["forge-scene", "forge-glb", "forge-fbx"]) {
+      assert.ok(run.includes(`--exclude ${engine}`), `${jobId} must exclude ${engine}`);
+    }
+  }
 });

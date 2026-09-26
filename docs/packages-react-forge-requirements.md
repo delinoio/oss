@@ -242,6 +242,17 @@ This additive approved scope does not remove the original document requirements.
 
 Deliver original reusable TSX audio-product examples (headphones, DAC/amplifier, stand and combined studio), deterministic geometry/texture source and provenance. Validate actual exports using Khronos Validator, independent ufbx, pinned Blender 4.5 LTS empty-scene imports and 2048-pixel front/back/oblique/detail renders without material/mesh repair, plus interactive local GLB viewing. Inspect and correct visual faults, record versions/hashes/observations, and state unexecuted hosts honestly. Extend CLI/MCP, installation consumers, six-platform engine CI and Linux visual CI. Run root Rust tests, relevant Clippy, package build/typecheck/lint/tests/example checks and public-doc tests; update contracts/AGENTS and remove generated dist. Scene import/editing, animation, rigging, refraction, transmission and advanced coatings are excluded. Full details are in `packages-react-forge-scene-contract.md`.
 
+### CI scope follow-up (2026-09-26)
+
+The explicit request for this PR authorizes removing all React Forge scene CI.
+It supersedes the six-platform engine and Linux visual CI requirements above
+for this extension: React Forge host validation skips its scene test suite and
+excludes the three scene crates from native tests and Clippy; workspace Rust
+tests and Clippy exclude them as well. No CI or release host job prepares scene
+inputs, runs Blender product renders, or performs scene interoperability
+checks. Khronos/ufbx interoperability, Blender re-imports and product image
+inspection remain local acceptance evidence.
+
 ## Sprite Follow-up
 The explicit 2026-09-25 request extends React Forge to author game sprites and requires real implementation and tests. The [sprite contract](packages-react-forge-sprite-contract.md) defines React pixel/shape/image composition, palettes, frame animations, native rasterization, PNG atlas and individual PNG exports with JSON metadata in one atomic archive, and library/CLI/MCP integration. This additive extension was included in npm `0.2.0`; it does not replace any Office/PDF/Figma requirements.
 

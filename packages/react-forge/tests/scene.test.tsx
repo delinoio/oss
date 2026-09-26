@@ -8,11 +8,12 @@ import { join } from "node:path";
 import { createRequire } from "node:module";
 import { createSession, Format, ErrorCode, Stage, type Diagnostic, type NodeHandle } from "../src/index.js";
 import { Scene, Group, Mesh, PointLight, PerspectiveCamera, AlphaMode, type GeometryInput } from "../src/glb.js";
+const sceneTest = process.env.REACT_FORGE_SKIP_SCENE_TESTS === "1" ? test.skip : test;
 const validator = createRequire(import.meta.url)("gltf-validator") as { validateBytes(bytes: Uint8Array): Promise<{ issues: { numErrors: number; messages: unknown[] } }> };
 const geometry = (): GeometryInput => ({ positions: new Float32Array([0,0,0,1,0,0,0,1,0]), normals: new Float32Array([0,0,1,0,0,1,0,0,1]), indices: new Uint32Array([0,1,2]), uv: new Float32Array([0,0,1,0,0,1]), tangents: new Float32Array([1,0,0,1,1,0,0,1,1,0,0,1]) });
 const decode = (b: Buffer) => JSON.parse(b.subarray(20,20+b.readUInt32LE(12)).toString());
 for (const format of [Format.Glb, Format.Fbx] as const) {
-  test(`${format}: concurrent renders commit in order around an intervening export`, async () => {
+  sceneTest(`${format}: concurrent renders commit in order around an intervening export`, async () => {
     const session = createSession(format);
     const g = await session.registerGeometry(geometry());
     const commits: string[] = [];
@@ -35,7 +36,7 @@ for (const format of [Format.Glb, Format.Fbx] as const) {
     } finally { await session.dispose(); }
   });
   for (const contended of [false, true]) {
-    test(`${format}: file export pins its invocation position with directory contention=${contended}`, async () => {
+    sceneTest(`${format}: file export pins its invocation position with directory contention=${contended}`, async () => {
       const session = createSession(format), blocker = createSession(format);
       const directory = await mkdtemp(join(tmpdir(), "forge-scene-file-order-"));
       let release!: () => void;
@@ -63,7 +64,7 @@ for (const format of [Format.Glb, Format.Fbx] as const) {
       }
     });
   }
-  test(`${format}: failed file reservations retain the preceding render's queue slot`, async () => {
+  sceneTest(`${format}: failed file reservations retain the preceding render's queue slot`, async () => {
     const session = createSession(format);
     const directory = await mkdtemp(join(tmpdir(), "forge-scene-reservation-failure-"));
     const commits: string[] = [];
@@ -83,7 +84,7 @@ for (const format of [Format.Glb, Format.Fbx] as const) {
       await rm(directory, { recursive: true, force: true });
     }
   });
-  test(`${format}: a queued recovery does not hide an earlier render failure`, async () => {
+  sceneTest(`${format}: a queued recovery does not hide an earlier render failure`, async () => {
     const session = createSession(format);
     const g = await session.registerGeometry(geometry());
     function Broken(): React.ReactNode { throw Error("Synthetic queued render failure"); }
@@ -95,7 +96,7 @@ for (const format of [Format.Glb, Format.Fbx] as const) {
       assert.ok((await session.export()).length > 0);
     } finally { await session.dispose(); }
   });
-  test(`${format}: native measurement and export diagnostics retain their stages`, async () => {
+  sceneTest(`${format}: native measurement and export diagnostics retain their stages`, async () => {
     const session = createSession(format);
     const events: Diagnostic[] = [];
     session.onDiagnostic(event => events.push(event));
@@ -125,7 +126,7 @@ for (const format of [Format.Glb, Format.Fbx] as const) {
         [[Stage.Layout, "started"], [Stage.Layout, "failed"]]);
     } finally { await session.dispose(); }
   });
-  test(`${format}: native scene, immutable geometry, world bounds and atomic output`, async () => {
+  sceneTest(`${format}: native scene, immutable geometry, world bounds and atomic output`, async () => {
     const s = createSession(format); const dir = await mkdtemp(join(tmpdir(),"forge-scene-"));
     try {
       assert.throws(()=>s.registerGeometry(null as never),{code:ErrorCode.MalformedInput});
@@ -144,7 +145,7 @@ for (const format of [Format.Glb, Format.Fbx] as const) {
       assert.equal((await readdir(dir)).length,1);
     } finally { await s.dispose(); await rm(dir,{recursive:true,force:true}); }
   });
-  test(`${format}: rejects invalid arrays, references, properties and texture requirements`, async () => {
+  sceneTest(`${format}: rejects invalid arrays, references, properties and texture requirements`, async () => {
     const s=createSession(format), other=createSession(format);
     try {
       const bad=geometry();bad.indices[2]=3;await assert.rejects(s.registerGeometry(bad),{code:ErrorCode.MalformedInput});
@@ -167,7 +168,7 @@ for (const format of [Format.Glb, Format.Fbx] as const) {
       await s.render(<Scene><Mesh geometry={g}/></Scene>);assert.ok((await s.export()).length>0);
     } finally {await Promise.all([s.dispose(),other.dispose()]);}
   });
-  test(`${format}: React state, pending Suspense cancellation and disposal`, async () => {
+  sceneTest(`${format}: React state, pending Suspense cancellation and disposal`, async () => {
     const s=createSession(format);const g=await s.registerGeometry(geometry());let update!:(n:number)=>void;
     function Model(){const [n,set]=useState(0);update=set;return <Mesh geometry={g} translation={[n,0,0]}/>;}
     try {
@@ -181,7 +182,7 @@ for (const format of [Format.Glb, Format.Fbx] as const) {
   });
 }
 for (const format of [Format.Glb, Format.Fbx] as const) {
-  test(`${format}: file exports preserve cross-session order behind an earlier render`, async () => {
+  sceneTest(`${format}: file exports preserve cross-session order behind an earlier render`, async () => {
     const first = createSession(format), last = createSession(format);
     const directory = await mkdtemp(join(tmpdir(), "forge-scene-order-"));
     try {
@@ -199,7 +200,7 @@ for (const format of [Format.Glb, Format.Fbx] as const) {
   });
 }
 
-test("scene registrations reserve aggregate bytes before concurrent validation", async()=>{
+sceneTest("scene registrations reserve aggregate bytes before concurrent validation", async()=>{
   const s=createSession(Format.Glb);const bytes=Buffer.alloc(64*1024*1024);
   try {
     await assert.rejects(s.registerTexture(Buffer.alloc(64*1024*1024+1)),{code:ErrorCode.ResourceLimit});
@@ -213,7 +214,7 @@ test("scene registrations reserve aggregate bytes before concurrent validation",
   } finally {await s.dispose();}
 });
 
-test("latest failed React scene blocks export until a successful render",async()=>{
+sceneTest("latest failed React scene blocks export until a successful render",async()=>{
   const s=createSession(Format.Glb);const g=await s.registerGeometry(geometry());
   function Broken():React.ReactNode {throw Error('Synthetic render failure');}
   try {
