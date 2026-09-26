@@ -2579,7 +2579,7 @@ fn windows_fbreak(args: BreakArgs) -> i32 {
                     } else if WINDOWS_CANCELLED.load(Ordering::SeqCst) {
                         Ok(0)
                     } else {
-                        terminal.decision(frame, &WINDOWS_CANCELLED)
+                        terminal.decision(frame, matching, &WINDOWS_CANCELLED)
                     }
                 });
             match decision {
@@ -2800,7 +2800,7 @@ fn macos_fbreak(args: BreakArgs) -> i32 {
                     } else if cancelled.load(Ordering::SeqCst) {
                         Ok(0)
                     } else {
-                        terminal.decision(frame, matching, &cancelled)
+                        terminal.decision(frame, &cancelled)
                     }
                 });
             match decision {
