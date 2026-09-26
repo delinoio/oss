@@ -490,10 +490,8 @@ fn publish(output: &OutputArgs, bytes: &[u8]) -> Result<(), &'static str> {
     let Some(path) = destination(output)? else {
         return io::stdout().write_all(bytes).map_err(|_| "output_write");
     };
-    if existing_report_destination(path)?.is_some() {
-        if !output.force {
-            return Err("output_exists");
-        }
+    if existing_report_destination(path)?.is_some() && !output.force {
+        return Err("output_exists");
     }
     let parent = path
         .parent()
