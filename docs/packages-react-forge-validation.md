@@ -191,7 +191,7 @@ Visual work corrected FBX enum flags rejected by Blender's camera reader, the FB
 
 Local verification passed root `TMPDIR=/private/tmp cargo test -- --test-threads=1` with **1,927 passed and three pre-existing opt-in tests ignored**, targeted scene/exporter/adapter Clippy with warnings denied, package build/typecheck/lint with **112 tests**, standalone example checks, public main/native candidate assembly and installed six-format CLI smoke, installed-archive six-format MCP inspection/measurement/export, **77 CI contract tests**, workflow validation, and `pnpm test` from `apps/public-docs` (all sixteen React Forge guide routes). Root test preparation followed the existing generic/pnport preload separation above. Earlier root attempts exposed existing path-alias/preload preparation requirements and transient clibox process-fixture failures; the final complete serial run passed. An initial Node 24.11.0 MCP loader issue was avoided by validating with Node 24.17.0; this does not establish compatibility for every Node 24 patch.
 
-The six-host native CI matrix includes the three scene crates, and Linux x64 additionally installs checksum-pinned Blender 4.5.14 and renders the fixtures. **Only macOS arm64 was executed locally for this acceptance record.** The later `0.2.0` release workflow passed all six native build and installed-consumer jobs; that evidence is distinct from the local Blender visual review recorded above and does not imply identical results in arbitrary FBX applications. GLB/FBX were absent from the historical npm `0.1.1` release and were included in `0.2.0`.
+At the time of this acceptance record, the six-host native CI matrix included the three scene crates, and Linux x64 additionally installed checksum-pinned Blender 4.5.14 and rendered the fixtures. **Only macOS arm64 was executed locally for this acceptance record.** The later `0.2.0` release workflow passed all six native build and installed-consumer jobs; that evidence is distinct from the local Blender visual review recorded above and does not imply identical results in arbitrary FBX applications. GLB/FBX were absent from the historical npm `0.1.1` release and were included in `0.2.0`. PR #992 removes the scene-specific engine, render, and visual-validation jobs from ordinary CI; the recorded acceptance results above are historical.
 
 Reproduce after building:
 
@@ -220,7 +220,7 @@ The package build/typecheck/lint, **113 package tests** including installed six-
 
 ### PR #988 render scheduling repair
 
-The first hosted run (`36115873712`) completed native/package checks on Linux x64 but reached the 60-minute job limit during sequential CPU scene rendering. The studio GLB alone took approximately 38 minutes for four views, leaving only five of 32 images complete when the job was cancelled. Preparation now remains in the native job, while four required product jobs consume its validated exports and render both formats independently with 120-minute budgets. Resolution, 96-sample CPU quality, scene geometry/materials and all 32 views remain unchanged. The comparison stage validates the complete requested product set and input/image hashes before producing evidence. The same run’s unrelated DevHud API OCI build failed on a Go module proxy connection reset; no application failure was reported, and the final repair push retries that job without changing its source. New hosted results remain pending.
+The first hosted run (`36115873712`) completed native/package checks on Linux x64 but reached the 60-minute job limit during sequential CPU scene rendering. The studio GLB alone took approximately 38 minutes for four views, leaving only five of 32 images complete when the job was cancelled. At that time, preparation moved into the native job, while four product jobs consumed its validated exports and rendered both formats independently with 120-minute budgets. Resolution, 96-sample CPU quality, scene geometry/materials and all 32 views remained unchanged. The comparison stage validated the complete requested product set and input/image hashes before producing evidence. The same run’s unrelated DevHud API OCI build failed on a Go module proxy connection reset; no application failure was reported, and the final repair push retried that job without changing its source. Hosted results after that repair remained pending.
 
 Local repair verification passed 78 CI contract tests, workflow/actionlint validation, six Python evidence regressions, package build/typecheck/lint with 113 tests, and standalone example checks. Fresh preparation generated and independently inspected all eight models, then a separate Blender 4.5.14 process rendered the stand's GLB/FBX pair at 2048px/96 samples on macOS Metal. All eight images and their contact sheet passed comparison and visual inspection. The new verifier also accepted the complete previous 32-image record without rewriting it. This verifies the preparation-to-render boundary locally; it is not a hosted Linux CPU timing result. Rust and frontend sources were unchanged, and their broader historical checks were not rerun.
 
@@ -492,14 +492,15 @@ breaking-field rejection, and the existing absent-baseline behavior. A temporary
 pointer-only clone of the full repository passed `proto:check`, Go binding tests,
 and client lint/build with **37 tests**, without fetching LFS payloads.
 
-The final status snapshot also discovered newly merged `main` commit `a00774d0`
-(PR #986). The merge retains the event-specific CI matrix: ordinary affected
-Windows/Linux validation, all six hosts in manual CI and release gates, and the
-shared host script. Scene/GLB/FBX tests and Clippy run through that script; Linux
-scene preparation and all four product render shards remain required. Both scene
-jobs share the narrowed source paths, so documentation-only changes do not start
-the native matrix or an orphaned render job. The protocol smudge fix independently
-arrived on `main` too; the merge retains its behavior and the new regression.
+At that historical merge snapshot, the final status check also discovered newly
+merged `main` commit `a00774d0` (PR #986). The merge retained the event-specific CI
+matrix: ordinary affected Windows/Linux validation, all six hosts in manual CI
+and release gates, and the shared host script. Scene/GLB/FBX tests and Clippy ran
+through that script; Linux scene preparation and all four product render shards
+were then required. Both scene jobs shared the narrowed source paths, so
+documentation-only changes did not start the native matrix or an orphaned render
+job. The protocol smudge fix independently arrived on `main` too; the merge
+retained its behavior and the new regression.
 
 Local macOS arm64/Node.js 24.17.0 merge validation passed **92 CI contract tests**,
 workflow and shell syntax validation, **22 affected release-contract tests**,
@@ -532,3 +533,12 @@ On macOS arm64/Node.js 24.17.0, `pnpm test` from `apps/public-docs` passed the
 **25 site-selector tests**, full Rspress build, both rendered-document validators,
 and **15 validator regressions**. This documentation-only merge changes no
 native engine, model, texture, or previously recorded rendering evidence.
+
+## Scene CI scope update (2026-09-26)
+
+The current workflow no longer prepares GLB/FBX scene inputs or runs dedicated
+Blender product-render jobs. The affected React Forge host matrix still runs its
+native scene-engine and package regressions. Khronos/ufbx checks, Blender
+re-imports, local GLB viewing and product image inspection remain reproducible
+local acceptance evidence. Earlier hosted render results in this file are
+historical records and do not describe current CI jobs.

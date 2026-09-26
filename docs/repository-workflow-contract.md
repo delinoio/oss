@@ -136,13 +136,11 @@ Repository-wide Go quality/tests and ach-specific compilation must first generat
 ### React Forge validation
 
 Source-consuming React Forge CI and release build checkouts enable Git LFS to
-hydrate the seven AURA source PNG textures before package/example validation and
-scene preparation. Root `.gitattributes` changes select every event-eligible job,
-including both React Forge jobs.
-Product render shards consume the prepared GLB/FBX artifact and need no source
-texture download. AURA uses seven explicit attributes alongside the other
+hydrate the seven AURA source PNG textures before package/example validation.
+Root `.gitattributes` changes select every event-eligible job, including React
+Forge validation. AURA uses seven explicit attributes alongside the other
 repository assets listed above.
 
 The centrally planned `react-forge` job runs on affected pull requests and main pushes and is required by `CI Result`. Its ordinary four-host/Node 24 boundary follows `docs/packages-react-forge-contract.md`: package-owned uncached native build and integration, installed CLI, native/legacy Forge regressions, test-only LibreOffice/Poppler rendering and benchmarks on Windows/Linux x64/arm64. Manual CI adds both Darwin hosts. It retains evidence for seven days and removes generated package dist. Shared `forge-package` changes also select existing Forge validation/render jobs. PR CI verifies installed packages on each selected host without transferring native tarballs or assembling a complete release candidate. Seven external `0.0.1` npm name reservations preceded the first source release. `release-react-forge.yml` uses the same host validation command on all six native hosts, including mandatory Darwin rendering and benchmarks, and assembles the complete seven-package candidate on exact tags. Release Project prepared `0.1.0`, whose publish job failed before registry writes. The next patch tag, `0.1.1`, carried the publisher fix and became the first functional npm release through seven configured Trusted Publishers with OIDC; all seven registry versions, integrities, provenance markers and `latest` tags were confirmed.
 
-The required `react-forge-scenes` job follows the exact `react-forge` change plan and depends on its successful native matrix. Linux x64 generates and inspects the eight scene files with `test:scenes --prepare-only`, then uploads `react-forge-scene-inputs` from the same run. Four independent Linux product jobs download those inputs and render each GLB/FBX pair with the same pinned Blender, 96 samples, 2048px minimum, and four views. Each has a 120-minute CPU budget; the native matrix retains 60 minutes. Both preparation and every product render remain required by `CI Result`. Comparisons reject missing/duplicate imports or views, changed input/image hashes and reduced image dimensions before writing their observational statistics. Per-product render artifacts retain seven days of evidence; no native package or render cache is transferred.
+The React Forge host job continues to run native, package, installed-consumer and document-render regressions on its selected matrix. Dedicated scene preparation and Blender product-render jobs are not part of CI. Khronos/ufbx interoperability checks and actual-file Blender renders remain local acceptance evidence, documented in the scene and validation contracts; they do not add hosted runner time or CI artifacts.

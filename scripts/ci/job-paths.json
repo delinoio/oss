@@ -676,47 +676,5 @@
       ".github/workflows/release-react-forge.yml",
       "scripts/release/project.mjs"
     ]
-  },
-  "react-forge-scenes": {
-    "paths": [
-      ".cargo/**",
-      "Cargo.toml",
-      "Cargo.lock",
-      "rust-toolchain",
-      "rust-toolchain.toml",
-      ".nvmrc",
-      "package.json",
-      "pnpm-lock.yaml",
-      "pnpm-workspace.yaml",
-      "turbo.json",
-      "packages/react-forge/src/**",
-      "packages/react-forge/tests/**",
-      "packages/react-forge/bin/**",
-      "packages/react-forge/scripts/**",
-      "packages/react-forge/examples/**/*.tsx",
-      "packages/react-forge/examples/**/*.ts",
-      "packages/react-forge/examples/**/*.json",
-      "packages/react-forge/examples/**/*.png",
-      "packages/react-forge/package.json",
-      "packages/react-forge/turbo.json",
-      "packages/react-forge/tsconfig*.json",
-      "crates/react-forge-node/src/**",
-      "crates/react-forge-node/tests/**",
-      "crates/react-forge-node/Cargo.toml",
-      "crates/react-forge-node/build.rs",
-      "crates/forge-*/src/**",
-      "crates/forge-*/tests/**",
-      "crates/forge-*/Cargo.toml",
-      "crates/forge-*/build.rs",
-      "crates/forge-*/schema.json",
-      "crates/forge-*/examples/**/*.json",
-      "crates/forge-*/assets/**/*.ttf",
-      "crates/delino-forge/src/**",
-      "crates/delino-forge/tests/**",
-      "crates/delino-forge/Cargo.toml",
-      "crates/delino-forge/build.rs",
-      ".github/workflows/release-react-forge.yml",
-      "scripts/release/project.mjs"
-    ]
   }
 }
