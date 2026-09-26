@@ -48,6 +48,12 @@ test("scoped workspace archive installs and its CLI generates local formats and 
     const mcp = await connect(directory, cli);
     try {
       assert.equal((await mcp.client.listTools()).tools.length, 9);
+      const syntax = await mcp.raw("execute", { code: "export default () => {\n const invalid = ;\n};" });
+      assert.equal(syntax.isError, true);
+      const syntaxError = syntax.structuredContent?.error as { code: string; diagnostics: { phase: string; source: string; line: number }[] };
+      assert.equal(syntaxError.code, "malformed_input");
+      assert.deepEqual({ phase: syntaxError.diagnostics[0]?.phase, source: syntaxError.diagnostics[0]?.source, line: syntaxError.diagnostics[0]?.line },
+        { phase: "compile", source: "inline", line: 2 });
       for (const [task, format] of cases) {
         const created = await mcp.call("execute", { entry: `tasks/${task}.tsx` });
         const snapshot = await mcp.call("inspect", { sessionId: created.sessionId });

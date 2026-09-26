@@ -37,7 +37,7 @@ export class SceneSession {
   private track<T>(stage: Stage, work: (context: { revision: number }) => Promise<T>): Promise<T> {
     this.signal(); const start = performance.now(); const context = { revision: this.revision };
     const task = (async () => { let code: ErrorCode | undefined;
-      try { return await work(context); } catch (e) { code = e instanceof ForgeError ? e.code : ErrorCode.Render; if (e instanceof ForgeError) throw new ForgeError(e.code, e.message, { ...e.context, stage, format: this.format, revision: context.revision }); throw e; }
+      try { return await work(context); } catch (e) { code = e instanceof ForgeError ? e.code : ErrorCode.Render; if (e instanceof ForgeError) throw new ForgeError(e.code, e.message, { ...e.context, stage, format: this.format, revision: context.revision }, e.cause); throw e; }
       finally { const d = Object.freeze({ source: "javascript" as const, stage, format: this.format, revision: context.revision, durationMs: performance.now() - start, code }); for (const f of this.listeners) { try { f(d); } catch { /* Observers cannot change outcomes. */ } } }
     })();
     this.operations.add(task); void task.finally(() => this.operations.delete(task)).catch(() => {}); return task;

@@ -4,6 +4,10 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
 import { connect } from "./mcp/client.js";
+import { TaskLoader } from "../src/mcp/loader.js";
+import { TaskError, TaskPhase } from "../src/mcp/diagnostics.js";
+import { ErrorCode } from "../src/types.js";
+import { ForgeError } from "../src/errors.js";
 
 const pdf = `import {createSession, Format} from '@delino/react-forge';
 import {Document, Page, Text} from '@delino/react-forge/pdf';
@@ -21,6 +25,7 @@ test("stdio tools keep a session across inline calls and export an exact inspect
     assert.equal(tools.tools.length, 9);
     const capabilities = await peer.call("capabilities");
     assert.equal(capabilities.mcp.transport, "stdio");
+    assert.match(capabilities.mcp.errorDiagnostics, /bounded caller messages/);
     const { sessionId } = await peer.call("execute", { code: pdf });
     const inspected = await peer.call("inspect", { sessionId });
     assert.ok(inspected.revision > 0);
@@ -51,6 +56,7 @@ async function errorCode(peer: Awaited<ReturnType<typeof connect>>, tool: string
   const result = await peer.raw(tool, args);
   assert.equal(result.isError, true, JSON.stringify(result));
   assert.equal((result.structuredContent!.error as any).code, code);
+  assert.deepEqual(JSON.parse((result.content[0] as { text: string }).text), result.structuredContent);
   return result.structuredContent!;
 }
 async function waitFor(path: string) {
@@ -127,12 +133,83 @@ test("entries reload, dependencies share identities and caller output never reac
     console.log('PRIVATE-CONSOLE');console.error('PRIVATE-STDERR');writeSync(1,'PRIVATE-RAW-STDOUT');writeSync(2,'PRIVATE-RAW-STDERR');
     export default ({state})=>{if(identity!==state.get('identity'))throw Error('duplicate inline helper');};` });
   const invalid = await errorCode(peer, "execute", { sessionId, code: "export default ()=>{throw Error('PRIVATE-FAILURE');};" }, "render");
-  assert.ok(!JSON.stringify(invalid).includes("PRIVATE"));
+  assert.equal(invalid.error.message, "PRIVATE-FAILURE");
+  assert.equal(invalid.error.diagnostics[0].phase, "task");
+  assert.equal(invalid.error.diagnostics[0].source, "inline");
+  assert.equal(invalid.error.diagnostics[0].line, 1);
+  assert.ok(!JSON.stringify(invalid).includes("PRIVATE-CONSOLE"));
+  assert.ok(!JSON.stringify(invalid).includes("export default"));
   await peer.call("close", { sessionId });
   assert.ok(!peer.stderr().includes("PRIVATE"));
   assert.ok(!peer.stderr().includes(cwd));
   for (const line of peer.stderr().trim().split("\n").filter(Boolean)) assert.equal(JSON.parse(line).source, "mcp");
 }));
+
+test("MCP reports bounded compiler, module and uncaught render diagnostics without logging task text", async () => fixture(async (peer, cwd) => {
+  const inline = await errorCode(peer, "execute", { code: "export default () => {\n const value = ;\n};" }, "malformed_input");
+  assert.equal(inline.error.diagnostics[0].phase, "compile");
+  assert.equal(inline.error.diagnostics[0].source, "inline");
+  assert.equal(inline.error.diagnostics[0].line, 2);
+  assert.ok(inline.error.diagnostics[0].column > 0);
+  assert.equal(inline.error.message, inline.error.diagnostics[0].message);
+  assert.ok(!JSON.stringify(inline).includes("const value = ;"));
+
+  await mkdir(join(cwd, "tasks"));
+  await writeFile(join(cwd, "tasks", "broken.tsx"), "export default () => {\n const value = ;\n};");
+  const entry = await errorCode(peer, "execute", { entry: "tasks/broken.tsx" }, "malformed_input");
+  assert.equal(entry.error.diagnostics[0].source, "entry");
+  assert.equal(entry.error.diagnostics[0].file, "tasks/broken.tsx");
+  assert.equal(entry.error.diagnostics[0].line, 2);
+
+  await writeFile(join(cwd, "tasks", "helper.ts"), "export const value = ;");
+  await writeFile(join(cwd, "tasks", "import.tsx"), "import { value } from './helper.js'; export default () => value;");
+  const imported = await errorCode(peer, "execute", { entry: "tasks/import.tsx" }, "malformed_input");
+  assert.equal(imported.error.diagnostics[0].source, "import");
+  assert.equal(imported.error.diagnostics[0].file, "tasks/helper.ts");
+  assert.equal(imported.error.diagnostics[0].line, 1);
+
+  const unresolved = await errorCode(peer, "execute", { code: "import './absent-local-module.js'; export default () => {};" }, "malformed_input");
+  assert.equal(unresolved.error.diagnostics[0].phase, "compile");
+  assert.match(unresolved.error.message, /absent-local-module/);
+
+  const { sessionId } = await peer.call("execute", { code: pdf });
+  const failed = await errorCode(peer, "execute", { sessionId, code: `import {createElement} from 'react';
+    function Broken() { throw Error('PRIVATE-RENDER-DETAIL'); }
+    export default async ({session}) => { await session.render(createElement(Broken)); };` }, "render");
+  assert.equal(failed.error.message, "PRIVATE-RENDER-DETAIL");
+  assert.equal(failed.error.diagnostics[0].phase, "render");
+  assert.equal(failed.error.diagnostics[0].source, "inline");
+  assert.equal(failed.error.diagnostics[0].line, 2);
+
+  await peer.call("execute", { sessionId, code: `import {createElement,Component} from 'react';
+    class Boundary extends Component { state={failed:false}; static getDerivedStateFromError(){return {failed:true};} render(){return this.state.failed?createElement('text',null,'recovered'):this.props.children;} }
+    function Broken(){throw Error('HANDLED-RENDER-DETAIL');}
+    export default async ({session})=>{await session.render(createElement(Boundary,null,createElement(Broken)));};` });
+  await peer.call("execute", { sessionId, code: `import {Document,Page,Text} from '@delino/react-forge/pdf';
+    export default async ({session}) => { await session.render(<Document language='en-US'><Page><Text>Recovered</Text></Page></Document>); };` });
+  const inspected = await peer.call("inspect", { sessionId });
+  assert.ok(inspected.targets);
+  await peer.call("close", { sessionId });
+
+  assert.ok(!peer.stderr().includes("PRIVATE-RENDER-DETAIL"));
+  assert.ok(!peer.stderr().includes("HANDLED-RENDER-DETAIL"));
+  assert.ok(!peer.stderr().includes("tasks/broken.tsx"));
+  for (const line of peer.stderr().trim().split("\n").filter(Boolean)) assert.equal(JSON.parse(line).source, "mcp");
+}));
+
+test("compiler diagnostics and caller messages have fixed response bounds", () => {
+  const loader = new TaskLoader(process.cwd());
+  try {
+    assert.equal(new ForgeError(ErrorCode.Render, "safe") instanceof TaskError, false);
+    assert.equal(loader.isCallerException(Error("internal detail")), false);
+    const issues = Array.from({ length: 12 }, (_, i) => ({ text: `issue ${i}` }));
+    const details = loader.diagnose(new TaskError(ErrorCode.MalformedInput, TaskPhase.Compile, Error("compile"), undefined, issues));
+    assert.equal(details?.diagnostics.length, 10);
+    assert.equal(details?.diagnosticsTruncated, true);
+    const long = loader.diagnose(new TaskError(ErrorCode.Render, TaskPhase.Task, Error("x".repeat(2048))));
+    assert.equal(long?.diagnostics[0]?.message.length, 1024);
+  } finally { loader.dispose(); }
+});
 
 test("tool validation, filtered pagination, stale measurement and invalid latest render stay recoverable", async () => fixture(async peer => {
   await errorCode(peer, "execute", { code: pdf, entry: "both.tsx" }, "malformed_input");

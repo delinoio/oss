@@ -67,7 +67,7 @@ export class DocumentSession {
     this.operations.add(operation);
     let code: ErrorCode | undefined;
     try { return await operation; }
-    catch (error) { code = error instanceof ForgeError ? error.code : ErrorCode.Io; if (error instanceof ForgeError) throw new ForgeError(error.code, error.message, { stage, format: this.format, ...error.context, revision: context.revision }); throw error; }
+    catch (error) { code = error instanceof ForgeError ? error.code : ErrorCode.Io; if (error instanceof ForgeError) throw new ForgeError(error.code, error.message, { stage, format: this.format, ...error.context, revision: context.revision }, error.cause); throw error; }
     finally {
       this.operations.delete(operation);
       const event = Object.freeze({ source: "javascript" as const, stage, format: this.format, revision: context.revision, durationMs: performance.now() - started, code });
