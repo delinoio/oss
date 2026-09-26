@@ -139,7 +139,7 @@ export class TaskLoader {
   }
 
   isCallerException(error: unknown): boolean {
-    return typeof error === "string" || this.stackLocation(error).source !== undefined;
+    return this.stackLocation(error).source !== undefined;
   }
 
   resolutionFailure(error: unknown): TaskError | undefined {

@@ -209,13 +209,19 @@ test("MCP reports bounded compiler, module and uncaught render diagnostics witho
   const runtimeDependencyDirectory = join(cwd, "node_modules", "rf-private-runtime");
   await mkdir(runtimeDependencyDirectory, { recursive: true });
   await writeFile(join(runtimeDependencyDirectory, "package.json"), JSON.stringify({ name: "rf-private-runtime", type: "module", exports: "./index.mjs" }));
-  await writeFile(join(runtimeDependencyDirectory, "index.mjs"), "export function fail() { throw Error('PRIVATE_EXTERNAL_DEPENDENCY'); }");
+  await writeFile(join(runtimeDependencyDirectory, "index.mjs"), "export function fail() { throw Error('PRIVATE_EXTERNAL_DEPENDENCY'); } export function failString() { throw 'PRIVATE_EXTERNAL_STRING'; }");
   const externalException = await errorCode(peer, "execute", {
     code: "import {fail} from 'rf-private-runtime'; export default () => { fail(); };",
   }, "render");
   assert.equal(externalException.error.message, "Task execution failed. Correct the task and retry.");
   assert.equal(externalException.error.diagnostics, undefined);
   assert.ok(!JSON.stringify(externalException).includes("PRIVATE_EXTERNAL_DEPENDENCY"));
+  const externalString = await errorCode(peer, "execute", {
+    code: "import {failString} from 'rf-private-runtime'; export default () => { failString(); };",
+  }, "render");
+  assert.equal(externalString.error.message, "Task execution failed. Correct the task and retry.");
+  assert.equal(externalString.error.diagnostics, undefined);
+  assert.ok(!JSON.stringify(externalString).includes("PRIVATE_EXTERNAL_STRING"));
 
   for (const extension of ["js", "mjs"]) {
     await writeFile(join(cwd, "tasks", `throwing-helper.${extension}`), `throw Error('PRIVATE-${extension.toUpperCase()}-HELPER');`);
