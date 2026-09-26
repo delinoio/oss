@@ -17,17 +17,10 @@ type openCodeRequestedSettings struct {
 // initializer and original session must independently validate their effect;
 // neither this mapping nor advisory model metadata authorizes public dispatch.
 func openCodeExecutionSettings(c domain.ExecutionConfiguration, mode domain.SessionMode, title string) (openCodeRequestedSettings, error) {
-	if err := c.Validate(); err != nil {
-		return openCodeRequestedSettings{}, err
-	}
 	if err := domain.Text(title, "native session title", 1024, true); err != nil {
 		return openCodeRequestedSettings{}, err
 	}
-	o := c.Options
-	if c.Harness != domain.OpenCode || c.Effort != "" || o.SubagentModel != "" || o.SubagentEffort != "" || o.MaxConcurrency != 0 || o.ApprovalReviewModel != "" || o.ServiceTier != "" {
-		return openCodeRequestedSettings{}, domain.Fail(domain.Unsupported, "The selected OpenCode options need an additional native settings adapter.", "Preserve every explicit selection; unsupported settings cannot be omitted or translated.")
-	}
-	agent, err := o.OpenCodePrimaryForInput(mode)
+	agent, err := c.OpenCodePrimaryForInput(mode)
 	if err != nil {
 		return openCodeRequestedSettings{}, err
 	}

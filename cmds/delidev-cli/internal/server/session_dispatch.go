@@ -76,8 +76,19 @@ func initialExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Session, machine domain.Machine, input domain.ExecutionJobInput) (domain.ExecutionJobInput, error) {
 	var empty domain.ExecutionJobInput
 	c := input.Configuration
-	if c.Harness != domain.Codex {
-		return empty, domain.Fail(domain.Unsupported, "This harness has no integrated execution profile yet.", "Select a supported installed Codex profile; no harness fallback is performed.")
+	version, protocol := codex.SupportedVersion, domain.OpenAIResponses
+	switch c.Harness {
+	case domain.Codex:
+	case domain.OpenCode:
+		if input.Continuation != nil {
+			return empty, domain.Fail(domain.Unsupported, "OpenCode continuation requires an original native checkpoint profile.", "Preserve the completed history and queued input; do not create another first execution.")
+		}
+		if _, err := c.OpenCodePrimaryForInput(input.Input.Mode); err != nil {
+			return empty, err
+		}
+		version, protocol = domain.OpenCodeProtocolVersion, domain.OpenAIChat
+	default:
+		return empty, domain.Fail(domain.Unsupported, "This harness has no integrated execution profile yet.", "Select a supported installed profile; no harness fallback is performed.")
 	}
 	var installation *domain.Installation
 	for i := range machine.Installations {
@@ -88,8 +99,8 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 			installation = &machine.Installations[i]
 		}
 	}
-	if installation == nil || installation.State != domain.InstallationDetected || installation.Version != codex.SupportedVersion || !installation.ProtocolVerified || installation.Protocol == nil || installation.Protocol.Protocol != domain.CodexAppServer || installation.Protocol.State != domain.ProtocolVerified || installation.Protocol.Problem != nil || installation.Problem != nil || installation.ResolvedPath == "" || installation.ObservedAt == nil || installation.ObservedAt.IsZero() || installation.ObservedAt.After(time.Now().UTC().Add(time.Second)) {
-		return empty, domain.Fail(domain.Unsupported, "The selected Worker has no verified installation for this execution profile.", "Run machine discovery with native protocol verification for the selected Codex installation.")
+	if installation == nil || installation.State != domain.InstallationDetected || installation.Version != version || !installation.ProtocolVerified || installation.Protocol == nil || installation.Protocol.Protocol != domain.ProtocolFor(c.Harness) || installation.Protocol.State != domain.ProtocolVerified || installation.Protocol.Problem != nil || installation.Problem != nil || installation.ResolvedPath == "" || installation.ObservedAt == nil || installation.ObservedAt.IsZero() || installation.ObservedAt.After(time.Now().UTC().Add(time.Second)) {
+		return empty, domain.Fail(domain.Unsupported, "The selected Worker has no verified installation for this execution profile.", "Run machine discovery with native protocol verification for the selected installation.")
 	}
 	_, account, err := accountFromTx(tx, input.AccountID, 0)
 	if err != nil {
@@ -106,8 +117,8 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 	if err != nil {
 		return empty, err
 	}
-	if provider.Protocol != domain.OpenAIResponses || (provider.Authentication == domain.KeylessAuth) != (account.Validation.Authentication == domain.KeylessEndpoint) || provider.Authentication != account.Connection.Authentication || account.ProviderID != c.ProviderID {
-		return empty, domain.Fail(domain.Unsupported, "The selected provider protocol is incompatible with this native profile.", "Select an OpenAI Responses provider for Codex; no protocol translation is performed.")
+	if provider.Protocol != protocol || (provider.Authentication == domain.KeylessAuth) != (account.Validation.Authentication == domain.KeylessEndpoint) || provider.Authentication != account.Connection.Authentication || account.ProviderID != c.ProviderID {
+		return empty, domain.Fail(domain.Unsupported, "The selected provider protocol is incompatible with this native profile.", "Select OpenAI Responses for Codex or Chat Completions for OpenCode; no protocol translation is performed.")
 	}
 	// Recheck current restrictions without resolving changed Agent/templates or
 	// rerunning routing. Only the immutable selected account may continue.
@@ -156,12 +167,18 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 	if request.Type == domain.Local && (session.LocalOrigin == nil || request.OriginMachineID != session.LocalOrigin.MachineID) {
 		return empty, workspace.ResultUncertain()
 	}
-	settings := codex.ThreadSettings{Model: c.NativeModel, Provider: codex.APIProvider, Cwd: manifest.PrimaryPath, Effort: c.Effort, Instructions: c.Instructions, Options: c.Options}
-	if len(manifest.Repositories) > 1 {
-		settings.WorkspaceRoots = manifest.WorkspaceRoots()
-	}
-	if err := codex.ValidateSelection(settings); err != nil {
-		return empty, err
+	if c.Harness == domain.OpenCode {
+		if len(manifest.Repositories) > 1 || request.Type == domain.GeneralChat && machine.OS == "windows" {
+			return empty, domain.Fail(domain.Unsupported, "This OpenCode workspace requires an additional native identity/settings profile.", "Preserve every repository and its prepared ownership; do not omit roots or infer Windows non-VCS identity.")
+		}
+	} else {
+		settings := codex.ThreadSettings{Model: c.NativeModel, Provider: codex.APIProvider, Cwd: manifest.PrimaryPath, Effort: c.Effort, Instructions: c.Instructions, Options: c.Options}
+		if len(manifest.Repositories) > 1 {
+			settings.WorkspaceRoots = manifest.WorkspaceRoots()
+		}
+		if err := codex.ValidateSelection(settings); err != nil {
+			return empty, err
+		}
 	}
 	input.Installation, input.Preparation, input.Manifest = *installation, job.Input, job.Output
 	return input, input.Validate()

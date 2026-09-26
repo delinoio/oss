@@ -33,13 +33,35 @@ type firstDispatchFixture struct {
 	workerClient            delidevv1connect.WorkerServiceClient
 	workerInstance          string
 	workerStream            *connect.ServerStreamForClient[pb.WatchWorkResponse]
+	workerRoot              string
+	workerDevice            domain.ID
 }
 
 // Public configuration/account/session APIs and authenticated Worker reports
 // establish readiness here. The reported installation is a protocol fixture;
 // ordinary tests never execute an installed harness or request inference.
 func newFirstDispatchFixture(t *testing.T) *firstDispatchFixture {
+	return newFirstDispatchFixtureForHarness(t, domain.Codex)
+}
+
+func newFirstDispatchFixtureForHarness(t *testing.T, harness domain.Harness, modes ...domain.SessionMode) *firstDispatchFixture {
 	t.Helper()
+	mode := domain.PlanMode
+	if len(modes) > 1 {
+		t.Fatal("fixture accepts one input mode")
+	}
+	if len(modes) == 1 {
+		mode = modes[0]
+	}
+	return newFirstDispatchFixtureProfile(t, harness, mode, "/fixture/"+string(harness), "")
+}
+
+func newFirstDispatchFixtureProfile(t *testing.T, harness domain.Harness, mode domain.SessionMode, executable, upstreamURL string) *firstDispatchFixture {
+	t.Helper()
+	protocol, permission, version := domain.OpenAIResponses, domain.PermissionReadOnly, domain.CodexProtocolVersion
+	if harness == domain.OpenCode {
+		protocol, permission, version = domain.OpenAIChat, domain.PermissionDefault, domain.OpenCodeProtocolVersion
+	}
 	db, err := store.Open(context.Background(), filepath.Join(t.TempDir(), "state"))
 	if err != nil {
 		t.Fatal(err)
@@ -53,18 +75,21 @@ func newFirstDispatchFixture(t *testing.T) *firstDispatchFixture {
 	base.accounts = delidevv1connect.NewAccountServiceClient(http.DefaultClient, server.URL)
 	base.resources = delidevv1connect.NewResourceServiceClient(http.DefaultClient, server.URL)
 	identity, paired := pairedWorker(t, context.Background(), base.endpoint, base.identity)
-	f := &firstDispatchFixture{accountFixture: base, service: service, machine: paired.Machine}
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet || r.URL.Path != "/models" || r.Header.Get("Authorization") != "" {
-			t.Error("dispatch fixture performed unexpected provider work")
-			http.Error(w, "unsupported", 400)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		io.WriteString(w, `{"data":[{"id":"fixture-model","object":"model"}]}`)
-	}))
-	t.Cleanup(upstream.Close)
-	provider := base.save(pb.EntityKind_ENTITY_KIND_PROVIDER, domain.Provider{Name: "Fixture", Endpoint: upstream.URL, Protocol: domain.OpenAIResponses, Authentication: domain.KeylessAuth})
+	f := &firstDispatchFixture{accountFixture: base, service: service, machine: paired.Machine, workerDevice: domain.ID(paired.Device.Id)}
+	if upstreamURL == "" {
+		upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodGet || r.URL.Path != "/models" || r.Header.Get("Authorization") != "" {
+				t.Error("dispatch fixture performed unexpected provider work")
+				http.Error(w, "unsupported", 400)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `{"data":[{"id":"fixture-model","object":"model"}]}`)
+		}))
+		t.Cleanup(upstream.Close)
+		upstreamURL = upstream.URL
+	}
+	provider := base.save(pb.EntityKind_ENTITY_KIND_PROVIDER, domain.Provider{Name: "Fixture", Endpoint: upstreamURL, Protocol: protocol, Authentication: domain.KeylessAuth})
 	account := base.save(pb.EntityKind_ENTITY_KIND_ACCOUNT, domain.Account{Alias: "Fixture", ProviderID: domain.ID(provider.Id), Type: domain.APIAccount, Enabled: true, Health: domain.AccountDisconnected})
 	connected, err := connectAccount(base, account, domain.NewID(), "", true)
 	if err != nil {
@@ -75,14 +100,14 @@ func newFirstDispatchFixture(t *testing.T) *firstDispatchFixture {
 		t.Fatal(err)
 	}
 	f.account = validated.Msg.Account
-	model := base.save(pb.EntityKind_ENTITY_KIND_MODEL, domain.Model{Name: "Fixture", NativeID: "fixture-model", ProviderID: domain.ID(provider.Id), Harnesses: []domain.Harness{domain.Codex}, MetadataSource: domain.UserDeclared})
+	model := base.save(pb.EntityKind_ENTITY_KIND_MODEL, domain.Model{Name: "Fixture", NativeID: "fixture-model", ProviderID: domain.ID(provider.Id), Harnesses: []domain.Harness{harness}, MetadataSource: domain.UserDeclared})
 	routing := domain.RoundRobin
-	f.agent = base.save(pb.EntityKind_ENTITY_KIND_AGENT, domain.Agent{Name: "Fixture", Harness: domain.Codex, ModelID: domain.ID(model.Id), Accounts: []domain.WeightedAccount{{ID: domain.ID(account.Id), Weight: 1}}, Options: domain.AgentOptions{Permission: domain.PermissionReadOnly}, Routing: &routing})
-	f.selection = domain.CreateSession{Name: "Fixture", AgentID: domain.ID(f.agent.Id), MachineID: domain.ID(f.machine.Id), Workspace: domain.GeneralChat, Prompt: "first retained input", Mode: domain.PlanMode, Source: domain.ExternalCLISession}
+	f.agent = base.save(pb.EntityKind_ENTITY_KIND_AGENT, domain.Agent{Name: "Fixture", Harness: harness, ModelID: domain.ID(model.Id), Accounts: []domain.WeightedAccount{{ID: domain.ID(account.Id), Weight: 1}}, Options: domain.AgentOptions{Permission: permission}, Routing: &routing})
+	f.selection = domain.CreateSession{Name: "Fixture", AgentID: domain.ID(f.agent.Id), MachineID: domain.ID(f.machine.Id), Workspace: domain.GeneralChat, Prompt: "first retained input", Mode: mode, Source: domain.ExternalCLISession}
 	ctx, client, instance, stream := workspaceStream(t, base, identity, domain.ID(f.machine.Id))
 	f.workerIdentity, f.workerClient, f.workerInstance, f.workerStream = identity, client, instance, stream
 	f.machine = currentCatalogResource(t, base, f.machine)
-	selections, _ := json.Marshal(domain.ExecutableSelections{Executables: []domain.ExecutableSelection{{Harness: domain.Codex, Path: "/fixture/codex"}}})
+	selections, _ := json.Marshal(domain.ExecutableSelections{Executables: []domain.ExecutableSelection{{Harness: harness, Path: executable}}})
 	_, err = client.DiscoverHarnesses(ctx, ownerRequest(base.identity, &pb.DiscoverHarnessesRequest{Mutation: acctMutation(f.machine, domain.NewID()), SelectionsJson: selections, VerifyProtocol: true}))
 	if err != nil {
 		t.Fatal(err)
@@ -103,12 +128,12 @@ func newFirstDispatchFixture(t *testing.T) *firstDispatchFixture {
 	for i := range observed.Installations {
 		v := &observed.Installations[i]
 		v.State = domain.InstallationMissing
-		if v.Harness == domain.Codex {
+		if v.Harness == harness {
 			v.State = domain.InstallationDetected
-			v.ResolvedPath = "/fixture/codex"
-			v.Version = domain.CodexProtocolVersion
+			v.ResolvedPath = executable
+			v.Version = version
 			v.ProtocolVerified = true
-			v.Protocol = &domain.ProtocolObservation{Protocol: domain.CodexAppServer, State: domain.ProtocolVerified}
+			v.Protocol = &domain.ProtocolObservation{Protocol: domain.ProtocolFor(harness), State: domain.ProtocolVerified}
 		}
 	}
 	raw, _ := json.Marshal(observed)
@@ -130,6 +155,7 @@ func newFirstDispatchFixture(t *testing.T) *firstDispatchFixture {
 	}
 	manager := workspace.Manager{Root: filepath.Join(t.TempDir(), "worker")}
 	manifest, err := manager.Prepare(ctx, request)
+	f.workerRoot = manager.Root
 	if err != nil {
 		t.Fatal(err)
 	}
