@@ -12,6 +12,12 @@ import { TaskError, TaskPhase, TaskSource, taskMessage, type CompilerIssue, type
 
 const resolutionCodes = new Set(["ERR_MODULE_NOT_FOUND", "MODULE_NOT_FOUND", "ERR_PACKAGE_PATH_NOT_EXPORTED", "ERR_UNKNOWN_FILE_EXTENSION", "ERR_UNSUPPORTED_DIR_IMPORT"]);
 
+class SafeResolutionError extends Error {
+  constructor(specifier: string | undefined, readonly code: string) {
+    super(`Unable to resolve import${specifier ? ` ${JSON.stringify(specifier.slice(0, 900))}` : ""}.`);
+  }
+}
+
 function compilerIssues(error: unknown): CompilerIssue[] {
   if (!error || typeof error !== "object" || !("errors" in error) || !Array.isArray(error.errors)) return [];
   return error.errors.filter((item): item is CompilerIssue => !!item && typeof item === "object" && typeof item.text === "string");
@@ -34,13 +40,23 @@ export class TaskLoader {
   private readonly hooks = registerHooks({
     resolve: (specifier, context, nextResolve) => {
       if (this.sources.has(specifier)) return { url: specifier, shortCircuit: true };
-      // Caller projects may have their own React or no React Forge installation.
-      // Pin only the engine's public imports; ordinary caller imports keep Node
-      // resolution. A second engine would split React and Figma rate/file queues.
-      if (/^(?:react(?:\/.*)?|react-reconciler(?:\/.*)?|@delino\/react-forge(?:\/(?:pptx|docx|xlsx|pdf|figma|sprite|sfx|glb|fbx))?)$/.test(specifier)) {
-        return nextResolve(specifier, { ...context, parentURL: import.meta.url });
+      try {
+        // Caller projects may have their own React or no React Forge installation.
+        // Pin only the engine's public imports; ordinary caller imports keep Node
+        // resolution. A second engine would split React and Figma rate/file queues.
+        if (/^(?:react(?:\/.*)?|react-reconciler(?:\/.*)?|@delino\/react-forge(?:\/(?:pptx|docx|xlsx|pdf|figma|sprite|sfx|glb|fbx))?)$/.test(specifier)) {
+          return nextResolve(specifier, { ...context, parentURL: import.meta.url });
+        }
+        return nextResolve(specifier, context);
+      } catch (error) {
+        const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
+        if (!resolutionCodes.has(code as string)) throw error;
+        // Node's resolver embeds host paths in its messages. Keep only the
+        // caller's relative or package specifier in MCP task diagnostics.
+        const safe = !isAbsolute(specifier) && !specifier.startsWith("file:") && !/^[a-zA-Z]:[\\/]/.test(specifier)
+          ? specifier : undefined;
+        throw new SafeResolutionError(safe, code as string);
       }
-      return nextResolve(specifier, context);
     },
     load: (url, context, nextLoad) => {
       // Node 24 rejects an undefined CommonJS source from tsx's synchronous
@@ -136,7 +152,10 @@ export class TaskLoader {
       catch (error) {
         if (error instanceof ForgeError) throw error;
         const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
-        if (resolutionCodes.has(code as string)) throw new TaskError(ErrorCode.MalformedInput, TaskPhase.Compile, error);
+        if (resolutionCodes.has(code as string)) {
+          throw new TaskError(ErrorCode.MalformedInput, TaskPhase.Compile,
+            error instanceof SafeResolutionError ? error : new SafeResolutionError(undefined, code as string));
+        }
         if (this.isCallerException(error)) throw new TaskError(ErrorCode.Render, TaskPhase.Task, error);
         throw new ForgeError(ErrorCode.Render, "Task execution failed. Correct the task and retry.");
       }

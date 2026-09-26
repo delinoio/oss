@@ -171,6 +171,16 @@ test("MCP reports bounded compiler, module and uncaught render diagnostics witho
   const unresolved = await errorCode(peer, "execute", { code: "import './absent-local-module.js'; export default () => {};" }, "malformed_input");
   assert.equal(unresolved.error.diagnostics[0].phase, "compile");
   assert.match(unresolved.error.message, /absent-local-module/);
+  assert.ok(!JSON.stringify(unresolved).includes(cwd));
+
+  const missingPackage = await errorCode(peer, "execute", { code: "import 'react-forge-uninstalled-package'; export default () => {};" }, "malformed_input");
+  assert.match(missingPackage.error.message, /react-forge-uninstalled-package/);
+  assert.ok(!JSON.stringify(missingPackage).includes(cwd));
+
+  await writeFile(join(cwd, "unknown.react-forge-extension"), "content");
+  const unknownExtension = await errorCode(peer, "execute", { code: "import './unknown.react-forge-extension'; export default () => {};" }, "malformed_input");
+  assert.equal(unknownExtension.error.diagnostics[0].phase, "compile");
+  assert.ok(!JSON.stringify(unknownExtension).includes(cwd));
 
   const { sessionId } = await peer.call("execute", { code: pdf });
   const failed = await errorCode(peer, "execute", { sessionId, code: `import {createElement} from 'react';
