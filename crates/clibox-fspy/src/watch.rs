@@ -273,6 +273,9 @@ impl WatchSession {
         let mut relevant = false;
         for event in events {
             let event = event.map_err(|_| WatchFailure::WatchLoss)?;
+            if event.need_rescan() || event.paths.is_empty() {
+                return Err(WatchFailure::WatchLoss);
+            }
             for path in event.paths {
                 let Ok(relative) = path.strip_prefix(&self.root) else {
                     continue;
@@ -286,5 +289,40 @@ impl WatchSession {
             }
         }
         Ok(relevant)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn failed_run_dependency_union_preserves_old_inputs() {
+        let mut next = Dependencies::default();
+        next.files.insert(PathBuf::from("new.txt"));
+        let mut previous = Dependencies::default();
+        previous.files.insert(PathBuf::from("old.txt"));
+        next.merge(previous);
+        assert!(next.files.contains(Path::new("new.txt")));
+        assert!(next.files.contains(Path::new("old.txt")));
+    }
+
+    #[test]
+    fn rescan_notification_fails_instead_of_losing_changes() {
+        use notify::{event::Flag, EventKind};
+
+        let session = WatchSession::new(PathBuf::from("/project"));
+        session
+            .tx
+            .send(Ok(Event::new(EventKind::Other).set_flag(Flag::Rescan)))
+            .unwrap();
+        assert_eq!(
+            session.collect(
+                &Dependencies::default(),
+                Duration::from_millis(1),
+                Duration::from_millis(1)
+            ),
+            Err(WatchFailure::WatchLoss)
+        );
     }
 }
