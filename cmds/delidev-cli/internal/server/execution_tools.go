@@ -13,8 +13,8 @@ func publishExecutionTool(tx *store.Tx, input domain.ExecutionJobInput, session 
 	var value domain.ExecutionMessage
 	var revision uint64
 	if event.Kind == domain.ExecutionToolStarted {
-		if update.Snapshot.Kind == domain.OpenCodeReadTool {
-			exists, err := tx.HasOpenCodeReadCall(input.ExecutionID, update.Snapshot.Read.CallID)
+		if update.Snapshot.Kind.IsOpenCode() {
+			exists, err := tx.HasOpenCodeToolCall(input.ExecutionID, update.Snapshot.OpenCodeCallID())
 			if err != nil {
 				return err
 			}
@@ -37,18 +37,18 @@ func publishExecutionTool(tx *store.Tx, input domain.ExecutionJobInput, session 
 		}
 		revision = r.Revision
 		tool := value.Tool
-		if tool.Started.Kind == domain.OpenCodeReadTool {
+		if tool.Started.Kind.IsOpenCode() {
 			prior := tool.Started
 			if len(tool.States) > 0 {
 				prior = tool.States[len(tool.States)-1].Snapshot
 			}
-			if update.Snapshot == nil || domain.ValidateOpenCodeReadTransition(prior, *update.Snapshot) != nil {
+			if update.Snapshot == nil || domain.ValidateOpenCodeToolTransition(prior, *update.Snapshot) != nil {
 				return executionEventConflict()
 			}
 		}
 		switch event.Kind {
 		case domain.ExecutionToolUpdated:
-			if tool.Started.Kind != domain.OpenCodeReadTool || len(tool.States) >= 1024 {
+			if !tool.Started.Kind.IsOpenCode() || len(tool.States) >= 1024 {
 				return executionEventConflict()
 			}
 			tool.States = append(tool.States, domain.SequencedToolState{Sequence: event.Sequence, Snapshot: *update.Snapshot})

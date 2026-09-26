@@ -33,7 +33,7 @@ function readSnapshot(value: unknown): ReadSnapshot | undefined {
   const input = object(read.input);
   const timing = object(read.time);
   const status = snapshot.status as ReadStatus;
-  if (snapshot.kind !== "opencode-read" || snapshot.command != null || snapshot.changes != null || !Object.values(ReadStatus).includes(status) || !boundedText(read.call_id) || !read.call_id || read.provider_executed === true) return;
+  if (snapshot.kind !== "opencode-read" || snapshot.command != null || snapshot.shell != null || snapshot.changes != null || !Object.values(ReadStatus).includes(status) || !boundedText(read.call_id) || !read.call_id || read.provider_executed === true) return;
   for (const field of [input.filePath, read.raw, read.title, read.output, read.error]) if (field != null && !boundedText(field)) return;
   for (const field of [input.offset, input.limit, timing.start, timing.end]) if (field != null && !count(field)) return;
   if (timing.end != null && (!count(timing.start) || !count(timing.end) || timing.end < timing.start)) return;

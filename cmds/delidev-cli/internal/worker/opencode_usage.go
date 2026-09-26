@@ -88,7 +88,7 @@ func (c *OpenCodeUsagePublisher) PublishObservation(ctx context.Context, o openc
 			}
 			return true, nil
 		}
-		if owner.finalized || c.steps[p.MessageID] != "" || len(c.starts) >= maxOpenCodeTextParts || t.parts[p.ID] != nil || t.reads[p.ID] != nil || c.values[p.ID].NativeID != "" {
+		if owner.finalized || c.steps[p.MessageID] != "" || len(c.starts) >= maxOpenCodeTextParts || t.parts[p.ID] != nil || t.tools[p.ID] != nil || c.values[p.ID].NativeID != "" {
 			return true, publicationUncertain()
 		}
 		c.steps[p.MessageID] = p.ID
@@ -133,7 +133,7 @@ func (c *OpenCodeUsagePublisher) PublishObservation(ctx context.Context, o openc
 	if len(c.values) >= maxOpenCodeTextParts+maxOpenCodeTextMessages {
 		return true, publicationUncertain()
 	}
-	if value.Source == domain.OpenCodeStepUsage && (c.steps[value.NativeParentID] == "" || t.messages[value.NativeParentID].finalized || c.starts[value.NativeID] != "" || t.parts[value.NativeID] != nil || t.reads[value.NativeID] != nil) {
+	if value.Source == domain.OpenCodeStepUsage && (c.steps[value.NativeParentID] == "" || t.messages[value.NativeParentID].finalized || c.starts[value.NativeID] != "" || t.parts[value.NativeID] != nil || t.tools[value.NativeID] != nil) {
 		return true, publicationUncertain()
 	}
 	if value.Source == domain.OpenCodeMessageUsage && o.Message.Assistant.Error == nil {

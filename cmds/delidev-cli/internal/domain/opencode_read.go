@@ -38,11 +38,6 @@ type OpenCodeReadMetadata struct {
 	Interrupted *bool                `json:"interrupted,omitempty"`
 }
 
-type OpenCodeToolTiming struct {
-	Start uint64  `json:"start"`
-	End   *uint64 `json:"end,omitempty"`
-}
-
 type OpenCodeReadObservation struct {
 	CallID           string                `json:"call_id"`
 	Input            OpenCodeReadInput     `json:"input"`

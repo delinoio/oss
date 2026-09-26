@@ -243,7 +243,7 @@ func (c *OpenCodeEventPublisher) completeHistory(history opencode.HistoryObserva
 					return false
 				}
 			case opencode.ToolPartKind:
-				p := t.reads[part.ID]
+				p := t.tools[part.ID]
 				if p == nil || p.update.NativeParentID != message.ID || p.latest.Status != domain.ToolCompleted && p.latest.Status != domain.ToolFailed {
 					return false
 				}
@@ -265,7 +265,7 @@ func (c *OpenCodeEventPublisher) completeHistory(history opencode.HistoryObserva
 			return false
 		}
 	}
-	for id := range t.reads {
+	for id := range t.tools {
 		if !seen[id] {
 			return false
 		}

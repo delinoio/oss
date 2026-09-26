@@ -12,9 +12,10 @@ type CommandActionKind string
 type FileChangeKind string
 
 const (
-	CommandTool      ToolKind = "command"
-	PatchTool        ToolKind = "patch"
-	OpenCodeReadTool ToolKind = "opencode-read"
+	CommandTool       ToolKind = "command"
+	PatchTool         ToolKind = "patch"
+	OpenCodeReadTool  ToolKind = "opencode-read"
+	OpenCodeShellTool ToolKind = "opencode-shell"
 
 	ToolPending   ToolStatus = "pending"
 	ToolRunning   ToolStatus = "running"
@@ -67,11 +68,12 @@ type FileChangeObservation struct {
 }
 
 type ToolSnapshot struct {
-	Kind    ToolKind                 `json:"kind"`
-	Status  ToolStatus               `json:"status"`
-	Command *CommandObservation      `json:"command,omitempty"`
-	Changes []FileChangeObservation  `json:"changes"`
-	Read    *OpenCodeReadObservation `json:"read,omitempty"`
+	Kind    ToolKind                  `json:"kind"`
+	Status  ToolStatus                `json:"status"`
+	Command *CommandObservation       `json:"command,omitempty"`
+	Changes []FileChangeObservation   `json:"changes"`
+	Read    *OpenCodeReadObservation  `json:"read,omitempty"`
+	Shell   *OpenCodeShellObservation `json:"shell,omitempty"`
 }
 
 type ToolInputObservation struct {
@@ -133,7 +135,7 @@ func (u ExecutionToolUpdate) Validate(kind ExecutionEventKind) error {
 		if u.Snapshot == nil || u.Snapshot.Validate() != nil {
 			return invalidTool()
 		}
-		if u.Snapshot.Kind == OpenCodeReadTool {
+		if u.Snapshot.Kind.IsOpenCode() {
 			if kind == ExecutionToolStarted && u.Snapshot.Status != ToolPending || kind == ExecutionToolUpdated && u.Snapshot.Status != ToolPending && u.Snapshot.Status != ToolRunning || kind == ExecutionToolCompleted && u.Snapshot.Status != ToolCompleted && u.Snapshot.Status != ToolFailed {
 				return invalidTool()
 			}
@@ -166,12 +168,18 @@ func (u ExecutionToolUpdate) Validate(kind ExecutionEventKind) error {
 
 func (s ToolSnapshot) Validate() error {
 	if s.Kind == OpenCodeReadTool {
-		if s.Command != nil || s.Changes != nil || s.Read == nil {
+		if s.Command != nil || s.Changes != nil || s.Read == nil || s.Shell != nil {
 			return invalidTool()
 		}
 		return s.Read.Validate(s.Status)
 	}
-	if s.Read != nil {
+	if s.Kind == OpenCodeShellTool {
+		if s.Command != nil || s.Changes != nil || s.Read != nil || s.Shell == nil {
+			return invalidTool()
+		}
+		return s.Shell.Validate(s.Status)
+	}
+	if s.Read != nil || s.Shell != nil {
 		return invalidTool()
 	}
 	if !slices.Contains([]ToolStatus{ToolRunning, ToolCompleted, ToolFailed, ToolDeclined}, s.Status) {

@@ -1,5 +1,6 @@
 import { NativeUsage } from "./native-usage";
 import { NativeRead } from "./native-read";
+import { NativeShell } from "./native-shell";
 import { NativeReasoning } from "./native-reasoning";
 import { SessionBudget } from "./session-budget";
 import { ExecutionConfiguration } from "./execution-configuration";
@@ -81,7 +82,7 @@ const TranscriptItem = memo(function TranscriptItem({ resource }: { resource: Re
   return <article className="message" aria-label={`${text(data.role) || "Agent"} message`}>
     <header><strong>{text(data.role) || "Agent"}</strong><small>{text(data.state)}</small></header>
     {text(data.text) ? <pre>{text(data.text)}</pre> : null}
-    {toolStarted.kind === "opencode-read" ? <NativeRead tool={tool} state={text(data.state)} /> : Object.keys(tool).length ? <details><summary>Tool · {text(toolStarted.kind) || "Native operation"} · {text(toolCompleted.status) || text(toolStarted.status)}</summary>
+    {toolStarted.kind === "opencode-read" ? <NativeRead tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-shell" ? <NativeShell tool={tool} state={text(data.state)} /> : Object.keys(tool).length ? <details><summary>Tool · {text(toolStarted.kind) || "Native operation"} · {text(toolCompleted.status) || text(toolStarted.status)}</summary>
       {text(command.command) ? <pre>{text(command.command)}</pre> : null}
       {text(command.cwd) ? <p>Directory: {text(command.cwd)}</p> : null}
       {text(tool.output) ? <pre>{text(tool.output)}</pre> : null}

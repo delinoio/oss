@@ -315,3 +315,82 @@ func TestOpenCodeReadPublicationKeepsOriginalLifecycleAndCallOwnership(t *testin
 		t.Fatal("retained Read lost original proposal, applied input or result")
 	}
 }
+
+func TestOpenCodeShellPublicationKeepsOriginalLifecycleAndCallOwnership(t *testing.T) {
+	f := newOpenCodePublicationFixture(t, domain.ExecuteMode)
+	f.publish(t, f.event(domain.ExecutionThreadBound, 1))
+	f.publish(t, f.event(domain.ExecutionInputAccepted, 2))
+	raw, path, output, title, preview := "", "/fixture/original", "original shell output", "original", "preview"
+	end, truncated := uint64(200), false
+	started := domain.ToolSnapshot{Kind: domain.OpenCodeShellTool, Status: domain.ToolPending, Shell: &domain.OpenCodeShellObservation{CallID: "call-original", Raw: &raw}}
+	running := domain.ToolSnapshot{Kind: domain.OpenCodeShellTool, Status: domain.ToolRunning, Shell: &domain.OpenCodeShellObservation{CallID: "call-original", Input: domain.OpenCodeShellInput{Command: &path}, Timing: &domain.OpenCodeToolTiming{Start: 100}}}
+	completed := domain.ToolSnapshot{Kind: domain.OpenCodeShellTool, Status: domain.ToolCompleted, Shell: &domain.OpenCodeShellObservation{CallID: "call-original", Input: running.Shell.Input, Timing: &domain.OpenCodeToolTiming{Start: 100, End: &end}, Title: &title, Output: &output, Metadata: &domain.OpenCodeShellMetadata{Output: &preview, Truncated: &truncated, ExitObserved: true}}}
+	update := domain.ExecutionToolUpdate{ID: domain.NewID(), NativeID: "prt_01960dcbe1fbABCDEFGHIJKLMN", NativeParentID: "msg_01960dcbe1fbABCDEFGHIJKLMN", Snapshot: &started}
+	makeEvent := func(kind domain.ExecutionEventKind, sequence uint64, value domain.ExecutionToolUpdate) domain.ExecutionEvent {
+		e := f.event(kind, sequence)
+		e.Tool = &value
+		return e
+	}
+	request := f.publish(t, makeEvent(domain.ExecutionToolStarted, 3, update))
+	if response, err := f.call(request); err != nil || !response.Msg.Replayed {
+		t.Fatal("Shell proposal replay duplicated publication")
+	}
+	duplicate := update
+	duplicate.ID = domain.NewID()
+	duplicate.NativeID = "prt_01960dcbe1fcABCDEFGHIJKLMN"
+	if _, err := f.call(f.requestEvent(t, makeEvent(domain.ExecutionToolStarted, 4, duplicate))); err == nil {
+		t.Fatal("one native call acquired a second part")
+	}
+	duplicate.Snapshot = &domain.ToolSnapshot{Kind: domain.OpenCodeReadTool, Status: domain.ToolPending, Read: &domain.OpenCodeReadObservation{CallID: "call-original", Raw: &raw}}
+	if _, err := f.call(f.requestEvent(t, makeEvent(domain.ExecutionToolStarted, 4, duplicate))); err == nil {
+		t.Fatal("native call acquired a second part across tool kinds")
+	}
+	update.Snapshot = &completed
+	if _, err := f.call(f.requestEvent(t, makeEvent(domain.ExecutionToolCompleted, 4, update))); err == nil {
+		t.Fatal("pending proposal fabricated successful execution")
+	}
+	update.Snapshot = &running
+	request = f.publish(t, makeEvent(domain.ExecutionToolUpdated, 4, update))
+	if response, err := f.call(request); err != nil || !response.Msg.Replayed {
+		t.Fatal("Shell running replay duplicated publication")
+	}
+	for _, name := range []string{"parent", "call", "input", "start", "kind"} {
+		bad := update
+		body, _ := json.Marshal(completed)
+		var snapshot domain.ToolSnapshot
+		if domain.Decode(body, &snapshot) != nil {
+			t.Fatal("invalid fixture")
+		}
+		bad.Snapshot = &snapshot
+		switch name {
+		case "parent":
+			bad.NativeParentID = "msg_01960dcbe1fcABCDEFGHIJKLMN"
+		case "call":
+			snapshot.Shell.CallID = "changed"
+		case "input":
+			value := "changed"
+			snapshot.Shell.Input.Command = &value
+		case "start":
+			snapshot.Shell.Timing.Start++
+		case "kind":
+			snapshot.Kind = domain.CommandTool
+		}
+		if _, err := f.call(f.requestEvent(t, makeEvent(domain.ExecutionToolCompleted, 5, bad))); err == nil {
+			t.Fatal("Shell completion substituted original ownership", name)
+		}
+	}
+	update.Snapshot = &completed
+	f.publish(t, makeEvent(domain.ExecutionToolCompleted, 5, update))
+	update.Snapshot = &running
+	if _, err := f.call(f.requestEvent(t, makeEvent(domain.ExecutionToolUpdated, 6, update))); err == nil {
+		t.Fatal("completed Shell returned to running")
+	}
+	r, err := f.service.Store.Get(context.Background(), domain.MessageKind, update.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := store.Decode[domain.ExecutionMessage](r)
+	if err != nil || value.State != domain.MessageComplete || value.NativeParentID != update.NativeParentID || value.Tool == nil || len(value.Tool.States) != 1 || value.Tool.States[0].Sequence != 4 || value.Tool.Started.Shell.Raw == nil || value.Tool.Started.Shell.Input.Command != nil || value.Tool.Completed == nil || *value.Tool.Completed.Shell.Output != output {
+		t.Fatal("retained Shell lost original proposal, applied input or result")
+	}
+}

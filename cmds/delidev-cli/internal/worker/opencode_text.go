@@ -33,7 +33,7 @@ type OpenCodeTextPublisher struct {
 	binding       *OpenCodeBindingPublisher
 	messages      map[string]*openCodeTextMessage
 	parts         map[string]*openCodeTextPart
-	reads         map[string]*openCodeReadPart
+	tools         map[string]*openCodeToolPart
 	calls         map[string]string
 	bytes         int
 	blocked       bool
@@ -57,7 +57,7 @@ func OpenOpenCodeTextPublisher(binding *OpenCodeBindingPublisher) (*OpenCodeText
 		return nil, publicationUncertain()
 	}
 	binding.textAttached = true
-	return &OpenCodeTextPublisher{binding: binding, messages: map[string]*openCodeTextMessage{}, parts: map[string]*openCodeTextPart{}, reads: map[string]*openCodeReadPart{}, calls: map[string]string{}, seen: map[string]bool{}}, nil
+	return &OpenCodeTextPublisher{binding: binding, messages: map[string]*openCodeTextMessage{}, parts: map[string]*openCodeTextPart{}, tools: map[string]*openCodeToolPart{}, calls: map[string]string{}, seen: map[string]bool{}}, nil
 }
 
 func (c *OpenCodeTextPublisher) publish(ctx context.Context, kind domain.ExecutionEventKind, message domain.ExecutionMessageUpdate, partKind opencode.PartKind) error {
@@ -126,10 +126,10 @@ func (c *OpenCodeTextPublisher) PublishObservation(ctx context.Context, observat
 			if observation.Part.Tool == nil {
 				return false, publicationUncertain()
 			}
-			if observation.Part.Tool.Name != "read" {
+			if observation.Part.Tool.Name != "read" && observation.Part.Tool.Name != "bash" {
 				return false, nil
 			}
-			return true, c.observeRead(ctx, *observation.Part)
+			return true, c.observeTool(ctx, *observation.Part)
 		}
 		if observation.Part.Kind != opencode.TextPartKind && observation.Part.Kind != opencode.ReasoningPartKind {
 			return false, nil
@@ -190,8 +190,8 @@ func (c *OpenCodeTextPublisher) observeMessage(ctx context.Context, observation 
 		return publicationUncertain()
 	}
 	if observation.MessageFinalized && !message.finalized {
-		for _, read := range c.reads {
-			if read.update.NativeParentID == native.ID && read.latest.Status != domain.ToolCompleted && read.latest.Status != domain.ToolFailed {
+		for _, tool := range c.tools {
+			if tool.update.NativeParentID == native.ID && tool.latest.Status != domain.ToolCompleted && tool.latest.Status != domain.ToolFailed {
 				return publicationUncertain()
 			}
 		}
@@ -217,7 +217,7 @@ func (c *OpenCodeTextPublisher) observeMessage(ctx context.Context, observation 
 func (c *OpenCodeTextPublisher) observePart(ctx context.Context, native opencode.NativePart) error {
 	b := c.binding
 	owner := c.messages[native.MessageID]
-	if native.SessionID != b.thread || owner == nil || c.reads[native.ID] != nil || native.Text == nil || (native.Kind != opencode.TextPartKind && native.Kind != opencode.ReasoningPartKind) || domain.NativeIdentity(native.ID).Validate(domain.OpenCode, domain.NativePartIdentity) != nil {
+	if native.SessionID != b.thread || owner == nil || c.tools[native.ID] != nil || native.Text == nil || (native.Kind != opencode.TextPartKind && native.Kind != opencode.ReasoningPartKind) || domain.NativeIdentity(native.ID).Validate(domain.OpenCode, domain.NativePartIdentity) != nil {
 		return publicationUncertain()
 	}
 	text := native.Text
@@ -227,7 +227,7 @@ func (c *OpenCodeTextPublisher) observePart(ctx context.Context, native opencode
 	ended := text.Timing != nil && text.Timing.End != nil
 	part := c.parts[native.ID]
 	if part == nil {
-		if owner.finalized || len(c.parts)+len(c.reads) >= maxOpenCodeTextParts || len(text.Text) > maxOpenCodeTextBytes-c.bytes {
+		if owner.finalized || len(c.parts)+len(c.tools) >= maxOpenCodeTextParts || len(text.Text) > maxOpenCodeTextBytes-c.bytes {
 			return publicationUncertain()
 		}
 		message := domain.ExecutionMessageUpdate{ID: domain.NewID(), NativeID: native.ID, NativeParentID: native.MessageID, Role: owner.role, Text: text.Text}

@@ -135,10 +135,10 @@ func validateNativeMessageOrigin(input domain.ExecutionJobInput, event domain.Ex
 	}
 	if tool := event.Tool; tool != nil {
 		if input.Configuration.Harness == domain.OpenCode {
-			if tool.Snapshot == nil || tool.Snapshot.Kind != domain.OpenCodeReadTool || domain.NativeIdentity(tool.NativeID).Validate(domain.OpenCode, domain.NativePartIdentity) != nil || domain.NativeIdentity(tool.NativeParentID).Validate(domain.OpenCode, domain.NativeMessageIdentity) != nil || tool.NativeParentID == event.NativeTurnID {
+			if tool.Snapshot == nil || !tool.Snapshot.Kind.IsOpenCode() || domain.NativeIdentity(tool.NativeID).Validate(domain.OpenCode, domain.NativePartIdentity) != nil || domain.NativeIdentity(tool.NativeParentID).Validate(domain.OpenCode, domain.NativeMessageIdentity) != nil || tool.NativeParentID == event.NativeTurnID {
 				return executionEventConflict()
 			}
-		} else if tool.NativeParentID != "" || tool.Snapshot != nil && tool.Snapshot.Kind == domain.OpenCodeReadTool {
+		} else if tool.NativeParentID != "" || tool.Snapshot != nil && tool.Snapshot.Kind.IsOpenCode() {
 			return executionEventConflict()
 		}
 	}

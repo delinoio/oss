@@ -60,6 +60,10 @@ const (
 	nativeTerminalPublication
 	nativeTerminalLostAckPublication
 	nativeTerminalAuthFailurePublication
+	nativeShellPublication
+	nativeShellNonzeroPublication
+	nativeShellTimeoutPublication
+	nativeShellTruncatedPublication
 )
 
 func TestManualNativeOpenCodePublishesRegisteredText(t *testing.T) {
@@ -92,17 +96,35 @@ func TestManualNativeOpenCodePublishesRegisteredAuthenticationFailure(t *testing
 	nativeRegisteredOpenCode(t, domain.ExecuteMode, false, nativeTerminalAuthFailurePublication)
 }
 
+func TestManualNativeOpenCodePublishesRegisteredShell(t *testing.T) {
+	for _, publication := range []nativeOpenCodePublication{nativeShellPublication, nativeShellNonzeroPublication, nativeShellTimeoutPublication, nativeShellTruncatedPublication} {
+		t.Run(fmt.Sprint(publication), func(t *testing.T) { nativeRegisteredOpenCode(t, domain.ExecuteMode, false, publication) })
+	}
+}
+
 func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool, publication nativeOpenCodePublication) {
 	publish := publication != nativeNoPublication
 	hasTranscript := publication >= nativeTextPublication
 	authFailure := publication == nativeTerminalAuthFailurePublication
+	shellTool := publication == nativeShellPublication || publication == nativeShellNonzeroPublication || publication == nativeShellTimeoutPublication || publication == nativeShellTruncatedPublication
+	const shellSentinel = "Original native Shell fixture."
+	shellCommand := "printf 'Original native Shell fixture.'; printf 'Original stderr fixture.' >&2"
+	if publication == nativeShellNonzeroPublication {
+		shellCommand += "; exit 7"
+	}
+	if publication == nativeShellTimeoutPublication {
+		shellCommand += "; sleep 2"
+	}
 	readTool := false
 	switch publication {
 	case nativeReadPublication, nativeReadFailurePublication, nativeReadDirectoryPublication, nativeUsagePublication, nativeTerminalPublication, nativeTerminalLostAckPublication:
 		readTool = true
 	}
+	if publication == nativeShellTruncatedPublication {
+		shellCommand = `i=0; while [ "$i" -lt 3000 ]; do printf 'Original native Shell fixture.\n'; i=$((i + 1)); done; printf 'Original stderr fixture.' >&2`
+	}
 	expectedCalls := int32(1)
-	if readTool {
+	if readTool || shellTool {
 		expectedCalls = 2
 	}
 	var readPath atomic.Value
@@ -187,9 +209,20 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 			return
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
-		if readTool && call == 1 {
-			args, _ := json.Marshal(map[string]any{"filePath": readPath.Load().(string)})
-			delta := map[string]any{"role": "assistant", "tool_calls": []any{map[string]any{"index": 0, "id": "call_registered_read", "type": "function", "function": map[string]any{"name": "read", "arguments": string(args)}}}}
+		if (readTool || shellTool) && call == 1 {
+			name, callID := "read", "call_registered_read"
+			var args []byte
+			if shellTool {
+				name, callID = "bash", "call_registered_shell"
+				input := map[string]any{"command": shellCommand}
+				if publication == nativeShellTimeoutPublication {
+					input["timeout"] = 50
+				}
+				args, _ = json.Marshal(input)
+			} else {
+				args, _ = json.Marshal(map[string]any{"filePath": readPath.Load().(string)})
+			}
+			delta := map[string]any{"role": "assistant", "tool_calls": []any{map[string]any{"index": 0, "id": callID, "type": "function", "function": map[string]any{"name": name, "arguments": string(args)}}}}
 			for _, choice := range []map[string]any{{"index": 0, "delta": delta, "finish_reason": nil}, {"index": 0, "delta": map[string]any{}, "finish_reason": "tool_calls"}} {
 				raw, _ := json.Marshal(map[string]any{"id": "chatcmpl-registered-read", "object": "chat.completion.chunk", "created": 1, "model": "fixture-model", "choices": []any{choice}})
 				_, _ = fmt.Fprintf(w, "data: %s\n\n", raw)
@@ -197,14 +230,18 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 			_, _ = io.WriteString(w, "data: [DONE]\n\n")
 			return
 		}
-		if readTool {
+		if readTool || shellTool {
+			callID, sentinel := "call_registered_read", readSentinel
+			if shellTool {
+				callID, sentinel = "call_registered_shell", shellSentinel
+			}
 			results := 0
 			for _, message := range body.Messages {
-				if message.Role != "tool" || message.ToolCallID != "call_registered_read" {
+				if message.Role != "tool" || message.ToolCallID != callID {
 					continue
 				}
 				var result string
-				if json.Unmarshal(message.Content, &result) != nil || !strings.Contains(result, readSentinel) {
+				if json.Unmarshal(message.Content, &result) != nil || !strings.Contains(result, sentinel) {
 					t.Error("original Read result did not reach the next native provider request")
 				}
 				results++
@@ -558,7 +595,7 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 		if authFailure {
 			expected = 1
 		}
-		if publication == nativeReasoningPublication || readTool {
+		if publication == nativeReasoningPublication || readTool || shellTool {
 			expected = 3
 		}
 		if err != nil || len(rows) != expected {
@@ -571,7 +608,32 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 				t.Fatal("native text publication lost original part identity or closure")
 			}
 			roles[message.Role] = true
-			if message.Role == domain.ToolMessage {
+			if message.Role == domain.ToolMessage && shellTool {
+				if message.Tool == nil || message.NativeParentID == "" || message.NativeParentID == receipt.MessageID || message.NativeParentID == progress.AssistantID || message.Tool.Started.Kind != domain.OpenCodeShellTool || message.Tool.Started.Status != domain.ToolPending || message.Tool.Completed == nil || len(message.Tool.States) < 1 {
+					t.Fatal("original Shell lifecycle lost its ownership or observations")
+				}
+				completed := message.Tool.Completed
+				shell := completed.Shell
+				if completed.Status != domain.ToolCompleted || shell == nil || shell.Input.Command == nil || *shell.Input.Command != shellCommand || shell.CallID != "call_registered_shell" || shell.Output == nil || !strings.Contains(*shell.Output, shellSentinel) || !strings.Contains(*shell.Output, "Original stderr fixture.") || shell.Metadata == nil || shell.Metadata.Output == nil || !shell.Metadata.ExitObserved || shell.Metadata.Truncated == nil || *shell.Metadata.Truncated != (publication == nativeShellTruncatedPublication) {
+					t.Fatal("original Shell output or metadata was replaced")
+				}
+				if publication == nativeShellTruncatedPublication && (shell.Metadata.OutputPath == nil || !strings.Contains(*shell.Output, *shell.Metadata.OutputPath)) {
+					t.Fatal("native clipped output lost its original saved-output reference")
+				}
+				if publication == nativeShellTimeoutPublication {
+					if shell.Metadata.Exit != nil || !strings.Contains(*shell.Output, "shell tool terminated command after exceeding timeout") || shell.Input.Timeout == nil || *shell.Input.Timeout != 50 {
+						t.Fatal("native timeout fabricated an exit code or lost its original content")
+					}
+				} else {
+					expectedExit := int64(0)
+					if publication == nativeShellNonzeroPublication {
+						expectedExit = 7
+					}
+					if shell.Metadata.Exit == nil || *shell.Metadata.Exit != expectedExit || shell.Input.Timeout != nil {
+						t.Fatal("native exit status or omitted timeout was reinterpreted")
+					}
+				}
+			} else if message.Role == domain.ToolMessage {
 				if !readTool || message.Tool == nil || message.NativeParentID == "" || message.NativeParentID == receipt.MessageID || message.NativeParentID == progress.AssistantID || message.Tool.Started.Status != domain.ToolPending || message.Tool.Started.Kind != domain.OpenCodeReadTool || message.Tool.Completed == nil || len(message.Tool.States) != 1 || message.Tool.States[0].Snapshot.Status != domain.ToolRunning {
 					t.Fatal("original Read proposal/running/result ownership was not preserved")
 				}
@@ -637,7 +699,7 @@ func nativeRegisteredOpenCode(t *testing.T, mode domain.SessionMode, revoke bool
 		}
 	}
 	expectedMessages := 2
-	if readTool {
+	if readTool || shellTool {
 		expectedMessages = 3
 	}
 	history, err := api.InspectHistory(ctx)

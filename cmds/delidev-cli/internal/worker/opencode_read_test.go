@@ -66,7 +66,7 @@ func TestOpenCodeReadFailureMayClosePendingWithoutInventedRunning(t *testing.T) 
 	f.publish(t, f.assistant(false))
 	f.publish(t, f.read(opencode.ToolPending))
 	f.publish(t, f.read(opencode.ToolError))
-	if len(f.rpc.events) != 6 || f.c.reads[textPartOneID].latest.Status != domain.ToolFailed {
+	if len(f.rpc.events) != 6 || f.c.tools[textPartOneID].latest.Status != domain.ToolFailed {
 		t.Fatal("pending failure fabricated a running observation")
 	}
 }
@@ -135,7 +135,7 @@ func TestOpenCodeReadOwnsRetainedSnapshotMemory(t *testing.T) {
 	value := f.read(opencode.ToolRunning)
 	f.publish(t, value)
 	value.Part.Tool.Timing.Start = 999
-	if f.c.reads[textPartOneID].latest.Read.Timing.Start != 1000 {
+	if f.c.tools[textPartOneID].latest.Read.Timing.Start != 1000 {
 		t.Fatal("caller changed retained original evidence")
 	}
 	f.publish(t, f.read(opencode.ToolCompleted))
