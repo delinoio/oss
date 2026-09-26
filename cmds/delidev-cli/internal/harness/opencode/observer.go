@@ -73,6 +73,7 @@ type observedMessage struct {
 	openStep  string
 	lastStep  string
 	finalized bool
+	parts     []string
 }
 
 type observedPart struct {
@@ -94,6 +95,7 @@ type inputObserver struct {
 	seen            map[string]bool
 	bytes           int
 	messages        map[string]*observedMessage
+	messageOrder    []string
 	parts           map[string]*observedPart
 	attachments     map[string]string
 	calls           map[string]string
@@ -433,6 +435,7 @@ func (o *inputObserver) message(raw []byte) (*NativeMessage, bool, error) {
 	if old == nil {
 		old = &observedMessage{base: base}
 		o.messages[value.ID] = old
+		o.messageOrder = append(o.messageOrder, value.ID)
 		if value.Assistant != nil {
 			o.progress.AssistantID = value.ID
 		}

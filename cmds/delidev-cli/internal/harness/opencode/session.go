@@ -122,6 +122,7 @@ type sessionAPI struct {
 	runtimeRoot       string
 	creationLookup    bool
 	creationCandidate string
+	historyRead       *historyPageRead
 }
 
 type sessionCreation struct {

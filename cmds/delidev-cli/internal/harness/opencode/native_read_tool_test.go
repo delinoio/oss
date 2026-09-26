@@ -199,6 +199,7 @@ func nativeReadToolFixture(t *testing.T, missing bool, toolFinish string) {
 	if receipt, err := api.inspectInput(ctx); err != nil || !receipt.Recorded {
 		t.Fatal("native tool activity lost original input storage")
 	}
+	verifyNativeObservedHistory(t, ctx, api, observer)
 }
 
 // Inspect the original provider tool-result message, not matching text from an

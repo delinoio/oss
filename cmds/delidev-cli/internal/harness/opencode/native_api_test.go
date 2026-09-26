@@ -496,6 +496,17 @@ func nativeOwnedAPISessionWithRequestCheck(t *testing.T, input, mismatch bool, r
 	if receipt, err := api.inspectInput(ctx); err != nil || !receipt.Recorded || receipt.MessageID != claims[1].MessageID || receipt.PartID != claims[1].PartID {
 		t.Fatal("fresh native IDs did not retain the exact originally claimed stored input")
 	}
+	ownedHistory := &OwnedAPI{session: api, reading: make(chan struct{}, 1)}
+	history, err := ownedHistory.InspectHistory(ctx)
+	if err != nil || history.RequestID != claims[1].RequestID || history.SessionID != claims[1].SessionID || history.InputID != claims[1].MessageID || history.AssistantID != progress.AssistantID || len(history.Messages) != len(observer.messages) || len(history.Digest) != 64 {
+		t.Fatalf("original stored native history did not match its live observation: %v", err)
+	}
+	encodedHistory, _ := json.Marshal(history)
+	for _, private := range []string{config.Workspace, config.Token, upstreamKey, "Reply using the private owned fixture response.", "Private owned fixture response", config.Instructions} {
+		if private != "" && bytes.Contains(encodedHistory, []byte(private)) {
+			t.Fatal("native history comparison evidence disclosed private payloads")
+		}
+	}
 	assistant := observer.messages[progress.AssistantID]
 	if assistant == nil || assistant.value.Assistant == nil || assistant.value.Assistant.Completed == nil {
 		t.Fatal("owned input did not retain its final native assistant")

@@ -170,6 +170,30 @@ func (a *OwnedAPI) InspectInput(ctx context.Context) (InputReceipt, error) {
 	return a.session.inspectInput(ctx)
 }
 
+// InspectHistory compares native persisted messages/parts with the complete
+// original settled observation. It cannot fill missing live events, authorize
+// another input or establish process closure and replacement readiness.
+func (a *OwnedAPI) InspectHistory(ctx context.Context) (HistoryObservation, error) {
+	if !a.valid() {
+		return HistoryObservation{}, sessionInvalid()
+	}
+	select {
+	case a.reading <- struct{}{}:
+		defer func() { <-a.reading }()
+	case <-ctx.Done():
+		return HistoryObservation{}, unavailable()
+	}
+	observer, _, err := a.observer(ctx)
+	if err != nil {
+		return HistoryObservation{}, err
+	}
+	if err := a.session.enter(ctx); err != nil {
+		return HistoryObservation{}, err
+	}
+	defer a.session.leave()
+	return a.session.readHistory(ctx, observer)
+}
+
 func (a *OwnedAPI) Reply(ctx context.Context, request domain.ID, interaction string, response InteractionResponse) (InteractionReceipt, error) {
 	observer, _, err := a.observer(ctx)
 	if err != nil {

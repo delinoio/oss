@@ -80,6 +80,9 @@ func (o *inputObserver) part(raw []byte) (*NativePart, bool, error) {
 		state.text = value.Text.Text
 	}
 	o.parts[value.ID] = state
+	if old == nil {
+		message.parts = append(message.parts, value.ID)
+	}
 	if message.value.User != nil {
 		o.progress.InputPartSeen = true
 	}

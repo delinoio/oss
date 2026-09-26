@@ -174,6 +174,7 @@ func nativeInteractionFixtureWithPolicy(t *testing.T, kind InteractionKind, mode
 			if _, err := api.replyInteraction(ctx, observer, domain.NewID(), interactionID, InteractionResponse{}); err == nil {
 				t.Fatal("completed native interaction granted a second send")
 			}
+			verifyNativeObservedHistory(t, ctx, api, observer)
 			return
 		}
 		if event.Kind != expected {

@@ -16,6 +16,7 @@ func (s *sessionAPI) request(ctx context.Context, method, path string, body []by
 	// login, provider switch, fork, deletion or prompt retry is available here.
 	valid := method == http.MethodPost && path == "/session" && s.creation != nil
 	valid = valid || s.runtimeRead && s.creation == nil && method == http.MethodGet && (path == "/config" || path == "/provider" || path == "/path" || path == "/agent") && len(body) == 0
+	valid = valid || s.historyRead != nil && method == http.MethodGet && path == s.historyRead.path && len(body) == 0
 	if s.creationLookup && s.creation != nil && s.creation.attempted && s.input == nil && method == http.MethodGet && len(body) == 0 {
 		valid = valid || path == "/session?limit=2"
 		if nativeID(s.creationCandidate, "ses") {
@@ -105,6 +106,15 @@ func (s *sessionAPI) request(ctx context.Context, method, path string, body []by
 		// Diagnostic bodies may contain local paths, credentials or input. They
 		// never become observations and are not required to infer non-rejection.
 		return nil, response.StatusCode, nil
+	}
+	if s.historyRead != nil && method == http.MethodGet && path == s.historyRead.path {
+		values := response.Header.Values("X-Next-Cursor")
+		if len(values) > 1 || len(values) == 1 && !validHistoryCursor(values[0]) || len(values) == 0 && len(response.Header.Values("Link")) != 0 {
+			return nil, response.StatusCode, sessionProblem()
+		}
+		if len(values) == 1 {
+			s.historyRead.cursor = values[0]
+		}
 	}
 	return raw, response.StatusCode, nil
 }
