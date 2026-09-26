@@ -131,7 +131,11 @@ export class TaskLoader {
     } catch { return {}; }
     for (const line of stack.split("\n").slice(1)) {
       const frame = framePath(line);
-      if (!frame || !isAbsolute(frame.path)) continue;
+      if (!frame) continue;
+      // A native throw site may include private data in its message. A later
+      // caller frame identifies only who invoked that native operation.
+      if (frame.path.startsWith("node:")) return {};
+      if (!isAbsolute(frame.path)) continue;
       // A later caller frame is only a call site. The first file-backed frame
       // must itself belong to the task before its exception can be disclosed.
       return this.location(frame.path, frame.line, frame.column - 1);

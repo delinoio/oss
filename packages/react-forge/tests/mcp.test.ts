@@ -231,6 +231,14 @@ test("MCP reports bounded compiler, module and uncaught render diagnostics witho
   assert.equal(externalString.error.message, "Task execution failed. Correct the task and retry.");
   assert.equal(externalString.error.diagnostics, undefined);
   assert.ok(!JSON.stringify(externalString).includes("PRIVATE_EXTERNAL_STRING"));
+  const nativeFailure = await errorCode(peer, "execute", {
+    code: `import {readFileSync} from 'node:fs';
+      export default () => { readFileSync(${JSON.stringify(join(cwd, "PRIVATE_NATIVE_PATH"))}, 'utf8'); };`,
+  }, "render");
+  assert.equal(nativeFailure.error.message, "Task execution failed. Correct the task and retry.");
+  assert.equal(nativeFailure.error.diagnostics, undefined);
+  assert.ok(!JSON.stringify(nativeFailure).includes("PRIVATE_NATIVE_PATH"));
+  assert.ok(!JSON.stringify(nativeFailure).includes(cwd));
 
   for (const extension of ["js", "mjs"]) {
     await writeFile(join(cwd, "tasks", `throwing-helper.${extension}`), `throw Error('PRIVATE-${extension.toUpperCase()}-HELPER');`);
