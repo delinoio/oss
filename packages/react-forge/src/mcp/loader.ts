@@ -60,7 +60,8 @@ export class TaskLoader {
         const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
         // Node's resolver embeds host paths in its messages. Keep only the
         // caller's relative or package specifier in MCP task diagnostics.
-        const safe = !isAbsolute(specifier) && !specifier.startsWith("file:") && !/^[a-zA-Z]:[\\/]/.test(specifier)
+        const parent = context.parentURL?.startsWith("file:") ? fileURLToPath(context.parentURL) : undefined;
+        const safe = parent && this.known.has(parent) && !isAbsolute(specifier) && !specifier.startsWith("file:") && !/^[a-zA-Z]:[\\/]/.test(specifier)
           ? specifier : undefined;
         throw new SafeResolutionError(safe, typeof code === "string" ? code : undefined);
       }

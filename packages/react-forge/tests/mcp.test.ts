@@ -206,6 +206,15 @@ test("MCP reports bounded compiler, module and uncaught render diagnostics witho
   assert.ok(!JSON.stringify(dependency).includes("PRIVATE_TYPED_DEPENDENCY"));
   assert.ok(!JSON.stringify(dependency).includes(cwd));
 
+  const unresolvedDependencyDirectory = join(cwd, "node_modules", "rf-private-import");
+  await mkdir(unresolvedDependencyDirectory, { recursive: true });
+  await writeFile(join(unresolvedDependencyDirectory, "package.json"), JSON.stringify({ name: "rf-private-import", type: "module", exports: "./index.mjs" }));
+  await writeFile(join(unresolvedDependencyDirectory, "index.mjs"), "import 'rf-private-missing'; export const value = 1;");
+  const externalImport = await errorCode(peer, "execute", { code: "import 'rf-private-import'; export default () => {};" }, "malformed_input");
+  assert.equal(externalImport.error.message, "Unable to resolve import.");
+  assert.ok(!JSON.stringify(externalImport).includes("rf-private-missing"));
+  assert.ok(!JSON.stringify(externalImport).includes(cwd));
+
   const runtimeDependencyDirectory = join(cwd, "node_modules", "rf-private-runtime");
   await mkdir(runtimeDependencyDirectory, { recursive: true });
   await writeFile(join(runtimeDependencyDirectory, "package.json"), JSON.stringify({ name: "rf-private-runtime", type: "module", exports: "./index.mjs" }));
