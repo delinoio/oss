@@ -51,6 +51,7 @@ const (
 	plainTextInput inputProfile = "plain-text"
 	readFileInput  inputProfile = "read-file"
 	fileWriteInput inputProfile = "file-write"
+	questionInput  inputProfile = "question"
 )
 
 const (
@@ -62,6 +63,7 @@ const (
 	InputFileTool           ObservationKind = "input-file-tool"
 	InputResponse           ObservationKind = "input-response"
 	InputPermissionRejected ObservationKind = "input-permission-rejected"
+	InputQuestion           ObservationKind = "input-question"
 )
 
 // InputObservation contains native facts only. Its coordinator must journal
@@ -79,6 +81,8 @@ type InputObservation struct {
 	Response       *responseUsage
 	Permission     *FilePermissionOffer
 	Rejection      *rejectedFileResult
+	Question       *questionFact
+	QuestionOffer  *QuestionOffer
 }
 
 type promptParams struct {
@@ -125,8 +129,14 @@ func (a *apiConnection) RunFileTools(ctx context.Context, request domain.ID, inp
 	return a.runInput(ctx, request, input, record, emit, fileWriteInput)
 }
 
+// RunQuestions owns the original default-mode question profile. Declining a
+// question preserves native continuation; it is not a product Stop operation.
+func (a *apiConnection) RunQuestions(ctx context.Context, request domain.ID, input string, record func(context.Context, InputClaim) error, emit func(context.Context, InputObservation) error) (PromptResult, error) {
+	return a.runInput(ctx, request, input, record, emit, questionInput)
+}
+
 func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input string, record func(context.Context, InputClaim) error, emit func(context.Context, InputObservation) error, profile inputProfile) (result PromptResult, returned error) {
-	if profile != plainTextInput && profile != readFileInput && profile != fileWriteInput {
+	if profile != plainTextInput && profile != readFileInput && profile != fileWriteInput && profile != questionInput {
 		return result, apiConfigurationError()
 	}
 	if request.Validate() != nil || domain.Text(input, "original native input", 256<<10, true) != nil || record == nil || emit == nil {
@@ -229,6 +239,7 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 			}
 		}
 		control.joinFileReplies()
+		control.joinQuestionReplies()
 		<-done
 		close(watchStop)
 		<-watchDone
@@ -257,6 +268,7 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 	var responseCounters responseUsage
 	var accounting responseAccounting
 	var fileTools *fileToolObserver
+	var questions *questionObserver
 	rpcObserved, turnObserved, promptObserved, responseObserved := false, false, false, false
 	var lastEvent, lastChunk uint64
 	hasEvent := false
@@ -311,6 +323,23 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 			return result, domain.Fail(domain.ResourceExhausted, "Native input observations reached their bound.", "Retain the original input and reconcile its native runtime.")
 		}
 		if event.Kind == nativewire.ServerRequest {
+			if profile == questionInput {
+				if questions == nil || !queue.running || queue.cleared {
+					return result, incompatible()
+				}
+				fact, err := questions.observe(event)
+				if err != nil {
+					return result, err
+				}
+				offer, err := control.offerQuestion(event, fact)
+				if err != nil {
+					return result, err
+				}
+				if err := publish(InputObservation{Kind: InputQuestion, Question: &fact, QuestionOffer: &offer}); err != nil {
+					return result, err
+				}
+				continue
+			}
 			if profile != fileWriteInput || fileTools == nil || !queue.running || queue.cleared {
 				return result, incompatible()
 			}
@@ -343,7 +372,12 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 				}
 			}
 			if !running && queue.running {
-				if profile != plainTextInput {
+				if profile == questionInput {
+					questions, err = newQuestionObserver(a.session, queue.prompt)
+					if err != nil {
+						return result, err
+					}
+				} else if profile != plainTextInput {
 					fileTools, err = newFileToolObserver(a.session, queue.prompt)
 					if err != nil {
 						return result, err
@@ -365,6 +399,27 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 			}
 			switch variant.Update.Kind {
 			case "tool_call_delta_chunk", "tool_call", "tool_call_update", "pending_interaction", "interaction_resolved":
+				if profile == questionInput {
+					if questions == nil || !queue.running || queue.cleared {
+						return result, incompatible()
+					}
+					fact, err := questions.observe(event)
+					if err != nil {
+						return result, err
+					}
+					if err := control.observeQuestionReply(life, fact); err != nil {
+						return result, err
+					}
+					if fact.Observation != nil {
+						if err := observeIndex(fact.Observation.Meta.Event); err != nil {
+							return result, err
+						}
+					}
+					if err := publish(InputObservation{Kind: InputQuestion, Question: &fact}); err != nil {
+						return result, err
+					}
+					continue
+				}
 				if profile == plainTextInput || fileTools == nil || !queue.running || queue.cleared {
 					return result, incompatible()
 				}
@@ -598,7 +653,7 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 		return result, incompatible()
 	}
 	if profile != plainTextInput {
-		if fileTools == nil || profile == readFileInput && len(fileTools.tools) > 0 && !fileTools.settled() || profile == fileWriteInput && !control.filesSettled(fileTools, false) {
+		if profile == questionInput && !control.questionsSettled(questions) || profile != questionInput && (fileTools == nil || profile == readFileInput && len(fileTools.tools) > 0 && !fileTools.settled() || profile == fileWriteInput && !control.filesSettled(fileTools, false)) {
 			return result, incompatible()
 		}
 		result, err = parseFilePromptResult(rpc.Result, a.session, queue.prompt, a.profile.model, accounting)

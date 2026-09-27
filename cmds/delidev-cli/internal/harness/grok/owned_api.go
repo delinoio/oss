@@ -13,12 +13,46 @@ type APIExecutionConfig = apiConfig
 // OwnedAPI binds the original durable claim callbacks for the entire runtime.
 // There is no constructor for adopting a process or restoring send authority.
 type OwnedAPI struct {
-	connection *apiConnection
-	creation   func(context.Context, CreationClaim) error
-	input      func(context.Context, InputClaim) error
-	closure    func(context.Context, ClosureClaim) error
-	stop       func(context.Context, StopClaim) error
-	fileReply  func(context.Context, FilePermissionClaim) error
+	connection    *apiConnection
+	creation      func(context.Context, CreationClaim) error
+	input         func(context.Context, InputClaim) error
+	closure       func(context.Context, ClosureClaim) error
+	stop          func(context.Context, StopClaim) error
+	fileReply     func(context.Context, FilePermissionClaim) error
+	questionReply func(context.Context, QuestionClaim) error
+}
+
+func OpenOwnedAPIWithQuestions(ctx context.Context, config APIExecutionConfig, creation func(context.Context, CreationClaim) error, input func(context.Context, InputClaim) error, closure func(context.Context, ClosureClaim) error, reply func(context.Context, QuestionClaim) error) (*OwnedAPI, error) {
+	if reply == nil {
+		return nil, apiConfigurationError()
+	}
+	api, err := OpenOwnedAPI(ctx, config, creation, input, closure)
+	if err != nil {
+		return nil, err
+	}
+	api.questionReply = reply
+	return api, nil
+}
+
+func (a *OwnedAPI) RunQuestions(ctx context.Context, request domain.ID, input string, emit func(context.Context, InputObservation) error) (PromptResult, error) {
+	if a == nil || a.connection == nil || a.questionReply == nil {
+		return PromptResult{}, apiConfigurationError()
+	}
+	return a.connection.RunQuestions(ctx, request, input, a.input, emit)
+}
+
+func (a *OwnedAPI) ReplyQuestion(ctx context.Context, request, arrival domain.ID, answer QuestionAnswer) (QuestionDelivery, error) {
+	if a == nil || a.connection == nil || a.questionReply == nil {
+		return QuestionDelivery{}, apiConfigurationError()
+	}
+	return a.connection.ReplyQuestion(ctx, request, arrival, answer, a.questionReply)
+}
+
+func (a *OwnedAPI) InspectQuestion(arrival domain.ID) (QuestionDelivery, error) {
+	if a == nil || a.connection == nil || a.connection.textControl() == nil {
+		return QuestionDelivery{}, sessionUncertain()
+	}
+	return a.connection.textControl().inspectQuestionReply(arrival)
 }
 
 func OpenOwnedAPIWithFileTools(ctx context.Context, config APIExecutionConfig, creation func(context.Context, CreationClaim) error, input func(context.Context, InputClaim) error, closure func(context.Context, ClosureClaim) error, reply func(context.Context, FilePermissionClaim) error) (*OwnedAPI, error) {

@@ -56,6 +56,7 @@ type textControl struct {
 	stop        *textStop
 	profile     inputProfile
 	permissions map[domain.ID]*fileReply
+	questions   map[domain.ID]*questionReply
 	inputDone   <-chan struct{}
 	editPolicy  domain.ID
 }

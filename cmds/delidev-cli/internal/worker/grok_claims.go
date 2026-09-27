@@ -42,11 +42,12 @@ type grokClaimReference struct {
 }
 
 type grokClaim struct {
-	Creation  *grok.CreationClaim       `json:"creation,omitempty"`
-	Input     *grok.InputClaim          `json:"input,omitempty"`
-	Closure   *grok.ClosureClaim        `json:"closure,omitempty"`
-	Stop      *grok.StopClaim           `json:"stop,omitempty"`
-	FileReply *grok.FilePermissionClaim `json:"file_reply,omitempty"`
+	Creation      *grok.CreationClaim       `json:"creation,omitempty"`
+	Input         *grok.InputClaim          `json:"input,omitempty"`
+	Closure       *grok.ClosureClaim        `json:"closure,omitempty"`
+	Stop          *grok.StopClaim           `json:"stop,omitempty"`
+	FileReply     *grok.FilePermissionClaim `json:"file_reply,omitempty"`
+	QuestionReply *grok.QuestionClaim       `json:"question_reply,omitempty"`
 }
 
 type grokClaimState struct {
@@ -157,8 +158,24 @@ func (s grokClaimState) validateNext(c grokClaim) error {
 	if c.FileReply != nil {
 		variants++
 	}
+	if c.QuestionReply != nil {
+		variants++
+	}
 	if len(s.Claims) >= maxGrokClaims || variants != 1 {
 		return grokClaimUncertain()
+	}
+	if c.QuestionReply != nil {
+		reply := c.QuestionReply
+		if len(s.Claims) < 4 || reply.Validate() != nil || reply.OwnerID != s.Reference.JobID || reply.ProductSessionID != s.Reference.SessionID || reply.InputRequestID != s.Reference.InputRequestID || reply.RequestID == s.Reference.CreationRequestID || reply.NativeSessionID != s.Claims[3].Input.NativeSessionID || reply.NativePromptID != s.Claims[3].Input.NativePromptID {
+			return grokClaimUncertain()
+		}
+		for _, record := range s.Claims[4:] {
+			prior := record.QuestionReply
+			if prior == nil || prior.RequestID == reply.RequestID || prior.ArrivalID == reply.ArrivalID || prior.ToolID == reply.ToolID || prior.RequestDigest == reply.RequestDigest {
+				return grokClaimUncertain()
+			}
+		}
+		return nil
 	}
 	if c.FileReply != nil {
 		reply := c.FileReply
@@ -254,6 +271,10 @@ func (j *grokClaimJournal) Stop(ctx context.Context, c grok.StopClaim) error {
 
 func (j *grokClaimJournal) FileReply(ctx context.Context, c grok.FilePermissionClaim) error {
 	return j.claim(ctx, grokClaim{FileReply: &c})
+}
+
+func (j *grokClaimJournal) QuestionReply(ctx context.Context, c grok.QuestionClaim) error {
+	return j.claim(ctx, grokClaim{QuestionReply: &c})
 }
 
 func (j *grokClaimJournal) claim(ctx context.Context, c grokClaim) (returned error) {

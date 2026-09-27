@@ -52,7 +52,8 @@ func TestManualNativeGrokWorkerOriginalClaims(t *testing.T) {
 		name                       string
 		changed, streamed, stopped bool
 		writing, rejected          bool
-	}{{name: "original"}, {name: "streamed", streamed: true}, {name: "changed", changed: true}, {name: "stopped", stopped: true}, {name: "write", writing: true}, {name: "write-rejected", writing: true, rejected: true}} {
+		question                   bool
+	}{{name: "original"}, {name: "streamed", streamed: true}, {name: "changed", changed: true}, {name: "stopped", stopped: true}, {name: "write", writing: true}, {name: "write-rejected", writing: true, rejected: true}, {name: "question", question: true}, {name: "question-cancelled", question: true, rejected: true}} {
 		t.Run(profile.name, func(t *testing.T) {
 			changed := profile.changed
 			stopRequest := domain.NewID()
@@ -111,6 +112,10 @@ func TestManualNativeGrokWorkerOriginalClaims(t *testing.T) {
 					nativeGrokWriteProvider(t, w, raw, filePath, p.input.Configuration.NativeModel, profile.rejected)
 					return
 				}
+				if profile.question {
+					nativeGrokQuestionProvider(t, w, raw, p.input.Configuration.NativeModel, profile.rejected)
+					return
+				}
 				chunks := []string{
 					`{"id":"chat-worker","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{"role":"assistant","content":"Original Worker fixture completed."},"finish_reason":null}]}`,
 					`{"id":"chat-worker","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":11,"completion_tokens":5,"total_tokens":16}}`,
@@ -151,6 +156,8 @@ func TestManualNativeGrokWorkerOriginalClaims(t *testing.T) {
 			var api *grok.OwnedAPI
 			if profile.writing {
 				api, err = grok.OpenOwnedAPIWithFileTools(ctx, cfg, journal.Creation, journal.Input, journal.Closure, journal.FileReply)
+			} else if profile.question {
+				api, err = grok.OpenOwnedAPIWithQuestions(ctx, cfg, journal.Creation, journal.Input, journal.Closure, journal.QuestionReply)
 			} else {
 				api, err = grok.OpenOwnedAPIWithStop(ctx, cfg, journal.Creation, journal.Input, journal.Closure, journal.Stop)
 			}
@@ -183,6 +190,10 @@ func TestManualNativeGrokWorkerOriginalClaims(t *testing.T) {
 			}
 			if profile.writing {
 				nativeGrokWorkerWrite(t, ctx, api, p, journal, session, filePath, profile.rejected)
+				return
+			}
+			if profile.question {
+				nativeGrokWorkerQuestion(t, ctx, api, p, journal, session, profile.rejected)
 				return
 			}
 			input := p.input.Input.Prompt

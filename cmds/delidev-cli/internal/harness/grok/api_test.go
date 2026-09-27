@@ -54,6 +54,10 @@ func apiFixtureProcess() {
 	workspace := ""
 	var pendingPrompt domain.ID
 	for scanner.Scan() {
+		if strings.HasPrefix(mode, "question-") && bytes.Contains(scanner.Bytes(), []byte(`"result"`)) {
+			fixtureQuestionReply(root, workspace, mode, pendingPrompt, scanner.Bytes())
+			continue
+		}
 		if strings.HasPrefix(mode, "write-") && bytes.Contains(scanner.Bytes(), []byte(`"result"`)) {
 			fixtureFileReply(root, workspace, mode, pendingPrompt, scanner.Bytes())
 			continue
