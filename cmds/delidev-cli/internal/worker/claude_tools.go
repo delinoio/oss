@@ -121,6 +121,26 @@ func (c *ClaudeContentPublisher) publishToolResults(ctx context.Context, o claud
 			return b.block()
 		}
 		queue = append(queue, claudeContentCommit{event: domain.ExecutionEvent{Kind: domain.ExecutionClaudeToolObserved, ClaudeTool: &update}, toolNative: result.ID, toolNext: claudePublishedTool{state: state, content: next}})
+		for arrival, interaction := range c.interactions {
+			if interaction.closed || interaction.update.NativeItemID != result.ID {
+				continue
+			}
+			attempt := c.responses[arrival]
+			if attempt == nil || !attempt.echoed {
+				return b.block()
+			}
+			original := domain.ExecutionInteraction{Claude: interaction.update.Claude, Type: interaction.update.Type, NativeRequestID: interaction.update.NativeRequestID, NativeItemID: interaction.update.NativeItemID}
+			evidence, err := domain.ClaudeCallbackResultEvidence(original, attempt.input, *next)
+			if err != nil {
+				return b.block()
+			}
+			u := &domain.ExecutionClaudeCallbackSettlement{ExecutionClaudeReplyEcho: domain.ExecutionClaudeReplyEcho{InteractionID: interaction.update.ID, ResponseID: attempt.journal.Control.ResponseID, ClaimID: attempt.journal.ClaimID, ArrivalID: arrival, NativeItemID: result.ID, BodyDigest: attempt.journal.Native.BodyDigest}, ToolMessageID: p.Reference.ID, ResultNativeID: o.NativeID, Evidence: evidence}
+			if u.Validate() != nil {
+				return b.block()
+			}
+			interaction.closed = true
+			queue = append(queue, claudeContentCommit{event: domain.ExecutionEvent{Kind: domain.ExecutionClaudeCallbackSettled, ClaudeSettlement: u}, interactionArrival: arrival, interactionNext: interaction})
+		}
 	}
 	c.seen[o.NativeID] = true
 	c.queue = queue

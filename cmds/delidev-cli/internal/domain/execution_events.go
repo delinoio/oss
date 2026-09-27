@@ -5,6 +5,7 @@ import "slices"
 type ExecutionEventKind string
 
 const (
+	ExecutionClaudeCallbackSettled    ExecutionEventKind = "claude-callback-settled"
 	ExecutionClaudeReplyEchoObserved  ExecutionEventKind = "claude-reply-echo-observed"
 	ExecutionClaudeMessageObserved    ExecutionEventKind = "claude-message-observed"
 	ExecutionClaudeUsageObserved      ExecutionEventKind = "claude-usage-observed"
@@ -147,6 +148,7 @@ type ExecutionMessageUpdate struct {
 // envelope. Exactly one event kind owns its optional payload. Unknown native
 // extensions need dedicated adapters before they can enter this document.
 type ExecutionEvent struct {
+	ClaudeSettlement   *ExecutionClaudeCallbackSettlement `json:"claude_settlement,omitempty"`
 	ClaudeReplyEcho    *ExecutionClaudeReplyEcho          `json:"claude_reply_echo,omitempty"`
 	ClaudeMessage      *ClaudeMessageUpdate               `json:"claude_message,omitempty"`
 	ClaudeUsage        *ClaudeUsageObservation            `json:"claude_usage,omitempty"`
@@ -195,6 +197,10 @@ func (e ExecutionEvent) Validate() error {
 		}
 	}
 	switch e.Kind {
+	case ExecutionClaudeCallbackSettled:
+		if e.ClaudeSettlement == nil || e.ClaudeSettlement.Validate() != nil {
+			return invalidClaudeResponse()
+		}
 	case ExecutionClaudeReplyEchoObserved:
 		if e.ClaudeReplyEcho == nil {
 			return invalidClaudeResponse()
@@ -351,7 +357,7 @@ func (e ExecutionEvent) Validate() error {
 	default:
 		return Fail(Unsupported, "Unknown normalized execution event.", "Use a dedicated supported native event adapter.")
 	}
-	if (e.Kind != ExecutionClaudeReplyEchoObserved && e.ClaudeReplyEcho != nil) || (e.Kind != ExecutionClaudeToolObserved && e.ClaudeTool != nil) || (e.Kind != ExecutionClaudeUsageObserved && e.ClaudeUsage != nil) || (e.Kind != ExecutionClaudeMessageObserved && e.ClaudeMessage != nil) || (e.Kind != ExecutionOpenCodeUsageObserved && e.OpenCodeUsage != nil) || (e.Kind != ExecutionApprovalAccepted && e.ApprovalAcceptance != nil) || (e.Kind != ExecutionApprovalDeliveryObserved && e.ApprovalResponse != nil) || (e.Kind != ExecutionSteerObserved && e.Steer != nil) || (e.Kind != ExecutionQuestionAccepted && e.QuestionAcceptance != nil) || (e.Kind != ExecutionQuestionDeliveryObserved && e.QuestionResponse != nil) || (!e.Kind.IsInteraction() && e.Interaction != nil) || (e.Kind != ExecutionWaitingChanged && e.Waiting != nil) || (!e.Kind.IsArtifact() && e.Artifact != nil) || (e.Kind != ExecutionProgressObserved && e.Progress != nil) || (!e.Kind.IsTool() && e.Tool != nil) || (e.Kind != ExecutionThreadBound && e.Observed != nil) || (e.Kind != ExecutionMessageStarted && e.Kind != ExecutionTextAppended && e.Kind != ExecutionMessageCompleted && e.Message != nil) || (e.Kind != ExecutionTurnFinished && (e.Outcome != "" || e.ProblemCode != "")) || (e.Kind != ExecutionUsageObserved && e.Usage != nil) || (e.Kind != ExecutionResponseUsageObserved && e.ResponseUsage != nil) || (e.Kind != ExecutionClaudeUsageObserved && e.Kind != ExecutionOpenCodeUsageObserved && e.Kind != ExecutionUsageObserved && e.Kind != ExecutionResponseUsageObserved && e.ObservationID != "") || (e.Kind != ExecutionNoticeObserved && e.Notice != "") {
+	if (e.Kind != ExecutionClaudeCallbackSettled && e.ClaudeSettlement != nil) || (e.Kind != ExecutionClaudeReplyEchoObserved && e.ClaudeReplyEcho != nil) || (e.Kind != ExecutionClaudeToolObserved && e.ClaudeTool != nil) || (e.Kind != ExecutionClaudeUsageObserved && e.ClaudeUsage != nil) || (e.Kind != ExecutionClaudeMessageObserved && e.ClaudeMessage != nil) || (e.Kind != ExecutionOpenCodeUsageObserved && e.OpenCodeUsage != nil) || (e.Kind != ExecutionApprovalAccepted && e.ApprovalAcceptance != nil) || (e.Kind != ExecutionApprovalDeliveryObserved && e.ApprovalResponse != nil) || (e.Kind != ExecutionSteerObserved && e.Steer != nil) || (e.Kind != ExecutionQuestionAccepted && e.QuestionAcceptance != nil) || (e.Kind != ExecutionQuestionDeliveryObserved && e.QuestionResponse != nil) || (!e.Kind.IsInteraction() && e.Interaction != nil) || (e.Kind != ExecutionWaitingChanged && e.Waiting != nil) || (!e.Kind.IsArtifact() && e.Artifact != nil) || (e.Kind != ExecutionProgressObserved && e.Progress != nil) || (!e.Kind.IsTool() && e.Tool != nil) || (e.Kind != ExecutionThreadBound && e.Observed != nil) || (e.Kind != ExecutionMessageStarted && e.Kind != ExecutionTextAppended && e.Kind != ExecutionMessageCompleted && e.Message != nil) || (e.Kind != ExecutionTurnFinished && (e.Outcome != "" || e.ProblemCode != "")) || (e.Kind != ExecutionUsageObserved && e.Usage != nil) || (e.Kind != ExecutionResponseUsageObserved && e.ResponseUsage != nil) || (e.Kind != ExecutionClaudeUsageObserved && e.Kind != ExecutionOpenCodeUsageObserved && e.Kind != ExecutionUsageObserved && e.Kind != ExecutionResponseUsageObserved && e.ObservationID != "") || (e.Kind != ExecutionNoticeObserved && e.Notice != "") {
 		return Fail(InvalidArgument, "An execution event contains another kind's payload.", "Publish one unambiguous typed event.")
 	}
 	if e.OpenCodeStop != nil && e.Kind != ExecutionTurnFinished {

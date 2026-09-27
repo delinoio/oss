@@ -169,8 +169,24 @@ func nativeClaudeReply(t *testing.T, mode domain.SessionMode, name string, deny 
 			if display == nil {
 				t.Fatal("content preceded acceptance")
 			}
-			if _, err := display.PublishObservation(ctx, o); err != nil {
-				t.Fatal("native callback tool publication", err)
+			settles := len(o.Content) == 1 && o.Content[0].Kind == claude.ToolResultObserved
+			if settles {
+				publication.dropAt = len(publication.calls) + 2
+			}
+			_, publishErr := display.PublishObservation(ctx, o)
+			if settles {
+				lost = publication.dropAt
+				if publishErr == nil || len(publication.calls) != lost {
+					t.Fatal("settlement acknowledgment not lost", publishErr)
+				}
+				if err := display.ReplayPending(ctx); err != nil {
+					t.Fatal("settlement receipt replay", err)
+				}
+				if publication.calls[lost-1] != publication.calls[lost] {
+					t.Fatal("settlement receipt changed")
+				}
+			} else if publishErr != nil {
+				t.Fatal("native callback tool publication", publishErr)
 			}
 		case claude.InteractionObserved:
 			if display == nil {
@@ -257,6 +273,9 @@ func nativeClaudeReply(t *testing.T, mode domain.SessionMode, name string, deny 
 			if !echoed {
 				t.Fatal("root result preceded original reply echo")
 			}
+			if handled, err := display.PublishUsageObservation(ctx, o); !handled || err != nil {
+				t.Fatal("settled callbacks blocked original result usage", err)
+			}
 			finished = true
 		}
 	}
@@ -271,15 +290,15 @@ func nativeClaudeReply(t *testing.T, mode domain.SessionMode, name string, deny 
 		t.Fatal("original callback record count", len(rows), err)
 	}
 	value, err := store.Decode[domain.ExecutionInteraction](rows[0])
-	if err != nil || value.Claude == nil || value.Claude.ArrivalID != original.ArrivalID || value.NativeRequestID.Text != original.RequestID || value.Claude.InputJSON != string(original.Input) || value.Claude.Tool.Name != name || value.Closure != domain.InteractionOpen || value.ClaudeCancellation != nil {
+	if err != nil || value.Claude == nil || value.Claude.ArrivalID != original.ArrivalID || value.NativeRequestID.Text != original.RequestID || value.Claude.InputJSON != string(original.Input) || value.Claude.Tool.Name != name || value.Closure != domain.InteractionNativeClosed || value.ClaudeCancellation != nil || value.ClaudeSettlement == nil {
 		t.Fatal("original request changed", err)
 	}
 	if name == "AskUserQuestion" {
-		if value.Response == nil || value.ApprovalResponse != nil || value.Response.State != domain.QuestionResponseTransmitted || value.Response.Acceptance != nil || value.Response.ClaudeEcho == nil {
-			t.Fatal("question echo promoted to semantic acceptance")
+		if value.Response == nil || value.ApprovalResponse != nil || value.Response.State != domain.QuestionResponseAccepted || value.Response.Acceptance == nil || value.Response.ClaudeEcho == nil {
+			t.Fatal("question result did not settle original callback")
 		}
-	} else if value.ApprovalResponse == nil || value.Response != nil || value.ApprovalResponse.State != domain.ApprovalResponseTransmitted || value.ApprovalResponse.Acceptance != nil || value.ApprovalResponse.ClaudeEcho == nil {
-		t.Fatal("approval echo promoted to semantic acceptance")
+	} else if value.ApprovalResponse == nil || value.Response != nil || value.ApprovalResponse.State != domain.ApprovalResponseAccepted || value.ApprovalResponse.Acceptance == nil || value.ApprovalResponse.ClaudeEcho == nil {
+		t.Fatal("approval result did not settle original callback")
 	}
 	marker, err := os.ReadFile(filepath.Join(workdir, "callback-marker.txt"))
 	if name == "Bash" && !deny {

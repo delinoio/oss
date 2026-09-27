@@ -32,6 +32,7 @@ type claudeResponseJournal struct {
 }
 type claudeResponseAttempt struct {
 	journal claudeResponseJournal
+	input   domain.ClaudePermissionResponse
 	echoed  bool
 }
 
@@ -125,7 +126,7 @@ func (c *ClaudeContentPublisher) deliverClaudeResponse(ctx, publicationCtx conte
 		return rpc.ClientError(err)
 	}
 	var value domain.ExecutionInteraction
-	if record == nil || record.Kind != pb.EntityKind_ENTITY_KIND_INTERACTION || record.SchemaVersion != 1 || record.Id != string(identity.InteractionID) || record.SessionId != string(p.input.SessionID) || record.Revision <= identity.Revision || domain.Decode(record.DocumentJson, &value) != nil || value.ExecutionID != p.execution || value.NativeThreadID != string(b.journal.SessionID) || value.NativeTurnID != b.turn || value.NativeItemID != original.NativeItemID || value.Type != kind || value.Closure != domain.InteractionOpen || !reflect.DeepEqual(value.Claude, original.Claude) || value.NativeRequestID.Text != original.NativeRequestID.Text || value.NativeRequestID.Kind != domain.InteractionTextID || value.NativeRequestID.Number != nil || value.OpenCode != nil || value.OpenCodeStop != nil || value.OpenCodeClosure != nil || value.Questions != nil || value.Approval != nil || value.ClaudeCancellation != nil {
+	if record == nil || record.Kind != pb.EntityKind_ENTITY_KIND_INTERACTION || record.SchemaVersion != 1 || record.Id != string(identity.InteractionID) || record.SessionId != string(p.input.SessionID) || record.Revision <= identity.Revision || domain.Decode(record.DocumentJson, &value) != nil || value.ExecutionID != p.execution || value.NativeThreadID != string(b.journal.SessionID) || value.NativeTurnID != b.turn || value.NativeItemID != original.NativeItemID || value.Type != kind || value.Closure != domain.InteractionOpen || !reflect.DeepEqual(value.Claude, original.Claude) || value.NativeRequestID.Text != original.NativeRequestID.Text || value.NativeRequestID.Kind != domain.InteractionTextID || value.NativeRequestID.Number != nil || value.OpenCode != nil || value.OpenCodeStop != nil || value.OpenCodeClosure != nil || value.Questions != nil || value.Approval != nil || value.ClaudeCancellation != nil || value.ClaudeSettlement != nil {
 		return b.block()
 	}
 	var claim *domain.QuestionResponseClaim
@@ -151,7 +152,7 @@ func (c *ClaudeContentPublisher) deliverClaudeResponse(ctx, publicationCtx conte
 		return b.block()
 	}
 	j.Native = claude.PermissionReplyClaim{Version: 1, OwnerID: p.job, SessionID: b.journal.SessionID, InputID: b.journal.InputID, TurnID: b.turn, ArrivalID: arrival, RequestID: original.NativeRequestID.Text, ToolID: original.NativeItemID, BodyDigest: digest}
-	attempt := &claudeResponseAttempt{journal: j}
+	attempt := &claudeResponseAttempt{journal: j, input: *response}
 	c.responses[arrival] = attempt
 	native := claude.PermissionReply{Behavior: claude.PermissionBehavior(response.Behavior), Answers: response.Answers, Interrupt: response.Interrupt != nil && *response.Interrupt}
 	if response.Message != nil {

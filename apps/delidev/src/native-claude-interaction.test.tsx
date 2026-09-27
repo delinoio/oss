@@ -66,3 +66,29 @@ test("retains an original transmitted response and echo without claiming accepta
   expect(screen.getByLabelText("Claude request unavailable")).toBeTruthy();
   expect(screen.queryByText("Original reason")).toBeNull();
 });
+
+for (const change of ["valid", "arrival", "tool", "result", "evidence", "sequence", "acceptance", "echo", "cancellation", "open"]) test(`validates original callback settlement: ${change}`, () => {
+  const data = claudeRequestFixture(), r = data.claude as Document;
+  const evidence = "native-claude-tool-result";
+  data.closure = "native-closed";
+  const settlement: Document = { arrival_id: r.arrival_id, tool_message_id: (r.tool as Document).id, result_native_id: "01900000-0000-7000-8000-000000000004", evidence, sequence: 12 };
+  const response: Document = { id: r.message_id, state: "accepted", accepted_at: "2026-09-27T00:00:00Z", input: { claude: { behavior: "allow" } }, claim: { id: r.arrival_id, job_id: r.message_id, machine_id: r.arrival_id, instance_id: r.message_id, device_id: r.arrival_id, claimed_at: "2026-09-27T00:00:00Z" }, delivery: { state: "transmitted", sequence: 9 }, claude_echo: { arrival_id: r.arrival_id, body_sha256: "ab".repeat(32), sequence: 10 }, acceptance: { evidence, sequence: 12 } };
+  data.claude_settlement = settlement; data.approval_response = response;
+  switch (change) {
+    case "arrival": settlement.arrival_id = r.message_id; break;
+    case "tool": settlement.tool_message_id = r.message_id; break;
+    case "result": settlement.result_native_id = "foreign"; break;
+    case "evidence": settlement.evidence = "native-claude-question-answers"; break;
+    case "sequence": settlement.sequence = 10; break;
+    case "acceptance": delete response.acceptance; break;
+    case "echo": delete response.claude_echo; break;
+    case "cancellation": data.claude_cancellation = { arrival_id: r.arrival_id }; break;
+    case "open": data.closure = "open"; break;
+  }
+  render(<NativeClaudeInteraction data={data} />);
+  if (change === "valid") {
+    expect(screen.getByText(/Claude processed the original callback/)).toBeTruthy();
+    expect(screen.queryByText(/was canceled/)).toBeNull();
+    expect(screen.queryByText(/does not prove.*answer was accepted/)).toBeNull();
+  } else expect(screen.getByLabelText("Claude request unavailable")).toBeTruthy();
+});

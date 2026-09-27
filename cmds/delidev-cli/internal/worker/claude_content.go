@@ -28,7 +28,7 @@ type claudeContentCommit struct {
 // ClaudeContentPublisher preserves whole provider messages and ordered native
 // text/thinking blocks and original root tools. Native usage is published as
 // independent observations, including original callback requests/cancellation.
-// Its caller must reconcile child, reply and terminal authority separately;
+// Its caller must reconcile child and terminal authority separately;
 // unsupported rich blocks latch this publisher.
 type ClaudeContentPublisher struct {
 	responses        map[domain.ID]*claudeResponseAttempt
@@ -284,6 +284,14 @@ func (c *ClaudeContentPublisher) commitHead() {
 	if item.interactionArrival != "" {
 		c.callbackRequests[item.interactionNext.update.NativeRequestID.Text] = true
 		c.interactions[item.interactionArrival] = item.interactionNext
+		if item.interactionNext.closed {
+			if attempt := c.responses[item.interactionArrival]; attempt != nil {
+				attempt.input = domain.ClaudePermissionResponse{}
+			}
+		}
+		if proof := item.event.ClaudeSettlement; proof != nil && c.binding.publisher.config.Logger != nil {
+			c.binding.publisher.config.Logger.Info("claude_callback_settled", "job_id", c.binding.publisher.job, "interaction_id", proof.InteractionID, "evidence", proof.Evidence)
+		}
 	}
 	if item.toolNative != "" {
 		if item.toolNext.state == domain.MessageComplete {

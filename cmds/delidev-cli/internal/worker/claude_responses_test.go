@@ -37,6 +37,9 @@ func (f *claudeReplyFixtureRPC) ClaimApprovalResponse(_ context.Context, req *co
 		return nil, connect.NewError(connect.CodeUnavailable, publicationUncertain())
 	}
 	value := domain.ExecutionInteraction{ExecutionID: j.ExecutionID, NativeThreadID: string(j.SessionID), NativeTurnID: c.binding.turn, NativeItemID: f.original.NativeItemID, NativeRequestID: f.original.NativeRequestID, Type: f.original.Type, Closure: domain.InteractionOpen, Claude: f.original.Claude, ApprovalResponse: &domain.ApprovalResponse{ID: domain.ID(r.ResponseId), State: domain.ApprovalResponseClaimed, Input: domain.ApprovalResponseInput{Claude: &domain.ClaudePermissionResponse{Behavior: domain.ClaudeReplyAllow}}, AcceptedAt: time.Now().UTC(), Claim: &domain.ApprovalResponseClaim{ID: domain.ID(r.Mutation.RequestId), JobID: j.JobID, MachineID: j.MachineID, InstanceID: j.InstanceID, DeviceID: j.DeviceID, ClaimedAt: time.Now().UTC()}}}
+	if f.change == "premature-settlement" {
+		value.ClaudeSettlement = &domain.ClaudeCallbackSettlement{}
+	}
 	if f.change == "foreign-thread" {
 		value.NativeThreadID = string(domain.NewID())
 	}
@@ -132,7 +135,7 @@ func TestClaudeResponseDeliveryRetriesOnlyOriginalReceipts(t *testing.T) {
 	}
 }
 func TestClaudeResponseFailsClosedWithoutAnotherNativeSend(t *testing.T) {
-	for _, change := range []string{"claim-loss", "foreign-thread", "foreign-claim", "mixed", "foreign-native", "send-loss", "retained-journal"} {
+	for _, change := range []string{"claim-loss", "foreign-thread", "foreign-claim", "mixed", "foreign-native", "send-loss", "retained-journal", "premature-settlement"} {
 		t.Run(change, func(t *testing.T) {
 			c, rpc, native, control, o := claudeReplyFixture(t, change)
 			ctx := context.Background()

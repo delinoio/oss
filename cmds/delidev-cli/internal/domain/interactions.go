@@ -211,6 +211,7 @@ func (u ExecutionInteractionUpdate) Validate(kind ExecutionEventKind) error {
 }
 
 type ExecutionInteraction struct {
+	ClaudeSettlement   *ClaudeCallbackSettlement      `json:"claude_settlement,omitempty"`
 	Claude             *ClaudeInteractionRequest      `json:"claude,omitempty"`
 	ClaudeCancellation *ClaudeInteractionCancellation `json:"claude_cancellation,omitempty"`
 	OpenCodeStop       *OpenCodeStopClosure           `json:"opencode_stop,omitempty"`
