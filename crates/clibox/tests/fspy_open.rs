@@ -54,7 +54,7 @@ fn mutating_open_without_write_is_recorded() {
 #[test]
 fn invalid_path_pointers_keep_native_failures_paired() {
     if std::env::var_os("CLIBOX_FSPY_INVALID_PATH_FIXTURE").is_some() {
-        let invalid = 1usize as *const libc::c_char;
+        let invalid = std::ptr::dangling::<libc::c_char>();
         let mut metadata = std::mem::MaybeUninit::<libc::stat>::uninit();
         assert_eq!(unsafe { libc::open(invalid, libc::O_RDONLY) }, -1);
         assert_eq!(

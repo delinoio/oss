@@ -55,7 +55,9 @@ unsafe fn handle_posix_spawn(
     if operation::safe_path(file).is_none() {
         // The legacy exec resolver reads file directly. Preserve the native
         // spawn error while the result side channel records an unavailable path.
+        // SAFETY: enter_path copies the caller pointer without dereferencing it.
         let operation = unsafe { operation::enter_path(Kind::Exec, file) };
+        // SAFETY: the original native call validates its unchanged arguments.
         let result = unsafe { original(pid, file, file_actions, attrp, argv, envp) };
         operation::finish_spawn(operation, result);
         return result;

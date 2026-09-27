@@ -39,6 +39,7 @@ pub fn safe_path(path: *const c_char) -> Option<CString> {
         if path.is_null() {
             return None;
         }
+        // SAFETY: sysconf reads one constant and has no caller pointer.
         let page_size = usize::try_from(unsafe { libc::sysconf(libc::_SC_PAGESIZE) }).ok()?;
         if page_size == 0 {
             return None;
@@ -54,7 +55,9 @@ pub fn safe_path(path: *const c_char) -> Option<CString> {
             // libc marks the task port alias deprecated in favor of mach2.
             // Keep this narrow ABI call while the injected client has no mach2
             // dependency; remove the allowance if that dependency is added.
-            #[allow(deprecated)]
+            #[expect(deprecated, reason = "the injected client avoids a mach2 dependency")]
+            // SAFETY: the kernel validates the untrusted source address; chunk
+            // is writable for the full requested length and copied is local.
             let status = unsafe {
                 mach_vm_read_overwrite(
                     libc::mach_task_self_,

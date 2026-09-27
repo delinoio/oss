@@ -40,7 +40,9 @@ fn handle_exec(
     if operation::safe_path(prog).is_none() {
         // The legacy exec resolver reads prog directly. Let the native call
         // diagnose an invalid or unterminated pathname without that read.
+        // SAFETY: enter_path copies the caller pointer without dereferencing it.
         let operation = unsafe { operation::enter_path(Kind::ExecReplace, prog) };
+        // SAFETY: the original native call validates its unchanged arguments.
         let result = unsafe { execve::original()(prog, argv, envp) };
         operation::finish(operation, i64::from(result));
         return result;
