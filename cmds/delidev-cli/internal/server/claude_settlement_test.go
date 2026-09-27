@@ -12,6 +12,11 @@ import (
 
 func claudeSettlementFixture(t *testing.T, kind domain.ClaudeInteractionKind, deny, uncertain, echo bool) (*publicationFixture, domain.ExecutionEvent, domain.ExecutionEvent) {
 	t.Helper()
+	return claudeSettlementResponseFixture(t, kind, deny, uncertain, echo, false)
+}
+
+func claudeSettlementResponseFixture(t *testing.T, kind domain.ClaudeInteractionKind, deny, uncertain, echo, interrupt bool) (*publicationFixture, domain.ExecutionEvent, domain.ExecutionEvent) {
+	t.Helper()
 	question := kind == domain.ClaudeUserQuestion
 	f, original, sequence := claudeNamedCallbackPublicationFixture(t, kind)
 	f.registerGrant(t)
@@ -25,6 +30,9 @@ func claudeSettlementFixture(t *testing.T, kind domain.ClaudeInteractionKind, de
 	if deny {
 		message := "Original denial"
 		reply = &domain.ClaudePermissionResponse{Behavior: domain.ClaudeReplyDeny, Message: &message}
+		if interrupt {
+			reply.Interrupt = &interrupt
+		}
 	}
 	response, claim := domain.NewID(), domain.NewID()
 	meta := &pb.Mutation{RequestId: string(claim), Id: string(original.ID), ExpectedRevision: 2}
@@ -89,6 +97,9 @@ func claudeSettlementFixture(t *testing.T, kind domain.ClaudeInteractionKind, de
 		result.Error, result.Structured = &failed, nil
 		result.NonExecution = &domain.ClaudeToolNonExecution{NativeID: original.NativeItemID, Kind: domain.ClaudePermissionRuleNonExecution}
 		evidence = domain.ClaudeDenialProcessed
+		if interrupt {
+			result.NonExecution.Kind, evidence = domain.ClaudeUserRejectedNonExecution, domain.ClaudeInterruptedDenialProcessed
+		}
 	}
 	r := original.Claude
 	tool := f.event(domain.ExecutionClaudeToolObserved, sequence+1)

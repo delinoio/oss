@@ -73,8 +73,8 @@ func TestClaudeResponseKeepsOriginalPermissionInputAndDenial(t *testing.T) {
 		t.Fatal(err)
 	}
 	interrupt = true
-	if deny.ValidateInteraction(o) == nil {
-		t.Fatal("uncomposed interruption context gained reply authority")
+	if deny.ValidateInteraction(o) != nil {
+		t.Fatal("original interrupted denial lost its explicit selection")
 	}
 	interrupt = false
 	deny.Decision = &CodexApprovalDecision{Kind: CodexApprovalAccept}

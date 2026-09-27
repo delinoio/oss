@@ -32,7 +32,8 @@ const provider: Guard = (v) => shape(v, { ...counters,
   iterations: nullable((a) => Array.isArray(a) && a.length <= 1024 && a.every(iteration)),
 });
 const model: Guard = (v) => shape(v, { inputTokens: nullable(count), outputTokens: nullable(count), cacheReadInputTokens: nullable(count), cacheCreationInputTokens: nullable(count), webSearchRequests: nullable(count), costUSD: nullable(decimal), contextWindow: nullable(positive), maxOutputTokens: nullable(positive), canonicalModel: nullable(label), provider: nullable(label) });
-const result: Guard = (v) => shape(v, { main_loop_turn: nullable(provider), native_cumulative_cost_usd: nullable(decimal), native_cumulative_models: nullable((m) => record(m) && Object.keys(m).length <= 256 && Object.entries(m).every(([key, value]) => label(key) && model(value))) });
+export const validClaudeResultUsage: Guard = (v) => shape(v, { main_loop_turn: nullable(provider), native_cumulative_cost_usd: nullable(decimal), native_cumulative_models: nullable((m) => record(m) && Object.keys(m).length <= 256 && Object.entries(m).every(([key, value]) => label(key) && model(value))) });
+const result = validClaudeResultUsage;
 const nativeID: Guard = (v) => typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[47][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(v);
 const messageID: Guard = (v) => nativeID(v) && (v as string)[14] === "7";
 function valid(v: Record<string, unknown>) {
@@ -49,15 +50,23 @@ function ProviderCounts({ value }: { value: unknown }) {
 
 export function NativeClaudeUsage({ value }: { value: Record<string, unknown> }) {
   if (!valid(value)) return <p>The retained Claude usage observation is unavailable or inconsistent.</p>;
-  const retained = object(value.result), models = object(retained.native_cumulative_models);
+  const retained = object(value.result);
   return <section aria-label="Claude native usage">
     <p>Source: {value.source === Source.Result ? "Original input result" : value.source === Source.Start ? "Provider message start" : value.source === Source.Block ? `Completed native block ${Number(value.index) + 1}` : "Provider message metadata"}</p>
     {value.source === Source.Result ? <>
-      <h4>Main-loop input turn</h4><ProviderCounts value={retained.main_loop_turn} />
+      <NativeClaudeResultUsage value={retained} />
+    </> : <ProviderCounts value={value.provider} />}
+    <p>Native reports overlap. Main-loop usage excludes auxiliary and subagent calls; cumulative model values belong to the original native runtime. Output includes thinking. These reports and native estimates are not added to billed usage, price estimates or session budgets.</p>
+  </section>;
+}
+
+export function NativeClaudeResultUsage({ value }: { value: unknown }) {
+  if (!result(value)) return <p>The retained Claude result usage is unavailable or inconsistent.</p>;
+  const retained = object(value), models = object(retained.native_cumulative_models);
+  return <section aria-label="Claude result usage">
+      <h4>Native main-loop turn</h4><ProviderCounts value={retained.main_loop_turn} />
       <h4>Native cumulative model ledger</h4>
       {retained.native_cumulative_models == null ? <p>Unavailable</p> : Object.keys(models).length === 0 ? <p>No model entries reported.</p> : Object.entries(models).map(([name, usage]) => <details key={name}><summary>{name}</summary><pre>{JSON.stringify(usage, null, 2)}</pre></details>)}
       <dl><dt>Native cumulative USD estimate</dt><dd>{retained.native_cumulative_cost_usd == null ? "Unavailable" : retained.native_cumulative_cost_usd as string}</dd></dl>
-    </> : <ProviderCounts value={value.provider} />}
-    <p>Native reports overlap. Main-loop usage excludes auxiliary and subagent calls; cumulative model values belong to the original native runtime. Output includes thinking. These reports and native estimates are not added to billed usage, price estimates or session budgets.</p>
   </section>;
 }

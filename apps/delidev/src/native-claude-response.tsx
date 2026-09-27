@@ -18,11 +18,12 @@ export function NativeClaudeResponse({ resource, questions, closed, accepted }: 
   const [skipped, setSkipped] = useState<Record<number, boolean>>({});
   const [denial, setDenial] = useState(false);
   const [reason, setReason] = useState("");
+  const [interrupt, setInterrupt] = useState(false);
   const questionMutation = useRetainedMutation(`claude-answer:${resource.id}`, InteractionQuery.respondQuestion, (r) => accepted(r.interaction));
   const approvalMutation = useRetainedMutation(`claude-approve:${resource.id}`, InteractionQuery.respondApproval, (r) => accepted(r.interaction));
   const mutation = questions ? questionMutation : approvalMutation;
   const answers = questions ? Object.fromEntries(questions.flatMap((q, i) => skipped[i] ? [] : [[q.question, customEnabled[i] ? custom[i] ?? "" : (selected[i] ?? []).join(", ")]])) : undefined;
-  const reply: Reply = denial ? { behavior: Behavior.Deny, message: reason } : { behavior: Behavior.Allow, ...(answers ? { answers } : {}) };
+  const reply: Reply = denial ? { behavior: Behavior.Deny, message: reason, ...(interrupt ? { interrupt: true } : {}) } : { behavior: Behavior.Allow, ...(answers ? { answers } : {}) };
   const missing = !denial && questions?.some((_, i) => !skipped[i] && !customEnabled[i] && !selected[i]?.length);
   const invalid = denial ? !reason.trim() || !validText(reason, 4096) : Object.values(answers ?? {}).some((v) => !validText(v, 256 * 1024));
   const oversized = encode({ claude: reply }).byteLength > 256 * 1024;
@@ -36,6 +37,8 @@ export function NativeClaudeResponse({ resource, questions, closed, accepted }: 
       <label className="checkbox"><input type="checkbox" checked={denial} onChange={(event) => setDenial(event.target.checked)} />Deny this request</label>
       {denial ? <>
         <label>Reason for denial<textarea value={reason} onChange={(event) => setReason(event.target.value)} /></label>
+        <label className="checkbox"><input type="checkbox" checked={interrupt} onChange={(event) => setInterrupt(event.target.checked)} />Also interrupt this Claude run</label>
+        {interrupt ? <p>Claude will stop after this denial. Further input remains paused until the original execution is reconciled.</p> : null}
       </> : questions ? questions.map((q, i) => <fieldset key={q.question}><legend>{q.header}</legend><p>{q.question}</p>
         {q.options.map((o) => <label className="checkbox" key={o.label}><input type={q.multiSelect ? "checkbox" : "radio"} name={`claude-${resource.id}-${i}`} checked={!customEnabled[i] && !skipped[i] && (selected[i] ?? []).includes(o.label)} onChange={(event) => {
           setSkipped({ ...skipped, [i]: false }); setCustomEnabled({ ...customEnabled, [i]: false });

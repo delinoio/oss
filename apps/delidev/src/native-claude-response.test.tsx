@@ -73,6 +73,20 @@ it("retries only the retained server receipt after acknowledgment loss and nativ
   await waitFor(() => expect(f.send).toHaveBeenCalledTimes(2));
   expect(f.send.mock.calls[0][0]).toEqual(f.send.mock.calls[1][0]);
 });
+it.each([true, false])("retains an explicit interrupted denial through an uncertain receipt: question=%s", async (question) => {
+  const f = fixture(); f.send.mockRejectedValueOnce(new ConnectError("Lost acknowledgment", Code.Unavailable));
+  const rendered = render(f.form(question));
+  fireEvent.click(screen.getByRole("checkbox", { name: "Deny this request" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Reason for denial" }), { target: { value: "Original interrupted denial" } });
+  fireEvent.click(screen.getByRole("checkbox", { name: "Also interrupt this Claude run" }));
+  fireEvent.click(screen.getByRole("button", { name: "Send denial to Claude" }));
+  await screen.findByRole("button", { name: "Retry the same response request" });
+  rendered.rerender(f.form(question, true));
+  fireEvent.click(screen.getByRole("button", { name: "Retry the same response request" }));
+  await waitFor(() => expect(f.send).toHaveBeenCalledTimes(2));
+  expect(f.send.mock.calls[0][0]).toEqual(f.send.mock.calls[1][0]);
+  expect(decoded(f.send.mock.calls[0][0])).toEqual({ claude: { behavior: "deny", message: "Original interrupted denial", interrupt: true } });
+});
 it("blocks closed, missing and oversized answers before RPC", () => {
   const f = fixture(); const rendered = render(f.form());
   fireEvent.submit(screen.getByRole("form")); expect(f.send).not.toHaveBeenCalled();

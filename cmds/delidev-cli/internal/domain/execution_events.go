@@ -5,39 +5,40 @@ import "slices"
 type ExecutionEventKind string
 
 const (
-	ExecutionClaudeCallbackSettled    ExecutionEventKind = "claude-callback-settled"
-	ExecutionClaudeReplyEchoObserved  ExecutionEventKind = "claude-reply-echo-observed"
-	ExecutionClaudeMessageObserved    ExecutionEventKind = "claude-message-observed"
-	ExecutionClaudeUsageObserved      ExecutionEventKind = "claude-usage-observed"
-	ExecutionClaudeToolObserved       ExecutionEventKind = "claude-tool-observed"
-	ExecutionThreadBound              ExecutionEventKind = "thread-bound"
-	ExecutionInputAccepted            ExecutionEventKind = "input-accepted"
-	ExecutionMessageStarted           ExecutionEventKind = "message-started"
-	ExecutionTextAppended             ExecutionEventKind = "text-appended"
-	ExecutionMessageCompleted         ExecutionEventKind = "message-completed"
-	ExecutionTurnFinished             ExecutionEventKind = "turn-finished"
-	ExecutionUsageObserved            ExecutionEventKind = "usage-observed"
-	ExecutionOpenCodeUsageObserved    ExecutionEventKind = "opencode-usage-observed"
-	ExecutionResponseUsageObserved    ExecutionEventKind = "response-usage-observed"
-	ExecutionNoticeObserved           ExecutionEventKind = "notice-observed"
-	ExecutionToolStarted              ExecutionEventKind = "tool-started"
-	ExecutionToolUpdated              ExecutionEventKind = "tool-updated"
-	ExecutionToolCompleted            ExecutionEventKind = "tool-completed"
-	ExecutionToolOutput               ExecutionEventKind = "tool-output"
-	ExecutionToolInput                ExecutionEventKind = "tool-input"
-	ExecutionToolPatch                ExecutionEventKind = "tool-patch"
-	ExecutionArtifactStarted          ExecutionEventKind = "artifact-started"
-	ExecutionArtifactCompleted        ExecutionEventKind = "artifact-completed"
-	ExecutionArtifactDelta            ExecutionEventKind = "artifact-delta"
-	ExecutionProgressObserved         ExecutionEventKind = "progress-observed"
-	ExecutionInteractionRequested     ExecutionEventKind = "interaction-requested"
-	ExecutionInteractionClosed        ExecutionEventKind = "interaction-closed"
-	ExecutionWaitingChanged           ExecutionEventKind = "waiting-changed"
-	ExecutionQuestionDeliveryObserved ExecutionEventKind = "question-delivery-observed"
-	ExecutionApprovalDeliveryObserved ExecutionEventKind = "approval-delivery-observed"
-	ExecutionQuestionAccepted         ExecutionEventKind = "question-accepted"
-	ExecutionApprovalAccepted         ExecutionEventKind = "approval-accepted"
-	ExecutionSteerObserved            ExecutionEventKind = "steer-observed"
+	ExecutionClaudeInterruptionObserved ExecutionEventKind = "claude-interruption-observed"
+	ExecutionClaudeCallbackSettled      ExecutionEventKind = "claude-callback-settled"
+	ExecutionClaudeReplyEchoObserved    ExecutionEventKind = "claude-reply-echo-observed"
+	ExecutionClaudeMessageObserved      ExecutionEventKind = "claude-message-observed"
+	ExecutionClaudeUsageObserved        ExecutionEventKind = "claude-usage-observed"
+	ExecutionClaudeToolObserved         ExecutionEventKind = "claude-tool-observed"
+	ExecutionThreadBound                ExecutionEventKind = "thread-bound"
+	ExecutionInputAccepted              ExecutionEventKind = "input-accepted"
+	ExecutionMessageStarted             ExecutionEventKind = "message-started"
+	ExecutionTextAppended               ExecutionEventKind = "text-appended"
+	ExecutionMessageCompleted           ExecutionEventKind = "message-completed"
+	ExecutionTurnFinished               ExecutionEventKind = "turn-finished"
+	ExecutionUsageObserved              ExecutionEventKind = "usage-observed"
+	ExecutionOpenCodeUsageObserved      ExecutionEventKind = "opencode-usage-observed"
+	ExecutionResponseUsageObserved      ExecutionEventKind = "response-usage-observed"
+	ExecutionNoticeObserved             ExecutionEventKind = "notice-observed"
+	ExecutionToolStarted                ExecutionEventKind = "tool-started"
+	ExecutionToolUpdated                ExecutionEventKind = "tool-updated"
+	ExecutionToolCompleted              ExecutionEventKind = "tool-completed"
+	ExecutionToolOutput                 ExecutionEventKind = "tool-output"
+	ExecutionToolInput                  ExecutionEventKind = "tool-input"
+	ExecutionToolPatch                  ExecutionEventKind = "tool-patch"
+	ExecutionArtifactStarted            ExecutionEventKind = "artifact-started"
+	ExecutionArtifactCompleted          ExecutionEventKind = "artifact-completed"
+	ExecutionArtifactDelta              ExecutionEventKind = "artifact-delta"
+	ExecutionProgressObserved           ExecutionEventKind = "progress-observed"
+	ExecutionInteractionRequested       ExecutionEventKind = "interaction-requested"
+	ExecutionInteractionClosed          ExecutionEventKind = "interaction-closed"
+	ExecutionWaitingChanged             ExecutionEventKind = "waiting-changed"
+	ExecutionQuestionDeliveryObserved   ExecutionEventKind = "question-delivery-observed"
+	ExecutionApprovalDeliveryObserved   ExecutionEventKind = "approval-delivery-observed"
+	ExecutionQuestionAccepted           ExecutionEventKind = "question-accepted"
+	ExecutionApprovalAccepted           ExecutionEventKind = "approval-accepted"
+	ExecutionSteerObserved              ExecutionEventKind = "steer-observed"
 )
 
 type MessageRole string
@@ -148,6 +149,7 @@ type ExecutionMessageUpdate struct {
 // envelope. Exactly one event kind owns its optional payload. Unknown native
 // extensions need dedicated adapters before they can enter this document.
 type ExecutionEvent struct {
+	ClaudeInterruption *ExecutionClaudeInterruption       `json:"claude_interruption,omitempty"`
 	ClaudeSettlement   *ExecutionClaudeCallbackSettlement `json:"claude_settlement,omitempty"`
 	ClaudeReplyEcho    *ExecutionClaudeReplyEcho          `json:"claude_reply_echo,omitempty"`
 	ClaudeMessage      *ClaudeMessageUpdate               `json:"claude_message,omitempty"`
@@ -197,6 +199,10 @@ func (e ExecutionEvent) Validate() error {
 		}
 	}
 	switch e.Kind {
+	case ExecutionClaudeInterruptionObserved:
+		if e.ClaudeInterruption == nil || e.ClaudeInterruption.Validate() != nil {
+			return invalidClaudeInterruption()
+		}
 	case ExecutionClaudeCallbackSettled:
 		if e.ClaudeSettlement == nil || e.ClaudeSettlement.Validate() != nil {
 			return invalidClaudeResponse()
@@ -357,7 +363,7 @@ func (e ExecutionEvent) Validate() error {
 	default:
 		return Fail(Unsupported, "Unknown normalized execution event.", "Use a dedicated supported native event adapter.")
 	}
-	if (e.Kind != ExecutionClaudeCallbackSettled && e.ClaudeSettlement != nil) || (e.Kind != ExecutionClaudeReplyEchoObserved && e.ClaudeReplyEcho != nil) || (e.Kind != ExecutionClaudeToolObserved && e.ClaudeTool != nil) || (e.Kind != ExecutionClaudeUsageObserved && e.ClaudeUsage != nil) || (e.Kind != ExecutionClaudeMessageObserved && e.ClaudeMessage != nil) || (e.Kind != ExecutionOpenCodeUsageObserved && e.OpenCodeUsage != nil) || (e.Kind != ExecutionApprovalAccepted && e.ApprovalAcceptance != nil) || (e.Kind != ExecutionApprovalDeliveryObserved && e.ApprovalResponse != nil) || (e.Kind != ExecutionSteerObserved && e.Steer != nil) || (e.Kind != ExecutionQuestionAccepted && e.QuestionAcceptance != nil) || (e.Kind != ExecutionQuestionDeliveryObserved && e.QuestionResponse != nil) || (!e.Kind.IsInteraction() && e.Interaction != nil) || (e.Kind != ExecutionWaitingChanged && e.Waiting != nil) || (!e.Kind.IsArtifact() && e.Artifact != nil) || (e.Kind != ExecutionProgressObserved && e.Progress != nil) || (!e.Kind.IsTool() && e.Tool != nil) || (e.Kind != ExecutionThreadBound && e.Observed != nil) || (e.Kind != ExecutionMessageStarted && e.Kind != ExecutionTextAppended && e.Kind != ExecutionMessageCompleted && e.Message != nil) || (e.Kind != ExecutionTurnFinished && (e.Outcome != "" || e.ProblemCode != "")) || (e.Kind != ExecutionUsageObserved && e.Usage != nil) || (e.Kind != ExecutionResponseUsageObserved && e.ResponseUsage != nil) || (e.Kind != ExecutionClaudeUsageObserved && e.Kind != ExecutionOpenCodeUsageObserved && e.Kind != ExecutionUsageObserved && e.Kind != ExecutionResponseUsageObserved && e.ObservationID != "") || (e.Kind != ExecutionNoticeObserved && e.Notice != "") {
+	if (e.Kind != ExecutionClaudeInterruptionObserved && e.ClaudeInterruption != nil) || (e.Kind != ExecutionClaudeCallbackSettled && e.ClaudeSettlement != nil) || (e.Kind != ExecutionClaudeReplyEchoObserved && e.ClaudeReplyEcho != nil) || (e.Kind != ExecutionClaudeToolObserved && e.ClaudeTool != nil) || (e.Kind != ExecutionClaudeUsageObserved && e.ClaudeUsage != nil) || (e.Kind != ExecutionClaudeMessageObserved && e.ClaudeMessage != nil) || (e.Kind != ExecutionOpenCodeUsageObserved && e.OpenCodeUsage != nil) || (e.Kind != ExecutionApprovalAccepted && e.ApprovalAcceptance != nil) || (e.Kind != ExecutionApprovalDeliveryObserved && e.ApprovalResponse != nil) || (e.Kind != ExecutionSteerObserved && e.Steer != nil) || (e.Kind != ExecutionQuestionAccepted && e.QuestionAcceptance != nil) || (e.Kind != ExecutionQuestionDeliveryObserved && e.QuestionResponse != nil) || (!e.Kind.IsInteraction() && e.Interaction != nil) || (e.Kind != ExecutionWaitingChanged && e.Waiting != nil) || (!e.Kind.IsArtifact() && e.Artifact != nil) || (e.Kind != ExecutionProgressObserved && e.Progress != nil) || (!e.Kind.IsTool() && e.Tool != nil) || (e.Kind != ExecutionThreadBound && e.Observed != nil) || (e.Kind != ExecutionMessageStarted && e.Kind != ExecutionTextAppended && e.Kind != ExecutionMessageCompleted && e.Message != nil) || (e.Kind != ExecutionTurnFinished && (e.Outcome != "" || e.ProblemCode != "")) || (e.Kind != ExecutionUsageObserved && e.Usage != nil) || (e.Kind != ExecutionResponseUsageObserved && e.ResponseUsage != nil) || (e.Kind != ExecutionClaudeUsageObserved && e.Kind != ExecutionOpenCodeUsageObserved && e.Kind != ExecutionUsageObserved && e.Kind != ExecutionResponseUsageObserved && e.ObservationID != "") || (e.Kind != ExecutionNoticeObserved && e.Notice != "") {
 		return Fail(InvalidArgument, "An execution event contains another kind's payload.", "Publish one unambiguous typed event.")
 	}
 	if e.OpenCodeStop != nil && e.Kind != ExecutionTurnFinished {
@@ -370,46 +376,48 @@ func (e ExecutionEvent) Validate() error {
 // original immutable account/configuration selection. Only a separately
 // verified completion report may set CleanupVerified after terminal publication.
 type ExecutionProgress struct {
-	OpenCodeStop           *OpenCodeStopObservation  `json:"opencode_stop,omitempty"`
-	JobID                  ID                        `json:"job_id"`
-	ExecutionID            ID                        `json:"execution_id"`
-	InputID                ID                        `json:"input_id"`
-	AcceptedInputs         []ExecutionInputBinding   `json:"accepted_inputs,omitempty"`
-	SteerAttempts          uint32                    `json:"steer_attempts,omitempty"`
-	LastSequence           uint64                    `json:"last_sequence"`
-	NativeThreadID         string                    `json:"native_thread_id"`
-	NativeTurnID           string                    `json:"native_turn_id,omitempty"`
-	Observed               ObservedExecutionSettings `json:"observed"`
-	Outcome                ExecutionOutcome          `json:"outcome"`
-	LatestWorkspaceEventID ID                        `json:"latest_workspace_event_id,omitempty"`
-	LatestTodoID           ID                        `json:"latest_todo_id,omitempty"`
-	LatestPlanID           ID                        `json:"latest_plan_id,omitempty"`
-	LatestDiffID           ID                        `json:"latest_diff_id,omitempty"`
-	LatestUsageID          ID                        `json:"latest_usage_id,omitempty"`
-	LatestResponseUsageID  ID                        `json:"latest_response_usage_id,omitempty"`
-	NoticeCount            uint64                    `json:"notice_count,omitempty"`
-	LastNotice             NativeNotice              `json:"last_notice,omitempty"`
-	CleanupVerified        bool                      `json:"cleanup_verified,omitempty"`
-	Waiting                NativeWaiting             `json:"waiting"`
-	UnconfirmedResponses   uint32                    `json:"unconfirmed_responses,omitempty"`
+	ClaudeInterruption     *ClaudeInterruptionProgress `json:"claude_interruption,omitempty"`
+	OpenCodeStop           *OpenCodeStopObservation    `json:"opencode_stop,omitempty"`
+	JobID                  ID                          `json:"job_id"`
+	ExecutionID            ID                          `json:"execution_id"`
+	InputID                ID                          `json:"input_id"`
+	AcceptedInputs         []ExecutionInputBinding     `json:"accepted_inputs,omitempty"`
+	SteerAttempts          uint32                      `json:"steer_attempts,omitempty"`
+	LastSequence           uint64                      `json:"last_sequence"`
+	NativeThreadID         string                      `json:"native_thread_id"`
+	NativeTurnID           string                      `json:"native_turn_id,omitempty"`
+	Observed               ObservedExecutionSettings   `json:"observed"`
+	Outcome                ExecutionOutcome            `json:"outcome"`
+	LatestWorkspaceEventID ID                          `json:"latest_workspace_event_id,omitempty"`
+	LatestTodoID           ID                          `json:"latest_todo_id,omitempty"`
+	LatestPlanID           ID                          `json:"latest_plan_id,omitempty"`
+	LatestDiffID           ID                          `json:"latest_diff_id,omitempty"`
+	LatestUsageID          ID                          `json:"latest_usage_id,omitempty"`
+	LatestResponseUsageID  ID                          `json:"latest_response_usage_id,omitempty"`
+	NoticeCount            uint64                      `json:"notice_count,omitempty"`
+	LastNotice             NativeNotice                `json:"last_notice,omitempty"`
+	CleanupVerified        bool                        `json:"cleanup_verified,omitempty"`
+	Waiting                NativeWaiting               `json:"waiting"`
+	UnconfirmedResponses   uint32                      `json:"unconfirmed_responses,omitempty"`
 }
 
 type ExecutionMessage struct {
-	ClaudeTool     *ClaudeToolContent    `json:"claude_tool,omitempty"`
-	Claude         *ClaudeMessageContent `json:"claude,omitempty"`
-	ExecutionID    ID                    `json:"execution_id"`
-	NativeThreadID string                `json:"native_thread_id"`
-	NativeTurnID   string                `json:"native_turn_id"`
-	NativeID       string                `json:"native_id"`
-	NativeParentID string                `json:"native_parent_id,omitempty"`
-	Role           MessageRole           `json:"role"`
-	Phase          *MessagePhase         `json:"phase,omitempty"`
-	InputID        ID                    `json:"input_id,omitempty"`
-	Text           string                `json:"text"`
-	State          MessageState          `json:"state"`
-	Tool           *ExecutionTool        `json:"tool,omitempty"`
-	Artifact       *ExecutionArtifact    `json:"artifact,omitempty"`
-	Progress       *NativeProgress       `json:"progress,omitempty"`
-	FirstSequence  uint64                `json:"first_sequence"`
-	LastSequence   uint64                `json:"last_sequence"`
+	ClaudeInterruption *ClaudeInterruption   `json:"claude_interruption,omitempty"`
+	ClaudeTool         *ClaudeToolContent    `json:"claude_tool,omitempty"`
+	Claude             *ClaudeMessageContent `json:"claude,omitempty"`
+	ExecutionID        ID                    `json:"execution_id"`
+	NativeThreadID     string                `json:"native_thread_id"`
+	NativeTurnID       string                `json:"native_turn_id"`
+	NativeID           string                `json:"native_id"`
+	NativeParentID     string                `json:"native_parent_id,omitempty"`
+	Role               MessageRole           `json:"role"`
+	Phase              *MessagePhase         `json:"phase,omitempty"`
+	InputID            ID                    `json:"input_id,omitempty"`
+	Text               string                `json:"text"`
+	State              MessageState          `json:"state"`
+	Tool               *ExecutionTool        `json:"tool,omitempty"`
+	Artifact           *ExecutionArtifact    `json:"artifact,omitempty"`
+	Progress           *NativeProgress       `json:"progress,omitempty"`
+	FirstSequence      uint64                `json:"first_sequence"`
+	LastSequence       uint64                `json:"last_sequence"`
 }

@@ -21,6 +21,7 @@ type claudeReplyFixtureRPC struct {
 	original domain.ExecutionInteractionUpdate
 	change   string
 	claims   int
+	reply    *domain.ClaudePermissionResponse
 }
 
 func (f *claudeReplyFixtureRPC) ClaimApprovalResponse(_ context.Context, req *connect.Request[pb.ClaimApprovalResponseRequest]) (*connect.Response[pb.ClaimApprovalResponseResponse], error) {
@@ -37,6 +38,9 @@ func (f *claudeReplyFixtureRPC) ClaimApprovalResponse(_ context.Context, req *co
 		return nil, connect.NewError(connect.CodeUnavailable, publicationUncertain())
 	}
 	value := domain.ExecutionInteraction{ExecutionID: j.ExecutionID, NativeThreadID: string(j.SessionID), NativeTurnID: c.binding.turn, NativeItemID: f.original.NativeItemID, NativeRequestID: f.original.NativeRequestID, Type: f.original.Type, Closure: domain.InteractionOpen, Claude: f.original.Claude, ApprovalResponse: &domain.ApprovalResponse{ID: domain.ID(r.ResponseId), State: domain.ApprovalResponseClaimed, Input: domain.ApprovalResponseInput{Claude: &domain.ClaudePermissionResponse{Behavior: domain.ClaudeReplyAllow}}, AcceptedAt: time.Now().UTC(), Claim: &domain.ApprovalResponseClaim{ID: domain.ID(r.Mutation.RequestId), JobID: j.JobID, MachineID: j.MachineID, InstanceID: j.InstanceID, DeviceID: j.DeviceID, ClaimedAt: time.Now().UTC()}}}
+	if f.reply != nil {
+		value.ApprovalResponse.Input.Claude = f.reply
+	}
 	if f.change == "premature-settlement" {
 		value.ClaudeSettlement = &domain.ClaudeCallbackSettlement{}
 	}
@@ -63,7 +67,7 @@ type claudeReplyFixtureNative struct {
 func (f *claudeReplyFixtureNative) ReplyClaimed(ctx context.Context, arrival domain.ID, reply claude.PermissionReply, claim func(context.Context, claude.PermissionReplyClaim) error) error {
 	f.calls++
 	a := f.c.responses[arrival]
-	if a == nil || reply.Behavior != claude.PermissionAllow || reply.Answers != nil {
+	if a == nil || string(reply.Behavior) != string(a.input.Behavior) || reply.Answers != nil || reply.Interrupt != (a.input.Interrupt != nil && *a.input.Interrupt) || a.input.Message != nil && reply.Message != *a.input.Message {
 		f.t.Fatal("native reply changed original response")
 	}
 	original := a.journal.Native

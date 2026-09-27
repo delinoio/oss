@@ -31,6 +31,7 @@ type claudeContentCommit struct {
 // Its caller must reconcile child and terminal authority separately;
 // unsupported rich blocks latch this publisher.
 type ClaudeContentPublisher struct {
+	interruption     *claudePublishedInterruption
 	responses        map[domain.ID]*claudeResponseAttempt
 	replyUncertain   bool
 	interactions     map[domain.ID]claudePublishedInteraction
@@ -100,6 +101,9 @@ func (c *ClaudeContentPublisher) PublishObservation(ctx context.Context, o claud
 	defer b.mu.Unlock()
 	if err := c.verify(); err != nil {
 		return false, err
+	}
+	if o.Kind == claude.CallbackInterruptResultObserved || o.Kind == claude.ContentObserved && len(o.Content) > 0 && o.Content[0].Kind == claude.NativeCallbackInterruptContext {
+		return true, c.publishInterruption(ctx, o)
 	}
 	if o.Kind != claude.ContentObserved {
 		return false, nil
@@ -265,6 +269,19 @@ func (c *ClaudeContentPublisher) drain(ctx context.Context) error {
 
 func (c *ClaudeContentPublisher) commitHead() {
 	item := c.queue[0]
+	if u := item.event.ClaudeInterruption; u != nil {
+		if u.Observation.Kind == domain.ClaudeDenialContext {
+			c.interruption.contextID = u.ID
+		} else {
+			c.interruption.resultID, c.resultUsage = u.ID, true
+		}
+		if logger := c.binding.publisher.config.Logger; logger != nil {
+			logger.Info("claude_interruption_observed", "job_id", c.binding.publisher.job, "interaction_id", u.Observation.InteractionID, "kind", u.Observation.Kind)
+		}
+	}
+	if s := item.event.ClaudeSettlement; s != nil && s.Evidence == domain.ClaudeInterruptedDenialProcessed {
+		c.interruption = &claudePublishedInterruption{settlement: *s}
+	}
 	if item.replyEcho != "" {
 		c.responses[item.replyEcho].echoed = true
 	}

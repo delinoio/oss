@@ -60,7 +60,7 @@ function validResponse(data: Document, original: Document, input: Document) {
   } else if (response.behavior !== "deny" || response.answers !== undefined || !label(response.message, 4096) || response.interrupt !== undefined && typeof response.interrupt !== "boolean") return false;
   const claim = object(r.claim), delivery = object(r.delivery), echo = object(r.claude_echo), settlement = object(data.claude_settlement), acceptance = object(r.acceptance);
   if (r.state === "accepted") {
-    const evidence = response.behavior === "deny" ? "native-claude-permission-denial" : question ? "native-claude-question-answers" : original.kind === Kind.Plan ? "native-claude-plan-approval" : "native-claude-tool-result";
+    const evidence = response.behavior === "deny" ? response.interrupt === true ? "native-claude-interrupted-denial" : "native-claude-permission-denial" : question ? "native-claude-question-answers" : original.kind === Kind.Plan ? "native-claude-plan-approval" : "native-claude-tool-result";
     if (data.claude_settlement == null || settlement.evidence !== evidence || !exact(acceptance, ["evidence", "sequence"]) || acceptance.evidence !== evidence || acceptance.sequence !== settlement.sequence || r.claude_echo == null || Number(settlement.sequence) <= Number(echo.sequence)) return false;
   } else if (data.claude_settlement != null || r.acceptance != null) return false;
   if (r.claim != null && (![claim.id, claim.job_id, claim.machine_id, claim.instance_id, claim.device_id].every(uuid) || !label(claim.claimed_at, 64))) return false;

@@ -99,9 +99,6 @@ func (r ClaudePermissionResponse) Validate(original ExecutionInteraction) error 
 			return invalidClaudeResponse()
 		}
 	case ClaudeReplyDeny:
-		if r.Interrupt != nil && *r.Interrupt {
-			return Fail(Unsupported, "Claude denial with interruption needs its original interruption-context adapter.", "Keep this request pending, send a non-interrupting denial, or use the separate original Stop control.")
-		}
 		if r.Answers != nil || r.Message == nil || Text(*r.Message, "native denial", 4096, true) != nil {
 			return invalidClaudeResponse()
 		}

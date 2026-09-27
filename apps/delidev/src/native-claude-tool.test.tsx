@@ -65,6 +65,10 @@ test("preserves original non-execution classification without treating generic e
   Object.assign(v.result!, { non_execution: { id: props.native, non_execution_kind: "permission-rule" } });
   const rendered = render(<NativeClaudeTool {...props} content={v} />);
   expect(screen.getByText(/Native permission policy prevented this tool/)).toBeTruthy();
+  Object.assign(v.result!, { non_execution: { id: props.native, non_execution_kind: "user-rejected" } });
+  rendered.rerender(<NativeClaudeTool {...props} content={v} />);
+  expect(screen.getByText(/original user rejection prevented this tool/)).toBeTruthy();
+  expect(screen.queryByText(/Native permission policy prevented this tool/)).toBeNull();
   v.result!.is_error = false;
   rendered.rerender(<NativeClaudeTool {...props} content={v} />);
   expect(screen.getByLabelText("Claude tool unavailable")).toBeTruthy();

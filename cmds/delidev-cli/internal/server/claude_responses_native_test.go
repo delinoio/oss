@@ -38,10 +38,20 @@ func TestManualNativeClaudeOriginalReplyDelivery(t *testing.T) {
 		{"deny-question", domain.ExecuteMode, "AskUserQuestion", true},
 		{"allow-plan-approval", domain.PlanMode, "ExitPlanMode", false}, {"deny-plan-approval", domain.PlanMode, "ExitPlanMode", true},
 	} {
-		t.Run(test.name, func(t *testing.T) { nativeClaudeReply(t, test.mode, test.tool, test.deny) })
+		t.Run(test.name, func(t *testing.T) { nativeClaudeReply(t, test.mode, test.tool, test.deny, false) })
 	}
 }
-func nativeClaudeReply(t *testing.T, mode domain.SessionMode, name string, deny bool) {
+func TestManualNativeClaudeInterruptedReplyPublication(t *testing.T) {
+	for _, test := range []struct {
+		name, tool string
+		mode       domain.SessionMode
+	}{
+		{"tool", "Bash", domain.ExecuteMode}, {"question", "AskUserQuestion", domain.ExecuteMode}, {"plan-question", "AskUserQuestion", domain.PlanMode}, {"plan-approval", "ExitPlanMode", domain.PlanMode},
+	} {
+		t.Run(test.name, func(t *testing.T) { nativeClaudeReply(t, test.mode, test.tool, true, true) })
+	}
+}
+func nativeClaudeReply(t *testing.T, mode domain.SessionMode, name string, deny, interrupt bool) {
 	t.Helper()
 	binary := os.Getenv("DELIDEV_NATIVE_CLAUDE_EXECUTABLE")
 	if binary == "" {
@@ -73,6 +83,9 @@ func nativeClaudeReply(t *testing.T, mode domain.SessionMode, name string, deny 
 	if name == "ExitPlanMode" {
 		expectedRequests = 3
 	}
+	if interrupt {
+		expectedRequests--
+	}
 	var calls atomic.Int32
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
@@ -89,12 +102,12 @@ func nativeClaudeReply(t *testing.T, mode domain.SessionMode, name string, deny 
 		block := map[string]any{"type": "tool_use", "id": "toolu_callback_original", "name": name, "input": map[string]any{}}
 		delta := map[string]any{"type": "input_json_delta", "partial_json": string(input)}
 		reason := "tool_use"
-		if n == expectedRequests {
+		if n == expectedRequests && !interrupt {
 			block = map[string]any{"type": "text", "text": ""}
 			delta = map[string]any{"type": "text_delta", "text": "Original callback completed."}
 			reason = "end_turn"
 		}
-		if name == "ExitPlanMode" && n < expectedRequests {
+		if name == "ExitPlanMode" && (n < expectedRequests || interrupt) {
 			if n == 1 {
 				var body struct {
 					Messages []struct {
@@ -227,11 +240,15 @@ func nativeClaudeReply(t *testing.T, mode domain.SessionMode, name string, deny 
 				t.Fatal("content preceded acceptance")
 			}
 			settles := original != nil && len(o.Content) == 1 && o.Content[0].Kind == claude.ToolResultObserved && o.Content[0].ToolResult.ID == original.ToolID
+			contextObserved := len(o.Content) == 1 && o.Content[0].Kind == claude.NativeCallbackInterruptContext
+			if contextObserved {
+				publication.dropAt = len(publication.calls) + 1
+			}
 			if settles {
 				publication.dropAt = len(publication.calls) + 2
 			}
 			_, publishErr := display.PublishObservation(ctx, o)
-			if settles {
+			if settles || contextObserved {
 				lost = publication.dropAt
 				if publishErr == nil || len(publication.calls) != lost {
 					t.Fatal("settlement acknowledgment not lost", publishErr)
@@ -282,6 +299,9 @@ func nativeClaudeReply(t *testing.T, mode domain.SessionMode, name string, deny 
 				if deny {
 					message := "Original request denied"
 					reply = &domain.ClaudePermissionResponse{Behavior: domain.ClaudeReplyDeny, Message: &message}
+					if interrupt {
+						reply.Interrupt = &interrupt
+					}
 				}
 				var deliver func() error
 				if name == "AskUserQuestion" {
@@ -329,7 +349,23 @@ func nativeClaudeReply(t *testing.T, mode domain.SessionMode, name string, deny 
 			} else {
 				t.Fatal("native reply unexpectedly canceled")
 			}
+		case claude.CallbackInterruptResultObserved:
+			if !interrupt || !echoed {
+				t.Fatal("unexpected interruption result")
+			}
+			publication.dropAt = len(publication.calls) + 1
+			if handled, err := display.PublishObservation(ctx, o); !handled || err == nil {
+				t.Fatal("interruption result acknowledgment not lost", err)
+			}
+			lost = publication.dropAt
+			if err := display.ReplayPending(ctx); err != nil || publication.calls[lost-1] != publication.calls[lost] {
+				t.Fatal("interruption receipt changed", err)
+			}
+			finished = true
 		case claude.InputFinished:
+			if interrupt {
+				t.Fatal("interruption fabricated input outcome")
+			}
 			if !echoed {
 				t.Fatal("root result preceded original reply echo")
 			}
@@ -359,6 +395,26 @@ func nativeClaudeReply(t *testing.T, mode domain.SessionMode, name string, deny 
 		}
 	} else if value.ApprovalResponse == nil || value.Response != nil || value.ApprovalResponse.State != domain.ApprovalResponseAccepted || value.ApprovalResponse.Acceptance == nil || value.ApprovalResponse.ClaudeEcho == nil {
 		t.Fatal("approval result did not settle original callback")
+	}
+	if interrupt {
+		sr, err := f.service.Store.Get(ctx, domain.SessionKind, f.input.SessionID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		session, err := store.Decode[domain.Session](sr)
+		if err != nil || session.Dispatch != domain.DispatchPaused || session.Recovery != domain.NeedsRecovery || session.Execution.Outcome != domain.ExecutionRunning || session.Execution.CleanupVerified || session.Execution.ClaudeInterruption == nil || session.Execution.ClaudeInterruption.ResultID == "" || session.Execution.UnconfirmedResponses != 0 || value.ClaudeSettlement.Evidence != domain.ClaudeInterruptedDenialProcessed {
+			t.Fatal("interruption fabricated terminal/cleanup or lost pause", err)
+		}
+		for _, id := range []domain.ID{session.Execution.ClaudeInterruption.ContextID, session.Execution.ClaudeInterruption.ResultID} {
+			row, err := f.service.Store.Get(ctx, domain.MessageKind, id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			message, err := store.Decode[domain.ExecutionMessage](row)
+			if err != nil || message.ClaudeInterruption == nil || message.ClaudeInterruption.Validate() != nil || message.ClaudeInterruption.ArrivalID != original.ArrivalID || message.InputID != "" {
+				t.Fatal("original interruption record changed", err)
+			}
+		}
 	}
 	marker, err := os.ReadFile(filepath.Join(workdir, "callback-marker.txt"))
 	if name == "Bash" && !deny {

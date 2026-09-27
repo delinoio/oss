@@ -93,14 +93,14 @@ for (const change of ["valid", "arrival", "tool", "result", "evidence", "sequenc
   } else expect(screen.getByLabelText("Claude request unavailable")).toBeTruthy();
 });
 
-for (const deny of [false, true]) test(`retains original Plan ${deny ? "denial" : "approval"} with its separate result evidence`, () => {
+for (const { deny, interrupt } of [{ deny: false, interrupt: false }, { deny: true, interrupt: false }, { deny: true, interrupt: true }]) test(`retains original Plan ${deny ? "denial" : "approval"} with its separate result evidence: interrupt=${interrupt}`, () => {
   const data = claudeRequestFixture(), r = data.claude as Document;
   r.kind = "plan-approval"; (r.tool as Document).name = "ExitPlanMode";
   r.input_json = JSON.stringify({ plan: "# Original accepted plan", planFilePath: "/private/original-plan.md" });
-  const evidence = deny ? "native-claude-permission-denial" : "native-claude-plan-approval";
+  const evidence = deny ? interrupt ? "native-claude-interrupted-denial" : "native-claude-permission-denial" : "native-claude-plan-approval";
   data.closure = "native-closed";
   data.claude_settlement = { arrival_id: r.arrival_id, tool_message_id: (r.tool as Document).id, result_native_id: "01900000-0000-7000-8000-000000000004", evidence, sequence: 12 };
-  data.approval_response = { id: r.message_id, state: "accepted", accepted_at: "2026-09-27T00:00:00Z", input: { claude: deny ? { behavior: "deny", message: "Keep planning" } : { behavior: "allow" } }, claim: { id: r.arrival_id, job_id: r.message_id, machine_id: r.arrival_id, instance_id: r.message_id, device_id: r.arrival_id, claimed_at: "2026-09-27T00:00:00Z" }, delivery: { state: "transmitted", sequence: 9 }, claude_echo: { arrival_id: r.arrival_id, body_sha256: "ab".repeat(32), sequence: 10 }, acceptance: { evidence, sequence: 12 } };
+  data.approval_response = { id: r.message_id, state: "accepted", accepted_at: "2026-09-27T00:00:00Z", input: { claude: deny ? { behavior: "deny", message: "Keep planning", ...(interrupt ? { interrupt: true } : {}) } : { behavior: "allow" } }, claim: { id: r.arrival_id, job_id: r.message_id, machine_id: r.arrival_id, instance_id: r.message_id, device_id: r.arrival_id, claimed_at: "2026-09-27T00:00:00Z" }, delivery: { state: "transmitted", sequence: 9 }, claude_echo: { arrival_id: r.arrival_id, body_sha256: "ab".repeat(32), sequence: 10 }, acceptance: { evidence, sequence: 12 } };
   const { container } = render(<NativeClaudeInteraction data={data} />);
   expect(screen.getByText("# Original accepted plan")).toBeTruthy();
   expect(screen.getByText(/Claude processed the original callback/)).toBeTruthy();

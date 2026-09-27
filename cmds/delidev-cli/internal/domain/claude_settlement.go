@@ -9,10 +9,11 @@ import (
 type ClaudeCallbackEvidence string
 
 const (
-	ClaudePlanProcessed    ClaudeCallbackEvidence = "native-claude-plan-approval"
-	ClaudeToolProcessed    ClaudeCallbackEvidence = "native-claude-tool-result"
-	ClaudeAnswersProcessed ClaudeCallbackEvidence = "native-claude-question-answers"
-	ClaudeDenialProcessed  ClaudeCallbackEvidence = "native-claude-permission-denial"
+	ClaudeInterruptedDenialProcessed ClaudeCallbackEvidence = "native-claude-interrupted-denial"
+	ClaudePlanProcessed              ClaudeCallbackEvidence = "native-claude-plan-approval"
+	ClaudeToolProcessed              ClaudeCallbackEvidence = "native-claude-tool-result"
+	ClaudeAnswersProcessed           ClaudeCallbackEvidence = "native-claude-question-answers"
+	ClaudeDenialProcessed            ClaudeCallbackEvidence = "native-claude-permission-denial"
 )
 
 // Settlement binds processing of one echoed callback to its original tool
@@ -37,7 +38,7 @@ func (u ExecutionClaudeCallbackSettlement) Validate() error {
 		return invalidClaudeResponse()
 	}
 	switch u.Evidence {
-	case ClaudeToolProcessed, ClaudeAnswersProcessed, ClaudeDenialProcessed, ClaudePlanProcessed:
+	case ClaudeToolProcessed, ClaudeAnswersProcessed, ClaudeDenialProcessed, ClaudePlanProcessed, ClaudeInterruptedDenialProcessed:
 		return nil
 	default:
 		return invalidClaudeResponse()
@@ -52,10 +53,14 @@ func ClaudeCallbackResultEvidence(original ExecutionInteraction, reply ClaudePer
 		return "", invalidClaudeResponse()
 	}
 	if reply.Behavior == ClaudeReplyDeny {
-		if result.NonExecution == nil || result.NonExecution.NativeID != request.Tool.NativeID || result.NonExecution.Kind != ClaudePermissionRuleNonExecution || result.Error == nil || !*result.Error {
+		kind, evidence := ClaudePermissionRuleNonExecution, ClaudeDenialProcessed
+		if reply.Interrupt != nil && *reply.Interrupt {
+			kind, evidence = ClaudeUserRejectedNonExecution, ClaudeInterruptedDenialProcessed
+		}
+		if result.NonExecution == nil || result.NonExecution.NativeID != request.Tool.NativeID || result.NonExecution.Kind != kind || result.Error == nil || !*result.Error {
 			return "", invalidClaudeResponse()
 		}
-		return ClaudeDenialProcessed, nil
+		return evidence, nil
 	}
 	if result.NonExecution != nil {
 		return "", invalidClaudeResponse()
