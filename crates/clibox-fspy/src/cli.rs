@@ -2257,6 +2257,7 @@ fn fbreak(args: BreakArgs) -> i32 {
         },
         |entry| terminal.poll(entry, &root, &selector),
     );
+    drop(terminal);
     match result {
         Ok(record) => final_child_status(&record),
         Err(error) => capture_status(
@@ -3047,6 +3048,7 @@ fn macos_fbreak(args: BreakArgs) -> i32 {
         &signals.cancelled,
         admission,
     );
+    drop(terminal);
     if control_loss.load(Ordering::SeqCst) {
         return diagnostic("control_channel_loss", "fbreak");
     }
