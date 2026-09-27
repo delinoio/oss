@@ -137,6 +137,18 @@ func TestCLISessionAcceptanceQueueAndArchive(t *testing.T) {
 	if err := os.WriteFile(retained, []byte("preserve across archive"), 0600); err != nil {
 		t.Fatal(err)
 	}
+	readRoots := run([]string{"session", "files", "roots", "--id", id}, nil)["roots"].([]any)
+	if len(readRoots) != 1 || readRoots[0].(map[string]any)["name"] != "General Chat" {
+		t.Fatal("CLI lost projectless root")
+	}
+	listing := run([]string{"session", "files", "list", "--id", id}, nil)["entries"].([]any)
+	if len(listing) != 1 || listing[0].(map[string]any)["name"] != "retained.txt" {
+		t.Fatal("CLI did not read the Worker directory")
+	}
+	preview := run([]string{"session", "files", "read", "--id", id, "--path", "retained.txt"}, nil)
+	if preview["text"] != "preserve across archive" {
+		t.Fatal("CLI did not return original Worker file content")
+	}
 	replay := run(prepareArgs, nil)
 	if replay["replayed"] != true || replay["workspace_job"].(map[string]any)["id"] != preparedJob["id"] {
 		t.Fatal("preparation receipt repeated native work")
@@ -144,6 +156,10 @@ func TestCLISessionAcceptanceQueueAndArchive(t *testing.T) {
 	run([]string{"session", "archive", "--id", id, "--revision", strconv.FormatUint(uint64(session["revision"].(float64)), 10)}, nil)
 	if raw, err := os.ReadFile(retained); err != nil || string(raw) != "preserve across archive" {
 		t.Fatal("Archive deleted ready workspace")
+	}
+
+	if run([]string{"session", "files", "read", "--id", id, "--path", "retained.txt"}, nil)["text"] != "preserve across archive" {
+		t.Fatal("archive hid retained files")
 	}
 
 	// Create two real repositories through validated CLI writes. Explicit full
@@ -182,6 +198,17 @@ func TestCLISessionAcceptanceQueueAndArchive(t *testing.T) {
 	preparedRepos := output["repositories"].([]any)
 	if len(preparedRepos) != 2 || output["primary_path"] != preparedRepos[1].(map[string]any)["path"] {
 		t.Fatal("primary/ordered repositories were lost")
+	}
+	worktreeID := worktree["session"].(map[string]any)["id"].(string)
+	fileRoots := run([]string{"session", "files", "roots", "--id", worktreeID}, nil)["roots"].([]any)
+	if len(fileRoots) != 2 || fileRoots[1].(map[string]any)["primary"] != true {
+		t.Fatal("CLI lost nonfirst primary root")
+	}
+	for _, repository := range repositories {
+		preview := run([]string{"session", "files", "read", "--id", worktreeID, "--repository-id", string(repository), "--path", "tracked.txt"}, nil)
+		if preview["text"] != "fixture" {
+			t.Fatal("CLI did not read every prepared worktree")
+		}
 	}
 	for i, item := range preparedRepos {
 		data := item.(map[string]any)

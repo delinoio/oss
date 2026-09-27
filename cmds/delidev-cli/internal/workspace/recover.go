@@ -263,6 +263,10 @@ func (m *Manager) verifyRecoveredReady(ctx context.Context, input PrepareRequest
 // original detached creation commit. Local retains its captured Git identity
 // while allowing current user commits. Both modes preserve all files unchanged.
 func (m *Manager) verifyWorkspaceIdentity(ctx context.Context, input PrepareRequest, manifest Manifest, validation readyValidation) (string, error) {
+	return m.verifyWorkspaceIdentityForOwner(ctx, input, manifest, validation, input.SessionID)
+}
+
+func (m *Manager) verifyWorkspaceIdentityForOwner(ctx context.Context, input PrepareRequest, manifest Manifest, validation readyValidation, owner domain.ID) (string, error) {
 	if validation != preparationIdentity && validation != continuationIdentity {
 		return "", ResultUncertain()
 	}
@@ -295,7 +299,7 @@ func (m *Manager) verifyWorkspaceIdentity(ctx context.Context, input PrepareRequ
 	}
 	identity := workspaceIdentity{PrimaryPath: manifest.PrimaryPath, Repositories: []repositoryIdentity{}}
 	git := m.Git
-	git.OwnerID = input.SessionID
+	git.OwnerID = owner
 	for _, repo := range manifest.Repositories {
 		if input.Type == domain.Local {
 			// The user's current branch may gain its first commit, or switch to an

@@ -5,6 +5,11 @@
 import { WorkerService } from "./delidev_pb.js";
 
 /**
+ * @generated from rpc delidev.v1.WorkerService.ReportWorkspaceRead
+ */
+export const reportWorkspaceRead = WorkerService.method.reportWorkspaceRead;
+
+/**
  * @generated from rpc delidev.v1.WorkerService.AttachWorker
  */
 export const attachWorker = WorkerService.method.attachWorker;

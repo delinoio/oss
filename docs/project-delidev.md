@@ -20,6 +20,7 @@ Run personal AI sessions across projects, accounts, native harnesses, and execut
 - [TypeScript client contract](packages-delidev-api-client-contract.md)
 - [Desktop client contract](apps-delidev-desktop-contract.md)
 - [Worker workspace contract](cmds-delidev-workspace-contract.md)
+- [Session file explorer](cmds-delidev-files-contract.md)
 - [Owned process contract](cmds-delidev-process-contract.md)
 - [Native harness adapter contract](cmds-delidev-harness-contract.md)
 - [Protected credential storage](cmds-delidev-credentials-contract.md)
@@ -198,3 +199,5 @@ Public Claude automatic compaction now retains original boundary/summary progres
 Claude root-text citations now compose native decoding, receipt-ordered Worker publication, atomic server retention and inert desktop disclosure. Original source variants, exact positions and initial/streamed/completed collections remain distinct, including the pinned native omission of completed citations. Original input completion and cleanup remain independent. The positively observed web-citation omission profile now supports v2 continuation across fresh native processes and metadata-only completed-report recovery, preserving native empty arrays and separately retained public deltas. Other citation shapes, interrupted/richer content and remaining issue scope still need their separate implementation and evidence.
 
 Claude now preserves complete multi-repository Worktree and authenticated Local scope across first dispatch, FIFO/Resume and completed-report recovery. Its primary cwd and ordered additional directories come from the immutable prepared manifest and are independently bound by native and Worker checkpoints. Legacy single-root checkpoint digests remain unchanged; original history/tool eligibility and cleanup still apply. Other native profiles and the remaining full issue requirements remain unfinished.
+
+Session workspace file browsing now has public owner/client RPC and CLI access plus a right-side desktop panel. A separate outbound Worker observation stream permits reads while the primary stream retains an unresolved native execution, without mutating execution authority. Original manifests select all repository roots and projectless workspaces; portable paths, anchored regular-file reads, bounded UTF-8 previews and directory observation pages are shared by clients. This adds the file explorer only; other session-side apps and the full issue requirements remain unfinished.

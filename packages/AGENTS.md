@@ -1,5 +1,7 @@
 ### Instructions for `packages/`
 
+- DeliDev workspace file queries use generated `SessionQuery.readSessionWorkspace`; no client filesystem or duplicated authorization logic. Keep file contents in bounded nonpersistent view caches, preserve exact decimal size strings, and render them as inert text under `docs/cmds-delidev-files-contract.md`.
+
 - Follow root `AGENTS.md` and the owning project/domain contracts.
 - Public npm packages generated here declare Apache-2.0 and include the complete license; preserve bundled third-party notices.
 - Generated packages must have a canonical source contract, reproducible generation, freshness checks, and no implicit secret or persistence policy.

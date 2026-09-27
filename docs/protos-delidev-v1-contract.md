@@ -226,3 +226,7 @@ The typed execution-event JSON adds `claude_denial` only to stopped `turn-finish
 
 ### Original Claude citation message extension
 The existing version-1 execution JSON adds `block-citation` to Claude provider-message mutations and optional typed citation collection/completion fields to block start/complete. Retained provider blocks may carry the original initial/delta/completed citation history. These fields use exact decimal uint64 coordinates and bounded closed source unions, with no opaque encrypted indices or action authority. The harness/session contracts define strict original lifecycle, completion omission and receipt semantics. This is an additive JSON extension; protobuf service signatures, generated bindings and the relational schema are unchanged.
+
+### Session workspace observations
+
+`SessionService.ReadSessionWorkspace` and Worker-only `WatchWorkspaceReads`/`ReportWorkspaceRead` implement the [file explorer contract](cmds-delidev-files-contract.md). Their closed JSON envelopes retain bounded exact metadata, decimal file sizes and relative paths. The secondary Worker stream depends on current primary ownership and cannot renew it; queries never enter durable jobs or mutation receipts. Worker errors carry closed codes only, and late, foreign, malformed or duplicate reports cannot release content.

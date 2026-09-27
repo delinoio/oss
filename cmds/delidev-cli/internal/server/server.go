@@ -73,6 +73,8 @@ type Service struct {
 	connections        map[domain.ID]map[domain.ID]context.CancelFunc
 	pairAttempts       map[string]attemptWindow
 	workerStreams      map[domain.ID]workerStream
+	workspaceReadsMu   sync.Mutex
+	workspaceReaders   map[domain.ID]*workspaceReader
 	executionOnce      sync.Once
 	executionAuthority *executionAuthority
 }

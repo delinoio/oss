@@ -60,6 +60,8 @@ func sessionCommand(ctx context.Context, c client, o options, args []string, str
 	action := args[0]
 	f := flags("session " + action)
 	switch action {
+	case "files":
+		return sessionFiles(ctx, c, args[1:])
 	case "steer":
 		id := f.String("id", "", "")
 		inputID := f.String("input-id", "", "")

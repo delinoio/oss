@@ -108,6 +108,12 @@ const (
 	// DeviceServiceRevokeDeviceProcedure is the fully-qualified name of the DeviceService's
 	// RevokeDevice RPC.
 	DeviceServiceRevokeDeviceProcedure = "/delidev.v1.DeviceService/RevokeDevice"
+	// WorkerServiceWatchWorkspaceReadsProcedure is the fully-qualified name of the WorkerService's
+	// WatchWorkspaceReads RPC.
+	WorkerServiceWatchWorkspaceReadsProcedure = "/delidev.v1.WorkerService/WatchWorkspaceReads"
+	// WorkerServiceReportWorkspaceReadProcedure is the fully-qualified name of the WorkerService's
+	// ReportWorkspaceRead RPC.
+	WorkerServiceReportWorkspaceReadProcedure = "/delidev.v1.WorkerService/ReportWorkspaceRead"
 	// WorkerServiceAttachWorkerProcedure is the fully-qualified name of the WorkerService's
 	// AttachWorker RPC.
 	WorkerServiceAttachWorkerProcedure = "/delidev.v1.WorkerService/AttachWorker"
@@ -161,6 +167,9 @@ const (
 	// ProviderServiceResolveModelProcedure is the fully-qualified name of the ProviderService's
 	// ResolveModel RPC.
 	ProviderServiceResolveModelProcedure = "/delidev.v1.ProviderService/ResolveModel"
+	// SessionServiceReadSessionWorkspaceProcedure is the fully-qualified name of the SessionService's
+	// ReadSessionWorkspace RPC.
+	SessionServiceReadSessionWorkspaceProcedure = "/delidev.v1.SessionService/ReadSessionWorkspace"
 	// SessionServiceGetSessionBudgetProcedure is the fully-qualified name of the SessionService's
 	// GetSessionBudget RPC.
 	SessionServiceGetSessionBudgetProcedure = "/delidev.v1.SessionService/GetSessionBudget"
@@ -937,6 +946,8 @@ func (UnimplementedDeviceServiceHandler) RevokeDevice(context.Context, *connect.
 
 // WorkerServiceClient is a client for the delidev.v1.WorkerService service.
 type WorkerServiceClient interface {
+	WatchWorkspaceReads(context.Context, *connect.Request[v1.WatchWorkspaceReadsRequest]) (*connect.ServerStreamForClient[v1.WatchWorkspaceReadsResponse], error)
+	ReportWorkspaceRead(context.Context, *connect.Request[v1.ReportWorkspaceReadRequest]) (*connect.Response[v1.ReportWorkspaceReadResponse], error)
 	AttachWorker(context.Context, *connect.Request[v1.AttachWorkerRequest]) (*connect.Response[v1.AttachWorkerResponse], error)
 	WatchWork(context.Context, *connect.Request[v1.WatchWorkRequest]) (*connect.ServerStreamForClient[v1.WatchWorkResponse], error)
 	ReportWork(context.Context, *connect.Request[v1.ReportWorkRequest]) (*connect.Response[v1.ReportWorkResponse], error)
@@ -960,6 +971,18 @@ func NewWorkerServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 	baseURL = strings.TrimRight(baseURL, "/")
 	workerServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("WorkerService").Methods()
 	return &workerServiceClient{
+		watchWorkspaceReads: connect.NewClient[v1.WatchWorkspaceReadsRequest, v1.WatchWorkspaceReadsResponse](
+			httpClient,
+			baseURL+WorkerServiceWatchWorkspaceReadsProcedure,
+			connect.WithSchema(workerServiceMethods.ByName("WatchWorkspaceReads")),
+			connect.WithClientOptions(opts...),
+		),
+		reportWorkspaceRead: connect.NewClient[v1.ReportWorkspaceReadRequest, v1.ReportWorkspaceReadResponse](
+			httpClient,
+			baseURL+WorkerServiceReportWorkspaceReadProcedure,
+			connect.WithSchema(workerServiceMethods.ByName("ReportWorkspaceRead")),
+			connect.WithClientOptions(opts...),
+		),
 		attachWorker: connect.NewClient[v1.AttachWorkerRequest, v1.AttachWorkerResponse](
 			httpClient,
 			baseURL+WorkerServiceAttachWorkerProcedure,
@@ -1025,6 +1048,8 @@ func NewWorkerServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 
 // workerServiceClient implements WorkerServiceClient.
 type workerServiceClient struct {
+	watchWorkspaceReads   *connect.Client[v1.WatchWorkspaceReadsRequest, v1.WatchWorkspaceReadsResponse]
+	reportWorkspaceRead   *connect.Client[v1.ReportWorkspaceReadRequest, v1.ReportWorkspaceReadResponse]
 	attachWorker          *connect.Client[v1.AttachWorkerRequest, v1.AttachWorkerResponse]
 	watchWork             *connect.Client[v1.WatchWorkRequest, v1.WatchWorkResponse]
 	reportWork            *connect.Client[v1.ReportWorkRequest, v1.ReportWorkResponse]
@@ -1035,6 +1060,16 @@ type workerServiceClient struct {
 	claimQuestionResponse *connect.Client[v1.ClaimQuestionResponseRequest, v1.ClaimQuestionResponseResponse]
 	claimApprovalResponse *connect.Client[v1.ClaimApprovalResponseRequest, v1.ClaimApprovalResponseResponse]
 	claimSteerInput       *connect.Client[v1.ClaimSteerInputRequest, v1.ClaimSteerInputResponse]
+}
+
+// WatchWorkspaceReads calls delidev.v1.WorkerService.WatchWorkspaceReads.
+func (c *workerServiceClient) WatchWorkspaceReads(ctx context.Context, req *connect.Request[v1.WatchWorkspaceReadsRequest]) (*connect.ServerStreamForClient[v1.WatchWorkspaceReadsResponse], error) {
+	return c.watchWorkspaceReads.CallServerStream(ctx, req)
+}
+
+// ReportWorkspaceRead calls delidev.v1.WorkerService.ReportWorkspaceRead.
+func (c *workerServiceClient) ReportWorkspaceRead(ctx context.Context, req *connect.Request[v1.ReportWorkspaceReadRequest]) (*connect.Response[v1.ReportWorkspaceReadResponse], error) {
+	return c.reportWorkspaceRead.CallUnary(ctx, req)
 }
 
 // AttachWorker calls delidev.v1.WorkerService.AttachWorker.
@@ -1089,6 +1124,8 @@ func (c *workerServiceClient) ClaimSteerInput(ctx context.Context, req *connect.
 
 // WorkerServiceHandler is an implementation of the delidev.v1.WorkerService service.
 type WorkerServiceHandler interface {
+	WatchWorkspaceReads(context.Context, *connect.Request[v1.WatchWorkspaceReadsRequest], *connect.ServerStream[v1.WatchWorkspaceReadsResponse]) error
+	ReportWorkspaceRead(context.Context, *connect.Request[v1.ReportWorkspaceReadRequest]) (*connect.Response[v1.ReportWorkspaceReadResponse], error)
 	AttachWorker(context.Context, *connect.Request[v1.AttachWorkerRequest]) (*connect.Response[v1.AttachWorkerResponse], error)
 	WatchWork(context.Context, *connect.Request[v1.WatchWorkRequest], *connect.ServerStream[v1.WatchWorkResponse]) error
 	ReportWork(context.Context, *connect.Request[v1.ReportWorkRequest]) (*connect.Response[v1.ReportWorkResponse], error)
@@ -1108,6 +1145,18 @@ type WorkerServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	workerServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("WorkerService").Methods()
+	workerServiceWatchWorkspaceReadsHandler := connect.NewServerStreamHandler(
+		WorkerServiceWatchWorkspaceReadsProcedure,
+		svc.WatchWorkspaceReads,
+		connect.WithSchema(workerServiceMethods.ByName("WatchWorkspaceReads")),
+		connect.WithHandlerOptions(opts...),
+	)
+	workerServiceReportWorkspaceReadHandler := connect.NewUnaryHandler(
+		WorkerServiceReportWorkspaceReadProcedure,
+		svc.ReportWorkspaceRead,
+		connect.WithSchema(workerServiceMethods.ByName("ReportWorkspaceRead")),
+		connect.WithHandlerOptions(opts...),
+	)
 	workerServiceAttachWorkerHandler := connect.NewUnaryHandler(
 		WorkerServiceAttachWorkerProcedure,
 		svc.AttachWorker,
@@ -1170,6 +1219,10 @@ func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOp
 	)
 	return "/delidev.v1.WorkerService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case WorkerServiceWatchWorkspaceReadsProcedure:
+			workerServiceWatchWorkspaceReadsHandler.ServeHTTP(w, r)
+		case WorkerServiceReportWorkspaceReadProcedure:
+			workerServiceReportWorkspaceReadHandler.ServeHTTP(w, r)
 		case WorkerServiceAttachWorkerProcedure:
 			workerServiceAttachWorkerHandler.ServeHTTP(w, r)
 		case WorkerServiceWatchWorkProcedure:
@@ -1198,6 +1251,14 @@ func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOp
 
 // UnimplementedWorkerServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedWorkerServiceHandler struct{}
+
+func (UnimplementedWorkerServiceHandler) WatchWorkspaceReads(context.Context, *connect.Request[v1.WatchWorkspaceReadsRequest], *connect.ServerStream[v1.WatchWorkspaceReadsResponse]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.WatchWorkspaceReads is not implemented"))
+}
+
+func (UnimplementedWorkerServiceHandler) ReportWorkspaceRead(context.Context, *connect.Request[v1.ReportWorkspaceReadRequest]) (*connect.Response[v1.ReportWorkspaceReadResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.ReportWorkspaceRead is not implemented"))
+}
 
 func (UnimplementedWorkerServiceHandler) AttachWorker(context.Context, *connect.Request[v1.AttachWorkerRequest]) (*connect.Response[v1.AttachWorkerResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.AttachWorker is not implemented"))
@@ -1537,6 +1598,7 @@ func (UnimplementedProviderServiceHandler) ResolveModel(context.Context, *connec
 
 // SessionServiceClient is a client for the delidev.v1.SessionService service.
 type SessionServiceClient interface {
+	ReadSessionWorkspace(context.Context, *connect.Request[v1.ReadSessionWorkspaceRequest]) (*connect.Response[v1.ReadSessionWorkspaceResponse], error)
 	GetSessionBudget(context.Context, *connect.Request[v1.GetSessionBudgetRequest]) (*connect.Response[v1.GetSessionBudgetResponse], error)
 	SetSessionBudget(context.Context, *connect.Request[v1.SetSessionBudgetRequest]) (*connect.Response[v1.SetSessionBudgetResponse], error)
 	SteerQueuedInput(context.Context, *connect.Request[v1.SteerQueuedInputRequest]) (*connect.Response[v1.SteerQueuedInputResponse], error)
@@ -1564,6 +1626,12 @@ func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 	baseURL = strings.TrimRight(baseURL, "/")
 	sessionServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("SessionService").Methods()
 	return &sessionServiceClient{
+		readSessionWorkspace: connect.NewClient[v1.ReadSessionWorkspaceRequest, v1.ReadSessionWorkspaceResponse](
+			httpClient,
+			baseURL+SessionServiceReadSessionWorkspaceProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("ReadSessionWorkspace")),
+			connect.WithClientOptions(opts...),
+		),
 		getSessionBudget: connect.NewClient[v1.GetSessionBudgetRequest, v1.GetSessionBudgetResponse](
 			httpClient,
 			baseURL+SessionServiceGetSessionBudgetProcedure,
@@ -1653,6 +1721,7 @@ func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 
 // sessionServiceClient implements SessionServiceClient.
 type sessionServiceClient struct {
+	readSessionWorkspace    *connect.Client[v1.ReadSessionWorkspaceRequest, v1.ReadSessionWorkspaceResponse]
 	getSessionBudget        *connect.Client[v1.GetSessionBudgetRequest, v1.GetSessionBudgetResponse]
 	setSessionBudget        *connect.Client[v1.SetSessionBudgetRequest, v1.SetSessionBudgetResponse]
 	steerQueuedInput        *connect.Client[v1.SteerQueuedInputRequest, v1.SteerQueuedInputResponse]
@@ -1667,6 +1736,11 @@ type sessionServiceClient struct {
 	prepareSessionWorkspace *connect.Client[v1.PrepareSessionWorkspaceRequest, v1.PrepareSessionWorkspaceResponse]
 	recoverSessionExecution *connect.Client[v1.RecoverSessionExecutionRequest, v1.RecoverSessionExecutionResponse]
 	recoverSessionWorkspace *connect.Client[v1.RecoverSessionWorkspaceRequest, v1.RecoverSessionWorkspaceResponse]
+}
+
+// ReadSessionWorkspace calls delidev.v1.SessionService.ReadSessionWorkspace.
+func (c *sessionServiceClient) ReadSessionWorkspace(ctx context.Context, req *connect.Request[v1.ReadSessionWorkspaceRequest]) (*connect.Response[v1.ReadSessionWorkspaceResponse], error) {
+	return c.readSessionWorkspace.CallUnary(ctx, req)
 }
 
 // GetSessionBudget calls delidev.v1.SessionService.GetSessionBudget.
@@ -1741,6 +1815,7 @@ func (c *sessionServiceClient) RecoverSessionWorkspace(ctx context.Context, req 
 
 // SessionServiceHandler is an implementation of the delidev.v1.SessionService service.
 type SessionServiceHandler interface {
+	ReadSessionWorkspace(context.Context, *connect.Request[v1.ReadSessionWorkspaceRequest]) (*connect.Response[v1.ReadSessionWorkspaceResponse], error)
 	GetSessionBudget(context.Context, *connect.Request[v1.GetSessionBudgetRequest]) (*connect.Response[v1.GetSessionBudgetResponse], error)
 	SetSessionBudget(context.Context, *connect.Request[v1.SetSessionBudgetRequest]) (*connect.Response[v1.SetSessionBudgetResponse], error)
 	SteerQueuedInput(context.Context, *connect.Request[v1.SteerQueuedInputRequest]) (*connect.Response[v1.SteerQueuedInputResponse], error)
@@ -1764,6 +1839,12 @@ type SessionServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	sessionServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("SessionService").Methods()
+	sessionServiceReadSessionWorkspaceHandler := connect.NewUnaryHandler(
+		SessionServiceReadSessionWorkspaceProcedure,
+		svc.ReadSessionWorkspace,
+		connect.WithSchema(sessionServiceMethods.ByName("ReadSessionWorkspace")),
+		connect.WithHandlerOptions(opts...),
+	)
 	sessionServiceGetSessionBudgetHandler := connect.NewUnaryHandler(
 		SessionServiceGetSessionBudgetProcedure,
 		svc.GetSessionBudget,
@@ -1850,6 +1931,8 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 	)
 	return "/delidev.v1.SessionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case SessionServiceReadSessionWorkspaceProcedure:
+			sessionServiceReadSessionWorkspaceHandler.ServeHTTP(w, r)
 		case SessionServiceGetSessionBudgetProcedure:
 			sessionServiceGetSessionBudgetHandler.ServeHTTP(w, r)
 		case SessionServiceSetSessionBudgetProcedure:
@@ -1886,6 +1969,10 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 
 // UnimplementedSessionServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedSessionServiceHandler struct{}
+
+func (UnimplementedSessionServiceHandler) ReadSessionWorkspace(context.Context, *connect.Request[v1.ReadSessionWorkspaceRequest]) (*connect.Response[v1.ReadSessionWorkspaceResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.ReadSessionWorkspace is not implemented"))
+}
 
 func (UnimplementedSessionServiceHandler) GetSessionBudget(context.Context, *connect.Request[v1.GetSessionBudgetRequest]) (*connect.Response[v1.GetSessionBudgetResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.GetSessionBudget is not implemented"))

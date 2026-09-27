@@ -5,6 +5,11 @@
 import { SessionService } from "./delidev_pb.js";
 
 /**
+ * @generated from rpc delidev.v1.SessionService.ReadSessionWorkspace
+ */
+export const readSessionWorkspace = SessionService.method.readSessionWorkspace;
+
+/**
  * @generated from rpc delidev.v1.SessionService.GetSessionBudget
  */
 export const getSessionBudget = SessionService.method.getSessionBudget;

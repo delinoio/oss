@@ -18,8 +18,10 @@ import (
 const workerLease = domain.WorkerConnectionTimeout
 
 type workerStream struct {
-	ID     domain.ID
-	Cancel context.CancelFunc
+	Instance domain.ID
+	Done     <-chan struct{}
+	ID       domain.ID
+	Cancel   context.CancelFunc
 }
 
 func workerActor(ctx context.Context, machine, instance string) error {
@@ -154,7 +156,7 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 	if previous, ok := s.workerStreams[machine]; ok {
 		previous.Cancel()
 	}
-	s.workerStreams[machine] = workerStream{ID: id, Cancel: cancel}
+	s.workerStreams[machine] = workerStream{ID: id, Cancel: cancel, Instance: instance, Done: ctx.Done()}
 	s.connectionsMu.Unlock()
 	defer func() {
 		s.connectionsMu.Lock()

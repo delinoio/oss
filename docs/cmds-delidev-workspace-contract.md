@@ -102,3 +102,7 @@ The pinned OpenCode API profile supports checkpoint continuation and completed-r
 
 ### Claude multi-repository execution and retention
 After complete original workspace validation and lease acquisition, Claude receives the manifest's primary path as cwd and every other repository as a native additional directory. The adapter preserves manifest order and checks canonical existing directories before launch or restoration. Original process and workspace cleanup remain separate from native history completion. Continuation and completed-report recovery derive ordered root authority from the accepted manifest, compare it with both retained checkpoint layers, and preserve secondary repositories as their original owned workspaces. They never synthesize missing native history, re-prepare a workspace, fetch, reset or replay a tool.
+
+### Read-only session observations
+
+The [file explorer contract](cmds-delidev-files-contract.md) adds bounded reads under the original accepted manifest without acquiring or changing the execution lease. Read-only Git validation uses a separate `workspace-read-processes` namespace and UUID owner; completed empty indexes are retired, and uncertain child ownership remains private recovery evidence. No read can reconcile, delete or replace preparation/execution process journals. `os.Root` anchors entry metadata and content independently of mutable absolute paths.

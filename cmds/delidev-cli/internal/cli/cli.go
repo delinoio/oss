@@ -743,6 +743,7 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   provider discover --account-id ID --revision N
   model search [--query TEXT] [--provider-id ID] [--include-hidden] [--limit N] [--page-token TOKEN]
   model resolve --selector ID|ALIAS|NATIVE_ID [--provider-id ID]
+  session files roots|list|read --id ID [--repository-id ID] [--path RELATIVE] [--page-token TOKEN]
   session create --input FILE|- [--wait]
   session prepare --id ID --revision N [--wait]
   session recover-workspace --id ID --revision N [--cleanup] [--wait]

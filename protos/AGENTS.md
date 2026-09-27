@@ -1,5 +1,7 @@
 ### Instructions for `protos/`
 
+- DeliDev `ReadSessionWorkspace` is owner/client-only. `WatchWorkspaceReads`/`ReportWorkspaceRead` are current owning-Worker-only observation APIs bound to the primary stream; they never claim durable jobs, refresh execution leases, create receipts or persist file bodies. Preserve the closed query/result schemas, exact relative-root selection, per-machine bound, deadline and late/duplicate/foreign result rejection in `docs/cmds-delidev-files-contract.md`.
+
 - DeliDev inbox notification operations are owner/paired-client-only and derive the preference/delivery scope from the authenticated principal. Candidate batches contain only original inbox/session UUIDs and closed notification kinds. A fresh durable claim may grant one OS presentation; exact receipt replay, reconnect or another claim request never repeats that grant. Submitted, denied, failed and uncertain reports cannot modify inbox read state or native response authority. Preserve client-bound expected preference revisions and current-state receipt reads; see `docs/cmds-delidev-inbox-contract.md`.
 
 - Follow root `AGENTS.md` and the owning project/domain contracts.

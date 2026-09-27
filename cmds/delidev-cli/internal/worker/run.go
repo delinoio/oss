@@ -432,7 +432,9 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 		}
 		cancel(err)
 	}()
-	defer func() { cancel(context.Canceled); _ = stream.Close(); <-received }()
+	readsDone := make(chan struct{})
+	go func() { defer close(readsDone); watchWorkspaceReads(ctx, config, client, credential, instance) }()
+	defer func() { cancel(context.Canceled); _ = stream.Close(); <-received; <-readsDone }()
 	for {
 		var work assignment
 		select {

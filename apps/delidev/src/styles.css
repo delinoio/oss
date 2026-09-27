@@ -106,3 +106,16 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .pricing-basis dt { color: var(--muted); }
 .pricing-basis dd { margin: 0; overflow-wrap: anywhere; }
 .pricing-basis small { display: block; color: var(--muted); overflow-wrap: anywhere; margin-block: .3rem; }
+
+.session-workspace { display: grid; grid-template-columns: minmax(0, 1fr); height: 100%; min-width: 0; }
+.session-workspace.files-open { grid-template-columns: minmax(320px, 1fr) minmax(300px, 380px); }
+.session-workspace > .session { min-width: 0; }
+.session-app-panel { min-width: 0; overflow: auto; border-left: 1px solid var(--border); background: white; }
+.session-files { padding: 20px; }
+.session-files h2 { margin: 0; }
+.session-files .file-path { overflow-wrap: anywhere; font-family: ui-monospace, monospace; }
+.file-entries { list-style: none; padding: 0; }
+.file-entries li > button, .file-entries li > span { display: block; width: 100%; text-align: left; margin-block: 6px; overflow-wrap: anywhere; }
+.file-entries small { display: block; }
+.session-files pre { font-family: ui-monospace, monospace; font-size: .85rem; max-height: 65vh; overflow: auto; white-space: pre; }
+@media (max-width: 1000px) { .session-workspace.files-open { grid-template-columns: minmax(0, 1fr); height: auto; min-height: 100%; } .session-app-panel { border-left: 0; border-top: 1px solid var(--border); } }
