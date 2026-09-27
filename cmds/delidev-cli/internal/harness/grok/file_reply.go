@@ -114,7 +114,7 @@ func (c *textControl) offerFilePermission(event nativewire.Event, fact fileToolF
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	key, err := fileToolRequestKey(event.ID)
-	if c.profile != fileWriteInput && c.profile != mixedToolInput || !c.running || c.terminal || fact.Permission == nil || event.Kind != nativewire.ServerRequest || event.Token.Validate() != nil || err != nil || c.permissions[event.Token] != nil || len(c.permissions) >= 128 {
+	if c.profile != fileWriteInput && !c.profile.mixed() || !c.running || c.terminal || fact.Permission == nil || event.Kind != nativewire.ServerRequest || event.Token.Validate() != nil || err != nil || c.permissions[event.Token] != nil || len(c.permissions) >= 128 {
 		return FilePermissionOffer{}, incompatible()
 	}
 	if c.permissions == nil {
@@ -156,7 +156,7 @@ func (a *apiConnection) ReplyFilePermission(ctx context.Context, request, arriva
 	}
 	c.mu.Lock()
 	r := c.permissions[arrival]
-	if c.profile != fileWriteInput && c.profile != mixedToolInput || !c.running || c.terminal || r == nil || r.done != nil || request == a.creationRequest || decision == AllowFileSession && c.editPolicy != "" {
+	if c.profile != fileWriteInput && !c.profile.mixed() || !c.running || c.terminal || r == nil || r.done != nil || request == a.creationRequest || request == a.modeRequest || decision == AllowFileSession && c.editPolicy != "" {
 		c.mu.Unlock()
 		return result, sessionUncertain()
 	}
@@ -173,6 +173,12 @@ func (a *apiConnection) ReplyFilePermission(ctx context.Context, request, arriva
 		}
 	}
 	body, _ := json.Marshal(answer)
+	for _, prior := range c.plans {
+		if prior.offer.ArrivalID == request || prior.done != nil && prior.observation.Claim.RequestID == request {
+			c.mu.Unlock()
+			return result, sessionUncertain()
+		}
+	}
 	claim := FilePermissionClaim{Version: 1, OwnerID: a.inspection.OwnerID, ProductSessionID: a.product, InputRequestID: c.input, RequestID: request, NativeSessionID: a.session, NativePromptID: c.prompt, ArrivalID: arrival, ToolID: r.offer.ToolID, RequestDigest: r.offer.RequestDigest, ProposalDigest: r.offer.ProposalDigest, Decision: decision, BodyDigest: fileDigest(body)}
 	if claim.Validate() != nil {
 		c.mu.Unlock()
@@ -303,6 +309,12 @@ func (c *textControl) filesSettled(tools *fileToolObserver, rejected bool) bool 
 	}
 	failed := 0
 	for _, tool := range tools.tools {
+		if tool.plan != nil {
+			if tools.plans == nil || tool.phase != fileToolCompleted || tool.pending || tool.resolved || tool.permission != "" || tool.inherited != "" {
+				return false
+			}
+			continue
+		}
 		if !tool.resolved {
 			return false
 		}

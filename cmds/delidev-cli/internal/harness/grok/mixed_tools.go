@@ -12,6 +12,7 @@ type toolFamily string
 const (
 	fileToolFamily     toolFamily = "file"
 	questionToolFamily toolFamily = "question"
+	planToolFamily     toolFamily = "plan"
 )
 
 // A mixed input shares original tool/request namespaces and cumulative bounds.
@@ -19,6 +20,7 @@ const (
 type mixedTools struct {
 	files     *fileToolObserver
 	questions *questionObserver
+	plans     *planObserver
 	owners    map[string]toolFamily
 	streaming map[uint64]string
 	arrivals  map[domain.ID]bool
@@ -31,6 +33,7 @@ type mixedTools struct {
 type mixedToolFact struct {
 	File     *fileToolFact
 	Question *questionFact
+	Plan     *planFact
 }
 
 func newMixedTools(session domain.ID, prompt string) (*mixedTools, error) {
@@ -79,6 +82,14 @@ func (o *mixedTools) observe(event nativewire.Event) (mixedToolFact, error) {
 				return fact, incompatible()
 			}
 			id, family = request.ID, questionToolFamily
+		case "_x.ai/exit_plan_mode":
+			var request struct {
+				ID string `json:"toolCallId"`
+			}
+			if o.plans == nil || json.Unmarshal(event.Params, &request) != nil {
+				return fact, incompatible()
+			}
+			id, family = request.ID, planToolFamily
 		default:
 			return fact, incompatible()
 		}
@@ -110,6 +121,11 @@ func (o *mixedTools) observe(event nativewire.Event) (mixedToolFact, error) {
 					family = fileToolFamily
 				case askQuestionTool:
 					family = questionToolFamily
+				case enterPlanTool, exitPlanTool:
+					if o.plans == nil {
+						return fact, incompatible()
+					}
+					family = planToolFamily
 				default:
 					return fact, incompatible()
 				}
@@ -129,6 +145,11 @@ func (o *mixedTools) observe(event nativewire.Event) (mixedToolFact, error) {
 		case string(fileInteractionPending), string(fileInteractionResolved):
 			id = variant.Update.Interaction
 			family = o.owners[id]
+		case "current_mode_update":
+			if o.plans == nil {
+				return fact, incompatible()
+			}
+			id, family = o.plans.active, planToolFamily
 		default:
 			return fact, incompatible()
 		}
@@ -136,6 +157,9 @@ func (o *mixedTools) observe(event nativewire.Event) (mixedToolFact, error) {
 		return fact, incompatible()
 	}
 	if id == "" || family == "" {
+		return fact, incompatible()
+	}
+	if o.plans != nil && o.plans.active != "" && family != planToolFamily {
 		return fact, incompatible()
 	}
 	if _, exists := o.owners[id]; !exists && len(o.owners) >= 128 {
@@ -171,6 +195,34 @@ func (o *mixedTools) observe(event nativewire.Event) (mixedToolFact, error) {
 			return fact, err
 		}
 		fact.Question = &value
+	case planToolFamily:
+		if o.plans == nil {
+			return fact, incompatible()
+		}
+		// Native mode transitions are accepted only between completed original
+		// file/question tools in this profile. Concurrent transitions need their
+		// own verified semantics; an inventory never substitutes for settlement.
+		if stream && o.plans.active == "" {
+			for _, tool := range o.files.tools {
+				if tool.phase != fileToolCompleted {
+					return fact, incompatible()
+				}
+			}
+			for _, tool := range o.questions.tools {
+				if tool.phase != fileToolCompleted {
+					return fact, incompatible()
+				}
+			}
+			if o.files.editPolicy != "" {
+				return fact, incompatible()
+			}
+		}
+		value, err := o.plans.observe(event)
+		if err != nil {
+			return fact, err
+		}
+		fact.Plan = &value
+		o.questions.mode = o.plans.mode
 	default:
 		return fact, incompatible()
 	}
@@ -194,4 +246,17 @@ func (o *mixedTools) observe(event nativewire.Event) (mixedToolFact, error) {
 		o.lastEvent, o.seenEvent = eventSequence, true
 	}
 	return fact, nil
+}
+
+func newPlanningTools(session domain.ID, prompt, home, workspace string, mode NativeMode) (*mixedTools, error) {
+	mixed, err := newMixedTools(session, prompt)
+	if err != nil {
+		return nil, err
+	}
+	plans, err := newPlanObserver(session, prompt, home, workspace, mode)
+	if err != nil {
+		return nil, err
+	}
+	mixed.plans, mixed.files.plans, mixed.questions.mode = plans, plans, mode
+	return mixed, nil
 }

@@ -54,7 +54,10 @@ const (
 	questionInput     inputProfile = "question"
 	mixedToolInput    inputProfile = "mixed-tools"
 	planQuestionInput inputProfile = "plan-questions"
+	planningInput     inputProfile = "planning"
 )
+
+func (p inputProfile) mixed() bool { return p == mixedToolInput || p == planningInput }
 
 func (p inputProfile) questionsOnly() bool { return p == questionInput || p == planQuestionInput }
 
@@ -68,6 +71,7 @@ const (
 	InputResponse           ObservationKind = "input-response"
 	InputPermissionRejected ObservationKind = "input-permission-rejected"
 	InputQuestion           ObservationKind = "input-question"
+	InputPlan               ObservationKind = "input-plan"
 )
 
 // InputObservation contains native facts only. Its coordinator must journal
@@ -87,6 +91,8 @@ type InputObservation struct {
 	Rejection      *rejectedFileResult
 	Question       *questionFact
 	QuestionOffer  *QuestionOffer
+	Plan           *planFact
+	PlanOffer      *PlanOffer
 }
 
 type promptParams struct {
@@ -144,7 +150,7 @@ func (a *apiConnection) RunTools(ctx context.Context, request domain.ID, input s
 }
 
 func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input string, record func(context.Context, InputClaim) error, emit func(context.Context, InputObservation) error, profile inputProfile) (result PromptResult, returned error) {
-	if profile != plainTextInput && profile != readFileInput && profile != fileWriteInput && !profile.questionsOnly() && profile != mixedToolInput {
+	if profile != plainTextInput && profile != readFileInput && profile != fileWriteInput && !profile.questionsOnly() && !profile.mixed() {
 		return result, apiConfigurationError()
 	}
 	if request.Validate() != nil || domain.Text(input, "original native input", 256<<10, true) != nil || record == nil || emit == nil {
@@ -164,7 +170,7 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 	if !a.ready || a.inputStarted || request == a.product || request == a.creationRequest || request == a.modeRequest {
 		return result, sessionUncertain()
 	}
-	if profile == planQuestionInput {
+	if profile == planQuestionInput || profile == planningInput && a.profile.mode == domain.PlanMode {
 		if a.profile.mode != domain.PlanMode || a.modeBinding == nil || a.modeBinding.Validate() != nil {
 			return result, sessionUncertain()
 		}
@@ -255,6 +261,7 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 		}
 		control.joinFileReplies()
 		control.joinQuestionReplies()
+		control.joinPlanReplies()
 		<-done
 		close(watchStop)
 		<-watchDone
@@ -311,13 +318,54 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 		}
 		return nil
 	}
-	publishMixed := func(event nativewire.Event) error {
+	publishMixed := func(event nativewire.Event) (returned error) {
+		stage := "original-tool"
+		defer func() {
+			if returned != nil && a.inspection.Logger != nil {
+				a.inspection.Logger.WarnContext(life, "Grok Build original tool observation failed", "owner_id", a.inspection.OwnerID, "input_id", request, "stage", stage, "code", domain.SafeError(returned).Code)
+			}
+		}()
 		if mixed == nil || !queue.running || queue.cleared {
 			return incompatible()
 		}
 		fact, err := mixed.observe(event)
 		if err != nil {
 			return err
+		}
+		if fact.Plan != nil {
+			stage = "original-plan-response"
+			observation := InputObservation{Kind: InputPlan, Plan: fact.Plan}
+			if event.Kind == nativewire.ServerRequest {
+				offer, err := control.offerPlan(event, *fact.Plan)
+				if err != nil {
+					return err
+				}
+				observation.PlanOffer = &offer
+			} else {
+				outcome, err := control.observePlanReply(life, *fact.Plan)
+				if err != nil {
+					return err
+				}
+				if outcome != "" {
+					if err := mixed.plans.bindResponse(fact.Plan.Interaction.ID, outcome); err != nil {
+						return err
+					}
+				}
+			}
+			if fact.Plan.Observation != nil {
+				stage = "original-plan-event"
+				if err := observeIndex(fact.Plan.Observation.Meta.Event); err != nil {
+					return err
+				}
+			}
+			if fact.Plan.Mode != nil {
+				stage = "original-plan-mode"
+				if err := observeIndex(fact.Plan.Mode.Meta.Event); err != nil {
+					return err
+				}
+			}
+			stage = "original-plan-publication"
+			return publish(observation)
 		}
 		if fact.Question != nil {
 			observation := InputObservation{Kind: InputQuestion, Question: fact.Question}
@@ -396,7 +444,7 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 			return result, domain.Fail(domain.ResourceExhausted, "Native input observations reached their bound.", "Retain the original input and reconcile its native runtime.")
 		}
 		if event.Kind == nativewire.ServerRequest {
-			if profile == mixedToolInput {
+			if profile.mixed() {
 				if err := publishMixed(event); err != nil {
 					return result, err
 				}
@@ -451,8 +499,16 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 				}
 			}
 			if !running && queue.running {
-				if profile == mixedToolInput {
-					mixed, err = newMixedTools(a.session, queue.prompt)
+				if profile.mixed() {
+					if profile == planningInput {
+						mode := NativeDefaultMode
+						if a.modeBinding != nil {
+							mode = NativePlanMode
+						}
+						mixed, err = newPlanningTools(a.session, queue.prompt, filepath.Dir(a.profile.path), a.workspace, mode)
+					} else {
+						mixed, err = newMixedTools(a.session, queue.prompt)
+					}
 					if err != nil {
 						return result, err
 					}
@@ -487,8 +543,8 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 				return result, incompatible()
 			}
 			switch variant.Update.Kind {
-			case "tool_call_delta_chunk", "tool_call", "tool_call_update", "pending_interaction", "interaction_resolved":
-				if profile == mixedToolInput {
+			case "tool_call_delta_chunk", "tool_call", "tool_call_update", "pending_interaction", "interaction_resolved", "current_mode_update":
+				if profile.mixed() {
 					if err := publishMixed(event); err != nil {
 						return result, err
 					}
@@ -576,7 +632,7 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 					return result, incompatible()
 				}
 				if reason.Update.Reason == Cancelled {
-					if profile == fileWriteInput || profile == mixedToolInput {
+					if profile == fileWriteInput || profile.mixed() {
 						rejectedTurn, err = parseRejectedFileTurn(event.Params, a.session, queue.prompt, a.profile.model)
 						if err != nil {
 							return result, err
@@ -655,7 +711,7 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 				return result, incompatible()
 			}
 			if reason.Reason == Cancelled {
-				if profile == fileWriteInput || profile == mixedToolInput {
+				if profile == fileWriteInput || profile.mixed() {
 					rejectedPrompt, err = parseRejectedFileCompletion(event.Params, a.session, queue.prompt)
 					if err != nil {
 						return result, err
@@ -698,8 +754,11 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 	if interrupted != promptInterrupted || rejected != promptRejected {
 		return result, incompatible()
 	}
+	if profile == planningInput && (mixed == nil || !control.plansSettled(mixed.plans)) {
+		return result, incompatible()
+	}
 	if rejected {
-		if !queue.cleared || !responseObserved || !control.filesSettled(fileTools, true) || profile == mixedToolInput && !control.questionsSettled(questions) {
+		if !queue.cleared || !responseObserved || !control.filesSettled(fileTools, true) || profile.mixed() && !control.questionsSettled(questions) {
 			return result, incompatible()
 		}
 		denied, err := parseRejectedFileResult(rpc.Result, a.session, queue.prompt, a.profile.model, accounting)
@@ -748,7 +807,7 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 		return result, incompatible()
 	}
 	if profile != plainTextInput {
-		if (profile.questionsOnly() || profile == mixedToolInput) && !control.questionsSettled(questions) || !profile.questionsOnly() && (fileTools == nil || profile == readFileInput && len(fileTools.tools) > 0 && !fileTools.settled() || (profile == fileWriteInput || profile == mixedToolInput) && !control.filesSettled(fileTools, false)) {
+		if (profile.questionsOnly() || profile.mixed()) && !control.questionsSettled(questions) || !profile.questionsOnly() && (fileTools == nil || profile == readFileInput && len(fileTools.tools) > 0 && !fileTools.settled() || (profile == fileWriteInput || profile.mixed()) && !control.filesSettled(fileTools, false)) {
 			return result, incompatible()
 		}
 		result, err = parseFilePromptResult(rpc.Result, a.session, queue.prompt, a.profile.model, accounting)

@@ -54,7 +54,8 @@ func TestManualNativeGrokWorkerOriginalClaims(t *testing.T) {
 		writing, rejected          bool
 		question                   bool
 		mixed, plan                bool
-	}{{name: "original"}, {name: "streamed", streamed: true}, {name: "changed", changed: true}, {name: "stopped", stopped: true}, {name: "write", writing: true}, {name: "write-rejected", writing: true, rejected: true}, {name: "question", question: true}, {name: "question-cancelled", question: true, rejected: true}, {name: "mixed", mixed: true}, {name: "plan-question", question: true, plan: true}, {name: "plan-question-cancelled", question: true, plan: true, rejected: true}} {
+		planning                   string
+	}{{name: "original"}, {name: "streamed", streamed: true}, {name: "changed", changed: true}, {name: "stopped", stopped: true}, {name: "write", writing: true}, {name: "write-rejected", writing: true, rejected: true}, {name: "question", question: true}, {name: "question-cancelled", question: true, rejected: true}, {name: "mixed", mixed: true}, {name: "plan-question", question: true, plan: true}, {name: "plan-question-cancelled", question: true, plan: true, rejected: true}, {name: "planning-approved", planning: "approved"}, {name: "planning-cancelled", planning: "cancelled"}, {name: "planning-abandoned", planning: "abandoned"}, {name: "planning-revised", planning: "revised"}, {name: "initial-planning-approved", plan: true, planning: "approved"}, {name: "initial-planning-revised", plan: true, planning: "revised"}} {
 		t.Run(profile.name, func(t *testing.T) {
 			changed := profile.changed
 			stopRequest := domain.NewID()
@@ -95,6 +96,7 @@ func TestManualNativeGrokWorkerOriginalClaims(t *testing.T) {
 					t.Error("native inference retained a relay lease")
 				}
 			})
+			planning := &nativeGrokPlanFixture{scenario: profile.planning}
 			var upstream atomic.Uint32
 			firstText := make(chan struct{})
 			provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -117,6 +119,10 @@ func TestManualNativeGrokWorkerOriginalClaims(t *testing.T) {
 					t.Error("native inference preceded synchronized original Worker claims")
 				}
 				w.Header().Set("Content-Type", "text/event-stream")
+				if profile.planning != "" {
+					planning.provider(t, w, raw, p.input.Configuration.NativeModel)
+					return
+				}
 				if profile.mixed {
 					nativeGrokMixedProvider(t, w, raw, filePath, p.input.Configuration.NativeModel)
 					return
@@ -167,7 +173,9 @@ func TestManualNativeGrokWorkerOriginalClaims(t *testing.T) {
 			defer cancel()
 			cfg := grok.APIExecutionConfig{Probe: grok.ProbeConfig{Process: process.Config{Directory: filepath.Join(p.config.Root, "processes"), OwnerID: p.job, Executable: executable, Cwd: root, Env: env, Logger: logger}, Version: grok.SupportedVersion, Home: filepath.Join(root, "grok")}, Workspace: workspace, Model: p.input.Configuration.NativeModel, ContextTokens: 32000, Mode: mode, ServerOrigin: relay.URL, Token: authority.token}
 			var api *grok.OwnedAPI
-			if profile.plan {
+			if profile.planning != "" {
+				api, err = grok.OpenOwnedAPIWithPlanning(ctx, cfg, grok.PlanningRecorders{Creation: journal.Creation, Mode: journal.Mode, Input: journal.Input, File: journal.FileReply, Question: journal.QuestionReply, Plan: journal.PlanReply})
+			} else if profile.plan {
 				api, err = grok.OpenOwnedAPIWithPlanQuestions(ctx, cfg, journal.Creation, journal.Mode, journal.Input, journal.QuestionReply)
 			} else if profile.mixed {
 				api, err = grok.OpenOwnedAPIWithTools(ctx, cfg, journal.Creation, journal.Input, journal.Closure, journal.FileReply, journal.QuestionReply)
@@ -214,6 +222,10 @@ func TestManualNativeGrokWorkerOriginalClaims(t *testing.T) {
 				if err != nil || len(claims) != 4 || claims[3].Mode == nil || *claims[3].Mode != binding || binding.NativeSessionID != session {
 					t.Fatal("native Plan mode lost original Worker binding", err)
 				}
+			}
+			if profile.planning != "" {
+				planning.run(t, ctx, api, p, journal, session)
+				return
 			}
 			if profile.mixed {
 				nativeGrokWorkerMixed(t, ctx, api, p, journal, session, filePath)

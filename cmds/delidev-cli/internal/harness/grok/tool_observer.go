@@ -38,6 +38,7 @@ type fileToolState struct {
 	permission domain.ID
 	inherited  domain.ID
 	details    [32]byte
+	plan       *PlanFileOrigin
 }
 
 // fileToolObserver belongs to one already accepted native prompt. It is a
@@ -53,6 +54,7 @@ type fileToolObserver struct {
 	lastEvent  uint64
 	seenEvent  bool
 	editPolicy domain.ID
+	plans      *planObserver
 }
 
 type fileToolFact struct {
@@ -62,6 +64,7 @@ type fileToolFact struct {
 	Permission  *filePermission
 	// This is original controller provenance, never a fabricated native reply.
 	InheritedPermission domain.ID
+	PlanFile            *PlanFileOrigin
 }
 
 func newFileToolObserver(session domain.ID, prompt string) (*fileToolObserver, error) {
@@ -176,15 +179,29 @@ func (o *fileToolObserver) observe(event nativewire.Event) (fileToolFact, error)
 			}
 			next.input, next.arguments = observed.Input, ""
 			if observed.Input.Name == writeFileTool {
-				next.inherited = o.editPolicy
+				if o.plans != nil && o.plans.mode == NativePlanMode {
+					next.plan, err = o.plans.fileOrigin(observed.Input)
+					if err != nil {
+						return fact, err
+					}
+				} else {
+					next.inherited = o.editPolicy
+				}
 			}
 		case fileToolDescribed:
-			if prior.phase != fileToolDeclared || !prior.pending || prior.resolved {
+			if prior.phase != fileToolDeclared || prior.resolved || prior.plan == nil && !prior.pending || prior.plan != nil && prior.pending {
 				return fact, incompatible()
 			}
 			next.details = historyValueDigest(permissionTool(observed))
 		case fileToolCompleted, fileToolFailed:
-			if prior.phase != fileToolDescribed || !prior.pending || !prior.resolved || prior.name == writeFileTool && prior.permission == "" && (prior.inherited == "" || prior.inherited != o.editPolicy || observed.Phase != fileToolCompleted) {
+			if prior.phase != fileToolDescribed {
+				return fact, incompatible()
+			}
+			if prior.plan != nil {
+				if prior.pending || prior.resolved || prior.permission != "" || prior.inherited != "" || observed.Phase != fileToolCompleted {
+					return fact, incompatible()
+				}
+			} else if !prior.pending || !prior.resolved || prior.name == writeFileTool && prior.permission == "" && (prior.inherited == "" || prior.inherited != o.editPolicy || observed.Phase != fileToolCompleted) {
 				return fact, incompatible()
 			}
 		default:
@@ -207,7 +224,7 @@ func (o *fileToolObserver) observe(event nativewire.Event) (fileToolFact, error)
 		}
 		id = interaction.ID
 		prior, exists := o.tools[id]
-		if !exists {
+		if !exists || prior.plan != nil {
 			return fact, incompatible()
 		}
 		next = prior
@@ -229,8 +246,17 @@ func (o *fileToolObserver) observe(event nativewire.Event) (fileToolFact, error)
 	if _, exists := o.tools[id]; !exists && len(o.tools) >= 128 {
 		return fileToolFact{}, domain.Fail(domain.ResourceExhausted, "Native file-tool count reached its bound.", "Retain the original input and reconcile its tools without replay.")
 	}
+	if next.plan != nil && fact.Observation != nil && fact.Observation.Phase == fileToolCompleted {
+		if err := o.plans.commitWrite(id, *next.plan, fact.Observation.Write); err != nil {
+			return fileToolFact{}, err
+		}
+	}
 	o.tools[id] = next
 	fact.InheritedPermission = next.inherited
+	if next.plan != nil {
+		origin := *next.plan
+		fact.PlanFile = &origin
+	}
 	o.bytes += len(event.Params)
 	if hasEvent {
 		o.lastEvent, o.seenEvent = eventIndexValue, true

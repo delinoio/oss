@@ -21,6 +21,48 @@ type OwnedAPI struct {
 	fileReply     func(context.Context, FilePermissionClaim) error
 	questionReply func(context.Context, QuestionClaim) error
 	mode          func(context.Context, ModeClaim) error
+	planReply     func(context.Context, PlanClaim) error
+}
+
+type PlanningRecorders struct {
+	Creation func(context.Context, CreationClaim) error
+	Mode     func(context.Context, ModeClaim) error
+	Input    func(context.Context, InputClaim) error
+	File     func(context.Context, FilePermissionClaim) error
+	Question func(context.Context, QuestionClaim) error
+	Plan     func(context.Context, PlanClaim) error
+}
+
+func OpenOwnedAPIWithPlanning(ctx context.Context, config APIExecutionConfig, record PlanningRecorders) (*OwnedAPI, error) {
+	if record.Creation == nil || record.Mode == nil || record.Input == nil || record.File == nil || record.Question == nil || record.Plan == nil {
+		return nil, apiConfigurationError()
+	}
+	connection, err := openAPI(ctx, config)
+	if err != nil {
+		return nil, err
+	}
+	return &OwnedAPI{connection: connection, creation: record.Creation, mode: record.Mode, input: record.Input, fileReply: record.File, questionReply: record.Question, planReply: record.Plan}, nil
+}
+
+func (a *OwnedAPI) RunPlanning(ctx context.Context, request domain.ID, input string, emit func(context.Context, InputObservation) error) (PromptResult, error) {
+	if a == nil || a.connection == nil || a.fileReply == nil || a.questionReply == nil || a.planReply == nil || a.mode == nil {
+		return PromptResult{}, apiConfigurationError()
+	}
+	return a.connection.runInput(ctx, request, input, a.input, emit, planningInput)
+}
+
+func (a *OwnedAPI) ReplyPlan(ctx context.Context, request, arrival domain.ID, outcome PlanOutcome) (PlanDelivery, error) {
+	if a == nil || a.connection == nil || a.planReply == nil {
+		return PlanDelivery{}, apiConfigurationError()
+	}
+	return a.connection.ReplyPlan(ctx, request, arrival, outcome, a.planReply)
+}
+
+func (a *OwnedAPI) InspectPlan(arrival domain.ID) (PlanDelivery, error) {
+	if a == nil || a.connection == nil || a.connection.textControl() == nil {
+		return PlanDelivery{}, sessionUncertain()
+	}
+	return a.connection.textControl().inspectPlanReply(arrival)
 }
 
 func OpenOwnedAPIWithPlanQuestions(ctx context.Context, config APIExecutionConfig, creation func(context.Context, CreationClaim) error, mode func(context.Context, ModeClaim) error, input func(context.Context, InputClaim) error, reply func(context.Context, QuestionClaim) error) (*OwnedAPI, error) {

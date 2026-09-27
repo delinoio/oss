@@ -18,6 +18,10 @@ func fixtureInput(root, workspace, mode string, request domain.ID, raw json.RawM
 		os.Exit(60)
 	}
 	_ = os.WriteFile(filepath.Join(root, "tmp", "input-started"), []byte("started"), 0600)
+	if strings.HasPrefix(mode, "planning-") {
+		fixturePlanningInput(root, workspace, mode, request, params.Prompt[0].Text)
+		return
+	}
 	if strings.HasPrefix(mode, "question-") {
 		fixtureQuestionInput(workspace, mode, request, params.Prompt[0].Text)
 		return

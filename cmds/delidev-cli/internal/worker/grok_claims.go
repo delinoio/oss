@@ -51,6 +51,7 @@ type grokClaim struct {
 	FileReply     *grok.FilePermissionClaim `json:"file_reply,omitempty"`
 	QuestionReply *grok.QuestionClaim       `json:"question_reply,omitempty"`
 	Mode          *grok.ModeClaim           `json:"mode,omitempty"`
+	PlanReply     *grok.PlanClaim           `json:"plan_reply,omitempty"`
 }
 
 // Tool families share original response namespaces in a mixed native input.
@@ -61,15 +62,22 @@ type grokReplyOwner struct {
 }
 
 func grokReplyOwnerOf(record grokClaim) (grokReplyOwner, error) {
-	if record.FileReply != nil && record.QuestionReply == nil {
+	if record.FileReply != nil && record.QuestionReply == nil && record.PlanReply == nil {
 		c := record.FileReply
 		if c.Validate() != nil {
 			return grokReplyOwner{}, grokClaimUncertain()
 		}
 		return grokReplyOwner{c.OwnerID, c.ProductSessionID, c.InputRequestID, c.RequestID, c.NativeSessionID, c.ArrivalID, c.NativePromptID, c.ToolID, c.RequestDigest}, nil
 	}
-	if record.QuestionReply != nil && record.FileReply == nil {
+	if record.QuestionReply != nil && record.FileReply == nil && record.PlanReply == nil {
 		c := record.QuestionReply
+		if c.Validate() != nil {
+			return grokReplyOwner{}, grokClaimUncertain()
+		}
+		return grokReplyOwner{c.OwnerID, c.ProductSessionID, c.InputRequestID, c.RequestID, c.NativeSessionID, c.ArrivalID, c.NativePromptID, c.ToolID, c.RequestDigest}, nil
+	}
+	if record.PlanReply != nil && record.FileReply == nil && record.QuestionReply == nil {
+		c := record.PlanReply
 		if c.Validate() != nil {
 			return grokReplyOwner{}, grokClaimUncertain()
 		}
@@ -195,7 +203,7 @@ func (s grokClaimState) validateNext(c grokClaim) error {
 	}
 	if len(s.Claims) < 4 {
 		m := c.Mode
-		if m == nil || c.Creation != nil || c.Input != nil || c.Stop != nil || c.Closure != nil || c.FileReply != nil || c.QuestionReply != nil || m.Validate() != nil || m.OwnerID != s.Reference.JobID || m.ProductSessionID != s.Reference.SessionID || m.NativeSessionID != s.Claims[1].Creation.NativeSessionID || m.RequestID == s.Reference.CreationRequestID || m.RequestID == s.Reference.InputRequestID {
+		if m == nil || c.Creation != nil || c.Input != nil || c.Stop != nil || c.Closure != nil || c.FileReply != nil || c.QuestionReply != nil || c.PlanReply != nil || m.Validate() != nil || m.OwnerID != s.Reference.JobID || m.ProductSessionID != s.Reference.SessionID || m.NativeSessionID != s.Claims[1].Creation.NativeSessionID || m.RequestID == s.Reference.CreationRequestID || m.RequestID == s.Reference.InputRequestID {
 			return grokClaimUncertain()
 		}
 		if len(s.Claims) == 2 {
@@ -211,14 +219,28 @@ func (s grokClaimState) validateNext(c grokClaim) error {
 		}
 		return nil
 	}
-	// Initial Plan text/questions retain the original four input stages after
-	// the separate mode mutation. They cannot borrow default file/Stop/history
-	// send authority; those require their own native Plan composition.
-	if c.Mode != nil || c.Stop != nil || c.Closure != nil || c.FileReply != nil {
+	// Initial Plan inputs retain the original four input stages after their
+	// separate mode mutation. Tool replies retain their own native authority;
+	// the original mode alone never grants default file, Stop or history rights.
+	if c.Mode != nil || c.Stop != nil || c.Closure != nil {
 		return grokClaimUncertain()
 	}
-	if c.QuestionReply != nil && (c.QuestionReply.RequestID == s.Claims[2].Mode.RequestID || c.QuestionReply.ArrivalID == s.Claims[2].Mode.RequestID) {
-		return grokClaimUncertain()
+	if c.QuestionReply != nil || c.FileReply != nil || c.PlanReply != nil {
+		reply, err := grokReplyOwnerOf(c)
+		if err != nil || reply.request == s.Claims[2].Mode.RequestID || reply.arrival == s.Claims[2].Mode.RequestID {
+			return grokClaimUncertain()
+		}
+		if c.FileReply != nil {
+			var last *grok.PlanClaim
+			for _, record := range s.Claims[4:] {
+				if record.PlanReply != nil {
+					last = record.PlanReply
+				}
+			}
+			if last == nil || last.Outcome != grok.PlanApproved && last.Outcome != grok.PlanAbandoned {
+				return grokClaimUncertain()
+			}
+		}
 	}
 	inputState := grokClaimState{Reference: s.Reference, Claims: append(append([]grokClaim{}, s.Claims[:2]...), s.Claims[4:]...)}
 	return inputState.validateNextInput(c)
@@ -244,10 +266,13 @@ func (s grokClaimState) validateNextInput(c grokClaim) error {
 	if c.QuestionReply != nil {
 		variants++
 	}
+	if c.PlanReply != nil {
+		variants++
+	}
 	if len(s.Claims) >= maxGrokClaims || variants != 1 {
 		return grokClaimUncertain()
 	}
-	if c.QuestionReply != nil || c.FileReply != nil {
+	if c.QuestionReply != nil || c.FileReply != nil || c.PlanReply != nil {
 		reply, err := grokReplyOwnerOf(c)
 		if len(s.Claims) < 4 || err != nil || reply.owner != s.Reference.JobID || reply.product != s.Reference.SessionID || reply.input != s.Reference.InputRequestID || reply.request == s.Reference.CreationRequestID || reply.native != s.Claims[3].Input.NativeSessionID || reply.prompt != s.Claims[3].Input.NativePromptID {
 			return grokClaimUncertain()
@@ -255,6 +280,27 @@ func (s grokClaimState) validateNextInput(c grokClaim) error {
 		for _, record := range s.Claims[4:] {
 			prior, err := grokReplyOwnerOf(record)
 			if err != nil || prior.request == reply.request || prior.arrival == reply.arrival || prior.request == reply.arrival || prior.arrival == reply.request || prior.tool == reply.tool || prior.requestDigest == reply.requestDigest {
+				return grokClaimUncertain()
+			}
+			if p := record.PlanReply; p != nil && (reply.tool == p.EntryToolID || reply.tool == p.WriteToolID) {
+				return grokClaimUncertain()
+			}
+			if p := c.PlanReply; p != nil && (prior.tool == p.EntryToolID || prior.tool == p.WriteToolID) {
+				return grokClaimUncertain()
+			}
+			if old, next := record.PlanReply, c.PlanReply; old != nil && next != nil && old.WriteToolID == next.WriteToolID && old.Revision != next.Revision {
+				return grokClaimUncertain()
+			}
+		}
+		if c.PlanReply != nil {
+			var prior *grok.PlanClaim
+			for _, record := range s.Claims[4:] {
+				if record.PlanReply != nil {
+					prior = record.PlanReply
+				}
+			}
+			p := c.PlanReply
+			if prior != nil && (prior.Outcome != grok.PlanCancelled || p.EntryToolID != prior.EntryToolID || p.EntryEventID != prior.EntryEventID || p.Revision < prior.Revision || p.Revision == prior.Revision && (p.WriteToolID != prior.WriteToolID || p.ContentDigest != prior.ContentDigest) || p.Revision > prior.Revision && p.WriteToolID == prior.WriteToolID) {
 				return grokClaimUncertain()
 			}
 		}
@@ -349,6 +395,10 @@ func (j *grokClaimJournal) QuestionReply(ctx context.Context, c grok.QuestionCla
 
 func (j *grokClaimJournal) Mode(ctx context.Context, c grok.ModeClaim) error {
 	return j.claim(ctx, grokClaim{Mode: &c})
+}
+
+func (j *grokClaimJournal) PlanReply(ctx context.Context, c grok.PlanClaim) error {
+	return j.claim(ctx, grokClaim{PlanReply: &c})
 }
 
 func (j *grokClaimJournal) claim(ctx context.Context, c grokClaim) (returned error) {
