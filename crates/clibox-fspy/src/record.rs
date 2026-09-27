@@ -132,6 +132,25 @@ pub struct AccessPath {
     pub identity: Option<FileIdentity>,
 }
 
+/// Bound retained receiver frames by a conservative NDJSON-sized charge.
+/// Native byte arrays can expand to four decimal JSON bytes per input byte;
+/// the classified paths are measured after resolution and the fixed allowance
+/// covers frame, pair, and record fields omitted from this path calculation.
+pub(crate) fn retained_frame_charge<'a>(
+    raw_path_bytes: usize,
+    paths: impl IntoIterator<Item = &'a AccessPath>,
+) -> Option<u64> {
+    let mut charge = u64::try_from(raw_path_bytes)
+        .ok()?
+        .checked_mul(4)?
+        .checked_add(512)?;
+    for path in paths {
+        let encoded = serde_json::to_vec(path).ok()?;
+        charge = charge.checked_add(u64::try_from(encoded.len()).ok()?)?;
+    }
+    Some(charge)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum FileIdentity {
@@ -794,6 +813,21 @@ mod tests {
     use std::io::Cursor;
 
     use super::*;
+
+    #[test]
+    fn retained_charge_covers_two_classified_windows_paths() {
+        let path = AccessPath {
+            class: PathClass::Project,
+            logical: NativePath::WindowsUtf16(vec![u16::MAX; 1000]),
+            resolved: Some(NativePath::WindowsUtf16(vec![u16::MAX; 1000])),
+            project_relative: None,
+            identity: None,
+        };
+        let encoded = serde_json::to_vec(&path).unwrap().len() as u64;
+        let charge = retained_frame_charge(4000, [&path, &path]).unwrap();
+        assert_eq!(charge, 512 + 4000 * 4 + encoded * 2);
+        assert!(charge > 4000 + 50);
+    }
 
     fn fixture(relative: &[u8], operation: Operation) -> Vec<u8> {
         let id = Uuid::parse_str("01890f7e-4b1c-7cc2-9dce-dfca43a88f6f").unwrap();

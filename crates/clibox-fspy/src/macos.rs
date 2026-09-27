@@ -152,7 +152,7 @@ pub struct FrameLedger {
     event_count: usize,
     max_events: usize,
     max_bytes: u64,
-    received_bytes: u64,
+    retained_bytes: u64,
 }
 
 impl FrameLedger {
@@ -175,12 +175,17 @@ impl FrameLedger {
                 .checked_add(1)
                 .ok_or_else(|| invalid("event_limit"))?;
         }
-        self.received_bytes = self
-            .received_bytes
-            .checked_add((HEADER_BYTES + frame.path.len()) as u64)
+        let charge = record::retained_frame_charge(frame.path.len(), frame.access_path.iter())
             .ok_or_else(|| invalid("byte_limit"))?;
-        if self.event_count > self.max_events || self.received_bytes > self.max_bytes {
-            return Err(invalid("frame_limit"));
+        self.retained_bytes = self
+            .retained_bytes
+            .checked_add(charge)
+            .ok_or_else(|| invalid("byte_limit"))?;
+        if self.event_count > self.max_events {
+            return Err(invalid("event_limit"));
+        }
+        if self.retained_bytes > self.max_bytes {
+            return Err(invalid("byte_limit"));
         }
         frame.sequence = self.frame_count;
         let key = (frame.pid, frame.tid, frame.id);
@@ -822,7 +827,7 @@ mod tests {
         let mut hello = frame_bytes(b'h', b"");
         hello[1] = 0;
         let frame = read_frame(&mut hello.as_slice()).unwrap().unwrap();
-        let mut ledger = FrameLedger::new(2, 256);
+        let mut ledger = FrameLedger::new(2, 4096);
         ledger.push(frame).unwrap();
         assert!(ledger.finish().unwrap().hello_pids.contains(&123));
         let bytes = frame_bytes(b's', b"/tmp/input");
@@ -842,14 +847,14 @@ mod tests {
         let mut completion = read_frame(&mut frame_bytes(b'e', b"").as_slice())
             .unwrap()
             .unwrap();
-        let mut ledger = FrameLedger::new(2, 256);
+        let mut ledger = FrameLedger::new(2, 4096);
         assert!(ledger.push(completion.clone()).is_err());
         ledger.push(start.clone()).unwrap();
         assert!(ledger.finish().is_err());
-        let mut ledger = FrameLedger::new(2, 256);
+        let mut ledger = FrameLedger::new(2, 4096);
         ledger.push(start.clone()).unwrap();
         assert!(ledger.push(start).is_err());
-        let mut ledger = FrameLedger::new(2, 256);
+        let mut ledger = FrameLedger::new(2, 4096);
         completion.monotonic_ns -= 1;
         ledger
             .push(
@@ -862,6 +867,27 @@ mod tests {
     }
 
     #[test]
+    fn classified_paths_exhaust_the_budget_before_retention() {
+        use crate::record::{AccessPath, NativePath, PathClass};
+
+        let mut path = vec![b'/'];
+        path.extend(std::iter::repeat_n(b'x', 1000));
+        let mut frame = read_frame(&mut frame_bytes(b's', &path).as_slice())
+            .unwrap()
+            .unwrap();
+        frame.access_path = Some(AccessPath {
+            class: PathClass::Project,
+            logical: NativePath::UnixBytes(path.clone()),
+            resolved: Some(NativePath::UnixBytes(path.clone())),
+            project_relative: Some(NativePath::UnixBytes(path)),
+            identity: None,
+        });
+        let mut ledger = FrameLedger::new(2, 6000);
+        assert_eq!(ledger.push(frame).unwrap_err().to_string(), "byte_limit");
+        assert!(ledger.pending.is_empty());
+    }
+
+    #[test]
     fn ledger_keeps_start_ancestry_after_reparenting() {
         let start = read_frame(&mut frame_bytes(b's', b"/tmp/input").as_slice())
             .unwrap()
@@ -870,7 +896,7 @@ mod tests {
             .unwrap()
             .unwrap();
         completion.parent_pid = 42;
-        let mut ledger = FrameLedger::new(2, 256);
+        let mut ledger = FrameLedger::new(2, 4096);
         ledger.push(start).unwrap();
         ledger.push(completion).unwrap();
         let pair = &ledger.finish().unwrap().pairs[0];
@@ -889,7 +915,7 @@ mod tests {
         let completion = read_frame(&mut frame_bytes(b'e', b"").as_slice())
             .unwrap()
             .unwrap();
-        let mut ledger = FrameLedger::new(2, 256);
+        let mut ledger = FrameLedger::new(2, 4096);
         ledger.push(hello).unwrap();
         ledger.push(start).unwrap();
         ledger.push(completion).unwrap();
@@ -908,7 +934,7 @@ mod tests {
         hello[1] = 0;
         hello[26..34].copy_from_slice(&123_457_u64.to_le_bytes());
         let hello = read_frame(&mut hello.as_slice()).unwrap().unwrap();
-        let mut ledger = FrameLedger::new(2, 256);
+        let mut ledger = FrameLedger::new(2, 4096);
         ledger.push(start).unwrap();
         ledger.push(hello).unwrap();
         let collected = ledger.finish().unwrap();

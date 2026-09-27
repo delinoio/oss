@@ -407,7 +407,7 @@ mod tests {
             directory.path(),
             Limits {
                 max_events: 100_000,
-                max_bytes: 64 * 1024 * 1024,
+                max_bytes: crate::record::DEFAULT_BYTE_LIMIT,
                 timeout: Some(Duration::from_secs(10)),
                 kill_after: Duration::from_millis(500),
             },
@@ -518,7 +518,7 @@ mod tests {
             directory.path(),
             Limits {
                 max_events: 100_000,
-                max_bytes: 64 * 1024 * 1024,
+                max_bytes: crate::record::DEFAULT_BYTE_LIMIT,
                 timeout: Some(Duration::from_secs(10)),
                 kill_after: Duration::from_millis(500),
             },
@@ -552,7 +552,7 @@ mod tests {
             directory.path(),
             Limits {
                 max_events: 100_000,
-                max_bytes: 64 * 1024 * 1024,
+                max_bytes: crate::record::DEFAULT_BYTE_LIMIT,
                 timeout: Some(Duration::from_secs(10)),
                 kill_after: Duration::from_millis(500),
             },
@@ -602,7 +602,7 @@ mod tests {
             directory.path(),
             Limits {
                 max_events: 100_000,
-                max_bytes: 64 * 1024 * 1024,
+                max_bytes: crate::record::DEFAULT_BYTE_LIMIT,
                 timeout: Some(Duration::from_millis(100)),
                 kill_after: Duration::from_millis(100),
             },
@@ -631,7 +631,7 @@ mod tests {
             directory.path(),
             Limits {
                 max_events: 100_000,
-                max_bytes: 64 * 1024 * 1024,
+                max_bytes: crate::record::DEFAULT_BYTE_LIMIT,
                 timeout: Some(Duration::from_secs(10)),
                 kill_after: Duration::from_millis(100),
             },

@@ -415,19 +415,39 @@ struct Ledger {
 impl Ledger {
     fn push(
         &mut self,
-        frame: Frame,
+        mut frame: Frame,
         root: &Path,
         max_events: usize,
         max_bytes: u64,
     ) -> io::Result<()> {
+        if frame.kind == FrameKind::Start {
+            if !frame.path.is_empty() && frame.access_path.is_none() {
+                frame.access_path = classify_path(root, &frame.path)?;
+            }
+            if let Some(second) = &frame.second_path {
+                if frame.second_access_path.is_none() {
+                    frame.second_access_path = classify_path(root, second)?;
+                }
+            }
+        }
+        let raw_path_bytes = frame
+            .path
+            .len()
+            .checked_add(frame.second_path.as_ref().map_or(0, Vec::len))
+            .ok_or_else(|| invalid("byte_limit"))?;
+        let charge = record::retained_frame_charge(
+            raw_path_bytes,
+            [
+                frame.access_path.as_ref(),
+                frame.second_access_path.as_ref(),
+            ]
+            .into_iter()
+            .flatten(),
+        )
+        .ok_or_else(|| invalid("byte_limit"))?;
         self.byte_count = self
             .byte_count
-            .checked_add(
-                (HEADER_BYTES
-                    + frame.path.len()
-                    + frame.second_path.as_ref().map_or(0, |path| path.len() + 4))
-                    as u64,
-            )
+            .checked_add(charge)
             .ok_or_else(|| invalid("byte_limit"))?;
         if self.byte_count > max_bytes {
             return Err(invalid("byte_limit"));
@@ -437,18 +457,12 @@ impl Ledger {
                 self.hello_pids.insert(frame.pid);
             }
             FrameKind::Start => {
-                self.event_count += 1;
+                self.event_count = self
+                    .event_count
+                    .checked_add(1)
+                    .ok_or_else(|| invalid("event_limit"))?;
                 if self.event_count > max_events {
                     return Err(invalid("event_limit"));
-                }
-                let mut frame = frame;
-                if !frame.path.is_empty() && frame.access_path.is_none() {
-                    frame.access_path = classify_path(root, &frame.path)?;
-                }
-                if let Some(second) = &frame.second_path {
-                    if frame.second_access_path.is_none() {
-                        frame.second_access_path = classify_path(root, second)?;
-                    }
                 }
                 let key = (frame.pid, frame.tid, frame.id);
                 if self.starts.insert(key, frame).is_some() {
@@ -456,7 +470,10 @@ impl Ledger {
                 }
             }
             FrameKind::Completion => {
-                self.event_count += 1;
+                self.event_count = self
+                    .event_count
+                    .checked_add(1)
+                    .ok_or_else(|| invalid("event_limit"))?;
                 if self.event_count > max_events {
                     return Err(invalid("event_limit"));
                 }
