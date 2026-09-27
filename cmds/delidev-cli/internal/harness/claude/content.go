@@ -865,9 +865,15 @@ func (b *ExecutionBinding) observeToolResult(raw []byte) ([]ContentEvent, error)
 	}
 	for id := range seen {
 		tool := b.content.tools[id]
-		if inlineToolKind(tool.name).valid() && tool.parent == "" && len(events) == 1 && events[0].ToolResult.Text != nil && (events[0].ToolResult.Error == nil || !*events[0].ToolResult.Error) && !strings.Contains(*events[0].ToolResult.Text, "<persisted-output>") {
-			if digest, valid := inlineMetadata(inlineToolKind(tool.name), envelope.Structured); valid {
-				tool.inline = &inlineToolEvidence{NativeID: envelope.UUID, Metadata: digest}
+		if inlineToolKind(tool.name).valid() && tool.parent == "" && len(events) == 1 && events[0].ToolResult.Text != nil && !strings.Contains(*events[0].ToolResult.Text, "<persisted-output>") {
+			failed := events[0].ToolResult.Error != nil && *events[0].ToolResult.Error
+			digest, valid := inlineMetadata(inlineToolKind(tool.name), envelope.Structured)
+			if failed {
+				digest, valid = inlineReadErrorMetadata(envelope.Structured)
+				valid = valid && tool.name == string(inlineReadTool)
+			}
+			if valid {
+				tool.inline = &inlineToolEvidence{Error: failed, NativeID: envelope.UUID, Metadata: digest}
 			}
 		}
 		tool.finished = true

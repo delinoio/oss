@@ -16,6 +16,7 @@ import (
 // File-result references, children, media and other tools require independent
 // auxiliary-history evidence. Tool approvals have a separate exact-echo proof.
 type inlineToolEvidence struct {
+	Error    bool
 	NativeID string
 	Metadata [sha256.Size]byte
 }
@@ -70,6 +71,7 @@ func (p inlineToolProofs) all() []namedInlineTool {
 }
 
 type checkpointInlineTool struct {
+	Error          bool             `json:"is_error,omitempty"`
 	ID             string           `json:"id"`
 	Input          domain.ID        `json:"input_id"`
 	Turn           string           `json:"native_turn_id"`
@@ -105,6 +107,17 @@ func inlineReadMetadata(raw []byte) ([sha256.Size]byte, bool) {
 		File *inlineReadFile `json:"file"`
 	}
 	if decodeNativeObject(raw, &value) != nil || value.Type != "text" || value.File == nil || value.File.Path == nil || domain.Text(*value.File.Path, "native Read result path", 4096, true) != nil || value.File.Content == nil || value.File.Lines == nil || value.File.Start == nil || value.File.Total == nil {
+		return [sha256.Size]byte{}, false
+	}
+	digest, err := streamReplyDigest(raw)
+	return digest, err == nil
+}
+
+// Failed root Read calls preserve their original native JSON string metadata.
+// This proves an original error result, never a successful read or permission.
+func inlineReadErrorMetadata(raw []byte) ([sha256.Size]byte, bool) {
+	var value *string
+	if domain.Decode(raw, &value) != nil || value == nil || domain.Text(*value, "native Read error metadata", domain.MaxMessageText, false) != nil {
 		return [sha256.Size]byte{}, false
 	}
 	digest, err := streamReplyDigest(raw)
@@ -147,10 +160,10 @@ func (b *ExecutionBinding) closedInlineTools() (inlineToolProofs, error) {
 		return result, continuationUnavailable()
 	}
 	for id, tool := range b.content.tools {
-		if !inlineToolKind(tool.name).valid() || tool.parent != "" || !tool.finished || !tool.streamed || tool.inline == nil || tool.caller.ToolID != "" || (tool.caller.Kind != "" && tool.caller.Kind != DirectCaller) {
+		if !inlineToolKind(tool.name).valid() || tool.parent != "" || !tool.finished || !tool.streamed || tool.inline == nil || tool.inline.Error && tool.name != string(inlineReadTool) || tool.caller.ToolID != "" || (tool.caller.Kind != "" && tool.caller.Kind != DirectCaller) {
 			return inlineToolProofs{}, continuationUnavailable()
 		}
-		proof := checkpointInlineTool{ID: id, Input: tool.ownerInput, Turn: tool.ownerTurn, Message: tool.message, Index: tool.index, InputDigest: hex.EncodeToString(tool.input[:]), Caller: tool.caller.Kind, Result: tool.inline.NativeID, MetadataDigest: hex.EncodeToString(tool.inline.Metadata[:])}
+		proof := checkpointInlineTool{Error: tool.inline.Error, ID: id, Input: tool.ownerInput, Turn: tool.ownerTurn, Message: tool.message, Index: tool.index, InputDigest: hex.EncodeToString(tool.input[:]), Caller: tool.caller.Kind, Result: tool.inline.NativeID, MetadataDigest: hex.EncodeToString(tool.inline.Metadata[:])}
 		switch inlineToolKind(tool.name) {
 		case inlineReadTool:
 			result.Read = append(result.Read, proof)
@@ -249,7 +262,11 @@ func verifyInlineToolHistory(ctx context.Context, raw []byte, proofsByKind inlin
 				Content *string `json:"content"`
 			}
 			metadata, valid := inlineMetadata(tool.Kind, record.Metadata)
-			if record.Kind != "user" || !started[tool.ID] || finished[tool.ID] || json.Unmarshal(message.Content, &blocks) != nil || len(blocks) != 1 || blocks[0].Type != "tool_result" || blocks[0].ID != tool.ID || (blocks[0].Error != nil && *blocks[0].Error) || blocks[0].Content == nil || strings.Contains(*blocks[0].Content, "<persisted-output>") || !valid || hex.EncodeToString(metadata[:]) != tool.MetadataDigest {
+			if tool.Error {
+				metadata, valid = inlineReadErrorMetadata(record.Metadata)
+				valid = valid && tool.Kind == inlineReadTool
+			}
+			if record.Kind != "user" || !started[tool.ID] || finished[tool.ID] || json.Unmarshal(message.Content, &blocks) != nil || len(blocks) != 1 || blocks[0].Type != "tool_result" || blocks[0].ID != tool.ID || (blocks[0].Error != nil && *blocks[0].Error) != tool.Error || blocks[0].Content == nil || strings.Contains(*blocks[0].Content, "<persisted-output>") || !valid || hex.EncodeToString(metadata[:]) != tool.MetadataDigest {
 				return historyUncertain()
 			}
 			finished[tool.ID] = true

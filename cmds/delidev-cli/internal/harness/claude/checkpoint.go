@@ -195,7 +195,7 @@ func RestoreCheckpoint(ctx context.Context, config APIStreamConfig, raw []byte, 
 	for _, tool := range cp.inlineTools().all() {
 		input, _ := hex.DecodeString(tool.InputDigest)
 		metadata, _ := hex.DecodeString(tool.MetadataDigest)
-		state := nativeToolState{ownerInput: tool.Input, ownerTurn: tool.Turn, name: string(tool.Kind), message: tool.Message, index: tool.Index, finished: true, streamed: true, caller: NativeToolCaller{Kind: tool.Caller}, inline: &inlineToolEvidence{NativeID: tool.Result}}
+		state := nativeToolState{ownerInput: tool.Input, ownerTurn: tool.Turn, name: string(tool.Kind), message: tool.Message, index: tool.Index, finished: true, streamed: true, caller: NativeToolCaller{Kind: tool.Caller}, inline: &inlineToolEvidence{Error: tool.Error, NativeID: tool.Result}}
 		copy(state.input[:], input)
 		copy(state.inline.Metadata[:], metadata)
 		b.content.tools[tool.ID] = state
@@ -282,7 +282,7 @@ func (cp sessionCheckpoint) validate(config APIStreamConfig, origin string, ref 
 	for _, group := range cp.inlineTools().groups() {
 		tools := group.Items
 		for i, tool := range tools {
-			if domain.Text(tool.ID, "native inline tool identity", 1024, true) != nil || (i > 0 && tools[i-1].ID >= tool.ID) || ids[tool.ID] || !slices.Contains(cp.Inputs, tool.Input) || !checkpointHasIdentity(cp.NativeIDs, tool.Turn) || !slices.Contains(cp.ProviderIDs, tool.Message) || !validHistoryDigest(tool.InputDigest) || !validHistoryDigest(tool.MetadataDigest) || !checkpointHasIdentity(cp.NativeIDs, tool.Result) || results[tool.Result] || (tool.Caller != "" && tool.Caller != DirectCaller) {
+			if tool.Error && group.Kind != inlineReadTool || domain.Text(tool.ID, "native inline tool identity", 1024, true) != nil || (i > 0 && tools[i-1].ID >= tool.ID) || ids[tool.ID] || !slices.Contains(cp.Inputs, tool.Input) || !checkpointHasIdentity(cp.NativeIDs, tool.Turn) || !slices.Contains(cp.ProviderIDs, tool.Message) || !validHistoryDigest(tool.InputDigest) || !validHistoryDigest(tool.MetadataDigest) || !checkpointHasIdentity(cp.NativeIDs, tool.Result) || results[tool.Result] || (tool.Caller != "" && tool.Caller != DirectCaller) {
 				return historyUncertain()
 			}
 			results[tool.Result], ids[tool.ID] = true, true

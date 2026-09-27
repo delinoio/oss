@@ -252,25 +252,13 @@ func nativePublishedClaudeRead(t *testing.T, mode domain.SessionMode, missing bo
 		t.Fatal("original input, tool or inference repeated")
 	}
 	closed, err := s.CloseForContinuation(ctx)
-	if missing {
-		// Error-result publication is supported, but this private checkpoint
-		// profile does not yet prove restoration of failed native Read history.
-		// Preserve that boundary rather than promoting display evidence.
-		problem, ok := err.(*domain.Error)
-		if !ok || problem.Code != domain.Unsupported || closed != nil {
-			t.Fatal("failed Read unexpectedly granted continuation", err)
-		}
-		if err := s.Close(); err != nil {
-			t.Fatal(err)
-		}
-	} else {
-		if err != nil {
-			t.Fatal("native tool history did not close", err)
-		}
-		if _, _, err := closed.RetainCheckpoint(ctx); err != nil {
-			t.Fatal(err)
-		}
+	if err != nil {
+		t.Fatal("native tool history did not close", err)
 	}
+	if _, _, err := closed.RetainCheckpoint(ctx); err != nil {
+		t.Fatal(err)
+	}
+
 	rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.MessageKind, SessionID: f.input.SessionID, Limit: 10})
 	if err != nil || len(rows) != 4 {
 		t.Fatal("original user/provider/tool message count", len(rows), err)

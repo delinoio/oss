@@ -22,10 +22,10 @@ import (
 
 func TestManualNativeReadToolRetainedHistory(t *testing.T) {
 	for _, permission := range []NativePermission{DefaultPermission, PlanPermission} {
-		t.Run(string(permission), func(t *testing.T) { nativeReadToolRetainedHistory(t, permission, permission == PlanPermission) })
+		t.Run(string(permission), func(t *testing.T) { nativeReadToolRetainedHistory(t, permission, permission == PlanPermission, false) })
 	}
 }
-func nativeReadToolRetainedHistory(t *testing.T, permission NativePermission, prefix bool) {
+func nativeReadToolRetainedHistory(t *testing.T, permission NativePermission, prefix, missing bool) {
 	binary := os.Getenv("DELIDEV_NATIVE_CLAUDE_EXECUTABLE")
 	if binary == "" {
 		t.Skip("explicit native binary and private scripted provider required")
@@ -36,8 +36,10 @@ func nativeReadToolRetainedHistory(t *testing.T, permission NativePermission, pr
 	defer cancel()
 	const content = "Private retained Read tool fixture.\n"
 	path := filepath.Join(cfg.Workspace, "read-fixture.txt")
-	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
-		t.Fatal(err)
+	if !missing {
+		if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+			t.Fatal(err)
+		}
 	}
 	var calls atomic.Int64
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -61,7 +63,7 @@ func nativeReadToolRetainedHistory(t *testing.T, permission NativePermission, pr
 			}
 		case 2, 3:
 			result := nativeFixtureToolResults(t, raw)["toolu_retained_read"]
-			if result.Error || !bytes.Contains(result.Content, []byte("Private retained Read tool fixture.")) {
+			if result.Error != missing || !missing && !bytes.Contains(result.Content, []byte("Private retained Read tool fixture.")) {
 				t.Error("original Read result missing from provider context")
 				w.WriteHeader(400)
 				return
@@ -121,7 +123,7 @@ func nativeReadToolRetainedHistory(t *testing.T, permission NativePermission, pr
 		t.Fatal("Read fixture did not settle exactly one original tool")
 	}
 	tool := session.current.content.tools["toolu_retained_read"]
-	if !tool.finished || tool.name != "Read" || tool.parent != "" || tool.ownerInput != input || tool.ownerTurn != session.current.turnID {
+	if tool.inline == nil || tool.inline.Error != missing || !tool.finished || tool.name != "Read" || tool.parent != "" || tool.ownerInput != input || tool.ownerTurn != session.current.turnID {
 		t.Fatal("original Read tool ownership changed")
 	}
 	messages := uint32(4)
@@ -203,5 +205,11 @@ func nativeReadPrefixedResponse(w http.ResponseWriter, path string) {
 	} {
 		raw, _ := json.Marshal(event)
 		_, _ = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event["type"], raw)
+	}
+}
+
+func TestManualNativeReadErrorRetainedHistory(t *testing.T) {
+	for _, permission := range []NativePermission{DefaultPermission, PlanPermission} {
+		t.Run(string(permission), func(t *testing.T) { nativeReadToolRetainedHistory(t, permission, permission == PlanPermission, true) })
 	}
 }
