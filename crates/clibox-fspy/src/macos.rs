@@ -427,7 +427,7 @@ impl OperationReceiver {
         max_bytes: u64,
         admission: Arc<AdmissionPolicy>,
     ) -> io::Result<Self> {
-        if max_events == 0 || max_bytes == 0 {
+        if max_bytes == 0 {
             return Err(invalid("receiver_limit"));
         }
         let directory = tempfile::Builder::new().prefix("clibox-fspy-").tempdir()?;
@@ -975,6 +975,19 @@ mod tests {
         assert_eq!(collected.pairs[0].0.operation, 11);
         assert_eq!(collected.pairs[0].1.result, 0);
         assert_eq!(collected.pairs[0].1.sequence, 4);
+    }
+
+    #[test]
+    fn zero_receiver_event_budget_accepts_hello_but_rejects_an_operation() {
+        let mut ledger = FrameLedger::new(0, 4096);
+        let mut hello = frame_bytes(b'h', b"");
+        hello[1] = 0;
+        let hello = read_frame(&mut hello.as_slice()).unwrap().unwrap();
+        ledger.push(hello).unwrap();
+        let start = read_frame(&mut frame_bytes(b's', b"/tmp/input").as_slice())
+            .unwrap()
+            .unwrap();
+        assert!(ledger.push(start).is_err());
     }
 
     #[test]

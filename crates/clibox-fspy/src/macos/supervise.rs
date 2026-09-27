@@ -184,6 +184,9 @@ where
     if cancelled.load(Ordering::Acquire) {
         return Err(CaptureFailure::Cancellation);
     }
+    if limits.max_events < 2 {
+        return Err(CaptureFailure::Record);
+    }
     let deadline = limits
         .timeout
         .map(|duration| {
@@ -246,7 +249,7 @@ where
     }
     let receiver = OperationReceiver::bind_with_admission(
         root,
-        limits.max_events,
+        limits.max_events - 2,
         limits.max_bytes,
         admission,
     )
@@ -387,6 +390,27 @@ where
 #[cfg(test)]
 mod tests {
     use std::{fs, process::Stdio, sync::atomic::AtomicBool};
+
+    #[test]
+    fn root_pair_exceeding_event_limit_is_rejected_before_launch() {
+        let directory = tempfile::tempdir().unwrap();
+        let output = directory.path().join("created.txt");
+        let mut command = fspy::Command::new("/usr/bin/touch");
+        command.arg(&output);
+        let result = capture(
+            command,
+            directory.path(),
+            Limits {
+                max_events: 1,
+                max_bytes: 1024 * 1024,
+                timeout: Some(Duration::from_secs(5)),
+                kill_after: Duration::from_millis(500),
+            },
+            &AtomicBool::new(false),
+        );
+        assert!(matches!(result, Err(CaptureFailure::Record)));
+        assert!(!output.exists());
+    }
 
     use super::*;
 
