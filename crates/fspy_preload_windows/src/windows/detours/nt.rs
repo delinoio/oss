@@ -103,7 +103,7 @@ unsafe fn begin_handle_operation(kind: u8, handle: HANDLE) -> Option<operation::
     operation::with_resolution(|| {
         // SAFETY: GetFileType accepts a native handle and does not take ownership.
         match unsafe { GetFileType(handle) } {
-            FILE_TYPE_DISK => unsafe { begin_path_operation_inner(kind, handle, false) },
+            FILE_TYPE_DISK => operation::begin_handle(kind, handle),
             FILE_TYPE_PIPE | FILE_TYPE_CHAR => None,
             _ => operation::begin(kind, &[]),
         }

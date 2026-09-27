@@ -57,6 +57,7 @@ pub struct Frame {
     pub result: i64,
     pub error: i32,
     pub path: Vec<u8>,
+    pub handle_identity: Option<FileIdentity>,
     pub second_path: Option<Vec<u8>>,
     pub sequence: u64,
     pub access_path: Option<AccessPath>,
@@ -102,9 +103,12 @@ pub fn read_frame(reader: &mut impl Read) -> io::Result<Option<Frame>> {
         FrameKind::Start
             if operation_id(operation).is_none()
                 || id == 0
-                || (result != 0 && !(operation == 1 && result == 1))
+                || (result != 0
+                    && !(operation == 1 && result == 1)
+                    && !(result == 2 && (2..=8).contains(&operation)))
                 || error != 0
-                || !length.is_multiple_of(2) =>
+                || !length.is_multiple_of(2)
+                || (result == 2 && length <= 24) =>
         {
             return Err(invalid("start_frame"))
         }
@@ -120,6 +124,14 @@ pub fn read_frame(reader: &mut impl Read) -> io::Result<Option<Frame>> {
     }
     let mut path = vec![0_u8; length];
     reader.read_exact(&mut path)?;
+    let handle_identity = if kind == FrameKind::Start && result == 2 {
+        let volume = u64::from_le_bytes(path[..8].try_into().unwrap());
+        let file_id = u128::from_le_bytes(path[8..24].try_into().unwrap());
+        path.drain(..24);
+        Some(FileIdentity::Windows { volume, file_id })
+    } else {
+        None
+    };
     let second_path = if kind == FrameKind::Start && operation == 9 && !path.is_empty() {
         if path.len() < 8 {
             return Err(invalid("mutation_paths"));
@@ -151,6 +163,7 @@ pub fn read_frame(reader: &mut impl Read) -> io::Result<Option<Frame>> {
         result,
         error,
         path,
+        handle_identity,
         second_path,
         sequence: 0,
         access_path: None,
@@ -306,10 +319,10 @@ fn resolve_even_if_absent(path: &Path) -> io::Result<Option<PathBuf>> {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, os::windows::ffi::OsStrExt};
+    use std::{fs, io::Cursor, os::windows::ffi::OsStrExt};
 
-    use super::classify_path;
-    use crate::record::NativePath;
+    use super::{classify_handle_path, classify_path, read_frame};
+    use crate::record::{FileIdentity, NativePath, PathClass};
 
     #[test]
     fn regular_file_ancestor_keeps_failed_probe_classified() {
@@ -327,6 +340,44 @@ mod tests {
             classified.project_relative,
             Some(NativePath::WindowsUtf16(
                 "file\\child".encode_utf16().collect()
+            ))
+        );
+    }
+
+    #[test]
+    fn descriptor_frame_retains_live_identity_and_classifies_without_reopen() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().canonicalize().unwrap();
+        let missing = root.join("moved-away");
+        let path = missing
+            .as_os_str()
+            .encode_wide()
+            .flat_map(u16::to_le_bytes)
+            .collect::<Vec<_>>();
+        let identity = FileIdentity::Windows {
+            volume: 0x1234,
+            file_id: 0x5678,
+        };
+        let mut frame = vec![0_u8; super::HEADER_BYTES];
+        frame[0] = b's';
+        frame[1] = 3;
+        frame[2..6].copy_from_slice(&1_u32.to_le_bytes());
+        frame[10..18].copy_from_slice(&1_u64.to_le_bytes());
+        frame[18..26].copy_from_slice(&1_u64.to_le_bytes());
+        frame[34..42].copy_from_slice(&2_i64.to_le_bytes());
+        frame[46..50].copy_from_slice(&u32::try_from(path.len() + 24).unwrap().to_le_bytes());
+        frame.extend_from_slice(&0x1234_u64.to_le_bytes());
+        frame.extend_from_slice(&0x5678_u128.to_le_bytes());
+        frame.extend_from_slice(&path);
+        let decoded = read_frame(&mut Cursor::new(frame)).unwrap().unwrap();
+        assert_eq!(decoded.handle_identity, Some(identity));
+        let classified = classify_handle_path(&root, &decoded.path, identity).unwrap();
+        assert_eq!(classified.class, PathClass::Project);
+        assert_eq!(classified.identity, Some(identity));
+        assert_eq!(
+            classified.project_relative,
+            Some(NativePath::WindowsUtf16(
+                "moved-away".encode_utf16().collect()
             ))
         );
     }
@@ -403,6 +454,53 @@ fn classify_path(root: &Path, bytes: &[u8]) -> io::Result<Option<AccessPath>> {
     }))
 }
 
+fn classify_handle_path(
+    root: &Path,
+    bytes: &[u8],
+    identity: FileIdentity,
+) -> io::Result<AccessPath> {
+    use std::os::windows::ffi::OsStrExt;
+
+    let logical = native_path(bytes)?;
+    let NativePath::WindowsUtf16(units) = &logical else {
+        unreachable!()
+    };
+    let nt_volume = r"\Device\HarddiskVolume".encode_utf16().collect::<Vec<_>>();
+    let path = if units.starts_with(&nt_volume) {
+        nt_volume_path(units)?
+    } else {
+        fs_path(units)
+    };
+    if !path.is_absolute() {
+        return Err(invalid("non_absolute_handle_path"));
+    }
+    // The sender obtained this final path and identity from the live handle.
+    // Reopening the pathname here can fail under exclusive sharing or race a
+    // rename.
+    let resolved = normalize(&path);
+    let relative = resolved.strip_prefix(root).ok();
+    Ok(AccessPath {
+        class: if relative.is_some() {
+            PathClass::Project
+        } else {
+            PathClass::External
+        },
+        logical,
+        resolved: Some(NativePath::WindowsUtf16(
+            resolved.as_os_str().encode_wide().collect(),
+        )),
+        project_relative: relative.map(|path| {
+            let units = path.as_os_str().encode_wide().collect::<Vec<_>>();
+            NativePath::WindowsUtf16(if units.is_empty() {
+                vec![b'.' as u16]
+            } else {
+                units
+            })
+        }),
+        identity: Some(identity),
+    })
+}
+
 #[derive(Default)]
 struct Ledger {
     starts: HashMap<(u32, u64, u64), Frame>,
@@ -422,7 +520,11 @@ impl Ledger {
     ) -> io::Result<()> {
         if frame.kind == FrameKind::Start {
             if !frame.path.is_empty() && frame.access_path.is_none() {
-                frame.access_path = classify_path(root, &frame.path)?;
+                frame.access_path = if let Some(identity) = frame.handle_identity {
+                    Some(classify_handle_path(root, &frame.path, identity)?)
+                } else {
+                    classify_path(root, &frame.path)?
+                };
             }
             if let Some(second) = &frame.second_path {
                 if frame.second_access_path.is_none() {
@@ -599,7 +701,11 @@ where
         }
         if frame.kind == FrameKind::Start {
             if !frame.path.is_empty() {
-                frame.access_path = classify_path(&context.root, &frame.path)?;
+                frame.access_path = if let Some(identity) = frame.handle_identity {
+                    Some(classify_handle_path(&context.root, &frame.path, identity)?)
+                } else {
+                    classify_path(&context.root, &frame.path)?
+                };
             }
             if let Some(second) = &frame.second_path {
                 frame.second_access_path = classify_path(&context.root, second)?;

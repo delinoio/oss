@@ -283,7 +283,59 @@ fn begin_with_intent(operation: u8, path: &[u16], mutates: bool) -> Option<Opera
     for unit in path {
         encoded.extend_from_slice(&unit.to_le_bytes());
     }
-    begin_encoded(operation, &encoded, mutates)
+    begin_encoded(operation, &encoded, i64::from(mutates))
+}
+
+pub fn begin_handle(operation: u8, handle: winapi::um::winnt::HANDLE) -> Option<OperationGuard> {
+    use winapi::um::{
+        fileapi::{BY_HANDLE_FILE_INFORMATION, FILE_ID_INFO, GetFileInformationByHandle},
+        minwinbase::FileIdInfo,
+        winbase::GetFileInformationByHandleEx,
+    };
+
+    let path = match unsafe { super::winapi_utils::get_path_name(handle) }
+        .or_else(|_| unsafe { super::winapi_utils::get_opened_path_name(handle) })
+    {
+        Ok(path) => path,
+        Err(_) => {
+            mark_loss("handle_path");
+            return None;
+        }
+    };
+    // SAFETY: both queries inspect the live borrowed file handle and write
+    // into their exact SDK structures without reopening its pathname.
+    let mut high = unsafe { std::mem::zeroed::<FILE_ID_INFO>() };
+    let (volume, file_id) = if unsafe {
+        GetFileInformationByHandleEx(
+            handle,
+            FileIdInfo,
+            (&raw mut high).cast(),
+            std::mem::size_of::<FILE_ID_INFO>() as u32,
+        )
+    } != 0
+    {
+        (
+            high.VolumeSerialNumber,
+            u128::from_le_bytes(high.FileId.Identifier),
+        )
+    } else {
+        let mut low = unsafe { std::mem::zeroed::<BY_HANDLE_FILE_INFORMATION>() };
+        if unsafe { GetFileInformationByHandle(handle, &raw mut low) } == 0 {
+            mark_loss("handle_identity");
+            return None;
+        }
+        (
+            u64::from(low.dwVolumeSerialNumber),
+            u128::from((u64::from(low.nFileIndexHigh) << 32) | u64::from(low.nFileIndexLow)),
+        )
+    };
+    let mut encoded = Vec::with_capacity(24 + path.len().saturating_mul(2));
+    encoded.extend_from_slice(&volume.to_le_bytes());
+    encoded.extend_from_slice(&file_id.to_le_bytes());
+    for unit in path.iter() {
+        encoded.extend_from_slice(&unit.to_le_bytes());
+    }
+    begin_encoded(operation, &encoded, 2)
 }
 
 /// Mutation starts carry both native paths as byte-counted UTF-16. A length
@@ -313,10 +365,10 @@ pub fn begin_paths(source: &[u16], destination: &[u16]) -> Option<OperationGuard
     for unit in source.iter().chain(destination) {
         encoded.extend_from_slice(&unit.to_le_bytes());
     }
-    begin_encoded(9, &encoded, false)
+    begin_encoded(9, &encoded, 0)
 }
 
-fn begin_encoded(operation: u8, encoded: &[u8], mutates: bool) -> Option<OperationGuard> {
+fn begin_encoded(operation: u8, encoded: &[u8], start_marker: i64) -> Option<OperationGuard> {
     // ExitProcess runs DLL detach routines after user execution has ended.
     // Their file hooks can run after Winsock is unavailable. They are outside
     // this execution's observation interval and must not open a new channel.
@@ -336,7 +388,7 @@ fn begin_encoded(operation: u8, encoded: &[u8], mutates: bool) -> Option<Operati
     state.next_id = id;
     let mut send = |state: &mut State| {
         state.stream().and_then(|stream| {
-            write_frame(stream, b's', operation, id, i64::from(mutates), 0, encoded)?;
+            write_frame(stream, b's', operation, id, start_marker, 0, encoded)?;
             let mut ack = [0_u8; 1];
             stream.read_exact(&mut ack)?;
             match ack[0] {

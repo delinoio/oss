@@ -265,6 +265,7 @@ where
         error: 0,
         access_path: classify_path(&root, &path).map_err(|_| CaptureFailure::Record)?,
         path,
+        handle_identity: None,
         second_path: None,
         sequence: 1,
         second_access_path: None,

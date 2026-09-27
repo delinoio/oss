@@ -61,6 +61,19 @@ pub unsafe fn get_u16_str(ustring: &UNICODE_STRING) -> &U16Str {
 }
 
 pub unsafe fn get_path_name(handle: HANDLE) -> winsafe::SysResult<SmallVec<u16, MAX_PATH>> {
+    unsafe { get_path_name_with_flags(handle, 0) }
+}
+
+pub unsafe fn get_opened_path_name(handle: HANDLE) -> winsafe::SysResult<SmallVec<u16, MAX_PATH>> {
+    // FILE_NAME_OPENED avoids SMB component normalization queries, which can
+    // fail even though the live handle itself is usable.
+    unsafe { get_path_name_with_flags(handle, 0x8) }
+}
+
+unsafe fn get_path_name_with_flags(
+    handle: HANDLE,
+    flags: u32,
+) -> winsafe::SysResult<SmallVec<u16, MAX_PATH>> {
     let mut path = SmallVec::<u16, MAX_PATH>::new();
     // The resolved name may grow between size queries. Retry a bounded number
     // of times and let the caller classify a persistent race as incomplete.
@@ -68,14 +81,7 @@ pub unsafe fn get_path_name(handle: HANDLE) -> winsafe::SysResult<SmallVec<u16, 
         let capacity =
             u32::try_from(path.capacity()).map_err(|_| co::ERROR::INSUFFICIENT_BUFFER)?;
         // SAFETY: the SmallVec allocation is valid for `capacity` UTF-16 units.
-        let len = unsafe {
-            GetFinalPathNameByHandleW(
-                handle,
-                path.as_mut_ptr(),
-                capacity,
-                0, /* FILE_NAME_NORMALIZED */
-            )
-        };
+        let len = unsafe { GetFinalPathNameByHandleW(handle, path.as_mut_ptr(), capacity, flags) };
         if len == 0 {
             return Err(winsafe::GetLastError());
         }
