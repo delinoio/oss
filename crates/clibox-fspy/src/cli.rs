@@ -2654,8 +2654,9 @@ fn macos_capture(
     command: &[OsString],
     root: &Path,
     args: &ExecutionArgs,
+    signals: &MacSignals,
 ) -> Result<CompleteRecord, (crate::macos::supervise::CaptureFailure, usize)> {
-    macos_capture_with(command, root, args, |_| Duration::ZERO)
+    macos_capture_with(command, root, args, signals, |_| Duration::ZERO)
 }
 
 #[cfg(target_os = "macos")]
@@ -2663,6 +2664,7 @@ fn macos_capture_with<F>(
     command: &[OsString],
     root: &Path,
     args: &ExecutionArgs,
+    signals: &MacSignals,
     delay_for: F,
 ) -> Result<CompleteRecord, (crate::macos::supervise::CaptureFailure, usize)>
 where
@@ -2680,7 +2682,6 @@ where
         .try_clone_to_owned()
         .map_err(|_| (crate::macos::supervise::CaptureFailure::Spawn, 0))?;
     child.stdout(Stdio::from(stderr)).stderr(Stdio::inherit());
-    let signals = MacSignals::new().map_err(|error| (error, 0))?;
     crate::macos::supervise::capture_with_delay(
         child,
         root,
@@ -2702,12 +2703,17 @@ fn macos_latencylab(args: LatencyArgs) -> i32 {
         Ok(selector) => std::sync::Arc::new(selector),
         Err(error) => return diagnostic(&error.to_string(), "latencylab"),
     };
+    let signals = match MacSignals::new() {
+        Ok(signals) => signals,
+        Err(error) => return macos_capture_status((error, 0), "latencylab"),
+    };
+    let capture_signals = &signals;
     latencylab_with(
         args,
         move |command, root, execution, _, kinds, delay| {
             let selector = std::sync::Arc::clone(&selector);
             let kinds = kinds.to_vec();
-            macos_capture_with(command, root, execution, move |frame| {
+            macos_capture_with(command, root, execution, capture_signals, move |frame| {
                 let Some(operation) = crate::macos::operation(frame.operation) else {
                     return Duration::ZERO;
                 };
@@ -2722,7 +2728,7 @@ fn macos_latencylab(args: LatencyArgs) -> i32 {
             })
             .map_err(|failure| macos_capture_status(failure, "latencylab"))
         },
-        || None,
+        || macos_command_cancel_status(&signals, "latencylab"),
     )
 }
 
@@ -3336,6 +3342,20 @@ fn macos_capture_status(
 }
 
 #[cfg(target_os = "macos")]
+fn macos_command_cancel_status(signals: &MacSignals, action: &'static str) -> Option<i32> {
+    use std::sync::atomic::Ordering;
+    signals.cancelled.load(Ordering::SeqCst).then(|| {
+        macos_capture_status(
+            (
+                crate::macos::supervise::CaptureFailure::Cancellation,
+                signals.signal.load(Ordering::SeqCst),
+            ),
+            action,
+        )
+    })
+}
+
+#[cfg(target_os = "macos")]
 fn macos_incomplete_record(
     root: &Path,
     failure: crate::macos::supervise::CaptureFailure,
@@ -3383,7 +3403,11 @@ fn macos_record(args: RecordArgs) -> i32 {
         Ok(root) => root,
         Err(error) => return diagnostic(error, "record"),
     };
-    let capture = macos_capture(&args.command, &root, &args.execution);
+    let signals = match MacSignals::new() {
+        Ok(signals) => signals,
+        Err(error) => return macos_capture_status((error, 0), "record"),
+    };
+    let capture = macos_capture(&args.command, &root, &args.execution, &signals);
     let (record, failure) = match capture {
         Ok(record) => (record, None),
         Err(failure) => (macos_incomplete_record(&root, failure.0), Some(failure)),
@@ -3397,8 +3421,19 @@ fn macos_record(args: RecordArgs) -> i32 {
     ) {
         return diagnostic(&error.to_string(), "record");
     }
-    if let Err(error) = publish(&args.output, &encoded) {
+    if let Some(status) = macos_command_cancel_status(&signals, "record") {
+        return status;
+    }
+    if let Err(error) = publish_with_cancel(&args.output, &encoded, || {
+        signals.cancelled.load(std::sync::atomic::Ordering::SeqCst)
+    }) {
+        if error == "cancellation" {
+            return macos_command_cancel_status(&signals, "record").unwrap_or(130);
+        }
         return diagnostic(error, "record");
+    }
+    if let Some(status) = macos_command_cancel_status(&signals, "record") {
+        return status;
     }
     failure.map_or_else(
         || final_child_status(&record),
@@ -3416,7 +3451,11 @@ fn macos_assetcov(args: AssetcovArgs) -> i32 {
         Ok(value) => value,
         Err(error) => return diagnostic(&error.to_string(), "assetcov"),
     };
-    let record = match macos_capture(&args.command, &root, &args.execution) {
+    let signals = match MacSignals::new() {
+        Ok(signals) => signals,
+        Err(error) => return macos_capture_status((error, 0), "assetcov"),
+    };
+    let record = match macos_capture(&args.command, &root, &args.execution, &signals) {
         Ok(record) => record,
         Err(error) => return macos_capture_status(error, "assetcov"),
     };
@@ -3450,9 +3489,20 @@ fn macos_assetcov(args: AssetcovArgs) -> i32 {
         if !encoded.ends_with(b"\n") {
             encoded.push(b'\n');
         }
-        if let Err(error) = publish(&args.output, &encoded) {
+        if let Some(status) = macos_command_cancel_status(&signals, "assetcov") {
+            return status;
+        }
+        if let Err(error) = publish_with_cancel(&args.output, &encoded, || {
+            signals.cancelled.load(std::sync::atomic::Ordering::SeqCst)
+        }) {
+            if error == "cancellation" {
+                return macos_command_cancel_status(&signals, "assetcov").unwrap_or(130);
+            }
             return diagnostic(error, "assetcov");
         }
+    }
+    if let Some(status) = macos_command_cancel_status(&signals, "assetcov") {
+        return status;
     }
     let status = child_status(&record);
     if status != 0 {
@@ -3521,8 +3571,9 @@ fn windows_capture(
     command: &[OsString],
     root: &Path,
     args: &ExecutionArgs,
+    signals: &WindowsSignals,
 ) -> Result<CompleteRecord, crate::windows::supervise::CaptureFailure> {
-    windows_capture_with(command, root, args, |_| Duration::ZERO)
+    windows_capture_with(command, root, args, signals, |_| Duration::ZERO)
 }
 
 #[cfg(target_os = "windows")]
@@ -3530,6 +3581,7 @@ fn windows_capture_with<F>(
     command: &[OsString],
     root: &Path,
     args: &ExecutionArgs,
+    _signals: &WindowsSignals,
     delay_for: F,
 ) -> Result<CompleteRecord, crate::windows::supervise::CaptureFailure>
 where
@@ -3549,7 +3601,6 @@ where
         .try_clone_to_owned()
         .map_err(|_| CaptureFailure::Spawn)?;
     child.stdout(Stdio::from(stderr)).stderr(Stdio::inherit());
-    let _signals = WindowsSignals::new()?;
     crate::windows::supervise::capture_with_delay(
         child,
         root,
@@ -3576,6 +3627,18 @@ fn windows_capture_status(
         CaptureFailure::Cancellation => 130,
         _ => 1,
     }
+}
+
+#[cfg(target_os = "windows")]
+fn windows_command_cancel_status(action: &'static str) -> Option<i32> {
+    WINDOWS_CANCELLED
+        .load(std::sync::atomic::Ordering::SeqCst)
+        .then(|| {
+            windows_capture_status(
+                crate::windows::supervise::CaptureFailure::Cancellation,
+                action,
+            )
+        })
 }
 
 #[cfg(target_os = "windows")]
@@ -3626,7 +3689,11 @@ fn windows_record(args: RecordArgs) -> i32 {
         Ok(root) => root,
         Err(error) => return diagnostic(error, "record"),
     };
-    let capture = windows_capture(&args.command, &root, &args.execution);
+    let signals = match WindowsSignals::new() {
+        Ok(signals) => signals,
+        Err(error) => return windows_capture_status(error, "record"),
+    };
+    let capture = windows_capture(&args.command, &root, &args.execution, &signals);
     let (record, failure) = match capture {
         Ok(record) => (record, None),
         Err(failure) => (windows_incomplete_record(&root, failure), Some(failure)),
@@ -3640,8 +3707,19 @@ fn windows_record(args: RecordArgs) -> i32 {
     ) {
         return diagnostic(&error.to_string(), "record");
     }
-    if let Err(error) = publish(&args.output, &encoded) {
+    if let Some(status) = windows_command_cancel_status("record") {
+        return status;
+    }
+    if let Err(error) = publish_with_cancel(&args.output, &encoded, || {
+        WINDOWS_CANCELLED.load(std::sync::atomic::Ordering::SeqCst)
+    }) {
+        if error == "cancellation" {
+            return windows_command_cancel_status("record").unwrap_or(130);
+        }
         return diagnostic(error, "record");
+    }
+    if let Some(status) = windows_command_cancel_status("record") {
+        return status;
     }
     failure.map_or_else(
         || child_status(&record),
@@ -3659,7 +3737,11 @@ fn windows_assetcov(args: AssetcovArgs) -> i32 {
         Ok(value) => value,
         Err(error) => return diagnostic(&error.to_string(), "assetcov"),
     };
-    let record = match windows_capture(&args.command, &root, &args.execution) {
+    let signals = match WindowsSignals::new() {
+        Ok(signals) => signals,
+        Err(error) => return windows_capture_status(error, "assetcov"),
+    };
+    let record = match windows_capture(&args.command, &root, &args.execution, &signals) {
         Ok(record) => record,
         Err(failure) => return windows_capture_status(failure, "assetcov"),
     };
@@ -3692,9 +3774,20 @@ fn windows_assetcov(args: AssetcovArgs) -> i32 {
         if !encoded.ends_with(b"\n") {
             encoded.push(b'\n');
         }
-        if let Err(error) = publish(&args.output, &encoded) {
+        if let Some(status) = windows_command_cancel_status("assetcov") {
+            return status;
+        }
+        if let Err(error) = publish_with_cancel(&args.output, &encoded, || {
+            WINDOWS_CANCELLED.load(std::sync::atomic::Ordering::SeqCst)
+        }) {
+            if error == "cancellation" {
+                return windows_command_cancel_status("assetcov").unwrap_or(130);
+            }
             return diagnostic(error, "assetcov");
         }
+    }
+    if let Some(status) = windows_command_cancel_status("assetcov") {
+        return status;
     }
     let status = child_status(&record);
     if status != 0 {
@@ -3716,12 +3809,17 @@ fn windows_latencylab(args: LatencyArgs) -> i32 {
         Ok(selector) => std::sync::Arc::new(selector),
         Err(error) => return diagnostic(&error.to_string(), "latencylab"),
     };
+    let signals = match WindowsSignals::new() {
+        Ok(signals) => signals,
+        Err(error) => return windows_capture_status(error, "latencylab"),
+    };
+    let capture_signals = &signals;
     latencylab_with(
         args,
         move |command, root, execution, _, kinds, delay| {
             let selector = std::sync::Arc::clone(&selector);
             let kinds = kinds.to_vec();
-            windows_capture_with(command, root, execution, move |frame| {
+            windows_capture_with(command, root, execution, capture_signals, move |frame| {
                 if windows_matching_path(frame, &selector, &kinds).is_some() {
                     delay
                 } else {
@@ -3730,7 +3828,7 @@ fn windows_latencylab(args: LatencyArgs) -> i32 {
             })
             .map_err(|failure| windows_capture_status(failure, "latencylab"))
         },
-        || None,
+        || windows_command_cancel_status("latencylab"),
     )
 }
 

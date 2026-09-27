@@ -67,7 +67,7 @@ Windows watch relevance and self-write checks compare path components with Windo
 
 Defaults are 1,000,000 events, 256 MiB trace, and 1 GiB/100,000 files for both reproduction snapshot and result. All overrides are positive. macOS hello frames consume byte and connection capacity but do not count as start/completion events; receipt sequence still reflects every frame. There is no default execution timeout. Cleanup requests graceful termination, waits five seconds by default, then forces termination and verifies cleanup within five additional seconds. Explicit file outputs use fspy-owned native atomic publication and `--force` rules without depending on another clibox companion crate; replacement preserves the existing file's ownership, mode or access attributes, and access ACL, and fails before replacement if preservation fails. A failed publication preserves the prior destination. Temporary private state is removed after handled failures and cancellation. No automatic history, artifact retention, or release publication is added.
 
-Linux execution report handlers retain signal ownership through encoding and publication. A handled SIGINT or SIGTERM before the atomic report commit cancels publication, removes the temporary file, and returns the corresponding 130 or 143 status.
+Linux and macOS execution report handlers retain signal ownership through encoding and publication. A handled SIGINT or SIGTERM before the atomic report commit cancels publication, removes the temporary file, and returns the corresponding 130 or 143 status. Windows report handlers likewise retain their console-control registration through publication and return 130 on cancellation.
 
 ## Validation
 
