@@ -45,6 +45,7 @@ const (
 	claudePublicOutboxChanged        claudePublicCase = "continuation-outbox-changed"
 	claudePublicRead                 claudePublicCase = "continuation-read"
 	claudePublicReadError            claudePublicCase = "continuation-read-error"
+	claudePublicQuestionHistory      claudePublicCase = "continuation-question"
 )
 
 func TestManualNativeClaudePublicCancellationContainment(t *testing.T) {
@@ -100,8 +101,9 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 	turns, turn := 1, 0
 	continuation := strings.HasPrefix(string(scenario), "continuation")
 	read := scenario == claudePublicRead || scenario == claudePublicReadError
+	questionHistory := scenario == claudePublicQuestionHistory
 	missingRead := scenario == claudePublicReadError
-	fault := continuation && !read && scenario != claudePublicContinuation && scenario != claudePublicResume
+	fault := continuation && !read && !questionHistory && scenario != claudePublicContinuation && scenario != claudePublicResume
 	var readRoot atomic.Value
 	if continuation {
 		turns = 3
@@ -111,17 +113,17 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 	}
 	var previous domain.ExecutionCompletion
 	denied := scenario == claudePublicQuestionInterrupt
-	question := scenario == claudePublicQuestion || scenario == claudePublicQuestionRetry || denied
+	question := questionHistory || scenario == claudePublicQuestion || scenario == claudePublicQuestionRetry || denied
 	retrying := scenario == claudePublicRetry || scenario == claudePublicQuestionRetry
 	streamStopping := scenario == claudePublicStop || scenario == claudePublicArchive
 	stopping := streamStopping || scenario == claudePublicStopBeforeAcceptance
 	var calls atomic.Int32
 	providerEnded := make(chan struct{})
 	expected := int32(turns)
-	if read {
+	if read || questionHistory {
 		expected *= 2
 	}
-	if question && !denied {
+	if question && !denied && !questionHistory {
 		expected++
 	}
 	if retrying {
@@ -148,6 +150,11 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 		}
 		if read {
 			if !checkClaudePublicReadHistory(t, raw, n, missingRead) {
+				w.WriteHeader(400)
+				return
+			}
+		} else if questionHistory {
+			if !checkClaudePublicQuestionHistory(t, raw, n) {
 				w.WriteHeader(400)
 				return
 			}
@@ -213,9 +220,13 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 			block = map[string]any{"type": "tool_use", "id": fmt.Sprintf("toolu_public_read_%d", (n-1)/2), "name": "Read", "input": map[string]any{}}
 			delta = map[string]any{"type": "input_json_delta", "partial_json": string(params)}
 			reason = "tool_use"
-		} else if question && n == 1 {
+		} else if question && (n == 1 || questionHistory && n%2 == 1) {
 			params, _ := json.Marshal(map[string]any{"questions": []any{map[string]any{"question": "Which original option?", "header": "Choice", "multiSelect": false, "options": []any{map[string]any{"label": "One", "description": "First option"}, map[string]any{"label": "Two", "description": "Second option"}}}}})
-			block = map[string]any{"type": "tool_use", "id": "toolu_public_original", "name": "AskUserQuestion", "input": map[string]any{}}
+			toolID := "toolu_public_original"
+			if questionHistory {
+				toolID = fmt.Sprintf("toolu_public_question_%d", (n-1)/2)
+			}
+			block = map[string]any{"type": "tool_use", "id": toolID, "name": "AskUserQuestion", "input": map[string]any{}}
 			delta = map[string]any{"type": "input_json_delta", "partial_json": string(params)}
 			reason = "tool_use"
 		}
@@ -332,10 +343,25 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 			}
 		}
 		if question && !answered {
+			session, err := store.Decode[domain.Session](f.refresh(t))
+			if err != nil {
+				t.Fatal(err)
+			}
 			rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.InteractionKind, SessionID: domain.ID(f.change.Session.Id), Limit: 10})
 			if err != nil {
 				t.Fatal(err)
 			}
+			current := rows[:0]
+			for _, row := range rows {
+				value, err := store.Decode[domain.ExecutionInteraction](row)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if session.Execution != nil && value.ExecutionID == session.Execution.ExecutionID {
+					current = append(current, row)
+				}
+			}
+			rows = current
 			if len(rows) > 1 {
 				t.Fatal("original public question repeated")
 			}
@@ -405,13 +431,10 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 			}
 			var proof domain.ExecutionCompletion
 			version, dispatch := uint32(2), domain.DispatchReady
-			if question {
-				version, dispatch = 1, domain.DispatchPaused
-			}
 			wantCalls := expected
 			if turns > 1 {
 				wantCalls = int32(turn + 1)
-				if read {
+				if read || questionHistory {
 					wantCalls *= 2
 				}
 			}
@@ -423,11 +446,7 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 				t.Fatal("public completion lost original outcome, cleanup or history readiness", err)
 			}
 			if question {
-				rows, _ := f.service.Store.List(ctx, store.Filter{Kind: domain.InteractionKind, SessionID: domain.ID(f.change.Session.Id), Limit: 10})
-				v, err := store.Decode[domain.ExecutionInteraction](rows[0])
-				if err != nil || v.ClaudeSettlement == nil || v.Response == nil || v.Response.State != domain.QuestionResponseAccepted {
-					t.Fatal("public callback did not settle", err)
-				}
+				verifyClaudePublicQuestionResults(t, ctx, f, turn+1)
 			}
 			if retrying {
 				rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.MessageKind, SessionID: domain.ID(f.change.Session.Id), Limit: 50})
@@ -463,6 +482,7 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 			}
 			previous = proof
 			turn++
+			answered = false
 			if turn < turns {
 				if fault {
 					alterClaudeContinuationEvidence(t, ctx, f.workerRoot, domain.ID(assignment.Id), proof, scenario)

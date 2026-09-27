@@ -47,11 +47,16 @@ func (c *ClaudeContentPublisher) RetainCompletion(ctx context.Context, api *clau
 	if c.checkpoint != nil {
 		return *c.checkpoint, nil
 	}
-	if completion.Outcome != domain.ExecutionSucceeded || c.terminal == nil || c.stop != nil || c.denial != nil || c.interruption != nil || len(c.interactions) != 0 || len(c.messages) == 0 {
+	if completion.Outcome != domain.ExecutionSucceeded || c.terminal == nil || c.stop != nil || c.denial != nil || c.interruption != nil || len(c.messages) == 0 {
 		return completion, nil
 	}
 	for _, tool := range c.tools {
-		if tool.state != domain.MessageComplete || !tool.readContinuation {
+		if tool.state != domain.MessageComplete || !tool.readContinuation && !tool.questionContinuation {
+			return completion, nil
+		}
+	}
+	for _, interaction := range c.interactions {
+		if !interaction.closed || !interaction.answerContinuation {
 			return completion, nil
 		}
 	}

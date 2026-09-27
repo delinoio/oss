@@ -72,7 +72,8 @@ func (t *Tx) ExecutionMessagesComplete(execution domain.ID) (bool, error) {
 }
 
 // Original completed root content may include separately retained Read results.
-// Other tools and all callbacks retain their independent continuation gates.
+// Answered questions additionally require their independently settled callback.
+// Other tools and callbacks retain their separate continuation gates.
 func (t *Tx) ClaudeRootContentContinuation(execution domain.ID) (bool, error) {
 	if err := execution.Validate(); err != nil {
 		return false, err
@@ -80,27 +81,37 @@ func (t *Tx) ClaudeRootContentContinuation(execution domain.ID) (bool, error) {
 	var content, unsupported bool
 	err := t.tx.QueryRowContext(t.ctx, `SELECT
  EXISTS(SELECT 1 FROM execution_messages m JOIN entities e ON e.id=m.message_id WHERE m.execution_id=? AND m.state='complete' AND json_type(e.body,'$.claude')='object'),
- (EXISTS(SELECT 1 FROM execution_messages m JOIN entities e ON e.id=m.message_id WHERE m.execution_id=? AND (m.state!='complete' OR json_type(e.body,'$.tool')='object' OR json_type(e.body,'$.claude_interruption')='object'))
- OR EXISTS(SELECT 1 FROM execution_interactions WHERE execution_id=?))`, execution, execution, execution).Scan(&content, &unsupported)
+ EXISTS(SELECT 1 FROM execution_messages m JOIN entities e ON e.id=m.message_id WHERE m.execution_id=? AND (m.state!='complete' OR json_type(e.body,'$.tool')='object' OR json_type(e.body,'$.claude_interruption')='object'))`, execution, execution).Scan(&content, &unsupported)
 	if err != nil || !content || unsupported {
 		return false, storageError(err)
 	}
-	rows, err := t.tx.QueryContext(t.ctx, `SELECT e.body FROM execution_messages m JOIN entities e ON e.id=m.message_id WHERE m.execution_id=? AND json_type(e.body,'$.claude_tool')='object'`, execution)
+	rows, err := t.tx.QueryContext(t.ctx, `SELECT e.id,e.body FROM execution_messages m JOIN entities e ON e.id=m.message_id WHERE m.execution_id=? AND json_type(e.body,'$.claude_tool')='object'`, execution)
 	if err != nil {
 		return false, storageError(err)
 	}
 	defer rows.Close()
+	questions := 0
 	for rows.Next() {
+		var id domain.ID
 		var raw []byte
 		var message domain.ExecutionMessage
-		if err := rows.Scan(&raw); err != nil {
+		if err := rows.Scan(&id, &raw); err != nil {
 			return false, storageError(err)
 		}
-		if domain.Decode(raw, &message) != nil || message.ExecutionID != execution || message.State != domain.MessageComplete || message.Role != domain.ToolMessage || !message.ClaudeTool.ClaudeReadContinuationCandidate() || message.NativeParentID != message.ClaudeTool.NativeMessageID || message.NativeID != message.ClaudeTool.Reference.NativeID {
+		if domain.Decode(raw, &message) != nil || message.ExecutionID != execution || message.State != domain.MessageComplete || message.Role != domain.ToolMessage || (!message.ClaudeTool.ClaudeReadContinuationCandidate() && !message.ClaudeTool.ClaudeQuestionContinuationCandidate()) || id != message.ClaudeTool.Reference.ID || message.NativeParentID != message.ClaudeTool.NativeMessageID || message.NativeID != message.ClaudeTool.Reference.NativeID {
 			return false, nil
 		}
+		if message.ClaudeTool.ClaudeQuestionContinuationCandidate() {
+			questions++
+		}
 	}
-	return true, storageError(rows.Err())
+	if err := rows.Err(); err != nil {
+		return false, storageError(err)
+	}
+	if err := rows.Close(); err != nil {
+		return false, storageError(err)
+	}
+	return t.claudeQuestionContinuation(execution, questions)
 }
 
 // The native part identity and provider call identity are different namespaces.
