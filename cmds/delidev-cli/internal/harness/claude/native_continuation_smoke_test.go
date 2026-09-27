@@ -62,6 +62,7 @@ const (
 	nativeHandoff nativeRetentionProfile = iota
 	nativeCheckpoint
 	nativeCheckpointAfterEOF
+	nativeCheckpointCitations
 )
 
 func TestManualNativeCheckpointAfterOriginalEOF(t *testing.T) {
@@ -119,12 +120,31 @@ func nativeClosedSessionContinuation(t *testing.T, profile nativeRetentionProfil
 					if m.Role != role || nativeFixtureProviderText(m.Content, original == 0) != text {
 						t.Error("process replacement lost or duplicated original conversation", original)
 					}
+					if profile == nativeCheckpointCitations && m.Role == "assistant" {
+						var blocks []struct {
+							Citations json.RawMessage `json:"citations"`
+						}
+						if json.Unmarshal(m.Content, &blocks) != nil || len(blocks) != 1 {
+							t.Error("original citation provider context changed")
+							w.WriteHeader(400)
+							return
+						}
+						if !bytes.Equal(bytes.TrimSpace(blocks[0].Citations), []byte("[]")) {
+							t.Error("native citation omission was changed or reconstructed")
+							w.WriteHeader(400)
+							return
+						}
+					}
 					original++
 				}
 				if int64(original) != 2*n-1 {
 					t.Error("original conversation message count changed", n, original)
 				}
-				nativeFixtureTextResponse(w, n)
+				if profile == nativeCheckpointCitations {
+					nativeFixtureCitationsResponse(w, n)
+				} else {
+					nativeFixtureTextResponse(w, n)
+				}
 			}))
 			defer provider.Close()
 			authority := &rotatingNativeAPIAuthority{token: nativeAPIFixtureToken, authority: nativeAPIAuthority{ctx: ctx, scope: apiproxy.Scope{ExecutionID: domain.NewID(), SessionID: cfg.SessionID, AccountID: domain.NewID(), ConnectionID: domain.NewID(), ProviderID: domain.NewID(), ModelID: domain.NewID(), NativeModel: cfg.Model, Provider: domain.Provider{Name: "Continuation fixture", Endpoint: provider.URL + "/provider", Protocol: domain.AnthropicMessages, Authentication: domain.APIKeyAuth}, Operations: []apiproxy.Operation{apiproxy.MessageCreate}}}}
@@ -158,6 +178,7 @@ func nativeClosedSessionContinuation(t *testing.T, profile nativeRetentionProfil
 					t.Fatal(err)
 				}
 				idle, finished := false, false
+				cited, omitted := false, false
 				for !idle {
 					observed, err := s.Next(ctx)
 					if err != nil {
@@ -167,12 +188,22 @@ func nativeClosedSessionContinuation(t *testing.T, profile nativeRetentionProfil
 						finished = observed.InputID == input && observed.Result.Successful()
 					}
 					idle = observed.Kind == RunStateObserved && observed.Run.State == RunIdle
+					if profile == nativeCheckpointCitations {
+						for _, content := range observed.Content {
+							if content.Kind == ContentChanged && content.DeltaKind == CitationsDelta && content.Citation != nil {
+								cited = content.Citation.Kind == WebCitation
+							}
+							if content.Kind == ContentCompleted {
+								omitted = content.CitationCompletion == CitationsOmittedByNative
+							}
+						}
+					}
 					// Display consumers cannot change the session-owned original proof.
 					if observed.Native != nil {
 						clear(observed.Native.Body)
 					}
 				}
-				if !finished {
+				if !finished || profile == nativeCheckpointCitations && (!cited || !omitted) {
 					t.Fatal("resumed original input did not finish")
 				}
 				var closed *ClosedAPISession
@@ -207,9 +238,17 @@ func nativeClosedSessionContinuation(t *testing.T, profile nativeRetentionProfil
 					if err != nil {
 						t.Fatal("native checkpoint retention failed", err)
 					}
-					for _, private := range []string{cfg.Home, cfg.Workspace, cfg.Instructions, nativeAPIFixtureToken, nativeAPIUpstreamKey, "Fixture request", "Fixture response"} {
+					for _, private := range []string{cfg.Home, cfg.Workspace, cfg.Instructions, nativeAPIFixtureToken, nativeAPIUpstreamKey, "Fixture request", "Fixture response", "private-fixture-citation-index", "Original fixture quote.", "https://fixture.invalid/citation"} {
 						if bytes.Contains(raw, []byte(private)) {
 							t.Fatal("checkpoint contains private runtime content")
+						}
+					}
+					if profile == nativeCheckpointCitations {
+						inspection := configuration
+						digest := checkpointDigest([]byte(inspection.Instructions))
+						inspection.Instructions = ""
+						if err := InspectCheckpoint(ctx, inspection, digest, raw, reference); err != nil {
+							t.Fatal("cited history comparison failed", err)
 						}
 					}
 					closed, err = RestoreCheckpoint(ctx, configuration, raw, reference)
@@ -236,7 +275,7 @@ func nativeClosedSessionContinuation(t *testing.T, profile nativeRetentionProfil
 			if calls.Load() != 3 {
 				t.Fatal("process replacement retried provider inference", calls.Load())
 			}
-			for _, private := range []string{cfg.Home, cfg.Workspace, cfg.Instructions, nativeAPIFixtureToken, nativeAPIUpstreamKey, "Fixture request", "Fixture response"} {
+			for _, private := range []string{cfg.Home, cfg.Workspace, cfg.Instructions, nativeAPIFixtureToken, nativeAPIUpstreamKey, "Fixture request", "Fixture response", "private-fixture-citation-index", "Original fixture quote.", "https://fixture.invalid/citation"} {
 				if strings.Contains(logs.String(), private) {
 					t.Fatal("continuation leaked private data")
 				}

@@ -9,6 +9,40 @@ import (
 func citationFixture() ClaudeCitation {
 	return ClaudeCitation{Kind: ClaudeWebCitation, Text: "Original quoted text", Web: &ClaudeWebLocation{URL: "https://fixture.invalid/source"}}
 }
+
+func TestClaudeCitationContinuationRequiresProvedNativeWebOmission(t *testing.T) {
+	for _, scenario := range []string{"web", "absent", "initial-null", "initial-absent", "matched", "pending", "completed-null", "no-delta", "document", "mixed"} {
+		t.Run(scenario, func(t *testing.T) {
+			h := &ClaudeCitationHistory{Initial: &ClaudeCitationCollection{Entries: []ClaudeCitation{}}, Deltas: []ClaudeCitation{citationFixture()}, Completed: &ClaudeCitationCollection{Entries: []ClaudeCitation{}}, Completion: ClaudeCitationsOmitted}
+			switch scenario {
+			case "absent":
+				h = nil
+			case "initial-null":
+				h.Initial = &ClaudeCitationCollection{Null: true}
+			case "initial-absent":
+				h.Initial = nil
+			case "matched":
+				h.Completed.Entries, h.Completion = []ClaudeCitation{citationFixture()}, ClaudeCitationsMatched
+			case "pending":
+				h.Completed, h.Completion = nil, ""
+			case "completed-null":
+				h.Completed = &ClaudeCitationCollection{Null: true}
+			case "no-delta":
+				h.Deltas = []ClaudeCitation{}
+			case "document", "mixed":
+				v := ClaudeCitation{Kind: ClaudeCharacterCitation, Text: "Original quote", Document: &ClaudeDocumentCitation{Index: "0", Start: "0", End: "1"}}
+				if scenario == "mixed" {
+					h.Deltas = append(h.Deltas, v)
+				} else {
+					h.Deltas = []ClaudeCitation{v}
+				}
+			}
+			if h.ContinuationCandidate() != (scenario == "web" || scenario == "absent") {
+				t.Fatal("unproved original citation history permitted", scenario)
+			}
+		})
+	}
+}
 func TestClaudeCitationVariantsAndExactLocations(t *testing.T) {
 	for _, kind := range []ClaudeCitationKind{ClaudeCharacterCitation, ClaudePageCitation, ClaudeContentBlockCitation, ClaudeSearchCitation, ClaudeWebCitation} {
 		v := citationFixture()

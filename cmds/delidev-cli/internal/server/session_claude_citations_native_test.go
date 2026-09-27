@@ -16,11 +16,25 @@ func TestManualNativeClaudePublicCitations(t *testing.T) {
 		t.Run(string(mode), func(t *testing.T) { nativeClaudePublicDispatch(t, mode, claudePublicCitations) })
 	}
 }
-func claudePublicCitationsResponse(w http.ResponseWriter) {
+func TestManualNativeClaudePublicCitationContinuation(t *testing.T) {
+	for _, mode := range []domain.SessionMode{domain.ExecuteMode, domain.PlanMode} {
+		t.Run(string(mode), func(t *testing.T) { nativeClaudePublicDispatch(t, mode, claudePublicCitationHistory) })
+	}
+}
+func TestManualNativeClaudePublicCitationRecovery(t *testing.T) {
+	for _, mode := range []domain.SessionMode{domain.ExecuteMode, domain.PlanMode} {
+		for _, turn := range []int{1, 2} {
+			t.Run(fmt.Sprintf("%s/turn-%d", mode, turn), func(t *testing.T) {
+				nativeClaudePublicDispatch(t, mode, claudePublicCitationHistory, claudePublicRecoveryCase{turn: turn})
+			})
+		}
+	}
+}
+func claudePublicCitationsResponse(w http.ResponseWriter, n int32) {
 	citation := map[string]any{"type": "web_search_result_location", "cited_text": "Original native cited passage.", "title": "Fixture source", "url": "https://fixture.invalid/citation", "encrypted_index": "private-original-encrypted-index"}
 	w.Header().Set("Content-Type", "text/event-stream")
 	for _, event := range []map[string]any{
-		{"type": "message_start", "message": map[string]any{"id": "msg_original_citations", "type": "message", "role": "assistant", "content": []any{}, "model": "fixture-model", "stop_reason": nil, "stop_sequence": nil, "usage": map[string]any{"input_tokens": 1, "output_tokens": 0}}},
+		{"type": "message_start", "message": map[string]any{"id": fmt.Sprintf("msg_original_citations_%d", n), "type": "message", "role": "assistant", "content": []any{}, "model": "fixture-model", "stop_reason": nil, "stop_sequence": nil, "usage": map[string]any{"input_tokens": 1, "output_tokens": 0}}},
 		{"type": "content_block_start", "index": 0, "content_block": map[string]any{"type": "text", "text": "", "citations": []any{}}},
 		{"type": "content_block_delta", "index": 0, "delta": map[string]any{"type": "text_delta", "text": "Original native cited answer."}},
 		{"type": "content_block_delta", "index": 0, "delta": map[string]any{"type": "citations_delta", "citation": citation}},
@@ -32,7 +46,7 @@ func claudePublicCitationsResponse(w http.ResponseWriter) {
 		_, _ = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event["type"], raw)
 	}
 }
-func verifyClaudePublicCitations(t *testing.T, ctx context.Context, f *firstDispatchFixture) {
+func verifyClaudePublicCitations(t *testing.T, ctx context.Context, f *firstDispatchFixture, want int) {
 	t.Helper()
 	rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.MessageKind, SessionID: domain.ID(f.change.Session.Id), Limit: 100})
 	if err != nil {
@@ -60,7 +74,7 @@ func verifyClaudePublicCitations(t *testing.T, ctx context.Context, f *firstDisp
 			t.Fatal("original citation stream/omission lost")
 		}
 	}
-	if found != 1 {
+	if found != want {
 		t.Fatal("original cited message duplicated", found)
 	}
 }

@@ -221,6 +221,25 @@ func (h *ClaudeCitationHistory) Validate(state ClaudeBlockState) error {
 	}
 	return nil
 }
+
+// The pinned native web-citation profile preserves an empty completed array
+// through its own persisted history and subsequent provider requests. Product
+// deltas remain separate original evidence, never reconstructed native context.
+// This candidate still requires independently verified native files/checkpoint.
+func (h *ClaudeCitationHistory) ContinuationCandidate() bool {
+	if h == nil {
+		return true
+	}
+	if h.Validate(ClaudeBlockStopped) != nil || h.Completion != ClaudeCitationsOmitted || h.Initial == nil || h.Initial.Null || len(h.Initial.Entries) != 0 {
+		return false
+	}
+	for _, citation := range h.Deltas {
+		if citation.Kind != ClaudeWebCitation {
+			return false
+		}
+	}
+	return true
+}
 func cloneClaudeCitation(v ClaudeCitation) ClaudeCitation {
 	v.Title = copyClaudeText(v.Title)
 	if v.Document != nil {

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -28,6 +29,7 @@ type claudePublicCase string
 
 const (
 	claudePublicCitations        claudePublicCase = "citations"
+	claudePublicCitationHistory  claudePublicCase = "continuation-citations"
 	claudePublicCompaction       claudePublicCase = "continuation-compaction"
 	claudePublicBackgroundStop   claudePublicCase = "background-stop"
 	claudePublicBashToolProgress claudePublicCase = "bash-tool-progress"
@@ -116,6 +118,7 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 	defer cancel()
 	turns, turn := 1, 0
 	compaction := scenario == claudePublicCompaction
+	citations := scenario == claudePublicCitations || scenario == claudePublicCitationHistory
 	nativeModel := "fixture-model"
 	if compaction {
 		nativeModel = "claude-sonnet-4-6"
@@ -133,7 +136,7 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 	effectHistory := &claudePublicEffectHistory{}
 	questionHistory := scenario == claudePublicQuestionHistory
 	missingRead := scenario == claudePublicReadError
-	fault := continuation && !read && !questionHistory && effect == "" && scenario != claudePublicContinuation && scenario != claudePublicResume && !compaction
+	fault := continuation && !read && !questionHistory && effect == "" && scenario != claudePublicContinuation && scenario != claudePublicResume && !compaction && !citations
 	var readRoot atomic.Value
 	if continuation {
 		turns = 3
@@ -191,10 +194,6 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 			w.WriteHeader(400)
 			return
 		}
-		if scenario == claudePublicCitations {
-			claudePublicCitationsResponse(w)
-			return
-		}
 		if read {
 			if !checkClaudePublicReadHistory(t, raw, n, missingRead) {
 				w.WriteHeader(400)
@@ -230,6 +229,9 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 				i := original
 				original++
 				want, role := "Original public Claude result.", "assistant"
+				if citations {
+					want = "Original native cited answer."
+				}
 				if i%2 == 0 {
 					role = "user"
 					want = fmt.Sprintf("continuation input %d", i/2)
@@ -241,6 +243,16 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 					t.Error("continuation replaced or reordered original history")
 					w.WriteHeader(400)
 					return
+				}
+				if citations && role == "assistant" {
+					var blocks []struct {
+						Citations json.RawMessage `json:"citations"`
+					}
+					if json.Unmarshal(message.Content, &blocks) != nil || len(blocks) != 1 || string(bytes.TrimSpace(blocks[0].Citations)) != "[]" {
+						t.Error("continuation changed original native citation omission")
+						w.WriteHeader(400)
+						return
+					}
 				}
 			}
 			if original != int(2*n-1) {
@@ -266,6 +278,10 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 			case <-r.Context().Done():
 			case <-ctx.Done():
 			}
+			return
+		}
+		if citations {
+			claudePublicCitationsResponse(w, n)
 			return
 		}
 		block := map[string]any{"type": "text", "text": ""}
@@ -576,7 +592,7 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 			}
 			var proof domain.ExecutionCompletion
 			version, dispatch := uint32(2), domain.DispatchReady
-			if background || scenario == claudePublicCitations {
+			if background {
 				version, dispatch = 1, domain.DispatchPaused
 			}
 			if recoveredBoundary {
@@ -637,8 +653,8 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 			if compaction && turn == 2 {
 				verifyClaudePublicCompaction(t, ctx, f, proof)
 			}
-			if scenario == claudePublicCitations {
-				verifyClaudePublicCitations(t, ctx, f)
+			if citations {
+				verifyClaudePublicCitations(t, ctx, f, turn+1)
 			}
 			if background {
 				verifyClaudePublicBackgroundStop(t, ctx, f, proof)

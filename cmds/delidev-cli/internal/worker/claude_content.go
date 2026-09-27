@@ -32,33 +32,33 @@ type claudeContentCommit struct {
 // Its caller must reconcile child and terminal authority separately;
 // unsupported rich blocks latch this publisher.
 type ClaudeContentPublisher struct {
-	citationHistory     bool
-	tasks               *domain.ClaudeTasksState
-	denial              *domain.ClaudeDenialCompletion
-	stop                *domain.ClaudeStopObservation
-	terminalCommand     domain.ClaudeCommandCompletion
-	terminalCommandID   string
-	resultUsageNativeID string
-	resultBoundary      *claude.NativeResult
-	terminal            *domain.ClaudeTerminalObservation
-	terminalSequence    uint64
-	completion          *domain.ExecutionCompletion
-	checkpoint          *domain.ExecutionCompletion
-	interruption        *claudePublishedInterruption
-	responses           map[domain.ID]*claudeResponseAttempt
-	replyUncertain      bool
-	interactions        map[domain.ID]claudePublishedInteraction
-	callbackRequests    map[string]bool
-	binding             *ClaudeBindingPublisher
-	messages            map[string]claudePublishedContent
-	tools               map[string]claudePublishedTool
-	seen                map[string]bool
-	usageSeen           map[string]bool
-	resultUsage         bool
-	active              string
-	inputPublished      bool
-	queue               []claudeContentCommit
-	pending             bool
+	citationHistoryUnsupported bool
+	tasks                      *domain.ClaudeTasksState
+	denial                     *domain.ClaudeDenialCompletion
+	stop                       *domain.ClaudeStopObservation
+	terminalCommand            domain.ClaudeCommandCompletion
+	terminalCommandID          string
+	resultUsageNativeID        string
+	resultBoundary             *claude.NativeResult
+	terminal                   *domain.ClaudeTerminalObservation
+	terminalSequence           uint64
+	completion                 *domain.ExecutionCompletion
+	checkpoint                 *domain.ExecutionCompletion
+	interruption               *claudePublishedInterruption
+	responses                  map[domain.ID]*claudeResponseAttempt
+	replyUncertain             bool
+	interactions               map[domain.ID]claudePublishedInteraction
+	callbackRequests           map[string]bool
+	binding                    *ClaudeBindingPublisher
+	messages                   map[string]claudePublishedContent
+	tools                      map[string]claudePublishedTool
+	seen                       map[string]bool
+	usageSeen                  map[string]bool
+	resultUsage                bool
+	active                     string
+	inputPublished             bool
+	queue                      []claudeContentCommit
+	pending                    bool
 }
 
 func OpenClaudeContentPublisher(binding *ClaudeBindingPublisher) (*ClaudeContentPublisher, error) {
@@ -308,8 +308,8 @@ func (c *ClaudeContentPublisher) drain(ctx context.Context) error {
 
 func (c *ClaudeContentPublisher) commitHead() {
 	item := c.queue[0]
-	if u := item.event.ClaudeMessage; u != nil && (u.Citation != nil || u.Citations != nil) {
-		c.citationHistory = true
+	if u := item.event.ClaudeMessage; u != nil && u.Mutation == domain.ClaudeBlockComplete {
+		c.citationHistoryUnsupported = c.citationHistoryUnsupported || !item.next.content.Blocks[*u.Index].Citations.ContinuationCandidate()
 	}
 	if u := item.event.ClaudeMessage; u != nil && u.Mutation == domain.ClaudeBlockCitation && c.binding.publisher.config.Logger != nil {
 		c.binding.publisher.config.Logger.Info("claude_citation_observed", "job_id", c.binding.journal.JobID, "sequence", item.event.Sequence, "kind", u.Citation.Kind)
