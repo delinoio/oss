@@ -501,33 +501,18 @@ fn publish(output: &OutputArgs, bytes: &[u8]) -> Result<(), &'static str> {
     if existing_report_destination(path)?.is_some() && !output.force {
         return Err("output_exists");
     }
-    let parent = path
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-        .unwrap_or(Path::new("."));
-    let mut temporary = tempfile::Builder::new()
-        .prefix(".clibox-fspy-")
-        .tempfile_in(parent)
-        .map_err(|_| "output_prepare")?;
-    temporary.write_all(bytes).map_err(|_| "output_write")?;
-    temporary.as_file().sync_all().map_err(|_| "output_sync")?;
-    if let Some(metadata) = existing_report_destination(path)? {
-        if !output.force {
-            return Err("output_exists");
+    clibox_transform::publish_file_bytes(path, output.force, bytes).map_err(|code| {
+        use clibox_transform::PublicationErrorCode as Code;
+        match code {
+            Code::OutputExists => "output_exists",
+            Code::UnsafeDestination => "output_not_regular",
+            Code::Permissions => "output_permissions",
+            Code::ReadFailed => "output_metadata",
+            Code::WriteFailed => "output_write",
+            Code::PublishFailed => "output_publish",
+            _ => "output_publish",
         }
-        temporary
-            .as_file()
-            .set_permissions(metadata.permissions())
-            .map_err(|_| "output_permissions")?;
-    }
-    if output.force {
-        temporary.persist(path).map_err(|_| "output_publish")?;
-    } else {
-        temporary
-            .persist_noclobber(path)
-            .map_err(|_| "output_publish")?;
-    }
-    Ok(())
+    })
 }
 
 fn load(
@@ -3772,6 +3757,77 @@ mod tests {
         );
         assert_eq!(fs::read(destination).unwrap(), b"original");
         assert_eq!(fs::read(alias).unwrap(), b"original");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn forced_report_preserves_owner_group_and_mode() {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("report.json");
+        fs::write(&destination, b"original").unwrap();
+        fs::set_permissions(&destination, fs::Permissions::from_mode(0o640)).unwrap();
+        let before = fs::metadata(&destination).unwrap();
+        let output = OutputArgs {
+            output: Some(destination.clone()),
+            force: true,
+        };
+        publish(&output, b"replacement").unwrap();
+        let after = fs::metadata(&destination).unwrap();
+        assert_eq!(fs::read(&destination).unwrap(), b"replacement");
+        assert_eq!(
+            (after.uid(), after.gid(), after.mode() & 0o7777),
+            (before.uid(), before.gid(), before.mode() & 0o7777)
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn forced_report_preserves_extended_acl() {
+        use std::{os::unix::ffi::OsStrExt, process::Command};
+
+        unsafe extern "C" {
+            fn acl_get_link_np(path: *const libc::c_char, kind: libc::c_int) -> *mut libc::c_void;
+            fn acl_to_text(acl: *mut libc::c_void, length: *mut libc::ssize_t)
+                -> *mut libc::c_char;
+            fn acl_free(object: *mut libc::c_void) -> libc::c_int;
+        }
+
+        fn acl_text(path: &Path) -> Vec<u8> {
+            let path = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+            let acl = unsafe { acl_get_link_np(path.as_ptr(), 0x100) };
+            assert!(!acl.is_null());
+            let mut length = 0;
+            let text = unsafe { acl_to_text(acl, &mut length) };
+            assert!(!text.is_null());
+            let bytes =
+                unsafe { std::slice::from_raw_parts(text.cast::<u8>(), length as usize) }.to_vec();
+            unsafe {
+                acl_free(text.cast());
+                acl_free(acl);
+            }
+            bytes
+        }
+
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("report.json");
+        fs::write(&destination, b"original").unwrap();
+        assert!(Command::new("chmod")
+            .arg("+a")
+            .arg("everyone deny execute")
+            .arg(&destination)
+            .status()
+            .unwrap()
+            .success());
+        let before = acl_text(&destination);
+        let output = OutputArgs {
+            output: Some(destination.clone()),
+            force: true,
+        };
+        publish(&output, b"replacement").unwrap();
+        assert_eq!(acl_text(&destination), before);
+        assert_eq!(fs::read(destination).unwrap(), b"replacement");
     }
 
     #[test]
