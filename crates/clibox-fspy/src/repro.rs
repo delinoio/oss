@@ -12,6 +12,10 @@ use std::{
     fs::{self, File},
     io::{self, Read, Write},
     path::{Component, Path, PathBuf},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
 };
 
 use sha2::{Digest, Sha256};
@@ -21,6 +25,7 @@ use crate::{coverage::Selector, record::FileIdentity};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReproFailure {
+    Cancellation,
     Unavailable,
     BlockedInput,
     ExternalLink,
@@ -33,6 +38,7 @@ pub enum ReproFailure {
 impl std::fmt::Display for ReproFailure {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str(match self {
+            Self::Cancellation => "cancelled",
             Self::Unavailable => "snapshot_unavailable",
             Self::BlockedInput => "blocked_input",
             Self::ExternalLink => "external_link",
@@ -56,6 +62,7 @@ pub struct SnapshotFile {
 }
 
 pub struct Snapshot {
+    cancelled: Arc<AtomicBool>,
     root: PathBuf,
     private: tempfile::TempDir,
     eligible: BTreeSet<PathBuf>,
@@ -169,7 +176,25 @@ fn stage_symlink(source: &Path, target: &Path, link: &Path) -> io::Result<()> {
     }
 }
 
-fn hash_file(path: &Path, root: &Path) -> Result<(String, u64, FileIdentity), ReproFailure> {
+fn check_cancelled(cancelled: &AtomicBool) -> Result<(), ReproFailure> {
+    #[cfg(windows)]
+    let requested =
+        cancelled.load(Ordering::SeqCst) || crate::cli::WINDOWS_CANCELLED.load(Ordering::SeqCst);
+    #[cfg(not(windows))]
+    let requested = cancelled.load(Ordering::SeqCst);
+    if requested {
+        Err(ReproFailure::Cancellation)
+    } else {
+        Ok(())
+    }
+}
+
+fn hash_file(
+    path: &Path,
+    root: &Path,
+    cancelled: &AtomicBool,
+) -> Result<(String, u64, FileIdentity), ReproFailure> {
+    check_cancelled(cancelled)?;
     let mut file = File::open(path).map_err(|_| ReproFailure::Unavailable)?;
     let opened = opened_path(&file)?;
     if !opened.starts_with(root) {
@@ -181,6 +206,7 @@ fn hash_file(path: &Path, root: &Path) -> Result<(String, u64, FileIdentity), Re
     let mut length = 0_u64;
     let mut buffer = [0_u8; 65536];
     loop {
+        check_cancelled(cancelled)?;
         let read = file
             .read(&mut buffer)
             .map_err(|_| ReproFailure::Unavailable)?;
@@ -196,6 +222,10 @@ fn hash_file(path: &Path, root: &Path) -> Result<(String, u64, FileIdentity), Re
 }
 
 impl Snapshot {
+    pub fn check_cancelled(&self) -> Result<(), ReproFailure> {
+        check_cancelled(&self.cancelled)
+    }
+
     pub fn selected_alias_for_identity(&self, identity: FileIdentity) -> Option<&Path> {
         self.selected_identities
             .get(&identity)
@@ -249,6 +279,23 @@ impl Snapshot {
         max_bytes: u64,
         max_files: usize,
     ) -> Result<Self, ReproFailure> {
+        Self::take_with_cancel(
+            root,
+            selector,
+            max_bytes,
+            max_files,
+            Arc::new(AtomicBool::new(false)),
+        )
+    }
+
+    pub fn take_with_cancel(
+        root: &Path,
+        selector: &Selector,
+        max_bytes: u64,
+        max_files: usize,
+        cancelled: Arc<AtomicBool>,
+    ) -> Result<Self, ReproFailure> {
+        check_cancelled(&cancelled)?;
         if max_bytes == 0 {
             return Err(ReproFailure::ByteLimit);
         }
@@ -264,6 +311,7 @@ impl Snapshot {
             .tempdir()
             .map_err(|_| ReproFailure::Unavailable)?;
         let mut snapshot = Self {
+            cancelled,
             root: root.clone(),
             private,
             eligible: BTreeSet::new(),
@@ -305,6 +353,7 @@ impl Snapshot {
                 }
             });
         for entry in walker {
+            check_cancelled(&snapshot.cancelled)?;
             let entry = match entry {
                 Ok(entry) => entry,
                 Err(error)
@@ -376,6 +425,7 @@ impl Snapshot {
     }
 
     fn add_path(&mut self, relative: &Path) -> Result<(), ReproFailure> {
+        check_cancelled(&self.cancelled)?;
         if !valid_relative(relative) {
             return Err(ReproFailure::Unavailable);
         }
@@ -439,6 +489,7 @@ impl Snapshot {
             let mut size = 0_u64;
             let mut buffer = [0_u8; 65536];
             loop {
+                check_cancelled(&self.cancelled)?;
                 let read = input
                     .read(&mut buffer)
                     .map_err(|_| ReproFailure::Unavailable)?;
@@ -466,7 +517,8 @@ impl Snapshot {
             output.sync_all().map_err(|_| ReproFailure::Unavailable)?;
             self.total_bytes += size;
             let sha256 = format!("{:x}", digest.finalize());
-            if hash_file(&source, &self.root)? != (sha256.clone(), size, identity) {
+            if hash_file(&source, &self.root, &self.cancelled)? != (sha256.clone(), size, identity)
+            {
                 return Err(ReproFailure::UnstableInput);
             }
             self.files.insert(
@@ -486,6 +538,7 @@ impl Snapshot {
     /// Recheck only collected source objects after the original execution.
     pub fn verify_required(&self, required: &BTreeSet<PathBuf>) -> Result<(), ReproFailure> {
         for relative in required {
+            check_cancelled(&self.cancelled)?;
             if !valid_relative(relative) {
                 return Err(ReproFailure::UncollectedInput);
             }
@@ -501,6 +554,7 @@ impl Snapshot {
     }
 
     fn verify_path(&self, relative: &Path) -> Result<(), ReproFailure> {
+        check_cancelled(&self.cancelled)?;
         let mut prefix = PathBuf::new();
         for component in relative.components() {
             prefix.push(component.as_os_str());
@@ -523,8 +577,14 @@ impl Snapshot {
             .files
             .get(relative)
             .ok_or(ReproFailure::UncollectedInput)?;
-        let actual = hash_file(&self.root.join(relative), &self.root)
-            .map_err(|_| ReproFailure::UnstableInput)?;
+        let actual =
+            hash_file(&self.root.join(relative), &self.root, &self.cancelled).map_err(|error| {
+                if error == ReproFailure::Cancellation {
+                    error
+                } else {
+                    ReproFailure::UnstableInput
+                }
+            })?;
         if actual != (expected.sha256.clone(), expected.size, expected.identity) {
             return Err(ReproFailure::UnstableInput);
         }
@@ -554,6 +614,7 @@ impl Snapshot {
         staged: &mut BTreeMap<PathBuf, SnapshotFile>,
         staged_identities: &mut BTreeMap<FileIdentity, PathBuf>,
     ) -> Result<(), ReproFailure> {
+        check_cancelled(&self.cancelled)?;
         let mut prefix = PathBuf::new();
         for component in relative.components() {
             prefix.push(component.as_os_str());
@@ -597,7 +658,29 @@ impl Snapshot {
                 .map_err(|_| ReproFailure::Unavailable)?;
             staged_file.hard_link_to = Some(first.clone());
         } else {
-            fs::copy(self.private.path().join(relative), &destination)
+            let mut input = File::open(self.private.path().join(relative))
+                .map_err(|_| ReproFailure::Unavailable)?;
+            let mut output = File::create(&destination).map_err(|_| ReproFailure::Unavailable)?;
+            let mut buffer = [0_u8; 65536];
+            loop {
+                check_cancelled(&self.cancelled)?;
+                let count = input
+                    .read(&mut buffer)
+                    .map_err(|_| ReproFailure::Unavailable)?;
+                if count == 0 {
+                    break;
+                }
+                output
+                    .write_all(&buffer[..count])
+                    .map_err(|_| ReproFailure::Unavailable)?;
+            }
+            output
+                .set_permissions(
+                    input
+                        .metadata()
+                        .map_err(|_| ReproFailure::Unavailable)?
+                        .permissions(),
+                )
                 .map_err(|_| ReproFailure::Unavailable)?;
             staged_identities.insert(file.identity, relative.to_path_buf());
         }
@@ -621,6 +704,43 @@ fn native_relative(path: &Path) -> crate::record::NativePath {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cancellation_stops_snapshot_and_staging() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(directory.path().join("input.txt"), vec![b'x'; 256 * 1024]).unwrap();
+        let selector = Selector::new(&["*.txt".into()], &[]).unwrap();
+        let cancelled = Arc::new(AtomicBool::new(true));
+        assert!(matches!(
+            Snapshot::take_with_cancel(
+                directory.path(),
+                &selector,
+                1024 * 1024,
+                10,
+                Arc::clone(&cancelled)
+            ),
+            Err(ReproFailure::Cancellation)
+        ));
+        cancelled.store(false, Ordering::SeqCst);
+        let snapshot = Snapshot::take_with_cancel(
+            directory.path(),
+            &selector,
+            1024 * 1024,
+            10,
+            Arc::clone(&cancelled),
+        )
+        .unwrap();
+        let candidate = tempfile::tempdir().unwrap();
+        cancelled.store(true, Ordering::SeqCst);
+        assert!(matches!(
+            snapshot.stage_required(
+                &BTreeSet::from([PathBuf::from("input.txt")]),
+                candidate.path()
+            ),
+            Err(ReproFailure::Cancellation)
+        ));
+        assert!(!candidate.path().join("input.txt").exists());
+    }
 
     #[test]
     fn stages_required_hardlink_aliases_as_one_file() {

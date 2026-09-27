@@ -926,6 +926,7 @@ fn execute_repro_capture(
     cwd: Option<&Path>,
     args: &ExecutionArgs,
     expected_stderr: &str,
+    signals: &SignalHandlers,
 ) -> Result<(CompleteRecord, bool), CaptureFailure> {
     use std::{
         os::{
@@ -964,7 +965,6 @@ fn execute_repro_capture(
             signal: 0,
         })?;
     child.stderr(Stdio::from(OwnedFd::from(writer)));
-    let signals = SignalHandlers::new().map_err(|error| CaptureFailure { error, signal: 0 })?;
     let finished = Arc::new(AtomicBool::new(false));
     let reader_finished = finished.clone();
     let needle = expected_stderr.as_bytes().to_vec();
@@ -1045,8 +1045,9 @@ fn repro_capture(
     cwd: Option<&Path>,
     args: &ExecutionArgs,
     expected_stderr: &str,
+    signals: &SignalHandlers,
 ) -> Result<(CompleteRecord, bool), i32> {
-    execute_repro_capture(command, root, cwd, args, expected_stderr)
+    execute_repro_capture(command, root, cwd, args, expected_stderr, signals)
         .map_err(|failure| capture_status(failure, "min-repro"))
 }
 
@@ -1057,6 +1058,7 @@ fn repro_capture(
     cwd: Option<&Path>,
     args: &ExecutionArgs,
     expected_stderr: &str,
+    signals: &MacSignals,
 ) -> Result<(CompleteRecord, bool), i32> {
     use std::{
         os::{
@@ -1094,8 +1096,6 @@ fn repro_capture(
             macos_capture_status((CaptureFailure::Spawn, 0), "min-repro")
         })?;
     child.stderr(Stdio::from(OwnedFd::from(writer)));
-    let signals =
-        MacSignals::new().map_err(|error| macos_capture_status((error, 0), "min-repro"))?;
     let finished = Arc::new(AtomicBool::new(false));
     let reader_finished = Arc::clone(&finished);
     let needle = expected_stderr.as_bytes().to_vec();
@@ -1167,6 +1167,7 @@ fn repro_capture(
     cwd: Option<&Path>,
     args: &ExecutionArgs,
     expected_stderr: &str,
+    _signals: &WindowsSignals,
 ) -> Result<(CompleteRecord, bool), i32> {
     use std::{
         io::Read,
@@ -1208,8 +1209,6 @@ fn repro_capture(
     child
         .stdout(Stdio::from(stderr))
         .stderr(Stdio::from(writer));
-    let _signals =
-        WindowsSignals::new().map_err(|failure| windows_capture_status(failure, "min-repro"))?;
     let needle = expected_stderr.as_bytes().to_vec();
     let forwarder = thread::Builder::new()
         .name("clibox-fspy-stderr".into())
@@ -1697,6 +1696,7 @@ fn collect_required(
     use crate::repro::ReproFailure;
     let mut required = std::collections::BTreeSet::new();
     for pair in &record.operations {
+        snapshot.check_cancelled()?;
         let input_operation = matches!(
             pair.start.operation,
             record::Operation::Read
@@ -1725,7 +1725,10 @@ fn collect_required(
                         if crate::repro::Snapshot::is_blocked(&directory) {
                             return Err(ReproFailure::BlockedInput);
                         }
-                        required.extend(snapshot.selected_entries_within(&directory).cloned());
+                        for entry in snapshot.selected_entries_within(&directory) {
+                            snapshot.check_cancelled()?;
+                            required.insert(entry.clone());
+                        }
                     }
                 }
             }
@@ -1786,7 +1789,12 @@ fn collect_required(
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
-fn tree_limits(root: &Path, max_bytes: u64, max_files: usize) -> Result<(), &'static str> {
+fn tree_limits(
+    root: &Path,
+    max_bytes: u64,
+    max_files: usize,
+    cancelled: &std::sync::atomic::AtomicBool,
+) -> Result<(), &'static str> {
     let mut bytes = 0_u64;
     let mut files = 0_usize;
     for entry in walkdir::WalkDir::new(root)
@@ -1794,6 +1802,9 @@ fn tree_limits(root: &Path, max_bytes: u64, max_files: usize) -> Result<(), &'st
         .into_iter()
         .skip(1)
     {
+        if cancelled.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err("cancelled");
+        }
         let entry = entry.map_err(|_| "result_unavailable")?;
         if entry.file_type().is_file() || entry.path_is_symlink() {
             files = files.checked_add(1).ok_or("result_file_limit")?;
@@ -1982,6 +1993,46 @@ fn reproduction_cwd(root: &Path) -> Result<PathBuf, &'static str> {
         .map_err(|_| "working_directory_outside_root")
 }
 
+#[cfg(target_os = "linux")]
+type ReproSignals = SignalHandlers;
+#[cfg(target_os = "macos")]
+type ReproSignals = MacSignals;
+#[cfg(target_os = "windows")]
+type ReproSignals = WindowsSignals;
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn repro_cancelled(signals: &ReproSignals) -> &std::sync::atomic::AtomicBool {
+    &signals.cancelled
+}
+
+#[cfg(target_os = "windows")]
+fn repro_cancelled(_: &ReproSignals) -> &std::sync::atomic::AtomicBool {
+    &WINDOWS_CANCELLED
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+fn repro_cancel_status(signals: &ReproSignals) -> i32 {
+    diagnostic("cancelled", "min-repro");
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    if signals.signal.load(std::sync::atomic::Ordering::SeqCst)
+        == signal_hook::consts::SIGTERM as usize
+    {
+        return 143;
+    }
+    #[cfg(target_os = "windows")]
+    let _ = signals;
+    130
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+fn repro_error(error: crate::repro::ReproFailure, signals: &ReproSignals) -> i32 {
+    if error == crate::repro::ReproFailure::Cancellation {
+        repro_cancel_status(signals)
+    } else {
+        diagnostic(&error.to_string(), "min-repro")
+    }
+}
+
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 fn min_repro(args: MinReproArgs) -> i32 {
     use std::collections::BTreeSet;
@@ -2017,31 +2068,58 @@ fn min_repro(args: MinReproArgs) -> i32 {
     if fs::symlink_metadata(&bundle_path).is_ok() {
         return diagnostic("bundle_exists", "min-repro");
     }
-    let snapshot = match crate::repro::Snapshot::take(
+    #[cfg(target_os = "linux")]
+    let signals = match SignalHandlers::new() {
+        Ok(signals) => signals,
+        Err(error) => return capture_status(CaptureFailure { error, signal: 0 }, "min-repro"),
+    };
+    #[cfg(target_os = "macos")]
+    let signals = match MacSignals::new() {
+        Ok(signals) => signals,
+        Err(error) => return macos_capture_status((error, 0), "min-repro"),
+    };
+    #[cfg(target_os = "windows")]
+    let signals = match WindowsSignals::new() {
+        Ok(signals) => signals,
+        Err(error) => return windows_capture_status(error, "min-repro"),
+    };
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    let snapshot_cancelled = std::sync::Arc::clone(&signals.cancelled);
+    #[cfg(target_os = "windows")]
+    let snapshot_cancelled = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let snapshot = match crate::repro::Snapshot::take_with_cancel(
         &root,
         &selector,
         args.max_snapshot_bytes,
         args.max_snapshot_files,
+        snapshot_cancelled,
     ) {
         Ok(snapshot) => snapshot,
-        Err(error) => return diagnostic(&error.to_string(), "min-repro"),
+        Err(error) => return repro_error(error, &signals),
     };
+    if repro_cancelled(&signals).load(std::sync::atomic::Ordering::SeqCst) {
+        return repro_cancel_status(&signals);
+    }
     let (original, original_matches) = match repro_capture(
         &args.command,
         &root,
         None,
         &args.execution,
         &args.expect_stderr,
+        &signals,
     ) {
         Ok(result) => result,
         Err(status) => return status,
     };
+    if repro_cancelled(&signals).load(std::sync::atomic::Ordering::SeqCst) {
+        return repro_cancel_status(&signals);
+    }
     if original.summary.child_exit_code != Some(args.expect_exit) || !original_matches {
         return diagnostic("original_mismatch", "min-repro");
     }
     let required = match collect_required(&original, &root, &selector, &snapshot) {
         Ok(required) => required,
-        Err(error) => return diagnostic(&error.to_string(), "min-repro"),
+        Err(error) => return repro_error(error, &signals),
     };
     let candidate = match tempfile::Builder::new()
         .prefix(".clibox-fspy-candidate-")
@@ -2052,7 +2130,7 @@ fn min_repro(args: MinReproArgs) -> i32 {
     };
     let staged = match snapshot.stage_required(&required, candidate.path()) {
         Ok(staged) => staged,
-        Err(error) => return diagnostic(&error.to_string(), "min-repro"),
+        Err(error) => return repro_error(error, &signals),
     };
     let staged_paths = staged
         .iter()
@@ -2068,14 +2146,21 @@ fn min_repro(args: MinReproArgs) -> i32 {
         Some(&candidate_cwd),
         &args.execution,
         &args.expect_stderr,
+        &signals,
     ) {
         Ok(result) => result,
         Err(status) => return status,
     };
+    if repro_cancelled(&signals).load(std::sync::atomic::Ordering::SeqCst) {
+        return repro_cancel_status(&signals);
+    }
     if rerun.summary.child_exit_code != Some(args.expect_exit) || !rerun_matches {
         return diagnostic("reproduction_mismatch", "min-repro");
     }
     for pair in &rerun.operations {
+        if repro_cancelled(&signals).load(std::sync::atomic::Ordering::SeqCst) {
+            return repro_cancel_status(&signals);
+        }
         if !matches!(
             pair.start.operation,
             record::Operation::Open
@@ -2128,8 +2213,13 @@ fn min_repro(args: MinReproArgs) -> i32 {
         candidate.path(),
         args.max_result_bytes,
         args.max_result_files,
+        repro_cancelled(&signals),
     ) {
-        return diagnostic(error, "min-repro");
+        return if error == "cancelled" {
+            repro_cancel_status(&signals)
+        } else {
+            diagnostic(error, "min-repro")
+        };
     }
     let bundle = match tempfile::Builder::new()
         .prefix(".clibox-fspy-bundle-")
@@ -2140,7 +2230,7 @@ fn min_repro(args: MinReproArgs) -> i32 {
     };
     let staged = match snapshot.stage_required(&required, bundle.path()) {
         Ok(staged) => staged,
-        Err(error) => return diagnostic(&error.to_string(), "min-repro"),
+        Err(error) => return repro_error(error, &signals),
     };
     if fs::create_dir_all(bundle.path().join(&cwd_relative)).is_err() {
         return diagnostic("bundle_prepare", "min-repro");
@@ -2152,27 +2242,37 @@ fn min_repro(args: MinReproArgs) -> i32 {
     if fs::create_dir(&metadata_dir).is_err() {
         return diagnostic("bundle_prepare", "min-repro");
     }
-    let external = original
-        .operations
-        .iter()
-        .filter(|pair| {
-            matches!(
-                pair.start.operation,
-                record::Operation::Open
-                    | record::Operation::Read
-                    | record::Operation::PositionalRead
-                    | record::Operation::Metadata
-                    | record::Operation::Directory
-                    | record::Operation::Exec
-            )
-        })
-        .flat_map(|pair| pair.start.paths.iter())
-        .filter(|path| path.class == record::PathClass::External)
-        .filter_map(|path| external_native_key(&path.logical))
-        .collect::<BTreeSet<_>>()
+    let mut external_keys = BTreeSet::new();
+    for pair in &original.operations {
+        if repro_cancelled(&signals).load(std::sync::atomic::Ordering::SeqCst) {
+            return repro_cancel_status(&signals);
+        }
+        if !matches!(
+            pair.start.operation,
+            record::Operation::Open
+                | record::Operation::Read
+                | record::Operation::PositionalRead
+                | record::Operation::Metadata
+                | record::Operation::Directory
+                | record::Operation::Exec
+        ) {
+            continue;
+        }
+        for path in &pair.start.paths {
+            if path.class == record::PathClass::External {
+                if let Some(key) = external_native_key(&path.logical) {
+                    external_keys.insert(key);
+                }
+            }
+        }
+    }
+    let external = external_keys
         .into_iter()
         .map(external_native_from_key)
         .collect::<Vec<_>>();
+    if repro_cancelled(&signals).load(std::sync::atomic::Ordering::SeqCst) {
+        return repro_cancel_status(&signals);
+    }
     let staged_links = snapshot
         .links()
         .iter()
@@ -2207,8 +2307,20 @@ fn min_repro(args: MinReproArgs) -> i32 {
     if fs::write(metadata_dir.join("manifest.json"), manifest_bytes).is_err()
         || fs::write(metadata_dir.join("README.md"), b"Run the original command from the working_directory listed in manifest.json, relative to this bundle directory, and check its expected exit status and stderr substring. The command and environment were intentionally not saved. External runtime and system dependencies are listed in manifest.json and were not bundled. This reproduction is verified only on the originating machine under the current environment. Delete the bundle directory manually when finished.\n").is_err()
     { return diagnostic("bundle_write", "min-repro"); }
-    if let Err(error) = tree_limits(bundle.path(), args.max_result_bytes, args.max_result_files) {
-        return diagnostic(error, "min-repro");
+    if let Err(error) = tree_limits(
+        bundle.path(),
+        args.max_result_bytes,
+        args.max_result_files,
+        repro_cancelled(&signals),
+    ) {
+        return if error == "cancelled" {
+            repro_cancel_status(&signals)
+        } else {
+            diagnostic(error, "min-repro")
+        };
+    }
+    if repro_cancelled(&signals).load(std::sync::atomic::Ordering::SeqCst) {
+        return repro_cancel_status(&signals);
     }
     if let Err(error) = publish_new_directory(bundle.path(), &bundle_path) {
         return diagnostic(error, "min-repro");
@@ -3260,7 +3372,8 @@ fn macos_assetcov(args: AssetcovArgs) -> i32 {
 }
 
 #[cfg(target_os = "windows")]
-static WINDOWS_CANCELLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+pub(crate) static WINDOWS_CANCELLED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
 
 #[cfg(target_os = "windows")]
 unsafe extern "system" fn windows_ctrl_handler(code: u32) -> i32 {
