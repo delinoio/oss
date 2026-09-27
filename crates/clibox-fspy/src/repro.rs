@@ -66,6 +66,7 @@ pub struct Snapshot {
     root: PathBuf,
     private: tempfile::TempDir,
     eligible: BTreeSet<PathBuf>,
+    eligible_directories: BTreeMap<PathBuf, FileIdentity>,
     selected_identities: BTreeMap<FileIdentity, PathBuf>,
     files: BTreeMap<PathBuf, SnapshotFile>,
     links: BTreeMap<PathBuf, PathBuf>,
@@ -240,9 +241,14 @@ impl Snapshot {
         &'a self,
         directory: &'a Path,
     ) -> impl Iterator<Item = &'a PathBuf> + 'a {
-        self.eligible
-            .iter()
+        self.eligible_directories
+            .keys()
+            .chain(self.eligible.iter())
             .filter(move |relative| relative.starts_with(directory))
+    }
+
+    pub fn contains_selected_directory(&self, relative: &Path) -> bool {
+        self.eligible_directories.contains_key(relative)
     }
 
     pub fn selected_path_has_identity(&self, relative: &Path, identity: FileIdentity) -> bool {
@@ -315,6 +321,7 @@ impl Snapshot {
             root: root.clone(),
             private,
             eligible: BTreeSet::new(),
+            eligible_directories: BTreeMap::new(),
             selected_identities: BTreeMap::new(),
             files: BTreeMap::new(),
             links: BTreeMap::new(),
@@ -379,6 +386,16 @@ impl Snapshot {
                 }
                 continue;
             }
+            if entry.file_type().is_dir() && !relative.as_os_str().is_empty() {
+                snapshot.add_path(relative)?;
+                let metadata = fs::metadata(entry.path()).map_err(|_| ReproFailure::Unavailable)?;
+                snapshot.claim_entry()?;
+                snapshot.eligible_directories.insert(
+                    relative.to_path_buf(),
+                    source_identity(entry.path(), &metadata)?,
+                );
+                continue;
+            }
             if !entry.file_type().is_file() {
                 continue;
             }
@@ -417,7 +434,7 @@ impl Snapshot {
     }
 
     fn claim_entry(&self) -> Result<(), ReproFailure> {
-        if self.files.len() + self.links.len() >= self.max_files {
+        if self.files.len() + self.links.len() + self.eligible_directories.len() >= self.max_files {
             Err(ReproFailure::FileLimit)
         } else {
             Ok(())
@@ -545,7 +562,9 @@ impl Snapshot {
             if denied(relative) {
                 return Err(ReproFailure::BlockedInput);
             }
-            if !self.eligible.contains(relative) {
+            if !self.eligible.contains(relative)
+                && !self.eligible_directories.contains_key(relative)
+            {
                 return Err(ReproFailure::UncollectedInput);
             }
             self.verify_path(relative)?;
@@ -572,6 +591,17 @@ impl Snapshot {
                     .map_err(|_| ReproFailure::UnstableInput)?;
                 return self.verify_path(&expected.join(suffix));
             }
+        }
+        if let Some(expected) = self.eligible_directories.get(relative) {
+            let path = self.root.join(relative);
+            let metadata = fs::metadata(&path).map_err(|_| ReproFailure::UnstableInput)?;
+            if !metadata.is_dir()
+                || source_identity(&path, &metadata).map_err(|_| ReproFailure::UnstableInput)?
+                    != *expected
+            {
+                return Err(ReproFailure::UnstableInput);
+            }
+            return Ok(());
         }
         let expected = self
             .files
@@ -636,6 +666,10 @@ impl Snapshot {
                 }
                 return Ok(());
             }
+        }
+        if self.eligible_directories.contains_key(relative) {
+            fs::create_dir_all(candidate.join(relative)).map_err(|_| ReproFailure::Unavailable)?;
+            return Ok(());
         }
         let file = self
             .files
@@ -704,6 +738,27 @@ fn native_relative(path: &Path) -> crate::record::NativePath {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn enumeration_stages_empty_and_subdirectories() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::create_dir_all(directory.path().join("listing/empty")).unwrap();
+        fs::create_dir_all(directory.path().join("listing/nested/leaf")).unwrap();
+        let selector = Selector::new(&["**".into()], &[]).unwrap();
+        let snapshot = Snapshot::take(directory.path(), &selector, 1024, 16).unwrap();
+        let required = snapshot
+            .selected_entries_within(Path::new("listing"))
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        assert_eq!(required.len(), 4);
+        let candidate = tempfile::tempdir().unwrap();
+        assert!(snapshot
+            .stage_required(&required, candidate.path())
+            .unwrap()
+            .is_empty());
+        assert!(candidate.path().join("listing/empty").is_dir());
+        assert!(candidate.path().join("listing/nested/leaf").is_dir());
+    }
 
     #[test]
     fn cancellation_stops_snapshot_and_staging() {

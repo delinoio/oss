@@ -2278,6 +2278,11 @@ fn min_repro(args: MinReproArgs) -> i32 {
         .iter()
         .filter(|(path, _)| bundle.path().join(path).is_symlink())
         .collect::<Vec<_>>();
+    let staged_directories = required
+        .iter()
+        .filter(|path| snapshot.contains_selected_directory(path))
+        .map(|path| selection_native(path))
+        .collect::<Vec<_>>();
     let manifest = serde_json::json!({
         "schema_version": 1,
         "working_directory": selection_native(if cwd_relative.as_os_str().is_empty() {
@@ -2290,6 +2295,7 @@ fn min_repro(args: MinReproArgs) -> i32 {
             "sha256": file.sha256,
             "size": file.size,
         })).collect::<Vec<_>>(),
+        "directories": staged_directories,
         "hard_links": staged.iter().filter_map(|file| file.hard_link_to.as_ref().map(|target| serde_json::json!({
             "path": selection_native(&file.relative),
             "target": selection_native(target),
