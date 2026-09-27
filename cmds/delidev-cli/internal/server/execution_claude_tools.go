@@ -33,7 +33,10 @@ func publishClaudeTool(tx *store.Tx, input domain.ExecutionJobInput, session sto
 	if u.Mutation == domain.ClaudeToolResultObserved {
 		expected = domain.ClaudeBlockStopped
 	}
-	if block.State != expected || (u.Mutation == domain.ClaudeToolResultObserved) != (message.State == domain.MessageComplete) {
+	// The original proposal block must stop before its result; the enclosing
+	// provider can still be streaming. Its own message-stop remains independent.
+	result := u.Mutation == domain.ClaudeToolResultObserved
+	if block.State != expected || message.State != domain.MessageStreaming && (!result || message.State != domain.MessageComplete) {
 		return executionEventConflict()
 	}
 	var value domain.ExecutionMessage

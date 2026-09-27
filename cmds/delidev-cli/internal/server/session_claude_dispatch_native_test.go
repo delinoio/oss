@@ -27,6 +27,7 @@ import (
 type claudePublicCase string
 
 const (
+	claudePublicBackgroundStop   claudePublicCase = "background-stop"
 	claudePublicBashToolProgress claudePublicCase = "bash-tool-progress"
 	claudePublicBashTask         claudePublicCase = "continuation-bash-task"
 	claudePublicBash             claudePublicCase = "continuation-bash"
@@ -115,8 +116,11 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 	continuation := strings.HasPrefix(string(scenario), "continuation")
 	read := scenario == claudePublicRead || scenario == claudePublicReadError
 	effect := claudePublicEffectName(scenario)
+	background := scenario == claudePublicBackgroundStop
+	taskStarted := make(chan string, 1)
+	taskPublished := false
 	effectCalls := int32(2)
-	if scenario == claudePublicEdit {
+	if scenario == claudePublicEdit || background {
 		effectCalls = 3
 	}
 	effectHistory := &claudePublicEffectHistory{}
@@ -180,7 +184,7 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 				w.WriteHeader(400)
 				return
 			}
-		} else if effect != "" {
+		} else if effect != "" && !background {
 			if !effectHistory.check(t, raw, n, effect, effectCalls) {
 				w.WriteHeader(400)
 				return
@@ -224,6 +228,10 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 				return
 			}
 		}
+		if background && n == 3 && !claudePublicBackgroundResult(t, raw, "toolu_public_background_stop", "") {
+			w.WriteHeader(400)
+			return
+		}
 		if retrying && (question && n == 2 || !question && n == 1) {
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("Retry-After", "1")
@@ -242,7 +250,27 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 		block := map[string]any{"type": "text", "text": ""}
 		delta := map[string]any{"type": "text_delta", "text": "Original public Claude result."}
 		reason := "end_turn"
-		if effect != "" && n%effectCalls != 0 {
+		if background && n < 3 {
+			name, id, params := "Bash", "toolu_public_background", map[string]any{"command": "sleep 60", "description": "Wait in the owned fixture scope", "run_in_background": true}
+			if n == 2 {
+				var task string
+				select {
+				case task = <-taskStarted:
+				case <-ctx.Done():
+					w.WriteHeader(400)
+					return
+				}
+				if !claudePublicBackgroundResult(t, raw, "toolu_public_background", task) {
+					w.WriteHeader(400)
+					return
+				}
+				name, id, params = "TaskStop", "toolu_public_background_stop", map[string]any{"task_id": task}
+			}
+			encoded, _ := json.Marshal(params)
+			block = map[string]any{"type": "tool_use", "id": id, "name": name, "input": map[string]any{}}
+			delta = map[string]any{"type": "input_json_delta", "partial_json": string(encoded)}
+			reason = "tool_use"
+		} else if effect != "" && n%effectCalls != 0 {
 			name, id, params := claudePublicEffectCall(effect, n, effectCalls, readRoot.Load().(string))
 			if scenario == claudePublicBashTask {
 				params["command"] = "sleep 4; " + params["command"].(string)
@@ -386,6 +414,21 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 				stopSent = err == nil
 			}
 		}
+		if background && !taskPublished {
+			session, err := store.Decode[domain.Session](f.refresh(t))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if session.Execution != nil && session.Execution.ClaudeTasks != nil {
+				for id, task := range session.Execution.ClaudeTasks.Tasks {
+					if task.Tool.NativeID != "toolu_public_background" || task.Status.Terminal() {
+						t.Fatal("background task owner changed before stop")
+					}
+					taskStarted <- id
+					taskPublished = true
+				}
+			}
+		}
 		if (question || effect != "") && !answered {
 			session, err := store.Decode[domain.Session](f.refresh(t))
 			if err != nil {
@@ -501,6 +544,9 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 			}
 			var proof domain.ExecutionCompletion
 			version, dispatch := uint32(2), domain.DispatchReady
+			if background {
+				version, dispatch = 1, domain.DispatchPaused
+			}
 			if recoveredBoundary {
 				dispatch = domain.DispatchPaused
 			}
@@ -514,14 +560,14 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 					wantCalls *= effectCalls
 				}
 			}
-			if job.State != domain.JobSucceeded || domain.Decode(job.Output, &proof) != nil || proof.ValidateForHarness(domain.ClaudeCode) != nil || proof.Version != version || calls.Load() != wantCalls || (question || effect != "") && !answered {
+			if job.State != domain.JobSucceeded || domain.Decode(job.Output, &proof) != nil || proof.ValidateForHarness(domain.ClaudeCode) != nil || proof.Version != version || calls.Load() != wantCalls || !background && (question || effect != "") && !answered {
 				t.Fatalf("public Claude execution did not finish: %s %v", job.State, job.Problem)
 			}
 			session, err := store.Decode[domain.Session](f.refresh(t))
 			if err != nil || session.Execution == nil || session.Execution.ClaudeTerminal == nil || !session.Execution.CleanupVerified || session.Dispatch != dispatch || session.Recovery != domain.NoRecovery || session.ActiveExecutionID != "" || session.PendingInputs != uint32(turns-turn-1) || session.Outcome != domain.ExecutionSucceeded {
 				t.Fatal("public completion lost original outcome, cleanup or history readiness", err)
 			}
-			if question || effect != "" {
+			if !background && (question || effect != "") {
 				verifyClaudePublicQuestionResults(t, ctx, f, turn+1)
 			}
 			if retrying {
@@ -553,7 +599,10 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 			if scenario == claudePublicBashTask || scenario == claudePublicBashToolProgress {
 				verifyClaudePublicBashTask(t, ctx, f, proof, scenario == claudePublicBashToolProgress)
 			}
-			if effect != "" {
+			if background {
+				verifyClaudePublicBackgroundStop(t, ctx, f, proof)
+			}
+			if effect != "" && !background {
 				verifyClaudePublicEffectFiles(t, readRoot.Load().(string), turn)
 			}
 			if read {

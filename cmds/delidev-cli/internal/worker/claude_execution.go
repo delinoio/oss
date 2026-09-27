@@ -297,6 +297,13 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 			}
 		}
 		if err != nil {
+			// Native bodies can contain commands, answers and private paths.
+			// Report only the adapter's closed observation classifications.
+			var contentKind claude.ContentEventKind
+			if len(o.Content) != 0 {
+				contentKind = o.Content[0].Kind
+			}
+			logger.WarnContext(publicationContext, "claude_execution_publication_rejected", "kind", o.Kind, "content_kind", contentKind, "code", domain.RecoveryRequired)
 			return nil, err
 		}
 		if !handled {

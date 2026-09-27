@@ -89,17 +89,29 @@ func (c *ClaudeContentPublisher) publishToolResults(ctx context.Context, o claud
 	for _, native := range o.Content {
 		result := native.ToolResult
 		if native.Kind != claude.ToolResultObserved || native.ParentToolID != "" || native.Index == nil || result == nil || native.Model != "" && native.Model != b.publisher.input.Configuration.NativeModel {
-			return b.block()
+			return c.rejectToolResult(claudeToolResultShape)
 		}
 		prior, ok := c.tools[result.ID]
 		parent, parentExists := c.messages[native.MessageID]
-		if !ok || prior.state != domain.MessageStreaming || prior.content == nil || !parentExists || parent.state != domain.MessageComplete || seen[result.ID] || result.Name != prior.content.Reference.Name {
-			return b.block()
+		if !ok || prior.state != domain.MessageStreaming || prior.content == nil || !parentExists || seen[result.ID] || result.Name != prior.content.Reference.Name {
+			return c.rejectToolResult(claudeToolResultOwner)
+		}
+		// Fast native tools can finish after their proposal block stops but
+		// before the provider message stops. Preserve that original ordering;
+		// a tool result must never complete its still-streaming provider.
+		if parent.state != domain.MessageComplete {
+			if parent.state != domain.MessageStreaming || parent.content == nil || int(*native.Index) >= len(parent.content.Blocks) {
+				return c.rejectToolResult(claudeToolResultProvider)
+			}
+			block := parent.content.Blocks[*native.Index]
+			if block.State != domain.ClaudeBlockStopped || block.Block.Tool == nil || *block.Block.Tool != prior.reference {
+				return c.rejectToolResult(claudeToolResultProvider)
+			}
 		}
 		seen[result.ID] = true
 		caller, err := claudeDirectCaller(result.CalledBy)
 		if err != nil {
-			return b.block()
+			return c.rejectToolResult(claudeToolResultCaller)
 		}
 		value := domain.ClaudeToolResult{NativeEventID: o.NativeID, Error: result.Error, Text: result.Text, NonExecution: result.NonExecution}
 		if len(result.Structured) != 0 {
@@ -111,7 +123,7 @@ func (c *ClaudeContentPublisher) publishToolResults(ctx context.Context, o claud
 			for _, block := range result.Blocks {
 				display, err := claudeDisplayBlock(&block)
 				if err != nil || display.Kind != domain.ClaudeText {
-					return b.block()
+					return c.rejectToolResult(claudeToolResultBlocks)
 				}
 				value.Blocks = append(value.Blocks, display)
 			}
@@ -120,7 +132,7 @@ func (c *ClaudeContentPublisher) publishToolResults(ctx context.Context, o claud
 		update := domain.ClaudeToolUpdate{Mutation: domain.ClaudeToolResultObserved, Reference: p.Reference, MessageID: parent.id, NativeMessageID: native.MessageID, Index: *native.Index, Caller: caller, Result: &value}
 		next, state, err := domain.ApplyClaudeTool(p, prior.state, update)
 		if err != nil {
-			return b.block()
+			return c.rejectToolResult(claudeToolResultValidation)
 		}
 		queue = append(queue, claudeContentCommit{event: domain.ExecutionEvent{Kind: domain.ExecutionClaudeToolObserved, ClaudeTool: &update}, toolNative: result.ID, toolNext: claudePublishedTool{state: state, content: next}})
 		for arrival, interaction := range c.interactions {
@@ -129,16 +141,16 @@ func (c *ClaudeContentPublisher) publishToolResults(ctx context.Context, o claud
 			}
 			attempt := c.responses[arrival]
 			if attempt == nil || !attempt.echoed {
-				return b.block()
+				return c.rejectToolResult(claudeToolResultResponse)
 			}
 			original := domain.ExecutionInteraction{Claude: interaction.update.Claude, Type: interaction.update.Type, NativeRequestID: interaction.update.NativeRequestID, NativeItemID: interaction.update.NativeItemID}
 			evidence, err := domain.ClaudeCallbackResultEvidence(original, attempt.input, *next)
 			if err != nil {
-				return b.block()
+				return c.rejectToolResult(claudeToolResultEvidence)
 			}
 			u := &domain.ExecutionClaudeCallbackSettlement{ExecutionClaudeReplyEcho: domain.ExecutionClaudeReplyEcho{InteractionID: interaction.update.ID, ResponseID: attempt.journal.Control.ResponseID, ClaimID: attempt.journal.ClaimID, ArrivalID: arrival, NativeItemID: result.ID, BodyDigest: attempt.journal.Native.BodyDigest}, ToolMessageID: p.Reference.ID, ResultNativeID: o.NativeID, Evidence: evidence}
 			if u.Validate() != nil {
-				return b.block()
+				return c.rejectToolResult(claudeToolResultSettlement)
 			}
 			interaction.closed = true
 			queue = append(queue, claudeContentCommit{event: domain.ExecutionEvent{Kind: domain.ExecutionClaudeCallbackSettled, ClaudeSettlement: u}, interactionArrival: arrival, interactionNext: interaction})
@@ -155,4 +167,27 @@ func (c *ClaudeContentPublisher) toolsComplete() bool {
 		}
 	}
 	return true
+}
+
+// Never include original commands, answers, output or paths in diagnostics.
+type claudeToolResultCheck string
+
+const (
+	claudeToolResultShape      claudeToolResultCheck = "shape"
+	claudeToolResultOwner      claudeToolResultCheck = "owner"
+	claudeToolResultProvider   claudeToolResultCheck = "provider-block"
+	claudeToolResultCaller     claudeToolResultCheck = "caller"
+	claudeToolResultBlocks     claudeToolResultCheck = "blocks"
+	claudeToolResultValidation claudeToolResultCheck = "result"
+	claudeToolResultResponse   claudeToolResultCheck = "response"
+	claudeToolResultEvidence   claudeToolResultCheck = "evidence"
+	claudeToolResultSettlement claudeToolResultCheck = "settlement"
+)
+
+func (c *ClaudeContentPublisher) rejectToolResult(check claudeToolResultCheck) error {
+	b := c.binding
+	if logger := b.publisher.config.Logger; logger != nil {
+		logger.Warn("claude_tool_result_rejected", "job_id", b.journal.JobID, "check", check, "code", domain.RecoveryRequired)
+	}
+	return b.block()
 }

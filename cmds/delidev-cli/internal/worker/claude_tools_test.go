@@ -63,7 +63,9 @@ func claudeToolFixture(t *testing.T, lose string, names ...string) (*ClaudeConte
 		output, failed := "Original read result", n == 1
 		results.Content = append(results.Content, claude.ContentEvent{Kind: claude.ToolResultObserved, MessageID: "msg_original", Index: &index, ToolResult: &claude.NativeToolResult{ID: id, Name: name, Text: &output, Error: &failed}})
 	}
-	publish(claude.ContentEvent{Kind: claude.ProviderMessageFinished}, "message-stop")
+	if lose != "defer-message-stop" {
+		publish(claude.ContentEvent{Kind: claude.ProviderMessageFinished}, "message-stop")
+	}
 	return c, rpc, results
 }
 
@@ -185,5 +187,66 @@ func TestClaudeReadContinuationEligibilityWaitsForOriginalResultReceipt(t *testi
 		if tool.historyKind != domain.ClaudeReadHistory || tool.content != nil || tool.state != domain.MessageComplete {
 			t.Fatal("original Read eligibility or payload release lost")
 		}
+	}
+}
+
+func TestClaudeToolResultBeforeProviderStopPreservesIndependentBoundaries(t *testing.T) {
+	c, rpc, o := claudeToolFixture(t, "defer-message-stop")
+	ctx := context.Background()
+	rpc.lose = true
+	if handled, err := c.PublishObservation(ctx, o); !handled || err == nil {
+		t.Fatal("lost early-result receipt accepted")
+	}
+	last := len(rpc.events) - 1
+	if c.toolsComplete() || c.messages["msg_original"].state != domain.MessageStreaming {
+		t.Fatal("unacknowledged result changed lifecycle")
+	}
+	rpc.lose = false
+	if err := c.ReplayPending(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(rpc.events[last], rpc.events[last+1]) || rpc.requests[last] != rpc.requests[last+1] {
+		t.Fatal("early result receipt changed")
+	}
+	if !c.toolsComplete() || c.active != "msg_original" || c.messages["msg_original"].state != domain.MessageStreaming || c.resultUsage || c.terminal != nil {
+		t.Fatal("tool result completed its provider or root")
+	}
+	if handled, err := c.PublishObservation(ctx, claudeContentObservation(c, claude.ContentEvent{Kind: claude.ProviderMessageFinished})); !handled || err != nil {
+		t.Fatal("original provider stop lost", err)
+	}
+	if c.active != "" || c.messages["msg_original"].state != domain.MessageComplete {
+		t.Fatal("provider stop not retained independently")
+	}
+}
+
+func TestClaudeEarlyToolResultsRejectIncompleteOrForeignProposalBlocks(t *testing.T) {
+	for _, change := range []string{"not-stopped", "foreign-block", "missing-content", "wrong-index", "missing-proposal"} {
+		t.Run(change, func(t *testing.T) {
+			c, rpc, o := claudeToolFixture(t, "defer-message-stop")
+			provider := c.messages["msg_original"]
+			switch change {
+			case "not-stopped":
+				provider.content.Blocks[1].State = domain.ClaudeBlockCompleted
+			case "foreign-block":
+				ref := *provider.content.Blocks[1].Block.Tool
+				ref.ID = domain.NewID()
+				provider.content.Blocks[1].Block.Tool = &ref
+			case "missing-content":
+				provider.content = nil
+			case "wrong-index":
+				index := uint32(2)
+				o.Content[1].Index = &index
+			case "missing-proposal":
+				c.tools["tool_original_two"].content.Proposal = nil
+			}
+			c.messages["msg_original"] = provider
+			before := len(rpc.events)
+			if _, err := c.PublishObservation(context.Background(), o); err == nil || len(rpc.events) != before || len(c.queue) != 0 {
+				t.Fatal("invalid batch partially committed")
+			}
+			if c.tools["tool_original_one"].state != domain.MessageStreaming {
+				t.Fatal("invalid later result completed earlier tool")
+			}
+		})
 	}
 }

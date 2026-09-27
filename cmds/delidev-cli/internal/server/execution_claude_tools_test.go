@@ -59,11 +59,9 @@ func TestClaudeToolsPublishAtomicallyWithOriginalProvider(t *testing.T) {
 		return e
 	}
 	if _, err := f.call(f.requestEvent(t, resultEvent())); err == nil {
-		t.Fatal("result before original provider closure accepted")
+		t.Fatal("result before original proposal block closure accepted")
 	}
 	u.Mutation, u.Block, u.Tool = domain.ClaudeBlockStop, nil, nil
-	publish()
-	u.Mutation, u.Index = domain.ClaudeMessageStop, nil
 	publish()
 	for _, change := range []string{"product", "native", "index", "provider", "caller"} {
 		bad := toolResult
@@ -97,6 +95,16 @@ func TestClaudeToolsPublishAtomicallyWithOriginalProvider(t *testing.T) {
 	if _, err := f.call(f.requestEvent(t, resultEvent())); err == nil {
 		t.Fatal("result reapplied with new receipt")
 	}
+	provider, err := f.service.Store.Get(context.Background(), domain.MessageKind, u.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	retained, err := store.Decode[domain.ExecutionMessage](provider)
+	if err != nil || retained.State != domain.MessageStreaming || retained.Claude.Blocks[index].State != domain.ClaudeBlockStopped {
+		t.Fatal("tool result completed provider", err)
+	}
+	u.Mutation, u.Index = domain.ClaudeMessageStop, nil
+	publish()
 	row, err := f.service.Store.Get(context.Background(), domain.MessageKind, ref.ID)
 	if err != nil {
 		t.Fatal(err)
