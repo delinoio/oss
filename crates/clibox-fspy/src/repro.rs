@@ -204,6 +204,15 @@ impl Snapshot {
         self.eligible.contains(relative)
     }
 
+    pub fn selected_entries_within<'a>(
+        &'a self,
+        directory: &'a Path,
+    ) -> impl Iterator<Item = &'a PathBuf> + 'a {
+        self.eligible
+            .iter()
+            .filter(move |relative| relative.starts_with(directory))
+    }
+
     pub fn selected_path_has_identity(&self, relative: &Path, identity: FileIdentity) -> bool {
         if !valid_relative(relative) || !self.eligible.contains(relative) {
             return false;

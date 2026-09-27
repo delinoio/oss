@@ -1698,6 +1698,25 @@ fn collect_required(
         if pair.start.operation == record::Operation::Open && pair.start.open_mutates {
             continue;
         }
+        if pair.start.operation == record::Operation::Directory
+            && pair.completion.native_error.is_none()
+        {
+            for path in &pair.start.paths {
+                if path.class == record::PathClass::Project {
+                    let directory = logical_relative(root, path).or_else(|| {
+                        let observed = repro_relative_native(&path.logical)?;
+                        (observed == root).then(PathBuf::new)
+                    });
+                    if let Some(directory) = directory {
+                        if crate::repro::Snapshot::is_blocked(&directory) {
+                            return Err(ReproFailure::BlockedInput);
+                        }
+                        required.extend(snapshot.selected_entries_within(&directory).cloned());
+                    }
+                }
+            }
+            continue;
+        }
         for path in &pair.start.paths {
             if path.class != record::PathClass::Project {
                 continue;
@@ -3942,7 +3961,9 @@ mod tests {
         let root = fs::canonicalize(directory.path()).unwrap();
         fs::write(root.join("a.txt"), b"input").unwrap();
         fs::hard_link(root.join("a.txt"), root.join("b.txt")).unwrap();
-        let selector = coverage::Selector::new(&["*.txt".into()], &[]).unwrap();
+        fs::create_dir(root.join("assets")).unwrap();
+        fs::write(root.join("assets/flag"), b"present").unwrap();
+        let selector = coverage::Selector::new(&["*.txt".into(), "assets/**".into()], &[]).unwrap();
         let snapshot = crate::repro::Snapshot::take(&root, &selector, 1024, 10).unwrap();
         let metadata = fs::metadata(root.join("b.txt")).unwrap();
         let identity = record::FileIdentity::Inode {
@@ -4018,8 +4039,30 @@ mod tests {
         assert!(collect_required(&record, &root, &selector, &snapshot)
             .unwrap()
             .is_empty());
+        record.operations[0].start.operation = record::Operation::Directory;
+        record.operations[0].start.open_mutates = false;
+        record.operations[0].start.paths[0].logical =
+            NativePath::UnixBytes(root.join("assets").as_os_str().as_bytes().to_vec());
+        record.operations[0].start.paths[0].resolved = Some(NativePath::UnixBytes(
+            root.join("assets").as_os_str().as_bytes().to_vec(),
+        ));
+        record.operations[0].start.paths[0].identity = None;
+        record.operations[0].start.paths[0].project_relative =
+            Some(NativePath::UnixBytes(b"assets".to_vec()));
+        assert_eq!(
+            collect_required(&record, &root, &selector, &snapshot).unwrap(),
+            std::collections::BTreeSet::from([PathBuf::from("assets/flag")])
+        );
         record.operations[0].start.operation = record::Operation::Read;
         record.operations[0].start.open_mutates = false;
+        record.operations[0].start.paths[0].logical =
+            NativePath::UnixBytes(root.join("b.txt").as_os_str().as_bytes().to_vec());
+        record.operations[0].start.paths[0].resolved = Some(NativePath::UnixBytes(
+            root.join("b.txt").as_os_str().as_bytes().to_vec(),
+        ));
+        record.operations[0].start.paths[0].project_relative =
+            Some(NativePath::UnixBytes(b"b.txt".to_vec()));
+        record.operations[0].start.paths[0].identity = Some(identity);
         fs::remove_file(root.join("b.txt")).unwrap();
         fs::write(root.join("b.txt"), b"changed").unwrap();
         assert!(matches!(
