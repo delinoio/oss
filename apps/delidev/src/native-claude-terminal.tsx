@@ -7,6 +7,7 @@ const nativeID = (v: unknown): v is string => typeof v === "string" && /^[0-9a-f
 const id = (v: unknown) => nativeID(v) && v[14] === "7";
 
 function outcome(progress: Document): string | undefined {
+	if (progress.claude_stop != null) return;
   const v = object(progress.claude_terminal);
   const fields = ["input_id", "result_native_id", "command_native_id", "idle_native_id", "kind", "reason", "is_error", "command"];
   if (Object.keys(v).length !== fields.length || !fields.every((key) => Object.hasOwn(v, key)) || !id(v.input_id) || v.input_id !== progress.input_id || !id(progress.execution_id) || !id(progress.native_thread_id) || !nativeID(progress.native_turn_id) || progress.claude_interruption != null || progress.cleanup_verified !== undefined && typeof progress.cleanup_verified !== "boolean") return;

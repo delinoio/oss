@@ -132,7 +132,7 @@ func supportsExecutionPublication(input domain.ExecutionJobInput, kind domain.Ex
 // their parent message explicitly instead of flattening several parts into a
 // fabricated message identity or using the assistant as the execution turn.
 func validateNativeMessageOrigin(input domain.ExecutionJobInput, event domain.ExecutionEvent) error {
-	if (event.ClaudeTerminal != nil) != (input.Configuration.Harness == domain.ClaudeCode && event.Kind == domain.ExecutionTurnFinished) {
+	if (event.ClaudeTerminal != nil || event.ClaudeStop != nil) != (input.Configuration.Harness == domain.ClaudeCode && event.Kind == domain.ExecutionTurnFinished) || event.ClaudeTerminal != nil && event.ClaudeStop != nil {
 		return executionEventConflict()
 	}
 	if input.Configuration.Harness == domain.ClaudeCode && event.NativeThreadID != string(input.SessionID) {
@@ -274,7 +274,11 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 			}
 			if event.Kind == domain.ExecutionTurnFinished {
 				if input.Configuration.Harness == domain.ClaudeCode {
-					if err := publishClaudeTerminal(tx, input, progress, event); err != nil {
+					publish := publishClaudeTerminal
+					if event.ClaudeStop != nil {
+						publish = publishClaudeStop
+					}
+					if err := publish(tx, input, progress, event); err != nil {
 						return err
 					}
 				}

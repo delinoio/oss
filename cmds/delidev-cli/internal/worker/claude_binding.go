@@ -32,23 +32,24 @@ const (
 // The journal holds only immutable identities/digests and one input intent.
 // Neither reading it nor reopening the outbox authorizes another native send.
 type claudeBindingJournal struct {
-	Version             uint32    `json:"version"`
-	JobID               domain.ID `json:"job_id"`
-	InstanceID          domain.ID `json:"instance_id"`
-	ServerID            domain.ID `json:"server_id"`
-	DeviceID            domain.ID `json:"device_id"`
-	MachineID           domain.ID `json:"machine_id"`
-	ExecutionID         domain.ID `json:"execution_id"`
-	SessionID           domain.ID `json:"session_id"`
-	InputID             domain.ID `json:"input_id"`
-	AccountID           domain.ID `json:"account_id"`
-	ConnectionID        domain.ID `json:"connection_id"`
-	ThreadRequestID     domain.ID `json:"thread_request_id"`
-	InputRequestID      domain.ID `json:"input_request_id"`
-	Revision            uint64    `json:"revision"`
-	AssignmentDigest    string    `json:"assignment_digest"`
-	ConfigurationDigest string    `json:"configuration_digest"`
-	InputClaimed        bool      `json:"input_claimed"`
+	StopClaim           *claude.InterruptClaim `json:"stop_claim,omitempty"`
+	Version             uint32                 `json:"version"`
+	JobID               domain.ID              `json:"job_id"`
+	InstanceID          domain.ID              `json:"instance_id"`
+	ServerID            domain.ID              `json:"server_id"`
+	DeviceID            domain.ID              `json:"device_id"`
+	MachineID           domain.ID              `json:"machine_id"`
+	ExecutionID         domain.ID              `json:"execution_id"`
+	SessionID           domain.ID              `json:"session_id"`
+	InputID             domain.ID              `json:"input_id"`
+	AccountID           domain.ID              `json:"account_id"`
+	ConnectionID        domain.ID              `json:"connection_id"`
+	ThreadRequestID     domain.ID              `json:"thread_request_id"`
+	InputRequestID      domain.ID              `json:"input_request_id"`
+	Revision            uint64                 `json:"revision"`
+	AssignmentDigest    string                 `json:"assignment_digest"`
+	ConfigurationDigest string                 `json:"configuration_digest"`
+	InputClaimed        bool                   `json:"input_claimed"`
 }
 
 // ClaudeBindingPublisher retains first-input intent before transmission, then

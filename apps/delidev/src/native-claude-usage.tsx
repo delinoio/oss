@@ -31,6 +31,7 @@ const provider: Guard = (v) => shape(v, { ...counters,
   fallback_credit: nullable(credit), service_tier: nullable(choice("standard", "priority", "batch")), speed: nullable(choice("standard", "fast")), inference_geo: nullable((v) => text(v, 128)),
   iterations: nullable((a) => Array.isArray(a) && a.length <= 1024 && a.every(iteration)),
 });
+export const validClaudeProviderUsage = provider;
 const model: Guard = (v) => shape(v, { inputTokens: nullable(count), outputTokens: nullable(count), cacheReadInputTokens: nullable(count), cacheCreationInputTokens: nullable(count), webSearchRequests: nullable(count), costUSD: nullable(decimal), contextWindow: nullable(positive), maxOutputTokens: nullable(positive), canonicalModel: nullable(label), provider: nullable(label) });
 export const validClaudeResultUsage: Guard = (v) => shape(v, { main_loop_turn: nullable(provider), native_cumulative_cost_usd: nullable(decimal), native_cumulative_models: nullable((m) => record(m) && Object.keys(m).length <= 256 && Object.entries(m).every(([key, value]) => label(key) && model(value))) });
 const result = validClaudeResultUsage;
@@ -46,6 +47,10 @@ function ProviderCounts({ value }: { value: unknown }) {
   if (value == null) return <p>Main-loop usage unavailable.</p>;
   const p = object(value);
   return <><dl>{labels.map(([key, name]) => <div key={key}><dt>{name}</dt><dd>{p[key] == null ? "Unavailable" : p[key] as string}</dd></div>)}</dl><details><summary>Native usage details</summary><pre>{JSON.stringify(p, null, 2)}</pre></details></>;
+}
+
+export function NativeClaudeProviderUsage({ value }: { value: unknown }) {
+  return provider(value) ? <ProviderCounts value={value} /> : <p>Native provider usage unavailable.</p>;
 }
 
 export function NativeClaudeUsage({ value }: { value: Record<string, unknown> }) {

@@ -13,6 +13,9 @@ import (
 // root text. Preserve those bytes as interrupted, never a completed block or
 // provider message_stop. Other unfinished content needs its own native proof.
 func (b *ExecutionBinding) observeInterruptedAssistant(parent string, message providerMessage, active *providerMessageState, aborted bool) ([]ContentEvent, error) {
+	if b.logger != nil {
+		b.logger.Info("claude_interrupted_content_observed", "owner_id", b.owner, "control_claimed", b.interrupt != nil, "native_aborted", aborted, "root", parent == "", "active", active != nil, "already_observed", b.interruptedMessage, "blocks", len(message.Content))
+	}
 	if !aborted || b.interrupt == nil || b.interruptedMessage || parent != "" || active == nil || active.id != message.ID || active.model != message.Model || len(active.blocks) != 1 || len(message.Content) != 1 || message.Stop != nil || message.Sequence != nil {
 		return nil, lifecycleUncertain()
 	}

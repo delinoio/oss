@@ -30,12 +30,15 @@ const (
 	claudePublicText                 claudePublicCase = "text"
 	claudePublicQuestion             claudePublicCase = "question"
 	claudePublicStop                 claudePublicCase = "stop"
+	claudePublicArchive              claudePublicCase = "archive"
 	claudePublicStopBeforeAcceptance claudePublicCase = "stop-before-acceptance"
 )
 
 func TestManualNativeClaudePublicCancellationContainment(t *testing.T) {
-	for _, scenario := range []claudePublicCase{claudePublicStopBeforeAcceptance, claudePublicStop} {
-		t.Run(string(scenario), func(t *testing.T) { nativeClaudePublicDispatch(t, domain.ExecuteMode, scenario) })
+	for _, mode := range []domain.SessionMode{domain.ExecuteMode, domain.PlanMode} {
+		for _, scenario := range []claudePublicCase{claudePublicStopBeforeAcceptance, claudePublicStop, claudePublicArchive} {
+			t.Run(fmt.Sprintf("%s/%s", mode, scenario), func(t *testing.T) { nativeClaudePublicDispatch(t, mode, scenario) })
+		}
 	}
 }
 
@@ -56,7 +59,8 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 	question := scenario == claudePublicQuestion
-	stopping := scenario == claudePublicStop || scenario == claudePublicStopBeforeAcceptance
+	streamStopping := scenario == claudePublicStop || scenario == claudePublicArchive
+	stopping := streamStopping || scenario == claudePublicStopBeforeAcceptance
 	var calls atomic.Int32
 	providerEnded := make(chan struct{})
 	expected := int32(1)
@@ -106,7 +110,7 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 		} {
 			encoded, _ := json.Marshal(event)
 			_, _ = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event["type"], encoded)
-			if scenario == claudePublicStop && i == 2 {
+			if streamStopping && i == 2 {
 				// Native user replay follows the provider's first streamed bytes.
 				// Keep the original content unfinished while public Stop arrives.
 				w.(http.Flusher).Flush()
@@ -161,8 +165,25 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 			if err != nil {
 				t.Fatal(err)
 			}
-			if session.Execution != nil && (scenario == claudePublicStopBeforeAcceptance || session.Execution.NativeTurnID != "") {
-				_, err := sessionClient(f.accountFixture).ControlSession(ctx, ownerRequest(f.identity, &pb.ControlSessionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(r.ID), ExpectedRevision: r.Revision}, Action: pb.SessionAction_SESSION_ACTION_STOP}))
+			ready := scenario == claudePublicStopBeforeAcceptance
+			if !ready {
+				rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.MessageKind, SessionID: domain.ID(f.change.Session.Id), Limit: 50})
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, row := range rows {
+					message, err := store.Decode[domain.ExecutionMessage](row)
+					if err == nil && message.Claude != nil && len(message.Claude.Blocks) == 1 && message.Claude.Blocks[0].Block.Text == "Original public Claude result." {
+						ready = true
+					}
+				}
+			}
+			if session.Execution != nil && ready {
+				action := pb.SessionAction_SESSION_ACTION_STOP
+				if scenario == claudePublicArchive {
+					action = pb.SessionAction_SESSION_ACTION_ARCHIVE
+				}
+				_, err := sessionClient(f.accountFixture).ControlSession(ctx, ownerRequest(f.identity, &pb.ControlSessionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(r.ID), ExpectedRevision: r.Revision}, Action: action}))
 				if err != nil && connect.CodeOf(err) != connect.CodeAborted {
 					t.Fatal("original public Stop", err)
 				}
@@ -200,7 +221,18 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 		if job.State.Terminal() || job.State == domain.JobUncertain {
 			if stopping {
 				session, err := store.Decode[domain.Session](f.refresh(t))
-				if err != nil || !stopSent || calls.Load() != 1 || job.State != domain.JobUncertain || len(job.Output) != 0 || session.Recovery != domain.NeedsRecovery || session.Dispatch != domain.DispatchPaused || session.Execution == nil || session.Execution.CleanupVerified || session.Execution.ClaudeTerminal != nil {
+				if err != nil || !stopSent || calls.Load() != 1 || session.Dispatch != domain.DispatchPaused || session.Execution == nil || session.Execution.ClaudeTerminal != nil {
+					t.Fatal("Stop lost original ownership", err)
+				}
+				if streamStopping {
+					if (session.Archive == domain.Archived) != (scenario == claudePublicArchive) {
+						t.Fatal("original archive cleanup did not settle")
+					}
+					var proof domain.ExecutionCompletion
+					if job.State != domain.JobCanceled || domain.Decode(job.Output, &proof) != nil || proof.ValidateForHarness(domain.ClaudeCode) != nil || proof.Outcome != domain.ExecutionStopped || proof.Version != 1 || session.Execution.ClaudeStop == nil || session.Execution.ClaudeStop.Validate() != nil || !session.Execution.CleanupVerified || session.Recovery != domain.NoRecovery || session.ActiveExecutionID != "" {
+						t.Fatal("original streaming Stop did not settle", job.State, job.Problem)
+					}
+				} else if job.State != domain.JobUncertain || len(job.Output) != 0 || session.Recovery != domain.NeedsRecovery || session.Execution.CleanupVerified || session.Execution.ClaudeStop != nil {
 					t.Fatal("Stop invented native input completion or lost original uncertainty", err, job.State, job.Problem)
 				}
 				select {

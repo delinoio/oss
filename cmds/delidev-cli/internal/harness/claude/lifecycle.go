@@ -101,43 +101,45 @@ type NativeInitialization struct {
 // Worker must retain its durable claim before constructing this binding and
 // must still process every private observation through its dedicated adapter.
 type ExecutionBinding struct {
-	mu                  sync.Mutex
-	session             domain.ID
-	input               domain.ID
-	digest              [sha256.Size]byte
-	model               string
-	workspace           string
-	home                string
-	permission          NativePermission
-	command             CommandState
-	initialized         bool
-	accepted            bool
-	finished            bool
-	terminal            *NativeResult
-	seen                map[string]bool
-	problem             *domain.Error
-	logger              *slog.Logger
-	owner               domain.ID
-	content             contentState
-	advertisedTools     map[string]bool
-	interactions        map[domain.ID]*interactionState
-	interactionBytes    int
-	tasks               map[string]nativeTaskState
-	backgroundTasks     map[string]bool
-	runState            NativeRunState
-	turnID              string
-	continuing          bool
-	continuationSeen    bool
-	continuationFailed  bool
-	notifications       uint32
-	pendingCompaction   *compactionSummaryBinding
-	interrupt           *InterruptClaim
-	interruptedMessage  bool
-	interruptionContext bool
-	interruptResult     *NativeResult
-	interruptedReply    domain.ID
-	denialToolResult    bool
-	denialContext       bool
+	mu                     sync.Mutex
+	session                domain.ID
+	input                  domain.ID
+	digest                 [sha256.Size]byte
+	model                  string
+	workspace              string
+	home                   string
+	permission             NativePermission
+	command                CommandState
+	initialized            bool
+	accepted               bool
+	finished               bool
+	terminal               *NativeResult
+	seen                   map[string]bool
+	problem                *domain.Error
+	logger                 *slog.Logger
+	owner                  domain.ID
+	content                contentState
+	advertisedTools        map[string]bool
+	interactions           map[domain.ID]*interactionState
+	interactionBytes       int
+	tasks                  map[string]nativeTaskState
+	backgroundTasks        map[string]bool
+	runState               NativeRunState
+	turnID                 string
+	continuing             bool
+	continuationSeen       bool
+	continuationFailed     bool
+	notifications          uint32
+	pendingCompaction      *compactionSummaryBinding
+	interrupt              *InterruptClaim
+	interruptedMessage     bool
+	interruptionContext    bool
+	interruptResult        *NativeResult
+	interruptRetryObserved bool
+	interruptedRetry       bool
+	interruptedReply       domain.ID
+	denialToolResult       bool
+	denialContext          bool
 }
 
 func BindExecution(config APIStreamConfig, input domain.ID, text string) (*ExecutionBinding, error) {
@@ -307,7 +309,7 @@ func (b *ExecutionBinding) Observe(event StreamEvent) (observation LifecycleObse
 					b.notifications++
 				}
 			}
-			if header.Subtype == "status" || header.Subtype == "thinking_tokens" {
+			if header.Subtype == "status" || header.Subtype == "thinking_tokens" || header.Subtype == "api_retry" {
 				phase = progressValidation
 				value, err := b.observeProgress(event)
 				if err != nil {
@@ -379,7 +381,7 @@ func (b *ExecutionBinding) Observe(event StreamEvent) (observation LifecycleObse
 			b.interruptResult = &NativeResult{Kind: result.Kind, Reason: result.Reason, Error: result.Error}
 			observation.Kind, observation.InputID, observation.Accepted = CallbackInterruptResultObserved, "", false
 			observation.CallbackArrivalID = b.interruptedReply
-		} else if b.interrupt != nil && b.interruptedMessage && b.interruptionContext && result.Reason == AbortedStreaming {
+		} else if b.interrupt != nil && b.interruptionContext && (b.interruptedMessage || b.interruptedRetry) && result.Reason == AbortedStreaming {
 			// The pinned native interrupt result omits user_message_uuid. Keep
 			// this session-level Stop fact separate from an input completion.
 			if b.interruptResult != nil {

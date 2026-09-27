@@ -20,6 +20,7 @@ const (
 	ClaudeBlockStreaming   ClaudeBlockState      = "streaming"
 	ClaudeBlockCompleted   ClaudeBlockState      = "completed"
 	ClaudeBlockStopped     ClaudeBlockState      = "stopped"
+	ClaudeBlockInterrupted ClaudeBlockState      = "interrupted"
 )
 
 // Retain displayable text and ordered tool references here. Tool payloads live
@@ -70,10 +71,11 @@ type ClaudeRetainedBlock struct {
 }
 
 type ClaudeMessageContent struct {
-	Model        string                `json:"model"`
-	Blocks       []ClaudeRetainedBlock `json:"blocks"`
-	StopReason   *string               `json:"stop_reason"`
-	StopSequence *string               `json:"stop_sequence"`
+	Interruption *ClaudeContentInterruption `json:"interruption,omitempty"`
+	Model        string                     `json:"model"`
+	Blocks       []ClaudeRetainedBlock      `json:"blocks"`
+	StopReason   *string                    `json:"stop_reason"`
+	StopSequence *string                    `json:"stop_sequence"`
 }
 
 func invalidClaudeContent() *Error {

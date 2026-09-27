@@ -16,6 +16,7 @@ type CompactResult string
 type NativeSeconds string
 
 const (
+	APIRetryObserved        ProgressKind  = "api-retry"
 	ThinkingTokensEstimated ProgressKind  = "thinking-tokens-estimated"
 	SessionStatusObserved   ProgressKind  = "session-status"
 	ToolProgressObserved    ProgressKind  = "tool-progress"
@@ -75,6 +76,7 @@ type NativeThinkingEstimate struct {
 }
 
 type NativeProgressObservation struct {
+	APIRetry       *NativeAPIRetryObservation
 	Thinking       *NativeThinkingEstimate
 	Kind           ProgressKind
 	Status         *SessionStatus
@@ -106,6 +108,30 @@ func (b *ExecutionBinding) observeProgress(event StreamEvent) (*NativeProgressOb
 		}
 		if json.Unmarshal(event.Body, &header) != nil {
 			return nil, lifecycleUncertain()
+		}
+		if header.Subtype == "api_retry" {
+			var value struct {
+				Type        string                 `json:"type"`
+				Subtype     string                 `json:"subtype"`
+				Session     domain.ID              `json:"session_id"`
+				UUID        string                 `json:"uuid"`
+				Attempt     *uint64                `json:"attempt"`
+				MaxRetries  *uint64                `json:"max_retries"`
+				DelayMS     *uint64                `json:"retry_delay_ms"`
+				ErrorStatus json.RawMessage        `json:"error_status"`
+				Error       NativeAssistantProblem `json:"error"`
+			}
+			if decodeNativeObject(event.Body, &value) != nil || value.Attempt == nil || value.MaxRetries == nil || value.DelayMS == nil || len(value.ErrorStatus) == 0 || !slices.Contains([]NativeAssistantProblem{"authentication_failed", "oauth_org_not_allowed", "account_on_hold", "billing_error", "rate_limit", "overloaded", "invalid_request", "model_not_found", "server_error", "unknown", "max_output_tokens"}, value.Error) {
+				return nil, lifecycleUncertain()
+			}
+			var status *uint16
+			if json.Unmarshal(value.ErrorStatus, &status) != nil || status != nil && (*status < 400 || *status > 599) {
+				return nil, lifecycleUncertain()
+			}
+			if active := b.content.active[""]; b.interrupt != nil && active != nil && active.interruptClosed {
+				b.interruptRetryObserved = true
+			}
+			return &NativeProgressObservation{Kind: APIRetryObserved, APIRetry: &NativeAPIRetryObservation{Attempt: *value.Attempt, MaxRetries: *value.MaxRetries, DelayMS: *value.DelayMS, ErrorStatus: status, Error: value.Error}}, nil
 		}
 		if header.Subtype == "thinking_tokens" {
 			var value struct {
@@ -184,6 +210,14 @@ func (b *ExecutionBinding) observeProgress(event StreamEvent) (*NativeProgressOb
 	default:
 		return nil, lifecycleUncertain()
 	}
+}
+
+type NativeAPIRetryObservation struct {
+	Attempt     uint64
+	MaxRetries  uint64
+	DelayMS     uint64
+	ErrorStatus *uint16
+	Error       NativeAssistantProblem
 }
 
 func decodeSessionProgress(raw json.RawMessage) (*NativeProgressObservation, error) {

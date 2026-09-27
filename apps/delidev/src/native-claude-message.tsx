@@ -2,10 +2,10 @@ import { object } from "./documents";
 import { claudeToolReference, type ClaudeToolReference } from "./native-claude-tool";
 
 enum BlockKind { Tool = "tool_use", Text = "text", Thinking = "thinking", Redacted = "redacted_thinking" }
-enum BlockState { Streaming = "streaming", Completed = "completed", Stopped = "stopped" }
+enum BlockState { Streaming = "streaming", Completed = "completed", Stopped = "stopped", Interrupted = "interrupted" }
 enum MessageState { Streaming = "streaming", Complete = "complete" }
 const stopReasons = new Set(["end_turn", "max_tokens", "stop_sequence", "tool_use", "pause_turn", "refusal", "model_context_window_exceeded"]);
-const blockLabels = { [BlockState.Streaming]: "Streaming", [BlockState.Completed]: "Content complete", [BlockState.Stopped]: "Stream closed" };
+const blockLabels = { [BlockState.Streaming]: "Streaming", [BlockState.Completed]: "Content complete", [BlockState.Stopped]: "Stream closed", [BlockState.Interrupted]: "Interrupted · partial response" };
 type Block = { tool?: ClaudeToolReference; index: number; kind: BlockKind; text: string; state: BlockState };
 
 function keys(value: Record<string, unknown>, expected: string[]) {
@@ -16,12 +16,15 @@ function validText(value: unknown, max: number): value is string {
 }
 function message(value: unknown, state: string): { blocks: Block[]; reason: string | null; sequence: string | null } | undefined {
   const data = object(value);
-  if (!keys(data, ["model", "blocks", "stop_reason", "stop_sequence"]) || !validText(data.model, 256) || !data.model || !Array.isArray(data.blocks) || data.blocks.length > 1024 || (state !== MessageState.Streaming && state !== MessageState.Complete) || (data.stop_reason !== null && (typeof data.stop_reason !== "string" || !stopReasons.has(data.stop_reason))) || (data.stop_sequence !== null && !validText(data.stop_sequence, 256 * 1024))) return undefined;
+  const interrupted = Object.hasOwn(data, "interruption"), proof = object(data.interruption);
+  const nativeID = (v: unknown): v is string => typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[47][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(v);
+  if (interrupted && (!keys(proof, ["request_id", "native_event_id", "evidence"]) || !["aborted-assistant", "closed-stream-before-retry"].includes(String(proof.evidence)) || !nativeID(proof.request_id) || proof.request_id[14] !== "7" || !nativeID(proof.native_event_id) || proof.request_id === proof.native_event_id || state !== MessageState.Complete || data.stop_reason !== null || data.stop_sequence !== null || !Array.isArray(data.blocks) || data.blocks.length !== 1)) return undefined;
+  if (!keys(data, ["model", "blocks", "stop_reason", "stop_sequence", ...(interrupted ? ["interruption"] : [])]) || !validText(data.model, 256) || !data.model || !Array.isArray(data.blocks) || data.blocks.length > 1024 || (state !== MessageState.Streaming && state !== MessageState.Complete) || (data.stop_reason !== null && (typeof data.stop_reason !== "string" || !stopReasons.has(data.stop_reason))) || (data.stop_sequence !== null && !validText(data.stop_sequence, 256 * 1024))) return undefined;
   const blocks: Block[] = [];
   let bytes = 0;
   for (const [index, value] of data.blocks.entries()) {
     const entry = object(value), block = object(entry.block);
-    if (!keys(entry, ["index", "block", "state"]) || !keys(block, block.kind === BlockKind.Tool ? ["kind", "text", "tool"] : ["kind", "text"]) || entry.index !== index || !Object.values(BlockKind).includes(block.kind as BlockKind) || !Object.values(BlockState).includes(entry.state as BlockState) || !validText(block.text, 256 * 1024) || ((block.kind === BlockKind.Redacted || block.kind === BlockKind.Tool) && block.text !== "") || (block.kind === BlockKind.Tool && !claudeToolReference(block.tool)) || ((state === MessageState.Complete || index < data.blocks.length - 1) && entry.state !== BlockState.Stopped)) return undefined;
+    if (!keys(entry, ["index", "block", "state"]) || !keys(block, block.kind === BlockKind.Tool ? ["kind", "text", "tool"] : ["kind", "text"]) || entry.index !== index || !Object.values(BlockKind).includes(block.kind as BlockKind) || !Object.values(BlockState).includes(entry.state as BlockState) || !validText(block.text, 256 * 1024) || ((block.kind === BlockKind.Redacted || block.kind === BlockKind.Tool) && block.text !== "") || (block.kind === BlockKind.Tool && !claudeToolReference(block.tool)) || (interrupted ? entry.state !== BlockState.Interrupted || block.kind !== BlockKind.Text : entry.state === BlockState.Interrupted || (state === MessageState.Complete || index < data.blocks.length - 1) && entry.state !== BlockState.Stopped)) return undefined;
     bytes += new TextEncoder().encode(block.text).length;
     if (bytes > 256 * 1024) return undefined;
     blocks.push({ tool: claudeToolReference(block.tool), index, kind: block.kind as BlockKind, text: block.text, state: entry.state as BlockState });

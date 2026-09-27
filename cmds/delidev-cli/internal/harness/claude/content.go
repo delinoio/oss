@@ -40,6 +40,8 @@ const (
 	ContentCompleted               ContentEventKind = "content-completed"
 	ContentStopped                 ContentEventKind = "content-stopped"
 	ContentInterrupted             ContentEventKind = "content-interrupted"
+	ContentInterruptStreamClosed   ContentEventKind = "content-interrupt-stream-closed"
+	ContentInterruptMessageClosed  ContentEventKind = "content-interrupt-message-closed"
 	ToolResultObserved             ContentEventKind = "tool-result-observed"
 	AssistantProblemObserved       ContentEventKind = "assistant-problem-observed"
 	TextBlock                      ContentBlockKind = "text"
@@ -126,6 +128,7 @@ type ContentEvent struct {
 }
 
 type contentBlockState struct {
+	interruptStopped   bool
 	kind               ContentBlockKind
 	text               strings.Builder
 	signature          strings.Builder
@@ -140,6 +143,7 @@ type contentBlockState struct {
 }
 
 type providerMessageState struct {
+	interruptClosed   bool
 	id, model, parent string
 	blocks            []*contentBlockState
 	stop              *NativeStopReason
@@ -251,7 +255,12 @@ func decodeContentBlock(raw []byte) (NativeContentBlock, error) {
 	return block, nil
 }
 
-func (b *ExecutionBinding) observeContent(event StreamEvent) ([]ContentEvent, error) {
+func (b *ExecutionBinding) observeContent(event StreamEvent) (observed []ContentEvent, returned error) {
+	defer func() {
+		if returned != nil && b.interrupt != nil && b.logger != nil {
+			b.logger.Warn("claude_stop_content_validation_failed", "owner_id", b.owner, "partial", event.Type == "stream_event", "assistant", event.Type == "assistant", "user", event.Type == "user", "initialized", b.initialized, "accepted", b.accepted, "finished", b.finished)
+		}
+	}()
 	if !b.initialized || !b.accepted {
 		return nil, lifecycleUncertain()
 	}
@@ -302,7 +311,7 @@ func (b *ExecutionBinding) contentParent(parent *string) (string, error) {
 	return *parent, nil
 }
 
-func (b *ExecutionBinding) observePartial(raw []byte) ([]ContentEvent, error) {
+func (b *ExecutionBinding) observePartial(raw []byte) (observed []ContentEvent, returned error) {
 	var envelope struct {
 		Type    string          `json:"type"`
 		Event   json.RawMessage `json:"event"`
@@ -323,6 +332,11 @@ func (b *ExecutionBinding) observePartial(raw []byte) ([]ContentEvent, error) {
 	if domain.Decode(envelope.Event, &fields) != nil || json.Unmarshal(fields["type"], &kind) != nil {
 		return nil, lifecycleUncertain()
 	}
+	defer func() {
+		if returned != nil && b.interrupt != nil && b.logger != nil {
+			b.logger.Warn("claude_stop_partial_validation_failed", "owner_id", b.owner, "message_start", kind == "message_start", "block_start", kind == "content_block_start", "block_delta", kind == "content_block_delta", "block_stop", kind == "content_block_stop", "message_delta", kind == "message_delta", "message_stop", kind == "message_stop")
+		}
+	}()
 	active := b.content.active[parent]
 	if kind == "message_start" {
 		var start struct {
@@ -422,7 +436,7 @@ func (b *ExecutionBinding) observePartial(raw []byte) ([]ContentEvent, error) {
 			return nil, lifecycleUncertain()
 		}
 		state := active.blocks[*change.Index]
-		if state.stopped || state.completed {
+		if state.stopped || state.completed || state.interruptStopped {
 			return nil, lifecycleUncertain()
 		}
 		var header struct {
@@ -489,6 +503,14 @@ func (b *ExecutionBinding) observePartial(raw []byte) ([]ContentEvent, error) {
 			return nil, lifecycleUncertain()
 		}
 		state := active.blocks[*stop.Index]
+		// When relay cancellation races the original interrupt, the pinned
+		// CLI can close its partial stream before the aborted assistant. This
+		// is only a provisional transport fact, never content completion.
+		if !state.completed && !state.stopped && !state.interruptStopped && b.interrupt != nil && parent == "" && len(active.blocks) == 1 && *stop.Index == 0 && state.kind == TextBlock {
+			state.interruptStopped = true
+			base.Kind, base.Index = ContentInterruptStreamClosed, stop.Index
+			return []ContentEvent{base}, nil
+		}
 		if state.stopped || !state.completed {
 			return nil, lifecycleUncertain()
 		}
@@ -519,6 +541,11 @@ func (b *ExecutionBinding) observePartial(raw []byte) ([]ContentEvent, error) {
 			active.stop = &stop
 		}
 	case "message_stop":
+		if b.interrupt != nil && parent == "" && len(active.blocks) == 1 && active.blocks[0].interruptStopped && !active.interruptClosed && len(fields) == 1 {
+			active.interruptClosed = true
+			base.Kind = ContentInterruptMessageClosed
+			return []ContentEvent{base}, nil
+		}
 		var stop struct {
 			Type string `json:"type"`
 		}
@@ -604,6 +631,9 @@ func (b *ExecutionBinding) observeAssistant(raw []byte) ([]ContentEvent, error) 
 		Aborted         json.RawMessage        `json:"aborted"`
 	}
 	if decodeNativeObject(raw, &envelope) != nil {
+		if b.interrupt != nil && b.logger != nil {
+			b.logger.Warn("claude_stop_assistant_envelope_invalid", "owner_id", b.owner)
+		}
 		return nil, lifecycleUncertain()
 	}
 	parent, err := b.contentParent(envelope.Parent)
@@ -624,6 +654,9 @@ func (b *ExecutionBinding) observeAssistant(raw []byte) ([]ContentEvent, error) 
 	}
 	message, err := decodeProviderMessage(envelope.Message)
 	if err != nil {
+		if b.interrupt != nil && b.logger != nil {
+			b.logger.Warn("claude_stop_assistant_message_invalid", "owner_id", b.owner, "aborted_present", len(envelope.Aborted) != 0)
+		}
 		return nil, err
 	}
 	active := b.content.active[parent]
@@ -782,7 +815,9 @@ func (b *ExecutionBinding) observeToolResult(raw []byte) (observations []Content
 	if !taskTexts(envelope.SubagentType, envelope.TaskDescription) || (parent == "" && (envelope.SubagentType != nil || envelope.TaskDescription != nil)) {
 		return nil, lifecycleUncertain()
 	}
-	if parent == "" && b.interrupt != nil && b.interruptedMessage && !b.interruptionContext && envelope.Synthetic == nil && len(envelope.Structured) == 0 && len(message.Content) == 1 {
+	retryActive := b.content.active[""]
+	retryClosed := b.interruptRetryObserved && retryActive != nil && retryActive.interruptClosed && len(retryActive.blocks) == 1 && retryActive.blocks[0].interruptStopped
+	if parent == "" && b.interrupt != nil && (b.interruptedMessage || retryClosed) && !b.interruptionContext && envelope.Synthetic == nil && len(envelope.Structured) == 0 && len(message.Content) == 1 {
 		var marker struct {
 			Type ContentBlockKind `json:"type"`
 			Text string           `json:"text"`
@@ -790,6 +825,11 @@ func (b *ExecutionBinding) observeToolResult(raw []byte) (observations []Content
 		// This is original native conversation context, not product input or
 		// an outcome inferred from prose. Result and idle still arrive separately.
 		if decodeNativeObject(message.Content[0], &marker) == nil && marker.Type == TextBlock && marker.Text == "[Request interrupted by user]" {
+			if retryClosed {
+				b.interruptedRetry = true
+				b.content.bufferedBytes -= retryActive.blocks[0].retainedBytes()
+				delete(b.content.active, "")
+			}
 			b.interruptionContext = true
 			return []ContentEvent{{Kind: NativeInterruptContext, Blocks: []NativeContentBlock{{Kind: TextBlock, Text: &marker.Text}}}}, nil
 		}

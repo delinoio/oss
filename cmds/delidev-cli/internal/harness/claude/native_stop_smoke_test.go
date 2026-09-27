@@ -140,6 +140,7 @@ func nativeInterruptStreaming(t *testing.T, permission NativePermission) {
 				t.Fatal("Stop result invented native input correlation")
 			}
 			results++
+			t.Logf("original Stop result kind=%s reason=%s is_error=%t", o.Result.Kind, o.Result.Reason, o.Result.Error)
 		}
 		if o.Run != nil && o.Run.State == RunIdle {
 			break

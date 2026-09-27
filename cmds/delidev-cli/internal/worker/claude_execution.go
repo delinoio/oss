@@ -112,9 +112,8 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 	}
 	nativeCtx, cancelNative := context.WithCancel(config.executionContext)
 	defer cancelNative()
-	// Until the separately correlated public Stop adapter is composed, targeted
-	// cancellation contains the original process and preserves recovery. It
-	// cannot synthesize a native interruption result or a successful cleanup.
+	// Targeted cancellation contains startup until acceptance is durable. The
+	// accepted original controller then owns a bounded native interrupt grace.
 	stopOnCancellation := context.AfterFunc(ctx, cancelNative)
 	defer stopOnCancellation()
 	api, err := claude.OpenAPISession(nativeCtx, claude.APIStreamConfig{
@@ -146,64 +145,108 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 			}
 		}
 	}()
+	readContext, publicationContext := ctx, nativeCtx
+	stopping := false
 	for {
-		o, err := api.Next(nativeCtx)
+		if ctx.Err() != nil && !stopping {
+			if nativeCtx.Err() != nil || display == nil {
+				return nil, publicationUncertain()
+			}
+			if err := finishControls(); err != nil {
+				return nil, err
+			}
+			stopping = true
+			grace, cancel := context.WithTimeout(nativeCtx, 15*time.Second)
+			defer cancel()
+			readContext, publicationContext = grace, grace
+			request := domain.NewID()
+			logger.InfoContext(grace, "native_execution_interruption_requested", "request_id", request)
+			if err := display.RequestStop(grace, api, request); err != nil {
+				return nil, err
+			}
+		}
+		o, err := api.Next(readContext)
 		if err != nil {
+			if !stopping && ctx.Err() != nil && nativeCtx.Err() == nil {
+				continue
+			}
 			return nil, err
+		}
+		if stopping {
+			handled, err := display.ObserveStop(o)
+			if err != nil {
+				return nil, err
+			}
+			if handled {
+				if o.Run != nil && o.Run.State == claude.RunIdle {
+					completion, err := display.PublishStopped(publicationContext, api)
+					if err != nil {
+						return nil, err
+					}
+					if err := lease.Close(); err != nil {
+						return nil, err
+					}
+					return json.Marshal(completion)
+				}
+				continue
+			}
 		}
 		handled := false
 		switch o.Kind {
 		case claude.SessionInitialized:
-			err, handled = binding.BindSession(nativeCtx, o, applied), true
+			err, handled = binding.BindSession(publicationContext, o, applied), true
 			if err == nil {
-				logger.InfoContext(nativeCtx, "native_execution_thread_bound")
+				logger.InfoContext(publicationContext, "native_execution_thread_bound")
 			}
 		case claude.InputAccepted:
-			err = binding.AcceptInput(nativeCtx, o)
+			err = binding.AcceptInput(publicationContext, o)
 			if err == nil {
 				display, err = OpenClaudeContentPublisher(binding)
 			}
 			if err == nil {
-				err = display.PublishInput(nativeCtx)
+				err = display.PublishInput(publicationContext)
 			}
 			if err == nil {
-				logger.InfoContext(nativeCtx, "native_execution_input_accepted", "input_id", input.InputID)
+				if !stopOnCancellation() {
+					return nil, publicationUncertain()
+				}
+				logger.InfoContext(publicationContext, "native_execution_input_accepted", "input_id", input.InputID)
 				finishControls = startClaudeControls(ctx, nativeCtx, cancelNative, config, display, api)
 			}
 			handled = true
 		case claude.ProgressObserved:
-			handled, err = binding.PublishProgressObservation(nativeCtx, o)
+			handled, err = binding.PublishProgressObservation(publicationContext, o)
 		case claude.ContentObserved:
 			if display != nil {
-				handled, err = display.PublishObservation(nativeCtx, o)
+				handled, err = display.PublishObservation(publicationContext, o)
 				if err == nil && len(o.Content) == 1 && o.Content[0].Usage != nil {
-					_, err = display.PublishUsageObservation(nativeCtx, o)
+					_, err = display.PublishUsageObservation(publicationContext, o)
 				}
 			}
 		case claude.InteractionObserved:
 			if display != nil {
-				handled, err = display.PublishInteractionObservation(nativeCtx, o)
+				handled, err = display.PublishInteractionObservation(publicationContext, o)
 			}
 		case claude.InputFinished:
 			if display != nil {
-				handled, err = display.PublishUsageObservation(nativeCtx, o)
+				handled, err = display.PublishUsageObservation(publicationContext, o)
 			}
 		case claude.CommandObserved:
 			if o.Command == claude.CommandQueued || o.Command == claude.CommandStarted {
 				handled = true
 			} else if display != nil {
-				handled, err = display.PublishBoundaryObservation(nativeCtx, o)
+				handled, err = display.PublishBoundaryObservation(publicationContext, o)
 			}
 		case claude.RunStateObserved:
 			if o.Run != nil && (o.Run.State == claude.RunRunning || o.Run.State == claude.RunRequiresAction) {
 				handled = true
 			} else if display != nil {
-				handled, err = display.PublishBoundaryObservation(nativeCtx, o)
+				handled, err = display.PublishBoundaryObservation(publicationContext, o)
 				if err == nil && handled {
 					if err := finishControls(); err != nil {
 						return nil, err
 					}
-					completion, err := display.Complete(nativeCtx, api)
+					completion, err := display.Complete(publicationContext, api)
 					if err != nil {
 						return nil, err
 					}
@@ -215,7 +258,7 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 			}
 		case claude.CallbackInterruptResultObserved:
 			if display != nil {
-				handled, err = display.PublishObservation(nativeCtx, o)
+				handled, err = display.PublishObservation(publicationContext, o)
 			}
 			if err == nil && handled {
 				return nil, publicationUncertain()
@@ -225,7 +268,7 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 			return nil, err
 		}
 		if !handled {
-			logger.WarnContext(nativeCtx, "claude_execution_observation_requires_reconciliation", "kind", o.Kind, "code", domain.Unsupported)
+			logger.WarnContext(publicationContext, "claude_execution_observation_requires_reconciliation", "kind", o.Kind, "code", domain.Unsupported)
 			return nil, domain.Fail(domain.Unsupported, "This native Claude observation requires additional publication evidence.", "Retain the original runtime and outbox; do not resend the input.")
 		}
 	}
