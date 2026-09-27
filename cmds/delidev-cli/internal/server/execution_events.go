@@ -121,7 +121,7 @@ func supportsExecutionPublication(input domain.ExecutionJobInput, kind domain.Ex
 	case domain.Codex:
 		return kind != domain.ExecutionOpenCodeUsageObserved && kind != domain.ExecutionClaudeMessageObserved && kind != domain.ExecutionClaudeUsageObserved && kind != domain.ExecutionClaudeToolObserved
 	case domain.ClaudeCode:
-		return (kind == domain.ExecutionThreadBound || kind == domain.ExecutionInputAccepted || kind == domain.ExecutionMessageStarted || kind == domain.ExecutionMessageCompleted || kind == domain.ExecutionClaudeMessageObserved || kind == domain.ExecutionClaudeUsageObserved || kind == domain.ExecutionClaudeToolObserved) && len(executionAPIOperations(input, domain.AnthropicMessages)) != 0
+		return (kind == domain.ExecutionThreadBound || kind == domain.ExecutionInputAccepted || kind == domain.ExecutionMessageStarted || kind == domain.ExecutionMessageCompleted || kind == domain.ExecutionClaudeMessageObserved || kind == domain.ExecutionClaudeUsageObserved || kind == domain.ExecutionClaudeToolObserved || kind == domain.ExecutionInteractionRequested || kind == domain.ExecutionInteractionClosed) && len(executionAPIOperations(input, domain.AnthropicMessages)) != 0
 	case domain.OpenCode:
 		return (kind == domain.ExecutionThreadBound || kind == domain.ExecutionInputAccepted || kind == domain.ExecutionMessageStarted || kind == domain.ExecutionTextAppended || kind == domain.ExecutionMessageCompleted || kind.IsArtifact() || kind == domain.ExecutionToolStarted || kind == domain.ExecutionToolUpdated || kind == domain.ExecutionToolCompleted || kind == domain.ExecutionOpenCodeUsageObserved || kind == domain.ExecutionProgressObserved || kind == domain.ExecutionInteractionRequested || kind == domain.ExecutionInteractionClosed || kind == domain.ExecutionQuestionDeliveryObserved || kind == domain.ExecutionApprovalDeliveryObserved || kind == domain.ExecutionQuestionAccepted || kind == domain.ExecutionApprovalAccepted || kind == domain.ExecutionTurnFinished) && len(executionAPIOperations(input, domain.OpenAIChat)) != 0
 	}
@@ -145,9 +145,12 @@ func validateNativeMessageOrigin(input domain.ExecutionJobInput, event domain.Ex
 		return executionEventConflict()
 	}
 	if u := event.Interaction; u != nil && event.Kind == domain.ExecutionInteractionRequested {
-		if (input.Configuration.Harness == domain.OpenCode) != (u.OpenCode != nil) || u.OpenCode != nil && u.OpenCode.NativeMessageID == event.NativeTurnID {
+		if (input.Configuration.Harness == domain.ClaudeCode) != (u.Claude != nil) || (input.Configuration.Harness == domain.OpenCode) != (u.OpenCode != nil) || u.OpenCode != nil && u.OpenCode.NativeMessageID == event.NativeTurnID {
 			return executionEventConflict()
 		}
+	}
+	if u := event.Interaction; u != nil && event.Kind == domain.ExecutionInteractionClosed && (input.Configuration.Harness == domain.ClaudeCode) != (u.ClaudeCancellation != nil) {
+		return executionEventConflict()
 	}
 	if event.Progress != nil && (input.Configuration.Harness == domain.OpenCode) != (event.Progress.Progress.Kind == domain.OpenCodeTodoProgressKind || event.Progress.Progress.Kind == domain.OpenCodeChangesProgressKind || event.Progress.Progress.Kind == domain.OpenCodeWorkspaceProgressKind) {
 		return executionEventConflict()

@@ -134,16 +134,18 @@ func (r QuestionRequest) Validate() error {
 // closure only. Response claims/delivery require a separate coordinator path;
 // a Worker cannot fabricate owner authorization by adding answer fields here.
 type ExecutionInteractionUpdate struct {
-	OpenCodeStop    *OpenCodeStopClosure        `json:"opencode_stop,omitempty"`
-	OpenCodeClosure *OpenCodePolicyClosure      `json:"opencode_closure,omitempty"`
-	OpenCode        *OpenCodeInteractionRequest `json:"opencode,omitempty"`
-	ID              ID                          `json:"id"`
-	NativeItemID    string                      `json:"native_item_id"`
-	NativeRequestID InteractionRequestID        `json:"native_request_id"`
-	Type            InteractionType             `json:"type"`
-	Questions       *QuestionRequest            `json:"questions,omitempty"`
-	Approval        *ApprovalRequest            `json:"approval,omitempty"`
-	Closure         InteractionClosure          `json:"closure,omitempty"`
+	Claude             *ClaudeInteractionRequest      `json:"claude,omitempty"`
+	ClaudeCancellation *ClaudeInteractionCancellation `json:"claude_cancellation,omitempty"`
+	OpenCodeStop       *OpenCodeStopClosure           `json:"opencode_stop,omitempty"`
+	OpenCodeClosure    *OpenCodePolicyClosure         `json:"opencode_closure,omitempty"`
+	OpenCode           *OpenCodeInteractionRequest    `json:"opencode,omitempty"`
+	ID                 ID                             `json:"id"`
+	NativeItemID       string                         `json:"native_item_id"`
+	NativeRequestID    InteractionRequestID           `json:"native_request_id"`
+	Type               InteractionType                `json:"type"`
+	Questions          *QuestionRequest               `json:"questions,omitempty"`
+	Approval           *ApprovalRequest               `json:"approval,omitempty"`
+	Closure            InteractionClosure             `json:"closure,omitempty"`
 }
 
 func (k ExecutionEventKind) IsInteraction() bool {
@@ -159,10 +161,14 @@ func (u ExecutionInteractionUpdate) Validate(kind ExecutionEventKind) error {
 	}
 	switch kind {
 	case ExecutionInteractionRequested:
-		if u.Closure != "" || u.OpenCodeClosure != nil || u.OpenCodeStop != nil {
+		if u.Closure != "" || u.OpenCodeClosure != nil || u.OpenCodeStop != nil || u.ClaudeCancellation != nil {
 			return invalidInteraction()
 		}
-		if u.OpenCode != nil {
+		if u.Claude != nil {
+			if u.OpenCode != nil || u.Questions != nil || u.Approval != nil || u.Claude.Validate(u.Type, u.NativeRequestID, u.NativeItemID) != nil {
+				return invalidInteraction()
+			}
+		} else if u.OpenCode != nil {
 			if u.Questions != nil || u.Approval != nil || NativeIdentity(u.NativeItemID).Validate(OpenCode, NativePartIdentity) != nil || u.OpenCode.Validate(u.Type, u.NativeRequestID) != nil {
 				return invalidInteraction()
 			}
@@ -175,6 +181,9 @@ func (u ExecutionInteractionUpdate) Validate(kind ExecutionEventKind) error {
 		}
 	case ExecutionInteractionClosed:
 		closure := InteractionNativeClosed
+		if u.ClaudeCancellation != nil && (u.ClaudeCancellation.ArrivalID.Validate() != nil || u.OpenCodeStop != nil || u.OpenCodeClosure != nil) {
+			return invalidInteraction()
+		}
 		if u.OpenCodeStop != nil {
 			identity := NativeQuestionIdentity
 			if u.Type == NativeApprovalInteraction {
@@ -188,7 +197,7 @@ func (u ExecutionInteractionUpdate) Validate(kind ExecutionEventKind) error {
 		if u.OpenCodeClosure != nil && (u.Type != NativeApprovalInteraction || u.NativeRequestID.Kind != InteractionTextID || NativeIdentity(u.NativeRequestID.Text).Validate(OpenCode, NativePermissionIdentity) != nil || u.OpenCodeClosure.Validate() != nil) {
 			return invalidInteraction()
 		}
-		if u.OpenCode != nil || u.Questions != nil || u.Approval != nil || u.Closure != closure {
+		if u.Claude != nil || u.OpenCode != nil || u.Questions != nil || u.Approval != nil || u.Closure != closure {
 			return invalidInteraction()
 		}
 	default:
@@ -202,22 +211,24 @@ func (u ExecutionInteractionUpdate) Validate(kind ExecutionEventKind) error {
 }
 
 type ExecutionInteraction struct {
-	OpenCodeStop     *OpenCodeStopClosure        `json:"opencode_stop,omitempty"`
-	OpenCodeClosure  *OpenCodePolicyClosure      `json:"opencode_closure,omitempty"`
-	OpenCode         *OpenCodeInteractionRequest `json:"opencode,omitempty"`
-	ExecutionID      ID                          `json:"execution_id"`
-	NativeThreadID   string                      `json:"native_thread_id"`
-	NativeTurnID     string                      `json:"native_turn_id"`
-	NativeItemID     string                      `json:"native_item_id"`
-	NativeRequestID  InteractionRequestID        `json:"native_request_id"`
-	Type             InteractionType             `json:"type"`
-	Questions        *QuestionRequest            `json:"questions"`
-	Approval         *ApprovalRequest            `json:"approval,omitempty"`
-	Closure          InteractionClosure          `json:"closure"`
-	FirstSequence    uint64                      `json:"first_sequence"`
-	LastSequence     uint64                      `json:"last_sequence"`
-	Response         *QuestionResponse           `json:"response,omitempty"`
-	ApprovalResponse *ApprovalResponse           `json:"approval_response,omitempty"`
+	Claude             *ClaudeInteractionRequest      `json:"claude,omitempty"`
+	ClaudeCancellation *ClaudeInteractionCancellation `json:"claude_cancellation,omitempty"`
+	OpenCodeStop       *OpenCodeStopClosure           `json:"opencode_stop,omitempty"`
+	OpenCodeClosure    *OpenCodePolicyClosure         `json:"opencode_closure,omitempty"`
+	OpenCode           *OpenCodeInteractionRequest    `json:"opencode,omitempty"`
+	ExecutionID        ID                             `json:"execution_id"`
+	NativeThreadID     string                         `json:"native_thread_id"`
+	NativeTurnID       string                         `json:"native_turn_id"`
+	NativeItemID       string                         `json:"native_item_id"`
+	NativeRequestID    InteractionRequestID           `json:"native_request_id"`
+	Type               InteractionType                `json:"type"`
+	Questions          *QuestionRequest               `json:"questions"`
+	Approval           *ApprovalRequest               `json:"approval,omitempty"`
+	Closure            InteractionClosure             `json:"closure"`
+	FirstSequence      uint64                         `json:"first_sequence"`
+	LastSequence       uint64                         `json:"last_sequence"`
+	Response           *QuestionResponse              `json:"response,omitempty"`
+	ApprovalResponse   *ApprovalResponse              `json:"approval_response,omitempty"`
 }
 
 // Waiting flags are observed native state, not answer/approval authority and

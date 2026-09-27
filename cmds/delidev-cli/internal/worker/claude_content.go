@@ -14,29 +14,34 @@ type claudePublishedContent struct {
 }
 
 type claudeContentCommit struct {
-	toolNative string
-	toolNext   claudePublishedTool
-	event      domain.ExecutionEvent
-	native     string
-	next       claudePublishedContent
-	input      bool
+	interactionArrival domain.ID
+	interactionNext    claudePublishedInteraction
+	toolNative         string
+	toolNext           claudePublishedTool
+	event              domain.ExecutionEvent
+	native             string
+	next               claudePublishedContent
+	input              bool
 }
 
 // ClaudeContentPublisher preserves whole provider messages and ordered native
 // text/thinking blocks and original root tools. Native usage is published as
-// independent observations. Its caller must reconcile child, interaction and
-// terminal authority separately; unsupported rich blocks latch this publisher.
+// independent observations, including original callback requests/cancellation.
+// Its caller must reconcile child, reply and terminal authority separately;
+// unsupported rich blocks latch this publisher.
 type ClaudeContentPublisher struct {
-	binding        *ClaudeBindingPublisher
-	messages       map[string]claudePublishedContent
-	tools          map[string]claudePublishedTool
-	seen           map[string]bool
-	usageSeen      map[string]bool
-	resultUsage    bool
-	active         string
-	inputPublished bool
-	queue          []claudeContentCommit
-	pending        bool
+	interactions     map[domain.ID]claudePublishedInteraction
+	callbackRequests map[string]bool
+	binding          *ClaudeBindingPublisher
+	messages         map[string]claudePublishedContent
+	tools            map[string]claudePublishedTool
+	seen             map[string]bool
+	usageSeen        map[string]bool
+	resultUsage      bool
+	active           string
+	inputPublished   bool
+	queue            []claudeContentCommit
+	pending          bool
 }
 
 func OpenClaudeContentPublisher(binding *ClaudeBindingPublisher) (*ClaudeContentPublisher, error) {
@@ -52,7 +57,7 @@ func OpenClaudeContentPublisher(binding *ClaudeBindingPublisher) (*ClaudeContent
 		return nil, publicationUncertain()
 	}
 	binding.contentAttached = true
-	return &ClaudeContentPublisher{binding: binding, messages: map[string]claudePublishedContent{}, seen: map[string]bool{}, usageSeen: map[string]bool{}, tools: map[string]claudePublishedTool{}}, nil
+	return &ClaudeContentPublisher{interactions: map[domain.ID]claudePublishedInteraction{}, callbackRequests: map[string]bool{}, binding: binding, messages: map[string]claudePublishedContent{}, seen: map[string]bool{}, usageSeen: map[string]bool{}, tools: map[string]claudePublishedTool{}}, nil
 }
 
 func (c *ClaudeContentPublisher) verify() error {
@@ -269,6 +274,10 @@ func (c *ClaudeContentPublisher) commitHead() {
 			c.active = item.native
 		}
 		c.messages[item.native] = item.next
+	}
+	if item.interactionArrival != "" {
+		c.callbackRequests[item.interactionNext.update.NativeRequestID.Text] = true
+		c.interactions[item.interactionArrival] = item.interactionNext
 	}
 	if item.toolNative != "" {
 		if item.toolNext.state == domain.MessageComplete {

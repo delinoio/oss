@@ -3,11 +3,11 @@ import { StrictMode } from "react";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { ConfigurationService, EntityKind, InboxService, ResourceSchema, ResourceService, SessionService, SystemService, newRequestId } from "@delinoio/delidev-api-client";
+import { ConfigurationService, EntityKind, InboxService, ResourceSchema, ResourceService, SessionService, SystemService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { App } from "./App";
 import { encode } from "./documents";
 
-function fixture() {
+function fixture(interactions: Resource[] = []) {
   const id = newRequestId();
   const session = create(ResourceSchema, { id, sessionId: id, kind: EntityKind.SESSION, revision: 7n, schemaVersion: 1, documentJson: encode({ name: "Retained session", workspace: "general-chat", outcome: "stopped", archive: "active", dispatch: "paused", recovery: "none" }) });
   const message = create(ResourceSchema, { id: newRequestId(), sessionId: id, kind: EntityKind.MESSAGE, revision: 1n, schemaVersion: 1, documentJson: encode({ role: "assistant", text: '<script>window.invalid = true</script>', state: "completed" }) });
@@ -21,7 +21,7 @@ function fixture() {
     router.service(SessionService, { listSessions: () => ({ sessions: [session, other] }), listQueue: () => ({ inputs: [] }), enqueueInput: enqueues, controlSession: controls });
     router.service(ResourceService, {
       getSnapshot: (request) => ({ resources: [request.filter?.sessionId === other.id ? other : session], cursor: "snapshot" }),
-      listResources: (request) => ({ resources: request.filter?.kind === EntityKind.MESSAGE ? [message] : [] }),
+      listResources: (request) => ({ resources: request.filter?.kind === EntityKind.MESSAGE ? [message] : request.filter?.kind === EntityKind.INTERACTION ? interactions : [] }),
       async *watchEvents(_request, context) {
         await new Promise<void>((resolve) => { if (context.signal.aborted) resolve(); else context.signal.addEventListener("abort", () => resolve(), { once: true }); });
       },
@@ -200,3 +200,20 @@ for (const mixed of [false, true]) {
     expect(value.controls).not.toHaveBeenCalled();
   });
 }
+
+for (const mixed of [false, true]) it(`renders Claude callbacks through the session RPC without other response controls (${mixed})`, async () => {
+  const data = { type: "native-approval", closure: "open", native_item_id: "tool_original", native_request_id: { kind: "text", text: "request_original" }, claude: {
+    version: "2.1.236", kind: "tool-permission", arrival_id: newRequestId(), tool: { id: newRequestId(), native_id: "tool_original", name: "Bash" }, message_id: newRequestId(), native_message_id: "msg_original", index: 0, caller: null, input_json: '{"command":"printf original"}', metadata: { permission_suggestions: null, blocked_path: null, decision_reason: null, decision_reason_type: null, requires_user_interaction: null, agent_id: null, title: null, display_name: null, description: "Original callback description" },
+  }, ...(mixed ? { opencode: {} } : {}) };
+  const interaction = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.INTERACTION, revision: 1n, schemaVersion: 1, documentJson: encode(data) });
+  const value = fixture([interaction]); interaction.sessionId = value.session.id;
+  render(<App transport={value.transport} />);
+  fireEvent.click(await screen.findByRole("button", { name: /General Chat Retained session/ }));
+  if (mixed) {
+    expect(await screen.findByLabelText("Claude request unavailable")).toBeTruthy();
+    expect(screen.queryByText("Original callback description")).toBeNull();
+  } else expect(await screen.findByText("Original callback description")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Send decision" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Send answers" })).toBeNull();
+  expect(value.enqueues).not.toHaveBeenCalled(); expect(value.controls).not.toHaveBeenCalled();
+});

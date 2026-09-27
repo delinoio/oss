@@ -48,7 +48,7 @@ func (c *ClaudeContentPublisher) PublishUsageObservation(ctx context.Context, o 
 			return true, b.block()
 		}
 	} else if o.Kind == claude.InputFinished {
-		if o.Result == nil || o.Result.Usage == nil || c.active != "" || !c.toolsComplete() || c.resultUsage {
+		if o.Result == nil || o.Result.Usage == nil || c.active != "" || !c.toolsComplete() || !c.interactionsSettled() || c.resultUsage {
 			return true, b.block()
 		}
 		value.Source = domain.ClaudeInputResultUsage
