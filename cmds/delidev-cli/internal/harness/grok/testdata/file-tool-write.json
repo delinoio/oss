@@ -1,0 +1,253 @@
+[
+  {
+    "kind": "notification",
+    "method": "_x.ai/session_notification",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "tool_call_delta_chunk",
+        "tool_call_id": "call_delidev_read",
+        "tool_index": 0,
+        "name": "write",
+        "arguments_delta": "{\"content\":\"Written fixture only.\\n\",\"file_path\":\"/fixture/workspace/fixture.txt\"}"
+      }
+    }
+  },
+  {
+    "kind": "notification",
+    "method": "session/update",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "tool_call",
+        "toolCallId": "call_delidev_read",
+        "title": "write",
+        "rawInput": {
+          "content": "Written fixture only.\n",
+          "file_path": "/fixture/workspace/fixture.txt"
+        },
+        "_meta": {
+          "x.ai/tool": {
+            "version": 1,
+            "name": "write",
+            "kind": "write",
+            "namespace": "opencode",
+            "label": "Write",
+            "read_only": false
+          }
+        }
+      },
+      "_meta": {
+        "totalTokens": 16,
+        "eventId": "019f6de0-a760-7000-8000-000000000071-5",
+        "agentTimestampMs": 1790528335776,
+        "promptId": "e5833c4a-d764-4428-8bd8-6c2968a34b1b",
+        "streamStartMs": 1790528335774,
+        "turnStartMs": 1790528335753,
+        "updateType": "ToolCall",
+        "updateParams": {
+          "toolCallId": "call_delidev_read",
+          "title": "write",
+          "kind": "Other",
+          "status": "Pending"
+        }
+      }
+    }
+  },
+  {
+    "kind": "notification",
+    "method": "_x.ai/session_notification",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "pending_interaction",
+        "tool_call_id": "call_delidev_read",
+        "kind": "permission"
+      }
+    }
+  },
+  {
+    "kind": "notification",
+    "method": "session/update",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "tool_call_update",
+        "toolCallId": "call_delidev_read",
+        "kind": "edit",
+        "title": "Write `/fixture/workspace/fixture.txt`",
+        "content": [
+          {
+            "type": "diff",
+            "path": "/fixture/workspace/fixture.txt",
+            "oldText": "",
+            "newText": "Written fixture only.\n"
+          }
+        ],
+        "locations": [
+          {
+            "path": "/fixture/workspace/fixture.txt"
+          }
+        ],
+        "rawInput": {
+          "variant": "Write",
+          "file_path": "/fixture/workspace/fixture.txt",
+          "content": "Written fixture only.\n"
+        },
+        "_meta": {
+          "x.ai/tool": {
+            "version": 1,
+            "name": "write",
+            "kind": "write",
+            "namespace": "opencode",
+            "label": "Write",
+            "read_only": false,
+            "input": {
+              "path": "/fixture/workspace/fixture.txt"
+            }
+          }
+        }
+      },
+      "_meta": {
+        "totalTokens": 16,
+        "eventId": "019f6de0-a760-7000-8000-000000000071-6",
+        "agentTimestampMs": 1790528335776,
+        "promptId": "e5833c4a-d764-4428-8bd8-6c2968a34b1b",
+        "streamStartMs": 1790528335774,
+        "turnStartMs": 1790528335753,
+        "updateType": "ToolCallUpdate",
+        "updateParams": {
+          "toolCallId": "call_delidev_read",
+          "status": null
+        }
+      }
+    }
+  },
+  {
+    "kind": "server-request",
+    "method": "session/request_permission",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "toolCall": {
+        "toolCallId": "call_delidev_read",
+        "kind": "edit",
+        "title": "Write `/fixture/workspace/fixture.txt`",
+        "rawInput": {
+          "variant": "Write",
+          "file_path": "/fixture/workspace/fixture.txt",
+          "content": "Written fixture only.\n"
+        },
+        "_meta": {
+          "x.ai/tool": {
+            "version": 1,
+            "name": "write",
+            "kind": "write",
+            "namespace": "opencode",
+            "label": "Write",
+            "read_only": false,
+            "input": {
+              "path": "/fixture/workspace/fixture.txt"
+            }
+          }
+        }
+      },
+      "options": [
+        {
+          "optionId": "allow-edits-session",
+          "name": "Yes, allow all edits during this session",
+          "kind": "allow_always"
+        },
+        {
+          "optionId": "allow-once",
+          "name": "Yes",
+          "kind": "allow_once"
+        },
+        {
+          "optionId": "reject-once",
+          "name": "No, and tell Grok what to do differently",
+          "kind": "reject_once"
+        }
+      ]
+    }
+  },
+  {
+    "kind": "notification",
+    "method": "_x.ai/session_notification",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "interaction_resolved",
+        "tool_call_id": "call_delidev_read"
+      }
+    }
+  },
+  {
+    "kind": "notification",
+    "method": "session/update",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "tool_call_update",
+        "toolCallId": "call_delidev_read",
+        "status": "completed",
+        "content": [
+          {
+            "type": "diff",
+            "path": "/fixture/workspace/fixture.txt",
+            "oldText": "Original fixture first line.\nOriginal fixture second line.\n",
+            "newText": "Written fixture only.\n",
+            "_meta": {
+              "details": [
+                {
+                  "old_string": "Original fixture first line.\nOriginal fixture second line.\n",
+                  "old_line": 1,
+                  "new_string": "Written fixture only.\n",
+                  "new_line": 1,
+                  "context_before": "",
+                  "context_after": "",
+                  "line_prefix": ""
+                }
+              ]
+            }
+          }
+        ],
+        "rawOutput": {
+          "type": "SearchReplace",
+          "EditsApplied": {
+            "old_string": "Original fixture first line.\nOriginal fixture second line.\n",
+            "new_string": "Written fixture only.\n",
+            "tool_output_for_prompt": "Wrote file successfully to /fixture/workspace/fixture.txt.",
+            "tool_output_for_prompt_concise": "Wrote file successfully to /fixture/workspace/fixture.txt.",
+            "absolute_path": "/fixture/workspace/fixture.txt",
+            "edits": {
+              "details": [
+                {
+                  "old_string": "Original fixture first line.\nOriginal fixture second line.\n",
+                  "old_line": 1,
+                  "new_string": "Written fixture only.\n",
+                  "new_line": 1,
+                  "context_before": "",
+                  "context_after": "",
+                  "line_prefix": ""
+                }
+              ]
+            }
+          }
+        }
+      },
+      "_meta": {
+        "totalTokens": 16,
+        "eventId": "019f6de0-a760-7000-8000-000000000071-7",
+        "agentTimestampMs": 1790528335789,
+        "promptId": "e5833c4a-d764-4428-8bd8-6c2968a34b1b",
+        "streamStartMs": 1790528335774,
+        "turnStartMs": 1790528335753,
+        "updateType": "ToolCallUpdate",
+        "updateParams": {
+          "toolCallId": "call_delidev_read",
+          "status": "Completed"
+        }
+      }
+    }
+  }
+]
