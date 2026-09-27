@@ -1,0 +1,188 @@
+package grok
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"strings"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/nativewire"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
+)
+
+// This opt-in test validates actual pinned schemas through a scripted private
+// provider. Its raw transport sends are deliberately test-only: they do not
+// implement the durable input/interaction/publication controller.
+func TestManualNativeGrokTextCompletion(t *testing.T) {
+	binary := os.Getenv("DELIDEV_NATIVE_GROK_EXECUTABLE")
+	if binary == "" {
+		t.Skip("explicit private native Grok Build binary required")
+	}
+	var calls atomic.Uint32
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/" {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if r.Method != http.MethodPost || r.URL.Path != "/api-proxy/v1/chat/completions" || r.URL.RawQuery != "" || r.Header.Get("Authorization") != "Bearer "+apiFixtureToken {
+			t.Error("unexpected native provider authority or operation")
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		raw, err := io.ReadAll(io.LimitReader(r.Body, 1<<20+1))
+		var body struct {
+			Model string `json:"model"`
+		}
+		if err != nil || len(raw) > 1<<20 || json.Unmarshal(raw, &body) != nil || body.Model != turnFixtureModel {
+			t.Error("native model or request bound changed")
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		calls.Add(1)
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, chunk := range []string{
+			`{"id":"chat-fixture","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{"role":"assistant","content":"Private fixture response."},"finish_reason":null}]}`,
+			`{"id":"chat-fixture","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":11,"completion_tokens":5,"total_tokens":16}}`,
+			`[DONE]`,
+		} {
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", chunk)
+		}
+	}))
+	defer provider.Close()
+	config, logs := fixtureAPIConfig(t, "native-turn")
+	config.Probe.Process.Executable = binary
+	config.ServerOrigin, config.Model = provider.URL, turnFixtureModel
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	api, err := openAPI(ctx, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := api.Close(); err != nil {
+			t.Error(err)
+		}
+		if err := process.ReconcileOwner(config.Probe.Process.Directory, config.Probe.Process.OwnerID); err != nil {
+			t.Error(err)
+		}
+		for _, private := range []string{config.Token, config.Model, config.Workspace, "Private fixture response."} {
+			if strings.Contains(logs.String(), private) {
+				t.Error("private native input or output logged")
+			}
+		}
+	}()
+	session, err := api.Create(ctx, domain.NewID(), domain.NewID(), func(_ context.Context, claim CreationClaim) error { return claim.Validate() })
+	if err != nil {
+		t.Fatal(err)
+	}
+	const input = "Return a private fixture response."
+	response, err := api.wire.Call(ctx, domain.NewID(), "session/prompt", map[string]any{"sessionId": session, "prompt": []any{map[string]any{"type": "text", "text": input}}})
+	if err != nil || response.ErrorCode != nil {
+		t.Fatal("native fixture prompt failed", err)
+	}
+	var advertised PromptResult
+	if decode(response.Result, &advertised) != nil {
+		t.Fatal("incompatible native prompt envelope")
+	}
+	prompt := advertised.Meta.Prompt
+	result, err := parsePromptResult(response.Result, session, prompt, turnFixtureModel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var turn TurnCompleted
+	var completion PromptCompleted
+	var text strings.Builder
+	queued, running, completed := false, false, false
+	for !completed {
+		event, err := api.wire.Next(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if event.Kind != nativewire.Notification {
+			t.Fatal("unexpected native fixture interaction")
+		}
+		switch event.Method {
+		case "_x.ai/queue/changed":
+			var value struct {
+				Session domain.ID `json:"sessionId"`
+				Entries []struct {
+					ID       string `json:"id"`
+					Version  uint64 `json:"version"`
+					Kind     string `json:"kind"`
+					Text     string `json:"text"`
+					Position uint64 `json:"position"`
+				} `json:"entries"`
+				Running string `json:"runningPromptId,omitempty"`
+				Text    string `json:"runningText,omitempty"`
+				Kind    string `json:"runningKind,omitempty"`
+			}
+			if decode(event.Params, &value) != nil || value.Session != session || len(value.Entries) > 1 {
+				t.Fatal("invalid original queue observation")
+			}
+			if len(value.Entries) == 1 {
+				entry := value.Entries[0]
+				if queued || entry.ID != prompt || entry.Version != 0 || entry.Position != 0 || entry.Kind != "prompt" || entry.Text != input {
+					t.Fatal("original native queued input changed")
+				}
+				queued = true
+			}
+			if value.Running != "" {
+				if !queued || running || value.Running != prompt || value.Kind != "prompt" || value.Text != input {
+					t.Fatal("original native running input changed")
+				}
+				running = true
+			}
+		case "session/update", "_x.ai/session_notification":
+			var variant struct {
+				Update struct {
+					Kind string `json:"sessionUpdate"`
+				} `json:"update"`
+			}
+			if json.Unmarshal(event.Params, &variant) != nil {
+				t.Fatal("invalid fixture event")
+			}
+			switch variant.Update.Kind {
+			case "agent_message_chunk":
+				chunk, err := parseTextChunk(event.Params, session, prompt)
+				if err != nil || !running {
+					t.Fatal("unowned native text", err)
+				}
+				text.WriteString(chunk.Update.Content.Text)
+			case "turn_completed":
+				turn, err = parseTurnCompleted(event.Params, session, prompt, turnFixtureModel)
+				if err != nil {
+					t.Fatal(err)
+				}
+			case "available_commands_update", "session_info_update", "session_summary_generated", "response_completed":
+				// This schema test does not grant production authority to the
+				// remaining native metadata or auxiliary publication families.
+			default:
+				t.Fatal("unobserved native fixture event variant")
+			}
+		case "_x.ai/session/prompt_complete":
+			completion, err = parsePromptCompleted(event.Params, session, prompt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			completed = true
+		case "_x.ai/sessions/changed":
+			// Resident-session metadata is outside this completion parser.
+		default:
+			t.Fatal("unobserved native fixture notification")
+		}
+	}
+	if !queued || !running || text.String() != "Private fixture response." || result.Reason != EndTurn || result.Meta.Usage.Input != 11 || result.Meta.Usage.Output != 5 || calls.Load() == 0 {
+		t.Fatal("native fixture evidence incomplete")
+	}
+	if err := matchCompletion(result, turn, completion, turnFixtureModel); err != nil {
+		t.Fatal(err)
+	}
+}

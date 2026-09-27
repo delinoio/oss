@@ -35,6 +35,22 @@ func TestNativeProfilesRejectNestedCaseAliases(t *testing.T) {
 			_, err := validateNewSession(raw, "/private/workspace", apiProfile{contextTokens: 32000})
 			return err
 		}},
+		{"prompt-result", promptResultFixture, func(raw []byte) error {
+			_, err := parsePromptResult(raw, turnFixtureSession, turnFixturePrompt, turnFixtureModel)
+			return err
+		}},
+		{"text-chunk", textChunkFixture, func(raw []byte) error {
+			_, err := parseTextChunk(raw, turnFixtureSession, turnFixturePrompt)
+			return err
+		}},
+		{"turn-completed", turnCompletedFixture, func(raw []byte) error {
+			_, err := parseTurnCompleted(raw, turnFixtureSession, turnFixturePrompt, turnFixtureModel)
+			return err
+		}},
+		{"prompt-completed", promptCompletedFixture, func(raw []byte) error {
+			_, err := parsePromptCompleted(raw, turnFixtureSession, turnFixturePrompt)
+			return err
+		}},
 	} {
 		if profile.validate == nil {
 			var envelope struct {
