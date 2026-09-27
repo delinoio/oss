@@ -12,8 +12,19 @@ func claudeInteractionPublicationFixture(t *testing.T) (*publicationFixture, dom
 	return claudeCallbackPublicationFixture(t, false)
 }
 func claudeCallbackPublicationFixture(t *testing.T, question bool) (*publicationFixture, domain.ExecutionInteractionUpdate, uint64) {
+	kind := domain.ClaudeToolPermission
+	if question {
+		kind = domain.ClaudeUserQuestion
+	}
+	return claudeNamedCallbackPublicationFixture(t, kind)
+}
+func claudeNamedCallbackPublicationFixture(t *testing.T, kind domain.ClaudeInteractionKind) (*publicationFixture, domain.ExecutionInteractionUpdate, uint64) {
 	t.Helper()
-	f := newClaudePublicationFixture(t, domain.ExecuteMode)
+	mode := domain.ExecuteMode
+	if kind == domain.ClaudePlanApproval {
+		mode = domain.PlanMode
+	}
+	f := newClaudePublicationFixture(t, mode)
 	f.publish(t, f.event(domain.ExecutionThreadBound, 1))
 	f.publish(t, f.event(domain.ExecutionInputAccepted, 2))
 	sequence := uint64(2)
@@ -28,9 +39,12 @@ func claudeCallbackPublicationFixture(t *testing.T, question bool) (*publication
 	publish()
 	index, input := uint32(0), `{"command":"printf original","exact":9007199254740993}`
 	ref := domain.ClaudeToolReference{ID: domain.NewID(), NativeID: "tool_original", Name: "Bash"}
-	if question {
+	if kind == domain.ClaudeUserQuestion {
 		ref.Name = "AskUserQuestion"
 		input = `{"questions":[{"question":"Original?","header":"Choice","options":[{"label":"One","description":"First"},{"label":"Two","description":"Second"}],"multiSelect":true}]}`
+	}
+	if kind == domain.ClaudePlanApproval {
+		ref.Name, input = "ExitPlanMode", `{"plan":"# Original plan","planFilePath":"/private/original-plan.md"}`
 	}
 	tool := domain.ClaudeToolUpdate{Mutation: domain.ClaudeToolStart, Reference: ref, MessageID: u.ID, NativeMessageID: u.NativeID, Index: index, InitialInput: &input}
 	u.Mutation, u.Index, u.Block, u.Tool = domain.ClaudeBlockStart, &index, &domain.ClaudeTextBlock{Kind: domain.ClaudeToolUse, Tool: &ref}, &tool
@@ -43,9 +57,10 @@ func claudeCallbackPublicationFixture(t *testing.T, question bool) (*publication
 	u.Mutation, u.Index = domain.ClaudeMessageStop, nil
 	publish()
 	request := domain.ExecutionInteractionUpdate{ID: domain.NewID(), NativeItemID: ref.NativeID, NativeRequestID: domain.InteractionRequestID{Kind: domain.InteractionTextID, Text: "request_original"}, Type: domain.NativeApprovalInteraction, Claude: &domain.ClaudeInteractionRequest{Version: domain.ClaudeProtocolVersion, Kind: domain.ClaudeToolPermission, ArrivalID: domain.NewID(), Tool: ref, MessageID: u.ID, NativeMessageID: u.NativeID, Index: index, InputJSON: input}}
-	if question {
+	if kind == domain.ClaudeUserQuestion {
 		request.Type, request.Claude.Kind = domain.UserQuestionInteraction, domain.ClaudeUserQuestion
 	}
+	request.Claude.Kind = kind
 	return f, request, sequence
 }
 func TestClaudeCallbackPublicationKeepsOriginalRequestCancellationAndInbox(t *testing.T) {

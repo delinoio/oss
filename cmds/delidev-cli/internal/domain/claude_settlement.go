@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"bytes"
 	"encoding/json"
 	"reflect"
 )
@@ -8,6 +9,7 @@ import (
 type ClaudeCallbackEvidence string
 
 const (
+	ClaudePlanProcessed    ClaudeCallbackEvidence = "native-claude-plan-approval"
 	ClaudeToolProcessed    ClaudeCallbackEvidence = "native-claude-tool-result"
 	ClaudeAnswersProcessed ClaudeCallbackEvidence = "native-claude-question-answers"
 	ClaudeDenialProcessed  ClaudeCallbackEvidence = "native-claude-permission-denial"
@@ -35,7 +37,7 @@ func (u ExecutionClaudeCallbackSettlement) Validate() error {
 		return invalidClaudeResponse()
 	}
 	switch u.Evidence {
-	case ClaudeToolProcessed, ClaudeAnswersProcessed, ClaudeDenialProcessed:
+	case ClaudeToolProcessed, ClaudeAnswersProcessed, ClaudeDenialProcessed, ClaudePlanProcessed:
 		return nil
 	default:
 		return invalidClaudeResponse()
@@ -46,7 +48,7 @@ func (u ExecutionClaudeCallbackSettlement) Validate() error {
 // Do not infer answer acceptance from display text, an echo or tool completion.
 func ClaudeCallbackResultEvidence(original ExecutionInteraction, reply ClaudePermissionResponse, tool ClaudeToolContent) (ClaudeCallbackEvidence, error) {
 	request, result := original.Claude, tool.Result
-	if reply.Validate(original) != nil || request.Kind == ClaudePlanApproval || tool.Reference != request.Tool || tool.MessageID != request.MessageID || tool.NativeMessageID != request.NativeMessageID || tool.Index != request.Index || !reflect.DeepEqual(tool.Caller, request.Caller) || tool.Proposal == nil || !EqualClaudeToolInput(tool.Proposal.Applied, request.InputJSON) || result == nil || result.Validate() != nil {
+	if reply.Validate(original) != nil || tool.Reference != request.Tool || tool.MessageID != request.MessageID || tool.NativeMessageID != request.NativeMessageID || tool.Index != request.Index || !reflect.DeepEqual(tool.Caller, request.Caller) || tool.Proposal == nil || !EqualClaudeToolInput(tool.Proposal.Applied, request.InputJSON) || result == nil || result.Validate() != nil {
 		return "", invalidClaudeResponse()
 	}
 	if reply.Behavior == ClaudeReplyDeny {
@@ -60,6 +62,46 @@ func ClaudeCallbackResultEvidence(original ExecutionInteraction, reply ClaudePer
 	}
 	if request.Kind == ClaudeToolPermission {
 		return ClaudeToolProcessed, nil
+	}
+	if request.Kind == ClaudePlanApproval {
+		if result.Error != nil && *result.Error || result.Structured == nil {
+			return "", invalidClaudeResponse()
+		}
+		var input struct {
+			Plan string  `json:"plan"`
+			Path *string `json:"planFilePath"`
+		}
+		var fields map[string]json.RawMessage
+		var output struct {
+			Plan     *string `json:"plan"`
+			Agent    *bool   `json:"isAgent"`
+			Path     *string `json:"filePath,omitempty"`
+			Task     *bool   `json:"hasTaskTool,omitempty"`
+			Edited   *bool   `json:"planWasEdited,omitempty"`
+			Awaiting *bool   `json:"awaitingLeaderApproval,omitempty"`
+			Request  *string `json:"requestId,omitempty"`
+		}
+		// The original callback may include native plan-tool options. Read the
+		// plan fields without dropping any of the retained original input.
+		if Decode([]byte(request.InputJSON), &fields) != nil || json.Unmarshal(fields["plan"], &input.Plan) != nil {
+			return "", invalidClaudeResponse()
+		}
+		if raw, ok := fields["planFilePath"]; ok && json.Unmarshal(raw, &input.Path) != nil {
+			return "", invalidClaudeResponse()
+		}
+		var outputFields map[string]json.RawMessage
+		if Decode([]byte(*result.Structured), &outputFields) != nil {
+			return "", invalidClaudeResponse()
+		}
+		for _, raw := range outputFields {
+			if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+				return "", invalidClaudeResponse()
+			}
+		}
+		if Decode([]byte(*result.Structured), &output) != nil || output.Plan == nil || *output.Plan != input.Plan || output.Agent == nil || *output.Agent || !reflect.DeepEqual(output.Path, input.Path) || output.Edited != nil && *output.Edited || output.Awaiting != nil && *output.Awaiting || output.Request != nil {
+			return "", invalidClaudeResponse()
+		}
+		return ClaudePlanProcessed, nil
 	}
 	if request.Kind != ClaudeUserQuestion || result.Error != nil && *result.Error || result.Structured == nil {
 		return "", invalidClaudeResponse()

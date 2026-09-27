@@ -94,3 +94,50 @@ func TestClaudeCallbackSettlementKeepsToolFailureAndDenialSeparate(t *testing.T)
 		}
 	}
 }
+
+func TestClaudePlanSettlementRequiresUnchangedRootPlanAndArtifact(t *testing.T) {
+	for _, path := range []string{"", "/private/original-plan.md"} {
+		o := claudeResponseOriginal(false)
+		o.Claude.Kind, o.Claude.Tool.Name = ClaudePlanApproval, "ExitPlanMode"
+		input := map[string]any{"plan": "# Original plan"}
+		output := map[string]any{"plan": "# Original plan", "isAgent": false, "hasTaskTool": true, "planWasEdited": false}
+		if path != "" {
+			input["planFilePath"], output["filePath"] = path, path
+		}
+		raw, _ := json.Marshal(input)
+		o.Claude.InputJSON = string(raw)
+		tool := claudeSettlementTool(o)
+		reply := ClaudePermissionResponse{Behavior: ClaudeReplyAllow}
+		encoded, _ := json.Marshal(output)
+		result := string(encoded)
+		tool.Result.Structured = &result
+		if evidence, err := ClaudeCallbackResultEvidence(o, reply, tool); err != nil || evidence != ClaudePlanProcessed {
+			t.Fatal("original root Plan result lost", err)
+		}
+		for _, field := range []string{"plan", "isAgent", "filePath", "planWasEdited", "awaitingLeaderApproval", "requestId", "unknown", "null"} {
+			bad := map[string]any{}
+			for key, value := range output {
+				bad[key] = value
+			}
+			switch field {
+			case "plan":
+				bad[field] = "# Changed plan"
+			case "isAgent", "planWasEdited", "awaitingLeaderApproval":
+				bad[field] = true
+			case "filePath":
+				bad[field] = "/private/foreign-plan.md"
+			case "requestId":
+				bad[field] = "foreign-leader-request"
+			case "unknown":
+				bad[field] = true
+			case "null":
+				bad["filePath"] = nil
+			}
+			encoded, _ = json.Marshal(bad)
+			result = string(encoded)
+			if _, err := ClaudeCallbackResultEvidence(o, reply, tool); err == nil {
+				t.Fatal("unverified Plan result accepted", field)
+			}
+		}
+	}
+}

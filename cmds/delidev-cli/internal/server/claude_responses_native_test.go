@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -35,6 +36,7 @@ func TestManualNativeClaudeOriginalReplyDelivery(t *testing.T) {
 		{"allow-tool", domain.ExecuteMode, "Bash", false}, {"deny-tool", domain.ExecuteMode, "Bash", true},
 		{"answer-execute", domain.ExecuteMode, "AskUserQuestion", false}, {"answer-plan", domain.PlanMode, "AskUserQuestion", false},
 		{"deny-question", domain.ExecuteMode, "AskUserQuestion", true},
+		{"allow-plan-approval", domain.PlanMode, "ExitPlanMode", false}, {"deny-plan-approval", domain.PlanMode, "ExitPlanMode", true},
 	} {
 		t.Run(test.name, func(t *testing.T) { nativeClaudeReply(t, test.mode, test.tool, test.deny) })
 	}
@@ -64,11 +66,18 @@ func nativeClaudeReply(t *testing.T, mode domain.SessionMode, name string, deny 
 		params = map[string]any{"questions": []any{map[string]any{"question": "Which original option?", "header": "Choice", "multiSelect": false, "options": []any{map[string]any{"label": "One", "description": "First original option"}, map[string]any{"label": "Two", "description": "Second original option"}}}}}
 	}
 	input, _ := json.Marshal(params)
+	const plan = "# Original plan\nPreserve the exact original callback and verify its result.\n"
+	var planPath atomic.Value
+	planPath.Store("")
+	expectedRequests := int32(2)
+	if name == "ExitPlanMode" {
+		expectedRequests = 3
+	}
 	var calls atomic.Int32
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
 		n := calls.Add(1)
-		if n > 2 || r.Method != http.MethodPost || r.URL.Path != "/messages" || r.URL.RawQuery != "beta=true" || r.Header.Get("Authorization") != "Bearer temporary-upstream-fixture-key" || r.Header.Get("X-Api-Key") != "" {
+		if n > expectedRequests || r.Method != http.MethodPost || r.URL.Path != "/messages" || r.URL.RawQuery != "beta=true" || r.Header.Get("Authorization") != "Bearer temporary-upstream-fixture-key" || r.Header.Get("X-Api-Key") != "" {
 			t.Error("callback fixture escaped original registered inference")
 			w.WriteHeader(400)
 			return
@@ -80,10 +89,58 @@ func nativeClaudeReply(t *testing.T, mode domain.SessionMode, name string, deny 
 		block := map[string]any{"type": "tool_use", "id": "toolu_callback_original", "name": name, "input": map[string]any{}}
 		delta := map[string]any{"type": "input_json_delta", "partial_json": string(input)}
 		reason := "tool_use"
-		if n == 2 {
+		if n == expectedRequests {
 			block = map[string]any{"type": "text", "text": ""}
 			delta = map[string]any{"type": "text_delta", "text": "Original callback completed."}
 			reason = "end_turn"
+		}
+		if name == "ExitPlanMode" && n < expectedRequests {
+			if n == 1 {
+				var body struct {
+					Messages []struct {
+						Content json.RawMessage `json:"content"`
+					} `json:"messages"`
+				}
+				if json.Unmarshal(raw, &body) != nil {
+					t.Error("invalid Plan provider request")
+					w.WriteHeader(400)
+					return
+				}
+				var text strings.Builder
+				for _, m := range body.Messages {
+					var plain string
+					if json.Unmarshal(m.Content, &plain) == nil {
+						text.WriteString(plain)
+						continue
+					}
+					var blocks []struct {
+						Text string `json:"text"`
+					}
+					if json.Unmarshal(m.Content, &blocks) == nil {
+						for _, b := range blocks {
+							text.WriteString(b.Text)
+						}
+					}
+				}
+				matches := regexp.MustCompile(`You should create your plan at (.+?) using the Write tool\.`).FindAllStringSubmatch(text.String(), -1)
+				if len(matches) != 1 || filepath.Dir(matches[0][1]) != filepath.Join(runtimeRoot, "claude", "plans") || filepath.Ext(matches[0][1]) != ".md" {
+					t.Error("native Plan context lost its private artifact")
+					w.WriteHeader(400)
+					return
+				}
+				planPath.Store(matches[0][1])
+				block = map[string]any{"type": "tool_use", "id": "toolu_plan_write", "name": "Write", "input": map[string]any{}}
+				written, _ := json.Marshal(map[string]any{"file_path": matches[0][1], "content": plan})
+				delta = map[string]any{"type": "input_json_delta", "partial_json": string(written)}
+			} else {
+				bytes, err := os.ReadFile(planPath.Load().(string))
+				if err != nil || string(bytes) != plan {
+					t.Error("original native plan artifact changed")
+					w.WriteHeader(400)
+					return
+				}
+				delta = map[string]any{"type": "input_json_delta", "partial_json": "{}"}
+			}
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		for _, event := range []map[string]any{
@@ -169,7 +226,7 @@ func nativeClaudeReply(t *testing.T, mode domain.SessionMode, name string, deny 
 			if display == nil {
 				t.Fatal("content preceded acceptance")
 			}
-			settles := len(o.Content) == 1 && o.Content[0].Kind == claude.ToolResultObserved
+			settles := original != nil && len(o.Content) == 1 && o.Content[0].Kind == claude.ToolResultObserved && o.Content[0].ToolResult.ID == original.ToolID
 			if settles {
 				publication.dropAt = len(publication.calls) + 2
 			}
@@ -197,6 +254,9 @@ func nativeClaudeReply(t *testing.T, mode domain.SessionMode, name string, deny 
 					t.Fatal("original callback repeated")
 				}
 				original = o.Interaction.Request
+				if name == "ExitPlanMode" && (original.Kind != claude.PlanApproval || original.Plan == nil || *original.Plan != plan || original.PlanPath == nil || *original.PlanPath != planPath.Load().(string)) {
+					t.Fatal("native Plan callback lost original artifact")
+				}
 				lost = len(publication.calls) + 1
 				publication.dropAt = lost
 				handled, err := display.PublishInteractionObservation(ctx, o)
@@ -279,7 +339,7 @@ func nativeClaudeReply(t *testing.T, mode domain.SessionMode, name string, deny 
 			finished = true
 		}
 	}
-	if original == nil || calls.Load() != 2 {
+	if original == nil || calls.Load() != expectedRequests {
 		t.Fatal("original callback missing or inference repeated")
 	}
 	if err := s.Close(); err != nil {

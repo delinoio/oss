@@ -10,9 +10,10 @@ import (
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
-func claudeSettlementFixture(t *testing.T, question, deny, uncertain, echo bool) (*publicationFixture, domain.ExecutionEvent, domain.ExecutionEvent) {
+func claudeSettlementFixture(t *testing.T, kind domain.ClaudeInteractionKind, deny, uncertain, echo bool) (*publicationFixture, domain.ExecutionEvent, domain.ExecutionEvent) {
 	t.Helper()
-	f, original, sequence := claudeCallbackPublicationFixture(t, question)
+	question := kind == domain.ClaudeUserQuestion
+	f, original, sequence := claudeNamedCallbackPublicationFixture(t, kind)
 	f.registerGrant(t)
 	e := f.event(domain.ExecutionInteractionRequested, sequence+1)
 	e.Interaction = &original
@@ -79,6 +80,10 @@ func claudeSettlementFixture(t *testing.T, question, deny, uncertain, echo bool)
 		result.Structured = &output
 		evidence = domain.ClaudeAnswersProcessed
 	}
+	if kind == domain.ClaudePlanApproval {
+		output := `{"plan":"# Original plan","isAgent":false,"filePath":"/private/original-plan.md"}`
+		result.Structured, evidence = &output, domain.ClaudePlanProcessed
+	}
 	if deny {
 		failed := true
 		result.Error, result.Structured = &failed, nil
@@ -94,10 +99,11 @@ func claudeSettlementFixture(t *testing.T, question, deny, uncertain, echo bool)
 }
 
 func TestClaudeCallbackSettlementIsAtomicOnceOnlyAndKeepsPriorRecovery(t *testing.T) {
-	for _, question := range []bool{false, true} {
+	for _, kind := range []domain.ClaudeInteractionKind{domain.ClaudeToolPermission, domain.ClaudeUserQuestion, domain.ClaudePlanApproval} {
+		question := kind == domain.ClaudeUserQuestion
 		for _, deny := range []bool{false, true} {
 			for _, uncertain := range []bool{false, true} {
-				f, tool, settlement := claudeSettlementFixture(t, question, deny, uncertain, true)
+				f, tool, settlement := claudeSettlementFixture(t, kind, deny, uncertain, true)
 				f.publish(t, tool)
 				id := settlement.ClaudeSettlement.InteractionID
 				_, before := readPublishedInteraction(t, f, id)
@@ -151,7 +157,7 @@ func TestClaudeCallbackSettlementIsAtomicOnceOnlyAndKeepsPriorRecovery(t *testin
 func TestClaudeCallbackSettlementRejectsMissingAndForeignEvidence(t *testing.T) {
 	for _, change := range []string{"no-echo", "no-result", "arrival", "response", "claim", "tool", "native-result", "digest", "kind", "canceled", "wrong-answer"} {
 		t.Run(change, func(t *testing.T) {
-			f, tool, e := claudeSettlementFixture(t, true, false, false, change != "no-echo")
+			f, tool, e := claudeSettlementFixture(t, domain.ClaudeUserQuestion, false, false, change != "no-echo")
 			u := e.ClaudeSettlement
 			if change == "wrong-answer" {
 				bad := `{"questions":[],"answers":{"Original?":"foreign"}}`
