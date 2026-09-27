@@ -30,6 +30,8 @@ type claudePublicCase string
 const (
 	claudePublicCitations        claudePublicCase = "citations"
 	claudePublicCitationHistory  claudePublicCase = "continuation-citations"
+	claudePublicMultipleLocal    claudePublicCase = "continuation-multiple-local"
+	claudePublicMultipleWorktree claudePublicCase = "continuation-multiple-worktree"
 	claudePublicCompaction       claudePublicCase = "continuation-compaction"
 	claudePublicBackgroundStop   claudePublicCase = "background-stop"
 	claudePublicBashToolProgress claudePublicCase = "bash-tool-progress"
@@ -109,6 +111,12 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 		t.Skip("explicit pinned Claude binary and scripted provider required")
 	}
 	timeout := 45 * time.Second
+	if (scenario == claudePublicMultipleLocal || scenario == claudePublicMultipleWorktree) && len(recovery) != 0 {
+		// Recovery also repeats the full positive/negative comparison matrix.
+		// Three Git roots require many owned inspection subprocesses; this is
+		// the fixture's total budget, not a native startup/operation deadline.
+		timeout = 2 * time.Minute
+	}
 	// The pinned native main-tool heartbeat is emitted every 30 seconds. Keep
 	// the opt-in long-tool case alive through that original timer and cleanup.
 	if scenario == claudePublicBashToolProgress {
@@ -124,7 +132,8 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 		nativeModel = "claude-sonnet-4-6"
 	}
 	continuation := strings.HasPrefix(string(scenario), "continuation")
-	read := scenario == claudePublicRead || scenario == claudePublicReadError
+	multiple := scenario == claudePublicMultipleLocal || scenario == claudePublicMultipleWorktree
+	read := scenario == claudePublicRead || scenario == claudePublicReadError || multiple
 	effect := claudePublicEffectName(scenario)
 	background := scenario == claudePublicBackgroundStop
 	taskStarted := make(chan string, 1)
@@ -138,6 +147,7 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 	missingRead := scenario == claudePublicReadError
 	fault := continuation && !read && !questionHistory && effect == "" && scenario != claudePublicContinuation && scenario != claudePublicResume && !compaction && !citations
 	var readRoot atomic.Value
+	var allRoots atomic.Value
 	if continuation {
 		turns = 3
 	}
@@ -195,6 +205,23 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 			return
 		}
 		if read {
+			if multiple {
+				var request struct {
+					System json.RawMessage `json:"system"`
+				}
+				if json.Unmarshal(raw, &request) != nil {
+					t.Error("invalid root context")
+					w.WriteHeader(400)
+					return
+				}
+				for _, root := range allRoots.Load().([]string) {
+					if !bytes.Contains(request.System, []byte(root)) {
+						t.Error("native context omitted an original repository")
+						w.WriteHeader(400)
+						return
+					}
+				}
+			}
 			if !checkClaudePublicReadHistory(t, raw, n, missingRead) {
 				w.WriteHeader(400)
 				return
@@ -320,7 +347,11 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 			delta = map[string]any{"type": "input_json_delta", "partial_json": string(encoded)}
 			reason = "tool_use"
 		} else if read && n%2 == 1 {
-			params, _ := json.Marshal(map[string]any{"file_path": filepath.Join(readRoot.Load().(string), fmt.Sprintf("original-%d.txt", (n-1)/2))})
+			root := readRoot.Load().(string)
+			if multiple {
+				root = allRoots.Load().([]string)[(n-1)/2]
+			}
+			params, _ := json.Marshal(map[string]any{"file_path": filepath.Join(root, fmt.Sprintf("original-%d.txt", (n-1)/2))})
 			block = map[string]any{"type": "tool_use", "id": fmt.Sprintf("toolu_public_read_%d", (n-1)/2), "name": "Read", "input": map[string]any{}}
 			delta = map[string]any{"type": "input_json_delta", "partial_json": string(params)}
 			reason = "tool_use"
@@ -355,7 +386,16 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 		}
 	}))
 	defer upstream.Close()
-	f := newFirstDispatchFixtureProfile(t, domain.ClaudeCode, mode, binary, upstream.URL, nativeModel)
+	var f *firstDispatchFixture
+	if multiple {
+		kind := domain.Worktree
+		if scenario == claudePublicMultipleLocal {
+			kind = domain.Local
+		}
+		f = newFirstDispatchFixtureWorkspaceProfile(t, domain.ClaudeCode, mode, binary, upstream.URL, nativeModel, kind, openCodeMultipleProject)
+	} else {
+		f = newFirstDispatchFixtureProfile(t, domain.ClaudeCode, mode, binary, upstream.URL, nativeModel)
+	}
 	if compaction {
 		_, err := sessionClient(f.accountFixture).EditQueuedInput(ctx, ownerRequest(f.identity, &pb.EditQueuedInputRequest{Mutation: acctMutation(f.change.Input, domain.NewID()), SessionId: f.change.Session.Id, Prompt: "first retained input " + strings.Repeat("fixture ", 30000)}))
 		if err != nil {
@@ -373,9 +413,20 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 			t.Fatal("original fixture workspace unavailable", err)
 		}
 		readRoot.Store(manifest.PrimaryPath)
+		if multiple {
+			roots := manifest.WorkspaceRoots()
+			if len(roots) != 3 || roots[1] != manifest.PrimaryPath {
+				t.Fatal("multiple repository fixture lost original primary")
+			}
+			allRoots.Store(roots)
+		}
 		for i := 0; i < turns; i++ {
 			if !missingRead && (effect == "" || effect == "Edit") {
-				if err := os.WriteFile(filepath.Join(manifest.PrimaryPath, fmt.Sprintf("original-%d.txt", i)), []byte(fmt.Sprintf("Original retained Read %d.\n", i)), 0600); err != nil {
+				root := manifest.PrimaryPath
+				if multiple {
+					root = allRoots.Load().([]string)[i]
+				}
+				if err := os.WriteFile(filepath.Join(root, fmt.Sprintf("original-%d.txt", i)), []byte(fmt.Sprintf("Original retained Read %d.\n", i)), 0600); err != nil {
 					t.Fatal(err)
 				}
 			}

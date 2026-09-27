@@ -57,8 +57,8 @@ func (p claudeExecutionCheckpoint) matches(ref ExecutionCheckpointRef) bool {
 	native := p.NativeReference
 	inputs, err := domain.CheckedExecutionInputs(ref.Completion.InputID, hex.EncodeToString(ref.PromptDigest[:]), ref.AcceptedInputs)
 	// Claude's current native checkpoint has root input boundaries, not Codex
-	// same-turn Steer or independently proved multi-root native authority.
-	if err != nil || len(inputs) != 1 || len(ref.WorkspaceRoots) > 1 || ref.validateForHarness(domain.ClaudeCode) != nil || p.Version != 1 || p.JobID != ref.JobID || p.SessionID != ref.SessionID || p.MachineID != ref.MachineID || p.HistoryExecutionID != ref.HistoryExecutionID || p.AssignmentInputDigest != ref.AssignmentInputDigest || p.ConfigurationDigest != ref.ConfigurationDigest || p.AccountID != ref.AccountID || p.ConnectionID != ref.ConnectionID || p.Completion != terminal || !slices.Equal(p.WorkspaceRoots, ref.WorkspaceRoots) || native.SessionID != ref.SessionID || native.OwnerID != ref.JobID || native.InputID != ref.Completion.InputID || native.InputSHA256 != inputs[0].PromptDigest || native.NativeTurnID != string(ref.Completion.NativeTurnID) || string(native.SessionID) != string(ref.Completion.NativeThreadID) || native.SHA256 != executionInputDigest(p.Native) || len(p.Native) == 0 || len(p.Native) > 8<<20 || !json.Valid(p.Native) || (ref.Completion.Outcome != domain.ExecutionSucceeded && !native.RequiresResume) {
+	// same-turn Steer. Ordered workspace roots remain independently pinned.
+	if err != nil || len(inputs) != 1 || ref.validateForHarness(domain.ClaudeCode) != nil || p.Version != 1 || p.JobID != ref.JobID || p.SessionID != ref.SessionID || p.MachineID != ref.MachineID || p.HistoryExecutionID != ref.HistoryExecutionID || p.AssignmentInputDigest != ref.AssignmentInputDigest || p.ConfigurationDigest != ref.ConfigurationDigest || p.AccountID != ref.AccountID || p.ConnectionID != ref.ConnectionID || p.Completion != terminal || !slices.Equal(p.WorkspaceRoots, ref.WorkspaceRoots) || native.SessionID != ref.SessionID || native.OwnerID != ref.JobID || native.InputID != ref.Completion.InputID || native.InputSHA256 != inputs[0].PromptDigest || native.NativeTurnID != string(ref.Completion.NativeTurnID) || string(native.SessionID) != string(ref.Completion.NativeThreadID) || native.SHA256 != executionInputDigest(p.Native) || len(p.Native) == 0 || len(p.Native) > 8<<20 || !json.Valid(p.Native) || (ref.Completion.Outcome != domain.ExecutionSucceeded && !native.RequiresResume) {
 		return false
 	}
 	return true
@@ -92,7 +92,7 @@ func retainClaudeCompletion(ctx context.Context, root string, jobID domain.ID, j
 	if input.Continuation != nil {
 		ref.HistoryExecutionID = input.Continuation.HistoryExecutionID
 	}
-	if ref.validateForHarness(domain.ClaudeCode) != nil || len(ref.WorkspaceRoots) > 1 {
+	if ref.validateForHarness(domain.ClaudeCode) != nil {
 		return "", executionCheckpointUncertain()
 	}
 	path, err := executionCheckpointPath(root, input.ExecutionID)
@@ -143,7 +143,7 @@ func ReadClaudeExecutionCheckpoint(ctx context.Context, root string, ref Executi
 		return nil, err
 	}
 	historyRoot := filepath.Join(root, "runtimes", string(ref.HistoryExecutionID))
-	if config.Version != claude.SupportedVersion || config.SessionID != ref.SessionID || config.Process.OwnerID != ref.JobID || config.Process.Directory != filepath.Join(root, "processes") || config.Process.Cwd != historyRoot || config.Home != filepath.Join(historyRoot, "claude") {
+	if !slices.Equal(config.WorkspaceRoots, ref.WorkspaceRoots) || config.Version != claude.SupportedVersion || config.SessionID != ref.SessionID || config.Process.OwnerID != ref.JobID || config.Process.Directory != filepath.Join(root, "processes") || config.Process.Cwd != historyRoot || config.Home != filepath.Join(historyRoot, "claude") {
 		return nil, executionCheckpointUncertain()
 	}
 	closed, err := claude.RestoreCheckpoint(ctx, config, p.Native, p.NativeReference)

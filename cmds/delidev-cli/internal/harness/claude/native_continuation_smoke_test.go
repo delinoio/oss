@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -63,6 +64,7 @@ const (
 	nativeCheckpoint
 	nativeCheckpointAfterEOF
 	nativeCheckpointCitations
+	nativeCheckpointMultipleRoots
 )
 
 func TestManualNativeCheckpointAfterOriginalEOF(t *testing.T) {
@@ -78,6 +80,15 @@ func nativeClosedSessionContinuation(t *testing.T, profile nativeRetentionProfil
 		t.Run(string(permission), func(t *testing.T) {
 			cfg, logs := apiFixtureConfig(t, "native-continuation")
 			cfg.Process.Executable, cfg.Model, cfg.Permission = binary, "fixture-model", permission
+			if profile == nativeCheckpointMultipleRoots {
+				first, last := filepath.Join(filepath.Dir(cfg.Workspace), "first-extra-root"), filepath.Join(filepath.Dir(cfg.Workspace), "last extra root")
+				for _, root := range []string{first, last} {
+					if err := os.Mkdir(root, 0700); err != nil {
+						t.Fatal(err)
+					}
+				}
+				cfg.WorkspaceRoots = []string{first, cfg.Workspace, last}
+			}
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			var calls atomic.Int64
@@ -105,6 +116,15 @@ func nativeClosedSessionContinuation(t *testing.T, profile nativeRetentionProfil
 					return
 				}
 				original := 0
+				if profile == nativeCheckpointMultipleRoots {
+					for _, root := range cfg.WorkspaceRoots {
+						if !bytes.Contains(request.System, []byte(root)) {
+							t.Error("native provider context omitted an accepted workspace root")
+							w.WriteHeader(400)
+							return
+						}
+					}
+				}
 				for _, m := range request.Messages {
 					body := string(m.Content)
 					if !strings.Contains(body, "Fixture request") && !strings.Contains(body, "Fixture response") {
@@ -243,7 +263,7 @@ func nativeClosedSessionContinuation(t *testing.T, profile nativeRetentionProfil
 							t.Fatal("checkpoint contains private runtime content")
 						}
 					}
-					if profile == nativeCheckpointCitations {
+					if profile == nativeCheckpointCitations || profile == nativeCheckpointMultipleRoots {
 						inspection := configuration
 						digest := checkpointDigest([]byte(inspection.Instructions))
 						inspection.Instructions = ""

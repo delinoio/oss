@@ -44,16 +44,17 @@ type APIConfig struct {
 // must durably accept the session and register the token before opening it. It
 // does not grant public execution or authorize resume without a history binding.
 type APIStreamConfig struct {
-	Process      process.Config   `json:"-"`
-	Version      string           `json:"-"`
-	Home         string           `json:"-"`
-	Workspace    string           `json:"-"`
-	SessionID    domain.ID        `json:"-"`
-	Model        string           `json:"-"`
-	Effort       NativeEffort     `json:"-"`
-	Permission   NativePermission `json:"-"`
-	Instructions string           `json:"-"`
-	API          APIConfig        `json:"-"`
+	Process        process.Config   `json:"-"`
+	Version        string           `json:"-"`
+	Home           string           `json:"-"`
+	Workspace      string           `json:"-"`
+	WorkspaceRoots []string         `json:"-"`
+	SessionID      domain.ID        `json:"-"`
+	Model          string           `json:"-"`
+	Effort         NativeEffort     `json:"-"`
+	Permission     NativePermission `json:"-"`
+	Instructions   string           `json:"-"`
+	API            APIConfig        `json:"-"`
 }
 
 func apiConfigurationError() *domain.Error {
@@ -91,6 +92,9 @@ func prepareAPIStreamMode(config APIStreamConfig, resumed bool) (process.Config,
 	if err != nil || !info.IsDir() {
 		return process.Config{}, apiConfigurationError()
 	}
+	if err := validateWorkspaceRoots(config); err != nil {
+		return process.Config{}, err
+	}
 	// Fresh launches use discovery's empty private directories. The private
 	// closed-session handoff rechecks their retained ownership before reuse;
 	// only PATH and Windows system lookup context survive caller environment.
@@ -120,6 +124,11 @@ func prepareAPIStreamMode(config APIStreamConfig, resumed bool) (process.Config,
 	}
 	if config.Effort != "" {
 		args = append(args, "--effort="+string(config.Effort))
+	}
+	for _, root := range config.WorkspaceRoots {
+		if root != config.Workspace {
+			args = append(args, "--add-dir="+root)
+		}
 	}
 	if config.Instructions != "" {
 		path := filepath.Join(filepath.Dir(config.Home), "instructions.txt")
@@ -211,7 +220,7 @@ func openAPIStreamMode(ctx context.Context, config APIStreamConfig, resumed bool
 		return nil, err
 	}
 	if config.Process.Logger != nil {
-		config.Process.Logger.InfoContext(ctx, "Claude Code API stream initialized", "owner_id", config.Process.OwnerID, "version", config.Version)
+		config.Process.Logger.InfoContext(ctx, "Claude Code API stream initialized", "owner_id", config.Process.OwnerID, "version", config.Version, "additional_root_count", max(0, len(config.WorkspaceRoots)-1))
 	}
 	return s, nil
 }

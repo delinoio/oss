@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -68,6 +69,7 @@ type APISession struct {
 }
 
 func OpenAPISession(ctx context.Context, config APIStreamConfig) (*APISession, error) {
+	config.WorkspaceRoots = slices.Clone(config.WorkspaceRoots)
 	stream, err := OpenAPIStream(ctx, config)
 	if err != nil {
 		return nil, err

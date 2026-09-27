@@ -177,11 +177,7 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 		if request.Type == domain.GeneralChat && machine.OS == "windows" {
 			return empty, domain.Fail(domain.Unsupported, "OpenCode General Chat requires a verified native Windows root identity.", "Preserve the prepared workspace; do not infer native non-VCS path ownership.")
 		}
-	} else if c.Harness == domain.ClaudeCode {
-		if len(manifest.Repositories) > 1 {
-			return empty, domain.Fail(domain.Unsupported, "Claude multiple-repository execution requires its original native reference adapter.", "Preserve all selected repositories; do not silently omit a root.")
-		}
-	} else {
+	} else if c.Harness == domain.Codex {
 		settings := codex.ThreadSettings{Model: c.NativeModel, Provider: codex.APIProvider, Cwd: manifest.PrimaryPath, Effort: c.Effort, Instructions: c.Instructions, Options: c.Options}
 		if len(manifest.Repositories) > 1 {
 			settings.WorkspaceRoots = manifest.WorkspaceRoots()

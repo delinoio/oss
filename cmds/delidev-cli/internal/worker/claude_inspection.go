@@ -17,7 +17,7 @@ import (
 // instruction body reaches the native inspector and no process is launched.
 func inspectCompletedClaudeCheckpoint(ctx context.Context, root string, ref CompletedExecutionRef, completion domain.ExecutionCompletion, cwd string) error {
 	c, native := ref.Checkpoint, ref.Claude
-	if ref.Harness != domain.ClaudeCode || native == nil || native.Validate() != nil || completion.Outcome != domain.ExecutionSucceeded || string(completion.NativeThreadID) != string(c.SessionID) || (native.ClaimVersion == 1) != (c.HistoryExecutionID == completion.ExecutionID) || ref.Preparation.Type != ref.Manifest.Type || len(c.WorkspaceRoots) != 0 || len(ref.Manifest.Repositories) > 1 {
+	if ref.Harness != domain.ClaudeCode || native == nil || native.Validate() != nil || completion.Outcome != domain.ExecutionSucceeded || string(completion.NativeThreadID) != string(c.SessionID) || (native.ClaimVersion == 1) != (c.HistoryExecutionID == completion.ExecutionID) || ref.Preparation.Type != ref.Manifest.Type || len(c.WorkspaceRoots) != 0 {
 		return executionCheckpointUncertain()
 	}
 	bindings, err := domain.CheckedExecutionInputs(c.Completion.InputID, hex.EncodeToString(c.PromptDigest[:]), c.AcceptedInputs)
@@ -44,6 +44,6 @@ func inspectCompletedClaudeCheckpoint(ctx context.Context, root string, ref Comp
 		return executionCheckpointUncertain()
 	}
 	history := filepath.Join(root, "runtimes", string(c.HistoryExecutionID))
-	config := claude.APIStreamConfig{Process: process.Config{Directory: filepath.Join(root, "processes"), OwnerID: c.JobID, Executable: native.Executable, Cwd: history}, Version: native.Version, Home: filepath.Join(history, "claude"), Workspace: cwd, SessionID: c.SessionID, Model: native.Model, Permission: claude.NativePermission(native.Permission), Effort: claude.NativeEffort(native.Effort), API: claude.APIConfig{ServerOrigin: credential.Endpoint}}
+	config := claude.APIStreamConfig{Process: process.Config{Directory: filepath.Join(root, "processes"), OwnerID: c.JobID, Executable: native.Executable, Cwd: history}, Version: native.Version, Home: filepath.Join(history, "claude"), Workspace: cwd, WorkspaceRoots: c.WorkspaceRoots, SessionID: c.SessionID, Model: native.Model, Permission: claude.NativePermission(native.Permission), Effort: claude.NativeEffort(native.Effort), API: claude.APIConfig{ServerOrigin: credential.Endpoint}}
 	return claude.InspectCheckpoint(ctx, config, native.InstructionsDigest, saved.Native, saved.NativeReference)
 }

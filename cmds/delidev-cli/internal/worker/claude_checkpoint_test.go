@@ -88,7 +88,6 @@ func TestClaudeCheckpointMetadataRequiresExactExecutionAndAccountOwnership(t *te
 				f.ref.AcceptedInputs = []domain.ExecutionInputBinding{domain.BindExecutionInput(f.input.InputID, f.input.Input.Prompt), domain.BindExecutionInput(domain.NewID(), "unsupported same-turn input")}
 			case "roots":
 				f.ref.WorkspaceRoots = []string{f.root, filepath.Join(f.root, "another")}
-				p.WorkspaceRoots = f.ref.WorkspaceRoots
 			case "codex":
 				f.ref.Completion.NativeThreadID = domain.NativeIdentity(domain.NewID())
 			}
@@ -96,6 +95,23 @@ func TestClaudeCheckpointMetadataRequiresExactExecutionAndAccountOwnership(t *te
 				t.Fatal("foreign native checkpoint metadata accepted")
 			}
 		})
+	}
+}
+
+func TestClaudeCheckpointMetadataPinsCompleteOrderedRoots(t *testing.T) {
+	f, p := claudeCheckpointMetadataFixture(t)
+	f.ref.WorkspaceRoots = []string{filepath.Join(f.root, "first"), filepath.Join(f.root, "primary"), filepath.Join(f.root, "last")}
+	p.WorkspaceRoots = append([]string{}, f.ref.WorkspaceRoots...)
+	if !p.matches(f.ref) {
+		t.Fatal("matching multiple roots rejected")
+	}
+	p.WorkspaceRoots[0], p.WorkspaceRoots[2] = p.WorkspaceRoots[2], p.WorkspaceRoots[0]
+	if p.matches(f.ref) {
+		t.Fatal("reordered root authority accepted")
+	}
+	p.WorkspaceRoots = nil
+	if p.matches(f.ref) {
+		t.Fatal("legacy omitted roots granted multiple-root authority")
 	}
 }
 

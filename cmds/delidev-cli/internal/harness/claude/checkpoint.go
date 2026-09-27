@@ -189,6 +189,7 @@ func InspectCheckpoint(ctx context.Context, config APIStreamConfig, instructions
 }
 
 func restoreCheckpoint(ctx context.Context, config APIStreamConfig, raw []byte, ref CheckpointReference, instructionsSHA256 string) (*ClosedAPISession, error) {
+	config.WorkspaceRoots = slices.Clone(config.WorkspaceRoots)
 	if err := ctx.Err(); err != nil {
 		return nil, domain.SafeError(err)
 	}
@@ -283,7 +284,8 @@ func checkpointConfigurationDigest(config APIStreamConfig, origin, instructionsS
 	// their contents in the checkpoint or allowing the file to supply them.
 	value := struct {
 		Version, Executable, Directory, Runtime, Home, Workspace, Model, Effort, Permission, Instructions, Origin string
-	}{config.Version, config.Process.Executable, config.Process.Directory, config.Process.Cwd, config.Home, config.Workspace, config.Model, string(config.Effort), string(config.Permission), instructionsSHA256, origin}
+		WorkspaceRoots                                                                                            []string `json:",omitempty"`
+	}{config.Version, config.Process.Executable, config.Process.Directory, config.Process.Cwd, config.Home, config.Workspace, config.Model, string(config.Effort), string(config.Permission), instructionsSHA256, origin, config.WorkspaceRoots}
 	raw, _ := json.Marshal(value)
 	return checkpointDigest(raw)
 }
@@ -293,6 +295,9 @@ func (cp sessionCheckpoint) validate(config APIStreamConfig, origin string, ref 
 }
 
 func (cp sessionCheckpoint) validateConfiguration(config APIStreamConfig, origin string, ref CheckpointReference, instructionsSHA256 string) error {
+	if validateWorkspaceRoots(config) != nil {
+		return historyUncertain()
+	}
 	if cp.Version != 1 || config.Version != SupportedVersion || !validHistoryDigest(ref.SHA256) || cp.Configuration != checkpointConfigurationDigest(config, origin, instructionsSHA256) || cp.Session != ref.SessionID || cp.Session != config.SessionID || cp.Owner != ref.OwnerID || cp.Owner != config.Process.OwnerID || cp.Input != ref.InputID || cp.InputDigest != ref.InputSHA256 || !validHistoryDigest(cp.InputDigest) || cp.Turn != ref.NativeTurnID || !nativeUUID(cp.Turn) || cp.Applied.Model != config.Model || (cp.Applied.Effort != nil && !validNativeEffort(*cp.Applied.Effort, false)) || (config.Effort != "" && (cp.Applied.Effort == nil || *cp.Applied.Effort != config.Effort)) || !validNativePermission(config.Permission) {
 		return historyUncertain()
 	}
