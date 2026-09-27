@@ -22,16 +22,19 @@ import (
 
 // This native schema regression deliberately uses test-only transport sends.
 // It does not grant the still-required durable original Stop/Worker controller.
-func TestManualNativeGrokInterruptedText(t *testing.T) { nativeInterruptedText(t, false) }
+func TestManualNativeGrokInterruptedText(t *testing.T) { nativeInterruptedText(t, false, false) }
 
-func TestManualNativeGrokOwnedTextStop(t *testing.T) { nativeInterruptedText(t, true) }
+func TestManualNativeGrokOwnedTextStop(t *testing.T) { nativeInterruptedText(t, true, false) }
 
-func nativeInterruptedText(t *testing.T, owned bool) {
+func TestManualNativeGrokOwnedPendingTextStop(t *testing.T) { nativeInterruptedText(t, true, true) }
+
+func nativeInterruptedText(t *testing.T, owned, pending bool) {
 	t.Helper()
 	binary := os.Getenv("DELIDEV_NATIVE_GROK_EXECUTABLE")
 	if binary == "" {
 		t.Skip("explicit private native binary required")
 	}
+	providerStarted := make(chan struct{}, 1)
 	var calls atomic.Uint32
 	var canceled atomic.Uint32
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -54,6 +57,12 @@ func nativeInterruptedText(t *testing.T, owned bool) {
 			return
 		}
 		calls.Add(1)
+		if pending {
+			providerStarted <- struct{}{}
+			<-r.Context().Done()
+			canceled.Add(1)
+			return
+		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = fmt.Fprint(w, "data: {\"id\":\"chat-stop-fixture\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"fixture-model\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"Partial original stop fixture.\"},\"finish_reason\":null}]}\n\n")
 		w.(http.Flusher).Flush()
@@ -72,6 +81,7 @@ func nativeInterruptedText(t *testing.T, owned bool) {
 		return claim.Validate()
 	})
 	if err != nil {
+		t.Log(logs.String())
 		t.Fatal(err)
 	}
 	api := controlled.connection
@@ -102,6 +112,7 @@ func nativeInterruptedText(t *testing.T, owned bool) {
 	}()
 	session, err := controlled.Create(ctx, domain.NewID(), domain.NewID())
 	if err != nil {
+		t.Log(logs.String())
 		t.Fatal(err)
 	}
 	if owned {
@@ -112,6 +123,17 @@ func nativeInterruptedText(t *testing.T, owned bool) {
 			switch observation.Kind {
 			case InputAccepted:
 				accepted = true
+				if pending {
+					select {
+					case <-providerStarted:
+					case <-callbackContext.Done():
+						return callbackContext.Err()
+					}
+					submitted, err := controlled.StopText(callbackContext, request)
+					if err != nil || !submitted.Delivered {
+						t.Fatal("original pending Stop was not delivered", err)
+					}
+				}
 			case InputText:
 				if !accepted {
 					t.Fatal("unaccepted interrupted text")
@@ -136,6 +158,21 @@ func nativeInterruptedText(t *testing.T, owned bool) {
 			}
 			return nil
 		})
+		if pending {
+			proof, inspectErr := controlled.InspectStop()
+			if err == nil || domain.SafeError(err).Code != domain.Canceled || !accepted || !settled || len(stopClaims) != 1 || partial.Len() != 0 || inspectErr != nil || !proof.Delivered || !proof.Idle || !proof.CleanupJoined || proof.NativeReason != Cancelled || proof.Category != MidTurnAbort {
+				t.Fatal("pending original Stop native facts incomplete", err, inspectErr, proof.NativeReason, proof.Category, proof.CleanupJoined)
+			}
+			observed, err := controlled.ObserveStoppedText(ctx)
+			if err != nil || observed.Validate(config.Model) != nil || observed.Interrupted == nil || observed.Completed != nil || len(observed.ChunkDigests) != 0 || observed.OutputDigest != "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" || proof.ProblemCode != "" {
+				t.Fatal("pending Stop fabricated original text or usage", err)
+			}
+			provider.Close()
+			if calls.Load() == 0 || calls.Load() != canceled.Load() || ctx.Err() != nil {
+				t.Fatal("pending native Stop did not join provider work")
+			}
+			return
+		}
 		if err == nil || domain.SafeError(err).Code != domain.Canceled || !accepted || !settled || len(stopClaims) != 1 || partial.String() != "Partial original stop fixture." {
 			t.Fatal("original controlled native Stop incomplete", err)
 		}

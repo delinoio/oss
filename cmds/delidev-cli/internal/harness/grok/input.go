@@ -717,7 +717,7 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 						return result, err
 					}
 				case retryMetadata:
-					if profile != plainTextInput || !queue.running || len(settled.chunks) == 0 || observation.retry == nil || observation.retry.Attempt != uint64(len(settled.retries)+1) {
+					if profile != plainTextInput || !queue.running || observation.retry == nil || observation.retry.Attempt != uint64(len(settled.retries)+1) {
 						return result, incompatible()
 					}
 					settled.retries = append(settled.retries, *observation.retry)

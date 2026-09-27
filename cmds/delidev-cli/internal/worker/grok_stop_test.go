@@ -15,15 +15,17 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
-func grokStoppedPublicationFixture(t *testing.T, completed bool) (*GrokBindingPublisher, *openCodeBindingRPC, grok.StoppedTextObservation) {
+func grokStoppedPublicationFixture(t *testing.T, kind domain.GrokStopKind) (*GrokBindingPublisher, *openCodeBindingRPC, grok.StoppedTextObservation) {
 	t.Helper()
 	c, client := acceptedGrokContentFixture(t)
 	ctx := context.Background()
 	// Lose the original text receipt before the independent Stop claim. The
 	// Stop tail must not prevent acknowledging exactly that pending receipt.
-	client.lose = true
-	if c.ObserveContent(ctx, grokContentText(c)) == nil {
-		t.Fatal("text receipt unexpectedly acknowledged")
+	if kind != domain.GrokInterruptedBeforeText {
+		client.lose = true
+		if c.ObserveContent(ctx, grokContentText(c)) == nil {
+			t.Fatal("text receipt unexpectedly acknowledged")
+		}
 	}
 	digest, _ := grok.ClosureClaimDigest(c.thread)
 	claim := grok.StopClaim{Version: 1, OwnerID: c.reference.JobID, ProductSessionID: c.reference.SessionID, InputRequestID: c.reference.InputRequestID, RequestID: domain.NewID(), NativeSessionID: c.thread, NativePromptID: c.turn, BodyDigest: digest}
@@ -45,13 +47,15 @@ func grokStoppedPublicationFixture(t *testing.T, completed bool) (*GrokBindingPu
 		t.Fatal("Stop claim reopened")
 	}
 	client.lose = false
-	if err := c.ReplayPending(ctx); err != nil {
-		t.Fatal(err)
+	if kind != domain.GrokInterruptedBeforeText {
+		if err := c.ReplayPending(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(client.events[2], client.events[3]) || client.requests[2] != client.requests[3] {
+			t.Fatal("Stop changed pending original receipt")
+		}
 	}
-	if !bytes.Equal(client.events[2], client.events[3]) || client.requests[2] != client.requests[3] {
-		t.Fatal("Stop changed pending original receipt")
-	}
-	if completed {
+	if kind == domain.GrokCompletedDuringStop {
 		if err := c.ObserveContent(ctx, grokContentResponse(t, c)); err != nil {
 			t.Fatal(err)
 		}
@@ -71,7 +75,7 @@ func grokStoppedPublicationFixture(t *testing.T, completed bool) (*GrokBindingPu
 			t.Fatal(err)
 		}
 	}
-	if completed {
+	if kind == domain.GrokCompletedDuringStop {
 		v.Stop.NativeReason = grok.EndTurn
 		v.Completed = &grok.TextTerminal{}
 		load("prompt-result", &v.Completed.Result)
@@ -94,8 +98,8 @@ func grokStoppedPublicationFixture(t *testing.T, completed bool) (*GrokBindingPu
 }
 
 func TestGrokStopPublishesOriginalTerminalAndReplaysOnlyReceipt(t *testing.T) {
-	for _, completed := range []bool{false, true} {
-		c, client, v := grokStoppedPublicationFixture(t, completed)
+	for _, kind := range []domain.GrokStopKind{domain.GrokInterruptedBeforeText, domain.GrokInterruptedText, domain.GrokCompletedDuringStop} {
+		c, client, v := grokStoppedPublicationFixture(t, kind)
 		before, _ := security.ReadPrivate(c.journal.path, maxGrokClaimBytes)
 		client.lose = true
 		if c.publishStoppedText(context.Background(), v) == nil || c.stage != grokTerminalPending {
@@ -115,22 +119,29 @@ func TestGrokStopPublishesOriginalTerminalAndReplaysOnlyReceipt(t *testing.T) {
 		}
 		proof, err := c.TextCompletion()
 		outcome := domain.ExecutionStopped
-		if completed {
+		if kind == domain.GrokCompletedDuringStop {
 			outcome = domain.ExecutionSucceeded
 		}
-		if err != nil || proof.Outcome != outcome || proof.Version != 1 || proof.NativeCheckpointDigest != "" || c.stopped == nil {
+		if err != nil || proof.Outcome != outcome || proof.Version != 1 || proof.NativeCheckpointDigest != "" || c.stopped == nil || c.stopped.Kind != kind {
 			t.Fatal("Stop lost original outcome or acquired history", err)
 		}
-		if !completed && (c.stopped.Completed != nil || c.stopped.ContextTokens == nil || len(c.stopped.Retries) != 1) {
+		if kind != domain.GrokCompletedDuringStop && (c.stopped.Completed != nil || c.stopped.ContextTokens == nil || len(c.stopped.Retries) != 1) {
 			t.Fatal("interrupted context/retry became usage")
+		}
+		if kind == domain.GrokInterruptedBeforeText && (c.stopped.MessageID != "" || c.stopped.TextChunks != 0 || c.content != (domain.GrokContentState{})) {
+			t.Fatal("pre-text Stop fabricated output")
 		}
 	}
 }
 
 func TestGrokStopRejectsChangedOriginalComparison(t *testing.T) {
-	for _, name := range []string{"input", "creation", "output", "chunk", "stop", "model", "terminal", "retry", "journal", "usage"} {
+	for _, name := range []string{"input", "creation", "output", "chunk", "stop", "model", "terminal", "retry", "journal", "usage", "hidden-output", "pending-metadata", "pending-message"} {
 		t.Run(name, func(t *testing.T) {
-			c, client, v := grokStoppedPublicationFixture(t, false)
+			kind := domain.GrokInterruptedText
+			if strings.HasPrefix(name, "pending-") {
+				kind = domain.GrokInterruptedBeforeText
+			}
+			c, client, v := grokStoppedPublicationFixture(t, kind)
 			switch name {
 			case "input":
 				v.InputDigest = strings.Repeat("ab", 32)
@@ -152,6 +163,12 @@ func TestGrokStopRejectsChangedOriginalComparison(t *testing.T) {
 				c.journal.closed = true
 			case "usage":
 				c.content.Responses = 1
+			case "hidden-output":
+				v.ChunkDigests, v.OutputDigest = nil, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+			case "pending-metadata":
+				c.content.LastEvent = string(c.thread) + "-10"
+			case "pending-message":
+				c.firstTextID, c.content.MessageID = domain.NewID(), domain.NewID()
 			}
 			n := len(client.events)
 			if c.publishStoppedText(context.Background(), v) == nil || len(client.events) != n {

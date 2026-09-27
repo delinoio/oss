@@ -65,6 +65,15 @@ func TestStoppedTextObservationRetainsIndependentTerminalAndContent(t *testing.T
 				t.Fatal("caller modified original Stop facts", err)
 			}
 			encoded, _ := json.Marshal(original)
+			// Zero observed chunks are valid only for the independently interrupted
+			// variant with the exact digest of empty output. This shape check alone
+			// cannot replace the original controller's retained comparison.
+			pending, _ := owned.ObserveStoppedText(context.Background())
+			empty := sha256.Sum256(nil)
+			pending.ChunkDigests, pending.OutputDigest = nil, hex.EncodeToString(empty[:])
+			if (pending.Validate(config.Model) == nil) != (mode == "stop-valid") {
+				t.Fatal("zero-output variant lost interruption/completion distinction")
+			}
 			for name, mutate := range map[string]func(*StoppedTextObservation){
 				"missing delivery": func(v *StoppedTextObservation) { v.Stop.Delivered = false },
 				"missing cleanup":  func(v *StoppedTextObservation) { v.Stop.CleanupJoined = false },

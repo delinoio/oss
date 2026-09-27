@@ -1,6 +1,9 @@
 package domain
 
-import "encoding/hex"
+import (
+	"crypto/sha256"
+	"encoding/hex"
+)
 
 type GrokStopKind string
 type GrokCancellationCategory string
@@ -23,8 +26,9 @@ type GrokStopRetry struct {
 }
 
 const (
-	GrokInterruptedText     GrokStopKind = "interrupted-text"
-	GrokCompletedDuringStop GrokStopKind = "completed-during-stop"
+	GrokInterruptedBeforeText GrokStopKind = "interrupted-before-text"
+	GrokInterruptedText       GrokStopKind = "interrupted-text"
+	GrokCompletedDuringStop   GrokStopKind = "completed-during-stop"
 )
 
 type GrokStopCompletion struct {
@@ -36,14 +40,15 @@ type GrokStopCompletion struct {
 }
 
 // A Stop owns one already accepted text input. Interrupted context is separate
-// from absent usage; a raced completion retains its original counts. Neither
-// variant supplies a native closed-history digest or continuation checkpoint.
+// from absent usage; an interruption before text owns no assistant message.
+// A raced completion retains its original counts. No variant supplies a native
+// closed-history digest or continuation checkpoint.
 type GrokStopObservation struct {
 	Kind           GrokStopKind             `json:"kind"`
 	RequestID      ID                       `json:"request_id"`
 	InputID        ID                       `json:"input_id"`
 	InputRequestID ID                       `json:"input_request_id"`
-	MessageID      ID                       `json:"message_id"`
+	MessageID      ID                       `json:"message_id,omitempty"`
 	NativeEventID  string                   `json:"native_event_id"`
 	TimestampMS    string                   `json:"timestamp_ms"`
 	ElapsedMS      string                   `json:"elapsed_ms"`
@@ -60,7 +65,7 @@ type GrokStopObservation struct {
 }
 
 func (v GrokStopObservation) Outcome() ExecutionOutcome {
-	if v.Kind == GrokInterruptedText {
+	if v.Kind == GrokInterruptedText || v.Kind == GrokInterruptedBeforeText {
 		return ExecutionStopped
 	}
 	if v.Kind == GrokCompletedDuringStop {
@@ -71,13 +76,25 @@ func (v GrokStopObservation) Outcome() ExecutionOutcome {
 
 func (v GrokStopObservation) Validate(thread string) error {
 	seen := map[ID]bool{}
-	for _, id := range []ID{v.RequestID, v.InputID, v.InputRequestID, v.MessageID} {
+	ids := []ID{v.RequestID, v.InputID, v.InputRequestID}
+	if v.Kind != GrokInterruptedBeforeText {
+		ids = append(ids, v.MessageID)
+	}
+	for _, id := range ids {
 		if id.Validate() != nil || seen[id] || string(id) == thread {
 			return invalidGrokContent()
 		}
 		seen[id] = true
 	}
-	if Text(v.Model, "original Grok model", 256, true) != nil || !v.Delivered || !v.Idle || !v.CleanupJoined || v.TextChunks == 0 || v.TextChunks > 1024 {
+	if Text(v.Model, "original Grok model", 256, true) != nil || !v.Delivered || !v.Idle || !v.CleanupJoined || v.TextChunks > 1024 {
+		return invalidGrokContent()
+	}
+	if v.Kind == GrokInterruptedBeforeText {
+		empty := sha256.Sum256(nil)
+		if v.MessageID != "" || v.TextChunks != 0 || v.OutputDigest != hex.EncodeToString(empty[:]) {
+			return invalidGrokContent()
+		}
+	} else if v.TextChunks == 0 {
 		return invalidGrokContent()
 	}
 	if _, err := GrokEventIndex(v.NativeEventID, thread); err != nil {
@@ -108,7 +125,7 @@ func (v GrokStopObservation) Validate(thread string) error {
 		return invalidGrokContent()
 	}
 	switch v.Kind {
-	case GrokInterruptedText:
+	case GrokInterruptedText, GrokInterruptedBeforeText:
 		if v.Category != GrokMidTurnAbort || v.ContextTokens == nil || v.Completed != nil {
 			return invalidGrokContent()
 		}

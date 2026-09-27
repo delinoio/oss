@@ -2,6 +2,7 @@ package grok
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 
@@ -98,8 +99,14 @@ func (a *OwnedAPI) ObserveStoppedText(ctx context.Context) (StoppedTextObservati
 func (v StoppedTextObservation) Validate(model string) error {
 	s := v.Stop
 	c := s.Claim
-	if c.Validate() != nil || v.CreationRequestID.Validate() != nil || v.CreationRequestID == c.RequestID || v.CreationRequestID == c.InputRequestID || !s.Claimed || !s.Attempted || !s.Delivered || !s.Idle || !s.CleanupJoined || s.ProblemCode != "" || len(v.ChunkDigests) == 0 || len(v.ChunkDigests) > 100000 {
+	if c.Validate() != nil || v.CreationRequestID.Validate() != nil || v.CreationRequestID == c.RequestID || v.CreationRequestID == c.InputRequestID || !s.Claimed || !s.Attempted || !s.Delivered || !s.Idle || !s.CleanupJoined || s.ProblemCode != "" || len(v.ChunkDigests) > 100000 {
 		return incompatible()
+	}
+	if len(v.ChunkDigests) == 0 {
+		empty := sha256.Sum256(nil)
+		if v.Interrupted == nil || v.Completed != nil || v.OutputDigest != hex.EncodeToString(empty[:]) {
+			return incompatible()
+		}
 	}
 	for _, value := range append([]string{v.InputDigest, v.OutputDigest}, v.ChunkDigests...) {
 		digest, err := hex.DecodeString(value)

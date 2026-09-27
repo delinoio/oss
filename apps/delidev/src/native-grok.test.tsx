@@ -105,6 +105,42 @@ it.each([false,true])("keeps Stop native outcome, usage and workspace cleanup in
  if(!completed) {expect(screen.getByText("Input usage").nextElementSibling?.textContent).toBe("Not reported");expect(screen.getByText("Reported context tokens").nextElementSibling?.textContent).toBe("18446744073709551615");}
  expect(screen.queryByRole("button")).toBeNull();
 });
+function beforeTextFixture(): Document {
+ const data=stoppedFixture(),v=object(data.grok_stop);
+ delete data.grok_content;delete v.message_id;
+ v.kind="interrupted-before-text";v.text_chunks=0;v.output_digest="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+ return data;
+}
+it("shows original pre-text Stop without inventing a message, usage or workspace cleanup",()=>{
+ render(<NativeGrokStop progress={beforeTextFixture()}/>);
+ expect(screen.getByText("Native outcome").nextElementSibling?.textContent).toBe("Interrupted before first text");
+ expect(screen.getByText(/No assistant text was observed/)).toBeTruthy();
+ expect(screen.getByText("Input usage").nextElementSibling?.textContent).toBe("Not reported");
+ expect(screen.getByText("Reported context tokens").nextElementSibling?.textContent).toBe("18446744073709551615");
+ expect(screen.getByText("Workspace cleanup report").nextElementSibling?.textContent).toBe("Not yet verified");
+ expect(screen.queryByText(/Partial output remains visible/)).toBeNull();
+ expect(screen.queryByRole("button")).toBeNull();
+});
+it.each(["message","empty-message","null-message","chunks","digest","content","null-content","usage","context","completed","input","mixed","event","outcome"])("rejects invented or mixed pre-text Stop: %s",change=>{
+ const data=beforeTextFixture(),v=object(data.grok_stop);
+ if(change==="message")v.message_id=messageId;
+ if(change==="empty-message")v.message_id="";
+ if(change==="null-message")v.message_id=null;
+ if(change==="chunks")v.text_chunks=1;
+ if(change==="digest")v.output_digest="ab".repeat(32);
+ if(change==="content")data.grok_content=stoppedFixture().grok_content;
+ if(change==="null-content")data.grok_content=null;
+ if(change==="usage")data.latest_usage_id=messageId;
+ if(change==="context")delete v.context_tokens;
+ if(change==="completed")v.completed={};
+ if(change==="input")v.input_id=messageId;
+ if(change==="mixed")data.claude_stop={};
+ if(change==="event")v.native_event_id="foreign-12";
+ if(change==="outcome")data.outcome="succeeded";
+ render(<NativeGrokStop progress={data}/>);
+ expect(screen.getByText(/Stop is unavailable or inconsistent/)).toBeTruthy();
+ expect(screen.queryByText("Reported context tokens")).toBeNull();
+});
 it.each(["input","mode","model","mixed","partial","chunks","context","usage","cleanup","retry","event","rounded","scope","outcome"])("rejects changed Grok Stop: %s",change=>{
  const data=stoppedFixture(),v=object(data.grok_stop);
  if(change==="input")v.input_id=messageId;

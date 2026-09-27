@@ -35,6 +35,8 @@ const (
 	grokPublicCancellation
 	grokPublicStoppedText
 	grokPublicStoppedCleanupFailure
+	grokPublicPendingTextStop
+	grokPublicPendingCleanupFailure
 )
 
 func TestManualNativeGrokPublicFirstTextDispatch(t *testing.T) {
@@ -57,10 +59,18 @@ func TestManualNativeGrokPublicStoppedCleanupFailure(t *testing.T) {
 	nativeGrokPublicFirstText(t, grokPublicStoppedCleanupFailure)
 }
 
+func TestManualNativeGrokPublicPendingTextStop(t *testing.T) {
+	nativeGrokPublicFirstText(t, grokPublicPendingTextStop)
+}
+func TestManualNativeGrokPublicPendingStopCleanupFailure(t *testing.T) {
+	nativeGrokPublicFirstText(t, grokPublicPendingCleanupFailure)
+}
+
 func nativeGrokPublicFirstText(t *testing.T, scenario grokPublicScenario) {
 	t.Helper()
-	cleanupFailure, cancelled := scenario == grokPublicCleanupFailure || scenario == grokPublicStoppedCleanupFailure, scenario == grokPublicCancellation
-	stopped := scenario == grokPublicStoppedText || scenario == grokPublicStoppedCleanupFailure
+	cleanupFailure, cancelled := scenario == grokPublicCleanupFailure || scenario == grokPublicStoppedCleanupFailure || scenario == grokPublicPendingCleanupFailure, scenario == grokPublicCancellation
+	pending := scenario == grokPublicPendingTextStop || scenario == grokPublicPendingCleanupFailure
+	stopped := scenario == grokPublicStoppedText || scenario == grokPublicStoppedCleanupFailure || pending
 	binary := os.Getenv("DELIDEV_NATIVE_GROK_EXECUTABLE")
 	if binary == "" {
 		t.Skip("explicit pinned native Grok and scripted loopback provider required")
@@ -97,7 +107,7 @@ func nativeGrokPublicFirstText(t *testing.T, scenario grokPublicScenario) {
 			t.Error("original native input was changed")
 		}
 		if cancelled || stopped {
-			if stopped {
+			if stopped && !pending {
 				w.Header().Set("Content-Type", "text/event-stream")
 				_, _ = io.WriteString(w, "data: {\"id\":\"chatcmpl-grok-stop\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"fixture-model\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"Original public Grok completion.\"},\"finish_reason\":null}]}\n\n")
 				w.(http.Flusher).Flush()
@@ -140,7 +150,22 @@ func nativeGrokPublicFirstText(t *testing.T, scenario grokPublicScenario) {
 			if stopped {
 				terminalSequence = 4
 			}
-			drop = publications.Add(1) == terminalSequence
+			if pending {
+				terminalSequence = 3
+			}
+			number := publications.Add(1)
+			if cancelled && number == 2 {
+				// Preserve a committed input acceptance with its original acknowledgment
+				// blocked. Startup cancellation must retain uncertainty and never claim Stop.
+				retained := httptest.NewRecorder()
+				handler.ServeHTTP(retained, r)
+				if retained.Code != http.StatusOK {
+					t.Error("input acceptance did not commit", retained.Code)
+				}
+				<-r.Context().Done()
+				return
+			}
+			drop = number == terminalSequence
 			if drop && cleanupFailure {
 				select {
 				case <-assignmentReady:
@@ -248,7 +273,7 @@ func nativeGrokPublicFirstText(t *testing.T, scenario grokPublicScenario) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if session.Execution != nil && session.Execution.GrokContent != nil && session.Execution.GrokContent.MessageID != "" {
+				if session.Execution != nil && ((pending && session.Execution.NativeTurnID != "") || (!pending && session.Execution.GrokContent != nil && session.Execution.GrokContent.MessageID != "")) {
 					break
 				}
 				select {
@@ -298,8 +323,15 @@ func nativeGrokPublicFirstText(t *testing.T, scenario grokPublicScenario) {
 				t.Fatal("Grok runner failed", job.State, job.Problem)
 			}
 			session, err := store.Decode[domain.Session](f.refresh(t))
-			if err != nil || session.Execution == nil || !session.Execution.CleanupVerified || (session.Execution.GrokTerminal != nil) == stopped || (stopped && (session.Execution.GrokStop == nil || session.Execution.GrokStop.Kind != domain.GrokInterruptedText || session.Execution.GrokStop.ContextTokens == nil || session.Execution.GrokStop.Completed != nil || session.Execution.Outcome != domain.ExecutionStopped || completion.Outcome != domain.ExecutionStopped || session.Recovery != domain.NoRecovery)) || session.Execution.Observed.GrokContextTokens != 48000 || session.Dispatch != domain.DispatchPaused || session.ActiveExecutionID != "" || session.PendingInputs != 0 {
+			stopKind := domain.GrokInterruptedText
+			if pending {
+				stopKind = domain.GrokInterruptedBeforeText
+			}
+			if err != nil || session.Execution == nil || !session.Execution.CleanupVerified || (session.Execution.GrokTerminal != nil) == stopped || (stopped && (session.Execution.GrokStop == nil || session.Execution.GrokStop.Kind != stopKind || session.Execution.GrokStop.ContextTokens == nil || session.Execution.GrokStop.Completed != nil || session.Execution.Outcome != domain.ExecutionStopped || completion.Outcome != domain.ExecutionStopped || session.Recovery != domain.NoRecovery)) || session.Execution.Observed.GrokContextTokens != 48000 || session.Dispatch != domain.DispatchPaused || session.ActiveExecutionID != "" || session.PendingInputs != 0 {
 				t.Fatal("completion lost cleanup/context or granted continuation", err)
+			}
+			if pending && (session.Execution.GrokContent != nil || session.Execution.LatestUsageID != "" || session.Execution.GrokStop.MessageID != "" || session.Execution.GrokStop.TextChunks != 0) {
+				t.Fatal("pre-text Stop fabricated output or usage")
 			}
 			break
 		}
@@ -333,6 +365,9 @@ func nativeGrokPublicFirstText(t *testing.T, scenario grokPublicScenario) {
 	wantedPublications := uint32(6)
 	if stopped {
 		wantedPublications = 5
+	}
+	if pending {
+		wantedPublications = 4
 	}
 	if cancelled {
 		wantedPublications = 2

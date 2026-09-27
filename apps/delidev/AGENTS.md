@@ -1,6 +1,6 @@
 # DeliDev CLI
 
-- Grok Stop disclosure validates the original execution/input/native namespaces, exclusive interrupted or raced-success variant, original partial-content state, typed retry ordering and exact decimal counters. Mark retained partial text as interrupted without claiming response completion or zero usage. Keep native cleanup separate from the workspace report; reject mixed/foreign/rounded records and derive no continuation or action from display.
+- Grok Stop disclosure validates the original execution/input/native namespaces, exclusive interrupted or raced-success variant, original partial-content state, typed retry ordering and exact decimal counters. Display pre-text interruption only with no message/content/usage reference, zero chunks and the exact empty-output digest. Mark retained partial text as interrupted without claiming response completion or zero usage. Keep native cleanup separate from the workspace report; reject mixed/foreign/rounded records and derive no continuation or action from display.
 
 - Original Grok completion disclosure validates the closed first-text terminal, exact native ownership, initial mode/model, one closed response and absence of other terminal families. Preserve exact native input total/duration strings and distinguish overlapping response usage, auxiliary work, cost, workspace cleanup and continuation. Reading native success never creates an action or reenables dispatch.
 

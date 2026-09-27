@@ -3,7 +3,7 @@ package worker
 import (
 	"context"
 	"encoding/hex"
-	"reflect"
+	"slices"
 	"strconv"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -53,7 +53,7 @@ func (c *GrokBindingPublisher) PublishStopped(ctx context.Context, api *grok.Own
 func (c *GrokBindingPublisher) publishStoppedText(ctx context.Context, v grok.StoppedTextObservation) error {
 	claims, err := c.readClaims()
 	stop := c.stopClaim.Load()
-	if c.stage != grokInputAccepted || c.mode != domain.GrokDefaultMode || c.terminal != nil || c.stopped != nil || err != nil || !c.acceptStopExtension(claims) || len(claims) != 5 || stop == nil || claims[4].Stop == nil || *claims[4].Stop != *stop || v.Validate(c.publisher.input.Configuration.NativeModel) != nil || v.Stop.Claim != *stop || v.CreationRequestID != c.reference.CreationRequestID || v.Stop.Claim.NativeSessionID != c.thread || v.Stop.Claim.NativePromptID != c.turn || claims[2].Input == nil || v.InputDigest != claims[2].Input.BodyDigest || !reflect.DeepEqual(v.ChunkDigests, c.textChunks) || v.OutputDigest != hex.EncodeToString(c.textOutput.Sum(nil)) || c.firstTextID.Validate() != nil {
+	if c.stage != grokInputAccepted || c.mode != domain.GrokDefaultMode || c.terminal != nil || c.stopped != nil || err != nil || !c.acceptStopExtension(claims) || len(claims) != 5 || stop == nil || claims[4].Stop == nil || *claims[4].Stop != *stop || v.Validate(c.publisher.input.Configuration.NativeModel) != nil || v.Stop.Claim != *stop || v.CreationRequestID != c.reference.CreationRequestID || v.Stop.Claim.NativeSessionID != c.thread || v.Stop.Claim.NativePromptID != c.turn || claims[2].Input == nil || v.InputDigest != claims[2].Input.BodyDigest || !slices.Equal(v.ChunkDigests, c.textChunks) || v.OutputDigest != hex.EncodeToString(c.textOutput.Sum(nil)) {
 		return c.block()
 	}
 	number := func(n uint64) string { return strconv.FormatUint(n, 10) }
@@ -68,6 +68,12 @@ func (c *GrokBindingPublisher) publishStoppedText(ctx context.Context, v grok.St
 		r, t := v.Interrupted.Result, v.Interrupted.Turn
 		contextTokens := number(r.Meta.ContextTokens)
 		result.Kind, result.Category, result.ContextTokens = domain.GrokInterruptedText, domain.GrokCancellationCategory(r.Meta.Category), &contextTokens
+		if len(v.ChunkDigests) == 0 {
+			if c.firstTextID != "" || c.content != (domain.GrokContentState{}) {
+				return c.block()
+			}
+			result.Kind = domain.GrokInterruptedBeforeText
+		}
 		result.NativeEventID, result.TimestampMS, result.ElapsedMS = t.Meta.Event, number(t.Meta.TimestampMS), number(t.Update.ElapsedMS)
 	} else {
 		if c.content.Responses != 1 || c.content.MessageID != "" || v.Completed == nil {
@@ -84,7 +90,7 @@ func (c *GrokBindingPublisher) publishStoppedText(ctx context.Context, v grok.St
 	}
 	last, lastErr := domain.GrokEventIndex(c.content.LastEvent, string(c.thread))
 	terminal, terminalErr := domain.GrokEventIndex(result.NativeEventID, string(c.thread))
-	if result.Validate(string(c.thread)) != nil || lastErr != nil || terminalErr != nil || terminal <= last {
+	if result.Validate(string(c.thread)) != nil || terminalErr != nil || result.Kind != domain.GrokInterruptedBeforeText && (lastErr != nil || terminal <= last) {
 		return c.block()
 	}
 	c.stopped, c.sequence, c.stage = &result, c.sequence+1, grokTerminalPending
