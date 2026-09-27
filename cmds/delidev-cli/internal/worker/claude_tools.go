@@ -8,10 +8,9 @@ import (
 )
 
 type claudePublishedTool struct {
-	state                domain.MessageState
-	content              *domain.ClaudeToolContent
-	readContinuation     bool
-	questionContinuation bool
+	state       domain.MessageState
+	content     *domain.ClaudeToolContent
+	historyKind domain.ClaudeToolHistoryKind
 }
 
 func claudeDirectCaller(value claude.NativeToolCaller) (*domain.ClaudeToolCallerKind, error) {

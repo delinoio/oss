@@ -107,7 +107,7 @@ func verifyClaudePublicQuestionResults(t *testing.T, ctx context.Context, f *fir
 			t.Fatal(err)
 		}
 		tool, err := store.Decode[domain.ExecutionMessage](message)
-		if err != nil || !value.ClaudeQuestionContinuationEvidence(tool) {
+		if err != nil || (!value.ClaudeQuestionContinuationEvidence(tool) && !value.ClaudeToolApprovalContinuationEvidence(tool)) {
 			t.Fatal("original question settlement changed", err)
 		}
 	}

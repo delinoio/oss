@@ -334,8 +334,8 @@ func (c *ClaudeContentPublisher) commitHead() {
 		c.messages[item.native] = item.next
 	}
 	if item.interactionArrival != "" {
-		if proof := item.event.ClaudeSettlement; proof != nil && proof.Evidence == domain.ClaudeAnswersProcessed {
-			item.interactionNext.answerContinuation = true
+		if proof := item.event.ClaudeSettlement; proof != nil && (proof.Evidence == domain.ClaudeAnswersProcessed || proof.Evidence == domain.ClaudeToolProcessed) {
+			item.interactionNext.continuation = proof.Evidence
 		}
 		if item.interactionNext.closed {
 			// Original server records retain the request. Closed Worker state
@@ -358,8 +358,7 @@ func (c *ClaudeContentPublisher) commitHead() {
 		if item.toolNext.state == domain.MessageComplete {
 			// Keep only profile eligibility after the original result receipt is
 			// acknowledged; released tool bodies must not remain in Worker memory.
-			item.toolNext.readContinuation = item.toolNext.content.ClaudeReadContinuationCandidate()
-			item.toolNext.questionContinuation = item.toolNext.content.ClaudeQuestionContinuationCandidate()
+			item.toolNext.historyKind = item.toolNext.content.ClaudeContinuationHistoryKind()
 			item.toolNext.content = nil
 		}
 		c.tools[item.toolNative] = item.toolNext

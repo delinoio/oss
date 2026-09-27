@@ -105,3 +105,85 @@ func TestClaudeQuestionContinuationRequiresOriginalAcceptedResponse(t *testing.T
 		})
 	}
 }
+
+func originalClaudeApprovalContinuation(t *testing.T, name string) (ExecutionInteraction, ExecutionMessage) {
+	t.Helper()
+	v, m := originalClaudeQuestionContinuation(t)
+	question := v.Response
+	v.Response = nil
+	v.Type, v.Claude.Kind, v.Claude.Tool.Name = NativeApprovalInteraction, ClaudeToolPermission, name
+	v.Claude.InputJSON = `{"original":"unchanged"}`
+	tool := claudeSettlementTool(v)
+	metadata := `{"original":"native result"}`
+	tool.Result.Structured = &metadata
+	m.ClaudeTool = &tool
+	v.ClaudeSettlement.Evidence = ClaudeToolProcessed
+	v.ClaudeSettlement.ResultNativeID = tool.Result.NativeEventID
+	reply := &ClaudePermissionResponse{Behavior: ClaudeReplyAllow}
+	digest, err := ClaudeResponseDigest(v, *reply)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v.ApprovalResponse = &ApprovalResponse{ID: question.ID, State: ApprovalResponseAccepted, Input: ApprovalResponseInput{Claude: reply}, Claim: question.Claim, Delivery: &ApprovalDeliveryObservation{State: ApprovalTransmitted, Sequence: question.Delivery.Sequence}, ClaudeEcho: &ClaudeReplyEcho{ArrivalID: v.Claude.ArrivalID, BodyDigest: digest, Sequence: question.ClaudeEcho.Sequence}, Acceptance: &ApprovalAcceptanceObservation{Evidence: ApprovalAcceptanceEvidence(ClaudeToolProcessed), Sequence: question.Acceptance.Sequence}}
+	return v, m
+}
+
+func TestClaudeToolContinuationRetainsOnlyOriginalAcceptedPermission(t *testing.T) {
+	for _, name := range []string{"Read", "Bash", "Write", "Edit"} {
+		t.Run(name, func(t *testing.T) {
+			for _, change := range []string{"valid", "uncertain-delivery", "missing-response", "question-response", "transmitted", "no-claim", "no-echo", "changed-echo", "not-sent", "wrong-acceptance", "missing-settlement", "question-settlement", "denied", "changed-input", "tool-error", "no-metadata", "non-executed", "canceled", "open"} {
+				t.Run(change, func(t *testing.T) {
+					v, m := originalClaudeApprovalContinuation(t, name)
+					r := v.ApprovalResponse
+					switch change {
+					case "uncertain-delivery":
+						r.Delivery.State = ApprovalDeliveryUncertain
+					case "missing-response":
+						v.ApprovalResponse = nil
+					case "question-response":
+						v.Response = &QuestionResponse{}
+					case "transmitted":
+						r.State = ApprovalResponseTransmitted
+					case "no-claim":
+						r.Claim = nil
+					case "no-echo":
+						r.ClaudeEcho = nil
+					case "changed-echo":
+						r.ClaudeEcho.BodyDigest = "foreign"
+					case "not-sent":
+						r.Delivery.State = ApprovalNotSent
+					case "wrong-acceptance":
+						r.Acceptance.Evidence = NativeApprovedCommand
+					case "missing-settlement":
+						v.ClaudeSettlement = nil
+					case "question-settlement":
+						v.ClaudeSettlement.Evidence = ClaudeAnswersProcessed
+					case "denied":
+						message := "Original denial"
+						r.Input.Claude = &ClaudePermissionResponse{Behavior: ClaudeReplyDeny, Message: &message}
+					case "changed-input":
+						m.ClaudeTool.Proposal.Applied = `{"changed":true}`
+					case "tool-error":
+						failed := true
+						m.ClaudeTool.Result.Error = &failed
+					case "no-metadata":
+						m.ClaudeTool.Result.Structured = nil
+					case "non-executed":
+						m.ClaudeTool.Result.NonExecution = &ClaudeToolNonExecution{NativeID: v.NativeItemID, Kind: ClaudeUserRejectedNonExecution}
+					case "canceled":
+						v.ClaudeCancellation = &ClaudeInteractionCancellation{ArrivalID: v.Claude.ArrivalID}
+					case "open":
+						v.Closure = InteractionOpen
+					}
+					want := change == "valid" || change == "uncertain-delivery" || change == "tool-error" && name == "Read"
+					if v.ClaudeToolApprovalContinuationEvidence(m) != want {
+						t.Fatal("tool continuation reinterpreted original approval")
+					}
+					if v.ClaudeQuestionContinuationEvidence(m) {
+						t.Fatal("tool approval became question authority")
+					}
+				})
+			}
+		})
+	}
+}

@@ -169,7 +169,7 @@ func TestClaudeReadContinuationEligibilityWaitsForOriginalResultReceipt(t *testi
 		t.Fatal("original result acknowledgment was not lost")
 	}
 	for _, tool := range c.tools {
-		if tool.readContinuation {
+		if tool.historyKind != "" {
 			t.Fatal("unacknowledged result acquired history eligibility")
 		}
 	}
@@ -178,7 +178,7 @@ func TestClaudeReadContinuationEligibilityWaitsForOriginalResultReceipt(t *testi
 		t.Fatal(err)
 	}
 	for _, tool := range c.tools {
-		if !tool.readContinuation || tool.content != nil || tool.state != domain.MessageComplete {
+		if tool.historyKind != domain.ClaudeReadHistory || tool.content != nil || tool.state != domain.MessageComplete {
 			t.Fatal("original Read eligibility or payload release lost")
 		}
 	}

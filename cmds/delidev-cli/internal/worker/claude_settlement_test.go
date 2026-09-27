@@ -35,6 +35,9 @@ func TestClaudeCallbackSettlementDrainsOriginalResultsBeforeClosing(t *testing.T
 		if c.interactionsSettled() {
 			t.Fatal("pending publication closed the callback")
 		}
+		if c.interactions[arrival].continuation != "" {
+			t.Fatal("unacknowledged original settlement granted history")
+		}
 		if !echo {
 			if len(rpc.events) != before {
 				t.Fatal("missing echo partially published result")
@@ -47,6 +50,9 @@ func TestClaudeCallbackSettlementDrainsOriginalResultsBeforeClosing(t *testing.T
 		}
 		if !c.interactionsSettled() || len(rpc.events) != before+3 || rpc.requests[before] != rpc.requests[before+1] || !bytes.Equal(rpc.events[before], rpc.events[before+1]) {
 			t.Fatal("result/settlement lost original receipt order")
+		}
+		if c.interactions[arrival].continuation != domain.ClaudeToolProcessed || c.interactions[arrival].update.Claude != nil || c.interactions[arrival].bytes != 0 {
+			t.Fatal("original tool approval evidence or payload release lost")
 		}
 		var event domain.ExecutionEvent
 		if domain.Decode(rpc.events[before+2], &event) != nil || event.Kind != domain.ExecutionClaudeCallbackSettled || event.ClaudeSettlement == nil || event.ClaudeSettlement.ArrivalID != arrival {

@@ -51,12 +51,12 @@ func (c *ClaudeContentPublisher) RetainCompletion(ctx context.Context, api *clau
 		return completion, nil
 	}
 	for _, tool := range c.tools {
-		if tool.state != domain.MessageComplete || !tool.readContinuation && !tool.questionContinuation {
+		if tool.state != domain.MessageComplete || tool.historyKind == "" {
 			return completion, nil
 		}
 	}
 	for _, interaction := range c.interactions {
-		if !interaction.closed || !interaction.answerContinuation {
+		if !interaction.closed || (interaction.continuation != domain.ClaudeAnswersProcessed && interaction.continuation != domain.ClaudeToolProcessed) {
 			return completion, nil
 		}
 	}

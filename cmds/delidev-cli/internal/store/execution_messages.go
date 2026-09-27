@@ -98,7 +98,7 @@ func (t *Tx) ClaudeRootContentContinuation(execution domain.ID) (bool, error) {
 		if err := rows.Scan(&id, &raw); err != nil {
 			return false, storageError(err)
 		}
-		if domain.Decode(raw, &message) != nil || message.ExecutionID != execution || message.State != domain.MessageComplete || message.Role != domain.ToolMessage || (!message.ClaudeTool.ClaudeReadContinuationCandidate() && !message.ClaudeTool.ClaudeQuestionContinuationCandidate()) || id != message.ClaudeTool.Reference.ID || message.NativeParentID != message.ClaudeTool.NativeMessageID || message.NativeID != message.ClaudeTool.Reference.NativeID {
+		if domain.Decode(raw, &message) != nil || message.ExecutionID != execution || message.State != domain.MessageComplete || message.Role != domain.ToolMessage || message.ClaudeTool.ClaudeContinuationHistoryKind() == "" || id != message.ClaudeTool.Reference.ID || message.NativeParentID != message.ClaudeTool.NativeMessageID || message.NativeID != message.ClaudeTool.Reference.NativeID {
 			return false, nil
 		}
 		if message.ClaudeTool.ClaudeQuestionContinuationCandidate() {
@@ -111,7 +111,7 @@ func (t *Tx) ClaudeRootContentContinuation(execution domain.ID) (bool, error) {
 	if err := rows.Close(); err != nil {
 		return false, storageError(err)
 	}
-	return t.claudeQuestionContinuation(execution, questions)
+	return t.claudeCallbackContinuation(execution, questions)
 }
 
 // The native part identity and provider call identity are different namespaces.

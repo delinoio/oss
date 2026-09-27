@@ -11,9 +11,9 @@ func (t *Tx) HasClaudeInteractionConflict(session, execution, arrival domain.ID,
 	return exists, storageError(err)
 }
 
-// Every indexed callback must retain one original accepted question response;
-// every Question tool must be represented exactly once in that same execution.
-func (t *Tx) claudeQuestionContinuation(execution domain.ID, questions int) (bool, error) {
+// Every indexed callback needs its original accepted response. Each Question
+// additionally requires exactly one callback; tool permission is native-owned.
+func (t *Tx) claudeCallbackContinuation(execution domain.ID, questions int) (bool, error) {
 	// Join and validate one bounded question/result pair at a time. Retaining all
 	// tool bodies together would amplify memory with the complete history size.
 	rows, err := t.tx.QueryContext(t.ctx, `SELECT e.body,tool.body FROM execution_interactions i
@@ -26,6 +26,7 @@ func (t *Tx) claudeQuestionContinuation(execution domain.ID, questions int) (boo
 	}
 	defer rows.Close()
 	seen := map[domain.ID]bool{}
+	answered := 0
 	for rows.Next() {
 		var raw, toolRaw []byte
 		var value domain.ExecutionInteraction
@@ -33,10 +34,13 @@ func (t *Tx) claudeQuestionContinuation(execution domain.ID, questions int) (boo
 		if err := rows.Scan(&raw, &toolRaw); err != nil {
 			return false, storageError(err)
 		}
-		if domain.Decode(raw, &value) != nil || value.ExecutionID != execution || value.Claude == nil || domain.Decode(toolRaw, &tool) != nil || seen[value.Claude.Tool.ID] || len(seen) >= questions || !value.ClaudeQuestionContinuationEvidence(tool) {
+		if domain.Decode(raw, &value) != nil || value.ExecutionID != execution || value.Claude == nil || domain.Decode(toolRaw, &tool) != nil || seen[value.Claude.Tool.ID] || (!value.ClaudeQuestionContinuationEvidence(tool) && !value.ClaudeToolApprovalContinuationEvidence(tool)) {
 			return false, nil
 		}
 		seen[value.Claude.Tool.ID] = true
+		if value.Claude.Kind == domain.ClaudeUserQuestion {
+			answered++
+		}
 	}
-	return len(seen) == questions, storageError(rows.Err())
+	return answered == questions, storageError(rows.Err())
 }

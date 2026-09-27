@@ -9,10 +9,10 @@ import (
 )
 
 type claudePublishedInteraction struct {
-	update             domain.ExecutionInteractionUpdate
-	closed             bool
-	answerContinuation bool
-	bytes              int
+	update       domain.ExecutionInteractionUpdate
+	closed       bool
+	continuation domain.ClaudeCallbackEvidence
+	bytes        int
 }
 
 // Callback arrival and native request IDs retain separate namespaces. A native

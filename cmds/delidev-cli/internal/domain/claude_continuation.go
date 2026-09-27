@@ -29,17 +29,67 @@ func (t *ClaudeToolContent) claudeInlineContinuationCandidate() bool {
 // Recheck the independently accepted original response, echo and result. A
 // closed request, complete tool or successful root cannot substitute for them.
 func (v ExecutionInteraction) ClaudeQuestionContinuationEvidence(tool ExecutionMessage) bool {
-	r, s := v.Response, v.ClaudeSettlement
-	if v.Claude == nil || v.Claude.Kind != ClaudeUserQuestion || v.Type != UserQuestionInteraction || v.Closure != InteractionNativeClosed || v.ClaudeCancellation != nil || v.ApprovalResponse != nil || r == nil || r.ID.Validate() != nil || r.State != QuestionResponseAccepted || r.Input.Claude == nil || r.Input.Claude.Behavior != ClaudeReplyAllow || r.Input.ValidateInteraction(v) != nil || r.Claim == nil || r.Claim.ID.Validate() != nil || r.Claim.JobID.Validate() != nil || r.Claim.InstanceID.Validate() != nil || r.Claim.DeviceID.Validate() != nil || r.Claim.MachineID.Validate() != nil || r.Delivery == nil || (r.Delivery.State != QuestionTransmitted && r.Delivery.State != QuestionDeliveryUncertain) || r.ClaudeEcho == nil || r.Acceptance == nil || r.Acceptance.OpenCode != nil || r.Acceptance.Evidence != QuestionAcceptanceEvidence(ClaudeAnswersProcessed) || s == nil || s.Evidence != ClaudeAnswersProcessed {
+	r := v.Response
+	if v.Claude == nil || v.Claude.Kind != ClaudeUserQuestion || v.Type != UserQuestionInteraction || v.ApprovalResponse != nil || !tool.ClaudeTool.ClaudeQuestionContinuationCandidate() || r == nil || r.ID.Validate() != nil || r.State != QuestionResponseAccepted || r.Input.Claude == nil || r.Input.Claude.Behavior != ClaudeReplyAllow || r.Input.ValidateInteraction(v) != nil || r.Delivery == nil || (r.Delivery.State != QuestionTransmitted && r.Delivery.State != QuestionDeliveryUncertain) || r.Acceptance == nil || r.Acceptance.OpenCode != nil || r.Acceptance.Evidence != QuestionAcceptanceEvidence(ClaudeAnswersProcessed) {
 		return false
 	}
-	if tool.ExecutionID != v.ExecutionID || tool.NativeThreadID != v.NativeThreadID || tool.NativeTurnID != v.NativeTurnID || tool.NativeID != v.NativeItemID || tool.State != MessageComplete || tool.Role != ToolMessage || !tool.ClaudeTool.ClaudeQuestionContinuationCandidate() || tool.NativeParentID != tool.ClaudeTool.NativeMessageID || s.ArrivalID != v.Claude.ArrivalID || s.ToolMessageID != tool.ClaudeTool.Reference.ID || s.ResultNativeID != tool.ClaudeTool.Result.NativeEventID || s.Sequence != v.LastSequence || s.Sequence != r.Acceptance.Sequence || r.ClaudeEcho.ArrivalID != s.ArrivalID || v.FirstSequence == 0 || r.Delivery.Sequence <= v.FirstSequence || r.Delivery.Sequence >= s.Sequence || r.ClaudeEcho.Sequence <= v.FirstSequence || r.ClaudeEcho.Sequence >= tool.LastSequence || tool.LastSequence >= s.Sequence {
+	return v.claudeCallbackContinuationEvidence(tool, ClaudeAnswersProcessed, *r.Input.Claude, r.Claim, r.ClaudeEcho, r.Delivery.Sequence, r.Acceptance.Sequence)
+}
+
+func (v ExecutionInteraction) ClaudeToolApprovalContinuationEvidence(tool ExecutionMessage) bool {
+	r := v.ApprovalResponse
+	if v.Claude == nil || v.Claude.Kind != ClaudeToolPermission || v.Type != NativeApprovalInteraction || v.Response != nil || (!tool.ClaudeTool.ClaudeReadContinuationCandidate() && !tool.ClaudeTool.ClaudeEffectContinuationCandidate()) || r == nil || r.ID.Validate() != nil || r.State != ApprovalResponseAccepted || r.Input.Claude == nil || r.Input.Claude.Behavior != ClaudeReplyAllow || r.Input.ValidateInteraction(v) != nil || r.Delivery == nil || (r.Delivery.State != ApprovalTransmitted && r.Delivery.State != ApprovalDeliveryUncertain) || r.Acceptance == nil || r.Acceptance.OpenCode != nil || r.Acceptance.Evidence != ApprovalAcceptanceEvidence(ClaudeToolProcessed) {
 		return false
 	}
-	digest, err := ClaudeResponseDigest(v, *r.Input.Claude)
-	if err != nil || digest != r.ClaudeEcho.BodyDigest {
+	return v.claudeCallbackContinuationEvidence(tool, ClaudeToolProcessed, *r.Input.Claude, r.Claim, r.ClaudeEcho, r.Delivery.Sequence, r.Acceptance.Sequence)
+}
+
+func (v ExecutionInteraction) claudeCallbackContinuationEvidence(tool ExecutionMessage, expected ClaudeCallbackEvidence, reply ClaudePermissionResponse, claim *QuestionResponseClaim, echo *ClaudeReplyEcho, delivery, acceptance uint64) bool {
+	s := v.ClaudeSettlement
+	if v.Closure != InteractionNativeClosed || v.ClaudeCancellation != nil || claim == nil || claim.ID.Validate() != nil || claim.JobID.Validate() != nil || claim.InstanceID.Validate() != nil || claim.DeviceID.Validate() != nil || claim.MachineID.Validate() != nil || echo == nil || s == nil || s.Evidence != expected {
 		return false
 	}
-	evidence, err := ClaudeCallbackResultEvidence(v, *r.Input.Claude, *tool.ClaudeTool)
-	return err == nil && evidence == ClaudeAnswersProcessed
+	if tool.ExecutionID != v.ExecutionID || tool.NativeThreadID != v.NativeThreadID || tool.NativeTurnID != v.NativeTurnID || tool.NativeID != v.NativeItemID || tool.State != MessageComplete || tool.Role != ToolMessage || tool.NativeParentID != tool.ClaudeTool.NativeMessageID || s.ArrivalID != v.Claude.ArrivalID || s.ToolMessageID != tool.ClaudeTool.Reference.ID || s.ResultNativeID != tool.ClaudeTool.Result.NativeEventID || s.Sequence != v.LastSequence || s.Sequence != acceptance || echo.ArrivalID != s.ArrivalID || v.FirstSequence == 0 || delivery <= v.FirstSequence || delivery >= s.Sequence || echo.Sequence <= v.FirstSequence || echo.Sequence >= tool.LastSequence || tool.LastSequence >= s.Sequence {
+		return false
+	}
+	digest, err := ClaudeResponseDigest(v, reply)
+	if err != nil || digest != echo.BodyDigest {
+		return false
+	}
+	evidence, err := ClaudeCallbackResultEvidence(v, reply, *tool.ClaudeTool)
+	return err == nil && evidence == expected
+}
+
+type ClaudeToolHistoryKind string
+
+const (
+	ClaudeReadHistory     ClaudeToolHistoryKind = "read"
+	ClaudeQuestionHistory ClaudeToolHistoryKind = "question"
+	ClaudeEffectHistory   ClaudeToolHistoryKind = "effect"
+)
+
+// Effect history preserves completed observations only; restoration never
+// re-executes a command, edits a file or restores a previous filesystem state.
+func (t *ClaudeToolContent) ClaudeEffectContinuationCandidate() bool {
+	if !t.claudeInlineContinuationCandidate() || t.Result.Error != nil && *t.Result.Error {
+		return false
+	}
+	switch t.Reference.Name {
+	case "Bash", "Write", "Edit":
+		return true
+	}
+	return false
+}
+
+func (t *ClaudeToolContent) ClaudeContinuationHistoryKind() ClaudeToolHistoryKind {
+	switch {
+	case t.ClaudeReadContinuationCandidate():
+		return ClaudeReadHistory
+	case t.ClaudeQuestionContinuationCandidate():
+		return ClaudeQuestionHistory
+	case t.ClaudeEffectContinuationCandidate():
+		return ClaudeEffectHistory
+	default:
+		return ""
+	}
 }

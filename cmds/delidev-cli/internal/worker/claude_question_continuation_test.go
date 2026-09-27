@@ -61,7 +61,7 @@ func TestClaudeQuestionContinuationWaitsForOriginalResultAndSettlementReceipts(t
 	if _, err := c.PublishObservation(ctx, result); err == nil {
 		t.Fatal("result receipt was not lost")
 	}
-	if c.tools[tool.Reference.NativeID].questionContinuation || c.interactions[arrival].answerContinuation {
+	if c.tools[tool.Reference.NativeID].historyKind != "" || c.interactions[arrival].continuation != "" {
 		t.Fatal("unacknowledged result granted continuation")
 	}
 	rpc.lose = false
@@ -70,7 +70,7 @@ func TestClaudeQuestionContinuationWaitsForOriginalResultAndSettlementReceipts(t
 	if err := c.ReplayPending(ctx); err == nil {
 		t.Fatal("settlement acknowledgment was not lost")
 	}
-	if !c.tools[tool.Reference.NativeID].questionContinuation || c.interactions[arrival].answerContinuation || c.interactions[arrival].closed {
+	if c.tools[tool.Reference.NativeID].historyKind != domain.ClaudeQuestionHistory || c.interactions[arrival].continuation != "" || c.interactions[arrival].closed {
 		t.Fatal("tool result substituted for acknowledged original settlement")
 	}
 	settlement := len(rpc.events) - 1
@@ -85,7 +85,7 @@ func TestClaudeQuestionContinuationWaitsForOriginalResultAndSettlementReceipts(t
 		t.Fatal("original result receipt changed")
 	}
 	value := c.interactions[arrival]
-	if !value.closed || !value.answerContinuation || value.update.Claude != nil || value.bytes != 0 || !c.tools[tool.Reference.NativeID].questionContinuation || c.tools[tool.Reference.NativeID].content != nil || c.responses[arrival].input.Answers != nil {
+	if !value.closed || value.continuation != domain.ClaudeAnswersProcessed || value.update.Claude != nil || value.bytes != 0 || c.tools[tool.Reference.NativeID].historyKind != domain.ClaudeQuestionHistory || c.tools[tool.Reference.NativeID].content != nil || c.responses[arrival].input.Answers != nil {
 		t.Fatal("acknowledged question evidence or payload release lost")
 	}
 }

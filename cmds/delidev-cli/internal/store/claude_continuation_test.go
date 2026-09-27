@@ -8,7 +8,7 @@ import (
 )
 
 func TestClaudeContinuationRetainsOriginalReadAndRejectsOtherProfiles(t *testing.T) {
-	for _, scenario := range []string{"read", "read-error", "missing-result", "missing-metadata", "non-executed", "foreign-provider", "foreign-tool", "foreign-role", "bash", "pending-tool", "missing-proposal", "invalid-proposal", "callback"} {
+	for _, scenario := range []string{"read", "read-error", "missing-result", "missing-metadata", "non-executed", "foreign-provider", "foreign-tool", "foreign-role", "unsupported-tool", "pending-tool", "missing-proposal", "invalid-proposal", "callback"} {
 		t.Run(scenario, func(t *testing.T) {
 			s, _ := openTest(t)
 			ctx := context.Background()
@@ -43,8 +43,8 @@ func TestClaudeContinuationRetainsOriginalReadAndRejectsOtherProfiles(t *testing
 					value.NativeID = "another_tool"
 				case "foreign-role":
 					value.Role = domain.AssistantMessage
-				case "bash":
-					tool.Reference.Name = "Bash"
+				case "unsupported-tool":
+					tool.Reference.Name = "Agent"
 				case "pending-tool":
 					value.State = domain.MessageStreaming
 				case "missing-proposal":

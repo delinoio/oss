@@ -28,6 +28,12 @@ import (
 type claudePublicCase string
 
 const (
+	claudePublicBash  claudePublicCase = "continuation-bash"
+	claudePublicWrite claudePublicCase = "continuation-write"
+	claudePublicEdit  claudePublicCase = "continuation-edit"
+)
+
+const (
 	claudePublicText                 claudePublicCase = "text"
 	claudePublicContinuation         claudePublicCase = "continuation"
 	claudePublicRetry                claudePublicCase = "retry"
@@ -101,9 +107,15 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 	turns, turn := 1, 0
 	continuation := strings.HasPrefix(string(scenario), "continuation")
 	read := scenario == claudePublicRead || scenario == claudePublicReadError
+	effect := claudePublicEffectName(scenario)
+	effectCalls := int32(2)
+	if scenario == claudePublicEdit {
+		effectCalls = 3
+	}
+	effectHistory := &claudePublicEffectHistory{}
 	questionHistory := scenario == claudePublicQuestionHistory
 	missingRead := scenario == claudePublicReadError
-	fault := continuation && !read && !questionHistory && scenario != claudePublicContinuation && scenario != claudePublicResume
+	fault := continuation && !read && !questionHistory && effect == "" && scenario != claudePublicContinuation && scenario != claudePublicResume
 	var readRoot atomic.Value
 	if continuation {
 		turns = 3
@@ -125,6 +137,9 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 	}
 	if question && !denied && !questionHistory {
 		expected++
+	}
+	if effect != "" {
+		expected *= effectCalls
 	}
 	if retrying {
 		expected++
@@ -155,6 +170,11 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 			}
 		} else if questionHistory {
 			if !checkClaudePublicQuestionHistory(t, raw, n) {
+				w.WriteHeader(400)
+				return
+			}
+		} else if effect != "" {
+			if !effectHistory.check(t, raw, n, effect, effectCalls) {
 				w.WriteHeader(400)
 				return
 			}
@@ -215,7 +235,13 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 		block := map[string]any{"type": "text", "text": ""}
 		delta := map[string]any{"type": "text_delta", "text": "Original public Claude result."}
 		reason := "end_turn"
-		if read && n%2 == 1 {
+		if effect != "" && n%effectCalls != 0 {
+			name, id, params := claudePublicEffectCall(effect, n, effectCalls, readRoot.Load().(string))
+			encoded, _ := json.Marshal(params)
+			block = map[string]any{"type": "tool_use", "id": id, "name": name, "input": map[string]any{}}
+			delta = map[string]any{"type": "input_json_delta", "partial_json": string(encoded)}
+			reason = "tool_use"
+		} else if read && n%2 == 1 {
 			params, _ := json.Marshal(map[string]any{"file_path": filepath.Join(readRoot.Load().(string), fmt.Sprintf("original-%d.txt", (n-1)/2))})
 			block = map[string]any{"type": "tool_use", "id": fmt.Sprintf("toolu_public_read_%d", (n-1)/2), "name": "Read", "input": map[string]any{}}
 			delta = map[string]any{"type": "input_json_delta", "partial_json": string(params)}
@@ -252,7 +278,7 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 	}))
 	defer upstream.Close()
 	f := newFirstDispatchFixtureProfile(t, domain.ClaudeCode, mode, binary, upstream.URL)
-	if read {
+	if read || effect != "" {
 		row, err := f.service.Store.Get(ctx, domain.JobKind, domain.ID(f.change.WorkspaceJob.Id))
 		if err != nil {
 			t.Fatal(err)
@@ -264,7 +290,7 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 		}
 		readRoot.Store(manifest.PrimaryPath)
 		for i := 0; i < turns; i++ {
-			if !missingRead {
+			if !missingRead && (effect == "" || effect == "Edit") {
 				if err := os.WriteFile(filepath.Join(manifest.PrimaryPath, fmt.Sprintf("original-%d.txt", i)), []byte(fmt.Sprintf("Original retained Read %d.\n", i)), 0600); err != nil {
 					t.Fatal(err)
 				}
@@ -342,7 +368,7 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 				stopSent = err == nil
 			}
 		}
-		if question && !answered {
+		if (question || effect != "") && !answered {
 			session, err := store.Decode[domain.Session](f.refresh(t))
 			if err != nil {
 				t.Fatal(err)
@@ -365,7 +391,17 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 			if len(rows) > 1 {
 				t.Fatal("original public question repeated")
 			}
-			if len(rows) == 1 {
+			if len(rows) == 1 && effect != "" {
+				body, _ := json.Marshal(domain.ApprovalResponseInput{Claude: &domain.ClaudePermissionResponse{Behavior: domain.ClaudeReplyAllow}})
+				req := &pb.RespondApprovalRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(rows[0].ID), ExpectedRevision: rows[0].Revision}, ResponseJson: body}
+				if _, err := interactionClient.RespondApproval(ctx, ownerRequest(f.identity, req)); err != nil {
+					t.Fatal("original tool approval", err)
+				}
+				if replay, err := interactionClient.RespondApproval(ctx, ownerRequest(f.identity, req)); err != nil || !replay.Msg.Replayed {
+					t.Fatal("original approval receipt", err)
+				}
+				answered = true
+			} else if len(rows) == 1 {
 				reply := &domain.ClaudePermissionResponse{Behavior: domain.ClaudeReplyAllow, Answers: map[string]string{"Which original option?": "Two"}}
 				if denied {
 					message, interrupt := "Original public interrupted denial", true
@@ -437,15 +473,18 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 				if read || questionHistory {
 					wantCalls *= 2
 				}
+				if effect != "" {
+					wantCalls *= effectCalls
+				}
 			}
-			if job.State != domain.JobSucceeded || domain.Decode(job.Output, &proof) != nil || proof.ValidateForHarness(domain.ClaudeCode) != nil || proof.Version != version || calls.Load() != wantCalls || question && !answered {
+			if job.State != domain.JobSucceeded || domain.Decode(job.Output, &proof) != nil || proof.ValidateForHarness(domain.ClaudeCode) != nil || proof.Version != version || calls.Load() != wantCalls || (question || effect != "") && !answered {
 				t.Fatalf("public Claude execution did not finish: %s %v", job.State, job.Problem)
 			}
 			session, err := store.Decode[domain.Session](f.refresh(t))
 			if err != nil || session.Execution == nil || session.Execution.ClaudeTerminal == nil || !session.Execution.CleanupVerified || session.Dispatch != dispatch || session.Recovery != domain.NoRecovery || session.ActiveExecutionID != "" || session.PendingInputs != uint32(turns-turn-1) || session.Outcome != domain.ExecutionSucceeded {
 				t.Fatal("public completion lost original outcome, cleanup or history readiness", err)
 			}
-			if question {
+			if question || effect != "" {
 				verifyClaudePublicQuestionResults(t, ctx, f, turn+1)
 			}
 			if retrying {
@@ -473,6 +512,9 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 				if retries != 1 || inputs != 1 {
 					t.Fatal("native retry duplicated input or lost progress", retries, inputs)
 				}
+			}
+			if effect != "" {
+				verifyClaudePublicEffectFiles(t, readRoot.Load().(string), turn)
 			}
 			if read {
 				verifyClaudePublicReadResult(t, ctx, f, proof, turn, missingRead)
