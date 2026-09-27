@@ -4240,7 +4240,10 @@ mod tests {
             Some(NativePath::UnixBytes(b"assets".to_vec()));
         assert_eq!(
             collect_required(&record, &root, &selector, &snapshot).unwrap(),
-            std::collections::BTreeSet::from([PathBuf::from("assets/flag")])
+            std::collections::BTreeSet::from([
+                PathBuf::from("assets"),
+                PathBuf::from("assets/flag"),
+            ])
         );
         record.operations[0].start.operation = record::Operation::Read;
         record.operations[0].start.open_mutates = false;
