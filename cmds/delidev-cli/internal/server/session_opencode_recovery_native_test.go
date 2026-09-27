@@ -65,6 +65,13 @@ func TestManualNativeOpenCodeCompletedExecutionRecovery(t *testing.T) {
 
 func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode, scenario string) {
 	workspaceType, scenario := openCodeProjectFixtureProfile(scenario)
+	projectProfile := openCodeCommittedProject
+	switch scenario {
+	case "unborn-resumed":
+		projectProfile, scenario = openCodeUnbornProject, "resumed"
+	case "first-commit-resumed":
+		projectProfile, scenario = openCodeFirstCommitProject, "resumed"
+	}
 	missingRead := strings.HasPrefix(scenario, "read-missing")
 	loadedInstructions := strings.HasPrefix(scenario, "read-loaded")
 	fileTool := strings.TrimSuffix(scenario, "-resumed")
@@ -193,7 +200,7 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 		_, _ = io.WriteString(w, strings.ReplaceAll(`data: {"id":"chatcmpl-recovery","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":20,"completion_tokens":4,"total_tokens":24}}`+"\n\ndata: [DONE]\n\n", "fixture-model", fixtureModel))
 	}))
 	defer upstream.Close()
-	f := newFirstDispatchFixtureWorkspaceProfile(t, domain.OpenCode, mode, binary, upstream.URL, fixtureModel, workspaceType)
+	f := newFirstDispatchFixtureWorkspaceProfile(t, domain.OpenCode, mode, binary, upstream.URL, fixtureModel, workspaceType, projectProfile)
 	if missingRead {
 		toolPath.Store(prepareOpenCodeMissingRead(t, f, permission))
 	} else if externalRejection || externalAllowance {
@@ -354,6 +361,7 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 			}
 		}
 	}
+	var adoptedDirectory string
 	if lostTurn == 2 {
 		firstState := domain.JobSucceeded
 		if stoppedFirst {
@@ -361,6 +369,16 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 		}
 		if job := waitJob(domain.ID(assignment.Id)); job.State != firstState {
 			t.Fatal("first execution failed", job.Problem)
+		}
+		if projectProfile == openCodeFirstCommitProject {
+			var original domain.Job
+			var execution domain.ExecutionJobInput
+			var manifest workspace.Manifest
+			if domain.Decode(assignment.DocumentJson, &original) != nil || domain.Decode(original.Input, &execution) != nil || domain.Decode(execution.Manifest, &manifest) != nil {
+				t.Fatal("missing original Local manifest")
+			}
+			adoptedDirectory = manifest.PrimaryPath
+			commitOpenCodeProjectFixture(t, ctx, adoptedDirectory)
 		}
 		enqueue()
 		assignment = resume()
@@ -532,6 +550,14 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 	var continued domain.ExecutionCompletion
 	if next.State != domain.JobSucceeded || domain.Decode(next.Output, &continued) != nil || continued.NativeThreadID != completion.NativeThreadID || continued.NativeTurnID == completion.NativeTurnID || calls.Load() != lostTurn+1+toolCalls {
 		t.Fatal("explicit Resume failed after recovered completion", next.Problem)
+	}
+	if adoptedDirectory != "" {
+		for path, want := range map[string]string{"tracked.txt": "Later independent Local changes.\n", "untracked-after-first-commit.txt": "Retain untracked Local content.\n"} {
+			raw, err := os.ReadFile(filepath.Join(adoptedDirectory, path))
+			if err != nil || string(raw) != want {
+				t.Fatal("recovered adoption changed independent Local files", err)
+			}
+		}
 	}
 	if loadedInstructions {
 		updateOpenCodeContinuationInstructions(t, toolPath.Load().(string), false)

@@ -98,44 +98,48 @@ type SessionReceipt struct {
 // providers/context and original server ownership. Discovery cannot create one
 // or expose session mutations. Durable Worker/account integration is separate.
 type sessionAPI struct {
-	client             *http.Client
-	origin             string
-	password           string
-	cwd                string
-	claim              func(context.Context, SessionClaim) error
-	alive              func() error
-	closeOwned         func(context.Context) error
-	reconcileOwned     func(context.Context) error
-	logger             *slog.Logger
-	owner              domain.ID
-	gate               chan struct{}
-	creation           *sessionCreation
-	input              *sessionInput
-	problem            *domain.Error
-	events             *eventStream
-	eventAttempt       bool
-	observer           *inputObserver
-	replyAttempt       *interactionHTTPAttempt
-	abortAttempt       bool
-	rejectionPolicy    RejectionPolicy
-	apiProfile         *nativeAPIProfile
-	apiVerified        bool
-	runtimeRead        bool
-	runtimeRoot        string
-	runtimeHome        string
-	checkpointProcess  process.Config
-	creationLookup     bool
-	creationCandidate  string
-	historyRead        *historyPageRead
-	checkpointRead     bool
-	predecessor        *nativeCheckpoint
-	predecessorDigest  string
-	resumeRequest      domain.ID
-	sessionAgent       PrimaryAgent
-	sessionPermissions []PermissionRule
-	restoredAlways     uint32
-	permissionRestore  *interactionHTTPAttempt
-	todoRead           bool
+	client              *http.Client
+	origin              string
+	password            string
+	cwd                 string
+	claim               func(context.Context, SessionClaim) error
+	alive               func() error
+	closeOwned          func(context.Context) error
+	reconcileOwned      func(context.Context) error
+	logger              *slog.Logger
+	owner               domain.ID
+	gate                chan struct{}
+	creation            *sessionCreation
+	input               *sessionInput
+	problem             *domain.Error
+	events              *eventStream
+	eventAttempt        bool
+	observer            *inputObserver
+	replyAttempt        *interactionHTTPAttempt
+	abortAttempt        bool
+	rejectionPolicy     RejectionPolicy
+	apiProfile          *nativeAPIProfile
+	apiVerified         bool
+	runtimeRead         bool
+	runtimeRoot         string
+	runtimeHome         string
+	checkpointProcess   process.Config
+	creationLookup      bool
+	creationCandidate   string
+	historyRead         *historyPageRead
+	projectRead         bool
+	projectProfile      bool
+	projectSourceDigest string
+	projectAdoption     *checkpointProjectAdoption
+	checkpointRead      bool
+	predecessor         *nativeCheckpoint
+	predecessorDigest   string
+	resumeRequest       domain.ID
+	sessionAgent        PrimaryAgent
+	sessionPermissions  []PermissionRule
+	restoredAlways      uint32
+	permissionRestore   *interactionHTTPAttempt
+	todoRead            bool
 }
 
 type sessionCreation struct {

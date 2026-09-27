@@ -29,7 +29,7 @@ func TestManualNativeOpenCodeOriginalClosedCheckpoint(t *testing.T) {
 	}
 }
 
-func nativeClosedCheckpoint(t *testing.T, executable, mode string, project ...bool) {
+func nativeClosedCheckpoint(t *testing.T, executable, mode string, project ...nativeCheckpointWorkspace) {
 	t.Helper()
 	requireNoManagedOpenCodeConfig(t)
 	config := fixtureOwnedAPIConfig(t)
@@ -39,8 +39,8 @@ func nativeClosedCheckpoint(t *testing.T, executable, mode string, project ...bo
 	}
 	config.Probe.Process.Executable = executable
 	config.Instructions = "Private checkpoint additive instruction."
-	if len(project) == 1 && project[0] {
-		prepareNativeCheckpointGit(t, &config)
+	if len(project) == 1 && project[0] != checkpointGeneralChat {
+		prepareNativeCheckpointGit(t, &config, project[0])
 	}
 	var logs bytes.Buffer
 	config.Probe.Process.Logger = slog.New(slog.NewJSONHandler(&logs, nil))
@@ -150,12 +150,12 @@ func nativeClosedCheckpoint(t *testing.T, executable, mode string, project ...bo
 			t.Fatal("checkpoint or logs retained original private content")
 		}
 	}
-	if len(project) == 1 && project[0] {
+	if len(project) == 1 && project[0] != checkpointGeneralChat {
 		value, err := decodeCheckpoint(raw, ref, home)
 		if err != nil {
 			t.Fatal(err)
 		}
-		inspectNativeProjectSnapshot(t, config, value)
+		inspectNativeProjectSnapshot(t, config, value, project[0])
 	}
 	original := bytes.Clone(raw)
 	raw[0] = '['

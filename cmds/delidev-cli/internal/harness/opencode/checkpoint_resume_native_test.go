@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
@@ -33,7 +34,7 @@ func TestManualNativeOpenCodeCheckpointProcessReplacement(t *testing.T) {
 	}
 }
 
-func nativeCheckpointReplacement(t *testing.T, binary string, mode string, project ...bool) {
+func nativeCheckpointReplacement(t *testing.T, binary string, mode string, project ...nativeCheckpointWorkspace) {
 	t.Helper()
 	requireNoManagedOpenCodeConfig(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -149,8 +150,8 @@ func nativeCheckpointReplacement(t *testing.T, binary string, mode string, proje
 		if turn > 0 {
 			config.Workspace, config.NativeRoot = original.Workspace, original.NativeRoot
 		} else {
-			if len(project) == 1 && project[0] {
-				prepareNativeCheckpointGit(t, &config)
+			if len(project) == 1 && project[0] != checkpointGeneralChat {
+				prepareNativeCheckpointGit(t, &config, project[0])
 			}
 			original = config
 		}
@@ -247,17 +248,26 @@ func nativeCheckpointReplacement(t *testing.T, binary string, mode string, proje
 		if err != nil || len(value.Previous) != turn || InspectCheckpoint(ctx, home, raw, current) != nil {
 			t.Fatal("replacement lost full history checkpoint", turn, err)
 		}
-		if len(project) == 1 && project[0] {
+		if len(project) == 1 && project[0] == checkpointFirstCommitProject && turn > 0 {
+			if !validCheckpointProjectAdoption(value) || value.ProjectAdoption == nil || value.ProjectAdoption.AfterInputs != 1 || value.ProjectAdoption.From != "global" || value.Project == "global" {
+				t.Fatal("first commit lost original project adoption evidence")
+			}
+		} else if value.ProjectAdoption != nil {
+			t.Fatal("unchanged native project acquired adoption evidence")
+		}
+		if len(project) == 1 && project[0] != checkpointGeneralChat {
 			if value.Snapshot == nil || !validCheckpointSnapshot(value) {
 				t.Fatal("project lost original snapshot proof", turn)
 			}
 			if turn == 0 {
-				inspectNativeProjectSnapshot(t, config, value)
+				inspectNativeProjectSnapshot(t, config, value, project[0])
 				content := []byte("Original private snapshot fixture.\n")
 				hash := sha1.Sum(append([]byte(fmt.Sprintf("blob %d\x00", len(content))), content...))
 				object := hex.EncodeToString(hash[:])
-				if err := os.Remove(filepath.Join(config.Workspace, ".git", "objects", object[:2], object[2:])); err != nil {
-					t.Fatal("remove original fixture object", err)
+				if project[0] == checkpointCommittedProject {
+					if err := os.Remove(filepath.Join(config.Workspace, ".git", "objects", object[:2], object[2:])); err != nil {
+						t.Fatal("remove original fixture object", err)
+					}
 				}
 			}
 			if turn > 0 {
@@ -270,6 +280,14 @@ func nativeCheckpointReplacement(t *testing.T, binary string, mode string, proje
 				t.Fatal(err)
 			}
 
+		}
+		if turn == 0 && len(project) == 1 && project[0] == checkpointFirstCommitProject {
+			command := exec.CommandContext(ctx, "git", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "-qm", "First independent fixture commit")
+			command.Dir = config.Workspace
+			command.Env = append(append([]string(nil), config.Probe.Process.Env...), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1", "GIT_TERMINAL_PROMPT=0")
+			if out, err := command.CombinedOutput(); err != nil {
+				t.Fatalf("first private commit: %v %s", err, out)
+			}
 		}
 		prior, ref = raw, current
 	}

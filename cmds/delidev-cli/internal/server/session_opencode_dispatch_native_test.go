@@ -22,6 +22,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/worker"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 )
@@ -144,6 +145,14 @@ func nativeOpenCodePublicDispatch(t *testing.T, turns int, failedFirst bool, fau
 
 func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bool, fault, tool string, switchModes ...bool) {
 	workspaceType, tool := openCodeProjectFixtureProfile(tool)
+	projectProfile := openCodeCommittedProject
+	if workspaceType == domain.Local && (tool == "unborn" || tool == "first-commit") {
+		projectProfile = openCodeUnbornProject
+		if tool == "first-commit" {
+			projectProfile = openCodeFirstCommitProject
+		}
+		tool = ""
+	}
 	externalAllowance := strings.HasPrefix(tool, "always-external-")
 	if externalAllowance {
 		tool = strings.TrimPrefix(tool, "always-external-")
@@ -368,7 +377,7 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 			// preparation report and explicit first Resume use their public APIs. Only
 			// protocol discovery is a pinned reported fixture; actual initialization is
 			// independently revalidated by the original installed native process.
-			f := newFirstDispatchFixtureWorkspaceProfile(t, domain.OpenCode, mode, binary, upstream.URL, fixtureModel, workspaceType)
+			f := newFirstDispatchFixtureWorkspaceProfile(t, domain.OpenCode, mode, binary, upstream.URL, fixtureModel, workspaceType, projectProfile)
 			if missingRead {
 				toolPath.Store(prepareOpenCodeMissingRead(t, f, permission))
 			} else if externalRejection || externalAllowance {
@@ -611,6 +620,22 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 					case <-changed:
 					case <-ctx.Done():
 						t.Fatal("public native execution did not finish")
+					}
+				}
+				if projectProfile == openCodeFirstCommitProject {
+					var manifest workspace.Manifest
+					if domain.Decode(input.Manifest, &manifest) != nil {
+						t.Fatal("invalid original Local manifest")
+					}
+					if turn == 0 {
+						commitOpenCodeProjectFixture(t, ctx, manifest.PrimaryPath)
+					} else {
+						for path, want := range map[string]string{"tracked.txt": "Later independent Local changes.\n", "untracked-after-first-commit.txt": "Retain untracked Local content.\n"} {
+							raw, err := os.ReadFile(filepath.Join(manifest.PrimaryPath, path))
+							if err != nil || string(raw) != want {
+								t.Fatal("native adoption changed later Local files", err)
+							}
+						}
 					}
 				}
 				if turn+1 < turns {

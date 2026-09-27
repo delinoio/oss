@@ -171,10 +171,13 @@ func (s *sessionAPI) snapshotObservation(value nativeCheckpoint) (*checkpointSna
 }
 
 func stageCheckpointSnapshot(ctx context.Context, source nativeCheckpoint, home string) error {
+	return stageCheckpointSnapshotAs(ctx, source, home, source.Project)
+}
+func stageCheckpointSnapshotAs(ctx context.Context, source nativeCheckpoint, home, project string) error {
 	if source.Snapshot == nil {
 		return nil
 	}
-	if !validCheckpointSnapshot(source) {
+	if !validCheckpointSnapshot(source) || !snapshotProjectComponent(project) {
 		return sessionUncertain()
 	}
 	root, err := os.OpenRoot(source.RuntimeHome)
@@ -182,15 +185,21 @@ func stageCheckpointSnapshot(ctx context.Context, source nativeCheckpoint, home 
 		return sessionUncertain()
 	}
 	defer root.Close()
-	destination := filepath.Join(home, filepath.FromSlash(checkpointSnapshotPath(source)))
+	targetPath := source
+	targetPath.Project = project
+	destination := filepath.Join(home, filepath.FromSlash(checkpointSnapshotPath(targetPath)))
 	homeRoot, err := os.OpenRoot(home)
 	if err != nil {
 		return sessionUncertain()
 	}
 	defer homeRoot.Close()
-	for _, name := range []string{"data/opencode/snapshot", "data/opencode/snapshot/" + source.Project, checkpointSnapshotPath(source)} {
+	for _, name := range []string{"data/opencode/snapshot", "data/opencode/snapshot/" + project, checkpointSnapshotPath(targetPath)} {
 		if err := homeRoot.Mkdir(name, 0700); err != nil {
-			return sessionUncertain()
+			// An adopted project shares only verified private parent folders.
+			// Its final snapshot directory must still be created exclusively.
+			if !os.IsExist(err) || name == checkpointSnapshotPath(targetPath) || security.CheckPrivateDir(filepath.Join(home, filepath.FromSlash(name))) != nil || !canonicalDirectory(filepath.Join(home, filepath.FromSlash(name))) {
+				return sessionUncertain()
+			}
 		}
 	}
 	target, err := os.OpenRoot(destination)

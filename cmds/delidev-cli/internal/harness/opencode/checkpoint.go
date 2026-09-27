@@ -30,24 +30,25 @@ type CheckpointReference struct {
 }
 
 type nativeCheckpoint struct {
-	Version           uint32                 `json:"version"`
-	NativeVersion     string                 `json:"native_version"`
-	Reference         CheckpointReference    `json:"reference"`
-	RuntimeHome       string                 `json:"runtime_home"`
-	Workspace         string                 `json:"workspace"`
-	NativeRoot        string                 `json:"native_root"`
-	Project           string                 `json:"project"`
-	Slug              string                 `json:"slug"`
-	Created           int64                  `json:"created"`
-	SettingsSHA256    string                 `json:"settings_sha256"`
-	CredentialSHA256  string                 `json:"credential_sha256"`
-	History           HistoryObservation     `json:"history"`
-	Previous          []HistoryObservation   `json:"previous,omitempty"`
-	PredecessorSHA256 string                 `json:"predecessor_sha256,omitempty"`
-	Snapshot          *checkpointSnapshot    `json:"snapshot_restoration,omitempty"`
-	Tools             *checkpointToolHistory `json:"tool_restoration,omitempty"`
-	Stop              *StopReceipt           `json:"stop,omitempty"`
-	Files             []checkpointFile       `json:"files"`
+	Version           uint32                     `json:"version"`
+	NativeVersion     string                     `json:"native_version"`
+	Reference         CheckpointReference        `json:"reference"`
+	RuntimeHome       string                     `json:"runtime_home"`
+	Workspace         string                     `json:"workspace"`
+	NativeRoot        string                     `json:"native_root"`
+	Project           string                     `json:"project"`
+	Slug              string                     `json:"slug"`
+	Created           int64                      `json:"created"`
+	SettingsSHA256    string                     `json:"settings_sha256"`
+	CredentialSHA256  string                     `json:"credential_sha256"`
+	History           HistoryObservation         `json:"history"`
+	Previous          []HistoryObservation       `json:"previous,omitempty"`
+	PredecessorSHA256 string                     `json:"predecessor_sha256,omitempty"`
+	ProjectAdoption   *checkpointProjectAdoption `json:"project_adoption,omitempty"`
+	Snapshot          *checkpointSnapshot        `json:"snapshot_restoration,omitempty"`
+	Tools             *checkpointToolHistory     `json:"tool_restoration,omitempty"`
+	Stop              *StopReceipt               `json:"stop,omitempty"`
+	Files             []checkpointFile           `json:"files"`
 }
 
 // RetainCheckpoint is available only after original complete-history and
@@ -134,6 +135,14 @@ func (a *OwnedAPI) RetainCheckpoint(ctx context.Context) (raw []byte, reference 
 			value.Previous = append(value.Previous, copyHistoryObservation(prior))
 		}
 	}
+	if s.projectAdoption != nil {
+		copy := *s.projectAdoption
+		value.ProjectAdoption = &copy
+	}
+	if value.ProjectAdoption == nil && s.predecessor != nil && s.predecessor.ProjectAdoption != nil {
+		copy := *s.predecessor.ProjectAdoption
+		value.ProjectAdoption = &copy
+	}
 	value.Tools = s.checkpointToolHistory(value)
 	phase = "snapshot"
 	if value.NativeRoot == value.Workspace && checkpointHasSnapshotFiles(value) {
@@ -213,7 +222,7 @@ func decodeCheckpoint(raw []byte, ref CheckpointReference, home string) (nativeC
 		return nativeCheckpoint{}, sessionUncertain()
 	}
 	input := value.History.Messages[0]
-	if len(input.Parts) != 1 || input.Parts[0].ID != ref.PartID || input.Parts[0].Kind != TextPartKind || !validCheckpointLineage(value) || !validCheckpointSnapshot(value) {
+	if len(input.Parts) != 1 || input.Parts[0].ID != ref.PartID || input.Parts[0].Kind != TextPartKind || !validCheckpointLineage(value) || !validCheckpointSnapshot(value) || !validCheckpointProjectAdoption(value) {
 		return nativeCheckpoint{}, sessionUncertain()
 	}
 	if stop := value.Stop; stop != nil {

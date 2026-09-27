@@ -65,7 +65,7 @@ func newFirstDispatchFixtureProfile(t *testing.T, harness domain.Harness, mode d
 	return newFirstDispatchFixtureWorkspaceProfile(t, harness, mode, executable, upstreamURL, nativeModel, domain.GeneralChat)
 }
 
-func newFirstDispatchFixtureWorkspaceProfile(t *testing.T, harness domain.Harness, mode domain.SessionMode, executable, upstreamURL, nativeModel string, workspaceType domain.WorkspaceType) *firstDispatchFixture {
+func newFirstDispatchFixtureWorkspaceProfile(t *testing.T, harness domain.Harness, mode domain.SessionMode, executable, upstreamURL, nativeModel string, workspaceType domain.WorkspaceType, projects ...openCodeProjectFixtureKind) *firstDispatchFixture {
 	t.Helper()
 	protocol, permission, version := domain.OpenAIResponses, domain.PermissionReadOnly, domain.CodexProtocolVersion
 	if harness == domain.OpenCode {
@@ -151,7 +151,7 @@ func newFirstDispatchFixtureWorkspaceProfile(t *testing.T, harness domain.Harnes
 	}
 	f.machine = currentCatalogResource(t, base, f.machine)
 	if workspaceType != domain.GeneralChat {
-		prepareOpenCodeProjectFixture(t, f, workspaceType)
+		prepareOpenCodeProjectFixture(t, f, workspaceType, projects...)
 	}
 	if workspaceType == domain.Local {
 		raw, _ := json.Marshal(f.selection)

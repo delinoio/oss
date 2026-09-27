@@ -16,6 +16,33 @@ import (
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
+type openCodeProjectFixtureKind uint8
+
+const (
+	openCodeCommittedProject openCodeProjectFixtureKind = iota
+	openCodeUnbornProject
+	openCodeFirstCommitProject
+)
+
+func TestManualNativeOpenCodeUnbornPublicContinuation(t *testing.T) {
+	for _, scenario := range []string{"unborn", "first-commit"} {
+		t.Run(scenario, func(t *testing.T) {
+			nativeOpenCodePublicDispatchProfile(t, 3, false, "", "project-local:"+scenario, true)
+		})
+	}
+}
+
+func TestManualNativeOpenCodeUnbornCompletionRecovery(t *testing.T) {
+	binary := nativeOpenCodeRecoveryExecutable(t)
+	for _, mode := range []domain.SessionMode{domain.ExecuteMode, domain.PlanMode} {
+		for _, scenario := range []string{"unborn-resumed", "first-commit-resumed"} {
+			t.Run(string(mode)+"/"+scenario, func(t *testing.T) {
+				nativeOpenCodeRecovery(t, binary, mode, "project-local:"+scenario)
+			})
+		}
+	}
+}
+
 func openCodeProjectFixtureProfile(profile string) (domain.WorkspaceType, string) {
 	for _, kind := range []domain.WorkspaceType{domain.Worktree, domain.Local} {
 		prefix := "project-" + string(kind) + ":"
@@ -26,7 +53,7 @@ func openCodeProjectFixtureProfile(profile string) (domain.WorkspaceType, string
 	return domain.GeneralChat, profile
 }
 
-func prepareOpenCodeProjectFixture(t *testing.T, f *firstDispatchFixture, kind domain.WorkspaceType) {
+func prepareOpenCodeProjectFixture(t *testing.T, f *firstDispatchFixture, kind domain.WorkspaceType, profiles ...openCodeProjectFixtureKind) {
 	t.Helper()
 	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
@@ -51,7 +78,14 @@ func prepareOpenCodeProjectFixture(t *testing.T, f *firstDispatchFixture, kind d
 	if err := os.WriteFile(filepath.Join(checkout, "tracked.txt"), []byte("Original project fixture.\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	for _, args := range [][]string{{"init", "-q", "--initial-branch=main"}, {"config", "core.hooksPath", filepath.Join(root, "no-hooks")}, {"add", "tracked.txt"}, {"-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "-qm", "Private project fixture"}} {
+	commands := [][]string{{"init", "-q", "--initial-branch=main"}, {"config", "core.hooksPath", filepath.Join(root, "no-hooks")}, {"add", "tracked.txt"}, {"-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "-qm", "Private project fixture"}}
+	if len(profiles) == 1 && profiles[0] != openCodeCommittedProject {
+		if kind != domain.Local {
+			t.Fatal("unborn fixture must use authenticated Local")
+		}
+		commands = commands[:len(commands)-1]
+	}
+	for _, args := range commands {
 		command := exec.CommandContext(ctx, "git", args...)
 		command.Dir, command.Env = checkout, env
 		command.Stdout, command.Stderr = io.Discard, io.Discard
@@ -112,5 +146,25 @@ func TestManualNativeOpenCodeProjectRefusesChangedSnapshot(t *testing.T) {
 func TestManualNativeOpenCodeProjectFailedContinuation(t *testing.T) {
 	for _, kind := range []domain.WorkspaceType{domain.Worktree, domain.Local} {
 		t.Run(string(kind), func(t *testing.T) { nativeOpenCodePublicDispatchProfile(t, 2, true, "", "project-"+string(kind)+":") })
+	}
+}
+
+func commitOpenCodeProjectFixture(t *testing.T, ctx context.Context, directory string) {
+	t.Helper()
+	env, err := harness.PrivateRuntimeEnvironment(filepath.Join(t.TempDir(), "git-runtime"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := exec.CommandContext(ctx, "git", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "-qm", "First private fixture commit")
+	command.Dir = directory
+	command.Env = append(env, "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1", "GIT_TERMINAL_PROMPT=0")
+	if out, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("first private project commit: %v %s", err, out)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "tracked.txt"), []byte("Later independent Local changes.\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "untracked-after-first-commit.txt"), []byte("Retain untracked Local content.\n"), 0600); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -89,6 +89,10 @@ func OpenResumedAPI(ctx context.Context, config APIExecutionConfig, home string,
 		session.sessionPermissions = checkpointAppliedPermissions(source.Tools, source.Tools.AppliedAlways)
 		session.restoredAlways = source.Tools.AppliedAlways
 	}
+	session.projectSourceDigest = ref.SHA256
+	if err := session.adoptCheckpointProject(ctx, source); err != nil {
+		return nil, err
+	}
 	if err := session.inspectCheckpointHistory(ctx, source, previousAgent); err != nil {
 		return nil, err
 	}
@@ -99,6 +103,9 @@ func OpenResumedAPI(ctx context.Context, config APIExecutionConfig, home string,
 		if err := session.inspectCheckpointHistory(ctx, source, previousAgent); err != nil {
 			return nil, err
 		}
+	}
+	if err := session.recheckCheckpointProject(ctx); err != nil {
+		return nil, err
 	}
 	session.creation.recorded = true
 	session.predecessor, session.predecessorDigest, session.resumeRequest = &resume.source, ref.SHA256, request
@@ -191,7 +198,7 @@ func InspectReplacementCheckpoint(ctx context.Context, home string, raw []byte, 
 }
 
 func checkpointReplacementProfile(value nativeCheckpoint) error {
-	if !validCheckpointTools(value) || !validCheckpointSnapshot(value) || value.Snapshot == nil && (value.Project != "global" || filepath.Dir(value.NativeRoot) != value.NativeRoot) {
+	if !validCheckpointTools(value) || !validCheckpointSnapshot(value) || !validCheckpointProjectAdoption(value) || value.Snapshot == nil && (value.Project != "global" || filepath.Dir(value.NativeRoot) != value.NativeRoot) {
 		return incompatible()
 	}
 	for _, history := range checkpointHistories(value) {
