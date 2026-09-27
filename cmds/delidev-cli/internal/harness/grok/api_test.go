@@ -54,6 +54,10 @@ func apiFixtureProcess() {
 	workspace := ""
 	var pendingPrompt domain.ID
 	for scanner.Scan() {
+		if strings.HasPrefix(mode, "write-") && bytes.Contains(scanner.Bytes(), []byte(`"result"`)) {
+			fixtureFileReply(root, workspace, mode, pendingPrompt, scanner.Bytes())
+			continue
+		}
 		var request struct {
 			JSONRPC string          `json:"jsonrpc"`
 			ID      domain.ID       `json:"id,omitempty"`

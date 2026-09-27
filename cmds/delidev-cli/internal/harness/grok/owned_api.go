@@ -18,6 +18,40 @@ type OwnedAPI struct {
 	input      func(context.Context, InputClaim) error
 	closure    func(context.Context, ClosureClaim) error
 	stop       func(context.Context, StopClaim) error
+	fileReply  func(context.Context, FilePermissionClaim) error
+}
+
+func OpenOwnedAPIWithFileTools(ctx context.Context, config APIExecutionConfig, creation func(context.Context, CreationClaim) error, input func(context.Context, InputClaim) error, closure func(context.Context, ClosureClaim) error, reply func(context.Context, FilePermissionClaim) error) (*OwnedAPI, error) {
+	if reply == nil {
+		return nil, apiConfigurationError()
+	}
+	api, err := OpenOwnedAPI(ctx, config, creation, input, closure)
+	if err != nil {
+		return nil, err
+	}
+	api.fileReply = reply
+	return api, nil
+}
+
+func (a *OwnedAPI) RunFileTools(ctx context.Context, request domain.ID, input string, emit func(context.Context, InputObservation) error) (PromptResult, error) {
+	if a == nil || a.connection == nil || a.fileReply == nil {
+		return PromptResult{}, apiConfigurationError()
+	}
+	return a.connection.RunFileTools(ctx, request, input, a.input, emit)
+}
+
+func (a *OwnedAPI) ReplyFilePermission(ctx context.Context, request, arrival domain.ID, decision FilePermissionDecision) (FilePermissionDelivery, error) {
+	if a == nil || a.connection == nil || a.fileReply == nil {
+		return FilePermissionDelivery{}, apiConfigurationError()
+	}
+	return a.connection.ReplyFilePermission(ctx, request, arrival, decision, a.fileReply)
+}
+
+func (a *OwnedAPI) InspectFilePermission(arrival domain.ID) (FilePermissionDelivery, error) {
+	if a == nil || a.connection == nil || a.connection.textControl() == nil {
+		return FilePermissionDelivery{}, sessionUncertain()
+	}
+	return a.connection.textControl().inspectFileReply(arrival)
 }
 
 func OpenOwnedAPIWithStop(ctx context.Context, config APIExecutionConfig, creation func(context.Context, CreationClaim) error, input func(context.Context, InputClaim) error, closure func(context.Context, ClosureClaim) error, stop func(context.Context, StopClaim) error) (*OwnedAPI, error) {

@@ -48,13 +48,15 @@ type textStop struct {
 }
 
 type textControl struct {
-	mu       sync.Mutex
-	input    domain.ID
-	prompt   string
-	running  bool
-	terminal bool
-	stop     *textStop
-	profile  inputProfile
+	mu          sync.Mutex
+	input       domain.ID
+	prompt      string
+	running     bool
+	terminal    bool
+	stop        *textStop
+	profile     inputProfile
+	permissions map[domain.ID]*fileReply
+	inputDone   <-chan struct{}
 }
 
 func (a *apiConnection) activateText(request domain.ID, profile inputProfile) {

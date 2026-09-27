@@ -1,0 +1,42 @@
+{
+  "stopReason": "cancelled",
+  "_meta": {
+    "sessionId": "019f6de0-a760-7000-8000-000000000071",
+    "requestId": "e5833c4a-d764-4428-8bd8-6c2968a34b1b",
+    "promptId": "e5833c4a-d764-4428-8bd8-6c2968a34b1b",
+    "totalTokens": 16,
+    "modelId": "fixture-model",
+    "inputTokens": 11,
+    "outputTokens": 5,
+    "cachedReadTokens": 0,
+    "reasoningTokens": 0,
+    "usage": {
+      "inputTokens": 11,
+      "outputTokens": 5,
+      "totalTokens": 16,
+      "cachedReadTokens": 0,
+      "cacheCreationTokens": 0,
+      "reasoningTokens": 0,
+      "modelCalls": 1,
+      "apiDurationMs": 4,
+      "modelUsage": {
+        "fixture-model": {
+          "inputTokens": 11,
+          "outputTokens": 5,
+          "totalTokens": 16,
+          "cachedReadTokens": 0,
+          "cacheCreationTokens": 0,
+          "reasoningTokens": 0,
+          "modelCalls": 1,
+          "apiDurationMs": 4
+        }
+      },
+      "numTurns": 1
+    },
+    "cancellationCategory": "PermissionRejected",
+    "cancellationContext": {
+      "tool_name": "write",
+      "reason": "User rejected the execution"
+    }
+  }
+}

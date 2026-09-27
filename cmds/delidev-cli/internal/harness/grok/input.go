@@ -50,16 +50,18 @@ type inputProfile string
 const (
 	plainTextInput inputProfile = "plain-text"
 	readFileInput  inputProfile = "read-file"
+	fileWriteInput inputProfile = "file-write"
 )
 
 const (
-	InputAccepted  ObservationKind = "input-accepted"
-	InputText      ObservationKind = "input-text"
-	InputTitle     ObservationKind = "input-title"
-	InputCompleted ObservationKind = "input-completed"
-	StopSettled    ObservationKind = "stop-settled"
-	InputFileTool  ObservationKind = "input-file-tool"
-	InputResponse  ObservationKind = "input-response"
+	InputAccepted           ObservationKind = "input-accepted"
+	InputText               ObservationKind = "input-text"
+	InputTitle              ObservationKind = "input-title"
+	InputCompleted          ObservationKind = "input-completed"
+	StopSettled             ObservationKind = "stop-settled"
+	InputFileTool           ObservationKind = "input-file-tool"
+	InputResponse           ObservationKind = "input-response"
+	InputPermissionRejected ObservationKind = "input-permission-rejected"
 )
 
 // InputObservation contains native facts only. Its coordinator must journal
@@ -75,6 +77,8 @@ type InputObservation struct {
 	Stop           *StopObservation
 	FileTool       *fileToolFact
 	Response       *responseUsage
+	Permission     *FilePermissionOffer
+	Rejection      *rejectedFileResult
 }
 
 type promptParams struct {
@@ -114,8 +118,14 @@ func (a *apiConnection) RunReadFiles(ctx context.Context, request domain.ID, inp
 	return a.runInput(ctx, request, input, record, emit, readFileInput)
 }
 
+// RunFileTools composes original Read/Write with explicit once-only permission
+// replies. It does not implement remembered approvals, Stop or native history.
+func (a *apiConnection) RunFileTools(ctx context.Context, request domain.ID, input string, record func(context.Context, InputClaim) error, emit func(context.Context, InputObservation) error) (PromptResult, error) {
+	return a.runInput(ctx, request, input, record, emit, fileWriteInput)
+}
+
 func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input string, record func(context.Context, InputClaim) error, emit func(context.Context, InputObservation) error, profile inputProfile) (result PromptResult, returned error) {
-	if profile != plainTextInput && profile != readFileInput {
+	if profile != plainTextInput && profile != readFileInput && profile != fileWriteInput {
 		return result, apiConfigurationError()
 	}
 	if request.Validate() != nil || domain.Text(input, "original native input", 256<<10, true) != nil || record == nil || emit == nil {
@@ -173,6 +183,9 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 	a.activateText(request, profile)
 	control := a.textControl()
 	life, cancel := context.WithCancel(ctx)
+	control.mu.Lock()
+	control.inputDone = life.Done()
+	control.mu.Unlock()
 	read, wake := context.WithCancel(life)
 	watchStop, watchDone := make(chan struct{}), make(chan struct{})
 	go func() {
@@ -214,6 +227,7 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 				control.mu.Unlock()
 			}
 		}
+		control.joinFileReplies()
 		<-done
 		close(watchStop)
 		<-watchDone
@@ -235,6 +249,9 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 	var completed PromptCompleted
 	var interruptedTurn InterruptedTurnCompleted
 	var interruptedPrompt InterruptedPromptCompleted
+	var rejectedTurn rejectedFileTurn
+	var rejectedPrompt rejectedFileCompletion
+	rejected, promptRejected := false, false
 	interrupted, promptInterrupted := false, false
 	var responseCounters responseUsage
 	var accounting responseAccounting
@@ -292,6 +309,23 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 		if events > 4096 {
 			return result, domain.Fail(domain.ResourceExhausted, "Native input observations reached their bound.", "Retain the original input and reconcile its native runtime.")
 		}
+		if event.Kind == nativewire.ServerRequest {
+			if profile != fileWriteInput || fileTools == nil || !queue.running || queue.cleared {
+				return result, incompatible()
+			}
+			fact, err := fileTools.observe(event)
+			if err != nil {
+				return result, err
+			}
+			offer, err := control.offerFilePermission(event, fact)
+			if err != nil {
+				return result, err
+			}
+			if err := publish(InputObservation{Kind: InputFileTool, FileTool: &fact, Permission: &offer}); err != nil {
+				return result, err
+			}
+			continue
+		}
 		if event.Kind != nativewire.Notification {
 			return result, incompatible()
 		}
@@ -308,7 +342,7 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 				}
 			}
 			if !running && queue.running {
-				if profile == readFileInput {
+				if profile != plainTextInput {
 					fileTools, err = newFileToolObserver(a.session, queue.prompt)
 					if err != nil {
 						return result, err
@@ -330,15 +364,20 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 			}
 			switch variant.Update.Kind {
 			case "tool_call_delta_chunk", "tool_call", "tool_call_update", "pending_interaction", "interaction_resolved":
-				if profile != readFileInput || fileTools == nil || !queue.running || queue.cleared {
+				if profile == plainTextInput || fileTools == nil || !queue.running || queue.cleared {
 					return result, incompatible()
 				}
 				fact, err := fileTools.observe(event)
 				if err != nil {
 					return result, err
 				}
-				if fact.Delta != nil && fact.Delta.Update.Name != nil && *fact.Delta.Update.Name != readFileTool || fact.Observation != nil && fact.Observation.Input.Name != readFileTool || fact.Permission != nil {
+				if profile == readFileInput && (fact.Delta != nil && fact.Delta.Update.Name != nil && *fact.Delta.Update.Name != readFileTool || fact.Observation != nil && fact.Observation.Input.Name != readFileTool || fact.Permission != nil) {
 					return result, incompatible()
+				}
+				if profile == fileWriteInput {
+					if err := control.observeFileReply(life, fact); err != nil {
+						return result, err
+					}
 				}
 				if fact.Observation != nil {
 					if err := observeIndex(fact.Observation.Meta.Event); err != nil {
@@ -381,17 +420,28 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 					return result, incompatible()
 				}
 				if reason.Update.Reason == Cancelled {
-					if control.originalStop() == nil {
-						return result, incompatible()
+					if profile == fileWriteInput {
+						rejectedTurn, err = parseRejectedFileTurn(event.Params, a.session, queue.prompt, a.profile.model)
+						if err != nil {
+							return result, err
+						}
+						if err := observeIndex(rejectedTurn.Turn.Meta.Event); err != nil {
+							return result, err
+						}
+						rejected = true
+					} else {
+						if control.originalStop() == nil {
+							return result, incompatible()
+						}
+						interruptedTurn, err = parseInterruptedTurn(event.Params, a.session, queue.prompt)
+						if err != nil {
+							return result, err
+						}
+						if err := observeIndex(interruptedTurn.Meta.Event); err != nil {
+							return result, err
+						}
+						interrupted = true
 					}
-					interruptedTurn, err = parseInterruptedTurn(event.Params, a.session, queue.prompt)
-					if err != nil {
-						return result, err
-					}
-					if err := observeIndex(interruptedTurn.Meta.Event); err != nil {
-						return result, err
-					}
-					interrupted = true
 				} else {
 					turn, err = parseTurnCompleted(event.Params, a.session, queue.prompt, a.profile.model)
 					if err != nil {
@@ -426,7 +476,7 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 					if err := accounting.observe(observation.usage); err != nil {
 						return result, err
 					}
-					if profile == readFileInput {
+					if profile != plainTextInput {
 						if err := publish(InputObservation{Kind: InputResponse, Response: &observation.usage}); err != nil {
 							return result, err
 						}
@@ -449,14 +499,22 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 				return result, incompatible()
 			}
 			if reason.Reason == Cancelled {
-				if control.originalStop() == nil {
-					return result, incompatible()
+				if profile == fileWriteInput {
+					rejectedPrompt, err = parseRejectedFileCompletion(event.Params, a.session, queue.prompt)
+					if err != nil {
+						return result, err
+					}
+					promptRejected = true
+				} else {
+					if control.originalStop() == nil {
+						return result, incompatible()
+					}
+					interruptedPrompt, err = parseInterruptedPromptCompleted(event.Params, a.session, queue.prompt)
+					if err != nil {
+						return result, err
+					}
+					promptInterrupted = true
 				}
-				interruptedPrompt, err = parseInterruptedPromptCompleted(event.Params, a.session, queue.prompt)
-				if err != nil {
-					return result, err
-				}
-				promptInterrupted = true
 			} else {
 				completed, err = parsePromptCompleted(event.Params, a.session, queue.prompt)
 				if err != nil {
@@ -481,8 +539,33 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 			return result, incompatible()
 		}
 	}
-	if interrupted != promptInterrupted {
+	if interrupted != promptInterrupted || rejected != promptRejected {
 		return result, incompatible()
+	}
+	if rejected {
+		if !queue.cleared || !responseObserved || !control.filesSettled(fileTools, true) {
+			return result, incompatible()
+		}
+		denied, err := parseRejectedFileResult(rpc.Result, a.session, queue.prompt, a.profile.model, accounting)
+		if err != nil || matchFileRejection(denied, rejectedTurn, rejectedPrompt, a.profile.model) != nil {
+			return result, incompatible()
+		}
+		control.finish()
+		if err := a.waitStopIdle(life, &settled, queue.prompt); err != nil {
+			return result, err
+		}
+		if err := a.profile.checkInitialized(); err != nil {
+			return result, err
+		}
+		if err := a.Close(); err != nil {
+			return result, sessionUncertain()
+		}
+		// Owned cleanup cancels the native publication context. Publish the
+		// correlated rejection on the original caller context after joining it.
+		if err := emit(ctx, InputObservation{Kind: InputPermissionRejected, InputID: request, NativePromptID: queue.prompt, Rejection: &denied}); err != nil {
+			return result, sessionUncertain()
+		}
+		return denied.Result, domain.Fail(domain.Canceled, "The original Grok Build file permission was rejected.", "Retain its reported usage and reconcile history before resuming.")
 	}
 	if interrupted {
 		stopped, err := parseInterruptedPromptResult(rpc.Result, a.session, queue.prompt, a.profile.model)
@@ -508,8 +591,8 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 	if !queue.cleared || !responseObserved {
 		return result, incompatible()
 	}
-	if profile == readFileInput {
-		if fileTools == nil || len(fileTools.tools) > 0 && !fileTools.settled() {
+	if profile != plainTextInput {
+		if fileTools == nil || profile == readFileInput && len(fileTools.tools) > 0 && !fileTools.settled() || profile == fileWriteInput && !control.filesSettled(fileTools, false) {
 			return result, incompatible()
 		}
 		result, err = parseFilePromptResult(rpc.Result, a.session, queue.prompt, a.profile.model, accounting)

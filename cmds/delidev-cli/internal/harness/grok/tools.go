@@ -27,6 +27,7 @@ const (
 	fileToolDeclared  fileToolPhase = "declared"
 	fileToolDescribed fileToolPhase = "described"
 	fileToolCompleted fileToolPhase = "completed"
+	fileToolFailed    fileToolPhase = "failed"
 )
 
 // These native facts are private observations, never permission grants or
@@ -78,6 +79,7 @@ type fileToolObservation struct {
 	Meta       toolObservationMeta
 	Read       *fileReadOutput
 	Write      *fileWriteOutput
+	Failure    *string
 }
 
 type fileReadOutput struct {
@@ -205,7 +207,7 @@ func (m toolObservationMeta) validate(session domain.ID, prompt, id string, phas
 		return isNull(m.Params.Status)
 	}
 	var status string
-	return phase == fileToolCompleted && decode(m.Params.Status, &status) == nil && status == "Completed"
+	return decode(m.Params.Status, &status) == nil && (phase == fileToolCompleted && status == "Completed" || phase == fileToolFailed && status == "Failed")
 }
 
 type fileDiff struct {
@@ -278,6 +280,23 @@ func parseFileToolObservation(raw []byte, session domain.ID, prompt string, orig
 			return value, incompatible()
 		}
 		value.Phase, value.ID, value.Input, value.Title, value.Descriptor = fileToolDescribed, details.ID, input, details.Title, details.Meta.Tool
+	} else if variant.Kind == "tool_call_update" && variant.Status != nil && *variant.Status == "failed" {
+		var failed struct {
+			Kind    string `json:"sessionUpdate"`
+			ID      string `json:"toolCallId"`
+			Status  string `json:"status"`
+			Content []struct {
+				Type    string     `json:"type"`
+				Content promptText `json:"content"`
+			} `json:"content"`
+		}
+		if original == nil || original.Name != writeFileTool || decode(envelope.Update, &failed) != nil || len(failed.Content) != 1 || failed.Content[0].Type != "content" || failed.Content[0].Content.Type != "text" || !text(failed.Content[0].Content.Text, 256<<10) {
+			return value, incompatible()
+		}
+		// Failure text is retained verbatim, not interpreted as an answer or
+		// permission rejection. That requires original reply/terminal facts.
+		value.Phase, value.ID, value.Input = fileToolFailed, failed.ID, *original
+		value.Failure = &failed.Content[0].Content.Text
 	} else if variant.Kind == "tool_call_update" && variant.Status != nil && *variant.Status == "completed" {
 		var complete struct {
 			Kind    string          `json:"sessionUpdate"`

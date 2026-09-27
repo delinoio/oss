@@ -3,8 +3,11 @@ package worker
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -473,5 +476,123 @@ func TestGrokStopClaimBindsOriginalWorkerAndExcludesClosureReplay(t *testing.T) 
 	}
 	if _, err := openGrokClaims(p); err == nil {
 		t.Fatal("retained Stop acquired native send lease")
+	}
+}
+
+func fileReplyClaimFixture(p *ExecutionPublisher, running *grok.InputClaim, index int) grok.FilePermissionClaim {
+	digest := func(value string) string { v := sha256.Sum256([]byte(value)); return hex.EncodeToString(v[:]) }
+	return grok.FilePermissionClaim{Version: 1, OwnerID: p.job, ProductSessionID: p.input.SessionID, InputRequestID: p.input.TurnRequestID, RequestID: domain.NewID(), NativeSessionID: running.NativeSessionID, NativePromptID: running.NativePromptID, ArrivalID: domain.NewID(), ToolID: fmt.Sprintf("original-tool-%d", index), RequestDigest: digest(fmt.Sprintf("s:request-%d", index)), ProposalDigest: digest(fmt.Sprintf("proposal-%d", index)), Decision: grok.AllowFileOnce, BodyDigest: digest(`{"outcome":{"outcome":"selected","optionId":"allow-once"}}`)}
+}
+
+func TestGrokFileReplyClaimsRetainOriginalOwnershipAndBound(t *testing.T) {
+	p, journal, claims := newGrokClaimsFixture(t)
+	ctx := context.Background()
+	original := fileReplyClaimFixture(p, claims[3].Input, 0)
+	if journal.FileReply(ctx, original) == nil {
+		t.Fatal("file reply preceded original input binding")
+	}
+	for _, claim := range claims {
+		if err := recordGrokClaim(ctx, journal, claim); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, mutate := range []func(*grok.FilePermissionClaim){
+		func(c *grok.FilePermissionClaim) { c.OwnerID = domain.NewID() },
+		func(c *grok.FilePermissionClaim) { c.ProductSessionID = domain.NewID() },
+		func(c *grok.FilePermissionClaim) { c.InputRequestID = domain.NewID() },
+		func(c *grok.FilePermissionClaim) { c.RequestID = p.input.ThreadRequestID },
+		func(c *grok.FilePermissionClaim) { c.NativeSessionID = domain.NewID() },
+		func(c *grok.FilePermissionClaim) { c.NativePromptID = "e5833c4a-d764-4428-8bd8-6c2968a34b1c" },
+		func(c *grok.FilePermissionClaim) { c.Decision = grok.RejectFileOnce },
+		func(c *grok.FilePermissionClaim) { c.ProposalDigest = strings.Repeat("AB", 32) },
+	} {
+		changed := original
+		mutate(&changed)
+		before, _ := security.ReadPrivate(journal.path, maxGrokClaimBytes)
+		if journal.FileReply(ctx, changed) == nil {
+			t.Fatal("foreign file reply claimed")
+		}
+		after, _ := security.ReadPrivate(journal.path, maxGrokClaimBytes)
+		if !bytes.Equal(before, after) {
+			t.Fatal("invalid file reply changed journal")
+		}
+	}
+	if err := journal.FileReply(ctx, original); err != nil {
+		t.Fatal(err)
+	}
+	for _, mutate := range []func(*grok.FilePermissionClaim){
+		func(c *grok.FilePermissionClaim) { c.RequestID = original.RequestID },
+		func(c *grok.FilePermissionClaim) { c.ArrivalID = original.ArrivalID },
+		func(c *grok.FilePermissionClaim) { c.ToolID = original.ToolID },
+		func(c *grok.FilePermissionClaim) { c.RequestDigest = original.RequestDigest },
+	} {
+		c := fileReplyClaimFixture(p, claims[3].Input, 1)
+		mutate(&c)
+		if journal.FileReply(ctx, c) == nil {
+			t.Fatal("original file reply identity reused")
+		}
+	}
+	for i := 1; i < 128; i++ {
+		if err := journal.FileReply(ctx, fileReplyClaimFixture(p, claims[3].Input, i)); err != nil {
+			t.Fatal("bounded original reply refused", i, err)
+		}
+	}
+	if journal.FileReply(ctx, fileReplyClaimFixture(p, claims[3].Input, 128)) == nil {
+		t.Fatal("unbounded file replies accepted")
+	}
+	retained, err := readGrokClaims(p.config.Root, journal.state.Reference)
+	if err != nil || len(retained) != 132 || *retained[4].FileReply != original {
+		t.Fatal("original replies not retained", err)
+	}
+	if p.state.Pending != nil || p.state.LastSequence != 0 {
+		t.Fatal("file claims granted public publication")
+	}
+	if err := journal.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := openGrokClaims(p); err == nil {
+		t.Fatal("file replies regained send authority on reopen")
+	}
+}
+
+func TestGrokFileRepliesExcludeTextStopAndClosure(t *testing.T) {
+	for _, preceding := range []string{"reply", "stop", "closure"} {
+		t.Run(preceding, func(t *testing.T) {
+			p, journal, claims := newGrokClaimsFixture(t)
+			ctx := context.Background()
+			for _, claim := range claims {
+				if err := recordGrokClaim(ctx, journal, claim); err != nil {
+					t.Fatal(err)
+				}
+			}
+			running := claims[3].Input
+			digest, _ := grok.ClosureClaimDigest(running.NativeSessionID)
+			stop := grok.StopClaim{Version: 1, OwnerID: p.job, ProductSessionID: p.input.SessionID, InputRequestID: p.input.TurnRequestID, RequestID: domain.NewID(), NativeSessionID: running.NativeSessionID, NativePromptID: running.NativePromptID, BodyDigest: digest}
+			closure := grok.ClosureClaim{Phase: grok.ClaimClosure, RequestID: domain.NewID(), ProductSessionID: p.input.SessionID, NativeSessionID: running.NativeSessionID, NativePromptID: running.NativePromptID, BodyDigest: digest}
+			reply := fileReplyClaimFixture(p, running, 0)
+			switch preceding {
+			case "reply":
+				if err := journal.FileReply(ctx, reply); err != nil {
+					t.Fatal(err)
+				}
+				if journal.Stop(ctx, stop) == nil || journal.Closure(ctx, closure) == nil {
+					t.Fatal("file reply granted text-only claims")
+				}
+			case "stop":
+				if err := journal.Stop(ctx, stop); err != nil {
+					t.Fatal(err)
+				}
+				if journal.FileReply(ctx, reply) == nil {
+					t.Fatal("stopped text granted file reply")
+				}
+			case "closure":
+				if err := journal.Closure(ctx, closure); err != nil {
+					t.Fatal(err)
+				}
+				if journal.FileReply(ctx, reply) == nil {
+					t.Fatal("closed text granted file reply")
+				}
+			}
+		})
 	}
 }

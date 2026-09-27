@@ -1,0 +1,30 @@
+{
+  "sessionId": "019f6de0-a760-7000-8000-000000000071",
+  "update": {
+    "sessionUpdate": "tool_call_update",
+    "toolCallId": "call_delidev_read",
+    "status": "failed",
+    "content": [
+      {
+        "type": "content",
+        "content": {
+          "type": "text",
+          "text": "User rejected the execution for tool `write`"
+        }
+      }
+    ]
+  },
+  "_meta": {
+    "totalTokens": 16,
+    "eventId": "019f6de0-a760-7000-8000-000000000071-7",
+    "agentTimestampMs": 1790530175653,
+    "promptId": "e5833c4a-d764-4428-8bd8-6c2968a34b1b",
+    "streamStartMs": 1790530175633,
+    "turnStartMs": 1790530175597,
+    "updateType": "ToolCallUpdate",
+    "updateParams": {
+      "toolCallId": "call_delidev_read",
+      "status": "Failed"
+    }
+  }
+}

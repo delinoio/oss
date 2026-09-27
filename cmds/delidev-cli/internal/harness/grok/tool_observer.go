@@ -176,7 +176,7 @@ func (o *fileToolObserver) observe(event nativewire.Event) (fileToolFact, error)
 				return fact, incompatible()
 			}
 			next.details = historyValueDigest(permissionTool(observed))
-		case fileToolCompleted:
+		case fileToolCompleted, fileToolFailed:
 			if prior.phase != fileToolDescribed || !prior.pending || !prior.resolved || prior.name == writeFileTool && prior.permission == "" {
 				return fact, incompatible()
 			}

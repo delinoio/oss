@@ -16,8 +16,8 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
-const maxGrokClaimBytes = 16 << 10
-const maxGrokClaims = 6
+const maxGrokClaimBytes = 256 << 10
+const maxGrokClaims = 132 // Four input stages plus at most 128 original tool replies.
 
 // The immutable publisher supplies assignment authority. Native configuration
 // inspection and session setup remain the adapter's separate responsibility.
@@ -42,10 +42,11 @@ type grokClaimReference struct {
 }
 
 type grokClaim struct {
-	Creation *grok.CreationClaim `json:"creation,omitempty"`
-	Input    *grok.InputClaim    `json:"input,omitempty"`
-	Closure  *grok.ClosureClaim  `json:"closure,omitempty"`
-	Stop     *grok.StopClaim     `json:"stop,omitempty"`
+	Creation  *grok.CreationClaim       `json:"creation,omitempty"`
+	Input     *grok.InputClaim          `json:"input,omitempty"`
+	Closure   *grok.ClosureClaim        `json:"closure,omitempty"`
+	Stop      *grok.StopClaim           `json:"stop,omitempty"`
+	FileReply *grok.FilePermissionClaim `json:"file_reply,omitempty"`
 }
 
 type grokClaimState struct {
@@ -153,8 +154,24 @@ func (s grokClaimState) validateNext(c grokClaim) error {
 	if c.Stop != nil {
 		variants++
 	}
+	if c.FileReply != nil {
+		variants++
+	}
 	if len(s.Claims) >= maxGrokClaims || variants != 1 {
 		return grokClaimUncertain()
+	}
+	if c.FileReply != nil {
+		reply := c.FileReply
+		if len(s.Claims) < 4 || reply.Validate() != nil || reply.OwnerID != s.Reference.JobID || reply.ProductSessionID != s.Reference.SessionID || reply.InputRequestID != s.Reference.InputRequestID || reply.RequestID == s.Reference.CreationRequestID || reply.NativeSessionID != s.Claims[3].Input.NativeSessionID || reply.NativePromptID != s.Claims[3].Input.NativePromptID {
+			return grokClaimUncertain()
+		}
+		for _, record := range s.Claims[4:] {
+			prior := record.FileReply
+			if prior == nil || prior.RequestID == reply.RequestID || prior.ArrivalID == reply.ArrivalID || prior.ToolID == reply.ToolID || prior.RequestDigest == reply.RequestDigest {
+				return grokClaimUncertain()
+			}
+		}
+		return nil
 	}
 	if c.Stop != nil {
 		stop := c.Stop
@@ -164,7 +181,7 @@ func (s grokClaimState) validateNext(c grokClaim) error {
 		return nil
 	}
 	if len(s.Claims) >= 4 {
-		if c.Closure == nil || c.Closure.Validate() != nil || len(s.Claims) == 5 && s.Claims[4].Stop != nil {
+		if c.Closure == nil || c.Closure.Validate() != nil || len(s.Claims) > 5 || len(s.Claims) == 5 && s.Claims[4].Closure == nil {
 			return grokClaimUncertain()
 		}
 		input := s.Claims[3].Input
@@ -233,6 +250,10 @@ func (j *grokClaimJournal) Closure(ctx context.Context, c grok.ClosureClaim) err
 
 func (j *grokClaimJournal) Stop(ctx context.Context, c grok.StopClaim) error {
 	return j.claim(ctx, grokClaim{Stop: &c})
+}
+
+func (j *grokClaimJournal) FileReply(ctx context.Context, c grok.FilePermissionClaim) error {
+	return j.claim(ctx, grokClaim{FileReply: &c})
 }
 
 func (j *grokClaimJournal) claim(ctx context.Context, c grokClaim) (returned error) {

@@ -51,7 +51,8 @@ func TestManualNativeGrokWorkerOriginalClaims(t *testing.T) {
 	for _, profile := range []struct {
 		name                       string
 		changed, streamed, stopped bool
-	}{{name: "original"}, {name: "streamed", streamed: true}, {name: "changed", changed: true}, {name: "stopped", stopped: true}} {
+		writing, rejected          bool
+	}{{name: "original"}, {name: "streamed", streamed: true}, {name: "changed", changed: true}, {name: "stopped", stopped: true}, {name: "write", writing: true}, {name: "write-rejected", writing: true, rejected: true}} {
 		t.Run(profile.name, func(t *testing.T) {
 			changed := profile.changed
 			stopRequest := domain.NewID()
@@ -68,6 +69,12 @@ func TestManualNativeGrokWorkerOriginalClaims(t *testing.T) {
 			workspace := filepath.Join(p.config.Root, "workspace 공백_+.-()")
 			if err := security.PrivateDir(workspace); err != nil {
 				t.Fatal(err)
+			}
+			filePath := filepath.Join(workspace, "original.txt")
+			if profile.writing {
+				if err := os.WriteFile(filePath, []byte("Original Worker file.\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
 			}
 			var logs bytes.Buffer
 			logger := slog.New(slog.NewJSONHandler(&logs, nil))
@@ -100,6 +107,10 @@ func TestManualNativeGrokWorkerOriginalClaims(t *testing.T) {
 					t.Error("native inference preceded synchronized original Worker claims")
 				}
 				w.Header().Set("Content-Type", "text/event-stream")
+				if profile.writing {
+					nativeGrokWriteProvider(t, w, raw, filePath, p.input.Configuration.NativeModel, profile.rejected)
+					return
+				}
 				chunks := []string{
 					`{"id":"chat-worker","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{"role":"assistant","content":"Original Worker fixture completed."},"finish_reason":null}]}`,
 					`{"id":"chat-worker","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":11,"completion_tokens":5,"total_tokens":16}}`,
@@ -137,7 +148,12 @@ func TestManualNativeGrokWorkerOriginalClaims(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
 			defer cancel()
 			cfg := grok.APIExecutionConfig{Probe: grok.ProbeConfig{Process: process.Config{Directory: filepath.Join(p.config.Root, "processes"), OwnerID: p.job, Executable: executable, Cwd: root, Env: env, Logger: logger}, Version: grok.SupportedVersion, Home: filepath.Join(root, "grok")}, Workspace: workspace, Model: p.input.Configuration.NativeModel, ContextTokens: 32000, ServerOrigin: relay.URL, Token: authority.token}
-			api, err := grok.OpenOwnedAPIWithStop(ctx, cfg, journal.Creation, journal.Input, journal.Closure, journal.Stop)
+			var api *grok.OwnedAPI
+			if profile.writing {
+				api, err = grok.OpenOwnedAPIWithFileTools(ctx, cfg, journal.Creation, journal.Input, journal.Closure, journal.FileReply)
+			} else {
+				api, err = grok.OpenOwnedAPIWithStop(ctx, cfg, journal.Creation, journal.Input, journal.Closure, journal.Stop)
+			}
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -164,6 +180,10 @@ func TestManualNativeGrokWorkerOriginalClaims(t *testing.T) {
 			session, err := api.Create(ctx, p.input.ThreadRequestID, p.input.SessionID)
 			if err != nil {
 				t.Fatal(err)
+			}
+			if profile.writing {
+				nativeGrokWorkerWrite(t, ctx, api, p, journal, session, filePath, profile.rejected)
+				return
 			}
 			input := p.input.Input.Prompt
 			if changed {

@@ -28,7 +28,7 @@ func TestManualNativeGrokFileTools(t *testing.T) {
 	if binary == "" {
 		t.Skip("explicit private native Grok binary required")
 	}
-	for _, mode := range []string{"read", "read-stream", "read-outside", "write", "owned-read", "owned-read-stream", "owned-read-outside"} {
+	for _, mode := range []string{"read", "read-stream", "read-outside", "write", "owned-read", "owned-read-stream", "owned-read-outside", "owned-write", "owned-write-reject"} {
 		t.Run(mode, func(t *testing.T) { nativeFileTool(t, binary, mode) })
 	}
 }
@@ -37,6 +37,7 @@ func nativeFileTool(t *testing.T, binary, mode string) {
 	t.Helper()
 	owned := strings.HasPrefix(mode, "owned-")
 	mode = strings.TrimPrefix(mode, "owned-")
+	writing := strings.HasPrefix(mode, "write")
 	config, logs := fixtureAPIConfig(t, "native-file-tool")
 	config.Probe.Process.Executable = binary
 	target := "fixture.txt"
@@ -98,7 +99,7 @@ func nativeFileTool(t *testing.T, binary, mode string) {
 			}
 			if message.Role == "tool" {
 				var content string
-				if message.Tool != "call_delidev_read" || json.Unmarshal(message.Content, &content) != nil || mode != "write" && content != "1→"+original || mode == "write" && !strings.Contains(content, "Wrote file successfully") {
+				if mode == "write-reject" || message.Tool != "call_delidev_read" || json.Unmarshal(message.Content, &content) != nil || !writing && content != "1→"+original || writing && !strings.Contains(content, "Wrote file successfully") {
 					t.Error("native tool result lost original output")
 					w.WriteHeader(http.StatusBadRequest)
 					return
@@ -120,7 +121,7 @@ func nativeFileTool(t *testing.T, binary, mode string) {
 		finish := "stop"
 		if len(body.Tools) > 0 && !toolResult {
 			arguments, name := map[string]any{"target_file": target}, readFileTool
-			if mode == "write" {
+			if writing {
 				name, arguments = writeFileTool, map[string]any{"file_path": actual, "content": written}
 			}
 			raw, _ := json.Marshal(arguments)
@@ -182,6 +183,10 @@ func nativeFileTool(t *testing.T, binary, mode string) {
 		t.Fatal(err)
 	}
 	const input = "Use the original private fixture file."
+	if owned && writing {
+		nativeOwnedWrite(t, ctx, api, session, input, actual, original, written, mode == "write-reject", &observedToolResult)
+		return
+	}
 	if owned {
 		request := domain.NewID()
 		var claims []InputClaim
