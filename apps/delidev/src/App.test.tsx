@@ -201,6 +201,27 @@ for (const mixed of [false, true]) {
   });
 }
 
+for (const mixed of [false, true]) it(`renders original Claude progress through session RPC with no implied input action (${mixed})`, async () => {
+  const value = fixture(), native = newRequestId();
+  value.message.documentJson = encode({
+    execution_id: newRequestId(), native_thread_id: newRequestId(), native_turn_id: newRequestId(), native_id: native,
+    role: "progress", text: "", state: "complete", first_sequence: 2, last_sequence: 2,
+    claude_progress: { native_event_id: native, kind: "session-status", input_accepted: false, status: { status: "requesting", permission: null, compact_result: null, compact_error: null }, thinking: null },
+    ...(mixed ? { claude_tool: {} } : {}),
+  });
+  render(<App transport={value.transport} />);
+  fireEvent.click(await screen.findByRole("button", { name: /General Chat Retained session/ }));
+  if (mixed) {
+    expect(await screen.findByLabelText("Claude progress unavailable")).toBeTruthy();
+    expect(screen.queryByText("Requesting")).toBeNull();
+  } else {
+    expect(await screen.findByText("Before input acceptance")).toBeTruthy();
+    expect(screen.getByText("Requesting")).toBeTruthy();
+  }
+  expect(value.enqueues).not.toHaveBeenCalled();
+  expect(value.controls).not.toHaveBeenCalled();
+});
+
 for (const mixed of [false, true]) it(`renders Claude callbacks through the session RPC without other response controls (${mixed})`, async () => {
   const data = { type: "native-approval", closure: "open", native_item_id: "tool_original", native_request_id: { kind: "text", text: "request_original" }, claude: {
     version: "2.1.236", kind: "tool-permission", arrival_id: newRequestId(), tool: { id: newRequestId(), native_id: "tool_original", name: "Bash" }, message_id: newRequestId(), native_message_id: "msg_original", index: 0, caller: null, input_json: '{"command":"printf original"}', metadata: { permission_suggestions: null, blocked_path: null, decision_reason: null, decision_reason_type: null, requires_user_interaction: null, agent_id: null, title: null, display_name: null, description: "Original callback description" },

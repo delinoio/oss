@@ -113,3 +113,24 @@ it("keeps unavailable snapshots, unknown options and imprecise revisions explici
   expect(screen.getByText(/session document version is not supported/)).toBeTruthy();
   expect(screen.queryByLabelText("Combined applied instructions")).toBeNull();
 });
+
+it("preserves initial Claude settings and earlier-execution ownership across sticky native mode changes", () => {
+  const value = fixture("claude-code");
+  const turn = newRequestId();
+  const data = { ...value.data, current_execution: { id: newRequestId(), input_id: newRequestId() }, execution: { ...value.data.execution, native_turn_id: turn, observed: { ...value.data.execution.observed, claude_permission: "plan" }, claude_progress: { native_turn_id: turn, latest_status_id: newRequestId(), permission: "default", permission_changed: true } } };
+  const view = render(<ExecutionConfiguration resource={{ ...value.resource, documentJson: encode(data) }} />);
+  fireEvent.click(screen.getByText("Execution configuration and instructions"));
+  const native = screen.getByRole("region", { name: "Native execution observations" });
+  expect(detail(native, "Observed Claude permission")).toBe("plan");
+  expect(detail(native, "Latest reported Claude permission")).toBe("default");
+  expect(screen.getByText(/retained observations belong to an earlier execution/)).toBeTruthy();
+  expect(screen.getByText(/Further input requires configuration reconciliation/)).toBeTruthy();
+  data.execution.claude_progress.permission = "plan";
+  view.rerender(<ExecutionConfiguration resource={{ ...value.resource, documentJson: encode(data) }} />);
+  expect(detail(native, "Latest reported Claude permission")).toBe("plan");
+  expect(screen.getByText(/Further input requires configuration reconciliation/)).toBeTruthy();
+  data.execution.claude_progress.native_turn_id = newRequestId();
+  view.rerender(<ExecutionConfiguration resource={{ ...value.resource, documentJson: encode(data) }} />);
+  expect(screen.getByText(/Retained Claude permission progress is unavailable/)).toBeTruthy();
+  expect(screen.queryByText(/Further input requires configuration reconciliation/)).toBeNull();
+});

@@ -213,6 +213,7 @@ func nativeClaudeReply(t *testing.T, mode domain.SessionMode, name string, deny,
 	var display *worker.ClaudeContentPublisher
 	var original *claude.NativeInteraction
 	lost := 0
+	preAcceptanceProgress, changedPermission := 0, false
 	finished, echoed := false, false
 	for !finished {
 		o, err := s.Next(ctx)
@@ -223,6 +224,21 @@ func nativeClaudeReply(t *testing.T, mode domain.SessionMode, name string, deny,
 		case claude.SessionInitialized:
 			if err := binding.BindSession(ctx, o, applied); err != nil {
 				t.Fatal(err)
+			}
+		case claude.ProgressObserved:
+			if !o.Accepted {
+				preAcceptanceProgress++
+			}
+			if o.Progress != nil && o.Progress.Permission != nil && *o.Progress.Permission != cfg.Permission {
+				changedPermission = true
+			}
+			lost = len(publication.calls) + 1
+			publication.dropAt = lost
+			if handled, err := binding.PublishProgressObservation(ctx, o); !handled || err == nil || len(publication.calls) != lost {
+				t.Fatal("original progress publication not handled or receipt not lost", err)
+			}
+			if err := binding.ReplayPending(ctx); err != nil || publication.calls[lost-1] != publication.calls[lost] {
+				t.Fatal("progress receipt changed", err)
 			}
 		case claude.InputAccepted:
 			if err := binding.AcceptInput(ctx, o); err != nil {
@@ -375,7 +391,7 @@ func nativeClaudeReply(t *testing.T, mode domain.SessionMode, name string, deny,
 			finished = true
 		}
 	}
-	if original == nil || calls.Load() != expectedRequests {
+	if original == nil || calls.Load() != expectedRequests || preAcceptanceProgress == 0 || name == "ExitPlanMode" && !deny && !changedPermission {
 		t.Fatal("original callback missing or inference repeated")
 	}
 	if err := s.Close(); err != nil {

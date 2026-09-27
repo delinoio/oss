@@ -119,9 +119,9 @@ func (s *Service) PublishExecution(ctx context.Context, req *connect.Request[pb.
 func supportsExecutionPublication(input domain.ExecutionJobInput, kind domain.ExecutionEventKind) bool {
 	switch input.Configuration.Harness {
 	case domain.Codex:
-		return kind != domain.ExecutionOpenCodeUsageObserved && kind != domain.ExecutionClaudeMessageObserved && kind != domain.ExecutionClaudeUsageObserved && kind != domain.ExecutionClaudeToolObserved && kind != domain.ExecutionClaudeReplyEchoObserved && kind != domain.ExecutionClaudeCallbackSettled && kind != domain.ExecutionClaudeInterruptionObserved
+		return kind != domain.ExecutionOpenCodeUsageObserved && kind != domain.ExecutionClaudeMessageObserved && kind != domain.ExecutionClaudeUsageObserved && kind != domain.ExecutionClaudeToolObserved && kind != domain.ExecutionClaudeReplyEchoObserved && kind != domain.ExecutionClaudeCallbackSettled && kind != domain.ExecutionClaudeInterruptionObserved && kind != domain.ExecutionClaudeProgressObserved
 	case domain.ClaudeCode:
-		return (kind == domain.ExecutionThreadBound || kind == domain.ExecutionInputAccepted || kind == domain.ExecutionMessageStarted || kind == domain.ExecutionMessageCompleted || kind == domain.ExecutionClaudeMessageObserved || kind == domain.ExecutionClaudeUsageObserved || kind == domain.ExecutionClaudeToolObserved || kind == domain.ExecutionClaudeReplyEchoObserved || kind == domain.ExecutionClaudeCallbackSettled || kind == domain.ExecutionClaudeInterruptionObserved || kind == domain.ExecutionQuestionDeliveryObserved || kind == domain.ExecutionApprovalDeliveryObserved || kind == domain.ExecutionInteractionRequested || kind == domain.ExecutionInteractionClosed) && len(executionAPIOperations(input, domain.AnthropicMessages)) != 0
+		return (kind == domain.ExecutionThreadBound || kind == domain.ExecutionInputAccepted || kind == domain.ExecutionMessageStarted || kind == domain.ExecutionMessageCompleted || kind == domain.ExecutionClaudeMessageObserved || kind == domain.ExecutionClaudeUsageObserved || kind == domain.ExecutionClaudeToolObserved || kind == domain.ExecutionClaudeReplyEchoObserved || kind == domain.ExecutionClaudeCallbackSettled || kind == domain.ExecutionClaudeInterruptionObserved || kind == domain.ExecutionClaudeProgressObserved || kind == domain.ExecutionQuestionDeliveryObserved || kind == domain.ExecutionApprovalDeliveryObserved || kind == domain.ExecutionInteractionRequested || kind == domain.ExecutionInteractionClosed) && len(executionAPIOperations(input, domain.AnthropicMessages)) != 0
 	case domain.OpenCode:
 		return (kind == domain.ExecutionThreadBound || kind == domain.ExecutionInputAccepted || kind == domain.ExecutionMessageStarted || kind == domain.ExecutionTextAppended || kind == domain.ExecutionMessageCompleted || kind.IsArtifact() || kind == domain.ExecutionToolStarted || kind == domain.ExecutionToolUpdated || kind == domain.ExecutionToolCompleted || kind == domain.ExecutionOpenCodeUsageObserved || kind == domain.ExecutionProgressObserved || kind == domain.ExecutionInteractionRequested || kind == domain.ExecutionInteractionClosed || kind == domain.ExecutionQuestionDeliveryObserved || kind == domain.ExecutionApprovalDeliveryObserved || kind == domain.ExecutionQuestionAccepted || kind == domain.ExecutionApprovalAccepted || kind == domain.ExecutionTurnFinished) && len(executionAPIOperations(input, domain.OpenAIChat)) != 0
 	}
@@ -229,7 +229,14 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 		if prior := progress.ClaudeInterruption; prior != nil && (prior.ResultID != "" || event.Kind != domain.ExecutionClaudeInterruptionObserved || event.ClaudeInterruption == nil || event.ClaudeInterruption.Observation.Kind != domain.ClaudeDenialResult) {
 			return executionEventConflict()
 		}
-		if event.Kind == domain.ExecutionInputAccepted {
+		if event.Kind == domain.ExecutionClaudeProgressObserved {
+			if err := publishClaudeProgress(tx, input, sr, progress, event); err != nil {
+				return err
+			}
+		} else if event.Kind == domain.ExecutionInputAccepted {
+			if prior := progress.ClaudeProgress; prior != nil && prior.NativeTurnID != event.NativeTurnID {
+				return executionEventConflict()
+			}
 			if progress.NativeTurnID != "" || progress.Outcome != domain.ExecutionNotStarted || queued.Delivery == domain.InputAccepted {
 				return executionEventConflict()
 			}

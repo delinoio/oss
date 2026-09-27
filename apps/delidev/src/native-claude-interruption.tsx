@@ -8,7 +8,7 @@ const exact = (v: Document, fields: string[]) => Object.keys(v).length === field
 
 function valid(data: Document) {
   const v = object(data.claude_interruption);
-  if (data.role !== "progress" || data.state !== "complete" || data.text !== "" || data.input_id !== undefined || data.native_parent_id !== undefined || data.phase != null || [data.claude, data.claude_tool, data.tool, data.artifact, data.progress].some((v) => v != null) || !id(data.execution_id) || !id(data.native_thread_id) || !nativeID(data.native_turn_id) || !Number.isSafeInteger(data.first_sequence) || Number(data.first_sequence) <= 0 || data.first_sequence !== data.last_sequence) return false;
+  if (data.role !== "progress" || data.state !== "complete" || data.text !== "" || data.input_id !== undefined || data.native_parent_id !== undefined || data.phase != null || [data.claude, data.claude_tool, data.claude_progress, data.tool, data.artifact, data.progress].some((v) => v != null) || !id(data.execution_id) || !id(data.native_thread_id) || !nativeID(data.native_turn_id) || !Number.isSafeInteger(data.first_sequence) || Number(data.first_sequence) <= 0 || data.first_sequence !== data.last_sequence) return false;
   if (!exact(v, ["kind", "native_event_id", "interaction_id", "arrival_id", "tool_message_id", "tool_result_native_id", "context", "result"]) || !nativeID(v.native_event_id) || data.native_id !== v.native_event_id || !nativeID(v.tool_result_native_id) || v.native_event_id === v.tool_result_native_id || ![v.interaction_id, v.arrival_id, v.tool_message_id].every(id)) return false;
   if (v.kind === Kind.Context) return v.context === "[Request interrupted by user for tool use]" && v.result === null;
   const r = object(v.result);

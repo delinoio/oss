@@ -24,6 +24,7 @@ const (
 	claudeAcceptancePending
 	claudeInputAccepted
 	claudeContentPending
+	claudeProgressPending
 	claudeBindingBlocked
 )
 
@@ -50,10 +51,13 @@ type claudeBindingJournal struct {
 }
 
 // ClaudeBindingPublisher retains first-input intent before transmission, then
-// publishes only the original validated initialization and replay acceptance.
-// It does not launch a process, send input, publish content or grant completion.
+// publishes original initialization, independent progress and replay acceptance.
+// Content uses its shared outbox. Neither path launches a process, sends input
+// or grants completion.
 // Close the native process before this coordinator, then its shared publisher.
 type ClaudeBindingPublisher struct {
+	progressSeen    map[string]bool
+	progressResume  claudeBindingStage
 	mu              sync.Mutex
 	publisher       *ExecutionPublisher
 	path            string
@@ -144,7 +148,7 @@ func (c *ClaudeBindingPublisher) verify() error {
 	if p.closed || p.release == nil || p.state.AssignmentDigest != c.journal.AssignmentDigest || p.state.JobID != c.journal.JobID || p.state.InstanceID != c.journal.InstanceID || p.state.ServerID != c.journal.ServerID || p.state.DeviceID != c.journal.DeviceID || p.state.Revision != c.journal.Revision {
 		return c.block()
 	}
-	pending := c.stage == claudeBindingPending || c.stage == claudeAcceptancePending || c.stage == claudeContentPending
+	pending := c.stage == claudeBindingPending || c.stage == claudeAcceptancePending || c.stage == claudeContentPending || c.stage == claudeProgressPending
 	if pending && (p.state.Pending == nil || p.state.LastSequence != c.sequence-1) || !pending && (p.state.Pending != nil || p.state.LastSequence != c.sequence) {
 		return c.block()
 	}
@@ -220,8 +224,8 @@ func (c *ClaudeBindingPublisher) AcceptInput(ctx context.Context, observation cl
 	if observation.Kind != claude.InputAccepted || !observation.Accepted || observation.SessionID != c.journal.SessionID || observation.InputID != c.journal.InputID || observation.NativeID != string(c.journal.InputID) || observation.TurnID != c.turn || observation.Initialized != nil {
 		return c.block()
 	}
-	c.sequence, c.stage = 2, claudeAcceptancePending
-	if err := c.publish(ctx, domain.ExecutionEvent{Sequence: 2, Kind: domain.ExecutionInputAccepted, NativeThreadID: string(c.journal.SessionID), NativeTurnID: c.turn}); err != nil {
+	c.sequence, c.stage = c.sequence+1, claudeAcceptancePending
+	if err := c.publish(ctx, domain.ExecutionEvent{Sequence: c.sequence, Kind: domain.ExecutionInputAccepted, NativeThreadID: string(c.journal.SessionID), NativeTurnID: c.turn}); err != nil {
 		return err
 	}
 	c.stage = claudeInputAccepted
@@ -259,7 +263,7 @@ func (c *ClaudeBindingPublisher) ReplayPending(ctx context.Context) error {
 	if err := c.verify(); err != nil {
 		return err
 	}
-	if c.stage != claudeBindingPending && c.stage != claudeAcceptancePending {
+	if c.stage != claudeBindingPending && c.stage != claudeAcceptancePending && c.stage != claudeProgressPending {
 		return publicationUncertain()
 	}
 	return c.replayPending(ctx)
@@ -286,7 +290,9 @@ func (c *ClaudeBindingPublisher) replayPending(ctx context.Context) error {
 	if err != nil || sequence != c.sequence {
 		return c.block()
 	}
-	if c.stage == claudeBindingPending {
+	if c.stage == claudeProgressPending {
+		c.stage = c.progressResume
+	} else if c.stage == claudeBindingPending {
 		c.stage = claudeSessionBound
 	} else {
 		c.stage = claudeInputAccepted

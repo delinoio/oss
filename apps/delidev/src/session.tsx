@@ -6,6 +6,7 @@ import { NativeRead } from "./native-read";
 import { NativeShell } from "./native-shell";
 import { NativeClaudeMessage } from "./native-claude-message";
 import { NativeClaudeInterruption } from "./native-claude-interruption";
+import { NativeClaudeProgress } from "./native-claude-progress";
 import { NativeClaudeTool } from "./native-claude-tool";
 import { NativeReasoning } from "./native-reasoning";
 import { SessionBudget } from "./session-budget";
@@ -76,6 +77,7 @@ function currentRows(base: readonly Resource[], live: ReadonlyMap<string, Resour
 
 const TranscriptItem = memo(function TranscriptItem({ resource }: { resource: Resource }) {
   const data = readDocument(resource);
+  if (data.claude_progress != null) return <NativeClaudeProgress data={data} />;
   if (data.claude_interruption != null) return <NativeClaudeInterruption data={data} />;
   if (data.claude_tool != null) {
     const valid = data.role === "tool" && data.text === "" && data.input_id == null &&

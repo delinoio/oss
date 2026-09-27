@@ -57,7 +57,7 @@ func OpenClaudeContentPublisher(binding *ClaudeBindingPublisher) (*ClaudeContent
 	if err := binding.verify(); err != nil {
 		return nil, err
 	}
-	if binding.stage != claudeInputAccepted || binding.sequence != 2 || binding.contentAttached {
+	if binding.stage != claudeInputAccepted || binding.sequence < 2 || binding.contentAttached {
 		return nil, publicationUncertain()
 	}
 	binding.contentAttached = true
