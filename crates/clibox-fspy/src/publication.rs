@@ -605,6 +605,16 @@ fn preserve_acl(_: &Original, _: &File) -> Result<()> {
     Err(Error::runtime(Code::Permissions))
 }
 
+/// Exercise the same destination and parent checks before launching a child.
+pub(crate) fn preflight_file_destination(
+    destination: &Path,
+    replace: bool,
+) -> std::result::Result<(), Code> {
+    let (_publication, _file) = Publication::prepare(Some(destination.to_path_buf()), replace)
+        .map_err(|error| error.code)?;
+    Ok(())
+}
+
 /// Publish a completed report through the native replacement path.
 pub(crate) fn publish_file_bytes(
     destination: &Path,

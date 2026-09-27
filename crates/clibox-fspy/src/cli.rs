@@ -501,17 +501,31 @@ fn publish(output: &OutputArgs, bytes: &[u8]) -> Result<(), &'static str> {
     if existing_report_destination(path)?.is_some() && !output.force {
         return Err("output_exists");
     }
-    crate::publication::publish_file_bytes(path, output.force, bytes).map_err(|code| {
-        use crate::publication::Code;
-        match code {
-            Code::OutputExists => "output_exists",
-            Code::UnsafeDestination => "output_not_regular",
-            Code::Permissions => "output_permissions",
-            Code::ReadFailed => "output_metadata",
-            Code::WriteFailed => "output_write",
-            Code::PublishFailed => "output_publish",
-        }
-    })
+    crate::publication::publish_file_bytes(path, output.force, bytes)
+        .map_err(report_publication_error)
+}
+
+fn report_publication_error(code: crate::publication::Code) -> &'static str {
+    use crate::publication::Code;
+    match code {
+        Code::OutputExists => "output_exists",
+        Code::UnsafeDestination => "output_not_regular",
+        Code::Permissions => "output_permissions",
+        Code::ReadFailed => "output_metadata",
+        Code::WriteFailed => "output_write",
+        Code::PublishFailed => "output_publish",
+    }
+}
+
+fn preflight_report_destination(output: &OutputArgs) -> Result<(), &'static str> {
+    let Some(path) = destination(output)? else {
+        return Ok(());
+    };
+    if existing_report_destination(path)?.is_some() && !output.force {
+        return Err("output_exists");
+    }
+    crate::publication::preflight_file_destination(path, output.force)
+        .map_err(report_publication_error)
 }
 
 fn load(
@@ -3589,6 +3603,9 @@ pub fn execute(command: Command) -> i32 {
         if let Err(classification) = destination(output) {
             return invalid_argument(classification, action);
         }
+        if let Err(classification) = preflight_report_destination(output) {
+            return diagnostic(classification, action);
+        }
     }
     match command {
         Command::Compare(args) => compare(args),
@@ -3957,6 +3974,50 @@ mod tests {
             assert_eq!(execute(parsed.command), 2);
         }
         assert!(!bundle.exists());
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn unusable_report_destination_is_rejected_before_execution() {
+        let directory = tempfile::tempdir().unwrap();
+        let output = directory.path().join("report.ndjson");
+        let marker = directory.path().join("child-ran");
+        fs::write(&output, b"existing").unwrap();
+        let parsed = TestCli::try_parse_from(vec![
+            OsString::from("fspy"),
+            OsString::from("record"),
+            OsString::from("--output"),
+            output.into_os_string(),
+            OsString::from("--"),
+            OsString::from("/usr/bin/touch"),
+            marker.as_os_str().to_os_string(),
+        ])
+        .unwrap();
+        assert_eq!(execute(parsed.command), 1);
+        assert!(!marker.exists());
+        let bundle = directory.path().join("bundle");
+        let parsed = TestCli::try_parse_from(vec![
+            OsString::from("fspy"),
+            OsString::from("min-repro"),
+            OsString::from("--include"),
+            OsString::from("*"),
+            OsString::from("--bundle-dir"),
+            bundle.as_os_str().to_os_string(),
+            OsString::from("--expect-exit"),
+            OsString::from("1"),
+            OsString::from("--expect-stderr"),
+            OsString::from("failed"),
+            OsString::from("--output"),
+            directory.path().as_os_str().to_os_string(),
+            OsString::from("--force"),
+            OsString::from("--"),
+            OsString::from("/usr/bin/touch"),
+            marker.as_os_str().to_os_string(),
+        ])
+        .unwrap();
+        assert_eq!(execute(parsed.command), 1);
+        assert!(!bundle.exists());
+        assert!(!marker.exists());
     }
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
