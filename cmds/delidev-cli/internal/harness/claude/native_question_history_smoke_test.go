@@ -145,6 +145,12 @@ func nativeQuestionRetainedHistory(t *testing.T, permission NativePermission) {
 		}
 		previous := session.config
 		previous.API = APIConfig{ServerOrigin: relay.URL}
+		inspection := previous
+		instructions := checkpointDigest([]byte(inspection.Instructions))
+		inspection.Instructions = ""
+		if err := InspectCheckpoint(ctx, inspection, instructions, raw, reference); err != nil {
+			t.Fatal("original question history inspection failed", err, logs.String())
+		}
 		closed, err = RestoreCheckpoint(ctx, previous, raw, reference)
 		if err != nil {
 			t.Fatal("original question checkpoint failed to restore", err, logs.String())

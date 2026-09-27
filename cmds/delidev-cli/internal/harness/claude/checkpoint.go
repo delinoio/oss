@@ -162,6 +162,28 @@ func (closed *ClosedAPISession) RetainCheckpoint(ctx context.Context) ([]byte, C
 // The returned capability still requires ContinueAPISession with a fresh owner
 // and credential, and sends no input until a separately authorized SendInput.
 func RestoreCheckpoint(ctx context.Context, config APIStreamConfig, raw []byte, ref CheckpointReference) (*ClosedAPISession, error) {
+	return restoreCheckpoint(ctx, config, raw, ref, checkpointDigest([]byte(config.Instructions)))
+}
+
+// InspectCheckpoint validates original retained history using independently
+// supplied instruction hashes. It accepts no instruction body or credential,
+// creates no replacement capability and launches no native process. Public
+// completed-execution recovery still needs original report and ownership proof.
+func InspectCheckpoint(ctx context.Context, config APIStreamConfig, instructionsSHA256 string, raw []byte, ref CheckpointReference) error {
+	if config.Instructions != "" || config.API.Token != "" || !validHistoryDigest(instructionsSHA256) {
+		return historyUncertain()
+	}
+	closed, err := restoreCheckpoint(ctx, config, raw, ref, instructionsSHA256)
+	if err != nil {
+		return err
+	}
+	// The comparison-only path must never export a handoff created without the
+	// original instruction body. Ordinary restoration retains that requirement.
+	closed.used = true
+	return nil
+}
+
+func restoreCheckpoint(ctx context.Context, config APIStreamConfig, raw []byte, ref CheckpointReference, instructionsSHA256 string) (*ClosedAPISession, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, domain.SafeError(err)
 	}
@@ -172,7 +194,7 @@ func RestoreCheckpoint(ctx context.Context, config APIStreamConfig, raw []byte, 
 	// This bounded private format can exceed the public 1 MiB JSON limit. Exact
 	// canonical re-encoding below rejects duplicate/unknown fields, malformed
 	// UTF-8 normalization, omitted fields and every alternate representation.
-	if json.Unmarshal(raw, &cp) != nil || cp.validate(config, config.API.ServerOrigin, ref) != nil {
+	if json.Unmarshal(raw, &cp) != nil || cp.validateConfiguration(config, config.API.ServerOrigin, ref, instructionsSHA256) != nil {
 		return nil, historyUncertain()
 	}
 	canonical, err := json.Marshal(cp)
@@ -247,17 +269,25 @@ func checkpointDigest(raw []byte) string {
 }
 
 func checkpointConfiguration(config APIStreamConfig, origin string) string {
+	return checkpointConfigurationDigest(config, origin, checkpointDigest([]byte(config.Instructions)))
+}
+
+func checkpointConfigurationDigest(config APIStreamConfig, origin, instructionsSHA256 string) string {
 	// Pin original private paths/instructions by digest, never by publishing
 	// their contents in the checkpoint or allowing the file to supply them.
 	value := struct {
 		Version, Executable, Directory, Runtime, Home, Workspace, Model, Effort, Permission, Instructions, Origin string
-	}{config.Version, config.Process.Executable, config.Process.Directory, config.Process.Cwd, config.Home, config.Workspace, config.Model, string(config.Effort), string(config.Permission), checkpointDigest([]byte(config.Instructions)), origin}
+	}{config.Version, config.Process.Executable, config.Process.Directory, config.Process.Cwd, config.Home, config.Workspace, config.Model, string(config.Effort), string(config.Permission), instructionsSHA256, origin}
 	raw, _ := json.Marshal(value)
 	return checkpointDigest(raw)
 }
 
 func (cp sessionCheckpoint) validate(config APIStreamConfig, origin string, ref CheckpointReference) error {
-	if cp.Version != 1 || config.Version != SupportedVersion || !validHistoryDigest(ref.SHA256) || cp.Configuration != checkpointConfiguration(config, origin) || cp.Session != ref.SessionID || cp.Session != config.SessionID || cp.Owner != ref.OwnerID || cp.Owner != config.Process.OwnerID || cp.Input != ref.InputID || cp.InputDigest != ref.InputSHA256 || !validHistoryDigest(cp.InputDigest) || cp.Turn != ref.NativeTurnID || !nativeUUID(cp.Turn) || cp.Applied.Model != config.Model || (cp.Applied.Effort != nil && !validNativeEffort(*cp.Applied.Effort, false)) || (config.Effort != "" && (cp.Applied.Effort == nil || *cp.Applied.Effort != config.Effort)) || !validNativePermission(config.Permission) {
+	return cp.validateConfiguration(config, origin, ref, checkpointDigest([]byte(config.Instructions)))
+}
+
+func (cp sessionCheckpoint) validateConfiguration(config APIStreamConfig, origin string, ref CheckpointReference, instructionsSHA256 string) error {
+	if cp.Version != 1 || config.Version != SupportedVersion || !validHistoryDigest(ref.SHA256) || cp.Configuration != checkpointConfigurationDigest(config, origin, instructionsSHA256) || cp.Session != ref.SessionID || cp.Session != config.SessionID || cp.Owner != ref.OwnerID || cp.Owner != config.Process.OwnerID || cp.Input != ref.InputID || cp.InputDigest != ref.InputSHA256 || !validHistoryDigest(cp.InputDigest) || cp.Turn != ref.NativeTurnID || !nativeUUID(cp.Turn) || cp.Applied.Model != config.Model || (cp.Applied.Effort != nil && !validNativeEffort(*cp.Applied.Effort, false)) || (config.Effort != "" && (cp.Applied.Effort == nil || *cp.Applied.Effort != config.Effort)) || !validNativePermission(config.Permission) {
 		return historyUncertain()
 	}
 	for _, id := range []domain.ID{cp.Session, cp.Owner, cp.Input} {
