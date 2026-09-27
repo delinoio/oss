@@ -111,15 +111,36 @@ func validateInitialize(raw []byte, id domain.ID, cwd string) error {
 		// the failed handshake classification, never the provider's explanation.
 		return probeUnavailable()
 	}
+	return validateInitializeResult(message.Result, cwd, nil)
+}
+
+func validateInitializeResult(raw []byte, cwd string, profile *apiProfile) error {
 	var result initializeResult
-	if decode(message.Result, &result) != nil || result.ProtocolVersion != 1 || result.Meta.Version != SupportedVersion || result.Meta.Cwd != cwd ||
-		!isNull(result.Meta.DefaultAuth) || !isNull(result.Meta.Metadata) || !emptyArray(result.Meta.MCPServers) || result.Meta.MCPApps ||
-		!emptyArray(result.Meta.ModelState.Models) || !text(result.Meta.ModelState.Current, 256) || !text(result.Meta.Hostname, 1024) ||
+	if decode(raw, &result) != nil || result.ProtocolVersion != 1 || result.Meta.Version != SupportedVersion || result.Meta.Cwd != cwd ||
+		!isNull(result.Meta.Metadata) || !emptyArray(result.Meta.MCPServers) || result.Meta.MCPApps ||
+		!text(result.Meta.ModelState.Current, 256) || !text(result.Meta.Hostname, 1024) ||
 		!nativeUUID(result.Meta.AgentID, 5) || !nativeUUID(result.Meta.InstanceID, 4) || result.Meta.FeedbackTraceOffer {
 		return incompatible()
 	}
-	if len(result.AuthMethods) != 1 || result.AuthMethods[0].ID != "grok.com" || !text(result.AuthMethods[0].Name, 256) || !text(result.AuthMethods[0].Description, 4096) {
+	authMethods := []string{"grok.com"}
+	if profile == nil {
+		if !isNull(result.Meta.DefaultAuth) || !emptyArray(result.Meta.ModelState.Models) {
+			return incompatible()
+		}
+	} else {
+		authMethods = []string{"xai.api_key", "grok.com"}
+		var auth string
+		if decode(result.Meta.DefaultAuth, &auth) != nil || auth != "xai.api_key" || result.Meta.ModelState.Current != selectedModel || validateModels(result.Meta.ModelState.Models, *profile) != nil {
+			return incompatible()
+		}
+	}
+	if len(result.AuthMethods) != len(authMethods) {
 		return incompatible()
+	}
+	for i, method := range result.AuthMethods {
+		if method.ID != authMethods[i] || !text(method.Name, 256) || !text(method.Description, 4096) {
+			return incompatible()
+		}
 	}
 	// These are advertisements only. No advertised tool, hook, session or
 	// authentication method grants an executable product capability.

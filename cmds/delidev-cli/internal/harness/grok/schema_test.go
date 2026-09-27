@@ -31,6 +31,10 @@ func TestNativeProfilesRejectNestedCaseAliases(t *testing.T) {
 	}{
 		{"inspect", inspectionFixture, func(raw []byte) error { return validateInspection(raw, "/private/fixture") }},
 		{"initialize", fixtureResponse(domain.NewID(), "/private/fixture"), nil},
+		{"session", sessionFixture, func(raw []byte) error {
+			_, err := validateNewSession(raw, "/private/workspace", apiProfile{contextTokens: 32000})
+			return err
+		}},
 	} {
 		if profile.validate == nil {
 			var envelope struct {

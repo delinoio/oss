@@ -14,6 +14,10 @@ import (
 // Native inspect is a read-only command. Validate its original observations
 // before starting ACP, and never activate inherited policies or extensions.
 func inspect(ctx context.Context, config process.Config) error {
+	return inspectConfiguration(ctx, config, "")
+}
+
+func inspectConfiguration(ctx context.Context, config process.Config, ownedConfiguration string) error {
 	bounded, cancel := context.WithCancel(ctx)
 	defer cancel()
 	stdout := inspectionOutput{cancel: cancel, capture: true}
@@ -30,7 +34,7 @@ func inspect(ctx context.Context, config process.Config) error {
 	if err != nil {
 		return probeUnavailable()
 	}
-	return validateInspection(stdout.buffer.Bytes(), config.Cwd)
+	return validateConfiguredInspection(stdout.buffer.Bytes(), config.Cwd, ownedConfiguration)
 }
 
 type inspectionOutput struct {
@@ -55,6 +59,10 @@ func (w *inspectionOutput) Write(data []byte) (int, error) {
 }
 
 func validateInspection(raw []byte, cwd string) error {
+	return validateConfiguredInspection(raw, cwd, "")
+}
+
+func validateConfiguredInspection(raw []byte, cwd, ownedConfiguration string) error {
 	var report struct {
 		Version             string          `json:"grokVersion"`
 		Channel             string          `json:"channel"`
@@ -114,9 +122,22 @@ func validateInspection(raw []byte, cwd string) error {
 		!isNull(report.LoginPolicy.DisableAPIKeyAuth) || !isNull(report.LoginPolicy.ForceLoginTeamUUID) || report.LoginPolicy.APIKeyAuthDisabled || report.ExternalCompat.RemoteSettingsLoaded {
 		return incompatible()
 	}
-	for _, list := range []json.RawMessage{report.ProjectInstructions, report.Hooks, report.Skills, report.Plugins, report.Marketplaces, report.MCPServers, report.LSPServers, report.ConfigSources.Layers,
+	for _, list := range []json.RawMessage{report.ProjectInstructions, report.Hooks, report.Skills, report.Plugins, report.Marketplaces, report.MCPServers, report.LSPServers,
 		report.Permissions.Sources, report.Permissions.Skipped, report.Permissions.MCPServerAllowlist, report.Permissions.MCPLockdownSources, report.Permissions.MarketplaceAllowlist, report.Permissions.MarketplaceLockdownSources, report.Permissions.ManagedMarketplaces} {
 		if !emptyArray(list) {
+			return incompatible()
+		}
+	}
+	if ownedConfiguration == "" {
+		if !emptyArray(report.ConfigSources.Layers) {
+			return incompatible()
+		}
+	} else {
+		var layers []struct {
+			Role string `json:"role"`
+			Path string `json:"path"`
+		}
+		if decode(report.ConfigSources.Layers, &layers) != nil || len(layers) != 1 || layers[0].Role != "user" || layers[0].Path != ownedConfiguration {
 			return incompatible()
 		}
 	}

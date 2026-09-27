@@ -1,0 +1,56 @@
+{
+  "sessionId": "019f6de0-a760-7000-8000-000000000071",
+  "models": {
+    "currentModelId": "delidev-selected",
+    "availableModels": [
+      {
+        "modelId": "delidev-selected",
+        "name": "DeliDev selected model",
+        "_meta": {
+          "totalContextTokens": 32000,
+          "agentType": "grok-build-plan"
+        }
+      }
+    ]
+  },
+  "configOptions": [
+    {
+      "id": "model",
+      "name": "Model",
+      "category": "model",
+      "type": "select",
+      "currentValue": "delidev-selected",
+      "options": [
+        {
+          "value": "delidev-selected",
+          "name": "DeliDev selected model"
+        }
+      ]
+    }
+  ],
+  "_meta": {
+    "currentWorkingDirectory": "/private/workspace",
+    "codebaseIndexed": [],
+    "isGitRepo": false,
+    "gitRoot": null,
+    "showNonGitWarning": false,
+    "feedbackEnabled": true,
+    "x.ai/sessionConfig": {
+      "options": [
+        {
+          "id": "delidev-selected",
+          "category": "model",
+          "label": "DeliDev selected model",
+          "selected": true
+        }
+      ]
+    },
+    "x.ai/sessionDetail": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "kind": "build",
+      "cwd": "/private/workspace",
+      "currentModelId": "delidev-selected"
+    },
+    "x.ai/memoryMode": "legacy"
+  }
+}

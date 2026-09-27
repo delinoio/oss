@@ -47,6 +47,7 @@ func fixtureResponse(id domain.ID, cwd string) []byte {
 }
 
 func init() {
+	apiFixtureProcess()
 	root := os.Getenv("HOME")
 	if len(os.Args) < 3 || os.Args[1] != "--no-auto-update" || !strings.HasPrefix(filepath.Base(root), "fixture-") {
 		return
