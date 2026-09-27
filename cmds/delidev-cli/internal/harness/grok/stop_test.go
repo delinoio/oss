@@ -168,6 +168,14 @@ func TestOriginalTextStopSeparatesSubmissionTerminalAndCleanup(t *testing.T) {
 			if api.completedText != nil {
 				t.Fatal("Stop force cleanup acquired successful history authority")
 			}
+			original, originalErr := (&OwnedAPI{connection: api}).ObserveStoppedText(context.Background())
+			if success {
+				if originalErr != nil || original.Validate(turnFixtureModel) != nil || original.Stop != proof || original.CreationRequestID != creation || len(original.ChunkDigests) != 1 {
+					t.Fatal("original stopped comparison missing", originalErr)
+				}
+			} else if originalErr == nil {
+				t.Fatal("incomplete or failed Stop acquired comparison authority")
+			}
 			select {
 			case <-api.wire.Done():
 			default:

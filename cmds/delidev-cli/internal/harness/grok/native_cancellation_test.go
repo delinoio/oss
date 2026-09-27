@@ -143,6 +143,10 @@ func nativeInterruptedText(t *testing.T, owned bool) {
 		if err != nil || !proof.CleanupJoined || proof.ProblemCode != "" || api.completedText != nil {
 			t.Fatal("stopped process acquired wrong history authority", err)
 		}
+		original, err := controlled.ObserveStoppedText(ctx)
+		if err != nil || original.Validate(config.Model) != nil || original.Stop != proof || original.Interrupted == nil || original.Completed != nil || len(original.ChunkDigests) == 0 {
+			t.Fatal("native stopped comparison lost original terminal variants", err)
+		}
 		if _, err := controlled.StopText(ctx, domain.NewID()); err == nil {
 			t.Fatal("native Stop acquired replay authority")
 		}

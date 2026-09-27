@@ -62,6 +62,7 @@ type apiConnection struct {
 	modeRequest     domain.ID
 	modeBinding     *ModeClaim
 	completedText   *completedText
+	stoppedText     *StoppedTextObservation
 	closureStarted  bool
 	controlMu       sync.Mutex
 	control         *textControl

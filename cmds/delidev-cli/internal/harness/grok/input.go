@@ -795,6 +795,10 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 		if err := a.settleStop(life, control, Cancelled, MidTurnAbort); err != nil {
 			return result, err
 		}
+		copy(settled.output[:], output.Sum(nil))
+		if err := a.retainStoppedText(settled, &InterruptedTextTerminal{Result: stopped, Turn: interruptedTurn, Prompt: interruptedPrompt}); err != nil {
+			return result, err
+		}
 		observation := control.observation()
 		if err := emit(ctx, InputObservation{Kind: StopSettled, InputID: request, NativePromptID: queue.prompt, Interruption: &stopped, Stop: &observation}); err != nil {
 			return result, sessionUncertain()
@@ -843,6 +847,9 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 			return result, err
 		}
 		if err := a.settleStop(life, control, EndTurn, ""); err != nil {
+			return result, err
+		}
+		if err := a.retainStoppedText(settled, nil); err != nil {
 			return result, err
 		}
 		if err := emit(ctx, InputObservation{Kind: InputCompleted, InputID: request, NativePromptID: queue.prompt, Result: &result}); err != nil {
