@@ -94,3 +94,44 @@ func TestClaudeProgressRejectsForeignMixedAndMisorderedObservations(t *testing.T
 		})
 	}
 }
+
+func TestClaudeAPIRetryProgressReplaysOnlyOriginalReceipt(t *testing.T) {
+	for _, afterAcceptance := range []bool{false, true} {
+		b, rpc, o, accepted := claudeProgressFixture(t)
+		ctx := context.Background()
+		if afterAcceptance {
+			if err := b.AcceptInput(ctx, accepted); err != nil {
+				t.Fatal(err)
+			}
+			o.Accepted = true
+		}
+		o.Progress = &claude.NativeProgressObservation{Kind: claude.APIRetryObserved, APIRetry: &claude.NativeAPIRetryObservation{Attempt: 9007199254740993, MaxRetries: ^uint64(0), Error: "unknown"}}
+		before := b.sequence
+		rpc.lose = true
+		if handled, err := b.PublishProgressObservation(ctx, o); !handled || err == nil {
+			t.Fatal("retry acknowledgment not lost")
+		}
+		rpc.lose = false
+		if err := b.ReplayPending(ctx); err != nil {
+			t.Fatal(err)
+		}
+		n := len(rpc.events)
+		if !bytes.Equal(rpc.events[n-1], rpc.events[n-2]) || rpc.requests[n-1] != rpc.requests[n-2] || b.sequence != before+1 {
+			t.Fatal("retry publication changed the original receipt")
+		}
+		var event domain.ExecutionEvent
+		if domain.Decode(rpc.events[n-1], &event) != nil || event.ClaudeProgress == nil {
+			t.Fatal("retry lost")
+		}
+		v := event.ClaudeProgress.Observation
+		if v.InputAccepted != afterAcceptance || v.APIRetry == nil || v.APIRetry.Attempt != "9007199254740993" || v.APIRetry.MaxRetries != "18446744073709551615" || v.APIRetry.DelayMS != "0" || v.APIRetry.ErrorStatus != nil {
+			t.Fatal("retry values changed")
+		}
+		o.NativeID = string(domain.NewID())
+		o.Progress.Status = new(claude.SessionStatus)
+		n = len(rpc.events)
+		if handled, err := b.PublishProgressObservation(ctx, o); !handled || err == nil || len(rpc.events) != n {
+			t.Fatal("mixed retry was published")
+		}
+	}
+}

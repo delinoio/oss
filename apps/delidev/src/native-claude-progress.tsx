@@ -1,6 +1,7 @@
 import { object, type Document } from "./documents";
+import { NativeClaudeAPIRetry, validClaudeAPIRetry } from "./native-claude-retry";
 
-enum Kind { Status = "session-status", Thinking = "thinking-tokens-estimated" }
+enum Kind { Status = "session-status", Thinking = "thinking-tokens-estimated", Retry = "api-retry" }
 enum Permission { Default = "default", Plan = "plan", AcceptEdits = "acceptEdits", DontAsk = "dontAsk", Bypass = "bypassPermissions" }
 const nativeID = (v: unknown): v is string => typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[47][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(v);
 const id = (v: unknown) => nativeID(v) && v[14] === "7";
@@ -12,7 +13,9 @@ const errorText = (v: unknown) => typeof v === "string" && !v.includes("\0") && 
 function valid(data: Document) {
   const v = object(data.claude_progress);
   if (data.role !== "progress" || data.state !== "complete" || data.text !== "" || data.input_id !== undefined || data.native_parent_id !== undefined || data.phase != null || [data.claude, data.claude_tool, data.claude_interruption, data.tool, data.artifact, data.progress].some((v) => v != null) || !id(data.execution_id) || !id(data.native_thread_id) || !nativeID(data.native_turn_id) || !Number.isSafeInteger(data.first_sequence) || Number(data.first_sequence) <= 0 || data.first_sequence !== data.last_sequence) return false;
-  if (!exact(v, ["native_event_id", "kind", "input_accepted", "status", "thinking"]) || !nativeID(v.native_event_id) || data.native_id !== v.native_event_id || v.native_event_id === data.native_turn_id || typeof v.input_accepted !== "boolean") return false;
+  if (!exact(v, ["native_event_id", "kind", "input_accepted", "status", "thinking", ...(Object.hasOwn(v, "api_retry") ? ["api_retry"] : [])]) || !nativeID(v.native_event_id) || data.native_id !== v.native_event_id || v.native_event_id === data.native_turn_id || typeof v.input_accepted !== "boolean") return false;
+  if (v.kind === Kind.Retry) return v.status === null && v.thinking === null && validClaudeAPIRetry(v.api_retry) && object(v.api_retry).native_event_id === v.native_event_id;
+  if (v.api_retry !== undefined) return false;
   if (v.kind === Kind.Status) {
     const s = object(v.status);
     return v.thinking === null && exact(s, ["status", "permission", "compact_result", "compact_error"]) && (s.status === null || s.status === "requesting" || s.status === "compacting") && (s.permission === null || permission(s.permission)) && (s.compact_result === null || s.compact_result === "success" || s.compact_result === "failed") && (s.compact_error === null || errorText(s.compact_error));
@@ -26,7 +29,7 @@ export function NativeClaudeProgress({ data }: { data: Document }) {
   const v = object(data.claude_progress), s = object(v.status), t = object(v.thinking);
   return <article className="message" aria-label="Claude progress observation">
     <header><strong>Claude progress</strong><small>{v.input_accepted ? "After input acceptance" : "Before input acceptance"}</small></header>
-    {v.kind === Kind.Status ? <>
+    {v.kind === Kind.Retry ? <NativeClaudeAPIRetry value={v.api_retry} /> : v.kind === Kind.Status ? <>
       <dl><dt>Reported status</dt><dd>{s.status === null ? "Status cleared" : s.status === "requesting" ? "Requesting" : "Compacting"}</dd>
         <dt>Reported permission mode</dt><dd>{s.permission === null ? "Not reported" : s.permission as string}</dd>
         {s.compact_result !== null ? <><dt>Compaction result</dt><dd>{s.compact_result === "success" ? "Succeeded" : "Failed"}</dd></> : null}
@@ -43,7 +46,7 @@ export function NativeClaudeProgress({ data }: { data: Document }) {
 export function NativeClaudePermissionProgress({ progress }: { progress: Document }) {
   if (progress.claude_progress == null) return null;
   const state = object(progress.claude_progress);
-  const valid = Object.keys(state).every((key) => ["native_turn_id", "latest_status_id", "latest_thinking_id", "permission", "permission_changed"].includes(key)) && nativeID(state.native_turn_id) && (progress.native_turn_id == null || progress.native_turn_id === "" || state.native_turn_id === progress.native_turn_id) && (state.latest_status_id === undefined || id(state.latest_status_id)) && (state.latest_thinking_id === undefined || id(state.latest_thinking_id)) && (state.latest_status_id !== undefined || state.latest_thinking_id !== undefined) && (state.permission === undefined || permission(state.permission) && state.latest_status_id !== undefined) && (state.permission_changed === undefined || typeof state.permission_changed === "boolean" && state.permission !== undefined);
+  const valid = Object.keys(state).every((key) => ["native_turn_id", "latest_status_id", "latest_thinking_id", "latest_retry_id", "permission", "permission_changed"].includes(key)) && nativeID(state.native_turn_id) && (progress.native_turn_id == null || progress.native_turn_id === "" || state.native_turn_id === progress.native_turn_id) && (state.latest_status_id === undefined || id(state.latest_status_id)) && (state.latest_thinking_id === undefined || id(state.latest_thinking_id)) && (state.latest_retry_id === undefined || id(state.latest_retry_id)) && (state.latest_status_id !== undefined || state.latest_thinking_id !== undefined || state.latest_retry_id !== undefined) && (state.permission === undefined || permission(state.permission) && state.latest_status_id !== undefined) && (state.permission_changed === undefined || typeof state.permission_changed === "boolean" && state.permission !== undefined);
   if (!valid) return <p>Retained Claude permission progress is unavailable or inconsistent.</p>;
   return <section aria-label="Claude permission progress">
     <dl><dt>Latest reported Claude permission</dt><dd>{state.permission === undefined ? "Not reported" : state.permission as string}</dd></dl>

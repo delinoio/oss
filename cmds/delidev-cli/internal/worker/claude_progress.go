@@ -17,7 +17,7 @@ func (b *ClaudeBindingPublisher) PublishProgressObservation(ctx context.Context,
 	if err := b.verify(); err != nil {
 		return false, err
 	}
-	if o.Kind != claude.ProgressObserved || o.Progress == nil || o.Progress.Kind != claude.SessionStatusObserved && o.Progress.Kind != claude.ThinkingTokensEstimated {
+	if o.Kind != claude.ProgressObserved || o.Progress == nil || o.Progress.Kind != claude.SessionStatusObserved && o.Progress.Kind != claude.ThinkingTokensEstimated && o.Progress.Kind != claude.APIRetryObserved {
 		return false, nil
 	}
 	accepted := b.stage == claudeInputAccepted
@@ -47,6 +47,19 @@ func (b *ClaudeBindingPublisher) PublishProgressObservation(ctx context.Context,
 		if n.CompactResult != nil {
 			value := domain.ClaudeCompactResult(*n.CompactResult)
 			v.Status.CompactResult = &value
+		}
+	case claude.APIRetryObserved:
+		if n.APIRetry == nil || !reflect.DeepEqual(*n, claude.NativeProgressObservation{Kind: n.Kind, APIRetry: n.APIRetry}) {
+			return true, b.block()
+		}
+		r := n.APIRetry
+		v.Kind, v.APIRetry = domain.ClaudeAPIRetryProgress, &domain.ClaudeAPIRetryObservation{
+			NativeEventID: o.NativeID, Attempt: domain.ClaudeProgressCount(strconv.FormatUint(r.Attempt, 10)),
+			MaxRetries: domain.ClaudeProgressCount(strconv.FormatUint(r.MaxRetries, 10)), DelayMS: domain.ClaudeProgressCount(strconv.FormatUint(r.DelayMS, 10)), Error: domain.ClaudeAPIProblem(r.Error),
+		}
+		if r.ErrorStatus != nil {
+			value := *r.ErrorStatus
+			v.APIRetry.ErrorStatus = &value
 		}
 	case claude.ThinkingTokensEstimated:
 		if !accepted || n.Thinking == nil || !reflect.DeepEqual(*n, claude.NativeProgressObservation{Kind: n.Kind, Thinking: n.Thinking}) {

@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { newRequestId } from "@delinoio/delidev-api-client";
-import { NativeClaudeProgress } from "./native-claude-progress";
+import { NativeClaudeProgress, NativeClaudePermissionProgress } from "./native-claude-progress";
 import { object, type Document } from "./documents";
 
 function fixture(thinking = false): Document {
@@ -62,4 +62,49 @@ test.each(["overflow", "negative", "rounded", "missing", "early-thinking", "inpu
   if (change === "oversized-error") s.compact_error = "x".repeat((256 << 10) + 1);
   render(<NativeClaudeProgress data={data} />);
   expect(screen.getByRole("article", { name: "Claude progress unavailable" })).toBeTruthy();
+});
+
+function retryFixture(accepted = false): Document {
+  const data = fixture();
+  const v = object(data.claude_progress);
+  v.kind = "api-retry"; v.status = null; v.input_accepted = accepted;
+  v.api_retry = { native_event_id: v.native_event_id, attempt: "9007199254740993", max_retries: "18446744073709551615", retry_delay_ms: "0", error_status: null, error: "unknown" };
+  return data;
+}
+
+test.each([false, true])("retains exact retry values with independent original input acceptance: %s", (accepted) => {
+  render(<NativeClaudeProgress data={retryFixture(accepted)} />);
+  expect(screen.getByText("9007199254740993")).toBeTruthy();
+  expect(screen.getByText("18446744073709551615")).toBeTruthy();
+  expect(screen.getByText("0")).toBeTruthy();
+  expect(screen.getByText("Not reported")).toBeTruthy();
+  expect(screen.getByText(accepted ? "After input acceptance" : "Before input acceptance")).toBeTruthy();
+  expect(screen.getByText(/does not confirm another request/)).toBeTruthy();
+  expect(screen.queryByRole("button")).toBeNull();
+});
+
+test.each(["missing", "foreign", "status", "thinking", "overflow", "number", "missing-null", "http", "error", "extra", "wrong-kind"])("rejects malformed or mixed retry: %s", (change) => {
+  const data = retryFixture(), v = object(data.claude_progress), r = object(v.api_retry);
+  if (change === "missing") delete v.api_retry;
+  if (change === "foreign") r.native_event_id = newRequestId();
+  if (change === "status") v.status = { status: "requesting", permission: null, compact_result: null, compact_error: null };
+  if (change === "thinking") v.thinking = { estimated_tokens: "0", estimated_tokens_delta: "0" };
+  if (change === "overflow") r.attempt = "18446744073709551616";
+  if (change === "number") r.max_retries = 9007199254740992;
+  if (change === "missing-null") delete r.error_status;
+  if (change === "http") r.error_status = 200;
+  if (change === "error") r.error = "future";
+  if (change === "extra") r.detail = "private";
+  if (change === "wrong-kind") v.kind = "session-status";
+  render(<NativeClaudeProgress data={data} />);
+  expect(screen.getByRole("article", { name: "Claude progress unavailable" })).toBeTruthy();
+});
+
+test("retry-only progress does not infer permission or erase an earlier permission transition", () => {
+  const state = { native_turn_id: newRequestId(), latest_retry_id: newRequestId() };
+  const { rerender } = render(<NativeClaudePermissionProgress progress={{ claude_progress: state }} />);
+  expect(screen.getByText("Not reported")).toBeTruthy();
+  rerender(<NativeClaudePermissionProgress progress={{ claude_progress: { ...state, latest_status_id: newRequestId(), permission: "plan", permission_changed: true } }} />);
+  expect(screen.getByText("plan")).toBeTruthy();
+  expect(screen.getByText(/Further input requires configuration reconciliation/)).toBeTruthy();
 });

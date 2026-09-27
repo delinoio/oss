@@ -94,3 +94,44 @@ func TestClaudeProgressRejectsForeignAcceptanceAndReusedNativeIdentityAtomically
 		})
 	}
 }
+
+func TestClaudeAPIRetryProgressPreservesQueueUsageAndOriginalOwnership(t *testing.T) {
+	f := newClaudePublicationFixture(t, domain.PlanMode)
+	f.registerGrant(t)
+	f.publish(t, f.event(domain.ExecutionThreadBound, 1))
+	for i, accepted := range []bool{false, true} {
+		sequence := uint64(2 + i*2)
+		if accepted {
+			f.publish(t, f.event(domain.ExecutionInputAccepted, sequence-1))
+		}
+		e := claudeProgressEvent(f, sequence, accepted)
+		v := &e.ClaudeProgress.Observation
+		v.Kind, v.Status = domain.ClaudeAPIRetryProgress, nil
+		v.APIRetry = &domain.ClaudeAPIRetryObservation{NativeEventID: v.NativeEventID, Attempt: "1", MaxRetries: "10", DelayMS: "9007199254740993", Error: domain.ClaudeAPIUnknown}
+		receipt := f.publish(t, e)
+		if r, err := f.call(receipt); err != nil || !r.Msg.Replayed {
+			t.Fatal("retry receipt lost", err)
+		}
+		row, _ := f.service.Store.Get(context.Background(), domain.SessionKind, f.input.SessionID)
+		s, err := store.Decode[domain.Session](row)
+		if err != nil || s.Execution.ClaudeProgress.LatestRetryID != e.ClaudeProgress.ID || s.Execution.LatestUsageID != "" || s.Execution.ClaudeProgress.Permission != nil || s.Execution.ClaudeProgress.LatestStatusID != "" || s.Execution.ClaudeProgress.LatestThinkingID != "" || (s.PendingInputs == 0) != accepted || (s.Execution.Outcome == domain.ExecutionRunning) != accepted || s.Dispatch != domain.DispatchClaimed || s.Recovery != domain.NoRecovery {
+			t.Fatal("retry altered unrelated authority", err)
+		}
+		// A new product record cannot reuse the original native event identity.
+		before := row
+		e.Sequence++
+		e.ClaudeProgress.ID = domain.NewID()
+		if _, err := f.call(f.requestEvent(t, e)); err == nil {
+			t.Fatal("duplicate native retry accepted")
+		}
+		after, _ := f.service.Store.Get(context.Background(), domain.SessionKind, f.input.SessionID)
+		if after.Revision != before.Revision {
+			t.Fatal("rejected retry partially committed")
+		}
+	}
+	lease, err := f.service.executionAuthority.Acquire(context.Background(), f.token)
+	if err != nil {
+		t.Fatal("observing retry revoked original relay", err)
+	}
+	lease.Release()
+}

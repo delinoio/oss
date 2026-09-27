@@ -28,6 +28,8 @@ type claudePublicCase string
 
 const (
 	claudePublicText                 claudePublicCase = "text"
+	claudePublicRetry                claudePublicCase = "retry"
+	claudePublicQuestionRetry        claudePublicCase = "question-retry"
 	claudePublicQuestion             claudePublicCase = "question"
 	claudePublicStop                 claudePublicCase = "stop"
 	claudePublicArchive              claudePublicCase = "archive"
@@ -50,6 +52,14 @@ func TestManualNativeClaudePublicFirstDispatch(t *testing.T) {
 	}
 }
 
+func TestManualNativeClaudePublicRetry(t *testing.T) {
+	for _, mode := range []domain.SessionMode{domain.ExecuteMode, domain.PlanMode} {
+		for _, scenario := range []claudePublicCase{claudePublicRetry, claudePublicQuestionRetry} {
+			t.Run(fmt.Sprintf("%s/%s", mode, scenario), func(t *testing.T) { nativeClaudePublicDispatch(t, mode, scenario) })
+		}
+	}
+}
+
 func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario claudePublicCase) {
 	t.Helper()
 	binary := os.Getenv("DELIDEV_NATIVE_CLAUDE_EXECUTABLE")
@@ -58,14 +68,18 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
-	question := scenario == claudePublicQuestion
+	question := scenario == claudePublicQuestion || scenario == claudePublicQuestionRetry
+	retrying := scenario == claudePublicRetry || scenario == claudePublicQuestionRetry
 	streamStopping := scenario == claudePublicStop || scenario == claudePublicArchive
 	stopping := streamStopping || scenario == claudePublicStopBeforeAcceptance
 	var calls atomic.Int32
 	providerEnded := make(chan struct{})
 	expected := int32(1)
 	if question {
-		expected = 2
+		expected++
+	}
+	if retrying {
+		expected++
 	}
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
@@ -81,9 +95,16 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 			return
 		}
 		raw, _ := io.ReadAll(io.LimitReader(r.Body, 8<<20))
-		if !strings.Contains(string(raw), "first retained input") || n == 2 && !strings.Contains(string(raw), "Two") {
+		if !strings.Contains(string(raw), "first retained input") || question && n >= 2 && !strings.Contains(string(raw), "Two") {
 			t.Error("original public input or answer changed")
 			w.WriteHeader(400)
+			return
+		}
+		if retrying && (question && n == 2 || !question && n == 1) {
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Retry-After", "1")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = io.WriteString(w, `{"type":"error","error":{"type":"overloaded_error","message":"Scripted retry"}}`)
 			return
 		}
 		if scenario == claudePublicStopBeforeAcceptance {
@@ -255,6 +276,32 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 				v, err := store.Decode[domain.ExecutionInteraction](rows[0])
 				if err != nil || v.ClaudeSettlement == nil || v.Response == nil || v.Response.State != domain.QuestionResponseAccepted {
 					t.Fatal("public callback did not settle", err)
+				}
+			}
+			if retrying {
+				rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.MessageKind, SessionID: domain.ID(f.change.Session.Id), Limit: 50})
+				if err != nil {
+					t.Fatal(err)
+				}
+				retries, inputs := 0, 0
+				for _, row := range rows {
+					m, err := store.Decode[domain.ExecutionMessage](row)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if m.InputID == session.Execution.InputID {
+						inputs++
+					}
+					if p := m.ClaudeProgress; p != nil && p.Kind == domain.ClaudeAPIRetryProgress {
+						retries++
+						if p.Validate() != nil || p.InputAccepted != question || p.APIRetry.ErrorStatus == nil || *p.APIRetry.ErrorStatus != 503 || session.Execution.ClaudeProgress == nil || session.Execution.ClaudeProgress.LatestRetryID != row.ID {
+							t.Fatal("original retry lost exact status or retained reference")
+						}
+						t.Logf("original retry: accepted=%t attempt=%s maximum=%s delay_ms=%s error=%s", p.InputAccepted, p.APIRetry.Attempt, p.APIRetry.MaxRetries, p.APIRetry.DelayMS, p.APIRetry.Error)
+					}
+				}
+				if retries != 1 || inputs != 1 {
+					t.Fatal("native retry duplicated input or lost progress", retries, inputs)
 				}
 			}
 			return

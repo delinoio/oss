@@ -12,6 +12,7 @@ type ClaudeProgressCount string
 const (
 	ClaudeStatusProgress   ClaudeProgressKind  = "session-status"
 	ClaudeThinkingProgress ClaudeProgressKind  = "thinking-tokens-estimated"
+	ClaudeAPIRetryProgress ClaudeProgressKind  = "api-retry"
 	ClaudeRequesting       ClaudeSessionStatus = "requesting"
 	ClaudeCompacting       ClaudeSessionStatus = "compacting"
 	ClaudeCompactSucceeded ClaudeCompactResult = "success"
@@ -38,6 +39,7 @@ type ClaudeProgressObservation struct {
 	InputAccepted bool                       `json:"input_accepted"`
 	Status        *ClaudeStatusObservation   `json:"status"`
 	Thinking      *ClaudeThinkingObservation `json:"thinking"`
+	APIRetry      *ClaudeAPIRetryObservation `json:"api_retry,omitempty"`
 }
 
 type ExecutionClaudeProgress struct {
@@ -50,6 +52,7 @@ type ExecutionClaudeProgress struct {
 type ClaudeProgressState struct {
 	NativeTurnID      string                `json:"native_turn_id"`
 	LatestStatusID    ID                    `json:"latest_status_id,omitempty"`
+	LatestRetryID     ID                    `json:"latest_retry_id,omitempty"`
 	LatestThinkingID  ID                    `json:"latest_thinking_id,omitempty"`
 	Permission        *ClaudePermissionMode `json:"permission,omitempty"`
 	PermissionChanged bool                  `json:"permission_changed,omitempty"`
@@ -73,11 +76,11 @@ func (v ClaudeProgressObservation) Validate() error {
 	switch v.Kind {
 	case ClaudeStatusProgress:
 		s := v.Status
-		if s == nil || v.Thinking != nil || s.Status != nil && *s.Status != ClaudeRequesting && *s.Status != ClaudeCompacting || s.Permission != nil && !s.Permission.Valid() || s.CompactResult != nil && *s.CompactResult != ClaudeCompactSucceeded && *s.CompactResult != ClaudeCompactFailed || s.CompactError != nil && Text(*s.CompactError, "native compact error", MaxMessageText, false) != nil {
+		if s == nil || v.Thinking != nil || v.APIRetry != nil || s.Status != nil && *s.Status != ClaudeRequesting && *s.Status != ClaudeCompacting || s.Permission != nil && !s.Permission.Valid() || s.CompactResult != nil && *s.CompactResult != ClaudeCompactSucceeded && *s.CompactResult != ClaudeCompactFailed || s.CompactError != nil && Text(*s.CompactError, "native compact error", MaxMessageText, false) != nil {
 			return invalidClaudeProgress()
 		}
 	case ClaudeThinkingProgress:
-		if !v.InputAccepted || v.Thinking == nil || v.Status != nil {
+		if !v.InputAccepted || v.Thinking == nil || v.Status != nil || v.APIRetry != nil {
 			return invalidClaudeProgress()
 		}
 		for _, counter := range []ClaudeProgressCount{v.Thinking.Tokens, v.Thinking.Delta} {
@@ -85,6 +88,10 @@ func (v ClaudeProgressObservation) Validate() error {
 			if err != nil || strconv.FormatUint(value, 10) != string(counter) {
 				return invalidClaudeProgress()
 			}
+		}
+	case ClaudeAPIRetryProgress:
+		if v.Status != nil || v.Thinking != nil || v.APIRetry == nil || v.APIRetry.NativeEventID != v.NativeEventID || v.APIRetry.Validate() != nil {
+			return invalidClaudeProgress()
 		}
 	default:
 		return invalidClaudeProgress()

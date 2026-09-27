@@ -36,3 +36,34 @@ func TestClaudeStatusPreservesNullAndIndependentPermissionAndCompaction(t *testi
 		t.Fatal("unrecognized native permission accepted")
 	}
 }
+
+func TestClaudeAPIRetryProgressPreservesExactOriginalObservations(t *testing.T) {
+	for _, accepted := range []bool{false, true} {
+		for _, scenario := range []string{"valid", "foreign", "mixed", "missing", "overflow", "rounded", "status", "error"} {
+			t.Run(scenario, func(t *testing.T) {
+				id := string(NewID())
+				v := ClaudeProgressObservation{NativeEventID: id, Kind: ClaudeAPIRetryProgress, InputAccepted: accepted, APIRetry: &ClaudeAPIRetryObservation{NativeEventID: id, Attempt: "9007199254740993", MaxRetries: "18446744073709551615", DelayMS: "0", Error: ClaudeAPIUnknown}}
+				switch scenario {
+				case "foreign":
+					v.APIRetry.NativeEventID = string(NewID())
+				case "mixed":
+					v.Status = &ClaudeStatusObservation{}
+				case "missing":
+					v.APIRetry = nil
+				case "overflow":
+					v.APIRetry.DelayMS = "18446744073709551616"
+				case "rounded":
+					v.APIRetry.Attempt = "1.0"
+				case "status":
+					status := uint16(200)
+					v.APIRetry.ErrorStatus = &status
+				case "error":
+					v.APIRetry.Error = "unclassified"
+				}
+				if (v.Validate() == nil) != (scenario == "valid") {
+					t.Fatal("retry authority or exact values changed")
+				}
+			})
+		}
+	}
+}

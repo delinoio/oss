@@ -12,7 +12,7 @@ func publishClaudeProgress(tx *store.Tx, input domain.ExecutionJobInput, session
 	}
 	v := u.Observation
 	accepted := p.NativeTurnID != ""
-	if v.InputAccepted != accepted || accepted && (event.NativeTurnID != p.NativeTurnID || p.Outcome != domain.ExecutionRunning) || !accepted && (p.Outcome != domain.ExecutionNotStarted || v.Kind != domain.ClaudeStatusProgress) || v.NativeEventID == event.NativeTurnID || v.NativeEventID == string(input.InputID) {
+	if v.InputAccepted != accepted || accepted && (event.NativeTurnID != p.NativeTurnID || p.Outcome != domain.ExecutionRunning) || !accepted && (p.Outcome != domain.ExecutionNotStarted || v.Kind != domain.ClaudeStatusProgress && v.Kind != domain.ClaudeAPIRetryProgress) || v.NativeEventID == event.NativeTurnID || v.NativeEventID == string(input.InputID) {
 		return executionEventConflict()
 	}
 	if p.ClaudeProgress == nil {
@@ -39,6 +39,8 @@ func publishClaudeProgress(tx *store.Tx, input domain.ExecutionJobInput, session
 			// reconciliation without rewriting the immutable initial settings.
 			state.PermissionChanged = state.PermissionChanged || *permission != p.Observed.ClaudePermission
 		}
+	case domain.ClaudeAPIRetryProgress:
+		state.LatestRetryID = u.ID
 	case domain.ClaudeThinkingProgress:
 		state.LatestThinkingID = u.ID
 	default:
