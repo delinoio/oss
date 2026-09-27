@@ -62,12 +62,12 @@ func TestManualNativeClaudeRecoveryRequiresOriginalCheckpoint(t *testing.T) {
 	}
 }
 
-func newClaudePublicRecoveryFixture(t *testing.T, f *firstDispatchFixture, calls *atomic.Int32, profile claudePublicRecoveryCase, perTurn int32) *claudePublicRecoveryFixture {
+func newClaudePublicRecoveryFixture(t *testing.T, f *firstDispatchFixture, calls *atomic.Int32, profile claudePublicRecoveryCase, reportCalls int32) *claudePublicRecoveryFixture {
 	t.Helper()
 	fixture := &claudePublicRecoveryFixture{profile: profile, lost: make(chan struct{}, 1), calls: calls}
 	handler := f.service.Handler(nil, true)
 	fault := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == delidevv1connect.WorkerServiceReportWorkProcedure && calls.Load() >= int32(profile.turn)*perTurn && !fixture.allow.Load() {
+		if r.URL.Path == delidevv1connect.WorkerServiceReportWorkProcedure && calls.Load() >= reportCalls && !fixture.allow.Load() {
 			select {
 			case fixture.lost <- struct{}{}:
 			default:
@@ -168,7 +168,14 @@ func (r *claudePublicRecoveryFixture) reconcile(t *testing.T, ctx context.Contex
 	}
 	var recovery domain.Job
 	var comparison domain.ExecutionRecoveryRequest
-	if domain.Decode(response.Msg.Change.ExecutionRecoveryJob.DocumentJson, &recovery) != nil || domain.Decode(recovery.Input, &comparison) != nil || comparison.Validate() != nil || comparison.Harness != domain.ClaudeCode || comparison.Claude == nil || comparison.Claude.ClaimVersion != uint32(r.profile.turn) {
+	var originalJob domain.Job
+	var originalInput domain.ExecutionJobInput
+	if domain.Decode(assignment.DocumentJson, &originalJob) != nil || domain.Decode(originalJob.Input, &originalInput) != nil || originalInput.Validate() != nil {
+		t.Fatal("original Claude assignment changed")
+	}
+	// Claim version describes first execution versus continuation, not the
+	// conversation turn count. Every later execution uses version 2.
+	if domain.Decode(response.Msg.Change.ExecutionRecoveryJob.DocumentJson, &recovery) != nil || domain.Decode(recovery.Input, &comparison) != nil || comparison.Validate() != nil || comparison.Harness != domain.ClaudeCode || comparison.Claude == nil || comparison.Claude.ClaimVersion != originalInput.Version {
 		t.Fatal("original Claude comparison profile changed")
 	}
 	var evidence domain.ExecutionRecoveryEvidence

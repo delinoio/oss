@@ -58,7 +58,7 @@ func TestClaudeTerminalRequiresSeparateOriginalIdleAndReplaysOnlyItsReceipt(t *t
 }
 
 func TestClaudeTerminalRejectsUncorrelatedUnsettledAndForeignBoundaries(t *testing.T) {
-	for _, scenario := range []string{"missing-command", "command-input", "idle-input", "session", "turn", "reused-id", "pending-task", "automatic-failure", "automatic-origin", "missing-usage", "pending-tool", "canceled-success", "interruption"} {
+	for _, scenario := range []string{"missing-command", "command-input", "idle-input", "session", "turn", "reused-id", "pending-task", "pending-compaction", "automatic-failure", "automatic-origin", "missing-usage", "pending-tool", "canceled-success", "interruption"} {
 		t.Run(scenario, func(t *testing.T) {
 			c, rpc, command, idle := claudeTerminalFixture(t)
 			ctx := context.Background()
@@ -86,6 +86,8 @@ func TestClaudeTerminalRejectsUncorrelatedUnsettledAndForeignBoundaries(t *testi
 				idle.TurnID = string(domain.NewID())
 			case "reused-id":
 				idle.NativeID = command.NativeID
+			case "pending-compaction":
+				c.binding.compaction = &domain.ClaudeCompactionState{Pending: &domain.ClaudeCompactionPending{}}
 			case "pending-task":
 				idle.Run.KnownWork.PendingTasks = 1
 			case "automatic-failure":

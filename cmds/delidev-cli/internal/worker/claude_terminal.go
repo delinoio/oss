@@ -37,7 +37,7 @@ func (c *ClaudeContentPublisher) PublishBoundaryObservation(ctx context.Context,
 		return true, nil
 	}
 	r := c.resultBoundary
-	if o.InputID != "" || o.Accepted || o.Command != "" || o.Result != nil || len(o.Content) != 0 || o.Run.KnownWork != (claude.NativeWorkObservation{}) || o.Run.ContinuationFailed || r == nil || r.KnownWork != (claude.NativeWorkObservation{}) || r.Origin != nil || !c.resultUsage || c.resultUsageNativeID == "" || c.active != "" || !c.toolsComplete() || !c.tasks.Closed() || !c.interactionsSettled() {
+	if o.InputID != "" || o.Accepted || o.Command != "" || o.Result != nil || len(o.Content) != 0 || o.Run.KnownWork != (claude.NativeWorkObservation{}) || o.Run.ContinuationFailed || r == nil || r.KnownWork != (claude.NativeWorkObservation{}) || r.Origin != nil || !c.resultUsage || c.resultUsageNativeID == "" || c.active != "" || !c.toolsComplete() || !c.tasks.Closed() || !c.interactionsSettled() || !b.compaction.Closed() {
 		return true, b.block()
 	}
 	v := &domain.ClaudeTerminalObservation{InputID: b.journal.InputID, ResultNativeID: c.resultUsageNativeID, CommandNativeID: c.terminalCommandID, IdleNativeID: o.NativeID, Kind: domain.ClaudeResultKind(r.Kind), Reason: domain.ClaudeTerminalReason(r.Reason), Error: r.Error, Command: c.terminalCommand}

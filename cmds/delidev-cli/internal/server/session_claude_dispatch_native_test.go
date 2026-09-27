@@ -27,6 +27,7 @@ import (
 type claudePublicCase string
 
 const (
+	claudePublicCompaction       claudePublicCase = "continuation-compaction"
 	claudePublicBackgroundStop   claudePublicCase = "background-stop"
 	claudePublicBashToolProgress claudePublicCase = "bash-tool-progress"
 	claudePublicBashTask         claudePublicCase = "continuation-bash-task"
@@ -113,6 +114,11 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	turns, turn := 1, 0
+	compaction := scenario == claudePublicCompaction
+	nativeModel := "fixture-model"
+	if compaction {
+		nativeModel = "claude-sonnet-4-6"
+	}
 	continuation := strings.HasPrefix(string(scenario), "continuation")
 	read := scenario == claudePublicRead || scenario == claudePublicReadError
 	effect := claudePublicEffectName(scenario)
@@ -126,10 +132,13 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 	effectHistory := &claudePublicEffectHistory{}
 	questionHistory := scenario == claudePublicQuestionHistory
 	missingRead := scenario == claudePublicReadError
-	fault := continuation && !read && !questionHistory && effect == "" && scenario != claudePublicContinuation && scenario != claudePublicResume
+	fault := continuation && !read && !questionHistory && effect == "" && scenario != claudePublicContinuation && scenario != claudePublicResume && !compaction
 	var readRoot atomic.Value
 	if continuation {
 		turns = 3
+	}
+	if compaction {
+		turns = 4
 	}
 	if fault {
 		turns = 2
@@ -143,6 +152,9 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 	var calls atomic.Int32
 	providerEnded := make(chan struct{})
 	expected := int32(turns)
+	if compaction {
+		expected++
+	}
 	if read || questionHistory {
 		expected *= 2
 	}
@@ -159,7 +171,7 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 		defer r.Body.Close()
 		if r.Method == http.MethodGet && r.URL.Path == "/models" {
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = io.WriteString(w, `{"data":[{"id":"fixture-model","object":"model"}]}`)
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": []any{map[string]any{"id": nativeModel, "object": "model"}}})
 			return
 		}
 		n := calls.Add(1)
@@ -169,6 +181,10 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 			return
 		}
 		raw, _ := io.ReadAll(io.LimitReader(r.Body, 8<<20))
+		if compaction {
+			claudePublicCompactionResponse(t, w, raw, n, nativeModel)
+			return
+		}
 		if !strings.Contains(string(raw), "first retained input") || question && n >= 2 && !strings.Contains(string(raw), "Two") {
 			t.Error("original public input or answer changed")
 			w.WriteHeader(400)
@@ -318,7 +334,13 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 		}
 	}))
 	defer upstream.Close()
-	f := newFirstDispatchFixtureProfile(t, domain.ClaudeCode, mode, binary, upstream.URL)
+	f := newFirstDispatchFixtureProfile(t, domain.ClaudeCode, mode, binary, upstream.URL, nativeModel)
+	if compaction {
+		_, err := sessionClient(f.accountFixture).EditQueuedInput(ctx, ownerRequest(f.identity, &pb.EditQueuedInputRequest{Mutation: acctMutation(f.change.Input, domain.NewID()), SessionId: f.change.Session.Id, Prompt: "first retained input " + strings.Repeat("fixture ", 30000)}))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
 	if read || effect != "" {
 		row, err := f.service.Store.Get(ctx, domain.JobKind, domain.ID(f.change.WorkspaceJob.Id))
 		if err != nil {
@@ -355,7 +377,12 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 		if effect != "" {
 			perTurn = effectCalls
 		}
-		recoveryFixture = newClaudePublicRecoveryFixture(t, f, &calls, recovery[0], perTurn)
+		reportCalls := int32(recovery[0].turn) * perTurn
+		if compaction && recovery[0].turn >= 3 {
+			// The third original input adds one native summarization request.
+			reportCalls++
+		}
+		recoveryFixture = newClaudePublicRecoveryFixture(t, f, &calls, recovery[0], reportCalls)
 		endpoint = recoveryFixture.endpoint
 	}
 	credential := worker.Credential{Version: 1, Type: domain.WorkerDevice, Endpoint: endpoint, ServerID: f.identity.ServerID, DeviceID: f.workerDevice, MachineID: f.selection.MachineID, PairingID: domain.NewID(), Token: f.workerIdentity.Token}
@@ -553,6 +580,9 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 			wantCalls := expected
 			if turns > 1 {
 				wantCalls = int32(turn + 1)
+				if compaction && turn >= 2 {
+					wantCalls++
+				}
 				if read || questionHistory {
 					wantCalls *= 2
 				}
@@ -598,6 +628,9 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 			}
 			if scenario == claudePublicBashTask || scenario == claudePublicBashToolProgress {
 				verifyClaudePublicBashTask(t, ctx, f, proof, scenario == claudePublicBashToolProgress)
+			}
+			if compaction && turn == 2 {
+				verifyClaudePublicCompaction(t, ctx, f, proof)
 			}
 			if background {
 				verifyClaudePublicBackgroundStop(t, ctx, f, proof)

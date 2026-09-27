@@ -4,7 +4,7 @@ package domain
 // must additionally prove its private native history and exclusive workspace;
 // these observations alone can never reconstruct a missing checkpoint.
 func (p ExecutionProgress) ClaudeContinuationBoundary(input ID) bool {
-	if !p.ClaudeTasks.InlineBashHistoryReady() {
+	if !p.ClaudeTasks.InlineBashHistoryReady() || !p.ClaudeCompaction.Closed() {
 		return false
 	}
 	t := p.ClaudeTerminal

@@ -92,7 +92,7 @@ func TestClaudeTerminalAndCleanupRemainSeparateWithoutUnprovedContinuation(t *te
 }
 
 func TestClaudeTerminalRejectsForeignMissingAndUnsettledPublicationAtomically(t *testing.T) {
-	for _, scenario := range []string{"missing-input", "missing-terminal", "foreign-result", "foreign-input", "init-reuse", "wrong-outcome", "pending-message", "reused-progress", "unconfirmed"} {
+	for _, scenario := range []string{"missing-input", "missing-terminal", "foreign-result", "foreign-input", "init-reuse", "wrong-outcome", "pending-message", "pending-compaction", "reused-progress", "unconfirmed"} {
 		t.Run(scenario, func(t *testing.T) {
 			f, e := claudeTerminalPublicationFixture(t, scenario != "missing-input")
 			switch scenario {
@@ -115,6 +115,13 @@ func TestClaudeTerminalRejectsForeignMissingAndUnsettledPublicationAtomically(t 
 				status := claudeProgressEvent(f, e.Sequence, true)
 				status.ClaudeProgress.Observation.NativeEventID = e.ClaudeTerminal.IdleNativeID
 				f.publish(t, status)
+				e.Sequence++
+			case "pending-compaction":
+				boundary := claudeProgressEvent(f, e.Sequence, true)
+				boundary.ClaudeProgress.Observation.Kind = domain.ClaudeCompactionProgress
+				boundary.ClaudeProgress.Observation.Status = nil
+				boundary.ClaudeProgress.Observation.Compaction = &domain.ClaudeCompactionBoundary{Trigger: domain.ClaudeAutomaticCompaction, Before: "100", Messages: &domain.ClaudePreservedMessages{Anchor: string(domain.NewID()), IDs: []string{string(domain.NewID())}}}
+				f.publish(t, boundary)
 				e.Sequence++
 			case "unconfirmed":
 				_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.unconfirmed", nil, func(tx *store.Tx) (any, error) {

@@ -71,12 +71,24 @@ func (b *ClaudeBindingPublisher) PublishProgressObservation(ctx context.Context,
 // native family. All progress uses one original sequence and durable outbox.
 func (b *ClaudeBindingPublisher) publishProgressLocked(ctx context.Context, o claude.LifecycleObservation, v domain.ClaudeProgressObservation) (bool, error) {
 	accepted := b.stage == claudeInputAccepted
-	if b.stage != claudeSessionBound && !accepted || o.SessionID != b.journal.SessionID || o.InputID != b.journal.InputID || o.TurnID != b.turn || o.Accepted != accepted || o.NativeID == b.turn || o.NativeID == string(b.journal.InputID) || b.progressSeen[o.NativeID] || len(b.progressSeen) >= 65536 {
+	compaction := v.Kind == domain.ClaudeCompactionProgress || v.Kind == domain.ClaudeCompactionSummaryProgress
+	inputMatches := o.InputID == b.journal.InputID && o.Accepted == accepted
+	if compaction {
+		inputMatches = o.InputID == "" && !o.Accepted
+	}
+	if b.stage != claudeSessionBound && !accepted || o.SessionID != b.journal.SessionID || !inputMatches || o.TurnID != b.turn || o.NativeID == b.turn || o.NativeID == string(b.journal.InputID) || b.progressSeen[o.NativeID] || len(b.progressSeen) >= 65536 {
 		return true, b.block()
 	}
 	u := &domain.ExecutionClaudeProgress{ID: domain.NewID(), Observation: v}
 	if u.Validate() != nil {
 		return true, b.block()
+	}
+	if compaction {
+		next, err := domain.ApplyClaudeCompaction(b.compaction, *u)
+		if err != nil {
+			return true, b.block()
+		}
+		b.compactionNext = next
 	}
 	if b.progressSeen == nil {
 		b.progressSeen = map[string]bool{}
@@ -87,6 +99,7 @@ func (b *ClaudeBindingPublisher) publishProgressLocked(ctx context.Context, o cl
 		return true, err
 	}
 	b.stage = b.progressResume
+	b.commitCompactionProgress()
 	if logger := b.publisher.config.Logger; logger != nil {
 		logger.Info("claude_progress_observed", "job_id", b.journal.JobID, "kind", v.Kind, "input_accepted", accepted)
 	}

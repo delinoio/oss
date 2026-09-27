@@ -12,7 +12,8 @@ func publishClaudeProgress(tx *store.Tx, input domain.ExecutionJobInput, session
 	}
 	v := u.Observation
 	accepted := p.NativeTurnID != ""
-	if v.InputAccepted != accepted || accepted && (event.NativeTurnID != p.NativeTurnID || p.Outcome != domain.ExecutionRunning) || !accepted && (p.Outcome != domain.ExecutionNotStarted || v.Kind != domain.ClaudeStatusProgress && v.Kind != domain.ClaudeAPIRetryProgress) || v.NativeEventID == event.NativeTurnID || v.NativeEventID == string(input.InputID) {
+	compaction := v.Kind == domain.ClaudeCompactionProgress || v.Kind == domain.ClaudeCompactionSummaryProgress
+	if v.InputAccepted != accepted || accepted && (event.NativeTurnID != p.NativeTurnID || p.Outcome != domain.ExecutionRunning) || !accepted && (p.Outcome != domain.ExecutionNotStarted || v.Kind != domain.ClaudeStatusProgress && v.Kind != domain.ClaudeAPIRetryProgress && !compaction) || v.NativeEventID == event.NativeTurnID || v.NativeEventID == string(input.InputID) {
 		return executionEventConflict()
 	}
 	if p.ClaudeProgress == nil {
@@ -21,6 +22,13 @@ func publishClaudeProgress(tx *store.Tx, input domain.ExecutionJobInput, session
 	state := p.ClaudeProgress
 	if state.NativeTurnID != event.NativeTurnID {
 		return executionEventConflict()
+	}
+	if compaction {
+		next, err := domain.ApplyClaudeCompaction(p.ClaudeCompaction, *u)
+		if err != nil {
+			return err
+		}
+		p.ClaudeCompaction = next
 	}
 	if v.Tool != nil {
 		if err := validateClaudeProgressTool(tx, input, session, event, v.Tool.Tool, v.Tool.TaskID == nil); err != nil {
@@ -66,6 +74,10 @@ func publishClaudeProgress(tx *store.Tx, input domain.ExecutionJobInput, session
 		return err
 	}
 	switch v.Kind {
+	case domain.ClaudeCompactionProgress:
+		state.LatestCompactionID = u.ID
+	case domain.ClaudeCompactionSummaryProgress:
+		state.LatestCompactionSummaryID = u.ID
 	case domain.ClaudeStatusProgress:
 		state.LatestStatusID = u.ID
 		if permission := v.Status.Permission; permission != nil {

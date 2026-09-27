@@ -394,6 +394,7 @@ func (e ExecutionEvent) Validate() error {
 // original immutable account/configuration selection. Only a separately
 // verified completion report may set CleanupVerified after terminal publication.
 type ExecutionProgress struct {
+	ClaudeCompaction       *ClaudeCompactionState      `json:"claude_compaction,omitempty"`
 	ClaudeDenial           *ClaudeDenialCompletion     `json:"claude_denial,omitempty"`
 	ClaudeStop             *ClaudeStopObservation      `json:"claude_stop,omitempty"`
 	ClaudeTerminal         *ClaudeTerminalObservation  `json:"claude_terminal,omitempty"`

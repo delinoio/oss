@@ -58,6 +58,8 @@ type claudeBindingJournal struct {
 // or grants completion.
 // Close the native process before this coordinator, then its shared publisher.
 type ClaudeBindingPublisher struct {
+	compaction      *domain.ClaudeCompactionState
+	compactionNext  *domain.ClaudeCompactionState
 	progressSeen    map[string]bool
 	progressResume  claudeBindingStage
 	mu              sync.Mutex
@@ -293,6 +295,7 @@ func (c *ClaudeBindingPublisher) replayPending(ctx context.Context) error {
 		return c.block()
 	}
 	if c.stage == claudeProgressPending {
+		c.commitCompactionProgress()
 		c.stage = c.progressResume
 	} else if c.stage == claudeBindingPending {
 		c.stage = claudeSessionBound

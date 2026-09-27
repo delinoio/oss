@@ -242,6 +242,8 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 			if display != nil {
 				handled, err = display.PublishTaskObservation(publicationContext, o)
 			}
+		case claude.CompactionObserved, claude.CompactionSummaryObserved:
+			handled, err = binding.PublishCompactionObservation(publicationContext, o)
 		case claude.ProgressObserved:
 			handled, err = binding.PublishProgressObservation(publicationContext, o)
 			if !handled && err == nil && display != nil {
