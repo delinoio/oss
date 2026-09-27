@@ -1753,6 +1753,13 @@ fn collect_required(
             if !selected || !snapshot.contains_selected(&alias) {
                 if pair.start.operation.is_content_read() && pair.completion.native_error.is_none()
                 {
+                    if selected
+                        && path.project_relative.as_ref().is_some_and(|relative| {
+                            generated_before_read(&record.operations, relative, pair.start.sequence)
+                        })
+                    {
+                        continue;
+                    }
                     return Err(ReproFailure::UncollectedInput);
                 }
                 continue;
@@ -4063,6 +4070,23 @@ mod tests {
         record.operations[0].start.paths[0].project_relative =
             Some(NativePath::UnixBytes(b"b.txt".to_vec()));
         record.operations[0].start.paths[0].identity = Some(identity);
+        fs::write(root.join("generated.txt"), b"generated").unwrap();
+        let mut generated = record.clone();
+        generated.operations[0].start.paths[0].logical =
+            NativePath::UnixBytes(root.join("generated.txt").as_os_str().as_bytes().to_vec());
+        generated.operations[0].start.paths[0].project_relative =
+            Some(NativePath::UnixBytes(b"generated.txt".to_vec()));
+        generated.operations[0].start.paths[0].identity = None;
+        generated.operations[0].start.sequence = 3;
+        generated.operations[0].completion.sequence = 4;
+        let mut write = generated.operations[0].clone();
+        write.start.operation = record::Operation::Write;
+        write.start.sequence = 1;
+        write.completion.sequence = 2;
+        generated.operations.insert(0, write);
+        assert!(collect_required(&generated, &root, &selector, &snapshot)
+            .unwrap()
+            .is_empty());
         fs::remove_file(root.join("b.txt")).unwrap();
         fs::write(root.join("b.txt"), b"changed").unwrap();
         assert!(matches!(
