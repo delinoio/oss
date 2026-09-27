@@ -49,3 +49,18 @@ for (const [name, change] of Object.entries<(value: ReturnType<typeof fixture>) 
   expect(screen.getByLabelText("Claude message unavailable")).toBeTruthy();
   expect(screen.queryByText("Original reasoning 🐦")).toBeNull();
 });
+
+test("retains inert tool references in their original provider block order", () => {
+  const content = { model: "fixture-model", blocks: [
+    { index: 0, block: { kind: "text", text: "Before original tool" }, state: "stopped" },
+    { index: 1, block: { kind: "tool_use", text: "", tool: { id: "01900000-0000-7000-8000-000000000001", native_id: "tool_original", name: "Read" } }, state: "stopped" },
+    { index: 2, block: { kind: "text", text: "After original tool" }, state: "stopped" },
+  ], stop_reason: "tool_use", stop_sequence: null };
+  const { container } = render(<NativeClaudeMessage content={content} state="complete" />);
+  const rows = screen.getAllByRole("listitem");
+  expect(rows).toHaveLength(3);
+  expect(rows[0]!.textContent).toContain("Before original tool");
+  expect(rows[1]!.textContent).toContain("Tool proposal: Read.");
+  expect(rows[2]!.textContent).toContain("After original tool");
+  expect(container.querySelectorAll("a,button,input")).toHaveLength(0);
+});

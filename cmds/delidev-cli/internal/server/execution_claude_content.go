@@ -23,7 +23,7 @@ func publishClaudeMessage(tx *store.Tx, input domain.ExecutionJobInput, session 
 		if err != nil {
 			return err
 		}
-		if r.SessionID != session.ID || value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeID != u.NativeID || value.NativeParentID != "" || value.Role != domain.AssistantMessage || value.Text != "" || value.InputID != "" || value.Phase != nil || value.Tool != nil || value.Artifact != nil || value.Progress != nil || value.Claude == nil {
+		if r.SessionID != session.ID || value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeID != u.NativeID || value.NativeParentID != "" || value.Role != domain.AssistantMessage || value.Text != "" || value.InputID != "" || value.Phase != nil || value.ClaudeTool != nil || value.Tool != nil || value.Artifact != nil || value.Progress != nil || value.Claude == nil {
 			return executionEventConflict()
 		}
 		revision = r.Revision
@@ -36,5 +36,11 @@ func publishClaudeMessage(tx *store.Tx, input domain.ExecutionJobInput, session 
 	if _, err := tx.Put(domain.MessageKind, u.ID, revision, session.ID, session.ProjectID, value); err != nil {
 		return err
 	}
-	return tx.BindExecutionMessage(session.ID, input.ExecutionID, u.ID, event.NativeThreadID, event.NativeTurnID, u.NativeID, state)
+	if err := tx.BindExecutionMessage(session.ID, input.ExecutionID, u.ID, event.NativeThreadID, event.NativeTurnID, u.NativeID, state); err != nil {
+		return err
+	}
+	if u.Tool != nil {
+		return publishClaudeTool(tx, input, session, event, u.Tool)
+	}
+	return nil
 }

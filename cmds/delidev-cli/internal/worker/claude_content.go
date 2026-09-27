@@ -14,19 +14,22 @@ type claudePublishedContent struct {
 }
 
 type claudeContentCommit struct {
-	event  domain.ExecutionEvent
-	native string
-	next   claudePublishedContent
-	input  bool
+	toolNative string
+	toolNext   claudePublishedTool
+	event      domain.ExecutionEvent
+	native     string
+	next       claudePublishedContent
+	input      bool
 }
 
 // ClaudeContentPublisher preserves whole provider messages and ordered native
-// text/thinking blocks. It consumes no usage, tool, child, interaction or result
-// authority. Its caller must separately reconcile those families before any
-// terminal publication; unhandled rich blocks latch this content publisher.
+// text/thinking blocks and original root tools. Native usage is published as
+// independent observations. Its caller must reconcile child, interaction and
+// terminal authority separately; unsupported rich blocks latch this publisher.
 type ClaudeContentPublisher struct {
 	binding        *ClaudeBindingPublisher
 	messages       map[string]claudePublishedContent
+	tools          map[string]claudePublishedTool
 	seen           map[string]bool
 	usageSeen      map[string]bool
 	resultUsage    bool
@@ -49,7 +52,7 @@ func OpenClaudeContentPublisher(binding *ClaudeBindingPublisher) (*ClaudeContent
 		return nil, publicationUncertain()
 	}
 	binding.contentAttached = true
-	return &ClaudeContentPublisher{binding: binding, messages: map[string]claudePublishedContent{}, seen: map[string]bool{}, usageSeen: map[string]bool{}}, nil
+	return &ClaudeContentPublisher{binding: binding, messages: map[string]claudePublishedContent{}, seen: map[string]bool{}, usageSeen: map[string]bool{}, tools: map[string]claudePublishedTool{}}, nil
 }
 
 func (c *ClaudeContentPublisher) verify() error {
@@ -93,7 +96,16 @@ func (c *ClaudeContentPublisher) PublishObservation(ctx context.Context, o claud
 	if o.Kind != claude.ContentObserved {
 		return false, nil
 	}
-	if c.resultUsage || !c.inputPublished || o.SessionID != b.journal.SessionID || o.InputID != b.journal.InputID || o.TurnID != b.turn || !o.Accepted || domain.NativeIdentity(o.NativeID).Validate(domain.ClaudeCode, domain.NativeTurnIdentity) != nil || c.seen[o.NativeID] || len(c.seen) >= 65536 || len(o.Content) != 1 {
+	if c.resultUsage || !c.inputPublished || o.SessionID != b.journal.SessionID || o.InputID != b.journal.InputID || o.TurnID != b.turn || !o.Accepted || domain.NativeIdentity(o.NativeID).Validate(domain.ClaudeCode, domain.NativeTurnIdentity) != nil || c.seen[o.NativeID] || len(c.seen) >= 65536 || len(o.Content) == 0 || len(o.Content) > 128 {
+		return true, b.block()
+	}
+	if o.Content[0].Kind == claude.ToolResultObserved {
+		if err := c.publishToolResults(ctx, o); err != nil {
+			return true, err
+		}
+		return true, nil
+	}
+	if len(o.Content) != 1 {
 		return true, b.block()
 	}
 	native := o.Content[0]
@@ -124,6 +136,7 @@ func (c *ClaudeContentPublisher) PublishObservation(ctx context.Context, o claud
 			u.StopSequence = &sequence
 		}
 	}
+	var toolNext claudePublishedTool
 	switch native.Kind {
 	case claude.ProviderMessageStarted:
 	case claude.ProviderMessageUpdated:
@@ -131,11 +144,21 @@ func (c *ClaudeContentPublisher) PublishObservation(ctx context.Context, o claud
 	case claude.ProviderMessageFinished:
 		u.Mutation = domain.ClaudeMessageStop
 	case claude.ContentStarted, claude.ContentCompleted:
-		block, err := claudeDisplayBlock(native.Block)
-		if err != nil {
-			return true, b.block()
+		if native.Block != nil && native.Block.Kind == claude.ToolUseBlock {
+			update, next, err := c.prepareToolProposal(prior.id, native)
+			if err != nil {
+				return true, b.block()
+			}
+			u.Tool, toolNext = update, next
+			reference := update.Reference
+			u.Block = &domain.ClaudeTextBlock{Kind: domain.ClaudeToolUse, Tool: &reference}
+		} else {
+			block, err := claudeDisplayBlock(native.Block)
+			if err != nil {
+				return true, b.block()
+			}
+			u.Block = &block
 		}
-		u.Block = &block
 		u.Mutation = domain.ClaudeBlockStart
 		if native.Kind == claude.ContentCompleted {
 			u.Mutation = domain.ClaudeBlockComplete
@@ -147,6 +170,17 @@ func (c *ClaudeContentPublisher) PublishObservation(ctx context.Context, o claud
 			return true, b.block()
 		}
 		block := prior.content.Blocks[*native.Index]
+		if native.DeltaKind == claude.ToolInputDelta {
+			if block.Block.Kind != domain.ClaudeToolUse || block.Block.Tool == nil || native.Delta == nil {
+				return true, b.block()
+			}
+			update, next, err := c.prepareToolInput(*block.Block.Tool, native)
+			if err != nil {
+				return true, b.block()
+			}
+			u.Tool, u.Mutation, toolNext = update, domain.ClaudeBlockToolInput, next
+			break
+		}
 		if native.DeltaKind == claude.SignatureDelta {
 			if native.Delta != nil || block.Block.Kind != domain.ClaudeThinking || block.State != domain.ClaudeBlockStreaming {
 				return true, b.block()
@@ -170,6 +204,9 @@ func (c *ClaudeContentPublisher) PublishObservation(ctx context.Context, o claud
 	}
 	c.seen[o.NativeID] = true
 	c.queue = []claudeContentCommit{{event: domain.ExecutionEvent{Kind: domain.ExecutionClaudeMessageObserved, ClaudeMessage: &u}, native: native.MessageID, next: claudePublishedContent{id: u.ID, state: state, content: next}}}
+	if u.Tool != nil {
+		c.queue[0].toolNative, c.queue[0].toolNext = u.Tool.Reference.NativeID, toolNext
+	}
 	return true, c.drain(ctx)
 }
 
@@ -232,6 +269,12 @@ func (c *ClaudeContentPublisher) commitHead() {
 			c.active = item.native
 		}
 		c.messages[item.native] = item.next
+	}
+	if item.toolNative != "" {
+		if item.toolNext.state == domain.MessageComplete {
+			item.toolNext.content = nil
+		}
+		c.tools[item.toolNative] = item.toolNext
 	}
 	c.queue[0] = claudeContentCommit{}
 	c.queue, c.pending = c.queue[1:], false

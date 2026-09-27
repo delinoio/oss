@@ -181,3 +181,22 @@ for (const mixed of [false, true]) {
     expect(value.controls).not.toHaveBeenCalled();
   });
 }
+
+for (const mixed of [false, true]) {
+  it(`renders original Claude tool ownership and rejects mixed records (${mixed})`, async () => {
+    const value = fixture();
+    value.message.documentJson = encode({ role: "tool", text: "", state: "complete", native_id: "tool_original", native_parent_id: "msg_original",
+      claude_tool: { reference: { id: value.message.id, native_id: "tool_original", name: "Read" }, message_id: "01900000-0000-7000-8000-000000000002", native_message_id: "msg_original", index: 0, caller: null, initial_input: "{}", input_delta: null, proposal: { proposed: "{}", applied: "{}" }, result: { native_event_id: "123e4567-e89b-42d3-a456-426614174000", is_error: false, text: "Original Claude tool output", blocks: null, structured: null } },
+      ...(mixed ? { claude: { model: "foreign" }, tool: { output: "Mixed output" } } : {}),
+    });
+    render(<App transport={value.transport} />);
+    fireEvent.click(await screen.findByRole("button", { name: /General Chat Retained session/ }));
+    if (mixed) {
+      expect(await screen.findByLabelText("Claude tool unavailable")).toBeTruthy();
+      expect(screen.queryByText("Original Claude tool output")).toBeNull();
+      expect(screen.queryByText("Mixed output")).toBeNull();
+    } else expect(await screen.findByText("Original Claude tool output")).toBeTruthy();
+    expect(value.enqueues).not.toHaveBeenCalled();
+    expect(value.controls).not.toHaveBeenCalled();
+  });
+}

@@ -1,11 +1,12 @@
 import { object } from "./documents";
+import { claudeToolReference, type ClaudeToolReference } from "./native-claude-tool";
 
-enum BlockKind { Text = "text", Thinking = "thinking", Redacted = "redacted_thinking" }
+enum BlockKind { Tool = "tool_use", Text = "text", Thinking = "thinking", Redacted = "redacted_thinking" }
 enum BlockState { Streaming = "streaming", Completed = "completed", Stopped = "stopped" }
 enum MessageState { Streaming = "streaming", Complete = "complete" }
 const stopReasons = new Set(["end_turn", "max_tokens", "stop_sequence", "tool_use", "pause_turn", "refusal", "model_context_window_exceeded"]);
 const blockLabels = { [BlockState.Streaming]: "Streaming", [BlockState.Completed]: "Content complete", [BlockState.Stopped]: "Stream closed" };
-type Block = { index: number; kind: BlockKind; text: string; state: BlockState };
+type Block = { tool?: ClaudeToolReference; index: number; kind: BlockKind; text: string; state: BlockState };
 
 function keys(value: Record<string, unknown>, expected: string[]) {
   return Object.keys(value).length === expected.length && expected.every((key) => Object.hasOwn(value, key));
@@ -20,10 +21,10 @@ function message(value: unknown, state: string): { blocks: Block[]; reason: stri
   let bytes = 0;
   for (const [index, value] of data.blocks.entries()) {
     const entry = object(value), block = object(entry.block);
-    if (!keys(entry, ["index", "block", "state"]) || !keys(block, ["kind", "text"]) || entry.index !== index || !Object.values(BlockKind).includes(block.kind as BlockKind) || !Object.values(BlockState).includes(entry.state as BlockState) || !validText(block.text, 256 * 1024) || (block.kind === BlockKind.Redacted && block.text !== "") || ((state === MessageState.Complete || index < data.blocks.length - 1) && entry.state !== BlockState.Stopped)) return undefined;
+    if (!keys(entry, ["index", "block", "state"]) || !keys(block, block.kind === BlockKind.Tool ? ["kind", "text", "tool"] : ["kind", "text"]) || entry.index !== index || !Object.values(BlockKind).includes(block.kind as BlockKind) || !Object.values(BlockState).includes(entry.state as BlockState) || !validText(block.text, 256 * 1024) || ((block.kind === BlockKind.Redacted || block.kind === BlockKind.Tool) && block.text !== "") || (block.kind === BlockKind.Tool && !claudeToolReference(block.tool)) || ((state === MessageState.Complete || index < data.blocks.length - 1) && entry.state !== BlockState.Stopped)) return undefined;
     bytes += new TextEncoder().encode(block.text).length;
     if (bytes > 256 * 1024) return undefined;
-    blocks.push({ index, kind: block.kind as BlockKind, text: block.text, state: entry.state as BlockState });
+    blocks.push({ tool: claudeToolReference(block.tool), index, kind: block.kind as BlockKind, text: block.text, state: entry.state as BlockState });
   }
   return { blocks, reason: data.stop_reason as string | null, sequence: data.stop_sequence as string | null };
 }
@@ -35,7 +36,7 @@ export function NativeClaudeMessage({ content, state }: { content: unknown; stat
   if (!retained) return <section aria-label="Claude message unavailable"><p>The retained Claude message is unavailable or inconsistent.</p></section>;
   return <section aria-label="Claude message content">
     <ol>{retained.blocks.map((block) => <li key={block.index}>
-      {block.kind === BlockKind.Thinking ? <details><summary>Reasoning · {blockLabels[block.state]}</summary><pre>{block.text}</pre></details> : block.kind === BlockKind.Redacted ? <p>Reasoning was redacted by the harness. <small>{blockLabels[block.state]}</small></p> : <><pre>{block.text}</pre><small>{blockLabels[block.state]}</small></>}
+      {block.kind === BlockKind.Tool ? <p>Tool proposal: {block.tool!.name}. <small>{blockLabels[block.state]}</small></p> : block.kind === BlockKind.Thinking ? <details><summary>Reasoning · {blockLabels[block.state]}</summary><pre>{block.text}</pre></details> : block.kind === BlockKind.Redacted ? <p>Reasoning was redacted by the harness. <small>{blockLabels[block.state]}</small></p> : <><pre>{block.text}</pre><small>{blockLabels[block.state]}</small></>}
     </li>)}</ol>
     {retained.reason !== null ? <p>Native stop reason: {retained.reason}</p> : null}
     {retained.sequence !== null ? <details><summary>Native stop sequence</summary><pre>{retained.sequence}</pre></details> : null}

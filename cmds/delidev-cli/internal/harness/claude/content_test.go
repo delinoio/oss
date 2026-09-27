@@ -294,3 +294,37 @@ func TestContentInitializationPreservesRestoredMessageAndToolOwnership(t *testin
 		})
 	}
 }
+
+func TestOriginalToolErrorMetadataRequiresNativeErrorEvidence(t *testing.T) {
+	for _, status := range []string{"true", "false", "absent", "null", "array", "number"} {
+		t.Run(status, func(t *testing.T) {
+			b := contentFixture(t)
+			contentTool(t, b, "", "tool_read", "Read")
+			block := map[string]any{"type": "tool_result", "tool_use_id": "tool_read", "content": "Original read failure"}
+			if status != "absent" {
+				block["is_error"] = status != "false"
+			}
+			var metadata any = "Original native error metadata"
+			switch status {
+			case "null":
+				metadata = json.RawMessage("null")
+			case "array":
+				metadata = []any{}
+			case "number":
+				metadata = 1
+			}
+			e := lifecycleChange(t, contentResult(t, b, "", block), "tool_use_result", metadata)
+			o, err := b.Observe(e)
+			if status != "true" {
+				if err == nil || b.content.tools["tool_read"].finished {
+					t.Fatal("invalid error metadata closed original tool")
+				}
+				return
+			}
+			raw, _ := json.Marshal(metadata)
+			if err != nil || len(o.Content) != 1 || string(o.Content[0].ToolResult.Structured) != string(raw) || !*o.Content[0].ToolResult.Error {
+				t.Fatal("original error metadata lost", err)
+			}
+		})
+	}
+}

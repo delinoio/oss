@@ -94,7 +94,7 @@ type NativeToolResult struct {
 	Error    *bool                `json:"is_error"`
 	Text     *string              `json:"text"`
 	Blocks   []NativeContentBlock `json:"blocks"`
-	// Structured is Claude's original tool_use_result object. This explicit
+	// Structured is Claude's original tool_use_result object or JSON error string. This explicit
 	// provider extension may duplicate binary media and remains private until
 	// its typed publication adapter exists. It grants no filesystem, process,
 	// network or interaction-response capability.
@@ -815,11 +815,8 @@ func (b *ExecutionBinding) observeToolResult(raw []byte) ([]ContentEvent, error)
 			return b.observeChildInput(parent, message.Content, envelope.SubagentType, envelope.TaskDescription)
 		}
 	}
-	if len(envelope.Structured) > 0 {
-		var object map[string]json.RawMessage
-		if len(message.Content) != 1 || domain.Decode(envelope.Structured, &object) != nil || object == nil {
-			return nil, lifecycleUncertain()
-		}
+	if len(envelope.Structured) > 0 && len(message.Content) != 1 {
+		return nil, lifecycleUncertain()
 	}
 	var events []ContentEvent
 	seen := map[string]bool{}
@@ -831,6 +828,12 @@ func (b *ExecutionBinding) observeToolResult(raw []byte) ([]ContentEvent, error)
 			Content json.RawMessage `json:"content"`
 		}
 		if decodeNativeObject(raw, &value) != nil || value.Type != "tool_result" {
+			return nil, lifecycleUncertain()
+		}
+		if len(envelope.Structured) != 0 && !domain.ValidClaudeToolResultMetadata(string(envelope.Structured), value.Error) {
+			if b.logger != nil {
+				b.logger.Warn("Claude Code tool metadata validation failed", "owner_id", b.owner, "code", domain.RecoveryRequired)
+			}
 			return nil, lifecycleUncertain()
 		}
 		tool, ok := b.content.tools[value.ID]
