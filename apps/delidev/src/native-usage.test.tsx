@@ -61,3 +61,16 @@ it("does not misattribute a returned observation from another session", async ()
   await waitFor(() => expect(screen.getByText("The matching native usage observation is unavailable.")).toBeTruthy());
   expect(screen.queryByText("Uncached input")).toBeNull();
 });
+
+
+it.each(["original", "foreign", "mixed"])("retains the selected Claude usage scope: %s", async (kind) => {
+ const session=create(ResourceSchema,{schemaVersion:1,id:"session",kind:EntityKind.SESSION,revision:1n,documentJson:encode({initial_execution:{configuration:{harness:"claude-code"}},execution:{execution_id:"original",latest_usage_id:"usage"}})});
+ const retained=create(ResourceSchema,{schemaVersion:1,id:"usage",kind:EntityKind.USAGE,sessionId:kind==="foreign"?"other":"session",documentJson:encode({execution_id:"original",harness:"claude-code",native_version:"2.1.236",claude_observation:{source:"input-result",native_event_id:"01960dcb-e1fa-7000-8000-000000000001",result:{main_loop_turn:{input_tokens:"9007199254740993"},native_cumulative_cost_usd:"0.0006994999999999999"}},...(kind==="mixed"?{response:{}}:{})})});
+ const requests:string[]=[];
+ const transport=createRouterTransport((router)=>router.service(ResourceService,{getResource:(request)=>{requests.push(request.id);return {resource:retained};}}));
+ const query=new QueryClient({defaultOptions:{queries:{retry:false}}});
+ render(<QueryClientProvider client={query}><TransportProvider transport={transport}><NativeUsage session={session}/></TransportProvider></QueryClientProvider>);
+ if(kind==="original") expect(await screen.findByText("9007199254740993")).toBeTruthy();
+ else { expect(await screen.findByText("The matching native usage observation is unavailable.")).toBeTruthy();expect(screen.queryByLabelText("Claude native usage")).toBeNull(); }
+ expect(requests).toEqual(["usage"]);
+});

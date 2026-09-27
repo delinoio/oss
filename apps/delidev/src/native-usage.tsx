@@ -2,6 +2,7 @@ import { useQuery } from "@connectrpc/connect-query";
 import { EntityKind, ResourceQuery, type Resource } from "@delinoio/delidev-api-client";
 import { document, object, text } from "./documents";
 import { Problem } from "./ui";
+import { NativeClaudeUsage } from "./native-claude-usage";
 
 enum Source {
   Step = "step-finish",
@@ -47,19 +48,20 @@ export function NativeUsage({ session }: { session: Resource }) {
   const configuration = object(object(data.initial_execution).configuration);
   const progress = object(data.execution);
   const id = text(progress.latest_usage_id);
-  const supported = configuration.harness === "opencode";
+  const claude = configuration.harness === "claude-code";
+  const supported = claude || configuration.harness === "opencode";
   const result = useQuery(ResourceQuery.getResource, { kind: EntityKind.USAGE, id }, { enabled: supported && Boolean(id) });
   if (!supported) return null;
   const retained = result.data?.resource;
   const record = document(retained);
-  const matches = retained?.id === id && retained.kind === EntityKind.USAGE && retained.sessionId === session.id && record.execution_id === progress.execution_id && record.harness === "opencode" && record.native_version === "1.18.32";
+  const matches = retained?.id === id && retained.kind === EntityKind.USAGE && retained.sessionId === session.id && record.execution_id === progress.execution_id && record.harness === configuration.harness && record.native_version === (claude ? "2.1.236" : "1.18.32") && (claude ? record.opencode_observation == null && record.usage == null && record.response == null : record.claude_observation == null);
   return <details><summary>Native usage observation</summary>
     <Problem error={result.error} />
     {result.error ? <p>Refresh failed. Any displayed observation is retained data.</p> : null}
     {!id ? <p>No native usage has been retained for this execution.</p> : result.isPending ? <p>Loading native usage…</p> : !matches ? <p>The matching native usage observation is unavailable.</p> : <>
       <p>Recorded execution: {text(record.execution_id)}</p>
       {object(data.current_execution).id !== record.execution_id && data.current_execution != null ? <p>This observation belongs to a preceding execution.</p> : null}
-      <NativeUsageObservation value={object(record.opencode_observation)} />
+      {claude ? <NativeClaudeUsage value={object(record.claude_observation)} /> : <NativeUsageObservation value={object(record.opencode_observation)} />}
     </>}
     {id ? <button disabled={result.isFetching} onClick={() => void result.refetch()}>Refresh native usage</button> : null}
   </details>;

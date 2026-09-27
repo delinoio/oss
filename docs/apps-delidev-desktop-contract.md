@@ -223,3 +223,6 @@ Existing OpenCode original permission disclosures remain valid across eligible e
 
 ### Claude native message disclosure
 Session transcripts render the optional Claude provider-message document as ordered text, collapsible thinking and explicitly redacted blocks. They preserve empty content, per-block lifecycle, whole-message state and observed native stop reason/sequence. The renderer validates the complete bounded document before any display, renders strings inertly, and treats missing/unknown/mixed/inconsistent records as unavailable. Message closure does not imply successful session completion, tool execution or current account capability.
+
+### Claude native usage disclosure
+The session’s exact latest native usage reference also supports pinned Claude `2.1.236`. Validate the original resource/session/execution and closed source graph before displaying any part. Show unavailable and measured zero separately; keep large counter strings and native decimal estimate spelling exact. Main-loop counters, ordered native metadata and cumulative model/cost ledgers stay separate, inert and read-only. Exclude mixed usage families and do not add overlapping reports to billing, estimates or budgets.

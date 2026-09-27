@@ -137,3 +137,5 @@ Claude first-input publication now connects a fresh immutable Worker claim journ
 
 
 Claude original root text publication now retains one provider-message record with ordered text, thinking and redacted-thinking blocks, separate completed/stopped states and original provider stop metadata. The desktop renders the bounded validated shape as inert content; thinking signatures remain private. Native thinking-token estimates remain separate progress, never usage or billing. Actual Execute/Plan lost-ack evidence covers original user publication and a thinking delta without repeating inference. Rich/child/tool/usage/interaction/terminal publication and public Claude dispatch/continuation remain separate required integrations.
+
+Claude root usage publication now retains original message/block reports and input-result main-loop/cumulative ledgers through the shared durable outbox, with exact string counters and desktop disclosure. They remain overlapping native telemetry outside normalized billing/pricing/budget accounting. Original terminal, tools/interactions/children, dispatch, continuation and remaining account/platform requirements are still being integrated.

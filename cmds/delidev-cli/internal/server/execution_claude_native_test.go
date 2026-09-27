@@ -31,18 +31,18 @@ import (
 // claim is a test coordinator, not evidence of public Worker publication.
 func TestManualNativeClaudeUsesRegisteredServerRelay(t *testing.T) {
 	for _, mode := range []domain.SessionMode{domain.ExecuteMode, domain.PlanMode} {
-		t.Run(string(mode), func(t *testing.T) { nativeRegisteredClaude(t, mode, false, 0, false) })
+		t.Run(string(mode), func(t *testing.T) { nativeRegisteredClaude(t, mode, false, 0, false, false) })
 	}
 }
 
 func TestManualNativeClaudeRegisteredRelayRevocation(t *testing.T) {
-	nativeRegisteredClaude(t, domain.ExecuteMode, true, 0, false)
+	nativeRegisteredClaude(t, domain.ExecuteMode, true, 0, false, false)
 }
 
 func TestManualNativeClaudePublishesOriginalBindings(t *testing.T) {
 	for _, mode := range []domain.SessionMode{domain.ExecuteMode, domain.PlanMode} {
 		for _, lost := range []int{1, 2} {
-			t.Run(fmt.Sprintf("%s/lost-%d", mode, lost), func(t *testing.T) { nativeRegisteredClaude(t, mode, false, lost, false) })
+			t.Run(fmt.Sprintf("%s/lost-%d", mode, lost), func(t *testing.T) { nativeRegisteredClaude(t, mode, false, lost, false, false) })
 		}
 	}
 }
@@ -50,12 +50,20 @@ func TestManualNativeClaudePublishesOriginalBindings(t *testing.T) {
 func TestManualNativeClaudePublishesOrderedContent(t *testing.T) {
 	for _, mode := range []domain.SessionMode{domain.ExecuteMode, domain.PlanMode} {
 		for _, lost := range []int{3, 7} {
-			t.Run(fmt.Sprintf("%s/lost-%d", mode, lost), func(t *testing.T) { nativeRegisteredClaude(t, mode, false, lost, true) })
+			t.Run(fmt.Sprintf("%s/lost-%d", mode, lost), func(t *testing.T) { nativeRegisteredClaude(t, mode, false, lost, true, false) })
 		}
 	}
 }
 
-func nativeRegisteredClaude(t *testing.T, mode domain.SessionMode, revoke bool, publicationLoss int, content bool) {
+func TestManualNativeClaudePublishesUsage(t *testing.T) {
+	for _, mode := range []domain.SessionMode{domain.ExecuteMode, domain.PlanMode} {
+		for _, lost := range []int{6, 29} {
+			t.Run(fmt.Sprintf("%s/lost-%d", mode, lost), func(t *testing.T) { nativeRegisteredClaude(t, mode, false, lost, true, true) })
+		}
+	}
+}
+
+func nativeRegisteredClaude(t *testing.T, mode domain.SessionMode, revoke bool, publicationLoss int, content, usage bool) {
 	t.Helper()
 	binary := os.Getenv("DELIDEV_NATIVE_CLAUDE_EXECUTABLE")
 	if binary == "" {
@@ -320,6 +328,18 @@ func nativeRegisteredClaude(t *testing.T, mode domain.SessionMode, revoke bool, 
 					}
 				}
 			}
+			if usage && (o.Kind == claude.ContentObserved || o.Kind == claude.InputFinished) {
+				_, err := display.PublishUsageObservation(ctx, o)
+				if err != nil {
+					if len(publication.calls) != publicationLoss {
+						t.Fatal("unexpected native usage publication failure", err)
+					}
+					if err := display.ReplayPending(ctx); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+
 			if o.Kind == claude.InputAccepted {
 				if o.InputID != f.input.InputID || o.SessionID != f.input.SessionID || o.TurnID == "" {
 					t.Fatal("native acceptance lost original ownership")
@@ -379,6 +399,9 @@ func nativeRegisteredClaude(t *testing.T, mode domain.SessionMode, revoke bool, 
 		if content {
 			expectedSequence = 22
 		}
+		if usage {
+			expectedSequence = 29
+		}
 		if err != nil || session.Execution == nil || session.Execution.LastSequence != expectedSequence || session.Execution.NativeThreadID != string(f.input.SessionID) || session.Execution.NativeTurnID == "" || session.PendingInputs != 0 || session.PendingInputBytes != 0 || session.Execution.CleanupVerified || session.Execution.Outcome != domain.ExecutionRunning || uint64(len(publication.calls)) != expectedSequence+1 || publication.calls[publicationLoss-1] != publication.calls[publicationLoss] {
 			t.Fatal("original bindings lost ownership/accounting or fabricated terminal evidence", err)
 		}
@@ -424,6 +447,33 @@ func nativeRegisteredClaude(t *testing.T, mode domain.SessionMode, revoke bool, 
 			t.Fatal("native transcript roles were duplicated")
 		}
 	}
+	if usage {
+		records, err := f.service.Store.List(ctx, store.Filter{Kind: domain.UsageKind, SessionID: f.input.SessionID, Limit: 20})
+		if err != nil || len(records) != 7 {
+			t.Fatal("native usage source count changed", len(records), err)
+		}
+		sources := map[domain.ClaudeUsageSource]int{}
+		for _, r := range records {
+			u, err := store.Decode[domain.ClaudeUsageRecord](r)
+			if err != nil || u.Usage.Validate() != nil || u.AccountID != f.input.AccountID || u.ConnectionID != f.input.ConnectionID || u.ExecutionID != f.input.ExecutionID {
+				t.Fatal("native usage lost its original attribution", err)
+			}
+			sources[u.Usage.Source]++
+			if u.Usage.Result != nil {
+				result := u.Usage.Result
+				if result.MainLoop == nil || result.MainLoop.Input == nil || *result.MainLoop.Input != "3" || result.MainLoop.Output == nil || *result.MainLoop.Output != "4" || result.NativeCostUSD == nil || result.Models["fixture-model"].Input == nil {
+					t.Fatal("native result usage lost its independent scopes")
+				}
+			}
+			if _, err := f.service.Store.ResponseUsage(ctx, r.ID); err == nil {
+				t.Fatal("overlapping native reports entered billing ledger")
+			}
+		}
+		if sources[domain.ClaudeMessageStartUsage] != 1 || sources[domain.ClaudeBlockCompleteUsage] != 4 || sources[domain.ClaudeMessageMetadataUsage] != 1 || sources[domain.ClaudeInputResultUsage] != 1 {
+			t.Fatal("native usage scopes were merged")
+		}
+	}
+
 	if calls.Load() != 1 {
 		t.Fatal("registered native execution repeated provider inference")
 	}

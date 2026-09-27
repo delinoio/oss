@@ -28,6 +28,8 @@ type ClaudeContentPublisher struct {
 	binding        *ClaudeBindingPublisher
 	messages       map[string]claudePublishedContent
 	seen           map[string]bool
+	usageSeen      map[string]bool
+	resultUsage    bool
 	active         string
 	inputPublished bool
 	queue          []claudeContentCommit
@@ -47,7 +49,7 @@ func OpenClaudeContentPublisher(binding *ClaudeBindingPublisher) (*ClaudeContent
 		return nil, publicationUncertain()
 	}
 	binding.contentAttached = true
-	return &ClaudeContentPublisher{binding: binding, messages: map[string]claudePublishedContent{}, seen: map[string]bool{}}, nil
+	return &ClaudeContentPublisher{binding: binding, messages: map[string]claudePublishedContent{}, seen: map[string]bool{}, usageSeen: map[string]bool{}}, nil
 }
 
 func (c *ClaudeContentPublisher) verify() error {
@@ -91,7 +93,7 @@ func (c *ClaudeContentPublisher) PublishObservation(ctx context.Context, o claud
 	if o.Kind != claude.ContentObserved {
 		return false, nil
 	}
-	if !c.inputPublished || o.SessionID != b.journal.SessionID || o.InputID != b.journal.InputID || o.TurnID != b.turn || !o.Accepted || domain.NativeIdentity(o.NativeID).Validate(domain.ClaudeCode, domain.NativeTurnIdentity) != nil || c.seen[o.NativeID] || len(c.seen) >= 65536 || len(o.Content) != 1 {
+	if c.resultUsage || !c.inputPublished || o.SessionID != b.journal.SessionID || o.InputID != b.journal.InputID || o.TurnID != b.turn || !o.Accepted || domain.NativeIdentity(o.NativeID).Validate(domain.ClaudeCode, domain.NativeTurnIdentity) != nil || c.seen[o.NativeID] || len(c.seen) >= 65536 || len(o.Content) != 1 {
 		return true, b.block()
 	}
 	native := o.Content[0]
