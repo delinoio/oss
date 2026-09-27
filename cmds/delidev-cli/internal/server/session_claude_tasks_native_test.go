@@ -13,6 +13,10 @@ func TestManualNativeClaudePublicBashTask(t *testing.T) {
 	nativeClaudePublicDispatch(t, domain.ExecuteMode, claudePublicBashTask)
 }
 
+func TestManualNativeClaudePublicLongBashProgress(t *testing.T) {
+	nativeClaudePublicDispatch(t, domain.ExecuteMode, claudePublicBashToolProgress)
+}
+
 func TestManualNativeClaudeBashTaskRecovery(t *testing.T) {
 	for _, turn := range []int{1, 2} {
 		t.Run(fmt.Sprintf("turn-%d", turn), func(t *testing.T) {
@@ -21,7 +25,7 @@ func TestManualNativeClaudeBashTaskRecovery(t *testing.T) {
 	}
 }
 
-func verifyClaudePublicBashTask(t *testing.T, ctx context.Context, f *firstDispatchFixture, completion domain.ExecutionCompletion) {
+func verifyClaudePublicBashTask(t *testing.T, ctx context.Context, f *firstDispatchFixture, completion domain.ExecutionCompletion, requireToolProgress bool) {
 	t.Helper()
 	rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.MessageKind, SessionID: domain.ID(f.change.Session.Id), Limit: 100})
 	if err != nil {
@@ -53,6 +57,10 @@ func verifyClaudePublicBashTask(t *testing.T, ctx context.Context, f *firstDispa
 			if m.ClaudeProgress.Validate() != nil || m.ClaudeProgress.Tool.Tool.Name != "Bash" {
 				t.Fatal("native tool progress lost original ownership")
 			}
+			p := m.ClaudeProgress.Tool
+			if requireToolProgress && (p.ParentToolID == nil || *p.ParentToolID != p.Tool.NativeID || p.Heartbeat == nil || !*p.Heartbeat || !domain.ValidClaudeToolHeartbeat(p.Tool.NativeID, p.NativeToolID)) {
+				t.Fatal("native heartbeat lost separate original identity or owner")
+			}
 			count++
 		}
 	}
@@ -60,6 +68,9 @@ func verifyClaudePublicBashTask(t *testing.T, ctx context.Context, f *firstDispa
 		t.Fatal("native task lifecycle missing", started, finished)
 	}
 	t.Logf("original tool progress events: %d", count)
+	if requireToolProgress && count == 0 {
+		t.Fatal("long native Bash did not publish tool progress")
+	}
 	session, err := store.Decode[domain.Session](f.refresh(t))
 	if err != nil || session.Execution.ClaudeTasks == nil || !session.Execution.ClaudeTasks.Closed() || !session.Execution.ClaudeTasks.InlineBashHistoryReady() || len(session.Execution.ClaudeTasks.Tasks) != 1 {
 		t.Fatal("task state lost original closed work", err)

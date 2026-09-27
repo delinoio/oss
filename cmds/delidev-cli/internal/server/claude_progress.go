@@ -26,6 +26,15 @@ func publishClaudeProgress(tx *store.Tx, input domain.ExecutionJobInput, session
 		if err := validateClaudeProgressTool(tx, input, session, event, v.Tool.Tool, v.Tool.TaskID == nil); err != nil {
 			return err
 		}
+		if v.Tool.NativeToolID != "" {
+			collision, err := tx.HasExecutionNativeMessage(input.ExecutionID, v.Tool.NativeToolID)
+			if err != nil {
+				return err
+			}
+			if collision {
+				return executionEventConflict()
+			}
+		}
 	}
 	if v.Tool != nil && v.Tool.TaskID != nil && !p.ClaudeTasks.OwnsRunningTask(*v.Tool.TaskID, v.Tool.Tool) {
 		return executionEventConflict()

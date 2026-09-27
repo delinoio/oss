@@ -20,7 +20,7 @@ func TestManualNativeClaudePublicEffectContinuation(t *testing.T) {
 
 func claudePublicEffectName(scenario claudePublicCase) string {
 	switch scenario {
-	case claudePublicBash, claudePublicBashTask:
+	case claudePublicBash, claudePublicBashTask, claudePublicBashToolProgress:
 		return "Bash"
 	case claudePublicWrite:
 		return "Write"

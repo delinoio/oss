@@ -27,10 +27,11 @@ import (
 type claudePublicCase string
 
 const (
-	claudePublicBashTask claudePublicCase = "continuation-bash-task"
-	claudePublicBash     claudePublicCase = "continuation-bash"
-	claudePublicWrite    claudePublicCase = "continuation-write"
-	claudePublicEdit     claudePublicCase = "continuation-edit"
+	claudePublicBashToolProgress claudePublicCase = "bash-tool-progress"
+	claudePublicBashTask         claudePublicCase = "continuation-bash-task"
+	claudePublicBash             claudePublicCase = "continuation-bash"
+	claudePublicWrite            claudePublicCase = "continuation-write"
+	claudePublicEdit             claudePublicCase = "continuation-edit"
 )
 
 const (
@@ -102,7 +103,13 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 	if binary == "" {
 		t.Skip("explicit pinned Claude binary and scripted provider required")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	timeout := 45 * time.Second
+	// The pinned native main-tool heartbeat is emitted every 30 seconds. Keep
+	// the opt-in long-tool case alive through that original timer and cleanup.
+	if scenario == claudePublicBashToolProgress {
+		timeout = 70 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	turns, turn := 1, 0
 	continuation := strings.HasPrefix(string(scenario), "continuation")
@@ -239,6 +246,9 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 			name, id, params := claudePublicEffectCall(effect, n, effectCalls, readRoot.Load().(string))
 			if scenario == claudePublicBashTask {
 				params["command"] = "sleep 4; " + params["command"].(string)
+			}
+			if scenario == claudePublicBashToolProgress {
+				params["command"] = "sleep 32; " + params["command"].(string)
 			}
 			encoded, _ := json.Marshal(params)
 			block = map[string]any{"type": "tool_use", "id": id, "name": name, "input": map[string]any{}}
@@ -540,8 +550,8 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 					t.Fatal("native retry duplicated input or lost progress", retries, inputs)
 				}
 			}
-			if scenario == claudePublicBashTask {
-				verifyClaudePublicBashTask(t, ctx, f, proof)
+			if scenario == claudePublicBashTask || scenario == claudePublicBashToolProgress {
+				verifyClaudePublicBashTask(t, ctx, f, proof, scenario == claudePublicBashToolProgress)
 			}
 			if effect != "" {
 				verifyClaudePublicEffectFiles(t, readRoot.Load().(string), turn)

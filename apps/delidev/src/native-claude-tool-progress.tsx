@@ -9,8 +9,14 @@ const seconds = (v: unknown) => typeof v === "string" && v.length <= 64 && /^(?:
 export function validClaudeToolReference(value: unknown): boolean { return tool(object(value)); }
 
 export function validClaudeToolProgress(value: unknown): boolean {
-  const v = object(value);
-  return exact(v, ["tool", "parent_tool_use_id", "elapsed_time_seconds", "heartbeat", ...(Object.hasOwn(v, "task_id") ? ["task_id"] : [])]) && (v.task_id === undefined || bounded(v.task_id, 1024)) && tool(object(v.tool)) && v.parent_tool_use_id === null && seconds(v.elapsed_time_seconds) && (v.heartbeat === null || typeof v.heartbeat === "boolean");
+  const v = object(value), ref = object(v.tool);
+  if (!exact(v, ["tool", "parent_tool_use_id", "elapsed_time_seconds", "heartbeat", ...(Object.hasOwn(v, "task_id") ? ["task_id"] : []), ...(Object.hasOwn(v, "tool_use_id") ? ["tool_use_id"] : [])]) || (v.task_id !== undefined && !bounded(v.task_id, 1024)) || !tool(ref) || !seconds(v.elapsed_time_seconds) || !(v.heartbeat === null || typeof v.heartbeat === "boolean")) return false;
+  if (v.parent_tool_use_id === null) return !Object.hasOwn(v, "tool_use_id");
+  if (v.parent_tool_use_id !== ref.native_id || v.heartbeat !== true || Object.hasOwn(v, "task_id") || !bounded(v.tool_use_id, 1024)) return false;
+  const prefix = `${ref.native_id}-heartbeat-`, id = v.tool_use_id as string;
+  if (!id.startsWith(prefix)) return false;
+  const index = id.slice(prefix.length);
+  return /^(?:0|[1-9][0-9]*)$/.test(index) && Number(index) <= 4294967295;
 }
 
 export function validClaudeToolSummary(value: unknown): boolean {
@@ -29,6 +35,7 @@ export function NativeClaudeToolProgress({ value }: { value: unknown }) {
   const v = object(value), ref = object(v.tool);
   return <>
     <dl><dt>Tool</dt><dd>{ref.name as string}</dd>{v.task_id !== undefined ? <><dt>Task</dt><dd>{v.task_id as string}</dd></> : null}<dt>Reported elapsed seconds</dt><dd>{v.elapsed_time_seconds as string}</dd><dt>Heartbeat</dt><dd>{v.heartbeat === null ? "Not reported" : v.heartbeat ? "Reported" : "Explicitly false"}</dd></dl>
+    {v.tool_use_id !== undefined ? <details><summary>Original heartbeat references</summary><dl><dt>Progress identity</dt><dd>{v.tool_use_id as string}</dd><dt>Owning tool identity</dt><dd>{v.parent_tool_use_id as string}</dd></dl></details> : null}
     <p>Tool progress does not confirm completion, approval or execution success.</p>
   </>;
 }

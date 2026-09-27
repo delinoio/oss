@@ -163,31 +163,41 @@ func (b *ExecutionBinding) observeProgress(event StreamEvent) (*NativeProgressOb
 			Retry        *NativeRetryObservation `json:"subagent_retry"`
 		}
 		if decodeNativeObject(event.Body, &value) != nil || value.Elapsed == nil || !taskTexts(value.SubagentType) {
-			return nil, lifecycleUncertain()
+			return b.rejectToolProgress(toolProgressShape)
 		}
 		var fields map[string]json.RawMessage
 		_ = json.Unmarshal(event.Body, &fields)
 		if len(fields["parent_tool_use_id"]) == 0 || (value.Parent != nil && domain.Text(*value.Parent, "native parent tool", 1024, true) != nil) {
-			return nil, lifecycleUncertain()
+			return b.rejectToolProgress(toolProgressParent)
 		}
 		tool, ok := b.content.tools[value.ID]
+		ownerID := value.ID
 		parent := ""
 		if value.Parent != nil {
 			parent = *value.Parent
 		}
+		if !ok && value.Parent != nil && value.Heartbeat != nil && *value.Heartbeat && value.Task == nil && domain.ValidClaudeToolHeartbeat(*value.Parent, value.ID) {
+			if value.SubagentType != nil || value.Retry != nil {
+				return b.rejectToolProgress(toolProgressShape)
+			}
+			// The native heartbeat belongs to the explicitly named original root
+			// tool. Preserve both wire identities in the returned observation.
+			ownerID, parent = *value.Parent, ""
+			tool, ok = b.content.tools[ownerID]
+		}
 		if !ok || tool.name != value.Name || tool.parent != parent {
-			return nil, lifecycleUncertain()
+			return b.rejectToolProgress(toolProgressOwner)
 		}
 		activeTask := false
 		if value.Task != nil {
 			task, exists := b.tasks[*value.Task]
-			if !exists || task.tool != value.ID || task.status.terminal() {
-				return nil, lifecycleUncertain()
+			if !exists || task.tool != ownerID || task.status.terminal() {
+				return b.rejectToolProgress(toolProgressTask)
 			}
 			activeTask = true
 		}
 		if tool.finished && !activeTask {
-			return nil, lifecycleUncertain()
+			return b.rejectToolProgress(toolProgressTerminal)
 		}
 		return &NativeProgressObservation{Kind: ToolProgressObserved, ToolID: value.ID, ToolName: value.Name, ParentToolID: value.Parent, Elapsed: value.Elapsed, TaskID: value.Task, Heartbeat: value.Heartbeat, SubagentType: value.SubagentType, Retry: value.Retry}, nil
 	case "tool_use_summary":
@@ -237,4 +247,23 @@ func decodeSessionProgress(raw json.RawMessage) (*NativeProgressObservation, err
 		return nil, lifecycleUncertain()
 	}
 	return &NativeProgressObservation{Kind: SessionStatusObserved, Status: value.Status, Permission: value.Permission, CompactResult: value.CompactResult, CompactError: value.CompactError}, nil
+}
+
+// Report only the closed validation stage, never raw progress fields, tool/task
+// identities, descriptions or command/output contents.
+type toolProgressCheck string
+
+const (
+	toolProgressShape    toolProgressCheck = "shape"
+	toolProgressParent   toolProgressCheck = "parent"
+	toolProgressOwner    toolProgressCheck = "tool-owner"
+	toolProgressTask     toolProgressCheck = "task-owner"
+	toolProgressTerminal toolProgressCheck = "terminal"
+)
+
+func (b *ExecutionBinding) rejectToolProgress(check toolProgressCheck) (*NativeProgressObservation, error) {
+	if b.logger != nil {
+		b.logger.Warn("Claude Code tool progress rejected", "owner_id", b.owner, "check", check, "code", domain.RecoveryRequired)
+	}
+	return nil, lifecycleUncertain()
 }

@@ -162,3 +162,31 @@ test.each(["latest_tool_id", "latest_tool_summary_id"])("tool-only progress does
   render(<NativeClaudePermissionProgress progress={{ claude_progress: { native_turn_id: newRequestId(), [key]: newRequestId() } }} />);
   expect(screen.getByText("Not reported")).toBeTruthy();
 });
+
+function heartbeatFixture(): Document {
+ const data=toolFixture(), p=object(object(data.claude_progress).tool);
+ p.parent_tool_use_id=object(p.tool).native_id; p.tool_use_id=`${p.parent_tool_use_id}-heartbeat-0`; p.heartbeat=true;
+ return data;
+}
+
+test("retains separate original heartbeat identity and owning tool", () => {
+ render(<NativeClaudeProgress data={heartbeatFixture()} />);
+ expect(screen.getByText("tool_original-heartbeat-0")).toBeTruthy();
+ expect(screen.getByText("tool_original")).toBeTruthy();
+ expect(screen.getByText("Reported")).toBeTruthy();
+ expect(screen.queryByRole("button")).toBeNull();
+});
+
+test.each(["parent", "identity", "leading-zero", "overflow", "missing-id", "missing-parent", "false", "task"])("rejects inconsistent native heartbeat: %s", (change) => {
+ const data=heartbeatFixture(), p=object(object(data.claude_progress).tool);
+ if(change==="parent") p.parent_tool_use_id="foreign";
+ if(change==="identity") p.tool_use_id="foreign-heartbeat-0";
+ if(change==="leading-zero") p.tool_use_id="tool_original-heartbeat-00";
+ if(change==="overflow") p.tool_use_id="tool_original-heartbeat-4294967296";
+ if(change==="missing-id") delete p.tool_use_id;
+ if(change==="missing-parent") p.parent_tool_use_id=null;
+ if(change==="false") p.heartbeat=false;
+ if(change==="task") p.task_id="task";
+ render(<NativeClaudeProgress data={data} />);
+ expect(screen.getByRole("article", {name:"Claude progress unavailable"})).toBeTruthy();
+});

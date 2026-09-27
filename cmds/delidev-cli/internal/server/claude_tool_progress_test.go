@@ -9,12 +9,16 @@ import (
 )
 
 func TestClaudeToolProgressPreservesOriginalReferencesAndAdvisoryState(t *testing.T) {
-	for _, summary := range []bool{false, true} {
+	for _, kind := range []string{"progress", "summary", "heartbeat"} {
 		f, callback, sequence := claudeNamedCallbackPublicationFixture(t, domain.ClaudeToolPermission)
 		before, _ := f.service.Store.Get(context.Background(), domain.MessageKind, callback.Claude.Tool.ID)
 		e := f.event(domain.ExecutionClaudeProgressObserved, sequence+1)
 		v := domain.ClaudeProgressObservation{Kind: domain.ClaudeToolProgress, NativeEventID: string(domain.NewID()), InputAccepted: true, Tool: &domain.ClaudeToolProgressObservation{Tool: callback.Claude.Tool, ElapsedSeconds: "0.0010"}}
-		if summary {
+		if kind == "heartbeat" {
+			beat := true
+			v.Tool.ParentToolID, v.Tool.NativeToolID, v.Tool.Heartbeat = &callback.Claude.Tool.NativeID, callback.Claude.Tool.NativeID+"-heartbeat-0", &beat
+		}
+		if kind == "summary" {
 			v.Kind, v.Tool, v.ToolSummary = domain.ClaudeToolSummaryProgress, nil, &domain.ClaudeToolSummaryObservation{Summary: "Original advisory text", Tools: []domain.ClaudeToolReference{callback.Claude.Tool}}
 		}
 		e.ClaudeProgress = &domain.ExecutionClaudeProgress{ID: domain.NewID(), Observation: v}
@@ -40,12 +44,37 @@ func TestClaudeToolProgressPreservesOriginalReferencesAndAdvisoryState(t *testin
 }
 
 func TestClaudeToolProgressRejectsForeignAndMixedReferencesAtomically(t *testing.T) {
-	for _, scenario := range []string{"product", "native", "name", "early", "parent", "missing", "summary-foreign", "summary-duplicate", "mixed"} {
+	for _, scenario := range []string{"product", "native", "name", "early", "parent", "missing", "summary-foreign", "summary-duplicate", "mixed", "heartbeat-parent", "heartbeat-false", "heartbeat-identity", "heartbeat-collision"} {
 		t.Run(scenario, func(t *testing.T) {
 			f, callback, sequence := claudeNamedCallbackPublicationFixture(t, domain.ClaudeToolPermission)
 			e := f.event(domain.ExecutionClaudeProgressObserved, sequence+1)
 			v := domain.ClaudeProgressObservation{Kind: domain.ClaudeToolProgress, NativeEventID: string(domain.NewID()), InputAccepted: true, Tool: &domain.ClaudeToolProgressObservation{Tool: callback.Claude.Tool, ElapsedSeconds: "0"}}
 			switch scenario {
+			case "heartbeat-parent", "heartbeat-false", "heartbeat-identity", "heartbeat-collision":
+				parent, beat := v.Tool.Tool.NativeID, true
+				v.Tool.ParentToolID, v.Tool.NativeToolID, v.Tool.Heartbeat = &parent, parent+"-heartbeat-0", &beat
+				if scenario == "heartbeat-collision" {
+					_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.native-collision", nil, func(tx *store.Tx) (any, error) {
+						id := domain.NewID()
+						_, err := tx.Put(domain.MessageKind, id, 0, f.input.SessionID, "", domain.ExecutionMessage{})
+						if err != nil {
+							return nil, err
+						}
+						return nil, tx.BindExecutionMessage(f.input.SessionID, f.input.ExecutionID, id, e.NativeThreadID, e.NativeTurnID, v.Tool.NativeToolID, domain.MessageComplete)
+					})
+					if err != nil {
+						t.Fatal(err)
+					}
+				}
+				if scenario == "heartbeat-parent" {
+					parent = "foreign"
+				}
+				if scenario == "heartbeat-false" {
+					beat = false
+				}
+				if scenario == "heartbeat-identity" {
+					v.Tool.NativeToolID = "foreign-heartbeat-0"
+				}
 			case "product":
 				v.Tool.Tool.ID = domain.NewID()
 			case "native":

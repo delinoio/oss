@@ -27,3 +27,40 @@ func TestClaudeToolProgressKeepsExactNativeElapsedAndClosedFamilies(t *testing.T
 		}
 	}
 }
+
+func TestClaudeToolHeartbeatPreservesSeparateIdentity(t *testing.T) {
+	ref := ClaudeToolReference{ID: NewID(), NativeID: "original-tool", Name: "Bash"}
+	yes := true
+	base := ClaudeToolProgressObservation{Tool: ref, ParentToolID: &ref.NativeID, NativeToolID: ref.NativeID + "-heartbeat-0", ElapsedSeconds: "30", Heartbeat: &yes}
+	for _, change := range []string{"valid", "next", "parent", "identity", "leading-zero", "overflow", "missing-identity", "missing-parent", "missing-heartbeat", "false", "task"} {
+		t.Run(change, func(t *testing.T) {
+			v := base
+			other, no := "foreign", false
+			switch change {
+			case "next":
+				v.NativeToolID = ref.NativeID + "-heartbeat-12"
+			case "parent":
+				v.ParentToolID = &other
+			case "identity":
+				v.NativeToolID = other + "-heartbeat-0"
+			case "leading-zero":
+				v.NativeToolID = ref.NativeID + "-heartbeat-00"
+			case "overflow":
+				v.NativeToolID = ref.NativeID + "-heartbeat-4294967296"
+			case "missing-identity":
+				v.NativeToolID = ""
+			case "missing-parent":
+				v.ParentToolID = nil
+			case "missing-heartbeat":
+				v.Heartbeat = nil
+			case "false":
+				v.Heartbeat = &no
+			case "task":
+				v.TaskID = &other
+			}
+			if (v.Validate() == nil) != (change == "valid" || change == "next") {
+				t.Fatal("incorrect heartbeat ownership classification")
+			}
+		})
+	}
+}

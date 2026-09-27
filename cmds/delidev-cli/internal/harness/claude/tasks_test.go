@@ -349,3 +349,47 @@ func TestProgressRejectsMalformedOrForeignNativeEvidence(t *testing.T) {
 		})
 	}
 }
+
+func TestToolHeartbeatRetainsOriginalRootOwnerAndProgressIdentity(t *testing.T) {
+	for _, change := range []string{"valid", "parent", "name", "identity", "missing-heartbeat", "false", "task", "finished", "child", "collision", "subagent"} {
+		t.Run(change, func(t *testing.T) {
+			b := contentFixture(t)
+			contentTool(t, b, "", "original", "Bash")
+			fields := map[string]any{"tool_use_id": "original-heartbeat-0", "tool_name": "Bash", "parent_tool_use_id": "original", "elapsed_time_seconds": 30, "heartbeat": true}
+			switch change {
+			case "parent":
+				fields["parent_tool_use_id"] = "foreign"
+			case "name":
+				fields["tool_name"] = "Read"
+			case "identity":
+				fields["tool_use_id"] = "foreign-heartbeat-0"
+			case "missing-heartbeat":
+				delete(fields, "heartbeat")
+			case "false":
+				fields["heartbeat"] = false
+			case "task":
+				fields["task_id"] = "task"
+			case "finished":
+				lifecycleObserve(t, b, contentResult(t, b, "", map[string]any{"type": "tool_result", "tool_use_id": "original", "content": "done"}))
+			case "child":
+				tool := b.content.tools["original"]
+				tool.parent = "outer"
+				b.content.tools["original"] = tool
+			case "subagent":
+				fields["subagent_type"] = "foreign"
+			case "collision":
+				contentTool(t, b, "", "original-heartbeat-0", "Bash")
+			}
+			o, err := b.Observe(lifecycleMessage(t, b, "tool_progress", fields))
+			if change != "valid" {
+				if err == nil {
+					t.Fatal("unowned heartbeat accepted")
+				}
+				return
+			}
+			if err != nil || o.Progress.ToolID != "original-heartbeat-0" || o.Progress.ParentToolID == nil || *o.Progress.ParentToolID != "original" || b.content.tools["original"].finished {
+				t.Fatal("heartbeat changed original ownership or completion", err)
+			}
+		})
+	}
+}
