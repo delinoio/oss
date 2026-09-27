@@ -12,6 +12,10 @@ use std::{
     net::TcpListener,
     os::unix::process::CommandExt,
     process::{Command, Stdio},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
     thread,
     time::Duration,
 };
@@ -1695,14 +1699,18 @@ fn managed_service_forwards_shutdown_output_before_readiness_timeout() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     let address = listener.local_addr().unwrap();
+    let finished = Arc::new(AtomicBool::new(false));
+    let server_finished = Arc::clone(&finished);
     let server = thread::spawn(move || {
-        let deadline = std::time::Instant::now() + Duration::from_secs(1);
+        // CLI startup can outlast its own readiness timeout on a loaded host.
+        // Bound startup separately and keep serving 503 until the CLI exits.
+        let preflight_deadline = std::time::Instant::now() + Duration::from_secs(10);
         let (mut stream, _) = loop {
             match listener.accept() {
                 Ok(stream) => break stream,
                 Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                     assert!(
-                        std::time::Instant::now() < deadline,
+                        std::time::Instant::now() < preflight_deadline,
                         "readiness preflight did not arrive"
                     );
                     thread::sleep(Duration::from_millis(1));
@@ -1715,14 +1723,15 @@ fn managed_service_forwards_shutdown_output_before_readiness_timeout() {
         stream
             .write_all(b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\n\r\n")
             .unwrap();
+        let service_deadline = std::time::Instant::now() + Duration::from_secs(5);
         while !service_started.exists() {
             assert!(
-                std::time::Instant::now() < deadline,
+                std::time::Instant::now() < service_deadline,
                 "managed service did not install its shutdown trap"
             );
             thread::sleep(Duration::from_millis(1));
         }
-        while std::time::Instant::now() < deadline {
+        while !server_finished.load(Ordering::Acquire) {
             match listener.accept() {
                 Ok((mut stream, _)) => {
                     let mut request = [0u8; 1024];
@@ -1763,6 +1772,8 @@ fn managed_service_forwards_shutdown_output_before_readiness_timeout() {
     )
     .output()
     .unwrap();
+    finished.store(true, Ordering::Release);
+    server.join().unwrap();
 
     assert_eq!(output.status.code(), Some(124), "{output:?}");
     assert!(
@@ -1773,7 +1784,6 @@ fn managed_service_forwards_shutdown_output_before_readiness_timeout() {
         !workload_started.exists(),
         "workload started after readiness timed out: {output:?}"
     );
-    server.join().unwrap();
 }
 
 #[test]
