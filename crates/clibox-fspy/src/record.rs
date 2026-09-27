@@ -136,6 +136,7 @@ pub struct AccessPath {
 /// Native byte arrays can expand to four decimal JSON bytes per input byte;
 /// the classified paths are measured after resolution and the fixed allowance
 /// covers frame, pair, and record fields omitted from this path calculation.
+#[cfg(any(test, target_os = "macos", target_os = "windows"))]
 pub(crate) fn retained_frame_charge<'a>(
     raw_path_bytes: usize,
     paths: impl IntoIterator<Item = &'a AccessPath>,
