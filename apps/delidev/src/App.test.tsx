@@ -255,3 +255,13 @@ it("opens and closes workspace files without replacing or sending the composer d
   expect(f.enqueues).not.toHaveBeenCalled();
   expect(f.controls).not.toHaveBeenCalled();
 });
+
+for (const mixed of [false, true]) it(`renders original Grok text through session RPC without new input (${mixed})`, async () => {
+ const value=fixture(),thread=newRequestId(),meta={event_id:`${thread}-10`,chunk_id:"1",context_tokens:"18446744073709551615",timestamp_ms:"1",stream_start_ms:"0",turn_start_ms:"0"};
+ value.message.documentJson=encode({execution_id:newRequestId(),native_thread_id:thread,native_turn_id:"526452fa-1956-42dd-b5f4-60e2b23dfe92",native_id:meta.event_id,role:"assistant",text:"Original Grok text",state:"complete",first_sequence:3,last_sequence:4,grok_text:{response_ordinal:1,chunks:[meta]},...(mixed?{claude_progress:{}}:{})});
+ render(<App transport={value.transport}/>);
+ fireEvent.click(await screen.findByRole("button",{name:/General Chat Retained session/}));
+ if(mixed){expect(await screen.findByLabelText("Grok text unavailable")).toBeTruthy();expect(screen.queryByText("Original Grok text")).toBeNull();}
+ else expect(await screen.findByText("Original Grok text")).toBeTruthy();
+ expect(value.enqueues).not.toHaveBeenCalled();expect(value.controls).not.toHaveBeenCalled();
+});

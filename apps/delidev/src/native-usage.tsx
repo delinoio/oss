@@ -1,3 +1,4 @@
+import { NativeGrokUsage } from "./native-grok";
 import { useQuery } from "@connectrpc/connect-query";
 import { EntityKind, ResourceQuery, type Resource } from "@delinoio/delidev-api-client";
 import { document, object, text } from "./documents";
@@ -49,19 +50,20 @@ export function NativeUsage({ session }: { session: Resource }) {
   const progress = object(data.execution);
   const id = text(progress.latest_usage_id);
   const claude = configuration.harness === "claude-code";
-  const supported = claude || configuration.harness === "opencode";
+  const grok = configuration.harness === "grok-build";
+  const supported = grok || claude || configuration.harness === "opencode";
   const result = useQuery(ResourceQuery.getResource, { kind: EntityKind.USAGE, id }, { enabled: supported && Boolean(id) });
   if (!supported) return null;
   const retained = result.data?.resource;
   const record = document(retained);
-  const matches = retained?.id === id && retained.kind === EntityKind.USAGE && retained.sessionId === session.id && record.execution_id === progress.execution_id && record.harness === configuration.harness && record.native_version === (claude ? "2.1.236" : "1.18.32") && (claude ? record.opencode_observation == null && record.usage == null && record.response == null : record.claude_observation == null);
+  const matches = retained?.id === id && retained.kind === EntityKind.USAGE && retained.sessionId === session.id && record.execution_id === progress.execution_id && record.harness === configuration.harness && record.native_version === (grok ? "1.0.41" : claude ? "2.1.236" : "1.18.32") && (grok ? record.claude_observation == null && record.opencode_observation == null && record.usage == null && record.response == null && record.native_thread_id === progress.native_thread_id && record.native_turn_id === progress.native_turn_id : record.grok_observation == null && (claude ? record.opencode_observation == null && record.usage == null && record.response == null : record.claude_observation == null));
   return <details><summary>Native usage observation</summary>
     <Problem error={result.error} />
     {result.error ? <p>Refresh failed. Any displayed observation is retained data.</p> : null}
     {!id ? <p>No native usage has been retained for this execution.</p> : result.isPending ? <p>Loading native usage…</p> : !matches ? <p>The matching native usage observation is unavailable.</p> : <>
       <p>Recorded execution: {text(record.execution_id)}</p>
       {object(data.current_execution).id !== record.execution_id && data.current_execution != null ? <p>This observation belongs to a preceding execution.</p> : null}
-      {claude ? <NativeClaudeUsage value={object(record.claude_observation)} /> : <NativeUsageObservation value={object(record.opencode_observation)} />}
+      {grok ? <NativeGrokUsage value={object(record.grok_observation)} /> : claude ? <NativeClaudeUsage value={object(record.claude_observation)} /> : <NativeUsageObservation value={object(record.opencode_observation)} />}
     </>}
     {id ? <button disabled={result.isFetching} onClick={() => void result.refetch()}>Refresh native usage</button> : null}
   </details>;

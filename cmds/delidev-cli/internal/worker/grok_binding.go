@@ -19,6 +19,7 @@ const (
 	grokSessionBound
 	grokAcceptancePending
 	grokInputAccepted
+	grokContentPending
 	grokBindingBlocked
 )
 
@@ -38,6 +39,9 @@ type GrokBindingPublisher struct {
 	proof          []grokClaim
 	pendingRequest domain.ID
 	pendingDigest  [sha256.Size]byte
+	content        domain.GrokContentState
+	pendingContent domain.GrokContentState
+	pendingKind    domain.ExecutionEventKind
 }
 
 func OpenGrokBindingPublisher(p *ExecutionPublisher) (*GrokBindingPublisher, error) {
@@ -239,7 +243,7 @@ func (c *GrokBindingPublisher) ReplayPending(ctx context.Context) error {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.stage != grokBindingPending && c.stage != grokAcceptancePending {
+	if c.stage != grokBindingPending && c.stage != grokAcceptancePending && c.stage != grokContentPending {
 		return publicationUncertain()
 	}
 	p := c.publisher
@@ -248,6 +252,8 @@ func (c *GrokBindingPublisher) ReplayPending(ctx context.Context) error {
 	kind := domain.ExecutionThreadBound
 	if c.stage == grokAcceptancePending {
 		kind = domain.ExecutionInputAccepted
+	} else if c.stage == grokContentPending {
+		kind = c.pendingKind
 	}
 	valid := !p.closed && pending != nil && pending.RequestID == c.pendingRequest && pending.Event.Kind == kind && pending.Event.Sequence == c.sequence && pending.Event.NativeThreadID == string(c.thread) && pending.Event.NativeTurnID == c.turn
 	if valid {
@@ -272,6 +278,11 @@ func (c *GrokBindingPublisher) ReplayPending(ctx context.Context) error {
 	if c.stage == grokBindingPending {
 		c.stage = grokSessionBound
 	} else {
+		if c.stage == grokContentPending {
+			c.content = c.pendingContent
+			c.pendingContent = domain.GrokContentState{}
+			c.pendingKind = ""
+		}
 		c.stage = grokInputAccepted
 	}
 	c.pendingRequest, c.pendingDigest = "", [sha256.Size]byte{}

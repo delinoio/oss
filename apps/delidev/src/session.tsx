@@ -1,3 +1,4 @@
+import { NativeGrokText } from "./native-grok";
 import { SessionFiles } from "./session-files";
 import { NativeBuiltin, NativeWorkspaceEvent } from "./native-builtin";
 import { NativeChanges, NativeRevision } from "./native-changes";
@@ -78,6 +79,7 @@ function currentRows(base: readonly Resource[], live: ReadonlyMap<string, Resour
 
 const TranscriptItem = memo(function TranscriptItem({ resource }: { resource: Resource }) {
   const data = readDocument(resource);
+  if (data.grok_text != null) return <NativeGrokText data={data} />;
   if (data.claude_progress != null) return <NativeClaudeProgress data={data} />;
   if (data.claude_interruption != null) return <NativeClaudeInterruption data={data} />;
   if (data.claude_tool != null) {

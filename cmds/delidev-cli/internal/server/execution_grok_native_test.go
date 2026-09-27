@@ -25,13 +25,21 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/worker"
 )
 
-func TestManualNativeGrokOriginalServerBinding(t *testing.T) {
+func TestManualNativeGrokOriginalServerBinding(t *testing.T) { testManualNativeGrokServer(t, false) }
+
+func TestManualNativeGrokOriginalServerContent(t *testing.T) { testManualNativeGrokServer(t, true) }
+
+func testManualNativeGrokServer(t *testing.T, content bool) {
 	executable := os.Getenv("DELIDEV_NATIVE_GROK_EXECUTABLE")
 	if executable == "" {
 		t.Skip("explicit private native executable required")
 	}
+	drops := []int{1, 2}
+	if content {
+		drops = []int{3, 4}
+	}
 	for _, mode := range []domain.SessionMode{domain.ExecuteMode, domain.PlanMode} {
-		for _, drop := range []int{1, 2} {
+		for _, drop := range drops {
 			t.Run(fmt.Sprintf("%s/lost-%d", mode, drop), func(t *testing.T) {
 				var requests atomic.Uint32
 				var f *publicationFixture
@@ -149,8 +157,27 @@ func TestManualNativeGrokOriginalServerBinding(t *testing.T) {
 				}
 				accepted := false
 				var prompt string
+				var chunks, responses uint64
 				emit := func(callback context.Context, v grok.InputObservation) error {
 					if v.Kind != grok.InputAccepted {
+						if content && (v.Kind == grok.InputText || v.Kind == grok.InputResponse) {
+							if v.Kind == grok.InputText {
+								chunks++
+							} else {
+								responses++
+							}
+							err := binding.ObserveContent(callback, v)
+							if err != nil && len(client.calls) == drop {
+								before, _ := security.ReadPrivate(claimsPath, 256<<10)
+								err = binding.ReplayPending(callback)
+								after, _ := security.ReadPrivate(claimsPath, 256<<10)
+								if !bytes.Equal(before, after) {
+									t.Error("content replay changed original native claims")
+									return context.Canceled
+								}
+							}
+							return err
+						}
 						return nil
 					}
 					if accepted {
@@ -182,7 +209,7 @@ func TestManualNativeGrokOriginalServerBinding(t *testing.T) {
 				} else {
 					_, err = api.RunText(ctx, f.input.TurnRequestID, f.input.Input.Prompt, emit)
 				}
-				if err != nil || !accepted || requests.Load() == 0 || len(client.calls) != 3 || client.calls[drop-1] != client.calls[drop] {
+				if err != nil || !accepted || requests.Load() == 0 || len(client.calls) != 3+int(chunks+responses) || client.calls[drop-1] != client.calls[drop] {
 					t.Log(logs.String())
 					t.Fatal("original native/server binding failed", err)
 				}
@@ -191,8 +218,27 @@ func TestManualNativeGrokOriginalServerBinding(t *testing.T) {
 					t.Fatal(err)
 				}
 				retained, err := store.Decode[domain.Session](record)
-				if err != nil || retained.Execution == nil || retained.Execution.LastSequence != 2 || retained.Execution.NativeThreadID != string(session) || retained.Execution.NativeTurnID != prompt || retained.Execution.Observed.ValidateForInput(f.input.Configuration, mode) != nil || retained.PendingInputs != 0 {
+				if err != nil || retained.Execution == nil || retained.Execution.LastSequence != 2+chunks+responses || retained.Execution.NativeThreadID != string(session) || retained.Execution.NativeTurnID != prompt || retained.Execution.Observed.ValidateForInput(f.input.Configuration, mode) != nil || retained.PendingInputs != 0 {
 					t.Fatal("server lost original Grok mode/input evidence", err)
+				}
+				if content {
+					if chunks != 1 || responses != 1 || retained.Execution.GrokContent == nil || retained.Execution.GrokContent.Responses != 1 || retained.Execution.GrokContent.MessageID != "" {
+						t.Fatal("missing original text/response composition")
+					}
+					usageRecord, err := f.service.Store.Get(ctx, domain.UsageKind, retained.Execution.LatestUsageID)
+					usage, decodeErr := store.Decode[domain.GrokUsageRecord](usageRecord)
+					if err != nil || decodeErr != nil || usage.Usage.Counts.Input != "11" || usage.Usage.Counts.Output != "5" || usage.ThreadID != string(session) || usage.TurnID != prompt {
+						t.Fatal("original response usage changed", err, decodeErr)
+					}
+					if err := f.service.Store.Read(ctx, func(tx *store.Tx) error {
+						complete, err := tx.ExecutionMessagesComplete(f.input.ExecutionID)
+						if !complete {
+							t.Error("response left original text open")
+						}
+						return err
+					}); err != nil {
+						t.Fatal(err)
+					}
 				}
 				if err := api.Close(); err != nil {
 					t.Fatal(err)

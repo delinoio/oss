@@ -139,6 +139,10 @@ func nativeTextCompletion(t *testing.T, owned bool) {
 					t.Error("unaccepted text")
 				}
 				output.WriteString(observation.Chunk.Update.Content.Text)
+			case InputResponse:
+				if !accepted || observation.Response == nil || observation.Response.Input != 11 || observation.Response.Output != 5 {
+					t.Error("missing original response counters")
+				}
 			case InputTitle:
 				if !accepted {
 					t.Error("unaccepted title")

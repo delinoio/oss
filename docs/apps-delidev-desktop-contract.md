@@ -294,3 +294,9 @@ The Files control opens the right session application panel without remounting t
 
 ### Portable configuration
 Settings provides explicit export, file/pasted import, machine and checkout mapping, unchanged existing-entry reuse, server-preference replacement, complete before/after review and retained apply/status/retry through generated Connect operations. Preserve exact original JSON bytes and pending drafts; importing never authenticates an account or registers a device. See [portable configuration](cmds-delidev-configuration-transfer-contract.md) for supported kinds, atomic Worker validation, bounds and remaining surfaces.
+
+### Original Grok text and response disclosure
+
+The session transcript renders server-retained `grok_text` only after validating the complete original metadata array, exact native session/prompt namespaces, product execution identity, event/chunk ordering, role/state and absence of foreign content families. Preserve original text as inert text. Details show original first/latest events, latest native chunk and exact context estimate; response text completion is distinct from execution completion. Invalid or mixed records show unavailable rather than falling through to generic text.
+
+The existing Connect Query native-usage disclosure additionally reads Grok `1.0.41` resources under their original session/execution/thread/prompt. Validate the closed five-counter response shape and preserve canonical uint64 strings without JavaScript numeric conversion. Label product response order, measured zero, absent total/cost and separate context/input/auxiliary scopes. Retained preceding-execution and stale-read handling stays intact. Neither display starts work, changes configuration, synthesizes billing or enables unimplemented dispatch. Component/RPC rendering evidence is separate from native platform/tray acceptance.

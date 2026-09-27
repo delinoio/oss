@@ -688,10 +688,8 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 					if err := accounting.observe(observation.usage); err != nil {
 						return result, err
 					}
-					if profile != plainTextInput {
-						if err := publish(InputObservation{Kind: InputResponse, Response: &observation.usage}); err != nil {
-							return result, err
-						}
+					if err := publish(InputObservation{Kind: InputResponse, Response: &observation.usage}); err != nil {
+						return result, err
 					}
 				case lastTurnMetadata:
 					if !queue.cleared || settled.summarySeen {

@@ -74,3 +74,13 @@ it.each(["original", "foreign", "mixed"])("retains the selected Claude usage sco
  else { expect(await screen.findByText("The matching native usage observation is unavailable.")).toBeTruthy();expect(screen.queryByLabelText("Claude native usage")).toBeNull(); }
  expect(requests).toEqual(["usage"]);
 });
+
+it.each(["original", "foreign-input", "foreign-session", "mixed", "old-version"])("attributes original Grok usage: %s", async (kind) => {
+ const session=create(ResourceSchema,{schemaVersion:1,id:"session",kind:EntityKind.SESSION,revision:1n,documentJson:encode({initial_execution:{configuration:{harness:"grok-build"}},execution:{execution_id:"original",native_thread_id:"thread",native_turn_id:"turn",latest_usage_id:"usage"}})});
+ const retained=create(ResourceSchema,{schemaVersion:1,id:"usage",kind:EntityKind.USAGE,sessionId:kind==="foreign-session"?"other":"session",documentJson:encode({execution_id:"original",harness:"grok-build",native_version:kind==="old-version"?"1.0.40":"1.0.41",native_thread_id:"thread",native_turn_id:kind==="foreign-input"?"other":"turn",grok_observation:{ordinal:1,counts:{input_tokens:"18446744073709551615",output_tokens:"5",cache_read_input_tokens:"0",cache_creation_input_tokens:"0",reasoning_tokens:"0"}},...(kind==="mixed"?{opencode_observation:{}}:{})})});
+ const transport=createRouterTransport((router)=>router.service(ResourceService,{getResource:()=>({resource:retained})}));
+ const query=new QueryClient({defaultOptions:{queries:{retry:false}}});
+ render(<QueryClientProvider client={query}><TransportProvider transport={transport}><NativeUsage session={session}/></TransportProvider></QueryClientProvider>);
+ if(kind==="original") expect(await screen.findByText("18446744073709551615")).toBeTruthy();
+ else { expect(await screen.findByText("The matching native usage observation is unavailable.")).toBeTruthy();expect(screen.queryByLabelText("Grok response usage")).toBeNull(); }
+});

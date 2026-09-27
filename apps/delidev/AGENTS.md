@@ -1,5 +1,7 @@
 # DeliDev CLI
 
+- Grok transcript/usage disclosure follows the harness and desktop contracts. Validate complete bounded original chunk provenance, native namespaces, response ordering and closed counter shapes; preserve inert text and exact uint64 strings. Keep context estimates, individual response usage, missing totals/costs and execution completion distinct. Match usage to its original session/execution/harness/version/thread/prompt, reject mixed records and derive no input, billing or native action from display.
+
 - Grok initial mode in execution configuration is an original server-retained observation. Keep it attributed to its original execution/input and distinct from current mode, sandbox permissions, requested settings and account readiness. Missing values remain unavailable; reading this field cannot enable Grok dispatch.
 
 - Portable configuration uses generated ConfigurationService operations under `docs/cmds-delidev-configuration-transfer-contract.md`. Preserve authoritative original JSON bytes and bigint revisions; never round-trip configuration through JavaScript numbers. Require explicit mappings and separate full change review/apply, invalidate edited previews, retain exact uncertain requests and keep acknowledged unknown outcomes blocked. No implicit account/device authentication or persistent document cache.

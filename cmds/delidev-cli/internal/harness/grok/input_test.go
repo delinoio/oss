@@ -148,7 +148,7 @@ func TestOwnedInputRetainsClaimsAndRejectsUncertainReplay(t *testing.T) {
 			})
 			success := mode == "input-valid" || mode == "input-rpc-first"
 			if success {
-				if err != nil || len(claims) != 2 || result.Meta.Prompt != claims[1].NativePromptID || len(observations) != 4 || observations[0].Kind != InputAccepted || observations[3].Kind != InputCompleted {
+				if err != nil || len(claims) != 2 || result.Meta.Prompt != claims[1].NativePromptID || len(observations) != 5 || observations[0].Kind != InputAccepted || observations[3].Kind != InputResponse || observations[4].Kind != InputCompleted {
 					t.Fatal("original native input evidence missing", err, len(observations))
 				}
 			} else {
