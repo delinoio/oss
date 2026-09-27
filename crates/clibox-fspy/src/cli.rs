@@ -2599,8 +2599,10 @@ impl WindowsBreakTerminal {
         if unsafe { GetConsoleMode(handle, &raw mut original_mode) } != TRUE {
             return Err("control_terminal_unavailable");
         }
+        // Keep Ctrl+C as a console control event so WindowsSignals can cancel
+        // a breakpoint even when no execution timeout was configured.
         let immediate =
-            original_mode & !(ENABLE_ECHO_INPUT | ENABLE_LINE_INPUT | ENABLE_PROCESSED_INPUT);
+            (original_mode & !(ENABLE_ECHO_INPUT | ENABLE_LINE_INPUT)) | ENABLE_PROCESSED_INPUT;
         if unsafe { SetConsoleMode(handle, immediate) } != TRUE {
             return Err("control_terminal_unavailable");
         }
