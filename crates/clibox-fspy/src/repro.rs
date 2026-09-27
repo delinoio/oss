@@ -169,12 +169,14 @@ fn stage_symlink(source: &Path, target: &Path, link: &Path) -> io::Result<()> {
     }
 }
 
-fn hash_file(path: &Path, root: &Path) -> Result<(String, u64), ReproFailure> {
+fn hash_file(path: &Path, root: &Path) -> Result<(String, u64, FileIdentity), ReproFailure> {
     let mut file = File::open(path).map_err(|_| ReproFailure::Unavailable)?;
     let opened = opened_path(&file)?;
     if !opened.starts_with(root) {
         return Err(ReproFailure::ExternalLink);
     }
+    let metadata = file.metadata().map_err(|_| ReproFailure::Unavailable)?;
+    let identity = source_identity(path, &metadata)?;
     let mut digest = Sha256::new();
     let mut length = 0_u64;
     let mut buffer = [0_u8; 65536];
@@ -190,7 +192,7 @@ fn hash_file(path: &Path, root: &Path) -> Result<(String, u64), ReproFailure> {
             .checked_add(read as u64)
             .ok_or(ReproFailure::ByteLimit)?;
     }
-    Ok((format!("{:x}", digest.finalize()), length))
+    Ok((format!("{:x}", digest.finalize()), length, identity))
 }
 
 impl Snapshot {
@@ -214,14 +216,21 @@ impl Snapshot {
     }
 
     pub fn selected_path_has_identity(&self, relative: &Path, identity: FileIdentity) -> bool {
-        if !valid_relative(relative) || !self.eligible.contains(relative) {
-            return false;
+        valid_relative(relative)
+            && self.eligible.contains(relative)
+            && self.snapshot_file(relative).map(|file| file.identity) == Some(identity)
+    }
+
+    fn snapshot_file(&self, relative: &Path) -> Option<&SnapshotFile> {
+        let mut prefix = PathBuf::new();
+        for component in relative.components() {
+            prefix.push(component.as_os_str());
+            if let Some(target) = self.links.get(&prefix) {
+                let suffix = relative.strip_prefix(&prefix).ok()?;
+                return self.snapshot_file(&target.join(suffix));
+            }
         }
-        let source = self.root.join(relative);
-        fs::metadata(&source)
-            .ok()
-            .and_then(|metadata| source_identity(&source, &metadata).ok())
-            == Some(identity)
+        self.files.get(relative)
     }
 
     pub fn is_blocked(relative: &Path) -> bool {
@@ -444,7 +453,7 @@ impl Snapshot {
             output.sync_all().map_err(|_| ReproFailure::Unavailable)?;
             self.total_bytes += size;
             let sha256 = format!("{:x}", digest.finalize());
-            if hash_file(&source, &self.root)? != (sha256.clone(), size) {
+            if hash_file(&source, &self.root)? != (sha256.clone(), size, identity) {
                 return Err(ReproFailure::UnstableInput);
             }
             self.files.insert(
@@ -503,7 +512,7 @@ impl Snapshot {
             .ok_or(ReproFailure::UncollectedInput)?;
         let actual = hash_file(&self.root.join(relative), &self.root)
             .map_err(|_| ReproFailure::UnstableInput)?;
-        if actual != (expected.sha256.clone(), expected.size) {
+        if actual != (expected.sha256.clone(), expected.size, expected.identity) {
             return Err(ReproFailure::UnstableInput);
         }
         Ok(())
@@ -666,6 +675,30 @@ mod tests {
         fs::write(directory.path().join("input.txt"), b"after").unwrap();
         assert!(matches!(
             snapshot.verify_required(&BTreeSet::from([PathBuf::from("input.txt")])),
+            Err(ReproFailure::UnstableInput)
+        ));
+    }
+
+    #[test]
+    fn rejects_replaced_input_with_identical_bytes() {
+        let directory = tempfile::tempdir().unwrap();
+        let input = directory.path().join("input.txt");
+        fs::write(&input, b"same bytes").unwrap();
+        let selector = Selector::new(&["*.txt".into()], &[]).unwrap();
+        let snapshot = Snapshot::take(directory.path(), &selector, 1024, 10).unwrap();
+        let relative = PathBuf::from("input.txt");
+        let expected = snapshot.files.get(&relative).unwrap().identity;
+        assert!(snapshot.selected_path_has_identity(&relative, expected));
+        let replacement = directory.path().join("replacement.tmp");
+        fs::write(&replacement, b"same bytes").unwrap();
+        fs::remove_file(&input).unwrap();
+        fs::rename(&replacement, &input).unwrap();
+        let observed = source_identity(&input, &fs::metadata(&input).unwrap()).unwrap();
+        assert_ne!(observed, expected);
+        assert!(!snapshot.selected_path_has_identity(&relative, observed));
+        assert!(snapshot.selected_path_has_identity(&relative, expected));
+        assert!(matches!(
+            snapshot.verify_required(&BTreeSet::from([relative])),
             Err(ReproFailure::UnstableInput)
         ));
     }
