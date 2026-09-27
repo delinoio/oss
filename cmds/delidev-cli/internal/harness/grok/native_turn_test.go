@@ -100,7 +100,8 @@ func TestManualNativeGrokTextCompletion(t *testing.T) {
 	var turn TurnCompleted
 	var completion PromptCompleted
 	var text strings.Builder
-	queued, running, completed := false, false, false
+	queue := inputQueue{session: session, text: input}
+	completed := false
 	for !completed {
 		event, err := api.wire.Next(ctx)
 		if err != nil {
@@ -111,34 +112,8 @@ func TestManualNativeGrokTextCompletion(t *testing.T) {
 		}
 		switch event.Method {
 		case "_x.ai/queue/changed":
-			var value struct {
-				Session domain.ID `json:"sessionId"`
-				Entries []struct {
-					ID       string `json:"id"`
-					Version  uint64 `json:"version"`
-					Kind     string `json:"kind"`
-					Text     string `json:"text"`
-					Position uint64 `json:"position"`
-				} `json:"entries"`
-				Running string `json:"runningPromptId,omitempty"`
-				Text    string `json:"runningText,omitempty"`
-				Kind    string `json:"runningKind,omitempty"`
-			}
-			if decode(event.Params, &value) != nil || value.Session != session || len(value.Entries) > 1 {
-				t.Fatal("invalid original queue observation")
-			}
-			if len(value.Entries) == 1 {
-				entry := value.Entries[0]
-				if queued || entry.ID != prompt || entry.Version != 0 || entry.Position != 0 || entry.Kind != "prompt" || entry.Text != input {
-					t.Fatal("original native queued input changed")
-				}
-				queued = true
-			}
-			if value.Running != "" {
-				if !queued || running || value.Running != prompt || value.Kind != "prompt" || value.Text != input {
-					t.Fatal("original native running input changed")
-				}
-				running = true
+			if err := queue.observe(event.Params); err != nil || queue.prompt != prompt {
+				t.Fatal("invalid original native queue binding", err)
 			}
 		case "session/update", "_x.ai/session_notification":
 			var variant struct {
@@ -152,7 +127,7 @@ func TestManualNativeGrokTextCompletion(t *testing.T) {
 			switch variant.Update.Kind {
 			case "agent_message_chunk":
 				chunk, err := parseTextChunk(event.Params, session, prompt)
-				if err != nil || !running {
+				if err != nil || !queue.running || queue.cleared {
 					t.Fatal("unowned native text", err)
 				}
 				text.WriteString(chunk.Update.Content.Text)
@@ -179,7 +154,7 @@ func TestManualNativeGrokTextCompletion(t *testing.T) {
 			t.Fatal("unobserved native fixture notification")
 		}
 	}
-	if !queued || !running || text.String() != "Private fixture response." || result.Reason != EndTurn || result.Meta.Usage.Input != 11 || result.Meta.Usage.Output != 5 || calls.Load() == 0 {
+	if !queue.queued || !queue.running || !queue.cleared || text.String() != "Private fixture response." || result.Reason != EndTurn || result.Meta.Usage.Input != 11 || result.Meta.Usage.Output != 5 || calls.Load() == 0 {
 		t.Fatal("native fixture evidence incomplete")
 	}
 	if err := matchCompletion(result, turn, completion, turnFixtureModel); err != nil {
