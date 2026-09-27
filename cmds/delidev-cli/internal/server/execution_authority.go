@@ -150,6 +150,13 @@ func executionAPIOperations(input domain.ExecutionJobInput, protocol domain.APIP
 			// counting and other protocols require separate evidence.
 			return []apiproxy.Operation{apiproxy.MessageCreate}
 		}
+	case domain.GrokBuild:
+		if input.Validate() != nil || input.Version != 1 || input.Continuation != nil || input.Installation.Version != domain.GrokProtocolVersion || protocol != domain.OpenAIChat {
+			return nil
+		}
+		if _, err := input.Configuration.GrokModeForInput(input.Input.Mode); err == nil {
+			return []apiproxy.Operation{apiproxy.ChatCompletion}
+		}
 	case domain.OpenCode:
 		o := input.Configuration.Options
 		validGeneration := input.Version == 1 && input.Continuation == nil || input.Version == 2 && input.Continuation != nil && input.Validate() == nil

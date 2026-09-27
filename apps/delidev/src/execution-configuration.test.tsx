@@ -86,6 +86,7 @@ it("preserves first-execution choices while separately identifying retained prio
 it.each([
   ["claude-code", "claude_permission", "plan", "Observed Claude permission"],
   ["opencode", "opencode_agent", "plan", "Observed OpenCode primary agent"],
+  ["grok-build", "grok_mode", "plan", "Observed Grok initial mode"],
 ])("keeps %s native policy separate from Codex sandbox labels", (harness, key, selection, label) => {
   const value = fixture(harness);
   const data = { ...value.data, execution: { ...value.data.execution, observed: { model: "original-model", effort: null, service_tier: null, permission: "default", approval_policy: "", [key]: selection } } };

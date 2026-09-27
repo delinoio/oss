@@ -233,3 +233,7 @@ The existing version-1 execution JSON adds `block-citation` to Claude provider-m
 
 ## Portable configuration operations
 `ConfigurationService.ExportConfiguration`, `PreviewConfigurationImport` and `ApplyConfigurationImport` expose bounded versioned owner/client JSON documents. Preview is read-only and signed for its exact actor/server/plan. Application uses one request identity and returns the original coordinator job outcome on reference-only replay; repository inspection remains Worker-only. See [portable configuration](cmds-delidev-configuration-transfer-contract.md). Generated Go and TypeScript/Connect Query bindings must reproduce exactly.
+
+### Grok original binding observation
+
+The version-1 `PublishExecution` document adds an optional typed `ObservedExecutionSettings.grok_mode` field with exact `default`/`plan` values, emitted only for Grok's separately verified first-input `thread-bound` profile. The matching `input-accepted` preserves the original UUID-v4 prompt under its native UUID-v7 session. Other harness observations omit this field and retain their prior JSON shape; they cannot inherit Grok policy or identity authority. Queue accounting and exact receipt retries retain existing semantics. Format support does not enable Grok `ReportWork` completion, other event families, continuation or public dispatch. Existing authenticated Resource reads, CLI and desktop inspection expose the original retained observation without a new RPC or protobuf schema.

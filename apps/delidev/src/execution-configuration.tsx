@@ -34,6 +34,7 @@ function NativeObservations({ progress, selection, harness }: { progress: Docume
         {harness === Harness.Codex ? <><dt>Observed sandbox</dt><dd>{observed(native.permission)}</dd><dt>Observed approval policy</dt><dd>{observed(native.approval_policy)}</dd></> : null}
         {harness === Harness.Claude ? <><dt>Observed Claude permission</dt><dd>{observed(native.claude_permission)}</dd></> : null}
         {harness === Harness.OpenCode ? <><dt>Observed OpenCode primary agent</dt><dd>{observed(native.opencode_agent)}</dd><dt>Observed permission selection</dt><dd>{observed(native.permission)}</dd></> : null}
+        {harness === Harness.Grok ? <><dt>Observed Grok initial mode</dt><dd>{observed(native.grok_mode)}</dd></> : null}
       </dl>
       {harness === Harness.Claude ? <NativeClaudePermissionProgress progress={progress} /> : null}
       {harness === Harness.Claude ? <NativeClaudeTerminal progress={progress} /> : null}

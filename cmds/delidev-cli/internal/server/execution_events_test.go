@@ -67,6 +67,10 @@ func (f *publicationFixture) event(kind domain.ExecutionEventKind, sequence uint
 			permission, _ := f.input.Configuration.ClaudeAPIInputPermission(f.input.Input.Mode)
 			e.Observed = &domain.ObservedExecutionSettings{Model: f.input.Configuration.NativeModel, Permission: domain.PermissionDefault, ClaudePermission: permission}
 		}
+		if f.input.Configuration.Harness == domain.GrokBuild {
+			mode, _ := f.input.Configuration.GrokModeForInput(f.input.Input.Mode)
+			e.Observed = &domain.ObservedExecutionSettings{Model: f.input.Configuration.NativeModel, Permission: domain.PermissionDefault, GrokMode: mode}
+		}
 		if f.input.Configuration.Harness == domain.OpenCode {
 			agent, _ := f.input.Configuration.Options.OpenCodePrimaryForInput(f.input.Input.Mode)
 			e.Observed = &domain.ObservedExecutionSettings{Model: f.input.Configuration.NativeModel, Permission: domain.PermissionDefault, OpenCodeAgent: agent}

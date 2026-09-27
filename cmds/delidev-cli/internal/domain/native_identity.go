@@ -48,6 +48,17 @@ func (id NativeIdentity) Validate(harness Harness, kind NativeIdentityKind) erro
 		if err != nil || value == uuid.Nil || value.Variant() != uuid.RFC4122 || (value.Version() != 4 && value.Version() != 7) || value.String() != string(id) {
 			return invalid()
 		}
+	case GrokBuild:
+		if kind == NativeThreadIdentity {
+			if ID(id).Validate() != nil {
+				return invalid()
+			}
+			break
+		}
+		value, err := uuid.Parse(string(id))
+		if err != nil || value == uuid.Nil || value.Variant() != uuid.RFC4122 || value.Version() != 4 || value.String() != string(id) {
+			return invalid()
+		}
 	case OpenCode:
 		prefix := "ses_"
 		if kind == NativeTurnIdentity || kind == NativeMessageIdentity {

@@ -184,6 +184,10 @@ func TestManualNativeGrokOriginalPlanning(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
+				bound, err := api.SessionBinding(ctx)
+				if err != nil || bound.NativeSessionID != session || bound.Model != config.Model || (bound.ModeBinding != nil) != (initial == domain.PlanMode) {
+					t.Fatal("native Plan binding lost original session/mode", err)
+				}
 				before, err := os.ReadFile(api.connection.profile.path)
 				if err != nil {
 					t.Fatal(err)

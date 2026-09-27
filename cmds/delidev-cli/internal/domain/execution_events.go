@@ -79,6 +79,7 @@ type ObservedExecutionSettings struct {
 	ApprovalPolicy   string               `json:"approval_policy"`
 	ClaudePermission ClaudePermissionMode `json:"claude_permission,omitempty"`
 	OpenCodeAgent    OpenCodePrimaryAgent `json:"opencode_agent,omitempty"`
+	GrokMode         GrokMode             `json:"grok_mode,omitempty"`
 }
 
 func (o ObservedExecutionSettings) Validate(configuration ExecutionConfiguration) error {
@@ -88,6 +89,9 @@ func (o ObservedExecutionSettings) Validate(configuration ExecutionConfiguration
 func (o ObservedExecutionSettings) ValidateForInput(configuration ExecutionConfiguration, mode SessionMode) error {
 	if !mode.Valid() || o.Model != configuration.NativeModel {
 		return Fail(Unsupported, "The observed native settings are incompatible.", "Reconcile the accepted configuration and native profile before sending input.")
+	}
+	if configuration.Harness != GrokBuild && o.GrokMode != "" {
+		return Fail(Unsupported, "The observed mode belongs to another native harness.", "Retain the selected harness's original settings.")
 	}
 	switch configuration.Harness {
 	case Codex:
@@ -115,6 +119,17 @@ func (o ObservedExecutionSettings) ValidateForInput(configuration ExecutionConfi
 		}
 		if o.OpenCodeAgent != agent {
 			return Fail(RecoveryRequired, "The native OpenCode primary agent changed.", "Reconcile the original selection and input mode before sending input.")
+		}
+	case GrokBuild:
+		expected, err := configuration.GrokModeForInput(mode)
+		if err != nil {
+			return err
+		}
+		if !o.GrokMode.Valid() || o.OpenCodeAgent != "" || o.ClaudePermission != "" || o.Permission != PermissionDefault || o.ApprovalPolicy != "" || o.Effort != nil || o.ServiceTier != nil {
+			return Fail(Unsupported, "The observed Grok Build settings contain an unsupported native policy.", "Preserve native mode observations without inventing sandbox, effort, approval or service-tier settings.")
+		}
+		if o.GrokMode != expected {
+			return Fail(RecoveryRequired, "The original Grok Build mode differs from the selected input.", "Reconcile the original native mode before accepting input.")
 		}
 	default:
 		return Fail(Unsupported, "The observed native settings are incompatible.", "Reconcile the accepted configuration and native profile before sending input.")

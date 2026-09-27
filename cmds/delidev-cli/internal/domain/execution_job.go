@@ -53,6 +53,9 @@ func (c ExecutionCompletion) Validate() error {
 }
 
 func (c ExecutionCompletion) ValidateForHarness(harness Harness) error {
+	if harness == GrokBuild {
+		return Fail(Unsupported, "Grok Build completion reporting requires its original terminal publication profile.", "Session and input binding do not prove published completion, cleanup or continuation.")
+	}
 	for _, id := range []ID{c.ExecutionID, c.InputID} {
 		if err := id.Validate(); err != nil {
 			return err

@@ -80,7 +80,9 @@ func newProfileAuthorityFixture(t *testing.T, upstream string, harness domain.Ha
 	}
 	model := domain.Model{Name: "Fixture", NativeID: nativeModel, ProviderID: providerID, Harnesses: []domain.Harness{harness}, MetadataSource: domain.UserDeclared}
 	permission, version := domain.PermissionReadOnly, domain.CodexProtocolVersion
-	if harness == domain.OpenCode {
+	if harness == domain.GrokBuild {
+		permission, version = domain.PermissionDefault, domain.GrokProtocolVersion
+	} else if harness == domain.OpenCode {
 		permission, version = domain.PermissionDefault, domain.OpenCodeProtocolVersion
 	} else if harness == domain.ClaudeCode {
 		permission, version = domain.PermissionDefault, domain.ClaudeProtocolVersion

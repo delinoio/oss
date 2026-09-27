@@ -1,5 +1,7 @@
 # DeliDev CLI
 
+- Grok initial mode in execution configuration is an original server-retained observation. Keep it attributed to its original execution/input and distinct from current mode, sandbox permissions, requested settings and account readiness. Missing values remain unavailable; reading this field cannot enable Grok dispatch.
+
 - Portable configuration uses generated ConfigurationService operations under `docs/cmds-delidev-configuration-transfer-contract.md`. Preserve authoritative original JSON bytes and bigint revisions; never round-trip configuration through JavaScript numbers. Require explicit mappings and separate full change review/apply, invalidate edited previews, retain exact uncertain requests and keep acknowledged unknown outcomes blocked. No implicit account/device authentication or persistent document cache.
 
 - macOS application reopening restores the existing main window through the same unminimize/show/focus path as tray activation. Never recreate the renderer, reset its geometry or submit work to restore presentation. Follow `docs/apps-delidev-desktop-contract.md`; keep actual OS reopen evidence separate from tray-menu activation.
