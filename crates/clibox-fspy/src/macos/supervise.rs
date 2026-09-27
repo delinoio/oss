@@ -1,6 +1,7 @@
 //! Supervise a newly launched, injected macOS process group.
 
 use std::{
+    collections::HashSet,
     future::Future,
     io,
     os::unix::ffi::OsStrExt,
@@ -108,36 +109,77 @@ fn poll_wait<F: Future + Unpin>(
         .ok()
 }
 
-fn cleanup_group(
+fn signal_tracked(
+    receiver: &OperationReceiver,
+    signal: i32,
+    signalled: &mut HashSet<u32>,
+) -> Result<(), CaptureFailure> {
+    for pid in receiver
+        .live_processes()
+        .map_err(|_| CaptureFailure::Cleanup)?
+    {
+        if !signalled.insert(pid) {
+            continue;
+        }
+        let pid = i32::try_from(pid).map_err(|_| CaptureFailure::Cleanup)?;
+        // SAFETY: the receiver recorded this process's start identity at its
+        // authenticated hello and rechecked it immediately before signaling.
+        if unsafe { libc::kill(pid, signal) } != 0
+            && io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH)
+        {
+            return Err(CaptureFailure::Cleanup);
+        }
+    }
+    Ok(())
+}
+
+fn cleanup_owned(
     pid: u32,
+    receiver: &OperationReceiver,
     wait: &mut BoxFuture<'static, io::Result<fspy::ChildTermination>>,
     runtime: &tokio::runtime::Runtime,
     kill_after: Duration,
     mut root_done: bool,
 ) -> Result<(), CaptureFailure> {
     signal_group(pid, libc::SIGTERM)?;
+    let mut signalled = HashSet::new();
     let graceful_until = Instant::now()
         .checked_add(kill_after)
         .ok_or(CaptureFailure::Cleanup)?;
     while Instant::now() < graceful_until {
+        signal_tracked(receiver, libc::SIGTERM, &mut signalled)?;
         if !root_done {
             root_done = poll_wait(runtime, wait).is_some();
         } else {
             thread::sleep(POLL);
         }
-        if root_done && !group_exists(pid)? {
+        if root_done
+            && !group_exists(pid)?
+            && receiver
+                .live_processes()
+                .map_err(|_| CaptureFailure::Cleanup)?
+                .is_empty()
+        {
             return Ok(());
         }
     }
     signal_group(pid, libc::SIGKILL)?;
+    let mut signalled = HashSet::new();
     let force_until = Instant::now() + FORCE_CONFIRM;
     while Instant::now() < force_until {
+        signal_tracked(receiver, libc::SIGKILL, &mut signalled)?;
         if !root_done {
             root_done = poll_wait(runtime, wait).is_some();
         } else {
             thread::sleep(POLL);
         }
-        if root_done && !group_exists(pid)? {
+        if root_done
+            && !group_exists(pid)?
+            && receiver
+                .live_processes()
+                .map_err(|_| CaptureFailure::Cleanup)?
+                .is_empty()
+        {
             return Ok(());
         }
     }
@@ -304,7 +346,14 @@ where
     root_completion.monotonic_ns = match monotonic_ns() {
         Ok(time) => time,
         Err(failure) => {
-            let cleanup = cleanup_group(pid, &mut wait, &runtime, limits.kill_after, false);
+            let cleanup = cleanup_owned(
+                pid,
+                &receiver,
+                &mut wait,
+                &runtime,
+                limits.kill_after,
+                false,
+            );
             token.cancel();
             let _ = receiver.finish();
             return Err(cleanup.err().unwrap_or(failure));
@@ -327,24 +376,40 @@ where
     let termination = match result {
         Ok(termination) => termination,
         Err(failure) => {
-            let cleanup = cleanup_group(pid, &mut wait, &runtime, limits.kill_after, false);
+            let cleanup = cleanup_owned(
+                pid,
+                &receiver,
+                &mut wait,
+                &runtime,
+                limits.kill_after,
+                false,
+            );
             token.cancel();
             let _ = receiver.finish();
             return Err(cleanup.err().unwrap_or(failure));
         }
     };
-    match group_exists(pid) {
-        Ok(true) => {
-            let cleanup = cleanup_group(pid, &mut wait, &runtime, limits.kill_after, true);
+    let group_live = group_exists(pid);
+    let tracked_live = receiver.live_processes();
+    match (group_live, tracked_live) {
+        (Ok(true), _) => {
+            let cleanup =
+                cleanup_owned(pid, &receiver, &mut wait, &runtime, limits.kill_after, true);
             let _ = receiver.finish();
             return Err(cleanup.err().unwrap_or(CaptureFailure::DescendantSurvived));
         }
-        Err(_) => {
-            let _ = cleanup_group(pid, &mut wait, &runtime, limits.kill_after, true);
+        (Ok(false), Ok(ref processes)) if !processes.is_empty() => {
+            let cleanup =
+                cleanup_owned(pid, &receiver, &mut wait, &runtime, limits.kill_after, true);
+            let _ = receiver.finish();
+            return Err(cleanup.err().unwrap_or(CaptureFailure::DescendantSurvived));
+        }
+        (Err(_), _) | (_, Err(_)) => {
+            let _ = cleanup_owned(pid, &receiver, &mut wait, &runtime, limits.kill_after, true);
             let _ = receiver.finish();
             return Err(CaptureFailure::Cleanup);
         }
-        Ok(false) => {}
+        (Ok(false), Ok(_)) => {}
     }
     let mut collected = receiver.finish().map_err(|_| CaptureFailure::TraceLoss)?;
     if !collected.hello_pids.contains(&pid)
@@ -703,6 +768,36 @@ mod tests {
         // The ten-second execution deadline plus forced cleanup confirmation
         // can legitimately exceed five seconds under a loaded test runner.
         assert!(began.elapsed() < Duration::from_secs(16));
+    }
+
+    #[test]
+    fn detects_and_terminates_a_detached_descendant() {
+        let directory = tempfile::tempdir().unwrap();
+        let input = directory.path().join("input.txt");
+        let marker = directory.path().join("detached.marker");
+        fs::write(&input, b"fixture").unwrap();
+        let mut command = fspy::Command::new(std::env::current_exe().unwrap());
+        command
+            .args(["--exact", "macos::tests::read_fixture_child"])
+            .envs(std::env::vars_os())
+            .env("CLIBOX_FSPY_TEST_INPUT", input.as_os_str())
+            .env("CLIBOX_FSPY_TEST_ORPHAN", "1")
+            .env("CLIBOX_FSPY_TEST_DETACH_MARKER", marker.as_os_str())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let result = capture(
+            command,
+            directory.path(),
+            Limits {
+                max_events: 100_000,
+                max_bytes: crate::record::DEFAULT_BYTE_LIMIT,
+                timeout: Some(Duration::from_secs(10)),
+                kill_after: Duration::from_millis(100),
+            },
+            &AtomicBool::new(false),
+        );
+        assert!(marker.exists());
+        assert!(matches!(result, Err(CaptureFailure::DescendantSurvived)));
     }
 
     #[test]

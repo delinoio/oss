@@ -257,6 +257,54 @@ pub struct CollectedOperations {
     pub hello_pids: HashSet<u32>,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct ProcessIdentity {
+    started_seconds: u64,
+    started_microseconds: u64,
+}
+
+fn process_state(pid: u32) -> io::Result<Option<(ProcessIdentity, u32)>> {
+    let pid = i32::try_from(pid).map_err(|_| invalid("process_id"))?;
+    let mut info = std::mem::MaybeUninit::<libc::proc_bsdinfo>::uninit();
+    let size = i32::try_from(std::mem::size_of::<libc::proc_bsdinfo>())
+        .map_err(|_| invalid("process_info_size"))?;
+    // SAFETY: proc_pidinfo writes at most size bytes into the matching buffer.
+    let read = unsafe {
+        libc::proc_pidinfo(
+            pid,
+            libc::PROC_PIDTBSDINFO,
+            0,
+            info.as_mut_ptr().cast(),
+            size,
+        )
+    };
+    if read == 0 {
+        // proc_pidinfo may return zero for both an exited process and a query
+        // failure. Only a confirmed absent PID is safe to ignore.
+        if unsafe { libc::kill(pid, 0) } == -1
+            && io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
+        {
+            return Ok(None);
+        }
+        return Err(invalid("process_info"));
+    }
+    if read != size {
+        return Err(invalid("process_info_size"));
+    }
+    // SAFETY: the kernel filled the entire structure when read == size.
+    let info = unsafe { info.assume_init() };
+    if info.pbi_pid != pid as u32 {
+        return Err(invalid("process_identity"));
+    }
+    Ok(Some((
+        ProcessIdentity {
+            started_seconds: info.pbi_start_tvsec,
+            started_microseconds: info.pbi_start_tvusec,
+        },
+        info.pbi_status,
+    )))
+}
+
 struct RetryRead<'a> {
     stream: &'a mut UnixStream,
     stopping: &'a AtomicBool,
@@ -280,6 +328,7 @@ impl Read for RetryRead<'_> {
 fn receive_connection(
     mut stream: UnixStream,
     ledger: &Mutex<FrameLedger>,
+    processes: &Mutex<HashMap<u32, ProcessIdentity>>,
     stopping: &AtomicBool,
     root: Option<&Path>,
     admission: &AdmissionPolicy,
@@ -304,6 +353,17 @@ fn receive_connection(
             }
             frame.image_id = image_id;
         } else if frame.kind == FrameKind::Hello {
+            if root.is_some() {
+                let (identity, _) =
+                    process_state(frame.pid)?.ok_or_else(|| invalid("hello_process_exited"))?;
+                let mut tracked = processes.lock().map_err(|_| invalid("process_lock"))?;
+                if tracked
+                    .insert(frame.pid, identity)
+                    .is_some_and(|prior| prior != identity)
+                {
+                    return Err(invalid("process_identity_changed"));
+                }
+            }
             peer = Some((frame.pid, frame.tid));
             image_id = frame.image_id;
         } else {
@@ -365,6 +425,7 @@ pub struct OperationReceiver {
     socket_path: PathBuf,
     stopping: Arc<AtomicBool>,
     failed: Arc<AtomicBool>,
+    processes: Arc<Mutex<HashMap<u32, ProcessIdentity>>>,
     receiver: Option<thread::JoinHandle<io::Result<CollectedOperations>>>,
 }
 
@@ -438,6 +499,8 @@ impl OperationReceiver {
         let stop = Arc::clone(&stopping);
         let failed = Arc::new(AtomicBool::new(false));
         let failure = Arc::clone(&failed);
+        let processes = Arc::new(Mutex::new(HashMap::new()));
+        let tracked_processes = Arc::clone(&processes);
         let receiver = thread::spawn(move || {
             let ledger = Arc::new(Mutex::new(FrameLedger::new(max_events, max_bytes)));
             let mut connections = Vec::new();
@@ -455,6 +518,7 @@ impl OperationReceiver {
                         }
                         idle_after_stop = 0;
                         let ledger = Arc::clone(&ledger);
+                        let processes = Arc::clone(&tracked_processes);
                         let stop = Arc::clone(&stop);
                         let failure = Arc::clone(&failure);
                         let root = root.clone();
@@ -463,6 +527,7 @@ impl OperationReceiver {
                             let result = receive_connection(
                                 stream,
                                 &ledger,
+                                &processes,
                                 &stop,
                                 root.as_deref(),
                                 admission.as_ref(),
@@ -512,6 +577,7 @@ impl OperationReceiver {
             socket_path,
             stopping,
             failed,
+            processes,
             receiver: Some(receiver),
         })
     }
@@ -522,6 +588,23 @@ impl OperationReceiver {
 
     pub fn failed(&self) -> bool {
         self.failed.load(Ordering::Acquire)
+    }
+
+    pub fn live_processes(&self) -> io::Result<Vec<u32>> {
+        let tracked = self
+            .processes
+            .lock()
+            .map_err(|_| invalid("process_lock"))?
+            .clone();
+        let mut live = Vec::new();
+        for (pid, expected) in tracked {
+            if let Some((actual, status)) = process_state(pid)? {
+                if actual == expected && status != libc::SZOMB {
+                    live.push(pid);
+                }
+            }
+        }
+        Ok(live)
     }
 
     pub fn finish(mut self) -> io::Result<CollectedOperations> {
@@ -1112,6 +1195,11 @@ mod tests {
             return;
         };
         if std::env::var_os("CLIBOX_FSPY_TEST_SLEEP").is_some() {
+            if let Some(marker) = std::env::var_os("CLIBOX_FSPY_TEST_DETACH_MARKER") {
+                // SAFETY: the fixture descendant is not the root group leader.
+                assert!(unsafe { libc::setsid() } > 0);
+                fs::write(marker, b"detached").unwrap();
+            }
             std::thread::sleep(Duration::from_secs(5));
             return;
         }
@@ -1124,6 +1212,13 @@ mod tests {
                 .stderr(Stdio::null())
                 .spawn()
                 .unwrap();
+            if let Some(marker) = std::env::var_os("CLIBOX_FSPY_TEST_DETACH_MARKER") {
+                let deadline = Instant::now() + Duration::from_secs(3);
+                while !PathBuf::from(&marker).exists() && Instant::now() < deadline {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                assert!(PathBuf::from(&marker).exists());
+            }
             return;
         }
         let path = PathBuf::from(path);
