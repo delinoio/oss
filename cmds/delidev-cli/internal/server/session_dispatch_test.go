@@ -70,6 +70,8 @@ func newFirstDispatchFixtureWorkspaceProfile(t *testing.T, harness domain.Harnes
 	protocol, permission, version := domain.OpenAIResponses, domain.PermissionReadOnly, domain.CodexProtocolVersion
 	if harness == domain.OpenCode {
 		protocol, permission, version = domain.OpenAIChat, domain.PermissionDefault, domain.OpenCodeProtocolVersion
+	} else if harness == domain.ClaudeCode {
+		protocol, permission, version = domain.AnthropicMessages, domain.PermissionDefault, domain.ClaudeProtocolVersion
 	}
 	db, err := store.Open(context.Background(), filepath.Join(t.TempDir(), "state"))
 	if err != nil {

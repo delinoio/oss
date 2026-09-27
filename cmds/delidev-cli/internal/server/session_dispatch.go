@@ -79,6 +79,14 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 	version, protocol := codex.SupportedVersion, domain.OpenAIResponses
 	switch c.Harness {
 	case domain.Codex:
+	case domain.ClaudeCode:
+		if input.Version != 1 || input.Continuation != nil {
+			return empty, domain.Fail(domain.Unsupported, "Claude continuation requires separately verified native history.", "Preserve the original input; no replacement execution is authorized.")
+		}
+		if _, err := c.ClaudeAPIInputPermission(input.Input.Mode); err != nil {
+			return empty, err
+		}
+		version, protocol = domain.ClaudeProtocolVersion, domain.AnthropicMessages
 	case domain.OpenCode:
 		if _, err := c.OpenCodePrimaryForInput(input.Input.Mode); err != nil {
 			return empty, err
@@ -115,7 +123,7 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 		return empty, err
 	}
 	if provider.Protocol != protocol || (provider.Authentication == domain.KeylessAuth) != (account.Validation.Authentication == domain.KeylessEndpoint) || provider.Authentication != account.Connection.Authentication || account.ProviderID != c.ProviderID {
-		return empty, domain.Fail(domain.Unsupported, "The selected provider protocol is incompatible with this native profile.", "Select OpenAI Responses for Codex or Chat Completions for OpenCode; no protocol translation is performed.")
+		return empty, domain.Fail(domain.Unsupported, "The selected provider protocol is incompatible with this native profile.", "Select OpenAI Responses for Codex, Anthropic Messages for Claude or Chat Completions for OpenCode; no protocol translation is performed.")
 	}
 	// Recheck current restrictions without resolving changed Agent/templates or
 	// rerunning routing. Only the immutable selected account may continue.
@@ -167,6 +175,10 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 	if c.Harness == domain.OpenCode {
 		if request.Type == domain.GeneralChat && machine.OS == "windows" {
 			return empty, domain.Fail(domain.Unsupported, "OpenCode General Chat requires a verified native Windows root identity.", "Preserve the prepared workspace; do not infer native non-VCS path ownership.")
+		}
+	} else if c.Harness == domain.ClaudeCode {
+		if len(manifest.Repositories) > 1 {
+			return empty, domain.Fail(domain.Unsupported, "Claude multiple-repository execution requires its original native reference adapter.", "Preserve all selected repositories; do not silently omit a root.")
 		}
 	} else {
 		settings := codex.ThreadSettings{Model: c.NativeModel, Provider: codex.APIProvider, Cwd: manifest.PrimaryPath, Effort: c.Effort, Instructions: c.Instructions, Options: c.Options}

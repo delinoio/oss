@@ -50,6 +50,9 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			logger.InfoContext(ctx, "native_execution_cleanup_verified")
 		}
 	}()
+	if input.Configuration.Harness == domain.ClaudeCode {
+		return executeClaudeSession(ctx, config, owner, input, logger)
+	}
 	if input.Configuration.Harness == domain.OpenCode {
 		return executeOpenCodeSession(ctx, config, owner, input, logger)
 	}
