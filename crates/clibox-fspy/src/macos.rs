@@ -369,6 +369,7 @@ fn receive_connection(
         } else {
             return Err(invalid("missing_hello"));
         }
+        let acknowledge = frame.kind != FrameKind::Completion;
         let start = frame.kind == FrameKind::Start;
         if start && !frame.path.is_empty() {
             if let Some(root) = root {
@@ -412,7 +413,7 @@ fn receive_connection(
             .lock()
             .map_err(|_| invalid("collector_lock"))?
             .push(frame)?;
-        if start {
+        if acknowledge {
             stream.write_all(b"g")?;
         }
     }

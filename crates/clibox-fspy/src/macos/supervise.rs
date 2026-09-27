@@ -457,6 +457,39 @@ mod tests {
     use std::{fs, process::Stdio, sync::atomic::AtomicBool};
 
     #[test]
+    fn short_lived_process_hello_is_recorded_before_exit() {
+        if std::env::var_os("CLIBOX_FSPY_SHORT_CHILD").is_some() {
+            return;
+        }
+        let directory = tempfile::tempdir().unwrap();
+        for _ in 0..12 {
+            let mut command = fspy::Command::new(std::env::current_exe().unwrap());
+            command
+                .args([
+                    "--exact",
+                    "macos::supervise::tests::short_lived_process_hello_is_recorded_before_exit",
+                ])
+                .envs(std::env::vars_os())
+                .env("CLIBOX_FSPY_SHORT_CHILD", "1")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null());
+            let record = capture(
+                command,
+                directory.path(),
+                Limits {
+                    max_events: 100_000,
+                    max_bytes: crate::record::DEFAULT_BYTE_LIMIT,
+                    timeout: Some(Duration::from_secs(5)),
+                    kill_after: Duration::from_millis(500),
+                },
+                &AtomicBool::new(false),
+            )
+            .unwrap();
+            assert_eq!(record.summary.child_exit_code, Some(0));
+        }
+    }
+
+    #[test]
     fn root_pair_exceeding_event_limit_is_rejected_before_launch() {
         let directory = tempfile::tempdir().unwrap();
         let output = directory.path().join("created.txt");

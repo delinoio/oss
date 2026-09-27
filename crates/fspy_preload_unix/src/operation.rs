@@ -291,6 +291,12 @@ fn with_stream<R>(callback: impl FnOnce(&UnixStream) -> R) -> Option<R> {
                 ) {
                     return None;
                 }
+                // The receiver records this process's start identity before
+                // acknowledging the hello. Keep even a no-I/O process alive
+                // until that identity is captured.
+                if !matches!(receive_ack(&socket), Ack::Proceed) {
+                    return None;
+                }
                 *stream = Some((pid, socket));
             }
             Some(callback(&stream.as_ref()?.1))
