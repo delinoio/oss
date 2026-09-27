@@ -188,6 +188,17 @@ func (s *Stream) Close() error {
 // path: canceling a process is cleanup proof, not proof that native buffered
 // persistence completed. Unexpected trailing events keep completion uncertain.
 func (s *Stream) Finish(ctx context.Context) error {
+	return s.finishWithExit(ctx, 0)
+}
+
+// The pinned interrupted-denial profile exits with code 1 after clean EOF.
+// Only its fully validated original callback lifecycle can use this boundary;
+// ordinary completion must continue to require zero and reject every error exit.
+func (s *Stream) finishDenial(ctx context.Context) error {
+	return s.finishWithExit(ctx, 1)
+}
+
+func (s *Stream) finishWithExit(ctx context.Context, expected int) error {
 	if err := s.acquire(ctx); err != nil {
 		return err
 	}
@@ -217,7 +228,18 @@ func (s *Stream) Finish(ctx context.Context) error {
 	// A clean native exit cannot hide a partial frame or new unconsumed work.
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.cleanup != nil || s.problem != nil || len(s.events) != 0 || len(s.pending) != 0 || s.activeIncoming != 0 || s.process.Wait() != nil {
+	exit := s.process.Wait()
+	code := 0
+	if exit != nil {
+		code = -1
+		if classified, ok := exit.(interface{ ExitCode() int }); ok {
+			code = classified.ExitCode()
+		}
+	}
+	if s.cleanup != nil || s.problem != nil || len(s.events) != 0 || len(s.pending) != 0 || s.activeIncoming != 0 || code != expected {
+		if s.logger != nil {
+			s.logger.Warn("claude_eof_unconfirmed", "owner_id", s.owner, "cleanup_confirmed", s.cleanup == nil, "protocol_valid", s.problem == nil, "remaining_events", len(s.events), "pending_controls", len(s.pending), "incoming_controls", s.activeIncoming, "exit_code", code, "expected_exit_code", expected)
+		}
 		return streamUncertain()
 	}
 	return nil

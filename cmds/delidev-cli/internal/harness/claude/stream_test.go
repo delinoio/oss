@@ -176,6 +176,8 @@ func init() {
 		_, _ = os.Stdout.WriteString("{\"type\":")
 	case "finish-nonzero":
 		os.Exit(1)
+	case "finish-other-error":
+		os.Exit(2)
 	case "finish-blocked":
 		for {
 			time.Sleep(time.Second)
@@ -562,5 +564,37 @@ func TestStreamAssistantProviderRequestIdentityCannotAcknowledgeControl(t *testi
 		if err := s.receive(raw); err == nil {
 			t.Fatal("unsupported provider identity envelope accepted")
 		}
+	}
+}
+
+func TestStreamDenialFinishRequiresExactErrorExitAndJoinedStreams(t *testing.T) {
+	for _, mode := range []string{"normal", "finish-nonzero", "finish-other-error", "finish-trailing", "finish-partial", "finish-blocked"} {
+		t.Run(mode, func(t *testing.T) {
+			s, _, logs := streamFixture(t, mode)
+			if _, err := s.Call(context.Background(), domain.NewID(), map[string]any{"subtype": "ready"}); err != nil {
+				t.Fatal(err)
+			}
+			duration := 5 * time.Second
+			if mode == "finish-blocked" {
+				duration = 100 * time.Millisecond
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), duration)
+			defer cancel()
+			err := s.finishDenial(ctx)
+			if (err == nil) != (mode == "finish-nonzero") {
+				t.Fatal("denial EOF accepted unrelated exit", err)
+			}
+			select {
+			case <-s.Done():
+			default:
+				t.Fatal("denial EOF left cleanup running")
+			}
+			if err := s.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(logs.String(), "private-stderr-sentinel") {
+				t.Fatal("private output entered cleanup log")
+			}
+		})
 	}
 }

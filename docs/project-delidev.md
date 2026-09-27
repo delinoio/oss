@@ -163,3 +163,6 @@ Claude first Execute/Plan dispatch now reaches the real outbound Worker through 
 
 
 Claude original root API retries now publish through the shared outbox and desktop transcript with exact counters/status, original acceptance chronology and independent usage/permission/outcome. Provider retries remain native behavior under the same checked relay scope; acknowledgment recovery never repeats input or inference. Partial-content retries, exhausted-retry cleanup, richer progress and the remaining full issue scope are still required.
+
+
+The private original Claude interrupted-denial controller now joins callback-owned clean EOF and exact native error-exit classification independently of input correlation. It cannot authorize a Worker terminal/report, recovery or continuation until the separate public composition is complete.

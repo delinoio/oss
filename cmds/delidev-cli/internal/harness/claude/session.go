@@ -36,6 +36,7 @@ type sessionTransport interface {
 	Err() *domain.Error
 	Close() error
 	Finish(context.Context) error
+	finishDenial(context.Context) error
 }
 
 // APISession owns the ordered live protocol for one private process. The
@@ -410,13 +411,17 @@ func (s *APISession) finishInputLocked(ctx context.Context) error {
 }
 
 func (s *APISession) finishLocked(ctx context.Context) error {
+	return s.finishWithLocked(ctx, s.stream.Finish)
+}
+
+func (s *APISession) finishWithLocked(ctx context.Context, finish func(context.Context) error) error {
 	if err := s.stream.inputBarrier(); err != nil {
 		return err
 	}
 	s.closed.Store(true)
 	bounded, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	if err := s.stream.Finish(bounded); err != nil {
+	if err := finish(bounded); err != nil {
 		// A failed EOF handoff must still join forced cleanup; it cannot leave
 		// the native process alive behind a closed controller or mint a proof.
 		if cleanup := s.stream.Close(); cleanup != nil {

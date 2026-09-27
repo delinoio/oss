@@ -94,6 +94,8 @@ func (f *sessionFixtureTransport) Finish(context.Context) error {
 	return f.Close()
 }
 
+func (f *sessionFixtureTransport) finishDenial(ctx context.Context) error { return f.Finish(ctx) }
+
 func sessionFixture(t *testing.T) (*APISession, *sessionFixtureTransport) {
 	t.Helper()
 	b, cfg := lifecycleFixture(t)

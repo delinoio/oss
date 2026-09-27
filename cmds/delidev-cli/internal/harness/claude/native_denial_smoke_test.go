@@ -148,6 +148,10 @@ func nativeInterruptedDenial(t *testing.T, tool string, permission NativePermiss
 				if _, err := os.Stat(filepath.Join(cfg.Workspace, "interrupted-denial-marker.txt")); !os.IsNotExist(err) {
 					t.Fatal("interrupted denied command executed", err)
 				}
+				result, err := s.FinishOriginalDenial(ctx, cfg.Process.OwnerID, cfg.SessionID, input, s.current.turnID, arrival)
+				if err != nil || result.Kind != ResultExecutionError || result.Reason != AbortedTools || !result.Error || result.Usage != nil || !s.cleanupJoined.Load() || s.current.finished || s.current.terminal != nil {
+					t.Fatal("original denial clean EOF lost separate uncorrelated result", err)
+				}
 				for _, text := range []string{"Original fixture denial", "Inspect the private denial fixture.", cfg.Workspace, nativeAPIFixtureToken, nativeAPIUpstreamKey} {
 					if strings.Contains(logs.String(), text) {
 						t.Fatal("private interruption data entered logs")
