@@ -360,3 +360,65 @@ func TestGrokClaimsRequireOriginalPublisherAuthority(t *testing.T) {
 		}
 	}
 }
+
+func TestGrokClaimsClosurePreservesOriginalInputAndNeverRepeats(t *testing.T) {
+	p, journal, claims := newGrokClaimsFixture(t)
+	ctx := context.Background()
+	digest, _ := grok.ClosureClaimDigest(claims[3].Input.NativeSessionID)
+	closure := grok.ClosureClaim{Phase: grok.ClaimClosure, RequestID: domain.NewID(), ProductSessionID: p.input.SessionID, NativeSessionID: claims[3].Input.NativeSessionID, NativePromptID: claims[3].Input.NativePromptID, BodyDigest: digest}
+	if journal.Closure(ctx, closure) == nil {
+		t.Fatal("closure preceded original input binding")
+	}
+	for _, claim := range claims {
+		if err := recordGrokClaim(ctx, journal, claim); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, change := range []func(*grok.ClosureClaim){
+		func(c *grok.ClosureClaim) { c.RequestID = p.input.ThreadRequestID },
+		func(c *grok.ClosureClaim) { c.RequestID = p.input.TurnRequestID },
+		func(c *grok.ClosureClaim) { c.ProductSessionID = domain.NewID() },
+		func(c *grok.ClosureClaim) { c.NativePromptID = "f5833c4a-d764-4428-8bd8-6c2968a34b1b" },
+		func(c *grok.ClosureClaim) {
+			c.NativeSessionID = domain.NewID()
+			c.BodyDigest, _ = grok.ClosureClaimDigest(c.NativeSessionID)
+		},
+		func(c *grok.ClosureClaim) { c.BodyDigest = strings.Repeat("ef", 32) },
+		func(c *grok.ClosureClaim) { c.Phase = grok.BindClosure },
+	} {
+		copy := closure
+		change(&copy)
+		if journal.Closure(ctx, copy) == nil || len(journal.state.Claims) != 4 {
+			t.Fatal("foreign closure changed original evidence")
+		}
+	}
+	if err := journal.Closure(ctx, closure); err != nil {
+		t.Fatal(err)
+	}
+	if journal.Closure(ctx, closure) == nil {
+		t.Fatal("repeated closure regained native send authority")
+	}
+	bound := closure
+	bound.Phase = grok.BindClosure
+	wrong := bound
+	wrong.RequestID = domain.NewID()
+	if journal.Closure(ctx, wrong) == nil {
+		t.Fatal("another closure request acquired original acknowledgment")
+	}
+	if err := journal.Closure(ctx, bound); err != nil {
+		t.Fatal(err)
+	}
+	if journal.Closure(ctx, bound) == nil {
+		t.Fatal("closure acknowledgment repeated")
+	}
+	retained, err := readGrokClaims(p.config.Root, journal.state.Reference)
+	if err != nil || len(retained) != 6 || *retained[5].Closure != bound {
+		t.Fatal("durable closure evidence missing", err)
+	}
+	if err := journal.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := openGrokClaims(p); err == nil {
+		t.Fatal("closed native session reopened original journal")
+	}
+}

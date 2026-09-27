@@ -87,6 +87,7 @@ func fixtureInput(root, workspace, mode string, request domain.ID, raw json.RawM
 	if mode != "input-rpc-first" && mode != "input-lost-response" {
 		reply()
 	}
+	fixtureInputTail(workspace, mode, notify)
 }
 
 func TestOwnedInputRetainsClaimsAndRejectsUncertainReplay(t *testing.T) {

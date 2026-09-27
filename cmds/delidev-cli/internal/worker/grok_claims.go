@@ -17,6 +17,7 @@ import (
 )
 
 const maxGrokClaimBytes = 16 << 10
+const maxGrokClaims = 6
 
 // The immutable publisher supplies assignment authority. Native configuration
 // inspection and session setup remain the adapter's separate responsibility.
@@ -43,6 +44,7 @@ type grokClaimReference struct {
 type grokClaim struct {
 	Creation *grok.CreationClaim `json:"creation,omitempty"`
 	Input    *grok.InputClaim    `json:"input,omitempty"`
+	Closure  *grok.ClosureClaim  `json:"closure,omitempty"`
 }
 
 type grokClaimState struct {
@@ -137,8 +139,40 @@ func grokClaimsPath(root string, job domain.ID) (string, error) {
 }
 
 func (s grokClaimState) validateNext(c grokClaim) error {
-	if len(s.Claims) >= 4 || (c.Creation == nil) == (c.Input == nil) {
+	variants := 0
+	if c.Creation != nil {
+		variants++
+	}
+	if c.Input != nil {
+		variants++
+	}
+	if c.Closure != nil {
+		variants++
+	}
+	if len(s.Claims) >= maxGrokClaims || variants != 1 {
 		return grokClaimUncertain()
+	}
+	if len(s.Claims) >= 4 {
+		if c.Closure == nil || c.Closure.Validate() != nil {
+			return grokClaimUncertain()
+		}
+		input := s.Claims[3].Input
+		closure := c.Closure
+		if closure.ProductSessionID != s.Reference.SessionID || closure.NativeSessionID != input.NativeSessionID || closure.NativePromptID != input.NativePromptID || closure.RequestID == s.Reference.InputRequestID || closure.RequestID == s.Reference.CreationRequestID {
+			return grokClaimUncertain()
+		}
+		if len(s.Claims) == 4 {
+			if closure.Phase != grok.ClaimClosure {
+				return grokClaimUncertain()
+			}
+		} else {
+			prior := *s.Claims[4].Closure
+			prior.Phase = grok.BindClosure
+			if prior != *closure {
+				return grokClaimUncertain()
+			}
+		}
+		return nil
 	}
 	if len(s.Claims) < 2 {
 		if c.Creation == nil || c.Creation.Validate() != nil || c.Creation.RequestID != s.Reference.CreationRequestID || c.Creation.ProductSessionID != s.Reference.SessionID {
@@ -180,6 +214,10 @@ func (j *grokClaimJournal) Creation(ctx context.Context, c grok.CreationClaim) e
 
 func (j *grokClaimJournal) Input(ctx context.Context, c grok.InputClaim) error {
 	return j.claim(ctx, grokClaim{Input: &c})
+}
+
+func (j *grokClaimJournal) Closure(ctx context.Context, c grok.ClosureClaim) error {
+	return j.claim(ctx, grokClaim{Closure: &c})
 }
 
 func (j *grokClaimJournal) claim(ctx context.Context, c grokClaim) (returned error) {
@@ -252,7 +290,7 @@ func readGrokClaims(root string, ref grokClaimReference) ([]grokClaim, error) {
 	}
 	raw, err := security.ReadPrivate(path, maxGrokClaimBytes)
 	var state grokClaimState
-	if err != nil || domain.Decode(raw, &state) != nil || state.Reference != ref || state.Claims == nil || len(state.Claims) > 4 {
+	if err != nil || domain.Decode(raw, &state) != nil || state.Reference != ref || state.Claims == nil || len(state.Claims) > maxGrokClaims {
 		return nil, grokClaimUncertain()
 	}
 	canonical, err := json.Marshal(state)

@@ -55,6 +55,8 @@ type apiConnection struct {
 	product         domain.ID
 	ready           bool
 	inputStarted    bool
+	completedText   *completedText
+	closureStarted  bool
 }
 
 func apiConfigurationError() *domain.Error {

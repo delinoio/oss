@@ -120,6 +120,9 @@ func apiFixtureProcess() {
 		case "session/prompt":
 			fixtureInput(root, workspace, mode, request.ID, request.Params)
 			continue
+		case "session/close":
+			fixtureClosure(root, mode, request.ID, request.Params)
+			continue
 		default:
 			os.Exit(53)
 		}

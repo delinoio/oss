@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -105,7 +106,7 @@ func TestManualNativeGrokWorkerOriginalClaims(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
 			defer cancel()
 			cfg := grok.APIExecutionConfig{Probe: grok.ProbeConfig{Process: process.Config{Directory: filepath.Join(p.config.Root, "processes"), OwnerID: p.job, Executable: executable, Cwd: root, Env: env, Logger: logger}, Version: grok.SupportedVersion, Home: filepath.Join(root, "grok")}, Workspace: workspace, Model: p.input.Configuration.NativeModel, ContextTokens: 32000, ServerOrigin: relay.URL, Token: authority.token}
-			api, err := grok.OpenOwnedAPI(ctx, cfg, journal.Creation, journal.Input)
+			api, err := grok.OpenOwnedAPI(ctx, cfg, journal.Creation, journal.Input, journal.Closure)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -165,6 +166,29 @@ func TestManualNativeGrokWorkerOriginalClaims(t *testing.T) {
 				return nil
 			}); err == nil {
 				t.Fatal("original input acquired replay authority")
+			}
+			if !changed {
+				closed, err := api.CloseText(ctx, domain.NewID())
+				claims, readErr := readGrokClaims(p.config.Root, journal.state.Reference)
+				if err != nil || readErr != nil || len(claims) != 6 || claims[4].Closure.RequestID != closed.RequestID || claims[5].Closure.Phase != grok.BindClosure || closed.NativeSessionID != session || closed.NativePromptID != result.Meta.Prompt || closed.Summary != "Original Worker fixture completed." {
+					t.Fatal("native closure lost original Worker evidence", err, readErr)
+				}
+				// There is no timing delay after native removal/process cleanup.
+				// Persisted summary remains separate evidence from its live event.
+				if err := security.CheckPrivateDir(cfg.Probe.Home); err != nil {
+					t.Fatal(err)
+				}
+				// This fixture inspects only generated files beneath its private
+				// home. Native Grok files can be 0644 inside that 0700 boundary;
+				// production history needs its own anchored owner/path validator.
+				raw, err := os.ReadFile(filepath.Join(cfg.Probe.Home, "sessions", url.PathEscape(workspace), string(session), "summary.json"))
+				var summary struct {
+					Text   string `json:"last_turn_summary"`
+					Prompt string `json:"last_turn_summary_prompt_id"`
+				}
+				if err != nil || len(raw) > 64<<10 || json.Unmarshal(raw, &summary) != nil || summary.Text != closed.Summary || summary.Prompt != closed.NativePromptID {
+					t.Fatal("native acknowledged closure lost its persisted summary", err)
+				}
 			}
 			if p.state.LastSequence != 0 || p.state.Pending != nil {
 				t.Fatal("private native claim invented public execution events")

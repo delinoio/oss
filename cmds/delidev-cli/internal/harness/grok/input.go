@@ -182,6 +182,7 @@ func (a *apiConnection) RunText(ctx context.Context, request domain.ID, input st
 		}
 	}()
 	queue := inputQueue{session: a.session, text: input}
+	settled := completedText{request: request}
 	var rpc nativewire.Response
 	var turn TurnCompleted
 	var completed PromptCompleted
@@ -318,6 +319,11 @@ func (a *apiConnection) RunText(ctx context.Context, request domain.ID, input st
 						return result, incompatible()
 					}
 					responseCounters, responseObserved = observation.usage, true
+				case lastTurnMetadata:
+					if !queue.cleared || settled.summarySeen {
+						return result, incompatible()
+					}
+					settled.summary, settled.summarySeen = observation.text, true
 				}
 			}
 		case "_x.ai/session/prompt_complete":
@@ -330,8 +336,17 @@ func (a *apiConnection) RunText(ctx context.Context, request domain.ID, input st
 			}
 			promptObserved = true
 		case "_x.ai/sessions/changed":
-			if _, err := parseActivity(event.Params, a.session, a.workspace); err != nil {
+			activity, err := parseActivity(event.Params, a.session, a.workspace)
+			if err != nil {
 				return result, err
+			}
+			if activity == idleActivity && queue.cleared {
+				if settled.idle {
+					return result, incompatible()
+				}
+				settled.idle = true
+			} else if settled.idle {
+				return result, incompatible()
 			}
 		default:
 			return result, incompatible()
@@ -357,5 +372,7 @@ func (a *apiConnection) RunText(ctx context.Context, request domain.ID, input st
 	if err := publish(InputObservation{Kind: InputCompleted, Result: &result}); err != nil {
 		return result, err
 	}
+	settled.prompt = queue.prompt
+	a.completedText = &settled
 	return result, nil
 }
