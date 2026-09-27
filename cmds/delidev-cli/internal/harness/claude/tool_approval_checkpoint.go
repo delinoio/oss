@@ -33,36 +33,54 @@ func (b *ExecutionBinding) closedToolApprovals() ([]checkpointToolApproval, erro
 			return nil, continuationUnavailable()
 		}
 		tool, exists := b.content.tools[value.request.ToolID]
-		if !exists || !tool.finished || tool.inline == nil || tool.parent != "" || value.request.Kind != ToolPermission || !value.prepared || !value.echoed || value.canceled || value.behavior != PermissionAllow || value.retainedBytes != 0 || value.request.Input != nil || len(value.questions) != 0 || value.input != tool.ownerInput || value.turn != tool.ownerTurn || value.event.ArrivalID != arrival || value.event.RequestID != value.request.RequestID || value.event.Kind != NativeRequest || value.requestDigest == ([sha256.Size]byte{}) || value.reply == ([sha256.Size]byte{}) {
+		if !exists || !tool.finished || tool.inline == nil || tool.parent != "" || !value.prepared || !value.echoed || value.canceled || value.behavior != PermissionAllow || value.retainedBytes != 0 || value.request.Input != nil || len(value.questions) != 0 || value.input != tool.ownerInput || value.turn != tool.ownerTurn || value.event.ArrivalID != arrival || value.event.RequestID != value.request.RequestID || value.event.Kind != NativeRequest || value.requestDigest == ([sha256.Size]byte{}) || value.reply == ([sha256.Size]byte{}) {
+			return nil, continuationUnavailable()
+		}
+		switch value.request.Kind {
+		case ToolPermission:
+			if tool.name == string(inlineQuestionTool) || value.questionResult != ([sha256.Size]byte{}) {
+				return nil, continuationUnavailable()
+			}
+		case UserQuestion:
+			if tool.name != string(inlineQuestionTool) || !b.originalQuestionResult(value.request.ToolID, tool.inline.Metadata) {
+				return nil, continuationUnavailable()
+			}
+			continue
+		default:
 			return nil, continuationUnavailable()
 		}
 		result = append(result, checkpointToolApproval{arrival, value.request.RequestID, value.request.ToolID, value.input, value.turn, hex.EncodeToString(value.requestDigest[:]), hex.EncodeToString(value.reply[:])})
+	}
+	for id, tool := range b.content.tools {
+		if tool.name == string(inlineQuestionTool) && (tool.inline == nil || !b.originalQuestionResult(id, tool.inline.Metadata)) {
+			return nil, continuationUnavailable()
+		}
 	}
 	slices.SortFunc(result, func(a, b checkpointToolApproval) int { return strings.Compare(string(a.Arrival), string(b.Arrival)) })
 	return result, nil
 }
 
 func (cp sessionCheckpoint) validateToolApprovals() error {
-	if len(cp.ToolApprovals) > maxStreamIdentities {
+	if len(cp.ToolApprovals)+len(cp.QuestionAnswers) > maxStreamIdentities {
 		return historyUncertain()
 	}
-	tools := map[string]checkpointInlineTool{}
+	tools := map[string]namedInlineTool{}
 	for _, tool := range cp.inlineTools().all() {
-		tools[tool.ID] = tool.checkpointInlineTool
+		tools[tool.ID] = tool
 	}
 	requests, approved := map[string]bool{}, map[string]bool{}
 	for i, approval := range cp.ToolApprovals {
 		tool, exists := tools[approval.Tool]
-		if approval.Arrival.Validate() != nil || (i > 0 && cp.ToolApprovals[i-1].Arrival >= approval.Arrival) || domain.Text(approval.Request, "native request identity", 128, true) != nil || requests[approval.Request] || approved[approval.Tool] || !exists || approval.Input != tool.Input || approval.Turn != tool.Turn || !validHistoryDigest(approval.RequestDigest) || !validHistoryDigest(approval.ReplyDigest) || approval.RequestDigest == strings.Repeat("0", 64) || approval.ReplyDigest == strings.Repeat("0", 64) {
+		if approval.Arrival.Validate() != nil || (i > 0 && cp.ToolApprovals[i-1].Arrival >= approval.Arrival) || domain.Text(approval.Request, "native request identity", 128, true) != nil || requests[approval.Request] || approved[approval.Tool] || !exists || tool.Kind == inlineQuestionTool || approval.Input != tool.Input || approval.Turn != tool.Turn || !validHistoryDigest(approval.RequestDigest) || !validHistoryDigest(approval.ReplyDigest) || approval.RequestDigest == strings.Repeat("0", 64) || approval.ReplyDigest == strings.Repeat("0", 64) {
 			return historyUncertain()
 		}
 		requests[approval.Request], approved[approval.Tool] = true, true
 	}
-	return nil
+	return cp.validateQuestionAnswers(requests, approved)
 }
 
 func restoreToolApprovals(b *ExecutionBinding, approvals []checkpointToolApproval) error {
-	if len(approvals) != 0 {
+	if len(approvals) != 0 && b.interactions == nil {
 		b.interactions = map[domain.ID]*interactionState{}
 	}
 	for _, approval := range approvals {

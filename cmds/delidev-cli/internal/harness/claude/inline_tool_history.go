@@ -24,17 +24,19 @@ type inlineToolEvidence struct {
 type inlineToolKind string
 
 const (
-	inlineReadTool  inlineToolKind = "Read"
-	inlineBashTool  inlineToolKind = "Bash"
-	inlineWriteTool inlineToolKind = "Write"
-	inlineEditTool  inlineToolKind = "Edit"
+	inlineReadTool     inlineToolKind = "Read"
+	inlineBashTool     inlineToolKind = "Bash"
+	inlineWriteTool    inlineToolKind = "Write"
+	inlineEditTool     inlineToolKind = "Edit"
+	inlineQuestionTool inlineToolKind = "AskUserQuestion"
 )
 
 type inlineToolProofs struct {
-	Read  []checkpointInlineTool
-	Bash  []checkpointInlineTool
-	Write []checkpointInlineTool
-	Edit  []checkpointInlineTool
+	Read     []checkpointInlineTool
+	Bash     []checkpointInlineTool
+	Write    []checkpointInlineTool
+	Edit     []checkpointInlineTool
+	Question []checkpointInlineTool
 }
 
 type inlineToolGroup struct {
@@ -44,16 +46,18 @@ type inlineToolGroup struct {
 
 func (kind inlineToolKind) valid() bool {
 	switch kind {
-	case inlineReadTool, inlineBashTool, inlineWriteTool, inlineEditTool:
+	case inlineReadTool, inlineBashTool, inlineWriteTool, inlineEditTool, inlineQuestionTool:
 		return true
 	default:
 		return false
 	}
 }
 func (p inlineToolProofs) groups() []inlineToolGroup {
-	return []inlineToolGroup{{inlineReadTool, p.Read}, {inlineBashTool, p.Bash}, {inlineWriteTool, p.Write}, {inlineEditTool, p.Edit}}
+	return []inlineToolGroup{{inlineReadTool, p.Read}, {inlineBashTool, p.Bash}, {inlineWriteTool, p.Write}, {inlineEditTool, p.Edit}, {inlineQuestionTool, p.Question}}
 }
-func (p inlineToolProofs) count() int { return len(p.Read) + len(p.Bash) + len(p.Write) + len(p.Edit) }
+func (p inlineToolProofs) count() int {
+	return len(p.Read) + len(p.Bash) + len(p.Write) + len(p.Edit) + len(p.Question)
+}
 
 type namedInlineTool struct {
 	checkpointInlineTool
@@ -149,6 +153,8 @@ func inlineMetadata(kind inlineToolKind, raw []byte) ([sha256.Size]byte, bool) {
 		return inlineWriteMetadata(raw)
 	case inlineEditTool:
 		return inlineEditMetadata(raw)
+	case inlineQuestionTool:
+		return inlineQuestionMetadata(raw)
 	default:
 		return [sha256.Size]byte{}, false
 	}
@@ -173,6 +179,8 @@ func (b *ExecutionBinding) closedInlineTools() (inlineToolProofs, error) {
 			result.Write = append(result.Write, proof)
 		case inlineEditTool:
 			result.Edit = append(result.Edit, proof)
+		case inlineQuestionTool:
+			result.Question = append(result.Question, proof)
 		}
 	}
 	for _, group := range result.groups() {

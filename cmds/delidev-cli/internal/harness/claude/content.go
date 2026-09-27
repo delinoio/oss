@@ -980,6 +980,9 @@ func (b *ExecutionBinding) observeToolResult(raw []byte) (observations []Content
 				digest, valid = inlineReadErrorMetadata(envelope.Structured)
 				valid = valid && tool.name == string(inlineReadTool)
 			}
+			if valid && tool.name == string(inlineQuestionTool) {
+				valid = b.originalQuestionResult(id, digest)
+			}
 			if valid {
 				tool.inline = &inlineToolEvidence{Error: failed, NativeID: envelope.UUID, Metadata: digest}
 			}

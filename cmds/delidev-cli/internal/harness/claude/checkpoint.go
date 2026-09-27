@@ -63,6 +63,8 @@ type sessionCheckpoint struct {
 	WriteTools         []checkpointInlineTool         `json:"inline_write_tools,omitempty"`
 	EditTools          []checkpointInlineTool         `json:"inline_edit_tools,omitempty"`
 	ToolApprovals      []checkpointToolApproval       `json:"tool_approvals,omitempty"`
+	QuestionTools      []checkpointInlineTool         `json:"inline_question_tools,omitempty"`
+	QuestionAnswers    []checkpointQuestionAnswer     `json:"question_answers,omitempty"`
 }
 
 // RetainCheckpoint consumes an original closed handoff and returns bounded
@@ -96,7 +98,12 @@ func (closed *ClosedAPISession) RetainCheckpoint(ctx context.Context) ([]byte, C
 		return nil, CheckpointReference{}, err
 	}
 	cp.ReadTools, cp.BashTools, cp.WriteTools, cp.EditTools = tools.Read, tools.Bash, tools.Write, tools.Edit
+	cp.QuestionTools = tools.Question
 	cp.ToolApprovals, err = b.closedToolApprovals()
+	if err != nil {
+		return nil, CheckpointReference{}, err
+	}
+	cp.QuestionAnswers, err = b.closedQuestionAnswers()
 	if err != nil {
 		return nil, CheckpointReference{}, err
 	}
@@ -200,6 +207,7 @@ func RestoreCheckpoint(ctx context.Context, config APIStreamConfig, raw []byte, 
 		copy(state.inline.Metadata[:], metadata)
 		b.content.tools[tool.ID] = state
 	}
+	restoreQuestionAnswers(b, cp.QuestionAnswers)
 	if err := restoreToolApprovals(b, cp.ToolApprovals); err != nil {
 		return nil, err
 	}
@@ -334,5 +342,5 @@ func checkpointStrings(values []string, bound int, valid func(string) bool) bool
 }
 
 func (cp sessionCheckpoint) inlineTools() inlineToolProofs {
-	return inlineToolProofs{Read: cp.ReadTools, Bash: cp.BashTools, Write: cp.WriteTools, Edit: cp.EditTools}
+	return inlineToolProofs{Read: cp.ReadTools, Bash: cp.BashTools, Write: cp.WriteTools, Edit: cp.EditTools, Question: cp.QuestionTools}
 }

@@ -42,6 +42,9 @@ func inlineContinuationFixture(t *testing.T, kind inlineToolKind, failure ...boo
 	if kind == inlineWriteTool || kind == inlineEditTool {
 		input, _ = inlineFileFixtureValues(kind)
 	}
+	if kind == inlineQuestionTool {
+		input, _ = inlineQuestionFixtureValues()
+	}
 	inputRaw, _ := json.Marshal(input)
 	inputHash, err := streamReplyDigest(inputRaw)
 	if err != nil {
@@ -53,6 +56,9 @@ func inlineContinuationFixture(t *testing.T, kind inlineToolKind, failure ...boo
 	}
 	if kind == inlineWriteTool || kind == inlineEditTool {
 		_, metadata = inlineFileFixtureValues(kind)
+	}
+	if kind == inlineQuestionTool {
+		_, metadata = inlineQuestionFixtureValues()
 	}
 	if failed {
 		metadata = "Original native Read error metadata"

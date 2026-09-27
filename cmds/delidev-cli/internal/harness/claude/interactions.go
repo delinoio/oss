@@ -139,6 +139,7 @@ type interactionState struct {
 	event                      StreamEvent
 	reply                      [sha256.Size]byte
 	requestDigest              [sha256.Size]byte
+	questionResult             [sha256.Size]byte
 	behavior                   PermissionBehavior
 	prepared, echoed, canceled bool
 	retainedBytes              int
@@ -310,6 +311,7 @@ func (b *ExecutionBinding) PreparePermissionReply(arrival domain.ID, reply Permi
 		return StreamEvent{}, nil, lifecycleUncertain()
 	}
 	var response any
+	var questionResult [sha256.Size]byte
 	switch reply.Behavior {
 	case PermissionAllow:
 		if reply.Message != "" || reply.Interrupt {
@@ -330,6 +332,14 @@ func (b *ExecutionBinding) PreparePermissionReply(arrival domain.ID, reply Permi
 				return StreamEvent{}, nil, lifecycleUncertain()
 			}
 			fields["answers"], _ = json.Marshal(reply.Answers)
+			// Retain only a digest of the exact expected native question result.
+			// Echoing a reply alone cannot prove that the tool processed it.
+			expected, _ := json.Marshal(map[string]json.RawMessage{"questions": fields["questions"], "answers": fields["answers"]})
+			var valid bool
+			questionResult, valid = inlineQuestionMetadata(expected)
+			if !valid {
+				return StreamEvent{}, nil, lifecycleUncertain()
+			}
 			input, _ = json.Marshal(fields)
 		} else if reply.Answers != nil {
 			return StreamEvent{}, nil, lifecycleUncertain()
@@ -364,6 +374,7 @@ func (b *ExecutionBinding) PreparePermissionReply(arrival domain.ID, reply Permi
 	b.releaseInteractionInput(value)
 	value.prepared = true
 	value.reply, value.behavior = digest, reply.Behavior
+	value.questionResult = questionResult
 	if reply.Interrupt {
 		b.interruptedReply = arrival
 	}
