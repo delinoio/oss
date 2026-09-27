@@ -52,6 +52,7 @@ pub struct SnapshotFile {
     pub sha256: String,
     pub size: u64,
     pub identity: FileIdentity,
+    pub hard_link_to: Option<PathBuf>,
 }
 
 pub struct Snapshot {
@@ -444,6 +445,7 @@ impl Snapshot {
                     sha256,
                     size,
                     identity,
+                    hard_link_to: None,
                 },
             );
         }
@@ -507,8 +509,9 @@ impl Snapshot {
     ) -> Result<Vec<SnapshotFile>, ReproFailure> {
         self.verify_required(required)?;
         let mut staged = BTreeMap::new();
+        let mut staged_identities = BTreeMap::new();
         for relative in required {
-            self.stage_path(relative, candidate, &mut staged)?;
+            self.stage_path(relative, candidate, &mut staged, &mut staged_identities)?;
         }
         Ok(staged.into_values().collect())
     }
@@ -518,6 +521,7 @@ impl Snapshot {
         relative: &Path,
         candidate: &Path,
         staged: &mut BTreeMap<PathBuf, SnapshotFile>,
+        staged_identities: &mut BTreeMap<FileIdentity, PathBuf>,
     ) -> Result<(), ReproFailure> {
         let mut prefix = PathBuf::new();
         for component in relative.components() {
@@ -526,7 +530,7 @@ impl Snapshot {
                 let suffix = relative
                     .strip_prefix(&prefix)
                     .map_err(|_| ReproFailure::Unavailable)?;
-                self.stage_path(&target.join(suffix), candidate, staged)?;
+                self.stage_path(&target.join(suffix), candidate, staged, staged_identities)?;
                 let link = candidate.join(&prefix);
                 if let Some(parent) = link.parent() {
                     fs::create_dir_all(parent).map_err(|_| ReproFailure::Unavailable)?;
@@ -545,13 +549,28 @@ impl Snapshot {
             .files
             .get(relative)
             .ok_or(ReproFailure::UncollectedInput)?;
+        if staged.contains_key(relative) {
+            return Ok(());
+        }
         let destination = candidate.join(relative);
         if let Some(parent) = destination.parent() {
             fs::create_dir_all(parent).map_err(|_| ReproFailure::Unavailable)?;
         }
-        fs::copy(self.private.path().join(relative), &destination)
-            .map_err(|_| ReproFailure::Unavailable)?;
-        staged.insert(relative.to_path_buf(), file.clone());
+        let mut staged_file = file.clone();
+        if let Some(first) = staged_identities.get(&file.identity) {
+            let source = staged.get(first).ok_or(ReproFailure::Unavailable)?;
+            if (source.sha256.as_str(), source.size) != (file.sha256.as_str(), file.size) {
+                return Err(ReproFailure::UnstableInput);
+            }
+            fs::hard_link(candidate.join(first), &destination)
+                .map_err(|_| ReproFailure::Unavailable)?;
+            staged_file.hard_link_to = Some(first.clone());
+        } else {
+            fs::copy(self.private.path().join(relative), &destination)
+                .map_err(|_| ReproFailure::Unavailable)?;
+            staged_identities.insert(file.identity, relative.to_path_buf());
+        }
+        staged.insert(relative.to_path_buf(), staged_file);
         Ok(())
     }
 }
@@ -571,6 +590,34 @@ fn native_relative(path: &Path) -> crate::record::NativePath {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stages_required_hardlink_aliases_as_one_file() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(directory.path().join("a.txt"), b"input").unwrap();
+        fs::hard_link(
+            directory.path().join("a.txt"),
+            directory.path().join("b.txt"),
+        )
+        .unwrap();
+        let selector = Selector::new(&["*.txt".into()], &[]).unwrap();
+        let snapshot = Snapshot::take(directory.path(), &selector, 1024, 10).unwrap();
+        let required = BTreeSet::from([PathBuf::from("a.txt"), PathBuf::from("b.txt")]);
+        let candidate = tempfile::tempdir().unwrap();
+        let staged = snapshot
+            .stage_required(&required, candidate.path())
+            .unwrap();
+        assert_eq!(staged.len(), 2);
+        assert_eq!(staged[1].hard_link_to, Some(PathBuf::from("a.txt")));
+        let first = candidate.path().join("a.txt");
+        let second = candidate.path().join("b.txt");
+        assert_eq!(
+            source_identity(&first, &fs::metadata(&first).unwrap()).unwrap(),
+            source_identity(&second, &fs::metadata(&second).unwrap()).unwrap()
+        );
+        fs::write(first, b"changed").unwrap();
+        assert_eq!(fs::read(second).unwrap(), b"changed");
+    }
 
     #[cfg(unix)]
     #[test]

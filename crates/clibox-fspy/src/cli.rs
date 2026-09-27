@@ -2148,6 +2148,10 @@ fn min_repro(args: MinReproArgs) -> i32 {
             "sha256": file.sha256,
             "size": file.size,
         })).collect::<Vec<_>>(),
+        "hard_links": staged.iter().filter_map(|file| file.hard_link_to.as_ref().map(|target| serde_json::json!({
+            "path": selection_native(&file.relative),
+            "target": selection_native(target),
+        }))).collect::<Vec<_>>(),
         "internal_links": staged_links.iter().map(|(path, target)| serde_json::json!({
             "path": selection_native(path),
             "target": selection_native(target),
