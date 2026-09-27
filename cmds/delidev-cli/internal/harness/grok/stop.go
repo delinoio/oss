@@ -54,11 +54,12 @@ type textControl struct {
 	running  bool
 	terminal bool
 	stop     *textStop
+	profile  inputProfile
 }
 
-func (a *apiConnection) activateText(request domain.ID) {
+func (a *apiConnection) activateText(request domain.ID, profile inputProfile) {
 	a.controlMu.Lock()
-	a.control = &textControl{input: request}
+	a.control = &textControl{input: request, profile: profile}
 	a.controlMu.Unlock()
 }
 
@@ -110,6 +111,10 @@ func (a *apiConnection) StopText(ctx context.Context, request domain.ID, record 
 		return result, sessionUncertain()
 	}
 	control.mu.Lock()
+	if control.profile != plainTextInput {
+		control.mu.Unlock()
+		return result, incompatible()
+	}
 	if !control.running || control.terminal || control.stop != nil || request == a.creationRequest || request == a.inspection.OwnerID || request == control.input || request == a.product {
 		control.mu.Unlock()
 		return control.observation(), sessionUncertain()

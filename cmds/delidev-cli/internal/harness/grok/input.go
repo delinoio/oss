@@ -45,6 +45,12 @@ func (c InputClaim) Validate() error {
 }
 
 type ObservationKind string
+type inputProfile string
+
+const (
+	plainTextInput inputProfile = "plain-text"
+	readFileInput  inputProfile = "read-file"
+)
 
 const (
 	InputAccepted  ObservationKind = "input-accepted"
@@ -52,6 +58,8 @@ const (
 	InputTitle     ObservationKind = "input-title"
 	InputCompleted ObservationKind = "input-completed"
 	StopSettled    ObservationKind = "stop-settled"
+	InputFileTool  ObservationKind = "input-file-tool"
+	InputResponse  ObservationKind = "input-response"
 )
 
 // InputObservation contains native facts only. Its coordinator must journal
@@ -65,6 +73,8 @@ type InputObservation struct {
 	Result         *PromptResult
 	Interruption   *InterruptedPromptResult
 	Stop           *StopObservation
+	FileTool       *fileToolFact
+	Response       *responseUsage
 }
 
 type promptParams struct {
@@ -94,6 +104,20 @@ func TextInputClaimDigest(session domain.ID, input string) (string, error) {
 // slash-command, subsequent-input or restoration authority. Successful return
 // proves original root-turn completion, not auxiliary/history/process cleanup.
 func (a *apiConnection) RunText(ctx context.Context, request domain.ID, input string, record func(context.Context, InputClaim) error, emit func(context.Context, InputObservation) error) (result PromptResult, returned error) {
+	return a.runInput(ctx, request, input, record, emit, plainTextInput)
+}
+
+// RunReadFiles composes the original input with the closed default Read profile.
+// Write/questions/replies/Stop and successful-history handoff remain excluded;
+// neither a read-only native descriptor nor this method grants a sandbox.
+func (a *apiConnection) RunReadFiles(ctx context.Context, request domain.ID, input string, record func(context.Context, InputClaim) error, emit func(context.Context, InputObservation) error) (PromptResult, error) {
+	return a.runInput(ctx, request, input, record, emit, readFileInput)
+}
+
+func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input string, record func(context.Context, InputClaim) error, emit func(context.Context, InputObservation) error, profile inputProfile) (result PromptResult, returned error) {
+	if profile != plainTextInput && profile != readFileInput {
+		return result, apiConfigurationError()
+	}
 	if request.Validate() != nil || domain.Text(input, "original native input", 256<<10, true) != nil || record == nil || emit == nil {
 		return result, apiConfigurationError()
 	}
@@ -146,7 +170,7 @@ func (a *apiConnection) RunText(ctx context.Context, request domain.ID, input st
 	if err := record(ctx, claim); err != nil {
 		return result, sessionUncertain()
 	}
-	a.activateText(request)
+	a.activateText(request, profile)
 	control := a.textControl()
 	life, cancel := context.WithCancel(ctx)
 	read, wake := context.WithCancel(life)
@@ -197,9 +221,9 @@ func (a *apiConnection) RunText(ctx context.Context, request domain.ID, input st
 			if returned != nil && domain.SafeError(returned).Code == domain.Canceled && control.observation().CleanupJoined {
 				logger.InfoContext(ctx, "Grok Build original text interrupted and cleaned up", "owner_id", a.inspection.OwnerID, "session_id", a.product, "input_id", request)
 			} else if returned != nil {
-				logger.WarnContext(ctx, "Grok Build original text input failed", "owner_id", a.inspection.OwnerID, "session_id", a.product, "input_id", request, "code", domain.SafeError(returned).Code)
+				logger.WarnContext(ctx, "Grok Build original input failed", "owner_id", a.inspection.OwnerID, "session_id", a.product, "input_id", request, "input_profile", profile, "code", domain.SafeError(returned).Code)
 			} else {
-				logger.InfoContext(ctx, "Grok Build original text input completed", "owner_id", a.inspection.OwnerID, "session_id", a.product, "input_id", request)
+				logger.InfoContext(ctx, "Grok Build original input completed", "owner_id", a.inspection.OwnerID, "session_id", a.product, "input_id", request, "input_profile", profile)
 			}
 		}
 	}()
@@ -213,6 +237,8 @@ func (a *apiConnection) RunText(ctx context.Context, request domain.ID, input st
 	var interruptedPrompt InterruptedPromptCompleted
 	interrupted, promptInterrupted := false, false
 	var responseCounters responseUsage
+	var accounting responseAccounting
+	var fileTools *fileToolObserver
 	rpcObserved, turnObserved, promptObserved, responseObserved := false, false, false, false
 	var lastEvent, lastChunk uint64
 	hasEvent := false
@@ -282,6 +308,12 @@ func (a *apiConnection) RunText(ctx context.Context, request domain.ID, input st
 				}
 			}
 			if !running && queue.running {
+				if profile == readFileInput {
+					fileTools, err = newFileToolObserver(a.session, queue.prompt)
+					if err != nil {
+						return result, err
+					}
+				}
 				control.accept(queue.prompt)
 				if err := publish(InputObservation{Kind: InputAccepted}); err != nil {
 					return result, err
@@ -297,6 +329,25 @@ func (a *apiConnection) RunText(ctx context.Context, request domain.ID, input st
 				return result, incompatible()
 			}
 			switch variant.Update.Kind {
+			case "tool_call_delta_chunk", "tool_call", "tool_call_update", "pending_interaction", "interaction_resolved":
+				if profile != readFileInput || fileTools == nil || !queue.running || queue.cleared {
+					return result, incompatible()
+				}
+				fact, err := fileTools.observe(event)
+				if err != nil {
+					return result, err
+				}
+				if fact.Delta != nil && fact.Delta.Update.Name != nil && *fact.Delta.Update.Name != readFileTool || fact.Observation != nil && fact.Observation.Input.Name != readFileTool || fact.Permission != nil {
+					return result, incompatible()
+				}
+				if fact.Observation != nil {
+					if err := observeIndex(fact.Observation.Meta.Event); err != nil {
+						return result, err
+					}
+				}
+				if err := publish(InputObservation{Kind: InputFileTool, FileTool: &fact}); err != nil {
+					return result, err
+				}
 			case "agent_message_chunk":
 				chunk, err := parseTextChunk(event.Params, a.session, queue.prompt)
 				if err != nil || event.Method != "session/update" || !queue.running || queue.cleared || chunk.Meta.Chunk <= lastChunk {
@@ -368,10 +419,18 @@ func (a *apiConnection) RunText(ctx context.Context, request domain.ID, input st
 						return result, err
 					}
 				case responseMetadata:
-					if !queue.running || responseObserved {
+					if !queue.running || profile == plainTextInput && responseObserved {
 						return result, incompatible()
 					}
 					responseCounters, responseObserved = observation.usage, true
+					if err := accounting.observe(observation.usage); err != nil {
+						return result, err
+					}
+					if profile == readFileInput {
+						if err := publish(InputObservation{Kind: InputResponse, Response: &observation.usage}); err != nil {
+							return result, err
+						}
+					}
 				case lastTurnMetadata:
 					if !queue.cleared || settled.summarySeen {
 						return result, incompatible()
@@ -449,7 +508,14 @@ func (a *apiConnection) RunText(ctx context.Context, request domain.ID, input st
 	if !queue.cleared || !responseObserved {
 		return result, incompatible()
 	}
-	result, err = parsePromptResult(rpc.Result, a.session, queue.prompt, a.profile.model)
+	if profile == readFileInput {
+		if fileTools == nil || len(fileTools.tools) > 0 && !fileTools.settled() {
+			return result, incompatible()
+		}
+		result, err = parseFilePromptResult(rpc.Result, a.session, queue.prompt, a.profile.model, accounting)
+	} else {
+		result, err = parsePromptResult(rpc.Result, a.session, queue.prompt, a.profile.model)
+	}
 	if err != nil {
 		return result, err
 	}
@@ -457,7 +523,7 @@ func (a *apiConnection) RunText(ctx context.Context, request domain.ID, input st
 		return result, err
 	}
 	usage := result.Meta.Usage
-	if result.Reason != EndTurn || usage.Calls != 1 || usage.Turns != 1 || responseCounters != (responseUsage{Input: usage.Input, Output: usage.Output, CachedRead: usage.CachedRead, CacheCreation: usage.CacheCreation, Reasoning: usage.Reasoning}) {
+	if result.Reason != EndTurn || profile == plainTextInput && (usage.Calls != 1 || usage.Turns != 1 || responseCounters != (responseUsage{Input: usage.Input, Output: usage.Output, CachedRead: usage.CachedRead, CacheCreation: usage.CacheCreation, Reasoning: usage.Reasoning})) {
 		return result, incompatible()
 	}
 	if err := a.profile.checkInitialized(); err != nil {
@@ -489,6 +555,8 @@ func (a *apiConnection) RunText(ctx context.Context, request domain.ID, input st
 		return result, err
 	}
 	settled.prompt = queue.prompt
-	a.completedText = &settled
+	if profile == plainTextInput {
+		a.completedText = &settled
+	}
 	return result, nil
 }

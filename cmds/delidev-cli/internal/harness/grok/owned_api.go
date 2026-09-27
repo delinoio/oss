@@ -71,6 +71,13 @@ func (a *OwnedAPI) RunText(ctx context.Context, request domain.ID, input string,
 	return a.connection.RunText(ctx, request, input, a.input, emit)
 }
 
+func (a *OwnedAPI) RunReadFiles(ctx context.Context, request domain.ID, input string, emit func(context.Context, InputObservation) error) (PromptResult, error) {
+	if a == nil || a.connection == nil {
+		return PromptResult{}, apiConfigurationError()
+	}
+	return a.connection.RunReadFiles(ctx, request, input, a.input, emit)
+}
+
 func (a *OwnedAPI) Close() error {
 	if a == nil || a.connection == nil {
 		return apiConfigurationError()

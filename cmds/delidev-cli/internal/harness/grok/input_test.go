@@ -18,6 +18,10 @@ func fixtureInput(root, workspace, mode string, request domain.ID, raw json.RawM
 		os.Exit(60)
 	}
 	_ = os.WriteFile(filepath.Join(root, "tmp", "input-started"), []byte("started"), 0600)
+	if strings.HasPrefix(mode, "read-") {
+		fixtureReadInput(workspace, mode, request, params.Prompt[0].Text)
+		return
+	}
 	write := func(value any) { _ = json.NewEncoder(os.Stdout).Encode(value) }
 	response := fixtureObject(promptResultFixture)
 	if mode == "input-conflicting-result" {

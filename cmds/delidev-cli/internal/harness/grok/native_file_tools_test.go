@@ -28,13 +28,15 @@ func TestManualNativeGrokFileTools(t *testing.T) {
 	if binary == "" {
 		t.Skip("explicit private native Grok binary required")
 	}
-	for _, mode := range []string{"read", "read-stream", "read-outside", "write"} {
+	for _, mode := range []string{"read", "read-stream", "read-outside", "write", "owned-read", "owned-read-stream", "owned-read-outside"} {
 		t.Run(mode, func(t *testing.T) { nativeFileTool(t, binary, mode) })
 	}
 }
 
 func nativeFileTool(t *testing.T, binary, mode string) {
 	t.Helper()
+	owned := strings.HasPrefix(mode, "owned-")
+	mode = strings.TrimPrefix(mode, "owned-")
 	config, logs := fixtureAPIConfig(t, "native-file-tool")
 	config.Probe.Process.Executable = binary
 	target := "fixture.txt"
@@ -180,6 +182,85 @@ func nativeFileTool(t *testing.T, binary, mode string) {
 		t.Fatal(err)
 	}
 	const input = "Use the original private fixture file."
+	if owned {
+		request := domain.NewID()
+		var claims []InputClaim
+		accepted, completed := false, false
+		deltas, tools, responses := 0, 0, 0
+		result, err := api.RunReadFiles(ctx, request, input, func(_ context.Context, c InputClaim) error {
+			if c.Validate() != nil || c.RequestID != request || c.NativeSessionID != session {
+				t.Fatal("changed original native Read claim")
+			}
+			claims = append(claims, c)
+			return nil
+		}, func(callback context.Context, event InputObservation) error {
+			if event.InputID != request || !nativeUUID(event.NativePromptID, 4) || completed {
+				t.Fatal("foreign or late original Read observation")
+			}
+			switch event.Kind {
+			case InputAccepted:
+				if accepted || len(claims) != 2 {
+					t.Fatal("Read acceptance preceded native binding")
+				}
+				accepted = true
+			case InputFileTool:
+				if !accepted || event.FileTool == nil || event.FileTool.Permission != nil {
+					t.Fatal("unowned or unsupported native Read fact")
+				}
+				if event.FileTool.Delta != nil {
+					deltas++
+					if deltas == 1 {
+						close(deltaSeen)
+					}
+					if _, err := api.StopText(callback, domain.NewID(), func(context.Context, StopClaim) error {
+						t.Error("Read granted unimplemented Stop authority")
+						return nil
+					}); err == nil || domain.SafeError(err).Code != domain.Unsupported {
+						t.Fatal("Read borrowed plain-text Stop")
+					}
+				}
+				if event.FileTool.Observation != nil && event.FileTool.Observation.Phase == fileToolCompleted {
+					tools++
+				}
+			case InputResponse:
+				if !accepted || event.Response == nil || event.Response.Input != 11 || event.Response.Output != 5 {
+					t.Fatal("native response accounting changed")
+				}
+				responses++
+				// The controller retains original accounting before this callback.
+				event.Response.Input = 999
+			case InputText, InputTitle:
+				if !accepted {
+					t.Fatal("unaccepted Read output")
+				}
+			case InputCompleted:
+				if !accepted || tools != 1 || responses != 2 || event.Result == nil {
+					t.Fatal("Read completed before independent facts")
+				}
+				completed = true
+			default:
+				t.Fatal("unknown Read observation")
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !completed || result.Meta.Input != 11 || result.Meta.Total != 16 || result.Meta.Usage.Input != 22 || result.Meta.Usage.Total != 32 || mode == "read-stream" && deltas < 2 || !observedToolResult.Load() {
+			t.Fatal("Read result collapsed original last/aggregate/context facts")
+		}
+		if _, err := api.CloseText(ctx, domain.NewID(), func(context.Context, ClosureClaim) error { t.Error("Read acquired plain-text closure"); return nil }); err == nil {
+			t.Fatal("tool history acquired plain-text closure")
+		}
+		if _, err := api.RunReadFiles(ctx, domain.NewID(), input, func(context.Context, InputClaim) error { t.Error("Read replay claimed"); return nil }, func(context.Context, InputObservation) error { return nil }); err == nil {
+			t.Fatal("native Read boundary reopened")
+		}
+		after, err := os.ReadFile(actual)
+		if err != nil || string(after) != original {
+			t.Fatal("Read changed original fixture file")
+		}
+		return
+	}
 	type reply struct {
 		response nativewire.Response
 		err      error
