@@ -78,10 +78,12 @@ func (t *Tx) ClaudeRootContentContinuation(execution domain.ID) (bool, error) {
 	if err := execution.Validate(); err != nil {
 		return false, err
 	}
+	// Live citation publication cannot prove persisted native citation history,
+	// especially when the pinned CLI omits streamed citations at completion.
 	var content, unsupported bool
 	err := t.tx.QueryRowContext(t.ctx, `SELECT
  EXISTS(SELECT 1 FROM execution_messages m JOIN entities e ON e.id=m.message_id WHERE m.execution_id=? AND m.state='complete' AND json_type(e.body,'$.claude')='object'),
- EXISTS(SELECT 1 FROM execution_messages m JOIN entities e ON e.id=m.message_id WHERE m.execution_id=? AND (m.state!='complete' OR json_type(e.body,'$.tool')='object' OR json_type(e.body,'$.claude_interruption')='object'))`, execution, execution).Scan(&content, &unsupported)
+	 EXISTS(SELECT 1 FROM execution_messages m JOIN entities e ON e.id=m.message_id WHERE m.execution_id=? AND (m.state!='complete' OR json_type(e.body,'$.tool')='object' OR json_type(e.body,'$.claude_interruption')='object' OR EXISTS(SELECT 1 FROM json_each(e.body,'$.claude.blocks') b WHERE json_type(b.value,'$.citations') IS NOT NULL)))`, execution, execution).Scan(&content, &unsupported)
 	if err != nil || !content || unsupported {
 		return false, storageError(err)
 	}

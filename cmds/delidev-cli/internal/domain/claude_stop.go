@@ -126,7 +126,7 @@ func InterruptClaudeContent(prior *ClaudeMessageContent, state MessageState, pro
 		return nil, invalidClaudeStop()
 	}
 	block := prior.Blocks[0]
-	if block.Index != 0 || block.State != ClaudeBlockStreaming || block.Block.Kind != ClaudeText || block.Block.Tool != nil || block.Block.Text != proof.Text {
+	if block.Index != 0 || block.State != ClaudeBlockStreaming || block.Block.Kind != ClaudeText || block.Block.Tool != nil || block.Block.Text != proof.Text || block.Citations != nil {
 		return nil, invalidClaudeStop()
 	}
 	copy := *prior

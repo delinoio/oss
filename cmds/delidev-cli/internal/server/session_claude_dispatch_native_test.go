@@ -27,6 +27,7 @@ import (
 type claudePublicCase string
 
 const (
+	claudePublicCitations        claudePublicCase = "citations"
 	claudePublicCompaction       claudePublicCase = "continuation-compaction"
 	claudePublicBackgroundStop   claudePublicCase = "background-stop"
 	claudePublicBashToolProgress claudePublicCase = "bash-tool-progress"
@@ -188,6 +189,10 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 		if !strings.Contains(string(raw), "first retained input") || question && n >= 2 && !strings.Contains(string(raw), "Two") {
 			t.Error("original public input or answer changed")
 			w.WriteHeader(400)
+			return
+		}
+		if scenario == claudePublicCitations {
+			claudePublicCitationsResponse(w)
 			return
 		}
 		if read {
@@ -571,7 +576,7 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 			}
 			var proof domain.ExecutionCompletion
 			version, dispatch := uint32(2), domain.DispatchReady
-			if background {
+			if background || scenario == claudePublicCitations {
 				version, dispatch = 1, domain.DispatchPaused
 			}
 			if recoveredBoundary {
@@ -631,6 +636,9 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 			}
 			if compaction && turn == 2 {
 				verifyClaudePublicCompaction(t, ctx, f, proof)
+			}
+			if scenario == claudePublicCitations {
+				verifyClaudePublicCitations(t, ctx, f)
 			}
 			if background {
 				verifyClaudePublicBackgroundStop(t, ctx, f, proof)

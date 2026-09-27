@@ -32,6 +32,7 @@ type claudeContentCommit struct {
 // Its caller must reconcile child and terminal authority separately;
 // unsupported rich blocks latch this publisher.
 type ClaudeContentPublisher struct {
+	citationHistory     bool
 	tasks               *domain.ClaudeTasksState
 	denial              *domain.ClaudeDenialCompletion
 	stop                *domain.ClaudeStopObservation
@@ -133,6 +134,9 @@ func (c *ClaudeContentPublisher) PublishObservation(ctx context.Context, o claud
 		return true, b.block()
 	}
 	native := o.Content[0]
+	if native.Citation != nil && (native.Kind != claude.ContentChanged || native.DeltaKind != claude.CitationsDelta) || native.CitationCompletion != "" && native.Kind != claude.ContentCompleted {
+		return true, b.block()
+	}
 	if native.ParentToolID != "" || native.Model != b.publisher.input.Configuration.NativeModel || domain.Text(native.MessageID, "native provider message", 1024, true) != nil {
 		return true, b.block()
 	}
@@ -177,7 +181,18 @@ func (c *ClaudeContentPublisher) PublishObservation(ctx context.Context, o claud
 			reference := update.Reference
 			u.Block = &domain.ClaudeTextBlock{Kind: domain.ClaudeToolUse, Tool: &reference}
 		} else {
-			block, err := claudeDisplayBlock(native.Block)
+			original := native.Block
+			if original != nil && original.Kind == claude.TextBlock {
+				copy := *original
+				copy.Citations = nil
+				original = &copy
+				var err error
+				u.Citations, err = claudeDisplayCitations(native.Block.Citations)
+				if err != nil {
+					return true, b.block()
+				}
+			}
+			block, err := claudeDisplayBlock(original)
 			if err != nil {
 				return true, b.block()
 			}
@@ -186,6 +201,7 @@ func (c *ClaudeContentPublisher) PublishObservation(ctx context.Context, o claud
 		u.Mutation = domain.ClaudeBlockStart
 		if native.Kind == claude.ContentCompleted {
 			u.Mutation = domain.ClaudeBlockComplete
+			u.CitationCompletion = domain.ClaudeCitationCompletion(native.CitationCompletion)
 		}
 	case claude.ContentStopped:
 		u.Mutation = domain.ClaudeBlockStop
@@ -194,6 +210,17 @@ func (c *ClaudeContentPublisher) PublishObservation(ctx context.Context, o claud
 			return true, b.block()
 		}
 		block := prior.content.Blocks[*native.Index]
+		if native.DeltaKind == claude.CitationsDelta {
+			if native.Citation == nil || native.Delta != nil || block.Block.Kind != domain.ClaudeText || native.Block != nil {
+				return true, b.block()
+			}
+			citation, err := claudeDisplayCitation(*native.Citation)
+			if err != nil {
+				return true, b.block()
+			}
+			u.Citation, u.Mutation = &citation, domain.ClaudeBlockCitation
+			break
+		}
 		if native.DeltaKind == claude.ToolInputDelta {
 			if block.Block.Kind != domain.ClaudeToolUse || block.Block.Tool == nil || native.Delta == nil {
 				return true, b.block()
@@ -281,6 +308,12 @@ func (c *ClaudeContentPublisher) drain(ctx context.Context) error {
 
 func (c *ClaudeContentPublisher) commitHead() {
 	item := c.queue[0]
+	if u := item.event.ClaudeMessage; u != nil && (u.Citation != nil || u.Citations != nil) {
+		c.citationHistory = true
+	}
+	if u := item.event.ClaudeMessage; u != nil && u.Mutation == domain.ClaudeBlockCitation && c.binding.publisher.config.Logger != nil {
+		c.binding.publisher.config.Logger.Info("claude_citation_observed", "job_id", c.binding.journal.JobID, "sequence", item.event.Sequence, "kind", u.Citation.Kind)
+	}
 	if item.tasksNext != nil {
 		c.tasks = item.tasksNext
 		if logger := c.binding.publisher.config.Logger; logger != nil {

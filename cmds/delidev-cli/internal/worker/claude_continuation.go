@@ -48,8 +48,9 @@ func (c *ClaudeContentPublisher) RetainCompletion(ctx context.Context, api *clau
 		return *c.checkpoint, nil
 	}
 	// Only original acknowledged completed inline Bash task candidates can
-	// reach native checkpoint validation. Other task profiles retain v1 pause.
-	if !c.tasks.InlineBashHistoryReady() {
+	// reach native checkpoint validation. Other tasks and citation histories
+	// retain v1 pause until their persisted native evidence is separately proved.
+	if !c.tasks.InlineBashHistoryReady() || c.citationHistory {
 		return completion, nil
 	}
 	if completion.Outcome != domain.ExecutionSucceeded || c.terminal == nil || c.stop != nil || c.denial != nil || c.interruption != nil || len(c.messages) == 0 {

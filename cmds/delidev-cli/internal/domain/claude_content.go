@@ -1,5 +1,7 @@
 package domain
 
+import "encoding/json"
+
 type ClaudeMessageMutation string
 type ClaudeTextKind string
 type ClaudeBlockState string
@@ -8,6 +10,7 @@ const (
 	ClaudeMessageStart     ClaudeMessageMutation = "message-start"
 	ClaudeBlockStart       ClaudeMessageMutation = "block-start"
 	ClaudeBlockAppend      ClaudeMessageMutation = "block-append"
+	ClaudeBlockCitation    ClaudeMessageMutation = "block-citation"
 	ClaudeBlockToolInput   ClaudeMessageMutation = "block-tool-input"
 	ClaudeBlockComplete    ClaudeMessageMutation = "block-complete"
 	ClaudeBlockStop        ClaudeMessageMutation = "block-stop"
@@ -52,22 +55,36 @@ func (b ClaudeTextBlock) Validate() error {
 }
 
 type ClaudeMessageUpdate struct {
-	Tool         *ClaudeToolUpdate     `json:"tool,omitempty"`
-	ID           ID                    `json:"id"`
-	NativeID     string                `json:"native_id"`
-	Model        string                `json:"model"`
-	Mutation     ClaudeMessageMutation `json:"mutation"`
-	Index        *uint32               `json:"index,omitempty"`
-	Block        *ClaudeTextBlock      `json:"block,omitempty"`
-	Delta        *string               `json:"delta,omitempty"`
-	StopReason   *string               `json:"stop_reason,omitempty"`
-	StopSequence *string               `json:"stop_sequence,omitempty"`
+	Citations          *ClaudeCitationCollection `json:"citations,omitempty"`
+	Citation           *ClaudeCitation           `json:"citation,omitempty"`
+	CitationCompletion ClaudeCitationCompletion  `json:"citation_completion,omitempty"`
+	Tool               *ClaudeToolUpdate         `json:"tool,omitempty"`
+	ID                 ID                        `json:"id"`
+	NativeID           string                    `json:"native_id"`
+	Model              string                    `json:"model"`
+	Mutation           ClaudeMessageMutation     `json:"mutation"`
+	Index              *uint32                   `json:"index,omitempty"`
+	Block              *ClaudeTextBlock          `json:"block,omitempty"`
+	Delta              *string                   `json:"delta,omitempty"`
+	StopReason         *string                   `json:"stop_reason,omitempty"`
+	StopSequence       *string                   `json:"stop_sequence,omitempty"`
+}
+
+func (u *ClaudeMessageUpdate) UnmarshalJSON(raw []byte) error {
+	type plain ClaudeMessageUpdate
+	var value plain
+	if Decode(raw, &value) != nil || !claudeCitationFields(raw, nil, "citations", "citation", "citation_completion") {
+		return invalidClaudeContent()
+	}
+	*u = ClaudeMessageUpdate(value)
+	return u.Validate()
 }
 
 type ClaudeRetainedBlock struct {
-	Index uint32           `json:"index"`
-	Block ClaudeTextBlock  `json:"block"`
-	State ClaudeBlockState `json:"state"`
+	Citations *ClaudeCitationHistory `json:"citations,omitempty"`
+	Index     uint32                 `json:"index"`
+	Block     ClaudeTextBlock        `json:"block"`
+	State     ClaudeBlockState       `json:"state"`
 }
 
 type ClaudeMessageContent struct {
@@ -97,9 +114,12 @@ func (u ClaudeMessageUpdate) Validate() error {
 		return invalidClaudeContent()
 	}
 	blockMutation := u.Mutation == ClaudeBlockStart || u.Mutation == ClaudeBlockComplete
-	indexed := blockMutation || u.Mutation == ClaudeBlockAppend || u.Mutation == ClaudeBlockStop || u.Mutation == ClaudeBlockToolInput
+	indexed := blockMutation || u.Mutation == ClaudeBlockAppend || u.Mutation == ClaudeBlockStop || u.Mutation == ClaudeBlockToolInput || u.Mutation == ClaudeBlockCitation
 	metadata := u.Mutation == ClaudeMessageStart || u.Mutation == ClaudeMessageMetadata
 	if indexed != (u.Index != nil) || u.Index != nil && *u.Index >= 1024 || blockMutation != (u.Block != nil) || u.Block != nil && u.Block.Validate() != nil || (u.Mutation == ClaudeBlockAppend) != (u.Delta != nil) || u.Delta != nil && Text(*u.Delta, "native text delta", MaxMessageText, false) != nil || !metadata && (u.StopReason != nil || u.StopSequence != nil) {
+		return invalidClaudeContent()
+	}
+	if u.Citations != nil && (!blockMutation || u.Block.Kind != ClaudeText || u.Citations.Validate() != nil) || (u.Mutation == ClaudeBlockCitation) != (u.Citation != nil) || u.Citation != nil && u.Citation.Validate() != nil || u.CitationCompletion != "" && (u.Mutation != ClaudeBlockComplete || u.Block.Kind != ClaudeText || u.CitationCompletion != ClaudeCitationsMatched && u.CitationCompletion != ClaudeCitationsOmitted) {
 		return invalidClaudeContent()
 	}
 
@@ -124,7 +144,7 @@ func (u ClaudeMessageUpdate) Validate() error {
 		}
 	}
 	switch u.Mutation {
-	case ClaudeMessageStart, ClaudeBlockStart, ClaudeBlockAppend, ClaudeBlockToolInput, ClaudeBlockComplete, ClaudeBlockStop, ClaudeMessageMetadata, ClaudeMessageStop:
+	case ClaudeMessageStart, ClaudeBlockStart, ClaudeBlockAppend, ClaudeBlockCitation, ClaudeBlockToolInput, ClaudeBlockComplete, ClaudeBlockStop, ClaudeMessageMetadata, ClaudeMessageStop:
 		return nil
 	}
 	return invalidClaudeContent()
@@ -150,7 +170,15 @@ func ApplyClaudeContent(prior *ClaudeMessageContent, state MessageState, u Claud
 		return conflict()
 	}
 	next := *prior
+	for _, block := range prior.Blocks {
+		if block.Citations.Validate(block.State) != nil {
+			return conflict()
+		}
+	}
 	next.Blocks = append([]ClaudeRetainedBlock{}, prior.Blocks...)
+	for i := range next.Blocks {
+		next.Blocks[i].Citations = cloneClaudeCitationHistory(prior.Blocks[i].Citations)
+	}
 	next.StopReason, next.StopSequence = copyClaudeText(prior.StopReason), copyClaudeText(prior.StopSequence)
 	if u.Mutation == ClaudeMessageMetadata {
 		next.StopReason, next.StopSequence = copyClaudeText(u.StopReason), copyClaudeText(u.StopSequence)
@@ -166,12 +194,23 @@ func ApplyClaudeContent(prior *ClaudeMessageContent, state MessageState, u Claud
 			return conflict()
 		}
 		next.Blocks = append(next.Blocks, ClaudeRetainedBlock{Index: *u.Index, Block: *u.Block, State: ClaudeBlockStreaming})
+		if u.Citations != nil {
+			next.Blocks[*u.Index].Citations = &ClaudeCitationHistory{Initial: cloneClaudeCitations(u.Citations), Deltas: []ClaudeCitation{}}
+		}
 	} else {
 		if int(*u.Index) >= len(next.Blocks) {
 			return conflict()
 		}
 		b := &next.Blocks[*u.Index]
 		switch u.Mutation {
+		case ClaudeBlockCitation:
+			if b.State != ClaudeBlockStreaming || b.Block.Kind != ClaudeText {
+				return conflict()
+			}
+			if b.Citations == nil {
+				b.Citations = &ClaudeCitationHistory{Deltas: []ClaudeCitation{}}
+			}
+			b.Citations.Deltas = append(b.Citations.Deltas, cloneClaudeCitation(*u.Citation))
 		case ClaudeBlockAppend:
 			if b.State != ClaudeBlockStreaming || b.Block.Kind == ClaudeRedactedThinking || b.Block.Kind == ClaudeToolUse {
 				return conflict()
@@ -186,6 +225,14 @@ func ApplyClaudeContent(prior *ClaudeMessageContent, state MessageState, u Claud
 				return conflict()
 			}
 			b.State = ClaudeBlockCompleted
+			if b.Citations != nil || u.Citations != nil {
+				if b.Citations == nil {
+					b.Citations = &ClaudeCitationHistory{Deltas: []ClaudeCitation{}}
+				}
+				b.Citations.Completed, b.Citations.Completion = cloneClaudeCitations(u.Citations), u.CitationCompletion
+			} else if u.CitationCompletion == ClaudeCitationsOmitted {
+				return conflict()
+			}
 		case ClaudeBlockStop:
 			if b.State != ClaudeBlockCompleted {
 				return conflict()
@@ -195,10 +242,20 @@ func ApplyClaudeContent(prior *ClaudeMessageContent, state MessageState, u Claud
 			return conflict()
 		}
 	}
-	retained := 0
+	retained, citationBytes := 0, 0
 	for index, b := range next.Blocks {
 		if b.Index != uint32(index) || b.Block.Validate() != nil || b.State != ClaudeBlockStreaming && b.State != ClaudeBlockCompleted && b.State != ClaudeBlockStopped {
 			return conflict()
+		}
+		if b.Citations != nil {
+			if b.Block.Kind != ClaudeText || b.Citations.Validate(b.State) != nil {
+				return conflict()
+			}
+			raw, err := json.Marshal(b.Citations)
+			if err != nil {
+				return conflict()
+			}
+			citationBytes += len(raw)
 		}
 		if b.Block.Tool != nil {
 			copy := *b.Block.Tool
@@ -206,7 +263,7 @@ func ApplyClaudeContent(prior *ClaudeMessageContent, state MessageState, u Claud
 		}
 		retained += len(b.Block.Text)
 	}
-	if retained > MaxMessageText {
+	if retained > MaxMessageText || citationBytes > MaxMessageText {
 		return nil, "", Fail(ResourceExhausted, "Claude message content reached its retention limit.", "Preserve the original partial message and reconcile without truncation or native replay.")
 	}
 	return &next, state, nil
