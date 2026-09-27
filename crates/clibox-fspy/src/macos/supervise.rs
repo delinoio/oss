@@ -240,6 +240,15 @@ where
     command
         .resolve_program()
         .map_err(|_| CaptureFailure::Spawn)?;
+    let failed_lookups = command.failed_program_lookups().to_vec();
+    let reserved_events = failed_lookups
+        .len()
+        .checked_add(1)
+        .and_then(|pairs| pairs.checked_mul(2))
+        .ok_or(CaptureFailure::Record)?;
+    if reserved_events > limits.max_events {
+        return Err(CaptureFailure::Record);
+    }
     let program =
         std::path::absolute(Path::new(command.program())).map_err(|_| CaptureFailure::Spawn)?;
     let path = program.as_os_str().as_bytes().to_vec();
@@ -292,7 +301,7 @@ where
     }
     let receiver = OperationReceiver::bind_with_admission(
         root,
-        limits.max_events - 2,
+        limits.max_events - reserved_events,
         limits.max_bytes,
         admission,
     )
@@ -424,20 +433,59 @@ where
     if termination.path_accesses.is_err() {
         return Err(CaptureFailure::TraceLoss);
     }
+    let reserved_sequence = u64::try_from(reserved_events).map_err(|_| CaptureFailure::Record)?;
     for (start, completion) in &mut collected.pairs {
         start.sequence = start
             .sequence
-            .checked_add(2)
+            .checked_add(reserved_sequence)
             .ok_or(CaptureFailure::Record)?;
         completion.sequence = completion
             .sequence
-            .checked_add(2)
+            .checked_add(reserved_sequence)
             .ok_or(CaptureFailure::Record)?;
     }
-    collected.pairs.insert(0, (root_start, root_completion));
+    let mut prefix = Vec::with_capacity(failed_lookups.len() + 1);
+    for (index, failure) in failed_lookups.iter().enumerate() {
+        let path = failure.path.as_os_str().as_bytes().to_vec();
+        let sequence = u64::try_from(index)
+            .ok()
+            .and_then(|index| index.checked_mul(2))
+            .and_then(|index| index.checked_add(1))
+            .ok_or(CaptureFailure::Record)?;
+        let start = Frame {
+            sequence,
+            kind: FrameKind::Start,
+            operation: 10,
+            pid,
+            parent_pid: root_start.parent_pid,
+            tid: u64::from(pid),
+            id: sequence,
+            monotonic_ns: root_start.monotonic_ns.saturating_sub(1).max(1),
+            result: 0,
+            error: 0,
+            access_path: classify_path(root, &path).map_err(|_| CaptureFailure::Record)?,
+            identity: None,
+            path,
+            requested_delay_ns: 0,
+            observed_delay_ns: 0,
+            image_id: None,
+        };
+        let mut completion = start.clone();
+        completion.kind = FrameKind::Completion;
+        completion.sequence = sequence + 1;
+        completion.result = -1;
+        completion.error = failure.os_error;
+        completion.path.clear();
+        completion.access_path = None;
+        prefix.push((start, completion));
+    }
+    root_start.sequence = reserved_sequence - 1;
+    root_completion.sequence = reserved_sequence;
+    prefix.push((root_start, root_completion));
+    prefix.extend(collected.pairs);
     assemble_candidate_record(
         root,
-        collected.pairs,
+        prefix,
         termination.status,
         limits.max_events,
         limits.max_bytes,
@@ -456,6 +504,62 @@ where
 #[cfg(test)]
 mod tests {
     use std::{fs, process::Stdio, sync::atomic::AtomicBool};
+
+    #[test]
+    fn failed_path_candidate_is_recorded_before_root_exec() {
+        use std::os::unix::fs::symlink;
+
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().canonicalize().unwrap();
+        let first = root.join("first");
+        let second = root.join("second");
+        fs::create_dir(&first).unwrap();
+        fs::create_dir(&second).unwrap();
+        symlink(std::env::current_exe().unwrap(), second.join("probe-tool")).unwrap();
+        let mut command = fspy::Command::new("probe-tool");
+        command
+            .args([
+                "--exact",
+                "macos::supervise::tests::short_lived_process_hello_is_recorded_before_exit",
+            ])
+            .envs(std::env::vars_os())
+            .env("PATH", std::env::join_paths([&first, &second]).unwrap())
+            .env("CLIBOX_FSPY_SHORT_CHILD", "1")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let record = capture(
+            command,
+            &root,
+            Limits {
+                max_events: 100_000,
+                max_bytes: crate::record::DEFAULT_BYTE_LIMIT,
+                timeout: Some(Duration::from_secs(10)),
+                kill_after: Duration::from_millis(500),
+            },
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        assert_eq!(record.summary.child_exit_code, Some(0));
+        assert_eq!(
+            record.operations[0].start.operation,
+            crate::record::Operation::Exec
+        );
+        assert_eq!(
+            record.operations[0].completion.native_error,
+            Some(libc::ENOENT)
+        );
+        assert_eq!(
+            record.operations[0].start.paths[0].project_relative,
+            Some(crate::record::NativePath::UnixBytes(
+                b"first/probe-tool".to_vec()
+            ))
+        );
+        assert_eq!(
+            record.operations[1].start.operation,
+            crate::record::Operation::Exec
+        );
+        assert_eq!(record.operations[1].completion.native_error, None);
+    }
 
     #[test]
     fn short_lived_process_hello_is_recorded_before_exit() {

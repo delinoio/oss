@@ -50,6 +50,7 @@ For a selected observed path, reproduction stages that logical alias when its cu
 ## Workflow semantics
 
 - `autowatch` runs once immediately, then watches observed project inputs, including successful executable accesses, directory queries, and absent paths, including failed executable lookups. It runs serially, debounces by 200 ms by default, checks cancellation throughout a configured debounce wait, replaces dependencies after success, unions new dependencies after child failure, and rejects an empty or unsafe watch set. Confirmed self-writes alone cannot trigger a rerun.
+  The macOS and Windows supervisors include failed root `PATH` candidates as bounded synthetic executable attempts before the selected root image so a newly available earlier candidate invalidates the watch set.
   Internal logical aliases and their resolved project targets are both watched so a symlink replacement invalidates the recorded input.
   A successful creating or truncating open is classified as an output even when no write syscall follows it; output-only opens do not become input dependencies.
 

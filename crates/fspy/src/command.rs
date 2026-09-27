@@ -20,6 +20,30 @@ use which::sys::{RealSys, Sys};
 
 use crate::{SPY_IMPL, TrackedChild, error::SpawnError};
 
+#[derive(Clone, Debug)]
+pub struct ProgramLookupFailure {
+    pub path: PathBuf,
+    pub os_error: i32,
+}
+
+#[cfg(unix)]
+const fn missing_program_error() -> i32 {
+    libc::ENOENT
+}
+#[cfg(windows)]
+const fn missing_program_error() -> i32 {
+    winapi::shared::winerror::ERROR_FILE_NOT_FOUND as i32
+}
+
+#[cfg(unix)]
+const fn non_executable_error() -> i32 {
+    libc::EACCES
+}
+#[cfg(windows)]
+const fn non_executable_error() -> i32 {
+    winapi::shared::winerror::ERROR_ACCESS_DENIED as i32
+}
+
 #[derive(derive_more::Debug)]
 pub struct Command {
     program: OsString,
@@ -27,6 +51,7 @@ pub struct Command {
     envs: FxHashMap<OsString, OsString>,
     cwd: Option<PathBuf>,
     pub(crate) resolution_accesses: Vec<PathBuf>,
+    resolution_failures: Vec<ProgramLookupFailure>,
     #[cfg(windows)]
     pub(crate) windows_job: Option<OwnedHandle>,
     #[cfg(unix)]
@@ -42,6 +67,12 @@ pub struct Command {
 }
 
 impl Command {
+    /// Program candidates rejected before the selected executable was found.
+    #[must_use]
+    pub fn failed_program_lookups(&self) -> &[ProgramLookupFailure] {
+        &self.resolution_failures
+    }
+
     /// Return the configured program path, including any prior resolution.
     #[must_use]
     pub fn program(&self) -> &OsStr {
@@ -58,6 +89,7 @@ impl Command {
             envs: FxHashMap::default(),
             cwd: None,
             resolution_accesses: Vec::new(),
+            resolution_failures: Vec::new(),
             #[cfg(windows)]
             windows_job: None,
             #[cfg(unix)]
@@ -247,8 +279,10 @@ impl Command {
             .unwrap_or_else(|| std::env::current_dir().expect("failed to get current dir"));
         let lookup_cwd = std::env::current_dir().unwrap_or_else(|_| cwd.clone());
         let checked = RefCell::new(Vec::new());
+        let failures = RefCell::new(Vec::new());
         let recorder = RecordingSys {
             checked: &checked,
+            failures: &failures,
             lookup_cwd: &lookup_cwd,
         };
         let mut query = which::WhichConfig::new_with_sys(recorder)
@@ -263,15 +297,36 @@ impl Command {
             cwd,
             cause: err,
         })?;
-        self.resolution_accesses.extend(checked.into_inner());
         // PATH entries can be relative. Bind execution to the exact candidate
         // checked by which, using the lookup process's working directory.
-        self.program = if selected.is_absolute() {
+        let selected = if selected.is_absolute() {
             selected
         } else {
             lookup_cwd.join(selected)
+        };
+        let checked = checked.into_inner();
+        let failures = failures.into_inner();
+        for candidate in &checked {
+            if candidate == &selected
+                || self
+                    .resolution_failures
+                    .iter()
+                    .any(|probe| probe.path == *candidate)
+            {
+                continue;
+            }
+            let os_error = failures
+                .iter()
+                .rev()
+                .find(|probe| probe.path == *candidate)
+                .map_or(missing_program_error(), |probe| probe.os_error);
+            self.resolution_failures.push(ProgramLookupFailure {
+                path: candidate.clone(),
+                os_error,
+            });
         }
-        .into_os_string();
+        self.resolution_accesses.extend(checked);
+        self.program = selected.into_os_string();
         Ok(())
     }
 
@@ -329,16 +384,28 @@ impl Command {
 
 struct RecordingSys<'a> {
     checked: &'a RefCell<Vec<PathBuf>>,
+    failures: &'a RefCell<Vec<ProgramLookupFailure>>,
     lookup_cwd: &'a Path,
 }
 
 impl RecordingSys<'_> {
-    fn record(&self, path: &Path) {
-        self.checked.borrow_mut().push(if path.is_absolute() {
+    fn absolute(&self, path: &Path) -> PathBuf {
+        if path.is_absolute() {
             path.to_owned()
         } else {
             self.lookup_cwd.join(path)
-        });
+        }
+    }
+
+    fn record(&self, path: &Path, error: Option<i32>) {
+        let absolute = self.absolute(path);
+        self.checked.borrow_mut().push(absolute.clone());
+        if let Some(os_error) = error {
+            self.failures.borrow_mut().push(ProgramLookupFailure {
+                path: absolute,
+                os_error,
+            });
+        }
     }
 }
 
@@ -375,13 +442,21 @@ impl Sys for RecordingSys<'_> {
     }
 
     fn metadata(&self, path: &Path) -> io::Result<Self::Metadata> {
-        self.record(path);
-        RealSys.metadata(path)
+        let result = RealSys.metadata(path);
+        self.record(
+            path,
+            result.as_ref().err().and_then(io::Error::raw_os_error),
+        );
+        result
     }
 
     fn symlink_metadata(&self, path: &Path) -> io::Result<Self::Metadata> {
-        self.record(path);
-        RealSys.symlink_metadata(path)
+        let result = RealSys.symlink_metadata(path);
+        self.record(
+            path,
+            result.as_ref().err().and_then(io::Error::raw_os_error),
+        );
+        result
     }
 
     fn read_dir(
@@ -392,7 +467,18 @@ impl Sys for RecordingSys<'_> {
     }
 
     fn is_valid_executable(&self, path: &Path) -> io::Result<bool> {
-        RealSys.is_valid_executable(path)
+        let result = RealSys.is_valid_executable(path);
+        if !matches!(result, Ok(true)) {
+            self.record(
+                path,
+                Some(match &result {
+                    Ok(false) => non_executable_error(),
+                    Err(error) => error.raw_os_error().unwrap_or_else(non_executable_error),
+                    Ok(true) => unreachable!(),
+                }),
+            );
+        }
+        result
     }
 }
 
@@ -402,7 +488,7 @@ mod tests {
 
     use tokio_util::sync::CancellationToken;
 
-    use super::Command;
+    use super::{Command, missing_program_error};
 
     #[test]
     fn records_missing_path_candidates_before_the_selected_image() {
@@ -424,6 +510,15 @@ mod tests {
         assert_eq!(command.program, found.as_os_str());
         assert!(command.resolution_accesses.contains(&first.join("tool")));
         assert!(command.resolution_accesses.contains(&found));
+        assert!(command.failed_program_lookups().iter().any(|failure| {
+            failure.path == first.join("tool") && failure.os_error == missing_program_error()
+        }));
+        assert!(
+            !command
+                .failed_program_lookups()
+                .iter()
+                .any(|failure| failure.path == found)
+        );
     }
 
     #[tokio::test]

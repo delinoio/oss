@@ -27,6 +27,7 @@ The generic fspy runner creates a random, user-private preload directory for eac
 If the private preload directory or global spy cannot initialize, the runner retains the initialization error and returns it from tracked `Command::spawn`; a missing or unwritable temporary directory must not panic the host process.
 
 The generic fspy runner records every executable candidate examined during PATH resolution, including absent candidates before the selected program. These reads join the Unix and Windows access results so a new earlier PATH match invalidates a cached trace. Relative selected paths are bound to the lookup process's working directory before launch.
+The command also exposes failed root lookup candidates with their native lookup errors to the macOS and Windows clibox supervisors. Those supervisors reserve record space before launch and emit failed executable pairs ahead of the selected root image; the legacy path channel remains the completeness check.
 
 The Unix preload preserves the `execvp` family shell fallback for executable text without a shebang. It prepares `/bin/sh` as a tracked child image and carries the script path as the shell argument. If the shell cannot admit injection, execution fails explicitly rather than yielding a complete trace for an untracked child.
 Linux exec interception treats null `argv` and `envp` arrays as empty vectors, as the kernel does. Shebang rewriting creates its interpreter argument when the caller supplied no `argv[0]`.

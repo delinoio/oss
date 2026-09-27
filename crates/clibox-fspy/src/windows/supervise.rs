@@ -242,6 +242,15 @@ where
     command
         .resolve_program()
         .map_err(|_| CaptureFailure::Spawn)?;
+    let failed_lookups = command.failed_program_lookups().to_vec();
+    let reserved_events = failed_lookups
+        .len()
+        .checked_add(1)
+        .and_then(|pairs| pairs.checked_mul(2))
+        .ok_or(CaptureFailure::Record)?;
+    if reserved_events > limits.max_events {
+        return Err(CaptureFailure::Record);
+    }
     let program =
         std::path::absolute(Path::new(command.program())).map_err(|_| CaptureFailure::Spawn)?;
     let path = program
@@ -304,7 +313,7 @@ where
     }
     let receiver = OperationReceiver::bind_with_admission(
         &root,
-        limits.max_events.saturating_sub(2).max(1),
+        limits.max_events.saturating_sub(reserved_events).max(1),
         limits.max_bytes,
         admission,
     )
@@ -433,20 +442,66 @@ where
         );
         return Err(CaptureFailure::TraceLoss);
     }
+    let reserved_sequence = u64::try_from(reserved_events).map_err(|_| CaptureFailure::Record)?;
     for (start, completion) in &mut collected.pairs {
         start.sequence = start
             .sequence
-            .checked_add(2)
+            .checked_add(reserved_sequence)
             .ok_or(CaptureFailure::Record)?;
         completion.sequence = completion
             .sequence
-            .checked_add(2)
+            .checked_add(reserved_sequence)
             .ok_or(CaptureFailure::Record)?;
     }
-    collected.pairs.insert(0, (root_start, root_completion));
+    let mut prefix = Vec::with_capacity(failed_lookups.len() + 1);
+    for (index, failure) in failed_lookups.iter().enumerate() {
+        let path = failure
+            .path
+            .as_os_str()
+            .encode_wide()
+            .flat_map(u16::to_le_bytes)
+            .collect::<Vec<_>>();
+        let sequence = u64::try_from(index)
+            .ok()
+            .and_then(|index| index.checked_mul(2))
+            .and_then(|index| index.checked_add(1))
+            .ok_or(CaptureFailure::Record)?;
+        let start = Frame {
+            kind: FrameKind::Start,
+            operation: 10,
+            pid,
+            parent_pid: root_start.parent_pid,
+            tid: u64::from(pid),
+            id: sequence,
+            monotonic_ns: root_start.monotonic_ns.saturating_sub(1).max(1),
+            result: 0,
+            error: 0,
+            access_path: classify_path(&root, &path).map_err(|_| CaptureFailure::Record)?,
+            path,
+            handle_identity: None,
+            requested_bytes: None,
+            second_path: None,
+            sequence,
+            second_access_path: None,
+            requested_delay_ns: 0,
+            observed_delay_ns: 0,
+        };
+        let mut completion = start.clone();
+        completion.kind = FrameKind::Completion;
+        completion.sequence = sequence + 1;
+        completion.result = -1;
+        completion.error = failure.os_error;
+        completion.path.clear();
+        completion.access_path = None;
+        prefix.push((start, completion));
+    }
+    root_start.sequence = reserved_sequence - 1;
+    root_completion.sequence = reserved_sequence;
+    prefix.push((root_start, root_completion));
+    prefix.extend(collected.pairs);
     assemble_candidate_record(
         &root,
-        collected.pairs,
+        prefix,
         termination.status.code().map(i64::from),
         limits.max_events,
         limits.max_bytes,
