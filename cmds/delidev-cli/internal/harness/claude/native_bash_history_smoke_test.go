@@ -29,7 +29,11 @@ func TestManualNativeBashToolRetainedHistory(t *testing.T) {
 	}
 }
 
-func nativeBashToolRetainedHistory(t *testing.T, mixed bool) {
+func TestManualNativeInlineBashTaskRetainedHistory(t *testing.T) {
+	nativeBashToolRetainedHistory(t, false, true)
+}
+
+func nativeBashToolRetainedHistory(t *testing.T, mixed bool, taskCases ...bool) {
 	binary := os.Getenv("DELIDEV_NATIVE_CLAUDE_EXECUTABLE")
 	if binary == "" {
 		t.Skip("explicit native binary and private scripted provider required")
@@ -39,7 +43,11 @@ func nativeBashToolRetainedHistory(t *testing.T, mixed bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	const content = "Private retained Bash tool fixture."
-	const command = `printf 'Private retained Bash tool fixture.' >> bash-marker.txt; cat bash-marker.txt`
+	command := `printf 'Private retained Bash tool fixture.' >> bash-marker.txt; cat bash-marker.txt`
+	taskCase := len(taskCases) == 1 && taskCases[0]
+	if taskCase {
+		command = "sleep 4; " + command
+	}
 	firstCalls, toolCount, messages := int64(2), 1, uint32(4)
 	if mixed {
 		firstCalls, toolCount, messages = 3, 2, 6
@@ -159,6 +167,12 @@ func nativeBashToolRetainedHistory(t *testing.T, mixed bool) {
 	if !tool.finished || tool.name != "Bash" || tool.parent != "" || tool.ownerInput != input || tool.ownerTurn != session.current.turnID {
 		t.Fatal("original Bash tool ownership changed")
 	}
+	if taskCase {
+		proofs, err := session.current.closedBashTasks()
+		if err != nil || len(proofs) != 1 {
+			t.Fatal("original completed inline Bash task did not qualify", err, len(session.current.tasks))
+		}
+	}
 	closed, err := session.CloseForContinuation(ctx)
 	if err != nil || closed.transcript.MatchedMessages != messages || closed.transcript.AdditionalMessages != 0 {
 		t.Fatal("Bash tool retained history is incomplete", err, logs.String())
@@ -181,6 +195,15 @@ func nativeBashToolRetainedHistory(t *testing.T, mixed bool) {
 	var checkpoint sessionCheckpoint
 	if json.Unmarshal(raw, &checkpoint) != nil || len(checkpoint.BashTools) != 1 || len(checkpoint.ToolApprovals) != 1 || len(checkpoint.ReadTools) != toolCount-1 {
 		t.Fatal("checkpoint lost original Bash/approval profile")
+	}
+	if taskCase && len(checkpoint.BashTasks) != 1 {
+		t.Fatal("checkpoint lost original task ownership")
+	}
+	if taskCase {
+		proofs, err := closed.previous.current.closedBashTasks()
+		if err != nil || len(proofs) != 1 {
+			t.Fatal("restored task ownership changed", err)
+		}
 	}
 	clear(raw)
 	restored := closed.previous.current.interactions[arrival]

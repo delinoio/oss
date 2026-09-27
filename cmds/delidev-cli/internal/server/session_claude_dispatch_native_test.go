@@ -27,7 +27,7 @@ import (
 type claudePublicCase string
 
 const (
-	claudePublicBashTask claudePublicCase = "bash-task"
+	claudePublicBashTask claudePublicCase = "continuation-bash-task"
 	claudePublicBash     claudePublicCase = "continuation-bash"
 	claudePublicWrite    claudePublicCase = "continuation-write"
 	claudePublicEdit     claudePublicCase = "continuation-edit"
@@ -491,9 +491,6 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 			}
 			var proof domain.ExecutionCompletion
 			version, dispatch := uint32(2), domain.DispatchReady
-			if scenario == claudePublicBashTask {
-				version, dispatch = 1, domain.DispatchPaused
-			}
 			if recoveredBoundary {
 				dispatch = domain.DispatchPaused
 			}

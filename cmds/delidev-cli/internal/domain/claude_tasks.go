@@ -11,6 +11,9 @@ import (
 type ClaudeTaskEventKind string
 type ClaudeTaskStatus string
 type ClaudeTaskType string
+type ClaudeTaskHistoryKind string
+
+const ClaudeInlineBashTaskHistory ClaudeTaskHistoryKind = "inline-bash"
 
 const (
 	ClaudeTaskStarted            ClaudeTaskEventKind = "task_started"
@@ -145,10 +148,11 @@ func (v ClaudeTaskObservation) Validate() error {
 // Keep only bounded ownership/state metadata in the current execution. Original
 // descriptions, usage, paths and summaries live in immutable progress records.
 type ClaudeTaskState struct {
-	Tool         ClaudeToolReference `json:"tool"`
-	Status       ClaudeTaskStatus    `json:"status"`
-	Notified     bool                `json:"notified"`
-	Backgrounded *bool               `json:"is_backgrounded,omitempty"`
+	History      ClaudeTaskHistoryKind `json:"history_kind,omitempty"`
+	Tool         ClaudeToolReference   `json:"tool"`
+	Status       ClaudeTaskStatus      `json:"status"`
+	Notified     bool                  `json:"notified"`
+	Backgrounded *bool                 `json:"is_backgrounded,omitempty"`
 }
 type ClaudeTasksState struct {
 	Tasks      map[string]ClaudeTaskState `json:"tasks"`
@@ -169,6 +173,24 @@ func (s *ClaudeTasksState) Closed() bool {
 	}
 	return true
 }
+
+// This is a public candidate only. Native history must independently prove the
+// original completed inline Bash result and retained task observation hashes.
+func (s *ClaudeTasksState) InlineBashHistoryReady() bool {
+	if s == nil {
+		return true
+	}
+	if len(s.Background) != 0 {
+		return false
+	}
+	for id, task := range s.Tasks {
+		if Text(id, "native task identity", 1024, true) != nil || task.History != ClaudeInlineBashTaskHistory || task.Status != ClaudeTaskCompleted || !task.Notified || task.Tool.Name != "Bash" || task.Tool.Validate() != nil || task.Backgrounded != nil && *task.Backgrounded {
+			return false
+		}
+	}
+	return true
+}
+
 func (s *ClaudeTasksState) OwnsRunningTask(id string, tool ClaudeToolReference) bool {
 	if s == nil {
 		return false
@@ -192,6 +214,10 @@ func ApplyClaudeTask(prior *ClaudeTasksState, v ClaudeTaskObservation) (*ClaudeT
 		next.Background = make([]string, 0, len(*v.Background))
 		for _, task := range *v.Background {
 			next.Background = append(next.Background, task.ID)
+			if retained, exists := next.Tasks[task.ID]; exists {
+				retained.History = ""
+				next.Tasks[task.ID] = retained
+			}
 		}
 	} else {
 		current, exists := next.Tasks[v.ID]
@@ -212,6 +238,9 @@ func ApplyClaudeTask(prior *ClaudeTasksState, v ClaudeTaskObservation) (*ClaudeT
 				return nil, invalidClaudeProgress()
 			}
 			current = ClaudeTaskState{Tool: *v.Tool, Status: ClaudeTaskRunning, Backgrounded: v.Backgrounded}
+			if (v.Backgrounded == nil || !*v.Backgrounded) && (v.SkipTranscript == nil || !*v.SkipTranscript) && (v.Ambient == nil || !*v.Ambient) && !slices.Contains(next.Background, v.ID) {
+				current.History = ClaudeInlineBashTaskHistory
+			}
 		} else {
 			if !exists || v.Tool != nil && *v.Tool != current.Tool {
 				return nil, invalidClaudeProgress()
@@ -227,15 +256,24 @@ func ApplyClaudeTask(prior *ClaudeTasksState, v ClaudeTaskObservation) (*ClaudeT
 						return nil, invalidClaudeProgress()
 					}
 					current.Status = *v.Patch.Status
+					if current.Status.Terminal() && current.Status != ClaudeTaskCompleted {
+						current.History = ""
+					}
 				}
 				if v.Patch.Backgrounded != nil {
 					current.Backgrounded = v.Patch.Backgrounded
+					if *v.Patch.Backgrounded {
+						current.History = ""
+					}
 				}
 			case ClaudeTaskNotified:
 				if current.Notified || current.Status.Terminal() && !sameClaudeTaskTerminal(current.Status, *v.Status) {
 					return nil, invalidClaudeProgress()
 				}
 				current.Status, current.Notified = *v.Status, true
+				if current.Status != ClaudeTaskCompleted || v.Reason != nil || v.SkipTranscript != nil && *v.SkipTranscript || v.Ambient != nil && *v.Ambient {
+					current.History = ""
+				}
 			}
 		}
 		next.Tasks[v.ID] = current

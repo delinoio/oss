@@ -133,6 +133,7 @@ type NativeTaskObservation struct {
 }
 
 type nativeTaskState struct {
+	inlineBash   *bashTaskHistory
 	tool         string
 	kind         TaskType
 	agentType    string
@@ -227,6 +228,10 @@ func (b *ExecutionBinding) observeTask(kind TaskEventKind, raw []byte) (*NativeT
 				return nil, lifecycleUncertain()
 			}
 			seen[task.ID] = true
+			if retained, exists := b.tasks[task.ID]; exists {
+				retained.inlineBash = nil
+				b.tasks[task.ID] = retained
+			}
 		}
 		// Retain only identities, independently of returned display metadata.
 		b.backgroundTasks = seen
@@ -324,6 +329,10 @@ func (b *ExecutionBinding) observeTask(kind TaskEventKind, raw []byte) (*NativeT
 				return nil, lifecycleUncertain()
 			}
 		}
+	}
+	retainBashTaskHistory(&retained, observation, value.UUID, raw)
+	if b.backgroundTasks[value.ID] {
+		retained.inlineBash = nil
 	}
 	b.tasks[value.ID] = retained
 	if b.logger != nil {

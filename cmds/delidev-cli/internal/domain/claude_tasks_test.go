@@ -109,3 +109,62 @@ func TestClaudeTaskExactCountersAndRetainedOwnershipBound(t *testing.T) {
 		t.Fatal("oversized ownership retained", err)
 	}
 }
+
+func TestClaudeInlineBashTaskHistoryRequiresOriginalEligibleStartAndNotification(t *testing.T) {
+	for _, change := range []string{"valid", "missing-notification", "failed", "start-background", "start-ambient", "start-skip", "later-background", "background-snapshot", "legacy-state"} {
+		t.Run(change, func(t *testing.T) {
+			start := taskStartFixture()
+			if change == "start-background" {
+				start.Backgrounded = taskPointer(true)
+			}
+			if change == "start-ambient" {
+				start.Ambient = taskPointer(true)
+			}
+			if change == "start-skip" {
+				start.SkipTranscript = taskPointer(true)
+			}
+			state, err := ApplyClaudeTask(nil, start)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if state.InlineBashHistoryReady() {
+				t.Fatal("running task acquired history")
+			}
+			if change == "later-background" {
+				for _, flag := range []bool{true, false} {
+					state, err = ApplyClaudeTask(state, ClaudeTaskObservation{Kind: ClaudeTaskUpdated, ID: start.ID, Patch: &ClaudeTaskPatch{Backgrounded: taskPointer(flag)}})
+					if err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			if change == "background-snapshot" {
+				for _, list := range [][]ClaudeBackgroundTask{{{ID: start.ID, Type: ClaudeLocalBashTask}}, {}} {
+					state, err = ApplyClaudeTask(state, ClaudeTaskObservation{Kind: ClaudeBackgroundTasksChanged, Background: &list})
+					if err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			event := ClaudeTaskObservation{Kind: ClaudeTaskNotified, ID: start.ID, Status: taskPointer(ClaudeTaskCompleted), OutputFile: taskPointer(""), Summary: taskPointer("")}
+			if change == "failed" {
+				event.Status = taskPointer(ClaudeTaskFailed)
+			}
+			if change == "missing-notification" {
+				event = ClaudeTaskObservation{Kind: ClaudeTaskUpdated, ID: start.ID, Patch: &ClaudeTaskPatch{Status: taskPointer(ClaudeTaskCompleted)}}
+			}
+			state, err = ApplyClaudeTask(state, event)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if change == "legacy-state" {
+				task := state.Tasks[start.ID]
+				task.History = ""
+				state.Tasks[start.ID] = task
+			}
+			if state.InlineBashHistoryReady() != (change == "valid") {
+				t.Fatal("task history eligibility lost original provenance")
+			}
+		})
+	}
+}

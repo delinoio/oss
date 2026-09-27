@@ -59,6 +59,7 @@ type sessionCheckpoint struct {
 	Owners             []domain.ID                    `json:"process_owners"`
 	Authorities        []string                       `json:"credential_sha256"`
 	ReadTools          []checkpointInlineTool         `json:"inline_read_tools,omitempty"`
+	BashTasks          []checkpointBashTask           `json:"inline_bash_tasks,omitempty"`
 	BashTools          []checkpointInlineTool         `json:"inline_bash_tools,omitempty"`
 	WriteTools         []checkpointInlineTool         `json:"inline_write_tools,omitempty"`
 	EditTools          []checkpointInlineTool         `json:"inline_edit_tools,omitempty"`
@@ -98,6 +99,10 @@ func (closed *ClosedAPISession) RetainCheckpoint(ctx context.Context) ([]byte, C
 		return nil, CheckpointReference{}, err
 	}
 	cp.ReadTools, cp.BashTools, cp.WriteTools, cp.EditTools = tools.Read, tools.Bash, tools.Write, tools.Edit
+	cp.BashTasks, err = b.closedBashTasks()
+	if err != nil {
+		return nil, CheckpointReference{}, err
+	}
 	cp.QuestionTools = tools.Question
 	cp.ToolApprovals, err = b.closedToolApprovals()
 	if err != nil {
@@ -229,6 +234,7 @@ func restoreCheckpoint(ctx context.Context, config APIStreamConfig, raw []byte, 
 		copy(state.inline.Metadata[:], metadata)
 		b.content.tools[tool.ID] = state
 	}
+	restoreBashTasks(b, cp.BashTasks)
 	restoreQuestionAnswers(b, cp.QuestionAnswers)
 	if err := restoreToolApprovals(b, cp.ToolApprovals); err != nil {
 		return nil, err
@@ -325,6 +331,9 @@ func (cp sessionCheckpoint) validateConfiguration(config APIStreamConfig, origin
 			}
 			results[tool.Result], ids[tool.ID] = true, true
 		}
+	}
+	if err := cp.validateBashTasks(); err != nil {
+		return err
 	}
 	if err := cp.validateToolApprovals(); err != nil {
 		return err

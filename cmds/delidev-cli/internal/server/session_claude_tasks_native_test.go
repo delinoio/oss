@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -10,6 +11,14 @@ import (
 
 func TestManualNativeClaudePublicBashTask(t *testing.T) {
 	nativeClaudePublicDispatch(t, domain.ExecuteMode, claudePublicBashTask)
+}
+
+func TestManualNativeClaudeBashTaskRecovery(t *testing.T) {
+	for _, turn := range []int{1, 2} {
+		t.Run(fmt.Sprintf("turn-%d", turn), func(t *testing.T) {
+			nativeClaudePublicDispatch(t, domain.ExecuteMode, claudePublicBashTask, claudePublicRecoveryCase{turn: turn})
+		})
+	}
 }
 
 func verifyClaudePublicBashTask(t *testing.T, ctx context.Context, f *firstDispatchFixture, completion domain.ExecutionCompletion) {
@@ -52,7 +61,7 @@ func verifyClaudePublicBashTask(t *testing.T, ctx context.Context, f *firstDispa
 	}
 	t.Logf("original tool progress events: %d", count)
 	session, err := store.Decode[domain.Session](f.refresh(t))
-	if err != nil || session.Execution.ClaudeTasks == nil || !session.Execution.ClaudeTasks.Closed() || len(session.Execution.ClaudeTasks.Tasks) != 1 {
+	if err != nil || session.Execution.ClaudeTasks == nil || !session.Execution.ClaudeTasks.Closed() || !session.Execution.ClaudeTasks.InlineBashHistoryReady() || len(session.Execution.ClaudeTasks.Tasks) != 1 {
 		t.Fatal("task state lost original closed work", err)
 	}
 }
