@@ -31,6 +31,7 @@ const (
 	claudePublicRetry                claudePublicCase = "retry"
 	claudePublicQuestionRetry        claudePublicCase = "question-retry"
 	claudePublicQuestion             claudePublicCase = "question"
+	claudePublicQuestionInterrupt    claudePublicCase = "question-interrupt"
 	claudePublicStop                 claudePublicCase = "stop"
 	claudePublicArchive              claudePublicCase = "archive"
 	claudePublicStopBeforeAcceptance claudePublicCase = "stop-before-acceptance"
@@ -60,6 +61,12 @@ func TestManualNativeClaudePublicRetry(t *testing.T) {
 	}
 }
 
+func TestManualNativeClaudePublicInterruptedDenial(t *testing.T) {
+	for _, mode := range []domain.SessionMode{domain.ExecuteMode, domain.PlanMode} {
+		t.Run(string(mode), func(t *testing.T) { nativeClaudePublicDispatch(t, mode, claudePublicQuestionInterrupt) })
+	}
+}
+
 func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario claudePublicCase) {
 	t.Helper()
 	binary := os.Getenv("DELIDEV_NATIVE_CLAUDE_EXECUTABLE")
@@ -68,14 +75,15 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
-	question := scenario == claudePublicQuestion || scenario == claudePublicQuestionRetry
+	denied := scenario == claudePublicQuestionInterrupt
+	question := scenario == claudePublicQuestion || scenario == claudePublicQuestionRetry || denied
 	retrying := scenario == claudePublicRetry || scenario == claudePublicQuestionRetry
 	streamStopping := scenario == claudePublicStop || scenario == claudePublicArchive
 	stopping := streamStopping || scenario == claudePublicStopBeforeAcceptance
 	var calls atomic.Int32
 	providerEnded := make(chan struct{})
 	expected := int32(1)
-	if question {
+	if question && !denied {
 		expected++
 	}
 	if retrying {
@@ -220,7 +228,12 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 				t.Fatal("original public question repeated")
 			}
 			if len(rows) == 1 {
-				body, _ := json.Marshal(domain.QuestionResponseInput{Claude: &domain.ClaudePermissionResponse{Behavior: domain.ClaudeReplyAllow, Answers: map[string]string{"Which original option?": "Two"}}})
+				reply := &domain.ClaudePermissionResponse{Behavior: domain.ClaudeReplyAllow, Answers: map[string]string{"Which original option?": "Two"}}
+				if denied {
+					message, interrupt := "Original public interrupted denial", true
+					reply = &domain.ClaudePermissionResponse{Behavior: domain.ClaudeReplyDeny, Message: &message, Interrupt: &interrupt}
+				}
+				body, _ := json.Marshal(domain.QuestionResponseInput{Claude: reply})
 				req := &pb.RespondQuestionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(rows[0].ID), ExpectedRevision: rows[0].Revision}, ResponseJson: body}
 				if _, err := interactionClient.RespondQuestion(ctx, ownerRequest(f.identity, req)); err != nil {
 					t.Fatal("public question response", err)
@@ -260,6 +273,14 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 				case <-providerEnded:
 				case <-ctx.Done():
 					t.Fatal("original inference survived Stop")
+				}
+				return
+			}
+			if denied {
+				session, err := store.Decode[domain.Session](f.refresh(t))
+				var proof domain.ExecutionCompletion
+				if err != nil || job.State != domain.JobCanceled || domain.Decode(job.Output, &proof) != nil || proof.ValidateForHarness(domain.ClaudeCode) != nil || proof.Outcome != domain.ExecutionStopped || proof.Version != 1 || calls.Load() != 1 || !answered || session.Execution == nil || session.Execution.ClaudeDenial == nil || session.Execution.ClaudeDenial.Validate() != nil || session.Execution.ClaudeTerminal != nil || session.Execution.ClaudeStop != nil || !session.Execution.CleanupVerified || session.Recovery != domain.NeedsRecovery || session.Dispatch != domain.DispatchPaused || session.ActiveExecutionID == "" || session.Outcome != domain.ExecutionStopped {
+					t.Fatal("original denial lost independent cleanup or recovery", job.State, job.Problem, err)
 				}
 				return
 			}

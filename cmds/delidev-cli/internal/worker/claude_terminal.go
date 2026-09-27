@@ -22,7 +22,10 @@ func (c *ClaudeContentPublisher) PublishBoundaryObservation(ctx context.Context,
 	if !command && !idle {
 		return false, nil
 	}
-	if !c.inputPublished || c.interruption != nil || o.SessionID != b.journal.SessionID || o.TurnID != b.turn || domain.NativeIdentity(o.NativeID).Validate(domain.ClaudeCode, domain.NativeTurnIdentity) != nil || o.NativeID == b.turn || o.NativeID == string(b.journal.InputID) || c.seen[o.NativeID] || b.progressSeen[o.NativeID] || c.usageSeen[o.NativeID] || len(c.seen) >= 65536 {
+	if c.interruption != nil {
+		return true, c.observeDenialBoundary(o, command)
+	}
+	if !c.inputPublished || o.SessionID != b.journal.SessionID || o.TurnID != b.turn || domain.NativeIdentity(o.NativeID).Validate(domain.ClaudeCode, domain.NativeTurnIdentity) != nil || o.NativeID == b.turn || o.NativeID == string(b.journal.InputID) || c.seen[o.NativeID] || b.progressSeen[o.NativeID] || c.usageSeen[o.NativeID] || len(c.seen) >= 65536 {
 		return true, b.block()
 	}
 	if command {
@@ -56,6 +59,9 @@ func (c *ClaudeContentPublisher) Complete(ctx context.Context, api *claude.APISe
 	b := c.binding
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if c.interruption != nil {
+		return c.completeDenialLocked(ctx, api)
+	}
 	if b.verify() != nil || b.stage != claudeTerminalPublished || c.terminal == nil || c.terminalSequence != b.sequence || c.pending || len(c.queue) != 0 {
 		return domain.ExecutionCompletion{}, publicationUncertain()
 	}

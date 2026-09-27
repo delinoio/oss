@@ -132,7 +132,7 @@ func supportsExecutionPublication(input domain.ExecutionJobInput, kind domain.Ex
 // their parent message explicitly instead of flattening several parts into a
 // fabricated message identity or using the assistant as the execution turn.
 func validateNativeMessageOrigin(input domain.ExecutionJobInput, event domain.ExecutionEvent) error {
-	if (event.ClaudeTerminal != nil || event.ClaudeStop != nil) != (input.Configuration.Harness == domain.ClaudeCode && event.Kind == domain.ExecutionTurnFinished) || event.ClaudeTerminal != nil && event.ClaudeStop != nil {
+	if (event.ClaudeTerminal != nil || event.ClaudeStop != nil || event.ClaudeDenial != nil) != (input.Configuration.Harness == domain.ClaudeCode && event.Kind == domain.ExecutionTurnFinished) || event.ClaudeTerminal != nil && event.ClaudeStop != nil {
 		return executionEventConflict()
 	}
 	if input.Configuration.Harness == domain.ClaudeCode && event.NativeThreadID != string(input.SessionID) {
@@ -229,8 +229,12 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 		if event.Kind == domain.ExecutionThreadBound || progress.JobID != job.ID || progress.ExecutionID != input.ExecutionID || progress.InputID != input.InputID || progress.NativeThreadID != event.NativeThreadID || event.Sequence != progress.LastSequence+1 {
 			return executionEventConflict()
 		}
-		if prior := progress.ClaudeInterruption; prior != nil && (prior.ResultID != "" || event.Kind != domain.ExecutionClaudeInterruptionObserved || event.ClaudeInterruption == nil || event.ClaudeInterruption.Observation.Kind != domain.ClaudeDenialResult) {
-			return executionEventConflict()
+		if prior := progress.ClaudeInterruption; prior != nil {
+			result := prior.ResultID == "" && event.Kind == domain.ExecutionClaudeInterruptionObserved && event.ClaudeInterruption != nil && event.ClaudeInterruption.Observation.Kind == domain.ClaudeDenialResult
+			cleanup := prior.ResultID != "" && event.Kind == domain.ExecutionTurnFinished && event.ClaudeDenial != nil
+			if !result && !cleanup {
+				return executionEventConflict()
+			}
 		}
 		if event.Kind == domain.ExecutionClaudeProgressObserved {
 			if err := publishClaudeProgress(tx, input, sr, progress, event); err != nil {
@@ -277,6 +281,8 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 					publish := publishClaudeTerminal
 					if event.ClaudeStop != nil {
 						publish = publishClaudeStop
+					} else if event.ClaudeDenial != nil {
+						publish = publishClaudeDenialCompletion
 					}
 					if err := publish(tx, input, progress, event); err != nil {
 						return err

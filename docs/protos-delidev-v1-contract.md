@@ -220,3 +220,6 @@ The existing Worker event JSON now admits a dedicated `claude_stop` proof only o
 
 
 Claude progress JSON adds the `api-retry` kind, its optional typed `api_retry` observation and `latest_retry_id` reference. The retry payload retains original event UUID, exact unsigned decimal strings for `attempt`, `max_retries`, `retry_delay_ms`, explicit nullable `error_status` and closed `error`. Existing status/thinking documents omit this optional field and preserve their stored bytes. Original Stop retry JSON remains unchanged. No protobuf, generated-binding or relational schema changes are required.
+
+
+The typed execution-event JSON adds `claude_denial` only to stopped `turn-finished` records, mutually exclusive with correlated `claude_terminal`, explicit `claude_stop` and other-harness Stop proof. It retains original initiating `input_id`, `interaction_id`, `arrival_id`, `context_id`, `result_id`, separate `command_native_id`/`idle_native_id`, explicit `native_input_id: null` and required `cleanup_verified: true`. The same proof is retained on execution progress. Existing version-1 Worker reporting confirms workspace cleanup separately. This additive Resource JSON contract changes no protobuf fields, generated bindings or relational schema.

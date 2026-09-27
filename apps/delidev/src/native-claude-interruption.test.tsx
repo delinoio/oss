@@ -28,7 +28,7 @@ test("displays independent original denial context without input controls", () =
 test("keeps uncorrelated session result and exact usage separate from input completion", () => {
   render(<NativeClaudeInterruption data={fixture(true)} />);
   expect(screen.getByText(/did not report an input result identity/)).toBeTruthy();
-  expect(screen.getByText(/process cleanup remain unconfirmed/)).toBeTruthy();
+  expect(screen.getByText(/does not establish input completion or process cleanup/)).toBeTruthy();
   expect(screen.getByText("9007199254740993")).toBeTruthy();
   expect(screen.getByText("0.0000010")).toBeTruthy();
   expect(screen.queryByText("Original input result")).toBeNull();

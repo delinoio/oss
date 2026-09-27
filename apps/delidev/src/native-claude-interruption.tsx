@@ -22,7 +22,7 @@ export function NativeClaudeInterruption({ data }: { data: Document }) {
     <header><strong>Claude interruption</strong><small>{value.kind === Kind.Context ? "Original context" : "Session result observed"}</small></header>
     {value.kind === Kind.Context ? <><pre>{value.context as string}</pre><p>Claude added this context after processing the original denial.</p></> : <>
       <p>Claude stopped after the denied request. It did not report an input result identity.</p>
-      <p>Input completion and process cleanup remain unconfirmed. Further input is paused for reconciliation.</p>
+      <p>This session-result observation does not establish input completion or process cleanup. See the separate execution cleanup report.</p>
       <details><summary>Native session-result usage</summary><NativeClaudeResultUsage value={object(value.result).usage} /><p>These overlapping native reports do not establish billed cost or an input outcome. Cumulative values belong to the original runtime.</p></details>
     </>}
   </article>;

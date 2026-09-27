@@ -166,3 +166,6 @@ Claude original root API retries now publish through the shared outbox and deskt
 
 
 The private original Claude interrupted-denial controller now joins callback-owned clean EOF and exact native error-exit classification independently of input correlation. It cannot authorize a Worker terminal/report, recovery or continuation until the separate public composition is complete.
+
+
+Claude interrupted-denial completion now composes original settled callback/context/session-result, cancelled-command/idle, exact native EOF cleanup, a dedicated stopped-execution publication and separate version-1 workspace report. Desktop cleanup disclosure preserves absent native input identity. History recovery remains required and dispatch stays paused; this does not enable resumed interrupted history or remaining issue scope.

@@ -3,6 +3,7 @@ import { memo } from "react";
 import { Harness } from "./configuration-fields";
 import { NativeClaudePermissionProgress } from "./native-claude-progress";
 import { NativeClaudeTerminal } from "./native-claude-terminal";
+import { NativeClaudeDenialCompletion } from "./native-claude-denial-completion";
 import { NativeClaudeStop } from "./native-claude-stop";
 import { document, items, object, text, type Document } from "./documents";
 
@@ -37,6 +38,7 @@ function NativeObservations({ progress, selection, harness }: { progress: Docume
       {harness === Harness.Claude ? <NativeClaudePermissionProgress progress={progress} /> : null}
       {harness === Harness.Claude ? <NativeClaudeTerminal progress={progress} /> : null}
       {harness === Harness.Claude ? <NativeClaudeStop progress={progress} /> : null}
+      {harness === Harness.Claude ? <NativeClaudeDenialCompletion progress={progress} /> : null}
       <p>Observations describe this recorded execution. Missing values remain unavailable.</p>
     </>}
   </section>;

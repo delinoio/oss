@@ -260,9 +260,6 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 			if display != nil {
 				handled, err = display.PublishObservation(publicationContext, o)
 			}
-			if err == nil && handled {
-				return nil, publicationUncertain()
-			}
 		}
 		if err != nil {
 			return nil, err

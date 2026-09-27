@@ -265,3 +265,7 @@ Bound and validate every original identity, evidence variant and nullable field 
 
 ### Claude API retry disclosure
 The original progress transcript renders native API retry attempt, configured native retry maximum, reported delay, closed error classification and explicit nullable HTTP status. Keep uint64 counters as exact strings and show before/after input acceptance from the original observation. Validate complete nonmixed ownership before rendering; retry-only progress cannot imply a permission observation, clear a prior mode transition or create a usage entry. No retry action is derived from these read-only observations. Stop uses the same bounded retry-value validation while preserving its separate interruption evidence.
+
+
+### Claude interrupted-denial cleanup disclosure
+The execution configuration renders dedicated original denial cleanup only when its exact interaction/context/result references match the retained interruption and all initiating/native identities are distinct. Preserve absent native input-result identity and separate the verified native process cleanup from the Worker workspace report. The original context and usage messages stay immutable and inert. Missing, mixed, foreign, reused or unconfirmed proofs show an unavailable state; no implicit Resume is offered and recovery remains independent.

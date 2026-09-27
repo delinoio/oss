@@ -31,6 +31,7 @@ type claudeContentCommit struct {
 // Its caller must reconcile child and terminal authority separately;
 // unsupported rich blocks latch this publisher.
 type ClaudeContentPublisher struct {
+	denial              *domain.ClaudeDenialCompletion
 	stop                *domain.ClaudeStopObservation
 	terminalCommand     domain.ClaudeCommandCompletion
 	terminalCommandID   string
@@ -277,6 +278,13 @@ func (c *ClaudeContentPublisher) drain(ctx context.Context) error {
 
 func (c *ClaudeContentPublisher) commitHead() {
 	item := c.queue[0]
+	if item.event.ClaudeDenial != nil {
+		c.terminalSequence = item.event.Sequence
+		c.binding.stage = claudeTerminalPublished
+		if logger := c.binding.publisher.config.Logger; logger != nil {
+			logger.Info("claude_original_denial_completed", "job_id", c.binding.journal.JobID, "sequence", item.event.Sequence)
+		}
+	}
 	if v := item.event.ClaudeStop; v != nil {
 		c.terminalSequence = item.event.Sequence
 		c.binding.stage = claudeTerminalPublished

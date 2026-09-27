@@ -377,7 +377,6 @@ func nativeClaudeReply(t *testing.T, mode domain.SessionMode, name string, deny,
 			if err := display.ReplayPending(ctx); err != nil || publication.calls[lost-1] != publication.calls[lost] {
 				t.Fatal("interruption receipt changed", err)
 			}
-			finished = true
 		case claude.InputFinished:
 			if interrupt {
 				t.Fatal("interruption fabricated input outcome")
@@ -387,6 +386,36 @@ func nativeClaudeReply(t *testing.T, mode domain.SessionMode, name string, deny,
 			}
 			if handled, err := display.PublishUsageObservation(ctx, o); !handled || err != nil {
 				t.Fatal("settled callbacks blocked original result usage", err)
+			}
+		}
+		if interrupt && display != nil && (o.Kind == claude.CommandObserved || o.Kind == claude.RunStateObserved) {
+			idle := o.Run != nil && o.Run.State == claude.RunIdle
+			handled, err := display.PublishBoundaryObservation(ctx, o)
+			if err != nil {
+				t.Fatal("original denied command/idle", err)
+			}
+			if idle {
+				if !handled {
+					t.Fatal("denial idle ignored")
+				}
+				publication.dropAt = len(publication.calls) + 1
+				if _, err := display.CompleteDenial(ctx, s); err == nil {
+					t.Fatal("denial completion acknowledgment not lost")
+				}
+				lost = publication.dropAt
+				if err := display.ReplayPending(ctx); err != nil || publication.calls[lost-1] != publication.calls[lost] {
+					t.Fatal("denial completion receipt changed", err)
+				}
+				completion, err := display.CompleteDenial(ctx, s)
+				if err != nil {
+					t.Fatal("original denied cleanup repeated or lost", err)
+				}
+				pf := publicationFixtureFromAuthority(t, f)
+				request, _ := pf.reportCompletion(t, completion)
+				if _, err := f.client.ReportWork(ctx, ownerRequest(security.Identity{Token: f.workerToken}, request)); err != nil {
+					t.Fatal("denial report receipt replay", err)
+				}
+				finished = true
 			}
 		}
 		if !interrupt && display != nil && (o.Kind == claude.CommandObserved || o.Kind == claude.RunStateObserved) {
@@ -460,8 +489,8 @@ func nativeClaudeReply(t *testing.T, mode domain.SessionMode, name string, deny,
 			t.Fatal(err)
 		}
 		session, err := store.Decode[domain.Session](sr)
-		if err != nil || session.Dispatch != domain.DispatchPaused || session.Recovery != domain.NeedsRecovery || session.Execution.Outcome != domain.ExecutionRunning || session.Execution.CleanupVerified || session.Execution.ClaudeInterruption == nil || session.Execution.ClaudeInterruption.ResultID == "" || session.Execution.UnconfirmedResponses != 0 || value.ClaudeSettlement.Evidence != domain.ClaudeInterruptedDenialProcessed {
-			t.Fatal("interruption fabricated terminal/cleanup or lost pause", err)
+		if err != nil || session.Dispatch != domain.DispatchPaused || session.Recovery != domain.NeedsRecovery || session.Execution.Outcome != domain.ExecutionStopped || !session.Execution.CleanupVerified || session.Execution.ClaudeDenial == nil || session.Execution.ClaudeDenial.Validate() != nil || session.Execution.ClaudeTerminal != nil || session.Execution.ClaudeStop != nil || session.ActiveExecutionID == "" || session.Execution.ClaudeInterruption == nil || session.Execution.ClaudeInterruption.ResultID == "" || session.Execution.UnconfirmedResponses != 0 || value.ClaudeSettlement.Evidence != domain.ClaudeInterruptedDenialProcessed {
+			t.Fatal("interruption lost original cleanup or recovery ownership", err)
 		}
 		for _, id := range []domain.ID{session.Execution.ClaudeInterruption.ContextID, session.Execution.ClaudeInterruption.ResultID} {
 			row, err := f.service.Store.Get(ctx, domain.MessageKind, id)

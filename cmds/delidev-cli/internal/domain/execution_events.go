@@ -150,6 +150,7 @@ type ExecutionMessageUpdate struct {
 // envelope. Exactly one event kind owns its optional payload. Unknown native
 // extensions need dedicated adapters before they can enter this document.
 type ExecutionEvent struct {
+	ClaudeDenial       *ClaudeDenialCompletion            `json:"claude_denial,omitempty"`
 	ClaudeStop         *ClaudeStopObservation             `json:"claude_stop,omitempty"`
 	ClaudeTerminal     *ClaudeTerminalObservation         `json:"claude_terminal,omitempty"`
 	ClaudeProgress     *ExecutionClaudeProgress           `json:"claude_progress,omitempty"`
@@ -371,6 +372,9 @@ func (e ExecutionEvent) Validate() error {
 	default:
 		return Fail(Unsupported, "Unknown normalized execution event.", "Use a dedicated supported native event adapter.")
 	}
+	if e.ClaudeDenial != nil && (e.Kind != ExecutionTurnFinished || e.ClaudeDenial.Validate() != nil || e.Outcome != ExecutionStopped || e.ProblemCode != "" || e.ClaudeTerminal != nil || e.ClaudeStop != nil || e.OpenCodeStop != nil) {
+		return invalidClaudeInterruption()
+	}
 	if e.ClaudeStop != nil && (e.Kind != ExecutionTurnFinished || e.ClaudeStop.Validate() != nil || e.Outcome != ExecutionStopped || e.ProblemCode != "" || e.ClaudeTerminal != nil || e.OpenCodeStop != nil) {
 		return invalidClaudeStop()
 	}
@@ -390,6 +394,7 @@ func (e ExecutionEvent) Validate() error {
 // original immutable account/configuration selection. Only a separately
 // verified completion report may set CleanupVerified after terminal publication.
 type ExecutionProgress struct {
+	ClaudeDenial           *ClaudeDenialCompletion     `json:"claude_denial,omitempty"`
 	ClaudeStop             *ClaudeStopObservation      `json:"claude_stop,omitempty"`
 	ClaudeTerminal         *ClaudeTerminalObservation  `json:"claude_terminal,omitempty"`
 	ClaudeProgress         *ClaudeProgressState        `json:"claude_progress,omitempty"`
