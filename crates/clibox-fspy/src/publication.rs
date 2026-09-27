@@ -15,6 +15,7 @@ use tempfile::{Builder, TempPath};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Code {
+    Cancelled,
     ReadFailed,
     WriteFailed,
     OutputExists,
@@ -620,13 +621,45 @@ pub(crate) fn publish_file_bytes(
     destination: &Path,
     replace: bool,
     bytes: &[u8],
+    cancelled: impl Fn() -> bool,
 ) -> std::result::Result<(), Code> {
     use std::io::Write;
 
     let (publication, file) = Publication::prepare(Some(destination.to_path_buf()), replace)
         .map_err(|error| error.code)?;
     let mut file = file.ok_or(Code::WriteFailed)?;
+    if cancelled() {
+        return Err(Code::Cancelled);
+    }
     file.write_all(bytes).map_err(|_| Code::WriteFailed)?;
     drop(file);
-    publication.publish(|| Ok(())).map_err(|error| error.code)
+    publication
+        .publish(|| {
+            if cancelled() {
+                Err(Error::runtime(Code::Cancelled))
+            } else {
+                Ok(())
+            }
+        })
+        .map_err(|error| error.code)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cancellation_before_commit_preserves_existing_output() {
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("report.txt");
+        fs::write(&destination, b"previous").unwrap();
+        let checks = std::cell::Cell::new(0);
+        let result = publish_file_bytes(&destination, true, b"replacement", || {
+            checks.set(checks.get() + 1);
+            checks.get() == 2
+        });
+        assert_eq!(result, Err(Code::Cancelled));
+        assert_eq!(fs::read(&destination).unwrap(), b"previous");
+        assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 1);
+    }
 }

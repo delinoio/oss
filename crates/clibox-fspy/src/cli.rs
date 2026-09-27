@@ -495,13 +495,24 @@ fn existing_report_destination(path: &Path) -> Result<Option<fs::Metadata>, &'st
 }
 
 fn publish(output: &OutputArgs, bytes: &[u8]) -> Result<(), &'static str> {
+    publish_with_cancel(output, bytes, || false)
+}
+
+fn publish_with_cancel(
+    output: &OutputArgs,
+    bytes: &[u8],
+    cancelled: impl Fn() -> bool,
+) -> Result<(), &'static str> {
+    if cancelled() {
+        return Err("cancellation");
+    }
     let Some(path) = destination(output)? else {
         return io::stdout().write_all(bytes).map_err(|_| "output_write");
     };
     if existing_report_destination(path)?.is_some() && !output.force {
         return Err("output_exists");
     }
-    crate::publication::publish_file_bytes(path, output.force, bytes)
+    crate::publication::publish_file_bytes(path, output.force, bytes, cancelled)
         .map_err(report_publication_error)
 }
 
@@ -516,6 +527,7 @@ fn wants_report(quiet: bool, output: &OutputArgs) -> bool {
 fn report_publication_error(code: crate::publication::Code) -> &'static str {
     use crate::publication::Code;
     match code {
+        Code::Cancelled => "cancellation",
         Code::OutputExists => "output_exists",
         Code::UnsafeDestination => "output_not_regular",
         Code::Permissions => "output_permissions",
@@ -872,8 +884,9 @@ fn execute_capture(
     command: &[OsString],
     root: &Path,
     args: &ExecutionArgs,
+    signals: &SignalHandlers,
 ) -> Result<CompleteRecord, CaptureFailure> {
-    execute_capture_with(command, root, args, |_| Duration::ZERO)
+    execute_capture_with(command, root, args, signals, |_| Duration::ZERO)
 }
 
 #[cfg(target_os = "linux")]
@@ -881,6 +894,7 @@ fn execute_capture_with<F>(
     command: &[OsString],
     root: &Path,
     args: &ExecutionArgs,
+    signals: &SignalHandlers,
     delay_for: F,
 ) -> Result<CompleteRecord, CaptureFailure>
 where
@@ -908,7 +922,6 @@ where
             signal: 0,
         })?;
     child.stdout(Stdio::from(stderr)).stderr(Stdio::inherit());
-    let signals = SignalHandlers::new().map_err(|error| CaptureFailure { error, signal: 0 })?;
     let result = crate::linux::capture::capture(
         &mut child,
         root,
@@ -1294,6 +1307,20 @@ fn capture_status(failure: CaptureFailure, action: &'static str) -> i32 {
     }
 }
 
+#[cfg(target_os = "linux")]
+fn command_cancel_status(signals: &SignalHandlers, action: &'static str) -> Option<i32> {
+    use std::sync::atomic::Ordering;
+    signals.cancelled.load(Ordering::SeqCst).then(|| {
+        capture_status(
+            CaptureFailure {
+                error: crate::linux::TraceFailure::Cancellation,
+                signal: signals.signal.load(Ordering::SeqCst),
+            },
+            action,
+        )
+    })
+}
+
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 fn child_status(record: &CompleteRecord) -> i32 {
     if let Some(signal) = record.summary.child_signal {
@@ -1360,7 +1387,11 @@ fn record(args: RecordArgs) -> i32 {
         Ok(root) => root,
         Err(error) => return diagnostic(error, "record"),
     };
-    let record = match execute_capture(&args.command, &root, &args.execution) {
+    let signals = match SignalHandlers::new() {
+        Ok(signals) => signals,
+        Err(error) => return capture_status(CaptureFailure { error, signal: 0 }, "record"),
+    };
+    let record = match execute_capture(&args.command, &root, &args.execution, &signals) {
         Ok(record) => record,
         Err(error) => {
             let incomplete = incomplete_record(&root, error.error);
@@ -1389,8 +1420,19 @@ fn record(args: RecordArgs) -> i32 {
     ) {
         return diagnostic(&error.to_string(), "record");
     }
-    if let Err(error) = publish(&args.output, &encoded) {
+    if let Some(status) = command_cancel_status(&signals, "record") {
+        return status;
+    }
+    if let Err(error) = publish_with_cancel(&args.output, &encoded, || {
+        signals.cancelled.load(std::sync::atomic::Ordering::SeqCst)
+    }) {
+        if error == "cancellation" {
+            return command_cancel_status(&signals, "record").unwrap_or(130);
+        }
         return diagnostic(error, "record");
+    }
+    if let Some(status) = command_cancel_status(&signals, "record") {
+        return status;
     }
     final_child_status(&record)
 }
@@ -1405,7 +1447,11 @@ fn assetcov(args: AssetcovArgs) -> i32 {
         Ok(value) => value,
         Err(error) => return diagnostic(&error.to_string(), "assetcov"),
     };
-    let record = match execute_capture(&args.command, &root, &args.execution) {
+    let signals = match SignalHandlers::new() {
+        Ok(signals) => signals,
+        Err(error) => return capture_status(CaptureFailure { error, signal: 0 }, "assetcov"),
+    };
+    let record = match execute_capture(&args.command, &root, &args.execution, &signals) {
         Ok(record) => record,
         Err(error) => return capture_status(error, "assetcov"),
     };
@@ -1451,9 +1497,20 @@ fn assetcov(args: AssetcovArgs) -> i32 {
         if !encoded.ends_with(b"\n") {
             encoded.push(b'\n');
         }
-        if let Err(error) = publish(&args.output, &encoded) {
+        if let Some(status) = command_cancel_status(&signals, "assetcov") {
+            return status;
+        }
+        if let Err(error) = publish_with_cancel(&args.output, &encoded, || {
+            signals.cancelled.load(std::sync::atomic::Ordering::SeqCst)
+        }) {
+            if error == "cancellation" {
+                return command_cancel_status(&signals, "assetcov").unwrap_or(130);
+            }
             return diagnostic(error, "assetcov");
         }
+    }
+    if let Some(status) = command_cancel_status(&signals, "assetcov") {
+        return status;
     }
     let status = child_status(&record);
     if status != 0 {
@@ -1503,20 +1560,28 @@ fn median(values: &[u128]) -> u128 {
 
 #[cfg(target_os = "linux")]
 fn latencylab(args: LatencyArgs) -> i32 {
-    latencylab_with(args, |command, root, execution, selector, kinds, delay| {
-        execute_capture_with(command, root, execution, |operation| {
-            if matches_selected(operation.operation, &operation.paths, selector, kinds) {
-                delay
-            } else {
-                Duration::ZERO
-            }
-        })
-        .map_err(|failure| capture_status(failure, "latencylab"))
-    })
+    let signals = match SignalHandlers::new() {
+        Ok(signals) => signals,
+        Err(error) => return capture_status(CaptureFailure { error, signal: 0 }, "latencylab"),
+    };
+    latencylab_with(
+        args,
+        |command, root, execution, selector, kinds, delay| {
+            execute_capture_with(command, root, execution, &signals, |operation| {
+                if matches_selected(operation.operation, &operation.paths, selector, kinds) {
+                    delay
+                } else {
+                    Duration::ZERO
+                }
+            })
+            .map_err(|failure| capture_status(failure, "latencylab"))
+        },
+        || command_cancel_status(&signals, "latencylab"),
+    )
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
-fn latencylab_with<F>(args: LatencyArgs, mut capture: F) -> i32
+fn latencylab_with<F, C>(args: LatencyArgs, mut capture: F, cancel_status: C) -> i32
 where
     F: FnMut(
         &[OsString],
@@ -1526,6 +1591,7 @@ where
         &[OperationKind],
         Duration,
     ) -> Result<CompleteRecord, i32>,
+    C: Fn() -> Option<i32>,
 {
     let root = match execution_root(&args.execution) {
         Ok(root) => root,
@@ -1554,6 +1620,9 @@ where
                 Ok(record) => record,
                 Err(status) => return status,
             };
+            if let Some(status) = cancel_status() {
+                return status;
+            }
             let execution_ns = began.elapsed().as_nanos();
             if child_status(&record) != 0 {
                 return diagnostic("child_failure", "latencylab");
@@ -1639,9 +1708,19 @@ where
         if !report.ends_with(b"\n") {
             report.push(b'\n');
         }
-        if let Err(error) = publish(&args.output, &report) {
+        if let Some(status) = cancel_status() {
+            return status;
+        }
+        if let Err(error) = publish_with_cancel(&args.output, &report, || cancel_status().is_some())
+        {
+            if error == "cancellation" {
+                return cancel_status().unwrap_or(130);
+            }
             return diagnostic(error, "latencylab");
         }
+    }
+    if let Some(status) = cancel_status() {
+        return status;
     }
     0
 }
@@ -2623,24 +2702,28 @@ fn macos_latencylab(args: LatencyArgs) -> i32 {
         Ok(selector) => std::sync::Arc::new(selector),
         Err(error) => return diagnostic(&error.to_string(), "latencylab"),
     };
-    latencylab_with(args, move |command, root, execution, _, kinds, delay| {
-        let selector = std::sync::Arc::clone(&selector);
-        let kinds = kinds.to_vec();
-        macos_capture_with(command, root, execution, move |frame| {
-            let Some(operation) = crate::macos::operation(frame.operation) else {
-                return Duration::ZERO;
-            };
-            let Some(path) = frame.access_path.as_ref() else {
-                return Duration::ZERO;
-            };
-            if matches_selected(operation, std::slice::from_ref(path), &selector, &kinds) {
-                delay
-            } else {
-                Duration::ZERO
-            }
-        })
-        .map_err(|failure| macos_capture_status(failure, "latencylab"))
-    })
+    latencylab_with(
+        args,
+        move |command, root, execution, _, kinds, delay| {
+            let selector = std::sync::Arc::clone(&selector);
+            let kinds = kinds.to_vec();
+            macos_capture_with(command, root, execution, move |frame| {
+                let Some(operation) = crate::macos::operation(frame.operation) else {
+                    return Duration::ZERO;
+                };
+                let Some(path) = frame.access_path.as_ref() else {
+                    return Duration::ZERO;
+                };
+                if matches_selected(operation, std::slice::from_ref(path), &selector, &kinds) {
+                    delay
+                } else {
+                    Duration::ZERO
+                }
+            })
+            .map_err(|failure| macos_capture_status(failure, "latencylab"))
+        },
+        || None,
+    )
 }
 
 #[cfg(target_os = "macos")]
@@ -3633,18 +3716,22 @@ fn windows_latencylab(args: LatencyArgs) -> i32 {
         Ok(selector) => std::sync::Arc::new(selector),
         Err(error) => return diagnostic(&error.to_string(), "latencylab"),
     };
-    latencylab_with(args, move |command, root, execution, _, kinds, delay| {
-        let selector = std::sync::Arc::clone(&selector);
-        let kinds = kinds.to_vec();
-        windows_capture_with(command, root, execution, move |frame| {
-            if windows_matching_path(frame, &selector, &kinds).is_some() {
-                delay
-            } else {
-                Duration::ZERO
-            }
-        })
-        .map_err(|failure| windows_capture_status(failure, "latencylab"))
-    })
+    latencylab_with(
+        args,
+        move |command, root, execution, _, kinds, delay| {
+            let selector = std::sync::Arc::clone(&selector);
+            let kinds = kinds.to_vec();
+            windows_capture_with(command, root, execution, move |frame| {
+                if windows_matching_path(frame, &selector, &kinds).is_some() {
+                    delay
+                } else {
+                    Duration::ZERO
+                }
+            })
+            .map_err(|failure| windows_capture_status(failure, "latencylab"))
+        },
+        || None,
+    )
 }
 
 #[cfg(target_os = "windows")]
