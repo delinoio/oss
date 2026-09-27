@@ -49,11 +49,16 @@ func TestManualNativeGrokWorkerOriginalClaims(t *testing.T) {
 		t.Skip("explicit pinned native binary and private runtime required")
 	}
 	for _, profile := range []struct {
-		name              string
-		changed, streamed bool
-	}{{name: "original"}, {name: "streamed", streamed: true}, {name: "changed", changed: true}} {
+		name                       string
+		changed, streamed, stopped bool
+	}{{name: "original"}, {name: "streamed", streamed: true}, {name: "changed", changed: true}, {name: "stopped", stopped: true}} {
 		t.Run(profile.name, func(t *testing.T) {
 			changed := profile.changed
+			stopRequest := domain.NewID()
+			responseText := "Original Worker fixture completed."
+			if profile.stopped {
+				responseText = "Original Worker partial response."
+			}
 			p, journal, _ := newGrokClaimsFixture(t)
 			root := filepath.Join(p.config.Root, "runtimes", string(p.input.ExecutionID))
 			env, err := harness.PrivateRuntimeEnvironment(root)
@@ -68,7 +73,7 @@ func TestManualNativeGrokWorkerOriginalClaims(t *testing.T) {
 			logger := slog.New(slog.NewJSONHandler(&logs, nil))
 			authority := &nativeGrokWorkerAuthority{token: apiproxy.TokenPrefix + base64.RawURLEncoding.EncodeToString(make([]byte, 32)), key: "private-server-key-" + string(domain.NewID())}
 			t.Cleanup(func() {
-				for _, private := range []string{authority.token, authority.key, p.input.Input.Prompt, workspace, "Original Worker fixture completed."} {
+				for _, private := range []string{authority.token, authority.key, p.input.Input.Prompt, workspace, responseText} {
 					if strings.Contains(logs.String(), private) {
 						t.Error("native Worker diagnostics disclosed private content")
 					}
@@ -100,6 +105,12 @@ func TestManualNativeGrokWorkerOriginalClaims(t *testing.T) {
 					`{"id":"chat-worker","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":11,"completion_tokens":5,"total_tokens":16}}`,
 					`[DONE]`,
 				}
+				if profile.stopped {
+					_, _ = fmt.Fprintf(w, "data: %s\n\n", strings.Replace(chunks[0], "Original Worker fixture completed.", responseText, 1))
+					w.(http.Flusher).Flush()
+					<-r.Context().Done()
+					return
+				}
 				if profile.streamed {
 					first := strings.Replace(chunks[0], "Original Worker fixture completed.", "Original Worker ", 1)
 					second := strings.Replace(chunks[0], "Original Worker fixture completed.", "fixture completed.", 1)
@@ -126,7 +137,7 @@ func TestManualNativeGrokWorkerOriginalClaims(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
 			defer cancel()
 			cfg := grok.APIExecutionConfig{Probe: grok.ProbeConfig{Process: process.Config{Directory: filepath.Join(p.config.Root, "processes"), OwnerID: p.job, Executable: executable, Cwd: root, Env: env, Logger: logger}, Version: grok.SupportedVersion, Home: filepath.Join(root, "grok")}, Workspace: workspace, Model: p.input.Configuration.NativeModel, ContextTokens: 32000, ServerOrigin: relay.URL, Token: authority.token}
-			api, err := grok.OpenOwnedAPI(ctx, cfg, journal.Creation, journal.Input, journal.Closure)
+			api, err := grok.OpenOwnedAPIWithStop(ctx, cfg, journal.Creation, journal.Input, journal.Closure, journal.Stop)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -160,17 +171,30 @@ func TestManualNativeGrokWorkerOriginalClaims(t *testing.T) {
 			}
 			var text strings.Builder
 			var textChunks uint64
-			completed := false
+			completed, stopSettled := false, false
 			result, err := api.RunText(ctx, p.input.TurnRequestID, input, func(_ context.Context, observation grok.InputObservation) error {
 				claims, err := readGrokClaims(p.config.Root, journal.state.Reference)
-				if err != nil || len(claims) != 4 || claims[3].Input.NativePromptID != observation.NativePromptID || observation.InputID != p.input.TurnRequestID {
+				if err != nil || (len(claims) != 4 && !(profile.stopped && len(claims) == 5 && claims[4].Stop != nil && claims[4].Stop.RequestID == stopRequest)) || claims[3].Input.NativePromptID != observation.NativePromptID || observation.InputID != p.input.TurnRequestID {
 					return grokClaimUncertain()
 				}
 				if observation.Kind == grok.InputText {
 					text.WriteString(observation.Chunk.Update.Content.Text)
 					textChunks++
+					if profile.stopped && textChunks == 1 {
+						submitted, err := api.StopText(ctx, stopRequest)
+						if err != nil || !submitted.Delivered || submitted.NativeReason != "" || submitted.CleanupJoined {
+							t.Fatal("Worker Stop delivery invented terminal proof", err)
+						}
+					}
 					if profile.streamed && textChunks == 1 {
 						close(firstText)
+					}
+				}
+				if observation.Kind == grok.StopSettled {
+					stopSettled = true
+					proof := observation.Stop
+					if proof == nil || !proof.CleanupJoined || proof.NativeReason != grok.Cancelled || proof.Claim.RequestID != stopRequest || proof.Claim.OwnerID != p.job || proof.Claim.InputRequestID != p.input.TurnRequestID || observation.Interruption == nil {
+						t.Fatal("Worker Stop lost original terminal evidence")
 					}
 				}
 				if observation.Kind == grok.InputCompleted {
@@ -183,7 +207,15 @@ func TestManualNativeGrokWorkerOriginalClaims(t *testing.T) {
 				if err == nil || !journal.failed || completed || readErr != nil || len(claims) != 2 || upstream.Load() != 0 || authority.requests.Load() != 0 {
 					t.Fatal("changed immutable input reached inference or publication", err, readErr)
 				}
-			} else if err != nil || readErr != nil || !completed || len(claims) != 4 || claims[1].Creation.NativeSessionID != session || claims[3].Input.NativePromptID != result.Meta.Prompt || text.String() != "Original Worker fixture completed." || upstream.Load() == 0 {
+			} else if profile.stopped {
+				if err == nil || domain.SafeError(err).Code != domain.Canceled || readErr != nil || !stopSettled || completed || len(claims) != 5 || claims[4].Stop.RequestID != stopRequest || text.String() != responseText || upstream.Load() == 0 {
+					t.Fatal("native Worker Stop lost synchronized original ownership", err, readErr)
+				}
+				if _, err := api.StopText(ctx, domain.NewID()); err == nil {
+					t.Fatal("native Worker Stop replayed")
+				}
+				provider.Close()
+			} else if err != nil || readErr != nil || !completed || len(claims) != 4 || claims[1].Creation.NativeSessionID != session || claims[3].Input.NativePromptID != result.Meta.Prompt || text.String() != responseText || upstream.Load() == 0 {
 				t.Fatal("original native Worker input lost its durable binding", err, readErr)
 			}
 			if _, err := api.RunText(ctx, p.input.TurnRequestID, p.input.Input.Prompt, func(context.Context, grok.InputObservation) error {
@@ -192,7 +224,7 @@ func TestManualNativeGrokWorkerOriginalClaims(t *testing.T) {
 			}); err == nil {
 				t.Fatal("original input acquired replay authority")
 			}
-			if !changed {
+			if !changed && !profile.stopped {
 				closed, err := api.CloseText(ctx, domain.NewID())
 				claims, readErr := readGrokClaims(p.config.Root, journal.state.Reference)
 				if err != nil || readErr != nil || len(claims) != 6 || claims[4].Closure.RequestID != closed.RequestID || claims[5].Closure.Phase != grok.BindClosure || closed.NativeSessionID != session || closed.NativePromptID != result.Meta.Prompt || closed.Summary != "Original Worker fixture completed." {

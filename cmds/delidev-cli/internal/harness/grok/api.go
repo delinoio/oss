@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
@@ -57,6 +58,8 @@ type apiConnection struct {
 	inputStarted    bool
 	completedText   *completedText
 	closureStarted  bool
+	controlMu       sync.Mutex
+	control         *textControl
 }
 
 func apiConfigurationError() *domain.Error {

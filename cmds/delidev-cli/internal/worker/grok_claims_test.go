@@ -422,3 +422,56 @@ func TestGrokClaimsClosurePreservesOriginalInputAndNeverRepeats(t *testing.T) {
 		t.Fatal("closed native session reopened original journal")
 	}
 }
+
+func TestGrokStopClaimBindsOriginalWorkerAndExcludesClosureReplay(t *testing.T) {
+	p, journal, claims := newGrokClaimsFixture(t)
+	native := claims[3].Input
+	digest, _ := grok.ClosureClaimDigest(native.NativeSessionID)
+	stop := grok.StopClaim{Version: 1, OwnerID: p.job, ProductSessionID: p.input.SessionID, InputRequestID: p.input.TurnRequestID, RequestID: domain.NewID(), NativeSessionID: native.NativeSessionID, NativePromptID: native.NativePromptID, BodyDigest: digest}
+	if journal.Stop(context.Background(), stop) == nil {
+		t.Fatal("unbound input acquired Stop")
+	}
+	for _, claim := range claims {
+		if err := recordGrokClaim(context.Background(), journal, claim); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, change := range []func(*grok.StopClaim){
+		func(c *grok.StopClaim) { c.OwnerID = domain.NewID() },
+		func(c *grok.StopClaim) { c.ProductSessionID = domain.NewID() },
+		func(c *grok.StopClaim) { c.InputRequestID = p.input.InputID },
+		func(c *grok.StopClaim) { c.RequestID = p.input.ThreadRequestID },
+		func(c *grok.StopClaim) {
+			c.NativeSessionID = domain.NewID()
+			c.BodyDigest, _ = grok.ClosureClaimDigest(c.NativeSessionID)
+		},
+		func(c *grok.StopClaim) { c.NativePromptID = "f5833c4a-d764-4428-8bd8-6c2968a34b1b" },
+		func(c *grok.StopClaim) { c.BodyDigest = strings.Repeat("ef", 32) },
+	} {
+		copy := stop
+		change(&copy)
+		if journal.Stop(context.Background(), copy) == nil || len(journal.state.Claims) != 4 {
+			t.Fatal("foreign Stop changed journal")
+		}
+	}
+	if err := journal.Stop(context.Background(), stop); err != nil {
+		t.Fatal(err)
+	}
+	retained, err := readGrokClaims(p.config.Root, journal.state.Reference)
+	if err != nil || len(retained) != 5 || retained[4].Stop == nil || *retained[4].Stop != stop {
+		t.Fatal("original Stop not synchronized", err)
+	}
+	if journal.Stop(context.Background(), stop) == nil {
+		t.Fatal("Stop replay accepted")
+	}
+	closure := grok.ClosureClaim{Phase: grok.ClaimClosure, RequestID: domain.NewID(), ProductSessionID: stop.ProductSessionID, NativeSessionID: stop.NativeSessionID, NativePromptID: stop.NativePromptID, BodyDigest: stop.BodyDigest}
+	if journal.Closure(context.Background(), closure) == nil {
+		t.Fatal("stopped runtime acquired successful closure")
+	}
+	if err := journal.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := openGrokClaims(p); err == nil {
+		t.Fatal("retained Stop acquired native send lease")
+	}
+}

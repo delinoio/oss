@@ -52,14 +52,15 @@ func apiFixtureProcess() {
 	}
 	scanner := bufio.NewScanner(os.Stdin)
 	workspace := ""
+	var pendingPrompt domain.ID
 	for scanner.Scan() {
 		var request struct {
 			JSONRPC string          `json:"jsonrpc"`
-			ID      domain.ID       `json:"id"`
+			ID      domain.ID       `json:"id,omitempty"`
 			Method  string          `json:"method"`
 			Params  json.RawMessage `json:"params"`
 		}
-		if decode(scanner.Bytes(), &request) != nil || request.JSONRPC != "2.0" || request.ID.Validate() != nil {
+		if decode(scanner.Bytes(), &request) != nil || request.JSONRPC != "2.0" || request.ID.Validate() != nil && !(request.Method == "session/cancel" && request.ID == "") {
 			os.Exit(51)
 		}
 		var result any = map[string]any{}
@@ -118,7 +119,11 @@ func apiFixtureProcess() {
 			_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"jsonrpc": "2.0", "method": "_x.ai/mcp_initialized", "params": map[string]any{"sessionId": value["sessionId"], "mcpToolCount": 0, "elapsedMs": 0}})
 			result = value
 		case "session/prompt":
+			pendingPrompt = request.ID
 			fixtureInput(root, workspace, mode, request.ID, request.Params)
+			continue
+		case "session/cancel":
+			fixtureStop(root, workspace, mode, pendingPrompt, request.Params)
 			continue
 		case "session/close":
 			fixtureClosure(root, mode, request.ID, request.Params)

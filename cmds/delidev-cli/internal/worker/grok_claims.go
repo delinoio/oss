@@ -45,6 +45,7 @@ type grokClaim struct {
 	Creation *grok.CreationClaim `json:"creation,omitempty"`
 	Input    *grok.InputClaim    `json:"input,omitempty"`
 	Closure  *grok.ClosureClaim  `json:"closure,omitempty"`
+	Stop     *grok.StopClaim     `json:"stop,omitempty"`
 }
 
 type grokClaimState struct {
@@ -149,11 +150,21 @@ func (s grokClaimState) validateNext(c grokClaim) error {
 	if c.Closure != nil {
 		variants++
 	}
+	if c.Stop != nil {
+		variants++
+	}
 	if len(s.Claims) >= maxGrokClaims || variants != 1 {
 		return grokClaimUncertain()
 	}
+	if c.Stop != nil {
+		stop := c.Stop
+		if len(s.Claims) != 4 || stop.Validate() != nil || stop.OwnerID != s.Reference.JobID || stop.ProductSessionID != s.Reference.SessionID || stop.InputRequestID != s.Reference.InputRequestID || stop.RequestID == s.Reference.CreationRequestID || stop.NativeSessionID != s.Claims[3].Input.NativeSessionID || stop.NativePromptID != s.Claims[3].Input.NativePromptID {
+			return grokClaimUncertain()
+		}
+		return nil
+	}
 	if len(s.Claims) >= 4 {
-		if c.Closure == nil || c.Closure.Validate() != nil {
+		if c.Closure == nil || c.Closure.Validate() != nil || len(s.Claims) == 5 && s.Claims[4].Stop != nil {
 			return grokClaimUncertain()
 		}
 		input := s.Claims[3].Input
@@ -218,6 +229,10 @@ func (j *grokClaimJournal) Input(ctx context.Context, c grok.InputClaim) error {
 
 func (j *grokClaimJournal) Closure(ctx context.Context, c grok.ClosureClaim) error {
 	return j.claim(ctx, grokClaim{Closure: &c})
+}
+
+func (j *grokClaimJournal) Stop(ctx context.Context, c grok.StopClaim) error {
+	return j.claim(ctx, grokClaim{Stop: &c})
 }
 
 func (j *grokClaimJournal) claim(ctx context.Context, c grokClaim) (returned error) {

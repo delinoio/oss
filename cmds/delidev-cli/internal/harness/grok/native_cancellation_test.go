@@ -22,7 +22,12 @@ import (
 
 // This native schema regression deliberately uses test-only transport sends.
 // It does not grant the still-required durable original Stop/Worker controller.
-func TestManualNativeGrokInterruptedText(t *testing.T) {
+func TestManualNativeGrokInterruptedText(t *testing.T) { nativeInterruptedText(t, false) }
+
+func TestManualNativeGrokOwnedTextStop(t *testing.T) { nativeInterruptedText(t, true) }
+
+func nativeInterruptedText(t *testing.T, owned bool) {
+	t.Helper()
 	binary := os.Getenv("DELIDEV_NATIVE_GROK_EXECUTABLE")
 	if binary == "" {
 		t.Skip("explicit private native binary required")
@@ -61,10 +66,15 @@ func TestManualNativeGrokInterruptedText(t *testing.T) {
 	config.ServerOrigin, config.Model = provider.URL, turnFixtureModel
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	api, err := openAPI(ctx, config)
+	var stopClaims []StopClaim
+	controlled, err := OpenOwnedAPIWithStop(ctx, config, func(_ context.Context, claim CreationClaim) error { return claim.Validate() }, func(_ context.Context, claim InputClaim) error { return claim.Validate() }, func(_ context.Context, claim ClosureClaim) error { return claim.Validate() }, func(_ context.Context, claim StopClaim) error {
+		stopClaims = append(stopClaims, claim)
+		return claim.Validate()
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
+	api := controlled.connection
 	defer func() {
 		if err := api.Close(); err != nil {
 			t.Error(err)
@@ -90,9 +100,57 @@ func TestManualNativeGrokInterruptedText(t *testing.T) {
 			}
 		}
 	}()
-	session, err := api.Create(ctx, domain.NewID(), domain.NewID(), func(_ context.Context, claim CreationClaim) error { return claim.Validate() })
+	session, err := controlled.Create(ctx, domain.NewID(), domain.NewID())
 	if err != nil {
 		t.Fatal(err)
+	}
+	if owned {
+		input, request := domain.NewID(), domain.NewID()
+		var partial strings.Builder
+		accepted, settled := false, false
+		_, err := controlled.RunText(ctx, input, "Original interrupted fixture input.", func(callbackContext context.Context, observation InputObservation) error {
+			switch observation.Kind {
+			case InputAccepted:
+				accepted = true
+			case InputText:
+				if !accepted {
+					t.Fatal("unaccepted interrupted text")
+				}
+				partial.WriteString(observation.Chunk.Update.Content.Text)
+				if len(stopClaims) == 0 {
+					submitted, err := controlled.StopText(callbackContext, request)
+					if err != nil || !submitted.Delivered || submitted.NativeReason != "" || submitted.CleanupJoined {
+						t.Fatal("native Stop submission invented cleanup", err)
+					}
+				}
+			case StopSettled:
+				settled = true
+				if observation.Stop == nil || !observation.Stop.CleanupJoined || observation.Stop.NativeReason != Cancelled || observation.Stop.Category != MidTurnAbort || observation.Interruption == nil || observation.Stop.Claim.InputRequestID != input || observation.Stop.Claim.RequestID != request || observation.Stop.Claim.NativeSessionID != session || observation.Stop.Claim.NativePromptID != observation.NativePromptID {
+					t.Fatal("native controlled Stop lost original evidence")
+				}
+			case InputCompleted:
+				t.Fatal("interrupted text published successful completion")
+			case InputTitle:
+			default:
+				t.Fatal("unknown interrupted observation")
+			}
+			return nil
+		})
+		if err == nil || domain.SafeError(err).Code != domain.Canceled || !accepted || !settled || len(stopClaims) != 1 || partial.String() != "Partial original stop fixture." {
+			t.Fatal("original controlled native Stop incomplete", err)
+		}
+		proof, err := controlled.InspectStop()
+		if err != nil || !proof.CleanupJoined || proof.ProblemCode != "" || api.completedText != nil {
+			t.Fatal("stopped process acquired wrong history authority", err)
+		}
+		if _, err := controlled.StopText(ctx, domain.NewID()); err == nil {
+			t.Fatal("native Stop acquired replay authority")
+		}
+		provider.Close()
+		if calls.Load() == 0 || calls.Load() != canceled.Load() || ctx.Err() != nil {
+			t.Fatal("controlled Stop retained provider work or waited for deadline")
+		}
+		return
 	}
 	type reply struct {
 		Response nativewire.Response

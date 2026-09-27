@@ -17,6 +17,33 @@ type OwnedAPI struct {
 	creation   func(context.Context, CreationClaim) error
 	input      func(context.Context, InputClaim) error
 	closure    func(context.Context, ClosureClaim) error
+	stop       func(context.Context, StopClaim) error
+}
+
+func OpenOwnedAPIWithStop(ctx context.Context, config APIExecutionConfig, creation func(context.Context, CreationClaim) error, input func(context.Context, InputClaim) error, closure func(context.Context, ClosureClaim) error, stop func(context.Context, StopClaim) error) (*OwnedAPI, error) {
+	if stop == nil {
+		return nil, apiConfigurationError()
+	}
+	api, err := OpenOwnedAPI(ctx, config, creation, input, closure)
+	if err != nil {
+		return nil, err
+	}
+	api.stop = stop
+	return api, nil
+}
+
+func (a *OwnedAPI) StopText(ctx context.Context, request domain.ID) (StopObservation, error) {
+	if a == nil || a.connection == nil || a.stop == nil {
+		return StopObservation{}, apiConfigurationError()
+	}
+	return a.connection.StopText(ctx, request, a.stop)
+}
+
+func (a *OwnedAPI) InspectStop() (StopObservation, error) {
+	if a == nil || a.connection == nil {
+		return StopObservation{}, apiConfigurationError()
+	}
+	return a.connection.InspectStop()
 }
 
 func OpenOwnedAPI(ctx context.Context, config APIExecutionConfig, creation func(context.Context, CreationClaim) error, input func(context.Context, InputClaim) error, closure func(context.Context, ClosureClaim) error) (*OwnedAPI, error) {

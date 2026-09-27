@@ -51,6 +51,7 @@ const (
 	InputText      ObservationKind = "input-text"
 	InputTitle     ObservationKind = "input-title"
 	InputCompleted ObservationKind = "input-completed"
+	StopSettled    ObservationKind = "stop-settled"
 )
 
 // InputObservation contains native facts only. Its coordinator must journal
@@ -62,6 +63,8 @@ type InputObservation struct {
 	Chunk          *TextChunk
 	Title          string
 	Result         *PromptResult
+	Interruption   *InterruptedPromptResult
+	Stop           *StopObservation
 }
 
 type promptParams struct {
@@ -143,6 +146,8 @@ func (a *apiConnection) RunText(ctx context.Context, request domain.ID, input st
 	if err := record(ctx, claim); err != nil {
 		return result, sessionUncertain()
 	}
+	a.activateText(request)
+	control := a.textControl()
 	life, cancel := context.WithCancel(ctx)
 	read, wake := context.WithCancel(life)
 	watchStop, watchDone := make(chan struct{}), make(chan struct{})
@@ -176,11 +181,22 @@ func (a *apiConnection) RunText(ctx context.Context, request domain.ID, input st
 				returned = sessionUncertain()
 			}
 		}
+		stop := control.finish()
+		if stop != nil {
+			<-stop.done
+			if returned != nil && domain.SafeError(returned).Code != domain.Canceled {
+				control.mu.Lock()
+				stop.observation.ProblemCode = domain.SafeError(returned).Code
+				control.mu.Unlock()
+			}
+		}
 		<-done
 		close(watchStop)
 		<-watchDone
 		if logger := a.inspection.Logger; logger != nil {
-			if returned != nil {
+			if returned != nil && domain.SafeError(returned).Code == domain.Canceled && control.observation().CleanupJoined {
+				logger.InfoContext(ctx, "Grok Build original text interrupted and cleaned up", "owner_id", a.inspection.OwnerID, "session_id", a.product, "input_id", request)
+			} else if returned != nil {
 				logger.WarnContext(ctx, "Grok Build original text input failed", "owner_id", a.inspection.OwnerID, "session_id", a.product, "input_id", request, "code", domain.SafeError(returned).Code)
 			} else {
 				logger.InfoContext(ctx, "Grok Build original text input completed", "owner_id", a.inspection.OwnerID, "session_id", a.product, "input_id", request)
@@ -193,6 +209,9 @@ func (a *apiConnection) RunText(ctx context.Context, request domain.ID, input st
 	var rpc nativewire.Response
 	var turn TurnCompleted
 	var completed PromptCompleted
+	var interruptedTurn InterruptedTurnCompleted
+	var interruptedPrompt InterruptedPromptCompleted
+	interrupted, promptInterrupted := false, false
 	var responseCounters responseUsage
 	rpcObserved, turnObserved, promptObserved, responseObserved := false, false, false, false
 	var lastEvent, lastChunk uint64
@@ -263,6 +282,7 @@ func (a *apiConnection) RunText(ctx context.Context, request domain.ID, input st
 				}
 			}
 			if !running && queue.running {
+				control.accept(queue.prompt)
 				if err := publish(InputObservation{Kind: InputAccepted}); err != nil {
 					return result, err
 				}
@@ -301,12 +321,34 @@ func (a *apiConnection) RunText(ctx context.Context, request domain.ID, input st
 				if event.Method != "_x.ai/session_notification" || turnObserved || !queue.running {
 					return result, incompatible()
 				}
-				turn, err = parseTurnCompleted(event.Params, a.session, queue.prompt, a.profile.model)
-				if err != nil {
-					return result, err
+				var reason struct {
+					Update struct {
+						Reason StopReason `json:"stop_reason"`
+					} `json:"update"`
 				}
-				if err := observeIndex(turn.Meta.Event); err != nil {
-					return result, err
+				if json.Unmarshal(event.Params, &reason) != nil {
+					return result, incompatible()
+				}
+				if reason.Update.Reason == Cancelled {
+					if control.originalStop() == nil {
+						return result, incompatible()
+					}
+					interruptedTurn, err = parseInterruptedTurn(event.Params, a.session, queue.prompt)
+					if err != nil {
+						return result, err
+					}
+					if err := observeIndex(interruptedTurn.Meta.Event); err != nil {
+						return result, err
+					}
+					interrupted = true
+				} else {
+					turn, err = parseTurnCompleted(event.Params, a.session, queue.prompt, a.profile.model)
+					if err != nil {
+						return result, err
+					}
+					if err := observeIndex(turn.Meta.Event); err != nil {
+						return result, err
+					}
 				}
 				turnObserved = true
 			default:
@@ -341,9 +383,26 @@ func (a *apiConnection) RunText(ctx context.Context, request domain.ID, input st
 			if promptObserved || !queue.running {
 				return result, incompatible()
 			}
-			completed, err = parsePromptCompleted(event.Params, a.session, queue.prompt)
-			if err != nil {
-				return result, err
+			var reason struct {
+				Reason StopReason `json:"stopReason"`
+			}
+			if json.Unmarshal(event.Params, &reason) != nil {
+				return result, incompatible()
+			}
+			if reason.Reason == Cancelled {
+				if control.originalStop() == nil {
+					return result, incompatible()
+				}
+				interruptedPrompt, err = parseInterruptedPromptCompleted(event.Params, a.session, queue.prompt)
+				if err != nil {
+					return result, err
+				}
+				promptInterrupted = true
+			} else {
+				completed, err = parsePromptCompleted(event.Params, a.session, queue.prompt)
+				if err != nil {
+					return result, err
+				}
 			}
 			promptObserved = true
 		case "_x.ai/sessions/changed":
@@ -351,7 +410,7 @@ func (a *apiConnection) RunText(ctx context.Context, request domain.ID, input st
 			if err != nil {
 				return result, err
 			}
-			if activity == idleActivity && queue.cleared {
+			if activity == idleActivity && (queue.cleared || control.originalStop() != nil) {
 				if settled.idle {
 					return result, incompatible()
 				}
@@ -362,6 +421,30 @@ func (a *apiConnection) RunText(ctx context.Context, request domain.ID, input st
 		default:
 			return result, incompatible()
 		}
+	}
+	if interrupted != promptInterrupted {
+		return result, incompatible()
+	}
+	if interrupted {
+		stopped, err := parseInterruptedPromptResult(rpc.Result, a.session, queue.prompt, a.profile.model)
+		if err != nil || matchInterruption(stopped, interruptedTurn, interruptedPrompt) != nil {
+			return result, incompatible()
+		}
+		control.finish()
+		if err := a.waitStopIdle(life, &settled, queue.prompt); err != nil {
+			return result, err
+		}
+		if err := a.profile.checkInitialized(); err != nil {
+			return result, err
+		}
+		if err := a.settleStop(life, control, Cancelled, MidTurnAbort); err != nil {
+			return result, err
+		}
+		observation := control.observation()
+		if err := emit(ctx, InputObservation{Kind: StopSettled, InputID: request, NativePromptID: queue.prompt, Interruption: &stopped, Stop: &observation}); err != nil {
+			return result, sessionUncertain()
+		}
+		return result, domain.Fail(domain.Canceled, "The original Grok Build input was interrupted.", "Resume only after the original stopped history is reconciled.")
 	}
 	if !queue.cleared || !responseObserved {
 		return result, incompatible()
@@ -383,6 +466,25 @@ func (a *apiConnection) RunText(ctx context.Context, request domain.ID, input st
 	settled.terminal = historyValueDigest(turn)
 	settled.usage, _ = validateUsage(usage, a.profile.model)
 	copy(settled.output[:], output.Sum(nil))
+	if stop := control.finish(); stop != nil {
+		// A real successful terminal may race an original Stop notification.
+		// Preserve completion while separately proving stopped ownership; this
+		// forced cleanup cannot acquire successful history/closure authority.
+		if err := a.waitStopIdle(life, &settled, queue.prompt); err != nil {
+			return result, err
+		}
+		if err := a.settleStop(life, control, EndTurn, ""); err != nil {
+			return result, err
+		}
+		if err := emit(ctx, InputObservation{Kind: InputCompleted, InputID: request, NativePromptID: queue.prompt, Result: &result}); err != nil {
+			return result, sessionUncertain()
+		}
+		observation := control.observation()
+		if err := emit(ctx, InputObservation{Kind: StopSettled, InputID: request, NativePromptID: queue.prompt, Stop: &observation}); err != nil {
+			return result, sessionUncertain()
+		}
+		return result, nil
+	}
 	if err := publish(InputObservation{Kind: InputCompleted, Result: &result}); err != nil {
 		return result, err
 	}

@@ -62,6 +62,9 @@ func fixtureInput(root, workspace, mode string, request domain.ID, raw json.RawM
 		textMethod = "_x.ai/session_notification"
 	}
 	notify(textMethod, textChunkFixture)
+	if strings.HasPrefix(mode, "stop-") && mode != "stop-completion-race" {
+		return
+	}
 	if mode == "input-duplicate-chunk" {
 		notify("session/update", textChunkFixture)
 	}
