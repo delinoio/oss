@@ -2,9 +2,12 @@ package server
 
 import (
 	"context"
+	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -124,5 +127,79 @@ func TestLifecycleLockPreventsConcurrentIntentChange(t *testing.T) {
 	defer lock.Close()
 	if err := SuppressLocalRestart(root, domain.NewID()); domain.SafeError(err).Code != domain.Conflict {
 		t.Fatal("overlapping native barrier", err)
+	}
+}
+
+type blockedReadyLog struct {
+	slog.Handler
+	entered chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (h *blockedReadyLog) Handle(ctx context.Context, record slog.Record) error {
+	if record.Message == "server_ready" {
+		h.once.Do(func() { close(h.entered) })
+		<-h.release
+	}
+	return h.Handler.Handle(ctx, record)
+}
+
+func TestHTTPReadinessReleasesStartupLifecycleOwnership(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "server")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	handler := &blockedReadyLog{Handler: slog.NewTextHandler(io.Discard, nil), entered: make(chan struct{}), release: make(chan struct{})}
+	done := make(chan error, 1)
+	go func() {
+		done <- Serve(ctx, Config{DataDir: root, Listen: "127.0.0.1:0", Logger: slog.New(handler), disableCatalogMaintenance: true}, nil)
+	}()
+	defer func() {
+		close(handler.release)
+		cancel()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Error("server cleanup", err)
+			}
+		case <-time.After(10 * time.Second):
+			t.Error("server cleanup did not join")
+		}
+	}()
+	select {
+	case <-handler.entered:
+	case err := <-done:
+		done <- err
+		t.Fatal("server did not reach readiness logging", err)
+	case <-ctx.Done():
+		t.Fatal("server did not reach readiness logging")
+	}
+	endpoint, err := LoadEndpoint(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity, err := security.LoadIdentity(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := delidevv1connect.NewSystemServiceClient(http.DefaultClient, endpoint.URL)
+	if _, err := client.GetStatus(ctx, ownerRequest(identity, &pb.GetStatusRequest{})); err != nil {
+		t.Fatal("authenticated readiness", err)
+	}
+	// A successful readiness probe must permit immediate reuse and Stop, even
+	// if the startup goroutine is still blocked writing its informational log.
+	lock, err := LockLifecycle(root)
+	if err != nil {
+		t.Fatal("HTTP readiness preceded startup ownership release", err)
+	}
+	if err := lock.Close(); err != nil {
+		t.Fatal(err)
+	}
+	request := domain.NewID()
+	if _, err := client.StopServer(ctx, ownerRequest(identity, &pb.StopServerRequest{RequestId: string(request)})); err != nil {
+		t.Fatal("ready server could not accept explicit Stop", err)
+	}
+	intent, err := ReadLifecycle(root)
+	if err != nil || intent.State != DesiredStopped || intent.Generation != request {
+		t.Fatal("ready server did not persist explicit stop intent", err)
 	}
 }

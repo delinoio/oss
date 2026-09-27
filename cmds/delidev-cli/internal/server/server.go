@@ -204,6 +204,13 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 		return domain.SafeError(err)
 	}
 	defer os.Remove(filepath.Join(state.Root(), "server.json"))
+	// Authenticated HTTP readiness permits immediate controller reuse or Stop.
+	// Release the completed native startup barrier before serving any request;
+	// logging and maintenance startup must not keep a ready server locked.
+	if err := lifecycleLock.Close(); err != nil {
+		return domain.SafeError(err)
+	}
+	lifecycleLock = nil
 	done := make(chan error, 1)
 	go func() { done <- httpServer.Serve(listener) }()
 	catalogCtx, stopCatalog := context.WithCancel(child)
@@ -230,10 +237,6 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	}()
 	defer func() { stopSchedules(); <-schedulesDone }()
 	config.Logger.Info("server_ready", "server_id", identity.ServerID, "listener", service.Endpoint.URL, "version", rpc.Version)
-	if err := lifecycleLock.Close(); err != nil {
-		return domain.SafeError(err)
-	}
-	lifecycleLock = nil
 	if ready != nil {
 		ready(service.Endpoint)
 	}
