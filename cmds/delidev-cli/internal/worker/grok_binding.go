@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"hash"
 	"reflect"
 	"sync"
 
@@ -20,6 +21,9 @@ const (
 	grokAcceptancePending
 	grokInputAccepted
 	grokContentPending
+	grokTextClosing
+	grokTerminalPending
+	grokTextFinished
 	grokBindingBlocked
 )
 
@@ -27,21 +31,29 @@ const (
 // outbox. It owns no native process, reply, terminal or continuation authority.
 // Close the original native process first, then this coordinator and publisher.
 type GrokBindingPublisher struct {
-	mu             sync.Mutex
-	publisher      *ExecutionPublisher
-	journal        *grokClaimJournal
-	reference      grokClaimReference
-	stage          grokBindingStage
-	mode           domain.GrokMode
-	thread         domain.ID
-	turn           string
-	sequence       uint64
-	proof          []grokClaim
-	pendingRequest domain.ID
-	pendingDigest  [sha256.Size]byte
-	content        domain.GrokContentState
-	pendingContent domain.GrokContentState
-	pendingKind    domain.ExecutionEventKind
+	mu              sync.Mutex
+	publisher       *ExecutionPublisher
+	journal         *grokClaimJournal
+	reference       grokClaimReference
+	stage           grokBindingStage
+	mode            domain.GrokMode
+	thread          domain.ID
+	turn            string
+	sequence        uint64
+	proof           []grokClaim
+	pendingRequest  domain.ID
+	pendingDigest   [sha256.Size]byte
+	content         domain.GrokContentState
+	pendingContent  domain.GrokContentState
+	pendingKind     domain.ExecutionEventKind
+	textOutput      hash.Hash
+	textChunks      []string
+	lastResponse    domain.GrokResponseCounts
+	pendingText     string
+	pendingChunk    string
+	pendingResponse *domain.GrokResponseCounts
+	closureID       domain.ID
+	terminal        *domain.GrokTextTerminal
 }
 
 func OpenGrokBindingPublisher(p *ExecutionPublisher) (*GrokBindingPublisher, error) {
@@ -82,7 +94,7 @@ func newGrokBindingPublisher(p *ExecutionPublisher, journal *grokClaimJournal) (
 	if err != nil || readErr != nil || path != journal.path || len(claims) != 0 {
 		return nil, publicationUncertain()
 	}
-	return &GrokBindingPublisher{publisher: p, journal: journal, reference: r, mode: mode}, nil
+	return &GrokBindingPublisher{publisher: p, journal: journal, reference: r, mode: mode, textOutput: sha256.New()}, nil
 }
 
 func (c *GrokBindingPublisher) block() error {
@@ -243,7 +255,7 @@ func (c *GrokBindingPublisher) ReplayPending(ctx context.Context) error {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.stage != grokBindingPending && c.stage != grokAcceptancePending && c.stage != grokContentPending {
+	if c.stage != grokBindingPending && c.stage != grokAcceptancePending && c.stage != grokContentPending && c.stage != grokTerminalPending {
 		return publicationUncertain()
 	}
 	p := c.publisher
@@ -254,6 +266,8 @@ func (c *GrokBindingPublisher) ReplayPending(ctx context.Context) error {
 		kind = domain.ExecutionInputAccepted
 	} else if c.stage == grokContentPending {
 		kind = c.pendingKind
+	} else if c.stage == grokTerminalPending {
+		kind = domain.ExecutionTurnFinished
 	}
 	valid := !p.closed && pending != nil && pending.RequestID == c.pendingRequest && pending.Event.Kind == kind && pending.Event.Sequence == c.sequence && pending.Event.NativeThreadID == string(c.thread) && pending.Event.NativeTurnID == c.turn
 	if valid {
@@ -277,11 +291,11 @@ func (c *GrokBindingPublisher) ReplayPending(ctx context.Context) error {
 	}
 	if c.stage == grokBindingPending {
 		c.stage = grokSessionBound
+	} else if c.stage == grokTerminalPending {
+		c.stage = grokTextFinished
 	} else {
 		if c.stage == grokContentPending {
-			c.content = c.pendingContent
-			c.pendingContent = domain.GrokContentState{}
-			c.pendingKind = ""
+			c.commitPendingContent()
 		}
 		c.stage = grokInputAccepted
 	}

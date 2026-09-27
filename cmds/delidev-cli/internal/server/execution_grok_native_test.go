@@ -25,11 +25,19 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/worker"
 )
 
-func TestManualNativeGrokOriginalServerBinding(t *testing.T) { testManualNativeGrokServer(t, false) }
+func TestManualNativeGrokOriginalServerBinding(t *testing.T) {
+	testManualNativeGrokServer(t, false, false)
+}
 
-func TestManualNativeGrokOriginalServerContent(t *testing.T) { testManualNativeGrokServer(t, true) }
+func TestManualNativeGrokOriginalServerContent(t *testing.T) {
+	testManualNativeGrokServer(t, true, false)
+}
 
-func testManualNativeGrokServer(t *testing.T, content bool) {
+func TestManualNativeGrokOriginalServerTerminal(t *testing.T) {
+	testManualNativeGrokServer(t, true, true)
+}
+
+func testManualNativeGrokServer(t *testing.T, content, terminal bool) {
 	executable := os.Getenv("DELIDEV_NATIVE_GROK_EXECUTABLE")
 	if executable == "" {
 		t.Skip("explicit private native executable required")
@@ -38,7 +46,12 @@ func testManualNativeGrokServer(t *testing.T, content bool) {
 	if content {
 		drops = []int{3, 4}
 	}
-	for _, mode := range []domain.SessionMode{domain.ExecuteMode, domain.PlanMode} {
+	modes := []domain.SessionMode{domain.ExecuteMode, domain.PlanMode}
+	if terminal {
+		drops = []int{5}
+		modes = []domain.SessionMode{domain.ExecuteMode}
+	}
+	for _, mode := range modes {
 		for _, drop := range drops {
 			t.Run(fmt.Sprintf("%s/lost-%d", mode, drop), func(t *testing.T) {
 				var requests atomic.Uint32
@@ -117,7 +130,10 @@ func testManualNativeGrokServer(t *testing.T, content bool) {
 						return context.Canceled
 					})
 				} else {
-					api, err = grok.OpenOwnedAPI(ctx, nativeConfig, binding.Creation, binding.Input, func(context.Context, grok.ClosureClaim) error {
+					api, err = grok.OpenOwnedAPI(ctx, nativeConfig, binding.Creation, binding.Input, func(ctx context.Context, claim grok.ClosureClaim) error {
+						if terminal {
+							return binding.Closure(ctx, claim)
+						}
 						t.Error("binding fixture acquired a closure claim")
 						return context.Canceled
 					})
@@ -209,7 +225,35 @@ func testManualNativeGrokServer(t *testing.T, content bool) {
 				} else {
 					_, err = api.RunText(ctx, f.input.TurnRequestID, f.input.Input.Prompt, emit)
 				}
-				if err != nil || !accepted || requests.Load() == 0 || len(client.calls) != 3+int(chunks+responses) || client.calls[drop-1] != client.calls[drop] {
+				extra := 0
+				if err == nil && terminal {
+					if _, err := binding.TextCompletion(); err == nil {
+						t.Fatal("unclosed text acquired completion")
+					}
+					if err := binding.CloseText(ctx, api); err == nil {
+						t.Fatal("terminal fixture did not lose original receipt")
+					}
+					if _, err := binding.TextCompletion(); err == nil {
+						t.Fatal("unacknowledged terminal acquired completion")
+					}
+					before, _ := security.ReadPrivate(claimsPath, 256<<10)
+					if err := binding.ReplayPending(ctx); err != nil {
+						t.Fatal(err)
+					}
+					after, _ := security.ReadPrivate(claimsPath, 256<<10)
+					if !bytes.Equal(before, after) {
+						t.Fatal("terminal replay changed native closure")
+					}
+					proof, err := binding.TextCompletion()
+					if err != nil || proof.ValidateForHarness(domain.GrokBuild) != nil || proof.Version != 1 || proof.Outcome != domain.ExecutionSucceeded {
+						t.Fatal("original native completion unavailable", err)
+					}
+					if err := binding.CloseText(ctx, api); err == nil {
+						t.Fatal("closed native work replayed")
+					}
+					extra = 1
+				}
+				if err != nil || !accepted || requests.Load() == 0 || len(client.calls) != 3+int(chunks+responses)+extra || client.calls[drop-1] != client.calls[drop] {
 					t.Log(logs.String())
 					t.Fatal("original native/server binding failed", err)
 				}
@@ -218,8 +262,11 @@ func testManualNativeGrokServer(t *testing.T, content bool) {
 					t.Fatal(err)
 				}
 				retained, err := store.Decode[domain.Session](record)
-				if err != nil || retained.Execution == nil || retained.Execution.LastSequence != 2+chunks+responses || retained.Execution.NativeThreadID != string(session) || retained.Execution.NativeTurnID != prompt || retained.Execution.Observed.ValidateForInput(f.input.Configuration, mode) != nil || retained.PendingInputs != 0 {
+				if err != nil || retained.Execution == nil || retained.Execution.LastSequence != 2+chunks+responses+uint64(extra) || retained.Execution.NativeThreadID != string(session) || retained.Execution.NativeTurnID != prompt || retained.Execution.Observed.ValidateForInput(f.input.Configuration, mode) != nil || retained.PendingInputs != 0 {
 					t.Fatal("server lost original Grok mode/input evidence", err)
+				}
+				if terminal && (retained.Execution.GrokTerminal == nil || retained.Execution.Outcome != domain.ExecutionSucceeded || retained.Execution.CleanupVerified) {
+					t.Fatal("terminal lost original completion or invented workspace report")
 				}
 				if content {
 					if chunks != 1 || responses != 1 || retained.Execution.GrokContent == nil || retained.Execution.GrokContent.Responses != 1 || retained.Execution.GrokContent.MessageID != "" {

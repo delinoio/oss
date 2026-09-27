@@ -49,3 +49,23 @@ export function NativeGrokUsage({ value }: { value: Document }) {
     <dt>Response total</dt><dd>Not reported</dd><dt>Actual cost</dt><dd>Not reported</dd>
   </dl><p>These counters describe this response only. They are separate from context estimates, input totals and auxiliary requests, and are not added to billed usage or session budgets.</p></section>;
 }
+
+function closedResponse(value: Document, thread: string, terminal: unknown) {
+  if (!exact(value, ["responses", "message_bytes", "message_chunks", "text_bytes", "last_event", "last_chunk"]) || value.responses !== 1 || value.message_bytes !== 0 || value.message_chunks !== 0 || !Number.isInteger(value.text_bytes) || Number(value.text_bytes) < 0 || Number(value.text_bytes) > (4 << 20) || !count(value.last_chunk) || BigInt(value.last_chunk) === 0n) return false;
+  const last = eventIndex(value.last_event, thread), end = eventIndex(terminal, thread);
+  return last !== undefined && end !== undefined && last < end;
+}
+
+export function NativeGrokTerminal({ progress }: { progress: Document }) {
+  if (progress.grok_terminal == null) return null;
+  const v = object(progress.grok_terminal), counts = object(v.counts), observed = object(progress.observed), content = object(progress.grok_content);
+  const valid = uuid(progress.execution_id, 7) && uuid(progress.native_thread_id, 7) && uuid(progress.native_turn_id, 4) && progress.outcome === "succeeded" && exact(v, ["kind", "native_event_id", "timestamp_ms", "elapsed_ms", "model", "counts", "total_tokens", "model_calls", "api_duration_ms", "turns", "closure_id", "history_digest"]) && v.kind === "closed-first-text" && eventIndex(v.native_event_id, progress.native_thread_id) !== undefined && count(v.timestamp_ms) && BigInt(v.timestamp_ms) <= 253402300799999n && [v.elapsed_ms, v.total_tokens, v.api_duration_ms].every(count) && v.model_calls === "1" && v.turns === "1" && uuid(v.closure_id, 7) && typeof v.history_digest === "string" && /^[a-f0-9]{64}$/.test(v.history_digest) && typeof v.model === "string" && v.model.length > 0 && v.model === observed.model && observed.grok_mode === "default" && closedResponse(content, progress.native_thread_id, v.native_event_id) && exact(counts, labels.map(([key]) => key)) && labels.every(([key]) => count(counts[key])) && [progress.claude_terminal, progress.claude_stop, progress.claude_denial, progress.opencode_stop].every((value) => value == null);
+  if (!valid) return <p>The retained Grok completion is unavailable or inconsistent.</p>;
+  return <details><summary>Original Grok input completion</summary><dl>
+    <dt>Native outcome</dt><dd>End turn</dd><dt>Model</dt><dd>{v.model as string}</dd>
+    <dt>Reported input total tokens</dt><dd>{v.total_tokens as string}</dd>
+    <dt>Native model calls</dt><dd>{v.model_calls as string}</dd>
+    <dt>Native API duration (ms)</dt><dd>{v.api_duration_ms as string}</dd>
+    <dt>Native elapsed time (ms)</dt><dd>{v.elapsed_ms as string}</dd>
+  </dl><p>The original native session was closed and its text history checked. Input totals overlap the response observation and do not report actual cost or auxiliary usage. Continuing this history requires separate support.</p></details>;
+}

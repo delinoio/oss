@@ -42,6 +42,10 @@ func (c *GrokBindingPublisher) ObserveContent(ctx context.Context, v grok.InputO
 		text := domain.GrokTextUpdate{ID: id, ResponseOrdinal: c.content.Responses + 1, Text: chunk.Update.Content.Text, Metadata: domain.GrokTextMetadata{EventID: m.Event, ChunkID: strconv.FormatUint(m.Chunk, 10), ContextTokens: strconv.FormatUint(m.ContextTokens, 10), TimestampMS: strconv.FormatUint(m.TimestampMS, 10), StreamStartMS: strconv.FormatUint(m.StreamStartMS, 10), TurnStartMS: strconv.FormatUint(m.TurnStartMS, 10)}}
 		next, err = c.content.ObserveText(text, string(c.thread))
 		event.Kind, event.GrokText = domain.ExecutionGrokTextObserved, &text
+		if err == nil {
+			c.pendingChunk, err = grok.TextChunkDigest(chunk)
+		}
+		c.pendingText = chunk.Update.Content.Text
 	case grok.InputResponse:
 		if v.Response == nil || v != (grok.InputObservation{Kind: grok.InputResponse, InputID: v.InputID, NativePromptID: v.NativePromptID, Response: v.Response}) {
 			return c.block()
@@ -50,6 +54,8 @@ func (c *GrokBindingPublisher) ObserveContent(ctx context.Context, v grok.InputO
 		usage := domain.GrokResponseUsage{Ordinal: c.content.Responses + 1, Counts: domain.GrokResponseCounts{Input: strconv.FormatUint(u.Input, 10), Output: strconv.FormatUint(u.Output, 10), CachedRead: strconv.FormatUint(u.CachedRead, 10), CacheCreation: strconv.FormatUint(u.CacheCreation, 10), Reasoning: strconv.FormatUint(u.Reasoning, 10)}}
 		next, err = c.content.ObserveResponse(usage)
 		event.Kind, event.GrokUsage, event.ObservationID = domain.ExecutionGrokUsageObserved, &usage, domain.NewID()
+		copy := usage.Counts
+		c.pendingResponse = &copy
 	default:
 		return c.block()
 	}
@@ -60,6 +66,19 @@ func (c *GrokBindingPublisher) ObserveContent(ctx context.Context, v grok.InputO
 	if err := c.publish(ctx, event); err != nil {
 		return err
 	}
-	c.content, c.pendingContent, c.pendingKind, c.stage = next, domain.GrokContentState{}, "", grokInputAccepted
+	c.commitPendingContent()
+	c.stage = grokInputAccepted
 	return nil
+}
+
+func (c *GrokBindingPublisher) commitPendingContent() {
+	if c.pendingChunk != "" {
+		c.textChunks = append(c.textChunks, c.pendingChunk)
+		_, _ = c.textOutput.Write([]byte(c.pendingText))
+	}
+	if c.pendingResponse != nil {
+		c.lastResponse = *c.pendingResponse
+	}
+	c.content, c.pendingContent, c.pendingKind = c.pendingContent, domain.GrokContentState{}, ""
+	c.pendingChunk, c.pendingText, c.pendingResponse = "", "", nil
 }

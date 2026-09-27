@@ -123,7 +123,10 @@ func supportsExecutionPublication(input domain.ExecutionJobInput, kind domain.Ex
 	case domain.ClaudeCode:
 		return (kind == domain.ExecutionThreadBound || kind == domain.ExecutionInputAccepted || kind == domain.ExecutionMessageStarted || kind == domain.ExecutionMessageCompleted || kind == domain.ExecutionClaudeMessageObserved || kind == domain.ExecutionClaudeUsageObserved || kind == domain.ExecutionClaudeToolObserved || kind == domain.ExecutionClaudeReplyEchoObserved || kind == domain.ExecutionClaudeCallbackSettled || kind == domain.ExecutionClaudeInterruptionObserved || kind == domain.ExecutionClaudeProgressObserved || kind == domain.ExecutionTurnFinished || kind == domain.ExecutionQuestionDeliveryObserved || kind == domain.ExecutionApprovalDeliveryObserved || kind == domain.ExecutionInteractionRequested || kind == domain.ExecutionInteractionClosed) && len(executionAPIOperations(input, domain.AnthropicMessages)) != 0
 	case domain.GrokBuild:
-		return (kind == domain.ExecutionThreadBound || kind == domain.ExecutionInputAccepted || kind == domain.ExecutionGrokTextObserved || kind == domain.ExecutionGrokUsageObserved) && len(executionAPIOperations(input, domain.OpenAIChat)) != 0
+		if kind == domain.ExecutionTurnFinished && input.Input.Mode != domain.ExecuteMode {
+			return false
+		}
+		return (kind == domain.ExecutionThreadBound || kind == domain.ExecutionInputAccepted || kind == domain.ExecutionGrokTextObserved || kind == domain.ExecutionGrokUsageObserved || kind == domain.ExecutionTurnFinished) && len(executionAPIOperations(input, domain.OpenAIChat)) != 0
 	case domain.OpenCode:
 		return (kind == domain.ExecutionThreadBound || kind == domain.ExecutionInputAccepted || kind == domain.ExecutionMessageStarted || kind == domain.ExecutionTextAppended || kind == domain.ExecutionMessageCompleted || kind.IsArtifact() || kind == domain.ExecutionToolStarted || kind == domain.ExecutionToolUpdated || kind == domain.ExecutionToolCompleted || kind == domain.ExecutionOpenCodeUsageObserved || kind == domain.ExecutionProgressObserved || kind == domain.ExecutionInteractionRequested || kind == domain.ExecutionInteractionClosed || kind == domain.ExecutionQuestionDeliveryObserved || kind == domain.ExecutionApprovalDeliveryObserved || kind == domain.ExecutionQuestionAccepted || kind == domain.ExecutionApprovalAccepted || kind == domain.ExecutionTurnFinished) && len(executionAPIOperations(input, domain.OpenAIChat)) != 0
 	}
@@ -134,7 +137,7 @@ func supportsExecutionPublication(input domain.ExecutionJobInput, kind domain.Ex
 // their parent message explicitly instead of flattening several parts into a
 // fabricated message identity or using the assistant as the execution turn.
 func validateNativeMessageOrigin(input domain.ExecutionJobInput, event domain.ExecutionEvent) error {
-	if (event.GrokText != nil || event.GrokUsage != nil) && input.Configuration.Harness != domain.GrokBuild {
+	if (event.GrokText != nil || event.GrokUsage != nil || event.GrokTerminal != nil) && input.Configuration.Harness != domain.GrokBuild {
 		return executionEventConflict()
 	}
 	if (event.ClaudeTerminal != nil || event.ClaudeStop != nil || event.ClaudeDenial != nil) != (input.Configuration.Harness == domain.ClaudeCode && event.Kind == domain.ExecutionTurnFinished) || event.ClaudeTerminal != nil && event.ClaudeStop != nil {
@@ -282,6 +285,11 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 				return executionEventConflict()
 			}
 			if event.Kind == domain.ExecutionTurnFinished {
+				if input.Configuration.Harness == domain.GrokBuild {
+					if err := publishGrokTerminal(tx, input, sr, progress, event); err != nil {
+						return err
+					}
+				}
 				if input.Configuration.Harness == domain.ClaudeCode {
 					publish := publishClaudeTerminal
 					if event.ClaudeStop != nil {

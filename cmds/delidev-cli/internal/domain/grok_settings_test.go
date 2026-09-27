@@ -89,7 +89,18 @@ func TestGrokOriginalSessionAndPromptIdentityRemainDistinct(t *testing.T) {
 		}
 	}
 	completion := ExecutionCompletion{Version: 1, ExecutionID: NewID(), InputID: NewID(), NativeThreadID: session, NativeTurnID: prompt, LastSequence: 3, Outcome: ExecutionSucceeded, CleanupVerified: true}
+	if err := completion.ValidateForHarness(GrokBuild); err != nil {
+		t.Fatal(err)
+	}
+	completion.Version = 2
+	completion.NativeCheckpointDigest = strings.Repeat("ab", 32)
 	if completion.ValidateForHarness(GrokBuild) == nil {
-		t.Fatal("identity format granted unimplemented completion")
+		t.Fatal("closed text format granted continuation")
+	}
+	completion.Version = 1
+	completion.NativeCheckpointDigest = ""
+	completion.Outcome = ExecutionStopped
+	if completion.ValidateForHarness(GrokBuild) == nil {
+		t.Fatal("closed text format granted another native outcome")
 	}
 }

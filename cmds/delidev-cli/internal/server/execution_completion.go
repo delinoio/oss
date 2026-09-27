@@ -31,6 +31,9 @@ func finishNativeExecution(tx *store.Tx, record store.Record, job domain.Job, ex
 	var completion domain.ExecutionCompletion
 	progress := session.Execution
 	verified := reported == nil && domain.Decode(raw, &completion) == nil && completion.ValidateForHarness(input.Configuration.Harness) == nil && completion.ExecutionID == input.ExecutionID && completion.InputID == input.InputID && progress != nil && progress.JobID == record.ID && progress.ExecutionID == input.ExecutionID && progress.InputID == input.InputID && progress.NativeThreadID == string(completion.NativeThreadID) && progress.NativeTurnID == string(completion.NativeTurnID) && progress.LastSequence == completion.LastSequence && progress.Outcome == completion.Outcome && !progress.CleanupVerified
+	if input.Configuration.Harness == domain.GrokBuild && verified {
+		verified = completion.Version == 1 && completion.Outcome == domain.ExecutionSucceeded && progress.GrokTerminal != nil && progress.GrokTerminal.Validate(progress.NativeThreadID) == nil && progress.GrokTerminal.Model == input.Configuration.NativeModel && input.Input.Mode == domain.ExecuteMode
+	}
 	if input.Configuration.Harness == domain.ClaudeCode {
 		// A digest alone cannot grant continuation after a changed permission,
 		// interrupted input or an uncomposed tool/callback history profile.

@@ -46,6 +46,9 @@ func TestGrokPublicationRetainsOnlyOriginalBindings(t *testing.T) {
 					t.Fatal(err)
 				}
 				expected := connect.CodeUnimplemented
+				if kind == domain.ExecutionTurnFinished && mode == domain.ExecuteMode {
+					expected = connect.CodeAborted
+				}
 
 				if _, err := f.call(f.requestEvent(t, event)); connect.CodeOf(err) != expected {
 					t.Fatalf("binding support granted an unimplemented Grok event family: %v", err)

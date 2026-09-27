@@ -825,6 +825,13 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 	if err := a.profile.checkInitialized(); err != nil {
 		return result, err
 	}
+	if profile == plainTextInput {
+		facts, err := retainTextTerminal(result, turn, completed)
+		if err != nil {
+			return result, err
+		}
+		settled.terminalFacts = &facts
+	}
 	settled.terminal = historyValueDigest(turn)
 	settled.usage, _ = validateUsage(usage, a.profile.model)
 	copy(settled.output[:], output.Sum(nil))

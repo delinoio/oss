@@ -49,20 +49,21 @@ func (c ClosureClaim) Validate() error {
 }
 
 type completedText struct {
-	request     domain.ID
-	prompt      string
-	summary     string
-	summarySeen bool
-	idle        bool
-	bodyDigest  string
-	chunks      [][32]byte
-	lastChunk   [32]byte
-	output      [32]byte
-	terminal    [32]byte
-	usage       ModelUsage
-	closed      domain.ID
-	home        os.FileInfo
-	history     *TextHistory
+	request       domain.ID
+	prompt        string
+	summary       string
+	summarySeen   bool
+	idle          bool
+	bodyDigest    string
+	chunks        [][32]byte
+	lastChunk     [32]byte
+	output        [32]byte
+	terminal      [32]byte
+	terminalFacts *TextTerminal
+	usage         ModelUsage
+	closed        domain.ID
+	home          os.FileInfo
+	history       *TextHistory
 }
 
 // TextClosure proves original native idle/summary, acknowledged session closure,

@@ -315,7 +315,7 @@ func TestOriginalTextFootprintIsIndependentOfPublicationCopies(t *testing.T) {
 	}
 	chunk, _ := parseTextChunk(textChunkFixture, turnFixtureSession, turnFixturePrompt)
 	original := api.completedText
-	if len(original.chunks) != 1 || original.chunks[0] != historyValueDigest(chunk) || original.output != sha256.Sum256([]byte(chunk.Update.Content.Text)) || original.usage.Input != 11 || original.prompt != turnFixturePrompt {
+	if len(original.chunks) != 1 || original.chunks[0] != historyValueDigest(chunk) || original.output != sha256.Sum256([]byte(chunk.Update.Content.Text)) || original.usage.Input != 11 || original.prompt != turnFixturePrompt || original.terminalFacts == nil || original.terminalFacts.Result.Meta.Usage.Input != 11 || original.terminalFacts.Result.Meta.Prompt != turnFixturePrompt {
 		t.Fatal("callback replaced original retained evidence")
 	}
 	if _, err := api.verifyClosedText(context.Background()); err == nil {
