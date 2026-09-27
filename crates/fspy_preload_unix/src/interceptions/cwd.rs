@@ -11,10 +11,7 @@ unsafe extern "C" fn chdir(path: *const c_char) -> c_int {
     #[cfg(target_os = "macos")]
     // SAFETY: the caller's pathname is forwarded unchanged to libc.
     let operation = unsafe { operation::enter_path(Kind::Metadata, path) };
-    if !path.is_null() {
-        // SAFETY: the non-null path belongs to this intercepted libc call.
-        unsafe { handle_open(fspy_nostd::CStr::from_ptr(path.cast()), AccessMode::READ) };
-    }
+    super::observe_path(path, AccessMode::READ);
     // SAFETY: forward the original path without modification.
     let result = unsafe { chdir::original()(path) };
     #[cfg(target_os = "macos")]

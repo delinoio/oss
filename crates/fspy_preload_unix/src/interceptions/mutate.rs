@@ -1,12 +1,9 @@
 use fspy_shared::ipc::AccessMode;
 use libc::{c_char, c_int, dev_t, mode_t, off_t, timespec, timeval, utimbuf};
 
+use crate::macros::intercept;
 #[cfg(target_os = "macos")]
 use crate::operation;
-use crate::{
-    client::{convert::PathAt, handle_open},
-    macros::intercept,
-};
 
 unsafe fn track_path(path: *const c_char) {
     #[cfg(target_os = "macos")]
@@ -14,10 +11,7 @@ unsafe fn track_path(path: *const c_char) {
     unsafe {
         operation::mutation_path(libc::AT_FDCWD, path);
     }
-    if !path.is_null() {
-        // SAFETY: a non-null path passed to the intercepted libc call is a C string.
-        unsafe { handle_open(fspy_nostd::CStr::from_ptr(path.cast()), AccessMode::WRITE) };
-    }
+    super::observe_path(path, AccessMode::WRITE);
 }
 
 unsafe fn track_path_at(dirfd: c_int, path: *const c_char) {
@@ -26,10 +20,7 @@ unsafe fn track_path_at(dirfd: c_int, path: *const c_char) {
     unsafe {
         operation::mutation_path(dirfd, path);
     }
-    if !path.is_null() {
-        // SAFETY: the descriptor and non-null path are forwarded from the caller.
-        unsafe { handle_open(PathAt::borrow_raw(dirfd, path), AccessMode::WRITE) };
-    }
+    super::observe_at(dirfd, path, AccessMode::WRITE);
 }
 
 macro_rules! intercept_mutation {

@@ -51,6 +51,16 @@ unsafe fn handle_posix_spawn(
     let client = global_client()
         .expect("posix_spawn(p) unexpectedly called before client initialized in ctor");
 
+    #[cfg(target_os = "macos")]
+    if operation::safe_path(file).is_none() {
+        // The legacy exec resolver reads file directly. Preserve the native
+        // spawn error while the result side channel records an unavailable path.
+        let operation = unsafe { operation::enter_path(Kind::Exec, file) };
+        let result = unsafe { original(pid, file, file_actions, attrp, argv, envp) };
+        operation::finish_spawn(operation, result);
+        return result;
+    }
+
     // POSIX file actions are opaque and may change the child's cwd before
     // image lookup. Preserve the caller's relative pathname in that case;
     // parent-side resolution could launch a different image. A successful

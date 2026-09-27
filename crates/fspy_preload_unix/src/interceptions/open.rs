@@ -3,10 +3,7 @@ use libc::FILE;
 #[cfg(target_os = "macos")]
 use crate::operation;
 use crate::{
-    client::{
-        convert::{ModeStr, OpenFlags, PathAt},
-        handle_open,
-    },
+    client::convert::{ModeStr, OpenFlags},
     libc::{c_char, c_int},
     macros::intercept,
 };
@@ -27,12 +24,6 @@ const fn mutates_at_open(flags: c_int) -> bool {
     flags & (libc::O_CREAT | libc::O_TRUNC) != 0
 }
 
-#[cfg(target_os = "macos")]
-const unsafe fn stdio_mutates_at_open(mode: *const c_char) -> bool {
-    // SAFETY: an interposed stdio call supplies the same valid mode string to libc.
-    !mode.is_null() && matches!(unsafe { *mode.cast::<u8>() }, b'w' | b'a')
-}
-
 #[cfg(not(target_os = "macos"))]
 type Mode = libc::mode_t;
 #[cfg(target_os = "macos")] // https://github.com/tailhook/openat/issues/21#issuecomment-535914957
@@ -43,12 +34,7 @@ unsafe extern "C" fn open(path: *const c_char, flags: c_int, mut args: ...) -> c
     #[cfg(target_os = "macos")]
     // SAFETY: the pointer is the caller's pathname passed unchanged to libc.
     let operation = unsafe { operation::enter_open_path(path, mutates_at_open(flags)) };
-    // SAFETY: path is a valid C string pointer provided by the caller of the
-    // interposed function
-    if !path.is_null() {
-        // SAFETY: the non-null pathname is valid for the intercepted call.
-        unsafe { handle_open(fspy_nostd::CStr::from_ptr(path.cast()), OpenFlags(flags)) };
-    }
+    super::observe_path(path, OpenFlags(flags));
     let result = if has_mode_arg(flags) {
         // SAFETY: when O_CREAT or O_TMPFILE is set, a mode_t argument is required by
         // the open() contract
@@ -76,12 +62,7 @@ unsafe extern "C" fn openat(
     #[cfg(target_os = "macos")]
     // SAFETY: the pointer is the caller's pathname passed unchanged to libc.
     let operation = unsafe { operation::enter_open_at(dirfd, path, mutates_at_open(flags)) };
-    // SAFETY: dirfd and path are valid arguments provided by the caller of the
-    // interposed function
-    if !path.is_null() {
-        // SAFETY: the non-null pathname and descriptor are caller-provided.
-        unsafe { handle_open(PathAt::borrow_raw(dirfd, path), OpenFlags(flags)) };
-    }
+    super::observe_at(dirfd, path, OpenFlags(flags));
 
     let result = if has_mode_arg(flags) {
         // https://github.com/tailhook/openat/issues/21#issuecomment-535914957
@@ -107,12 +88,7 @@ intercept!(open_nocancel: unsafe extern "C" fn(*const c_char, c_int, ...) -> c_i
 unsafe extern "C" fn open_nocancel(path: *const c_char, flags: c_int, mut args: ...) -> c_int {
     // SAFETY: the pointer is the caller's pathname passed unchanged to libc.
     let operation = unsafe { operation::enter_open_path(path, mutates_at_open(flags)) };
-    // SAFETY: path is a valid C string pointer provided by the caller of
-    // open$NOCANCEL
-    if !path.is_null() {
-        // SAFETY: the non-null pathname is valid for the intercepted call.
-        unsafe { handle_open(fspy_nostd::CStr::from_ptr(path.cast()), OpenFlags(flags)) };
-    }
+    super::observe_path(path, OpenFlags(flags));
     let result = if has_mode_arg(flags) {
         // SAFETY: O_CREAT requires a mode argument, matching the open$NOCANCEL contract
         let mode: Mode = unsafe { args.arg() };
@@ -139,12 +115,7 @@ unsafe extern "C" fn openat_nocancel(
 ) -> c_int {
     // SAFETY: the pointer is the caller's pathname passed unchanged to libc.
     let operation = unsafe { operation::enter_open_at(dirfd, path, mutates_at_open(flags)) };
-    // SAFETY: dirfd and path are valid arguments provided by the caller of
-    // openat$NOCANCEL
-    if !path.is_null() {
-        // SAFETY: the non-null pathname and descriptor are caller-provided.
-        unsafe { handle_open(PathAt::borrow_raw(dirfd, path), OpenFlags(flags)) };
-    }
+    super::observe_at(dirfd, path, OpenFlags(flags));
     let result = if has_mode_arg(flags) {
         // SAFETY: O_CREAT requires a mode argument, matching the openat$NOCANCEL
         // contract
@@ -164,14 +135,23 @@ unsafe extern "C" fn openat_nocancel(
 intercept!(fopen(64): unsafe extern "C" fn(path: *const c_char, mode: *const c_char) -> *mut FILE);
 unsafe extern "C" fn fopen(path: *const c_char, mode: *const c_char) -> *mut libc::FILE {
     #[cfg(target_os = "macos")]
+    let mode_copy = operation::safe_path(mode);
+    #[cfg(target_os = "macos")]
     // SAFETY: the caller's pathname is forwarded unchanged to libc.
-    let operation = unsafe { operation::enter_open_path(path, stdio_mutates_at_open(mode)) };
-    // SAFETY: path and mode are valid C string pointers provided by the caller of
-    // the interposed function
-    if !path.is_null() {
-        // SAFETY: the non-null pathname and mode are caller-provided strings.
-        unsafe { handle_open(fspy_nostd::CStr::from_ptr(path.cast()), ModeStr(mode)) };
+    let operation = unsafe {
+        operation::enter_open_path(
+            path,
+            mode_copy
+                .as_ref()
+                .is_some_and(|mode| matches!(mode.as_bytes().first().copied(), Some(b'w' | b'a'))),
+        )
+    };
+    #[cfg(target_os = "macos")]
+    if let Some(mode) = &mode_copy {
+        super::observe_path(path, ModeStr(mode.as_ptr()));
     }
+    #[cfg(target_os = "linux")]
+    super::observe_path(path, ModeStr(mode));
     // SAFETY: calling the original libc fopen() with the same arguments forwarded
     // from the interposed function
     let result = unsafe { fopen::original()(path, mode) };
@@ -187,8 +167,17 @@ unsafe extern "C" fn freopen(
     stream: *mut FILE,
 ) -> *mut FILE {
     #[cfg(target_os = "macos")]
+    let mode_copy = operation::safe_path(mode);
+    #[cfg(target_os = "macos")]
     // SAFETY: the caller's pathname is forwarded unchanged to libc.
-    let operation = unsafe { operation::enter_open_path(path, stdio_mutates_at_open(mode)) };
+    let operation = unsafe {
+        operation::enter_open_path(
+            path,
+            mode_copy
+                .as_ref()
+                .is_some_and(|mode| matches!(mode.as_bytes().first().copied(), Some(b'w' | b'a'))),
+        )
+    };
     // SAFETY: path and mode are valid C string pointers provided by the caller of
     // the interposed function
     if path.is_null() {
@@ -199,8 +188,12 @@ unsafe extern "C" fn freopen(
             client.mark_incomplete();
         }
     } else {
-        // SAFETY: the non-null pathname and mode are caller-provided strings.
-        unsafe { handle_open(fspy_nostd::CStr::from_ptr(path.cast()), ModeStr(mode)) };
+        #[cfg(target_os = "macos")]
+        if let Some(mode) = &mode_copy {
+            super::observe_path(path, ModeStr(mode.as_ptr()));
+        }
+        #[cfg(target_os = "linux")]
+        super::observe_path(path, ModeStr(mode));
     }
     // SAFETY: calling the original libc freopen() with the same arguments forwarded
     // from the interposed function

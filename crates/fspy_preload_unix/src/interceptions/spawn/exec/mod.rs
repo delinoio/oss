@@ -36,6 +36,15 @@ fn handle_exec(
     argv: *const *const libc::c_char,
     envp: *const *const libc::c_char,
 ) -> libc::c_int {
+    #[cfg(target_os = "macos")]
+    if operation::safe_path(prog).is_none() {
+        // The legacy exec resolver reads prog directly. Let the native call
+        // diagnose an invalid or unterminated pathname without that read.
+        let operation = unsafe { operation::enter_path(Kind::ExecReplace, prog) };
+        let result = unsafe { execve::original()(prog, argv, envp) };
+        operation::finish(operation, i64::from(result));
+        return result;
+    }
     let client =
         global_client().expect("exec unexpectedly called before client initialized in ctor");
     // SAFETY: prog, argv, and envp are valid pointers to C strings/arrays forwarded

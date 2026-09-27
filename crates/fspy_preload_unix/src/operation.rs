@@ -7,7 +7,7 @@
 
 use std::{
     cell::{Cell, RefCell},
-    ffi::CStr,
+    ffi::CString,
     os::{fd::AsRawFd, unix::net::UnixStream},
     path::PathBuf,
     sync::{
@@ -21,6 +21,61 @@ use libc::{c_char, c_int};
 use crate::client::global_client;
 
 const MAX_PATH: usize = 4096;
+
+unsafe extern "C" {
+    fn mach_vm_read_overwrite(
+        target_task: libc::mach_port_t,
+        address: libc::mach_vm_address_t,
+        size: libc::mach_vm_size_t,
+        data: libc::mach_vm_address_t,
+        outsize: *mut libc::mach_vm_size_t,
+    ) -> libc::kern_return_t;
+}
+
+/// Copy a caller pathname without dereferencing its pointer in the preload.
+/// Invalid and unterminated buffers must reach libc unchanged for native errno.
+pub fn safe_path(path: *const c_char) -> Option<CString> {
+    preserve_errno(|| {
+        if path.is_null() {
+            return None;
+        }
+        let page_size = usize::try_from(unsafe { libc::sysconf(libc::_SC_PAGESIZE) }).ok()?;
+        if page_size == 0 {
+            return None;
+        }
+        let mut bytes = Vec::with_capacity(MAX_PATH);
+        let mut chunk = [0_u8; MAX_PATH];
+        while bytes.len() < MAX_PATH {
+            let address = (path as usize).checked_add(bytes.len())?;
+            let length = (page_size - address % page_size).min(MAX_PATH - bytes.len());
+            let mut copied = 0;
+            // Read only to the next page boundary. A later unreadable page then
+            // yields an unavailable path instead of crashing inside CStr.
+            // libc marks the task port alias deprecated in favor of mach2.
+            // Keep this narrow ABI call while the injected client has no mach2
+            // dependency; remove the allowance if that dependency is added.
+            #[allow(deprecated)]
+            let status = unsafe {
+                mach_vm_read_overwrite(
+                    libc::mach_task_self_,
+                    address as u64,
+                    length as u64,
+                    chunk.as_mut_ptr() as u64,
+                    &raw mut copied,
+                )
+            };
+            if status != libc::KERN_SUCCESS || copied != length as u64 {
+                return None;
+            }
+            if let Some(end) = chunk[..length].iter().position(|byte| *byte == 0) {
+                bytes.extend_from_slice(&chunk[..end]);
+                return CString::new(bytes).ok();
+            }
+            bytes.extend_from_slice(&chunk[..length]);
+        }
+        None
+    })
+}
 static SOCKET: OnceLock<Option<PathBuf>> = OnceLock::new();
 static READY: AtomicBool = AtomicBool::new(false);
 
@@ -255,12 +310,12 @@ fn send_frame(
 }
 
 pub unsafe fn enter_path(kind: Kind, path: *const c_char) -> Option<Token> {
-    // SAFETY: the caller passes the intercepted libc pathname unchanged.
+    // SAFETY: the pointer is forwarded unchanged and copied fault-tolerantly.
     unsafe { enter_path_with_intent(kind, path, false) }
 }
 
 pub unsafe fn enter_open_path(path: *const c_char, mutates: bool) -> Option<Token> {
-    // SAFETY: the caller passes the intercepted libc pathname unchanged.
+    // SAFETY: the pointer is forwarded unchanged and copied fault-tolerantly.
     unsafe { enter_path_with_intent(Kind::Open, path, mutates) }
 }
 
@@ -268,26 +323,22 @@ unsafe fn enter_path_with_intent(kind: Kind, path: *const c_char, mutates: bool)
     socket_path()?;
     with_resolution(|| {
         preserve_errno(|| {
-            let bytes = if path.is_null() {
-                &[][..]
-            } else {
-                // SAFETY: the caller supplies the same valid pathname pointer to libc.
-                unsafe { CStr::from_ptr(path) }.to_bytes()
-            };
+            let copied = safe_path(path);
+            let bytes = copied.as_ref().map_or(&[][..], |path| path.as_bytes());
             enter_with_intent(kind, &absolute_path(libc::AT_FDCWD, bytes), mutates)
         })
     })
 }
 
 pub unsafe fn enter_at(kind: Kind, dirfd: c_int, path: *const c_char) -> Option<Token> {
-    // SAFETY: the caller passes the intercepted libc descriptor and pathname
-    // unchanged.
+    // SAFETY: the descriptor is unchanged and the pointer is copied
+    // fault-tolerantly.
     unsafe { enter_at_with_intent(kind, dirfd, path, false) }
 }
 
 pub unsafe fn enter_open_at(dirfd: c_int, path: *const c_char, mutates: bool) -> Option<Token> {
-    // SAFETY: the caller passes the intercepted libc descriptor and pathname
-    // unchanged.
+    // SAFETY: the descriptor is unchanged and the pointer is copied
+    // fault-tolerantly.
     unsafe { enter_at_with_intent(Kind::Open, dirfd, path, mutates) }
 }
 
@@ -300,12 +351,8 @@ unsafe fn enter_at_with_intent(
     socket_path()?;
     with_resolution(|| {
         preserve_errno(|| {
-            let bytes = if path.is_null() {
-                &[][..]
-            } else {
-                // SAFETY: the caller supplies the same valid pathname pointer to libc.
-                unsafe { CStr::from_ptr(path) }.to_bytes()
-            };
+            let copied = safe_path(path);
+            let bytes = copied.as_ref().map_or(&[][..], |path| path.as_bytes());
             enter_with_intent(kind, &absolute_path(dirfd, bytes), mutates)
         })
     })

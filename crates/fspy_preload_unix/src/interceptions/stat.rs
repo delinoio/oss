@@ -3,22 +3,18 @@ use fspy_nostd::BorrowedFd;
 use fspy_shared::ipc::AccessMode;
 use libc::{c_char, c_int, stat as stat_struct};
 
+#[cfg(target_os = "linux")]
+use crate::client::{convert::PathAt, handle_open};
+use crate::macros::intercept;
 #[cfg(target_os = "macos")]
 use crate::operation::{self, Kind};
-use crate::{
-    client::{convert::PathAt, handle_open},
-    macros::intercept,
-};
 
 intercept!(stat(64): unsafe extern "C" fn(path: *const c_char, buf: *mut stat_struct) -> c_int);
 unsafe extern "C" fn stat(path: *const c_char, buf: *mut stat_struct) -> c_int {
     #[cfg(target_os = "macos")]
     // SAFETY: path is the caller's pathname passed unchanged to libc.
     let operation = unsafe { operation::enter_path(Kind::Metadata, path) };
-    if !path.is_null() {
-        // SAFETY: the non-null pathname is valid for the intercepted call.
-        unsafe { handle_open(fspy_nostd::CStr::from_ptr(path.cast()), AccessMode::READ) };
-    }
+    super::observe_path(path, AccessMode::READ);
     // SAFETY: calling the original libc stat() with the same arguments forwarded
     // from the interposed function
     let result = unsafe { stat::original()(path, buf) };
@@ -33,10 +29,7 @@ unsafe extern "C" fn lstat(path: *const c_char, buf: *mut stat_struct) -> c_int 
     // SAFETY: path is the caller's pathname passed unchanged to libc.
     let operation = unsafe { operation::enter_path(Kind::Metadata, path) };
     // TODO: add accessmode ReadNoFollow
-    if !path.is_null() {
-        // SAFETY: the non-null pathname is valid for the intercepted call.
-        unsafe { handle_open(fspy_nostd::CStr::from_ptr(path.cast()), AccessMode::READ) };
-    }
+    super::observe_path(path, AccessMode::READ);
     // SAFETY: calling the original libc lstat() with the same arguments forwarded
     // from the interposed function
     let result = unsafe { lstat::original()(path, buf) };
@@ -55,10 +48,7 @@ unsafe extern "C" fn fstatat(
     #[cfg(target_os = "macos")]
     // SAFETY: pathname is the caller's path passed unchanged to libc.
     let operation = unsafe { operation::enter_at(Kind::Metadata, dirfd, pathname) };
-    if !pathname.is_null() {
-        // SAFETY: the non-null pathname and descriptor are caller-provided.
-        unsafe { handle_open(PathAt::borrow_raw(dirfd, pathname), AccessMode::READ) };
-    }
+    super::observe_at(dirfd, pathname, AccessMode::READ);
     // SAFETY: calling the original libc fstatat() with the same arguments forwarded
     // from the interposed function
     let result = unsafe { fstatat::original()(dirfd, pathname, buf, flags) };

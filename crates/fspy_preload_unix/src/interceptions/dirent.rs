@@ -21,15 +21,7 @@ unsafe extern "C" fn scandir(
     #[cfg(target_os = "macos")]
     // SAFETY: dirname is the caller's path passed unchanged to libc.
     let operation = unsafe { operation::enter_path(Kind::Directory, dirname) };
-    if !dirname.is_null() {
-        // SAFETY: the non-null pathname is valid for the intercepted call.
-        unsafe {
-            handle_open(
-                fspy_nostd::CStr::from_ptr(dirname.cast()),
-                AccessMode::READ_DIR,
-            );
-        };
-    }
+    super::observe_path(dirname, AccessMode::READ_DIR);
     // SAFETY: calling the original libc scandir() with the same arguments forwarded
     // from the interposed function
     let result = unsafe { scandir::original()(dirname, namelist, select, compar) };
@@ -57,15 +49,7 @@ mod macos_only {
     ) -> c_int {
         // SAFETY: dirname is the caller's path passed unchanged to libc.
         let operation = unsafe { operation::enter_path(Kind::Directory, dirname) };
-        if !dirname.is_null() {
-            // SAFETY: the non-null pathname is valid for the intercepted call.
-            unsafe {
-                handle_open(
-                    fspy_nostd::CStr::from_ptr(dirname.cast()),
-                    AccessMode::READ_DIR,
-                );
-            };
-        }
+        super::super::observe_path(dirname, AccessMode::READ_DIR);
         // SAFETY: calling the original libc scandir_b() with the same arguments
         // forwarded from the interposed function
         let result = unsafe { scandir_b::original()(dirname, namelist, select, compar) };
@@ -132,15 +116,7 @@ unsafe extern "C" fn opendir(dir_name: *const c_char) -> *mut DIR {
     #[cfg(target_os = "macos")]
     // SAFETY: dir_name is the caller's path passed unchanged to libc.
     let operation = unsafe { operation::enter_path(Kind::Directory, dir_name) };
-    if !dir_name.is_null() {
-        // SAFETY: the non-null pathname is valid for the intercepted call.
-        unsafe {
-            handle_open(
-                fspy_nostd::CStr::from_ptr(dir_name.cast()),
-                AccessMode::READ_DIR,
-            );
-        };
-    }
+    super::observe_path(dir_name, AccessMode::READ_DIR);
     // SAFETY: calling the original libc opendir() with the same arguments forwarded
     // from the interposed function
     let result = unsafe { opendir::original()(dir_name) };
