@@ -31,7 +31,7 @@ use crate::record::{
     NativePath, Operation, OperationPair, PathClass, Platform, Start, Summary, SCHEMA_VERSION,
 };
 
-const HEADER_BYTES: usize = 50;
+const HEADER_BYTES: usize = 66;
 const MAX_PATH_BYTES: usize = 4096;
 const MAX_CONNECTIONS: usize = 4096;
 
@@ -56,6 +56,7 @@ pub struct Frame {
     pub error: i32,
     pub path: Vec<u8>,
     pub access_path: Option<AccessPath>,
+    pub identity: Option<FileIdentity>,
     pub requested_delay_ns: u64,
     pub observed_delay_ns: u64,
     /// A per-process-image nonce inherited by every thread connection.
@@ -99,6 +100,9 @@ pub fn read_frame(reader: &mut impl Read) -> io::Result<Option<Frame>> {
     let result = i64::from_le_bytes(header[34..42].try_into().expect("fixed header"));
     let error = i32::from_le_bytes(header[42..46].try_into().expect("fixed header"));
     let length = u32::from_le_bytes(header[46..50].try_into().expect("fixed header")) as usize;
+    let device = u64::from_le_bytes(header[50..58].try_into().expect("fixed header"));
+    let inode = u64::from_le_bytes(header[58..66].try_into().expect("fixed header"));
+    let identity = (device != 0 || inode != 0).then_some(FileIdentity::Inode { device, inode });
     if length > MAX_PATH_BYTES
         || pid == 0
         || tid == 0
@@ -111,6 +115,8 @@ pub fn read_frame(reader: &mut impl Read) -> io::Result<Option<Frame>> {
                     && !(operation == 1 && result == 1)
                     && !((operation == 3 || operation == 5) && result >= -1))))
         || (kind == FrameKind::Hello && length != 0)
+        || (kind != FrameKind::Start && identity.is_some())
+        || (identity.is_some() && !(2..=9).contains(&operation))
         || (kind == FrameKind::Completion
             && (length != 0 || (result < 0) != (error != 0) || error < 0))
     {
@@ -134,6 +140,7 @@ pub fn read_frame(reader: &mut impl Read) -> io::Result<Option<Frame>> {
         error,
         path,
         access_path: None,
+        identity,
         requested_delay_ns: 0,
         observed_delay_ns: 0,
         image_id: (kind == FrameKind::Hello).then_some((id, result as u64)),
@@ -376,7 +383,7 @@ fn receive_connection(
         let start = frame.kind == FrameKind::Start;
         if start && !frame.path.is_empty() {
             if let Some(root) = root {
-                frame.access_path = classify_path(root, &frame.path)?;
+                frame.access_path = classify_path_with_identity(root, &frame.path, frame.identity)?;
             }
         }
         if start {
@@ -676,6 +683,14 @@ fn resolve_even_if_absent(path: &Path) -> io::Result<Option<PathBuf>> {
 }
 
 pub(super) fn classify_path(root: &Path, bytes: &[u8]) -> io::Result<Option<AccessPath>> {
+    classify_path_with_identity(root, bytes, None)
+}
+
+fn classify_path_with_identity(
+    root: &Path,
+    bytes: &[u8],
+    descriptor_identity: Option<FileIdentity>,
+) -> io::Result<Option<AccessPath>> {
     let logical = PathBuf::from(OsString::from_vec(bytes.to_vec()));
     if !logical.is_absolute() {
         return Err(invalid("non_absolute_path"));
@@ -684,7 +699,8 @@ pub(super) fn classify_path(root: &Path, bytes: &[u8]) -> io::Result<Option<Acce
         return Ok(None);
     };
     let relative = resolved.strip_prefix(root).ok();
-    let identity = file_id::get_file_id(&logical).ok().map(FileIdentity::from);
+    let identity =
+        descriptor_identity.or_else(|| file_id::get_file_id(&logical).ok().map(FileIdentity::from));
     Ok(Some(AccessPath {
         class: if relative.is_some() {
             PathClass::Project
@@ -848,8 +864,8 @@ mod tests {
     use tokio_util::sync::CancellationToken;
 
     use super::{
-        assemble_candidate_record, classify_path, read_frame, FrameKind, FrameLedger,
-        OperationReceiver,
+        assemble_candidate_record, classify_path, classify_path_with_identity, read_frame,
+        FrameKind, FrameLedger, OperationReceiver,
     };
 
     #[test]
@@ -865,6 +881,28 @@ mod tests {
             classified.project_relative,
             Some(crate::record::NativePath::UnixBytes(b"file/child".to_vec()))
         );
+    }
+
+    #[test]
+    fn descriptor_identity_survives_path_replacement() {
+        use crate::record::FileIdentity;
+
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().canonicalize().unwrap();
+        let logical = root.join("input");
+        fs::write(&logical, b"first").unwrap();
+        let original = file_id::get_file_id(&logical).unwrap();
+        fs::rename(&logical, root.join("moved")).unwrap();
+        fs::write(&logical, b"second").unwrap();
+        assert_ne!(original, file_id::get_file_id(&logical).unwrap());
+        let observed = classify_path_with_identity(
+            &root,
+            logical.as_os_str().as_bytes(),
+            Some(FileIdentity::from(original)),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(observed.identity, Some(FileIdentity::from(original)));
     }
 
     #[test]
@@ -899,6 +937,7 @@ mod tests {
         frame.extend_from_slice(&0_i64.to_le_bytes());
         frame.extend_from_slice(&0_i32.to_le_bytes());
         frame.extend_from_slice(&(path.len() as u32).to_le_bytes());
+        frame.extend_from_slice(&[0_u8; 16]);
         frame.extend_from_slice(path);
         frame
     }
@@ -932,6 +971,20 @@ mod tests {
         assert!(read_frame(&mut invalid.as_slice()).is_err());
         let with_nul = frame_bytes(b's', b"/tmp/a\0b");
         assert!(read_frame(&mut with_nul.as_slice()).is_err());
+        let mut descriptor = frame_bytes(b's', b"/tmp/input");
+        descriptor[1] = 3;
+        descriptor[50..58].copy_from_slice(&7_u64.to_le_bytes());
+        descriptor[58..66].copy_from_slice(&11_u64.to_le_bytes());
+        assert_eq!(
+            read_frame(&mut descriptor.as_slice())
+                .unwrap()
+                .unwrap()
+                .identity,
+            Some(crate::record::FileIdentity::Inode {
+                device: 7,
+                inode: 11
+            })
+        );
         assert!(read_frame(&mut frame_bytes(b'h', b"").as_slice()).is_err());
         let mut hello_with_path = frame_bytes(b'h', b"/tmp/input");
         hello_with_path[1] = 0;

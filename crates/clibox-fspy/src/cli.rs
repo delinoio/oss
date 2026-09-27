@@ -5056,12 +5056,14 @@ mod tests {
         .unwrap();
         assert_eq!(execute(cli.command), 0);
         let record = load(&output, DEFAULT_EVENT_LIMIT, DEFAULT_BYTE_LIMIT).unwrap();
+        let input_identity = record::FileIdentity::from(file_id::get_file_id(&input).unwrap());
         assert!(record.operations.iter().any(|pair| {
             pair.start.operation.is_content_read()
                 && pair.completion.byte_count.is_some_and(|count| count > 0)
                 && pair.start.paths.iter().any(|path| {
                     path.project_relative.as_ref()
                         == Some(&NativePath::UnixBytes(b"input.txt".to_vec()))
+                        && path.identity == Some(input_identity)
                 })
         }));
         assert!(record.operations.iter().any(|pair| {

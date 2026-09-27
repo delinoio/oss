@@ -284,10 +284,13 @@ fn with_stream<R>(callback: impl FnOnce(&UnixStream) -> R) -> Option<R> {
                     &socket,
                     b'h',
                     Kind::Hello,
-                    image_id.0,
-                    image_id.1.cast_signed(),
-                    0,
-                    &[],
+                    FramePayload {
+                        id: image_id.0,
+                        result: image_id.1.cast_signed(),
+                        error: 0,
+                        path: &[],
+                        identity: None,
+                    },
                 ) {
                     return None;
                 }
@@ -304,19 +307,27 @@ fn with_stream<R>(callback: impl FnOnce(&UnixStream) -> R) -> Option<R> {
     })
 }
 
-fn send_frame(
-    socket: &UnixStream,
-    frame: u8,
-    kind: Kind,
+#[derive(Clone, Copy)]
+struct FramePayload<'a> {
     id: u64,
     result: i64,
     error: i32,
-    path: &[u8],
-) -> bool {
+    path: &'a [u8],
+    identity: Option<(u64, u64)>,
+}
+
+fn send_frame(socket: &UnixStream, frame: u8, kind: Kind, payload: FramePayload<'_>) -> bool {
+    let FramePayload {
+        id,
+        result,
+        error,
+        path,
+        identity,
+    } = payload;
     let Ok(length) = u32::try_from(path.len()) else {
         return false;
     };
-    let mut packet = Vec::with_capacity(50 + path.len());
+    let mut packet = Vec::with_capacity(66 + path.len());
     packet.push(frame);
     packet.push(kind as u8);
     packet.extend_from_slice(&std::process::id().to_le_bytes());
@@ -331,6 +342,9 @@ fn send_frame(
     packet.extend_from_slice(&result.to_le_bytes());
     packet.extend_from_slice(&error.to_le_bytes());
     packet.extend_from_slice(&length.to_le_bytes());
+    let (device, inode) = identity.unwrap_or((0, 0));
+    packet.extend_from_slice(&device.to_le_bytes());
+    packet.extend_from_slice(&inode.to_le_bytes());
     packet.extend_from_slice(path);
     send_all(socket, &packet)
 }
@@ -483,7 +497,22 @@ fn enter_fd_with_result(kind: Kind, fd: c_int, start_result: i64) -> Option<Toke
             // descriptors. They are outside this file-operation boundary; sending
             // a pathless event for every child stdout write would exhaust the
             // bounded record without adding file evidence.
-            path.and_then(|path| enter_with_result(kind, path, start_result))
+            path.and_then(|path| {
+                // Inspect the same live descriptor before its native operation.
+                // A later rename or replacement of F_GETPATH must not replace
+                // the inode identity with that of a new pathname occupant.
+                // SAFETY: fstat writes the exact initialized native structure.
+                let mut stat = unsafe { std::mem::zeroed::<libc::stat>() };
+                // SAFETY: fd remains borrowed by the intercepted call and
+                // stat points to writable storage of the exact native type.
+                if unsafe { libc::fstat(fd, &raw mut stat) } != 0 {
+                    mark_incomplete();
+                    return None;
+                }
+                let device = u64::from(stat.st_dev.cast_unsigned());
+                let inode = stat.st_ino;
+                enter_with_result_and_identity(kind, path, start_result, Some((device, inode)))
+            })
         })
     })
 }
@@ -493,6 +522,15 @@ fn enter_with_intent(kind: Kind, path: &[u8], mutates: bool) -> Option<Token> {
 }
 
 fn enter_with_result(kind: Kind, path: &[u8], start_result: i64) -> Option<Token> {
+    enter_with_result_and_identity(kind, path, start_result, None)
+}
+
+fn enter_with_result_and_identity(
+    kind: Kind,
+    path: &[u8],
+    start_result: i64,
+    identity: Option<(u64, u64)>,
+) -> Option<Token> {
     if ACTIVE.with(Cell::get) {
         return None;
     }
@@ -502,7 +540,18 @@ fn enter_with_result(kind: Kind, path: &[u8], start_result: i64) -> Option<Token
         id
     });
     let outcome = with_stream(|socket| {
-        if send_frame(socket, b's', kind, id, start_result, 0, path) {
+        if send_frame(
+            socket,
+            b's',
+            kind,
+            FramePayload {
+                id,
+                result: start_result,
+                error: 0,
+                path,
+                identity,
+            },
+        ) {
             receive_ack(socket)
         } else {
             Ack::Lost
@@ -529,7 +578,20 @@ pub fn leave(token: Option<Token>, result: i64, error: i32) {
         return;
     };
     if !matches!(
-        with_stream(|socket| send_frame(socket, b'e', token.kind, token.id, result, error, &[])),
+        with_stream(|socket| {
+            send_frame(
+                socket,
+                b'e',
+                token.kind,
+                FramePayload {
+                    id: token.id,
+                    result,
+                    error,
+                    path: &[],
+                    identity: None,
+                },
+            )
+        }),
         Some(true)
     ) {
         mark_incomplete();

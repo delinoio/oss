@@ -255,6 +255,7 @@ where
         result: 0,
         error: 0,
         access_path: classify_path(root, &path).map_err(|_| CaptureFailure::Record)?,
+        identity: None,
         path,
         requested_delay_ns: 0,
         observed_delay_ns: 0,
