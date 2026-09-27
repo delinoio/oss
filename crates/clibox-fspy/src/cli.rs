@@ -5064,6 +5064,13 @@ mod tests {
                         == Some(&NativePath::UnixBytes(b"input.txt".to_vec()))
                 })
         }));
+        assert!(record.operations.iter().any(|pair| {
+            pair.start.operation == record::Operation::Write
+                && pair.start.paths.iter().any(|path| {
+                    path.project_relative.as_ref()
+                        == Some(&NativePath::UnixBytes(b"nocancel.txt".to_vec()))
+                })
+        }));
 
         let compare_report = directory.path().join("compare.txt");
         let cli = TestCli::try_parse_from([
@@ -5132,10 +5139,37 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn macos_cli_read_fixture() {
+        use std::os::fd::{AsRawFd, IntoRawFd};
+
+        unsafe extern "C" {
+            #[link_name = "read$NOCANCEL"]
+            fn read_nocancel(fd: libc::c_int, buffer: *mut libc::c_void, count: usize) -> isize;
+            #[link_name = "write$NOCANCEL"]
+            fn write_nocancel(fd: libc::c_int, buffer: *const libc::c_void, count: usize) -> isize;
+            #[link_name = "close$NOCANCEL"]
+            fn close_nocancel(fd: libc::c_int) -> libc::c_int;
+        }
         let Some(input) = std::env::var_os("CLIBOX_FSPY_CLI_MAC_INPUT") else {
             return;
         };
-        assert_eq!(fs::read(input).unwrap(), b"fixture");
+        let input = PathBuf::from(input);
+        assert_eq!(fs::read(&input).unwrap(), b"fixture");
+        let input_file = fs::File::open(&input).unwrap();
+        let mut buffer = [0_u8; 7];
+        // SAFETY: the file descriptor and writable buffer remain valid during the call.
+        assert_eq!(
+            unsafe { read_nocancel(input_file.as_raw_fd(), buffer.as_mut_ptr().cast(), 7) },
+            7
+        );
+        assert_eq!(&buffer, b"fixture");
+        let output = fs::File::create(input.parent().unwrap().join("nocancel.txt")).unwrap();
+        // SAFETY: the owned descriptor and source bytes remain valid during the call.
+        assert_eq!(
+            unsafe { write_nocancel(output.as_raw_fd(), b"x".as_ptr().cast(), 1) },
+            1
+        );
+        // SAFETY: into_raw_fd transfers ownership and close$NOCANCEL consumes it once.
+        assert_eq!(unsafe { close_nocancel(output.into_raw_fd()) }, 0);
     }
 
     #[cfg(target_os = "macos")]
