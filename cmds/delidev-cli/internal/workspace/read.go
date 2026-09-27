@@ -89,7 +89,7 @@ func (m *Manager) ReadWorkspace(ctx context.Context, request ReadRequest) (resul
 	// Continuation identity allows commits and dirty files without requiring a
 	// closed native claim. This observation grants no execution/recovery rights.
 	inspection := &Manager{Root: m.Root, Git: m.Git}
-	inspection.Git.noFSMonitor = true
+	inspection.Git.readOnly = true
 	inspection.Git.ProcessRoot = filepath.Join(m.Root, "workspace-read-processes")
 	if len(retained.Repositories) > 0 {
 		if err := security.PrivateDir(inspection.Git.ProcessRoot); err != nil {

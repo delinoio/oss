@@ -36,6 +36,14 @@ The patch is limited to 64 KiB without truncation; larger comparisons return Res
 
 Desktop Files and Diff share the existing right session area while preserving the conversation and unsent composer. Diff supports repository/comparison selection, a literal relative path, explicit refresh, keyboard Escape and focus return. Patch text and filenames remain inert. Failed refresh retains and labels the prior observation; closing or changing the view cancels outstanding reads and discards inactive query contents. No background polling or persistent cache is added.
 
+## Local Review Coordinates
+
+`SessionService.ReadSessionReviewContext` and `session review-context --id ID --repository-id ID [--comparison working-tree|staged|creation] [--path RELATIVE]` return the exact Worker Git observation plus validated ordinary unified-diff files and line coordinates. They share the original owner/client authorization, prepared workspace, outbound Worker, deadline and bounded read process. They do not accept caller-provided patch bytes. Read-only Git children pin `LC_ALL=C` so binary and final-newline markers have one grammar regardless of the Worker locale. Structured output is limited to 1 MiB without partial results; at most 256 changed files are interpreted.
+
+The parser requires matching no-rename file identities, portable paths within the original query, supported modes, exact old/new headers and complete non-overlapping hunk counts. Git-quoted UTF-8 and unquoted filenames containing spaces preserve their original paths. Each ordinary text line retains its old/new number (absence is zero), original text, final-newline presence and hunk identity. Combined/unknown/incomplete/duplicate/ambiguous forms fail explicitly. Binary, mode-only, empty-file, symbolic-link and submodule changes expose file locations only, never fabricated line anchors.
+
+A review selection identifies one file or up to 20 visible consecutive lines on one side in one hunk. The domain anchor binds repository, comparison, query path, exact diff revision, selected file/side/range, SHA-256 of the original file patch and at most 8 KiB of exact selected context. Validation never silently relocates a comment: a changed comparison or context does not match the retained anchor. This read-only increment establishes coordinate evidence; durable comment CRUD, freshness presentation and atomic grouped agent submissions remain separate required work.
+
 ## Storage
 
 Original accepted preparation and Worker manifests select roots. File contents and observation requests/results remain in memory; no database, event, receipt, transcript, search, disk cache or synced setting retains them. Client query caches have no persistence and are removed when the explorer closes or changes session. Navigation preserves the session and unsent composer input.
@@ -69,3 +77,5 @@ Update the project index, protocol/client/desktop contracts and relevant scoped 
 - [Go traversal-resistant filesystem APIs](https://go.dev/blog/osroot)
 - [Git diff](https://git-scm.com/docs/git-diff)
 - [Git attributes and filters](https://git-scm.com/docs/gitattributes)
+
+- [Git patch format](https://git-scm.com/docs/diff-format)

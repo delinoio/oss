@@ -223,6 +223,16 @@ func TestCLISessionAcceptanceQueueAndArchive(t *testing.T) {
 		if comparison["base_object"] != commits[i] || comparison["head_commit"] != commits[i] || !strings.Contains(comparison["patch"].(string), "+CLI diff change") {
 			t.Fatal("CLI diff lost selected creation commit or repository")
 		}
+		review := run([]string{"session", "review-context", "--id", worktreeID, "--repository-id", string(repositories[i]), "--comparison", "creation"}, nil)
+		files := review["files"].([]any)
+		if review["diff"].(map[string]any)["revision"] != comparison["revision"] || len(files) != 1 {
+			t.Fatal("review lost original diff identity")
+		}
+		file := files[0].(map[string]any)
+		lines := file["lines"].([]any)
+		if file["path"] != "tracked.txt" || file["kind"] != "text" || len(lines) != 2 || lines[0].(map[string]any)["newline"] != false || lines[1].(map[string]any)["new"] != float64(1) {
+			t.Fatal("review lost original line sides or EOF")
+		}
 		out, err := exec.Command("git", "-C", path, "rev-parse", "HEAD").Output()
 		if err != nil || strings.TrimSpace(string(out)) != commits[i] {
 			t.Fatal("recorded commit differs from actual checkout")

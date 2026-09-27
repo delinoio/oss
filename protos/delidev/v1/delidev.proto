@@ -523,6 +523,7 @@ message ResolveModelResponse {
 // Owner/client session acceptance and ordered input. Native execution and
 // interactions are separately capability-checked; acceptance is not dispatch.
 service SessionService {
+  rpc ReadSessionReviewContext(ReadSessionReviewContextRequest) returns (ReadSessionReviewContextResponse);
   rpc ReadSessionWorkspace(ReadSessionWorkspaceRequest) returns (ReadSessionWorkspaceResponse);
   rpc GetSessionBudget(GetSessionBudgetRequest) returns (GetSessionBudgetResponse);
   rpc SetSessionBudget(SetSessionBudgetRequest) returns (SetSessionBudgetResponse);
@@ -538,6 +539,16 @@ service SessionService {
   rpc PrepareSessionWorkspace(PrepareSessionWorkspaceRequest) returns (PrepareSessionWorkspaceResponse);
   rpc RecoverSessionExecution(RecoverSessionExecutionRequest) returns (RecoverSessionExecutionResponse);
   rpc RecoverSessionWorkspace(RecoverSessionWorkspaceRequest) returns (RecoverSessionWorkspaceResponse);
+}
+message ReadSessionReviewContextRequest {
+  string session_id = 1;
+  // Closed git-diff workspace query; only the owning Worker supplies bytes.
+  bytes query_json = 2;
+}
+message ReadSessionReviewContextResponse {
+  // Exact diff observation and validated ordinary Git file/line coordinates.
+  // Non-line changes expose file anchors only. No submission authority.
+  bytes document_json = 1;
 }
 message SteerQueuedInputRequest {
   // Exact queue record revision; request_id also identifies the Steer attempt.

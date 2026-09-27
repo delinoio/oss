@@ -21,7 +21,7 @@ func sessionFiles(ctx context.Context, c client, args []string) (any, error) {
 		query.Operation = domain.WorkspaceDirectory
 	case "read":
 		query.Operation = domain.WorkspaceFile
-	case "diff":
+	case "diff", "review-context":
 		query.Operation = domain.WorkspaceGitDiff
 	default:
 		return nil, domain.Fail(domain.InvalidArgument, "Unknown workspace file operation.", "Use roots, list or read.")
@@ -52,6 +52,26 @@ func sessionFiles(ctx context.Context, c client, args []string) (any, error) {
 		return nil, err
 	}
 	raw, _ := json.Marshal(query)
+	if args[0] == "review-context" {
+		response, err := c.sessions.ReadSessionReviewContext(ctx, request(c, &pb.ReadSessionReviewContextRequest{SessionId: *id, QueryJson: raw}))
+		if err != nil {
+			return nil, rpc.ClientError(err)
+		}
+		var result domain.ReviewContext
+		if len(response.Msg.DocumentJson) > domain.MaxReviewContextBytes {
+			return nil, domain.Fail(domain.ResourceExhausted, "The review context exceeds its limit.", "Select a narrower relative path.")
+		}
+		if err := domain.Decode(response.Msg.DocumentJson, &result); err != nil {
+			return nil, err
+		}
+		if err := result.Diff.Validate(query); err != nil {
+			return nil, err
+		}
+		// Derive coordinates from the validated patch rather than trusting a
+		// second independently editable representation in the response.
+		result.Files, err = result.Diff.ReviewFiles()
+		return result, err
+	}
 	response, err := c.sessions.ReadSessionWorkspace(ctx, request(c, &pb.ReadSessionWorkspaceRequest{SessionId: *id, QueryJson: raw}))
 	if err != nil {
 		return nil, rpc.ClientError(err)

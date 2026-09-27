@@ -65,3 +65,8 @@ Generated `ConfigurationQuery` exposes export, preview and apply. Clients preser
 ### Session Git comparisons
 
 `SessionQuery.readSessionWorkspace` also carries the closed `git-diff` query/result described in the [workspace read contract](cmds-delidev-files-contract.md). Clients validate repository/comparison/path ownership, exact Git object and revision strings, bounded inert patch text and separate untracked paths; they retain no persistent file cache. The existing generated Connect service surface is unchanged.
+
+
+## Local review coordinates
+
+Generated `SessionQuery.readSessionReviewContext` exposes the exact original Worker diff and validated file/line coordinates. Preserve original side numbers, hunk identity, final-newline absence and non-line file-only states. The Go domain remains coordinate authority; clients cannot turn these read-only observations into implicit mutation or execution. Follow the [workspace contract](cmds-delidev-files-contract.md).

@@ -257,3 +257,8 @@ The server validates existing cancellation, native/content ownership and origina
 ### Session Git diff observations
 
 The existing workspace-read JSON envelope adds operation `git-diff` and a closed `comparison` selector (`working-tree`, `staged`, `creation`). An exclusive optional `diff` result retains original repository/path, base kind/object, actual optional HEAD, bounded complete patch, separate untracked paths and SHA-256 revision. Worker and server validate scope and exact revision; mixed file/directory/diff payloads are rejected. Current authentication, cancellation, primary-stream ownership and late-report rules remain unchanged. This is additive JSON under existing Connect methods; protobuf, generated bindings and SQLite schema are unchanged. See [files and Git comparisons](cmds-delidev-files-contract.md).
+
+
+## Local review coordinates
+
+`SessionService.ReadSessionReviewContext` accepts a session UUID and the closed `git-diff` workspace query. It returns at most 1 MiB of exact original diff and parsed ordinary file/line coordinates, derived from the owning Worker through the existing read channel. Owner/paired-client authorization and original observation ownership still apply. Binary/non-line changes are file-only; ambiguous/combined/incomplete patches are unsupported. This read does not persist comments, create receipts or grant submission authority. See the [workspace and review coordinate contract](cmds-delidev-files-contract.md).

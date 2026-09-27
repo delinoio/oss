@@ -176,6 +176,9 @@ const (
 	// ProviderServiceResolveModelProcedure is the fully-qualified name of the ProviderService's
 	// ResolveModel RPC.
 	ProviderServiceResolveModelProcedure = "/delidev.v1.ProviderService/ResolveModel"
+	// SessionServiceReadSessionReviewContextProcedure is the fully-qualified name of the
+	// SessionService's ReadSessionReviewContext RPC.
+	SessionServiceReadSessionReviewContextProcedure = "/delidev.v1.SessionService/ReadSessionReviewContext"
 	// SessionServiceReadSessionWorkspaceProcedure is the fully-qualified name of the SessionService's
 	// ReadSessionWorkspace RPC.
 	SessionServiceReadSessionWorkspaceProcedure = "/delidev.v1.SessionService/ReadSessionWorkspace"
@@ -1685,6 +1688,7 @@ func (UnimplementedProviderServiceHandler) ResolveModel(context.Context, *connec
 
 // SessionServiceClient is a client for the delidev.v1.SessionService service.
 type SessionServiceClient interface {
+	ReadSessionReviewContext(context.Context, *connect.Request[v1.ReadSessionReviewContextRequest]) (*connect.Response[v1.ReadSessionReviewContextResponse], error)
 	ReadSessionWorkspace(context.Context, *connect.Request[v1.ReadSessionWorkspaceRequest]) (*connect.Response[v1.ReadSessionWorkspaceResponse], error)
 	GetSessionBudget(context.Context, *connect.Request[v1.GetSessionBudgetRequest]) (*connect.Response[v1.GetSessionBudgetResponse], error)
 	SetSessionBudget(context.Context, *connect.Request[v1.SetSessionBudgetRequest]) (*connect.Response[v1.SetSessionBudgetResponse], error)
@@ -1713,6 +1717,12 @@ func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 	baseURL = strings.TrimRight(baseURL, "/")
 	sessionServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("SessionService").Methods()
 	return &sessionServiceClient{
+		readSessionReviewContext: connect.NewClient[v1.ReadSessionReviewContextRequest, v1.ReadSessionReviewContextResponse](
+			httpClient,
+			baseURL+SessionServiceReadSessionReviewContextProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("ReadSessionReviewContext")),
+			connect.WithClientOptions(opts...),
+		),
 		readSessionWorkspace: connect.NewClient[v1.ReadSessionWorkspaceRequest, v1.ReadSessionWorkspaceResponse](
 			httpClient,
 			baseURL+SessionServiceReadSessionWorkspaceProcedure,
@@ -1808,21 +1818,27 @@ func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 
 // sessionServiceClient implements SessionServiceClient.
 type sessionServiceClient struct {
-	readSessionWorkspace    *connect.Client[v1.ReadSessionWorkspaceRequest, v1.ReadSessionWorkspaceResponse]
-	getSessionBudget        *connect.Client[v1.GetSessionBudgetRequest, v1.GetSessionBudgetResponse]
-	setSessionBudget        *connect.Client[v1.SetSessionBudgetRequest, v1.SetSessionBudgetResponse]
-	steerQueuedInput        *connect.Client[v1.SteerQueuedInputRequest, v1.SteerQueuedInputResponse]
-	createSession           *connect.Client[v1.CreateSessionRequest, v1.CreateSessionResponse]
-	listSessions            *connect.Client[v1.ListSessionsRequest, v1.ListSessionsResponse]
-	enqueueInput            *connect.Client[v1.EnqueueInputRequest, v1.EnqueueInputResponse]
-	editQueuedInput         *connect.Client[v1.EditQueuedInputRequest, v1.EditQueuedInputResponse]
-	removeQueuedInput       *connect.Client[v1.RemoveQueuedInputRequest, v1.RemoveQueuedInputResponse]
-	listQueue               *connect.Client[v1.ListQueueRequest, v1.ListQueueResponse]
-	controlSession          *connect.Client[v1.ControlSessionRequest, v1.ControlSessionResponse]
-	renameSession           *connect.Client[v1.RenameSessionRequest, v1.RenameSessionResponse]
-	prepareSessionWorkspace *connect.Client[v1.PrepareSessionWorkspaceRequest, v1.PrepareSessionWorkspaceResponse]
-	recoverSessionExecution *connect.Client[v1.RecoverSessionExecutionRequest, v1.RecoverSessionExecutionResponse]
-	recoverSessionWorkspace *connect.Client[v1.RecoverSessionWorkspaceRequest, v1.RecoverSessionWorkspaceResponse]
+	readSessionReviewContext *connect.Client[v1.ReadSessionReviewContextRequest, v1.ReadSessionReviewContextResponse]
+	readSessionWorkspace     *connect.Client[v1.ReadSessionWorkspaceRequest, v1.ReadSessionWorkspaceResponse]
+	getSessionBudget         *connect.Client[v1.GetSessionBudgetRequest, v1.GetSessionBudgetResponse]
+	setSessionBudget         *connect.Client[v1.SetSessionBudgetRequest, v1.SetSessionBudgetResponse]
+	steerQueuedInput         *connect.Client[v1.SteerQueuedInputRequest, v1.SteerQueuedInputResponse]
+	createSession            *connect.Client[v1.CreateSessionRequest, v1.CreateSessionResponse]
+	listSessions             *connect.Client[v1.ListSessionsRequest, v1.ListSessionsResponse]
+	enqueueInput             *connect.Client[v1.EnqueueInputRequest, v1.EnqueueInputResponse]
+	editQueuedInput          *connect.Client[v1.EditQueuedInputRequest, v1.EditQueuedInputResponse]
+	removeQueuedInput        *connect.Client[v1.RemoveQueuedInputRequest, v1.RemoveQueuedInputResponse]
+	listQueue                *connect.Client[v1.ListQueueRequest, v1.ListQueueResponse]
+	controlSession           *connect.Client[v1.ControlSessionRequest, v1.ControlSessionResponse]
+	renameSession            *connect.Client[v1.RenameSessionRequest, v1.RenameSessionResponse]
+	prepareSessionWorkspace  *connect.Client[v1.PrepareSessionWorkspaceRequest, v1.PrepareSessionWorkspaceResponse]
+	recoverSessionExecution  *connect.Client[v1.RecoverSessionExecutionRequest, v1.RecoverSessionExecutionResponse]
+	recoverSessionWorkspace  *connect.Client[v1.RecoverSessionWorkspaceRequest, v1.RecoverSessionWorkspaceResponse]
+}
+
+// ReadSessionReviewContext calls delidev.v1.SessionService.ReadSessionReviewContext.
+func (c *sessionServiceClient) ReadSessionReviewContext(ctx context.Context, req *connect.Request[v1.ReadSessionReviewContextRequest]) (*connect.Response[v1.ReadSessionReviewContextResponse], error) {
+	return c.readSessionReviewContext.CallUnary(ctx, req)
 }
 
 // ReadSessionWorkspace calls delidev.v1.SessionService.ReadSessionWorkspace.
@@ -1902,6 +1918,7 @@ func (c *sessionServiceClient) RecoverSessionWorkspace(ctx context.Context, req 
 
 // SessionServiceHandler is an implementation of the delidev.v1.SessionService service.
 type SessionServiceHandler interface {
+	ReadSessionReviewContext(context.Context, *connect.Request[v1.ReadSessionReviewContextRequest]) (*connect.Response[v1.ReadSessionReviewContextResponse], error)
 	ReadSessionWorkspace(context.Context, *connect.Request[v1.ReadSessionWorkspaceRequest]) (*connect.Response[v1.ReadSessionWorkspaceResponse], error)
 	GetSessionBudget(context.Context, *connect.Request[v1.GetSessionBudgetRequest]) (*connect.Response[v1.GetSessionBudgetResponse], error)
 	SetSessionBudget(context.Context, *connect.Request[v1.SetSessionBudgetRequest]) (*connect.Response[v1.SetSessionBudgetResponse], error)
@@ -1926,6 +1943,12 @@ type SessionServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	sessionServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("SessionService").Methods()
+	sessionServiceReadSessionReviewContextHandler := connect.NewUnaryHandler(
+		SessionServiceReadSessionReviewContextProcedure,
+		svc.ReadSessionReviewContext,
+		connect.WithSchema(sessionServiceMethods.ByName("ReadSessionReviewContext")),
+		connect.WithHandlerOptions(opts...),
+	)
 	sessionServiceReadSessionWorkspaceHandler := connect.NewUnaryHandler(
 		SessionServiceReadSessionWorkspaceProcedure,
 		svc.ReadSessionWorkspace,
@@ -2018,6 +2041,8 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 	)
 	return "/delidev.v1.SessionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case SessionServiceReadSessionReviewContextProcedure:
+			sessionServiceReadSessionReviewContextHandler.ServeHTTP(w, r)
 		case SessionServiceReadSessionWorkspaceProcedure:
 			sessionServiceReadSessionWorkspaceHandler.ServeHTTP(w, r)
 		case SessionServiceGetSessionBudgetProcedure:
@@ -2056,6 +2081,10 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 
 // UnimplementedSessionServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedSessionServiceHandler struct{}
+
+func (UnimplementedSessionServiceHandler) ReadSessionReviewContext(context.Context, *connect.Request[v1.ReadSessionReviewContextRequest]) (*connect.Response[v1.ReadSessionReviewContextResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.ReadSessionReviewContext is not implemented"))
+}
 
 func (UnimplementedSessionServiceHandler) ReadSessionWorkspace(context.Context, *connect.Request[v1.ReadSessionWorkspaceRequest]) (*connect.Response[v1.ReadSessionWorkspaceResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.ReadSessionWorkspace is not implemented"))

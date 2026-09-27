@@ -751,6 +751,7 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   model resolve --selector ID|ALIAS|NATIVE_ID [--provider-id ID]
   session files roots|list|read --id ID [--repository-id ID] [--path RELATIVE] [--page-token TOKEN]
   session diff --id ID --repository-id ID [--comparison working-tree|staged|creation] [--path RELATIVE]
+  session review-context --id ID --repository-id ID [--comparison working-tree|staged|creation] [--path RELATIVE]
   session create --input FILE|- [--wait]
   session prepare --id ID --revision N [--wait]
   session recover-workspace --id ID --revision N [--cleanup] [--wait]
