@@ -762,13 +762,16 @@ mod tests {
             Limits {
                 max_events: 100_000,
                 max_bytes: crate::record::DEFAULT_BYTE_LIMIT,
-                timeout: Some(Duration::from_millis(100)),
+                // Leave time for the injected hello on loaded CI hosts so this
+                // fixture exercises a running group's timeout and cleanup.
+                // Shorten this only if the fixture gains an explicit ready gate.
+                timeout: Some(Duration::from_secs(2)),
                 kill_after: Duration::from_millis(100),
             },
             &AtomicBool::new(false),
         );
-        assert!(matches!(result, Err(CaptureFailure::Timeout)));
-        assert!(began.elapsed() < Duration::from_secs(5));
+        assert_eq!(result.err(), Some(CaptureFailure::Timeout));
+        assert!(began.elapsed() < Duration::from_secs(10));
     }
 
     #[test]

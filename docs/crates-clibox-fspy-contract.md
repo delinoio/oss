@@ -69,3 +69,5 @@ Defaults are 1,000,000 events, 256 MiB trace, and 1 GiB/100,000 files for both r
 ## Validation
 
 Native behavior tests must exercise all seven commands and the eight supported targets, including Alpine consumers and pnport regressions where interception changes. Run root `cargo test`, formatting and applicable lint checks, `pnpm --filter @delino/clibox test`, `pnpm --filter @delino/clibox test:package`, and public-docs `pnpm test` when that frontend changes. Package and CI inventories must include the companion crate and affected native sources. Do not count parser, fixture, or macOS-only tests as validation for other native targets.
+
+The macOS owned-group timeout fixture leaves two seconds for injected process startup so its deadline tests a running child and cleanup under loaded CI hosts. The separate root-executable admission-delay fixture checks timeout before launch.
