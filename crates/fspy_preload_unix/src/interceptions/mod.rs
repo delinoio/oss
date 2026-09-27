@@ -40,6 +40,8 @@ fn observe_at(
 #[cfg(target_os = "linux")]
 fn observe_path(path: *const libc::c_char, mode: impl crate::client::convert::ToAccessMode) {
     if !path.is_null() {
+        // SAFETY: the pointer is the intercepted caller's path and remains
+        // live through this synchronous observation.
         unsafe {
             crate::client::handle_open(fspy_nostd::CStr::from_ptr(path.cast()), mode);
         }
@@ -53,11 +55,13 @@ fn observe_at(
     mode: impl crate::client::convert::ToAccessMode,
 ) {
     if !path.is_null() {
+        // SAFETY: the caller's path and directory descriptor remain valid
+        // through this synchronous observation.
         unsafe {
             crate::client::handle_open(
                 crate::client::convert::PathAt::borrow_raw(dirfd, path),
                 mode,
-            )
+            );
         }
     }
 }
