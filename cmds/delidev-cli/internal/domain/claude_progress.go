@@ -10,13 +10,15 @@ type ClaudeCompactResult string
 type ClaudeProgressCount string
 
 const (
-	ClaudeStatusProgress   ClaudeProgressKind  = "session-status"
-	ClaudeThinkingProgress ClaudeProgressKind  = "thinking-tokens-estimated"
-	ClaudeAPIRetryProgress ClaudeProgressKind  = "api-retry"
-	ClaudeRequesting       ClaudeSessionStatus = "requesting"
-	ClaudeCompacting       ClaudeSessionStatus = "compacting"
-	ClaudeCompactSucceeded ClaudeCompactResult = "success"
-	ClaudeCompactFailed    ClaudeCompactResult = "failed"
+	ClaudeToolProgress        ClaudeProgressKind  = "tool-progress"
+	ClaudeToolSummaryProgress ClaudeProgressKind  = "tool-summary"
+	ClaudeStatusProgress      ClaudeProgressKind  = "session-status"
+	ClaudeThinkingProgress    ClaudeProgressKind  = "thinking-tokens-estimated"
+	ClaudeAPIRetryProgress    ClaudeProgressKind  = "api-retry"
+	ClaudeRequesting          ClaudeSessionStatus = "requesting"
+	ClaudeCompacting          ClaudeSessionStatus = "compacting"
+	ClaudeCompactSucceeded    ClaudeCompactResult = "success"
+	ClaudeCompactFailed       ClaudeCompactResult = "failed"
 )
 
 type ClaudeStatusObservation struct {
@@ -34,12 +36,14 @@ type ClaudeThinkingObservation struct {
 // InputAccepted describes observation order, not a native input acknowledgment.
 // A session status may precede the original user replay.
 type ClaudeProgressObservation struct {
-	NativeEventID string                     `json:"native_event_id"`
-	Kind          ClaudeProgressKind         `json:"kind"`
-	InputAccepted bool                       `json:"input_accepted"`
-	Status        *ClaudeStatusObservation   `json:"status"`
-	Thinking      *ClaudeThinkingObservation `json:"thinking"`
-	APIRetry      *ClaudeAPIRetryObservation `json:"api_retry,omitempty"`
+	NativeEventID string                         `json:"native_event_id"`
+	Kind          ClaudeProgressKind             `json:"kind"`
+	InputAccepted bool                           `json:"input_accepted"`
+	Status        *ClaudeStatusObservation       `json:"status"`
+	Thinking      *ClaudeThinkingObservation     `json:"thinking"`
+	APIRetry      *ClaudeAPIRetryObservation     `json:"api_retry,omitempty"`
+	Tool          *ClaudeToolProgressObservation `json:"tool,omitempty"`
+	ToolSummary   *ClaudeToolSummaryObservation  `json:"tool_summary,omitempty"`
 }
 
 type ExecutionClaudeProgress struct {
@@ -50,12 +54,14 @@ type ExecutionClaudeProgress struct {
 // The first observed native init/turn is pinned before input acceptance without
 // populating ExecutionProgress.NativeTurnID or claiming input delivery.
 type ClaudeProgressState struct {
-	NativeTurnID      string                `json:"native_turn_id"`
-	LatestStatusID    ID                    `json:"latest_status_id,omitempty"`
-	LatestRetryID     ID                    `json:"latest_retry_id,omitempty"`
-	LatestThinkingID  ID                    `json:"latest_thinking_id,omitempty"`
-	Permission        *ClaudePermissionMode `json:"permission,omitempty"`
-	PermissionChanged bool                  `json:"permission_changed,omitempty"`
+	NativeTurnID        string                `json:"native_turn_id"`
+	LatestStatusID      ID                    `json:"latest_status_id,omitempty"`
+	LatestRetryID       ID                    `json:"latest_retry_id,omitempty"`
+	LatestThinkingID    ID                    `json:"latest_thinking_id,omitempty"`
+	LatestToolID        ID                    `json:"latest_tool_id,omitempty"`
+	LatestToolSummaryID ID                    `json:"latest_tool_summary_id,omitempty"`
+	Permission          *ClaudePermissionMode `json:"permission,omitempty"`
+	PermissionChanged   bool                  `json:"permission_changed,omitempty"`
 }
 
 func invalidClaudeProgress() error {
@@ -73,6 +79,15 @@ func (v ClaudeProgressObservation) Validate() error {
 	if NativeIdentity(v.NativeEventID).Validate(ClaudeCode, NativeTurnIdentity) != nil {
 		return invalidClaudeProgress()
 	}
+	populated := 0
+	for _, present := range []bool{v.Status != nil, v.Thinking != nil, v.APIRetry != nil, v.Tool != nil, v.ToolSummary != nil} {
+		if present {
+			populated++
+		}
+	}
+	if populated != 1 {
+		return invalidClaudeProgress()
+	}
 	switch v.Kind {
 	case ClaudeStatusProgress:
 		s := v.Status
@@ -88,6 +103,14 @@ func (v ClaudeProgressObservation) Validate() error {
 			if err != nil || strconv.FormatUint(value, 10) != string(counter) {
 				return invalidClaudeProgress()
 			}
+		}
+	case ClaudeToolProgress:
+		if !v.InputAccepted || v.Tool == nil || v.Tool.Validate() != nil {
+			return invalidClaudeProgress()
+		}
+	case ClaudeToolSummaryProgress:
+		if !v.InputAccepted || v.ToolSummary == nil || v.ToolSummary.Validate() != nil {
+			return invalidClaudeProgress()
 		}
 	case ClaudeAPIRetryProgress:
 		if v.Status != nil || v.Thinking != nil || v.APIRetry == nil || v.APIRetry.NativeEventID != v.NativeEventID || v.APIRetry.Validate() != nil {

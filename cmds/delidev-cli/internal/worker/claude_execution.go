@@ -240,6 +240,9 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 			handled = true
 		case claude.ProgressObserved:
 			handled, err = binding.PublishProgressObservation(publicationContext, o)
+			if !handled && err == nil && display != nil {
+				handled, err = display.PublishToolProgressObservation(publicationContext, o)
+			}
 		case claude.ContentObserved:
 			if display != nil {
 				handled, err = display.PublishObservation(publicationContext, o)

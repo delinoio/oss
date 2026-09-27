@@ -108,3 +108,57 @@ test("retry-only progress does not infer permission or erase an earlier permissi
   expect(screen.getByText("plan")).toBeTruthy();
   expect(screen.getByText(/Further input requires configuration reconciliation/)).toBeTruthy();
 });
+
+function toolFixture(summary = false): Document {
+  const data = fixture(true), v = object(data.claude_progress);
+  v.kind = summary ? "tool-summary" : "tool-progress"; v.thinking = null;
+  const ref = { id: newRequestId(), native_id: "tool_original", name: "Bash" };
+  if (summary) v.tool_summary = { summary: "<script>original()</script>", preceding_tools: [ref] };
+  else v.tool = { tool: ref, parent_tool_use_id: null, elapsed_time_seconds: "9.007199254740993e+15", heartbeat: false };
+  return data;
+}
+
+test("retains original elapsed spelling and false heartbeat without tool actions", () => {
+  render(<NativeClaudeProgress data={toolFixture()} />);
+  expect(screen.getByText("9.007199254740993e+15")).toBeTruthy();
+  expect(screen.getByText("Explicitly false")).toBeTruthy();
+  expect(screen.getByText("Bash")).toBeTruthy();
+  expect(screen.getByText(/does not confirm completion, approval/)).toBeTruthy();
+  expect(screen.queryByRole("button")).toBeNull();
+});
+
+test("renders the original tool summary as inert advisory text", () => {
+  const { container } = render(<NativeClaudeProgress data={toolFixture(true)} />);
+  expect(screen.getByText("<script>original()</script>")).toBeTruthy();
+  expect(container.querySelector("script")).toBeNull();
+  expect(screen.getByText(/summary does not confirm tool completion/)).toBeTruthy();
+  expect(screen.queryByRole("button")).toBeNull();
+});
+
+test.each(["number", "negative", "infinity", "space", "hex", "missing-null", "missing-heartbeat", "parent", "foreign-id", "name", "early", "mixed", "summary-mixed", "summary-duplicate", "summary-native-duplicate", "summary-empty", "summary-overflow"])("rejects malformed or mixed tool progress: %s", (change) => {
+  const data = toolFixture(change.startsWith("summary")), v = object(data.claude_progress), p = object(v.tool), s = object(v.tool_summary);
+  if (change === "number") p.elapsed_time_seconds = 9007199254740992;
+  if (change === "negative") p.elapsed_time_seconds = "-1";
+  if (change === "infinity") p.elapsed_time_seconds = "1e999";
+  if (change === "space") p.elapsed_time_seconds = " 1";
+  if (change === "hex") p.elapsed_time_seconds = "0xff";
+  if (change === "missing-null") delete p.parent_tool_use_id;
+  if (change === "missing-heartbeat") delete p.heartbeat;
+  if (change === "parent") p.parent_tool_use_id = "unproved-parent";
+  if (change === "foreign-id") object(p.tool).id = "foreign";
+  if (change === "name") object(p.tool).name = "";
+  if (change === "early") v.input_accepted = false;
+  if (change === "mixed") v.api_retry = {};
+  if (change === "summary-mixed") v.tool = {};
+  if (change === "summary-duplicate") s.preceding_tools = [(s.preceding_tools as Document[])[0], (s.preceding_tools as Document[])[0]];
+  if (change === "summary-native-duplicate") s.preceding_tools = [(s.preceding_tools as Document[])[0], { ...(s.preceding_tools as Document[])[0], id: newRequestId() }];
+  if (change === "summary-empty") s.preceding_tools = [];
+  if (change === "summary-overflow") s.summary = "x".repeat((256 << 10) + 1);
+  render(<NativeClaudeProgress data={data} />);
+  expect(screen.getByRole("article", { name: "Claude progress unavailable" })).toBeTruthy();
+});
+
+test.each(["latest_tool_id", "latest_tool_summary_id"])("tool-only progress does not invent permission: %s", (key) => {
+  render(<NativeClaudePermissionProgress progress={{ claude_progress: { native_turn_id: newRequestId(), [key]: newRequestId() } }} />);
+  expect(screen.getByText("Not reported")).toBeTruthy();
+});

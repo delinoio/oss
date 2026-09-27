@@ -355,9 +355,10 @@ func (c *ClaudeContentPublisher) commitHead() {
 		}
 	}
 	if item.toolNative != "" {
+		item.toolNext.reference = item.toolNext.content.Reference
 		if item.toolNext.state == domain.MessageComplete {
-			// Keep only profile eligibility after the original result receipt is
-			// acknowledged; released tool bodies must not remain in Worker memory.
+			// Keep original reference metadata and profile eligibility after the
+			// receipt; released tool bodies must not remain in Worker memory.
 			item.toolNext.historyKind = item.toolNext.content.ClaudeContinuationHistoryKind()
 			item.toolNext.content = nil
 		}

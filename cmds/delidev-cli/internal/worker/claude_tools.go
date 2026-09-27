@@ -8,6 +8,7 @@ import (
 )
 
 type claudePublishedTool struct {
+	reference   domain.ClaudeToolReference
 	state       domain.MessageState
 	content     *domain.ClaudeToolContent
 	historyKind domain.ClaudeToolHistoryKind

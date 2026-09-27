@@ -21,9 +21,6 @@ func (b *ClaudeBindingPublisher) PublishProgressObservation(ctx context.Context,
 		return false, nil
 	}
 	accepted := b.stage == claudeInputAccepted
-	if b.stage != claudeSessionBound && !accepted || o.SessionID != b.journal.SessionID || o.InputID != b.journal.InputID || o.TurnID != b.turn || o.Accepted != accepted || o.NativeID == b.turn || o.NativeID == string(b.journal.InputID) || b.progressSeen[o.NativeID] || len(b.progressSeen) >= 65536 {
-		return true, b.block()
-	}
 	n := o.Progress
 	v := domain.ClaudeProgressObservation{NativeEventID: o.NativeID, InputAccepted: accepted}
 	switch n.Kind {
@@ -66,6 +63,16 @@ func (b *ClaudeBindingPublisher) PublishProgressObservation(ctx context.Context,
 			return true, b.block()
 		}
 		v.Kind, v.Thinking = domain.ClaudeThinkingProgress, &domain.ClaudeThinkingObservation{Tokens: domain.ClaudeProgressCount(strconv.FormatUint(n.Thinking.Tokens, 10)), Delta: domain.ClaudeProgressCount(strconv.FormatUint(n.Thinking.Delta, 10))}
+	}
+	return b.publishProgressLocked(ctx, o, v)
+}
+
+// The caller holds the shared binding lock and has validated the selected
+// native family. All progress uses one original sequence and durable outbox.
+func (b *ClaudeBindingPublisher) publishProgressLocked(ctx context.Context, o claude.LifecycleObservation, v domain.ClaudeProgressObservation) (bool, error) {
+	accepted := b.stage == claudeInputAccepted
+	if b.stage != claudeSessionBound && !accepted || o.SessionID != b.journal.SessionID || o.InputID != b.journal.InputID || o.TurnID != b.turn || o.Accepted != accepted || o.NativeID == b.turn || o.NativeID == string(b.journal.InputID) || b.progressSeen[o.NativeID] || len(b.progressSeen) >= 65536 {
+		return true, b.block()
 	}
 	u := &domain.ExecutionClaudeProgress{ID: domain.NewID(), Observation: v}
 	if u.Validate() != nil {

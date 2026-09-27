@@ -22,6 +22,18 @@ func publishClaudeProgress(tx *store.Tx, input domain.ExecutionJobInput, session
 	if state.NativeTurnID != event.NativeTurnID {
 		return executionEventConflict()
 	}
+	if v.Tool != nil {
+		if err := validateClaudeProgressTool(tx, input, session, event, v.Tool.Tool, true); err != nil {
+			return err
+		}
+	}
+	if v.ToolSummary != nil {
+		for _, tool := range v.ToolSummary.Tools {
+			if err := validateClaudeProgressTool(tx, input, session, event, tool, false); err != nil {
+				return err
+			}
+		}
+	}
 	message := domain.ExecutionMessage{ExecutionID: input.ExecutionID, NativeThreadID: event.NativeThreadID, NativeTurnID: event.NativeTurnID, NativeID: v.NativeEventID, Role: domain.ProgressMessage, State: domain.MessageComplete, FirstSequence: event.Sequence, LastSequence: event.Sequence, ClaudeProgress: &v}
 	if _, err := tx.Put(domain.MessageKind, u.ID, 0, session.ID, session.ProjectID, message); err != nil {
 		return err
@@ -39,11 +51,30 @@ func publishClaudeProgress(tx *store.Tx, input domain.ExecutionJobInput, session
 			// reconciliation without rewriting the immutable initial settings.
 			state.PermissionChanged = state.PermissionChanged || *permission != p.Observed.ClaudePermission
 		}
+	case domain.ClaudeToolProgress:
+		state.LatestToolID = u.ID
+	case domain.ClaudeToolSummaryProgress:
+		state.LatestToolSummaryID = u.ID
 	case domain.ClaudeAPIRetryProgress:
 		state.LatestRetryID = u.ID
 	case domain.ClaudeThinkingProgress:
 		state.LatestThinkingID = u.ID
 	default:
+		return executionEventConflict()
+	}
+	return nil
+}
+
+func validateClaudeProgressTool(tx *store.Tx, input domain.ExecutionJobInput, session store.Record, event domain.ExecutionEvent, ref domain.ClaudeToolReference, running bool) error {
+	r, err := tx.Get(domain.MessageKind, ref.ID)
+	if err != nil {
+		return err
+	}
+	message, err := store.Decode[domain.ExecutionMessage](r)
+	if err != nil || r.SessionID != session.ID || message.ExecutionID != input.ExecutionID || message.NativeThreadID != event.NativeThreadID || message.NativeTurnID != event.NativeTurnID || message.Role != domain.ToolMessage || message.ClaudeTool == nil || message.ClaudeTool.Reference != ref || message.NativeID != ref.NativeID || message.NativeParentID != message.ClaudeTool.NativeMessageID || message.LastSequence >= event.Sequence || (message.State != domain.MessageStreaming && message.State != domain.MessageComplete) {
+		return executionEventConflict()
+	}
+	if running && (message.State != domain.MessageStreaming || message.ClaudeTool.Proposal == nil || message.ClaudeTool.Result != nil) {
 		return executionEventConflict()
 	}
 	return nil
