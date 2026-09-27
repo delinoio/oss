@@ -168,8 +168,8 @@ func TestOriginalFileReplyClaimsAndTerminalFaults(t *testing.T) {
 							t.Fatal("prior identity acquired response")
 						}
 					}
-					if _, e := api.ReplyFilePermission(callback, domain.NewID(), arrival, "allow-edits-session", func(context.Context, FilePermissionClaim) error { t.Error("session policy claimed"); return nil }); e == nil {
-						t.Fatal("unsupported remembered policy sent")
+					if _, e := api.ReplyFilePermission(callback, domain.NewID(), arrival, "unknown-policy", func(context.Context, FilePermissionClaim) error { t.Error("unknown policy claimed"); return nil }); e == nil {
+						t.Fatal("unknown permission policy sent")
 					}
 					delivered, e := api.ReplyFilePermission(callback, domain.NewID(), arrival, decision, func(_ context.Context, c FilePermissionClaim) error {
 						claims++

@@ -36,6 +36,7 @@ type fileToolState struct {
 	pending    bool
 	resolved   bool
 	permission domain.ID
+	inherited  domain.ID
 	details    [32]byte
 }
 
@@ -43,14 +44,15 @@ type fileToolState struct {
 // single-reader observation boundary, not a sender, response claim or outbox.
 // Retain only original comparison facts; caller mutation cannot replace them.
 type fileToolObserver struct {
-	session   domain.ID
-	prompt    string
-	tools     map[string]fileToolState
-	arrivals  map[domain.ID]bool
-	requests  map[string]bool
-	bytes     int
-	lastEvent uint64
-	seenEvent bool
+	session    domain.ID
+	prompt     string
+	tools      map[string]fileToolState
+	arrivals   map[domain.ID]bool
+	requests   map[string]bool
+	bytes      int
+	lastEvent  uint64
+	seenEvent  bool
+	editPolicy domain.ID
 }
 
 type fileToolFact struct {
@@ -58,6 +60,8 @@ type fileToolFact struct {
 	Observation *fileToolObservation
 	Interaction *fileInteraction
 	Permission  *filePermission
+	// This is original controller provenance, never a fabricated native reply.
+	InheritedPermission domain.ID
 }
 
 func newFileToolObserver(session domain.ID, prompt string) (*fileToolObserver, error) {
@@ -85,7 +89,7 @@ func (o *fileToolObserver) observe(event nativewire.Event) (fileToolFact, error)
 		if !exists || prior.phase != fileToolDescribed || !prior.pending || prior.resolved || prior.permission != "" || prior.input != permission.Tool.Input || prior.details != historyValueDigest(permission.Tool) {
 			return fact, incompatible()
 		}
-		prior.permission = event.Token
+		prior.permission, prior.inherited = event.Token, ""
 		o.tools[permission.Tool.ID] = prior
 		o.arrivals[event.Token], o.requests[requestKey] = true, true
 		o.bytes += len(event.Params)
@@ -171,13 +175,16 @@ func (o *fileToolObserver) observe(event nativewire.Event) (fileToolFact, error)
 				return fact, incompatible()
 			}
 			next.input, next.arguments = observed.Input, ""
+			if observed.Input.Name == writeFileTool {
+				next.inherited = o.editPolicy
+			}
 		case fileToolDescribed:
 			if prior.phase != fileToolDeclared || !prior.pending || prior.resolved {
 				return fact, incompatible()
 			}
 			next.details = historyValueDigest(permissionTool(observed))
 		case fileToolCompleted, fileToolFailed:
-			if prior.phase != fileToolDescribed || !prior.pending || !prior.resolved || prior.name == writeFileTool && prior.permission == "" {
+			if prior.phase != fileToolDescribed || !prior.pending || !prior.resolved || prior.name == writeFileTool && prior.permission == "" && (prior.inherited == "" || prior.inherited != o.editPolicy || observed.Phase != fileToolCompleted) {
 				return fact, incompatible()
 			}
 		default:
@@ -223,11 +230,22 @@ func (o *fileToolObserver) observe(event nativewire.Event) (fileToolFact, error)
 		return fileToolFact{}, domain.Fail(domain.ResourceExhausted, "Native file-tool count reached its bound.", "Retain the original input and reconcile its tools without replay.")
 	}
 	o.tools[id] = next
+	fact.InheritedPermission = next.inherited
 	o.bytes += len(event.Params)
 	if hasEvent {
 		o.lastEvent, o.seenEvent = eventIndexValue, true
 	}
 	return fact, nil
+}
+
+// The live original controller is the sole caller. Read-only inspection cannot
+// reconstruct this policy from a journal or from an unrequested resolution.
+func (o *fileToolObserver) observeEditPolicy(arrival domain.ID) error {
+	if o == nil || arrival.Validate() != nil || o.editPolicy != "" && o.editPolicy != arrival {
+		return incompatible()
+	}
+	o.editPolicy = arrival
+	return nil
 }
 
 func (o *fileToolObserver) settled() bool {

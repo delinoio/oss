@@ -596,3 +596,33 @@ func TestGrokFileRepliesExcludeTextStopAndClosure(t *testing.T) {
 		})
 	}
 }
+
+func TestGrokRememberedEditsRetainExactOriginalReplyClaim(t *testing.T) {
+	p, journal, claims := newGrokClaimsFixture(t)
+	ctx := context.Background()
+	for _, claim := range claims {
+		if err := recordGrokClaim(ctx, journal, claim); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reply := fileReplyClaimFixture(p, claims[3].Input, 0)
+	reply.Decision = grok.AllowFileSession
+	if journal.FileReply(ctx, reply) == nil {
+		t.Fatal("once-only reply digest authorized remembered edits")
+	}
+	digest := sha256.Sum256([]byte(`{"outcome":{"outcome":"selected","optionId":"allow-edits-session"}}`))
+	reply.BodyDigest = hex.EncodeToString(digest[:])
+	if err := journal.FileReply(ctx, reply); err != nil {
+		t.Fatal(err)
+	}
+	retained, err := readGrokClaims(p.config.Root, journal.state.Reference)
+	if err != nil || len(retained) != 5 || *retained[4].FileReply != reply {
+		t.Fatal("remembered original decision lost durable ownership", err)
+	}
+	if journal.FileReply(ctx, reply) == nil {
+		t.Fatal("remembered policy acquired response replay")
+	}
+	if p.state.Pending != nil || p.state.LastSequence != 0 {
+		t.Fatal("remembered edits claimed public publication")
+	}
+}

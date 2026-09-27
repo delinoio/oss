@@ -57,6 +57,7 @@ type textControl struct {
 	profile     inputProfile
 	permissions map[domain.ID]*fileReply
 	inputDone   <-chan struct{}
+	editPolicy  domain.ID
 }
 
 func (a *apiConnection) activateText(request domain.ID, profile inputProfile) {

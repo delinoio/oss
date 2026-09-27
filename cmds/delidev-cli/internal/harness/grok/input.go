@@ -119,7 +119,8 @@ func (a *apiConnection) RunReadFiles(ctx context.Context, request domain.ID, inp
 }
 
 // RunFileTools composes original Read/Write with explicit once-only permission
-// replies. It does not implement remembered approvals, Stop or native history.
+// replies and their original remembered edit scope. Stop and native history
+// require separate controller profiles.
 func (a *apiConnection) RunFileTools(ctx context.Context, request domain.ID, input string, record func(context.Context, InputClaim) error, emit func(context.Context, InputObservation) error) (PromptResult, error) {
 	return a.runInput(ctx, request, input, record, emit, fileWriteInput)
 }
@@ -377,6 +378,11 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 				if profile == fileWriteInput {
 					if err := control.observeFileReply(life, fact); err != nil {
 						return result, err
+					}
+					if policy := control.originalEditPolicy(); policy != "" {
+						if err := fileTools.observeEditPolicy(policy); err != nil {
+							return result, err
+						}
 					}
 				}
 				if fact.Observation != nil {

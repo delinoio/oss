@@ -14,8 +14,9 @@ import (
 type FilePermissionDecision string
 
 const (
-	AllowFileOnce  FilePermissionDecision = "allow-once"
-	RejectFileOnce FilePermissionDecision = "reject-once"
+	AllowFileOnce    FilePermissionDecision = "allow-once"
+	AllowFileSession FilePermissionDecision = "allow-edits-session"
+	RejectFileOnce   FilePermissionDecision = "reject-once"
 )
 
 type filePermissionAnswer struct {
@@ -27,7 +28,7 @@ type filePermissionAnswer struct {
 
 func fileAnswer(decision FilePermissionDecision) (filePermissionAnswer, error) {
 	var answer filePermissionAnswer
-	if decision != AllowFileOnce && decision != RejectFileOnce {
+	if decision != AllowFileOnce && decision != RejectFileOnce && decision != AllowFileSession {
 		return answer, incompatible()
 	}
 	answer.Outcome.Outcome, answer.Outcome.Option = "selected", decision
@@ -155,7 +156,7 @@ func (a *apiConnection) ReplyFilePermission(ctx context.Context, request, arriva
 	}
 	c.mu.Lock()
 	r := c.permissions[arrival]
-	if c.profile != fileWriteInput || !c.running || c.terminal || r == nil || r.done != nil || request == a.creationRequest {
+	if c.profile != fileWriteInput || !c.running || c.terminal || r == nil || r.done != nil || request == a.creationRequest || decision == AllowFileSession && c.editPolicy != "" {
 		c.mu.Unlock()
 		return result, sessionUncertain()
 	}
@@ -244,6 +245,9 @@ func (c *textControl) observeFileReply(ctx context.Context, fact fileToolFact) e
 	}
 	if reply == nil {
 		c.mu.Unlock()
+		if fact.InheritedPermission != "" && fact.InheritedPermission != c.originalEditPolicy() {
+			return incompatible()
+		}
 		return nil
 	} // A Read has no client request.
 	done := reply.done
@@ -269,8 +273,16 @@ func (c *textControl) observeFileReply(ctx context.Context, fact fileToolFact) e
 		v.Resolved = true
 	} else {
 		phase := fact.Observation.Phase
-		if !v.Resolved || v.ToolPhase != "" || phase == fileToolCompleted && v.Claim.Decision != AllowFileOnce || phase == fileToolFailed && v.Claim.Decision != RejectFileOnce {
+		if !v.Resolved || v.ToolPhase != "" || phase == fileToolCompleted && v.Claim.Decision != AllowFileOnce && v.Claim.Decision != AllowFileSession || phase == fileToolFailed && v.Claim.Decision != RejectFileOnce {
 			return incompatible()
+		}
+		if v.Claim.Decision == AllowFileSession {
+			if c.editPolicy != "" {
+				return incompatible()
+			}
+			// Delivery or resolution alone cannot seed remembered edits. Bind
+			// the original scope only after the approving Write also completes.
+			c.editPolicy = v.Claim.ArrivalID
 		}
 		v.ToolPhase = phase
 	}
@@ -286,6 +298,9 @@ func (c *textControl) filesSettled(tools *fileToolObserver, rejected bool) bool 
 	failed := 0
 	for _, tool := range tools.tools {
 		if !tool.resolved {
+			return false
+		}
+		if tool.name == writeFileTool && tool.permission == "" && (c.editPolicy == "" || tool.inherited != c.editPolicy || tool.phase != fileToolCompleted) {
 			return false
 		}
 		if tool.phase == fileToolFailed {
@@ -310,6 +325,12 @@ func (c *textControl) filesSettled(tools *fileToolObserver, rejected bool) bool 
 		}
 	}
 	return !rejected && failed == 0 && denied == 0 || rejected && failed == 1 && denied == 1
+}
+
+func (c *textControl) originalEditPolicy() domain.ID {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.editPolicy
 }
 
 func (c *textControl) joinFileReplies() {
