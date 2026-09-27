@@ -1,6 +1,7 @@
 package grok
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -22,6 +24,15 @@ import (
 // provider. Its raw transport sends are deliberately test-only: they do not
 // implement the durable input/interaction/publication controller.
 func TestManualNativeGrokTextCompletion(t *testing.T) {
+	nativeTextCompletion(t, false)
+}
+
+func TestManualNativeGrokOwnedTextInput(t *testing.T) {
+	nativeTextCompletion(t, true)
+}
+
+func nativeTextCompletion(t *testing.T, owned bool) {
+	t.Helper()
 	binary := os.Getenv("DELIDEV_NATIVE_GROK_EXECUTABLE")
 	if binary == "" {
 		t.Skip("explicit private native Grok Build binary required")
@@ -73,6 +84,18 @@ func TestManualNativeGrokTextCompletion(t *testing.T) {
 		if err := process.ReconcileOwner(config.Probe.Process.Directory, config.Probe.Process.OwnerID); err != nil {
 			t.Error(err)
 		}
+		if err := filepath.WalkDir(filepath.Dir(config.Probe.Home), func(path string, entry os.DirEntry, err error) error {
+			if err != nil || entry.IsDir() {
+				return err
+			}
+			raw, err := os.ReadFile(path)
+			if bytes.Contains(raw, []byte(config.Token)) {
+				t.Error("native input persisted its execution credential")
+			}
+			return err
+		}); err != nil {
+			t.Error(err)
+		}
 		for _, private := range []string{config.Token, config.Model, config.Workspace, "Private fixture response."} {
 			if strings.Contains(logs.String(), private) {
 				t.Error("private native input or output logged")
@@ -84,6 +107,64 @@ func TestManualNativeGrokTextCompletion(t *testing.T) {
 		t.Fatal(err)
 	}
 	const input = "Return a private fixture response."
+	if owned {
+		request := domain.NewID()
+		claims := []InputClaim{}
+		accepted, completed := false, false
+		var output strings.Builder
+		result, err := api.RunText(ctx, request, input, func(_ context.Context, claim InputClaim) error {
+			if err := claim.Validate(); err != nil {
+				return err
+			}
+			if claim.RequestID != request || claim.NativeSessionID != session {
+				t.Error("original native input claim changed")
+			}
+			if claim.Phase == ClaimInput && calls.Load() != 0 {
+				t.Error("inference preceded original input claim")
+			}
+			claims = append(claims, claim)
+			return nil
+		}, func(_ context.Context, observation InputObservation) error {
+			if observation.InputID != request || !nativeUUID(observation.NativePromptID, 4) || completed {
+				t.Error("foreign or late original input publication")
+			}
+			switch observation.Kind {
+			case InputAccepted:
+				if accepted {
+					t.Error("input accepted twice")
+				}
+				accepted = true
+			case InputText:
+				if !accepted || observation.Chunk == nil {
+					t.Error("unaccepted text")
+				}
+				output.WriteString(observation.Chunk.Update.Content.Text)
+			case InputTitle:
+				if !accepted {
+					t.Error("unaccepted title")
+				}
+			case InputCompleted:
+				if !accepted || observation.Result == nil {
+					t.Error("unaccepted completion")
+				}
+				completed = true
+			default:
+				t.Error("unknown original observation")
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("owned original input: %v; %s", err, logs.String())
+		}
+		if !accepted || !completed || len(claims) != 2 || claims[0].BodyDigest != claims[1].BodyDigest || claims[1].NativePromptID != result.Meta.Prompt || output.String() != "Private fixture response." || result.Meta.Usage.Input != 11 || result.Meta.Usage.Output != 5 {
+			t.Fatal("incomplete owned native input")
+		}
+		if _, err := api.RunText(ctx, domain.NewID(), input, func(context.Context, InputClaim) error { t.Error("second native input claimed"); return nil }, func(context.Context, InputObservation) error { return nil }); err == nil {
+			t.Fatal("original input boundary reopened")
+		}
+		return
+	}
+
 	response, err := api.wire.Call(ctx, domain.NewID(), "session/prompt", map[string]any{"sessionId": session, "prompt": []any{map[string]any{"type": "text", "text": input}}})
 	if err != nil || response.ErrorCode != nil {
 		t.Fatal("native fixture prompt failed", err)
@@ -137,8 +218,10 @@ func TestManualNativeGrokTextCompletion(t *testing.T) {
 					t.Fatal(err)
 				}
 			case "available_commands_update", "session_info_update", "session_summary_generated", "response_completed":
-				// This schema test does not grant production authority to the
-				// remaining native metadata or auxiliary publication families.
+				if _, err := parsePassiveObservation(event.Params, event.Method, session, prompt); err != nil {
+					t.Fatal("incompatible original passive event", err)
+				}
+
 			default:
 				t.Fatal("unobserved native fixture event variant")
 			}
@@ -149,7 +232,9 @@ func TestManualNativeGrokTextCompletion(t *testing.T) {
 			}
 			completed = true
 		case "_x.ai/sessions/changed":
-			// Resident-session metadata is outside this completion parser.
+			if _, err := parseActivity(event.Params, session, config.Workspace); err != nil {
+				t.Fatal("changed original native activity", err)
+			}
 		default:
 			t.Fatal("unobserved native fixture notification")
 		}

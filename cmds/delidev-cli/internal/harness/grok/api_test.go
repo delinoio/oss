@@ -51,6 +51,7 @@ func apiFixtureProcess() {
 		os.Exit(50)
 	}
 	scanner := bufio.NewScanner(os.Stdin)
+	workspace := ""
 	for scanner.Scan() {
 		var request struct {
 			JSONRPC string          `json:"jsonrpc"`
@@ -89,6 +90,7 @@ func apiFixtureProcess() {
 			if decode(request.Params, &params) != nil || len(params.MCPServers) != 0 {
 				os.Exit(54)
 			}
+			workspace = params.Cwd
 			value := fixtureObject(sessionFixture)
 			meta := value["_meta"].(map[string]any)
 			meta["currentWorkingDirectory"] = params.Cwd
@@ -115,6 +117,9 @@ func apiFixtureProcess() {
 			}
 			_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"jsonrpc": "2.0", "method": "_x.ai/mcp_initialized", "params": map[string]any{"sessionId": value["sessionId"], "mcpToolCount": 0, "elapsedMs": 0}})
 			result = value
+		case "session/prompt":
+			fixtureInput(root, workspace, mode, request.ID, request.Params)
+			continue
 		default:
 			os.Exit(53)
 		}

@@ -37,6 +37,7 @@ type apiConfig struct {
 }
 
 type apiProfile struct {
+	model         string
 	contextTokens uint64
 	configuration []byte
 	path          string
@@ -49,7 +50,11 @@ type apiConnection struct {
 	inspection      process.Config
 	gate            chan struct{}
 	creationStarted bool
+	creationRequest domain.ID
 	session         domain.ID
+	product         domain.ID
+	ready           bool
+	inputStarted    bool
 }
 
 func apiConfigurationError() *domain.Error {
@@ -108,7 +113,7 @@ func buildAPIProfile(config apiConfig) (apiProfile, error) {
 	if err != nil || len(configuration) > 16<<10 {
 		return apiProfile{}, apiConfigurationError()
 	}
-	return apiProfile{contextTokens: config.ContextTokens, configuration: configuration, path: filepath.Join(config.Probe.Home, "config.toml")}, nil
+	return apiProfile{model: config.Model, contextTokens: config.ContextTokens, configuration: configuration, path: filepath.Join(config.Probe.Home, "config.toml")}, nil
 }
 
 func (p apiProfile) check() error {

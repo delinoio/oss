@@ -167,6 +167,7 @@ func (a *apiConnection) Create(ctx context.Context, request, product domain.ID, 
 	digest, configuration := sha256.Sum256(body), sha256.Sum256(a.profile.configuration)
 	claim := CreationClaim{Phase: ClaimCreation, RequestID: request, ProductSessionID: product, BodyDigest: hex.EncodeToString(digest[:]), ConfigurationDigest: hex.EncodeToString(configuration[:])}
 	a.creationStarted = true
+	a.creationRequest = request
 	stage = claimCreationStage
 	if err := record(ready, claim); err != nil {
 		return "", sessionUncertain()
@@ -196,6 +197,7 @@ func (a *apiConnection) Create(ctx context.Context, request, product domain.ID, 
 	if err := a.profile.checkInitialized(); err != nil {
 		return "", err
 	}
+	a.product, a.ready = product, true
 	return native, nil
 }
 
