@@ -505,6 +505,14 @@ fn publish(output: &OutputArgs, bytes: &[u8]) -> Result<(), &'static str> {
         .map_err(report_publication_error)
 }
 
+fn wants_report(quiet: bool, output: &OutputArgs) -> bool {
+    !quiet
+        || output
+            .output
+            .as_deref()
+            .is_some_and(|path| path.as_os_str() != "-")
+}
+
 fn report_publication_error(code: crate::publication::Code) -> &'static str {
     use crate::publication::Code;
     match code {
@@ -580,7 +588,7 @@ fn compare(args: CompareArgs) -> i32 {
         Ok(difference) => difference,
         Err(_) => return diagnostic("incompatible_record", "compare"),
     };
-    if !args.quiet {
+    if wants_report(args.quiet, &args.output) {
         let report = if args.json {
             let path_list = |keys: &[record::ProjectKey]| {
                 keys.iter()
@@ -1405,7 +1413,7 @@ fn assetcov(args: AssetcovArgs) -> i32 {
         Ok(report) => report,
         Err(error) => return diagnostic(&error.to_string(), "assetcov"),
     };
-    if !args.quiet {
+    if wants_report(args.quiet, &args.output) {
         let mut encoded = if args.json {
             match serde_json::to_vec_pretty(&serde_json::json!({
                 "covered": report.covered.iter().map(|file| &file.logical).collect::<Vec<_>>(),
@@ -1594,7 +1602,7 @@ where
     let baseline_median_ns = median(&baseline);
     let delayed_median_ns = median(&delayed);
     let slowdown_ratio = delayed_median_ns as f64 / baseline_median_ns.max(1) as f64;
-    if !args.quiet {
+    if wants_report(args.quiet, &args.output) {
         let mut report = if args.json {
             match serde_json::to_vec_pretty(&serde_json::json!({
                 "runs": runs,
@@ -2331,7 +2339,7 @@ fn min_repro(args: MinReproArgs) -> i32 {
     if let Err(error) = publish_new_directory(bundle.path(), &bundle_path) {
         return diagnostic(error, "min-repro");
     }
-    if !args.quiet {
+    if wants_report(args.quiet, &args.output) {
         let mut report = if args.json {
             match serde_json::to_vec_pretty(&serde_json::json!({
                 "verified": true,
@@ -3333,7 +3341,7 @@ fn macos_assetcov(args: AssetcovArgs) -> i32 {
         Ok(report) => report,
         Err(error) => return diagnostic(&error.to_string(), "assetcov"),
     };
-    if !args.quiet {
+    if wants_report(args.quiet, &args.output) {
         let mut encoded = if args.json {
             match serde_json::to_vec_pretty(&serde_json::json!({
                 "covered": report.covered.iter().map(|file| &file.logical).collect::<Vec<_>>(),
@@ -3576,7 +3584,7 @@ fn windows_assetcov(args: AssetcovArgs) -> i32 {
         Ok(report) => report,
         Err(error) => return diagnostic(&error.to_string(), "assetcov"),
     };
-    if !args.quiet {
+    if wants_report(args.quiet, &args.output) {
         let mut encoded = if args.json {
             match serde_json::to_vec_pretty(&serde_json::json!({
                 "covered": report.covered.iter().map(|file| &file.logical).collect::<Vec<_>>(),
@@ -4048,6 +4056,31 @@ mod tests {
     }
 
     #[test]
+    fn quiet_suppresses_stdout_but_keeps_explicit_file_reports() {
+        assert!(!wants_report(
+            true,
+            &OutputArgs {
+                output: None,
+                force: false,
+            }
+        ));
+        assert!(!wants_report(
+            true,
+            &OutputArgs {
+                output: Some(PathBuf::from("-")),
+                force: false,
+            }
+        ));
+        assert!(wants_report(
+            true,
+            &OutputArgs {
+                output: Some(PathBuf::from("./-")),
+                force: false,
+            }
+        ));
+    }
+
+    #[test]
     fn force_stdout_is_rejected_before_execution_or_bundle_creation() {
         let directory = tempfile::tempdir().unwrap();
         let bundle = directory.path().join("repro");
@@ -4425,6 +4458,21 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(execute(compare.command), 0);
+        let compare_report = directory.path().join("compare.txt");
+        let compare = TestCli::try_parse_from([
+            OsString::from("fspy"),
+            OsString::from("compare"),
+            trace_path.as_os_str().to_os_string(),
+            trace_path.as_os_str().to_os_string(),
+            OsString::from("--quiet"),
+            OsString::from("--output"),
+            compare_report.as_os_str().to_os_string(),
+        ])
+        .unwrap();
+        assert_eq!(execute(compare.command), 0);
+        assert!(fs::read_to_string(compare_report)
+            .unwrap()
+            .contains("Added project files"));
         let coverage = TestCli::try_parse_from([
             OsString::from("fspy"),
             OsString::from("assetcov"),
@@ -4929,6 +4977,22 @@ mod tests {
                         == Some(&NativePath::UnixBytes(b"input.txt".to_vec()))
                 })
         }));
+
+        let compare_report = directory.path().join("compare.txt");
+        let cli = TestCli::try_parse_from([
+            OsString::from("fspy"),
+            OsString::from("compare"),
+            output.as_os_str().to_owned(),
+            output.as_os_str().to_owned(),
+            OsString::from("--quiet"),
+            OsString::from("--output"),
+            compare_report.as_os_str().to_owned(),
+        ])
+        .unwrap();
+        assert_eq!(execute(cli.command), 0);
+        assert!(fs::read_to_string(compare_report)
+            .unwrap()
+            .contains("Added project files"));
 
         let cli = TestCli::try_parse_from([
             OsString::from("fspy"),
