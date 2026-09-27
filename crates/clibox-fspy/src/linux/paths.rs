@@ -255,6 +255,40 @@ fn base_path(tid: u32, descriptor: i32) -> Result<Option<PathBuf>, TraceFailure>
     }
 }
 
+fn empty_descriptor_path(
+    tid: u32,
+    descriptor: i32,
+) -> Result<Option<(PathBuf, Option<FileIdentity>)>, TraceFailure> {
+    if descriptor != libc::AT_FDCWD {
+        return descriptor_path(tid, descriptor);
+    }
+    let proc_path = format!("/proc/{tid}/cwd");
+    let path = fs::read_link(&proc_path).map_err(|_| supervision("cwd_read"))?;
+    let identity = file_id::get_file_id(&proc_path)
+        .map(FileIdentity::from)
+        .map_err(|_| supervision("cwd_identity"))?;
+    Ok(Some((path, Some(identity))))
+}
+
+fn empty_path_uses_descriptor(entry: &RawEntry, path_index: usize) -> bool {
+    if path_index != 1 {
+        return false;
+    }
+    let flags = if entry.syscall == libc::SYS_statx as u64 {
+        entry.args[2]
+    } else if entry.syscall == libc::SYS_newfstatat as u64
+        || entry.syscall == libc::SYS_faccessat2 as u64
+    {
+        entry.args[3]
+    } else if entry.syscall == libc::SYS_execveat as u64 || entry.syscall == libc::SYS_linkat as u64
+    {
+        entry.args[4]
+    } else {
+        return false;
+    };
+    flags & libc::AT_EMPTY_PATH as u64 != 0
+}
+
 fn absolute_path(
     tid: u32,
     path: PathBuf,
@@ -365,18 +399,31 @@ fn from_source(
     let (path, identity) = match source {
         Source::Path(index) => (
             read_path(entry.tid, entry.args[index])?
+                .filter(|path| !path.as_os_str().is_empty())
                 .map(|path| absolute_path(entry.tid, path, libc::AT_FDCWD))
                 .transpose()?
                 .flatten(),
             None,
         ),
-        Source::At(dir_index, path_index) => {
-            let path = read_path(entry.tid, entry.args[path_index])?
-                .map(|path| absolute_path(entry.tid, path, entry.args[dir_index] as i32))
-                .transpose()?
-                .flatten();
-            (path, None)
-        }
+        Source::At(dir_index, path_index) => match read_path(entry.tid, entry.args[path_index])? {
+            Some(path) if path.as_os_str().is_empty() => {
+                if empty_path_uses_descriptor(entry, path_index) {
+                    let Some((path, identity)) =
+                        empty_descriptor_path(entry.tid, entry.args[dir_index] as i32)?
+                    else {
+                        return Ok((None, true));
+                    };
+                    (Some(path), identity)
+                } else {
+                    (None, None)
+                }
+            }
+            Some(path) => (
+                absolute_path(entry.tid, path, entry.args[dir_index] as i32)?,
+                None,
+            ),
+            None => (None, None),
+        },
         Source::Descriptor(index) => {
             let descriptor = entry.args[index] as i32;
             let Some((path, identity)) = descriptor_path(entry.tid, descriptor)? else {
@@ -431,9 +478,46 @@ pub fn decode(entry: &RawEntry, root: &Path) -> Result<Option<DecodedOperation>,
 
 #[cfg(test)]
 mod tests {
-    use std::os::unix::fs::symlink;
+    use std::os::{fd::AsRawFd, unix::fs::symlink};
 
     use super::*;
+
+    #[test]
+    fn empty_at_path_uses_descriptor_only_with_native_flag() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().canonicalize().unwrap();
+        let file_path = root.join("input.txt");
+        fs::write(&file_path, b"input").unwrap();
+        let file = fs::File::open(&file_path).unwrap();
+        let empty = b"\0";
+        let mut entry = RawEntry {
+            ordinal: 1,
+            pid: std::process::id(),
+            tid: std::process::id(),
+            parent_pid: None,
+            syscall: libc::SYS_statx as u64,
+            args: [file.as_raw_fd() as u64, empty.as_ptr() as u64, 0, 0, 0, 0],
+            monotonic_ns: 1,
+        };
+        let ordinary = decode(&entry, &root).unwrap().unwrap();
+        assert!(ordinary.paths.is_empty());
+        assert!(ordinary.path_unavailable);
+
+        entry.args[2] = libc::AT_EMPTY_PATH as u64;
+        let descriptor = decode(&entry, &root).unwrap().unwrap();
+        assert_eq!(descriptor.paths.len(), 1);
+        assert_eq!(descriptor.paths[0].class, PathClass::Project);
+        assert!(descriptor.paths[0].identity.is_some());
+        assert!(!descriptor.path_unavailable);
+        let expected_identity = descriptor.paths[0].identity;
+
+        entry.syscall = libc::SYS_newfstatat as u64;
+        entry.args[2] = 0;
+        entry.args[3] = libc::AT_EMPTY_PATH as u64;
+        let descriptor = decode(&entry, &root).unwrap().unwrap();
+        assert_eq!(descriptor.paths[0].identity, expected_identity);
+        assert_eq!(descriptor.paths[0].class, PathClass::Project);
+    }
 
     #[test]
     fn missing_path_parent_components_do_not_escape_classification() {
