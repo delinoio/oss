@@ -108,6 +108,15 @@ unsafe extern "C" fn close(fd: c_int) -> c_int {
     result
 }
 
+intercept!(ftruncate: unsafe extern "C" fn(c_int, off_t) -> c_int);
+unsafe extern "C" fn ftruncate(fd: c_int, length: off_t) -> c_int {
+    let token = operation::enter_fd(Kind::Mutation, fd);
+    // SAFETY: forwards the caller's descriptor and requested length unchanged.
+    let result = unsafe { ftruncate::original()(fd, length) };
+    operation::finish(token, i64::from(result));
+    result
+}
+
 intercept!(fstat: unsafe extern "C" fn(c_int, *mut libc::stat) -> c_int);
 unsafe extern "C" fn fstat(fd: c_int, buffer: *mut libc::stat) -> c_int {
     let token = operation::enter_fd(Kind::Metadata, fd);

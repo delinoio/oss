@@ -412,6 +412,42 @@ mod tests {
         assert!(!output.exists());
     }
 
+    #[test]
+    fn captures_descriptor_only_truncation_as_mutation() {
+        let directory = tempfile::tempdir().unwrap();
+        let input = directory.path().join("input.txt");
+        fs::write(&input, b"fixture").unwrap();
+        let mut command = fspy::Command::new(std::env::current_exe().unwrap());
+        command
+            .args(["--exact", "macos::tests::read_fixture_child"])
+            .envs(std::env::vars_os())
+            .env("CLIBOX_FSPY_TEST_INPUT", input.as_os_str())
+            .env("CLIBOX_FSPY_TEST_FTRUNCATE", "1")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let record = capture(
+            command,
+            directory.path(),
+            Limits {
+                max_events: 100_000,
+                max_bytes: crate::record::DEFAULT_BYTE_LIMIT,
+                timeout: Some(Duration::from_secs(10)),
+                kill_after: Duration::from_millis(500),
+            },
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        assert!(record.operations.iter().any(|pair| {
+            pair.start.operation == crate::record::Operation::Mutation
+                && pair.start.paths.iter().any(|path| {
+                    path.project_relative
+                        == Some(crate::record::NativePath::UnixBytes(b"input.txt".to_vec()))
+                })
+                && pair.completion.native_error.is_none()
+        }));
+        assert_eq!(fs::read(input).unwrap(), b"fix");
+    }
+
     use super::*;
 
     #[test]

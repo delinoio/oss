@@ -1128,6 +1128,12 @@ mod tests {
         }
         let path = PathBuf::from(path);
         assert_eq!(fs::read(&path).unwrap(), b"fixture");
+        if std::env::var_os("CLIBOX_FSPY_TEST_FTRUNCATE").is_some() {
+            let file = fs::OpenOptions::new().write(true).open(&path).unwrap();
+            // SAFETY: the opened regular-file descriptor remains live.
+            assert_eq!(unsafe { libc::ftruncate(file.as_raw_fd(), 3) }, 0);
+            return;
+        }
         if std::env::var_os("CLIBOX_FSPY_TEST_DESCENDANT").as_deref()
             == Some(std::ffi::OsStr::new("2"))
         {
