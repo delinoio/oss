@@ -10,7 +10,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -49,15 +48,19 @@ func TestManualNativeGrokWorkerOriginalClaims(t *testing.T) {
 	if executable == "" {
 		t.Skip("explicit pinned native binary and private runtime required")
 	}
-	for _, changed := range []bool{false, true} {
-		t.Run(fmt.Sprintf("changed-input-%t", changed), func(t *testing.T) {
+	for _, profile := range []struct {
+		name              string
+		changed, streamed bool
+	}{{name: "original"}, {name: "streamed", streamed: true}, {name: "changed", changed: true}} {
+		t.Run(profile.name, func(t *testing.T) {
+			changed := profile.changed
 			p, journal, _ := newGrokClaimsFixture(t)
 			root := filepath.Join(p.config.Root, "runtimes", string(p.input.ExecutionID))
 			env, err := harness.PrivateRuntimeEnvironment(root)
 			if err != nil {
 				t.Fatal(err)
 			}
-			workspace := filepath.Join(p.config.Root, "workspace")
+			workspace := filepath.Join(p.config.Root, "workspace 공백_+.-()")
 			if err := security.PrivateDir(workspace); err != nil {
 				t.Fatal(err)
 			}
@@ -75,6 +78,7 @@ func TestManualNativeGrokWorkerOriginalClaims(t *testing.T) {
 				}
 			})
 			var upstream atomic.Uint32
+			firstText := make(chan struct{})
 			provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				upstream.Add(1)
 				raw, err := io.ReadAll(io.LimitReader(r.Body, 1<<20+1))
@@ -91,12 +95,28 @@ func TestManualNativeGrokWorkerOriginalClaims(t *testing.T) {
 					t.Error("native inference preceded synchronized original Worker claims")
 				}
 				w.Header().Set("Content-Type", "text/event-stream")
-				for _, chunk := range []string{
+				chunks := []string{
 					`{"id":"chat-worker","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{"role":"assistant","content":"Original Worker fixture completed."},"finish_reason":null}]}`,
 					`{"id":"chat-worker","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":11,"completion_tokens":5,"total_tokens":16}}`,
 					`[DONE]`,
-				} {
+				}
+				if profile.streamed {
+					first := strings.Replace(chunks[0], "Original Worker fixture completed.", "Original Worker ", 1)
+					second := strings.Replace(chunks[0], "Original Worker fixture completed.", "fixture completed.", 1)
+					chunks = append([]string{first, second}, chunks[1:]...)
+				}
+				for index, chunk := range chunks {
 					_, _ = fmt.Fprintf(w, "data: %s\n\n", chunk)
+					if profile.streamed && index == 0 {
+						w.(http.Flusher).Flush()
+						// Observe the actual first native chunk before releasing
+						// the remaining scripted output; no timing delay is used.
+						select {
+						case <-firstText:
+						case <-r.Context().Done():
+							return
+						}
+					}
 				}
 			}))
 			defer provider.Close()
@@ -139,6 +159,7 @@ func TestManualNativeGrokWorkerOriginalClaims(t *testing.T) {
 				input += " replacement"
 			}
 			var text strings.Builder
+			var textChunks uint64
 			completed := false
 			result, err := api.RunText(ctx, p.input.TurnRequestID, input, func(_ context.Context, observation grok.InputObservation) error {
 				claims, err := readGrokClaims(p.config.Root, journal.state.Reference)
@@ -147,6 +168,10 @@ func TestManualNativeGrokWorkerOriginalClaims(t *testing.T) {
 				}
 				if observation.Kind == grok.InputText {
 					text.WriteString(observation.Chunk.Update.Content.Text)
+					textChunks++
+					if profile.streamed && textChunks == 1 {
+						close(firstText)
+					}
 				}
 				if observation.Kind == grok.InputCompleted {
 					completed = true
@@ -173,21 +198,21 @@ func TestManualNativeGrokWorkerOriginalClaims(t *testing.T) {
 				if err != nil || readErr != nil || len(claims) != 6 || claims[4].Closure.RequestID != closed.RequestID || claims[5].Closure.Phase != grok.BindClosure || closed.NativeSessionID != session || closed.NativePromptID != result.Meta.Prompt || closed.Summary != "Original Worker fixture completed." {
 					t.Fatal("native closure lost original Worker evidence", err, readErr)
 				}
-				// There is no timing delay after native removal/process cleanup.
-				// Persisted summary remains separate evidence from its live event.
-				if err := security.CheckPrivateDir(cfg.Probe.Home); err != nil {
-					t.Fatal(err)
+				// Verification must use original controller facts after immediate
+				// native closure, without a load/replay or inference request.
+				requests := upstream.Load()
+				history, err := api.VerifyClosedText(ctx)
+				if err != nil || history.InputID != p.input.TurnRequestID || history.ClosureID != closed.RequestID || history.NativeSessionID != session || history.NativePromptID != result.Meta.Prompt || history.TextChunks != textChunks || profile.streamed && textChunks < 2 || len(history.FilesDigest) != 64 {
+					for _, line := range strings.Split(logs.String(), "\n") {
+						if strings.Contains(line, "history verification failed") {
+							t.Log(line)
+						}
+					}
+					t.Fatal("closed native text history lost original evidence", err)
 				}
-				// This fixture inspects only generated files beneath its private
-				// home. Native Grok files can be 0644 inside that 0700 boundary;
-				// production history needs its own anchored owner/path validator.
-				raw, err := os.ReadFile(filepath.Join(cfg.Probe.Home, "sessions", url.PathEscape(workspace), string(session), "summary.json"))
-				var summary struct {
-					Text   string `json:"last_turn_summary"`
-					Prompt string `json:"last_turn_summary_prompt_id"`
-				}
-				if err != nil || len(raw) > 64<<10 || json.Unmarshal(raw, &summary) != nil || summary.Text != closed.Summary || summary.Prompt != closed.NativePromptID {
-					t.Fatal("native acknowledged closure lost its persisted summary", err)
+				again, err := api.VerifyClosedText(ctx)
+				if err != nil || again != history || upstream.Load() != requests {
+					t.Fatal("history inspection changed original files or invoked inference", err)
 				}
 			}
 			if p.state.LastSequence != 0 || p.state.Pending != nil {

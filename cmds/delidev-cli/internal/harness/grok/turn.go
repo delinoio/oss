@@ -141,8 +141,12 @@ func eventIndex(event string, session domain.ID) (uint64, error) {
 }
 
 func parseTextChunk(raw []byte, session domain.ID, prompt string) (TextChunk, error) {
+	return parseTextChunkBound(raw, session, prompt, 256<<10)
+}
+
+func parseTextChunkBound(raw []byte, session domain.ID, prompt string, limit int) (TextChunk, error) {
 	var value TextChunk
-	if session.Validate() != nil || !nativeUUID(prompt, 4) || decode(raw, &value) != nil || value.Session != session || value.Update.Kind != "agent_message_chunk" || value.Update.Content.Type != "text" || domain.Text(value.Update.Content.Text, "native text chunk", 256<<10, false) != nil || value.Meta.Prompt != prompt || value.Meta.Type != "AgentMessageChunk" || value.Meta.Chunk == 0 {
+	if session.Validate() != nil || !nativeUUID(prompt, 4) || decode(raw, &value) != nil || value.Session != session || value.Update.Kind != "agent_message_chunk" || value.Update.Content.Type != "text" || domain.Text(value.Update.Content.Text, "native text chunk", limit, false) != nil || value.Meta.Prompt != prompt || value.Meta.Type != "AgentMessageChunk" || value.Meta.Chunk == 0 {
 		return TextChunk{}, incompatible()
 	}
 	if _, err := eventIndex(value.Meta.Event, session); err != nil {

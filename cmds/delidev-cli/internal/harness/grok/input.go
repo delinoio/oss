@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -133,6 +135,10 @@ func (a *apiConnection) RunText(ctx context.Context, request domain.ID, input st
 		return result, err
 	}
 	claim := InputClaim{Phase: ClaimInput, RequestID: request, ProductSessionID: a.product, NativeSessionID: a.session, BodyDigest: digest}
+	home, err := os.Lstat(filepath.Dir(a.profile.path))
+	if err != nil || !home.IsDir() {
+		return result, sessionUncertain()
+	}
 	a.inputStarted = true
 	if err := record(ctx, claim); err != nil {
 		return result, sessionUncertain()
@@ -182,7 +188,8 @@ func (a *apiConnection) RunText(ctx context.Context, request domain.ID, input st
 		}
 	}()
 	queue := inputQueue{session: a.session, text: input}
-	settled := completedText{request: request}
+	settled := completedText{request: request, bodyDigest: digest, home: home}
+	output := sha256.New()
 	var rpc nativewire.Response
 	var turn TurnCompleted
 	var completed PromptCompleted
@@ -283,6 +290,10 @@ func (a *apiConnection) RunText(ctx context.Context, request domain.ID, input st
 					return result, domain.Fail(domain.ResourceExhausted, "Native text exceeded its retained input bound.", "Retain the original output and reconcile this input without replay.")
 				}
 				lastChunk = chunk.Meta.Chunk
+				// Retain original facts before exposing the callback's mutable copy.
+				settled.chunks = append(settled.chunks, historyValueDigest(chunk))
+				settled.lastChunk = historyTextEnvelopeDigest(chunk)
+				_, _ = output.Write([]byte(chunk.Update.Content.Text))
 				if err := publish(InputObservation{Kind: InputText, Chunk: &chunk}); err != nil {
 					return result, err
 				}
@@ -369,6 +380,9 @@ func (a *apiConnection) RunText(ctx context.Context, request domain.ID, input st
 	if err := a.profile.checkInitialized(); err != nil {
 		return result, err
 	}
+	settled.terminal = historyValueDigest(turn)
+	settled.usage, _ = validateUsage(usage, a.profile.model)
+	copy(settled.output[:], output.Sum(nil))
 	if err := publish(InputObservation{Kind: InputCompleted, Result: &result}); err != nil {
 		return result, err
 	}

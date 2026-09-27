@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"os"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/nativewire"
@@ -53,6 +54,15 @@ type completedText struct {
 	summary     string
 	summarySeen bool
 	idle        bool
+	bodyDigest  string
+	chunks      [][32]byte
+	lastChunk   [32]byte
+	output      [32]byte
+	terminal    [32]byte
+	usage       ModelUsage
+	closed      domain.ID
+	home        os.FileInfo
+	history     *TextHistory
 }
 
 // TextClosure proves original native idle/summary, acknowledged session closure,
@@ -120,6 +130,9 @@ func (a *apiConnection) CloseText(ctx context.Context, request domain.ID, record
 		cancel()
 		if err := a.Close(); err != nil {
 			returned = sessionUncertain()
+		}
+		if returned == nil {
+			completed.closed = request
 		}
 		close(watchStop)
 		<-watchDone
