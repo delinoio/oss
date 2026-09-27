@@ -26,6 +26,7 @@ type apiSessionConfig struct {
 	Probe        ProbeConfig                               `json:"-"`
 	Workspace    string                                    `json:"-"`
 	NativeRoot   string                                    `json:"-"`
+	References   []WorkspaceReference                      `json:"-"`
 	ServerOrigin string                                    `json:"-"`
 	Token        string                                    `json:"-"`
 	Settings     SessionSettings                           `json:"-"`
@@ -66,7 +67,7 @@ func prepareAPISession(config apiSessionConfig) ([]string, *nativeAPIProfile, er
 		return nil, nil, incompatible()
 	}
 	root := filepath.Dir(config.Probe.Home)
-	if directoryContains(root, config.Workspace) || directoryContains(config.Workspace, root) {
+	if directoryContains(root, config.Workspace) || directoryContains(config.Workspace, root) || !validWorkspaceReferences(config.References, config.Workspace, root) || len(config.References) > 0 && config.NativeRoot != config.Workspace {
 		return nil, nil, sessionInvalid()
 	}
 	if err := rpc.ValidateEndpoint(config.ServerOrigin); err != nil {
@@ -80,6 +81,10 @@ func prepareAPISession(config apiSessionConfig) ([]string, *nativeAPIProfile, er
 	settings := config.Settings
 	settings.Permission = slices.Clone(settings.Permission)
 	profile := &nativeAPIProfile{Settings: settings, BaseURL: origin.String(), Token: config.Token, ContextLimit: config.ContextLimit, OutputLimit: config.OutputLimit, Rejection: config.Rejection, Instructions: config.Instructions}
+	profile.References = slices.Clone(config.References)
+	if err := profile.inspectReferences(); err != nil {
+		return nil, nil, err
+	}
 	if config.Instructions != "" {
 		profile.InstructionsPath = filepath.Join(root, "instructions.txt")
 	}
@@ -116,6 +121,9 @@ func prepareAPISession(config apiSessionConfig) ([]string, *nativeAPIProfile, er
 		env = append(env, "ProgramData="+programData)
 	}
 	if err := profile.writeInstructions(); err != nil {
+		return nil, nil, err
+	}
+	if err := profile.writeReferences(root, config.Workspace); err != nil {
 		return nil, nil, err
 	}
 	return env, profile, nil
@@ -195,7 +203,7 @@ func (s *sessionAPI) verifyNativeContext(ctx context.Context, config apiSessionC
 	}{
 		{"/path", func(raw []byte) error { return exactPrivateJSON(raw, paths) }},
 		{"/agent", func(raw []byte) error {
-			return validatePrimaryAgent(raw, config.Settings.Agent, root, config.NativeRoot)
+			return validatePrimaryAgent(raw, config.Settings.Agent, root, config.NativeRoot, s.apiProfile.References...)
 		}},
 	} {
 		raw, status, err := s.request(ctx, http.MethodGet, step.path, nil, http.StatusOK)
@@ -206,17 +214,24 @@ func (s *sessionAPI) verifyNativeContext(ctx context.Context, config apiSessionC
 			s.apiVerified = false
 			s.problem = sessionProblem()
 			if s.logger != nil {
+				if step.path == "/agent" && len(s.apiProfile.References) > 0 {
+					rules, references := observedReferencePolicyCounts(raw, config.Settings.Agent, s.apiProfile.References)
+					s.logger.WarnContext(ctx, "opencode_reference_policy_mismatch", "owner_id", s.owner, "expected_references", len(s.apiProfile.References), "observed_references", references, "observed_rules", rules)
+				}
 				s.logger.WarnContext(ctx, "OpenCode effective native context verification failed", "owner_id", s.owner, "phase", step.path, "http_status", status, "code", domain.SafeError(err).Code)
 			}
 			return err
 		}
 	}
 	s.runtimeRoot = config.NativeRoot
+	if len(s.apiProfile.References) > 0 && s.logger != nil {
+		s.logger.InfoContext(ctx, "opencode_workspace_references_verified", "owner_id", s.owner, "additional_repositories", len(s.apiProfile.References))
+	}
 	return nil
 }
 
-func validatePrimaryAgent(raw []byte, selected PrimaryAgent, root, worktree string) error {
-	expected, err := expectedPrimaryAgent(selected, root, worktree)
+func validatePrimaryAgent(raw []byte, selected PrimaryAgent, root, worktree string, references ...WorkspaceReference) error {
+	expected, err := expectedPrimaryAgent(selected, root, worktree, references...)
 	if err != nil {
 		return err
 	}
@@ -245,15 +260,20 @@ func validatePrimaryAgent(raw []byte, selected PrimaryAgent, root, worktree stri
 	return nil
 }
 
-func expectedPrimaryAgent(agent PrimaryAgent, root, worktree string) (map[string]any, error) {
+func expectedPrimaryAgent(agent PrimaryAgent, root, worktree string, references ...WorkspaceReference) (map[string]any, error) {
 	glob := filepath.Join(root, "data", "opencode", "tool-output", "*")
 	rules := []PermissionRule{
 		{"*", "*", PermissionAllow}, {"doom_loop", "*", PermissionAsk},
 		{"external_directory", "*", PermissionAsk}, {"external_directory", glob, PermissionAllow},
 		{"external_directory", filepath.Join(root, "tmp", "opencode", "*"), PermissionAllow},
+	}
+	for _, reference := range references {
+		rules = append(rules, PermissionRule{"external_directory", filepath.Join(reference.Path, "*"), PermissionAllow})
+	}
+	rules = append(rules, []PermissionRule{
 		{"question", "*", PermissionDeny}, {"plan_enter", "*", PermissionDeny}, {"plan_exit", "*", PermissionDeny},
 		{"read", "*", PermissionAllow}, {"read", "*.env", PermissionAsk}, {"read", "*.env.*", PermissionAsk}, {"read", "*.env.example", PermissionAllow},
-	}
+	}...)
 	var description string
 	switch agent {
 	case BuildAgent:

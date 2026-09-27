@@ -36,9 +36,6 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 	if domain.Decode(input.Preparation, &preparation) != nil || domain.Decode(input.Manifest, &manifest) != nil || preparation.SessionID != input.SessionID || preparation.MachineID != input.MachineID || workspace.ValidateResult(preparation, manifest, runtime.GOOS) != nil {
 		return nil, workspace.ResultUncertain()
 	}
-	if len(manifest.Repositories) > 1 {
-		return nil, domain.Fail(domain.Unsupported, "OpenCode execution needs a native multiple-repository settings adapter.", "Preserve all selected repositories; additional roots cannot be silently omitted.")
-	}
 	executable := input.Installation.ResolvedPath
 	resolved, err := filepath.EvalSymlinks(executable)
 	if err != nil || !filepath.IsAbs(executable) || resolved != executable {
@@ -134,7 +131,8 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 	nativeConfig := opencode.APIExecutionConfig{
 		Probe:     opencode.ProbeConfig{Process: process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: home, Env: env, Logger: logger}, Version: input.Installation.Version, Home: filepath.Join(home, "opencode")},
 		Workspace: lease.WorkingDirectory(), NativeRoot: nativeRoot, ServerOrigin: connection.Credential.Endpoint, Token: token,
-		Settings: requested.Session, Instructions: requested.Instructions, Rejection: requested.Rejection,
+		References: openCodeWorkspaceReferences(manifest),
+		Settings:   requested.Session, Instructions: requested.Instructions, Rejection: requested.Rejection,
 	}
 	var resumeClaim *opencode.SessionClaim
 	if checkpoint != nil {
@@ -299,10 +297,10 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 
 // The lease has independently verified project Git ownership. General Chat
 // must also exclude enclosing Git metadata; a native message cannot nominate
-// its own root. Multiple roots and Windows global project spelling require
-// their separate native profiles before this boundary can broaden.
+// its own root. Additional repositories use separately verified native local
+// references; Windows global project spelling still needs its own profile.
 func openCodeWorkspaceRoot(manifest workspace.Manifest, cwd string) (string, error) {
-	if cwd != manifest.PrimaryPath || !filepath.IsAbs(cwd) || len(manifest.Repositories) > 1 {
+	if cwd != manifest.PrimaryPath || !filepath.IsAbs(cwd) || manifest.Type == domain.GeneralChat && len(manifest.Repositories) != 0 {
 		return "", workspace.ResultUncertain()
 	}
 	if manifest.Type != domain.GeneralChat {
@@ -319,6 +317,17 @@ func openCodeWorkspaceRoot(manifest workspace.Manifest, cwd string) (string, err
 			return directory, nil
 		}
 	}
+}
+
+// Call only after the complete manifest and original workspace lease agree.
+func openCodeWorkspaceReferences(manifest workspace.Manifest) []opencode.WorkspaceReference {
+	var references []opencode.WorkspaceReference
+	for _, repository := range manifest.Repositories {
+		if repository.Path != manifest.PrimaryPath {
+			references = append(references, opencode.WorkspaceReference{RepositoryID: repository.ID, Path: repository.Path})
+		}
+	}
+	return references
 }
 
 func acceptOpenCodeInput(ctx context.Context, api *opencode.OwnedAPI, binding *OpenCodeBindingPublisher) ([]*opencode.FrozenObservation, error) {

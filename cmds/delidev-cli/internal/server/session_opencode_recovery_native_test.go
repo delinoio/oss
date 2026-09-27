@@ -71,6 +71,8 @@ func nativeOpenCodeRecovery(t *testing.T, binary string, mode domain.SessionMode
 		projectProfile, scenario = openCodeUnbornProject, "resumed"
 	case "first-commit-resumed":
 		projectProfile, scenario = openCodeFirstCommitProject, "resumed"
+	case "multiple-resumed":
+		projectProfile, scenario = openCodeMultipleProject, "resumed"
 	}
 	missingRead := strings.HasPrefix(scenario, "read-missing")
 	loadedInstructions := strings.HasPrefix(scenario, "read-loaded")

@@ -15,7 +15,7 @@ import (
 // assignment and original claims, never from the checkpoint being inspected.
 func inspectCompletedOpenCodeCheckpoint(ctx context.Context, root string, ref CompletedExecutionRef, completion domain.ExecutionCompletion, cwd string) error {
 	c, native := ref.Checkpoint, ref.OpenCode
-	if ref.Harness != domain.OpenCode || native == nil || native.Validate() != nil || ref.Preparation.Type != ref.Manifest.Type || len(ref.Manifest.Repositories) > 1 || len(c.WorkspaceRoots) != 0 {
+	if ref.Harness != domain.OpenCode || native == nil || native.Validate() != nil || ref.Preparation.Type != ref.Manifest.Type || len(c.WorkspaceRoots) != 0 {
 		return executionCheckpointUncertain()
 	}
 	bindings, err := domain.CheckedExecutionInputs(c.Completion.InputID, hex.EncodeToString(c.PromptDigest[:]), c.AcceptedInputs)
@@ -47,5 +47,5 @@ func inspectCompletedOpenCodeCheckpoint(ctx context.Context, root string, ref Co
 		return err
 	}
 	home := filepath.Join(root, "runtimes", string(completion.ExecutionID))
-	return opencode.InspectReplacementWorkspace(ctx, home, saved.Native, saved.NativeReference, cwd, nativeRoot)
+	return opencode.InspectReplacementWorkspace(ctx, home, saved.Native, saved.NativeReference, cwd, nativeRoot, openCodeWorkspaceReferences(ref.Manifest)...)
 }

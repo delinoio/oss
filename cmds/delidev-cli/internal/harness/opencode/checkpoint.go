@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -36,6 +37,7 @@ type nativeCheckpoint struct {
 	RuntimeHome       string                     `json:"runtime_home"`
 	Workspace         string                     `json:"workspace"`
 	NativeRoot        string                     `json:"native_root"`
+	References        []WorkspaceReference       `json:"workspace_references,omitempty"`
 	Project           string                     `json:"project"`
 	Slug              string                     `json:"slug"`
 	Created           int64                      `json:"created"`
@@ -129,6 +131,7 @@ func (a *OwnedAPI) RetainCheckpoint(ctx context.Context) (raw []byte, reference 
 	s.observer.mu.Unlock()
 	ref := CheckpointReference{OwnerID: s.owner, CreationRequestID: c.request, InputRequestID: i.receipt.RequestID, SessionID: history.SessionID, InputID: history.InputID, PartID: i.receipt.PartID, InputSHA256: hex.EncodeToString(i.digest[:]), HistorySHA256: history.Digest, RequiresResume: requiresResume}
 	value := nativeCheckpoint{Version: 1, NativeVersion: SupportedVersion, Reference: ref, RuntimeHome: s.runtimeHome, Workspace: s.cwd, NativeRoot: s.runtimeRoot, Project: c.identity.project, Slug: c.identity.slug, Created: c.identity.created, SettingsSHA256: settings, CredentialSHA256: mutationDigest([]byte(s.apiProfile.Token)), History: history, Stop: stop, Files: files}
+	value.References = slices.Clone(s.apiProfile.References)
 	if s.predecessor != nil {
 		value.PredecessorSHA256 = s.predecessorDigest
 		for _, prior := range checkpointHistories(*s.predecessor) {
@@ -222,7 +225,7 @@ func decodeCheckpoint(raw []byte, ref CheckpointReference, home string) (nativeC
 		return nativeCheckpoint{}, sessionUncertain()
 	}
 	input := value.History.Messages[0]
-	if len(input.Parts) != 1 || input.Parts[0].ID != ref.PartID || input.Parts[0].Kind != TextPartKind || !validCheckpointLineage(value) || !validCheckpointSnapshot(value) || !validCheckpointProjectAdoption(value) {
+	if len(input.Parts) != 1 || input.Parts[0].ID != ref.PartID || input.Parts[0].Kind != TextPartKind || !validCheckpointLineage(value) || !validCheckpointSnapshot(value) || !validCheckpointProjectAdoption(value) || !validCheckpointReferences(value) {
 		return nativeCheckpoint{}, sessionUncertain()
 	}
 	if stop := value.Stop; stop != nil {
@@ -359,7 +362,8 @@ func checkpointSettingsForAgent(s *sessionAPI, agent PrimaryAgent) (string, erro
 		InstructionsSHA256        string
 		TitleSHA256, RelaySHA256  string
 		Sources                   []instruction
-	}{agent, p.Settings.Provider, p.Settings.Model, p.Settings.Permission, p.ContextLimit, p.OutputLimit, p.Rejection, mutationDigest([]byte(p.Instructions)), mutationDigest([]byte(p.Settings.Title)), mutationDigest([]byte(p.BaseURL)), sources})
+		References                []WorkspaceReference `json:",omitempty"`
+	}{agent, p.Settings.Provider, p.Settings.Model, p.Settings.Permission, p.ContextLimit, p.OutputLimit, p.Rejection, mutationDigest([]byte(p.Instructions)), mutationDigest([]byte(p.Settings.Title)), mutationDigest([]byte(p.BaseURL)), sources, p.References})
 	if err != nil {
 		return "", sessionUncertain()
 	}

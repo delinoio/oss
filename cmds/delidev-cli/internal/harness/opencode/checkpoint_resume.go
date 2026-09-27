@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -28,7 +29,10 @@ type checkpointResume struct {
 // own original native replacement evidence.
 func OpenResumedAPI(ctx context.Context, config APIExecutionConfig, home string, raw []byte, ref CheckpointReference, request domain.ID, previousAgent PrimaryAgent, explicitResume bool) (result *OwnedAPI, returned error) {
 	source, err := decodeCheckpoint(raw, ref, home)
-	if err != nil || (previousAgent != BuildAgent && previousAgent != PlanAgent) || ctx.Err() != nil || request.Validate() != nil || request == ref.CreationRequestID || request == ref.InputRequestID || request == ref.OwnerID || config.Probe.Process.OwnerID == ref.OwnerID || source.Reference.RequiresResume && !explicitResume || config.Workspace != source.Workspace || config.NativeRoot != source.NativeRoot {
+	if err != nil || !slices.Equal(source.References, config.References) {
+		return nil, sessionUncertain()
+	}
+	if (previousAgent != BuildAgent && previousAgent != PlanAgent) || ctx.Err() != nil || request.Validate() != nil || request == ref.CreationRequestID || request == ref.InputRequestID || request == ref.OwnerID || config.Probe.Process.OwnerID == ref.OwnerID || source.Reference.RequiresResume && !explicitResume || config.Workspace != source.Workspace || config.NativeRoot != source.NativeRoot {
 		return nil, sessionUncertain()
 	}
 	if checkpointReplacementProfile(source) != nil || request == config.Probe.Process.OwnerID || config.Probe.Process.OwnerID == ref.CreationRequestID || config.Probe.Process.OwnerID == ref.InputRequestID {
@@ -198,7 +202,7 @@ func InspectReplacementCheckpoint(ctx context.Context, home string, raw []byte, 
 }
 
 func checkpointReplacementProfile(value nativeCheckpoint) error {
-	if !validCheckpointTools(value) || !validCheckpointSnapshot(value) || !validCheckpointProjectAdoption(value) || value.Snapshot == nil && (value.Project != "global" || filepath.Dir(value.NativeRoot) != value.NativeRoot) {
+	if !validCheckpointTools(value) || !validCheckpointSnapshot(value) || !validCheckpointProjectAdoption(value) || !validCheckpointReferences(value) || value.Snapshot == nil && (value.Project != "global" || filepath.Dir(value.NativeRoot) != value.NativeRoot) {
 		return incompatible()
 	}
 	for _, history := range checkpointHistories(value) {
@@ -246,9 +250,9 @@ func CheckpointResumeClaim(config APIExecutionConfig, ref CheckpointReference, r
 
 // InspectReplacementWorkspace joins independent closed workspace ownership
 // with the native checkpoint without launching or changing original state.
-func InspectReplacementWorkspace(ctx context.Context, home string, raw []byte, ref CheckpointReference, workspace, root string) error {
+func InspectReplacementWorkspace(ctx context.Context, home string, raw []byte, ref CheckpointReference, workspace, root string, references ...WorkspaceReference) error {
 	value, err := decodeCheckpoint(raw, ref, home)
-	if err != nil || value.Workspace != workspace || value.NativeRoot != root {
+	if err != nil || value.Workspace != workspace || value.NativeRoot != root || !slices.Equal(value.References, references) {
 		return sessionUncertain()
 	}
 	return InspectReplacementCheckpoint(ctx, home, raw, ref)

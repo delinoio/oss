@@ -450,7 +450,7 @@ func nativeOwnedAPISessionWithRequestCheck(t *testing.T, input, mismatch bool, r
 	if _, err := api.submitText(ctx, domain.NewID(), "Reply using the private owned fixture response."); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := api.observeInput(ctx, config.Workspace); err == nil {
+	if _, err := api.observeInput(ctx, filepath.Join(config.Workspace, "foreign-root")); err == nil {
 		t.Fatal("unverified project root replaced initializer evidence")
 	}
 	observer, err := api.observeInput(ctx, config.NativeRoot)

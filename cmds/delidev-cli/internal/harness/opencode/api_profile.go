@@ -29,6 +29,9 @@ type nativeAPIProfile struct {
 	Instructions        string               `json:"-"`
 	InstructionsPath    string               `json:"-"`
 	ProjectInstructions *projectInstructions `json:"-"`
+	References          []WorkspaceReference `json:"-"`
+	ReferencePath       string               `json:"-"`
+	ReferenceWorkspace  string               `json:"-"`
 }
 
 func (p nativeAPIProfile) config() (map[string]any, error) {
@@ -68,6 +71,10 @@ func (p nativeAPIProfile) config() (map[string]any, error) {
 	}
 	if len(instructionPaths) > 0 {
 		result["instructions"] = instructionPaths
+	}
+	if len(p.References) > 0 {
+		result["$schema"] = referenceConfigSchema
+		result["references"] = p.referenceConfig()
 	}
 	return result, nil
 }

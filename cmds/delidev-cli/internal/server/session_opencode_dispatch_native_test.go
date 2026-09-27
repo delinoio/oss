@@ -146,6 +146,9 @@ func nativeOpenCodePublicDispatch(t *testing.T, turns int, failedFirst bool, fau
 func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bool, fault, tool string, switchModes ...bool) {
 	workspaceType, tool := openCodeProjectFixtureProfile(tool)
 	projectProfile := openCodeCommittedProject
+	if strings.HasPrefix(tool, "multiple-") {
+		projectProfile, tool = openCodeMultipleProject, strings.TrimPrefix(tool, "multiple-")
+	}
 	if workspaceType == domain.Local && (tool == "unborn" || tool == "first-commit") {
 		projectProfile = openCodeUnbornProject
 		if tool == "first-commit" {
@@ -240,6 +243,7 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer cancel()
 			var calls atomic.Int64
+			var referenceManifest atomic.Value
 			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.Header.Get("Authorization") != "" {
 					t.Error("keyless upstream received Worker or owner credentials")
@@ -250,6 +254,9 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 					return
 				}
 				raw, err := io.ReadAll(io.LimitReader(r.Body, 2<<20))
+				if projectProfile == openCodeMultipleProject {
+					verifyOpenCodeProjectReferences(t, raw, referenceManifest.Load().(workspace.Manifest))
+				}
 				var request struct {
 					Model  string `json:"model"`
 					Stream bool   `json:"stream"`
@@ -391,6 +398,23 @@ func nativeOpenCodePublicDispatchProfile(t *testing.T, turns int, failedFirst bo
 				toolPath.Store(prepareOpenCodeLoadedRead(t, f, permission))
 			} else if tool != "" {
 				toolPath.Store(prepareOpenCodeContinuationTool(t, f, tool, permission))
+			}
+			if projectProfile == openCodeMultipleProject {
+				manifest := openCodeProjectManifest(t, f)
+				referenceManifest.Store(manifest)
+				if len(manifest.Repositories) != 3 || manifest.Repositories[1].Path != manifest.PrimaryPath {
+					t.Fatal("fixture lost designated non-first primary")
+				}
+				if tool != "" {
+					old := toolPath.Load().(string)
+					path := filepath.Join(manifest.Repositories[0].Path, filepath.Base(old))
+					if tool != "write" {
+						if err := os.Rename(old, path); err != nil {
+							t.Fatal(err)
+						}
+					}
+					toolPath.Store(path)
+				}
 			}
 			f.workerStream.Close()
 			_, err := f.service.Store.Mutate(ctx, domain.NewID(), "fixture.release-setup-worker", nil, func(tx *store.Tx) (any, error) {
@@ -698,6 +722,8 @@ func alterOpenCodeContinuationEvidence(t *testing.T, ctx context.Context, root s
 		path = filepath.Join(root, "runtimes", string(execution), "data", "opencode", "opencode.db")
 	case "snapshot":
 		path = filepath.Join(root, "runtimes", string(execution), "snapshot-checkpoint", "index")
+	case "reference-config":
+		path = filepath.Join(root, "runtimes", string(execution), "opencode", "opencode.json")
 	case "claims":
 		path = filepath.Join(root, "jobs", string(job), "opencode-claims.json")
 	case "report":
