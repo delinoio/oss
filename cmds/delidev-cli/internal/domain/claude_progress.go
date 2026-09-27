@@ -10,15 +10,16 @@ type ClaudeCompactResult string
 type ClaudeProgressCount string
 
 const (
-	ClaudeToolProgress        ClaudeProgressKind  = "tool-progress"
-	ClaudeToolSummaryProgress ClaudeProgressKind  = "tool-summary"
-	ClaudeStatusProgress      ClaudeProgressKind  = "session-status"
-	ClaudeThinkingProgress    ClaudeProgressKind  = "thinking-tokens-estimated"
-	ClaudeAPIRetryProgress    ClaudeProgressKind  = "api-retry"
-	ClaudeRequesting          ClaudeSessionStatus = "requesting"
-	ClaudeCompacting          ClaudeSessionStatus = "compacting"
-	ClaudeCompactSucceeded    ClaudeCompactResult = "success"
-	ClaudeCompactFailed       ClaudeCompactResult = "failed"
+	ClaudeTaskLifecycleProgress ClaudeProgressKind  = "task-lifecycle"
+	ClaudeToolProgress          ClaudeProgressKind  = "tool-progress"
+	ClaudeToolSummaryProgress   ClaudeProgressKind  = "tool-summary"
+	ClaudeStatusProgress        ClaudeProgressKind  = "session-status"
+	ClaudeThinkingProgress      ClaudeProgressKind  = "thinking-tokens-estimated"
+	ClaudeAPIRetryProgress      ClaudeProgressKind  = "api-retry"
+	ClaudeRequesting            ClaudeSessionStatus = "requesting"
+	ClaudeCompacting            ClaudeSessionStatus = "compacting"
+	ClaudeCompactSucceeded      ClaudeCompactResult = "success"
+	ClaudeCompactFailed         ClaudeCompactResult = "failed"
 )
 
 type ClaudeStatusObservation struct {
@@ -43,6 +44,7 @@ type ClaudeProgressObservation struct {
 	Thinking      *ClaudeThinkingObservation     `json:"thinking"`
 	APIRetry      *ClaudeAPIRetryObservation     `json:"api_retry,omitempty"`
 	Tool          *ClaudeToolProgressObservation `json:"tool,omitempty"`
+	Task          *ClaudeTaskObservation         `json:"task,omitempty"`
 	ToolSummary   *ClaudeToolSummaryObservation  `json:"tool_summary,omitempty"`
 }
 
@@ -58,6 +60,7 @@ type ClaudeProgressState struct {
 	LatestStatusID      ID                    `json:"latest_status_id,omitempty"`
 	LatestRetryID       ID                    `json:"latest_retry_id,omitempty"`
 	LatestThinkingID    ID                    `json:"latest_thinking_id,omitempty"`
+	LatestTaskID        ID                    `json:"latest_task_id,omitempty"`
 	LatestToolID        ID                    `json:"latest_tool_id,omitempty"`
 	LatestToolSummaryID ID                    `json:"latest_tool_summary_id,omitempty"`
 	Permission          *ClaudePermissionMode `json:"permission,omitempty"`
@@ -80,7 +83,7 @@ func (v ClaudeProgressObservation) Validate() error {
 		return invalidClaudeProgress()
 	}
 	populated := 0
-	for _, present := range []bool{v.Status != nil, v.Thinking != nil, v.APIRetry != nil, v.Tool != nil, v.ToolSummary != nil} {
+	for _, present := range []bool{v.Status != nil, v.Thinking != nil, v.APIRetry != nil, v.Tool != nil, v.ToolSummary != nil, v.Task != nil} {
 		if present {
 			populated++
 		}
@@ -103,6 +106,10 @@ func (v ClaudeProgressObservation) Validate() error {
 			if err != nil || strconv.FormatUint(value, 10) != string(counter) {
 				return invalidClaudeProgress()
 			}
+		}
+	case ClaudeTaskLifecycleProgress:
+		if !v.InputAccepted || v.Task == nil || v.Task.Validate() != nil {
+			return invalidClaudeProgress()
 		}
 	case ClaudeToolProgress:
 		if !v.InputAccepted || v.Tool == nil || v.Tool.Validate() != nil {

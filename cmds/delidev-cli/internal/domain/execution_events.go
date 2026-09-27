@@ -397,6 +397,7 @@ type ExecutionProgress struct {
 	ClaudeDenial           *ClaudeDenialCompletion     `json:"claude_denial,omitempty"`
 	ClaudeStop             *ClaudeStopObservation      `json:"claude_stop,omitempty"`
 	ClaudeTerminal         *ClaudeTerminalObservation  `json:"claude_terminal,omitempty"`
+	ClaudeTasks            *ClaudeTasksState           `json:"claude_tasks,omitempty"`
 	ClaudeProgress         *ClaudeProgressState        `json:"claude_progress,omitempty"`
 	ClaudeInterruption     *ClaudeInterruptionProgress `json:"claude_interruption,omitempty"`
 	OpenCodeStop           *OpenCodeStopObservation    `json:"opencode_stop,omitempty"`

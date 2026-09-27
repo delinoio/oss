@@ -12,8 +12,12 @@ import (
 
 // A single provider message proposes two calls; the native user envelope then
 // returns both original results. Lost acknowledgments must never replay tools.
-func claudeToolFixture(t *testing.T, lose string) (*ClaudeContentPublisher, *openCodeBindingRPC, claude.LifecycleObservation) {
+func claudeToolFixture(t *testing.T, lose string, names ...string) (*ClaudeContentPublisher, *openCodeBindingRPC, claude.LifecycleObservation) {
 	t.Helper()
+	name := "Read"
+	if len(names) != 0 {
+		name = names[0]
+	}
 	c, rpc := newClaudeContentFixture(t)
 	ctx := context.Background()
 	if err := c.PublishInput(ctx); err != nil {
@@ -48,7 +52,7 @@ func claudeToolFixture(t *testing.T, lose string) (*ClaudeContentPublisher, *ope
 	results.Content = nil
 	for n, id := range []string{"tool_original_one", "tool_original_two"} {
 		index := uint32(n)
-		native := &claude.NativeTool{ID: id, Name: "Read", Input: json.RawMessage(`{}`)}
+		native := &claude.NativeTool{ID: id, Name: name, Input: json.RawMessage(`{}`)}
 		block := &claude.NativeContentBlock{Kind: claude.ToolUseBlock, Tool: native}
 		publish(claude.ContentEvent{Kind: claude.ContentStarted, Index: &index, Block: block}, "start")
 		delta := `{"file_path":"/private/fixture","large":9007199254740993}`
@@ -57,7 +61,7 @@ func claudeToolFixture(t *testing.T, lose string) (*ClaudeContentPublisher, *ope
 		publish(claude.ContentEvent{Kind: claude.ContentCompleted, Index: &index, Block: block}, "proposal")
 		publish(claude.ContentEvent{Kind: claude.ContentStopped, Index: &index}, "stop")
 		output, failed := "Original read result", n == 1
-		results.Content = append(results.Content, claude.ContentEvent{Kind: claude.ToolResultObserved, MessageID: "msg_original", Index: &index, ToolResult: &claude.NativeToolResult{ID: id, Name: "Read", Text: &output, Error: &failed}})
+		results.Content = append(results.Content, claude.ContentEvent{Kind: claude.ToolResultObserved, MessageID: "msg_original", Index: &index, ToolResult: &claude.NativeToolResult{ID: id, Name: name, Text: &output, Error: &failed}})
 	}
 	publish(claude.ContentEvent{Kind: claude.ProviderMessageFinished}, "message-stop")
 	return c, rpc, results

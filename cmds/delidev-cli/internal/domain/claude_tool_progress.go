@@ -12,11 +12,12 @@ type ClaudeToolProgressObservation struct {
 	Tool           ClaudeToolReference `json:"tool"`
 	ParentToolID   *string             `json:"parent_tool_use_id"`
 	ElapsedSeconds string              `json:"elapsed_time_seconds"`
+	TaskID         *string             `json:"task_id,omitempty"`
 	Heartbeat      *bool               `json:"heartbeat"`
 }
 
 func (v ClaudeToolProgressObservation) Validate() error {
-	if v.Tool.Validate() != nil || v.ParentToolID != nil || len(v.ElapsedSeconds) == 0 || len(v.ElapsedSeconds) > 64 || v.ElapsedSeconds[0] < '0' || v.ElapsedSeconds[0] > '9' || !json.Valid([]byte(v.ElapsedSeconds)) {
+	if v.Tool.Validate() != nil || v.ParentToolID != nil || v.TaskID != nil && Text(*v.TaskID, "native task identity", 1024, true) != nil || len(v.ElapsedSeconds) == 0 || len(v.ElapsedSeconds) > 64 || v.ElapsedSeconds[0] < '0' || v.ElapsedSeconds[0] > '9' || !json.Valid([]byte(v.ElapsedSeconds)) {
 		return invalidClaudeProgress()
 	}
 	seconds, err := strconv.ParseFloat(v.ElapsedSeconds, 64)

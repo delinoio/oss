@@ -6,9 +6,11 @@ const bounded = (v: unknown, max: number, required = true) => typeof v === "stri
 const tool = (v: Document) => exact(v, ["id", "native_id", "name"]) && uuid(v.id) && bounded(v.native_id, 1024) && bounded(v.name, 256);
 const seconds = (v: unknown) => typeof v === "string" && v.length <= 64 && /^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$/.test(v) && Number.isFinite(Number(v));
 
+export function validClaudeToolReference(value: unknown): boolean { return tool(object(value)); }
+
 export function validClaudeToolProgress(value: unknown): boolean {
   const v = object(value);
-  return exact(v, ["tool", "parent_tool_use_id", "elapsed_time_seconds", "heartbeat"]) && tool(object(v.tool)) && v.parent_tool_use_id === null && seconds(v.elapsed_time_seconds) && (v.heartbeat === null || typeof v.heartbeat === "boolean");
+  return exact(v, ["tool", "parent_tool_use_id", "elapsed_time_seconds", "heartbeat", ...(Object.hasOwn(v, "task_id") ? ["task_id"] : [])]) && (v.task_id === undefined || bounded(v.task_id, 1024)) && tool(object(v.tool)) && v.parent_tool_use_id === null && seconds(v.elapsed_time_seconds) && (v.heartbeat === null || typeof v.heartbeat === "boolean");
 }
 
 export function validClaudeToolSummary(value: unknown): boolean {
@@ -26,7 +28,7 @@ export function validClaudeToolSummary(value: unknown): boolean {
 export function NativeClaudeToolProgress({ value }: { value: unknown }) {
   const v = object(value), ref = object(v.tool);
   return <>
-    <dl><dt>Tool</dt><dd>{ref.name as string}</dd><dt>Reported elapsed seconds</dt><dd>{v.elapsed_time_seconds as string}</dd><dt>Heartbeat</dt><dd>{v.heartbeat === null ? "Not reported" : v.heartbeat ? "Reported" : "Explicitly false"}</dd></dl>
+    <dl><dt>Tool</dt><dd>{ref.name as string}</dd>{v.task_id !== undefined ? <><dt>Task</dt><dd>{v.task_id as string}</dd></> : null}<dt>Reported elapsed seconds</dt><dd>{v.elapsed_time_seconds as string}</dd><dt>Heartbeat</dt><dd>{v.heartbeat === null ? "Not reported" : v.heartbeat ? "Reported" : "Explicitly false"}</dd></dl>
     <p>Tool progress does not confirm completion, approval or execution success.</p>
   </>;
 }

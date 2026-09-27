@@ -7,7 +7,7 @@ import (
 
 func publishClaudeTerminal(tx *store.Tx, input domain.ExecutionJobInput, p *domain.ExecutionProgress, event domain.ExecutionEvent) error {
 	v := event.ClaudeTerminal
-	if input.Configuration.Harness != domain.ClaudeCode || v == nil || v.Validate() != nil || v.InputID != input.InputID || p.ClaudeInterruption != nil || p.ClaudeTerminal != nil || p.UnconfirmedResponses != 0 || p.LatestUsageID == "" {
+	if input.Configuration.Harness != domain.ClaudeCode || v == nil || v.Validate() != nil || v.InputID != input.InputID || p.ClaudeInterruption != nil || p.ClaudeTerminal != nil || !p.ClaudeTasks.Closed() || p.UnconfirmedResponses != 0 || p.LatestUsageID == "" {
 		return executionEventConflict()
 	}
 	for _, native := range []string{v.ResultNativeID, v.CommandNativeID, v.IdleNativeID} {

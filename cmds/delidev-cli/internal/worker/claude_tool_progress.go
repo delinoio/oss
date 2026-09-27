@@ -22,16 +22,17 @@ func (c *ClaudeContentPublisher) PublishToolProgressObservation(ctx context.Cont
 	v := domain.ClaudeProgressObservation{NativeEventID: o.NativeID, InputAccepted: true}
 	switch n.Kind {
 	case claude.ToolProgressObserved:
-		// Task/child progress needs its own ownership adapter. Explicit native
-		// root parent null and an absent heartbeat retain separate meanings.
-		if n.Elapsed == nil || !reflect.DeepEqual(*n, claude.NativeProgressObservation{Kind: n.Kind, ToolID: n.ToolID, ToolName: n.ToolName, Elapsed: n.Elapsed, Heartbeat: n.Heartbeat}) {
+		// A completed tool can still own an independently running native task.
+		// Root parent null and an absent heartbeat retain separate meanings.
+		if n.Elapsed == nil || !reflect.DeepEqual(*n, claude.NativeProgressObservation{Kind: n.Kind, ToolID: n.ToolID, ToolName: n.ToolName, Elapsed: n.Elapsed, Heartbeat: n.Heartbeat, TaskID: n.TaskID}) {
 			return true, b.block()
 		}
 		tool, exists := c.tools[n.ToolID]
-		if !exists || tool.state != domain.MessageStreaming || tool.content == nil || tool.content.Proposal == nil || tool.reference.Name != n.ToolName {
+		if !exists || tool.reference.Validate() != nil || tool.reference.Name != n.ToolName || (n.TaskID == nil && (tool.state != domain.MessageStreaming || tool.content == nil || tool.content.Proposal == nil)) || (n.TaskID != nil && !c.tasks.OwnsRunningTask(*n.TaskID, tool.reference)) {
 			return true, b.block()
 		}
 		v.Kind, v.Tool = domain.ClaudeToolProgress, &domain.ClaudeToolProgressObservation{Tool: tool.reference, ElapsedSeconds: string(*n.Elapsed)}
+		v.Tool.TaskID = cloneClaudeTaskField(n.TaskID)
 		if n.Heartbeat != nil {
 			value := *n.Heartbeat
 			v.Tool.Heartbeat = &value

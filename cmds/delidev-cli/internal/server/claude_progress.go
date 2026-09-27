@@ -23,9 +23,24 @@ func publishClaudeProgress(tx *store.Tx, input domain.ExecutionJobInput, session
 		return executionEventConflict()
 	}
 	if v.Tool != nil {
-		if err := validateClaudeProgressTool(tx, input, session, event, v.Tool.Tool, true); err != nil {
+		if err := validateClaudeProgressTool(tx, input, session, event, v.Tool.Tool, v.Tool.TaskID == nil); err != nil {
 			return err
 		}
+	}
+	if v.Tool != nil && v.Tool.TaskID != nil && !p.ClaudeTasks.OwnsRunningTask(*v.Tool.TaskID, v.Tool.Tool) {
+		return executionEventConflict()
+	}
+	if v.Task != nil {
+		if v.Task.Tool != nil {
+			if err := validateClaudeProgressTool(tx, input, session, event, *v.Task.Tool, v.Task.Kind == domain.ClaudeTaskStarted); err != nil {
+				return err
+			}
+		}
+		next, err := domain.ApplyClaudeTask(p.ClaudeTasks, *v.Task)
+		if err != nil {
+			return err
+		}
+		p.ClaudeTasks = next
 	}
 	if v.ToolSummary != nil {
 		for _, tool := range v.ToolSummary.Tools {
@@ -51,6 +66,8 @@ func publishClaudeProgress(tx *store.Tx, input domain.ExecutionJobInput, session
 			// reconciliation without rewriting the immutable initial settings.
 			state.PermissionChanged = state.PermissionChanged || *permission != p.Observed.ClaudePermission
 		}
+	case domain.ClaudeTaskLifecycleProgress:
+		state.LatestTaskID = u.ID
 	case domain.ClaudeToolProgress:
 		state.LatestToolID = u.ID
 	case domain.ClaudeToolSummaryProgress:

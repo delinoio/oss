@@ -4,6 +4,9 @@ package domain
 // must additionally prove its private native history and exclusive workspace;
 // these observations alone can never reconstruct a missing checkpoint.
 func (p ExecutionProgress) ClaudeContinuationBoundary(input ID) bool {
+	if p.ClaudeTasks != nil && (len(p.ClaudeTasks.Tasks) != 0 || len(p.ClaudeTasks.Background) != 0) {
+		return false
+	}
 	t := p.ClaudeTerminal
 	if t == nil || t.Validate() != nil || t.InputID != input || t.Outcome() != ExecutionSucceeded || p.Outcome != ExecutionSucceeded || p.ClaudeStop != nil || p.ClaudeDenial != nil || p.ClaudeInterruption != nil || p.OpenCodeStop != nil || p.Waiting != (NativeWaiting{}) || p.UnconfirmedResponses != 0 || len(p.AcceptedInputs) > 1 || len(p.AcceptedInputs) == 1 && p.AcceptedInputs[0].InputID != input || p.SteerAttempts != 0 {
 		return false

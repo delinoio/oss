@@ -238,6 +238,10 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 				finishControls = startClaudeControls(ctx, nativeCtx, cancelNative, config, display, api)
 			}
 			handled = true
+		case claude.TaskObserved:
+			if display != nil {
+				handled, err = display.PublishTaskObservation(publicationContext, o)
+			}
 		case claude.ProgressObserved:
 			handled, err = binding.PublishProgressObservation(publicationContext, o)
 			if !handled && err == nil && display != nil {

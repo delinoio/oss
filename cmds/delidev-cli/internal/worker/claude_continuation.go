@@ -47,6 +47,12 @@ func (c *ClaudeContentPublisher) RetainCompletion(ctx context.Context, api *clau
 	if c.checkpoint != nil {
 		return *c.checkpoint, nil
 	}
+	// Native task histories require a separate checkpoint profile. Preserve
+	// truthful completed/closed v1 evidence without claiming resumability until
+	// that profile verifies the original task history as well as tool results.
+	if c.tasks != nil && (len(c.tasks.Tasks) != 0 || len(c.tasks.Background) != 0) {
+		return completion, nil
+	}
 	if completion.Outcome != domain.ExecutionSucceeded || c.terminal == nil || c.stop != nil || c.denial != nil || c.interruption != nil || len(c.messages) == 0 {
 		return completion, nil
 	}

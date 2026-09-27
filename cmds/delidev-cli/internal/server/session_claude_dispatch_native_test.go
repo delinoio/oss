@@ -27,9 +27,10 @@ import (
 type claudePublicCase string
 
 const (
-	claudePublicBash  claudePublicCase = "continuation-bash"
-	claudePublicWrite claudePublicCase = "continuation-write"
-	claudePublicEdit  claudePublicCase = "continuation-edit"
+	claudePublicBashTask claudePublicCase = "bash-task"
+	claudePublicBash     claudePublicCase = "continuation-bash"
+	claudePublicWrite    claudePublicCase = "continuation-write"
+	claudePublicEdit     claudePublicCase = "continuation-edit"
 )
 
 const (
@@ -236,6 +237,9 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 		reason := "end_turn"
 		if effect != "" && n%effectCalls != 0 {
 			name, id, params := claudePublicEffectCall(effect, n, effectCalls, readRoot.Load().(string))
+			if scenario == claudePublicBashTask {
+				params["command"] = "sleep 4; " + params["command"].(string)
+			}
 			encoded, _ := json.Marshal(params)
 			block = map[string]any{"type": "tool_use", "id": id, "name": name, "input": map[string]any{}}
 			delta = map[string]any{"type": "input_json_delta", "partial_json": string(encoded)}
@@ -487,6 +491,9 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 			}
 			var proof domain.ExecutionCompletion
 			version, dispatch := uint32(2), domain.DispatchReady
+			if scenario == claudePublicBashTask {
+				version, dispatch = 1, domain.DispatchPaused
+			}
 			if recoveredBoundary {
 				dispatch = domain.DispatchPaused
 			}
@@ -535,6 +542,9 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 				if retries != 1 || inputs != 1 {
 					t.Fatal("native retry duplicated input or lost progress", retries, inputs)
 				}
+			}
+			if scenario == claudePublicBashTask {
+				verifyClaudePublicBashTask(t, ctx, f, proof)
 			}
 			if effect != "" {
 				verifyClaudePublicEffectFiles(t, readRoot.Load().(string), turn)
