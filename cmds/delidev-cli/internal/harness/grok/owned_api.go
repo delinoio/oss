@@ -22,6 +22,25 @@ type OwnedAPI struct {
 	questionReply func(context.Context, QuestionClaim) error
 }
 
+func OpenOwnedAPIWithTools(ctx context.Context, config APIExecutionConfig, creation func(context.Context, CreationClaim) error, input func(context.Context, InputClaim) error, closure func(context.Context, ClosureClaim) error, fileReply func(context.Context, FilePermissionClaim) error, questionReply func(context.Context, QuestionClaim) error) (*OwnedAPI, error) {
+	if fileReply == nil || questionReply == nil {
+		return nil, apiConfigurationError()
+	}
+	api, err := OpenOwnedAPIWithFileTools(ctx, config, creation, input, closure, fileReply)
+	if err != nil {
+		return nil, err
+	}
+	api.questionReply = questionReply
+	return api, nil
+}
+
+func (a *OwnedAPI) RunTools(ctx context.Context, request domain.ID, input string, emit func(context.Context, InputObservation) error) (PromptResult, error) {
+	if a == nil || a.connection == nil || a.fileReply == nil || a.questionReply == nil {
+		return PromptResult{}, apiConfigurationError()
+	}
+	return a.connection.RunTools(ctx, request, input, a.input, emit)
+}
+
 func OpenOwnedAPIWithQuestions(ctx context.Context, config APIExecutionConfig, creation func(context.Context, CreationClaim) error, input func(context.Context, InputClaim) error, closure func(context.Context, ClosureClaim) error, reply func(context.Context, QuestionClaim) error) (*OwnedAPI, error) {
 	if reply == nil {
 		return nil, apiConfigurationError()

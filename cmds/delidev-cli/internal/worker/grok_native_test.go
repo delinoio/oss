@@ -53,7 +53,8 @@ func TestManualNativeGrokWorkerOriginalClaims(t *testing.T) {
 		changed, streamed, stopped bool
 		writing, rejected          bool
 		question                   bool
-	}{{name: "original"}, {name: "streamed", streamed: true}, {name: "changed", changed: true}, {name: "stopped", stopped: true}, {name: "write", writing: true}, {name: "write-rejected", writing: true, rejected: true}, {name: "question", question: true}, {name: "question-cancelled", question: true, rejected: true}} {
+		mixed                      bool
+	}{{name: "original"}, {name: "streamed", streamed: true}, {name: "changed", changed: true}, {name: "stopped", stopped: true}, {name: "write", writing: true}, {name: "write-rejected", writing: true, rejected: true}, {name: "question", question: true}, {name: "question-cancelled", question: true, rejected: true}, {name: "mixed", mixed: true}} {
 		t.Run(profile.name, func(t *testing.T) {
 			changed := profile.changed
 			stopRequest := domain.NewID()
@@ -72,7 +73,7 @@ func TestManualNativeGrokWorkerOriginalClaims(t *testing.T) {
 				t.Fatal(err)
 			}
 			filePath := filepath.Join(workspace, "original.txt")
-			if profile.writing {
+			if profile.writing || profile.mixed {
 				if err := os.WriteFile(filePath, []byte("Original Worker file.\n"), 0600); err != nil {
 					t.Fatal(err)
 				}
@@ -108,6 +109,10 @@ func TestManualNativeGrokWorkerOriginalClaims(t *testing.T) {
 					t.Error("native inference preceded synchronized original Worker claims")
 				}
 				w.Header().Set("Content-Type", "text/event-stream")
+				if profile.mixed {
+					nativeGrokMixedProvider(t, w, raw, filePath, p.input.Configuration.NativeModel)
+					return
+				}
 				if profile.writing {
 					nativeGrokWriteProvider(t, w, raw, filePath, p.input.Configuration.NativeModel, profile.rejected)
 					return
@@ -154,7 +159,9 @@ func TestManualNativeGrokWorkerOriginalClaims(t *testing.T) {
 			defer cancel()
 			cfg := grok.APIExecutionConfig{Probe: grok.ProbeConfig{Process: process.Config{Directory: filepath.Join(p.config.Root, "processes"), OwnerID: p.job, Executable: executable, Cwd: root, Env: env, Logger: logger}, Version: grok.SupportedVersion, Home: filepath.Join(root, "grok")}, Workspace: workspace, Model: p.input.Configuration.NativeModel, ContextTokens: 32000, ServerOrigin: relay.URL, Token: authority.token}
 			var api *grok.OwnedAPI
-			if profile.writing {
+			if profile.mixed {
+				api, err = grok.OpenOwnedAPIWithTools(ctx, cfg, journal.Creation, journal.Input, journal.Closure, journal.FileReply, journal.QuestionReply)
+			} else if profile.writing {
 				api, err = grok.OpenOwnedAPIWithFileTools(ctx, cfg, journal.Creation, journal.Input, journal.Closure, journal.FileReply)
 			} else if profile.question {
 				api, err = grok.OpenOwnedAPIWithQuestions(ctx, cfg, journal.Creation, journal.Input, journal.Closure, journal.QuestionReply)
@@ -187,6 +194,10 @@ func TestManualNativeGrokWorkerOriginalClaims(t *testing.T) {
 			session, err := api.Create(ctx, p.input.ThreadRequestID, p.input.SessionID)
 			if err != nil {
 				t.Fatal(err)
+			}
+			if profile.mixed {
+				nativeGrokWorkerMixed(t, ctx, api, p, journal, session, filePath)
+				return
 			}
 			if profile.writing {
 				nativeGrokWorkerWrite(t, ctx, api, p, journal, session, filePath, profile.rejected)

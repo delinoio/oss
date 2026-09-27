@@ -91,7 +91,7 @@ func TestGrokQuestionReplyClaimsRetainOriginalOwnershipAndBound(t *testing.T) {
 }
 
 func TestGrokQuestionRepliesExcludeTextStopAndClosure(t *testing.T) {
-	for _, preceding := range []string{"reply", "stop", "closure", "file-reply"} {
+	for _, preceding := range []string{"reply", "stop", "closure"} {
 		t.Run(preceding, func(t *testing.T) {
 			p, journal, claims := newGrokClaimsFixture(t)
 			ctx := context.Background()
@@ -110,15 +110,8 @@ func TestGrokQuestionRepliesExcludeTextStopAndClosure(t *testing.T) {
 				if err := journal.QuestionReply(ctx, reply); err != nil {
 					t.Fatal(err)
 				}
-				if journal.Stop(ctx, stop) == nil || journal.Closure(ctx, closure) == nil || journal.FileReply(ctx, fileReplyClaimFixture(p, running, 0)) == nil {
+				if journal.Stop(ctx, stop) == nil || journal.Closure(ctx, closure) == nil {
 					t.Fatal("question reply granted text-only claims")
-				}
-			case "file-reply":
-				if err := journal.FileReply(ctx, fileReplyClaimFixture(p, running, 0)); err != nil {
-					t.Fatal(err)
-				}
-				if journal.QuestionReply(ctx, reply) == nil {
-					t.Fatal("file profile granted question reply")
 				}
 			case "stop":
 				if err := journal.Stop(ctx, stop); err != nil {

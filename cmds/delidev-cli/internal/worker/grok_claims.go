@@ -50,6 +50,31 @@ type grokClaim struct {
 	QuestionReply *grok.QuestionClaim       `json:"question_reply,omitempty"`
 }
 
+// Tool families share original response namespaces in a mixed native input.
+// This comparison value contains no answer bytes and grants no send authority.
+type grokReplyOwner struct {
+	owner, product, input, request, native, arrival domain.ID
+	prompt, tool, requestDigest                     string
+}
+
+func grokReplyOwnerOf(record grokClaim) (grokReplyOwner, error) {
+	if record.FileReply != nil && record.QuestionReply == nil {
+		c := record.FileReply
+		if c.Validate() != nil {
+			return grokReplyOwner{}, grokClaimUncertain()
+		}
+		return grokReplyOwner{c.OwnerID, c.ProductSessionID, c.InputRequestID, c.RequestID, c.NativeSessionID, c.ArrivalID, c.NativePromptID, c.ToolID, c.RequestDigest}, nil
+	}
+	if record.QuestionReply != nil && record.FileReply == nil {
+		c := record.QuestionReply
+		if c.Validate() != nil {
+			return grokReplyOwner{}, grokClaimUncertain()
+		}
+		return grokReplyOwner{c.OwnerID, c.ProductSessionID, c.InputRequestID, c.RequestID, c.NativeSessionID, c.ArrivalID, c.NativePromptID, c.ToolID, c.RequestDigest}, nil
+	}
+	return grokReplyOwner{}, grokClaimUncertain()
+}
+
 type grokClaimState struct {
 	Reference grokClaimReference `json:"reference"`
 	Claims    []grokClaim        `json:"claims"`
@@ -164,27 +189,14 @@ func (s grokClaimState) validateNext(c grokClaim) error {
 	if len(s.Claims) >= maxGrokClaims || variants != 1 {
 		return grokClaimUncertain()
 	}
-	if c.QuestionReply != nil {
-		reply := c.QuestionReply
-		if len(s.Claims) < 4 || reply.Validate() != nil || reply.OwnerID != s.Reference.JobID || reply.ProductSessionID != s.Reference.SessionID || reply.InputRequestID != s.Reference.InputRequestID || reply.RequestID == s.Reference.CreationRequestID || reply.NativeSessionID != s.Claims[3].Input.NativeSessionID || reply.NativePromptID != s.Claims[3].Input.NativePromptID {
+	if c.QuestionReply != nil || c.FileReply != nil {
+		reply, err := grokReplyOwnerOf(c)
+		if len(s.Claims) < 4 || err != nil || reply.owner != s.Reference.JobID || reply.product != s.Reference.SessionID || reply.input != s.Reference.InputRequestID || reply.request == s.Reference.CreationRequestID || reply.native != s.Claims[3].Input.NativeSessionID || reply.prompt != s.Claims[3].Input.NativePromptID {
 			return grokClaimUncertain()
 		}
 		for _, record := range s.Claims[4:] {
-			prior := record.QuestionReply
-			if prior == nil || prior.RequestID == reply.RequestID || prior.ArrivalID == reply.ArrivalID || prior.ToolID == reply.ToolID || prior.RequestDigest == reply.RequestDigest {
-				return grokClaimUncertain()
-			}
-		}
-		return nil
-	}
-	if c.FileReply != nil {
-		reply := c.FileReply
-		if len(s.Claims) < 4 || reply.Validate() != nil || reply.OwnerID != s.Reference.JobID || reply.ProductSessionID != s.Reference.SessionID || reply.InputRequestID != s.Reference.InputRequestID || reply.RequestID == s.Reference.CreationRequestID || reply.NativeSessionID != s.Claims[3].Input.NativeSessionID || reply.NativePromptID != s.Claims[3].Input.NativePromptID {
-			return grokClaimUncertain()
-		}
-		for _, record := range s.Claims[4:] {
-			prior := record.FileReply
-			if prior == nil || prior.RequestID == reply.RequestID || prior.ArrivalID == reply.ArrivalID || prior.ToolID == reply.ToolID || prior.RequestDigest == reply.RequestDigest {
+			prior, err := grokReplyOwnerOf(record)
+			if err != nil || prior.request == reply.request || prior.arrival == reply.arrival || prior.request == reply.arrival || prior.arrival == reply.request || prior.tool == reply.tool || prior.requestDigest == reply.requestDigest {
 				return grokClaimUncertain()
 			}
 		}

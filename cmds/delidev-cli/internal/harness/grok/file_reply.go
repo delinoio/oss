@@ -114,7 +114,7 @@ func (c *textControl) offerFilePermission(event nativewire.Event, fact fileToolF
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	key, err := fileToolRequestKey(event.ID)
-	if c.profile != fileWriteInput || !c.running || c.terminal || fact.Permission == nil || event.Kind != nativewire.ServerRequest || event.Token.Validate() != nil || err != nil || c.permissions[event.Token] != nil || len(c.permissions) >= 128 {
+	if c.profile != fileWriteInput && c.profile != mixedToolInput || !c.running || c.terminal || fact.Permission == nil || event.Kind != nativewire.ServerRequest || event.Token.Validate() != nil || err != nil || c.permissions[event.Token] != nil || len(c.permissions) >= 128 {
 		return FilePermissionOffer{}, incompatible()
 	}
 	if c.permissions == nil {
@@ -156,12 +156,18 @@ func (a *apiConnection) ReplyFilePermission(ctx context.Context, request, arriva
 	}
 	c.mu.Lock()
 	r := c.permissions[arrival]
-	if c.profile != fileWriteInput || !c.running || c.terminal || r == nil || r.done != nil || request == a.creationRequest || decision == AllowFileSession && c.editPolicy != "" {
+	if c.profile != fileWriteInput && c.profile != mixedToolInput || !c.running || c.terminal || r == nil || r.done != nil || request == a.creationRequest || decision == AllowFileSession && c.editPolicy != "" {
 		c.mu.Unlock()
 		return result, sessionUncertain()
 	}
 	for _, prior := range c.permissions {
-		if prior.done != nil && prior.observation.Claim.RequestID == request {
+		if prior.offer.ArrivalID == request || prior.done != nil && prior.observation.Claim.RequestID == request {
+			c.mu.Unlock()
+			return result, sessionUncertain()
+		}
+	}
+	for _, prior := range c.questions {
+		if prior.offer.ArrivalID == request || prior.done != nil && prior.observation.Claim.RequestID == request {
 			c.mu.Unlock()
 			return result, sessionUncertain()
 		}
