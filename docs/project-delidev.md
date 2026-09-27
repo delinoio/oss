@@ -130,3 +130,5 @@ OpenCode multi-repository Worktree and authenticated Local execution now keep th
 
 
 Claude's private live controller now supports an originally claimed root interrupt, with positive default/Plan partial-text evidence. It distinguishes native acknowledgment, interrupted content, session-level uncorrelated result, command cancellation, idle and process cleanup. This boundary neither invents a missing native input ID nor enables stopped-history handoff or public Claude dispatch; those integrations remain in progress.
+
+Claude initial-assignment API registration now uses the existing authenticated Worker and revocable selected-account relay. Its exact Messages-only profile shares settings validation with the private Worker adapter; public Claude dispatch/publication, continuation registration and selected external-account acceptance remain separate unfinished work.

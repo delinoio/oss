@@ -47,3 +47,22 @@ func (o AgentOptions) ClaudePermissionForInput(mode SessionMode) (ClaudePermissi
 	}
 	return o.ClaudePermission, nil
 }
+
+// ClaudeAPIInputPermission is shared by the server's exact relay profile and
+// the Worker launch adapter. Registration must not authorize settings that the
+// owning native adapter would omit. Applied settings still need native proof.
+func (c ExecutionConfiguration) ClaudeAPIInputPermission(mode SessionMode) (ClaudePermissionMode, error) {
+	if err := c.Validate(); err != nil {
+		return "", err
+	}
+	o := c.Options
+	if c.Harness != ClaudeCode || o.SubagentModel != "" || o.SubagentEffort != "" || o.MaxConcurrency != 0 || o.ApprovalReviewModel != "" || o.ServiceTier != "" {
+		return "", Fail(Unsupported, "The selected Claude options need an additional native settings adapter.", "Preserve the explicit selection; unsupported settings cannot be omitted or translated.")
+	}
+	switch c.Effort {
+	case "", "low", "medium", "high", "xhigh", "max":
+	default:
+		return "", Fail(Unsupported, "The selected effort is not supported by this Claude profile.", "Use an exact supported native effort or leave it unspecified.")
+	}
+	return o.ClaudePermissionForInput(mode)
+}

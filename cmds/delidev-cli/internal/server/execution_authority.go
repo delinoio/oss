@@ -141,6 +141,15 @@ func executionAPIOperations(input domain.ExecutionJobInput, protocol domain.APIP
 		if input.Installation.Version == domain.CodexProtocolVersion && protocol == domain.OpenAIResponses {
 			return []apiproxy.Operation{apiproxy.ResponseCreate, apiproxy.ResponseCompact}
 		}
+	case domain.ClaudeCode:
+		if input.Version != 1 || input.Continuation != nil || input.Installation.Version != domain.ClaudeProtocolVersion || protocol != domain.AnthropicMessages {
+			return nil
+		}
+		if _, err := input.Configuration.ClaudeAPIInputPermission(input.Input.Mode); err == nil {
+			// Token counting, resumed assignments and public dispatch have
+			// separate evidence gates; a discovery handshake grants none.
+			return []apiproxy.Operation{apiproxy.MessageCreate}
+		}
 	case domain.OpenCode:
 		o := input.Configuration.Options
 		validGeneration := input.Version == 1 && input.Continuation == nil || input.Version == 2 && input.Continuation != nil && input.Validate() == nil

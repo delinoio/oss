@@ -44,6 +44,8 @@ func newHarnessAuthorityFixture(t *testing.T, upstream string, harness domain.Ha
 	protocol := domain.OpenAIResponses
 	if harness == domain.OpenCode {
 		protocol = domain.OpenAIChat
+	} else if harness == domain.ClaudeCode {
+		protocol = domain.AnthropicMessages
 	}
 	return newProfileAuthorityFixture(t, upstream, harness, protocol, nil, false)
 }
@@ -80,6 +82,8 @@ func newProfileAuthorityFixture(t *testing.T, upstream string, harness domain.Ha
 	permission, version := domain.PermissionReadOnly, domain.CodexProtocolVersion
 	if harness == domain.OpenCode {
 		permission, version = domain.PermissionDefault, domain.OpenCodeProtocolVersion
+	} else if harness == domain.ClaudeCode {
+		permission, version = domain.PermissionDefault, domain.ClaudeProtocolVersion
 	}
 	agent := domain.Agent{Name: "Fixture", Harness: harness, ModelID: modelID, Accounts: []domain.WeightedAccount{{ID: accountID, Weight: 1}}, Options: domain.AgentOptions{Permission: permission}}
 	configuration, err := domain.ResolveExecutionConfiguration(agentID, 1, agent, 1, model, domain.Priority, nil)
@@ -173,6 +177,8 @@ func (f *authorityFixture) request(t *testing.T, token, body string) *http.Respo
 func (f *authorityFixture) operationPath() string {
 	if f.input.Configuration.Harness == domain.OpenCode {
 		return "/chat/completions"
+	} else if f.input.Configuration.Harness == domain.ClaudeCode {
+		return "/messages"
 	}
 	return "/responses"
 }
@@ -247,7 +253,7 @@ func TestExecutionGrantRPCAndRelayRetainOnlyScopedAuthority(t *testing.T) {
 }
 
 func TestExecutionGrantCannotSurviveEpochReplacementOrAccountRevocation(t *testing.T) {
-	for _, harness := range []domain.Harness{domain.Codex, domain.OpenCode} {
+	for _, harness := range []domain.Harness{domain.Codex, domain.OpenCode, domain.ClaudeCode} {
 		t.Run(string(harness), func(t *testing.T) { testExecutionGrantCannotSurviveEpochReplacementOrAccountRevocation(t, harness) })
 	}
 }
@@ -292,7 +298,7 @@ func testExecutionGrantCannotSurviveEpochReplacementOrAccountRevocation(t *testi
 }
 
 func TestExecutionAccountRevocationJoinsActiveProviderRequest(t *testing.T) {
-	for _, harness := range []domain.Harness{domain.Codex, domain.OpenCode} {
+	for _, harness := range []domain.Harness{domain.Codex, domain.OpenCode, domain.ClaudeCode} {
 		t.Run(string(harness), func(t *testing.T) { testExecutionAccountRevocationJoinsActiveProviderRequest(t, harness) })
 	}
 }
@@ -346,7 +352,7 @@ func testExecutionAccountRevocationJoinsActiveProviderRequest(t *testing.T, harn
 }
 
 func TestExecutionGrantRechecksMutableOwnership(t *testing.T) {
-	for _, harness := range []domain.Harness{domain.Codex, domain.OpenCode} {
+	for _, harness := range []domain.Harness{domain.Codex, domain.OpenCode, domain.ClaudeCode} {
 		t.Run(string(harness), func(t *testing.T) { testExecutionGrantRechecksMutableOwnership(t, harness) })
 	}
 }
