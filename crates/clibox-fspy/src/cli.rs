@@ -501,8 +501,8 @@ fn publish(output: &OutputArgs, bytes: &[u8]) -> Result<(), &'static str> {
     if existing_report_destination(path)?.is_some() && !output.force {
         return Err("output_exists");
     }
-    clibox_transform::publish_file_bytes(path, output.force, bytes).map_err(|code| {
-        use clibox_transform::PublicationErrorCode as Code;
+    crate::publication::publish_file_bytes(path, output.force, bytes).map_err(|code| {
+        use crate::publication::Code;
         match code {
             Code::OutputExists => "output_exists",
             Code::UnsafeDestination => "output_not_regular",
@@ -510,7 +510,6 @@ fn publish(output: &OutputArgs, bytes: &[u8]) -> Result<(), &'static str> {
             Code::ReadFailed => "output_metadata",
             Code::WriteFailed => "output_write",
             Code::PublishFailed => "output_publish",
-            _ => "output_publish",
         }
     })
 }

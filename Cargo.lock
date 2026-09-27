@@ -1826,7 +1826,6 @@ name = "clibox-fspy"
 version = "0.1.0"
 dependencies = [
  "clap",
- "clibox-transform",
  "file-id",
  "fspy",
  "futures-util",
@@ -1845,6 +1844,7 @@ dependencies = [
  "uuid",
  "walkdir",
  "winapi",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
