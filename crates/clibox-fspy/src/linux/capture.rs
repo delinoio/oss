@@ -56,7 +56,12 @@ impl Event {
     }
 }
 
-fn root_program(command: &Command) -> Result<PathBuf, TraceFailure> {
+struct RootProgram {
+    selected: PathBuf,
+    failed_candidates: Vec<(PathBuf, i32)>,
+}
+
+fn root_program(command: &Command, max_failed: usize) -> Result<RootProgram, TraceFailure> {
     let cwd = command.get_current_dir().unwrap_or_else(|| Path::new("."));
     let cwd = std::path::absolute(cwd).map_err(|_| TraceFailure::Spawn)?;
     let program = Path::new(command.get_program());
@@ -70,7 +75,12 @@ fn root_program(command: &Command) -> Result<PathBuf, TraceFailure> {
         } else {
             cwd.join(program)
         };
-        return executable(&path).then_some(path).ok_or(TraceFailure::Spawn);
+        return executable(&path)
+            .then_some(RootProgram {
+                selected: path,
+                failed_candidates: Vec::new(),
+            })
+            .ok_or(TraceFailure::Spawn);
     }
     let path_env = command
         .get_envs()
@@ -78,6 +88,7 @@ fn root_program(command: &Command) -> Result<PathBuf, TraceFailure> {
         .map(|(_, value)| value.map(OsString::from))
         .unwrap_or_else(|| env::var_os("PATH"))
         .unwrap_or_else(|| OsString::from("/bin:/usr/bin"));
+    let mut failed_candidates = Vec::new();
     for directory in env::split_paths(&path_env) {
         let base = if directory.is_absolute() {
             directory
@@ -86,8 +97,19 @@ fn root_program(command: &Command) -> Result<PathBuf, TraceFailure> {
         };
         let candidate = base.join(program);
         if executable(&candidate) {
-            return Ok(candidate);
+            return Ok(RootProgram {
+                selected: candidate,
+                failed_candidates,
+            });
         }
+        if failed_candidates.len() >= max_failed {
+            return Err(TraceFailure::EventLimit);
+        }
+        let error = match fs::metadata(&candidate) {
+            Ok(_) => libc::EACCES,
+            Err(error) => error.raw_os_error().unwrap_or(libc::EIO),
+        };
+        failed_candidates.push((candidate, error));
     }
     Err(TraceFailure::Spawn)
 }
@@ -148,7 +170,50 @@ where
     if cancelled.load(Ordering::SeqCst) {
         return Err(TraceFailure::Cancellation);
     }
-    let program = root_program(command)?;
+    let RootProgram {
+        selected: program,
+        failed_candidates,
+    } = root_program(command, limits.max_events / 2 - 1)?;
+    let mut failed_execs = Vec::with_capacity(failed_candidates.len());
+    let mut retained_bytes = root
+        .as_os_str()
+        .as_bytes()
+        .len()
+        .saturating_mul(4)
+        .saturating_add(1024) as u64;
+    for (candidate, error) in failed_candidates {
+        if cancelled.load(Ordering::SeqCst) {
+            return Err(TraceFailure::Cancellation);
+        }
+        let encoded =
+            CString::new(candidate.as_os_str().as_bytes()).map_err(|_| TraceFailure::Spawn)?;
+        let entry = RawEntry {
+            ordinal: 0,
+            pid: std::process::id(),
+            tid: unsafe { libc::gettid() as u32 },
+            parent_pid: None,
+            syscall: libc::SYS_execve as u64,
+            args: [encoded.as_ptr() as usize as u64, 0, 0, 0, 0, 0],
+            monotonic_ns: u64::try_from(began.elapsed().as_nanos())
+                .map_err(|_| supervision("time_limit"))?,
+        };
+        let operation =
+            paths::decode(&entry, &root)?.ok_or_else(|| supervision("root_exec_decode"))?;
+        if operation.path_unavailable || operation.paths.len() != 1 {
+            return Err(supervision("root_exec_path"));
+        }
+        let charge = serde_json::to_vec(&operation.paths)
+            .map_err(|_| supervision("capture_encoding"))?
+            .len() as u64
+            + 1024;
+        retained_bytes = retained_bytes
+            .checked_add(charge)
+            .ok_or(TraceFailure::ByteLimit)?;
+        if retained_bytes > limits.max_bytes {
+            return Err(TraceFailure::ByteLimit);
+        }
+        failed_execs.push((operation, entry.monotonic_ns, error));
+    }
     let encoded_program =
         CString::new(program.as_os_str().as_bytes()).map_err(|_| TraceFailure::Spawn)?;
     let root_entry = RawEntry {
@@ -173,13 +238,9 @@ where
         .map_err(|_| supervision("capture_encoding"))?
         .len() as u64
         + 1024;
-    let mut retained_bytes = root
-        .as_os_str()
-        .as_bytes()
-        .len()
-        .saturating_mul(4)
-        .saturating_add(1024) as u64
-        + root_charge;
+    retained_bytes = retained_bytes
+        .checked_add(root_charge)
+        .ok_or(TraceFailure::ByteLimit)?;
     if retained_bytes > limits.max_bytes {
         return Err(TraceFailure::ByteLimit);
     }
@@ -246,7 +307,12 @@ where
             if retained_bytes.saturating_add(charge) > limits.max_bytes {
                 return Err(TraceFailure::ByteLimit);
             }
-            if starts.len().saturating_add(2).saturating_mul(2) > limits.max_events {
+            if starts
+                .len()
+                .saturating_add(failed_execs.len() + 2)
+                .saturating_mul(2)
+                > limits.max_events
+            {
                 return Err(TraceFailure::EventLimit);
             }
             retained_bytes += charge;
@@ -290,11 +356,45 @@ where
     if starts.len() != result.operations.len() {
         return Err(supervision("unpaired_capture"));
     }
-    let mut events =
-        Vec::<Event>::with_capacity(result.operations.len().saturating_add(1).saturating_mul(2));
+    let synthetic_count = failed_execs.len() + 1;
+    let mut events = Vec::<Event>::with_capacity(
+        result
+            .operations
+            .len()
+            .saturating_add(synthetic_count)
+            .saturating_mul(2),
+    );
+    for (index, (operation, monotonic_ns, error)) in failed_execs.into_iter().enumerate() {
+        let correlation_id = u64::try_from(index + 1).map_err(|_| TraceFailure::EventLimit)?;
+        events.push(Event::Start(Start {
+            sequence: 0,
+            correlation_id,
+            pid: result.root_pid,
+            tid: result.root_pid,
+            parent_pid: Some(std::process::id()),
+            operation: Operation::Exec,
+            open_mutates: false,
+            paths: operation.paths,
+            path_unavailable: false,
+            descriptor: None,
+            monotonic_ns,
+            requested_delay_ns: 0,
+        }));
+        events.push(Event::Completion(Completion {
+            sequence: 0,
+            correlation_id,
+            pid: result.root_pid,
+            tid: result.root_pid,
+            monotonic_ns,
+            native_result: -1,
+            native_error: Some(error),
+            byte_count: None,
+            observed_delay_ns: 0,
+        }));
+    }
     events.push(Event::Start(Start {
         sequence: 0,
-        correlation_id: 1,
+        correlation_id: u64::try_from(synthetic_count).map_err(|_| TraceFailure::EventLimit)?,
         pid: result.root_pid,
         tid: result.root_pid,
         parent_pid: Some(std::process::id()),
@@ -308,7 +408,7 @@ where
     }));
     events.push(Event::Completion(Completion {
         sequence: 0,
-        correlation_id: 1,
+        correlation_id: u64::try_from(synthetic_count).map_err(|_| TraceFailure::EventLimit)?,
         pid: result.root_pid,
         tid: result.root_pid,
         monotonic_ns: root_completion_ns,
@@ -321,7 +421,7 @@ where
         let entry = completed.entry;
         let correlation_id = entry
             .ordinal
-            .checked_add(1)
+            .checked_add(u64::try_from(synthetic_count).map_err(|_| TraceFailure::EventLimit)?)
             .ok_or(TraceFailure::EventLimit)?;
         let captured = starts
             .remove(&entry.ordinal)
@@ -443,6 +543,41 @@ mod tests {
 
     use super::*;
     use crate::record::{parse, serialize, DEFAULT_BYTE_LIMIT, DEFAULT_EVENT_LIMIT};
+
+    #[test]
+    fn path_candidates_before_selected_executable_are_recorded() {
+        let directory = tempfile::tempdir().unwrap();
+        let missing = directory.path().join("missing");
+        let fallback = directory.path().join("fallback");
+        fs::create_dir_all(&missing).unwrap();
+        fs::create_dir_all(&fallback).unwrap();
+        fs::copy("/bin/true", fallback.join("tool")).unwrap();
+        let path = env::join_paths([&missing, &fallback]).unwrap();
+        let mut command = Command::new("tool");
+        command.env("PATH", path).stdout(Stdio::null());
+        let record = capture(
+            &mut command,
+            directory.path(),
+            Limits::default(),
+            &AtomicBool::new(false),
+            |_| Duration::ZERO,
+        )
+        .unwrap();
+        let failed = &record.operations[0];
+        assert_eq!(failed.start.operation, Operation::Exec);
+        assert_eq!(failed.completion.native_error, Some(libc::ENOENT));
+        assert_eq!(
+            failed.start.paths[0].project_relative,
+            Some(NativePath::UnixBytes(b"missing/tool".to_vec()))
+        );
+        let selected = &record.operations[1];
+        assert_eq!(selected.start.operation, Operation::Exec);
+        assert_eq!(selected.completion.native_error, None);
+        assert_eq!(
+            selected.start.paths[0].project_relative,
+            Some(NativePath::UnixBytes(b"fallback/tool".to_vec()))
+        );
+    }
 
     #[test]
     fn root_executable_is_recorded_before_child_operations() {
