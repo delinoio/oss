@@ -48,7 +48,7 @@ func (b *ExecutionBinding) observeRunState(raw []byte) (*NativeRunObservation, e
 			return nil, lifecycleUncertain()
 		}
 	case RunIdle:
-		if b.runState != RunRunning || !b.finished || b.continuing ||
+		if b.runState != RunRunning || (!b.finished && b.interruptResult == nil) || b.continuing ||
 			(b.command != CommandCompleted && b.command != CommandCancelled) || len(b.content.active) != 0 || b.content.openTools != 0 {
 			return nil, lifecycleUncertain()
 		}

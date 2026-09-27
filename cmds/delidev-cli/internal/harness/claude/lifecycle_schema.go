@@ -225,6 +225,9 @@ func (b *ExecutionBinding) validateResult(raw []byte) (NativeResult, bool, error
 		return NativeResult{}, false, err
 	}
 	value := NativeResult{Kind: result.Kind, Reason: result.Reason, Error: *result.Error, Usage: usage, KnownWork: b.knownWork()}
+	if b.interruptedMessage && (result.Reason != AbortedStreaming || !b.interruptionContext) {
+		return NativeResult{}, false, lifecycleUncertain()
+	}
 	if !b.continuing && ((b.command == CommandCompleted && value.cancelsCommand()) || (b.command == CommandCancelled && !value.cancelsCommand())) {
 		return NativeResult{}, false, lifecycleUncertain()
 	}

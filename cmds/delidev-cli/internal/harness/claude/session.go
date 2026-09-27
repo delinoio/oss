@@ -22,6 +22,7 @@ const (
 	sessionInputPhase     sessionPhase = "input"
 	sessionEventPhase     sessionPhase = "event"
 	sessionReplyPhase     sessionPhase = "reply"
+	sessionInterruptPhase sessionPhase = "interrupt"
 )
 
 type sessionTransport interface {
@@ -29,6 +30,7 @@ type sessionTransport interface {
 	SendInput(context.Context, domain.ID, domain.ID, string) error
 	Next(context.Context) (StreamEvent, error)
 	Reply(context.Context, StreamEvent, any) error
+	Interrupt(context.Context, domain.ID) error
 	inputBarrier() error
 	Err() *domain.Error
 	Close() error
@@ -51,6 +53,8 @@ type APISession struct {
 	inputs            map[domain.ID]bool
 	reading           bool
 	closed            atomic.Bool
+	cleanupJoined     atomic.Bool
+	interrupt         *InterruptObservation
 	problem           *domain.Error
 	permissionChanged bool
 	history           *sessionHistory
@@ -119,7 +123,7 @@ func (s *APISession) SendInput(ctx context.Context, input domain.ID, text string
 	if intent != ContinueSuccessfulRun && intent != ResumeTerminalRun {
 		return AppliedSettings{}, apiConfigurationError()
 	}
-	if s.reading || s.inputs[input] || (s.current != nil && s.current.seen[string(input)]) || s.permissionChanged || (s.compaction != nil && !s.compaction.settled) {
+	if s.interrupt != nil || s.reading || s.inputs[input] || (s.current != nil && s.current.seen[string(input)]) || s.permissionChanged || (s.compaction != nil && !s.compaction.settled) {
 		return AppliedSettings{}, sessionBusy()
 	}
 	if s.compaction != nil && s.compaction.status == CompactFailed && intent != ResumeTerminalRun {
@@ -253,7 +257,7 @@ func (s *APISession) StartCompaction(ctx context.Context, action domain.ID) (App
 	if action.Validate() != nil {
 		return AppliedSettings{}, apiConfigurationError()
 	}
-	if s.reading || s.inputs[action] || s.permissionChanged || s.current == nil || s.current.seen[string(action)] || (s.compaction != nil && !s.compaction.settled) {
+	if s.interrupt != nil || s.reading || s.inputs[action] || s.permissionChanged || s.current == nil || s.current.seen[string(action)] || (s.compaction != nil && !s.compaction.settled) {
 		return AppliedSettings{}, sessionBusy()
 	}
 	if len(s.inputs) >= maxStreamIdentities {
@@ -305,7 +309,7 @@ func (s *APISession) Reply(ctx context.Context, arrival domain.ID, reply Permiss
 	if ctx.Err() != nil {
 		return domain.SafeError(ctx.Err())
 	}
-	if s.current == nil {
+	if s.current == nil || s.interrupt != nil {
 		return sessionBusy()
 	}
 	event, raw, err := s.current.PreparePermissionReply(arrival, reply)
@@ -322,7 +326,11 @@ func (s *APISession) Reply(ctx context.Context, arrival domain.ID, reply Permiss
 // It does not turn an uncertain input or reply into a completed operation.
 func (s *APISession) Close() error {
 	s.closed.Store(true)
-	return s.stream.Close()
+	err := s.stream.Close()
+	if err == nil {
+		s.cleanupJoined.Store(true)
+	}
+	return err
 }
 
 // Finish joins a native EOF exit only after all observed work is settled. It
@@ -367,6 +375,7 @@ func (s *APISession) finishLocked(ctx context.Context) error {
 		}
 		return s.latch(sessionTransportPhase, domain.SafeError(err))
 	}
+	s.cleanupJoined.Store(true)
 	return nil
 }
 

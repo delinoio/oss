@@ -33,10 +33,12 @@ const (
 	ProviderMessageSnapshot  ContentEventKind = "provider-message-snapshot"
 	ChildInputObserved       ContentEventKind = "child-input-observed"
 	NativeContextObserved    ContentEventKind = "native-context-observed"
+	NativeInterruptContext   ContentEventKind = "native-interrupt-context"
 	ContentStarted           ContentEventKind = "content-started"
 	ContentChanged           ContentEventKind = "content-changed"
 	ContentCompleted         ContentEventKind = "content-completed"
 	ContentStopped           ContentEventKind = "content-stopped"
+	ContentInterrupted       ContentEventKind = "content-interrupted"
 	ToolResultObserved       ContentEventKind = "tool-result-observed"
 	AssistantProblemObserved ContentEventKind = "assistant-problem-observed"
 	TextBlock                ContentBlockKind = "text"
@@ -596,6 +598,7 @@ func (b *ExecutionBinding) observeAssistant(raw []byte) ([]ContentEvent, error) 
 		RequestID       *string                `json:"request_id"`
 		SubagentType    *string                `json:"subagent_type"`
 		TaskDescription *string                `json:"task_description"`
+		Aborted         json.RawMessage        `json:"aborted"`
 	}
 	if decodeNativeObject(raw, &envelope) != nil {
 		return nil, lifecycleUncertain()
@@ -611,7 +614,7 @@ func (b *ExecutionBinding) observeAssistant(raw []byte) ([]ContentEvent, error) 
 		return nil, lifecycleUncertain()
 	}
 	if envelope.APIError || envelope.Error != "" {
-		if !envelope.APIError || !slices.Contains([]NativeAssistantProblem{"authentication_failed", "oauth_org_not_allowed", "account_on_hold", "billing_error", "rate_limit", "overloaded", "invalid_request", "model_not_found", "server_error", "unknown", "max_output_tokens"}, envelope.Error) {
+		if len(envelope.Aborted) != 0 || !envelope.APIError || !slices.Contains([]NativeAssistantProblem{"authentication_failed", "oauth_org_not_allowed", "account_on_hold", "billing_error", "rate_limit", "overloaded", "invalid_request", "model_not_found", "server_error", "unknown", "max_output_tokens"}, envelope.Error) {
 			return nil, lifecycleUncertain()
 		}
 		return []ContentEvent{{Kind: AssistantProblemObserved, ParentToolID: parent, Problem: envelope.Error}}, nil
@@ -621,6 +624,9 @@ func (b *ExecutionBinding) observeAssistant(raw []byte) ([]ContentEvent, error) 
 		return nil, err
 	}
 	active := b.content.active[parent]
+	if len(envelope.Aborted) != 0 {
+		return b.observeInterruptedAssistant(parent, message, active, bytes.Equal(bytes.TrimSpace(envelope.Aborted), []byte("true")))
+	}
 	if active == nil && parent != "" {
 		return b.observeChildSnapshot(parent, message, envelope.SubagentType, envelope.TaskDescription)
 	}
@@ -759,6 +765,18 @@ func (b *ExecutionBinding) observeToolResult(raw []byte) ([]ContentEvent, error)
 	}
 	if !taskTexts(envelope.SubagentType, envelope.TaskDescription) || (parent == "" && (envelope.SubagentType != nil || envelope.TaskDescription != nil)) {
 		return nil, lifecycleUncertain()
+	}
+	if parent == "" && b.interrupt != nil && b.interruptedMessage && !b.interruptionContext && envelope.Synthetic == nil && len(envelope.Structured) == 0 && len(message.Content) == 1 {
+		var marker struct {
+			Type ContentBlockKind `json:"type"`
+			Text string           `json:"text"`
+		}
+		// This is original native conversation context, not product input or
+		// an outcome inferred from prose. Result and idle still arrive separately.
+		if decodeNativeObject(message.Content[0], &marker) == nil && marker.Type == TextBlock && marker.Text == "[Request interrupted by user]" {
+			b.interruptionContext = true
+			return []ContentEvent{{Kind: NativeInterruptContext, Blocks: []NativeContentBlock{{Kind: TextBlock, Text: &marker.Text}}}}, nil
+		}
 	}
 	// Native Read can publish a PDF as a separate synthetic root user message
 	// without a tool_use_id. Preserve that original context envelope rather

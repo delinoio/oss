@@ -20,6 +20,7 @@ const (
 	InputAccepted             LifecycleKind = "input-accepted"
 	InputFinished             LifecycleKind = "input-finished"
 	UncorrelatedTermination   LifecycleKind = "uncorrelated-termination"
+	InterruptResultObserved   LifecycleKind = "interrupt-result-observed"
 	ContentObserved           LifecycleKind = "content-observed"
 	InteractionObserved       LifecycleKind = "interaction-observed"
 	TaskObserved              LifecycleKind = "task-observed"
@@ -90,36 +91,40 @@ type LifecycleObservation struct {
 // Worker must retain its durable claim before constructing this binding and
 // must still process every private observation through its dedicated adapter.
 type ExecutionBinding struct {
-	mu                 sync.Mutex
-	session            domain.ID
-	input              domain.ID
-	digest             [sha256.Size]byte
-	model              string
-	workspace          string
-	home               string
-	permission         NativePermission
-	command            CommandState
-	initialized        bool
-	accepted           bool
-	finished           bool
-	terminal           *NativeResult
-	seen               map[string]bool
-	problem            *domain.Error
-	logger             *slog.Logger
-	owner              domain.ID
-	content            contentState
-	advertisedTools    map[string]bool
-	interactions       map[domain.ID]*interactionState
-	interactionBytes   int
-	tasks              map[string]nativeTaskState
-	backgroundTasks    map[string]bool
-	runState           NativeRunState
-	turnID             string
-	continuing         bool
-	continuationSeen   bool
-	continuationFailed bool
-	notifications      uint32
-	pendingCompaction  *compactionSummaryBinding
+	mu                  sync.Mutex
+	session             domain.ID
+	input               domain.ID
+	digest              [sha256.Size]byte
+	model               string
+	workspace           string
+	home                string
+	permission          NativePermission
+	command             CommandState
+	initialized         bool
+	accepted            bool
+	finished            bool
+	terminal            *NativeResult
+	seen                map[string]bool
+	problem             *domain.Error
+	logger              *slog.Logger
+	owner               domain.ID
+	content             contentState
+	advertisedTools     map[string]bool
+	interactions        map[domain.ID]*interactionState
+	interactionBytes    int
+	tasks               map[string]nativeTaskState
+	backgroundTasks     map[string]bool
+	runState            NativeRunState
+	turnID              string
+	continuing          bool
+	continuationSeen    bool
+	continuationFailed  bool
+	notifications       uint32
+	pendingCompaction   *compactionSummaryBinding
+	interrupt           *InterruptClaim
+	interruptedMessage  bool
+	interruptionContext bool
+	interruptResult     *NativeResult
 }
 
 func BindExecution(config APIStreamConfig, input domain.ID, text string) (*ExecutionBinding, error) {
@@ -173,6 +178,9 @@ func (b *ExecutionBinding) Observe(event StreamEvent) (observation LifecycleObse
 		observation.InputID, observation.Accepted = "", false
 	}
 	if event.Kind != NativeMessage {
+		if b.interruptResult != nil {
+			return LifecycleObservation{}, lifecycleUncertain()
+		}
 		switch event.Kind {
 		case NativeRequest, NativeCancellation, NativeReplyEcho:
 			phase = interactionValidation
@@ -214,6 +222,9 @@ func (b *ExecutionBinding) Observe(event StreamEvent) (observation LifecycleObse
 		return LifecycleObservation{}, lifecycleUncertain()
 	}
 	observation.NativeID = header.UUID
+	if b.interruptResult != nil && event.Type != "command_lifecycle" && !(event.Type == "system" && header.Subtype == "session_state_changed") {
+		return LifecycleObservation{}, lifecycleUncertain()
+	}
 	if b.pendingCompaction != nil && (event.Type == "result" || ((event.Type == "stream_event" || event.Type == "assistant") && header.Parent == nil) || (event.Type == "system" && header.Subtype == "session_state_changed")) {
 		return LifecycleObservation{}, lifecycleUncertain()
 	}
@@ -345,6 +356,14 @@ func (b *ExecutionBinding) Observe(event StreamEvent) (observation LifecycleObse
 			retained := NativeResult{Kind: result.Kind, Reason: result.Reason, Error: result.Error}
 			b.terminal = &retained
 			observation.Kind = InputFinished
+		} else if b.interrupt != nil && b.interruptedMessage && b.interruptionContext && result.Reason == AbortedStreaming {
+			// The pinned native interrupt result omits user_message_uuid. Keep
+			// this session-level Stop fact separate from an input completion.
+			if b.interruptResult != nil {
+				return LifecycleObservation{}, lifecycleUncertain()
+			}
+			b.interruptResult = &NativeResult{Kind: result.Kind, Reason: result.Reason, Error: result.Error}
+			observation.Kind, observation.InputID, observation.Accepted = InterruptResultObserved, "", false
 		} else {
 			// Native API failures can omit user_message_uuid. Retain the session
 			// failure without attaching it to this input or resolving acceptance.
@@ -360,15 +379,19 @@ func (b *ExecutionBinding) Observe(event StreamEvent) (observation LifecycleObse
 }
 
 func (b *ExecutionBinding) acceptCommand(next CommandState) bool {
+	terminal := b.terminal
+	if terminal == nil {
+		terminal = b.interruptResult
+	}
 	switch next {
 	case CommandQueued:
 		return b.command == "" && !b.finished
 	case CommandStarted:
 		return b.command == CommandQueued && !b.finished
 	case CommandCompleted:
-		return b.command == CommandStarted && (b.terminal == nil || !b.terminal.cancelsCommand())
+		return b.command == CommandStarted && (terminal == nil || !terminal.cancelsCommand())
 	case CommandCancelled:
-		return (b.command == CommandQueued || b.command == CommandStarted) && (b.terminal == nil || b.terminal.cancelsCommand())
+		return (b.command == CommandQueued || b.command == CommandStarted) && (terminal == nil || terminal.cancelsCommand())
 	case CommandDiscarded:
 		return b.command == CommandQueued
 	default:

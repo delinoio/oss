@@ -20,8 +20,11 @@ type sessionFixtureTransport struct {
 	reads, sends, replies            atomic.Int64
 	barrier                          error
 	readError, sendError, replyError error
+	interruptError                   error
+	interrupts                       atomic.Int64
 	blockingRead                     chan struct{}
 	blockingNext                     chan struct{}
+	blockingInterrupt                chan struct{}
 }
 
 func (f *sessionFixtureTransport) ReadAppliedSettings(ctx context.Context, _ domain.ID, _ string, _ NativeEffort) (AppliedSettings, error) {
@@ -59,6 +62,19 @@ func (f *sessionFixtureTransport) Reply(context.Context, StreamEvent, any) error
 	return f.replyError
 }
 func (f *sessionFixtureTransport) inputBarrier() error { return f.barrier }
+func (f *sessionFixtureTransport) Interrupt(ctx context.Context, _ domain.ID) error {
+	f.interrupts.Add(1)
+	if f.blockingInterrupt != nil {
+		close(f.blockingInterrupt)
+		select {
+		case <-f.done:
+			return streamEnded()
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return f.interruptError
+}
 func (f *sessionFixtureTransport) Err() *domain.Error {
 	if f.closed.Load() {
 		return streamEnded()

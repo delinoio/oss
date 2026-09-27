@@ -51,6 +51,11 @@ func (s *APISession) CloseForContinuation(ctx context.Context) (*ClosedAPISessio
 		return nil, domain.SafeError(err)
 	}
 	b := s.current
+	if s.interrupt != nil {
+		// Aborted envelopes and native cancellation metadata need independent
+		// persisted-history evidence before they may authorize replacement.
+		return nil, continuationUnavailable()
+	}
 	if s.reading || s.permissionChanged || b == nil || b.problem != nil || !b.accepted || !b.finished || b.terminal == nil || b.runState != RunIdle || b.continuing || b.pendingCompaction != nil || (s.compaction != nil && !s.compaction.settled) {
 		return nil, sessionBusy()
 	}

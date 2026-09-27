@@ -55,6 +55,28 @@ func init() {
 				time.Sleep(100 * time.Millisecond)
 			}
 			response := map[string]any{"type": "control_response", "response": map[string]any{"subtype": "success", "request_id": message.RequestID, "response": map[string]any{"ready": true}}}
+			if subtype == "interrupt" {
+				if len(message.Request) != 1 {
+					os.Exit(52)
+				}
+				body := map[string]any{"still_queued": []any{}}
+				switch mode {
+				case "interrupt-null":
+					body["still_queued"] = nil
+				case "interrupt-missing":
+					delete(body, "still_queued")
+				case "interrupt-queued":
+					body["still_queued"] = []any{domain.NewID()}
+				case "interrupt-extra":
+					body["extra"] = true
+				case "interrupt-alias":
+					body = map[string]any{"Still_queued": []any{}}
+				}
+				response["response"].(map[string]any)["response"] = body
+				if mode == "interrupt-failed" {
+					response["response"] = map[string]any{"subtype": "error", "request_id": message.RequestID, "error": "private-error-sentinel"}
+				}
+			}
 			if subtype == "error" {
 				response["response"] = map[string]any{"subtype": "error", "request_id": message.RequestID, "error": "private-error-sentinel"}
 			}
