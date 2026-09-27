@@ -74,14 +74,15 @@ const MaxExecutionEvents = 100000
 // Observations remain distinct from the immutable requested configuration.
 // Nil effort/tier means unavailable, not a manufactured native default.
 type ObservedExecutionSettings struct {
-	Model            string               `json:"model"`
-	Effort           *string              `json:"effort"`
-	ServiceTier      *string              `json:"service_tier"`
-	Permission       PermissionMode       `json:"permission"`
-	ApprovalPolicy   string               `json:"approval_policy"`
-	ClaudePermission ClaudePermissionMode `json:"claude_permission,omitempty"`
-	OpenCodeAgent    OpenCodePrimaryAgent `json:"opencode_agent,omitempty"`
-	GrokMode         GrokMode             `json:"grok_mode,omitempty"`
+	Model             string               `json:"model"`
+	Effort            *string              `json:"effort"`
+	ServiceTier       *string              `json:"service_tier"`
+	Permission        PermissionMode       `json:"permission"`
+	ApprovalPolicy    string               `json:"approval_policy"`
+	ClaudePermission  ClaudePermissionMode `json:"claude_permission,omitempty"`
+	OpenCodeAgent     OpenCodePrimaryAgent `json:"opencode_agent,omitempty"`
+	GrokMode          GrokMode             `json:"grok_mode,omitempty"`
+	GrokContextTokens uint64               `json:"grok_context_tokens,omitempty"`
 }
 
 func (o ObservedExecutionSettings) Validate(configuration ExecutionConfiguration) error {
@@ -92,7 +93,7 @@ func (o ObservedExecutionSettings) ValidateForInput(configuration ExecutionConfi
 	if !mode.Valid() || o.Model != configuration.NativeModel {
 		return Fail(Unsupported, "The observed native settings are incompatible.", "Reconcile the accepted configuration and native profile before sending input.")
 	}
-	if configuration.Harness != GrokBuild && o.GrokMode != "" {
+	if configuration.Harness != GrokBuild && (o.GrokMode != "" || o.GrokContextTokens != 0) {
 		return Fail(Unsupported, "The observed mode belongs to another native harness.", "Retain the selected harness's original settings.")
 	}
 	switch configuration.Harness {
@@ -132,6 +133,13 @@ func (o ObservedExecutionSettings) ValidateForInput(configuration ExecutionConfi
 		}
 		if o.GrokMode != expected {
 			return Fail(RecoveryRequired, "The original Grok Build mode differs from the selected input.", "Reconcile the original native mode before accepting input.")
+		}
+		expectedContext := uint64(0)
+		if configuration.GrokContext != nil {
+			expectedContext = configuration.GrokContext.Tokens
+		}
+		if o.GrokContextTokens != expectedContext {
+			return Fail(RecoveryRequired, "The native Grok model context differs from its accepted selection.", "Retain the original model metadata and native binding before accepting input.")
 		}
 	default:
 		return Fail(Unsupported, "The observed native settings are incompatible.", "Reconcile the accepted configuration and native profile before sending input.")

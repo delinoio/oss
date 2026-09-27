@@ -28,7 +28,7 @@ const (
 )
 
 // GrokBindingPublisher joins original native claims with the shared durable
-// outbox. It owns no native process, reply, terminal or continuation authority.
+// outbox. It cannot adopt a native process, send tool replies or grant continuation.
 // Close the original native process first, then this coordinator and publisher.
 type GrokBindingPublisher struct {
 	mu              sync.Mutex
@@ -193,6 +193,9 @@ func (c *GrokBindingPublisher) BindSession(ctx context.Context, binding grok.Ses
 		return publicationUncertain()
 	}
 	observed := domain.ObservedExecutionSettings{Model: binding.Model, Permission: domain.PermissionDefault, GrokMode: domain.GrokMode(binding.Mode)}
+	if c.publisher.input.Configuration.GrokContext != nil {
+		observed.GrokContextTokens = binding.ContextTokens
+	}
 	if binding.OwnerID != c.reference.JobID || binding.ProductSessionID != c.reference.SessionID || binding.CreationRequestID != c.reference.CreationRequestID || domain.NativeIdentity(binding.NativeSessionID).Validate(domain.GrokBuild, domain.NativeThreadIdentity) != nil || observed.ValidateForInput(c.publisher.input.Configuration, c.publisher.input.Input.Mode) != nil {
 		return c.block()
 	}

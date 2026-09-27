@@ -49,7 +49,14 @@ func TestInteractionResponseInspectionPreservesExactLiveEvidenceAndPause(t *test
 		t.Run(map[bool]string{false: "missing-output", true: "live-output"}[accepted], func(t *testing.T) {
 			c, response, arrival, _ := responseHistoryFixture(t, accepted)
 			prior := c.problem
-			bounded, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+			timeout := 100 * time.Millisecond
+			if accepted {
+				// The positive fixture performs three native history RPCs. Its
+				// transport may be scheduled behind other package subprocesses in
+				// the full suite; only missing-output tests the short expiry path.
+				timeout = 3 * time.Second
+			}
+			bounded, cancel := context.WithTimeout(context.Background(), timeout)
 			defer cancel()
 			status, err := c.InspectInteractionResponse(bounded, response, arrival)
 			if accepted && err != nil {

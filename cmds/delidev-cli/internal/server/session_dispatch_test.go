@@ -72,6 +72,8 @@ func newFirstDispatchFixtureWorkspaceProfile(t *testing.T, harness domain.Harnes
 		protocol, permission, version = domain.OpenAIChat, domain.PermissionDefault, domain.OpenCodeProtocolVersion
 	} else if harness == domain.ClaudeCode {
 		protocol, permission, version = domain.AnthropicMessages, domain.PermissionDefault, domain.ClaudeProtocolVersion
+	} else if harness == domain.GrokBuild {
+		protocol, permission, version = domain.OpenAIChat, domain.PermissionDefault, domain.GrokProtocolVersion
 	}
 	db, err := store.Open(context.Background(), filepath.Join(t.TempDir(), "state"))
 	if err != nil {
@@ -111,7 +113,12 @@ func newFirstDispatchFixtureWorkspaceProfile(t *testing.T, harness domain.Harnes
 		t.Fatal(err)
 	}
 	f.account = validated.Msg.Account
-	model := base.save(pb.EntityKind_ENTITY_KIND_MODEL, domain.Model{Name: "Fixture", NativeID: nativeModel, ProviderID: domain.ID(provider.Id), Harnesses: []domain.Harness{harness}, MetadataSource: domain.UserDeclared})
+	modelValue := domain.Model{Name: "Fixture", NativeID: nativeModel, ProviderID: domain.ID(provider.Id), Harnesses: []domain.Harness{harness}, MetadataSource: domain.UserDeclared}
+	if harness == domain.GrokBuild {
+		limit := uint64(48000)
+		modelValue.ContextLimit = &limit
+	}
+	model := base.save(pb.EntityKind_ENTITY_KIND_MODEL, modelValue)
 	routing := domain.RoundRobin
 	f.agent = base.save(pb.EntityKind_ENTITY_KIND_AGENT, domain.Agent{Name: "Fixture", Harness: harness, ModelID: domain.ID(model.Id), Accounts: []domain.WeightedAccount{{ID: domain.ID(account.Id), Weight: 1}}, Options: domain.AgentOptions{Permission: permission}, Routing: &routing})
 	f.selection = domain.CreateSession{Name: "Fixture", AgentID: domain.ID(f.agent.Id), MachineID: domain.ID(f.machine.Id), Workspace: domain.GeneralChat, Prompt: "first retained input", Mode: mode, Source: domain.ExternalCLISession}

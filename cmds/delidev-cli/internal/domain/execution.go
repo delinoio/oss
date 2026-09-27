@@ -34,6 +34,7 @@ type ExecutionConfiguration struct {
 	Routing       RoutingPolicy     `json:"routing"`
 	Templates     []AppliedTemplate `json:"templates"`
 	Instructions  string            `json:"instructions"`
+	GrokContext   *GrokModelContext `json:"grok_context,omitempty"`
 }
 
 func ResolveExecutionConfiguration(agentID ID, agentRevision uint64, agent Agent, modelRevision uint64, model Model, defaultPolicy RoutingPolicy, templates []AppliedTemplate) (ExecutionConfiguration, error) {
@@ -82,6 +83,12 @@ func ResolveExecutionConfiguration(agentID ID, agentRevision uint64, agent Agent
 		parts[i] = template.Contents
 	}
 	result = ExecutionConfiguration{AgentID: agentID, AgentRevision: agentRevision, Harness: agent.Harness, ModelID: agent.ModelID, ModelRevision: modelRevision, ProviderID: model.ProviderID, NativeModel: model.NativeID, Effort: agent.Effort, Options: agent.Options, Accounts: slices.Clone(agent.Accounts), Routing: policy, Templates: slices.Clone(templates), Instructions: strings.Join(parts, "\n\n")}
+	if agent.Harness == GrokBuild && model.ContextLimit != nil {
+		result.GrokContext = &GrokModelContext{Tokens: *model.ContextLimit, Source: model.MetadataSource}
+		if err := result.GrokContext.Validate(); err != nil {
+			return ExecutionConfiguration{}, err
+		}
+	}
 	return result, nil
 }
 
@@ -95,6 +102,9 @@ func (c ExecutionConfiguration) Digest() (string, error) {
 }
 
 func (c ExecutionConfiguration) Validate() error {
+	if c.GrokContext != nil && (c.Harness != GrokBuild || c.GrokContext.Validate() != nil) {
+		return Fail(RecoveryRequired, "The retained Grok model context is invalid.", "Preserve the original model selection and its metadata provenance.")
+	}
 	ids := make([]ID, len(c.Templates))
 	for i, template := range c.Templates {
 		ids[i] = template.ID

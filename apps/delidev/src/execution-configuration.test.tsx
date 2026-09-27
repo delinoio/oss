@@ -29,6 +29,26 @@ function detail(region: HTMLElement, label: string): string | null | undefined {
   return within(region).getByText(label, { selector: "dt" }).nextElementSibling?.textContent;
 }
 
+it("keeps selected Grok context provenance separate from native context observation", () => {
+  const value = fixture("grok-build");
+  const data = { ...value.data, initial_execution: { ...value.data.initial_execution, configuration: { ...value.configuration, grok_context: { tokens: 48000, source: "user-declared" } } }, execution: { ...value.data.execution, observed: { model: "original-model", grok_mode: "default", grok_context_tokens: 48000 } } };
+  const view = render(<ExecutionConfiguration resource={{ ...value.resource, documentJson: encode(data) }} />);
+  fireEvent.click(screen.getByText("Execution configuration and instructions"));
+  const saved = screen.getByRole("region", { name: "Saved execution configuration" });
+  const native = screen.getByRole("region", { name: "Native execution observations" });
+  expect(detail(saved, "Saved Grok context window")).toBe("48000");
+  expect(detail(saved, "Saved context source")).toBe("User-declared model metadata");
+  expect(detail(native, "Observed Grok context window")).toBe("48000");
+  for (const source of ["unknown", "private-future-metadata"]) {
+    const changed = { ...data, initial_execution: { ...data.initial_execution, configuration: { ...data.initial_execution.configuration, grok_context: { tokens: 32000, source } } }, execution: { ...data.execution, observed: { model: "original-model", grok_mode: "default", grok_context_tokens: 0 } } };
+    view.rerender(<ExecutionConfiguration resource={{ ...value.resource, documentJson: encode(changed) }} />);
+    expect(detail(saved, "Saved Grok context window")).toBe("Unavailable");
+    expect(detail(saved, "Saved context source")).toBe("Unavailable");
+    expect(detail(native, "Observed Grok context window")).toBe("Unavailable");
+    expect(screen.queryByText("private-future-metadata")).toBeNull();
+  }
+});
+
 it("shows the immutable ordered instructions as inert read-only text without native prompts", () => {
   const value = fixture();
   const { container } = render(<ExecutionConfiguration resource={value.resource} />);

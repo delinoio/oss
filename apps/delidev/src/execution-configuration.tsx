@@ -18,6 +18,9 @@ function observed(value: unknown): string {
 function integer(value: unknown): string {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? String(value) : "Unavailable";
 }
+function grokContext(value: unknown): string {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1024 && value <= 1_000_000_000 ? String(value) : "Unavailable";
+}
 
 function NativeObservations({ progress, selection, harness }: { progress: Document; selection: Document; harness: unknown }) {
   const native = object(progress.observed);
@@ -35,7 +38,7 @@ function NativeObservations({ progress, selection, harness }: { progress: Docume
         {harness === Harness.Codex ? <><dt>Observed sandbox</dt><dd>{observed(native.permission)}</dd><dt>Observed approval policy</dt><dd>{observed(native.approval_policy)}</dd></> : null}
         {harness === Harness.Claude ? <><dt>Observed Claude permission</dt><dd>{observed(native.claude_permission)}</dd></> : null}
         {harness === Harness.OpenCode ? <><dt>Observed OpenCode primary agent</dt><dd>{observed(native.opencode_agent)}</dd><dt>Observed permission selection</dt><dd>{observed(native.permission)}</dd></> : null}
-        {harness === Harness.Grok ? <><dt>Observed Grok initial mode</dt><dd>{observed(native.grok_mode)}</dd></> : null}
+        {harness === Harness.Grok ? <><dt>Observed Grok initial mode</dt><dd>{observed(native.grok_mode)}</dd><dt>Observed Grok context window</dt><dd>{grokContext(native.grok_context_tokens)}</dd></> : null}
       </dl>
       {harness === Harness.Claude ? <NativeClaudePermissionProgress progress={progress} /> : null}
       {harness === Harness.Claude ? <NativeClaudeTerminal progress={progress} /> : null}
@@ -55,6 +58,8 @@ export const ExecutionConfiguration = memo(function ExecutionConfiguration({ res
   const initial = object(data.initial_execution);
   const configuration = object(initial.configuration);
   const options = object(configuration.options);
+  const context = object(configuration.grok_context);
+  const contextSource = context.source === "known" ? "Known model metadata" : context.source === "user-declared" ? "User-declared model metadata" : "Unavailable";
   const current = object(data.current_execution);
   const selection = text(current.id) ? current : { id: initial.id, input_id: initial.input_id, account_id: initial.initial_account_id };
   const templates = items(configuration.templates);
@@ -69,6 +74,7 @@ export const ExecutionConfiguration = memo(function ExecutionConfiguration({ res
         <dl>
           <dt>Harness</dt><dd>{text(configuration.harness) || "Unavailable"}</dd>
           <dt>Requested model</dt><dd>{text(configuration.native_model)}</dd>
+          {configuration.harness === Harness.Grok ? <><dt>Saved Grok context window</dt><dd>{contextSource === "Unavailable" ? "Unavailable" : grokContext(context.tokens)}</dd><dt>Saved context source</dt><dd>{contextSource}</dd></> : null}
           <dt>Requested reasoning effort</dt><dd>{requested(configuration.effort)}</dd>
           <dt>Saved permission selection</dt><dd>{requested(options.permission)}</dd>
           {configuration.harness === Harness.Claude || options.claude_permission !== undefined ? <><dt>Saved Claude permission</dt><dd>{requested(options.claude_permission)}</dd></> : null}

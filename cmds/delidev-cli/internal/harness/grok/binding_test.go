@@ -36,7 +36,7 @@ func TestSessionBindingRequiresOriginalReadyModeAndConfiguration(t *testing.T) {
 				}
 			}
 			bound, err := api.sessionBinding(context.Background())
-			if err != nil || bound.NativeSessionID != session || bound.ProductSessionID != product || bound.CreationRequestID != request || bound.OwnerID != config.Probe.Process.OwnerID || bound.Model != config.Model || bound.ConfigurationDigest != creation[1].ConfigurationDigest || (bound.ModeBinding != nil) != (mode == domain.PlanMode) {
+			if err != nil || bound.NativeSessionID != session || bound.ProductSessionID != product || bound.CreationRequestID != request || bound.OwnerID != config.Probe.Process.OwnerID || bound.Model != config.Model || bound.ContextTokens != config.ContextTokens || bound.ConfigurationDigest != creation[1].ConfigurationDigest || (bound.ModeBinding != nil) != (mode == domain.PlanMode) {
 				t.Fatal("native binding lost original provenance", err)
 			}
 			if bound.ModeBinding != nil {

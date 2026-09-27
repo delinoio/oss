@@ -93,6 +93,14 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 			return empty, err
 		}
 		version, protocol = domain.OpenCodeProtocolVersion, domain.OpenAIChat
+	case domain.GrokBuild:
+		if input.Version != 1 || input.Continuation != nil {
+			return empty, domain.Fail(domain.Unsupported, "Grok continuation requires separately verified native history.", "Preserve the original completed input without creating a replacement session.")
+		}
+		if _, err := c.GrokFirstTextContext(input.Input.Mode); err != nil {
+			return empty, err
+		}
+		version, protocol = domain.GrokProtocolVersion, domain.OpenAIChat
 	default:
 		return empty, domain.Fail(domain.Unsupported, "This harness has no integrated execution profile yet.", "Select a supported installed profile; no harness fallback is performed.")
 	}
@@ -124,7 +132,7 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 		return empty, err
 	}
 	if provider.Protocol != protocol || (provider.Authentication == domain.KeylessAuth) != (account.Validation.Authentication == domain.KeylessEndpoint) || provider.Authentication != account.Connection.Authentication || account.ProviderID != c.ProviderID {
-		return empty, domain.Fail(domain.Unsupported, "The selected provider protocol is incompatible with this native profile.", "Select OpenAI Responses for Codex, Anthropic Messages for Claude or Chat Completions for OpenCode; no protocol translation is performed.")
+		return empty, domain.Fail(domain.Unsupported, "The selected provider protocol is incompatible with this native profile.", "Select OpenAI Responses for Codex, Anthropic Messages for Claude or Chat Completions for OpenCode/Grok; no protocol translation is performed.")
 	}
 	// Recheck current restrictions without resolving changed Agent/templates or
 	// rerunning routing. Only the immutable selected account may continue.
@@ -173,7 +181,11 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 	if request.Type == domain.Local && (session.LocalOrigin == nil || request.OriginMachineID != session.LocalOrigin.MachineID) {
 		return empty, workspace.ResultUncertain()
 	}
-	if c.Harness == domain.OpenCode {
+	if c.Harness == domain.GrokBuild {
+		if request.Type != domain.GeneralChat || len(manifest.Repositories) != 0 {
+			return empty, domain.Fail(domain.Unsupported, "This Grok runner requires an owned General Chat workspace.", "Retain repository workspaces for their separately verified native profile.")
+		}
+	} else if c.Harness == domain.OpenCode {
 		if request.Type == domain.GeneralChat && machine.OS == "windows" {
 			return empty, domain.Fail(domain.Unsupported, "OpenCode General Chat requires a verified native Windows root identity.", "Preserve the prepared workspace; do not infer native non-VCS path ownership.")
 		}
