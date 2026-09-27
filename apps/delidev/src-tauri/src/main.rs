@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod notification_host;
 mod tray_host;
 use std::{
     collections::{BTreeMap, HashMap},
@@ -11,6 +12,10 @@ use delidev_desktop::{
     Connection, Connector, LocalServerStatus, LocalWorkerAction, LocalWorkerProof,
     LocalWorkerStatus, NativeFailure, RemovedConnections, SavedConnection, SavedConnectionState,
     Supervision, bundled_sidecar, canonical_id, connection_origin, default_data_root,
+};
+use notification_host::{
+    NotificationHost, begin_notifications, end_notifications, notification_permission,
+    present_notification, request_notification_permission,
 };
 use tauri::{
     AppHandle, Emitter, Manager, WebviewWindow, WebviewWindowBuilder, WindowEvent, Wry,
@@ -139,9 +144,11 @@ fn saved_binding(
     {
         return Err(NativeFailure::PermissionDenied);
     }
+    // Native commands may run on the event loop while label publication owns
+    // this map and waits for that loop. Return Busy instead of deadlocking it.
     windows
         .0
-        .lock()
+        .try_lock()
         .map_err(|_| NativeFailure::Busy)?
         .get(window.label())
         .filter(|binding| !binding.closing)
@@ -595,9 +602,11 @@ fn run() -> Result<(), NativeFailure> {
     let connector = Arc::new(Connector::new(bundled_sidecar(&executable)?, root)?);
     let supervision = Arc::new(Supervision::new(Arc::clone(&connector)));
     let tray = Arc::new(TrayHost::default());
+    let notifications = Arc::new(NotificationHost::default());
     let app = tauri::Builder::<Wry>::new()
         .manage(Arc::new(SavedWindows::default()))
         .manage(Arc::clone(&tray))
+        .manage(Arc::clone(&notifications))
         .manage(connector)
         .manage(Arc::clone(&supervision))
         .invoke_handler(tauri::generate_handler![
@@ -621,7 +630,12 @@ fn run() -> Result<(), NativeFailure> {
             begin_tray,
             publish_tray,
             read_tray_action,
-            acknowledge_tray_action
+            acknowledge_tray_action,
+            begin_notifications,
+            end_notifications,
+            notification_permission,
+            request_notification_permission,
+            present_notification
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
@@ -637,6 +651,9 @@ fn run() -> Result<(), NativeFailure> {
                     }
                 }
             } else if matches!(event, WindowEvent::Destroyed) {
+                window
+                    .state::<Arc<NotificationHost>>()
+                    .remove(window.label());
                 tray_host::remove(window.app_handle(), window.label());
             }
         })
@@ -660,11 +677,14 @@ fn run() -> Result<(), NativeFailure> {
         .build(tauri::generate_context!())
         .map_err(|_| NativeFailure::SidecarFailed)?;
     let exiting = Arc::clone(&tray);
+    let exiting_notifications = Arc::clone(&notifications);
     app.run(move |_, event| {
         if matches!(event, tauri::RunEvent::Exit) {
+            exiting_notifications.stop();
             exiting.stop();
         }
     });
+    notifications.stop();
     tray.stop();
     Ok(())
 }

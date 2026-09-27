@@ -7,9 +7,10 @@ import { EntityKind, InboxService, ResourceSchema, ResourceService, SessionServi
 import { App } from "./App";
 import { encode } from "./documents";
 
-const native = vi.hoisted(() => ({ callbacks: new Set<() => void>(), pending: null as { id: string; destination: string } | null, calls: [] as string[] }));
+const native = vi.hoisted(() => ({ callbacks: new Set<() => void>(), pending: null as { id: string; destination: string; inbox_id?: string } | null, calls: [] as string[] }));
 vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => true, invoke: async (name: string, args?: { id: string }) => {
   native.calls.push(name);
+  if (name === "notification_permission") return { permission: "unavailable", problem: "os-unavailable" };
   if (name === "begin_tray") return "scope";
   if (name === "read_tray_action") return native.pending;
   if (name === "acknowledge_tray_action" && native.pending?.id === args?.id) native.pending = null;
@@ -19,12 +20,15 @@ vi.mock("@tauri-apps/api/event", () => ({ listen: async (_event: string, callbac
 it("opens the native-selected view without sending work or losing the session draft", async () => {
   const id = newRequestId();
   const session = create(ResourceSchema, { id, sessionId: id, kind: EntityKind.SESSION, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Tray fixture", workspace: "general-chat", outcome: "stopped", archive: "active", dispatch: "paused", recovery: "none" }) });
+  const inboxId = newRequestId();
+  const entry = create(ResourceSchema, { id: inboxId, kind: EntityKind.INBOX, sessionId: id, revision: 1n, schemaVersion: 1, documentJson: encode({ source: "execution-terminal", read_state: "unread" }) });
+  const getInbox = vi.fn(() => ({ view: { entry, session } })), markRead = vi.fn(() => ({}));
   const send = vi.fn(() => ({}));
   const transport = createRouterTransport((router) => {
     router.service(SystemService, { getStatus: () => ({ version: "0.1.0" }), getOverview: () => ({ observedAt: "2026-09-27T00:01:00Z", todayFromUnixMs: 1790467200000n, todayUntilUnixMs: 1790467260000n }) });
     router.service(SessionService, { listSessions: () => ({ sessions: [session] }), listQueue: () => ({ inputs: [] }), enqueueInput: send });
     router.service(ResourceService, { listResources: () => ({ resources: [] }), getSnapshot: () => ({ resources: [session], cursor: "fixture" }), async *watchEvents(_request, context) { await new Promise<void>((resolve) => context.signal.addEventListener("abort", () => resolve(), { once: true })); } });
-    router.service(InboxService, { listInbox: () => ({ entries: [] }) });
+    router.service(InboxService, { listInbox: () => ({ entries: [] }), getInboxEntry: getInbox, setInboxReadState: markRead });
     router.service(UsageService, { getUsageSummary: () => ({}) });
   });
   const view = render(<StrictMode><App transport={transport} /></StrictMode>);
@@ -36,6 +40,17 @@ it("opens the native-selected view without sending work or losing the session dr
   await act(async () => { for (const callback of native.callbacks) callback(); });
   await screen.findByText("No retained requests or completions.");
   await waitFor(() => expect(native.pending).toBeNull());
+  native.pending = { id: newRequestId(), destination: "inbox", inbox_id: inboxId };
+  await act(async () => { for (const callback of native.callbacks) callback(); });
+  await screen.findByText("Selected inbox item");
+  expect(getInbox).toHaveBeenCalledWith(expect.objectContaining({ id: inboxId }), expect.anything());
+  expect(markRead).not.toHaveBeenCalled();
+  await waitFor(() => expect((screen.getByRole("button", { name: "Refresh selected item" }) as HTMLButtonElement).disabled).toBe(false));
+  const beforeReactivation = getInbox.mock.calls.length;
+  native.pending = { id: newRequestId(), destination: "inbox", inbox_id: inboxId };
+  await act(async () => { for (const callback of native.callbacks) callback(); });
+  await waitFor(() => expect(getInbox).toHaveBeenCalledTimes(beforeReactivation + 1));
+  expect(markRead).not.toHaveBeenCalled();
   native.pending = { id: newRequestId(), destination: "sessions" };
   await act(async () => { for (const callback of native.callbacks) callback(); });
   expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);

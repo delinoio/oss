@@ -23,6 +23,11 @@ fn main() {
             "publish_tray",
             "read_tray_action",
             "acknowledge_tray_action",
+            "begin_notifications",
+            "end_notifications",
+            "notification_permission",
+            "request_notification_permission",
+            "present_notification",
         ]),
     ))
     .expect("DeliDev native build configuration must be valid");

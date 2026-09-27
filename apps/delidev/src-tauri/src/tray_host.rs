@@ -39,6 +39,10 @@ struct Activation {
 pub struct TrayAction {
     id: String,
     destination: TrayDestination,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    inbox_id: Option<String>,
+    #[serde(skip)]
+    notification_scope: Option<String>,
 }
 #[derive(Default)]
 struct State {
@@ -137,13 +141,20 @@ pub fn read_tray_action(
     host: tauri::State<'_, Arc<TrayHost>>,
 ) -> Result<Option<TrayAction>, NativeFailure> {
     authorized(&window, &windows)?;
-    Ok(host
+    let action = host
         .state
         .lock()
         .map_err(|_| NativeFailure::Busy)?
         .pending
         .get(window.label())
-        .cloned())
+        .cloned();
+    Ok(action.filter(|action| {
+        action.notification_scope.as_ref().is_none_or(|scope| {
+            window
+                .state::<Arc<super::NotificationHost>>()
+                .current(window.label(), scope)
+        })
+    }))
 }
 #[tauri::command]
 pub fn acknowledge_tray_action(
@@ -444,9 +455,42 @@ fn activate(app: &AppHandle<Wry>, id: &str) {
         .ok()
         .and_then(|v| v.actions.get(id).cloned());
     let Some(action) = action else { return };
+    navigate(app, action, None, None);
+}
+pub fn activate_inbox(
+    app: &AppHandle<Wry>,
+    label: String,
+    instance: Option<String>,
+    scope: String,
+    inbox_id: String,
+) {
+    if delidev_desktop::canonical_id(&inbox_id).is_err() {
+        return;
+    }
+    navigate(
+        app,
+        Activation {
+            label,
+            instance,
+            destination: TrayDestination::Inbox,
+        },
+        Some(inbox_id),
+        Some(scope),
+    );
+}
+fn navigate(
+    app: &AppHandle<Wry>,
+    action: Activation,
+    inbox_id: Option<String>,
+    notification_scope: Option<String>,
+) {
+    let host = app.state::<Arc<TrayHost>>();
     let Some(window) = app.get_webview_window(&action.label) else {
         return;
     };
+    if !window.url().is_ok_and(|url| trusted_url(&url)) {
+        return;
+    }
     if let Some(instance) = &action.instance {
         let windows = app.state::<Arc<SavedWindows>>();
         if !window.url().is_ok_and(|url| trusted_url(&url))
@@ -465,6 +509,8 @@ fn activate(app: &AppHandle<Wry>, id: &str) {
             TrayAction {
                 id: uuid::Uuid::now_v7().to_string(),
                 destination: action.destination,
+                inbox_id,
+                notification_scope,
             },
         );
     }
@@ -582,6 +628,8 @@ mod tests {
             TrayAction {
                 id: "original".into(),
                 destination: TrayDestination::Inbox,
+                inbox_id: Some(uuid::Uuid::now_v7().to_string()),
+                notification_scope: None,
             },
         );
         assert_eq!(
@@ -595,6 +643,8 @@ mod tests {
             TrayAction {
                 id: "newer".into(),
                 destination: TrayDestination::Usage,
+                inbox_id: None,
+                notification_scope: None,
             },
         );
         state.acknowledge("main", "original");

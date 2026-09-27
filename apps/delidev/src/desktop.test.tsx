@@ -24,6 +24,7 @@ function savedFixture() {
     if (command === "connection_context") return profile;
     if (command === "connect_saved") return connection;
     if (command === "show_connection_manager") return;
+    if (command === "notification_permission") return { permission: "unavailable", problem: "os-unavailable" };
     if (command === "begin_tray") return "fixture-presentation";
     if (command === "publish_tray" || command === "read_tray_action") return;
     throw new Error("Unexpected native authority");
@@ -37,7 +38,7 @@ it("uses only the native-pinned saved authority and direct product RPCs without 
   expect(screen.getByText("Remote fixture")).toBeTruthy();
   expect(bridge.createTransport).toHaveBeenCalledWith(expect.objectContaining({ origin: value.profile.endpoint }));
   expect(value.status).toHaveBeenCalled();
-  expect(bridge.invoke.mock.calls.every(([command]) => ["connection_context", "connect_saved", "begin_tray", "publish_tray", "read_tray_action"].includes(command))).toBe(true);
+  expect(bridge.invoke.mock.calls.every(([command]) => ["connection_context", "connect_saved", "begin_tray", "publish_tray", "read_tray_action", "notification_permission"].includes(command))).toBe(true);
   expect(JSON.stringify(bridge.invoke.mock.calls)).not.toContain(value.connection.token);
   expect(screen.queryByText(value.connection.token)).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Verify saved connection" }));

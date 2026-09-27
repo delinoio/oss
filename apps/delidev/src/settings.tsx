@@ -1,4 +1,5 @@
 import { ModelPricing } from "./pricing";
+import { NotificationSettings } from "./notification-settings";
 import { useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
@@ -37,7 +38,7 @@ export function ConfigurationEditor({ kind, initial, active, saved, cancel }: { 
   </form>;
 }
 
-enum SettingsArea { Configuration, Diagnostics }
+enum SettingsArea { Configuration, Diagnostics, Notifications }
 
 export function Settings({ close, visible = true, controlLocalWorker, currentDeviceId, pairingAuthority }: { pairingAuthority?: PairingAuthority; close: () => void; visible?: boolean; controlLocalWorker?: ControlLocalWorker; currentDeviceId?: string }) {
   const [kind, setKind] = useState(EntityKind.PROVIDER);
@@ -54,7 +55,8 @@ export function Settings({ close, visible = true, controlLocalWorker, currentDev
   const result = useQuery(ResourceQuery.listResources, { filter: { kind, pageSize: 50, pageToken: page } }, { enabled: visible && area === SettingsArea.Configuration });
   const tabs = [[EntityKind.PROVIDER, "Providers"], [EntityKind.MODEL, "Models"], [EntityKind.ACCOUNT, "AI accounts"], [EntityKind.AGENT, "Agent Workers"], [EntityKind.TEMPLATE, "Instructions"], [EntityKind.PROJECT, "Projects"], [EntityKind.REPOSITORY, "Repositories"], [EntityKind.MACHINE, "Execution Workers"], [EntityKind.DEVICE, "Paired devices"], [EntityKind.SETTINGS, "Server preferences"]] as const;
   const done = () => { setEditing(undefined); setDeleting(undefined); void client.invalidateQueries({ refetchType: "active" }); };
-  return <Modal title="Settings" close={close} visible={visible}><nav aria-label="Settings categories">{tabs.map(([value, label]) => <button key={value} disabled={Boolean(editing || account || deleting || routing || machine || device || pricing)} aria-pressed={area === SettingsArea.Configuration && kind === value} onClick={() => { setKind(value); setArea(SettingsArea.Configuration); setPage(""); }}>{label}</button>)}<button disabled={Boolean(editing || account || deleting || routing || machine || device || pricing)} aria-pressed={area === SettingsArea.Diagnostics} onClick={() => setArea(SettingsArea.Diagnostics)}>Diagnostics</button></nav>
+  return <Modal title="Settings" close={close} visible={visible}><nav aria-label="Settings categories">{tabs.map(([value, label]) => <button key={value} disabled={Boolean(editing || account || deleting || routing || machine || device || pricing)} aria-pressed={area === SettingsArea.Configuration && kind === value} onClick={() => { setKind(value); setArea(SettingsArea.Configuration); setPage(""); }}>{label}</button>)}<button disabled={Boolean(editing || account || deleting || routing || machine || device || pricing)} aria-pressed={area === SettingsArea.Diagnostics} onClick={() => setArea(SettingsArea.Diagnostics)}>Diagnostics</button><button disabled={Boolean(editing || account || deleting || routing || machine || device || pricing)} aria-pressed={area === SettingsArea.Notifications} onClick={() => setArea(SettingsArea.Notifications)}>Notifications</button></nav>
+    <div hidden={area !== SettingsArea.Notifications}><NotificationSettings active={visible && area === SettingsArea.Notifications} /></div>
     <div hidden={area !== SettingsArea.Diagnostics}><Doctor active={visible && area === SettingsArea.Diagnostics} /></div>
     <div hidden={area !== SettingsArea.Configuration}>
     {controlLocalWorker ? <div hidden={kind !== EntityKind.MACHINE || Boolean(machine || editing || deleting || routing || account)}><LocalWorkerControls control={controlLocalWorker} active={visible && area === SettingsArea.Configuration && kind === EntityKind.MACHINE} changed={() => void client.invalidateQueries({ refetchType: "active" })} /></div> : null}

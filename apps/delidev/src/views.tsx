@@ -12,6 +12,7 @@ import { ResourceChoice } from "./configuration-fields";
 import { StartingReferences } from "./schedules";
 import { useLocalWorkerProof, type ReadLocalWorkerProof } from "./local-worker";
 import { Interaction } from "./interactions";
+import { inboxResponseCurrent } from "./inbox-source";
 
 export enum Surface { Sessions = "sessions", Search = "search", Activity = "activity", Inbox = "inbox", Schedules = "schedules", Usage = "usage" }
 function Pager({ page, next, setPage, busy }: { page: string; next?: string; setPage: (value: string) => void; busy: boolean }) {
@@ -41,12 +42,13 @@ export function Activity({ open }: { open: (id: string) => void }) {
   </section>;
 }
 
-function InboxRow({ view, open, refresh }: { view: InboxView; open: (id: string) => void; refresh: () => void }) {
+export function InboxRow({ view, open, refresh }: { view: InboxView; open: (id: string) => void; refresh: () => void }) {
   const data = document(view.entry);
   const read = text(data.read_state) === "read";
+  const responseCurrent = inboxResponseCurrent(view);
   const mutation = useRetainedMutation(`inbox:${view.entry?.id}`, InboxQuery.setInboxReadState, refresh);
   return <article className="result"><strong>{resourceName(view.session)}</strong><p>{text(data.source) === "interaction" ? "Agent request" : `Execution ${text(object(data.terminal).outcome)}`}</p>
-    <p>{read ? "Read" : "Unread"}{view.interaction ? ` · ${text(document(view.interaction).closure)}` : ""}</p><div className="actions"><button onClick={() => open(view.entry!.sessionId)}>Open session</button><button disabled={mutation.busy || mutation.uncertain} onClick={() => void mutation.send({ mutation: { requestId: newRequestId(), id: view.entry!.id, expectedRevision: view.entry!.revision }, readState: read ? InboxReadState.UNREAD : InboxReadState.READ })}>{read ? "Mark unread" : "Mark read"}</button></div><Problem error={mutation.error} />{view.interaction ? <Interaction resource={view.interaction} refresh={refresh} /> : null}{mutation.uncertain ? <button onClick={mutation.retry}>Retry the same read-state change</button> : null}
+    <p>{read ? "Read" : "Unread"}{view.interaction ? ` · ${text(document(view.interaction).closure)}` : ""}</p><div className="actions"><button onClick={() => open(view.entry!.sessionId)}>Open session</button><button disabled={mutation.busy || mutation.uncertain} onClick={() => void mutation.send({ mutation: { requestId: newRequestId(), id: view.entry!.id, expectedRevision: view.entry!.revision }, readState: read ? InboxReadState.UNREAD : InboxReadState.READ })}>{read ? "Mark unread" : "Mark read"}</button></div><Problem error={mutation.error} />{view.interaction ? <><fieldset disabled={!responseCurrent}><legend>Original request</legend><Interaction resource={view.interaction} refresh={refresh} /></fieldset>{!responseCurrent ? <p>This request is retained for inspection. Its session is paused, archived, recovering or no longer owns this execution.</p> : null}</> : null}{mutation.uncertain ? <button onClick={mutation.retry}>Retry the same read-state change</button> : null}
   </article>;
 }
 export function Inbox({ open }: { open: (id: string) => void }) {
