@@ -54,7 +54,7 @@ test("stdio tools keep a session across inline calls and export an exact inspect
     assert.equal((await peer.call("sessions")).sessions.length, 1);
     await peer.call("close", { sessionId });
     assert.equal((await peer.call("sessions")).sessions.length, 0);
-  } finally { await peer.close(); await rm(cwd, { recursive: true, force: true }); }
+  } finally { await peer.close(); await removeFixture(cwd); }
 });
 
 test("CommonJS caller dependencies and createElement share the canonical React instance", async () => fixture(async (peer, cwd) => {
@@ -78,7 +78,11 @@ async function fixture(work: (peer: Awaited<ReturnType<typeof connect>>, cwd: st
   const cwd = await mkdtemp(join(tmpdir(), "react-forge-mcp-"));
   const peer = await connect(cwd);
   try { await work(peer, cwd); }
-  finally { await peer.close(); await rm(cwd, { recursive: true, force: true }); }
+  finally { await peer.close(); await removeFixture(cwd); }
+}
+async function removeFixture(cwd: string) {
+  // Windows can briefly retain a directory handle after the server closes.
+  await rm(cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 }
 async function errorCode(peer: Awaited<ReturnType<typeof connect>>, tool: string, args: Record<string, unknown>, code: string) {
   const result = await peer.raw(tool, args);

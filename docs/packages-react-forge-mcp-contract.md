@@ -63,6 +63,8 @@ The real stdio MCP test must create and inspect a PDF from inline JSX without a 
 
 Cancellation fixtures register their abort waiter before publishing readiness and handle an already-aborted signal. The late-return fixture deliberately resumes after cancellation has arrived, proving cleanup does not depend on the timing of the readiness write's continuation.
 
+Stdio test fixtures wait for the server process close event before deleting their working directory. Filesystem cleanup tolerates a short Windows handle-release delay, while a server that does not close still fails the fixture.
+
 ## Dependencies and Integrations
 Reuse pinned `@modelcontextprotocol/sdk`, `tsx` and the existing native engines. Declare exact direct `esbuild` and `zod` dependencies matching the existing lockfile versions for virtual TSX transformation and shared runtime/advertised schemas. The parent alone owns protocol stdout; one execution child owns all sessions. No existing Forge CLI/MCP or native defaults change.
 
