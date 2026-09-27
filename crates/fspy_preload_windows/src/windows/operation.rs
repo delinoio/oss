@@ -287,6 +287,14 @@ fn begin_with_intent(operation: u8, path: &[u16], mutates: bool) -> Option<Opera
 }
 
 pub fn begin_handle(operation: u8, handle: winapi::um::winnt::HANDLE) -> Option<OperationGuard> {
+    begin_handle_with_requested(operation, handle, None)
+}
+
+pub fn begin_handle_with_requested(
+    operation: u8,
+    handle: winapi::um::winnt::HANDLE,
+    requested: Option<u64>,
+) -> Option<OperationGuard> {
     use winapi::um::{
         fileapi::{BY_HANDLE_FILE_INFORMATION, FILE_ID_INFO, GetFileInformationByHandle},
         minwinbase::FileIdInfo,
@@ -329,13 +337,16 @@ pub fn begin_handle(operation: u8, handle: winapi::um::winnt::HANDLE) -> Option<
             u128::from((u64::from(low.nFileIndexHigh) << 32) | u64::from(low.nFileIndexLow)),
         )
     };
-    let mut encoded = Vec::with_capacity(24 + path.len().saturating_mul(2));
+    let mut encoded = Vec::with_capacity(32 + path.len().saturating_mul(2));
     encoded.extend_from_slice(&volume.to_le_bytes());
     encoded.extend_from_slice(&file_id.to_le_bytes());
+    if let Some(requested) = requested {
+        encoded.extend_from_slice(&requested.to_le_bytes());
+    }
     for unit in path.iter() {
         encoded.extend_from_slice(&unit.to_le_bytes());
     }
-    begin_encoded(operation, &encoded, 2)
+    begin_encoded(operation, &encoded, if requested.is_some() { 3 } else { 2 })
 }
 
 /// Mutation starts carry both native paths as byte-counted UTF-16. A length

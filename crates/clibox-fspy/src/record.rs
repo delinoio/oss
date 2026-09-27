@@ -241,6 +241,8 @@ pub struct Start {
     /// pathname argument; the operation result is still observed.
     pub path_unavailable: bool,
     pub descriptor: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requested_bytes: Option<u64>,
     pub monotonic_ns: u64,
     pub requested_delay_ns: u64,
 }
@@ -857,6 +859,7 @@ mod tests {
             }],
             path_unavailable: false,
             descriptor: None,
+            requested_bytes: None,
             monotonic_ns: 100,
             requested_delay_ns: 0,
         });

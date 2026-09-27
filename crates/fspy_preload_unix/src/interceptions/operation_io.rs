@@ -9,7 +9,7 @@ use crate::{
 
 intercept!(read: unsafe extern "C" fn(c_int, *mut c_void, size_t) -> ssize_t);
 unsafe extern "C" fn read(fd: c_int, buffer: *mut c_void, count: size_t) -> ssize_t {
-    let token = operation::enter_fd(Kind::Read, fd);
+    let token = operation::enter_fd_requested(Kind::Read, fd, u64::try_from(count).ok());
     // SAFETY: forwards the caller's original valid arguments.
     let result = unsafe { read::original()(fd, buffer, count) };
     operation::finish(token, result as i64);
@@ -18,7 +18,8 @@ unsafe extern "C" fn read(fd: c_int, buffer: *mut c_void, count: size_t) -> ssiz
 
 intercept!(readv: unsafe extern "C" fn(c_int, *const libc::iovec, c_int) -> ssize_t);
 unsafe extern "C" fn readv(fd: c_int, vectors: *const libc::iovec, count: c_int) -> ssize_t {
-    let token = operation::enter_fd(Kind::Read, fd);
+    let requested = operation::requested_vector_bytes(vectors, count);
+    let token = operation::enter_fd_requested(Kind::Read, fd, requested);
     // SAFETY: the original call receives the caller's unmodified arguments.
     let result = unsafe { readv::original()(fd, vectors, count) };
     operation::finish(token, result as i64);
@@ -32,7 +33,7 @@ unsafe extern "C" fn pread(
     count: size_t,
     offset: off_t,
 ) -> ssize_t {
-    let token = operation::enter_fd(Kind::PositionalRead, fd);
+    let token = operation::enter_fd_requested(Kind::PositionalRead, fd, u64::try_from(count).ok());
     // SAFETY: forwards the caller's original valid arguments.
     let result = unsafe { pread::original()(fd, buffer, count, offset) };
     operation::finish(token, result as i64);
@@ -46,7 +47,8 @@ unsafe extern "C" fn preadv(
     count: c_int,
     offset: off_t,
 ) -> ssize_t {
-    let token = operation::enter_fd(Kind::PositionalRead, fd);
+    let requested = operation::requested_vector_bytes(vectors, count);
+    let token = operation::enter_fd_requested(Kind::PositionalRead, fd, requested);
     // SAFETY: the original call receives the caller's unmodified arguments.
     let result = unsafe { preadv::original()(fd, vectors, count, offset) };
     operation::finish(token, result as i64);

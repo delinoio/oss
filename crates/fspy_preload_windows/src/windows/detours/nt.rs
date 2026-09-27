@@ -99,11 +99,15 @@ fn complete_path_operation(guard: Option<operation::OperationGuard>, status: NTS
     }
 }
 
-unsafe fn begin_handle_operation(kind: u8, handle: HANDLE) -> Option<operation::OperationGuard> {
+unsafe fn begin_handle_operation(
+    kind: u8,
+    handle: HANDLE,
+    requested: Option<u64>,
+) -> Option<operation::OperationGuard> {
     operation::with_resolution(|| {
         // SAFETY: GetFileType accepts a native handle and does not take ownership.
         match unsafe { GetFileType(handle) } {
-            FILE_TYPE_DISK => operation::begin_handle(kind, handle),
+            FILE_TYPE_DISK => operation::begin_handle_with_requested(kind, handle, requested),
             FILE_TYPE_PIPE | FILE_TYPE_CHAR => None,
             _ => operation::begin(kind, &[]),
         }
@@ -699,7 +703,7 @@ static DETOUR_NT_QUERY_DIRECTORY_FILE: Detour<
                 restart_scan: BOOLEAN,
             ) -> NTSTATUS {
                 // SAFETY: the directory handle remains valid until return.
-                let operation = unsafe { begin_handle_operation(8, file_handle) };
+                let operation = unsafe { begin_handle_operation(8, file_handle, None) };
                 // SAFETY: intercepting directory query to record directory read access
                 unsafe { handle_open(AccessMode::READ_DIR, file_handle) };
                 // SAFETY: calling the original NtQueryDirectoryFile
@@ -757,7 +761,7 @@ static DETOUR_NT_QUERY_DIRECTORY_FILE_EX: Detour<NtQueryDirectoryFileExFn> =
                 file_name: PUNICODE_STRING,
             ) -> NTSTATUS {
                 // SAFETY: the directory handle remains valid until return.
-                let operation = unsafe { begin_handle_operation(8, file_handle) };
+                let operation = unsafe { begin_handle_operation(8, file_handle, None) };
                 // SAFETY: intercepting directory query to record directory read access
                 unsafe { handle_open(AccessMode::READ_DIR, file_handle) };
                 // SAFETY: calling the original NtQueryDirectoryFileEx
@@ -963,7 +967,7 @@ static DETOUR_NT_QUERY_INFORMATION_FILE: Detour<
                 file_information_class: FILE_INFORMATION_CLASS,
             ) -> NTSTATUS {
                 // SAFETY: the handle remains owned by the caller.
-                let operation = unsafe { begin_handle_operation(7, file_handle) };
+                let operation = unsafe { begin_handle_operation(7, file_handle, None) };
                 // SAFETY: forwarding the original arguments unchanged.
                 let status = unsafe {
                     (DETOUR_NT_QUERY_INFORMATION_FILE.real())(
@@ -1010,7 +1014,8 @@ static DETOUR_NT_READ_FILE: Detour<
             ) -> NTSTATUS {
                 let kind = if byte_offset.is_null() { 3 } else { 5 };
                 // SAFETY: file_handle remains owned by the native caller.
-                let operation = unsafe { begin_handle_operation(kind, file_handle) };
+                let operation =
+                    unsafe { begin_handle_operation(kind, file_handle, Some(u64::from(length))) };
                 // SAFETY: forwarding the original arguments unchanged.
                 let status = unsafe {
                     (DETOUR_NT_READ_FILE.real())(
@@ -1068,7 +1073,7 @@ static DETOUR_NT_WRITE_FILE: Detour<
             ) -> NTSTATUS {
                 let kind = if byte_offset.is_null() { 4 } else { 6 };
                 // SAFETY: file_handle remains owned by the native caller.
-                let operation = unsafe { begin_handle_operation(kind, file_handle) };
+                let operation = unsafe { begin_handle_operation(kind, file_handle, None) };
                 // SAFETY: forwarding the original arguments unchanged.
                 let status = unsafe {
                     (DETOUR_NT_WRITE_FILE.real())(
@@ -1103,7 +1108,7 @@ static DETOUR_NT_CLOSE: Detour<unsafe extern "system" fn(HANDLE) -> NTSTATUS> =
         Detour::new(c"NtClose", ntapi::ntobapi::NtClose, {
             unsafe extern "system" fn new_fn(handle: HANDLE) -> NTSTATUS {
                 // SAFETY: resolve a disk handle before the native close.
-                let operation = unsafe { begin_handle_operation(2, handle) };
+                let operation = unsafe { begin_handle_operation(2, handle, None) };
                 // SAFETY: forwarding the original handle unchanged.
                 let status = unsafe { (DETOUR_NT_CLOSE.real())(handle) };
                 complete_path_operation(operation, status);

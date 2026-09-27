@@ -414,6 +414,56 @@ fn absolute_path(dirfd: c_int, path: &[u8]) -> Vec<u8> {
 }
 
 pub fn enter_fd(kind: Kind, fd: c_int) -> Option<Token> {
+    enter_fd_with_result(kind, fd, 0)
+}
+
+pub fn enter_fd_requested(kind: Kind, fd: c_int, requested: Option<u64>) -> Option<Token> {
+    let result = requested
+        .and_then(|bytes| i64::try_from(bytes).ok())
+        .unwrap_or(-1);
+    enter_fd_with_result(kind, fd, result)
+}
+
+pub fn requested_vector_bytes(vectors: *const libc::iovec, count: c_int) -> Option<u64> {
+    preserve_errno(|| {
+        let count = usize::try_from(count).ok()?;
+        if count > 1024 {
+            return None;
+        }
+        if count == 0 {
+            return Some(0);
+        }
+        let mut copied = std::iter::repeat_with(|| libc::iovec {
+            iov_base: std::ptr::null_mut(),
+            iov_len: 0,
+        })
+        .take(count)
+        .collect::<Vec<_>>();
+        let bytes = count.checked_mul(std::mem::size_of::<libc::iovec>())?;
+        let mut received = 0_u64;
+        // SAFETY: the kernel validates the caller pointer and writes only to
+        // this bounded local vector allocation.
+        #[expect(deprecated, reason = "the injected client avoids a mach2 dependency")]
+        if unsafe {
+            mach_vm_read_overwrite(
+                libc::mach_task_self_,
+                vectors as u64,
+                bytes as u64,
+                copied.as_mut_ptr() as u64,
+                &raw mut received,
+            )
+        } != libc::KERN_SUCCESS
+            || received != bytes as u64
+        {
+            return None;
+        }
+        copied.iter().try_fold(0_u64, |sum, vector| {
+            sum.checked_add(u64::try_from(vector.iov_len).ok()?)
+        })
+    })
+}
+
+fn enter_fd_with_result(kind: Kind, fd: c_int, start_result: i64) -> Option<Token> {
     socket_path()?;
     with_resolution(|| {
         preserve_errno(|| {
@@ -433,16 +483,16 @@ pub fn enter_fd(kind: Kind, fd: c_int) -> Option<Token> {
             // descriptors. They are outside this file-operation boundary; sending
             // a pathless event for every child stdout write would exhaust the
             // bounded record without adding file evidence.
-            path.and_then(|path| enter(kind, path))
+            path.and_then(|path| enter_with_result(kind, path, start_result))
         })
     })
 }
 
-fn enter(kind: Kind, path: &[u8]) -> Option<Token> {
-    enter_with_intent(kind, path, false)
+fn enter_with_intent(kind: Kind, path: &[u8], mutates: bool) -> Option<Token> {
+    enter_with_result(kind, path, i64::from(mutates))
 }
 
-fn enter_with_intent(kind: Kind, path: &[u8], mutates: bool) -> Option<Token> {
+fn enter_with_result(kind: Kind, path: &[u8], start_result: i64) -> Option<Token> {
     if ACTIVE.with(Cell::get) {
         return None;
     }
@@ -452,7 +502,7 @@ fn enter_with_intent(kind: Kind, path: &[u8], mutates: bool) -> Option<Token> {
         id
     });
     let outcome = with_stream(|socket| {
-        if send_frame(socket, b's', kind, id, i64::from(mutates), 0, path) {
+        if send_frame(socket, b's', kind, id, start_result, 0, path) {
             receive_ack(socket)
         } else {
             Ack::Lost

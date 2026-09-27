@@ -58,6 +58,7 @@ pub struct Frame {
     pub error: i32,
     pub path: Vec<u8>,
     pub handle_identity: Option<FileIdentity>,
+    pub requested_bytes: Option<u64>,
     pub second_path: Option<Vec<u8>>,
     pub sequence: u64,
     pub access_path: Option<AccessPath>,
@@ -105,10 +106,12 @@ pub fn read_frame(reader: &mut impl Read) -> io::Result<Option<Frame>> {
                 || id == 0
                 || (result != 0
                     && !(operation == 1 && result == 1)
-                    && !(result == 2 && (2..=8).contains(&operation)))
+                    && !(result == 2 && (2..=8).contains(&operation))
+                    && !(result == 3 && matches!(operation, 3 | 5)))
                 || error != 0
                 || !length.is_multiple_of(2)
-                || (result == 2 && length <= 24) =>
+                || (result == 2 && length <= 24)
+                || (result == 3 && length <= 32) =>
         {
             return Err(invalid("start_frame"))
         }
@@ -124,12 +127,21 @@ pub fn read_frame(reader: &mut impl Read) -> io::Result<Option<Frame>> {
     }
     let mut path = vec![0_u8; length];
     reader.read_exact(&mut path)?;
-    let handle_identity = if kind == FrameKind::Start && result == 2 {
+    let handle_identity = if kind == FrameKind::Start && matches!(result, 2 | 3) {
         let volume = u64::from_le_bytes(path[..8].try_into().unwrap());
         let file_id = u128::from_le_bytes(path[8..24].try_into().unwrap());
-        path.drain(..24);
         Some(FileIdentity::Windows { volume, file_id })
     } else {
+        None
+    };
+    let requested_bytes = if kind == FrameKind::Start && result == 3 {
+        let requested = u64::from_le_bytes(path[24..32].try_into().unwrap());
+        path.drain(..32);
+        Some(requested)
+    } else {
+        if handle_identity.is_some() {
+            path.drain(..24);
+        }
         None
     };
     let second_path = if kind == FrameKind::Start && operation == 9 && !path.is_empty() {
@@ -164,6 +176,7 @@ pub fn read_frame(reader: &mut impl Read) -> io::Result<Option<Frame>> {
         error,
         path,
         handle_identity,
+        requested_bytes,
         second_path,
         sequence: 0,
         access_path: None,
@@ -364,13 +377,15 @@ mod tests {
         frame[2..6].copy_from_slice(&1_u32.to_le_bytes());
         frame[10..18].copy_from_slice(&1_u64.to_le_bytes());
         frame[18..26].copy_from_slice(&1_u64.to_le_bytes());
-        frame[34..42].copy_from_slice(&2_i64.to_le_bytes());
-        frame[46..50].copy_from_slice(&u32::try_from(path.len() + 24).unwrap().to_le_bytes());
+        frame[34..42].copy_from_slice(&3_i64.to_le_bytes());
+        frame[46..50].copy_from_slice(&u32::try_from(path.len() + 32).unwrap().to_le_bytes());
         frame.extend_from_slice(&0x1234_u64.to_le_bytes());
         frame.extend_from_slice(&0x5678_u128.to_le_bytes());
+        frame.extend_from_slice(&0_u64.to_le_bytes());
         frame.extend_from_slice(&path);
         let decoded = read_frame(&mut Cursor::new(frame)).unwrap().unwrap();
         assert_eq!(decoded.handle_identity, Some(identity));
+        assert_eq!(decoded.requested_bytes, Some(0));
         let classified = classify_handle_path(&root, &decoded.path, identity).unwrap();
         assert_eq!(classified.class, PathClass::Project);
         assert_eq!(classified.identity, Some(identity));
@@ -944,6 +959,7 @@ pub fn assemble_candidate_record(
                 paths,
                 path_unavailable,
                 descriptor: None,
+                requested_bytes: start.requested_bytes,
                 monotonic_ns: start.monotonic_ns,
                 requested_delay_ns: start.requested_delay_ns,
             },

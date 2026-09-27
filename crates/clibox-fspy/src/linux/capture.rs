@@ -25,8 +25,61 @@ use crate::record::{
 #[derive(Debug, Clone)]
 struct CapturedEntry {
     operation: paths::DecodedOperation,
+    requested_bytes: Option<u64>,
     requested_delay_ns: u64,
     observed_delay_ns: u64,
+}
+
+fn requested_read_bytes(entry: &RawEntry) -> Option<u64> {
+    if entry.syscall == libc::SYS_read as u64 || entry.syscall == libc::SYS_pread64 as u64 {
+        return Some(entry.args[2]);
+    }
+    if entry.syscall != libc::SYS_readv as u64
+        && entry.syscall != libc::SYS_preadv as u64
+        && entry.syscall != libc::SYS_preadv2 as u64
+    {
+        return None;
+    }
+    let count = usize::try_from(entry.args[2]).ok()?;
+    if count > 1024 {
+        return None;
+    }
+    if count == 0 {
+        return Some(0);
+    }
+    let mut vectors = std::iter::repeat_with(|| libc::iovec {
+        iov_base: std::ptr::null_mut(),
+        iov_len: 0,
+    })
+    .take(count)
+    .collect::<Vec<_>>();
+    let bytes = count.checked_mul(std::mem::size_of::<libc::iovec>())?;
+    let local = libc::iovec {
+        iov_base: vectors.as_mut_ptr().cast(),
+        iov_len: bytes,
+    };
+    let remote = libc::iovec {
+        iov_base: entry.args[1] as usize as *mut libc::c_void,
+        iov_len: bytes,
+    };
+    // SAFETY: the tracee is stopped; the kernel validates its vector pointer
+    // and writes only within the bounded local allocation.
+    if unsafe {
+        libc::process_vm_readv(
+            entry.tid as i32,
+            &raw const local,
+            1,
+            &raw const remote,
+            1,
+            0,
+        )
+    } != isize::try_from(bytes).ok()?
+    {
+        return None;
+    }
+    vectors.iter().try_fold(0_u64, |sum, vector| {
+        sum.checked_add(u64::try_from(vector.iov_len).ok()?)
+    })
 }
 
 pub enum CaptureAction {
@@ -337,6 +390,7 @@ where
                 .insert(
                     entry.ordinal,
                     CapturedEntry {
+                        requested_bytes: requested_read_bytes(entry),
                         operation: decoded,
                         requested_delay_ns,
                         observed_delay_ns,
@@ -377,6 +431,7 @@ where
             paths: operation.paths,
             path_unavailable: false,
             descriptor: None,
+            requested_bytes: None,
             monotonic_ns,
             requested_delay_ns: 0,
         }));
@@ -403,6 +458,7 @@ where
         paths: root_operation.paths,
         path_unavailable: false,
         descriptor: None,
+        requested_bytes: None,
         monotonic_ns: root_entry.monotonic_ns,
         requested_delay_ns,
     }));
@@ -453,6 +509,7 @@ where
             paths: captured.operation.paths,
             path_unavailable: captured.operation.path_unavailable,
             descriptor: captured.operation.descriptor,
+            requested_bytes: captured.requested_bytes,
             monotonic_ns: entry.monotonic_ns,
             requested_delay_ns: captured.requested_delay_ns,
         }));

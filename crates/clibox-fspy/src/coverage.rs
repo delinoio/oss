@@ -268,7 +268,13 @@ pub fn analyze(
             }
             if let Some(identity) = path.identity {
                 if let Some(selected) = denominator.files.get(&identity) {
-                    if bytes > 0 || selected.initially_empty {
+                    if bytes > 0
+                        || (selected.initially_empty
+                            && pair
+                                .start
+                                .requested_bytes
+                                .is_some_and(|requested| requested > 0))
+                    {
                         covered.insert(identity);
                     }
                 }
@@ -329,6 +335,7 @@ mod tests {
                     }],
                     path_unavailable: false,
                     descriptor: None,
+                    requested_bytes: Some(1),
                     monotonic_ns: 1,
                     requested_delay_ns: 0,
                 },
@@ -403,6 +410,11 @@ mod tests {
                 .len(),
             1
         );
+        let mut no_request = read_record(&selected, empty, 0);
+        no_request.operations[0].start.requested_bytes = Some(0);
+        assert!(analyze(&selected, &no_request).unwrap().covered.is_empty());
+        no_request.operations[0].start.requested_bytes = None;
+        assert!(analyze(&selected, &no_request).unwrap().covered.is_empty());
         assert_eq!(
             analyze(&selected, &read_record(&selected, full, 0))
                 .unwrap()

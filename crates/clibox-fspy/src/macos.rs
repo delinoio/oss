@@ -106,7 +106,10 @@ pub fn read_frame(reader: &mut impl Read) -> io::Result<Option<Frame>> {
         || monotonic_ns == 0
         || (kind == FrameKind::Hello && error != 0)
         || (kind == FrameKind::Start
-            && (error != 0 || (result != 0 && !(operation == 1 && result == 1))))
+            && (error != 0
+                || (result != 0
+                    && !(operation == 1 && result == 1)
+                    && !((operation == 3 || operation == 5) && result >= -1))))
         || (kind == FrameKind::Hello && length != 0)
         || (kind == FrameKind::Completion
             && (length != 0 || (result < 0) != (error != 0) || error < 0))
@@ -770,6 +773,9 @@ pub fn assemble_candidate_record(
                 paths,
                 path_unavailable,
                 descriptor: None,
+                requested_bytes: (matches!(kind, Operation::Read | Operation::PositionalRead)
+                    && start.result >= 0)
+                    .then_some(start.result as u64),
                 monotonic_ns: start.monotonic_ns,
                 requested_delay_ns: start.requested_delay_ns,
             },
