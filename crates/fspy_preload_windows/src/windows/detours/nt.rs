@@ -4,7 +4,7 @@ use fspy_shared::ipc::{AccessMode, IpcPath, PathAccess};
 use ntapi::{
     ntioapi::{
         FILE_CREATE, FILE_INFORMATION_CLASS, FILE_OPEN_IF, FILE_OVERWRITE, FILE_OVERWRITE_IF,
-        FILE_RENAME_INFORMATION, FILE_SUPERSEDE, FileLinkInformation,
+        FILE_RENAME_INFORMATION, FILE_SUPERSEDE, FileEndOfFileInformation, FileLinkInformation,
         FileLinkInformationBypassAccessCheck, FileLinkInformationEx,
         FileLinkInformationExBypassAccessCheck, FileRenameInformation,
         FileRenameInformationBypassAccessCheck, FileRenameInformationEx,
@@ -800,6 +800,10 @@ fn changes_destination_name(class: FILE_INFORMATION_CLASS) -> bool {
     )
 }
 
+fn changes_handle_contents(class: FILE_INFORMATION_CLASS) -> bool {
+    class == FileEndOfFileInformation
+}
+
 unsafe fn read_mutation_paths(
     file_handle: HANDLE,
     file_information: PVOID,
@@ -922,6 +926,13 @@ static DETOUR_NT_SET_INFORMATION_FILE: Detour<
                             (operation::begin(9, &[]), false)
                         }
                     })
+                } else if changes_handle_contents(file_information_class) {
+                    // End-of-file changes mutate the opened inode even though
+                    // no destination pathname is supplied by this NT class.
+                    // SAFETY: the caller retains the live handle through the call.
+                    let guard = unsafe { begin_handle_operation(9, file_handle, None) };
+                    let resolved = guard.is_some();
+                    Some((guard, resolved))
                 } else {
                     None
                 };
@@ -1137,6 +1148,10 @@ mod set_information_tests {
             assert!(changes_destination_name(class));
         }
         assert!(!changes_destination_name(
+            ntapi::ntioapi::FilePositionInformation
+        ));
+        assert!(changes_handle_contents(FileEndOfFileInformation));
+        assert!(!changes_handle_contents(
             ntapi::ntioapi::FilePositionInformation
         ));
     }
