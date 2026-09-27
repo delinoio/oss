@@ -248,7 +248,11 @@ func (a *apiConnection) observeSetup(ctx context.Context, session domain.ID) err
 				Count   uint32    `json:"mcpToolCount"`
 				Elapsed uint64    `json:"elapsedMs"`
 			}
-			if decode(event.Params, &inventory) != nil || inventory.Session != session || inventory.Count != 0 || initialized || inventories == 0 || phase != len(phases) {
+			// MCP startup is performed by the spawned actor. Actual pinned
+			// native runs may finish it before git discovery/response setup.
+			// Keep both barriers independent and require every setup phase
+			// before returning; MCP readiness alone cannot grant input authority.
+			if decode(event.Params, &inventory) != nil || inventory.Session != session || inventory.Count != 0 || initialized || inventories == 0 || phase < 7 {
 				return incompatible()
 			}
 			initialized = true

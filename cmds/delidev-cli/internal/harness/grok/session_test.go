@@ -12,7 +12,7 @@ import (
 )
 
 func TestCreationRetainsOriginalClaimsAndNeverRepeatsUncertainty(t *testing.T) {
-	for _, mode := range []string{"valid", "claim-failure", "bind-failure", "session-model", "setup-foreign", "session-timeout"} {
+	for _, mode := range []string{"valid", "claim-failure", "bind-failure", "session-model", "setup-foreign", "session-timeout", "setup-mcp-early", "setup-mcp-too-early", "setup-mcp-duplicate", "setup-mcp-incomplete"} {
 		t.Run(mode, func(t *testing.T) {
 			config, _ := fixtureAPIConfig(t, mode)
 			api, err := openAPI(context.Background(), config)
@@ -36,13 +36,16 @@ func TestCreationRetainsOriginalClaimsAndNeverRepeatsUncertainty(t *testing.T) {
 				if mode == "session-timeout" {
 					time.AfterFunc(50*time.Millisecond, cancel)
 				}
+				if mode == "setup-mcp-incomplete" && claim.Phase == BindCreation {
+					time.AfterFunc(100*time.Millisecond, cancel)
+				}
 				if mode == "claim-failure" || mode == "bind-failure" && claim.Phase == BindCreation {
 					return context.Canceled
 				}
 				return nil
 			}
 			native, err := api.Create(ctx, request, product, record)
-			if mode == "valid" {
+			if mode == "valid" || mode == "setup-mcp-early" {
 				if err != nil || native.Validate() != nil || len(claims) != 2 || claims[1].NativeSessionID != native || claims[0].BodyDigest != claims[1].BodyDigest || claims[0].ConfigurationDigest != claims[1].ConfigurationDigest {
 					t.Fatal("native ownership missing", err)
 				}

@@ -119,8 +119,19 @@ func apiFixtureProcess() {
 				if i == 5 {
 					_, _ = os.Stdout.WriteString(inventoryFixture)
 				}
+				if strings.HasPrefix(mode, "setup-mcp-") && (i == 6 || mode == "setup-mcp-too-early" && i == 5) {
+					_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"jsonrpc": "2.0", "method": "_x.ai/mcp_initialized", "params": map[string]any{"sessionId": value["sessionId"], "mcpToolCount": 0, "elapsedMs": 0}})
+					if mode == "setup-mcp-duplicate" {
+						_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"jsonrpc": "2.0", "method": "_x.ai/mcp_initialized", "params": map[string]any{"sessionId": value["sessionId"], "mcpToolCount": 0, "elapsedMs": 0}})
+					}
+					if mode == "setup-mcp-incomplete" {
+						break
+					}
+				}
 			}
-			_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"jsonrpc": "2.0", "method": "_x.ai/mcp_initialized", "params": map[string]any{"sessionId": value["sessionId"], "mcpToolCount": 0, "elapsedMs": 0}})
+			if !strings.HasPrefix(mode, "setup-mcp-") {
+				_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"jsonrpc": "2.0", "method": "_x.ai/mcp_initialized", "params": map[string]any{"sessionId": value["sessionId"], "mcpToolCount": 0, "elapsedMs": 0}})
+			}
 			result = value
 		case "session/prompt":
 			pendingPrompt = request.ID
