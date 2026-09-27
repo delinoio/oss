@@ -15,22 +15,23 @@ import (
 type LifecycleKind string
 
 const (
-	CommandObserved           LifecycleKind = "command-observed"
-	SessionInitialized        LifecycleKind = "session-initialized"
-	InputAccepted             LifecycleKind = "input-accepted"
-	InputFinished             LifecycleKind = "input-finished"
-	UncorrelatedTermination   LifecycleKind = "uncorrelated-termination"
-	InterruptResultObserved   LifecycleKind = "interrupt-result-observed"
-	ContentObserved           LifecycleKind = "content-observed"
-	InteractionObserved       LifecycleKind = "interaction-observed"
-	TaskObserved              LifecycleKind = "task-observed"
-	ProgressObserved          LifecycleKind = "progress-observed"
-	RunStateObserved          LifecycleKind = "run-state-observed"
-	ContinuationInitialized   LifecycleKind = "continuation-initialized"
-	ContinuationFinished      LifecycleKind = "continuation-finished"
-	PrivateObservation        LifecycleKind = "private-observation"
-	CompactionCommandObserved LifecycleKind = "compaction-command-observed"
-	CompactionResultObserved  LifecycleKind = "compaction-result-observed"
+	CommandObserved                 LifecycleKind = "command-observed"
+	SessionInitialized              LifecycleKind = "session-initialized"
+	InputAccepted                   LifecycleKind = "input-accepted"
+	InputFinished                   LifecycleKind = "input-finished"
+	UncorrelatedTermination         LifecycleKind = "uncorrelated-termination"
+	CallbackInterruptResultObserved LifecycleKind = "callback-interrupt-result-observed"
+	InterruptResultObserved         LifecycleKind = "interrupt-result-observed"
+	ContentObserved                 LifecycleKind = "content-observed"
+	InteractionObserved             LifecycleKind = "interaction-observed"
+	TaskObserved                    LifecycleKind = "task-observed"
+	ProgressObserved                LifecycleKind = "progress-observed"
+	RunStateObserved                LifecycleKind = "run-state-observed"
+	ContinuationInitialized         LifecycleKind = "continuation-initialized"
+	ContinuationFinished            LifecycleKind = "continuation-finished"
+	PrivateObservation              LifecycleKind = "private-observation"
+	CompactionCommandObserved       LifecycleKind = "compaction-command-observed"
+	CompactionResultObserved        LifecycleKind = "compaction-result-observed"
 )
 
 type CommandState string
@@ -63,23 +64,24 @@ const (
 // additionally retains private extensions; none of these facts grants
 // public publication authority or permission to discard unhandled families.
 type LifecycleObservation struct {
-	Kind           LifecycleKind
-	Initialized    *NativeInitialization
-	SessionID      domain.ID
-	InputID        domain.ID
-	ActionID       domain.ID
-	NativeID       string
-	Command        CommandState
-	Accepted       bool
-	Result         *NativeResult
-	Interaction    *InteractionObservation
-	Task           *NativeTaskObservation     `json:"-"`
-	Progress       *NativeProgressObservation `json:"-"`
-	Run            *NativeRunObservation      `json:"-"`
-	Compaction     *NativeCompaction          `json:"-"`
-	Summary        *NativeCompactionSummary   `json:"-"`
-	CompactCommand *NativeCompactionCommand   `json:"-"`
-	CompactResult  *NativeCompactionResult    `json:"-"`
+	CallbackArrivalID domain.ID
+	Kind              LifecycleKind
+	Initialized       *NativeInitialization
+	SessionID         domain.ID
+	InputID           domain.ID
+	ActionID          domain.ID
+	NativeID          string
+	Command           CommandState
+	Accepted          bool
+	Result            *NativeResult
+	Interaction       *InteractionObservation
+	Task              *NativeTaskObservation     `json:"-"`
+	Progress          *NativeProgressObservation `json:"-"`
+	Run               *NativeRunObservation      `json:"-"`
+	Compaction        *NativeCompaction          `json:"-"`
+	Summary           *NativeCompactionSummary   `json:"-"`
+	CompactCommand    *NativeCompactionCommand   `json:"-"`
+	CompactResult     *NativeCompactionResult    `json:"-"`
 	// TurnID is the original native init envelope identity. An automatic
 	// continuation has its own turn and never acknowledges a product input.
 	TurnID  string
@@ -133,6 +135,9 @@ type ExecutionBinding struct {
 	interruptedMessage  bool
 	interruptionContext bool
 	interruptResult     *NativeResult
+	interruptedReply    domain.ID
+	denialToolResult    bool
+	denialContext       bool
 }
 
 func BindExecution(config APIStreamConfig, input domain.ID, text string) (*ExecutionBinding, error) {
@@ -365,6 +370,15 @@ func (b *ExecutionBinding) Observe(event StreamEvent) (observation LifecycleObse
 			retained := NativeResult{Kind: result.Kind, Reason: result.Reason, Error: result.Error}
 			b.terminal = &retained
 			observation.Kind = InputFinished
+		} else if b.interruptedReply != "" && b.denialToolResult && b.denialContext && result.Reason == AbortedTools {
+			// Native interruption-coupled denial omits the product input UUID.
+			// Retain its initiating callback separately from input completion.
+			if b.interruptResult != nil {
+				return LifecycleObservation{}, lifecycleUncertain()
+			}
+			b.interruptResult = &NativeResult{Kind: result.Kind, Reason: result.Reason, Error: result.Error}
+			observation.Kind, observation.InputID, observation.Accepted = CallbackInterruptResultObserved, "", false
+			observation.CallbackArrivalID = b.interruptedReply
 		} else if b.interrupt != nil && b.interruptedMessage && b.interruptionContext && result.Reason == AbortedStreaming {
 			// The pinned native interrupt result omits user_message_uuid. Keep
 			// this session-level Stop fact separate from an input completion.

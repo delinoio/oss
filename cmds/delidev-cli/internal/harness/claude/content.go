@@ -27,30 +27,31 @@ func (r *NativeStopReason) UnmarshalJSON(raw []byte) error {
 }
 
 const (
-	ProviderMessageStarted   ContentEventKind = "provider-message-started"
-	ProviderMessageUpdated   ContentEventKind = "provider-message-updated"
-	ProviderMessageFinished  ContentEventKind = "provider-message-finished"
-	ProviderMessageSnapshot  ContentEventKind = "provider-message-snapshot"
-	ChildInputObserved       ContentEventKind = "child-input-observed"
-	NativeContextObserved    ContentEventKind = "native-context-observed"
-	NativeInterruptContext   ContentEventKind = "native-interrupt-context"
-	ContentStarted           ContentEventKind = "content-started"
-	ContentChanged           ContentEventKind = "content-changed"
-	ContentCompleted         ContentEventKind = "content-completed"
-	ContentStopped           ContentEventKind = "content-stopped"
-	ContentInterrupted       ContentEventKind = "content-interrupted"
-	ToolResultObserved       ContentEventKind = "tool-result-observed"
-	AssistantProblemObserved ContentEventKind = "assistant-problem-observed"
-	TextBlock                ContentBlockKind = "text"
-	ThinkingBlock            ContentBlockKind = "thinking"
-	RedactedThinkingBlock    ContentBlockKind = "redacted_thinking"
-	ImageBlock               ContentBlockKind = "image"
-	DocumentBlock            ContentBlockKind = "document"
-	ToolUseBlock             ContentBlockKind = "tool_use"
-	TextDelta                ContentDeltaKind = "text_delta"
-	ThinkingDelta            ContentDeltaKind = "thinking_delta"
-	ToolInputDelta           ContentDeltaKind = "input_json_delta"
-	SignatureDelta           ContentDeltaKind = "signature_delta"
+	ProviderMessageStarted         ContentEventKind = "provider-message-started"
+	ProviderMessageUpdated         ContentEventKind = "provider-message-updated"
+	ProviderMessageFinished        ContentEventKind = "provider-message-finished"
+	ProviderMessageSnapshot        ContentEventKind = "provider-message-snapshot"
+	ChildInputObserved             ContentEventKind = "child-input-observed"
+	NativeContextObserved          ContentEventKind = "native-context-observed"
+	NativeCallbackInterruptContext ContentEventKind = "native-callback-interrupt-context"
+	NativeInterruptContext         ContentEventKind = "native-interrupt-context"
+	ContentStarted                 ContentEventKind = "content-started"
+	ContentChanged                 ContentEventKind = "content-changed"
+	ContentCompleted               ContentEventKind = "content-completed"
+	ContentStopped                 ContentEventKind = "content-stopped"
+	ContentInterrupted             ContentEventKind = "content-interrupted"
+	ToolResultObserved             ContentEventKind = "tool-result-observed"
+	AssistantProblemObserved       ContentEventKind = "assistant-problem-observed"
+	TextBlock                      ContentBlockKind = "text"
+	ThinkingBlock                  ContentBlockKind = "thinking"
+	RedactedThinkingBlock          ContentBlockKind = "redacted_thinking"
+	ImageBlock                     ContentBlockKind = "image"
+	DocumentBlock                  ContentBlockKind = "document"
+	ToolUseBlock                   ContentBlockKind = "tool_use"
+	TextDelta                      ContentDeltaKind = "text_delta"
+	ThinkingDelta                  ContentDeltaKind = "thinking_delta"
+	ToolInputDelta                 ContentDeltaKind = "input_json_delta"
+	SignatureDelta                 ContentDeltaKind = "signature_delta"
 )
 
 // NativeTool is an observed provider extension. Input is a validated JSON
@@ -103,6 +104,7 @@ type NativeToolResult struct {
 }
 
 type ContentEvent struct {
+	CallbackArrivalID  domain.ID
 	Kind               ContentEventKind
 	MessageID          string
 	Model              string
@@ -792,6 +794,16 @@ func (b *ExecutionBinding) observeToolResult(raw []byte) (observations []Content
 			return []ContentEvent{{Kind: NativeInterruptContext, Blocks: []NativeContentBlock{{Kind: TextBlock, Text: &marker.Text}}}}, nil
 		}
 	}
+	if parent == "" && b.interruptedReply != "" && b.denialToolResult && !b.denialContext && envelope.Synthetic == nil && len(envelope.Structured) == 0 && len(envelope.ResultMeta) == 0 && len(message.Content) == 1 {
+		var marker struct {
+			Type ContentBlockKind `json:"type"`
+			Text string           `json:"text"`
+		}
+		if decodeNativeObject(message.Content[0], &marker) == nil && marker.Type == TextBlock && marker.Text == "[Request interrupted by user for tool use]" {
+			b.denialContext = true
+			return []ContentEvent{{Kind: NativeCallbackInterruptContext, CallbackArrivalID: b.interruptedReply, Blocks: []NativeContentBlock{{Kind: TextBlock, Text: &marker.Text}}}}, nil
+		}
+	}
 	// Native Read can publish a PDF as a separate synthetic root user message
 	// without a tool_use_id. Preserve that original context envelope rather
 	// than inventing a tool association or accepting another product input.
@@ -900,12 +912,23 @@ func (b *ExecutionBinding) observeToolResult(raw []byte) (observations []Content
 			if value.Error == nil || !*value.Error {
 				return nil, lifecycleUncertain()
 			}
+			if classification.Kind == domain.ClaudeUserRejectedNonExecution {
+				callback := b.interactions[b.interruptedReply]
+				if b.denialToolResult || callback == nil || !callback.prepared || !callback.echoed || callback.canceled || callback.behavior != PermissionDeny || callback.request.ToolID != value.ID || tool.parent != "" {
+					return nil, lifecycleUncertain()
+				}
+			}
 			events[len(events)-1].ToolResult.NonExecution = &classification
 		}
 	}
 	for id := range meta {
 		if !seen[id] {
 			return nil, lifecycleUncertain()
+		}
+	}
+	if callback := b.interactions[b.interruptedReply]; callback != nil {
+		if rejected, ok := meta[callback.request.ToolID]; ok && rejected.Kind == domain.ClaudeUserRejectedNonExecution {
+			b.denialToolResult = true
 		}
 	}
 	for id := range seen {

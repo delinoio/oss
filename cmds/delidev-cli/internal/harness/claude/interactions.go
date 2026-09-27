@@ -302,7 +302,7 @@ func (b *ExecutionBinding) PreparePermissionReply(arrival domain.ID, reply Permi
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	value := b.interactions[arrival]
-	if b.problem != nil || value == nil || value.prepared || value.canceled {
+	if b.problem != nil || value == nil || value.prepared || value.canceled || b.interruptedReply != "" {
 		return StreamEvent{}, nil, lifecycleUncertain()
 	}
 	tool, exists := b.content.tools[value.request.ToolID]
@@ -339,6 +339,9 @@ func (b *ExecutionBinding) PreparePermissionReply(arrival domain.ID, reply Permi
 			Input    json.RawMessage    `json:"updatedInput"`
 		}{PermissionAllow, input}
 	case PermissionDeny:
+		if reply.Interrupt && (b.interrupt != nil || tool.parent != "" || b.continuing || len(b.tasks) != 0 || len(b.backgroundTasks) != 0 || b.content.openTools != 1) {
+			return StreamEvent{}, nil, lifecycleUncertain()
+		}
 		if reply.Answers != nil || domain.Text(reply.Message, "native denial", 4096, true) != nil {
 			return StreamEvent{}, nil, lifecycleUncertain()
 		}
@@ -361,6 +364,9 @@ func (b *ExecutionBinding) PreparePermissionReply(arrival domain.ID, reply Permi
 	b.releaseInteractionInput(value)
 	value.prepared = true
 	value.reply, value.behavior = digest, reply.Behavior
+	if reply.Interrupt {
+		b.interruptedReply = arrival
+	}
 	if b.logger != nil {
 		b.logger.Info("Claude Code permission reply prepared", "owner_id", b.owner, "arrival_id", arrival, "behavior", reply.Behavior)
 	}

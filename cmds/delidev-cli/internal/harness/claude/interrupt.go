@@ -80,7 +80,7 @@ func (s *APISession) Interrupt(ctx context.Context, request domain.ID, claim fun
 		return s.interruptObservation(), domain.SafeError(err)
 	}
 	b := s.current
-	if request.Validate() != nil || claim == nil || s.interrupt != nil || b == nil || !b.accepted || !b.initialized || b.finished || b.continuing || b.pendingCompaction != nil || s.compaction != nil || !nativeUUID(b.turnID) || b.command != CommandStarted || b.problem != nil || b.runState != RunRunning && b.runState != RunRequiresAction || len(b.tasks) != 0 || len(b.backgroundTasks) != 0 || s.inputs[request] || b.seen[string(request)] || request == s.config.SessionID || request == s.config.Process.OwnerID {
+	if request.Validate() != nil || claim == nil || s.interrupt != nil || b == nil || b.interruptedReply != "" || !b.accepted || !b.initialized || b.finished || b.continuing || b.pendingCompaction != nil || s.compaction != nil || !nativeUUID(b.turnID) || b.command != CommandStarted || b.problem != nil || b.runState != RunRunning && b.runState != RunRequiresAction || len(b.tasks) != 0 || len(b.backgroundTasks) != 0 || s.inputs[request] || b.seen[string(request)] || request == s.config.SessionID || request == s.config.Process.OwnerID {
 		return s.interruptObservation(), sessionBusy()
 	}
 	s.interrupt = &InterruptObservation{Claim: InterruptClaim{1, s.config.Process.OwnerID, s.config.SessionID, b.input, b.turnID, request}}

@@ -49,7 +49,10 @@ type ClaudeToolResult struct {
 
 type ClaudeNonExecutionKind string
 
-const ClaudePermissionRuleNonExecution ClaudeNonExecutionKind = "permission-rule"
+const (
+	ClaudePermissionRuleNonExecution ClaudeNonExecutionKind = "permission-rule"
+	ClaudeUserRejectedNonExecution   ClaudeNonExecutionKind = "user-rejected"
+)
 
 type ClaudeToolNonExecution struct {
 	NativeID string                 `json:"id"`
@@ -57,7 +60,7 @@ type ClaudeToolNonExecution struct {
 }
 
 func (n ClaudeToolNonExecution) Validate() error {
-	if n.Kind != ClaudePermissionRuleNonExecution || Text(n.NativeID, "native non-executed tool", 1024, true) != nil {
+	if (n.Kind != ClaudePermissionRuleNonExecution && n.Kind != ClaudeUserRejectedNonExecution) || Text(n.NativeID, "native non-executed tool", 1024, true) != nil {
 		return invalidClaudeTool()
 	}
 	return nil
