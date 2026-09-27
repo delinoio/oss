@@ -24,10 +24,14 @@ func TestManualNativeGrokOriginalQuestions(t *testing.T) {
 	if binary == "" {
 		t.Skip("explicit private native executable required")
 	}
-	for _, mode := range []string{"question", "question-stream", "question-cancel", "question-multiple", "question-free", "question-skip"} {
+	for _, mode := range []string{"question", "question-stream", "question-cancel", "question-multiple", "question-free", "question-skip", "question-plan", "question-plan-cancel", "question-plan-skip"} {
 		t.Run(mode, func(t *testing.T) {
 			config, logs := fixtureAPIConfig(t, "native-question")
 			config.Probe.Process.Executable = binary
+			plan := strings.Contains(mode, "plan")
+			if plan {
+				config.Mode = domain.PlanMode
+			}
 			var mu sync.Mutex
 			var calls int
 			var returnedTools []json.RawMessage
@@ -126,7 +130,17 @@ func TestManualNativeGrokOriginalQuestions(t *testing.T) {
 			defer cancel()
 			var claims []InputClaim
 			var replies []QuestionClaim
-			api, err := OpenOwnedAPIWithQuestions(ctx, config, func(_ context.Context, c CreationClaim) error { return c.Validate() }, func(_ context.Context, c InputClaim) error { claims = append(claims, c); return c.Validate() }, func(context.Context, ClosureClaim) error { t.Error("question acquired closure"); return incompatible() }, func(_ context.Context, c QuestionClaim) error { replies = append(replies, c); return c.Validate() })
+			var modes []ModeClaim
+			creation := func(_ context.Context, c CreationClaim) error { return c.Validate() }
+			inputClaim := func(_ context.Context, c InputClaim) error { claims = append(claims, c); return c.Validate() }
+			replyClaim := func(_ context.Context, c QuestionClaim) error { replies = append(replies, c); return c.Validate() }
+			var api *OwnedAPI
+			var err error
+			if plan {
+				api, err = OpenOwnedAPIWithPlanQuestions(ctx, config, creation, func(_ context.Context, c ModeClaim) error { modes = append(modes, c); return c.Validate() }, inputClaim, replyClaim)
+			} else {
+				api, err = OpenOwnedAPIWithQuestions(ctx, config, creation, inputClaim, func(context.Context, ClosureClaim) error { t.Error("question acquired closure"); return incompatible() }, replyClaim)
+			}
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -163,12 +177,31 @@ func TestManualNativeGrokOriginalQuestions(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			modeRequest := domain.NewID()
+			run := api.RunQuestions
+			expectedMode := NativeDefaultMode
+			if plan {
+				run, expectedMode = api.RunPlanQuestions, NativePlanMode
+				binding, err := api.SelectPlan(ctx, modeRequest)
+				if err != nil || len(modes) != 2 || binding != modes[1] || binding.NativeSessionID != session {
+					t.Fatal("original Plan mode did not bind", err)
+				}
+				if _, err := api.SelectPlan(ctx, domain.NewID()); err == nil {
+					t.Fatal("Plan selection replayed")
+				}
+				if _, err := api.RunQuestions(ctx, domain.NewID(), "Downgrade.", func(context.Context, InputObservation) error { return nil }); err == nil {
+					t.Fatal("Plan silently downgraded")
+				}
+				if _, err := run(ctx, modeRequest, "Reused mode request.", func(context.Context, InputObservation) error { return nil }); err == nil {
+					t.Fatal("Plan operation reused for input")
+				}
+			}
 			input := domain.NewID()
 			var arrival domain.ID
 			accepted, completed := false, false
 			responses, tools, deltas := 0, 0, 0
 			var stages []questionInteractionStage
-			result, err := api.RunQuestions(ctx, input, "Ask the original fixture questions.", func(callback context.Context, event InputObservation) error {
+			result, err := run(ctx, input, "Ask the original fixture questions.", func(callback context.Context, event InputObservation) error {
 				if event.InputID != input || !nativeUUID(event.NativePromptID, 4) || completed {
 					t.Fatal("changed question input identity")
 				}
@@ -198,13 +231,13 @@ func TestManualNativeGrokOriginalQuestions(t *testing.T) {
 						tools++
 					}
 					if request := event.Question.Request; request != nil {
-						if event.QuestionOffer == nil || arrival != "" || request.Session != session || request.Mode != questionDefaultMode || len(stages) != 3 {
+						if event.QuestionOffer == nil || arrival != "" || request.Session != session || request.Mode != expectedMode || len(stages) != 3 {
 							t.Fatal("question borrowed permission resolution")
 						}
 						arrival = event.QuestionOffer.ArrivalID
 						answer := QuestionAnswer{Outcome: QuestionAccepted, Answers: map[string]string{request.Questions[0].Question: "Blue"}}
 						switch mode {
-						case "question-cancel":
+						case "question-cancel", "question-plan-cancel":
 							answer = QuestionAnswer{Outcome: QuestionCancelled}
 						case "question-multiple":
 							answer.Answers = map[string]string{request.Questions[0].Question: "Blue, Green", request.Questions[1].Question: "A custom fixture answer."}
@@ -214,7 +247,7 @@ func TestManualNativeGrokOriginalQuestions(t *testing.T) {
 						case "question-free":
 							answer.Answers = map[string]string{request.Questions[0].Question: "A custom fixture answer."}
 							answer.Annotations = map[string]QuestionAnnotation{request.Questions[0].Question: {Notes: "Private fixture note"}}
-						case "question-skip":
+						case "question-skip", "question-plan-skip":
 							answer = QuestionAnswer{Outcome: QuestionSkipInterview, PartialAnswers: map[string]string{request.Questions[0].Question: "Blue"}}
 						}
 						body, err := answer.body(request.Questions)
@@ -225,6 +258,11 @@ func TestManualNativeGrokOriginalQuestions(t *testing.T) {
 						request.Questions[0].Question = "changed"
 						request.Questions[0].Options[0].Label = "changed"
 						event.QuestionOffer.ToolID = "changed"
+						if plan {
+							if _, err := api.ReplyQuestion(callback, modeRequest, arrival, answer); err == nil {
+								t.Fatal("question reused original mode operation")
+							}
+						}
 						delivery, err := api.ReplyQuestion(callback, domain.NewID(), arrival, answer)
 						if err != nil || !delivery.Claimed || !delivery.Attempted || !delivery.Delivered || delivery.Resolved || delivery.ToolPhase != "" || delivery.Claim.BodyDigest != digest || delivery.Claim.NativeSessionID != session || delivery.Claim.ToolID != "call_delidev_read" {
 							t.Fatal("question delivery lost original authority", err)

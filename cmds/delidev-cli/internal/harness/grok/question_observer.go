@@ -39,6 +39,7 @@ type questionToolState struct {
 
 type questionObserver struct {
 	session   domain.ID
+	mode      NativeMode
 	prompt    string
 	tools     map[string]questionToolState
 	arrivals  map[domain.ID]bool
@@ -49,10 +50,14 @@ type questionObserver struct {
 }
 
 func newQuestionObserver(session domain.ID, prompt string) (*questionObserver, error) {
-	if session.Validate() != nil || !nativeUUID(prompt, 4) {
+	return newQuestionObserverForMode(session, prompt, NativeDefaultMode)
+}
+
+func newQuestionObserverForMode(session domain.ID, prompt string, mode NativeMode) (*questionObserver, error) {
+	if session.Validate() != nil || !nativeUUID(prompt, 4) || mode != NativeDefaultMode && mode != NativePlanMode {
 		return nil, incompatible()
 	}
-	return &questionObserver{session: session, prompt: prompt, tools: map[string]questionToolState{}, arrivals: map[domain.ID]bool{}, requests: map[string]bool{}}, nil
+	return &questionObserver{session: session, prompt: prompt, mode: mode, tools: map[string]questionToolState{}, arrivals: map[domain.ID]bool{}, requests: map[string]bool{}}, nil
 }
 
 func (o *questionObserver) observe(event nativewire.Event) (questionFact, error) {
@@ -65,7 +70,7 @@ func (o *questionObserver) observe(event nativewire.Event) (questionFact, error)
 		if event.Method != "_x.ai/ask_user_question" || event.Token.Validate() != nil || err != nil || o.arrivals[event.Token] || o.requests[key] {
 			return fact, incompatible()
 		}
-		request, err := parseQuestionRequest(event.Params, o.session)
+		request, err := parseQuestionRequestForMode(event.Params, o.session, o.mode)
 		if err != nil {
 			return fact, err
 		}

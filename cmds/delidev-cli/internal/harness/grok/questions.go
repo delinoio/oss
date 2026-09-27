@@ -8,9 +8,7 @@ import (
 
 const askQuestionTool fileToolName = "ask_user_question"
 
-type questionMode string
-
-const questionDefaultMode questionMode = "default"
+const questionDefaultMode = NativeDefaultMode
 
 type questionOption struct {
 	Label       string `json:"label"`
@@ -80,12 +78,16 @@ type questionRequest struct {
 	Session   domain.ID      `json:"sessionId"`
 	ID        string         `json:"toolCallId"`
 	Questions []questionItem `json:"questions"`
-	Mode      questionMode   `json:"mode"`
+	Mode      NativeMode     `json:"mode"`
 }
 
 func parseQuestionRequest(raw []byte, session domain.ID) (questionRequest, error) {
+	return parseQuestionRequestForMode(raw, session, NativeDefaultMode)
+}
+
+func parseQuestionRequestForMode(raw []byte, session domain.ID, mode NativeMode) (questionRequest, error) {
 	var request questionRequest
-	if len(raw) > 256<<10 || session.Validate() != nil || decode(raw, &request) != nil || request.Session != session || !text(request.ID, 256) || request.Mode != questionDefaultMode || validateQuestions(request.Questions) != nil {
+	if mode != NativeDefaultMode && mode != NativePlanMode || len(raw) > 256<<10 || session.Validate() != nil || decode(raw, &request) != nil || request.Session != session || !text(request.ID, 256) || request.Mode != mode || validateQuestions(request.Questions) != nil {
 		return request, incompatible()
 	}
 	return request, nil

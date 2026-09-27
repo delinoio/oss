@@ -27,6 +27,10 @@ import (
 )
 
 func newGrokClaimsFixture(t *testing.T) (*ExecutionPublisher, *grokClaimJournal, []grokClaim) {
+	return newGrokClaimsFixtureForMode(t, domain.ExecuteMode)
+}
+
+func newGrokClaimsFixtureForMode(t *testing.T, mode domain.SessionMode) (*ExecutionPublisher, *grokClaimJournal, []grokClaim) {
 	t.Helper()
 	f := newCheckpointFixture(t)
 	f.input.Configuration.Harness = domain.GrokBuild
@@ -35,7 +39,7 @@ func newGrokClaimsFixture(t *testing.T) (*ExecutionPublisher, *grokClaimJournal,
 	f.input.ConfigurationDigest, _ = f.input.Configuration.Digest()
 	f.input.Installation.Harness, f.input.Installation.Version = domain.GrokBuild, grok.SupportedVersion
 	f.input.Installation.Protocol = &domain.ProtocolObservation{Protocol: domain.GrokACP, State: domain.ProtocolVerified}
-	f.input.Input.Mode = domain.ExecuteMode
+	f.input.Input.Mode = mode
 	f.job.Input, _ = json.Marshal(f.input)
 	f.job.InstanceID, f.job.AcceptedAt = domain.NewID(), time.Now().UTC()
 	raw, _ := json.Marshal(f.job)
@@ -66,6 +70,9 @@ func newGrokClaimsFixture(t *testing.T) (*ExecutionPublisher, *grokClaimJournal,
 func recordGrokClaim(ctx context.Context, journal *grokClaimJournal, c grokClaim) error {
 	if c.Creation != nil {
 		return journal.Creation(ctx, *c.Creation)
+	}
+	if c.Mode != nil {
+		return journal.Mode(ctx, *c.Mode)
 	}
 	return journal.Input(ctx, *c.Input)
 }

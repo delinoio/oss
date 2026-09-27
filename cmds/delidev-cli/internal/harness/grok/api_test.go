@@ -141,6 +141,9 @@ func apiFixtureProcess() {
 			pendingPrompt = request.ID
 			fixtureInput(root, workspace, mode, request.ID, request.Params)
 			continue
+		case "session/set_mode":
+			fixtureInitialPlan(root, mode, request.ID, request.Params)
+			continue
 		case "session/cancel":
 			fixtureStop(root, workspace, mode, pendingPrompt, request.Params)
 			continue

@@ -20,6 +20,32 @@ type OwnedAPI struct {
 	stop          func(context.Context, StopClaim) error
 	fileReply     func(context.Context, FilePermissionClaim) error
 	questionReply func(context.Context, QuestionClaim) error
+	mode          func(context.Context, ModeClaim) error
+}
+
+func OpenOwnedAPIWithPlanQuestions(ctx context.Context, config APIExecutionConfig, creation func(context.Context, CreationClaim) error, mode func(context.Context, ModeClaim) error, input func(context.Context, InputClaim) error, reply func(context.Context, QuestionClaim) error) (*OwnedAPI, error) {
+	if config.Mode != domain.PlanMode || creation == nil || mode == nil || input == nil || reply == nil {
+		return nil, apiConfigurationError()
+	}
+	connection, err := openAPI(ctx, config)
+	if err != nil {
+		return nil, err
+	}
+	return &OwnedAPI{connection: connection, creation: creation, mode: mode, input: input, questionReply: reply}, nil
+}
+
+func (a *OwnedAPI) SelectPlan(ctx context.Context, request domain.ID) (ModeClaim, error) {
+	if a == nil || a.connection == nil || a.mode == nil {
+		return ModeClaim{}, apiConfigurationError()
+	}
+	return a.connection.SelectPlan(ctx, request, a.mode)
+}
+
+func (a *OwnedAPI) RunPlanQuestions(ctx context.Context, request domain.ID, input string, emit func(context.Context, InputObservation) error) (PromptResult, error) {
+	if a == nil || a.connection == nil || a.mode == nil || a.questionReply == nil {
+		return PromptResult{}, apiConfigurationError()
+	}
+	return a.connection.runInput(ctx, request, input, a.input, emit, planQuestionInput)
 }
 
 func OpenOwnedAPIWithTools(ctx context.Context, config APIExecutionConfig, creation func(context.Context, CreationClaim) error, input func(context.Context, InputClaim) error, closure func(context.Context, ClosureClaim) error, fileReply func(context.Context, FilePermissionClaim) error, questionReply func(context.Context, QuestionClaim) error) (*OwnedAPI, error) {
@@ -134,7 +160,7 @@ func (a *OwnedAPI) InspectStop() (StopObservation, error) {
 }
 
 func OpenOwnedAPI(ctx context.Context, config APIExecutionConfig, creation func(context.Context, CreationClaim) error, input func(context.Context, InputClaim) error, closure func(context.Context, ClosureClaim) error) (*OwnedAPI, error) {
-	if creation == nil || input == nil || closure == nil {
+	if creation == nil || input == nil || closure == nil || config.Mode != "" && config.Mode != domain.ExecuteMode {
 		return nil, apiConfigurationError()
 	}
 	connection, err := openAPI(ctx, config)

@@ -84,7 +84,7 @@ func (c *textControl) offerQuestion(event nativewire.Event, fact questionFact) (
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	key, err := fileToolRequestKey(event.ID)
-	if c.profile != questionInput && c.profile != mixedToolInput || !c.running || c.terminal || fact.Request == nil || event.Kind != nativewire.ServerRequest || event.Token.Validate() != nil || err != nil || c.questions[event.Token] != nil || len(c.questions) >= 128 {
+	if !c.profile.questionsOnly() && c.profile != mixedToolInput || !c.running || c.terminal || fact.Request == nil || event.Kind != nativewire.ServerRequest || event.Token.Validate() != nil || err != nil || c.questions[event.Token] != nil || len(c.questions) >= 128 {
 		return QuestionOffer{}, incompatible()
 	}
 	if c.questions == nil {
@@ -127,7 +127,7 @@ func (a *apiConnection) ReplyQuestion(ctx context.Context, request, arrival doma
 	}
 	c.mu.Lock()
 	r := c.questions[arrival]
-	if c.profile != questionInput && c.profile != mixedToolInput || !c.running || c.terminal || r == nil || r.done != nil || request == a.creationRequest {
+	if !c.profile.questionsOnly() && c.profile != mixedToolInput || !c.running || c.terminal || r == nil || r.done != nil || request == a.creationRequest || request == a.modeRequest {
 		c.mu.Unlock()
 		return result, sessionUncertain()
 	}

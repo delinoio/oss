@@ -17,28 +17,30 @@ import (
 )
 
 const maxGrokClaimBytes = 256 << 10
-const maxGrokClaims = 132 // Four input stages plus at most 128 original tool replies.
+const maxGrokClaims = 132                   // Four input stages plus at most 128 original tool replies.
+const maxGrokPlanClaims = maxGrokClaims + 2 // Original mode claim and independent binding.
 
 // The immutable publisher supplies assignment authority. Native configuration
 // inspection and session setup remain the adapter's separate responsibility.
 // No prompt, credential, native endpoint or workspace path enters this journal.
 type grokClaimReference struct {
-	Version             uint32    `json:"version"`
-	JobID               domain.ID `json:"job_id"`
-	InstanceID          domain.ID `json:"instance_id"`
-	ServerID            domain.ID `json:"server_id"`
-	DeviceID            domain.ID `json:"device_id"`
-	MachineID           domain.ID `json:"machine_id"`
-	ExecutionID         domain.ID `json:"execution_id"`
-	SessionID           domain.ID `json:"session_id"`
-	InputID             domain.ID `json:"input_id"`
-	AccountID           domain.ID `json:"account_id"`
-	ConnectionID        domain.ID `json:"connection_id"`
-	CreationRequestID   domain.ID `json:"creation_request_id"`
-	InputRequestID      domain.ID `json:"input_request_id"`
-	Revision            uint64    `json:"revision"`
-	AssignmentDigest    string    `json:"assignment_digest"`
-	ConfigurationDigest string    `json:"configuration_digest"`
+	Version             uint32             `json:"version"`
+	JobID               domain.ID          `json:"job_id"`
+	InstanceID          domain.ID          `json:"instance_id"`
+	ServerID            domain.ID          `json:"server_id"`
+	DeviceID            domain.ID          `json:"device_id"`
+	MachineID           domain.ID          `json:"machine_id"`
+	ExecutionID         domain.ID          `json:"execution_id"`
+	SessionID           domain.ID          `json:"session_id"`
+	InputID             domain.ID          `json:"input_id"`
+	AccountID           domain.ID          `json:"account_id"`
+	ConnectionID        domain.ID          `json:"connection_id"`
+	CreationRequestID   domain.ID          `json:"creation_request_id"`
+	InputRequestID      domain.ID          `json:"input_request_id"`
+	Revision            uint64             `json:"revision"`
+	AssignmentDigest    string             `json:"assignment_digest"`
+	ConfigurationDigest string             `json:"configuration_digest"`
+	InputMode           domain.SessionMode `json:"input_mode,omitempty"`
 }
 
 type grokClaim struct {
@@ -48,6 +50,7 @@ type grokClaim struct {
 	Stop          *grok.StopClaim           `json:"stop,omitempty"`
 	FileReply     *grok.FilePermissionClaim `json:"file_reply,omitempty"`
 	QuestionReply *grok.QuestionClaim       `json:"question_reply,omitempty"`
+	Mode          *grok.ModeClaim           `json:"mode,omitempty"`
 }
 
 // Tool families share original response namespaces in a mixed native input.
@@ -99,7 +102,7 @@ func grokClaimUncertain() *domain.Error {
 }
 
 func (r grokClaimReference) validate() error {
-	if r.Version != 1 || r.Revision == 0 || r.CreationRequestID == r.InputRequestID || r.CreationRequestID == r.SessionID || r.InputRequestID == r.SessionID {
+	if (r.Version != 1 || r.InputMode != "") && (r.Version != 2 || r.InputMode != domain.PlanMode) || r.Revision == 0 || r.CreationRequestID == r.InputRequestID || r.CreationRequestID == r.SessionID || r.InputRequestID == r.SessionID {
 		return grokClaimUncertain()
 	}
 	for _, id := range []domain.ID{r.JobID, r.InstanceID, r.ServerID, r.DeviceID, r.MachineID, r.ExecutionID, r.SessionID, r.InputID, r.AccountID, r.ConnectionID, r.CreationRequestID, r.InputRequestID} {
@@ -127,6 +130,11 @@ func openGrokClaims(p *ExecutionPublisher) (*grokClaimJournal, error) {
 		return nil, grokClaimUncertain()
 	}
 	ref := grokClaimReference{Version: 1, JobID: p.job, InstanceID: publication.InstanceID, ServerID: publication.ServerID, DeviceID: publication.DeviceID, MachineID: i.MachineID, ExecutionID: i.ExecutionID, SessionID: i.SessionID, InputID: i.InputID, AccountID: i.AccountID, ConnectionID: i.ConnectionID, CreationRequestID: i.ThreadRequestID, InputRequestID: i.TurnRequestID, Revision: publication.Revision, AssignmentDigest: publication.AssignmentDigest, ConfigurationDigest: i.ConfigurationDigest}
+	if i.Input.Mode == domain.PlanMode {
+		ref.Version, ref.InputMode = 2, domain.PlanMode
+	} else if i.Input.Mode != domain.ExecuteMode {
+		return nil, grokClaimUncertain()
+	}
 	if ref.validate() != nil {
 		return nil, grokClaimUncertain()
 	}
@@ -167,6 +175,56 @@ func grokClaimsPath(root string, job domain.ID) (string, error) {
 }
 
 func (s grokClaimState) validateNext(c grokClaim) error {
+	if s.Reference.validate() != nil {
+		return grokClaimUncertain()
+	}
+	if s.Reference.Version == 1 {
+		if c.Mode != nil {
+			return grokClaimUncertain()
+		}
+		return s.validateNextInput(c)
+	}
+	if len(s.Claims) >= maxGrokPlanClaims {
+		return grokClaimUncertain()
+	}
+	if len(s.Claims) < 2 {
+		if c.Mode != nil {
+			return grokClaimUncertain()
+		}
+		return s.validateNextInput(c)
+	}
+	if len(s.Claims) < 4 {
+		m := c.Mode
+		if m == nil || c.Creation != nil || c.Input != nil || c.Stop != nil || c.Closure != nil || c.FileReply != nil || c.QuestionReply != nil || m.Validate() != nil || m.OwnerID != s.Reference.JobID || m.ProductSessionID != s.Reference.SessionID || m.NativeSessionID != s.Claims[1].Creation.NativeSessionID || m.RequestID == s.Reference.CreationRequestID || m.RequestID == s.Reference.InputRequestID {
+			return grokClaimUncertain()
+		}
+		if len(s.Claims) == 2 {
+			if m.Phase != grok.ClaimMode {
+				return grokClaimUncertain()
+			}
+		} else {
+			prior := *s.Claims[2].Mode
+			prior.Phase, prior.EventID, prior.TimestampMS = grok.BindMode, m.EventID, m.TimestampMS
+			if prior != *m {
+				return grokClaimUncertain()
+			}
+		}
+		return nil
+	}
+	// Initial Plan text/questions retain the original four input stages after
+	// the separate mode mutation. They cannot borrow default file/Stop/history
+	// send authority; those require their own native Plan composition.
+	if c.Mode != nil || c.Stop != nil || c.Closure != nil || c.FileReply != nil {
+		return grokClaimUncertain()
+	}
+	if c.QuestionReply != nil && (c.QuestionReply.RequestID == s.Claims[2].Mode.RequestID || c.QuestionReply.ArrivalID == s.Claims[2].Mode.RequestID) {
+		return grokClaimUncertain()
+	}
+	inputState := grokClaimState{Reference: s.Reference, Claims: append(append([]grokClaim{}, s.Claims[:2]...), s.Claims[4:]...)}
+	return inputState.validateNextInput(c)
+}
+
+func (s grokClaimState) validateNextInput(c grokClaim) error {
 	variants := 0
 	if c.Creation != nil {
 		variants++
@@ -289,6 +347,10 @@ func (j *grokClaimJournal) QuestionReply(ctx context.Context, c grok.QuestionCla
 	return j.claim(ctx, grokClaim{QuestionReply: &c})
 }
 
+func (j *grokClaimJournal) Mode(ctx context.Context, c grok.ModeClaim) error {
+	return j.claim(ctx, grokClaim{Mode: &c})
+}
+
 func (j *grokClaimJournal) claim(ctx context.Context, c grokClaim) (returned error) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
@@ -359,7 +421,7 @@ func readGrokClaims(root string, ref grokClaimReference) ([]grokClaim, error) {
 	}
 	raw, err := security.ReadPrivate(path, maxGrokClaimBytes)
 	var state grokClaimState
-	if err != nil || domain.Decode(raw, &state) != nil || state.Reference != ref || state.Claims == nil || len(state.Claims) > maxGrokClaims {
+	if err != nil || domain.Decode(raw, &state) != nil || state.Reference != ref || state.Claims == nil || len(state.Claims) > maxGrokPlanClaims {
 		return nil, grokClaimUncertain()
 	}
 	canonical, err := json.Marshal(state)

@@ -65,13 +65,17 @@ func nativeGrokWorkerQuestion(t *testing.T, ctx context.Context, api *grok.Owned
 	t.Helper()
 	var arrival domain.ID
 	completed := false
-	result, err := api.RunQuestions(ctx, p.input.TurnRequestID, p.input.Input.Prompt, func(callback context.Context, v grok.InputObservation) error {
+	stages, mode, run := 4, grok.NativeDefaultMode, api.RunQuestions
+	if p.input.Input.Mode == domain.PlanMode {
+		stages, mode, run = 6, grok.NativePlanMode, api.RunPlanQuestions
+	}
+	result, err := run(ctx, p.input.TurnRequestID, p.input.Input.Prompt, func(callback context.Context, v grok.InputObservation) error {
 		claims, err := readGrokClaims(p.config.Root, journal.state.Reference)
-		if err != nil || len(claims) < 4 || len(claims) > 5 || claims[3].Input.NativePromptID != v.NativePromptID || v.InputID != p.input.TurnRequestID {
+		if err != nil || len(claims) < stages || len(claims) > stages+1 || claims[stages-1].Input.NativePromptID != v.NativePromptID || v.InputID != p.input.TurnRequestID {
 			return grokClaimUncertain()
 		}
 		if v.QuestionOffer != nil {
-			if len(claims) != 4 || arrival != "" || v.Question == nil || v.Question.Request == nil || len(v.Question.Request.Questions) != 1 || v.Question.Request.Questions[0].Question != workerQuestionText {
+			if len(claims) != stages || arrival != "" || v.Question == nil || v.Question.Request == nil || v.Question.Request.Mode != mode || len(v.Question.Request.Questions) != 1 || v.Question.Request.Questions[0].Question != workerQuestionText {
 				t.Error("native question proposal was not original")
 				return grokClaimUncertain()
 			}
@@ -86,7 +90,7 @@ func nativeGrokWorkerQuestion(t *testing.T, ctx context.Context, api *grok.Owned
 				return grokClaimUncertain()
 			}
 			retained, err := readGrokClaims(p.config.Root, journal.state.Reference)
-			if err != nil || len(retained) != 5 || retained[4].QuestionReply == nil || *retained[4].QuestionReply != delivery.Claim || delivery.Claim.NativeSessionID != session || delivery.Claim.ProposalDigest != v.QuestionOffer.ProposalDigest {
+			if err != nil || len(retained) != stages+1 || retained[stages].QuestionReply == nil || *retained[stages].QuestionReply != delivery.Claim || delivery.Claim.NativeSessionID != session || delivery.Claim.ProposalDigest != v.QuestionOffer.ProposalDigest {
 				t.Error("question lost synchronized Worker ownership")
 				return grokClaimUncertain()
 			}

@@ -53,8 +53,8 @@ func TestManualNativeGrokWorkerOriginalClaims(t *testing.T) {
 		changed, streamed, stopped bool
 		writing, rejected          bool
 		question                   bool
-		mixed                      bool
-	}{{name: "original"}, {name: "streamed", streamed: true}, {name: "changed", changed: true}, {name: "stopped", stopped: true}, {name: "write", writing: true}, {name: "write-rejected", writing: true, rejected: true}, {name: "question", question: true}, {name: "question-cancelled", question: true, rejected: true}, {name: "mixed", mixed: true}} {
+		mixed, plan                bool
+	}{{name: "original"}, {name: "streamed", streamed: true}, {name: "changed", changed: true}, {name: "stopped", stopped: true}, {name: "write", writing: true}, {name: "write-rejected", writing: true, rejected: true}, {name: "question", question: true}, {name: "question-cancelled", question: true, rejected: true}, {name: "mixed", mixed: true}, {name: "plan-question", question: true, plan: true}, {name: "plan-question-cancelled", question: true, plan: true, rejected: true}} {
 		t.Run(profile.name, func(t *testing.T) {
 			changed := profile.changed
 			stopRequest := domain.NewID()
@@ -62,7 +62,11 @@ func TestManualNativeGrokWorkerOriginalClaims(t *testing.T) {
 			if profile.stopped {
 				responseText = "Original Worker partial response."
 			}
-			p, journal, _ := newGrokClaimsFixture(t)
+			mode := domain.ExecuteMode
+			if profile.plan {
+				mode = domain.PlanMode
+			}
+			p, journal, _ := newGrokClaimsFixtureForMode(t, mode)
 			root := filepath.Join(p.config.Root, "runtimes", string(p.input.ExecutionID))
 			env, err := harness.PrivateRuntimeEnvironment(root)
 			if err != nil {
@@ -105,7 +109,11 @@ func TestManualNativeGrokWorkerOriginalClaims(t *testing.T) {
 					return
 				}
 				claims, err := readGrokClaims(p.config.Root, journal.state.Reference)
-				if err != nil || len(claims) < 3 || claims[0].Creation.RequestID != p.input.ThreadRequestID || claims[2].Input.RequestID != p.input.TurnRequestID {
+				inputIndex := 2
+				if profile.plan {
+					inputIndex = 4
+				}
+				if err != nil || len(claims) <= inputIndex || claims[0].Creation.RequestID != p.input.ThreadRequestID || claims[inputIndex].Input.RequestID != p.input.TurnRequestID {
 					t.Error("native inference preceded synchronized original Worker claims")
 				}
 				w.Header().Set("Content-Type", "text/event-stream")
@@ -157,9 +165,11 @@ func TestManualNativeGrokWorkerOriginalClaims(t *testing.T) {
 			defer relay.Close()
 			ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
 			defer cancel()
-			cfg := grok.APIExecutionConfig{Probe: grok.ProbeConfig{Process: process.Config{Directory: filepath.Join(p.config.Root, "processes"), OwnerID: p.job, Executable: executable, Cwd: root, Env: env, Logger: logger}, Version: grok.SupportedVersion, Home: filepath.Join(root, "grok")}, Workspace: workspace, Model: p.input.Configuration.NativeModel, ContextTokens: 32000, ServerOrigin: relay.URL, Token: authority.token}
+			cfg := grok.APIExecutionConfig{Probe: grok.ProbeConfig{Process: process.Config{Directory: filepath.Join(p.config.Root, "processes"), OwnerID: p.job, Executable: executable, Cwd: root, Env: env, Logger: logger}, Version: grok.SupportedVersion, Home: filepath.Join(root, "grok")}, Workspace: workspace, Model: p.input.Configuration.NativeModel, ContextTokens: 32000, Mode: mode, ServerOrigin: relay.URL, Token: authority.token}
 			var api *grok.OwnedAPI
-			if profile.mixed {
+			if profile.plan {
+				api, err = grok.OpenOwnedAPIWithPlanQuestions(ctx, cfg, journal.Creation, journal.Mode, journal.Input, journal.QuestionReply)
+			} else if profile.mixed {
 				api, err = grok.OpenOwnedAPIWithTools(ctx, cfg, journal.Creation, journal.Input, journal.Closure, journal.FileReply, journal.QuestionReply)
 			} else if profile.writing {
 				api, err = grok.OpenOwnedAPIWithFileTools(ctx, cfg, journal.Creation, journal.Input, journal.Closure, journal.FileReply)
@@ -194,6 +204,16 @@ func TestManualNativeGrokWorkerOriginalClaims(t *testing.T) {
 			session, err := api.Create(ctx, p.input.ThreadRequestID, p.input.SessionID)
 			if err != nil {
 				t.Fatal(err)
+			}
+			if profile.plan {
+				binding, err := api.SelectPlan(ctx, domain.NewID())
+				if err != nil {
+					t.Fatal(err)
+				}
+				claims, err := readGrokClaims(p.config.Root, journal.state.Reference)
+				if err != nil || len(claims) != 4 || claims[3].Mode == nil || *claims[3].Mode != binding || binding.NativeSessionID != session {
+					t.Fatal("native Plan mode lost original Worker binding", err)
+				}
 			}
 			if profile.mixed {
 				nativeGrokWorkerMixed(t, ctx, api, p, journal, session, filePath)

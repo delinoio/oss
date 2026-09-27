@@ -48,12 +48,15 @@ type ObservationKind string
 type inputProfile string
 
 const (
-	plainTextInput inputProfile = "plain-text"
-	readFileInput  inputProfile = "read-file"
-	fileWriteInput inputProfile = "file-write"
-	questionInput  inputProfile = "question"
-	mixedToolInput inputProfile = "mixed-tools"
+	plainTextInput    inputProfile = "plain-text"
+	readFileInput     inputProfile = "read-file"
+	fileWriteInput    inputProfile = "file-write"
+	questionInput     inputProfile = "question"
+	mixedToolInput    inputProfile = "mixed-tools"
+	planQuestionInput inputProfile = "plan-questions"
 )
+
+func (p inputProfile) questionsOnly() bool { return p == questionInput || p == planQuestionInput }
 
 const (
 	InputAccepted           ObservationKind = "input-accepted"
@@ -141,7 +144,7 @@ func (a *apiConnection) RunTools(ctx context.Context, request domain.ID, input s
 }
 
 func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input string, record func(context.Context, InputClaim) error, emit func(context.Context, InputObservation) error, profile inputProfile) (result PromptResult, returned error) {
-	if profile != plainTextInput && profile != readFileInput && profile != fileWriteInput && profile != questionInput && profile != mixedToolInput {
+	if profile != plainTextInput && profile != readFileInput && profile != fileWriteInput && !profile.questionsOnly() && profile != mixedToolInput {
 		return result, apiConfigurationError()
 	}
 	if request.Validate() != nil || domain.Text(input, "original native input", 256<<10, true) != nil || record == nil || emit == nil {
@@ -158,7 +161,14 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 	case <-ctx.Done():
 		return result, domain.SafeError(ctx.Err())
 	}
-	if !a.ready || a.inputStarted || request == a.product || request == a.creationRequest {
+	if !a.ready || a.inputStarted || request == a.product || request == a.creationRequest || request == a.modeRequest {
+		return result, sessionUncertain()
+	}
+	if profile == planQuestionInput {
+		if a.profile.mode != domain.PlanMode || a.modeBinding == nil || a.modeBinding.Validate() != nil {
+			return result, sessionUncertain()
+		}
+	} else if a.profile.mode == domain.PlanMode || a.modeStarted {
 		return result, sessionUncertain()
 	}
 	if err := a.profile.checkInitialized(); err != nil {
@@ -278,6 +288,10 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 	rpcObserved, turnObserved, promptObserved, responseObserved := false, false, false, false
 	var lastEvent, lastChunk uint64
 	hasEvent := false
+	if a.modeBinding != nil {
+		lastEvent, _ = eventIndex(a.modeBinding.EventID, a.session)
+		hasEvent = true
+	}
 	textBytes, events := 0, 0
 	observeIndex := func(event string) error {
 		if event == "" {
@@ -388,7 +402,7 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 				}
 				continue
 			}
-			if profile == questionInput {
+			if profile.questionsOnly() {
 				if questions == nil || !queue.running || queue.cleared {
 					return result, incompatible()
 				}
@@ -443,8 +457,12 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 						return result, err
 					}
 					fileTools, questions = mixed.files, mixed.questions
-				} else if profile == questionInput {
-					questions, err = newQuestionObserver(a.session, queue.prompt)
+				} else if profile.questionsOnly() {
+					mode := NativeDefaultMode
+					if profile == planQuestionInput {
+						mode = NativePlanMode
+					}
+					questions, err = newQuestionObserverForMode(a.session, queue.prompt, mode)
 					if err != nil {
 						return result, err
 					}
@@ -476,7 +494,7 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 					}
 					continue
 				}
-				if profile == questionInput {
+				if profile.questionsOnly() {
 					if questions == nil || !queue.running || queue.cleared {
 						return result, incompatible()
 					}
@@ -730,7 +748,7 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 		return result, incompatible()
 	}
 	if profile != plainTextInput {
-		if (profile == questionInput || profile == mixedToolInput) && !control.questionsSettled(questions) || profile != questionInput && (fileTools == nil || profile == readFileInput && len(fileTools.tools) > 0 && !fileTools.settled() || (profile == fileWriteInput || profile == mixedToolInput) && !control.filesSettled(fileTools, false)) {
+		if (profile.questionsOnly() || profile == mixedToolInput) && !control.questionsSettled(questions) || !profile.questionsOnly() && (fileTools == nil || profile == readFileInput && len(fileTools.tools) > 0 && !fileTools.settled() || (profile == fileWriteInput || profile == mixedToolInput) && !control.filesSettled(fileTools, false)) {
 			return result, incompatible()
 		}
 		result, err = parseFilePromptResult(rpc.Result, a.session, queue.prompt, a.profile.model, accounting)

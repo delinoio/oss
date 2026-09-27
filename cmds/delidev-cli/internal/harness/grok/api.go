@@ -29,16 +29,18 @@ const credentialVariable = "DELIDEV_GROK_EXECUTION_TOKEN"
 // Durable session claims, typed events and permission delivery independently
 // govern any later execution; discovery never calls it.
 type apiConfig struct {
-	Probe         ProbeConfig `json:"-"`
-	Workspace     string      `json:"-"`
-	Model         string      `json:"-"`
-	ContextTokens uint64      `json:"-"`
-	ServerOrigin  string      `json:"-"`
-	Token         string      `json:"-"`
+	Probe         ProbeConfig        `json:"-"`
+	Workspace     string             `json:"-"`
+	Model         string             `json:"-"`
+	ContextTokens uint64             `json:"-"`
+	Mode          domain.SessionMode `json:"-"`
+	ServerOrigin  string             `json:"-"`
+	Token         string             `json:"-"`
 }
 
 type apiProfile struct {
 	model         string
+	mode          domain.SessionMode
 	contextTokens uint64
 	configuration []byte
 	path          string
@@ -56,6 +58,9 @@ type apiConnection struct {
 	product         domain.ID
 	ready           bool
 	inputStarted    bool
+	modeStarted     bool
+	modeRequest     domain.ID
+	modeBinding     *ModeClaim
 	completedText   *completedText
 	closureStarted  bool
 	controlMu       sync.Mutex
@@ -67,6 +72,12 @@ func apiConfigurationError() *domain.Error {
 }
 
 func buildAPIProfile(config apiConfig) (apiProfile, error) {
+	if config.Mode == "" {
+		config.Mode = domain.ExecuteMode
+	}
+	if !config.Mode.Valid() {
+		return apiProfile{}, apiConfigurationError()
+	}
 	if config.Probe.Version != SupportedVersion {
 		return apiProfile{}, incompatible()
 	}
@@ -118,7 +129,7 @@ func buildAPIProfile(config apiConfig) (apiProfile, error) {
 	if err != nil || len(configuration) > 16<<10 {
 		return apiProfile{}, apiConfigurationError()
 	}
-	return apiProfile{model: config.Model, contextTokens: config.ContextTokens, configuration: configuration, path: filepath.Join(config.Probe.Home, "config.toml")}, nil
+	return apiProfile{model: config.Model, mode: config.Mode, contextTokens: config.ContextTokens, configuration: configuration, path: filepath.Join(config.Probe.Home, "config.toml")}, nil
 }
 
 func (p apiProfile) check() error {
