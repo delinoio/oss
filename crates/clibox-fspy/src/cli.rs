@@ -1695,6 +1695,9 @@ fn collect_required(
         if !input_operation {
             continue;
         }
+        if pair.start.operation == record::Operation::Open && pair.start.open_mutates {
+            continue;
+        }
         for path in &pair.start.paths {
             if path.class != record::PathClass::Project {
                 continue;
@@ -3944,7 +3947,7 @@ mod tests {
             device: metadata.dev(),
             inode: metadata.ino(),
         };
-        let record = CompleteRecord {
+        let mut record = CompleteRecord {
             header: record::Header {
                 schema_version: record::SCHEMA_VERSION,
                 execution_id: uuid::Uuid::now_v7(),
@@ -4008,6 +4011,13 @@ mod tests {
             required,
             std::collections::BTreeSet::from([PathBuf::from("b.txt")])
         );
+        record.operations[0].start.operation = record::Operation::Open;
+        record.operations[0].start.open_mutates = true;
+        assert!(collect_required(&record, &root, &selector, &snapshot)
+            .unwrap()
+            .is_empty());
+        record.operations[0].start.operation = record::Operation::Read;
+        record.operations[0].start.open_mutates = false;
         fs::remove_file(root.join("b.txt")).unwrap();
         fs::write(root.join("b.txt"), b"changed").unwrap();
         assert!(matches!(
