@@ -58,6 +58,8 @@ type APISession struct {
 	cleanupJoined     atomic.Bool
 	interrupt         *InterruptObservation
 	problem           *domain.Error
+	originalInputEOF  bool
+	handoffRetained   bool
 	permissionChanged bool
 	history           *sessionHistory
 	authorities       map[[sha256.Size]byte]bool
@@ -384,6 +386,7 @@ func (s *APISession) FinishOriginalInput(ctx context.Context, owner, session, in
 	if err := s.finishInputLocked(ctx); err != nil {
 		return NativeResult{}, err
 	}
+	s.originalInputEOF = true
 	return result, nil
 }
 

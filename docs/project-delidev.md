@@ -169,3 +169,6 @@ The private original Claude interrupted-denial controller now joins callback-own
 
 
 Claude interrupted-denial completion now composes original settled callback/context/session-result, cancelled-command/idle, exact native EOF cleanup, a dedicated stopped-execution publication and separate version-1 workspace report. Desktop cleanup disclosure preserves absent native input identity. History recovery remains required and dispatch stays paused; this does not enable resumed interrupted history or remaining issue scope.
+
+
+The private Claude controller can now retain original verified history after its separately confirmed clean input EOF, without closing the process twice or treating forced cleanup as history proof. The existing checkpoint and single-use fresh-authority continuation profiles remain independently checked; their public Worker/report/dispatch composition is still required.

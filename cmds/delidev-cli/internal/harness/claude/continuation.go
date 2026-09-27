@@ -50,25 +50,7 @@ func (s *APISession) CloseForContinuation(ctx context.Context) (*ClosedAPISessio
 	if err := ctx.Err(); err != nil {
 		return nil, domain.SafeError(err)
 	}
-	b := s.current
-	if s.interrupt != nil {
-		// Aborted envelopes and native cancellation metadata need independent
-		// persisted-history evidence before they may authorize replacement.
-		return nil, continuationUnavailable()
-	}
-	if s.reading || s.permissionChanged || b == nil || b.problem != nil || !b.accepted || !b.finished || b.terminal == nil || b.runState != RunIdle || b.continuing || b.pendingCompaction != nil || (s.compaction != nil && !s.compaction.settled) {
-		return nil, sessionBusy()
-	}
-	// Settled inline tool results join original main history, with exact
-	// echoed tool approvals retained separately from native tool completion.
-	// Other tools, child histories and callbacks keep their separate gates.
-	if s.history == nil || !s.owners[s.config.Process.OwnerID] || len(s.authorities) == 0 || len(b.tasks) != 0 || len(b.backgroundTasks) != 0 || len(b.content.serverTools) != 0 || len(b.content.active) != 0 || b.content.openTools != 0 || b.interactionBytes != 0 || s.history.boundary != nil || s.history.action != "" || len(s.history.messages) == 0 {
-		return nil, continuationUnavailable()
-	}
-	if _, err := b.closedInlineTools(); err != nil {
-		return nil, err
-	}
-	if _, err := b.closedToolApprovals(); err != nil {
+	if err := s.continuationBoundaryLocked(); err != nil {
 		return nil, err
 	}
 	if err := s.stream.inputBarrier(); err != nil {
@@ -77,10 +59,60 @@ func (s *APISession) CloseForContinuation(ctx context.Context) (*ClosedAPISessio
 	if err := s.finishLocked(ctx); err != nil {
 		return nil, s.latch(sessionTransportPhase, streamUncertain())
 	}
+	return s.retainClosedHistoryLocked(ctx)
+}
+
+// RetainOriginalCompletion verifies persisted history after the exact original
+// input has already completed clean EOF. It cannot close again, infer cleanup
+// from a missing process or create a second authority from one controller.
+func (s *APISession) RetainOriginalCompletion(ctx context.Context, owner, session, input domain.ID, turn string) (*ClosedAPISession, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return nil, domain.SafeError(err)
+	}
+	b := s.current
+	if !s.originalInputEOF || !s.closed.Load() || !s.cleanupJoined.Load() || s.problem != nil || b == nil || s.config.Process.OwnerID != owner || s.config.SessionID != session || b.owner != owner || b.session != session || b.input != input || b.turnID != turn {
+		return nil, historyUncertain()
+	}
+	if err := s.continuationBoundaryLocked(); err != nil {
+		return nil, err
+	}
+	return s.retainClosedHistoryLocked(ctx)
+}
+
+func (s *APISession) continuationBoundaryLocked() error {
+	b := s.current
+	if s.interrupt != nil || s.handoffRetained {
+		// Aborted envelopes and native cancellation metadata need independent
+		// persisted-history evidence before they may authorize replacement.
+		return continuationUnavailable()
+	}
+	if s.reading || s.permissionChanged || b == nil || b.problem != nil || !b.accepted || !b.finished || b.terminal == nil || b.runState != RunIdle || b.continuing || b.pendingCompaction != nil || (s.compaction != nil && !s.compaction.settled) {
+		return sessionBusy()
+	}
+	// Settled inline tool results join original main history, with exact
+	// echoed tool approvals retained separately from native tool completion.
+	// Other tools, child histories and callbacks keep their separate gates.
+	if s.history == nil || !s.owners[s.config.Process.OwnerID] || len(s.authorities) == 0 || len(b.tasks) != 0 || len(b.backgroundTasks) != 0 || len(b.content.serverTools) != 0 || len(b.content.active) != 0 || b.content.openTools != 0 || b.interactionBytes != 0 || s.history.boundary != nil || s.history.action != "" || len(s.history.messages) == 0 {
+		return continuationUnavailable()
+	}
+	if _, err := b.closedInlineTools(); err != nil {
+		return err
+	}
+	if _, err := b.closedToolApprovals(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *APISession) retainClosedHistoryLocked(ctx context.Context) (*ClosedAPISession, error) {
 	observed, err := s.readRetainedTranscript(ctx)
 	if err != nil {
 		return nil, s.latch(sessionEventPhase, domain.SafeError(err))
 	}
+	b := s.current
+	s.handoffRetained = true
 	requiresResume := !b.terminal.Successful() || b.continuationFailed || (s.compaction != nil && s.compaction.status == CompactFailed)
 	if s.config.Process.Logger != nil {
 		s.config.Process.Logger.InfoContext(ctx, "Claude Code closed session retained for process handoff", "owner_id", s.config.Process.OwnerID, "session_id", s.config.SessionID, "requires_resume", requiresResume)

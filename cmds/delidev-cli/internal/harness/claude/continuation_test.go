@@ -281,3 +281,69 @@ func TestClosedContinuationConcurrentClaimsLaunchOnce(t *testing.T) {
 		t.Fatal("handoff did not own exactly one native replacement", success)
 	}
 }
+
+func TestOriginalEOFHistoryRetentionRequiresExactOriginalCleanCompletion(t *testing.T) {
+	for _, scenario := range []string{"valid", "open", "forced-close", "generic-finish", "owner", "session", "input", "turn", "permission", "missing-ledger", "changed-history", "duplicate", "prior-handoff"} {
+		t.Run(scenario, func(t *testing.T) {
+			s, transport := continuationFixture(t)
+			owner, session, input, turn := s.config.Process.OwnerID, s.config.SessionID, s.current.input, s.current.turnID
+			ctx := context.Background()
+			switch scenario {
+			case "open":
+			case "forced-close":
+				if err := s.Close(); err != nil {
+					t.Fatal(err)
+				}
+			case "generic-finish":
+				if err := s.Finish(ctx); err != nil {
+					t.Fatal(err)
+				}
+			case "prior-handoff":
+				if _, err := s.CloseForContinuation(ctx); err != nil {
+					t.Fatal(err)
+				}
+			default:
+				if _, err := s.FinishOriginalInput(ctx, owner, session, input, turn); err != nil {
+					t.Fatal(err)
+				}
+			}
+			switch scenario {
+			case "owner":
+				owner = domain.NewID()
+			case "session":
+				session = domain.NewID()
+			case "input":
+				input = domain.NewID()
+			case "turn":
+				turn = string(domain.NewID())
+			case "permission":
+				s.permissionChanged = true
+			case "missing-ledger":
+				s.history = nil
+			case "changed-history":
+				path := filepath.Join(s.config.Home, "projects", "delidev", string(session)+".jsonl")
+				if err := os.WriteFile(path, []byte("{}\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			case "duplicate":
+				if _, err := s.RetainOriginalCompletion(ctx, owner, session, input, turn); err != nil {
+					t.Fatal(err)
+				}
+			}
+			closed, err := s.RetainOriginalCompletion(ctx, owner, session, input, turn)
+			if scenario == "valid" {
+				if err != nil || closed == nil || closed.transcript.MatchedMessages != 2 || !s.originalInputEOF || !s.handoffRetained {
+					t.Fatal("original EOF lost verified history", err)
+				}
+			} else if err == nil || closed != nil {
+				t.Fatal("unproved EOF granted history authority")
+			}
+			if transport.sends.Load() != 0 || transport.replies.Load() != 0 || transport.interrupts.Load() != 0 {
+				t.Fatal("history inspection replayed native work")
+			}
+			if scenario == "open" && transport.closed.Load() {
+				t.Fatal("history retention closed live controller")
+			}
+		})
+	}
+}

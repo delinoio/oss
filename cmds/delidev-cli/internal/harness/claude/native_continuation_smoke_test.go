@@ -49,14 +49,26 @@ func nativeContinuationToken(n byte) string {
 }
 
 func TestManualNativeClosedSessionContinuation(t *testing.T) {
-	nativeClosedSessionContinuation(t, false)
+	nativeClosedSessionContinuation(t, nativeHandoff)
 }
 
 func TestManualNativeCheckpointContinuation(t *testing.T) {
-	nativeClosedSessionContinuation(t, true)
+	nativeClosedSessionContinuation(t, nativeCheckpoint)
 }
 
-func nativeClosedSessionContinuation(t *testing.T, retained bool) {
+type nativeRetentionProfile uint8
+
+const (
+	nativeHandoff nativeRetentionProfile = iota
+	nativeCheckpoint
+	nativeCheckpointAfterEOF
+)
+
+func TestManualNativeCheckpointAfterOriginalEOF(t *testing.T) {
+	nativeClosedSessionContinuation(t, nativeCheckpointAfterEOF)
+}
+
+func nativeClosedSessionContinuation(t *testing.T, profile nativeRetentionProfile) {
 	binary := os.Getenv("DELIDEV_NATIVE_CLAUDE_EXECUTABLE")
 	if binary == "" {
 		t.Skip("explicit native binary and private scripted provider required")
@@ -163,7 +175,21 @@ func nativeClosedSessionContinuation(t *testing.T, retained bool) {
 				if !finished {
 					t.Fatal("resumed original input did not finish")
 				}
-				closed, err := s.CloseForContinuation(ctx)
+				var closed *ClosedAPISession
+				if profile == nativeCheckpointAfterEOF {
+					original, finishErr := s.FinishOriginalInput(ctx, s.config.Process.OwnerID, cfg.SessionID, input, s.current.turnID)
+					if finishErr != nil || !original.Successful() {
+						t.Fatal("original clean EOF failed", finishErr)
+					}
+					closed, err = s.RetainOriginalCompletion(ctx, s.config.Process.OwnerID, cfg.SessionID, input, s.current.turnID)
+					if err == nil {
+						if _, duplicate := s.RetainOriginalCompletion(ctx, s.config.Process.OwnerID, cfg.SessionID, input, s.current.turnID); duplicate == nil {
+							t.Fatal("original EOF minted two handoffs")
+						}
+					}
+				} else {
+					closed, err = s.CloseForContinuation(ctx)
+				}
 				if err != nil || closed.transcript.MatchedMessages != uint32(2*turn) {
 					t.Fatal("closed native history did not match original ledger", err)
 				}
@@ -174,7 +200,7 @@ func nativeClosedSessionContinuation(t *testing.T, retained bool) {
 				if turn == 3 {
 					break
 				}
-				if retained {
+				if profile != nativeHandoff {
 					configuration := s.config
 					configuration.API = APIConfig{ServerOrigin: relay.URL}
 					raw, reference, err := closed.RetainCheckpoint(ctx)
