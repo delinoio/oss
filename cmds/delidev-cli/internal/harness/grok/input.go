@@ -71,6 +71,20 @@ type promptText struct {
 	Text string `json:"text"`
 }
 
+// TextInputClaimDigest lets the owning Worker compare an input claim against
+// its immutable assignment without persisting the original prompt a second time.
+func TextInputClaimDigest(session domain.ID, input string) (string, error) {
+	if session.Validate() != nil || domain.Text(input, "original native input", 256<<10, true) != nil || strings.HasPrefix(strings.TrimSpace(input), "/") {
+		return "", apiConfigurationError()
+	}
+	body, err := json.Marshal(promptParams{Session: session, Prompt: []promptText{{Type: "text", Text: input}}})
+	if err != nil {
+		return "", apiConfigurationError()
+	}
+	digest := sha256.Sum256(body)
+	return hex.EncodeToString(digest[:]), nil
+}
+
 // RunText owns the first plain-text input boundary. It has no permission reply,
 // slash-command, subsequent-input or restoration authority. Successful return
 // proves original root-turn completion, not auxiliary/history/process cleanup.
@@ -114,9 +128,11 @@ func (a *apiConnection) RunText(ctx context.Context, request domain.ID, input st
 	if err != nil || len(encoded) > nativewire.MaxFrame {
 		return result, domain.Fail(domain.ResourceExhausted, "The encoded native input exceeds its bound.", "Reduce the original input before accepting native work.")
 	}
-	body, _ := json.Marshal(params)
-	digest := sha256.Sum256(body)
-	claim := InputClaim{Phase: ClaimInput, RequestID: request, ProductSessionID: a.product, NativeSessionID: a.session, BodyDigest: hex.EncodeToString(digest[:])}
+	digest, err := TextInputClaimDigest(a.session, input)
+	if err != nil {
+		return result, err
+	}
+	claim := InputClaim{Phase: ClaimInput, RequestID: request, ProductSessionID: a.product, NativeSessionID: a.session, BodyDigest: digest}
 	a.inputStarted = true
 	if err := record(ctx, claim); err != nil {
 		return result, sessionUncertain()
@@ -255,7 +271,7 @@ func (a *apiConnection) RunText(ctx context.Context, request domain.ID, input st
 			switch variant.Update.Kind {
 			case "agent_message_chunk":
 				chunk, err := parseTextChunk(event.Params, a.session, queue.prompt)
-				if err != nil || !queue.running || queue.cleared || chunk.Meta.Chunk <= lastChunk {
+				if err != nil || event.Method != "session/update" || !queue.running || queue.cleared || chunk.Meta.Chunk <= lastChunk {
 					return result, incompatible()
 				}
 				if err := observeIndex(chunk.Meta.Event); err != nil {
@@ -270,7 +286,7 @@ func (a *apiConnection) RunText(ctx context.Context, request domain.ID, input st
 					return result, err
 				}
 			case "turn_completed":
-				if turnObserved || !queue.running {
+				if event.Method != "_x.ai/session_notification" || turnObserved || !queue.running {
 					return result, incompatible()
 				}
 				turn, err = parseTurnCompleted(event.Params, a.session, queue.prompt, a.profile.model)

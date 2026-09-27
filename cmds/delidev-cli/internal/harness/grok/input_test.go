@@ -57,7 +57,11 @@ func fixtureInput(root, workspace, mode string, request domain.ID, raw json.RawM
 			break
 		}
 	}
-	notify("session/update", textChunkFixture)
+	textMethod := "session/update"
+	if mode == "input-text-method" {
+		textMethod = "_x.ai/session_notification"
+	}
+	notify(textMethod, textChunkFixture)
 	if mode == "input-duplicate-chunk" {
 		notify("session/update", textChunkFixture)
 	}
@@ -74,7 +78,11 @@ func fixtureInput(root, workspace, mode string, request domain.ID, raw json.RawM
 		}
 	}
 	notify("_x.ai/queue/changed", queueFixture(input, 2))
-	notify("_x.ai/session_notification", turnCompletedFixture)
+	turnMethod := "_x.ai/session_notification"
+	if mode == "input-turn-method" {
+		turnMethod = "session/update"
+	}
+	notify(turnMethod, turnCompletedFixture)
 	notify("_x.ai/session/prompt_complete", promptCompletedFixture)
 	if mode != "input-rpc-first" && mode != "input-lost-response" {
 		reply()
@@ -82,7 +90,7 @@ func fixtureInput(root, workspace, mode string, request domain.ID, raw json.RawM
 }
 
 func TestOwnedInputRetainsClaimsAndRejectsUncertainReplay(t *testing.T) {
-	for _, mode := range []string{"input-valid", "input-rpc-first", "input-foreign", "input-duplicate-chunk", "input-conflicting-result", "input-native-error", "input-lost-response", "input-claim-failure", "input-bind-failure", "input-publication-failure"} {
+	for _, mode := range []string{"input-valid", "input-rpc-first", "input-foreign", "input-duplicate-chunk", "input-conflicting-result", "input-native-error", "input-lost-response", "input-claim-failure", "input-bind-failure", "input-publication-failure", "input-text-method", "input-turn-method"} {
 		t.Run(mode, func(t *testing.T) {
 			config, _ := fixtureAPIConfig(t, mode)
 			config.Model = turnFixtureModel
