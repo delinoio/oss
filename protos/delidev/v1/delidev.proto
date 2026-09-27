@@ -19,6 +19,9 @@ service ResourceService {
 }
 
 service ConfigurationService {
+  rpc ExportConfiguration(ExportConfigurationRequest) returns (ExportConfigurationResponse);
+  rpc PreviewConfigurationImport(PreviewConfigurationImportRequest) returns (PreviewConfigurationImportResponse);
+  rpc ApplyConfigurationImport(ApplyConfigurationImportRequest) returns (ApplyConfigurationImportResponse);
   rpc SaveConfiguration(SaveConfigurationRequest) returns (SaveConfigurationResponse);
   rpc DeleteConfiguration(DeleteConfigurationRequest) returns (DeleteConfigurationResponse);
   rpc PreviewRouting(PreviewRoutingRequest) returns (PreviewRoutingResponse);
@@ -1234,3 +1237,23 @@ message ReportWorkspaceReadRequest {
   string problem_code = 5;
 }
 message ReportWorkspaceReadResponse {}
+
+message ExportConfigurationRequest {}
+message ExportConfigurationResponse {
+  bytes document_json = 1;
+}
+message PreviewConfigurationImportRequest {
+  bytes selection_json = 1;
+}
+message PreviewConfigurationImportResponse {
+  bytes preview_json = 1;
+}
+message ApplyConfigurationImportRequest {
+  string request_id = 1;
+  bytes preview_json = 2;
+}
+message ApplyConfigurationImportResponse {
+  string request_id = 1;
+  bool replayed = 2;
+  bytes result_json = 3;
+}

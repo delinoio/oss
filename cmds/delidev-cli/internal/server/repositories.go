@@ -93,6 +93,9 @@ func finishRepositorySave(tx *store.Tx, parentID domain.ID) error {
 	if err != nil {
 		return err
 	}
+	if parent.Type == domain.ImportConfigurationJob {
+		return finishConfigurationImport(tx, record, parent)
+	}
 	if parent.Type != domain.SaveRepositoryJob || parent.State != domain.JobQueued {
 		return nil
 	}

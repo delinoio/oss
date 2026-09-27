@@ -1,5 +1,7 @@
 ### Instructions for `packages/`
 
+- DeliDev portable configuration uses generated ConfigurationQuery export/preview/apply bindings. Keep original document bytes and exact request identities under `docs/cmds-delidev-configuration-transfer-contract.md`; client parsing never becomes authorization, validation or numeric reserialization authority.
+
 - DeliDev workspace file queries use generated `SessionQuery.readSessionWorkspace`; no client filesystem or duplicated authorization logic. Keep file contents in bounded nonpersistent view caches, preserve exact decimal size strings, and render them as inert text under `docs/cmds-delidev-files-contract.md`.
 
 - Follow root `AGENTS.md` and the owning project/domain contracts.

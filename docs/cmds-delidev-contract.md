@@ -168,3 +168,6 @@ The same question/approval CLI commands now accept original OpenCode direct resp
 
 ### Claude registered API authority
 The pinned Claude initial-assignment profile now composes authenticated Worker registration with the revocable server relay. It authorizes only Anthropic Messages creation using the immutable original account/connection/model and shared native settings validation. It retains independent native input, result, idle and cleanup facts; registration alone does not enable public Claude dispatch, publication, continuation, subscription accounts or token counting. See the [relay contract](cmds-delidev-proxy-contract.md) and [evidence ledger](cmds-delidev-evidence.md).
+
+## Portable configuration
+The eight existing editable configuration kinds now share owner/client export, read-only signed previews and atomic imports through Connect, CLI and desktop settings. Explicit machine/checkout mappings, fresh disconnected accounts, unchanged reuse and revision-bound settings replacement prevent implicit authority transfer. New repositories pass every Worker inspection before any configuration commits. See [portable configuration](cmds-delidev-configuration-transfer-contract.md) for limits and remaining portable surfaces.

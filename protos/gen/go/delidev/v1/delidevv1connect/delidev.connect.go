@@ -84,6 +84,15 @@ const (
 	// ResourceServiceWatchEventsProcedure is the fully-qualified name of the ResourceService's
 	// WatchEvents RPC.
 	ResourceServiceWatchEventsProcedure = "/delidev.v1.ResourceService/WatchEvents"
+	// ConfigurationServiceExportConfigurationProcedure is the fully-qualified name of the
+	// ConfigurationService's ExportConfiguration RPC.
+	ConfigurationServiceExportConfigurationProcedure = "/delidev.v1.ConfigurationService/ExportConfiguration"
+	// ConfigurationServicePreviewConfigurationImportProcedure is the fully-qualified name of the
+	// ConfigurationService's PreviewConfigurationImport RPC.
+	ConfigurationServicePreviewConfigurationImportProcedure = "/delidev.v1.ConfigurationService/PreviewConfigurationImport"
+	// ConfigurationServiceApplyConfigurationImportProcedure is the fully-qualified name of the
+	// ConfigurationService's ApplyConfigurationImport RPC.
+	ConfigurationServiceApplyConfigurationImportProcedure = "/delidev.v1.ConfigurationService/ApplyConfigurationImport"
 	// ConfigurationServiceSaveConfigurationProcedure is the fully-qualified name of the
 	// ConfigurationService's SaveConfiguration RPC.
 	ConfigurationServiceSaveConfigurationProcedure = "/delidev.v1.ConfigurationService/SaveConfiguration"
@@ -606,6 +615,9 @@ func (UnimplementedResourceServiceHandler) WatchEvents(context.Context, *connect
 
 // ConfigurationServiceClient is a client for the delidev.v1.ConfigurationService service.
 type ConfigurationServiceClient interface {
+	ExportConfiguration(context.Context, *connect.Request[v1.ExportConfigurationRequest]) (*connect.Response[v1.ExportConfigurationResponse], error)
+	PreviewConfigurationImport(context.Context, *connect.Request[v1.PreviewConfigurationImportRequest]) (*connect.Response[v1.PreviewConfigurationImportResponse], error)
+	ApplyConfigurationImport(context.Context, *connect.Request[v1.ApplyConfigurationImportRequest]) (*connect.Response[v1.ApplyConfigurationImportResponse], error)
 	SaveConfiguration(context.Context, *connect.Request[v1.SaveConfigurationRequest]) (*connect.Response[v1.SaveConfigurationResponse], error)
 	DeleteConfiguration(context.Context, *connect.Request[v1.DeleteConfigurationRequest]) (*connect.Response[v1.DeleteConfigurationResponse], error)
 	PreviewRouting(context.Context, *connect.Request[v1.PreviewRoutingRequest]) (*connect.Response[v1.PreviewRoutingResponse], error)
@@ -622,6 +634,24 @@ func NewConfigurationServiceClient(httpClient connect.HTTPClient, baseURL string
 	baseURL = strings.TrimRight(baseURL, "/")
 	configurationServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("ConfigurationService").Methods()
 	return &configurationServiceClient{
+		exportConfiguration: connect.NewClient[v1.ExportConfigurationRequest, v1.ExportConfigurationResponse](
+			httpClient,
+			baseURL+ConfigurationServiceExportConfigurationProcedure,
+			connect.WithSchema(configurationServiceMethods.ByName("ExportConfiguration")),
+			connect.WithClientOptions(opts...),
+		),
+		previewConfigurationImport: connect.NewClient[v1.PreviewConfigurationImportRequest, v1.PreviewConfigurationImportResponse](
+			httpClient,
+			baseURL+ConfigurationServicePreviewConfigurationImportProcedure,
+			connect.WithSchema(configurationServiceMethods.ByName("PreviewConfigurationImport")),
+			connect.WithClientOptions(opts...),
+		),
+		applyConfigurationImport: connect.NewClient[v1.ApplyConfigurationImportRequest, v1.ApplyConfigurationImportResponse](
+			httpClient,
+			baseURL+ConfigurationServiceApplyConfigurationImportProcedure,
+			connect.WithSchema(configurationServiceMethods.ByName("ApplyConfigurationImport")),
+			connect.WithClientOptions(opts...),
+		),
 		saveConfiguration: connect.NewClient[v1.SaveConfigurationRequest, v1.SaveConfigurationResponse](
 			httpClient,
 			baseURL+ConfigurationServiceSaveConfigurationProcedure,
@@ -645,9 +675,27 @@ func NewConfigurationServiceClient(httpClient connect.HTTPClient, baseURL string
 
 // configurationServiceClient implements ConfigurationServiceClient.
 type configurationServiceClient struct {
-	saveConfiguration   *connect.Client[v1.SaveConfigurationRequest, v1.SaveConfigurationResponse]
-	deleteConfiguration *connect.Client[v1.DeleteConfigurationRequest, v1.DeleteConfigurationResponse]
-	previewRouting      *connect.Client[v1.PreviewRoutingRequest, v1.PreviewRoutingResponse]
+	exportConfiguration        *connect.Client[v1.ExportConfigurationRequest, v1.ExportConfigurationResponse]
+	previewConfigurationImport *connect.Client[v1.PreviewConfigurationImportRequest, v1.PreviewConfigurationImportResponse]
+	applyConfigurationImport   *connect.Client[v1.ApplyConfigurationImportRequest, v1.ApplyConfigurationImportResponse]
+	saveConfiguration          *connect.Client[v1.SaveConfigurationRequest, v1.SaveConfigurationResponse]
+	deleteConfiguration        *connect.Client[v1.DeleteConfigurationRequest, v1.DeleteConfigurationResponse]
+	previewRouting             *connect.Client[v1.PreviewRoutingRequest, v1.PreviewRoutingResponse]
+}
+
+// ExportConfiguration calls delidev.v1.ConfigurationService.ExportConfiguration.
+func (c *configurationServiceClient) ExportConfiguration(ctx context.Context, req *connect.Request[v1.ExportConfigurationRequest]) (*connect.Response[v1.ExportConfigurationResponse], error) {
+	return c.exportConfiguration.CallUnary(ctx, req)
+}
+
+// PreviewConfigurationImport calls delidev.v1.ConfigurationService.PreviewConfigurationImport.
+func (c *configurationServiceClient) PreviewConfigurationImport(ctx context.Context, req *connect.Request[v1.PreviewConfigurationImportRequest]) (*connect.Response[v1.PreviewConfigurationImportResponse], error) {
+	return c.previewConfigurationImport.CallUnary(ctx, req)
+}
+
+// ApplyConfigurationImport calls delidev.v1.ConfigurationService.ApplyConfigurationImport.
+func (c *configurationServiceClient) ApplyConfigurationImport(ctx context.Context, req *connect.Request[v1.ApplyConfigurationImportRequest]) (*connect.Response[v1.ApplyConfigurationImportResponse], error) {
+	return c.applyConfigurationImport.CallUnary(ctx, req)
 }
 
 // SaveConfiguration calls delidev.v1.ConfigurationService.SaveConfiguration.
@@ -667,6 +715,9 @@ func (c *configurationServiceClient) PreviewRouting(ctx context.Context, req *co
 
 // ConfigurationServiceHandler is an implementation of the delidev.v1.ConfigurationService service.
 type ConfigurationServiceHandler interface {
+	ExportConfiguration(context.Context, *connect.Request[v1.ExportConfigurationRequest]) (*connect.Response[v1.ExportConfigurationResponse], error)
+	PreviewConfigurationImport(context.Context, *connect.Request[v1.PreviewConfigurationImportRequest]) (*connect.Response[v1.PreviewConfigurationImportResponse], error)
+	ApplyConfigurationImport(context.Context, *connect.Request[v1.ApplyConfigurationImportRequest]) (*connect.Response[v1.ApplyConfigurationImportResponse], error)
 	SaveConfiguration(context.Context, *connect.Request[v1.SaveConfigurationRequest]) (*connect.Response[v1.SaveConfigurationResponse], error)
 	DeleteConfiguration(context.Context, *connect.Request[v1.DeleteConfigurationRequest]) (*connect.Response[v1.DeleteConfigurationResponse], error)
 	PreviewRouting(context.Context, *connect.Request[v1.PreviewRoutingRequest]) (*connect.Response[v1.PreviewRoutingResponse], error)
@@ -679,6 +730,24 @@ type ConfigurationServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewConfigurationServiceHandler(svc ConfigurationServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	configurationServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("ConfigurationService").Methods()
+	configurationServiceExportConfigurationHandler := connect.NewUnaryHandler(
+		ConfigurationServiceExportConfigurationProcedure,
+		svc.ExportConfiguration,
+		connect.WithSchema(configurationServiceMethods.ByName("ExportConfiguration")),
+		connect.WithHandlerOptions(opts...),
+	)
+	configurationServicePreviewConfigurationImportHandler := connect.NewUnaryHandler(
+		ConfigurationServicePreviewConfigurationImportProcedure,
+		svc.PreviewConfigurationImport,
+		connect.WithSchema(configurationServiceMethods.ByName("PreviewConfigurationImport")),
+		connect.WithHandlerOptions(opts...),
+	)
+	configurationServiceApplyConfigurationImportHandler := connect.NewUnaryHandler(
+		ConfigurationServiceApplyConfigurationImportProcedure,
+		svc.ApplyConfigurationImport,
+		connect.WithSchema(configurationServiceMethods.ByName("ApplyConfigurationImport")),
+		connect.WithHandlerOptions(opts...),
+	)
 	configurationServiceSaveConfigurationHandler := connect.NewUnaryHandler(
 		ConfigurationServiceSaveConfigurationProcedure,
 		svc.SaveConfiguration,
@@ -699,6 +768,12 @@ func NewConfigurationServiceHandler(svc ConfigurationServiceHandler, opts ...con
 	)
 	return "/delidev.v1.ConfigurationService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case ConfigurationServiceExportConfigurationProcedure:
+			configurationServiceExportConfigurationHandler.ServeHTTP(w, r)
+		case ConfigurationServicePreviewConfigurationImportProcedure:
+			configurationServicePreviewConfigurationImportHandler.ServeHTTP(w, r)
+		case ConfigurationServiceApplyConfigurationImportProcedure:
+			configurationServiceApplyConfigurationImportHandler.ServeHTTP(w, r)
 		case ConfigurationServiceSaveConfigurationProcedure:
 			configurationServiceSaveConfigurationHandler.ServeHTTP(w, r)
 		case ConfigurationServiceDeleteConfigurationProcedure:
@@ -713,6 +788,18 @@ func NewConfigurationServiceHandler(svc ConfigurationServiceHandler, opts ...con
 
 // UnimplementedConfigurationServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedConfigurationServiceHandler struct{}
+
+func (UnimplementedConfigurationServiceHandler) ExportConfiguration(context.Context, *connect.Request[v1.ExportConfigurationRequest]) (*connect.Response[v1.ExportConfigurationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ConfigurationService.ExportConfiguration is not implemented"))
+}
+
+func (UnimplementedConfigurationServiceHandler) PreviewConfigurationImport(context.Context, *connect.Request[v1.PreviewConfigurationImportRequest]) (*connect.Response[v1.PreviewConfigurationImportResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ConfigurationService.PreviewConfigurationImport is not implemented"))
+}
+
+func (UnimplementedConfigurationServiceHandler) ApplyConfigurationImport(context.Context, *connect.Request[v1.ApplyConfigurationImportRequest]) (*connect.Response[v1.ApplyConfigurationImportResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ConfigurationService.ApplyConfigurationImport is not implemented"))
+}
 
 func (UnimplementedConfigurationServiceHandler) SaveConfiguration(context.Context, *connect.Request[v1.SaveConfigurationRequest]) (*connect.Response[v1.SaveConfigurationResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ConfigurationService.SaveConfiguration is not implemented"))

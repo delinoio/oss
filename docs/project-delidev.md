@@ -21,6 +21,7 @@ Run personal AI sessions across projects, accounts, native harnesses, and execut
 - [Desktop client contract](apps-delidev-desktop-contract.md)
 - [Worker workspace contract](cmds-delidev-workspace-contract.md)
 - [Session file explorer](cmds-delidev-files-contract.md)
+- [Portable configuration](cmds-delidev-configuration-transfer-contract.md)
 - [Owned process contract](cmds-delidev-process-contract.md)
 - [Native harness adapter contract](cmds-delidev-harness-contract.md)
 - [Protected credential storage](cmds-delidev-credentials-contract.md)
@@ -46,6 +47,8 @@ Local is the default; listeners default to loopback. Remote transport requires a
 Prepared multi-repository Worktree execution now supplies all original repository paths to Codex's native runtime roots, keeps the designated primary cwd and validates the effective writable scope. Public CLI Execute/Plan, subsequent turns and explicit Resume retain those roots through checkpoints and complete workspace ownership checks. Local creation now requires the invoking computer's private paired Worker authority, retains its immutable machine/device provenance and executes existing checkouts, including unborn branches, without changing user branches, the index or dirty files. Local preparation recovery uses the original Worker journal and captured Git identity, preserves ready checkouts, and cleans only incomplete managed metadata under explicit authorization.
 
 The private Codex continuation boundary blocks every resumed binding until the latest native terminal turn, ordered input digests and original effective defaults/permissions match retained execution evidence. Process-replacement continuation after Execute, Plan, Steer and interruption is verified with a private scripted provider on macOS; failed/interrupted outcomes require explicit intent. The actual Worker now preserves an immutable native checkpoint after cleanup and binds its exact digest in the server-accepted version-2 completion, without retaining prompt/answer/token contents in that file. Public later-turn FIFO/Resume now composes current per-turn ownership, exact predecessor evidence, fresh scoped credentials and the original private native history. Native history alone does not resolve missing semantic interaction acceptance or prove cleanup. Public Steer now joins a revision-checked selected-input claim, metadata-only outbound control, current-Worker claim, journaled native attempt, automatic uncertainty inspection and typed acceptance publication. Confirmed same-turn inputs become part of that ordered continuation proof; late resolution preserves original uncertainty and cannot clear recovery.
+
+Portable configuration now uses the [version-1 transfer contract](cmds-delidev-configuration-transfer-contract.md) across Connect, CLI and desktop settings: explicit machine/checkout remapping, read-only signed previews, fresh disconnected accounts and atomic all-repository validation preserve existing settings on failure. The supported eight editable configuration kinds do not imply portability of other product surfaces or runtime authority.
 
 Only observed real-environment results qualify as harness/platform/account integration evidence. Unit fixtures and cross-compilation must remain separately labeled. Unsupported native features must fail explicitly, without emulation.
 

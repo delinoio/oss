@@ -5,6 +5,21 @@
 import { ConfigurationService } from "./delidev_pb.js";
 
 /**
+ * @generated from rpc delidev.v1.ConfigurationService.ExportConfiguration
+ */
+export const exportConfiguration = ConfigurationService.method.exportConfiguration;
+
+/**
+ * @generated from rpc delidev.v1.ConfigurationService.PreviewConfigurationImport
+ */
+export const previewConfigurationImport = ConfigurationService.method.previewConfigurationImport;
+
+/**
+ * @generated from rpc delidev.v1.ConfigurationService.ApplyConfigurationImport
+ */
+export const applyConfigurationImport = ConfigurationService.method.applyConfigurationImport;
+
+/**
  * @generated from rpc delidev.v1.ConfigurationService.SaveConfiguration
  */
 export const saveConfiguration = ConfigurationService.method.saveConfiguration;

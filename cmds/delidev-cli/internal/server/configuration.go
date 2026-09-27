@@ -72,7 +72,7 @@ func SaveConfiguration(ctx context.Context, s *store.Store, input ConfigurationM
 		return tx.Put(input.Kind, id, input.ExpectedRevision, "", "", value)
 	})
 }
-func mustExist(tx *store.Tx, kind domain.Kind, ids ...domain.ID) error {
+func mustExist(tx configurationView, kind domain.Kind, ids ...domain.ID) error {
 	for _, id := range ids {
 		if _, err := tx.Get(kind, id); err != nil {
 			return err
@@ -80,7 +80,14 @@ func mustExist(tx *store.Tx, kind domain.Kind, ids ...domain.ID) error {
 	}
 	return nil
 }
-func all(tx *store.Tx, kind domain.Kind) ([]store.Record, error) {
+
+type configurationView interface {
+	Get(domain.Kind, domain.ID) (store.Record, error)
+	List(store.Filter) ([]store.Record, error)
+	ValidateModelIdentity(domain.ID, domain.Model) error
+}
+
+func all(tx configurationView, kind domain.Kind) ([]store.Record, error) {
 	out := []store.Record{}
 	f := store.Filter{Kind: kind, Limit: store.MaxPage}
 	for {
@@ -98,7 +105,7 @@ func all(tx *store.Tx, kind domain.Kind) ([]store.Record, error) {
 		f.After = page[len(page)-1].ID
 	}
 }
-func validateRelationships(tx *store.Tx, kind domain.Kind, id domain.ID, expected uint64, value validatable) error {
+func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID, expected uint64, value validatable) error {
 	switch v := value.(type) {
 	case *domain.Project:
 		if err := mustExist(tx, domain.RepositoryKind, v.Repositories...); err != nil {

@@ -230,3 +230,6 @@ The existing version-1 execution JSON adds `block-citation` to Claude provider-m
 ### Session workspace observations
 
 `SessionService.ReadSessionWorkspace` and Worker-only `WatchWorkspaceReads`/`ReportWorkspaceRead` implement the [file explorer contract](cmds-delidev-files-contract.md). Their closed JSON envelopes retain bounded exact metadata, decimal file sizes and relative paths. The secondary Worker stream depends on current primary ownership and cannot renew it; queries never enter durable jobs or mutation receipts. Worker errors carry closed codes only, and late, foreign, malformed or duplicate reports cannot release content.
+
+## Portable configuration operations
+`ConfigurationService.ExportConfiguration`, `PreviewConfigurationImport` and `ApplyConfigurationImport` expose bounded versioned owner/client JSON documents. Preview is read-only and signed for its exact actor/server/plan. Application uses one request identity and returns the original coordinator job outcome on reference-only replay; repository inspection remains Worker-only. See [portable configuration](cmds-delidev-configuration-transfer-contract.md). Generated Go and TypeScript/Connect Query bindings must reproduce exactly.

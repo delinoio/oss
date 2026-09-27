@@ -320,6 +320,12 @@ func Run(ctx context.Context, args []string, streams IO) int {
 			return emit(nil, rpc.ClientError(err))
 		}
 		return emit(json.RawMessage(response.Msg.ReportJson), nil)
+	case "configuration":
+		if len(rest) > 0 && rest[0] == "apply" {
+			ensureRequest(&o)
+		}
+		value, err := configurationTransfer(ctx, c, o, rest, streams)
+		return emit(value, err)
 	case "backup":
 		if len(rest) != 1 || rest[0] != "create" {
 			return emit(nil, usage())
@@ -783,6 +789,9 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   queue list --session-id ID [--limit N] [--page-token TOKEN]
   queue edit --session-id ID --id ID --revision N --input FILE|-
   queue remove --session-id ID --id ID --revision N
+  configuration export [--output PATH]
+  configuration preview --input PATH|- [--output PATH]
+  configuration apply --input PATH|- [--request-id ID]
   backup create
   settings defaults
   KIND list [--limit 50] [--page-token TOKEN] [--project-id ID] [--session-id ID]
