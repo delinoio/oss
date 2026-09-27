@@ -39,11 +39,28 @@ type ClaudeToolProposal struct {
 	Applied  string `json:"applied"`
 }
 type ClaudeToolResult struct {
-	NativeEventID string            `json:"native_event_id"`
-	Error         *bool             `json:"is_error"`
-	Text          *string           `json:"text"`
-	Blocks        []ClaudeTextBlock `json:"blocks"`
-	Structured    *string           `json:"structured"`
+	NonExecution  *ClaudeToolNonExecution `json:"non_execution,omitempty"`
+	NativeEventID string                  `json:"native_event_id"`
+	Error         *bool                   `json:"is_error"`
+	Text          *string                 `json:"text"`
+	Blocks        []ClaudeTextBlock       `json:"blocks"`
+	Structured    *string                 `json:"structured"`
+}
+
+type ClaudeNonExecutionKind string
+
+const ClaudePermissionRuleNonExecution ClaudeNonExecutionKind = "permission-rule"
+
+type ClaudeToolNonExecution struct {
+	NativeID string                 `json:"id"`
+	Kind     ClaudeNonExecutionKind `json:"non_execution_kind"`
+}
+
+func (n ClaudeToolNonExecution) Validate() error {
+	if n.Kind != ClaudePermissionRuleNonExecution || Text(n.NativeID, "native non-executed tool", 1024, true) != nil {
+		return invalidClaudeTool()
+	}
+	return nil
 }
 
 type ClaudeToolUpdate struct {
@@ -96,6 +113,9 @@ func ValidClaudeToolResultMetadata(value string, failed *bool) bool {
 }
 
 func (r ClaudeToolResult) Validate() error {
+	if r.NonExecution != nil && (r.NonExecution.Validate() != nil || r.Error == nil || !*r.Error) {
+		return invalidClaudeTool()
+	}
 	if NativeIdentity(r.NativeEventID).Validate(ClaudeCode, NativeTurnIdentity) != nil || r.Text != nil && Text(*r.Text, "native tool result", MaxMessageText, false) != nil || r.Text != nil && r.Blocks != nil || len(r.Blocks) > 1024 || r.Structured != nil && !ValidClaudeToolResultMetadata(*r.Structured, r.Error) {
 		return invalidClaudeTool()
 	}
@@ -112,6 +132,9 @@ func (r ClaudeToolResult) Validate() error {
 	return nil
 }
 func (u ClaudeToolUpdate) Validate() error {
+	if u.Result != nil && u.Result.NonExecution != nil && u.Result.NonExecution.NativeID != u.Reference.NativeID {
+		return invalidClaudeTool()
+	}
 	if u.Reference.Validate() != nil || u.MessageID.Validate() != nil || Text(u.NativeMessageID, "native provider identity", 1024, true) != nil || u.Reference.NativeID == u.NativeMessageID || u.Index >= 1024 || u.Caller != nil && *u.Caller != ClaudeDirectToolCaller {
 		return invalidClaudeTool()
 	}

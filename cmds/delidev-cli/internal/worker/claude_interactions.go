@@ -31,7 +31,10 @@ func (c *ClaudeContentPublisher) PublishInteractionObservation(ctx context.Conte
 		return true, b.block()
 	}
 	if n.Kind == claude.InteractionReplyEchoed {
-		return false, nil
+		return true, c.publishReplyEcho(ctx, n)
+	}
+	if n.ReplyDigest != "" {
+		return true, b.block()
 	}
 	prior, exists := c.interactions[n.ArrivalID]
 	var next claudePublishedInteraction

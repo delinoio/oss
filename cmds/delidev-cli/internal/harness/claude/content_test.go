@@ -328,3 +328,43 @@ func TestOriginalToolErrorMetadataRequiresNativeErrorEvidence(t *testing.T) {
 		})
 	}
 }
+
+func TestClaudeNonExecutionMetadataRequiresExactFailedOriginalTool(t *testing.T) {
+	for _, change := range []string{"valid", "foreign", "duplicate", "empty", "null", "kind", "successful", "missing-error"} {
+		t.Run(change, func(t *testing.T) {
+			b := contentFixture(t)
+			contentTool(t, b, "", "tool_read", "Read")
+			block := map[string]any{"type": "tool_result", "tool_use_id": "tool_read", "content": "Original denied request", "is_error": true}
+			meta := []any{map[string]any{"id": "tool_read", "non_execution_kind": "permission-rule"}}
+			var raw any = meta
+			switch change {
+			case "foreign":
+				meta[0].(map[string]any)["id"] = "foreign"
+			case "duplicate":
+				raw = append(meta, meta[0])
+			case "empty":
+				raw = []any{}
+			case "null":
+				raw = json.RawMessage("null")
+			case "kind":
+				meta[0].(map[string]any)["non_execution_kind"] = "unknown"
+			case "successful":
+				block["is_error"] = false
+			case "missing-error":
+				delete(block, "is_error")
+			}
+			e := lifecycleChange(t, contentResult(t, b, "", block), "tool_use_result", "Original denied request")
+			e = lifecycleChange(t, e, "tool_result_meta", raw)
+			o, err := b.Observe(e)
+			if change != "valid" {
+				if err == nil || b.content.tools["tool_read"].finished {
+					t.Fatal("invalid non-execution metadata completed original call")
+				}
+				return
+			}
+			if err != nil || len(o.Content) != 1 || o.Content[0].ToolResult.NonExecution == nil || o.Content[0].ToolResult.NonExecution.NativeID != "tool_read" || b.content.tools["tool_read"].inline != nil {
+				t.Fatal("denied tool lost original classification or acquired Read history", err)
+			}
+		})
+	}
+}

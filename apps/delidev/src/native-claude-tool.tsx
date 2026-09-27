@@ -16,7 +16,7 @@ function json(v: unknown, errorString = false): v is string {
   if (!text(v)) return false;
   try { const parsed: unknown = JSON.parse(v); return (errorString && text(parsed)) || (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)); } catch { return false; }
 }
-type Result = { native_event_id: string; is_error: boolean | null; text: string | null; blocks: { kind: "text"; text: string }[] | null; structured: string | null };
+type Result = { non_execution?: { id: string; non_execution_kind: "permission-rule" }; native_event_id: string; is_error: boolean | null; text: string | null; blocks: { kind: "text"; text: string }[] | null; structured: string | null };
 type Tool = { reference: ClaudeToolReference; message_id: string; native_message_id: string; index: number; caller: "direct" | null; initial_input: string; input_delta: string | null; proposal: { proposed: string; applied: string } | null; result: Result | null };
 function tool(value: unknown, state: string): Tool | undefined {
   const v = object(value), ref = claudeToolReference(v.reference);
@@ -29,7 +29,8 @@ function tool(value: unknown, state: string): Tool | undefined {
   if ((state === State.Complete) !== (v.result !== null) || (v.result !== null && v.proposal === null)) return undefined;
   if (v.result !== null) {
     const r = object(v.result);
-    if (!keys(r, ["native_event_id", "is_error", "text", "blocks", "structured"]) || !uuid(r.native_event_id, true) || (r.is_error !== null && typeof r.is_error !== "boolean") || (r.text !== null && !text(r.text)) || (r.structured !== null && !json(r.structured, r.is_error === true)) || (r.text !== null && r.blocks !== null)) return undefined;
+    if (!keys(r, ["native_event_id", "is_error", "text", "blocks", "structured", ...(r.non_execution === undefined ? [] : ["non_execution"])]) || !uuid(r.native_event_id, true) || (r.is_error !== null && typeof r.is_error !== "boolean") || (r.text !== null && !text(r.text)) || (r.structured !== null && !json(r.structured, r.is_error === true)) || (r.text !== null && r.blocks !== null)) return undefined;
+    if (r.non_execution !== undefined) { const n = object(r.non_execution); if (!keys(n, ["id", "non_execution_kind"]) || n.id !== ref.native_id || n.non_execution_kind !== "permission-rule" || r.is_error !== true) return undefined; }
     if (r.blocks !== null) {
       if (!Array.isArray(r.blocks) || r.blocks.length > 1024) return undefined;
       let bytes = 0;
@@ -56,6 +57,7 @@ export function NativeClaudeTool({ content, state, id, native, parent }: { conte
     {retained.proposal ? <><details><summary>Original proposed input</summary><pre>{retained.proposal.proposed}</pre></details><details><summary>Native applied input</summary><pre>{retained.proposal.applied}</pre></details></> : null}
     {result ? <section aria-label="Original tool result">
       <p>Native error flag: {result.is_error === null ? "Not reported" : result.is_error ? "Error reported" : "No error reported"}.</p>
+      {result.non_execution ? <p>Native permission policy prevented this tool from executing.</p> : null}
       {result.text !== null ? <pre>{result.text}</pre> : null}
       {result.blocks !== null ? <ol aria-label="Tool result blocks">{result.blocks.map((b, index) => <li key={index}><pre>{b.text}</pre></li>)}</ol> : null}
       {result.structured !== null ? <details><summary>Structured native result</summary><pre>{result.structured}</pre></details> : null}

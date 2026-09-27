@@ -59,3 +59,13 @@ test("retains native string metadata only with an explicit error result", () => 
   rerender(<NativeClaudeTool {...props} content={v} />);
   expect(screen.getByLabelText("Claude tool unavailable")).toBeTruthy();
 });
+
+test("preserves original non-execution classification without treating generic errors as policy denial", () => {
+  const v = fixture(); v.result!.is_error = true;
+  Object.assign(v.result!, { non_execution: { id: props.native, non_execution_kind: "permission-rule" } });
+  const rendered = render(<NativeClaudeTool {...props} content={v} />);
+  expect(screen.getByText(/Native permission policy prevented this tool/)).toBeTruthy();
+  v.result!.is_error = false;
+  rendered.rerender(<NativeClaudeTool {...props} content={v} />);
+  expect(screen.getByLabelText("Claude tool unavailable")).toBeTruthy();
+});

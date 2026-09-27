@@ -3,6 +3,7 @@ package claude
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"slices"
 
@@ -121,12 +122,13 @@ type NativeInteraction struct {
 	PlanPath                *string            `json:"-"`
 }
 type InteractionObservation struct {
-	Kind      InteractionEventKind
-	Request   *NativeInteraction `json:"-"`
-	ArrivalID domain.ID
-	Canceled  bool
-	InputID   domain.ID
-	TurnID    string
+	ReplyDigest string
+	Kind        InteractionEventKind
+	Request     *NativeInteraction `json:"-"`
+	ArrivalID   domain.ID
+	Canceled    bool
+	InputID     domain.ID
+	TurnID      string
 	// Exact native echo proves only the original reply was echoed. It does not
 	// prove tool success, plan execution or acceptance of an input turn.
 }
@@ -172,6 +174,7 @@ func (b *ExecutionBinding) observeInteraction(event StreamEvent) (*InteractionOb
 			}
 			retained.echoed = true
 			result.Kind = InteractionReplyEchoed
+			result.ReplyDigest = hex.EncodeToString(digest[:])
 		default:
 			return nil, lifecycleUncertain()
 		}

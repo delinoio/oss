@@ -12,18 +12,27 @@ const MaxQuestionResponseBytes = 256 << 10
 // native questions need a protected native retention/delivery capability and
 // must never fall back to this ordinary persisted response shape.
 type QuestionResponseInput struct {
+	Claude   *ClaudePermissionResponse `json:"claude,omitempty"`
 	OpenCode *OpenCodeQuestionResponse `json:"opencode,omitempty"`
 	Answers  map[string][]string       `json:"answers"`
 }
 
 func (r *QuestionResponseInput) UnmarshalJSON(raw []byte) error {
 	var wire struct {
+		Claude   *ClaudePermissionResponse `json:"claude,omitempty"`
 		OpenCode *OpenCodeQuestionResponse `json:"opencode,omitempty"`
 		Answers  map[string][]*string      `json:"answers"`
 	}
 	var fields map[string]json.RawMessage
 	if Decode(raw, &wire) != nil || Decode(raw, &fields) != nil {
 		return invalidQuestionResponse()
+	}
+	if _, exists := fields["claude"]; exists {
+		if len(fields) != 1 || wire.Claude == nil {
+			return invalidQuestionResponse()
+		}
+		*r = QuestionResponseInput{Claude: wire.Claude}
+		return nil
 	}
 	if _, exists := fields["opencode"]; exists {
 		if len(fields) != 1 || wire.OpenCode == nil || wire.Answers != nil {
@@ -57,7 +66,7 @@ func invalidQuestionResponse() error {
 }
 
 func (r QuestionResponseInput) Validate(original *QuestionRequest) error {
-	if r.OpenCode != nil || original == nil || original.Validate() != nil || len(r.Answers) != len(original.Questions) {
+	if r.Claude != nil || r.OpenCode != nil || original == nil || original.Validate() != nil || len(r.Answers) != len(original.Questions) {
 		return invalidQuestionResponse()
 	}
 	for _, question := range original.Questions {
@@ -111,6 +120,7 @@ type QuestionResponseClaim struct {
 // Queued acceptance is a server fact only. Native ownership/delivery and
 // semantic acceptance require separate state transitions and evidence.
 type QuestionResponse struct {
+	ClaudeEcho *ClaudeReplyEcho               `json:"claude_echo,omitempty"`
 	ID         ID                             `json:"id"`
 	State      QuestionResponseState          `json:"state"`
 	Input      QuestionResponseInput          `json:"input"`
@@ -200,7 +210,12 @@ func (u ExecutionQuestionAcceptanceUpdate) Validate() error {
 
 func (r QuestionResponseInput) MarshalJSON() ([]byte, error) {
 	type plain QuestionResponseInput
-	if r.OpenCode != nil && r.Answers == nil {
+	if r.Claude != nil && r.OpenCode == nil && r.Answers == nil {
+		return json.Marshal(struct {
+			Claude *ClaudePermissionResponse `json:"claude"`
+		}{r.Claude})
+	}
+	if r.OpenCode != nil && r.Claude == nil && r.Answers == nil {
 		return json.Marshal(struct {
 			OpenCode *OpenCodeQuestionResponse `json:"opencode"`
 		}{r.OpenCode})

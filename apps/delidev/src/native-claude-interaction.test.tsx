@@ -54,3 +54,15 @@ for (const change of ["mixed", "tool", "version", "arrival", "cancellation", "su
   expect(screen.getByLabelText("Claude request unavailable")).toBeTruthy();
   expect(screen.queryByText("Original reason")).toBeNull();
 });
+
+test("retains an original transmitted response and echo without claiming acceptance", () => {
+  const data = claudeRequestFixture(), r = data.claude as Document;
+  data.approval_response = { id: r.message_id, state: "transmitted", accepted_at: "2026-09-27T00:00:00Z", input: { claude: { behavior: "allow" } }, claim: { id: r.arrival_id, job_id: r.message_id, machine_id: r.arrival_id, instance_id: r.message_id, device_id: r.arrival_id, claimed_at: "2026-09-27T00:00:00Z" }, delivery: { state: "transmitted", sequence: 9 }, claude_echo: { arrival_id: r.arrival_id, body_sha256: "ab".repeat(32), sequence: 10 } };
+  const rendered = render(<NativeClaudeInteraction data={data} />);
+  expect(screen.getByText(/Claude echoed the original response/)).toBeTruthy();
+  expect(screen.getByText(/Transmission and native acceptance are separate/)).toBeTruthy();
+  ((data.approval_response as Document).claude_echo as Document).arrival_id = r.message_id;
+  rendered.rerender(<NativeClaudeInteraction data={data} />);
+  expect(screen.getByLabelText("Claude request unavailable")).toBeTruthy();
+  expect(screen.queryByText("Original reason")).toBeNull();
+});

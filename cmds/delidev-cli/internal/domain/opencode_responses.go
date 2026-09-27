@@ -126,9 +126,12 @@ func (r OpenCodePermissionResponse) Validate(original *OpenCodeInteractionReques
 
 func (r QuestionResponseInput) ValidateInteraction(original ExecutionInteraction) error {
 	if original.Claude != nil {
-		return Fail(Unsupported, "Claude callback replies require their original delivery adapter.", "Preserve this request; an ordinary message or another harness response cannot answer it.")
+		if original.Type != UserQuestionInteraction || r.Claude == nil || r.OpenCode != nil || r.Answers != nil {
+			return invalidQuestionResponse()
+		}
+		return r.Claude.Validate(original)
 	}
-	if original.Type != UserQuestionInteraction {
+	if r.Claude != nil || original.Type != UserQuestionInteraction {
 		return invalidQuestionResponse()
 	}
 	if original.OpenCode == nil {
@@ -149,9 +152,12 @@ func (r QuestionResponseInput) ValidateInteraction(original ExecutionInteraction
 
 func (r ApprovalResponseInput) ValidateInteraction(original ExecutionInteraction) error {
 	if original.Claude != nil {
-		return Fail(Unsupported, "Claude callback replies require their original delivery adapter.", "Preserve this request; an ordinary message or another harness response cannot answer it.")
+		if original.Type != NativeApprovalInteraction || r.Claude == nil || r.OpenCode != nil || r.Decision != nil || r.Grant != nil {
+			return invalidApprovalResponse()
+		}
+		return r.Claude.Validate(original)
 	}
-	if original.Type != NativeApprovalInteraction {
+	if r.Claude != nil || original.Type != NativeApprovalInteraction {
 		return invalidApprovalResponse()
 	}
 	if original.OpenCode == nil {

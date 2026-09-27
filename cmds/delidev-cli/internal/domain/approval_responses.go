@@ -13,9 +13,24 @@ const MaxApprovalResponseBytes = 256 << 10
 // selects one original decision or a bounded native permission grant, never
 // another request, command, question answer or execution policy.
 type ApprovalResponseInput struct {
+	Claude   *ClaudePermissionResponse   `json:"claude,omitempty"`
 	OpenCode *OpenCodePermissionResponse `json:"opencode,omitempty"`
 	Decision *CodexApprovalDecision      `json:"decision,omitempty"`
 	Grant    *CodexPermissionGrant       `json:"grant,omitempty"`
+}
+
+func (r *ApprovalResponseInput) UnmarshalJSON(raw []byte) error {
+	type plain ApprovalResponseInput
+	var value plain
+	var fields map[string]json.RawMessage
+	if Decode(raw, &value) != nil || Decode(raw, &fields) != nil {
+		return invalidApprovalResponse()
+	}
+	if _, exists := fields["claude"]; exists && (len(fields) != 1 || value.Claude == nil) {
+		return invalidApprovalResponse()
+	}
+	*r = ApprovalResponseInput(value)
+	return nil
 }
 
 func invalidApprovalResponse() error {
@@ -23,7 +38,7 @@ func invalidApprovalResponse() error {
 }
 
 func (r ApprovalResponseInput) Validate(original *ApprovalRequest) error {
-	if r.OpenCode != nil || original == nil || original.Validate() != nil {
+	if r.Claude != nil || r.OpenCode != nil || original == nil || original.Validate() != nil {
 		return invalidApprovalResponse()
 	}
 	a := original.Codex
@@ -78,6 +93,7 @@ const (
 // its own original interaction, response and claim before any send or report.
 type ApprovalResponseClaim = QuestionResponseClaim
 type ApprovalResponse struct {
+	ClaudeEcho *ClaudeReplyEcho               `json:"claude_echo,omitempty"`
 	ID         ID                             `json:"id"`
 	State      ApprovalResponseState          `json:"state"`
 	Input      ApprovalResponseInput          `json:"input"`

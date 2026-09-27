@@ -1,4 +1,6 @@
 import { object, text, type Document } from "./documents";
+import type { Resource } from "@delinoio/delidev-api-client";
+import { NativeClaudeResponse, type ClaudeQuestion } from "./native-claude-response";
 import { claudeToolReference } from "./native-claude-tool";
 
 enum Kind { Tool = "tool-permission", Question = "user-question", Plan = "plan-approval" }
@@ -18,7 +20,7 @@ function suggestion(value: unknown) {
 }
 function request(data: Document) {
   const r = object(data.claude), m = object(r.metadata), ref = claudeToolReference(r.tool), native = object(data.native_request_id);
-  if (!exact(r, ["version", "kind", "arrival_id", "tool", "message_id", "native_message_id", "index", "caller", "input_json", "metadata"]) || r.version !== "2.1.236" || !Object.values(Kind).includes(r.kind as Kind) || !uuid(r.arrival_id) || !ref || !uuid(r.message_id) || r.message_id === ref.id || !label(r.native_message_id, 1024) || r.native_message_id === ref.native_id || data.native_item_id !== ref.native_id || !Number.isInteger(r.index) || Number(r.index) < 0 || Number(r.index) >= 1024 || (r.caller !== null && r.caller !== "direct") || !bounded(r.input_json, 256 * 1024) || !exact(native, ["kind", "text"]) || native.kind !== "text" || !label(native.text, 128) || data.opencode != null || data.questions != null || data.approval != null || data.response != null || data.approval_response != null || data.opencode_stop != null || data.opencode_closure != null) return undefined;
+  if (!exact(r, ["version", "kind", "arrival_id", "tool", "message_id", "native_message_id", "index", "caller", "input_json", "metadata"]) || r.version !== "2.1.236" || !Object.values(Kind).includes(r.kind as Kind) || !uuid(r.arrival_id) || !ref || !uuid(r.message_id) || r.message_id === ref.id || !label(r.native_message_id, 1024) || r.native_message_id === ref.native_id || data.native_item_id !== ref.native_id || !Number.isInteger(r.index) || Number(r.index) < 0 || Number(r.index) >= 1024 || (r.caller !== null && r.caller !== "direct") || !bounded(r.input_json, 256 * 1024) || !exact(native, ["kind", "text"]) || native.kind !== "text" || !label(native.text, 128) || data.opencode != null || data.questions != null || data.approval != null || data.opencode_stop != null || data.opencode_closure != null) return undefined;
   if (new TextEncoder().encode(JSON.stringify(r)).length > 512 * 1024 || !exact(m, ["permission_suggestions", "blocked_path", "decision_reason", "decision_reason_type", "requires_user_interaction", "agent_id", "title", "display_name", "description"]) || ![m.blocked_path, m.decision_reason, m.decision_reason_type, m.agent_id, m.title, m.display_name, m.description].every(optionalText) || (m.requires_user_interaction !== null && typeof m.requires_user_interaction !== "boolean") || (m.permission_suggestions !== null && (!Array.isArray(m.permission_suggestions) || m.permission_suggestions.length > 128 || !m.permission_suggestions.every(suggestion)))) return undefined;
   const cancellation = object(data.claude_cancellation);
   if (data.closure === "open" ? data.claude_cancellation != null : data.closure !== "native-closed" || !exact(cancellation, ["arrival_id"]) || cancellation.arrival_id !== r.arrival_id) return undefined;
@@ -35,10 +37,34 @@ function request(data: Document) {
       for (const value of q.options) { const o = object(value); if (!exact(o, ["label", "description"]) || !label(o.label, 1024) || !bounded(o.description, 4096) || options.has(o.label)) return undefined; options.add(o.label); }
     }
   } else if (data.type !== "native-approval" || (r.kind === Kind.Plan ? ref.name !== "ExitPlanMode" || !label(input.plan, 256 * 1024) || (input.planFilePath !== undefined && !label(input.planFilePath, 4096)) : ref.name === "ExitPlanMode" || ref.name === "AskUserQuestion")) return undefined;
+  if (!validResponse(data, r, input)) return undefined;
   return { original: r, metadata: m, input, name: ref.name };
 }
 
-export function NativeClaudeInteraction({ data }: { data: Document }) {
+function validResponse(data: Document, original: Document, input: Document) {
+  const question = original.kind === Kind.Question;
+  if (question ? data.approval_response != null : data.response != null) return false;
+  const value = question ? data.response : data.approval_response;
+  if (value == null) return true;
+  const r = object(value), wrapper = object(r.input), response = object(wrapper.claude);
+  if (!uuid(r.id) || !label(r.accepted_at, 64) || !Number.isFinite(Date.parse(text(r.accepted_at))) || !["queued", "claimed", "transmitted", "uncertain", "canceled"].includes(text(r.state)) || !exact(wrapper, ["claude"]) || !Object.keys(response).every((k) => ["behavior", "answers", "message", "interrupt"].includes(k)) || new TextEncoder().encode(JSON.stringify(wrapper)).length > 256 * 1024 || r.acceptance != null) return false;
+  if (response.behavior === "allow") {
+    if (response.message !== undefined || response.interrupt !== undefined) return false;
+    if (question) {
+      if (response.answers == null || Array.isArray(response.answers) || typeof response.answers !== "object") return false;
+      const keys = (input.questions as ClaudeQuestion[]).map((q) => q.question);
+      if (!Object.entries(object(response.answers)).every(([key, value]) => keys.includes(key) && bounded(value, 256 * 1024))) return false;
+    } else if (response.answers !== undefined) return false;
+  } else if (response.behavior !== "deny" || response.answers !== undefined || !label(response.message, 4096) || response.interrupt !== undefined && typeof response.interrupt !== "boolean") return false;
+  const claim = object(r.claim), delivery = object(r.delivery), echo = object(r.claude_echo);
+  if (r.claim != null && (![claim.id, claim.job_id, claim.machine_id, claim.instance_id, claim.device_id].every(uuid) || !label(claim.claimed_at, 64))) return false;
+  if (r.delivery != null && (r.claim == null || !["not-sent", "transmitted", "uncertain"].includes(text(delivery.state)) || !Number.isSafeInteger(delivery.sequence) || Number(delivery.sequence) <= 0)) return false;
+  if (r.state === "queued" && (r.claim != null || r.delivery != null) || r.state === "claimed" && (r.claim == null || r.delivery != null) || r.state === "transmitted" && delivery.state !== "transmitted") return false;
+  if (r.claude_echo != null && (!exact(echo, ["arrival_id", "body_sha256", "sequence"]) || echo.arrival_id !== original.arrival_id || !/^[0-9a-f]{64}$/.test(text(echo.body_sha256)) || !Number.isSafeInteger(echo.sequence) || Number(echo.sequence) <= Number(delivery.sequence) || !["transmitted", "uncertain"].includes(text(r.state)) || !["transmitted", "uncertain"].includes(text(delivery.state)))) return false;
+  return true;
+}
+
+export function NativeClaudeInteraction({ data, resource, accepted }: { data: Document; resource?: Resource; accepted?: (value?: Resource) => void }) {
   const r = request(data);
   if (!r) return <section aria-label="Claude request unavailable"><p>The retained Claude request is unavailable or inconsistent.</p></section>;
   return <section aria-label="Original Claude request">
@@ -49,7 +75,10 @@ export function NativeClaudeInteraction({ data }: { data: Document }) {
     {r.original.kind === Kind.Plan ? <><pre>{text(r.input.plan)}</pre>{typeof r.input.planFilePath === "string" ? <p>Native plan path: {r.input.planFilePath}</p> : null}</> : null}
     <details><summary>Original callback input</summary><pre>{text(r.original.input_json)}</pre></details>
     <details><summary>Original callback metadata</summary><pre>{JSON.stringify(r.metadata, null, 2)}</pre></details>
-    <p>{data.closure === "native-closed" ? "The original native request was canceled. Cancellation does not prove that a response was accepted." : "The original request is waiting. Claude reply delivery is not available yet; an ordinary message cannot answer this request."}</p>
+    <p>{data.closure === "native-closed" ? "The original native request was canceled. Cancellation does not prove that a response was accepted." : data.response != null || data.approval_response != null ? "The response is retained. Transmission and native acceptance are separate observations." : "The original request is waiting for a response."}</p>
+    {object(data.response ?? data.approval_response).claude_echo != null ? <p>Claude echoed the original response. This does not prove that the tool or plan ran, or that the answer was accepted.</p> : null}
+    {data.response != null || data.approval_response != null ? <details><summary>Retained response</summary><pre>{JSON.stringify(object(data.response ?? data.approval_response).input, null, 2)}</pre></details> : null}
+    {resource && accepted ? <NativeClaudeResponse key={resource.id} resource={resource} accepted={accepted} questions={r.original.kind === Kind.Question ? r.input.questions as ClaudeQuestion[] : undefined} closed={data.closure !== "open" || data.response != null || data.approval_response != null} /> : null}
     <p>Native suggestions do not grant access or change saved permissions.</p>
   </section>;
 }

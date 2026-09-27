@@ -301,6 +301,20 @@ func (s *APISession) StartCompaction(ctx context.Context, action domain.ID) (App
 }
 
 func (s *APISession) Reply(ctx context.Context, arrival domain.ID, reply PermissionReply) error {
+	return s.reply(ctx, arrival, reply, nil)
+}
+
+// ReplyClaimed requires the owning Worker to synchronize exact native ownership
+// and reply digest before pipe transmission. Preparation is once-only even when
+// that barrier fails; a replacement process cannot adopt this callback.
+func (s *APISession) ReplyClaimed(ctx context.Context, arrival domain.ID, reply PermissionReply, claim func(context.Context, PermissionReplyClaim) error) error {
+	if claim == nil {
+		return lifecycleUncertain()
+	}
+	return s.reply(ctx, arrival, reply, claim)
+}
+
+func (s *APISession) reply(ctx context.Context, arrival domain.ID, reply PermissionReply, claim func(context.Context, PermissionReplyClaim) error) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.status(); err != nil {
@@ -315,6 +329,12 @@ func (s *APISession) Reply(ctx context.Context, arrival domain.ID, reply Permiss
 	event, raw, err := s.current.PreparePermissionReply(arrival, reply)
 	if err != nil {
 		return err
+	}
+	if claim != nil {
+		original, err := s.current.permissionReplyClaim(arrival)
+		if err != nil || claim(ctx, original) != nil {
+			return s.latch(sessionReplyPhase, lifecycleUncertain())
+		}
 	}
 	if err := s.stream.Reply(ctx, event, raw); err != nil {
 		return s.latch(sessionReplyPhase, lifecycleUncertain())

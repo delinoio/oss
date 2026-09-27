@@ -99,7 +99,7 @@ func (c *ClaudeContentPublisher) publishToolResults(ctx context.Context, o claud
 		if err != nil {
 			return b.block()
 		}
-		value := domain.ClaudeToolResult{NativeEventID: o.NativeID, Error: result.Error, Text: result.Text}
+		value := domain.ClaudeToolResult{NativeEventID: o.NativeID, Error: result.Error, Text: result.Text, NonExecution: result.NonExecution}
 		if len(result.Structured) != 0 {
 			raw := string(result.Structured)
 			value.Structured = &raw

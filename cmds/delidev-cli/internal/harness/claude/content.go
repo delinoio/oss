@@ -88,12 +88,13 @@ type NativeContentBlock struct {
 }
 
 type NativeToolResult struct {
-	CalledBy NativeToolCaller     `json:"caller"`
-	ID       string               `json:"id"`
-	Name     string               `json:"name"`
-	Error    *bool                `json:"is_error"`
-	Text     *string              `json:"text"`
-	Blocks   []NativeContentBlock `json:"blocks"`
+	NonExecution *domain.ClaudeToolNonExecution
+	CalledBy     NativeToolCaller     `json:"caller"`
+	ID           string               `json:"id"`
+	Name         string               `json:"name"`
+	Error        *bool                `json:"is_error"`
+	Text         *string              `json:"text"`
+	Blocks       []NativeContentBlock `json:"blocks"`
 	// Structured is Claude's original tool_use_result object or JSON error string. This explicit
 	// provider extension may duplicate binary media and remains private until
 	// its typed publication adapter exists. It grants no filesystem, process,
@@ -736,7 +737,13 @@ func (b *ExecutionBinding) observeAssistant(raw []byte) ([]ContentEvent, error) 
 	return []ContentEvent{{Kind: ContentCompleted, MessageID: active.id, Model: active.model, ParentToolID: parent, Index: &index, Block: &block, CitationCompletion: citationCompletion, Usage: message.Usage, StopReason: message.Stop, StopSequence: message.Sequence}}, nil
 }
 
-func (b *ExecutionBinding) observeToolResult(raw []byte) ([]ContentEvent, error) {
+func (b *ExecutionBinding) observeToolResult(raw []byte) (observations []ContentEvent, returned error) {
+	phase := "envelope"
+	defer func() {
+		if returned != nil && b.logger != nil {
+			b.logger.Warn("Claude Code tool result validation failed", "owner_id", b.owner, "phase", phase, "code", domain.RecoveryRequired)
+		}
+	}()
 	var envelope struct {
 		Type            string          `json:"type"`
 		Message         json.RawMessage `json:"message"`
@@ -745,6 +752,7 @@ func (b *ExecutionBinding) observeToolResult(raw []byte) ([]ContentEvent, error)
 		UUID            string          `json:"uuid"`
 		Timestamp       string          `json:"timestamp"`
 		Structured      json.RawMessage `json:"tool_use_result"`
+		ResultMeta      json.RawMessage `json:"tool_result_meta"`
 		Synthetic       *bool           `json:"isSynthetic"`
 		SubagentType    *string         `json:"subagent_type"`
 		TaskDescription *string         `json:"task_description"`
@@ -756,13 +764,19 @@ func (b *ExecutionBinding) observeToolResult(raw []byte) ([]ContentEvent, error)
 	if decodeNativeObject(raw, &envelope) != nil || decodeNativeObject(envelope.Message, &message) != nil || message.Role != "user" || len(message.Content) == 0 || len(message.Content) > 128 {
 		return nil, lifecycleUncertain()
 	}
+	phase = "parent"
 	parent, err := b.contentParent(envelope.Parent)
 	if err != nil {
 		return nil, err
 	}
+	if len(envelope.ResultMeta) != 0 && (parent != "" || envelope.Synthetic != nil) {
+		return nil, lifecycleUncertain()
+	}
+	phase = "timestamp"
 	if _, err := time.Parse(time.RFC3339Nano, envelope.Timestamp); err != nil {
 		return nil, lifecycleUncertain()
 	}
+	phase = "task"
 	if !taskTexts(envelope.SubagentType, envelope.TaskDescription) || (parent == "" && (envelope.SubagentType != nil || envelope.TaskDescription != nil)) {
 		return nil, lifecycleUncertain()
 	}
@@ -820,6 +834,23 @@ func (b *ExecutionBinding) observeToolResult(raw []byte) ([]ContentEvent, error)
 	}
 	var events []ContentEvent
 	seen := map[string]bool{}
+	meta := map[string]domain.ClaudeToolNonExecution{}
+	if len(envelope.ResultMeta) != 0 {
+		phase = "non-execution"
+		var values []domain.ClaudeToolNonExecution
+		if domain.Decode(envelope.ResultMeta, &values) != nil || len(values) == 0 || len(values) > len(message.Content) {
+			return nil, lifecycleUncertain()
+		}
+		for _, value := range values {
+			if value.Validate() != nil {
+				return nil, lifecycleUncertain()
+			}
+			if _, exists := meta[value.NativeID]; exists {
+				return nil, lifecycleUncertain()
+			}
+			meta[value.NativeID] = value
+		}
+	}
 	for _, raw := range message.Content {
 		var value struct {
 			Type    string          `json:"type"`
@@ -827,6 +858,7 @@ func (b *ExecutionBinding) observeToolResult(raw []byte) ([]ContentEvent, error)
 			Error   *bool           `json:"is_error"`
 			Content json.RawMessage `json:"content"`
 		}
+		phase = "block"
 		if decodeNativeObject(raw, &value) != nil || value.Type != "tool_result" {
 			return nil, lifecycleUncertain()
 		}
@@ -836,6 +868,7 @@ func (b *ExecutionBinding) observeToolResult(raw []byte) ([]ContentEvent, error)
 			}
 			return nil, lifecycleUncertain()
 		}
+		phase = "tool-owner"
 		tool, ok := b.content.tools[value.ID]
 		if !ok || tool.finished || tool.parent != parent || seen[value.ID] {
 			return nil, lifecycleUncertain()
@@ -852,6 +885,7 @@ func (b *ExecutionBinding) observeToolResult(raw []byte) ([]ContentEvent, error)
 			}
 		}
 		seen[value.ID] = true
+		phase = "result-text"
 		text, blocks, err := decodeToolResultText(value.Content)
 		if err != nil {
 			return nil, err
@@ -862,10 +896,21 @@ func (b *ExecutionBinding) observeToolResult(raw []byte) ([]ContentEvent, error)
 			position = &index
 		}
 		events = append(events, ContentEvent{Kind: ToolResultObserved, MessageID: tool.message, ParentToolID: parent, Index: position, ToolResult: &NativeToolResult{ID: value.ID, Name: tool.name, CalledBy: tool.caller, Error: value.Error, Text: text, Blocks: blocks, Structured: bytes.Clone(envelope.Structured)}})
+		if classification, ok := meta[value.ID]; ok {
+			if value.Error == nil || !*value.Error {
+				return nil, lifecycleUncertain()
+			}
+			events[len(events)-1].ToolResult.NonExecution = &classification
+		}
+	}
+	for id := range meta {
+		if !seen[id] {
+			return nil, lifecycleUncertain()
+		}
 	}
 	for id := range seen {
 		tool := b.content.tools[id]
-		if inlineToolKind(tool.name).valid() && tool.parent == "" && len(events) == 1 && events[0].ToolResult.Text != nil && !strings.Contains(*events[0].ToolResult.Text, "<persisted-output>") {
+		if inlineToolKind(tool.name).valid() && tool.parent == "" && len(events) == 1 && events[0].ToolResult.NonExecution == nil && events[0].ToolResult.Text != nil && !strings.Contains(*events[0].ToolResult.Text, "<persisted-output>") {
 			failed := events[0].ToolResult.Error != nil && *events[0].ToolResult.Error
 			digest, valid := inlineMetadata(inlineToolKind(tool.name), envelope.Structured)
 			if failed {

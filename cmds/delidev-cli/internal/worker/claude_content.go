@@ -14,6 +14,7 @@ type claudePublishedContent struct {
 }
 
 type claudeContentCommit struct {
+	replyEcho          domain.ID
 	interactionArrival domain.ID
 	interactionNext    claudePublishedInteraction
 	toolNative         string
@@ -30,6 +31,8 @@ type claudeContentCommit struct {
 // Its caller must reconcile child, reply and terminal authority separately;
 // unsupported rich blocks latch this publisher.
 type ClaudeContentPublisher struct {
+	responses        map[domain.ID]*claudeResponseAttempt
+	replyUncertain   bool
 	interactions     map[domain.ID]claudePublishedInteraction
 	callbackRequests map[string]bool
 	binding          *ClaudeBindingPublisher
@@ -57,7 +60,7 @@ func OpenClaudeContentPublisher(binding *ClaudeBindingPublisher) (*ClaudeContent
 		return nil, publicationUncertain()
 	}
 	binding.contentAttached = true
-	return &ClaudeContentPublisher{interactions: map[domain.ID]claudePublishedInteraction{}, callbackRequests: map[string]bool{}, binding: binding, messages: map[string]claudePublishedContent{}, seen: map[string]bool{}, usageSeen: map[string]bool{}, tools: map[string]claudePublishedTool{}}, nil
+	return &ClaudeContentPublisher{responses: map[domain.ID]*claudeResponseAttempt{}, interactions: map[domain.ID]claudePublishedInteraction{}, callbackRequests: map[string]bool{}, binding: binding, messages: map[string]claudePublishedContent{}, seen: map[string]bool{}, usageSeen: map[string]bool{}, tools: map[string]claudePublishedTool{}}, nil
 }
 
 func (c *ClaudeContentPublisher) verify() error {
@@ -262,6 +265,9 @@ func (c *ClaudeContentPublisher) drain(ctx context.Context) error {
 
 func (c *ClaudeContentPublisher) commitHead() {
 	item := c.queue[0]
+	if item.replyEcho != "" {
+		c.responses[item.replyEcho].echoed = true
+	}
 	if item.input {
 		c.inputPublished = true
 	}

@@ -1,0 +1,83 @@
+import { create } from "@bufbuild/protobuf";
+import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
+import { TransportProvider } from "@connectrpc/connect-query";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { expect, it, vi } from "vitest";
+import { EntityKind, InteractionService, ResourceSchema, newRequestId } from "@delinoio/delidev-api-client";
+import { NativeClaudeResponse } from "./native-claude-response";
+import { MutationIntents } from "./mutation";
+import type { ReactNode } from "react";
+
+type Input = { mutation?: { requestId?: string; id?: string; expectedRevision?: bigint }; responseJson: Uint8Array };
+const question = { question: "Original?", header: "Choice", options: [{ label: "One", description: "First" }, { label: "Two", description: "Second" }], multiSelect: true };
+function fixture() {
+  const resource = create(ResourceSchema, { id: newRequestId(), sessionId: newRequestId(), kind: EntityKind.INTERACTION, schemaVersion: 1, revision: 9n });
+  const send = vi.fn(async (_: Input) => ({ interaction: create(ResourceSchema, { ...resource, revision: 10n }) }));
+  const accepted = vi.fn();
+  const transport = createRouterTransport((r) => r.service(InteractionService, { respondQuestion: send, respondApproval: send }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  const view = (child: ReactNode) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents>{child}</MutationIntents></QueryClientProvider></TransportProvider>;
+  const form = (questions = true, closed = false, multiple = true) => view(<NativeClaudeResponse resource={resource} questions={questions ? [{ ...question, multiSelect: multiple }] : undefined} closed={closed} accepted={accepted} />);
+  return { resource, send, form };
+}
+function decoded(v: Input) { return JSON.parse(new TextDecoder().decode(v.responseJson)); }
+
+it("keeps original question text keys and native comma-separated selection order", async () => {
+  const f = fixture(); render(f.form());
+  fireEvent.click(screen.getByRole("checkbox", { name: "Two Second" }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "One First" }));
+  fireEvent.click(screen.getByRole("button", { name: "Send answers to Claude" }));
+  await waitFor(() => expect(f.send).toHaveBeenCalledTimes(1));
+  expect(decoded(f.send.mock.calls[0][0])).toEqual({ claude: { behavior: "allow", answers: { "Original?": "Two, One" } } });
+  expect(f.send.mock.calls[0][0].mutation).toMatchObject({ id: f.resource.id, expectedRevision: 9n });
+});
+it("replaces a single choice with exact custom text", async () => {
+  const f = fixture(); render(f.form(true, false, false));
+  fireEvent.click(screen.getByRole("radio", { name: "One First" }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "Use an exact custom answer for question 1" }));
+  fireEvent.change(screen.getByRole("textbox"), { target: { value: "  답변\n" } });
+  fireEvent.click(screen.getByRole("button", { name: "Send answers to Claude" }));
+  await waitFor(() => expect(f.send).toHaveBeenCalledTimes(1));
+  expect(decoded(f.send.mock.calls[0][0])).toEqual({ claude: { behavior: "allow", answers: { "Original?": "  답변\n" } } });
+});
+it.each([true, false])("keeps explicit unanswered and empty-string answers distinct: skip=%s", async (skip) => {
+  const f = fixture(); render(f.form());
+  fireEvent.click(screen.getByRole("checkbox", { name: skip ? "Leave question 1 unanswered" : "Use an exact custom answer for question 1" }));
+  fireEvent.click(screen.getByRole("button", { name: "Send answers to Claude" }));
+  await waitFor(() => expect(f.send).toHaveBeenCalledTimes(1));
+  expect(decoded(f.send.mock.calls[0][0])).toEqual({ claude: { behavior: "allow", answers: skip ? {} : { "Original?": "" } } });
+});
+it("sends an explicit one-request allow without editing tool input", async () => {
+  const f = fixture(); render(f.form(false));
+  fireEvent.click(screen.getByRole("button", { name: "Allow this Claude request" }));
+  await waitFor(() => expect(f.send).toHaveBeenCalledTimes(1));
+  expect(decoded(f.send.mock.calls[0][0])).toEqual({ claude: { behavior: "allow" } });
+});
+it.each([true, false])("preserves the exact original denial reason: question=%s", async (question) => {
+  const f = fixture(); render(f.form(question));
+  fireEvent.click(screen.getByRole("checkbox", { name: "Deny this request" }));
+  fireEvent.submit(screen.getByRole("form")); expect(f.send).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByRole("textbox", { name: "Reason for denial" }), { target: { value: " Original denial\n" } });
+  fireEvent.click(screen.getByRole("button", { name: "Send denial to Claude" }));
+  await waitFor(() => expect(f.send).toHaveBeenCalledTimes(1));
+  expect(decoded(f.send.mock.calls[0][0])).toEqual({ claude: { behavior: "deny", message: " Original denial\n" } });
+});
+it("retries only the retained server receipt after acknowledgment loss and native cancellation", async () => {
+  const f = fixture(); f.send.mockRejectedValueOnce(new ConnectError("Lost acknowledgment", Code.Unavailable));
+  const rendered = render(f.form(false));
+  fireEvent.click(screen.getByRole("button", { name: "Allow this Claude request" }));
+  await screen.findByRole("button", { name: "Retry the same response request" });
+  rendered.rerender(f.form(false, true));
+  fireEvent.click(screen.getByRole("button", { name: "Retry the same response request" }));
+  await waitFor(() => expect(f.send).toHaveBeenCalledTimes(2));
+  expect(f.send.mock.calls[0][0]).toEqual(f.send.mock.calls[1][0]);
+});
+it("blocks closed, missing and oversized answers before RPC", () => {
+  const f = fixture(); const rendered = render(f.form());
+  fireEvent.submit(screen.getByRole("form")); expect(f.send).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("checkbox", { name: "Use an exact custom answer for question 1" }));
+  fireEvent.change(screen.getByRole("textbox"), { target: { value: "x".repeat(256 * 1024) } });
+  fireEvent.submit(screen.getByRole("form")); expect(f.send).not.toHaveBeenCalled();
+  rendered.rerender(f.form(false, true)); fireEvent.submit(screen.getByRole("form")); expect(f.send).not.toHaveBeenCalled();
+});
