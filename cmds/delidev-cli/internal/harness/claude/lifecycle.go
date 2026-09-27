@@ -302,7 +302,7 @@ func (b *ExecutionBinding) Observe(event StreamEvent) (observation LifecycleObse
 					b.notifications++
 				}
 			}
-			if header.Subtype == "status" {
+			if header.Subtype == "status" || header.Subtype == "thinking_tokens" {
 				phase = progressValidation
 				value, err := b.observeProgress(event)
 				if err != nil {

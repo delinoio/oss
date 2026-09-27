@@ -119,9 +119,9 @@ func (s *Service) PublishExecution(ctx context.Context, req *connect.Request[pb.
 func supportsExecutionPublication(input domain.ExecutionJobInput, kind domain.ExecutionEventKind) bool {
 	switch input.Configuration.Harness {
 	case domain.Codex:
-		return kind != domain.ExecutionOpenCodeUsageObserved
+		return kind != domain.ExecutionOpenCodeUsageObserved && kind != domain.ExecutionClaudeMessageObserved
 	case domain.ClaudeCode:
-		return (kind == domain.ExecutionThreadBound || kind == domain.ExecutionInputAccepted) && len(executionAPIOperations(input, domain.AnthropicMessages)) != 0
+		return (kind == domain.ExecutionThreadBound || kind == domain.ExecutionInputAccepted || kind == domain.ExecutionMessageStarted || kind == domain.ExecutionMessageCompleted || kind == domain.ExecutionClaudeMessageObserved) && len(executionAPIOperations(input, domain.AnthropicMessages)) != 0
 	case domain.OpenCode:
 		return (kind == domain.ExecutionThreadBound || kind == domain.ExecutionInputAccepted || kind == domain.ExecutionMessageStarted || kind == domain.ExecutionTextAppended || kind == domain.ExecutionMessageCompleted || kind.IsArtifact() || kind == domain.ExecutionToolStarted || kind == domain.ExecutionToolUpdated || kind == domain.ExecutionToolCompleted || kind == domain.ExecutionOpenCodeUsageObserved || kind == domain.ExecutionProgressObserved || kind == domain.ExecutionInteractionRequested || kind == domain.ExecutionInteractionClosed || kind == domain.ExecutionQuestionDeliveryObserved || kind == domain.ExecutionApprovalDeliveryObserved || kind == domain.ExecutionQuestionAccepted || kind == domain.ExecutionApprovalAccepted || kind == domain.ExecutionTurnFinished) && len(executionAPIOperations(input, domain.OpenAIChat)) != 0
 	}
@@ -133,6 +133,12 @@ func supportsExecutionPublication(input domain.ExecutionJobInput, kind domain.Ex
 // fabricated message identity or using the assistant as the execution turn.
 func validateNativeMessageOrigin(input domain.ExecutionJobInput, event domain.ExecutionEvent) error {
 	if input.Configuration.Harness == domain.ClaudeCode && event.NativeThreadID != string(input.SessionID) {
+		return executionEventConflict()
+	}
+	if event.ClaudeMessage != nil && (input.Configuration.Harness != domain.ClaudeCode || event.ClaudeMessage.Model != input.Configuration.NativeModel) {
+		return executionEventConflict()
+	}
+	if input.Configuration.Harness == domain.ClaudeCode && event.Message != nil && (event.Message.Role != domain.UserMessage || event.Message.NativeID != string(input.InputID) || event.Message.InputID != input.InputID || event.Message.NativeParentID != "" || event.Message.Phase != nil) {
 		return executionEventConflict()
 	}
 	if (event.OpenCodeStop != nil || event.Interaction != nil && event.Interaction.OpenCodeStop != nil) && input.Configuration.Harness != domain.OpenCode {
@@ -341,6 +347,10 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 				// process cleanup. Inbox read state never changes this evidence.
 				terminal := domain.InboxTerminal{JobID: job.ID, InputID: input.InputID, NativeThreadID: event.NativeThreadID, NativeTurnID: event.NativeTurnID, Sequence: event.Sequence, Outcome: event.Outcome}
 				if _, err := tx.CreateInboxEntry(sr.ID, sr.ProjectID, domain.InboxEntry{Source: domain.ExecutionTerminalInbox, SourceID: input.ExecutionID, ReadState: domain.InboxUnread, Terminal: &terminal}); err != nil {
+					return err
+				}
+			} else if event.Kind == domain.ExecutionClaudeMessageObserved {
+				if err := publishClaudeMessage(tx, input, sr, event); err != nil {
 					return err
 				}
 			} else if event.Kind == domain.ExecutionSteerObserved {

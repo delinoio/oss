@@ -29,7 +29,7 @@ function fixture() {
     router.service(InboxService, { listInbox: () => ({ entries: [] }) });
     router.service(ConfigurationService, {});
   });
-  return { transport, session, enqueues, controls, status };
+  return { transport, session, message, enqueues, controls, status };
 }
 
 it("keeps the draft and session mounted across settings and navigation, and renders native text inertly", async () => {
@@ -155,3 +155,29 @@ it("does not present cached server status as current connectivity after a failed
   expect((composer as HTMLTextAreaElement).value).toBe("Keep while disconnected");
   expect(value.enqueues).not.toHaveBeenCalled();
 });
+
+for (const mixed of [false, true]) {
+  it(`renders original Claude blocks and rejects mixed message families (${mixed})`, async () => {
+    const value = fixture();
+    value.message.documentJson = encode({
+      role: "assistant", text: "", state: "complete",
+      claude: { model: "fixture", stop_reason: "end_turn", stop_sequence: null, blocks: [
+        { index: 0, block: { kind: "thinking", text: "Original native reasoning" }, state: "stopped" },
+        { index: 1, block: { kind: "text", text: "Original native answer" }, state: "stopped" },
+      ] },
+      ...(mixed ? { tool: { output: "Mixed tool output" } } : {}),
+    });
+    render(<App transport={value.transport} />);
+    fireEvent.click(await screen.findByRole("button", { name: /General Chat Retained session/ }));
+    if (mixed) {
+      expect(await screen.findByLabelText("Claude message unavailable")).toBeTruthy();
+      expect(screen.queryByText("Original native answer")).toBeNull();
+      expect(screen.queryByText("Mixed tool output")).toBeNull();
+    } else {
+      expect(await screen.findByText("Original native answer")).toBeTruthy();
+      expect(screen.getByText("Original native reasoning")).toBeTruthy();
+    }
+    expect(value.enqueues).not.toHaveBeenCalled();
+    expect(value.controls).not.toHaveBeenCalled();
+  });
+}

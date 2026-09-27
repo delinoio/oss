@@ -23,6 +23,7 @@ const (
 	claudeSessionBound
 	claudeAcceptancePending
 	claudeInputAccepted
+	claudeContentPending
 	claudeBindingBlocked
 )
 
@@ -53,19 +54,20 @@ type claudeBindingJournal struct {
 // It does not launch a process, send input, publish content or grant completion.
 // Close the native process before this coordinator, then its shared publisher.
 type ClaudeBindingPublisher struct {
-	mu             sync.Mutex
-	publisher      *ExecutionPublisher
-	path           string
-	journal        claudeBindingJournal
-	saved          []byte
-	release        func() error
-	closed         bool
-	closeErr       error
-	stage          claudeBindingStage
-	turn           string
-	sequence       uint64
-	pendingRequest domain.ID
-	pendingDigest  [sha256.Size]byte
+	mu              sync.Mutex
+	publisher       *ExecutionPublisher
+	path            string
+	journal         claudeBindingJournal
+	saved           []byte
+	release         func() error
+	closed          bool
+	closeErr        error
+	stage           claudeBindingStage
+	contentAttached bool
+	turn            string
+	sequence        uint64
+	pendingRequest  domain.ID
+	pendingDigest   [sha256.Size]byte
 }
 
 func OpenClaudeBindingPublisher(p *ExecutionPublisher) (*ClaudeBindingPublisher, error) {
@@ -142,7 +144,7 @@ func (c *ClaudeBindingPublisher) verify() error {
 	if p.closed || p.release == nil || p.state.AssignmentDigest != c.journal.AssignmentDigest || p.state.JobID != c.journal.JobID || p.state.InstanceID != c.journal.InstanceID || p.state.ServerID != c.journal.ServerID || p.state.DeviceID != c.journal.DeviceID || p.state.Revision != c.journal.Revision {
 		return c.block()
 	}
-	pending := c.stage == claudeBindingPending || c.stage == claudeAcceptancePending
+	pending := c.stage == claudeBindingPending || c.stage == claudeAcceptancePending || c.stage == claudeContentPending
 	if pending && (p.state.Pending == nil || p.state.LastSequence != c.sequence-1) || !pending && (p.state.Pending != nil || p.state.LastSequence != c.sequence) {
 		return c.block()
 	}
@@ -260,6 +262,11 @@ func (c *ClaudeBindingPublisher) ReplayPending(ctx context.Context) error {
 	if c.stage != claudeBindingPending && c.stage != claudeAcceptancePending {
 		return publicationUncertain()
 	}
+	return c.replayPending(ctx)
+}
+
+// The binding lock is held; content owns its own queued state transition.
+func (c *ClaudeBindingPublisher) replayPending(ctx context.Context) error {
 	p := c.publisher
 	p.mu.Lock()
 	pending := p.state.Pending

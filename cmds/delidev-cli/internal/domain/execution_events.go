@@ -5,6 +5,7 @@ import "slices"
 type ExecutionEventKind string
 
 const (
+	ExecutionClaudeMessageObserved    ExecutionEventKind = "claude-message-observed"
 	ExecutionThreadBound              ExecutionEventKind = "thread-bound"
 	ExecutionInputAccepted            ExecutionEventKind = "input-accepted"
 	ExecutionMessageStarted           ExecutionEventKind = "message-started"
@@ -143,6 +144,7 @@ type ExecutionMessageUpdate struct {
 // envelope. Exactly one event kind owns its optional payload. Unknown native
 // extensions need dedicated adapters before they can enter this document.
 type ExecutionEvent struct {
+	ClaudeMessage      *ClaudeMessageUpdate               `json:"claude_message,omitempty"`
 	Version            uint32                             `json:"version"`
 	ExecutionID        ID                                 `json:"execution_id"`
 	Sequence           uint64                             `json:"sequence"`
@@ -187,6 +189,10 @@ func (e ExecutionEvent) Validate() error {
 		}
 	}
 	switch e.Kind {
+	case ExecutionClaudeMessageObserved:
+		if e.ClaudeMessage == nil || e.ClaudeMessage.Validate() != nil {
+			return invalidClaudeContent()
+		}
 	case ExecutionSteerObserved:
 		if e.Steer == nil {
 			return Fail(InvalidArgument, "A Steer observation is required.", "Use the original claim and exact native delivery classification.")
@@ -324,7 +330,7 @@ func (e ExecutionEvent) Validate() error {
 	default:
 		return Fail(Unsupported, "Unknown normalized execution event.", "Use a dedicated supported native event adapter.")
 	}
-	if (e.Kind != ExecutionOpenCodeUsageObserved && e.OpenCodeUsage != nil) || (e.Kind != ExecutionApprovalAccepted && e.ApprovalAcceptance != nil) || (e.Kind != ExecutionApprovalDeliveryObserved && e.ApprovalResponse != nil) || (e.Kind != ExecutionSteerObserved && e.Steer != nil) || (e.Kind != ExecutionQuestionAccepted && e.QuestionAcceptance != nil) || (e.Kind != ExecutionQuestionDeliveryObserved && e.QuestionResponse != nil) || (!e.Kind.IsInteraction() && e.Interaction != nil) || (e.Kind != ExecutionWaitingChanged && e.Waiting != nil) || (!e.Kind.IsArtifact() && e.Artifact != nil) || (e.Kind != ExecutionProgressObserved && e.Progress != nil) || (!e.Kind.IsTool() && e.Tool != nil) || (e.Kind != ExecutionThreadBound && e.Observed != nil) || (e.Kind != ExecutionMessageStarted && e.Kind != ExecutionTextAppended && e.Kind != ExecutionMessageCompleted && e.Message != nil) || (e.Kind != ExecutionTurnFinished && (e.Outcome != "" || e.ProblemCode != "")) || (e.Kind != ExecutionUsageObserved && e.Usage != nil) || (e.Kind != ExecutionResponseUsageObserved && e.ResponseUsage != nil) || (e.Kind != ExecutionOpenCodeUsageObserved && e.Kind != ExecutionUsageObserved && e.Kind != ExecutionResponseUsageObserved && e.ObservationID != "") || (e.Kind != ExecutionNoticeObserved && e.Notice != "") {
+	if (e.Kind != ExecutionClaudeMessageObserved && e.ClaudeMessage != nil) || (e.Kind != ExecutionOpenCodeUsageObserved && e.OpenCodeUsage != nil) || (e.Kind != ExecutionApprovalAccepted && e.ApprovalAcceptance != nil) || (e.Kind != ExecutionApprovalDeliveryObserved && e.ApprovalResponse != nil) || (e.Kind != ExecutionSteerObserved && e.Steer != nil) || (e.Kind != ExecutionQuestionAccepted && e.QuestionAcceptance != nil) || (e.Kind != ExecutionQuestionDeliveryObserved && e.QuestionResponse != nil) || (!e.Kind.IsInteraction() && e.Interaction != nil) || (e.Kind != ExecutionWaitingChanged && e.Waiting != nil) || (!e.Kind.IsArtifact() && e.Artifact != nil) || (e.Kind != ExecutionProgressObserved && e.Progress != nil) || (!e.Kind.IsTool() && e.Tool != nil) || (e.Kind != ExecutionThreadBound && e.Observed != nil) || (e.Kind != ExecutionMessageStarted && e.Kind != ExecutionTextAppended && e.Kind != ExecutionMessageCompleted && e.Message != nil) || (e.Kind != ExecutionTurnFinished && (e.Outcome != "" || e.ProblemCode != "")) || (e.Kind != ExecutionUsageObserved && e.Usage != nil) || (e.Kind != ExecutionResponseUsageObserved && e.ResponseUsage != nil) || (e.Kind != ExecutionOpenCodeUsageObserved && e.Kind != ExecutionUsageObserved && e.Kind != ExecutionResponseUsageObserved && e.ObservationID != "") || (e.Kind != ExecutionNoticeObserved && e.Notice != "") {
 		return Fail(InvalidArgument, "An execution event contains another kind's payload.", "Publish one unambiguous typed event.")
 	}
 	if e.OpenCodeStop != nil && e.Kind != ExecutionTurnFinished {
@@ -362,19 +368,20 @@ type ExecutionProgress struct {
 }
 
 type ExecutionMessage struct {
-	ExecutionID    ID                 `json:"execution_id"`
-	NativeThreadID string             `json:"native_thread_id"`
-	NativeTurnID   string             `json:"native_turn_id"`
-	NativeID       string             `json:"native_id"`
-	NativeParentID string             `json:"native_parent_id,omitempty"`
-	Role           MessageRole        `json:"role"`
-	Phase          *MessagePhase      `json:"phase,omitempty"`
-	InputID        ID                 `json:"input_id,omitempty"`
-	Text           string             `json:"text"`
-	State          MessageState       `json:"state"`
-	Tool           *ExecutionTool     `json:"tool,omitempty"`
-	Artifact       *ExecutionArtifact `json:"artifact,omitempty"`
-	Progress       *NativeProgress    `json:"progress,omitempty"`
-	FirstSequence  uint64             `json:"first_sequence"`
-	LastSequence   uint64             `json:"last_sequence"`
+	Claude         *ClaudeMessageContent `json:"claude,omitempty"`
+	ExecutionID    ID                    `json:"execution_id"`
+	NativeThreadID string                `json:"native_thread_id"`
+	NativeTurnID   string                `json:"native_turn_id"`
+	NativeID       string                `json:"native_id"`
+	NativeParentID string                `json:"native_parent_id,omitempty"`
+	Role           MessageRole           `json:"role"`
+	Phase          *MessagePhase         `json:"phase,omitempty"`
+	InputID        ID                    `json:"input_id,omitempty"`
+	Text           string                `json:"text"`
+	State          MessageState          `json:"state"`
+	Tool           *ExecutionTool        `json:"tool,omitempty"`
+	Artifact       *ExecutionArtifact    `json:"artifact,omitempty"`
+	Progress       *NativeProgress       `json:"progress,omitempty"`
+	FirstSequence  uint64                `json:"first_sequence"`
+	LastSequence   uint64                `json:"last_sequence"`
 }

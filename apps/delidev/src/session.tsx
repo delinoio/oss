@@ -4,6 +4,7 @@ import { NativeTodo, NativeTodoProgress } from "./native-todo";
 import { NativeUsage } from "./native-usage";
 import { NativeRead } from "./native-read";
 import { NativeShell } from "./native-shell";
+import { NativeClaudeMessage } from "./native-claude-message";
 import { NativeReasoning } from "./native-reasoning";
 import { SessionBudget } from "./session-budget";
 import { ExecutionConfiguration } from "./execution-configuration";
@@ -73,6 +74,16 @@ function currentRows(base: readonly Resource[], live: ReadonlyMap<string, Resour
 
 const TranscriptItem = memo(function TranscriptItem({ resource }: { resource: Resource }) {
   const data = readDocument(resource);
+  if (data.claude != null) {
+    const valid = data.role === "assistant" && data.text === "" &&
+      data.native_parent_id == null && data.input_id == null &&
+      data.phase == null && data.tool == null &&
+      data.artifact == null && data.progress == null;
+    return <article className="message" aria-label="Assistant message">
+      <header><strong>assistant</strong><small>{text(data.state)}</small></header>
+      <NativeClaudeMessage content={valid ? data.claude : undefined} state={text(data.state)} />
+    </article>;
+  }
   const tool = object(data.tool);
   const toolStarted = object(tool.started);
   const toolCompleted = object(tool.completed);

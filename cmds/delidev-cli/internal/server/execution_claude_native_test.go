@@ -31,23 +31,31 @@ import (
 // claim is a test coordinator, not evidence of public Worker publication.
 func TestManualNativeClaudeUsesRegisteredServerRelay(t *testing.T) {
 	for _, mode := range []domain.SessionMode{domain.ExecuteMode, domain.PlanMode} {
-		t.Run(string(mode), func(t *testing.T) { nativeRegisteredClaude(t, mode, false, 0) })
+		t.Run(string(mode), func(t *testing.T) { nativeRegisteredClaude(t, mode, false, 0, false) })
 	}
 }
 
 func TestManualNativeClaudeRegisteredRelayRevocation(t *testing.T) {
-	nativeRegisteredClaude(t, domain.ExecuteMode, true, 0)
+	nativeRegisteredClaude(t, domain.ExecuteMode, true, 0, false)
 }
 
 func TestManualNativeClaudePublishesOriginalBindings(t *testing.T) {
 	for _, mode := range []domain.SessionMode{domain.ExecuteMode, domain.PlanMode} {
 		for _, lost := range []int{1, 2} {
-			t.Run(fmt.Sprintf("%s/lost-%d", mode, lost), func(t *testing.T) { nativeRegisteredClaude(t, mode, false, lost) })
+			t.Run(fmt.Sprintf("%s/lost-%d", mode, lost), func(t *testing.T) { nativeRegisteredClaude(t, mode, false, lost, false) })
 		}
 	}
 }
 
-func nativeRegisteredClaude(t *testing.T, mode domain.SessionMode, revoke bool, publicationLoss int) {
+func TestManualNativeClaudePublishesOrderedContent(t *testing.T) {
+	for _, mode := range []domain.SessionMode{domain.ExecuteMode, domain.PlanMode} {
+		for _, lost := range []int{3, 7} {
+			t.Run(fmt.Sprintf("%s/lost-%d", mode, lost), func(t *testing.T) { nativeRegisteredClaude(t, mode, false, lost, true) })
+		}
+	}
+}
+
+func nativeRegisteredClaude(t *testing.T, mode domain.SessionMode, revoke bool, publicationLoss int, content bool) {
 	t.Helper()
 	binary := os.Getenv("DELIDEV_NATIVE_CLAUDE_EXECUTABLE")
 	if binary == "" {
@@ -124,14 +132,32 @@ func nativeRegisteredClaude(t *testing.T, mode domain.SessionMode, revoke bool, 
 			return
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
-		for _, event := range []map[string]any{
+		events := []map[string]any{
 			{"type": "message_start", "message": map[string]any{"id": "msg_registered_claude", "type": "message", "role": "assistant", "content": []any{}, "model": "fixture-model", "stop_reason": nil, "stop_sequence": nil, "usage": map[string]any{"input_tokens": 3, "output_tokens": 0}}},
-			{"type": "content_block_start", "index": 0, "content_block": map[string]any{"type": "text", "text": ""}},
-			{"type": "content_block_delta", "index": 0, "delta": map[string]any{"type": "text_delta", "text": "Registered Claude result."}},
-			{"type": "content_block_stop", "index": 0},
-			{"type": "message_delta", "delta": map[string]any{"stop_reason": "end_turn", "stop_sequence": nil}, "usage": map[string]any{"output_tokens": 4}},
-			{"type": "message_stop"},
-		} {
+		}
+		index := 0
+		if content {
+			events = append(events,
+				map[string]any{"type": "content_block_start", "index": 0, "content_block": map[string]any{"type": "thinking", "thinking": "", "signature": ""}},
+				map[string]any{"type": "content_block_delta", "index": 0, "delta": map[string]any{"type": "thinking_delta", "thinking": "Original native reasoning."}},
+				map[string]any{"type": "content_block_delta", "index": 0, "delta": map[string]any{"type": "signature_delta", "signature": "private-fixture-signature"}},
+				map[string]any{"type": "content_block_stop", "index": 0},
+				map[string]any{"type": "content_block_start", "index": 1, "content_block": map[string]any{"type": "redacted_thinking", "data": "private-fixture-redaction"}},
+				map[string]any{"type": "content_block_stop", "index": 1},
+				map[string]any{"type": "content_block_start", "index": 2, "content_block": map[string]any{"type": "text", "text": ""}},
+				map[string]any{"type": "content_block_delta", "index": 2, "delta": map[string]any{"type": "text_delta", "text": "First native block."}},
+				map[string]any{"type": "content_block_stop", "index": 2},
+			)
+			index = 3
+		}
+		events = append(events,
+			map[string]any{"type": "content_block_start", "index": index, "content_block": map[string]any{"type": "text", "text": ""}},
+			map[string]any{"type": "content_block_delta", "index": index, "delta": map[string]any{"type": "text_delta", "text": "Registered Claude result."}},
+			map[string]any{"type": "content_block_stop", "index": index},
+			map[string]any{"type": "message_delta", "delta": map[string]any{"stop_reason": "end_turn", "stop_sequence": nil}, "usage": map[string]any{"output_tokens": 4}},
+			map[string]any{"type": "message_stop"},
+		)
+		for _, event := range events {
 			raw, _ := json.Marshal(event)
 			_, _ = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event["type"], raw)
 		}
@@ -240,11 +266,12 @@ func nativeRegisteredClaude(t *testing.T, mode domain.SessionMode, revoke bool, 
 			t.Fatal(err)
 		}
 	} else {
-		accepted, completed, texts := 0, 0, 0
+		accepted, completed, texts, estimates := 0, 0, 0, 0
+		var display *worker.ClaudeContentPublisher
 		for {
 			o, err := s.Next(ctx)
 			if err != nil {
-				t.Fatal(err)
+				t.Fatal("next original native observation", accepted, completed, texts, err)
 			}
 			if bindings != nil && (o.Kind == claude.SessionInitialized || o.Kind == claude.InputAccepted) {
 				var err error
@@ -262,6 +289,37 @@ func nativeRegisteredClaude(t *testing.T, mode domain.SessionMode, revoke bool, 
 					}
 				}
 			}
+			if content && o.Kind == claude.InputAccepted {
+				display, err = worker.OpenClaudeContentPublisher(bindings)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := display.PublishInput(ctx); err != nil {
+					if len(publication.calls) != publicationLoss {
+						t.Fatal("unexpected original input publication failure", err)
+					}
+					if err := display.ReplayPending(ctx); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			if content && o.Kind == claude.ContentObserved {
+				if display == nil {
+					t.Fatal("content preceded original input acceptance")
+				}
+				handled, err := display.PublishObservation(ctx, o)
+				if !handled {
+					t.Fatal("original content was not consumed")
+				}
+				if err != nil {
+					if len(publication.calls) != publicationLoss {
+						t.Fatal("unexpected native content publication failure", o.Kind, err)
+					}
+					if err := display.ReplayPending(ctx); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
 			if o.Kind == claude.InputAccepted {
 				if o.InputID != f.input.InputID || o.SessionID != f.input.SessionID || o.TurnID == "" {
 					t.Fatal("native acceptance lost original ownership")
@@ -270,11 +328,21 @@ func nativeRegisteredClaude(t *testing.T, mode domain.SessionMode, revoke bool, 
 			}
 			for _, c := range o.Content {
 				if c.Kind == claude.ContentCompleted && c.Block != nil && c.Block.Kind == claude.TextBlock {
-					if c.Block.Text == nil || *c.Block.Text != "Registered Claude result." || c.MessageID != "msg_registered_claude" {
+					expected := "Registered Claude result."
+					if content && texts == 0 {
+						expected = "First native block."
+					}
+					if c.Block.Text == nil || *c.Block.Text != expected || c.MessageID != "msg_registered_claude" {
 						t.Fatal("registered native output changed")
 					}
 					texts++
 				}
+			}
+			if o.Progress != nil && o.Progress.Kind == claude.ThinkingTokensEstimated {
+				if o.Progress.Thinking == nil || o.Progress.Thinking.Tokens == 0 || o.Progress.Thinking.Delta == 0 {
+					t.Fatal("native thinking estimate lost its separate counters")
+				}
+				estimates++
 			}
 			if o.Kind == claude.InputFinished {
 				if o.InputID != f.input.InputID || o.Result == nil || !o.Result.Successful() {
@@ -286,7 +354,11 @@ func nativeRegisteredClaude(t *testing.T, mode domain.SessionMode, revoke bool, 
 				break
 			}
 		}
-		if accepted != 1 || completed != 1 || texts != 1 {
+		expectedTexts := 1
+		if content {
+			expectedTexts = 2
+		}
+		if accepted != 1 || completed != 1 || texts != expectedTexts || (content && estimates == 0) {
 			t.Fatal("registered Claude run lost or repeated original facts", accepted, completed, texts)
 		}
 		closed, err := s.CloseForContinuation(ctx)
@@ -303,8 +375,53 @@ func nativeRegisteredClaude(t *testing.T, mode domain.SessionMode, revoke bool, 
 			t.Fatal(err)
 		}
 		session, err := store.Decode[domain.Session](r)
-		if err != nil || session.Execution == nil || session.Execution.LastSequence != 2 || session.Execution.NativeThreadID != string(f.input.SessionID) || session.Execution.NativeTurnID == "" || session.PendingInputs != 0 || session.PendingInputBytes != 0 || session.Execution.CleanupVerified || session.Execution.Outcome != domain.ExecutionRunning || len(publication.calls) != 3 || publication.calls[publicationLoss-1] != publication.calls[publicationLoss] {
+		expectedSequence := uint64(2)
+		if content {
+			expectedSequence = 22
+		}
+		if err != nil || session.Execution == nil || session.Execution.LastSequence != expectedSequence || session.Execution.NativeThreadID != string(f.input.SessionID) || session.Execution.NativeTurnID == "" || session.PendingInputs != 0 || session.PendingInputBytes != 0 || session.Execution.CleanupVerified || session.Execution.Outcome != domain.ExecutionRunning || uint64(len(publication.calls)) != expectedSequence+1 || publication.calls[publicationLoss-1] != publication.calls[publicationLoss] {
 			t.Fatal("original bindings lost ownership/accounting or fabricated terminal evidence", err)
+		}
+	}
+	if content {
+		records, err := f.service.Store.List(ctx, store.Filter{Kind: domain.MessageKind, SessionID: f.input.SessionID, Limit: 10})
+		if err != nil || len(records) != 2 {
+			t.Fatal("native transcript lost original input/provider messages", err, len(records))
+		}
+		users, assistants := 0, 0
+		for _, record := range records {
+			message, err := store.Decode[domain.ExecutionMessage](record)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if message.State != domain.MessageComplete {
+				t.Fatal("original native message did not close")
+			}
+			if message.Role == domain.UserMessage {
+				users++
+				if message.Text != "Fixture prompt" || message.NativeID != string(f.input.InputID) || message.Claude != nil {
+					t.Fatal("original user replay changed")
+				}
+				continue
+			}
+			assistants++
+			if message.NativeID != "msg_registered_claude" || message.Text != "" || message.Claude == nil || len(message.Claude.Blocks) != 4 || message.Claude.StopReason == nil || *message.Claude.StopReason != "end_turn" || message.Claude.StopSequence != nil {
+				t.Fatal("native provider message identity or stop metadata changed")
+			}
+			kinds := []domain.ClaudeTextKind{domain.ClaudeThinking, domain.ClaudeRedactedThinking, domain.ClaudeText, domain.ClaudeText}
+			texts := []string{"Original native reasoning.", "", "First native block.", "Registered Claude result."}
+			for i, block := range message.Claude.Blocks {
+				if block.Index != uint32(i) || block.State != domain.ClaudeBlockStopped || block.Block.Kind != kinds[i] || block.Block.Text != texts[i] {
+					t.Fatal("native block order or bytes changed", i)
+				}
+			}
+			raw, _ := json.Marshal(message)
+			if strings.Contains(string(raw), "private-fixture") {
+				t.Fatal("opaque native data entered public transcript")
+			}
+		}
+		if users != 1 || assistants != 1 {
+			t.Fatal("native transcript roles were duplicated")
 		}
 	}
 	if calls.Load() != 1 {

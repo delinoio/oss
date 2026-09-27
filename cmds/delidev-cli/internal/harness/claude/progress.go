@@ -16,13 +16,14 @@ type CompactResult string
 type NativeSeconds string
 
 const (
-	SessionStatusObserved ProgressKind  = "session-status"
-	ToolProgressObserved  ProgressKind  = "tool-progress"
-	ToolSummaryObserved   ProgressKind  = "tool-summary"
-	SessionRequesting     SessionStatus = "requesting"
-	SessionCompacting     SessionStatus = "compacting"
-	CompactSucceeded      CompactResult = "success"
-	CompactFailed         CompactResult = "failed"
+	ThinkingTokensEstimated ProgressKind  = "thinking-tokens-estimated"
+	SessionStatusObserved   ProgressKind  = "session-status"
+	ToolProgressObserved    ProgressKind  = "tool-progress"
+	ToolSummaryObserved     ProgressKind  = "tool-summary"
+	SessionRequesting       SessionStatus = "requesting"
+	SessionCompacting       SessionStatus = "compacting"
+	CompactSucceeded        CompactResult = "success"
+	CompactFailed           CompactResult = "failed"
 )
 
 func (n *NativeSeconds) UnmarshalJSON(raw []byte) error {
@@ -66,7 +67,15 @@ func (r *NativeRetryObservation) UnmarshalJSON(raw []byte) error {
 // Progress remains native observation. A permission-mode report cannot grant
 // a permission change, a tool summary cannot complete tools, and a retry report
 // cannot authorize an adapter retry, account fallback or a new input.
+// These counters are native streaming estimates, not provider usage or billing.
+// Preserve their original values without attributing them to a provider message.
+type NativeThinkingEstimate struct {
+	Tokens uint64
+	Delta  uint64
+}
+
 type NativeProgressObservation struct {
+	Thinking       *NativeThinkingEstimate
 	Kind           ProgressKind
 	Status         *SessionStatus
 	Permission     *NativePermission
@@ -92,6 +101,26 @@ func (b *ExecutionBinding) observeProgress(event StreamEvent) (*NativeProgressOb
 	}
 	switch event.Type {
 	case "system":
+		var header struct {
+			Subtype string `json:"subtype"`
+		}
+		if json.Unmarshal(event.Body, &header) != nil {
+			return nil, lifecycleUncertain()
+		}
+		if header.Subtype == "thinking_tokens" {
+			var value struct {
+				Type    string    `json:"type"`
+				Session domain.ID `json:"session_id"`
+				UUID    string    `json:"uuid"`
+				Subtype string    `json:"subtype"`
+				Tokens  *uint64   `json:"estimated_tokens"`
+				Delta   *uint64   `json:"estimated_tokens_delta"`
+			}
+			if !b.accepted || decodeNativeObject(event.Body, &value) != nil || value.Tokens == nil || value.Delta == nil {
+				return nil, lifecycleUncertain()
+			}
+			return &NativeProgressObservation{Kind: ThinkingTokensEstimated, Thinking: &NativeThinkingEstimate{Tokens: *value.Tokens, Delta: *value.Delta}}, nil
+		}
 		return decodeSessionProgress(event.Body)
 	case "tool_progress":
 		var value struct {
