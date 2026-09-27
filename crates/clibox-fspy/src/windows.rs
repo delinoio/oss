@@ -283,7 +283,12 @@ fn resolve_even_if_absent(path: &Path) -> io::Result<Option<PathBuf>> {
                 }
                 return Ok(Some(normalize(&resolved)));
             }
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
+                ) =>
+            {
                 let component = cursor
                     .components()
                     .next_back()
@@ -296,6 +301,34 @@ fn resolve_even_if_absent(path: &Path) -> io::Result<Option<PathBuf>> {
             Err(error) if error.kind() == io::ErrorKind::PermissionDenied => return Ok(None),
             Err(error) => return Err(error),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{fs, os::windows::ffi::OsStrExt};
+
+    use super::classify_path;
+    use crate::record::NativePath;
+
+    #[test]
+    fn regular_file_ancestor_keeps_failed_probe_classified() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().canonicalize().unwrap();
+        fs::write(root.join("file"), b"fixture").unwrap();
+        let target = root.join("file").join("child");
+        let units = target.as_os_str().encode_wide().collect::<Vec<_>>();
+        let bytes = units
+            .iter()
+            .flat_map(|unit| unit.to_le_bytes())
+            .collect::<Vec<_>>();
+        let classified = classify_path(&root, &bytes).unwrap().unwrap();
+        assert_eq!(
+            classified.project_relative,
+            Some(NativePath::WindowsUtf16(
+                "file\\child".encode_utf16().collect()
+            ))
+        );
     }
 }
 

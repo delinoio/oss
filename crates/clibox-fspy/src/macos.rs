@@ -540,7 +540,12 @@ fn resolve_even_if_absent(path: &Path) -> io::Result<Option<PathBuf>> {
                 }
                 return Ok(Some(normalize(&resolved)));
             }
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
+                ) =>
+            {
                 let component = cursor
                     .components()
                     .next_back()
@@ -729,6 +734,21 @@ mod tests {
         assemble_candidate_record, classify_path, read_frame, FrameKind, FrameLedger,
         OperationReceiver,
     };
+
+    #[test]
+    fn regular_file_ancestor_keeps_failed_probe_classified() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().canonicalize().unwrap();
+        fs::write(root.join("file"), b"fixture").unwrap();
+        let target = root.join("file/child");
+        let classified = classify_path(&root, target.as_os_str().as_bytes())
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            classified.project_relative,
+            Some(crate::record::NativePath::UnixBytes(b"file/child".to_vec()))
+        );
+    }
 
     #[test]
     fn inaccessible_ancestor_does_not_abort_path_classification() {
