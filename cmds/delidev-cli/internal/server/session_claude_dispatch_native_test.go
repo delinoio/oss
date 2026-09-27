@@ -28,6 +28,7 @@ type claudePublicCase string
 
 const (
 	claudePublicText                 claudePublicCase = "text"
+	claudePublicContinuation         claudePublicCase = "continuation"
 	claudePublicRetry                claudePublicCase = "retry"
 	claudePublicQuestionRetry        claudePublicCase = "question-retry"
 	claudePublicQuestion             claudePublicCase = "question"
@@ -35,6 +36,12 @@ const (
 	claudePublicStop                 claudePublicCase = "stop"
 	claudePublicArchive              claudePublicCase = "archive"
 	claudePublicStopBeforeAcceptance claudePublicCase = "stop-before-acceptance"
+	claudePublicResume               claudePublicCase = "continuation-resume"
+	claudePublicCheckpointChanged    claudePublicCase = "continuation-checkpoint-changed"
+	claudePublicHistoryChanged       claudePublicCase = "continuation-history-changed"
+	claudePublicClaimChanged         claudePublicCase = "continuation-claim-changed"
+	claudePublicReportChanged        claudePublicCase = "continuation-report-changed"
+	claudePublicOutboxChanged        claudePublicCase = "continuation-outbox-changed"
 )
 
 func TestManualNativeClaudePublicCancellationContainment(t *testing.T) {
@@ -67,6 +74,18 @@ func TestManualNativeClaudePublicInterruptedDenial(t *testing.T) {
 	}
 }
 
+func TestManualNativeClaudePublicContinuation(t *testing.T) {
+	for _, mode := range []domain.SessionMode{domain.ExecuteMode, domain.PlanMode} {
+		t.Run(string(mode), func(t *testing.T) { nativeClaudePublicDispatch(t, mode, claudePublicContinuation) })
+	}
+}
+
+func TestManualNativeClaudePublicContinuationEvidence(t *testing.T) {
+	for _, scenario := range []claudePublicCase{claudePublicResume, claudePublicCheckpointChanged, claudePublicHistoryChanged, claudePublicClaimChanged, claudePublicReportChanged, claudePublicOutboxChanged} {
+		t.Run(string(scenario), func(t *testing.T) { nativeClaudePublicDispatch(t, domain.ExecuteMode, scenario) })
+	}
+}
+
 func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario claudePublicCase) {
 	t.Helper()
 	binary := os.Getenv("DELIDEV_NATIVE_CLAUDE_EXECUTABLE")
@@ -75,6 +94,16 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
+	turns, turn := 1, 0
+	continuation := strings.HasPrefix(string(scenario), "continuation")
+	fault := continuation && scenario != claudePublicContinuation && scenario != claudePublicResume
+	if continuation {
+		turns = 3
+	}
+	if fault {
+		turns = 2
+	}
+	var previous domain.ExecutionCompletion
 	denied := scenario == claudePublicQuestionInterrupt
 	question := scenario == claudePublicQuestion || scenario == claudePublicQuestionRetry || denied
 	retrying := scenario == claudePublicRetry || scenario == claudePublicQuestionRetry
@@ -82,7 +111,7 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 	stopping := streamStopping || scenario == claudePublicStopBeforeAcceptance
 	var calls atomic.Int32
 	providerEnded := make(chan struct{})
-	expected := int32(1)
+	expected := int32(turns)
 	if question && !denied {
 		expected++
 	}
@@ -107,6 +136,45 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 			t.Error("original public input or answer changed")
 			w.WriteHeader(400)
 			return
+		}
+		if continuation {
+			var request struct {
+				Messages []struct {
+					Role    string          `json:"role"`
+					Content json.RawMessage `json:"content"`
+				} `json:"messages"`
+			}
+			if json.Unmarshal(raw, &request) != nil {
+				t.Error("continuation lost original message count")
+				w.WriteHeader(400)
+				return
+			}
+			original := 0
+			for _, message := range request.Messages {
+				if message.Role == "system" {
+					continue
+				}
+				i := original
+				original++
+				want, role := "Original public Claude result.", "assistant"
+				if i%2 == 0 {
+					role = "user"
+					want = fmt.Sprintf("continuation input %d", i/2)
+					if i == 0 {
+						want = "first retained input"
+					}
+				}
+				if message.Role != role || !strings.Contains(string(message.Content), want) {
+					t.Error("continuation replaced or reordered original history")
+					w.WriteHeader(400)
+					return
+				}
+			}
+			if original != int(2*n-1) {
+				t.Error("continuation lost or duplicated ordinary history", n, original)
+				w.WriteHeader(400)
+				return
+			}
 		}
 		if retrying && (question && n == 2 || !question && n == 1) {
 			w.Header().Set("Content-Type", "application/json")
@@ -176,6 +244,12 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 	case <-ready:
 	case <-ctx.Done():
 		t.Fatal("original Worker did not attach")
+	}
+	for next := 1; next < turns; next++ {
+		body, _ := json.Marshal(domain.SessionInput{Prompt: fmt.Sprintf("continuation input %d", next), Mode: mode})
+		if _, err := sessionClient(f.accountFixture).EnqueueInput(ctx, ownerRequest(f.identity, &pb.EnqueueInputRequest{RequestId: string(domain.NewID()), SessionId: f.change.Session.Id, DocumentJson: body})); err != nil {
+			t.Fatal(err)
+		}
 	}
 	sr := f.refresh(t)
 	response, err := sessionClient(f.accountFixture).ControlSession(ctx, ownerRequest(f.identity, &pb.ControlSessionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(sr.ID), ExpectedRevision: sr.Revision}, Action: pb.SessionAction_SESSION_ACTION_RESUME}))
@@ -253,6 +327,13 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 			t.Fatal(err)
 		}
 		if job.State.Terminal() || job.State == domain.JobUncertain {
+			if fault && turn > 0 {
+				session, err := store.Decode[domain.Session](f.refresh(t))
+				if err != nil || job.State != domain.JobUncertain || len(job.Output) != 0 || calls.Load() != 1 || session.Recovery != domain.NeedsRecovery || session.Dispatch != domain.DispatchPaused {
+					t.Fatal("changed history acquired another input", job.State, job.Problem, err)
+				}
+				return
+			}
 			if stopping {
 				session, err := store.Decode[domain.Session](f.refresh(t))
 				if err != nil || !stopSent || calls.Load() != 1 || session.Dispatch != domain.DispatchPaused || session.Execution == nil || session.Execution.ClaudeTerminal != nil {
@@ -285,12 +366,20 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 				return
 			}
 			var proof domain.ExecutionCompletion
-			if job.State != domain.JobSucceeded || domain.Decode(job.Output, &proof) != nil || proof.ValidateForHarness(domain.ClaudeCode) != nil || proof.Version != 1 || calls.Load() != expected || question && !answered {
+			version, dispatch := uint32(2), domain.DispatchReady
+			if question {
+				version, dispatch = 1, domain.DispatchPaused
+			}
+			wantCalls := expected
+			if turns > 1 {
+				wantCalls = int32(turn + 1)
+			}
+			if job.State != domain.JobSucceeded || domain.Decode(job.Output, &proof) != nil || proof.ValidateForHarness(domain.ClaudeCode) != nil || proof.Version != version || calls.Load() != wantCalls || question && !answered {
 				t.Fatalf("public Claude execution did not finish: %s %v", job.State, job.Problem)
 			}
 			session, err := store.Decode[domain.Session](f.refresh(t))
-			if err != nil || session.Execution == nil || session.Execution.ClaudeTerminal == nil || !session.Execution.CleanupVerified || session.Dispatch != domain.DispatchPaused || session.Recovery != domain.NoRecovery || session.ActiveExecutionID != "" || session.PendingInputs != 0 || session.Outcome != domain.ExecutionSucceeded {
-				t.Fatal("public completion lost original outcome/cleanup or enabled continuation", err)
+			if err != nil || session.Execution == nil || session.Execution.ClaudeTerminal == nil || !session.Execution.CleanupVerified || session.Dispatch != dispatch || session.Recovery != domain.NoRecovery || session.ActiveExecutionID != "" || session.PendingInputs != uint32(turns-turn-1) || session.Outcome != domain.ExecutionSucceeded {
+				t.Fatal("public completion lost original outcome, cleanup or history readiness", err)
 			}
 			if question {
 				rows, _ := f.service.Store.List(ctx, store.Filter{Kind: domain.InteractionKind, SessionID: domain.ID(f.change.Session.Id), Limit: 10})
@@ -325,6 +414,44 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 					t.Fatal("native retry duplicated input or lost progress", retries, inputs)
 				}
 			}
+			if turn > 0 && (proof.NativeThreadID != previous.NativeThreadID || proof.NativeTurnID == previous.NativeTurnID || proof.ExecutionID == previous.ExecutionID || proof.NativeCheckpointDigest == previous.NativeCheckpointDigest) {
+				t.Fatal("continuation reused authority or replaced native session")
+			}
+			previous = proof
+			turn++
+			if turn < turns {
+				if fault {
+					alterClaudeContinuationEvidence(t, ctx, f.workerRoot, domain.ID(assignment.Id), proof, scenario)
+				}
+				if scenario == claudePublicResume && turn == 1 {
+					for _, action := range []pb.SessionAction{pb.SessionAction_SESSION_ACTION_STOP, pb.SessionAction_SESSION_ACTION_RESUME} {
+						current := f.refresh(t)
+						if _, err := sessionClient(f.accountFixture).ControlSession(ctx, ownerRequest(f.identity, &pb.ControlSessionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(current.ID), ExpectedRevision: current.Revision}, Action: action})); err != nil {
+							t.Fatal("explicit original-history Resume", err)
+						}
+					}
+				} else if err := f.service.dispatchExecution(ctx, f.refresh(t)); err != nil {
+					t.Fatal("automatic original-history continuation", err)
+				}
+				var next store.Record
+				if err := f.service.Store.Read(ctx, func(tx *store.Tx) error {
+					_, current, err := sessionRecord(tx, sr.ID)
+					if err != nil {
+						return err
+					}
+					next, err = tx.SessionExecutionJob(sr.ID, current.ActiveExecutionID)
+					return err
+				}); err != nil {
+					t.Fatal(err)
+				}
+				assignment = &pb.Resource{Id: string(next.ID), DocumentJson: next.Data}
+				var nextJob domain.Job
+				var nextInput domain.ExecutionJobInput
+				if domain.Decode(next.Data, &nextJob) != nil || domain.Decode(nextJob.Input, &nextInput) != nil || nextInput.Validate() != nil || nextInput.Continuation == nil || nextInput.Continuation.Completion != previous || nextInput.Input.Mode != mode {
+					t.Fatal("continuation lost exact original predecessor")
+				}
+				continue
+			}
 			return
 		}
 		select {
@@ -332,5 +459,78 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 		case <-ctx.Done():
 			t.Fatal("public Claude execution did not finish")
 		}
+	}
+}
+
+// Wait only for the accepted report's local acknowledgment transition before
+// altering disposable evidence; otherwise the writer could repair the fixture.
+func alterClaudeContinuationEvidence(t *testing.T, ctx context.Context, root string, job domain.ID, proof domain.ExecutionCompletion, scenario claudePublicCase) {
+	t.Helper()
+	report := filepath.Join(root, "jobs", string(job)+".json")
+	for {
+		raw, err := os.ReadFile(report)
+		var operation struct {
+			State string `json:"state"`
+		}
+		if err == nil && json.Unmarshal(raw, &operation) == nil && operation.State == "reported" {
+			break
+		}
+		select {
+		case <-time.After(10 * time.Millisecond):
+		case <-ctx.Done():
+			t.Fatal("original report did not finish")
+		}
+	}
+	path := filepath.Join(root, "runtimes", string(proof.ExecutionID), "native-completion.json")
+	switch scenario {
+	case claudePublicHistoryChanged:
+		path = ""
+		err := filepath.WalkDir(filepath.Join(root, "runtimes", string(proof.ExecutionID), "claude"), func(candidate string, entry os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if entry.Name() == string(proof.NativeThreadID)+".jsonl" {
+				if path != "" {
+					t.Fatal("ambiguous original history")
+				}
+				path = candidate
+			}
+			return nil
+		})
+		if err != nil || path == "" {
+			t.Fatal("original history unavailable", err)
+		}
+	case claudePublicClaimChanged:
+		path = filepath.Join(root, "jobs", string(job), "claude-claims.json")
+	case claudePublicReportChanged:
+		path = report
+	case claudePublicOutboxChanged:
+		path = filepath.Join(root, "jobs", string(job), "publication.json")
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scenario == claudePublicClaimChanged || scenario == claudePublicReportChanged || scenario == claudePublicOutboxChanged {
+		var value map[string]json.RawMessage
+		if json.Unmarshal(raw, &value) != nil {
+			t.Fatal("invalid original fixture journal")
+		}
+		switch scenario {
+		case claudePublicClaimChanged:
+			value["input_claimed"] = json.RawMessage(`false`)
+		case claudePublicReportChanged:
+			value["state"] = json.RawMessage(`"started"`)
+		case claudePublicOutboxChanged:
+			value["last_sequence"] = json.RawMessage(`0`)
+		}
+		raw, _ = json.Marshal(value)
+	} else if scenario == claudePublicHistoryChanged {
+		raw = append(raw, []byte("{}\n")...)
+	} else {
+		raw = append(raw, '\n')
+	}
+	if err := os.WriteFile(path, raw, 0600); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -40,6 +40,7 @@ type ClaudeContentPublisher struct {
 	terminal            *domain.ClaudeTerminalObservation
 	terminalSequence    uint64
 	completion          *domain.ExecutionCompletion
+	checkpoint          *domain.ExecutionCompletion
 	interruption        *claudePublishedInterruption
 	responses           map[domain.ID]*claudeResponseAttempt
 	replyUncertain      bool

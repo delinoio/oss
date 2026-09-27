@@ -32,13 +32,19 @@ func finishNativeExecution(tx *store.Tx, record store.Record, job domain.Job, ex
 	progress := session.Execution
 	verified := reported == nil && domain.Decode(raw, &completion) == nil && completion.ValidateForHarness(input.Configuration.Harness) == nil && completion.ExecutionID == input.ExecutionID && completion.InputID == input.InputID && progress != nil && progress.JobID == record.ID && progress.ExecutionID == input.ExecutionID && progress.InputID == input.InputID && progress.NativeThreadID == string(completion.NativeThreadID) && progress.NativeTurnID == string(completion.NativeTurnID) && progress.LastSequence == completion.LastSequence && progress.Outcome == completion.Outcome && !progress.CleanupVerified
 	if input.Configuration.Harness == domain.ClaudeCode {
-		// Public Claude continuation requires its own original checkpoint and
-		// permission reconciliation; a forged v2 report cannot grant FIFO.
+		// A digest alone cannot grant continuation after a changed permission,
+		// interrupted input or an uncomposed tool/callback history profile.
 		if verified {
 			ordinary := progress.ClaudeTerminal != nil && progress.ClaudeStop == nil && progress.ClaudeDenial == nil && progress.ClaudeTerminal.Validate() == nil && progress.ClaudeTerminal.InputID == input.InputID && progress.ClaudeTerminal.Outcome() == completion.Outcome
 			stopped := progress.ClaudeStop != nil && progress.ClaudeTerminal == nil && progress.ClaudeDenial == nil && progress.ClaudeStop.Validate() == nil && progress.ClaudeStop.InputID == input.InputID && completion.Outcome == domain.ExecutionStopped
 			denied := progress.ClaudeDenial != nil && progress.ClaudeTerminal == nil && progress.ClaudeStop == nil && progress.ClaudeDenial.Validate() == nil && progress.ClaudeDenial.InputID == input.InputID && completion.Outcome == domain.ExecutionStopped
 			verified = completion.Version == 1 && (ordinary || stopped || denied)
+			if completion.Version == 2 && ordinary && progress.ClaudeContinuationBoundary(input.InputID) {
+				verified, err = tx.ClaudeRootContentContinuation(input.ExecutionID)
+				if err != nil {
+					return store.Record{}, err
+				}
+			}
 		}
 	}
 	now := time.Now().UTC()

@@ -80,7 +80,8 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 	switch c.Harness {
 	case domain.Codex:
 	case domain.ClaudeCode:
-		if input.Version != 1 || input.Continuation != nil {
+		validGeneration := input.Version == 1 && input.Continuation == nil || input.Version == 2 && input.Continuation != nil && input.Continuation.Validate(input) == nil
+		if !validGeneration {
 			return empty, domain.Fail(domain.Unsupported, "Claude continuation requires separately verified native history.", "Preserve the original input; no replacement execution is authorized.")
 		}
 		if _, err := c.ClaudeAPIInputPermission(input.Input.Mode); err != nil {

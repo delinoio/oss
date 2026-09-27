@@ -71,6 +71,20 @@ func (t *Tx) ExecutionMessagesComplete(execution domain.ID) (bool, error) {
 	return !pending, storageError(err)
 }
 
+// The initial public Claude checkpoint profile requires original completed root
+// content with no tools or callbacks. Closed inline tool history has its own
+// native adapter but still needs public continuation composition and evidence.
+func (t *Tx) ClaudeRootContentContinuation(execution domain.ID) (bool, error) {
+	if err := execution.Validate(); err != nil {
+		return false, err
+	}
+	var content, unsupported bool
+	err := t.tx.QueryRowContext(t.ctx, `SELECT
+ EXISTS(SELECT 1 FROM execution_messages m JOIN entities e ON e.id=m.message_id WHERE m.execution_id=? AND m.state='complete' AND json_type(e.body,'$.claude')='object'),
+ EXISTS(SELECT 1 FROM execution_messages m JOIN entities e ON e.id=m.message_id WHERE m.execution_id=? AND (m.state!='complete' OR json_type(e.body,'$.claude_tool')='object' OR json_type(e.body,'$.tool')='object' OR json_type(e.body,'$.claude_interruption')='object'))`, execution, execution).Scan(&content, &unsupported)
+	return content && !unsupported, storageError(err)
+}
+
 // The native part identity and provider call identity are different namespaces.
 // Check both within the same serialized publication transaction; an OpenCode
 // call cannot be relabeled as a second part. The execution index bounds this

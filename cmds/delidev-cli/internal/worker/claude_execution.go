@@ -24,8 +24,8 @@ import (
 )
 
 func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, input domain.ExecutionJobInput, logger *slog.Logger) (output json.RawMessage, returned error) {
-	if input.Version != 1 || input.Continuation != nil || input.Installation.Version != claude.SupportedVersion {
-		return nil, domain.Fail(domain.Unsupported, "Claude execution requires its original verified first-input profile.", "Preserve original history; do not start a replacement input.")
+	if input.Validate() != nil || input.Installation.Version != claude.SupportedVersion {
+		return nil, domain.Fail(domain.Unsupported, "Claude execution requires its original verified input and history profile.", "Preserve original history; do not start a replacement input.")
 	}
 	permission, effort, err := claudeExecutionSettings(input.Configuration, input.Input.Mode)
 	if err != nil {
@@ -42,7 +42,12 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 		return nil, domain.Fail(domain.RecoveryRequired, "The selected native executable identity changed.", "Refresh Worker discovery before execution; no PATH fallback is used.")
 	}
 	manager := &workspace.Manager{Root: config.Root, Logger: logger}
-	lease, err := manager.ClaimFirstExecution(ctx, owner, input.ExecutionID, preparation, manifest)
+	var lease *workspace.ExecutionLease
+	if c := input.Continuation; c != nil {
+		lease, err = manager.ClaimContinuation(ctx, owner, input.ExecutionID, workspace.ExecutionPredecessor{JobID: c.Previous.JobID, ExecutionID: c.Previous.ExecutionID}, preparation, manifest)
+	} else {
+		lease, err = manager.ClaimFirstExecution(ctx, owner, input.ExecutionID, preparation, manifest)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -91,14 +96,14 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 	token := apiproxy.TokenPrefix + rawToken
 	digest := sha256.Sum256([]byte(token))
 	registration := domain.NewID()
-	intent := struct {
+	registrationIntent := struct {
 		Version     uint32    `json:"version"`
 		JobID       domain.ID `json:"job_id"`
 		ExecutionID domain.ID `json:"execution_id"`
 		RequestID   domain.ID `json:"request_id"`
 		TokenDigest string    `json:"token_digest"`
 	}{1, owner, input.ExecutionID, registration, hex.EncodeToString(digest[:])}
-	if err := writeJSON(filepath.Join(manager.Root, "jobs", string(owner), "claude-registration.json"), intent); err != nil {
+	if err := writeJSON(filepath.Join(manager.Root, "jobs", string(owner), "claude-registration.json"), registrationIntent); err != nil {
 		return nil, publicationUncertain()
 	}
 	bounded, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -116,11 +121,30 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 	// accepted original controller then owns a bounded native interrupt grace.
 	stopOnCancellation := context.AfterFunc(ctx, cancelNative)
 	defer stopOnCancellation()
-	api, err := claude.OpenAPISession(nativeCtx, claude.APIStreamConfig{
+	nativeConfig := claude.APIStreamConfig{
 		Process: process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: home, Env: env, Logger: logger},
 		Version: input.Installation.Version, Home: filepath.Join(home, "claude"), Workspace: lease.WorkingDirectory(), SessionID: input.SessionID, Model: input.Configuration.NativeModel,
 		Permission: permission, Effort: effort, Instructions: input.Configuration.Instructions, API: claude.APIConfig{ServerOrigin: connection.Credential.Endpoint, Token: token},
-	})
+	}
+	var api *claude.APISession
+	intent := claude.ContinueSuccessfulRun
+	if input.Continuation != nil {
+		// Restore derives original paths from the immutable history identity.
+		// It retains only bounded lookup environment from this fresh runtime,
+		// never its paths or credentials, before reconstructing native settings.
+		closed, restoreErr := readClaudeContinuation(ctx, manager.Root, connection.Credential, input, manifest, nativeConfig)
+		if restoreErr != nil {
+			logger.WarnContext(ctx, "claude_continuation_checkpoint_failed", "execution_id", input.ExecutionID, "code", domain.SafeError(restoreErr).Code)
+			return nil, restoreErr
+		}
+		logger.InfoContext(ctx, "claude_continuation_checkpoint_verified", "execution_id", input.ExecutionID, "previous_execution_id", input.Continuation.Previous.ExecutionID)
+		if input.Continuation.Intent == domain.ContinueExplicitly {
+			intent = claude.ResumeTerminalRun
+		}
+		api, err = claude.ContinueAPISession(nativeCtx, closed, owner, nativeConfig.API, intent)
+	} else {
+		api, err = claude.OpenAPISession(nativeCtx, nativeConfig)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +156,7 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 	if err := binding.ClaimInput(ctx, input.TurnRequestID, input.InputID, input.Input.Prompt); err != nil {
 		return nil, err
 	}
-	applied, err := api.SendInput(ctx, input.InputID, input.Input.Prompt, claude.ContinueSuccessfulRun)
+	applied, err := api.SendInput(ctx, input.InputID, input.Input.Prompt, intent)
 	if err != nil {
 		return nil, err
 	}
@@ -251,6 +275,10 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 						return nil, err
 					}
 					if err := lease.Close(); err != nil {
+						return nil, err
+					}
+					completion, err = display.RetainCompletion(publicationContext, api, completion)
+					if err != nil {
 						return nil, err
 					}
 					return json.Marshal(completion)

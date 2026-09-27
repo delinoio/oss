@@ -172,3 +172,5 @@ Claude interrupted-denial completion now composes original settled callback/cont
 
 
 The private Claude controller can now retain original verified history after its separately confirmed clean input EOF, without closing the process twice or treating forced cleanup as history proof. The existing checkpoint and single-use fresh-authority continuation profiles remain independently checked; their public Worker/report/dispatch composition is still required.
+
+Claude public successful root-content sessions now retain original native history through version-2 cleanup reports and continue through FIFO or explicit Resume after a product pause. Every fresh Worker execution verifies the accepted predecessor, original private journals/checkpoint and immutable account/configuration before continuing the same native session with fresh authority. Tools/callbacks, changed permissions, interrupted/failed history, full recovery and the remaining issue scope retain their separate gates; see the harness/session contracts and evidence ledger for the exercised profiles.

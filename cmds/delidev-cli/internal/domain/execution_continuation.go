@@ -62,6 +62,9 @@ func (c ExecutionContinuation) Validate(input ExecutionJobInput) error {
 		return Fail(RecoveryRequired, "Continuation does not match a verified preceding execution.", "Preserve the original assignment, terminal history and cleanup proof before sending new input.")
 	}
 	p, done := c.Previous, c.Completion
+	if input.Configuration.Harness == ClaudeCode && (!p.ClaudeContinuationBoundary(p.InputID) || c.InputMode != input.Input.Mode) {
+		return invalid()
+	}
 	for _, id := range []ID{c.HistoryExecutionID, c.HistoryRequestID, p.JobID, p.ExecutionID, p.InputID} {
 		if id.Validate() != nil {
 			return invalid()
