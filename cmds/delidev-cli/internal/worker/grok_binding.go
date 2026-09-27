@@ -7,6 +7,7 @@ import (
 	"hash"
 	"reflect"
 	"sync"
+	"sync/atomic"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/grok"
@@ -32,6 +33,10 @@ const (
 // Close the original native process first, then this coordinator and publisher.
 type GrokBindingPublisher struct {
 	mu              sync.Mutex
+	accepted        atomic.Bool
+	stopClaim       atomic.Pointer[grok.StopClaim]
+	stopped         *domain.GrokStopObservation
+	firstTextID     domain.ID
 	publisher       *ExecutionPublisher
 	journal         *grokClaimJournal
 	reference       grokClaimReference
@@ -247,6 +252,7 @@ func (c *GrokBindingPublisher) AcceptInput(ctx context.Context, v grok.InputObse
 		return err
 	}
 	c.stage = grokInputAccepted
+	c.accepted.Store(true)
 	return nil
 }
 
@@ -282,7 +288,7 @@ func (c *GrokBindingPublisher) ReplayPending(ctx context.Context) error {
 		return c.block()
 	}
 	claims, err := c.readClaims()
-	if err != nil || len(claims) != len(c.proof) {
+	if err != nil || !c.acceptStopExtension(claims) {
 		return c.block()
 	}
 	if err := p.ReplayPending(ctx); err != nil {
@@ -301,6 +307,7 @@ func (c *GrokBindingPublisher) ReplayPending(ctx context.Context) error {
 			c.commitPendingContent()
 		}
 		c.stage = grokInputAccepted
+		c.accepted.Store(true)
 	}
 	c.pendingRequest, c.pendingDigest = "", [sha256.Size]byte{}
 	return nil

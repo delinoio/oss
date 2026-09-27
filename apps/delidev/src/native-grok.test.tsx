@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { expect, it } from "vitest";
 import { object, type Document } from "./documents";
-import { NativeGrokText, NativeGrokUsage, NativeGrokTerminal } from "./native-grok";
+import { NativeGrokText, NativeGrokUsage, NativeGrokTerminal, NativeGrokStop } from "./native-grok";
 const thread = "01960dcb-e1fa-7000-8000-000000000001";
 function textFixture(): Document {
  const meta = { event_id: `${thread}-10`, chunk_id: "1", context_tokens: "18446744073709551615", timestamp_ms: "1", stream_start_ms: "0", turn_start_ms: "0" };
@@ -75,4 +75,53 @@ it.each(["mixed","mode","model","prompt","outcome","open-text","missing-total","
  render(<NativeGrokTerminal progress={data} />);
  expect(screen.getByText(/completion is unavailable or inconsistent/)).toBeTruthy();
  expect(screen.queryByText("Reported input total tokens")).toBeNull();
+});
+
+const stopId="01960dcb-e1fa-7000-8000-000000000002", inputId="01960dcb-e1fa-7000-8000-000000000003", operationId="01960dcb-e1fa-7000-8000-000000000004", messageId="01960dcb-e1fa-7000-8000-000000000005";
+function stoppedFixture(completed=false): Document {
+ const progress=terminalFixture();delete progress.grok_terminal;
+ progress.input_id=inputId;progress.outcome=completed?"succeeded":"stopped";
+ if(!completed) progress.grok_content={responses:0,message_id:messageId,message_bytes:8,message_chunks:1,text_bytes:8,last_event:`${thread}-10`,last_chunk:"1"};
+ progress.grok_stop={kind:completed?"completed-during-stop":"interrupted-text",request_id:stopId,input_id:inputId,input_request_id:operationId,message_id:messageId,native_event_id:`${thread}-12`,timestamp_ms:"1",elapsed_ms:"18446744073709551615",model:"Original model",output_digest:"ab".repeat(32),text_chunks:1,delivered:true,idle:true,cleanup_joined:true,...(completed?{completed:{counts:usageFixture().counts,total_tokens:"18446744073709551615",model_calls:"1",api_duration_ms:"2",turns:"1"}}:{category:"MidTurnAbort",context_tokens:"18446744073709551615",retries:[{native_event_id:`${thread}-11`,timestamp_ms:"1",kind:"retrying",error:"http",attempt:"1",max_retries:"3"}]})};
+ return progress;
+}
+it("shows interrupted output without asserting a completed response or missing usage",()=>{
+ const data=textFixture();object(data.grok_text).interruption={request_id:stopId,native_event_id:`${thread}-12`};
+ render(<NativeGrokText data={data}/>);
+ expect(screen.getByText("Partial response stopped")).toBeTruthy();
+ expect(screen.queryByText("Response text complete")).toBeNull();
+ expect(screen.getByText(/Its usage was not reported/)).toBeTruthy();
+});
+it.each([null,{request_id:stopId,native_event_id:`${thread}-10`},{request_id:stopId,native_event_id:"foreign-12"},{request_id:stopId,native_event_id:`${thread}-12`,extra:true}])("rejects a changed interruption marker %s",interruption=>{
+ const data=textFixture();object(data.grok_text).interruption=interruption;
+ render(<NativeGrokText data={data}/>);
+ expect(screen.getByLabelText("Grok text unavailable")).toBeTruthy();
+});
+it.each([false,true])("keeps Stop native outcome, usage and workspace cleanup independent (%s)",completed=>{
+ const data=stoppedFixture(completed);render(<NativeGrokStop progress={data}/>);
+ expect(screen.getByText("Native outcome").nextElementSibling?.textContent).toBe(completed?"Completed while Stop was requested":"Interrupted");
+ expect(screen.getByText("Native elapsed time (ms)").nextElementSibling?.textContent).toBe("18446744073709551615");
+ expect(screen.getByText("Workspace cleanup report").nextElementSibling?.textContent).toBe("Not yet verified");
+ if(!completed) {expect(screen.getByText("Input usage").nextElementSibling?.textContent).toBe("Not reported");expect(screen.getByText("Reported context tokens").nextElementSibling?.textContent).toBe("18446744073709551615");}
+ expect(screen.queryByRole("button")).toBeNull();
+});
+it.each(["input","mode","model","mixed","partial","chunks","context","usage","cleanup","retry","event","rounded","scope","outcome"])("rejects changed Grok Stop: %s",change=>{
+ const data=stoppedFixture(),v=object(data.grok_stop);
+ if(change==="input")v.input_id=messageId;
+ if(change==="mode")object(data.observed).grok_mode="plan";
+ if(change==="model")v.model="foreign";
+ if(change==="mixed")data.grok_terminal={};
+ if(change==="partial")object(data.grok_content).responses=1;
+ if(change==="chunks")v.text_chunks=2;
+ if(change==="context")delete v.context_tokens;
+ if(change==="usage")v.completed={};
+ if(change==="cleanup")v.cleanup_joined=false;
+ if(change==="retry")object((v.retries as Document[])[0]).attempt="01";
+ if(change==="event")v.native_event_id=`${thread}-10`;
+ if(change==="rounded")v.context_tokens=18446744073709551615;
+ if(change==="scope")v.input_request_id=inputId;
+ if(change==="outcome")data.outcome="succeeded";
+ render(<NativeGrokStop progress={data}/>);
+ expect(screen.getByText(/Stop is unavailable or inconsistent/)).toBeTruthy();
+ expect(screen.queryByText("Reported context tokens")).toBeNull();
 });

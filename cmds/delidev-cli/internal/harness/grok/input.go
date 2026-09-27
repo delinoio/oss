@@ -14,6 +14,22 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/nativewire"
 )
 
+type inputDiagnosticStage string
+
+const (
+	inputDiagnosticStart              inputDiagnosticStage = "input-start"
+	inputDiagnosticEnvelope           inputDiagnosticStage = "input-envelope"
+	inputDiagnosticQueue              inputDiagnosticStage = "input-queue"
+	inputDiagnosticUpdate             inputDiagnosticStage = "input-update"
+	inputDiagnosticText               inputDiagnosticStage = "input-text"
+	inputDiagnosticTurnTerminal       inputDiagnosticStage = "input-turn-terminal"
+	inputDiagnosticInterruptedTurn    inputDiagnosticStage = "input-interrupted-turn"
+	inputDiagnosticPassive            inputDiagnosticStage = "input-passive"
+	inputDiagnosticPromptTerminal     inputDiagnosticStage = "input-prompt-terminal"
+	inputDiagnosticActivity           inputDiagnosticStage = "input-activity"
+	inputDiagnosticTerminalComparison inputDiagnosticStage = "input-terminal-comparison"
+)
+
 type InputPhase string
 
 const (
@@ -212,6 +228,7 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 	if err := record(ctx, claim); err != nil {
 		return result, sessionUncertain()
 	}
+	diagnosticStage := inputDiagnosticStart
 	a.activateText(request, profile)
 	control := a.textControl()
 	life, cancel := context.WithCancel(ctx)
@@ -269,7 +286,7 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 			if returned != nil && domain.SafeError(returned).Code == domain.Canceled && control.observation().CleanupJoined {
 				logger.InfoContext(ctx, "Grok Build original text interrupted and cleaned up", "owner_id", a.inspection.OwnerID, "session_id", a.product, "input_id", request)
 			} else if returned != nil {
-				logger.WarnContext(ctx, "Grok Build original input failed", "owner_id", a.inspection.OwnerID, "session_id", a.product, "input_id", request, "input_profile", profile, "code", domain.SafeError(returned).Code)
+				logger.WarnContext(ctx, "Grok Build original input failed", "owner_id", a.inspection.OwnerID, "session_id", a.product, "input_id", request, "input_profile", profile, "stage", diagnosticStage, "code", domain.SafeError(returned).Code)
 			} else {
 				logger.InfoContext(ctx, "Grok Build original input completed", "owner_id", a.inspection.OwnerID, "session_id", a.product, "input_id", request, "input_profile", profile)
 			}
@@ -439,6 +456,7 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 			}
 			return result, sessionUncertain()
 		}
+		diagnosticStage = inputDiagnosticEnvelope
 		events++
 		if events > 4096 {
 			return result, domain.Fail(domain.ResourceExhausted, "Native input observations reached their bound.", "Retain the original input and reconcile its native runtime.")
@@ -488,6 +506,7 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 		}
 		switch event.Method {
 		case "_x.ai/queue/changed":
+			diagnosticStage = inputDiagnosticQueue
 			queued, running := queue.queued, queue.running
 			if err := queue.observe(event.Params); err != nil {
 				return result, err
@@ -542,6 +561,7 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 			if json.Unmarshal(event.Params, &variant) != nil {
 				return result, incompatible()
 			}
+			diagnosticStage = inputDiagnosticUpdate
 			switch variant.Update.Kind {
 			case "tool_call_delta_chunk", "tool_call", "tool_call_update", "pending_interaction", "interaction_resolved", "current_mode_update":
 				if profile.mixed() {
@@ -600,6 +620,7 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 					return result, err
 				}
 			case "agent_message_chunk":
+				diagnosticStage = inputDiagnosticText
 				chunk, err := parseTextChunk(event.Params, a.session, queue.prompt)
 				if err != nil || event.Method != "session/update" || !queue.running || queue.cleared || chunk.Meta.Chunk <= lastChunk {
 					return result, incompatible()
@@ -620,6 +641,7 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 					return result, err
 				}
 			case "turn_completed":
+				diagnosticStage = inputDiagnosticTurnTerminal
 				if event.Method != "_x.ai/session_notification" || turnObserved || !queue.running {
 					return result, incompatible()
 				}
@@ -645,6 +667,7 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 						if control.originalStop() == nil {
 							return result, incompatible()
 						}
+						diagnosticStage = inputDiagnosticInterruptedTurn
 						interruptedTurn, err = parseInterruptedTurn(event.Params, a.session, queue.prompt)
 						if err != nil {
 							return result, err
@@ -665,6 +688,8 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 				}
 				turnObserved = true
 			default:
+				diagnosticStage = inputDiagnosticPassive
+
 				observation, err := parsePassiveObservation(event.Params, event.Method, a.session, queue.prompt)
 				if err != nil {
 					return result, err
@@ -691,6 +716,14 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 					if err := publish(InputObservation{Kind: InputResponse, Response: &observation.usage}); err != nil {
 						return result, err
 					}
+				case retryMetadata:
+					if profile != plainTextInput || !queue.running || len(settled.chunks) == 0 || observation.retry == nil || observation.retry.Attempt != uint64(len(settled.retries)+1) {
+						return result, incompatible()
+					}
+					settled.retries = append(settled.retries, *observation.retry)
+					if logger := a.inspection.Logger; logger != nil {
+						logger.InfoContext(life, "grok_native_retry_observed", "owner_id", a.inspection.OwnerID, "input_id", request, "attempt", observation.retry.Attempt, "error", observation.retry.Error)
+					}
 				case lastTurnMetadata:
 					if !queue.cleared || settled.summarySeen {
 						return result, incompatible()
@@ -699,6 +732,7 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 				}
 			}
 		case "_x.ai/session/prompt_complete":
+			diagnosticStage = inputDiagnosticPromptTerminal
 			if promptObserved || !queue.running {
 				return result, incompatible()
 			}
@@ -733,6 +767,7 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 			}
 			promptObserved = true
 		case "_x.ai/sessions/changed":
+			diagnosticStage = inputDiagnosticActivity
 			activity, err := parseActivity(event.Params, a.session, a.workspace)
 			if err != nil {
 				return result, err
@@ -749,6 +784,7 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 			return result, incompatible()
 		}
 	}
+	diagnosticStage = inputDiagnosticTerminalComparison
 	if interrupted != promptInterrupted || rejected != promptRejected {
 		return result, incompatible()
 	}
@@ -860,6 +896,9 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 			return result, sessionUncertain()
 		}
 		return result, nil
+	}
+	if len(settled.retries) != 0 {
+		return result, incompatible()
 	}
 	if err := publish(InputObservation{Kind: InputCompleted, Result: &result}); err != nil {
 		return result, err

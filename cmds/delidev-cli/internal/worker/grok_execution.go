@@ -117,14 +117,14 @@ func executeGrokSession(ctx context.Context, config Config, owner domain.ID, inp
 	if registered == nil || registered.Msg == nil || registered.Msg.ProxyPath != "/api-proxy/v1" {
 		return nil, publicationUncertain()
 	}
-	// Stream loss and targeted cancellation join the owned process. This profile
-	// does not translate forced cleanup into a native stopped terminal/report.
+	// Startup cancellation and stream loss join the owned process immediately.
+	// Accepted input uses the separate original Stop controller below.
 	nativeCtx, cancelNative := context.WithCancel(config.executionContext)
 	defer cancelNative()
 	cancelTargeted := context.AfterFunc(ctx, cancelNative)
 	defer cancelTargeted()
 	nativeConfig := grok.APIExecutionConfig{Probe: grok.ProbeConfig{Process: process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: home, Env: env, Logger: logger}, Version: input.Installation.Version, Home: filepath.Join(home, "grok")}, Workspace: lease.WorkingDirectory(), Model: input.Configuration.NativeModel, ContextTokens: contextTokens, Mode: input.Input.Mode, ServerOrigin: connection.Credential.Endpoint, Token: token}
-	api, err := grok.OpenOwnedAPI(nativeCtx, nativeConfig, binding.Creation, binding.Input, binding.Closure)
+	api, err := grok.OpenOwnedAPIWithStop(nativeCtx, nativeConfig, binding.Creation, binding.Input, binding.Closure, binding.Stop)
 	if err != nil {
 		return nil, err
 	}
@@ -156,6 +156,7 @@ func executeGrokSession(ctx context.Context, config Config, owner domain.ID, inp
 		return nil, err
 	}
 	logger.InfoContext(nativeCtx, "native_execution_thread_bound")
+	var stopControl *grokStopControl
 	_, err = api.RunText(nativeCtx, input.TurnRequestID, input.Input.Prompt, func(callback context.Context, value grok.InputObservation) error {
 		switch value.Kind {
 		case grok.InputAccepted:
@@ -163,22 +164,36 @@ func executeGrokSession(ctx context.Context, config Config, owner domain.ID, inp
 				return err
 			}
 			logger.InfoContext(callback, "native_execution_input_accepted", "input_id", input.InputID)
+			if !cancelTargeted() {
+				return publicationUncertain()
+			}
+			stopControl = startGrokStopControl(ctx, nativeCtx, cancelNative, api, logger)
 			return nil
 		case grok.InputText, grok.InputResponse:
 			return publish(callback, binding.ObserveContent(callback, value))
-		case grok.InputTitle, grok.InputCompleted:
-			// Validated passive title/root completion does not prove native close,
-			// history or workspace cleanup. The original closed proof follows.
+		case grok.InputTitle, grok.InputCompleted, grok.StopSettled:
+			// Callback copies do not prove original native closure/Stop, history
+			// or workspace cleanup. Independent controller comparison follows.
 			return nil
 		default:
 			return publicationUncertain()
 		}
 	})
-	if err != nil {
-		return nil, err
-	}
-	if err := publish(nativeCtx, binding.CloseText(nativeCtx, api)); err != nil {
-		return nil, err
+	stopControl.join()
+	if _, stopErr := api.InspectStop(); stopErr == nil {
+		if err != nil && domain.SafeError(err).Code != domain.Canceled {
+			return nil, err
+		}
+		if err := publish(nativeCtx, binding.PublishStopped(nativeCtx, api)); err != nil {
+			return nil, err
+		}
+	} else {
+		if err != nil {
+			return nil, err
+		}
+		if err := publish(nativeCtx, binding.CloseText(nativeCtx, api)); err != nil {
+			return nil, err
+		}
 	}
 	completion, err := binding.TextCompletion()
 	if err != nil {

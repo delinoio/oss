@@ -53,8 +53,8 @@ func (c ExecutionCompletion) Validate() error {
 }
 
 func (c ExecutionCompletion) ValidateForHarness(harness Harness) error {
-	if harness == GrokBuild && (c.Version != 1 || c.Outcome != ExecutionSucceeded || c.NativeCheckpointDigest != "") {
-		return Fail(Unsupported, "Grok Build completion requires the closed original first-text profile.", "Other native outcomes and continuation require their own terminal and cleanup evidence.")
+	if harness == GrokBuild && (c.Version != 1 || (c.Outcome != ExecutionSucceeded && c.Outcome != ExecutionStopped) || c.NativeCheckpointDigest != "") {
+		return Fail(Unsupported, "Grok Build completion requires the closed original first-text profile.", "Original terminal, Stop and cleanup evidence remain independent of this envelope; continuation requires its own profile.")
 	}
 	for _, id := range []ID{c.ExecutionID, c.InputID} {
 		if err := id.Validate(); err != nil {

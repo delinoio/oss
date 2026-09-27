@@ -33,6 +33,8 @@ const (
 	grokPublicFirstText grokPublicScenario = iota
 	grokPublicCleanupFailure
 	grokPublicCancellation
+	grokPublicStoppedText
+	grokPublicStoppedCleanupFailure
 )
 
 func TestManualNativeGrokPublicFirstTextDispatch(t *testing.T) {
@@ -47,9 +49,18 @@ func TestManualNativeGrokPublicCancellationContainment(t *testing.T) {
 	nativeGrokPublicFirstText(t, grokPublicCancellation)
 }
 
+func TestManualNativeGrokPublicStoppedText(t *testing.T) {
+	nativeGrokPublicFirstText(t, grokPublicStoppedText)
+}
+
+func TestManualNativeGrokPublicStoppedCleanupFailure(t *testing.T) {
+	nativeGrokPublicFirstText(t, grokPublicStoppedCleanupFailure)
+}
+
 func nativeGrokPublicFirstText(t *testing.T, scenario grokPublicScenario) {
 	t.Helper()
-	cleanupFailure, cancelled := scenario == grokPublicCleanupFailure, scenario == grokPublicCancellation
+	cleanupFailure, cancelled := scenario == grokPublicCleanupFailure || scenario == grokPublicStoppedCleanupFailure, scenario == grokPublicCancellation
+	stopped := scenario == grokPublicStoppedText || scenario == grokPublicStoppedCleanupFailure
 	binary := os.Getenv("DELIDEV_NATIVE_GROK_EXECUTABLE")
 	if binary == "" {
 		t.Skip("explicit pinned native Grok and scripted loopback provider required")
@@ -85,7 +96,12 @@ func nativeGrokPublicFirstText(t *testing.T, scenario grokPublicScenario) {
 		if calls.Add(1) == 1 && !bytes.Contains(raw, []byte("first retained input")) {
 			t.Error("original native input was changed")
 		}
-		if cancelled {
+		if cancelled || stopped {
+			if stopped {
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = io.WriteString(w, "data: {\"id\":\"chatcmpl-grok-stop\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"fixture-model\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"Original public Grok completion.\"},\"finish_reason\":null}]}\n\n")
+				w.(http.Flusher).Flush()
+			}
 			started <- struct{}{}
 			<-r.Context().Done()
 			upstreamStopped <- struct{}{}
@@ -120,7 +136,11 @@ func nativeGrokPublicFirstText(t *testing.T, scenario grokPublicScenario) {
 	faultServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		drop := false
 		if r.URL.Path == delidevv1connect.WorkerServicePublishExecutionProcedure {
-			drop = publications.Add(1) == 5
+			terminalSequence := uint32(5)
+			if stopped {
+				terminalSequence = 4
+			}
+			drop = publications.Add(1) == terminalSequence
 			if drop && cleanupFailure {
 				select {
 				case <-assignmentReady:
@@ -215,11 +235,28 @@ func nativeGrokPublicFirstText(t *testing.T, scenario grokPublicScenario) {
 	jobID.Store(domain.ID(assignment.Id))
 	original.Store(&input)
 	close(assignmentReady)
-	if cancelled {
+	if cancelled || stopped {
 		select {
 		case <-started:
 		case <-ctx.Done():
 			t.Fatal("original input did not reach provider")
+		}
+		if stopped {
+			for {
+				changed := f.service.Store.Changed()
+				session, err := store.Decode[domain.Session](f.refresh(t))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if session.Execution != nil && session.Execution.GrokContent != nil && session.Execution.GrokContent.MessageID != "" {
+					break
+				}
+				select {
+				case <-changed:
+				case <-ctx.Done():
+					t.Fatal("original text not published")
+				}
+			}
 		}
 		sr := f.refresh(t)
 		if _, err := sessionClient(f.accountFixture).ControlSession(ctx, ownerRequest(f.identity, &pb.ControlSessionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(sr.ID), ExpectedRevision: sr.Revision}, Action: pb.SessionAction_SESSION_ACTION_STOP})); err != nil {
@@ -241,7 +278,7 @@ func nativeGrokPublicFirstText(t *testing.T, scenario grokPublicScenario) {
 		if job.State.Terminal() || job.State == domain.JobUncertain {
 			if cleanupFailure || cancelled {
 				session, err := store.Decode[domain.Session](f.refresh(t))
-				if err != nil || job.State != domain.JobUncertain || len(job.Output) != 0 || job.Problem == nil || job.Problem.Code != domain.RecoveryRequired || session.Execution == nil || (session.Execution.GrokTerminal != nil) != cleanupFailure || session.Execution.CleanupVerified || session.Recovery == domain.NoRecovery {
+				if err != nil || job.State != domain.JobUncertain || len(job.Output) != 0 || job.Problem == nil || job.Problem.Code != domain.RecoveryRequired || session.Execution == nil || (session.Execution.GrokTerminal != nil) != (cleanupFailure && !stopped) || stopped && session.Execution.GrokStop == nil || session.Execution.CleanupVerified || session.Recovery == domain.NoRecovery {
 					stop()
 					<-done
 					t.Log(logs.String())
@@ -250,14 +287,18 @@ func nativeGrokPublicFirstText(t *testing.T, scenario grokPublicScenario) {
 				break
 			}
 			var completion domain.ExecutionCompletion
-			if job.State != domain.JobSucceeded || domain.Decode(job.Output, &completion) != nil || completion.ValidateForHarness(domain.GrokBuild) != nil || completion.Version != 1 {
+			wantedState := domain.JobSucceeded
+			if stopped {
+				wantedState = domain.JobCanceled
+			}
+			if job.State != wantedState || domain.Decode(job.Output, &completion) != nil || completion.ValidateForHarness(domain.GrokBuild) != nil || completion.Version != 1 {
 				stop()
 				<-done
 				t.Log(logs.String())
 				t.Fatal("Grok runner failed", job.State, job.Problem)
 			}
 			session, err := store.Decode[domain.Session](f.refresh(t))
-			if err != nil || session.Execution == nil || !session.Execution.CleanupVerified || session.Execution.GrokTerminal == nil || session.Execution.Observed.GrokContextTokens != 48000 || session.Dispatch != domain.DispatchPaused || session.ActiveExecutionID != "" || session.PendingInputs != 0 {
+			if err != nil || session.Execution == nil || !session.Execution.CleanupVerified || (session.Execution.GrokTerminal != nil) == stopped || (stopped && (session.Execution.GrokStop == nil || session.Execution.GrokStop.Kind != domain.GrokInterruptedText || session.Execution.GrokStop.ContextTokens == nil || session.Execution.GrokStop.Completed != nil || session.Execution.Outcome != domain.ExecutionStopped || completion.Outcome != domain.ExecutionStopped || session.Recovery != domain.NoRecovery)) || session.Execution.Observed.GrokContextTokens != 48000 || session.Dispatch != domain.DispatchPaused || session.ActiveExecutionID != "" || session.PendingInputs != 0 {
 				t.Fatal("completion lost cleanup/context or granted continuation", err)
 			}
 			break
@@ -290,6 +331,9 @@ func nativeGrokPublicFirstText(t *testing.T, scenario grokPublicScenario) {
 		t.Fatal("original native process was not joined", err)
 	}
 	wantedPublications := uint32(6)
+	if stopped {
+		wantedPublications = 5
+	}
 	if cancelled {
 		wantedPublications = 2
 	}
@@ -298,11 +342,14 @@ func nativeGrokPublicFirstText(t *testing.T, scenario grokPublicScenario) {
 	}
 	claims, err := security.ReadPrivate(filepath.Join(f.workerRoot, "jobs", assignment.Id, "grok-claims.json"), 256<<10)
 	wantedClosure := 1
-	if cancelled {
+	if cancelled || stopped {
 		wantedClosure = 0
 	}
 	if err != nil || bytes.Count(claims, []byte(`"phase":"claim-input"`)) != 1 || bytes.Count(claims, []byte(`"phase":"claim-closure"`)) != wantedClosure {
 		t.Fatal("original input/closure claims changed", err)
+	}
+	if stopped && bytes.Count(claims, []byte(`"stop":`)) != 1 {
+		t.Fatal("Stop claimed more than once")
 	}
 	if err := filepath.WalkDir(filepath.Join(f.workerRoot, "runtimes", string(input.ExecutionID)), func(path string, entry os.DirEntry, err error) error {
 		if err != nil || entry.IsDir() {

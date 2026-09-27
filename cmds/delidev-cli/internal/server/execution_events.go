@@ -137,7 +137,7 @@ func supportsExecutionPublication(input domain.ExecutionJobInput, kind domain.Ex
 // their parent message explicitly instead of flattening several parts into a
 // fabricated message identity or using the assistant as the execution turn.
 func validateNativeMessageOrigin(input domain.ExecutionJobInput, event domain.ExecutionEvent) error {
-	if (event.GrokText != nil || event.GrokUsage != nil || event.GrokTerminal != nil) && input.Configuration.Harness != domain.GrokBuild {
+	if (event.GrokText != nil || event.GrokUsage != nil || event.GrokTerminal != nil || event.GrokStop != nil) && input.Configuration.Harness != domain.GrokBuild {
 		return executionEventConflict()
 	}
 	if (event.ClaudeTerminal != nil || event.ClaudeStop != nil || event.ClaudeDenial != nil) != (input.Configuration.Harness == domain.ClaudeCode && event.Kind == domain.ExecutionTurnFinished) || event.ClaudeTerminal != nil && event.ClaudeStop != nil {
@@ -286,7 +286,11 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 			}
 			if event.Kind == domain.ExecutionTurnFinished {
 				if input.Configuration.Harness == domain.GrokBuild {
-					if err := publishGrokTerminal(tx, input, sr, progress, event); err != nil {
+					publish := publishGrokTerminal
+					if event.GrokStop != nil {
+						publish = publishGrokStop
+					}
+					if err := publish(tx, input, sr, progress, event); err != nil {
 						return err
 					}
 				}

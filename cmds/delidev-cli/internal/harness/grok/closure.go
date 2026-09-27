@@ -60,6 +60,7 @@ type completedText struct {
 	output        [32]byte
 	terminal      [32]byte
 	terminalFacts *TextTerminal
+	retries       []RetryObservation
 	usage         ModelUsage
 	closed        domain.ID
 	home          os.FileInfo

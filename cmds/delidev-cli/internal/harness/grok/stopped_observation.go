@@ -20,6 +20,7 @@ type InterruptedTextTerminal struct {
 // evidence. Exactly one terminal variant is present, including a real successful
 // result racing Stop. This grants neither history nor continuation authority.
 type StoppedTextObservation struct {
+	Retries           []RetryObservation       `json:"retries,omitempty"`
 	CreationRequestID domain.ID                `json:"creation_request_id"`
 	Stop              StopObservation          `json:"stop"`
 	Interrupted       *InterruptedTextTerminal `json:"interrupted,omitempty"`
@@ -50,7 +51,7 @@ func (a *apiConnection) retainStoppedText(input completedText, interrupted *Inte
 	for i, digest := range input.chunks {
 		chunks[i] = hex.EncodeToString(digest[:])
 	}
-	value := StoppedTextObservation{CreationRequestID: a.creationRequest, Stop: a.textControl().observation(), Interrupted: interrupted, Completed: input.terminalFacts, InputDigest: input.bodyDigest, OutputDigest: hex.EncodeToString(input.output[:]), ChunkDigests: chunks}
+	value := StoppedTextObservation{Retries: input.retries, CreationRequestID: a.creationRequest, Stop: a.textControl().observation(), Interrupted: interrupted, Completed: input.terminalFacts, InputDigest: input.bodyDigest, OutputDigest: hex.EncodeToString(input.output[:]), ChunkDigests: chunks}
 	copy, err := copyStoppedText(value)
 	if err != nil || copy.Validate(a.profile.model) != nil || copy.Stop.Claim.InputRequestID != input.request {
 		return sessionUncertain()
@@ -103,6 +104,30 @@ func (v StoppedTextObservation) Validate(model string) error {
 	for _, value := range append([]string{v.InputDigest, v.OutputDigest}, v.ChunkDigests...) {
 		digest, err := hex.DecodeString(value)
 		if err != nil || len(digest) != 32 || hex.EncodeToString(digest) != value {
+			return incompatible()
+		}
+	}
+	if len(v.Retries) > 3 {
+		return incompatible()
+	}
+	var prior uint64
+	for i, retry := range v.Retries {
+		index, err := eventIndex(retry.Event, c.NativeSessionID)
+		if retry.Validate(c.NativeSessionID) != nil || retry.Attempt != uint64(i+1) || err != nil || i > 0 && index <= prior {
+			return incompatible()
+		}
+		prior = index
+	}
+	terminalEvent := ""
+	if v.Interrupted != nil {
+		terminalEvent = v.Interrupted.Turn.Meta.Event
+	}
+	if v.Completed != nil {
+		terminalEvent = v.Completed.Turn.Meta.Event
+	}
+	if len(v.Retries) > 0 {
+		index, err := eventIndex(terminalEvent, c.NativeSessionID)
+		if err != nil || index <= prior {
 			return incompatible()
 		}
 	}

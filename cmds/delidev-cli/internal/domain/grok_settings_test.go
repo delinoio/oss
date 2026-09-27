@@ -100,7 +100,11 @@ func TestGrokOriginalSessionAndPromptIdentityRemainDistinct(t *testing.T) {
 	completion.Version = 1
 	completion.NativeCheckpointDigest = ""
 	completion.Outcome = ExecutionStopped
+	if err := completion.ValidateForHarness(GrokBuild); err != nil {
+		t.Fatal("original stopped completion envelope rejected", err)
+	}
+	completion.Outcome = ExecutionFailed
 	if completion.ValidateForHarness(GrokBuild) == nil {
-		t.Fatal("closed text format granted another native outcome")
+		t.Fatal("unproved native failure format accepted")
 	}
 }

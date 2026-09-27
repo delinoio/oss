@@ -175,6 +175,7 @@ type ExecutionMessageUpdate struct {
 // envelope. Exactly one event kind owns its optional payload. Unknown native
 // extensions need dedicated adapters before they can enter this document.
 type ExecutionEvent struct {
+	GrokStop           *GrokStopObservation               `json:"grok_stop,omitempty"`
 	GrokTerminal       *GrokTextTerminal                  `json:"grok_terminal,omitempty"`
 	GrokText           *GrokTextUpdate                    `json:"grok_text,omitempty"`
 	GrokUsage          *GrokResponseUsage                 `json:"grok_usage,omitempty"`
@@ -408,6 +409,9 @@ func (e ExecutionEvent) Validate() error {
 	default:
 		return Fail(Unsupported, "Unknown normalized execution event.", "Use a dedicated supported native event adapter.")
 	}
+	if e.GrokStop != nil && (e.Kind != ExecutionTurnFinished || e.GrokStop.Validate(e.NativeThreadID) != nil || e.Outcome != e.GrokStop.Outcome() || e.ProblemCode != "" || e.GrokTerminal != nil || e.ClaudeTerminal != nil || e.ClaudeStop != nil || e.ClaudeDenial != nil || e.OpenCodeStop != nil) {
+		return invalidGrokContent()
+	}
 	if e.GrokTerminal != nil && (e.Kind != ExecutionTurnFinished || e.GrokTerminal.Validate(e.NativeThreadID) != nil || e.Outcome != ExecutionSucceeded || e.ProblemCode != "" || e.ClaudeTerminal != nil || e.ClaudeStop != nil || e.ClaudeDenial != nil || e.OpenCodeStop != nil) {
 		return invalidGrokContent()
 	}
@@ -433,6 +437,7 @@ func (e ExecutionEvent) Validate() error {
 // original immutable account/configuration selection. Only a separately
 // verified completion report may set CleanupVerified after terminal publication.
 type ExecutionProgress struct {
+	GrokStop               *GrokStopObservation        `json:"grok_stop,omitempty"`
 	GrokTerminal           *GrokTextTerminal           `json:"grok_terminal,omitempty"`
 	GrokContent            *GrokContentState           `json:"grok_content,omitempty"`
 	ClaudeCompaction       *ClaudeCompactionState      `json:"claude_compaction,omitempty"`

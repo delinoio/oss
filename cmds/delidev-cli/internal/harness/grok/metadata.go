@@ -14,6 +14,7 @@ const (
 	titleMetadata    metadataKind = "title"
 	summaryMetadata  metadataKind = "summary"
 	responseMetadata metadataKind = "response"
+	retryMetadata    metadataKind = "retry"
 	lastTurnMetadata metadataKind = "last-turn-summary"
 )
 
@@ -27,6 +28,7 @@ type responseUsage struct {
 
 type passiveObservation struct {
 	kind  metadataKind
+	retry *RetryObservation
 	text  string
 	usage responseUsage
 	event string
@@ -161,6 +163,15 @@ func parsePassiveObservation(raw []byte, method string, session domain.ID, promp
 			return observed, incompatible()
 		}
 		observed.kind, observed.usage = responseMetadata, value.Usage
+	case "retry_state":
+		if method != "_x.ai/session_notification" {
+			return observed, incompatible()
+		}
+		retry, err := parseRetry(raw, session)
+		if err != nil {
+			return observed, err
+		}
+		observed.kind, observed.event, observed.retry = retryMetadata, retry.Event, &retry
 	case "last_turn_summary":
 		var value struct {
 			Kind    string `json:"sessionUpdate"`

@@ -20,7 +20,7 @@ func (c *GrokBindingPublisher) ObserveContent(ctx context.Context, v grok.InputO
 		return publicationUncertain()
 	}
 	claims, err := c.readClaims()
-	if err != nil || len(claims) != len(c.proof) || v.InputID != c.reference.InputRequestID || v.NativePromptID != c.turn {
+	if err != nil || !c.acceptStopExtension(claims) || v.InputID != c.reference.InputRequestID || v.NativePromptID != c.turn {
 		return c.block()
 	}
 	event := domain.ExecutionEvent{Sequence: c.sequence + 1, NativeThreadID: string(c.thread), NativeTurnID: c.turn}
@@ -73,6 +73,9 @@ func (c *GrokBindingPublisher) ObserveContent(ctx context.Context, v grok.InputO
 
 func (c *GrokBindingPublisher) commitPendingContent() {
 	if c.pendingChunk != "" {
+		if c.firstTextID == "" {
+			c.firstTextID = c.pendingContent.MessageID
+		}
 		c.textChunks = append(c.textChunks, c.pendingChunk)
 		_, _ = c.textOutput.Write([]byte(c.pendingText))
 	}

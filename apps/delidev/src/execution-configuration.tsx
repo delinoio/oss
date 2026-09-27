@@ -1,4 +1,4 @@
-import { NativeGrokTerminal } from "./native-grok";
+import { NativeGrokTerminal, NativeGrokStop } from "./native-grok";
 import { type Resource } from "@delinoio/delidev-api-client";
 import { memo } from "react";
 import { Harness } from "./configuration-fields";
@@ -42,7 +42,7 @@ function NativeObservations({ progress, selection, harness }: { progress: Docume
       </dl>
       {harness === Harness.Claude ? <NativeClaudePermissionProgress progress={progress} /> : null}
       {harness === Harness.Claude ? <NativeClaudeTerminal progress={progress} /> : null}
-      {harness === Harness.Grok ? <NativeGrokTerminal progress={progress} /> : null}
+      {harness === Harness.Grok ? <><NativeGrokTerminal progress={progress} /><NativeGrokStop progress={progress} /></> : null}
       {harness === Harness.Claude ? <NativeClaudeStop progress={progress} /> : null}
       {harness === Harness.Claude ? <NativeClaudeDenialCompletion progress={progress} /> : null}
       <p>Observations describe this recorded execution. Missing values remain unavailable.</p>

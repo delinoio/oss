@@ -7,7 +7,7 @@ import (
 
 func publishGrokTerminal(tx *store.Tx, input domain.ExecutionJobInput, sr store.Record, p *domain.ExecutionProgress, event domain.ExecutionEvent) error {
 	v := event.GrokTerminal
-	if v == nil || v.Validate(event.NativeThreadID) != nil || p.GrokTerminal != nil || input.Input.Mode != domain.ExecuteMode || input.Continuation != nil || v.Model != input.Configuration.NativeModel || p.GrokContent == nil || p.GrokContent.Responses != 1 || p.GrokContent.MessageID != "" || p.GrokContent.LastEvent == "" || event.Outcome != domain.ExecutionSucceeded || v.ClosureID == input.ThreadRequestID || v.ClosureID == input.TurnRequestID || v.ClosureID == input.SessionID {
+	if v == nil || v.Validate(event.NativeThreadID) != nil || p.GrokTerminal != nil || p.GrokStop != nil || input.Input.Mode != domain.ExecuteMode || input.Continuation != nil || v.Model != input.Configuration.NativeModel || p.GrokContent == nil || p.GrokContent.Responses != 1 || p.GrokContent.MessageID != "" || p.GrokContent.LastEvent == "" || event.Outcome != domain.ExecutionSucceeded || v.ClosureID == input.ThreadRequestID || v.ClosureID == input.TurnRequestID || v.ClosureID == input.SessionID {
 		return executionEventConflict()
 	}
 	last, err := domain.GrokEventIndex(p.GrokContent.LastEvent, event.NativeThreadID)

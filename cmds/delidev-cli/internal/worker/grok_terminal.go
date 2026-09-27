@@ -103,8 +103,8 @@ func (c *GrokBindingPublisher) publishClosedText(ctx context.Context, observed g
 	return nil
 }
 
-// TextCompletion proves published original native closure only. The job runner
-// must separately join its workspace lease before retaining/reporting this
+// TextCompletion proves the acknowledged original native closure or Stop.
+// The job runner must separately join its workspace lease before reporting this
 // version-1 completion, which deliberately grants no continuation checkpoint.
 func (c *GrokBindingPublisher) TextCompletion() (domain.ExecutionCompletion, error) {
 	if c == nil || c.journal == nil {
@@ -114,10 +114,15 @@ func (c *GrokBindingPublisher) TextCompletion() (domain.ExecutionCompletion, err
 	defer c.mu.Unlock()
 	claims, err := c.readClaims()
 	sequence, sequenceErr := c.publisher.acknowledgedSequence()
-	if c.stage != grokTextFinished || c.terminal == nil || err != nil || len(claims) != 6 || sequenceErr != nil || sequence != c.sequence {
+	ordinary := c.terminal != nil && c.stopped == nil && len(claims) == 6
+	stopped := c.stopped != nil && c.terminal == nil && len(claims) == 5 && c.stopped.Validate(string(c.thread)) == nil
+	if c.stage != grokTextFinished || (!ordinary && !stopped) || err != nil || sequenceErr != nil || sequence != c.sequence {
 		return domain.ExecutionCompletion{}, publicationUncertain()
 	}
 	value := domain.ExecutionCompletion{Version: 1, ExecutionID: c.reference.ExecutionID, InputID: c.reference.InputID, NativeThreadID: domain.NativeIdentity(c.thread), NativeTurnID: domain.NativeIdentity(c.turn), LastSequence: sequence, Outcome: domain.ExecutionSucceeded, CleanupVerified: true}
+	if stopped {
+		value.Outcome = c.stopped.Outcome()
+	}
 	if err := value.ValidateForHarness(domain.GrokBuild); err != nil {
 		return domain.ExecutionCompletion{}, err
 	}

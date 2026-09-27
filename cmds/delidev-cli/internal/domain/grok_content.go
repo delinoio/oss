@@ -26,8 +26,9 @@ type GrokTextUpdate struct {
 // A product text span is anchored by its first original chunk event. Grok
 // supplies no native message identity or commentary/final classification here.
 type GrokTextContent struct {
-	ResponseOrdinal uint32             `json:"response_ordinal"`
-	Chunks          []GrokTextMetadata `json:"chunks"`
+	Interruption    *GrokTextInterruption `json:"interruption,omitempty"`
+	ResponseOrdinal uint32                `json:"response_ordinal"`
+	Chunks          []GrokTextMetadata    `json:"chunks"`
 }
 
 type GrokResponseCounts struct {

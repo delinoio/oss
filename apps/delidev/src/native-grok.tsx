@@ -12,7 +12,7 @@ function metadata(v: Document, thread: string) {
 function validText(data: Document) {
   if (data.role !== "assistant" || !["streaming", "complete"].includes(String(data.state)) || typeof data.text !== "string" || data.text.includes("\0") || /[\uD800-\uDFFF]/u.test(data.text) || new TextEncoder().encode(data.text).length > (256 << 10) || !uuid(data.execution_id, 7) || !uuid(data.native_thread_id, 7) || !uuid(data.native_turn_id, 4) || data.phase != null || data.input_id !== undefined || data.native_parent_id !== undefined || [data.claude, data.claude_tool, data.claude_progress, data.claude_interruption, data.tool, data.artifact, data.progress].some((v) => v != null)) return false;
   const v = object(data.grok_text), chunks = v.chunks;
-  if (!exact(v, ["response_ordinal", "chunks"]) || !ordinal(v.response_ordinal) || !Array.isArray(chunks) || chunks.length < 1 || chunks.length > 1024 || !Number.isSafeInteger(data.first_sequence) || Number(data.first_sequence) < 3 || !Number.isSafeInteger(data.last_sequence) || Number(data.last_sequence) > 100000 || Number(data.last_sequence) < Number(data.first_sequence) + chunks.length - (data.state === "complete" ? 0 : 1)) return false;
+  if (!exact(v, ["response_ordinal", "chunks", ...(v.interruption !== undefined ? ["interruption"] : [])]) || !ordinal(v.response_ordinal) || !Array.isArray(chunks) || chunks.length < 1 || chunks.length > 1024 || !Number.isSafeInteger(data.first_sequence) || Number(data.first_sequence) < 3 || !Number.isSafeInteger(data.last_sequence) || Number(data.last_sequence) > 100000 || Number(data.last_sequence) < Number(data.first_sequence) + chunks.length - (data.state === "complete" ? 0 : 1)) return false;
   let priorEvent: bigint | undefined, priorChunk: bigint | undefined;
   for (const raw of chunks) {
     const chunk = object(raw);
@@ -21,6 +21,8 @@ function validText(data: Document) {
     if (priorEvent !== undefined && (event <= priorEvent || number <= priorChunk!)) return false;
     priorEvent = event; priorChunk = number;
   }
+  const interrupted = object(v.interruption);
+  if (v.interruption !== undefined && (data.state !== "complete" || !exact(interrupted, ["request_id", "native_event_id"]) || !uuid(interrupted.request_id, 7) || eventIndex(interrupted.native_event_id, data.native_thread_id) === undefined || eventIndex(interrupted.native_event_id, data.native_thread_id)! <= priorEvent!)) return false;
   return data.native_id === object(chunks[0]).event_id;
 }
 
@@ -28,7 +30,7 @@ export function NativeGrokText({ data }: { data: Document }) {
   if (!validText(data)) return <article className="message" aria-label="Grok text unavailable"><p>The retained Grok text is unavailable or inconsistent.</p></article>;
   const v = object(data.grok_text), chunks = v.chunks as Document[], first = chunks[0]!, last = chunks[chunks.length - 1]!;
   return <article className="message" aria-label="Grok assistant text">
-    <header><strong>assistant</strong><small>{data.state === "complete" ? "Response text complete" : "Streaming"}</small></header>
+    <header><strong>assistant</strong><small>{v.interruption !== undefined ? "Partial response stopped" : data.state === "complete" ? "Response text complete" : "Streaming"}</small></header>
     <pre>{data.text as string}</pre>
     <details><summary>Grok text details</summary><dl>
       <dt>Response order in this input</dt><dd>{v.response_ordinal as number}</dd>
@@ -36,7 +38,7 @@ export function NativeGrokText({ data }: { data: Document }) {
       <dt>Latest native text event</dt><dd>{last.event_id as string}</dd>
       <dt>Latest native chunk</dt><dd>{last.chunk_id as string}</dd>
       <dt>Latest reported context tokens</dt><dd>{last.context_tokens as string}</dd>
-    </dl><p>Context is a native estimate, separate from response usage. Completed response text does not mean the execution has finished.</p></details>
+    </dl><p>Context is a native estimate, separate from response usage. Completed response text does not mean the execution has finished.</p>{v.interruption !== undefined ? <p>The original response was interrupted. Its usage was not reported.</p> : null}</details>
   </article>;
 }
 
@@ -59,7 +61,7 @@ function closedResponse(value: Document, thread: string, terminal: unknown) {
 export function NativeGrokTerminal({ progress }: { progress: Document }) {
   if (progress.grok_terminal == null) return null;
   const v = object(progress.grok_terminal), counts = object(v.counts), observed = object(progress.observed), content = object(progress.grok_content);
-  const valid = uuid(progress.execution_id, 7) && uuid(progress.native_thread_id, 7) && uuid(progress.native_turn_id, 4) && progress.outcome === "succeeded" && exact(v, ["kind", "native_event_id", "timestamp_ms", "elapsed_ms", "model", "counts", "total_tokens", "model_calls", "api_duration_ms", "turns", "closure_id", "history_digest"]) && v.kind === "closed-first-text" && eventIndex(v.native_event_id, progress.native_thread_id) !== undefined && count(v.timestamp_ms) && BigInt(v.timestamp_ms) <= 253402300799999n && [v.elapsed_ms, v.total_tokens, v.api_duration_ms].every(count) && v.model_calls === "1" && v.turns === "1" && uuid(v.closure_id, 7) && typeof v.history_digest === "string" && /^[a-f0-9]{64}$/.test(v.history_digest) && typeof v.model === "string" && v.model.length > 0 && v.model === observed.model && observed.grok_mode === "default" && closedResponse(content, progress.native_thread_id, v.native_event_id) && exact(counts, labels.map(([key]) => key)) && labels.every(([key]) => count(counts[key])) && [progress.claude_terminal, progress.claude_stop, progress.claude_denial, progress.opencode_stop].every((value) => value == null);
+  const valid = uuid(progress.execution_id, 7) && uuid(progress.native_thread_id, 7) && uuid(progress.native_turn_id, 4) && progress.outcome === "succeeded" && exact(v, ["kind", "native_event_id", "timestamp_ms", "elapsed_ms", "model", "counts", "total_tokens", "model_calls", "api_duration_ms", "turns", "closure_id", "history_digest"]) && v.kind === "closed-first-text" && eventIndex(v.native_event_id, progress.native_thread_id) !== undefined && count(v.timestamp_ms) && BigInt(v.timestamp_ms) <= 253402300799999n && [v.elapsed_ms, v.total_tokens, v.api_duration_ms].every(count) && v.model_calls === "1" && v.turns === "1" && uuid(v.closure_id, 7) && typeof v.history_digest === "string" && /^[a-f0-9]{64}$/.test(v.history_digest) && typeof v.model === "string" && v.model.length > 0 && v.model === observed.model && observed.grok_mode === "default" && closedResponse(content, progress.native_thread_id, v.native_event_id) && exact(counts, labels.map(([key]) => key)) && labels.every(([key]) => count(counts[key])) && [progress.grok_stop, progress.claude_terminal, progress.claude_stop, progress.claude_denial, progress.opencode_stop].every((value) => value == null);
   if (!valid) return <p>The retained Grok completion is unavailable or inconsistent.</p>;
   return <details><summary>Original Grok input completion</summary><dl>
     <dt>Native outcome</dt><dd>End turn</dd><dt>Model</dt><dd>{v.model as string}</dd>
@@ -68,4 +70,47 @@ export function NativeGrokTerminal({ progress }: { progress: Document }) {
     <dt>Native API duration (ms)</dt><dd>{v.api_duration_ms as string}</dd>
     <dt>Native elapsed time (ms)</dt><dd>{v.elapsed_ms as string}</dd>
   </dl><p>The original native session was closed and its text history checked. Input totals overlap the response observation and do not report actual cost or auxiliary usage. Continuing this history requires separate support.</p></details>;
+}
+
+function stoppedInput(progress: Document) {
+  const v = object(progress.grok_stop), observed = object(progress.observed), content = object(progress.grok_content);
+  if (!uuid(progress.execution_id, 7) || !uuid(progress.native_thread_id, 7) || !uuid(progress.native_turn_id, 4)) return false;
+  const thread = progress.native_thread_id;
+  const interrupted = v.kind === "interrupted-text", completed = v.kind === "completed-during-stop";
+  const optional = ["category", "context_tokens", "completed", "retries"].filter((key) => Object.hasOwn(v, key));
+  if (!exact(v, ["kind", "request_id", "input_id", "input_request_id", "message_id", "native_event_id", "timestamp_ms", "elapsed_ms", "model", "output_digest", "text_chunks", "delivered", "idle", "cleanup_joined", ...optional]) || (!interrupted && !completed) || progress.outcome !== (interrupted ? "stopped" : "succeeded") || [progress.grok_terminal, progress.claude_terminal, progress.claude_stop, progress.claude_denial, progress.opencode_stop].some((value) => value != null)) return false;
+  const ids = [v.request_id, v.input_id, v.input_request_id, v.message_id];
+  if (!ids.every((id) => uuid(id, 7) && id !== thread) || new Set(ids).size !== ids.length || v.input_id !== progress.input_id || v.delivered !== true || v.idle !== true || v.cleanup_joined !== true || typeof v.model !== "string" || !v.model || v.model !== observed.model || observed.grok_mode !== "default" || typeof v.output_digest !== "string" || !/^[a-f0-9]{64}$/.test(v.output_digest) || !Number.isInteger(v.text_chunks) || Number(v.text_chunks) < 1 || Number(v.text_chunks) > 1024 || !count(v.timestamp_ms) || BigInt(v.timestamp_ms) > 253402300799999n || !count(v.elapsed_ms)) return false;
+  const end = eventIndex(v.native_event_id, thread), last = eventIndex(content.last_event, thread);
+  if (end === undefined || last === undefined || end <= last) return false;
+  let prior: bigint | undefined;
+  if (v.retries !== undefined) {
+    if (!Array.isArray(v.retries) || v.retries.length > 3) return false;
+    for (const [index, value] of v.retries.entries()) {
+      const retry = object(value), event = eventIndex(retry.native_event_id, thread);
+      if (!exact(retry, ["native_event_id", "timestamp_ms", "kind", "error", "attempt", "max_retries"]) || retry.kind !== "retrying" || retry.error !== "http" || retry.attempt !== String(index + 1) || retry.max_retries !== "3" || !count(retry.timestamp_ms) || BigInt(retry.timestamp_ms) > 253402300799999n || event === undefined || event >= end || (prior !== undefined && event <= prior)) return false;
+      prior = event;
+    }
+  }
+  if (interrupted) {
+    return v.category === "MidTurnAbort" && count(v.context_tokens) && v.completed === undefined && exact(content, ["responses", "message_id", "message_bytes", "message_chunks", "text_bytes", "last_event", "last_chunk"]) && content.responses === 0 && content.message_id === v.message_id && content.message_chunks === v.text_chunks && Number.isInteger(content.message_bytes) && Number(content.message_bytes) > 0 && Number(content.message_bytes) <= (256 << 10) && content.text_bytes === content.message_bytes && count(content.last_chunk) && BigInt(content.last_chunk) > 0n;
+  }
+  const result = object(v.completed), counts = object(result.counts);
+  return v.category === undefined && v.context_tokens === undefined && closedResponse(content, thread, v.native_event_id) && exact(result, ["counts", "total_tokens", "model_calls", "api_duration_ms", "turns"]) && result.model_calls === "1" && result.turns === "1" && [result.total_tokens, result.api_duration_ms].every(count) && exact(counts, labels.map(([key]) => key)) && labels.every(([key]) => count(counts[key]));
+}
+
+export function NativeGrokStop({ progress }: { progress: Document }) {
+  if (progress.grok_stop == null) return null;
+  if (!stoppedInput(progress)) return <p>The retained Grok Stop is unavailable or inconsistent.</p>;
+  const v = object(progress.grok_stop), result = object(v.completed), interrupted = v.kind === "interrupted-text";
+  const retries = Array.isArray(v.retries) ? v.retries : [];
+  return <details><summary>Original Grok Stop result</summary><dl>
+    <dt>Native outcome</dt><dd>{interrupted ? "Interrupted" : "Completed while Stop was requested"}</dd>
+    <dt>Model</dt><dd>{v.model as string}</dd>
+    <dt>Native elapsed time (ms)</dt><dd>{v.elapsed_ms as string}</dd>
+    {interrupted ? <><dt>Reported context tokens</dt><dd>{v.context_tokens as string}</dd><dt>Input usage</dt><dd>Not reported</dd></> : <><dt>Reported input total tokens</dt><dd>{result.total_tokens as string}</dd><dt>Native API duration (ms)</dt><dd>{result.api_duration_ms as string}</dd></>}
+    <dt>Observed HTTP retries before Stop settled</dt><dd>{retries.length}</dd>
+    <dt>Native process cleanup</dt><dd>Joined</dd>
+    <dt>Workspace cleanup report</dt><dd>{progress.cleanup_verified === true ? "Verified" : "Not yet verified"}</dd>
+  </dl><p>{interrupted ? "Partial output remains visible. Context tokens do not replace missing response usage." : "The original successful result is retained alongside your Stop request."} This result does not authorize another input or prove that history can be resumed.</p></details>;
 }
