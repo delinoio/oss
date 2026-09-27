@@ -285,7 +285,7 @@ fn with_stream<R>(callback: impl FnOnce(&UnixStream) -> R) -> Option<R> {
                     b'h',
                     Kind::Hello,
                     image_id.0,
-                    image_id.1 as i64,
+                    image_id.1.cast_signed(),
                     0,
                     &[],
                 ) {
