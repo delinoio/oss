@@ -153,6 +153,9 @@ func (s *Service) ReadSessionWorkspace(ctx context.Context, req *connect.Request
 	if !selected {
 		return fail(domain.Fail(domain.InvalidArgument, "The repository is not part of this session workspace.", "Select one of this session's workspace roots."))
 	}
+	if query.Operation == domain.WorkspaceGitDiff && query.Comparison == domain.DiffCreation && input.Type != domain.Worktree {
+		return fail(domain.Fail(domain.Unsupported, "Creation comparisons require a prepared Worktree.", "Choose working-tree or staged for Local repositories; no session-start filesystem baseline exists."))
+	}
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	deadline, _ := ctx.Deadline()
@@ -361,7 +364,10 @@ func (s *Service) ReportWorkspaceRead(ctx context.Context, req *connect.Request[
 		default:
 			return fail(workspaceReadUnavailable())
 		}
-		reply.problem = domain.Fail(code, "The execution machine could not provide this workspace view.", "Refresh the directory; check Worker access and workspace recovery if the problem persists.")
+		reply.problem = domain.Fail(code, "The execution machine could not provide this workspace view.", "Refresh the view; check Worker access and workspace recovery if the problem persists.")
+		if pending.request.Query.Operation == domain.WorkspaceGitDiff && code == domain.Unsupported {
+			reply.problem = domain.Fail(code, "This Git comparison is unavailable on the execution machine.", "Select a prepared Git repository and supported comparison. Working-tree comparisons cannot run configured clean/process filters; use the staged comparison to inspect stored changes.")
+		}
 	} else {
 		if len(req.Msg.DocumentJson) > 512<<10 || domain.Decode(req.Msg.DocumentJson, &result) != nil || result.Validate(pending.request.Query) != nil {
 			return fail(workspaceReadUnavailable())

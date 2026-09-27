@@ -1,5 +1,6 @@
 import { NativeGrokText } from "./native-grok";
 import { SessionFiles } from "./session-files";
+import { SessionDiff } from "./session-diff";
 import { NativeBuiltin, NativeWorkspaceEvent } from "./native-builtin";
 import { NativeChanges, NativeRevision } from "./native-changes";
 import { NativeTodo, NativeTodoProgress } from "./native-todo";
@@ -131,10 +132,13 @@ const TranscriptItem = memo(function TranscriptItem({ resource }: { resource: Re
   </article>;
 });
 
+enum SessionPanel { Closed = "closed", Files = "files", Diff = "diff" }
+
 export function SessionView({ id, draft, setDraft }: { id: string; draft: string; setDraft: (value: string) => void }) {
   const live = useSessionStream(id);
-  const [filesOpen, setFilesOpen] = useState(false);
+  const [panel, setPanel] = useState(SessionPanel.Closed);
   const filesButton = useRef<HTMLButtonElement>(null);
+  const diffButton = useRef<HTMLButtonElement>(null);
  const [budgetBlocked,setBudgetBlocked]=useState(false);
   const [page, setPage] = useState("");
   const [queuePage, setQueuePage] = useState("");
@@ -175,9 +179,9 @@ export function SessionView({ id, draft, setDraft }: { id: string; draft: string
     if (!session) return;
     void control.send({ mutation: { id, expectedRevision: session.revision, requestId: newRequestId() }, action: value });
   };
-  return <div className={`session-workspace${filesOpen ? " files-open" : ""}`}><section className="session" aria-label="Current session">
+  return <div className={`session-workspace${panel !== SessionPanel.Closed ? " files-open" : ""}`}><section className="session" aria-label="Current session">
     <header className="session-header"><div><h2>{resourceName(session)}</h2><p>{workspaceNames[text(data.workspace) as Workspace] || "Workspace"} · {text(data.outcome)} · {text(data.dispatch)} · {text(data.archive)}</p></div>
-      <div className="actions"><button ref={filesButton} aria-expanded={filesOpen} aria-controls={`files-${id}`} onClick={() => setFilesOpen(!filesOpen)}>Files</button><button disabled={!session || control.busy || control.uncertain} onClick={() => action(SessionAction.STOP)}>Stop</button>
+      <div className="actions"><button ref={filesButton} aria-expanded={panel === SessionPanel.Files} aria-controls={`files-${id}`} onClick={() => setPanel(panel === SessionPanel.Files ? SessionPanel.Closed : SessionPanel.Files)}>Files</button><button ref={diffButton} aria-expanded={panel === SessionPanel.Diff} aria-controls={`diff-${id}`} onClick={() => setPanel(panel === SessionPanel.Diff ? SessionPanel.Closed : SessionPanel.Diff)}>Diff</button><button disabled={!session || control.busy || control.uncertain} onClick={() => action(SessionAction.STOP)}>Stop</button>
         <button disabled={!session || control.busy || control.uncertain} onClick={() => action(text(data.archive) === "archived" ? SessionAction.RESTORE : SessionAction.ARCHIVE)}>{text(data.archive) === "archived" ? "Restore" : "Archive"}</button>
         <button disabled={!session || control.busy || control.uncertain || budgetBlocked || text(data.archive) !== "active"} onClick={() => action(SessionAction.RESUME)}>Resume</button></div></header>
     <p className="connection" role="status">{live.state === ConnectionState.Live ? "Connected" : live.state === ConnectionState.Reconnecting ? "Connection lost · Retained state shown" : live.state === ConnectionState.Failed ? "Connection requires attention" : "Connecting…"}</p>
@@ -202,5 +206,5 @@ export function SessionView({ id, draft, setDraft }: { id: string; draft: string
       <div className="actions"><label>Mode <select value={mode} disabled={locked} onChange={(event) => setMode(event.target.value as Mode)}><option value={Mode.Execute}>Execute</option><option value={Mode.Plan}>Plan</option></select></label><button className="primary" disabled={locked || !draft.trim() || text(data.archive) !== "active"}>Queue message</button></div>
       <Problem error={send.error} />{send.uncertain ? <button type="button" disabled={send.busy} onClick={send.retry}>Retry the same message</button> : null}
     </form>
-  </section>{filesOpen ? <div id={`files-${id}`} className="session-app-panel"><SessionFiles key={id} sessionId={id} close={() => { setFilesOpen(false); filesButton.current?.focus(); }} /></div> : null}</div>;
+  </section>{panel === SessionPanel.Files ? <div id={`files-${id}`} className="session-app-panel"><SessionFiles key={id} sessionId={id} close={() => { setPanel(SessionPanel.Closed); filesButton.current?.focus(); }} /></div> : panel === SessionPanel.Diff ? <div id={`diff-${id}`} className="session-app-panel"><SessionDiff key={id} sessionId={id} worktree={data.workspace === Workspace.Worktree} close={() => { setPanel(SessionPanel.Closed); diffButton.current?.focus(); }} /></div> : null}</div>;
 }

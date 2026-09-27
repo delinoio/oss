@@ -52,7 +52,7 @@ func (m *Manager) ReadWorkspace(ctx context.Context, request ReadRequest) (resul
 	}
 	defer func() {
 		if returned != nil {
-			m.Logger.WarnContext(ctx, "workspace_read_failed", "read_id", request.ID, "session_id", request.Preparation.SessionID, "operation", request.Query.Operation, "code", domain.SafeError(returned).Code)
+			m.Logger.WarnContext(ctx, "workspace_read_failed", "read_id", request.ID, "session_id", request.Preparation.SessionID, "operation", request.Query.Operation, "comparison", request.Query.Comparison, "code", domain.SafeError(returned).Code)
 		}
 	}()
 	retained, err := m.Read(request.Preparation.SessionID)
@@ -89,6 +89,7 @@ func (m *Manager) ReadWorkspace(ctx context.Context, request ReadRequest) (resul
 	// Continuation identity allows commits and dirty files without requiring a
 	// closed native claim. This observation grants no execution/recovery rights.
 	inspection := &Manager{Root: m.Root, Git: m.Git}
+	inspection.Git.noFSMonitor = true
 	inspection.Git.ProcessRoot = filepath.Join(m.Root, "workspace-read-processes")
 	if len(retained.Repositories) > 0 {
 		if err := security.PrivateDir(inspection.Git.ProcessRoot); err != nil {
@@ -118,7 +119,13 @@ func (m *Manager) ReadWorkspace(ctx context.Context, request ReadRequest) (resul
 	if err := ctx.Err(); err != nil {
 		return result, domain.SafeError(err)
 	}
-	result, err = readRoot(ctx, root, request)
+	if request.Query.Operation == domain.WorkspaceGitDiff {
+		git := inspection.Git
+		git.OwnerID = request.ID
+		result, err = git.readDiff(ctx, request, retained)
+	} else {
+		result, err = readRoot(ctx, root, request)
+	}
 	if err != nil {
 		return result, err
 	}
@@ -128,6 +135,11 @@ func (m *Manager) ReadWorkspace(ctx context.Context, request ReadRequest) (resul
 	}
 	if err := ctx.Err(); err != nil {
 		return domain.WorkspaceReadResult{}, domain.SafeError(err)
+	}
+	if request.Query.Operation == domain.WorkspaceGitDiff {
+		if _, err := inspection.verifyWorkspaceIdentityForOwner(ctx, request.Preparation, retained, continuationIdentity, request.ID); err != nil {
+			return domain.WorkspaceReadResult{}, err
+		}
 	}
 	return result, result.Validate(request.Query)
 }

@@ -118,4 +118,6 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .file-entries li > button, .file-entries li > span { display: block; width: 100%; text-align: left; margin-block: 6px; overflow-wrap: anywhere; }
 .file-entries small { display: block; }
 .session-files pre { font-family: ui-monospace, monospace; font-size: .85rem; max-height: 65vh; overflow: auto; white-space: pre; }
+.git-comparison dd { margin: 0 0 .75rem; overflow-wrap: anywhere; font-family: ui-monospace, monospace; font-size: .85rem; }
+.git-comparison li { overflow-wrap: anywhere; }
 @media (max-width: 1000px) { .session-workspace.files-open { grid-template-columns: minmax(0, 1fr); height: auto; min-height: 100%; } .session-app-panel { border-left: 0; border-top: 1px solid var(--border); } }

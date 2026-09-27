@@ -26,7 +26,8 @@ function observation(raw: Uint8Array): Observation {
 
 // Each view observes one path. Inactive observations have no persistent cache;
 // changing path or closing the panel cancels the prior read through Connect.
-const readOptions = { retry: false, gcTime: 0, staleTime: Infinity, refetchOnWindowFocus: false, select: (response: { documentJson: Uint8Array }) => observation(response.documentJson) };
+export const workspaceReadOptions = { retry: false, gcTime: 0, staleTime: Infinity, refetchOnWindowFocus: false, select: (response: { documentJson: Uint8Array }) => observation(response.documentJson) };
+const readOptions = workspaceReadOptions;
 
 export function SessionFiles({ sessionId, close }: { sessionId: string; close: () => void }) {
   const heading = useRef<HTMLHeadingElement>(null);

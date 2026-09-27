@@ -21,18 +21,24 @@ func sessionFiles(ctx context.Context, c client, args []string) (any, error) {
 		query.Operation = domain.WorkspaceDirectory
 	case "read":
 		query.Operation = domain.WorkspaceFile
+	case "diff":
+		query.Operation = domain.WorkspaceGitDiff
 	default:
 		return nil, domain.Fail(domain.InvalidArgument, "Unknown workspace file operation.", "Use roots, list or read.")
 	}
 	f := flags("session files " + args[0])
 	id := f.String("id", "", "session UUID")
 	repo, path, page := new(string), new(string), new(string)
+	comparison := new(string)
 	if query.Operation != domain.WorkspaceRoots {
 		repo = f.String("repository-id", "", "prepared repository UUID; omit for General Chat")
 		path = f.String("path", ".", "relative slash path within the selected workspace")
 	}
 	if query.Operation == domain.WorkspaceDirectory {
 		page = f.String("page-token", "", "next page from the same directory observation")
+	}
+	if query.Operation == domain.WorkspaceGitDiff {
+		comparison = f.String("comparison", string(domain.DiffWorkingTree), "working-tree, staged, or Worktree creation comparison")
 	}
 	if err := parse(f, args[1:]); err != nil {
 		return nil, err
@@ -41,6 +47,7 @@ func sessionFiles(ctx context.Context, c client, args []string) (any, error) {
 		return nil, err
 	}
 	query.RepositoryID, query.Path, query.PageToken = domain.ID(*repo), *path, *page
+	query.Comparison = domain.WorkspaceDiffComparison(*comparison)
 	if err := query.Validate(); err != nil {
 		return nil, err
 	}
@@ -52,6 +59,11 @@ func sessionFiles(ctx context.Context, c client, args []string) (any, error) {
 	var result domain.WorkspaceReadResult
 	if err := domain.Decode(response.Msg.DocumentJson, &result); err != nil {
 		return nil, err
+	}
+	if query.Operation != domain.WorkspaceRoots {
+		if err := result.Validate(query); err != nil {
+			return nil, err
+		}
 	}
 	return result, nil
 }

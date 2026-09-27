@@ -35,6 +35,7 @@ type Git struct {
 	Logger      *slog.Logger
 	HooksDir    string
 	Timeout     time.Duration
+	noFSMonitor bool
 }
 
 type limitedOutput struct {
@@ -74,6 +75,11 @@ func (g Git) runCommand(ctx context.Context, root string, args ...string) ([]byt
 	bounded, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	commandArgs := []string{"-C", root, "-c", "core.quotePath=false", "-c", "color.ui=false"}
+	if g.noFSMonitor {
+		// Even check-attr can open the index and invoke a configured fsmonitor.
+		// Read-only workspace observations never grant that command authority.
+		commandArgs = append(commandArgs, "-c", "core.fsmonitor=false")
+	}
 	if g.HooksDir != "" {
 		commandArgs = append(commandArgs, "-c", "core.hooksPath="+g.HooksDir)
 	}

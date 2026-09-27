@@ -216,6 +216,13 @@ func TestCLISessionAcceptanceQueueAndArchive(t *testing.T) {
 			t.Fatal("wrong preparation identity/commit/ownership")
 		}
 		path := data["path"].(string)
+		if err := os.WriteFile(filepath.Join(path, "tracked.txt"), []byte("CLI diff change\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		comparison := run([]string{"session", "diff", "--id", worktreeID, "--repository-id", string(repositories[i]), "--comparison", "creation"}, nil)["diff"].(map[string]any)
+		if comparison["base_object"] != commits[i] || comparison["head_commit"] != commits[i] || !strings.Contains(comparison["patch"].(string), "+CLI diff change") {
+			t.Fatal("CLI diff lost selected creation commit or repository")
+		}
 		out, err := exec.Command("git", "-C", path, "rev-parse", "HEAD").Output()
 		if err != nil || strings.TrimSpace(string(out)) != commits[i] {
 			t.Fatal("recorded commit differs from actual checkout")

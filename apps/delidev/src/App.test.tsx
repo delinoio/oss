@@ -239,16 +239,16 @@ for (const mixed of [false, true]) it(`renders Claude callbacks through the sess
   expect(value.enqueues).not.toHaveBeenCalled(); expect(value.controls).not.toHaveBeenCalled();
 });
 
-it("opens and closes workspace files without replacing or sending the composer draft", async () => {
+it.each(["Files", "Diff"])("opens and closes workspace %s without replacing or sending the composer draft", async (panel) => {
   const f = fixture(); render(<App transport={f.transport} />);
   fireEvent.click(await screen.findByRole("button", { name: /General Chat Retained session/ }));
   const composer = await screen.findByRole("textbox", { name: "Message" });
   fireEvent.change(composer, { target: { value: "Keep while browsing files" } });
-  const files = screen.getByRole("button", { name: "Files" });
+  const files = screen.getByRole("button", { name: panel });
   fireEvent.click(files);
-  expect(await screen.findByRole("complementary", { name: "Session files" })).toBeTruthy();
+  expect(await screen.findByRole("complementary", { name: panel === "Files" ? "Session files" : "Session Git diff" })).toBeTruthy();
   expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
-  fireEvent.click(screen.getByRole("button", { name: "Close session files" }));
+  fireEvent.click(screen.getByRole("button", { name: panel === "Files" ? "Close session files" : "Close session diff" }));
   expect(document.activeElement).toBe(files);
   expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
   expect((composer as HTMLTextAreaElement).value).toBe("Keep while browsing files");

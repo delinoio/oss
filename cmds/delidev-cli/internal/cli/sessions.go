@@ -62,6 +62,8 @@ func sessionCommand(ctx context.Context, c client, o options, args []string, str
 	switch action {
 	case "files":
 		return sessionFiles(ctx, c, args[1:])
+	case "diff":
+		return sessionFiles(ctx, c, append([]string{"diff"}, args[1:]...))
 	case "steer":
 		id := f.String("id", "", "")
 		inputID := f.String("input-id", "", "")

@@ -12,16 +12,18 @@ const (
 	WorkspaceRoots          WorkspaceReadOperation = "roots"
 	WorkspaceDirectory      WorkspaceReadOperation = "directory"
 	WorkspaceFile           WorkspaceReadOperation = "file"
+	WorkspaceGitDiff        WorkspaceReadOperation = "git-diff"
 	WorkspacePageSize                              = 100
 	WorkspaceDirectoryLimit                        = 10000
 	WorkspacePreviewLimit                          = 64 << 10
 )
 
 type WorkspaceReadQuery struct {
-	Operation    WorkspaceReadOperation `json:"operation"`
-	RepositoryID ID                     `json:"repository_id,omitempty"`
-	Path         string                 `json:"path,omitempty"`
-	PageToken    string                 `json:"page_token,omitempty"`
+	Operation    WorkspaceReadOperation  `json:"operation"`
+	RepositoryID ID                      `json:"repository_id,omitempty"`
+	Path         string                  `json:"path,omitempty"`
+	PageToken    string                  `json:"page_token,omitempty"`
+	Comparison   WorkspaceDiffComparison `json:"comparison,omitempty"`
 }
 
 // A single portable namespace prevents alternate streams and platform-specific
@@ -51,7 +53,7 @@ func WorkspacePath(value string) bool {
 }
 
 func (q WorkspaceReadQuery) Validate() error {
-	valid := q.RepositoryID == "" || q.RepositoryID.Validate() == nil
+	valid := (q.RepositoryID == "" || q.RepositoryID.Validate() == nil) && (q.Operation == WorkspaceGitDiff || q.Comparison == "")
 	switch q.Operation {
 	case WorkspaceRoots:
 		valid = valid && q.RepositoryID == "" && q.Path == "" && q.PageToken == ""
@@ -59,6 +61,8 @@ func (q WorkspaceReadQuery) Validate() error {
 		valid = valid && WorkspacePath(q.Path) && len(q.PageToken) <= 256
 	case WorkspaceFile:
 		valid = valid && q.Path != "." && WorkspacePath(q.Path) && q.PageToken == ""
+	case WorkspaceGitDiff:
+		valid = valid && q.RepositoryID.Validate() == nil && WorkspacePath(q.Path) && q.PageToken == "" && q.Comparison.Valid()
 	default:
 		valid = false
 	}
@@ -96,12 +100,17 @@ type WorkspaceReadResult struct {
 	Size          int64            `json:"size,string"`
 	Binary        bool             `json:"binary"`
 	Truncated     bool             `json:"truncated"`
+	Diff          *WorkspaceDiff   `json:"diff,omitempty"`
 }
 
 // Validate every observation before crossing the Worker-to-client boundary.
 func (r WorkspaceReadResult) Validate(q WorkspaceReadQuery) error {
 	valid := q.Validate() == nil && len(r.Text) <= WorkspacePreviewLimit && utf8.ValidString(r.Text) && r.Size >= 0 && len(r.NextPageToken) <= 256
-	if q.Operation == WorkspaceFile {
+	if q.Operation == WorkspaceGitDiff {
+		valid = valid && r.Diff != nil && r.Diff.Validate(q) == nil && len(r.Roots) == 0 && len(r.Entries) == 0 && r.NextPageToken == "" && r.Text == "" && r.Size == 0 && !r.Binary && !r.Truncated
+	} else if r.Diff != nil {
+		valid = false
+	} else if q.Operation == WorkspaceFile {
 		valid = valid && len(r.Roots) == 0 && len(r.Entries) == 0 && r.NextPageToken == "" && (!r.Binary || r.Text == "") && !strings.ContainsRune(r.Text, 0) && int64(len(r.Text)) <= r.Size && (!r.Truncated || r.Size > WorkspacePreviewLimit) && (r.Binary || r.Truncated || int64(len(r.Text)) == r.Size)
 	} else if q.Operation == WorkspaceDirectory {
 		valid = valid && len(r.Roots) == 0 && len(r.Entries) <= WorkspacePageSize && r.Text == "" && r.Size == 0 && !r.Binary && !r.Truncated

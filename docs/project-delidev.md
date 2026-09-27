@@ -20,7 +20,7 @@ Run personal AI sessions across projects, accounts, native harnesses, and execut
 - [TypeScript client contract](packages-delidev-api-client-contract.md)
 - [Desktop client contract](apps-delidev-desktop-contract.md)
 - [Worker workspace contract](cmds-delidev-workspace-contract.md)
-- [Session file explorer](cmds-delidev-files-contract.md)
+- [Session file explorer and Git comparisons](cmds-delidev-files-contract.md)
 - [Portable configuration](cmds-delidev-configuration-transfer-contract.md)
 - [Owned process contract](cmds-delidev-process-contract.md)
 - [Native harness adapter contract](cmds-delidev-harness-contract.md)
@@ -215,6 +215,6 @@ Claude root-text citations now compose native decoding, receipt-ordered Worker p
 
 Claude now preserves complete multi-repository Worktree and authenticated Local scope across first dispatch, FIFO/Resume and completed-report recovery. Its primary cwd and ordered additional directories come from the immutable prepared manifest and are independently bound by native and Worker checkpoints. Legacy single-root checkpoint digests remain unchanged; original history/tool eligibility and cleanup still apply. Other native profiles and the remaining full issue requirements remain unfinished.
 
-Session workspace file browsing now has public owner/client RPC and CLI access plus a right-side desktop panel. A separate outbound Worker observation stream permits reads while the primary stream retains an unresolved native execution, without mutating execution authority. Original manifests select all repository roots and projectless workspaces; portable paths, anchored regular-file reads, bounded UTF-8 previews and directory observation pages are shared by clients. This adds the file explorer only; other session-side apps and the full issue requirements remain unfinished.
+Session workspace file browsing now has public owner/client RPC and CLI access plus a right-side desktop panel. A separate outbound Worker observation stream permits reads while the primary stream retains an unresolved native execution, without mutating execution authority. Original manifests select all repository roots and projectless workspaces; portable paths, anchored regular-file reads, bounded UTF-8 previews and directory observation pages are shared by clients. The same channel now provides bounded Git diffs against current HEAD, the staged index or immutable Worktree creation commits, with original unborn-branch evidence and separately listed untracked files. The desktop Diff panel preserves the conversation/composer and renders inert comparisons. Local review comments/submissions, other session-side apps and the full issue requirements remain unfinished.
 
 Grok first-text Execute/General Chat now composes public Stop with its original once-only native claim, acknowledged content, independently retained interrupted/raced-success terminal and separate workspace cleanup. It preserves an accepted pre-text interruption without creating a message or usage, partial text and missing usage, including the pinned HTTP-retry observation caused by relay revocation before native cancellation. Desktop disclosure separates native outcome from Stop and workspace reporting. This adds no stopped-history continuation, richer tool/Plan Stop, real-account acceptance or remaining issue completion claim.

@@ -1,8 +1,8 @@
-# DeliDev Session Files
+# DeliDev Session Files and Git Comparisons
 
 ## Scope
 
-`cmds/delidev-cli/internal/{domain,workspace,worker,server,cli}` owns read-only session workspace browsing. `apps/delidev` presents the same product operations in the session's right application area. This contract implements the file explorer requirement of issue #964; terminal, diff, browser, editing and downloads remain separate capabilities.
+`cmds/delidev-cli/internal/{domain,workspace,worker,server,cli}` owns read-only session workspace browsing and Git comparisons. `apps/delidev` presents the same product operations in the session's right application area. This contract implements file browsing and bounded Git comparisons for issue #964; local review comments/submissions, terminal, browser, editing and downloads remain separate capabilities.
 
 ## Runtime and Language
 
@@ -14,11 +14,27 @@ Owners and paired clients inspect the actual execution machine's prepared Genera
 
 ## Interfaces and Contracts
 
-`SessionService.ReadSessionWorkspace` accepts a session UUID and a closed JSON query: `roots`, `directory`, or `file`. Roots use repository UUIDs; the projectless root has an empty repository UUID. Paths are bounded to 4,096 UTF-8 bytes and 64 components, with at most 255 bytes per component. Paths are canonical relative slash paths (`.` denotes the root), never client-selected absolute directories. Results contain root descriptors, directory entries or an inert UTF-8 text preview. CLI commands are `session files roots|list|read --id ID`, with `--repository-id`, `--path`, and directory `--page-token` as appropriate.
+`SessionService.ReadSessionWorkspace` accepts a session UUID and a closed JSON query: `roots`, `directory`, `file`, or `git-diff`. Roots use repository UUIDs; the projectless root has an empty repository UUID. Paths are bounded to 4,096 UTF-8 bytes and 64 components, with at most 255 bytes per component. Paths are canonical relative slash paths (`.` denotes the root), never client-selected absolute directories. Results contain root descriptors, directory entries or an inert UTF-8 text preview. CLI commands are `session files roots|list|read --id ID`, with `--repository-id`, `--path`, and directory `--page-token` as appropriate.
 
 `WorkerService.WatchWorkspaceReads` and `ReportWorkspaceRead` form a separate outbound-only, authenticated observation channel. It is bound to the current primary Worker stream and instance, and cannot renew that stream's lease or authorize execution. At most 1,024 observation streams and 64 pending reads exist per server. One observation per machine is outstanding; a concurrent query receives ResourceExhausted. Reads expire after 15 seconds, never enter the durable execution queue, and cannot block native execution controls. Disconnect, replacement and revocation invalidate pending observations. The server revalidates current session/preparation and Worker ownership before releasing a result.
 
 Directory pages contain at most 100 entries. Enumeration is bounded at 10,000 entries and fails explicitly beyond that limit. Page tokens bind the session, repository, path and digest of the sorted directory observation; changes require restarting pagination. Filenames unsupported by the portable path contract cause an explicit Unsupported result rather than disappearing. Symbolic links and special files are displayed as inert entries, never opened as previews. Text previews read at most 64 KiB plus a sentinel; binary or invalid UTF-8 data has no text preview. Truncated text is labeled; live filesystem observations are not atomic snapshots.
+
+## Git Comparisons
+
+`session diff --id ID --repository-id ID [--comparison working-tree|staged|creation] [--path RELATIVE]` uses the same owner/client `ReadSessionWorkspace` and outbound Worker observation channel. The equivalent closed JSON operation is `git-diff`, with explicit `comparison`, repository UUID and canonical relative path. The default CLI comparison is `working-tree`. Desktop defaults to `creation` for Worktree sessions and `working-tree` for Local. General Chat without a prepared repository is unavailable, rather than interpreting an incidental nested Git directory as a configured repository.
+
+- `working-tree` compares tracked working files, including staged changes, against the current exact HEAD.
+- `staged` compares the Git index against the current exact HEAD.
+- `creation` compares tracked working files against that repository's immutable resolved Worktree creation commit. It is unavailable for Local; no session-start filesystem baseline is created.
+
+An independently verified unborn Local branch compares against Git's canonical empty tree without writing an object, branch or commit. The result retains the comparison, repository, relative path, base kind/object, optional actual HEAD, complete patch, separately listed untracked paths and a SHA-256 revision over those exact returned facts. HEAD changes during the operation reject the observation. Live working-tree/index reads are not atomic filesystem snapshots; the revision identifies returned bytes and grants no patch application, local review or execution authority.
+
+Git runs with an independent read process owner and original manifest/administrative identity checks before and after the observation. Native execution claims remain untouched. Literal pathspecs prevent option/glob expansion. Diff and text-conversion helpers are disabled, and every read-only inspection child disables configured filesystem monitors, including index-opening attribute checks. Active clean/process filter attributes on selected tracked paths block a working-tree comparison; unused global driver definitions do not. Staged comparisons read stored Git content. Repository configuration/attributes and files remain live user-owned inputs, not a new OS sandbox.
+
+The patch is limited to 64 KiB without truncation; larger comparisons return ResourceExhausted with narrower-path guidance. Binary changes keep Git's binary indication without fabricated lines. Submodules show Gitlink commit differences only; nested dirty/untracked content is explicitly outside this comparison. At most 100 untracked paths / 16 KiB of names are listed separately and never represented as included patch hunks. Filter inspection is bounded by 10,000 tracked paths. Invalid UTF-8, NUL text, unsupported portable paths and incomplete/mixed observations fail rather than disappearing. No fetch, checkout, staging, commit, filesystem baseline or shared-checkout mutation is performed.
+
+Desktop Files and Diff share the existing right session area while preserving the conversation and unsent composer. Diff supports repository/comparison selection, a literal relative path, explicit refresh, keyboard Escape and focus return. Patch text and filenames remain inert. Failed refresh retains and labels the prior observation; closing or changing the view cancels outstanding reads and discards inactive query contents. No background polling or persistent cache is added.
 
 ## Storage
 
@@ -38,7 +54,7 @@ Run focused domain/workspace/server/Worker/CLI tests, the complete DeliDev Go su
 
 ## Dependencies and Integrations
 
-Uses the existing preparation manifest, authenticated Connect services, Worker process lifecycle and generated API client. No new network listener, Tauri business binding or filesystem dependency is introduced.
+Uses native Git comparisons, the existing preparation manifest, authenticated Connect services, Worker process lifecycle and generated API client. No new network listener, Tauri business binding or filesystem dependency is introduced.
 
 ## Change Triggers
 
@@ -51,3 +67,5 @@ Update the project index, protocol/client/desktop contracts and relevant scoped 
 - [Requirements](cmds-delidev-requirements.md)
 - [Repository defaults](repository-defaults.md)
 - [Go traversal-resistant filesystem APIs](https://go.dev/blog/osroot)
+- [Git diff](https://git-scm.com/docs/git-diff)
+- [Git attributes and filters](https://git-scm.com/docs/gitattributes)
