@@ -347,6 +347,9 @@ func (c *ClaudeContentPublisher) commitHead() {
 	}
 	if item.toolNative != "" {
 		if item.toolNext.state == domain.MessageComplete {
+			// Keep only profile eligibility after the original result receipt is
+			// acknowledged; released tool bodies must not remain in Worker memory.
+			item.toolNext.readContinuation = item.toolNext.content.ClaudeReadContinuationCandidate()
 			item.toolNext.content = nil
 		}
 		c.tools[item.toolNative] = item.toolNext

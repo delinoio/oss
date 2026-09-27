@@ -159,3 +159,27 @@ func TestClaudeToolResultBatchRejectsAllBeforePublishingAny(t *testing.T) {
 		})
 	}
 }
+
+func TestClaudeReadContinuationEligibilityWaitsForOriginalResultReceipt(t *testing.T) {
+	c, rpc, o := claudeToolFixture(t, "")
+	o.Content[0].ToolResult.Structured = json.RawMessage(`{"type":"text","file":{"filePath":"/private/fixture","content":"Original read result","numLines":1,"startLine":1,"totalLines":1}}`)
+	o.Content[1].ToolResult.Structured = json.RawMessage(`"Original read failure"`)
+	rpc.lose = true
+	if handled, err := c.PublishObservation(context.Background(), o); !handled || err == nil {
+		t.Fatal("original result acknowledgment was not lost")
+	}
+	for _, tool := range c.tools {
+		if tool.readContinuation {
+			t.Fatal("unacknowledged result acquired history eligibility")
+		}
+	}
+	rpc.lose = false
+	if err := c.ReplayPending(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range c.tools {
+		if !tool.readContinuation || tool.content != nil || tool.state != domain.MessageComplete {
+			t.Fatal("original Read eligibility or payload release lost")
+		}
+	}
+}

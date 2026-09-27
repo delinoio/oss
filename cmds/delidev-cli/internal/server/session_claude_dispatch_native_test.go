@@ -20,6 +20,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/worker"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 )
@@ -42,6 +43,8 @@ const (
 	claudePublicClaimChanged         claudePublicCase = "continuation-claim-changed"
 	claudePublicReportChanged        claudePublicCase = "continuation-report-changed"
 	claudePublicOutboxChanged        claudePublicCase = "continuation-outbox-changed"
+	claudePublicRead                 claudePublicCase = "continuation-read"
+	claudePublicReadError            claudePublicCase = "continuation-read-error"
 )
 
 func TestManualNativeClaudePublicCancellationContainment(t *testing.T) {
@@ -96,7 +99,10 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 	defer cancel()
 	turns, turn := 1, 0
 	continuation := strings.HasPrefix(string(scenario), "continuation")
-	fault := continuation && scenario != claudePublicContinuation && scenario != claudePublicResume
+	read := scenario == claudePublicRead || scenario == claudePublicReadError
+	missingRead := scenario == claudePublicReadError
+	fault := continuation && !read && scenario != claudePublicContinuation && scenario != claudePublicResume
+	var readRoot atomic.Value
 	if continuation {
 		turns = 3
 	}
@@ -112,6 +118,9 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 	var calls atomic.Int32
 	providerEnded := make(chan struct{})
 	expected := int32(turns)
+	if read {
+		expected *= 2
+	}
 	if question && !denied {
 		expected++
 	}
@@ -137,7 +146,12 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 			w.WriteHeader(400)
 			return
 		}
-		if continuation {
+		if read {
+			if !checkClaudePublicReadHistory(t, raw, n, missingRead) {
+				w.WriteHeader(400)
+				return
+			}
+		} else if continuation {
 			var request struct {
 				Messages []struct {
 					Role    string          `json:"role"`
@@ -194,7 +208,12 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 		block := map[string]any{"type": "text", "text": ""}
 		delta := map[string]any{"type": "text_delta", "text": "Original public Claude result."}
 		reason := "end_turn"
-		if question && n == 1 {
+		if read && n%2 == 1 {
+			params, _ := json.Marshal(map[string]any{"file_path": filepath.Join(readRoot.Load().(string), fmt.Sprintf("original-%d.txt", (n-1)/2))})
+			block = map[string]any{"type": "tool_use", "id": fmt.Sprintf("toolu_public_read_%d", (n-1)/2), "name": "Read", "input": map[string]any{}}
+			delta = map[string]any{"type": "input_json_delta", "partial_json": string(params)}
+			reason = "tool_use"
+		} else if question && n == 1 {
 			params, _ := json.Marshal(map[string]any{"questions": []any{map[string]any{"question": "Which original option?", "header": "Choice", "multiSelect": false, "options": []any{map[string]any{"label": "One", "description": "First option"}, map[string]any{"label": "Two", "description": "Second option"}}}}})
 			block = map[string]any{"type": "tool_use", "id": "toolu_public_original", "name": "AskUserQuestion", "input": map[string]any{}}
 			delta = map[string]any{"type": "input_json_delta", "partial_json": string(params)}
@@ -222,6 +241,25 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 	}))
 	defer upstream.Close()
 	f := newFirstDispatchFixtureProfile(t, domain.ClaudeCode, mode, binary, upstream.URL)
+	if read {
+		row, err := f.service.Store.Get(ctx, domain.JobKind, domain.ID(f.change.WorkspaceJob.Id))
+		if err != nil {
+			t.Fatal(err)
+		}
+		job, err := store.Decode[domain.Job](row)
+		var manifest workspace.Manifest
+		if err != nil || domain.Decode(job.Output, &manifest) != nil || manifest.PrimaryPath == "" {
+			t.Fatal("original fixture workspace unavailable", err)
+		}
+		readRoot.Store(manifest.PrimaryPath)
+		for i := 0; i < turns; i++ {
+			if !missingRead {
+				if err := os.WriteFile(filepath.Join(manifest.PrimaryPath, fmt.Sprintf("original-%d.txt", i)), []byte(fmt.Sprintf("Original retained Read %d.\n", i)), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+	}
 	f.workerStream.Close()
 	_, err := f.service.Store.Mutate(ctx, domain.NewID(), "fixture.release-setup-worker", nil, func(tx *store.Tx) (any, error) {
 		return nil, tx.SetWorkerInstance(f.selection.MachineID, domain.ID(f.workerInstance), time.Now().Add(-2*time.Minute))
@@ -373,6 +411,9 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 			wantCalls := expected
 			if turns > 1 {
 				wantCalls = int32(turn + 1)
+				if read {
+					wantCalls *= 2
+				}
 			}
 			if job.State != domain.JobSucceeded || domain.Decode(job.Output, &proof) != nil || proof.ValidateForHarness(domain.ClaudeCode) != nil || proof.Version != version || calls.Load() != wantCalls || question && !answered {
 				t.Fatalf("public Claude execution did not finish: %s %v", job.State, job.Problem)
@@ -413,6 +454,9 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 				if retries != 1 || inputs != 1 {
 					t.Fatal("native retry duplicated input or lost progress", retries, inputs)
 				}
+			}
+			if read {
+				verifyClaudePublicReadResult(t, ctx, f, proof, turn, missingRead)
 			}
 			if turn > 0 && (proof.NativeThreadID != previous.NativeThreadID || proof.NativeTurnID == previous.NativeTurnID || proof.ExecutionID == previous.ExecutionID || proof.NativeCheckpointDigest == previous.NativeCheckpointDigest) {
 				t.Fatal("continuation reused authority or replaced native session")
