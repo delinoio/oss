@@ -58,6 +58,8 @@ pub struct Frame {
     pub access_path: Option<AccessPath>,
     pub requested_delay_ns: u64,
     pub observed_delay_ns: u64,
+    /// A per-process-image nonce inherited by every thread connection.
+    pub image_id: Option<(u64, u64)>,
 }
 
 fn invalid(reason: &'static str) -> io::Error {
@@ -102,7 +104,7 @@ pub fn read_frame(reader: &mut impl Read) -> io::Result<Option<Frame>> {
         || tid == 0
         || id == 0
         || monotonic_ns == 0
-        || (kind == FrameKind::Hello && (result != 0 || error != 0))
+        || (kind == FrameKind::Hello && error != 0)
         || (kind == FrameKind::Start
             && (error != 0 || (result != 0 && !(operation == 1 && result == 1))))
         || (kind == FrameKind::Hello && length != 0)
@@ -131,6 +133,7 @@ pub fn read_frame(reader: &mut impl Read) -> io::Result<Option<Frame>> {
         access_path: None,
         requested_delay_ns: 0,
         observed_delay_ns: 0,
+        image_id: (kind == FrameKind::Hello).then_some((id, result as u64)),
     }))
 }
 
@@ -197,17 +200,23 @@ impl FrameLedger {
                         .pending
                         .get(&key)
                         .ok_or_else(|| invalid("missing_exec"))?;
-                    let mut completion = start.clone();
-                    completion.kind = FrameKind::Completion;
-                    completion.monotonic_ns = frame.monotonic_ns;
-                    completion.result = 0;
-                    completion.error = 0;
-                    completion.path.clear();
-                    completion.access_path = None;
-                    self.push(completion)?;
+                    let old_image = start.image_id.ok_or_else(|| invalid("missing_image"))?;
+                    if frame.image_id != Some(old_image) {
+                        let mut completion = start.clone();
+                        completion.kind = FrameKind::Completion;
+                        completion.monotonic_ns = frame.monotonic_ns;
+                        completion.result = 0;
+                        completion.error = 0;
+                        completion.path.clear();
+                        completion.access_path = None;
+                        self.push(completion)?;
+                    }
                 }
             }
             FrameKind::Start => {
+                if frame.operation == 11 && frame.image_id.is_none() {
+                    return Err(invalid("missing_image"));
+                }
                 if frame.operation == 11 && self.replacing.insert(frame.pid, key).is_some() {
                     return Err(invalid("duplicate_exec"));
                 }
@@ -279,6 +288,8 @@ fn receive_connection(
 
     stream.set_nonblocking(false)?;
     stream.set_read_timeout(Some(Duration::from_millis(100)))?;
+    let mut image_id = None;
+    let mut peer = None;
     loop {
         let mut reader = RetryRead {
             stream: &mut stream,
@@ -287,6 +298,17 @@ fn receive_connection(
         let Some(mut frame) = read_frame(&mut reader)? else {
             return Ok(());
         };
+        if let Some((pid, tid)) = peer {
+            if frame.kind == FrameKind::Hello || frame.pid != pid || frame.tid != tid {
+                return Err(invalid("connection_identity"));
+            }
+            frame.image_id = image_id;
+        } else if frame.kind == FrameKind::Hello {
+            peer = Some((frame.pid, frame.tid));
+            image_id = frame.image_id;
+        } else {
+            return Err(invalid("missing_hello"));
+        }
         let start = frame.kind == FrameKind::Start;
         if start && !frame.path.is_empty() {
             if let Some(root) = root {
@@ -929,19 +951,30 @@ mod tests {
     fn replacement_hello_completes_the_pending_exec() {
         let mut start = frame_bytes(b's', b"/tmp/tool");
         start[1] = 11;
-        let start = read_frame(&mut start.as_slice()).unwrap().unwrap();
-        let mut hello = frame_bytes(b'h', b"");
-        hello[1] = 0;
-        hello[26..34].copy_from_slice(&123_457_u64.to_le_bytes());
-        let hello = read_frame(&mut hello.as_slice()).unwrap().unwrap();
+        let mut start = read_frame(&mut start.as_slice()).unwrap().unwrap();
+        start.image_id = Some((789, 0));
+        let mut old_hello = frame_bytes(b'h', b"");
+        old_hello[1] = 0;
+        old_hello[26..34].copy_from_slice(&123_457_u64.to_le_bytes());
+        let old_hello = read_frame(&mut old_hello.as_slice()).unwrap().unwrap();
+        let mut successor_hello = frame_bytes(b'h', b"");
+        successor_hello[1] = 0;
+        successor_hello[26..34].copy_from_slice(&123_458_u64.to_le_bytes());
+        successor_hello[34..42].copy_from_slice(&1_i64.to_le_bytes());
+        let successor_hello = read_frame(&mut successor_hello.as_slice())
+            .unwrap()
+            .unwrap();
         let mut ledger = FrameLedger::new(2, 4096);
         ledger.push(start).unwrap();
-        ledger.push(hello).unwrap();
+        ledger.push(old_hello).unwrap();
+        assert_eq!(ledger.pending.len(), 1);
+        assert!(ledger.completed.is_empty());
+        ledger.push(successor_hello).unwrap();
         let collected = ledger.finish().unwrap();
         assert_eq!(collected.pairs.len(), 1);
         assert_eq!(collected.pairs[0].0.operation, 11);
         assert_eq!(collected.pairs[0].1.result, 0);
-        assert_eq!(collected.pairs[0].1.sequence, 3);
+        assert_eq!(collected.pairs[0].1.sequence, 4);
     }
 
     #[test]

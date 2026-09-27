@@ -80,6 +80,7 @@ pub fn safe_path(path: *const c_char) -> Option<CString> {
     })
 }
 static SOCKET: OnceLock<Option<PathBuf>> = OnceLock::new();
+static IMAGE_ID: OnceLock<(u64, u64)> = OnceLock::new();
 static READY: AtomicBool = AtomicBool::new(false);
 
 #[cfg_attr(
@@ -91,6 +92,13 @@ static READY: AtomicBool = AtomicBool::new(false);
 )]
 pub fn init_ready() {
     let _ = SOCKET.set(std::env::var_os("CLIBOX_FSPY_SOCKET").map(PathBuf::from));
+    let mut nonce = [0_u8; 16];
+    // SAFETY: arc4random_buf initializes this local array without file I/O.
+    unsafe { libc::arc4random_buf(nonce.as_mut_ptr().cast(), nonce.len()) };
+    let _ = IMAGE_ID.set((
+        u64::from_le_bytes(nonce[..8].try_into().expect("fixed nonce")) | 1,
+        u64::from_le_bytes(nonce[8..].try_into().expect("fixed nonce")),
+    ));
     READY.store(true, Ordering::Release);
     if socket_path().is_some() && !matches!(preserve_errno(|| with_stream(|_| true)), Some(true)) {
         mark_incomplete();
@@ -252,6 +260,7 @@ fn with_stream<R>(callback: impl FnOnce(&UnixStream) -> R) -> Option<R> {
                 MUTATIONS.with(|stack| stack.borrow_mut().clear());
             }
             if stream.is_none() {
+                let image_id = IMAGE_ID.get()?;
                 let socket = UnixStream::connect(path).ok()?;
                 let enabled: c_int = 1;
                 // SAFETY: the option value has the expected native size.
@@ -271,7 +280,15 @@ fn with_stream<R>(callback: impl FnOnce(&UnixStream) -> R) -> Option<R> {
                 {
                     return None;
                 }
-                if !send_frame(&socket, b'h', Kind::Hello, 1, 0, 0, &[]) {
+                if !send_frame(
+                    &socket,
+                    b'h',
+                    Kind::Hello,
+                    image_id.0,
+                    image_id.1 as i64,
+                    0,
+                    &[],
+                ) {
                     return None;
                 }
                 *stream = Some((pid, socket));

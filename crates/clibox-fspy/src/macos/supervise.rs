@@ -213,6 +213,7 @@ where
         path,
         requested_delay_ns: 0,
         observed_delay_ns: 0,
+        image_id: None,
     };
     let delay = match admission(&root_start, cancelled) {
         Admission::Proceed(delay) => delay,
