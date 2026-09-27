@@ -678,7 +678,19 @@ fn run() -> Result<(), NativeFailure> {
         .map_err(|_| NativeFailure::SidecarFailed)?;
     let exiting = Arc::clone(&tray);
     let exiting_notifications = Arc::clone(&notifications);
-    app.run(move |_, event| {
+    app.run(move |_app, event| {
+        #[cfg(target_os = "macos")]
+        if matches!(event, tauri::RunEvent::Reopen { .. }) {
+            // macOS app/Dock reopening must reveal the retained main window
+            // after close-to-tray. Reuse the same restoration as tray actions;
+            // creating a replacement would discard the renderer's drafts.
+            if _app
+                .get_webview_window("main")
+                .is_none_or(|window| show(&window).is_err())
+            {
+                tracing::warn!(operation = "window_reopen", code = "window-unavailable");
+            }
+        }
         if matches!(event, tauri::RunEvent::Exit) {
             exiting_notifications.stop();
             exiting.stop();
