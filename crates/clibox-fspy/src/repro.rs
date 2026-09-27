@@ -276,6 +276,7 @@ impl Snapshot {
             max_files,
         };
         let mut external_selected = false;
+        let mut blocked_identities = BTreeSet::new();
         let walker = WalkDir::new(&root)
             .follow_links(true)
             .into_iter()
@@ -287,9 +288,6 @@ impl Snapshot {
                     Ok(relative) => relative,
                     Err(_) => return false,
                 };
-                if denied(relative) {
-                    return false;
-                }
                 match fs::canonicalize(entry.path()) {
                     Ok(resolved) if resolved.starts_with(&root) => true,
                     Ok(_) => {
@@ -320,13 +318,21 @@ impl Snapshot {
                 }
                 Err(_) => return Err(ReproFailure::Unavailable),
             };
-            if !entry.file_type().is_file() {
-                continue;
-            }
             let relative = entry
                 .path()
                 .strip_prefix(&root)
                 .map_err(|_| ReproFailure::Unavailable)?;
+            if denied(relative) {
+                if entry.file_type().is_file() {
+                    let metadata =
+                        fs::metadata(entry.path()).map_err(|_| ReproFailure::Unavailable)?;
+                    blocked_identities.insert(source_identity(entry.path(), &metadata)?);
+                }
+                continue;
+            }
+            if !entry.file_type().is_file() {
+                continue;
+            }
             if !selector.matches(&native_relative(relative)) {
                 continue;
             }
@@ -350,6 +356,13 @@ impl Snapshot {
         }
         if external_selected {
             return Err(ReproFailure::ExternalLink);
+        }
+        if snapshot
+            .selected_identities
+            .keys()
+            .any(|identity| blocked_identities.contains(identity))
+        {
+            return Err(ReproFailure::BlockedInput);
         }
         Ok(snapshot)
     }
@@ -700,6 +713,31 @@ mod tests {
         assert!(matches!(
             snapshot.verify_required(&BTreeSet::from([relative])),
             Err(ReproFailure::UnstableInput)
+        ));
+    }
+
+    #[test]
+    fn rejects_selected_hardlink_to_blocked_credential_path() {
+        let directory = tempfile::tempdir().unwrap();
+        let blocked = directory.path().join(".env");
+        fs::write(&blocked, b"SECRET=value").unwrap();
+        fs::hard_link(&blocked, directory.path().join("input.txt")).unwrap();
+        let selector = Selector::new(&["*.txt".into()], &[]).unwrap();
+        assert!(matches!(
+            Snapshot::take(directory.path(), &selector, 1024, 10),
+            Err(ReproFailure::BlockedInput)
+        ));
+
+        fs::remove_file(&blocked).unwrap();
+        fs::create_dir(directory.path().join(".ssh")).unwrap();
+        fs::hard_link(
+            directory.path().join("input.txt"),
+            directory.path().join(".ssh/key"),
+        )
+        .unwrap();
+        assert!(matches!(
+            Snapshot::take(directory.path(), &selector, 1024, 10),
+            Err(ReproFailure::BlockedInput)
         ));
     }
 }
