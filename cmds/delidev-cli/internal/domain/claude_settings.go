@@ -59,10 +59,16 @@ func (c ExecutionConfiguration) ClaudeAPIInputPermission(mode SessionMode) (Clau
 	if c.Harness != ClaudeCode || o.SubagentModel != "" || o.SubagentEffort != "" || o.MaxConcurrency != 0 || o.ApprovalReviewModel != "" || o.ServiceTier != "" {
 		return "", Fail(Unsupported, "The selected Claude options need an additional native settings adapter.", "Preserve the explicit selection; unsupported settings cannot be omitted or translated.")
 	}
-	switch c.Effort {
-	case "", "low", "medium", "high", "xhigh", "max":
-	default:
+	if c.Effort != "" && !validClaudeEffort(c.Effort) {
 		return "", Fail(Unsupported, "The selected effort is not supported by this Claude profile.", "Use an exact supported native effort or leave it unspecified.")
 	}
 	return o.ClaudePermissionForInput(mode)
+}
+
+func validClaudeEffort(value string) bool {
+	switch value {
+	case "low", "medium", "high", "xhigh", "max":
+		return true
+	}
+	return false
 }

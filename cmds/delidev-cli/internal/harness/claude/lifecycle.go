@@ -64,6 +64,7 @@ const (
 // public publication authority or permission to discard unhandled families.
 type LifecycleObservation struct {
 	Kind           LifecycleKind
+	Initialized    *NativeInitialization
 	SessionID      domain.ID
 	InputID        domain.ID
 	ActionID       domain.ID
@@ -84,6 +85,13 @@ type LifecycleObservation struct {
 	TurnID  string
 	Content []ContentEvent
 	Native  *StreamEvent `json:"-"`
+}
+
+// NativeInitialization is emitted only after exact native initialization
+// validation. It is independent of requested launch flags and applied effort.
+type NativeInitialization struct {
+	Model      string
+	Permission NativePermission
 }
 
 // ExecutionBinding validates one immutable input attempt. It sends nothing,
@@ -262,6 +270,7 @@ func (b *ExecutionBinding) Observe(event StreamEvent) (observation LifecycleObse
 			b.initialized = true
 			b.turnID = header.UUID
 			observation.Kind, observation.TurnID = SessionInitialized, b.turnID
+			observation.Initialized = &NativeInitialization{Model: b.model, Permission: b.permission}
 		} else if header.Subtype == "session_state_changed" {
 			phase = runValidation
 			value, err := b.observeRunState(event.Body)

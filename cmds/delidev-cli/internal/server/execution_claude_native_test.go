@@ -20,6 +20,8 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/claude"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/worker"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 )
@@ -29,15 +31,23 @@ import (
 // claim is a test coordinator, not evidence of public Worker publication.
 func TestManualNativeClaudeUsesRegisteredServerRelay(t *testing.T) {
 	for _, mode := range []domain.SessionMode{domain.ExecuteMode, domain.PlanMode} {
-		t.Run(string(mode), func(t *testing.T) { nativeRegisteredClaude(t, mode, false) })
+		t.Run(string(mode), func(t *testing.T) { nativeRegisteredClaude(t, mode, false, 0) })
 	}
 }
 
 func TestManualNativeClaudeRegisteredRelayRevocation(t *testing.T) {
-	nativeRegisteredClaude(t, domain.ExecuteMode, true)
+	nativeRegisteredClaude(t, domain.ExecuteMode, true, 0)
 }
 
-func nativeRegisteredClaude(t *testing.T, mode domain.SessionMode, revoke bool) {
+func TestManualNativeClaudePublishesOriginalBindings(t *testing.T) {
+	for _, mode := range []domain.SessionMode{domain.ExecuteMode, domain.PlanMode} {
+		for _, lost := range []int{1, 2} {
+			t.Run(fmt.Sprintf("%s/lost-%d", mode, lost), func(t *testing.T) { nativeRegisteredClaude(t, mode, false, lost) })
+		}
+	}
+}
+
+func nativeRegisteredClaude(t *testing.T, mode domain.SessionMode, revoke bool, publicationLoss int) {
 	t.Helper()
 	binary := os.Getenv("DELIDEV_NATIVE_CLAUDE_EXECUTABLE")
 	if binary == "" {
@@ -129,6 +139,29 @@ func nativeRegisteredClaude(t *testing.T, mode domain.SessionMode, revoke bool) 
 	defer upstream.Close()
 	f := newProfileAuthorityFixture(t, upstream.URL, domain.ClaudeCode, domain.AnthropicMessages, func(input *domain.ExecutionJobInput) { input.Input.Mode = mode }, false)
 	f.registerGrant(t)
+	var bindings *worker.ClaudeBindingPublisher
+	var publication *losePublicationAck
+	if publicationLoss != 0 {
+		pf := publicationFixtureFromAuthority(t, f)
+		pc := publicationWorkerConfig(t, pf)
+		privateParent, err := filepath.EvalSymlinks(t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		pc.Root = filepath.Join(privateParent, "worker")
+		publication = &losePublicationAck{WorkerServiceClient: f.client, t: t, path: filepath.Join(pc.Root, "jobs", string(f.job), "publication.json"), dropAt: publicationLoss}
+		pc.Client = publication
+		publisher, err := worker.OpenExecutionPublisher(pc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer publisher.Close()
+		bindings, err = worker.OpenClaudeBindingPublisher(publisher)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer bindings.Close()
+	}
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -162,6 +195,11 @@ func nativeRegisteredClaude(t *testing.T, mode domain.SessionMode, revoke bool) 
 	claim, _ := json.Marshal(struct{ Job, Session, Input, Request domain.ID }{f.job, f.input.SessionID, f.input.InputID, f.input.TurnRequestID})
 	if err := security.WriteAtomic(filepath.Join(root, "claimed-input.json"), claim); err != nil {
 		t.Fatal(err)
+	}
+	if bindings != nil {
+		if err := bindings.ClaimInput(ctx, f.input.TurnRequestID, f.input.InputID, f.input.Input.Prompt); err != nil {
+			t.Fatal(err)
+		}
 	}
 	applied, err := s.SendInput(ctx, f.input.InputID, f.input.Input.Prompt, claude.ContinueSuccessfulRun)
 	if err != nil || applied.Model != cfg.Model || applied.Effort == nil {
@@ -208,6 +246,22 @@ func nativeRegisteredClaude(t *testing.T, mode domain.SessionMode, revoke bool) 
 			if err != nil {
 				t.Fatal(err)
 			}
+			if bindings != nil && (o.Kind == claude.SessionInitialized || o.Kind == claude.InputAccepted) {
+				var err error
+				if o.Kind == claude.SessionInitialized {
+					err = bindings.BindSession(ctx, o, applied)
+				} else {
+					err = bindings.AcceptInput(ctx, o)
+				}
+				if err != nil {
+					if len(publication.calls) != publicationLoss {
+						t.Fatal("unexpected original publication failure", err)
+					}
+					if err := bindings.ReplayPending(ctx); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
 			if o.Kind == claude.InputAccepted {
 				if o.InputID != f.input.InputID || o.SessionID != f.input.SessionID || o.TurnID == "" {
 					t.Fatal("native acceptance lost original ownership")
@@ -241,6 +295,16 @@ func nativeRegisteredClaude(t *testing.T, mode domain.SessionMode, revoke bool) 
 		}
 		if _, _, err := closed.RetainCheckpoint(ctx); err != nil {
 			t.Fatal("registered native history did not retain original evidence", err)
+		}
+	}
+	if bindings != nil {
+		r, err := f.service.Store.Get(ctx, domain.SessionKind, f.input.SessionID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		session, err := store.Decode[domain.Session](r)
+		if err != nil || session.Execution == nil || session.Execution.LastSequence != 2 || session.Execution.NativeThreadID != string(f.input.SessionID) || session.Execution.NativeTurnID == "" || session.PendingInputs != 0 || session.PendingInputBytes != 0 || session.Execution.CleanupVerified || session.Execution.Outcome != domain.ExecutionRunning || len(publication.calls) != 3 || publication.calls[publicationLoss-1] != publication.calls[publicationLoss] {
+			t.Fatal("original bindings lost ownership/accounting or fabricated terminal evidence", err)
 		}
 	}
 	if calls.Load() != 1 {

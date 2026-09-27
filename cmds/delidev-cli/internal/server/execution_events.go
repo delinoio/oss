@@ -120,6 +120,8 @@ func supportsExecutionPublication(input domain.ExecutionJobInput, kind domain.Ex
 	switch input.Configuration.Harness {
 	case domain.Codex:
 		return kind != domain.ExecutionOpenCodeUsageObserved
+	case domain.ClaudeCode:
+		return (kind == domain.ExecutionThreadBound || kind == domain.ExecutionInputAccepted) && len(executionAPIOperations(input, domain.AnthropicMessages)) != 0
 	case domain.OpenCode:
 		return (kind == domain.ExecutionThreadBound || kind == domain.ExecutionInputAccepted || kind == domain.ExecutionMessageStarted || kind == domain.ExecutionTextAppended || kind == domain.ExecutionMessageCompleted || kind.IsArtifact() || kind == domain.ExecutionToolStarted || kind == domain.ExecutionToolUpdated || kind == domain.ExecutionToolCompleted || kind == domain.ExecutionOpenCodeUsageObserved || kind == domain.ExecutionProgressObserved || kind == domain.ExecutionInteractionRequested || kind == domain.ExecutionInteractionClosed || kind == domain.ExecutionQuestionDeliveryObserved || kind == domain.ExecutionApprovalDeliveryObserved || kind == domain.ExecutionQuestionAccepted || kind == domain.ExecutionApprovalAccepted || kind == domain.ExecutionTurnFinished) && len(executionAPIOperations(input, domain.OpenAIChat)) != 0
 	}
@@ -130,6 +132,9 @@ func supportsExecutionPublication(input domain.ExecutionJobInput, kind domain.Ex
 // their parent message explicitly instead of flattening several parts into a
 // fabricated message identity or using the assistant as the execution turn.
 func validateNativeMessageOrigin(input domain.ExecutionJobInput, event domain.ExecutionEvent) error {
+	if input.Configuration.Harness == domain.ClaudeCode && event.NativeThreadID != string(input.SessionID) {
+		return executionEventConflict()
+	}
 	if (event.OpenCodeStop != nil || event.Interaction != nil && event.Interaction.OpenCodeStop != nil) && input.Configuration.Harness != domain.OpenCode {
 		return executionEventConflict()
 	}

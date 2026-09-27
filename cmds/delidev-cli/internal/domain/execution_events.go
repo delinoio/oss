@@ -92,7 +92,7 @@ func (o ObservedExecutionSettings) ValidateForInput(configuration ExecutionConfi
 		if err != nil {
 			return err
 		}
-		if o.OpenCodeAgent != "" || !o.ClaudePermission.Valid() || o.Permission != PermissionDefault || o.ApprovalPolicy != "" || o.ServiceTier != nil || configuration.Options.ServiceTier != "" {
+		if o.OpenCodeAgent != "" || !o.ClaudePermission.Valid() || o.Permission != PermissionDefault || o.ApprovalPolicy != "" || o.ServiceTier != nil || configuration.Options.ServiceTier != "" || o.Effort != nil && !validClaudeEffort(*o.Effort) {
 			return Fail(Unsupported, "The observed Claude settings contain an unsupported native policy.", "Preserve the original Claude tool permission observation without a synthetic sandbox, approval policy or service tier.")
 		}
 		if o.ClaudePermission != permission {
