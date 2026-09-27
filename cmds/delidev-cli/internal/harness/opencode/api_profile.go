@@ -29,6 +29,7 @@ type nativeAPIProfile struct {
 	Instructions        string               `json:"-"`
 	InstructionsPath    string               `json:"-"`
 	ProjectInstructions *projectInstructions `json:"-"`
+	ProjectConfig       *projectConfigScope  `json:"-"`
 	References          []WorkspaceReference `json:"-"`
 	ReferencePath       string               `json:"-"`
 	ReferenceWorkspace  string               `json:"-"`

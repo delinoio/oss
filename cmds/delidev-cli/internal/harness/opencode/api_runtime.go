@@ -70,6 +70,13 @@ func prepareAPISession(config apiSessionConfig) ([]string, *nativeAPIProfile, er
 	if directoryContains(root, config.Workspace) || directoryContains(config.Workspace, root) || !validWorkspaceReferences(config.References, config.Workspace, root) || len(config.References) > 0 && config.NativeRoot != config.Workspace {
 		return nil, nil, sessionInvalid()
 	}
+	projectConfig := &projectConfigScope{Directory: config.Workspace, Root: config.NativeRoot}
+	if err := projectConfig.inspect(); err != nil {
+		if logger := config.Probe.Process.Logger; logger != nil {
+			logger.Warn("opencode_project_config_source_refused", "owner_id", config.Probe.Process.OwnerID, "code", domain.Unsupported)
+		}
+		return nil, nil, err
+	}
 	if err := rpc.ValidateEndpoint(config.ServerOrigin); err != nil {
 		return nil, nil, err
 	}
@@ -81,6 +88,7 @@ func prepareAPISession(config apiSessionConfig) ([]string, *nativeAPIProfile, er
 	settings := config.Settings
 	settings.Permission = slices.Clone(settings.Permission)
 	profile := &nativeAPIProfile{Settings: settings, BaseURL: origin.String(), Token: config.Token, ContextLimit: config.ContextLimit, OutputLimit: config.OutputLimit, Rejection: config.Rejection, Instructions: config.Instructions}
+	profile.ProjectConfig = projectConfig
 	profile.References = slices.Clone(config.References)
 	if err := profile.inspectReferences(); err != nil {
 		return nil, nil, err

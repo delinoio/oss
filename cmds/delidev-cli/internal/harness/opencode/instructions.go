@@ -29,6 +29,9 @@ func (p *nativeAPIProfile) writeInstructions() error {
 }
 
 func (p *nativeAPIProfile) inspectInstructions() error {
+	if err := p.ProjectConfig.inspect(); err != nil {
+		return err
+	}
 	if err := p.inspectReferences(); err != nil {
 		return err
 	}

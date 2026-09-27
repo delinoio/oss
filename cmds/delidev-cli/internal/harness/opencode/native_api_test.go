@@ -151,9 +151,9 @@ func TestManualNativeOpenCodeOwnedAPIProjectInstructions(t *testing.T) {
 						writeProjectInstruction(t, filepath.Join(dir, "CONTEXT.md"), ignoredContext)
 					}
 				}
-				// Loading repository configuration would change the verified
-				// model and fail before inference; only selected instructions load.
-				writeProjectInstruction(t, filepath.Join(root, "opencode.json"), `{"model":"foreign/ignored"}`)
+				// Native project configuration is independently refused before
+				// launch: the pinned v2 loader ignores the legacy disable flag.
+				// These cases establish only the selected instruction sources.
 			}
 			check := func(body map[string]json.RawMessage) {
 				var messages []map[string]json.RawMessage

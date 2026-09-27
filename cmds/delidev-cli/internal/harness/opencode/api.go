@@ -51,6 +51,11 @@ func openAPISessionRestoring(ctx context.Context, config apiSessionConfig, resto
 			return nil, err
 		}
 	}
+	// Staging can take time. Recheck every original source even when this
+	// session has no additive instructions or additional repositories.
+	if err := profile.inspectInstructions(); err != nil {
+		return nil, err
+	}
 	secret := make([]byte, 32)
 	if _, err := rand.Read(secret); err != nil {
 		return nil, unavailable()

@@ -123,15 +123,6 @@ func (p *nativeAPIProfile) writeReferences(home, workspace string) error {
 	return p.inspectReferences()
 }
 
-func referenceSourcesEmpty(workspace string) bool {
-	for _, name := range []string{"opencode.json", "opencode.jsonc", ".opencode"} {
-		if _, err := os.Lstat(filepath.Join(workspace, name)); !os.IsNotExist(err) {
-			return false
-		}
-	}
-	return true
-}
-
 // Diagnostic counts never grant authority or expose native paths/payloads.
 func observedReferencePolicyCounts(raw []byte, selected PrimaryAgent, references []WorkspaceReference) (int, int) {
 	var agents []struct {
