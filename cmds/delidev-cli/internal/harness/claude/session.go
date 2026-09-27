@@ -358,6 +358,27 @@ func (s *APISession) Close() error {
 func (s *APISession) Finish(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.finishInputLocked(ctx)
+}
+
+// FinishOriginalInput joins the exact original controller's clean EOF exit.
+// It returns classification only; it neither proves retained history nor grants
+// replacement/continuation authority after a permission transition or callback.
+func (s *APISession) FinishOriginalInput(ctx context.Context, owner, session, input domain.ID, turn string) (NativeResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	b := s.current
+	if b == nil || s.config.Process.OwnerID != owner || s.config.SessionID != session || b.input != input || b.turnID != turn || b.terminal == nil || b.continuationSeen || s.interrupt != nil || b.interruptedReply != "" {
+		return NativeResult{}, lifecycleUncertain()
+	}
+	result := NativeResult{Kind: b.terminal.Kind, Reason: b.terminal.Reason, Error: b.terminal.Error}
+	if err := s.finishInputLocked(ctx); err != nil {
+		return NativeResult{}, err
+	}
+	return result, nil
+}
+
+func (s *APISession) finishInputLocked(ctx context.Context) error {
 	if err := s.status(); err != nil {
 		return err
 	}

@@ -25,6 +25,7 @@ const (
 	claudeInputAccepted
 	claudeContentPending
 	claudeProgressPending
+	claudeTerminalPublished
 	claudeBindingBlocked
 )
 

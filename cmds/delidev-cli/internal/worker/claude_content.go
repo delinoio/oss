@@ -31,21 +31,28 @@ type claudeContentCommit struct {
 // Its caller must reconcile child and terminal authority separately;
 // unsupported rich blocks latch this publisher.
 type ClaudeContentPublisher struct {
-	interruption     *claudePublishedInterruption
-	responses        map[domain.ID]*claudeResponseAttempt
-	replyUncertain   bool
-	interactions     map[domain.ID]claudePublishedInteraction
-	callbackRequests map[string]bool
-	binding          *ClaudeBindingPublisher
-	messages         map[string]claudePublishedContent
-	tools            map[string]claudePublishedTool
-	seen             map[string]bool
-	usageSeen        map[string]bool
-	resultUsage      bool
-	active           string
-	inputPublished   bool
-	queue            []claudeContentCommit
-	pending          bool
+	terminalCommand     domain.ClaudeCommandCompletion
+	terminalCommandID   string
+	resultUsageNativeID string
+	resultBoundary      *claude.NativeResult
+	terminal            *domain.ClaudeTerminalObservation
+	terminalSequence    uint64
+	completion          *domain.ExecutionCompletion
+	interruption        *claudePublishedInterruption
+	responses           map[domain.ID]*claudeResponseAttempt
+	replyUncertain      bool
+	interactions        map[domain.ID]claudePublishedInteraction
+	callbackRequests    map[string]bool
+	binding             *ClaudeBindingPublisher
+	messages            map[string]claudePublishedContent
+	tools               map[string]claudePublishedTool
+	seen                map[string]bool
+	usageSeen           map[string]bool
+	resultUsage         bool
+	active              string
+	inputPublished      bool
+	queue               []claudeContentCommit
+	pending             bool
 }
 
 func OpenClaudeContentPublisher(binding *ClaudeBindingPublisher) (*ClaudeContentPublisher, error) {
@@ -269,6 +276,17 @@ func (c *ClaudeContentPublisher) drain(ctx context.Context) error {
 
 func (c *ClaudeContentPublisher) commitHead() {
 	item := c.queue[0]
+	if v := item.event.ClaudeTerminal; v != nil {
+		copy := *v
+		c.terminal, c.terminalSequence = &copy, item.event.Sequence
+		c.binding.stage = claudeTerminalPublished
+		if logger := c.binding.publisher.config.Logger; logger != nil {
+			logger.Info("claude_original_terminal_observed", "job_id", c.binding.journal.JobID, "sequence", item.event.Sequence, "outcome", item.event.Outcome)
+		}
+	}
+	if u := item.event.ClaudeUsage; u != nil && u.Source == domain.ClaudeInputResultUsage {
+		c.resultUsageNativeID = u.NativeEventID
+	}
 	if u := item.event.ClaudeInterruption; u != nil {
 		if u.Observation.Kind == domain.ClaudeDenialContext {
 			c.interruption.contextID = u.ID

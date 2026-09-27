@@ -388,7 +388,49 @@ func nativeClaudeReply(t *testing.T, mode domain.SessionMode, name string, deny,
 			if handled, err := display.PublishUsageObservation(ctx, o); !handled || err != nil {
 				t.Fatal("settled callbacks blocked original result usage", err)
 			}
-			finished = true
+		}
+		if !interrupt && display != nil && (o.Kind == claude.CommandObserved || o.Kind == claude.RunStateObserved) {
+			idle := o.Run != nil && o.Run.State == claude.RunIdle
+			if idle {
+				publication.dropAt = len(publication.calls) + 1
+			}
+			handled, err := display.PublishBoundaryObservation(ctx, o)
+			if idle {
+				lost = publication.dropAt
+				if !handled || err == nil || len(publication.calls) != lost {
+					t.Fatal("terminal acknowledgment not lost", err)
+				}
+				if err := display.ReplayPending(ctx); err != nil || publication.calls[lost-1] != publication.calls[lost] {
+					t.Fatal("terminal receipt changed", err)
+				}
+				finished = true
+			} else if err != nil {
+				t.Fatal("original command closure", err)
+			}
+		}
+	}
+	if !interrupt {
+		sr, err := f.service.Store.Get(ctx, domain.SessionKind, f.input.SessionID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		session, err := store.Decode[domain.Session](sr)
+		if err != nil || session.Execution.ClaudeTerminal == nil || session.Execution.Outcome != domain.ExecutionSucceeded || session.Execution.CleanupVerified {
+			t.Fatal("original native terminal lost or fabricated cleanup", err)
+		}
+		completion, err := display.Complete(ctx, s)
+		if err != nil {
+			t.Fatal("original clean EOF completion", err)
+		}
+		pf := publicationFixtureFromAuthority(t, f)
+		request, _ := pf.reportCompletion(t, completion)
+		if _, err := f.client.ReportWork(ctx, ownerRequest(security.Identity{Token: f.workerToken}, request)); err != nil {
+			t.Fatal("completion receipt replay", err)
+		}
+		sr, _ = f.service.Store.Get(ctx, domain.SessionKind, f.input.SessionID)
+		session, err = store.Decode[domain.Session](sr)
+		if err != nil || !session.Execution.CleanupVerified || session.ActiveExecutionID != "" || session.Dispatch != domain.DispatchPaused || session.Recovery != domain.NoRecovery {
+			t.Fatal("clean EOF enabled unproved continuation or lost cleanup", err)
 		}
 	}
 	if original == nil || calls.Load() != expectedRequests || preAcceptanceProgress == 0 || name == "ExitPlanMode" && !deny && !changedPermission {

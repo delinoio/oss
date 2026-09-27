@@ -2,6 +2,7 @@ import { type Resource } from "@delinoio/delidev-api-client";
 import { memo } from "react";
 import { Harness } from "./configuration-fields";
 import { NativeClaudePermissionProgress } from "./native-claude-progress";
+import { NativeClaudeTerminal } from "./native-claude-terminal";
 import { document, items, object, text, type Document } from "./documents";
 
 const knownOptions = new Set(["permission", "claude_permission", "approval_policy", "subagent_model", "subagent_effort", "max_concurrency", "approval_review_model", "service_tier"]);
@@ -33,6 +34,7 @@ function NativeObservations({ progress, selection, harness }: { progress: Docume
         {harness === Harness.OpenCode ? <><dt>Observed OpenCode primary agent</dt><dd>{observed(native.opencode_agent)}</dd><dt>Observed permission selection</dt><dd>{observed(native.permission)}</dd></> : null}
       </dl>
       {harness === Harness.Claude ? <NativeClaudePermissionProgress progress={progress} /> : null}
+      {harness === Harness.Claude ? <NativeClaudeTerminal progress={progress} /> : null}
       <p>Observations describe this recorded execution. Missing values remain unavailable.</p>
     </>}
   </section>;

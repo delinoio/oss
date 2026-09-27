@@ -46,8 +46,13 @@ func TestClaudePublicationRetainsOnlyOriginalBindings(t *testing.T) {
 					t.Fatal(err)
 				}
 				expected := connect.CodeUnimplemented
+				if kind == domain.ExecutionTurnFinished {
+					// Binding alone lacks the independently required original
+					// result/command/idle proof for the now supported terminal.
+					expected = connect.CodeAborted
+				}
 				if _, err := f.call(f.requestEvent(t, event)); connect.CodeOf(err) != expected {
-					t.Fatalf("binding support granted an unimplemented Claude event family: %v", err)
+					t.Fatalf("binding support granted an unsupported or unproved Claude event: %v", err)
 				}
 			}
 			after, err := f.service.Store.Get(context.Background(), domain.SessionKind, f.input.SessionID)

@@ -31,6 +31,11 @@ func finishNativeExecution(tx *store.Tx, record store.Record, job domain.Job, ex
 	var completion domain.ExecutionCompletion
 	progress := session.Execution
 	verified := reported == nil && domain.Decode(raw, &completion) == nil && completion.ValidateForHarness(input.Configuration.Harness) == nil && completion.ExecutionID == input.ExecutionID && completion.InputID == input.InputID && progress != nil && progress.JobID == record.ID && progress.ExecutionID == input.ExecutionID && progress.InputID == input.InputID && progress.NativeThreadID == string(completion.NativeThreadID) && progress.NativeTurnID == string(completion.NativeTurnID) && progress.LastSequence == completion.LastSequence && progress.Outcome == completion.Outcome && !progress.CleanupVerified
+	if input.Configuration.Harness == domain.ClaudeCode {
+		// Public Claude continuation requires its own original checkpoint and
+		// permission reconciliation; a forged v2 report cannot grant FIFO.
+		verified = verified && completion.Version == 1 && progress.ClaudeTerminal != nil && progress.ClaudeTerminal.Validate() == nil && progress.ClaudeTerminal.InputID == input.InputID && progress.ClaudeTerminal.Outcome() == completion.Outcome
+	}
 	now := time.Now().UTC()
 	job.FinishedAt = &now
 	previousDispatch := session.Dispatch

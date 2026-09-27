@@ -21,6 +21,7 @@ type sessionFixtureTransport struct {
 	barrier                          error
 	readError, sendError, replyError error
 	interruptError                   error
+	finishError                      error
 	interrupts                       atomic.Int64
 	blockingRead                     chan struct{}
 	blockingNext                     chan struct{}
@@ -86,7 +87,12 @@ func (f *sessionFixtureTransport) Close() error {
 	return nil
 }
 
-func (f *sessionFixtureTransport) Finish(context.Context) error { return f.Close() }
+func (f *sessionFixtureTransport) Finish(context.Context) error {
+	if f.finishError != nil {
+		return f.finishError
+	}
+	return f.Close()
+}
 
 func sessionFixture(t *testing.T) (*APISession, *sessionFixtureTransport) {
 	t.Helper()

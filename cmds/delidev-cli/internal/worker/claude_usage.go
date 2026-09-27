@@ -64,6 +64,13 @@ func (c *ClaudeContentPublisher) PublishUsageObservation(ctx context.Context, o 
 	c.usageSeen[o.NativeID] = true
 	if value.Source == domain.ClaudeInputResultUsage {
 		c.resultUsage = true
+		r := *o.Result
+		r.Usage = nil
+		if r.Origin != nil {
+			origin := *r.Origin
+			r.Origin = &origin
+		}
+		c.resultBoundary = &r
 	}
 	c.queue = []claudeContentCommit{{event: domain.ExecutionEvent{Kind: domain.ExecutionClaudeUsageObserved, ObservationID: domain.NewID(), ClaudeUsage: &value}}}
 	return true, c.drain(ctx)
