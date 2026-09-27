@@ -138,26 +138,8 @@ func retainClaudeCompletion(ctx context.Context, root string, jobID domain.ID, j
 // launched. Current account/Worker readiness and the new durable claim remain
 // mandatory before the caller invokes ContinueAPISession on the result.
 func ReadClaudeExecutionCheckpoint(ctx context.Context, root string, ref ExecutionCheckpointRef, config claude.APIStreamConfig) (*claude.ClosedAPISession, error) {
-	if ref.validateForHarness(domain.ClaudeCode) != nil || ref.Completion.Version != 2 {
-		return nil, executionCheckpointUncertain()
-	}
-	path, err := executionCheckpointPath(root, ref.Completion.ExecutionID)
+	p, err := readClaudeExecutionCheckpoint(root, ref)
 	if err != nil {
-		return nil, err
-	}
-	raw, err := security.ReadPrivate(path, maxClaudeExecutionCheckpointBytes)
-	if err != nil || executionInputDigest(raw) != ref.Completion.NativeCheckpointDigest {
-		return nil, executionCheckpointUncertain()
-	}
-	var p claudeExecutionCheckpoint
-	if json.Unmarshal(raw, &p) != nil || !p.matches(ref) {
-		return nil, executionCheckpointUncertain()
-	}
-	canonical, err := json.Marshal(p)
-	if err != nil || !bytes.Equal(raw, canonical) {
-		return nil, executionCheckpointUncertain()
-	}
-	if _, err := executionCheckpointPath(root, ref.HistoryExecutionID); err != nil {
 		return nil, err
 	}
 	historyRoot := filepath.Join(root, "runtimes", string(ref.HistoryExecutionID))
@@ -173,4 +155,30 @@ func ReadClaudeExecutionCheckpoint(ctx context.Context, root string, ref Executi
 		return nil, executionCheckpointUncertain()
 	}
 	return closed, nil
+}
+
+func readClaudeExecutionCheckpoint(root string, ref ExecutionCheckpointRef) (claudeExecutionCheckpoint, error) {
+	var p claudeExecutionCheckpoint
+	if ref.validateForHarness(domain.ClaudeCode) != nil || ref.Completion.Version != 2 {
+		return p, executionCheckpointUncertain()
+	}
+	path, err := executionCheckpointPath(root, ref.Completion.ExecutionID)
+	if err != nil {
+		return p, err
+	}
+	raw, err := security.ReadPrivate(path, maxClaudeExecutionCheckpointBytes)
+	if err != nil || executionInputDigest(raw) != ref.Completion.NativeCheckpointDigest {
+		return p, executionCheckpointUncertain()
+	}
+	if json.Unmarshal(raw, &p) != nil || !p.matches(ref) {
+		return p, executionCheckpointUncertain()
+	}
+	canonical, err := json.Marshal(p)
+	if err != nil || !bytes.Equal(raw, canonical) {
+		return p, executionCheckpointUncertain()
+	}
+	if _, err := executionCheckpointPath(root, ref.HistoryExecutionID); err != nil {
+		return p, err
+	}
+	return p, nil
 }

@@ -25,6 +25,11 @@ func recoveryFixture(t *testing.T, outcome domain.ExecutionOutcome) *publication
 	terminal := f.event(domain.ExecutionTurnFinished, 3)
 	terminal.Outcome = outcome
 	f.publish(t, terminal)
+	return replaceRecoveryFixtureWorker(t, f)
+}
+
+func replaceRecoveryFixtureWorker(t *testing.T, f *publicationFixture) *publicationFixture {
+	t.Helper()
 	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.recovery-ready", nil, func(tx *store.Tx) (any, error) {
 		sr, session, err := sessionRecord(tx, f.input.SessionID)
 		if err != nil {

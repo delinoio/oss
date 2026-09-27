@@ -180,6 +180,20 @@ func executionRecoveryRequest(tx *store.Tx, serverID domain.ID, sr store.Record,
 		}
 		result.Harness = domain.OpenCode
 		result.OpenCode = &domain.OpenCodeRecoveryReference{ClaimVersion: input.Version, CreationRequestID: creation, BindingRequestID: input.ThreadRequestID, InputRequestID: input.TurnRequestID}
+	} else if input.Configuration.Harness == domain.ClaudeCode {
+		permission, err := input.Configuration.ClaudeAPIInputPermission(input.Input.Mode)
+		if err != nil || !progress.ClaudeContinuationBoundary(input.InputID) {
+			return domain.ExecutionRecoveryRequest{}, domain.ExecutionRecoveryUncertain()
+		}
+		eligible, err := tx.ClaudeRootContentContinuation(input.ExecutionID)
+		if err != nil {
+			return result, err
+		}
+		if !eligible {
+			return domain.ExecutionRecoveryRequest{}, domain.ExecutionRecoveryUncertain()
+		}
+		result.Harness = domain.ClaudeCode
+		result.Claude = &domain.ClaudeRecoveryReference{ClaimVersion: input.Version, Version: input.Installation.Version, Executable: input.Installation.ResolvedPath, Model: input.Configuration.NativeModel, Effort: input.Configuration.Effort, Permission: permission, InstructionsDigest: continuationDigest([]byte(input.Configuration.Instructions)), BindingRequestID: input.ThreadRequestID, InputRequestID: input.TurnRequestID}
 	} else if input.Configuration.Harness != domain.Codex {
 		return domain.ExecutionRecoveryRequest{}, domain.ExecutionRecoveryUncertain()
 	}

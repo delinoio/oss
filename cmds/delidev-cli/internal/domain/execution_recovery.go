@@ -12,6 +12,7 @@ type ExecutionRecoveryRequest struct {
 	Version               uint32                     `json:"version"`
 	Harness               Harness                    `json:"harness,omitempty"`
 	OpenCode              *OpenCodeRecoveryReference `json:"opencode,omitempty"`
+	Claude                *ClaudeRecoveryReference   `json:"claude,omitempty"`
 	ServerID              ID                         `json:"server_id"`
 	DeviceID              ID                         `json:"device_id"`
 	InstanceID            ID                         `json:"instance_id"`
@@ -38,7 +39,7 @@ func ExecutionRecoveryUncertain() *Error {
 }
 
 func (r ExecutionRecoveryRequest) Validate() error {
-	if (r.NativeHarness() != Codex && r.NativeHarness() != OpenCode) || (r.NativeHarness() == OpenCode) != (r.OpenCode != nil) || r.OpenCode != nil && r.OpenCode.Validate() != nil {
+	if (r.NativeHarness() != Codex && r.NativeHarness() != OpenCode && r.NativeHarness() != ClaudeCode) || (r.NativeHarness() == OpenCode) != (r.OpenCode != nil) || (r.NativeHarness() == ClaudeCode) != (r.Claude != nil) || r.OpenCode != nil && r.OpenCode.Validate() != nil || r.Claude != nil && r.Claude.Validate() != nil {
 		return ExecutionRecoveryUncertain()
 	}
 	if r.Version != 1 || r.AssignmentRevision == 0 || r.Completion.Version != 1 || r.Completion.ValidateForHarness(r.NativeHarness()) != nil || !r.InputMode.Valid() {
@@ -59,10 +60,38 @@ func (r ExecutionRecoveryRequest) Validate() error {
 	if err != nil || r.OpenCode != nil && (len(bindings) != 1 || (r.OpenCode.ClaimVersion == 1) != (r.HistoryExecutionID == r.Completion.ExecutionID)) {
 		return ExecutionRecoveryUncertain()
 	}
+	if r.Claude != nil && (len(bindings) != 1 || (r.Claude.ClaimVersion == 1) != (r.HistoryExecutionID == r.Completion.ExecutionID) || string(r.Completion.NativeThreadID) != string(r.SessionID) || r.Completion.Outcome != ExecutionSucceeded) {
+		return ExecutionRecoveryUncertain()
+	}
 	for _, raw := range []json.RawMessage{r.Preparation, r.Manifest} {
 		if len(raw) == 0 || len(raw) > 1<<20 || !json.Valid(raw) {
 			return ExecutionRecoveryUncertain()
 		}
+	}
+	return nil
+}
+
+// Claude inspection compares immutable launch settings without receiving the
+// instruction body, prompt, answer, credential or authority for a new process.
+type ClaudeRecoveryReference struct {
+	ClaimVersion       uint32               `json:"claim_version"`
+	Version            string               `json:"version"`
+	Executable         string               `json:"executable"`
+	Model              string               `json:"model"`
+	Effort             string               `json:"effort"`
+	Permission         ClaudePermissionMode `json:"permission"`
+	InstructionsDigest string               `json:"instructions_sha256"`
+	BindingRequestID   ID                   `json:"binding_request_id"`
+	InputRequestID     ID                   `json:"input_request_id"`
+}
+
+func (r ClaudeRecoveryReference) Validate() error {
+	if (r.ClaimVersion != 1 && r.ClaimVersion != 2) || r.Version != ClaudeProtocolVersion || UniqueIDs([]ID{r.BindingRequestID, r.InputRequestID}) != nil || Text(r.Executable, "native executable", 4096, true) != nil || Text(r.Model, "native model", 1024, true) != nil || r.Effort != "" && !validClaudeEffort(r.Effort) || !r.Permission.Valid() {
+		return ExecutionRecoveryUncertain()
+	}
+	digest, err := hex.DecodeString(r.InstructionsDigest)
+	if err != nil || len(digest) != sha256.Size || hex.EncodeToString(digest) != r.InstructionsDigest {
+		return ExecutionRecoveryUncertain()
 	}
 	return nil
 }

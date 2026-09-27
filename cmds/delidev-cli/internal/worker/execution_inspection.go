@@ -20,6 +20,7 @@ import (
 type CompletedExecutionRef struct {
 	Harness            domain.Harness
 	OpenCode           *domain.OpenCodeRecoveryReference
+	Claude             *domain.ClaudeRecoveryReference
 	ServerID           domain.ID
 	DeviceID           domain.ID
 	InstanceID         domain.ID
@@ -51,7 +52,7 @@ const (
 // operation. The caller still needs a dedicated server recovery transaction.
 func InspectCompletedExecution(ctx context.Context, manager *workspace.Manager, ref CompletedExecutionRef) (evidence CompletedExecutionEvidence, returned error) {
 	harness := domain.ExecutionRecoveryRequest{Harness: ref.Harness}.NativeHarness()
-	if (harness != domain.Codex && harness != domain.OpenCode) || (harness == domain.OpenCode) != (ref.OpenCode != nil) || ref.OpenCode != nil && ref.OpenCode.Validate() != nil {
+	if (harness != domain.Codex && harness != domain.OpenCode && harness != domain.ClaudeCode) || (harness == domain.OpenCode) != (ref.OpenCode != nil) || (harness == domain.ClaudeCode) != (ref.Claude != nil) || ref.OpenCode != nil && ref.OpenCode.Validate() != nil || ref.Claude != nil && ref.Claude.Validate() != nil {
 		return evidence, executionCheckpointUncertain()
 	}
 	if manager == nil || ref.Checkpoint.validateForHarness(harness) != nil || ref.Checkpoint.Completion.Version != 1 || ref.AssignmentRevision == 0 || !canonicalDigest(ref.AssignmentDigest) || domain.UniqueIDs([]domain.ID{ref.ServerID, ref.DeviceID, ref.InstanceID}) != nil || ref.Preparation.SessionID != ref.Checkpoint.SessionID || ref.Preparation.MachineID != ref.Checkpoint.MachineID {
@@ -115,6 +116,10 @@ func InspectCompletedExecution(ctx context.Context, manager *workspace.Manager, 
 	checkpointRef.WorkspaceRoots = nativeWorkspaceRoots(ref.Manifest)
 	if harness == domain.OpenCode {
 		if err := inspectCompletedOpenCodeCheckpoint(bounded, root, ref, completion, inspection.WorkingDirectory()); err != nil {
+			return evidence, err
+		}
+	} else if harness == domain.ClaudeCode {
+		if err := inspectCompletedClaudeCheckpoint(bounded, root, ref, completion, inspection.WorkingDirectory()); err != nil {
 			return evidence, err
 		}
 	} else {

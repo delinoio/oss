@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -96,7 +95,7 @@ func TestManualNativeClaudePublicContinuationEvidence(t *testing.T) {
 	}
 }
 
-func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario claudePublicCase) {
+func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario claudePublicCase, recovery ...claudePublicRecoveryCase) {
 	t.Helper()
 	binary := os.Getenv("DELIDEV_NATIVE_CLAUDE_EXECUTABLE")
 	if binary == "" {
@@ -304,22 +303,26 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 	if err != nil {
 		t.Fatal(err)
 	}
-	credential := worker.Credential{Version: 1, Type: domain.WorkerDevice, Endpoint: f.endpoint.URL, ServerID: f.identity.ServerID, DeviceID: f.workerDevice, MachineID: f.selection.MachineID, PairingID: domain.NewID(), Token: f.workerIdentity.Token}
+	endpoint := f.endpoint.URL
+	var recoveryFixture *claudePublicRecoveryFixture
+	if len(recovery) != 0 {
+		perTurn := int32(1)
+		if read || questionHistory {
+			perTurn = 2
+		}
+		if effect != "" {
+			perTurn = effectCalls
+		}
+		recoveryFixture = newClaudePublicRecoveryFixture(t, f, &calls, recovery[0], perTurn)
+		endpoint = recoveryFixture.endpoint
+	}
+	credential := worker.Credential{Version: 1, Type: domain.WorkerDevice, Endpoint: endpoint, ServerID: f.identity.ServerID, DeviceID: f.workerDevice, MachineID: f.selection.MachineID, PairingID: domain.NewID(), Token: f.workerIdentity.Token}
 	raw, _ := json.Marshal(credential)
 	if err := security.WriteAtomic(filepath.Join(f.workerRoot, "device.json"), raw); err != nil {
 		t.Fatal(err)
 	}
-	running, stop := context.WithCancel(ctx)
-	done, ready := make(chan error, 1), make(chan domain.ID, 1)
-	go func() {
-		done <- worker.Run(running, worker.Config{Root: f.workerRoot, Logger: slog.New(slog.NewJSONHandler(os.Stderr, nil)), Ready: func(id domain.ID) { ready <- id }})
-	}()
-	defer func() { stop(); <-done }()
-	select {
-	case <-ready:
-	case <-ctx.Done():
-		t.Fatal("original Worker did not attach")
-	}
+	stop := startClaudePublicFixtureWorker(t, ctx, f.workerRoot)
+	defer func() { stop() }()
 	for next := 1; next < turns; next++ {
 		body, _ := json.Marshal(domain.SessionInput{Prompt: fmt.Sprintf("continuation input %d", next), Mode: mode})
 		if _, err := sessionClient(f.accountFixture).EnqueueInput(ctx, ownerRequest(f.identity, &pb.EnqueueInputRequest{RequestId: string(domain.NewID()), SessionId: f.change.Session.Id, DocumentJson: body})); err != nil {
@@ -334,6 +337,7 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 	assignment := response.Msg.Change.ExecutionJob
 	interactionClient := delidevv1connect.NewInteractionServiceClient(http.DefaultClient, f.endpoint.URL)
 	answered, stopSent := false, false
+	recoveredBoundary := false
 	ticker := time.NewTicker(20 * time.Millisecond)
 	defer ticker.Stop()
 	for {
@@ -426,6 +430,22 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 		if err != nil {
 			t.Fatal(err)
 		}
+		if recoveryFixture != nil && recoveryFixture.ready() {
+			stop()
+			stop = recoveryFixture.replaceWorker(t, ctx, f)
+			if !recoveryFixture.reconcile(t, ctx, f, assignment) {
+				return
+			}
+			recoveredBoundary = true
+			record, err = f.service.Store.Get(ctx, domain.JobKind, domain.ID(assignment.Id))
+			if err != nil {
+				t.Fatal(err)
+			}
+			job, err = store.Decode[domain.Job](record)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
 		if job.State.Terminal() || job.State == domain.JobUncertain {
 			if fault && turn > 0 {
 				session, err := store.Decode[domain.Session](f.refresh(t))
@@ -467,6 +487,9 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 			}
 			var proof domain.ExecutionCompletion
 			version, dispatch := uint32(2), domain.DispatchReady
+			if recoveredBoundary {
+				dispatch = domain.DispatchPaused
+			}
 			wantCalls := expected
 			if turns > 1 {
 				wantCalls = int32(turn + 1)
@@ -529,8 +552,12 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 				if fault {
 					alterClaudeContinuationEvidence(t, ctx, f.workerRoot, domain.ID(assignment.Id), proof, scenario)
 				}
-				if scenario == claudePublicResume && turn == 1 {
-					for _, action := range []pb.SessionAction{pb.SessionAction_SESSION_ACTION_STOP, pb.SessionAction_SESSION_ACTION_RESUME} {
+				if scenario == claudePublicResume && turn == 1 || recoveredBoundary {
+					actions := []pb.SessionAction{pb.SessionAction_SESSION_ACTION_RESUME}
+					if !recoveredBoundary {
+						actions = append([]pb.SessionAction{pb.SessionAction_SESSION_ACTION_STOP}, actions...)
+					}
+					for _, action := range actions {
 						current := f.refresh(t)
 						if _, err := sessionClient(f.accountFixture).ControlSession(ctx, ownerRequest(f.identity, &pb.ControlSessionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(current.ID), ExpectedRevision: current.Revision}, Action: action})); err != nil {
 							t.Fatal("explicit original-history Resume", err)
@@ -556,6 +583,7 @@ func nativeClaudePublicDispatch(t *testing.T, mode domain.SessionMode, scenario 
 				if domain.Decode(next.Data, &nextJob) != nil || domain.Decode(nextJob.Input, &nextInput) != nil || nextInput.Validate() != nil || nextInput.Continuation == nil || nextInput.Continuation.Completion != previous || nextInput.Input.Mode != mode {
 					t.Fatal("continuation lost exact original predecessor")
 				}
+				recoveredBoundary = false
 				continue
 			}
 			return

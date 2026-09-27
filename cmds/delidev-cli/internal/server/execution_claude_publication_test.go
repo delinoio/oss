@@ -12,7 +12,10 @@ import (
 
 func newClaudePublicationFixture(t *testing.T, mode domain.SessionMode) *publicationFixture {
 	t.Helper()
-	f := publicationFixtureFromAuthority(t, newProfileAuthorityFixture(t, "http://127.0.0.1:1", domain.ClaudeCode, domain.AnthropicMessages, func(input *domain.ExecutionJobInput) { input.Input.Mode = mode }, false))
+	f := publicationFixtureFromAuthority(t, newProfileAuthorityFixture(t, "http://127.0.0.1:1", domain.ClaudeCode, domain.AnthropicMessages, func(input *domain.ExecutionJobInput) {
+		input.Input.Mode = mode
+		input.Installation.ResolvedPath = "/fixture/claude"
+	}, false))
 	f.thread, f.turn = f.input.SessionID, "123e4567-e89b-42d3-a456-426614174000"
 	return f
 }

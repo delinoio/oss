@@ -10,9 +10,12 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 )
 
-func claudeRootCompletionFixture(t *testing.T) (*publicationFixture, domain.ExecutionCompletion) {
+func claudeRootCompletionFixture(t *testing.T, beforeTerminal ...func(*publicationFixture)) (*publicationFixture, domain.ExecutionCompletion) {
 	t.Helper()
 	f, terminal := claudeTerminalPublicationFixture(t, true)
+	for _, setup := range beforeTerminal {
+		setup(f)
+	}
 	u := domain.ClaudeMessageUpdate{ID: domain.NewID(), NativeID: "msg_original_completed", Model: f.input.Configuration.NativeModel}
 	index, text := uint32(0), "Original retained content"
 	for _, kind := range []domain.ClaudeMessageMutation{domain.ClaudeMessageStart, domain.ClaudeBlockStart, domain.ClaudeBlockAppend, domain.ClaudeBlockComplete, domain.ClaudeBlockStop, domain.ClaudeMessageStop} {
