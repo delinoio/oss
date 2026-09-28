@@ -79,6 +79,8 @@ The server remains the only database owner. Frontend query caches and unsent dra
 
 Generated Connect Query read keys contain their read request parameters, including search text and pagination cursors, only in the connection-scoped memory cache. Credentials and mutation payloads never enter those keys. Retain at most eight inactive query pages in addition to the bounded currently observed pages; cancel and clear the entire cache when its connection is disposed, including React Strict Mode effect replay. Conversation navigation retains at most 100 previous cursors and always offers a return to the first page.
 
+The last loaded conversation page appends newly created messages in authenticated stream delivery order, including messages whose Worker-generated UUID sorts before the page's last ID. Earlier pages retain their bounds; duplicate, removed and foreign-session messages are excluded. A new stream snapshot retains only still-present arrivals and refreshes the retained pages without changing the unsent composer.
+
 ### Interactive requests and input queue
 Session and inbox views expose the same generated interaction RPCs. Questions retain every native ID, exact offered labels, optional free text and an explicitly chosen unanswered array. Bound the complete answer before retaining it. Secret-marked questions disable ordinary response submission until protected delivery is implemented. Reading an inbox item remains independent of answering or approving it; queued delivery is shown separately from native acceptance and closure.
 

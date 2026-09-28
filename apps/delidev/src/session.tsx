@@ -34,6 +34,7 @@ function useSessionStream(id: string) {
   const transport = useTransport();
   const [resources, setResources] = useState<ReadonlyMap<string, Resource>>(new Map());
   const [removed, setRemoved] = useState<ReadonlySet<string>>(new Set());
+  const [newMessageIds, setNewMessageIds] = useState<readonly string[]>([]);
   const [state, setState] = useState(ConnectionState.Connecting);
   const [error, setError] = useState<ClientFailure>();
   const [generation, setGeneration] = useState(0);
@@ -42,6 +43,7 @@ function useSessionStream(id: string) {
     const controller = new AbortController();
     const client = createClient(ResourceService, transport);
     const tombstones = new Set<string>();
+    const known = new Set<string>();
     const run = async () => {
       for await (const change of synchronizeResources(client, { kind: EntityKind.SESSION, sessionId: id }, {
         signal: controller.signal, watchKinds: [EntityKind.MESSAGE, EntityKind.QUEUE, EntityKind.INTERACTION],
@@ -49,13 +51,22 @@ function useSessionStream(id: string) {
       })) {
         if (controller.signal.aborted) return;
         if (change.kind === SyncKind.Snapshot) {
+          known.clear();
+          for (const row of change.resources) known.add(row.id);
           setResources(new Map(change.resources.map((r) => [r.id, r])));
           setRemoved(new Set());
+          setNewMessageIds((current) => current.filter((id) => known.has(id)));
           tombstones.clear();
           setGeneration((value) => value + 1);
         } else if (change.kind === SyncKind.Upsert) {
+          if (!known.has(change.resource.id) && change.resource.kind === EntityKind.MESSAGE) {
+            setNewMessageIds((current) => current.length >= 2000 ? current : [...current, change.resource.id]);
+          }
+          known.add(change.resource.id);
           setResources((current) => new Map(current).set(change.resource.id, change.resource));
         } else if (change.kind === SyncKind.Remove) {
+          known.delete(change.id);
+          setNewMessageIds((current) => current.filter((id) => id !== change.id));
           if (!tombstones.has(change.id) && tombstones.size >= 2000) throw new ConnectError("Reopen this session to refresh its retained history.", Code.ResourceExhausted);
           tombstones.add(change.id);
           setResources((current) => { const next = new Map(current); next.delete(change.id); return next; });
@@ -70,7 +81,7 @@ function useSessionStream(id: string) {
     void run().catch((reason) => { if (!controller.signal.aborted) { setError(clientFailure(reason)); setState(ConnectionState.Failed); } });
     return () => controller.abort();
   }, [id, transport, restart]);
-  return { resources, removed, state, error, generation, retry: () => setRestart((value) => value + 1) };
+  return { resources, removed, newMessageIds, state, error, generation, retry: () => setRestart((value) => value + 1) };
 }
 
 function currentRows(base: readonly Resource[], live: ReadonlyMap<string, Resource>, removed: ReadonlySet<string>, kind: EntityKind): Resource[] {
@@ -78,6 +89,20 @@ function currentRows(base: readonly Resource[], live: ReadonlyMap<string, Resour
     const update = live.get(row.id);
     return update?.kind === kind && update.revision > row.revision ? update : row;
   });
+}
+
+export function messageRows(base: readonly Resource[], live: ReadonlyMap<string, Resource>, removed: ReadonlySet<string>, arrivals: readonly string[], sessionId: string, lastPage: boolean): Resource[] {
+  const result = currentRows(base, live, removed, EntityKind.MESSAGE);
+  if (!lastPage) return result;
+  const ids = new Set(result.map((row) => row.id));
+  for (const id of arrivals) {
+    const row = live.get(id);
+    if (row?.kind === EntityKind.MESSAGE && row.sessionId === sessionId && !ids.has(id) && !removed.has(id)) {
+      result.push(row);
+      ids.add(id);
+    }
+  }
+  return result;
 }
 
 const TranscriptItem = memo(function TranscriptItem({ resource }: { resource: Resource }) {
@@ -156,18 +181,10 @@ export function SessionView({ id, draft, setDraft }: { id: string; draft: string
   const session = observed && acknowledged && acknowledged.revision > observed.revision ? acknowledged : observed;
   const data = readDocument(session);
   const rows = useMemo(() => {
-    const result = currentRows(messages.data?.resources ?? [], live.resources, live.removed, EntityKind.MESSAGE);
-    // Only the last page accepts newly appended messages. Earlier pages keep
-    // their bounds and update existing message identities without rescanning.
-    if (messages.data && !messages.data.nextPageToken) {
-      const ids = new Set(result.map((r) => r.id));
-      const after = messages.data.resources.at(-1)?.id ?? "";
-      for (const row of live.resources.values()) {
-        if (row.kind === EntityKind.MESSAGE && row.id > after && !ids.has(row.id) && !live.removed.has(row.id)) result.push(row);
-      }
-    }
-    return result.sort((a, b) => a.id.localeCompare(b.id));
-  }, [messages.data, live.resources, live.removed]);
+    // The stream records creation order. UUIDs from different Workers are not
+    // an append sequence, even when each Worker generates UUID-v7 values.
+    return messageRows(messages.data?.resources ?? [], live.resources, live.removed, live.newMessageIds, id, !!messages.data && !messages.data.nextPageToken);
+  }, [messages.data, live.resources, live.removed, live.newMessageIds, id]);
   useEffect(() => { if (live.generation > 1) { void messages.refetch(); void queue.refetch(); void interactions.refetch(); } }, [live.generation]);
   const send = useRetainedMutation(`enqueue:${id}`, SessionQuery.enqueueInput, () => { setDraft(""); void queue.refetch(); });
   const control = useRetainedMutation(`control:${id}`, SessionQuery.controlSession, (value) => { if (value.change?.session) setAcknowledged(value.change.session); });
