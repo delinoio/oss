@@ -38,7 +38,7 @@ Restrict the environment to main and the seven CLI release-tag patterns, includi
 
 ## Validation and rollout
 
-The acceptance matrix is Ubuntu 22.04/24.04/26.04 LTS, Debian 12/13, Fedora 43/44, UBI 9/10, Rocky Linux 9/10, and AlmaLinux 9/10 on both architectures. Verify repository registration, signature validation, installation, upgrade, version/help execution, dependency resolution, removal and preservation of user data. Container checks do not certify Runmoor's Docker/Tart service integration.
+The acceptance matrix is Ubuntu 22.04/24.04/26.04 LTS, Debian 12/13, Fedora 43/44, UBI 9/10, Rocky Linux 9/10, and AlmaLinux 9/10 on both architectures. Verify repository registration, signature validation, installation, upgrade, version/help execution, dependency resolution, removal and preservation of user data. This matrix proves package compatibility, not an expansion of each CLI's runtime support. Runmoor manager execution on Linux remains limited to Ubuntu 22.04+ on x86-64 or ARM64; non-Ubuntu package checks do not exercise manager execution. Container checks do not certify Runmoor's Docker/Tart service integration.
 
 Rocky Linux 10 uses the project's `rockylinux/rockylinux:10` image; the separate Docker Official Image namespace does not publish `rockylinux:10`. Installation logs identify the exact distribution image, project, architecture and fixture/live mode.
 
