@@ -492,6 +492,8 @@ service IntegrationService {
   rpc RefreshPullRequestProblems(RefreshPullRequestProblemsRequest) returns (RefreshPullRequestProblemsResponse);
   rpc ListPullRequestProblems(ListPullRequestProblemsRequest) returns (ListPullRequestProblemsResponse);
   rpc DismissPullRequestProblem(DismissPullRequestProblemRequest) returns (DismissPullRequestProblemResponse);
+  rpc ListPullRequestRemediationAttempts(ListPullRequestRemediationAttemptsRequest) returns (ListPullRequestRemediationAttemptsResponse);
+  rpc ResumePullRequestRemediation(ResumePullRequestRemediationRequest) returns (ResumePullRequestRemediationResponse);
 }
 message RefreshPullRequestProblemsRequest {
   string request_id = 1;
@@ -530,6 +532,26 @@ message DismissPullRequestProblemRequest {
 }
 message DismissPullRequestProblemResponse {
   Resource problem = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message ListPullRequestRemediationAttemptsRequest {
+  string remote_repository_id = 1;
+  string pull_request_id = 2;
+  uint32 page_size = 3;
+  string page_token = 4;
+}
+message ListPullRequestRemediationAttemptsResponse {
+  Resource problem_set = 1;
+  repeated Resource attempts = 2;
+  string next_page_token = 3;
+}
+message ResumePullRequestRemediationRequest {
+  // The original retained PR set, never a session or queued input.
+  Mutation mutation = 1;
+}
+message ResumePullRequestRemediationResponse {
+  Resource problem_set = 1;
   string request_id = 2;
   bool replayed = 3;
 }

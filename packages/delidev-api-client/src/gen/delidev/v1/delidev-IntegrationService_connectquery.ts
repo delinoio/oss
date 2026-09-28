@@ -53,3 +53,13 @@ export const listPullRequestProblems = IntegrationService.method.listPullRequest
  * @generated from rpc delidev.v1.IntegrationService.DismissPullRequestProblem
  */
 export const dismissPullRequestProblem = IntegrationService.method.dismissPullRequestProblem;
+
+/**
+ * @generated from rpc delidev.v1.IntegrationService.ListPullRequestRemediationAttempts
+ */
+export const listPullRequestRemediationAttempts = IntegrationService.method.listPullRequestRemediationAttempts;
+
+/**
+ * @generated from rpc delidev.v1.IntegrationService.ResumePullRequestRemediation
+ */
+export const resumePullRequestRemediation = IntegrationService.method.resumePullRequestRemediation;

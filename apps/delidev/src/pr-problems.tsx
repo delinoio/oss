@@ -6,6 +6,7 @@ import { bounded, date, positive, sha, uuid } from "./github-query-model";
 import { useRetainedMutation } from "./mutation";
 import { CIOriginalEvidence, PRCI, validCIContext, validPRCI } from "./github-ci";
 import { Problem } from "./ui";
+import { OpenPRRemediationHistory } from "./pr-remediation-history";
 
 enum LocalState { Unhandled = "unhandled", Dismissed = "locally-dismissed" }
 export type PRProblemSelection = { repositoryId: string; remoteRepositoryId: string; pullRequestId: string; number: string };
@@ -131,5 +132,5 @@ export function PRProblemHistory({ selection }: { selection: PRProblemSelection 
 }
 export function OpenPRProblemHistory({ selection }: { selection: PRProblemSelection }) {
   const [open, setOpen] = useState(false);
-  return <div><button aria-expanded={open} onClick={() => setOpen(!open)}>{open ? "Close retained PR problems" : "Show retained PR problems"}</button>{open ? <PRProblemHistory key={`${selection.repositoryId}:${selection.remoteRepositoryId}:${selection.pullRequestId}`} selection={selection} /> : null}</div>;
+  return <div><OpenPRRemediationHistory selection={selection} validateSet={row => Boolean(readPRProblemSet(row, selection))} /><button aria-expanded={open} onClick={() => setOpen(!open)}>{open ? "Close retained PR problems" : "Show retained PR problems"}</button>{open ? <PRProblemHistory key={`${selection.repositoryId}:${selection.remoteRepositoryId}:${selection.pullRequestId}`} selection={selection} /> : null}</div>;
 }

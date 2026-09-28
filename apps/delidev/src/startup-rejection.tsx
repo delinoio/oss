@@ -1,19 +1,10 @@
 import { EntityKind, type Resource } from "@delinoio/delidev-api-client";
 import { document, object, text, type Document } from "./documents";
+import { utcTimestamp as timestamp } from "./timestamp";
 
 const uuid = (value: unknown) => typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value);
 const digest = (value: unknown) => typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
 const exact = (value: Document, keys: string[]) => Object.keys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key));
-// Keep nanoseconds when comparing Go RFC3339Nano timestamps. Date.parse alone
-// rounds them to milliseconds and also normalizes invalid calendar dates.
-function timestamp(value: unknown): string | undefined {
-  if (typeof value !== "string") return;
-  const match = /^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.(\d{1,9}))?Z$/.exec(value);
-  if (!match) return;
-  const whole = `${match[1]}Z`, parsed = Date.parse(whole);
-  if (!Number.isFinite(parsed) || new Date(parsed).toISOString() !== `${match[1]}.000Z`) return;
-  return `${match[1]}.${(match[2] ?? "").padEnd(9, "0")}Z`;
-}
 const revision = (value: unknown) => typeof value === "string" && /^[1-9][0-9]{0,19}$/.test(value) && BigInt(value) <= 18446744073709551615n;
 const reasons: Record<string, string> = {
   conflict: "The PR or prepared workspace changed.", missing_input: "Required PR or Git input was unavailable.",

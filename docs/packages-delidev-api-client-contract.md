@@ -100,3 +100,6 @@ Generated IntegrationQuery now includes RefreshPullRequestProblems, ListPullRequ
 
 
 The generated PR collection kind enum adds independent CI/conflict reads while omitted/explicit feedback preserve the original receipt family. Unknown numeric kinds are rejected on the server. Shared Resource envelopes retain typed original CI proof references and conflict transitions; callers must keep historical evidence separate from current prerequisites and cannot infer handling or execution from a response.
+
+
+IntegrationQuery also exports generated ListPullRequestRemediationAttempts and ResumePullRequestRemediation bindings. Callers preserve exact stable numeric strings and original set/request/revision identity; paginated history and explicit allowance resumption cannot infer execution authority or perform implicit mutation retries. These methods share the existing authenticated direct Connect transport and require no new client persistence or environment configuration.

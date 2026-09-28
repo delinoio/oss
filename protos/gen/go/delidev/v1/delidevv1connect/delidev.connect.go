@@ -196,6 +196,12 @@ const (
 	// IntegrationServiceDismissPullRequestProblemProcedure is the fully-qualified name of the
 	// IntegrationService's DismissPullRequestProblem RPC.
 	IntegrationServiceDismissPullRequestProblemProcedure = "/delidev.v1.IntegrationService/DismissPullRequestProblem"
+	// IntegrationServiceListPullRequestRemediationAttemptsProcedure is the fully-qualified name of the
+	// IntegrationService's ListPullRequestRemediationAttempts RPC.
+	IntegrationServiceListPullRequestRemediationAttemptsProcedure = "/delidev.v1.IntegrationService/ListPullRequestRemediationAttempts"
+	// IntegrationServiceResumePullRequestRemediationProcedure is the fully-qualified name of the
+	// IntegrationService's ResumePullRequestRemediation RPC.
+	IntegrationServiceResumePullRequestRemediationProcedure = "/delidev.v1.IntegrationService/ResumePullRequestRemediation"
 	// ProviderServiceListProviderPresetsProcedure is the fully-qualified name of the ProviderService's
 	// ListProviderPresets RPC.
 	ProviderServiceListProviderPresetsProcedure = "/delidev.v1.ProviderService/ListProviderPresets"
@@ -1600,6 +1606,8 @@ type IntegrationServiceClient interface {
 	RefreshPullRequestProblems(context.Context, *connect.Request[v1.RefreshPullRequestProblemsRequest]) (*connect.Response[v1.RefreshPullRequestProblemsResponse], error)
 	ListPullRequestProblems(context.Context, *connect.Request[v1.ListPullRequestProblemsRequest]) (*connect.Response[v1.ListPullRequestProblemsResponse], error)
 	DismissPullRequestProblem(context.Context, *connect.Request[v1.DismissPullRequestProblemRequest]) (*connect.Response[v1.DismissPullRequestProblemResponse], error)
+	ListPullRequestRemediationAttempts(context.Context, *connect.Request[v1.ListPullRequestRemediationAttemptsRequest]) (*connect.Response[v1.ListPullRequestRemediationAttemptsResponse], error)
+	ResumePullRequestRemediation(context.Context, *connect.Request[v1.ResumePullRequestRemediationRequest]) (*connect.Response[v1.ResumePullRequestRemediationResponse], error)
 }
 
 // NewIntegrationServiceClient constructs a client for the delidev.v1.IntegrationService service. By
@@ -1673,21 +1681,35 @@ func NewIntegrationServiceClient(httpClient connect.HTTPClient, baseURL string, 
 			connect.WithSchema(integrationServiceMethods.ByName("DismissPullRequestProblem")),
 			connect.WithClientOptions(opts...),
 		),
+		listPullRequestRemediationAttempts: connect.NewClient[v1.ListPullRequestRemediationAttemptsRequest, v1.ListPullRequestRemediationAttemptsResponse](
+			httpClient,
+			baseURL+IntegrationServiceListPullRequestRemediationAttemptsProcedure,
+			connect.WithSchema(integrationServiceMethods.ByName("ListPullRequestRemediationAttempts")),
+			connect.WithClientOptions(opts...),
+		),
+		resumePullRequestRemediation: connect.NewClient[v1.ResumePullRequestRemediationRequest, v1.ResumePullRequestRemediationResponse](
+			httpClient,
+			baseURL+IntegrationServiceResumePullRequestRemediationProcedure,
+			connect.WithSchema(integrationServiceMethods.ByName("ResumePullRequestRemediation")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // integrationServiceClient implements IntegrationServiceClient.
 type integrationServiceClient struct {
-	saveIntegrationProfile       *connect.Client[v1.SaveIntegrationProfileRequest, v1.SaveIntegrationProfileResponse]
-	replaceIntegrationToken      *connect.Client[v1.ReplaceIntegrationTokenRequest, v1.ReplaceIntegrationTokenResponse]
-	validateIntegrationProfile   *connect.Client[v1.ValidateIntegrationProfileRequest, v1.ValidateIntegrationProfileResponse]
-	deleteIntegrationProfile     *connect.Client[v1.DeleteIntegrationProfileRequest, v1.DeleteIntegrationProfileResponse]
-	inspectRepositoryIntegration *connect.Client[v1.InspectRepositoryIntegrationRequest, v1.InspectRepositoryIntegrationResponse]
-	queryRepositoryIntegration   *connect.Client[v1.QueryRepositoryIntegrationRequest, v1.QueryRepositoryIntegrationResponse]
-	getGitHubTokenForm           *connect.Client[v1.GetGitHubTokenFormRequest, v1.GetGitHubTokenFormResponse]
-	refreshPullRequestProblems   *connect.Client[v1.RefreshPullRequestProblemsRequest, v1.RefreshPullRequestProblemsResponse]
-	listPullRequestProblems      *connect.Client[v1.ListPullRequestProblemsRequest, v1.ListPullRequestProblemsResponse]
-	dismissPullRequestProblem    *connect.Client[v1.DismissPullRequestProblemRequest, v1.DismissPullRequestProblemResponse]
+	saveIntegrationProfile             *connect.Client[v1.SaveIntegrationProfileRequest, v1.SaveIntegrationProfileResponse]
+	replaceIntegrationToken            *connect.Client[v1.ReplaceIntegrationTokenRequest, v1.ReplaceIntegrationTokenResponse]
+	validateIntegrationProfile         *connect.Client[v1.ValidateIntegrationProfileRequest, v1.ValidateIntegrationProfileResponse]
+	deleteIntegrationProfile           *connect.Client[v1.DeleteIntegrationProfileRequest, v1.DeleteIntegrationProfileResponse]
+	inspectRepositoryIntegration       *connect.Client[v1.InspectRepositoryIntegrationRequest, v1.InspectRepositoryIntegrationResponse]
+	queryRepositoryIntegration         *connect.Client[v1.QueryRepositoryIntegrationRequest, v1.QueryRepositoryIntegrationResponse]
+	getGitHubTokenForm                 *connect.Client[v1.GetGitHubTokenFormRequest, v1.GetGitHubTokenFormResponse]
+	refreshPullRequestProblems         *connect.Client[v1.RefreshPullRequestProblemsRequest, v1.RefreshPullRequestProblemsResponse]
+	listPullRequestProblems            *connect.Client[v1.ListPullRequestProblemsRequest, v1.ListPullRequestProblemsResponse]
+	dismissPullRequestProblem          *connect.Client[v1.DismissPullRequestProblemRequest, v1.DismissPullRequestProblemResponse]
+	listPullRequestRemediationAttempts *connect.Client[v1.ListPullRequestRemediationAttemptsRequest, v1.ListPullRequestRemediationAttemptsResponse]
+	resumePullRequestRemediation       *connect.Client[v1.ResumePullRequestRemediationRequest, v1.ResumePullRequestRemediationResponse]
 }
 
 // SaveIntegrationProfile calls delidev.v1.IntegrationService.SaveIntegrationProfile.
@@ -1740,6 +1762,17 @@ func (c *integrationServiceClient) DismissPullRequestProblem(ctx context.Context
 	return c.dismissPullRequestProblem.CallUnary(ctx, req)
 }
 
+// ListPullRequestRemediationAttempts calls
+// delidev.v1.IntegrationService.ListPullRequestRemediationAttempts.
+func (c *integrationServiceClient) ListPullRequestRemediationAttempts(ctx context.Context, req *connect.Request[v1.ListPullRequestRemediationAttemptsRequest]) (*connect.Response[v1.ListPullRequestRemediationAttemptsResponse], error) {
+	return c.listPullRequestRemediationAttempts.CallUnary(ctx, req)
+}
+
+// ResumePullRequestRemediation calls delidev.v1.IntegrationService.ResumePullRequestRemediation.
+func (c *integrationServiceClient) ResumePullRequestRemediation(ctx context.Context, req *connect.Request[v1.ResumePullRequestRemediationRequest]) (*connect.Response[v1.ResumePullRequestRemediationResponse], error) {
+	return c.resumePullRequestRemediation.CallUnary(ctx, req)
+}
+
 // IntegrationServiceHandler is an implementation of the delidev.v1.IntegrationService service.
 type IntegrationServiceHandler interface {
 	SaveIntegrationProfile(context.Context, *connect.Request[v1.SaveIntegrationProfileRequest]) (*connect.Response[v1.SaveIntegrationProfileResponse], error)
@@ -1752,6 +1785,8 @@ type IntegrationServiceHandler interface {
 	RefreshPullRequestProblems(context.Context, *connect.Request[v1.RefreshPullRequestProblemsRequest]) (*connect.Response[v1.RefreshPullRequestProblemsResponse], error)
 	ListPullRequestProblems(context.Context, *connect.Request[v1.ListPullRequestProblemsRequest]) (*connect.Response[v1.ListPullRequestProblemsResponse], error)
 	DismissPullRequestProblem(context.Context, *connect.Request[v1.DismissPullRequestProblemRequest]) (*connect.Response[v1.DismissPullRequestProblemResponse], error)
+	ListPullRequestRemediationAttempts(context.Context, *connect.Request[v1.ListPullRequestRemediationAttemptsRequest]) (*connect.Response[v1.ListPullRequestRemediationAttemptsResponse], error)
+	ResumePullRequestRemediation(context.Context, *connect.Request[v1.ResumePullRequestRemediationRequest]) (*connect.Response[v1.ResumePullRequestRemediationResponse], error)
 }
 
 // NewIntegrationServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -1821,6 +1856,18 @@ func NewIntegrationServiceHandler(svc IntegrationServiceHandler, opts ...connect
 		connect.WithSchema(integrationServiceMethods.ByName("DismissPullRequestProblem")),
 		connect.WithHandlerOptions(opts...),
 	)
+	integrationServiceListPullRequestRemediationAttemptsHandler := connect.NewUnaryHandler(
+		IntegrationServiceListPullRequestRemediationAttemptsProcedure,
+		svc.ListPullRequestRemediationAttempts,
+		connect.WithSchema(integrationServiceMethods.ByName("ListPullRequestRemediationAttempts")),
+		connect.WithHandlerOptions(opts...),
+	)
+	integrationServiceResumePullRequestRemediationHandler := connect.NewUnaryHandler(
+		IntegrationServiceResumePullRequestRemediationProcedure,
+		svc.ResumePullRequestRemediation,
+		connect.WithSchema(integrationServiceMethods.ByName("ResumePullRequestRemediation")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/delidev.v1.IntegrationService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case IntegrationServiceSaveIntegrationProfileProcedure:
@@ -1843,6 +1890,10 @@ func NewIntegrationServiceHandler(svc IntegrationServiceHandler, opts ...connect
 			integrationServiceListPullRequestProblemsHandler.ServeHTTP(w, r)
 		case IntegrationServiceDismissPullRequestProblemProcedure:
 			integrationServiceDismissPullRequestProblemHandler.ServeHTTP(w, r)
+		case IntegrationServiceListPullRequestRemediationAttemptsProcedure:
+			integrationServiceListPullRequestRemediationAttemptsHandler.ServeHTTP(w, r)
+		case IntegrationServiceResumePullRequestRemediationProcedure:
+			integrationServiceResumePullRequestRemediationHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1890,6 +1941,14 @@ func (UnimplementedIntegrationServiceHandler) ListPullRequestProblems(context.Co
 
 func (UnimplementedIntegrationServiceHandler) DismissPullRequestProblem(context.Context, *connect.Request[v1.DismissPullRequestProblemRequest]) (*connect.Response[v1.DismissPullRequestProblemResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.IntegrationService.DismissPullRequestProblem is not implemented"))
+}
+
+func (UnimplementedIntegrationServiceHandler) ListPullRequestRemediationAttempts(context.Context, *connect.Request[v1.ListPullRequestRemediationAttemptsRequest]) (*connect.Response[v1.ListPullRequestRemediationAttemptsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.IntegrationService.ListPullRequestRemediationAttempts is not implemented"))
+}
+
+func (UnimplementedIntegrationServiceHandler) ResumePullRequestRemediation(context.Context, *connect.Request[v1.ResumePullRequestRemediationRequest]) (*connect.Response[v1.ResumePullRequestRemediationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.IntegrationService.ResumePullRequestRemediation is not implemented"))
 }
 
 // ProviderServiceClient is a client for the delidev.v1.ProviderService service.

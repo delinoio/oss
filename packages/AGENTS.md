@@ -96,3 +96,5 @@
 
 
 - DeliDev retained PR feedback uses generated IntegrationQuery refresh/list/dismissal bindings. Preserve exact remote numeric strings, resource revisions and original content-version/request identities. No implicit collection, mutation retry, handling inference or browser persistence is allowed; follow the integration contract.
+
+- DeliDev IntegrationQuery exposes generated retained remediation-history and explicit allowance-resumption bindings. Preserve exact numeric PR IDs and original set/revision/request identity without persistence, implicit mutation retry or execution inference; follow the integration/client contracts.
