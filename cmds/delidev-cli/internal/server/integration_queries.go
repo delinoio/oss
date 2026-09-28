@@ -50,9 +50,12 @@ func (s *Service) QueryRepositoryIntegration(ctx context.Context, req *connect.R
 		return nil, rpc.Error(domain.Fail(domain.RecoveryRequired, "The query returned another repository.", "Refresh the explicitly selected repository."), correlation)
 	}
 
-	value := domain.RepositoryQueryResult{RepositoryID: domain.ID(req.Msg.RepositoryId), RepositoryRevision: strconv.FormatUint(selected.record.Revision, 10), ProfileID: selected.repository.IntegrationID, GenerationID: selected.profile.Connection.GenerationID, ObservedAt: time.Now().UTC().Truncate(time.Millisecond), Identity: observed.Identity, Repository: observed.Repository, Query: query, Items: observed.Items, NextPage: observed.NextPage, TotalCount: observed.TotalCount, Incomplete: observed.Incomplete, SearchLimitReached: observed.SearchLimitReached, Diff: observed.Diff, Checks: observed.Checks, Statuses: observed.Statuses, Rules: observed.Rules, CI: observed.CI}
+	value := domain.RepositoryQueryResult{RepositoryID: domain.ID(req.Msg.RepositoryId), RepositoryRevision: strconv.FormatUint(selected.record.Revision, 10), ProfileID: selected.repository.IntegrationID, GenerationID: selected.profile.Connection.GenerationID, ObservedAt: time.Now().UTC().Truncate(time.Millisecond), Identity: observed.Identity, Repository: observed.Repository, Query: query, Items: observed.Items, NextPage: observed.NextPage, TotalCount: observed.TotalCount, Incomplete: observed.Incomplete, SearchLimitReached: observed.SearchLimitReached, Diff: observed.Diff, Checks: observed.Checks, Statuses: observed.Statuses, Rules: observed.Rules, CI: observed.CI, Feedback: observed.Feedback}
 	if err := value.Validate(); err != nil {
 		return nil, rpc.Error(err, correlation)
+	}
+	if value.Feedback != nil {
+		s.logger.Info("repository_feedback_observed", "repository_id", value.RepositoryID, "entry_count", len(value.Feedback.Entries), "thread_count", len(value.Feedback.Threads), "correlation_id", correlation)
 	}
 	if value.CI != nil {
 		s.logger.Info("repository_ci_observed", "repository_id", value.RepositoryID, "state", value.CI.Result.State, "commit_source", value.CI.Result.Source, "requirement_count", len(value.CI.Result.Requirements), "correlation_id", correlation)

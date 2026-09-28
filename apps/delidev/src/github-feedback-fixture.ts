@@ -1,0 +1,6 @@
+export function feedbackObservation() {
+  const published = "2026-09-28T01:00:00Z";
+  const review = { kind: "review", id: "9007199254740993", node_id: "REVIEW_1", body: "<script>Approved review feedback</script>", native_state: "APPROVED", published_at: published, review_submitted_at: published, content_version: "c".repeat(64), url: "https://github.com/fixture-owner/repo/pull/17#pullrequestreview-9007199254740993", author: { native_type: "Bot", kind: "bot", id: "199175422", node_id: "BOT_1", login: "chatgpt-codex-connector" } };
+  const comment = { kind: "review-comment", id: "53", node_id: "COMMENT_1", body: "Please inspect this condition", native_state: "SUBMITTED", review_state: "APPROVED", review_submitted_at: published, published_at: published, content_version: "d".repeat(64), url: "https://github.com/fixture-owner/repo/pull/17#discussion_r53", review_node_id: "REVIEW_1", thread_node_id: "THREAD_1", code: { path: "file.go", diff_hunk: "@@ -1 +1 @@\n-old\n+new", original_line: 1 } };
+  return { base_sha: "a".repeat(40), head_sha: "b".repeat(40), excluded_draft_reviews: 1, entries: [review, comment] as [typeof review, typeof comment], threads: [{ node_id: "THREAD_1", resolved: false, outdated: true, comment_nodes: ["COMMENT_1"], excluded_drafts: 1 }] };
+}

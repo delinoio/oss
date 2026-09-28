@@ -467,3 +467,5 @@
 - PR active-rule reads use generated Connect Query and an exclusive complete base/head-bound inventory. Validate exact ruleset/App IDs, source consistency and bounded requirements; show provenance/unknown states inertly without partial paging or inferred CI results. Preserve inactive-query disposal and the integration contract.
 
 - Required CI is an explicit generated query with complete exclusive scope, exact totals/identities and checked requirement/result references. Keep evaluated head/test-merge provenance, pending/missing/unknown and unsupported conditions visible; render native context data inertly. A read never starts automatic handling or grants later execution authority.
+
+- Published PR feedback uses the generated exclusive repository query with complete current-PR/review/thread validation. Keep approved/dismissed content, original actor identity, edit version, resolution/outdated flags and nullable code context visible and inert. Exclude drafts, dispose inactive reads and never infer local handling, App identity or reviewer permission from presentation; follow the integration contract.

@@ -25,6 +25,7 @@ const (
 	RepositoryStatuses RepositoryQueryOperation = "statuses"
 	RepositoryRules    RepositoryQueryOperation = "rules"
 	RepositoryCI       RepositoryQueryOperation = "ci"
+	RepositoryFeedback RepositoryQueryOperation = "feedback"
 )
 
 type RepositoryItemState string
@@ -57,8 +58,8 @@ func (q RepositoryQuery) Validate() error {
 		return invalid()
 	}
 	switch q.Operation {
-	case RepositoryDiff, RepositoryDetail, RepositoryRules, RepositoryCI:
-		if (q.Operation == RepositoryDiff || q.Operation == RepositoryRules || q.Operation == RepositoryCI) && q.Kind != RepositoryPullRequest {
+	case RepositoryDiff, RepositoryDetail, RepositoryRules, RepositoryCI, RepositoryFeedback:
+		if (q.Operation == RepositoryDiff || q.Operation == RepositoryRules || q.Operation == RepositoryCI || q.Operation == RepositoryFeedback) && q.Kind != RepositoryPullRequest {
 			return invalid()
 		}
 		if !PositiveDecimal(q.Number) || q.State != "" || q.Search != "" || q.Page != 0 || q.PageSize != 0 {
@@ -222,10 +223,11 @@ func repositorySHA(value string) bool {
 }
 
 func (q RepositoryQuery) IsPRObservation() bool {
-	return q.Operation == RepositoryDiff || q.Operation == RepositoryChecks || q.Operation == RepositoryStatuses || q.Operation == RepositoryRules || q.Operation == RepositoryCI
+	return q.Operation == RepositoryDiff || q.Operation == RepositoryChecks || q.Operation == RepositoryStatuses || q.Operation == RepositoryRules || q.Operation == RepositoryCI || q.Operation == RepositoryFeedback
 }
 
 type RepositoryQueryResult struct {
+	Feedback           *PullRequestFeedback       `json:"feedback,omitempty"`
 	CI                 *PullRequestCI             `json:"ci,omitempty"`
 	Rules              *PullRequestRules          `json:"rules,omitempty"`
 	Diff               *PullRequestDiff           `json:"diff,omitempty"`
@@ -254,7 +256,7 @@ func (r RepositoryQueryResult) Validate() error {
 		return invalid()
 	}
 	q := r.Query
-	if q.Operation == RepositoryDetail || q.Operation == RepositoryDiff || q.Operation == RepositoryRules || q.Operation == RepositoryCI {
+	if q.Operation == RepositoryDetail || q.Operation == RepositoryDiff || q.Operation == RepositoryRules || q.Operation == RepositoryCI || q.Operation == RepositoryFeedback {
 		if len(r.Items) != 1 || r.NextPage != 0 {
 			return invalid()
 		}
@@ -282,6 +284,9 @@ func (r RepositoryQueryResult) Validate() error {
 		}
 		itemQuery = RepositoryQuery{Kind: RepositoryPullRequest, Operation: RepositoryDetail, Number: q.Number}
 	}
+	if q.Operation != RepositoryFeedback && r.Feedback != nil {
+		return invalid()
+	}
 	if q.Operation != RepositoryCI && r.CI != nil {
 		return invalid()
 	}
@@ -289,6 +294,10 @@ func (r RepositoryQueryResult) Validate() error {
 		return invalid()
 	}
 	switch q.Operation {
+	case RepositoryFeedback:
+		if r.Feedback == nil || r.CI != nil || r.Rules != nil || r.Diff != nil || r.Checks != nil || r.Statuses != nil || r.Feedback.Validate(r.Items[0]) != nil {
+			return invalid()
+		}
 	case RepositoryCI:
 		if r.CI == nil || r.Rules != nil || r.Diff != nil || r.Checks != nil || r.Statuses != nil || r.CI.Validate(r.Items[0]) != nil {
 			return invalid()

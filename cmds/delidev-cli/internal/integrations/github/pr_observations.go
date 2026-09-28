@@ -153,7 +153,19 @@ func (c *Client) queryPRObservation(ctx context.Context, token []byte, repositor
 		return result, err
 	}
 	result.Items = []domain.RepositoryItem{item}
-	if q.Operation == domain.RepositoryRules {
+	if q.Operation == domain.RepositoryFeedback {
+		result.Feedback, err = c.readFeedbackInventory(ctx, token, repository, item)
+		if err != nil {
+			return result, err
+		}
+		repeated, err := c.readFeedbackInventory(ctx, token, repository, item)
+		if err != nil {
+			return result, err
+		}
+		if !reflect.DeepEqual(result.Feedback, repeated) {
+			return result, domain.Fail(domain.Conflict, "Published feedback changed during the read.", "Refresh the complete PR feedback; no mixed content versions were published.")
+		}
+	} else if q.Operation == domain.RepositoryRules {
 		result.Rules, err = c.readActiveRules(ctx, token, repository, item)
 		if err != nil {
 			return result, err
