@@ -17,9 +17,11 @@ Trusted developers and small-team operators install the binary, Docker/Tart, cre
 ### CLI and configuration
 
 - Commands: `init`, `config validate`, `config show --resolved`, `runner update`, `run`, `status`, `doctor`, `reload`, `pause`, `resume`, `drain`, `stop`, `version`; `service install/start/stop/uninstall`; `image create/open/seal/list/remove`.
+- Global and command-local help display the current CLI version from the same `Version` constant used by `runmoor version`.
 - Global and command-local `--config` select a TOML file. `--no-color` or `NO_COLOR` disables default text-log ANSI colors. JSON is uncolored. All product output is English.
 - `status --json` and `doctor --json` have `schema_version: 1`; errors contain stable `code`, `message`, `recovery`, and relevant pool/runner identifiers. Status includes image revisions and unresolved preparation; doctor includes the current status snapshot plus persistent pool/execution problems and probes actual sleep-inhibition acquisition. The local Unix HTTP control protocol is `/v1/control`, available only through an owner-only filesystem socket. It is not a remote API.
 - `init` exclusively creates a minimal valid configuration using prompts or flags and omission-aware defaults. Configuration loading rejects unknown keys/versions, unsafe paths, duplicate identities, unsupported targets/architecture, contradictory backend fields, and impossible budgets before activation.
+- New `init` pools write `runmoor-linux`, `linux`, `x64` on Docker amd64; `runmoor-linux`, `linux`, `ARM64` on Docker arm64; and `runmoor-macos`, `macOS`, `ARM64` on Tart arm64. The existing scale-set name remains the first label. These labels are generated only by `init`: loading, validating or reloading existing and manually authored pools never adds routing labels, and omitted labels remain empty.
 - TOML v1 has `storage`, `host`, `timeouts`, `logging`, `connections`, and `pools`; optional Docker socket/Tart executable settings select local dependencies. Connections contain a GitHub.com repository or organization URL, PAT/App enum, one `credential.env` or `credential.file` reference, and App client/installation IDs when applicable. Pools specify connection, explicit scale-set name, routing labels, optional organization group, backend/mode, optional native architecture, image or image source, latest or pinned runner version/path, min-idle/max-runners, runner resources, and DinD image/resources when enabled.
 - Host concurrency, CPU, memory MiB and minimum free disk MiB may be omitted for automatic defaults; explicit values must be positive limits. Aggregate minimum idle reservations, including daemon resources, must fit. Image setup consumes the same limits and counts toward the two-macOS-VM maximum.
 - Default timeouts are Docker preparation 5 minutes, Tart preparation 10 minutes, and a job 6 hours. Transient retries use exponential jittered backoff of 1–60 seconds, extended for provider rate-limit instructions. Three consecutive preparation failures suspend only the affected pool. Authentication/ownership failures require correction and resume.
@@ -176,7 +178,7 @@ Update this document, the project index, scoped command policies, README/public 
 
 ## Automatic defaults and runner management
 
-The next unreleased version extends TOML v1 with optional resource and concurrency
+Runmoor 0.2.0 extends TOML v1 with optional resource and concurrency
 fields. Only omitted values receive defaults; explicit zero and negative values
 remain invalid. Host CPU and physical memory are detected at startup and reload.
 Docker has an additional engine CPU/memory ceiling, shared by all Docker jobs and

@@ -17,7 +17,7 @@ import (
 	"golang.org/x/term"
 )
 
-const helpText = `Runmoor 0.1.0 - local ephemeral GitHub Actions runners
+const helpText = ` - local ephemeral GitHub Actions runners
 
 Usage: runmoor [--config PATH] COMMAND [OPTIONS]
 
@@ -42,12 +42,16 @@ status and doctor --json use schema_version 1. Product output is English.
 GitHub live compatibility and real Tart execution have not been certified.
 `
 
+func printHelp(out io.Writer) {
+	fmt.Fprint(out, "Runmoor ", Version, helpText)
+}
+
 func Execute(args []string, out, errOut io.Writer) int {
 	if len(args) > 0 && strings.HasPrefix(args[0], "__guest-") {
 		return guestExecute(args[0], args[1:], out)
 	}
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
-		fmt.Fprint(out, helpText)
+		printHelp(out)
 		return 0
 	}
 	path := DefaultConfigPath()
@@ -61,7 +65,7 @@ func Execute(args []string, out, errOut io.Writer) int {
 	}
 	args = root.Args()
 	if len(args) == 0 {
-		fmt.Fprint(out, helpText)
+		printHelp(out)
 		return 2
 	}
 	command := args[0]
@@ -69,7 +73,7 @@ func Execute(args []string, out, errOut io.Writer) int {
 	sub := ""
 	if command == "config" || command == "service" || command == "image" || command == "runner" {
 		if len(args) == 0 {
-			fmt.Fprint(out, helpText)
+			printHelp(out)
 			return 2
 		}
 		sub = args[0]
@@ -105,7 +109,7 @@ func Execute(args []string, out, errOut io.Writer) int {
 	fs.StringVar(&im.RunnerPath, "runner-path", "", "absolute guest runner path")
 	fs.StringVar(&im.RunnerVersion, "runner-version", "", "latest or exact installed runner version")
 	if e := fs.Parse(args); e == flag.ErrHelp {
-		fmt.Fprint(out, helpText)
+		printHelp(out)
 		if command == "image" {
 			fmt.Fprintln(out, "Image options: create --name NAME (--ipsw latest|PATH | --from SOURCE) [--cpu N --memory-mib N]; open/seal/remove --id UUID; seal [--runner-version latest|VERSION] [--runner-path PATH]")
 		}

@@ -66,7 +66,7 @@ Linux users select `runmoor-linux-amd64.tar.gz` or `runmoor-linux-arm64.tar.gz` 
 
 ## Configure
 
-> **Version note:** Automatic setup and managed runner updates described here target the next Runmoor release. Published 0.1.3 uses the explicit pinned configuration and manual image preparation also documented below. Check `runmoor init --help` for the new options.
+> **Version note:** Runmoor 0.2.0 introduced automatic setup and managed runner updates. Guided Mac VM creation during `init` and `image create --ipsw latest` are in the next release. Version 0.1.3 uses the explicit pinned configuration and manual image preparation also documented below. Check `runmoor version` before using release-specific commands.
 
 ```sh
 runmoor init
@@ -86,6 +86,10 @@ Both supported operating systems use:
 
 State/data may be overridden by absolute TOML paths. Configuration and credential files must be owned by your user, regular files, and mode 0600. Directories/socket are private to that user. Very long state paths exceed the Unix socket length limit and are rejected. Storage relocation requires drain, stop, and a complete installation backup; it is not a live reload.
 
+`RUNMOOR_PAT` is an example environment variable name for a GitHub personal access token, not a token issued by Runmoor or a one-hour runner registration token. Create a fine-grained PAT in GitHub under **Settings → Developer settings → Personal access tokens → Fine-grained tokens**. Repository runners require repository Administration read/write; organization runners require organization Administration read and Self-hosted runners read/write. The token owner must be allowed to manage the target's runners, and an organization may require token approval. See the [PAT creation guide](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens) and [runner permissions](https://docs.github.com/en/actions/how-tos/manage-runners/use-actions-runner-controller/authenticate-to-the-api).
+
+For an Ubuntu systemd user service, prefer a user-owned mode 0600 credential file and `credential = { file = "REPLACE_WITH_ABSOLUTE_PAT_FILE" }`. A terminal's exported variable is not automatically inherited by the user service; `runmoor service install` never embeds its value. After rotating a PAT in the same file, run `runmoor resume --pool NAME` to refresh the connection and clear authentication suspension. An environment-backed service already running without its PAT needs a stop/start after importing the variable, followed by `resume`. The [public Ubuntu service guide](https://oss.delino.io/runmoor/operations#github-pat-for-an-ubuntu-user-service) gives the token entry, file, startup and recovery steps. Do not put a PAT value in TOML or a service definition.
+
 ## Automatic configuration
 
 In a terminal, `runmoor init` asks for the GitHub target, execution backend and
@@ -103,8 +107,8 @@ runmoor config validate
 runmoor run
 ```
 
-The generated configuration needs no resource limits, architecture, runner
-version or Docker image digest:
+The following generated configuration is for an ARM64 Docker host. It needs no
+resource limits, architecture, runner version or Docker image digest:
 
 ```toml
 schema_version = 1
@@ -119,9 +123,14 @@ credential = { env = "RUNMOOR_PAT" }
 name = "linux"
 connection = "project"
 scale_set = "runmoor-linux"
-labels = ["runmoor-linux"]
+labels = ["runmoor-linux", "linux", "ARM64"]
 backend = "docker"
 ```
+
+On an amd64 Docker host, `init` uses `x64` instead of `ARM64`. Tart uses
+`["runmoor-macos", "macOS", "ARM64"]`. These defaults apply only to newly
+generated configurations; existing and manually written labels are preserved,
+and an omitted `labels` field stays empty.
 
 The manager detects host capacity and the local Docker engine limit. Defaults
 are 2 CPUs/4096 MiB per Docker job and 4 CPUs/8192 MiB per Tart job. Concurrency is
@@ -221,6 +230,9 @@ jobs:
 ```
 
 Use the configured scale-set label, or a matching label array, and applicable GitHub runner-group policy. Runmoor receives demand without a public webhook endpoint. Ordinary NAT networking is sufficient.
+For a new ARM64 Docker pool, `runs-on: [runmoor-linux, linux, ARM64]` also
+selects its platform and architecture; use `x64` for an amd64 pool. The
+single scale-set label above continues to work.
 
 ```sh
 runmoor status
@@ -367,7 +379,7 @@ Manager-only restart reconciles SQLite with actual Docker/Tart and GitHub state,
 
 A recorded job completion continues through cleanup even if GitHub has already removed its ephemeral runner registration. Capacity becomes available once the owned execution is confirmed stopped, while any remaining cleanup is retried. An upgrade does not automatically recover existing quarantines. For a previously affected completed job, confirm completion in GitHub and verify the exact ownership and stopped state of its local resources before recovering the affected pool with `runmoor stop --pool NAME --force`.
 
-Back up only after `drain` and `stop`. Preserve the complete state and managed-data directories; protect referenced credential files separately. Install the new binary manually and start again. Roll back using a compatible binary and its matching drained state/data backup. The new release upgrades existing state automatically; back up before upgrading and use the matching backup to return to 0.1.3. Unsupported database versions fail without destructive migration; never reuse an older backup while resources created after that backup are still active.
+Back up only after `drain` and `stop`. Preserve the complete state and managed-data directories; protect referenced credential files separately. Install the new binary manually and start again. Roll back using a compatible binary and its matching drained state/data backup. Version 0.2.0 upgrades existing state automatically; back up before upgrading and use the matching backup to return to 0.1.3. Unsupported database versions fail without destructive migration; never reuse an older backup while resources created after that backup are still active.
 
 Jobs retain timeout accounting across restart/sleep. Active work requests OS sleep inhibition; warm idle capacity does not keep the machine awake indefinitely. Failure is a warning and does not change system power settings. Forced sleep, lid closure, shutdown and power loss can still interrupt work.
 
@@ -412,6 +424,42 @@ macOS and Xcode still use their existing manual/package-manager update workflows
 - `CLEANUP_PENDING`: restore Docker/Tart/GitHub connectivity and let reconciliation retry. A stopped manager reports pending cleanup until the next run.
 - `SLEEP_INHIBITION_UNAVAILABLE`: check OS utility/session permissions; work continues without a sleep guarantee.
 - Repeated preparation failures suspend the affected pool after three attempts. Unrelated healthy pools continue.
+
+### Ubuntu startup checks
+
+Use `runmoor init` for a missing configuration; `runmoor config init` is not a
+command. Most commands load the configuration before state. If
+`Cannot securely open a private file` occurs during `config validate`, inspect
+the selected configuration path (`~/.config/runmoor/config.toml` by default,
+or the path passed with `--config`). It may be missing, inaccessible, or a
+symlink. Restore the matching configuration for an existing installation
+rather than deleting its state.
+See the [configuration guide](https://oss.delino.io/runmoor/configuration)
+for owner-only file requirements and path checks.
+
+`Docker capacity is awaiting verification` means new Docker work is paused
+until Runmoor can query the local engine; it retries automatically. Run
+`docker info` without `sudo` as the Runmoor user. If the Unix socket denies
+access, check its group and the user's active groups. Granting `docker` group
+access gives root-level Docker control. Log out and back in, then check
+`loginctl show-user "$(id -un)" --property=Linger`: with `Linger=yes`, the
+systemd user manager may retain its old groups despite a successful `docker
+info` in the new login. Drain active work, then have an administrator terminate
+the user's sessions and manager from a separate session or reboot before
+starting Runmoor again. Runmoor itself remains a user service. See the
+[Docker guide](https://oss.delino.io/runmoor/docker) for the full procedure.
+
+An existing service definition prevents `runmoor service install` from
+overwriting it. On Ubuntu, inspect `systemctl --user cat runmoor.service` for
+the current binary and configuration paths, then run
+`systemctl --user daemon-reload` in the service user's login session. If
+`runmoor service start` reports `User service command failed`, run
+`systemctl --user enable --now runmoor.service` directly and inspect
+`systemctl --user status runmoor.service --no-pager -l` plus
+`journalctl --user -u runmoor.service -n 50 --no-pager` for the original
+failure. Preserve the service definition and state until any owned executions
+and cleanup have been drained. See the
+[operations guide](https://oss.delino.io/runmoor/operations).
 
 Diagnostics are local, sanitized structured metadata bounded by **seven days and 256 MiB**. Completed execution history expires after seven days; unresolved ownership/cleanup remains until reconciliation. Credentials, JIT configuration, workflow secrets and raw job output are excluded. User-created sealed images remain until explicit deletion; generated runner revisions follow managed retention. There is no telemetry or Prometheus endpoint.
 

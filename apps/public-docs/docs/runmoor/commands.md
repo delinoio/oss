@@ -1,6 +1,6 @@
 # Runmoor Commands and Routing
 
-> **Version note:** Automatic setup and managed runner updates described here target the next Runmoor release. Published 0.1.3 uses the explicit pinned configuration and manual image preparation also documented below. Check `runmoor init --help` for the new options.
+> **Version note:** Runmoor 0.2.0 introduced automatic setup and managed runner updates. Guided Mac VM creation during `init` and `image create --ipsw latest` are in the next release. Version 0.1.3 uses the explicit pinned configuration and manual image preparation also documented below. Check `runmoor version` before using release-specific commands.
 
 
 ```yaml
@@ -12,6 +12,9 @@ jobs:
 ```
 
 Use the configured scale-set label, or a matching label array, and applicable GitHub runner-group policy. Runmoor receives demand without a public webhook endpoint. Ordinary NAT networking is sufficient.
+For a new ARM64 Docker pool, `runs-on: [runmoor-linux, linux, ARM64]` also
+selects its platform and architecture; use `x64` for an amd64 pool. The
+single scale-set label above continues to work.
 
 ```sh
 runmoor status

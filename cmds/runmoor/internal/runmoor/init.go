@@ -29,6 +29,30 @@ type InitOptions struct {
 	ImageOnly      bool
 }
 
+func initialPoolLabels(backend Backend, arch string) (string, []string, error) {
+	name, platformLabel := "linux", "linux"
+	switch backend {
+	case Docker:
+	case Tart:
+		if arch != "arm64" {
+			return "", nil, problem(ErrConfig, "Tart requires an arm64 host.", "Use a supported macOS arm64 host.")
+		}
+		name, platformLabel = "macos", "macOS"
+	default:
+		return "", nil, problem(ErrConfig, "Invalid initial setup backend.", "Choose docker or tart.")
+	}
+	var architectureLabel string
+	switch arch {
+	case "amd64":
+		architectureLabel = "x64"
+	case "arm64":
+		architectureLabel = "ARM64"
+	default:
+		return "", nil, problem(ErrConfig, "Unsupported host architecture.", "Use a supported amd64 or arm64 host.")
+	}
+	return name, []string{"runmoor-" + name, platformLabel, architectureLabel}, nil
+}
+
 func initialize(path string, opts InitOptions, input io.Reader, output io.Writer, interactive bool) error {
 	return initializeWithContext(context.Background(), path, opts, input, output, interactive, defaultGuidedRuntime{})
 }
@@ -182,11 +206,11 @@ func initializeWithContext(ctx context.Context, path string, opts InitOptions, i
 		if opts.InstallationID != 0 {
 			conn["installation_id"] = opts.InstallationID
 		}
-		name := "linux"
-		if opts.Backend == string(Tart) {
-			name = "macos"
+		name, labels, e := initialPoolLabels(Backend(opts.Backend), runtime.GOARCH)
+		if e != nil {
+			return e
 		}
-		pool := map[string]any{"name": name, "connection": "project", "backend": opts.Backend, "scale_set": "runmoor-" + name, "labels": []string{"runmoor-" + name}}
+		pool := map[string]any{"name": name, "connection": "project", "backend": opts.Backend, "scale_set": "runmoor-" + name, "labels": labels}
 		if opts.Image != "" {
 			pool["image"] = opts.Image
 		}

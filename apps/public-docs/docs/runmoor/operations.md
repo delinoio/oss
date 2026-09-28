@@ -1,6 +1,6 @@
 # Runmoor Operations
 
-> **Version note:** Automatic setup and managed runner updates described here target the next Runmoor release. Published 0.1.3 uses the explicit pinned configuration and manual image preparation also documented below. Check `runmoor init --help` for the new options.
+> **Version note:** Runmoor 0.2.0 introduced automatic setup and managed runner updates. Version 0.1.3 uses the explicit pinned configuration and manual image preparation also documented below. Check `runmoor version` before using 0.2.0 commands.
 
 ```sh
 runmoor service install
@@ -11,11 +11,135 @@ runmoor service uninstall
 
 These commands manage a launchd or systemd **user** service with the same drain semantics. Install the binary at a persistent location first. Installation does not overwrite an existing service definition. Uninstall preserves data/configuration and refuses to abandon known live executions when the manager cannot be contacted. Run the service in a functioning user session; availability after logout/reboot depends on that OS session, and Runmoor does not change system login policy.
 
+## Recover an Ubuntu user service
+
+Run these checks as the Runmoor user in a working login session, without
+`sudo`. `service install` does not replace an existing definition. If it
+reports that a definition already exists or cannot be created securely,
+inspect the existing unit before retrying. A previous install can leave the
+unit file in place when systemd's reload fails after file creation.
+
+```sh
+systemctl --user status runmoor.service --no-pager -l
+systemctl --user daemon-reload
+systemctl --user cat runmoor.service
+```
+
+An `inactive (dead)` and `disabled` unit is present but not running. In the
+unit shown by `cat`, check that `ExecStart` names the current Runmoor binary
+and the intended `--config` file, especially after replacing the binary or
+configuration. If `systemctl --user` cannot reach the user manager, log in as
+the actual service user rather than running Runmoor through `sudo`.
+
+When the unit paths are correct and the service is inactive, try
+`runmoor service start` first. Runmoor checks that the unit is a regular,
+owner-only file belonging to the current user and does not follow a symlink.
+If that command reports exactly `DEPENDENCY_UNAVAILABLE: User service command
+failed`, its unit check succeeded and the systemd command failed. Only then
+run the same systemd command directly to see its original error:
+
+```sh
+systemctl --user enable --now runmoor.service
+systemctl --user status runmoor.service --no-pager -l
+journalctl --user -u runmoor.service -n 50 --no-pager
+```
+
+`runmoor service uninstall` asks Runmoor to drain and stop owned work, then
+disables and stops the user unit. A failure during disable/stop leaves the unit
+file in place, but a later systemd reload failure can be reported after Runmoor
+has removed it. Both return `DEPENDENCY_UNAVAILABLE: User service command
+failed`. Check whether the unit file still exists in the user's systemd
+configuration directory and inspect the direct `systemctl --user` output and
+journal before retrying. After `runmoor status` confirms no active executions
+or pending cleanup, the corresponding disable/stop command is
+`systemctl --user disable --now runmoor.service`. Do not manually remove the
+unit, state, or managed data while executions or cleanup may still be active.
+Use the normal drain/stop path before replacing a service definition.
+
+## GitHub PAT for an Ubuntu user service
+
+[Create a GitHub PAT](./configuration#create-a-github-pat) for the configured
+repository or organization. Run the following commands as the Ubuntu user who
+will run the service. They prompt without displaying the token or placing its
+value in shell history:
+
+```bash
+install -d -m 700 "$HOME/.config/runmoor"
+pat_file=$(mktemp "$HOME/.config/runmoor/github.pat.XXXXXX")
+read -r -s -p 'GitHub PAT: ' pat
+printf '\n'
+printf '%s\n' "$pat" > "$pat_file"
+unset pat
+mv -f -- "$pat_file" "$HOME/.config/runmoor/github.pat"
+realpath "$HOME/.config/runmoor/github.pat"
+```
+
+In `~/.config/runmoor/config.toml`, replace the connection's environment
+reference with a file reference using the absolute path printed by `realpath`:
+
+```toml
+auth = "pat"
+credential = { file = "REPLACE_WITH_ABSOLUTE_PAT_FILE" }
+```
+
+`mktemp` creates a mode 0600 file and `mv` replaces the credential file without
+making its contents public during rotation. TOML does not expand `$HOME`. Keep
+the PAT value out of TOML and the service definition. The credential file must
+be a regular file owned by the service user with mode 0600. Then validate and
+start the user service:
+
+```sh
+runmoor config validate
+runmoor service install
+runmoor service start
+runmoor status
+```
+
+Run `service install` only for a new service definition. For an already running
+pool, replacing the PAT in the same file does not automatically refresh its
+GitHub connection. Revalidate the credential and clear any authentication
+suspension after rotation:
+
+```sh
+runmoor resume --pool linux
+runmoor status
+```
+
+If you change the credential reference in TOML, accept that configuration
+before resuming the affected pool:
+
+```sh
+runmoor reload
+runmoor resume --pool linux
+```
+
+A terminal's `export RUNMOOR_PAT` does not automatically reach systemd's user
+manager. If you keep `credential = { env = "RUNMOOR_PAT" }`, import it before
+starting the service:
+
+```bash
+read -r -s -p 'GitHub PAT: ' RUNMOOR_PAT
+printf '\n'
+export RUNMOOR_PAT
+systemctl --user import-environment RUNMOOR_PAT
+unset RUNMOOR_PAT
+runmoor service start
+```
+
+If the service was already running without the PAT, `service start` leaves that
+process running with its old environment. After importing the variable, use
+`runmoor service stop`, `runmoor service start`, and `runmoor resume --pool linux`
+to restart the manager and clear the pool's authentication suspension. Service
+stop drains active work before exiting. Supply the variable again when the user
+manager restarts. A file reference remains available across those restarts. The
+user service starts after logout or reboot only if your Ubuntu user-session
+policy keeps its systemd user manager running.
+
 Manager-only restart reconciles SQLite with actual Docker/Tart and GitHub state, resumes verified live work and retries incomplete cleanup. Ambiguous resources are quarantined rather than deleted. Confirmed termination releases resources; unresolved cleanup/ownership records remain durable. Runmoor never automatically reruns a failed GitHub job.
 
 A recorded job completion continues through cleanup even if GitHub has already removed its ephemeral runner registration. Capacity becomes available once the owned execution is confirmed stopped, while any remaining cleanup is retried. An upgrade does not automatically recover existing quarantines. For a previously affected completed job, confirm completion in GitHub and verify the exact ownership and stopped state of its local resources before recovering the affected pool with `runmoor stop --pool NAME --force`.
 
-Back up only after `drain` and `stop`. Preserve the complete state and managed-data directories; protect referenced credential files separately. Install the new binary manually and start again. Roll back using a compatible binary and its matching drained state/data backup. The new release upgrades existing state automatically; back up before upgrading and use the matching backup to return to 0.1.3. Unsupported database versions fail without destructive migration; never reuse an older backup while resources created after that backup are still active.
+Back up only after `drain` and `stop`. Preserve the complete state and managed-data directories; protect referenced credential files separately. Install the new binary manually and start again. Roll back using a compatible binary and its matching drained state/data backup. Version 0.2.0 upgrades existing state automatically; back up before upgrading and use the matching backup to return to 0.1.3. Unsupported database versions fail without destructive migration; never reuse an older backup while resources created after that backup are still active.
 
 Jobs retain timeout accounting across restart/sleep. Active work requests OS sleep inhibition; warm idle capacity does not keep the machine awake indefinitely. Failure is a warning and does not change system power settings. Forced sleep, lid closure, shutdown and power loss can still interrupt work.
 
