@@ -28,6 +28,7 @@ type Manager struct {
 	poolLoops       map[string]context.CancelFunc
 	poolLocks       map[string]*sync.Mutex
 	remotes         map[string]Remote
+	remoteKeys      map[string]string
 	wg              sync.WaitGroup
 	imageMu         sync.Mutex
 	reloadMu        sync.Mutex
@@ -37,7 +38,7 @@ type Manager struct {
 
 func NewManager(store *Store, path string, l *slog.Logger) *Manager {
 	ctx, cancel := context.WithCancel(context.Background())
-	m := &Manager{Store: store, ConfigPath: path, Log: l, RemoteFactory: NewGitHub, Drivers: defaultDriver, Images: &ImageManager{Store: store, Tart: &TartDriver{Exec: OSCommand{}}}, Power: &PowerManager{}, workers: map[string]context.CancelFunc{}, poolLoops: map[string]context.CancelFunc{}, poolLocks: map[string]*sync.Mutex{}, remotes: map[string]Remote{}, ctx: ctx, cancel: cancel}
+	m := &Manager{Store: store, ConfigPath: path, Log: l, RemoteFactory: NewGitHub, Drivers: defaultDriver, Images: &ImageManager{Store: store, Tart: &TartDriver{Exec: OSCommand{}}}, Power: &PowerManager{}, workers: map[string]context.CancelFunc{}, poolLoops: map[string]context.CancelFunc{}, poolLocks: map[string]*sync.Mutex{}, remotes: map[string]Remote{}, remoteKeys: map[string]string{}, ctx: ctx, cancel: cancel}
 	m.ResolveCapacity = resolveDockerCapacity
 	m.ReleaseClient = defaultReleaseClient()
 	m.RunnerBuilder = &ManagedImageBuilder{Store: store, Images: m.Images, Client: m.ReleaseClient, Log: l}
@@ -57,15 +58,29 @@ func (m *Manager) poolLock(id string) *sync.Mutex {
 func (m *Manager) remote(p PoolState) (Remote, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if current := m.Store.View().Pools[p.ID]; current == nil || current.Phase == Retired {
+	s := m.Store.View()
+	current := s.Pools[p.ID]
+	if current == nil || current.Phase == Retired {
 		return nil, problem(ErrRetry, "Pool generation has retired.", "Use the active pool generation shown by status.")
 	}
-	if r := m.remotes[p.ID]; r != nil {
-		return r, nil
+	connection := current.Connection
+	if current.Phase == Draining {
+		if replacement, ok := s.RetirementAuthority[p.ID]; ok && poolIdentity(current.Spec, replacement) == poolIdentity(current.Spec, current.Connection) {
+			connection = replacement
+		}
 	}
-	r, e := m.RemoteFactory(p.Connection)
+	key := fingerprint(connection)
+	prior := m.remotes[p.ID]
+	if prior != nil && m.remoteKeys[p.ID] == key {
+		return prior, nil
+	}
+	r, e := m.RemoteFactory(connection)
 	if e == nil {
+		if prior != nil && current.Phase == Draining {
+			m.Log.Info("pool_cleanup_authority_switched", "pool", current.Spec.Name, "pool_id", p.ID)
+		}
 		m.remotes[p.ID] = r
+		m.remoteKeys[p.ID] = key
 	}
 	return r, e
 }
@@ -103,6 +118,22 @@ func acceptSnapshotWithValidatedReload(s *Snapshot, c Config, restart, validated
 	for _, p := range c.Pools {
 		wanted[p.Name] = p
 	}
+	if validatedReload {
+		if s.RetirementAuthority == nil {
+			s.RetirementAuthority = map[string]Connection{}
+		}
+		for _, old := range s.Pools {
+			if old.Phase != Draining {
+				continue
+			}
+			if next, ok := wanted[old.Spec.Name]; ok {
+				conn := c.Connection(next.Connection)
+				if poolIdentity(old.Spec, old.Connection) == poolIdentity(next, conn) && authChanged(old.Connection, conn) {
+					s.RetirementAuthority[old.ID] = conn
+				}
+			}
+		}
+	}
 	matched := map[string]bool{}
 	previous := map[string]PoolState{}
 	for _, old := range s.Pools {
@@ -118,6 +149,9 @@ func acceptSnapshotWithValidatedReload(s *Snapshot, c Config, restart, validated
 			continue
 		}
 		previous[old.Spec.Name] = *old
+		if validatedReload && poolIdentity(old.Spec, old.Connection) == poolIdentity(p, conn) && authChanged(old.Connection, conn) {
+			s.RetirementAuthority[old.ID] = conn
+		}
 		old.Phase = Draining
 		old.Demand = 0
 	}
@@ -1149,6 +1183,7 @@ func (m *Manager) retirePool(ctx context.Context, id string) {
 	if err := m.Store.Update(func(s *Snapshot) error {
 		p := s.Pools[id]
 		p.Phase, p.Session, p.Demand = Retired, "", 0
+		delete(s.RetirementAuthority, id)
 		return nil
 	}); err != nil {
 		m.poolProblem(id, err, false)
@@ -1158,6 +1193,7 @@ func (m *Manager) retirePool(ctx context.Context, id string) {
 	// Existing lock waiters retain this mutex until they see Retired. The
 	// current-state guards above prevent late work from recreating either cache.
 	delete(m.remotes, id)
+	delete(m.remoteKeys, id)
 	delete(m.poolLocks, id)
 	if cancel := m.poolLoops[id]; cancel != nil {
 		cancel()

@@ -292,3 +292,72 @@ func TestVerifiedManagedImageRecoversStartupCircuitBreaker(t *testing.T) {
 		}
 	}
 }
+
+type credentialRetirementRemote struct {
+	*fakeRemote
+	deletionError error
+	deleted       int
+}
+
+func (r *credentialRetirementRemote) DeletePool(_ context.Context, p PoolState) error {
+	if r.deletionError != nil {
+		return r.deletionError
+	}
+	if p.ScaleSetID != 1 || p.OwnerLabel == "" {
+		return problem(ErrOwnership, "Fixture ownership mismatch.", "Preserve the pool.")
+	}
+	r.deleted++
+	return nil
+}
+
+func TestValidatedCredentialReplacementRetiresWithNewAuthority(t *testing.T) {
+	for _, ownershipError := range []bool{false, true} {
+		t.Run(map[bool]string{false: "owned", true: "ownership rejected"}[ownershipError], func(t *testing.T) {
+			m, c, _, _, oldID := testManager(t)
+			oldRemote := &credentialRetirementRemote{fakeRemote: &fakeRemote{}, deletionError: problem(ErrAuth, "Fixture old credential was revoked.", "Replace the credential.")}
+			newRemote := &credentialRetirementRemote{fakeRemote: &fakeRemote{}}
+			if ownershipError {
+				newRemote.deletionError = problem(ErrOwnership, "Fixture owner label is wrong.", "Preserve the pool.")
+			}
+			oldCredential := c.Connections[0].Credential.Env
+			m.RemoteFactory = func(conn Connection) (Remote, error) {
+				if conn.Credential.Env == oldCredential {
+					return oldRemote, nil
+				}
+				return newRemote, nil
+			}
+			if _, err := m.remote(*m.Store.View().Pools[oldID]); err != nil {
+				t.Fatal(err)
+			}
+			if err := m.Store.Update(func(s *Snapshot) error {
+				s.Pools[oldID].Phase = Suspended
+				s.Pools[oldID].Problem = oldRemote.deletionError.(*Problem)
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			c.Connections[0].Credential.Env = "RUNMOOR_REPLACEMENT_CREDENTIAL"
+			writeSuspensionReload(t, m, c)
+			if err := m.Reload(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			s := m.Store.View()
+			if s.Pools[oldID].Phase != Draining || len(s.RetirementAuthority) != 1 {
+				t.Fatal("validated replacement authority was not retained")
+			}
+			remote, err := m.remote(*s.Pools[oldID])
+			if err != nil || remote != newRemote {
+				t.Fatal("draining generation kept its revoked cached client", err)
+			}
+			m.retirePool(context.Background(), oldID)
+			s = m.Store.View()
+			if ownershipError {
+				if s.Pools[oldID].Phase != Draining || s.RetirementAuthority[oldID].Credential.Env != c.Connections[0].Credential.Env {
+					t.Fatal("failed ownership verification released the old scale set")
+				}
+			} else if s.Pools[oldID].Phase != Retired || s.RetirementAuthority[oldID].Name != "" || newRemote.deleted != 1 || oldRemote.deleted != 0 {
+				t.Fatal("old scale set was not retired with the validated replacement credential")
+			}
+		})
+	}
+}
