@@ -951,6 +951,7 @@ where
 #[cfg(target_os = "linux")]
 fn execute_repro_capture(
     command: &[OsString],
+    original_argv0: Option<&std::ffi::OsStr>,
     root: &Path,
     cwd: Option<&Path>,
     args: &ExecutionArgs,
@@ -1038,7 +1039,9 @@ fn execute_repro_capture(
         &mut child,
         |program| {
             let mut resolved = ProcessCommand::new(program);
-            resolved.args(&command[1..]).arg0(&command[0]);
+            resolved
+                .args(&command[1..])
+                .arg0(original_argv0.unwrap_or(command[0].as_os_str()));
             if let Some(cwd) = cwd {
                 resolved.current_dir(cwd);
             }
@@ -1076,19 +1079,29 @@ fn execute_repro_capture(
 #[cfg(target_os = "linux")]
 fn repro_capture(
     command: &[OsString],
+    original_argv0: Option<&std::ffi::OsStr>,
     root: &Path,
     cwd: Option<&Path>,
     args: &ExecutionArgs,
     expected_stderr: &str,
     signals: &SignalHandlers,
 ) -> Result<(CompleteRecord, bool), i32> {
-    execute_repro_capture(command, root, cwd, args, expected_stderr, signals)
-        .map_err(|failure| capture_status(failure, "min-repro"))
+    execute_repro_capture(
+        command,
+        original_argv0,
+        root,
+        cwd,
+        args,
+        expected_stderr,
+        signals,
+    )
+    .map_err(|failure| capture_status(failure, "min-repro"))
 }
 
 #[cfg(target_os = "macos")]
 fn repro_capture(
     command: &[OsString],
+    original_argv0: Option<&std::ffi::OsStr>,
     root: &Path,
     cwd: Option<&Path>,
     args: &ExecutionArgs,
@@ -1112,6 +1125,9 @@ fn repro_capture(
 
     let mut child = fspy::Command::new(&command[0]);
     child.args(&command[1..]).envs(std::env::vars_os());
+    if let Some(argv0) = original_argv0 {
+        child.arg0(argv0);
+    }
     if let Some(cwd) = cwd {
         child.current_dir(cwd);
     }
@@ -1198,6 +1214,7 @@ fn repro_capture(
 #[cfg(target_os = "windows")]
 fn repro_capture(
     command: &[OsString],
+    _original_argv0: Option<&std::ffi::OsStr>,
     root: &Path,
     cwd: Option<&Path>,
     args: &ExecutionArgs,
@@ -1894,6 +1911,28 @@ fn collect_required(
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+fn staged_root_executable(
+    record: &CompleteRecord,
+    required: &std::collections::BTreeSet<PathBuf>,
+) -> Option<PathBuf> {
+    record
+        .operations
+        .iter()
+        .find(|pair| {
+            pair.start.operation == record::Operation::Exec
+                && pair.completion.native_error.is_none()
+        })?
+        .start
+        .paths
+        .first()
+        .filter(|path| path.class == record::PathClass::Project)?
+        .project_relative
+        .as_ref()
+        .and_then(repro_relative_native)
+        .filter(|relative| required.contains(relative))
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 fn tree_limits(
     root: &Path,
     max_bytes: u64,
@@ -2207,6 +2246,7 @@ fn min_repro(args: MinReproArgs) -> i32 {
     }
     let (original, original_matches) = match repro_capture(
         &args.command,
+        None,
         &root,
         None,
         &args.execution,
@@ -2245,8 +2285,14 @@ fn min_repro(args: MinReproArgs) -> i32 {
     if fs::create_dir_all(&candidate_cwd).is_err() {
         return diagnostic("candidate_prepare", "min-repro");
     }
+    let mut rerun_command = args.command.clone();
+    let staged_program = staged_root_executable(&original, &required);
+    if let Some(relative) = &staged_program {
+        rerun_command[0] = candidate.path().join(relative).into_os_string();
+    }
     let (rerun, rerun_matches) = match repro_capture(
-        &args.command,
+        &rerun_command,
+        staged_program.as_ref().map(|_| args.command[0].as_os_str()),
         candidate.path(),
         Some(&candidate_cwd),
         &args.execution,
@@ -4784,8 +4830,21 @@ mod tests {
         fs::create_dir(root.join("subdir")).unwrap();
         fs::write(root.join("subdir/input.txt"), b"fixture").unwrap();
         fs::write(root.join(".env"), b"secret").unwrap();
-        for case in ["verified", "nested", "blocked", "original", "metadata"] {
+        for case in [
+            "verified",
+            "nested",
+            "blocked",
+            "original",
+            "metadata",
+            "local-executable",
+        ] {
             let bundle = directory.path().join(format!("{case}-bundle"));
+            if case == "local-executable" {
+                #[cfg(target_os = "linux")]
+                fs::copy("/bin/sh", root.join("tool")).unwrap();
+                #[cfg(target_os = "macos")]
+                fs::copy(std::env::current_exe().unwrap(), root.join("tool")).unwrap();
+            }
             let cwd = if case == "nested" {
                 root.join("subdir")
             } else {
@@ -4815,7 +4874,7 @@ mod tests {
                     .windows(b"FSPY_REPRO_STDOUT_MARKER".len())
                     .any(|part| part == b"FSPY_REPRO_STDOUT_MARKER"));
             }
-            if case == "verified" || case == "nested" {
+            if matches!(case, "verified" | "nested" | "local-executable") {
                 let input = if case == "nested" {
                     bundle.join("subdir/input.txt")
                 } else {
@@ -4833,6 +4892,9 @@ mod tests {
                     selection_native(Path::new(if case == "nested" { "subdir" } else { "." }))
                 );
                 assert!(!bundle.join(".env").exists());
+                if case == "local-executable" {
+                    assert!(bundle.join("tool").is_file());
+                }
             } else {
                 assert!(!bundle.exists());
             }
@@ -4864,6 +4926,11 @@ mod tests {
             root.as_os_str().to_owned(),
             OsString::from("--include"),
             OsString::from(include),
+        ];
+        if case == "local-executable" {
+            arguments.extend([OsString::from("--include"), OsString::from("tool")]);
+        }
+        arguments.extend([
             OsString::from("--bundle-dir"),
             bundle,
             OsString::from("--expect-exit"),
@@ -4872,14 +4939,25 @@ mod tests {
             OsString::from("EXPECTED"),
             OsString::from("--quiet"),
             OsString::from("--"),
-        ];
+        ]);
         #[cfg(target_os = "linux")]
-        arguments.extend([OsString::from("/bin/sh"), OsString::from("-c")]);
+        arguments.extend([
+            if case == "local-executable" {
+                root.join("tool").into_os_string()
+            } else {
+                OsString::from("/bin/sh")
+            },
+            OsString::from("-c"),
+        ]);
         #[cfg(target_os = "macos")]
         {
             std::env::set_var("CLIBOX_FSPY_REPRO_ROOT", &root);
             arguments.extend([
-                std::env::current_exe().unwrap().into_os_string(),
+                if case == "local-executable" {
+                    root.join("tool").into_os_string()
+                } else {
+                    std::env::current_exe().unwrap().into_os_string()
+                },
                 OsString::from("--exact"),
                 OsString::from("cli::tests::repro_workload_fixture"),
                 OsString::from("--nocapture"),
@@ -4904,7 +4982,10 @@ mod tests {
         let cli = TestCli::try_parse_from(arguments).unwrap();
         assert_eq!(
             execute(cli.command),
-            if case == "verified" || case == "nested" {
+            if matches!(
+                case.to_str(),
+                Some("verified" | "nested" | "local-executable")
+            ) {
                 0
             } else {
                 1
@@ -5845,8 +5926,18 @@ mod tests {
         fs::create_dir(root.join("subdir")).unwrap();
         fs::write(root.join("subdir/input.txt"), b"fixture").unwrap();
         fs::write(root.join(".env"), b"secret").unwrap();
-        for case in ["verified", "nested", "blocked", "original", "metadata"] {
+        for case in [
+            "verified",
+            "nested",
+            "blocked",
+            "original",
+            "metadata",
+            "local-executable",
+        ] {
             let bundle = directory.path().join(format!("{case}-bundle"));
+            if case == "local-executable" {
+                fs::copy(std::env::current_exe().unwrap(), root.join("tool.exe")).unwrap();
+            }
             let cwd = if case == "nested" {
                 root.join("subdir")
             } else {
@@ -5874,7 +5965,7 @@ mod tests {
                 .stderr
                 .windows(b"FSPY_REPRO_STDOUT_MARKER".len())
                 .any(|part| part == b"FSPY_REPRO_STDOUT_MARKER"));
-            if case == "verified" || case == "nested" {
+            if matches!(case, "verified" | "nested" | "local-executable") {
                 let input = if case == "nested" {
                     bundle.join("subdir/input.txt")
                 } else {
@@ -5892,6 +5983,9 @@ mod tests {
                     selection_native(Path::new(if case == "nested" { "subdir" } else { "." }))
                 );
                 assert!(!bundle.join(".env").exists());
+                if case == "local-executable" {
+                    assert!(bundle.join("tool.exe").is_file());
+                }
             } else {
                 assert!(!bundle.exists());
             }
@@ -5906,17 +6000,22 @@ mod tests {
         };
         let bundle = std::env::var_os("CLIBOX_FSPY_WIN_REPRO_BUNDLE").unwrap();
         let case = std::env::var("CLIBOX_FSPY_WIN_REPRO_CASE").unwrap();
-        let cli = TestCli::try_parse_from([
+        let mut arguments = vec![
             OsString::from("fspy"),
             OsString::from("min-repro"),
             OsString::from("--root"),
-            root,
+            root.clone(),
             OsString::from("--include"),
             OsString::from(match case.as_str() {
                 "blocked" => "*",
                 "nested" => "subdir/input.txt",
                 _ => "input.txt",
             }),
+        ];
+        if case == "local-executable" {
+            arguments.extend([OsString::from("--include"), OsString::from("tool.exe")]);
+        }
+        arguments.extend([
             OsString::from("--bundle-dir"),
             bundle,
             OsString::from("--expect-exit"),
@@ -5925,15 +6024,21 @@ mod tests {
             OsString::from("EXPECTED"),
             OsString::from("--quiet"),
             OsString::from("--"),
-            std::env::current_exe().unwrap().into_os_string(),
+            if case == "local-executable" {
+                PathBuf::from(root.as_os_str())
+                    .join("tool.exe")
+                    .into_os_string()
+            } else {
+                std::env::current_exe().unwrap().into_os_string()
+            },
             OsString::from("--exact"),
             OsString::from("cli::tests::windows_reproduction_workload"),
             OsString::from("--nocapture"),
-        ])
-        .unwrap();
+        ]);
+        let cli = TestCli::try_parse_from(arguments).unwrap();
         assert_eq!(
             execute(cli.command),
-            if case == "verified" || case == "nested" {
+            if matches!(case.as_str(), "verified" | "nested" | "local-executable") {
                 0
             } else {
                 1
