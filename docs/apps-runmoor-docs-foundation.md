@@ -33,6 +33,7 @@
 ## Security
 - Installation examples select one exact published release tag, derive archive download URLs and the tag-triggered signing identity from it, and verify both Sigstore bundles and the selected archive checksum before extraction. Manual-main signatures require their separately documented exact identity; never use an arbitrary-version identity wildcard. Keep the CLI README in sync.
 - Preserve the stable-release verification limits, credential-reference guidance, signature verification steps, trusted-workload restrictions, and third-party licensing boundaries.
+- Public configuration guidance identifies `RUNMOOR_PAT` as a GitHub PAT environment reference, explains where to create fine-grained and classic PATs and the repository/organization runner permissions, and distinguishes it from short-lived runner registration tokens. Ubuntu user-service guidance shows a user-owned mode 0600 credential file with an absolute TOML file reference, explains the systemd user-manager environment boundary and the explicit connection refresh/resume after token rotation, and preserves the user-session availability limit. An environment-backed service already running without the imported PAT requires stop/start and pool resume. Never place a PAT value in public examples, TOML, or service definitions.
 - Do not publish internal credentials, private repository paths, or unsupported release claims.
 - Preserve the release-availability classifier previously applied by public-docs, including its negation fixtures. Rendered affirmative beta-channel, partial/staged GA, phased/fractional rollout, early-access, and early-announcement claims fail validation; stable-channel disclosures and explicit unavailable/unsupported/prohibited statements remain valid.
 - The app-local public-content validator preserves the former public-docs credential/path safeguards. It rejects credential patterns and private filesystem/repository paths in rendered text and HTML comments, plus credential-bearing or forbidden HTML/CSS resource URLs after entity and URL decoding. Credential parameters, including authorization codes, are checked in ordinary queries, direct fragments, and the query portion of hash-routed fragments. Public route exceptions match complete route IDs (with optional query or fragment), never arbitrary paths beginning with a route name. Same-origin static assets remain permitted, as do documented environment/file credential placeholders and XDG paths. Rejections report the page and classification without echoing the rejected value.
@@ -81,9 +82,9 @@ The Runmoor install page links directly to the shared key-verification and stabl
 
 ## Automatic configuration documentation
 
-The next unreleased Runmoor version adds interactive/minimal init, omitted resource
+Runmoor 0.2.0 adds interactive/minimal init, omitted resource
 and architecture defaults, latest runner management for Docker/Tart, resolved
-configuration inspection and explicit update requests. Guides label this version
-boundary and retain 0.1.3-compatible manual pins, image setup, credentials,
+configuration inspection and explicit update requests. Guides label the released
+version boundary and retain 0.1.3-compatible manual pins, image setup, credentials,
 license terms and verification limits. Public guides describe operator behavior,
 not the internal SQLite migration journal or repository implementation paths.

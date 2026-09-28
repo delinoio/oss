@@ -1,6 +1,6 @@
 # Runmoor Docker Execution
 
-> **Version note:** Automatic setup and managed runner updates described here target the next Runmoor release. Published 0.1.3 uses the explicit pinned configuration and manual image preparation also documented below. Check `runmoor init --help` for the new options.
+> **Version note:** Automatic setup and managed runner updates are available in Runmoor 0.2.0. Version 0.1.3 uses the explicit pinned configuration and manual image preparation also documented below.
 
 The official `ghcr.io/actions/actions-runner` image is intentionally minimal. With automatic management, omit `image` and `runner_version`: Runmoor downloads the official native-architecture image, verifies its runner version and records its immutable digest. Compatible custom images need a non-root `runner` user with UID/GID 1001, a POSIX shell and standard utilities, and the Docker CLI for DinD. Automatic custom-image preparation requires no declared image volumes and a dedicated `runner_path`; that directory is replaced only inside a disposable candidate. The source image remains unchanged.
 

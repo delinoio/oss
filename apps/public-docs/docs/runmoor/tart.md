@@ -1,6 +1,6 @@
 # Runmoor Tart Images
 
-> **Version note:** Automatic setup and managed runner updates described here target the next Runmoor release. Published 0.1.3 uses the explicit pinned configuration and manual image preparation also documented below. Check `runmoor init --help` for the new options.
+> **Version note:** Automatic setup and managed runner updates are available in Runmoor 0.2.0. Version 0.1.3 uses the explicit pinned configuration and manual image preparation also documented below.
 
 Install **Tart 2.37.0** on macOS 14+ arm64 yourself. Install **Tart Guest Agent 0.14.2** with RPC enabled in the guest's non-root runner account. Account setup, login, Xcode licensing and tools remain manual. Review the version-specific [Tart license](https://github.com/openai/tart/blob/2.37.0/LICENSE) and [Guest Agent license](https://github.com/openai/tart-guest-agent/blob/v0.14.2/LICENSE), currently FSL-1.1-ALv2, plus the applicable Apple software terms. They are external software, not bundled or relicensed by Runmoor.
 
