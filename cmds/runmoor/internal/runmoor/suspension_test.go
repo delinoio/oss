@@ -355,9 +355,61 @@ func TestValidatedCredentialReplacementRetiresWithNewAuthority(t *testing.T) {
 				if s.Pools[oldID].Phase != Draining || s.RetirementAuthority[oldID].Credential.Env != c.Connections[0].Credential.Env {
 					t.Fatal("failed ownership verification released the old scale set")
 				}
-			} else if s.Pools[oldID].Phase != Retired || s.RetirementAuthority[oldID].Name != "" || newRemote.deleted != 1 || oldRemote.deleted != 0 {
+			} else if s.Pools[oldID].Phase != Retired || s.RetirementAuthority[oldID].Name != "" || s.RetirementValidation[oldID] != "" || newRemote.deleted != 1 || oldRemote.deleted != 0 {
 				t.Fatal("old scale set was not retired with the validated replacement credential")
 			}
 		})
+	}
+}
+
+func TestValidatedCredentialRollbackRefreshesDrainingAuthority(t *testing.T) {
+	m, c, _, _, oldID := testManager(t)
+	original := c.Connections[0].Credential.Env
+	staleOriginal := &credentialRetirementRemote{fakeRemote: &fakeRemote{}, deletionError: problem(ErrAuth, "Fixture original credential was revoked.", "Restore the credential.")}
+	staleReplacement := &credentialRetirementRemote{fakeRemote: &fakeRemote{}, deletionError: problem(ErrAuth, "Fixture replacement credential was revoked.", "Restore the credential.")}
+	restoredOriginal := &credentialRetirementRemote{fakeRemote: &fakeRemote{}}
+	restored := false
+	m.RemoteFactory = func(conn Connection) (Remote, error) {
+		if conn.Credential.Env != original {
+			return staleReplacement, nil
+		}
+		if restored {
+			return restoredOriginal, nil
+		}
+		return staleOriginal, nil
+	}
+	if _, err := m.remote(*m.Store.View().Pools[oldID]); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Store.Update(func(s *Snapshot) error {
+		s.Pools[oldID].Phase = Suspended
+		s.Pools[oldID].Problem = problem(ErrAuth, "Fixture original credential was revoked.", "Replace the credential.")
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	c.Connections[0].Credential.Env = "RUNMOOR_REPLACEMENT_CREDENTIAL"
+	writeSuspensionReload(t, m, c)
+	if err := m.Reload(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	m.retirePool(context.Background(), oldID)
+	if s := m.Store.View(); s.Pools[oldID].Phase != Draining || s.RetirementAuthority[oldID].Credential.Env != c.Connections[0].Credential.Env {
+		t.Fatal("failed replacement cleanup did not retain its authority")
+	}
+	restored = true
+	c.Connections[0].Credential.Env = original
+	writeSuspensionReload(t, m, c)
+	if err := m.Reload(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	s := m.Store.View()
+	if s.RetirementAuthority[oldID].Credential.Env != original {
+		t.Fatal("validated rollback did not replace the stale cleanup authority")
+	}
+	m.retirePool(context.Background(), oldID)
+	s = m.Store.View()
+	if s.Pools[oldID].Phase != Retired || restoredOriginal.deleted != 1 || staleOriginal.deleted != 0 || staleReplacement.deleted != 0 {
+		t.Fatal("rollback kept a revoked cleanup client")
 	}
 }

@@ -143,6 +143,7 @@ type PoolState struct {
 	Problem             *Problem   `json:"problem,omitempty"`
 	PreviousIdentity    string     `json:"previous_identity,omitempty"`
 }
+
 type Runner struct {
 	ID               string      `json:"id"`
 	PoolID           string      `json:"pool_id"`
@@ -188,26 +189,27 @@ type Image struct {
 	Problem       *Problem   `json:"problem,omitempty"`
 }
 type Snapshot struct {
-	ReleaseRetryAt      time.Time                   `json:"release_retry_at,omitempty"`
-	ReleaseProblem      *Problem                    `json:"release_problem,omitempty"`
-	ReleaseAttempts     int                         `json:"release_attempts,omitempty"`
-	SchemaVersion       int                         `json:"schema_version"`
-	Installation        string                      `json:"installation"`
-	Generation          string                      `json:"generation"`
-	Config              Config                      `json:"config"`
-	Requested           Config                      `json:"requested_config"`
-	Managed             map[string]*ManagedPool     `json:"managed_pools"`
-	ManagedRecovery     map[string]*ManagedRecovery `json:"managed_recovery,omitempty"`
-	RetirementAuthority map[string]Connection       `json:"retirement_authority,omitempty"`
-	Artifacts           map[string]*RunnerArtifact  `json:"runner_artifacts"`
-	Releases            []RunnerRelease             `json:"runner_releases,omitempty"`
-	ReleaseChecked      time.Time                   `json:"release_checked,omitempty"`
-	Pools               map[string]*PoolState       `json:"pools"`
-	Runners             map[string]*Runner          `json:"runners"`
-	Images              map[string]*Image           `json:"images"`
-	Generations         map[string]Config           `json:"generations"`
-	Paused              bool                        `json:"paused"`
-	Stopping            bool                        `json:"stopping"`
-	Cursor              int                         `json:"cursor"`
-	PowerProblem        *Problem                    `json:"power_problem,omitempty"`
+	ReleaseRetryAt       time.Time                   `json:"release_retry_at,omitempty"`
+	ReleaseProblem       *Problem                    `json:"release_problem,omitempty"`
+	ReleaseAttempts      int                         `json:"release_attempts,omitempty"`
+	SchemaVersion        int                         `json:"schema_version"`
+	Installation         string                      `json:"installation"`
+	Generation           string                      `json:"generation"`
+	Config               Config                      `json:"config"`
+	Requested            Config                      `json:"requested_config"`
+	Managed              map[string]*ManagedPool     `json:"managed_pools"`
+	ManagedRecovery      map[string]*ManagedRecovery `json:"managed_recovery,omitempty"`
+	RetirementAuthority  map[string]Connection       `json:"retirement_authority,omitempty"`
+	RetirementValidation map[string]string           `json:"retirement_validation,omitempty"`
+	Artifacts            map[string]*RunnerArtifact  `json:"runner_artifacts"`
+	Releases             []RunnerRelease             `json:"runner_releases,omitempty"`
+	ReleaseChecked       time.Time                   `json:"release_checked,omitempty"`
+	Pools                map[string]*PoolState       `json:"pools"`
+	Runners              map[string]*Runner          `json:"runners"`
+	Images               map[string]*Image           `json:"images"`
+	Generations          map[string]Config           `json:"generations"`
+	Paused               bool                        `json:"paused"`
+	Stopping             bool                        `json:"stopping"`
+	Cursor               int                         `json:"cursor"`
+	PowerProblem         *Problem                    `json:"power_problem,omitempty"`
 }

@@ -64,12 +64,16 @@ func (m *Manager) remote(p PoolState) (Remote, error) {
 		return nil, problem(ErrRetry, "Pool generation has retired.", "Use the active pool generation shown by status.")
 	}
 	connection := current.Connection
+	key := fingerprint(connection)
 	if current.Phase == Draining {
 		if replacement, ok := s.RetirementAuthority[p.ID]; ok && poolIdentity(current.Spec, replacement) == poolIdentity(current.Spec, current.Connection) {
 			connection = replacement
+			key = fingerprint(struct {
+				Connection Connection
+				Validation string
+			}{replacement, s.RetirementValidation[p.ID]})
 		}
 	}
-	key := fingerprint(connection)
 	prior := m.remotes[p.ID]
 	if prior != nil && m.remoteKeys[p.ID] == key {
 		return prior, nil
@@ -107,6 +111,9 @@ func acceptSnapshot(s *Snapshot, c Config, restart bool) error {
 	return acceptSnapshotWithValidatedReload(s, c, restart, false)
 }
 func acceptSnapshotWithValidatedReload(s *Snapshot, c Config, restart, validatedReload bool) error {
+	if validatedReload {
+		refreshRetirementAuthority(s, c)
+	}
 	if s.Generation != "" && fingerprint(s.Config) == fingerprint(c) {
 		if restart {
 			s.Stopping = false
@@ -117,22 +124,6 @@ func acceptSnapshotWithValidatedReload(s *Snapshot, c Config, restart, validated
 	wanted := map[string]Pool{}
 	for _, p := range c.Pools {
 		wanted[p.Name] = p
-	}
-	if validatedReload {
-		if s.RetirementAuthority == nil {
-			s.RetirementAuthority = map[string]Connection{}
-		}
-		for _, old := range s.Pools {
-			if old.Phase != Draining {
-				continue
-			}
-			if next, ok := wanted[old.Spec.Name]; ok {
-				conn := c.Connection(next.Connection)
-				if poolIdentity(old.Spec, old.Connection) == poolIdentity(next, conn) && authChanged(old.Connection, conn) {
-					s.RetirementAuthority[old.ID] = conn
-				}
-			}
-		}
 	}
 	matched := map[string]bool{}
 	previous := map[string]PoolState{}
@@ -151,6 +142,7 @@ func acceptSnapshotWithValidatedReload(s *Snapshot, c Config, restart, validated
 		previous[old.Spec.Name] = *old
 		if validatedReload && poolIdentity(old.Spec, old.Connection) == poolIdentity(p, conn) && authChanged(old.Connection, conn) {
 			s.RetirementAuthority[old.ID] = conn
+			s.RetirementValidation[old.ID] = newID()
 		}
 		old.Phase = Draining
 		old.Demand = 0
@@ -192,6 +184,36 @@ func acceptSnapshotWithValidatedReload(s *Snapshot, c Config, restart, validated
 		s.Stopping = false
 	}
 	return nil
+}
+
+func refreshRetirementAuthority(s *Snapshot, c Config) {
+	if s.RetirementAuthority == nil {
+		s.RetirementAuthority = map[string]Connection{}
+	}
+	if s.RetirementValidation == nil {
+		s.RetirementValidation = map[string]string{}
+	}
+	wanted := map[string]Pool{}
+	for _, p := range c.Pools {
+		wanted[p.Name] = p
+	}
+	for _, old := range s.Pools {
+		if old.Phase != Draining {
+			continue
+		}
+		next, ok := wanted[old.Spec.Name]
+		if !ok {
+			continue
+		}
+		conn := c.Connection(next.Connection)
+		if poolIdentity(old.Spec, old.Connection) != poolIdentity(next, conn) {
+			continue
+		}
+		// A new validation must supersede both a revoked replacement and a
+		// cached client for an older credential reference with the same name.
+		s.RetirementAuthority[old.ID] = conn
+		s.RetirementValidation[old.ID] = newID()
+	}
 }
 
 func suspensionCorrected(old PoolState, next Pool, conn Connection, oldConfig, newConfig Config) bool {
@@ -1184,6 +1206,7 @@ func (m *Manager) retirePool(ctx context.Context, id string) {
 		p := s.Pools[id]
 		p.Phase, p.Session, p.Demand = Retired, "", 0
 		delete(s.RetirementAuthority, id)
+		delete(s.RetirementValidation, id)
 		return nil
 	}); err != nil {
 		m.poolProblem(id, err, false)
