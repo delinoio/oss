@@ -126,7 +126,10 @@ export async function publishDraft(plan, request, { releaseId, expectedAssets, n
     if (!Number.isSafeInteger(releaseId) || releaseId <= 0) throw publicationError("INVALID_RELEASE_ID", "A positive release ID is required");
     const names = [...releaseAssetNames, ...releaseAssetNames.map((name) => `${name}.sigstore.json`)].sort();
     if (!Array.isArray(expectedAssets) || JSON.stringify(expectedAssets.map((asset) => asset.name).sort()) !== JSON.stringify(names)) throw publicationError("ASSET_MISMATCH", "Publication requires the complete verified asset manifest");
-    await checkPublication(plan, request, expectedAssets, releaseId);
+    // The pinned ID alone cannot detect a second same-tag draft created since
+    // preflight. Rediscover all candidates immediately before the irreversible write.
+    const draft = await checkPublication(plan, request, expectedAssets);
+    if (draft?.id !== releaseId) throw publicationError("RELEASE_ID_CHANGED", "The pinned draft is no longer the sole release for this tag");
     releaseLog(plan, "publishing", releaseId);
     const result = await request(`${repositoryApi}/releases/${releaseId}`, { method: "PATCH", body: { draft: false, prerelease: false, body: notes } });
     const release = result.body;

@@ -208,7 +208,7 @@ test("Publication patches only the verified release ID after final revalidation"
     method: "PATCH", body: { draft: false, prerelease: false, body: "Canonical notes" },
   } });
   assert.deepEqual(remote.calls.slice(0, -1).map(({ route }) => route), [
-    `${prefix}/git/ref/tags/${encodeURIComponent(sourceTag)}`, `${prefix}/releases/42`,
+    `${prefix}/git/ref/tags/${encodeURIComponent(sourceTag)}`, `${prefix}/releases?per_page=100&page=1`, `${prefix}/releases/42`,
   ]);
   for (const fields of [{ draft: false }, { id: 43 }, { assets: [] }, { target_commitish: "2".repeat(40) }]) {
     const changed = remoteFixture({ draft: draftFixture(fields) });
@@ -223,6 +223,21 @@ test("Publication patches only the verified release ID after final revalidation"
   const missingId = remoteFixture();
   await assert.rejects(publishDraft(publicationPlan(), missingId.request, { expectedAssets, notes: "notes" }), { code: "INVALID_RELEASE_ID" });
   assert.equal(missingId.calls.length, 0);
+});
+
+test("Publication rediscovers concurrent duplicates and refuses replacement or disappeared drafts", async () => {
+  for (const replacement of [null, draftFixture({ id: 43 })]) {
+    const remote = remoteFixture({ draft: replacement, overrides: { [`${prefix}/releases/43`]: { status: 200, body: replacement } } });
+    await assert.rejects(publishDraft(publicationPlan(), remote.request, { releaseId: 42, expectedAssets, notes: "notes" }), { code: "RELEASE_ID_CHANGED" });
+    assert.ok(remote.calls.every(({ options }) => !options));
+  }
+  const pages = [[draftFixture()]];
+  const remote = remoteFixture({ pages });
+  const inspected = await checkPublication(publicationPlan(), remote.request);
+  // Another publisher introduces a conflicting draft after our initial inspection.
+  pages[0].push(draftFixture({ id: 43 }));
+  await assert.rejects(publishDraft(publicationPlan(), remote.request, { releaseId: inspected.id, expectedAssets, notes: "notes" }), { code: "DUPLICATE_RELEASE" });
+  assert.ok(remote.calls.every(({ options }) => !options));
 });
 
 test("An uncertain publication outcome is reported without retrying the write", async () => {
