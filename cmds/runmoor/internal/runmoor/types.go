@@ -43,6 +43,13 @@ const (
 	Retired   PoolPhase = "retired"
 )
 
+type SuspensionSource string
+
+const (
+	SuspensionUnknown  SuspensionSource = ""
+	SuspensionScaleSet SuspensionSource = "remote_scale_set"
+)
+
 type RunnerPhase string
 
 const (
@@ -128,20 +135,21 @@ func (r Resources) Add(o Resources) Resources {
 }
 
 type PoolState struct {
-	ID                  string     `json:"id"`
-	Generation          string     `json:"generation"`
-	Spec                Pool       `json:"spec"`
-	Connection          Connection `json:"connection"`
-	Phase               PoolPhase  `json:"phase"`
-	ScaleSetID          int        `json:"scale_set_id"`
-	OwnerLabel          string     `json:"owner_label"`
-	CreatePending       bool       `json:"create_pending"`
-	Demand              int        `json:"demand"`
-	Session             string     `json:"session,omitempty"`
-	LastMessage         int        `json:"last_message"`
-	PreparationFailures int        `json:"preparation_failures"`
-	Problem             *Problem   `json:"problem,omitempty"`
-	PreviousIdentity    string     `json:"previous_identity,omitempty"`
+	ID                  string           `json:"id"`
+	Generation          string           `json:"generation"`
+	Spec                Pool             `json:"spec"`
+	Connection          Connection       `json:"connection"`
+	Phase               PoolPhase        `json:"phase"`
+	ScaleSetID          int              `json:"scale_set_id"`
+	OwnerLabel          string           `json:"owner_label"`
+	CreatePending       bool             `json:"create_pending"`
+	Demand              int              `json:"demand"`
+	Session             string           `json:"session,omitempty"`
+	LastMessage         int              `json:"last_message"`
+	PreparationFailures int              `json:"preparation_failures"`
+	Problem             *Problem         `json:"problem,omitempty"`
+	SuspensionSource    SuspensionSource `json:"suspension_source,omitempty"`
+	PreviousIdentity    string           `json:"previous_identity,omitempty"`
 }
 
 type Runner struct {

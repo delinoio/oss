@@ -162,6 +162,7 @@ func acceptSnapshotWithValidatedReload(s *Snapshot, c Config, restart, validated
 				if s.Paused || s.Stopping || !(validatedReload && suspensionCorrected(old, p, conn, s.Config, c) || managedRecoveryMatches(s, &old)) {
 					next.Phase = Suspended
 					next.PreparationFailures = old.PreparationFailures
+					next.SuspensionSource = old.SuspensionSource
 					if old.Problem != nil {
 						copy := *old.Problem
 						next.Problem = &copy
@@ -225,7 +226,7 @@ func suspensionCorrected(old PoolState, next Pool, conn Connection, oldConfig, n
 	case ErrAuth:
 		return authChanged(old.Connection, conn) || !strings.EqualFold(normalizedRunnerGroup(oldPool.RunnerGroup), normalizedRunnerGroup(next.RunnerGroup))
 	case ErrOwnership:
-		return poolIdentity(oldPool, old.Connection) != poolIdentity(next, conn)
+		return old.SuspensionSource == SuspensionScaleSet && poolIdentity(oldPool, old.Connection) != poolIdentity(next, conn)
 	case ErrImage:
 		return imageChanged(oldPool, next)
 	case ErrRunnerVersion:
@@ -547,6 +548,9 @@ func (m *Manager) ensurePoolLoop(id string) {
 	}()
 }
 func (m *Manager) poolProblem(id string, err error, suspend bool) {
+	m.poolProblemWithSource(id, err, suspend, SuspensionUnknown)
+}
+func (m *Manager) poolProblemWithSource(id string, err error, suspend bool, source SuspensionSource) {
 	p := classify(err, ErrRetry, "Pool dependency is unavailable.", "Inspect status and retry after restoring the dependency.")
 	_ = m.Store.Update(func(s *Snapshot) error {
 		v := s.Pools[id]
@@ -555,8 +559,12 @@ func (m *Manager) poolProblem(id string, err error, suspend bool) {
 		}
 		p.Pool = v.Spec.Name
 		v.Problem = p
+		v.SuspensionSource = SuspensionUnknown
 		if suspend && v.Phase != Draining {
 			v.Phase = Suspended
+			if p.Code == ErrOwnership {
+				v.SuspensionSource = source
+			}
 		}
 		return nil
 	})
@@ -603,10 +611,14 @@ func (m *Manager) poolLoop(ctx context.Context, id string) {
 				cancel()
 			}
 		}
+		source := SuspensionUnknown
 		if e == nil {
 			probe, cancel := context.WithTimeout(ctx, 60*time.Second)
 			p, e = m.ensureScaleSet(probe, id, remote)
 			cancel()
+			if e != nil {
+				source = SuspensionScaleSet
+			}
 			if e == nil && (p == nil || p.ScaleSetID == 0) {
 				return
 			}
@@ -614,7 +626,7 @@ func (m *Manager) poolLoop(ctx context.Context, id string) {
 		if e != nil {
 			code := classify(e, ErrRetry, "Pool initialization failed.", "Run doctor.").Code
 			suspend := code == ErrAuth || code == ErrOwnership || code == ErrImage || code == ErrPlatform || code == ErrRunnerVersion
-			m.poolProblem(id, e, suspend)
+			m.poolProblemWithSource(id, e, suspend, source)
 			if suspend {
 				return
 			}
@@ -896,6 +908,7 @@ func (m *Manager) failPreparation(id string, err error) {
 		if pool.Phase != Draining && (pool.PreparationFailures >= 3 || p.Code == ErrAuth || p.Code == ErrRunnerVersion || p.Code == ErrOwnership) {
 			pool.Phase = Suspended
 			pool.Problem = p
+			pool.SuspensionSource = SuspensionUnknown
 		}
 		return nil
 	})
@@ -1387,6 +1400,7 @@ func (m *Manager) Resume(ctx context.Context, name string) error {
 			s.Pools[id].Session = ""
 			s.Pools[id].PreparationFailures = 0
 			s.Pools[id].Problem = nil
+			s.Pools[id].SuspensionSource = SuspensionUnknown
 		}
 		return nil
 	})

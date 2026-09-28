@@ -53,6 +53,9 @@ func TestValidatedReloadRecoversOnlyRelatedSuspensions(t *testing.T) {
 				p.Phase = Suspended
 				p.Problem = blocked
 				p.PreparationFailures = 3
+				if tc.code == ErrOwnership {
+					p.SuspensionSource = SuspensionScaleSet
+				}
 				return nil
 			}); err != nil {
 				t.Fatal(err)
@@ -138,6 +141,60 @@ func TestRunnerVersionSuspensionIgnoresDaemonImageReplacement(t *testing.T) {
 	if !found {
 		t.Fatal("replacement DinD generation was not created")
 	}
+}
+
+func TestLocalOwnershipSuspensionIgnoresScaleSetChange(t *testing.T) {
+	m, c, _, _, oldID := testManager(t)
+	blocked := problem(ErrOwnership, "Fixture Docker volume belongs to another execution.", "Inspect the local volume.")
+	if err := m.Store.Update(func(s *Snapshot) error {
+		s.Pools[oldID].Phase = Suspended
+		s.Pools[oldID].Problem = blocked
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	c.Pools[0].ScaleSet = "replacement-linux"
+	writeSuspensionReload(t, m, c)
+	if err := m.Reload(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	s := m.Store.View()
+	if s.Pools[oldID].Phase != Draining {
+		t.Fatal("old local-ownership generation did not drain")
+	}
+	found := false
+	for id, p := range s.Pools {
+		if id != oldID {
+			found = true
+			if p.Phase != Suspended || p.Problem == nil || *p.Problem != *blocked || p.SuspensionSource != SuspensionUnknown {
+				t.Fatalf("scale-set change concealed local ownership conflict: %+v", p)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("replacement pool was not created")
+	}
+}
+
+func TestOwnershipSuspensionRecordsRemoteOrLocalSource(t *testing.T) {
+	t.Run("remote scale set", func(t *testing.T) {
+		m, _, remote, _, id := testManager(t)
+		remote.failure = problem(ErrOwnership, "Fixture remote scale set is foreign.", "Choose another scale set.")
+		m.poolLoop(context.Background(), id)
+		p := m.Store.View().Pools[id]
+		if p.Phase != Suspended || p.SuspensionSource != SuspensionScaleSet {
+			t.Fatalf("remote ownership source was not recorded: %+v", p)
+		}
+	})
+	t.Run("local preparation", func(t *testing.T) {
+		m, _, _, _, id := testManager(t)
+		runnerID := seedRunner(t, m, id, Preparing)
+		m.failPreparation(runnerID, problem(ErrOwnership, "Fixture local volume is foreign.", "Inspect the volume."))
+		p := m.Store.View().Pools[id]
+		if p.Phase != Suspended || p.SuspensionSource != SuspensionUnknown {
+			t.Fatalf("local ownership source was misclassified: %+v", p)
+		}
+	})
 }
 
 func TestLegacySuspensionRemainsVisibleAndRequiresResume(t *testing.T) {
@@ -279,6 +336,9 @@ func TestValidatedManagedReloadRecoversAfterCandidatePublication(t *testing.T) {
 				s.Pools[oldID].Phase = Suspended
 				s.Pools[oldID].Problem = blocked
 				s.Pools[oldID].PreparationFailures = 2
+				if tc.code == ErrOwnership {
+					s.Pools[oldID].SuspensionSource = SuspensionScaleSet
+				}
 				return nil
 			}); err != nil {
 				t.Fatal(err)
