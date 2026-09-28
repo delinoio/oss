@@ -193,6 +193,8 @@ Frontend changes require package-local `pnpm test`, typechecking and production 
 
 `pnpm build:native` generates the typed client, frontend and target-specific Go sidecar before building the native host. `pnpm dev:desktop --data-dir /absolute/private/scope` runs the embedded frontend in that host. `pnpm prepare:sidecar [TARGET_TRIPLE]` accepts only the six explicit macOS/Windows/Linux x64/arm64 target mappings and never silently substitutes the host. Native packaging/signing/publication remain separate acceptance work.
 
+Workspace Rust Clippy and test CI prepare those same generated inputs using the pinned Go toolchain before compiling the desktop host. A bare all-features Cargo command in a clean checkout lacks the Tauri external-binary resource until that preparation runs; generated frontend and sidecar files remain untracked.
+
 ## Dependencies and Integrations
 Use the repository's React, Connect Query, React Query and Rsbuild pins. The Go server/Worker and canonical versioned protobuf remain authoritative. Toss frontend guidelines inform explicit status, focused forms, clear action hierarchy and accessible components.
 

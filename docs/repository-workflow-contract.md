@@ -37,6 +37,8 @@ The shared checksum generator keeps sorted recursive paths, GNU filename escapin
 
 The Ubuntu workspace Rust Clippy and test jobs install WebKitGTK 4.1 development files before compiling DevHud. Its package supplies the JavaScriptCoreGTK 4.1 pkg-config metadata required by the resolved all-features graph. PR #1041's Clippy job failed at this native prerequisite before linting source; the CI prerequisite repair does not claim a Rust source change.
 
+Those same jobs build the DeliDev typed client, frontend and target-specific Go sidecar before compiling its desktop Tauri host. The Go setup uses the repository's pinned `go.mod` version, and generated frontend and sidecar output remains ignored. This preserves Tauri's declared external-binary input without adding a placeholder artifact to source control.
+
 CI never builds a signed private candidate and never publishes.
 
 Changes to the shared checksum generator select the DevHud supply-chain fixture job that exercises it, including on pull requests where desktop packaging is skipped.

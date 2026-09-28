@@ -259,6 +259,10 @@ jobs:
           toolchain: nightly-2026-01-01
           components: clippy
 
+      - name: Setup Go for DeliDev sidecar
+        id: ci-go
+        uses: ./.github/actions/setup-ci-go
+
       - name: Setup Node.js
         id: ci-node
         uses: ./.github/actions/setup-ci-node
@@ -268,6 +272,12 @@ jobs:
 
       - name: Build DevHUD frontend
         run: pnpm --filter devhud build:frontend
+
+      - name: Build DeliDev native inputs
+        run: |
+          pnpm --filter @delinoio/delidev-api-client build
+          pnpm --filter delidev-desktop build:frontend
+          pnpm --filter delidev-desktop prepare:sidecar
 
       - name: Install DevHUD Linux prerequisites
         run: |
@@ -290,6 +300,13 @@ jobs:
           path: ${{ steps.ci-node.outputs.cache-path }}
           key: ${{ steps.ci-node.outputs.cache-key }}
 
+      - name: Save Go cache after successful main validation
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-go.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.ci-go.outputs.cache-path }}
+          key: ${{ steps.ci-go.outputs.cache-key }}
+
   rust-test:
     needs: changes
     if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['rust-test'] }}
@@ -307,6 +324,10 @@ jobs:
         with:
           toolchain: nightly-2026-01-01
 
+      - name: Setup Go for DeliDev sidecar
+        id: ci-go
+        uses: ./.github/actions/setup-ci-go
+
       - name: Setup Node.js
         id: ci-node
         uses: ./.github/actions/setup-ci-node
@@ -316,6 +337,12 @@ jobs:
 
       - name: Build DevHUD frontend
         run: pnpm --filter devhud build:frontend
+
+      - name: Build DeliDev native inputs
+        run: |
+          pnpm --filter @delinoio/delidev-api-client build
+          pnpm --filter delidev-desktop build:frontend
+          pnpm --filter delidev-desktop prepare:sidecar
 
       - name: Install DevHUD Linux prerequisites
         run: |
@@ -341,6 +368,13 @@ jobs:
         with:
           path: ${{ steps.ci-node.outputs.cache-path }}
           key: ${{ steps.ci-node.outputs.cache-key }}
+
+      - name: Save Go cache after successful main validation
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-go.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.ci-go.outputs.cache-path }}
+          key: ${{ steps.ci-go.outputs.cache-key }}
 
   forge-test:
     needs: changes
