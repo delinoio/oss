@@ -88,3 +88,6 @@ configuration inspection and explicit update requests. Guides label the released
 version boundary and retain 0.1.3-compatible manual pins, image setup, credentials,
 license terms and verification limits. Public guides describe operator behavior,
 not the internal SQLite migration journal or repository implementation paths.
+The generated configuration guide shows the new scale-set, platform and
+architecture labels for an ARM64 Docker host, explains the `x64` amd64 and
+`macOS` Tart variants, and preserves explicitly authored label examples.

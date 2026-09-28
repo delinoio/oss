@@ -12,6 +12,9 @@ jobs:
 ```
 
 Use the configured scale-set label, or a matching label array, and applicable GitHub runner-group policy. Runmoor receives demand without a public webhook endpoint. Ordinary NAT networking is sufficient.
+For a new ARM64 Docker pool, `runs-on: [runmoor-linux, linux, ARM64]` also
+selects its platform and architecture; use `x64` for an amd64 pool. The
+single scale-set label above continues to work.
 
 ```sh
 runmoor status

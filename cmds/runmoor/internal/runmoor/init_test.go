@@ -5,9 +5,38 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 )
+
+func TestInitialPoolLabels(t *testing.T) {
+	for _, tc := range []struct {
+		backend Backend
+		arch    string
+		name    string
+		labels  []string
+	}{
+		{Docker, "amd64", "linux", []string{"runmoor-linux", "linux", "x64"}},
+		{Docker, "arm64", "linux", []string{"runmoor-linux", "linux", "ARM64"}},
+		{Tart, "arm64", "macos", []string{"runmoor-macos", "macOS", "ARM64"}},
+	} {
+		t.Run(string(tc.backend)+"/"+tc.arch, func(t *testing.T) {
+			name, labels, err := initialPoolLabels(tc.backend, tc.arch)
+			if err != nil || name != tc.name || !slices.Equal(labels, tc.labels) {
+				t.Fatalf("pool labels: name=%q labels=%v error=%v", name, labels, err)
+			}
+		})
+	}
+	for _, tc := range []struct {
+		backend Backend
+		arch    string
+	}{{Docker, "386"}, {Tart, "amd64"}, {Backend("unknown"), "arm64"}} {
+		if _, _, err := initialPoolLabels(tc.backend, tc.arch); err == nil {
+			t.Fatalf("accepted unsupported backend/architecture: %s/%s", tc.backend, tc.arch)
+		}
+	}
+}
 
 func TestInitInteractiveAndNoninteractiveReferences(t *testing.T) {
 	if runtime.GOOS == "windows" {
@@ -32,7 +61,11 @@ func TestInitInteractiveAndNoninteractiveReferences(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if config.Connections[0].Credential.Env != "MY_RUNNER_PAT" || config.Pools[0].RunnerVersion != LatestRunner || !strings.Contains(output.String(), "runs-on: runmoor-linux") {
+		_, wantLabels, err := initialPoolLabels(Docker, runtime.GOARCH)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if config.Connections[0].Credential.Env != "MY_RUNNER_PAT" || config.Pools[0].RunnerVersion != LatestRunner || !slices.Equal(config.Pools[0].Labels, wantLabels) || !strings.Contains(output.String(), "runs-on: runmoor-linux") {
 			t.Fatal("initializer failed to create minimal managed configuration")
 		}
 		original, _ := os.ReadFile(path)
@@ -53,5 +86,24 @@ func TestInitInteractiveAndNoninteractiveReferences(t *testing.T) {
 	}
 	if err := initialize(path, InitOptions{Backend: "docker"}, strings.NewReader(""), &bytes.Buffer{}, true); err == nil {
 		t.Fatal("EOF accepted")
+	}
+}
+
+func TestInitTartLabelsRoundTrip(t *testing.T) {
+	if runtime.GOOS != "darwin" || runtime.GOARCH != "arm64" {
+		t.Skip("Tart initialization requires macOS arm64")
+	}
+	c := fixtureConfig(t)
+	path := filepath.Join(filepath.Dir(c.Storage.State), "tart-labels.toml")
+	opts := InitOptions{Backend: string(Tart), Target: "https://github.com/example/repo", CredentialEnv: "MY_RUNNER_PAT", Image: newID()}
+	if err := initialize(path, opts, strings.NewReader(""), &bytes.Buffer{}, false); err != nil {
+		t.Fatal(err)
+	}
+	config, err := LoadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(config.Pools) != 1 || config.Pools[0].ScaleSet != "runmoor-macos" || !slices.Equal(config.Pools[0].Labels, []string{"runmoor-macos", "macOS", "ARM64"}) {
+		t.Fatalf("Tart labels did not survive TOML round trip: %+v", config.Pools)
 	}
 }
