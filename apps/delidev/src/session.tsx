@@ -35,6 +35,7 @@ function useSessionStream(id: string) {
   const [resources, setResources] = useState<ReadonlyMap<string, Resource>>(new Map());
   const [removed, setRemoved] = useState<ReadonlySet<string>>(new Set());
   const [newMessageIds, setNewMessageIds] = useState<readonly string[]>([]);
+  const [newInteractionIds, setNewInteractionIds] = useState<readonly string[]>([]);
   const [state, setState] = useState(ConnectionState.Connecting);
   const [error, setError] = useState<ClientFailure>();
   const [generation, setGeneration] = useState(0);
@@ -56,17 +57,20 @@ function useSessionStream(id: string) {
           setResources(new Map(change.resources.map((r) => [r.id, r])));
           setRemoved(new Set());
           setNewMessageIds((current) => current.filter((id) => known.has(id)));
+          setNewInteractionIds((current) => current.filter((id) => known.has(id)));
           tombstones.clear();
           setGeneration((value) => value + 1);
         } else if (change.kind === SyncKind.Upsert) {
-          if (!known.has(change.resource.id) && change.resource.kind === EntityKind.MESSAGE) {
-            setNewMessageIds((current) => current.length >= 2000 ? current : [...current, change.resource.id]);
+          if (!known.has(change.resource.id)) {
+            if (change.resource.kind === EntityKind.MESSAGE) setNewMessageIds((current) => current.length >= 2000 ? current : [...current, change.resource.id]);
+            if (change.resource.kind === EntityKind.INTERACTION) setNewInteractionIds((current) => current.length >= 2000 ? current : [...current, change.resource.id]);
           }
           known.add(change.resource.id);
           setResources((current) => new Map(current).set(change.resource.id, change.resource));
         } else if (change.kind === SyncKind.Remove) {
           known.delete(change.id);
           setNewMessageIds((current) => current.filter((id) => id !== change.id));
+          setNewInteractionIds((current) => current.filter((id) => id !== change.id));
           if (!tombstones.has(change.id) && tombstones.size >= 2000) throw new ConnectError("Reopen this session to refresh its retained history.", Code.ResourceExhausted);
           tombstones.add(change.id);
           setResources((current) => { const next = new Map(current); next.delete(change.id); return next; });
@@ -81,7 +85,7 @@ function useSessionStream(id: string) {
     void run().catch((reason) => { if (!controller.signal.aborted) { setError(clientFailure(reason)); setState(ConnectionState.Failed); } });
     return () => controller.abort();
   }, [id, transport, restart]);
-  return { resources, removed, newMessageIds, state, error, generation, retry: () => setRestart((value) => value + 1) };
+  return { resources, removed, newMessageIds, newInteractionIds, state, error, generation, retry: () => setRestart((value) => value + 1) };
 }
 
 function currentRows(base: readonly Resource[], live: ReadonlyMap<string, Resource>, removed: ReadonlySet<string>, kind: EntityKind): Resource[] {
@@ -91,18 +95,26 @@ function currentRows(base: readonly Resource[], live: ReadonlyMap<string, Resour
   });
 }
 
-export function messageRows(base: readonly Resource[], live: ReadonlyMap<string, Resource>, removed: ReadonlySet<string>, arrivals: readonly string[], sessionId: string, lastPage: boolean): Resource[] {
-  const result = currentRows(base, live, removed, EntityKind.MESSAGE);
+function appendedRows(base: readonly Resource[], live: ReadonlyMap<string, Resource>, removed: ReadonlySet<string>, arrivals: readonly string[], sessionId: string, lastPage: boolean, kind: EntityKind): Resource[] {
+  const result = currentRows(base, live, removed, kind);
   if (!lastPage) return result;
   const ids = new Set(result.map((row) => row.id));
   for (const id of arrivals) {
     const row = live.get(id);
-    if (row?.kind === EntityKind.MESSAGE && row.sessionId === sessionId && !ids.has(id) && !removed.has(id)) {
+    if (row?.kind === kind && row.sessionId === sessionId && !ids.has(id) && !removed.has(id)) {
       result.push(row);
       ids.add(id);
     }
   }
   return result;
+}
+
+export function messageRows(base: readonly Resource[], live: ReadonlyMap<string, Resource>, removed: ReadonlySet<string>, arrivals: readonly string[], sessionId: string, lastPage: boolean): Resource[] {
+  return appendedRows(base, live, removed, arrivals, sessionId, lastPage, EntityKind.MESSAGE);
+}
+
+export function interactionRows(base: readonly Resource[], live: ReadonlyMap<string, Resource>, removed: ReadonlySet<string>, arrivals: readonly string[], sessionId: string, lastPage: boolean): Resource[] {
+  return appendedRows(base, live, removed, arrivals, sessionId, lastPage, EntityKind.INTERACTION);
 }
 
 const TranscriptItem = memo(function TranscriptItem({ resource }: { resource: Resource }) {
@@ -192,8 +204,7 @@ export function SessionView({ id, draft, setDraft }: { id: string; draft: string
   const next = messages.data?.nextPageToken;
   const pending = currentRows(queue.data?.inputs ?? [], live.resources, live.removed, EntityKind.QUEUE);
   if (queue.data && !queue.data.nextPageToken) for (const row of live.resources.values()) if (row.kind === EntityKind.QUEUE && !live.removed.has(row.id) && Number(readDocument(row).sequence) > Number(readDocument(queue.data.inputs.at(-1)).sequence ?? 0) && !pending.some((r) => r.id === row.id)) pending.push(row);
-  const requests = currentRows(interactions.data?.resources ?? [], live.resources, live.removed, EntityKind.INTERACTION);
-  if (interactions.data && !interactions.data.nextPageToken) for (const row of live.resources.values()) if (row.kind === EntityKind.INTERACTION && row.id > (interactions.data.resources.at(-1)?.id ?? "") && !live.removed.has(row.id) && !requests.some((r) => r.id === row.id)) requests.push(row);
+  const requests = interactionRows(interactions.data?.resources ?? [], live.resources, live.removed, live.newInteractionIds, id, !!interactions.data && !interactions.data.nextPageToken);
   const queued = pending.filter((r) => text(readDocument(r).delivery) !== "removed");
   const action = (value: SessionAction) => {
     if (!session) return;
