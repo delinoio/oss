@@ -153,6 +153,17 @@ func TestRetainedHistoryReaderPinsFileAndAncestorIdentityAcrossPair(t *testing.T
 				must(os.Mkdir(path, 0700))
 				must(os.WriteFile(filepath.Join(path, "second"), []byte("second"), 0600))
 			case "root-replaced":
+				if runtime.GOOS == "windows" {
+					// Windows keeps the retained root open without delete sharing, so
+					// replacement is rejected before the second read can run.
+					if err := os.Rename(home, home+"-old"); err == nil {
+						t.Fatal("retained root was unexpectedly movable")
+					}
+					if _, err := scope.read(ctx, filepath.Join("native", "first"), 16); err != nil {
+						t.Fatal(err)
+					}
+					return
+				}
 				must(os.Rename(home, home+"-old"))
 				must(os.Mkdir(home, 0700))
 			case "scope-permissions":
