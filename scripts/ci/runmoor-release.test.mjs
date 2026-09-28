@@ -78,7 +78,7 @@ test("Runmoor Homebrew verifies and installs before obtaining tap-only publicati
   assert.deepEqual(workflow.permissions, { contents: "read" });
   assert.equal(workflow.on.workflow_dispatch.inputs.dry_run.default, true);
   assert.equal(workflow.on.workflow_call.inputs.dry_run.default, true);
-  assert.equal(workflow.jobs.homebrew["runs-on"], "macos-14");
+  assert.equal(workflow.jobs.homebrew["runs-on"], "macos-15");
   assert.doesNotMatch(JSON.stringify(workflow), /id-token|sign-blob|action-gh-release/u);
   const steps = workflow.jobs.homebrew.steps;
   const validation = steps.findIndex((step) => step.name === "Validate Homebrew installation on Apple Silicon");

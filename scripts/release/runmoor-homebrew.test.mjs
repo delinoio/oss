@@ -57,6 +57,8 @@ test("Homebrew verifies all public assets and signatures before rendering a macO
   assert.match(formula, /depends_on arch: :arm64/u);
   assert.match(formula, /depends_on macos: :sonoma/u);
   assert.match(formula, /license "Apache-2.0"/u);
+  assert.match(formula, /prefix\.install "LICENSE"/u);
+  assert.match(formula, /\(prefix\/"LICENSE"\)\.read/u);
   assert.match(formula, /runmoor version/u);
   assert.doesNotMatch(formula, /on_linux|darwin-amd64|service do|__VERSION__/u);
 });

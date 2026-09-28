@@ -12,6 +12,7 @@ class Runmoor < Formula
   def install
     bin.install "runmoor"
     doc.install "README.md"
+    prefix.install "LICENSE"
   end
 
   def caveats
@@ -23,6 +24,7 @@ class Runmoor < Formula
   end
 
   test do
+    assert_match "Apache License", (prefix/"LICENSE").read
     assert_match "runmoor #{version} (", shell_output("#{bin}/runmoor version")
     assert_match "Usage:", shell_output("#{bin}/runmoor --help")
   end

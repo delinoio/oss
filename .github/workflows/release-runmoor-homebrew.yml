@@ -40,7 +40,9 @@ concurrency:
 
 jobs:
   homebrew:
-    runs-on: macos-14
+    # Standard macos-15 is ARM64; Intel uses macos-15-intel.
+    # https://github.com/actions/runner-images#available-images
+    runs-on: macos-15
     env:
       RELEASE_VERSION: ${{ inputs.version }}
       RELEASE_REVISION: ${{ inputs.revision }}
