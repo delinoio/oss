@@ -9,7 +9,7 @@ test("Workflow keeps credentials, OIDC and actual signing out of every dry-run j
   assert.equal(workflow.on.workflow_dispatch.inputs.dry_run.default, true);
   assert.deepEqual(workflow.on.push.tags, ["runmoor@v*"]);
   for (const [name, job] of Object.entries(workflow.jobs)) {
-    if (name === "publish") continue;
+    if (name === "publish" || name === "homebrew") continue;
     assert.equal(job.permissions?.["id-token"], undefined);
     assert.doesNotMatch(JSON.stringify(job), /secrets\.|cosign|sign-blob|action-gh-release/u);
   }
@@ -63,4 +63,35 @@ test("Workflow keeps credentials, OIDC and actual signing out of every dry-run j
   assert.ok(publish.steps.indexOf(pinStep) < publish.steps.indexOf(finalVerificationStep));
   assert.ok(publish.steps.indexOf(finalVerificationStep) < publish.steps.indexOf(publishStable));
   assert.ok(publish.steps.indexOf(release) < publish.steps.indexOf(publishStable));
+});
+
+test("Runmoor Homebrew verifies and installs before obtaining tap-only publication credentials", () => {
+  const release = yaml.load(readFileSync(new URL("../../.github/workflows/release-runmoor.yml", import.meta.url), "utf8"));
+  const call = release.jobs.homebrew;
+  assert.deepEqual(call.needs, ["plan", "publish"]);
+  assert.equal(call.if, "needs.plan.outputs.mode == 'publish'");
+  assert.equal(call.uses, "./.github/workflows/release-runmoor-homebrew.yml");
+  assert.equal(call.with.dry_run, false);
+  assert.deepEqual(call.permissions, { contents: "read" });
+  assert.match(JSON.stringify(release.jobs.package), /runmoor-homebrew\.mjs render/u);
+  const workflow = yaml.load(readFileSync(new URL("../../.github/workflows/release-runmoor-homebrew.yml", import.meta.url), "utf8"));
+  assert.deepEqual(workflow.permissions, { contents: "read" });
+  assert.equal(workflow.on.workflow_dispatch.inputs.dry_run.default, true);
+  assert.equal(workflow.on.workflow_call.inputs.dry_run.default, true);
+  assert.equal(workflow.jobs.homebrew["runs-on"], "macos-15");
+  assert.doesNotMatch(JSON.stringify(workflow), /id-token|sign-blob|action-gh-release/u);
+  const steps = workflow.jobs.homebrew.steps;
+  const validation = steps.findIndex((step) => step.name === "Validate Homebrew installation on Apple Silicon");
+  const token = steps.findIndex((step) => step.id === "tap-bot");
+  assert.ok(steps.findIndex((step) => step.name === "Validate publication context before credentials") < token);
+  assert.ok(validation < token);
+  assert.match(steps[validation].run, /brew install --formula/u);
+  assert.match(steps[validation].run, /brew test/u);
+  assert.match(steps[validation].run, /\$RELEASE_REVISION/u);
+  assert.equal(steps[token].with.repositories, "homebrew-tap");
+  assert.equal(steps[token].with["permission-contents"], "write");
+  for (const step of steps.slice(token)) assert.equal(step.if, "${{ !inputs.dry_run }}");
+  const publish = steps.find((step) => step.name === "Publish verified Homebrew Formula");
+  assert.equal(publish.env.HOMEBREW_TAP_GH_TOKEN, "${{ steps.tap-bot.outputs.token }}");
+  assert.match(steps.at(-1).run, /brew install delinoio\/tap\/runmoor/u);
 });
