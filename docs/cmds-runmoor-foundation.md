@@ -139,6 +139,14 @@ Use `log/slog` text or JSON for lifecycle transitions, preparation duration, ret
 - Built all three unsigned platform archives, verified inventory and checksums, and executed the packaged macOS arm64 version command. Temporary build output was removed. A read-only live discovery using the corrected implementation found the existing `runmoor@v0.1.2` draft (ID `392298946`) and its eight uploaded assets without changing it.
 - These checks do not certify live GitHub runner assignment or real Tart execution. Public release/download/signature evidence is recorded separately after publication.
 
+### Public release recovery evidence (2026-09-28)
+
+- [PR #1001](https://github.com/delinoio/oss/pull/1001) merged the draft lookup and ID-bound publication repair after all required CI checks and automated review passed. [Release Project run 36362584715](https://github.com/delinoio/oss/actions/runs/36362584715) created `runmoor@v0.1.3` at `514ff0a2af4c79a9448b3148c512e416e0b00cf6` through the release bot.
+- [Release Runmoor run 36362626105](https://github.com/delinoio/oss/actions/runs/36362626105) successfully built, signed, downloaded, verified and published [Runmoor 0.1.3](https://github.com/delinoio/oss/releases/tag/runmoor%40v0.1.3), release ID `397873289`, with `draft=false`, `prerelease=false` and exactly eight assets.
+- Independently downloaded all eight public assets without authentication. Their sizes and SHA-256 digests matched the release metadata; archive inventory and `SHA256SUMS` verification passed. Cosign `v3.1.3` verified all four bundles against the exact `release-runmoor.yml@refs/tags/runmoor@v0.1.3` identity and GitHub Actions OIDC issuer. The temporary cosign binary's digest was checked against its upstream release metadata.
+- Extracted the public macOS arm64 archive in a temporary directory and executed `runmoor version`, which returned `runmoor 0.1.3 (514ff0a2af4c79a9448b3148c512e416e0b00cf6)`. Temporary downloaded archives and extracted executables were removed; no user installation or service was changed.
+- Confirmed preservation of the immutable, asset-free `runmoor@v0.1.1` release (ID `392272909`) and the unpublished `runmoor@v0.1.2` draft with eight assets (ID `392298946`). This release verification does not certify live runner assignment or real Tart execution.
+
 ## Dependencies and Integrations
 
 Use GitHub.com scale-set APIs, a local Docker engine, external Tart/Guest Agent, launchd/systemd, and native sleep inhibition utilities. No public inbound endpoint is required; Docker/Tart use ordinary NAT. Public docs and release workflows remain in their existing repository domains.
