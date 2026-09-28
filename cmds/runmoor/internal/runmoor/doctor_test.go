@@ -15,6 +15,87 @@ import (
 
 const runnerReleaseFixtureSecret = "fixture-runner-response-secret"
 
+type validatingDriver struct {
+	Driver
+	validate func(context.Context, Config, Pool, Snapshot) error
+}
+
+func (d validatingDriver) Validate(ctx context.Context, c Config, p Pool, s Snapshot) error {
+	return d.validate(ctx, c, p, s)
+}
+
+func TestOfflineDoctorUsesCommittedManagedPool(t *testing.T) {
+	for _, state := range []string{"ready", "retry", "invalid image", "expired", "pending", "unprepared"} {
+		t.Run(state, func(t *testing.T) {
+			c, store := fixtureStore(t)
+			current := c.Pools[0]
+			requested := c
+			requested.Pools = append([]Pool(nil), c.Pools...)
+			requested.Pools[0].Image = ""
+			requested.Pools[0].RunnerVersion = LatestRunner
+			s := store.View()
+			q := &ManagedPool{Name: current.Name, Current: &current, Phase: UpdateReady}
+			s.Managed[current.Name] = q
+			wantExit, wantValidated := 0, 1
+			switch state {
+			case "retry":
+				q.Phase = UpdateRetry
+				q.Problem = releaseProblem()
+			case "invalid image":
+				wantExit = 1
+			case "expired":
+				q.Expires = time.Now().Add(-time.Hour)
+				wantExit = 1
+			case "pending":
+				q.Current = nil
+				q.Phase = UpdatePending
+				wantExit, wantValidated = 1, 0
+			case "unprepared":
+				delete(s.Managed, current.Name)
+				wantExit, wantValidated = 1, 0
+			}
+			before := fingerprint(s)
+			validated, authenticated := 0, 0
+			driver := validatingDriver{validate: func(_ context.Context, gotConfig Config, got Pool, _ Snapshot) error {
+				validated++
+				if fingerprint(got) != fingerprint(current) || fingerprint(gotConfig) != fingerprint(c) {
+					t.Fatal("doctor validated unresolved requested settings")
+				}
+				if state == "invalid image" {
+					return problem(ErrImage, "Fixture image is missing.", "Restore it.")
+				}
+				return nil
+			}}
+			factory := func(got Connection) (Remote, error) {
+				authenticated++
+				if fingerprint(got) != fingerprint(c.Connections[0]) {
+					t.Fatal("wrong committed connection")
+				}
+				return &fakeRemote{}, nil
+			}
+			report := Doctor(context.Background(), requested, s, factory, func(Backend) (Driver, error) { return driver, nil })
+			// Host and power support differ across CI platforms. Assert the pool
+			// checks and their CLI exit classification independently of that host.
+			poolReport := DoctorReport{}
+			updates := 0
+			for _, check := range report.Checks {
+				if check.Pool == current.Name {
+					poolReport.Checks = append(poolReport.Checks, check)
+				}
+				if check.Name == "runner_update" {
+					updates++
+				}
+			}
+			if updates != 1 || validated != wantValidated || authenticated != wantValidated || doctorExit(poolReport) != wantExit {
+				t.Fatalf("unexpected offline checks: updates=%d validated=%d authenticated=%d report=%+v", updates, validated, authenticated, poolReport)
+			}
+			if fingerprint(s) != before {
+				t.Fatal("doctor mutated committed state")
+			}
+		})
+	}
+}
+
 type runnerReleaseTransport func(*http.Request) (*http.Response, error)
 
 func (f runnerReleaseTransport) RoundTrip(req *http.Request) (*http.Response, error) {

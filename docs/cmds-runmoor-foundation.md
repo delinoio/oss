@@ -195,6 +195,11 @@ image/source when needed. It never overwrites an existing configuration, accepts
 credential values, installs host dependencies or starts a service. `--image-only`
 creates a configuration for manual initial macOS setup. `config show --resolved`
 reads committed versions and resolved capacity without preparing images.
+Offline `doctor` also inspects each managed pool's committed current image and
+connection. Requested `latest` or image-source settings do not imply pending
+preparation when that environment exists. It reports one managed-state check,
+retains genuine pending/expired/invalid-image failures, and never downloads or
+replaces an image during diagnosis.
 
 Omitted `runner_version` and `runner_version = "latest"` select automatic runner
 management. An exact version remains a pin. Docker image omission selects the

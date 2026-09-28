@@ -95,17 +95,30 @@ func Doctor(ctx context.Context, c Config, s Snapshot, factory func(Connection) 
 		add("runner_update", q.Name, err, q.Current != nil && (q.Expires.IsZero() || time.Now().Before(q.Expires)))
 	}
 	for _, p := range c.Pools {
+		poolConfig := c
 		if managesRunner(p) {
-			add("runner_update", p.Name, problem(ErrRetry, "Managed runner image is awaiting preparation.", "Start the manager; doctor does not download images."), false)
-			continue
+			managed := s.Managed[p.Name]
+			if managed == nil {
+				add("runner_update", p.Name, problem(ErrRetry, "Managed runner image is awaiting preparation.", "Start the manager; doctor does not download images."), false)
+				continue
+			}
+			if managed.Current == nil {
+				// The managed-state check above already reports pending preparation.
+				continue
+			}
+			// Offline callers supply requested TOML, whose latest/source fields
+			// remain unresolved. Inspect the same committed environment as a live
+			// manager without downloading or replacing any image.
+			p = *managed.Current
+			poolConfig = s.Config
 		}
 		probe, cancel := context.WithTimeout(ctx, 30*time.Second)
 		driver, e := drivers(p.Backend)
 		if e == nil {
-			e = driver.Validate(probe, c, p, s)
+			e = driver.Validate(probe, poolConfig, p, s)
 		}
 		add("backend_and_image", p.Name, e, false)
-		remote, e := factory(c.Connection(p.Connection))
+		remote, e := factory(poolConfig.Connection(p.Connection))
 		if e == nil {
 			e = remote.Check(probe, p)
 		}
