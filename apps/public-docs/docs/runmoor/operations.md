@@ -50,9 +50,23 @@ runmoor service start
 runmoor status
 ```
 
-Run `service install` only for a new service definition. If you change the
-credential reference of a running service, use `runmoor service stop` followed
-by `runmoor service start` so the manager reads it in a new process.
+Run `service install` only for a new service definition. For an already running
+pool, replacing the PAT in the same file does not automatically refresh its
+GitHub connection. Revalidate the credential and clear any authentication
+suspension after rotation:
+
+```sh
+runmoor resume --pool linux
+runmoor status
+```
+
+If you change the credential reference in TOML, accept that configuration
+before resuming the affected pool:
+
+```sh
+runmoor reload
+runmoor resume --pool linux
+```
 
 A terminal's `export RUNMOOR_PAT` does not automatically reach systemd's user
 manager. If you keep `credential = { env = "RUNMOOR_PAT" }`, import it before
@@ -67,9 +81,14 @@ unset RUNMOOR_PAT
 runmoor service start
 ```
 
-Supply it again when the user manager restarts. A file reference remains
-available across those restarts. The user service starts after logout or reboot
-only if your Ubuntu user-session policy keeps its systemd user manager running.
+If the service was already running without the PAT, `service start` leaves that
+process running with its old environment. After importing the variable, use
+`runmoor service stop`, `runmoor service start`, and `runmoor resume --pool linux`
+to restart the manager and clear the pool's authentication suspension. Service
+stop drains active work before exiting. Supply the variable again when the user
+manager restarts. A file reference remains available across those restarts. The
+user service starts after logout or reboot only if your Ubuntu user-session
+policy keeps its systemd user manager running.
 
 Manager-only restart reconciles SQLite with actual Docker/Tart and GitHub state, resumes verified live work and retries incomplete cleanup. Ambiguous resources are quarantined rather than deleted. Confirmed termination releases resources; unresolved cleanup/ownership records remain durable. Runmoor never automatically reruns a failed GitHub job.
 
