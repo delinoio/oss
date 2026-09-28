@@ -31,8 +31,12 @@ and the intended `--config` file, especially after replacing the binary or
 configuration. If `systemctl --user` cannot reach the user manager, log in as
 the actual service user rather than running Runmoor through `sudo`.
 
-When the unit paths are correct and the service is inactive, run the command
-used by `runmoor service start` directly to see systemd's original error:
+When the unit paths are correct and the service is inactive, try
+`runmoor service start` first. Runmoor checks that the unit is a regular,
+owner-only file belonging to the current user and does not follow a symlink.
+If that command reports exactly `DEPENDENCY_UNAVAILABLE: User service command
+failed`, its unit check succeeded and the systemd command failed. Only then
+run the same systemd command directly to see its original error:
 
 ```sh
 systemctl --user enable --now runmoor.service
