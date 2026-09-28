@@ -21,6 +21,7 @@ type ControlRequest struct {
 }
 type ControlResponse struct {
 	SchemaVersion int           `json:"schema_version"`
+	Config        *Config       `json:"config,omitempty"`
 	Status        *Status       `json:"status,omitempty"`
 	Image         *Image        `json:"image,omitempty"`
 	Images        []*Image      `json:"images,omitempty"`
@@ -28,21 +29,24 @@ type ControlResponse struct {
 	Doctor        *DoctorReport `json:"doctor,omitempty"`
 }
 type Status struct {
-	SchemaVersion  int          `json:"schema_version"`
-	Version        string       `json:"version"`
-	Running        bool         `json:"manager_running"`
-	Generation     string       `json:"generation"`
-	Paused         bool         `json:"paused"`
-	Stopping       bool         `json:"stopping"`
-	Budget         Budget       `json:"budget"`
-	Reserved       Resources    `json:"reserved"`
-	Active         int          `json:"active_runners_and_setup_vms"`
-	VMs            int          `json:"macos_vms"`
-	PendingCleanup int          `json:"pending_cleanup"`
-	Pools          []PoolStatus `json:"pools"`
-	Runners        []Runner     `json:"runners"`
-	Images         []*Image     `json:"images"`
-	Power          *Problem     `json:"power_warning,omitempty"`
+	SchemaVersion  int                        `json:"schema_version"`
+	Version        string                     `json:"version"`
+	Running        bool                       `json:"manager_running"`
+	Generation     string                     `json:"generation"`
+	Paused         bool                       `json:"paused"`
+	Stopping       bool                       `json:"stopping"`
+	Budget         Budget                     `json:"budget"`
+	Reserved       Resources                  `json:"reserved"`
+	Active         int                        `json:"active_runners_and_setup_vms"`
+	VMs            int                        `json:"macos_vms"`
+	PendingCleanup int                        `json:"pending_cleanup"`
+	Pools          []PoolStatus               `json:"pools"`
+	Runners        []Runner                   `json:"runners"`
+	Images         []*Image                   `json:"images"`
+	Power          *Problem                   `json:"power_warning,omitempty"`
+	DockerBudget   Resources                  `json:"docker_budget,omitempty"`
+	Managed        map[string]*ManagedPool    `json:"managed_runners,omitempty"`
+	Artifacts      map[string]*RunnerArtifact `json:"runner_artifacts,omitempty"`
 }
 type PoolStatus struct {
 	ID         string    `json:"id"`
@@ -60,6 +64,9 @@ type PoolStatus struct {
 func statusOf(s Snapshot, running bool) *Status {
 	used, n, vms := usage(s)
 	v := &Status{SchemaVersion: 1, Version: Version, Running: running, Generation: s.Generation, Paused: s.Paused, Stopping: s.Stopping, Budget: s.Config.Host, Reserved: used, Active: n, VMs: vms, PendingCleanup: pendingCleanup(s), Pools: []PoolStatus{}, Runners: []Runner{}, Power: s.PowerProblem, Images: []*Image{}}
+	v.Managed = s.Managed
+	v.Artifacts = s.Artifacts
+	v.DockerBudget = s.Config.DockerBudget
 	for _, p := range sortedPools(s) {
 		if p.Phase == Retired {
 			continue
@@ -138,6 +145,11 @@ func (m *Manager) Control(ctx context.Context, req ControlRequest) ControlRespon
 			r.Status.Running = true
 		}
 		resp.Doctor = &r
+	case "config":
+		c := displayResolved(m.Store.View())
+		resp.Config = &c
+	case "runner-update":
+		err = m.requestRunnerUpdate(req.Pool)
 	case "status":
 		resp.Status = statusOf(m.Store.View(), true)
 	case "reload":

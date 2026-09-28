@@ -3,6 +3,7 @@ package runmoor
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -22,8 +23,9 @@ type ImageRequest struct {
 	RunnerVersion string    `json:"runner_version,omitempty"`
 }
 type ImageManager struct {
-	Store *Store
-	Tart  *TartDriver
+	Store  *Store
+	Tart   *TartDriver
+	Client *http.Client
 }
 
 func (m *ImageManager) Operate(ctx context.Context, c Config, req ImageRequest) (*Image, error) {
@@ -31,6 +33,11 @@ func (m *ImageManager) Operate(ctx context.Context, c Config, req ImageRequest) 
 		return nil, e
 	}
 	if req.Action == "create" {
+		var e error
+		req.Resources, e = defaultImageResources(c, req.Resources)
+		if e != nil {
+			return nil, e
+		}
 		return m.create(ctx, c, req)
 	}
 	s := m.Store.View()
@@ -86,8 +93,9 @@ func (m *ImageManager) Operate(ctx context.Context, c Config, req ImageRequest) 
 		if im.Phase == ImageSealed {
 			return im, nil
 		}
-		if !versionPattern.MatchString(req.RunnerVersion) {
-			return nil, problem(ErrConfig, "Sealing requires an exact --runner-version.", "Install a pinned runner in a clean image first.")
+		automatic := req.RunnerVersion == "" || req.RunnerVersion == LatestRunner
+		if !automatic && !versionPattern.MatchString(req.RunnerVersion) {
+			return nil, problem(ErrConfig, "Runner version must be latest or an exact version.", "Omit --runner-version to install the latest runner.")
 		}
 		if req.RunnerPath == "" {
 			req.RunnerPath = "/Users/runner/actions-runner"
@@ -106,6 +114,36 @@ func (m *ImageManager) Operate(ctx context.Context, c Config, req ImageRequest) 
 			if _, e = m.Tart.Exec.Start(c.TartExecutable, []string{"run", "--no-graphics", "--no-audio", im.VM}, tartEnv(c)); e != nil {
 				return nil, m.imageFailure(im.ID, problem(ErrPreparation, "Cannot boot the image for validation.", "Check Tart and image compatibility."))
 			}
+		}
+		if automatic {
+			if !managedPathValid(req.RunnerPath) {
+				return nil, m.imageFailure(im.ID, problem(ErrConfig, "Automatic installation requires a dedicated clean runner directory.", "Use the default runner_path."))
+			}
+			cli := m.Client
+			if cli == nil {
+				cli = defaultReleaseClient()
+			}
+			probe, cancel := context.WithTimeout(ctx, 10*time.Second)
+			releases, e := fetchRunnerReleases(probe, cli)
+			cancel()
+			if e != nil {
+				return nil, m.imageFailure(im.ID, e)
+			}
+			if len(releases) == 0 {
+				return nil, m.imageFailure(im.ID, releaseProblem())
+			}
+			if e = cleanupRunnerDownload(c, im.ID); e != nil {
+				return nil, m.imageFailure(im.ID, e)
+			}
+			builder := ManagedImageBuilder{Store: m.Store, Images: m, Client: cli}
+			archive, e := builder.archive(ctx, c, Pool{Backend: Tart, Arch: "arm64"}, RunnerArtifact{ID: im.ID}, releases[0])
+			if e != nil {
+				return nil, m.imageFailure(im.ID, e)
+			}
+			if e = builder.installTartArchive(ctx, c, im.VM, req.RunnerPath, archive); e != nil {
+				return nil, m.imageFailure(im.ID, e)
+			}
+			req.RunnerVersion = releases[0].Version()
 		}
 		if e = m.Tart.guestReady(ctx, c, im.VM, req.RunnerPath, req.RunnerVersion); e != nil {
 			return nil, m.imageFailure(im.ID, e)
@@ -130,6 +168,9 @@ func (m *ImageManager) Operate(ctx context.Context, c Config, req ImageRequest) 
 			return nil, e
 		}
 	case "remove":
+		if artifactReferenced(s, im.ID) {
+			return nil, problem(ErrImageInUse, "An automatic runner configuration references this image.", "Change or remove the pool and allow managed retention to complete.")
+		}
 		if e := m.Store.Update(func(v *Snapshot) error {
 			for _, p := range v.Pools {
 				if p.Phase != Retired && p.Spec.Backend == Tart && p.Spec.Image == im.ID {
@@ -148,6 +189,9 @@ func (m *ImageManager) Operate(ctx context.Context, c Config, req ImageRequest) 
 			return nil
 		}); e != nil {
 			return nil, e
+		}
+		if e := cleanupRunnerDownload(c, im.ID); e != nil {
+			return nil, m.imageFailure(im.ID, e)
 		}
 		if e := cleanupImportArchive(c, im.ID); e != nil {
 			return nil, m.imageFailure(im.ID, e)
@@ -175,7 +219,9 @@ func (m *ImageManager) reserve(c Config, id string) error {
 		if im.Phase == ImageOpen {
 			return nil
 		}
-		used, count, vms := usage(*s)
+		budget := cloneSnapshot(*s)
+		delete(budget.Artifacts, id)
+		used, count, vms := usage(budget)
 		if used.CPU+im.Resources.CPU > c.Host.CPU || used.MemoryMiB+im.Resources.MemoryMiB > c.Host.MemoryMiB || count+1 > c.Host.MaxRunners || vms >= 2 {
 			return problem(ErrCapacity, "No host capacity is available for image preparation.", "Wait for jobs to finish or close another setup VM; macOS permits at most two Runmoor VMs.")
 		}
@@ -206,7 +252,12 @@ func (m *ImageManager) create(ctx context.Context, c Config, req ImageRequest) (
 	if req.IPSW != "" && (!filepath.IsAbs(req.IPSW) || !strings.HasSuffix(strings.ToLower(req.IPSW), ".ipsw")) {
 		return nil, problem(ErrConfig, "IPSW input must be a local absolute .ipsw path.", "Download the restore image yourself and provide its path.")
 	}
-	id := newID()
+	id := req.ID
+	if id == "" {
+		id = newID()
+	} else if !validID(id) {
+		return nil, problem(ErrConfig, "Invalid preparation identity.", "Retry the managed image operation.")
+	}
 	im := &Image{ID: id, Name: req.Name, Phase: ImagePreparing, VM: "rm-image-" + id, Resources: req.Resources, Source: req.From, CreatedAt: nowUTC()}
 	if req.IPSW != "" {
 		im.Source = req.IPSW
@@ -332,6 +383,10 @@ func (m *ImageManager) Reconcile(ctx context.Context, c Config) error {
 	for id, im := range m.Store.View().Images {
 		// Manager serialization excludes active create/import operations here.
 		// Include preparing, sealed and removing revisions, not just open VMs.
+		if err := cleanupRunnerDownload(c, id); err != nil {
+			cleanupErr = m.imageFailure(id, err)
+			continue
+		}
 		if err := cleanupImportArchive(c, id); err != nil {
 			cleanupErr = m.imageFailure(id, err)
 			continue

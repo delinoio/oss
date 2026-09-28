@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"golang.org/x/term"
 	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -18,8 +20,10 @@ const helpText = `Runmoor 0.1.0 - local ephemeral GitHub Actions runners
 
 Usage: runmoor [--config PATH] COMMAND [OPTIONS]
 
-  init                      Create a documented TOML skeleton (never overwrite)
-  config validate           Validate TOML schema v1 and host resource budgets
+  init                      Create a minimal configuration (interactive in a terminal)
+  config validate           Validate TOML schema v1 and automatic or explicit budgets
+  config show --resolved    Show calculated settings and committed runner versions
+  runner update [--pool NAME] Check and prepare managed runner updates now
   run                       Run the foreground manager
   status [--json]            Inspect pools, capacity, active work and cleanup
   doctor [--json]            Check credentials, dependencies, images and power
@@ -62,7 +66,7 @@ func Execute(args []string, out, errOut io.Writer) int {
 	command := args[0]
 	args = args[1:]
 	sub := ""
-	if command == "config" || command == "service" || command == "image" {
+	if command == "config" || command == "service" || command == "image" || command == "runner" {
 		if len(args) == 0 {
 			fmt.Fprint(out, helpText)
 			return 2
@@ -77,6 +81,18 @@ func Execute(args []string, out, errOut io.Writer) int {
 	jsonOutput := fs.Bool("json", false, "versioned JSON output")
 	pool := fs.String("pool", "", "pool name")
 	force := fs.Bool("force", false, "terminate owned work during stop")
+	resolved := fs.Bool("resolved", false, "show effective configuration")
+	initOpts := InitOptions{}
+	fs.StringVar(&initOpts.Target, "target", "", "GitHub repository or organization URL")
+	fs.StringVar(&initOpts.Backend, "backend", "", "docker or tart")
+	fs.StringVar(&initOpts.Auth, "auth", "", "pat or app")
+	fs.StringVar(&initOpts.CredentialEnv, "credential-env", "", "credential environment variable name")
+	fs.StringVar(&initOpts.CredentialFile, "credential-file", "", "absolute private credential file")
+	fs.StringVar(&initOpts.ClientID, "client-id", "", "GitHub App client ID")
+	fs.Int64Var(&initOpts.InstallationID, "installation-id", 0, "GitHub App installation ID")
+	fs.StringVar(&initOpts.Image, "image", "", "immutable Docker image or sealed Tart UUID")
+	fs.StringVar(&initOpts.ImageSource, "image-source", "", "prepared Tart source")
+	fs.BoolVar(&initOpts.ImageOnly, "image-only", false, "create configuration for initial image preparation")
 	im := ImageRequest{Action: sub}
 	fs.StringVar(&im.ID, "id", "", "image revision UUID")
 	fs.StringVar(&im.Name, "name", "", "image display name")
@@ -104,14 +120,20 @@ func Execute(args []string, out, errOut io.Writer) int {
 		allowed := f.Name == "config" || f.Name == "no-color"
 		switch f.Name {
 		case "json":
-			allowed = command == "status" || command == "doctor" || (command == "image" && sub == "list")
+			allowed = command == "status" || command == "doctor" || command == "config" || (command == "image" && sub == "list")
 		case "pool":
-			allowed = command == "pause" || command == "resume" || command == "drain" || command == "stop"
+			allowed = command == "pause" || command == "resume" || command == "drain" || command == "stop" || (command == "runner" && sub == "update")
 		case "force":
 			allowed = command == "stop"
 		case "id":
 			allowed = command == "image" && (sub == "open" || sub == "seal" || sub == "remove")
-		case "name", "ipsw", "from", "source-home", "cpu", "memory-mib":
+		case "target", "backend", "auth", "credential-env", "credential-file", "client-id", "installation-id", "image", "image-source", "image-only":
+			allowed = command == "init"
+		case "resolved":
+			allowed = command == "config" && sub == "show"
+		case "source-home":
+			allowed = command == "init" || (command == "image" && sub == "create")
+		case "name", "ipsw", "from", "cpu", "memory-mib":
 			allowed = command == "image" && sub == "create"
 		case "runner-path", "runner-version":
 			allowed = command == "image" && sub == "seal"
@@ -122,6 +144,17 @@ func Execute(args []string, out, errOut io.Writer) int {
 		return printFailure(errOut, *jsonOutput, problem(ErrConfig, "Flag is not supported by this command.", "Run the command with --help."))
 	}
 
+	if command == "image" && sub == "create" {
+		bad := false
+		fs.Visit(func(f *flag.Flag) {
+			if f.Name == "cpu" && im.Resources.CPU <= 0 || f.Name == "memory-mib" && im.Resources.MemoryMiB <= 0 {
+				bad = true
+			}
+		})
+		if bad {
+			return printFailure(errOut, *jsonOutput, problem(ErrConfig, "Explicit setup resources must be positive.", "Omit the options to use automatic defaults."))
+		}
+	}
 	abs, e := filepath.Abs(path)
 	if e != nil {
 		return printFailure(errOut, *jsonOutput, problem(ErrConfig, "Invalid configuration path.", "Use a valid --config path."))
@@ -132,10 +165,10 @@ func Execute(args []string, out, errOut io.Writer) int {
 		return 0
 	}
 	if command == "init" {
-		if e = InitConfig(path); e != nil {
+		initOpts.SourceHome = im.SourceHome
+		if e = initialize(path, initOpts, os.Stdin, out, term.IsTerminal(int(os.Stdin.Fd()))); e != nil {
 			return printFailure(errOut, *jsonOutput, e)
 		}
-		fmt.Fprintln(out, "Created TOML schema v1 skeleton. Set credentials, pinned images and resource budgets before running.")
 		return 0
 	}
 	c, e := LoadConfig(path)
@@ -147,11 +180,41 @@ func Execute(args []string, out, errOut io.Writer) int {
 	defer stop()
 	switch command {
 	case "config":
+		if sub == "show" && *resolved {
+			resp, err := SendControl(ctx, c, ControlRequest{Action: "config"})
+			if err == nil && resp.Config != nil {
+				writeJSON(out, resp.Config)
+				return 0
+			}
+			if p, ok := err.(*Problem); err != nil && (!ok || p.Code != ErrControl) {
+				return printFailure(errOut, *jsonOutput, err)
+			}
+			snapshot, err := ReadSnapshot(c)
+			if err == nil {
+				writeJSON(out, displayResolved(snapshot))
+				return 0
+			}
+			if !os.IsNotExist(err) {
+				return printFailure(errOut, *jsonOutput, err)
+			}
+			// Initial resolution has no committed runner version until run.
+			writeJSON(out, c)
+			return 0
+		}
 		if sub != "validate" {
 			e = problem(ErrConfig, "Unknown config command.", "Use 'runmoor config validate'.")
 		} else {
 			fmt.Fprintln(out, "Configuration is valid (schema v1).")
 			return 0
+		}
+	case "runner":
+		if sub != "update" {
+			e = problem(ErrConfig, "Unknown runner command.", "Use runner update [--pool NAME].")
+		} else {
+			_, e = SendControl(ctx, c, ControlRequest{Action: "runner-update", Pool: *pool})
+			if e == nil {
+				fmt.Fprintln(out, "Runner update requested; inspect status for progress.")
+			}
 		}
 	case "run":
 		e = runForeground(ctx, path, c, errOut)
@@ -260,6 +323,13 @@ func Execute(args []string, out, errOut io.Writer) int {
 	return 0
 }
 func runForeground(ctx context.Context, path string, c Config, out io.Writer) error {
+	var err error
+	probe, cancel := context.WithTimeout(ctx, 10*time.Second)
+	c, err = resolveDockerCapacity(probe, c)
+	cancel()
+	if err != nil {
+		return err
+	}
 	if e := platformCheck(ctx); e != nil {
 		return e
 	}
@@ -356,6 +426,23 @@ func printStatus(w io.Writer, s *Status, jsonOutput bool) {
 	}
 	fmt.Fprintf(w, "Runmoor %s | manager running: %t | paused: %t | stopping: %t\n", s.Version, s.Running, s.Paused, s.Stopping)
 	fmt.Fprintf(w, "Reserved: %d CPU, %d MiB, %d executions/setup VMs; macOS VMs: %d/2; pending cleanup: %d\n", s.Reserved.CPU, s.Reserved.MemoryMiB, s.Active, s.VMs, s.PendingCleanup)
+	fmt.Fprintf(w, "Budget: %d CPU, %d MiB; concurrency: %d\n", s.Budget.CPU, s.Budget.MemoryMiB, s.Budget.MaxRunners)
+	names := []string{}
+	for name := range s.Managed {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		q := s.Managed[name]
+		version := "not prepared"
+		if q.Current != nil {
+			version = q.Current.RunnerVersion
+		}
+		fmt.Fprintf(w, "Managed runner %s: %s, version=%s, candidate=%s, last check=%s, next check=%s\n", name, q.Phase, version, q.CandidateVersion, q.LastCheck.Format(time.RFC3339), q.NextCheck.Format(time.RFC3339))
+		if q.Problem != nil {
+			fmt.Fprintln(w, q.Problem.Error())
+		}
+	}
 	for _, p := range s.Pools {
 		fmt.Fprintf(w, "%s [%s] %s: demand=%d total=%d busy=%d\n", p.Name, p.Generation, p.Phase, p.Demand, p.Total, p.Busy)
 		if p.Problem != nil {

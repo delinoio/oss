@@ -3,6 +3,7 @@ package runmoor
 import (
 	"context"
 	"log/slog"
+	"net/http"
 	"sort"
 	"sync"
 	"time"
@@ -18,6 +19,8 @@ type Manager struct {
 	Drivers       DriverFactory
 	Images        *ImageManager
 	Power         PowerController
+	ReleaseClient *http.Client
+	RunnerBuilder RunnerImageBuilder
 	mu            sync.Mutex
 	workers       map[string]context.CancelFunc
 	poolLoops     map[string]context.CancelFunc
@@ -32,7 +35,10 @@ type Manager struct {
 
 func NewManager(store *Store, path string, l *slog.Logger) *Manager {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Manager{Store: store, ConfigPath: path, Log: l, RemoteFactory: NewGitHub, Drivers: defaultDriver, Images: &ImageManager{Store: store, Tart: &TartDriver{Exec: OSCommand{}}}, Power: &PowerManager{}, workers: map[string]context.CancelFunc{}, poolLoops: map[string]context.CancelFunc{}, poolLocks: map[string]*sync.Mutex{}, remotes: map[string]Remote{}, ctx: ctx, cancel: cancel}
+	m := &Manager{Store: store, ConfigPath: path, Log: l, RemoteFactory: NewGitHub, Drivers: defaultDriver, Images: &ImageManager{Store: store, Tart: &TartDriver{Exec: OSCommand{}}}, Power: &PowerManager{}, workers: map[string]context.CancelFunc{}, poolLoops: map[string]context.CancelFunc{}, poolLocks: map[string]*sync.Mutex{}, remotes: map[string]Remote{}, ctx: ctx, cancel: cancel}
+	m.ReleaseClient = defaultReleaseClient()
+	m.RunnerBuilder = &ManagedImageBuilder{Store: store, Images: m.Images, Client: m.ReleaseClient}
+	return m
 }
 func (m *Manager) poolLock(id string) *sync.Mutex {
 	m.mu.Lock()
@@ -63,47 +69,65 @@ func (m *Manager) remote(p PoolState) (Remote, error) {
 func (m *Manager) activate(c Config) error { return m.accept(c, true) }
 func (m *Manager) accept(c Config, restart bool) error {
 	return m.Store.Update(func(s *Snapshot) error {
-		if s.Generation != "" && fingerprint(s.Config) == fingerprint(c) {
-			if restart {
-				s.Stopping = false
+		initializeManaged(s, c)
+		if restart {
+			s.ReleaseChecked = time.Time{}
+			for _, q := range s.Managed {
+				q.NextCheck = time.Time{}
 			}
-			return nil
 		}
-		gen := newID()
-		wanted := map[string]Pool{}
-		for _, p := range c.Pools {
-			wanted[p.Name] = p
-		}
-		matched := map[string]bool{}
-		for _, old := range s.Pools {
-			if old.Phase == Retired || old.Phase == Draining {
-				continue
-			}
-			p, ok := wanted[old.Spec.Name]
-			conn := c.Connection(p.Connection)
-			if ok && fingerprint(old.Spec) == fingerprint(p) && fingerprint(old.Connection) == fingerprint(conn) {
-				old.Generation = gen
-				matched[p.Name] = true
-				continue
-			}
-			old.Phase = Draining
-			old.Demand = 0
-		}
-		for _, p := range c.Pools {
-			if matched[p.Name] {
-				continue
-			}
-			id := newID()
-			s.Pools[id] = &PoolState{ID: id, Generation: gen, Spec: p, Connection: c.Connection(p.Connection), Phase: Ready, OwnerLabel: "runmoor-owner-" + s.Installation}
-		}
-		s.Config = c
-		s.Generation = gen
-		s.Generations[gen] = c
+		return acceptSnapshot(s, managedConfig(*s), restart)
+	})
+}
+func acceptSnapshot(s *Snapshot, c Config, restart bool) error {
+	if s.Generation != "" && fingerprint(s.Config) == fingerprint(c) {
 		if restart {
 			s.Stopping = false
 		}
 		return nil
-	})
+	}
+	gen := newID()
+	wanted := map[string]Pool{}
+	for _, p := range c.Pools {
+		wanted[p.Name] = p
+	}
+	matched := map[string]bool{}
+	phases := map[string]PoolPhase{}
+	for _, old := range s.Pools {
+		if old.Phase == Retired || old.Phase == Draining {
+			continue
+		}
+		p, ok := wanted[old.Spec.Name]
+		conn := c.Connection(p.Connection)
+		if ok && fingerprint(old.Spec) == fingerprint(p) && fingerprint(old.Connection) == fingerprint(conn) {
+			old.Generation = gen
+			matched[p.Name] = true
+			continue
+		}
+		phases[old.Spec.Name] = old.Phase
+		old.Phase = Draining
+		old.Demand = 0
+	}
+	for _, p := range c.Pools {
+		if matched[p.Name] {
+			continue
+		}
+		id := newID()
+		s.Pools[id] = &PoolState{ID: id, Generation: gen, Spec: p, Connection: c.Connection(p.Connection), Phase: Ready, OwnerLabel: "runmoor-owner-" + s.Installation}
+		if phases[p.Name] == Paused || phases[p.Name] == Suspended {
+			s.Pools[id].Phase = phases[p.Name]
+		}
+		if q := s.Managed[p.Name]; q != nil && q.Paused {
+			s.Pools[id].Phase = Paused
+		}
+	}
+	s.Config = c
+	s.Generation = gen
+	s.Generations[gen] = c
+	if restart {
+		s.Stopping = false
+	}
+	return nil
 }
 func (m *Manager) Run(ctx context.Context, c Config) error {
 	defer func() {
@@ -168,6 +192,11 @@ func (m *Manager) Run(ctx context.Context, c Config) error {
 	}
 }
 func allTerminated(s Snapshot) bool {
+	for _, a := range s.Artifacts {
+		if a.Reserved || a.Phase == ArtifactRemoving {
+			return false
+		}
+	}
 	for _, im := range s.Images {
 		if im.Phase == ImageOpen || im.Phase == ImageRemoving {
 			return false
@@ -200,8 +229,14 @@ func pendingCleanup(s Snapshot) int {
 	return n
 }
 func (m *Manager) step() error {
+	m.startManagedWork()
 	s := m.Store.View()
 	active := false
+	for _, a := range s.Artifacts {
+		if a.Reserved || a.Phase == ArtifactRemoving {
+			active = true
+		}
+	}
 	for _, r := range s.Runners {
 		if !r.Terminated && (r.Phase == Busy || r.Phase == Preparing || r.Phase == Cleaning || r.Phase == Quarantined) {
 			active = true
@@ -1072,6 +1107,11 @@ func (m *Manager) Stop(force bool) error {
 	if err == nil {
 		if force {
 			m.cancelForcedWorkers("")
+			m.mu.Lock()
+			if cancel := m.workers["runner-update"]; cancel != nil {
+				cancel()
+			}
+			m.mu.Unlock()
 		}
 		m.Log.Info("manager_stop_requested", "force", force)
 	}
@@ -1084,6 +1124,10 @@ func (m *Manager) Stop(force bool) error {
 func (m *Manager) StopPool(name string, force bool) error {
 	err := m.Store.Update(func(s *Snapshot) error {
 		found := false
+		if q := s.Managed[name]; q != nil {
+			q.Paused = true
+			found = true
+		}
 		for _, p := range s.Pools {
 			if p.Spec.Name != name || p.Phase == Retired {
 				continue
@@ -1131,6 +1175,10 @@ func (m *Manager) Pause(name string) error {
 			return nil
 		}
 		found := false
+		if q := s.Managed[name]; q != nil {
+			q.Paused = true
+			found = true
+		}
 		for _, p := range s.Pools {
 			if p.Spec.Name == name && p.Phase != Retired && p.Phase != Draining {
 				p.Phase = Paused
@@ -1156,7 +1204,7 @@ func (m *Manager) Resume(ctx context.Context, name string) error {
 			ids = append(ids, id)
 		}
 	}
-	if len(ids) == 0 {
+	if len(ids) == 0 && !(name != "" && s.Managed[name] != nil) && !(name == "" && len(s.Managed) > 0) {
 		return problem(ErrConfig, "No resumable pool matches.", "Inspect status and the active configuration.")
 	}
 	m.mu.Lock()
@@ -1176,6 +1224,12 @@ func (m *Manager) Resume(ctx context.Context, name string) error {
 				if p.Phase == Ready {
 					p.Phase = Paused
 				}
+			}
+		}
+		for key, q := range s.Managed {
+			if name == "" || key == name {
+				q.Paused = false
+				q.NextCheck = time.Time{}
 			}
 		}
 		for _, id := range ids {
@@ -1210,11 +1264,27 @@ func (m *Manager) Reload(ctx context.Context) error {
 	if e != nil {
 		return e
 	}
+	if needsCapacity(c) {
+		c, e = resolveDockerCapacity(ctx, c)
+		if e != nil {
+			return e
+		}
+	}
 	s := m.Store.View()
 	if c.Storage != s.Config.Storage {
 		return problem(ErrConfig, "Storage locations cannot change during reload.", "Drain and stop before restoring a complete installation into new locations.")
 	}
 	for _, p := range c.Pools {
+		if managesRunner(p) {
+			remote, err := m.RemoteFactory(c.Connection(p.Connection))
+			if err != nil {
+				return err
+			}
+			if err = remote.Check(ctx, p); err != nil {
+				return err
+			}
+			continue
+		}
 		if e = m.validatePool(ctx, c, p, s); e != nil {
 			return e
 		}

@@ -3,6 +3,7 @@ package runmoor
 import (
 	"database/sql"
 	"encoding/json"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sync"
@@ -55,8 +56,8 @@ func OpenStore(c Config) (*Store, error) {
 	if err = db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		return failed(problem(ErrState, "Cannot read SQLite state version.", "Restore a compatible state backup."))
 	}
-	if version != 0 && version != 1 {
-		return failed(problem(ErrStateVersion, "This binary supports SQLite schema version 1 only.", "Use the matching binary or restore its matching backup; do not downgrade the database."))
+	if version != 0 && version != 1 && version != 2 {
+		return failed(problem(ErrStateVersion, "This binary supports SQLite schema versions 1 and 2 only.", "Use the matching binary or restore its matching backup; do not downgrade the database."))
 	}
 	if version == 0 {
 		var tables int
@@ -70,11 +71,11 @@ func OpenStore(c Config) (*Store, error) {
 	s := &Store{db: db, lock: lock}
 	relocated := false
 	if version == 0 {
-		s.state = Snapshot{SchemaVersion: 1, Installation: newID(), Pools: map[string]*PoolState{}, Runners: map[string]*Runner{}, Images: map[string]*Image{}, Generations: map[string]Config{}, Config: c}
+		s.state = Snapshot{SchemaVersion: 2, Requested: c, Managed: map[string]*ManagedPool{}, Artifacts: map[string]*RunnerArtifact{}, Installation: newID(), Pools: map[string]*PoolState{}, Runners: map[string]*Runner{}, Images: map[string]*Image{}, Generations: map[string]Config{}, Config: c}
 		b, _ := json.Marshal(s.state)
 		tx, e := db.Begin()
 		if e == nil {
-			_, e = tx.Exec("CREATE TABLE snapshot (id INTEGER PRIMARY KEY CHECK(id=1), body BLOB NOT NULL); PRAGMA user_version=1;")
+			_, e = tx.Exec("CREATE TABLE snapshot (id INTEGER PRIMARY KEY CHECK(id=1), body BLOB NOT NULL); PRAGMA user_version=2;")
 			if e == nil {
 				_, e = tx.Exec("INSERT INTO snapshot(id,body) VALUES(1,?)", b)
 			}
@@ -92,8 +93,38 @@ func OpenStore(c Config) (*Store, error) {
 		if err = db.QueryRow("SELECT body FROM snapshot WHERE id=1").Scan(&b); err != nil {
 			return failed(problem(ErrState, "State snapshot is missing.", "Restore a compatible backup."))
 		}
-		if err = json.Unmarshal(b, &s.state); err != nil || s.state.SchemaVersion != 1 || !validID(s.state.Installation) || s.state.Pools == nil || s.state.Runners == nil || s.state.Images == nil || s.state.Generations == nil {
+		if err = json.Unmarshal(b, &s.state); err != nil || (s.state.SchemaVersion != version) || !validID(s.state.Installation) || s.state.Pools == nil || s.state.Runners == nil || s.state.Images == nil || s.state.Generations == nil {
 			return failed(problem(ErrState, "State snapshot is invalid.", "Preserve the database for diagnosis and restore a compatible backup."))
+		}
+		if version == 1 {
+			// Snapshot and database version move together. Existing ownership,
+			// reservations and generation payloads are never reinterpreted.
+			s.state.SchemaVersion = 2
+			s.state.Requested = s.state.Config
+			s.state.Managed = map[string]*ManagedPool{}
+			s.state.Artifacts = map[string]*RunnerArtifact{}
+			body, e := json.Marshal(s.state)
+			if e != nil {
+				return failed(problem(ErrState, "Cannot migrate state.", "Preserve a complete state backup."))
+			}
+			tx, e := db.Begin()
+			if e == nil {
+				_, e = tx.Exec("UPDATE snapshot SET body=? WHERE id=1", body)
+				if e == nil {
+					_, e = tx.Exec("PRAGMA user_version=2")
+				}
+				if e == nil {
+					e = tx.Commit()
+				} else {
+					tx.Rollback()
+				}
+			}
+			if e != nil {
+				return failed(problem(ErrState, "Cannot atomically migrate SQLite v1 to v2.", "Restore storage access and retry with this binary."))
+			}
+		}
+		if s.state.Managed == nil || s.state.Artifacts == nil {
+			return failed(problem(ErrState, "Managed state is missing.", "Restore a compatible complete backup."))
 		}
 		if s.state.Config.Storage != c.Storage {
 			for _, r := range s.state.Runners {
@@ -199,4 +230,36 @@ func (s *Store) Prune(now time.Time) error {
 		}
 		return nil
 	})
+}
+
+// ReadSnapshot never creates or migrates storage and is safe beside a manager.
+func ReadSnapshot(c Config) (Snapshot, error) {
+	var s Snapshot
+	path := filepath.Join(c.Storage.State, "state.sqlite")
+	if _, err := os.Stat(path); err != nil {
+		return s, err
+	}
+	f, err := openPrivate(path, os.O_RDONLY)
+	if err != nil {
+		return s, err
+	}
+	f.Close()
+	uri := url.URL{Scheme: "file", Path: path, RawQuery: "mode=ro"}
+	db, err := sql.Open("sqlite", uri.String())
+	if err != nil {
+		return s, problem(ErrState, "Cannot read state.", "Inspect manager status.")
+	}
+	defer db.Close()
+	var version int
+	if err = db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || (version != 1 && version != 2) {
+		return s, problem(ErrStateVersion, "Unsupported state version.", "Use a compatible Runmoor binary.")
+	}
+	var body []byte
+	if err = db.QueryRow("SELECT body FROM snapshot WHERE id=1").Scan(&body); err != nil || json.Unmarshal(body, &s) != nil || s.SchemaVersion != version {
+		return s, problem(ErrState, "Cannot read the state snapshot.", "Restore a complete compatible backup.")
+	}
+	if version == 1 {
+		s.Requested = s.Config
+	}
+	return s, nil
 }

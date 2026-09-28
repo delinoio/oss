@@ -61,7 +61,7 @@ func TestStateRejectsFutureVersionWithoutConversion(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	if _, e = db.Exec("PRAGMA user_version=2"); e != nil {
+	if _, e = db.Exec("PRAGMA user_version=3"); e != nil {
 		t.Fatal(e)
 	}
 	db.Close()
@@ -71,7 +71,7 @@ func TestStateRejectsFutureVersionWithoutConversion(t *testing.T) {
 	defer db.Close()
 	var version int
 	db.QueryRow("PRAGMA user_version").Scan(&version)
-	if version != 2 {
+	if version != 3 {
 		t.Fatal("future database modified")
 	}
 }

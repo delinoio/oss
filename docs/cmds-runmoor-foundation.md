@@ -164,3 +164,60 @@ Update this document, the project index, scoped command policies, README/public 
 - [GitHub runner authentication](https://docs.github.com/en/actions/how-tos/manage-runners/use-actions-runner-controller/authenticate-to-the-api).
 - [Runner update requirements](https://docs.github.com/en/actions/reference/runners/self-hosted-runners).
 - [Tart 2.37.0](https://github.com/openai/tart/tree/2.37.0), [Guest Agent 0.14.2](https://github.com/openai/tart-guest-agent/tree/v0.14.2).
+
+## Automatic defaults and runner management
+
+The next unreleased version extends TOML v1 with optional resource and concurrency
+fields. Only omitted values receive defaults; explicit zero and negative values
+remain invalid. Host CPU and physical memory are detected at startup and reload.
+Docker has an additional engine CPU/memory ceiling, shared by all Docker jobs and
+preparation containers without restricting unrelated Tart capacity. The default
+Docker runner uses 2 CPUs and 4096 MiB; Tart uses 4 CPUs and 8192 MiB. Omitted
+allocations shrink to the available budget on smaller machines, with automatic
+minimums of 1 CPU/1024 MiB and 2 CPUs/4096 MiB respectively. Existing explicit
+allocations retain their meaning. Pool concurrency is the minimum of the CPU and
+memory quotients, bounded by the two-VM Tart limit; global reservations include
+all pools, DinD and image preparation. Disk reserves default to 10240 MiB, or
+20480 MiB when Tart is configured. Warm capacity defaults to zero.
+
+`init` creates a minimal valid configuration through terminal prompts or flags.
+It accepts target, backend, authentication and credential *references*, plus an
+image/source when needed. It never overwrites an existing configuration, accepts
+credential values, installs host dependencies or starts a service. `--image-only`
+creates a configuration for manual initial macOS setup. `config show --resolved`
+reads committed versions and resolved capacity without preparing images.
+
+Omitted `runner_version` and `runner_version = "latest"` select automatic runner
+management. An exact version remains a pin. Docker image omission selects the
+official image; explicit Docker sources remain immutable digests. Tart supports
+an existing sealed UUID or mutually exclusive `image_source = { from = "...",
+source_home = "..." }`, using the existing import sources. Imported sources are
+resolved once and retained as immutable local bases; OS/toolchain refresh is
+not implied by runner refresh. Custom Docker sources and Tart bases are cloned
+before replacing the dedicated runner directory. User sources are never edited.
+
+The manager checks official stable releases at startup and hourly. It shares
+bounded latest-100 metadata, verifies architecture and installed version, pins
+Docker pulls to digests, and verifies the SHA-256 of downloaded runner archives.
+Repacking rejects traversal, links, special files and oversized archives. Image
+preparation is credential-free and never registers a runner. `runner update
+[--pool NAME]` requests an immediate check. `image create` resources are optional;
+`image seal` with an omitted version installs the latest runner before sealing.
+
+Requested configuration and effective generations are separate. Verified
+candidates activate atomically through the existing drain/retirement boundary;
+old jobs keep their original images, resources and deadlines. Pause, drain and
+stop remain authoritative. A waiting update gets the next available preparation
+slot without interrupting busy jobs. Failures retain the last verified image and
+retry with backoff. Known support deadlines block new acquisition after expiry;
+unknown release freshness is reported without pretending a cached image is
+current. Initial preparation failure has no runnable fallback.
+
+SQLite v2 adds managed-pool state, immutable artifact identities, release metadata
+and preparation/cleanup reservations. Opening v1 migrates its snapshot and
+`user_version` atomically without rewriting installation ownership or execution
+history. Old binaries reject v2. Read-only configuration inspection does not
+migrate state. Public status/doctor JSON remains schema v1 with additive managed
+runner and artifact fields. Generated artifacts retain current, previous and
+referenced bases; cleanup never force-removes externally referenced Docker images
+or deletes user sources. Official pulled base layers remain Docker-owned.

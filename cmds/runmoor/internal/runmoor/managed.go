@@ -1,0 +1,424 @@
+package runmoor
+
+import (
+	"context"
+	"net/http"
+	"sort"
+	"time"
+)
+
+func initializeManaged(s *Snapshot, c Config) {
+	if s.Managed == nil {
+		s.Managed = map[string]*ManagedPool{}
+	}
+	if s.Artifacts == nil {
+		s.Artifacts = map[string]*RunnerArtifact{}
+	}
+	names := map[string]bool{}
+	for _, p := range c.Pools {
+		if !managesRunner(p) {
+			continue
+		}
+		names[p.Name] = true
+		hash := fingerprint(p)
+		managed := s.Managed[p.Name]
+		if managed == nil {
+			managed = &ManagedPool{Name: p.Name, Phase: UpdatePending}
+			s.Managed[p.Name] = managed
+			for _, old := range s.Pools {
+				if old.Spec.Name == p.Name && old.Phase != Retired && old.Phase != Draining && old.Spec.Backend == p.Backend && fingerprint(old.Connection) == fingerprint(c.Connection(p.Connection)) {
+					copy := old.Spec
+					managed.Current = &copy
+					managed.Paused = old.Phase == Paused
+				}
+			}
+		}
+		if managed.DesiredHash != hash {
+			managed.DesiredHash = hash
+			managed.NextCheck = time.Time{}
+			managed.Phase = UpdatePending
+			managed.BaseImage = ""
+		}
+	}
+	for name := range s.Managed {
+		if !names[name] {
+			delete(s.Managed, name)
+		}
+	}
+	s.Requested = c
+}
+func managedConfig(s Snapshot) Config {
+	c := s.Requested
+	c.Pools = nil
+	for _, p := range s.Requested.Pools {
+		if !managesRunner(p) {
+			c.Pools = append(c.Pools, p)
+			continue
+		}
+		if managed := s.Managed[p.Name]; managed != nil && managed.Current != nil {
+			c.Pools = append(c.Pools, *managed.Current)
+		}
+	}
+	return c
+}
+func (m *Manager) requestRunnerUpdate(name string) error {
+	return m.Store.Update(func(s *Snapshot) error {
+		if s.Stopping {
+			return problem(ErrControl, "The manager is stopping.", "Restart the manager before requesting an update.")
+		}
+		found := false
+		for key, v := range s.Managed {
+			if name == "" || name == key {
+				v.NextCheck = time.Time{}
+				found = true
+			}
+		}
+		if !found {
+			return problem(ErrConfig, "No automatically managed pool matches.", "Use runner_version = latest or a managed image source, then reload.")
+		}
+		s.ReleaseChecked = time.Time{}
+		return nil
+	})
+}
+func (m *Manager) startManagedWork() {
+	s := m.Store.View()
+	// One worker serializes release acquisition, candidate preparation and cleanup.
+	// It is lifecycle-tracked like runner workers and cannot outlive shutdown.
+	due := ""
+	names := make([]string, 0, len(s.Managed))
+	for name := range s.Managed {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	if !s.Paused && !s.Stopping {
+		for _, name := range names {
+			v := s.Managed[name]
+			if !v.Paused && !time.Now().Before(v.NextCheck) {
+				due = name
+				break
+			}
+		}
+	}
+	cleanup := false
+	for _, a := range s.Artifacts {
+		if a.Phase != ArtifactReady {
+			cleanup = true
+		}
+	}
+	if due != "" || cleanup {
+		m.startWork("runner-update", func(ctx context.Context) { m.updateManaged(ctx, due) })
+	}
+}
+func (m *Manager) updateManaged(ctx context.Context, name string) {
+	m.imageMu.Lock()
+	defer m.imageMu.Unlock()
+	if err := m.cleanupManaged(ctx); err != nil {
+		if name != "" {
+			m.managedFailure(name, err)
+		}
+		return
+	}
+	if name == "" {
+		return
+	}
+	s := m.Store.View()
+	managed := s.Managed[name]
+	if managed == nil || managed.Paused || s.Paused || s.Stopping {
+		return
+	}
+	desired, ok := requestedPool(s.Requested, name)
+	if !ok {
+		return
+	}
+	hash := managed.DesiredHash
+	if err := m.Store.Update(func(v *Snapshot) error {
+		if q := v.Managed[name]; q != nil && q.DesiredHash == hash {
+			if q.Phase != UpdateWaiting {
+				q.Phase = UpdateChecking
+			}
+		}
+		return nil
+	}); err != nil {
+		return
+	}
+	releases := s.Releases
+	if len(releases) == 0 || s.ReleaseChecked.IsZero() || time.Since(s.ReleaseChecked) >= time.Hour {
+		probe, cancel := context.WithTimeout(ctx, 10*time.Second)
+		var err error
+		releases, err = fetchRunnerReleases(probe, m.ReleaseClient)
+		cancel()
+		if err != nil {
+			m.managedFailure(name, err)
+			return
+		}
+		if err = m.Store.Update(func(v *Snapshot) error { v.Releases = releases; v.ReleaseChecked = nowUTC(); return nil }); err != nil {
+			m.managedFailure(name, err)
+			return
+		}
+	}
+	if len(releases) == 0 {
+		m.managedFailure(name, releaseProblem())
+		return
+	}
+	selected := releases[0]
+	if desired.RunnerVersion != LatestRunner {
+		found := false
+		for _, release := range releases {
+			if release.Version() == desired.RunnerVersion {
+				selected = release
+				found = true
+				break
+			}
+		}
+		if !found {
+			m.managedFailure(name, problem(ErrRunnerVersion, "The pinned runner is not a known supported release.", "Select latest or a current exact release."))
+			return
+		}
+	}
+	if err := m.Store.Update(func(v *Snapshot) error {
+		q := v.Managed[name]
+		if q == nil || q.DesiredHash != hash {
+			return staleUpdate()
+		}
+		q.LastCheck = v.ReleaseChecked
+		q.CandidateVersion = selected.Version()
+		if q.Current != nil {
+			deadline := updateDeadline(releases, q.Current.RunnerVersion)
+			if !deadline.IsZero() && (q.Expires.IsZero() || deadline.Before(q.Expires)) {
+				q.Expires = deadline
+			}
+			found := false
+			for _, r := range releases {
+				found = found || r.Version() == q.Current.RunnerVersion
+			}
+			if !found {
+				q.Expires = nowUTC()
+			}
+		}
+		return nil
+	}); err != nil {
+		return
+	}
+	if managed.Current != nil && managed.Current.RunnerVersion == selected.Version() && managed.AppliedHash == hash {
+		_ = m.Store.Update(func(v *Snapshot) error {
+			q := v.Managed[name]
+			if q == nil || q.DesiredHash != hash {
+				return staleUpdate()
+			}
+			q.Phase = UpdateReady
+			q.NextCheck = time.Now().Add(time.Hour)
+			q.Attempts = 0
+			q.Problem = nil
+			return nil
+		})
+		return
+	}
+	m.Log.Info("runner_update_preparing", "pool", name, "version", selected.Version(), "backend", desired.Backend)
+	artifact := RunnerArtifact{ID: newID(), Pool: name, Backend: desired.Backend, Phase: ArtifactPreparing, Resources: desired.Resources, Reserved: true, CreatedAt: nowUTC()}
+	if err := m.Store.Update(func(v *Snapshot) error {
+		q := v.Managed[name]
+		if q == nil || q.DesiredHash != hash || q.Paused || v.Paused || v.Stopping {
+			return staleUpdate()
+		}
+		q.Phase = UpdateWaiting
+		if !preparationFits(*v, artifact) {
+			return nil
+		}
+		q.Candidate = artifact.ID
+		q.Phase = UpdatePreparing
+		v.Artifacts[artifact.ID] = &artifact
+		return nil
+	}); err != nil {
+		return
+	}
+	if m.Store.View().Artifacts[artifact.ID] == nil {
+		_ = m.Store.Update(func(v *Snapshot) error {
+			if q := v.Managed[name]; q != nil {
+				q.NextCheck = time.Now().Add(time.Second)
+				q.Problem = problem(ErrCapacity, "Runner update is waiting for preparation capacity.", "Running jobs will finish normally; the next available slot is reserved for the update.")
+			}
+			return nil
+		})
+		return
+	}
+	buildCtx, cancel := context.WithTimeout(ctx, 30*time.Minute)
+	resolved, err := m.RunnerBuilder.Prepare(buildCtx, s.Requested, desired, artifact, selected)
+	cancel()
+	if err != nil {
+		m.managedFailure(name, err)
+		m.abandonArtifact(ctx, artifact.ID)
+		return
+	}
+	err = m.Store.Update(func(v *Snapshot) error {
+		a := v.Artifacts[artifact.ID]
+		if a == nil {
+			return staleUpdate()
+		}
+		a.Image = resolved.Image
+		a.Reserved = false
+		a.Phase = ArtifactReady
+		q := v.Managed[name]
+		if q == nil || q.DesiredHash != hash || v.Stopping || v.Paused || q.Paused {
+			return nil
+		}
+		q.PreviousArtifact = q.CurrentArtifact
+		q.CurrentArtifact = artifact.ID
+		q.Current = &resolved
+		q.AppliedHash = hash
+		q.Candidate = ""
+		q.CandidateVersion = ""
+		q.Phase = UpdateReady
+		q.Problem = nil
+		q.Attempts = 0
+		q.NextCheck = time.Now().Add(time.Hour)
+		q.Expires = updateDeadline(releases, resolved.RunnerVersion)
+		if desired.Backend == Tart && q.BaseImage == "" {
+			q.BaseImage = resolved.Image
+		}
+		return acceptSnapshot(v, managedConfig(*v), false)
+	})
+	if err != nil {
+		m.managedFailure(name, err)
+		return
+	}
+	m.Log.Info("runner_update_ready", "pool", name, "version", resolved.RunnerVersion, "artifact", artifact.ID)
+	_ = m.cleanupManaged(ctx)
+}
+func staleUpdate() *Problem {
+	return problem(ErrRetry, "Runner update was superseded or stopped.", "The current configuration and existing jobs remain authoritative.")
+}
+func (m *Manager) managedFailure(name string, err error) {
+	p := classify(err, ErrRetry, "Managed runner preparation failed.", "Inspect status; Runmoor will retry automatically.")
+	_ = m.Store.Update(func(s *Snapshot) error {
+		if q := s.Managed[name]; q != nil {
+			q.Phase = UpdateRetry
+			q.Attempts++
+			q.Problem = p
+			q.NextCheck = time.Now().Add(min(time.Hour, retryDelay(q.Attempts, p)))
+			if !q.Expires.IsZero() && !time.Now().Before(q.Expires) {
+				q.Phase = UpdateExpired
+			}
+		}
+		return nil
+	})
+	logProblem(m.Log, "runner_update_failed", p)
+}
+func preparationFits(s Snapshot, a RunnerArtifact) bool {
+	used, count, vms := usage(s)
+	if used.CPU+a.Resources.CPU > s.Config.Host.CPU || used.MemoryMiB+a.Resources.MemoryMiB > s.Config.Host.MemoryMiB || count >= s.Config.Host.MaxRunners || (a.Backend == Tart && vms >= 2) {
+		return false
+	}
+	if a.Backend == Docker && validResources(s.Config.DockerBudget) {
+		used := dockerUsage(s)
+		return used.CPU+a.Resources.CPU <= s.Config.DockerBudget.CPU && used.MemoryMiB+a.Resources.MemoryMiB <= s.Config.DockerBudget.MemoryMiB
+	}
+	return true
+}
+func (m *Manager) abandonArtifact(ctx context.Context, id string) {
+	_ = m.Store.Update(func(s *Snapshot) error {
+		if a := s.Artifacts[id]; a != nil {
+			a.Phase = ArtifactRemoving
+		}
+		return nil
+	})
+	// Cancellation must not erase cleanup ownership. A separate bounded attempt
+	// either confirms cleanup or leaves the reservation for the next reconciliation.
+	cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
+	_ = m.cleanupManaged(cleanup)
+}
+func artifactReferenced(s Snapshot, id string) bool {
+	a := s.Artifacts[id]
+	if a == nil {
+		return false
+	}
+	for _, q := range s.Managed {
+		if q.CurrentArtifact == id || q.PreviousArtifact == id || q.BaseImage == a.Image && a.Image != "" {
+			return true
+		}
+	}
+	for _, p := range s.Pools {
+		if p.Phase != Retired && p.Spec.Image == a.Image && a.Image != "" {
+			return true
+		}
+	}
+	for _, r := range s.Runners {
+		if r.Phase != Completed && r.Image == a.Image && a.Image != "" {
+			return true
+		}
+	}
+	// An explicit user pin is also a live reference, including a paused pool.
+	for _, p := range s.Requested.Pools {
+		if p.Image == a.Image && a.Image != "" {
+			return true
+		}
+	}
+	return false
+}
+func (m *Manager) cleanupManaged(ctx context.Context) error {
+	s := m.Store.View()
+	ids := make([]string, 0, len(s.Artifacts))
+	for id := range s.Artifacts {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		s = m.Store.View()
+		a := s.Artifacts[id]
+		if a == nil || artifactReferenced(s, id) {
+			continue
+		}
+		if err := m.Store.Update(func(v *Snapshot) error {
+			if a := v.Artifacts[id]; a != nil {
+				a.Phase = ArtifactRemoving
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+		if err := m.RunnerBuilder.Cleanup(ctx, s.Config, *a); err != nil {
+			_ = m.Store.Update(func(v *Snapshot) error {
+				if a := v.Artifacts[id]; a != nil {
+					a.Problem = classify(err, ErrCleanup, "Managed artifact cleanup is pending.", "Restore backend connectivity; ownership and reservations are retained.")
+				}
+				return nil
+			})
+			return err
+		}
+		if err := m.Store.Update(func(v *Snapshot) error {
+			delete(v.Artifacts, id)
+			for _, q := range v.Managed {
+				if q.Candidate == id {
+					q.Candidate = ""
+					if q.Phase == UpdatePreparing {
+						q.NextCheck = time.Time{}
+					}
+				}
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+func defaultReleaseClient() *http.Client {
+	return &http.Client{Timeout: 15 * time.Minute, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		if len(via) > 10 || req.URL.Scheme != "https" || req.URL.User != nil {
+			return releaseProblem()
+		}
+		req.Header.Del("Authorization")
+		return nil
+	}}
+}
+
+func displayResolved(s Snapshot) Config {
+	c := s.Requested
+	c.Pools = append([]Pool(nil), c.Pools...)
+	for i, p := range c.Pools {
+		if q := s.Managed[p.Name]; q != nil && q.Current != nil {
+			c.Pools[i] = *q.Current
+		}
+	}
+	return c
+}

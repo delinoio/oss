@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -29,22 +28,23 @@ type Connection struct {
 	InstallationID int64     `toml:"installation_id" json:"installation_id,omitempty"`
 }
 type Pool struct {
-	Name            string    `toml:"name" json:"name"`
-	Connection      string    `toml:"connection" json:"connection"`
-	ScaleSet        string    `toml:"scale_set" json:"scale_set"`
-	RunnerGroup     string    `toml:"runner_group" json:"runner_group,omitempty"`
-	Labels          []string  `toml:"labels" json:"labels"`
-	Backend         Backend   `toml:"backend" json:"backend"`
-	Mode            Mode      `toml:"mode" json:"mode"`
-	Arch            string    `toml:"arch" json:"arch"`
-	Image           string    `toml:"image" json:"image"`
-	RunnerPath      string    `toml:"runner_path" json:"runner_path"`
-	RunnerVersion   string    `toml:"runner_version" json:"runner_version"`
-	MinIdle         int       `toml:"min_idle" json:"min_idle"`
-	MaxRunners      int       `toml:"max_runners" json:"max_runners"`
-	Resources       Resources `toml:"resources" json:"resources"`
-	DaemonResources Resources `toml:"daemon_resources" json:"daemon_resources"`
-	DaemonImage     string    `toml:"daemon_image" json:"daemon_image,omitempty"`
+	Name            string       `toml:"name" json:"name"`
+	Connection      string       `toml:"connection" json:"connection"`
+	ScaleSet        string       `toml:"scale_set" json:"scale_set"`
+	RunnerGroup     string       `toml:"runner_group" json:"runner_group,omitempty"`
+	Labels          []string     `toml:"labels" json:"labels"`
+	Backend         Backend      `toml:"backend" json:"backend"`
+	Mode            Mode         `toml:"mode" json:"mode"`
+	Arch            string       `toml:"arch" json:"arch"`
+	Image           string       `toml:"image" json:"image"`
+	ImageSource     *ImageSource `toml:"image_source,omitempty" json:"image_source,omitempty"`
+	RunnerPath      string       `toml:"runner_path" json:"runner_path"`
+	RunnerVersion   string       `toml:"runner_version" json:"runner_version"`
+	MinIdle         int          `toml:"min_idle" json:"min_idle"`
+	MaxRunners      int          `toml:"max_runners" json:"max_runners"`
+	Resources       Resources    `toml:"resources" json:"resources"`
+	DaemonResources Resources    `toml:"daemon_resources" json:"daemon_resources"`
+	DaemonImage     string       `toml:"daemon_image" json:"daemon_image,omitempty"`
 }
 type Storage struct {
 	State string `toml:"state" json:"state"`
@@ -67,16 +67,25 @@ type Logging struct {
 	NoColor bool   `toml:"no_color" json:"no_color"`
 }
 type Config struct {
-	SchemaVersion  int          `toml:"schema_version" json:"schema_version"`
-	Storage        Storage      `toml:"storage" json:"storage"`
-	Host           Budget       `toml:"host" json:"host"`
-	Timeouts       Timeouts     `toml:"timeouts" json:"timeouts"`
-	Logging        Logging      `toml:"logging" json:"logging"`
-	DockerSocket   string       `toml:"docker_socket" json:"docker_socket"`
-	TartExecutable string       `toml:"tart_executable" json:"tart_executable"`
-	Connections    []Connection `toml:"connections" json:"connections"`
-	Pools          []Pool       `toml:"pools" json:"pools"`
+	SchemaVersion  int             `toml:"schema_version" json:"schema_version"`
+	Storage        Storage         `toml:"storage" json:"storage"`
+	Host           Budget          `toml:"host" json:"host"`
+	Timeouts       Timeouts        `toml:"timeouts" json:"timeouts"`
+	Logging        Logging         `toml:"logging" json:"logging"`
+	DockerSocket   string          `toml:"docker_socket" json:"docker_socket"`
+	TartExecutable string          `toml:"tart_executable" json:"tart_executable"`
+	Connections    []Connection    `toml:"connections" json:"connections"`
+	Pools          []Pool          `toml:"pools" json:"pools"`
+	Automatic      map[string]bool `toml:"-" json:"automatic,omitempty"`
+	DockerBudget   Resources       `toml:"-" json:"docker_budget,omitempty"`
 }
+
+type ImageSource struct {
+	From       string `toml:"from" json:"from"`
+	SourceHome string `toml:"source_home,omitempty" json:"source_home,omitempty"`
+}
+
+const LatestRunner = "latest"
 
 var safeName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$`)
 var envName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
@@ -111,7 +120,16 @@ func LoadConfig(path string) (Config, error) {
 	if err = decoder.Decode(&c); err != nil {
 		return c, problem(ErrConfig, "Cannot decode TOML schema v1.", "Check the TOML reference; remove unknown fields and literal credentials.")
 	}
-	return NormalizeConfig(c)
+	var fields map[string]any
+	if err = toml.Unmarshal(data, &fields); err != nil {
+		return c, problem(ErrConfig, "Cannot decode configuration fields.", "Check the TOML syntax.")
+	}
+	markAutomatic(&c, fields)
+	capacity, err := hostCapacity()
+	if err != nil && needsCapacity(c) {
+		return c, err
+	}
+	return resolveDefaults(c, capacity)
 }
 func NormalizeConfig(c Config) (Config, error) {
 	fail := func(s string) (Config, error) {
@@ -253,13 +271,19 @@ func NormalizeConfig(c Config) (Config, error) {
 		if !validRunnerPath(p.RunnerPath) {
 			return fail("runner_path must be an absolute clean guest path.")
 		}
-		if !versionPattern.MatchString(p.RunnerVersion) {
-			return fail("Every pool must pin an exact runner_version.")
+		if p.RunnerVersion == "" {
+			p.RunnerVersion = LatestRunner
 		}
-		if p.Backend == Docker && !immutableDockerImage(p.Image) {
+		if p.RunnerVersion != LatestRunner && !versionPattern.MatchString(p.RunnerVersion) {
+			return fail("runner_version must be latest or an exact release version.")
+		}
+		if p.Backend == Docker && p.Image != "" && !immutableDockerImage(p.Image) {
 			return fail("Docker images require immutable sha256 digests.")
 		}
-		if p.Backend == Tart && !validID(p.Image) {
+		if p.ImageSource != nil && (p.Backend != Tart || p.Image != "" || !validImageSource(*p.ImageSource)) {
+			return fail("image_source requires a Tart source and cannot be combined with image.")
+		}
+		if p.Backend == Tart && p.ImageSource == nil && !validID(p.Image) {
 			return fail("Tart pools require a sealed image revision UUID-v7.")
 		}
 		if p.Mode == DinD {
@@ -348,66 +372,3 @@ func ResolveSecret(ref SecretRef) (string, error) {
 	}
 	return strings.TrimSpace(string(b)), nil
 }
-func InitConfig(path string) error {
-	if err := privateDir(filepath.Dir(path)); err != nil {
-		return err
-	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
-	if err != nil {
-		return problem(ErrConfig, "Cannot create configuration without overwriting an existing file.", "Choose a new --config path or edit the existing file.")
-	}
-	defer f.Close()
-	_, err = fmt.Fprintf(f, configSkeleton, runtime.GOARCH)
-	return err
-}
-
-const configSkeleton = `# Runmoor. Fill every REQUIRED value before running.
-# Credentials are references only. File references require owner-only permissions.
-schema_version = 1
-# docker_socket = "unix:///var/run/docker.sock"
-# tart_executable = "tart"
-
-[storage]
-# Defaults follow XDG_CONFIG_HOME, XDG_STATE_HOME and XDG_DATA_HOME on both OSes.
-# state = "/absolute/private/state"
-# data = "/absolute/private/data"
-
-[host]
-max_runners = 0 # REQUIRED
-cpu = 0 # REQUIRED: total CPU cores available to all runner and daemon containers
-memory_mib = 0 # REQUIRED
-min_free_disk_mib = 0 # REQUIRED
-
-[timeouts]
-docker_preparation = "5m"
-tart_preparation = "10m"
-job = "6h"
-
-[logging]
-format = "text" # text or json
-level = "info"
-no_color = false # --no-color or NO_COLOR also disables ANSI output
-
-[[connections]]
-name = "personal"
-target = "https://github.com/OWNER/REPOSITORY" # organization: https://github.com/OWNER
-auth = "pat" # app additionally requires client_id and installation_id
-credential = { env = "RUNMOOR_PAT" } # or { file = "/absolute/private/credential" }
-
-[[pools]]
-name = "linux"
-connection = "personal"
-scale_set = "runmoor-linux"
-labels = ["runmoor-linux"]
-backend = "docker"
-mode = "plain" # dind requires daemon_image and daemon_resources
-arch = "%s"
-image = "REQUIRED_IMAGE_AT_SHA256_DIGEST"
-runner_version = "2.337.0" # verify current support and replace images explicitly
-runner_path = "/home/runner"
-min_idle = 0
-max_runners = 1
-resources = { cpu = 0, memory_mib = 0 } # REQUIRED
-# daemon_image = "docker@sha256:REQUIRED_DIGEST"
-# daemon_resources = { cpu = 1, memory_mib = 1024 }
-`

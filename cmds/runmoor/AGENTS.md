@@ -1,7 +1,7 @@
 # Runmoor command rules
 
 - Follow `docs/project-runmoor.md` and `docs/cmds-runmoor-foundation.md`; issue #893 is the product contract.
-- Keep CLI, TOML v1, SQLite v1, and versioned JSON contracts synchronized with the English README and Markdown-owned `apps/public-docs/docs/runmoor` documentation at `https://oss.delino.io/runmoor`.
+- Keep CLI, TOML v1, SQLite v2 (with atomic v1 migration), and versioned JSON contracts synchronized with the English README and Markdown-owned `apps/public-docs/docs/runmoor` documentation at `https://oss.delino.io/runmoor`.
 - Use the official pinned `actions/scaleset` client. Persist message effects before acknowledgement; derive demand from statistics, never event counts.
 - Use the official split Moby `client` and `api` modules for Docker operations, with automatic API negotiation and the existing local Unix-socket restriction. Preserve result-envelope handling, ownership checks, resource limits, cancellation, and redacted errors when updating the SDK.
 - Preserve installation ownership, per-runner resource reservations, original configuration generations, and cleanup progress across crashes. Never adopt resources based only on their names. Serialize each pool's scale-set initialization/publication with retirement; draining pools may resolve pending creation by lookup but cannot begin a new creation or retire while that outcome is unresolved.
@@ -33,3 +33,10 @@
 - Run `go test ./cmds/runmoor/...`, supported-host race tests, and `go vet ./cmds/runmoor/...`. Docker integration is opt-in with `RUNMOOR_DOCKER_TEST=1`; Tart integration is opt-in with `RUNMOOR_TART_TEST=1`. Ordinary tests never contact GitHub or install user services.
 - Publication must reject conflicting existing tags and existing releases before signing; uncertain remote status is a failure. Discover drafts through paginated release listings, pin their numeric ID through verification/publication, and retain exact source, asset and signing-identity checks. README installation commands select one release tag for downloads and signature verification and check its checksum before extraction.
 - Release dry runs never obtain OIDC credentials, sign, publish, or produce pretend Sigstore evidence. Public releases use the stable channel while continuing to disclose the live GitHub and Tart verification gaps.
+
+### Automatic runner management
+
+- Follow the automatic defaults and runner management contract in `docs/cmds-runmoor-foundation.md`. Preserve the difference between omitted and explicit resource values, requested configuration and committed execution generations, and global host versus Docker engine capacity.
+- Only verified immutable candidates may activate. Preparation is credential-free, lifecycle-tracked, durably reserved, and serialized with image operations. Never update a running job or an operator source image. Pause/drain/stop and stale-candidate checks are authoritative at publication.
+- Keep current, previous, source and live execution references during artifact collection. Recover uncertain preparation/commit outcomes by exact journaled ownership; never blindly recreate or force-remove a foreign/referenced artifact.
+- Ordinary tests inject release transports and image builders. Real Docker/Tart validation remains opt-in and is distinct from live GitHub job certification.
