@@ -188,6 +188,10 @@ allocations retain their meaning. Pool concurrency is the minimum of the CPU and
 memory quotients, bounded by the two-VM Tart limit; global reservations include
 all pools, DinD and image preparation. Disk reserves default to 10240 MiB, or
 20480 MiB when Tart is configured. Warm capacity defaults to zero.
+GitHub session polling and job acquisition apply the same host and Docker engine
+CPU/memory ceilings, including DinD, even when an explicit pool concurrency is
+larger. Acquisition rechecks current eligibility and capacity after polling so a
+concurrent capacity reduction cannot admit work under the previous ceiling.
 
 `init` creates a minimal valid configuration through terminal prompts or flags.
 It accepts target, backend, authentication and credential *references*, plus an

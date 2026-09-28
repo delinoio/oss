@@ -587,23 +587,7 @@ func (m *Manager) listen(ctx context.Context, id string, session RemoteSession) 
 		if p == nil || p.Phase == Retired || p.Phase == Suspended {
 			return nil
 		}
-		capacity := p.Spec.MaxRunners
-		if !eligible(s, p) {
-			capacity = 0
-		}
-		if capacity > s.Config.Host.MaxRunners {
-			capacity = s.Config.Host.MaxRunners
-		}
-		cost := p.Spec.Cost()
-		if n := s.Config.Host.CPU / cost.CPU; capacity > n {
-			capacity = n
-		}
-		if n := int(s.Config.Host.MemoryMiB / cost.MemoryMiB); capacity > n {
-			capacity = n
-		}
-		if p.Spec.Backend == Tart && capacity > 2 {
-			capacity = 2
-		}
+		capacity := acquisitionCapacity(s, p)
 		msg, e := session.Poll(ctx, p.LastMessage, capacity)
 		if e != nil {
 			return e
@@ -617,7 +601,7 @@ func (m *Manager) listen(ctx context.Context, id string, session RemoteSession) 
 		// Acquiring offered jobs never changes demand locally. Only the next
 		// authoritative statistics snapshot changes the scheduler's target.
 		current := m.Store.View()
-		if eligible(current, current.Pools[id]) {
+		if capacity = min(capacity, acquisitionCapacity(current, current.Pools[id])); capacity > 0 {
 			ids := []int64{}
 			for _, job := range msg.JobAvailableMessages {
 				if len(ids) >= capacity {

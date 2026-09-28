@@ -81,6 +81,25 @@ func eligible(s Snapshot, p *PoolState) bool {
 	return true
 }
 
+// acquisitionCapacity bounds both advertised capacity and job acquisition by
+// the physical ceiling. The scheduler separately accounts for shared usage.
+func acquisitionCapacity(s Snapshot, p *PoolState) int {
+	if !eligible(s, p) {
+		return 0
+	}
+	cost := p.Spec.Cost()
+	capacity := min(p.Spec.MaxRunners, s.Config.Host.MaxRunners,
+		s.Config.Host.CPU/cost.CPU, int(s.Config.Host.MemoryMiB/cost.MemoryMiB))
+	if p.Spec.Backend == Docker && validResources(s.Config.DockerBudget) {
+		capacity = min(capacity, s.Config.DockerBudget.CPU/cost.CPU,
+			int(s.Config.DockerBudget.MemoryMiB/cost.MemoryMiB))
+	}
+	if p.Spec.Backend == Tart {
+		capacity = min(capacity, 2)
+	}
+	return capacity
+}
+
 // Schedule is pure: demand has a complete first pass before any warm capacity.
 // It includes preparations, uncertain live resources, and image setup VMs.
 func Schedule(s Snapshot) []string {
