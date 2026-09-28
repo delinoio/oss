@@ -230,6 +230,15 @@ func TestIntegrationProfilesReplayReplacementAndDelete(t *testing.T) {
 			return err
 		}
 		if !entry.IsDir() {
+			info, err := entry.Info()
+			if err != nil {
+				return err
+			}
+			if info.Size() == 0 {
+				// Active Windows lock files cannot be read while locked and
+				// have no bytes in which a token could be persisted.
+				return nil
+			}
 			raw, err := os.ReadFile(path)
 			if err != nil {
 				return err
