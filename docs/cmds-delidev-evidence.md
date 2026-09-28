@@ -2144,3 +2144,16 @@ the filter marker. Focused workspace race tests and vet pass on macOS arm64;
 the workspace test package cross-compiles for Windows amd64. This fixture does
 not establish live Windows filter behavior or make user-owned worktree files
 atomic.
+
+### PR #1041 workspace file-read replacement repair (2026-09-28)
+
+File and directory previews now open each relative path component from its
+verified parent directory handle. The opened identity is compared with the
+non-link entry seen before and after opening, and directory enumeration plus
+child metadata remain on the same opened directory. A replacement with an
+internal link to another file or directory rejects the observation before its
+content is returned. Deterministic tests replace a previously observed file
+and parent directory with internal links, and separately verify nested preview
+and listing behavior. Focused workspace race tests and vet pass on macOS arm64;
+the workspace test package cross-compiles for Windows amd64. This fixture does
+not establish live Windows link-race behavior or make user-owned files atomic.

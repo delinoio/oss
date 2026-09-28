@@ -36,6 +36,54 @@ func readFailure() error {
 func readUnsupported() error {
 	return domain.Fail(domain.Unsupported, "The entry is not a supported portable directory or regular file.", "Select a regular file or directory inside this workspace.")
 }
+func readChanged() error {
+	return domain.Fail(domain.Conflict, "The workspace entry changed while it was read.", "Refresh the file or directory.")
+}
+
+// Root confines escapes but permits internal links. Open each component from
+// the preceding anchored directory and compare its identity with both lstat
+// observations before any bytes or directory children can be read.
+func openVerifiedChildRoot(parent *os.Root, name string, expected os.FileInfo) (*os.Root, error) {
+	if expected.Mode()&os.ModeSymlink != 0 || !expected.IsDir() {
+		return nil, readUnsupported()
+	}
+	child, err := parent.OpenRoot(name)
+	if err != nil {
+		return nil, readFailure()
+	}
+	opened, err := child.Stat(".")
+	if err != nil || !os.SameFile(expected, opened) {
+		child.Close()
+		return nil, readChanged()
+	}
+	current, err := parent.Lstat(name)
+	if err != nil || current.Mode()&os.ModeSymlink != 0 || !os.SameFile(expected, current) {
+		child.Close()
+		return nil, readChanged()
+	}
+	return child, nil
+}
+
+func openVerifiedEntry(parent *os.Root, name string, expected os.FileInfo) (*os.File, error) {
+	if expected.Mode()&os.ModeSymlink != 0 || (!expected.IsDir() && !expected.Mode().IsRegular()) {
+		return nil, readUnsupported()
+	}
+	file, err := openWorkspaceEntry(parent, name)
+	if err != nil {
+		return nil, readFailure()
+	}
+	opened, err := file.Stat()
+	if err != nil || !os.SameFile(expected, opened) {
+		file.Close()
+		return nil, readChanged()
+	}
+	current, err := parent.Lstat(name)
+	if err != nil || current.Mode()&os.ModeSymlink != 0 || !os.SameFile(expected, current) {
+		file.Close()
+		return nil, readChanged()
+	}
+	return file, nil
+}
 
 // ReadWorkspace observes files without taking or rewriting native execution
 // ownership. Its Git children use a distinct owner, including during a live run.
@@ -166,22 +214,28 @@ func (m *Manager) observeWorkspace(ctx context.Context, request ReadRequest, rep
 func readRoot(ctx context.Context, root *os.Root, request ReadRequest) (domain.WorkspaceReadResult, error) {
 	var result domain.WorkspaceReadResult
 	query := request.Query
-	// Do not present links as directories or let an explicit path silently
-	// navigate through one. os.Root independently confines replacement races.
-	part := ""
-	for _, component := range strings.Split(query.Path, "/") {
-		part = filepath.Join(part, component)
-		info, err := root.Lstat(part)
+	components := strings.Split(query.Path, "/")
+	parent := root
+	for _, component := range components[:len(components)-1] {
+		info, err := parent.Lstat(component)
 		if err != nil {
 			return result, readFailure()
 		}
-		if info.Mode()&os.ModeSymlink != 0 {
-			return result, readUnsupported()
+		child, err := openVerifiedChildRoot(parent, component, info)
+		if err != nil {
+			return result, err
 		}
+		defer child.Close()
+		parent = child
 	}
-	file, err := openWorkspaceEntry(root, filepath.FromSlash(query.Path))
+	name := components[len(components)-1]
+	expected, err := parent.Lstat(name)
 	if err != nil {
 		return result, readFailure()
+	}
+	file, err := openVerifiedEntry(parent, name, expected)
+	if err != nil {
+		return result, err
 	}
 	defer file.Close()
 	info, err := file.Stat()
@@ -224,6 +278,13 @@ func readRoot(ctx context.Context, root *os.Root, request ReadRequest) (domain.W
 	if !info.IsDir() {
 		return result, readUnsupported()
 	}
+	// ReadDir and child Lstat must observe the same anchored directory even if
+	// its name is replaced after the file handle was opened.
+	directory, err := openVerifiedChildRoot(parent, name, info)
+	if err != nil {
+		return result, err
+	}
+	defer directory.Close()
 	entries := make([]domain.WorkspaceEntry, 0)
 	for {
 		if err := ctx.Err(); err != nil {
@@ -240,7 +301,7 @@ func readRoot(ctx context.Context, root *os.Root, request ReadRequest) (domain.W
 			if !domain.WorkspacePath(entry.Name()) || strings.Contains(entry.Name(), "/") {
 				return result, readUnsupported()
 			}
-			stat, err := root.Lstat(filepath.Join(filepath.FromSlash(query.Path), entry.Name()))
+			stat, err := directory.Lstat(entry.Name())
 			if err != nil {
 				return result, readFailure()
 			}

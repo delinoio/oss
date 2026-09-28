@@ -151,3 +151,83 @@ func TestWorkspaceReadLocalPreservesSeparateProcessOwnership(t *testing.T) {
 		t.Fatal("read altered execution claim", err)
 	}
 }
+
+func TestWorkspaceReadAnchorsNestedEntries(t *testing.T) {
+	path := t.TempDir()
+	if err := os.Mkdir(filepath.Join(path, "nested"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(path, "nested", "plain.txt"), []byte("original"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	root, err := os.OpenRoot(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	fileRequest := ReadRequest{Query: domain.WorkspaceReadQuery{Operation: domain.WorkspaceFile, Path: "nested/plain.txt"}}
+	preview, err := readRoot(context.Background(), root, fileRequest)
+	if err != nil || preview.Text != "original" {
+		t.Fatal("nested preview was not read from its anchored directory", err)
+	}
+	directoryRequest := ReadRequest{Query: domain.WorkspaceReadQuery{Operation: domain.WorkspaceDirectory, Path: "nested"}}
+	listing, err := readRoot(context.Background(), root, directoryRequest)
+	if err != nil || len(listing.Entries) != 1 || listing.Entries[0].Name != "plain.txt" {
+		t.Fatal("nested directory listing was not anchored", err)
+	}
+}
+
+func TestWorkspaceReadRejectsRacedInternalLinks(t *testing.T) {
+	path := t.TempDir()
+	for _, name := range []string{"original", "other"} {
+		if err := os.Mkdir(filepath.Join(path, name), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(path, name, "file.txt"), []byte(name), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	root, err := os.OpenRoot(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+
+	fileBefore, err := root.Lstat("original/file.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(path, "original", "other.txt"), []byte("different"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(filepath.Join(path, "original", "file.txt"), filepath.Join(path, "original", "saved.txt")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("other.txt", filepath.Join(path, "original", "file.txt")); err != nil {
+		t.Skipf("creating a test symlink is unavailable: %v", err)
+	}
+	original, err := root.OpenRoot("original")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer original.Close()
+	if file, err := openVerifiedEntry(original, "file.txt", fileBefore); err == nil {
+		file.Close()
+		t.Fatal("a replaced final component opened another workspace file")
+	}
+
+	directoryBefore, err := root.Lstat("original")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(filepath.Join(path, "original"), filepath.Join(path, "saved-original")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("other", filepath.Join(path, "original")); err != nil {
+		t.Fatal(err)
+	}
+	if directory, err := openVerifiedChildRoot(root, "original", directoryBefore); err == nil {
+		directory.Close()
+		t.Fatal("a replaced parent component opened another workspace directory")
+	}
+}
