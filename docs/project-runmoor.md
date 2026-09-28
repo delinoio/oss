@@ -35,6 +35,7 @@ Runmoor manages disposable, single-job GitHub Actions runners on one developer o
 - Image mutations run through the manager, which owns the setup VM lifetime and sleep inhibition; initial image preparation can run with no pools or connections.
 - Images are digest-pinned or immutable sealed revisions. Runmoor never bundles Tart or redistributes macOS/Xcode images. External Tart and Guest Agent version-specific licenses remain separate from Runmoor's license.
 - Release identity is `runmoor@v<MAJOR.MINOR.PATCH>`, starting at `0.1.0`. Only darwin-arm64, linux-amd64, and linux-arm64 binary archives are published through the stable release channel, with checksums and Sigstore verification material. No Homebrew packaging is added.
+- Publication discovers an existing draft through paginated release listings and pins its numeric ID through the final download, complete signed-asset verification and publication. Published or conflicting releases are never overwritten; an uncertain publication result requires remote inspection before recovery.
 - The implementation task explicitly omits live GitHub verification and local real Tart execution. Automated mocks, local Docker validation, and opt-in Tart tests must not be described as full GitHub/Tart certification.
 
 ## Change Policy

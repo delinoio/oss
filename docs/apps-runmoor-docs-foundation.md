@@ -31,6 +31,7 @@
 - No user data or credentials are stored by this documentation app.
 
 ## Security
+- Installation examples select one exact published release tag, derive archive download URLs and the tag-triggered signing identity from it, and verify both Sigstore bundles and the selected archive checksum before extraction. Manual-main signatures require their separately documented exact identity; never use an arbitrary-version identity wildcard. Keep the CLI README in sync.
 - Preserve the stable-release verification limits, credential-reference guidance, signature verification steps, trusted-workload restrictions, and third-party licensing boundaries.
 - Do not publish internal credentials, private repository paths, or unsupported release claims.
 - Preserve the release-availability classifier previously applied by public-docs, including its negation fixtures. Rendered affirmative beta-channel, partial/staged GA, phased/fractional rollout, early-access, and early-announcement claims fail validation; stable-channel disclosures and explicit unavailable/unsupported/prohibited statements remain valid.
