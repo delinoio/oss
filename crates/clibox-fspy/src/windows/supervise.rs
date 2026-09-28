@@ -248,9 +248,13 @@ where
         .checked_add(1)
         .and_then(|pairs| pairs.checked_mul(2))
         .ok_or(CaptureFailure::Record)?;
-    if reserved_events > limits.max_events {
-        return Err(CaptureFailure::Record);
-    }
+    // The receiver requires capacity for a complete native start/completion
+    // pair. Reject an exhausted budget before launching the child.
+    let native_events = limits
+        .max_events
+        .checked_sub(reserved_events)
+        .filter(|remaining| *remaining >= 2)
+        .ok_or(CaptureFailure::Record)?;
     let program =
         std::path::absolute(Path::new(command.program())).map_err(|_| CaptureFailure::Spawn)?;
     let path = program
@@ -311,13 +315,9 @@ where
     if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
         return Err(CaptureFailure::Timeout);
     }
-    let receiver = OperationReceiver::bind_with_admission(
-        &root,
-        limits.max_events.saturating_sub(reserved_events).max(1),
-        limits.max_bytes,
-        admission,
-    )
-    .map_err(|_| CaptureFailure::Initialization)?;
+    let receiver =
+        OperationReceiver::bind_with_admission(&root, native_events, limits.max_bytes, admission)
+            .map_err(|_| CaptureFailure::Initialization)?;
     let job = Job::new()?;
     command
         .windows_job_handle(job.0.as_handle())
@@ -546,6 +546,39 @@ mod tests {
         );
         assert!(matches!(result, Err(CaptureFailure::Cancellation)));
         assert!(seen.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn exhausted_native_event_budget_rejects_before_launch() {
+        let directory = tempfile::tempdir().unwrap();
+        let marker = directory.path().join("launched.txt");
+        let mut command = fspy::Command::new(std::env::current_exe().unwrap());
+        command
+            .args(["--exact", "windows::supervise::tests::event_budget_fixture"])
+            .envs(std::env::vars_os())
+            .env("CLIBOX_FSPY_BUDGET_MARKER", &marker)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let result = capture(
+            command,
+            directory.path(),
+            Limits {
+                max_events: 2,
+                max_bytes: 1024 * 1024,
+                timeout: Some(Duration::from_secs(5)),
+                kill_after: Duration::from_millis(500),
+            },
+            &AtomicBool::new(false),
+        );
+        assert!(matches!(result, Err(CaptureFailure::Record)));
+        assert!(!marker.exists());
+    }
+
+    #[test]
+    fn event_budget_fixture() {
+        if let Some(marker) = std::env::var_os("CLIBOX_FSPY_BUDGET_MARKER") {
+            fs::write(marker, b"launched").unwrap();
+        }
     }
 
     #[test]
