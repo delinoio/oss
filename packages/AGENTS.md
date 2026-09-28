@@ -87,3 +87,5 @@
 - DeliDev `SessionQuery.readSessionReviewContext` carries authoritative Worker diff coordinates with original side/range/text/newline facts. Clients cannot manufacture line anchors for binary, mode-only, symbolic-link or submodule changes. Keep observations bounded and nonpersistent under `docs/cmds-delidev-files-contract.md`.
 
 - DeliDev generated SessionQuery local review mutations preserve exact decimal revisions, original anchor/context and immutable submitted snapshots. Retain exact uncertain wire requests across panel navigation; current Resource refresh cannot silently update a selected revision. Use the dedicated owner/client operations under `docs/cmds-delidev-files-contract.md`.
+
+- DeliDev generated IntegrationQuery follows `docs/cmds-delidev-integrations-contract.md`; write-only PATs never enter query keys/read models and pending revision strings remain exact. Generate all service descriptors from the canonical proto.

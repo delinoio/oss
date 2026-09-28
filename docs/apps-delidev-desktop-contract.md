@@ -323,3 +323,8 @@ Paginated review records include current comments and immutable submission histo
 ### Grok original user history disclosure
 
 The transcript renders a complete `grok_user` record through the existing authenticated Resource stream and message reads. Its reserved product ID preserves its original place before the assistant even though verification finishes after native closure. Validate the closed user metadata, original input/execution/session/prompt identities, event anchor, late publication sequence and absence of mixed content before rendering exact inert text. Details show its selected model, original event and exact timestamp, explicitly labeling verification from closed native history. Null/malformed/mixed records show unavailable. The original terminal additionally requires the matching reserved-message/proof pair when present, while old records may omit both. Display never recreates missing/Stop history or sends another input.
+
+
+## GitHub profile settings
+
+Settings > Integrations > GitHub uses generated IntegrationQuery for named fine-grained/classic profiles, fixed resource-owner/type definitions, renaming, server-native PAT replacement, identity validation and confirmed deletion. Repository settings explicitly select their profile; deleted associations require reconfiguration. Preserve exact decimal pending revisions, transient password input, cleared byte buffers/mutation caches and original request identity without automatic token retention on uncertainty. Retries require explicit reentry; identity success never claims repository/PR/issue/check/ruleset access. The [integration contract](cmds-delidev-integrations-contract.md) keeps future queries, forms and remediation distinct.

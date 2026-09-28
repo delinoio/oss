@@ -27,6 +27,7 @@ Run personal AI sessions across projects, accounts, native harnesses, and execut
 - [Protected credential storage](cmds-delidev-credentials-contract.md)
 - [Read-only diagnostics](cmds-delidev-diagnostics-contract.md)
 - [Saved client connections](cmds-delidev-connections-contract.md)
+- [GitHub integration profiles](cmds-delidev-integrations-contract.md)
 - [Account lifecycle](cmds-delidev-accounts-contract.md)
 - [Provider inspection](cmds-delidev-providers-contract.md)
 - [Provider and model catalog](cmds-delidev-catalog-contract.md)
@@ -225,3 +226,6 @@ The workspace read surface also exposes bounded structured local-review coordina
 Grok successful first-text sessions now retain their original user input after independently checked native closure/history. The reserved product identity preserves conversation order, while the message records its actual late publication and closed-history source. Input/model/event comparisons and atomic terminal/message receipt replay prevent substitution or duplication; Stop and historical omissions remain unfilled. Existing RPC/CLI reads and the desktop display this original record. Richer user/tool/interaction/Plan histories, continuation and the remaining full issue scope remain required work.
 
 First Execute Grok instructions now preserve the immutable ordered Agent templates through an exclusive private native global-rules file, exact native inspection, original binding comparison and independently verified closed context history. Actual macOS arm64 fixtures cover ordinary/multibyte instructions, the 256 KiB boundary and public dispatch with terminal-receipt loss. The native title request remains separate from root instruction evidence. Plan instructions, repository rules, continuation and other account/platform evidence remain required.
+
+
+Named GitHub.com PAT profiles now have dedicated authenticated RPC/CLI/desktop save, replacement, identity validation and deletion, with explicit repository selection. Native generations and pending cleanup preserve exact retries and cancel/join original identity inspections; saved tokens never enter product reads or SQLite. Identity verification is separate from repository feature access. GitHub query/PR/ruleset/reviewer/remediation flows, creation-form validation and real PAT access remain required full-issue work under [the integration contract](cmds-delidev-integrations-contract.md).

@@ -35,6 +35,8 @@ const (
 	WorkerServiceName = "delidev.v1.WorkerService"
 	// AccountServiceName is the fully-qualified name of the AccountService service.
 	AccountServiceName = "delidev.v1.AccountService"
+	// IntegrationServiceName is the fully-qualified name of the IntegrationService service.
+	IntegrationServiceName = "delidev.v1.IntegrationService"
 	// ProviderServiceName is the fully-qualified name of the ProviderService service.
 	ProviderServiceName = "delidev.v1.ProviderService"
 	// SessionServiceName is the fully-qualified name of the SessionService service.
@@ -164,6 +166,18 @@ const (
 	// AccountServiceValidateAccountProcedure is the fully-qualified name of the AccountService's
 	// ValidateAccount RPC.
 	AccountServiceValidateAccountProcedure = "/delidev.v1.AccountService/ValidateAccount"
+	// IntegrationServiceSaveIntegrationProfileProcedure is the fully-qualified name of the
+	// IntegrationService's SaveIntegrationProfile RPC.
+	IntegrationServiceSaveIntegrationProfileProcedure = "/delidev.v1.IntegrationService/SaveIntegrationProfile"
+	// IntegrationServiceReplaceIntegrationTokenProcedure is the fully-qualified name of the
+	// IntegrationService's ReplaceIntegrationToken RPC.
+	IntegrationServiceReplaceIntegrationTokenProcedure = "/delidev.v1.IntegrationService/ReplaceIntegrationToken"
+	// IntegrationServiceValidateIntegrationProfileProcedure is the fully-qualified name of the
+	// IntegrationService's ValidateIntegrationProfile RPC.
+	IntegrationServiceValidateIntegrationProfileProcedure = "/delidev.v1.IntegrationService/ValidateIntegrationProfile"
+	// IntegrationServiceDeleteIntegrationProfileProcedure is the fully-qualified name of the
+	// IntegrationService's DeleteIntegrationProfile RPC.
+	IntegrationServiceDeleteIntegrationProfileProcedure = "/delidev.v1.IntegrationService/DeleteIntegrationProfile"
 	// ProviderServiceListProviderPresetsProcedure is the fully-qualified name of the ProviderService's
 	// ListProviderPresets RPC.
 	ProviderServiceListProviderPresetsProcedure = "/delidev.v1.ProviderService/ListProviderPresets"
@@ -1548,6 +1562,154 @@ func (UnimplementedAccountServiceHandler) GetAccountStatus(context.Context, *con
 
 func (UnimplementedAccountServiceHandler) ValidateAccount(context.Context, *connect.Request[v1.ValidateAccountRequest]) (*connect.Response[v1.ValidateAccountResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.AccountService.ValidateAccount is not implemented"))
+}
+
+// IntegrationServiceClient is a client for the delidev.v1.IntegrationService service.
+type IntegrationServiceClient interface {
+	SaveIntegrationProfile(context.Context, *connect.Request[v1.SaveIntegrationProfileRequest]) (*connect.Response[v1.SaveIntegrationProfileResponse], error)
+	ReplaceIntegrationToken(context.Context, *connect.Request[v1.ReplaceIntegrationTokenRequest]) (*connect.Response[v1.ReplaceIntegrationTokenResponse], error)
+	ValidateIntegrationProfile(context.Context, *connect.Request[v1.ValidateIntegrationProfileRequest]) (*connect.Response[v1.ValidateIntegrationProfileResponse], error)
+	DeleteIntegrationProfile(context.Context, *connect.Request[v1.DeleteIntegrationProfileRequest]) (*connect.Response[v1.DeleteIntegrationProfileResponse], error)
+}
+
+// NewIntegrationServiceClient constructs a client for the delidev.v1.IntegrationService service. By
+// default, it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses,
+// and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the
+// connect.WithGRPC() or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewIntegrationServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) IntegrationServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	integrationServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("IntegrationService").Methods()
+	return &integrationServiceClient{
+		saveIntegrationProfile: connect.NewClient[v1.SaveIntegrationProfileRequest, v1.SaveIntegrationProfileResponse](
+			httpClient,
+			baseURL+IntegrationServiceSaveIntegrationProfileProcedure,
+			connect.WithSchema(integrationServiceMethods.ByName("SaveIntegrationProfile")),
+			connect.WithClientOptions(opts...),
+		),
+		replaceIntegrationToken: connect.NewClient[v1.ReplaceIntegrationTokenRequest, v1.ReplaceIntegrationTokenResponse](
+			httpClient,
+			baseURL+IntegrationServiceReplaceIntegrationTokenProcedure,
+			connect.WithSchema(integrationServiceMethods.ByName("ReplaceIntegrationToken")),
+			connect.WithClientOptions(opts...),
+		),
+		validateIntegrationProfile: connect.NewClient[v1.ValidateIntegrationProfileRequest, v1.ValidateIntegrationProfileResponse](
+			httpClient,
+			baseURL+IntegrationServiceValidateIntegrationProfileProcedure,
+			connect.WithSchema(integrationServiceMethods.ByName("ValidateIntegrationProfile")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteIntegrationProfile: connect.NewClient[v1.DeleteIntegrationProfileRequest, v1.DeleteIntegrationProfileResponse](
+			httpClient,
+			baseURL+IntegrationServiceDeleteIntegrationProfileProcedure,
+			connect.WithSchema(integrationServiceMethods.ByName("DeleteIntegrationProfile")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// integrationServiceClient implements IntegrationServiceClient.
+type integrationServiceClient struct {
+	saveIntegrationProfile     *connect.Client[v1.SaveIntegrationProfileRequest, v1.SaveIntegrationProfileResponse]
+	replaceIntegrationToken    *connect.Client[v1.ReplaceIntegrationTokenRequest, v1.ReplaceIntegrationTokenResponse]
+	validateIntegrationProfile *connect.Client[v1.ValidateIntegrationProfileRequest, v1.ValidateIntegrationProfileResponse]
+	deleteIntegrationProfile   *connect.Client[v1.DeleteIntegrationProfileRequest, v1.DeleteIntegrationProfileResponse]
+}
+
+// SaveIntegrationProfile calls delidev.v1.IntegrationService.SaveIntegrationProfile.
+func (c *integrationServiceClient) SaveIntegrationProfile(ctx context.Context, req *connect.Request[v1.SaveIntegrationProfileRequest]) (*connect.Response[v1.SaveIntegrationProfileResponse], error) {
+	return c.saveIntegrationProfile.CallUnary(ctx, req)
+}
+
+// ReplaceIntegrationToken calls delidev.v1.IntegrationService.ReplaceIntegrationToken.
+func (c *integrationServiceClient) ReplaceIntegrationToken(ctx context.Context, req *connect.Request[v1.ReplaceIntegrationTokenRequest]) (*connect.Response[v1.ReplaceIntegrationTokenResponse], error) {
+	return c.replaceIntegrationToken.CallUnary(ctx, req)
+}
+
+// ValidateIntegrationProfile calls delidev.v1.IntegrationService.ValidateIntegrationProfile.
+func (c *integrationServiceClient) ValidateIntegrationProfile(ctx context.Context, req *connect.Request[v1.ValidateIntegrationProfileRequest]) (*connect.Response[v1.ValidateIntegrationProfileResponse], error) {
+	return c.validateIntegrationProfile.CallUnary(ctx, req)
+}
+
+// DeleteIntegrationProfile calls delidev.v1.IntegrationService.DeleteIntegrationProfile.
+func (c *integrationServiceClient) DeleteIntegrationProfile(ctx context.Context, req *connect.Request[v1.DeleteIntegrationProfileRequest]) (*connect.Response[v1.DeleteIntegrationProfileResponse], error) {
+	return c.deleteIntegrationProfile.CallUnary(ctx, req)
+}
+
+// IntegrationServiceHandler is an implementation of the delidev.v1.IntegrationService service.
+type IntegrationServiceHandler interface {
+	SaveIntegrationProfile(context.Context, *connect.Request[v1.SaveIntegrationProfileRequest]) (*connect.Response[v1.SaveIntegrationProfileResponse], error)
+	ReplaceIntegrationToken(context.Context, *connect.Request[v1.ReplaceIntegrationTokenRequest]) (*connect.Response[v1.ReplaceIntegrationTokenResponse], error)
+	ValidateIntegrationProfile(context.Context, *connect.Request[v1.ValidateIntegrationProfileRequest]) (*connect.Response[v1.ValidateIntegrationProfileResponse], error)
+	DeleteIntegrationProfile(context.Context, *connect.Request[v1.DeleteIntegrationProfileRequest]) (*connect.Response[v1.DeleteIntegrationProfileResponse], error)
+}
+
+// NewIntegrationServiceHandler builds an HTTP handler from the service implementation. It returns
+// the path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewIntegrationServiceHandler(svc IntegrationServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	integrationServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("IntegrationService").Methods()
+	integrationServiceSaveIntegrationProfileHandler := connect.NewUnaryHandler(
+		IntegrationServiceSaveIntegrationProfileProcedure,
+		svc.SaveIntegrationProfile,
+		connect.WithSchema(integrationServiceMethods.ByName("SaveIntegrationProfile")),
+		connect.WithHandlerOptions(opts...),
+	)
+	integrationServiceReplaceIntegrationTokenHandler := connect.NewUnaryHandler(
+		IntegrationServiceReplaceIntegrationTokenProcedure,
+		svc.ReplaceIntegrationToken,
+		connect.WithSchema(integrationServiceMethods.ByName("ReplaceIntegrationToken")),
+		connect.WithHandlerOptions(opts...),
+	)
+	integrationServiceValidateIntegrationProfileHandler := connect.NewUnaryHandler(
+		IntegrationServiceValidateIntegrationProfileProcedure,
+		svc.ValidateIntegrationProfile,
+		connect.WithSchema(integrationServiceMethods.ByName("ValidateIntegrationProfile")),
+		connect.WithHandlerOptions(opts...),
+	)
+	integrationServiceDeleteIntegrationProfileHandler := connect.NewUnaryHandler(
+		IntegrationServiceDeleteIntegrationProfileProcedure,
+		svc.DeleteIntegrationProfile,
+		connect.WithSchema(integrationServiceMethods.ByName("DeleteIntegrationProfile")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/delidev.v1.IntegrationService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case IntegrationServiceSaveIntegrationProfileProcedure:
+			integrationServiceSaveIntegrationProfileHandler.ServeHTTP(w, r)
+		case IntegrationServiceReplaceIntegrationTokenProcedure:
+			integrationServiceReplaceIntegrationTokenHandler.ServeHTTP(w, r)
+		case IntegrationServiceValidateIntegrationProfileProcedure:
+			integrationServiceValidateIntegrationProfileHandler.ServeHTTP(w, r)
+		case IntegrationServiceDeleteIntegrationProfileProcedure:
+			integrationServiceDeleteIntegrationProfileHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedIntegrationServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedIntegrationServiceHandler struct{}
+
+func (UnimplementedIntegrationServiceHandler) SaveIntegrationProfile(context.Context, *connect.Request[v1.SaveIntegrationProfileRequest]) (*connect.Response[v1.SaveIntegrationProfileResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.IntegrationService.SaveIntegrationProfile is not implemented"))
+}
+
+func (UnimplementedIntegrationServiceHandler) ReplaceIntegrationToken(context.Context, *connect.Request[v1.ReplaceIntegrationTokenRequest]) (*connect.Response[v1.ReplaceIntegrationTokenResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.IntegrationService.ReplaceIntegrationToken is not implemented"))
+}
+
+func (UnimplementedIntegrationServiceHandler) ValidateIntegrationProfile(context.Context, *connect.Request[v1.ValidateIntegrationProfileRequest]) (*connect.Response[v1.ValidateIntegrationProfileResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.IntegrationService.ValidateIntegrationProfile is not implemented"))
+}
+
+func (UnimplementedIntegrationServiceHandler) DeleteIntegrationProfile(context.Context, *connect.Request[v1.DeleteIntegrationProfileRequest]) (*connect.Response[v1.DeleteIntegrationProfileResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.IntegrationService.DeleteIntegrationProfile is not implemented"))
 }
 
 // ProviderServiceClient is a client for the delidev.v1.ProviderService service.

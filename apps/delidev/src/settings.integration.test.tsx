@@ -418,3 +418,23 @@ it("persists native Claude permission selection through the desktop and real Go 
   await expect(configurations.saveConfiguration({ kind: EntityKind.AGENT, mutation: { id: agent.id, expectedRevision: agent.revision, requestId: newRequestId() }, schemaVersion: 1, documentJson: encode({ ...prior, options: { permission: "read-only", claude_permission: "plan" } }) })).rejects.toThrow();
   expect(document((await resources.getResource({ id: agent.id, kind: EntityKind.AGENT })).resource)).toEqual(prior);
 }, 15000);
+
+it("saves and renames GitHub profiles through the real Go server and CLI", async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
+  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
+  fireEvent.click(screen.getByRole("button", { name: "Integrations" }));
+  fireEvent.click(await screen.findByRole("button", { name: "New GitHub profile" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Profile name" }), { target: { value: "Real server profile" } });
+  fireEvent.change(screen.getByRole("textbox", { name: "Resource owner" }), { target: { value: "fixture-owner" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save profile" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Rename Real server profile" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Profile name" }), { target: { value: "Renamed server profile" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save profile" }));
+  await screen.findByRole("button", { name: "Manage Renamed server profile" });
+  const output = JSON.parse(await runCLI(["integration", "list"]));
+  const row = output.result.resources.find((value: { data: { name: string } }) => value.data.name === "Renamed server profile");
+  expect(row).toBeTruthy();
+  expect(row.data).toEqual({ name: "Renamed server profile", provider: "github.com", token_kind: "fine-grained", resource_owner: "fixture-owner" });
+  expect(row.revision).toBe(2);
+  client.clear(); cleanup();
+}, 30000);

@@ -271,3 +271,8 @@ The existing workspace-read JSON envelope adds operation `git-diff` and a closed
 ### Grok closed-history user documents
 
 The Grok `input-accepted` JSON event may carry `grok_user_message_id`, a UUID-v7 reserved before assistant publication and retained in execution progress. It creates no Message resource. Original successful `grok_terminal.user` carries the closed source, native user event, canonical millisecond timestamp, zero prompt index, selected model and exact input SHA-256. Only the original closed-history composition can atomically create its complete `grok_user` Message with accepted input text and input reference. Historical omission of both reservation and proof remains readable; mixed pairs, other event kinds/harnesses and unsupported Stop history cannot acquire a user record. Existing Resource RPC/CLI, event identity/revision synchronization and message indexing expose these additive JSON fields without a protobuf or database migration.
+
+
+## GitHub integration profiles
+
+Owner/client-only `IntegrationService` has strict-definition Save, write-only bounded-PAT Replace, Validate and Delete operations, separate from AccountService. Follow [the integration contract](cmds-delidev-integrations-contract.md). Mutations bind actor/original revision/request identity; accepted results return current metadata and typed optional problems. Pending-operation expected revisions use decimal strings in JSON. A deleted profile retains its tombstone/receipt without token or historical content; generic configuration cannot write connection/identity/pending state. Worker authentication cannot invoke this service.

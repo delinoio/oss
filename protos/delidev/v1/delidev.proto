@@ -480,6 +480,57 @@ message ValidateAccountResponse {
   bytes validation_json = 4;
 }
 
+// Server-owned read-only integration profiles are separate from AI Accounts.
+service IntegrationService {
+  rpc SaveIntegrationProfile(SaveIntegrationProfileRequest) returns (SaveIntegrationProfileResponse);
+  rpc ReplaceIntegrationToken(ReplaceIntegrationTokenRequest) returns (ReplaceIntegrationTokenResponse);
+  rpc ValidateIntegrationProfile(ValidateIntegrationProfileRequest) returns (ValidateIntegrationProfileResponse);
+  rpc DeleteIntegrationProfile(DeleteIntegrationProfileRequest) returns (DeleteIntegrationProfileResponse);
+}
+message SaveIntegrationProfileRequest {
+  Mutation mutation = 1;
+  uint32 schema_version = 2;
+  // Closed editable definition only; no connection, identity or credential fields.
+  bytes document_json = 3;
+}
+message SaveIntegrationProfileResponse {
+  Resource profile = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message ReplaceIntegrationTokenRequest {
+  Mutation mutation = 1;
+  // Write-only bounded PAT bytes. Never retained in a receipt or response.
+  bytes token = 2;
+}
+message ReplaceIntegrationTokenResponse {
+  Resource profile = 1;
+  string request_id = 2;
+  bool replayed = 3;
+  // A committed change can require native cleanup or validation retry.
+  bytes problem_json = 4;
+}
+message ValidateIntegrationProfileRequest {
+  Mutation mutation = 1;
+}
+message ValidateIntegrationProfileResponse {
+  Resource profile = 1;
+  string request_id = 2;
+  bool replayed = 3;
+  bytes problem_json = 4;
+}
+message DeleteIntegrationProfileRequest {
+  Mutation mutation = 1;
+}
+message DeleteIntegrationProfileResponse {
+  // Present only while native deletion remains pending.
+  Resource profile = 1;
+  string request_id = 2;
+  bool replayed = 3;
+  bool deleted = 4;
+  bytes problem_json = 5;
+}
+
 service ProviderService {
   rpc ListProviderPresets(ListProviderPresetsRequest) returns (ListProviderPresetsResponse);
   rpc DiscoverModels(DiscoverModelsRequest) returns (DiscoverModelsResponse);

@@ -75,3 +75,6 @@ Generated `SessionQuery.readSessionReviewContext` exposes the exact original Wor
 ## Durable local review client
 
 Generated `SessionQuery` includes comment creation/edit/deletion and grouped submission. Use `ResourceQuery` for scoped review reads. Preserve bigint entity revisions and decimal-string content revisions without numeric rounding, strict comment/submission document variants, original anchor/context and immutable submitted copies. Current data cannot replace selected request revisions or uncertain wire requests. The desktop uses connection-scoped mutation retention and does not infer agent execution from queue acceptance. Follow [local reviews](cmds-delidev-files-contract.md).
+
+
+`IntegrationQuery` exports generated SaveIntegrationProfile, ReplaceIntegrationToken, ValidateIntegrationProfile and DeleteIntegrationProfile descriptors. PATs are bounded write-only fields; no token belongs in query keys, resource documents or read responses. Preserve pending-operation decimal revisions and actor-bound exact request identities under the [integration contract](cmds-delidev-integrations-contract.md).

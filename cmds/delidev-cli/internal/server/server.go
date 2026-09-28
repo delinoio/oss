@@ -58,6 +58,13 @@ type Service struct {
 	delidevv1connect.UnimplementedWorkerServiceHandler
 	delidevv1connect.UnimplementedAccountServiceHandler
 	delidevv1connect.UnimplementedProviderServiceHandler
+	delidevv1connect.UnimplementedIntegrationServiceHandler
+	integrationOnce    sync.Once
+	integrationGate    chan struct{}
+	integrationChecks  map[domain.ID]*integrationCheck
+	integrationSecrets integrationSecrets
+	ownedPAT           *credentials.PATStore
+	github             githubIdentity
 	accountOnce        sync.Once
 	accountGate        chan struct{}
 	accountChecks      map[domain.ID]map[domain.ID]accountCheck
@@ -193,6 +200,7 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	defer stop()
 	service := &Service{Store: state, Identity: identity, Endpoint: Endpoint{URL: protocol + "://" + listener.Addr().String(), ServerID: identity.ServerID, Version: rpc.Version, ProtocolVersion: rpc.ProtocolVersion, StartedAt: time.Now().UTC()}, logger: config.Logger, stop: stop, accountSecrets: config.accountSecrets}
 	defer service.closeAccountSecrets()
+	defer service.closeIntegrationSecrets()
 	handler := service.Handler(config.AllowedOrigins, ip.IsLoopback())
 	defer service.executionAuthority.close()
 	httpServer := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10, BaseContext: func(net.Listener) context.Context { return child }, ErrorLog: slog.NewLogLogger(config.Logger.Handler(), slog.LevelWarn)}
@@ -270,6 +278,9 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	if err := service.closeAccountSecrets(); err != nil {
 		return domain.SafeError(err)
 	}
+	if err := service.closeIntegrationSecrets(); err != nil {
+		return domain.SafeError(err)
+	}
 	config.Logger.Info("server_stopped", "server_id", identity.ServerID)
 	return nil
 }
@@ -289,6 +300,7 @@ func (s *Service) Handler(origins []string, loopback bool) http.Handler {
 	mux.Handle(delidevv1connect.NewWorkerServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewAccountServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewProviderServiceHandler(s, options...))
+	mux.Handle(delidevv1connect.NewIntegrationServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewSessionServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewInteractionServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewInboxServiceHandler(s, options...))

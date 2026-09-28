@@ -51,6 +51,7 @@ type client struct {
 	devices       delidevv1connect.DeviceServiceClient
 	workers       delidevv1connect.WorkerServiceClient
 	accounts      delidevv1connect.AccountServiceClient
+	integrations  delidevv1connect.IntegrationServiceClient
 	providers     delidevv1connect.ProviderServiceClient
 	sessions      delidevv1connect.SessionServiceClient
 	interactions  delidevv1connect.InteractionServiceClient
@@ -137,6 +138,9 @@ func Run(ctx context.Context, args []string, streams IO) int {
 			}
 		}
 	}
+	if command == "integration" && len(rest) > 0 && rest[0] == "replace-token" && o.tokenStdin {
+		return emit(nil, domain.Fail(domain.InvalidArgument, "Server authentication and a PAT cannot share stdin.", "Use a paired client or local owner connection before supplying --pat-stdin."))
+	}
 	c, err := connectClient(o, streams.In)
 	if err != nil {
 		if command == "server" && len(rest) == 1 && rest[0] == "stop" && o.server == "" && !o.tokenStdin && domain.SafeError(err).Code == domain.ServerUnavailable {
@@ -151,6 +155,9 @@ func Run(ctx context.Context, args []string, streams IO) int {
 	defer c.transport.CloseIdleConnections()
 	if command != "events" {
 		limit := 30 * time.Second
+		if command == "integration" {
+			c.transport.ResponseHeaderTimeout = 25 * time.Second
+		}
 		if command == "session" && len(rest) > 0 {
 			switch rest[0] {
 			case "files", "diff", "review-context":
@@ -265,6 +272,12 @@ func Run(ctx context.Context, args []string, streams IO) int {
 	case "model":
 		if len(rest) > 0 && (rest[0] == "search" || rest[0] == "resolve") {
 			value, err := modelCatalog(ctx, c, rest)
+			return emit(value, err)
+		}
+	case "integration":
+		if len(rest) > 0 && rest[0] != "list" && rest[0] != "get" && rest[0] != "snapshot" {
+			ensureRequest(&o)
+			value, err := integrationCommand(ctx, c, o, rest, streams)
 			return emit(value, err)
 		}
 	case "account":
@@ -623,6 +636,7 @@ func connectClient(o options, input io.Reader) (client, error) {
 		interactions:  delidevv1connect.NewInteractionServiceClient(httpClient, endpoint, opts...),
 		sessions:      delidevv1connect.NewSessionServiceClient(httpClient, endpoint, opts...),
 		accounts:      delidevv1connect.NewAccountServiceClient(httpClient, endpoint, opts...),
+		integrations:  delidevv1connect.NewIntegrationServiceClient(httpClient, endpoint, opts...),
 		providers:     delidevv1connect.NewProviderServiceClient(httpClient, endpoint, opts...),
 		devices:       delidevv1connect.NewDeviceServiceClient(httpClient, endpoint, opts...),
 		workers:       delidevv1connect.NewWorkerServiceClient(httpClient, endpoint, opts...),
@@ -759,6 +773,11 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   account disconnect --id ID --revision N
   account validate --id ID --revision N
   account status --id ID
+  integration create --input FILE|-
+  integration edit --id ID --revision N --input FILE|-
+  integration replace-token --id ID --revision N --pat-stdin
+  integration validate|delete --id ID --revision N
+  integration list|get|snapshot [--id ID]
   provider presets
   provider create --preset PRESET [--name NAME]
   provider discover --account-id ID --revision N
