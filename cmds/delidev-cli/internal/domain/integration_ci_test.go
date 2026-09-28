@@ -3,8 +3,13 @@ package domain
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
+func ciCheckEvidence() *CIContextEvidence {
+	at := time.Date(2026, 9, 28, 0, 0, 0, 0, time.UTC)
+	return &CIContextEvidence{SuiteNodeID: "SUITE_1", StartedAt: &at, CompletedAt: &at, Workflow: &CIWorkflowEvidence{NodeID: "RUN_1", RunNumber: "12", ObservedAttempt: "1", CreatedAt: at, UpdatedAt: at}}
+}
 func ciFixture() (RepositoryItem, PullRequestCI) {
 	no := false
 	item := RepositoryItem{State: RepositoryItemOpen, Merged: &no, BaseRef: "main", BaseSHA: strings.Repeat("a", 40), HeadSHA: strings.Repeat("b", 40)}
@@ -12,7 +17,7 @@ func ciFixture() (RepositoryItem, PullRequestCI) {
 	conclusion := "FAILURE"
 	event := "pull_request"
 	rules := []ActiveRepositoryRule{{Type: "required_status_checks", RulesetID: "37", SourceKind: RulesetRepository, NativeSourceKind: "Repository", Source: "fixture-owner/repo", Digest: strings.Repeat("d", 64), RequiredChecks: &RequiredRuleChecks{Checks: []RequiredRuleCheck{{Context: "CI Result", IntegrationID: &id}}}}}
-	v := PullRequestCI{NativeMergeability: "MERGEABLE", Rules: PullRequestRules{BaseRef: item.BaseRef, BaseSHA: item.BaseSHA, HeadSHA: item.HeadSHA, Rules: rules, Digest: ActiveRulesDigest(rules)}, Head: CIRollup{CommitSHA: item.HeadSHA, TotalCount: "1", Contexts: []CIContext{{Kind: CICheckRun, NodeID: "CHECK_1", Name: "CI Result", CommitSHA: item.HeadSHA, Required: true, NativeStatus: "COMPLETED", NativeConclusion: &conclusion, Application: &CheckApplication{ID: id, NodeID: "APP_15368", Slug: "github-actions"}, WorkflowEvent: &event}}}, TestMerge: &CIRollup{CommitSHA: strings.Repeat("c", 40), TotalCount: "0", Contexts: []CIContext{}}}
+	v := PullRequestCI{NativeMergeability: "MERGEABLE", Rules: PullRequestRules{BaseRef: item.BaseRef, BaseSHA: item.BaseSHA, HeadSHA: item.HeadSHA, Rules: rules, Digest: ActiveRulesDigest(rules)}, Head: CIRollup{CommitSHA: item.HeadSHA, TotalCount: "1", Contexts: []CIContext{{Evidence: ciCheckEvidence(), Kind: CICheckRun, NodeID: "CHECK_1", Name: "CI Result", CommitSHA: item.HeadSHA, Required: true, NativeStatus: "COMPLETED", NativeConclusion: &conclusion, Application: &CheckApplication{ID: id, NodeID: "APP_15368", Slug: "github-actions"}, WorkflowEvent: &event}}}, TestMerge: &CIRollup{CommitSHA: strings.Repeat("c", 40), TotalCount: "0", Contexts: []CIContext{}}}
 	v.Result = v.Evaluate(item)
 	return item, v
 }
@@ -33,7 +38,10 @@ func TestRequiredCITerminalResultsExcludePassingPendingOptionalAndOtherApp(t *te
 		{"optional", func(v *PullRequestCI) { v.Head.Contexts[0].Required = false }, CIMissing},
 		{"different app", func(v *PullRequestCI) { v.Head.Contexts[0].Application.ID = "99" }, CIMissing},
 		{"no app", func(v *PullRequestCI) { v.Head.Contexts[0].Application = nil }, CIUnknown},
-		{"missing workflow evidence", func(v *PullRequestCI) { v.Head.Contexts[0].WorkflowEvent = nil }, CIUnknown},
+		{"missing workflow evidence", func(v *PullRequestCI) {
+			v.Head.Contexts[0].WorkflowEvent = nil
+			v.Head.Contexts[0].Evidence.Workflow = nil
+		}, CIUnknown},
 		{"manual workflow", func(v *PullRequestCI) { x := "workflow_dispatch"; v.Head.Contexts[0].WorkflowEvent = &x }, CIMissing},
 		{"future conclusion", func(v *PullRequestCI) { x := "FUTURE"; v.Head.Contexts[0].NativeConclusion = &x }, CIUnknown},
 	} {
@@ -82,7 +90,7 @@ func TestRequiredCIKeepsClassicOnlyOptionalAndAppBoundStatusUnknown(t *testing.T
 		t.Fatal("classic requirement triggered ruleset CI")
 	}
 	item, v = ciFixture()
-	v.Head.Contexts = append(v.Head.Contexts, CIContext{Kind: CICommitStatus, NodeID: "STATUS_1", Name: "CI Result", CommitSHA: item.HeadSHA, Required: true, NativeStatus: "ERROR"})
+	v.Head.Contexts = append(v.Head.Contexts, CIContext{Evidence: &CIContextEvidence{CreatedAt: ciCheckEvidence().StartedAt, UpdatedAt: ciCheckEvidence().CompletedAt}, Kind: CICommitStatus, NodeID: "STATUS_1", Name: "CI Result", CommitSHA: item.HeadSHA, Required: true, NativeStatus: "ERROR"})
 	v.Head.TotalCount = "2"
 	v.Result = v.Evaluate(item)
 	if v.Result.State != CIUnknown || v.Result.Reason != CIAppUnverified {

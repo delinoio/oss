@@ -36,3 +36,27 @@ it("keeps an unknown evaluated commit explicit without a required-failure table"
   expect(screen.queryByRole("table")).toBeNull();
   expect(screen.getByText(/evaluated commit could not be verified/)).toBeTruthy();
 });
+
+it("renders original CI output inertly and labels the workflow attempt as aggregate evidence", () => {
+  const value = ciObservation();
+  const view = render(<PRCI value={value} />);
+  expect(screen.getByText("<script>inert output</script>")).toBeTruthy();
+  expect(view.container.querySelector("script")).toBeNull();
+  expect(screen.getByText(/observed workflow attempt 2/)).toBeTruthy();
+  expect(screen.getByText(/does not prove that each retained check ran again/)).toBeTruthy();
+  expect(screen.getByText("2026-09-28T00:01:00Z")).toBeTruthy();
+});
+
+it("rejects missing or mixed lifecycle proof, impossible attempts and oversized original output", () => {
+  const noEvidence = ciObservation();
+  const { evidence: _evidence, ...row } = noEvidence.head.contexts[0];
+  expect(validPRCI({ ...noEvidence, head: { ...noEvidence.head, contexts: [row] } }, item)).toBe(false);
+  const invalid = ciObservation(); invalid.head.contexts[0].evidence.workflow.observed_attempt = "2147483648";
+  expect(validPRCI(invalid, item)).toBe(false);
+  const backwards = ciObservation(); backwards.head.contexts[0].evidence.completed_at = "2026-09-27T00:00:00Z";
+  expect(validPRCI(backwards, item)).toBe(false);
+  const large = ciObservation(); large.head.contexts[0].evidence.summary = "x".repeat((64 << 10) + 1);
+  expect(validPRCI(large, item)).toBe(false);
+  const mixed = ciObservation();
+  expect(validPRCI({ ...mixed, head: { ...mixed.head, contexts: [{ ...mixed.head.contexts[0], evidence: { ...mixed.head.contexts[0].evidence, description: "status-only evidence" } }] } }, item)).toBe(false);
+});

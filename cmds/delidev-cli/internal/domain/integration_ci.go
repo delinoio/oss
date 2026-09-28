@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"encoding/json"
 	"reflect"
 	"strconv"
 )
@@ -15,19 +16,20 @@ const (
 )
 
 type CIContext struct {
-	Kind             CIContextKind     `json:"kind"`
-	NodeID           string            `json:"node_id"`
-	Name             string            `json:"name"`
-	CommitSHA        string            `json:"commit_sha"`
-	Required         bool              `json:"required"`
-	NativeStatus     string            `json:"native_status"`
-	NativeConclusion *string           `json:"native_conclusion,omitempty"`
-	Application      *CheckApplication `json:"application,omitempty"`
-	WorkflowEvent    *string           `json:"workflow_event,omitempty"`
+	Evidence         *CIContextEvidence `json:"evidence"`
+	Kind             CIContextKind      `json:"kind"`
+	NodeID           string             `json:"node_id"`
+	Name             string             `json:"name"`
+	CommitSHA        string             `json:"commit_sha"`
+	Required         bool               `json:"required"`
+	NativeStatus     string             `json:"native_status"`
+	NativeConclusion *string            `json:"native_conclusion,omitempty"`
+	Application      *CheckApplication  `json:"application,omitempty"`
+	WorkflowEvent    *string            `json:"workflow_event,omitempty"`
 }
 
 func (v CIContext) Validate(sha string) error {
-	if v.CommitSHA != sha || Text(v.NodeID, "CI node identity", 256, true) != nil || Text(v.Name, "CI context", 1024, true) != nil || Text(v.NativeStatus, "CI status", 64, true) != nil {
+	if !repositorySHA(sha) || v.Evidence == nil || v.Evidence.validate(v.Kind, v.WorkflowEvent) != nil || v.CommitSHA != sha || Text(v.NodeID, "CI node identity", 256, true) != nil || Text(v.Name, "CI context", 1024, true) != nil || Text(v.NativeStatus, "CI status", 64, true) != nil {
 		return invalidPRObservation()
 	}
 	switch v.Kind {
@@ -276,6 +278,10 @@ func (v PullRequestCI) Evaluate(item RepositoryItem) RequiredCIResult {
 }
 
 func (v PullRequestCI) Validate(item RepositoryItem) error {
+	raw, err := json.Marshal(v)
+	if err != nil || len(raw) > MaxCIEvidenceBytes {
+		return invalidPRObservation()
+	}
 	if v.Rules.Validate(item) != nil || v.Head.Validate(item.HeadSHA) != nil || v.TestMerge != nil && (v.TestMerge.Validate(v.TestMerge.CommitSHA) != nil || v.TestMerge.CommitSHA == item.HeadSHA) {
 		return invalidPRObservation()
 	}

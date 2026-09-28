@@ -4,12 +4,28 @@ import { validPRRules } from "./github-rules";
 
 const states = new Set(["unknown", "missing", "pending", "non-failing", "terminal-failure", "not-required"]);
 const reasons = new Set(["observed", "no-matching-result", "app-unverified", "unknown-native-result", "unsupported-rule", "commit-unverified", "closed-pr", "workflow-unverified"]);
+function ciTime(value: unknown): value is string {
+  return typeof value === "string" && value.length <= 40 && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,9})?(?:Z|[+-]\d\d:\d\d)$/.test(value) && Number.isFinite(Date.parse(value)) && Date.parse(value) >= 0;
+}
+function validEvidence(row: Document): boolean {
+  const value = object(row.evidence), workflow = object(value.workflow);
+  if (row.evidence == null) return false;
+  for (const field of ["started_at", "completed_at", "created_at", "updated_at"]) if (value[field] != null && !ciTime(value[field])) return false;
+  for (const field of ["title", "summary", "text", "description"]) if (value[field] != null && !bounded(value[field], 64 << 10, false)) return false;
+  if (row.kind === "check-run") {
+    if (!bounded(value.suite_node_id, 256) || value.created_at != null || value.updated_at != null || value.description != null || (value.workflow == null) !== (row.workflow_event == null)) return false;
+    if (ciTime(value.started_at) && ciTime(value.completed_at) && Date.parse(value.completed_at) < Date.parse(value.started_at)) return false;
+    if (value.workflow != null && (!bounded(workflow.node_id, 256) || !positive(workflow.run_number) || BigInt(text(workflow.run_number)) > 2147483647n || !positive(workflow.observed_attempt) || BigInt(text(workflow.observed_attempt)) > 2147483647n || !ciTime(workflow.created_at) || !ciTime(workflow.updated_at) || Date.parse(workflow.updated_at) < Date.parse(workflow.created_at))) return false;
+    return true;
+  }
+  return row.kind === "commit-status" && value.suite_node_id == null && value.started_at == null && value.completed_at == null && value.workflow == null && value.title == null && value.summary == null && value.text == null && ciTime(value.created_at) && ciTime(value.updated_at) && Date.parse(value.updated_at) >= Date.parse(value.created_at);
+}
 function validRollup(raw: unknown, expected: unknown, seen: Set<string>): boolean {
   const value = object(raw);
   if (raw == null || !sha(expected) || value.commit_sha !== expected || !Array.isArray(value.contexts) || value.contexts.length > 500 || value.total_count !== String(value.contexts.length)) return false;
   for (const raw of value.contexts) {
     const row = object(raw);
-    if (!bounded(row.node_id, 256) || seen.has(row.node_id) || row.commit_sha !== expected || !bounded(row.name, 1024) || typeof row.required !== "boolean" || !bounded(row.native_status, 64)) return false;
+    if (!validEvidence(row) || !bounded(row.node_id, 256) || seen.has(row.node_id) || row.commit_sha !== expected || !bounded(row.name, 1024) || typeof row.required !== "boolean" || !bounded(row.native_status, 64)) return false;
     seen.add(row.node_id);
     if (row.kind === "check-run") {
       if ((row.native_conclusion != null && !bounded(row.native_conclusion, 64)) || (row.workflow_event != null && !bounded(row.workflow_event, 100))) return false;
@@ -21,6 +37,7 @@ function validRollup(raw: unknown, expected: unknown, seen: Set<string>): boolea
 }
 export function validPRCI(raw: unknown, item: Document): boolean {
   const value = object(raw), result = object(value.result);
+  if (new TextEncoder().encode(JSON.stringify(value)).byteLength > 512 << 10) return false;
   const seen = new Set<string>();
   if (raw == null || !validPRRules(value.rules, item) || !validRollup(value.head, item.head_sha, seen) || !["MERGEABLE", "CONFLICTING", "UNKNOWN"].includes(text(value.native_mergeability)) || typeof value.in_merge_queue !== "boolean") return false;
   const merge = object(value.test_merge);
@@ -57,6 +74,16 @@ export function validPRCI(raw: unknown, item: Document): boolean {
   return true;
 }
 
+function CIOriginalEvidence({ row }: { row: Document }) {
+  const value = object(row.evidence), workflow = object(value.workflow);
+  return <details><summary>Original lifecycle and output</summary>
+    <p>Result ID: {text(row.node_id)}{value.suite_node_id ? ` · Suite: ${text(value.suite_node_id)}` : ""}</p>
+    <dl>{[["started_at", "Started"], ["completed_at", "Completed"], ["created_at", "Created"], ["updated_at", "Updated"]].map(([key, label]) => value[key] ? <div key={key}><dt>{label}</dt><dd><time dateTime={text(value[key])}>{text(value[key])}</time></dd></div> : null)}</dl>
+    {value.workflow ? <p>Workflow {text(workflow.node_id)} · run {text(workflow.run_number)} · observed workflow attempt {text(workflow.observed_attempt)}. This aggregate attempt does not prove that each retained check ran again.</p> : null}
+    {[["title", "Original title"], ["summary", "Original summary"], ["text", "Original text"], ["description", "Original description"]].map(([key, label]) => value[key] != null ? <div key={key}><h5>{label}</h5><pre>{text(value[key])}</pre></div> : null)}
+  </details>;
+}
+
 const stateLabels = new Map([["unknown", "Unknown"], ["missing", "Required result missing"], ["pending", "Required checks pending"], ["non-failing", "Observed required results are non-failing"], ["terminal-failure", "Terminal required CI failure"], ["not-required", "No active ruleset status checks required"]]);
 const reasonLabels = new Map([
   ["app-unverified", "The required App could not be verified."],
@@ -75,6 +102,6 @@ export function PRCI({ value }: { value: Document }) {
     {reasonLabels.has(text(result.reason)) ? <p>{reasonLabels.get(text(result.reason))}</p> : null}
     <p>This is a current observation of active rulesets. Missing, pending and unknown results do not establish passing CI. A later action requires fresh evidence.</p>
     {items(result.requirements).length ? <table><caption>Active ruleset CI requirements</caption><thead><tr><th scope="col">Requirement</th><th scope="col">App</th><th scope="col">Result</th></tr></thead><tbody>{items(result.requirements).map((raw, index) => { const row = object(raw); return <tr key={index}><th scope="row">{text(row.context)}<small> · ruleset {text(row.ruleset_id)}</small></th><td>{text(row.integration_id) || "No restriction reported"}</td><td>{stateLabels.get(text(row.state))}{reasonLabels.has(text(row.reason)) ? <small> · {reasonLabels.get(text(row.reason))}</small> : null}</td></tr>; })}</tbody></table> : null}
-    {result.source !== "unknown" ? <details><summary>Inspected check and status results ({text(selected.total_count)})</summary><ul>{items(selected.contexts).map((raw) => { const row = object(raw); return <li key={text(row.node_id)}>{text(row.name)} · {text(row.kind)} · {text(row.native_status)}{row.native_conclusion ? ` / ${text(row.native_conclusion)}` : ""} · {row.required ? "GitHub required" : "GitHub optional"}{row.application ? ` · App ${text(object(row.application).id)}` : ""}{row.workflow_event ? ` · ${text(row.workflow_event)}` : ""}</li>; })}</ul></details> : null}
+    {result.source !== "unknown" ? <details><summary>Inspected check and status results ({text(selected.total_count)})</summary><ul>{items(selected.contexts).map((raw) => { const row = object(raw); return <li key={text(row.node_id)}>{text(row.name)} · {text(row.kind)} · {text(row.native_status)}{row.native_conclusion ? ` / ${text(row.native_conclusion)}` : ""} · {row.required ? "GitHub required" : "GitHub optional"}{row.application ? ` · App ${text(object(row.application).id)}` : ""}{row.workflow_event ? ` · ${text(row.workflow_event)}` : ""}<CIOriginalEvidence row={row} /></li>; })}</ul></details> : null}
   </section>;
 }

@@ -473,3 +473,5 @@
 - Reviewer inspection uses the generated exclusive query with complete feedback/author/App coverage and exact identity/permission/version validation. Keep current identity, collaborator grants/custom-role uncertainty and entry-specific App attribution separate and inert. Unknown proof never becomes an inferred App or permission; read/disposal behavior cannot change policies or start remediation.
 
 - Remediation editing uses shared revision-bound configuration RPC. Preserve exact string reviewer IDs and empty selections; repository overrides replace the complete server policy and start with all automation off. Restore inheritance only explicitly, retain original uncertain mutation bytes, and never imply policy persistence starts execution while the controller is unavailable. Follow the integration contract.
+
+- Required CI original lifecycle/output stays inert and bounded, with strict check/status family validation and exact native counts. Label workflow run attempts as aggregate observations, never proof that every retained check ran again. Go owns per-result versions; no displayed evidence grants execution authority.

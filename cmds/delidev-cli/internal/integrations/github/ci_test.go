@@ -17,7 +17,7 @@ func ciNodeFixture() map[string]any {
 	head := strings.Repeat("b", 40)
 	return map[string]any{"id": "ITEM_stable", "number": 17, "state": "OPEN", "merged": false, "baseRefName": "main", "baseRefOid": accessSHA, "headRefName": "feature", "headRefOid": head, "mergeable": "MERGEABLE", "isInMergeQueue": false, "repository": map[string]any{"id": "R_37"},
 		"potentialMergeCommit": map[string]any{"oid": strings.Repeat("c", 40), "parents": map[string]any{"totalCount": 2, "nodes": []any{map[string]any{"oid": accessSHA}, map[string]any{"oid": head}}}, "statusCheckRollup": nil},
-		"statusCheckRollup":    map[string]any{"commit": map[string]any{"oid": head}, "contexts": map[string]any{"totalCount": 1, "pageInfo": map[string]any{"hasNextPage": false, "endCursor": "one"}, "nodes": []any{map[string]any{"__typename": "CheckRun", "id": "CHECK_53", "name": "CI Result", "status": "COMPLETED", "conclusion": "FAILURE", "isRequired": true, "repository": map[string]any{"id": "R_37"}, "checkSuite": map[string]any{"commit": map[string]any{"oid": head}, "app": map[string]any{"databaseId": 15368, "id": "APP_15368", "slug": "github-actions"}, "workflowRun": map[string]any{"event": "pull_request"}}}}}},
+		"statusCheckRollup":    map[string]any{"commit": map[string]any{"oid": head}, "contexts": map[string]any{"totalCount": 1, "pageInfo": map[string]any{"hasNextPage": false, "endCursor": "one"}, "nodes": []any{map[string]any{"__typename": "CheckRun", "startedAt": "2026-09-28T00:00:00Z", "completedAt": "2026-09-28T00:01:00Z", "title": "Result", "summary": "Original summary", "text": nil, "id": "CHECK_53", "name": "CI Result", "status": "COMPLETED", "conclusion": "FAILURE", "isRequired": true, "repository": map[string]any{"id": "R_37"}, "checkSuite": map[string]any{"id": "SUITE_1", "commit": map[string]any{"oid": head}, "app": map[string]any{"databaseId": 15368, "id": "APP_15368", "slug": "github-actions"}, "workflowRun": map[string]any{"id": "RUN_1", "event": "pull_request", "runNumber": 12, "runAttempt": 1, "createdAt": "2026-09-28T00:00:00Z", "updatedAt": "2026-09-28T00:01:00Z"}}}}}},
 	}
 }
 func ciClientFixture(t *testing.T, mutate func(int, map[string]any) map[string]any) (*Client, *int) {
@@ -246,16 +246,62 @@ func TestCIPublicGraphQLProjection(t *testing.T) {
 	data, _ := jsonObject(envelope["data"])
 	node, _ := jsonObject(data["node"])
 	_, head, merge, err := parseCINode(node, repo, item)
-	if err != nil || head.total != 40 || merge == nil || merge.total != 0 {
+	if err != nil || head.total == 0 || head.rollup.Validate(item.HeadSHA) != nil || merge != nil && merge.rollup.Validate(merge.rollup.CommitSHA) != nil {
 		t.Fatal("public CI evidence not retained", err)
 	}
 	found := false
 	for _, v := range head.rollup.Contexts {
-		if v.Name == "CI Result" && v.Required && v.Application != nil && v.Application.ID == "15368" && v.WorkflowEvent != nil && *v.WorkflowEvent == "pull_request" {
+		if v.Kind == domain.CICheckRun && v.Application != nil && v.Application.ID == "15368" && v.WorkflowEvent != nil && *v.WorkflowEvent == "pull_request" && v.Evidence.Workflow != nil && v.Version() != "" {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatal("real required check provenance missing")
+		t.Fatal("real Actions result lifecycle/workflow provenance missing")
+	}
+}
+
+func TestCIOriginalEvidenceCannotChangeOrDisappearDuringObservation(t *testing.T) {
+	for _, mode := range []string{"missing-output", "malformed-time", "zero-attempt", "mixed-output", "changed-time", "changed-attempt"} {
+		t.Run(mode, func(t *testing.T) {
+			c, _ := ciClientFixture(t, func(read int, node map[string]any) map[string]any {
+				row := node["statusCheckRollup"].(map[string]any)["contexts"].(map[string]any)["nodes"].([]any)[0].(map[string]any)
+				workflow := row["checkSuite"].(map[string]any)["workflowRun"].(map[string]any)
+				switch mode {
+				case "missing-output":
+					delete(row, "summary")
+				case "malformed-time":
+					row["startedAt"] = "not-a-date"
+				case "zero-attempt":
+					workflow["runAttempt"] = 0
+				case "mixed-output":
+					if read > 1 {
+						row["summary"] = "edited original output"
+					}
+				case "changed-time":
+					if read > 1 {
+						row["completedAt"] = "2026-09-28T00:02:00Z"
+					}
+				case "changed-attempt":
+					if read > 1 {
+						workflow["runAttempt"] = 2
+					}
+				}
+				return map[string]any{"data": map[string]any{"node": node}}
+			})
+			repo, _ := ciFixtureItem(t)
+			_, err := c.QueryRepository(context.Background(), []byte("private-fixture-pat"), repo.Owner, repo.Name, domain.RepositoryQuery{Kind: domain.RepositoryPullRequest, Operation: domain.RepositoryCI, Number: "17"})
+			if err == nil {
+				t.Fatal("incomplete or changing native evidence accepted")
+			}
+		})
+	}
+}
+
+func TestCIStatusEvidencePreservesOriginalTimestampsAndDescription(t *testing.T) {
+	repo, item := ciFixtureItem(t)
+	raw, _ := json.Marshal(map[string]any{"__typename": "StatusContext", "id": "STATUS_1", "context": "external", "state": "FAILURE", "isRequired": true, "commit": map[string]any{"oid": item.HeadSHA}, "createdAt": "2026-09-28T00:00:00Z", "updatedAt": "2026-09-28T00:01:00Z", "description": "Original external failure"})
+	v, err := parseCIContext(raw, repo, item.HeadSHA)
+	if err != nil || v.Evidence.CreatedAt == nil || v.Evidence.UpdatedAt == nil || v.Evidence.Description == nil || *v.Evidence.Description != "Original external failure" || v.Version() == "" {
+		t.Fatal(v, err)
 	}
 }

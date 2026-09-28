@@ -24,11 +24,11 @@ fragment DeliDevContexts on StatusCheckRollupContextConnection {
   totalCount pageInfo { hasNextPage endCursor }
   nodes {
     __typename
-    ... on CheckRun { id name status conclusion isRequired(pullRequestId: $id)
+    ... on CheckRun { id name status conclusion startedAt completedAt title summary text isRequired(pullRequestId: $id)
       repository { id }
-      checkSuite { commit { oid } app { databaseId id slug } workflowRun { event } }
+      checkSuite { id commit { oid } app { databaseId id slug } workflowRun { id event runNumber runAttempt createdAt updatedAt } }
     }
-    ... on StatusContext { id context state isRequired(pullRequestId: $id) commit { oid } }
+    ... on StatusContext { id context state createdAt updatedAt description isRequired(pullRequestId: $id) commit { oid } }
   }
 }`
 
@@ -45,11 +45,12 @@ type ciPage struct {
 func parseCIContext(raw []byte, repository domain.RemoteRepository, sha string) (domain.CIContext, error) {
 	f, ok := jsonObject(raw)
 	required, requiredOK := nullableBool(f, "isRequired")
-	v := domain.CIContext{NodeID: stringField(f, "id")}
+	v := domain.CIContext{NodeID: stringField(f, "id"), Evidence: &domain.CIContextEvidence{}}
 	if !ok || !requiredOK || required == nil {
 		return v, queryUnavailable()
 	}
 	v.Required = *required
+	e := v.Evidence
 	switch stringField(f, "__typename") {
 	case "CheckRun":
 		v.Kind, v.Name, v.NativeStatus = domain.CICheckRun, stringField(f, "name"), stringField(f, "status")
@@ -64,6 +65,21 @@ func parseCIContext(raw []byte, repository domain.RemoteRepository, sha string) 
 			return v, queryUnavailable()
 		}
 		v.CommitSHA = stringField(commit, "oid")
+		e.SuiteNodeID = stringField(suite, "id")
+		e.StartedAt, ok = nullableTime(f, "startedAt")
+		if !ok {
+			return v, queryUnavailable()
+		}
+		e.CompletedAt, ok = nullableTime(f, "completedAt")
+		if !ok {
+			return v, queryUnavailable()
+		}
+		for key, dest := range map[string]**string{"title": &e.Title, "summary": &e.Summary, "text": &e.Text} {
+			*dest, ok = nullableString(f, key)
+			if !ok {
+				return v, queryUnavailable()
+			}
+		}
 		appRaw, exists := suite["app"]
 		if !exists {
 			return v, queryUnavailable()
@@ -87,8 +103,28 @@ func parseCIContext(raw []byte, repository domain.RemoteRepository, sha string) 
 			}
 			event := stringField(workflow, "event")
 			v.WorkflowEvent = &event
+			number, numberOK := exactUnsigned(workflow["runNumber"])
+			attempt, attemptOK := exactUnsigned(workflow["runAttempt"])
+			created, createdOK := nullableTime(workflow, "createdAt")
+			updated, updatedOK := nullableTime(workflow, "updatedAt")
+			if !numberOK || !attemptOK || number == 0 || attempt == 0 || number > 2147483647 || attempt > 2147483647 || !createdOK || !updatedOK || created == nil || updated == nil {
+				return v, queryUnavailable()
+			}
+			e.Workflow = &domain.CIWorkflowEvidence{NodeID: stringField(workflow, "id"), RunNumber: strconv.FormatUint(number, 10), ObservedAttempt: strconv.FormatUint(attempt, 10), CreatedAt: *created, UpdatedAt: *updated}
 		}
 	case "StatusContext":
+		e.CreatedAt, ok = nullableTime(f, "createdAt")
+		if !ok || e.CreatedAt == nil {
+			return v, queryUnavailable()
+		}
+		e.UpdatedAt, ok = nullableTime(f, "updatedAt")
+		if !ok || e.UpdatedAt == nil {
+			return v, queryUnavailable()
+		}
+		e.Description, ok = nullableString(f, "description")
+		if !ok {
+			return v, queryUnavailable()
+		}
 		v.Kind, v.Name, v.NativeStatus = domain.CICommitStatus, stringField(f, "context"), stringField(f, "state")
 		commit, ok := jsonObject(f["commit"])
 		if !ok {
