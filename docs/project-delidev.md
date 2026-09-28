@@ -229,3 +229,5 @@ First Execute Grok instructions now preserve the immutable ordered Agent templat
 
 
 Named GitHub.com PAT profiles now have dedicated authenticated RPC/CLI/desktop save, replacement, identity validation and deletion, with explicit repository selection. Native generations and pending cleanup preserve exact retries and cancel/join original identity inspections; saved tokens never enter product reads or SQLite. Identity verification is separate from repository feature access. GitHub query/PR/ruleset/reviewer/remediation flows, creation-form validation and real PAT access remain required full-issue work under [the integration contract](cmds-delidev-integrations-contract.md).
+
+Repository-specific GitHub read-access inspection now spans RPC, CLI and desktop settings. It preserves independent endpoint states, current profile/generation and exact repository revision, with bounded joined cancellation and no saved observation. This does not complete PR/issue queries, ruleset/reviewer evaluation, remediation, official form or real PAT acceptance; follow the integration contract and evidence ledger.

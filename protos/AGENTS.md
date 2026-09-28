@@ -104,3 +104,5 @@
 - DeliDev local review mutations are owner/paired-client-only dedicated SessionService methods. Bind actor/session/exact request and expected revisions; create anchors only from the original Worker read. Commit grouped snapshots, comment links and one ordinary input atomically. Read-only receipt replay cannot recreate deleted data or enqueue twice. Follow `docs/cmds-delidev-files-contract.md`; generated Go and TypeScript sources remain tool-owned.
 
 - DeliDev IntegrationService is owner/client-only under `docs/cmds-delidev-integrations-contract.md`. Keep PATs bounded and write-only, definitions closed, mutations actor/revision/request-bound, pending revisions exact and accepted replay current-state-only. Generic configuration and Worker credentials cannot alter or invoke profile connection state.
+
+- DeliDev InspectRepositoryIntegration is a read-only owner/client operation with a versioned, exact repository-revision/profile/generation-bound response. Keep unavailable and not-evaluated feature observations distinct from CI/rules outcomes; no mutation receipt or saved PAT belongs in this response.

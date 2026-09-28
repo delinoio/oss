@@ -78,3 +78,5 @@ Generated `SessionQuery` includes comment creation/edit/deletion and grouped sub
 
 
 `IntegrationQuery` exports generated SaveIntegrationProfile, ReplaceIntegrationToken, ValidateIntegrationProfile and DeleteIntegrationProfile descriptors. PATs are bounded write-only fields; no token belongs in query keys, resource documents or read responses. Preserve pending-operation decimal revisions and actor-bound exact request identities under the [integration contract](cmds-delidev-integrations-contract.md).
+
+`IntegrationQuery.inspectRepositoryIntegration` exposes the repository-specific read. Consumers must validate the complete schema-version-1 document, exact repository/revision/profile and canonical feature states before display. Preserve unknown access and previous observations distinctly; no endpoint success constitutes CI/rules/reviewer evidence. Desktop cancels/discards observations on close/inactivation and uses no automatic focus/reconnect retries.

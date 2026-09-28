@@ -37,6 +37,34 @@ func integrationCommand(ctx context.Context, c client, o options, args []string,
 		return nil, usage()
 	}
 	operation := args[0]
+	if operation == "inspect-repository" {
+		f := flags("integration inspect-repository")
+		id := f.String("repository-id", "", "")
+		if err := parse(f, args[1:]); err != nil {
+			return nil, err
+		}
+		if err := domain.ID(*id).Validate(); err != nil {
+			return nil, err
+		}
+		reply, err := c.integrations.InspectRepositoryIntegration(ctx, request(c, &pb.InspectRepositoryIntegrationRequest{RepositoryId: *id}))
+		if err != nil {
+			return nil, rpc.ClientError(err)
+		}
+		if reply.Msg.SchemaVersion != 1 {
+			return nil, domain.Fail(domain.Unsupported, "Unsupported repository integration observation.", "Use a compatible client and server.")
+		}
+		var value domain.RepositoryIntegrationAccess
+		if err := domain.Decode(reply.Msg.DocumentJson, &value); err != nil {
+			return nil, err
+		}
+		if err := value.Validate(); err != nil {
+			return nil, err
+		}
+		if value.RepositoryID != domain.ID(*id) {
+			return nil, domain.Fail(domain.RecoveryRequired, "The access observation belongs to another repository.", "Inspect the selected repository again.")
+		}
+		return value, nil
+	}
 	switch operation {
 	case "create", "edit", "replace-token", "validate", "delete":
 	default:

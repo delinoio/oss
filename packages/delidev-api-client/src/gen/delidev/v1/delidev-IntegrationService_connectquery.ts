@@ -23,3 +23,8 @@ export const validateIntegrationProfile = IntegrationService.method.validateInte
  * @generated from rpc delidev.v1.IntegrationService.DeleteIntegrationProfile
  */
 export const deleteIntegrationProfile = IntegrationService.method.deleteIntegrationProfile;
+
+/**
+ * @generated from rpc delidev.v1.IntegrationService.InspectRepositoryIntegration
+ */
+export const inspectRepositoryIntegration = IntegrationService.method.inspectRepositoryIntegration;

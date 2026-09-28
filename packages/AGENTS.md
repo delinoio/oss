@@ -89,3 +89,5 @@
 - DeliDev generated SessionQuery local review mutations preserve exact decimal revisions, original anchor/context and immutable submitted snapshots. Retain exact uncertain wire requests across panel navigation; current Resource refresh cannot silently update a selected revision. Use the dedicated owner/client operations under `docs/cmds-delidev-files-contract.md`.
 
 - DeliDev generated IntegrationQuery follows `docs/cmds-delidev-integrations-contract.md`; write-only PATs never enter query keys/read models and pending revision strings remain exact. Generate all service descriptors from the canonical proto.
+
+- DeliDev IntegrationQuery includes the generated repository access read. Consumers preserve its exact scope and decimal revision and independently validate observations; endpoint availability is not future authorization or semantic CI/rules evidence.

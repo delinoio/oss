@@ -186,6 +186,11 @@ func (r Repository) Validate() error {
 	if err := r.Starting.Validate(true); err != nil {
 		return err
 	}
+	if r.GitHubOwner != "" || r.GitHubName != "" {
+		if err := ValidateGitHubRepository(r.GitHubOwner, r.GitHubName); err != nil {
+			return err
+		}
+	}
 	if r.IntegrationID != "" {
 		if err := r.IntegrationID.Validate(); err != nil {
 			return err

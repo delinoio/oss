@@ -157,6 +157,10 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		limit := 30 * time.Second
 		if command == "integration" {
 			c.transport.ResponseHeaderTimeout = 25 * time.Second
+			if len(rest) > 0 && rest[0] == "inspect-repository" {
+				limit = 40 * time.Second
+				c.transport.ResponseHeaderTimeout = limit
+			}
 		}
 		if command == "session" && len(rest) > 0 {
 			switch rest[0] {
@@ -276,7 +280,9 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		}
 	case "integration":
 		if len(rest) > 0 && rest[0] != "list" && rest[0] != "get" && rest[0] != "snapshot" {
-			ensureRequest(&o)
+			if rest[0] != "inspect-repository" {
+				ensureRequest(&o)
+			}
 			value, err := integrationCommand(ctx, c, o, rest, streams)
 			return emit(value, err)
 		}
@@ -778,6 +784,7 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   integration replace-token --id ID --revision N --pat-stdin
   integration validate|delete --id ID --revision N
   integration list|get|snapshot [--id ID]
+  integration inspect-repository --repository-id ID
   provider presets
   provider create --preset PRESET [--name NAME]
   provider discover --account-id ID --revision N

@@ -486,6 +486,7 @@ service IntegrationService {
   rpc ReplaceIntegrationToken(ReplaceIntegrationTokenRequest) returns (ReplaceIntegrationTokenResponse);
   rpc ValidateIntegrationProfile(ValidateIntegrationProfileRequest) returns (ValidateIntegrationProfileResponse);
   rpc DeleteIntegrationProfile(DeleteIntegrationProfileRequest) returns (DeleteIntegrationProfileResponse);
+  rpc InspectRepositoryIntegration(InspectRepositoryIntegrationRequest) returns (InspectRepositoryIntegrationResponse);
 }
 message SaveIntegrationProfileRequest {
   Mutation mutation = 1;
@@ -529,6 +530,16 @@ message DeleteIntegrationProfileResponse {
   bool replayed = 3;
   bool deleted = 4;
   bytes problem_json = 5;
+}
+
+message InspectRepositoryIntegrationRequest {
+  // Selects the repository's explicitly configured profile, never a fallback.
+  string repository_id = 1;
+}
+message InspectRepositoryIntegrationResponse {
+  uint32 schema_version = 1;
+  // Fresh scoped endpoint-access observations, not persistent authorization.
+  bytes document_json = 2;
 }
 
 service ProviderService {

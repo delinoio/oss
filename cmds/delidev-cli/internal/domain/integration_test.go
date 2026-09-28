@@ -54,3 +54,28 @@ func TestIntegrationGenerationAndIdentityValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestGitHubRepositorySelectionValidation(t *testing.T) {
+	for _, name := range []string{"repo", "repo-name", "repo_name", "repo.name"} {
+		if err := ValidateGitHubRepository("owner", name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, name := range []string{"", ".", "..", "repo/other", "repo?token=x", "repo#fragment", "repo%2Fother", "repo\n"} {
+		if ValidateGitHubRepository("owner", name) == nil {
+			t.Fatalf("unsafe repository accepted %q", name)
+		}
+	}
+	fine := IntegrationDefinition{Name: "Fine", Provider: GitHubCom, TokenKind: FineGrainedPAT, ResourceOwner: "Selected"}
+	if !fine.AllowsGitHubOwner("selected") || fine.AllowsGitHubOwner("other") {
+		t.Fatal("fine-grained owner boundary")
+	}
+	classic := IntegrationDefinition{Name: "Classic", Provider: GitHubCom, TokenKind: ClassicPAT}
+	if !classic.AllowsGitHubOwner("other") {
+		t.Fatal("unrestricted classic owner")
+	}
+	classic.ResourceOwner = "selected"
+	if classic.AllowsGitHubOwner("other") {
+		t.Fatal("declared owner ignored")
+	}
+}
