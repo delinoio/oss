@@ -54,6 +54,9 @@ func fixtureRelease(t *testing.T, backend Backend, arch string) (RunnerRelease, 
 	return RunnerRelease{Tag: "v2.338.0", Published: time.Now(), Assets: []RunnerAsset{{Name: name, URL: "https://github.com/actions/runner/releases/download/v2.338.0/" + name, Digest: "sha256:" + hex.EncodeToString(hash[:]), Size: int64(len(body))}}}, body
 }
 func TestRunnerArchiveVerificationAndSafeRepack(t *testing.T) {
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
+		t.Skip("Runner archive storage requires Unix ownership and private-file support")
+	}
 	c := fixtureConfig(t)
 	release, body := fixtureRelease(t, Docker, "arm64")
 	asset, err := runnerArchiveAsset(release, Docker, "arm64")
@@ -107,6 +110,9 @@ func TestRunnerReleaseAssetRejectsWrongAuthorityAndMissingChecksum(t *testing.T)
 }
 
 func TestOfficialRunnerArchive(t *testing.T) {
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
+		t.Skip("Runner archive storage requires Unix ownership and private-file support")
+	}
 	if os.Getenv("RUNMOOR_RUNNER_DOWNLOAD_TEST") != "1" {
 		t.Skip("set RUNMOOR_RUNNER_DOWNLOAD_TEST=1 for an official runner download without registration")
 	}
