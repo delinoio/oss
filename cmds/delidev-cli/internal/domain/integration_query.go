@@ -17,9 +17,12 @@ const (
 type RepositoryQueryOperation string
 
 const (
-	RepositoryList   RepositoryQueryOperation = "list"
-	RepositorySearch RepositoryQueryOperation = "search"
-	RepositoryDetail RepositoryQueryOperation = "detail"
+	RepositoryList     RepositoryQueryOperation = "list"
+	RepositorySearch   RepositoryQueryOperation = "search"
+	RepositoryDetail   RepositoryQueryOperation = "detail"
+	RepositoryDiff     RepositoryQueryOperation = "diff"
+	RepositoryChecks   RepositoryQueryOperation = "checks"
+	RepositoryStatuses RepositoryQueryOperation = "statuses"
 )
 
 type RepositoryItemState string
@@ -52,8 +55,15 @@ func (q RepositoryQuery) Validate() error {
 		return invalid()
 	}
 	switch q.Operation {
-	case RepositoryDetail:
+	case RepositoryDiff, RepositoryDetail:
+		if q.Operation == RepositoryDiff && q.Kind != RepositoryPullRequest {
+			return invalid()
+		}
 		if !PositiveDecimal(q.Number) || q.State != "" || q.Search != "" || q.Page != 0 || q.PageSize != 0 {
+			return invalid()
+		}
+	case RepositoryChecks, RepositoryStatuses:
+		if q.Kind != RepositoryPullRequest || !PositiveDecimal(q.Number) || q.State != "" || q.Search != "" || q.Page < 1 || q.Page > 10000 || q.PageSize < 1 || q.PageSize > 20 {
 			return invalid()
 		}
 	case RepositoryList, RepositorySearch:
@@ -209,20 +219,27 @@ func repositorySHA(value string) bool {
 	return true
 }
 
+func (q RepositoryQuery) IsPRObservation() bool {
+	return q.Operation == RepositoryDiff || q.Operation == RepositoryChecks || q.Operation == RepositoryStatuses
+}
+
 type RepositoryQueryResult struct {
-	RepositoryID       ID               `json:"repository_id"`
-	RepositoryRevision string           `json:"repository_revision"`
-	ProfileID          ID               `json:"profile_id"`
-	GenerationID       ID               `json:"generation_id"`
-	ObservedAt         time.Time        `json:"observed_at"`
-	Identity           GitHubIdentity   `json:"identity"`
-	Repository         RemoteRepository `json:"repository"`
-	Query              RepositoryQuery  `json:"query"`
-	Items              []RepositoryItem `json:"items"`
-	NextPage           uint32           `json:"next_page,omitempty"`
-	TotalCount         *string          `json:"total_count,omitempty"`
-	Incomplete         *bool            `json:"incomplete,omitempty"`
-	SearchLimitReached bool             `json:"search_limit_reached,omitempty"`
+	Diff               *PullRequestDiff           `json:"diff,omitempty"`
+	Checks             *PullRequestChecks         `json:"checks,omitempty"`
+	Statuses           *PullRequestCommitStatuses `json:"statuses,omitempty"`
+	RepositoryID       ID                         `json:"repository_id"`
+	RepositoryRevision string                     `json:"repository_revision"`
+	ProfileID          ID                         `json:"profile_id"`
+	GenerationID       ID                         `json:"generation_id"`
+	ObservedAt         time.Time                  `json:"observed_at"`
+	Identity           GitHubIdentity             `json:"identity"`
+	Repository         RemoteRepository           `json:"repository"`
+	Query              RepositoryQuery            `json:"query"`
+	Items              []RepositoryItem           `json:"items"`
+	NextPage           uint32                     `json:"next_page,omitempty"`
+	TotalCount         *string                    `json:"total_count,omitempty"`
+	Incomplete         *bool                      `json:"incomplete,omitempty"`
+	SearchLimitReached bool                       `json:"search_limit_reached,omitempty"`
 }
 
 func (r RepositoryQueryResult) Validate() error {
@@ -233,7 +250,7 @@ func (r RepositoryQueryResult) Validate() error {
 		return invalid()
 	}
 	q := r.Query
-	if q.Operation == RepositoryDetail {
+	if q.Operation == RepositoryDetail || q.Operation == RepositoryDiff {
 		if len(r.Items) != 1 || r.NextPage != 0 {
 			return invalid()
 		}
@@ -254,9 +271,34 @@ func (r RepositoryQueryResult) Validate() error {
 	} else if r.TotalCount != nil || r.Incomplete != nil || r.SearchLimitReached {
 		return invalid()
 	}
+	itemQuery := q
+	if q.IsPRObservation() {
+		if len(r.Items) != 1 {
+			return invalid()
+		}
+		itemQuery = RepositoryQuery{Kind: RepositoryPullRequest, Operation: RepositoryDetail, Number: q.Number}
+	}
+	switch q.Operation {
+	case RepositoryDiff:
+		if r.Diff == nil || r.Checks != nil || r.Statuses != nil || r.Diff.Validate(r.Items[0]) != nil {
+			return invalid()
+		}
+	case RepositoryChecks:
+		if r.Checks == nil || r.Diff != nil || r.Statuses != nil || r.Checks.Validate(r.Items[0], q.PageSize) != nil {
+			return invalid()
+		}
+	case RepositoryStatuses:
+		if r.Statuses == nil || r.Diff != nil || r.Checks != nil || r.Statuses.Validate(r.Items[0], q.PageSize) != nil {
+			return invalid()
+		}
+	default:
+		if r.Diff != nil || r.Checks != nil || r.Statuses != nil {
+			return invalid()
+		}
+	}
 	seen := map[string]bool{}
 	for _, item := range r.Items {
-		if item.Validate(r.Repository, q) != nil || seen[item.ID] {
+		if item.Validate(r.Repository, itemQuery) != nil || seen[item.ID] {
 			return invalid()
 		}
 		seen[item.ID] = true

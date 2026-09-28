@@ -2,7 +2,10 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -106,5 +109,56 @@ func TestRepositoryQueryDeletionJoinsReadAndClearsToken(t *testing.T) {
 		if b != 0 {
 			t.Fatal("token outlived deletion")
 		}
+	}
+}
+
+func TestRepositoryQueriesExposeOnlyMatchingPRObservationFamily(t *testing.T) {
+	f := newIntegrationFixture(t)
+	profile := f.replace(profileMutation(f.save("Selected")), "selected-query-token")
+	repo := f.repository(domain.ID(profile.Profile.Id))
+	invalid := false
+	f.service.githubQueries = queryFunc(func(_ context.Context, _ []byte, _, _ string, q domain.RepositoryQuery) (gh.RepositoryQueryObservation, error) {
+		value := queryObservation()
+		body := "Original PR body"
+		no := false
+		now := time.Now().UTC()
+		item := domain.RepositoryItem{Provider: domain.GitHubCom, Kind: domain.RepositoryPullRequest, IdentitySource: domain.RepositoryPullRequestIdentity, ID: "17", NodeID: "PR_17", Number: "17", Title: "PR fixture", State: domain.RepositoryItemOpen, CreatedAt: now, UpdatedAt: now, URL: domain.RepositoryItemURL("fixture-owner", "repo", domain.RepositoryPullRequest, "17"), Body: &body, Draft: &no, Merged: &no, BaseRef: "main", HeadRef: "feature", BaseSHA: strings.Repeat("a", 40), HeadSHA: strings.Repeat("b", 40)}
+		value.Items = []domain.RepositoryItem{item}
+		switch q.Operation {
+		case domain.RepositoryDiff:
+			sum := sha256.Sum256(nil)
+			value.Diff = &domain.PullRequestDiff{Patch: "", Digest: hex.EncodeToString(sum[:]), BaseSHA: item.BaseSHA, HeadSHA: item.HeadSHA}
+		case domain.RepositoryChecks:
+			value.Checks = &domain.PullRequestChecks{HeadSHA: item.HeadSHA, Filter: domain.LatestCheckRuns, TotalCount: "0", Runs: []domain.PullRequestCheck{}}
+		case domain.RepositoryStatuses:
+			value.Statuses = &domain.PullRequestCommitStatuses{HeadSHA: item.HeadSHA, State: domain.CommitStatusPending, NativeState: "pending", TotalCount: "0", Contexts: []domain.PullRequestCommitStatus{}}
+		}
+		if invalid {
+			value.Diff = &domain.PullRequestDiff{}
+		}
+		return value, nil
+	})
+	for _, operation := range []domain.RepositoryQueryOperation{domain.RepositoryDiff, domain.RepositoryChecks, domain.RepositoryStatuses} {
+		query := domain.RepositoryQuery{Kind: domain.RepositoryPullRequest, Operation: operation, Number: "17"}
+		if operation != domain.RepositoryDiff {
+			query.Page = 1
+			query.PageSize = 20
+		}
+		raw, _ := json.Marshal(query)
+		request := &pb.QueryRepositoryIntegrationRequest{RepositoryId: repo.Id, SchemaVersion: 1, QueryJson: raw}
+		response, err := f.client.QueryRepositoryIntegration(context.Background(), ownerRequest(f.service.Identity, request))
+		if err != nil {
+			t.Fatal(operation, err)
+		}
+		var value domain.RepositoryQueryResult
+		if domain.Decode(response.Msg.DocumentJson, &value) != nil || value.Validate() != nil || value.Query != query {
+			t.Fatal("PR observation did not preserve query family")
+		}
+	}
+	invalid = true
+	query := domain.RepositoryQuery{Kind: domain.RepositoryPullRequest, Operation: domain.RepositoryChecks, Number: "17", Page: 1, PageSize: 20}
+	raw, _ := json.Marshal(query)
+	if _, err := f.client.QueryRepositoryIntegration(context.Background(), ownerRequest(f.service.Identity, &pb.QueryRepositoryIntegrationRequest{RepositoryId: repo.Id, SchemaVersion: 1, QueryJson: raw})); err == nil {
+		t.Fatal("mixed observation families published")
 	}
 }

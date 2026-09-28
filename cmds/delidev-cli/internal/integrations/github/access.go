@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -30,7 +32,18 @@ type readResult struct {
 func inaccessible() readResult {
 	return readResult{state: domain.IntegrationAccessUnavailable, problem: domain.Fail(domain.Unavailable, "GitHub repository access could not be verified.", "Retry after checking network availability; unavailable data does not establish feature access or successful checks.")}
 }
+
+type repositoryRepresentation uint8
+
+const (
+	repositoryJSON repositoryRepresentation = iota
+	repositoryDiff
+)
+
 func (c *Client) readRepositoryJSON(ctx context.Context, token []byte, path string) readResult {
+	return c.readRepository(ctx, token, path, repositoryJSON)
+}
+func (c *Client) readRepository(ctx context.Context, token []byte, path string, representation repositoryRepresentation) readResult {
 	if credentials.ValidatePAT(token) != nil || (!strings.HasPrefix(path, "/repos/") && !strings.HasPrefix(path, "/search/issues?")) {
 		return inaccessible()
 	}
@@ -42,7 +55,17 @@ func (c *Client) readRepositoryJSON(ctx context.Context, token []byte, path stri
 	}
 	req.Header.Set("Authorization", "Bearer "+string(token))
 	defer req.Header.Del("Authorization")
-	req.Header.Set("Accept", "application/vnd.github+json")
+	accept := "application/vnd.github+json"
+	limit := int64(1 << 20)
+	switch representation {
+	case repositoryJSON:
+	case repositoryDiff:
+		accept = "application/vnd.github.diff"
+		limit = 512 << 10
+	default:
+		return inaccessible()
+	}
+	req.Header.Set("Accept", accept)
 	req.Header.Set("X-GitHub-Api-Version", apiVersion)
 	req.Header.Set("User-Agent", "DeliDev/0.1.0")
 	reply, err := c.http.Do(req)
@@ -60,16 +83,26 @@ func (c *Client) readRepositoryJSON(ctx context.Context, token []byte, path stri
 		problem.Message = "GitHub did not permit this repository feature read."
 		return readResult{state: states[failure.State], problem: &problem}
 	}
-	raw, err := io.ReadAll(io.LimitReader(reply.Body, (1<<20)+1))
+	raw, err := io.ReadAll(io.LimitReader(reply.Body, limit+1))
 	if err != nil {
 		return inaccessible()
 	}
-	if len(raw) > 1<<20 {
+	if int64(len(raw)) > limit {
+		if representation == repositoryDiff {
+			return readResult{state: domain.IntegrationAccessUnavailable, problem: domain.Fail(domain.ResourceExhausted, "The GitHub diff exceeds its read limit.", "Inspect this comparison in GitHub; no truncated diff is returned.")}
+		}
 		return readResult{state: domain.IntegrationAccessUnavailable, problem: domain.Fail(domain.ResourceExhausted, "The GitHub response exceeds its read limit.", "Read a smaller result page or narrow the search; no truncated result is returned.")}
 	}
-	var complete any
-	if domain.Decode(raw, &complete) != nil {
-		return inaccessible()
+	if representation == repositoryDiff {
+		contentType, parameters, err := mime.ParseMediaType(reply.Header.Get("Content-Type"))
+		if err != nil || (parameters["charset"] != "" && !strings.EqualFold(parameters["charset"], "utf-8")) || (contentType != "application/vnd.github.diff" && contentType != "application/vnd.github.v3.diff") || !utf8.Valid(raw) || strings.ContainsRune(string(raw), '\x00') {
+			return inaccessible()
+		}
+	} else {
+		var complete any
+		if domain.Decode(raw, &complete) != nil {
+			return inaccessible()
+		}
 	}
 	return readResult{raw: raw, link: reply.Header.Get("Link"), state: domain.IntegrationAccessAvailable}
 }

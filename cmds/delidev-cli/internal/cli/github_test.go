@@ -2,6 +2,8 @@ package cli
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http/httptest"
 	"path/filepath"
@@ -49,6 +51,51 @@ func TestCLIGitHubQueriesUseVersionedScopedRead(t *testing.T) {
 			}
 			if strings.Contains(output.String(), "private-fixture-token") {
 				t.Fatal("secret escaped")
+			}
+		})
+	}
+}
+
+func TestCLIGitHubPRObservationCommandsUseExactNumberAndPage(t *testing.T) {
+	for _, command := range []string{"diff", "checks", "statuses"} {
+		t.Run(command, func(t *testing.T) {
+			id := domain.NewID()
+			calls := 0
+			peer := httptest.NewServer(connect.NewUnaryHandler(delidevv1connect.IntegrationServiceQueryRepositoryIntegrationProcedure, func(_ context.Context, r *connect.Request[pb.QueryRepositoryIntegrationRequest]) (*connect.Response[pb.QueryRepositoryIntegrationResponse], error) {
+				calls++
+				var q domain.RepositoryQuery
+				if domain.Decode(r.Msg.QueryJson, &q) != nil || q.Number != "9007199254740993" || string(q.Operation) != command || q.Kind != domain.RepositoryPullRequest || q.Validate() != nil {
+					t.Error("changed PR query")
+				}
+				now := time.Now().UTC()
+				body := ""
+				no := false
+				item := domain.RepositoryItem{Provider: domain.GitHubCom, Kind: domain.RepositoryPullRequest, IdentitySource: domain.RepositoryPullRequestIdentity, ID: "17", NodeID: "PR_17", Number: q.Number, Title: "Fixture", State: domain.RepositoryItemOpen, CreatedAt: now, UpdatedAt: now, URL: domain.RepositoryItemURL("fixture-owner", "repo", q.Kind, q.Number), Body: &body, Draft: &no, Merged: &no, BaseRef: "main", HeadRef: "feature", BaseSHA: strings.Repeat("a", 40), HeadSHA: strings.Repeat("b", 40)}
+				value := domain.RepositoryQueryResult{RepositoryID: id, RepositoryRevision: "1", ProfileID: domain.NewID(), GenerationID: domain.NewID(), ObservedAt: now, Identity: domain.GitHubIdentity{ID: "17", NodeID: "U_17", Login: "fixture-user"}, Repository: domain.RemoteRepository{Provider: domain.GitHubCom, ID: "37", NodeID: "R_37", Owner: "fixture-owner", Name: "repo"}, Query: q, Items: []domain.RepositoryItem{item}}
+				switch q.Operation {
+				case domain.RepositoryDiff:
+					sum := sha256.Sum256(nil)
+					value.Diff = &domain.PullRequestDiff{Digest: hex.EncodeToString(sum[:]), BaseSHA: item.BaseSHA, HeadSHA: item.HeadSHA}
+				case domain.RepositoryChecks:
+					value.Checks = &domain.PullRequestChecks{HeadSHA: item.HeadSHA, Filter: domain.LatestCheckRuns, TotalCount: "0", Runs: []domain.PullRequestCheck{}}
+				case domain.RepositoryStatuses:
+					value.Statuses = &domain.PullRequestCommitStatuses{HeadSHA: item.HeadSHA, State: domain.CommitStatusPending, NativeState: "pending", TotalCount: "0", Contexts: []domain.PullRequestCommitStatus{}}
+				}
+				if err := value.Validate(); err != nil {
+					t.Fatal(err)
+				}
+				raw, _ := json.Marshal(value)
+				return connect.NewResponse(&pb.QueryRepositoryIntegrationResponse{SchemaVersion: 1, DocumentJson: raw}), nil
+			}))
+			defer peer.Close()
+			var output, diagnostic strings.Builder
+			args := []string{"--data-dir", filepath.Join(t.TempDir(), "client"), "--server", peer.URL, "--token-stdin", "github", "pr", command, "--repository-id", string(id), "--number", "9007199254740993"}
+			if command != "diff" {
+				args = append(args, "--page", "2", "--page-size", "1")
+			}
+			code := Run(context.Background(), args, IO{In: strings.NewReader("private-fixture-token"), Out: &output, Err: &diagnostic})
+			if code != 0 || calls != 1 {
+				t.Fatalf("PR query: %d %s calls=%d", code, output.String(), calls)
 			}
 		})
 	}

@@ -12,6 +12,9 @@ import (
 )
 
 type RepositoryQueryObservation struct {
+	Diff               *domain.PullRequestDiff
+	Checks             *domain.PullRequestChecks
+	Statuses           *domain.PullRequestCommitStatuses
 	Identity           domain.GitHubIdentity
 	Repository         domain.RemoteRepository
 	Items              []domain.RepositoryItem
@@ -174,7 +177,7 @@ func parseItem(raw []byte, repository domain.RemoteRepository, query domain.Repo
 
 // Pagination links are metadata only. A next-page URL must preserve every
 // original parameter and authority; callers construct the next request afresh.
-func queryNextPage(header, path string, page uint32) (uint32, error) {
+func queryNextPage(header, path string, page uint32, repository domain.RemoteRepository) (uint32, error) {
 	if header == "" {
 		return 0, nil
 	}
@@ -220,7 +223,15 @@ func queryNextPage(header, path string, page uint32) (uint32, error) {
 			return 0, queryUnavailable()
 		}
 		observed, err := url.Parse(address)
-		if err != nil || observed.Scheme != expected.Scheme || observed.Host != expected.Host || observed.User != nil || observed.Fragment != "" || observed.EscapedPath() != expected.EscapedPath() {
+		// GitHub emits numeric repository URLs in Link headers. Only the stable
+		// repository identity read in this same query may supply that alias; the
+		// next request is still constructed independently from configured names.
+		pathMatches := err == nil && observed.EscapedPath() == expected.EscapedPath()
+		prefix := repositoryPath(repository) + "/"
+		if err == nil && domain.PositiveDecimal(repository.ID) && strings.HasPrefix(expected.EscapedPath(), prefix) {
+			pathMatches = pathMatches || observed.EscapedPath() == "/repositories/"+repository.ID+"/"+strings.TrimPrefix(expected.EscapedPath(), prefix)
+		}
+		if err != nil || observed.Scheme != expected.Scheme || observed.Host != expected.Host || observed.User != nil || observed.Fragment != "" || !pathMatches {
 			return 0, queryUnavailable()
 		}
 		values, err := url.ParseQuery(observed.RawQuery)
@@ -296,6 +307,9 @@ func (c *Client) QueryRepository(ctx context.Context, token []byte, owner, name 
 		return RepositoryQueryObservation{}, queryUnavailable()
 	}
 	result := RepositoryQueryObservation{Identity: *identity.Identity, Repository: *repository, Items: []domain.RepositoryItem{}}
+	if q.IsPRObservation() {
+		return c.queryPRObservation(bounded, token, *repository, q, result)
+	}
 	path, err := queryPath(*repository, q)
 	if err != nil {
 		return result, err
@@ -359,7 +373,7 @@ func (c *Client) QueryRepository(ctx context.Context, token []byte, owner, name 
 		result.Items = append(result.Items, item)
 	}
 	if q.Operation != domain.RepositoryDetail {
-		result.NextPage, err = queryNextPage(read.link, path, q.Page)
+		result.NextPage, err = queryNextPage(read.link, path, q.Page, *repository)
 		if err != nil {
 			return result, err
 		}

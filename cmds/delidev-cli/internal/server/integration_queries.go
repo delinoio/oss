@@ -50,7 +50,7 @@ func (s *Service) QueryRepositoryIntegration(ctx context.Context, req *connect.R
 		return nil, rpc.Error(domain.Fail(domain.RecoveryRequired, "The query returned another repository.", "Refresh the explicitly selected repository."), correlation)
 	}
 
-	value := domain.RepositoryQueryResult{RepositoryID: domain.ID(req.Msg.RepositoryId), RepositoryRevision: strconv.FormatUint(selected.record.Revision, 10), ProfileID: selected.repository.IntegrationID, GenerationID: selected.profile.Connection.GenerationID, ObservedAt: time.Now().UTC().Truncate(time.Millisecond), Identity: observed.Identity, Repository: observed.Repository, Query: query, Items: observed.Items, NextPage: observed.NextPage, TotalCount: observed.TotalCount, Incomplete: observed.Incomplete, SearchLimitReached: observed.SearchLimitReached}
+	value := domain.RepositoryQueryResult{RepositoryID: domain.ID(req.Msg.RepositoryId), RepositoryRevision: strconv.FormatUint(selected.record.Revision, 10), ProfileID: selected.repository.IntegrationID, GenerationID: selected.profile.Connection.GenerationID, ObservedAt: time.Now().UTC().Truncate(time.Millisecond), Identity: observed.Identity, Repository: observed.Repository, Query: query, Items: observed.Items, NextPage: observed.NextPage, TotalCount: observed.TotalCount, Incomplete: observed.Incomplete, SearchLimitReached: observed.SearchLimitReached, Diff: observed.Diff, Checks: observed.Checks, Statuses: observed.Statuses}
 	if err := value.Validate(); err != nil {
 		return nil, rpc.Error(err, correlation)
 	}

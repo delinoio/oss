@@ -190,3 +190,20 @@ func TestRepositoryQueryRetainsUnknownAuthorForManualInspection(t *testing.T) {
 		t.Fatal("unknown author discarded", err)
 	}
 }
+
+func TestRepositoryQueryAcceptsOnlyItsObservedRepositoryIDPagination(t *testing.T) {
+	q := listQuery(domain.RepositoryIssue)
+	path, _ := queryPath(domain.RemoteRepository{Owner: "fixture-owner", Name: "repo"}, q)
+	path = strings.Replace(path, "page=1&", "page=2&", 1)
+	for _, id := range []string{"37", "38"} {
+		linkPath := strings.Replace(path, "/repos/fixture-owner/repo/", "/repositories/"+id+"/", 1)
+		client, _ := queryFixture(t, q, []any{}, "<"+apiOrigin+linkPath+">; rel=\"next\"")
+		result, err := client.QueryRepository(context.Background(), []byte("private-fixture-pat"), "fixture-owner", "repo", q)
+		if id == "37" && (err != nil || result.NextPage != 2) {
+			t.Fatal("GitHub stable-ID pagination rejected", err)
+		}
+		if id != "37" && err == nil {
+			t.Fatal("foreign repository ID pagination accepted")
+		}
+	}
+}

@@ -107,4 +107,4 @@
 
 - DeliDev InspectRepositoryIntegration is a read-only owner/client operation with a versioned, exact repository-revision/profile/generation-bound response. Keep unavailable and not-evaluated feature observations distinct from CI/rules outcomes; no mutation receipt or saved PAT belongs in this response.
 
-- DeliDev QueryRepositoryIntegration is a versioned owner/client-only read under the integration contract. Derive profile/generation from the repository, validate strict list/search/detail queries, keep exact numeric namespaces and explicit partial results, and expose no mutation receipt or arbitrary API URL.
+- DeliDev QueryRepositoryIntegration is a versioned owner/client-only read under the integration contract. Derive profile/generation from the repository, validate strict list/search/detail and PR-only diff/checks/statuses queries, keep exact numeric namespaces and explicit partial results, and expose no mutation receipt or arbitrary API URL. PR observations require one original PR detail and its exclusive head-bound family; native unknown states and independent Checks/statuses never imply evaluated-commit or remediation authority.
