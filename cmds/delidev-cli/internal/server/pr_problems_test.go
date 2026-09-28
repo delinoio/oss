@@ -218,3 +218,71 @@ func TestPRProblemCollectorCannotOverwriteConcurrentDismissal(t *testing.T) {
 		t.Fatal("dismissal lost")
 	}
 }
+
+func TestPRProblemCollectionFamiliesAreIndependentAndRequestBound(t *testing.T) {
+	f := newIntegrationFixture(t)
+	profile := f.replace(profileMutation(f.save("Independent problems")), "problem-fixture-only-token")
+	repo := f.repository(domain.ID(profile.Profile.Id))
+	calls := 0
+	f.service.githubQueries = queryFunc(func(_ context.Context, _ []byte, _, _ string, q domain.RepositoryQuery) (gh.RepositoryQueryObservation, error) {
+		calls++
+		value := retainedFeedbackObservation(q)
+		no := false
+		value.Items[0].Mergeable = &no
+		if q.Operation == domain.RepositoryCI {
+			// No applicable rules and no native results is an observed non-trigger,
+			// while an independently verified merge conflict remains collectable.
+			item := value.Items[0]
+			value.CI = &domain.PullRequestCI{Rules: domain.PullRequestRules{BaseRef: item.BaseRef, BaseSHA: item.BaseSHA, HeadSHA: item.HeadSHA, Rules: []domain.ActiveRepositoryRule{}, Digest: domain.ActiveRulesDigest(nil)}, Head: domain.CIRollup{CommitSHA: item.HeadSHA, TotalCount: "0", Contexts: []domain.CIContext{}}, NativeMergeability: "CONFLICTING"}
+			value.CI.Result = value.CI.Evaluate(item)
+		}
+		return value, nil
+	})
+	original := &pb.RefreshPullRequestProblemsRequest{RequestId: string(domain.NewID()), RepositoryId: repo.Id, Number: "17"}
+	first, err := f.client.RefreshPullRequestProblems(context.Background(), ownerRequest(f.service.Identity, original))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, kind := range []pb.PullRequestProblemCollectionKind{pb.PullRequestProblemCollectionKind_PULL_REQUEST_PROBLEM_COLLECTION_KIND_CI, pb.PullRequestProblemCollectionKind_PULL_REQUEST_PROBLEM_COLLECTION_KIND_CONFLICT} {
+		request := &pb.RefreshPullRequestProblemsRequest{RequestId: string(domain.NewID()), RepositoryId: repo.Id, Number: "17", Kind: kind}
+		reply, err := f.client.RefreshPullRequestProblems(context.Background(), ownerRequest(f.service.Identity, request))
+		if err != nil || reply.Msg.ProblemSet.Id != first.Msg.ProblemSet.Id {
+			t.Fatal("kind created another PR owner", err)
+		}
+	}
+	var set domain.PRProblemSet
+	if err = f.service.Store.Read(domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice}), func(tx *store.Tx) error {
+		_, value, err := tx.GetPRProblemSet(domain.ID(first.Msg.ProblemSet.Id))
+		set = value
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if set.Feedback == nil || set.CI == nil || set.CI.State != domain.CINotRequired || set.Conflict == nil || set.Conflict.State != domain.PRConflictPresent {
+		t.Fatal("mixed independent prerequisites")
+	}
+	list, err := f.client.ListPullRequestProblems(context.Background(), ownerRequest(f.service.Identity, &pb.ListPullRequestProblemsRequest{RemoteRepositoryId: set.Target.RemoteRepositoryID, PullRequestId: set.Target.PullRequestID, PageSize: 20}))
+	if err != nil || len(list.Msg.Problems) != 3 {
+		t.Fatal("lost independent feedback", err)
+	}
+	for _, row := range list.Msg.Problems {
+		var v domain.PRProblem
+		if domain.Decode(row.DocumentJson, &v) != nil || v.Validate() != nil || !v.Current {
+			t.Fatal("inconsistent mixed history")
+		}
+	}
+	count := calls
+	wrongKind := &pb.RefreshPullRequestProblemsRequest{RequestId: original.RequestId, RepositoryId: repo.Id, Number: "17", Kind: pb.PullRequestProblemCollectionKind_PULL_REQUEST_PROBLEM_COLLECTION_KIND_CONFLICT}
+	if _, err := f.client.RefreshPullRequestProblems(context.Background(), ownerRequest(f.service.Identity, wrongKind)); connect.CodeOf(err) != connect.CodeAborted || calls != count {
+		t.Fatal("original request changed collection family", err)
+	}
+	invalid := &pb.RefreshPullRequestProblemsRequest{RequestId: string(domain.NewID()), RepositoryId: repo.Id, Number: "17", Kind: 99}
+	if _, err := f.client.RefreshPullRequestProblems(context.Background(), ownerRequest(f.service.Identity, invalid)); connect.CodeOf(err) != connect.CodeInvalidArgument || calls != count {
+		t.Fatal("unknown enum reached GitHub", err)
+	}
+	// Existing omitted-kind requests remain exact replay after the new enum.
+	replay, err := f.client.RefreshPullRequestProblems(context.Background(), ownerRequest(f.service.Identity, original))
+	if err != nil || !replay.Msg.Replayed || calls != count {
+		t.Fatal("legacy feedback receipt invalidated", err)
+	}
+}

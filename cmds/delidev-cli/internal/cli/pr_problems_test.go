@@ -17,7 +17,7 @@ import (
 )
 
 func TestCLIPRProblemCommandsPreserveExactIdentityAndRejectForeignHistory(t *testing.T) {
-	for _, mode := range []string{"refresh", "list", "dismiss", "foreign-history"} {
+	for _, mode := range []string{"refresh", "refresh-ci", "refresh-conflict", "list", "dismiss", "foreign-history"} {
 		t.Run(mode, func(t *testing.T) {
 			repository, id, setID, requestID := domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID()
 			at := time.Now().UTC()
@@ -26,8 +26,16 @@ func TestCLIPRProblemCommandsPreserveExactIdentityAndRejectForeignHistory(t *tes
 			entry := domain.PRFeedback{Kind: domain.PRConversationComment, ID: "71", NodeID: "COMMENT_71", Body: "Original retained feedback", PublishedAt: at, URL: "https://github.com/fixture-owner/repo/pull/17#issuecomment-71"}
 			entry.ContentVersion = entry.Version()
 			provider, _ := domain.FeedbackProviderState(entry, nil)
-			value := domain.PRProblem{Version: 1, Type: domain.PRProblemEvidenceRecord, SetID: setID, Kind: domain.PRFeedbackProblem, Target: target, Observation: observation, ContentVersion: entry.ContentVersion, Feedback: entry, OriginalProvider: provider, LatestProvider: provider, State: domain.PRProblemDismissed, Dismissal: &domain.PRProblemDismissal{ActorType: domain.OwnerDevice, RequestID: requestID, At: at}}
-			set := domain.PRProblemSet{Version: 1, Type: domain.PRProblemSetRecord, Target: target, Feedback: observation}
+			value := domain.PRProblem{Version: 1, Type: domain.PRProblemEvidenceRecord, SetID: setID, Kind: domain.PRFeedbackProblem, Target: target, Observation: observation, ContentVersion: entry.ContentVersion, Feedback: &entry, OriginalProvider: &provider, LatestProvider: &provider, State: domain.PRProblemDismissed, Dismissal: &domain.PRProblemDismissal{ActorType: domain.OwnerDevice, RequestID: requestID, At: at}}
+			set := domain.PRProblemSet{Version: 1, Type: domain.PRProblemSetRecord, Target: target, Feedback: &observation}
+			expectedKind := pb.PullRequestProblemCollectionKind_PULL_REQUEST_PROBLEM_COLLECTION_KIND_FEEDBACK
+			if mode == "refresh-ci" {
+				expectedKind = pb.PullRequestProblemCollectionKind_PULL_REQUEST_PROBLEM_COLLECTION_KIND_CI
+				set.CI = &domain.PRCIObservationSummary{Observation: observation, State: domain.CIUnknown, Reason: domain.CICommitUnverified, Source: domain.CIUnknownCommit, RulesDigest: strings.Repeat("a", 64)}
+			} else if mode == "refresh-conflict" {
+				expectedKind = pb.PullRequestProblemCollectionKind_PULL_REQUEST_PROBLEM_COLLECTION_KIND_CONFLICT
+				set.Conflict = &domain.PRConflictObservation{Observation: observation, BaseRef: "main", HeadRef: "feature", PullRequestState: domain.RepositoryItemOpen, State: domain.PRConflictUnknown}
+			}
 			if mode == "foreign-history" {
 				set.Target.PullRequestID = "99"
 			}
@@ -39,7 +47,7 @@ func TestCLIPRProblemCommandsPreserveExactIdentityAndRejectForeignHistory(t *tes
 			mux := http.NewServeMux()
 			mux.Handle(delidevv1connect.IntegrationServiceRefreshPullRequestProblemsProcedure, connect.NewUnaryHandler(delidevv1connect.IntegrationServiceRefreshPullRequestProblemsProcedure, func(_ context.Context, r *connect.Request[pb.RefreshPullRequestProblemsRequest]) (*connect.Response[pb.RefreshPullRequestProblemsResponse], error) {
 				calls++
-				if r.Msg.RepositoryId != string(repository) || r.Msg.Number != "17" || r.Msg.RequestId != string(requestID) {
+				if r.Msg.RepositoryId != string(repository) || r.Msg.Number != "17" || r.Msg.RequestId != string(requestID) || r.Msg.Kind != expectedKind {
 					t.Error("collection identity changed")
 				}
 				return connect.NewResponse(&pb.RefreshPullRequestProblemsResponse{ProblemSet: setRow, RequestId: string(requestID)}), nil
@@ -62,8 +70,13 @@ func TestCLIPRProblemCommandsPreserveExactIdentityAndRejectForeignHistory(t *tes
 			defer peer.Close()
 			args := []string{"--data-dir", filepath.Join(t.TempDir(), "client"), "--server", peer.URL, "--token-stdin", "--request-id", string(requestID), "github", "pr", "problems"}
 			switch mode {
-			case "refresh":
+			case "refresh", "refresh-ci", "refresh-conflict":
 				args = append(args, "refresh", "--repository-id", string(repository), "--number", "17")
+				if mode == "refresh-ci" {
+					args = append(args, "--kind", "ci")
+				} else if mode == "refresh-conflict" {
+					args = append(args, "--kind", "conflict")
+				}
 			case "dismiss":
 				args = append(args, "dismiss", "--id", string(id), "--revision", "9007199254740993", "--content-version", entry.ContentVersion)
 			default:

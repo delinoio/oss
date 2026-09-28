@@ -74,7 +74,7 @@ export function validPRCI(raw: unknown, item: Document): boolean {
   return true;
 }
 
-function CIOriginalEvidence({ row }: { row: Document }) {
+export function CIOriginalEvidence({ row }: { row: Document }) {
   const value = object(row.evidence), workflow = object(value.workflow);
   return <details><summary>Original lifecycle and output</summary>
     <p>Result ID: {text(row.node_id)}{value.suite_node_id ? ` · Suite: ${text(value.suite_node_id)}` : ""}</p>
@@ -94,14 +94,19 @@ const reasonLabels = new Map([
   ["closed-pr", "The PR is closed; these results cannot start automatic handling."],
   ["no-matching-result", "No matching required result was observed."],
 ]);
-export function PRCI({ value }: { value: Document }) {
+export function PRCI({ value, historical = false }: { value: Document; historical?: boolean }) {
   const result = object(value.result), selected = result.source === "test-merge" ? object(value.test_merge) : object(value.head);
   return <section aria-label="Required CI evaluation">
     <p role="status">{stateLabels.get(text(result.state))}</p>
     {result.evaluated_sha ? <p>Evaluated {result.source === "test-merge" ? "test merge" : "head"} commit: <code>{text(result.evaluated_sha)}</code></p> : null}
     {reasonLabels.has(text(result.reason)) ? <p>{reasonLabels.get(text(result.reason))}</p> : null}
-    <p>This is a current observation of active rulesets. Missing, pending and unknown results do not establish passing CI. A later action requires fresh evidence.</p>
+    <p>{historical ? "This is the original retained evaluation of active rulesets." : "This is a current observation of active rulesets."} Missing, pending and unknown results do not establish passing CI. A later action requires fresh evidence.</p>
     {items(result.requirements).length ? <table><caption>Active ruleset CI requirements</caption><thead><tr><th scope="col">Requirement</th><th scope="col">App</th><th scope="col">Result</th></tr></thead><tbody>{items(result.requirements).map((raw, index) => { const row = object(raw); return <tr key={index}><th scope="row">{text(row.context)}<small> · ruleset {text(row.ruleset_id)}</small></th><td>{text(row.integration_id) || "No restriction reported"}</td><td>{stateLabels.get(text(row.state))}{reasonLabels.has(text(row.reason)) ? <small> · {reasonLabels.get(text(row.reason))}</small> : null}</td></tr>; })}</tbody></table> : null}
     {result.source !== "unknown" ? <details><summary>Inspected check and status results ({text(selected.total_count)})</summary><ul>{items(selected.contexts).map((raw) => { const row = object(raw); return <li key={text(row.node_id)}>{text(row.name)} · {text(row.kind)} · {text(row.native_status)}{row.native_conclusion ? ` / ${text(row.native_conclusion)}` : ""} · {row.required ? "GitHub required" : "GitHub optional"}{row.application ? ` · App ${text(object(row.application).id)}` : ""}{row.workflow_event ? ` · ${text(row.workflow_event)}` : ""}<CIOriginalEvidence row={row} /></li>; })}</ul></details> : null}
   </section>;
+}
+
+export function validCIContext(raw: unknown): boolean {
+ const row = object(raw);
+ return validRollup({ commit_sha: row.commit_sha, total_count: "1", contexts: [raw] }, row.commit_sha, new Set());
 }

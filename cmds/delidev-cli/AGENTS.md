@@ -550,3 +550,6 @@
 
 
 - Durable PR feedback follows the integration contract. Schema v18 shares stable remote PR ownership across aliases/sessions, retains immutable original versions and separates provider state/current membership from local handling. Publish complete inventories only after current selection/generation/actor and captured set-revision checks; quota failure rolls back all writes. Exact version/revision Dismiss retains audit provenance and invalidates concurrent collectors/pages. Keep owner/client reference-only receipts, signed epoch-bound history, synchronized migration backups and original history after configuration deletion. No persistence or dismissal grants execution authority.
+
+
+- Schema-v19 PR CI/conflict evidence follows the integration contract. Preserve original v18 bytes/receipts during index migration. Select CI problems only from complete recomputed required/evaluated terminal failure; bind each version to immutable shared original proof and never use workflow-wide attempts to resurrect unchanged results. Conflict transitions preserve dedup through unknown reads and restart, while verified resolution or changed refs/commits permits a new version. Collection families remain independent, with legacy feedback receipt compatibility; no storage or local Dismiss grants execution.

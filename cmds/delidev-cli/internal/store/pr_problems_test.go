@@ -288,7 +288,7 @@ func TestPRProblemRetainedQuotaRollsBackWholeCollection(t *testing.T) {
 			entry.URL = observation.Items[0].URL + "#issuecomment-" + entry.ID
 			entry.ContentVersion = entry.Version()
 			provider, _ := domain.FeedbackProviderState(entry, nil)
-			value := domain.PRProblem{Version: 1, Type: domain.PRProblemEvidenceRecord, SetID: set.ID, Kind: domain.PRFeedbackProblem, Target: parent.Target, Observation: parent.Feedback, ContentVersion: entry.ContentVersion, Feedback: entry, OriginalProvider: provider, LatestProvider: provider, State: domain.PRProblemUnhandled}
+			value := domain.PRProblem{Version: 1, Type: domain.PRProblemEvidenceRecord, SetID: set.ID, Kind: domain.PRFeedbackProblem, Target: parent.Target, Observation: *parent.Feedback, ContentVersion: entry.ContentVersion, Feedback: &entry, OriginalProvider: &provider, LatestProvider: &provider, State: domain.PRProblemUnhandled}
 			if _, err := tx.putPRProblem(domain.NewID(), 0, value); err != nil {
 				return nil, err
 			}

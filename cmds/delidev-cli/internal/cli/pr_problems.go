@@ -19,13 +19,14 @@ func prProblemsCommand(ctx context.Context, c client, o options, args []string) 
 	}
 	action := args[0]
 	f := flags("github pr problems " + action)
-	var repository, number, remote, pr, page, id, version string
+	var repository, number, remote, pr, page, id, version, collection string
 	var limit uint
 	var revision uint64
 	switch action {
 	case "refresh":
 		f.StringVar(&repository, "repository-id", "", "configured repository UUID")
 		f.StringVar(&number, "number", "", "exact PR number")
+		f.StringVar(&collection, "kind", "feedback", "feedback, ci or conflict")
 	case "list":
 		f.StringVar(&remote, "remote-repository-id", "", "GitHub repository numeric ID")
 		f.StringVar(&pr, "pull-request-id", "", "GitHub PR numeric ID, not its number or issue ID")
@@ -46,13 +47,26 @@ func prProblemsCommand(ctx context.Context, c client, o options, args []string) 
 		if domain.ID(repository).Validate() != nil || !domain.PositiveDecimal(number) {
 			return nil, domain.Fail(domain.InvalidArgument, "Invalid PR selection.", "Provide a configured repository UUID and canonical positive PR number.")
 		}
+		kind := pb.PullRequestProblemCollectionKind_PULL_REQUEST_PROBLEM_COLLECTION_KIND_FEEDBACK
+		switch collection {
+		case "feedback":
+		case "ci":
+			kind = pb.PullRequestProblemCollectionKind_PULL_REQUEST_PROBLEM_COLLECTION_KIND_CI
+		case "conflict":
+			kind = pb.PullRequestProblemCollectionKind_PULL_REQUEST_PROBLEM_COLLECTION_KIND_CONFLICT
+		default:
+			return nil, domain.Fail(domain.InvalidArgument, "Unknown PR collection kind.", "Use --kind feedback, ci or conflict.")
+		}
 		ensureRequest(&o)
-		r, err := c.integrations.RefreshPullRequestProblems(ctx, request(c, &pb.RefreshPullRequestProblemsRequest{RequestId: string(o.requestID), RepositoryId: repository, Number: number}))
+		r, err := c.integrations.RefreshPullRequestProblems(ctx, request(c, &pb.RefreshPullRequestProblemsRequest{RequestId: string(o.requestID), RepositoryId: repository, Number: number, Kind: kind}))
 		if err != nil {
 			return nil, rpc.ClientError(err)
 		}
 		var value domain.PRProblemSet
 		if !prProblemEnvelope(r.Msg.ProblemSet) || domain.Decode(r.Msg.ProblemSet.DocumentJson, &value) != nil || value.Validate() != nil || value.Target.Number != number || r.Msg.RequestId != string(o.requestID) {
+			return nil, prProblemResponseError()
+		}
+		if (kind == pb.PullRequestProblemCollectionKind_PULL_REQUEST_PROBLEM_COLLECTION_KIND_FEEDBACK && value.Feedback == nil) || (kind == pb.PullRequestProblemCollectionKind_PULL_REQUEST_PROBLEM_COLLECTION_KIND_CI && value.CI == nil) || (kind == pb.PullRequestProblemCollectionKind_PULL_REQUEST_PROBLEM_COLLECTION_KIND_CONFLICT && value.Conflict == nil) {
 			return nil, prProblemResponseError()
 		}
 		// Replay returns current shared history, whose latest local alias may differ.

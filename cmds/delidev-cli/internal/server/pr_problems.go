@@ -53,14 +53,31 @@ func (s *Service) RefreshPullRequestProblems(ctx context.Context, req *connect.R
 	if repository.Validate() != nil || requestID.Validate() != nil || !domain.PositiveDecimal(req.Msg.Number) {
 		return fail(domain.Fail(domain.InvalidArgument, "Invalid PR collection request.", "Provide a repository UUID, request UUID and exact positive PR number."))
 	}
+	operation := domain.RepositoryFeedback
+	switch req.Msg.Kind {
+	case pb.PullRequestProblemCollectionKind_PULL_REQUEST_PROBLEM_COLLECTION_KIND_UNSPECIFIED, pb.PullRequestProblemCollectionKind_PULL_REQUEST_PROBLEM_COLLECTION_KIND_FEEDBACK:
+	case pb.PullRequestProblemCollectionKind_PULL_REQUEST_PROBLEM_COLLECTION_KIND_CI:
+		operation = domain.RepositoryCI
+	case pb.PullRequestProblemCollectionKind_PULL_REQUEST_PROBLEM_COLLECTION_KIND_CONFLICT:
+		operation = domain.RepositoryDetail
+	default:
+		return fail(domain.Fail(domain.InvalidArgument, "Unknown PR problem collection kind.", "Select published feedback, required CI or merge conflict."))
+	}
+	// Keep the original feedback receipt digest for v18 client retries. Other
+	// collection families use separate identities and operation namespaces.
 	identity := struct {
 		Repository domain.ID
 		Number     string
 		Actor      domain.Principal
 	}{repository, req.Msg.Number, actor}
+	receiptOperation := "pr.problems.refresh"
+	if operation != domain.RepositoryFeedback {
+		receiptOperation += "." + string(operation)
+	}
+
 	ctx, cancel := context.WithTimeout(ctx, 75*time.Second)
 	defer cancel()
-	result, replayed, err := s.Store.Replay(ctx, requestID, "pr.problems.refresh", identity)
+	result, replayed, err := s.Store.Replay(ctx, requestID, receiptOperation, identity)
 	if err != nil {
 		return fail(err)
 	}
@@ -83,14 +100,14 @@ func (s *Service) RefreshPullRequestProblems(ctx context.Context, req *connect.R
 		if err != nil {
 			return fail(err)
 		}
-		observed, err := s.readProblemObservation(ctx, repository, req.Msg.Number, domain.RepositoryFeedback, correlation)
+		observed, err := s.readProblemObservation(ctx, repository, req.Msg.Number, operation, correlation)
 		if err != nil {
 			return fail(err)
 		}
 		if detail.RepositoryRevision != observed.RepositoryRevision || detail.ProfileID != observed.ProfileID || detail.GenerationID != observed.GenerationID || detail.Repository.ID != observed.Repository.ID || detail.Repository.NodeID != observed.Repository.NodeID || detail.Items[0].ID != observed.Items[0].ID || detail.Items[0].NodeID != observed.Items[0].NodeID {
 			return fail(prObservationConflict())
 		}
-		result, err = s.Store.Mutate(ctx, requestID, "pr.problems.refresh", identity, func(tx *store.Tx) (any, error) {
+		result, err = s.Store.Mutate(ctx, requestID, receiptOperation, identity, func(tx *store.Tx) (any, error) {
 			selected, err := repositoryIntegrationFromTx(tx, repository)
 			if err != nil {
 				return nil, err
@@ -98,7 +115,15 @@ func (s *Service) RefreshPullRequestProblems(ctx context.Context, req *connect.R
 			if strconv.FormatUint(selected.record.Revision, 10) != observed.RepositoryRevision || selected.repository.IntegrationID != observed.ProfileID || selected.profile.Connection.GenerationID != observed.GenerationID {
 				return nil, prObservationConflict()
 			}
-			row, _, err := tx.ObservePRFeedback(epoch, observed)
+			var row store.Record
+			switch operation {
+			case domain.RepositoryCI:
+				row, _, err = tx.ObservePRCI(epoch, observed)
+			case domain.RepositoryDetail:
+				row, _, err = tx.ObservePRConflict(epoch, observed)
+			default:
+				row, _, err = tx.ObservePRFeedback(epoch, observed)
+			}
 			if err != nil {
 				return nil, err
 			}
@@ -117,7 +142,7 @@ func (s *Service) RefreshPullRequestProblems(ctx context.Context, req *connect.R
 	if err != nil {
 		return fail(err)
 	}
-	s.logger.InfoContext(ctx, "pr_problems_collected", "repository_id", repository, "set_id", row.ID, "replayed", result.Replayed, "correlation_id", correlation)
+	s.logger.InfoContext(ctx, "pr_problems_collected", "kind", operation, "repository_id", repository, "set_id", row.ID, "replayed", result.Replayed, "correlation_id", correlation)
 	response := connect.NewResponse(&pb.RefreshPullRequestProblemsResponse{ProblemSet: rpc.Resource(row), RequestId: string(result.RequestID), Replayed: result.Replayed})
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil

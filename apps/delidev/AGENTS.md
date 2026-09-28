@@ -478,3 +478,6 @@
 
 
 - Retained PR feedback uses generated IntegrationQuery from both PR detail and historical session links. Validate the whole page and exact remote/content identities before local actions; keep original content inert and provider dismissal/resolution separate from local handling. Preserve exact uncertain collection/dismissal requests across navigation, dispose closed reads, and expose history without requiring a current PAT. No collection or local Dismiss may start execution; follow the integration contract.
+
+
+- PR problem history supports separate feedback, CI and conflict collection. Keep latest unknown/non-failing summaries separate from retained failure/transition evidence. Original CI proof reads validate exact context and original observation, remain explicitly historical and are discarded when closed. Exact kind/request/version/revision handling and inert output follow the integration contract; none of these controls may execute a fix.

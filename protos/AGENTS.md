@@ -115,3 +115,6 @@
 
 
 - DeliDev retained PR feedback collection/list/dismissal are dedicated owner/client IntegrationService operations. Accept no caller-supplied remote evidence; bind mutations to actor/original request and dismissal to exact revision/content version. History uses stable remote numeric identities and signed page-size/set-revision-bound cursors. Reference-only replay cannot fetch GitHub, recreate deleted state or start execution; follow the integration contract.
+
+
+- DeliDev PR problem collection has a closed kind enum. Unspecified and explicit feedback preserve the original receipt family; CI/conflict remain separate request identities. Unknown kinds fail before remote reads. All kinds use the same stable PR history and version-local Dismiss, without granting execution or borrowing another kind’s prerequisites.

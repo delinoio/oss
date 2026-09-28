@@ -497,6 +497,14 @@ message RefreshPullRequestProblemsRequest {
   string request_id = 1;
   string repository_id = 2;
   string number = 3;
+  // Unspecified preserves the original published-feedback collection.
+  PullRequestProblemCollectionKind kind = 4;
+}
+enum PullRequestProblemCollectionKind {
+  PULL_REQUEST_PROBLEM_COLLECTION_KIND_UNSPECIFIED = 0;
+  PULL_REQUEST_PROBLEM_COLLECTION_KIND_FEEDBACK = 1;
+  PULL_REQUEST_PROBLEM_COLLECTION_KIND_CI = 2;
+  PULL_REQUEST_PROBLEM_COLLECTION_KIND_CONFLICT = 3;
 }
 message RefreshPullRequestProblemsResponse {
   Resource problem_set = 1;

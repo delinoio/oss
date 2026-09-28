@@ -161,14 +161,19 @@ func migrate(ctx context.Context, db *sql.DB, root string) error {
 			return storageError(err)
 		}
 	}
-	var legacyProblems int
-	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM entities WHERE kind='problem'").Scan(&legacyProblems); err != nil {
-		return storageError(err)
+	if version < 18 {
+		var legacyProblems int
+		if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM entities WHERE kind='problem'").Scan(&legacyProblems); err != nil {
+			return storageError(err)
+		}
+		if legacyProblems != 0 {
+			return domain.Fail(domain.RecoveryRequired, "Legacy PR problem ownership is unrecognized.", "Preserve the original database and migration backup; no old evidence is reinterpreted.")
+		}
+		if _, err := tx.ExecContext(ctx, prProblemSchema); err != nil {
+			return storageError(err)
+		}
 	}
-	if legacyProblems != 0 {
-		return domain.Fail(domain.RecoveryRequired, "Legacy PR problem ownership is unrecognized.", "Preserve the original database and migration backup; no old evidence is reinterpreted.")
-	}
-	if _, err := tx.ExecContext(ctx, prProblemSchema); err != nil {
+	if _, err := tx.ExecContext(ctx, prCIProblemSchema); err != nil {
 		return storageError(err)
 	}
 	return storageError(tx.Commit())

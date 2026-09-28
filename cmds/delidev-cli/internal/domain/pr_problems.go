@@ -19,7 +19,11 @@ const (
 
 type PRProblemKind string
 
-const PRFeedbackProblem PRProblemKind = "review-feedback"
+const (
+	PRFeedbackProblem      PRProblemKind = "review-feedback"
+	PRCIProblem            PRProblemKind = "ci-failure"
+	PRMergeConflictProblem PRProblemKind = "merge-conflict"
+)
 
 type PRProblemState string
 
@@ -53,14 +57,16 @@ func (v PRProblemObservation) Validate() error {
 }
 
 type PRProblemSet struct {
-	Version  uint32               `json:"version"`
-	Type     PRProblemRecordType  `json:"type"`
-	Target   SessionPullRequest   `json:"target"`
-	Feedback PRProblemObservation `json:"feedback"`
+	Version  uint32                  `json:"version"`
+	Type     PRProblemRecordType     `json:"type"`
+	Target   SessionPullRequest      `json:"target"`
+	Feedback *PRProblemObservation   `json:"feedback,omitempty"`
+	CI       *PRCIObservationSummary `json:"ci,omitempty"`
+	Conflict *PRConflictObservation  `json:"conflict,omitempty"`
 }
 
 func (v PRProblemSet) Validate() error {
-	if v.Version != 1 || v.Type != PRProblemSetRecord || v.Target.Validate() != nil || v.Feedback.Validate() != nil {
+	if v.Version != 1 || v.Type != PRProblemSetRecord || v.Target.Validate() != nil || (v.Feedback == nil && v.CI == nil && v.Conflict == nil) || (v.Feedback != nil && v.Feedback.Validate() != nil) || (v.CI != nil && v.CI.Validate() != nil) || (v.Conflict != nil && v.Conflict.Validate() != nil) {
 		return invalidPRProblem()
 	}
 	return nil
@@ -102,19 +108,21 @@ type PRProblemDismissal struct {
 }
 
 type PRProblem struct {
-	Version          uint32                  `json:"version"`
-	Type             PRProblemRecordType     `json:"type"`
-	SetID            ID                      `json:"set_id"`
-	Kind             PRProblemKind           `json:"kind"`
-	Target           SessionPullRequest      `json:"target"`
-	Observation      PRProblemObservation    `json:"observation"`
-	ContentVersion   string                  `json:"content_version"`
-	Feedback         PRFeedback              `json:"feedback"`
-	OriginalProvider PRFeedbackProviderState `json:"original_provider"`
-	LatestProvider   PRFeedbackProviderState `json:"latest_provider"`
-	Current          bool                    `json:"current"`
-	State            PRProblemState          `json:"state"`
-	Dismissal        *PRProblemDismissal     `json:"dismissal,omitempty"`
+	Version          uint32                   `json:"version"`
+	Type             PRProblemRecordType      `json:"type"`
+	SetID            ID                       `json:"set_id"`
+	Kind             PRProblemKind            `json:"kind"`
+	Target           SessionPullRequest       `json:"target"`
+	Observation      PRProblemObservation     `json:"observation"`
+	ContentVersion   string                   `json:"content_version"`
+	Feedback         *PRFeedback              `json:"feedback,omitempty"`
+	OriginalProvider *PRFeedbackProviderState `json:"original_provider,omitempty"`
+	LatestProvider   *PRFeedbackProviderState `json:"latest_provider,omitempty"`
+	CI               *PRCIProblemEvidence     `json:"ci,omitempty"`
+	Conflict         *PRConflictSnapshot      `json:"conflict,omitempty"`
+	Current          bool                     `json:"current"`
+	State            PRProblemState           `json:"state"`
+	Dismissal        *PRProblemDismissal      `json:"dismissal,omitempty"`
 }
 
 func (v PRFeedbackProviderState) validate(kind PRFeedbackKind) error {
@@ -138,11 +146,27 @@ func (v PRFeedbackProviderState) validate(kind PRFeedbackKind) error {
 }
 
 func (v PRProblem) Validate() error {
-	if v.Version != 1 || v.Type != PRProblemEvidenceRecord || v.SetID.Validate() != nil || v.Kind != PRFeedbackProblem || v.Target.Validate() != nil || v.Observation.Validate() != nil || v.ContentVersion != v.Feedback.ContentVersion {
+	if v.Version != 1 || v.Type != PRProblemEvidenceRecord || v.SetID.Validate() != nil || v.Target.Validate() != nil || v.Observation.Validate() != nil || !lowerDigest(v.ContentVersion) {
 		return invalidPRProblem()
 	}
-	item := RepositoryItem{URL: RepositoryItemURL(v.Target.Owner, v.Target.Name, RepositoryPullRequest, v.Target.Number)}
-	if v.Feedback.Validate(item) != nil || v.OriginalProvider.validate(v.Feedback.Kind) != nil || v.LatestProvider.validate(v.Feedback.Kind) != nil || v.OriginalProvider.NativeState != v.Feedback.NativeState || v.OriginalProvider.ReviewState != v.Feedback.ReviewState || v.OriginalProvider.AuthorPresent != (v.Feedback.Author != nil) {
+	switch v.Kind {
+	case PRFeedbackProblem:
+		if v.Feedback == nil || v.OriginalProvider == nil || v.LatestProvider == nil || v.CI != nil || v.Conflict != nil || v.ContentVersion != v.Feedback.ContentVersion {
+			return invalidPRProblem()
+		}
+		item := RepositoryItem{URL: RepositoryItemURL(v.Target.Owner, v.Target.Name, RepositoryPullRequest, v.Target.Number)}
+		if v.Feedback.Validate(item) != nil || v.OriginalProvider.validate(v.Feedback.Kind) != nil || v.LatestProvider.validate(v.Feedback.Kind) != nil || v.OriginalProvider.NativeState != v.Feedback.NativeState || v.OriginalProvider.ReviewState != v.Feedback.ReviewState || v.OriginalProvider.AuthorPresent != (v.Feedback.Author != nil) {
+			return invalidPRProblem()
+		}
+	case PRCIProblem:
+		if v.CI == nil || v.Feedback != nil || v.OriginalProvider != nil || v.LatestProvider != nil || v.Conflict != nil || v.CI.Validate() != nil || v.ContentVersion != v.CI.Context.Version() {
+			return invalidPRProblem()
+		}
+	case PRMergeConflictProblem:
+		if v.Conflict == nil || v.Feedback != nil || v.OriginalProvider != nil || v.LatestProvider != nil || v.CI != nil || v.Conflict.Validate() != nil || v.ContentVersion != v.Conflict.ContentVersion() || v.Observation.BaseSHA != v.Conflict.Observation.BaseSHA || v.Observation.HeadSHA != v.Conflict.Observation.HeadSHA || !v.Observation.ObservedAt.Equal(v.Conflict.Observation.ObservedAt) {
+			return invalidPRProblem()
+		}
+	default:
 		return invalidPRProblem()
 	}
 	switch v.State {
@@ -170,4 +194,22 @@ func (v PRProblem) Validate() error {
 
 func invalidPRProblem() error {
 	return Fail(RecoveryRequired, "The retained PR problem evidence is inconsistent.", "Preserve the original problem and content version for inspection.")
+}
+
+func (v PRProblem) NativeNode() string {
+	switch v.Kind {
+	case PRFeedbackProblem:
+		if v.Feedback != nil {
+			return v.Feedback.NodeID
+		}
+	case PRCIProblem:
+		if v.CI != nil {
+			return v.CI.Context.NodeID
+		}
+	case PRMergeConflictProblem:
+		if v.Conflict != nil {
+			return "conflict:" + string(v.Conflict.TransitionID)
+		}
+	}
+	return ""
 }

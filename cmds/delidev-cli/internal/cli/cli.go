@@ -813,7 +813,7 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   github pr|issue get|open --repository-id ID --number N
   github pr diff|rules|ci|feedback|reviewers --repository-id ID --number N
   github pr checks|statuses --repository-id ID --number N [--page N --page-size N]
-  github pr problems refresh --repository-id ID --number N
+  github pr problems refresh --repository-id ID --number N [--kind feedback|ci|conflict]
   github pr problems list --remote-repository-id N --pull-request-id N [--limit N --page-token TOKEN]
   github pr problems dismiss --id ID --revision N --content-version SHA256
   provider presets

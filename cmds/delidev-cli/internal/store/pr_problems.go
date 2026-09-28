@@ -109,10 +109,25 @@ func (t *Tx) GetPRProblem(id domain.ID) (Record, domain.PRProblem, error) {
 	var kind domain.PRProblemKind
 	var node, version string
 	var current bool
-	if err = t.tx.QueryRowContext(t.ctx, "SELECT set_id,kind,native_node,content_version,current FROM pr_problem_records WHERE id=?", id).Scan(&set, &kind, &node, &version, &current); err != nil {
+	var proofID sql.NullString
+	if err = t.tx.QueryRowContext(t.ctx, "SELECT set_id,kind,native_node,content_version,current,ci_observation_id FROM pr_problem_records WHERE id=?", id).Scan(&set, &kind, &node, &version, &current, &proofID); err != nil {
 		return r, v, storageError(err)
 	}
-	if set != v.SetID || kind != v.Kind || node != v.Feedback.NodeID || version != v.ContentVersion || current != v.Current {
+	if set != v.SetID || kind != v.Kind || node != v.NativeNode() || version != v.ContentVersion || current != v.Current {
+		return r, v, prProblemConflict()
+	}
+	if v.Kind == domain.PRCIProblem {
+		if !proofID.Valid || domain.ID(proofID.String) != v.CI.ObservationID {
+			return r, v, prProblemConflict()
+		}
+		_, proof, err := t.GetPRCIObservation(v.CI.ObservationID)
+		if err != nil {
+			return r, v, err
+		}
+		if proof.SetID != v.SetID || !proof.Target.SamePR(v.Target) || !v.CI.Matches(proof) || proof.Observation.BaseSHA != v.Observation.BaseSHA || proof.Observation.HeadSHA != v.Observation.HeadSHA || !proof.Observation.ObservedAt.Equal(v.Observation.ObservedAt) {
+			return r, v, prProblemConflict()
+		}
+	} else if proofID.Valid {
 		return r, v, prProblemConflict()
 	}
 	_, parent, err := t.GetPRProblemSet(set)
@@ -134,7 +149,11 @@ func (t *Tx) putPRProblem(id domain.ID, expected uint64, value domain.PRProblem)
 		return r, err
 	}
 	if expected == 0 {
-		_, err = t.tx.ExecContext(t.ctx, "INSERT INTO pr_problem_records(id,set_id,kind,native_node,content_version,current) VALUES(?,?,?,?,?,?)", id, value.SetID, value.Kind, value.Feedback.NodeID, value.ContentVersion, value.Current)
+		var proofID any
+		if value.CI != nil {
+			proofID = value.CI.ObservationID
+		}
+		_, err = t.tx.ExecContext(t.ctx, "INSERT INTO pr_problem_records(id,set_id,kind,native_node,content_version,current,ci_observation_id) VALUES(?,?,?,?,?,?,?)", id, value.SetID, value.Kind, value.NativeNode(), value.ContentVersion, value.Current, proofID)
 	} else {
 		_, err = t.tx.ExecContext(t.ctx, "UPDATE pr_problem_records SET current=? WHERE id=?", value.Current, id)
 	}
@@ -174,7 +193,7 @@ func (t *Tx) ObservePRFeedback(expectedSetRevision uint64, observed domain.Repos
 		return Record{}, 0, prProblemConflict()
 	}
 	set.Target = target
-	set.Feedback = domain.PRProblemObservation{BaseSHA: item.BaseSHA, HeadSHA: item.HeadSHA, ObservedAt: observed.ObservedAt}
+	set.Feedback = &domain.PRProblemObservation{BaseSHA: item.BaseSHA, HeadSHA: item.HeadSHA, ObservedAt: observed.ObservedAt}
 	if err = set.Validate(); err != nil {
 		return Record{}, 0, err
 	}
@@ -191,7 +210,7 @@ func (t *Tx) ObservePRFeedback(expectedSetRevision uint64, observed domain.Repos
 	if err = t.tx.QueryRowContext(t.ctx, "SELECT COUNT(*) FROM pr_problem_records WHERE set_id=?", setRecord.ID).Scan(&count); err != nil {
 		return Record{}, 0, storageError(err)
 	}
-	previous, err := t.currentPRProblems(setRecord.ID)
+	previous, err := t.currentPRProblems(setRecord.ID, domain.PRFeedbackProblem, domain.MaxPRFeedback)
 	if err != nil {
 		return Record{}, 0, err
 	}
@@ -208,7 +227,7 @@ func (t *Tx) ObservePRFeedback(expectedSetRevision uint64, observed domain.Repos
 			// A content edit cannot change a provider node's original kind or
 			// numeric identity. Check retained history, including absent versions.
 			var priorID domain.ID
-			priorErr := t.tx.QueryRowContext(t.ctx, "SELECT id FROM pr_problem_records WHERE set_id=? AND native_node=? LIMIT 1", setRecord.ID, entry.NodeID).Scan(&priorID)
+			priorErr := t.tx.QueryRowContext(t.ctx, "SELECT id FROM pr_problem_records WHERE set_id=? AND kind=? AND native_node=? LIMIT 1", setRecord.ID, domain.PRFeedbackProblem, entry.NodeID).Scan(&priorID)
 			if priorErr == nil {
 				_, prior, e := t.GetPRProblem(priorID)
 				if e != nil {
@@ -224,7 +243,7 @@ func (t *Tx) ObservePRFeedback(expectedSetRevision uint64, observed domain.Repos
 				return Record{}, 0, domain.Fail(domain.ResourceExhausted, "This PR has reached its retained problem-version limit.", "Preserve its history; no feedback was evicted or partially collected.")
 			}
 			id = domain.NewID()
-			value := domain.PRProblem{Version: 1, Type: domain.PRProblemEvidenceRecord, SetID: setRecord.ID, Kind: domain.PRFeedbackProblem, Target: target, Observation: set.Feedback, ContentVersion: entry.ContentVersion, Feedback: entry, OriginalProvider: latest, LatestProvider: latest, Current: true, State: domain.PRProblemUnhandled}
+			value := domain.PRProblem{Version: 1, Type: domain.PRProblemEvidenceRecord, SetID: setRecord.ID, Kind: domain.PRFeedbackProblem, Target: target, Observation: *set.Feedback, ContentVersion: entry.ContentVersion, Feedback: &entry, OriginalProvider: &latest, LatestProvider: &latest, Current: true, State: domain.PRProblemUnhandled}
 			if _, err = t.putPRProblem(id, 0, value); err != nil {
 				return Record{}, 0, err
 			}
@@ -239,8 +258,8 @@ func (t *Tx) ObservePRFeedback(expectedSetRevision uint64, observed domain.Repos
 			if value.Feedback.ID != entry.ID || value.Feedback.Kind != entry.Kind {
 				return Record{}, 0, prProblemConflict()
 			}
-			if !value.Current || !reflect.DeepEqual(value.LatestProvider, latest) {
-				value.Current, value.LatestProvider = true, latest
+			if !value.Current || !reflect.DeepEqual(value.LatestProvider, &latest) {
+				value.Current, value.LatestProvider = true, &latest
 				if _, err = t.putPRProblem(id, r.Revision, value); err != nil {
 					return Record{}, 0, err
 				}
@@ -264,8 +283,8 @@ func (t *Tx) ObservePRFeedback(expectedSetRevision uint64, observed domain.Repos
 	return setRecord, created, nil
 }
 
-func (t *Tx) currentPRProblems(set domain.ID) ([]domain.ID, error) {
-	rows, err := t.tx.QueryContext(t.ctx, "SELECT id FROM pr_problem_records WHERE set_id=? AND kind=? AND current=1 ORDER BY id LIMIT ?", set, domain.PRFeedbackProblem, domain.MaxPRFeedback+1)
+func (t *Tx) currentPRProblems(set domain.ID, kind domain.PRProblemKind, limit int) ([]domain.ID, error) {
+	rows, err := t.tx.QueryContext(t.ctx, "SELECT id FROM pr_problem_records WHERE set_id=? AND kind=? AND current=1 ORDER BY id LIMIT ?", set, kind, limit+1)
 	if err != nil {
 		return nil, storageError(err)
 	}
@@ -281,7 +300,7 @@ func (t *Tx) currentPRProblems(set domain.ID) ([]domain.ID, error) {
 	if err := rows.Err(); err != nil {
 		return nil, storageError(err)
 	}
-	if len(ids) > domain.MaxPRFeedback {
+	if len(ids) > limit {
 		return nil, prProblemConflict()
 	}
 	return ids, nil

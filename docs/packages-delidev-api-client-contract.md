@@ -97,3 +97,6 @@ PR-only `reviewers` uses the same generated query and current selected repositor
 
 
 Generated IntegrationQuery now includes RefreshPullRequestProblems, ListPullRequestProblems and DismissPullRequestProblem. Retain exact request UUIDs, big integer resource revisions, stable remote numeric strings and content versions. Collection inputs contain only local repository selection/PR number; callers cannot submit evidence. Read history without implicit collection and preserve signed page tokens and explicit stale-cursor recovery. Local UI mutations do not authorize execution.
+
+
+The generated PR collection kind enum adds independent CI/conflict reads while omitted/explicit feedback preserve the original receipt family. Unknown numeric kinds are rejected on the server. Shared Resource envelopes retain typed original CI proof references and conflict transitions; callers must keep historical evidence separate from current prerequisites and cannot infer handling or execution from a response.

@@ -236,3 +236,6 @@ PR/issue list, repository-scoped plain search and detail now span RPC, CLI and d
 
 
 Published PR feedback now has schema-v18 durable shared history and exact content-version local dismissal across RPC/CLI/desktop. Stable remote identity shares one inventory across local aliases and session links; original body/context/provider provenance survives edits, approval/dismissal, disappearance, head changes, restart and configuration deletion. Complete collection rechecks authorization and shared revision atomically; reference-only replay does not repeat network access. CI/conflict problems, handled/resolved transitions, Fix now and the actual bounded remediation controller remain unfinished, alongside the other issue requirements.
+
+
+Schema-v19 PR history now includes required-CI failure versions with immutable shared complete rule/result proofs, plus independently collected verified conflict transitions. Original feedback and local decisions survive migration unchanged. Unknown/current applicability and original evidence remain separate; retries retain one shared stable PR owner and exact kind/request identity. RPC/CLI/desktop expose independent collection, original proof inspection and local Dismiss. Handled/resolved transitions, Fix now, fresh execution authorization, durable attempt chains and the remediation controller remain unfinished.
