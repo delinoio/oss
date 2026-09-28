@@ -238,12 +238,13 @@ func TestGuidedTartInitResumesAndProtectsConfiguration(t *testing.T) {
 }
 
 func TestGuidedIPSWSelection(t *testing.T) {
-	for _, input := range []string{"latest", "/tmp/restore.ipsw"} {
+	localIPSW := filepath.Join(t.TempDir(), "restore.ipsw")
+	for _, input := range []string{"latest", localIPSW} {
 		if !validGuidedIPSW(input) {
 			t.Fatalf("rejected valid IPSW source %q", input)
 		}
 	}
-	for _, input := range []string{"", "relative.ipsw", "/tmp/other.txt", "/tmp/a.ipsw\n"} {
+	for _, input := range []string{"", "relative.ipsw", filepath.Join(t.TempDir(), "other.txt"), localIPSW + "\n"} {
 		if validGuidedIPSW(input) {
 			t.Fatalf("accepted invalid IPSW source %q", input)
 		}
