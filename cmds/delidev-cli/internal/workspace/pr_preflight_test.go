@@ -2,9 +2,11 @@ package workspace
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -50,8 +52,10 @@ func TestPRFirstExecutionRechecksRemoteAndPreservesOriginalPreparation(t *testin
 				repair = func() { gitTest(t, root, "config", "--worktree", "--unset", "remote.origin.url") }
 			}
 			job, execution := domain.NewID(), domain.NewID()
-			if _, err := f.manager.ClaimFirstExecution(context.Background(), job, execution, f.request, manifest); err == nil {
-				t.Fatal("changed original PR started")
+			_, firstErr := f.manager.ClaimFirstExecution(context.Background(), job, execution, f.request, manifest)
+			var rejected *prStartupRejection
+			if !errors.As(firstErr, &rejected) || rejected.record.Phase != prStartupRejected {
+				t.Fatal("changed original PR lacks a retained pre-native rejection", firstErr)
 			}
 			if _, err := os.Stat(f.manager.executionClaimPath(f.request.SessionID)); !os.IsNotExist(err) {
 				t.Fatal("failed preflight created an execution claim", err)
@@ -76,9 +80,24 @@ func TestPRFirstExecutionRechecksRemoteAndPreservesOriginalPreparation(t *testin
 				}
 			}
 			repair()
-			// A pre-claim failure may be retried only after the real operands are
-			// restored; no earlier observation can authorize the new native read.
-			lease, err := f.manager.ClaimFirstExecution(context.Background(), job, execution, f.request, manifest)
+			journalPath := f.manager.prStartupPath(f.request.SessionID, execution)
+			retained := readPRStartupTestFile(t, journalPath)
+			network := readPRStartupTestFile(t, f.log)
+			// Restoration cannot revive the original execution, including after
+			// manager replacement. Its immutable rejection performs no new Git IO.
+			for _, manager := range []*Manager{f.manager, {Root: f.manager.Root, Git: f.manager.Git}} {
+				_, err := manager.ClaimFirstExecution(context.Background(), job, execution, f.request, manifest)
+				var replay *prStartupRejection
+				if !errors.As(err, &replay) || !reflect.DeepEqual(replay.record, rejected.record) {
+					t.Fatal("original rejection was not retained", err)
+				}
+				if readPRStartupTestFile(t, journalPath) != retained || readPRStartupTestFile(t, f.log) != network {
+					t.Fatal("original rejection replay rewrote evidence or repeated networking")
+				}
+			}
+			// A distinct private claim needs new identities and current reads.
+			// This is not public authorization to resend an accepted server job.
+			lease, err := f.manager.ClaimFirstExecution(context.Background(), domain.NewID(), domain.NewID(), f.request, manifest)
 			if err != nil {
 				t.Fatal("restored original preflight", err)
 			}
