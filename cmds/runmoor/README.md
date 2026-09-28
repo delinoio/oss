@@ -107,8 +107,8 @@ runmoor config validate
 runmoor run
 ```
 
-The generated configuration needs no resource limits, architecture, runner
-version or Docker image digest:
+The following generated configuration is for an ARM64 Docker host. It needs no
+resource limits, architecture, runner version or Docker image digest:
 
 ```toml
 schema_version = 1
@@ -123,9 +123,14 @@ credential = { env = "RUNMOOR_PAT" }
 name = "linux"
 connection = "project"
 scale_set = "runmoor-linux"
-labels = ["runmoor-linux"]
+labels = ["runmoor-linux", "linux", "ARM64"]
 backend = "docker"
 ```
+
+On an amd64 Docker host, `init` uses `x64` instead of `ARM64`. Tart uses
+`["runmoor-macos", "macOS", "ARM64"]`. These defaults apply only to newly
+generated configurations; existing and manually written labels are preserved,
+and an omitted `labels` field stays empty.
 
 The manager detects host capacity and the local Docker engine limit. Defaults
 are 2 CPUs/4096 MiB per Docker job and 4 CPUs/8192 MiB per Tart job. Concurrency is
@@ -225,6 +230,9 @@ jobs:
 ```
 
 Use the configured scale-set label, or a matching label array, and applicable GitHub runner-group policy. Runmoor receives demand without a public webhook endpoint. Ordinary NAT networking is sufficient.
+For a new ARM64 Docker pool, `runs-on: [runmoor-linux, linux, ARM64]` also
+selects its platform and architecture; use `x64` for an amd64 pool. The
+single scale-set label above continues to work.
 
 ```sh
 runmoor status

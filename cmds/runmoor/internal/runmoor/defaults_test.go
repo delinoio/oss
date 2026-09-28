@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"testing"
 
 	"github.com/pelletier/go-toml/v2"
@@ -88,6 +89,20 @@ func TestLoadMinimalConfigKeepsOmissions(t *testing.T) {
 	}
 	if !loaded.Automatic["pool.linux.resources.cpu"] || loaded.Pools[0].MaxRunners == 0 {
 		t.Fatalf("missing omission metadata: %+v", loaded)
+	}
+	if len(loaded.Pools[0].Labels) != 0 {
+		t.Fatalf("omitted routing labels changed: %v", loaded.Pools[0].Labels)
+	}
+	explicit := filepath.Join(filepath.Dir(c.Storage.State), "explicit-labels.toml")
+	if err := os.WriteFile(explicit, []byte(minimalConfig+"labels = [\"custom\"]\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err = LoadConfig(explicit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(loaded.Pools[0].Labels, []string{"custom"}) {
+		t.Fatalf("explicit routing labels changed: %v", loaded.Pools[0].Labels)
 	}
 }
 
