@@ -50,9 +50,26 @@ func (s *Service) QueryRepositoryIntegration(ctx context.Context, req *connect.R
 		return nil, rpc.Error(domain.Fail(domain.RecoveryRequired, "The query returned another repository.", "Refresh the explicitly selected repository."), correlation)
 	}
 
-	value := domain.RepositoryQueryResult{RepositoryID: domain.ID(req.Msg.RepositoryId), RepositoryRevision: strconv.FormatUint(selected.record.Revision, 10), ProfileID: selected.repository.IntegrationID, GenerationID: selected.profile.Connection.GenerationID, ObservedAt: time.Now().UTC().Truncate(time.Millisecond), Identity: observed.Identity, Repository: observed.Repository, Query: query, Items: observed.Items, NextPage: observed.NextPage, TotalCount: observed.TotalCount, Incomplete: observed.Incomplete, SearchLimitReached: observed.SearchLimitReached, Diff: observed.Diff, Checks: observed.Checks, Statuses: observed.Statuses, Rules: observed.Rules, CI: observed.CI, Feedback: observed.Feedback}
+	value := domain.RepositoryQueryResult{RepositoryID: domain.ID(req.Msg.RepositoryId), RepositoryRevision: strconv.FormatUint(selected.record.Revision, 10), ProfileID: selected.repository.IntegrationID, GenerationID: selected.profile.Connection.GenerationID, ObservedAt: time.Now().UTC().Truncate(time.Millisecond), Identity: observed.Identity, Repository: observed.Repository, Query: query, Items: observed.Items, NextPage: observed.NextPage, TotalCount: observed.TotalCount, Incomplete: observed.Incomplete, SearchLimitReached: observed.SearchLimitReached, Diff: observed.Diff, Checks: observed.Checks, Statuses: observed.Statuses, Rules: observed.Rules, CI: observed.CI, Feedback: observed.Feedback, Reviewers: observed.Reviewers}
 	if err := value.Validate(); err != nil {
 		return nil, rpc.Error(err, correlation)
+	}
+	if value.Reviewers != nil {
+		identities, permissions, applications := 0, 0, 0
+		for _, actor := range value.Reviewers.Actors {
+			if actor.IdentityAccess == domain.IntegrationAccessAvailable {
+				identities++
+			}
+			if actor.Permission.Access == domain.IntegrationAccessAvailable {
+				permissions++
+			}
+		}
+		for _, app := range value.Reviewers.Applications {
+			if app.State == domain.FeedbackAppAttributed {
+				applications++
+			}
+		}
+		s.logger.Info("repository_reviewers_observed", "repository_id", value.RepositoryID, "actor_count", len(value.Reviewers.Actors), "verified_identity_count", identities, "known_permission_count", permissions, "attributed_app_count", applications, "feedback_count", len(value.Reviewers.Feedback.Entries), "correlation_id", correlation)
 	}
 	if value.Feedback != nil {
 		s.logger.Info("repository_feedback_observed", "repository_id", value.RepositoryID, "entry_count", len(value.Feedback.Entries), "thread_count", len(value.Feedback.Threads), "correlation_id", correlation)

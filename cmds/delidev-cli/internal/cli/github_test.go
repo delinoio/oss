@@ -57,7 +57,7 @@ func TestCLIGitHubQueriesUseVersionedScopedRead(t *testing.T) {
 }
 
 func TestCLIGitHubPRObservationCommandsUseExactNumberAndPage(t *testing.T) {
-	for _, command := range []string{"diff", "checks", "statuses", "rules", "ci", "feedback"} {
+	for _, command := range []string{"diff", "checks", "statuses", "rules", "ci", "feedback", "reviewers"} {
 		t.Run(command, func(t *testing.T) {
 			id := domain.NewID()
 			calls := 0
@@ -78,6 +78,8 @@ func TestCLIGitHubPRObservationCommandsUseExactNumberAndPage(t *testing.T) {
 					value.Diff = &domain.PullRequestDiff{Digest: hex.EncodeToString(sum[:]), BaseSHA: item.BaseSHA, HeadSHA: item.HeadSHA}
 				case domain.RepositoryChecks:
 					value.Checks = &domain.PullRequestChecks{HeadSHA: item.HeadSHA, Filter: domain.LatestCheckRuns, TotalCount: "0", Runs: []domain.PullRequestCheck{}}
+				case domain.RepositoryReviewers:
+					value.Reviewers = &domain.PullRequestReviewers{Feedback: domain.PullRequestFeedback{BaseSHA: item.BaseSHA, HeadSHA: item.HeadSHA, Entries: []domain.PRFeedback{}, Threads: []domain.PRFeedbackThread{}}, Actors: []domain.PRReviewerIdentity{}, Applications: []domain.FeedbackApplication{}}
 				case domain.RepositoryFeedback:
 					value.Feedback = &domain.PullRequestFeedback{BaseSHA: item.BaseSHA, HeadSHA: item.HeadSHA, Entries: []domain.PRFeedback{}, Threads: []domain.PRFeedbackThread{}}
 				case domain.RepositoryCI:
@@ -97,7 +99,7 @@ func TestCLIGitHubPRObservationCommandsUseExactNumberAndPage(t *testing.T) {
 			defer peer.Close()
 			var output, diagnostic strings.Builder
 			args := []string{"--data-dir", filepath.Join(t.TempDir(), "client"), "--server", peer.URL, "--token-stdin", "github", "pr", command, "--repository-id", string(id), "--number", "9007199254740993"}
-			if command != "diff" && command != "rules" && command != "ci" && command != "feedback" {
+			if command != "diff" && command != "rules" && command != "ci" && command != "feedback" && command != "reviewers" {
 				args = append(args, "--page", "2", "--page-size", "1")
 			}
 			code := Run(context.Background(), args, IO{In: strings.NewReader("private-fixture-token"), Out: &output, Err: &diagnostic})

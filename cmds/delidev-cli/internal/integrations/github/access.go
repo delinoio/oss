@@ -44,7 +44,8 @@ func (c *Client) readRepositoryJSON(ctx context.Context, token []byte, path stri
 	return c.readRepository(ctx, token, path, repositoryJSON)
 }
 func (c *Client) readRepository(ctx context.Context, token []byte, path string, representation repositoryRepresentation) readResult {
-	if credentials.ValidatePAT(token) != nil || (!strings.HasPrefix(path, "/repos/") && !strings.HasPrefix(path, "/search/issues?")) {
+	userIdentity := representation == repositoryJSON && strings.HasPrefix(path, "/user/") && domain.PositiveDecimal(strings.TrimPrefix(path, "/user/"))
+	if credentials.ValidatePAT(token) != nil || (!strings.HasPrefix(path, "/repos/") && !strings.HasPrefix(path, "/search/issues?") && !userIdentity) {
 		return inaccessible()
 	}
 	bounded, cancel := context.WithTimeout(ctx, 15*time.Second)

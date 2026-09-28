@@ -17,15 +17,16 @@ const (
 type RepositoryQueryOperation string
 
 const (
-	RepositoryList     RepositoryQueryOperation = "list"
-	RepositorySearch   RepositoryQueryOperation = "search"
-	RepositoryDetail   RepositoryQueryOperation = "detail"
-	RepositoryDiff     RepositoryQueryOperation = "diff"
-	RepositoryChecks   RepositoryQueryOperation = "checks"
-	RepositoryStatuses RepositoryQueryOperation = "statuses"
-	RepositoryRules    RepositoryQueryOperation = "rules"
-	RepositoryCI       RepositoryQueryOperation = "ci"
-	RepositoryFeedback RepositoryQueryOperation = "feedback"
+	RepositoryList      RepositoryQueryOperation = "list"
+	RepositorySearch    RepositoryQueryOperation = "search"
+	RepositoryDetail    RepositoryQueryOperation = "detail"
+	RepositoryDiff      RepositoryQueryOperation = "diff"
+	RepositoryChecks    RepositoryQueryOperation = "checks"
+	RepositoryStatuses  RepositoryQueryOperation = "statuses"
+	RepositoryRules     RepositoryQueryOperation = "rules"
+	RepositoryCI        RepositoryQueryOperation = "ci"
+	RepositoryFeedback  RepositoryQueryOperation = "feedback"
+	RepositoryReviewers RepositoryQueryOperation = "reviewers"
 )
 
 type RepositoryItemState string
@@ -58,8 +59,8 @@ func (q RepositoryQuery) Validate() error {
 		return invalid()
 	}
 	switch q.Operation {
-	case RepositoryDiff, RepositoryDetail, RepositoryRules, RepositoryCI, RepositoryFeedback:
-		if (q.Operation == RepositoryDiff || q.Operation == RepositoryRules || q.Operation == RepositoryCI || q.Operation == RepositoryFeedback) && q.Kind != RepositoryPullRequest {
+	case RepositoryDiff, RepositoryDetail, RepositoryRules, RepositoryCI, RepositoryFeedback, RepositoryReviewers:
+		if (q.Operation == RepositoryDiff || q.Operation == RepositoryRules || q.Operation == RepositoryCI || q.Operation == RepositoryFeedback || q.Operation == RepositoryReviewers) && q.Kind != RepositoryPullRequest {
 			return invalid()
 		}
 		if !PositiveDecimal(q.Number) || q.State != "" || q.Search != "" || q.Page != 0 || q.PageSize != 0 {
@@ -223,10 +224,11 @@ func repositorySHA(value string) bool {
 }
 
 func (q RepositoryQuery) IsPRObservation() bool {
-	return q.Operation == RepositoryDiff || q.Operation == RepositoryChecks || q.Operation == RepositoryStatuses || q.Operation == RepositoryRules || q.Operation == RepositoryCI || q.Operation == RepositoryFeedback
+	return q.Operation == RepositoryDiff || q.Operation == RepositoryChecks || q.Operation == RepositoryStatuses || q.Operation == RepositoryRules || q.Operation == RepositoryCI || q.Operation == RepositoryFeedback || q.Operation == RepositoryReviewers
 }
 
 type RepositoryQueryResult struct {
+	Reviewers          *PullRequestReviewers      `json:"reviewers,omitempty"`
 	Feedback           *PullRequestFeedback       `json:"feedback,omitempty"`
 	CI                 *PullRequestCI             `json:"ci,omitempty"`
 	Rules              *PullRequestRules          `json:"rules,omitempty"`
@@ -256,7 +258,7 @@ func (r RepositoryQueryResult) Validate() error {
 		return invalid()
 	}
 	q := r.Query
-	if q.Operation == RepositoryDetail || q.Operation == RepositoryDiff || q.Operation == RepositoryRules || q.Operation == RepositoryCI || q.Operation == RepositoryFeedback {
+	if q.Operation == RepositoryDetail || q.Operation == RepositoryDiff || q.Operation == RepositoryRules || q.Operation == RepositoryCI || q.Operation == RepositoryFeedback || q.Operation == RepositoryReviewers {
 		if len(r.Items) != 1 || r.NextPage != 0 {
 			return invalid()
 		}
@@ -284,6 +286,9 @@ func (r RepositoryQueryResult) Validate() error {
 		}
 		itemQuery = RepositoryQuery{Kind: RepositoryPullRequest, Operation: RepositoryDetail, Number: q.Number}
 	}
+	if q.Operation != RepositoryReviewers && r.Reviewers != nil {
+		return invalid()
+	}
 	if q.Operation != RepositoryFeedback && r.Feedback != nil {
 		return invalid()
 	}
@@ -294,6 +299,10 @@ func (r RepositoryQueryResult) Validate() error {
 		return invalid()
 	}
 	switch q.Operation {
+	case RepositoryReviewers:
+		if r.Reviewers == nil || r.Feedback != nil || r.CI != nil || r.Rules != nil || r.Diff != nil || r.Checks != nil || r.Statuses != nil || r.Reviewers.Validate(r.Items[0]) != nil {
+			return invalid()
+		}
 	case RepositoryFeedback:
 		if r.Feedback == nil || r.CI != nil || r.Rules != nil || r.Diff != nil || r.Checks != nil || r.Statuses != nil || r.Feedback.Validate(r.Items[0]) != nil {
 			return invalid()

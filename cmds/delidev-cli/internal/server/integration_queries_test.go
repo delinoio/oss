@@ -130,6 +130,8 @@ func TestRepositoryQueriesExposeOnlyMatchingPRObservationFamily(t *testing.T) {
 			value.Diff = &domain.PullRequestDiff{Patch: "", Digest: hex.EncodeToString(sum[:]), BaseSHA: item.BaseSHA, HeadSHA: item.HeadSHA}
 		case domain.RepositoryChecks:
 			value.Checks = &domain.PullRequestChecks{HeadSHA: item.HeadSHA, Filter: domain.LatestCheckRuns, TotalCount: "0", Runs: []domain.PullRequestCheck{}}
+		case domain.RepositoryReviewers:
+			value.Reviewers = &domain.PullRequestReviewers{Feedback: domain.PullRequestFeedback{BaseSHA: item.BaseSHA, HeadSHA: item.HeadSHA, Entries: []domain.PRFeedback{}, Threads: []domain.PRFeedbackThread{}}, Actors: []domain.PRReviewerIdentity{}, Applications: []domain.FeedbackApplication{}}
 		case domain.RepositoryFeedback:
 			value.Feedback = &domain.PullRequestFeedback{BaseSHA: item.BaseSHA, HeadSHA: item.HeadSHA, Entries: []domain.PRFeedback{}, Threads: []domain.PRFeedbackThread{}}
 		case domain.RepositoryCI:
@@ -145,9 +147,9 @@ func TestRepositoryQueriesExposeOnlyMatchingPRObservationFamily(t *testing.T) {
 		}
 		return value, nil
 	})
-	for _, operation := range []domain.RepositoryQueryOperation{domain.RepositoryDiff, domain.RepositoryChecks, domain.RepositoryStatuses, domain.RepositoryRules, domain.RepositoryCI, domain.RepositoryFeedback} {
+	for _, operation := range []domain.RepositoryQueryOperation{domain.RepositoryDiff, domain.RepositoryChecks, domain.RepositoryStatuses, domain.RepositoryRules, domain.RepositoryCI, domain.RepositoryFeedback, domain.RepositoryReviewers} {
 		query := domain.RepositoryQuery{Kind: domain.RepositoryPullRequest, Operation: operation, Number: "17"}
-		if operation != domain.RepositoryDiff && operation != domain.RepositoryRules && operation != domain.RepositoryCI && operation != domain.RepositoryFeedback {
+		if operation != domain.RepositoryDiff && operation != domain.RepositoryRules && operation != domain.RepositoryCI && operation != domain.RepositoryFeedback && operation != domain.RepositoryReviewers {
 			query.Page = 1
 			query.PageSize = 20
 		}

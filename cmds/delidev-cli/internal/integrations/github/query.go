@@ -12,6 +12,7 @@ import (
 )
 
 type RepositoryQueryObservation struct {
+	Reviewers          *domain.PullRequestReviewers
 	Feedback           *domain.PullRequestFeedback
 	CI                 *domain.PullRequestCI
 	Rules              *domain.PullRequestRules
