@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"slices"
 	"time"
 
@@ -9,6 +10,76 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 )
+
+// A successful match remains bound to the original candidate revision. Session
+// activity, pause/Archive or preparation changes during the read invalidate it;
+// the later acceptance transaction must compare this selection again.
+func (s *Service) matchPRRemediationWorkspace(ctx context.Context, selected store.Record, target domain.PRGitTarget) (workspace.PRWorkspaceMatch, error) {
+	var empty workspace.PRWorkspaceMatch
+	if _, err := integrationActor(ctx); err != nil {
+		return empty, err
+	}
+	if selected.Kind != domain.SessionKind || selected.ID.Validate() != nil || selected.Revision == 0 || target.Validate() != nil {
+		return empty, domain.Fail(domain.InvalidArgument, "Invalid PR workspace candidate.", "Select an original linked session and current PR target.")
+	}
+	check := func(tx *store.Tx) error {
+		r, session, err := sessionRecord(tx, selected.ID)
+		if err != nil {
+			return err
+		}
+		if r.Revision != selected.Revision || r.ProjectID != selected.ProjectID || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || session.Dispatch == domain.DispatchPaused || (session.Workspace != domain.Worktree && session.Workspace != domain.Local) {
+			return domain.Fail(domain.Conflict, "The PR workspace candidate changed during inspection.", "Refresh eligible linked sessions without resuming paused or archived work.")
+		}
+		if _, err = sessionPRScope(tx, selected.ID, target.Target.RepositoryID); err != nil {
+			return err
+		}
+		links, err := tx.List(store.Filter{Kind: domain.PullRequestKind, SessionID: selected.ID, Limit: domain.MaxSessionPullRequests + 1})
+		if err != nil {
+			return err
+		}
+		if len(links) > domain.MaxSessionPullRequests {
+			return workspace.ResultUncertain()
+		}
+		matches := 0
+		for _, row := range links {
+			link, err := store.Decode[domain.SessionPullRequest](row)
+			if err != nil || link.Validate() != nil || row.ProjectID != r.ProjectID || row.SessionID != r.ID {
+				return workspace.ResultUncertain()
+			}
+			if link.SamePR(target.Target) && link.RepositoryID == target.Target.RepositoryID && link.RepositoryNodeID == target.Target.RepositoryNodeID && link.PullRequestNodeID == target.Target.PullRequestNodeID && link.Number == target.Target.Number {
+				matches++
+			}
+		}
+		if matches != 1 {
+			return domain.Fail(domain.Conflict, "The original PR association changed during inspection.", "Refresh the exact linked session; historical names or another PR link cannot substitute for it.")
+		}
+		return nil
+	}
+	var input workspace.PrepareRequest
+	var manifest workspace.Manifest
+	if err := s.Store.Read(ctx, func(tx *store.Tx) error {
+		if err := check(tx); err != nil {
+			return err
+		}
+		var err error
+		input, manifest, err = workspaceReadScope(tx, selected.ID)
+		return err
+	}); err != nil {
+		return empty, err
+	}
+	raw, err := s.observeWorkerWorkspace(ctx, selected.ID, input, manifest, domain.WorkspaceReadQuery{}, &target)
+	if err != nil {
+		return empty, err
+	}
+	if err := s.Store.Read(ctx, check); err != nil {
+		return empty, err
+	}
+	var result workspace.PRWorkspaceMatch
+	if domain.Decode(raw, &result) != nil {
+		return empty, workspace.ResultUncertain()
+	}
+	return result, nil
+}
 
 // A plan is a read-only configuration check, not a session, account reservation
 // or native Git grant. Acceptance must replan in its transaction; native startup

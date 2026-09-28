@@ -22,6 +22,7 @@ import (
 )
 
 type ReadRequest struct {
+	PRCandidate *domain.PRGitTarget       `json:"pr_candidate,omitempty"`
 	ID          domain.ID                 `json:"id"`
 	Deadline    time.Time                 `json:"deadline"`
 	Preparation PrepareRequest            `json:"preparation"`
@@ -38,53 +39,76 @@ func readUnsupported() error {
 
 // ReadWorkspace observes files without taking or rewriting native execution
 // ownership. Its Git children use a distinct owner, including during a live run.
-func (m *Manager) ReadWorkspace(ctx context.Context, request ReadRequest) (result domain.WorkspaceReadResult, returned error) {
-	if request.ID.Validate() != nil || request.Preparation.validate() != nil || request.Query.Validate() != nil || request.Query.Operation == domain.WorkspaceRoots {
+func (m *Manager) ReadWorkspace(ctx context.Context, request ReadRequest) (domain.WorkspaceReadResult, error) {
+	var result domain.WorkspaceReadResult
+	if request.PRCandidate != nil || request.Query.Validate() != nil || request.Query.Operation == domain.WorkspaceRoots {
 		return result, readUnsupported()
 	}
+	err := m.observeWorkspace(ctx, request, request.Query.RepositoryID, request.Query.Operation == domain.WorkspaceGitDiff, func(ctx context.Context, git Git, retained Manifest, root *os.Root, _ string) error {
+		var err error
+		if request.Query.Operation == domain.WorkspaceGitDiff {
+			result, err = git.readDiff(ctx, request, retained)
+		} else {
+			result, err = readRoot(ctx, root, request)
+		}
+		return err
+	})
+	if err != nil {
+		return domain.WorkspaceReadResult{}, err
+	}
+	return result, result.Validate(request.Query)
+}
+
+// File views and private PR matching share original manifest, filesystem anchor
+// and independently cleaned read-process ownership. Neither takes an execution
+// lease or replaces a native startup/continuation check.
+func (m *Manager) observeWorkspace(ctx context.Context, request ReadRequest, repositoryID domain.ID, verifyAfter bool, observe func(context.Context, Git, Manifest, *os.Root, string) error) (returned error) {
+	if request.ID.Validate() != nil || request.Preparation.validate() != nil {
+		return readUnsupported()
+	}
 	if request.Deadline.IsZero() || time.Until(request.Deadline) <= 0 || time.Until(request.Deadline) > 16*time.Second {
-		return result, readFailure()
+		return readFailure()
 	}
 	ctx, cancel := context.WithDeadline(ctx, request.Deadline)
 	defer cancel()
 	if security.CheckPrivateDir(m.Root) != nil || m.initialize() != nil {
-		return result, ResultUncertain()
+		return ResultUncertain()
 	}
 	defer func() {
 		if returned != nil {
-			m.Logger.WarnContext(ctx, "workspace_read_failed", "read_id", request.ID, "session_id", request.Preparation.SessionID, "operation", request.Query.Operation, "comparison", request.Query.Comparison, "code", domain.SafeError(returned).Code)
+			m.Logger.WarnContext(ctx, "workspace_read_failed", "read_id", request.ID, "session_id", request.Preparation.SessionID, "operation", request.Query.Operation, "pr_candidate", request.PRCandidate != nil, "comparison", request.Query.Comparison, "code", domain.SafeError(returned).Code)
 		}
 	}()
 	retained, err := m.Read(request.Preparation.SessionID)
 	actual, _ := json.Marshal(retained)
 	expected, _ := json.Marshal(request.Manifest)
 	if err != nil || !bytes.Equal(actual, expected) || retained.State != Ready {
-		return result, ResultUncertain()
+		return ResultUncertain()
 	}
 	selected := ""
-	if retained.Type == domain.GeneralChat && request.Query.RepositoryID == "" {
+	if retained.Type == domain.GeneralChat && repositoryID == "" {
 		selected = retained.PrimaryPath
 	}
 	for _, repo := range retained.Repositories {
-		if repo.ID == request.Query.RepositoryID {
+		if repo.ID == repositoryID {
 			selected = repo.Path
 		}
 	}
 	if selected == "" {
-		return result, readUnsupported()
+		return readUnsupported()
 	}
 	before, err := os.Lstat(selected)
 	if err != nil || !before.IsDir() || before.Mode()&os.ModeSymlink != 0 {
-		return result, ResultUncertain()
+		return ResultUncertain()
 	}
 	root, err := os.OpenRoot(selected)
 	if err != nil {
-		return result, readFailure()
+		return readFailure()
 	}
 	defer root.Close()
 	anchored, err := root.Stat(".")
 	if err != nil || !os.SameFile(before, anchored) {
-		return result, ResultUncertain()
+		return ResultUncertain()
 	}
 	// Continuation identity allows commits and dirty files without requiring a
 	// closed native claim. This observation grants no execution/recovery rights.
@@ -93,11 +117,11 @@ func (m *Manager) ReadWorkspace(ctx context.Context, request ReadRequest) (resul
 	inspection.Git.ProcessRoot = filepath.Join(m.Root, "workspace-read-processes")
 	if len(retained.Repositories) > 0 {
 		if err := security.PrivateDir(inspection.Git.ProcessRoot); err != nil {
-			return result, ResultUncertain()
+			return ResultUncertain()
 		}
 		owner := filepath.Join(inspection.Git.ProcessRoot, string(request.ID))
 		if err := os.Mkdir(owner, 0700); err != nil {
-			return result, ResultUncertain()
+			return ResultUncertain()
 		}
 		defer func() {
 			cleanup, stop := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
@@ -105,43 +129,38 @@ func (m *Manager) ReadWorkspace(ctx context.Context, request ReadRequest) (resul
 			// Delete only an empty, fully reconciled read-only process index.
 			// Unknown children retain their private journals for recovery.
 			if process.ReconcileOwnerContext(cleanup, inspection.Git.ProcessRoot, request.ID) != nil || os.Remove(owner) != nil {
-				result, returned = domain.WorkspaceReadResult{}, ResultUncertain()
+				returned = ResultUncertain()
 				return
 			}
 			if err := os.Remove(owner + ".recovery.lock"); err != nil {
-				result, returned = domain.WorkspaceReadResult{}, ResultUncertain()
+				returned = ResultUncertain()
 			}
 		}()
 	}
 	if _, err := inspection.verifyWorkspaceIdentityForOwner(ctx, request.Preparation, retained, continuationIdentity, request.ID); err != nil {
-		return result, err
+		return err
 	}
 	if err := ctx.Err(); err != nil {
-		return result, domain.SafeError(err)
+		return domain.SafeError(err)
 	}
-	if request.Query.Operation == domain.WorkspaceGitDiff {
-		git := inspection.Git
-		git.OwnerID = request.ID
-		result, err = git.readDiff(ctx, request, retained)
-	} else {
-		result, err = readRoot(ctx, root, request)
-	}
-	if err != nil {
-		return result, err
+	git := inspection.Git
+	git.OwnerID = request.ID
+	if err := observe(ctx, git, retained, root, selected); err != nil {
+		return err
 	}
 	after, err := os.Lstat(selected)
 	if err != nil || !os.SameFile(before, after) || after.Mode()&os.ModeSymlink != 0 {
-		return domain.WorkspaceReadResult{}, ResultUncertain()
+		return ResultUncertain()
 	}
 	if err := ctx.Err(); err != nil {
-		return domain.WorkspaceReadResult{}, domain.SafeError(err)
+		return domain.SafeError(err)
 	}
-	if request.Query.Operation == domain.WorkspaceGitDiff {
+	if verifyAfter {
 		if _, err := inspection.verifyWorkspaceIdentityForOwner(ctx, request.Preparation, retained, continuationIdentity, request.ID); err != nil {
-			return domain.WorkspaceReadResult{}, err
+			return err
 		}
 	}
-	return result, result.Validate(request.Query)
+	return nil
 }
 
 func readRoot(ctx context.Context, root *os.Root, request ReadRequest) (domain.WorkspaceReadResult, error) {

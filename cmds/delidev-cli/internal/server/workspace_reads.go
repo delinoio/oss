@@ -156,19 +156,30 @@ func (s *Service) ReadSessionWorkspace(ctx context.Context, req *connect.Request
 	if query.Operation == domain.WorkspaceGitDiff && query.Comparison == domain.DiffCreation && input.Type != domain.Worktree {
 		return fail(domain.Fail(domain.Unsupported, "Creation comparisons require a prepared Worktree.", "Choose working-tree or staged for Local repositories; no session-start filesystem baseline exists."))
 	}
+	raw, err := s.observeWorkerWorkspace(ctx, id, input, manifest, query, nil)
+	if err != nil {
+		return fail(err)
+	}
+	return connect.NewResponse(&pb.ReadSessionWorkspaceResponse{DocumentJson: raw}), nil
+}
+
+// Both profiles retain the same one-read-per-Worker bound and current primary
+// stream, paired device and original preparation checks through publication.
+func (s *Service) observeWorkerWorkspace(ctx context.Context, id domain.ID, input workspace.PrepareRequest, manifest workspace.Manifest, query domain.WorkspaceReadQuery, target *domain.PRGitTarget) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	deadline, _ := ctx.Deadline()
-	observation := &workspaceObservation{request: workspace.ReadRequest{ID: domain.NewID(), Deadline: deadline, Preparation: input, Manifest: manifest, Query: query}, result: make(chan workspaceReadReply, 1)}
+	deadline = deadline.UTC()
+	observation := &workspaceObservation{request: workspace.ReadRequest{ID: domain.NewID(), Deadline: deadline, Preparation: input, Manifest: manifest, Query: query, PRCandidate: target}, result: make(chan workspaceReadReply, 1)}
 	s.workspaceReadsMu.Lock()
 	reader := s.workspaceReaders[input.MachineID]
 	if reader == nil {
 		s.workspaceReadsMu.Unlock()
-		return fail(workspaceReadUnavailable())
+		return nil, workspaceReadUnavailable()
 	}
 	if reader.pending != nil {
 		s.workspaceReadsMu.Unlock()
-		return fail(domain.Fail(domain.ResourceExhausted, "Another workspace read is in progress on this machine.", "Wait for it to finish and refresh."))
+		return nil, domain.Fail(domain.ResourceExhausted, "Another workspace read is in progress on this machine.", "Wait for it to finish and refresh.")
 	}
 	active := 0
 	for _, current := range s.workspaceReaders {
@@ -178,7 +189,7 @@ func (s *Service) ReadSessionWorkspace(ctx context.Context, req *connect.Request
 	}
 	if active >= 64 {
 		s.workspaceReadsMu.Unlock()
-		return fail(domain.Fail(domain.ResourceExhausted, "The workspace observation limit is reached.", "Wait for active reads to finish and refresh."))
+		return nil, domain.Fail(domain.ResourceExhausted, "The workspace observation limit is reached.", "Wait for active reads to finish and refresh.")
 	}
 	reader.pending = observation
 	s.workspaceReadsMu.Unlock()
@@ -191,34 +202,34 @@ func (s *Service) ReadSessionWorkspace(ctx context.Context, req *connect.Request
 	}()
 	primary, err := s.primaryWorkspaceStream(reader.machine, reader.instance)
 	if err != nil || primary.ID != reader.primary {
-		return fail(workspaceReadUnavailable())
+		return nil, workspaceReadUnavailable()
 	}
 	if err := s.Store.Read(ctx, func(tx *store.Tx) error { return currentWorkspaceReader(tx, reader) }); err != nil {
-		return fail(err)
+		return nil, err
 	}
 	raw, _ := json.Marshal(observation.request)
 	select {
 	case reader.requests <- raw:
 	case <-reader.done:
-		return fail(workspaceReadUnavailable())
+		return nil, workspaceReadUnavailable()
 	case <-primary.Done:
-		return fail(workspaceReadUnavailable())
+		return nil, workspaceReadUnavailable()
 	case <-ctx.Done():
-		return fail(workspaceReadUnavailable())
+		return nil, workspaceReadUnavailable()
 	}
 	select {
 	case <-ctx.Done():
-		return fail(workspaceReadUnavailable())
+		return nil, workspaceReadUnavailable()
 	case <-reader.done:
-		return fail(workspaceReadUnavailable())
+		return nil, workspaceReadUnavailable()
 	case <-primary.Done:
-		return fail(workspaceReadUnavailable())
+		return nil, workspaceReadUnavailable()
 	case reply := <-observation.result:
 		// A result cannot outlive session deletion, changed preparation, a
 		// revoked client/Worker or replacement of the primary execution stream.
 		current, err := s.primaryWorkspaceStream(reader.machine, reader.instance)
 		if err != nil || current.ID != reader.primary {
-			return fail(workspaceReadUnavailable())
+			return nil, workspaceReadUnavailable()
 		}
 		err = s.Store.Read(ctx, func(tx *store.Tx) error {
 			if err := currentWorkspaceReader(tx, reader); err != nil {
@@ -236,15 +247,15 @@ func (s *Service) ReadSessionWorkspace(ctx context.Context, req *connect.Request
 			return nil
 		})
 		if err != nil {
-			return fail(err)
+			return nil, err
 		}
 		if reply.problem != nil {
-			return fail(reply.problem)
+			return nil, reply.problem
 		}
 		if s.logger != nil {
-			s.logger.InfoContext(ctx, "workspace_read_completed", "read_id", observation.request.ID, "session_id", id, "machine_id", reader.machine, "operation", query.Operation)
+			s.logger.InfoContext(ctx, "workspace_read_completed", "read_id", observation.request.ID, "session_id", id, "machine_id", reader.machine, "operation", query.Operation, "pr_candidate", target != nil)
 		}
-		return connect.NewResponse(&pb.ReadSessionWorkspaceResponse{DocumentJson: reply.document}), nil
+		return reply.document, nil
 	}
 }
 
@@ -368,6 +379,12 @@ func (s *Service) ReportWorkspaceRead(ctx context.Context, req *connect.Request[
 		if pending.request.Query.Operation == domain.WorkspaceGitDiff && code == domain.Unsupported {
 			reply.problem = domain.Fail(code, "This Git comparison is unavailable on the execution machine.", "Select a prepared Git repository and supported comparison. Working-tree comparisons cannot run configured clean/process filters; use the staged comparison to inspect stored changes.")
 		}
+	} else if pending.request.PRCandidate != nil {
+		var match workspace.PRWorkspaceMatch
+		if len(req.Msg.DocumentJson) > 4096 || domain.Decode(req.Msg.DocumentJson, &match) != nil || workspace.ValidatePRWorkspaceMatch(pending.request, match) != nil {
+			return fail(workspaceReadUnavailable())
+		}
+		reply.document, _ = json.Marshal(match)
 	} else {
 		if len(req.Msg.DocumentJson) > 512<<10 || domain.Decode(req.Msg.DocumentJson, &result) != nil || result.Validate(pending.request.Query) != nil {
 			return fail(workspaceReadUnavailable())

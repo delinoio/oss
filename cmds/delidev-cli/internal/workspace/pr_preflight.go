@@ -36,7 +36,18 @@ func (m *Manager) preflightPreparedPRs(ctx context.Context, input PrepareRequest
 	return nil
 }
 
+type prBranchSelection uint8
+
+const (
+	prDetachedOnly prBranchSelection = iota
+	prHeadOrDetached
+)
+
 func (g Git) preflightPR(ctx context.Context, root string, spec RepositorySpec) error {
+	return g.preflightPRWorkspace(ctx, root, spec, prDetachedOnly)
+}
+
+func (g Git) preflightPRWorkspace(ctx context.Context, root string, spec RepositorySpec, branchMode prBranchSelection) error {
 	bounded, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	target := *spec.PRTarget
@@ -48,11 +59,12 @@ func (g Git) preflightPR(ctx context.Context, root string, spec RepositorySpec) 
 		if trimGit(raw) != target.HeadSHA {
 			return prWorkspaceChanged()
 		}
-		_, exit, err := g.runCommand(bounded, root, "symbolic-ref", "--quiet", "HEAD")
+		branch, exit, err := g.runCommand(bounded, root, "symbolic-ref", "--quiet", "HEAD")
 		if err == nil {
-			return prWorkspaceChanged()
-		}
-		if exit != 1 {
+			if branchMode != prHeadOrDetached || trimGit(branch) != "refs/heads/"+target.HeadRef {
+				return prWorkspaceChanged()
+			}
+		} else if exit != 1 {
 			return err
 		}
 		// Include ignored/untracked data as well as the index and working tree.

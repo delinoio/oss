@@ -64,12 +64,23 @@ func receiveWorkspaceReads(ctx context.Context, config Config, client delidevv1c
 		if len(message.RequestJson) > 2<<20 || domain.Decode(message.RequestJson, &request) != nil || request.ID.Validate() != nil || request.Preparation.MachineID != credential.MachineID {
 			return workspace.ResultUncertain()
 		}
-		result, problem := manager.ReadWorkspace(ctx, request)
 		report := &pb.ReportWorkspaceReadRequest{MachineId: string(credential.MachineID), InstanceId: string(instance), ReadId: string(request.ID)}
+		var problem error
+		if request.PRCandidate != nil {
+			var result workspace.PRWorkspaceMatch
+			result, problem = manager.MatchPRWorkspace(ctx, request)
+			if problem == nil {
+				report.DocumentJson, _ = json.Marshal(result)
+			}
+		} else {
+			var result domain.WorkspaceReadResult
+			result, problem = manager.ReadWorkspace(ctx, request)
+			if problem == nil {
+				report.DocumentJson, _ = json.Marshal(result)
+			}
+		}
 		if problem != nil {
 			report.ProblemCode = string(domain.SafeError(problem).Code)
-		} else {
-			report.DocumentJson, _ = json.Marshal(result)
 		}
 		attempt, stop := context.WithTimeout(ctx, 5*time.Second)
 		_, err = client.ReportWorkspaceRead(attempt, authenticated(credential, report))
