@@ -73,8 +73,8 @@ func initialExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 	return checkedExecutionAssignment(tx, sr, session, machine, domain.ExecutionJobInput{Version: 1, SessionID: sr.ID, MachineID: session.MachineID, ExecutionID: claim.ID, InputID: claim.InputID, ThreadRequestID: domain.NewID(), TurnRequestID: queued.NativeRequestID, Input: domain.SessionInput{Prompt: queued.Prompt, Mode: queued.Mode}, Configuration: claim.Configuration, ConfigurationDigest: claim.ConfigurationDigest, AccountID: claim.InitialAccountID, ConnectionID: claim.ConnectionID})
 }
 
-func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Session, machine domain.Machine, input domain.ExecutionJobInput) (domain.ExecutionJobInput, error) {
-	var empty domain.ExecutionJobInput
+func checkedExecutionSelection(tx *store.Tx, session domain.Session, machine domain.Machine, input domain.ExecutionJobInput) (domain.Installation, error) {
+	var empty domain.Installation
 	c := input.Configuration
 	version, protocol := codex.SupportedVersion, domain.OpenAIResponses
 	switch c.Harness {
@@ -159,6 +159,16 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 			return empty, domain.Fail(domain.PermissionDenied, "Current project restrictions exclude the selected execution.", "Restore the original Agent and account permissions before resuming.")
 		}
 	}
+	return *installation, nil
+}
+
+func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Session, machine domain.Machine, input domain.ExecutionJobInput) (domain.ExecutionJobInput, error) {
+	var empty domain.ExecutionJobInput
+	installation, err := checkedExecutionSelection(tx, session, machine, input)
+	if err != nil {
+		return empty, err
+	}
+	c := input.Configuration
 	prepared, err := tx.Get(domain.JobKind, session.Preparation.JobID)
 	if err != nil {
 		return empty, err
@@ -198,7 +208,7 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 			return empty, err
 		}
 	}
-	input.Installation, input.Preparation, input.Manifest = *installation, job.Input, job.Output
+	input.Installation, input.Preparation, input.Manifest = installation, job.Input, job.Output
 	return input, input.Validate()
 }
 
