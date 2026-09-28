@@ -5,6 +5,16 @@
 import { SessionService } from "./delidev_pb.js";
 
 /**
+ * @generated from rpc delidev.v1.SessionService.LinkSessionPullRequest
+ */
+export const linkSessionPullRequest = SessionService.method.linkSessionPullRequest;
+
+/**
+ * @generated from rpc delidev.v1.SessionService.UnlinkSessionPullRequest
+ */
+export const unlinkSessionPullRequest = SessionService.method.unlinkSessionPullRequest;
+
+/**
  * @generated from rpc delidev.v1.SessionService.ReadSessionReviewContext
  */
 export const readSessionReviewContext = SessionService.method.readSessionReviewContext;

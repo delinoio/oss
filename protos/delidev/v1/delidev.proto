@@ -597,6 +597,8 @@ message ResolveModelResponse {
 // Owner/client session acceptance and ordered input. Native execution and
 // interactions are separately capability-checked; acceptance is not dispatch.
 service SessionService {
+  rpc LinkSessionPullRequest(LinkSessionPullRequestRequest) returns (LinkSessionPullRequestResponse);
+  rpc UnlinkSessionPullRequest(UnlinkSessionPullRequestRequest) returns (UnlinkSessionPullRequestResponse);
   rpc ReadSessionReviewContext(ReadSessionReviewContextRequest) returns (ReadSessionReviewContextResponse);
   rpc ReadSessionWorkspace(ReadSessionWorkspaceRequest) returns (ReadSessionWorkspaceResponse);
   rpc GetSessionBudget(GetSessionBudgetRequest) returns (GetSessionBudgetResponse);
@@ -617,6 +619,27 @@ service SessionService {
   rpc EditLocalReviewComment(EditLocalReviewCommentRequest) returns (EditLocalReviewCommentResponse);
   rpc DeleteLocalReviewComment(DeleteLocalReviewCommentRequest) returns (DeleteLocalReviewCommentResponse);
   rpc SubmitLocalReview(SubmitLocalReviewRequest) returns (SubmitLocalReviewResponse);
+}
+message LinkSessionPullRequestRequest {
+  string request_id = 1;
+  string session_id = 2;
+  string repository_id = 3;
+  // Canonical decimal PR number. Stable provider identities are server-observed.
+  string number = 4;
+}
+message LinkSessionPullRequestResponse {
+  Resource association = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message UnlinkSessionPullRequestRequest {
+  Mutation mutation = 1;
+  string session_id = 2;
+}
+message UnlinkSessionPullRequestResponse {
+  string id = 1;
+  string request_id = 2;
+  bool replayed = 3;
 }
 message ReadSessionReviewContextRequest {
   string session_id = 1;

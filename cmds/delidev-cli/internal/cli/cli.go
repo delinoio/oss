@@ -168,6 +168,10 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		}
 		if command == "session" && len(rest) > 0 {
 			switch rest[0] {
+			case "pr":
+				// Linking refreshes GitHub identities before committing metadata.
+				limit = 45 * time.Second
+				c.transport.ResponseHeaderTimeout = limit
 			case "files", "diff", "review-context":
 				// The Worker observation owns a 15-second deadline. Leave
 				// room for its typed result instead of racing its response.
@@ -806,6 +810,8 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   session diff --id ID --repository-id ID [--comparison working-tree|staged|creation] [--path RELATIVE]
   session review-context --id ID --repository-id ID [--comparison working-tree|staged|creation] [--path RELATIVE]
   session review create|edit|delete|submit|list|get --id SESSION [--review-id ID] [--revision N] [--input PATH]
+  session pr link --id SESSION --repository-id ID --number N
+  session pr list|get|unlink --id SESSION [--association-id ID] [--revision N]
   session create --input FILE|- [--wait]
   session prepare --id ID --revision N [--wait]
   session recover-workspace --id ID --revision N [--cleanup] [--wait]

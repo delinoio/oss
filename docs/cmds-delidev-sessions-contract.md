@@ -5,7 +5,12 @@
 
 Workspace preparation and first Codex API execution are integrated through durable outbound Worker jobs. Creation initially retains `outcome=not-started`, `dispatch=blocked`, a readiness-pending problem and the current workspace job. Once preparation and current dispatch checks succeed, the coordinator atomically claims the earliest input, freezes the configuration/account/route and queues its immutable native assignment. The owning Worker independently validates actual filesystem/native/provider authority before sending. Native Stop/Archive, FIFO continuation, explicit Resume, selected-input Steer and non-secret question responses are integrated for the pinned Codex API profile. Public approval response delivery is also integrated; exact approval acceptance/recovery, protected answers, general native recovery and forks remain pending. Acceptance, a ready workspace and an assignment are separate from successful native execution.
 
+## Durable PR Associations
+
+Stable zero-to-many PR associations are separate session/project-owned `pull_request` resources under the [integration contract](cmds-delidev-integrations-contract.md). Dedicated owner/client link/unlink RPCs and `session pr` commands retain exact remote identities after Archive/restart without changing session revisions, dispatch, native ownership or queue state. New links require fresh project-scoped GitHub detail and post-read configuration/generation rechecks; retained reads/unlink remain available after project/profile reconfiguration. Association metadata is not current problem evidence or remediation eligibility.
+
 ## Runtime and Language
+
 Go with the root dependencies, existing Connect transport and private SQLite authority. No client-owned database or in-memory-only acceptance queue.
 
 ## Users and Operators
