@@ -202,6 +202,74 @@ func TestManagedUpdateCarriesUnrelatedSuspensionCause(t *testing.T) {
 	}
 }
 
+func TestValidatedManagedReloadRecoversAfterCandidatePublication(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		code   ErrorCode
+		change func(*Config)
+		ready  bool
+	}{
+		{"authentication group", ErrAuth, func(c *Config) { c.Pools[0].RunnerGroup = "replacement-group" }, true},
+		{"ownership scale set", ErrOwnership, func(c *Config) { c.Pools[0].ScaleSet = "replacement-linux" }, true},
+		{"unrelated labels", ErrAuth, func(c *Config) { c.Pools[0].Labels = append(c.Pools[0].Labels, "extra") }, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m, c, _, oldID := managedFixture(t)
+			if tc.name == "authentication group" {
+				c.Connections[0].Target = "https://github.com/delinoio"
+				if err := m.Store.Update(func(s *Snapshot) error {
+					s.Config.Connections[0].Target = c.Connections[0].Target
+					s.Requested.Connections[0].Target = c.Connections[0].Target
+					s.Pools[oldID].Connection.Target = c.Connections[0].Target
+					return nil
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			blocked := problem(tc.code, "Fixture managed suspension.", "Correct the configuration.")
+			if err := m.Store.Update(func(s *Snapshot) error {
+				s.Pools[oldID].Phase = Suspended
+				s.Pools[oldID].Problem = blocked
+				s.Pools[oldID].PreparationFailures = 2
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			tc.change(&c)
+			writeSuspensionReload(t, m, c)
+			if err := m.Reload(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if m.Store.View().Pools[oldID].Phase != Suspended {
+				t.Fatal("reload resumed the pool before its managed candidate was verified")
+			}
+			if tc.ready {
+				c.Pools[0].Labels = append(c.Pools[0].Labels, "second-reload")
+				writeSuspensionReload(t, m, c)
+				if err := m.Reload(context.Background()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			m.updateManaged(context.Background(), "linux")
+			s := m.Store.View()
+			if s.Pools[oldID].Phase != Draining {
+				t.Fatal("old managed generation did not drain")
+			}
+			for id, p := range s.Pools {
+				if id == oldID {
+					continue
+				}
+				if tc.ready && (p.Phase != Ready || p.Problem != nil || p.PreparationFailures != 0) {
+					t.Fatalf("validated managed correction was lost: %+v", p)
+				}
+				if !tc.ready && (p.Phase != Suspended || p.Problem == nil || *p.Problem != *blocked || p.PreparationFailures != 2) {
+					t.Fatalf("unrelated managed change resumed the pool: %+v", p)
+				}
+			}
+		})
+	}
+}
+
 func TestVerifiedManagedImageRecoversStartupCircuitBreaker(t *testing.T) {
 	m, _, _, oldID := managedFixture(t)
 	if err := m.Store.Update(func(s *Snapshot) error {

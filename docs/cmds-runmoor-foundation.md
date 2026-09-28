@@ -237,7 +237,12 @@ stop remain authoritative. A waiting update gets the next available preparation
 slot without interrupting busy jobs. Failures retain the last verified image and
 retry with backoff. Known support deadlines block new acquisition after expiry;
 unknown release freshness is reported without pretending a cached image is
-current. Initial preparation failure has no runnable fallback.
+current. Initial preparation failure has no runnable fallback. For an already
+managed suspended pool, a validated reload retains its failure-specific recovery
+decision until the matching desired candidate is verified and published. A later
+unrelated reload may keep that decision while the original correction remains;
+stale candidates, changed failures and operator pause/stop cannot use it. This
+durable decision is private state and does not change status or doctor JSON.
 An unchanged release still requires bounded read-only validation of its committed
 image. Missing or invalid images are prepared again and the candidate is validated
 before activation. Verified repair clears only a matching image/version suspension

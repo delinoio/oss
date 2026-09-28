@@ -75,6 +75,9 @@ func (m *Manager) accept(c Config, restart bool) error {
 }
 func (m *Manager) acceptWithValidatedReload(c Config, restart, validatedReload bool) error {
 	return m.Store.Update(func(s *Snapshot) error {
+		if validatedReload {
+			recordValidatedManagedRecovery(s, c)
+		}
 		initializeManaged(s, c)
 		if restart {
 			s.ReleaseChecked = time.Time{}
@@ -108,7 +111,8 @@ func acceptSnapshotWithValidatedReload(s *Snapshot, c Config, restart, validated
 		}
 		p, ok := wanted[old.Spec.Name]
 		conn := c.Connection(p.Connection)
-		if ok && fingerprint(old.Spec) == fingerprint(p) && fingerprint(old.Connection) == fingerprint(conn) && (!validatedReload || old.Phase != Suspended || !suspensionCorrected(*old, p, conn, s.Config, c)) {
+		recover := ok && old.Phase == Suspended && !s.Paused && !s.Stopping && (validatedReload && suspensionCorrected(*old, p, conn, s.Config, c) || managedRecoveryMatches(s, old))
+		if ok && fingerprint(old.Spec) == fingerprint(p) && fingerprint(old.Connection) == fingerprint(conn) && !recover {
 			old.Generation = gen
 			matched[p.Name] = true
 			continue
@@ -129,7 +133,7 @@ func acceptSnapshotWithValidatedReload(s *Snapshot, c Config, restart, validated
 			case Paused:
 				next.Phase = Paused
 			case Suspended:
-				if !validatedReload || s.Paused || s.Stopping || !suspensionCorrected(old, p, conn, s.Config, c) {
+				if s.Paused || s.Stopping || !(validatedReload && suspensionCorrected(old, p, conn, s.Config, c) || managedRecoveryMatches(s, &old)) {
 					next.Phase = Suspended
 					next.PreparationFailures = old.PreparationFailures
 					if old.Problem != nil {
@@ -137,6 +141,9 @@ func acceptSnapshotWithValidatedReload(s *Snapshot, c Config, restart, validated
 						next.Problem = &copy
 					}
 				}
+			}
+			if recovery := s.ManagedRecovery[p.Name]; recovery != nil && recovery.PoolID == old.ID {
+				delete(s.ManagedRecovery, p.Name)
 			}
 		}
 		if q := s.Managed[p.Name]; q != nil && q.Paused {
