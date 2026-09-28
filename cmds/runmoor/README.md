@@ -66,7 +66,7 @@ Linux users select `runmoor-linux-amd64.tar.gz` or `runmoor-linux-arm64.tar.gz` 
 
 ## Configure
 
-> **Version note:** Automatic setup and managed runner updates described here target the next Runmoor release. Published 0.1.3 uses the explicit pinned configuration and manual image preparation also documented below. Check `runmoor init --help` for the new options.
+> **Version note:** Automatic setup and managed runner updates are available in Runmoor 0.2.0. Version 0.1.3 uses the explicit pinned configuration and manual image preparation also documented below.
 
 ```sh
 runmoor init
@@ -85,6 +85,10 @@ Both supported operating systems use:
 | Managed images | `$XDG_DATA_HOME/runmoor` | `~/.local/share/runmoor` |
 
 State/data may be overridden by absolute TOML paths. Configuration and credential files must be owned by your user, regular files, and mode 0600. Directories/socket are private to that user. Very long state paths exceed the Unix socket length limit and are rejected. Storage relocation requires drain, stop, and a complete installation backup; it is not a live reload.
+
+`RUNMOOR_PAT` is an example environment variable name for a GitHub personal access token, not a token issued by Runmoor or a one-hour runner registration token. Create a fine-grained PAT in GitHub under **Settings → Developer settings → Personal access tokens → Fine-grained tokens**. Repository runners require repository Administration read/write; organization runners require organization Administration read and Self-hosted runners read/write. The token owner must be allowed to manage the target's runners, and an organization may require token approval. See the [PAT creation guide](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens) and [runner permissions](https://docs.github.com/en/actions/how-tos/manage-runners/use-actions-runner-controller/authenticate-to-the-api).
+
+For an Ubuntu systemd user service, prefer a user-owned mode 0600 credential file and `credential = { file = "REPLACE_WITH_ABSOLUTE_PAT_FILE" }`. A terminal's exported variable is not automatically inherited by the user service; `runmoor service install` never embeds its value. The [public Ubuntu service guide](https://oss.delino.io/runmoor/operations#github-pat-for-an-ubuntu-user-service) gives the token entry, file, and startup steps. Do not put a PAT value in TOML or a service definition.
 
 ## Automatic configuration
 

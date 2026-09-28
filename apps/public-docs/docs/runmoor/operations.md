@@ -1,6 +1,6 @@
 # Runmoor Operations
 
-> **Version note:** Automatic setup and managed runner updates described here target the next Runmoor release. Published 0.1.3 uses the explicit pinned configuration and manual image preparation also documented below. Check `runmoor init --help` for the new options.
+> **Version note:** Automatic setup and managed runner updates are available in Runmoor 0.2.0. Version 0.1.3 uses the explicit pinned configuration and manual image preparation also documented below.
 
 ```sh
 runmoor service install
@@ -10,6 +10,66 @@ runmoor service uninstall
 ```
 
 These commands manage a launchd or systemd **user** service with the same drain semantics. Install the binary at a persistent location first. Installation does not overwrite an existing service definition. Uninstall preserves data/configuration and refuses to abandon known live executions when the manager cannot be contacted. Run the service in a functioning user session; availability after logout/reboot depends on that OS session, and Runmoor does not change system login policy.
+
+## GitHub PAT for an Ubuntu user service
+
+[Create a GitHub PAT](./configuration#create-a-github-pat) for the configured
+repository or organization. Run the following commands as the Ubuntu user who
+will run the service. They prompt without displaying the token or placing its
+value in shell history:
+
+```bash
+install -d -m 700 "$HOME/.config/runmoor"
+pat_file=$(mktemp "$HOME/.config/runmoor/github.pat.XXXXXX")
+read -r -s -p 'GitHub PAT: ' pat
+printf '\n'
+printf '%s\n' "$pat" > "$pat_file"
+unset pat
+mv -f -- "$pat_file" "$HOME/.config/runmoor/github.pat"
+realpath "$HOME/.config/runmoor/github.pat"
+```
+
+In `~/.config/runmoor/config.toml`, replace the connection's environment
+reference with a file reference using the absolute path printed by `realpath`:
+
+```toml
+auth = "pat"
+credential = { file = "REPLACE_WITH_ABSOLUTE_PAT_FILE" }
+```
+
+`mktemp` creates a mode 0600 file and `mv` replaces the credential file without
+making its contents public during rotation. TOML does not expand `$HOME`. Keep
+the PAT value out of TOML and the service definition. The credential file must
+be a regular file owned by the service user with mode 0600. Then validate and
+start the user service:
+
+```sh
+runmoor config validate
+runmoor service install
+runmoor service start
+runmoor status
+```
+
+Run `service install` only for a new service definition. If you change the
+credential reference of a running service, use `runmoor service stop` followed
+by `runmoor service start` so the manager reads it in a new process.
+
+A terminal's `export RUNMOOR_PAT` does not automatically reach systemd's user
+manager. If you keep `credential = { env = "RUNMOOR_PAT" }`, import it before
+starting the service:
+
+```bash
+read -r -s -p 'GitHub PAT: ' RUNMOOR_PAT
+printf '\n'
+export RUNMOOR_PAT
+systemctl --user import-environment RUNMOOR_PAT
+unset RUNMOOR_PAT
+runmoor service start
+```
+
+Supply it again when the user manager restarts. A file reference remains
+available across those restarts. The user service starts after logout or reboot
+only if your Ubuntu user-session policy keeps its systemd user manager running.
 
 Manager-only restart reconciles SQLite with actual Docker/Tart and GitHub state, resumes verified live work and retries incomplete cleanup. Ambiguous resources are quarantined rather than deleted. Confirmed termination releases resources; unresolved cleanup/ownership records remain durable. Runmoor never automatically reruns a failed GitHub job.
 

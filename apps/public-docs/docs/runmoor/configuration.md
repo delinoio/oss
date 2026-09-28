@@ -1,6 +1,6 @@
 # Runmoor Configuration
 
-> **Version note:** Automatic setup and managed runner updates described here target the next Runmoor release. Published 0.1.3 uses the explicit pinned configuration and manual image preparation also documented below. Check `runmoor init --help` for the new options.
+> **Version note:** Automatic setup and managed runner updates are available in Runmoor 0.2.0. Version 0.1.3 uses the explicit pinned configuration and manual image preparation also documented below.
 
 
 ```sh
@@ -20,6 +20,44 @@ Both supported operating systems use:
 | Managed images | `$XDG_DATA_HOME/runmoor` | `~/.local/share/runmoor` |
 
 State/data may be overridden by absolute TOML paths. Configuration and credential files must be owned by your user, regular files, and mode 0600. Directories/socket are private to that user. Very long state paths exceed the Unix socket length limit and are rejected. Storage relocation requires drain, stop, and a complete installation backup; it is not a live reload.
+
+## Create a GitHub PAT
+
+`RUNMOOR_PAT` is an example environment variable name, not a token issued by
+Runmoor. Its value is a GitHub personal access token (PAT) for the repository or
+organization in `target`. Runmoor uses it to request the short-lived runner
+credentials; do not substitute a one-hour runner registration token.
+
+In GitHub, open **Settings → Developer settings → Personal access tokens →
+Fine-grained tokens → Generate new token**. Select the repository owner and the
+repositories this Runmoor connection will manage, then grant:
+
+| Target | Fine-grained PAT permissions |
+| --- | --- |
+| Repository | Repository **Administration: Read and write** |
+| Organization | Organization **Administration: Read** and **Self-hosted runners: Read and write** |
+
+The token owner must already have access to manage the target's runners.
+Organizations may require approval before a fine-grained PAT works. If you use
+a classic PAT instead, GitHub documents `repo` for repository runners and
+`admin:org` for organization runners. Choose an expiration and rotate the token
+before it expires. See GitHub's [PAT creation guide](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens)
+and [runner authentication permissions](https://docs.github.com/en/actions/how-tos/manage-runners/use-actions-runner-controller/authenticate-to-the-api).
+
+For a foreground `runmoor run`, `credential = { env = "RUNMOOR_PAT" }` reads the
+variable from that process's environment. Enter it without putting the value in
+shell history:
+
+```bash
+read -r -s -p 'GitHub PAT: ' RUNMOOR_PAT
+printf '\n'
+export RUNMOOR_PAT
+runmoor run
+```
+
+For a systemd user service on Ubuntu, follow the [persistent credential file
+steps](./operations#github-pat-for-an-ubuntu-user-service). Exporting the variable
+in a terminal alone does not pass it to an independently started service.
 
 ## Automatic configuration
 
@@ -140,7 +178,7 @@ Use `amd64` on an amd64 Ubuntu host. GitHub organization targets omit the reposi
 
 For an App connection set `auth = "app"`, `client_id`, a positive `installation_id`, and a credential reference to its PEM key. For a file reference use `credential = { file = "REPLACE_WITH_ABSOLUTE_PRIVATE_FILE" }`. Do not place a PAT or private key in TOML. Service definitions never copy credential values; file references are easier to keep available across login/reboot than environment references.
 
-GitHub App repository registration requires repository Administration read/write and Metadata read; organization registration requires organization Self-hosted runners read/write. Classic PATs require `repo` for repository runners or `admin:org` for organization runners. Fine-grained PATs require the target's documented Administration/Self-hosted runners permissions. Follow the [official permission guide](https://docs.github.com/en/actions/how-tos/manage-runners/use-actions-runner-controller/authenticate-to-the-api). GitHub groups and repository access rules remain authoritative.
+GitHub App repository registration requires repository Administration read/write and Metadata read; organization registration requires organization Self-hosted runners read/write. GitHub groups and repository access rules remain authoritative.
 
 Unknown keys/schema versions, literal credentials, invalid limits, incompatible architecture, mutable image tags and impossible minimum-idle allocations are rejected. The default preparation limits are five minutes for Docker and ten for Tart; jobs default to six hours. Duration values must be positive and at most seven days.
 
