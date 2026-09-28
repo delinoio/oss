@@ -143,11 +143,11 @@ func newProfileAuthorityFixture(t *testing.T, upstream string, harness domain.Ha
 			return nil, err
 		}
 		raw, _ := json.Marshal(f.input)
-		state, instance := domain.JobClaimed, f.instance
+		state, instance, device := domain.JobClaimed, f.instance, f.device
 		if queued {
-			state, instance = domain.JobQueued, ""
+			state, instance, device = domain.JobQueued, "", ""
 		}
-		return tx.PutJob(f.job, 0, f.input.SessionID, "", domain.Job{Type: domain.ExecuteSessionJob, State: state, MachineID: f.input.MachineID, InstanceID: instance, Input: raw, AcceptedAt: time.Now().UTC()})
+		return tx.PutJob(f.job, 0, f.input.SessionID, "", domain.Job{Type: domain.ExecuteSessionJob, State: state, MachineID: f.input.MachineID, InstanceID: instance, AssignedDeviceID: device, Input: raw, AcceptedAt: time.Now().UTC()})
 	})
 	if err != nil {
 		t.Fatal(err)

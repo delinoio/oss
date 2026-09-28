@@ -123,6 +123,7 @@ func TestWorkerPRStartupRejectionBindsJournalAndNeverStartsHarness(t *testing.T)
 	if err != nil || string(after) != string(originalJournal) {
 		t.Fatal("report replay rewrote original evidence")
 	}
+	assertPRStartupRecovery(t, config, credential, resource, f.job, result)
 	_, cause := manager.ClaimFirstExecution(context.Background(), f.jobID, f.input.ExecutionID, preparation, manifest)
 	if !workspace.IsPRStartupRejection(cause) {
 		t.Fatal(cause)

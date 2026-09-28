@@ -18,6 +18,9 @@ func recoverExecution(ctx context.Context, config Config, job domain.Job) (json.
 	if err != nil || credential.Type != domain.WorkerDevice || credential.ServerID != request.ServerID || credential.MachineID != request.MachineID || credential.DeviceID != request.DeviceID {
 		return nil, domain.ExecutionRecoveryUncertain()
 	}
+	if request.Startup != nil {
+		return recoverPRStartup(ctx, config, request)
+	}
 	var preparation workspace.PrepareRequest
 	var manifest workspace.Manifest
 	if domain.Decode(request.Preparation, &preparation) != nil || domain.Decode(request.Manifest, &manifest) != nil || preparation.SessionID != request.SessionID || preparation.MachineID != request.MachineID {

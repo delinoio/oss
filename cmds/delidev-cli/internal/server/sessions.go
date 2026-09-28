@@ -85,7 +85,7 @@ func (s *Service) sessionResult(ctx context.Context, result store.Result) (*pb.S
 			if err != nil {
 				return err
 			}
-			if recovery.SessionID != refs.SessionID || job.Type != domain.RecoverExecutionJob || value.Execution == nil || job.ParentID != value.Execution.JobID {
+			if recovery.SessionID != refs.SessionID || job.Type != domain.RecoverExecutionJob || change.ExecutionJob == nil || job.ParentID != domain.ID(change.ExecutionJob.Id) || (value.Execution != nil && job.ParentID != value.Execution.JobID) {
 				return domain.ExecutionRecoveryUncertain()
 			}
 			change.ExecutionRecoveryJob = rpc.Resource(recovery)

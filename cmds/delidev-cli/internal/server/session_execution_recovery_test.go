@@ -98,7 +98,7 @@ func claimRecovery(t *testing.T, f *publicationFixture, resource *pb.Resource) (
 		if err := domain.Decode(job.Input, &expected); err != nil {
 			return nil, err
 		}
-		job.State, job.InstanceID = domain.JobClaimed, f.instance
+		job.State, job.InstanceID, job.AssignedDeviceID = domain.JobClaimed, f.instance, f.device
 		claimed, err = tx.PutJob(r.ID, r.Revision, r.SessionID, r.ProjectID, job)
 		return nil, err
 	})

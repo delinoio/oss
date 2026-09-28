@@ -59,6 +59,28 @@ it("binds execution recovery to the original execution without resending input o
   expect(value.control).not.toHaveBeenCalled(); expect(value.createSession).not.toHaveBeenCalled();
 });
 
+it("inspects a pre-native Worktree interruption with the original first identity and exact retry", async () => {
+  const value = fixture();
+  value.recover.mockRejectedValueOnce(new ConnectError("receipt lost", Code.Unavailable));
+  const retained = document(value.session);
+  delete retained.execution;
+  retained.workspace = "worktree";
+  retained.initial_execution = { id: value.execution };
+  const session = create(ResourceSchema, { ...value.session, documentJson: encode(retained) });
+  const view = render(value.view(<SessionTools resource={session} changed={() => {}} />));
+  fireEvent.click(screen.getByText("Session details and recovery"));
+  fireEvent.click(screen.getByRole("button", { name: "Reconcile original execution" }));
+  expect(screen.getByText(/startup or native cleanup evidence/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Confirm selected recovery action" }));
+  await screen.findByRole("button", { name: "Retry the same execution recovery" });
+  view.rerender(value.view(<SessionTools resource={create(ResourceSchema, { ...session, revision: 10n })} changed={() => {}} />));
+  fireEvent.click(screen.getByRole("button", { name: "Retry the same execution recovery" }));
+  await waitFor(() => expect(value.recover).toHaveBeenCalledTimes(2));
+  expect(value.recover.mock.calls[0][0]).toEqual(value.recover.mock.calls[1][0]);
+  expect(value.recover.mock.calls[0][0]).toMatchObject({ expectedExecutionId: value.execution, mutation: { expectedRevision: 8n } });
+  expect(value.control).not.toHaveBeenCalled(); expect(value.createSession).not.toHaveBeenCalled(); expect(value.prepare).not.toHaveBeenCalled();
+});
+
 it("keeps a stale name draft and blocks a recovery confirmation selected before a peer revision", async () => {
   const value = fixture(), rendered = render(value.view(<SessionTools resource={value.session} changed={() => {}} />));
   fireEvent.click(screen.getByText("Session details and recovery"));

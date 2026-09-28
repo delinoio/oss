@@ -118,3 +118,5 @@
 
 
 - DeliDev PR problem collection has a closed kind enum. Unspecified and explicit feedback preserve the original receipt family; CI/conflict remain separate request identities. Unknown kinds fail before remote reads. All kinds use the same stable PR history and version-local Dismiss, without granting execution or borrowing another kind’s prerequisites.
+
+- DeliDev original PR startup rejection/recovery uses the existing ReportWork and RecoverSessionExecution envelopes under the sessions/protocol contracts. Keep exclusive metadata-only rejection proof separate from native completion and bind original paired device/assignment before current Worker inspection. Decimal-string rejection revisions retain uint64 precision. Neither an accepted rejection nor inspection/receipt replay can resend the input, fabricate native progress or Resume; no protobuf change is implied by these additive job/resource JSON profiles.

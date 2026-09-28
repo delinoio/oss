@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"encoding/json"
 	"time"
 
@@ -16,18 +17,36 @@ func (s *Service) finishPRStartupRejection(tx *store.Tx, actor domain.Principal,
 	if domain.Decode(raw, &rejected) != nil || rejected.Validate() != nil || rejected.ServerID != s.Identity.ServerID || rejected.DeviceID != actor.DeviceID || actor.Type != domain.WorkerDevice || rejected.MachineID != actor.MachineID {
 		return store.Record{}, false, nil
 	}
+	return settlePRStartupRejection(tx, record, job, revision, rejected, "")
+}
+
+// A recovery ID permits only the independently validated original inspection.
+// The original assignment remains immutable; current Worker ownership never
+// rewrites that old instance or acquires native publication authority.
+func settlePRStartupRejection(tx *store.Tx, record store.Record, job domain.Job, revision uint64, rejected domain.ExecutionStartupRejection, recoveryID domain.ID) (store.Record, bool, error) {
 	input, sr, session, err := nativeExecutionScope(tx, record, job)
 	if err != nil {
 		return store.Record{}, true, err
 	}
-	if input.Continuation != nil || session.Workspace != domain.Worktree || session.CurrentExecution != nil || session.Execution != nil || session.StartupRejection != nil || session.Recovery != domain.NoRecovery || session.Outcome != domain.ExecutionNotStarted || session.PendingSteerID != "" || session.ExecutionRecoveryJobID != "" {
+	if input.Continuation != nil || session.Workspace != domain.Worktree || session.CurrentExecution != nil || session.Execution != nil || session.StartupRejection != nil || session.PendingSteerID != "" {
+		return store.Record{}, false, nil
+	}
+	if recoveryID == "" {
+		if job.State != domain.JobClaimed || session.Recovery != domain.NoRecovery || session.Outcome != domain.ExecutionNotStarted || session.ExecutionRecoveryJobID != "" {
+			return store.Record{}, false, nil
+		}
+	} else if job.State != domain.JobUncertain || job.Problem == nil || job.Problem.Code != domain.RecoveryRequired || len(job.Output) != 0 || session.ExecutionRecoveryJobID != recoveryID || session.Recovery != domain.Reconciling || session.Outcome != domain.ExecutionFailed || job.AssignedDeviceID != rejected.DeviceID {
 		return store.Record{}, false, nil
 	}
 	assignment, err := tx.JobAssignment(record.ID)
 	if err != nil {
 		return store.Record{}, true, err
 	}
-	if assignment.SessionID != sr.ID || assignment.ProjectID != sr.ProjectID || rejected.ValidateAssignment(assignment.ID, assignment.Revision, assignment.Data) != nil || rejected.ValidateAssignment(record.ID, record.Revision, record.Data) != nil || rejected.InstanceID != job.InstanceID || rejected.MachineID != job.MachineID {
+	if assignment.SessionID != sr.ID || assignment.ProjectID != sr.ProjectID || rejected.ValidateAssignment(assignment.ID, assignment.Revision, assignment.Data) != nil || rejected.InstanceID != job.InstanceID || rejected.MachineID != job.MachineID {
+		return store.Record{}, false, nil
+	}
+	var original domain.Job
+	if domain.Decode(assignment.Data, &original) != nil || !bytes.Equal(original.Input, job.Input) || recoveryID == "" && rejected.ValidateAssignment(record.ID, record.Revision, record.Data) != nil {
 		return store.Record{}, false, nil
 	}
 	_, err = tx.ExecutionGrantForJob(record.ID)
@@ -58,7 +77,7 @@ func (s *Service) finishPRStartupRejection(tx *store.Tx, actor domain.Principal,
 	if err != nil {
 		return store.Record{}, true, err
 	}
-	if ir.SessionID != sr.ID || ir.ProjectID != sr.ProjectID || queued.Delivery != domain.InputClaimed || queued.ExecutionID != input.ExecutionID || queued.NativeRequestID != input.TurnRequestID || queued.Prompt != input.Input.Prompt || queued.Mode != input.Input.Mode || session.PendingInputs == 0 || session.PendingInputBytes < uint64(len(queued.Prompt)) {
+	if ir.SessionID != sr.ID || ir.ProjectID != sr.ProjectID || (recoveryID == "" && queued.Delivery != domain.InputClaimed || recoveryID != "" && queued.Delivery != domain.InputUncertain) || queued.ExecutionID != input.ExecutionID || queued.NativeRequestID != input.TurnRequestID || queued.Prompt != input.Input.Prompt || queued.Mode != input.Input.Mode || session.PendingInputs == 0 || session.PendingInputBytes < uint64(len(queued.Prompt)) {
 		return store.Record{}, false, nil
 	}
 	queued.Delivery = domain.InputRejected
@@ -66,11 +85,11 @@ func (s *Service) finishPRStartupRejection(tx *store.Tx, actor domain.Principal,
 	session.PendingInputBytes -= uint64(len(queued.Prompt))
 	session.StartupRejection = &rejected
 	session.ActiveExecutionID, session.NextExecutionIntent = "", ""
-	session.Dispatch = domain.DispatchPaused
+	session.Dispatch, session.Recovery, session.Outcome = domain.DispatchPaused, domain.NoRecovery, domain.ExecutionNotStarted
 	if session.Archive == domain.ArchivePending {
 		session.Archive = domain.Archived
 	}
-	if session.Problem == nil {
+	if session.Problem == nil || recoveryID != "" && session.Problem.Code == domain.RecoveryRequired {
 		session.Problem = startupRejectionProblem(rejected)
 	}
 	now := time.Now().UTC()

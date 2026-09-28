@@ -9,29 +9,30 @@ import (
 // ExecutionRecoveryRequest contains comparison facts only. It cannot authorize
 // native input, replace the original assignment, or mint execution credentials.
 type ExecutionRecoveryRequest struct {
-	Version               uint32                     `json:"version"`
-	Harness               Harness                    `json:"harness,omitempty"`
-	OpenCode              *OpenCodeRecoveryReference `json:"opencode,omitempty"`
-	Claude                *ClaudeRecoveryReference   `json:"claude,omitempty"`
-	ServerID              ID                         `json:"server_id"`
-	DeviceID              ID                         `json:"device_id"`
-	InstanceID            ID                         `json:"instance_id"`
-	JobID                 ID                         `json:"job_id"`
-	SessionID             ID                         `json:"session_id"`
-	MachineID             ID                         `json:"machine_id"`
-	AssignmentRevision    uint64                     `json:"assignment_revision"`
-	AssignmentDigest      string                     `json:"assignment_digest"`
-	AssignmentInputDigest string                     `json:"assignment_input_digest"`
-	ConfigurationDigest   string                     `json:"configuration_digest"`
-	AccountID             ID                         `json:"account_id"`
-	ConnectionID          ID                         `json:"connection_id"`
-	HistoryExecutionID    ID                         `json:"history_execution_id"`
-	Completion            ExecutionCompletion        `json:"completion"`
-	InputMode             SessionMode                `json:"input_mode"`
-	PromptDigest          string                     `json:"prompt_digest"`
-	AcceptedInputs        []ExecutionInputBinding    `json:"accepted_inputs"`
-	Preparation           json.RawMessage            `json:"preparation"`
-	Manifest              json.RawMessage            `json:"manifest"`
+	Startup               *PRStartupRecoveryReference `json:"startup,omitempty"`
+	Version               uint32                      `json:"version"`
+	Harness               Harness                     `json:"harness,omitempty"`
+	OpenCode              *OpenCodeRecoveryReference  `json:"opencode,omitempty"`
+	Claude                *ClaudeRecoveryReference    `json:"claude,omitempty"`
+	ServerID              ID                          `json:"server_id"`
+	DeviceID              ID                          `json:"device_id"`
+	InstanceID            ID                          `json:"instance_id"`
+	JobID                 ID                          `json:"job_id"`
+	SessionID             ID                          `json:"session_id"`
+	MachineID             ID                          `json:"machine_id"`
+	AssignmentRevision    uint64                      `json:"assignment_revision"`
+	AssignmentDigest      string                      `json:"assignment_digest"`
+	AssignmentInputDigest string                      `json:"assignment_input_digest"`
+	ConfigurationDigest   string                      `json:"configuration_digest"`
+	AccountID             ID                          `json:"account_id"`
+	ConnectionID          ID                          `json:"connection_id"`
+	HistoryExecutionID    ID                          `json:"history_execution_id"`
+	Completion            ExecutionCompletion         `json:"completion"`
+	InputMode             SessionMode                 `json:"input_mode"`
+	PromptDigest          string                      `json:"prompt_digest"`
+	AcceptedInputs        []ExecutionInputBinding     `json:"accepted_inputs"`
+	Preparation           json.RawMessage             `json:"preparation"`
+	Manifest              json.RawMessage             `json:"manifest"`
 }
 
 func ExecutionRecoveryUncertain() *Error {
@@ -39,6 +40,9 @@ func ExecutionRecoveryUncertain() *Error {
 }
 
 func (r ExecutionRecoveryRequest) Validate() error {
+	if r.Startup != nil {
+		return r.validatePRStartupRecovery()
+	}
 	if (r.NativeHarness() != Codex && r.NativeHarness() != OpenCode && r.NativeHarness() != ClaudeCode) || (r.NativeHarness() == OpenCode) != (r.OpenCode != nil) || (r.NativeHarness() == ClaudeCode) != (r.Claude != nil) || r.OpenCode != nil && r.OpenCode.Validate() != nil || r.Claude != nil && r.Claude.Validate() != nil {
 		return ExecutionRecoveryUncertain()
 	}

@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
+
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
@@ -206,5 +208,29 @@ func TestPRStartupReportRejectsChangedOrContradictoryEvidence(t *testing.T) {
 				t.Fatal("uncertainty was discarded", err)
 			}
 		})
+	}
+}
+
+func TestPRStartupReportCannotBorrowAnotherDeviceOrItsReceipt(t *testing.T) {
+	f, rejected := newStartupReportFixture(t)
+	foreign := domain.Principal{Type: domain.WorkerDevice, DeviceID: domain.NewID(), MachineID: f.input.MachineID}
+	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.other-device", nil, func(tx *store.Tx) (any, error) {
+		return tx.Put(domain.DeviceKind, foreign.DeviceID, 0, "", "", domain.Device{Name: "Other fixture Worker", Type: domain.WorkerDevice, MachineID: foreign.MachineID, PairedAt: time.Now().UTC()})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(rejected)
+	request := &pb.ReportWorkRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(f.job), ExpectedRevision: 1}, MachineId: string(f.input.MachineID), InstanceId: string(f.instance), OutputJson: raw}
+	for _, replay := range []bool{false, true} {
+		if replay {
+			if _, err := f.client.ReportWork(context.Background(), ownerRequest(security.Identity{Token: f.workerToken}, request)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		_, err := f.service.ReportWork(domain.WithPrincipal(context.Background(), foreign), connect.NewRequest(request))
+		if connect.CodeOf(err) != connect.CodePermissionDenied {
+			t.Fatal("foreign device borrowed assignment or receipt", replay, err)
+		}
 	}
 }

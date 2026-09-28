@@ -485,3 +485,5 @@
 - PR source presentation preserves exact original fork identity, explicit provider unavailability and historical absence separately. Validate the complete source/base namespace before rendering and reject source facts in list/issue projections. Keep IDs as strings and names inert; no source read grants Git execution or substitutes the base repository. Follow the integration contract.
 
 - Original pre-native PR rejection disclosure follows the desktop/sessions contracts. Validate exact session/input/configuration ownership, closed metadata-only proof, decimal-string uint64 revision and nanosecond time order. Preserve the rejected input as history and disable Resume for any present rejection; malformed evidence stays unavailable. No display grants native completion, fresh fix or resend authority.
+
+- Before native progress exists, the existing explicit execution-recovery control may submit the original initial Worktree execution ID. Preserve revision-bound confirmation and exact uncertain request replay. This is metadata-only inspection subject to server proof checks; never invoke Resume, preparation or new session creation as recovery.

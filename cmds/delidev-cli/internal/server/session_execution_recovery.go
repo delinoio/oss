@@ -37,7 +37,7 @@ func (s *Service) RecoverSessionExecution(ctx context.Context, req *connect.Requ
 		if err != nil {
 			return nil, err
 		}
-		if sr.Revision != identity.Revision || session.Execution == nil || session.Execution.ExecutionID != execution || (session.Recovery != domain.NeedsRecovery && session.Recovery != domain.Reconciling) || session.Archive == domain.Archived {
+		if sr.Revision != identity.Revision || session.InitialExecution == nil || session.ExecutionSelection().ID != execution || (session.Recovery != domain.NeedsRecovery && session.Recovery != domain.Reconciling) || session.Archive == domain.Archived {
 			return nil, domain.ExecutionRecoveryUncertain()
 		}
 		if _, _, err := activeMachine(tx, session.MachineID); err != nil {
@@ -52,7 +52,11 @@ func (s *Service) RecoverSessionExecution(ctx context.Context, req *connect.Requ
 			if err != nil {
 				return nil, err
 			}
-			if prior.SessionID != sr.ID || job.Type != domain.RecoverExecutionJob || job.ParentID != session.Execution.JobID {
+			original, err := tx.SessionExecutionJob(sr.ID, execution)
+			if err != nil {
+				return nil, err
+			}
+			if prior.SessionID != sr.ID || job.Type != domain.RecoverExecutionJob || job.ParentID != original.ID || (session.Execution != nil && job.ParentID != session.Execution.JobID) {
 				return nil, domain.ExecutionRecoveryUncertain()
 			}
 			if job.State == domain.JobQueued || job.State == domain.JobClaimed {
@@ -96,6 +100,9 @@ func (s *Service) RecoverSessionExecution(ctx context.Context, req *connect.Requ
 // fresh execution authorization after this operation leaves dispatch paused.
 func executionRecoveryRequest(tx *store.Tx, serverID domain.ID, sr store.Record, session domain.Session) (domain.ExecutionRecoveryRequest, error) {
 	var result domain.ExecutionRecoveryRequest
+	if session.Execution == nil {
+		return prStartupRecoveryRequest(tx, serverID, sr, session)
+	}
 	progress := session.Execution
 	if progress == nil || session.InitialExecution == nil || session.Preparation == nil || session.Preparation.State != domain.PreparationReady || session.PendingSteerID != "" || progress.Waiting != (domain.NativeWaiting{}) || progress.UnconfirmedResponses != 0 || (session.ActiveExecutionID != "" && session.ActiveExecutionID != progress.ExecutionID) || (session.Recovery != domain.NeedsRecovery && session.Recovery != domain.Reconciling) {
 		return result, domain.ExecutionRecoveryUncertain()
@@ -202,6 +209,9 @@ func executionRecoveryRequest(tx *store.Tx, serverID domain.ID, sr store.Record,
 
 func validateExecutionRecoveryResult(tx *store.Tx, record store.Record, job domain.Job, raw []byte) error {
 	var expected domain.ExecutionRecoveryRequest
+	if domain.Decode(job.Input, &expected) == nil && expected.Startup != nil {
+		return validatePRStartupRecoveryResult(tx, record, job, expected, raw)
+	}
 	var evidence domain.ExecutionRecoveryEvidence
 	if domain.Decode(job.Input, &expected) != nil || domain.Decode(raw, &evidence) != nil || evidence.Validate(expected) != nil || expected.JobID != job.ParentID || expected.SessionID != record.SessionID || expected.MachineID != job.MachineID {
 		return domain.ExecutionRecoveryUncertain()
@@ -242,6 +252,10 @@ func finishExecutionRecovery(tx *store.Tx, record store.Record, job domain.Job) 
 	} else {
 		if err := validateExecutionRecoveryResult(tx, record, job, job.Output); err != nil {
 			return err
+		}
+		var expected domain.ExecutionRecoveryRequest
+		if domain.Decode(job.Input, &expected) == nil && expected.Startup != nil {
+			return finishPRStartupRecovery(tx, record, job)
 		}
 		var evidence domain.ExecutionRecoveryEvidence
 		if err := domain.Decode(job.Output, &evidence); err != nil {
