@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"golang.org/x/term"
 	"io"
 	"os"
 	"os/signal"
@@ -14,6 +13,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"golang.org/x/term"
 )
 
 const helpText = `Runmoor 0.1.0 - local ephemeral GitHub Actions runners
@@ -102,11 +103,14 @@ func Execute(args []string, out, errOut io.Writer) int {
 	fs.IntVar(&im.Resources.CPU, "cpu", 0, "image setup CPU cores")
 	fs.Int64Var(&im.Resources.MemoryMiB, "memory-mib", 0, "image setup memory MiB")
 	fs.StringVar(&im.RunnerPath, "runner-path", "", "absolute guest runner path")
-	fs.StringVar(&im.RunnerVersion, "runner-version", "", "exact installed runner version")
+	fs.StringVar(&im.RunnerVersion, "runner-version", "", "latest or exact installed runner version")
 	if e := fs.Parse(args); e == flag.ErrHelp {
 		fmt.Fprint(out, helpText)
 		if command == "image" {
-			fmt.Fprintln(out, "Image options: --name NAME (--ipsw /local/image.ipsw | --from SOURCE) --cpu N --memory-mib N; open/seal/remove --id UUID; seal --runner-version VERSION [--runner-path PATH]")
+			fmt.Fprintln(out, "Image options: create --name NAME (--ipsw PATH | --from SOURCE) [--cpu N --memory-mib N]; open/seal/remove --id UUID; seal [--runner-version latest|VERSION] [--runner-path PATH]")
+		}
+		if command == "init" {
+			fmt.Fprintln(out, "Init options: --target URL --backend docker|tart --auth pat|app (--credential-env NAME | --credential-file PATH) [--client-id ID --installation-id N] [--image DIGEST_OR_UUID | --image-source SOURCE --source-home PATH]; --image-only prepares a configuration without pools.")
 		}
 		return 0
 	} else if e != nil || fs.NArg() != 0 {
@@ -204,7 +208,14 @@ func Execute(args []string, out, errOut io.Writer) int {
 		if sub != "validate" {
 			e = problem(ErrConfig, "Unknown config command.", "Use 'runmoor config validate'.")
 		} else {
-			fmt.Fprintln(out, "Configuration is valid (schema v1).")
+			if *jsonOutput {
+				writeJSON(out, struct {
+					SchemaVersion int  `json:"schema_version"`
+					Valid         bool `json:"valid"`
+				}{1, true})
+			} else {
+				fmt.Fprintln(out, "Configuration is valid (schema v1).")
+			}
 			return 0
 		}
 	case "runner":
@@ -323,12 +334,11 @@ func Execute(args []string, out, errOut io.Writer) int {
 	return 0
 }
 func runForeground(ctx context.Context, path string, c Config, out io.Writer) error {
-	var err error
 	probe, cancel := context.WithTimeout(ctx, 10*time.Second)
-	c, err = resolveDockerCapacity(probe, c)
+	resolved, capacityErr := resolveDockerCapacity(probe, c)
 	cancel()
-	if err != nil {
-		return err
+	if capacityErr == nil {
+		c = resolved
 	}
 	if e := platformCheck(ctx); e != nil {
 		return e
@@ -341,6 +351,19 @@ func runForeground(ctx context.Context, path string, c Config, out io.Writer) er
 	logger, e := NewLogger(c, out)
 	if e != nil {
 		return e
+	}
+	if capacityErr != nil {
+		c.DockerCapacityPending = true
+		cached := store.View().Config.DockerBudget
+		if validResources(cached) {
+			c.DockerBudget = cached
+			var err error
+			c, err = resolveDefaults(c, Resources{c.Host.CPU, c.Host.MemoryMiB})
+			if err != nil {
+				return err
+			}
+		}
+		logProblem(logger, "docker_capacity_retry", classify(capacityErr, ErrRetry, "Docker capacity is temporarily unavailable.", "Restore the engine; managed pools retry automatically."))
 	}
 	m := NewManager(store, path, logger)
 	if e = m.activate(c); e != nil {
@@ -427,6 +450,12 @@ func printStatus(w io.Writer, s *Status, jsonOutput bool) {
 	fmt.Fprintf(w, "Runmoor %s | manager running: %t | paused: %t | stopping: %t\n", s.Version, s.Running, s.Paused, s.Stopping)
 	fmt.Fprintf(w, "Reserved: %d CPU, %d MiB, %d executions/setup VMs; macOS VMs: %d/2; pending cleanup: %d\n", s.Reserved.CPU, s.Reserved.MemoryMiB, s.Active, s.VMs, s.PendingCleanup)
 	fmt.Fprintf(w, "Budget: %d CPU, %d MiB; concurrency: %d\n", s.Budget.CPU, s.Budget.MemoryMiB, s.Budget.MaxRunners)
+	if validResources(s.DockerBudget) {
+		fmt.Fprintf(w, "Docker engine budget: %d CPU, %d MiB\n", s.DockerBudget.CPU, s.DockerBudget.MemoryMiB)
+	}
+	if s.DockerCapacityPending {
+		fmt.Fprintln(w, "Docker capacity is awaiting verification; new Docker work is paused until the engine is reachable.")
+	}
 	names := []string{}
 	for name := range s.Managed {
 		names = append(names, name)
@@ -438,13 +467,13 @@ func printStatus(w io.Writer, s *Status, jsonOutput bool) {
 		if q.Current != nil {
 			version = q.Current.RunnerVersion
 		}
-		fmt.Fprintf(w, "Managed runner %s: %s, version=%s, candidate=%s, last check=%s, next check=%s\n", name, q.Phase, version, q.CandidateVersion, q.LastCheck.Format(time.RFC3339), q.NextCheck.Format(time.RFC3339))
+		fmt.Fprintf(w, "Managed runner %s: %s, mode=%s, version=%s, candidate=%s, last check=%s, next check=%s; %d CPU, %d MiB, concurrency=%d\n", name, q.Phase, q.Mode, version, q.CandidateVersion, q.LastCheck.Format(time.RFC3339), q.NextCheck.Format(time.RFC3339), q.Resources.CPU, q.Resources.MemoryMiB, q.MaxRunners)
 		if q.Problem != nil {
 			fmt.Fprintln(w, q.Problem.Error())
 		}
 	}
 	for _, p := range s.Pools {
-		fmt.Fprintf(w, "%s [%s] %s: demand=%d total=%d busy=%d\n", p.Name, p.Generation, p.Phase, p.Demand, p.Total, p.Busy)
+		fmt.Fprintf(w, "%s [%s] %s: demand=%d total=%d busy=%d; mode=%s version=%s, %d CPU, %d MiB, concurrency=%d\n", p.Name, p.Generation, p.Phase, p.Demand, p.Total, p.Busy, p.RunnerMode, p.RunnerVersion, p.Resources.CPU, p.Resources.MemoryMiB, p.MaxRunners)
 		if p.Problem != nil {
 			fmt.Fprintln(w, p.Problem.Error())
 		}

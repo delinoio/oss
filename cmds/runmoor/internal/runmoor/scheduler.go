@@ -63,6 +63,9 @@ func logicalCount(s Snapshot, name string) int {
 }
 func eligible(s Snapshot, p *PoolState) bool {
 	if p != nil {
+		if p.Spec.Backend == Docker && s.Config.DockerCapacityPending {
+			return false
+		}
 		if q := s.Managed[p.Spec.Name]; q != nil && (q.Paused || (!q.Expires.IsZero() && !time.Now().Before(q.Expires))) {
 			return false
 		}
@@ -240,7 +243,11 @@ func retirementCandidates(s Snapshot) []string {
 		if !needDemand && busy+p.Spec.MinIdle > target {
 			target = busy + p.Spec.MinIdle
 		}
-		if s.Paused || s.Stopping || p.Phase != Ready {
+		managedBlocked := false
+		if q := s.Managed[p.Spec.Name]; q != nil {
+			managedBlocked = q.Paused || !q.Expires.IsZero() && !time.Now().Before(q.Expires)
+		}
+		if s.Paused || s.Stopping || p.Phase != Ready || managedBlocked {
 			target = busy
 		}
 		if count > target {

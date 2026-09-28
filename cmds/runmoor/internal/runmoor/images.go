@@ -58,7 +58,7 @@ func (m *ImageManager) Operate(ctx context.Context, c Config, req ImageRequest) 
 	case "open":
 		ctx, cancel := context.WithTimeout(ctx, c.Preparation(Tart))
 		defer cancel()
-		if im.Phase == ImageSealed || im.Phase == ImageRemoving {
+		if im.Phase == ImageSealed || im.Phase == ImageImported || im.Phase == ImageRemoving {
 			return nil, problem(ErrImage, "A sealed or removing revision cannot be opened for setup.", "Create a new revision with --from pointing at the sealed revision UUID.")
 		}
 		if im.Phase == ImageOpen {
@@ -88,6 +88,9 @@ func (m *ImageManager) Operate(ctx context.Context, c Config, req ImageRequest) 
 			}
 		}
 	case "seal":
+		if im.Phase == ImageImported {
+			return nil, problem(ErrImage, "An imported managed source is immutable.", "Create a separate revision from its UUID before changing it.")
+		}
 		ctx, cancel := context.WithTimeout(ctx, c.Preparation(Tart))
 		defer cancel()
 		if im.Phase == ImageSealed {
@@ -262,7 +265,13 @@ func (m *ImageManager) create(ctx context.Context, c Config, req ImageRequest) (
 	if req.IPSW != "" {
 		im.Source = req.IPSW
 	}
-	if e := m.Store.Update(func(s *Snapshot) error { s.Images[id] = im; return nil }); e != nil {
+	if e := m.Store.Update(func(s *Snapshot) error {
+		if s.Images[id] != nil {
+			return problem(ErrOwnership, "Image identity already exists.", "Use a fresh image revision.")
+		}
+		s.Images[id] = im
+		return nil
+	}); e != nil {
 		return nil, e
 	}
 	if e := m.reserve(c, id); e != nil {
@@ -276,7 +285,7 @@ func (m *ImageManager) create(ctx context.Context, c Config, req ImageRequest) (
 	var args []string
 	if req.IPSW != "" {
 		args = []string{"create", "--from-ipsw", req.IPSW, im.VM}
-	} else if source := s.Images[req.From]; source != nil && source.Phase == ImageSealed {
+	} else if source := s.Images[req.From]; source != nil && (source.Phase == ImageSealed || source.Phase == ImageImported) {
 		if e := m.Tart.validateSealed(ctx, c, source, s.Installation); e != nil {
 			return nil, m.imageFailure(id, e)
 		}

@@ -17,6 +17,12 @@ import (
 
 const artifactKey = "io.runmoor.artifact"
 
+func (b *ManagedImageBuilder) log(event string, a RunnerArtifact) {
+	if b.Log != nil {
+		b.Log.Info(event, "pool", a.Pool, "backend", a.Backend, "artifact", a.ID)
+	}
+}
+
 func artifactName(id string) string { return "runmoor-image-" + id }
 func artifactTag(id string) string  { return "runmoor-managed:" + id }
 func artifactDirectory(c Config, id string) string {
@@ -26,6 +32,12 @@ func managedPathValid(p string) bool {
 	return validRunnerPath(p) && filepath.Clean(p) == p && p != "/" && strings.Count(p, "/") >= 2
 }
 func (b *ManagedImageBuilder) Prepare(ctx context.Context, c Config, p Pool, a RunnerArtifact, r RunnerRelease) (Pool, error) {
+	if ctx.Err() != nil {
+		return p, ctx.Err()
+	}
+	if err := diskCheck(c); err != nil {
+		return p, err
+	}
 	if !managedPathValid(p.RunnerPath) {
 		return p, problem(ErrConfig, "Automatic installation requires a dedicated clean runner directory.", "Use the default runner_path or another dedicated absolute directory.")
 	}
@@ -40,6 +52,7 @@ func (b *ManagedImageBuilder) archive(ctx context.Context, c Config, p Pool, a R
 		return "", err
 	}
 	dir := artifactDirectory(c, a.ID)
+	b.log("runner_archive_downloading", a)
 	archive, err := downloadRunnerArchive(ctx, b.Client, asset, dir)
 	if err != nil {
 		return "", err
@@ -48,6 +61,7 @@ func (b *ManagedImageBuilder) archive(ctx context.Context, c Config, p Pool, a R
 	if err = validatedRunnerTar(ctx, archive, output); err != nil {
 		return "", err
 	}
+	b.log("runner_archive_verified", a)
 	return output, nil
 }
 func (b *ManagedImageBuilder) prepareDocker(ctx context.Context, c Config, p Pool, a RunnerArtifact, r RunnerRelease) (Pool, error) {
@@ -66,6 +80,7 @@ func (b *ManagedImageBuilder) prepareDocker(ctx context.Context, c Config, p Poo
 		return p, dockerProblem()
 	}
 	if official || errdefs.IsNotFound(err) {
+		b.log("runner_image_pulling", a)
 		pulled, e := cli.ImagePull(ctx, ref, client.ImagePullOptions{Platforms: []ocispec.Platform{{OS: "linux", Architecture: p.Arch}}})
 		if e != nil {
 			return p, dockerProblem()
@@ -88,6 +103,9 @@ func (b *ManagedImageBuilder) prepareDocker(ctx context.Context, c Config, p Poo
 	}
 	if err != nil || info.Os != "linux" || info.Architecture != p.Arch {
 		return p, problem(ErrImage, "Runner image has an incompatible platform.", "Choose a native Linux image; emulation is unsupported.")
+	}
+	if info.Config == nil || len(info.Config.Volumes) > 0 {
+		return p, problem(ErrImage, "Automatic image preparation requires an image without declared volumes.", "Use a compatible immutable base whose runner directory belongs to its image filesystem.")
 	}
 	resolved := info.ID
 	if official {
@@ -141,10 +159,15 @@ func (b *ManagedImageBuilder) prepareDocker(ctx context.Context, c Config, p Poo
 			return p, dockerProblem()
 		}
 	}
-	if err = dockerExec(ctx, cli, created.ID, "runner", []string{"/bin/sh", "-c", `set -eu; [ "$(id -u):$(id -g)" = 1001:1001 ]; cd "$1"; [ -x ./run.sh ]; [ "$(RUNNER_LOG_TO_STDOUT=0 ./bin/Runner.Listener --version 2>/dev/null)" = "$2" ]; for f in .runner .credentials .credentials_rsaparams; do [ ! -e "$f" ]; done; [ ! -d _work ] || [ -z "$(ls -A _work)" ]`, "runmoor", p.RunnerPath, r.Version()}); err != nil {
+	// Official images can print trace lines during --version. Match only the
+	// exact version line, just as execution bootstrap does, without exposing logs.
+	if err = dockerExec(ctx, cli, created.ID, "runner", []string{"/bin/sh", "-c", `set -eu; [ "$(id -u):$(id -g)" = 1001:1001 ]; cd "$1"; [ -x ./run.sh ]; [ "$(RUNNER_LOG_TO_STDOUT=0 ./bin/Runner.Listener --version 2>/dev/null | sed -n '/^[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$/p')" = "$2" ]; for f in .runner .credentials .credentials_rsaparams; do [ ! -e "$f" ]; done; [ ! -d _work ] || [ -z "$(ls -A _work)" ]`, "runmoor", p.RunnerPath, r.Version()}); err != nil {
 		return p, err
 	}
 	if !official {
+		if err = dockerExec(ctx, cli, created.ID, "runner", []string{"/bin/sh", "-c", `rm -rf "$1/_diag"`, "runmoor", p.RunnerPath}); err != nil {
+			return p, err
+		}
 		// A deterministic tag plus ownership labels recovers a commit whose response
 		// was lost. Do not retry a commit or adopt a pre-existing unowned image.
 		if err = b.Store.Update(func(s *Snapshot) error { s.Artifacts[a.ID].Generated = true; return nil }); err != nil {
@@ -158,7 +181,12 @@ func (b *ManagedImageBuilder) prepareDocker(ctx context.Context, c Config, p Poo
 		if json.Unmarshal(raw, &commitConfig) != nil {
 			return p, dockerProblem()
 		}
-		commitConfig.Labels = labels
+		if commitConfig.Labels == nil {
+			commitConfig.Labels = map[string]string{}
+		}
+		for key, value := range labels {
+			commitConfig.Labels[key] = value
+		}
 		committed, e := cli.ContainerCommit(ctx, created.ID, client.ContainerCommitOptions{Reference: artifactTag(a.ID), Config: &commitConfig})
 		if e != nil {
 			return p, dockerProblem()
@@ -174,6 +202,7 @@ func (b *ManagedImageBuilder) prepareDocker(ctx context.Context, c Config, p Poo
 	p.Image = resolved
 	p.ImageSource = nil
 	p.RunnerVersion = r.Version()
+	b.log("runner_image_verified", a)
 	return p, nil
 }
 func dockerExec(ctx context.Context, cli *client.Client, id, user string, args []string) error {
@@ -233,6 +262,9 @@ func cleanupPreparationContainer(ctx context.Context, cli *client.Client, instal
 	return nil
 }
 func (b *ManagedImageBuilder) prepareTart(ctx context.Context, c Config, p Pool, a RunnerArtifact, r RunnerRelease) (Pool, error) {
+	if err := b.Images.Tart.check(ctx, c); err != nil {
+		return p, err
+	}
 	archive, err := b.archive(ctx, c, p, a, r)
 	if err != nil {
 		return p, err
@@ -243,8 +275,10 @@ func (b *ManagedImageBuilder) prepareTart(ctx context.Context, c Config, p Pool,
 		source = q.BaseImage
 	}
 	if source == "" && p.ImageSource != nil {
-		source = p.ImageSource.From
-		home = p.ImageSource.SourceHome
+		source, err = b.importTartSource(ctx, c, p, a)
+		if err != nil {
+			return p, err
+		}
 	}
 	im, err := b.Images.create(ctx, c, ImageRequest{ID: a.ID, Action: "create", Name: artifactName(a.ID), From: source, SourceHome: home, Resources: a.Resources})
 	if err != nil {
@@ -273,7 +307,62 @@ func (b *ManagedImageBuilder) prepareTart(ctx context.Context, c Config, p Pool,
 	p.Image = sealed.ID
 	p.ImageSource = nil
 	p.RunnerVersion = r.Version()
+	b.log("runner_image_sealed", a)
 	return p, nil
+}
+
+// Freeze the first successful import before booting or changing any guest files.
+// The source survives failed runner installations and restarts; subsequent
+// candidates clone this owned digest instead of resolving a mutable source again.
+func (b *ManagedImageBuilder) importTartSource(ctx context.Context, c Config, p Pool, candidate RunnerArtifact) (string, error) {
+	base := RunnerArtifact{ID: newID(), Pool: p.Name, Backend: Tart, Phase: ArtifactPreparing, Resources: candidate.Resources, Reserved: true, Generated: true, CreatedAt: nowUTC()}
+	base.Image = base.ID
+	if err := b.Store.Update(func(s *Snapshot) error {
+		a := s.Artifacts[candidate.ID]
+		q := s.Managed[p.Name]
+		if a == nil || q == nil || q.DesiredHash != fingerprint(p) || !a.Reserved {
+			return staleUpdate()
+		}
+		// Transfer the existing reservation atomically. Import and candidate boot
+		// are sequential and must not consume two VM slots or double the budget.
+		a.Reserved = false
+		s.Artifacts[base.ID] = &base
+		return nil
+	}); err != nil {
+		return "", err
+	}
+	im, err := b.Images.create(ctx, c, ImageRequest{ID: base.ID, Action: "create", Name: artifactName(base.ID), From: p.ImageSource.From, SourceHome: p.ImageSource.SourceHome, Resources: base.Resources})
+	if err != nil {
+		return "", err
+	}
+	vm, err := b.Images.Tart.vm(ctx, c, im.VM)
+	if err != nil {
+		return "", err
+	}
+	if vm.Running || vm.State == "suspended" {
+		return "", problem(ErrImage, "Imported source must be stopped before it is frozen.", "Use a stopped prepared macOS source.")
+	}
+	digest, err := imageDigest(ctx, c, im.VM)
+	if err != nil {
+		return "", err
+	}
+	if err = b.Store.Update(func(s *Snapshot) error {
+		q := s.Managed[p.Name]
+		if q == nil || q.DesiredHash != fingerprint(p) {
+			return staleUpdate()
+		}
+		q.BaseImage = base.ID
+		s.Images[base.ID].Phase = ImageImported
+		s.Images[base.ID].Digest = digest
+		s.Artifacts[base.ID].Phase = ArtifactReady
+		s.Artifacts[base.ID].Reserved = false
+		s.Artifacts[candidate.ID].Reserved = true
+		return nil
+	}); err != nil {
+		return "", err
+	}
+	b.log("runner_source_frozen", base)
+	return base.ID, nil
 }
 func (b *ManagedImageBuilder) installTartArchive(ctx context.Context, c Config, vm, path, archive string) error {
 	// A separate readiness probe accepts a prepared guest without a runner. It
@@ -308,6 +397,7 @@ printf 'RUNMOOR_READY\n'`
 	return err
 }
 func (b *ManagedImageBuilder) Cleanup(ctx context.Context, c Config, a RunnerArtifact) error {
+	b.log("runner_artifact_cleanup", a)
 	if a.Backend == Docker {
 		cli, err := dockerClient(ctx, c)
 		if err != nil {

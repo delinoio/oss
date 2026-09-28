@@ -178,6 +178,9 @@ func TestManagedPreparationReservesNextCapacityAndRecoversCrash(t *testing.T) {
 		t.Fatal("released reservation before termination")
 	}
 	b.cleanup = nil
+	if err := m.Store.Update(func(s *Snapshot) error { s.Artifacts[orphan.ID].NextCleanup = time.Time{}; return nil }); err != nil {
+		t.Fatal(err)
+	}
 	if err := m.cleanupManaged(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -222,5 +225,295 @@ func TestManagedPendingPoolPauseAndResume(t *testing.T) {
 	}
 	if m.Store.View().Managed["new"].Paused {
 		t.Fatal("pending pool did not resume")
+	}
+}
+
+func TestManagedScopedResumeKeepsOtherPendingPoolsPaused(t *testing.T) {
+	m, c, _, _, _ := testManager(t)
+	for _, name := range []string{"first", "second"} {
+		p := c.Pools[0]
+		p.Name, p.ScaleSet, p.Image, p.RunnerVersion = name, name, "", LatestRunner
+		c.Pools = append(c.Pools, p)
+	}
+	if err := m.accept(c, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Pause(""); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Resume(context.Background(), "first"); err != nil {
+		t.Fatal(err)
+	}
+	s := m.Store.View()
+	if s.Paused || s.Managed["first"].Paused || !s.Managed["second"].Paused {
+		t.Fatal("scoped resume unpaused another pending pool")
+	}
+}
+
+func TestPausedManagedPoolChecksReleasesWithoutPreparing(t *testing.T) {
+	m, _, builder, _ := managedFixture(t)
+	if err := m.Pause(""); err != nil {
+		t.Fatal(err)
+	}
+	m.updateManaged(context.Background(), "linux")
+	s := m.Store.View()
+	q := s.Managed["linux"]
+	if !s.Paused || builder.calls != 0 || q.Current.RunnerVersion != "2.337.0" || q.CandidateVersion != "2.338.0" || q.LastCheck.IsZero() || !q.NextCheck.After(time.Now()) {
+		t.Fatal("paused release checks changed execution or lost freshness")
+	}
+}
+
+func TestManagedImportedSourceSurvivesPreparationRetry(t *testing.T) {
+	c, s := fixtureStore(t)
+	driver, fixture := fakeTart(c)
+	images := &ImageManager{Store: s, Tart: driver}
+	p := c.Pools[0]
+	p.Backend, p.Image, p.RunnerVersion, p.RunnerPath = Tart, "", LatestRunner, "/Users/runner/actions-runner"
+	p.ImageSource = &ImageSource{From: "/fixture.tvm"}
+	c.Pools = []Pool{p}
+	c.Host.MaxRunners = 1
+	a := RunnerArtifact{ID: newID(), Pool: p.Name, Backend: Tart, Phase: ArtifactPreparing, Resources: p.Resources, Reserved: true, CreatedAt: nowUTC()}
+	if err := s.Update(func(s *Snapshot) error {
+		s.Config = c
+		initializeManaged(s, c)
+		s.Artifacts[a.ID] = &a
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	builder := &ManagedImageBuilder{Store: s, Images: images}
+	base, err := builder.importTartSource(context.Background(), c, p, a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	frozen := s.View().Images[base]
+	if frozen.Phase != ImageImported || frozen.Digest == "" || s.View().Managed[p.Name].BaseImage != base {
+		t.Fatal("import was not frozen before guest changes")
+	}
+	// Simulate a failed candidate and a later retry with the external source gone.
+	if err = builder.Cleanup(context.Background(), c, *s.View().Artifacts[a.ID]); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.Update(func(s *Snapshot) error { delete(s.Artifacts, a.ID); return nil }); err != nil {
+		t.Fatal(err)
+	}
+	a.ID = newID()
+	if err = s.Update(func(s *Snapshot) error { s.Artifacts[a.ID] = &a; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	release, body := fixtureRelease(t, Tart, p.Arch)
+	builder.Client = archiveClient(body)
+	resolved, err := builder.Prepare(context.Background(), c, p, a, release)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Image == base || fingerprint(s.View().Images[base]) != fingerprint(frozen) {
+		t.Fatal("retry modified its frozen source")
+	}
+	imports := 0
+	fixture.mu.Lock()
+	for _, cmd := range fixture.commands {
+		if cmd[0] == "import" {
+			imports++
+		}
+	}
+	fixture.mu.Unlock()
+	if imports != 1 {
+		t.Fatalf("resolved the external source %d times", imports)
+	}
+	for _, action := range []string{"open", "seal", "remove"} {
+		if _, err = images.Operate(context.Background(), c, ImageRequest{Action: action, ID: base}); err == nil {
+			t.Fatalf("allowed %s of the active source", action)
+		}
+	}
+}
+
+func TestManagedUnreferencedReadyArtifactIsCollectedWithoutPools(t *testing.T) {
+	m, _, builder, _ := managedFixture(t)
+	a := RunnerArtifact{ID: newID(), Backend: Docker, Phase: ArtifactReady, Image: "sha256:" + strings.Repeat("c", 64)}
+	if err := m.Store.Update(func(s *Snapshot) error {
+		s.Managed = nil
+		s.Artifacts[a.ID] = &a
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	m.startManagedWork()
+	m.wg.Wait()
+	if len(builder.cleaned) != 1 || m.Store.View().Artifacts[a.ID] != nil {
+		t.Fatal("orphan collection required a remaining managed pool")
+	}
+}
+
+func TestDockerCapacityRecoveryBlocksOnlyDocker(t *testing.T) {
+	m, c, _, _, id := testManager(t)
+	if err := m.Store.Update(func(s *Snapshot) error {
+		s.Requested.DockerCapacityPending = true
+		s.Config.DockerCapacityPending = true
+		s.Pools[id].ScaleSetID, s.Pools[id].Session = 1, "fixture"
+		other := *s.Pools[id]
+		other.ID = "macos"
+		other.Spec.Name, other.Spec.ScaleSet, other.Spec.Backend = "macos", "macos", Tart
+		s.Pools[other.ID] = &other
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s := m.Store.View()
+	if eligible(s, s.Pools[id]) || !eligible(s, s.Pools["macos"]) {
+		t.Fatal("pending engine capacity affected the wrong pools")
+	}
+	m.ResolveCapacity = func(context.Context, Config) (Config, error) { return Config{}, dockerProblem() }
+	if err := m.retryDockerCapacity(context.Background()); err == nil || !m.Store.View().Config.DockerCapacityPending {
+		t.Fatal("failed capacity probe released the wait")
+	}
+	m.ResolveCapacity = func(_ context.Context, c Config) (Config, error) {
+		c.DockerCapacityPending = false
+		c.DockerBudget = c.Pools[0].Cost()
+		return c, nil
+	}
+	if err := m.retryDockerCapacity(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	s = m.Store.View()
+	if s.Config.DockerCapacityPending || s.Config.DockerBudget != c.Pools[0].Cost() || !eligible(s, s.Pools[id]) {
+		t.Fatal("recovered capacity was not applied atomically")
+	}
+}
+
+func TestManagedTartPreparesSeparateSealedRevision(t *testing.T) {
+	c, s := fixtureStore(t)
+	driver, fixture := fakeTart(c)
+	images := &ImageManager{Store: s, Tart: driver}
+	source, err := images.Operate(context.Background(), c, ImageRequest{Action: "create", Name: "source", IPSW: "/fixture.ipsw", Resources: Resources{1, 512}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err = images.Operate(context.Background(), c, ImageRequest{Action: "seal", ID: source.ID, RunnerVersion: "2.337.0"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := fingerprint(source)
+	p := c.Pools[0]
+	p.Backend = Tart
+	p.Image = source.ID
+	p.RunnerPath = source.RunnerPath
+	p.RunnerVersion = LatestRunner
+	a := RunnerArtifact{ID: newID(), Pool: p.Name, Backend: Tart, Phase: ArtifactPreparing, Resources: p.Resources, Reserved: true, CreatedAt: nowUTC()}
+	if err = s.Update(func(s *Snapshot) error { s.Artifacts[a.ID] = &a; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	release, body := fixtureRelease(t, Tart, p.Arch)
+	builder := &ManagedImageBuilder{Store: s, Images: images, Client: archiveClient(body)}
+	result, err := builder.Prepare(context.Background(), c, p, a, release)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap := s.View()
+	candidate := snap.Images[result.Image]
+	if result.Image == source.ID || result.RunnerVersion != "2.338.0" || candidate.Phase != ImageSealed || candidate.Digest == "" || fingerprint(snap.Images[source.ID]) != before {
+		t.Fatal("source changed or candidate was not sealed")
+	}
+	fixture.mu.Lock()
+	jit := fixture.jit
+	running := fixture.running[candidate.VM]
+	fixture.mu.Unlock()
+	if jit != "" || running {
+		t.Fatal("preparation registered a runner or left the VM running")
+	}
+	if err = builder.Cleanup(context.Background(), c, *snap.Artifacts[a.ID]); err != nil {
+		t.Fatal(err)
+	}
+	if s.View().Images[source.ID] == nil || s.View().Images[a.ID] != nil {
+		t.Fatal("cleanup removed the source or retained the candidate")
+	}
+}
+
+func TestManagedForceStopCancelsBuilder(t *testing.T) {
+	m, _, builder, _ := managedFixture(t)
+	entered := make(chan struct{})
+	cancelled := make(chan struct{})
+	builder.prepare = func(ctx context.Context, _ Config, _ Pool, _ RunnerArtifact, _ RunnerRelease) (Pool, error) {
+		close(entered)
+		<-ctx.Done()
+		close(cancelled)
+		return Pool{}, ctx.Err()
+	}
+	if !m.startWork("runner-update", func(ctx context.Context) { m.updateManaged(ctx, "linux") }) {
+		t.Fatal("worker did not start")
+	}
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("builder did not start")
+	}
+	done := make(chan error, 1)
+	go func() { done <- m.Stop(true) }()
+	select {
+	case <-cancelled:
+	case <-time.After(5 * time.Second):
+		t.Fatal("force stop did not cancel preparation")
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("stop did not finish cleanup")
+	}
+	m.wg.Wait()
+	s := m.Store.View()
+	if !s.Stopping || len(s.Artifacts) != 0 || s.Config.Pools[0].RunnerVersion != "2.337.0" {
+		t.Fatal("stop changed the active image or lost cleanup")
+	}
+}
+func TestManagedReleaseFailuresShareRetryDeadline(t *testing.T) {
+	m, _, _, _ := managedFixture(t)
+	calls := 0
+	m.ReleaseClient = &http.Client{Transport: runnerReleaseTransport(func(*http.Request) (*http.Response, error) {
+		calls++
+		return &http.Response{StatusCode: 429, Header: http.Header{"Retry-After": []string{"600"}}, Body: io.NopCloser(strings.NewReader("fixture-secret"))}, nil
+	})}
+	if err := m.Store.Update(func(s *Snapshot) error { s.ReleaseChecked = time.Time{}; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	m.updateManaged(context.Background(), "linux")
+	m.updateManaged(context.Background(), "linux")
+	s := m.Store.View()
+	if calls != 1 || time.Until(s.ReleaseRetryAt) < 9*time.Minute || s.ReleaseProblem == nil || strings.Contains(s.Managed["linux"].Problem.Error(), "fixture-secret") {
+		t.Fatal("shared rate-limit/backoff or redaction failed")
+	}
+}
+func TestManagedRetentionPreservesLiveAndPreviousImages(t *testing.T) {
+	m, _, builder, _ := managedFixture(t)
+	builder.prepare = func(_ context.Context, _ Config, p Pool, _ RunnerArtifact, r RunnerRelease) (Pool, error) {
+		p.Image = "sha256:" + fingerprint(r.Version())
+		p.RunnerVersion = r.Version()
+		return p, nil
+	}
+	m.updateManaged(context.Background(), "linux")
+	first := m.Store.View().Managed["linux"].CurrentArtifact
+	for _, version := range []string{"2.339.0", "2.340.0"} {
+		setManagedReleases(t, m, []RunnerRelease{{Tag: "v" + version, Published: nowUTC()}, {Tag: "v2.338.0", Published: nowUTC()}, {Tag: "v2.337.0", Published: nowUTC()}})
+		m.updateManaged(context.Background(), "linux")
+		if err := m.Store.Update(func(s *Snapshot) error {
+			for _, p := range s.Pools {
+				if p.Phase == Draining {
+					p.Phase = Retired
+				}
+			}
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := m.cleanupManaged(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	s := m.Store.View()
+	q := s.Managed["linux"]
+	if s.Artifacts[first] != nil || s.Artifacts[q.CurrentArtifact] == nil || s.Artifacts[q.PreviousArtifact] == nil || len(s.Artifacts) != 2 {
+		t.Fatal("current/previous retention failed")
 	}
 }

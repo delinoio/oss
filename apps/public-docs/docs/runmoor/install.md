@@ -41,7 +41,7 @@ install -m 755 runmoor "$HOME/.local/bin/runmoor"
 
 The download tag and signing identity must refer to the same release. Tag-triggered releases use the identity above. For a release explicitly signed by a manual run on `main`, use the exact identity `https://github.com/delinoio/oss/.github/workflows/release-runmoor.yml@refs/heads/main` after checking its release run.
 
-Linux users select `runmoor-linux-amd64.tar.gz` or `runmoor-linux-arm64.tar.gz` and may use `sha256sum -c` instead of `shasum -a 256 -c`. Running the manager on Linux requires Ubuntu 22.04 or newer on x86-64 or ARM64. Add your user binary directory to PATH yourself. No Homebrew package, automatic update, system-level service, or bundled Docker/Tart is installed.
+Linux users select `runmoor-linux-amd64.tar.gz` or `runmoor-linux-arm64.tar.gz` and may use `sha256sum -c` instead of `shasum -a 256 -c`. Running the manager on Linux requires Ubuntu 22.04 or newer on x86-64 or ARM64. Add your user binary directory to PATH yourself. No Homebrew package, Runmoor binary auto-updater, system-level service, or bundled Docker/Tart is installed.
 
 ## Linux APT and DNF
 

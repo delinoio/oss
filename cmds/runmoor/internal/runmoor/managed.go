@@ -21,6 +21,12 @@ func initializeManaged(s *Snapshot, c Config) {
 		}
 		names[p.Name] = true
 		hash := fingerprint(p)
+		sourceHash := fingerprint(struct {
+			Backend Backend
+			Image   string
+			Source  *ImageSource
+			Path    string
+		}{p.Backend, p.Image, p.ImageSource, p.RunnerPath})
 		managed := s.Managed[p.Name]
 		if managed == nil {
 			managed = &ManagedPool{Name: p.Name, Phase: UpdatePending}
@@ -33,11 +39,18 @@ func initializeManaged(s *Snapshot, c Config) {
 				}
 			}
 		}
+		if managed.SourceHash != sourceHash {
+			managed.SourceHash = sourceHash
+			managed.BaseImage = ""
+		}
+		managed.Mode = runnerMode(p)
+		managed.Resources = p.Cost()
+		managed.MaxRunners = p.MaxRunners
 		if managed.DesiredHash != hash {
 			managed.DesiredHash = hash
 			managed.NextCheck = time.Time{}
 			managed.Phase = UpdatePending
-			managed.BaseImage = ""
+
 		}
 	}
 	for name := range s.Managed {
@@ -77,6 +90,9 @@ func (m *Manager) requestRunnerUpdate(name string) error {
 			return problem(ErrConfig, "No automatically managed pool matches.", "Use runner_version = latest or a managed image source, then reload.")
 		}
 		s.ReleaseChecked = time.Time{}
+		if s.ReleaseProblem == nil || s.ReleaseProblem.HTTPStatus != 429 && s.ReleaseProblem.HTTPStatus != 403 {
+			s.ReleaseRetryAt = time.Time{}
+		}
 		return nil
 	})
 }
@@ -90,18 +106,18 @@ func (m *Manager) startManagedWork() {
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	if !s.Paused && !s.Stopping {
+	if !s.Stopping {
 		for _, name := range names {
 			v := s.Managed[name]
-			if !v.Paused && !time.Now().Before(v.NextCheck) {
+			if !time.Now().Before(v.NextCheck) {
 				due = name
 				break
 			}
 		}
 	}
 	cleanup := false
-	for _, a := range s.Artifacts {
-		if a.Phase != ArtifactReady {
+	for id, a := range s.Artifacts {
+		if !artifactReferenced(s, id) && !time.Now().Before(a.NextCleanup) {
 			cleanup = true
 		}
 	}
@@ -110,6 +126,9 @@ func (m *Manager) startManagedWork() {
 	}
 }
 func (m *Manager) updateManaged(ctx context.Context, name string) {
+	if ctx.Err() != nil {
+		return
+	}
 	m.imageMu.Lock()
 	defer m.imageMu.Unlock()
 	if err := m.cleanupManaged(ctx); err != nil {
@@ -123,12 +142,39 @@ func (m *Manager) updateManaged(ctx context.Context, name string) {
 	}
 	s := m.Store.View()
 	managed := s.Managed[name]
-	if managed == nil || managed.Paused || s.Paused || s.Stopping {
+	if managed == nil || s.Stopping {
 		return
 	}
 	desired, ok := requestedPool(s.Requested, name)
 	if !ok {
 		return
+	}
+	if !managed.Paused && !s.Paused && desired.Backend == Docker && (s.Requested.DockerCapacityPending || !validResources(s.Requested.DockerBudget)) && m.ResolveCapacity != nil {
+		probe, cancel := context.WithTimeout(ctx, 10*time.Second)
+		resolved, err := m.ResolveCapacity(probe, s.Requested)
+		cancel()
+		if err != nil {
+			m.managedFailure(name, err)
+			return
+		}
+		if fingerprint(resolved) != fingerprint(s.Requested) {
+			before := fingerprint(s.Requested)
+			if err = m.Store.Update(func(v *Snapshot) error {
+				if v.Stopping || v.Paused || fingerprint(v.Requested) != before {
+					return staleUpdate()
+				}
+				initializeManaged(v, resolved)
+				return acceptSnapshot(v, managedConfig(*v), false)
+			}); err != nil {
+				return
+			}
+			s = m.Store.View()
+			managed = s.Managed[name]
+			desired, ok = requestedPool(s.Requested, name)
+			if managed == nil || !ok {
+				return
+			}
+		}
 	}
 	hash := managed.DesiredHash
 	if err := m.Store.Update(func(v *Snapshot) error {
@@ -143,15 +189,37 @@ func (m *Manager) updateManaged(ctx context.Context, name string) {
 	}
 	releases := s.Releases
 	if len(releases) == 0 || s.ReleaseChecked.IsZero() || time.Since(s.ReleaseChecked) >= time.Hour {
+		if time.Now().Before(s.ReleaseRetryAt) && s.ReleaseProblem != nil {
+			m.managedFailure(name, s.ReleaseProblem)
+			return
+		}
 		probe, cancel := context.WithTimeout(ctx, 10*time.Second)
 		var err error
 		releases, err = fetchRunnerReleases(probe, m.ReleaseClient)
 		cancel()
+		if err == nil && len(releases) == 0 {
+			err = releaseProblem()
+		}
 		if err != nil {
-			m.managedFailure(name, err)
+			p := classify(err, ErrRetry, "Runner release lookup failed.", "Wait for the next automatic retry.")
+			_ = m.Store.Update(func(v *Snapshot) error {
+				v.ReleaseAttempts++
+				v.ReleaseRetryAt = time.Now().Add(managedRetryDelay(v.ReleaseAttempts, p))
+				p.RetryAt = v.ReleaseRetryAt
+				v.ReleaseProblem = p
+				return nil
+			})
+			m.managedFailure(name, p)
 			return
 		}
-		if err = m.Store.Update(func(v *Snapshot) error { v.Releases = releases; v.ReleaseChecked = nowUTC(); return nil }); err != nil {
+		if err = m.Store.Update(func(v *Snapshot) error {
+			v.Releases = releases
+			v.ReleaseChecked = nowUTC()
+			v.ReleaseRetryAt = time.Time{}
+			v.ReleaseProblem = nil
+			v.ReleaseAttempts = 0
+			return nil
+		}); err != nil {
 			m.managedFailure(name, err)
 			return
 		}
@@ -199,6 +267,25 @@ func (m *Manager) updateManaged(ctx context.Context, name string) {
 	}); err != nil {
 		return
 	}
+	if current := m.Store.View(); current.Paused || current.Managed[name] == nil || current.Managed[name].Paused {
+		_ = m.Store.Update(func(v *Snapshot) error {
+			q := v.Managed[name]
+			if q == nil || q.DesiredHash != hash {
+				return staleUpdate()
+			}
+			q.Phase = managed.Phase
+			if !v.Paused && !q.Paused {
+				q.NextCheck = time.Time{}
+				return nil
+			}
+			q.NextCheck = time.Now().Add(time.Hour)
+			if !q.Expires.IsZero() && !time.Now().Before(q.Expires) {
+				q.Phase = UpdateExpired
+			}
+			return nil
+		})
+		return
+	}
 	if managed.Current != nil && managed.Current.RunnerVersion == selected.Version() && managed.AppliedHash == hash {
 		_ = m.Store.Update(func(v *Snapshot) error {
 			q := v.Managed[name]
@@ -206,6 +293,9 @@ func (m *Manager) updateManaged(ctx context.Context, name string) {
 				return staleUpdate()
 			}
 			q.Phase = UpdateReady
+			if !q.Expires.IsZero() && !time.Now().Before(q.Expires) {
+				q.Phase = UpdateExpired
+			}
 			q.NextCheck = time.Now().Add(time.Hour)
 			q.Attempts = 0
 			q.Problem = nil
@@ -217,7 +307,7 @@ func (m *Manager) updateManaged(ctx context.Context, name string) {
 	artifact := RunnerArtifact{ID: newID(), Pool: name, Backend: desired.Backend, Phase: ArtifactPreparing, Resources: desired.Resources, Reserved: true, CreatedAt: nowUTC()}
 	if err := m.Store.Update(func(v *Snapshot) error {
 		q := v.Managed[name]
-		if q == nil || q.DesiredHash != hash || q.Paused || v.Paused || v.Stopping {
+		if q == nil || q.DesiredHash != hash || q.Paused || v.Paused || v.Stopping || ctx.Err() != nil {
 			return staleUpdate()
 		}
 		q.Phase = UpdateWaiting
@@ -249,6 +339,7 @@ func (m *Manager) updateManaged(ctx context.Context, name string) {
 		m.abandonArtifact(ctx, artifact.ID)
 		return
 	}
+	activated := false
 	err = m.Store.Update(func(v *Snapshot) error {
 		a := v.Artifacts[artifact.ID]
 		if a == nil {
@@ -258,9 +349,15 @@ func (m *Manager) updateManaged(ctx context.Context, name string) {
 		a.Reserved = false
 		a.Phase = ArtifactReady
 		q := v.Managed[name]
-		if q == nil || q.DesiredHash != hash || v.Stopping || v.Paused || q.Paused {
+		if q == nil || q.DesiredHash != hash || v.Stopping || v.Paused || q.Paused || ctx.Err() != nil {
+			if q != nil && q.DesiredHash == hash {
+				q.Phase = UpdatePending
+				q.Candidate = ""
+				q.CandidateVersion = ""
+			}
 			return nil
 		}
+		activated = true
 		q.PreviousArtifact = q.CurrentArtifact
 		q.CurrentArtifact = artifact.ID
 		q.Current = &resolved
@@ -281,7 +378,11 @@ func (m *Manager) updateManaged(ctx context.Context, name string) {
 		m.managedFailure(name, err)
 		return
 	}
-	m.Log.Info("runner_update_ready", "pool", name, "version", resolved.RunnerVersion, "artifact", artifact.ID)
+	if activated {
+		m.Log.Info("runner_update_ready", "pool", name, "version", resolved.RunnerVersion, "artifact", artifact.ID)
+	} else {
+		m.Log.Info("runner_update_deferred", "pool", name, "artifact", artifact.ID)
+	}
 	_ = m.cleanupManaged(ctx)
 }
 func staleUpdate() *Problem {
@@ -294,7 +395,7 @@ func (m *Manager) managedFailure(name string, err error) {
 			q.Phase = UpdateRetry
 			q.Attempts++
 			q.Problem = p
-			q.NextCheck = time.Now().Add(min(time.Hour, retryDelay(q.Attempts, p)))
+			q.NextCheck = time.Now().Add(managedRetryDelay(q.Attempts, p))
 			if !q.Expires.IsZero() && !time.Now().Before(q.Expires) {
 				q.Phase = UpdateExpired
 			}
@@ -365,7 +466,7 @@ func (m *Manager) cleanupManaged(ctx context.Context) error {
 	for _, id := range ids {
 		s = m.Store.View()
 		a := s.Artifacts[id]
-		if a == nil || artifactReferenced(s, id) {
+		if a == nil || artifactReferenced(s, id) || time.Now().Before(a.NextCleanup) {
 			continue
 		}
 		if err := m.Store.Update(func(v *Snapshot) error {
@@ -380,6 +481,8 @@ func (m *Manager) cleanupManaged(ctx context.Context) error {
 			_ = m.Store.Update(func(v *Snapshot) error {
 				if a := v.Artifacts[id]; a != nil {
 					a.Problem = classify(err, ErrCleanup, "Managed artifact cleanup is pending.", "Restore backend connectivity; ownership and reservations are retained.")
+					a.CleanupAttempts++
+					a.NextCleanup = time.Now().Add(managedRetryDelay(a.CleanupAttempts, a.Problem))
 				}
 				return nil
 			})
@@ -421,4 +524,12 @@ func displayResolved(s Snapshot) Config {
 		}
 	}
 	return c
+}
+
+func managedRetryDelay(attempt int, p *Problem) time.Duration {
+	delay := min(time.Hour, 5*time.Second*time.Duration(1<<min(max(attempt, 0), 10)))
+	if p != nil && !p.RetryAt.IsZero() {
+		delay = max(delay, time.Until(p.RetryAt))
+	}
+	return delay
 }

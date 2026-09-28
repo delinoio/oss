@@ -76,3 +76,12 @@ Runmoor `0.1.3` native packages have passed the complete public installation mat
 The public installation surface documents the exact repository key fingerprint, supported Linux distribution/architecture matrix, stable or explicit preview registration, and package-manager install/update/remove commands. Operational details remain in `docs/repository-linux-packages-contract.md`. Installation guidance must preserve the existing release-archive and other supported installation methods.
 
 The Runmoor install page links directly to the shared key-verification and stable-registration sections before showing installation commands. It explains that key inspection alone does not register an APT source, requires a successful package-list refresh and a visible package candidate, and links to shared troubleshooting for missing packages. Installation, upgrade, and removal commands use separate copyable blocks so copying an installation example cannot immediately uninstall the package. The shared registration page owns architecture, source, suite, update-error, and candidate diagnostics.
+
+## Automatic configuration documentation
+
+The next unreleased Runmoor version adds interactive/minimal init, omitted resource
+and architecture defaults, latest runner management for Docker/Tart, resolved
+configuration inspection and explicit update requests. Guides label this version
+boundary and retain 0.1.3-compatible manual pins, image setup, credentials,
+license terms and verification limits. Public guides describe operator behavior,
+not the internal SQLite migration journal or repository implementation paths.

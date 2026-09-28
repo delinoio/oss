@@ -127,6 +127,11 @@ func OpenStore(c Config) (*Store, error) {
 			return failed(problem(ErrState, "Managed state is missing.", "Restore a compatible complete backup."))
 		}
 		if s.state.Config.Storage != c.Storage {
+			for _, a := range s.state.Artifacts {
+				if a.Reserved || a.Phase != ArtifactReady {
+					return failed(problem(ErrConfig, "Storage relocation requires completed managed image preparation and cleanup.", "Finish runner updates and cleanup at the original storage locations first."))
+				}
+			}
 			for _, r := range s.state.Runners {
 				if r.Phase != Completed {
 					return failed(problem(ErrConfig, "Storage relocation requires completed execution cleanup.", "Restore the original storage locations and drain before moving the complete backup."))
@@ -150,6 +155,7 @@ func OpenStore(c Config) (*Store, error) {
 	if relocated {
 		if err := s.Update(func(v *Snapshot) error {
 			v.Config.Storage = c.Storage
+			v.Requested.Storage = c.Storage
 			for id, generation := range v.Generations {
 				generation.Storage = c.Storage
 				v.Generations[id] = generation

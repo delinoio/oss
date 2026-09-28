@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/moby/moby/client"
 )
@@ -148,7 +149,30 @@ func resolveDockerCapacity(ctx context.Context, c Config) (Config, error) {
 		return c, dockerProblem()
 	}
 	c.DockerBudget = Resources{info.Info.NCPU, info.Info.MemTotal / (1024 * 1024)}
+	c.DockerCapacityPending = false
 	return resolveDefaults(c, Resources{c.Host.CPU, c.Host.MemoryMiB})
+}
+
+func (m *Manager) retryDockerCapacity(ctx context.Context) error {
+	m.imageMu.Lock()
+	defer m.imageMu.Unlock()
+	s := m.Store.View()
+	if !s.Requested.DockerCapacityPending {
+		return nil
+	}
+	probe, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	c, err := m.ResolveCapacity(probe, s.Requested)
+	if err != nil {
+		return err
+	}
+	return m.Store.Update(func(v *Snapshot) error {
+		if v.Stopping || fingerprint(v.Requested) != fingerprint(s.Requested) {
+			return staleUpdate()
+		}
+		initializeManaged(v, c)
+		return acceptSnapshot(v, managedConfig(*v), false)
+	})
 }
 func defaultImageResources(c Config, r Resources) (Resources, error) {
 	if r.CPU == 0 {

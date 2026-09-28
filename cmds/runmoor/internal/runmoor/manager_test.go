@@ -137,6 +137,7 @@ func testManager(t *testing.T) (*Manager, Config, *fakeRemote, *fakeDriver, stri
 	m.RemoteFactory = func(Connection) (Remote, error) { return r, nil }
 	m.Drivers = func(Backend) (Driver, error) { return d, nil }
 	m.Power = fakePower{}
+	m.ResolveCapacity = func(_ context.Context, c Config) (Config, error) { return c, nil }
 	if e := m.activate(c); e != nil {
 		t.Fatal(e)
 	}

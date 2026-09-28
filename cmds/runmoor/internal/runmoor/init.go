@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/pelletier/go-toml/v2"
@@ -60,7 +61,8 @@ func initialize(path string, opts InitOptions, input io.Reader, output io.Writer
 			}
 		}
 	}
-	if opts.Auth == "" {
+	askAuth := opts.Auth == ""
+	if askAuth {
 		opts.Auth = string(PAT)
 	}
 	if interactive && !opts.ImageOnly {
@@ -70,9 +72,11 @@ func initialize(path string, opts InitOptions, input io.Reader, output io.Writer
 				return err
 			}
 		}
-		opts.Auth, err = ask("Authentication (pat/app)", opts.Auth)
-		if err != nil {
-			return err
+		if askAuth {
+			opts.Auth, err = ask("Authentication (pat/app)", opts.Auth)
+			if err != nil {
+				return err
+			}
 		}
 		if opts.CredentialEnv == "" && opts.CredentialFile == "" {
 			kind, e := ask("Credential reference (env/file)", "env")
@@ -82,7 +86,11 @@ func initialize(path string, opts InitOptions, input io.Reader, output io.Writer
 			if kind == "file" {
 				opts.CredentialFile, err = ask("Absolute private credential file", "")
 			} else if kind == "env" {
-				opts.CredentialEnv, err = ask("Credential environment variable name", "RUNMOOR_PAT")
+				fallback := "RUNMOOR_PAT"
+				if opts.Auth == string(App) {
+					fallback = "RUNMOOR_APP_PRIVATE_KEY"
+				}
+				opts.CredentialEnv, err = ask("Credential environment variable name", fallback)
 			} else {
 				return problem(ErrConfig, "Unknown credential reference kind.", "Use env or file, never the credential value.")
 			}
@@ -102,7 +110,8 @@ func initialize(path string, opts InitOptions, input io.Reader, output io.Writer
 				if e != nil {
 					return e
 				}
-				if _, e = fmt.Sscan(value, &opts.InstallationID); e != nil {
+				opts.InstallationID, e = strconv.ParseInt(value, 10, 64)
+				if e != nil {
 					return problem(ErrConfig, "Invalid installation ID.", "Provide a positive numeric installation ID.")
 				}
 			}
@@ -116,6 +125,12 @@ func initialize(path string, opts InitOptions, input io.Reader, output io.Writer
 	}
 	fields := map[string]any{"schema_version": 1}
 	if !opts.ImageOnly {
+		if opts.Auth == string(App) && (opts.ClientID == "" || opts.InstallationID <= 0) {
+			return problem(ErrConfig, "GitHub App setup needs client and installation identifiers.", "Provide --client-id ID and --installation-id N.")
+		}
+		if opts.Backend == string(Tart) && opts.Image == "" && opts.ImageSource == "" {
+			return problem(ErrConfig, "Tart setup needs a prepared macOS source.", "Provide --image-source SOURCE with optional --source-home PATH, or --image SEALED_UUID. Use --image-only to prepare an initial source first.")
+		}
 		if opts.Target == "" || (opts.CredentialEnv == "" && opts.CredentialFile == "") {
 			return problem(ErrConfig, "Initial setup needs a GitHub target and a credential reference.", "Use --target URL and either --credential-env NAME or --credential-file PATH, or run init in a terminal.")
 		}

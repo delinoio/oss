@@ -67,17 +67,18 @@ type Logging struct {
 	NoColor bool   `toml:"no_color" json:"no_color"`
 }
 type Config struct {
-	SchemaVersion  int             `toml:"schema_version" json:"schema_version"`
-	Storage        Storage         `toml:"storage" json:"storage"`
-	Host           Budget          `toml:"host" json:"host"`
-	Timeouts       Timeouts        `toml:"timeouts" json:"timeouts"`
-	Logging        Logging         `toml:"logging" json:"logging"`
-	DockerSocket   string          `toml:"docker_socket" json:"docker_socket"`
-	TartExecutable string          `toml:"tart_executable" json:"tart_executable"`
-	Connections    []Connection    `toml:"connections" json:"connections"`
-	Pools          []Pool          `toml:"pools" json:"pools"`
-	Automatic      map[string]bool `toml:"-" json:"automatic,omitempty"`
-	DockerBudget   Resources       `toml:"-" json:"docker_budget,omitempty"`
+	SchemaVersion         int             `toml:"schema_version" json:"schema_version"`
+	Storage               Storage         `toml:"storage" json:"storage"`
+	Host                  Budget          `toml:"host" json:"host"`
+	Timeouts              Timeouts        `toml:"timeouts" json:"timeouts"`
+	Logging               Logging         `toml:"logging" json:"logging"`
+	DockerSocket          string          `toml:"docker_socket" json:"docker_socket"`
+	TartExecutable        string          `toml:"tart_executable" json:"tart_executable"`
+	Connections           []Connection    `toml:"connections" json:"connections"`
+	Pools                 []Pool          `toml:"pools" json:"pools"`
+	Automatic             map[string]bool `toml:"-" json:"automatic,omitempty"`
+	DockerBudget          Resources       `toml:"-" json:"docker_budget,omitempty"`
+	DockerCapacityPending bool            `toml:"-" json:"docker_capacity_pending,omitempty"`
 }
 
 type ImageSource struct {
@@ -190,7 +191,7 @@ func NormalizeConfig(c Config) (Config, error) {
 		return fail("Docker must use a local unix:/// socket; remote engines are unsupported.")
 	}
 	if c.Host.MaxRunners <= 0 || c.Host.MaxRunners > 10000 || c.Host.CPU <= 0 || c.Host.CPU > 100000 || c.Host.MemoryMiB <= 0 || c.Host.MemoryMiB > 1<<40 || c.Host.MinFreeDiskMiB <= 0 || c.Host.MinFreeDiskMiB > 1<<40 {
-		return fail("Explicit positive host concurrency, CPU, memory and minimum free disk budgets are required.")
+		return fail("Host concurrency, CPU, memory and minimum free disk budgets must resolve to positive bounded values.")
 	}
 	connections := map[string]Connection{}
 	for i := range c.Connections {

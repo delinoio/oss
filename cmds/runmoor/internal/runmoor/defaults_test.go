@@ -90,3 +90,49 @@ func TestLoadMinimalConfigKeepsOmissions(t *testing.T) {
 		t.Fatalf("missing omission metadata: %+v", loaded)
 	}
 }
+
+func TestAutomaticDinDAndMixedBackendBudgets(t *testing.T) {
+	c, err := decodeDefaults(t, minimalConfig+`mode = "dind"
+daemon_image = "docker@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+`, Resources{8, 16384})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := c.Pools[0]
+	if p.DaemonResources != (Resources{1, 1024}) || p.MaxRunners != 2 {
+		t.Fatalf("DinD omitted allocations not combined: %+v", p)
+	}
+	if runtime.GOOS != "darwin" || runtime.GOARCH != "arm64" {
+		return
+	}
+	tart := p
+	tart.Name = "macos"
+	tart.ScaleSet = "runmoor-macos"
+	tart.Backend = Tart
+	tart.Mode = Plain
+	tart.DaemonImage = ""
+	tart.DaemonResources = Resources{}
+	tart.Image = newID()
+	tart.RunnerPath = "/Users/runner/actions-runner"
+	tart.Resources = Resources{4, 8192}
+	tart.MaxRunners = 2
+	c.Pools = append(c.Pools, tart)
+	c.Host = Budget{CPU: 16, MemoryMiB: 32768, MaxRunners: 4, MinFreeDiskMiB: 1}
+	c.DockerBudget = Resources{3, 6144}
+	c, err = NormalizeConfig(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := Snapshot{Config: c, Pools: map[string]*PoolState{}, Runners: map[string]*Runner{}, Images: map[string]*Image{}, Artifacts: map[string]*RunnerArtifact{}}
+	for _, p := range c.Pools {
+		s.Pools[p.Name] = &PoolState{ID: p.Name, Spec: p, Phase: Ready, ScaleSetID: 1, Session: "fixture", Demand: 10}
+	}
+	allocated := Schedule(s)
+	counts := map[string]int{}
+	for _, pool := range allocated {
+		counts[pool]++
+	}
+	if counts["linux"] != 1 || counts["macos"] != 2 {
+		t.Fatalf("host/engine/VM ceilings not independent: %v", counts)
+	}
+}

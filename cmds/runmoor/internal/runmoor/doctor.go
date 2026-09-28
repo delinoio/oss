@@ -42,6 +42,9 @@ func Doctor(ctx context.Context, c Config, s Snapshot, factory func(Connection) 
 	}
 	add("platform", "", platformCheck(ctx), false)
 	add("disk_reserve", "", diskCheck(c), false)
+	if s.Config.DockerCapacityPending {
+		add("docker_capacity", "", problem(ErrRetry, "Docker capacity has not been verified for this manager run.", "Restore Docker connectivity; capacity detection retries automatically."), false)
+	}
 	name, args := powerCommand()
 	if runtime.GOOS == "darwin" {
 		args = []string{"-i", "/usr/bin/true"}

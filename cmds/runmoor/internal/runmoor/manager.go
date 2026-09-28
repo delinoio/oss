@@ -12,32 +12,34 @@ import (
 )
 
 type Manager struct {
-	Store         *Store
-	ConfigPath    string
-	Log           *slog.Logger
-	RemoteFactory func(Connection) (Remote, error)
-	Drivers       DriverFactory
-	Images        *ImageManager
-	Power         PowerController
-	ReleaseClient *http.Client
-	RunnerBuilder RunnerImageBuilder
-	mu            sync.Mutex
-	workers       map[string]context.CancelFunc
-	poolLoops     map[string]context.CancelFunc
-	poolLocks     map[string]*sync.Mutex
-	remotes       map[string]Remote
-	wg            sync.WaitGroup
-	imageMu       sync.Mutex
-	reloadMu      sync.Mutex
-	ctx           context.Context
-	cancel        context.CancelFunc
+	ResolveCapacity func(context.Context, Config) (Config, error)
+	Store           *Store
+	ConfigPath      string
+	Log             *slog.Logger
+	RemoteFactory   func(Connection) (Remote, error)
+	Drivers         DriverFactory
+	Images          *ImageManager
+	Power           PowerController
+	ReleaseClient   *http.Client
+	RunnerBuilder   RunnerImageBuilder
+	mu              sync.Mutex
+	workers         map[string]context.CancelFunc
+	poolLoops       map[string]context.CancelFunc
+	poolLocks       map[string]*sync.Mutex
+	remotes         map[string]Remote
+	wg              sync.WaitGroup
+	imageMu         sync.Mutex
+	reloadMu        sync.Mutex
+	ctx             context.Context
+	cancel          context.CancelFunc
 }
 
 func NewManager(store *Store, path string, l *slog.Logger) *Manager {
 	ctx, cancel := context.WithCancel(context.Background())
 	m := &Manager{Store: store, ConfigPath: path, Log: l, RemoteFactory: NewGitHub, Drivers: defaultDriver, Images: &ImageManager{Store: store, Tart: &TartDriver{Exec: OSCommand{}}}, Power: &PowerManager{}, workers: map[string]context.CancelFunc{}, poolLoops: map[string]context.CancelFunc{}, poolLocks: map[string]*sync.Mutex{}, remotes: map[string]Remote{}, ctx: ctx, cancel: cancel}
+	m.ResolveCapacity = resolveDockerCapacity
 	m.ReleaseClient = defaultReleaseClient()
-	m.RunnerBuilder = &ManagedImageBuilder{Store: store, Images: m.Images, Client: m.ReleaseClient}
+	m.RunnerBuilder = &ManagedImageBuilder{Store: store, Images: m.Images, Client: m.ReleaseClient, Log: l}
 	return m
 }
 func (m *Manager) poolLock(id string) *sync.Mutex {
@@ -221,6 +223,11 @@ func (m *Manager) readyToStop() bool {
 }
 func pendingCleanup(s Snapshot) int {
 	n := 0
+	for _, a := range s.Artifacts {
+		if a.Phase == ArtifactRemoving {
+			n++
+		}
+	}
 	for _, r := range s.Runners {
 		if r.Phase == Cleaning || r.Phase == Quarantined || (r.Terminated && r.Phase != Completed) {
 			n++
@@ -428,6 +435,16 @@ func (m *Manager) poolLoop(ctx context.Context, id string) {
 		p := s.Pools[id]
 		if p == nil || p.Phase == Retired || p.Phase == Suspended {
 			return
+		}
+		if p.Phase == Ready && p.Spec.Backend == Docker && s.Config.DockerCapacityPending && !s.Stopping {
+			if err := m.retryDockerCapacity(ctx); err != nil {
+				m.poolProblem(id, err, false)
+				if !waitContext(ctx, retryDelay(attempt, err)) {
+					return
+				}
+				attempt++
+			}
+			continue
 		}
 		blocked := false
 		for _, other := range s.Pools {
@@ -1152,6 +1169,15 @@ func (m *Manager) StopPool(name string, force bool) error {
 	})
 	if err == nil && force {
 		m.cancelForcedWorkers(name)
+		// Cancel only this pool's in-flight candidate. The shared worker may be
+		// updating another pool, whose operation must remain unaffected.
+		if q := m.Store.View().Managed[name]; q != nil && q.Candidate != "" {
+			m.mu.Lock()
+			if cancel := m.workers["runner-update"]; cancel != nil {
+				cancel()
+			}
+			m.mu.Unlock()
+		}
 	}
 	return err
 }
@@ -1220,6 +1246,9 @@ func (m *Manager) Resume(ctx context.Context, name string) error {
 			s.Paused = false
 		} else if s.Paused {
 			s.Paused = false
+			for _, q := range s.Managed {
+				q.Paused = true
+			}
 			for _, p := range s.Pools {
 				if p.Phase == Ready {
 					p.Phase = Paused
@@ -1264,8 +1293,8 @@ func (m *Manager) Reload(ctx context.Context) error {
 	if e != nil {
 		return e
 	}
-	if needsCapacity(c) {
-		c, e = resolveDockerCapacity(ctx, c)
+	if m.ResolveCapacity != nil {
+		c, e = m.ResolveCapacity(ctx, c)
 		if e != nil {
 			return e
 		}
