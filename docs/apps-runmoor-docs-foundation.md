@@ -71,4 +71,6 @@
 
 ## Native package guidance
 
+Runmoor `0.1.3` native packages have passed the complete public installation matrix and are documented as available through stable. Other projects require their own verified publication before availability claims change.
+
 The public installation surface documents the exact repository key fingerprint, supported Linux distribution/architecture matrix, stable or explicit preview registration, and package-manager install/update/remove commands. Operational details remain in `docs/repository-linux-packages-contract.md`. Installation guidance must preserve the existing release-archive and other supported installation methods.

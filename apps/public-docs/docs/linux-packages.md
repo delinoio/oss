@@ -6,7 +6,7 @@ Use the signed Delino repository at `https://pkgs.oss.delino.io` to install CLI 
 
 Packages support x86-64 and ARM64 on Ubuntu 22.04, 24.04 and 26.04 LTS; Debian 12 and 13; Fedora 43 and 44; and RHEL-compatible 9 and 10 systems, including UBI, Rocky Linux and AlmaLinux.
 
-**Native packages are not published yet.** The commands below apply after each CLI’s first native package release. `binpm`, `cargo-mono`, `nodeup`, `with-watch`, `derun`, `runmoor` and `clibox` will all use stable. Preview is reserved and currently has no CLI packages. Package versions use the original CLI version followed by `-1`. Older releases published before native package support are unavailable through these repositories.
+**Runmoor `0.1.3` native packages are available in stable.** Other CLI examples apply after that CLI’s first verified native package release; check its installation guide for availability. `binpm`, `cargo-mono`, `nodeup`, `with-watch`, `derun`, `runmoor` and `clibox` all use the stable channel. Preview is reserved and currently has no CLI packages. Package versions use the original CLI version followed by `-1`. Older releases published before native package support are unavailable through these repositories.
 
 These APT and DNF repositories do not support Arch Linux or Alpine Linux and do not distribute DevHud.
 
@@ -113,7 +113,7 @@ sudo dnf makecache
 
 ## Runmoor and clibox
 
-After their first native releases, use the stable registration above and install `runmoor` or `clibox` with APT or DNF. Check `runmoor version` or `clibox --version`. Native clibox installation does not require Node.js; desktop helpers remain optional user-installed tools.
+Use the stable registration above to install Runmoor `0.1.3` with APT or DNF. The same registration applies to `clibox` after its first verified native release. Check `runmoor version` or `clibox --version`. Native clibox installation does not require Node.js; desktop helpers remain optional user-installed tools.
 
 Installation does not register or start a Runmoor service, configure runners, or install Docker or Tart. Follow the [Runmoor guide](https://oss.delino.io/runmoor/) for explicit setup and service commands. Package installation checks do not certify live GitHub or Tart integration.
 
