@@ -129,6 +129,9 @@ func TestGrokOriginalTerminalRejectsChangedComparisonEvidence(t *testing.T) {
 				c.stage = grokInputAccepted
 			case "journal":
 				c.journal.closed = true
+				// Restore the test-only fault before fixture cleanup releases the
+				// Windows lock handle.
+				t.Cleanup(func() { c.journal.closed = false })
 			}
 			before := len(client.events)
 			if c.publishClosedText(context.Background(), v, c.closureID) == nil || len(client.events) != before {

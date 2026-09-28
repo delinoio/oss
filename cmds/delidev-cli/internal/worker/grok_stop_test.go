@@ -161,6 +161,9 @@ func TestGrokStopRejectsChangedOriginalComparison(t *testing.T) {
 				v.Retries[0].Attempt = 2
 			case "journal":
 				c.journal.closed = true
+				// Restore the test-only fault before fixture cleanup releases the
+				// Windows lock handle.
+				t.Cleanup(func() { c.journal.closed = false })
 			case "usage":
 				c.content.Responses = 1
 			case "hidden-output":
