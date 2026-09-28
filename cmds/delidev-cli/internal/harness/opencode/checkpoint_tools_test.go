@@ -100,7 +100,7 @@ func TestCheckpointInlineToolsRequireCompleteIndependentState(t *testing.T) {
 }
 
 func checkpointToolsFixture() (nativeCheckpoint, *sessionAPI) {
-	value := nativeCheckpoint{Project: "global", NativeRoot: "/"}
+	value := nativeCheckpoint{Project: "global", NativeRoot: fixtureNativeRoot()}
 	observer := &inputObserver{parts: make(map[string]*observedPart)}
 	message := HistoryMessage{ID: "private-message"}
 	for _, name := range []checkpointToolName{checkpointReadTool, checkpointShellTool} {
@@ -150,7 +150,7 @@ func TestCheckpointToolProofPreservesCompleteOrderedLineage(t *testing.T) {
 		})
 	}
 	value, s := checkpointToolsFixture()
-	next := nativeCheckpoint{Project: "global", NativeRoot: "/", Previous: []HistoryObservation{value.History}}
+	next := nativeCheckpoint{Project: "global", NativeRoot: fixtureNativeRoot(), Previous: []HistoryObservation{value.History}}
 	s.predecessor = &value
 	s.observer = &inputObserver{}
 	next.Tools = s.checkpointToolHistory(next)

@@ -30,7 +30,7 @@ func checkpointPolicyFixture(t *testing.T) (nativeCheckpoint, *sessionAPI, *obse
 		part.value.Tool.CallID = i.value.Tool.CallID
 		message.Parts = append(message.Parts, HistoryPart{ID: partID, Kind: ToolPartKind, Digest: mutationDigest(part.raw)})
 	}
-	value := nativeCheckpoint{Project: "global", NativeRoot: "/", History: HistoryObservation{RequestID: o.input.receipt.RequestID, SessionID: fixtureSessionID, Messages: []HistoryMessage{message}}}
+	value := nativeCheckpoint{Project: "global", NativeRoot: fixtureNativeRoot(), History: HistoryObservation{RequestID: o.input.receipt.RequestID, SessionID: fixtureSessionID, Messages: []HistoryMessage{message}}}
 	value.Tools = r.api.checkpointToolHistory(value)
 	if value.Tools == nil || value.Tools.Version != 4 || len(value.Tools.Policy) != 1 || len(value.Tools.Always) != 1 || len(value.Tools.Once) != 0 || checkpointReplacementProfile(value) != nil || len(r.claims) != 1 || r.posts != 1 {
 		t.Fatal("original policy closure lost or acquired a direct response")
@@ -145,7 +145,7 @@ func TestCheckpointPolicyProofBindsOriginalLineage(t *testing.T) {
 	s.predecessor, s.observer = &value, &inputObserver{}
 	s.restoredAlways = 1
 	s.sessionPermissions = checkpointAppliedPermissions(value.Tools, 1)
-	next := nativeCheckpoint{Project: "global", NativeRoot: "/", Previous: []HistoryObservation{value.History}}
+	next := nativeCheckpoint{Project: "global", NativeRoot: fixtureNativeRoot(), Previous: []HistoryObservation{value.History}}
 	next.Tools = s.checkpointToolHistory(next)
 	if next.Tools == nil || next.Tools.Version != 4 || next.Tools.AppliedAlways != 1 || checkpointReplacementProfile(next) != nil {
 		t.Fatal("text successor lost original policy history")

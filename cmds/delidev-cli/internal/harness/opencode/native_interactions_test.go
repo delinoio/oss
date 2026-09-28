@@ -148,7 +148,7 @@ func nativeInteractionFixtureWithPolicy(t *testing.T, kind InteractionKind, mode
 	if _, err := api.submit(ctx, domain.NewID(), fixtureMessageID, fixturePartID, "Exercise the private interaction proposal."); err != nil {
 		t.Fatal(err)
 	}
-	observer, err := api.observeInput(ctx, "/")
+	observer, err := api.observeInput(ctx, fixtureNativeRoot())
 	if err != nil {
 		t.Fatal(err)
 	}

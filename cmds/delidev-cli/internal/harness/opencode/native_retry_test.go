@@ -75,7 +75,7 @@ func nativeRetryFixture(t *testing.T, mode nativeRetryMode) {
 	if _, err := api.submit(ctx, domain.NewID(), fixtureMessageID, fixturePartID, "Exercise the original native retry."); err != nil {
 		t.Fatal(err)
 	}
-	observer, err := api.observeInput(ctx, "/")
+	observer, err := api.observeInput(ctx, fixtureNativeRoot())
 	if err != nil {
 		t.Fatal(err)
 	}

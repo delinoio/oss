@@ -34,7 +34,7 @@ func TestCheckpointExternalAllowancesPreserveOriginalCrossToolClosure(t *testing
 			s.predecessor, s.observer = &value, &inputObserver{}
 			s.restoredAlways = 1
 			s.sessionPermissions = checkpointAppliedPermissions(value.Tools, 1)
-			next := nativeCheckpoint{Project: "global", NativeRoot: "/", Previous: []HistoryObservation{copyHistoryObservation(value.History)}}
+			next := nativeCheckpoint{Project: "global", NativeRoot: fixtureNativeRoot(), Previous: []HistoryObservation{copyHistoryObservation(value.History)}}
 			next.Tools = s.checkpointToolHistory(next)
 			if next.Tools == nil || next.Tools.Version != 13 || next.Tools.AppliedAlways != 1 || checkpointReplacementProfile(next) != nil || s.freshCheckpointInput(direct.attempt.claim.RequestID, "new-message", "new-part") {
 				t.Fatal("external successor lost applied prefix or reused response")

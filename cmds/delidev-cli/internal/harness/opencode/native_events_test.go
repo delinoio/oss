@@ -61,7 +61,7 @@ func nativeTextEventFixture(t *testing.T, reason FinishReason) {
 	if _, err := api.submit(ctx, domain.NewID(), fixtureMessageID, fixturePartID, "Reply with the private fixture response."); err != nil {
 		t.Fatal(err)
 	}
-	observer, err := api.observeInput(ctx, "/")
+	observer, err := api.observeInput(ctx, fixtureNativeRoot())
 	if err != nil {
 		t.Fatal(err)
 	}

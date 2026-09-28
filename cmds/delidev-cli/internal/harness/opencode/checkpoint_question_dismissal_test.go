@@ -28,7 +28,7 @@ func checkpointQuestionDismissalFixture(t *testing.T) (nativeCheckpoint, *sessio
 	part.value.Tool.State, part.value.Tool.Output, part.value.Tool.Metadata = ToolError, nil, nil
 	problem := "private original native dismissal"
 	part.value.Tool.Error = &problem
-	value := nativeCheckpoint{Project: "global", NativeRoot: "/", History: HistoryObservation{RequestID: c.InputRequestID, SessionID: c.SessionID, Messages: []HistoryMessage{{ID: c.MessageID, Parts: []HistoryPart{{ID: c.PartID, Kind: ToolPartKind, Digest: mutationDigest(part.raw)}}}}}}
+	value := nativeCheckpoint{Project: "global", NativeRoot: fixtureNativeRoot(), History: HistoryObservation{RequestID: c.InputRequestID, SessionID: c.SessionID, Messages: []HistoryMessage{{ID: c.MessageID, Parts: []HistoryPart{{ID: c.PartID, Kind: ToolPartKind, Digest: mutationDigest(part.raw)}}}}}}
 	value.Tools = r.api.checkpointToolHistory(value)
 	if value.Tools == nil || value.Tools.Version != 8 || value.Tools.InteractionFree || len(value.Tools.Questions) != 1 || value.Tools.Questions[0].Claim != c || c.Kind != RejectQuestionMutation || checkpointReplacementProfile(value) != nil {
 		t.Fatal("original Question dismissal not retained")
@@ -106,7 +106,7 @@ func TestCheckpointQuestionDismissalPreservesLineageWithoutLegacyPromotion(t *te
 	value, s, i := checkpointQuestionDismissalFixture(t)
 	original, _ := json.Marshal(value)
 	s.predecessor, s.observer = &value, &inputObserver{}
-	next := nativeCheckpoint{Project: "global", NativeRoot: "/", Previous: []HistoryObservation{copyHistoryObservation(value.History)}}
+	next := nativeCheckpoint{Project: "global", NativeRoot: fixtureNativeRoot(), Previous: []HistoryObservation{copyHistoryObservation(value.History)}}
 	next.Tools = s.checkpointToolHistory(next)
 	if next.Tools == nil || next.Tools.Version != 8 || checkpointReplacementProfile(next) != nil || s.freshCheckpointInput(i.attempt.claim.RequestID, "new-message", "new-part") {
 		t.Fatal("successor lost dismissal ownership or allowed response request reuse")

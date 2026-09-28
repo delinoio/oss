@@ -53,7 +53,7 @@ func TestCheckpointNamedRejectionsPreserveCrossToolOriginalClosures(t *testing.T
 			}
 			original, _ := json.Marshal(value)
 			s.predecessor, s.observer = &value, &inputObserver{}
-			next := nativeCheckpoint{Project: "global", NativeRoot: "/", Previous: []HistoryObservation{copyHistoryObservation(value.History)}}
+			next := nativeCheckpoint{Project: "global", NativeRoot: fixtureNativeRoot(), Previous: []HistoryObservation{copyHistoryObservation(value.History)}}
 			next.Tools = s.checkpointToolHistory(next)
 			if next.Tools == nil || next.Tools.Version != 11 || checkpointReplacementProfile(next) != nil || s.freshCheckpointInput(direct.attempt.claim.RequestID, "new-message", "new-part") {
 				t.Fatal("successor lost original named rejection or reused response identity")

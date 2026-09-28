@@ -100,7 +100,7 @@ func TestCheckpointAlwaysSuccessorPinsAppliedPrefixWithoutChangingOriginal(t *te
 	s.predecessor, s.observer = &value, &inputObserver{}
 	s.restoredAlways = 1
 	s.sessionPermissions = checkpointAppliedPermissions(value.Tools, 1)
-	next := nativeCheckpoint{Project: "global", NativeRoot: "/", Previous: []HistoryObservation{value.History}}
+	next := nativeCheckpoint{Project: "global", NativeRoot: fixtureNativeRoot(), Previous: []HistoryObservation{value.History}}
 	next.Tools = s.checkpointToolHistory(next)
 	if next.Tools == nil || next.Tools.AppliedAlways != 1 || value.Tools.AppliedAlways != 0 || checkpointReplacementProfile(next) != nil {
 		t.Fatal("successor lost independently applied allowance prefix")

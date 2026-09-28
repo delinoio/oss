@@ -99,7 +99,7 @@ func TestCheckpointOrdinaryReadErrorPreservesOriginalApprovalsAndImmutableLineag
 			s.restoredAlways = uint32(len(value.Tools.Always))
 			s.sessionPermissions = checkpointAppliedPermissions(value.Tools, s.restoredAlways)
 		}
-		next := nativeCheckpoint{Project: "global", NativeRoot: "/", Previous: []HistoryObservation{copyHistoryObservation(value.History)}}
+		next := nativeCheckpoint{Project: "global", NativeRoot: fixtureNativeRoot(), Previous: []HistoryObservation{copyHistoryObservation(value.History)}}
 		next.Tools = s.checkpointToolHistory(next)
 		if next.Tools == nil || next.Tools.Version != 12 || checkpointReplacementProfile(next) != nil || s.freshCheckpointInput(i.attempt.claim.RequestID, "new-message", "new-part") {
 			t.Fatal("error successor lost original approval or reused response")
@@ -211,7 +211,7 @@ func TestCheckpointOrdinaryReadErrorPreservesEarlierProfilesAndLaterTextStop(t *
 				t.Fatal("ordinary error rewrote earlier tool proof")
 			}
 			s.predecessor, s.observer = &value, &inputObserver{}
-			next := nativeCheckpoint{Project: "global", NativeRoot: "/", History: HistoryObservation{RequestID: domain.NewID()}, Previous: append(append([]HistoryObservation(nil), value.Previous...), copyHistoryObservation(value.History)), Stop: &StopReceipt{}}
+			next := nativeCheckpoint{Project: "global", NativeRoot: fixtureNativeRoot(), History: HistoryObservation{RequestID: domain.NewID()}, Previous: append(append([]HistoryObservation(nil), value.Previous...), copyHistoryObservation(value.History)), Stop: &StopReceipt{}}
 			next.Tools = s.checkpointToolHistory(next)
 			if next.Tools == nil || next.Tools.Version != 12 || checkpointReplacementProfile(next) != nil {
 				t.Fatal("later text Stop invalidated earlier ended Read error")

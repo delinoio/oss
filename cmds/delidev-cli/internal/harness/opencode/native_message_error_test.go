@@ -45,7 +45,7 @@ func TestManualNativeOpenCodeMessageError(t *testing.T) {
 	if _, err := api.submit(ctx, domain.NewID(), fixtureMessageID, fixturePartID, "Exercise the private error fixture."); err != nil {
 		t.Fatal(err)
 	}
-	observer, err := api.observeInput(ctx, "/")
+	observer, err := api.observeInput(ctx, fixtureNativeRoot())
 	if err != nil {
 		t.Fatal(err)
 	}

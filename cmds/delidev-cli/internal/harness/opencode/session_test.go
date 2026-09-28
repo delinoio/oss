@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -21,6 +22,18 @@ import (
 const fixtureSessionID = "ses_01960dcbe1faabcdefghijklmn"
 const fixtureMessageID = "msg_01960dcbe1faABCDEFGHIJKLMN"
 const fixturePartID = "prt_01960dcbe1fa1234567890ABCD"
+
+func fixtureNativeRoot() string {
+	return filepath.VolumeName(os.TempDir()) + string(filepath.Separator)
+}
+
+func fixtureWorkspacePath() string {
+	return filepath.Join(fixtureNativeRoot(), "private", "workspace")
+}
+
+func fixtureObserverRoot() string {
+	return filepath.Join(fixtureNativeRoot(), "private", "root")
+}
 
 func fixtureSettings() SessionSettings {
 	return SessionSettings{Title: "Private title", Agent: "build", Provider: "private-provider", Model: "private-model", Permission: []PermissionRule{{Permission: "*", Pattern: "*", Action: PermissionAsk}}}
@@ -294,7 +307,7 @@ func TestSessionRejectsChangedNativeSettingsAndMetadata(t *testing.T) {
 		for _, mutation := range []string{"missing", "null", "alias"} {
 			t.Run(key+"/"+mutation, func(t *testing.T) {
 				creation := &sessionCreation{request: domain.NewID(), settings: fixtureSettings()}
-				value := fixtureObject(t, fixtureSession("/private/workspace", creation.request, creation.settings))
+				value := fixtureObject(t, fixtureSession(fixtureWorkspacePath(), creation.request, creation.settings))
 				switch mutation {
 				case "missing":
 					delete(value, key)
@@ -305,7 +318,7 @@ func TestSessionRejectsChangedNativeSettingsAndMetadata(t *testing.T) {
 					delete(value, key)
 				}
 				raw, _ := json.Marshal(value)
-				if _, err := validateSession(raw, "/private/workspace", creation, true); err == nil {
+				if _, err := validateSession(raw, fixtureWorkspacePath(), creation, true); err == nil {
 					t.Fatal("invalid native evidence accepted")
 				}
 			})
@@ -326,10 +339,10 @@ func TestSessionRejectsChangedNativeSettingsAndMetadata(t *testing.T) {
 		func(v map[string]any) { v["cost"] = "0" },
 	} {
 		creation := &sessionCreation{request: domain.NewID(), settings: fixtureSettings()}
-		value := fixtureObject(t, fixtureSession("/private/workspace", creation.request, creation.settings))
+		value := fixtureObject(t, fixtureSession(fixtureWorkspacePath(), creation.request, creation.settings))
 		mutate(value)
 		raw, _ := json.Marshal(value)
-		if _, err := validateSession(raw, "/private/workspace", creation, true); err == nil {
+		if _, err := validateSession(raw, fixtureWorkspacePath(), creation, true); err == nil {
 			t.Fatal("changed native settings accepted")
 		}
 	}
@@ -338,10 +351,10 @@ func TestSessionRejectsChangedNativeSettingsAndMetadata(t *testing.T) {
 func TestNativeSessionCreationPreservesIndependentClockReads(t *testing.T) {
 	creation := &sessionCreation{request: domain.NewID(), settings: fixtureSettings()}
 	for _, updated := range []int{1233, 1234, 1235} {
-		value := fixtureSession("/private/workspace", creation.request, creation.settings)
+		value := fixtureSession(fixtureWorkspacePath(), creation.request, creation.settings)
 		value["time"] = map[string]any{"created": 1234, "updated": updated}
 		raw, _ := json.Marshal(value)
-		identity, err := validateSession(raw, "/private/workspace", creation, true)
+		identity, err := validateSession(raw, fixtureWorkspacePath(), creation, true)
 		if (err == nil) != (updated >= 1234) || err == nil && identity.created != 1234 {
 			t.Fatal("independent creation timestamps changed original ownership or accepted regression")
 		}
@@ -465,21 +478,21 @@ func TestNativeInputRowBeforePartIsUnconfirmed(t *testing.T) {
 func TestOriginalSessionAtGitRootHasEmptyRelativePath(t *testing.T) {
 	request := domain.NewID()
 	settings := fixtureSettings()
-	value := fixtureSession("/private/workspace", request, settings)
+	value := fixtureSession(fixtureWorkspacePath(), request, settings)
 	value["path"] = ""
 	raw, _ := json.Marshal(value)
 	creation := &sessionCreation{request: request, settings: settings}
-	if _, err := validateSession(raw, "/private/workspace", creation, true); err != nil {
+	if _, err := validateSession(raw, fixtureWorkspacePath(), creation, true); err != nil {
 		t.Fatal("native Git root path was rejected", err)
 	}
 	delete(value, "path")
 	raw, _ = json.Marshal(value)
-	if _, err := validateSession(raw, "/private/workspace", creation, true); err == nil {
+	if _, err := validateSession(raw, fixtureWorkspacePath(), creation, true); err == nil {
 		t.Fatal("missing native path was accepted")
 	}
 	value["path"] = nil
 	raw, _ = json.Marshal(value)
-	if _, err := validateSession(raw, "/private/workspace", creation, true); err == nil {
+	if _, err := validateSession(raw, fixtureWorkspacePath(), creation, true); err == nil {
 		t.Fatal("null native path became empty")
 	}
 }

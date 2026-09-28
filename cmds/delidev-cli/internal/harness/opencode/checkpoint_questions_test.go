@@ -24,7 +24,7 @@ func checkpointQuestionFixture(t *testing.T) (nativeCheckpoint, *sessionAPI, *ob
 	part.value.Tool = checkpointInlineToolFixture(checkpointQuestionTool)
 	part.value.Tool.CallID = c.CallID
 	part.value.Tool.Metadata, _ = json.Marshal(map[string]any{"answers": r.response.Answers, "truncated": false})
-	value := nativeCheckpoint{Project: "global", NativeRoot: "/", History: HistoryObservation{RequestID: c.InputRequestID, SessionID: c.SessionID, Messages: []HistoryMessage{{ID: c.MessageID, Parts: []HistoryPart{{ID: c.PartID, Kind: ToolPartKind, Digest: mutationDigest(part.raw)}}}}}}
+	value := nativeCheckpoint{Project: "global", NativeRoot: fixtureNativeRoot(), History: HistoryObservation{RequestID: c.InputRequestID, SessionID: c.SessionID, Messages: []HistoryMessage{{ID: c.MessageID, Parts: []HistoryPart{{ID: c.PartID, Kind: ToolPartKind, Digest: mutationDigest(part.raw)}}}}}}
 	value.Tools = r.api.checkpointToolHistory(value)
 	if value.Tools == nil || value.Tools.Version != 5 || len(value.Tools.Questions) != 1 || value.Tools.Questions[0].Claim != c || checkpointReplacementProfile(value) != nil {
 		t.Fatal("original question acceptance not retained")
@@ -143,7 +143,7 @@ func TestCheckpointQuestionProofRetainsDistinctReplyOwnership(t *testing.T) {
 	}
 	value, s, _ := checkpointQuestionFixture(t)
 	s.predecessor, s.observer = &value, &inputObserver{}
-	next := nativeCheckpoint{Project: "global", NativeRoot: "/", Previous: []HistoryObservation{value.History}}
+	next := nativeCheckpoint{Project: "global", NativeRoot: fixtureNativeRoot(), Previous: []HistoryObservation{value.History}}
 	next.Tools = s.checkpointToolHistory(next)
 	if next.Tools == nil || next.Tools.Version != 5 || checkpointReplacementProfile(next) != nil || s.freshCheckpointInput(value.Tools.Questions[0].Claim.RequestID, "new-message", "new-part") {
 		t.Fatal("successor lost question ownership or permitted request reuse")

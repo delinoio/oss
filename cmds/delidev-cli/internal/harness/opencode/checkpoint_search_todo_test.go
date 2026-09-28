@@ -86,7 +86,7 @@ func TestCheckpointSearchTodoProofPreservesOriginalHistory(t *testing.T) {
 				t.Fatal("original search/Todo state not retained")
 			}
 			s.predecessor, s.observer = &value, &inputObserver{}
-			next := nativeCheckpoint{Project: "global", NativeRoot: "/", Previous: []HistoryObservation{copyHistoryObservation(value.History)}}
+			next := nativeCheckpoint{Project: "global", NativeRoot: fixtureNativeRoot(), Previous: []HistoryObservation{copyHistoryObservation(value.History)}}
 			next.Tools = s.checkpointToolHistory(next)
 			if next.Tools == nil || next.Tools.Version != 6 || checkpointReplacementProfile(next) != nil {
 				t.Fatal("text successor lost prior search/Todo proof")
@@ -135,7 +135,7 @@ func TestTodoHistoryComparisonUsesOriginalEventAndClosedRead(t *testing.T) {
 			defer server.Close()
 			client, transport := probeHTTPClient(strings.TrimPrefix(server.URL, "http://"))
 			defer transport.CloseIdleConnections()
-			s := &sessionAPI{creation: &sessionCreation{identity: sessionIdentity{id: fixtureSessionID}}, client: client, origin: server.URL, password: "private-fixture", cwd: "/private/workspace", alive: func() error { return nil }}
+			s := &sessionAPI{creation: &sessionCreation{identity: sessionIdentity{id: fixtureSessionID}}, client: client, origin: server.URL, password: "private-fixture", cwd: fixtureWorkspacePath(), alive: func() error { return nil }}
 			if mode == "event" {
 				expected.EventID = ""
 			}

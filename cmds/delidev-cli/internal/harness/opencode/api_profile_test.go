@@ -111,7 +111,7 @@ func TestEffectiveAPIProfileVerificationIsBoundedAndClaimPreceding(t *testing.T)
 					want = "/provider"
 				}
 				user, password, ok := r.BasicAuth()
-				if i > 3 || r.Method != http.MethodGet || r.URL.Path != want || r.URL.RawQuery != "" || r.Header.Get("x-opencode-directory") != "/private/workspace" || !ok || user != "delidev" || password != "private-server-secret" {
+				if i > 3 || r.Method != http.MethodGet || r.URL.Path != want || r.URL.RawQuery != "" || r.Header.Get("x-opencode-directory") != fixtureWorkspacePath() || !ok || user != "delidev" || password != "private-server-secret" {
 					t.Error("verification escaped its exact read-only authority")
 				}
 				w.Header().Set("Content-Type", "application/json")
@@ -125,7 +125,7 @@ func TestEffectiveAPIProfileVerificationIsBoundedAndClaimPreceding(t *testing.T)
 				_ = json.NewEncoder(w).Encode(value)
 			}))
 			defer server.Close()
-			api := &sessionAPI{client: server.Client(), origin: server.URL, cwd: "/private/workspace", password: "private-server-secret", gate: make(chan struct{}, 1), apiProfile: p, rejectionPolicy: p.Rejection, logger: slog.New(slog.NewJSONHandler(&logs, nil)), alive: func() error { return nil }}
+			api := &sessionAPI{client: server.Client(), origin: server.URL, cwd: fixtureWorkspacePath(), password: "private-server-secret", gate: make(chan struct{}, 1), apiProfile: p, rejectionPolicy: p.Rejection, logger: slog.New(slog.NewJSONHandler(&logs, nil)), alive: func() error { return nil }}
 			api.claim = func(context.Context, SessionClaim) error {
 				t.Error("configuration inspection claimed a mutation")
 				return nil

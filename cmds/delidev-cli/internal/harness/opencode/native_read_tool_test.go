@@ -113,7 +113,7 @@ func nativeReadToolFixture(t *testing.T, missing bool, toolFinish string) {
 	if _, err := api.submit(ctx, domain.NewID(), fixtureMessageID, fixturePartID, "Read the private fixture file and report completion."); err != nil {
 		t.Fatal(err)
 	}
-	observer, err := api.observeInput(ctx, "/")
+	observer, err := api.observeInput(ctx, fixtureNativeRoot())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -32,24 +32,24 @@ const snapshotFixtureConfig = `[core]
 
 func TestSnapshotConfigRejectsExecutableOrForeignSettings(t *testing.T) {
 	for _, bad := range []string{"[include]\n path = /private/foreign", "[core]\n hooksPath = /private/hook", "[filter \"unsafe\"]\n clean = command", "[remote \"origin\"]\n url = https://invalid.example", "[extensions]\n objectFormat = sha256", "[core]\n fsmonitor = command", "[core]\n bare = false"} {
-		if safeSnapshotConfig([]byte(snapshotFixtureConfig+bad), "/private/workspace") {
+		if safeSnapshotConfig([]byte(snapshotFixtureConfig+bad), fixtureWorkspacePath()) {
 			t.Fatal("unverified configuration accepted")
 		}
 	}
 	for _, change := range []struct{ from, to string }{{"false", "true"}, {"version = 4", "version = 2"}, {"threads = true", "threads = false"}, {"worktree = /private/workspace", "worktree = /private/foreign"}, {"symlinks = true\n", ""}} {
 		raw := strings.Replace(snapshotFixtureConfig, change.from, change.to, 1)
-		if safeSnapshotConfig([]byte(raw), "/private/workspace") {
+		if safeSnapshotConfig([]byte(raw), fixtureWorkspacePath()) {
 			t.Fatal("native setting changed")
 		}
 	}
-	for _, workspace := range []string{"/private/workspace", "/private/space name", "/private/#quoted;name", "/private/quote\"name", "C:\\private\\workspace"} {
+	for _, workspace := range []string{fixtureWorkspacePath(), "/private/space name", "/private/#quoted;name", "/private/quote\"name", "C:\\private\\workspace"} {
 		escaped := strings.NewReplacer("\\", "\\\\", "\"", "\\\"").Replace(workspace)
 		raw := strings.Replace(snapshotFixtureConfig, "worktree = /private/workspace", "worktree = \""+escaped+"\"", 1)
 		if !safeSnapshotConfig([]byte(raw), workspace) {
 			t.Fatal("exact quoted native worktree rejected")
 		}
 	}
-	if !safeSnapshotConfig([]byte(snapshotFixtureConfig), "/private/workspace") {
+	if !safeSnapshotConfig([]byte(snapshotFixtureConfig), fixtureWorkspacePath()) {
 		t.Fatal("native profile rejected")
 	}
 }

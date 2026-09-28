@@ -36,7 +36,7 @@ func checkpointRejectionFixture(t *testing.T, feedback *string, cascade bool) (n
 		part := r.f.o.parts[partID]
 		message.Parts = append(message.Parts, HistoryPart{ID: partID, Kind: ToolPartKind, Digest: mutationDigest(part.raw)})
 	}
-	value := nativeCheckpoint{Project: "global", NativeRoot: "/", History: HistoryObservation{RequestID: r.f.o.input.receipt.RequestID, SessionID: fixtureSessionID, Messages: []HistoryMessage{message}}}
+	value := nativeCheckpoint{Project: "global", NativeRoot: fixtureNativeRoot(), History: HistoryObservation{RequestID: r.f.o.input.receipt.RequestID, SessionID: fixtureSessionID, Messages: []HistoryMessage{message}}}
 	value.Tools = r.api.checkpointToolHistory(value)
 	if value.Tools == nil || value.Tools.Version != 9 || value.Tools.InteractionFree || len(value.Tools.Rejections) != 1 || (len(value.Tools.RejectionPolicy) == 1) != cascade || checkpointReplacementProfile(value) != nil || len(r.claims) != 1 || r.posts != 1 {
 		t.Fatal("original rejection lost or acquired a second direct reply")
@@ -54,7 +54,7 @@ func TestCheckpointRejectionsRequireOriginalAcceptanceAndFailedRead(t *testing.T
 			value, s, direct := checkpointRejectionFixture(t, feedback, cascade)
 			original, _ := json.Marshal(value)
 			s.predecessor, s.observer = &value, &inputObserver{}
-			next := nativeCheckpoint{Project: "global", NativeRoot: "/", Previous: []HistoryObservation{copyHistoryObservation(value.History)}}
+			next := nativeCheckpoint{Project: "global", NativeRoot: fixtureNativeRoot(), Previous: []HistoryObservation{copyHistoryObservation(value.History)}}
 			next.Tools = s.checkpointToolHistory(next)
 			if next.Tools == nil || next.Tools.Version != 9 || checkpointReplacementProfile(next) != nil || s.freshCheckpointInput(direct.attempt.claim.RequestID, "new-message", "new-part") {
 				t.Fatal("successor lost rejection or allowed response identity reuse")

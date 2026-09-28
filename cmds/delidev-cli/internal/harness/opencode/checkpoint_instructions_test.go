@@ -96,7 +96,7 @@ func TestCheckpointLoadedInstructionsPreserveEarlierPermissionEvidence(t *testin
 			s.restoredAlways = uint32(len(value.Tools.Always))
 			s.sessionPermissions = checkpointAppliedPermissions(value.Tools, s.restoredAlways)
 		}
-		next := nativeCheckpoint{Project: "global", NativeRoot: "/", Previous: []HistoryObservation{copyHistoryObservation(value.History)}}
+		next := nativeCheckpoint{Project: "global", NativeRoot: fixtureNativeRoot(), Previous: []HistoryObservation{copyHistoryObservation(value.History)}}
 		next.Tools = s.checkpointToolHistory(next)
 		if next.Tools == nil || next.Tools.Version != 10 || checkpointReplacementProfile(next) != nil {
 			t.Fatal("text successor lost loaded-instruction lineage")

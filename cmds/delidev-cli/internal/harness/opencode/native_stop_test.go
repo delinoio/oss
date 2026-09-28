@@ -141,7 +141,7 @@ func nativeStopFixture(t *testing.T, mode string, lost bool, intent nativeStopIn
 	if _, err := api.submit(ctx, domain.NewID(), fixtureMessageID, fixturePartID, "Exercise private native Stop."); err != nil {
 		t.Fatal(err)
 	}
-	observer, err := api.observeInput(ctx, "/")
+	observer, err := api.observeInput(ctx, fixtureNativeRoot())
 	if err != nil {
 		t.Fatal(err)
 	}

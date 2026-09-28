@@ -11,7 +11,7 @@ func fixtureAssistant() map[string]any {
 	return map[string]any{
 		"id": "msg_01960dcbe1fbABCDEFGHIJKLMN", "sessionID": fixtureSessionID, "role": "assistant", "time": map[string]any{"created": 1235},
 		"parentID": fixtureMessageID, "modelID": "private-model", "providerID": "private-provider", "mode": "build", "agent": "build",
-		"path": map[string]any{"cwd": "/private/workspace", "root": "/private/root"}, "cost": 0,
+		"path": map[string]any{"cwd": fixtureWorkspacePath(), "root": fixtureObserverRoot()}, "cost": 0,
 		"tokens": map[string]any{"input": 20, "output": 4, "reasoning": 0, "cache": map[string]any{"read": 0, "write": 0}},
 	}
 }
@@ -37,7 +37,7 @@ func TestNativeMessageCompletionAndErrorAreIndependent(t *testing.T) {
 			t.Fatal("finish, completion timestamp or native error collapsed")
 		}
 		encoded, _ := json.Marshal(message)
-		for _, secret := range []string{"private-diagnostic", "/private/workspace", "/private/root", "private-model"} {
+		for _, secret := range []string{"private-diagnostic", fixtureWorkspacePath(), fixtureObserverRoot(), "private-model"} {
 			if strings.Contains(string(encoded), secret) {
 				t.Fatal("private native message escaped ordinary serialization")
 			}
@@ -114,7 +114,7 @@ func TestNativeMessageRejectsAliasesAndContradictions(t *testing.T) {
 		func(v map[string]any) { v["time"].(map[string]any)["completed"] = 1234 },
 		func(v map[string]any) { v["time"].(map[string]any)["created"] = nil },
 		func(v map[string]any) { v["time"].(map[string]any)["Created"] = 1235 },
-		func(v map[string]any) { v["path"].(map[string]any)["Cwd"] = "/private/workspace" },
+		func(v map[string]any) { v["path"].(map[string]any)["Cwd"] = fixtureWorkspacePath() },
 		func(v map[string]any) { v["tokens"].(map[string]any)["cache"] = nil },
 		func(v map[string]any) { v["tokens"].(map[string]any)["Total"] = 24 },
 		func(v map[string]any) { v["finish"] = "success" },

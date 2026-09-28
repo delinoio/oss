@@ -22,7 +22,7 @@ func eventFrame(id int, kind EventKind, properties any) string {
 func streamFixture(t *testing.T, wire string) *eventStream {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
-	stream := &eventStream{ctx: ctx, body: io.NopCloser(strings.NewReader(wire)), cancel: cancel, queue: make(chan NativeEvent, maxQueuedEvents), done: make(chan struct{}), seen: map[string]bool{}, last: time.Now(), cwd: "/private/workspace", alive: func() error { return nil }}
+	stream := &eventStream{ctx: ctx, body: io.NopCloser(strings.NewReader(wire)), cancel: cancel, queue: make(chan NativeEvent, maxQueuedEvents), done: make(chan struct{}), seen: map[string]bool{}, last: time.Now(), cwd: fixtureWorkspacePath(), alive: func() error { return nil }}
 	go stream.run(ctx)
 	t.Cleanup(stream.Close)
 	return stream

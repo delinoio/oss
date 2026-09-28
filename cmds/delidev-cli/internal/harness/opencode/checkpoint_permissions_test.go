@@ -27,7 +27,7 @@ func checkpointPermissionFixture(t *testing.T, decisions ...PermissionDecision) 
 	part := o.parts[claim.PartID]
 	part.value.Tool = checkpointInlineToolFixture(checkpointReadTool)
 	part.value.Tool.CallID = claim.CallID
-	value := nativeCheckpoint{Project: "global", NativeRoot: "/", History: HistoryObservation{RequestID: claim.InputRequestID, SessionID: claim.SessionID, Messages: []HistoryMessage{{ID: claim.MessageID, Parts: []HistoryPart{{ID: claim.PartID, Kind: ToolPartKind, Digest: mutationDigest(part.raw)}}}}}}
+	value := nativeCheckpoint{Project: "global", NativeRoot: fixtureNativeRoot(), History: HistoryObservation{RequestID: claim.InputRequestID, SessionID: claim.SessionID, Messages: []HistoryMessage{{ID: claim.MessageID, Parts: []HistoryPart{{ID: claim.PartID, Kind: ToolPartKind, Digest: mutationDigest(part.raw)}}}}}}
 	value.Tools = r.api.checkpointToolHistory(value)
 	valid := value.Tools != nil && !value.Tools.InteractionFree && checkpointReplacementProfile(value) == nil
 	if valid && always {
@@ -133,7 +133,7 @@ func TestCheckpointOnceProofIsBoundToOriginalToolAndInput(t *testing.T) {
 	value, s, _ := checkpointPermissionFixture(t)
 	s.predecessor = &value
 	s.observer = &inputObserver{}
-	next := nativeCheckpoint{Project: "global", NativeRoot: "/", Previous: []HistoryObservation{value.History}}
+	next := nativeCheckpoint{Project: "global", NativeRoot: fixtureNativeRoot(), Previous: []HistoryObservation{value.History}}
 	next.Tools = s.checkpointToolHistory(next)
 	if next.Tools == nil || next.Tools.Version != 2 || len(next.Tools.Once) != 1 || checkpointReplacementProfile(next) != nil {
 		t.Fatal("later text input lost original permission evidence")
