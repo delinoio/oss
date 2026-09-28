@@ -251,6 +251,10 @@ impl Snapshot {
         self.eligible_directories.contains_key(relative)
     }
 
+    pub fn selected_directory_has_identity(&self, relative: &Path, identity: FileIdentity) -> bool {
+        self.eligible_directories.get(relative) == Some(&identity)
+    }
+
     pub fn selected_path_has_identity(&self, relative: &Path, identity: FileIdentity) -> bool {
         valid_relative(relative)
             && self.eligible.contains(relative)

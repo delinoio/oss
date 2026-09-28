@@ -1826,13 +1826,14 @@ fn collect_required(
                 continue;
             }
             let logical = logical_relative(root, path);
-            let alias = if logical
-                .as_ref()
-                .is_some_and(|relative| snapshot.contains_selected(relative))
-            {
+            let alias = if logical.as_ref().is_some_and(|relative| {
+                snapshot.contains_selected(relative)
+                    || snapshot.contains_selected_directory(relative)
+            }) {
                 let relative = logical.expect("selected logical path exists");
                 if path.identity.is_some_and(|identity| {
                     !snapshot.selected_path_has_identity(&relative, identity)
+                        && !snapshot.selected_directory_has_identity(&relative, identity)
                 }) {
                     return Err(ReproFailure::UnstableInput);
                 }
@@ -1854,7 +1855,10 @@ fn collect_required(
                 return Err(ReproFailure::BlockedInput);
             }
             let selected = selector.matches(&selection_native(&alias));
-            if !selected || !snapshot.contains_selected(&alias) {
+            if !selected
+                || !(snapshot.contains_selected(&alias)
+                    || snapshot.contains_selected_directory(&alias))
+            {
                 if pair.start.operation.is_content_read() && pair.completion.native_error.is_none()
                 {
                     if selected
@@ -4369,7 +4373,9 @@ mod tests {
         fs::hard_link(root.join("a.txt"), root.join("b.txt")).unwrap();
         fs::create_dir(root.join("assets")).unwrap();
         fs::write(root.join("assets/flag"), b"present").unwrap();
-        let selector = coverage::Selector::new(&["*.txt".into(), "assets/**".into()], &[]).unwrap();
+        let selector =
+            coverage::Selector::new(&["*.txt".into(), "assets".into(), "assets/**".into()], &[])
+                .unwrap();
         let snapshot = crate::repro::Snapshot::take(&root, &selector, 1024, 10).unwrap();
         let metadata = fs::metadata(root.join("b.txt")).unwrap();
         let identity = record::FileIdentity::Inode {
@@ -4463,6 +4469,24 @@ mod tests {
                 PathBuf::from("assets/flag"),
             ])
         );
+        let directory_metadata = fs::metadata(root.join("assets")).unwrap();
+        let directory_identity = record::FileIdentity::Inode {
+            device: directory_metadata.dev(),
+            inode: directory_metadata.ino(),
+        };
+        record.operations[0].start.paths[0].identity = Some(directory_identity);
+        for operation in [record::Operation::Metadata, record::Operation::Open] {
+            record.operations[0].start.operation = operation;
+            assert_eq!(
+                collect_required(&record, &root, &selector, &snapshot).unwrap(),
+                std::collections::BTreeSet::from([PathBuf::from("assets")])
+            );
+        }
+        record.operations[0].start.paths[0].identity = Some(identity);
+        assert!(matches!(
+            collect_required(&record, &root, &selector, &snapshot),
+            Err(crate::repro::ReproFailure::UnstableInput)
+        ));
         record.operations[0].start.operation = record::Operation::Read;
         record.operations[0].start.open_mutates = false;
         record.operations[0].start.paths[0].logical =
