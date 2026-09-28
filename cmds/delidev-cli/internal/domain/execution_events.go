@@ -175,6 +175,7 @@ type ExecutionMessageUpdate struct {
 // envelope. Exactly one event kind owns its optional payload. Unknown native
 // extensions need dedicated adapters before they can enter this document.
 type ExecutionEvent struct {
+	GrokUserMessageID  ID                                 `json:"grok_user_message_id,omitempty"`
 	GrokStop           *GrokStopObservation               `json:"grok_stop,omitempty"`
 	GrokTerminal       *GrokTextTerminal                  `json:"grok_terminal,omitempty"`
 	GrokText           *GrokTextUpdate                    `json:"grok_text,omitempty"`
@@ -231,6 +232,9 @@ func (e ExecutionEvent) Validate() error {
 		if err := Text(e.NativeTurnID, "native turn identity", 1024, true); err != nil {
 			return err
 		}
+	}
+	if e.GrokUserMessageID != "" && (e.Kind != ExecutionInputAccepted || e.GrokUserMessageID.Validate() != nil) {
+		return invalidGrokContent()
 	}
 	switch e.Kind {
 	case ExecutionGrokTextObserved:
@@ -437,6 +441,7 @@ func (e ExecutionEvent) Validate() error {
 // original immutable account/configuration selection. Only a separately
 // verified completion report may set CleanupVerified after terminal publication.
 type ExecutionProgress struct {
+	GrokUserMessageID      ID                          `json:"grok_user_message_id,omitempty"`
 	GrokStop               *GrokStopObservation        `json:"grok_stop,omitempty"`
 	GrokTerminal           *GrokTextTerminal           `json:"grok_terminal,omitempty"`
 	GrokContent            *GrokContentState           `json:"grok_content,omitempty"`
@@ -472,6 +477,7 @@ type ExecutionProgress struct {
 }
 
 type ExecutionMessage struct {
+	GrokUser           *GrokUserHistory           `json:"grok_user,omitempty"`
 	GrokText           *GrokTextContent           `json:"grok_text,omitempty"`
 	ClaudeProgress     *ClaudeProgressObservation `json:"claude_progress,omitempty"`
 	ClaudeInterruption *ClaudeInterruption        `json:"claude_interruption,omitempty"`

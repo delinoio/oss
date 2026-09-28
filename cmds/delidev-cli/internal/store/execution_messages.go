@@ -71,6 +71,21 @@ func (t *Tx) ExecutionMessagesComplete(execution domain.ID) (bool, error) {
 	return !pending, storageError(err)
 }
 
+// The execution index bounds this lookup; closed first-text history must match
+// its one original assistant record, not merely the most recent chunk event.
+func (t *Tx) GrokFirstTextMessage(execution domain.ID) (Record, error) {
+	if err := execution.Validate(); err != nil {
+		return Record{}, err
+	}
+	var id domain.ID
+	err := t.tx.QueryRowContext(t.ctx, `SELECT e.id FROM execution_messages m JOIN entities e ON e.id=m.message_id
+ WHERE m.execution_id=? AND json_extract(e.body,'$.grok_text.response_ordinal')=1 ORDER BY e.id LIMIT 1`, execution).Scan(&id)
+	if err != nil {
+		return Record{}, storageError(err)
+	}
+	return t.Get(domain.MessageKind, id)
+}
+
 // Original completed root content may include separately retained Read results.
 // Answered questions additionally require their independently settled callback.
 // Other tools and callbacks retain their separate continuation gates.

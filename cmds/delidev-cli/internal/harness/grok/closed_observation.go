@@ -137,7 +137,7 @@ func (a *OwnedAPI) CompletedTextScope(ctx context.Context) (CompletedTextScope, 
 // it cannot establish original process, filesystem or publication ownership.
 func (v ClosedTextObservation) Validate(model string) error {
 	h := v.History
-	if h.InputID.Validate() != nil || h.ClosureID.Validate() != nil || h.NativeSessionID.Validate() != nil || !nativeUUID(h.NativePromptID, 4) || h.TextChunks == 0 || h.TextChunks > 100000 || h.TextChunks != uint64(len(v.ChunkDigests)) {
+	if h.User.Validate(string(h.NativeSessionID)) != nil || h.User.Model != model || h.InputID.Validate() != nil || h.ClosureID.Validate() != nil || h.NativeSessionID.Validate() != nil || !nativeUUID(h.NativePromptID, 4) || h.TextChunks == 0 || h.TextChunks > 100000 || h.TextChunks != uint64(len(v.ChunkDigests)) {
 		return incompatible()
 	}
 	digests := append([]string{h.FilesDigest, v.OutputDigest}, v.ChunkDigests...)

@@ -27,7 +27,7 @@ func textHistoryFixture(t *testing.T) (*apiConnection, map[string][]byte, string
 	}
 	digest, _ := TextInputClaimDigest(turnFixtureSession, input)
 	usage, _ := validateUsage(turn.Update.Usage, turnFixtureModel)
-	completed := &completedText{request: domain.NewID(), prompt: turnFixturePrompt, summary: "Original retained summary.", summarySeen: true, idle: true, bodyDigest: digest, chunks: [][32]byte{historyValueDigest(chunk)}, lastChunk: historyTextEnvelopeDigest(chunk), output: sha256.Sum256([]byte(chunk.Update.Content.Text)), terminal: historyValueDigest(turn), usage: usage, closed: domain.NewID()}
+	completed := &completedText{request: domain.NewID(), prompt: turnFixturePrompt, summary: "Original retained summary.", summarySeen: true, idle: true, bodyDigest: digest, chunks: [][32]byte{historyValueDigest(chunk)}, firstTextEvent: chunk.Meta.Event, lastChunk: historyTextEnvelopeDigest(chunk), output: sha256.Sum256([]byte(chunk.Update.Content.Text)), terminal: historyValueDigest(turn), usage: usage, closed: domain.NewID()}
 	home := historyFileFixture(t, nil)
 	workspace := filepath.Join(filepath.Dir(home), "workspace 공백_+.-()")
 	completed.home, _ = os.Lstat(home)
@@ -50,11 +50,13 @@ func textHistoryFixture(t *testing.T) (*apiConnection, map[string][]byte, string
 	}
 	user := storedUser{Session: turnFixtureSession}
 	user.Update.Kind, user.Update.Content, user.Update.Meta.Model = "user_message_chunk", promptText{Type: "text", Text: input}, turnFixtureModel
-	user.Meta.Event, user.Meta.TimestampMS = string(turnFixtureSession)+"-2", chunk.Meta.TimestampMS-1
+	index, stampMS := uint64(0), chunk.Meta.TimestampMS-1
+	user.Update.Meta.Index = &index
+	user.Meta.Event, user.Meta.TimestampMS = string(turnFixtureSession)+"-2", &stampMS
 	row := func(method string, stamp uint64, value any) any {
 		return map[string]any{"timestamp": stamp / 1000, "method": method, "params": value}
 	}
-	files["updates.jsonl"] = lines(row("session/update", user.Meta.TimestampMS, user), row("session/update", chunk.Meta.TimestampMS, chunk), row("_x.ai/session/update", turn.Meta.TimestampMS, turn))
+	files["updates.jsonl"] = lines(row("session/update", *user.Meta.TimestampMS, user), row("session/update", chunk.Meta.TimestampMS, chunk), row("_x.ai/session/update", turn.Meta.TimestampMS, turn))
 	files["system_prompt.txt"] = []byte("Synthetic system fixture, not a native prompt.")
 	files["chat_history.jsonl"] = lines(
 		map[string]any{"type": "system", "content": string(files["system_prompt.txt"])},
@@ -99,7 +101,7 @@ func TestClosedTextHistoryMatchesOriginalWithoutMutationOrAuthority(t *testing.T
 	var logs bytes.Buffer
 	a.inspection.Logger = slog.New(slog.NewJSONHandler(&logs, nil))
 	first, err := a.verifyClosedText(context.Background())
-	if err != nil || first.InputID != a.completedText.request || first.ClosureID != a.completedText.closed || first.TextChunks != 1 || len(first.FilesDigest) != 64 {
+	if err != nil || first.User.Validate(string(a.session)) != nil || first.User.NativeEventID != string(a.session)+"-2" || first.User.InputDigest != domain.GrokUserInputDigest("Original retained input.\n한글 + <literal>") || first.InputID != a.completedText.request || first.ClosureID != a.completedText.closed || first.TextChunks != 1 || len(first.FilesDigest) != 64 {
 		t.Fatal("original retained text not verified", err)
 	}
 	second, err := a.verifyClosedText(context.Background())
@@ -124,7 +126,7 @@ func TestClosedTextHistoryMatchesOriginalWithoutMutationOrAuthority(t *testing.T
 }
 
 func TestClosedTextHistoryRejectsOriginalEvidenceDrift(t *testing.T) {
-	for _, name := range []string{"input", "chunk", "terminal", "chat", "system", "usage", "summary", "foreign-session", "foreign-prompt", "unknown-record", "reordered", "truncated", "closure-missing", "original-home-replaced", "canceled"} {
+	for _, name := range []string{"input", "chunk", "terminal", "chat", "system", "usage", "summary", "foreign-session", "foreign-prompt", "unknown-record", "reordered", "truncated", "closure-missing", "original-home-replaced", "canceled", "missing-user-index", "missing-user-time", "user-after-first-text"} {
 		t.Run(name, func(t *testing.T) {
 			a, files, directory := textHistoryFixture(t)
 			ctx := context.Background()
@@ -135,6 +137,19 @@ func TestClosedTextHistoryRejectsOriginalEvidenceDrift(t *testing.T) {
 				files[file] = bytes.ReplaceAll(files[file], []byte(old), []byte(new))
 			}
 			switch name {
+			case "missing-user-index", "missing-user-time", "user-after-first-text":
+				rows := bytes.Split(files["updates.jsonl"], []byte("\n"))
+				row := fixtureObject(rows[0])
+				params := row["params"].(map[string]any)
+				if name == "missing-user-index" {
+					delete(params["update"].(map[string]any)["_meta"].(map[string]any), "promptIndex")
+				} else if name == "missing-user-time" {
+					delete(params["_meta"].(map[string]any), "agentTimestampMs")
+				} else {
+					a.completedText.firstTextEvent = string(a.session) + "-1"
+				}
+				rows[0], _ = json.Marshal(row)
+				files["updates.jsonl"] = bytes.Join(rows, []byte("\n"))
 			case "input":
 				replace("updates.jsonl", "Original retained input", "Changed retained input")
 			case "chunk":
@@ -335,7 +350,7 @@ func TestHistoryOmittedMetadataCannotBecomeExplicitEmptyFields(t *testing.T) {
 	row := fixtureObject(rows[1])
 	row["synthetic_reason"] = ""
 	rows[1], _ = json.Marshal(row)
-	input, err := verifyTextUpdates(files["updates.jsonl"], a.session, a.profile.model, a.completedText)
+	input, _, err := verifyTextUpdates(files["updates.jsonl"], a.session, a.profile.model, a.completedText)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -377,7 +392,7 @@ func TestNativeHistoryCoalescesTextWithLastOriginalMetadata(t *testing.T) {
 	merged.Meta = first.Meta
 	row["params"] = merged
 	rows[1], _ = json.Marshal(row)
-	if _, err := verifyTextUpdates(bytes.Join(rows, []byte("\n")), a.session, a.profile.model, a.completedText); err == nil {
+	if _, _, err := verifyTextUpdates(bytes.Join(rows, []byte("\n")), a.session, a.profile.model, a.completedText); err == nil {
 		t.Fatal("merged history substituted earlier metadata")
 	}
 }

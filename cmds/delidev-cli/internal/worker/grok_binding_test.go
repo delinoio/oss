@@ -95,7 +95,7 @@ func TestGrokBindingRequiresPublicationBeforeOriginalInput(t *testing.T) {
 				t.Fatal("settled binding acquired another publication")
 			}
 			var retained domain.ExecutionEvent
-			if domain.Decode(client.events[3], &retained) != nil || retained.NativeThreadID != string(binding.NativeSessionID) || retained.NativeTurnID != observation.NativePromptID {
+			if domain.Decode(client.events[3], &retained) != nil || retained.GrokUserMessageID.Validate() != nil || retained.GrokUserMessageID != c.userMessageID || retained.NativeThreadID != string(binding.NativeSessionID) || retained.NativeTurnID != observation.NativePromptID {
 				t.Fatal("Grok input was replaced with product identity")
 			}
 			if err := c.Close(); err != nil {

@@ -12,6 +12,9 @@ func publishGrokContent(tx *store.Tx, input domain.ExecutionJobInput, sr store.R
 	}
 	if event.Kind == domain.ExecutionGrokTextObserved {
 		v := *event.GrokText
+		if progress.GrokUserMessageID != "" && v.ID <= progress.GrokUserMessageID {
+			return executionEventConflict()
+		}
 		next, err := state.ObserveText(v, event.NativeThreadID)
 		if err != nil {
 			return err

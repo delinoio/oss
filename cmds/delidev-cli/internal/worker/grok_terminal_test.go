@@ -53,7 +53,7 @@ func grokClosedPublicationFixture(t *testing.T) (*GrokBindingPublisher, *openCod
 	turn.Update.ElapsedMS = 3
 	turn.Meta.Event = string(c.thread) + "-11"
 	turn.Meta.TimestampMS = 1
-	observed := grok.ClosedTextObservation{History: grok.TextHistory{InputID: c.reference.InputRequestID, ClosureID: c.closureID, NativeSessionID: c.thread, NativePromptID: c.turn, FilesDigest: strings.Repeat("ab", 32), TextChunks: 1}, Terminal: grok.TextTerminal{Result: result, Turn: turn, Prompt: grok.PromptCompleted{Session: c.thread, Prompt: c.turn, Reason: grok.EndTurn, AgentResult: json.RawMessage(`null`)}}, OutputDigest: hex.EncodeToString(c.textOutput.Sum(nil)), ChunkDigests: append([]string{}, c.textChunks...)}
+	observed := grok.ClosedTextObservation{History: grok.TextHistory{User: domain.GrokUserHistory{Source: domain.GrokClosedFirstText, NativeEventID: string(c.thread) + "-2", TimestampMS: "0", PromptIndex: "0", Model: model, InputDigest: domain.GrokUserInputDigest(c.publisher.input.Input.Prompt)}, InputID: c.reference.InputRequestID, ClosureID: c.closureID, NativeSessionID: c.thread, NativePromptID: c.turn, FilesDigest: strings.Repeat("ab", 32), TextChunks: 1}, Terminal: grok.TextTerminal{Result: result, Turn: turn, Prompt: grok.PromptCompleted{Session: c.thread, Prompt: c.turn, Reason: grok.EndTurn, AgentResult: json.RawMessage(`null`)}}, OutputDigest: hex.EncodeToString(c.textOutput.Sum(nil)), ChunkDigests: append([]string{}, c.textChunks...)}
 	if err := observed.Validate(model); err != nil {
 		t.Fatal(err)
 	}
@@ -91,10 +91,22 @@ func TestGrokOriginalTerminalLostReceiptNeverRepeatsClosure(t *testing.T) {
 	}
 }
 func TestGrokOriginalTerminalRejectsChangedComparisonEvidence(t *testing.T) {
-	for _, mutation := range []string{"chunk", "output", "input", "closure", "model", "native-event", "prompt", "counter", "history", "stage", "journal"} {
+	for _, mutation := range []string{"chunk", "output", "input", "closure", "model", "native-event", "prompt", "counter", "history", "stage", "journal", "user-text", "user-model", "user-index", "user-event", "missing-user", "user-order"} {
 		t.Run(mutation, func(t *testing.T) {
 			c, client, v := grokClosedPublicationFixture(t)
 			switch mutation {
+			case "user-order":
+				v.History.User.NativeEventID = c.firstTextEvent
+			case "user-text":
+				v.History.User.InputDigest = domain.GrokUserInputDigest("changed")
+			case "user-model":
+				v.History.User.Model = "foreign"
+			case "user-index":
+				v.History.User.PromptIndex = "1"
+			case "user-event":
+				v.History.User.NativeEventID = string(domain.NewID()) + "-2"
+			case "missing-user":
+				v.History.User = domain.GrokUserHistory{}
 			case "chunk":
 				v.ChunkDigests[0] = strings.Repeat("cd", 32)
 			case "output":

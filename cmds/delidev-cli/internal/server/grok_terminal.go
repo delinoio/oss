@@ -30,7 +30,42 @@ func publishGrokTerminal(tx *store.Tx, input domain.ExecutionJobInput, sr store.
 	if !complete {
 		return executionEventConflict()
 	}
+	// Legacy accepted receipts omit the reservation and user comparison together.
+	// A new reservation may only become a message through this original closure.
+	if (p.GrokUserMessageID != "") != (v.User != nil) {
+		return executionEventConflict()
+	}
+	if v.User != nil {
+		if err := publishGrokUser(tx, input, sr, p, event); err != nil {
+			return err
+		}
+	}
 	copy := *v
 	p.GrokTerminal = &copy
 	return nil
+}
+
+func publishGrokUser(tx *store.Tx, input domain.ExecutionJobInput, sr store.Record, p *domain.ExecutionProgress, event domain.ExecutionEvent) error {
+	user := *event.GrokTerminal.User
+	if p.GrokUserMessageID.Validate() != nil || user.InputDigest != domain.GrokUserInputDigest(input.Input.Prompt) {
+		return executionEventConflict()
+	}
+	r, err := tx.GrokFirstTextMessage(input.ExecutionID)
+	if err != nil {
+		return err
+	}
+	assistant, err := store.Decode[domain.ExecutionMessage](r)
+	if err != nil || r.SessionID != sr.ID || r.ID <= p.GrokUserMessageID || assistant.ExecutionID != input.ExecutionID || assistant.NativeThreadID != event.NativeThreadID || assistant.NativeTurnID != event.NativeTurnID || assistant.Role != domain.AssistantMessage || assistant.State != domain.MessageComplete || assistant.GrokText == nil || len(assistant.GrokText.Chunks) == 0 || assistant.NativeID != assistant.GrokText.Chunks[0].EventID {
+		return executionEventConflict()
+	}
+	first, e1 := domain.GrokEventIndex(assistant.NativeID, event.NativeThreadID)
+	original, e2 := domain.GrokEventIndex(user.NativeEventID, event.NativeThreadID)
+	if e1 != nil || e2 != nil || original >= first {
+		return executionEventConflict()
+	}
+	message := domain.ExecutionMessage{GrokUser: &user, ExecutionID: input.ExecutionID, NativeThreadID: event.NativeThreadID, NativeTurnID: event.NativeTurnID, NativeID: user.NativeEventID, Role: domain.UserMessage, InputID: input.InputID, Text: input.Input.Prompt, State: domain.MessageComplete, FirstSequence: event.Sequence, LastSequence: event.Sequence}
+	if _, err := tx.Put(domain.MessageKind, p.GrokUserMessageID, 0, sr.ID, sr.ProjectID, message); err != nil {
+		return err
+	}
+	return tx.BindExecutionMessage(sr.ID, input.ExecutionID, p.GrokUserMessageID, event.NativeThreadID, event.NativeTurnID, user.NativeEventID, domain.MessageComplete)
 }

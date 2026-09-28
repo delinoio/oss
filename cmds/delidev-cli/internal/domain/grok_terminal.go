@@ -12,6 +12,7 @@ const GrokClosedFirstText GrokTerminalKind = "closed-first-text"
 // facts, original native close and independently compared first-text history.
 // Its counters are one native input's report, not billable response aggregation.
 type GrokTextTerminal struct {
+	User          *GrokUserHistory   `json:"user,omitempty"`
 	Kind          GrokTerminalKind   `json:"kind"`
 	NativeEventID string             `json:"native_event_id"`
 	TimestampMS   string             `json:"timestamp_ms"`
@@ -47,6 +48,13 @@ func (v GrokTextTerminal) Validate(thread string) error {
 	hash, err := hex.DecodeString(v.HistoryDigest)
 	if err != nil || len(hash) != 32 || hex.EncodeToString(hash) != v.HistoryDigest {
 		return invalidGrokContent()
+	}
+	if v.User != nil {
+		user, e1 := GrokEventIndex(v.User.NativeEventID, thread)
+		terminal, e2 := GrokEventIndex(v.NativeEventID, thread)
+		if v.User.Validate(thread) != nil || v.User.Model != v.Model || e1 != nil || e2 != nil || user >= terminal {
+			return invalidGrokContent()
+		}
 	}
 	return nil
 }

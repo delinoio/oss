@@ -75,6 +75,7 @@ func (c *GrokBindingPublisher) commitPendingContent() {
 	if c.pendingChunk != "" {
 		if c.firstTextID == "" {
 			c.firstTextID = c.pendingContent.MessageID
+			c.firstTextEvent = c.pendingContent.LastEvent
 		}
 		c.textChunks = append(c.textChunks, c.pendingChunk)
 		_, _ = c.textOutput.Write([]byte(c.pendingText))

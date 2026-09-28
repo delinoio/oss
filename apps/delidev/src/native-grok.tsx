@@ -10,7 +10,7 @@ function metadata(v: Document, thread: string) {
 }
 
 function validText(data: Document) {
-  if (data.role !== "assistant" || !["streaming", "complete"].includes(String(data.state)) || typeof data.text !== "string" || data.text.includes("\0") || /[\uD800-\uDFFF]/u.test(data.text) || new TextEncoder().encode(data.text).length > (256 << 10) || !uuid(data.execution_id, 7) || !uuid(data.native_thread_id, 7) || !uuid(data.native_turn_id, 4) || data.phase != null || data.input_id !== undefined || data.native_parent_id !== undefined || [data.claude, data.claude_tool, data.claude_progress, data.claude_interruption, data.tool, data.artifact, data.progress].some((v) => v != null)) return false;
+  if (data.role !== "assistant" || !["streaming", "complete"].includes(String(data.state)) || typeof data.text !== "string" || data.text.includes("\0") || /[\uD800-\uDFFF]/u.test(data.text) || new TextEncoder().encode(data.text).length > (256 << 10) || !uuid(data.execution_id, 7) || !uuid(data.native_thread_id, 7) || !uuid(data.native_turn_id, 4) || data.phase != null || data.input_id !== undefined || data.native_parent_id !== undefined || [data.grok_user, data.claude, data.claude_tool, data.claude_progress, data.claude_interruption, data.tool, data.artifact, data.progress].some((v) => v != null)) return false;
   const v = object(data.grok_text), chunks = v.chunks;
   if (!exact(v, ["response_ordinal", "chunks", ...(v.interruption !== undefined ? ["interruption"] : [])]) || !ordinal(v.response_ordinal) || !Array.isArray(chunks) || chunks.length < 1 || chunks.length > 1024 || !Number.isSafeInteger(data.first_sequence) || Number(data.first_sequence) < 3 || !Number.isSafeInteger(data.last_sequence) || Number(data.last_sequence) > 100000 || Number(data.last_sequence) < Number(data.first_sequence) + chunks.length - (data.state === "complete" ? 0 : 1)) return false;
   let priorEvent: bigint | undefined, priorChunk: bigint | undefined;
@@ -24,6 +24,25 @@ function validText(data: Document) {
   const interrupted = object(v.interruption);
   if (v.interruption !== undefined && (data.state !== "complete" || !exact(interrupted, ["request_id", "native_event_id"]) || !uuid(interrupted.request_id, 7) || eventIndex(interrupted.native_event_id, data.native_thread_id) === undefined || eventIndex(interrupted.native_event_id, data.native_thread_id)! <= priorEvent!)) return false;
   return data.native_id === object(chunks[0]).event_id;
+}
+
+function userHistory(v: Document, thread: string) {
+  return exact(v, ["source", "native_event_id", "timestamp_ms", "prompt_index", "model", "input_digest"]) && v.source === "closed-first-text" && eventIndex(v.native_event_id, thread) !== undefined && count(v.timestamp_ms) && BigInt(v.timestamp_ms) <= 253402300799999n && v.prompt_index === "0" && typeof v.model === "string" && v.model.length > 0 && !v.model.includes("\0") && !/[\uD800-\uDFFF]/u.test(v.model) && new TextEncoder().encode(v.model).length <= 256 && typeof v.input_digest === "string" && /^[a-f0-9]{64}$/.test(v.input_digest);
+}
+
+export function NativeGrokUser({ data }: { data: Document }) {
+  const v = object(data.grok_user);
+  const valid = data.role === "user" && data.state === "complete" && uuid(data.execution_id, 7) && uuid(data.input_id, 7) && uuid(data.native_thread_id, 7) && uuid(data.native_turn_id, 4) && data.native_id === v.native_event_id && userHistory(v, data.native_thread_id) && typeof data.text === "string" && data.text.length > 0 && !data.text.includes("\0") && !/[\uD800-\uDFFF]/u.test(data.text) && new TextEncoder().encode(data.text).length <= (256 << 10) && Number.isSafeInteger(data.first_sequence) && Number(data.first_sequence) >= 5 && Number(data.first_sequence) <= 100000 && data.last_sequence === data.first_sequence && [data.grok_text, data.claude, data.claude_tool, data.claude_progress, data.claude_interruption, data.tool, data.artifact, data.progress, data.phase, data.native_parent_id].every((value) => value === undefined);
+  if (!valid) return <article className="message" aria-label="Grok user input unavailable"><p>The retained Grok user input is unavailable or inconsistent.</p></article>;
+  return <article className="message" aria-label="Grok user input">
+    <header><strong>user</strong><small>Verified from closed native history</small></header>
+    <pre>{data.text as string}</pre>
+    <details><summary>Grok input details</summary><dl>
+      <dt>Original native event</dt><dd>{v.native_event_id as string}</dd>
+      <dt>Model</dt><dd>{v.model as string}</dd>
+      <dt>Native timestamp (ms)</dt><dd>{v.timestamp_ms as string}</dd>
+    </dl><p>This input was checked against the original native history after the session closed.</p></details>
+  </article>;
 }
 
 export function NativeGrokText({ data }: { data: Document }) {
@@ -61,8 +80,9 @@ function closedResponse(value: Document, thread: string, terminal: unknown) {
 export function NativeGrokTerminal({ progress }: { progress: Document }) {
   if (progress.grok_terminal == null) return null;
   const v = object(progress.grok_terminal), counts = object(v.counts), observed = object(progress.observed), content = object(progress.grok_content);
-  const valid = uuid(progress.execution_id, 7) && uuid(progress.native_thread_id, 7) && uuid(progress.native_turn_id, 4) && progress.outcome === "succeeded" && exact(v, ["kind", "native_event_id", "timestamp_ms", "elapsed_ms", "model", "counts", "total_tokens", "model_calls", "api_duration_ms", "turns", "closure_id", "history_digest"]) && v.kind === "closed-first-text" && eventIndex(v.native_event_id, progress.native_thread_id) !== undefined && count(v.timestamp_ms) && BigInt(v.timestamp_ms) <= 253402300799999n && [v.elapsed_ms, v.total_tokens, v.api_duration_ms].every(count) && v.model_calls === "1" && v.turns === "1" && uuid(v.closure_id, 7) && typeof v.history_digest === "string" && /^[a-f0-9]{64}$/.test(v.history_digest) && typeof v.model === "string" && v.model.length > 0 && v.model === observed.model && observed.grok_mode === "default" && closedResponse(content, progress.native_thread_id, v.native_event_id) && exact(counts, labels.map(([key]) => key)) && labels.every(([key]) => count(counts[key])) && [progress.grok_stop, progress.claude_terminal, progress.claude_stop, progress.claude_denial, progress.opencode_stop].every((value) => value == null);
-  if (!valid) return <p>The retained Grok completion is unavailable or inconsistent.</p>;
+  const valid = uuid(progress.execution_id, 7) && uuid(progress.native_thread_id, 7) && uuid(progress.native_turn_id, 4) && progress.outcome === "succeeded" && exact(v, ["kind", "native_event_id", "timestamp_ms", "elapsed_ms", "model", "counts", "total_tokens", "model_calls", "api_duration_ms", "turns", "closure_id", "history_digest", ...(v.user !== undefined ? ["user"] : [])]) && v.kind === "closed-first-text" && eventIndex(v.native_event_id, progress.native_thread_id) !== undefined && count(v.timestamp_ms) && BigInt(v.timestamp_ms) <= 253402300799999n && [v.elapsed_ms, v.total_tokens, v.api_duration_ms].every(count) && v.model_calls === "1" && v.turns === "1" && uuid(v.closure_id, 7) && typeof v.history_digest === "string" && /^[a-f0-9]{64}$/.test(v.history_digest) && typeof v.model === "string" && v.model.length > 0 && v.model === observed.model && observed.grok_mode === "default" && closedResponse(content, progress.native_thread_id, v.native_event_id) && exact(counts, labels.map(([key]) => key)) && labels.every(([key]) => count(counts[key])) && [progress.grok_stop, progress.claude_terminal, progress.claude_stop, progress.claude_denial, progress.opencode_stop].every((value) => value == null);
+  const userValid = v.user === undefined ? progress.grok_user_message_id === undefined : uuid(progress.grok_user_message_id, 7) && typeof progress.native_thread_id === "string" && userHistory(object(v.user), progress.native_thread_id) && object(v.user).model === v.model && eventIndex(object(v.user).native_event_id, progress.native_thread_id)! < eventIndex(content.last_event, progress.native_thread_id)!;
+  if (!valid || !userValid) return <p>The retained Grok completion is unavailable or inconsistent.</p>;
   return <details><summary>Original Grok input completion</summary><dl>
     <dt>Native outcome</dt><dd>End turn</dd><dt>Model</dt><dd>{v.model as string}</dd>
     <dt>Reported input total tokens</dt><dd>{v.total_tokens as string}</dd>

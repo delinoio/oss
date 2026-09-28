@@ -137,7 +137,7 @@ func supportsExecutionPublication(input domain.ExecutionJobInput, kind domain.Ex
 // their parent message explicitly instead of flattening several parts into a
 // fabricated message identity or using the assistant as the execution turn.
 func validateNativeMessageOrigin(input domain.ExecutionJobInput, event domain.ExecutionEvent) error {
-	if (event.GrokText != nil || event.GrokUsage != nil || event.GrokTerminal != nil || event.GrokStop != nil) && input.Configuration.Harness != domain.GrokBuild {
+	if (event.GrokUserMessageID != "" || event.GrokText != nil || event.GrokUsage != nil || event.GrokTerminal != nil || event.GrokStop != nil) && input.Configuration.Harness != domain.GrokBuild {
 		return executionEventConflict()
 	}
 	if (event.ClaudeTerminal != nil || event.ClaudeStop != nil || event.ClaudeDenial != nil) != (input.Configuration.Harness == domain.ClaudeCode && event.Kind == domain.ExecutionTurnFinished) || event.ClaudeTerminal != nil && event.ClaudeStop != nil {
@@ -267,6 +267,14 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 			}
 			if session.PendingInputs == 0 || session.PendingInputBytes < uint64(len(queued.Prompt)) {
 				return domain.Fail(domain.RecoveryRequired, "Input queue accounting is inconsistent.", "Retain native acceptance and reconcile the queue before another send.")
+			}
+			if event.GrokUserMessageID != "" {
+				for _, occupied := range []domain.ID{sr.ID, job.ID, input.ExecutionID, input.InputID, input.ThreadRequestID, input.TurnRequestID, input.AccountID, input.ConnectionID, domain.ID(event.NativeThreadID)} {
+					if event.GrokUserMessageID == occupied {
+						return executionEventConflict()
+					}
+				}
+				progress.GrokUserMessageID = event.GrokUserMessageID
 			}
 			progress.NativeTurnID = event.NativeTurnID
 			progress.Outcome = domain.ExecutionRunning

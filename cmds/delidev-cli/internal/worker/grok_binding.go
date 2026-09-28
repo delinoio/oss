@@ -37,6 +37,8 @@ type GrokBindingPublisher struct {
 	stopClaim       atomic.Pointer[grok.StopClaim]
 	stopped         *domain.GrokStopObservation
 	firstTextID     domain.ID
+	firstTextEvent  string
+	userMessageID   domain.ID
 	publisher       *ExecutionPublisher
 	journal         *grokClaimJournal
 	reference       grokClaimReference
@@ -248,7 +250,10 @@ func (c *GrokBindingPublisher) AcceptInput(ctx context.Context, v grok.InputObse
 		return c.block()
 	}
 	c.proof, c.turn, c.sequence, c.stage = claims, v.NativePromptID, 2, grokAcceptancePending
-	if err := c.publish(ctx, domain.ExecutionEvent{Sequence: 2, Kind: domain.ExecutionInputAccepted, NativeThreadID: string(c.thread), NativeTurnID: c.turn}); err != nil {
+	// Reserve display order before any assistant publication. This ID alone
+	// creates no message; only independently closed native history can do so.
+	c.userMessageID = domain.NewID()
+	if err := c.publish(ctx, domain.ExecutionEvent{Sequence: 2, Kind: domain.ExecutionInputAccepted, GrokUserMessageID: c.userMessageID, NativeThreadID: string(c.thread), NativeTurnID: c.turn}); err != nil {
 		return err
 	}
 	c.stage = grokInputAccepted

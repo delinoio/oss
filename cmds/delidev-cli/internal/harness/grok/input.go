@@ -634,6 +634,9 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 				}
 				lastChunk = chunk.Meta.Chunk
 				// Retain original facts before exposing the callback's mutable copy.
+				if len(settled.chunks) == 0 {
+					settled.firstTextEvent = chunk.Meta.Event
+				}
 				settled.chunks = append(settled.chunks, historyValueDigest(chunk))
 				settled.lastChunk = historyTextEnvelopeDigest(chunk)
 				_, _ = output.Write([]byte(chunk.Update.Content.Text))

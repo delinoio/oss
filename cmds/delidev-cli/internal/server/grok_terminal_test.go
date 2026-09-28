@@ -10,15 +10,24 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 )
 
-func grokServerTerminalFixture(t *testing.T) (*publicationFixture, domain.ExecutionEvent) {
+func grokServerTerminalFixture(t *testing.T, withUser ...bool) (*publicationFixture, domain.ExecutionEvent) {
 	t.Helper()
-	f := grokServerAccepted(t)
+	f := newGrokPublicationFixture(t, domain.ExecuteMode)
+	f.publish(t, f.event(domain.ExecutionThreadBound, 1))
+	accepted := f.event(domain.ExecutionInputAccepted, 2)
+	if len(withUser) != 0 && withUser[0] {
+		accepted.GrokUserMessageID = domain.NewID()
+	}
+	f.publish(t, accepted)
 	f.publish(t, grokServerText(f))
 	usage := grokServerResponse(f, 4, 1)
 	f.publish(t, usage)
 	e := f.event(domain.ExecutionTurnFinished, 5)
 	e.Outcome = domain.ExecutionSucceeded
 	e.GrokTerminal = &domain.GrokTextTerminal{Kind: domain.GrokClosedFirstText, NativeEventID: string(f.thread) + "-11", TimestampMS: "1", ElapsedMS: "3", Model: f.input.Configuration.NativeModel, Counts: usage.GrokUsage.Counts, TotalTokens: "16", ModelCalls: "1", APIDurationMS: "2", Turns: "1", ClosureID: domain.NewID(), HistoryDigest: strings.Repeat("ab", 32)}
+	if accepted.GrokUserMessageID != "" {
+		e.GrokTerminal.User = &domain.GrokUserHistory{Source: domain.GrokClosedFirstText, NativeEventID: string(f.thread) + "-2", TimestampMS: "0", PromptIndex: "0", Model: f.input.Configuration.NativeModel, InputDigest: domain.GrokUserInputDigest(f.input.Input.Prompt)}
+	}
 	return f, e
 }
 func TestGrokClosedTextTerminalAndVersionOneReport(t *testing.T) {

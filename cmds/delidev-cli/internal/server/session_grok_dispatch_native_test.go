@@ -330,6 +330,13 @@ func nativeGrokPublicFirstText(t *testing.T, scenario grokPublicScenario) {
 			if err != nil || session.Execution == nil || !session.Execution.CleanupVerified || (session.Execution.GrokTerminal != nil) == stopped || (stopped && (session.Execution.GrokStop == nil || session.Execution.GrokStop.Kind != stopKind || session.Execution.GrokStop.ContextTokens == nil || session.Execution.GrokStop.Completed != nil || session.Execution.Outcome != domain.ExecutionStopped || completion.Outcome != domain.ExecutionStopped || session.Recovery != domain.NoRecovery)) || session.Execution.Observed.GrokContextTokens != 48000 || session.Dispatch != domain.DispatchPaused || session.ActiveExecutionID != "" || session.PendingInputs != 0 {
 				t.Fatal("completion lost cleanup/context or granted continuation", err)
 			}
+			if !stopped {
+				assertGrokUserHistory(t, f.service.Store, *original.Load(), session)
+			} else {
+				if _, err := f.service.Store.Get(ctx, domain.MessageKind, session.Execution.GrokUserMessageID); domain.SafeError(err).Code != domain.NotFound {
+					t.Fatal("Stop fabricated closed native user history", err)
+				}
+			}
 			if pending && (session.Execution.GrokContent != nil || session.Execution.LatestUsageID != "" || session.Execution.GrokStop.MessageID != "" || session.Execution.GrokStop.TextChunks != 0) {
 				t.Fatal("pre-text Stop fabricated output or usage")
 			}

@@ -268,6 +268,9 @@ func testManualNativeGrokServer(t *testing.T, content, terminal bool) {
 				if terminal && (retained.Execution.GrokTerminal == nil || retained.Execution.Outcome != domain.ExecutionSucceeded || retained.Execution.CleanupVerified) {
 					t.Fatal("terminal lost original completion or invented workspace report")
 				}
+				if terminal {
+					assertGrokUserHistory(t, f.service.Store, f.input, retained)
+				}
 				if content {
 					if chunks != 1 || responses != 1 || retained.Execution.GrokContent == nil || retained.Execution.GrokContent.Responses != 1 || retained.Execution.GrokContent.MessageID != "" {
 						t.Fatal("missing original text/response composition")

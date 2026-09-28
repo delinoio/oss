@@ -83,12 +83,18 @@ func (c *GrokBindingPublisher) publishClosedText(ctx context.Context, observed g
 	h := observed.History
 	r := observed.Terminal.Result
 	t := observed.Terminal.Turn
-	if h.InputID != c.reference.InputRequestID || h.ClosureID != closureID || h.NativeSessionID != c.thread || h.NativePromptID != c.turn || h.TextChunks != uint64(len(c.textChunks)) || !reflect.DeepEqual(observed.ChunkDigests, c.textChunks) || observed.OutputDigest != hex.EncodeToString(c.textOutput.Sum(nil)) || r.Meta.Session != c.thread || r.Meta.Prompt != c.turn || r.Meta.Model != c.publisher.input.Configuration.NativeModel || r.Reason != grok.EndTurn || t.Session != c.thread || t.Update.Prompt != c.turn {
+	if c.userMessageID.Validate() != nil || h.User.InputDigest != domain.GrokUserInputDigest(c.publisher.input.Input.Prompt) || h.InputID != c.reference.InputRequestID || h.ClosureID != closureID || h.NativeSessionID != c.thread || h.NativePromptID != c.turn || h.TextChunks != uint64(len(c.textChunks)) || !reflect.DeepEqual(observed.ChunkDigests, c.textChunks) || observed.OutputDigest != hex.EncodeToString(c.textOutput.Sum(nil)) || r.Meta.Session != c.thread || r.Meta.Prompt != c.turn || r.Meta.Model != c.publisher.input.Configuration.NativeModel || r.Reason != grok.EndTurn || t.Session != c.thread || t.Update.Prompt != c.turn {
+		return c.block()
+	}
+	first, e1 := domain.GrokEventIndex(c.firstTextEvent, string(c.thread))
+	original, e2 := domain.GrokEventIndex(h.User.NativeEventID, string(c.thread))
+	if e1 != nil || e2 != nil || original >= first {
 		return c.block()
 	}
 	number := func(n uint64) string { return strconv.FormatUint(n, 10) }
 	u := r.Meta.Usage
-	terminal := domain.GrokTextTerminal{Kind: domain.GrokClosedFirstText, NativeEventID: t.Meta.Event, TimestampMS: number(t.Meta.TimestampMS), ElapsedMS: number(t.Update.ElapsedMS), Model: r.Meta.Model, Counts: domain.GrokResponseCounts{Input: number(u.Input), Output: number(u.Output), CachedRead: number(u.CachedRead), CacheCreation: number(u.CacheCreation), Reasoning: number(u.Reasoning)}, TotalTokens: number(u.Total), ModelCalls: number(u.Calls), APIDurationMS: number(u.DurationMS), Turns: number(u.Turns), ClosureID: closureID, HistoryDigest: h.FilesDigest}
+	user := h.User
+	terminal := domain.GrokTextTerminal{User: &user, Kind: domain.GrokClosedFirstText, NativeEventID: t.Meta.Event, TimestampMS: number(t.Meta.TimestampMS), ElapsedMS: number(t.Update.ElapsedMS), Model: r.Meta.Model, Counts: domain.GrokResponseCounts{Input: number(u.Input), Output: number(u.Output), CachedRead: number(u.CachedRead), CacheCreation: number(u.CacheCreation), Reasoning: number(u.Reasoning)}, TotalTokens: number(u.Total), ModelCalls: number(u.Calls), APIDurationMS: number(u.DurationMS), Turns: number(u.Turns), ClosureID: closureID, HistoryDigest: h.FilesDigest}
 	if terminal.Validate(string(c.thread)) != nil || terminal.Counts != c.lastResponse {
 		return c.block()
 	}

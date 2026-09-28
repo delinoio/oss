@@ -1,13 +1,45 @@
 import { render, screen } from "@testing-library/react";
 import { expect, it } from "vitest";
 import { object, type Document } from "./documents";
-import { NativeGrokText, NativeGrokUsage, NativeGrokTerminal, NativeGrokStop } from "./native-grok";
+import { NativeGrokText, NativeGrokUser, NativeGrokUsage, NativeGrokTerminal, NativeGrokStop } from "./native-grok";
 const thread = "01960dcb-e1fa-7000-8000-000000000001";
 function textFixture(): Document {
  const meta = { event_id: `${thread}-10`, chunk_id: "1", context_tokens: "18446744073709551615", timestamp_ms: "1", stream_start_ms: "0", turn_start_ms: "0" };
  return { execution_id: thread, native_thread_id: thread, native_turn_id: "526452fa-1956-42dd-b5f4-60e2b23dfe92", native_id: meta.event_id, role: "assistant", state: "complete", text: "Original <script>private()</script> 한글", first_sequence: 3, last_sequence: 4, grok_text: { response_ordinal: 1, chunks: [{ ...meta }] } };
 }
 function usageFixture(): Document { return { ordinal: 1, counts: { input_tokens: "18446744073709551615", output_tokens: "5", cache_read_input_tokens: "0", cache_creation_input_tokens: "0", reasoning_tokens: "0" } }; }
+
+function userFixture(): Document {
+ const data = textFixture(); delete data.grok_text;
+ return { ...data, role: "user", input_id: "01960dcb-e1fa-7000-8000-000000000002", native_id: `${thread}-2`, first_sequence: 5, last_sequence: 5, grok_user: { source: "closed-first-text", native_event_id: `${thread}-2`, timestamp_ms: "253402300799999", prompt_index: "0", model: "Original model", input_digest: "ab".repeat(32) } };
+}
+it("shows the original user input with its closed-history provenance", () => {
+ const { container } = render(<NativeGrokUser data={userFixture()} />);
+ expect(screen.getByLabelText("Grok user input")).toBeTruthy();
+ expect(screen.getByText("Verified from closed native history")).toBeTruthy();
+ expect(screen.getByText("Original <script>private()</script> 한글")).toBeTruthy();
+ expect(screen.getByText("Native timestamp (ms)").nextElementSibling?.textContent).toBe("253402300799999");
+ expect(container.querySelector("script")).toBeNull();
+});
+it.each(["role", "state", "input", "foreign", "source", "index", "timestamp", "rounded", "digest", "mixed", "unknown", "surrogate", "sequence"])("rejects inconsistent closed Grok user input: %s", change => {
+ const data = userFixture(), user = object(data.grok_user);
+ if(change === "role") data.role = "assistant";
+ if(change === "state") data.state = "streaming";
+ if(change === "input") delete data.input_id;
+ if(change === "foreign") user.native_event_id = "foreign-2";
+ if(change === "source") user.source = "live";
+ if(change === "index") user.prompt_index = "1";
+ if(change === "timestamp") user.timestamp_ms = "253402300800000";
+ if(change === "rounded") user.timestamp_ms = 1;
+ if(change === "digest") user.input_digest = "";
+ if(change === "mixed") data.grok_text = textFixture().grok_text;
+ if(change === "unknown") user.extra = true;
+ if(change === "surrogate") data.text = "\ud800";
+ if(change === "sequence") data.last_sequence = 6;
+ render(<NativeGrokUser data={data} />);
+ expect(screen.getByLabelText("Grok user input unavailable")).toBeTruthy();
+ expect(screen.queryByText("Verified from closed native history")).toBeNull();
+});
 it("preserves inert original text, exact context and distinct response completion", () => {
  const { container } = render(<NativeGrokText data={textFixture()} />);
  expect(screen.getByText("Original <script>private()</script> 한글")).toBeTruthy();
@@ -57,6 +89,19 @@ it("displays original closed input totals without implying continuation or addit
  expect(screen.getByText("Reported input total tokens").nextElementSibling?.textContent).toBe("18446744073709551615");
  expect(screen.getByText(/Input totals overlap/)).toBeTruthy();
  expect(screen.queryByRole("button")).toBeNull();
+});
+it.each(["valid", "missing-reservation", "missing-proof", "foreign-model", "event-order", "null-proof"])("validates closed user provenance alongside the original terminal: %s", change => {
+ const progress=terminalFixture(), terminal=object(progress.grok_terminal), user=object(userFixture().grok_user);
+ progress.grok_user_message_id="01960dcb-e1fa-7000-8000-000000000002";
+ terminal.user=user;
+ if(change==="missing-reservation") delete progress.grok_user_message_id;
+ if(change==="missing-proof") delete terminal.user;
+ if(change==="foreign-model") user.model="other";
+ if(change==="event-order") user.native_event_id=`${thread}-10`;
+ if(change==="null-proof") terminal.user=null;
+ render(<NativeGrokTerminal progress={progress}/>);
+ if(change==="valid") expect(screen.getByText("Original Grok input completion")).toBeTruthy();
+ else expect(screen.getByText(/completion is unavailable or inconsistent/)).toBeTruthy();
 });
 it.each(["mixed","mode","model","prompt","outcome","open-text","missing-total","calls","event","history","event-order","missing-content"])("rejects inconsistent original Grok completion: %s",change=>{
  const data=terminalFixture(),v=object(data.grok_terminal);

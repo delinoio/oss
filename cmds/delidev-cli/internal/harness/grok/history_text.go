@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,12 +18,13 @@ import (
 // grants no process adoption, continuation, public completion or replay rights.
 // Native instructions/tools/context still require their own continuation proof.
 type TextHistory struct {
-	InputID         domain.ID `json:"input_id"`
-	ClosureID       domain.ID `json:"closure_id"`
-	NativeSessionID domain.ID `json:"native_session_id"`
-	NativePromptID  string    `json:"native_prompt_id"`
-	FilesDigest     string    `json:"files_digest"`
-	TextChunks      uint64    `json:"text_chunks"`
+	User            domain.GrokUserHistory `json:"user"`
+	InputID         domain.ID              `json:"input_id"`
+	ClosureID       domain.ID              `json:"closure_id"`
+	NativeSessionID domain.ID              `json:"native_session_id"`
+	NativePromptID  string                 `json:"native_prompt_id"`
+	FilesDigest     string                 `json:"files_digest"`
+	TextChunks      uint64                 `json:"text_chunks"`
 }
 
 type historyStage string
@@ -78,25 +80,26 @@ type storedUser struct {
 		Kind    string     `json:"sessionUpdate"`
 		Content promptText `json:"content"`
 		Meta    struct {
-			Model string `json:"modelId"`
-			Index uint64 `json:"promptIndex"`
+			Model string  `json:"modelId"`
+			Index *uint64 `json:"promptIndex"`
 		} `json:"_meta"`
 	} `json:"update"`
 	Meta struct {
-		Event       string `json:"eventId"`
-		TimestampMS uint64 `json:"agentTimestampMs"`
+		Event       string  `json:"eventId"`
+		TimestampMS *uint64 `json:"agentTimestampMs"`
 	} `json:"_meta"`
 }
 
-func verifyTextUpdates(raw []byte, session domain.ID, model string, completed *completedText) (string, error) {
+func verifyTextUpdates(raw []byte, session domain.ID, model string, completed *completedText) (string, domain.GrokUserHistory, error) {
 	// The pinned native writer coalesces all text into one retained chunk,
 	// preserving the last live chunk's metadata. Individual live chunks remain
 	// separate observations; persisted text cannot reconstruct their boundaries.
 	rows, err := historyLines(raw, 3)
 	if err != nil {
-		return "", err
+		return "", domain.GrokUserHistory{}, err
 	}
 	var input string
+	var observed domain.GrokUserHistory
 	var last uint64
 	for index, raw := range rows {
 		var row struct {
@@ -105,42 +108,48 @@ func verifyTextUpdates(raw []byte, session domain.ID, model string, completed *c
 			Params    json.RawMessage `json:"params"`
 		}
 		if decode(raw, &row) != nil || row.Timestamp > 253402300799 {
-			return "", historyUncertain()
+			return "", domain.GrokUserHistory{}, historyUncertain()
 		}
 		var event string
 		var timestamp uint64
 		switch {
 		case index == 0:
 			var user storedUser
-			if decode(row.Params, &user) != nil || row.Method != "session/update" || user.Session != session || user.Update.Kind != "user_message_chunk" || user.Update.Content.Type != "text" || user.Update.Meta.Model != model || user.Update.Meta.Index != 0 {
-				return "", historyUncertain()
+			if decode(row.Params, &user) != nil || row.Method != "session/update" || user.Session != session || user.Update.Kind != "user_message_chunk" || user.Update.Content.Type != "text" || user.Update.Meta.Model != model || (user.Update.Meta.Index == nil || *user.Update.Meta.Index != 0) || user.Meta.TimestampMS == nil {
+				return "", domain.GrokUserHistory{}, historyUncertain()
 			}
 			input = user.Update.Content.Text
 			digest, err := TextInputClaimDigest(session, input)
 			if err != nil || digest != completed.bodyDigest {
-				return "", historyUncertain()
+				return "", domain.GrokUserHistory{}, historyUncertain()
 			}
-			event, timestamp = user.Meta.Event, user.Meta.TimestampMS
+			event, timestamp = user.Meta.Event, *user.Meta.TimestampMS
+			observed = domain.GrokUserHistory{Source: domain.GrokClosedFirstText, NativeEventID: event, TimestampMS: strconv.FormatUint(timestamp, 10), PromptIndex: "0", Model: model, InputDigest: domain.GrokUserInputDigest(input)}
 		case index == len(rows)-1:
 			turn, err := parseTurnCompleted(row.Params, session, completed.prompt, model)
 			if err != nil || row.Method != "_x.ai/session/update" || historyValueDigest(turn) != completed.terminal {
-				return "", historyUncertain()
+				return "", domain.GrokUserHistory{}, historyUncertain()
 			}
 			event, timestamp = turn.Meta.Event, turn.Meta.TimestampMS
 		default:
 			chunk, err := parseTextChunkBound(row.Params, session, completed.prompt, 4<<20)
 			if err != nil || row.Method != "session/update" || historyTextEnvelopeDigest(chunk) != completed.lastChunk || sha256.Sum256([]byte(chunk.Update.Content.Text)) != completed.output {
-				return "", historyUncertain()
+				return "", domain.GrokUserHistory{}, historyUncertain()
 			}
 			event, timestamp = chunk.Meta.Event, chunk.Meta.TimestampMS
 		}
 		current, err := eventIndex(event, session)
 		if err != nil || index > 0 && current <= last || timestamp > 253402300799999 {
-			return "", historyUncertain()
+			return "", domain.GrokUserHistory{}, historyUncertain()
 		}
 		last = current
 	}
-	return input, nil
+	first, e1 := eventIndex(completed.firstTextEvent, session)
+	user, e2 := eventIndex(observed.NativeEventID, session)
+	if e1 != nil || e2 != nil || user >= first {
+		return "", domain.GrokUserHistory{}, historyUncertain()
+	}
+	return input, observed, nil
 }
 
 func verifyTextChat(raw, system []byte, input, model string, completed *completedText) error {
@@ -350,7 +359,7 @@ func (a *apiConnection) verifyClosedText(ctx context.Context) (result TextHistor
 		hashes[i] = sha256.Sum256(files[i])
 	}
 	stage = historyUpdates
-	input, err := verifyTextUpdates(files[0], a.session, a.profile.model, completed)
+	input, user, err := verifyTextUpdates(files[0], a.session, a.profile.model, completed)
 	if err != nil {
 		return result, historyUncertain()
 	}
@@ -379,7 +388,7 @@ func (a *apiConnection) verifyClosedText(ctx context.Context) (result TextHistor
 		return result, err
 	}
 	digest := historyValueDigest(hashes)
-	result = TextHistory{InputID: completed.request, ClosureID: completed.closed, NativeSessionID: a.session, NativePromptID: completed.prompt, FilesDigest: hex.EncodeToString(digest[:]), TextChunks: uint64(len(completed.chunks))}
+	result = TextHistory{User: user, InputID: completed.request, ClosureID: completed.closed, NativeSessionID: a.session, NativePromptID: completed.prompt, FilesDigest: hex.EncodeToString(digest[:]), TextChunks: uint64(len(completed.chunks))}
 	if completed.history != nil && *completed.history != result {
 		return TextHistory{}, historyUncertain()
 	}

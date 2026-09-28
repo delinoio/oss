@@ -265,3 +265,18 @@ for (const mixed of [false, true]) it(`renders original Grok text through sessio
  else expect(await screen.findByText("Original Grok text")).toBeTruthy();
  expect(value.enqueues).not.toHaveBeenCalled();expect(value.controls).not.toHaveBeenCalled();
 });
+
+it.each(["valid", "mixed", "null"])("renders closed Grok user history through session RPC (%s)", async change => {
+ const value=fixture(), thread=newRequestId();
+ value.message.documentJson=encode({execution_id:newRequestId(),input_id:newRequestId(),native_thread_id:thread,native_turn_id:"526452fa-1956-42dd-b5f4-60e2b23dfe92",native_id:`${thread}-2`,role:"user",text:"Original verified Grok input",state:"complete",first_sequence:5,last_sequence:5,grok_user:change==="null"?null:{source:"closed-first-text",native_event_id:`${thread}-2`,timestamp_ms:"1",prompt_index:"0",model:"Original model",input_digest:"ab".repeat(32)},...(change==="mixed"?{grok_text:{}}:{})});
+ render(<App transport={value.transport}/>);
+ fireEvent.click(await screen.findByRole("button",{name:/General Chat Retained session/}));
+ if(change==="valid") {
+  expect(await screen.findByText("Original verified Grok input")).toBeTruthy();
+  expect(screen.getByText("Verified from closed native history")).toBeTruthy();
+ } else {
+  expect(await screen.findByLabelText("Grok user input unavailable")).toBeTruthy();
+  expect(screen.queryByText("Original verified Grok input")).toBeNull();
+ }
+ expect(value.enqueues).not.toHaveBeenCalled(); expect(value.controls).not.toHaveBeenCalled();
+});
