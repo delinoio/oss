@@ -62,6 +62,10 @@ func (f *threadFixture) handleTurn(id json.RawMessage, method string, raw json.R
 		}
 	}
 	switch method {
+	case "fixture/write-fence":
+		if len(id) != 0 {
+			os.Exit(37)
+		}
 	case "fixture/metadata":
 		for key, value := range params {
 			f.thread[key] = value
@@ -363,10 +367,10 @@ func TestLateTurnAcknowledgmentsDoNotAuthorizeReplay(t *testing.T) {
 				nextKind(t, client, TurnStartedEvent)
 			}
 			requestID, inputID := domain.NewID(), domain.NewID()
-			// A short timer can expire during the preflight thread/read on a busy
-			// Windows host, before any turn request is sent. Gate the fixture's
-			// acknowledgment so cancellation always follows receipt of the exact
-			// operation and the response always follows the uncertain return.
+			// Gate the native reply until the exact request is received. The child
+			// can write that marker before the parent's pipe write completes, so a
+			// second notification fences the write gate before cancellation. Replace
+			// this fixture fence if the transport exposes write completion directly.
 			marker := capture + ".turn-response"
 			if err := os.WriteFile(marker+".hold", nil, 0o600); err != nil {
 				t.Fatal(err)
@@ -393,6 +397,9 @@ func TestLateTurnAcknowledgmentsDoNotAuthorizeReplay(t *testing.T) {
 			}()
 			if err := waitForTurnFixtureMarker(ctx, marker+".received"); err != nil {
 				t.Fatalf("fixture did not receive turn/%s: %v", action, err)
+			}
+			if err := client.wire.Notify(ctx, "fixture/write-fence", struct{}{}); err != nil {
+				t.Fatalf("fixture write did not complete: %v", err)
 			}
 			cancel()
 			assertCode(t, <-result, domain.RecoveryRequired)
