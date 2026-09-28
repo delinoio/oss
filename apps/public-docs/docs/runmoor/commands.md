@@ -39,7 +39,7 @@ All commands accept `--config PATH` and `--no-color`. Commands and flags are cas
 
 | Command | Additional options and behavior |
 | --- | --- |
-| `init` | Interactive setup or `--target`, `--backend`, `--auth`, `--credential-env`/`--credential-file`, App IDs, `--image`/`--image-source`, `--source-home`; `--image-only` creates an empty setup configuration; never overwrites |
+| `init` | Interactive Tart setup can create and supervise a new Apple-IPSW VM, then resume after interruption; scripted setup uses `--target`, `--backend`, `--auth`, `--credential-env`/`--credential-file`, App IDs and `--image`/`--image-source`; `--image-only` creates an empty setup configuration; never overwrites |
 | `config validate` | Reject unknown fields, versions and contradictory budgets |
 | `config show --resolved` | Read calculated settings and committed runner versions without preparing images |
 | `runner update` | Optional `--pool NAME`; request an immediate managed runner check |
@@ -50,7 +50,7 @@ All commands accept `--config PATH` and `--no-color`. Commands and flags are cas
 | `stop` | Optional `--pool NAME` and `--force`; whole-manager stop exits |
 | `version` | Print version and source revision |
 | `service install`, `start`, `stop`, `uninstall` | Operate the user service; use the `service` prefix for each |
-| `image create` | `--name NAME`, optional `--cpu N` and `--memory-mib N`, exactly one `--ipsw PATH` or `--from SOURCE`; optional `--source-home PATH` for an external local image |
+| `image create` | `--name NAME`, optional `--cpu N` and `--memory-mib N`, exactly one `--ipsw latest\|PATH` or `--from SOURCE`; optional `--source-home PATH` for an external local image |
 | `image open`, `remove` | `--id UUID`; use the `image` prefix for each |
 | `image seal` | `--id UUID`, optional `--runner-version latest|VERSION` and `--runner-path PATH`; omission installs latest |
 | `image list` | Optional `--json`; includes preparation/sealed revisions and problems |

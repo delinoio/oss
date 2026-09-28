@@ -97,7 +97,7 @@ func Execute(args []string, out, errOut io.Writer) int {
 	im := ImageRequest{Action: sub}
 	fs.StringVar(&im.ID, "id", "", "image revision UUID")
 	fs.StringVar(&im.Name, "name", "", "image display name")
-	fs.StringVar(&im.IPSW, "ipsw", "", "absolute local IPSW path")
+	fs.StringVar(&im.IPSW, "ipsw", "", "latest supported Apple IPSW or absolute local .ipsw path")
 	fs.StringVar(&im.From, "from", "", "local Tart name, .tvm, sealed UUID or oci:// reference")
 	fs.StringVar(&im.SourceHome, "source-home", "", "external Tart home for a local source name")
 	fs.IntVar(&im.Resources.CPU, "cpu", 0, "image setup CPU cores")
@@ -107,7 +107,7 @@ func Execute(args []string, out, errOut io.Writer) int {
 	if e := fs.Parse(args); e == flag.ErrHelp {
 		fmt.Fprint(out, helpText)
 		if command == "image" {
-			fmt.Fprintln(out, "Image options: create --name NAME (--ipsw PATH | --from SOURCE) [--cpu N --memory-mib N]; open/seal/remove --id UUID; seal [--runner-version latest|VERSION] [--runner-path PATH]")
+			fmt.Fprintln(out, "Image options: create --name NAME (--ipsw latest|PATH | --from SOURCE) [--cpu N --memory-mib N]; open/seal/remove --id UUID; seal [--runner-version latest|VERSION] [--runner-path PATH]")
 		}
 		if command == "init" {
 			fmt.Fprintln(out, "Init options: --target URL --backend docker|tart --auth pat|app (--credential-env NAME | --credential-file PATH) [--client-id ID --installation-id N] [--image DIGEST_OR_UUID | --image-source SOURCE --source-home PATH]; --image-only prepares a configuration without pools.")
@@ -170,7 +170,9 @@ func Execute(args []string, out, errOut io.Writer) int {
 	}
 	if command == "init" {
 		initOpts.SourceHome = im.SourceHome
-		if e = initialize(path, initOpts, os.Stdin, out, term.IsTerminal(int(os.Stdin.Fd()))); e != nil {
+		initCtx, stopInit := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stopInit()
+		if e = initializeWithContext(initCtx, path, initOpts, os.Stdin, out, term.IsTerminal(int(os.Stdin.Fd())), defaultGuidedRuntime{}); e != nil {
 			return printFailure(errOut, *jsonOutput, e)
 		}
 		return 0
@@ -334,6 +336,16 @@ func Execute(args []string, out, errOut io.Writer) int {
 	return 0
 }
 func runForeground(ctx context.Context, path string, c Config, out io.Writer) error {
+	return runForegroundReady(ctx, path, c, out, nil)
+}
+
+func runForegroundReady(ctx context.Context, path string, c Config, out io.Writer, ready chan<- error) (result error) {
+	announced := false
+	defer func() {
+		if ready != nil && !announced {
+			ready <- result
+		}
+	}()
 	probe, cancel := context.WithTimeout(ctx, 10*time.Second)
 	resolved, capacityErr := resolveDockerCapacity(probe, c)
 	cancel()
@@ -374,6 +386,10 @@ func runForeground(ctx context.Context, path string, c Config, out io.Writer) er
 		return e
 	}
 	defer server.Close()
+	if ready != nil {
+		ready <- nil
+		announced = true
+	}
 	logger.Info("manager_started", "version", Version, "installation", store.View().Installation)
 	return m.Run(ctx, c)
 }

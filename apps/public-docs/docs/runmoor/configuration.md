@@ -28,6 +28,14 @@ credential reference. On Linux the suggested backend is Docker; on Apple Silicon
 macOS it is Tart. Supply the referenced credential separately. Init does not
 install Docker/Tart or start a service.
 
+On macOS, interactive Tart setup offers `create` (the default) or `existing`.
+`create` downloads the latest host-supported Apple IPSW through Tart or uses
+an absolute local `.ipsw`, supervises guest setup, verifies Guest Agent after
+a reboot, seals the image and writes the final configuration. The guest account,
+Guest Agent and optional tool setup still require your input. Run `runmoor
+init` again with the same config path after an interruption. See [Tart image
+preparation](./tart) for the complete first-run steps.
+
 For scripts, provide the inputs directly:
 
 ```sh

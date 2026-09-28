@@ -61,7 +61,7 @@ Trusted developers and small-team operators install the binary, Docker/Tart, cre
 - Image mutations require a running manager; the CLI never executes them offline. The manager retains sleep inhibition for open setup/validation revisions after the request returns. Whole-manager stop, including force-stop and service stop/uninstall, waits for open setup and pending image removal; pool-scoped waits do not. Shutdown rejects new image operations but permits sealing an already open revision and retrying pending removal. Close the setup VM normally or seal it before expecting stop to finish. Offline image listing remains available. Initial setup accepts automatic or explicit host budgets with no pools/connections; add the Tart pool and reload after sealing.
 
 - Initial compatibility pins: Tart 2.37.0, Guest Agent 0.14.2, macOS 14+ arm64. Require functional Guest Agent RPC and an exact runner version in the prepared non-root guest account. A reachable guest returns a bounded ready/invalid marker; invalid accounts, versions, registration or workspace state fail immediately with `IMAGE_INVALID`, while unavailable RPC retries within the preparation deadline.
-- `image create --name NAME [--cpu N --memory-mib N]` accepts exactly one `--ipsw PATH` or `--from SOURCE`. Sources are a stopped local Tart name (optional `--source-home`), absolute `.tvm`, sealed Runmoor revision UUID, or `oci://` input resolved to a digest. Imports never modify the operator's source image.
+- `image create --name NAME [--cpu N --memory-mib N]` accepts exactly one `--ipsw latest|PATH` or `--from SOURCE`. `latest` delegates selection of the newest host-supported Apple restore image to Tart; a path is an absolute local `.ipsw`. Sources are a stopped local Tart name (optional `--source-home`), absolute `.tvm`, sealed Runmoor revision UUID, or `oci://` input resolved to a digest. Imports never modify the operator's source image.
 - Local-name imports use a temporary `import-<image UUID>.tvm` archive in private managed data. The image UUID is durable before export begins; normal completion/failure, restart reconciliation across all image phases, and image removal clean that exact artifact. Cleanup errors remain visible in image diagnostics and prevent successful removal from discarding the ownership record. Unjournaled archives and unexpected symlink/directory targets are preserved.
 - `image open --id UUID` opens a mutable setup revision for account/Xcode/tool installation. `image seal --id UUID --runner-version VERSION [--runner-path PATH]` validates guest readiness, clean runner registration/workspace and exact versions, stops the VM, hashes the base files and publishes an immutable local revision. Sealing and sealed-image verification hash with bounded, cancellation-aware reads under the operation context, so preparation deadlines and force-stop do not wait for a whole disk read; cancellation closes the file and discards the partial digest. Editing requires a new revision. `image remove` refuses referenced or active images.
 - Image open polls the owned VM until Tart confirms it running, bounded by the Tart preparation deadline. A spawned process alone is insufficient. Unconfirmed startup records a safe preparation error and holds its reservation until reconciliation confirms the VM stopped.
@@ -289,3 +289,29 @@ managed preparation and cleanup.
 - Windows amd64 and Linux arm64 CLI cross-compilation passed; these are build
   checks, not runtime certification. Public documentation `pnpm test` passed
   the consolidated build, route/content checks and validator fixtures.
+
+### Guided macOS first setup
+
+- Interactive Tart `init` offers creation from `latest`, meaning Tart's
+  host-supported Apple IPSW, or an absolute local `.ipsw`, alongside the
+  existing prepared-source choice. `image create --ipsw latest` uses the same
+  Tart option. Noninteractive init still requires an image/source reference or
+  explicit `--image-only`. Tart remains operator-installed at exact version
+  2.37.0.
+- Guided init stages a private image-only configuration and a private atomic
+  setup journal keyed to the requested final config path and UUID-v7 image.
+  Tart image-only setup keeps the 20480 MiB free-disk reserve even before a
+  pool exists.
+  The normal manager owns image mutations and sleep inhibition. After the
+  operator finishes the non-root runner account, Guest Agent 0.14.2 login RPC
+  and optional tools, Runmoor validates the guest, cleanly stops and boots it
+  headless to verify automatic Agent readiness, installs the checksummed
+  current runner and seals the image. It creates the final TOML exclusively
+  after manager shutdown, using that sealed UUID with latest runner management.
+- The operator explicitly confirms guest setup completion so Agent startup
+  cannot seal an image before optional tool/Xcode preparation finishes.
+  Repeating interactive init resumes the journaled owned revision. Ambiguous
+  VM creation or ownership, altered staged configuration and conflicting
+  manager/storage state fail visibly; neither a source image nor an existing
+  final config is overwritten or adopted. Aborting a wizard cleanly stops an
+  open setup VM and retains the journal for retry.

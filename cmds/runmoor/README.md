@@ -264,6 +264,24 @@ Docker and privileged DinD share a kernel; they are not secure isolation for arb
 
 Install **Tart 2.37.0** on macOS 14+ arm64 yourself. Install **Tart Guest Agent 0.14.2** with RPC enabled in the guest's non-root runner account. Account setup, login, Xcode licensing and tools remain manual. Review the version-specific [Tart license](https://github.com/openai/tart/blob/2.37.0/LICENSE) and [Guest Agent license](https://github.com/openai/tart-guest-agent/blob/v0.14.2/LICENSE), currently FSL-1.1-ALv2, plus the applicable Apple software terms. They are external software, not bundled or relicensed by Runmoor.
 
+## Create a Mac image during first setup
+
+Run `runmoor init` in a terminal, select `tart`, then select `create`.
+The default `latest` lets Tart fetch the newest Apple IPSW supported by the
+host; an absolute local `.ipsw` path also works. Runmoor creates and opens an
+owned VM under a temporary image-only manager. In the VM, finish macOS setup,
+use a non-root `runner` login account, install Guest Agent 0.14.2 with
+`--run-agent` enabled after login, install optional tools and accept any Xcode
+license. A normal Homebrew install may select a different Guest Agent version.
+
+Press Enter in the original terminal only after guest setup is finished.
+Runmoor checks RPC readiness, reboots to verify the Agent starts without manual
+intervention, installs the verified latest runner, seals the image and writes
+the final configuration. Run `runmoor run` afterward. An interrupted setup
+resumes with `runmoor init` and the same `--config` path; existing final
+configurations and unverified images are never overwritten or adopted.
+Noninteractive init still requires a prepared image.
+
 ## Managed runners from a prepared Mac image
 
 Once an operator-owned image has a clean non-root account and the required Guest
@@ -316,7 +334,7 @@ min_free_disk_mib = 20480
 Choose budgets appropriate for your Mac, start `runmoor run`, and issue image commands from a second terminal using the same configuration. After sealing, add the connection and Tart pool, then run `runmoor reload`.
 
 ```sh
-runmoor image create --name xcode --ipsw "$HOME/Downloads/restore.ipsw" --cpu 2 --memory-mib 4096
+runmoor image create --name xcode --ipsw latest --cpu 2 --memory-mib 4096
 runmoor image create --name imported --from LOCAL_TART_NAME --cpu 2 --memory-mib 4096
 runmoor image create --name imported-oci --from oci://REGISTRY/NAMESPACE/IMAGE:TAG --cpu 2 --memory-mib 4096
 runmoor image list

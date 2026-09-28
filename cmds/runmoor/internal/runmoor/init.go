@@ -2,6 +2,7 @@ package runmoor
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -24,10 +25,23 @@ type InitOptions struct {
 	Image          string
 	ImageSource    string
 	SourceHome     string
+	RunnerVersion  string
 	ImageOnly      bool
 }
 
 func initialize(path string, opts InitOptions, input io.Reader, output io.Writer, interactive bool) error {
+	return initializeWithContext(context.Background(), path, opts, input, output, interactive, defaultGuidedRuntime{})
+}
+
+func initializeWithContext(ctx context.Context, path string, opts InitOptions, input io.Reader, output io.Writer, interactive bool, guided guidedRuntime) error {
+	if exists, err := guidedJournalExists(path); err != nil {
+		return err
+	} else if exists {
+		if !interactive {
+			return problem(ErrConfig, "Interactive Tart setup is pending.", "Run 'runmoor init' in a terminal with the same --config path to resume.")
+		}
+		return resumeGuidedInit(ctx, path, input, output, guided)
+	}
 	if _, err := os.Lstat(path); err == nil || !os.IsNotExist(err) {
 		return problem(ErrConfig, "Configuration already exists or cannot be inspected.", "Choose a new --config path; existing files are never overwritten.")
 	}
@@ -117,13 +131,31 @@ func initialize(path string, opts InitOptions, input io.Reader, output io.Writer
 			}
 		}
 		if opts.Backend == string(Tart) && opts.Image == "" && opts.ImageSource == "" {
-			opts.ImageSource, err = ask("Prepared Tart source (local name, .tvm, sealed UUID or oci:// reference)", "")
-			if err != nil {
-				return err
+			choice, e := ask("Tart image (create/existing)", "create")
+			if e != nil {
+				return e
+			}
+			switch choice {
+			case "create":
+				ipsw, e := ask("Apple IPSW (latest or absolute .ipsw path)", "latest")
+				if e != nil {
+					return e
+				}
+				return startGuidedInit(ctx, path, opts, ipsw, reader, output, guided)
+			case "existing":
+				opts.ImageSource, err = ask("Prepared Tart source (local name, .tvm, sealed UUID or oci:// reference)", "")
+				if err != nil {
+					return err
+				}
+			default:
+				return problem(ErrConfig, "Unknown Tart image choice.", "Choose create or existing.")
 			}
 		}
 	}
 	fields := map[string]any{"schema_version": 1}
+	if opts.ImageOnly && opts.Backend == string(Tart) {
+		fields["host"] = map[string]any{"min_free_disk_mib": 20480}
+	}
 	if !opts.ImageOnly {
 		if opts.Auth == string(App) && (opts.ClientID == "" || opts.InstallationID <= 0) {
 			return problem(ErrConfig, "GitHub App setup needs client and installation identifiers.", "Provide --client-id ID and --installation-id N.")
@@ -165,6 +197,9 @@ func initialize(path string, opts InitOptions, input io.Reader, output io.Writer
 			}
 			pool["image_source"] = source
 		}
+		if opts.RunnerVersion != "" {
+			pool["runner_version"] = opts.RunnerVersion
+		}
 		fields["connections"] = []any{conn}
 		fields["pools"] = []any{pool}
 	}
@@ -188,24 +223,9 @@ func initialize(path string, opts InitOptions, input io.Reader, output io.Writer
 	if err = privateDir(filepath.Dir(path)); err != nil {
 		return err
 	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
-	if err != nil {
-		return problem(ErrConfig, "Cannot create configuration exclusively.", "Choose a new --config path.")
+	if err = writePrivateExclusive(path, []byte("# Runmoor: omitted resources and runner versions are managed automatically.\n# Credential values stay outside this file.\n"+string(body))); err != nil {
+		return problem(ErrConfig, "Cannot create configuration exclusively.", "Choose a new --config path or check private directory permissions.")
 	}
-	success := false
-	defer func() {
-		f.Close()
-		if !success {
-			os.Remove(path)
-		}
-	}()
-	if _, err = io.WriteString(f, "# Runmoor: omitted resources and runner versions are managed automatically.\n# Credential values stay outside this file.\n"+string(body)); err != nil {
-		return err
-	}
-	if err = f.Sync(); err != nil {
-		return err
-	}
-	success = true
 	fmt.Fprintln(output, "Created configuration. "+allocationSummary(c))
 	for _, p := range c.Pools {
 		fmt.Fprintf(output, "Workflow routing: runs-on: %s\n", p.ScaleSet)

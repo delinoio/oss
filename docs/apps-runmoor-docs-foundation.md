@@ -87,3 +87,9 @@ configuration inspection and explicit update requests. Guides label this version
 boundary and retain 0.1.3-compatible manual pins, image setup, credentials,
 license terms and verification limits. Public guides describe operator behavior,
 not the internal SQLite migration journal or repository implementation paths.
+
+The Tart guide also describes interactive first setup from a host-supported
+Apple IPSW, operator completion of the guest account/Guest Agent/tool setup,
+post-reboot readiness validation, automatic runner installation and sealing,
+and same-command interruption recovery. Preserve the exact external Tart and
+Guest Agent version and license boundaries and the published-version note.
