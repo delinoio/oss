@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
 func TestInstructionInspectionRequiresExactOriginalFile(t *testing.T) {
@@ -58,7 +59,11 @@ func TestInstructionInspectionRequiresExactOriginalFile(t *testing.T) {
 func TestInstructionsRemainPrivateExclusiveAndUnchanged(t *testing.T) {
 	for _, mutation := range []string{"overwrite", "changed", "removed", "symlink", "permissions", "empty-inherited"} {
 		t.Run(mutation, func(t *testing.T) {
-			p := instructionProfile{path: filepath.Join(t.TempDir(), "Agents.md"), contents: nativeInstructionFixture}
+			root := filepath.Join(t.TempDir(), "grok")
+			if err := security.PrivateDir(root); err != nil {
+				t.Fatal(err)
+			}
+			p := instructionProfile{path: filepath.Join(root, "Agents.md"), contents: nativeInstructionFixture}
 			if err := p.write(); err != nil {
 				t.Fatal(err)
 			}
