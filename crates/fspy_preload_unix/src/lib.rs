@@ -19,6 +19,8 @@ mod interceptions;
 mod libc;
 #[cfg(all(unix, not(target_env = "musl")))]
 mod macros;
+#[cfg(all(target_os = "macos", not(feature = "pnport")))]
+mod operation;
 
 #[cfg(all(target_os = "macos", feature = "pnport"))]
 mod pnport;

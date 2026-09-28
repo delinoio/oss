@@ -6,6 +6,9 @@ import { CallToolResultSchema, type CallToolResult } from "@modelcontextprotocol
 
 export async function connect(cwd: string, cli = fileURLToPath(new URL("../../bin/react-forge.mjs", import.meta.url))) {
   const transport = new StdioClientTransport({ command: process.execPath, args: [cli, "mcp", "--cwd", cwd], stderr: "pipe", env: Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)) });
+  // The SDK may finish close() after its termination deadline but before the
+  // child emits close. Windows still locks the fixture directory in that gap.
+  const processClosed = new Promise<void>(resolve => { transport.onclose = resolve; });
   let stderr = "";
   transport.stderr?.on("data", chunk => { stderr += String(chunk); });
   const client = new Client({ name: "react-forge-test", version: "1" });
@@ -22,6 +25,17 @@ export async function connect(cwd: string, cli = fileURLToPath(new URL("../../bi
       assert.deepEqual(JSON.parse((result.content[0] as { text: string }).text), result.structuredContent);
       return result.structuredContent as Record<string, any>;
     },
-    async close() { await client.close(); },
+    async close() {
+      await client.close();
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          processClosed,
+          new Promise<never>((_, reject) => {
+            timeout = setTimeout(() => reject(new Error("MCP server did not close after client shutdown")), 10_000);
+          }),
+        ]);
+      } finally { if (timeout) clearTimeout(timeout); }
+    },
   };
 }

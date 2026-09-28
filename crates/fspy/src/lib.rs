@@ -40,6 +40,8 @@ pub struct ChildTermination {
 }
 
 pub struct TrackedChild {
+    /// Root process identifier for owned-execution cleanup.
+    pub root_pid: u32,
     /// The handle for writing to the child's standard input (stdin), if it has
     /// been captured.
     pub stdin: Option<ChildStdin>,

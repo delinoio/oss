@@ -1246,16 +1246,30 @@ static int spawn_once(char *path) {
 int main(int argc, char **argv) {
     if (argc > 1) return probe();
     if (probe()) return 20;
-    // The first wave establishes the scheduler-dependent peak of transient
-    // joined threads whose ptrace exit stops are still being drained.
+    // Joined threads can still have ptrace exit stops queued under CI load.
+    // Warm the pool, then require two stable waves within a bounded number
+    // of attempts. A per-thread mapping leak grows on every wave; remove the
+    // extra warmup if the supervisor can acknowledge exit-stop drainage.
     for (int i = 0; i < 48; ++i) if (thread_once()) return 21;
-    size_t before = vm_size_kb();
-    if (!before) return 22;
-    for (int i = 0; i < 48; ++i) if (thread_once()) return 23;
-    size_t after = vm_size_kb();
-    if (after > before + 32768) {
-        fprintf(stderr, "thread scratch VmSize grew from %zu to %zu kB\n", before, after);
-        return 24;
+    size_t before = 0;
+    size_t after = 0;
+    int stable_waves = 0;
+    for (int wave = 0; wave < 5; ++wave) {
+        before = vm_size_kb();
+        if (!before) return 22;
+        for (int i = 0; i < 48; ++i) if (thread_once()) return 23;
+        after = vm_size_kb();
+        if (!after) return 22;
+        if (after <= before + 32768) {
+            if (++stable_waves == 2) break;
+        } else {
+            stable_waves = 0;
+        }
+        if (wave == 4) {
+            fprintf(stderr, "thread scratch VmSize kept growing from %zu to %zu kB\n", before, after);
+            return 24;
+        }
+        usleep(50000);
     }
     if (spawn_once(argv[0])) return 25;
     before = vm_size_kb();

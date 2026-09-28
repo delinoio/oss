@@ -8,6 +8,8 @@ use std::{
 use fspy_shared_unix::exec::ExecResolveConfig;
 use libc::{c_char, c_int};
 
+#[cfg(target_os = "macos")]
+use crate::operation::{self, Kind};
 use crate::{
     client::{global_client, raw_exec::RawExec},
     macros::intercept,
@@ -49,6 +51,18 @@ unsafe fn handle_posix_spawn(
     let client = global_client()
         .expect("posix_spawn(p) unexpectedly called before client initialized in ctor");
 
+    #[cfg(target_os = "macos")]
+    if operation::safe_path(file).is_none() {
+        // The legacy exec resolver reads file directly. Preserve the native
+        // spawn error while the result side channel records an unavailable path.
+        // SAFETY: enter_path copies the caller pointer without dereferencing it.
+        let operation = unsafe { operation::enter_path(Kind::Exec, file) };
+        // SAFETY: the original native call validates its unchanged arguments.
+        let result = unsafe { original(pid, file, file_actions, attrp, argv, envp) };
+        operation::finish_spawn(operation, result);
+        return result;
+    }
+
     // POSIX file actions are opaque and may change the child's cwd before
     // image lookup. Preserve the caller's relative pathname in that case;
     // parent-side resolution could launch a different image. A successful
@@ -79,14 +93,21 @@ unsafe fn handle_posix_spawn(
             fspy_nostd_alloc::pooled_bump(),
             |raw_command, pre_exec| {
                 let call_original = move || {
-                    original(
+                    #[cfg(target_os = "macos")]
+                    // The resolved program pointer remains valid for the
+                    // entire native spawn call under the enclosing unsafe block.
+                    let operation = operation::enter_path(Kind::Exec, raw_command.prog);
+                    let result = original(
                         pid,
                         raw_command.prog,
                         file_actions,
                         attrp,
                         raw_command.argv.cast(),
                         raw_command.envp.cast(),
-                    )
+                    );
+                    #[cfg(target_os = "macos")]
+                    operation::finish_spawn(operation, result);
+                    result
                 };
                 if let Some(pre_exec) = pre_exec {
                     thread::scope(move |s| {

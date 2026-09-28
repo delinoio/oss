@@ -9,8 +9,9 @@ clibox is a native command-line toolbox for everyday development, available thro
 - Replace text, format or adjust dates, encode or decode Base64, and compute or verify hashes.
 - Wait for a TCP endpoint, HTTP response, or regular file.
 - List dotenv keys, merge configuration layers, and normalize YAML.
+- In source builds for a future release, trace file operations, compare records, watch observed inputs, measure read coverage and delays, verify reproduction bundles, and pause matching operations.
 
-The [command index](/clibox/commands) covers all 25 commands. Start with [installation](/clibox/install) and the [getting started guide](/clibox/getting-started).
+The [command index](/clibox/commands) covers all 25 commands in published version 0.2.0 and links to the seven upcoming [file access workflows](/clibox/fspy). Start with [installation](/clibox/install) and the [getting started guide](/clibox/getting-started).
 
 ## Supported environments
 
@@ -20,7 +21,7 @@ The npm launcher requires Node.js 22 or newer. Prebuilt packages support macOS a
 
 Use the same commands from a shell or `package.json` scripts. clibox works with your current user permissions and adds no saved application configuration, cache, history, or telemetry. Command results go to stdout and redacted diagnostics go to stderr. See [output and cancellation](/clibox/output) for exit codes, partial output, and file replacement boundaries.
 
-Published version 0.1.6 includes `env run`, `port list`, and `hash compute`. The next release adds the five `run with-*` execution wrappers and renames environment execution to `run env`; the [migration guide](/clibox/migration) explains the version-specific syntax and earlier changes.
+Published version 0.2.0 includes `run env`, the five `run with-*` execution wrappers, and `system cpus`. The [migration guide](/clibox/migration) explains older syntax. The `fspy` family remains in source until a future manual release.
 
 ## Learn more
 

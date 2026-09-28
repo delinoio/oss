@@ -1,8 +1,8 @@
 # Command index
 
-The index uses `run env`, the five `run with-*` wrappers, and `system cpus` from the next release. Published version **0.1.6** instead uses **`env run`** and does not include the wrappers or CPU queries. The other command names below are already available in 0.1.6. See [Migration](/clibox/migration).
+The 25 commands below are in published version **0.2.0**. See [Migration](/clibox/migration) for older syntax. The seven [file access workflows](/clibox/fspy) are implemented in source for a future release and are not in the published 0.2.0 packages.
 
-All 25 commands are available through the native executable and the npm launcher in the next release. Use `pnpm exec clibox` or `npm exec -- clibox` for a project-local installation.
+Use `pnpm exec clibox` or `npm exec -- clibox` for a project-local installation.
 
 | Command | Purpose |
 | --- | --- |
@@ -31,6 +31,10 @@ All 25 commands are available through the native executable and the npm launcher
 | [`clibox dotenv list`](/clibox/configuration#list-dotenv-keys) | List sorted unique dotenv keys. |
 | [`clibox dotenv merge`](/clibox/configuration#merge-dotenv-files) | Merge dotenv layers in order. |
 | [`clibox yaml normalize`](/clibox/configuration#normalize-yaml) | Expand YAML references and normalize formatting. |
+
+## File access workflows in source
+
+The source CLI adds `clibox fspy record`, `compare`, `autowatch`, `assetcov`, `latencylab`, `min-repro`, and `fbreak`. See [File access workflows](/clibox/fspy) for syntax and limits. These seven commands await a future packaged release.
 
 ## Help and version
 

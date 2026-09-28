@@ -5,6 +5,8 @@ use fspy_shared_unix::exec::ExecResolveConfig;
 use libc::{c_char, c_int};
 use with_argv::with_argv;
 
+#[cfg(target_os = "macos")]
+use crate::operation::{self, Kind};
 use crate::{
     client::{global_client, raw_exec::RawExec},
     macros::intercept,
@@ -34,6 +36,17 @@ fn handle_exec(
     argv: *const *const libc::c_char,
     envp: *const *const libc::c_char,
 ) -> libc::c_int {
+    #[cfg(target_os = "macos")]
+    if operation::safe_path(prog).is_none() {
+        // The legacy exec resolver reads prog directly. Let the native call
+        // diagnose an invalid or unterminated pathname without that read.
+        // SAFETY: enter_path copies the caller pointer without dereferencing it.
+        let operation = unsafe { operation::enter_path(Kind::ExecReplace, prog) };
+        // SAFETY: the original native call validates its unchanged arguments.
+        let result = unsafe { execve::original()(prog, argv, envp) };
+        operation::finish(operation, i64::from(result));
+        return result;
+    }
     let client =
         global_client().expect("exec unexpectedly called before client initialized in ctor");
     // SAFETY: prog, argv, and envp are valid pointers to C strings/arrays forwarded
@@ -47,8 +60,14 @@ fn handle_exec(
                 if let Some(pre_exec) = pre_exec.as_ref() {
                     pre_exec.run()?;
                 }
+                #[cfg(target_os = "macos")]
+                // The successor image's hello completes a successful replacement;
+                // only a failed execve returns to complete in this image.
+                let operation = operation::enter_path(Kind::ExecReplace, raw_command.prog);
                 let result =
                     execve::original()(raw_command.prog, raw_command.argv, raw_command.envp);
+                #[cfg(target_os = "macos")]
+                operation::finish(operation, i64::from(result));
                 // A Linux image can be named through an inspected descriptor.
                 // Keep it alive until the kernel has attempted execve.
                 #[cfg(target_os = "linux")]
