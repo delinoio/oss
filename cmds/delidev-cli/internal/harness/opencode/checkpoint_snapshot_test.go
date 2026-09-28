@@ -31,14 +31,19 @@ const snapshotFixtureConfig = `[core]
 `
 
 func TestSnapshotConfigRejectsExecutableOrForeignSettings(t *testing.T) {
+	// Build the baseline from the native path so the rejection cases remain
+	// meaningful on Windows, where the fixture workspace has a drive letter.
+	nativeWorkspace := fixtureWorkspacePath()
+	nativeWorktree := "\"" + strings.NewReplacer("\\", "\\\\", "\"", "\\\"").Replace(nativeWorkspace) + "\""
+	nativeConfig := strings.Replace(snapshotFixtureConfig, "worktree = /private/workspace", "worktree = "+nativeWorktree, 1)
 	for _, bad := range []string{"[include]\n path = /private/foreign", "[core]\n hooksPath = /private/hook", "[filter \"unsafe\"]\n clean = command", "[remote \"origin\"]\n url = https://invalid.example", "[extensions]\n objectFormat = sha256", "[core]\n fsmonitor = command", "[core]\n bare = false"} {
-		if safeSnapshotConfig([]byte(snapshotFixtureConfig+bad), fixtureWorkspacePath()) {
+		if safeSnapshotConfig([]byte(nativeConfig+bad), nativeWorkspace) {
 			t.Fatal("unverified configuration accepted")
 		}
 	}
-	for _, change := range []struct{ from, to string }{{"false", "true"}, {"version = 4", "version = 2"}, {"threads = true", "threads = false"}, {"worktree = /private/workspace", "worktree = /private/foreign"}, {"symlinks = true\n", ""}} {
-		raw := strings.Replace(snapshotFixtureConfig, change.from, change.to, 1)
-		if safeSnapshotConfig([]byte(raw), fixtureWorkspacePath()) {
+	for _, change := range []struct{ from, to string }{{"false", "true"}, {"version = 4", "version = 2"}, {"threads = true", "threads = false"}, {"worktree = " + nativeWorktree, "worktree = /private/foreign"}, {"symlinks = true\n", ""}} {
+		raw := strings.Replace(nativeConfig, change.from, change.to, 1)
+		if safeSnapshotConfig([]byte(raw), nativeWorkspace) {
 			t.Fatal("native setting changed")
 		}
 	}
@@ -49,7 +54,7 @@ func TestSnapshotConfigRejectsExecutableOrForeignSettings(t *testing.T) {
 			t.Fatal("exact quoted native worktree rejected")
 		}
 	}
-	if !safeSnapshotConfig([]byte(snapshotFixtureConfig), fixtureWorkspacePath()) {
+	if !safeSnapshotConfig([]byte(nativeConfig), nativeWorkspace) {
 		t.Fatal("native profile rejected")
 	}
 }
