@@ -259,10 +259,13 @@ async fn remove_connection(
     let instance = uuid::Uuid::now_v7().to_string();
     let original = {
         let mut values = windows.0.lock().map_err(|_| NativeFailure::Busy)?;
-        if profile.state != SavedConnectionState::Removed
-            && values.get(&label).is_some_and(|binding| binding.closing)
-        {
-            return Err(NativeFailure::Busy);
+        if let Some(binding) = values.get(&label).filter(|binding| binding.closing) {
+            let retry = profile.state == SavedConnectionState::Removing
+                && binding.profile.state == SavedConnectionState::Removing
+                && binding.profile.removal == profile.removal;
+            if profile.state != SavedConnectionState::Removed && !retry {
+                return Err(NativeFailure::Busy);
+            }
         }
         values.insert(
             label.clone(),
@@ -286,21 +289,34 @@ async fn remove_connection(
         }
         return Err(NativeFailure::SidecarFailed);
     }
+    let retry_lookup = Arc::clone(&connector);
+    let retry_id = id.clone();
+    let retry_request = request_id.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
         connector.remove_saved(&id, &request_id, revision)
     })
     .await
     .map_err(|_| NativeFailure::SidecarFailed)
     .and_then(|value| value);
-    let mut values = windows.0.lock().map_err(|_| NativeFailure::SidecarFailed)?;
-    // Keep a completed deletion barrier for this app process. A previously
-    // started open can still carry pre-removal metadata after Go finishes.
+    // Keep the barrier even when cleanup fails: Go may already have committed
+    // the removal marker, and an in-flight open can hold older paired metadata.
+    // Re-inspect an uncertain failure so its exact durable cleanup retry can
+    // replace this barrier without admitting a stale open.
     if result.is_err()
-        && values
-            .get(&label)
-            .is_some_and(|binding| binding.instance == instance)
+        && let Ok(Ok(observed)) =
+            tauri::async_runtime::spawn_blocking(move || retry_lookup.inspect_saved(&retry_id))
+                .await
+        && observed.state == SavedConnectionState::Removing
+        && observed.removal.as_ref().is_some_and(|removal| {
+            removal.request_id == retry_request && removal.expected_revision == revision
+        })
     {
-        values.remove(&label);
+        let mut values = windows.0.lock().map_err(|_| NativeFailure::SidecarFailed)?;
+        if let Some(binding) = values.get_mut(&label)
+            && binding.instance == instance
+        {
+            binding.profile = observed;
+        }
     }
     result
 }
