@@ -99,17 +99,18 @@ impl Presented {
             let Ok(message) = message else { return false };
             match message.header().member().map(|v| v.as_str()) {
                 Some("ActionInvoked") => {
-                    if let Ok((id, action)) = message.body().deserialize::<(u32, String)>() {
-                        if id == self.id && action == "default" {
-                            return true;
-                        }
+                    if let Ok((id, action)) = message.body().deserialize::<(u32, String)>()
+                        && id == self.id
+                        && action == "default"
+                    {
+                        return true;
                     }
                 }
                 Some("NotificationClosed") => {
-                    if let Ok((id, _)) = message.body().deserialize::<(u32, u32)>() {
-                        if id == self.id {
-                            return false;
-                        }
+                    if let Ok((id, _)) = message.body().deserialize::<(u32, u32)>()
+                        && id == self.id
+                    {
+                        return false;
                     }
                 }
                 _ => {}
