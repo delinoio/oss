@@ -37,9 +37,24 @@ id -nG
 When the socket belongs to the `docker` group, an administrator can add the
 Runmoor user to that group with `sudo usermod -aG docker "$USER"`. Log out
 completely and log back in, then verify `docker info` again without `sudo` and
-restart the Runmoor user service. A `newgrp` shell does not update an already
-running user service. Membership in the `docker` group grants root-level Docker
-control; review the [official Docker post-installation guidance](https://docs.docker.com/engine/install/linux-postinstall/)
+check whether the systemd user manager stayed alive across logout:
+
+```sh
+loginctl show-user "$(id -un)" --property=Linger
+```
+
+If this reports `Linger=yes`, the user manager may still have its old group
+membership even though `docker info` works in the new login. After active
+Runmoor work has drained and stopped, have an administrator run
+`sudo loginctl terminate-user RUNMOOR_USER` from a separate administrator
+session (replace `RUNMOOR_USER` with the account name), or reboot the host.
+Terminating the user ends all of that account's sessions and user services.
+Log in again, verify `docker info` without `sudo`, then run
+`runmoor service start`. Restarting only `runmoor.service` or entering a
+`newgrp` shell does not refresh a still-running user manager's groups. See the
+[systemd loginctl reference](https://www.freedesktop.org/software/systemd/man/latest/loginctl.html)
+for lingering and user termination. Membership in the `docker` group grants
+root-level Docker control; review the [official Docker post-installation guidance](https://docs.docker.com/engine/install/linux-postinstall/)
 before granting it. If the permission error names a Docker CLI configuration
 file instead of the socket, diagnose that file's ownership separately.
 

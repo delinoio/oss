@@ -93,6 +93,8 @@ implementation paths.
 Ubuntu operator guidance distinguishes `runmoor init` from `config validate`,
 locates private configuration access failures without removing existing state,
 explains Docker capacity verification and non-root local-socket access, and
-shows how to inspect an existing systemd user unit and the original systemd
-failure before replacing a service definition. The CLI README links to the
+accounts for lingering systemd user managers retaining old group membership
+after a Docker group change. It shows how to inspect an existing systemd user
+unit and the original systemd failure before replacing a service definition.
+The CLI README links to the
 corresponding public guides. No unverified service-start root cause is claimed.

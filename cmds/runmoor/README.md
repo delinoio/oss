@@ -415,9 +415,13 @@ for owner-only file requirements and path checks.
 until Runmoor can query the local engine; it retries automatically. Run
 `docker info` without `sudo` as the Runmoor user. If the Unix socket denies
 access, check its group and the user's active groups. Granting `docker` group
-access gives root-level Docker control and requires a new login session before
-the user service receives the new membership. Runmoor itself remains a user
-service. See the [Docker guide](https://oss.delino.io/runmoor/docker).
+access gives root-level Docker control. Log out and back in, then check
+`loginctl show-user "$(id -un)" --property=Linger`: with `Linger=yes`, the
+systemd user manager may retain its old groups despite a successful `docker
+info` in the new login. Drain active work, then have an administrator terminate
+the user's sessions and manager from a separate session or reboot before
+starting Runmoor again. Runmoor itself remains a user service. See the
+[Docker guide](https://oss.delino.io/runmoor/docker) for the full procedure.
 
 An existing service definition prevents `runmoor service install` from
 overwriting it. On Ubuntu, inspect `systemctl --user cat runmoor.service` for
