@@ -23,6 +23,7 @@ const (
 	RepositoryDiff     RepositoryQueryOperation = "diff"
 	RepositoryChecks   RepositoryQueryOperation = "checks"
 	RepositoryStatuses RepositoryQueryOperation = "statuses"
+	RepositoryRules    RepositoryQueryOperation = "rules"
 )
 
 type RepositoryItemState string
@@ -55,8 +56,8 @@ func (q RepositoryQuery) Validate() error {
 		return invalid()
 	}
 	switch q.Operation {
-	case RepositoryDiff, RepositoryDetail:
-		if q.Operation == RepositoryDiff && q.Kind != RepositoryPullRequest {
+	case RepositoryDiff, RepositoryDetail, RepositoryRules:
+		if (q.Operation == RepositoryDiff || q.Operation == RepositoryRules) && q.Kind != RepositoryPullRequest {
 			return invalid()
 		}
 		if !PositiveDecimal(q.Number) || q.State != "" || q.Search != "" || q.Page != 0 || q.PageSize != 0 {
@@ -220,10 +221,11 @@ func repositorySHA(value string) bool {
 }
 
 func (q RepositoryQuery) IsPRObservation() bool {
-	return q.Operation == RepositoryDiff || q.Operation == RepositoryChecks || q.Operation == RepositoryStatuses
+	return q.Operation == RepositoryDiff || q.Operation == RepositoryChecks || q.Operation == RepositoryStatuses || q.Operation == RepositoryRules
 }
 
 type RepositoryQueryResult struct {
+	Rules              *PullRequestRules          `json:"rules,omitempty"`
 	Diff               *PullRequestDiff           `json:"diff,omitempty"`
 	Checks             *PullRequestChecks         `json:"checks,omitempty"`
 	Statuses           *PullRequestCommitStatuses `json:"statuses,omitempty"`
@@ -250,7 +252,7 @@ func (r RepositoryQueryResult) Validate() error {
 		return invalid()
 	}
 	q := r.Query
-	if q.Operation == RepositoryDetail || q.Operation == RepositoryDiff {
+	if q.Operation == RepositoryDetail || q.Operation == RepositoryDiff || q.Operation == RepositoryRules {
 		if len(r.Items) != 1 || r.NextPage != 0 {
 			return invalid()
 		}
@@ -278,7 +280,14 @@ func (r RepositoryQueryResult) Validate() error {
 		}
 		itemQuery = RepositoryQuery{Kind: RepositoryPullRequest, Operation: RepositoryDetail, Number: q.Number}
 	}
+	if q.Operation != RepositoryRules && r.Rules != nil {
+		return invalid()
+	}
 	switch q.Operation {
+	case RepositoryRules:
+		if r.Rules == nil || r.Diff != nil || r.Checks != nil || r.Statuses != nil || r.Rules.Validate(r.Items[0]) != nil {
+			return invalid()
+		}
 	case RepositoryDiff:
 		if r.Diff == nil || r.Checks != nil || r.Statuses != nil || r.Diff.Validate(r.Items[0]) != nil {
 			return invalid()

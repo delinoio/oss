@@ -152,54 +152,68 @@ func (c *Client) queryPRObservation(ctx context.Context, token []byte, repositor
 		return result, err
 	}
 	result.Items = []domain.RepositoryItem{item}
-	base := repositoryPath(repository)
-	values := url.Values{"page": {strconv.FormatUint(uint64(q.Page), 10)}, "per_page": {strconv.FormatUint(uint64(q.PageSize), 10)}}
-	var path string
-	var read readResult
-	switch q.Operation {
-	case domain.RepositoryDiff:
-		// Immutable commit operands prevent an A -> B -> A PR-head race from
-		// mislabeling a diff fetched by mutable PR number. No fallback is safe.
-		path = base + "/compare/" + item.BaseSHA + "..." + item.HeadSHA
-		read = c.readRepository(ctx, token, path, repositoryDiff)
-	case domain.RepositoryChecks:
-		values.Set("filter", "latest")
-		path = base + "/commits/" + item.HeadSHA + "/check-runs?" + values.Encode()
-		read = c.readRepositoryJSON(ctx, token, path)
-	case domain.RepositoryStatuses:
-		path = base + "/commits/" + item.HeadSHA + "/status?" + values.Encode()
-		read = c.readRepositoryJSON(ctx, token, path)
-	default:
-		return result, queryUnavailable()
-	}
-	if read.state != domain.IntegrationAccessAvailable {
-		return result, readProblem(read)
-	}
-	switch q.Operation {
-	case domain.RepositoryDiff:
-		if read.link != "" {
-			return result, queryUnavailable()
-		}
-		sum := sha256.Sum256(read.raw)
-		result.Diff = &domain.PullRequestDiff{Patch: string(read.raw), Digest: hex.EncodeToString(sum[:]), BaseSHA: item.BaseSHA, HeadSHA: item.HeadSHA}
-		if result.Diff.Validate(item) != nil {
-			return result, queryUnavailable()
-		}
-	case domain.RepositoryChecks:
-		result.Checks, err = parsePRChecks(read.raw, repository, item, q.PageSize)
-	case domain.RepositoryStatuses:
-		result.Statuses, err = parsePRStatuses(read.raw, repository, item, q.PageSize)
-	}
-	if err != nil {
-		return result, err
-	}
-	if q.Operation != domain.RepositoryDiff {
-		result.NextPage, err = queryNextPage(read.link, path, q.Page, repository)
+	if q.Operation == domain.RepositoryRules {
+		result.Rules, err = c.readActiveRules(ctx, token, repository, item)
 		if err != nil {
 			return result, err
 		}
-		if result.NextPage > 10000 {
-			return result, domain.Fail(domain.ResourceExhausted, "The PR observation page limit is reached.", "Inspect the selected PR in GitHub.")
+		repeated, err := c.readActiveRules(ctx, token, repository, item)
+		if err != nil {
+			return result, err
+		}
+		if repeated.Digest != result.Rules.Digest {
+			return result, domain.Fail(domain.Conflict, "The active rules changed during the read.", "Refresh the PR rules explicitly; no earlier requirements were published.")
+		}
+	} else {
+		base := repositoryPath(repository)
+		values := url.Values{"page": {strconv.FormatUint(uint64(q.Page), 10)}, "per_page": {strconv.FormatUint(uint64(q.PageSize), 10)}}
+		var path string
+		var read readResult
+		switch q.Operation {
+		case domain.RepositoryDiff:
+			// Immutable commit operands prevent an A -> B -> A PR-head race from
+			// mislabeling a diff fetched by mutable PR number. No fallback is safe.
+			path = base + "/compare/" + item.BaseSHA + "..." + item.HeadSHA
+			read = c.readRepository(ctx, token, path, repositoryDiff)
+		case domain.RepositoryChecks:
+			values.Set("filter", "latest")
+			path = base + "/commits/" + item.HeadSHA + "/check-runs?" + values.Encode()
+			read = c.readRepositoryJSON(ctx, token, path)
+		case domain.RepositoryStatuses:
+			path = base + "/commits/" + item.HeadSHA + "/status?" + values.Encode()
+			read = c.readRepositoryJSON(ctx, token, path)
+		default:
+			return result, queryUnavailable()
+		}
+		if read.state != domain.IntegrationAccessAvailable {
+			return result, readProblem(read)
+		}
+		switch q.Operation {
+		case domain.RepositoryDiff:
+			if read.link != "" {
+				return result, queryUnavailable()
+			}
+			sum := sha256.Sum256(read.raw)
+			result.Diff = &domain.PullRequestDiff{Patch: string(read.raw), Digest: hex.EncodeToString(sum[:]), BaseSHA: item.BaseSHA, HeadSHA: item.HeadSHA}
+			if result.Diff.Validate(item) != nil {
+				return result, queryUnavailable()
+			}
+		case domain.RepositoryChecks:
+			result.Checks, err = parsePRChecks(read.raw, repository, item, q.PageSize)
+		case domain.RepositoryStatuses:
+			result.Statuses, err = parsePRStatuses(read.raw, repository, item, q.PageSize)
+		}
+		if err != nil {
+			return result, err
+		}
+		if q.Operation != domain.RepositoryDiff {
+			result.NextPage, err = queryNextPage(read.link, path, q.Page, repository)
+			if err != nil {
+				return result, err
+			}
+			if result.NextPage > 10000 {
+				return result, domain.Fail(domain.ResourceExhausted, "The PR observation page limit is reached.", "Inspect the selected PR in GitHub.")
+			}
 		}
 	}
 	current, err := readDetail()

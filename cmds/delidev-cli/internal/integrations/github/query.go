@@ -12,6 +12,7 @@ import (
 )
 
 type RepositoryQueryObservation struct {
+	Rules              *domain.PullRequestRules
 	Diff               *domain.PullRequestDiff
 	Checks             *domain.PullRequestChecks
 	Statuses           *domain.PullRequestCommitStatuses

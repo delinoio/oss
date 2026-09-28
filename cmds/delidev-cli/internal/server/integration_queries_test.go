@@ -130,6 +130,8 @@ func TestRepositoryQueriesExposeOnlyMatchingPRObservationFamily(t *testing.T) {
 			value.Diff = &domain.PullRequestDiff{Patch: "", Digest: hex.EncodeToString(sum[:]), BaseSHA: item.BaseSHA, HeadSHA: item.HeadSHA}
 		case domain.RepositoryChecks:
 			value.Checks = &domain.PullRequestChecks{HeadSHA: item.HeadSHA, Filter: domain.LatestCheckRuns, TotalCount: "0", Runs: []domain.PullRequestCheck{}}
+		case domain.RepositoryRules:
+			value.Rules = &domain.PullRequestRules{BaseRef: item.BaseRef, BaseSHA: item.BaseSHA, HeadSHA: item.HeadSHA, Rules: []domain.ActiveRepositoryRule{}, Digest: domain.ActiveRulesDigest(nil)}
 		case domain.RepositoryStatuses:
 			value.Statuses = &domain.PullRequestCommitStatuses{HeadSHA: item.HeadSHA, State: domain.CommitStatusPending, NativeState: "pending", TotalCount: "0", Contexts: []domain.PullRequestCommitStatus{}}
 		}
@@ -138,9 +140,9 @@ func TestRepositoryQueriesExposeOnlyMatchingPRObservationFamily(t *testing.T) {
 		}
 		return value, nil
 	})
-	for _, operation := range []domain.RepositoryQueryOperation{domain.RepositoryDiff, domain.RepositoryChecks, domain.RepositoryStatuses} {
+	for _, operation := range []domain.RepositoryQueryOperation{domain.RepositoryDiff, domain.RepositoryChecks, domain.RepositoryStatuses, domain.RepositoryRules} {
 		query := domain.RepositoryQuery{Kind: domain.RepositoryPullRequest, Operation: operation, Number: "17"}
-		if operation != domain.RepositoryDiff {
+		if operation != domain.RepositoryDiff && operation != domain.RepositoryRules {
 			query.Page = 1
 			query.PageSize = 20
 		}

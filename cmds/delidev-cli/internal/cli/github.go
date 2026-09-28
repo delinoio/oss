@@ -34,6 +34,8 @@ func githubCommand(ctx context.Context, c client, args []string) (any, error) {
 		query.Operation = domain.RepositoryDiff
 	case "checks":
 		query.Operation = domain.RepositoryChecks
+	case "rules":
+		query.Operation = domain.RepositoryRules
 	case "statuses":
 		query.Operation = domain.RepositoryStatuses
 	default:
@@ -46,7 +48,7 @@ func githubCommand(ctx context.Context, c client, args []string) (any, error) {
 	if query.Operation == domain.RepositoryDetail || query.IsPRObservation() {
 		f.StringVar(&number, "number", "", "")
 	}
-	if query.Operation != domain.RepositoryDetail && query.Operation != domain.RepositoryDiff {
+	if query.Operation != domain.RepositoryDetail && query.Operation != domain.RepositoryDiff && query.Operation != domain.RepositoryRules {
 		f.UintVar(&page, "page", 1, "")
 		f.UintVar(&size, "page-size", 20, "")
 	}

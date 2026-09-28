@@ -807,7 +807,7 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   github pr|issue list --repository-id ID [--state open|closed|all] [--page N --page-size N]
   github pr|issue search --repository-id ID --text TERMS [--state open|closed|all] [--page N]
   github pr|issue get|open --repository-id ID --number N
-  github pr diff --repository-id ID --number N
+  github pr diff|rules --repository-id ID --number N
   github pr checks|statuses --repository-id ID --number N [--page N --page-size N]
   provider presets
   provider create --preset PRESET [--name NAME]
