@@ -104,6 +104,13 @@ jobs:
         run: |
           node scripts/release/runmoor.mjs checksums --output dist
           node scripts/release/runmoor.mjs verify --output dist
+      - name: Validate Homebrew Formula rendering
+        env:
+          RELEASE_VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          node scripts/release/runmoor-homebrew.mjs render \
+            --version "$RELEASE_VERSION" --revision "$GITHUB_SHA" \
+            --archives dist --output "$RUNNER_TEMP/runmoor.rb"
       - uses: actions/upload-artifact@v7
         with:
           name: runmoor-unsigned-archives
@@ -283,6 +290,20 @@ jobs:
             notes: readFileSync(process.env.RUNMOOR_RELEASE_NOTES, 'utf8'),
           });
           JS
+
+  homebrew:
+    name: Publish Homebrew Formula
+    needs: [plan, publish]
+    if: needs.plan.outputs.mode == 'publish'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/release-runmoor-homebrew.yml
+    secrets:
+      DELINO_RELEASE_BOT_PRIVATE_KEY: ${{ secrets.DELINO_RELEASE_BOT_PRIVATE_KEY }}
+    with:
+      version: ${{ needs.plan.outputs.version }}
+      revision: ${{ github.sha }}
+      dry_run: false
 
   linux-packages:
     name: Publish native Linux packages

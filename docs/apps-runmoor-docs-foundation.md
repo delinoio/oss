@@ -71,6 +71,8 @@
 
 ## Native package guidance
 
+The installation page and CLI README also document `brew install delinoio/tap/runmoor`, version inspection, explicit Homebrew upgrades and removal for macOS 14+ Apple Silicon. Homebrew uses the same signed public archive as direct installation, and checks the Formula's pinned SHA-256 during installation. Preserve direct archive/Sigstore instructions and clarify that Tart, runner configuration and Runmoor service registration remain operator-owned. Intel and Linux Homebrew are not supported.
+
 Runmoor `0.1.3` native packages have passed the complete public installation matrix and are documented as available through stable. Shared executable installation/update/removal examples use Runmoor; other projects require their own verified publication before availability claims change. Public installation guidance must distinguish package compatibility from manager runtime support: Linux manager execution requires Ubuntu 22.04+ on x86-64 or ARM64, while non-Ubuntu package checks prove installation and version/help execution only.
 
 The public installation surface documents the exact repository key fingerprint, supported Linux distribution/architecture matrix, stable or explicit preview registration, and package-manager install/update/remove commands. Operational details remain in `docs/repository-linux-packages-contract.md`. Installation guidance must preserve the existing release-archive and other supported installation methods.

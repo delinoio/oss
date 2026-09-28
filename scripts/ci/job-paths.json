@@ -542,6 +542,8 @@
       "scripts/release/linux/**",
       "scripts/release/project.mjs",
       "scripts/release/runmoor.mjs",
+      "scripts/release/runmoor-homebrew.mjs",
+      "packaging/homebrew/templates/runmoor.rb.tmpl",
       "scripts/release/update-homebrew.sh",
       "scripts/release/devhud-operations.test.mjs",
       "servers/devhud-api/**",

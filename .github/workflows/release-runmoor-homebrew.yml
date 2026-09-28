@@ -1,0 +1,115 @@
+name: Release Runmoor Homebrew
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact published Runmoor MAJOR.MINOR.PATCH version
+        required: true
+        type: string
+      revision:
+        description: Exact 40-hex source commit of the published release
+        required: true
+        type: string
+      dry_run:
+        description: Verify and install in CI without updating the tap
+        required: true
+        default: true
+        type: boolean
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+      revision:
+        required: true
+        type: string
+      dry_run:
+        default: true
+        type: boolean
+    secrets:
+      DELINO_RELEASE_BOT_PRIVATE_KEY:
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-runmoor-homebrew
+  cancel-in-progress: false
+
+jobs:
+  homebrew:
+    runs-on: macos-14
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+      RELEASE_REVISION: ${{ inputs.revision }}
+      HOMEBREW_NO_AUTO_UPDATE: 1
+      HOMEBREW_NO_ANALYTICS: 1
+      HOMEBREW_NO_INSTALL_CLEANUP: 1
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+      - name: Validate publication context before credentials
+        if: ${{ !inputs.dry_run }}
+        run: |
+          node --input-type=module <<'JS'
+          import { homebrewPlan, publicationContext } from './scripts/release/runmoor-homebrew.mjs';
+          publicationContext(homebrewPlan({ version: process.env.RELEASE_VERSION, revision: process.env.RELEASE_REVISION }));
+          JS
+      - uses: sigstore/cosign-installer@v4.1.1
+      - name: Verify public release and render Formula
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node scripts/release/runmoor-homebrew.mjs prepare \
+            --version "$RELEASE_VERSION" --revision "$RELEASE_REVISION" \
+            --output "$RUNNER_TEMP/runmoor.rb"
+      - name: Validate Homebrew installation on Apple Silicon
+        run: |
+          test "$(uname -m)" = arm64
+          brew tap-new --no-git delinoio/runmoor-validation
+          cp "$RUNNER_TEMP/runmoor.rb" "$(brew --repository delinoio/runmoor-validation)/Formula/runmoor.rb"
+          brew install --formula delinoio/runmoor-validation/runmoor
+          brew test delinoio/runmoor-validation/runmoor
+          brew audit --strict delinoio/runmoor-validation/runmoor
+          test "$(runmoor version)" = "runmoor $RELEASE_VERSION ($RELEASE_REVISION)"
+          brew uninstall delinoio/runmoor-validation/runmoor
+          brew untap delinoio/runmoor-validation
+      - name: Create Homebrew repository token
+        if: ${{ !inputs.dry_run }}
+        id: tap-bot
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.DELINO_RELEASE_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.DELINO_RELEASE_BOT_PRIVATE_KEY }}
+          owner: delinoio
+          repositories: homebrew-tap
+          permission-contents: write
+      - name: Resolve Homebrew bot identity
+        if: ${{ !inputs.dry_run }}
+        id: tap-identity
+        env:
+          GH_TOKEN: ${{ steps.tap-bot.outputs.token }}
+        run: node scripts/release/project.mjs bot-identity
+      - name: Publish verified Homebrew Formula
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HOMEBREW_TAP_GH_TOKEN: ${{ steps.tap-bot.outputs.token }}
+          RELEASE_BOT_NAME: ${{ steps.tap-identity.outputs.name }}
+          RELEASE_BOT_EMAIL: ${{ steps.tap-identity.outputs.email }}
+        run: |
+          node scripts/release/runmoor-homebrew.mjs publish \
+            --version "$RELEASE_VERSION" --revision "$RELEASE_REVISION" \
+            --output "$RUNNER_TEMP/runmoor.rb"
+      - name: Verify installation from the public tap
+        if: ${{ !inputs.dry_run }}
+        run: |
+          brew install delinoio/tap/runmoor
+          brew test delinoio/tap/runmoor
+          test "$(runmoor version)" = "runmoor $RELEASE_VERSION ($RELEASE_REVISION)"

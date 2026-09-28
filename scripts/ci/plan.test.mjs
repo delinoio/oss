@@ -105,7 +105,7 @@ test("Runmoor source and release scripts do not rebuild DevHud desktop/mobile", 
 
 test("shared release implementations select the fixture job that exercises them", () => {
   for (const event of [Event.PullRequest, Event.Push]) {
-    for (const path of ["scripts/release/project.mjs", "scripts/release/runmoor.mjs", "scripts/release/update-homebrew.sh"]) {
+    for (const path of ["scripts/release/project.mjs", "scripts/release/runmoor.mjs", "scripts/release/runmoor-homebrew.mjs", "packaging/homebrew/templates/runmoor.rb.tmpl", "scripts/release/update-homebrew.sh"]) {
       assert.equal(planJobs(event, [path]).jobs["devhud-release-contracts"], true, `${event}: ${path}`);
     }
   }
