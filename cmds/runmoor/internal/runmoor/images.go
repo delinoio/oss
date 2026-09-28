@@ -90,8 +90,14 @@ func (m *ImageManager) Operate(ctx context.Context, c Config, req ImageRequest) 
 		}
 		for {
 			v, err := m.Tart.vm(ctx, c, im.VM)
-			if err == nil && v.Running && m.Tart.preparedGuest(ctx, c, im.VM, "/Users/runner/actions-runner") == nil {
-				return im, nil
+			if err == nil && v.Running {
+				guestErr := m.Tart.preparedGuest(ctx, c, im.VM, "/Users/runner/actions-runner")
+				if guestErr == nil {
+					return im, nil
+				}
+				if p, ok := guestErr.(*Problem); ok && p.Code == ErrImage {
+					return nil, m.imageFailure(im.ID, p)
+				}
 			}
 			if !waitContext(ctx, time.Second) {
 				return nil, m.imageFailure(im.ID, problem(ErrPreparation, "Guest Agent did not start after a clean boot.", "Enable Guest Agent 0.14.2 RPC for the logged-in runner account, then retry setup."))

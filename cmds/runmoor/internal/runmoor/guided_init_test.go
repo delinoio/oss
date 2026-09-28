@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 type fakeGuidedRuntime struct {
@@ -345,5 +346,30 @@ func TestGuidedImageRequiresReadyGuestAfterCleanBoot(t *testing.T) {
 	}
 	if stop < 0 || run <= stop || exec <= run {
 		t.Fatal("guest was not validated after a stop and headless boot")
+	}
+}
+
+func TestGuidedImageRejectsInvalidGuestAfterCleanBoot(t *testing.T) {
+	c, store := fixtureStore(t)
+	driver, fixture := fakeTart(c)
+	images := &ImageManager{Store: store, Tart: driver}
+	ctx := context.Background()
+	image, err := images.Operate(ctx, c, ImageRequest{Action: "create", Name: "fresh-mac", IPSW: "latest", Resources: Resources{2, 4096}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = images.Operate(ctx, c, ImageRequest{Action: "open", ID: image.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = images.Operate(ctx, c, ImageRequest{Action: "probe", ID: image.ID}); err != nil {
+		t.Fatal(err)
+	}
+	fixture.rejectGuest = true
+	deadline, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	_, err = images.Operate(deadline, c, ImageRequest{Action: "verify-boot", ID: image.ID})
+	p, ok := err.(*Problem)
+	if !ok || p.Code != ErrImage {
+		t.Fatalf("invalid guest after reboot must fail immediately with IMAGE_INVALID: %v", err)
 	}
 }
