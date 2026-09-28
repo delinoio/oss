@@ -43,6 +43,54 @@ unsafe extern "C" {
     pub unsafe fn openat_nocancel(dirfd: c_int, path: *const c_char, flags: c_int, ...) -> c_int;
 
     #[cfg(all(target_os = "macos", not(feature = "pnport")))]
+    #[link_name = "read$NOCANCEL"]
+    pub unsafe fn read_nocancel(fd: c_int, buffer: *mut c_void, count: size_t) -> ssize_t;
+    #[cfg(all(target_os = "macos", not(feature = "pnport")))]
+    #[link_name = "readv$NOCANCEL"]
+    pub unsafe fn readv_nocancel(fd: c_int, vectors: *const iovec, count: c_int) -> ssize_t;
+    #[cfg(all(target_os = "macos", not(feature = "pnport")))]
+    #[link_name = "pread$NOCANCEL"]
+    pub unsafe fn pread_nocancel(
+        fd: c_int,
+        buffer: *mut c_void,
+        count: size_t,
+        offset: off_t,
+    ) -> ssize_t;
+    #[cfg(all(target_os = "macos", not(feature = "pnport")))]
+    #[link_name = "preadv$NOCANCEL"]
+    pub unsafe fn preadv_nocancel(
+        fd: c_int,
+        vectors: *const iovec,
+        count: c_int,
+        offset: off_t,
+    ) -> ssize_t;
+    #[cfg(all(target_os = "macos", not(feature = "pnport")))]
+    #[link_name = "write$NOCANCEL"]
+    pub unsafe fn write_nocancel(fd: c_int, buffer: *const c_void, count: size_t) -> ssize_t;
+    #[cfg(all(target_os = "macos", not(feature = "pnport")))]
+    #[link_name = "writev$NOCANCEL"]
+    pub unsafe fn writev_nocancel(fd: c_int, vectors: *const iovec, count: c_int) -> ssize_t;
+    #[cfg(all(target_os = "macos", not(feature = "pnport")))]
+    #[link_name = "pwrite$NOCANCEL"]
+    pub unsafe fn pwrite_nocancel(
+        fd: c_int,
+        buffer: *const c_void,
+        count: size_t,
+        offset: off_t,
+    ) -> ssize_t;
+    #[cfg(all(target_os = "macos", not(feature = "pnport")))]
+    #[link_name = "pwritev$NOCANCEL"]
+    pub unsafe fn pwritev_nocancel(
+        fd: c_int,
+        vectors: *const iovec,
+        count: c_int,
+        offset: off_t,
+    ) -> ssize_t;
+    #[cfg(all(target_os = "macos", not(feature = "pnport")))]
+    #[link_name = "close$NOCANCEL"]
+    pub unsafe fn close_nocancel(fd: c_int) -> c_int;
+
+    #[cfg(all(target_os = "macos", not(feature = "pnport")))]
     pub unsafe fn __getdirentries64(
         fd: c_int,
         buf: *mut u8,

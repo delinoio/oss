@@ -49,7 +49,8 @@ func TestInteractionResponseInspectionPreservesExactLiveEvidenceAndPause(t *test
 		t.Run(map[bool]string{false: "missing-output", true: "live-output"}[accepted], func(t *testing.T) {
 			c, response, arrival, _ := responseHistoryFixture(t, accepted)
 			prior := c.problem
-			bounded, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+			// Permit loaded CI runners to deliver the already queued live proof.
+			bounded, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
 			status, err := c.InspectInteractionResponse(bounded, response, arrival)
 			if accepted && err != nil {

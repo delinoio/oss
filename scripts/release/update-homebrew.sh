@@ -8,7 +8,7 @@ Render and optionally push Homebrew formula/cask updates.
 
 Usage:
   ./scripts/release/update-homebrew.sh \
-    --project <binpm|nodeup|with-watch|derun|pnport> \
+    --project <binpm|nodeup|with-watch|derun|pnport|runmoor> \
     --version <semver> \
     [--darwin-amd64-url <url>] [--darwin-amd64-sha256 <sha>] \
     [--darwin-arm64-url <url>] [--darwin-arm64-sha256 <sha>] \
@@ -152,6 +152,28 @@ rendered_file=""
 destination_path=""
 
 case "$project" in
+  runmoor)
+    if [[ ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+      log "runmoor requires an exact stable version"
+      exit 1
+    fi
+    expected_url="https://github.com/delinoio/oss/releases/download/runmoor@v${version}/runmoor-darwin-arm64.tar.gz"
+    if [ "$darwin_arm64_url" != "$expected_url" ] || [[ ! "$darwin_arm64_sha256" =~ ^[a-f0-9]{64}$ ]]; then
+      log "runmoor requires its exact versioned macOS ARM64 release URL and SHA256"
+      exit 1
+    fi
+    if [ -n "$darwin_amd64_url$darwin_amd64_sha256$linux_amd64_url$linux_amd64_sha256$linux_arm64_url$linux_arm64_sha256" ]; then
+      log "runmoor Homebrew supports macOS ARM64 only"
+      exit 1
+    fi
+    destination_path="Formula/runmoor.rb"
+    rendered_file="$(mktemp)"
+    node --input-type=module - "$repo_root/packaging/homebrew/templates/runmoor.rb.tmpl" "$version" "$darwin_arm64_url" "$darwin_arm64_sha256" >"$rendered_file" <<'JS'
+import { readFileSync } from 'node:fs';
+const [template, version, url, sha256] = process.argv.slice(2);
+process.stdout.write(readFileSync(template, 'utf8').replaceAll('__VERSION__', version).replaceAll('__DARWIN_ARM64_URL__', url).replaceAll('__DARWIN_ARM64_SHA256__', sha256));
+JS
+    ;;
   binpm|nodeup|with-watch|derun|pnport)
     if [ "$project" = "pnport" ] && [[ ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
       log "pnport requires an exact stable version"
@@ -244,10 +266,10 @@ else
 fi
 
 mkdir -p "$(dirname -- "$destination_path")"
-if [ "$project" = "pnport" ] && [ -f "$destination_path" ]; then
+if { [ "$project" = "pnport" ] || [ "$project" = "runmoor" ]; } && [ -f "$destination_path" ]; then
   existing_version="$(sed -nE 's/^  version "([0-9]+\.[0-9]+\.[0-9]+)"$/\1/p' "$destination_path")"
   if [[ ! "$existing_version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-    log "existing pnport formula has no single exact version"
+    log "existing $project formula has no single exact version"
     exit 1
   fi
   if node -e '
@@ -258,11 +280,11 @@ if [ "$project" = "pnport" ] && [ -f "$destination_path" ]; then
     }
     process.exit(1);
   ' "$version" "$existing_version"; then
-    log "refusing pnport Homebrew downgrade from $existing_version to $version"
+    log "refusing $project Homebrew downgrade from $existing_version to $version"
     exit 1
   fi
   if [ "$existing_version" = "$version" ] && ! cmp -s "$rendered_file" "$destination_path"; then
-    log "conflicting pnport formula bytes for version $version"
+    log "conflicting $project formula bytes for version $version"
     exit 1
   fi
 fi

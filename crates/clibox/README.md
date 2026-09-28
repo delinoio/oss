@@ -18,9 +18,9 @@ The npm launcher requires Node.js 22 or newer. Prebuilt binaries cover macOS and
 
 ## Migrating older command syntax
 
-`system cpus` is implemented for the next release and is absent from published version 0.1.6.
+Published version **0.2.0** includes `system cpus`, `run env`, and the five `run with-*` wrappers. The seven `fspy` workflows are implemented in source for a future release and are absent from 0.2.0.
 
-The examples below use `run env`, which is implemented for the next minor release. Published version **0.1.6** uses **`env run`** instead; substitute that spelling in the environment examples and use `clibox env --help` for its command group. Version 0.1.6 already includes `port list`, `hash compute`, and the output/cancellation behavior described here. Update scripts when upgrading to the corresponding interface; rejected old names return exit code 2 with migration guidance and are not aliases.
+The examples below use `run env` from published version **0.2.0**. Version 0.1.6 used `env run`; update scripts when upgrading. Rejected old names return exit code 2 with migration guidance and are not aliases. See the [file access workflow guide](https://oss.delino.io/clibox/fspy) for the upcoming `fspy` commands and their limits.
 
 | Previous use | New use |
 | --- | --- |
@@ -50,7 +50,7 @@ clibox clipboard paste
 clibox system cpus [--kind available|logical] [--json | --quiet]
 ```
 
-Use `--help` after any command for English help and examples. Root help (`clibox`, `--help`, or `-h`) also identifies the built version, Delino maintainer, repository, Apache-2.0 license, and GitHub Issues support path; subcommand help stays focused on that command. Running `clibox` without arguments or using explicit `--help` prints help to stdout and returns exit code **0**. Running `clibox run`, `clibox port`, `clibox clipboard`, `clibox system`, `clibox wait`, `clibox text`, `clibox time`, `clibox base64`, `clibox hash`, `clibox dotenv`, or `clibox yaml` without a subcommand prints that command's help to stderr and returns exit code **2**. Other invalid or missing arguments return exit code **2** with an error diagnostic; runtime failures return **1**. `run env` forwards the child program's exit status and supported termination signals.
+Use `--help` after any command for English help and examples. Root help (`clibox`, `--help`, or `-h`) also identifies the built version, Delino maintainer, repository, Apache-2.0 license, and GitHub Issues support path; subcommand help stays focused on that command. Running `clibox` without arguments or using explicit `--help` prints help to stdout and returns exit code **0**. Running `clibox run`, `clibox port`, `clibox clipboard`, `clibox system`, `clibox wait`, `clibox fspy`, `clibox text`, `clibox time`, `clibox base64`, `clibox hash`, `clibox dotenv`, or `clibox yaml` without a subcommand prints that command's help to stderr and returns exit code **2**. Other invalid or missing arguments return exit code **2** with an error diagnostic; runtime failures return **1**. `run env` forwards the child program's exit status and supported termination signals.
 
 ### Run with environment variables
 

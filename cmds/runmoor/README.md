@@ -8,6 +8,21 @@ Linux jobs use an operator-installed local Docker engine. macOS jobs use operato
 
 ## Install and verify
 
+### Homebrew on Apple Silicon Mac
+
+On macOS 14 or newer with Apple Silicon, install from the Delino tap:
+
+```sh
+brew install delinoio/tap/runmoor
+runmoor version
+```
+
+Homebrew installs the prebuilt release and checks its pinned SHA-256. Tart and runner images are installed separately. Installation does not configure runners or register or start a service. Intel Macs and Linux Homebrew are not supported.
+
+Update with `brew update` followed by `brew upgrade delinoio/tap/runmoor`, or remove with `brew uninstall delinoio/tap/runmoor`. If you registered a Runmoor service, stop and uninstall that service before upgrading or removing the package; after upgrading, reinstall the service with the new executable and start it explicitly. See the [operations guide](https://oss.delino.io/runmoor/operations) for service commands. Your configuration and data remain yours.
+
+### Release archives
+
 Download the matching `runmoor-darwin-arm64.tar.gz`, `runmoor-linux-amd64.tar.gz` or `runmoor-linux-arm64.tar.gz` from the [`runmoor@v…` releases](https://github.com/delinoio/oss/releases). Download `SHA256SUMS` and the `.sigstore.json` bundles alongside it. A publication dry-run archive is unsigned and is not a public release.
 
 Choose a published stable `runmoor@v…` release and replace `X.Y.Z` below with its version. Install cosign separately before verification. This example downloads and installs the Apple Silicon Mac archive; macOS 14 or newer is required.
@@ -47,7 +62,7 @@ install -m 755 runmoor "$HOME/.local/bin/runmoor"
 
 The download tag and signing identity must refer to the same release. Tag-triggered releases use the identity above. For a release explicitly signed by a manual run on `main`, use the exact identity `https://github.com/delinoio/oss/.github/workflows/release-runmoor.yml@refs/heads/main` after checking its release run.
 
-Linux users select `runmoor-linux-amd64.tar.gz` or `runmoor-linux-arm64.tar.gz` and may use `sha256sum -c` instead of `shasum -a 256 -c`. Add your user binary directory to PATH yourself. No Homebrew package, Runmoor binary auto-updater, system-level service, or bundled Docker/Tart is installed.
+Linux users select `runmoor-linux-amd64.tar.gz` or `runmoor-linux-arm64.tar.gz` and may use `sha256sum -c` instead of `shasum -a 256 -c`. Add your user binary directory to PATH yourself. Direct archive installation does not register the executable with Homebrew or install a Runmoor binary auto-updater, system-level service, or bundled Docker/Tart.
 
 ## Configure
 

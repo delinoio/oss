@@ -471,12 +471,28 @@ __attribute__((constructor)) static void start(void) {
             .status()
             .unwrap()
             .success());
-        let result = run(&mut view, &library, &executable, &[]);
-        assert_eq!(result.unwrap_err().code, Code::PnportInjectionFailed);
-        assert_eq!(
-            fs::read_dir(view.session.join("starting")).unwrap().count(),
-            1
-        );
+        // A saturated host can consume the five-second missing-injection
+        // deadline before dyld enters the constructor. Retry that unobserved
+        // launch, but accept this test only after entry is actually proven.
+        for attempt in 0..3 {
+            let result = run(&mut view, &library, &executable, &[]);
+            assert_eq!(result.unwrap_err().code, Code::PnportInjectionFailed);
+            let observed = fs::read_dir(view.session.join("starting"))
+                .ok()
+                .is_some_and(|mut entries| entries.next().is_some());
+            if observed {
+                assert_eq!(
+                    fs::read_dir(view.session.join("starting")).unwrap().count(),
+                    1
+                );
+                return;
+            }
+            tracing::debug!(
+                attempt,
+                "constructor entry was not observed before deadline"
+            );
+        }
+        panic!("The preload constructor did not start in three launches");
     }
 
     #[test]

@@ -21,6 +21,7 @@ members = [
     "crates/binpm",
     "crates/cargo-mono",
     "crates/clibox",
+    "crates/clibox-fspy",
     "crates/clibox-config",
     "crates/clibox-system",
     "crates/clibox-transform",

@@ -84,7 +84,7 @@ test("pnport publication defaults to a credential-free dry run and exact tag", (
   assert.deepEqual(release.jobs.homebrew.needs, ["prepare", "package", "publish-release"]);
   assert.equal(release.jobs["publish-npm"].permissions["id-token"], "write");
   assert.equal(release.jobs["publish-release"].permissions["id-token"], "write");
-  assert.match(source("scripts/release/update-homebrew.sh"), /conflicting pnport formula bytes/u);
+  assert.match(source("scripts/release/update-homebrew.sh"), /conflicting \$project formula bytes/u);
 });
 
 for (const project of [Project.Clibox, Project.Pnport, Project.AsyncCommitHook]) for (const [scenario, results] of [

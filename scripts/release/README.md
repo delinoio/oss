@@ -44,6 +44,10 @@ These scripts are designed for use by release workflows:
 
 Public release guidance is maintained at the stable `/devhud/releases` route of the configured public documentation site, with `/devhud/install` and `/devhud/security` companion routes.
 
+## Runmoor Homebrew
+
+`runmoor-homebrew.mjs` verifies an existing public Runmoor release and renders its macOS 14+ Apple Silicon Formula. `release-runmoor-homebrew.yml` follows future Runmoor archive publication automatically. For initial publication or recovery, dispatch **Release Runmoor Homebrew** on `main` with the exact published version and source revision. The default dry run verifies signatures and tests installation in ephemeral macOS CI without updating the tap. Set `dry_run=false` to publish the identical tested Formula through the tap-only release bot and verify installation from `delinoio/tap/runmoor`. Do not create a new CLI release or modify an existing tag or asset solely to recover the Formula.
+
 ## Native Linux CLI repositories
 
 `linux-packages.mjs` verifies an already-published release, creates nFPM packages and signed APT/DNF metadata, and resumes publication from private R2 state. Use Actions → Publish Linux CLI packages on `main`, with the exact project, version without `v`, and 40-character tag commit. The default `dry-run` performs disposable signing and the full installation matrix. Select `publish` only for the same supported release identity when recovering its package publication. Existing GitHub assets and tags are never replaced.

@@ -28,6 +28,7 @@ fn help_and_no_arguments_succeed_on_stdout() {
             "base64",
             "hash",
             "wait",
+            "fspy",
             "dotenv",
             "yaml",
         ] {
@@ -63,7 +64,7 @@ fn version_comes_from_the_cargo_package() {
 
 #[test]
 fn missing_subcommands_show_command_help_on_stderr() {
-    let groups: [(&str, &[&str]); 11] = [
+    let groups: [(&str, &[&str]); 12] = [
         (
             "run",
             &[
@@ -79,6 +80,18 @@ fn missing_subcommands_show_command_help_on_stderr() {
         ("clipboard", &["copy", "paste"]),
         ("system", &["cpus"]),
         ("wait", &["tcp", "http", "file"]),
+        (
+            "fspy",
+            &[
+                "record",
+                "compare",
+                "autowatch",
+                "assetcov",
+                "latencylab",
+                "min-repro",
+                "fbreak",
+            ],
+        ),
         ("dotenv", &["list", "merge"]),
         ("yaml", &["normalize"]),
         ("text", &["replace"]),
@@ -131,6 +144,7 @@ fn unknown_arguments_fail_on_stderr() {
         vec!["clipboard", "PRIVATE-MARKER"],
         vec!["system", "PRIVATE-MARKER"],
         vec!["wait", "PRIVATE-MARKER"],
+        vec!["fspy", "PRIVATE-MARKER"],
         vec!["text", "PRIVATE-MARKER"],
         vec!["time", "PRIVATE-MARKER"],
         vec!["base64", "PRIVATE-MARKER"],
@@ -157,6 +171,13 @@ fn every_command_has_help_and_examples() {
         vec!["wait", "tcp", "--help"],
         vec!["wait", "http", "--help"],
         vec!["wait", "file", "--help"],
+        vec!["fspy", "record", "--help"],
+        vec!["fspy", "compare", "--help"],
+        vec!["fspy", "autowatch", "--help"],
+        vec!["fspy", "assetcov", "--help"],
+        vec!["fspy", "latencylab", "--help"],
+        vec!["fspy", "min-repro", "--help"],
+        vec!["fspy", "fbreak", "--help"],
         vec!["run", "env", "--help"],
         vec!["run", "with-rate-limit", "--help"],
         vec!["run", "with-lock", "--help"],
