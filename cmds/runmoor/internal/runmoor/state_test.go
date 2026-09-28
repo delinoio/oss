@@ -2,6 +2,7 @@ package runmoor
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -61,7 +62,7 @@ func TestStateRejectsFutureVersionWithoutConversion(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	if _, e = db.Exec("PRAGMA user_version=2"); e != nil {
+	if _, e = db.Exec("PRAGMA user_version=3"); e != nil {
 		t.Fatal(e)
 	}
 	db.Close()
@@ -71,7 +72,7 @@ func TestStateRejectsFutureVersionWithoutConversion(t *testing.T) {
 	defer db.Close()
 	var version int
 	db.QueryRow("PRAGMA user_version").Scan(&version)
-	if version != 2 {
+	if version != 3 {
 		t.Fatal("future database modified")
 	}
 }
@@ -118,5 +119,44 @@ func TestDiagnosticRetentionEnforcesAgeAndBytes(t *testing.T) {
 	entries, e := os.ReadDir(dir)
 	if e != nil || len(entries) != 0 {
 		t.Fatal("age/size retention not enforced")
+	}
+}
+
+func TestStateMigratesV1AtomicallyAndReadOnlyInspectionDoesNotMigrate(t *testing.T) {
+	c, s := fixtureStore(t)
+	snapshot := s.View()
+	snapshot.SchemaVersion = 1
+	snapshot.Managed = nil
+	snapshot.Artifacts = nil
+	snapshot.Requested = Config{}
+	id := newID()
+	snapshot.Runners[id] = &Runner{ID: id, Phase: Cleaning, Resources: Resources{1, 512}, Image: "original"}
+	body, err := json.Marshal(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.db.Exec("UPDATE snapshot SET body=? WHERE id=1", body); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.db.Exec("PRAGMA user_version=1"); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	read, err := ReadSnapshot(c)
+	if err != nil || read.SchemaVersion != 1 {
+		t.Fatalf("read-only v1 read: %v", err)
+	}
+	migrated, err := OpenStore(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer migrated.Close()
+	after := migrated.View()
+	if after.SchemaVersion != 2 || after.Installation != snapshot.Installation || fingerprint(after.Runners[id]) != fingerprint(snapshot.Runners[id]) || fingerprint(after.Requested) != fingerprint(snapshot.Config) {
+		t.Fatal("migration lost original state")
+	}
+	var version int
+	if err = migrated.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 2 {
+		t.Fatal("snapshot and database schema differ")
 	}
 }

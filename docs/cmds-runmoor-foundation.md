@@ -16,12 +16,12 @@ Trusted developers and small-team operators install the binary, Docker/Tart, cre
 
 ### CLI and configuration
 
-- Commands: `init`, `config validate`, `run`, `status`, `doctor`, `reload`, `pause`, `resume`, `drain`, `stop`, `version`; `service install/start/stop/uninstall`; `image create/open/seal/list/remove`.
+- Commands: `init`, `config validate`, `config show --resolved`, `runner update`, `run`, `status`, `doctor`, `reload`, `pause`, `resume`, `drain`, `stop`, `version`; `service install/start/stop/uninstall`; `image create/open/seal/list/remove`.
 - Global and command-local `--config` select a TOML file. `--no-color` or `NO_COLOR` disables default text-log ANSI colors. JSON is uncolored. All product output is English.
 - `status --json` and `doctor --json` have `schema_version: 1`; errors contain stable `code`, `message`, `recovery`, and relevant pool/runner identifiers. Status includes image revisions and unresolved preparation; doctor includes the current status snapshot plus persistent pool/execution problems and probes actual sleep-inhibition acquisition. The local Unix HTTP control protocol is `/v1/control`, available only through an owner-only filesystem socket. It is not a remote API.
-- `init` exclusively creates an annotated skeleton with explicit incomplete resource/image/credential inputs. Configuration loading rejects unknown keys/versions, unsafe paths, duplicate identities, unsupported targets/architecture, contradictory backend fields, and impossible budgets before activation.
-- TOML v1 has `storage`, `host`, `timeouts`, `logging`, `connections`, and `pools`; optional Docker socket/Tart executable settings select local dependencies. Connections contain a GitHub.com repository or organization URL, PAT/App enum, one `credential.env` or `credential.file` reference, and App client/installation IDs when applicable. Pools specify connection, explicit scale-set name, routing labels, optional organization group, backend/mode/architecture, pinned image/runner version/path, min-idle/max-runners, runner resources, and DinD image/resources when enabled.
-- Host concurrency, CPU, memory MiB and minimum free disk MiB are explicit positive limits. Aggregate minimum idle reservations, including daemon resources, must fit. Image setup consumes the same limits and counts toward the two-macOS-VM maximum.
+- `init` exclusively creates a minimal valid configuration using prompts or flags and omission-aware defaults. Configuration loading rejects unknown keys/versions, unsafe paths, duplicate identities, unsupported targets/architecture, contradictory backend fields, and impossible budgets before activation.
+- TOML v1 has `storage`, `host`, `timeouts`, `logging`, `connections`, and `pools`; optional Docker socket/Tart executable settings select local dependencies. Connections contain a GitHub.com repository or organization URL, PAT/App enum, one `credential.env` or `credential.file` reference, and App client/installation IDs when applicable. Pools specify connection, explicit scale-set name, routing labels, optional organization group, backend/mode, optional native architecture, image or image source, latest or pinned runner version/path, min-idle/max-runners, runner resources, and DinD image/resources when enabled.
+- Host concurrency, CPU, memory MiB and minimum free disk MiB may be omitted for automatic defaults; explicit values must be positive limits. Aggregate minimum idle reservations, including daemon resources, must fit. Image setup consumes the same limits and counts toward the two-macOS-VM maximum.
 - Default timeouts are Docker preparation 5 minutes, Tart preparation 10 minutes, and a job 6 hours. Transient retries use exponential jittered backoff of 1–60 seconds, extended for provider rate-limit instructions. Three consecutive preparation failures suspend only the affected pool. Authentication/ownership failures require correction and resume.
 - Forced cancellation preserves the existing preparation-failure counter and pool suspension state, including when an adapter returns success after cancellation. It is logged as cancellation instead of an image/bootstrap failure.
 - A scheduled preparation must still be unforced and in the preparing phase when its worker starts. This closes the force-stop gap between reservation and worker registration; cancellation is also checked before JIT and backend work. After journaling a returned JIT registration ID, the worker re-reads the durable forced flag and preparing phase immediately before backend preparation. A stop or lifecycle transition during registration prevents provisioning even before context cancellation arrives, preserves the new phase and failure counters, and retains the registration ID for cleanup.
@@ -46,9 +46,9 @@ Trusted developers and small-team operators install the binary, Docker/Tart, cre
 
 ### Docker
 
-- Require a local Unix-socket Linux engine on the host's native architecture. Reject remote endpoints even when selected by ambient Docker settings. Validate engine resources and immutable image identities (`repository@sha256:…` or a local content-addressed `sha256:…` image ID). Operators pre-pull the configured images.
-- The official minimal runner image is supported. Compatible images need the `runner` account with UID/GID 1001, shell/utilities, exact runner binaries, and Docker CLI for DinD. No GitHub-hosted image tool inventory is promised. Auto-update is disabled at scale-set creation; `doctor` checks release freshness and guides explicit image replacement.
-- Runner freshness requests the latest 100 GitHub runner releases under the existing ten-second probe context. Response acquisition reads at most 8 MiB plus one detection byte, rejects an exceeded 8 MiB ceiling before decoding, and parses the complete bounded response. Oversize responses report the limit with manual release-verification and retry guidance; read/transport failures, non-200 responses and malformed JSON remain safe `DEPENDENCY_RETRY` warnings without upstream bodies or raw errors. Stable-release selection and the 30-day update window are unchanged: unknown or expired pins return `RUNNER_VERSION_UNSUPPORTED`, and a newer release within the window prompts explicit image replacement. This does not update a binary, image or running job automatically.
+- Require a local Unix-socket Linux engine on the host's native architecture. Reject remote endpoints even when selected by ambient Docker settings. Validate engine resources and immutable image identities (`repository@sha256:…` or a local content-addressed `sha256:…` image ID). Manual pins require pre-pulled images. Managed images are prepared by the manager before activation.
+- The official minimal runner image is supported. Compatible images need the `runner` account with UID/GID 1001, shell/utilities, exact runner binaries, and Docker CLI for DinD. No GitHub-hosted image tool inventory is promised. Auto-update is disabled at scale-set creation; the manager updates automatic pools, while `doctor` checks freshness and reports managed progress or manual-pin recovery.
+- Runner freshness requests the latest 100 GitHub runner releases under the existing ten-second probe context. Response acquisition reads at most 8 MiB plus one detection byte, rejects an exceeded 8 MiB ceiling before decoding, and parses the complete bounded response. Oversize responses report the limit with manual release-verification and retry guidance; read/transport failures, non-200 responses and malformed JSON remain safe `DEPENDENCY_RETRY` warnings without upstream bodies or raw errors. Stable-release selection and the 30-day update window are unchanged: unknown or expired pins return `RUNNER_VERSION_UNSUPPORTED`, and a newer release within the window prompts replacement for manually pinned pools. Doctor itself never updates a binary, image or running job. The manager owns automatic image updates.
 - Docker preparation observes a running container for one second after its execution-specific bootstrap marker appears. Immediate launcher exits remain preparation failures and trigger the same three-failure suspension as guest startup failures; `run.sh` stays PID 1 for normal cancellation signals.
 - Per execution, create labelled named volumes and a network. DinD adds a privileged daemon with private cgroup v2 namespace, its own socket and disposable Docker storage. Shared workspace/externals paths and network namespace support container actions and service containers. Both runner and daemon have CPU/memory limits.
 - DinD reconciliation inspects the daemon's recorded identity and ownership as well as the runner. Missing/stopped/paused/restarting daemons make the execution unavailable for busy-aware cleanup without claiming termination; ownership changes quarantine it, and transient inspection errors preserve reservations for retry.
@@ -58,10 +58,10 @@ Trusted developers and small-team operators install the binary, Docker/Tart, cre
 
 ### Tart images and jobs
 
-- Image mutations require a running manager; the CLI never executes them offline. The manager retains sleep inhibition for open setup/validation revisions after the request returns. Whole-manager stop, including force-stop and service stop/uninstall, waits for open setup and pending image removal; pool-scoped waits do not. Shutdown rejects new image operations but permits sealing an already open revision and retrying pending removal. Close the setup VM normally or seal it before expecting stop to finish. Offline image listing remains available. Initial setup accepts explicit host budgets with no pools/connections; add the Tart pool and reload after sealing.
+- Image mutations require a running manager; the CLI never executes them offline. The manager retains sleep inhibition for open setup/validation revisions after the request returns. Whole-manager stop, including force-stop and service stop/uninstall, waits for open setup and pending image removal; pool-scoped waits do not. Shutdown rejects new image operations but permits sealing an already open revision and retrying pending removal. Close the setup VM normally or seal it before expecting stop to finish. Offline image listing remains available. Initial setup accepts automatic or explicit host budgets with no pools/connections; add the Tart pool and reload after sealing.
 
 - Initial compatibility pins: Tart 2.37.0, Guest Agent 0.14.2, macOS 14+ arm64. Require functional Guest Agent RPC and an exact runner version in the prepared non-root guest account. A reachable guest returns a bounded ready/invalid marker; invalid accounts, versions, registration or workspace state fail immediately with `IMAGE_INVALID`, while unavailable RPC retries within the preparation deadline.
-- `image create --name NAME --cpu N --memory-mib N` accepts exactly one `--ipsw PATH` or `--from SOURCE`. Sources are a stopped local Tart name (optional `--source-home`), absolute `.tvm`, sealed Runmoor revision UUID, or `oci://` input resolved to a digest. Imports never modify the operator's source image.
+- `image create --name NAME [--cpu N --memory-mib N]` accepts exactly one `--ipsw PATH` or `--from SOURCE`. Sources are a stopped local Tart name (optional `--source-home`), absolute `.tvm`, sealed Runmoor revision UUID, or `oci://` input resolved to a digest. Imports never modify the operator's source image.
 - Local-name imports use a temporary `import-<image UUID>.tvm` archive in private managed data. The image UUID is durable before export begins; normal completion/failure, restart reconciliation across all image phases, and image removal clean that exact artifact. Cleanup errors remain visible in image diagnostics and prevent successful removal from discarding the ownership record. Unjournaled archives and unexpected symlink/directory targets are preserved.
 - `image open --id UUID` opens a mutable setup revision for account/Xcode/tool installation. `image seal --id UUID --runner-version VERSION [--runner-path PATH]` validates guest readiness, clean runner registration/workspace and exact versions, stops the VM, hashes the base files and publishes an immutable local revision. Sealing and sealed-image verification hash with bounded, cancellation-aware reads under the operation context, so preparation deadlines and force-stop do not wait for a whole disk read; cancellation closes the file and discards the partial digest. Editing requires a new revision. `image remove` refuses referenced or active images.
 - Image open polls the owned VM until Tart confirms it running, bounded by the Tart preparation deadline. A spawned process alone is insufficient. Unconfirmed startup records a safe preparation error and holds its reservation until reconciliation confirms the VM stopped.
@@ -83,8 +83,8 @@ A launchd bootout failure is returned as a safe dependency error and leaves the 
 - Data: `$XDG_DATA_HOME/runmoor`, otherwise `~/.local/share/runmoor`.
 - TOML may override absolute state/data directories. The Unix socket path must fit macOS's length limit. Directories are mode 0700; files/socket are 0600. Reject symlinks and foreign ownership at sensitive file boundaries.
 - SQLite schema v1 stores an atomic snapshot row under WAL/FULL durability: installation identity, configuration generations/references, pool/session metadata without tokens, runner lifecycle and reservations, image revisions, and cleanup progress. A nonblocking file lock excludes concurrent manager or offline state access.
-- Delete completed execution history after seven days. Preserve unresolved cleanup and ownership indefinitely. Sealed images remain until explicit deletion. Unsupported state versions are rejected without conversion.
-- Storage relocation is accepted only after all executions complete cleanup and all image setup/removal operations close; it atomically rebinds retained generations while preserving installation ownership. Backup only after drain and stop: preserve the complete state and managed data directories, protect referenced credentials separately, and pair backups with a compatible binary. Updates and rollback are manual; never open a newer state schema with an older binary.
+- Delete completed execution history after seven days. Preserve unresolved cleanup and ownership indefinitely. User-created sealed images remain until explicit deletion; generated revisions use reference-aware managed retention. SQLite v1 migrates atomically to v2; other unsupported versions are rejected.
+- Storage relocation is accepted only after all executions complete cleanup and all image setup/removal operations close; it atomically rebinds retained generations while preserving installation ownership. Backup only after drain and stop: preserve the complete state and managed data directories, protect referenced credentials separately, and pair backups with a compatible binary. Runmoor binary updates and rollback are manual; never open a newer state schema with an older binary.
 
 ## Security
 
@@ -97,7 +97,7 @@ Use `log/slog` text or JSON for lifecycle transitions, preparation duration, ret
 ## Build and Test
 
 - Run formatting, `go vet ./cmds/runmoor/...`, `go test ./cmds/runmoor/...`, and supported-host `go test -race ./cmds/runmoor/...`.
-- Ordinary tests use an in-process TLS GitHub API substitute with the real scale-set SDK, deterministic backend/session adapters, temporary private state, and no live credentials or user-service installation.
+- Ordinary tests use an in-process TLS GitHub API substitute with the real scale-set SDK, deterministic backend/session adapters, temporary private state, and no live credentials or user-service installation. Archive download/repack fixtures and the opt-in official archive download run only on Darwin/Linux because private file creation requires Unix ownership checks. Windows CI still runs portable release metadata and asset-selection validation; unsupported-host storage continues returning `PLATFORM_UNSUPPORTED`.
 - Guest-validation shell fixtures allow 15 seconds for real process startup on loaded hosts. Invalid-image cases still assert exactly one validation call, and the dedicated transport-timeout case retains its 50 ms deadline; production readiness deadlines are unchanged.
 - Opt-in Docker tests exercise real local containers, DinD builds/actions/service connectivity, quotas, restart adoption, cancellation and ownership-scoped cleanup without requesting GitHub jobs. Opt-in Tart tests require explicitly supplied operator-owned clean input and are never automatic.
 - Preserve root Ubuntu/macOS/Windows Go CI. Generate ignored administrator assets with `pnpm --filter devhud-admin build:embedded` before root Go tests/vet. Runmoor public guide changes run `pnpm --filter public-docs test`, which is also the validation command for the shared public site.
@@ -173,3 +173,119 @@ Update this document, the project index, scoped command policies, README/public 
 - [GitHub runner authentication](https://docs.github.com/en/actions/how-tos/manage-runners/use-actions-runner-controller/authenticate-to-the-api).
 - [Runner update requirements](https://docs.github.com/en/actions/reference/runners/self-hosted-runners).
 - [Tart 2.37.0](https://github.com/openai/tart/tree/2.37.0), [Guest Agent 0.14.2](https://github.com/openai/tart-guest-agent/tree/v0.14.2).
+
+## Automatic defaults and runner management
+
+The next unreleased version extends TOML v1 with optional resource and concurrency
+fields. Only omitted values receive defaults; explicit zero and negative values
+remain invalid. Host CPU and physical memory are detected at startup and reload.
+Docker has an additional engine CPU/memory ceiling, shared by all Docker jobs and
+preparation containers without restricting unrelated Tart capacity. The default
+Docker runner uses 2 CPUs and 4096 MiB; Tart uses 4 CPUs and 8192 MiB. Omitted
+allocations shrink to the available budget on smaller machines, with automatic
+minimums of 1 CPU/1024 MiB and 2 CPUs/4096 MiB respectively. Existing explicit
+allocations retain their meaning. Pool concurrency is the minimum of the CPU and
+memory quotients, bounded by the two-VM Tart limit; global reservations include
+all pools, DinD and image preparation. Disk reserves default to 10240 MiB, or
+20480 MiB when Tart is configured. Warm capacity defaults to zero.
+GitHub session polling and job acquisition apply the same host and Docker engine
+CPU/memory ceilings, including DinD, even when an explicit pool concurrency is
+larger. Acquisition rechecks current eligibility and capacity after polling so a
+concurrent capacity reduction cannot admit work under the previous ceiling.
+
+`init` creates a minimal valid configuration through terminal prompts or flags.
+It accepts target, backend, authentication and credential *references*, plus an
+image/source when needed. It never overwrites an existing configuration, accepts
+credential values, installs host dependencies or starts a service. `--image-only`
+creates a configuration for manual initial macOS setup. `config show --resolved`
+reads committed versions and resolved capacity without preparing images.
+Offline `doctor` also inspects each managed pool's committed current image and
+connection. Requested `latest` or image-source settings do not imply pending
+preparation when that environment exists. It reports one managed-state check,
+retains genuine pending/expired/invalid-image failures, and never downloads or
+replaces an image during diagnosis.
+
+Omitted `runner_version` and `runner_version = "latest"` select automatic runner
+management. An exact version remains a pin. Docker image omission selects the
+official image; explicit Docker sources remain immutable digests. Tart supports
+an existing sealed UUID or mutually exclusive `image_source = { from = "...",
+source_home = "..." }`, using the existing import sources. Imported sources are
+resolved once and retained as immutable local bases; OS/toolchain refresh is
+not implied by runner refresh. Custom Docker sources and Tart bases are cloned
+before replacing the dedicated runner directory. User sources are never edited.
+
+The first successful Tart import commits an immutable `imported` source revision
+before any guest mutation. It is a clone source, not a runnable sealed revision;
+open/seal in place is prohibited. Installation retries and restarts reuse its
+recorded digest even if the external name/export changes. Import and candidate
+preparation transfer a single reservation atomically instead of consuming two VM
+slots. Explicit source changes reset the source selection.
+
+The manager checks official stable releases at startup and hourly. It shares
+bounded latest-100 metadata, verifies architecture and installed version, pins
+Docker pulls to digests, and verifies the SHA-256 of downloaded runner archives.
+Repacking rejects traversal, escaping/chained/directory links, special files and oversized archives; validated relative links to regular in-tree files are emitted after every regular entry. Image
+preparation is credential-free and never registers a runner. `runner update
+[--pool NAME]` requests an immediate check. `image create` resources are optional;
+`image seal` with an omitted version installs the latest runner before sealing.
+
+Requested configuration and effective generations are separate. Verified
+candidates activate atomically through the existing drain/retirement boundary;
+old jobs keep their original images, resources and deadlines. Pause, drain and
+stop remain authoritative. A waiting update gets the next available preparation
+slot without interrupting busy jobs. Failures retain the last verified image and
+retry with backoff. Known support deadlines block new acquisition after expiry;
+unknown release freshness is reported without pretending a cached image is
+current. Initial preparation failure has no runnable fallback.
+An unchanged release still requires bounded read-only validation of its committed
+image. Missing or invalid images are prepared again and the candidate is validated
+before activation. Verified repair clears only a matching image/version suspension;
+authentication, ownership and other failures remain suspended, and operator
+pause/drain/stop or concurrent reload cannot be undone. Transient validation
+failures preserve the current artifact and retry with backoff.
+
+SQLite v2 adds managed-pool state, immutable artifact identities, release metadata
+and preparation/cleanup reservations. Opening v1 migrates its snapshot and
+`user_version` atomically without rewriting installation ownership or execution
+history. Old binaries reject v2. Read-only configuration inspection does not
+migrate state. Public status/doctor JSON remains schema v1 with additive managed
+runner and artifact fields. Generated artifacts retain current, previous and
+referenced bases; cleanup never force-removes externally referenced Docker images
+or deletes user sources. Official pulled base layers remain Docker-owned.
+
+An unavailable Docker capacity check at startup leaves only Docker acquisition
+pending until a bounded retry succeeds; cached capacity does not authorize new
+work before verification. Successful capacity resolution stays fixed until the
+next start or reload. Paused pools continue hourly release metadata checks while
+preparation remains deferred. Scoped resume preserves other pending pool pauses.
+Known expiry retires idle capacity through busy-aware removal and never interrupts
+busy work. Provider rate-limit deadlines are shared across pools. Failed owned
+artifact cleanup retains reservations with backoff, and collection runs even
+after all managed pools have been removed. Storage relocation rejects pending
+managed preparation and cleanup.
+
+### Automatic management validation evidence (2026-09-28)
+
+- Passed `go test ./cmds/runmoor/...`, macOS arm64 race tests and
+  `go vet ./cmds/runmoor/...`. Deterministic fixtures cover omissions/explicit
+  zero, small hosts, partial overrides, independent Docker ceilings, mixed
+  pools/DinD, TTY/non-TTY init, migration preserving ownership and executions,
+  release ordering/rate limits, missing publication, checksum and archive
+  validation, cancellation, stale activation, scoped pause/resume, source reuse,
+  known expiry, interrupted cleanup and current/previous/live retention.
+- Passed real local Docker plain/DinD execution-adapter integration and managed
+  image preparation on the native arm64 engine. Managed integration pulled and
+  verified official runner 2.337.0 by digest, then replaced only its runner with
+  a checksummed fixture archive in a separate owned image; the source stayed
+  unchanged and preparation containers were removed. No live GitHub job or JIT
+  registration was performed.
+- Downloaded the official runner 2.337.0 macOS arm64 archive (127,732,571 bytes),
+  verified its published SHA-256, and passed safe tar reconstruction including
+  its internal Node executable symlinks. This does not certify guest boot or
+  Guest Agent compatibility.
+- Tart import/clone/install/seal/cancellation/cleanup use deterministic command
+  fixtures. Real opt-in Tart validation was unavailable because this host has no
+  Tart installation; live GitHub and Tart execution remain unverified.
+- Windows amd64 and Linux arm64 CLI cross-compilation passed; these are build
+  checks, not runtime certification. Public documentation `pnpm test` passed
+  the consolidated build, route/content checks and validator fixtures.

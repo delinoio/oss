@@ -85,7 +85,11 @@ func (d *DockerDriver) Validate(ctx context.Context, c Config, p Pool, s Snapsho
 	if info.Info.OSType != "linux" || arch != runtime.GOARCH || arch != p.Arch {
 		return problem(ErrPlatform, "Docker must run native-architecture Linux containers.", "Select a matching local Linux engine without CPU emulation.")
 	}
-	if c.Host.CPU > info.Info.NCPU || c.Host.MemoryMiB > info.Info.MemTotal/(1024*1024) {
+	budget := Resources{c.Host.CPU, c.Host.MemoryMiB}
+	if validResources(c.DockerBudget) {
+		budget = c.DockerBudget
+	}
+	if budget.CPU > info.Info.NCPU || budget.MemoryMiB > info.Info.MemTotal/(1024*1024) || p.Cost().CPU > budget.CPU || p.Cost().MemoryMiB > budget.MemoryMiB {
 		return problem(ErrCapacity, "Configured budgets exceed Docker engine resources.", "Increase Docker's assigned resources or reduce the host budget.")
 	}
 	if p.Mode == DinD && info.Info.CgroupVersion != "2" {
