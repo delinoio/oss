@@ -23,6 +23,7 @@ type fakeGuidedRuntime struct {
 	verifyFail  bool
 	startError  error
 	storage     Storage
+	createFail  bool
 }
 
 func (*fakeGuidedRuntime) Check(context.Context, Config) error { return nil }
@@ -58,7 +59,10 @@ func (f *fakeGuidedRuntime) Control(_ context.Context, _ Config, req ControlRequ
 				return resp, errors.New("unexpected IPSW")
 			}
 			f.createCount++
-			f.image = &Image{ID: req.Image.ID, Phase: ImagePreparing}
+			f.image = &Image{ID: req.Image.ID, Phase: ImagePreparing, CreationComplete: !f.createFail}
+			if f.createFail {
+				return resp, problem(ErrPreparation, "Tart create failed after claiming the VM.", "Inspect the owned VM.")
+			}
 		case "open":
 			f.image.Phase = ImageOpen
 		case "close":
@@ -209,6 +213,37 @@ func TestGuidedIPSWSelection(t *testing.T) {
 	}
 }
 
+func TestGuidedInitRefusesAmbiguousCreatedVM(t *testing.T) {
+	if runtime.GOOS != "darwin" || runtime.GOARCH != "arm64" {
+		t.Skip("Tart configuration requires an Apple Silicon Mac")
+	}
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	storage, err := os.MkdirTemp("/private/tmp", "rm-a-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(storage) })
+	t.Setenv("XDG_STATE_HOME", filepath.Join(storage, "state"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(storage, "data"))
+	path := filepath.Join(dir, "config.toml")
+	opts := InitOptions{Backend: string(Tart), Target: "https://github.com/example/repo", Auth: string(PAT), CredentialEnv: "RUNMOOR_PAT"}
+	fake := &fakeGuidedRuntime{createFail: true}
+	firstErr := startGuidedInit(context.Background(), path, opts, "latest", bufio.NewReader(strings.NewReader("")), io.Discard, fake)
+	if firstErr == nil {
+		t.Fatal("failed Tart creation was accepted")
+	}
+	fake.createFail = false
+	if err := resumeGuidedInit(context.Background(), path, strings.NewReader("\n"), io.Discard, fake); err == nil {
+		t.Fatal("ambiguous image creation was resumed")
+	}
+	if fake.createCount != 1 || strings.Contains(strings.Join(fake.actions, ","), "open") {
+		t.Fatalf("ambiguous image was recreated or opened: first=%v created=%d actions=%v", firstErr, fake.createCount, fake.actions)
+	}
+}
+
 func TestGuidedStorageRejectsExistingPaths(t *testing.T) {
 	root := t.TempDir()
 	storage := Storage{State: filepath.Join(root, "state"), Data: filepath.Join(root, "data")}
@@ -280,6 +315,9 @@ func TestImageCreatePassesLatestSupportedIPSWToTart(t *testing.T) {
 	image, err := (&ImageManager{Store: store, Tart: driver}).Operate(context.Background(), c, ImageRequest{Action: "create", Name: "fresh-mac", IPSW: "latest", Resources: Resources{2, 4096}})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !image.CreationComplete {
+		t.Fatal("successful Tart creation was not durably marked complete")
 	}
 	found := false
 	for _, args := range fixture.commands {

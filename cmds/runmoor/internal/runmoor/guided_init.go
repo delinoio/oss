@@ -291,6 +291,9 @@ func runGuidedInit(ctx context.Context, j guidedInitJournal, reader *bufio.Reade
 		}
 	}
 	if im.Phase != ImageSealed {
+		if !im.CreationComplete {
+			return problem(ErrOwnership, "Setup VM creation did not complete conclusively.", "Inspect the journaled image and Tart VM; Runmoor will not resume or seal an uncertain creation.")
+		}
 		if im.Phase != ImagePreparing && im.Phase != ImageOpen {
 			return problem(ErrImage, "Setup image is in an unexpected phase.", "Inspect 'runmoor image list' using the pending bootstrap configuration.")
 		}

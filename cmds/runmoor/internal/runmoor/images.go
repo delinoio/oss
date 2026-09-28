@@ -395,6 +395,7 @@ func (m *ImageManager) create(ctx context.Context, c Config, req ImageRequest) (
 	}
 	if e := m.Store.Update(func(s *Snapshot) error {
 		s.Images[id].Phase = ImagePreparing
+		s.Images[id].CreationComplete = true
 		s.Images[id].Source = im.Source
 		return nil
 	}); e != nil {
