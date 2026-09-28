@@ -171,12 +171,57 @@ func parseItem(raw []byte, repository domain.RemoteRepository, query domain.Repo
 			}
 			item.BaseRef, item.BaseSHA = stringField(base, "ref"), stringField(base, "sha")
 			item.HeadRef, item.HeadSHA = stringField(head, "ref"), stringField(head, "sha")
+			headRepository, ok := parsePRHeadRepository(head["repo"], repository)
+			if !ok {
+				return domain.RepositoryItem{}, false, queryUnavailable()
+			}
+			item.HeadRepository = &headRepository
 		}
 	}
 	if item.Validate(repository, query) != nil {
 		return domain.RepositoryItem{}, false, queryUnavailable()
 	}
 	return item, false, nil
+}
+
+func parsePRHeadRepository(raw []byte, base domain.RemoteRepository) (domain.PRHeadRepositoryObservation, bool) {
+	value := domain.PRHeadRepositoryObservation{State: domain.PRHeadRepositoryUnavailable}
+	if strings.TrimSpace(string(raw)) == "null" {
+		return value, true
+	}
+	fields, ok := jsonObject(raw)
+	if !ok {
+		return value, false
+	}
+	owner, ok := jsonObject(fields["owner"])
+	if !ok {
+		return value, false
+	}
+	name, login := stringField(fields, "name"), stringField(owner, "login")
+	repository, ok := parseRepository(raw, login, name)
+	if !ok {
+		return value, false
+	}
+	// Retain identity rather than trusting arbitrary provider-supplied Git URLs.
+	// Native preparation constructs its closed GitHub transport separately.
+	if stringField(fields, "clone_url") != "https://github.com/"+repository.Owner+"/"+repository.Name+".git" || stringField(fields, "ssh_url") != "git@github.com:"+repository.Owner+"/"+repository.Name+".git" {
+		return value, false
+	}
+	value.State, value.Repository = domain.PRHeadRepositoryAvailable, repository
+	return value, value.Validate(base) == nil
+}
+
+func samePRHeadRepository(a, b *domain.PRHeadRepositoryObservation) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	if a.State != b.State {
+		return false
+	}
+	if a.Repository == nil || b.Repository == nil {
+		return a.Repository == b.Repository
+	}
+	return *a.Repository == *b.Repository
 }
 
 // Pagination links are metadata only. A next-page URL must preserve every

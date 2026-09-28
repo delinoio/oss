@@ -356,3 +356,6 @@ Retained PR feedback is available from PR detail and retained session associatio
 
 
 Retained PR problem history now covers published feedback, required CI and merge conflicts with an explicit independent collection selector. Latest kind-specific observation time/state/reason remains separate from retained original versions. CI rows show original lifecycle/output and lazily fetch the complete immutable rules/result proof through ResourceQuery, validating its exact context, original scope/time and shared PR before historical rendering. Closing releases that proof query. Conflict rows retain the original transition/ref/commit identity across unknown readings without implying current eligibility. Exact local Dismiss works across all kinds; no Fix now or automatic execution is implied.
+
+
+PR detail and detail-bound observations now show their original source repository separately from base/head refs. The source identity disclosure preserves exact numeric/node IDs and private/public metadata. Explicit unavailable source and historical unobserved data have distinct messages; neither substitutes the base repository. Validate exact identity consistency, closed state and detail-only placement before rendering. Names remain inert text and the display cannot initiate Git work.

@@ -481,3 +481,5 @@
 
 
 - PR problem history supports separate feedback, CI and conflict collection. Keep latest unknown/non-failing summaries separate from retained failure/transition evidence. Original CI proof reads validate exact context and original observation, remain explicitly historical and are discarded when closed. Exact kind/request/version/revision handling and inert output follow the integration contract; none of these controls may execute a fix.
+
+- PR source presentation preserves exact original fork identity, explicit provider unavailability and historical absence separately. Validate the complete source/base namespace before rendering and reject source facts in list/issue projections. Keep IDs as strings and names inert; no source read grants Git execution or substitutes the base repository. Follow the integration contract.

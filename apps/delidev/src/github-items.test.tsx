@@ -13,13 +13,13 @@ import { RepositoryGitHubItems, githubResult } from "./github-items";
 import { encode } from "./documents";
 import { ItemKind, QueryOperation, type GitHubQuery } from "./github-query-model";
 
-function fixture() {
+function fixture(headRepository?: unknown) {
   const repository = create(ResourceSchema, { id: newRequestId(), revision: 9007199254740993n, kind: EntityKind.REPOSITORY, schemaVersion: 1, documentJson: encode({ integration_id: newRequestId(), github_owner: "fixture-owner", github_name: "repo" }) });
   const profile = JSON.parse(new TextDecoder().decode(repository.documentJson)).integration_id as string;
   const generation = newRequestId();
   const query = vi.fn(async (request: { repositoryId: string; queryJson: Uint8Array }) => {
     const q = JSON.parse(new TextDecoder().decode(request.queryJson)), detail = ["detail", "diff", "checks", "statuses", "rules", "ci", "feedback", "reviewers"].includes(q.operation), search = q.operation === "search", pr = q.kind === "pull-request";
-    const item = { provider: "github.com", kind: q.kind, identity_source: pr && !search ? "pull-request-api" : "issue-api", id: "9007199254740993", node_id: "ITEM_17", number: "17", title: "Original fixture title", state: "open", created_at: "2026-09-01T00:00:00Z", updated_at: "2026-09-28T00:00:00Z", author: { id: "19", node_id: "U_19", login: "fixture-author", kind: "user", provider_type: "User" }, url: `https://github.com/fixture-owner/repo/${pr ? "pull" : "issues"}/17`, ...(pr ? { draft: false } : {}), ...(detail ? { body: "<script>never executed</script>\nOriginal body", ...(pr ? { merged: false, base_ref: "main", base_sha: "a".repeat(40), head_ref: "feature", head_sha: "b".repeat(40) } : {}) } : {}) };
+    const item = { provider: "github.com", kind: q.kind, identity_source: pr && !search ? "pull-request-api" : "issue-api", id: "9007199254740993", node_id: "ITEM_17", number: "17", title: "Original fixture title", state: "open", created_at: "2026-09-01T00:00:00Z", updated_at: "2026-09-28T00:00:00Z", author: { id: "19", node_id: "U_19", login: "fixture-author", kind: "user", provider_type: "User" }, url: `https://github.com/fixture-owner/repo/${pr ? "pull" : "issues"}/17`, ...(pr ? { draft: false } : {}), ...(detail ? { body: "<script>never executed</script>\nOriginal body", ...(pr ? { merged: false, ...(headRepository === undefined ? {} : { head_repository: headRepository }), base_ref: "main", base_sha: "a".repeat(40), head_ref: "feature", head_sha: "b".repeat(40) } : {}) } : {}) };
     const patch = "diff --git a/file b/file\n+Original patch\n";
     const observation = q.operation === "reviewers" ? { reviewers: reviewerObservation() } : q.operation === "feedback" ? { feedback: feedbackObservation() } : q.operation === "ci" ? { ci: ciObservation() } : q.operation === "rules" ? { rules: { base_ref: "main", base_sha: "a".repeat(40), head_sha: "b".repeat(40), digest: "c".repeat(64), rules: [{ type: "required_status_checks", ruleset_id: "9007199254740993", source_kind: "repository", native_source_kind: "Repository", source: "fixture-owner/repo", digest: "d".repeat(64), required_checks: { strict: false, checks: [{ context: "CI Result", integration_id: "15368" }] } }] } } : q.operation === "diff" ? { diff: { patch, digest: createHash("sha256").update(patch).digest("hex"), base_sha: "a".repeat(40), head_sha: "b".repeat(40) } } : q.operation === "checks" ? { checks: { head_sha: "b".repeat(40), filter: "latest", total_count: "1", runs: [{ id: "53", node_id: "CHECK_53", name: "Fixture Check", head_sha: "b".repeat(40), status: "completed", native_status: "completed", conclusion: "success", native_conclusion: "success", application: { id: "15368", node_id: "APP_15368", slug: "github-actions" } }] } } : q.operation === "statuses" ? { statuses: { head_sha: "b".repeat(40), state: "pending", native_state: "pending", total_count: "0", contexts: [] } } : {};
     return { schemaVersion: 1, documentJson: encode({ ...observation, repository_id: repository.id, repository_revision: repository.revision.toString(), profile_id: profile, generation_id: generation, observed_at: "2026-09-28T00:00:00Z", identity: { id: "17", node_id: "U_17", login: "fixture-user" }, repository: { provider: "github.com", id: "37", node_id: "R_37", owner: "fixture-owner", name: "repo", private: true }, query: q, items: [item], ...(search ? { total_count: "1001", incomplete: true } : {}), ...(!detail && q.page === 1 ? { next_page: 2 } : {}) }) };
@@ -136,4 +136,39 @@ it("verifies feedback authors with a separate complete observation", async () =>
   expect(screen.getByText("No collaborator grant")).toBeTruthy();
   expect(screen.queryByRole("navigation", { name: "GitHub result pages" })).toBeNull();
   expect(JSON.parse(new TextDecoder().decode(f.query.mock.calls.at(-1)![0].queryJson))).toEqual({ kind: "pull-request", operation: "reviewers", number: "17" });
+});
+
+const forkSource = () => ({ state: "available", repository: { provider: "github.com", id: "9007199254740993", node_id: "FORK_1", owner: "fixture-author", name: "fork-repo", private: true, default_branch: "main" } });
+it.each([
+  [undefined, "not recorded in this observation"],
+  [{ state: "unavailable" }, "unavailable on GitHub"],
+  [forkSource(), "fixture-author/fork-repo"],
+])("keeps original fork, deleted source and historical absence distinct (%j)", async (source, expected) => {
+  const f = fixture(source); render(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "Browse GitHub items" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Read #17" }));
+  await screen.findByText((_, element) => element?.tagName === "P" && Boolean(element.textContent?.startsWith("Source repository:") && element.textContent.includes(expected)));
+  if (source && source.state === "available") {
+    fireEvent.click(screen.getByText("Source repository identity"));
+    expect(screen.getByText("9007199254740993")).toBeTruthy();
+    expect(screen.getByText("FORK_1")).toBeTruthy();
+  }
+});
+it("rejects inconsistent source identities and source data outside PR detail", async () => {
+  const f = fixture(forkSource()), query: GitHubQuery = { kind: ItemKind.PullRequest, operation: QueryOperation.Detail, number: "17" };
+  const response = await f.query({ repositoryId: f.repository.id, queryJson: encode(query) });
+  const original = JSON.parse(new TextDecoder().decode(response.documentJson));
+  expect(githubResult(response.documentJson, f.repository, query)).toBeTruthy();
+  for (const source of [
+    { state: "future" }, { state: "available" }, { ...forkSource(), state: "unavailable" },
+    ...[{ id: "37" }, { node_id: "R_37" }, { owner: "fixture-owner", name: "repo" }, { id: 9007199254740992 }, { provider: "other" }, { owner: "<script>" }, { name: ".." }, { private: null }, { default_branch: "main\nother" }].map((change) => ({ state: "available", repository: { ...forkSource().repository, ...change } })),
+  ]) {
+    const value = structuredClone(original); value.items[0].head_repository = source;
+    expect(githubResult(encode(value), f.repository, query), JSON.stringify(source)).toBeUndefined();
+  }
+  for (const other of [{ kind: ItemKind.Issue, operation: QueryOperation.Detail, number: "17" }, { kind: ItemKind.PullRequest, operation: QueryOperation.List, page: 1, page_size: 20 }] satisfies GitHubQuery[]) {
+    const read = await f.query({ repositoryId: f.repository.id, queryJson: encode(other) });
+    const value = JSON.parse(new TextDecoder().decode(read.documentJson)); value.items[0].head_repository = forkSource();
+    expect(githubResult(encode(value), f.repository, other)).toBeUndefined();
+  }
 });

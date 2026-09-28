@@ -242,3 +242,6 @@ Schema-v19 PR history now includes required-CI failure versions with immutable s
 
 
 Schema v20 now provides an internal PR remediation coordination core: one durable active/uncertain attempt per stable PR, version/input-bound reservations, fresh independent kind prerequisites, atomic ordinary-claim accounting, lifetime attempt counts and explicit resumption baselines. Original native completion/cleanup gates release without inferring Git push or handled feedback. Public Fix now/controller composition, PR-head workspace selection, direct-harness Git changes and complete platform acceptance remain required; policy persistence does not yet dispatch remediation.
+
+
+PR detail now retains original same-repository/fork source identities with explicit unavailable versus historical-unobserved state. Repeated reads bind this source alongside original refs/commits, and desktop detail displays exact original identity. A private non-secret Git-target snapshot establishes the inputs for future Worker preparation without granting Git authentication or execution. Public remediation/session selection and the direct-harness Git flow remain unfinished.

@@ -166,6 +166,7 @@ type RepositoryItem struct {
 	BaseSHA        string                       `json:"base_sha,omitempty"`
 	HeadRef        string                       `json:"head_ref,omitempty"`
 	HeadSHA        string                       `json:"head_sha,omitempty"`
+	HeadRepository *PRHeadRepositoryObservation `json:"head_repository,omitempty"`
 }
 
 func RepositoryItemURL(owner, name string, kind RepositoryItemKind, number string) string {
@@ -190,6 +191,9 @@ func (r RepositoryItem) Validate(repository RemoteRepository, query RepositoryQu
 		return invalid()
 	}
 	if r.Author != nil && r.Author.Validate() != nil {
+		return invalid()
+	}
+	if r.HeadRepository != nil && (r.Kind != RepositoryPullRequest || query.Operation != RepositoryDetail || r.HeadRepository.Validate(repository) != nil) {
 		return invalid()
 	}
 	if query.Operation != RepositoryDetail {

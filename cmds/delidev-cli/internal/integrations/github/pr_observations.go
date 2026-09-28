@@ -271,7 +271,7 @@ func (c *Client) queryPRObservation(ctx context.Context, token []byte, repositor
 	if err != nil {
 		return result, err
 	}
-	if current.ID != item.ID || current.NodeID != item.NodeID || current.BaseRef != item.BaseRef || current.BaseSHA != item.BaseSHA || current.HeadRef != item.HeadRef || current.HeadSHA != item.HeadSHA {
+	if current.ID != item.ID || current.NodeID != item.NodeID || current.BaseRef != item.BaseRef || current.BaseSHA != item.BaseSHA || current.HeadRef != item.HeadRef || current.HeadSHA != item.HeadSHA || !samePRHeadRepository(current.HeadRepository, item.HeadRepository) {
 		return result, domain.Fail(domain.Conflict, "The PR base or head changed while reading its observation.", "Refresh the current PR explicitly; the earlier data was not published.")
 	}
 	if result.CI != nil && (current.State != item.State || current.Merged == nil || item.Merged == nil || *current.Merged != *item.Merged || result.CI.Validate(current) != nil) {
