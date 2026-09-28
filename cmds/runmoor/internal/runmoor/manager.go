@@ -108,7 +108,7 @@ func acceptSnapshotWithValidatedReload(s *Snapshot, c Config, restart, validated
 		}
 		p, ok := wanted[old.Spec.Name]
 		conn := c.Connection(p.Connection)
-		if ok && fingerprint(old.Spec) == fingerprint(p) && fingerprint(old.Connection) == fingerprint(conn) {
+		if ok && fingerprint(old.Spec) == fingerprint(p) && fingerprint(old.Connection) == fingerprint(conn) && (!validatedReload || old.Phase != Suspended || !suspensionCorrected(*old, p, conn, s.Config, c)) {
 			old.Generation = gen
 			matched[p.Name] = true
 			continue
@@ -168,7 +168,15 @@ func suspensionCorrected(old PoolState, next Pool, conn Connection, oldConfig, n
 	case ErrPlatform:
 		return oldPool.Backend != next.Backend || oldPool.Arch != next.Arch
 	case ErrPreparation:
-		return executionChanged(oldPool, next) || oldConfig.DockerSocket != newConfig.DockerSocket || oldConfig.TartExecutable != newConfig.TartExecutable || oldConfig.Timeouts != newConfig.Timeouts
+		if executionChanged(oldPool, next) {
+			return true
+		}
+		switch oldPool.Backend {
+		case Docker:
+			return oldConfig.DockerSocket != newConfig.DockerSocket || oldConfig.Timeouts.DockerPreparation != newConfig.Timeouts.DockerPreparation
+		case Tart:
+			return oldConfig.TartExecutable != newConfig.TartExecutable || oldConfig.Timeouts.TartPreparation != newConfig.Timeouts.TartPreparation
+		}
 	}
 	return old.PreparationFailures >= 3 && executionChanged(oldPool, next)
 }

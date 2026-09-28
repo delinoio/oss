@@ -25,18 +25,24 @@ func writeSuspensionReload(t *testing.T, m *Manager, c Config) {
 
 func TestValidatedReloadRecoversOnlyRelatedSuspensions(t *testing.T) {
 	for _, tc := range []struct {
-		name      string
-		code      ErrorCode
-		change    func(*Config)
-		wantReady bool
+		name            string
+		code            ErrorCode
+		change          func(*Config)
+		wantReady       bool
+		wantReplacement bool
 	}{
-		{"authentication credential", ErrAuth, func(c *Config) { c.Connections[0].Credential.Env = "RUNMOOR_REPLACEMENT_CREDENTIAL" }, true},
-		{"authentication unrelated image", ErrAuth, func(c *Config) { c.Pools[0].Image = "example/runner@sha256:" + strings.Repeat("b", 64) }, false},
-		{"ownership identity", ErrOwnership, func(c *Config) { c.Pools[0].ScaleSet = "replacement-linux" }, true},
-		{"ownership unrelated image", ErrOwnership, func(c *Config) { c.Pools[0].Image = "example/runner@sha256:" + strings.Repeat("b", 64) }, false},
-		{"image replacement", ErrImage, func(c *Config) { c.Pools[0].Image = "example/runner@sha256:" + strings.Repeat("b", 64) }, true},
-		{"image unrelated label", ErrImage, func(c *Config) { c.Pools[0].Labels = []string{"test-linux", "extra"} }, false},
-		{"preparation resources", ErrPreparation, func(c *Config) { c.Pools[0].Resources.MemoryMiB++ }, true},
+		{"authentication credential", ErrAuth, func(c *Config) { c.Connections[0].Credential.Env = "RUNMOOR_REPLACEMENT_CREDENTIAL" }, true, true},
+		{"authentication unrelated image", ErrAuth, func(c *Config) { c.Pools[0].Image = "example/runner@sha256:" + strings.Repeat("b", 64) }, false, true},
+		{"ownership identity", ErrOwnership, func(c *Config) { c.Pools[0].ScaleSet = "replacement-linux" }, true, true},
+		{"ownership unrelated image", ErrOwnership, func(c *Config) { c.Pools[0].Image = "example/runner@sha256:" + strings.Repeat("b", 64) }, false, true},
+		{"image replacement", ErrImage, func(c *Config) { c.Pools[0].Image = "example/runner@sha256:" + strings.Repeat("b", 64) }, true, true},
+		{"image unrelated label", ErrImage, func(c *Config) { c.Pools[0].Labels = []string{"test-linux", "extra"} }, false, true},
+		{"preparation resources", ErrPreparation, func(c *Config) { c.Pools[0].Resources.MemoryMiB++ }, true, true},
+		{"preparation Docker timeout", ErrPreparation, func(c *Config) { c.Timeouts.DockerPreparation = "7m" }, true, true},
+		{"preparation Docker socket", ErrPreparation, func(c *Config) { c.DockerSocket = "unix:///var/run/replacement-docker.sock" }, true, true},
+		{"preparation unrelated job timeout", ErrPreparation, func(c *Config) { c.Timeouts.Job = "7h" }, false, false},
+		{"preparation unrelated Tart timeout", ErrPreparation, func(c *Config) { c.Timeouts.TartPreparation = "11m" }, false, false},
+		{"preparation unrelated Tart executable", ErrPreparation, func(c *Config) { c.TartExecutable = "/usr/local/bin/tart" }, false, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m, c, _, _, oldID := testManager(t)
@@ -57,6 +63,12 @@ func TestValidatedReloadRecoversOnlyRelatedSuspensions(t *testing.T) {
 				t.Fatal(err)
 			}
 			s := m.Store.View()
+			if !tc.wantReplacement {
+				if len(s.Pools) != 1 || s.Pools[oldID].Phase != Suspended || s.Pools[oldID].Problem == nil || *s.Pools[oldID].Problem != *blocked || s.Pools[oldID].PreparationFailures != 3 {
+					t.Fatalf("unrelated global change altered the suspension: %+v", s.Pools)
+				}
+				return
+			}
 			if s.Pools[oldID].Phase != Draining {
 				t.Fatal("old generation did not drain")
 			}
