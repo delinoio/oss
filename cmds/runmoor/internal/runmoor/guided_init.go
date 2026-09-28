@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"time"
 )
@@ -163,6 +164,14 @@ func resumeGuidedInit(ctx context.Context, path string, input io.Reader, output 
 	fmt.Fprintln(output, "Resuming the owned macOS image setup.")
 	return runGuidedInit(ctx, j, bufio.NewReader(input), output, runtime)
 }
+func expectedGuidedConfig(path string, opts InitOptions) (Config, error) {
+	temporary := path + ".runmoor-expected-" + newID() + ".toml"
+	defer os.Remove(temporary)
+	if err := initialize(temporary, opts, strings.NewReader(""), io.Discard, false); err != nil {
+		return Config{}, err
+	}
+	return LoadConfig(temporary)
+}
 func ensureGuidedFiles(j guidedInitJournal) (Config, error) {
 	_, bootstrap, final := guidedPaths(j.ConfigPath)
 	if _, err := os.Lstat(final); os.IsNotExist(err) {
@@ -176,11 +185,16 @@ func ensureGuidedFiles(j guidedInitJournal) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	if len(finalConfig.Pools) != 1 || len(finalConfig.Connections) != 1 || finalConfig.Pools[0].Image != j.ImageID || finalConfig.Pools[0].Backend != Tart || finalConfig.Pools[0].RunnerVersion != LatestRunner || finalConfig.Connections[0].Target != j.Options.Target || finalConfig.Connections[0].Auth != AuthKind(j.Options.Auth) || finalConfig.Connections[0].Credential.Env != j.Options.CredentialEnv || finalConfig.Connections[0].Credential.File != j.Options.CredentialFile || finalConfig.Connections[0].ClientID != j.Options.ClientID || finalConfig.Connections[0].InstallationID != j.Options.InstallationID || finalConfig.Storage != j.Storage {
+	expectedFinal, err := expectedGuidedConfig(j.ConfigPath, j.Options)
+	if err != nil {
+		return Config{}, err
+	}
+	if !reflect.DeepEqual(finalConfig, expectedFinal) {
 		return Config{}, problem(ErrConfig, "Pending final configuration changed.", "Preserve the setup files and inspect them; Runmoor will not overwrite the file.")
 	}
+	bootstrapOptions := InitOptions{Backend: string(Tart), ImageOnly: true, Storage: j.Storage}
 	if _, err = os.Lstat(bootstrap); os.IsNotExist(err) {
-		if err = initialize(bootstrap, InitOptions{Backend: string(Tart), ImageOnly: true, Storage: j.Storage}, strings.NewReader(""), io.Discard, false); err != nil {
+		if err = initialize(bootstrap, bootstrapOptions, strings.NewReader(""), io.Discard, false); err != nil {
 			return Config{}, err
 		}
 	} else if err != nil {
@@ -190,7 +204,11 @@ func ensureGuidedFiles(j guidedInitJournal) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	if len(c.Pools) != 0 || len(c.Connections) != 0 || c.Storage != j.Storage {
+	expectedBootstrap, err := expectedGuidedConfig(j.ConfigPath, bootstrapOptions)
+	if err != nil {
+		return Config{}, err
+	}
+	if !reflect.DeepEqual(c, expectedBootstrap) {
 		return Config{}, problem(ErrConfig, "Pending bootstrap configuration changed.", "Preserve the setup files and inspect them; Runmoor will not adopt another configuration.")
 	}
 	return c, nil

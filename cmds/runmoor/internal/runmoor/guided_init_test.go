@@ -149,6 +149,43 @@ func TestGuidedTartInitResumesAndProtectsConfiguration(t *testing.T) {
 	if err = os.WriteFile(staged, originalStage, 0600); err != nil {
 		t.Fatal(err)
 	}
+	versionKey := bytes.Index(originalStage, []byte("runner_version ="))
+	if versionKey < 0 {
+		t.Fatal("staged configuration lacks a runner version")
+	}
+	versionLineEnd := versionKey + bytes.IndexByte(originalStage[versionKey:], '\n') + 1
+	alteredStage := append(append([]byte{}, originalStage[:versionLineEnd]...), []byte("runner_path = '/Users/other/actions-runner'\n")...)
+	alteredStage = append(alteredStage, originalStage[versionLineEnd:]...)
+	if err = os.WriteFile(staged, alteredStage, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if altered, e := LoadConfig(staged); e != nil || altered.Pools[0].RunnerPath != "/Users/other/actions-runner" {
+		t.Fatalf("runner-path fixture must be a valid changed config: %+v %v", altered.Pools, e)
+	}
+	beforeActions := len(fake.actions)
+	if err = initializeWithContext(context.Background(), path, InitOptions{}, strings.NewReader("\n"), io.Discard, true, fake); err == nil || len(fake.actions) != beforeActions {
+		t.Fatal("altered runner path was accepted or image work began")
+	}
+	if err = os.WriteFile(staged, originalStage, 0600); err != nil {
+		t.Fatal(err)
+	}
+	_, bootstrap, _ := guidedPaths(path)
+	originalBootstrap, err := os.ReadFile(bootstrap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(bootstrap, append(append([]byte{}, originalBootstrap...), []byte("\n[logging]\nlevel = 'debug'\n")...), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if altered, e := LoadConfig(bootstrap); e != nil || altered.Logging.Level != "debug" {
+		t.Fatalf("bootstrap fixture must be a valid changed config: %+v %v", altered.Logging, e)
+	}
+	if err = initializeWithContext(context.Background(), path, InitOptions{}, strings.NewReader("\n"), io.Discard, true, fake); err == nil || len(fake.actions) != beforeActions {
+		t.Fatal("altered bootstrap configuration was accepted or image work began")
+	}
+	if err = os.WriteFile(bootstrap, originalBootstrap, 0600); err != nil {
+		t.Fatal(err)
+	}
 	fake.probeReady = true
 	fake.verifyFail = true
 	if err = initializeWithContext(context.Background(), path, InitOptions{}, strings.NewReader("\n"), io.Discard, true, fake); err == nil {

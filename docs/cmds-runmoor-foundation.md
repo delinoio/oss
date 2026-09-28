@@ -321,6 +321,9 @@ managed preparation and cleanup.
   manager/storage state fail visibly; neither a source image nor an existing
   final config is overwritten or adopted. Aborting a wizard cleanly stops an
   open setup VM and retains the journal for retry.
+  On resume, the complete normalized staged final and bootstrap configurations
+  must match configurations regenerated from the private journal; changes to
+  paths, resource budgets, labels or other fields are not adopted.
   A durable successful image-creation marker is required before reopening a
   journaled VM; a failed or interrupted Tart create cannot be cleared merely
   by a later open request.
