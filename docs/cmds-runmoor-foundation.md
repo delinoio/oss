@@ -17,7 +17,7 @@ Trusted developers and small-team operators install the binary, Docker/Tart, cre
 ### CLI and configuration
 
 - Commands: `init`, `config validate`, `config show --resolved`, `runner update`, `run`, `status`, `doctor`, `reload`, `pause`, `resume`, `drain`, `stop`, `version`; `service install/start/stop/uninstall`; `image create/open/seal/list/remove`.
-- `runmoor --help` displays the current CLI version from the same `Version` constant used by `runmoor version`.
+- Global and command-local help display the current CLI version from the same `Version` constant used by `runmoor version`.
 - Global and command-local `--config` select a TOML file. `--no-color` or `NO_COLOR` disables default text-log ANSI colors. JSON is uncolored. All product output is English.
 - `status --json` and `doctor --json` have `schema_version: 1`; errors contain stable `code`, `message`, `recovery`, and relevant pool/runner identifiers. Status includes image revisions and unresolved preparation; doctor includes the current status snapshot plus persistent pool/execution problems and probes actual sleep-inhibition acquisition. The local Unix HTTP control protocol is `/v1/control`, available only through an owner-only filesystem socket. It is not a remote API.
 - `init` exclusively creates a minimal valid configuration using prompts or flags and omission-aware defaults. Configuration loading rejects unknown keys/versions, unsafe paths, duplicate identities, unsupported targets/architecture, contradictory backend fields, and impossible budgets before activation.

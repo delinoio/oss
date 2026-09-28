@@ -109,7 +109,7 @@ func Execute(args []string, out, errOut io.Writer) int {
 	fs.StringVar(&im.RunnerPath, "runner-path", "", "absolute guest runner path")
 	fs.StringVar(&im.RunnerVersion, "runner-version", "", "latest or exact installed runner version")
 	if e := fs.Parse(args); e == flag.ErrHelp {
-		fmt.Fprint(out, helpText)
+		printHelp(out)
 		if command == "image" {
 			fmt.Fprintln(out, "Image options: create --name NAME (--ipsw PATH | --from SOURCE) [--cpu N --memory-mib N]; open/seal/remove --id UUID; seal [--runner-version latest|VERSION] [--runner-path PATH]")
 		}
