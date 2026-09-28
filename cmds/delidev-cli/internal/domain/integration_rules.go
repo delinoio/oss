@@ -41,6 +41,7 @@ type RequiredRuleCheck struct {
 }
 
 type RequiredRuleChecks struct {
+	UnknownParameters    bool                `json:"unknown_parameters,omitempty"`
 	Strict               bool                `json:"strict"`
 	DoNotEnforceOnCreate *bool               `json:"do_not_enforce_on_create,omitempty"`
 	Checks               []RequiredRuleCheck `json:"checks"`

@@ -465,3 +465,5 @@
 - Official GitHub forms use revision-bound generated Connect reads and explicit repository/scope guidance. Never invent Checks/repository-prefill support. Suppress late native actions after closing/replacement, keep Classic private repo rights explicit, and send untrusted opener input through sidecar stdin. Only trusted main/pinned-server windows may invoke the closed Go-validated GitHub presentation capability; OS dispatch is not page/access/token proof.
 
 - PR active-rule reads use generated Connect Query and an exclusive complete base/head-bound inventory. Validate exact ruleset/App IDs, source consistency and bounded requirements; show provenance/unknown states inertly without partial paging or inferred CI results. Preserve inactive-query disposal and the integration contract.
+
+- Required CI is an explicit generated query with complete exclusive scope, exact totals/identities and checked requirement/result references. Keep evaluated head/test-merge provenance, pending/missing/unknown and unsupported conditions visible; render native context data inertly. A read never starts automatic handling or grants later execution authority.

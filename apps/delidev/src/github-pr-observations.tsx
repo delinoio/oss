@@ -1,6 +1,7 @@
 import { items, object, text, type Document } from "./documents";
 import { QueryOperation, type GitHubQuery, positive, bounded, date, actorValid } from "./github-query-model";
 
+import { PRCI, validPRCI } from "./github-ci";
 import { PRRules, validPRRules } from "./github-rules";
 
 const count = (value: unknown): value is string => typeof value === "string" && /^(0|[1-9][0-9]{0,19})$/.test(value) && BigInt(value) <= 18446744073709551615n;
@@ -9,9 +10,11 @@ const checkStatus = (value: string) => checkStatuses.get(value) ?? "unknown";
 const conclusions = new Map([["success", "success"], ["failure", "failure"], ["neutral", "neutral"], ["cancelled", "cancelled"], ["skipped", "skipped"], ["timed_out", "timed-out"], ["action_required", "action-required"], ["stale", "stale"], ["startup_failure", "startup-failure"]]);
 const conclusion = (value: string) => conclusions.get(value) ?? "unknown";
 const statusState = (value: string) => ["pending", "success", "failure", "error"].includes(value) ? value : "unknown";
-export const isObservation = (query: GitHubQuery) => [QueryOperation.Diff, QueryOperation.Checks, QueryOperation.Statuses, QueryOperation.Rules].includes(query.operation);
+export const isObservation = (query: GitHubQuery) => [QueryOperation.Diff, QueryOperation.Checks, QueryOperation.Statuses, QueryOperation.Rules, QueryOperation.CI].includes(query.operation);
 export function validPRObservation(result: Document, query: GitHubQuery, item: Document) {
   const diff = object(result.diff), checks = object(result.checks), statuses = object(result.statuses);
+  if (query.operation === QueryOperation.CI) return query.kind === "pull-request" && result.diff == null && result.checks == null && result.statuses == null && result.rules == null && validPRCI(result.ci, item);
+  if (result.ci != null) return false;
   if (query.operation === QueryOperation.Rules) return query.kind === "pull-request" && result.diff == null && result.checks == null && result.statuses == null && validPRRules(result.rules, item);
   if (result.rules != null) return false;
   if (!isObservation(query)) return result.diff == null && result.checks == null && result.statuses == null;
@@ -43,6 +46,7 @@ export function validPRObservation(result: Document, query: GitHubQuery, item: D
 }
 export function PRObservation({ value, query, item }: { value: Document; query: GitHubQuery; item: Document }) {
   if (!isObservation(query)) return null;
+  if (query.operation === QueryOperation.CI) return <PRCI value={object(value.ci)} />;
   if (query.operation === QueryOperation.Rules) return <PRRules value={object(value.rules)} />;
   const diff = object(value.diff), checks = object(value.checks), statuses = object(value.statuses);
   return <section aria-label="PR head observation"><p>Observed PR head: <code>{text(item.head_sha)}</code></p><p>These results do not evaluate active rulesets or the commit GitHub evaluates for required CI. Missing, pending or unknown results do not establish passing CI.</p>

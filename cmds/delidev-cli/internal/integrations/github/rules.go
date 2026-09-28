@@ -43,6 +43,11 @@ func parseActiveRule(raw []byte) (domain.ActiveRepositoryRule, error) {
 			return rule, queryUnavailable()
 		}
 		required := &domain.RequiredRuleChecks{Strict: *strict, Checks: []domain.RequiredRuleCheck{}}
+		for key := range p {
+			if key != "strict_required_status_checks_policy" && key != "do_not_enforce_on_create" && key != "required_status_checks" {
+				required.UnknownParameters = true
+			}
+		}
 		if _, exists := p["do_not_enforce_on_create"]; exists {
 			required.DoNotEnforceOnCreate, ok = nullableBool(p, "do_not_enforce_on_create")
 			if !ok || required.DoNotEnforceOnCreate == nil {
@@ -55,6 +60,11 @@ func parseActiveRule(raw []byte) (domain.ActiveRepositoryRule, error) {
 				return rule, queryUnavailable()
 			}
 			value := domain.RequiredRuleCheck{Context: stringField(check, "context")}
+			for key := range check {
+				if key != "context" && key != "integration_id" {
+					required.UnknownParameters = true
+				}
+			}
 			if rawID, exists := check["integration_id"]; exists && string(rawID) != "null" {
 				id, ok := exactUnsigned(rawID)
 				if !ok {

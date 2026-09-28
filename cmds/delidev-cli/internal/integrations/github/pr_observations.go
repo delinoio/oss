@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/url"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -164,6 +165,35 @@ func (c *Client) queryPRObservation(ctx context.Context, token []byte, repositor
 		if repeated.Digest != result.Rules.Digest {
 			return result, domain.Fail(domain.Conflict, "The active rules changed during the read.", "Refresh the PR rules explicitly; no earlier requirements were published.")
 		}
+	} else if q.Operation == domain.RepositoryCI {
+		rules, err := c.readActiveRules(ctx, token, repository, item)
+		if err != nil {
+			return result, err
+		}
+		observed, err := c.readCIInventory(ctx, token, repository, item)
+		if err != nil {
+			return result, err
+		}
+		repeated, err := c.readCIInventory(ctx, token, repository, item)
+		if err != nil {
+			return result, err
+		}
+		if !reflect.DeepEqual(observed, repeated) {
+			return result, domain.Fail(domain.Conflict, "CI results changed during the read.", "Refresh the complete PR CI evidence; no mixed result was published.")
+		}
+		currentRules, err := c.readActiveRules(ctx, token, repository, item)
+		if err != nil {
+			return result, err
+		}
+		if rules.Digest != currentRules.Digest {
+			return result, domain.Fail(domain.Conflict, "Active CI rules changed during the read.", "Refresh the PR CI evaluation explicitly.")
+		}
+		observed.Rules = *rules
+		observed.Result = observed.Evaluate(item)
+		if observed.Validate(item) != nil {
+			return result, queryUnavailable()
+		}
+		result.CI = &observed
 	} else {
 		base := repositoryPath(repository)
 		values := url.Values{"page": {strconv.FormatUint(uint64(q.Page), 10)}, "per_page": {strconv.FormatUint(uint64(q.PageSize), 10)}}
@@ -222,6 +252,9 @@ func (c *Client) queryPRObservation(ctx context.Context, token []byte, repositor
 	}
 	if current.ID != item.ID || current.NodeID != item.NodeID || current.BaseRef != item.BaseRef || current.BaseSHA != item.BaseSHA || current.HeadRef != item.HeadRef || current.HeadSHA != item.HeadSHA {
 		return result, domain.Fail(domain.Conflict, "The PR base or head changed while reading its observation.", "Refresh the current PR explicitly; the earlier data was not published.")
+	}
+	if result.CI != nil && (current.State != item.State || current.Merged == nil || item.Merged == nil || *current.Merged != *item.Merged || result.CI.Validate(current) != nil) {
+		return result, domain.Fail(domain.Conflict, "The PR CI evaluation changed before publication.", "Refresh current CI evidence.")
 	}
 	if ctx.Err() != nil {
 		return result, domain.SafeError(ctx.Err())

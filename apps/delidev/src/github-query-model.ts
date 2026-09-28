@@ -1,7 +1,7 @@
 import { object, text } from "./documents";
 
 export enum ItemKind { PullRequest = "pull-request", Issue = "issue" }
-export enum QueryOperation { List = "list", Search = "search", Detail = "detail", Diff = "diff", Checks = "checks", Statuses = "statuses", Rules = "rules" }
+export enum QueryOperation { List = "list", Search = "search", Detail = "detail", Diff = "diff", Checks = "checks", Statuses = "statuses", Rules = "rules", CI = "ci" }
 export enum ItemState { Open = "open", Closed = "closed", All = "all" }
 export type GitHubQuery = { kind: ItemKind; operation: QueryOperation; state?: ItemState; search?: string; number?: string; page?: number; page_size?: number };
 export const positive = (value: unknown): value is string => typeof value === "string" && /^[1-9][0-9]{0,19}$/.test(value) && BigInt(value) <= 18446744073709551615n;

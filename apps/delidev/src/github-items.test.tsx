@@ -1,3 +1,4 @@
+import { ciObservation } from "./github-ci-fixture";
 import { createHash } from "node:crypto";
 import { create } from "@bufbuild/protobuf";
 import { createRouterTransport } from "@connectrpc/connect";
@@ -15,10 +16,10 @@ function fixture() {
   const profile = JSON.parse(new TextDecoder().decode(repository.documentJson)).integration_id as string;
   const generation = newRequestId();
   const query = vi.fn(async (request: { repositoryId: string; queryJson: Uint8Array }) => {
-    const q = JSON.parse(new TextDecoder().decode(request.queryJson)), detail = ["detail", "diff", "checks", "statuses", "rules"].includes(q.operation), search = q.operation === "search", pr = q.kind === "pull-request";
+    const q = JSON.parse(new TextDecoder().decode(request.queryJson)), detail = ["detail", "diff", "checks", "statuses", "rules", "ci"].includes(q.operation), search = q.operation === "search", pr = q.kind === "pull-request";
     const item = { provider: "github.com", kind: q.kind, identity_source: pr && !search ? "pull-request-api" : "issue-api", id: "9007199254740993", node_id: "ITEM_17", number: "17", title: "Original fixture title", state: "open", created_at: "2026-09-01T00:00:00Z", updated_at: "2026-09-28T00:00:00Z", author: { id: "19", node_id: "U_19", login: "fixture-author", kind: "user", provider_type: "User" }, url: `https://github.com/fixture-owner/repo/${pr ? "pull" : "issues"}/17`, ...(pr ? { draft: false } : {}), ...(detail ? { body: "<script>never executed</script>\nOriginal body", ...(pr ? { merged: false, base_ref: "main", base_sha: "a".repeat(40), head_ref: "feature", head_sha: "b".repeat(40) } : {}) } : {}) };
     const patch = "diff --git a/file b/file\n+Original patch\n";
-    const observation = q.operation === "rules" ? { rules: { base_ref: "main", base_sha: "a".repeat(40), head_sha: "b".repeat(40), digest: "c".repeat(64), rules: [{ type: "required_status_checks", ruleset_id: "9007199254740993", source_kind: "repository", native_source_kind: "Repository", source: "fixture-owner/repo", digest: "d".repeat(64), required_checks: { strict: false, checks: [{ context: "CI Result", integration_id: "15368" }] } }] } } : q.operation === "diff" ? { diff: { patch, digest: createHash("sha256").update(patch).digest("hex"), base_sha: "a".repeat(40), head_sha: "b".repeat(40) } } : q.operation === "checks" ? { checks: { head_sha: "b".repeat(40), filter: "latest", total_count: "1", runs: [{ id: "53", node_id: "CHECK_53", name: "Fixture Check", head_sha: "b".repeat(40), status: "completed", native_status: "completed", conclusion: "success", native_conclusion: "success", application: { id: "15368", node_id: "APP_15368", slug: "github-actions" } }] } } : q.operation === "statuses" ? { statuses: { head_sha: "b".repeat(40), state: "pending", native_state: "pending", total_count: "0", contexts: [] } } : {};
+    const observation = q.operation === "ci" ? { ci: ciObservation() } : q.operation === "rules" ? { rules: { base_ref: "main", base_sha: "a".repeat(40), head_sha: "b".repeat(40), digest: "c".repeat(64), rules: [{ type: "required_status_checks", ruleset_id: "9007199254740993", source_kind: "repository", native_source_kind: "Repository", source: "fixture-owner/repo", digest: "d".repeat(64), required_checks: { strict: false, checks: [{ context: "CI Result", integration_id: "15368" }] } }] } } : q.operation === "diff" ? { diff: { patch, digest: createHash("sha256").update(patch).digest("hex"), base_sha: "a".repeat(40), head_sha: "b".repeat(40) } } : q.operation === "checks" ? { checks: { head_sha: "b".repeat(40), filter: "latest", total_count: "1", runs: [{ id: "53", node_id: "CHECK_53", name: "Fixture Check", head_sha: "b".repeat(40), status: "completed", native_status: "completed", conclusion: "success", native_conclusion: "success", application: { id: "15368", node_id: "APP_15368", slug: "github-actions" } }] } } : q.operation === "statuses" ? { statuses: { head_sha: "b".repeat(40), state: "pending", native_state: "pending", total_count: "0", contexts: [] } } : {};
     return { schemaVersion: 1, documentJson: encode({ ...observation, repository_id: repository.id, repository_revision: repository.revision.toString(), profile_id: profile, generation_id: generation, observed_at: "2026-09-28T00:00:00Z", identity: { id: "17", node_id: "U_17", login: "fixture-user" }, repository: { provider: "github.com", id: "37", node_id: "R_37", owner: "fixture-owner", name: "repo", private: true }, query: q, items: [item], ...(search ? { total_count: "1001", incomplete: true } : {}), ...(!detail && q.page === 1 ? { next_page: 2 } : {}) }) };
   });
   const transport = createRouterTransport((router) => router.service(IntegrationService, { queryRepositoryIntegration: query }));
@@ -103,4 +104,14 @@ it("preserves unknown check source values without accepting a known passing clas
   const response = await f.query({ repositoryId: f.repository.id, queryJson: encode(query) });const value = JSON.parse(new TextDecoder().decode(response.documentJson));
   value.checks.runs[0].native_status = "constructor";value.checks.runs[0].status = "unknown";value.checks.runs[0].native_conclusion = "future-conclusion";value.checks.runs[0].conclusion = "unknown";
   expect(githubResult(encode(value), f.repository, query)).toBeTruthy();value.checks.runs[0].conclusion = "success";expect(githubResult(encode(value), f.repository, query)).toBeUndefined();
+});
+
+it("evaluates required CI separately from the head-only observations", async () => {
+  const f = fixture(); render(f.view()); fireEvent.click(screen.getByRole("button", { name: "Browse GitHub items" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Read #17" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Evaluate required CI" }));
+  await screen.findByRole("table", { name: "Active ruleset CI requirements" });
+  expect(screen.getByRole("status").textContent).toBe("Terminal required CI failure");
+  expect(screen.queryByRole("navigation", { name: "GitHub result pages" })).toBeNull();
+  expect(JSON.parse(new TextDecoder().decode(f.query.mock.calls.at(-1)![0].queryJson))).toEqual({ kind: "pull-request", operation: "ci", number: "17" });
 });

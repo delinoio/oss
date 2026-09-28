@@ -21,7 +21,7 @@ export function validPRRules(raw: unknown, item: Document): boolean {
       continue;
     }
     const required = object(rule.required_checks);
-    if (typeof required.strict !== "boolean" || (required.do_not_enforce_on_create != null && typeof required.do_not_enforce_on_create !== "boolean") || !Array.isArray(required.checks) || required.checks.length > 100) return false;
+    if (typeof required.strict !== "boolean" || (required.unknown_parameters != null && typeof required.unknown_parameters !== "boolean") || (required.do_not_enforce_on_create != null && typeof required.do_not_enforce_on_create !== "boolean") || !Array.isArray(required.checks) || required.checks.length > 100) return false;
     const checks = new Set<string>();
     for (const raw of required.checks) {
       const check = object(raw);
@@ -45,6 +45,7 @@ export function PRRules({ value }: { value: Document }) {
         <h5>{text(rule.type)}</h5>
         <p>{text(rule.native_source_kind)}: {text(rule.source)} · Ruleset {text(rule.ruleset_id)}{rule.source_kind === "unknown" ? " · Unknown source type" : ""}</p>
         {rule.type === "required_status_checks" ? <>
+          {required.unknown_parameters ? <p>This rule includes unrecognized parameters; CI evaluation is unknown.</p> : null}
           <p>Require an up-to-date branch: {required.strict ? "Yes" : "No"}</p>
           {items(required.checks).length ? <table><caption>Required status checks · ruleset {text(rule.ruleset_id)}</caption>
             <thead><tr><th scope="col">Context or check name</th><th scope="col">Required App</th></tr></thead>
