@@ -30,6 +30,8 @@ One GitHub concurrency group serializes all publishers with `cancel-in-progress:
 
 Cache immutable package and snapshot objects for one year. Bypass caching for mutable repository entrypoints and setup/key files, and disable negative caching for this hostname. Verify public HTTPS responses before reporting publication success. Structured logs contain project, version, revision, phase and stable error codes, never credentials or signing material.
 
+Public HTTPS readback retries transient transport errors, HTTP 408/429/5xx responses, and byte mismatches at most three times with bounded pauses. Other HTTP 4xx responses fail immediately. Each retry or terminal failure logs the safe repository object key, attempt, stable error code, and HTTP status when available; publication succeeds only after exact byte equality for every object. The publisher retains the signed snapshot and partial upload state for an exact-identity retry after a terminal failure.
+
 ## Credentials and operations
 
 The `linux-packages` GitHub Environment owns dedicated R2 object credentials limited to the two buckets and an RSA 4096 OpenPGP signing subkey. Keep the primary secret key and recovery material outside CI. Commit the public certificate and fingerprint only. APT uses a repository-specific Signed-By keyring. PR and dry-run paths use disposable signing identities and cannot consume production secrets or write R2.
