@@ -41,14 +41,16 @@ journalctl --user -u runmoor.service -n 50 --no-pager
 ```
 
 `runmoor service uninstall` asks Runmoor to drain and stop owned work, then
-disables and stops the user unit. If systemd fails, Runmoor preserves the unit
-and reports `DEPENDENCY_UNAVAILABLE: User service command failed`; inspect the
-direct `systemctl --user` output and journal before retrying. After `runmoor
-status` confirms no active executions or pending cleanup, the corresponding
-systemd command is `systemctl --user disable --now runmoor.service`. Do not
-manually remove the unit, state, or managed data while executions or cleanup
-may still be active. Use the normal drain/stop path before replacing a service
-definition.
+disables and stops the user unit. A failure during disable/stop leaves the unit
+file in place, but a later systemd reload failure can be reported after Runmoor
+has removed it. Both return `DEPENDENCY_UNAVAILABLE: User service command
+failed`. Check whether the unit file still exists in the user's systemd
+configuration directory and inspect the direct `systemctl --user` output and
+journal before retrying. After `runmoor status` confirms no active executions
+or pending cleanup, the corresponding disable/stop command is
+`systemctl --user disable --now runmoor.service`. Do not manually remove the
+unit, state, or managed data while executions or cleanup may still be active.
+Use the normal drain/stop path before replacing a service definition.
 
 Manager-only restart reconciles SQLite with actual Docker/Tart and GitHub state, resumes verified live work and retries incomplete cleanup. Ambiguous resources are quarantined rather than deleted. Confirmed termination releases resources; unresolved cleanup/ownership records remain durable. Runmoor never automatically reruns a failed GitHub job.
 
