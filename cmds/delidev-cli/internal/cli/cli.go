@@ -155,6 +155,10 @@ func Run(ctx context.Context, args []string, streams IO) int {
 	defer c.transport.CloseIdleConnections()
 	if command != "events" {
 		limit := 30 * time.Second
+		if command == "github" {
+			limit = 40 * time.Second
+			c.transport.ResponseHeaderTimeout = limit
+		}
 		if command == "integration" {
 			c.transport.ResponseHeaderTimeout = 25 * time.Second
 			if len(rest) > 0 && rest[0] == "inspect-repository" {
@@ -278,6 +282,9 @@ func Run(ctx context.Context, args []string, streams IO) int {
 			value, err := modelCatalog(ctx, c, rest)
 			return emit(value, err)
 		}
+	case "github":
+		value, err := githubCommand(ctx, c, rest)
+		return emit(value, err)
 	case "integration":
 		if len(rest) > 0 && rest[0] != "list" && rest[0] != "get" && rest[0] != "snapshot" {
 			if rest[0] != "inspect-repository" {
@@ -785,6 +792,9 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   integration validate|delete --id ID --revision N
   integration list|get|snapshot [--id ID]
   integration inspect-repository --repository-id ID
+  github pr|issue list --repository-id ID [--state open|closed|all] [--page N --page-size N]
+  github pr|issue search --repository-id ID --text TERMS [--state open|closed|all] [--page N]
+  github pr|issue get --repository-id ID --number N
   provider presets
   provider create --preset PRESET [--name NAME]
   provider discover --account-id ID --revision N

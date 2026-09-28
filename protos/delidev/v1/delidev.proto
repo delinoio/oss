@@ -487,6 +487,7 @@ service IntegrationService {
   rpc ValidateIntegrationProfile(ValidateIntegrationProfileRequest) returns (ValidateIntegrationProfileResponse);
   rpc DeleteIntegrationProfile(DeleteIntegrationProfileRequest) returns (DeleteIntegrationProfileResponse);
   rpc InspectRepositoryIntegration(InspectRepositoryIntegrationRequest) returns (InspectRepositoryIntegrationResponse);
+  rpc QueryRepositoryIntegration(QueryRepositoryIntegrationRequest) returns (QueryRepositoryIntegrationResponse);
 }
 message SaveIntegrationProfileRequest {
   Mutation mutation = 1;
@@ -539,6 +540,17 @@ message InspectRepositoryIntegrationRequest {
 message InspectRepositoryIntegrationResponse {
   uint32 schema_version = 1;
   // Fresh scoped endpoint-access observations, not persistent authorization.
+  bytes document_json = 2;
+}
+
+message QueryRepositoryIntegrationRequest {
+  string repository_id = 1;
+  uint32 schema_version = 2;
+  // Strict read-only query; repository/profile authority comes from server state.
+  bytes query_json = 3;
+}
+message QueryRepositoryIntegrationResponse {
+  uint32 schema_version = 1;
   bytes document_json = 2;
 }
 

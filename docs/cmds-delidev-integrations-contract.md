@@ -2,7 +2,7 @@
 
 ## Scope
 
-`cmds/delidev-cli/internal/integrations/github`, the domain integration model, server IntegrationService handlers and CLI integration commands own named server-side GitHub.com PAT profiles. This implementation provides profile metadata, direct native credential generations, authenticated identity inspection and repository-specific read-endpoint access observations. Issue/PR data queries, ruleset evaluation, other reviewers' identity/permission validation, creation-form verification and remediation remain separate required issue #964 work; endpoint access cannot stand in for them.
+`cmds/delidev-cli/internal/integrations/github`, the domain integration model, server IntegrationService handlers and CLI integration commands own named server-side GitHub.com PAT profiles. This implementation provides profile metadata, direct native credential generations, authenticated identity inspection and repository-specific read-endpoint access observations. PR/issue list, search and detail reads are also implemented. PR diffs/check outcomes, external opening, session associations, ruleset evaluation, other reviewers' identity/permission validation, creation-form verification and remediation remain separate required issue #964 work; endpoint access cannot stand in for them.
 
 ## Runtime and Language
 
@@ -14,7 +14,7 @@ The server owner and paired product clients manage profiles. Worker credentials 
 
 ## Interfaces and Contracts
 
-`IntegrationService` provides `SaveIntegrationProfile`, `ReplaceIntegrationToken`, `ValidateIntegrationProfile`, `DeleteIntegrationProfile` and read-only `InspectRepositoryIntegration`. Generic resource reads/list/snapshots/events expose `integration` metadata. Save accepts strict schema-version-1 definition JSON containing `name`, provider `github.com`, `token_kind` (`fine-grained` preferred or `classic`) and optional `resource_owner`; fine-grained profiles require an owner. The token type and resource owner are explicit user declarations, fixed for the profile lifetime. Renaming cannot alter connection state. A different owner/type requires another profile.
+`IntegrationService` provides `SaveIntegrationProfile`, `ReplaceIntegrationToken`, `ValidateIntegrationProfile`, `DeleteIntegrationProfile` and read-only `InspectRepositoryIntegration` / `QueryRepositoryIntegration`. Generic resource reads/list/snapshots/events expose `integration` metadata. Save accepts strict schema-version-1 definition JSON containing `name`, provider `github.com`, `token_kind` (`fine-grained` preferred or `classic`) and optional `resource_owner`; fine-grained profiles require an owner. The token type and resource owner are explicit user declarations, fixed for the profile lifetime. Renaming cannot alter connection state. A different owner/type requires another profile.
 
 CLI commands are `integration create --input FILE|-`, `integration edit --id ID --revision N --input FILE|-`, `integration replace-token --id ID --revision N --pat-stdin`, `integration validate|delete --id ID --revision N`, `integration inspect-repository --repository-id ID`, and ordinary `integration list|get|snapshot`. PAT input is bounded to 512 visible ASCII bytes, permits one conventional terminal LF/CRLF and never appears in argv. The PAT and server-authentication token cannot share stdin. Accepted operations with cleanup/inspection problems return current metadata plus a typed failure and the original request ID; the CLI preserves that result with a nonzero status.
 
@@ -44,6 +44,22 @@ Repository settings provide explicit owner/name/profile fields and an opt-in acc
 
 GitHub's official PAT management documentation currently lists Checks API as a fine-grained PAT limitation, while individual Checks endpoint documentation advertises fine-grained Checks(read) support. Do not resolve that contradiction by inventing a permission prefill or blanket support. Keep actual selected-repository observations explicit; real PAT and official-form acceptance remain required evidence. Active branch rules and the single-user collaborator-permission lookup document Metadata(read), not extra administration scopes. Form navigation currently stops at GitHub's user reauthentication boundary; no token was created.
 
+## PR and Issue Queries
+
+`QueryRepositoryIntegration` accepts the configured local repository UUID, schema version 1 and strict query JSON. Kinds are `pull-request` or `issue`; operations are `list`, `search` and `detail`. List/search select `open`, `closed` or `all`, a one-based page at most 10,000 and a page size 1–20. Detail requires only a canonical positive decimal item number. Search accepts bounded plain letter/number/space/hyphen/underscore/period terms; it does not expose GitHub's query language. The adapter quotes individual terms, supplies its own exact `repo`, kind, title/body and optional state qualifiers, and rejects a constructed query over GitHub's 256-byte limit. Search cannot override repository scope.
+
+Every query refreshes the selected token's identity and exact repository metadata. Search additionally reads the matching repository feature endpoint, because GitHub search itself documents no fine-grained permission requirement. No identity-only result, unrelated feature, system token, response URL or older access observation grants query authority. The same one-per-profile/eight-global bounded owner, cancellation and post-read authorization/repository-revision/generation checks serve access and content reads. Queries persist no receipt, content, page state or authorization grant.
+
+The adapter projects only bounded stable identities, original state/title/author and times. It distinguishes the `issue-api` and `pull-request-api` numeric identity namespaces: the issue/search number ID for a PR is different from the PR REST numeric ID, even when their node ID and repository/number match. Keep both provenance and exact decimal strings; future durable PR association must resolve the actual PR identity rather than guessing across namespaces. Actor type retains original provider type and a known `User`/`Bot`/`Organization` classification or explicit unknown classification, never proof of an installed App or effective reviewer permission. An unknown type remains visible for manual inspection with no inferred reviewer authority; a deleted/null author stays unavailable.
+
+List responses omit bodies. Detail returns bounded original Markdown as inert text; a null body becomes empty text. PR detail preserves observed base/head refs and SHA values, draft/merged booleans and nullable mergeability. Validate its base repository's stable identities against the selected repository; an absent/deleted head-fork repository does not erase the original ref/SHA. Unknown mergeability stays unknown and does not authorize a conflict fix or prove checks/rules satisfaction. API and GitHub item addresses must match the selected repository/number; the returned GitHub address is constructed from those validated fields. No remote HTML, images or external URLs are fetched/rendered.
+
+Repository issue listing includes PR entries in GitHub. Validate their scope, then omit them from the issue projection while preserving original API page progression. An empty projected page with a next page is not a complete issue inventory. Link headers are metadata only: a next link must preserve exact official origin, endpoint and every query parameter, contain exactly one consecutive page value and add no fragment/userinfo. Never follow the supplied link. Each next request is independently constructed and authorized. These are live API pages, not an immutable cross-page snapshot; concurrent GitHub edits can shift page contents.
+
+Search preserves exact total count and `incomplete_results`; neither a timeout nor an omitted item proves absence. Enforce GitHub's first-1,000-match boundary and expose reaching it without silently fetching outside that range. Oversized responses fail with typed capacity guidance to reduce page size/narrow search, never truncation. CLI commands are `github pr|issue list --repository-id ID [--state open|closed|all] [--page N --page-size N]`, `github pr|issue search --repository-id ID --text TERMS [--state ... --page N --page-size N]`, and `github pr|issue get --repository-id ID --number N`. CLI independently validates the complete returned scope, query and exact numbers. Headers/command lifetime allow the bounded 35-second server read.
+
+The desktop repository settings browser provides type/state/page-size selection, plain search, explicit paging and detail/back/refresh actions through generated Connect Query. It validates the whole observation before rendering, marks previous observations during refresh/failure, distinguishes search incompleteness and unknown mergeability, and cancels/discards queries on close/inactivation. Body and GitHub address remain inert text in this increment. PR diff/check/status reads, native external opening, durable session associations, evidence handling and remediation remain required separately.
+
 ## Storage
 
 Only non-secret definitions, generation references, current typed validation, pending operations and receipts enter server SQLite. Direct PAT bytes use the separate native service in the credential contract. Private generation metadata and keyed receipt commitments are outside/inside SQLite respectively, but neither contains raw tokens, encrypted PAT payloads, unkeyed token hashes or owner-key bytes. The protected server owner identity keys domain-separated request commitments and must accompany restoration of its matching scope.
@@ -56,7 +72,7 @@ Owner/client authorization is checked at the public boundary and transactionally
 
 ## Logging
 
-Structured logs include bounded operation/state, opaque profile/request identifiers, typed error codes, pending/deleted/replayed flags and correlation identity. No PAT, identity response body, user email, profile document or GitHub diagnostic body is logged. Native storage uses the separate credential logging boundary.
+Structured logs include bounded operation/state, opaque profile/request identifiers, typed error codes, pending/deleted/replayed flags and correlation identity. No PAT, identity response body, user email, profile document, search text, item body/title, returned URLs or GitHub diagnostic body is logged. Native storage uses the separate credential logging boundary.
 
 ## Build and Test
 
@@ -66,7 +82,7 @@ Tests use real temporary SQLite and authenticated loopback Connect, injected pri
 
 ## Dependencies and Integrations
 
-The credential package owns native storage and immutable generation markers. Existing ResourceService provides metadata reads/events. Generated Go/TypeScript bindings and Connect Query own the transport. Repository associations remain explicit and future read-only queries must enforce fresh selected-profile and per-feature authority.
+The credential package owns native storage and immutable generation markers. Existing ResourceService provides metadata reads/events. Generated Go/TypeScript bindings and Connect Query own the transport. Repository associations remain explicit and every read-only query must enforce fresh selected-profile and per-feature authority.
 
 ## Change Triggers
 
@@ -79,3 +95,5 @@ Update this document, the credential/protocol/client/desktop contracts, the proj
 - [GitHub authenticated user API](https://docs.github.com/en/rest/users/users#get-the-authenticated-user).
 - [GitHub PAT management](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens).
 - [GitHub Checks API](https://docs.github.com/en/rest/checks/runs), [active branch rules](https://docs.github.com/en/rest/repos/rules#get-rules-for-a-branch), [collaborator permission](https://docs.github.com/en/rest/collaborators/collaborators#get-repository-permissions-for-a-user), [branch metadata](https://docs.github.com/en/rest/branches/branches#get-a-branch).
+
+- [GitHub PR list/detail](https://docs.github.com/en/rest/pulls/pulls), [repository issues](https://docs.github.com/en/rest/issues/issues), [issue/PR search and limits](https://docs.github.com/en/rest/search/search).

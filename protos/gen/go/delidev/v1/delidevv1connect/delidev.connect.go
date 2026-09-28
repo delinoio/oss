@@ -181,6 +181,9 @@ const (
 	// IntegrationServiceInspectRepositoryIntegrationProcedure is the fully-qualified name of the
 	// IntegrationService's InspectRepositoryIntegration RPC.
 	IntegrationServiceInspectRepositoryIntegrationProcedure = "/delidev.v1.IntegrationService/InspectRepositoryIntegration"
+	// IntegrationServiceQueryRepositoryIntegrationProcedure is the fully-qualified name of the
+	// IntegrationService's QueryRepositoryIntegration RPC.
+	IntegrationServiceQueryRepositoryIntegrationProcedure = "/delidev.v1.IntegrationService/QueryRepositoryIntegration"
 	// ProviderServiceListProviderPresetsProcedure is the fully-qualified name of the ProviderService's
 	// ListProviderPresets RPC.
 	ProviderServiceListProviderPresetsProcedure = "/delidev.v1.ProviderService/ListProviderPresets"
@@ -1574,6 +1577,7 @@ type IntegrationServiceClient interface {
 	ValidateIntegrationProfile(context.Context, *connect.Request[v1.ValidateIntegrationProfileRequest]) (*connect.Response[v1.ValidateIntegrationProfileResponse], error)
 	DeleteIntegrationProfile(context.Context, *connect.Request[v1.DeleteIntegrationProfileRequest]) (*connect.Response[v1.DeleteIntegrationProfileResponse], error)
 	InspectRepositoryIntegration(context.Context, *connect.Request[v1.InspectRepositoryIntegrationRequest]) (*connect.Response[v1.InspectRepositoryIntegrationResponse], error)
+	QueryRepositoryIntegration(context.Context, *connect.Request[v1.QueryRepositoryIntegrationRequest]) (*connect.Response[v1.QueryRepositoryIntegrationResponse], error)
 }
 
 // NewIntegrationServiceClient constructs a client for the delidev.v1.IntegrationService service. By
@@ -1617,6 +1621,12 @@ func NewIntegrationServiceClient(httpClient connect.HTTPClient, baseURL string, 
 			connect.WithSchema(integrationServiceMethods.ByName("InspectRepositoryIntegration")),
 			connect.WithClientOptions(opts...),
 		),
+		queryRepositoryIntegration: connect.NewClient[v1.QueryRepositoryIntegrationRequest, v1.QueryRepositoryIntegrationResponse](
+			httpClient,
+			baseURL+IntegrationServiceQueryRepositoryIntegrationProcedure,
+			connect.WithSchema(integrationServiceMethods.ByName("QueryRepositoryIntegration")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -1627,6 +1637,7 @@ type integrationServiceClient struct {
 	validateIntegrationProfile   *connect.Client[v1.ValidateIntegrationProfileRequest, v1.ValidateIntegrationProfileResponse]
 	deleteIntegrationProfile     *connect.Client[v1.DeleteIntegrationProfileRequest, v1.DeleteIntegrationProfileResponse]
 	inspectRepositoryIntegration *connect.Client[v1.InspectRepositoryIntegrationRequest, v1.InspectRepositoryIntegrationResponse]
+	queryRepositoryIntegration   *connect.Client[v1.QueryRepositoryIntegrationRequest, v1.QueryRepositoryIntegrationResponse]
 }
 
 // SaveIntegrationProfile calls delidev.v1.IntegrationService.SaveIntegrationProfile.
@@ -1654,6 +1665,11 @@ func (c *integrationServiceClient) InspectRepositoryIntegration(ctx context.Cont
 	return c.inspectRepositoryIntegration.CallUnary(ctx, req)
 }
 
+// QueryRepositoryIntegration calls delidev.v1.IntegrationService.QueryRepositoryIntegration.
+func (c *integrationServiceClient) QueryRepositoryIntegration(ctx context.Context, req *connect.Request[v1.QueryRepositoryIntegrationRequest]) (*connect.Response[v1.QueryRepositoryIntegrationResponse], error) {
+	return c.queryRepositoryIntegration.CallUnary(ctx, req)
+}
+
 // IntegrationServiceHandler is an implementation of the delidev.v1.IntegrationService service.
 type IntegrationServiceHandler interface {
 	SaveIntegrationProfile(context.Context, *connect.Request[v1.SaveIntegrationProfileRequest]) (*connect.Response[v1.SaveIntegrationProfileResponse], error)
@@ -1661,6 +1677,7 @@ type IntegrationServiceHandler interface {
 	ValidateIntegrationProfile(context.Context, *connect.Request[v1.ValidateIntegrationProfileRequest]) (*connect.Response[v1.ValidateIntegrationProfileResponse], error)
 	DeleteIntegrationProfile(context.Context, *connect.Request[v1.DeleteIntegrationProfileRequest]) (*connect.Response[v1.DeleteIntegrationProfileResponse], error)
 	InspectRepositoryIntegration(context.Context, *connect.Request[v1.InspectRepositoryIntegrationRequest]) (*connect.Response[v1.InspectRepositoryIntegrationResponse], error)
+	QueryRepositoryIntegration(context.Context, *connect.Request[v1.QueryRepositoryIntegrationRequest]) (*connect.Response[v1.QueryRepositoryIntegrationResponse], error)
 }
 
 // NewIntegrationServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -1700,6 +1717,12 @@ func NewIntegrationServiceHandler(svc IntegrationServiceHandler, opts ...connect
 		connect.WithSchema(integrationServiceMethods.ByName("InspectRepositoryIntegration")),
 		connect.WithHandlerOptions(opts...),
 	)
+	integrationServiceQueryRepositoryIntegrationHandler := connect.NewUnaryHandler(
+		IntegrationServiceQueryRepositoryIntegrationProcedure,
+		svc.QueryRepositoryIntegration,
+		connect.WithSchema(integrationServiceMethods.ByName("QueryRepositoryIntegration")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/delidev.v1.IntegrationService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case IntegrationServiceSaveIntegrationProfileProcedure:
@@ -1712,6 +1735,8 @@ func NewIntegrationServiceHandler(svc IntegrationServiceHandler, opts ...connect
 			integrationServiceDeleteIntegrationProfileHandler.ServeHTTP(w, r)
 		case IntegrationServiceInspectRepositoryIntegrationProcedure:
 			integrationServiceInspectRepositoryIntegrationHandler.ServeHTTP(w, r)
+		case IntegrationServiceQueryRepositoryIntegrationProcedure:
+			integrationServiceQueryRepositoryIntegrationHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1739,6 +1764,10 @@ func (UnimplementedIntegrationServiceHandler) DeleteIntegrationProfile(context.C
 
 func (UnimplementedIntegrationServiceHandler) InspectRepositoryIntegration(context.Context, *connect.Request[v1.InspectRepositoryIntegrationRequest]) (*connect.Response[v1.InspectRepositoryIntegrationResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.IntegrationService.InspectRepositoryIntegration is not implemented"))
+}
+
+func (UnimplementedIntegrationServiceHandler) QueryRepositoryIntegration(context.Context, *connect.Request[v1.QueryRepositoryIntegrationRequest]) (*connect.Response[v1.QueryRepositoryIntegrationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.IntegrationService.QueryRepositoryIntegration is not implemented"))
 }
 
 // ProviderServiceClient is a client for the delidev.v1.ProviderService service.

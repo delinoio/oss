@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strconv"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -54,18 +55,16 @@ func repositoryIntegrationFromTx(tx *store.Tx, id domain.ID) (repositoryIntegrat
 	}
 	return repositoryIntegrationSelection{record: record, repository: repository, profile: profile}, nil
 }
-func (s *Service) InspectRepositoryIntegration(ctx context.Context, req *connect.Request[pb.InspectRepositoryIntegrationRequest]) (*connect.Response[pb.InspectRepositoryIntegrationResponse], error) {
-	correlation := req.Header().Get(rpc.CorrelationHeader)
+func (s *Service) withRepositoryIntegration(ctx context.Context, id domain.ID, operation, correlation string, read func(context.Context, []byte, repositoryIntegrationSelection) error) (repositoryIntegrationSelection, error) {
 	if _, err := integrationActor(ctx); err != nil {
-		return nil, rpc.Error(err, correlation)
+		return repositoryIntegrationSelection{}, err
 	}
-	id := domain.ID(req.Msg.RepositoryId)
 	if err := id.Validate(); err != nil {
-		return nil, rpc.Error(err, correlation)
+		return repositoryIntegrationSelection{}, err
 	}
 	unlock, err := s.lockIntegrations(ctx)
 	if err != nil {
-		return nil, rpc.Error(err, correlation)
+		return repositoryIntegrationSelection{}, err
 	}
 	locked := true
 	defer func() {
@@ -76,14 +75,14 @@ func (s *Service) InspectRepositoryIntegration(ctx context.Context, req *connect
 	var selected repositoryIntegrationSelection
 	err = s.Store.Read(ctx, func(tx *store.Tx) error { var e error; selected, e = repositoryIntegrationFromTx(tx, id); return e })
 	if err != nil {
-		return nil, rpc.Error(err, correlation)
+		return repositoryIntegrationSelection{}, err
 	}
 	profileID := selected.repository.IntegrationID
 	if s.integrationChecks[profileID] != nil {
-		return nil, rpc.Error(domain.Fail(domain.Conflict, "The selected profile already has an active GitHub inspection.", "Wait for its result before starting another inspection."), correlation)
+		return repositoryIntegrationSelection{}, domain.Fail(domain.Conflict, "The selected profile already has an active GitHub inspection.", "Wait for its result before starting another inspection.")
 	}
 	if len(s.integrationChecks) >= 8 {
-		return nil, rpc.Error(domain.Fail(domain.ResourceExhausted, "The server's GitHub inspection limit is reached.", "Retry after an active inspection completes."), correlation)
+		return repositoryIntegrationSelection{}, domain.Fail(domain.ResourceExhausted, "The server's GitHub inspection limit is reached.", "Retry after an active inspection completes.")
 	}
 	if s.integrationChecks == nil {
 		s.integrationChecks = map[domain.ID]*integrationCheck{}
@@ -104,33 +103,29 @@ func (s *Service) InspectRepositoryIntegration(ctx context.Context, req *connect
 	}()
 	vault, err := s.patSecrets()
 	if err != nil {
-		return nil, rpc.Error(err, correlation)
+		return repositoryIntegrationSelection{}, err
 	}
 	generation := selected.profile.Connection.GenerationID
 	token, err := vault.Get(checkCtx, credentials.PATRef{ProfileID: profileID, GenerationID: generation})
 	if err != nil {
-		return nil, rpc.Error(err, correlation)
+		return repositoryIntegrationSelection{}, err
 	}
 	defer clear(token)
-	if s.githubAccess == nil {
-		s.githubAccess = gh.New()
-	}
-	client := s.githubAccess
 	unlock()
 	locked = false
-	s.logger.Info("repository_integration_inspection_started", "repository_id", id, "profile_id", profileID, "correlation_id", correlation)
-	observed, err := client.InspectRepository(checkCtx, token, selected.repository.GitHubOwner, selected.repository.GitHubName)
+	s.logger.Info("repository_integration_read_started", "operation", operation, "repository_id", id, "profile_id", profileID, "correlation_id", correlation)
+	err = read(checkCtx, token, selected)
 	clear(token)
 	if checkCtx.Err() != nil {
 		err = domain.SafeError(checkCtx.Err())
 	}
 	if err != nil {
-		s.logger.Warn("repository_integration_inspection_failed", "repository_id", id, "profile_id", profileID, "error_code", domain.SafeError(err).Code, "correlation_id", correlation)
-		return nil, rpc.Error(err, correlation)
+		s.logger.Warn("repository_integration_read_failed", "operation", operation, "repository_id", id, "profile_id", profileID, "error_code", domain.SafeError(err).Code, "correlation_id", correlation)
+		return repositoryIntegrationSelection{}, err
 	}
 	unlock, err = s.lockIntegrations(checkCtx)
 	if err != nil {
-		return nil, rpc.Error(err, correlation)
+		return repositoryIntegrationSelection{}, err
 	}
 	locked = true
 	err = s.Store.Read(checkCtx, func(tx *store.Tx) error {
@@ -144,9 +139,35 @@ func (s *Service) InspectRepositoryIntegration(ctx context.Context, req *connect
 		return nil
 	})
 	if err != nil {
-		s.logger.Warn("repository_integration_inspection_rejected", "repository_id", id, "profile_id", profileID, "error_code", domain.SafeError(err).Code, "correlation_id", correlation)
+		s.logger.Warn("repository_integration_read_rejected", "operation", operation, "repository_id", id, "profile_id", profileID, "error_code", domain.SafeError(err).Code, "correlation_id", correlation)
+		return repositoryIntegrationSelection{}, err
+	}
+	s.logger.Info("repository_integration_read_finished", "operation", operation, "repository_id", id, "profile_id", profileID, "correlation_id", correlation)
+	return selected, nil
+}
+
+func (s *Service) InspectRepositoryIntegration(ctx context.Context, req *connect.Request[pb.InspectRepositoryIntegrationRequest]) (*connect.Response[pb.InspectRepositoryIntegrationResponse], error) {
+	correlation := req.Header().Get(rpc.CorrelationHeader)
+	id := domain.ID(req.Msg.RepositoryId)
+	var observed gh.RepositoryAccessObservation
+	selected, err := s.withRepositoryIntegration(ctx, id, "access", correlation, func(readCtx context.Context, token []byte, selected repositoryIntegrationSelection) error {
+		client := s.githubAccess
+		if client == nil {
+			client = gh.New()
+		}
+		var err error
+		observed, err = client.InspectRepository(readCtx, token, selected.repository.GitHubOwner, selected.repository.GitHubName)
+		return err
+	})
+	if err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
+	profileID, generation := selected.repository.IntegrationID, selected.profile.Connection.GenerationID
+
+	if observed.Repository != nil && (!strings.EqualFold(observed.Repository.Owner, selected.repository.GitHubOwner) || !strings.EqualFold(observed.Repository.Name, selected.repository.GitHubName)) {
+		return nil, rpc.Error(domain.Fail(domain.RecoveryRequired, "The query returned another repository.", "Refresh the explicitly selected repository."), correlation)
+	}
+
 	value := domain.RepositoryIntegrationAccess{RepositoryID: id, RepositoryRevision: strconv.FormatUint(selected.record.Revision, 10), ProfileID: profileID, GenerationID: generation, ObservedAt: time.Now().UTC().Truncate(time.Millisecond), Identity: observed.Identity, Repository: observed.Repository, Features: observed.Features}
 	for i := range value.Features {
 		if value.Features[i].Problem != nil {

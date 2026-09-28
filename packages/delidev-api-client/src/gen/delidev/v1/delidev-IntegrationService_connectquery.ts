@@ -28,3 +28,8 @@ export const deleteIntegrationProfile = IntegrationService.method.deleteIntegrat
  * @generated from rpc delidev.v1.IntegrationService.InspectRepositoryIntegration
  */
 export const inspectRepositoryIntegration = IntegrationService.method.inspectRepositoryIntegration;
+
+/**
+ * @generated from rpc delidev.v1.IntegrationService.QueryRepositoryIntegration
+ */
+export const queryRepositoryIntegration = IntegrationService.method.queryRepositoryIntegration;
