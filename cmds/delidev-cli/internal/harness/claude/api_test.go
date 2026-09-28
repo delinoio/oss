@@ -28,7 +28,7 @@ func init() {
 			os.Exit(70)
 		}
 	}
-	if os.Getenv("ANTHROPIC_API_KEY") != nativeAPIFixtureToken || os.Getenv("ANTHROPIC_AUTH_TOKEN") != nativeAPIFixtureToken || os.Getenv("CLAUDE_SECURESTORAGE_CONFIG_DIR") != filepath.Join(root, "claude") || os.Getenv("ANTHROPIC_BASE_URL") != "https://relay.example/api-proxy" || os.Getenv("CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST") != "1" || os.Getenv("CLAUDE_CODE_RESUME_INTERRUPTED_TURN") != "0" || os.Getenv("CLAUDE_CODE_PROJECT_DIR_NAME") != "delidev" {
+	if os.Getenv("ANTHROPIC_API_KEY") != nativeAPIFixtureToken || os.Getenv("ANTHROPIC_AUTH_TOKEN") != nativeAPIFixtureToken || os.Getenv("CLAUDE_SECURESTORAGE_CONFIG_DIR") != filepath.Join(root, "claude") || os.Getenv("ANTHROPIC_BASE_URL") != "https://relay.example/api-proxy" || os.Getenv("CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST") != "1" || os.Getenv("CLAUDE_CODE_RESUME_INTERRUPTED_TURN") != "0" || os.Getenv("CLAUDE_CODE_PROJECT_DIR_NAME") != "delidev" || os.Getenv("CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS") != "1" {
 		os.Exit(71)
 	}
 	cwd, _ := os.Getwd()
@@ -89,7 +89,36 @@ func init() {
 	}
 	_, _ = os.Stdout.Write(fixtureResponse(request.ID, result))
 	if scanner.Scan() {
-		_, _ = os.Stdout.WriteString("unexpected-input\n")
+		var settingsRequest struct {
+			Type    string    `json:"type"`
+			ID      domain.ID `json:"request_id"`
+			Request struct {
+				Subtype string `json:"subtype"`
+			} `json:"request"`
+		}
+		if decodeNativeObject(scanner.Bytes(), &settingsRequest) != nil || settingsRequest.Type != "control_request" || settingsRequest.ID.Validate() != nil || settingsRequest.ID == request.ID || settingsRequest.Request.Subtype != "get_settings" {
+			os.Exit(78)
+		}
+		settings := settingsFixture()
+		applied := settings["applied"].(map[string]any)
+		switch mode {
+		case "settings-effort":
+			applied["effort"] = "medium"
+		case "settings-model":
+			applied["model"] = "foreign-model"
+		case "settings-sources":
+			settings["sources"] = []any{map[string]any{"source": "managed", "settings": map[string]any{}}}
+		case "settings-advisor":
+			applied["advisor"] = "unrequested-model"
+		case "settings-ultracode":
+			applied["ultracode"] = true
+		case "settings-missing":
+			delete(applied, "effort")
+		}
+		_, _ = os.Stdout.Write(fixtureResponse(settingsRequest.ID, settings))
+		if scanner.Scan() {
+			_, _ = os.Stdout.WriteString("unexpected-input\n")
+		}
 	}
 	os.Exit(0)
 }
@@ -101,13 +130,13 @@ func apiFixtureConfig(t *testing.T, mode string) (APIStreamConfig, *bytes.Buffer
 	if err := security.PrivateDir(workspace); err != nil {
 		t.Fatal(err)
 	}
-	cfg.Process.Env = append(cfg.Process.Env, "ANTHROPIC_AUTH_TOKEN=foreign-fixture-only", "CLAUDE_CODE_OAUTH_TOKEN=foreign-fixture-only", "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1", "ANTHROPIC_MODEL=foreign-model", "NODE_OPTIONS=foreign-loader", "HTTPS_PROXY=http://proxy.example", "BASH_ENV=foreign-shell")
+	cfg.Process.Env = append(cfg.Process.Env, "ANTHROPIC_AUTH_TOKEN=foreign-fixture-only", "CLAUDE_CODE_OAUTH_TOKEN=foreign-fixture-only", "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1", "ANTHROPIC_MODEL=foreign-model", "NODE_OPTIONS=foreign-loader", "HTTPS_PROXY=http://proxy.example", "BASH_ENV=foreign-shell", "CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS=0")
 	cfg.Process.Args = []string{"caller-arguments-must-not-survive"}
 	return APIStreamConfig{Process: cfg.Process, Version: SupportedVersion, Home: cfg.Home, Workspace: workspace, SessionID: domain.NewID(), Model: "fixed-model", Effort: "high", Permission: PlanPermission, Instructions: "private-api-instructions-sentinel", API: APIConfig{ServerOrigin: "https://relay.example", Token: nativeAPIFixtureToken}}, logs
 }
 
 func TestAPIStreamRebuildsPrivateRuntimeAndValidatesNativeAuthority(t *testing.T) {
-	for _, mode := range []string{"valid", "permission", "authority", "subscription", "no-token-source", "bare-commands", "remote", "timeout"} {
+	for _, mode := range []string{"valid", "permission", "authority", "subscription", "no-token-source", "bare-commands", "remote", "timeout", "settings-effort", "settings-model", "settings-sources", "settings-advisor", "settings-ultracode", "settings-missing"} {
 		t.Run(mode, func(t *testing.T) {
 			cfg, logs := apiFixtureConfig(t, mode)
 			duration := 5 * time.Second
@@ -120,6 +149,15 @@ func TestAPIStreamRebuildsPrivateRuntimeAndValidatesNativeAuthority(t *testing.T
 			if mode == "valid" {
 				if err != nil {
 					t.Fatal(err)
+				}
+				applied, ok := s.InitialAppliedSettings()
+				if !ok || applied.Model != cfg.Model || applied.Effort == nil || *applied.Effort != cfg.Effort {
+					t.Fatal("initial native settings observation lost")
+				}
+				*applied.Effort = LowEffort
+				again, _ := s.InitialAppliedSettings()
+				if *again.Effort != cfg.Effort {
+					t.Fatal("caller changed initial settings observation")
 				}
 				if err := s.Close(); err != nil {
 					t.Fatal(err)

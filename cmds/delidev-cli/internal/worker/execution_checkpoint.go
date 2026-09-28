@@ -65,6 +65,10 @@ func executionInputDigest(raw []byte) string {
 }
 
 func (r ExecutionCheckpointRef) validate() error {
+	return r.validateForHarness(domain.Codex)
+}
+
+func (r ExecutionCheckpointRef) validateForHarness(harness domain.Harness) error {
 	for _, id := range []domain.ID{r.JobID, r.SessionID, r.MachineID, r.HistoryExecutionID, r.AccountID, r.ConnectionID} {
 		if id.Validate() != nil {
 			return executionCheckpointUncertain()
@@ -84,7 +88,7 @@ func (r ExecutionCheckpointRef) validate() error {
 			return executionCheckpointUncertain()
 		}
 	}
-	if r.Completion.Validate() != nil || !r.InputMode.Valid() {
+	if r.Completion.ValidateForHarness(harness) != nil || !r.InputMode.Valid() {
 		return executionCheckpointUncertain()
 	}
 	if _, err := r.nativeInputs(); err != nil {
@@ -114,7 +118,7 @@ func (p CodexExecutionCheckpoint) matches(ref ExecutionCheckpointRef) bool {
 	terminal := ref.Completion
 	terminal.Version, terminal.NativeCheckpointDigest = 1, ""
 	inputs, err := ref.nativeInputs()
-	if err != nil || ref.validate() != nil || p.Version != 1 || p.JobID != ref.JobID || p.SessionID != ref.SessionID || p.MachineID != ref.MachineID || p.HistoryExecutionID != ref.HistoryExecutionID || p.AssignmentInputDigest != ref.AssignmentInputDigest || p.ConfigurationDigest != ref.ConfigurationDigest || p.AccountID != ref.AccountID || p.ConnectionID != ref.ConnectionID || p.Completion != terminal || p.Native.ThreadID != ref.Completion.NativeThreadID || p.Native.SessionID != p.Native.ThreadID || p.Native.TurnID != ref.Completion.NativeTurnID || p.Native.Mode != ref.InputMode || !slices.Equal(p.Native.Effective.WorkspaceRoots, ref.WorkspaceRoots) || !slices.Equal(p.Native.Inputs, inputs) {
+	if err != nil || ref.validate() != nil || p.Version != 1 || p.JobID != ref.JobID || p.SessionID != ref.SessionID || p.MachineID != ref.MachineID || p.HistoryExecutionID != ref.HistoryExecutionID || p.AssignmentInputDigest != ref.AssignmentInputDigest || p.ConfigurationDigest != ref.ConfigurationDigest || p.AccountID != ref.AccountID || p.ConnectionID != ref.ConnectionID || p.Completion != terminal || string(p.Native.ThreadID) != string(ref.Completion.NativeThreadID) || p.Native.SessionID != p.Native.ThreadID || string(p.Native.TurnID) != string(ref.Completion.NativeTurnID) || p.Native.Mode != ref.InputMode || !slices.Equal(p.Native.Effective.WorkspaceRoots, ref.WorkspaceRoots) || !slices.Equal(p.Native.Inputs, inputs) {
 		return false
 	}
 	status := map[domain.ExecutionOutcome]codex.TurnStatus{domain.ExecutionSucceeded: codex.TurnCompleted, domain.ExecutionFailed: codex.TurnFailed, domain.ExecutionStopped: codex.TurnInterrupted}[ref.Completion.Outcome]
@@ -193,7 +197,7 @@ func ReadCodexExecutionCheckpoint(root string, ref ExecutionCheckpointRef) (Code
 
 func retainCodexCompletion(root string, jobID domain.ID, job domain.Job, input domain.ExecutionJobInput, bound codex.ThreadResult, completion domain.ExecutionCompletion, acceptedInputs []domain.ExecutionInputBinding) (string, error) {
 	var accepted domain.ExecutionJobInput
-	if domain.Decode(job.Input, &accepted) != nil || input.Validate() != nil || completion.Validate() != nil || completion.Version != 1 || bound.Thread == nil || bound.Effective == nil || bound.RequestID != input.ThreadRequestID || bound.Thread.ID != completion.NativeThreadID || completion.ExecutionID != input.ExecutionID || completion.InputID != input.InputID || job.Type != domain.ExecuteSessionJob || job.MachineID != input.MachineID {
+	if domain.Decode(job.Input, &accepted) != nil || input.Validate() != nil || completion.Validate() != nil || completion.Version != 1 || bound.Thread == nil || bound.Effective == nil || bound.RequestID != input.ThreadRequestID || string(bound.Thread.ID) != string(completion.NativeThreadID) || completion.ExecutionID != input.ExecutionID || completion.InputID != input.InputID || job.Type != domain.ExecuteSessionJob || job.MachineID != input.MachineID {
 		return "", executionCheckpointUncertain()
 	}
 	actual, err := json.Marshal(input)
@@ -219,7 +223,7 @@ func retainCodexCompletion(root string, jobID domain.ID, job domain.Job, input d
 		ref.HistoryExecutionID = input.Continuation.HistoryExecutionID
 	}
 	status := map[domain.ExecutionOutcome]codex.TurnStatus{domain.ExecutionSucceeded: codex.TurnCompleted, domain.ExecutionFailed: codex.TurnFailed, domain.ExecutionStopped: codex.TurnInterrupted}[completion.Outcome]
-	checkpoint := CodexExecutionCheckpoint{Version: 1, JobID: jobID, SessionID: ref.SessionID, MachineID: ref.MachineID, HistoryExecutionID: ref.HistoryExecutionID, AssignmentInputDigest: ref.AssignmentInputDigest, ConfigurationDigest: ref.ConfigurationDigest, AccountID: ref.AccountID, ConnectionID: ref.ConnectionID, Completion: completion, Native: codex.ContinuationCheckpoint{ThreadID: bound.Thread.ID, SessionID: bound.Thread.SessionID, TurnID: completion.NativeTurnID, Status: status, Mode: input.Input.Mode, Inputs: nativeInputs, Effective: *bound.Effective}}
+	checkpoint := CodexExecutionCheckpoint{Version: 1, JobID: jobID, SessionID: ref.SessionID, MachineID: ref.MachineID, HistoryExecutionID: ref.HistoryExecutionID, AssignmentInputDigest: ref.AssignmentInputDigest, ConfigurationDigest: ref.ConfigurationDigest, AccountID: ref.AccountID, ConnectionID: ref.ConnectionID, Completion: completion, Native: codex.ContinuationCheckpoint{ThreadID: bound.Thread.ID, SessionID: bound.Thread.SessionID, TurnID: domain.ID(completion.NativeTurnID), Status: status, Mode: input.Input.Mode, Inputs: nativeInputs, Effective: *bound.Effective}}
 	if !checkpoint.matches(ref) {
 		return "", executionCheckpointUncertain()
 	}

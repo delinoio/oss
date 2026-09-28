@@ -12,17 +12,39 @@ const MaxQuestionResponseBytes = 256 << 10
 // native questions need a protected native retention/delivery capability and
 // must never fall back to this ordinary persisted response shape.
 type QuestionResponseInput struct {
-	Answers map[string][]string `json:"answers"`
+	Claude   *ClaudePermissionResponse `json:"claude,omitempty"`
+	OpenCode *OpenCodeQuestionResponse `json:"opencode,omitempty"`
+	Answers  map[string][]string       `json:"answers"`
 }
 
 func (r *QuestionResponseInput) UnmarshalJSON(raw []byte) error {
 	var wire struct {
-		Answers map[string][]*string `json:"answers"`
+		Claude   *ClaudePermissionResponse `json:"claude,omitempty"`
+		OpenCode *OpenCodeQuestionResponse `json:"opencode,omitempty"`
+		Answers  map[string][]*string      `json:"answers"`
 	}
-	if Decode(raw, &wire) != nil || wire.Answers == nil {
+	var fields map[string]json.RawMessage
+	if Decode(raw, &wire) != nil || Decode(raw, &fields) != nil {
 		return invalidQuestionResponse()
 	}
-	r.Answers = map[string][]string{}
+	if _, exists := fields["claude"]; exists {
+		if len(fields) != 1 || wire.Claude == nil {
+			return invalidQuestionResponse()
+		}
+		*r = QuestionResponseInput{Claude: wire.Claude}
+		return nil
+	}
+	if _, exists := fields["opencode"]; exists {
+		if len(fields) != 1 || wire.OpenCode == nil || wire.Answers != nil {
+			return invalidQuestionResponse()
+		}
+		*r = QuestionResponseInput{OpenCode: wire.OpenCode}
+		return nil
+	}
+	if wire.Answers == nil {
+		return invalidQuestionResponse()
+	}
+	*r = QuestionResponseInput{Answers: map[string][]string{}}
 	for id, values := range wire.Answers {
 		if values == nil {
 			return invalidQuestionResponse()
@@ -40,11 +62,11 @@ func (r *QuestionResponseInput) UnmarshalJSON(raw []byte) error {
 }
 
 func invalidQuestionResponse() error {
-	return Fail(InvalidArgument, "The response does not match its original questions.", "Answer every original question identity with offered options or supported free text, using an explicit empty array for no answer; do not add approval or policy fields.")
+	return Fail(InvalidArgument, "The response does not match its original questions.", "Preserve every original question in its native response structure, using offered options or supported text and explicit empty arrays for unanswered questions.")
 }
 
 func (r QuestionResponseInput) Validate(original *QuestionRequest) error {
-	if original == nil || original.Validate() != nil || len(r.Answers) != len(original.Questions) {
+	if r.Claude != nil || r.OpenCode != nil || original == nil || original.Validate() != nil || len(r.Answers) != len(original.Questions) {
 		return invalidQuestionResponse()
 	}
 	for _, question := range original.Questions {
@@ -98,6 +120,7 @@ type QuestionResponseClaim struct {
 // Queued acceptance is a server fact only. Native ownership/delivery and
 // semantic acceptance require separate state transitions and evidence.
 type QuestionResponse struct {
+	ClaudeEcho *ClaudeReplyEcho               `json:"claude_echo,omitempty"`
 	ID         ID                             `json:"id"`
 	State      QuestionResponseState          `json:"state"`
 	Input      QuestionResponseInput          `json:"input"`
@@ -145,17 +168,21 @@ func (u ExecutionQuestionResponseUpdate) Validate() error {
 	return nil
 }
 
-// Acceptance is a native tool-output fact, independently retained from server
+// Acceptance is a typed native processing fact, independently retained from server
 // queue acceptance, pipe delivery, native request closure and disk persistence.
 type QuestionAcceptanceEvidence string
 
 const NativeQuestionOutput QuestionAcceptanceEvidence = "native-question-output"
+const NativeOpenCodeQuestionReply QuestionAcceptanceEvidence = "native-opencode-question-reply"
+const NativeOpenCodeQuestionRejected QuestionAcceptanceEvidence = "native-opencode-question-rejected"
 
 type QuestionAcceptanceObservation struct {
+	OpenCode *OpenCodeReplyEvidence     `json:"opencode,omitempty"`
 	Evidence QuestionAcceptanceEvidence `json:"evidence"`
 	Sequence uint64                     `json:"sequence"`
 }
 type ExecutionQuestionAcceptanceUpdate struct {
+	OpenCode      *OpenCodeReplyEvidence     `json:"opencode,omitempty"`
 	InteractionID ID                         `json:"interaction_id"`
 	ResponseID    ID                         `json:"response_id"`
 	ClaimID       ID                         `json:"claim_id"`
@@ -172,8 +199,26 @@ func (u ExecutionQuestionAcceptanceUpdate) Validate() error {
 	if err := Text(u.NativeItemID, "native question item", 1024, true); err != nil {
 		return err
 	}
-	if u.Evidence != NativeQuestionOutput {
+	if (u.Evidence == NativeOpenCodeQuestionReply || u.Evidence == NativeOpenCodeQuestionRejected) && u.OpenCode != nil {
+		return u.OpenCode.Validate(UserQuestionInteraction)
+	}
+	if u.OpenCode != nil || u.Evidence != NativeQuestionOutput {
 		return Fail(InvalidArgument, "Unknown native question acceptance evidence.", "Use the exact owned native tool-output observation; transport or closure cannot substitute for acceptance.")
 	}
 	return nil
+}
+
+func (r QuestionResponseInput) MarshalJSON() ([]byte, error) {
+	type plain QuestionResponseInput
+	if r.Claude != nil && r.OpenCode == nil && r.Answers == nil {
+		return json.Marshal(struct {
+			Claude *ClaudePermissionResponse `json:"claude"`
+		}{r.Claude})
+	}
+	if r.OpenCode != nil && r.Claude == nil && r.Answers == nil {
+		return json.Marshal(struct {
+			OpenCode *OpenCodeQuestionResponse `json:"opencode"`
+		}{r.OpenCode})
+	}
+	return json.Marshal(plain(r))
 }

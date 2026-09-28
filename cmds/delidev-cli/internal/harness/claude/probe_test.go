@@ -12,6 +12,7 @@ import (
 	"reflect"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -309,5 +310,40 @@ func TestProbeFramesBoundUnterminatedOutput(t *testing.T) {
 	}
 	if ctx.Err() == nil || wire.status() == nil || wire.status().Code != domain.ResourceExhausted || w.buffer != nil {
 		t.Fatal("unbounded incomplete native frame")
+	}
+}
+
+// Cancel synchronously after real native ownership is prepared and before
+// process.Start returns its handle. This covers the narrow start-barrier race
+// without sleeping or extending the production probe deadline.
+type cancelPreparedProbeLog struct {
+	bytes.Buffer
+	cancel context.CancelFunc
+	once   sync.Once
+}
+
+func (w *cancelPreparedProbeLog) Write(raw []byte) (int, error) {
+	if bytes.Contains(raw, []byte(`"msg":"native process prepared"`)) {
+		w.once.Do(w.cancel)
+	}
+	return w.Buffer.Write(raw)
+}
+
+func TestProbeCancellationAtPreparedNativeBarrierIsTypedAndJoined(t *testing.T) {
+	cfg, _ := fixtureConfig(t, "valid")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	log := &cancelPreparedProbeLog{cancel: cancel}
+	cfg.Process.Logger = slog.New(slog.NewJSONHandler(log, nil))
+	err := Probe(ctx, cfg)
+	problem, ok := err.(*domain.Error)
+	if !ok || problem.Code != domain.Canceled || ctx.Err() != context.Canceled {
+		t.Fatal("prepared probe cancellation lost its typed boundary", err)
+	}
+	if strings.Contains(log.String(), `"msg":"native process resumed"`) || strings.Contains(log.String(), "broken pipe") || strings.Contains(problem.Error(), cfg.Process.Directory) {
+		t.Fatal("canceled probe crossed native start or disclosed private transport")
+	}
+	if err := process.ReconcileOwner(cfg.Process.Directory, cfg.Process.OwnerID); err != nil {
+		t.Fatal("canceled prepared probe did not join cleanup", err)
 	}
 }

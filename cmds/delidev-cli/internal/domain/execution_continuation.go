@@ -62,6 +62,9 @@ func (c ExecutionContinuation) Validate(input ExecutionJobInput) error {
 		return Fail(RecoveryRequired, "Continuation does not match a verified preceding execution.", "Preserve the original assignment, terminal history and cleanup proof before sending new input.")
 	}
 	p, done := c.Previous, c.Completion
+	if input.Configuration.Harness == ClaudeCode && (!p.ClaudeContinuationBoundary(p.InputID) || c.InputMode != input.Input.Mode) {
+		return invalid()
+	}
 	for _, id := range []ID{c.HistoryExecutionID, c.HistoryRequestID, p.JobID, p.ExecutionID, p.InputID} {
 		if id.Validate() != nil {
 			return invalid()
@@ -73,7 +76,7 @@ func (c ExecutionContinuation) Validate(input ExecutionJobInput) error {
 			return invalid()
 		}
 	}
-	if c.HistoryExecutionID == input.ExecutionID || p.ExecutionID == input.ExecutionID || p.InputID == input.InputID || c.HistoryRequestID == input.ThreadRequestID || c.HistoryRequestID == input.TurnRequestID || !c.InputMode.Valid() || done.Version != 2 || done.Validate() != nil || !p.CleanupVerified || p.Waiting != (NativeWaiting{}) || p.UnconfirmedResponses != 0 || p.ExecutionID != done.ExecutionID || p.InputID != done.InputID || p.NativeThreadID != string(done.NativeThreadID) || p.NativeTurnID != string(done.NativeTurnID) || p.LastSequence != done.LastSequence || p.Outcome != done.Outcome || p.Observed.Validate(input.Configuration) != nil {
+	if c.HistoryExecutionID == input.ExecutionID || p.ExecutionID == input.ExecutionID || p.InputID == input.InputID || c.HistoryRequestID == input.ThreadRequestID || c.HistoryRequestID == input.TurnRequestID || !c.InputMode.Valid() || done.Version != 2 || done.ValidateForHarness(input.Configuration.Harness) != nil || !p.CleanupVerified || p.Waiting != (NativeWaiting{}) || p.UnconfirmedResponses != 0 || p.ExecutionID != done.ExecutionID || p.InputID != done.InputID || p.NativeThreadID != string(done.NativeThreadID) || p.NativeTurnID != string(done.NativeTurnID) || p.LastSequence != done.LastSequence || p.Outcome != done.Outcome || p.Observed.ValidateForInput(input.Configuration, c.InputMode) != nil {
 		return invalid()
 	}
 	if c.Intent != ContinueExplicitly && (c.Intent != ContinueAutomatically || p.Outcome != ExecutionSucceeded) {

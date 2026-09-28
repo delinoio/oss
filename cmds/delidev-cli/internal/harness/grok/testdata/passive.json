@@ -1,0 +1,438 @@
+[
+  {
+    "method": "session/update",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "available_commands_update",
+        "availableCommands": [
+          {
+            "name": "compact",
+            "description": "Private command descriptor",
+            "input": {
+              "hint": "Private argument hint"
+            }
+          },
+          {
+            "name": "always-approve",
+            "description": "Private command descriptor",
+            "input": {
+              "hint": "Private argument hint"
+            }
+          },
+          {
+            "name": "context",
+            "description": "Private command descriptor",
+            "input": null
+          },
+          {
+            "name": "session-info",
+            "description": "Private command descriptor",
+            "input": null
+          },
+          {
+            "name": "feedback",
+            "description": "Private command descriptor",
+            "input": {
+              "hint": "Private argument hint"
+            }
+          },
+          {
+            "name": "deep-research",
+            "description": "Private command descriptor",
+            "input": {
+              "hint": "Private argument hint"
+            },
+            "_meta": {
+              "workflowSource": "builtin",
+              "workflowPath": "/private/builtin/deep_research.rhai"
+            }
+          },
+          {
+            "name": "workflow",
+            "description": "Private command descriptor",
+            "input": {
+              "hint": "Private argument hint"
+            }
+          },
+          {
+            "name": "goal",
+            "description": "Private command descriptor",
+            "input": {
+              "hint": "Private argument hint"
+            }
+          },
+          {
+            "name": "loop",
+            "description": "Private command descriptor",
+            "input": {
+              "hint": "Private argument hint"
+            }
+          }
+        ],
+        "_meta": {
+          "tools": [
+            "run_terminal_command",
+            "read_file",
+            "search_replace",
+            "list_dir",
+            "grep",
+            "kill_command_or_subagent",
+            "todo_write",
+            "get_command_or_subagent_output",
+            "spawn_subagent",
+            "scheduler_create",
+            "scheduler_delete",
+            "scheduler_list",
+            "monitor",
+            "search_tool",
+            "use_tool",
+            "workflow",
+            "enter_plan_mode",
+            "exit_plan_mode",
+            "ask_user_question",
+            "send_feedback",
+            "web_search",
+            "image_gen",
+            "image_edit",
+            "image_to_video",
+            "reference_to_video",
+            "write"
+          ]
+        }
+      },
+      "_meta": {
+        "totalTokens": 2262,
+        "eventId": "019f6de0-a760-7000-8000-000000000071-0",
+        "agentTimestampMs": 1790518602045,
+        "updateType": "AvailableCommandsUpdate",
+        "updateParams": {
+          "commandsCount": 9
+        }
+      }
+    }
+  },
+  {
+    "method": "session/update",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "available_commands_update",
+        "availableCommands": [
+          {
+            "name": "compact",
+            "description": "Private command descriptor",
+            "input": {
+              "hint": "Private argument hint"
+            }
+          },
+          {
+            "name": "always-approve",
+            "description": "Private command descriptor",
+            "input": {
+              "hint": "Private argument hint"
+            }
+          },
+          {
+            "name": "context",
+            "description": "Private command descriptor",
+            "input": null
+          },
+          {
+            "name": "session-info",
+            "description": "Private command descriptor",
+            "input": null
+          },
+          {
+            "name": "feedback",
+            "description": "Private command descriptor",
+            "input": {
+              "hint": "Private argument hint"
+            }
+          },
+          {
+            "name": "deep-research",
+            "description": "Private command descriptor",
+            "input": {
+              "hint": "Private argument hint"
+            },
+            "_meta": {
+              "workflowSource": "builtin",
+              "workflowPath": "/private/builtin/deep_research.rhai"
+            }
+          },
+          {
+            "name": "workflow",
+            "description": "Private command descriptor",
+            "input": {
+              "hint": "Private argument hint"
+            }
+          },
+          {
+            "name": "goal",
+            "description": "Private command descriptor",
+            "input": {
+              "hint": "Private argument hint"
+            }
+          },
+          {
+            "name": "loop",
+            "description": "Private command descriptor",
+            "input": {
+              "hint": "Private argument hint"
+            }
+          }
+        ],
+        "_meta": {
+          "tools": [
+            "run_terminal_command",
+            "read_file",
+            "search_replace",
+            "list_dir",
+            "grep",
+            "kill_command_or_subagent",
+            "todo_write",
+            "get_command_or_subagent_output",
+            "spawn_subagent",
+            "scheduler_create",
+            "scheduler_delete",
+            "scheduler_list",
+            "monitor",
+            "search_tool",
+            "use_tool",
+            "workflow",
+            "enter_plan_mode",
+            "exit_plan_mode",
+            "ask_user_question",
+            "send_feedback",
+            "web_search",
+            "image_gen",
+            "image_edit",
+            "image_to_video",
+            "reference_to_video",
+            "write"
+          ]
+        }
+      },
+      "_meta": {
+        "totalTokens": 2262,
+        "eventId": "019f6de0-a760-7000-8000-000000000071-1",
+        "agentTimestampMs": 1790518602057,
+        "updateType": "AvailableCommandsUpdate",
+        "updateParams": {
+          "commandsCount": 9
+        }
+      }
+    }
+  },
+  {
+    "method": "_x.ai/sessions/changed",
+    "params": {
+      "upserted": [
+        {
+          "sessionId": "019f6de0-a760-7000-8000-000000000071",
+          "title": null,
+          "cwd": "/private/workspace",
+          "isWorktree": false,
+          "modelId": "delidev-selected",
+          "yolo": false,
+          "activity": "working",
+          "resident": true,
+          "lastChangeUnixMs": 1790518602061,
+          "origin": {
+            "kind": "local"
+          }
+        }
+      ],
+      "removed": []
+    }
+  },
+  {
+    "method": "_x.ai/session_notification",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "session_summary_generated",
+        "session_summary": "Return a private fixture response."
+      }
+    }
+  },
+  {
+    "method": "session/update",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "session_info_update",
+        "title": "Return a private fixture response."
+      }
+    }
+  },
+  {
+    "method": "session/update",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "available_commands_update",
+        "availableCommands": [
+          {
+            "name": "compact",
+            "description": "Private command descriptor",
+            "input": {
+              "hint": "Private argument hint"
+            }
+          },
+          {
+            "name": "always-approve",
+            "description": "Private command descriptor",
+            "input": {
+              "hint": "Private argument hint"
+            }
+          },
+          {
+            "name": "context",
+            "description": "Private command descriptor",
+            "input": null
+          },
+          {
+            "name": "session-info",
+            "description": "Private command descriptor",
+            "input": null
+          },
+          {
+            "name": "feedback",
+            "description": "Private command descriptor",
+            "input": {
+              "hint": "Private argument hint"
+            }
+          },
+          {
+            "name": "deep-research",
+            "description": "Private command descriptor",
+            "input": {
+              "hint": "Private argument hint"
+            },
+            "_meta": {
+              "workflowSource": "builtin",
+              "workflowPath": "/private/builtin/deep_research.rhai"
+            }
+          },
+          {
+            "name": "workflow",
+            "description": "Private command descriptor",
+            "input": {
+              "hint": "Private argument hint"
+            }
+          },
+          {
+            "name": "goal",
+            "description": "Private command descriptor",
+            "input": {
+              "hint": "Private argument hint"
+            }
+          },
+          {
+            "name": "loop",
+            "description": "Private command descriptor",
+            "input": {
+              "hint": "Private argument hint"
+            }
+          }
+        ],
+        "_meta": {
+          "tools": [
+            "run_terminal_command",
+            "read_file",
+            "search_replace",
+            "list_dir",
+            "grep",
+            "kill_command_or_subagent",
+            "todo_write",
+            "get_command_or_subagent_output",
+            "spawn_subagent",
+            "scheduler_create",
+            "scheduler_delete",
+            "scheduler_list",
+            "monitor",
+            "search_tool",
+            "use_tool",
+            "workflow",
+            "enter_plan_mode",
+            "exit_plan_mode",
+            "ask_user_question",
+            "send_feedback",
+            "web_search",
+            "image_gen",
+            "image_edit",
+            "image_to_video",
+            "reference_to_video",
+            "write"
+          ]
+        }
+      },
+      "_meta": {
+        "totalTokens": 16,
+        "eventId": "019f6de0-a760-7000-8000-000000000071-5",
+        "agentTimestampMs": 1790518602179,
+        "promptId": "e5833c4a-d764-4428-8bd8-6c2968a34b1b",
+        "streamStartMs": 1790518602176,
+        "turnStartMs": 1790518602152,
+        "updateType": "AvailableCommandsUpdate",
+        "updateParams": {
+          "commandsCount": 9
+        }
+      }
+    }
+  },
+  {
+    "method": "_x.ai/session_notification",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "response_completed",
+        "usage": {
+          "input_tokens": 11,
+          "output_tokens": 5,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0,
+          "reasoning_tokens": 0
+        }
+      }
+    }
+  },
+  {
+    "method": "_x.ai/sessions/changed",
+    "params": {
+      "upserted": [
+        {
+          "sessionId": "019f6de0-a760-7000-8000-000000000071",
+          "title": null,
+          "cwd": "/private/workspace",
+          "isWorktree": false,
+          "modelId": "delidev-selected",
+          "yolo": false,
+          "activity": "idle",
+          "resident": true,
+          "lastChangeUnixMs": 1790518602395,
+          "origin": {
+            "kind": "local"
+          }
+        }
+      ],
+      "removed": []
+    }
+  },
+  {
+    "method": "_x.ai/session_notification",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "last_turn_summary",
+        "summary": "Private fixture response.",
+        "prompt_id": "e5833c4a-d764-4428-8bd8-6c2968a34b1b"
+      },
+      "_meta": {
+        "agentTimestampMs": 1790518602397
+      }
+    }
+  }
+]

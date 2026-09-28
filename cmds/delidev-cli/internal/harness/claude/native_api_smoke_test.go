@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -146,6 +147,10 @@ func TestManualNativeAPIChildEnvironment(t *testing.T) {
 			t.Error(err)
 		}
 	}()
+	binding, err := BindExecution(config, inputID, "Run the private environment check.")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := s.SendInput(ctx, inputID, session, "Run the private environment check."); err != nil {
 		t.Fatal(err)
 	}
@@ -156,6 +161,20 @@ func TestManualNativeAPIChildEnvironment(t *testing.T) {
 		event, err := s.Next(ctx)
 		if err != nil {
 			t.Fatal(err)
+		}
+		if event.Kind == NativeRequest {
+			var fields map[string]json.RawMessage
+			_ = json.Unmarshal(event.Body, &fields)
+			keys := make([]string, 0, len(fields))
+			for key := range fields {
+				keys = append(keys, key)
+			}
+			slices.Sort(keys)
+			t.Log("native tool permission callback fields", keys)
+		}
+		observation, err := binding.Observe(event)
+		if err != nil {
+			t.Fatalf("native event %s/%s failed: %v; structured trace: %s", event.Kind, event.Type, err, logs.String())
 		}
 		if event.Kind == NativeRequest {
 			var callback struct {
@@ -175,13 +194,23 @@ func TestManualNativeAPIChildEnvironment(t *testing.T) {
 			if callbacks != 1 {
 				t.Fatal("duplicate native permission request")
 			}
-			if err := s.Reply(ctx, event, map[string]any{"behavior": "allow", "updatedInput": callback.Input}); err != nil {
+			if observation.Interaction == nil || observation.Interaction.Request == nil || observation.Interaction.Request.Kind != ToolPermission {
+				t.Fatal("native tool approval did not preserve its typed callback")
+			}
+			arrival, reply, err := binding.PreparePermissionReply(event.ArrivalID, PermissionReply{Behavior: PermissionAllow})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := s.Reply(ctx, arrival, reply); err != nil {
 				t.Fatal(err)
 			}
 		}
 		if event.Kind == NativeReplyEcho {
 			if echoed || event.ArrivalID != original.ArrivalID || event.RequestID != original.RequestID {
 				t.Fatal("foreign or repeated native reply echo")
+			}
+			if observation.Kind != InteractionObserved || observation.Interaction == nil || observation.Interaction.Kind != InteractionReplyEchoed || observation.Interaction.Canceled {
+				t.Fatal("native echo changed typed reply ownership")
 			}
 			echoed = true
 		}

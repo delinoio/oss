@@ -6,6 +6,7 @@ option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1"
 // All operations, including loopback, require authenticated owner authorization.
 service SystemService {
   rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
+  rpc GetOverview(GetOverviewRequest) returns (GetOverviewResponse);
   rpc StopServer(StopServerRequest) returns (StopServerResponse);
   rpc GetDoctor(GetDoctorRequest) returns (GetDoctorResponse);
   rpc CreateBackup(CreateBackupRequest) returns (CreateBackupResponse);
@@ -16,11 +17,16 @@ service ResourceService {
   rpc GetSnapshot(GetSnapshotRequest) returns (GetSnapshotResponse);
   rpc WatchEvents(WatchEventsRequest) returns (stream WatchEventsResponse);
 }
+
 service ConfigurationService {
+  rpc ExportConfiguration(ExportConfigurationRequest) returns (ExportConfigurationResponse);
+  rpc PreviewConfigurationImport(PreviewConfigurationImportRequest) returns (PreviewConfigurationImportResponse);
+  rpc ApplyConfigurationImport(ApplyConfigurationImportRequest) returns (ApplyConfigurationImportResponse);
   rpc SaveConfiguration(SaveConfigurationRequest) returns (SaveConfigurationResponse);
   rpc DeleteConfiguration(DeleteConfigurationRequest) returns (DeleteConfigurationResponse);
   rpc PreviewRouting(PreviewRoutingRequest) returns (PreviewRoutingResponse);
 }
+
 // Owner and paired-client responses use their own durable acceptance boundary.
 service InteractionService {
   rpc RespondQuestion(RespondQuestionRequest) returns (RespondQuestionResponse);
@@ -81,6 +87,7 @@ enum EntityKind {
   ENTITY_KIND_PAIRING = 25;
   ENTITY_KIND_STEER = 26;
 }
+
 // Resource documents are versioned, strictly validated UTF-8 JSON. Their closed
 // schemas live in the Go domain types. Unknown fields and enum values fail.
 // This envelope never permits arbitrary database writes: each mutation kind
@@ -115,6 +122,16 @@ message ErrorDetail {
   string correlation_id = 4;
 }
 message GetStatusRequest {}
+message GetOverviewRequest {}
+message GetOverviewResponse {
+  string observed_at = 1;
+  uint64 active_sessions = 2;
+  uint64 pending_interactions = 3;
+  uint64 registered_workers = 4;
+  uint64 connected_workers = 5;
+  int64 today_from_unix_ms = 6;
+  int64 today_until_unix_ms = 7;
+}
 message GetStatusResponse {
   string version = 1;
   uint32 protocol_version = 2;
@@ -219,6 +236,8 @@ service DeviceService {
   rpc RevokeDevice(RevokeDeviceRequest) returns (RevokeDeviceResponse);
 }
 service WorkerService {
+  rpc WatchWorkspaceReads(WatchWorkspaceReadsRequest) returns (stream WatchWorkspaceReadsResponse);
+  rpc ReportWorkspaceRead(ReportWorkspaceReadRequest) returns (ReportWorkspaceReadResponse);
   rpc AttachWorker(AttachWorkerRequest) returns (AttachWorkerResponse);
   rpc WatchWork(WatchWorkRequest) returns (stream WatchWorkResponse);
   rpc ReportWork(ReportWorkRequest) returns (ReportWorkResponse);
@@ -461,6 +480,162 @@ message ValidateAccountResponse {
   bytes validation_json = 4;
 }
 
+// Server-owned read-only integration profiles are separate from AI Accounts.
+service IntegrationService {
+  rpc SaveIntegrationProfile(SaveIntegrationProfileRequest) returns (SaveIntegrationProfileResponse);
+  rpc ReplaceIntegrationToken(ReplaceIntegrationTokenRequest) returns (ReplaceIntegrationTokenResponse);
+  rpc ValidateIntegrationProfile(ValidateIntegrationProfileRequest) returns (ValidateIntegrationProfileResponse);
+  rpc DeleteIntegrationProfile(DeleteIntegrationProfileRequest) returns (DeleteIntegrationProfileResponse);
+  rpc InspectRepositoryIntegration(InspectRepositoryIntegrationRequest) returns (InspectRepositoryIntegrationResponse);
+  rpc QueryRepositoryIntegration(QueryRepositoryIntegrationRequest) returns (QueryRepositoryIntegrationResponse);
+  rpc GetGitHubTokenForm(GetGitHubTokenFormRequest) returns (GetGitHubTokenFormResponse);
+  rpc RefreshPullRequestProblems(RefreshPullRequestProblemsRequest) returns (RefreshPullRequestProblemsResponse);
+  rpc ListPullRequestProblems(ListPullRequestProblemsRequest) returns (ListPullRequestProblemsResponse);
+  rpc DismissPullRequestProblem(DismissPullRequestProblemRequest) returns (DismissPullRequestProblemResponse);
+  rpc ListPullRequestRemediationAttempts(ListPullRequestRemediationAttemptsRequest) returns (ListPullRequestRemediationAttemptsResponse);
+  rpc ResumePullRequestRemediation(ResumePullRequestRemediationRequest) returns (ResumePullRequestRemediationResponse);
+}
+message RefreshPullRequestProblemsRequest {
+  string request_id = 1;
+  string repository_id = 2;
+  string number = 3;
+  // Unspecified preserves the original published-feedback collection.
+  PullRequestProblemCollectionKind kind = 4;
+}
+enum PullRequestProblemCollectionKind {
+  PULL_REQUEST_PROBLEM_COLLECTION_KIND_UNSPECIFIED = 0;
+  PULL_REQUEST_PROBLEM_COLLECTION_KIND_FEEDBACK = 1;
+  PULL_REQUEST_PROBLEM_COLLECTION_KIND_CI = 2;
+  PULL_REQUEST_PROBLEM_COLLECTION_KIND_CONFLICT = 3;
+}
+message RefreshPullRequestProblemsResponse {
+  Resource problem_set = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message ListPullRequestProblemsRequest {
+  // Stable GitHub numeric identities, independent of local repository aliases.
+  string remote_repository_id = 1;
+  string pull_request_id = 2;
+  uint32 page_size = 3;
+  string page_token = 4;
+}
+message ListPullRequestProblemsResponse {
+  // Absent when this remote PR has no retained inventory.
+  Resource problem_set = 1;
+  repeated Resource problems = 2;
+  string next_page_token = 3;
+}
+message DismissPullRequestProblemRequest {
+  Mutation mutation = 1;
+  string content_version = 2;
+}
+message DismissPullRequestProblemResponse {
+  Resource problem = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message ListPullRequestRemediationAttemptsRequest {
+  string remote_repository_id = 1;
+  string pull_request_id = 2;
+  uint32 page_size = 3;
+  string page_token = 4;
+}
+message ListPullRequestRemediationAttemptsResponse {
+  Resource problem_set = 1;
+  repeated Resource attempts = 2;
+  string next_page_token = 3;
+}
+message ResumePullRequestRemediationRequest {
+  // The original retained PR set, never a session or queued input.
+  Mutation mutation = 1;
+}
+message ResumePullRequestRemediationResponse {
+  Resource problem_set = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+enum GitHubTokenAccess {
+  GIT_HUB_TOKEN_ACCESS_UNSPECIFIED = 0;
+  GIT_HUB_TOKEN_ACCESS_SELECTED_REPOSITORIES = 1;
+  GIT_HUB_TOKEN_ACCESS_PUBLIC_REPOSITORIES = 2;
+  GIT_HUB_TOKEN_ACCESS_PRIVATE_REPOSITORIES = 3;
+}
+message GetGitHubTokenFormRequest {
+  string profile_id = 1;
+  uint64 expected_revision = 2;
+  GitHubTokenAccess access = 3;
+}
+message GetGitHubTokenFormResponse {
+  uint32 schema_version = 1;
+  // Non-secret official form configuration, never a token or access grant.
+  bytes document_json = 2;
+}
+message SaveIntegrationProfileRequest {
+  Mutation mutation = 1;
+  uint32 schema_version = 2;
+  // Closed editable definition only; no connection, identity or credential fields.
+  bytes document_json = 3;
+}
+message SaveIntegrationProfileResponse {
+  Resource profile = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message ReplaceIntegrationTokenRequest {
+  Mutation mutation = 1;
+  // Write-only bounded PAT bytes. Never retained in a receipt or response.
+  bytes token = 2;
+}
+message ReplaceIntegrationTokenResponse {
+  Resource profile = 1;
+  string request_id = 2;
+  bool replayed = 3;
+  // A committed change can require native cleanup or validation retry.
+  bytes problem_json = 4;
+}
+message ValidateIntegrationProfileRequest {
+  Mutation mutation = 1;
+}
+message ValidateIntegrationProfileResponse {
+  Resource profile = 1;
+  string request_id = 2;
+  bool replayed = 3;
+  bytes problem_json = 4;
+}
+message DeleteIntegrationProfileRequest {
+  Mutation mutation = 1;
+}
+message DeleteIntegrationProfileResponse {
+  // Present only while native deletion remains pending.
+  Resource profile = 1;
+  string request_id = 2;
+  bool replayed = 3;
+  bool deleted = 4;
+  bytes problem_json = 5;
+}
+
+message InspectRepositoryIntegrationRequest {
+  // Selects the repository's explicitly configured profile, never a fallback.
+  string repository_id = 1;
+}
+message InspectRepositoryIntegrationResponse {
+  uint32 schema_version = 1;
+  // Fresh scoped endpoint-access observations, not persistent authorization.
+  bytes document_json = 2;
+}
+
+message QueryRepositoryIntegrationRequest {
+  string repository_id = 1;
+  uint32 schema_version = 2;
+  // Strict read-only query; repository/profile authority comes from server state.
+  bytes query_json = 3;
+}
+message QueryRepositoryIntegrationResponse {
+  uint32 schema_version = 1;
+  bytes document_json = 2;
+}
+
 service ProviderService {
   rpc ListProviderPresets(ListProviderPresetsRequest) returns (ListProviderPresetsResponse);
   rpc DiscoverModels(DiscoverModelsRequest) returns (DiscoverModelsResponse);
@@ -504,6 +679,12 @@ message ResolveModelResponse {
 // Owner/client session acceptance and ordered input. Native execution and
 // interactions are separately capability-checked; acceptance is not dispatch.
 service SessionService {
+  rpc LinkSessionPullRequest(LinkSessionPullRequestRequest) returns (LinkSessionPullRequestResponse);
+  rpc UnlinkSessionPullRequest(UnlinkSessionPullRequestRequest) returns (UnlinkSessionPullRequestResponse);
+  rpc ReadSessionReviewContext(ReadSessionReviewContextRequest) returns (ReadSessionReviewContextResponse);
+  rpc ReadSessionWorkspace(ReadSessionWorkspaceRequest) returns (ReadSessionWorkspaceResponse);
+  rpc GetSessionBudget(GetSessionBudgetRequest) returns (GetSessionBudgetResponse);
+  rpc SetSessionBudget(SetSessionBudgetRequest) returns (SetSessionBudgetResponse);
   rpc SteerQueuedInput(SteerQueuedInputRequest) returns (SteerQueuedInputResponse);
   rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
   rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
@@ -516,6 +697,41 @@ service SessionService {
   rpc PrepareSessionWorkspace(PrepareSessionWorkspaceRequest) returns (PrepareSessionWorkspaceResponse);
   rpc RecoverSessionExecution(RecoverSessionExecutionRequest) returns (RecoverSessionExecutionResponse);
   rpc RecoverSessionWorkspace(RecoverSessionWorkspaceRequest) returns (RecoverSessionWorkspaceResponse);
+  rpc CreateLocalReviewComment(CreateLocalReviewCommentRequest) returns (CreateLocalReviewCommentResponse);
+  rpc EditLocalReviewComment(EditLocalReviewCommentRequest) returns (EditLocalReviewCommentResponse);
+  rpc DeleteLocalReviewComment(DeleteLocalReviewCommentRequest) returns (DeleteLocalReviewCommentResponse);
+  rpc SubmitLocalReview(SubmitLocalReviewRequest) returns (SubmitLocalReviewResponse);
+}
+message LinkSessionPullRequestRequest {
+  string request_id = 1;
+  string session_id = 2;
+  string repository_id = 3;
+  // Canonical decimal PR number. Stable provider identities are server-observed.
+  string number = 4;
+}
+message LinkSessionPullRequestResponse {
+  Resource association = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message UnlinkSessionPullRequestRequest {
+  Mutation mutation = 1;
+  string session_id = 2;
+}
+message UnlinkSessionPullRequestResponse {
+  string id = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message ReadSessionReviewContextRequest {
+  string session_id = 1;
+  // Closed git-diff workspace query; only the owning Worker supplies bytes.
+  bytes query_json = 2;
+}
+message ReadSessionReviewContextResponse {
+  // Exact diff observation and validated ordinary Git file/line coordinates.
+  // Non-line changes expose file anchors only. No submission authority.
+  bytes document_json = 1;
 }
 message SteerQueuedInputRequest {
   // Exact queue record revision; request_id also identifies the Steer attempt.
@@ -636,6 +852,12 @@ service InboxService {
   rpc GetInboxEntry(GetInboxEntryRequest) returns (GetInboxEntryResponse);
   rpc ListInbox(ListInboxRequest) returns (ListInboxResponse);
   rpc SetInboxReadState(SetInboxReadStateRequest) returns (SetInboxReadStateResponse);
+  rpc GetNotificationPreferences(GetNotificationPreferencesRequest) returns (GetNotificationPreferencesResponse);
+  rpc SetNotificationPreferences(SetNotificationPreferencesRequest) returns (SetNotificationPreferencesResponse);
+  rpc ListNotificationCandidates(ListNotificationCandidatesRequest) returns (ListNotificationCandidatesResponse);
+  rpc ClaimNotification(ClaimNotificationRequest) returns (ClaimNotificationResponse);
+  rpc GetNotificationDelivery(GetNotificationDeliveryRequest) returns (GetNotificationDeliveryResponse);
+  rpc ReportNotification(ReportNotificationRequest) returns (ReportNotificationResponse);
 }
 enum InboxReadState {
   INBOX_READ_STATE_UNSPECIFIED = 0;
@@ -784,4 +1006,491 @@ message GetScheduleOccurrenceRequest {
 }
 message GetScheduleOccurrenceResponse {
   Resource occurrence = 1;
+}
+
+// Owner/paired-client reads of retained conversations, including Archive.
+service SearchService {
+  rpc SearchConversations(SearchConversationsRequest) returns (SearchConversationsResponse);
+}
+enum SearchExecutionOutcome {
+  SEARCH_EXECUTION_OUTCOME_UNSPECIFIED = 0;
+  SEARCH_EXECUTION_OUTCOME_NOT_STARTED = 1;
+  SEARCH_EXECUTION_OUTCOME_RUNNING = 2;
+  SEARCH_EXECUTION_OUTCOME_SUCCEEDED = 3;
+  SEARCH_EXECUTION_OUTCOME_FAILED = 4;
+  SEARCH_EXECUTION_OUTCOME_STOPPED = 5;
+}
+enum SearchArchiveState {
+  SEARCH_ARCHIVE_STATE_UNSPECIFIED = 0;
+  SEARCH_ARCHIVE_STATE_ACTIVE = 1;
+  SEARCH_ARCHIVE_STATE_ARCHIVING = 2;
+  SEARCH_ARCHIVE_STATE_ARCHIVED = 3;
+}
+message SearchConversationsRequest {
+  // Literal Unicode text; no SQL, wildcard or FTS expression syntax.
+  string query = 1;
+  string session_id = 2;
+  string project_id = 3;
+  string agent_id = 4;
+  // Original message execution account, not the Agent's current candidates.
+  string account_id = 5;
+  SearchExecutionOutcome outcome = 6;
+  SearchArchiveState archive = 7;
+  uint32 page_size = 8;
+  string page_token = 9;
+}
+message ConversationSearchHit {
+  Resource message = 1;
+  string session_name = 2;
+  string agent_id = 3;
+  SearchExecutionOutcome outcome = 4;
+  SearchArchiveState archive = 5;
+}
+message SearchConversationsResponse {
+  repeated ConversationSearchHit hits = 1;
+  string next_page_token = 2;
+}
+
+service ActivityService {
+  rpc ListActivity(ListActivityRequest) returns (ListActivityResponse);
+}
+enum ActivityKind {
+  ACTIVITY_KIND_UNSPECIFIED = 0;
+  // Accepted dispatch is not proof that native input started.
+  ACTIVITY_KIND_EXECUTION_ACCEPTED = 1;
+  // Observed native outcomes do not assert process cleanup.
+  ACTIVITY_KIND_EXECUTION_SUCCEEDED = 2;
+  ACTIVITY_KIND_EXECUTION_FAILED = 3;
+  ACTIVITY_KIND_EXECUTION_STOPPED = 4;
+  ACTIVITY_KIND_SCHEDULE_CRON = 5;
+  ACTIVITY_KIND_SCHEDULE_RUN_NOW = 6;
+}
+enum ActivityOccurrenceState {
+  ACTIVITY_OCCURRENCE_STATE_UNSPECIFIED = 0;
+  ACTIVITY_OCCURRENCE_STATE_WAITING = 1;
+  ACTIVITY_OCCURRENCE_STATE_ACTIVE = 2;
+  ACTIVITY_OCCURRENCE_STATE_SUCCEEDED = 3;
+  ACTIVITY_OCCURRENCE_STATE_FAILED = 4;
+  ACTIVITY_OCCURRENCE_STATE_STOPPED = 5;
+  ACTIVITY_OCCURRENCE_STATE_SKIPPED = 6;
+}
+enum ActivityJobState {
+  ACTIVITY_JOB_STATE_UNSPECIFIED = 0;
+  ACTIVITY_JOB_STATE_QUEUED = 1;
+  ACTIVITY_JOB_STATE_CLAIMED = 2;
+  ACTIVITY_JOB_STATE_SUCCEEDED = 3;
+  ACTIVITY_JOB_STATE_FAILED = 4;
+  ACTIVITY_JOB_STATE_UNCERTAIN = 5;
+  ACTIVITY_JOB_STATE_CANCELED = 6;
+}
+message ListActivityRequest {
+  string session_id = 1;
+  string project_id = 2;
+  uint32 page_size = 3;
+  string page_token = 4;
+}
+// Metadata only. Original source identity is also the stable activity identity.
+message ActivityEntry {
+  string id = 1;
+  EntityKind source_kind = 2;
+  uint64 source_revision = 3;
+  int64 observed_at_unix_ms = 4;
+  ActivityKind kind = 5;
+  string session_id = 6;
+  string project_id = 7;
+  string execution_id = 8;
+  string account_id = 9;
+  string job_id = 10;
+  string schedule_id = 11;
+  string occurrence_id = 12;
+  // Current occurrence state, distinct from its original acceptance time.
+  ActivityOccurrenceState occurrence_state = 13;
+  // Current dispatch/cleanup job state, including pre-native failure.
+  ActivityJobState job_state = 14;
+}
+message ListActivityResponse {
+  repeated ActivityEntry entries = 1;
+  string next_page_token = 2;
+}
+
+service UsageService {
+  rpc GetUsageSummary(GetUsageSummaryRequest) returns (GetUsageSummaryResponse);
+  rpc GetModelPricing(GetModelPricingRequest) returns (GetModelPricingResponse);
+  rpc GetPricingVersion(GetPricingVersionRequest) returns (GetPricingVersionResponse);
+  rpc SetModelPricing(SetModelPricingRequest) returns (SetModelPricingResponse);
+}
+message GetUsageSummaryRequest {
+  // Half-open server retention-time range. Zero defaults to the last 30 days.
+  int64 from_unix_ms = 1;
+  int64 until_unix_ms = 2;
+  string session_id = 3;
+  string project_id = 4;
+  string account_id = 5;
+  string provider_id = 6;
+  string model_id = 7;
+  bool general_chat = 8;
+}
+message UsageMeasure {
+  // Empty is unavailable. "0" is measured zero. Decimal integer, never float.
+  string known_total = 1;
+  uint32 measured_responses = 2;
+  uint32 unavailable_responses = 3;
+}
+message UsageTotals {
+  uint32 responses = 1;
+  UsageMeasure input = 2;
+  UsageMeasure cached_input = 3;
+  UsageMeasure cache_write_input = 4;
+  UsageMeasure output = 5;
+  UsageMeasure reasoning_output = 6;
+  UsageMeasure total = 7;
+}
+message UsageGroup {
+  string session_id = 1;
+  // Empty means projectless General Chat; removed projects retain their UUID.
+  string project_id = 2;
+  string account_id = 3;
+  string provider_id = 4;
+  string model_id = 5;
+  UsageTotals totals = 6;
+  // Current display labels only; immutable IDs above remain authoritative.
+  // Missing/deleted configuration leaves its label empty.
+  string session_name = 7;
+  string project_name = 8;
+  string account_name = 9;
+  string provider_name = 10;
+  string model_name = 11;
+  EstimateTotals estimates = 12;
+}
+enum UsageCoverage {
+  USAGE_COVERAGE_UNSPECIFIED = 0;
+  // Exact known subtotals only. Missing/legacy/child telemetry is not zero.
+  USAGE_COVERAGE_OBSERVED_ROOT_RESPONSES = 1;
+}
+enum UsageCostState {
+  USAGE_COST_STATE_UNSPECIFIED = 0;
+  USAGE_COST_STATE_UNAVAILABLE = 1;
+  USAGE_COST_STATE_KNOWN_SUBTOTAL = 2;
+}
+message GetUsageSummaryResponse {
+  int64 from_unix_ms = 1;
+  int64 until_unix_ms = 2;
+  UsageTotals totals = 3;
+  repeated UsageGroup groups = 4;
+  UsageCoverage coverage = 5;
+  UsageCostState actual_cost = 6;
+  UsageCostState estimated_cost = 7;
+  // Accepted in this time range with no exact response retained in the range.
+  // This does not assert that those executions made no calls.
+  uint32 accepted_executions_without_response = 8;
+  EstimateTotals estimates = 9;
+  repeated PricingUsage pricing = 10;
+}
+
+// User-declared token prices only. No rate or result establishes actual spend.
+enum InputPricingMode {
+  INPUT_PRICING_MODE_UNSPECIFIED = 0;
+  INPUT_PRICING_MODE_UNIFORM = 1;
+  INPUT_PRICING_MODE_CACHED_DISCOUNT = 2;
+}
+message TokenPricing {
+  string currency = 1;
+  string source = 2;
+  string as_of = 3;
+  InputPricingMode input_mode = 4;
+  // Decimal currency units per million tokens, at most nine fractional digits.
+  // Omitted is unavailable; an explicit "0" is a zero rate.
+  optional string input_per_million = 5;
+  optional string cached_input_per_million = 6;
+  optional string output_per_million = 7;
+  repeated string exclusions = 8;
+}
+message PricingVersion {
+  string id = 1;
+  string model_id = 2;
+  string provider_id = 3;
+  uint64 revision = 4;
+  int64 created_at_unix_ms = 5;
+  TokenPricing basis = 6;
+}
+message GetModelPricingRequest {
+  string model_id = 1;
+}
+message GetModelPricingResponse {
+  uint64 model_revision = 2;
+  // Absent means no basis has been configured for the existing model.
+  PricingVersion pricing = 1;
+}
+message GetPricingVersionRequest {
+  string id = 1;
+}
+message GetPricingVersionResponse {
+  PricingVersion pricing = 1;
+}
+message SetModelPricingRequest {
+  // The model ID and independent pricing revision; zero creates its first basis.
+  Mutation mutation = 1;
+  TokenPricing basis = 2;
+  // Bind the model/provider selection read with GetModelPricing.
+  uint64 expected_model_revision = 3;
+}
+message SetModelPricingResponse {
+  // Immutable accepted basis, including on a retry after a later price change.
+  PricingVersion pricing = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+
+message CurrencyEstimate {
+  string currency = 1;
+  // Exact decimal currency units. Empty is unavailable, not zero.
+  string known_amount = 2;
+  uint32 complete_responses = 3;
+  uint32 partial_responses = 4;
+  uint32 unavailable_responses = 5;
+}
+message EstimateTotals {
+  repeated CurrencyEstimate currencies = 1;
+  uint32 unpriced_responses = 2;
+}
+message EstimateMeasure {
+  string known_amount = 1;
+  string known_tokens = 2;
+  uint32 priced_responses = 3;
+  uint32 missing_usage_responses = 4;
+  uint32 missing_price_responses = 5;
+  uint32 unsupported_breakdown_responses = 6;
+  uint32 not_applicable_responses = 7;
+}
+message PricingUsage {
+  PricingVersion pricing = 1;
+  CurrencyEstimate totals = 2;
+  EstimateMeasure input = 3;
+  EstimateMeasure cached_input = 4;
+  EstimateMeasure output = 5;
+}
+
+message EstimatedCostBudget {
+  string currency = 1;
+  // Exact nonnegative decimal currency amount; never a token-count budget.
+  string threshold = 2;
+}
+enum BudgetState {
+  BUDGET_STATE_UNSPECIFIED = 0;
+  BUDGET_STATE_DISABLED = 1;
+  // Known evidence is below the threshold or unavailable. Never verified spend.
+  BUDGET_STATE_ALLOW_INCOMPLETE = 2;
+  BUDGET_STATE_THRESHOLD_REACHED = 3;
+}
+message BudgetEvidence {
+  string currency = 1;
+  string known_amount = 2;
+  uint64 complete_responses = 3;
+  uint64 partial_responses = 4;
+  uint64 unavailable_responses = 5;
+}
+message SessionBudgetView {
+  Resource session = 1;
+  EstimatedCostBudget budget = 2;
+  BudgetState state = 3;
+  // Entire retained session lifetime, independent of dashboard time filters.
+  BudgetEvidence selected_currency = 4;
+  uint64 unpriced_responses = 5;
+  uint64 other_currency_responses = 6;
+  UsageCoverage coverage = 7;
+}
+message GetSessionBudgetRequest {
+  string session_id = 1;
+}
+message GetSessionBudgetResponse {
+  SessionBudgetView view = 1;
+}
+message SetSessionBudgetRequest {
+  Mutation mutation = 1;
+  oneof change {
+    EstimatedCostBudget budget = 2;
+    // Must be true; omission cannot disable a budget.
+    bool remove = 3;
+  }
+}
+message SetSessionBudgetResponse {
+  // Current authorized state on receipt replay; no execution is authorized.
+  SessionBudgetView view = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+
+// Client-local presentation preferences and deduplication are server-owned.
+// These operations never mark inbox entries read or answer/execute a request.
+enum NotificationKind {
+  NOTIFICATION_KIND_UNSPECIFIED = 0;
+  NOTIFICATION_KIND_REQUEST = 1;
+  NOTIFICATION_KIND_SUCCEEDED = 2;
+  NOTIFICATION_KIND_FAILED = 3;
+  NOTIFICATION_KIND_STOPPED = 4;
+}
+enum NotificationState {
+  NOTIFICATION_STATE_UNSPECIFIED = 0;
+  NOTIFICATION_STATE_CLAIMED = 1;
+  // Accepted by the OS interface; not proof that a person saw the notification.
+  NOTIFICATION_STATE_SUBMITTED = 2;
+  NOTIFICATION_STATE_DENIED = 3;
+  NOTIFICATION_STATE_FAILED = 4;
+  NOTIFICATION_STATE_UNCERTAIN = 5;
+}
+message NotificationPreferences {
+  uint64 revision = 1;
+  bool interactions = 2;
+  bool terminals = 3;
+}
+message NotificationCandidate {
+  string inbox_id = 1;
+  string session_id = 2;
+  NotificationKind kind = 3;
+}
+message NotificationDelivery {
+  NotificationCandidate candidate = 1;
+  string claim_id = 2;
+  NotificationState state = 3;
+}
+message GetNotificationPreferencesRequest {}
+message GetNotificationPreferencesResponse {
+  NotificationPreferences preferences = 1;
+}
+message SetNotificationPreferencesRequest {
+  string request_id = 1;
+  // Revision belongs to the authenticated client's preferences only.
+  NotificationPreferences preferences = 2;
+}
+message SetNotificationPreferencesResponse {
+  NotificationPreferences preferences = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message ListNotificationCandidatesRequest {
+  // Default 20; at most 50. Claimed entries leave the next batch.
+  uint32 limit = 1;
+}
+message ListNotificationCandidatesResponse {
+  repeated NotificationCandidate candidates = 1;
+  bool more = 2;
+}
+message ClaimNotificationRequest {
+  string inbox_id = 1;
+  string request_id = 2;
+}
+message ClaimNotificationResponse {
+  NotificationDelivery delivery = 1;
+  // True exactly once, on fresh durable acceptance. Receipt replay never
+  // grants another OS submission, including after an acknowledgment was lost.
+  bool may_present = 2;
+  string request_id = 3;
+  bool replayed = 4;
+}
+message GetNotificationDeliveryRequest {
+  string inbox_id = 1;
+}
+message GetNotificationDeliveryResponse {
+  NotificationDelivery delivery = 1;
+}
+message ReportNotificationRequest {
+  string inbox_id = 1;
+  string claim_id = 2;
+  string request_id = 3;
+  NotificationState state = 4;
+}
+message ReportNotificationResponse {
+  NotificationDelivery delivery = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+
+// Read-only observations do not enter the durable Worker execution queue.
+message ReadSessionWorkspaceRequest {
+  string session_id = 1;
+  bytes query_json = 2;
+}
+message ReadSessionWorkspaceResponse {
+  bytes document_json = 1;
+}
+message WatchWorkspaceReadsRequest {
+  string machine_id = 1;
+  string instance_id = 2;
+}
+message WatchWorkspaceReadsResponse {
+  bool heartbeat = 1;
+  // Closed workspace.ReadRequest; one outstanding observation per machine.
+  bytes request_json = 2;
+}
+message ReportWorkspaceReadRequest {
+  string machine_id = 1;
+  string instance_id = 2;
+  string read_id = 3;
+  bytes document_json = 4;
+  // Code only. Worker diagnostic text never crosses this boundary.
+  string problem_code = 5;
+}
+message ReportWorkspaceReadResponse {}
+
+message ExportConfigurationRequest {}
+message ExportConfigurationResponse {
+  bytes document_json = 1;
+}
+message PreviewConfigurationImportRequest {
+  bytes selection_json = 1;
+}
+message PreviewConfigurationImportResponse {
+  bytes preview_json = 1;
+}
+message ApplyConfigurationImportRequest {
+  string request_id = 1;
+  bytes preview_json = 2;
+}
+message ApplyConfigurationImportResponse {
+  string request_id = 1;
+  bool replayed = 2;
+  bytes result_json = 3;
+}
+
+message CreateLocalReviewCommentRequest {
+  string request_id = 1;
+  string session_id = 2;
+  // Closed query, expected diff revision, selection and comment body.
+  bytes document_json = 3;
+}
+message CreateLocalReviewCommentResponse {
+  Resource comment = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message EditLocalReviewCommentRequest {
+  Mutation mutation = 1;
+  string session_id = 2;
+  string body = 3;
+}
+message EditLocalReviewCommentResponse {
+  Resource comment = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message DeleteLocalReviewCommentRequest {
+  Mutation mutation = 1;
+  string session_id = 2;
+}
+message DeleteLocalReviewCommentResponse {
+  string id = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message SubmitLocalReviewRequest {
+  string request_id = 1;
+  string session_id = 2;
+  // Selected exact comment revisions, mode and explicit stale selection.
+  bytes document_json = 3;
+}
+message SubmitLocalReviewResponse {
+  Resource submission = 1;
+  SessionChange change = 2;
+  string request_id = 3;
+  bool replayed = 4;
 }

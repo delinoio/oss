@@ -22,7 +22,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const SchemaVersion = 12
+const SchemaVersion = 20
 const applicationID = 0x444c4456
 const MaxPage = 200
 
@@ -73,12 +73,13 @@ type Result struct {
 }
 
 type Tx struct {
-	tx        *sql.Tx
-	ctx       context.Context
-	requestID domain.ID
-	now       time.Time
-	touched   map[domain.ID]bool
-	readOnly  bool
+	tx           *sql.Tx
+	ctx          context.Context
+	requestID    domain.ID
+	now          time.Time
+	touched      map[domain.ID]bool
+	queueTouched map[domain.ID]bool
+	readOnly     bool
 }
 
 func Open(ctx context.Context, root string) (_ *Store, returned error) {
@@ -166,7 +167,7 @@ func Open(ctx context.Context, root string) (_ *Store, returned error) {
 		if err != nil {
 			return fail(err)
 		}
-		if _, err = tx.ExecContext(ctx, schema+workerSchema+catalogSchema+sessionSchema+jobControlSchema+assignmentSchema+executionSchema+executionMessageSchema+interactionSchema+inboxSchema+scheduleSchema+deletedConfigurationSchema); err == nil {
+		if _, err = tx.ExecContext(ctx, schema+workerSchema+catalogSchema+sessionSchema+jobControlSchema+assignmentSchema+executionSchema+executionMessageSchema+interactionSchema+inboxSchema+scheduleSchema+deletedConfigurationSchema+searchSchema+responseUsageSchema+pricingSchema+budgetSchema+notificationSchema+prProblemSchema+prCIProblemSchema+prRemediationSchema); err == nil {
 			err = tx.Commit()
 		} else {
 			tx.Rollback()
@@ -349,6 +350,9 @@ func (s *Store) Mutate(ctx context.Context, id domain.ID, operation string, inpu
 	out, err := apply(t)
 	if err != nil {
 		return Result{}, storageError(err)
+	}
+	if err = t.validatePRRemediationClaims(); err != nil {
+		return Result{}, err
 	}
 	raw, err := json.Marshal(out)
 	if err != nil || len(raw) > 4<<20 {
@@ -535,10 +539,19 @@ func (t *Tx) Put(kind domain.Kind, id domain.ID, expected uint64, sessionID, pro
 		return Record{}, storageError(err)
 	}
 	r := Record{ID: id, Kind: kind, Revision: expected + 1, SessionID: sessionID, ProjectID: projectID, Data: body, CreatedAt: time.UnixMilli(created).UTC(), UpdatedAt: t.now}
+	if err = t.indexMessage(r); err != nil {
+		return Record{}, err
+	}
 	if err = t.event(r, action); err != nil {
 		return Record{}, err
 	}
 	t.touched[id] = true
+	if kind == domain.QueueKind {
+		if t.queueTouched == nil {
+			t.queueTouched = map[domain.ID]bool{}
+		}
+		t.queueTouched[id] = true
+	}
 	if sessionID != "" {
 		t.touched[sessionID] = true
 	}

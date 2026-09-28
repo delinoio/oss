@@ -29,13 +29,37 @@ func init() {
 	}
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Buffer(make([]byte, 4096), MaxFrame+1)
-	write := func(value any) { raw, _ := json.Marshal(value); _, _ = os.Stdout.Write(append(raw, '\n')) }
+	write := func(value any) {
+		if object, ok := value.(map[string]any); ok && strings.HasPrefix(os.Args[2], "jsonrpc") {
+			switch os.Args[2] {
+			case "jsonrpc-absent":
+			case "jsonrpc-alias":
+				object["JSONRPC"] = "2.0"
+			default:
+				object["jsonrpc"] = "2.0"
+			}
+		}
+		raw, _ := json.Marshal(value)
+		_, _ = os.Stdout.Write(append(raw, '\n'))
+	}
 	for scanner.Scan() {
 		var request envelope
 		if json.Unmarshal(scanner.Bytes(), &request) != nil {
 			os.Exit(3)
 		}
+		if strings.HasPrefix(os.Args[2], "jsonrpc") && request.JSONRPC != "2.0" {
+			os.Exit(5)
+		}
 		switch request.Method {
+		case "stderr-overflow":
+			_, _ = os.Stderr.Write(bytes.Repeat([]byte{'x'}, maxDiagnosticBytes+1))
+		case "notify":
+			write(map[string]any{"method": "notified", "params": request.Params})
+		case "error-alias":
+			write(map[string]any{"id": request.ID, "error": map[string]any{"Code": -32602, "message": "private"}})
+		case "jsonrpc-interaction":
+			write(map[string]any{"id": 7, "method": "approval", "params": map[string]string{"command": "private-command"}})
+			write(map[string]any{"id": request.ID, "result": map[string]bool{"accepted": true}})
 		case "unicode":
 			raw, _ := json.Marshal(map[string]any{"id": request.ID, "result": map[string]string{"text": "한글 😀"}})
 			for _, value := range append(raw, '\n') {
@@ -83,7 +107,11 @@ func startFixture(t *testing.T, mode string) (*Connection, process.Config, *byte
 	}
 	var log bytes.Buffer
 	cfg := process.Config{Directory: filepath.Join(t.TempDir(), "processes"), OwnerID: domain.NewID(), Executable: executable, Args: []string{"__delidev_wire_fixture", mode}, Cwd: t.TempDir(), Env: []string{}, Logger: slog.New(slog.NewJSONHandler(&log, nil))}
-	c, err := Start(context.Background(), cfg)
+	start := Start
+	if strings.HasPrefix(mode, "jsonrpc") {
+		start = StartJSONRPC
+	}
+	c, err := start(context.Background(), cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,6 +121,73 @@ func startFixture(t *testing.T, mode string) (*Connection, process.Config, *byte
 		}
 	})
 	return c, cfg, &log
+}
+
+func TestExplicitJSONRPCProfileRequestsRepliesAndNotifications(t *testing.T) {
+	c, _, _ := startFixture(t, "jsonrpc")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := c.Call(ctx, domain.NewID(), "interactions", struct{}{}); err == nil {
+		// The Codex-only emittedAtMs extension must not enter this profile.
+		if _, err = c.Next(ctx); err == nil {
+			_, err = c.Next(ctx)
+		}
+		if err == nil {
+			t.Fatal("Codex extension accepted in JSON-RPC profile")
+		}
+	}
+	c2, _, _ := startFixture(t, "jsonrpc")
+	if _, err := c2.Call(ctx, domain.NewID(), "ping", struct{}{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c2.Notify(ctx, "notify", map[string]bool{"original": true}); err != nil {
+		t.Fatal(err)
+	}
+	event, err := c2.Next(ctx)
+	if err != nil || event.Kind != Notification || event.Method != "notified" || string(event.Params) != `{"original":true}` {
+		t.Fatal("JSON-RPC notification failed", err)
+	}
+	if _, err := c2.Call(ctx, domain.NewID(), "jsonrpc-interaction", struct{}{}); err != nil {
+		t.Fatal(err)
+	}
+	event, err = c2.Next(ctx)
+	if err != nil || event.Kind != ServerRequest {
+		t.Fatal("JSON-RPC interaction missing", err)
+	}
+	if err := c2.Reply(ctx, event, map[string]bool{"accepted": true}); err != nil {
+		t.Fatal(err)
+	}
+	event, err = c2.Next(ctx)
+	if err != nil || event.Method != "resolved" || string(event.Params) != `{"accepted":true}` {
+		t.Fatal("JSON-RPC reply missing", err)
+	}
+}
+
+func TestExplicitJSONRPCRejectsForeignEnvelopesAndBoundedDiagnostics(t *testing.T) {
+	for _, test := range []struct {
+		mode, method string
+		code         domain.Code
+	}{
+		{"jsonrpc-absent", "ping", domain.Unsupported},
+		{"jsonrpc-alias", "ping", domain.Unsupported},
+		{"jsonrpc", "error-alias", domain.Unsupported},
+		{"jsonrpc", "stderr-overflow", domain.ResourceExhausted},
+	} {
+		t.Run(test.mode+"/"+test.method, func(t *testing.T) {
+			c, _, logs := startFixture(t, test.mode)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if _, err := c.Call(ctx, domain.NewID(), test.method, struct{}{}); err == nil {
+				t.Fatal("invalid native output accepted")
+			}
+			if err := c.Err(); err == nil || err.Code != test.code {
+				t.Fatal("wrong native failure", err)
+			}
+			if strings.Contains(logs.String(), "private") {
+				t.Fatal("native diagnostic logged")
+			}
+		})
+	}
 }
 func TestNativeWirePartialFramesAndRedactedErrors(t *testing.T) {
 	c, config, log := startFixture(t, "normal")
@@ -275,11 +370,40 @@ func TestNativeWireProtocolFailuresAndBoundsStopOwnedScope(t *testing.T) {
 }
 func TestNativeWireBlockedInputIsBounded(t *testing.T) {
 	c, config, _ := startFixture(t, "blocked-input")
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	_, err := c.Call(ctx, domain.NewID(), "blocked", map[string]string{"text": strings.Repeat("x", 900<<10)})
-	if err == nil || domain.SafeError(err).Code != domain.RecoveryRequired {
-		t.Fatalf("blocked write result: %v", err)
+	id := domain.NewID()
+	result := make(chan error, 1)
+	go func() {
+		_, err := c.Call(ctx, id, "blocked", map[string]string{"text": strings.Repeat("x", 900<<10)})
+		result <- err
+	}()
+	// Wait for ownership to cross the send barrier before canceling. A short
+	// wall-clock deadline can expire during race-instrumented JSON validation,
+	// which correctly reports not-sent instead of exercising a blocked pipe.
+	for {
+		c.mu.Lock()
+		sending := c.seen[id]
+		c.mu.Unlock()
+		if sending {
+			break
+		}
+		select {
+		case err := <-result:
+			t.Fatalf("call ended before send ownership: %v", err)
+		case <-ctx.Done():
+			t.Fatal("call never reached send ownership")
+		case <-time.After(time.Millisecond):
+		}
+	}
+	cancel()
+	select {
+	case err := <-result:
+		if err == nil || domain.SafeError(err).Code != domain.RecoveryRequired {
+			t.Fatalf("blocked write result: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("blocked write did not join owned cleanup")
 	}
 	if err := c.Close(); err != nil {
 		t.Fatal(err)

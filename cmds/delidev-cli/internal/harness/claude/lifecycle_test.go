@@ -101,8 +101,8 @@ func TestExecutionBindingPreservesIndependentNativeAcceptanceAndCompletion(t *te
 	if observation := lifecycleObserve(t, b, lifecycleInit(t, b)); observation.Kind != SessionInitialized || observation.Accepted {
 		t.Fatal("native initialization fabricated input acceptance")
 	}
-	if observation := lifecycleObserve(t, b, StreamEvent{Kind: NativeReplyEcho}); observation.Kind != PrivateObservation || observation.Accepted {
-		t.Fatal("callback echo became input acceptance")
+	if observation := lifecycleObserve(t, b, StreamEvent{Kind: NativeLateResponse}); observation.Kind != PrivateObservation || observation.Accepted {
+		t.Fatal("late control became input acceptance")
 	}
 	accepted := lifecycleObserve(t, b, lifecycleReplay(t, b))
 	if accepted.Kind != InputAccepted || !accepted.Accepted || accepted.InputID != b.input || accepted.SessionID != b.session {

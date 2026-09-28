@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "github-presentation"
+description = "Open only closed official GitHub token forms and PR or issue addresses in the OS browser."
+commands.allow = ["open_github"]

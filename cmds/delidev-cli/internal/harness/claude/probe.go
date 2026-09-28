@@ -33,6 +33,7 @@ const (
 	runtimePhase    probePhase = "runtime"
 	launchPhase     probePhase = "launch"
 	initializePhase probePhase = "initialize"
+	settingsPhase   probePhase = "settings"
 	cleanupPhase    probePhase = "cleanup"
 )
 
@@ -110,8 +111,18 @@ func Probe(ctx context.Context, config ProbeConfig) (returned error) {
 			}
 		}
 	}()
+	// Preparing an owned process can outlive the probe deadline. Its lifetime
+	// watcher may close the supervisor pipe before Resume acquires the start
+	// barrier, so classify that race from the probe context, not a raw OS error.
+	// The deferred cleanup still independently proves termination.
+	if err := bounded.Err(); err != nil {
+		return domain.SafeError(err)
+	}
 	if err := h.Resume(); err != nil {
-		return err
+		if err := bounded.Err(); err != nil {
+			return domain.SafeError(err)
+		}
+		return probeUnavailable()
 	}
 	phase = initializePhase
 	request, _ := json.Marshal(struct {

@@ -31,6 +31,7 @@ import (
 const DefaultListen = "127.0.0.1:46310"
 
 type Config struct {
+	StartupID                 domain.ID
 	DataDir                   string
 	Listen                    string
 	TLSCertificate            string
@@ -57,6 +58,15 @@ type Service struct {
 	delidevv1connect.UnimplementedWorkerServiceHandler
 	delidevv1connect.UnimplementedAccountServiceHandler
 	delidevv1connect.UnimplementedProviderServiceHandler
+	delidevv1connect.UnimplementedIntegrationServiceHandler
+	integrationOnce    sync.Once
+	integrationGate    chan struct{}
+	integrationChecks  map[domain.ID]*integrationCheck
+	integrationSecrets integrationSecrets
+	ownedPAT           *credentials.PATStore
+	github             githubIdentity
+	githubAccess       githubRepositoryAccess
+	githubQueries      githubRepositoryQueries
 	accountOnce        sync.Once
 	accountGate        chan struct{}
 	accountChecks      map[domain.ID]map[domain.ID]accountCheck
@@ -72,6 +82,8 @@ type Service struct {
 	connections        map[domain.ID]map[domain.ID]context.CancelFunc
 	pairAttempts       map[string]attemptWindow
 	workerStreams      map[domain.ID]workerStream
+	workspaceReadsMu   sync.Mutex
+	workspaceReaders   map[domain.ID]*workspaceReader
 	executionOnce      sync.Once
 	executionAuthority *executionAuthority
 }
@@ -122,6 +134,29 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	if config.Logger == nil {
 		config.Logger = slog.New(slog.NewJSONHandler(os.Stderr, nil))
 	}
+	if err := security.PrivateDir(config.DataDir); err != nil {
+		return domain.SafeError(err)
+	}
+	lifecycleLock, err := LockLifecycle(config.DataDir)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if lifecycleLock != nil {
+			lifecycleLock.Close()
+		}
+	}()
+	if config.StartupID != "" {
+		intent, err := ReadLifecycle(config.DataDir)
+		if err != nil {
+			return err
+		}
+		if intent.State != DesiredRunning || intent.Generation != config.StartupID || !intent.Matches(config) {
+			return domain.Fail(domain.Conflict, "This server startup was canceled or superseded.", "Inspect lifecycle intent before explicitly starting again.")
+		}
+	} else if _, err := ReadLifecycle(config.DataDir); err != nil {
+		return err
+	}
 	var certificate tls.Certificate
 	if config.TLSCertificate != "" {
 		certificate, err = tls.LoadX509KeyPair(config.TLSCertificate, config.TLSKey)
@@ -134,6 +169,11 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 		return err
 	}
 	defer state.Close()
+	if config.StartupID == "" {
+		if _, err := WriteRunning(config.DataDir, config); err != nil {
+			return err
+		}
+	}
 	storedIdentity, err := state.ScopeIdentity(ctx)
 	if err != nil {
 		return err
@@ -162,6 +202,7 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	defer stop()
 	service := &Service{Store: state, Identity: identity, Endpoint: Endpoint{URL: protocol + "://" + listener.Addr().String(), ServerID: identity.ServerID, Version: rpc.Version, ProtocolVersion: rpc.ProtocolVersion, StartedAt: time.Now().UTC()}, logger: config.Logger, stop: stop, accountSecrets: config.accountSecrets}
 	defer service.closeAccountSecrets()
+	defer service.closeIntegrationSecrets()
 	handler := service.Handler(config.AllowedOrigins, ip.IsLoopback())
 	defer service.executionAuthority.close()
 	httpServer := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10, BaseContext: func(net.Listener) context.Context { return child }, ErrorLog: slog.NewLogLogger(config.Logger.Handler(), slog.LevelWarn)}
@@ -173,6 +214,13 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 		return domain.SafeError(err)
 	}
 	defer os.Remove(filepath.Join(state.Root(), "server.json"))
+	// Authenticated HTTP readiness permits immediate controller reuse or Stop.
+	// Release the completed native startup barrier before serving any request;
+	// logging and maintenance startup must not keep a ready server locked.
+	if err := lifecycleLock.Close(); err != nil {
+		return domain.SafeError(err)
+	}
+	lifecycleLock = nil
 	done := make(chan error, 1)
 	go func() { done <- httpServer.Serve(listener) }()
 	catalogCtx, stopCatalog := context.WithCancel(child)
@@ -232,6 +280,9 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	if err := service.closeAccountSecrets(); err != nil {
 		return domain.SafeError(err)
 	}
+	if err := service.closeIntegrationSecrets(); err != nil {
+		return domain.SafeError(err)
+	}
 	config.Logger.Info("server_stopped", "server_id", identity.ServerID)
 	return nil
 }
@@ -243,11 +294,15 @@ func (s *Service) Handler(origins []string, loopback bool) http.Handler {
 	options := []connect.HandlerOption{connect.WithReadMaxBytes(2 << 20), connect.WithSendMaxBytes(5 << 20)}
 	mux.Handle(delidevv1connect.NewSystemServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewResourceServiceHandler(s, options...))
+	mux.Handle(delidevv1connect.NewSearchServiceHandler(s, options...))
+	mux.Handle(delidevv1connect.NewActivityServiceHandler(s, options...))
+	mux.Handle(delidevv1connect.NewUsageServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewConfigurationServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewDeviceServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewWorkerServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewAccountServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewProviderServiceHandler(s, options...))
+	mux.Handle(delidevv1connect.NewIntegrationServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewSessionServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewInteractionServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewInboxServiceHandler(s, options...))
@@ -336,9 +391,17 @@ func (s *Service) GetStatus(_ context.Context, req *connect.Request[pb.GetStatus
 }
 func (s *Service) StopServer(ctx context.Context, req *connect.Request[pb.StopServerRequest]) (*connect.Response[pb.StopServerResponse], error) {
 	id := domain.ID(req.Msg.RequestId)
-	_, err := s.Store.Mutate(ctx, id, "server.stop", struct {
+	lock, err := LockLifecycle(s.Store.Root())
+	if err != nil {
+		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
+	}
+	defer lock.Close()
+	_, err = s.Store.Mutate(ctx, id, "server.stop", struct {
 		StartedAt time.Time `json:"started_at"`
 	}{s.Endpoint.StartedAt}, func(*store.Tx) (any, error) {
+		if err := writeStopped(s.Store.Root(), id, configurationDigest(Config{})); err != nil {
+			return nil, err
+		}
 		return struct {
 			Accepted bool `json:"accepted"`
 		}{true}, nil
@@ -351,28 +414,6 @@ func (s *Service) StopServer(ctx context.Context, req *connect.Request[pb.StopSe
 	// durable receipt already prevents an ambiguous client retry from duplicating.
 	time.AfterFunc(100*time.Millisecond, s.stop)
 	response := connect.NewResponse(&pb.StopServerResponse{RequestId: string(id)})
-	rpc.CopyCorrelation(response, req.Header())
-	return response, nil
-}
-func (s *Service) GetDoctor(ctx context.Context, req *connect.Request[pb.GetDoctorRequest]) (*connect.Response[pb.GetDoctorResponse], error) {
-	_, _, err := s.Store.Snapshot(ctx, store.Filter{Kind: domain.SettingsKind, Limit: 2})
-	state := "ready"
-	if err != nil {
-		state = "failed"
-	}
-	report := struct {
-		Version         string    `json:"version"`
-		ServerID        domain.ID `json:"server_id"`
-		Listener        string    `json:"listener"`
-		Database        string    `json:"database"`
-		CredentialStore string    `json:"credential_store"`
-		InferenceProbes bool      `json:"inference_probes"`
-	}{rpc.Version, s.Identity.ServerID, s.Endpoint.URL, state, "owner-credential-ready", false}
-	raw, err := json.Marshal(report)
-	if err != nil {
-		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
-	}
-	response := connect.NewResponse(&pb.GetDoctorResponse{ReportJson: raw})
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil
 }

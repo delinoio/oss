@@ -1,0 +1,237 @@
+[
+  {
+    "kind": "notification",
+    "method": "_x.ai/session_notification",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "tool_call_delta_chunk",
+        "tool_call_id": "call_delidev_read",
+        "tool_index": 0,
+        "name": "ask_user_question",
+        "arguments_delta": "{\"questions\":[{\"options\":[{\"description\":\"First fixture choice\",\"label\":\"Blue\"},{\"description\":\"Second fixture choice\",\"label\":\"Green\"}],\"question\":\"Which original fixture color?\"}]}"
+      }
+    }
+  },
+  {
+    "kind": "notification",
+    "method": "session/update",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "tool_call",
+        "toolCallId": "call_delidev_read",
+        "title": "ask_user_question",
+        "rawInput": {
+          "questions": [
+            {
+              "options": [
+                {
+                  "description": "First fixture choice",
+                  "label": "Blue"
+                },
+                {
+                  "description": "Second fixture choice",
+                  "label": "Green"
+                }
+              ],
+              "question": "Which original fixture color?"
+            }
+          ]
+        },
+        "_meta": {
+          "x.ai/tool": {
+            "version": 1,
+            "name": "ask_user_question",
+            "kind": "ask_user",
+            "namespace": "grok_build",
+            "label": "Ask User",
+            "read_only": true
+          }
+        }
+      },
+      "_meta": {
+        "totalTokens": 16,
+        "eventId": "019f6de0-a760-7000-8000-000000000071-5",
+        "agentTimestampMs": 1790533457985,
+        "promptId": "e5833c4a-d764-4428-8bd8-6c2968a34b1b",
+        "streamStartMs": 1790533457972,
+        "turnStartMs": 1790533457917,
+        "updateType": "ToolCall",
+        "updateParams": {
+          "toolCallId": "call_delidev_read",
+          "title": "ask_user_question",
+          "kind": "Other",
+          "status": "Pending"
+        }
+      }
+    }
+  },
+  {
+    "kind": "notification",
+    "method": "_x.ai/session_notification",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "pending_interaction",
+        "tool_call_id": "call_delidev_read",
+        "kind": "permission"
+      }
+    }
+  },
+  {
+    "kind": "notification",
+    "method": "session/update",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "tool_call_update",
+        "toolCallId": "call_delidev_read",
+        "kind": "other",
+        "title": "Ask: Which original fixture color?",
+        "locations": [],
+        "rawInput": {
+          "variant": "AskUserQuestion",
+          "questions": [
+            {
+              "question": "Which original fixture color?",
+              "options": [
+                {
+                  "label": "Blue",
+                  "description": "First fixture choice"
+                },
+                {
+                  "label": "Green",
+                  "description": "Second fixture choice"
+                }
+              ],
+              "multiSelect": null
+            }
+          ]
+        },
+        "_meta": {
+          "x.ai/tool": {
+            "version": 1,
+            "name": "ask_user_question",
+            "kind": "ask_user",
+            "namespace": "grok_build",
+            "label": "Ask User",
+            "read_only": true
+          }
+        }
+      },
+      "_meta": {
+        "totalTokens": 16,
+        "eventId": "019f6de0-a760-7000-8000-000000000071-6",
+        "agentTimestampMs": 1790533457985,
+        "promptId": "e5833c4a-d764-4428-8bd8-6c2968a34b1b",
+        "streamStartMs": 1790533457972,
+        "turnStartMs": 1790533457917,
+        "updateType": "ToolCallUpdate",
+        "updateParams": {
+          "toolCallId": "call_delidev_read",
+          "status": null
+        }
+      }
+    }
+  },
+  {
+    "kind": "notification",
+    "method": "_x.ai/session_notification",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "interaction_resolved",
+        "tool_call_id": "call_delidev_read"
+      }
+    }
+  },
+  {
+    "kind": "notification",
+    "method": "_x.ai/session_notification",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "pending_interaction",
+        "tool_call_id": "call_delidev_read",
+        "kind": "question"
+      }
+    }
+  },
+  {
+    "kind": "server-request",
+    "method": "_x.ai/ask_user_question",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "toolCallId": "call_delidev_read",
+      "questions": [
+        {
+          "question": "Which original fixture color?",
+          "options": [
+            {
+              "label": "Blue",
+              "description": "First fixture choice"
+            },
+            {
+              "label": "Green",
+              "description": "Second fixture choice"
+            }
+          ],
+          "multiSelect": null
+        }
+      ],
+      "mode": "default"
+    }
+  },
+  {
+    "kind": "notification",
+    "method": "_x.ai/session_notification",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "interaction_resolved",
+        "tool_call_id": "call_delidev_read"
+      }
+    }
+  },
+  {
+    "kind": "notification",
+    "method": "session/update",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "tool_call_update",
+        "toolCallId": "call_delidev_read",
+        "status": "completed",
+        "content": [
+          {
+            "type": "content",
+            "content": {
+              "type": "text",
+              "text": "User has answered your questions: \"Which original fixture color?\"=\"Blue\". You can now continue with the user's answers in mind."
+            }
+          }
+        ],
+        "rawOutput": {
+          "type": "AskUserQuestion",
+          "UserAnswered": {
+            "message": "User has answered your questions: \"Which original fixture color?\"=\"Blue\". You can now continue with the user's answers in mind."
+          }
+        }
+      },
+      "_meta": {
+        "totalTokens": 16,
+        "eventId": "019f6de0-a760-7000-8000-000000000071-7",
+        "agentTimestampMs": 1790533458008,
+        "promptId": "e5833c4a-d764-4428-8bd8-6c2968a34b1b",
+        "streamStartMs": 1790533457972,
+        "turnStartMs": 1790533457917,
+        "updateType": "ToolCallUpdate",
+        "updateParams": {
+          "toolCallId": "call_delidev_read",
+          "status": "Completed"
+        }
+      }
+    }
+  }
+]

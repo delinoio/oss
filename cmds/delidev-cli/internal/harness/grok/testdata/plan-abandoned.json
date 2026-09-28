@@ -1,0 +1,792 @@
+[
+  {
+    "kind": "notification",
+    "method": "_x.ai/session_notification",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "tool_call_delta_chunk",
+        "tool_call_id": "call_delidev_0",
+        "tool_index": 0,
+        "name": "enter_plan_mode",
+        "arguments_delta": "{}"
+      }
+    }
+  },
+  {
+    "kind": "notification",
+    "method": "session/update",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "tool_call",
+        "toolCallId": "call_delidev_0",
+        "title": "enter_plan_mode",
+        "rawInput": {},
+        "_meta": {
+          "x.ai/tool": {
+            "version": 1,
+            "name": "enter_plan_mode",
+            "kind": "enter_plan",
+            "namespace": "grok_build",
+            "label": "Enter Plan Mode",
+            "read_only": true
+          }
+        }
+      },
+      "_meta": {
+        "totalTokens": 16,
+        "eventId": "019f6de0-a760-7000-8000-000000000071-5",
+        "agentTimestampMs": 1790535562881,
+        "promptId": "e5833c4a-d764-4428-8bd8-6c2968a34b1b",
+        "streamStartMs": 1790535562878,
+        "turnStartMs": 1790535562852,
+        "updateType": "ToolCall",
+        "updateParams": {
+          "toolCallId": "call_delidev_0",
+          "title": "enter_plan_mode",
+          "kind": "Other",
+          "status": "Pending"
+        }
+      }
+    }
+  },
+  {
+    "kind": "notification",
+    "method": "_x.ai/session_notification",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "pending_interaction",
+        "tool_call_id": "call_delidev_0",
+        "kind": "permission"
+      }
+    }
+  },
+  {
+    "kind": "notification",
+    "method": "session/update",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "tool_call_update",
+        "toolCallId": "call_delidev_0",
+        "kind": "other",
+        "title": "Plan: Enter",
+        "locations": [],
+        "rawInput": {
+          "variant": "EnterPlanMode"
+        },
+        "_meta": {
+          "x.ai/tool": {
+            "version": 1,
+            "name": "enter_plan_mode",
+            "kind": "enter_plan",
+            "namespace": "grok_build",
+            "label": "Enter Plan Mode",
+            "read_only": true
+          }
+        }
+      },
+      "_meta": {
+        "totalTokens": 16,
+        "eventId": "019f6de0-a760-7000-8000-000000000071-6",
+        "agentTimestampMs": 1790535562881,
+        "promptId": "e5833c4a-d764-4428-8bd8-6c2968a34b1b",
+        "streamStartMs": 1790535562878,
+        "turnStartMs": 1790535562852,
+        "updateType": "ToolCallUpdate",
+        "updateParams": {
+          "toolCallId": "call_delidev_0",
+          "status": null
+        }
+      }
+    }
+  },
+  {
+    "kind": "notification",
+    "method": "_x.ai/session_notification",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "interaction_resolved",
+        "tool_call_id": "call_delidev_0"
+      }
+    }
+  },
+  {
+    "kind": "notification",
+    "method": "session/update",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "current_mode_update",
+        "currentModeId": "plan"
+      },
+      "_meta": {
+        "eventId": "019f6de0-a760-7000-8000-000000000071-7",
+        "agentTimestampMs": 1790535562882
+      }
+    }
+  },
+  {
+    "kind": "notification",
+    "method": "session/update",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "tool_call_update",
+        "toolCallId": "call_delidev_0",
+        "status": "completed",
+        "title": "Plan mode entered",
+        "content": [
+          {
+            "type": "content",
+            "content": {
+              "type": "text",
+              "text": "Plan file: /fixture/plan.md"
+            }
+          }
+        ],
+        "rawOutput": {
+          "type": "EnterPlanMode",
+          "Entered": {
+            "message": "You have entered plan mode. You should now focus on exploring the codebase and creating an implementation plan.",
+            "plan_file_path": "/fixture/plan.md",
+            "tool_hints": {
+              "ask_user": "ask_user_question",
+              "exit_plan": "exit_plan_mode",
+              "task": "spawn_subagent"
+            },
+            "plan_file_seed": "empty"
+          }
+        }
+      },
+      "_meta": {
+        "totalTokens": 16,
+        "eventId": "019f6de0-a760-7000-8000-000000000071-8",
+        "agentTimestampMs": 1790535562882,
+        "promptId": "e5833c4a-d764-4428-8bd8-6c2968a34b1b",
+        "streamStartMs": 1790535562878,
+        "turnStartMs": 1790535562852,
+        "updateType": "ToolCallUpdate",
+        "updateParams": {
+          "toolCallId": "call_delidev_0",
+          "status": "Completed"
+        }
+      }
+    }
+  },
+  {
+    "kind": "notification",
+    "method": "_x.ai/session_notification",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "tool_call_delta_chunk",
+        "tool_call_id": "call_delidev_1",
+        "tool_index": 0,
+        "name": "ask_user_question",
+        "arguments_delta": "{\"questions\":[{\"options\":[{\"description\":\"First\",\"label\":\"Blue\"},{\"description\":\"Second\",\"label\":\"Green\"}],\"question\":\"Which original mixed option?\"}]}"
+      }
+    }
+  },
+  {
+    "kind": "notification",
+    "method": "session/update",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "tool_call",
+        "toolCallId": "call_delidev_1",
+        "title": "ask_user_question",
+        "rawInput": {
+          "questions": [
+            {
+              "options": [
+                {
+                  "description": "First",
+                  "label": "Blue"
+                },
+                {
+                  "description": "Second",
+                  "label": "Green"
+                }
+              ],
+              "question": "Which original mixed option?"
+            }
+          ]
+        },
+        "_meta": {
+          "x.ai/tool": {
+            "version": 1,
+            "name": "ask_user_question",
+            "kind": "ask_user",
+            "namespace": "grok_build",
+            "label": "Ask User",
+            "read_only": true
+          }
+        }
+      },
+      "_meta": {
+        "totalTokens": 16,
+        "eventId": "019f6de0-a760-7000-8000-000000000071-12",
+        "agentTimestampMs": 1790535562905,
+        "promptId": "e5833c4a-d764-4428-8bd8-6c2968a34b1b",
+        "streamStartMs": 1790535562898,
+        "turnStartMs": 1790535562852,
+        "updateType": "ToolCall",
+        "updateParams": {
+          "toolCallId": "call_delidev_1",
+          "title": "ask_user_question",
+          "kind": "Other",
+          "status": "Pending"
+        }
+      }
+    }
+  },
+  {
+    "kind": "notification",
+    "method": "_x.ai/session_notification",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "pending_interaction",
+        "tool_call_id": "call_delidev_1",
+        "kind": "permission"
+      }
+    }
+  },
+  {
+    "kind": "notification",
+    "method": "session/update",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "tool_call_update",
+        "toolCallId": "call_delidev_1",
+        "kind": "other",
+        "title": "Ask: Which original mixed option?",
+        "locations": [],
+        "rawInput": {
+          "variant": "AskUserQuestion",
+          "questions": [
+            {
+              "question": "Which original mixed option?",
+              "options": [
+                {
+                  "label": "Blue",
+                  "description": "First"
+                },
+                {
+                  "label": "Green",
+                  "description": "Second"
+                }
+              ],
+              "multiSelect": null
+            }
+          ]
+        },
+        "_meta": {
+          "x.ai/tool": {
+            "version": 1,
+            "name": "ask_user_question",
+            "kind": "ask_user",
+            "namespace": "grok_build",
+            "label": "Ask User",
+            "read_only": true
+          }
+        }
+      },
+      "_meta": {
+        "totalTokens": 16,
+        "eventId": "019f6de0-a760-7000-8000-000000000071-13",
+        "agentTimestampMs": 1790535562905,
+        "promptId": "e5833c4a-d764-4428-8bd8-6c2968a34b1b",
+        "streamStartMs": 1790535562898,
+        "turnStartMs": 1790535562852,
+        "updateType": "ToolCallUpdate",
+        "updateParams": {
+          "toolCallId": "call_delidev_1",
+          "status": null
+        }
+      }
+    }
+  },
+  {
+    "kind": "notification",
+    "method": "_x.ai/session_notification",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "interaction_resolved",
+        "tool_call_id": "call_delidev_1"
+      }
+    }
+  },
+  {
+    "kind": "notification",
+    "method": "_x.ai/session_notification",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "pending_interaction",
+        "tool_call_id": "call_delidev_1",
+        "kind": "question"
+      }
+    }
+  },
+  {
+    "kind": "server-request",
+    "method": "_x.ai/ask_user_question",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "toolCallId": "call_delidev_1",
+      "questions": [
+        {
+          "question": "Which original mixed option?",
+          "options": [
+            {
+              "label": "Blue",
+              "description": "First"
+            },
+            {
+              "label": "Green",
+              "description": "Second"
+            }
+          ],
+          "multiSelect": null
+        }
+      ],
+      "mode": "plan"
+    }
+  },
+  {
+    "kind": "notification",
+    "method": "_x.ai/session_notification",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "interaction_resolved",
+        "tool_call_id": "call_delidev_1"
+      }
+    }
+  },
+  {
+    "kind": "notification",
+    "method": "session/update",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "tool_call_update",
+        "toolCallId": "call_delidev_1",
+        "status": "completed",
+        "content": [
+          {
+            "type": "content",
+            "content": {
+              "type": "text",
+              "text": "User has answered your questions: \"Which original mixed option?\"=\"Blue\". You can now continue with the user's answers in mind."
+            }
+          }
+        ],
+        "rawOutput": {
+          "type": "AskUserQuestion",
+          "UserAnswered": {
+            "message": "User has answered your questions: \"Which original mixed option?\"=\"Blue\". You can now continue with the user's answers in mind."
+          }
+        }
+      },
+      "_meta": {
+        "totalTokens": 16,
+        "eventId": "019f6de0-a760-7000-8000-000000000071-14",
+        "agentTimestampMs": 1790535562913,
+        "promptId": "e5833c4a-d764-4428-8bd8-6c2968a34b1b",
+        "streamStartMs": 1790535562898,
+        "turnStartMs": 1790535562852,
+        "updateType": "ToolCallUpdate",
+        "updateParams": {
+          "toolCallId": "call_delidev_1",
+          "status": "Completed"
+        }
+      }
+    }
+  },
+  {
+    "kind": "notification",
+    "method": "_x.ai/session_notification",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "tool_call_delta_chunk",
+        "tool_call_id": "call_delidev_2",
+        "tool_index": 0,
+        "name": "write",
+        "arguments_delta": "{\"content\":\"# Original fixture plan\\n\\nRead the isolated fixture file.\\n\",\"file_path\":\"/fixture/plan.md\"}"
+      }
+    }
+  },
+  {
+    "kind": "notification",
+    "method": "session/update",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "tool_call",
+        "toolCallId": "call_delidev_2",
+        "title": "write",
+        "rawInput": {
+          "content": "# Original fixture plan\n\nRead the isolated fixture file.\n",
+          "file_path": "/fixture/plan.md"
+        },
+        "_meta": {
+          "x.ai/tool": {
+            "version": 1,
+            "name": "write",
+            "kind": "write",
+            "namespace": "opencode",
+            "label": "Write",
+            "read_only": false
+          }
+        }
+      },
+      "_meta": {
+        "totalTokens": 16,
+        "eventId": "019f6de0-a760-7000-8000-000000000071-18",
+        "agentTimestampMs": 1790535562933,
+        "promptId": "e5833c4a-d764-4428-8bd8-6c2968a34b1b",
+        "streamStartMs": 1790535562927,
+        "turnStartMs": 1790535562852,
+        "updateType": "ToolCall",
+        "updateParams": {
+          "toolCallId": "call_delidev_2",
+          "title": "write",
+          "kind": "Other",
+          "status": "Pending"
+        }
+      }
+    }
+  },
+  {
+    "kind": "notification",
+    "method": "session/update",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "tool_call_update",
+        "toolCallId": "call_delidev_2",
+        "kind": "edit",
+        "title": "Write `/fixture/plan.md`",
+        "content": [
+          {
+            "type": "diff",
+            "path": "/fixture/plan.md",
+            "oldText": "",
+            "newText": "# Original fixture plan\n\nRead the isolated fixture file.\n"
+          }
+        ],
+        "locations": [
+          {
+            "path": "/fixture/plan.md"
+          }
+        ],
+        "rawInput": {
+          "variant": "Write",
+          "file_path": "/fixture/plan.md",
+          "content": "# Original fixture plan\n\nRead the isolated fixture file.\n"
+        },
+        "_meta": {
+          "x.ai/tool": {
+            "version": 1,
+            "name": "write",
+            "kind": "write",
+            "namespace": "opencode",
+            "label": "Write",
+            "read_only": false,
+            "input": {
+              "path": "/fixture/plan.md"
+            }
+          }
+        }
+      },
+      "_meta": {
+        "totalTokens": 16,
+        "eventId": "019f6de0-a760-7000-8000-000000000071-19",
+        "agentTimestampMs": 1790535562933,
+        "promptId": "e5833c4a-d764-4428-8bd8-6c2968a34b1b",
+        "streamStartMs": 1790535562927,
+        "turnStartMs": 1790535562852,
+        "updateType": "ToolCallUpdate",
+        "updateParams": {
+          "toolCallId": "call_delidev_2",
+          "status": null
+        }
+      }
+    }
+  },
+  {
+    "kind": "notification",
+    "method": "session/update",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "tool_call_update",
+        "toolCallId": "call_delidev_2",
+        "status": "completed",
+        "content": [
+          {
+            "type": "diff",
+            "path": "/fixture/plan.md",
+            "oldText": "",
+            "newText": "# Original fixture plan\n\nRead the isolated fixture file.\n",
+            "_meta": {
+              "details": [
+                {
+                  "old_string": "",
+                  "old_line": 1,
+                  "new_string": "# Original fixture plan\n\nRead the isolated fixture file.\n",
+                  "new_line": 1,
+                  "context_before": "",
+                  "context_after": "",
+                  "line_prefix": ""
+                }
+              ]
+            }
+          }
+        ],
+        "rawOutput": {
+          "type": "SearchReplace",
+          "EditsApplied": {
+            "old_string": "",
+            "new_string": "# Original fixture plan\n\nRead the isolated fixture file.\n",
+            "tool_output_for_prompt": "Wrote file successfully to /fixture/plan.md.",
+            "tool_output_for_prompt_concise": "Wrote file successfully to /fixture/plan.md.",
+            "absolute_path": "/fixture/plan.md",
+            "edits": {
+              "details": [
+                {
+                  "old_string": "",
+                  "old_line": 1,
+                  "new_string": "# Original fixture plan\n\nRead the isolated fixture file.\n",
+                  "new_line": 1,
+                  "context_before": "",
+                  "context_after": "",
+                  "line_prefix": ""
+                }
+              ]
+            }
+          }
+        }
+      },
+      "_meta": {
+        "totalTokens": 16,
+        "eventId": "019f6de0-a760-7000-8000-000000000071-20",
+        "agentTimestampMs": 1790535562938,
+        "promptId": "e5833c4a-d764-4428-8bd8-6c2968a34b1b",
+        "streamStartMs": 1790535562927,
+        "turnStartMs": 1790535562852,
+        "updateType": "ToolCallUpdate",
+        "updateParams": {
+          "toolCallId": "call_delidev_2",
+          "status": "Completed"
+        }
+      }
+    }
+  },
+  {
+    "kind": "notification",
+    "method": "_x.ai/session_notification",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "tool_call_delta_chunk",
+        "tool_call_id": "call_delidev_3",
+        "tool_index": 0,
+        "name": "exit_plan_mode",
+        "arguments_delta": "{}"
+      }
+    }
+  },
+  {
+    "kind": "notification",
+    "method": "session/update",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "tool_call",
+        "toolCallId": "call_delidev_3",
+        "title": "exit_plan_mode",
+        "rawInput": {},
+        "_meta": {
+          "x.ai/tool": {
+            "version": 1,
+            "name": "exit_plan_mode",
+            "kind": "exit_plan",
+            "namespace": "grok_build",
+            "label": "Exit Plan Mode",
+            "read_only": true
+          }
+        }
+      },
+      "_meta": {
+        "totalTokens": 16,
+        "eventId": "019f6de0-a760-7000-8000-000000000071-24",
+        "agentTimestampMs": 1790535562960,
+        "promptId": "e5833c4a-d764-4428-8bd8-6c2968a34b1b",
+        "streamStartMs": 1790535562953,
+        "turnStartMs": 1790535562852,
+        "updateType": "ToolCall",
+        "updateParams": {
+          "toolCallId": "call_delidev_3",
+          "title": "exit_plan_mode",
+          "kind": "Other",
+          "status": "Pending"
+        }
+      }
+    }
+  },
+  {
+    "kind": "notification",
+    "method": "_x.ai/session_notification",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "pending_interaction",
+        "tool_call_id": "call_delidev_3",
+        "kind": "permission"
+      }
+    }
+  },
+  {
+    "kind": "notification",
+    "method": "session/update",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "tool_call_update",
+        "toolCallId": "call_delidev_3",
+        "kind": "other",
+        "title": "Plan: Exit",
+        "locations": [],
+        "rawInput": {
+          "variant": "ExitPlanMode"
+        },
+        "_meta": {
+          "x.ai/tool": {
+            "version": 1,
+            "name": "exit_plan_mode",
+            "kind": "exit_plan",
+            "namespace": "grok_build",
+            "label": "Exit Plan Mode",
+            "read_only": true
+          }
+        }
+      },
+      "_meta": {
+        "totalTokens": 16,
+        "eventId": "019f6de0-a760-7000-8000-000000000071-25",
+        "agentTimestampMs": 1790535562960,
+        "promptId": "e5833c4a-d764-4428-8bd8-6c2968a34b1b",
+        "streamStartMs": 1790535562953,
+        "turnStartMs": 1790535562852,
+        "updateType": "ToolCallUpdate",
+        "updateParams": {
+          "toolCallId": "call_delidev_3",
+          "status": null
+        }
+      }
+    }
+  },
+  {
+    "kind": "notification",
+    "method": "_x.ai/session_notification",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "interaction_resolved",
+        "tool_call_id": "call_delidev_3"
+      }
+    }
+  },
+  {
+    "kind": "notification",
+    "method": "_x.ai/session_notification",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "pending_interaction",
+        "tool_call_id": "call_delidev_3",
+        "kind": "plan_approval"
+      }
+    }
+  },
+  {
+    "kind": "server-request",
+    "method": "_x.ai/exit_plan_mode",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "toolCallId": "call_delidev_3",
+      "planContent": "# Original fixture plan\n\nRead the isolated fixture file.\n"
+    }
+  },
+  {
+    "kind": "notification",
+    "method": "_x.ai/session_notification",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "interaction_resolved",
+        "tool_call_id": "call_delidev_3"
+      }
+    }
+  },
+  {
+    "kind": "notification",
+    "method": "session/update",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "current_mode_update",
+        "currentModeId": "default"
+      },
+      "_meta": {
+        "eventId": "019f6de0-a760-7000-8000-000000000071-26",
+        "agentTimestampMs": 1790535562961
+      }
+    }
+  },
+  {
+    "kind": "notification",
+    "method": "session/update",
+    "params": {
+      "sessionId": "019f6de0-a760-7000-8000-000000000071",
+      "update": {
+        "sessionUpdate": "tool_call_update",
+        "toolCallId": "call_delidev_3",
+        "status": "completed",
+        "content": [
+          {
+            "type": "content",
+            "content": {
+              "type": "text",
+              "text": "The user chose to abandon the plan entirely (via the Abandon option in the plan approval dialog). Plan mode has been disabled. Do not call exit_plan_mode again unless the user explicitly asks to re-enter plan mode."
+            }
+          }
+        ]
+      },
+      "_meta": {
+        "totalTokens": 16,
+        "eventId": "019f6de0-a760-7000-8000-000000000071-27",
+        "agentTimestampMs": 1790535562961,
+        "promptId": "e5833c4a-d764-4428-8bd8-6c2968a34b1b",
+        "streamStartMs": 1790535562953,
+        "turnStartMs": 1790535562852,
+        "updateType": "ToolCallUpdate",
+        "updateParams": {
+          "toolCallId": "call_delidev_3",
+          "status": "Completed"
+        }
+      }
+    }
+  }
+]

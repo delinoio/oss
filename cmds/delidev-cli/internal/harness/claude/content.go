@@ -27,31 +27,44 @@ func (r *NativeStopReason) UnmarshalJSON(raw []byte) error {
 }
 
 const (
-	ProviderMessageStarted   ContentEventKind = "provider-message-started"
-	ProviderMessageUpdated   ContentEventKind = "provider-message-updated"
-	ProviderMessageFinished  ContentEventKind = "provider-message-finished"
-	ContentStarted           ContentEventKind = "content-started"
-	ContentChanged           ContentEventKind = "content-changed"
-	ContentCompleted         ContentEventKind = "content-completed"
-	ContentStopped           ContentEventKind = "content-stopped"
-	ToolResultObserved       ContentEventKind = "tool-result-observed"
-	AssistantProblemObserved ContentEventKind = "assistant-problem-observed"
-	TextBlock                ContentBlockKind = "text"
-	ThinkingBlock            ContentBlockKind = "thinking"
-	ToolUseBlock             ContentBlockKind = "tool_use"
-	TextDelta                ContentDeltaKind = "text_delta"
-	ThinkingDelta            ContentDeltaKind = "thinking_delta"
-	ToolInputDelta           ContentDeltaKind = "input_json_delta"
-	SignatureDelta           ContentDeltaKind = "signature_delta"
+	ProviderMessageStarted         ContentEventKind = "provider-message-started"
+	ProviderMessageUpdated         ContentEventKind = "provider-message-updated"
+	ProviderMessageFinished        ContentEventKind = "provider-message-finished"
+	ProviderMessageSnapshot        ContentEventKind = "provider-message-snapshot"
+	ChildInputObserved             ContentEventKind = "child-input-observed"
+	NativeContextObserved          ContentEventKind = "native-context-observed"
+	NativeCallbackInterruptContext ContentEventKind = "native-callback-interrupt-context"
+	NativeInterruptContext         ContentEventKind = "native-interrupt-context"
+	ContentStarted                 ContentEventKind = "content-started"
+	ContentChanged                 ContentEventKind = "content-changed"
+	ContentCompleted               ContentEventKind = "content-completed"
+	ContentStopped                 ContentEventKind = "content-stopped"
+	ContentInterrupted             ContentEventKind = "content-interrupted"
+	ContentInterruptStreamClosed   ContentEventKind = "content-interrupt-stream-closed"
+	ContentInterruptMessageClosed  ContentEventKind = "content-interrupt-message-closed"
+	ToolResultObserved             ContentEventKind = "tool-result-observed"
+	AssistantProblemObserved       ContentEventKind = "assistant-problem-observed"
+	TextBlock                      ContentBlockKind = "text"
+	ThinkingBlock                  ContentBlockKind = "thinking"
+	RedactedThinkingBlock          ContentBlockKind = "redacted_thinking"
+	ImageBlock                     ContentBlockKind = "image"
+	DocumentBlock                  ContentBlockKind = "document"
+	ToolUseBlock                   ContentBlockKind = "tool_use"
+	TextDelta                      ContentDeltaKind = "text_delta"
+	ThinkingDelta                  ContentDeltaKind = "thinking_delta"
+	ToolInputDelta                 ContentDeltaKind = "input_json_delta"
+	SignatureDelta                 ContentDeltaKind = "signature_delta"
 )
 
 // NativeTool is an observed provider extension. Input is a validated JSON
 // object, not a command to execute or permission authority. Native interaction
 // replies require their separate original-arrival and policy validation.
 type NativeTool struct {
-	ID    string          `json:"id"`
-	Name  string          `json:"name"`
-	Input json.RawMessage `json:"input"`
+	ID       string           `json:"id"`
+	Name     string           `json:"name"`
+	Input    json.RawMessage  `json:"input"`
+	Caller   json.RawMessage  `json:"-"`
+	CalledBy NativeToolCaller `json:"caller"`
 	// Native completion can enrich a streamed proposal, e.g. ExitPlanMode
 	// resolves the actual plan text/path. Retain both without authorizing a
 	// reply from the proposal or discarding the native completion's contents.
@@ -59,10 +72,18 @@ type NativeTool struct {
 }
 
 type NativeContentBlock struct {
-	Kind     ContentBlockKind `json:"kind"`
-	Text     *string          `json:"text,omitempty"`
-	Thinking *string          `json:"thinking,omitempty"`
-	Tool     *NativeTool      `json:"tool,omitempty"`
+	Kind      ContentBlockKind `json:"kind"`
+	Text      *string          `json:"text,omitempty"`
+	Thinking  *string          `json:"thinking,omitempty"`
+	Tool      *NativeTool      `json:"tool,omitempty"`
+	Citations *NativeCitations `json:"citations,omitempty"`
+	Cache     json.RawMessage  `json:"-"`
+	// Rich sources remain private adapter data until attachment publication
+	// supplies its own storage and display boundary. URLs/file IDs are data,
+	// never instructions to fetch a remote or local resource.
+	Media        *NativeMediaBlock   `json:"-"`
+	ServerTool   *NativeServerTool   `json:"-"`
+	ServerResult *NativeServerResult `json:"-"`
 	// Opaque signatures belong to native thinking continuity, not displayable
 	// reasoning. Compare stream bytes only; native persistence/verification owns
 	// their meaning. Never reconstruct hidden text from them.
@@ -70,58 +91,82 @@ type NativeContentBlock struct {
 }
 
 type NativeToolResult struct {
-	ID     string               `json:"id"`
-	Name   string               `json:"name"`
-	Error  *bool                `json:"is_error"`
-	Text   *string              `json:"text"`
-	Blocks []NativeContentBlock `json:"blocks"`
-	// Structured is Claude's original tool_use_result object. This explicit
-	// provider extension is display/history data, never a filesystem, process,
+	NonExecution *domain.ClaudeToolNonExecution
+	CalledBy     NativeToolCaller     `json:"caller"`
+	ID           string               `json:"id"`
+	Name         string               `json:"name"`
+	Error        *bool                `json:"is_error"`
+	Text         *string              `json:"text"`
+	Blocks       []NativeContentBlock `json:"blocks"`
+	// Structured is Claude's original tool_use_result object or JSON error string. This explicit
+	// provider extension may duplicate binary media and remains private until
+	// its typed publication adapter exists. It grants no filesystem, process,
 	// network or interaction-response capability.
-	Structured json.RawMessage `json:"structured,omitempty"`
+	Structured json.RawMessage `json:"-"`
 }
 
 type ContentEvent struct {
-	Kind         ContentEventKind
-	MessageID    string
-	Model        string
-	ParentToolID string
-	Index        *uint32
-	Block        *NativeContentBlock
-	DeltaKind    ContentDeltaKind
-	Delta        *string
-	Usage        *ProviderUsage
-	StopReason   *NativeStopReason
-	StopSequence *string
-	ToolResult   *NativeToolResult
-	Problem      NativeAssistantProblem
+	CallbackArrivalID  domain.ID
+	Kind               ContentEventKind
+	MessageID          string
+	Model              string
+	ParentToolID       string
+	Index              *uint32
+	Block              *NativeContentBlock
+	Blocks             []NativeContentBlock
+	SubagentType       *string
+	TaskDescription    *string
+	DeltaKind          ContentDeltaKind
+	Delta              *string
+	Citation           *NativeCitation
+	CitationCompletion NativeCitationCompletion
+	Usage              *ProviderUsage
+	StopReason         *NativeStopReason
+	StopSequence       *string
+	ToolResult         *NativeToolResult
+	Problem            NativeAssistantProblem
 }
 
 type contentBlockState struct {
+	interruptStopped   bool
 	kind               ContentBlockKind
 	text               strings.Builder
 	signature          strings.Builder
 	toolID, toolName   string
 	initialInput       json.RawMessage
 	completed, stopped bool
+	citations          [][sha256.Size]byte
+	initialCitations   int
+	cache              json.RawMessage
+	caller             json.RawMessage
+	staticDigest       *[sha256.Size]byte
 }
 
 type providerMessageState struct {
+	interruptClosed   bool
 	id, model, parent string
 	blocks            []*contentBlockState
+	stop              *NativeStopReason
 }
 
 type nativeToolState struct {
+	ownerInput            domain.ID
+	ownerTurn             string
 	name, parent, message string
 	index                 uint32
 	input                 [sha256.Size]byte
 	finished              bool
+	streamed              bool
+	caller                NativeToolCaller
+	inline                *inlineToolEvidence
 }
 
 type contentState struct {
 	active        map[string]*providerMessageState
 	seen          map[string]bool
 	tools         map[string]nativeToolState
+	serverTools   map[string]serverToolState
+	snapshots     map[string]string
 	openTools     int
 	bufferedBytes int
 }
@@ -146,12 +191,19 @@ func decodeContentBlock(raw []byte) (NativeContentBlock, error) {
 	switch kind {
 	case TextBlock:
 		var value struct {
-			Type ContentBlockKind `json:"type"`
-			Text *string          `json:"text"`
+			Type      ContentBlockKind `json:"type"`
+			Text      *string          `json:"text"`
+			Citations json.RawMessage  `json:"citations"`
+			Cache     json.RawMessage  `json:"cache_control"`
 		}
-		if decodeNativeObject(raw, &value) != nil || value.Text == nil || domain.Text(*value.Text, "native text", domain.MaxMessageText, false) != nil {
+		if decodeNativeObject(raw, &value) != nil || value.Text == nil || domain.Text(*value.Text, "native text", domain.MaxMessageText, false) != nil || validateNativeCache(value.Cache) != nil {
 			return NativeContentBlock{}, lifecycleUncertain()
 		}
+		citations, err := decodeCitations(value.Citations)
+		if err != nil {
+			return NativeContentBlock{}, err
+		}
+		block.Citations, block.Cache = citations, bytes.Clone(value.Cache)
 		block.Text = value.Text
 	case ThinkingBlock:
 		var value struct {
@@ -163,30 +215,73 @@ func decodeContentBlock(raw []byte) (NativeContentBlock, error) {
 			return NativeContentBlock{}, lifecycleUncertain()
 		}
 		block.Thinking, block.signature = value.Thinking, *value.Signature
+	case RedactedThinkingBlock:
+		var value struct {
+			Type ContentBlockKind `json:"type"`
+			Data *string          `json:"data"`
+		}
+		if decodeNativeObject(raw, &value) != nil || value.Data == nil || domain.Text(*value.Data, "native redacted thinking", 128<<10, true) != nil {
+			return NativeContentBlock{}, lifecycleUncertain()
+		}
+		block.signature = *value.Data
+	case ImageBlock, DocumentBlock:
+		media, err := decodeMediaBlock(raw, kind)
+		if err != nil {
+			return NativeContentBlock{}, err
+		}
+		block.Media = media
+	case ServerToolUseBlock, WebSearchResultBlock, WebFetchResultBlock, CodeExecutionResultBlock, BashExecutionResultBlock, EditorExecutionResultBlock, AdvisorResultBlock, ToolSearchResultBlock:
+		return decodeServerBlock(raw, kind)
 	case ToolUseBlock:
 		var value struct {
-			Type  ContentBlockKind `json:"type"`
-			ID    string           `json:"id"`
-			Name  string           `json:"name"`
-			Input json.RawMessage  `json:"input"`
+			Type   ContentBlockKind `json:"type"`
+			ID     string           `json:"id"`
+			Name   string           `json:"name"`
+			Input  json.RawMessage  `json:"input"`
+			Caller json.RawMessage  `json:"caller"`
 		}
 		var input map[string]json.RawMessage
 		if decodeNativeObject(raw, &value) != nil || domain.Text(value.ID, "native tool identity", 1024, true) != nil || domain.Text(value.Name, "native tool name", 256, true) != nil || len(value.Input) > domain.MaxMessageText || domain.Decode(value.Input, &input) != nil || input == nil {
 			return NativeContentBlock{}, lifecycleUncertain()
 		}
-		block.Tool = &NativeTool{ID: value.ID, Name: value.Name, Input: bytes.Clone(value.Input)}
+		caller, err := decodeToolCaller(value.Caller)
+		if err != nil {
+			return NativeContentBlock{}, err
+		}
+		block.Tool = &NativeTool{ID: value.ID, Name: value.Name, Input: bytes.Clone(value.Input), Caller: bytes.Clone(value.Caller), CalledBy: caller}
 	default:
 		return NativeContentBlock{}, domain.Fail(domain.Unsupported, "The Claude Code content block needs its native extension adapter.", "Retain the original message without substituting or truncating its content.")
 	}
 	return block, nil
 }
 
-func (b *ExecutionBinding) observeContent(event StreamEvent) ([]ContentEvent, error) {
-	if !b.initialized || !b.accepted || b.finished {
+func (b *ExecutionBinding) observeContent(event StreamEvent) (observed []ContentEvent, returned error) {
+	defer func() {
+		if returned != nil && b.interrupt != nil && b.logger != nil {
+			b.logger.Warn("claude_stop_content_validation_failed", "owner_id", b.owner, "partial", event.Type == "stream_event", "assistant", event.Type == "assistant", "user", event.Type == "user", "initialized", b.initialized, "accepted", b.accepted, "finished", b.finished)
+		}
+	}()
+	if !b.initialized || !b.accepted {
 		return nil, lifecycleUncertain()
 	}
+	if b.finished && !b.continuing {
+		var header struct {
+			Parent *string `json:"parent_tool_use_id"`
+		}
+		if json.Unmarshal(event.Body, &header) != nil || header.Parent == nil || !b.activeChildTask(*header.Parent) {
+			return nil, lifecycleUncertain()
+		}
+	}
+	// Restored checkpoints have no active streams but retain original message
+	// and tool ownership. Initializing a new stream must not erase that ledger.
 	if b.content.active == nil {
-		b.content = contentState{active: map[string]*providerMessageState{}, seen: map[string]bool{}, tools: map[string]nativeToolState{}}
+		b.content.active = map[string]*providerMessageState{}
+	}
+	if b.content.seen == nil {
+		b.content.seen = map[string]bool{}
+	}
+	if b.content.tools == nil {
+		b.content.tools = map[string]nativeToolState{}
 	}
 	switch event.Type {
 	case "stream_event":
@@ -205,13 +300,18 @@ func (b *ExecutionBinding) contentParent(parent *string) (string, error) {
 		return "", nil
 	}
 	tool, ok := b.content.tools[*parent]
-	if !ok || tool.finished || (tool.name != "Agent" && tool.name != "Task") {
+	if !ok || (tool.finished && !b.activeChildTask(*parent)) || (tool.name != "Agent" && tool.name != "Task") {
 		return "", lifecycleUncertain()
+	}
+	for _, task := range b.tasks {
+		if task.tool == *parent && task.kind == LocalAgentTask && task.status.terminal() {
+			return "", lifecycleUncertain()
+		}
 	}
 	return *parent, nil
 }
 
-func (b *ExecutionBinding) observePartial(raw []byte) ([]ContentEvent, error) {
+func (b *ExecutionBinding) observePartial(raw []byte) (observed []ContentEvent, returned error) {
 	var envelope struct {
 		Type    string          `json:"type"`
 		Event   json.RawMessage `json:"event"`
@@ -232,6 +332,11 @@ func (b *ExecutionBinding) observePartial(raw []byte) ([]ContentEvent, error) {
 	if domain.Decode(envelope.Event, &fields) != nil || json.Unmarshal(fields["type"], &kind) != nil {
 		return nil, lifecycleUncertain()
 	}
+	defer func() {
+		if returned != nil && b.interrupt != nil && b.logger != nil {
+			b.logger.Warn("claude_stop_partial_validation_failed", "owner_id", b.owner, "message_start", kind == "message_start", "block_start", kind == "content_block_start", "block_delta", kind == "content_block_delta", "block_stop", kind == "content_block_stop", "message_delta", kind == "message_delta", "message_stop", kind == "message_stop")
+		}
+	}()
 	active := b.content.active[parent]
 	if kind == "message_start" {
 		var start struct {
@@ -248,6 +353,9 @@ func (b *ExecutionBinding) observePartial(raw []byte) ([]ContentEvent, error) {
 		key := parent + "\x00" + message.ID
 		if len(message.Content) != 0 || b.content.seen[key] || len(b.content.seen) >= 4096 {
 			return nil, lifecycleUncertain()
+		}
+		if err := b.continueServerMessage(parent, message.ID); err != nil {
+			return nil, err
 		}
 		b.content.seen[key] = true
 		b.content.active[parent] = &providerMessageState{id: message.ID, model: message.Model, parent: parent}
@@ -271,21 +379,49 @@ func (b *ExecutionBinding) observePartial(raw []byte) ([]ContentEvent, error) {
 		if err != nil {
 			return nil, err
 		}
+		if !assistantBlock(block.Kind) {
+			return nil, lifecycleUncertain()
+		}
 		state := &contentBlockState{kind: block.Kind}
+		state.citations, err = citationDigests(block.Citations)
+		if err != nil {
+			return nil, err
+		}
+		state.initialCitations = len(state.citations)
+		state.cache = bytes.Clone(block.Cache)
 		if block.Text != nil {
 			state.text.WriteString(*block.Text)
 		}
 		if block.Thinking != nil {
 			state.text.WriteString(*block.Thinking)
-			state.signature.WriteString(block.signature)
 		}
+		state.signature.WriteString(block.signature)
 		if block.Tool != nil {
-			if !b.advertisedTools[block.Tool.Name] || b.content.tools[block.Tool.ID].name != "" || b.content.openTools >= 128 || len(b.content.tools) >= 4096 {
+			if !b.advertisedTools[block.Tool.Name] || b.content.tools[block.Tool.ID].name != "" || b.content.serverTools[block.Tool.ID].name != "" || b.content.openTools >= 128 || len(b.content.tools)+len(b.content.serverTools) >= 4096 {
 				return nil, lifecycleUncertain()
 			}
 			state.toolID, state.toolName, state.initialInput = block.Tool.ID, block.Tool.Name, bytes.Clone(block.Tool.Input)
+			if err := b.validateToolCaller(block.Tool.CalledBy, parent, active.id, nil); err != nil {
+				return nil, err
+			}
+			state.caller = bytes.Clone(block.Tool.Caller)
 		}
-		if err := b.content.retainBytes(state.text.Len() + state.signature.Len() + len(state.initialInput)); err != nil {
+		if block.ServerTool != nil || block.ServerResult != nil {
+			if _, _, err := b.stageServerBlocks([]NativeContentBlock{block}, parent, active.id, nil); err != nil {
+				return nil, err
+			}
+			if tool := block.ServerTool; tool != nil {
+				state.toolID, state.toolName, state.initialInput = tool.ID, string(tool.Name), bytes.Clone(tool.Input)
+				state.cache, state.caller = bytes.Clone(tool.Cache), bytes.Clone(tool.Caller)
+			} else {
+				digest, err := streamReplyDigest(block.ServerResult.Native)
+				if err != nil {
+					return nil, err
+				}
+				state.staticDigest = &digest
+			}
+		}
+		if err := b.content.retainBytes(state.retainedBytes()); err != nil {
 			return nil, err
 		}
 		active.blocks = append(active.blocks, state)
@@ -300,14 +436,43 @@ func (b *ExecutionBinding) observePartial(raw []byte) ([]ContentEvent, error) {
 			return nil, lifecycleUncertain()
 		}
 		state := active.blocks[*change.Index]
-		if state.stopped || state.completed {
+		if state.stopped || state.completed || state.interruptStopped {
 			return nil, lifecycleUncertain()
+		}
+		var header struct {
+			Type ContentDeltaKind `json:"type"`
+		}
+		if json.Unmarshal(change.Delta, &header) != nil {
+			return nil, lifecycleUncertain()
+		}
+		if header.Type == CitationsDelta {
+			var delta struct {
+				Type     ContentDeltaKind `json:"type"`
+				Citation json.RawMessage  `json:"citation"`
+			}
+			if state.kind != TextBlock || len(state.citations) >= 1024 || decodeNativeObject(change.Delta, &delta) != nil {
+				return nil, lifecycleUncertain()
+			}
+			citation, err := decodeCitation(delta.Citation)
+			if err != nil {
+				return nil, err
+			}
+			digest, err := streamReplyDigest(citation.Native)
+			if err != nil {
+				return nil, err
+			}
+			if err := b.content.retainBytes(sha256.Size); err != nil {
+				return nil, err
+			}
+			state.citations = append(state.citations, digest)
+			base.Kind, base.Index, base.DeltaKind, base.Citation = ContentChanged, change.Index, CitationsDelta, &citation
+			return []ContentEvent{base}, nil
 		}
 		delta, content, err := decodeContentDelta(change.Delta)
 		if err != nil {
 			return nil, err
 		}
-		if (delta == TextDelta && state.kind != TextBlock) || ((delta == ThinkingDelta || delta == SignatureDelta) && state.kind != ThinkingBlock) || (delta == ToolInputDelta && state.kind != ToolUseBlock) {
+		if (delta == TextDelta && state.kind != TextBlock) || ((delta == ThinkingDelta || delta == SignatureDelta) && state.kind != ThinkingBlock) || (delta == ToolInputDelta && state.kind != ToolUseBlock && state.kind != ServerToolUseBlock) {
 			return nil, lifecycleUncertain()
 		}
 		if delta == SignatureDelta {
@@ -338,6 +503,14 @@ func (b *ExecutionBinding) observePartial(raw []byte) ([]ContentEvent, error) {
 			return nil, lifecycleUncertain()
 		}
 		state := active.blocks[*stop.Index]
+		// When relay cancellation races the original interrupt, the pinned
+		// CLI can close its partial stream before the aborted assistant. This
+		// is only a provisional transport fact, never content completion.
+		if !state.completed && !state.stopped && !state.interruptStopped && b.interrupt != nil && parent == "" && len(active.blocks) == 1 && *stop.Index == 0 && state.kind == TextBlock {
+			state.interruptStopped = true
+			base.Kind, base.Index = ContentInterruptStreamClosed, stop.Index
+			return []ContentEvent{base}, nil
+		}
 		if state.stopped || !state.completed {
 			return nil, lifecycleUncertain()
 		}
@@ -361,7 +534,18 @@ func (b *ExecutionBinding) observePartial(raw []byte) ([]ContentEvent, error) {
 		// Preserve this native usage update as reported. It is not an additive
 		// token delta, and absent counters cannot be replaced with zero.
 		base.Kind, base.Usage, base.StopReason, base.StopSequence = ProviderMessageUpdated, update.Usage, delta.Stop, delta.Sequence
+		// Returned observations are mutable display data, not ownership state.
+		active.stop = nil
+		if delta.Stop != nil {
+			stop := *delta.Stop
+			active.stop = &stop
+		}
 	case "message_stop":
+		if b.interrupt != nil && parent == "" && len(active.blocks) == 1 && active.blocks[0].interruptStopped && !active.interruptClosed && len(fields) == 1 {
+			active.interruptClosed = true
+			base.Kind = ContentInterruptMessageClosed
+			return []ContentEvent{base}, nil
+		}
 		var stop struct {
 			Type string `json:"type"`
 		}
@@ -373,6 +557,7 @@ func (b *ExecutionBinding) observePartial(raw []byte) ([]ContentEvent, error) {
 				return nil, lifecycleUncertain()
 			}
 		}
+		b.suspendServerMessage(active)
 		delete(b.content.active, parent)
 		base.Kind = ProviderMessageFinished
 	default:
@@ -432,17 +617,23 @@ func decodeContentDelta(raw []byte) (ContentDeltaKind, string, error) {
 
 func (b *ExecutionBinding) observeAssistant(raw []byte) ([]ContentEvent, error) {
 	var envelope struct {
-		Type      string                 `json:"type"`
-		Message   json.RawMessage        `json:"message"`
-		Session   domain.ID              `json:"session_id"`
-		Parent    *string                `json:"parent_tool_use_id"`
-		UUID      string                 `json:"uuid"`
-		Timestamp string                 `json:"timestamp"`
-		Error     NativeAssistantProblem `json:"error"`
-		APIError  bool                   `json:"is_api_error_message"`
-		RequestID *string                `json:"request_id"`
+		Type            string                 `json:"type"`
+		Message         json.RawMessage        `json:"message"`
+		Session         domain.ID              `json:"session_id"`
+		Parent          *string                `json:"parent_tool_use_id"`
+		UUID            string                 `json:"uuid"`
+		Timestamp       string                 `json:"timestamp"`
+		Error           NativeAssistantProblem `json:"error"`
+		APIError        bool                   `json:"is_api_error_message"`
+		RequestID       *string                `json:"request_id"`
+		SubagentType    *string                `json:"subagent_type"`
+		TaskDescription *string                `json:"task_description"`
+		Aborted         json.RawMessage        `json:"aborted"`
 	}
 	if decodeNativeObject(raw, &envelope) != nil {
+		if b.interrupt != nil && b.logger != nil {
+			b.logger.Warn("claude_stop_assistant_envelope_invalid", "owner_id", b.owner)
+		}
 		return nil, lifecycleUncertain()
 	}
 	parent, err := b.contentParent(envelope.Parent)
@@ -452,17 +643,29 @@ func (b *ExecutionBinding) observeAssistant(raw []byte) ([]ContentEvent, error) 
 	if _, err := time.Parse(time.RFC3339Nano, envelope.Timestamp); err != nil {
 		return nil, lifecycleUncertain()
 	}
+	if !taskTexts(envelope.SubagentType, envelope.TaskDescription) || (parent == "" && (envelope.SubagentType != nil || envelope.TaskDescription != nil)) {
+		return nil, lifecycleUncertain()
+	}
 	if envelope.APIError || envelope.Error != "" {
-		if !envelope.APIError || !slices.Contains([]NativeAssistantProblem{"authentication_failed", "oauth_org_not_allowed", "account_on_hold", "billing_error", "rate_limit", "overloaded", "invalid_request", "model_not_found", "server_error", "unknown", "max_output_tokens"}, envelope.Error) {
+		if len(envelope.Aborted) != 0 || !envelope.APIError || !slices.Contains([]NativeAssistantProblem{"authentication_failed", "oauth_org_not_allowed", "account_on_hold", "billing_error", "rate_limit", "overloaded", "invalid_request", "model_not_found", "server_error", "unknown", "max_output_tokens"}, envelope.Error) {
 			return nil, lifecycleUncertain()
 		}
 		return []ContentEvent{{Kind: AssistantProblemObserved, ParentToolID: parent, Problem: envelope.Error}}, nil
 	}
 	message, err := decodeProviderMessage(envelope.Message)
 	if err != nil {
+		if b.interrupt != nil && b.logger != nil {
+			b.logger.Warn("claude_stop_assistant_message_invalid", "owner_id", b.owner, "aborted_present", len(envelope.Aborted) != 0)
+		}
 		return nil, err
 	}
 	active := b.content.active[parent]
+	if len(envelope.Aborted) != 0 {
+		return b.observeInterruptedAssistant(parent, message, active, bytes.Equal(bytes.TrimSpace(envelope.Aborted), []byte("true")))
+	}
+	if active == nil && parent != "" {
+		return b.observeChildSnapshot(parent, message, envelope.SubagentType, envelope.TaskDescription)
+	}
 	if active == nil || active.id != message.ID || active.model != message.Model || len(message.Content) != 1 || len(active.blocks) == 0 {
 		return nil, lifecycleUncertain()
 	}
@@ -478,13 +681,33 @@ func (b *ExecutionBinding) observeAssistant(raw []byte) ([]ContentEvent, error) 
 	if block.Kind != state.kind {
 		return nil, lifecycleUncertain()
 	}
+	var citationCompletion NativeCitationCompletion
 	switch block.Kind {
 	case TextBlock:
-		if *block.Text != state.text.String() {
+		citations, err := citationDigests(block.Citations)
+		if err != nil || !bytes.Equal(bytes.TrimSpace(block.Cache), bytes.TrimSpace(state.cache)) || *block.Text != state.text.String() {
+			return nil, lifecycleUncertain()
+		}
+		if slices.Equal(citations, state.citations) {
+			citationCompletion = CitationsMatched
+		} else if state.initialCitations == 0 && len(state.citations) > 0 && block.Citations != nil && !block.Citations.Null && len(citations) == 0 {
+			// Native 2.1.236 forwards citation deltas but its completed text block
+			// keeps an empty citation array. Preserve both observations explicitly;
+			// never replace the native array or discard earlier delta evidence.
+			// Remove this exception when a verified native profile retains them.
+			citationCompletion = CitationsOmittedByNative
+			if b.logger != nil {
+				b.logger.Debug("Claude Code completed block omitted streamed citations", "owner_id", b.owner, "citation_count", len(state.citations))
+			}
+		} else {
 			return nil, lifecycleUncertain()
 		}
 	case ThinkingBlock:
 		if *block.Thinking != state.text.String() || block.signature != state.signature.String() {
+			return nil, lifecycleUncertain()
+		}
+	case RedactedThinkingBlock:
+		if block.signature != state.signature.String() {
 			return nil, lifecycleUncertain()
 		}
 	case ToolUseBlock:
@@ -500,34 +723,74 @@ func (b *ExecutionBinding) observeAssistant(raw []byte) ([]ContentEvent, error) 
 		if err != nil {
 			return nil, err
 		}
-		if block.Tool.ID != state.toolID || block.Tool.Name != state.toolName || b.content.tools[block.Tool.ID].name != "" || b.content.openTools >= 128 || len(b.content.tools) >= 4096 {
+		if block.Tool.ID != state.toolID || block.Tool.Name != state.toolName || !bytes.Equal(block.Tool.Caller, state.caller) || b.content.tools[block.Tool.ID].name != "" || b.content.serverTools[block.Tool.ID].name != "" || b.content.openTools >= 128 || len(b.content.tools)+len(b.content.serverTools) >= 4096 {
 			return nil, lifecycleUncertain()
 		}
+		if err := b.validateToolCaller(block.Tool.CalledBy, parent, active.id, nil); err != nil {
+			return nil, err
+		}
 		block.Tool.ProposedInput = bytes.Clone(input)
-		b.content.tools[block.Tool.ID] = nativeToolState{name: block.Tool.Name, parent: parent, message: active.id, index: index, input: observed}
+		ownerInput, ownerTurn := b.contentOwner(parent)
+		b.content.tools[block.Tool.ID] = nativeToolState{ownerInput: ownerInput, ownerTurn: ownerTurn, name: block.Tool.Name, parent: parent, message: active.id, index: index, input: observed, streamed: true, caller: block.Tool.CalledBy}
 		b.content.openTools++
+	case ServerToolUseBlock:
+		input := state.initialInput
+		if state.text.Len() != 0 {
+			input = json.RawMessage(state.text.String())
+		}
+		proposed, err := streamReplyDigest(input)
+		observed, observedErr := streamReplyDigest(block.ServerTool.Input)
+		if err != nil || observedErr != nil || proposed != observed || block.ServerTool.ID != state.toolID || string(block.ServerTool.Name) != state.toolName || !bytes.Equal(block.ServerTool.Cache, state.cache) || !bytes.Equal(block.ServerTool.Caller, state.caller) {
+			return nil, lifecycleUncertain()
+		}
+	case WebSearchResultBlock, WebFetchResultBlock, CodeExecutionResultBlock, BashExecutionResultBlock, EditorExecutionResultBlock, AdvisorResultBlock, ToolSearchResultBlock:
+		observed, err := streamReplyDigest(block.ServerResult.Native)
+		if err != nil || state.staticDigest == nil || observed != *state.staticDigest {
+			return nil, lifecycleUncertain()
+		}
+	default:
+		return nil, lifecycleUncertain()
+	}
+	if block.ServerTool != nil || block.ServerResult != nil {
+		changes, delta, err := b.stageServerBlocks([]NativeContentBlock{block}, parent, active.id, nil)
+		if err != nil {
+			return nil, err
+		}
+		b.commitServerBlocks(changes, delta)
 	}
 	state.completed = true
-	// Exact completion has already been compared with the streamed bytes.
+	// Completion has been compared with the streamed bytes, preserving the
+	// separately classified native citation omission when applicable.
 	// Retain only identity/state for stop and later tool ownership, so long
 	// messages do not accumulate every completed block in the observer.
-	b.content.bufferedBytes -= state.text.Len() + state.signature.Len() + len(state.initialInput)
+	b.content.bufferedBytes -= state.retainedBytes()
 	state.text.Reset()
 	state.signature.Reset()
 	state.initialInput = nil
-	return []ContentEvent{{Kind: ContentCompleted, MessageID: active.id, Model: active.model, ParentToolID: parent, Index: &index, Block: &block, Usage: message.Usage, StopReason: message.Stop, StopSequence: message.Sequence}}, nil
+	state.cache, state.citations = nil, nil
+	state.caller, state.staticDigest = nil, nil
+	return []ContentEvent{{Kind: ContentCompleted, MessageID: active.id, Model: active.model, ParentToolID: parent, Index: &index, Block: &block, CitationCompletion: citationCompletion, Usage: message.Usage, StopReason: message.Stop, StopSequence: message.Sequence}}, nil
 }
 
-func (b *ExecutionBinding) observeToolResult(raw []byte) ([]ContentEvent, error) {
+func (b *ExecutionBinding) observeToolResult(raw []byte) (observations []ContentEvent, returned error) {
+	phase := "envelope"
+	defer func() {
+		if returned != nil && b.logger != nil {
+			b.logger.Warn("Claude Code tool result validation failed", "owner_id", b.owner, "phase", phase, "code", domain.RecoveryRequired)
+		}
+	}()
 	var envelope struct {
-		Type       string          `json:"type"`
-		Message    json.RawMessage `json:"message"`
-		Session    domain.ID       `json:"session_id"`
-		Parent     *string         `json:"parent_tool_use_id"`
-		UUID       string          `json:"uuid"`
-		Timestamp  string          `json:"timestamp"`
-		Structured json.RawMessage `json:"tool_use_result"`
-		Synthetic  *bool           `json:"isSynthetic"`
+		Type            string          `json:"type"`
+		Message         json.RawMessage `json:"message"`
+		Session         domain.ID       `json:"session_id"`
+		Parent          *string         `json:"parent_tool_use_id"`
+		UUID            string          `json:"uuid"`
+		Timestamp       string          `json:"timestamp"`
+		Structured      json.RawMessage `json:"tool_use_result"`
+		ResultMeta      json.RawMessage `json:"tool_result_meta"`
+		Synthetic       *bool           `json:"isSynthetic"`
+		SubagentType    *string         `json:"subagent_type"`
+		TaskDescription *string         `json:"task_description"`
 	}
 	var message struct {
 		Role    string            `json:"role"`
@@ -536,21 +799,110 @@ func (b *ExecutionBinding) observeToolResult(raw []byte) ([]ContentEvent, error)
 	if decodeNativeObject(raw, &envelope) != nil || decodeNativeObject(envelope.Message, &message) != nil || message.Role != "user" || len(message.Content) == 0 || len(message.Content) > 128 {
 		return nil, lifecycleUncertain()
 	}
+	phase = "parent"
 	parent, err := b.contentParent(envelope.Parent)
 	if err != nil {
 		return nil, err
 	}
+	if len(envelope.ResultMeta) != 0 && (parent != "" || envelope.Synthetic != nil) {
+		return nil, lifecycleUncertain()
+	}
+	phase = "timestamp"
 	if _, err := time.Parse(time.RFC3339Nano, envelope.Timestamp); err != nil {
 		return nil, lifecycleUncertain()
 	}
-	if len(envelope.Structured) > 0 {
-		var object map[string]json.RawMessage
-		if len(message.Content) != 1 || domain.Decode(envelope.Structured, &object) != nil || object == nil {
+	phase = "task"
+	if !taskTexts(envelope.SubagentType, envelope.TaskDescription) || (parent == "" && (envelope.SubagentType != nil || envelope.TaskDescription != nil)) {
+		return nil, lifecycleUncertain()
+	}
+	retryActive := b.content.active[""]
+	retryClosed := b.interruptRetryObserved && retryActive != nil && retryActive.interruptClosed && len(retryActive.blocks) == 1 && retryActive.blocks[0].interruptStopped
+	if parent == "" && b.interrupt != nil && (b.interruptedMessage || retryClosed) && !b.interruptionContext && envelope.Synthetic == nil && len(envelope.Structured) == 0 && len(message.Content) == 1 {
+		var marker struct {
+			Type ContentBlockKind `json:"type"`
+			Text string           `json:"text"`
+		}
+		// This is original native conversation context, not product input or
+		// an outcome inferred from prose. Result and idle still arrive separately.
+		if decodeNativeObject(message.Content[0], &marker) == nil && marker.Type == TextBlock && marker.Text == "[Request interrupted by user]" {
+			if retryClosed {
+				b.interruptedRetry = true
+				b.content.bufferedBytes -= retryActive.blocks[0].retainedBytes()
+				delete(b.content.active, "")
+			}
+			b.interruptionContext = true
+			return []ContentEvent{{Kind: NativeInterruptContext, Blocks: []NativeContentBlock{{Kind: TextBlock, Text: &marker.Text}}}}, nil
+		}
+	}
+	if parent == "" && b.interruptedReply != "" && b.denialToolResult && !b.denialContext && envelope.Synthetic == nil && len(envelope.Structured) == 0 && len(envelope.ResultMeta) == 0 && len(message.Content) == 1 {
+		var marker struct {
+			Type ContentBlockKind `json:"type"`
+			Text string           `json:"text"`
+		}
+		if decodeNativeObject(message.Content[0], &marker) == nil && marker.Type == TextBlock && marker.Text == "[Request interrupted by user for tool use]" {
+			b.denialContext = true
+			return []ContentEvent{{Kind: NativeCallbackInterruptContext, CallbackArrivalID: b.interruptedReply, Blocks: []NativeContentBlock{{Kind: TextBlock, Text: &marker.Text}}}}, nil
+		}
+	}
+	// Native Read can publish a PDF as a separate synthetic root user message
+	// without a tool_use_id. Preserve that original context envelope rather
+	// than inventing a tool association or accepting another product input.
+	if parent == "" && envelope.Synthetic != nil && *envelope.Synthetic && len(envelope.Structured) == 0 {
+		var header struct {
+			Type ContentBlockKind `json:"type"`
+		}
+		if json.Unmarshal(message.Content[0], &header) != nil {
 			return nil, lifecycleUncertain()
 		}
+		if header.Type == ImageBlock || header.Type == DocumentBlock {
+			if b.content.active[parent] != nil {
+				return nil, lifecycleUncertain()
+			}
+			blocks := make([]NativeContentBlock, 0, len(message.Content))
+			for _, raw := range message.Content {
+				block, err := decodeContentBlock(raw)
+				if err != nil {
+					return nil, err
+				}
+				if block.Kind != ImageBlock && block.Kind != DocumentBlock {
+					return nil, lifecycleUncertain()
+				}
+				blocks = append(blocks, block)
+			}
+			return []ContentEvent{{Kind: NativeContextObserved, Blocks: blocks}}, nil
+		}
+	}
+	if parent != "" && len(envelope.Structured) == 0 {
+		var header struct {
+			Type string `json:"type"`
+		}
+		_ = json.Unmarshal(message.Content[0], &header)
+		if header.Type != "tool_result" {
+			return b.observeChildInput(parent, message.Content, envelope.SubagentType, envelope.TaskDescription)
+		}
+	}
+	if len(envelope.Structured) > 0 && len(message.Content) != 1 {
+		return nil, lifecycleUncertain()
 	}
 	var events []ContentEvent
 	seen := map[string]bool{}
+	meta := map[string]domain.ClaudeToolNonExecution{}
+	if len(envelope.ResultMeta) != 0 {
+		phase = "non-execution"
+		var values []domain.ClaudeToolNonExecution
+		if domain.Decode(envelope.ResultMeta, &values) != nil || len(values) == 0 || len(values) > len(message.Content) {
+			return nil, lifecycleUncertain()
+		}
+		for _, value := range values {
+			if value.Validate() != nil {
+				return nil, lifecycleUncertain()
+			}
+			if _, exists := meta[value.NativeID]; exists {
+				return nil, lifecycleUncertain()
+			}
+			meta[value.NativeID] = value
+		}
+	}
 	for _, raw := range message.Content {
 		var value struct {
 			Type    string          `json:"type"`
@@ -558,9 +910,17 @@ func (b *ExecutionBinding) observeToolResult(raw []byte) ([]ContentEvent, error)
 			Error   *bool           `json:"is_error"`
 			Content json.RawMessage `json:"content"`
 		}
+		phase = "block"
 		if decodeNativeObject(raw, &value) != nil || value.Type != "tool_result" {
 			return nil, lifecycleUncertain()
 		}
+		if len(envelope.Structured) != 0 && !domain.ValidClaudeToolResultMetadata(string(envelope.Structured), value.Error) {
+			if b.logger != nil {
+				b.logger.Warn("Claude Code tool metadata validation failed", "owner_id", b.owner, "code", domain.RecoveryRequired)
+			}
+			return nil, lifecycleUncertain()
+		}
+		phase = "tool-owner"
 		tool, ok := b.content.tools[value.ID]
 		if !ok || tool.finished || tool.parent != parent || seen[value.ID] {
 			return nil, lifecycleUncertain()
@@ -568,7 +928,7 @@ func (b *ExecutionBinding) observeToolResult(raw []byte) ([]ContentEvent, error)
 		// A synchronous parent cannot finish while its observed descendants
 		// remain active. Background tasks need their separate native lifecycle
 		// adapter; a tool result alone cannot close or adopt those children.
-		if b.content.active[value.ID] != nil {
+		if b.content.active[value.ID] != nil || b.hasOpenServerChild(value.ID) {
 			return nil, lifecycleUncertain()
 		}
 		for _, child := range b.content.tools {
@@ -577,15 +937,56 @@ func (b *ExecutionBinding) observeToolResult(raw []byte) ([]ContentEvent, error)
 			}
 		}
 		seen[value.ID] = true
+		phase = "result-text"
 		text, blocks, err := decodeToolResultText(value.Content)
 		if err != nil {
 			return nil, err
 		}
 		index := tool.index
-		events = append(events, ContentEvent{Kind: ToolResultObserved, MessageID: tool.message, ParentToolID: parent, Index: &index, ToolResult: &NativeToolResult{ID: value.ID, Name: tool.name, Error: value.Error, Text: text, Blocks: blocks, Structured: bytes.Clone(envelope.Structured)}})
+		var position *uint32
+		if tool.streamed {
+			position = &index
+		}
+		events = append(events, ContentEvent{Kind: ToolResultObserved, MessageID: tool.message, ParentToolID: parent, Index: position, ToolResult: &NativeToolResult{ID: value.ID, Name: tool.name, CalledBy: tool.caller, Error: value.Error, Text: text, Blocks: blocks, Structured: bytes.Clone(envelope.Structured)}})
+		if classification, ok := meta[value.ID]; ok {
+			if value.Error == nil || !*value.Error {
+				return nil, lifecycleUncertain()
+			}
+			if classification.Kind == domain.ClaudeUserRejectedNonExecution {
+				callback := b.interactions[b.interruptedReply]
+				if b.denialToolResult || callback == nil || !callback.prepared || !callback.echoed || callback.canceled || callback.behavior != PermissionDeny || callback.request.ToolID != value.ID || tool.parent != "" {
+					return nil, lifecycleUncertain()
+				}
+			}
+			events[len(events)-1].ToolResult.NonExecution = &classification
+		}
+	}
+	for id := range meta {
+		if !seen[id] {
+			return nil, lifecycleUncertain()
+		}
+	}
+	if callback := b.interactions[b.interruptedReply]; callback != nil {
+		if rejected, ok := meta[callback.request.ToolID]; ok && rejected.Kind == domain.ClaudeUserRejectedNonExecution {
+			b.denialToolResult = true
+		}
 	}
 	for id := range seen {
 		tool := b.content.tools[id]
+		if inlineToolKind(tool.name).valid() && tool.parent == "" && len(events) == 1 && events[0].ToolResult.NonExecution == nil && events[0].ToolResult.Text != nil && !strings.Contains(*events[0].ToolResult.Text, "<persisted-output>") {
+			failed := events[0].ToolResult.Error != nil && *events[0].ToolResult.Error
+			digest, valid := inlineMetadata(inlineToolKind(tool.name), envelope.Structured)
+			if failed {
+				digest, valid = inlineReadErrorMetadata(envelope.Structured)
+				valid = valid && tool.name == string(inlineReadTool)
+			}
+			if valid && tool.name == string(inlineQuestionTool) {
+				valid = b.originalQuestionResult(id, digest)
+			}
+			if valid {
+				tool.inline = &inlineToolEvidence{Error: failed, NativeID: envelope.UUID, Metadata: digest}
+			}
+		}
 		tool.finished = true
 		b.content.tools[id] = tool
 		b.content.openTools--
@@ -614,10 +1015,39 @@ func decodeToolResultText(raw []byte) (*string, []NativeContentBlock, error) {
 		if err != nil {
 			return nil, nil, err
 		}
-		if block.Kind != TextBlock {
+		if !userContentBlock(block.Kind) {
 			return nil, nil, domain.Fail(domain.Unsupported, "The Claude Code tool result needs its rich-content adapter.", "Retain all original result blocks without flattening or omitting them.")
 		}
 		result = append(result, block)
 	}
 	return nil, result, nil
+}
+
+func assistantBlock(kind ContentBlockKind) bool {
+	return kind == TextBlock || kind == ThinkingBlock || kind == RedactedThinkingBlock || kind == ToolUseBlock || kind == ServerToolUseBlock || serverResultKind(kind)
+}
+
+func (s *contentBlockState) retainedBytes() int {
+	size := s.text.Len() + s.signature.Len() + len(s.initialInput) + len(s.cache) + len(s.caller) + len(s.citations)*sha256.Size
+	if s.staticDigest != nil {
+		size += sha256.Size
+	}
+	return size
+}
+
+func userContentBlock(kind ContentBlockKind) bool {
+	return kind == TextBlock || kind == ImageBlock || kind == DocumentBlock
+}
+
+// Child ownership follows the original parent tool even when its callback
+// arrives while a different automatic turn is active in the same native run.
+func (b *ExecutionBinding) contentOwner(parent string) (domain.ID, string) {
+	if parent != "" {
+		tool := b.content.tools[parent]
+		return tool.ownerInput, tool.ownerTurn
+	}
+	if b.continuing {
+		return "", b.turnID
+	}
+	return b.input, b.turnID
 }

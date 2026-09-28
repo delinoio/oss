@@ -38,8 +38,14 @@ func openNoFollow(path string) (*os.File, error) {
 
 type Lock struct{ f *os.File }
 
-func TryLock(path string) (*Lock, error) {
-	fd, err := unix.Open(path, unix.O_RDWR|unix.O_CREAT|unix.O_CLOEXEC|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0600)
+func TryLock(path string) (*Lock, error)         { return tryLock(path, true) }
+func TryLockExisting(path string) (*Lock, error) { return tryLock(path, false) }
+func tryLock(path string, create bool) (*Lock, error) {
+	flags := unix.O_RDWR | unix.O_CLOEXEC | unix.O_NOFOLLOW | unix.O_NONBLOCK
+	if create {
+		flags |= unix.O_CREAT
+	}
+	fd, err := unix.Open(path, flags, 0600)
 	if err != nil {
 		return nil, err
 	}

@@ -35,6 +35,8 @@ const (
 	WorkerServiceName = "delidev.v1.WorkerService"
 	// AccountServiceName is the fully-qualified name of the AccountService service.
 	AccountServiceName = "delidev.v1.AccountService"
+	// IntegrationServiceName is the fully-qualified name of the IntegrationService service.
+	IntegrationServiceName = "delidev.v1.IntegrationService"
 	// ProviderServiceName is the fully-qualified name of the ProviderService service.
 	ProviderServiceName = "delidev.v1.ProviderService"
 	// SessionServiceName is the fully-qualified name of the SessionService service.
@@ -43,6 +45,12 @@ const (
 	InboxServiceName = "delidev.v1.InboxService"
 	// ScheduleServiceName is the fully-qualified name of the ScheduleService service.
 	ScheduleServiceName = "delidev.v1.ScheduleService"
+	// SearchServiceName is the fully-qualified name of the SearchService service.
+	SearchServiceName = "delidev.v1.SearchService"
+	// ActivityServiceName is the fully-qualified name of the ActivityService service.
+	ActivityServiceName = "delidev.v1.ActivityService"
+	// UsageServiceName is the fully-qualified name of the UsageService service.
+	UsageServiceName = "delidev.v1.UsageService"
 )
 
 // These constants are the fully-qualified names of the RPCs defined in this package. They're
@@ -55,6 +63,9 @@ const (
 const (
 	// SystemServiceGetStatusProcedure is the fully-qualified name of the SystemService's GetStatus RPC.
 	SystemServiceGetStatusProcedure = "/delidev.v1.SystemService/GetStatus"
+	// SystemServiceGetOverviewProcedure is the fully-qualified name of the SystemService's GetOverview
+	// RPC.
+	SystemServiceGetOverviewProcedure = "/delidev.v1.SystemService/GetOverview"
 	// SystemServiceStopServerProcedure is the fully-qualified name of the SystemService's StopServer
 	// RPC.
 	SystemServiceStopServerProcedure = "/delidev.v1.SystemService/StopServer"
@@ -75,6 +86,15 @@ const (
 	// ResourceServiceWatchEventsProcedure is the fully-qualified name of the ResourceService's
 	// WatchEvents RPC.
 	ResourceServiceWatchEventsProcedure = "/delidev.v1.ResourceService/WatchEvents"
+	// ConfigurationServiceExportConfigurationProcedure is the fully-qualified name of the
+	// ConfigurationService's ExportConfiguration RPC.
+	ConfigurationServiceExportConfigurationProcedure = "/delidev.v1.ConfigurationService/ExportConfiguration"
+	// ConfigurationServicePreviewConfigurationImportProcedure is the fully-qualified name of the
+	// ConfigurationService's PreviewConfigurationImport RPC.
+	ConfigurationServicePreviewConfigurationImportProcedure = "/delidev.v1.ConfigurationService/PreviewConfigurationImport"
+	// ConfigurationServiceApplyConfigurationImportProcedure is the fully-qualified name of the
+	// ConfigurationService's ApplyConfigurationImport RPC.
+	ConfigurationServiceApplyConfigurationImportProcedure = "/delidev.v1.ConfigurationService/ApplyConfigurationImport"
 	// ConfigurationServiceSaveConfigurationProcedure is the fully-qualified name of the
 	// ConfigurationService's SaveConfiguration RPC.
 	ConfigurationServiceSaveConfigurationProcedure = "/delidev.v1.ConfigurationService/SaveConfiguration"
@@ -99,6 +119,12 @@ const (
 	// DeviceServiceRevokeDeviceProcedure is the fully-qualified name of the DeviceService's
 	// RevokeDevice RPC.
 	DeviceServiceRevokeDeviceProcedure = "/delidev.v1.DeviceService/RevokeDevice"
+	// WorkerServiceWatchWorkspaceReadsProcedure is the fully-qualified name of the WorkerService's
+	// WatchWorkspaceReads RPC.
+	WorkerServiceWatchWorkspaceReadsProcedure = "/delidev.v1.WorkerService/WatchWorkspaceReads"
+	// WorkerServiceReportWorkspaceReadProcedure is the fully-qualified name of the WorkerService's
+	// ReportWorkspaceRead RPC.
+	WorkerServiceReportWorkspaceReadProcedure = "/delidev.v1.WorkerService/ReportWorkspaceRead"
 	// WorkerServiceAttachWorkerProcedure is the fully-qualified name of the WorkerService's
 	// AttachWorker RPC.
 	WorkerServiceAttachWorkerProcedure = "/delidev.v1.WorkerService/AttachWorker"
@@ -140,6 +166,42 @@ const (
 	// AccountServiceValidateAccountProcedure is the fully-qualified name of the AccountService's
 	// ValidateAccount RPC.
 	AccountServiceValidateAccountProcedure = "/delidev.v1.AccountService/ValidateAccount"
+	// IntegrationServiceSaveIntegrationProfileProcedure is the fully-qualified name of the
+	// IntegrationService's SaveIntegrationProfile RPC.
+	IntegrationServiceSaveIntegrationProfileProcedure = "/delidev.v1.IntegrationService/SaveIntegrationProfile"
+	// IntegrationServiceReplaceIntegrationTokenProcedure is the fully-qualified name of the
+	// IntegrationService's ReplaceIntegrationToken RPC.
+	IntegrationServiceReplaceIntegrationTokenProcedure = "/delidev.v1.IntegrationService/ReplaceIntegrationToken"
+	// IntegrationServiceValidateIntegrationProfileProcedure is the fully-qualified name of the
+	// IntegrationService's ValidateIntegrationProfile RPC.
+	IntegrationServiceValidateIntegrationProfileProcedure = "/delidev.v1.IntegrationService/ValidateIntegrationProfile"
+	// IntegrationServiceDeleteIntegrationProfileProcedure is the fully-qualified name of the
+	// IntegrationService's DeleteIntegrationProfile RPC.
+	IntegrationServiceDeleteIntegrationProfileProcedure = "/delidev.v1.IntegrationService/DeleteIntegrationProfile"
+	// IntegrationServiceInspectRepositoryIntegrationProcedure is the fully-qualified name of the
+	// IntegrationService's InspectRepositoryIntegration RPC.
+	IntegrationServiceInspectRepositoryIntegrationProcedure = "/delidev.v1.IntegrationService/InspectRepositoryIntegration"
+	// IntegrationServiceQueryRepositoryIntegrationProcedure is the fully-qualified name of the
+	// IntegrationService's QueryRepositoryIntegration RPC.
+	IntegrationServiceQueryRepositoryIntegrationProcedure = "/delidev.v1.IntegrationService/QueryRepositoryIntegration"
+	// IntegrationServiceGetGitHubTokenFormProcedure is the fully-qualified name of the
+	// IntegrationService's GetGitHubTokenForm RPC.
+	IntegrationServiceGetGitHubTokenFormProcedure = "/delidev.v1.IntegrationService/GetGitHubTokenForm"
+	// IntegrationServiceRefreshPullRequestProblemsProcedure is the fully-qualified name of the
+	// IntegrationService's RefreshPullRequestProblems RPC.
+	IntegrationServiceRefreshPullRequestProblemsProcedure = "/delidev.v1.IntegrationService/RefreshPullRequestProblems"
+	// IntegrationServiceListPullRequestProblemsProcedure is the fully-qualified name of the
+	// IntegrationService's ListPullRequestProblems RPC.
+	IntegrationServiceListPullRequestProblemsProcedure = "/delidev.v1.IntegrationService/ListPullRequestProblems"
+	// IntegrationServiceDismissPullRequestProblemProcedure is the fully-qualified name of the
+	// IntegrationService's DismissPullRequestProblem RPC.
+	IntegrationServiceDismissPullRequestProblemProcedure = "/delidev.v1.IntegrationService/DismissPullRequestProblem"
+	// IntegrationServiceListPullRequestRemediationAttemptsProcedure is the fully-qualified name of the
+	// IntegrationService's ListPullRequestRemediationAttempts RPC.
+	IntegrationServiceListPullRequestRemediationAttemptsProcedure = "/delidev.v1.IntegrationService/ListPullRequestRemediationAttempts"
+	// IntegrationServiceResumePullRequestRemediationProcedure is the fully-qualified name of the
+	// IntegrationService's ResumePullRequestRemediation RPC.
+	IntegrationServiceResumePullRequestRemediationProcedure = "/delidev.v1.IntegrationService/ResumePullRequestRemediation"
 	// ProviderServiceListProviderPresetsProcedure is the fully-qualified name of the ProviderService's
 	// ListProviderPresets RPC.
 	ProviderServiceListProviderPresetsProcedure = "/delidev.v1.ProviderService/ListProviderPresets"
@@ -152,6 +214,24 @@ const (
 	// ProviderServiceResolveModelProcedure is the fully-qualified name of the ProviderService's
 	// ResolveModel RPC.
 	ProviderServiceResolveModelProcedure = "/delidev.v1.ProviderService/ResolveModel"
+	// SessionServiceLinkSessionPullRequestProcedure is the fully-qualified name of the SessionService's
+	// LinkSessionPullRequest RPC.
+	SessionServiceLinkSessionPullRequestProcedure = "/delidev.v1.SessionService/LinkSessionPullRequest"
+	// SessionServiceUnlinkSessionPullRequestProcedure is the fully-qualified name of the
+	// SessionService's UnlinkSessionPullRequest RPC.
+	SessionServiceUnlinkSessionPullRequestProcedure = "/delidev.v1.SessionService/UnlinkSessionPullRequest"
+	// SessionServiceReadSessionReviewContextProcedure is the fully-qualified name of the
+	// SessionService's ReadSessionReviewContext RPC.
+	SessionServiceReadSessionReviewContextProcedure = "/delidev.v1.SessionService/ReadSessionReviewContext"
+	// SessionServiceReadSessionWorkspaceProcedure is the fully-qualified name of the SessionService's
+	// ReadSessionWorkspace RPC.
+	SessionServiceReadSessionWorkspaceProcedure = "/delidev.v1.SessionService/ReadSessionWorkspace"
+	// SessionServiceGetSessionBudgetProcedure is the fully-qualified name of the SessionService's
+	// GetSessionBudget RPC.
+	SessionServiceGetSessionBudgetProcedure = "/delidev.v1.SessionService/GetSessionBudget"
+	// SessionServiceSetSessionBudgetProcedure is the fully-qualified name of the SessionService's
+	// SetSessionBudget RPC.
+	SessionServiceSetSessionBudgetProcedure = "/delidev.v1.SessionService/SetSessionBudget"
 	// SessionServiceSteerQueuedInputProcedure is the fully-qualified name of the SessionService's
 	// SteerQueuedInput RPC.
 	SessionServiceSteerQueuedInputProcedure = "/delidev.v1.SessionService/SteerQueuedInput"
@@ -188,6 +268,18 @@ const (
 	// SessionServiceRecoverSessionWorkspaceProcedure is the fully-qualified name of the
 	// SessionService's RecoverSessionWorkspace RPC.
 	SessionServiceRecoverSessionWorkspaceProcedure = "/delidev.v1.SessionService/RecoverSessionWorkspace"
+	// SessionServiceCreateLocalReviewCommentProcedure is the fully-qualified name of the
+	// SessionService's CreateLocalReviewComment RPC.
+	SessionServiceCreateLocalReviewCommentProcedure = "/delidev.v1.SessionService/CreateLocalReviewComment"
+	// SessionServiceEditLocalReviewCommentProcedure is the fully-qualified name of the SessionService's
+	// EditLocalReviewComment RPC.
+	SessionServiceEditLocalReviewCommentProcedure = "/delidev.v1.SessionService/EditLocalReviewComment"
+	// SessionServiceDeleteLocalReviewCommentProcedure is the fully-qualified name of the
+	// SessionService's DeleteLocalReviewComment RPC.
+	SessionServiceDeleteLocalReviewCommentProcedure = "/delidev.v1.SessionService/DeleteLocalReviewComment"
+	// SessionServiceSubmitLocalReviewProcedure is the fully-qualified name of the SessionService's
+	// SubmitLocalReview RPC.
+	SessionServiceSubmitLocalReviewProcedure = "/delidev.v1.SessionService/SubmitLocalReview"
 	// InboxServiceGetInboxEntryProcedure is the fully-qualified name of the InboxService's
 	// GetInboxEntry RPC.
 	InboxServiceGetInboxEntryProcedure = "/delidev.v1.InboxService/GetInboxEntry"
@@ -196,6 +288,24 @@ const (
 	// InboxServiceSetInboxReadStateProcedure is the fully-qualified name of the InboxService's
 	// SetInboxReadState RPC.
 	InboxServiceSetInboxReadStateProcedure = "/delidev.v1.InboxService/SetInboxReadState"
+	// InboxServiceGetNotificationPreferencesProcedure is the fully-qualified name of the InboxService's
+	// GetNotificationPreferences RPC.
+	InboxServiceGetNotificationPreferencesProcedure = "/delidev.v1.InboxService/GetNotificationPreferences"
+	// InboxServiceSetNotificationPreferencesProcedure is the fully-qualified name of the InboxService's
+	// SetNotificationPreferences RPC.
+	InboxServiceSetNotificationPreferencesProcedure = "/delidev.v1.InboxService/SetNotificationPreferences"
+	// InboxServiceListNotificationCandidatesProcedure is the fully-qualified name of the InboxService's
+	// ListNotificationCandidates RPC.
+	InboxServiceListNotificationCandidatesProcedure = "/delidev.v1.InboxService/ListNotificationCandidates"
+	// InboxServiceClaimNotificationProcedure is the fully-qualified name of the InboxService's
+	// ClaimNotification RPC.
+	InboxServiceClaimNotificationProcedure = "/delidev.v1.InboxService/ClaimNotification"
+	// InboxServiceGetNotificationDeliveryProcedure is the fully-qualified name of the InboxService's
+	// GetNotificationDelivery RPC.
+	InboxServiceGetNotificationDeliveryProcedure = "/delidev.v1.InboxService/GetNotificationDelivery"
+	// InboxServiceReportNotificationProcedure is the fully-qualified name of the InboxService's
+	// ReportNotification RPC.
+	InboxServiceReportNotificationProcedure = "/delidev.v1.InboxService/ReportNotification"
 	// ScheduleServiceSaveScheduleProcedure is the fully-qualified name of the ScheduleService's
 	// SaveSchedule RPC.
 	ScheduleServiceSaveScheduleProcedure = "/delidev.v1.ScheduleService/SaveSchedule"
@@ -220,11 +330,30 @@ const (
 	// ScheduleServiceGetScheduleOccurrenceProcedure is the fully-qualified name of the
 	// ScheduleService's GetScheduleOccurrence RPC.
 	ScheduleServiceGetScheduleOccurrenceProcedure = "/delidev.v1.ScheduleService/GetScheduleOccurrence"
+	// SearchServiceSearchConversationsProcedure is the fully-qualified name of the SearchService's
+	// SearchConversations RPC.
+	SearchServiceSearchConversationsProcedure = "/delidev.v1.SearchService/SearchConversations"
+	// ActivityServiceListActivityProcedure is the fully-qualified name of the ActivityService's
+	// ListActivity RPC.
+	ActivityServiceListActivityProcedure = "/delidev.v1.ActivityService/ListActivity"
+	// UsageServiceGetUsageSummaryProcedure is the fully-qualified name of the UsageService's
+	// GetUsageSummary RPC.
+	UsageServiceGetUsageSummaryProcedure = "/delidev.v1.UsageService/GetUsageSummary"
+	// UsageServiceGetModelPricingProcedure is the fully-qualified name of the UsageService's
+	// GetModelPricing RPC.
+	UsageServiceGetModelPricingProcedure = "/delidev.v1.UsageService/GetModelPricing"
+	// UsageServiceGetPricingVersionProcedure is the fully-qualified name of the UsageService's
+	// GetPricingVersion RPC.
+	UsageServiceGetPricingVersionProcedure = "/delidev.v1.UsageService/GetPricingVersion"
+	// UsageServiceSetModelPricingProcedure is the fully-qualified name of the UsageService's
+	// SetModelPricing RPC.
+	UsageServiceSetModelPricingProcedure = "/delidev.v1.UsageService/SetModelPricing"
 )
 
 // SystemServiceClient is a client for the delidev.v1.SystemService service.
 type SystemServiceClient interface {
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.GetStatusResponse], error)
+	GetOverview(context.Context, *connect.Request[v1.GetOverviewRequest]) (*connect.Response[v1.GetOverviewResponse], error)
 	StopServer(context.Context, *connect.Request[v1.StopServerRequest]) (*connect.Response[v1.StopServerResponse], error)
 	GetDoctor(context.Context, *connect.Request[v1.GetDoctorRequest]) (*connect.Response[v1.GetDoctorResponse], error)
 	CreateBackup(context.Context, *connect.Request[v1.CreateBackupRequest]) (*connect.Response[v1.CreateBackupResponse], error)
@@ -245,6 +374,12 @@ func NewSystemServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			httpClient,
 			baseURL+SystemServiceGetStatusProcedure,
 			connect.WithSchema(systemServiceMethods.ByName("GetStatus")),
+			connect.WithClientOptions(opts...),
+		),
+		getOverview: connect.NewClient[v1.GetOverviewRequest, v1.GetOverviewResponse](
+			httpClient,
+			baseURL+SystemServiceGetOverviewProcedure,
+			connect.WithSchema(systemServiceMethods.ByName("GetOverview")),
 			connect.WithClientOptions(opts...),
 		),
 		stopServer: connect.NewClient[v1.StopServerRequest, v1.StopServerResponse](
@@ -271,6 +406,7 @@ func NewSystemServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 // systemServiceClient implements SystemServiceClient.
 type systemServiceClient struct {
 	getStatus    *connect.Client[v1.GetStatusRequest, v1.GetStatusResponse]
+	getOverview  *connect.Client[v1.GetOverviewRequest, v1.GetOverviewResponse]
 	stopServer   *connect.Client[v1.StopServerRequest, v1.StopServerResponse]
 	getDoctor    *connect.Client[v1.GetDoctorRequest, v1.GetDoctorResponse]
 	createBackup *connect.Client[v1.CreateBackupRequest, v1.CreateBackupResponse]
@@ -279,6 +415,11 @@ type systemServiceClient struct {
 // GetStatus calls delidev.v1.SystemService.GetStatus.
 func (c *systemServiceClient) GetStatus(ctx context.Context, req *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.GetStatusResponse], error) {
 	return c.getStatus.CallUnary(ctx, req)
+}
+
+// GetOverview calls delidev.v1.SystemService.GetOverview.
+func (c *systemServiceClient) GetOverview(ctx context.Context, req *connect.Request[v1.GetOverviewRequest]) (*connect.Response[v1.GetOverviewResponse], error) {
+	return c.getOverview.CallUnary(ctx, req)
 }
 
 // StopServer calls delidev.v1.SystemService.StopServer.
@@ -299,6 +440,7 @@ func (c *systemServiceClient) CreateBackup(ctx context.Context, req *connect.Req
 // SystemServiceHandler is an implementation of the delidev.v1.SystemService service.
 type SystemServiceHandler interface {
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.GetStatusResponse], error)
+	GetOverview(context.Context, *connect.Request[v1.GetOverviewRequest]) (*connect.Response[v1.GetOverviewResponse], error)
 	StopServer(context.Context, *connect.Request[v1.StopServerRequest]) (*connect.Response[v1.StopServerResponse], error)
 	GetDoctor(context.Context, *connect.Request[v1.GetDoctorRequest]) (*connect.Response[v1.GetDoctorResponse], error)
 	CreateBackup(context.Context, *connect.Request[v1.CreateBackupRequest]) (*connect.Response[v1.CreateBackupResponse], error)
@@ -315,6 +457,12 @@ func NewSystemServiceHandler(svc SystemServiceHandler, opts ...connect.HandlerOp
 		SystemServiceGetStatusProcedure,
 		svc.GetStatus,
 		connect.WithSchema(systemServiceMethods.ByName("GetStatus")),
+		connect.WithHandlerOptions(opts...),
+	)
+	systemServiceGetOverviewHandler := connect.NewUnaryHandler(
+		SystemServiceGetOverviewProcedure,
+		svc.GetOverview,
+		connect.WithSchema(systemServiceMethods.ByName("GetOverview")),
 		connect.WithHandlerOptions(opts...),
 	)
 	systemServiceStopServerHandler := connect.NewUnaryHandler(
@@ -339,6 +487,8 @@ func NewSystemServiceHandler(svc SystemServiceHandler, opts ...connect.HandlerOp
 		switch r.URL.Path {
 		case SystemServiceGetStatusProcedure:
 			systemServiceGetStatusHandler.ServeHTTP(w, r)
+		case SystemServiceGetOverviewProcedure:
+			systemServiceGetOverviewHandler.ServeHTTP(w, r)
 		case SystemServiceStopServerProcedure:
 			systemServiceStopServerHandler.ServeHTTP(w, r)
 		case SystemServiceGetDoctorProcedure:
@@ -356,6 +506,10 @@ type UnimplementedSystemServiceHandler struct{}
 
 func (UnimplementedSystemServiceHandler) GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.GetStatusResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SystemService.GetStatus is not implemented"))
+}
+
+func (UnimplementedSystemServiceHandler) GetOverview(context.Context, *connect.Request[v1.GetOverviewRequest]) (*connect.Response[v1.GetOverviewResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SystemService.GetOverview is not implemented"))
 }
 
 func (UnimplementedSystemServiceHandler) StopServer(context.Context, *connect.Request[v1.StopServerRequest]) (*connect.Response[v1.StopServerResponse], error) {
@@ -520,6 +674,9 @@ func (UnimplementedResourceServiceHandler) WatchEvents(context.Context, *connect
 
 // ConfigurationServiceClient is a client for the delidev.v1.ConfigurationService service.
 type ConfigurationServiceClient interface {
+	ExportConfiguration(context.Context, *connect.Request[v1.ExportConfigurationRequest]) (*connect.Response[v1.ExportConfigurationResponse], error)
+	PreviewConfigurationImport(context.Context, *connect.Request[v1.PreviewConfigurationImportRequest]) (*connect.Response[v1.PreviewConfigurationImportResponse], error)
+	ApplyConfigurationImport(context.Context, *connect.Request[v1.ApplyConfigurationImportRequest]) (*connect.Response[v1.ApplyConfigurationImportResponse], error)
 	SaveConfiguration(context.Context, *connect.Request[v1.SaveConfigurationRequest]) (*connect.Response[v1.SaveConfigurationResponse], error)
 	DeleteConfiguration(context.Context, *connect.Request[v1.DeleteConfigurationRequest]) (*connect.Response[v1.DeleteConfigurationResponse], error)
 	PreviewRouting(context.Context, *connect.Request[v1.PreviewRoutingRequest]) (*connect.Response[v1.PreviewRoutingResponse], error)
@@ -536,6 +693,24 @@ func NewConfigurationServiceClient(httpClient connect.HTTPClient, baseURL string
 	baseURL = strings.TrimRight(baseURL, "/")
 	configurationServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("ConfigurationService").Methods()
 	return &configurationServiceClient{
+		exportConfiguration: connect.NewClient[v1.ExportConfigurationRequest, v1.ExportConfigurationResponse](
+			httpClient,
+			baseURL+ConfigurationServiceExportConfigurationProcedure,
+			connect.WithSchema(configurationServiceMethods.ByName("ExportConfiguration")),
+			connect.WithClientOptions(opts...),
+		),
+		previewConfigurationImport: connect.NewClient[v1.PreviewConfigurationImportRequest, v1.PreviewConfigurationImportResponse](
+			httpClient,
+			baseURL+ConfigurationServicePreviewConfigurationImportProcedure,
+			connect.WithSchema(configurationServiceMethods.ByName("PreviewConfigurationImport")),
+			connect.WithClientOptions(opts...),
+		),
+		applyConfigurationImport: connect.NewClient[v1.ApplyConfigurationImportRequest, v1.ApplyConfigurationImportResponse](
+			httpClient,
+			baseURL+ConfigurationServiceApplyConfigurationImportProcedure,
+			connect.WithSchema(configurationServiceMethods.ByName("ApplyConfigurationImport")),
+			connect.WithClientOptions(opts...),
+		),
 		saveConfiguration: connect.NewClient[v1.SaveConfigurationRequest, v1.SaveConfigurationResponse](
 			httpClient,
 			baseURL+ConfigurationServiceSaveConfigurationProcedure,
@@ -559,9 +734,27 @@ func NewConfigurationServiceClient(httpClient connect.HTTPClient, baseURL string
 
 // configurationServiceClient implements ConfigurationServiceClient.
 type configurationServiceClient struct {
-	saveConfiguration   *connect.Client[v1.SaveConfigurationRequest, v1.SaveConfigurationResponse]
-	deleteConfiguration *connect.Client[v1.DeleteConfigurationRequest, v1.DeleteConfigurationResponse]
-	previewRouting      *connect.Client[v1.PreviewRoutingRequest, v1.PreviewRoutingResponse]
+	exportConfiguration        *connect.Client[v1.ExportConfigurationRequest, v1.ExportConfigurationResponse]
+	previewConfigurationImport *connect.Client[v1.PreviewConfigurationImportRequest, v1.PreviewConfigurationImportResponse]
+	applyConfigurationImport   *connect.Client[v1.ApplyConfigurationImportRequest, v1.ApplyConfigurationImportResponse]
+	saveConfiguration          *connect.Client[v1.SaveConfigurationRequest, v1.SaveConfigurationResponse]
+	deleteConfiguration        *connect.Client[v1.DeleteConfigurationRequest, v1.DeleteConfigurationResponse]
+	previewRouting             *connect.Client[v1.PreviewRoutingRequest, v1.PreviewRoutingResponse]
+}
+
+// ExportConfiguration calls delidev.v1.ConfigurationService.ExportConfiguration.
+func (c *configurationServiceClient) ExportConfiguration(ctx context.Context, req *connect.Request[v1.ExportConfigurationRequest]) (*connect.Response[v1.ExportConfigurationResponse], error) {
+	return c.exportConfiguration.CallUnary(ctx, req)
+}
+
+// PreviewConfigurationImport calls delidev.v1.ConfigurationService.PreviewConfigurationImport.
+func (c *configurationServiceClient) PreviewConfigurationImport(ctx context.Context, req *connect.Request[v1.PreviewConfigurationImportRequest]) (*connect.Response[v1.PreviewConfigurationImportResponse], error) {
+	return c.previewConfigurationImport.CallUnary(ctx, req)
+}
+
+// ApplyConfigurationImport calls delidev.v1.ConfigurationService.ApplyConfigurationImport.
+func (c *configurationServiceClient) ApplyConfigurationImport(ctx context.Context, req *connect.Request[v1.ApplyConfigurationImportRequest]) (*connect.Response[v1.ApplyConfigurationImportResponse], error) {
+	return c.applyConfigurationImport.CallUnary(ctx, req)
 }
 
 // SaveConfiguration calls delidev.v1.ConfigurationService.SaveConfiguration.
@@ -581,6 +774,9 @@ func (c *configurationServiceClient) PreviewRouting(ctx context.Context, req *co
 
 // ConfigurationServiceHandler is an implementation of the delidev.v1.ConfigurationService service.
 type ConfigurationServiceHandler interface {
+	ExportConfiguration(context.Context, *connect.Request[v1.ExportConfigurationRequest]) (*connect.Response[v1.ExportConfigurationResponse], error)
+	PreviewConfigurationImport(context.Context, *connect.Request[v1.PreviewConfigurationImportRequest]) (*connect.Response[v1.PreviewConfigurationImportResponse], error)
+	ApplyConfigurationImport(context.Context, *connect.Request[v1.ApplyConfigurationImportRequest]) (*connect.Response[v1.ApplyConfigurationImportResponse], error)
 	SaveConfiguration(context.Context, *connect.Request[v1.SaveConfigurationRequest]) (*connect.Response[v1.SaveConfigurationResponse], error)
 	DeleteConfiguration(context.Context, *connect.Request[v1.DeleteConfigurationRequest]) (*connect.Response[v1.DeleteConfigurationResponse], error)
 	PreviewRouting(context.Context, *connect.Request[v1.PreviewRoutingRequest]) (*connect.Response[v1.PreviewRoutingResponse], error)
@@ -593,6 +789,24 @@ type ConfigurationServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewConfigurationServiceHandler(svc ConfigurationServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	configurationServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("ConfigurationService").Methods()
+	configurationServiceExportConfigurationHandler := connect.NewUnaryHandler(
+		ConfigurationServiceExportConfigurationProcedure,
+		svc.ExportConfiguration,
+		connect.WithSchema(configurationServiceMethods.ByName("ExportConfiguration")),
+		connect.WithHandlerOptions(opts...),
+	)
+	configurationServicePreviewConfigurationImportHandler := connect.NewUnaryHandler(
+		ConfigurationServicePreviewConfigurationImportProcedure,
+		svc.PreviewConfigurationImport,
+		connect.WithSchema(configurationServiceMethods.ByName("PreviewConfigurationImport")),
+		connect.WithHandlerOptions(opts...),
+	)
+	configurationServiceApplyConfigurationImportHandler := connect.NewUnaryHandler(
+		ConfigurationServiceApplyConfigurationImportProcedure,
+		svc.ApplyConfigurationImport,
+		connect.WithSchema(configurationServiceMethods.ByName("ApplyConfigurationImport")),
+		connect.WithHandlerOptions(opts...),
+	)
 	configurationServiceSaveConfigurationHandler := connect.NewUnaryHandler(
 		ConfigurationServiceSaveConfigurationProcedure,
 		svc.SaveConfiguration,
@@ -613,6 +827,12 @@ func NewConfigurationServiceHandler(svc ConfigurationServiceHandler, opts ...con
 	)
 	return "/delidev.v1.ConfigurationService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case ConfigurationServiceExportConfigurationProcedure:
+			configurationServiceExportConfigurationHandler.ServeHTTP(w, r)
+		case ConfigurationServicePreviewConfigurationImportProcedure:
+			configurationServicePreviewConfigurationImportHandler.ServeHTTP(w, r)
+		case ConfigurationServiceApplyConfigurationImportProcedure:
+			configurationServiceApplyConfigurationImportHandler.ServeHTTP(w, r)
 		case ConfigurationServiceSaveConfigurationProcedure:
 			configurationServiceSaveConfigurationHandler.ServeHTTP(w, r)
 		case ConfigurationServiceDeleteConfigurationProcedure:
@@ -627,6 +847,18 @@ func NewConfigurationServiceHandler(svc ConfigurationServiceHandler, opts ...con
 
 // UnimplementedConfigurationServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedConfigurationServiceHandler struct{}
+
+func (UnimplementedConfigurationServiceHandler) ExportConfiguration(context.Context, *connect.Request[v1.ExportConfigurationRequest]) (*connect.Response[v1.ExportConfigurationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ConfigurationService.ExportConfiguration is not implemented"))
+}
+
+func (UnimplementedConfigurationServiceHandler) PreviewConfigurationImport(context.Context, *connect.Request[v1.PreviewConfigurationImportRequest]) (*connect.Response[v1.PreviewConfigurationImportResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ConfigurationService.PreviewConfigurationImport is not implemented"))
+}
+
+func (UnimplementedConfigurationServiceHandler) ApplyConfigurationImport(context.Context, *connect.Request[v1.ApplyConfigurationImportRequest]) (*connect.Response[v1.ApplyConfigurationImportResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ConfigurationService.ApplyConfigurationImport is not implemented"))
+}
 
 func (UnimplementedConfigurationServiceHandler) SaveConfiguration(context.Context, *connect.Request[v1.SaveConfigurationRequest]) (*connect.Response[v1.SaveConfigurationResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ConfigurationService.SaveConfiguration is not implemented"))
@@ -860,6 +1092,8 @@ func (UnimplementedDeviceServiceHandler) RevokeDevice(context.Context, *connect.
 
 // WorkerServiceClient is a client for the delidev.v1.WorkerService service.
 type WorkerServiceClient interface {
+	WatchWorkspaceReads(context.Context, *connect.Request[v1.WatchWorkspaceReadsRequest]) (*connect.ServerStreamForClient[v1.WatchWorkspaceReadsResponse], error)
+	ReportWorkspaceRead(context.Context, *connect.Request[v1.ReportWorkspaceReadRequest]) (*connect.Response[v1.ReportWorkspaceReadResponse], error)
 	AttachWorker(context.Context, *connect.Request[v1.AttachWorkerRequest]) (*connect.Response[v1.AttachWorkerResponse], error)
 	WatchWork(context.Context, *connect.Request[v1.WatchWorkRequest]) (*connect.ServerStreamForClient[v1.WatchWorkResponse], error)
 	ReportWork(context.Context, *connect.Request[v1.ReportWorkRequest]) (*connect.Response[v1.ReportWorkResponse], error)
@@ -883,6 +1117,18 @@ func NewWorkerServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 	baseURL = strings.TrimRight(baseURL, "/")
 	workerServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("WorkerService").Methods()
 	return &workerServiceClient{
+		watchWorkspaceReads: connect.NewClient[v1.WatchWorkspaceReadsRequest, v1.WatchWorkspaceReadsResponse](
+			httpClient,
+			baseURL+WorkerServiceWatchWorkspaceReadsProcedure,
+			connect.WithSchema(workerServiceMethods.ByName("WatchWorkspaceReads")),
+			connect.WithClientOptions(opts...),
+		),
+		reportWorkspaceRead: connect.NewClient[v1.ReportWorkspaceReadRequest, v1.ReportWorkspaceReadResponse](
+			httpClient,
+			baseURL+WorkerServiceReportWorkspaceReadProcedure,
+			connect.WithSchema(workerServiceMethods.ByName("ReportWorkspaceRead")),
+			connect.WithClientOptions(opts...),
+		),
 		attachWorker: connect.NewClient[v1.AttachWorkerRequest, v1.AttachWorkerResponse](
 			httpClient,
 			baseURL+WorkerServiceAttachWorkerProcedure,
@@ -948,6 +1194,8 @@ func NewWorkerServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 
 // workerServiceClient implements WorkerServiceClient.
 type workerServiceClient struct {
+	watchWorkspaceReads   *connect.Client[v1.WatchWorkspaceReadsRequest, v1.WatchWorkspaceReadsResponse]
+	reportWorkspaceRead   *connect.Client[v1.ReportWorkspaceReadRequest, v1.ReportWorkspaceReadResponse]
 	attachWorker          *connect.Client[v1.AttachWorkerRequest, v1.AttachWorkerResponse]
 	watchWork             *connect.Client[v1.WatchWorkRequest, v1.WatchWorkResponse]
 	reportWork            *connect.Client[v1.ReportWorkRequest, v1.ReportWorkResponse]
@@ -958,6 +1206,16 @@ type workerServiceClient struct {
 	claimQuestionResponse *connect.Client[v1.ClaimQuestionResponseRequest, v1.ClaimQuestionResponseResponse]
 	claimApprovalResponse *connect.Client[v1.ClaimApprovalResponseRequest, v1.ClaimApprovalResponseResponse]
 	claimSteerInput       *connect.Client[v1.ClaimSteerInputRequest, v1.ClaimSteerInputResponse]
+}
+
+// WatchWorkspaceReads calls delidev.v1.WorkerService.WatchWorkspaceReads.
+func (c *workerServiceClient) WatchWorkspaceReads(ctx context.Context, req *connect.Request[v1.WatchWorkspaceReadsRequest]) (*connect.ServerStreamForClient[v1.WatchWorkspaceReadsResponse], error) {
+	return c.watchWorkspaceReads.CallServerStream(ctx, req)
+}
+
+// ReportWorkspaceRead calls delidev.v1.WorkerService.ReportWorkspaceRead.
+func (c *workerServiceClient) ReportWorkspaceRead(ctx context.Context, req *connect.Request[v1.ReportWorkspaceReadRequest]) (*connect.Response[v1.ReportWorkspaceReadResponse], error) {
+	return c.reportWorkspaceRead.CallUnary(ctx, req)
 }
 
 // AttachWorker calls delidev.v1.WorkerService.AttachWorker.
@@ -1012,6 +1270,8 @@ func (c *workerServiceClient) ClaimSteerInput(ctx context.Context, req *connect.
 
 // WorkerServiceHandler is an implementation of the delidev.v1.WorkerService service.
 type WorkerServiceHandler interface {
+	WatchWorkspaceReads(context.Context, *connect.Request[v1.WatchWorkspaceReadsRequest], *connect.ServerStream[v1.WatchWorkspaceReadsResponse]) error
+	ReportWorkspaceRead(context.Context, *connect.Request[v1.ReportWorkspaceReadRequest]) (*connect.Response[v1.ReportWorkspaceReadResponse], error)
 	AttachWorker(context.Context, *connect.Request[v1.AttachWorkerRequest]) (*connect.Response[v1.AttachWorkerResponse], error)
 	WatchWork(context.Context, *connect.Request[v1.WatchWorkRequest], *connect.ServerStream[v1.WatchWorkResponse]) error
 	ReportWork(context.Context, *connect.Request[v1.ReportWorkRequest]) (*connect.Response[v1.ReportWorkResponse], error)
@@ -1031,6 +1291,18 @@ type WorkerServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	workerServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("WorkerService").Methods()
+	workerServiceWatchWorkspaceReadsHandler := connect.NewServerStreamHandler(
+		WorkerServiceWatchWorkspaceReadsProcedure,
+		svc.WatchWorkspaceReads,
+		connect.WithSchema(workerServiceMethods.ByName("WatchWorkspaceReads")),
+		connect.WithHandlerOptions(opts...),
+	)
+	workerServiceReportWorkspaceReadHandler := connect.NewUnaryHandler(
+		WorkerServiceReportWorkspaceReadProcedure,
+		svc.ReportWorkspaceRead,
+		connect.WithSchema(workerServiceMethods.ByName("ReportWorkspaceRead")),
+		connect.WithHandlerOptions(opts...),
+	)
 	workerServiceAttachWorkerHandler := connect.NewUnaryHandler(
 		WorkerServiceAttachWorkerProcedure,
 		svc.AttachWorker,
@@ -1093,6 +1365,10 @@ func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOp
 	)
 	return "/delidev.v1.WorkerService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case WorkerServiceWatchWorkspaceReadsProcedure:
+			workerServiceWatchWorkspaceReadsHandler.ServeHTTP(w, r)
+		case WorkerServiceReportWorkspaceReadProcedure:
+			workerServiceReportWorkspaceReadHandler.ServeHTTP(w, r)
 		case WorkerServiceAttachWorkerProcedure:
 			workerServiceAttachWorkerHandler.ServeHTTP(w, r)
 		case WorkerServiceWatchWorkProcedure:
@@ -1121,6 +1397,14 @@ func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOp
 
 // UnimplementedWorkerServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedWorkerServiceHandler struct{}
+
+func (UnimplementedWorkerServiceHandler) WatchWorkspaceReads(context.Context, *connect.Request[v1.WatchWorkspaceReadsRequest], *connect.ServerStream[v1.WatchWorkspaceReadsResponse]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.WatchWorkspaceReads is not implemented"))
+}
+
+func (UnimplementedWorkerServiceHandler) ReportWorkspaceRead(context.Context, *connect.Request[v1.ReportWorkspaceReadRequest]) (*connect.Response[v1.ReportWorkspaceReadResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.ReportWorkspaceRead is not implemented"))
+}
 
 func (UnimplementedWorkerServiceHandler) AttachWorker(context.Context, *connect.Request[v1.AttachWorkerRequest]) (*connect.Response[v1.AttachWorkerResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.AttachWorker is not implemented"))
@@ -1310,6 +1594,363 @@ func (UnimplementedAccountServiceHandler) ValidateAccount(context.Context, *conn
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.AccountService.ValidateAccount is not implemented"))
 }
 
+// IntegrationServiceClient is a client for the delidev.v1.IntegrationService service.
+type IntegrationServiceClient interface {
+	SaveIntegrationProfile(context.Context, *connect.Request[v1.SaveIntegrationProfileRequest]) (*connect.Response[v1.SaveIntegrationProfileResponse], error)
+	ReplaceIntegrationToken(context.Context, *connect.Request[v1.ReplaceIntegrationTokenRequest]) (*connect.Response[v1.ReplaceIntegrationTokenResponse], error)
+	ValidateIntegrationProfile(context.Context, *connect.Request[v1.ValidateIntegrationProfileRequest]) (*connect.Response[v1.ValidateIntegrationProfileResponse], error)
+	DeleteIntegrationProfile(context.Context, *connect.Request[v1.DeleteIntegrationProfileRequest]) (*connect.Response[v1.DeleteIntegrationProfileResponse], error)
+	InspectRepositoryIntegration(context.Context, *connect.Request[v1.InspectRepositoryIntegrationRequest]) (*connect.Response[v1.InspectRepositoryIntegrationResponse], error)
+	QueryRepositoryIntegration(context.Context, *connect.Request[v1.QueryRepositoryIntegrationRequest]) (*connect.Response[v1.QueryRepositoryIntegrationResponse], error)
+	GetGitHubTokenForm(context.Context, *connect.Request[v1.GetGitHubTokenFormRequest]) (*connect.Response[v1.GetGitHubTokenFormResponse], error)
+	RefreshPullRequestProblems(context.Context, *connect.Request[v1.RefreshPullRequestProblemsRequest]) (*connect.Response[v1.RefreshPullRequestProblemsResponse], error)
+	ListPullRequestProblems(context.Context, *connect.Request[v1.ListPullRequestProblemsRequest]) (*connect.Response[v1.ListPullRequestProblemsResponse], error)
+	DismissPullRequestProblem(context.Context, *connect.Request[v1.DismissPullRequestProblemRequest]) (*connect.Response[v1.DismissPullRequestProblemResponse], error)
+	ListPullRequestRemediationAttempts(context.Context, *connect.Request[v1.ListPullRequestRemediationAttemptsRequest]) (*connect.Response[v1.ListPullRequestRemediationAttemptsResponse], error)
+	ResumePullRequestRemediation(context.Context, *connect.Request[v1.ResumePullRequestRemediationRequest]) (*connect.Response[v1.ResumePullRequestRemediationResponse], error)
+}
+
+// NewIntegrationServiceClient constructs a client for the delidev.v1.IntegrationService service. By
+// default, it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses,
+// and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the
+// connect.WithGRPC() or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewIntegrationServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) IntegrationServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	integrationServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("IntegrationService").Methods()
+	return &integrationServiceClient{
+		saveIntegrationProfile: connect.NewClient[v1.SaveIntegrationProfileRequest, v1.SaveIntegrationProfileResponse](
+			httpClient,
+			baseURL+IntegrationServiceSaveIntegrationProfileProcedure,
+			connect.WithSchema(integrationServiceMethods.ByName("SaveIntegrationProfile")),
+			connect.WithClientOptions(opts...),
+		),
+		replaceIntegrationToken: connect.NewClient[v1.ReplaceIntegrationTokenRequest, v1.ReplaceIntegrationTokenResponse](
+			httpClient,
+			baseURL+IntegrationServiceReplaceIntegrationTokenProcedure,
+			connect.WithSchema(integrationServiceMethods.ByName("ReplaceIntegrationToken")),
+			connect.WithClientOptions(opts...),
+		),
+		validateIntegrationProfile: connect.NewClient[v1.ValidateIntegrationProfileRequest, v1.ValidateIntegrationProfileResponse](
+			httpClient,
+			baseURL+IntegrationServiceValidateIntegrationProfileProcedure,
+			connect.WithSchema(integrationServiceMethods.ByName("ValidateIntegrationProfile")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteIntegrationProfile: connect.NewClient[v1.DeleteIntegrationProfileRequest, v1.DeleteIntegrationProfileResponse](
+			httpClient,
+			baseURL+IntegrationServiceDeleteIntegrationProfileProcedure,
+			connect.WithSchema(integrationServiceMethods.ByName("DeleteIntegrationProfile")),
+			connect.WithClientOptions(opts...),
+		),
+		inspectRepositoryIntegration: connect.NewClient[v1.InspectRepositoryIntegrationRequest, v1.InspectRepositoryIntegrationResponse](
+			httpClient,
+			baseURL+IntegrationServiceInspectRepositoryIntegrationProcedure,
+			connect.WithSchema(integrationServiceMethods.ByName("InspectRepositoryIntegration")),
+			connect.WithClientOptions(opts...),
+		),
+		queryRepositoryIntegration: connect.NewClient[v1.QueryRepositoryIntegrationRequest, v1.QueryRepositoryIntegrationResponse](
+			httpClient,
+			baseURL+IntegrationServiceQueryRepositoryIntegrationProcedure,
+			connect.WithSchema(integrationServiceMethods.ByName("QueryRepositoryIntegration")),
+			connect.WithClientOptions(opts...),
+		),
+		getGitHubTokenForm: connect.NewClient[v1.GetGitHubTokenFormRequest, v1.GetGitHubTokenFormResponse](
+			httpClient,
+			baseURL+IntegrationServiceGetGitHubTokenFormProcedure,
+			connect.WithSchema(integrationServiceMethods.ByName("GetGitHubTokenForm")),
+			connect.WithClientOptions(opts...),
+		),
+		refreshPullRequestProblems: connect.NewClient[v1.RefreshPullRequestProblemsRequest, v1.RefreshPullRequestProblemsResponse](
+			httpClient,
+			baseURL+IntegrationServiceRefreshPullRequestProblemsProcedure,
+			connect.WithSchema(integrationServiceMethods.ByName("RefreshPullRequestProblems")),
+			connect.WithClientOptions(opts...),
+		),
+		listPullRequestProblems: connect.NewClient[v1.ListPullRequestProblemsRequest, v1.ListPullRequestProblemsResponse](
+			httpClient,
+			baseURL+IntegrationServiceListPullRequestProblemsProcedure,
+			connect.WithSchema(integrationServiceMethods.ByName("ListPullRequestProblems")),
+			connect.WithClientOptions(opts...),
+		),
+		dismissPullRequestProblem: connect.NewClient[v1.DismissPullRequestProblemRequest, v1.DismissPullRequestProblemResponse](
+			httpClient,
+			baseURL+IntegrationServiceDismissPullRequestProblemProcedure,
+			connect.WithSchema(integrationServiceMethods.ByName("DismissPullRequestProblem")),
+			connect.WithClientOptions(opts...),
+		),
+		listPullRequestRemediationAttempts: connect.NewClient[v1.ListPullRequestRemediationAttemptsRequest, v1.ListPullRequestRemediationAttemptsResponse](
+			httpClient,
+			baseURL+IntegrationServiceListPullRequestRemediationAttemptsProcedure,
+			connect.WithSchema(integrationServiceMethods.ByName("ListPullRequestRemediationAttempts")),
+			connect.WithClientOptions(opts...),
+		),
+		resumePullRequestRemediation: connect.NewClient[v1.ResumePullRequestRemediationRequest, v1.ResumePullRequestRemediationResponse](
+			httpClient,
+			baseURL+IntegrationServiceResumePullRequestRemediationProcedure,
+			connect.WithSchema(integrationServiceMethods.ByName("ResumePullRequestRemediation")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// integrationServiceClient implements IntegrationServiceClient.
+type integrationServiceClient struct {
+	saveIntegrationProfile             *connect.Client[v1.SaveIntegrationProfileRequest, v1.SaveIntegrationProfileResponse]
+	replaceIntegrationToken            *connect.Client[v1.ReplaceIntegrationTokenRequest, v1.ReplaceIntegrationTokenResponse]
+	validateIntegrationProfile         *connect.Client[v1.ValidateIntegrationProfileRequest, v1.ValidateIntegrationProfileResponse]
+	deleteIntegrationProfile           *connect.Client[v1.DeleteIntegrationProfileRequest, v1.DeleteIntegrationProfileResponse]
+	inspectRepositoryIntegration       *connect.Client[v1.InspectRepositoryIntegrationRequest, v1.InspectRepositoryIntegrationResponse]
+	queryRepositoryIntegration         *connect.Client[v1.QueryRepositoryIntegrationRequest, v1.QueryRepositoryIntegrationResponse]
+	getGitHubTokenForm                 *connect.Client[v1.GetGitHubTokenFormRequest, v1.GetGitHubTokenFormResponse]
+	refreshPullRequestProblems         *connect.Client[v1.RefreshPullRequestProblemsRequest, v1.RefreshPullRequestProblemsResponse]
+	listPullRequestProblems            *connect.Client[v1.ListPullRequestProblemsRequest, v1.ListPullRequestProblemsResponse]
+	dismissPullRequestProblem          *connect.Client[v1.DismissPullRequestProblemRequest, v1.DismissPullRequestProblemResponse]
+	listPullRequestRemediationAttempts *connect.Client[v1.ListPullRequestRemediationAttemptsRequest, v1.ListPullRequestRemediationAttemptsResponse]
+	resumePullRequestRemediation       *connect.Client[v1.ResumePullRequestRemediationRequest, v1.ResumePullRequestRemediationResponse]
+}
+
+// SaveIntegrationProfile calls delidev.v1.IntegrationService.SaveIntegrationProfile.
+func (c *integrationServiceClient) SaveIntegrationProfile(ctx context.Context, req *connect.Request[v1.SaveIntegrationProfileRequest]) (*connect.Response[v1.SaveIntegrationProfileResponse], error) {
+	return c.saveIntegrationProfile.CallUnary(ctx, req)
+}
+
+// ReplaceIntegrationToken calls delidev.v1.IntegrationService.ReplaceIntegrationToken.
+func (c *integrationServiceClient) ReplaceIntegrationToken(ctx context.Context, req *connect.Request[v1.ReplaceIntegrationTokenRequest]) (*connect.Response[v1.ReplaceIntegrationTokenResponse], error) {
+	return c.replaceIntegrationToken.CallUnary(ctx, req)
+}
+
+// ValidateIntegrationProfile calls delidev.v1.IntegrationService.ValidateIntegrationProfile.
+func (c *integrationServiceClient) ValidateIntegrationProfile(ctx context.Context, req *connect.Request[v1.ValidateIntegrationProfileRequest]) (*connect.Response[v1.ValidateIntegrationProfileResponse], error) {
+	return c.validateIntegrationProfile.CallUnary(ctx, req)
+}
+
+// DeleteIntegrationProfile calls delidev.v1.IntegrationService.DeleteIntegrationProfile.
+func (c *integrationServiceClient) DeleteIntegrationProfile(ctx context.Context, req *connect.Request[v1.DeleteIntegrationProfileRequest]) (*connect.Response[v1.DeleteIntegrationProfileResponse], error) {
+	return c.deleteIntegrationProfile.CallUnary(ctx, req)
+}
+
+// InspectRepositoryIntegration calls delidev.v1.IntegrationService.InspectRepositoryIntegration.
+func (c *integrationServiceClient) InspectRepositoryIntegration(ctx context.Context, req *connect.Request[v1.InspectRepositoryIntegrationRequest]) (*connect.Response[v1.InspectRepositoryIntegrationResponse], error) {
+	return c.inspectRepositoryIntegration.CallUnary(ctx, req)
+}
+
+// QueryRepositoryIntegration calls delidev.v1.IntegrationService.QueryRepositoryIntegration.
+func (c *integrationServiceClient) QueryRepositoryIntegration(ctx context.Context, req *connect.Request[v1.QueryRepositoryIntegrationRequest]) (*connect.Response[v1.QueryRepositoryIntegrationResponse], error) {
+	return c.queryRepositoryIntegration.CallUnary(ctx, req)
+}
+
+// GetGitHubTokenForm calls delidev.v1.IntegrationService.GetGitHubTokenForm.
+func (c *integrationServiceClient) GetGitHubTokenForm(ctx context.Context, req *connect.Request[v1.GetGitHubTokenFormRequest]) (*connect.Response[v1.GetGitHubTokenFormResponse], error) {
+	return c.getGitHubTokenForm.CallUnary(ctx, req)
+}
+
+// RefreshPullRequestProblems calls delidev.v1.IntegrationService.RefreshPullRequestProblems.
+func (c *integrationServiceClient) RefreshPullRequestProblems(ctx context.Context, req *connect.Request[v1.RefreshPullRequestProblemsRequest]) (*connect.Response[v1.RefreshPullRequestProblemsResponse], error) {
+	return c.refreshPullRequestProblems.CallUnary(ctx, req)
+}
+
+// ListPullRequestProblems calls delidev.v1.IntegrationService.ListPullRequestProblems.
+func (c *integrationServiceClient) ListPullRequestProblems(ctx context.Context, req *connect.Request[v1.ListPullRequestProblemsRequest]) (*connect.Response[v1.ListPullRequestProblemsResponse], error) {
+	return c.listPullRequestProblems.CallUnary(ctx, req)
+}
+
+// DismissPullRequestProblem calls delidev.v1.IntegrationService.DismissPullRequestProblem.
+func (c *integrationServiceClient) DismissPullRequestProblem(ctx context.Context, req *connect.Request[v1.DismissPullRequestProblemRequest]) (*connect.Response[v1.DismissPullRequestProblemResponse], error) {
+	return c.dismissPullRequestProblem.CallUnary(ctx, req)
+}
+
+// ListPullRequestRemediationAttempts calls
+// delidev.v1.IntegrationService.ListPullRequestRemediationAttempts.
+func (c *integrationServiceClient) ListPullRequestRemediationAttempts(ctx context.Context, req *connect.Request[v1.ListPullRequestRemediationAttemptsRequest]) (*connect.Response[v1.ListPullRequestRemediationAttemptsResponse], error) {
+	return c.listPullRequestRemediationAttempts.CallUnary(ctx, req)
+}
+
+// ResumePullRequestRemediation calls delidev.v1.IntegrationService.ResumePullRequestRemediation.
+func (c *integrationServiceClient) ResumePullRequestRemediation(ctx context.Context, req *connect.Request[v1.ResumePullRequestRemediationRequest]) (*connect.Response[v1.ResumePullRequestRemediationResponse], error) {
+	return c.resumePullRequestRemediation.CallUnary(ctx, req)
+}
+
+// IntegrationServiceHandler is an implementation of the delidev.v1.IntegrationService service.
+type IntegrationServiceHandler interface {
+	SaveIntegrationProfile(context.Context, *connect.Request[v1.SaveIntegrationProfileRequest]) (*connect.Response[v1.SaveIntegrationProfileResponse], error)
+	ReplaceIntegrationToken(context.Context, *connect.Request[v1.ReplaceIntegrationTokenRequest]) (*connect.Response[v1.ReplaceIntegrationTokenResponse], error)
+	ValidateIntegrationProfile(context.Context, *connect.Request[v1.ValidateIntegrationProfileRequest]) (*connect.Response[v1.ValidateIntegrationProfileResponse], error)
+	DeleteIntegrationProfile(context.Context, *connect.Request[v1.DeleteIntegrationProfileRequest]) (*connect.Response[v1.DeleteIntegrationProfileResponse], error)
+	InspectRepositoryIntegration(context.Context, *connect.Request[v1.InspectRepositoryIntegrationRequest]) (*connect.Response[v1.InspectRepositoryIntegrationResponse], error)
+	QueryRepositoryIntegration(context.Context, *connect.Request[v1.QueryRepositoryIntegrationRequest]) (*connect.Response[v1.QueryRepositoryIntegrationResponse], error)
+	GetGitHubTokenForm(context.Context, *connect.Request[v1.GetGitHubTokenFormRequest]) (*connect.Response[v1.GetGitHubTokenFormResponse], error)
+	RefreshPullRequestProblems(context.Context, *connect.Request[v1.RefreshPullRequestProblemsRequest]) (*connect.Response[v1.RefreshPullRequestProblemsResponse], error)
+	ListPullRequestProblems(context.Context, *connect.Request[v1.ListPullRequestProblemsRequest]) (*connect.Response[v1.ListPullRequestProblemsResponse], error)
+	DismissPullRequestProblem(context.Context, *connect.Request[v1.DismissPullRequestProblemRequest]) (*connect.Response[v1.DismissPullRequestProblemResponse], error)
+	ListPullRequestRemediationAttempts(context.Context, *connect.Request[v1.ListPullRequestRemediationAttemptsRequest]) (*connect.Response[v1.ListPullRequestRemediationAttemptsResponse], error)
+	ResumePullRequestRemediation(context.Context, *connect.Request[v1.ResumePullRequestRemediationRequest]) (*connect.Response[v1.ResumePullRequestRemediationResponse], error)
+}
+
+// NewIntegrationServiceHandler builds an HTTP handler from the service implementation. It returns
+// the path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewIntegrationServiceHandler(svc IntegrationServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	integrationServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("IntegrationService").Methods()
+	integrationServiceSaveIntegrationProfileHandler := connect.NewUnaryHandler(
+		IntegrationServiceSaveIntegrationProfileProcedure,
+		svc.SaveIntegrationProfile,
+		connect.WithSchema(integrationServiceMethods.ByName("SaveIntegrationProfile")),
+		connect.WithHandlerOptions(opts...),
+	)
+	integrationServiceReplaceIntegrationTokenHandler := connect.NewUnaryHandler(
+		IntegrationServiceReplaceIntegrationTokenProcedure,
+		svc.ReplaceIntegrationToken,
+		connect.WithSchema(integrationServiceMethods.ByName("ReplaceIntegrationToken")),
+		connect.WithHandlerOptions(opts...),
+	)
+	integrationServiceValidateIntegrationProfileHandler := connect.NewUnaryHandler(
+		IntegrationServiceValidateIntegrationProfileProcedure,
+		svc.ValidateIntegrationProfile,
+		connect.WithSchema(integrationServiceMethods.ByName("ValidateIntegrationProfile")),
+		connect.WithHandlerOptions(opts...),
+	)
+	integrationServiceDeleteIntegrationProfileHandler := connect.NewUnaryHandler(
+		IntegrationServiceDeleteIntegrationProfileProcedure,
+		svc.DeleteIntegrationProfile,
+		connect.WithSchema(integrationServiceMethods.ByName("DeleteIntegrationProfile")),
+		connect.WithHandlerOptions(opts...),
+	)
+	integrationServiceInspectRepositoryIntegrationHandler := connect.NewUnaryHandler(
+		IntegrationServiceInspectRepositoryIntegrationProcedure,
+		svc.InspectRepositoryIntegration,
+		connect.WithSchema(integrationServiceMethods.ByName("InspectRepositoryIntegration")),
+		connect.WithHandlerOptions(opts...),
+	)
+	integrationServiceQueryRepositoryIntegrationHandler := connect.NewUnaryHandler(
+		IntegrationServiceQueryRepositoryIntegrationProcedure,
+		svc.QueryRepositoryIntegration,
+		connect.WithSchema(integrationServiceMethods.ByName("QueryRepositoryIntegration")),
+		connect.WithHandlerOptions(opts...),
+	)
+	integrationServiceGetGitHubTokenFormHandler := connect.NewUnaryHandler(
+		IntegrationServiceGetGitHubTokenFormProcedure,
+		svc.GetGitHubTokenForm,
+		connect.WithSchema(integrationServiceMethods.ByName("GetGitHubTokenForm")),
+		connect.WithHandlerOptions(opts...),
+	)
+	integrationServiceRefreshPullRequestProblemsHandler := connect.NewUnaryHandler(
+		IntegrationServiceRefreshPullRequestProblemsProcedure,
+		svc.RefreshPullRequestProblems,
+		connect.WithSchema(integrationServiceMethods.ByName("RefreshPullRequestProblems")),
+		connect.WithHandlerOptions(opts...),
+	)
+	integrationServiceListPullRequestProblemsHandler := connect.NewUnaryHandler(
+		IntegrationServiceListPullRequestProblemsProcedure,
+		svc.ListPullRequestProblems,
+		connect.WithSchema(integrationServiceMethods.ByName("ListPullRequestProblems")),
+		connect.WithHandlerOptions(opts...),
+	)
+	integrationServiceDismissPullRequestProblemHandler := connect.NewUnaryHandler(
+		IntegrationServiceDismissPullRequestProblemProcedure,
+		svc.DismissPullRequestProblem,
+		connect.WithSchema(integrationServiceMethods.ByName("DismissPullRequestProblem")),
+		connect.WithHandlerOptions(opts...),
+	)
+	integrationServiceListPullRequestRemediationAttemptsHandler := connect.NewUnaryHandler(
+		IntegrationServiceListPullRequestRemediationAttemptsProcedure,
+		svc.ListPullRequestRemediationAttempts,
+		connect.WithSchema(integrationServiceMethods.ByName("ListPullRequestRemediationAttempts")),
+		connect.WithHandlerOptions(opts...),
+	)
+	integrationServiceResumePullRequestRemediationHandler := connect.NewUnaryHandler(
+		IntegrationServiceResumePullRequestRemediationProcedure,
+		svc.ResumePullRequestRemediation,
+		connect.WithSchema(integrationServiceMethods.ByName("ResumePullRequestRemediation")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/delidev.v1.IntegrationService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case IntegrationServiceSaveIntegrationProfileProcedure:
+			integrationServiceSaveIntegrationProfileHandler.ServeHTTP(w, r)
+		case IntegrationServiceReplaceIntegrationTokenProcedure:
+			integrationServiceReplaceIntegrationTokenHandler.ServeHTTP(w, r)
+		case IntegrationServiceValidateIntegrationProfileProcedure:
+			integrationServiceValidateIntegrationProfileHandler.ServeHTTP(w, r)
+		case IntegrationServiceDeleteIntegrationProfileProcedure:
+			integrationServiceDeleteIntegrationProfileHandler.ServeHTTP(w, r)
+		case IntegrationServiceInspectRepositoryIntegrationProcedure:
+			integrationServiceInspectRepositoryIntegrationHandler.ServeHTTP(w, r)
+		case IntegrationServiceQueryRepositoryIntegrationProcedure:
+			integrationServiceQueryRepositoryIntegrationHandler.ServeHTTP(w, r)
+		case IntegrationServiceGetGitHubTokenFormProcedure:
+			integrationServiceGetGitHubTokenFormHandler.ServeHTTP(w, r)
+		case IntegrationServiceRefreshPullRequestProblemsProcedure:
+			integrationServiceRefreshPullRequestProblemsHandler.ServeHTTP(w, r)
+		case IntegrationServiceListPullRequestProblemsProcedure:
+			integrationServiceListPullRequestProblemsHandler.ServeHTTP(w, r)
+		case IntegrationServiceDismissPullRequestProblemProcedure:
+			integrationServiceDismissPullRequestProblemHandler.ServeHTTP(w, r)
+		case IntegrationServiceListPullRequestRemediationAttemptsProcedure:
+			integrationServiceListPullRequestRemediationAttemptsHandler.ServeHTTP(w, r)
+		case IntegrationServiceResumePullRequestRemediationProcedure:
+			integrationServiceResumePullRequestRemediationHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedIntegrationServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedIntegrationServiceHandler struct{}
+
+func (UnimplementedIntegrationServiceHandler) SaveIntegrationProfile(context.Context, *connect.Request[v1.SaveIntegrationProfileRequest]) (*connect.Response[v1.SaveIntegrationProfileResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.IntegrationService.SaveIntegrationProfile is not implemented"))
+}
+
+func (UnimplementedIntegrationServiceHandler) ReplaceIntegrationToken(context.Context, *connect.Request[v1.ReplaceIntegrationTokenRequest]) (*connect.Response[v1.ReplaceIntegrationTokenResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.IntegrationService.ReplaceIntegrationToken is not implemented"))
+}
+
+func (UnimplementedIntegrationServiceHandler) ValidateIntegrationProfile(context.Context, *connect.Request[v1.ValidateIntegrationProfileRequest]) (*connect.Response[v1.ValidateIntegrationProfileResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.IntegrationService.ValidateIntegrationProfile is not implemented"))
+}
+
+func (UnimplementedIntegrationServiceHandler) DeleteIntegrationProfile(context.Context, *connect.Request[v1.DeleteIntegrationProfileRequest]) (*connect.Response[v1.DeleteIntegrationProfileResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.IntegrationService.DeleteIntegrationProfile is not implemented"))
+}
+
+func (UnimplementedIntegrationServiceHandler) InspectRepositoryIntegration(context.Context, *connect.Request[v1.InspectRepositoryIntegrationRequest]) (*connect.Response[v1.InspectRepositoryIntegrationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.IntegrationService.InspectRepositoryIntegration is not implemented"))
+}
+
+func (UnimplementedIntegrationServiceHandler) QueryRepositoryIntegration(context.Context, *connect.Request[v1.QueryRepositoryIntegrationRequest]) (*connect.Response[v1.QueryRepositoryIntegrationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.IntegrationService.QueryRepositoryIntegration is not implemented"))
+}
+
+func (UnimplementedIntegrationServiceHandler) GetGitHubTokenForm(context.Context, *connect.Request[v1.GetGitHubTokenFormRequest]) (*connect.Response[v1.GetGitHubTokenFormResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.IntegrationService.GetGitHubTokenForm is not implemented"))
+}
+
+func (UnimplementedIntegrationServiceHandler) RefreshPullRequestProblems(context.Context, *connect.Request[v1.RefreshPullRequestProblemsRequest]) (*connect.Response[v1.RefreshPullRequestProblemsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.IntegrationService.RefreshPullRequestProblems is not implemented"))
+}
+
+func (UnimplementedIntegrationServiceHandler) ListPullRequestProblems(context.Context, *connect.Request[v1.ListPullRequestProblemsRequest]) (*connect.Response[v1.ListPullRequestProblemsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.IntegrationService.ListPullRequestProblems is not implemented"))
+}
+
+func (UnimplementedIntegrationServiceHandler) DismissPullRequestProblem(context.Context, *connect.Request[v1.DismissPullRequestProblemRequest]) (*connect.Response[v1.DismissPullRequestProblemResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.IntegrationService.DismissPullRequestProblem is not implemented"))
+}
+
+func (UnimplementedIntegrationServiceHandler) ListPullRequestRemediationAttempts(context.Context, *connect.Request[v1.ListPullRequestRemediationAttemptsRequest]) (*connect.Response[v1.ListPullRequestRemediationAttemptsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.IntegrationService.ListPullRequestRemediationAttempts is not implemented"))
+}
+
+func (UnimplementedIntegrationServiceHandler) ResumePullRequestRemediation(context.Context, *connect.Request[v1.ResumePullRequestRemediationRequest]) (*connect.Response[v1.ResumePullRequestRemediationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.IntegrationService.ResumePullRequestRemediation is not implemented"))
+}
+
 // ProviderServiceClient is a client for the delidev.v1.ProviderService service.
 type ProviderServiceClient interface {
 	ListProviderPresets(context.Context, *connect.Request[v1.ListProviderPresetsRequest]) (*connect.Response[v1.ListProviderPresetsResponse], error)
@@ -1460,6 +2101,12 @@ func (UnimplementedProviderServiceHandler) ResolveModel(context.Context, *connec
 
 // SessionServiceClient is a client for the delidev.v1.SessionService service.
 type SessionServiceClient interface {
+	LinkSessionPullRequest(context.Context, *connect.Request[v1.LinkSessionPullRequestRequest]) (*connect.Response[v1.LinkSessionPullRequestResponse], error)
+	UnlinkSessionPullRequest(context.Context, *connect.Request[v1.UnlinkSessionPullRequestRequest]) (*connect.Response[v1.UnlinkSessionPullRequestResponse], error)
+	ReadSessionReviewContext(context.Context, *connect.Request[v1.ReadSessionReviewContextRequest]) (*connect.Response[v1.ReadSessionReviewContextResponse], error)
+	ReadSessionWorkspace(context.Context, *connect.Request[v1.ReadSessionWorkspaceRequest]) (*connect.Response[v1.ReadSessionWorkspaceResponse], error)
+	GetSessionBudget(context.Context, *connect.Request[v1.GetSessionBudgetRequest]) (*connect.Response[v1.GetSessionBudgetResponse], error)
+	SetSessionBudget(context.Context, *connect.Request[v1.SetSessionBudgetRequest]) (*connect.Response[v1.SetSessionBudgetResponse], error)
 	SteerQueuedInput(context.Context, *connect.Request[v1.SteerQueuedInputRequest]) (*connect.Response[v1.SteerQueuedInputResponse], error)
 	CreateSession(context.Context, *connect.Request[v1.CreateSessionRequest]) (*connect.Response[v1.CreateSessionResponse], error)
 	ListSessions(context.Context, *connect.Request[v1.ListSessionsRequest]) (*connect.Response[v1.ListSessionsResponse], error)
@@ -1472,6 +2119,10 @@ type SessionServiceClient interface {
 	PrepareSessionWorkspace(context.Context, *connect.Request[v1.PrepareSessionWorkspaceRequest]) (*connect.Response[v1.PrepareSessionWorkspaceResponse], error)
 	RecoverSessionExecution(context.Context, *connect.Request[v1.RecoverSessionExecutionRequest]) (*connect.Response[v1.RecoverSessionExecutionResponse], error)
 	RecoverSessionWorkspace(context.Context, *connect.Request[v1.RecoverSessionWorkspaceRequest]) (*connect.Response[v1.RecoverSessionWorkspaceResponse], error)
+	CreateLocalReviewComment(context.Context, *connect.Request[v1.CreateLocalReviewCommentRequest]) (*connect.Response[v1.CreateLocalReviewCommentResponse], error)
+	EditLocalReviewComment(context.Context, *connect.Request[v1.EditLocalReviewCommentRequest]) (*connect.Response[v1.EditLocalReviewCommentResponse], error)
+	DeleteLocalReviewComment(context.Context, *connect.Request[v1.DeleteLocalReviewCommentRequest]) (*connect.Response[v1.DeleteLocalReviewCommentResponse], error)
+	SubmitLocalReview(context.Context, *connect.Request[v1.SubmitLocalReviewRequest]) (*connect.Response[v1.SubmitLocalReviewResponse], error)
 }
 
 // NewSessionServiceClient constructs a client for the delidev.v1.SessionService service. By
@@ -1485,6 +2136,42 @@ func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 	baseURL = strings.TrimRight(baseURL, "/")
 	sessionServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("SessionService").Methods()
 	return &sessionServiceClient{
+		linkSessionPullRequest: connect.NewClient[v1.LinkSessionPullRequestRequest, v1.LinkSessionPullRequestResponse](
+			httpClient,
+			baseURL+SessionServiceLinkSessionPullRequestProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("LinkSessionPullRequest")),
+			connect.WithClientOptions(opts...),
+		),
+		unlinkSessionPullRequest: connect.NewClient[v1.UnlinkSessionPullRequestRequest, v1.UnlinkSessionPullRequestResponse](
+			httpClient,
+			baseURL+SessionServiceUnlinkSessionPullRequestProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("UnlinkSessionPullRequest")),
+			connect.WithClientOptions(opts...),
+		),
+		readSessionReviewContext: connect.NewClient[v1.ReadSessionReviewContextRequest, v1.ReadSessionReviewContextResponse](
+			httpClient,
+			baseURL+SessionServiceReadSessionReviewContextProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("ReadSessionReviewContext")),
+			connect.WithClientOptions(opts...),
+		),
+		readSessionWorkspace: connect.NewClient[v1.ReadSessionWorkspaceRequest, v1.ReadSessionWorkspaceResponse](
+			httpClient,
+			baseURL+SessionServiceReadSessionWorkspaceProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("ReadSessionWorkspace")),
+			connect.WithClientOptions(opts...),
+		),
+		getSessionBudget: connect.NewClient[v1.GetSessionBudgetRequest, v1.GetSessionBudgetResponse](
+			httpClient,
+			baseURL+SessionServiceGetSessionBudgetProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("GetSessionBudget")),
+			connect.WithClientOptions(opts...),
+		),
+		setSessionBudget: connect.NewClient[v1.SetSessionBudgetRequest, v1.SetSessionBudgetResponse](
+			httpClient,
+			baseURL+SessionServiceSetSessionBudgetProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("SetSessionBudget")),
+			connect.WithClientOptions(opts...),
+		),
 		steerQueuedInput: connect.NewClient[v1.SteerQueuedInputRequest, v1.SteerQueuedInputResponse](
 			httpClient,
 			baseURL+SessionServiceSteerQueuedInputProcedure,
@@ -1557,23 +2244,87 @@ func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(sessionServiceMethods.ByName("RecoverSessionWorkspace")),
 			connect.WithClientOptions(opts...),
 		),
+		createLocalReviewComment: connect.NewClient[v1.CreateLocalReviewCommentRequest, v1.CreateLocalReviewCommentResponse](
+			httpClient,
+			baseURL+SessionServiceCreateLocalReviewCommentProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("CreateLocalReviewComment")),
+			connect.WithClientOptions(opts...),
+		),
+		editLocalReviewComment: connect.NewClient[v1.EditLocalReviewCommentRequest, v1.EditLocalReviewCommentResponse](
+			httpClient,
+			baseURL+SessionServiceEditLocalReviewCommentProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("EditLocalReviewComment")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteLocalReviewComment: connect.NewClient[v1.DeleteLocalReviewCommentRequest, v1.DeleteLocalReviewCommentResponse](
+			httpClient,
+			baseURL+SessionServiceDeleteLocalReviewCommentProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("DeleteLocalReviewComment")),
+			connect.WithClientOptions(opts...),
+		),
+		submitLocalReview: connect.NewClient[v1.SubmitLocalReviewRequest, v1.SubmitLocalReviewResponse](
+			httpClient,
+			baseURL+SessionServiceSubmitLocalReviewProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("SubmitLocalReview")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // sessionServiceClient implements SessionServiceClient.
 type sessionServiceClient struct {
-	steerQueuedInput        *connect.Client[v1.SteerQueuedInputRequest, v1.SteerQueuedInputResponse]
-	createSession           *connect.Client[v1.CreateSessionRequest, v1.CreateSessionResponse]
-	listSessions            *connect.Client[v1.ListSessionsRequest, v1.ListSessionsResponse]
-	enqueueInput            *connect.Client[v1.EnqueueInputRequest, v1.EnqueueInputResponse]
-	editQueuedInput         *connect.Client[v1.EditQueuedInputRequest, v1.EditQueuedInputResponse]
-	removeQueuedInput       *connect.Client[v1.RemoveQueuedInputRequest, v1.RemoveQueuedInputResponse]
-	listQueue               *connect.Client[v1.ListQueueRequest, v1.ListQueueResponse]
-	controlSession          *connect.Client[v1.ControlSessionRequest, v1.ControlSessionResponse]
-	renameSession           *connect.Client[v1.RenameSessionRequest, v1.RenameSessionResponse]
-	prepareSessionWorkspace *connect.Client[v1.PrepareSessionWorkspaceRequest, v1.PrepareSessionWorkspaceResponse]
-	recoverSessionExecution *connect.Client[v1.RecoverSessionExecutionRequest, v1.RecoverSessionExecutionResponse]
-	recoverSessionWorkspace *connect.Client[v1.RecoverSessionWorkspaceRequest, v1.RecoverSessionWorkspaceResponse]
+	linkSessionPullRequest   *connect.Client[v1.LinkSessionPullRequestRequest, v1.LinkSessionPullRequestResponse]
+	unlinkSessionPullRequest *connect.Client[v1.UnlinkSessionPullRequestRequest, v1.UnlinkSessionPullRequestResponse]
+	readSessionReviewContext *connect.Client[v1.ReadSessionReviewContextRequest, v1.ReadSessionReviewContextResponse]
+	readSessionWorkspace     *connect.Client[v1.ReadSessionWorkspaceRequest, v1.ReadSessionWorkspaceResponse]
+	getSessionBudget         *connect.Client[v1.GetSessionBudgetRequest, v1.GetSessionBudgetResponse]
+	setSessionBudget         *connect.Client[v1.SetSessionBudgetRequest, v1.SetSessionBudgetResponse]
+	steerQueuedInput         *connect.Client[v1.SteerQueuedInputRequest, v1.SteerQueuedInputResponse]
+	createSession            *connect.Client[v1.CreateSessionRequest, v1.CreateSessionResponse]
+	listSessions             *connect.Client[v1.ListSessionsRequest, v1.ListSessionsResponse]
+	enqueueInput             *connect.Client[v1.EnqueueInputRequest, v1.EnqueueInputResponse]
+	editQueuedInput          *connect.Client[v1.EditQueuedInputRequest, v1.EditQueuedInputResponse]
+	removeQueuedInput        *connect.Client[v1.RemoveQueuedInputRequest, v1.RemoveQueuedInputResponse]
+	listQueue                *connect.Client[v1.ListQueueRequest, v1.ListQueueResponse]
+	controlSession           *connect.Client[v1.ControlSessionRequest, v1.ControlSessionResponse]
+	renameSession            *connect.Client[v1.RenameSessionRequest, v1.RenameSessionResponse]
+	prepareSessionWorkspace  *connect.Client[v1.PrepareSessionWorkspaceRequest, v1.PrepareSessionWorkspaceResponse]
+	recoverSessionExecution  *connect.Client[v1.RecoverSessionExecutionRequest, v1.RecoverSessionExecutionResponse]
+	recoverSessionWorkspace  *connect.Client[v1.RecoverSessionWorkspaceRequest, v1.RecoverSessionWorkspaceResponse]
+	createLocalReviewComment *connect.Client[v1.CreateLocalReviewCommentRequest, v1.CreateLocalReviewCommentResponse]
+	editLocalReviewComment   *connect.Client[v1.EditLocalReviewCommentRequest, v1.EditLocalReviewCommentResponse]
+	deleteLocalReviewComment *connect.Client[v1.DeleteLocalReviewCommentRequest, v1.DeleteLocalReviewCommentResponse]
+	submitLocalReview        *connect.Client[v1.SubmitLocalReviewRequest, v1.SubmitLocalReviewResponse]
+}
+
+// LinkSessionPullRequest calls delidev.v1.SessionService.LinkSessionPullRequest.
+func (c *sessionServiceClient) LinkSessionPullRequest(ctx context.Context, req *connect.Request[v1.LinkSessionPullRequestRequest]) (*connect.Response[v1.LinkSessionPullRequestResponse], error) {
+	return c.linkSessionPullRequest.CallUnary(ctx, req)
+}
+
+// UnlinkSessionPullRequest calls delidev.v1.SessionService.UnlinkSessionPullRequest.
+func (c *sessionServiceClient) UnlinkSessionPullRequest(ctx context.Context, req *connect.Request[v1.UnlinkSessionPullRequestRequest]) (*connect.Response[v1.UnlinkSessionPullRequestResponse], error) {
+	return c.unlinkSessionPullRequest.CallUnary(ctx, req)
+}
+
+// ReadSessionReviewContext calls delidev.v1.SessionService.ReadSessionReviewContext.
+func (c *sessionServiceClient) ReadSessionReviewContext(ctx context.Context, req *connect.Request[v1.ReadSessionReviewContextRequest]) (*connect.Response[v1.ReadSessionReviewContextResponse], error) {
+	return c.readSessionReviewContext.CallUnary(ctx, req)
+}
+
+// ReadSessionWorkspace calls delidev.v1.SessionService.ReadSessionWorkspace.
+func (c *sessionServiceClient) ReadSessionWorkspace(ctx context.Context, req *connect.Request[v1.ReadSessionWorkspaceRequest]) (*connect.Response[v1.ReadSessionWorkspaceResponse], error) {
+	return c.readSessionWorkspace.CallUnary(ctx, req)
+}
+
+// GetSessionBudget calls delidev.v1.SessionService.GetSessionBudget.
+func (c *sessionServiceClient) GetSessionBudget(ctx context.Context, req *connect.Request[v1.GetSessionBudgetRequest]) (*connect.Response[v1.GetSessionBudgetResponse], error) {
+	return c.getSessionBudget.CallUnary(ctx, req)
+}
+
+// SetSessionBudget calls delidev.v1.SessionService.SetSessionBudget.
+func (c *sessionServiceClient) SetSessionBudget(ctx context.Context, req *connect.Request[v1.SetSessionBudgetRequest]) (*connect.Response[v1.SetSessionBudgetResponse], error) {
+	return c.setSessionBudget.CallUnary(ctx, req)
 }
 
 // SteerQueuedInput calls delidev.v1.SessionService.SteerQueuedInput.
@@ -1636,8 +2387,34 @@ func (c *sessionServiceClient) RecoverSessionWorkspace(ctx context.Context, req 
 	return c.recoverSessionWorkspace.CallUnary(ctx, req)
 }
 
+// CreateLocalReviewComment calls delidev.v1.SessionService.CreateLocalReviewComment.
+func (c *sessionServiceClient) CreateLocalReviewComment(ctx context.Context, req *connect.Request[v1.CreateLocalReviewCommentRequest]) (*connect.Response[v1.CreateLocalReviewCommentResponse], error) {
+	return c.createLocalReviewComment.CallUnary(ctx, req)
+}
+
+// EditLocalReviewComment calls delidev.v1.SessionService.EditLocalReviewComment.
+func (c *sessionServiceClient) EditLocalReviewComment(ctx context.Context, req *connect.Request[v1.EditLocalReviewCommentRequest]) (*connect.Response[v1.EditLocalReviewCommentResponse], error) {
+	return c.editLocalReviewComment.CallUnary(ctx, req)
+}
+
+// DeleteLocalReviewComment calls delidev.v1.SessionService.DeleteLocalReviewComment.
+func (c *sessionServiceClient) DeleteLocalReviewComment(ctx context.Context, req *connect.Request[v1.DeleteLocalReviewCommentRequest]) (*connect.Response[v1.DeleteLocalReviewCommentResponse], error) {
+	return c.deleteLocalReviewComment.CallUnary(ctx, req)
+}
+
+// SubmitLocalReview calls delidev.v1.SessionService.SubmitLocalReview.
+func (c *sessionServiceClient) SubmitLocalReview(ctx context.Context, req *connect.Request[v1.SubmitLocalReviewRequest]) (*connect.Response[v1.SubmitLocalReviewResponse], error) {
+	return c.submitLocalReview.CallUnary(ctx, req)
+}
+
 // SessionServiceHandler is an implementation of the delidev.v1.SessionService service.
 type SessionServiceHandler interface {
+	LinkSessionPullRequest(context.Context, *connect.Request[v1.LinkSessionPullRequestRequest]) (*connect.Response[v1.LinkSessionPullRequestResponse], error)
+	UnlinkSessionPullRequest(context.Context, *connect.Request[v1.UnlinkSessionPullRequestRequest]) (*connect.Response[v1.UnlinkSessionPullRequestResponse], error)
+	ReadSessionReviewContext(context.Context, *connect.Request[v1.ReadSessionReviewContextRequest]) (*connect.Response[v1.ReadSessionReviewContextResponse], error)
+	ReadSessionWorkspace(context.Context, *connect.Request[v1.ReadSessionWorkspaceRequest]) (*connect.Response[v1.ReadSessionWorkspaceResponse], error)
+	GetSessionBudget(context.Context, *connect.Request[v1.GetSessionBudgetRequest]) (*connect.Response[v1.GetSessionBudgetResponse], error)
+	SetSessionBudget(context.Context, *connect.Request[v1.SetSessionBudgetRequest]) (*connect.Response[v1.SetSessionBudgetResponse], error)
 	SteerQueuedInput(context.Context, *connect.Request[v1.SteerQueuedInputRequest]) (*connect.Response[v1.SteerQueuedInputResponse], error)
 	CreateSession(context.Context, *connect.Request[v1.CreateSessionRequest]) (*connect.Response[v1.CreateSessionResponse], error)
 	ListSessions(context.Context, *connect.Request[v1.ListSessionsRequest]) (*connect.Response[v1.ListSessionsResponse], error)
@@ -1650,6 +2427,10 @@ type SessionServiceHandler interface {
 	PrepareSessionWorkspace(context.Context, *connect.Request[v1.PrepareSessionWorkspaceRequest]) (*connect.Response[v1.PrepareSessionWorkspaceResponse], error)
 	RecoverSessionExecution(context.Context, *connect.Request[v1.RecoverSessionExecutionRequest]) (*connect.Response[v1.RecoverSessionExecutionResponse], error)
 	RecoverSessionWorkspace(context.Context, *connect.Request[v1.RecoverSessionWorkspaceRequest]) (*connect.Response[v1.RecoverSessionWorkspaceResponse], error)
+	CreateLocalReviewComment(context.Context, *connect.Request[v1.CreateLocalReviewCommentRequest]) (*connect.Response[v1.CreateLocalReviewCommentResponse], error)
+	EditLocalReviewComment(context.Context, *connect.Request[v1.EditLocalReviewCommentRequest]) (*connect.Response[v1.EditLocalReviewCommentResponse], error)
+	DeleteLocalReviewComment(context.Context, *connect.Request[v1.DeleteLocalReviewCommentRequest]) (*connect.Response[v1.DeleteLocalReviewCommentResponse], error)
+	SubmitLocalReview(context.Context, *connect.Request[v1.SubmitLocalReviewRequest]) (*connect.Response[v1.SubmitLocalReviewResponse], error)
 }
 
 // NewSessionServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -1659,6 +2440,42 @@ type SessionServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	sessionServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("SessionService").Methods()
+	sessionServiceLinkSessionPullRequestHandler := connect.NewUnaryHandler(
+		SessionServiceLinkSessionPullRequestProcedure,
+		svc.LinkSessionPullRequest,
+		connect.WithSchema(sessionServiceMethods.ByName("LinkSessionPullRequest")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sessionServiceUnlinkSessionPullRequestHandler := connect.NewUnaryHandler(
+		SessionServiceUnlinkSessionPullRequestProcedure,
+		svc.UnlinkSessionPullRequest,
+		connect.WithSchema(sessionServiceMethods.ByName("UnlinkSessionPullRequest")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sessionServiceReadSessionReviewContextHandler := connect.NewUnaryHandler(
+		SessionServiceReadSessionReviewContextProcedure,
+		svc.ReadSessionReviewContext,
+		connect.WithSchema(sessionServiceMethods.ByName("ReadSessionReviewContext")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sessionServiceReadSessionWorkspaceHandler := connect.NewUnaryHandler(
+		SessionServiceReadSessionWorkspaceProcedure,
+		svc.ReadSessionWorkspace,
+		connect.WithSchema(sessionServiceMethods.ByName("ReadSessionWorkspace")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sessionServiceGetSessionBudgetHandler := connect.NewUnaryHandler(
+		SessionServiceGetSessionBudgetProcedure,
+		svc.GetSessionBudget,
+		connect.WithSchema(sessionServiceMethods.ByName("GetSessionBudget")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sessionServiceSetSessionBudgetHandler := connect.NewUnaryHandler(
+		SessionServiceSetSessionBudgetProcedure,
+		svc.SetSessionBudget,
+		connect.WithSchema(sessionServiceMethods.ByName("SetSessionBudget")),
+		connect.WithHandlerOptions(opts...),
+	)
 	sessionServiceSteerQueuedInputHandler := connect.NewUnaryHandler(
 		SessionServiceSteerQueuedInputProcedure,
 		svc.SteerQueuedInput,
@@ -1731,8 +2548,44 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 		connect.WithSchema(sessionServiceMethods.ByName("RecoverSessionWorkspace")),
 		connect.WithHandlerOptions(opts...),
 	)
+	sessionServiceCreateLocalReviewCommentHandler := connect.NewUnaryHandler(
+		SessionServiceCreateLocalReviewCommentProcedure,
+		svc.CreateLocalReviewComment,
+		connect.WithSchema(sessionServiceMethods.ByName("CreateLocalReviewComment")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sessionServiceEditLocalReviewCommentHandler := connect.NewUnaryHandler(
+		SessionServiceEditLocalReviewCommentProcedure,
+		svc.EditLocalReviewComment,
+		connect.WithSchema(sessionServiceMethods.ByName("EditLocalReviewComment")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sessionServiceDeleteLocalReviewCommentHandler := connect.NewUnaryHandler(
+		SessionServiceDeleteLocalReviewCommentProcedure,
+		svc.DeleteLocalReviewComment,
+		connect.WithSchema(sessionServiceMethods.ByName("DeleteLocalReviewComment")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sessionServiceSubmitLocalReviewHandler := connect.NewUnaryHandler(
+		SessionServiceSubmitLocalReviewProcedure,
+		svc.SubmitLocalReview,
+		connect.WithSchema(sessionServiceMethods.ByName("SubmitLocalReview")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/delidev.v1.SessionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case SessionServiceLinkSessionPullRequestProcedure:
+			sessionServiceLinkSessionPullRequestHandler.ServeHTTP(w, r)
+		case SessionServiceUnlinkSessionPullRequestProcedure:
+			sessionServiceUnlinkSessionPullRequestHandler.ServeHTTP(w, r)
+		case SessionServiceReadSessionReviewContextProcedure:
+			sessionServiceReadSessionReviewContextHandler.ServeHTTP(w, r)
+		case SessionServiceReadSessionWorkspaceProcedure:
+			sessionServiceReadSessionWorkspaceHandler.ServeHTTP(w, r)
+		case SessionServiceGetSessionBudgetProcedure:
+			sessionServiceGetSessionBudgetHandler.ServeHTTP(w, r)
+		case SessionServiceSetSessionBudgetProcedure:
+			sessionServiceSetSessionBudgetHandler.ServeHTTP(w, r)
 		case SessionServiceSteerQueuedInputProcedure:
 			sessionServiceSteerQueuedInputHandler.ServeHTTP(w, r)
 		case SessionServiceCreateSessionProcedure:
@@ -1757,6 +2610,14 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 			sessionServiceRecoverSessionExecutionHandler.ServeHTTP(w, r)
 		case SessionServiceRecoverSessionWorkspaceProcedure:
 			sessionServiceRecoverSessionWorkspaceHandler.ServeHTTP(w, r)
+		case SessionServiceCreateLocalReviewCommentProcedure:
+			sessionServiceCreateLocalReviewCommentHandler.ServeHTTP(w, r)
+		case SessionServiceEditLocalReviewCommentProcedure:
+			sessionServiceEditLocalReviewCommentHandler.ServeHTTP(w, r)
+		case SessionServiceDeleteLocalReviewCommentProcedure:
+			sessionServiceDeleteLocalReviewCommentHandler.ServeHTTP(w, r)
+		case SessionServiceSubmitLocalReviewProcedure:
+			sessionServiceSubmitLocalReviewHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1765,6 +2626,30 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 
 // UnimplementedSessionServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedSessionServiceHandler struct{}
+
+func (UnimplementedSessionServiceHandler) LinkSessionPullRequest(context.Context, *connect.Request[v1.LinkSessionPullRequestRequest]) (*connect.Response[v1.LinkSessionPullRequestResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.LinkSessionPullRequest is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) UnlinkSessionPullRequest(context.Context, *connect.Request[v1.UnlinkSessionPullRequestRequest]) (*connect.Response[v1.UnlinkSessionPullRequestResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.UnlinkSessionPullRequest is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) ReadSessionReviewContext(context.Context, *connect.Request[v1.ReadSessionReviewContextRequest]) (*connect.Response[v1.ReadSessionReviewContextResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.ReadSessionReviewContext is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) ReadSessionWorkspace(context.Context, *connect.Request[v1.ReadSessionWorkspaceRequest]) (*connect.Response[v1.ReadSessionWorkspaceResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.ReadSessionWorkspace is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) GetSessionBudget(context.Context, *connect.Request[v1.GetSessionBudgetRequest]) (*connect.Response[v1.GetSessionBudgetResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.GetSessionBudget is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) SetSessionBudget(context.Context, *connect.Request[v1.SetSessionBudgetRequest]) (*connect.Response[v1.SetSessionBudgetResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.SetSessionBudget is not implemented"))
+}
 
 func (UnimplementedSessionServiceHandler) SteerQueuedInput(context.Context, *connect.Request[v1.SteerQueuedInputRequest]) (*connect.Response[v1.SteerQueuedInputResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.SteerQueuedInput is not implemented"))
@@ -1814,11 +2699,33 @@ func (UnimplementedSessionServiceHandler) RecoverSessionWorkspace(context.Contex
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.RecoverSessionWorkspace is not implemented"))
 }
 
+func (UnimplementedSessionServiceHandler) CreateLocalReviewComment(context.Context, *connect.Request[v1.CreateLocalReviewCommentRequest]) (*connect.Response[v1.CreateLocalReviewCommentResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.CreateLocalReviewComment is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) EditLocalReviewComment(context.Context, *connect.Request[v1.EditLocalReviewCommentRequest]) (*connect.Response[v1.EditLocalReviewCommentResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.EditLocalReviewComment is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) DeleteLocalReviewComment(context.Context, *connect.Request[v1.DeleteLocalReviewCommentRequest]) (*connect.Response[v1.DeleteLocalReviewCommentResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.DeleteLocalReviewComment is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) SubmitLocalReview(context.Context, *connect.Request[v1.SubmitLocalReviewRequest]) (*connect.Response[v1.SubmitLocalReviewResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.SubmitLocalReview is not implemented"))
+}
+
 // InboxServiceClient is a client for the delidev.v1.InboxService service.
 type InboxServiceClient interface {
 	GetInboxEntry(context.Context, *connect.Request[v1.GetInboxEntryRequest]) (*connect.Response[v1.GetInboxEntryResponse], error)
 	ListInbox(context.Context, *connect.Request[v1.ListInboxRequest]) (*connect.Response[v1.ListInboxResponse], error)
 	SetInboxReadState(context.Context, *connect.Request[v1.SetInboxReadStateRequest]) (*connect.Response[v1.SetInboxReadStateResponse], error)
+	GetNotificationPreferences(context.Context, *connect.Request[v1.GetNotificationPreferencesRequest]) (*connect.Response[v1.GetNotificationPreferencesResponse], error)
+	SetNotificationPreferences(context.Context, *connect.Request[v1.SetNotificationPreferencesRequest]) (*connect.Response[v1.SetNotificationPreferencesResponse], error)
+	ListNotificationCandidates(context.Context, *connect.Request[v1.ListNotificationCandidatesRequest]) (*connect.Response[v1.ListNotificationCandidatesResponse], error)
+	ClaimNotification(context.Context, *connect.Request[v1.ClaimNotificationRequest]) (*connect.Response[v1.ClaimNotificationResponse], error)
+	GetNotificationDelivery(context.Context, *connect.Request[v1.GetNotificationDeliveryRequest]) (*connect.Response[v1.GetNotificationDeliveryResponse], error)
+	ReportNotification(context.Context, *connect.Request[v1.ReportNotificationRequest]) (*connect.Response[v1.ReportNotificationResponse], error)
 }
 
 // NewInboxServiceClient constructs a client for the delidev.v1.InboxService service. By default, it
@@ -1850,14 +2757,56 @@ func NewInboxServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(inboxServiceMethods.ByName("SetInboxReadState")),
 			connect.WithClientOptions(opts...),
 		),
+		getNotificationPreferences: connect.NewClient[v1.GetNotificationPreferencesRequest, v1.GetNotificationPreferencesResponse](
+			httpClient,
+			baseURL+InboxServiceGetNotificationPreferencesProcedure,
+			connect.WithSchema(inboxServiceMethods.ByName("GetNotificationPreferences")),
+			connect.WithClientOptions(opts...),
+		),
+		setNotificationPreferences: connect.NewClient[v1.SetNotificationPreferencesRequest, v1.SetNotificationPreferencesResponse](
+			httpClient,
+			baseURL+InboxServiceSetNotificationPreferencesProcedure,
+			connect.WithSchema(inboxServiceMethods.ByName("SetNotificationPreferences")),
+			connect.WithClientOptions(opts...),
+		),
+		listNotificationCandidates: connect.NewClient[v1.ListNotificationCandidatesRequest, v1.ListNotificationCandidatesResponse](
+			httpClient,
+			baseURL+InboxServiceListNotificationCandidatesProcedure,
+			connect.WithSchema(inboxServiceMethods.ByName("ListNotificationCandidates")),
+			connect.WithClientOptions(opts...),
+		),
+		claimNotification: connect.NewClient[v1.ClaimNotificationRequest, v1.ClaimNotificationResponse](
+			httpClient,
+			baseURL+InboxServiceClaimNotificationProcedure,
+			connect.WithSchema(inboxServiceMethods.ByName("ClaimNotification")),
+			connect.WithClientOptions(opts...),
+		),
+		getNotificationDelivery: connect.NewClient[v1.GetNotificationDeliveryRequest, v1.GetNotificationDeliveryResponse](
+			httpClient,
+			baseURL+InboxServiceGetNotificationDeliveryProcedure,
+			connect.WithSchema(inboxServiceMethods.ByName("GetNotificationDelivery")),
+			connect.WithClientOptions(opts...),
+		),
+		reportNotification: connect.NewClient[v1.ReportNotificationRequest, v1.ReportNotificationResponse](
+			httpClient,
+			baseURL+InboxServiceReportNotificationProcedure,
+			connect.WithSchema(inboxServiceMethods.ByName("ReportNotification")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // inboxServiceClient implements InboxServiceClient.
 type inboxServiceClient struct {
-	getInboxEntry     *connect.Client[v1.GetInboxEntryRequest, v1.GetInboxEntryResponse]
-	listInbox         *connect.Client[v1.ListInboxRequest, v1.ListInboxResponse]
-	setInboxReadState *connect.Client[v1.SetInboxReadStateRequest, v1.SetInboxReadStateResponse]
+	getInboxEntry              *connect.Client[v1.GetInboxEntryRequest, v1.GetInboxEntryResponse]
+	listInbox                  *connect.Client[v1.ListInboxRequest, v1.ListInboxResponse]
+	setInboxReadState          *connect.Client[v1.SetInboxReadStateRequest, v1.SetInboxReadStateResponse]
+	getNotificationPreferences *connect.Client[v1.GetNotificationPreferencesRequest, v1.GetNotificationPreferencesResponse]
+	setNotificationPreferences *connect.Client[v1.SetNotificationPreferencesRequest, v1.SetNotificationPreferencesResponse]
+	listNotificationCandidates *connect.Client[v1.ListNotificationCandidatesRequest, v1.ListNotificationCandidatesResponse]
+	claimNotification          *connect.Client[v1.ClaimNotificationRequest, v1.ClaimNotificationResponse]
+	getNotificationDelivery    *connect.Client[v1.GetNotificationDeliveryRequest, v1.GetNotificationDeliveryResponse]
+	reportNotification         *connect.Client[v1.ReportNotificationRequest, v1.ReportNotificationResponse]
 }
 
 // GetInboxEntry calls delidev.v1.InboxService.GetInboxEntry.
@@ -1875,11 +2824,47 @@ func (c *inboxServiceClient) SetInboxReadState(ctx context.Context, req *connect
 	return c.setInboxReadState.CallUnary(ctx, req)
 }
 
+// GetNotificationPreferences calls delidev.v1.InboxService.GetNotificationPreferences.
+func (c *inboxServiceClient) GetNotificationPreferences(ctx context.Context, req *connect.Request[v1.GetNotificationPreferencesRequest]) (*connect.Response[v1.GetNotificationPreferencesResponse], error) {
+	return c.getNotificationPreferences.CallUnary(ctx, req)
+}
+
+// SetNotificationPreferences calls delidev.v1.InboxService.SetNotificationPreferences.
+func (c *inboxServiceClient) SetNotificationPreferences(ctx context.Context, req *connect.Request[v1.SetNotificationPreferencesRequest]) (*connect.Response[v1.SetNotificationPreferencesResponse], error) {
+	return c.setNotificationPreferences.CallUnary(ctx, req)
+}
+
+// ListNotificationCandidates calls delidev.v1.InboxService.ListNotificationCandidates.
+func (c *inboxServiceClient) ListNotificationCandidates(ctx context.Context, req *connect.Request[v1.ListNotificationCandidatesRequest]) (*connect.Response[v1.ListNotificationCandidatesResponse], error) {
+	return c.listNotificationCandidates.CallUnary(ctx, req)
+}
+
+// ClaimNotification calls delidev.v1.InboxService.ClaimNotification.
+func (c *inboxServiceClient) ClaimNotification(ctx context.Context, req *connect.Request[v1.ClaimNotificationRequest]) (*connect.Response[v1.ClaimNotificationResponse], error) {
+	return c.claimNotification.CallUnary(ctx, req)
+}
+
+// GetNotificationDelivery calls delidev.v1.InboxService.GetNotificationDelivery.
+func (c *inboxServiceClient) GetNotificationDelivery(ctx context.Context, req *connect.Request[v1.GetNotificationDeliveryRequest]) (*connect.Response[v1.GetNotificationDeliveryResponse], error) {
+	return c.getNotificationDelivery.CallUnary(ctx, req)
+}
+
+// ReportNotification calls delidev.v1.InboxService.ReportNotification.
+func (c *inboxServiceClient) ReportNotification(ctx context.Context, req *connect.Request[v1.ReportNotificationRequest]) (*connect.Response[v1.ReportNotificationResponse], error) {
+	return c.reportNotification.CallUnary(ctx, req)
+}
+
 // InboxServiceHandler is an implementation of the delidev.v1.InboxService service.
 type InboxServiceHandler interface {
 	GetInboxEntry(context.Context, *connect.Request[v1.GetInboxEntryRequest]) (*connect.Response[v1.GetInboxEntryResponse], error)
 	ListInbox(context.Context, *connect.Request[v1.ListInboxRequest]) (*connect.Response[v1.ListInboxResponse], error)
 	SetInboxReadState(context.Context, *connect.Request[v1.SetInboxReadStateRequest]) (*connect.Response[v1.SetInboxReadStateResponse], error)
+	GetNotificationPreferences(context.Context, *connect.Request[v1.GetNotificationPreferencesRequest]) (*connect.Response[v1.GetNotificationPreferencesResponse], error)
+	SetNotificationPreferences(context.Context, *connect.Request[v1.SetNotificationPreferencesRequest]) (*connect.Response[v1.SetNotificationPreferencesResponse], error)
+	ListNotificationCandidates(context.Context, *connect.Request[v1.ListNotificationCandidatesRequest]) (*connect.Response[v1.ListNotificationCandidatesResponse], error)
+	ClaimNotification(context.Context, *connect.Request[v1.ClaimNotificationRequest]) (*connect.Response[v1.ClaimNotificationResponse], error)
+	GetNotificationDelivery(context.Context, *connect.Request[v1.GetNotificationDeliveryRequest]) (*connect.Response[v1.GetNotificationDeliveryResponse], error)
+	ReportNotification(context.Context, *connect.Request[v1.ReportNotificationRequest]) (*connect.Response[v1.ReportNotificationResponse], error)
 }
 
 // NewInboxServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -1907,6 +2892,42 @@ func NewInboxServiceHandler(svc InboxServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(inboxServiceMethods.ByName("SetInboxReadState")),
 		connect.WithHandlerOptions(opts...),
 	)
+	inboxServiceGetNotificationPreferencesHandler := connect.NewUnaryHandler(
+		InboxServiceGetNotificationPreferencesProcedure,
+		svc.GetNotificationPreferences,
+		connect.WithSchema(inboxServiceMethods.ByName("GetNotificationPreferences")),
+		connect.WithHandlerOptions(opts...),
+	)
+	inboxServiceSetNotificationPreferencesHandler := connect.NewUnaryHandler(
+		InboxServiceSetNotificationPreferencesProcedure,
+		svc.SetNotificationPreferences,
+		connect.WithSchema(inboxServiceMethods.ByName("SetNotificationPreferences")),
+		connect.WithHandlerOptions(opts...),
+	)
+	inboxServiceListNotificationCandidatesHandler := connect.NewUnaryHandler(
+		InboxServiceListNotificationCandidatesProcedure,
+		svc.ListNotificationCandidates,
+		connect.WithSchema(inboxServiceMethods.ByName("ListNotificationCandidates")),
+		connect.WithHandlerOptions(opts...),
+	)
+	inboxServiceClaimNotificationHandler := connect.NewUnaryHandler(
+		InboxServiceClaimNotificationProcedure,
+		svc.ClaimNotification,
+		connect.WithSchema(inboxServiceMethods.ByName("ClaimNotification")),
+		connect.WithHandlerOptions(opts...),
+	)
+	inboxServiceGetNotificationDeliveryHandler := connect.NewUnaryHandler(
+		InboxServiceGetNotificationDeliveryProcedure,
+		svc.GetNotificationDelivery,
+		connect.WithSchema(inboxServiceMethods.ByName("GetNotificationDelivery")),
+		connect.WithHandlerOptions(opts...),
+	)
+	inboxServiceReportNotificationHandler := connect.NewUnaryHandler(
+		InboxServiceReportNotificationProcedure,
+		svc.ReportNotification,
+		connect.WithSchema(inboxServiceMethods.ByName("ReportNotification")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/delidev.v1.InboxService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case InboxServiceGetInboxEntryProcedure:
@@ -1915,6 +2936,18 @@ func NewInboxServiceHandler(svc InboxServiceHandler, opts ...connect.HandlerOpti
 			inboxServiceListInboxHandler.ServeHTTP(w, r)
 		case InboxServiceSetInboxReadStateProcedure:
 			inboxServiceSetInboxReadStateHandler.ServeHTTP(w, r)
+		case InboxServiceGetNotificationPreferencesProcedure:
+			inboxServiceGetNotificationPreferencesHandler.ServeHTTP(w, r)
+		case InboxServiceSetNotificationPreferencesProcedure:
+			inboxServiceSetNotificationPreferencesHandler.ServeHTTP(w, r)
+		case InboxServiceListNotificationCandidatesProcedure:
+			inboxServiceListNotificationCandidatesHandler.ServeHTTP(w, r)
+		case InboxServiceClaimNotificationProcedure:
+			inboxServiceClaimNotificationHandler.ServeHTTP(w, r)
+		case InboxServiceGetNotificationDeliveryProcedure:
+			inboxServiceGetNotificationDeliveryHandler.ServeHTTP(w, r)
+		case InboxServiceReportNotificationProcedure:
+			inboxServiceReportNotificationHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1934,6 +2967,30 @@ func (UnimplementedInboxServiceHandler) ListInbox(context.Context, *connect.Requ
 
 func (UnimplementedInboxServiceHandler) SetInboxReadState(context.Context, *connect.Request[v1.SetInboxReadStateRequest]) (*connect.Response[v1.SetInboxReadStateResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.InboxService.SetInboxReadState is not implemented"))
+}
+
+func (UnimplementedInboxServiceHandler) GetNotificationPreferences(context.Context, *connect.Request[v1.GetNotificationPreferencesRequest]) (*connect.Response[v1.GetNotificationPreferencesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.InboxService.GetNotificationPreferences is not implemented"))
+}
+
+func (UnimplementedInboxServiceHandler) SetNotificationPreferences(context.Context, *connect.Request[v1.SetNotificationPreferencesRequest]) (*connect.Response[v1.SetNotificationPreferencesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.InboxService.SetNotificationPreferences is not implemented"))
+}
+
+func (UnimplementedInboxServiceHandler) ListNotificationCandidates(context.Context, *connect.Request[v1.ListNotificationCandidatesRequest]) (*connect.Response[v1.ListNotificationCandidatesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.InboxService.ListNotificationCandidates is not implemented"))
+}
+
+func (UnimplementedInboxServiceHandler) ClaimNotification(context.Context, *connect.Request[v1.ClaimNotificationRequest]) (*connect.Response[v1.ClaimNotificationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.InboxService.ClaimNotification is not implemented"))
+}
+
+func (UnimplementedInboxServiceHandler) GetNotificationDelivery(context.Context, *connect.Request[v1.GetNotificationDeliveryRequest]) (*connect.Response[v1.GetNotificationDeliveryResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.InboxService.GetNotificationDelivery is not implemented"))
+}
+
+func (UnimplementedInboxServiceHandler) ReportNotification(context.Context, *connect.Request[v1.ReportNotificationRequest]) (*connect.Response[v1.ReportNotificationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.InboxService.ReportNotification is not implemented"))
 }
 
 // ScheduleServiceClient is a client for the delidev.v1.ScheduleService service.
@@ -2186,4 +3243,292 @@ func (UnimplementedScheduleServiceHandler) ListScheduleOccurrences(context.Conte
 
 func (UnimplementedScheduleServiceHandler) GetScheduleOccurrence(context.Context, *connect.Request[v1.GetScheduleOccurrenceRequest]) (*connect.Response[v1.GetScheduleOccurrenceResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ScheduleService.GetScheduleOccurrence is not implemented"))
+}
+
+// SearchServiceClient is a client for the delidev.v1.SearchService service.
+type SearchServiceClient interface {
+	SearchConversations(context.Context, *connect.Request[v1.SearchConversationsRequest]) (*connect.Response[v1.SearchConversationsResponse], error)
+}
+
+// NewSearchServiceClient constructs a client for the delidev.v1.SearchService service. By default,
+// it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and
+// sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC()
+// or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewSearchServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) SearchServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	searchServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("SearchService").Methods()
+	return &searchServiceClient{
+		searchConversations: connect.NewClient[v1.SearchConversationsRequest, v1.SearchConversationsResponse](
+			httpClient,
+			baseURL+SearchServiceSearchConversationsProcedure,
+			connect.WithSchema(searchServiceMethods.ByName("SearchConversations")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// searchServiceClient implements SearchServiceClient.
+type searchServiceClient struct {
+	searchConversations *connect.Client[v1.SearchConversationsRequest, v1.SearchConversationsResponse]
+}
+
+// SearchConversations calls delidev.v1.SearchService.SearchConversations.
+func (c *searchServiceClient) SearchConversations(ctx context.Context, req *connect.Request[v1.SearchConversationsRequest]) (*connect.Response[v1.SearchConversationsResponse], error) {
+	return c.searchConversations.CallUnary(ctx, req)
+}
+
+// SearchServiceHandler is an implementation of the delidev.v1.SearchService service.
+type SearchServiceHandler interface {
+	SearchConversations(context.Context, *connect.Request[v1.SearchConversationsRequest]) (*connect.Response[v1.SearchConversationsResponse], error)
+}
+
+// NewSearchServiceHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewSearchServiceHandler(svc SearchServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	searchServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("SearchService").Methods()
+	searchServiceSearchConversationsHandler := connect.NewUnaryHandler(
+		SearchServiceSearchConversationsProcedure,
+		svc.SearchConversations,
+		connect.WithSchema(searchServiceMethods.ByName("SearchConversations")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/delidev.v1.SearchService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case SearchServiceSearchConversationsProcedure:
+			searchServiceSearchConversationsHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedSearchServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedSearchServiceHandler struct{}
+
+func (UnimplementedSearchServiceHandler) SearchConversations(context.Context, *connect.Request[v1.SearchConversationsRequest]) (*connect.Response[v1.SearchConversationsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SearchService.SearchConversations is not implemented"))
+}
+
+// ActivityServiceClient is a client for the delidev.v1.ActivityService service.
+type ActivityServiceClient interface {
+	ListActivity(context.Context, *connect.Request[v1.ListActivityRequest]) (*connect.Response[v1.ListActivityResponse], error)
+}
+
+// NewActivityServiceClient constructs a client for the delidev.v1.ActivityService service. By
+// default, it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses,
+// and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the
+// connect.WithGRPC() or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewActivityServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) ActivityServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	activityServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("ActivityService").Methods()
+	return &activityServiceClient{
+		listActivity: connect.NewClient[v1.ListActivityRequest, v1.ListActivityResponse](
+			httpClient,
+			baseURL+ActivityServiceListActivityProcedure,
+			connect.WithSchema(activityServiceMethods.ByName("ListActivity")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// activityServiceClient implements ActivityServiceClient.
+type activityServiceClient struct {
+	listActivity *connect.Client[v1.ListActivityRequest, v1.ListActivityResponse]
+}
+
+// ListActivity calls delidev.v1.ActivityService.ListActivity.
+func (c *activityServiceClient) ListActivity(ctx context.Context, req *connect.Request[v1.ListActivityRequest]) (*connect.Response[v1.ListActivityResponse], error) {
+	return c.listActivity.CallUnary(ctx, req)
+}
+
+// ActivityServiceHandler is an implementation of the delidev.v1.ActivityService service.
+type ActivityServiceHandler interface {
+	ListActivity(context.Context, *connect.Request[v1.ListActivityRequest]) (*connect.Response[v1.ListActivityResponse], error)
+}
+
+// NewActivityServiceHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewActivityServiceHandler(svc ActivityServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	activityServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("ActivityService").Methods()
+	activityServiceListActivityHandler := connect.NewUnaryHandler(
+		ActivityServiceListActivityProcedure,
+		svc.ListActivity,
+		connect.WithSchema(activityServiceMethods.ByName("ListActivity")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/delidev.v1.ActivityService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case ActivityServiceListActivityProcedure:
+			activityServiceListActivityHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedActivityServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedActivityServiceHandler struct{}
+
+func (UnimplementedActivityServiceHandler) ListActivity(context.Context, *connect.Request[v1.ListActivityRequest]) (*connect.Response[v1.ListActivityResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ActivityService.ListActivity is not implemented"))
+}
+
+// UsageServiceClient is a client for the delidev.v1.UsageService service.
+type UsageServiceClient interface {
+	GetUsageSummary(context.Context, *connect.Request[v1.GetUsageSummaryRequest]) (*connect.Response[v1.GetUsageSummaryResponse], error)
+	GetModelPricing(context.Context, *connect.Request[v1.GetModelPricingRequest]) (*connect.Response[v1.GetModelPricingResponse], error)
+	GetPricingVersion(context.Context, *connect.Request[v1.GetPricingVersionRequest]) (*connect.Response[v1.GetPricingVersionResponse], error)
+	SetModelPricing(context.Context, *connect.Request[v1.SetModelPricingRequest]) (*connect.Response[v1.SetModelPricingResponse], error)
+}
+
+// NewUsageServiceClient constructs a client for the delidev.v1.UsageService service. By default, it
+// uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and sends
+// uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC() or
+// connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewUsageServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) UsageServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	usageServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("UsageService").Methods()
+	return &usageServiceClient{
+		getUsageSummary: connect.NewClient[v1.GetUsageSummaryRequest, v1.GetUsageSummaryResponse](
+			httpClient,
+			baseURL+UsageServiceGetUsageSummaryProcedure,
+			connect.WithSchema(usageServiceMethods.ByName("GetUsageSummary")),
+			connect.WithClientOptions(opts...),
+		),
+		getModelPricing: connect.NewClient[v1.GetModelPricingRequest, v1.GetModelPricingResponse](
+			httpClient,
+			baseURL+UsageServiceGetModelPricingProcedure,
+			connect.WithSchema(usageServiceMethods.ByName("GetModelPricing")),
+			connect.WithClientOptions(opts...),
+		),
+		getPricingVersion: connect.NewClient[v1.GetPricingVersionRequest, v1.GetPricingVersionResponse](
+			httpClient,
+			baseURL+UsageServiceGetPricingVersionProcedure,
+			connect.WithSchema(usageServiceMethods.ByName("GetPricingVersion")),
+			connect.WithClientOptions(opts...),
+		),
+		setModelPricing: connect.NewClient[v1.SetModelPricingRequest, v1.SetModelPricingResponse](
+			httpClient,
+			baseURL+UsageServiceSetModelPricingProcedure,
+			connect.WithSchema(usageServiceMethods.ByName("SetModelPricing")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// usageServiceClient implements UsageServiceClient.
+type usageServiceClient struct {
+	getUsageSummary   *connect.Client[v1.GetUsageSummaryRequest, v1.GetUsageSummaryResponse]
+	getModelPricing   *connect.Client[v1.GetModelPricingRequest, v1.GetModelPricingResponse]
+	getPricingVersion *connect.Client[v1.GetPricingVersionRequest, v1.GetPricingVersionResponse]
+	setModelPricing   *connect.Client[v1.SetModelPricingRequest, v1.SetModelPricingResponse]
+}
+
+// GetUsageSummary calls delidev.v1.UsageService.GetUsageSummary.
+func (c *usageServiceClient) GetUsageSummary(ctx context.Context, req *connect.Request[v1.GetUsageSummaryRequest]) (*connect.Response[v1.GetUsageSummaryResponse], error) {
+	return c.getUsageSummary.CallUnary(ctx, req)
+}
+
+// GetModelPricing calls delidev.v1.UsageService.GetModelPricing.
+func (c *usageServiceClient) GetModelPricing(ctx context.Context, req *connect.Request[v1.GetModelPricingRequest]) (*connect.Response[v1.GetModelPricingResponse], error) {
+	return c.getModelPricing.CallUnary(ctx, req)
+}
+
+// GetPricingVersion calls delidev.v1.UsageService.GetPricingVersion.
+func (c *usageServiceClient) GetPricingVersion(ctx context.Context, req *connect.Request[v1.GetPricingVersionRequest]) (*connect.Response[v1.GetPricingVersionResponse], error) {
+	return c.getPricingVersion.CallUnary(ctx, req)
+}
+
+// SetModelPricing calls delidev.v1.UsageService.SetModelPricing.
+func (c *usageServiceClient) SetModelPricing(ctx context.Context, req *connect.Request[v1.SetModelPricingRequest]) (*connect.Response[v1.SetModelPricingResponse], error) {
+	return c.setModelPricing.CallUnary(ctx, req)
+}
+
+// UsageServiceHandler is an implementation of the delidev.v1.UsageService service.
+type UsageServiceHandler interface {
+	GetUsageSummary(context.Context, *connect.Request[v1.GetUsageSummaryRequest]) (*connect.Response[v1.GetUsageSummaryResponse], error)
+	GetModelPricing(context.Context, *connect.Request[v1.GetModelPricingRequest]) (*connect.Response[v1.GetModelPricingResponse], error)
+	GetPricingVersion(context.Context, *connect.Request[v1.GetPricingVersionRequest]) (*connect.Response[v1.GetPricingVersionResponse], error)
+	SetModelPricing(context.Context, *connect.Request[v1.SetModelPricingRequest]) (*connect.Response[v1.SetModelPricingResponse], error)
+}
+
+// NewUsageServiceHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewUsageServiceHandler(svc UsageServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	usageServiceMethods := v1.File_delidev_v1_delidev_proto.Services().ByName("UsageService").Methods()
+	usageServiceGetUsageSummaryHandler := connect.NewUnaryHandler(
+		UsageServiceGetUsageSummaryProcedure,
+		svc.GetUsageSummary,
+		connect.WithSchema(usageServiceMethods.ByName("GetUsageSummary")),
+		connect.WithHandlerOptions(opts...),
+	)
+	usageServiceGetModelPricingHandler := connect.NewUnaryHandler(
+		UsageServiceGetModelPricingProcedure,
+		svc.GetModelPricing,
+		connect.WithSchema(usageServiceMethods.ByName("GetModelPricing")),
+		connect.WithHandlerOptions(opts...),
+	)
+	usageServiceGetPricingVersionHandler := connect.NewUnaryHandler(
+		UsageServiceGetPricingVersionProcedure,
+		svc.GetPricingVersion,
+		connect.WithSchema(usageServiceMethods.ByName("GetPricingVersion")),
+		connect.WithHandlerOptions(opts...),
+	)
+	usageServiceSetModelPricingHandler := connect.NewUnaryHandler(
+		UsageServiceSetModelPricingProcedure,
+		svc.SetModelPricing,
+		connect.WithSchema(usageServiceMethods.ByName("SetModelPricing")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/delidev.v1.UsageService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case UsageServiceGetUsageSummaryProcedure:
+			usageServiceGetUsageSummaryHandler.ServeHTTP(w, r)
+		case UsageServiceGetModelPricingProcedure:
+			usageServiceGetModelPricingHandler.ServeHTTP(w, r)
+		case UsageServiceGetPricingVersionProcedure:
+			usageServiceGetPricingVersionHandler.ServeHTTP(w, r)
+		case UsageServiceSetModelPricingProcedure:
+			usageServiceSetModelPricingHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedUsageServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedUsageServiceHandler struct{}
+
+func (UnimplementedUsageServiceHandler) GetUsageSummary(context.Context, *connect.Request[v1.GetUsageSummaryRequest]) (*connect.Response[v1.GetUsageSummaryResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.UsageService.GetUsageSummary is not implemented"))
+}
+
+func (UnimplementedUsageServiceHandler) GetModelPricing(context.Context, *connect.Request[v1.GetModelPricingRequest]) (*connect.Response[v1.GetModelPricingResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.UsageService.GetModelPricing is not implemented"))
+}
+
+func (UnimplementedUsageServiceHandler) GetPricingVersion(context.Context, *connect.Request[v1.GetPricingVersionRequest]) (*connect.Response[v1.GetPricingVersionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.UsageService.GetPricingVersion is not implemented"))
+}
+
+func (UnimplementedUsageServiceHandler) SetModelPricing(context.Context, *connect.Request[v1.SetModelPricingRequest]) (*connect.Response[v1.SetModelPricingResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.UsageService.SetModelPricing is not implemented"))
 }

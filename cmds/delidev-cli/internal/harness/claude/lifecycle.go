@@ -15,13 +15,23 @@ import (
 type LifecycleKind string
 
 const (
-	CommandObserved         LifecycleKind = "command-observed"
-	SessionInitialized      LifecycleKind = "session-initialized"
-	InputAccepted           LifecycleKind = "input-accepted"
-	InputFinished           LifecycleKind = "input-finished"
-	UncorrelatedTermination LifecycleKind = "uncorrelated-termination"
-	ContentObserved         LifecycleKind = "content-observed"
-	PrivateObservation      LifecycleKind = "private-observation"
+	CommandObserved                 LifecycleKind = "command-observed"
+	SessionInitialized              LifecycleKind = "session-initialized"
+	InputAccepted                   LifecycleKind = "input-accepted"
+	InputFinished                   LifecycleKind = "input-finished"
+	UncorrelatedTermination         LifecycleKind = "uncorrelated-termination"
+	CallbackInterruptResultObserved LifecycleKind = "callback-interrupt-result-observed"
+	InterruptResultObserved         LifecycleKind = "interrupt-result-observed"
+	ContentObserved                 LifecycleKind = "content-observed"
+	InteractionObserved             LifecycleKind = "interaction-observed"
+	TaskObserved                    LifecycleKind = "task-observed"
+	ProgressObserved                LifecycleKind = "progress-observed"
+	RunStateObserved                LifecycleKind = "run-state-observed"
+	ContinuationInitialized         LifecycleKind = "continuation-initialized"
+	ContinuationFinished            LifecycleKind = "continuation-finished"
+	PrivateObservation              LifecycleKind = "private-observation"
+	CompactionCommandObserved       LifecycleKind = "compaction-command-observed"
+	CompactionResultObserved        LifecycleKind = "compaction-result-observed"
 )
 
 type CommandState string
@@ -29,12 +39,16 @@ type CommandState string
 type lifecyclePhase string
 
 const (
-	envelopeValidation lifecyclePhase = "envelope"
-	commandValidation  lifecyclePhase = "command"
-	initValidation     lifecyclePhase = "initialize"
-	replayValidation   lifecyclePhase = "replay"
-	contentValidation  lifecyclePhase = "content"
-	resultValidation   lifecyclePhase = "result"
+	envelopeValidation    lifecyclePhase = "envelope"
+	commandValidation     lifecyclePhase = "command"
+	initValidation        lifecyclePhase = "initialize"
+	replayValidation      lifecyclePhase = "replay"
+	contentValidation     lifecyclePhase = "content"
+	resultValidation      lifecyclePhase = "result"
+	interactionValidation lifecyclePhase = "interaction"
+	taskValidation        lifecyclePhase = "task"
+	progressValidation    lifecyclePhase = "progress"
+	runValidation         lifecyclePhase = "run"
 )
 
 const (
@@ -46,19 +60,40 @@ const (
 )
 
 // LifecycleObservation retains native acceptance independently of completion.
-// Content and Result contain validated native observations. Native additionally
-// retains private extensions and interactions; none of these facts grants
+// Content, Result and Interaction contain validated native observations. Native
+// additionally retains private extensions; none of these facts grants
 // public publication authority or permission to discard unhandled families.
 type LifecycleObservation struct {
-	Kind      LifecycleKind
-	SessionID domain.ID
-	InputID   domain.ID
-	NativeID  string
-	Command   CommandState
-	Accepted  bool
-	Result    *NativeResult
-	Content   []ContentEvent
-	Native    *StreamEvent `json:"-"`
+	CallbackArrivalID domain.ID
+	Kind              LifecycleKind
+	Initialized       *NativeInitialization
+	SessionID         domain.ID
+	InputID           domain.ID
+	ActionID          domain.ID
+	NativeID          string
+	Command           CommandState
+	Accepted          bool
+	Result            *NativeResult
+	Interaction       *InteractionObservation
+	Task              *NativeTaskObservation     `json:"-"`
+	Progress          *NativeProgressObservation `json:"-"`
+	Run               *NativeRunObservation      `json:"-"`
+	Compaction        *NativeCompaction          `json:"-"`
+	Summary           *NativeCompactionSummary   `json:"-"`
+	CompactCommand    *NativeCompactionCommand   `json:"-"`
+	CompactResult     *NativeCompactionResult    `json:"-"`
+	// TurnID is the original native init envelope identity. An automatic
+	// continuation has its own turn and never acknowledges a product input.
+	TurnID  string
+	Content []ContentEvent
+	Native  *StreamEvent `json:"-"`
+}
+
+// NativeInitialization is emitted only after exact native initialization
+// validation. It is independent of requested launch flags and applied effort.
+type NativeInitialization struct {
+	Model      string
+	Permission NativePermission
 }
 
 // ExecutionBinding validates one immutable input attempt. It sends nothing,
@@ -66,25 +101,45 @@ type LifecycleObservation struct {
 // Worker must retain its durable claim before constructing this binding and
 // must still process every private observation through its dedicated adapter.
 type ExecutionBinding struct {
-	mu              sync.Mutex
-	session         domain.ID
-	input           domain.ID
-	digest          [sha256.Size]byte
-	model           string
-	workspace       string
-	home            string
-	permission      NativePermission
-	command         CommandState
-	initialized     bool
-	accepted        bool
-	finished        bool
-	terminal        *NativeResult
-	seen            map[string]bool
-	problem         *domain.Error
-	logger          *slog.Logger
-	owner           domain.ID
-	content         contentState
-	advertisedTools map[string]bool
+	mu                     sync.Mutex
+	session                domain.ID
+	input                  domain.ID
+	digest                 [sha256.Size]byte
+	model                  string
+	workspace              string
+	home                   string
+	permission             NativePermission
+	command                CommandState
+	initialized            bool
+	accepted               bool
+	finished               bool
+	terminal               *NativeResult
+	seen                   map[string]bool
+	problem                *domain.Error
+	logger                 *slog.Logger
+	owner                  domain.ID
+	content                contentState
+	advertisedTools        map[string]bool
+	interactions           map[domain.ID]*interactionState
+	interactionBytes       int
+	tasks                  map[string]nativeTaskState
+	backgroundTasks        map[string]bool
+	runState               NativeRunState
+	turnID                 string
+	continuing             bool
+	continuationSeen       bool
+	continuationFailed     bool
+	notifications          uint32
+	pendingCompaction      *compactionSummaryBinding
+	interrupt              *InterruptClaim
+	interruptedMessage     bool
+	interruptionContext    bool
+	interruptResult        *NativeResult
+	interruptRetryObserved bool
+	interruptedRetry       bool
+	interruptedReply       domain.ID
+	denialToolResult       bool
+	denialContext          bool
 }
 
 func BindExecution(config APIStreamConfig, input domain.ID, text string) (*ExecutionBinding, error) {
@@ -133,9 +188,29 @@ func (b *ExecutionBinding) Observe(event StreamEvent) (observation LifecycleObse
 		}
 	}()
 	observation = LifecycleObservation{Kind: PrivateObservation, SessionID: b.session, InputID: b.input, Accepted: b.accepted, Native: &event}
+	observation.TurnID = b.turnID
+	if b.continuing {
+		observation.InputID, observation.Accepted = "", false
+	}
 	if event.Kind != NativeMessage {
+		if b.interruptResult != nil {
+			return LifecycleObservation{}, lifecycleUncertain()
+		}
 		switch event.Kind {
-		case NativeRequest, NativeCancellation, NativeLateResponse, NativeReplyEcho:
+		case NativeRequest, NativeCancellation, NativeReplyEcho:
+			phase = interactionValidation
+			value, err := b.observeInteraction(event)
+			if err != nil {
+				return LifecycleObservation{}, err
+			}
+			observation.Kind, observation.Interaction = InteractionObserved, value
+			observation.InputID, observation.TurnID = value.InputID, value.TurnID
+			observation.Accepted = value.InputID != ""
+			if b.logger != nil {
+				b.logger.Debug("Claude Code interaction observed", "owner_id", b.owner, "arrival_id", value.ArrivalID, "state", value.Kind, "canceled", value.Canceled)
+			}
+			return observation, nil
+		case NativeLateResponse:
 			return observation, nil
 		default:
 			return LifecycleObservation{}, lifecycleUncertain()
@@ -151,8 +226,9 @@ func (b *ExecutionBinding) Observe(event StreamEvent) (observation LifecycleObse
 		Session domain.ID `json:"session_id"`
 		UUID    string    `json:"uuid"`
 		Replay  bool      `json:"isReplay"`
+		Parent  *string   `json:"parent_tool_use_id"`
 	}
-	for name, target := range map[string]any{"type": &header.Type, "subtype": &header.Subtype, "session_id": &header.Session, "uuid": &header.UUID, "isReplay": &header.Replay} {
+	for name, target := range map[string]any{"type": &header.Type, "subtype": &header.Subtype, "session_id": &header.Session, "uuid": &header.UUID, "isReplay": &header.Replay, "parent_tool_use_id": &header.Parent} {
 		if raw := fields[name]; len(raw) != 0 && json.Unmarshal(raw, target) != nil {
 			return LifecycleObservation{}, lifecycleUncertain()
 		}
@@ -161,6 +237,12 @@ func (b *ExecutionBinding) Observe(event StreamEvent) (observation LifecycleObse
 		return LifecycleObservation{}, lifecycleUncertain()
 	}
 	observation.NativeID = header.UUID
+	if b.interruptResult != nil && event.Type != "command_lifecycle" && !(event.Type == "system" && header.Subtype == "session_state_changed") {
+		return LifecycleObservation{}, lifecycleUncertain()
+	}
+	if b.pendingCompaction != nil && (event.Type == "result" || ((event.Type == "stream_event" || event.Type == "assistant") && header.Parent == nil) || (event.Type == "system" && header.Subtype == "session_state_changed")) {
+		return LifecycleObservation{}, lifecycleUncertain()
+	}
 	switch event.Type {
 	case "command_lifecycle":
 		phase = commandValidation
@@ -179,14 +261,80 @@ func (b *ExecutionBinding) Observe(event StreamEvent) (observation LifecycleObse
 	case "system":
 		if header.Subtype == "init" {
 			phase = initValidation
-			if b.initialized || b.finished || b.command != CommandStarted || b.validateSystemInit(event.Body) != nil {
+			if b.initialized {
+				if !b.canStartContinuation() || b.validateSystemInit(event.Body) != nil {
+					return LifecycleObservation{}, lifecycleUncertain()
+				}
+				b.continuing, b.continuationSeen = true, true
+				b.turnID = header.UUID
+				observation.Kind, observation.TurnID = ContinuationInitialized, b.turnID
+				observation.InputID, observation.Accepted = "", false
+				break
+			}
+			if b.finished || b.command != CommandStarted || b.validateSystemInit(event.Body) != nil {
 				return LifecycleObservation{}, lifecycleUncertain()
 			}
 			b.initialized = true
-			observation.Kind = SessionInitialized
+			b.turnID = header.UUID
+			observation.Kind, observation.TurnID = SessionInitialized, b.turnID
+			observation.Initialized = &NativeInitialization{Model: b.model, Permission: b.permission}
+		} else if header.Subtype == "session_state_changed" {
+			phase = runValidation
+			value, err := b.observeRunState(event.Body)
+			if err != nil {
+				return LifecycleObservation{}, err
+			}
+			observation.Kind, observation.Run = RunStateObserved, value
+			observation.InputID, observation.Accepted = "", false
+		} else if header.Subtype == "compact_boundary" {
+			phase = contentValidation
+			value, err := b.observeCompaction(event.Body)
+			if err != nil {
+				return LifecycleObservation{}, err
+			}
+			observation.Kind, observation.Compaction = CompactionObserved, value
+			// Compaction can run before original input replay. It cannot accept
+			// that input or provide another product input identity.
+			observation.InputID, observation.Accepted = "", false
+		} else {
+			switch TaskEventKind(header.Subtype) {
+			case TaskStarted, TaskProgress, TaskUpdated, TaskNotification, BackgroundTasksChanged:
+				phase = taskValidation
+				value, err := b.observeTask(TaskEventKind(header.Subtype), event.Body)
+				if err != nil {
+					return LifecycleObservation{}, err
+				}
+				observation.Kind, observation.Task = TaskObserved, value
+				if value.Kind == TaskNotification {
+					b.notifications++
+				}
+			}
+			if header.Subtype == "status" || header.Subtype == "thinking_tokens" || header.Subtype == "api_retry" {
+				phase = progressValidation
+				value, err := b.observeProgress(event)
+				if err != nil {
+					return LifecycleObservation{}, err
+				}
+				observation.Kind, observation.Progress = ProgressObserved, value
+			}
 		}
+	case "tool_progress", "tool_use_summary":
+		phase = progressValidation
+		value, err := b.observeProgress(event)
+		if err != nil {
+			return LifecycleObservation{}, err
+		}
+		observation.Kind, observation.Progress = ProgressObserved, value
 	case "user":
-		if header.Replay {
+		if b.pendingCompaction != nil && !header.Replay && (header.Parent == nil || header.UUID == b.pendingCompaction.anchor) {
+			phase = contentValidation
+			value, err := b.observeCompactionSummary(event.Body)
+			if err != nil {
+				return LifecycleObservation{}, err
+			}
+			observation.Kind, observation.Summary = CompactionSummaryObserved, value
+			observation.InputID, observation.Accepted = "", false
+		} else if header.Replay {
 			phase = replayValidation
 			if err := b.acceptReplay(event.Body); err != nil {
 				return LifecycleObservation{}, err
@@ -215,11 +363,32 @@ func (b *ExecutionBinding) Observe(event StreamEvent) (observation LifecycleObse
 			return LifecycleObservation{}, err
 		}
 		observation.Result = &result
-		if correlated {
+		if b.continuing {
+			b.continuing = false
+			b.continuationFailed = b.continuationFailed || !result.Successful()
+			observation.Kind, observation.InputID, observation.Accepted = ContinuationFinished, "", false
+		} else if correlated {
 			b.finished = true
 			retained := NativeResult{Kind: result.Kind, Reason: result.Reason, Error: result.Error}
 			b.terminal = &retained
 			observation.Kind = InputFinished
+		} else if b.interruptedReply != "" && b.denialToolResult && b.denialContext && result.Reason == AbortedTools {
+			// Native interruption-coupled denial omits the product input UUID.
+			// Retain its initiating callback separately from input completion.
+			if b.interruptResult != nil {
+				return LifecycleObservation{}, lifecycleUncertain()
+			}
+			b.interruptResult = &NativeResult{Kind: result.Kind, Reason: result.Reason, Error: result.Error}
+			observation.Kind, observation.InputID, observation.Accepted = CallbackInterruptResultObserved, "", false
+			observation.CallbackArrivalID = b.interruptedReply
+		} else if b.interrupt != nil && b.interruptionContext && (b.interruptedMessage || b.interruptedRetry) && result.Reason == AbortedStreaming {
+			// The pinned native interrupt result omits user_message_uuid. Keep
+			// this session-level Stop fact separate from an input completion.
+			if b.interruptResult != nil {
+				return LifecycleObservation{}, lifecycleUncertain()
+			}
+			b.interruptResult = &NativeResult{Kind: result.Kind, Reason: result.Reason, Error: result.Error}
+			observation.Kind, observation.InputID, observation.Accepted = InterruptResultObserved, "", false
 		} else {
 			// Native API failures can omit user_message_uuid. Retain the session
 			// failure without attaching it to this input or resolving acceptance.
@@ -235,15 +404,19 @@ func (b *ExecutionBinding) Observe(event StreamEvent) (observation LifecycleObse
 }
 
 func (b *ExecutionBinding) acceptCommand(next CommandState) bool {
+	terminal := b.terminal
+	if terminal == nil {
+		terminal = b.interruptResult
+	}
 	switch next {
 	case CommandQueued:
 		return b.command == "" && !b.finished
 	case CommandStarted:
 		return b.command == CommandQueued && !b.finished
 	case CommandCompleted:
-		return b.command == CommandStarted && (b.terminal == nil || !b.terminal.cancelsCommand())
+		return b.command == CommandStarted && (terminal == nil || !terminal.cancelsCommand())
 	case CommandCancelled:
-		return (b.command == CommandQueued || b.command == CommandStarted) && (b.terminal == nil || b.terminal.cancelsCommand())
+		return (b.command == CommandQueued || b.command == CommandStarted) && (terminal == nil || terminal.cancelsCommand())
 	case CommandDiscarded:
 		return b.command == CommandQueued
 	default:

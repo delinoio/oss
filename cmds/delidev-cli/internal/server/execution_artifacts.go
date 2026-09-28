@@ -3,6 +3,8 @@ package server
 import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
+	"reflect"
+	"strings"
 )
 
 func publishExecutionArtifact(tx *store.Tx, input domain.ExecutionJobInput, session store.Record, event domain.ExecutionEvent) error {
@@ -13,7 +15,7 @@ func publishExecutionArtifact(tx *store.Tx, input domain.ExecutionJobInput, sess
 	var value domain.ExecutionMessage
 	var revision uint64
 	if event.Kind == domain.ExecutionArtifactStarted {
-		value = domain.ExecutionMessage{ExecutionID: input.ExecutionID, NativeThreadID: event.NativeThreadID, NativeTurnID: event.NativeTurnID, NativeID: update.NativeID, Role: domain.ArtifactMessage, State: domain.MessageStreaming, FirstSequence: event.Sequence, Artifact: &domain.ExecutionArtifact{Started: *update.Snapshot}}
+		value = domain.ExecutionMessage{ExecutionID: input.ExecutionID, NativeThreadID: event.NativeThreadID, NativeTurnID: event.NativeTurnID, NativeID: update.NativeID, NativeParentID: update.NativeParentID, Role: domain.ArtifactMessage, State: domain.MessageStreaming, FirstSequence: event.Sequence, Artifact: &domain.ExecutionArtifact{Started: *update.Snapshot}}
 	} else {
 		r, err := tx.Get(domain.MessageKind, update.ID)
 		if err != nil {
@@ -23,7 +25,7 @@ func publishExecutionArtifact(tx *store.Tx, input domain.ExecutionJobInput, sess
 		if err != nil {
 			return err
 		}
-		if r.SessionID != session.ID || value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeID != update.NativeID || value.Role != domain.ArtifactMessage || value.State != domain.MessageStreaming || value.Artifact == nil || value.Artifact.Completed != nil {
+		if r.SessionID != session.ID || value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeID != update.NativeID || value.NativeParentID != update.NativeParentID || value.Role != domain.ArtifactMessage || value.State != domain.MessageStreaming || value.Artifact == nil || value.Artifact.Completed != nil {
 			return executionEventConflict()
 		}
 		revision = r.Revision
@@ -33,6 +35,15 @@ func publishExecutionArtifact(tx *store.Tx, input domain.ExecutionJobInput, sess
 			if update.Snapshot.Kind != artifact.Started.Kind {
 				return executionEventConflict()
 			}
+			if artifact.Started.Kind == domain.OpenCodeRevisionArtifact && !reflect.DeepEqual(artifact.Started, *update.Snapshot) {
+				return executionEventConflict()
+			}
+			if artifact.Started.Kind == domain.ReasoningTextArtifact {
+				text, err := retainedReasoningText(*artifact)
+				if err != nil || update.Snapshot.Text != text {
+					return executionEventConflict()
+				}
+			}
 			// Authoritative plan completion may replace its streamed draft. Keep
 			// both observations; no prefix check, concatenation or inferred text.
 			artifact.Completed = update.Snapshot
@@ -40,6 +51,12 @@ func publishExecutionArtifact(tx *store.Tx, input domain.ExecutionJobInput, sess
 		case domain.ExecutionArtifactDelta:
 			if update.Delta.ArtifactKind() != artifact.Started.Kind {
 				return executionEventConflict()
+			}
+			if artifact.Started.Kind == domain.ReasoningTextArtifact {
+				text, err := retainedReasoningText(*artifact)
+				if err != nil || len(update.Delta.Text) > domain.MaxMessageText-len(text) {
+					return executionEventConflict()
+				}
 			}
 			if len(artifact.Deltas) >= 10000 {
 				return domain.Fail(domain.ResourceExhausted, "Artifact stream retention reached its bound.", "Retain native history for reconciliation without truncating evidence.")
@@ -56,6 +73,24 @@ func publishExecutionArtifact(tx *store.Tx, input domain.ExecutionJobInput, sess
 	return tx.BindExecutionMessage(session.ID, input.ExecutionID, update.ID, event.NativeThreadID, event.NativeTurnID, update.NativeID, value.State)
 }
 
+// This native family is one plain-text reasoning part. Its snapshots and
+// suffixes are a monotonic stream, unlike an authoritative replacement plan.
+func retainedReasoningText(artifact domain.ExecutionArtifact) (string, error) {
+	if artifact.Started.Kind != domain.ReasoningTextArtifact || artifact.Started.Validate() != nil {
+		return "", executionEventConflict()
+	}
+	var text strings.Builder
+	text.WriteString(artifact.Started.Text)
+	for _, observation := range artifact.Deltas {
+		delta := observation.Delta
+		if delta.Kind != domain.ReasoningTextDelta || delta.Validate() != nil || len(delta.Text) > domain.MaxMessageText-text.Len() {
+			return "", executionEventConflict()
+		}
+		text.WriteString(delta.Text)
+	}
+	return text.String(), nil
+}
+
 func publishExecutionProgress(tx *store.Tx, input domain.ExecutionJobInput, session store.Record, progress *domain.ExecutionProgress, event domain.ExecutionEvent) error {
 	update := event.Progress
 	if update == nil {
@@ -64,13 +99,32 @@ func publishExecutionProgress(tx *store.Tx, input domain.ExecutionJobInput, sess
 	// Turn-level observations have their own immutable product identity and no
 	// native item. They must not occupy a fabricated native-message index entry.
 	value := domain.ExecutionMessage{ExecutionID: input.ExecutionID, NativeThreadID: event.NativeThreadID, NativeTurnID: event.NativeTurnID, Role: domain.ProgressMessage, State: domain.MessageComplete, FirstSequence: event.Sequence, LastSequence: event.Sequence, Progress: &update.Progress}
+	nativeEvent := ""
+	if update.Progress.Kind == domain.OpenCodeTodoProgressKind {
+		nativeEvent = update.Progress.Todo.NativeEventID
+	}
+	if update.Progress.Kind == domain.OpenCodeChangesProgressKind {
+		nativeEvent = update.Progress.Changes.NativeEventID
+	}
+	if update.Progress.Kind == domain.OpenCodeWorkspaceProgressKind {
+		nativeEvent = update.Progress.Workspace.NativeEventID
+	}
+	if nativeEvent != "" {
+		if err := tx.CheckOpenCodeProgressEvent(session.ID, input.ExecutionID, nativeEvent); err != nil {
+			return err
+		}
+	}
 	if _, err := tx.Put(domain.MessageKind, update.ID, 0, session.ID, session.ProjectID, value); err != nil {
 		return err
 	}
 	switch update.Progress.Kind {
+	case domain.OpenCodeWorkspaceProgressKind:
+		progress.LatestWorkspaceEventID = update.ID
+	case domain.OpenCodeTodoProgressKind:
+		progress.LatestTodoID = update.ID
 	case domain.PlanProgress:
 		progress.LatestPlanID = update.ID
-	case domain.DiffProgress:
+	case domain.DiffProgress, domain.OpenCodeChangesProgressKind:
 		progress.LatestDiffID = update.ID
 	default:
 		return executionEventConflict()

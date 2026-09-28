@@ -63,6 +63,18 @@ func (f *publicationFixture) event(kind domain.ExecutionEventKind, sequence uint
 	if kind == domain.ExecutionThreadBound {
 		e.NativeTurnID = ""
 		e.Observed = &domain.ObservedExecutionSettings{Model: f.input.Configuration.NativeModel, Permission: domain.PermissionReadOnly, ApprovalPolicy: "on-request"}
+		if f.input.Configuration.Harness == domain.ClaudeCode {
+			permission, _ := f.input.Configuration.ClaudeAPIInputPermission(f.input.Input.Mode)
+			e.Observed = &domain.ObservedExecutionSettings{Model: f.input.Configuration.NativeModel, Permission: domain.PermissionDefault, ClaudePermission: permission}
+		}
+		if f.input.Configuration.Harness == domain.GrokBuild {
+			mode, _ := f.input.Configuration.GrokModeForInput(f.input.Input.Mode)
+			e.Observed = &domain.ObservedExecutionSettings{Model: f.input.Configuration.NativeModel, Permission: domain.PermissionDefault, GrokMode: mode}
+		}
+		if f.input.Configuration.Harness == domain.OpenCode {
+			agent, _ := f.input.Configuration.Options.OpenCodePrimaryForInput(f.input.Input.Mode)
+			e.Observed = &domain.ObservedExecutionSettings{Model: f.input.Configuration.NativeModel, Permission: domain.PermissionDefault, OpenCodeAgent: agent}
+		}
 	}
 	return e
 }
@@ -326,4 +338,23 @@ func TestExecutionPublicationRetainsBoundedMessageWithoutTruncation(t *testing.T
 	if err != nil || len(retained.Text) != domain.MaxMessageText || retained.LastSequence != 3 {
 		t.Fatal("failed append changed or truncated retained text")
 	}
+}
+
+func TestCodexPublicationKeepsItsOriginalNativeIdentityProfile(t *testing.T) {
+	f := newPublicationFixture(t)
+	f.publish(t, f.event(domain.ExecutionThreadBound, 1))
+	event := f.event(domain.ExecutionInputAccepted, 2)
+	event.NativeTurnID = "93ce72f1-5a6e-4181-9b3d-219cbb424a24"
+	if _, err := f.call(f.requestEvent(t, event)); err == nil {
+		t.Fatal("Claude UUID-v4 turn changed the selected Codex publication profile")
+	}
+	record, err := f.service.Store.Get(context.Background(), domain.SessionKind, f.input.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := store.Decode[domain.Session](record)
+	if err != nil || session.Execution == nil || session.Execution.LastSequence != 1 || session.Execution.NativeTurnID != "" {
+		t.Fatal("rejected native identity partially advanced execution", err)
+	}
+	f.publish(t, f.event(domain.ExecutionInputAccepted, 2))
 }

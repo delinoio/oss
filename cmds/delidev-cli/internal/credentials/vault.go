@@ -92,6 +92,7 @@ type Vault struct {
 	lock      *security.Lock
 	closeOnce sync.Once
 	closed    bool
+	readOnly  bool
 }
 
 // Open holds a private scope lock until Close. Creating/opening the scope does
@@ -308,6 +309,9 @@ func (v *Vault) log(operation string, r Ref, err error) {
 // On failure, leave the intent in place: the native write may already have
 // succeeded. Never delete it speculatively after an uncertain database commit.
 func (v *Vault) Put(ctx context.Context, r Ref, secret []byte) (binding string, err error) {
+	if v.readOnly {
+		return "", readOnlyFailure()
+	}
 	if err = r.validate(); err != nil {
 		return "", err
 	}
@@ -454,6 +458,9 @@ func (v *Vault) Get(ctx context.Context, r Ref) (secret []byte, err error) {
 // removes the OS key. A locked/unavailable OS store leaves a retryable deleting
 // record, but Get/Put can no longer use or resurrect the reference.
 func (v *Vault) Delete(ctx context.Context, r Ref) (err error) {
+	if v.readOnly {
+		return readOnlyFailure()
+	}
 	if err = r.validate(); err != nil {
 		return err
 	}

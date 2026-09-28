@@ -97,7 +97,7 @@ func (s *Service) currentClaimApproval(tx *store.Tx, identity approvalClaimIdent
 	if err != nil {
 		return r, value, err
 	}
-	if value.ApprovalResponse == nil || value.ApprovalResponse.ID != identity.Response || value.ApprovalResponse.Input.Validate(value.Approval) != nil {
+	if value.ApprovalResponse == nil || value.ApprovalResponse.ID != identity.Response || value.ApprovalResponse.Input.ValidateInteraction(value) != nil {
 		return r, value, executionEventConflict()
 	}
 	grant, err := s.approvalResponseScope(tx, r, value)

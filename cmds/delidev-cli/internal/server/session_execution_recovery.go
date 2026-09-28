@@ -37,7 +37,7 @@ func (s *Service) RecoverSessionExecution(ctx context.Context, req *connect.Requ
 		if err != nil {
 			return nil, err
 		}
-		if sr.Revision != identity.Revision || session.Execution == nil || session.Execution.ExecutionID != execution || (session.Recovery != domain.NeedsRecovery && session.Recovery != domain.Reconciling) || session.Archive == domain.Archived {
+		if sr.Revision != identity.Revision || session.InitialExecution == nil || session.ExecutionSelection().ID != execution || (session.Recovery != domain.NeedsRecovery && session.Recovery != domain.Reconciling) || session.Archive == domain.Archived {
 			return nil, domain.ExecutionRecoveryUncertain()
 		}
 		if _, _, err := activeMachine(tx, session.MachineID); err != nil {
@@ -52,7 +52,11 @@ func (s *Service) RecoverSessionExecution(ctx context.Context, req *connect.Requ
 			if err != nil {
 				return nil, err
 			}
-			if prior.SessionID != sr.ID || job.Type != domain.RecoverExecutionJob || job.ParentID != session.Execution.JobID {
+			original, err := tx.SessionExecutionJob(sr.ID, execution)
+			if err != nil {
+				return nil, err
+			}
+			if prior.SessionID != sr.ID || job.Type != domain.RecoverExecutionJob || job.ParentID != original.ID || (session.Execution != nil && job.ParentID != session.Execution.JobID) {
 				return nil, domain.ExecutionRecoveryUncertain()
 			}
 			if job.State == domain.JobQueued || job.State == domain.JobClaimed {
@@ -96,6 +100,9 @@ func (s *Service) RecoverSessionExecution(ctx context.Context, req *connect.Requ
 // fresh execution authorization after this operation leaves dispatch paused.
 func executionRecoveryRequest(tx *store.Tx, serverID domain.ID, sr store.Record, session domain.Session) (domain.ExecutionRecoveryRequest, error) {
 	var result domain.ExecutionRecoveryRequest
+	if session.Execution == nil {
+		return prStartupRecoveryRequest(tx, serverID, sr, session)
+	}
 	progress := session.Execution
 	if progress == nil || session.InitialExecution == nil || session.Preparation == nil || session.Preparation.State != domain.PreparationReady || session.PendingSteerID != "" || progress.Waiting != (domain.NativeWaiting{}) || progress.UnconfirmedResponses != 0 || (session.ActiveExecutionID != "" && session.ActiveExecutionID != progress.ExecutionID) || (session.Recovery != domain.NeedsRecovery && session.Recovery != domain.Reconciling) {
 		return result, domain.ExecutionRecoveryUncertain()
@@ -159,13 +166,52 @@ func executionRecoveryRequest(tx *store.Tx, serverID domain.ID, sr store.Record,
 		Version: 1, ServerID: serverID, DeviceID: grant.DeviceID, InstanceID: claim.InstanceID, JobID: original.ID, SessionID: sr.ID, MachineID: session.MachineID,
 		AssignmentRevision: assigned.Revision, AssignmentDigest: continuationDigest(assigned.Data), AssignmentInputDigest: continuationDigest(claim.Input), ConfigurationDigest: input.ConfigurationDigest,
 		AccountID: input.AccountID, ConnectionID: input.ConnectionID, HistoryExecutionID: history, InputMode: input.Input.Mode, PromptDigest: continuationDigest([]byte(input.Input.Prompt)), AcceptedInputs: progress.AcceptedInputs, Preparation: input.Preparation, Manifest: input.Manifest,
-		Completion: domain.ExecutionCompletion{Version: 1, ExecutionID: input.ExecutionID, InputID: input.InputID, NativeThreadID: domain.ID(progress.NativeThreadID), NativeTurnID: domain.ID(progress.NativeTurnID), LastSequence: progress.LastSequence, Outcome: progress.Outcome, CleanupVerified: true},
+		Completion: domain.ExecutionCompletion{Version: 1, ExecutionID: input.ExecutionID, InputID: input.InputID, NativeThreadID: domain.NativeIdentity(progress.NativeThreadID), NativeTurnID: domain.NativeIdentity(progress.NativeTurnID), LastSequence: progress.LastSequence, Outcome: progress.Outcome, CleanupVerified: true},
+	}
+	if input.Configuration.Harness == domain.OpenCode {
+		if len(bindings) != 1 {
+			return domain.ExecutionRecoveryRequest{}, domain.ExecutionRecoveryUncertain()
+		}
+		creation := input.ThreadRequestID
+		if input.Continuation != nil {
+			first, err := tx.SessionExecutionJob(sr.ID, history)
+			if err != nil {
+				return result, err
+			}
+			initial, err := store.Decode[domain.Job](first)
+			var original domain.ExecutionJobInput
+			if err != nil || domain.Decode(initial.Input, &original) != nil || original.Validate() != nil || original.Version != 1 || original.Configuration.Harness != domain.OpenCode || original.ExecutionID != history || original.SessionID != sr.ID || original.MachineID != input.MachineID || original.ConfigurationDigest != input.ConfigurationDigest || original.AccountID != input.AccountID || original.ConnectionID != input.ConnectionID {
+				return domain.ExecutionRecoveryRequest{}, domain.ExecutionRecoveryUncertain()
+			}
+			creation = original.ThreadRequestID
+		}
+		result.Harness = domain.OpenCode
+		result.OpenCode = &domain.OpenCodeRecoveryReference{ClaimVersion: input.Version, CreationRequestID: creation, BindingRequestID: input.ThreadRequestID, InputRequestID: input.TurnRequestID}
+	} else if input.Configuration.Harness == domain.ClaudeCode {
+		permission, err := input.Configuration.ClaudeAPIInputPermission(input.Input.Mode)
+		if err != nil || !progress.ClaudeContinuationBoundary(input.InputID) {
+			return domain.ExecutionRecoveryRequest{}, domain.ExecutionRecoveryUncertain()
+		}
+		eligible, err := tx.ClaudeRootContentContinuation(input.ExecutionID)
+		if err != nil {
+			return result, err
+		}
+		if !eligible {
+			return domain.ExecutionRecoveryRequest{}, domain.ExecutionRecoveryUncertain()
+		}
+		result.Harness = domain.ClaudeCode
+		result.Claude = &domain.ClaudeRecoveryReference{ClaimVersion: input.Version, Version: input.Installation.Version, Executable: input.Installation.ResolvedPath, Model: input.Configuration.NativeModel, Effort: input.Configuration.Effort, Permission: permission, InstructionsDigest: continuationDigest([]byte(input.Configuration.Instructions)), BindingRequestID: input.ThreadRequestID, InputRequestID: input.TurnRequestID}
+	} else if input.Configuration.Harness != domain.Codex {
+		return domain.ExecutionRecoveryRequest{}, domain.ExecutionRecoveryUncertain()
 	}
 	return result, result.Validate()
 }
 
 func validateExecutionRecoveryResult(tx *store.Tx, record store.Record, job domain.Job, raw []byte) error {
 	var expected domain.ExecutionRecoveryRequest
+	if domain.Decode(job.Input, &expected) == nil && expected.Startup != nil {
+		return validatePRStartupRecoveryResult(tx, record, job, expected, raw)
+	}
 	var evidence domain.ExecutionRecoveryEvidence
 	if domain.Decode(job.Input, &expected) != nil || domain.Decode(raw, &evidence) != nil || evidence.Validate(expected) != nil || expected.JobID != job.ParentID || expected.SessionID != record.SessionID || expected.MachineID != job.MachineID {
 		return domain.ExecutionRecoveryUncertain()
@@ -206,6 +252,10 @@ func finishExecutionRecovery(tx *store.Tx, record store.Record, job domain.Job) 
 	} else {
 		if err := validateExecutionRecoveryResult(tx, record, job, job.Output); err != nil {
 			return err
+		}
+		var expected domain.ExecutionRecoveryRequest
+		if domain.Decode(job.Input, &expected) == nil && expected.Startup != nil {
+			return finishPRStartupRecovery(tx, record, job)
 		}
 		var evidence domain.ExecutionRecoveryEvidence
 		if err := domain.Decode(job.Output, &evidence); err != nil {

@@ -18,8 +18,10 @@ import (
 const workerLease = domain.WorkerConnectionTimeout
 
 type workerStream struct {
-	ID     domain.ID
-	Cancel context.CancelFunc
+	Instance domain.ID
+	Done     <-chan struct{}
+	ID       domain.ID
+	Cancel   context.CancelFunc
 }
 
 func workerActor(ctx context.Context, machine, instance string) error {
@@ -154,7 +156,7 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 	if previous, ok := s.workerStreams[machine]; ok {
 		previous.Cancel()
 	}
-	s.workerStreams[machine] = workerStream{ID: id, Cancel: cancel}
+	s.workerStreams[machine] = workerStream{ID: id, Cancel: cancel, Instance: instance, Done: ctx.Done()}
 	s.connectionsMu.Unlock()
 	defer func() {
 		s.connectionsMu.Lock()
@@ -292,7 +294,8 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 					if j.State != domain.JobQueued {
 						return r, nil
 					}
-					j.State, j.InstanceID = domain.JobClaimed, instance
+					actor, _ := domain.PrincipalFrom(ctx)
+					j.State, j.InstanceID, j.AssignedDeviceID = domain.JobClaimed, instance, actor.DeviceID
 					return tx.PutJob(r.ID, r.Revision, r.SessionID, r.ProjectID, j)
 				})
 				if err != nil {
@@ -400,6 +403,25 @@ func (s *Service) ReportWork(ctx context.Context, req *connect.Request[pb.Report
 		return nil, rpc.Error(domain.Fail(domain.MissingInput, "The claimed job and revision are required.", "Report the exact accepted job."), correlation)
 	}
 	machine, instance := domain.ID(req.Msg.MachineId), domain.ID(req.Msg.InstanceId)
+	actor, _ := domain.PrincipalFrom(ctx)
+	// Check immutable assigned-device ownership before receipt lookup as well
+	// as before mutation. Historical jobs retain their existing machine scope.
+	if err := s.Store.Read(ctx, func(tx *store.Tx) error {
+		r, err := tx.Get(domain.JobKind, domain.ID(meta.Id))
+		if err != nil {
+			return err
+		}
+		j, err := store.Decode[domain.Job](r)
+		if err != nil {
+			return err
+		}
+		if j.AssignedDeviceID != "" && j.AssignedDeviceID != actor.DeviceID {
+			return domain.Fail(domain.PermissionDenied, "The assigned Worker device does not own this report.", "Use the original paired Worker device.")
+		}
+		return nil
+	}); err != nil {
+		return nil, rpc.Error(err, correlation)
+	}
 	var problem *domain.Error
 	if req.Msg.Problem != nil {
 		problem = workerProblem(req.Msg.Problem)
@@ -426,13 +448,18 @@ func (s *Service) ReportWork(ctx context.Context, req *connect.Request[pb.Report
 		if err != nil {
 			return nil, err
 		}
-		if job.MachineID != machine || job.InstanceID != instance {
+		if job.MachineID != machine || job.InstanceID != instance || job.AssignedDeviceID != "" && job.AssignedDeviceID != actor.DeviceID {
 			return nil, domain.Fail(domain.PermissionDenied, "The Worker does not own this job.", "Report only work assigned to this machine and process.")
 		}
 		if job.State != domain.JobClaimed {
 			return nil, domain.Fail(domain.Conflict, "The job is no longer awaiting this result.", "Inspect its current accepted outcome.")
 		}
 		if job.Type == domain.ExecuteSessionJob {
+			if problem == nil {
+				if saved, handled, err := s.finishPRStartupRejection(tx, actor, record, job, meta.ExpectedRevision, req.Msg.OutputJson); handled {
+					return saved, err
+				}
+			}
 			return finishNativeExecution(tx, record, job, meta.ExpectedRevision, req.Msg.OutputJson, problem)
 		}
 		if problem == nil {

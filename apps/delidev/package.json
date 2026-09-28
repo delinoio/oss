@@ -1,0 +1,39 @@
+{
+  "name": "delidev-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "dev:frontend": "rsbuild dev",
+    "build": "rsbuild build",
+    "build:frontend": "rsbuild build",
+    "typecheck": "tsc --noEmit",
+    "lint": "pnpm typecheck",
+    "test": "pnpm --filter @delinoio/delidev-api-client build && pnpm typecheck && vitest run && pnpm build",
+    "test:unit": "vitest run",
+    "prepare:sidecar": "node scripts/prepare-sidecar.mjs",
+    "build:native": "pnpm --filter @delinoio/delidev-api-client build && pnpm build && pnpm prepare:sidecar && cargo build --manifest-path src-tauri/Cargo.toml --features desktop-host,custom-protocol --bin delidev-desktop",
+    "dev:desktop": "pnpm build:native && cargo run --manifest-path src-tauri/Cargo.toml --features desktop-host,custom-protocol --bin delidev-desktop --"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "2.14.0",
+    "@connectrpc/connect": "2.1.2",
+    "@connectrpc/connect-query": "2.3.1",
+    "@delinoio/delidev-api-client": "workspace:*",
+    "@tanstack/react-query": "5.101.4",
+    "@tauri-apps/api": "2.10.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@rsbuild/core": "2.1.10",
+    "@rsbuild/plugin-react": "2.0.1",
+    "@testing-library/react": "16.3.3",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "jsdom": "20.0.3",
+    "typescript": "5.9.3",
+    "vitest": "4.1.11"
+  }
+}

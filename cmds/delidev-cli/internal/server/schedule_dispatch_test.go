@@ -405,8 +405,8 @@ func TestScheduleCoordinatorSelectionFailureAndRevokedLocalOrigin(t *testing.T) 
 
 func TestScheduleCoordinatorLoopDrainsDueHistoryAndJoinsCancellation(t *testing.T) {
 	f := newScheduleDispatchFixture(t, domain.ScheduleAllowOverlap, false)
-	// Keep the next real due instant several minutes away, even when this test
-	// starts near a minute boundary. The two retained due times precede startup.
+	// Keep the next real due instant several minutes away so this timer
+	// test exercises only the two offline instants, even near a minute boundary.
 	started := time.Now().UTC()
 	minute := (started.Minute() + 5) % 60
 	next := started.Truncate(time.Hour).Add(time.Duration(minute) * time.Minute)
@@ -448,13 +448,23 @@ func TestScheduleCoordinatorLoopDrainsDueHistoryAndJoinsCancellation(t *testing.
 			t.Fatal(err)
 		}
 		if len(rows) >= 2 {
+			missed := 0
 			for _, r := range rows {
-				v, _ := store.Decode[domain.ScheduleOccurrence](r)
-				if v.State != domain.OccurrenceSkipped || v.Reason != domain.ServerOfflineOccurrence {
-					t.Fatal("catch-up execution created")
+				v, err := store.Decode[domain.ScheduleOccurrence](r)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !v.DueAt.Before(f.service.Endpoint.StartedAt) {
+					continue
+				}
+				missed++
+				if v.State != domain.OccurrenceSkipped || v.Reason != domain.ServerOfflineOccurrence || v.SessionID != "" {
+					t.Fatalf("missed instant %s (startup %s) created execution: state=%s reason=%s", v.DueAt, f.service.Endpoint.StartedAt, v.State, v.Reason)
 				}
 			}
-			break
+			if missed >= 2 {
+				break
+			}
 		}
 		if time.Now().After(deadline) {
 			t.Fatal("scheduler did not advance missed history")

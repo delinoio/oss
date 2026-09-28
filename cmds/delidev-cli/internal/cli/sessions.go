@@ -60,6 +60,16 @@ func sessionCommand(ctx context.Context, c client, o options, args []string, str
 	action := args[0]
 	f := flags("session " + action)
 	switch action {
+	case "pr":
+		return sessionPRCommand(ctx, c, o, args[1:])
+	case "files":
+		return sessionFiles(ctx, c, args[1:])
+	case "diff":
+		return sessionFiles(ctx, c, append([]string{"diff"}, args[1:]...))
+	case "review-context":
+		return sessionFiles(ctx, c, append([]string{"review-context"}, args[1:]...))
+	case "review":
+		return sessionReview(ctx, c, o, args[1:], streams)
 	case "steer":
 		id := f.String("id", "", "")
 		inputID := f.String("input-id", "", "")

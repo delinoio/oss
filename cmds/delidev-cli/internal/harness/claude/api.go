@@ -13,6 +13,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
 // NativePermission is Claude's own permission selector, not a translation of
@@ -43,16 +44,17 @@ type APIConfig struct {
 // must durably accept the session and register the token before opening it. It
 // does not grant public execution or authorize resume without a history binding.
 type APIStreamConfig struct {
-	Process      process.Config   `json:"-"`
-	Version      string           `json:"-"`
-	Home         string           `json:"-"`
-	Workspace    string           `json:"-"`
-	SessionID    domain.ID        `json:"-"`
-	Model        string           `json:"-"`
-	Effort       NativeEffort     `json:"-"`
-	Permission   NativePermission `json:"-"`
-	Instructions string           `json:"-"`
-	API          APIConfig        `json:"-"`
+	Process        process.Config   `json:"-"`
+	Version        string           `json:"-"`
+	Home           string           `json:"-"`
+	Workspace      string           `json:"-"`
+	WorkspaceRoots []string         `json:"-"`
+	SessionID      domain.ID        `json:"-"`
+	Model          string           `json:"-"`
+	Effort         NativeEffort     `json:"-"`
+	Permission     NativePermission `json:"-"`
+	Instructions   string           `json:"-"`
+	API            APIConfig        `json:"-"`
 }
 
 func apiConfigurationError() *domain.Error {
@@ -60,12 +62,16 @@ func apiConfigurationError() *domain.Error {
 }
 
 func prepareAPIStream(config APIStreamConfig) (process.Config, error) {
+	return prepareAPIStreamMode(config, false)
+}
+
+func prepareAPIStreamMode(config APIStreamConfig, resumed bool) (process.Config, error) {
 	if config.Version != SupportedVersion {
 		return process.Config{}, incompatible()
 	}
 	if config.Process.OwnerID.Validate() != nil || !filepath.IsAbs(config.Process.Executable) || config.SessionID.Validate() != nil || domain.Text(config.Model, "native model", 256, true) != nil || domain.Text(config.Instructions, "native instructions", 256<<10, false) != nil ||
 		!slices.Contains([]NativePermission{DefaultPermission, PlanPermission, AcceptEditsPermission, DontAskPermission, BypassPermission}, config.Permission) ||
-		!slices.Contains([]NativeEffort{"", LowEffort, MediumEffort, HighEffort, XHighEffort, MaxEffort}, config.Effort) || !apiproxy.ValidToken(config.API.Token) {
+		!validNativeEffort(config.Effort, true) || !apiproxy.ValidToken(config.API.Token) {
 		return process.Config{}, apiConfigurationError()
 	}
 	if err := rpc.ValidateEndpoint(config.API.ServerOrigin); err != nil {
@@ -86,9 +92,13 @@ func prepareAPIStream(config APIStreamConfig) (process.Config, error) {
 	if err != nil || !info.IsDir() {
 		return process.Config{}, apiConfigurationError()
 	}
-	// Rebuild from the same private, empty account directories as discovery;
+	if err := validateWorkspaceRoots(config); err != nil {
+		return process.Config{}, err
+	}
+	// Fresh launches use discovery's empty private directories. The private
+	// closed-session handoff rechecks their retained ownership before reuse;
 	// only PATH and Windows system lookup context survive caller environment.
-	env, err := probeEnvironment(ProbeConfig{Process: config.Process, Version: config.Version, Home: config.Home})
+	env, err := nativeEnvironment(ProbeConfig{Process: config.Process, Version: config.Version, Home: config.Home}, !resumed)
 	if err != nil {
 		return process.Config{}, err
 	}
@@ -105,22 +115,39 @@ func prepareAPIStream(config APIStreamConfig) (process.Config, error) {
 	// lookup out of account initialization. Both hold one scoped credential;
 	// the relay accepts their equality only for the native Messages protocol.
 	// The secure-store namespace also remains bound to this private home.
-	env = append(env, "ANTHROPIC_API_KEY="+config.API.Token, "ANTHROPIC_AUTH_TOKEN="+config.API.Token, "CLAUDE_SECURESTORAGE_CONFIG_DIR="+config.Home, "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST=1", "CLAUDE_CODE_RESUME_INTERRUPTED_TURN=0", "CLAUDE_CODE_PROJECT_DIR_NAME=delidev")
+	env = append(env, "ANTHROPIC_API_KEY="+config.API.Token, "ANTHROPIC_AUTH_TOKEN="+config.API.Token, "CLAUDE_SECURESTORAGE_CONFIG_DIR="+config.Home, "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST=1", "CLAUDE_CODE_RESUME_INTERRUPTED_TURN=0", "CLAUDE_CODE_PROJECT_DIR_NAME=delidev", "CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS=1")
+	// The pinned CLI otherwise omits its authoritative post-continuation idle
+	// event. Keep this explicit opt-in until a verified profile emits it by default.
 	args := []string{"--print", "--input-format=stream-json", "--output-format=stream-json", "--verbose", "--setting-sources=", "--strict-mcp-config", `--mcp-config={"mcpServers":{}}`, "--permission-mode=" + string(config.Permission), "--permission-prompt-tool=stdio", "--no-chrome", "--replay-user-messages", "--include-partial-messages", "--model=" + config.Model, "--session-id=" + string(config.SessionID)}
+	if resumed {
+		args[len(args)-1] = "--resume=" + string(config.SessionID)
+	}
 	if config.Effort != "" {
 		args = append(args, "--effort="+string(config.Effort))
 	}
+	for _, root := range config.WorkspaceRoots {
+		if root != config.Workspace {
+			args = append(args, "--add-dir="+root)
+		}
+	}
 	if config.Instructions != "" {
 		path := filepath.Join(filepath.Dir(config.Home), "instructions.txt")
-		file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
-		if err != nil {
-			return process.Config{}, apiConfigurationError()
-		}
-		_, written := file.WriteString(config.Instructions)
-		synced := file.Sync()
-		closed := file.Close()
-		if written != nil || synced != nil || closed != nil {
-			return process.Config{}, apiConfigurationError()
+		if resumed {
+			raw, err := security.ReadPrivate(path, 256<<10)
+			if err != nil || string(raw) != config.Instructions {
+				return process.Config{}, historyUncertain()
+			}
+		} else {
+			file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+			if err != nil {
+				return process.Config{}, apiConfigurationError()
+			}
+			_, written := file.WriteString(config.Instructions)
+			synced := file.Sync()
+			closed := file.Close()
+			if written != nil || synced != nil || closed != nil {
+				return process.Config{}, apiConfigurationError()
+			}
 		}
 		args = append(args, "--append-system-prompt-file="+path)
 	}
@@ -132,7 +159,11 @@ func prepareAPIStream(config APIStreamConfig) (process.Config, error) {
 // OpenAPIStream validates only native launch and initialization. A typed session
 // adapter must bind subsequent lifecycle/input/result observations before they
 // can establish accepted input, publish events or retain resumable history.
-func OpenAPIStream(ctx context.Context, config APIStreamConfig) (stream *Stream, returned error) {
+func OpenAPIStream(ctx context.Context, config APIStreamConfig) (*Stream, error) {
+	return openAPIStreamMode(ctx, config, false)
+}
+
+func openAPIStreamMode(ctx context.Context, config APIStreamConfig, resumed bool) (stream *Stream, returned error) {
 	if err := ctx.Err(); err != nil {
 		return nil, domain.SafeError(err)
 	}
@@ -145,7 +176,7 @@ func OpenAPIStream(ctx context.Context, config APIStreamConfig) (stream *Stream,
 			config.Process.Logger.WarnContext(ctx, "Claude Code API stream initialization failed", "owner_id", config.Process.OwnerID, "phase", phase, "code", domain.SafeError(returned).Code)
 		}
 	}()
-	prepared, err := prepareAPIStream(config)
+	prepared, err := prepareAPIStreamMode(config, resumed)
 	if err != nil {
 		return nil, err
 	}
@@ -177,11 +208,19 @@ func OpenAPIStream(ctx context.Context, config APIStreamConfig) (stream *Stream,
 	if err := validateInitializeProfile(response.Result, string(config.Permission), "ANTHROPIC_API_KEY"); err != nil {
 		return nil, err
 	}
+	phase = settingsPhase
+	applied, err := s.ReadAppliedSettings(bounded, domain.NewID(), config.Model, config.Effort)
+	if err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	s.initialApplied = &applied
+	s.mu.Unlock()
 	if err := s.Err(); err != nil {
 		return nil, err
 	}
 	if config.Process.Logger != nil {
-		config.Process.Logger.InfoContext(ctx, "Claude Code API stream initialized", "owner_id", config.Process.OwnerID, "version", config.Version)
+		config.Process.Logger.InfoContext(ctx, "Claude Code API stream initialized", "owner_id", config.Process.OwnerID, "version", config.Version, "additional_root_count", max(0, len(config.WorkspaceRoots)-1))
 	}
 	return s, nil
 }

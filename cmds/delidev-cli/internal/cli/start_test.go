@@ -30,7 +30,7 @@ import (
 // Only the test binary's explicit server re-exec path enters the CLI. Tests
 // never start an installed harness or load a user data directory.
 func init() {
-	if len(os.Args) >= 5 && os.Args[1] == "--data-dir" && os.Args[3] == "server" && os.Args[4] == "run" {
+	if len(os.Args) >= 5 && os.Args[1] == "--data-dir" && ((os.Args[3] == "server" && os.Args[4] == "run") || (os.Args[3] == "worker" && os.Args[4] == "start")) {
 		os.Exit(Run(context.Background(), os.Args[1:], IO{}))
 	}
 }
@@ -103,7 +103,7 @@ func TestDetachedStartupReadiness(t *testing.T) {
 					return
 				}
 				defer c.transport.CloseIdleConnections()
-				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 				defer cancel()
 				_, err = c.system.StopServer(ctx, request(c, &pb.StopServerRequest{RequestId: string(domain.NewID())}))
 				if err != nil {
@@ -124,7 +124,9 @@ func TestDetachedStartupReadiness(t *testing.T) {
 					}
 				}
 			}()
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			// The detached process has a 15-second readiness window after launch.
+			// Give Windows test-binary re-exec and preflight time outside that window.
+			ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 			defer cancel()
 			streams := IO{In: strings.NewReader(""), Out: io.Discard, Err: io.Discard}
 			result, err := startDetached(ctx, o, config, streams)

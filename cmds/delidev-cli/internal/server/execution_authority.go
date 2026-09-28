@@ -110,7 +110,11 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 		return empty, executionDenied()
 	}
 	provider, err := store.Decode[domain.Provider](r)
-	if err != nil || provider.Authentication != account.Connection.Authentication || provider.Protocol != domain.OpenAIResponses || input.Configuration.Harness != domain.Codex || input.Installation.Version != domain.CodexProtocolVersion {
+	if err != nil || provider.Authentication != account.Connection.Authentication {
+		return empty, executionDenied()
+	}
+	operations := executionAPIOperations(input, provider.Protocol)
+	if len(operations) == 0 {
 		return empty, executionDenied()
 	}
 	r, err = tx.Get(domain.ModelKind, input.Configuration.ModelID)
@@ -121,11 +125,49 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 	if err != nil || model.ProviderID != input.Configuration.ProviderID || !slices.Contains(model.Harnesses, input.Configuration.Harness) {
 		return empty, executionDenied()
 	}
-	scope := apiproxy.Scope{ExecutionID: grant.ExecutionID, SessionID: input.SessionID, AccountID: input.AccountID, ConnectionID: input.ConnectionID, ProviderID: input.Configuration.ProviderID, ModelID: input.Configuration.ModelID, NativeModel: input.Configuration.NativeModel, Provider: provider, Operations: []apiproxy.Operation{apiproxy.ResponseCreate, apiproxy.ResponseCompact}}
+	scope := apiproxy.Scope{ExecutionID: grant.ExecutionID, SessionID: input.SessionID, AccountID: input.AccountID, ConnectionID: input.ConnectionID, ProviderID: input.Configuration.ProviderID, ModelID: input.Configuration.ModelID, NativeModel: input.Configuration.NativeModel, Provider: provider, Operations: operations}
 	if err := scope.Validate(); err != nil {
 		return empty, executionDenied()
 	}
 	return scope, nil
+}
+
+// Relay compatibility is narrower than native protocol discovery. In particular,
+// OpenCode continuation requires its exact accepted predecessor profile; no
+// different SDK protocol or silently omitted native options is authorized.
+func executionAPIOperations(input domain.ExecutionJobInput, protocol domain.APIProtocol) []apiproxy.Operation {
+	switch input.Configuration.Harness {
+	case domain.Codex:
+		if input.Installation.Version == domain.CodexProtocolVersion && protocol == domain.OpenAIResponses {
+			return []apiproxy.Operation{apiproxy.ResponseCreate, apiproxy.ResponseCompact}
+		}
+	case domain.ClaudeCode:
+		if input.Validate() != nil || input.Installation.Version != domain.ClaudeProtocolVersion || protocol != domain.AnthropicMessages {
+			return nil
+		}
+		if _, err := input.Configuration.ClaudeAPIInputPermission(input.Input.Mode); err == nil {
+			// Resumed assignments retain the exact checked predecessor. Token
+			// counting and other protocols require separate evidence.
+			return []apiproxy.Operation{apiproxy.MessageCreate}
+		}
+	case domain.GrokBuild:
+		if input.Validate() != nil || input.Version != 1 || input.Continuation != nil || input.Installation.Version != domain.GrokProtocolVersion || protocol != domain.OpenAIChat {
+			return nil
+		}
+		if _, err := input.Configuration.GrokModeForInput(input.Input.Mode); err == nil {
+			return []apiproxy.Operation{apiproxy.ChatCompletion}
+		}
+	case domain.OpenCode:
+		o := input.Configuration.Options
+		validGeneration := input.Version == 1 && input.Continuation == nil || input.Version == 2 && input.Continuation != nil && input.Validate() == nil
+		if !validGeneration || input.Installation.Version != domain.OpenCodeProtocolVersion || protocol != domain.OpenAIChat || input.Configuration.Effort != "" || o.SubagentModel != "" || o.SubagentEffort != "" || o.MaxConcurrency != 0 || o.ApprovalReviewModel != "" || o.ServiceTier != "" {
+			return nil
+		}
+		if _, err := o.OpenCodePrimaryForInput(input.Input.Mode); err == nil {
+			return []apiproxy.Operation{apiproxy.ChatCompletion}
+		}
+	}
+	return nil
 }
 
 func (a *executionAuthority) resolve(ctx context.Context, grant store.ExecutionGrant) (apiproxy.Scope, error) {
@@ -337,20 +379,21 @@ func (s *Service) RegisterExecution(ctx context.Context, req *connect.Request[pb
 		}
 		return struct{ JobID domain.ID }{identity.Job}, tx.PutExecutionGrant(grant)
 	})
+	var registeredScope apiproxy.Scope
 	if err == nil {
 		err = s.Store.Read(ctx, func(tx *store.Tx) error {
 			stored, err := tx.ExecutionGrant(identity.Digest)
 			if err != nil || stored.JobID != grant.JobID {
 				return executionDenied()
 			}
-			_, err = s.executionAuthority.scope(tx, stored)
+			registeredScope, err = s.executionAuthority.scope(tx, stored)
 			return err
 		})
 	}
 	if err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
-	s.logger.Info("execution_credential_registered", "job_id", identity.Job, "machine_id", identity.Machine, "instance_id", identity.Instance, "request_id", meta.RequestId, "replayed", result.Replayed)
+	s.logger.Info("execution_credential_registered", "job_id", identity.Job, "machine_id", identity.Machine, "instance_id", identity.Instance, "request_id", meta.RequestId, "api_protocol", registeredScope.Provider.Protocol, "replayed", result.Replayed)
 	response := connect.NewResponse(&pb.RegisterExecutionResponse{ProxyPath: apiproxy.Prefix, Replayed: result.Replayed})
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil

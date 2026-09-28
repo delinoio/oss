@@ -25,6 +25,11 @@ func recoveryFixture(t *testing.T, outcome domain.ExecutionOutcome) *publication
 	terminal := f.event(domain.ExecutionTurnFinished, 3)
 	terminal.Outcome = outcome
 	f.publish(t, terminal)
+	return replaceRecoveryFixtureWorker(t, f)
+}
+
+func replaceRecoveryFixtureWorker(t *testing.T, f *publicationFixture) *publicationFixture {
+	t.Helper()
 	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.recovery-ready", nil, func(tx *store.Tx) (any, error) {
 		sr, session, err := sessionRecord(tx, f.input.SessionID)
 		if err != nil {
@@ -93,7 +98,7 @@ func claimRecovery(t *testing.T, f *publicationFixture, resource *pb.Resource) (
 		if err := domain.Decode(job.Input, &expected); err != nil {
 			return nil, err
 		}
-		job.State, job.InstanceID = domain.JobClaimed, f.instance
+		job.State, job.InstanceID, job.AssignedDeviceID = domain.JobClaimed, f.instance, f.device
 		claimed, err = tx.PutJob(r.ID, r.Revision, r.SessionID, r.ProjectID, job)
 		return nil, err
 	})
@@ -325,7 +330,7 @@ func TestExecutionRecoveryFailureAllowsNewExplicitInspection(t *testing.T) {
 	_, first := acceptRecovery(t, f)
 	claimed, evidence := claimRecovery(t, f, first.ExecutionRecoveryJob)
 	bad := evidence
-	bad.Completion.NativeTurnID = domain.NewID()
+	bad.Completion.NativeTurnID = domain.NativeIdentity(domain.NewID())
 	raw, _ := json.Marshal(bad)
 	_, err := f.client.ReportWork(context.Background(), ownerRequest(security.Identity{Token: f.workerToken}, &pb.ReportWorkRequest{Mutation: &pb.Mutation{Id: string(claimed.ID), ExpectedRevision: claimed.Revision, RequestId: string(domain.NewID())}, MachineId: string(f.input.MachineID), InstanceId: string(f.instance), OutputJson: raw}))
 	if err != nil {

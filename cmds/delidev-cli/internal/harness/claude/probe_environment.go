@@ -11,6 +11,12 @@ import (
 )
 
 func probeEnvironment(config ProbeConfig) ([]string, error) {
+	return nativeEnvironment(config, true)
+}
+
+// Retained mode is private to a proved closed-session handoff. Discovery and
+// fresh execution must continue to reject every populated runtime directory.
+func nativeEnvironment(config ProbeConfig, fresh bool) ([]string, error) {
 	invalid := func() error {
 		return domain.Fail(domain.InvalidArgument, "Claude Code discovery requires a fresh private runtime.", "Prepare a dedicated canonical Worker runtime before native protocol validation.")
 	}
@@ -37,7 +43,7 @@ func probeEnvironment(config ProbeConfig) ([]string, error) {
 		// Never probe a retained execution runtime or consume an existing login,
 		// hook, plugin, cache or settings file. Version detection uses this same
 		// empty runtime before the protocol probe.
-		if name != "" {
+		if fresh && name != "" {
 			entries, err := os.ReadDir(path)
 			if err != nil || len(entries) != 0 {
 				return nil, invalid()

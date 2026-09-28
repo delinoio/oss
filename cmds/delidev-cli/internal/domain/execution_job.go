@@ -36,8 +36,8 @@ type ExecutionCompletion struct {
 	Version         uint32           `json:"version"`
 	ExecutionID     ID               `json:"execution_id"`
 	InputID         ID               `json:"input_id"`
-	NativeThreadID  ID               `json:"native_thread_id"`
-	NativeTurnID    ID               `json:"native_turn_id"`
+	NativeThreadID  NativeIdentity   `json:"native_thread_id"`
+	NativeTurnID    NativeIdentity   `json:"native_turn_id"`
 	LastSequence    uint64           `json:"last_sequence"`
 	Outcome         ExecutionOutcome `json:"outcome"`
 	CleanupVerified bool             `json:"cleanup_verified"`
@@ -47,10 +47,25 @@ type ExecutionCompletion struct {
 }
 
 func (c ExecutionCompletion) Validate() error {
-	for _, id := range []ID{c.ExecutionID, c.InputID, c.NativeThreadID, c.NativeTurnID} {
+	// Existing context-free readers and the original recovery profile are
+	// Codex-only. Other profiles require the immutable assignment explicitly.
+	return c.ValidateForHarness(Codex)
+}
+
+func (c ExecutionCompletion) ValidateForHarness(harness Harness) error {
+	if harness == GrokBuild && (c.Version != 1 || (c.Outcome != ExecutionSucceeded && c.Outcome != ExecutionStopped) || c.NativeCheckpointDigest != "") {
+		return Fail(Unsupported, "Grok Build completion requires the closed original first-text profile.", "Original terminal, Stop and cleanup evidence remain independent of this envelope; continuation requires its own profile.")
+	}
+	for _, id := range []ID{c.ExecutionID, c.InputID} {
 		if err := id.Validate(); err != nil {
 			return err
 		}
+	}
+	if err := c.NativeThreadID.Validate(harness, NativeThreadIdentity); err != nil {
+		return err
+	}
+	if err := c.NativeTurnID.Validate(harness, NativeTurnIdentity); err != nil {
+		return err
 	}
 	validProfile := c.Version == 1 && c.NativeCheckpointDigest == ""
 	if c.Version == 2 {

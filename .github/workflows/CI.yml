@@ -259,6 +259,10 @@ jobs:
           toolchain: nightly-2026-01-01
           components: clippy
 
+      - name: Setup Go for DeliDev sidecar
+        id: ci-go
+        uses: ./.github/actions/setup-ci-go
+
       - name: Setup Node.js
         id: ci-node
         uses: ./.github/actions/setup-ci-node
@@ -269,10 +273,16 @@ jobs:
       - name: Build DevHUD frontend
         run: pnpm --filter devhud build:frontend
 
+      - name: Build DeliDev native inputs
+        run: |
+          pnpm --filter @delinoio/delidev-api-client build
+          pnpm --filter delidev-desktop build:frontend
+          pnpm --filter delidev-desktop prepare:sidecar
+
       - name: Install DevHUD Linux prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgbm-dev libgtk-3-dev libx11-dev libxtst-dev ninja-build
+          sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgbm-dev libgtk-3-dev libwebkit2gtk-4.1-dev libx11-dev libxtst-dev ninja-build
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -289,6 +299,13 @@ jobs:
         with:
           path: ${{ steps.ci-node.outputs.cache-path }}
           key: ${{ steps.ci-node.outputs.cache-key }}
+
+      - name: Save Go cache after successful main validation
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-go.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.ci-go.outputs.cache-path }}
+          key: ${{ steps.ci-go.outputs.cache-key }}
 
   rust-test:
     needs: changes
@@ -307,6 +324,10 @@ jobs:
         with:
           toolchain: nightly-2026-01-01
 
+      - name: Setup Go for DeliDev sidecar
+        id: ci-go
+        uses: ./.github/actions/setup-ci-go
+
       - name: Setup Node.js
         id: ci-node
         uses: ./.github/actions/setup-ci-node
@@ -317,10 +338,16 @@ jobs:
       - name: Build DevHUD frontend
         run: pnpm --filter devhud build:frontend
 
+      - name: Build DeliDev native inputs
+        run: |
+          pnpm --filter @delinoio/delidev-api-client build
+          pnpm --filter delidev-desktop build:frontend
+          pnpm --filter delidev-desktop prepare:sidecar
+
       - name: Install DevHUD Linux prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgbm-dev libgtk-3-dev libx11-dev libxtst-dev ninja-build
+          sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgbm-dev libgtk-3-dev libwebkit2gtk-4.1-dev libx11-dev libxtst-dev ninja-build
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -341,6 +368,13 @@ jobs:
         with:
           path: ${{ steps.ci-node.outputs.cache-path }}
           key: ${{ steps.ci-node.outputs.cache-key }}
+
+      - name: Save Go cache after successful main validation
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-go.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.ci-go.outputs.cache-path }}
+          key: ${{ steps.ci-go.outputs.cache-key }}
 
   forge-test:
     needs: changes
@@ -1266,6 +1300,10 @@ jobs:
           pnpm --filter @delinoio/devhud-api-client lint
           pnpm --filter @delinoio/devhud-api-client test
           pnpm --filter @delinoio/devhud-api-client build
+          pnpm --filter @delinoio/delidev-api-client lint
+          pnpm --filter @delinoio/delidev-api-client test
+          pnpm --filter @delinoio/delidev-api-client build
+          pnpm --filter delidev-desktop test
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}

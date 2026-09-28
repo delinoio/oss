@@ -180,6 +180,11 @@ func (t *Tx) PutJob(id domain.ID, expected uint64, session, project domain.ID, j
 		if err != nil {
 			return Record{}, err
 		}
+		// Bind the authenticated device only at the first claim. Historical
+		// assignments without that identity cannot acquire recovery authority.
+		if original.AssignedDeviceID != job.AssignedDeviceID && (original.State != domain.JobQueued || job.State != domain.JobClaimed || original.AssignedDeviceID != "") {
+			return Record{}, domain.Fail(domain.InvalidArgument, "The assigned Worker device is immutable.", "Preserve the original accepted assignment.")
+		}
 		if original.Type != job.Type || original.MachineID != job.MachineID || original.ParentID != job.ParentID || !original.AcceptedAt.Equal(job.AcceptedAt) {
 			return Record{}, domain.Fail(domain.InvalidArgument, "Accepted job routing is immutable.", "Create a new explicit operation instead of reassigning accepted work.")
 		}

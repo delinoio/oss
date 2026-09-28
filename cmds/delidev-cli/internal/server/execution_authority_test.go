@@ -39,7 +39,22 @@ func newAuthorityFixture(t *testing.T, upstream string) *authorityFixture {
 	return newConfiguredAuthorityFixture(t, upstream, nil, false)
 }
 
+func newHarnessAuthorityFixture(t *testing.T, upstream string, harness domain.Harness) *authorityFixture {
+	t.Helper()
+	protocol := domain.OpenAIResponses
+	if harness == domain.OpenCode {
+		protocol = domain.OpenAIChat
+	} else if harness == domain.ClaudeCode {
+		protocol = domain.AnthropicMessages
+	}
+	return newProfileAuthorityFixture(t, upstream, harness, protocol, nil, false)
+}
+
 func newConfiguredAuthorityFixture(t *testing.T, upstream string, configure func(*domain.ExecutionJobInput), queued bool) *authorityFixture {
+	return newProfileAuthorityFixture(t, upstream, domain.Codex, domain.OpenAIResponses, configure, queued)
+}
+
+func newProfileAuthorityFixture(t *testing.T, upstream string, harness domain.Harness, protocol domain.APIProtocol, configure func(*domain.ExecutionJobInput), queued bool, nativeModels ...string) *authorityFixture {
 	t.Helper()
 	s, err := store.Open(context.Background(), filepath.Join(t.TempDir(), "state"))
 	if err != nil {
@@ -56,8 +71,23 @@ func newConfiguredAuthorityFixture(t *testing.T, upstream string, configure func
 	}
 	f := &authorityFixture{workerToken: workerToken, token: apiproxy.TokenPrefix + rawToken, job: domain.NewID(), device: domain.NewID(), instance: domain.NewID()}
 	providerID, modelID, agentID, accountID, connectionID := domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID()
-	model := domain.Model{Name: "Fixture", NativeID: "fixture-model", ProviderID: providerID, Harnesses: []domain.Harness{domain.Codex}, MetadataSource: domain.UserDeclared}
-	agent := domain.Agent{Name: "Fixture", Harness: domain.Codex, ModelID: modelID, Accounts: []domain.WeightedAccount{{ID: accountID, Weight: 1}}, Options: domain.AgentOptions{Permission: domain.PermissionReadOnly}}
+	nativeModel := "fixture-model"
+	if len(nativeModels) > 1 {
+		t.Fatal("fixture accepts one explicit native model")
+	}
+	if len(nativeModels) == 1 {
+		nativeModel = nativeModels[0]
+	}
+	model := domain.Model{Name: "Fixture", NativeID: nativeModel, ProviderID: providerID, Harnesses: []domain.Harness{harness}, MetadataSource: domain.UserDeclared}
+	permission, version := domain.PermissionReadOnly, domain.CodexProtocolVersion
+	if harness == domain.GrokBuild {
+		permission, version = domain.PermissionDefault, domain.GrokProtocolVersion
+	} else if harness == domain.OpenCode {
+		permission, version = domain.PermissionDefault, domain.OpenCodeProtocolVersion
+	} else if harness == domain.ClaudeCode {
+		permission, version = domain.PermissionDefault, domain.ClaudeProtocolVersion
+	}
+	agent := domain.Agent{Name: "Fixture", Harness: harness, ModelID: modelID, Accounts: []domain.WeightedAccount{{ID: accountID, Weight: 1}}, Options: domain.AgentOptions{Permission: permission}}
 	configuration, err := domain.ResolveExecutionConfiguration(agentID, 1, agent, 1, model, domain.Priority, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -66,7 +96,7 @@ func newConfiguredAuthorityFixture(t *testing.T, upstream string, configure func
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.input = domain.ExecutionJobInput{Version: 1, SessionID: domain.NewID(), MachineID: domain.NewID(), ExecutionID: domain.NewID(), InputID: domain.NewID(), ThreadRequestID: domain.NewID(), TurnRequestID: domain.NewID(), Configuration: configuration, ConfigurationDigest: digest, AccountID: accountID, ConnectionID: connectionID, Input: domain.SessionInput{Mode: domain.ExecuteMode, Prompt: "Fixture prompt"}, Installation: domain.Installation{Harness: domain.Codex, State: domain.InstallationDetected, Version: domain.CodexProtocolVersion, ProtocolVerified: true, Protocol: &domain.ProtocolObservation{Protocol: domain.CodexAppServer, State: domain.ProtocolVerified}}, Preparation: json.RawMessage(`{}`), Manifest: json.RawMessage(`{}`)}
+	f.input = domain.ExecutionJobInput{Version: 1, SessionID: domain.NewID(), MachineID: domain.NewID(), ExecutionID: domain.NewID(), InputID: domain.NewID(), ThreadRequestID: domain.NewID(), TurnRequestID: domain.NewID(), Configuration: configuration, ConfigurationDigest: digest, AccountID: accountID, ConnectionID: connectionID, Input: domain.SessionInput{Mode: domain.ExecuteMode, Prompt: "Fixture prompt"}, Installation: domain.Installation{Harness: harness, State: domain.InstallationDetected, Version: version, ProtocolVerified: true, Protocol: &domain.ProtocolObservation{Protocol: domain.ProtocolFor(harness), State: domain.ProtocolVerified}}, Preparation: json.RawMessage(`{}`), Manifest: json.RawMessage(`{}`)}
 	if configure != nil {
 		configure(&f.input)
 	}
@@ -83,7 +113,7 @@ func newConfiguredAuthorityFixture(t *testing.T, upstream string, configure func
 			id    domain.ID
 			value any
 		}{
-			{domain.ProviderKind, providerID, domain.Provider{Name: "Fixture", Endpoint: upstream, Protocol: domain.OpenAIResponses, Authentication: domain.BearerAuth}},
+			{domain.ProviderKind, providerID, domain.Provider{Name: "Fixture", Endpoint: upstream, Protocol: protocol, Authentication: domain.BearerAuth}},
 			{domain.ModelKind, modelID, model}, {domain.AgentKind, agentID, agent},
 			{domain.AccountKind, accountID, domain.Account{Alias: "Fixture", ProviderID: providerID, Type: domain.APIAccount, Enabled: true, Health: domain.AccountReady, Connection: &domain.AccountConnection{ID: connectionID, Authentication: domain.BearerAuth, ConnectedAt: time.Now().UTC()}}},
 			{domain.MachineKind, f.input.MachineID, domain.Machine{Name: "Fixture", OS: "linux", Architecture: "arm64"}},
@@ -105,7 +135,7 @@ func newConfiguredAuthorityFixture(t *testing.T, upstream string, configure func
 		if err := tx.SetWorkerInstance(f.input.MachineID, f.instance, seen); err != nil {
 			return nil, err
 		}
-		initial := domain.InitialExecution{ID: f.input.ExecutionID, InputID: f.input.InputID, Configuration: configuration, ConfigurationDigest: digest, InitialAccountID: accountID, ConnectionID: connectionID, AcceptedAt: time.Now().UTC()}
+		initial := domain.InitialExecution{ID: f.input.ExecutionID, InputID: f.input.InputID, Configuration: f.input.Configuration, ConfigurationDigest: f.input.ConfigurationDigest, InitialAccountID: accountID, ConnectionID: connectionID, AcceptedAt: time.Now().UTC()}
 		if err := put(domain.SessionKind, f.input.SessionID, f.input.SessionID, domain.Session{Name: "Fixture", AgentID: agentID, MachineID: f.input.MachineID, Workspace: domain.GeneralChat, Outcome: domain.ExecutionRunning, Archive: domain.NotArchived, Recovery: domain.NoRecovery, Dispatch: domain.DispatchClaimed, ActiveExecutionID: f.input.ExecutionID, InitialExecution: &initial}); err != nil {
 			return nil, err
 		}
@@ -113,11 +143,11 @@ func newConfiguredAuthorityFixture(t *testing.T, upstream string, configure func
 			return nil, err
 		}
 		raw, _ := json.Marshal(f.input)
-		state, instance := domain.JobClaimed, f.instance
+		state, instance, device := domain.JobClaimed, f.instance, f.device
 		if queued {
-			state, instance = domain.JobQueued, ""
+			state, instance, device = domain.JobQueued, "", ""
 		}
-		return tx.PutJob(f.job, 0, f.input.SessionID, "", domain.Job{Type: domain.ExecuteSessionJob, State: state, MachineID: f.input.MachineID, InstanceID: instance, Input: raw, AcceptedAt: time.Now().UTC()})
+		return tx.PutJob(f.job, 0, f.input.SessionID, "", domain.Job{Type: domain.ExecuteSessionJob, State: state, MachineID: f.input.MachineID, InstanceID: instance, AssignedDeviceID: device, Input: raw, AcceptedAt: time.Now().UTC()})
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -143,7 +173,21 @@ func (f *authorityFixture) registerGrant(t *testing.T) *pb.RegisterExecutionResp
 
 func (f *authorityFixture) request(t *testing.T, token, body string) *http.Response {
 	t.Helper()
-	r, err := http.NewRequest(http.MethodPost, f.http.URL+apiproxy.Prefix+"/responses", strings.NewReader(body))
+	return f.requestPath(t, token, "/responses", body)
+}
+
+func (f *authorityFixture) operationPath() string {
+	if f.input.Configuration.Harness == domain.OpenCode {
+		return "/chat/completions"
+	} else if f.input.Configuration.Harness == domain.ClaudeCode {
+		return "/messages"
+	}
+	return "/responses"
+}
+
+func (f *authorityFixture) requestPath(t *testing.T, token, path, body string) *http.Response {
+	t.Helper()
+	r, err := http.NewRequest(http.MethodPost, f.http.URL+apiproxy.Prefix+path, strings.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -211,7 +255,13 @@ func TestExecutionGrantRPCAndRelayRetainOnlyScopedAuthority(t *testing.T) {
 }
 
 func TestExecutionGrantCannotSurviveEpochReplacementOrAccountRevocation(t *testing.T) {
-	f := newAuthorityFixture(t, "http://127.0.0.1:1")
+	for _, harness := range []domain.Harness{domain.Codex, domain.OpenCode, domain.ClaudeCode} {
+		t.Run(string(harness), func(t *testing.T) { testExecutionGrantCannotSurviveEpochReplacementOrAccountRevocation(t, harness) })
+	}
+}
+
+func testExecutionGrantCannotSurviveEpochReplacementOrAccountRevocation(t *testing.T, harness domain.Harness) {
+	f := newHarnessAuthorityFixture(t, "http://127.0.0.1:1", harness)
 	f.registerGrant(t)
 	lease, err := f.service.executionAuthority.Acquire(context.Background(), f.token)
 	if err != nil {
@@ -250,6 +300,12 @@ func TestExecutionGrantCannotSurviveEpochReplacementOrAccountRevocation(t *testi
 }
 
 func TestExecutionAccountRevocationJoinsActiveProviderRequest(t *testing.T) {
+	for _, harness := range []domain.Harness{domain.Codex, domain.OpenCode, domain.ClaudeCode} {
+		t.Run(string(harness), func(t *testing.T) { testExecutionAccountRevocationJoinsActiveProviderRequest(t, harness) })
+	}
+}
+
+func testExecutionAccountRevocationJoinsActiveProviderRequest(t *testing.T, harness domain.Harness) {
 	started, ended := make(chan struct{}), make(chan struct{})
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.Copy(io.Discard, r.Body)
@@ -258,12 +314,12 @@ func TestExecutionAccountRevocationJoinsActiveProviderRequest(t *testing.T) {
 		close(ended)
 	}))
 	defer upstream.Close()
-	f := newAuthorityFixture(t, upstream.URL)
+	f := newHarnessAuthorityFixture(t, upstream.URL, harness)
 	f.registerGrant(t)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		r, _ := http.NewRequest(http.MethodPost, f.http.URL+apiproxy.Prefix+"/responses", strings.NewReader(`{"model":"fixture-model"}`))
+		r, _ := http.NewRequest(http.MethodPost, f.http.URL+apiproxy.Prefix+f.operationPath(), strings.NewReader(`{"model":"fixture-model"}`))
 		r.Header.Set("Content-Type", "application/json")
 		r.Header.Set("Authorization", "Bearer "+f.token)
 		response, err := http.DefaultClient.Do(r)
@@ -298,9 +354,15 @@ func TestExecutionAccountRevocationJoinsActiveProviderRequest(t *testing.T) {
 }
 
 func TestExecutionGrantRechecksMutableOwnership(t *testing.T) {
+	for _, harness := range []domain.Harness{domain.Codex, domain.OpenCode, domain.ClaudeCode} {
+		t.Run(string(harness), func(t *testing.T) { testExecutionGrantRechecksMutableOwnership(t, harness) })
+	}
+}
+
+func testExecutionGrantRechecksMutableOwnership(t *testing.T, harness domain.Harness) {
 	for _, change := range []string{"finished-job", "replaced-instance", "expired-heartbeat", "revoked-device", "disabled-machine", "paused-session", "changed-input", "replaced-connection"} {
 		t.Run(change, func(t *testing.T) {
-			f := newAuthorityFixture(t, "http://127.0.0.1:1")
+			f := newHarnessAuthorityFixture(t, "http://127.0.0.1:1", harness)
 			f.registerGrant(t)
 			lease, err := f.service.executionAuthority.Acquire(context.Background(), f.token)
 			if err != nil {

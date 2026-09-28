@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "local-bootstrap"
+description = "Start or reuse the same local Go server and load its separate paired desktop credential and same-server local Worker proof; explicitly register, start, inspect or stop that fixed Worker."
+commands.allow = ["connect_local", "local_server_status", "local_worker_proof", "local_worker_control"]

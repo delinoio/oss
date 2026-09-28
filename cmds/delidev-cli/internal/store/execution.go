@@ -87,6 +87,54 @@ func (t *Tx) ClaimInitialExecution(sessionID domain.ID, sessionRevision uint64, 
 	if session.PendingInputs == 0 || session.PendingInputBytes < uint64(len(input.Prompt)) {
 		return empty, domain.Fail(domain.RecoveryRequired, "Pending input accounting is inconsistent.", "Reconcile retained input ownership before dispatch.")
 	}
+	preview, err := t.PreviewInitialExecution(session)
+	if err != nil {
+		return empty, err
+	}
+	accepted := domain.InitialExecution{ID: domain.NewID(), InputID: inputID, Configuration: preview.Configuration, ConfigurationDigest: preview.ConfigurationDigest, InitialAccountID: preview.AccountID, ConnectionID: preview.ConnectionID, Route: preview.Route, AcceptedAt: t.now}
+	input.Delivery = domain.InputClaimed
+	input.ExecutionID = accepted.ID
+	input.NativeRequestID = domain.NewID()
+	session.InitialExecution = &accepted
+	session.ActiveExecutionID = accepted.ID
+	session.Dispatch = domain.DispatchClaimed
+	session.Problem = nil
+	// Queue accounting includes a claimed input until native acceptance is
+	// proven. A transaction claim itself cannot release capacity or claim a turn.
+	if _, err := t.Put(domain.QueueKind, ir.ID, ir.Revision, sr.ID, sr.ProjectID, input); err != nil {
+		return empty, err
+	}
+	if _, err := t.Put(domain.SessionKind, sr.ID, sr.Revision, sr.ID, sr.ProjectID, session); err != nil {
+		return empty, err
+	}
+	routingRecord := preview.routingRecord
+	if routingRecord.ID == "" {
+		routingRecord.ID = domain.NewID()
+	}
+	if _, err := t.Put(domain.RoutingKind, routingRecord.ID, routingRecord.Revision, "", "", domain.AgentRouting{AgentID: session.AgentID, State: preview.nextRouting}); err != nil {
+		return empty, err
+	}
+	return accepted, nil
+}
+
+// InitialExecutionPreview is a read-only selection from one current database
+// snapshot. It does not reserve an account, advance routing or grant execution.
+// Claims always resolve it again inside their own atomic mutation.
+type InitialExecutionPreview struct {
+	Configuration       domain.ExecutionConfiguration
+	ConfigurationDigest string
+	AccountID           domain.ID
+	ConnectionID        domain.ID
+	Route               domain.Route
+	routingRecord       Record
+	nextRouting         domain.RoutingState
+}
+
+func (t *Tx) PreviewInitialExecution(session domain.Session) (InitialExecutionPreview, error) {
+	var empty InitialExecutionPreview
+	if err := t.Authorize(); err != nil {
+		return empty, err
+	}
 	ar, agent, err := decodeEntity[domain.Agent](t, domain.AgentKind, session.AgentID)
 	if err != nil {
 		return empty, err
@@ -183,27 +231,5 @@ func (t *Tx) ClaimInitialExecution(sessionID domain.ID, sessionRevision uint64, 
 	if selected.Connection == nil || selected.Connection.ID.Validate() != nil || selected.Connection.Authentication != provider.Authentication || (selected.Type == domain.SubscriptionAccount) != (provider.Protocol == domain.NativeSubscription) {
 		return empty, domain.Fail(domain.Conflict, "The selected account connection is incompatible with the provider.", "Revalidate the current account connection before dispatch.")
 	}
-	accepted := domain.InitialExecution{ID: domain.NewID(), InputID: inputID, Configuration: configuration, ConfigurationDigest: digest, InitialAccountID: route.Selected, ConnectionID: selected.Connection.ID, Route: route, AcceptedAt: t.now}
-	input.Delivery = domain.InputClaimed
-	input.ExecutionID = accepted.ID
-	input.NativeRequestID = domain.NewID()
-	session.InitialExecution = &accepted
-	session.ActiveExecutionID = accepted.ID
-	session.Dispatch = domain.DispatchClaimed
-	session.Problem = nil
-	// Queue accounting includes a claimed input until native acceptance is
-	// proven. A transaction claim itself cannot release capacity or claim a turn.
-	if _, err := t.Put(domain.QueueKind, ir.ID, ir.Revision, sr.ID, sr.ProjectID, input); err != nil {
-		return empty, err
-	}
-	if _, err := t.Put(domain.SessionKind, sr.ID, sr.Revision, sr.ID, sr.ProjectID, session); err != nil {
-		return empty, err
-	}
-	if routingRecord.ID == "" {
-		routingRecord.ID = domain.NewID()
-	}
-	if _, err := t.Put(domain.RoutingKind, routingRecord.ID, routingRecord.Revision, "", "", domain.AgentRouting{AgentID: ar.ID, State: next}); err != nil {
-		return empty, err
-	}
-	return accepted, nil
+	return InitialExecutionPreview{Configuration: configuration, ConfigurationDigest: digest, AccountID: route.Selected, ConnectionID: selected.Connection.ID, Route: route, routingRecord: routingRecord, nextRouting: next}, nil
 }

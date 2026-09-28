@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -17,6 +18,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
 func TestManualNativeContentAndTurnUsage(t *testing.T) {
@@ -71,7 +73,7 @@ func TestManualNativeContentAndTurnUsage(t *testing.T) {
 	relay := httptest.NewServer(apiproxy.New(authority, slog.New(slog.NewJSONHandler(io.Discard, nil))))
 	defer relay.Close()
 	cfg.API.ServerOrigin = relay.URL
-	s, err := OpenAPIStream(ctx, cfg)
+	s, err := OpenAPISession(ctx, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,28 +90,28 @@ func TestManualNativeContentAndTurnUsage(t *testing.T) {
 			}
 		}
 	}()
+	historyProofs := []HistoryMessageProof{}
 	for turn := int64(1); turn <= 2; turn++ {
 		input := domain.NewID()
 		const prompt = "Observe multiple native content blocks."
-		binding, err := BindExecution(cfg, input, prompt)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := s.SendInput(ctx, input, cfg.SessionID, prompt); err != nil {
+		if _, err := s.SendInput(ctx, input, prompt, ContinueSuccessfulRun); err != nil {
 			t.Fatal(err)
 		}
 		var completed []string
 		var nativeIDs []string
 		var result *NativeResult
-		var commandClosed, messageClosed bool
-		for result == nil || !commandClosed {
-			event, err := s.Next(ctx)
+		var commandClosed, messageClosed, runIdle bool
+		for result == nil || !commandClosed || !runIdle {
+			observation, err := s.Next(ctx)
 			if err != nil {
 				t.Fatal(err)
 			}
-			observation, err := binding.Observe(event)
-			if err != nil {
-				t.Fatal(err)
+			if observation.Native != nil && (observation.Native.Type == "assistant" || observation.Native.Type == "user") {
+				proof, err := ObserveMainHistoryMessage(*observation.Native, cfg.SessionID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				historyProofs = append(historyProofs, proof)
 			}
 			for _, content := range observation.Content {
 				if content.Kind == ContentCompleted {
@@ -126,6 +128,9 @@ func TestManualNativeContentAndTurnUsage(t *testing.T) {
 					messageClosed = true
 				}
 			}
+			if observation.Kind == RunStateObserved && observation.Run.State == RunIdle {
+				runIdle = true
+			}
 			if observation.Kind == InputFinished {
 				result = observation.Result
 			}
@@ -133,7 +138,7 @@ func TestManualNativeContentAndTurnUsage(t *testing.T) {
 				commandClosed = true
 			}
 		}
-		if len(completed) != 2 || completed[0] != "First visible block." || completed[1] != "Second visible block." || nativeIDs[0] == nativeIDs[1] || !messageClosed || !result.Successful() || !binding.accepted || result.Usage == nil {
+		if len(completed) != 2 || completed[0] != "First visible block." || completed[1] != "Second visible block." || nativeIDs[0] == nativeIDs[1] || !messageClosed || !result.Successful() || !s.current.accepted || result.Usage == nil {
 			t.Fatal("native block sequence or original completion was lost")
 		}
 		usage := result.Usage
@@ -149,5 +154,19 @@ func TestManualNativeContentAndTurnUsage(t *testing.T) {
 	}
 	if calls.Load() != 2 {
 		t.Fatal("native provider call count changed")
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := security.ReadPrivate(filepath.Join(cfg.Home, "projects", "delidev", string(cfg.SessionID)+".jsonl"), maxHistoryTranscript)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), nativeAPIFixtureToken) || strings.Contains(string(raw), nativeAPIUpstreamKey) {
+		t.Fatal("native transcript retained fixture credentials")
+	}
+	observation, err := ReadMainTranscript(ctx, cfg.Home, cfg.SessionID, cfg.Workspace, historyProofs, nil, nil, cfg.Process.Logger)
+	if err != nil || observation.MatchedMessages != 6 || observation.AdditionalMessages != 0 {
+		t.Fatal("persisted native transcript did not retain the ordered original inputs and blocks", err)
 	}
 }

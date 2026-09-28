@@ -61,6 +61,7 @@ const (
 	InputClaimed   InputDelivery = "claimed"
 	InputAccepted  InputDelivery = "accepted"
 	InputUncertain InputDelivery = "uncertain"
+	InputRejected  InputDelivery = "rejected-before-start"
 	InputRemoved   InputDelivery = "removed"
 )
 
@@ -89,15 +90,16 @@ type RepositoryStart struct {
 // CreateSession contains selections, not executable settings. The Agent Worker
 // and templates are resolved into an immutable snapshot only at first dispatch.
 type CreateSession struct {
-	Name      string            `json:"name"`
-	AgentID   ID                `json:"agent_id"`
-	MachineID ID                `json:"machine_id"`
-	ProjectID ID                `json:"project_id,omitempty"`
-	Workspace WorkspaceType     `json:"workspace"`
-	Starting  []RepositoryStart `json:"starting,omitempty"`
-	Prompt    string            `json:"prompt"`
-	Mode      SessionMode       `json:"mode"`
-	Source    SessionSource     `json:"source"`
+	EstimatedCostBudget *EstimatedCostBudget `json:"estimated_cost_budget,omitempty"`
+	Name                string               `json:"name"`
+	AgentID             ID                   `json:"agent_id"`
+	MachineID           ID                   `json:"machine_id"`
+	ProjectID           ID                   `json:"project_id,omitempty"`
+	Workspace           WorkspaceType        `json:"workspace"`
+	Starting            []RepositoryStart    `json:"starting,omitempty"`
+	Prompt              string               `json:"prompt"`
+	Mode                SessionMode          `json:"mode"`
+	Source              SessionSource        `json:"source"`
 }
 
 func (c *CreateSession) ApplyDefaults() {
@@ -113,6 +115,11 @@ func (c *CreateSession) ApplyDefaults() {
 }
 
 func (c CreateSession) Validate() error {
+	if c.EstimatedCostBudget != nil {
+		if err := c.EstimatedCostBudget.Validate(); err != nil {
+			return err
+		}
+	}
 	if err := Text(c.Name, "session name", 256, true); err != nil {
 		return err
 	}
@@ -175,32 +182,34 @@ type LocalOrigin struct {
 // Session separates visibility, outcome and recovery from dispatch eligibility.
 // Blocked or restored sessions must never be interpreted as completed execution.
 type Session struct {
-	ScheduleOrigin         *ScheduleOrigin     `json:"schedule_origin,omitempty"`
-	LocalOrigin            *LocalOrigin        `json:"local_origin,omitempty"`
-	Name                   string              `json:"name"`
-	AgentID                ID                  `json:"agent_id"`
-	MachineID              ID                  `json:"machine_id"`
-	ProjectID              ID                  `json:"project_id,omitempty"`
-	Workspace              WorkspaceType       `json:"workspace"`
-	Starting               []RepositoryStart   `json:"starting,omitempty"`
-	Source                 SessionSource       `json:"source"`
-	CreatedBy              ID                  `json:"created_by,omitempty"`
-	Outcome                ExecutionOutcome    `json:"outcome"`
-	Archive                ArchiveState        `json:"archive"`
-	Recovery               RecoveryState       `json:"recovery"`
-	Dispatch               DispatchState       `json:"dispatch"`
-	Problem                *Error              `json:"problem,omitempty"`
-	ExecutionRecoveryJobID ID                  `json:"execution_recovery_job_id,omitempty"`
-	ActiveExecutionID      ID                  `json:"active_execution_id,omitempty"`
-	PendingSteerID         ID                  `json:"pending_steer_id,omitempty"`
-	LastInputSequence      uint64              `json:"last_input_sequence"`
-	PendingInputs          uint32              `json:"pending_inputs"`
-	PendingInputBytes      uint64              `json:"pending_input_bytes"`
-	Preparation            *SessionPreparation `json:"preparation,omitempty"`
-	InitialExecution       *InitialExecution   `json:"initial_execution,omitempty"`
-	CurrentExecution       *ExecutionSelection `json:"current_execution,omitempty"`
-	NextExecutionIntent    ExecutionIntent     `json:"next_execution_intent,omitempty"`
-	Execution              *ExecutionProgress  `json:"execution,omitempty"`
+	EstimatedCostBudget    *EstimatedCostBudget       `json:"estimated_cost_budget,omitempty"`
+	ScheduleOrigin         *ScheduleOrigin            `json:"schedule_origin,omitempty"`
+	LocalOrigin            *LocalOrigin               `json:"local_origin,omitempty"`
+	Name                   string                     `json:"name"`
+	AgentID                ID                         `json:"agent_id"`
+	MachineID              ID                         `json:"machine_id"`
+	ProjectID              ID                         `json:"project_id,omitempty"`
+	Workspace              WorkspaceType              `json:"workspace"`
+	Starting               []RepositoryStart          `json:"starting,omitempty"`
+	Source                 SessionSource              `json:"source"`
+	CreatedBy              ID                         `json:"created_by,omitempty"`
+	Outcome                ExecutionOutcome           `json:"outcome"`
+	Archive                ArchiveState               `json:"archive"`
+	Recovery               RecoveryState              `json:"recovery"`
+	Dispatch               DispatchState              `json:"dispatch"`
+	Problem                *Error                     `json:"problem,omitempty"`
+	ExecutionRecoveryJobID ID                         `json:"execution_recovery_job_id,omitempty"`
+	ActiveExecutionID      ID                         `json:"active_execution_id,omitempty"`
+	PendingSteerID         ID                         `json:"pending_steer_id,omitempty"`
+	LastInputSequence      uint64                     `json:"last_input_sequence"`
+	PendingInputs          uint32                     `json:"pending_inputs"`
+	PendingInputBytes      uint64                     `json:"pending_input_bytes"`
+	Preparation            *SessionPreparation        `json:"preparation,omitempty"`
+	InitialExecution       *InitialExecution          `json:"initial_execution,omitempty"`
+	CurrentExecution       *ExecutionSelection        `json:"current_execution,omitempty"`
+	NextExecutionIntent    ExecutionIntent            `json:"next_execution_intent,omitempty"`
+	Execution              *ExecutionProgress         `json:"execution,omitempty"`
+	StartupRejection       *ExecutionStartupRejection `json:"startup_rejection,omitempty"`
 }
 
 type PreparationState string

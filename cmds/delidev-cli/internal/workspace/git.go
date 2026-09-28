@@ -29,12 +29,14 @@ type Inspection struct {
 	DefaultRefs map[string]string `json:"default_refs"`
 }
 type Git struct {
-	Executable  string
-	ProcessRoot string
-	OwnerID     domain.ID
-	Logger      *slog.Logger
-	HooksDir    string
-	Timeout     time.Duration
+	Executable    string
+	ProcessRoot   string
+	OwnerID       domain.ID
+	Logger        *slog.Logger
+	HooksDir      string
+	Timeout       time.Duration
+	readOnly      bool
+	diffIndexFile string
 }
 
 type limitedOutput struct {
@@ -74,6 +76,11 @@ func (g Git) runCommand(ctx context.Context, root string, args ...string) ([]byt
 	bounded, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	commandArgs := []string{"-C", root, "-c", "core.quotePath=false", "-c", "color.ui=false"}
+	if g.readOnly {
+		// Even check-attr can open the index and invoke a configured fsmonitor.
+		// Read-only workspace observations never grant that command authority.
+		commandArgs = append(commandArgs, "-c", "core.fsmonitor=false")
+	}
 	if g.HooksDir != "" {
 		commandArgs = append(commandArgs, "-c", "core.hooksPath="+g.HooksDir)
 	}
@@ -84,7 +91,17 @@ func (g Git) runCommand(ctx context.Context, root string, args ...string) ([]byt
 	}
 	var out limitedOutput
 	out.limit = MaxGitOutput
-	err := process.Run(bounded, process.Config{Directory: g.ProcessRoot, OwnerID: g.OwnerID, Executable: binary, Args: commandArgs, Env: gitEnvironment(), Cwd: root, Stdout: &out, Stderr: io.Discard, Logger: g.Logger})
+	environment := gitEnvironment()
+	if g.readOnly {
+		// Git localizes binary/EOF patch markers. Read observations require a
+		// stable wire grammar independent of the execution machine's locale.
+		environment = slices.DeleteFunc(environment, func(value string) bool { key, _, _ := strings.Cut(value, "="); return strings.EqualFold(key, "LC_ALL") })
+		environment = append(environment, "LC_ALL=C")
+	}
+	if g.diffIndexFile != "" {
+		environment = append(environment, "GIT_INDEX_FILE="+g.diffIndexFile)
+	}
+	err := process.Run(bounded, process.Config{Directory: g.ProcessRoot, OwnerID: g.OwnerID, Executable: binary, Args: commandArgs, Env: environment, Cwd: root, Stdout: &out, Stderr: io.Discard, Logger: g.Logger})
 	if err != nil {
 		if domain.SafeError(err).Code == domain.RecoveryRequired {
 			return nil, -1, err

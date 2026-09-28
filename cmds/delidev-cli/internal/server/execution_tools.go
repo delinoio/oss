@@ -13,7 +13,16 @@ func publishExecutionTool(tx *store.Tx, input domain.ExecutionJobInput, session 
 	var value domain.ExecutionMessage
 	var revision uint64
 	if event.Kind == domain.ExecutionToolStarted {
-		value = domain.ExecutionMessage{ExecutionID: input.ExecutionID, NativeThreadID: event.NativeThreadID, NativeTurnID: event.NativeTurnID, NativeID: update.NativeID, Role: domain.ToolMessage, State: domain.MessageStreaming, FirstSequence: event.Sequence, Tool: &domain.ExecutionTool{Started: *update.Snapshot}}
+		if update.Snapshot.Kind.IsOpenCode() {
+			exists, err := tx.HasOpenCodeToolCall(input.ExecutionID, update.Snapshot.OpenCodeCallID())
+			if err != nil {
+				return err
+			}
+			if exists {
+				return executionEventConflict()
+			}
+		}
+		value = domain.ExecutionMessage{ExecutionID: input.ExecutionID, NativeThreadID: event.NativeThreadID, NativeTurnID: event.NativeTurnID, NativeID: update.NativeID, NativeParentID: update.NativeParentID, Role: domain.ToolMessage, State: domain.MessageStreaming, FirstSequence: event.Sequence, Tool: &domain.ExecutionTool{Started: *update.Snapshot}}
 	} else {
 		r, err := tx.Get(domain.MessageKind, update.ID)
 		if err != nil {
@@ -23,13 +32,46 @@ func publishExecutionTool(tx *store.Tx, input domain.ExecutionJobInput, session 
 		if err != nil {
 			return err
 		}
-		if r.SessionID != session.ID || value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeID != update.NativeID || value.Role != domain.ToolMessage || value.State != domain.MessageStreaming || value.Tool == nil || value.Tool.Completed != nil {
+		if r.SessionID != session.ID || value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeID != update.NativeID || value.NativeParentID != update.NativeParentID || value.Role != domain.ToolMessage || value.State != domain.MessageStreaming || value.Tool == nil || value.Tool.Completed != nil {
 			return executionEventConflict()
 		}
 		revision = r.Revision
 		tool := value.Tool
+		if tool.Started.Kind.IsOpenCode() {
+			prior := tool.Started
+			if len(tool.States) > 0 {
+				prior = tool.States[len(tool.States)-1].Snapshot
+			}
+			if update.Snapshot == nil || domain.ValidateOpenCodeToolTransition(prior, *update.Snapshot) != nil {
+				return executionEventConflict()
+			}
+		}
 		switch event.Kind {
+		case domain.ExecutionToolUpdated:
+			if !tool.Started.Kind.IsOpenCode() || len(tool.States) >= 1024 {
+				return executionEventConflict()
+			}
+			tool.States = append(tool.States, domain.SequencedToolState{Sequence: event.Sequence, Snapshot: *update.Snapshot})
 		case domain.ExecutionToolCompleted:
+			if tool.Started.Kind.IsOpenCode() {
+				ids, err := tx.ExecutionItemInteractions(input.ExecutionID, event.NativeThreadID, event.NativeTurnID, update.NativeID)
+				if err != nil {
+					return err
+				}
+				for _, id := range ids {
+					r, err := tx.Get(domain.InteractionKind, id)
+					if err != nil {
+						return err
+					}
+					interaction, err := store.Decode[domain.ExecutionInteraction](r)
+					if err != nil {
+						return err
+					}
+					if interaction.Closure == domain.InteractionOpen {
+						return executionEventConflict()
+					}
+				}
+			}
 			if update.Snapshot.Kind != tool.Started.Kind {
 				return executionEventConflict()
 			}

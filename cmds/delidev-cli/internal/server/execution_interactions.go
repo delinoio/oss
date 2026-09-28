@@ -7,22 +7,52 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 )
 
-func publishExecutionInteraction(tx *store.Tx, input domain.ExecutionJobInput, session store.Record, event domain.ExecutionEvent) (bool, error) {
+func publishExecutionInteraction(tx *store.Tx, input domain.ExecutionJobInput, session store.Record, progress *domain.ExecutionProgress, event domain.ExecutionEvent) (bool, error) {
 	u := event.Interaction
 	if u == nil {
 		return false, executionEventConflict()
 	}
 	if event.Kind == domain.ExecutionInteractionRequested {
+		if u.Claude != nil {
+			if err := validateClaudeInteractionTool(tx, input, session, event); err != nil {
+				return false, err
+			}
+		}
+		if u.OpenCode != nil {
+			tool, err := tx.OpenCodeInteractionTool(session.ID, input.ExecutionID, event.NativeThreadID, event.NativeTurnID, u.NativeItemID)
+			if err != nil {
+				return false, err
+			}
+			if tool.Role != domain.ToolMessage || tool.State != domain.MessageStreaming || tool.NativeParentID != u.OpenCode.NativeMessageID || tool.Tool == nil || tool.Tool.Completed != nil || tool.Tool.Started.OpenCodeCallID() != u.OpenCode.CallID {
+				return false, executionEventConflict()
+			}
+			if u.Type == domain.UserQuestionInteraction && (tool.Tool.Started.Kind != domain.OpenCodeBuiltinTool || tool.Tool.Started.Builtin.Name != domain.OpenCodeQuestionTool) {
+				return false, executionEventConflict()
+			}
+			exists, err := tx.HasOpenCodeInteractionEvent(session.ID, input.ExecutionID, u.OpenCode.NativeEventID)
+			if err != nil {
+				return false, err
+			}
+			if exists {
+				return false, executionEventConflict()
+			}
+		}
 		if u.Approval != nil && (u.Approval.Harness != input.Configuration.Harness || u.Approval.Version != input.Installation.Version) {
 			return false, executionEventConflict()
 		}
-		value := domain.ExecutionInteraction{ExecutionID: input.ExecutionID, NativeThreadID: event.NativeThreadID, NativeTurnID: event.NativeTurnID, NativeItemID: u.NativeItemID, NativeRequestID: u.NativeRequestID, Type: u.Type, Questions: u.Questions, Approval: u.Approval, Closure: domain.InteractionOpen, FirstSequence: event.Sequence, LastSequence: event.Sequence}
+		value := domain.ExecutionInteraction{ExecutionID: input.ExecutionID, NativeThreadID: event.NativeThreadID, NativeTurnID: event.NativeTurnID, NativeItemID: u.NativeItemID, NativeRequestID: u.NativeRequestID, Type: u.Type, Questions: u.Questions, Approval: u.Approval, OpenCode: u.OpenCode, Claude: u.Claude, Closure: domain.InteractionOpen, FirstSequence: event.Sequence, LastSequence: event.Sequence}
 		if _, err := tx.Put(domain.InteractionKind, u.ID, 0, session.ID, session.ProjectID, value); err != nil {
 			return false, err
 		}
 		var payload any = u.Questions
 		if u.Type == domain.NativeApprovalInteraction {
 			payload = u.Approval
+		}
+		if u.OpenCode != nil {
+			payload = u.OpenCode
+		}
+		if u.Claude != nil {
+			payload = u.Claude
 		}
 		raw, err := json.Marshal(payload)
 		if err != nil {
@@ -45,6 +75,26 @@ func publishExecutionInteraction(tx *store.Tx, input domain.ExecutionJobInput, s
 	key, keyErr := value.NativeRequestID.Key()
 	newKey, newErr := u.NativeRequestID.Key()
 	if keyErr != nil || newErr != nil || key != newKey || r.SessionID != session.ID || value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeItemID != u.NativeItemID || value.Type != u.Type || value.Closure != domain.InteractionOpen {
+		return false, executionEventConflict()
+	}
+	if u.ClaudeCancellation != nil {
+		if input.Configuration.Harness != domain.ClaudeCode || value.Claude == nil || value.Claude.ArrivalID != u.ClaudeCancellation.ArrivalID {
+			return false, executionEventConflict()
+		}
+		value.ClaudeCancellation = u.ClaudeCancellation
+	} else if value.Claude != nil {
+		return false, executionEventConflict()
+	} else if u.OpenCodeStop != nil {
+		if err := validateOpenCodeStopClosure(tx, input, progress, value, u.OpenCodeStop); err != nil {
+			return false, err
+		}
+		value.OpenCodeStop = u.OpenCodeStop
+	} else if u.OpenCodeClosure != nil {
+		if err := validateOpenCodePolicyClosure(tx, input, value, u.OpenCodeClosure); err != nil {
+			return false, err
+		}
+		value.OpenCodeClosure = u.OpenCodeClosure
+	} else if value.OpenCode != nil && !((value.Response != nil && value.Response.State == domain.QuestionResponseAccepted) || (value.ApprovalResponse != nil && value.ApprovalResponse.State == domain.ApprovalResponseAccepted)) {
 		return false, executionEventConflict()
 	}
 	return closePublishedInteraction(tx, r, value, u.Closure, event.Sequence)

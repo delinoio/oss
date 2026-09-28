@@ -58,6 +58,27 @@ plugins:
       - target=ts
       - import_extension=js
 
+  - local:
+      - pnpm
+      - exec
+      - protoc-gen-es
+    out: packages/delidev-api-client/src/gen
+    types:
+      - "delidev.v1"
+    opt:
+      - target=ts
+      - import_extension=js
+  - local:
+      - pnpm
+      - exec
+      - protoc-gen-connect-query
+    out: packages/delidev-api-client/src/gen
+    types:
+      - "delidev.v1"
+    opt:
+      - target=ts
+      - import_extension=js
+
 inputs:
   - directory: protos
     paths:

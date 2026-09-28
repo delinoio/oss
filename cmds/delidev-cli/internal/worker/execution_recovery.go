@@ -18,6 +18,9 @@ func recoverExecution(ctx context.Context, config Config, job domain.Job) (json.
 	if err != nil || credential.Type != domain.WorkerDevice || credential.ServerID != request.ServerID || credential.MachineID != request.MachineID || credential.DeviceID != request.DeviceID {
 		return nil, domain.ExecutionRecoveryUncertain()
 	}
+	if request.Startup != nil {
+		return recoverPRStartup(ctx, config, request)
+	}
 	var preparation workspace.PrepareRequest
 	var manifest workspace.Manifest
 	if domain.Decode(request.Preparation, &preparation) != nil || domain.Decode(request.Manifest, &manifest) != nil || preparation.SessionID != request.SessionID || preparation.MachineID != request.MachineID {
@@ -28,6 +31,7 @@ func recoverExecution(ctx context.Context, config Config, job domain.Job) (json.
 	copy(promptDigest[:], digest)
 	manager := &workspace.Manager{Root: config.Root, Logger: config.Logger}
 	evidence, err := InspectCompletedExecution(ctx, manager, CompletedExecutionRef{
+		Harness: request.Harness, OpenCode: request.OpenCode, Claude: request.Claude,
 		ServerID: request.ServerID, DeviceID: request.DeviceID, InstanceID: request.InstanceID, AssignmentRevision: request.AssignmentRevision, AssignmentDigest: request.AssignmentDigest,
 		Checkpoint:  ExecutionCheckpointRef{JobID: request.JobID, SessionID: request.SessionID, MachineID: request.MachineID, HistoryExecutionID: request.HistoryExecutionID, AssignmentInputDigest: request.AssignmentInputDigest, ConfigurationDigest: request.ConfigurationDigest, AccountID: request.AccountID, ConnectionID: request.ConnectionID, Completion: request.Completion, InputMode: request.InputMode, PromptDigest: promptDigest, AcceptedInputs: request.AcceptedInputs},
 		Preparation: preparation, Manifest: manifest,

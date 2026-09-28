@@ -1,0 +1,9 @@
+[[permission]]
+identifier = "tray-presentation"
+description = "Publish bounded status presentation for the calling trusted window and consume its own native navigation action; no product execution or arbitrary window selection."
+commands.allow = ["begin_tray", "publish_tray", "read_tray_action", "acknowledge_tray_action"]
+
+[[permission]]
+identifier = "notification-presentation"
+description = "Inspect native notification readiness and present bounded notices for the calling trusted window; no product RPCs, custom content or target selection."
+commands.allow = ["begin_notifications", "end_notifications", "notification_permission", "request_notification_permission", "present_notification"]

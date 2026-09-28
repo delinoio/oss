@@ -19,12 +19,13 @@ import (
 )
 
 type RepositorySpec struct {
-	ID              domain.ID        `json:"id"`
-	Checkout        string           `json:"checkout"`
-	PreferredRemote string           `json:"preferred_remote,omitempty"`
-	Base            domain.Reference `json:"base"`
-	Starting        domain.Reference `json:"starting"`
-	AutoFetch       bool             `json:"auto_fetch"`
+	PRTarget        *domain.PRGitTarget `json:"pr_target,omitempty"`
+	ID              domain.ID           `json:"id"`
+	Checkout        string              `json:"checkout"`
+	PreferredRemote string              `json:"preferred_remote,omitempty"`
+	Base            domain.Reference    `json:"base"`
+	Starting        domain.Reference    `json:"starting"`
+	AutoFetch       bool                `json:"auto_fetch"`
 }
 type PrepareRequest struct {
 	SessionID         domain.ID            `json:"session_id"`
@@ -43,16 +44,17 @@ const (
 )
 
 type PreparedRepository struct {
-	LocalHEAD           LocalHEADState   `json:"local_head,omitempty"`
-	LocalIdentityDigest string           `json:"local_identity_digest,omitempty"`
-	ID                  domain.ID        `json:"id"`
-	Source              string           `json:"source"`
-	Path                string           `json:"path"`
-	Base                domain.Reference `json:"base"`
-	Starting            domain.Reference `json:"starting"`
-	BaseCommit          string           `json:"base_commit"`
-	StartingCommit      string           `json:"starting_commit"`
-	Owned               bool             `json:"owned"`
+	PRTarget            *domain.PRGitTarget `json:"pr_target,omitempty"`
+	LocalHEAD           LocalHEADState      `json:"local_head,omitempty"`
+	LocalIdentityDigest string              `json:"local_identity_digest,omitempty"`
+	ID                  domain.ID           `json:"id"`
+	Source              string              `json:"source"`
+	Path                string              `json:"path"`
+	Base                domain.Reference    `json:"base"`
+	Starting            domain.Reference    `json:"starting"`
+	BaseCommit          string              `json:"base_commit"`
+	StartingCommit      string              `json:"starting_commit"`
+	Owned               bool                `json:"owned"`
 }
 type State string
 
@@ -97,7 +99,7 @@ func (m *Manager) initialize() error {
 		return err
 	}
 	m.Root = canonical
-	for _, name := range []string{"workspaces", "locks", "empty-hooks", "processes", "execution-claims", "execution-history"} {
+	for _, name := range []string{"workspaces", "locks", "empty-hooks", "processes", "execution-claims", "execution-history", "pr-startup"} {
 		if err := security.PrivateDir(filepath.Join(m.Root, name)); err != nil {
 			return err
 		}
@@ -112,6 +114,20 @@ func (m *Manager) initialize() error {
 	return nil
 }
 func (r PrepareRequest) validate() error {
+	if err := r.validateStructure(); err != nil {
+		return err
+	}
+	for _, repo := range r.Repositories {
+		if !filepath.IsAbs(repo.Checkout) {
+			return domain.Fail(domain.InvalidArgument, "A checkout path must be absolute on this Worker.", "Use Worker repository inspection.")
+		}
+	}
+	return nil
+}
+
+// Server-side evidence validation cannot interpret a remote Worker's paths
+// with the server host OS. ValidateResult checks them against the Worker OS.
+func (r PrepareRequest) validateStructure() error {
 	if err := r.SessionID.Validate(); err != nil {
 		return err
 	}
@@ -135,13 +151,20 @@ func (r PrepareRequest) validate() error {
 	}
 	ids := []domain.ID{}
 	primary := false
+	prTargets := 0
 	for _, repo := range r.Repositories {
+		if err := validatePRPreparation(repo, r.Type); err != nil {
+			return err
+		}
+		if repo.PRTarget != nil {
+			prTargets++
+			if prTargets > 1 {
+				return domain.Fail(domain.InvalidArgument, "A PR preparation must select exactly one original PR repository.", "Prepare independent PRs in separate sessions.")
+			}
+		}
 		ids = append(ids, repo.ID)
 		if repo.ID == r.PrimaryRepository {
 			primary = true
-		}
-		if !filepath.IsAbs(repo.Checkout) {
-			return domain.Fail(domain.InvalidArgument, "A checkout path must be absolute on this Worker.", "Use Worker repository inspection.")
 		}
 	}
 	if err := domain.UniqueIDs(ids); err != nil {
@@ -275,6 +298,15 @@ func (m *Manager) Prepare(ctx context.Context, request PrepareRequest) (Manifest
 					return failed(err)
 				}
 			} else {
+				if spec.PRTarget != nil {
+					target := *spec.PRTarget
+					prepared.PRTarget = &target
+					m.Logger.Info("workspace_pr_objects_started", "session_id", request.SessionID, "repository_id", spec.ID)
+					if err := git.preparePRObjects(ctx, inspection, spec); err != nil {
+						return failed(err)
+					}
+					m.Logger.Info("workspace_pr_objects_ready", "session_id", request.SessionID, "repository_id", spec.ID)
+				}
 				if prepared.Starting.Type == "" {
 					prepared.Starting, err = DefaultStarting(inspection, spec.PreferredRemote)
 					if err != nil {

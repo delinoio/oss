@@ -1,0 +1,362 @@
+package worker
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"runtime"
+	"time"
+
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/opencode"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
+	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
+)
+
+func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID, input domain.ExecutionJobInput, logger *slog.Logger) (output json.RawMessage, returned error) {
+	if input.Installation.Version != opencode.SupportedVersion {
+		return nil, domain.Fail(domain.Unsupported, "This OpenCode execution requires a separately verified continuation profile.", "Retain the original native history; do not start a replacement input.")
+	}
+	requested, err := openCodeExecutionSettings(input.Configuration, input.Input.Mode, "DeliDev session")
+	if err != nil {
+		return nil, err
+	}
+	var preparation workspace.PrepareRequest
+	var manifest workspace.Manifest
+	if domain.Decode(input.Preparation, &preparation) != nil || domain.Decode(input.Manifest, &manifest) != nil || preparation.SessionID != input.SessionID || preparation.MachineID != input.MachineID || workspace.ValidateResult(preparation, manifest, runtime.GOOS) != nil {
+		return nil, workspace.ResultUncertain()
+	}
+	executable := input.Installation.ResolvedPath
+	resolved, err := filepath.EvalSymlinks(executable)
+	if err != nil || !filepath.IsAbs(executable) || resolved != executable {
+		return nil, domain.Fail(domain.RecoveryRequired, "The selected native executable identity changed.", "Refresh Worker discovery before another execution; no PATH fallback is used.")
+	}
+	manager := &workspace.Manager{Root: config.Root, Logger: config.Logger}
+	var lease *workspace.ExecutionLease
+	if c := input.Continuation; c != nil {
+		lease, err = manager.ClaimContinuation(ctx, owner, input.ExecutionID, workspace.ExecutionPredecessor{JobID: c.Previous.JobID, ExecutionID: c.Previous.ExecutionID}, preparation, manifest)
+	} else {
+		lease, err = manager.ClaimFirstExecution(ctx, owner, input.ExecutionID, preparation, manifest)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := lease.Close(); err != nil {
+			output, returned = nil, err
+		}
+	}()
+	nativeRoot, err := openCodeWorkspaceRoot(manifest, lease.WorkingDirectory())
+	if err != nil {
+		return nil, err
+	}
+	var checkpoint *openCodeExecutionCheckpoint
+	if input.Continuation != nil {
+		value, err := readOpenCodeContinuationCheckpoint(ctx, manager.Root, config.execution.Credential, input)
+		if err != nil {
+			logger.WarnContext(ctx, "opencode_continuation_checkpoint_failed", "execution_id", input.ExecutionID, "code", domain.SafeError(err).Code)
+			return nil, err
+		}
+		checkpoint = &value
+		logger.InfoContext(ctx, "opencode_continuation_checkpoint_verified", "execution_id", input.ExecutionID, "previous_execution_id", input.Continuation.Previous.ExecutionID)
+	}
+	runtimeRoot := filepath.Join(manager.Root, "runtimes")
+	if err := security.PrivateDir(runtimeRoot); err != nil {
+		return nil, domain.SafeError(err)
+	}
+	home := filepath.Join(runtimeRoot, string(input.ExecutionID))
+	if _, err := os.Lstat(home); !errors.Is(err, os.ErrNotExist) {
+		return nil, publicationUncertain()
+	}
+	env, err := harness.PrivateRuntimeEnvironment(home)
+	if err != nil {
+		return nil, domain.SafeError(err)
+	}
+	connection := config.execution
+	publicationConfig := *connection
+	publicationConfig.Root = manager.Root
+	publisher, err := OpenExecutionPublisher(publicationConfig)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := publisher.Close(); err != nil {
+			output, returned = nil, publicationUncertain()
+		}
+	}()
+	rawToken, err := security.RandomToken()
+	if err != nil {
+		return nil, domain.SafeError(err)
+	}
+	token := apiproxy.TokenPrefix + rawToken
+	digest := sha256.Sum256([]byte(token))
+	registration := domain.NewID()
+	intent := struct {
+		Version     uint32    `json:"version"`
+		JobID       domain.ID `json:"job_id"`
+		ExecutionID domain.ID `json:"execution_id"`
+		RequestID   domain.ID `json:"request_id"`
+		TokenDigest string    `json:"token_digest"`
+	}{1, owner, input.ExecutionID, registration, hex.EncodeToString(digest[:])}
+	// OpenCode's private runtime must remain empty before native scanners run.
+	// Registration belongs to the Worker journal outside that runtime.
+	if err := writeJSON(filepath.Join(manager.Root, "jobs", string(owner), "opencode-registration.json"), intent); err != nil {
+		return nil, publicationUncertain()
+	}
+	bounded, cancel := context.WithTimeout(ctx, 30*time.Second)
+	registered, err := connection.Client.RegisterExecution(bounded, authenticated(connection.Credential, &pb.RegisterExecutionRequest{Mutation: &pb.Mutation{RequestId: string(registration), Id: string(owner), ExpectedRevision: connection.Assignment.Revision}, MachineId: string(input.MachineID), InstanceId: string(connection.Instance), CredentialDigest: digest[:]}))
+	cancel()
+	if err != nil {
+		return nil, rpc.ClientError(err)
+	}
+	if registered == nil || registered.Msg == nil || registered.Msg.ProxyPath != "/api-proxy/v1" {
+		return nil, publicationUncertain()
+	}
+	// The stream owns native lifetime. Targeted Stop only kills startup until
+	// original input acceptance is durable; afterwards it owns an abort grace.
+	nativeCtx, cancelNative := context.WithCancel(config.executionContext)
+	defer cancelNative()
+	cancelBeforeAcceptance := context.AfterFunc(ctx, cancelNative)
+	defer cancelBeforeAcceptance()
+	nativeConfig := opencode.APIExecutionConfig{
+		Probe:     opencode.ProbeConfig{Process: process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: home, Env: env, Logger: logger}, Version: input.Installation.Version, Home: filepath.Join(home, "opencode")},
+		Workspace: lease.WorkingDirectory(), NativeRoot: nativeRoot, ServerOrigin: connection.Credential.Endpoint, Token: token,
+		References: openCodeWorkspaceReferences(manifest),
+		Settings:   requested.Session, Instructions: requested.Instructions, Rejection: requested.Rejection,
+	}
+	var resumeClaim *opencode.SessionClaim
+	if checkpoint != nil {
+		claim, err := opencode.CheckpointResumeClaim(nativeConfig, checkpoint.NativeReference, input.ThreadRequestID)
+		if err != nil {
+			return nil, err
+		}
+		resumeClaim = &claim
+	}
+	binding, err := openOpenCodeBinding(publisher, checkpoint, resumeClaim)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := binding.Close(); err != nil {
+			output, returned = nil, err
+		}
+	}()
+	nativeConfig.Claim = binding.Claim
+	var api *opencode.OwnedAPI
+	if checkpoint != nil {
+		previousHome := filepath.Join(runtimeRoot, string(checkpoint.Reference.Claim.ExecutionID))
+		previousAgent, err := input.Configuration.OpenCodePrimaryForInput(input.Continuation.InputMode)
+		if err != nil {
+			return nil, err
+		}
+		api, err = opencode.OpenResumedAPI(nativeCtx, nativeConfig, previousHome, checkpoint.Native, checkpoint.NativeReference, input.ThreadRequestID, previousAgent, input.Continuation.Intent == domain.ContinueExplicitly)
+	} else {
+		api, err = opencode.OpenOwnedAPI(nativeCtx, nativeConfig)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		cleanup, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if err := api.Close(cleanup); err != nil {
+			output, returned = nil, err
+		}
+	}()
+	observed, err := api.InitialSettings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var session string
+	if checkpoint != nil {
+		session = checkpoint.NativeReference.SessionID
+	} else {
+		session, err = api.CreateSession(ctx, input.ThreadRequestID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if err := binding.BindSession(ctx, input.ThreadRequestID, session, observed); err != nil {
+		return nil, err
+	}
+	logger.InfoContext(ctx, "native_execution_thread_bound")
+	// StartText's context owns the original subscription, so it cannot be the
+	// targeted job context that later wakes the event reader to request Stop.
+	if _, err := api.StartText(nativeCtx, input.TurnRequestID, input.Input.Prompt); err != nil {
+		return nil, err
+	}
+	prefix, err := acceptOpenCodeInput(ctx, api, binding)
+	if err != nil {
+		return nil, err
+	}
+	if !cancelBeforeAcceptance() {
+		return nil, domain.SafeError(context.Canceled)
+	}
+	logger.InfoContext(ctx, "native_execution_input_accepted", "input_id", input.InputID)
+	mapper, err := OpenOpenCodeEventPublisher(binding, api)
+	if err != nil {
+		return nil, err
+	}
+	for _, frozen := range prefix {
+		observation, err := frozen.Thaw()
+		if err != nil {
+			return nil, err
+		}
+		if err := mapper.PublishObservation(nativeCtx, observation); err != nil {
+			return nil, err
+		}
+	}
+	prefix = nil
+	finishControls := startOpenCodeControls(ctx, nativeCtx, cancelNative, config, mapper)
+	defer func() {
+		if err := finishControls(); err != nil {
+			output, returned = nil, err
+		}
+	}()
+	readContext, publicationContext := ctx, nativeCtx
+	stopping := false
+	for {
+		progress, err := api.Progress(publicationContext)
+		if err != nil || progress.NeedsRecovery {
+			return nil, publicationUncertain()
+		}
+		if ctx.Err() != nil && !stopping {
+			if nativeCtx.Err() != nil {
+				return nil, domain.SafeError(nativeCtx.Err())
+			}
+			stopping = true
+			grace, cancel := context.WithTimeout(nativeCtx, 15*time.Second)
+			defer cancel()
+			readContext, publicationContext = grace, grace
+			if !progress.TerminalObserved {
+				request := domain.NewID()
+				logger.InfoContext(grace, "native_execution_interruption_requested", "request_id", request)
+				if progress.AssistantID == "" || (progress.Status != opencode.NativeStatusBusy && progress.Status != opencode.NativeStatusRetry) {
+					// Unobserved scheduling permits owned termination, never an
+					// invented native abort or original-input completion report.
+					if _, err := api.ClaimOwnedStop(grace, request); err != nil {
+						return nil, err
+					}
+					if _, err := api.FinishStopCleanup(grace); err != nil {
+						return nil, err
+					}
+					return nil, publicationUncertain()
+				}
+				receipt, err := mapper.RequestStop(grace, request)
+				if err != nil && !receipt.NativeAttempted {
+					return nil, err
+				}
+				// Lost HTTP leaves this original attempt pending. Continue its
+				// stream; only native history plus cleanup can settle it.
+			}
+		}
+		if progress.SettledObserved {
+			if _, err := mapper.PublishTerminal(publicationContext); err != nil {
+				return nil, err
+			}
+			if err := finishControls(); err != nil {
+				return nil, err
+			}
+			_, err := mapper.Complete(publicationContext)
+			if err != nil {
+				return nil, err
+			}
+			// Keep workspace ownership through the original snapshot export and
+			// join its separately journaled Git children before closing the lease.
+			completion, err := mapper.RetainCompletion(publicationContext)
+			if err != nil {
+				return nil, err
+			}
+			if err := lease.Close(); err != nil {
+				return nil, err
+			}
+			return json.Marshal(completion)
+		}
+		observation, err := api.Next(readContext)
+		if err != nil {
+			if !stopping && ctx.Err() != nil && nativeCtx.Err() == nil {
+				continue
+			}
+			return nil, err
+		}
+		if err := mapper.PublishObservation(publicationContext, observation); err != nil {
+			return nil, err
+		}
+	}
+}
+
+// The lease has independently verified project Git ownership. General Chat
+// must also exclude enclosing Git metadata; a native message cannot nominate
+// its own root. Additional repositories use separately verified native local
+// references; Windows global project spelling still needs its own profile.
+func openCodeWorkspaceRoot(manifest workspace.Manifest, cwd string) (string, error) {
+	if cwd != manifest.PrimaryPath || !filepath.IsAbs(cwd) || manifest.Type == domain.GeneralChat && len(manifest.Repositories) != 0 {
+		return "", workspace.ResultUncertain()
+	}
+	if manifest.Type != domain.GeneralChat {
+		return cwd, nil
+	}
+	if runtime.GOOS == "windows" {
+		return "", domain.Fail(domain.Unsupported, "OpenCode General Chat requires verified native Windows root identity.", "Preserve the prepared workspace; do not infer native path ownership.")
+	}
+	for directory := cwd; ; directory = filepath.Dir(directory) {
+		if _, err := os.Lstat(filepath.Join(directory, ".git")); !errors.Is(err, os.ErrNotExist) {
+			return "", workspace.ResultUncertain()
+		}
+		if filepath.Dir(directory) == directory {
+			return directory, nil
+		}
+	}
+}
+
+// Call only after the complete manifest and original workspace lease agree.
+func openCodeWorkspaceReferences(manifest workspace.Manifest) []opencode.WorkspaceReference {
+	var references []opencode.WorkspaceReference
+	for _, repository := range manifest.Repositories {
+		if repository.Path != manifest.PrimaryPath {
+			references = append(references, opencode.WorkspaceReference{RepositoryID: repository.ID, Path: repository.Path})
+		}
+	}
+	return references
+}
+
+func acceptOpenCodeInput(ctx context.Context, api *opencode.OwnedAPI, binding *OpenCodeBindingPublisher) ([]*opencode.FrozenObservation, error) {
+	var prefix []*opencode.FrozenObservation
+	bytes := 0
+	for len(prefix) < 65536 {
+		observation, err := api.Next(ctx)
+		if err != nil {
+			return nil, err
+		}
+		frozen, err := observation.Freeze()
+		if err != nil || frozen.Bytes() <= 0 || frozen.Bytes() > maxOpenCodeTextBytes-bytes {
+			return nil, publicationUncertain()
+		}
+		prefix, bytes = append(prefix, frozen), bytes+frozen.Bytes()
+		progress, err := api.Progress(ctx)
+		if err != nil || progress.NeedsRecovery {
+			return nil, publicationUncertain()
+		}
+		if progress.UserSeen && progress.InputPartSeen {
+			receipt, err := api.InspectInput(ctx)
+			if err != nil {
+				return nil, err
+			}
+			if err := binding.AcceptInput(ctx, receipt); err != nil {
+				return nil, err
+			}
+			return prefix, nil
+		}
+	}
+	return nil, publicationUncertain()
+}

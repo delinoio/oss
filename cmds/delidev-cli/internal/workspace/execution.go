@@ -194,12 +194,24 @@ func (m *Manager) claimExecution(ctx context.Context, jobID, executionID domain.
 	}
 	digest := sha256.Sum256(actual)
 	manifestDigest := hex.EncodeToString(digest[:])
+	var prGate *prStartupGate
+	if previous == nil {
+		prGate, err = m.beginPRStartup(jobID, executionID, input, manifestDigest)
+		if err != nil {
+			return nil, err
+		}
+	}
 	identityDigest, err := m.verifyWorkspaceIdentity(ctx, input, manifest, validation)
 	if err != nil {
 		return nil, err
 	}
 	if previous != nil && (prior.ManifestDigest != manifestDigest || prior.WorkspaceDigest != identityDigest) {
 		return nil, ResultUncertain()
+	}
+	if previous == nil {
+		if err := prGate.finish(m.preflightPreparedPRs(ctx, input, manifest)); err != nil {
+			return nil, err
+		}
 	}
 	// Preparation's read-only Git checks have their own session process owner.
 	// Prove its cleanup before creating a distinct execution-job owner scope.

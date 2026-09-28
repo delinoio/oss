@@ -59,6 +59,7 @@ func TestLinuxIsolatedSecretService(t *testing.T) {
 	}
 	ctx := context.Background()
 	backend := linuxStore{}
+	exerciseNativePAT(t, linuxStore{profile: patProfile}, backend)
 	name := string(domain.NewID()) + "/" + string(domain.NewID()) + "/" + string(domain.NewID()) + "/account-api"
 	defer func() {
 		if err := backend.remove(ctx, name); err != nil {

@@ -1,0 +1,36 @@
+{
+  "sessionId": "019f6de0-a760-7000-8000-000000000071",
+  "update": {
+    "sessionUpdate": "turn_completed",
+    "prompt_id": "e5833c4a-d764-4428-8bd8-6c2968a34b1b",
+    "stop_reason": "end_turn",
+    "usage": {
+      "inputTokens": 11,
+      "outputTokens": 5,
+      "totalTokens": 16,
+      "cachedReadTokens": 0,
+      "cacheCreationTokens": 0,
+      "reasoningTokens": 0,
+      "modelCalls": 1,
+      "apiDurationMs": 5,
+      "modelUsage": {
+        "fixture-model": {
+          "inputTokens": 11,
+          "outputTokens": 5,
+          "totalTokens": 16,
+          "cachedReadTokens": 0,
+          "cacheCreationTokens": 0,
+          "reasoningTokens": 0,
+          "modelCalls": 1,
+          "apiDurationMs": 5
+        }
+      },
+      "numTurns": 1
+    },
+    "elapsed_ms": 324
+  },
+  "_meta": {
+    "eventId": "019f6de0-a760-7000-8000-000000000071-8",
+    "agentTimestampMs": 1790518602395
+  }
+}

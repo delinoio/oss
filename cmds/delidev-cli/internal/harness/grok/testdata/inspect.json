@@ -1,0 +1,143 @@
+{
+  "grokVersion": "1.0.41",
+  "channel": "unknown",
+  "cwd": "/private/fixture",
+  "projectRoot": null,
+  "projectTrusted": true,
+  "projectInstructions": [],
+  "permissions": {
+    "sources": [],
+    "loaded": 0,
+    "skipped": [],
+    "mcpServerAllowlist": [],
+    "mcpLockdownSources": [],
+    "mcpManagedServersOnly": "off",
+    "marketplaceAllowlist": [],
+    "marketplaceLockdownSources": [],
+    "managedMarketplaces": [],
+    "managedSettingsPath": "/Library/Application Support/ClaudeCode/managed-settings.json",
+    "managedSettingsExists": false,
+    "managedSettingsActive": false,
+    "claudeBypassLockAdvisory": false
+  },
+  "loginPolicy": {
+    "disableApiKeyAuth": null,
+    "forceLoginTeamUuid": null,
+    "apiKeyAuthDisabled": false
+  },
+  "hooks": [],
+  "skills": [],
+  "agents": [
+    {
+      "name": "general-purpose",
+      "description": "Private built-in fixture",
+      "source": {
+        "type": "builtin"
+      }
+    },
+    {
+      "name": "explore",
+      "description": "Private built-in fixture",
+      "source": {
+        "type": "builtin"
+      }
+    },
+    {
+      "name": "plan",
+      "description": "Private built-in fixture",
+      "source": {
+        "type": "builtin"
+      }
+    }
+  ],
+  "plugins": [],
+  "marketplaces": [],
+  "mcpServers": [],
+  "lspServers": [],
+  "configSources": {
+    "layers": []
+  },
+  "externalCompat": {
+    "remoteSettingsLoaded": false,
+    "cells": [
+      {
+        "vendor": "cursor",
+        "surface": "skills",
+        "enabled": false,
+        "source": "env"
+      },
+      {
+        "vendor": "cursor",
+        "surface": "rules",
+        "enabled": false,
+        "source": "env"
+      },
+      {
+        "vendor": "cursor",
+        "surface": "agents",
+        "enabled": false,
+        "source": "env"
+      },
+      {
+        "vendor": "cursor",
+        "surface": "mcps",
+        "enabled": false,
+        "source": "env"
+      },
+      {
+        "vendor": "cursor",
+        "surface": "hooks",
+        "enabled": false,
+        "source": "env"
+      },
+      {
+        "vendor": "cursor",
+        "surface": "sessions",
+        "enabled": true,
+        "source": "default"
+      },
+      {
+        "vendor": "claude",
+        "surface": "skills",
+        "enabled": false,
+        "source": "env"
+      },
+      {
+        "vendor": "claude",
+        "surface": "rules",
+        "enabled": false,
+        "source": "env"
+      },
+      {
+        "vendor": "claude",
+        "surface": "agents",
+        "enabled": false,
+        "source": "env"
+      },
+      {
+        "vendor": "claude",
+        "surface": "mcps",
+        "enabled": false,
+        "source": "env"
+      },
+      {
+        "vendor": "claude",
+        "surface": "hooks",
+        "enabled": false,
+        "source": "env"
+      },
+      {
+        "vendor": "claude",
+        "surface": "sessions",
+        "enabled": true,
+        "source": "default"
+      },
+      {
+        "vendor": "codex",
+        "surface": "sessions",
+        "enabled": true,
+        "source": "default"
+      }
+    ]
+  }
+}

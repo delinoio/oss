@@ -68,6 +68,7 @@ type incoming struct {
 }
 
 type Connection struct {
+	jsonrpc    string
 	process    *process.Handle
 	cancel     context.CancelFunc
 	done       chan struct{}
@@ -93,10 +94,23 @@ func uncertain() *domain.Error {
 // Start crosses the durable native start barrier, but sends no harness request.
 // The adapter must complete its handshake before exposing product operations.
 func Start(ctx context.Context, config process.Config) (*Connection, error) {
+	return start(ctx, config, "")
+}
+
+// StartJSONRPC requires explicit JSON-RPC 2.0 envelopes in both directions.
+// Codex's existing omitted-version profile remains independent.
+func StartJSONRPC(ctx context.Context, config process.Config) (*Connection, error) {
+	return start(ctx, config, "2.0")
+}
+
+func start(ctx context.Context, config process.Config, version string) (*Connection, error) {
 	life, cancel := context.WithCancel(ctx)
-	c := &Connection{cancel: cancel, done: make(chan struct{}), writeGate: make(chan struct{}, 1), events: make(chan Event, maxEvents), pending: map[string]*pending{}, seen: map[domain.ID]bool{}, incoming: map[string]incoming{}}
+	c := &Connection{jsonrpc: version, cancel: cancel, done: make(chan struct{}), writeGate: make(chan struct{}, 1), events: make(chan Event, maxEvents), pending: map[string]*pending{}, seen: map[domain.ID]bool{}, incoming: map[string]incoming{}}
 	config.Stdout = &frameWriter{connection: c}
 	config.Stderr = io.Discard
+	if version != "" {
+		config.Stderr = &boundedDiagnostic{connection: c}
+	}
 	h, err := process.Start(life, config)
 	if err != nil {
 		cancel()
@@ -198,7 +212,7 @@ func (c *Connection) Call(ctx context.Context, id domain.ID, method string, para
 	if err := id.Validate(); err != nil {
 		return Response{}, err
 	}
-	raw, err := marshal(envelope{ID: json.RawMessage(`"` + string(id) + `"`), Method: method}, params)
+	raw, err := marshal(envelope{JSONRPC: c.jsonrpc, ID: json.RawMessage(`"` + string(id) + `"`), Method: method}, params)
 	if err != nil {
 		return Response{}, err
 	}
@@ -242,7 +256,7 @@ func (c *Connection) Call(ctx context.Context, id domain.ID, method string, para
 	return Response{}, uncertain()
 }
 func (c *Connection) Notify(ctx context.Context, method string, params any) error {
-	raw, err := marshal(envelope{Method: method}, params)
+	raw, err := marshal(envelope{JSONRPC: c.jsonrpc, Method: method}, params)
 	if err != nil {
 		return err
 	}
@@ -265,7 +279,7 @@ func (c *Connection) Reply(ctx context.Context, event Event, result any) error {
 	if err != nil {
 		return domain.Fail(domain.InvalidArgument, "Invalid native response.", "Use the original interaction's typed response schema.")
 	}
-	raw, err := json.Marshal(envelope{ID: event.ID, Result: resultJSON})
+	raw, err := json.Marshal(envelope{JSONRPC: c.jsonrpc, ID: event.ID, Result: resultJSON})
 	if err != nil || len(raw) > MaxFrame {
 		return domain.Fail(domain.ResourceExhausted, "Native response exceeds its bound.", "Reduce the response size.")
 	}
@@ -413,6 +427,29 @@ func (c *Connection) receive(raw []byte) error {
 	if message.JSONRPC != "" && message.JSONRPC != "2.0" {
 		return protocolFailure()
 	}
+	if c.jsonrpc != "" {
+		if string(fields["jsonrpc"]) != `"2.0"` {
+			return protocolFailure()
+		}
+		for key := range fields {
+			switch key {
+			case "jsonrpc", "id", "method", "params", "result", "error":
+			default:
+				return protocolFailure()
+			}
+		}
+		if hasError {
+			var errorFields map[string]json.RawMessage
+			if json.Unmarshal(fields["error"], &errorFields) != nil {
+				return protocolFailure()
+			}
+			for key := range errorFields {
+				if key != "code" && key != "message" && key != "data" {
+					return protocolFailure()
+				}
+			}
+		}
+	}
 	if message.EmittedAtMS != nil && (*message.EmittedAtMS < 0 || *message.EmittedAtMS > 253402300799999) {
 		return protocolFailure()
 	}
@@ -469,6 +506,21 @@ type frameWriter struct {
 	connection *Connection
 	buffer     []byte
 	stopped    bool
+}
+
+const maxDiagnosticBytes = 64 << 10
+
+type boundedDiagnostic struct {
+	connection *Connection
+	count      int
+}
+
+func (w *boundedDiagnostic) Write(data []byte) (int, error) {
+	if len(data) > maxDiagnosticBytes-w.count {
+		w.connection.fail(domain.Fail(domain.ResourceExhausted, "Native diagnostic output exceeded its bound.", "Reconcile the native process and inspect its supported protocol profile."))
+	}
+	w.count = min(maxDiagnosticBytes, w.count+min(maxDiagnosticBytes, len(data)))
+	return len(data), nil
 }
 
 func (w *frameWriter) Write(data []byte) (int, error) {

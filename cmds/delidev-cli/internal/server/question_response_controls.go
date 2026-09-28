@@ -97,7 +97,7 @@ func (s *Service) currentClaimQuestion(tx *store.Tx, identity questionClaimIdent
 	if err != nil {
 		return r, value, err
 	}
-	if value.Response == nil || value.Response.ID != identity.Response || value.Response.Input.Validate(value.Questions) != nil {
+	if value.Response == nil || value.Response.ID != identity.Response || value.Response.Input.ValidateInteraction(value) != nil {
 		return r, value, executionEventConflict()
 	}
 	grant, err := s.questionResponseScope(tx, r, value)

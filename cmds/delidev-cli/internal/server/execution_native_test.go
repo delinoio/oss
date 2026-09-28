@@ -21,6 +21,8 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/worker"
+	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
+	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 )
 
 func TestManualNativeCodexUsesRegisteredServerRelay(t *testing.T) {
@@ -58,6 +60,20 @@ func TestManualNativeCodexUsesRegisteredServerRelay(t *testing.T) {
 	}))
 	defer upstream.Close()
 	f := publicationFixtureFromAuthority(t, newAuthorityFixture(t, upstream.URL))
+	usageClient := delidevv1connect.NewUsageServiceClient(f.http.Client(), f.http.URL)
+	selectedPrice, err := usageClient.SetModelPricing(ctx, ownerRequest(f.service.Identity, &pb.SetModelPricingRequest{Mutation: &pb.Mutation{Id: string(f.input.Configuration.ModelID), RequestId: string(domain.NewID())}, ExpectedModelRevision: 1, Basis: publicPrice("USD")}))
+	if err != nil {
+		t.Fatal("native fixture price configuration", err)
+	}
+	sessionClient := delidevv1connect.NewSessionServiceClient(f.http.Client(), f.http.URL)
+	initialSession, err := f.service.Store.Get(ctx, domain.SessionKind, f.input.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	initialBudget, err := sessionClient.SetSessionBudget(ctx, ownerRequest(f.service.Identity, &pb.SetSessionBudgetRequest{Mutation: &pb.Mutation{Id: string(initialSession.ID), ExpectedRevision: initialSession.Revision, RequestId: string(domain.NewID())}, Change: &pb.SetSessionBudgetRequest_Budget{Budget: &pb.EstimatedCostBudget{Currency: "USD", Threshold: "0.0000125"}}}))
+	if err != nil || initialBudget.Msg.View.State != pb.BudgetState_BUDGET_STATE_ALLOW_INCOMPLETE {
+		t.Fatal("native fixture budget configuration", err)
+	}
 	f.registerGrant(t)
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -179,6 +195,18 @@ func TestManualNativeCodexUsesRegisteredServerRelay(t *testing.T) {
 	if err != nil || usage.AccountID != f.input.AccountID || usage.ConnectionID != f.input.ConnectionID || usage.ModelID != configuration.ModelID || usage.ThreadID != string(bound.Thread.ID) || usage.TurnID != string(turn.TurnID) || *usage.Usage.Last.Total != 2 || *usage.Usage.Total.Input != 1 || *usage.Usage.Total.Output != 1 {
 		t.Fatal("native usage observation lost its exact counters or event-time attribution")
 	}
+	responseUsage, err := f.service.Store.ResponseUsage(ctx, session.Execution.LatestResponseUsageID)
+	if err != nil || responseUsage.Record.AccountID != f.input.AccountID || responseUsage.Record.ConnectionID != f.input.ConnectionID || responseUsage.Record.ModelID != configuration.ModelID || responseUsage.Record.ThreadID != string(bound.Thread.ID) || responseUsage.Record.TurnID != string(turn.TurnID) || responseUsage.Record.Usage.Counts == nil || *responseUsage.Record.Usage.Counts.Input != 1 || *responseUsage.Record.Usage.Counts.Output != 1 || *responseUsage.Record.Usage.Counts.Total != 2 || responseUsage.Record.Usage.CostEvidence != domain.UsageCostMissing {
+		t.Fatal("native exact response usage lost its counters or original attribution", err)
+	}
+	summary, err := usageClient.GetUsageSummary(ctx, ownerRequest(f.service.Identity, &pb.GetUsageSummaryRequest{SessionId: string(f.input.SessionID)}))
+	if err != nil || summary.Msg.ActualCost != pb.UsageCostState_USAGE_COST_STATE_UNAVAILABLE || len(summary.Msg.Estimates.Currencies) != 1 || summary.Msg.Estimates.Currencies[0].KnownAmount != "0.0000125" || len(summary.Msg.Pricing) != 1 || summary.Msg.Pricing[0].Pricing.Id != selectedPrice.Msg.Pricing.Id {
+		t.Fatal("native usage lost its immutable separate estimate", err)
+	}
+	budgetView, err := sessionClient.GetSessionBudget(ctx, ownerRequest(f.service.Identity, &pb.GetSessionBudgetRequest{SessionId: string(f.input.SessionID)}))
+	if err != nil || budgetView.Msg.View.State != pb.BudgetState_BUDGET_STATE_THRESHOLD_REACHED || budgetView.Msg.View.SelectedCurrency.KnownAmount != "0.0000125" {
+		t.Fatal("native estimate did not reach the inclusive budget threshold", err)
+	}
 	if err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -203,5 +231,5 @@ func TestManualNativeCodexUsesRegisteredServerRelay(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	t.Log("installed Codex -> registered server relay -> scripted local provider -> Worker durable event outbox -> server transcript and attributed native usage: every event in this simple turn handled, exact identities/counters, server-only key and owned closure; dispatch readiness simulated, tools/interactions/populated quota unimplemented")
+	t.Log("installed Codex -> registered server relay -> scripted local provider -> Worker durable event outbox -> server transcript, attributed native usage and immutable separate token-price estimate with an inclusive budget observation: every event in this simple turn handled, exact identities/counters, server-only key and owned closure; dispatch readiness simulated, other capability scopes unexercised")
 }

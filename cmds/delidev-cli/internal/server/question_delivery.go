@@ -67,8 +67,14 @@ func publishQuestionAcceptance(tx *store.Tx, job store.Record, input domain.Exec
 	if err != nil {
 		return err
 	}
+	if err := validateOpenCodeReplyAcceptance(tx, input, value, event.QuestionAcceptance.OpenCode); err != nil {
+		return err
+	}
 	response := value.Response
 	if r.SessionID != input.SessionID || value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeItemID != u.NativeItemID || value.Type != domain.UserQuestionInteraction || response == nil || response.ID != u.ResponseID || response.Claim == nil || response.Delivery == nil || response.Acceptance != nil || (response.State != domain.QuestionResponseTransmitted && response.State != domain.QuestionResponseUncertain) || (response.Delivery.State != domain.QuestionTransmitted && response.Delivery.State != domain.QuestionDeliveryUncertain) || response.Delivery.Sequence >= event.Sequence || progress.UnconfirmedResponses == 0 {
+		return executionEventConflict()
+	}
+	if value.OpenCode != nil && ((response.Input.OpenCode.Reject && u.Evidence != domain.NativeOpenCodeQuestionRejected) || (!response.Input.OpenCode.Reject && u.Evidence != domain.NativeOpenCodeQuestionReply)) {
 		return executionEventConflict()
 	}
 	claimedJob, err := store.Decode[domain.Job](job)
@@ -80,7 +86,7 @@ func publishQuestionAcceptance(tx *store.Tx, job store.Record, input domain.Exec
 		return executionEventConflict()
 	}
 	response.State = domain.QuestionResponseAccepted
-	response.Acceptance = &domain.QuestionAcceptanceObservation{Evidence: u.Evidence, Sequence: event.Sequence}
+	response.Acceptance = &domain.QuestionAcceptanceObservation{Evidence: u.Evidence, Sequence: event.Sequence, OpenCode: u.OpenCode}
 	progress.UnconfirmedResponses--
 	// This fact does not clear earlier Stop, transport, Worker-loss or other
 	// recovery gates, and never changes native closure or cleanup evidence.

@@ -1,0 +1,35 @@
+fn main() {
+    #[cfg(feature = "desktop-host")]
+    tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
+        tauri_build::AppManifest::new().commands(&[
+            "open_github",
+            "connect_local",
+            "local_server_status",
+            "local_worker_proof",
+            "local_worker_control",
+            "connection_context",
+            "saved_connections",
+            "removed_connections",
+            "remove_connection",
+            "retained_worker_control",
+            "pair_connection",
+            "retry_connection",
+            "rename_connection",
+            "open_connection",
+            "connect_saved",
+            "saved_worker_proof",
+            "saved_worker_control",
+            "show_connection_manager",
+            "begin_tray",
+            "publish_tray",
+            "read_tray_action",
+            "acknowledge_tray_action",
+            "begin_notifications",
+            "end_notifications",
+            "notification_permission",
+            "request_notification_permission",
+            "present_notification",
+        ]),
+    ))
+    .expect("DeliDev native build configuration must be valid");
+}

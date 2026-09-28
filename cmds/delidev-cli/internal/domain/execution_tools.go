@@ -12,9 +12,14 @@ type CommandActionKind string
 type FileChangeKind string
 
 const (
-	CommandTool ToolKind = "command"
-	PatchTool   ToolKind = "patch"
+	CommandTool         ToolKind = "command"
+	PatchTool           ToolKind = "patch"
+	OpenCodeReadTool    ToolKind = "opencode-read"
+	OpenCodeShellTool   ToolKind = "opencode-shell"
+	OpenCodeTodoTool    ToolKind = "opencode-todo"
+	OpenCodeBuiltinTool ToolKind = "opencode-builtin"
 
+	ToolPending   ToolStatus = "pending"
 	ToolRunning   ToolStatus = "running"
 	ToolCompleted ToolStatus = "completed"
 	ToolFailed    ToolStatus = "failed"
@@ -65,10 +70,14 @@ type FileChangeObservation struct {
 }
 
 type ToolSnapshot struct {
-	Kind    ToolKind                `json:"kind"`
-	Status  ToolStatus              `json:"status"`
-	Command *CommandObservation     `json:"command,omitempty"`
-	Changes []FileChangeObservation `json:"changes"`
+	Builtin *OpenCodeBuiltinObservation `json:"builtin,omitempty"`
+	Todo    *OpenCodeTodoObservation    `json:"todo,omitempty"`
+	Kind    ToolKind                    `json:"kind"`
+	Status  ToolStatus                  `json:"status"`
+	Command *CommandObservation         `json:"command,omitempty"`
+	Changes []FileChangeObservation     `json:"changes"`
+	Read    *OpenCodeReadObservation    `json:"read,omitempty"`
+	Shell   *OpenCodeShellObservation   `json:"shell,omitempty"`
 }
 
 type ToolInputObservation struct {
@@ -77,12 +86,13 @@ type ToolInputObservation struct {
 }
 
 type ExecutionToolUpdate struct {
-	ID       ID                       `json:"id"`
-	NativeID string                   `json:"native_id"`
-	Snapshot *ToolSnapshot            `json:"snapshot,omitempty"`
-	Delta    *string                  `json:"delta,omitempty"`
-	Changes  *[]FileChangeObservation `json:"changes,omitempty"`
-	Input    *ToolInputObservation    `json:"input,omitempty"`
+	ID             ID                       `json:"id"`
+	NativeID       string                   `json:"native_id"`
+	NativeParentID string                   `json:"native_parent_id,omitempty"`
+	Snapshot       *ToolSnapshot            `json:"snapshot,omitempty"`
+	Delta          *string                  `json:"delta,omitempty"`
+	Changes        *[]FileChangeObservation `json:"changes,omitempty"`
+	Input          *ToolInputObservation    `json:"input,omitempty"`
 }
 
 // Preserve every patch/input observation with its execution sequence. Native
@@ -95,7 +105,13 @@ type SequencedToolPatch struct {
 	Sequence uint64                  `json:"sequence"`
 	Changes  []FileChangeObservation `json:"changes"`
 }
+type SequencedToolState struct {
+	Sequence uint64       `json:"sequence"`
+	Snapshot ToolSnapshot `json:"snapshot"`
+}
+
 type ExecutionTool struct {
+	States    []SequencedToolState `json:"states,omitempty"`
 	Started   ToolSnapshot         `json:"started"`
 	Completed *ToolSnapshot        `json:"completed,omitempty"`
 	Output    *string              `json:"output"`
@@ -104,7 +120,7 @@ type ExecutionTool struct {
 }
 
 func (k ExecutionEventKind) IsTool() bool {
-	return slices.Contains([]ExecutionEventKind{ExecutionToolStarted, ExecutionToolCompleted, ExecutionToolOutput, ExecutionToolInput, ExecutionToolPatch}, k)
+	return slices.Contains([]ExecutionEventKind{ExecutionToolStarted, ExecutionToolUpdated, ExecutionToolCompleted, ExecutionToolOutput, ExecutionToolInput, ExecutionToolPatch}, k)
 }
 
 func invalidTool() error {
@@ -112,15 +128,22 @@ func invalidTool() error {
 }
 
 func (u ExecutionToolUpdate) Validate(kind ExecutionEventKind) error {
-	if u.ID.Validate() != nil || Text(u.NativeID, "native tool identity", 1024, true) != nil {
+	if u.ID.Validate() != nil || Text(u.NativeID, "native tool identity", 1024, true) != nil || Text(u.NativeParentID, "native tool parent", 1024, false) != nil {
 		return invalidTool()
 	}
-	if (kind != ExecutionToolStarted && kind != ExecutionToolCompleted && u.Snapshot != nil) || (kind != ExecutionToolOutput && u.Delta != nil) || (kind != ExecutionToolInput && u.Input != nil) || (kind != ExecutionToolPatch && u.Changes != nil) {
+	if (kind != ExecutionToolStarted && kind != ExecutionToolCompleted && kind != ExecutionToolUpdated && u.Snapshot != nil) || (kind != ExecutionToolOutput && u.Delta != nil) || (kind != ExecutionToolInput && u.Input != nil) || (kind != ExecutionToolPatch && u.Changes != nil) {
 		return invalidTool()
 	}
 	switch kind {
-	case ExecutionToolStarted, ExecutionToolCompleted:
-		if u.Snapshot == nil || u.Snapshot.Validate() != nil || (kind == ExecutionToolStarted) != (u.Snapshot.Status == ToolRunning) {
+	case ExecutionToolStarted, ExecutionToolUpdated, ExecutionToolCompleted:
+		if u.Snapshot == nil || u.Snapshot.Validate() != nil {
+			return invalidTool()
+		}
+		if u.Snapshot.Kind.IsOpenCode() {
+			if kind == ExecutionToolStarted && u.Snapshot.Status != ToolPending || kind == ExecutionToolUpdated && u.Snapshot.Status != ToolPending && u.Snapshot.Status != ToolRunning || kind == ExecutionToolCompleted && u.Snapshot.Status != ToolCompleted && u.Snapshot.Status != ToolFailed {
+				return invalidTool()
+			}
+		} else if kind == ExecutionToolUpdated || (kind == ExecutionToolStarted) != (u.Snapshot.Status == ToolRunning) {
 			return invalidTool()
 		}
 	case ExecutionToolOutput:
@@ -148,6 +171,33 @@ func (u ExecutionToolUpdate) Validate(kind ExecutionEventKind) error {
 }
 
 func (s ToolSnapshot) Validate() error {
+	if s.Kind == OpenCodeReadTool {
+		if s.Command != nil || s.Changes != nil || s.Read == nil || s.Shell != nil || s.Todo != nil || s.Builtin != nil {
+			return invalidTool()
+		}
+		return s.Read.Validate(s.Status)
+	}
+	if s.Kind == OpenCodeShellTool {
+		if s.Command != nil || s.Changes != nil || s.Read != nil || s.Shell == nil || s.Todo != nil || s.Builtin != nil {
+			return invalidTool()
+		}
+		return s.Shell.Validate(s.Status)
+	}
+	if s.Kind == OpenCodeTodoTool {
+		if s.Command != nil || s.Changes != nil || s.Read != nil || s.Shell != nil || s.Todo == nil || s.Builtin != nil {
+			return invalidTool()
+		}
+		return s.Todo.Validate(s.Status)
+	}
+	if s.Kind == OpenCodeBuiltinTool {
+		if s.Command != nil || s.Changes != nil || s.Read != nil || s.Shell != nil || s.Todo != nil || s.Builtin == nil {
+			return invalidTool()
+		}
+		return s.Builtin.Validate(s.Status)
+	}
+	if s.Read != nil || s.Shell != nil || s.Todo != nil || s.Builtin != nil {
+		return invalidTool()
+	}
 	if !slices.Contains([]ToolStatus{ToolRunning, ToolCompleted, ToolFailed, ToolDeclined}, s.Status) {
 		return invalidTool()
 	}

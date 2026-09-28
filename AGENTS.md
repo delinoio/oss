@@ -124,7 +124,8 @@ enum ProjectId {
 
 ### Project Domain Ownership
 
-- `delidev` -> `cmds/delidev-cli`, `protos/delidev/v1`, `protos/gen/go/delidev/v1`; follow `docs/project-delidev.md` and the complete issue #964 requirements. The executable is `delidev`; Go owns single-user server and Worker business logic. Keep implementation and real-environment evidence distinct in `docs/cmds-delidev-evidence.md`.
+- DeliDev active issue #964 scope includes the complete desktop app plus CLI/server/Worker requirements, as explicitly confirmed by the owner on 2026-09-25; prior CLI-only increments do not narrow completion. Keep desktop implementation and native evidence gaps visible.
+- `delidev` -> `apps/delidev`, `cmds/delidev-cli`, `protos/delidev/v1`, `protos/gen/go/delidev/v1`, `packages/delidev-api-client`; follow `docs/project-delidev.md` and the complete issue #964 requirements. The executable is `delidev`; Go owns single-user server and Worker business logic. Keep implementation and real-environment evidence distinct in `docs/cmds-delidev-evidence.md`.
 - `forge` -> `crates/forge-tree-doc`, `crates/forge-pptx`, `crates/delino-forge`; follow `docs/project-forge.md` and `docs/crates-forge-foundation.md`. Keep all three packages private, local-only, and preserve unsupported PPTX content during supported edits. Opened documents export to a separate path; reject replacement of their tracked source even with explicit overwrite. CLI/MCP share one core; optional preview is not a generation dependency.
 
 - `nodeup` -> `crates/nodeup`, `apps/public-docs/docs/nodeup`
@@ -373,8 +374,8 @@ Coverage expectations:
 - `go-quality`: generates and validates the ignored administrator and ach UI bundles, then runs `go fmt ./...` (failing if formatting changes are applied) and `go vet ./...` on Ubuntu.
 - `go-test`: generates and validates the ignored administrator and ach UI bundles, then runs `go test ./...` on `ubuntu-latest`, `macos-latest`, and `windows-latest`.
 - `rust-fmt`: runs `cargo fmt --all --check`.
-- `rust-clippy`: runs `cargo clippy --workspace --all-targets --all-features -- -D warnings`.
-- `rust-test`: builds pnport and its injection companion with `cargo build --locked -p pnport -p pnport-preload`, then runs `cargo test --workspace --all-targets`.
+- `rust-clippy`: prepares the DeliDev typed client, frontend and Go sidecar plus WebKitGTK 4.1 development prerequisites, then runs `cargo clippy --workspace --all-targets --all-features -- -D warnings`.
+- `rust-test`: prepares the DeliDev typed client, frontend and Go sidecar plus WebKitGTK 4.1 development prerequisites, builds pnport and its injection companion with `cargo build --locked -p pnport -p pnport-preload`, then runs `cargo test --workspace --all-targets`.
 - `node-public-docs-test`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter public-docs test`, covering the root and all seven project content sections.
 - `node-clibox-test`: runs `cargo test --locked -p clibox -p clibox-config -p clibox-fspy -p clibox-system -p clibox-transform -p clibox-wait` for native utility/configuration/process/adapter and file-access behavior, native CLI consumer installation and launcher/distribution tests on Linux, macOS, and Windows, selected by shared CI planning and required by `CI Result`.
 - `node-pnport-test`: checks launcher and package contracts, version synchronization, immutable artifacts, installer rollback, and fail-closed release publication on affected PRs and main pushes.
@@ -406,6 +407,7 @@ Change-scoped execution rules:
 - Central path rules cover Go, Rust, every Node workspace, repository environment tooling, DevHud domains, packaging, public docs, and package/release/review workflows. Runmoor-only release scripts do not select DevHud native packaging; shared DevHud packaging inputs still do.
 - The PR frontend job runs the complete DevHud test command, including native-script fixtures, clean desktop/mobile frontend output validation, static mobile/widget contracts, and immutable CEF pins. Its aggregate `test` task is non-cacheable because it validates consecutive clean builds and external contract inputs.
 - Protocol generation and package-local frontend outputs are deterministic and cacheable; the ignored administrator and ach UI embeds, native package, mobile, smoke, signing, release, and deployment tasks remain non-cacheable.
+- The shared protocol CI job also validates the DeliDev TypeScript client, generated freshness and real temporary Go-server synchronization. DeliDev command/client changes select it; the native subprocess fixture remains uncached and cannot use user credentials or inference.
 - Changes to `.github/workflows/CI.yml`, `.github/actions/**`, or central planning/result logic force every check eligible for that event. Changes to `scripts/ci/job-paths.json` compare the previous and current rules and force only changed eligible jobs. PRs still exclude native packaging; `workflow_dispatch` runs all domain jobs regardless of changed paths.
 - CI installs always use the frozen pnpm lockfile with `--ignore-scripts`. Shared pnpm/Go setup actions restore caches scoped by OS, architecture, tool version, and lockfile; only successful main jobs save them. Rust compilation caches likewise save only on successful main jobs; the DevHud desktop matrix must cache dependencies only with target caching disabled, and rustfmt has no dependency cache. PRs may restore main caches but never create branch-scoped caches. The Runmoor workflow uses the same Go cache policy and cancels superseded executions on the same ref.
 - CI is read-only: it does not consume release secrets, push tags or images, create releases, upload stores, deploy services/docs, or mutate updater/controller state.

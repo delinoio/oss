@@ -1,8 +1,17 @@
 ### Instructions for `protos/`
 
+- DeliDev ConfigurationService export/preview/apply follows `docs/cmds-delidev-configuration-transfer-contract.md`. Versioned bounded JSON excludes credentials and runtime evidence. Signed previews bind actor/server/exact before/after plan; import mutation receipts are reference-only and never replay side effects. Worker credentials cannot invoke these owner/client operations.
+
+- DeliDev `ReadSessionWorkspace` is owner/client-only. `WatchWorkspaceReads`/`ReportWorkspaceRead` are current owning-Worker-only observation APIs bound to the primary stream; they never claim durable jobs, refresh execution leases, create receipts or persist file bodies. Preserve the closed query/result schemas, exact relative-root selection, per-machine bound, deadline and late/duplicate/foreign result rejection in `docs/cmds-delidev-files-contract.md`.
+
+- DeliDev's private `pr_candidate` workspace read follows the workspace/protocol contracts. Require an exclusive zero file query and a closed 4 KiB metadata result bound to the original complete request and current Worker stream. Public file results and private matching proof cannot substitute for one another; no matching read grants execution, Git writes or startup-rejection authority.
+
+- DeliDev inbox notification operations are owner/paired-client-only and derive the preference/delivery scope from the authenticated principal. Candidate batches contain only original inbox/session UUIDs and closed notification kinds. A fresh durable claim may grant one OS presentation; exact receipt replay, reconnect or another claim request never repeats that grant. Submitted, denied, failed and uncertain reports cannot modify inbox read state or native response authority. Preserve client-bound expected preference revisions and current-state receipt reads; see `docs/cmds-delidev-inbox-contract.md`.
+
 - Follow root `AGENTS.md` and the owning project/domain contracts.
 - Keep protobuf package names, enum identifiers, compatibility, and generated-client rules stable and documented before implementation.
 - Write schemas and comments in English.
+- DeliDev `SystemService.GetOverview` is owner/paired-client-only. Preserve exact uint64 ownership/request/Worker counts, observation time and server UTC usage boundaries; no resource bodies, credentials, native identities or paths enter this presentation response. Worker-compatible `GetStatus` stays separate. Connected Workers require independently sampled stream presence plus current database authorization and a fresh lease; observations never authorize execution or cleanup.
 
 ### Scope in This Domain
 
@@ -69,3 +78,49 @@
 - DeliDev `ScheduleService` is owner/client-only. Strict definition writes cannot supply timer, origin, creator or occurrence state. Preserve actor-bound reference-only receipts, write-only secondary Local authentication, retained origin for unchanged Local selection, exact revision checks and signed filter/epoch-bound pages. Pause/delete never remove accepted work; manual Run now shares cron overlap acceptance, and history remains readable after configuration deletion. Resume cannot clear a disabling problem without reconfiguration.
 
 - DeliDev Project/Agent `DeleteConfiguration` preserves independent retained sessions, snapshots and occurrences while atomically disabling matching schedules. Keep final project selection restrictions private and tombstone-bound for established executions; deleted configuration cannot authorize fresh selection or first dispatch. Current account/Worker/native authority and typed recovery errors remain unchanged.
+
+- DeliDev `SearchService` is owner/paired-client-only. Search current retained message resources, including Archive, with literal Unicode queries and original-execution account filters. Keep query contents out of logs and readable cursor payloads; bind actor/filter/source epoch, recheck revocation transactionally, reject unknown enum values and bound both wire encodings without truncating source messages. Search grants no response or execution authority.
+
+- DeliDev `ActivityService.ListActivity` returns only typed metadata from durable original sources. Preserve source UUID/revision/time and origin links, separate dispatch from native completion/cleanup, and retain original execution-account identity. Owner/client-only pages bind actor/filter/source epoch and recheck revocation; no source document or native conversation identity enters activity.
+
+- DeliDev schema generation includes `packages/delidev-api-client/src/gen` TypeScript/Connect Query output. Keep root freshness, Turbo source/output tracking and the shared protocol CI client/real-Go-server checks synchronized; never handwrite generated descriptors or move business authority into the client.
+
+- DeliDev `UsageService.GetUsageSummary` exposes bounded owner/client-only exact-response subtotals with original attribution, decimal-string counters, separate measured/unavailable counts and explicit coverage/cost enums. No native response digest, thread/turn identity or prompt enters the aggregate. Current labels are optional; reads recheck authorization and never return partial totals after capacity failure.
+
+- DeliDev pricing RPCs are owner/client-only with actor-bound exact receipts and independent pricing revisions. Keep nullable decimal rates, immutable historical source/date/currency/mode/exclusions, separate per-currency amounts and category evidence. A retry returns its accepted version without reselecting it, and estimates never establish actual spend or complete native telemetry.
+
+- DeliDev SessionService budget reads/writes are owner/client-only, revision-bound and transactionally authorized. Keep optional decimal-string budgets, explicit oneof removal, exact actor-bound current-state receipts, lifetime per-currency evidence and incomplete coverage. The typed budget_reached failed precondition cannot consume pending input or cancel accepted execution.
+
+- DeliDev normalized OpenCode text and plain-text reasoning JSON keeps the original part ID and an immutable native_parent_id message owner, separately from the original input turn. Other current profiles omit/reject that field; preserve historical Codex encoding and unchanged protobuf envelopes. The reasoning-text artifact profile retains null summary/content arrays and index-free suffixes with exact monotonic completion. These profiles cannot grant other rich-event, terminal or continuation authority.
+
+- DeliDev `tool-updated` supports the pinned OpenCode Read, Shell, Todo and closed builtin JSON profiles defined in the protocol contract. Retain optional native_parent_id, original call identity, pending proposal, immutable applied input/start, ordered intermediate snapshots and separate success/error completion. Builtin input/metadata JSON strings preserve exact native fields and numeric spelling. Other harness profiles reject these additions; historical Codex JSON and protobuf envelopes remain unchanged. No path or typed native payload grants file access or native execution authority.
+
+- DeliDev `opencode-usage-observed` is a separate pinned native observation profile with original source/parent identity, decimal-string categories, nullable total and unpriced estimate. Keep it mutually exclusive with Codex usage/response payloads, derive attribution at publication and retain each source once. It cannot feed the exact response ledger, pricing or budgets; preserve existing protobuf envelopes and historical Codex JSON.
+
+- OpenCode `turn-finished` requires original completed user and finalized-assistant usage evidence in addition to current execution/sequence checks. Preserve terminal inbox receipts, independent cleanup/job reporting and authoritative late Stop/recovery state. Terminal publication alone cannot enable continuation or claim process closure.
+
+- OpenCode original question/permission request JSON uses a disjoint `opencode` payload, original `que_`/`per_` identities and observed tool-part/assistant/call ownership. Preserve ordered matrices without synthetic question IDs, optional native flags and exact permission scope/metadata. Commit original request uniqueness and unread inbox atomically, preserve independent read state and block tool/root completion with pending requests. Proposal publication cannot authorize Codex response encoding, response delivery or public execution. The separate direct-response union uses original ordered answer matrices and one-request `once` permissions through existing response/claim RPCs; bounded native reply evidence binds proposal/event/request/body digest to the current response claim and confirmed exact-body HTTP delivery before independent native closure. Keep reply content out of metadata, and reject missing/mixed proofs or unsupported cascade policies.
+
+- DeliDev `ReadSessionReviewContext` is owner/client-only and interprets the existing authenticated Worker Git observation. It accepts no client patch and returns at most 1 MiB of exact diff plus validated file/line coordinates. Preserve absent side numbers and non-line file-only anchors under `docs/cmds-delidev-files-contract.md`.
+
+- DeliDev local review mutations are owner/paired-client-only dedicated SessionService methods. Bind actor/session/exact request and expected revisions; create anchors only from the original Worker read. Commit grouped snapshots, comment links and one ordinary input atomically. Read-only receipt replay cannot recreate deleted data or enqueue twice. Follow `docs/cmds-delidev-files-contract.md`; generated Go and TypeScript sources remain tool-owned.
+
+- DeliDev IntegrationService is owner/client-only under `docs/cmds-delidev-integrations-contract.md`. Keep PATs bounded and write-only, definitions closed, mutations actor/revision/request-bound, pending revisions exact and accepted replay current-state-only. Generic configuration and Worker credentials cannot alter or invoke profile connection state.
+
+- DeliDev InspectRepositoryIntegration is a read-only owner/client operation with a versioned, exact repository-revision/profile/generation-bound response. Keep unavailable and not-evaluated feature observations distinct from CI/rules outcomes; no mutation receipt or saved PAT belongs in this response.
+
+- DeliDev QueryRepositoryIntegration is a versioned owner/client-only read under the integration contract. Derive profile/generation from the repository, validate strict list/search/detail and PR-only diff/checks/statuses queries, keep exact numeric namespaces and explicit partial results, and expose no mutation receipt or arbitrary API URL. PR observations require one original PR detail and its exclusive head-bound family; native unknown states and independent Checks/statuses never imply evaluated-commit or remediation authority.
+
+- DeliDev LinkSessionPullRequest/UnlinkSessionPullRequest are owner/client metadata mutations under the integration contract. Inputs cannot supply stable remote identity or access evidence; the server resolves/rechecks them. Preserve exact actor-bound retries, association revision ownership, archived retention and deletion tombstones without session execution authority. ResourceService supplies scoped historical association reads/events.
+
+- DeliDev GitHub token forms are read-only, profile/revision-bound non-secret configurations with a closed access enum. Keep credential storage, remote API authority and local OS dispatch outside the response; regenerate all bindings after schema edits.
+
+
+- DeliDev retained PR feedback collection/list/dismissal are dedicated owner/client IntegrationService operations. Accept no caller-supplied remote evidence; bind mutations to actor/original request and dismissal to exact revision/content version. History uses stable remote numeric identities and signed page-size/set-revision-bound cursors. Reference-only replay cannot fetch GitHub, recreate deleted state or start execution; follow the integration contract.
+
+
+- DeliDev PR problem collection has a closed kind enum. Unspecified and explicit feedback preserve the original receipt family; CI/conflict remain separate request identities. Unknown kinds fail before remote reads. All kinds use the same stable PR history and version-local Dismiss, without granting execution or borrowing another kind’s prerequisites.
+
+- DeliDev original PR startup rejection/recovery uses the existing ReportWork and RecoverSessionExecution envelopes under the sessions/protocol contracts. Keep exclusive metadata-only rejection proof separate from native completion and bind original paired device/assignment before current Worker inspection. Decimal-string rejection revisions retain uint64 precision. Neither an accepted rejection nor inspection/receipt replay can resend the input, fabricate native progress or Resume; no protobuf change is implied by these additive job/resource JSON profiles.
+
+- DeliDev remediation history/resumption are owner/client IntegrationService operations under the integration contract. Lists bind stable remote numeric identities, normalized page size and every original attempt revision in their signed cursor. Resume targets the exact retained set mutation, advances only explicit allowance provenance and returns current state on replay; no execution or remote-evidence payload is accepted. Regenerate Go and TypeScript/Connect Query outputs together.

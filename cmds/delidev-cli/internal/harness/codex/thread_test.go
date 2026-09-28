@@ -66,7 +66,7 @@ func (f *threadFixture) handle(id json.RawMessage, method string, raw json.RawMe
 		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"id": id, "error": map[string]any{"code": code, "message": "fixture-protected-diagnostic", "data": "fixture-protected-details"}})
 		return true
 	}
-	if params["experimentalRawEvents"] != true {
+	if (method == string(startThread) && params["experimentalRawEvents"] != true) || (method == string(resumeThread) && params["experimentalRawEvents"] != nil) {
 		os.Exit(26)
 	}
 	threadID := domain.NewID()
@@ -276,6 +276,7 @@ func TestThreadNativeDefaultsAreObservableWithoutInventingThem(t *testing.T) {
 }
 func TestThreadInvalidSettingsDoNotConsumeRequestIdentity(t *testing.T) {
 	changes := []func(*ThreadSettings){
+		func(s *ThreadSettings) { s.Options.ClaudePermission = domain.ClaudePermissionDefault },
 		func(s *ThreadSettings) { s.Model = "" }, func(s *ThreadSettings) { s.Cwd = "relative" }, func(s *ThreadSettings) { s.Options.SubagentModel = "other" }, func(s *ThreadSettings) { s.Options.SubagentEffort = "high" }, func(s *ThreadSettings) { s.Options.MaxConcurrency = 3 }, func(s *ThreadSettings) { s.Options.ApprovalReviewModel = "other" }, func(s *ThreadSettings) { s.Options.ApprovalPolicy = "invented" }, func(s *ThreadSettings) { s.Options.Permission = "invented" }, func(s *ThreadSettings) { s.Instructions = strings.Repeat("x", (256<<10)+1) },
 	}
 	client, capture := openThreadFixture(t, "thread-ready")

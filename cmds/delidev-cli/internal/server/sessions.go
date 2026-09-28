@@ -85,7 +85,7 @@ func (s *Service) sessionResult(ctx context.Context, result store.Result) (*pb.S
 			if err != nil {
 				return err
 			}
-			if recovery.SessionID != refs.SessionID || job.Type != domain.RecoverExecutionJob || value.Execution == nil || job.ParentID != value.Execution.JobID {
+			if recovery.SessionID != refs.SessionID || job.Type != domain.RecoverExecutionJob || change.ExecutionJob == nil || job.ParentID != domain.ID(change.ExecutionJob.Id) || (value.Execution != nil && job.ParentID != value.Execution.JobID) {
 				return domain.ExecutionRecoveryUncertain()
 			}
 			change.ExecutionRecoveryJob = rpc.Resource(recovery)
@@ -176,7 +176,7 @@ func appendSessionInput(tx *store.Tx, id domain.ID, session *domain.Session, inp
 }
 
 func acceptedSession(input domain.CreateSession, origin *domain.LocalOrigin, creator domain.ID) domain.Session {
-	return domain.Session{LocalOrigin: origin, Name: input.Name, AgentID: input.AgentID, MachineID: input.MachineID, ProjectID: input.ProjectID, Workspace: input.Workspace, Starting: input.Starting, Source: input.Source, CreatedBy: creator, Outcome: domain.ExecutionNotStarted, Archive: domain.NotArchived, Recovery: domain.NoRecovery, Dispatch: domain.DispatchBlocked, Problem: domain.InitialExecutionPending()}
+	return domain.Session{EstimatedCostBudget: input.EstimatedCostBudget, LocalOrigin: origin, Name: input.Name, AgentID: input.AgentID, MachineID: input.MachineID, ProjectID: input.ProjectID, Workspace: input.Workspace, Starting: input.Starting, Source: input.Source, CreatedBy: creator, Outcome: domain.ExecutionNotStarted, Archive: domain.NotArchived, Recovery: domain.NoRecovery, Dispatch: domain.DispatchBlocked, Problem: domain.InitialExecutionPending()}
 }
 
 func (s *Service) CreateSession(ctx context.Context, req *connect.Request[pb.CreateSessionRequest]) (*connect.Response[pb.CreateSessionResponse], error) {
@@ -427,6 +427,9 @@ func (s *Service) ControlSession(ctx context.Context, req *connect.Request[pb.Co
 			return nil, domain.Fail(domain.Conflict, "The session revision changed.", "Reload current state before controlling it.")
 		}
 		if action == domain.ResumeSession {
+			if value.StartupRejection != nil {
+				return nil, domain.Fail(domain.Conflict, "This input was rejected before native startup and cannot be resumed.", "Preserve this attempt and create a fresh authorized PR fix after resolving its rejection.")
+			}
 			if value.InitialExecution != nil {
 				_, err := queueContinuation(tx, r, value, true)
 				return sessionReceipt{SessionID: r.ID}, err

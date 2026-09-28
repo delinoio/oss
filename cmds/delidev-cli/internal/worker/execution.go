@@ -44,12 +44,28 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	logger = logger.With("job_id", owner, "execution_id", input.ExecutionID, "session_id", input.SessionID, "harness", input.Configuration.Harness)
 	logger.InfoContext(ctx, "native_execution_started")
 	defer func() {
+		if workspace.IsPRStartupRejection(returned) {
+			output, returned = reportPRStartupRejection(config, owner, job, returned)
+			if returned == nil {
+				logger.InfoContext(ctx, "native_execution_startup_rejected")
+				return
+			}
+		}
 		if returned != nil {
 			logger.WarnContext(ctx, "native_execution_requires_reconciliation", "code", domain.SafeError(returned).Code)
 		} else {
 			logger.InfoContext(ctx, "native_execution_cleanup_verified")
 		}
 	}()
+	if input.Configuration.Harness == domain.ClaudeCode {
+		return executeClaudeSession(ctx, config, owner, input, logger)
+	}
+	if input.Configuration.Harness == domain.OpenCode {
+		return executeOpenCodeSession(ctx, config, owner, input, logger)
+	}
+	if input.Configuration.Harness == domain.GrokBuild {
+		return executeGrokSession(ctx, config, owner, input, logger)
+	}
 	if input.Configuration.Harness != domain.Codex || input.Installation.Version != codex.SupportedVersion {
 		return nil, domain.Fail(domain.Unsupported, "This native execution profile is not implemented.", "Select a verified installed Codex profile; no fallback harness is used.")
 	}
@@ -295,7 +311,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		default:
 			return nil, publicationUncertain()
 		}
-		completion := domain.ExecutionCompletion{Version: 1, ExecutionID: input.ExecutionID, InputID: input.InputID, NativeThreadID: bound.Thread.ID, NativeTurnID: turn.TurnID, LastSequence: sequence, Outcome: outcome, CleanupVerified: true}
+		completion := domain.ExecutionCompletion{Version: 1, ExecutionID: input.ExecutionID, InputID: input.InputID, NativeThreadID: domain.NativeIdentity(bound.Thread.ID), NativeTurnID: domain.NativeIdentity(turn.TurnID), LastSequence: sequence, Outcome: outcome, CleanupVerified: true}
 		if err := completion.Validate(); err != nil {
 			return nil, err
 		}

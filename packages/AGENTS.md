@@ -1,5 +1,9 @@
 ### Instructions for `packages/`
 
+- DeliDev portable configuration uses generated ConfigurationQuery export/preview/apply bindings. Keep original document bytes and exact request identities under `docs/cmds-delidev-configuration-transfer-contract.md`; client parsing never becomes authorization, validation or numeric reserialization authority.
+
+- DeliDev workspace file queries use generated `SessionQuery.readSessionWorkspace`; no client filesystem or duplicated authorization logic. Keep file contents in bounded nonpersistent view caches, preserve exact decimal size strings, and render them as inert text under `docs/cmds-delidev-files-contract.md`.
+
 - Follow root `AGENTS.md` and the owning project/domain contracts.
 - Public npm packages generated here declare Apache-2.0 and include the complete license; preserve bundled third-party notices.
 - Generated packages must have a canonical source contract, reproducible generation, freshness checks, and no implicit secret or persistence policy.
@@ -27,6 +31,12 @@
 
 ### async-commit-hook
 - `packages/async-commit-hook-api-client` owns `@delinoio/async-commit-hook-api-client`, generated exclusively from `async_commit_hook.v1`. Follow `docs/packages-async-commit-hook-api-client-contract.md`; no client-side duplicate gate logic or persistence.
+
+### DeliDev
+
+- `packages/delidev-api-client` owns the private generated TypeScript/Connect Query bindings and bounded read-only synchronization helpers. Follow `docs/packages-delidev-api-client-contract.md`. Generate all descriptors from `delidev.v1`; never duplicate Go product validation or add implicit startup/mutation retry.
+- Bind each transport to one explicit HTTPS or exact HTTP loopback origin and fresh caller-owned credentials. Disable redirects/cookies/cache; never store credentials, documents or cursors in browser storage, logs or query keys. Identity changes cancel all old requests and discard their caches.
+- Apply coherent complete snapshots before their cursors, then fetch changed resources by identity/revision. Advance replay only after consumption, resnapshot on typed gaps, preserve retained state on disconnect, and bound memory/backoff. Resource streams cannot emit native notifications or execute work. The real temporary Go-server fixture is uncached and uses only test-owned credentials/processes.
 
 ### clibox Rules
 
@@ -73,6 +83,20 @@
 - Keep the ROAM travel IR example's reusable React source, local image assets, generation prompts and provenance together. Resolve its assets relative to the task module, retain explicit fictional-metric labels and calculation consistency, and keep exported decks/previews untracked. The example must run without network access or image-generation/conversion tools and must generate successfully on all six native CI hosts with their installed fonts.
 
 - Word list components must carry stable list-instance identity into the native model. Separate numbered lists restart independently; items within a list share numbering, and imported numbering definitions remain untouched.
+
+- DeliDev `SessionQuery.readSessionReviewContext` carries authoritative Worker diff coordinates with original side/range/text/newline facts. Clients cannot manufacture line anchors for binary, mode-only, symbolic-link or submodule changes. Keep observations bounded and nonpersistent under `docs/cmds-delidev-files-contract.md`.
+
+- DeliDev generated SessionQuery local review mutations preserve exact decimal revisions, original anchor/context and immutable submitted snapshots. Retain exact uncertain wire requests across panel navigation; current Resource refresh cannot silently update a selected revision. Use the dedicated owner/client operations under `docs/cmds-delidev-files-contract.md`.
+
+- DeliDev generated IntegrationQuery follows `docs/cmds-delidev-integrations-contract.md`; write-only PATs never enter query keys/read models and pending revision strings remain exact. Generate all service descriptors from the canonical proto.
+
+- DeliDev IntegrationQuery includes the generated repository access read. Consumers preserve its exact scope and decimal revision and independently validate observations; endpoint availability is not future authorization or semantic CI/rules evidence.
+
+- DeliDev IntegrationQuery includes generated repository content queries. Keep strict query/scope validation, exact decimal IDs with original API identity source, explicit search/page limits and nullable mergeability; no query cache or content response may carry saved PATs.
+
+- DeliDev retained PR feedback uses generated IntegrationQuery refresh/list/dismissal bindings. Preserve exact remote numeric strings, resource revisions and original content-version/request identities. No implicit collection, mutation retry, handling inference or browser persistence is allowed; follow the integration contract.
+
+- DeliDev IntegrationQuery exposes generated retained remediation-history and explicit allowance-resumption bindings. Preserve exact numeric PR IDs and original set/revision/request identity without persistence, implicit mutation retry or execution inference; follow the integration/client contracts.
 
 - React Forge GLB/FBX scene and animation sessions follow `docs/packages-react-forge-scene-contract.md`; preserve the shared React, atomic export and MCP lifecycle while keeping the 3D model independent from Office/PDF.
 - React Forge `/sfx` adds generation-only WAV sessions under `docs/packages-react-forge-sfx-contract.md`; preserve original procedural-example provenance, expose synthesis limits, and distinguish this unreleased extension from npm `0.1.1`.

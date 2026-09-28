@@ -1,0 +1,293 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "opencode",
+    "version": "1.0.0",
+    "description": "opencode api"
+  },
+  "paths": {
+    "/global/health": {
+      "get": {
+        "operationId": "global.health",
+        "responses": {
+          "200": {
+            "description": "Synthetic readiness fixture",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/global/event": {
+      "get": {
+        "operationId": "global.event",
+        "responses": {
+          "200": {
+            "description": "Synthetic readiness fixture",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/global/config": {
+      "get": {
+        "operationId": "global.config.get",
+        "responses": {
+          "200": {
+            "description": "Synthetic readiness fixture",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/event": {
+      "get": {
+        "operationId": "event.subscribe",
+        "responses": {
+          "200": {
+            "description": "Synthetic readiness fixture",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/question": {
+      "get": {
+        "operationId": "question.list",
+        "responses": {
+          "200": {
+            "description": "Synthetic readiness fixture",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/question/{requestID}/reply": {
+      "post": {
+        "operationId": "question.reply",
+        "responses": {
+          "200": {
+            "description": "Synthetic readiness fixture",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/permission": {
+      "get": {
+        "operationId": "permission.list",
+        "responses": {
+          "200": {
+            "description": "Synthetic readiness fixture",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/permission/{requestID}/reply": {
+      "post": {
+        "operationId": "permission.reply",
+        "responses": {
+          "200": {
+            "description": "Synthetic readiness fixture",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/session": {
+      "get": {
+        "operationId": "session.list",
+        "responses": {
+          "200": {
+            "description": "Synthetic readiness fixture",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "session.create",
+        "responses": {
+          "200": {
+            "description": "Synthetic readiness fixture",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/session/status": {
+      "get": {
+        "operationId": "session.status",
+        "responses": {
+          "200": {
+            "description": "Synthetic readiness fixture",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/session/{sessionID}": {
+      "get": {
+        "operationId": "session.get",
+        "responses": {
+          "200": {
+            "description": "Synthetic readiness fixture",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/session/{sessionID}/message": {
+      "get": {
+        "operationId": "session.messages",
+        "responses": {
+          "200": {
+            "description": "Synthetic readiness fixture",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/session/{sessionID}/fork": {
+      "post": {
+        "operationId": "session.fork",
+        "responses": {
+          "200": {
+            "description": "Synthetic readiness fixture",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/session/{sessionID}/abort": {
+      "post": {
+        "operationId": "session.abort",
+        "responses": {
+          "200": {
+            "description": "Synthetic readiness fixture",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/session/{sessionID}/prompt_async": {
+      "post": {
+        "operationId": "session.prompt_async",
+        "responses": {
+          "204": {
+            "description": "Synthetic readiness fixture"
+          }
+        }
+      }
+    },
+    "/question/{requestID}/reject": {
+      "post": {
+        "operationId": "question.reject",
+        "responses": {
+          "200": {
+            "description": "Synthetic readiness fixture",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {},
+  "security": [],
+  "tags": []
+}

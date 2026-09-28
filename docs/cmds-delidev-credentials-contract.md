@@ -8,7 +8,9 @@ Only an authenticated server lifecycle operation may use the primitive. Callers 
 
 The vault holds an exclusive private directory lock and pins its server UUID-v7 identity. A missing identity pin cannot rebind a populated vault. Under the exclusive lock, first-open recovery may discard only bounded private regular `.pending-<decimal>` atomic-write scratch files at an otherwise empty vault root; it validates every entry before removal and synchronizes cleanup. Owner directories, links, unknown names or oversized files retain recovery-required state. References comprise an owner UUID-v7, mutation request UUID-v7 and closed purpose (`account-api`, `account-login`, `network-proxy`, `worker-ssh`). Aliases, emails, provider URLs and user-selected filesystem paths are not native credential names. A replacement receives a fresh mutation ID. Private directory/file ownership, permissions and non-symlink checks apply to every access. Running independent copies of the same server identity against the same native references is outside the single-authority contract.
 
-GitHub PATs require their own direct OS credential-store lifecycle under the issue contract. The envelope primitive does not implement PAT integration, credential import, platform unlock UI, backup restoration, or provider login.
+GitHub PATs now have the separate direct native storage primitive below. The account envelope primitive does not store PAT payloads. Public PAT configuration/validation, credential import, platform unlock UI, backup restoration and provider login require their separate lifecycle composition.
+
+The [doctor inspection boundary](cmds-delidev-diagnostics-contract.md) may open only an existing private vault with its original lock and server pin. It holds a non-creating exclusive lock, performs no scratch reconciliation or scope initialization, rejects writes/deletes and closes after inspection. Reading an exact sealed reference proves decryptability only; it never establishes provider readiness or enumerates unrelated native credentials.
 
 ## Envelope and persistence
 
@@ -56,3 +58,16 @@ rm -rf "$delidev_fixture_dir"
 ```
 
 Cross-compilation does not establish native behavior. Passing a temporary keychain/Secret Service test does not establish account login, upstream key validation, provider inference, proxy authorization or full OS service lifecycle acceptance. The [evidence ledger](cmds-delidev-evidence.md) records those boundaries separately.
+
+## Direct GitHub PAT storage
+
+`PATStore` uses a distinct `io.delino.delidev.github.pat.v1` native service on macOS Keychain, Windows Credential Manager and Linux Secret Service. It writes the exact 1–512 visible ASCII token bytes directly into that OS service. The existing account wrapping service retains its exact 64-byte format and namespace; neither profile can select the other's entries. PAT names bind only server UUID, profile UUID and immutable generation UUID. This primitive reads no default GitHub/system credential and exposes no public secret-reading operation.
+
+The private metadata directory reuses the server-scope pin, exclusive lock, private ownership checks and joined close boundary, without using account envelope serialization. Each generation has only `staged`, `sealed`, `deleting` or `deleted` metadata. A domain-separated HMAC under the caller's existing protected server owner key binds the exact initial token to its staged intent; the key, token and unkeyed token digest never enter metadata. The store copies that key into its own lifetime and clears it after joined closure. Callers clear returned token buffers after bounded use and retain authorization/revision/mutation receipt ownership outside this primitive.
+
+Before the first native write, persist the original staged intent. Native acknowledgment loss reconciles only the exact generation and original bytes. A sealed generation whose native entry disappears returns recovery required and is never recreated by retry. Deletion persists a denial tombstone before touching the OS store, so locked/unavailable native cleanup leaves a retryable marker that already refuses Get/Put. Completed tombstones cannot be reused, and replayed deletion cannot remove a newer generation. Metadata-only cleanup enumeration scans this profile's owned records in bounded batches with cancellation and rejects more than 256 unresolved generations without returning a partial list. No native credential enumeration is used.
+
+The native adapters keep their existing no-prompt, exact-match, redacted-error and platform session constraints for both profiles. Public profile metadata, current GitHub identity/access validation, immediate cancellation of active integration requests, replacement/delete coordination, RPC/CLI and desktop settings still require the server integration layer; primitive success alone proves none of those capabilities.
+
+
+The direct PAT primitive is now composed by [IntegrationService and its CLI/desktop clients](cmds-delidev-integrations-contract.md). That layer supplies actor-bound reference receipts, durable denial before native replacement/deletion, exact pending-generation recovery and joined identity-inspection cancellation. Native storage success remains separate from GitHub identity and repository feature authorization.

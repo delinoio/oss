@@ -115,6 +115,15 @@ func writeJSON(path string, value any) error {
 // acceptance. A lost response can therefore retry exactly without creating a
 // new device or replacing an existing credential.
 func Pair(ctx context.Context, root string, grant PairingCode, kind domain.DeviceType, name string) (Credential, error) {
+	return pair(ctx, root, grant, kind, name, false)
+}
+
+// RetryPair requires the original private pairing journal or completed device.
+// It cannot recreate lost request/token ownership from a saved grant alone.
+func RetryPair(ctx context.Context, root string, grant PairingCode, kind domain.DeviceType, name string) (Credential, error) {
+	return pair(ctx, root, grant, kind, name, true)
+}
+func pair(ctx context.Context, root string, grant PairingCode, kind domain.DeviceType, name string, existing bool) (Credential, error) {
 	var zero Credential
 	if err := grant.Validate(); err != nil {
 		return zero, err
@@ -122,10 +131,18 @@ func Pair(ctx context.Context, root string, grant PairingCode, kind domain.Devic
 	if kind != domain.WorkerDevice && kind != domain.ClientDevice {
 		return zero, domain.Fail(domain.InvalidArgument, "Unknown pairing type.", "Select client or worker.")
 	}
-	if err := security.PrivateDir(root); err != nil {
+	check := security.PrivateDir
+	if existing {
+		check = security.CheckPrivateDir
+	}
+	if err := check(root); err != nil {
 		return zero, err
 	}
-	lock, err := security.TryLock(filepath.Join(root, "pairing.lock"))
+	lockScope := security.TryLock
+	if existing {
+		lockScope = security.TryLockExisting
+	}
+	lock, err := lockScope(filepath.Join(root, "pairing.lock"))
 	if err != nil {
 		return zero, err
 	}
@@ -142,6 +159,9 @@ func Pair(ctx context.Context, root string, grant PairingCode, kind domain.Devic
 	var pending pendingPair
 	raw, err := security.ReadPrivate(path, 32<<10)
 	if errors.Is(err, os.ErrNotExist) {
+		if existing {
+			return zero, domain.Fail(domain.RecoveryRequired, "The original pairing journal is unavailable.", "Preserve this scope; do not recreate a request or credential from the grant alone.")
+		}
 		token, err := RandomToken()
 		if err != nil {
 			return zero, err
@@ -172,6 +192,9 @@ func Pair(ctx context.Context, root string, grant PairingCode, kind domain.Devic
 		}
 		if err := pending.Credential.Validate(); err != nil {
 			return zero, err
+		}
+		if pending.RequestID.Validate() != nil || pending.Credential.ServerID != grant.ServerID || pending.Credential.PairingID != grant.PairingID || pending.Credential.Endpoint != grant.Endpoint {
+			return zero, domain.Fail(domain.RecoveryRequired, "The original pairing journal has inconsistent ownership.", "Preserve the original scope; do not resend or replace its request or credential.")
 		}
 	}
 	httpClient, transport := rpc.HTTPClient()

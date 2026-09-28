@@ -116,7 +116,7 @@ const (
 )
 
 type threadParams struct {
-	RawEvents                  bool              `json:"experimentalRawEvents"`
+	RawEvents                  bool              `json:"experimentalRawEvents,omitempty"`
 	ThreadID                   domain.ID         `json:"threadId,omitempty"`
 	Model                      string            `json:"model"`
 	ModelProvider              string            `json:"modelProvider"`
@@ -223,7 +223,7 @@ func (s ThreadSettings) wireSettings() (threadParams, error) {
 		}
 		p.WorkspaceRoots = slices.Clone(s.WorkspaceRoots)
 	}
-	if s.Options.SubagentModel != "" || s.Options.SubagentEffort != "" || s.Options.MaxConcurrency != 0 || s.Options.ApprovalReviewModel != "" {
+	if s.Options.SubagentModel != "" || s.Options.SubagentEffort != "" || s.Options.MaxConcurrency != 0 || s.Options.ApprovalReviewModel != "" || s.Options.ClaudePermission != "" {
 		return p, unsupportedSettings()
 	}
 	switch s.Options.Permission {
@@ -310,11 +310,14 @@ func (c *Client) bindThread(ctx context.Context, requestID, threadID domain.ID, 
 		}
 	}
 	params.ThreadID = threadID
-	params.RawEvents = true
 	if method == resumeThread {
 		exclude := true
 		params.ExcludeTurns = &exclude
 	} else {
+		// The pinned ThreadResumeParams has no raw-event opt-in and its server
+		// listener disables these supplements. Only fresh thread/start accepts
+		// this option; do not pretend an ignored resume field enables telemetry.
+		params.RawEvents = true
 		params.HistoryMode = LegacyHistory
 		ephemeral := false
 		params.Ephemeral = &ephemeral

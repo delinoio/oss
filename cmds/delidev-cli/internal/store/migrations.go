@@ -42,7 +42,7 @@ func migrate(ctx context.Context, db *sql.DB, root string) error {
 	if version == SchemaVersion {
 		return nil
 	}
-	if version < 1 || version > 11 {
+	if version < 1 || version >= SchemaVersion {
 		return domain.Fail(domain.RecoveryRequired, "No supported migration exists for this database.", "Preserve the original and use a matching server version.")
 	}
 	if err := migrationBackup(ctx, db, root); err != nil {
@@ -125,7 +125,60 @@ func migrate(ctx context.Context, db *sql.DB, root string) error {
 			return storageError(err)
 		}
 	}
-	if _, err := tx.ExecContext(ctx, deletedConfigurationSchema); err != nil {
+	if version < 12 {
+		if _, err := tx.ExecContext(ctx, deletedConfigurationSchema); err != nil {
+			return storageError(err)
+		}
+	}
+	if version < 13 {
+		if _, err := tx.ExecContext(ctx, searchSchema); err != nil {
+			return storageError(err)
+		}
+		if err := (&Tx{tx: tx, ctx: ctx}).backfillSearch(); err != nil {
+			return err
+		}
+	}
+	if version < 14 {
+		if _, err := tx.ExecContext(ctx, responseUsageSchema); err != nil {
+			return storageError(err)
+		}
+	}
+	if version < 15 {
+		if _, err := tx.ExecContext(ctx, pricingSchema); err != nil {
+			return storageError(err)
+		}
+	}
+	if version < 16 {
+		if _, err := tx.ExecContext(ctx, budgetSchema); err != nil {
+			return storageError(err)
+		}
+		if err := (&Tx{tx: tx, ctx: ctx}).backfillSessionEstimates(); err != nil {
+			return err
+		}
+	}
+	if version < 17 {
+		if _, err := tx.ExecContext(ctx, notificationSchema); err != nil {
+			return storageError(err)
+		}
+	}
+	if version < 18 {
+		var legacyProblems int
+		if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM entities WHERE kind='problem'").Scan(&legacyProblems); err != nil {
+			return storageError(err)
+		}
+		if legacyProblems != 0 {
+			return domain.Fail(domain.RecoveryRequired, "Legacy PR problem ownership is unrecognized.", "Preserve the original database and migration backup; no old evidence is reinterpreted.")
+		}
+		if _, err := tx.ExecContext(ctx, prProblemSchema); err != nil {
+			return storageError(err)
+		}
+	}
+	if version < 19 {
+		if _, err := tx.ExecContext(ctx, prCIProblemSchema); err != nil {
+			return storageError(err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, prRemediationSchema); err != nil {
 		return storageError(err)
 	}
 	return storageError(tx.Commit())

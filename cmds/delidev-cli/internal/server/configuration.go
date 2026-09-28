@@ -72,7 +72,7 @@ func SaveConfiguration(ctx context.Context, s *store.Store, input ConfigurationM
 		return tx.Put(input.Kind, id, input.ExpectedRevision, "", "", value)
 	})
 }
-func mustExist(tx *store.Tx, kind domain.Kind, ids ...domain.ID) error {
+func mustExist(tx configurationView, kind domain.Kind, ids ...domain.ID) error {
 	for _, id := range ids {
 		if _, err := tx.Get(kind, id); err != nil {
 			return err
@@ -80,7 +80,14 @@ func mustExist(tx *store.Tx, kind domain.Kind, ids ...domain.ID) error {
 	}
 	return nil
 }
-func all(tx *store.Tx, kind domain.Kind) ([]store.Record, error) {
+
+type configurationView interface {
+	Get(domain.Kind, domain.ID) (store.Record, error)
+	List(store.Filter) ([]store.Record, error)
+	ValidateModelIdentity(domain.ID, domain.Model) error
+}
+
+func all(tx configurationView, kind domain.Kind) ([]store.Record, error) {
 	out := []store.Record{}
 	f := store.Filter{Kind: kind, Limit: store.MaxPage}
 	for {
@@ -98,7 +105,7 @@ func all(tx *store.Tx, kind domain.Kind) ([]store.Record, error) {
 		f.After = page[len(page)-1].ID
 	}
 }
-func validateRelationships(tx *store.Tx, kind domain.Kind, id domain.ID, expected uint64, value validatable) error {
+func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID, expected uint64, value validatable) error {
 	switch v := value.(type) {
 	case *domain.Project:
 		if err := mustExist(tx, domain.RepositoryKind, v.Repositories...); err != nil {
@@ -115,7 +122,12 @@ func validateRelationships(tx *store.Tx, kind domain.Kind, id domain.ID, expecte
 			}
 		}
 		if v.IntegrationID != "" {
-			return mustExist(tx, domain.IntegrationKind, v.IntegrationID)
+			if err := mustExist(tx, domain.IntegrationKind, v.IntegrationID); err != nil {
+				return err
+			}
+		}
+		if v.Remediation != nil {
+			return validateRemediationRelationships(tx, *v.Remediation)
 		}
 		return nil
 	case *domain.Agent:
@@ -262,16 +274,19 @@ func validateRelationships(tx *store.Tx, kind domain.Kind, id domain.ID, expecte
 		if len(records) > 0 && records[0].ID != id {
 			return domain.Fail(domain.Conflict, "The server already has settings.", "Edit the existing settings ID and revision.")
 		}
-		if v.Remediation.AgentID != "" {
-			if err := mustExist(tx, domain.AgentKind, v.Remediation.AgentID); err != nil {
-				return err
-			}
+		return validateRemediationRelationships(tx, v.Remediation)
+	}
+	return nil
+}
+
+func validateRemediationRelationships(tx configurationView, policy domain.RemediationPolicy) error {
+	if policy.AgentID != "" {
+		if err := mustExist(tx, domain.AgentKind, policy.AgentID); err != nil {
+			return err
 		}
-		if v.Remediation.MachineID != "" {
-			if err := mustExist(tx, domain.MachineKind, v.Remediation.MachineID); err != nil {
-				return err
-			}
-		}
+	}
+	if policy.MachineID != "" {
+		return mustExist(tx, domain.MachineKind, policy.MachineID)
 	}
 	return nil
 }

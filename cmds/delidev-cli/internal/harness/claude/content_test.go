@@ -272,3 +272,99 @@ func TestContentChildOwnershipAndAggregateBound(t *testing.T) {
 		}
 	})
 }
+
+func TestContentInitializationPreservesRestoredMessageAndToolOwnership(t *testing.T) {
+	for _, duplicate := range []bool{false, true} {
+		t.Run(fmt.Sprint(duplicate), func(t *testing.T) {
+			b := contentFixture(t)
+			previous := nativeToolState{name: "Read", ownerInput: domain.NewID(), ownerTurn: string(domain.NewID()), finished: true}
+			b.content.seen = map[string]bool{"\x00old-provider": true}
+			b.content.tools = map[string]nativeToolState{"old-tool": previous}
+			message := "new-provider"
+			if duplicate {
+				message = "old-provider"
+			}
+			_, err := b.Observe(contentPartial(t, b, "", map[string]any{"type": "message_start", "message": contentMessage(message)}))
+			if (err != nil) != duplicate {
+				t.Fatal("restored provider identity was forgotten or fresh input was refused", err)
+			}
+			if !b.content.seen["\x00old-provider"] || b.content.tools["old-tool"] != previous {
+				t.Fatal("first new stream erased restored native ownership")
+			}
+		})
+	}
+}
+
+func TestOriginalToolErrorMetadataRequiresNativeErrorEvidence(t *testing.T) {
+	for _, status := range []string{"true", "false", "absent", "null", "array", "number"} {
+		t.Run(status, func(t *testing.T) {
+			b := contentFixture(t)
+			contentTool(t, b, "", "tool_read", "Read")
+			block := map[string]any{"type": "tool_result", "tool_use_id": "tool_read", "content": "Original read failure"}
+			if status != "absent" {
+				block["is_error"] = status != "false"
+			}
+			var metadata any = "Original native error metadata"
+			switch status {
+			case "null":
+				metadata = json.RawMessage("null")
+			case "array":
+				metadata = []any{}
+			case "number":
+				metadata = 1
+			}
+			e := lifecycleChange(t, contentResult(t, b, "", block), "tool_use_result", metadata)
+			o, err := b.Observe(e)
+			if status != "true" {
+				if err == nil || b.content.tools["tool_read"].finished {
+					t.Fatal("invalid error metadata closed original tool")
+				}
+				return
+			}
+			raw, _ := json.Marshal(metadata)
+			if err != nil || len(o.Content) != 1 || string(o.Content[0].ToolResult.Structured) != string(raw) || !*o.Content[0].ToolResult.Error {
+				t.Fatal("original error metadata lost", err)
+			}
+		})
+	}
+}
+
+func TestClaudeNonExecutionMetadataRequiresExactFailedOriginalTool(t *testing.T) {
+	for _, change := range []string{"valid", "foreign", "duplicate", "empty", "null", "kind", "successful", "missing-error"} {
+		t.Run(change, func(t *testing.T) {
+			b := contentFixture(t)
+			contentTool(t, b, "", "tool_read", "Read")
+			block := map[string]any{"type": "tool_result", "tool_use_id": "tool_read", "content": "Original denied request", "is_error": true}
+			meta := []any{map[string]any{"id": "tool_read", "non_execution_kind": "permission-rule"}}
+			var raw any = meta
+			switch change {
+			case "foreign":
+				meta[0].(map[string]any)["id"] = "foreign"
+			case "duplicate":
+				raw = append(meta, meta[0])
+			case "empty":
+				raw = []any{}
+			case "null":
+				raw = json.RawMessage("null")
+			case "kind":
+				meta[0].(map[string]any)["non_execution_kind"] = "unknown"
+			case "successful":
+				block["is_error"] = false
+			case "missing-error":
+				delete(block, "is_error")
+			}
+			e := lifecycleChange(t, contentResult(t, b, "", block), "tool_use_result", "Original denied request")
+			e = lifecycleChange(t, e, "tool_result_meta", raw)
+			o, err := b.Observe(e)
+			if change != "valid" {
+				if err == nil || b.content.tools["tool_read"].finished {
+					t.Fatal("invalid non-execution metadata completed original call")
+				}
+				return
+			}
+			if err != nil || len(o.Content) != 1 || o.Content[0].ToolResult.NonExecution == nil || o.Content[0].ToolResult.NonExecution.NativeID != "tool_read" || b.content.tools["tool_read"].inline != nil {
+				t.Fatal("denied tool lost original classification or acquired Read history", err)
+			}
+		})
+	}
+}

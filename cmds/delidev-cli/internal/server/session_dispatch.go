@@ -23,6 +23,9 @@ func queueInitialExecution(tx *store.Tx, sr store.Record, session domain.Session
 	if session.InitialExecution != nil || session.CurrentExecution != nil || session.NextExecutionIntent != "" || session.ActiveExecutionID != "" || session.Outcome != domain.ExecutionNotStarted || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || session.Preparation == nil || session.Preparation.State != domain.PreparationReady || (session.Dispatch != domain.DispatchBlocked && session.Dispatch != domain.DispatchReady && !(explicitResume && session.Dispatch == domain.DispatchPaused)) {
 		return store.Record{}, firstDispatchConflict()
 	}
+	if err := tx.RequireSessionBudget(sr.ID, session.EstimatedCostBudget); err != nil {
+		return store.Record{}, err
+	}
 	_, machine, err := activeMachine(tx, session.MachineID)
 	if err != nil {
 		return store.Record{}, err
@@ -70,11 +73,36 @@ func initialExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 	return checkedExecutionAssignment(tx, sr, session, machine, domain.ExecutionJobInput{Version: 1, SessionID: sr.ID, MachineID: session.MachineID, ExecutionID: claim.ID, InputID: claim.InputID, ThreadRequestID: domain.NewID(), TurnRequestID: queued.NativeRequestID, Input: domain.SessionInput{Prompt: queued.Prompt, Mode: queued.Mode}, Configuration: claim.Configuration, ConfigurationDigest: claim.ConfigurationDigest, AccountID: claim.InitialAccountID, ConnectionID: claim.ConnectionID})
 }
 
-func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Session, machine domain.Machine, input domain.ExecutionJobInput) (domain.ExecutionJobInput, error) {
-	var empty domain.ExecutionJobInput
+func checkedExecutionSelection(tx *store.Tx, session domain.Session, machine domain.Machine, input domain.ExecutionJobInput) (domain.Installation, error) {
+	var empty domain.Installation
 	c := input.Configuration
-	if c.Harness != domain.Codex {
-		return empty, domain.Fail(domain.Unsupported, "This harness has no integrated execution profile yet.", "Select a supported installed Codex profile; no harness fallback is performed.")
+	version, protocol := codex.SupportedVersion, domain.OpenAIResponses
+	switch c.Harness {
+	case domain.Codex:
+	case domain.ClaudeCode:
+		validGeneration := input.Version == 1 && input.Continuation == nil || input.Version == 2 && input.Continuation != nil && input.Continuation.Validate(input) == nil
+		if !validGeneration {
+			return empty, domain.Fail(domain.Unsupported, "Claude continuation requires separately verified native history.", "Preserve the original input; no replacement execution is authorized.")
+		}
+		if _, err := c.ClaudeAPIInputPermission(input.Input.Mode); err != nil {
+			return empty, err
+		}
+		version, protocol = domain.ClaudeProtocolVersion, domain.AnthropicMessages
+	case domain.OpenCode:
+		if _, err := c.OpenCodePrimaryForInput(input.Input.Mode); err != nil {
+			return empty, err
+		}
+		version, protocol = domain.OpenCodeProtocolVersion, domain.OpenAIChat
+	case domain.GrokBuild:
+		if input.Version != 1 || input.Continuation != nil {
+			return empty, domain.Fail(domain.Unsupported, "Grok continuation requires separately verified native history.", "Preserve the original completed input without creating a replacement session.")
+		}
+		if _, err := c.GrokFirstTextContext(input.Input.Mode); err != nil {
+			return empty, err
+		}
+		version, protocol = domain.GrokProtocolVersion, domain.OpenAIChat
+	default:
+		return empty, domain.Fail(domain.Unsupported, "This harness has no integrated execution profile yet.", "Select a supported installed profile; no harness fallback is performed.")
 	}
 	var installation *domain.Installation
 	for i := range machine.Installations {
@@ -85,8 +113,8 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 			installation = &machine.Installations[i]
 		}
 	}
-	if installation == nil || installation.State != domain.InstallationDetected || installation.Version != codex.SupportedVersion || !installation.ProtocolVerified || installation.Protocol == nil || installation.Protocol.Protocol != domain.CodexAppServer || installation.Protocol.State != domain.ProtocolVerified || installation.Protocol.Problem != nil || installation.Problem != nil || installation.ResolvedPath == "" || installation.ObservedAt == nil || installation.ObservedAt.IsZero() || installation.ObservedAt.After(time.Now().UTC().Add(time.Second)) {
-		return empty, domain.Fail(domain.Unsupported, "The selected Worker has no verified installation for this execution profile.", "Run machine discovery with native protocol verification for the selected Codex installation.")
+	if installation == nil || installation.State != domain.InstallationDetected || installation.Version != version || !installation.ProtocolVerified || installation.Protocol == nil || installation.Protocol.Protocol != domain.ProtocolFor(c.Harness) || installation.Protocol.State != domain.ProtocolVerified || installation.Protocol.Problem != nil || installation.Problem != nil || installation.ResolvedPath == "" || installation.ObservedAt == nil || installation.ObservedAt.IsZero() || installation.ObservedAt.After(time.Now().UTC().Add(time.Second)) {
+		return empty, domain.Fail(domain.Unsupported, "The selected Worker has no verified installation for this execution profile.", "Run machine discovery with native protocol verification for the selected installation.")
 	}
 	_, account, err := accountFromTx(tx, input.AccountID, 0)
 	if err != nil {
@@ -103,8 +131,8 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 	if err != nil {
 		return empty, err
 	}
-	if provider.Protocol != domain.OpenAIResponses || (provider.Authentication == domain.KeylessAuth) != (account.Validation.Authentication == domain.KeylessEndpoint) || provider.Authentication != account.Connection.Authentication || account.ProviderID != c.ProviderID {
-		return empty, domain.Fail(domain.Unsupported, "The selected provider protocol is incompatible with this native profile.", "Select an OpenAI Responses provider for Codex; no protocol translation is performed.")
+	if provider.Protocol != protocol || (provider.Authentication == domain.KeylessAuth) != (account.Validation.Authentication == domain.KeylessEndpoint) || provider.Authentication != account.Connection.Authentication || account.ProviderID != c.ProviderID {
+		return empty, domain.Fail(domain.Unsupported, "The selected provider protocol is incompatible with this native profile.", "Select OpenAI Responses for Codex, Anthropic Messages for Claude or Chat Completions for OpenCode/Grok; no protocol translation is performed.")
 	}
 	// Recheck current restrictions without resolving changed Agent/templates or
 	// rerunning routing. Only the immutable selected account may continue.
@@ -131,6 +159,16 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 			return empty, domain.Fail(domain.PermissionDenied, "Current project restrictions exclude the selected execution.", "Restore the original Agent and account permissions before resuming.")
 		}
 	}
+	return *installation, nil
+}
+
+func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Session, machine domain.Machine, input domain.ExecutionJobInput) (domain.ExecutionJobInput, error) {
+	var empty domain.ExecutionJobInput
+	installation, err := checkedExecutionSelection(tx, session, machine, input)
+	if err != nil {
+		return empty, err
+	}
+	c := input.Configuration
 	prepared, err := tx.Get(domain.JobKind, session.Preparation.JobID)
 	if err != nil {
 		return empty, err
@@ -153,14 +191,24 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 	if request.Type == domain.Local && (session.LocalOrigin == nil || request.OriginMachineID != session.LocalOrigin.MachineID) {
 		return empty, workspace.ResultUncertain()
 	}
-	settings := codex.ThreadSettings{Model: c.NativeModel, Provider: codex.APIProvider, Cwd: manifest.PrimaryPath, Effort: c.Effort, Instructions: c.Instructions, Options: c.Options}
-	if len(manifest.Repositories) > 1 {
-		settings.WorkspaceRoots = manifest.WorkspaceRoots()
+	if c.Harness == domain.GrokBuild {
+		if request.Type != domain.GeneralChat || len(manifest.Repositories) != 0 {
+			return empty, domain.Fail(domain.Unsupported, "This Grok runner requires an owned General Chat workspace.", "Retain repository workspaces for their separately verified native profile.")
+		}
+	} else if c.Harness == domain.OpenCode {
+		if request.Type == domain.GeneralChat && machine.OS == "windows" {
+			return empty, domain.Fail(domain.Unsupported, "OpenCode General Chat requires a verified native Windows root identity.", "Preserve the prepared workspace; do not infer native non-VCS path ownership.")
+		}
+	} else if c.Harness == domain.Codex {
+		settings := codex.ThreadSettings{Model: c.NativeModel, Provider: codex.APIProvider, Cwd: manifest.PrimaryPath, Effort: c.Effort, Instructions: c.Instructions, Options: c.Options}
+		if len(manifest.Repositories) > 1 {
+			settings.WorkspaceRoots = manifest.WorkspaceRoots()
+		}
+		if err := codex.ValidateSelection(settings); err != nil {
+			return empty, err
+		}
 	}
-	if err := codex.ValidateSelection(settings); err != nil {
-		return empty, err
-	}
-	input.Installation, input.Preparation, input.Manifest = *installation, job.Input, job.Output
+	input.Installation, input.Preparation, input.Manifest = installation, job.Input, job.Output
 	return input, input.Validate()
 }
 

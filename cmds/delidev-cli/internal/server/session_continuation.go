@@ -37,6 +37,9 @@ func queueContinuation(tx *store.Tx, sr store.Record, session domain.Session, ex
 	if intent != domain.ContinueExplicitly && (intent != domain.ContinueAutomatically || session.Outcome != domain.ExecutionSucceeded) {
 		return store.Record{}, continuationConflict()
 	}
+	if err := tx.RequireSessionBudget(sr.ID, session.EstimatedCostBudget); err != nil {
+		return store.Record{}, err
+	}
 	_, machine, err := activeMachine(tx, session.MachineID)
 	if err != nil {
 		return store.Record{}, err
@@ -59,7 +62,7 @@ func queueContinuation(tx *store.Tx, sr store.Record, session domain.Session, ex
 	}
 	var assignment domain.ExecutionJobInput
 	var completion domain.ExecutionCompletion
-	if domain.Decode(job.Input, &assignment) != nil || assignment.Validate() != nil || !session.OwnsExecution(assignment) || assignment.SessionID != sr.ID || job.MachineID != session.MachineID || domain.Decode(job.Output, &completion) != nil || completion.Version != 2 || completion.Validate() != nil || session.Execution.JobID != previous.ID {
+	if domain.Decode(job.Input, &assignment) != nil || assignment.Validate() != nil || !session.OwnsExecution(assignment) || assignment.SessionID != sr.ID || job.MachineID != session.MachineID || domain.Decode(job.Output, &completion) != nil || completion.Version != 2 || completion.ValidateForHarness(assignment.Configuration.Harness) != nil || session.Execution.JobID != previous.ID {
 		return store.Record{}, nativeCompletionUncertain()
 	}
 	terminalState := map[domain.ExecutionOutcome]domain.JobState{domain.ExecutionSucceeded: domain.JobSucceeded, domain.ExecutionFailed: domain.JobFailed, domain.ExecutionStopped: domain.JobCanceled}[completion.Outcome]
@@ -112,6 +115,11 @@ func queueContinuation(tx *store.Tx, sr store.Record, session domain.Session, ex
 		return store.Record{}, continuationConflict()
 	}
 	input.InputID, input.Input = ir.ID, domain.SessionInput{Prompt: next.Prompt, Mode: next.Mode}
+	if input.Configuration.Harness == domain.OpenCode {
+		if _, err := input.Configuration.OpenCodePrimaryForInput(input.Input.Mode); err != nil {
+			return store.Record{}, err
+		}
+	}
 	if err := input.Validate(); err != nil {
 		return store.Record{}, err
 	}

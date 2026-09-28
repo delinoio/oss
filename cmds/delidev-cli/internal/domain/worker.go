@@ -66,13 +66,14 @@ func PrincipalFrom(ctx context.Context) (Principal, bool) {
 type JobType string
 
 const (
-	InspectRepositoryJob JobType = "inspect-repository"
-	SaveRepositoryJob    JobType = "save-repository"
-	PrepareWorkspaceJob  JobType = "prepare-workspace"
-	RecoverExecutionJob  JobType = "recover-execution"
-	RecoverWorkspaceJob  JobType = "recover-workspace"
-	HarnessDiscoveryJob  JobType = "harness-discovery"
-	ExecuteSessionJob    JobType = "execute-session"
+	InspectRepositoryJob   JobType = "inspect-repository"
+	SaveRepositoryJob      JobType = "save-repository"
+	ImportConfigurationJob JobType = "import-configuration"
+	PrepareWorkspaceJob    JobType = "prepare-workspace"
+	RecoverExecutionJob    JobType = "recover-execution"
+	RecoverWorkspaceJob    JobType = "recover-workspace"
+	HarnessDiscoveryJob    JobType = "harness-discovery"
+	ExecuteSessionJob      JobType = "execute-session"
 )
 
 type JobState string
@@ -89,36 +90,40 @@ const (
 func (s JobState) Terminal() bool { return s == JobSucceeded || s == JobFailed || s == JobCanceled }
 
 type Job struct {
-	Type       JobType         `json:"type"`
-	State      JobState        `json:"state"`
-	MachineID  ID              `json:"machine_id,omitempty"`
-	InstanceID ID              `json:"instance_id,omitempty"`
-	ParentID   ID              `json:"parent_id,omitempty"`
-	Input      json.RawMessage `json:"input"`
-	Output     json.RawMessage `json:"output,omitempty"`
-	Problem    *Error          `json:"problem,omitempty"`
-	AcceptedAt time.Time       `json:"accepted_at"`
-	FinishedAt *time.Time      `json:"finished_at,omitempty"`
+	Type             JobType         `json:"type"`
+	State            JobState        `json:"state"`
+	MachineID        ID              `json:"machine_id,omitempty"`
+	InstanceID       ID              `json:"instance_id,omitempty"`
+	AssignedDeviceID ID              `json:"assigned_device_id,omitempty"`
+	ParentID         ID              `json:"parent_id,omitempty"`
+	Input            json.RawMessage `json:"input"`
+	Output           json.RawMessage `json:"output,omitempty"`
+	Problem          *Error          `json:"problem,omitempty"`
+	AcceptedAt       time.Time       `json:"accepted_at"`
+	FinishedAt       *time.Time      `json:"finished_at,omitempty"`
 }
 
 func (j Job) Validate() error {
-	if !slices.Contains([]JobType{InspectRepositoryJob, SaveRepositoryJob, PrepareWorkspaceJob, RecoverWorkspaceJob, RecoverExecutionJob, HarnessDiscoveryJob, ExecuteSessionJob}, j.Type) {
+	if !slices.Contains([]JobType{InspectRepositoryJob, SaveRepositoryJob, ImportConfigurationJob, PrepareWorkspaceJob, RecoverWorkspaceJob, RecoverExecutionJob, HarnessDiscoveryJob, ExecuteSessionJob}, j.Type) {
 		return Fail(InvalidArgument, "Unknown Worker job type.", "Use a supported product operation.")
 	}
 	if !slices.Contains([]JobState{JobQueued, JobClaimed, JobSucceeded, JobFailed, JobUncertain, JobCanceled}, j.State) {
 		return Fail(InvalidArgument, "Unknown Worker job state.", "Reload the accepted job.")
 	}
-	if j.Type != SaveRepositoryJob {
+	if j.Type != SaveRepositoryJob && j.Type != ImportConfigurationJob {
 		if err := j.MachineID.Validate(); err != nil {
 			return err
 		}
 	}
-	for _, id := range []ID{j.InstanceID, j.ParentID} {
+	for _, id := range []ID{j.InstanceID, j.ParentID, j.AssignedDeviceID} {
 		if id != "" {
 			if err := id.Validate(); err != nil {
 				return err
 			}
 		}
+	}
+	if j.AssignedDeviceID != "" && (j.State == JobQueued || j.InstanceID == "") {
+		return Fail(InvalidArgument, "A Worker device requires an original claimed process.", "Bind the paired device only when claiming a queued operation.")
 	}
 	if len(j.Input) > 1<<20 || len(j.Output) > 1<<20 || !json.Valid(j.Input) || (len(j.Output) > 0 && !json.Valid(j.Output)) {
 		return Fail(InvalidArgument, "Invalid Worker job document.", "Use a bounded versioned job payload.")

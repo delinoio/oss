@@ -28,6 +28,7 @@ import (
 
 type Config struct {
 	Root             string
+	StartupID        domain.ID
 	Logger           *slog.Logger
 	Ready            func(domain.ID)
 	execution        *PublicationConfig
@@ -61,7 +62,7 @@ func authenticated[T any](credential Credential, message *T) *connect.Request[T]
 	r.Header().Set("Authorization", "Bearer "+credential.Token)
 	return r
 }
-func Run(ctx context.Context, config Config) error {
+func Run(ctx context.Context, config Config) (resultErr error) {
 	credential, err := LoadCredential(config.Root)
 	if err != nil {
 		return err
@@ -72,11 +73,56 @@ func Run(ctx context.Context, config Config) error {
 	if config.Logger == nil {
 		config.Logger = slog.New(slog.NewJSONHandler(io.Discard, nil))
 	}
-	lock, err := security.TryLock(filepath.Join(config.Root, "worker.lock"))
+	// Serialize the start barrier with status probes and stop intent. A read-only
+	// probe must never transiently steal the process lock from a starting child.
+	intentLock, err := lifecycleLock(config.Root)
 	if err != nil {
 		return err
 	}
+	lock, err := security.TryLock(filepath.Join(config.Root, "worker.lock"))
+	if err != nil {
+		intentLock.Close()
+		return err
+	}
 	defer lock.Close()
+	lifecycle, err := enterLifecycleLocked(config.Root, credential, config.StartupID)
+	intentLock.Close()
+	if err != nil {
+		return err
+	}
+	runContext, cancelRun := context.WithCancelCause(ctx)
+	observed := make(chan struct{})
+	go func() {
+		defer close(observed)
+		observeStop(runContext, config.Root, credential, lifecycle.Generation, cancelRun)
+	}()
+	defer func() {
+		cancelRun(context.Canceled)
+		<-observed
+		if err := setPhase(config.Root, credential, lifecycle.Generation, RuntimeExited); err != nil {
+			resultErr = err
+		}
+		if resultErr != nil {
+			config.Logger.Warn("worker controller exited", "machine_id", credential.MachineID, "generation", lifecycle.Generation, "code", domain.SafeError(resultErr).Code)
+		} else {
+			config.Logger.Info("worker controller exited", "machine_id", credential.MachineID, "generation", lifecycle.Generation)
+		}
+	}()
+	onReady := config.Ready
+	config.Ready = func(id domain.ID) {
+		if err := setPhase(config.Root, credential, lifecycle.Generation, RuntimeReady); err != nil {
+			cancelRun(err)
+			return
+		}
+		if onReady != nil {
+			onReady(id)
+		}
+	}
+	config.Logger.Info("worker controller starting", "machine_id", credential.MachineID, "generation", lifecycle.Generation)
+	return runConnected(runContext, config, credential)
+}
+
+func runConnected(ctx context.Context, config Config, credential Credential) error {
 	for _, name := range []string{"jobs", "empty-hooks"} {
 		if err := security.PrivateDir(filepath.Join(config.Root, name)); err != nil {
 			return err
@@ -386,7 +432,9 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 		}
 		cancel(err)
 	}()
-	defer func() { cancel(context.Canceled); _ = stream.Close(); <-received }()
+	readsDone := make(chan struct{})
+	go func() { defer close(readsDone); watchWorkspaceReads(ctx, config, client, credential, instance) }()
+	defer func() { cancel(context.Canceled); _ = stream.Close(); <-received; <-readsDone }()
 	for {
 		var work assignment
 		select {

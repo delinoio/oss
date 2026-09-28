@@ -1,0 +1,658 @@
+use std::{
+    collections::BTreeMap,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
+    thread::{self, JoinHandle},
+    time::{Duration, Instant},
+};
+
+use delidev_desktop::{
+    NativeFailure,
+    presentation::{TrayDestination, TraySummary, menu_alias},
+};
+use tauri::{
+    AppHandle, Emitter, Manager, WebviewWindow, Wry,
+    menu::{Menu, MenuItem, Submenu},
+    tray::TrayIconBuilder,
+};
+
+use super::{SavedWindows, saved_binding, show, trusted_main, trusted_url};
+
+const TRAY_ID: &str = "delidev-status";
+const STALE_AFTER: Duration = Duration::from_secs(45);
+struct Presentation {
+    scope: String,
+    revision: u32,
+    summary: Option<TraySummary>,
+    received: Instant,
+    stale: bool,
+}
+#[derive(Clone)]
+struct Activation {
+    label: String,
+    instance: Option<String>,
+    destination: TrayDestination,
+}
+#[derive(Clone, serde::Serialize)]
+pub struct TrayAction {
+    id: String,
+    destination: TrayDestination,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    inbox_id: Option<String>,
+    #[serde(skip)]
+    notification_scope: Option<String>,
+}
+#[derive(Default)]
+struct State {
+    windows: BTreeMap<String, Presentation>,
+    actions: BTreeMap<String, Activation>,
+    pending: BTreeMap<String, TrayAction>,
+}
+impl State {
+    fn publish(
+        &mut self,
+        label: &str,
+        scope: &str,
+        revision: u32,
+        summary: TraySummary,
+    ) -> Result<(), NativeFailure> {
+        summary.validate()?;
+        let current = self
+            .windows
+            .get_mut(label)
+            .filter(|v| v.scope == scope && revision > v.revision)
+            .ok_or(NativeFailure::InvalidEvidence)?;
+        current.revision = revision;
+        current.summary = Some(summary);
+        current.received = Instant::now();
+        current.stale = false;
+        Ok(())
+    }
+
+    fn acknowledge(&mut self, label: &str, id: &str) {
+        if self.pending.get(label).is_some_and(|value| value.id == id) {
+            self.pending.remove(label);
+        }
+    }
+}
+#[derive(Default)]
+pub struct TrayHost {
+    state: Mutex<State>,
+    pub available: AtomicBool,
+    stop: Arc<AtomicBool>,
+    task: Mutex<Option<JoinHandle<()>>>,
+}
+fn authorized(window: &WebviewWindow<Wry>, windows: &SavedWindows) -> Result<(), NativeFailure> {
+    if window.label() == "main" {
+        trusted_main(window)
+    } else {
+        saved_binding(window, windows).map(|_| ())
+    }
+}
+#[tauri::command]
+pub fn begin_tray(
+    window: WebviewWindow<Wry>,
+    app: AppHandle<Wry>,
+    windows: tauri::State<'_, Arc<SavedWindows>>,
+    host: tauri::State<'_, Arc<TrayHost>>,
+) -> Result<String, NativeFailure> {
+    authorized(&window, &windows)?;
+    let scope = uuid::Uuid::now_v7().to_string();
+    host.state
+        .lock()
+        .map_err(|_| NativeFailure::Busy)?
+        .windows
+        .insert(
+            window.label().into(),
+            Presentation {
+                scope: scope.clone(),
+                revision: 0,
+                summary: None,
+                received: Instant::now(),
+                stale: false,
+            },
+        );
+    schedule(&app);
+    Ok(scope)
+}
+#[tauri::command]
+pub fn publish_tray(
+    window: WebviewWindow<Wry>,
+    app: AppHandle<Wry>,
+    windows: tauri::State<'_, Arc<SavedWindows>>,
+    host: tauri::State<'_, Arc<TrayHost>>,
+    scope: String,
+    revision: u32,
+    summary: TraySummary,
+) -> Result<(), NativeFailure> {
+    authorized(&window, &windows)?;
+    let mut state = host.state.lock().map_err(|_| NativeFailure::Busy)?;
+    state.publish(window.label(), &scope, revision, summary)?;
+    drop(state);
+    schedule(&app);
+    Ok(())
+}
+#[tauri::command]
+pub fn read_tray_action(
+    window: WebviewWindow<Wry>,
+    windows: tauri::State<'_, Arc<SavedWindows>>,
+    host: tauri::State<'_, Arc<TrayHost>>,
+) -> Result<Option<TrayAction>, NativeFailure> {
+    authorized(&window, &windows)?;
+    let action = host
+        .state
+        .lock()
+        .map_err(|_| NativeFailure::Busy)?
+        .pending
+        .get(window.label())
+        .cloned();
+    Ok(action.filter(|action| {
+        action.notification_scope.as_ref().is_none_or(|scope| {
+            window
+                .state::<Arc<super::NotificationHost>>()
+                .current(window.label(), scope)
+        })
+    }))
+}
+#[tauri::command]
+pub fn acknowledge_tray_action(
+    window: WebviewWindow<Wry>,
+    windows: tauri::State<'_, Arc<SavedWindows>>,
+    host: tauri::State<'_, Arc<TrayHost>>,
+    id: String,
+) -> Result<(), NativeFailure> {
+    authorized(&window, &windows)?;
+    let mut state = host.state.lock().map_err(|_| NativeFailure::Busy)?;
+    state.acknowledge(window.label(), &id);
+    Ok(())
+}
+
+pub fn schedule(app: &AppHandle<Wry>) {
+    let target = app.clone();
+    if app
+        .run_on_main_thread(move || {
+            if render(&target).is_err() {
+                tracing::warn!(
+                    operation = "tray_refresh",
+                    code = "presentation-unavailable"
+                );
+            }
+        })
+        .is_err()
+    {
+        tracing::warn!(
+            operation = "tray_schedule",
+            code = "presentation-unavailable"
+        );
+    }
+}
+pub fn remove(app: &AppHandle<Wry>, label: &str) {
+    let host = app.state::<Arc<TrayHost>>();
+    if let Ok(mut state) = host.state.lock() {
+        state.windows.remove(label);
+        state.pending.remove(label);
+    }
+    schedule(app);
+}
+fn append(
+    app: &AppHandle<Wry>,
+    menu: &Submenu<Wry>,
+    text: &str,
+    activation: Option<Activation>,
+    state: &mut State,
+) -> tauri::Result<()> {
+    let id = uuid::Uuid::now_v7().to_string();
+    let item = MenuItem::with_id(app, id.clone(), text, activation.is_some(), None::<&str>)?;
+    if let Some(action) = activation {
+        state.actions.insert(id, action);
+    }
+    menu.append(&item)
+}
+fn render(app: &AppHandle<Wry>) -> tauri::Result<()> {
+    let Some(tray) = app.tray_by_id(TRAY_ID) else {
+        return Ok(());
+    };
+    let host = app.state::<Arc<TrayHost>>();
+    let saved = app.state::<Arc<SavedWindows>>();
+    // Both state maps are touched only long enough to build bounded native UI.
+    // No controller, network operation, credential read or product call occurs.
+    // Saved-label publication can be awaiting the main thread while holding
+    // its lock. Skip this repaint instead of blocking the event loop on it.
+    let saved = match saved.0.try_lock() {
+        Ok(values) => values.clone(),
+        Err(_) => return Ok(()),
+    };
+    let mut state = host.state.lock().unwrap_or_else(|e| e.into_inner());
+    state.actions.clear();
+    let menu = Menu::new(app)?;
+    menu.append(&MenuItem::with_id(
+        app,
+        "tray-show",
+        "Show DeliDev",
+        true,
+        None::<&str>,
+    )?)?;
+    let mut labels: Vec<_> = app.webview_windows().into_keys().collect();
+    labels.sort();
+    for label in labels {
+        let (name, instance) = if label == "main" {
+            ("Local server".to_owned(), None)
+        } else {
+            let Some(binding) = saved.get(&label).filter(|v| !v.closing) else {
+                continue;
+            };
+            (
+                menu_alias(&binding.profile.name),
+                Some(binding.instance.clone()),
+            )
+        };
+        let action = |destination| {
+            Some(Activation {
+                label: label.clone(),
+                instance: instance.clone(),
+                destination,
+            })
+        };
+        let submenu = Submenu::new(app, name, true)?;
+        let current = state.windows.get(&label);
+        let stale = current.is_some_and(|v| {
+            v.stale
+                || v.received.elapsed() > STALE_AFTER
+                || v.summary
+                    .as_ref()
+                    .and_then(|v| v.overview.as_ref())
+                    .is_some_and(|v| v.stale)
+        });
+        let summary = current.and_then(|v| v.summary.clone());
+        if let Some(overview) = summary.as_ref().and_then(|v| v.overview.as_ref()) {
+            append(
+                app,
+                &submenu,
+                if stale {
+                    "Server status stale"
+                } else {
+                    "Server connected"
+                },
+                None,
+                &mut state,
+            )?;
+            append(
+                app,
+                &submenu,
+                &format!("Updated {}", overview.observed_at),
+                None,
+                &mut state,
+            )?;
+            append(
+                app,
+                &submenu,
+                &format!(
+                    "{} active sessions{}",
+                    overview.active_sessions,
+                    if stale { " · stale" } else { "" }
+                ),
+                action(TrayDestination::Sessions),
+                &mut state,
+            )?;
+            append(
+                app,
+                &submenu,
+                &format!(
+                    "{} pending requests{}",
+                    overview.pending_interactions,
+                    if stale { " · stale" } else { "" }
+                ),
+                action(TrayDestination::Inbox),
+                &mut state,
+            )?;
+            append(
+                app,
+                &submenu,
+                &format!(
+                    "Workers: {} / {} connected{}",
+                    overview.connected_workers,
+                    overview.registered_workers,
+                    if stale { " · stale" } else { "" }
+                ),
+                action(TrayDestination::Settings),
+                &mut state,
+            )?;
+        } else {
+            append(app, &submenu, "Server status unavailable", None, &mut state)?;
+            append(
+                app,
+                &submenu,
+                "Sessions",
+                action(TrayDestination::Sessions),
+                &mut state,
+            )?;
+            append(
+                app,
+                &submenu,
+                "Inbox",
+                action(TrayDestination::Inbox),
+                &mut state,
+            )?;
+        }
+        let usage = summary.as_ref().and_then(|v| v.usage.as_ref());
+        let usage_text = match usage.and_then(|v| v.known_tokens.as_deref()) {
+            Some(tokens) => format!(
+                "Today (UTC): {tokens} known tokens{}{}",
+                if usage.is_some_and(|v| v.incomplete) {
+                    " · incomplete"
+                } else {
+                    ""
+                },
+                if stale { " · stale" } else { "" }
+            ),
+            None => "Today (UTC): usage unavailable".into(),
+        };
+        append(
+            app,
+            &submenu,
+            &usage_text,
+            action(TrayDestination::Usage),
+            &mut state,
+        )?;
+        let accounts = Submenu::new(
+            app,
+            if stale {
+                "Account quotas · stale"
+            } else {
+                "Account quotas"
+            },
+            true,
+        )?;
+        if let Some(values) = summary.as_ref().and_then(|v| v.accounts.as_ref()) {
+            if values.entries.is_empty() {
+                append(app, &accounts, "No configured accounts", None, &mut state)?;
+            }
+            for account in &values.entries {
+                let quota = Submenu::new(app, menu_alias(&account.alias), true)?;
+                if account.windows.is_empty() {
+                    append(app, &quota, "Quota unavailable", None, &mut state)?;
+                }
+                for (index, window) in account.windows.iter().enumerate() {
+                    append(
+                        app,
+                        &quota,
+                        &format!("Window {}: {}", index + 1, window.label()),
+                        None,
+                        &mut state,
+                    )?;
+                    if let Some(at) = &window.observed_at {
+                        append(app, &quota, &format!("Observed {at}"), None, &mut state)?;
+                    }
+                    if let Some(at) = &window.reset_at {
+                        append(app, &quota, &format!("Reset {at}"), None, &mut state)?;
+                    }
+                }
+                if account.more {
+                    append(
+                        app,
+                        &quota,
+                        "More windows in account settings",
+                        action(TrayDestination::Settings),
+                        &mut state,
+                    )?;
+                }
+                accounts.append(&quota)?;
+            }
+            if values.more {
+                append(
+                    app,
+                    &accounts,
+                    "More accounts in Settings",
+                    action(TrayDestination::Settings),
+                    &mut state,
+                )?;
+            }
+        } else {
+            append(
+                app,
+                &accounts,
+                "Account quotas unavailable",
+                None,
+                &mut state,
+            )?;
+        }
+        submenu.append(&accounts)?;
+        append(
+            app,
+            &submenu,
+            "Worker and account settings",
+            action(TrayDestination::Settings),
+            &mut state,
+        )?;
+        menu.append(&submenu)?;
+    }
+    menu.append(&MenuItem::with_id(
+        app,
+        "tray-quit",
+        "Quit DeliDev (keep server and Workers running)",
+        true,
+        None::<&str>,
+    )?)?;
+    tray.set_menu(Some(menu))
+}
+fn activate(app: &AppHandle<Wry>, id: &str) {
+    if id == "tray-quit" {
+        app.exit(0);
+        return;
+    }
+    if id == "tray-show" {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = show(&window);
+        }
+        return;
+    }
+    let host = app.state::<Arc<TrayHost>>();
+    let action = host
+        .state
+        .lock()
+        .ok()
+        .and_then(|v| v.actions.get(id).cloned());
+    let Some(action) = action else { return };
+    navigate(app, action, None, None);
+}
+pub fn activate_inbox(
+    app: &AppHandle<Wry>,
+    label: String,
+    instance: Option<String>,
+    scope: String,
+    inbox_id: String,
+) {
+    if delidev_desktop::canonical_id(&inbox_id).is_err() {
+        return;
+    }
+    navigate(
+        app,
+        Activation {
+            label,
+            instance,
+            destination: TrayDestination::Inbox,
+        },
+        Some(inbox_id),
+        Some(scope),
+    );
+}
+fn navigate(
+    app: &AppHandle<Wry>,
+    action: Activation,
+    inbox_id: Option<String>,
+    notification_scope: Option<String>,
+) {
+    let host = app.state::<Arc<TrayHost>>();
+    let Some(window) = app.get_webview_window(&action.label) else {
+        return;
+    };
+    if !window.url().is_ok_and(|url| trusted_url(&url)) {
+        return;
+    }
+    if let Some(instance) = &action.instance {
+        let windows = app.state::<Arc<SavedWindows>>();
+        if !window.url().is_ok_and(|url| trusted_url(&url))
+            || !windows.0.try_lock().is_ok_and(|values| {
+                values
+                    .get(&action.label)
+                    .is_some_and(|value| !value.closing && &value.instance == instance)
+            })
+        {
+            return;
+        }
+    }
+    if let Ok(mut state) = host.state.lock() {
+        state.pending.insert(
+            action.label,
+            TrayAction {
+                id: uuid::Uuid::now_v7().to_string(),
+                destination: action.destination,
+                inbox_id,
+                notification_scope,
+            },
+        );
+    }
+    if show(&window).is_err() || window.emit("tray-activate", ()).is_err() {
+        tracing::warn!(operation = "tray_activate", code = "window-unavailable");
+    }
+}
+impl TrayHost {
+    pub fn install(self: &Arc<Self>, app: &AppHandle<Wry>) -> tauri::Result<()> {
+        let menu = Menu::new(app)?;
+        menu.append(&MenuItem::with_id(
+            app,
+            "tray-show",
+            "Show DeliDev",
+            true,
+            None::<&str>,
+        )?)?;
+        let mut builder = TrayIconBuilder::with_id(TRAY_ID)
+            .menu(&menu)
+            .tooltip("DeliDev")
+            .show_menu_on_left_click(true)
+            .on_menu_event(|app, event| activate(app, event.id.as_ref()));
+        if let Some(icon) = app.default_window_icon() {
+            builder = builder.icon(icon.clone());
+        }
+        builder.build(app)?;
+        render(app)?;
+        self.available.store(true, Ordering::Release);
+        let app = app.clone();
+        let stop = Arc::clone(&self.stop);
+        *self.task.lock().unwrap_or_else(|e| e.into_inner()) = Some(thread::spawn(move || {
+            while !stop.load(Ordering::Acquire) {
+                thread::park_timeout(Duration::from_secs(15));
+                if stop.load(Ordering::Acquire) {
+                    break;
+                }
+                let host = app.state::<Arc<TrayHost>>();
+                let changed = if let Ok(mut state) = host.state.lock() {
+                    let mut changed = false;
+                    for value in state.windows.values_mut() {
+                        if !value.stale && value.received.elapsed() > STALE_AFTER {
+                            value.stale = true;
+                            changed = true;
+                        }
+                    }
+                    changed
+                } else {
+                    false
+                };
+                if changed {
+                    schedule(&app);
+                }
+            }
+        }));
+        tracing::info!(operation = "tray_install", state = "ready");
+        Ok(())
+    }
+
+    pub fn stop(&self) {
+        self.stop.store(true, Ordering::Release);
+        if let Some(task) = self.task.lock().unwrap_or_else(|e| e.into_inner()).take() {
+            task.thread().unpark();
+            let _ = task.join();
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn unavailable() -> TraySummary {
+        TraySummary {
+            overview: None,
+            usage: None,
+            accounts: None,
+        }
+    }
+    fn presentation(scope: &str) -> Presentation {
+        Presentation {
+            scope: scope.into(),
+            revision: 0,
+            summary: None,
+            received: Instant::now(),
+            stale: false,
+        }
+    }
+    #[test]
+    fn old_scopes_cannot_replace_another_window_or_newer_publication() {
+        let mut state = State::default();
+        state.windows.insert("main".into(), presentation("first"));
+        state.windows.insert("saved".into(), presentation("other"));
+        state.publish("main", "first", 2, unavailable()).unwrap();
+        assert!(state.publish("main", "first", 1, unavailable()).is_err());
+        assert!(state.publish("main", "first", 2, unavailable()).is_err());
+        assert!(state.publish("saved", "first", 3, unavailable()).is_err());
+        state
+            .windows
+            .insert("main".into(), presentation("replacement"));
+        assert!(state.publish("main", "first", 4, unavailable()).is_err());
+        state
+            .publish("main", "replacement", 1, unavailable())
+            .unwrap();
+        state.windows.remove("main");
+        assert!(
+            state
+                .publish("main", "replacement", 2, unavailable())
+                .is_err()
+        );
+    }
+    #[test]
+    fn reading_and_stale_acknowledgment_preserve_pending_navigation() {
+        let mut state = State::default();
+        state.pending.insert(
+            "main".into(),
+            TrayAction {
+                id: "original".into(),
+                destination: TrayDestination::Inbox,
+                inbox_id: Some(uuid::Uuid::now_v7().to_string()),
+                notification_scope: None,
+            },
+        );
+        assert_eq!(
+            state.pending.get("main").unwrap().destination,
+            TrayDestination::Inbox
+        );
+        state.acknowledge("saved", "original");
+        assert!(state.pending.contains_key("main"));
+        state.pending.insert(
+            "main".into(),
+            TrayAction {
+                id: "newer".into(),
+                destination: TrayDestination::Usage,
+                inbox_id: None,
+                notification_scope: None,
+            },
+        );
+        state.acknowledge("main", "original");
+        assert_eq!(
+            state.pending.get("main").unwrap().destination,
+            TrayDestination::Usage
+        );
+        state.acknowledge("main", "newer");
+        assert!(!state.pending.contains_key("main"));
+    }
+}

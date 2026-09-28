@@ -1,0 +1,30 @@
+import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
+import { TransportProvider } from "@connectrpc/connect-query";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { expect, it, vi } from "vitest";
+import { SystemService } from "@delinoio/delidev-api-client";
+import { LocalServerControls, LocalServerState, type LocalServerStatus } from "./local-server";
+import { MutationIntents } from "./mutation";
+
+it("requires an explicit stop, retains its uncertain request, and never restarts from a stopped status", async () => {
+  const stop = vi.fn(async (_request: unknown) => ({}));
+  stop.mockRejectedValueOnce(new ConnectError("Response lost", Code.Unavailable));
+  const restart = vi.fn();
+  const transport = createRouterTransport((router) => router.service(SystemService, { stopServer: stop }));
+  const client = new QueryClient();
+  const view = (state: LocalServerState) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><LocalServerControls status={{ state, attempts: 0, retry_ms: 0 } satisfies LocalServerStatus} restart={restart} busy={false} /></MutationIntents></QueryClientProvider></TransportProvider>;
+  const mounted = render(view(LocalServerState.Ready));
+  fireEvent.click(screen.getByText("Local server"));
+  fireEvent.click(screen.getByRole("button", { name: "Stop local server" }));
+  expect(stop).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Confirm server stop" }));
+  await screen.findByRole("button", { name: "Retry the same server stop" });
+  mounted.rerender(view(LocalServerState.Stopped));
+  expect(restart).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Retry the same server stop" }));
+  await waitFor(() => expect(stop).toHaveBeenCalledTimes(2));
+  expect(stop.mock.calls[1][0]).toEqual(stop.mock.calls[0][0]);
+  fireEvent.click(screen.getByRole("button", { name: "Start local server" }));
+  expect(restart).toHaveBeenCalledTimes(1);
+});

@@ -30,24 +30,26 @@ func (s *Service) acceptApprovalResponse(tx *store.Tx, responseID, interactionID
 	if r.Revision != revision || value.Closure != domain.InteractionOpen || (value.ApprovalResponse != nil || value.Response != nil) || value.Type != domain.NativeApprovalInteraction {
 		return store.Record{}, domain.Fail(domain.Conflict, "The approval changed, closed or already has a response.", "Reload its original request and current response state before responding; do not replay native input.")
 	}
-	if err := input.Validate(value.Approval); err != nil {
+	if err := input.ValidateInteraction(value); err != nil {
 		return store.Record{}, err
 	}
 	if _, err := s.approvalResponseScope(tx, r, value); err != nil {
 		return store.Record{}, err
 	}
-	// The current live scope accepts the pinned Codex profile only. Account for
-	// its per-approval native response wrapper before acceptance, not after the
+	// The Codex branch additionally accounts for its pinned native wrapper;
+	// prepare its exact response before acceptance, not after the
 	// Worker has claimed a response that cannot fit on the native wire.
-	if _, err := codex.PrepareApprovalResponse(value.Approval, input); err != nil {
-		return store.Record{}, err
+	if value.OpenCode == nil && value.Claude == nil {
+		if _, err := codex.PrepareApprovalResponse(value.Approval, input); err != nil {
+			return store.Record{}, err
+		}
 	}
 	value.ApprovalResponse = &domain.ApprovalResponse{ID: responseID, State: domain.ApprovalResponseQueued, Input: input, AcceptedAt: time.Now().UTC()}
 	return tx.Put(r.Kind, r.ID, r.Revision, r.SessionID, r.ProjectID, value)
 }
 
 func (s *Service) approvalResponseScope(tx *store.Tx, r store.Record, value domain.ExecutionInteraction) (store.ExecutionGrant, error) {
-	if value.Type != domain.NativeApprovalInteraction || value.Approval == nil || value.Approval.Validate() != nil {
+	if value.Type != domain.NativeApprovalInteraction || (value.Claude == nil && value.OpenCode == nil && (value.Approval == nil || value.Approval.Validate() != nil)) || (value.OpenCode != nil && value.OpenCode.Validate(value.Type, value.NativeRequestID) != nil) || (value.Claude != nil && (value.OpenCode != nil || value.Approval != nil || value.Questions != nil || value.Claude.Validate(value.Type, value.NativeRequestID, value.NativeItemID) != nil)) {
 		return store.ExecutionGrant{}, executionEventConflict()
 	}
 	grant, err := s.interactionResponseScope(tx, r, value)

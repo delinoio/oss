@@ -30,7 +30,34 @@ func finishNativeExecution(tx *store.Tx, record store.Record, job domain.Job, ex
 	}
 	var completion domain.ExecutionCompletion
 	progress := session.Execution
-	verified := reported == nil && domain.Decode(raw, &completion) == nil && completion.Validate() == nil && completion.ExecutionID == input.ExecutionID && completion.InputID == input.InputID && progress != nil && progress.JobID == record.ID && progress.ExecutionID == input.ExecutionID && progress.InputID == input.InputID && progress.NativeThreadID == string(completion.NativeThreadID) && progress.NativeTurnID == string(completion.NativeTurnID) && progress.LastSequence == completion.LastSequence && progress.Outcome == completion.Outcome && !progress.CleanupVerified
+	verified := reported == nil && domain.Decode(raw, &completion) == nil && completion.ValidateForHarness(input.Configuration.Harness) == nil && completion.ExecutionID == input.ExecutionID && completion.InputID == input.InputID && progress != nil && progress.JobID == record.ID && progress.ExecutionID == input.ExecutionID && progress.InputID == input.InputID && progress.NativeThreadID == string(completion.NativeThreadID) && progress.NativeTurnID == string(completion.NativeTurnID) && progress.LastSequence == completion.LastSequence && progress.Outcome == completion.Outcome && !progress.CleanupVerified
+	if input.Configuration.Harness == domain.GrokBuild && verified {
+		ordinary := completion.Outcome == domain.ExecutionSucceeded && progress.GrokStop == nil && progress.GrokTerminal != nil && progress.GrokTerminal.Validate(progress.NativeThreadID) == nil && progress.GrokTerminal.Model == input.Configuration.NativeModel
+		stopped := progress.GrokTerminal == nil && progress.GrokStop != nil && progress.GrokStop.Validate(progress.NativeThreadID) == nil && progress.GrokStop.Outcome() == completion.Outcome && progress.GrokStop.Model == input.Configuration.NativeModel && progress.GrokStop.InputID == input.InputID && progress.GrokStop.InputRequestID == input.TurnRequestID
+		if stopped {
+			stopped, err = tx.JobCancellationRequested(record.ID)
+			if err != nil {
+				return store.Record{}, err
+			}
+		}
+		verified = completion.Version == 1 && (ordinary || stopped) && input.Input.Mode == domain.ExecuteMode
+	}
+	if input.Configuration.Harness == domain.ClaudeCode {
+		// A digest alone cannot grant continuation after a changed permission,
+		// interrupted input or an uncomposed tool/callback history profile.
+		if verified {
+			ordinary := progress.ClaudeTerminal != nil && progress.ClaudeStop == nil && progress.ClaudeDenial == nil && progress.ClaudeTerminal.Validate() == nil && progress.ClaudeTerminal.InputID == input.InputID && progress.ClaudeTerminal.Outcome() == completion.Outcome
+			stopped := progress.ClaudeStop != nil && progress.ClaudeTerminal == nil && progress.ClaudeDenial == nil && progress.ClaudeStop.Validate() == nil && progress.ClaudeStop.InputID == input.InputID && completion.Outcome == domain.ExecutionStopped
+			denied := progress.ClaudeDenial != nil && progress.ClaudeTerminal == nil && progress.ClaudeStop == nil && progress.ClaudeDenial.Validate() == nil && progress.ClaudeDenial.InputID == input.InputID && completion.Outcome == domain.ExecutionStopped
+			verified = completion.Version == 1 && (ordinary || stopped || denied)
+			if completion.Version == 2 && ordinary && progress.ClaudeContinuationBoundary(input.InputID) {
+				verified, err = tx.ClaudeRootContentContinuation(input.ExecutionID)
+				if err != nil {
+					return store.Record{}, err
+				}
+			}
+		}
+	}
 	now := time.Now().UTC()
 	job.FinishedAt = &now
 	previousDispatch := session.Dispatch

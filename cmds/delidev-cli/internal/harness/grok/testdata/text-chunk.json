@@ -1,0 +1,20 @@
+{
+  "sessionId": "019f6de0-a760-7000-8000-000000000071",
+  "update": {
+    "sessionUpdate": "agent_message_chunk",
+    "content": {
+      "type": "text",
+      "text": "Private fixture response."
+    }
+  },
+  "_meta": {
+    "totalTokens": 2277,
+    "eventId": "019f6de0-a760-7000-8000-000000000071-4",
+    "agentTimestampMs": 1790518602176,
+    "promptId": "e5833c4a-d764-4428-8bd8-6c2968a34b1b",
+    "streamStartMs": 1790518602176,
+    "turnStartMs": 1790518602152,
+    "updateType": "AgentMessageChunk",
+    "chunkId": 1
+  }
+}

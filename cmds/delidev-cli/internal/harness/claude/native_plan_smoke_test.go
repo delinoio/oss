@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -192,7 +193,7 @@ func TestManualNativePlanQuestionArtifactAndApproval(t *testing.T) {
 	relay := httptest.NewServer(apiproxy.New(authority, slog.New(slog.NewJSONHandler(io.Discard, nil))))
 	defer relay.Close()
 	cfg.API.ServerOrigin = relay.URL
-	s, err := OpenAPIStream(ctx, cfg)
+	s, err := OpenAPISession(ctx, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,24 +209,30 @@ func TestManualNativePlanQuestionArtifactAndApproval(t *testing.T) {
 		}
 	}()
 	input := domain.NewID()
-	binding, err := BindExecution(cfg, input, "Plan the private fixture change.")
-	if err != nil {
+	if _, err := s.SendInput(ctx, input, "Plan the private fixture change.", ContinueSuccessfulRun); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SendInput(ctx, input, cfg.SessionID, "Plan the private fixture change."); err != nil {
-		t.Fatal(err)
-	}
+	finished := false
 	answered, approved := false, false
 	tools := map[string]*NativeTool{}
 	results := map[string]*NativeToolResult{}
 	for {
-		event, err := s.Next(ctx)
+		observation, err := s.Next(ctx)
 		if err != nil {
 			t.Fatal(err)
 		}
-		observation, err := binding.Observe(event)
-		if err != nil {
-			t.Fatal(err)
+		event := *observation.Native
+		if event.Kind == NativeRequest {
+			var fields map[string]json.RawMessage
+			if json.Unmarshal(event.Body, &fields) != nil {
+				t.Fatal("invalid native callback envelope")
+			}
+			keys := make([]string, 0, len(fields))
+			for key := range fields {
+				keys = append(keys, key)
+			}
+			sort.Strings(keys)
+			t.Log("native permission callback field names", keys)
 		}
 		for _, content := range observation.Content {
 			if content.Kind == ContentCompleted && content.Block != nil && content.Block.Tool != nil {
@@ -254,6 +261,11 @@ func TestManualNativePlanQuestionArtifactAndApproval(t *testing.T) {
 			}
 		}
 		if event.Kind == NativeRequest {
+			if observation.Kind != InteractionObserved || observation.Interaction == nil || observation.Interaction.Request == nil {
+				t.Fatal("native callback was not typed")
+			}
+			typed := observation.Interaction.Request
+			reply := PermissionReply{Behavior: PermissionAllow}
 			var request struct {
 				Subtype string                     `json:"subtype"`
 				Tool    string                     `json:"tool_name"`
@@ -278,7 +290,10 @@ func TestManualNativePlanQuestionArtifactAndApproval(t *testing.T) {
 				if answered || request.ID != "toolu_plan_question" || !strings.Contains(string(request.Input["questions"]), question) {
 					t.Fatal("native question changed")
 				}
-				request.Input["answers"], _ = json.Marshal(map[string]string{question: "First"})
+				if typed.Kind != UserQuestion || len(typed.Questions) != 1 || typed.Questions[0].Question != question {
+					t.Fatal("typed question changed")
+				}
+				reply.Answers = map[string]string{question: "First"}
 				answered = true
 			case "ExitPlanMode":
 				if !answered || approved || request.ID != "toolu_plan_exit" {
@@ -288,11 +303,14 @@ func TestManualNativePlanQuestionArtifactAndApproval(t *testing.T) {
 				if json.Unmarshal(request.Input["plan"], &content) != nil || content != plan || json.Unmarshal(request.Input["planFilePath"], &path) != nil || path != artifact.Load().(string) {
 					t.Fatal("native approval did not retain the exact written plan")
 				}
+				if typed.Kind != PlanApproval || typed.Plan == nil || *typed.Plan != plan || typed.PlanPath == nil || *typed.PlanPath != path {
+					t.Fatal("typed plan approval changed")
+				}
 				approved = true
 			default:
 				t.Fatal("unexpected native permission callback", request.Tool)
 			}
-			if err := s.Reply(ctx, event, map[string]any{"behavior": "allow", "updatedInput": request.Input}); err != nil {
+			if err := s.Reply(ctx, event.ArrivalID, reply); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -308,6 +326,18 @@ func TestManualNativePlanQuestionArtifactAndApproval(t *testing.T) {
 			}
 			if json.Unmarshal(event.Body, &result) != nil || result.Session != cfg.SessionID || result.Input != input || result.Error || result.Terminal != "completed" || !answered || !approved || requests.Load() != 4 {
 				t.Fatal("native plan did not complete its original input")
+			}
+			finished = true
+		}
+		if observation.Kind == RunStateObserved && observation.Run.State == RunIdle {
+			if !finished {
+				t.Fatal("idle preceded original plan result")
+			}
+			if !s.permissionChanged {
+				t.Fatal("native Plan permission transition was not retained")
+			}
+			if _, err := s.SendInput(ctx, domain.NewID(), "Do not implicitly adopt changed native permission.", ResumeTerminalRun); err == nil || domain.SafeError(err).Code != domain.Conflict || requests.Load() != 4 {
+				t.Fatal("changed native Plan permission silently authorized another input", err)
 			}
 			return
 		}

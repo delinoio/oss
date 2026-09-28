@@ -73,7 +73,7 @@ func (c *CodexEventPublisher) BindThread(ctx context.Context, result codex.Threa
 	if result.Effective.Provider != codex.APIProvider || result.Effective.ApprovalsReviewer != "user" {
 		return publicationUncertain()
 	}
-	if err := observed.Validate(c.publisher.input.Configuration); err != nil {
+	if err := observed.ValidateForInput(c.publisher.input.Configuration, c.publisher.input.Input.Mode); err != nil {
 		return err
 	}
 	c.thread = result.Thread.ID
@@ -161,6 +161,11 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 			return false, publicationUncertain()
 		}
 		return true, c.publish(ctx, domain.ExecutionEvent{Kind: domain.ExecutionUsageObserved, ObservationID: domain.NewID(), Usage: event.Usage})
+	case codex.ResponseUsageEvent:
+		if event.ResponseUsage == nil || event.ResponseUsage.Validate() != nil || event.TurnID != c.turn {
+			return false, publicationUncertain()
+		}
+		return true, c.publish(ctx, domain.ExecutionEvent{Kind: domain.ExecutionResponseUsageObserved, ObservationID: domain.NewID(), ResponseUsage: event.ResponseUsage})
 	case codex.NoticeEvent:
 		return true, c.publish(ctx, domain.ExecutionEvent{Kind: domain.ExecutionNoticeObserved, Notice: event.Notice})
 	case codex.TurnStartedEvent:

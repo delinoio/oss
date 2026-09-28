@@ -1,0 +1,21 @@
+import { type Resource } from "@delinoio/delidev-api-client";
+
+export type Document = Record<string, unknown>;
+export function document(resource?: Resource): Document {
+  if (!resource || resource.schemaVersion !== 1 || resource.documentJson.byteLength > 1 << 20) return {};
+  try {
+    const value: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(resource.documentJson));
+    return object(value);
+  } catch { return {}; }
+}
+export function object(value: unknown): Document {
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Document : {};
+}
+export function text(value: unknown): string { return typeof value === "string" ? value : ""; }
+export function items(value: unknown): unknown[] { return Array.isArray(value) ? value : []; }
+export function encode(value: unknown): Uint8Array { return new TextEncoder().encode(JSON.stringify(value)); }
+
+export enum Workspace { Worktree = "worktree", Local = "local", GeneralChat = "general-chat" }
+export enum Mode { Execute = "execute", Plan = "plan" }
+export const workspaceNames: Record<Workspace, string> = { [Workspace.Worktree]: "Worktree", [Workspace.Local]: "Local computer", [Workspace.GeneralChat]: "General Chat" };
+export function resourceName(resource?: Resource): string { const data = document(resource); return text(data.name) || text(data.alias) || "Unnamed"; }

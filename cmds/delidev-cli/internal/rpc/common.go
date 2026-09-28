@@ -55,7 +55,7 @@ func Error(err error, correlation string) error {
 		code = connect.CodePermissionDenied
 	case domain.Unavailable, domain.ServerUnavailable:
 		code = connect.CodeUnavailable
-	case domain.ConfirmationRequired, domain.RecoveryRequired:
+	case domain.ConfirmationRequired, domain.RecoveryRequired, domain.BudgetReached:
 		code = connect.CodeFailedPrecondition
 	case domain.Unsupported:
 		code = connect.CodeUnimplemented

@@ -44,10 +44,14 @@ type client struct {
 	transport     *http.Transport
 	system        delidevv1connect.SystemServiceClient
 	resources     delidevv1connect.ResourceServiceClient
+	search        delidevv1connect.SearchServiceClient
+	activity      delidevv1connect.ActivityServiceClient
+	usage         delidevv1connect.UsageServiceClient
 	configuration delidevv1connect.ConfigurationServiceClient
 	devices       delidevv1connect.DeviceServiceClient
 	workers       delidevv1connect.WorkerServiceClient
 	accounts      delidevv1connect.AccountServiceClient
+	integrations  delidevv1connect.IntegrationServiceClient
 	providers     delidevv1connect.ProviderServiceClient
 	sessions      delidevv1connect.SessionServiceClient
 	interactions  delidevv1connect.InteractionServiceClient
@@ -103,6 +107,13 @@ func Run(ctx context.Context, args []string, streams IO) int {
 	if remaining[0] == "version" || remaining[0] == "--version" {
 		return emit(map[string]any{"version": rpc.Version, "protocol_version": rpc.ProtocolVersion}, nil)
 	}
+	if remaining[0] == "presentation" {
+		if o.tokenStdin {
+			return emit(nil, domain.Fail(domain.InvalidArgument, "Local presentation does not accept server authentication input.", "Omit --token-stdin; no server connection is needed."))
+		}
+		value, err := githubPresentationCommand(ctx, remaining[1:], streams.In)
+		return emit(value, err)
+	}
 	if o.dataDir == "" {
 		o.dataDir, err = DefaultDataDir()
 		if err != nil {
@@ -111,14 +122,18 @@ func Run(ctx context.Context, args []string, streams IO) int {
 	}
 	command := remaining[0]
 	rest := remaining[1:]
-	if command == "server" && len(rest) > 0 && (rest[0] == "start" || rest[0] == "run") {
+	if command == "server" && len(rest) > 0 && (rest[0] == "start" || rest[0] == "run" || rest[0] == "ensure") {
 		value, err := start(ctx, o, rest, streams)
+		return emit(value, err)
+	}
+	if command == "connection" {
+		value, err := connectionCommand(ctx, o, rest, streams)
 		return emit(value, err)
 	}
 	if command == "settings" && len(rest) == 1 && rest[0] == "defaults" {
 		return emit(domain.DefaultSettings(), nil)
 	}
-	if command == "worker" || (command == "device" && len(rest) > 0 && rest[0] == "pair") {
+	if command == "worker" || (command == "device" && len(rest) > 0 && (rest[0] == "pair" || rest[0] == "pair-local" || rest[0] == "inspect")) {
 		value, err := deviceLocal(ctx, o, command, rest, streams)
 		return emit(value, err)
 	}
@@ -130,17 +145,75 @@ func Run(ctx context.Context, args []string, streams IO) int {
 			}
 		}
 	}
+	if command == "integration" && len(rest) > 0 && rest[0] == "replace-token" && o.tokenStdin {
+		return emit(nil, domain.Fail(domain.InvalidArgument, "Server authentication and a PAT cannot share stdin.", "Use a paired client or local owner connection before supplying --pat-stdin."))
+	}
 	c, err := connectClient(o, streams.In)
 	if err != nil {
+		if command == "server" && len(rest) == 1 && rest[0] == "stop" && o.server == "" && !o.tokenStdin && domain.SafeError(err).Code == domain.ServerUnavailable {
+			ensureRequest(&o)
+			if suppressErr := server.SuppressLocalRestart(o.dataDir, o.requestID); suppressErr != nil {
+				return emit(nil, suppressErr)
+			}
+			return emit(nil, offlineStop())
+		}
 		return emit(nil, err)
 	}
 	defer c.transport.CloseIdleConnections()
 	if command != "events" {
-		bounded, cancel := context.WithTimeout(ctx, 30*time.Second)
+		limit := 30 * time.Second
+		if command == "github" {
+			limit = 40 * time.Second
+			c.transport.ResponseHeaderTimeout = limit
+		}
+		if command == "integration" {
+			c.transport.ResponseHeaderTimeout = 25 * time.Second
+			if len(rest) > 0 && rest[0] == "inspect-repository" {
+				limit = 40 * time.Second
+				c.transport.ResponseHeaderTimeout = limit
+			}
+		}
+		if command == "session" && len(rest) > 0 {
+			switch rest[0] {
+			case "pr":
+				// Linking refreshes GitHub identities before committing metadata.
+				limit = 45 * time.Second
+				c.transport.ResponseHeaderTimeout = limit
+			case "files", "diff", "review-context":
+				// The Worker observation owns a 15-second deadline. Leave
+				// room for its typed result instead of racing its response.
+				c.transport.ResponseHeaderTimeout = 20 * time.Second
+			case "review":
+				// Comment creation and grouped submission have server limits
+				// of 30 and 45 seconds. The default 15-second header timeout
+				// would abandon valid work before either operation finishes.
+				limit = 50 * time.Second
+				c.transport.ResponseHeaderTimeout = limit
+			}
+		}
+		bounded, cancel := context.WithTimeout(ctx, limit)
 		defer cancel()
 		ctx = bounded
 	}
 	switch command {
+	case "usage":
+		if len(rest) > 0 && rest[0] == "pricing" {
+			if len(rest) > 1 && rest[1] == "set" {
+				ensureRequest(&o)
+			}
+			value, err := pricingCommand(ctx, c, o, rest[1:], streams.In)
+			return emit(value, err)
+		}
+		if len(rest) > 0 && rest[0] == "summary" {
+			value, err := usageCommand(ctx, c, rest)
+			return emit(value, err)
+		}
+	case "activity":
+		value, err := activityCommand(ctx, c, rest)
+		return emit(value, err)
+	case "search":
+		value, err := searchCommand(ctx, c, rest)
+		return emit(value, err)
 	case "schedule":
 		if len(rest) > 0 && rest[0] != "snapshot" {
 			switch rest[0] {
@@ -150,6 +223,12 @@ func Run(ctx context.Context, args []string, streams IO) int {
 			value, err := scheduleCommand(ctx, c, o, rest, streams)
 			return emit(value, err)
 		}
+	case "notification":
+		if len(rest) > 0 && (rest[0] == "configure" || rest[0] == "claim" || rest[0] == "report") {
+			ensureRequest(&o)
+		}
+		value, err := notificationCommand(ctx, c, o, rest)
+		return emit(value, err)
 	case "inbox":
 		if len(rest) > 0 && rest[0] != "snapshot" {
 			if rest[0] == "mark-read" || rest[0] == "mark-unread" {
@@ -170,6 +249,13 @@ func Run(ctx context.Context, args []string, streams IO) int {
 			return emit(value, err)
 		}
 	case "session":
+		if len(rest) > 0 && rest[0] == "budget" {
+			if len(rest) > 1 && rest[1] != "get" {
+				ensureRequest(&o)
+			}
+			value, err := budgetCommand(ctx, c, o, rest[1:])
+			return emit(value, err)
+		}
 		if len(rest) > 0 && rest[0] != "get" && rest[0] != "inspect" && rest[0] != "snapshot" {
 			if rest[0] != "list" {
 				ensureRequest(&o)
@@ -207,6 +293,25 @@ func Run(ctx context.Context, args []string, streams IO) int {
 			value, err := modelCatalog(ctx, c, rest)
 			return emit(value, err)
 		}
+	case "github":
+		if len(rest) >= 2 && rest[0] == "pr" && rest[1] == "remediation" {
+			value, err := prRemediationCommand(ctx, c, o, rest[2:])
+			return emit(value, err)
+		}
+		if len(rest) >= 2 && rest[0] == "pr" && rest[1] == "problems" {
+			value, err := prProblemsCommand(ctx, c, o, rest[2:])
+			return emit(value, err)
+		}
+		value, err := githubCommand(ctx, c, rest)
+		return emit(value, err)
+	case "integration":
+		if len(rest) > 0 && rest[0] != "list" && rest[0] != "get" && rest[0] != "snapshot" {
+			if rest[0] != "inspect-repository" {
+				ensureRequest(&o)
+			}
+			value, err := integrationCommand(ctx, c, o, rest, streams)
+			return emit(value, err)
+		}
 	case "account":
 		if len(rest) > 0 && (rest[0] == "connect" || rest[0] == "disconnect" || rest[0] == "status" || rest[0] == "validate") {
 			if rest[0] != "status" {
@@ -238,6 +343,12 @@ func Run(ctx context.Context, args []string, streams IO) int {
 			return emit(nil, usage())
 		}
 		switch rest[0] {
+		case "overview":
+			response, err := c.system.GetOverview(ctx, request(c, &pb.GetOverviewRequest{}))
+			if err != nil {
+				return emit(nil, rpc.ClientError(err))
+			}
+			return emit(overviewOutput(response.Msg), nil)
 		case "status":
 			response, err := c.system.GetStatus(ctx, request(c, &pb.GetStatusRequest{}))
 			if err != nil {
@@ -248,6 +359,12 @@ func Run(ctx context.Context, args []string, streams IO) int {
 			ensureRequest(&o)
 			response, err := c.system.StopServer(ctx, request(c, &pb.StopServerRequest{RequestId: string(o.requestID)}))
 			if err != nil {
+				if o.server == "" && !o.tokenStdin && (domain.SafeError(rpc.ClientError(err)).Code == domain.ServerUnavailable || domain.SafeError(rpc.ClientError(err)).Code == domain.Unavailable) {
+					if suppressErr := server.SuppressLocalRestart(o.dataDir, o.requestID); suppressErr != nil {
+						return emit(nil, suppressErr)
+					}
+					return emit(nil, offlineStop())
+				}
 				return emit(nil, rpc.ClientError(err))
 			}
 			return emit(response.Msg, nil)
@@ -263,6 +380,12 @@ func Run(ctx context.Context, args []string, streams IO) int {
 			return emit(nil, rpc.ClientError(err))
 		}
 		return emit(json.RawMessage(response.Msg.ReportJson), nil)
+	case "configuration":
+		if len(rest) > 0 && rest[0] == "apply" {
+			ensureRequest(&o)
+		}
+		value, err := configurationTransfer(ctx, c, o, rest, streams)
+		return emit(value, err)
 	case "backup":
 		if len(rest) != 1 || rest[0] != "create" {
 			return emit(nil, usage())
@@ -545,11 +668,15 @@ func connectClient(o options, input io.Reader) (client, error) {
 		interactions:  delidevv1connect.NewInteractionServiceClient(httpClient, endpoint, opts...),
 		sessions:      delidevv1connect.NewSessionServiceClient(httpClient, endpoint, opts...),
 		accounts:      delidevv1connect.NewAccountServiceClient(httpClient, endpoint, opts...),
+		integrations:  delidevv1connect.NewIntegrationServiceClient(httpClient, endpoint, opts...),
 		providers:     delidevv1connect.NewProviderServiceClient(httpClient, endpoint, opts...),
 		devices:       delidevv1connect.NewDeviceServiceClient(httpClient, endpoint, opts...),
 		workers:       delidevv1connect.NewWorkerServiceClient(httpClient, endpoint, opts...),
 		system:        delidevv1connect.NewSystemServiceClient(httpClient, endpoint, opts...),
 		resources:     delidevv1connect.NewResourceServiceClient(httpClient, endpoint, opts...),
+		search:        delidevv1connect.NewSearchServiceClient(httpClient, endpoint, opts...),
+		activity:      delidevv1connect.NewActivityServiceClient(httpClient, endpoint, opts...),
+		usage:         delidevv1connect.NewUsageServiceClient(httpClient, endpoint, opts...),
 		configuration: delidevv1connect.NewConfigurationServiceClient(httpClient, endpoint, opts...),
 	}, nil
 }
@@ -597,7 +724,7 @@ func resourcesJSON(records []*pb.Resource) []any {
 }
 
 func start(ctx context.Context, o options, args []string, streams IO) (any, error) {
-	if o.server != "" {
+	if o.server != "" || o.tokenStdin {
 		return nil, domain.Fail(domain.InvalidArgument, "Server startup is a local infrastructure command.", "Run it on the server machine with its data directory.")
 	}
 	fs := flags("server start")
@@ -606,12 +733,30 @@ func start(ctx context.Context, o options, args []string, streams IO) (any, erro
 	key := fs.String("tls-key", "", "TLS key")
 	origins := fs.String("allowed-origins", "", "comma-separated exact origins")
 	foreground := fs.Bool("foreground", false, "remain attached")
+	startupID := fs.String("startup-id", "", "exact detached startup generation")
 	if err := parse(fs, args[1:]); err != nil {
 		return nil, err
 	}
+	if _, err := worker.LoadCredential(o.dataDir); err == nil {
+		return nil, domain.Fail(domain.PermissionDenied, "Server startup requires an owner scope, not a paired device scope.", "Select the server's original local data directory.")
+	} else if !os.IsNotExist(err) {
+		return nil, err
+	}
 	configuration := server.Config{DataDir: o.dataDir, Listen: *listen, TLSCertificate: *cert, TLSKey: *key, Logger: slog.New(slog.NewJSONHandler(streams.Err, nil))}
+	if *startupID != "" {
+		if args[0] != "run" || domain.ID(*startupID).Validate() != nil {
+			return nil, usage()
+		}
+		configuration.StartupID = domain.ID(*startupID)
+	}
 	if *origins != "" {
 		configuration.AllowedOrigins = strings.Split(*origins, ",")
+	}
+	if args[0] == "ensure" {
+		if *foreground {
+			return nil, usage()
+		}
+		return ensureDetached(ctx, o, configuration, streams, true)
 	}
 	if args[0] == "run" || *foreground {
 		err := server.Serve(ctx, configuration, func(e server.Endpoint) {
@@ -625,30 +770,69 @@ func start(ctx context.Context, o options, args []string, streams IO) (any, erro
 	return startDetached(ctx, o, configuration, streams)
 }
 
+func offlineStop() error {
+	return domain.Fail(domain.RecoveryRequired, "Automatic local restart is suppressed, but server shutdown is unconfirmed.", "Inspect the existing server before starting again; no session or process cleanup is claimed.")
+}
+
 const help = `DeliDev 0.1.0 (unreleased)
 
 Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
 
   server start [--foreground] [--listen IP:PORT] [--tls-cert FILE --tls-key FILE]
                [--allowed-origins ORIGIN,ORIGIN]
-  server status | stop
+  server status | overview | stop
+  server ensure [--listen IP:PORT] [--allowed-origins ORIGIN,ORIGIN]
   doctor
+  connection list
+  connection worker-register|worker-inspect|worker-status|worker-start --id UUID
+  connection worker-stop --id UUID --generation UUID
+  connection pair --id UUID --name NAME --code-stdin
+  connection inspect|verify|retry --id UUID
   device create-pairing --type worker|client --name NAME
   device pair --device-dir PATH --code-stdin
+  device pair-local --device-dir PATH
+  device inspect --device-dir PATH
   device revoke --id ID --revision N
   worker pair --worker-dir PATH --name NAME --code-stdin
-  worker start --worker-dir PATH
+  worker pair-local --worker-dir PATH
+  worker inspect --worker-dir PATH
+  worker status --worker-dir PATH
+  worker stop --worker-dir PATH --generation UUID-V7
+  worker start --worker-dir PATH [--detach]
   repository inspect --machine-id ID --path PATH [--preferred-remote NAME] [--wait]
   machine discover --id ID --revision N [--input FILE|-] [--protocol] [--wait]
   account connect --id ID --revision N (--key-stdin | --keyless)
   account disconnect --id ID --revision N
   account validate --id ID --revision N
   account status --id ID
+  integration create --input FILE|-
+  integration edit --id ID --revision N --input FILE|-
+  integration replace-token --id ID --revision N --pat-stdin
+  integration validate|delete --id ID --revision N
+  integration list|get|snapshot [--id ID]
+  integration token-form --id ID --revision N --access selected-repositories|public-repositories|private-repositories [--open]
+  integration inspect-repository --repository-id ID
+  github pr|issue list --repository-id ID [--state open|closed|all] [--page N --page-size N]
+  github pr|issue search --repository-id ID --text TERMS [--state open|closed|all] [--page N]
+  github pr|issue get|open --repository-id ID --number N
+  github pr diff|rules|ci|feedback|reviewers --repository-id ID --number N
+  github pr checks|statuses --repository-id ID --number N [--page N --page-size N]
+  github pr problems refresh --repository-id ID --number N [--kind feedback|ci|conflict]
+  github pr problems list --remote-repository-id N --pull-request-id N [--limit N --page-token TOKEN]
+  github pr problems dismiss --id ID --revision N --content-version SHA256
+  github pr remediation list --remote-repository-id N --pull-request-id N [--limit N --page-token TOKEN]
+  github pr remediation resume --id SET_ID --revision N
   provider presets
   provider create --preset PRESET [--name NAME]
   provider discover --account-id ID --revision N
   model search [--query TEXT] [--provider-id ID] [--include-hidden] [--limit N] [--page-token TOKEN]
   model resolve --selector ID|ALIAS|NATIVE_ID [--provider-id ID]
+  session files roots|list|read --id ID [--repository-id ID] [--path RELATIVE] [--page-token TOKEN]
+  session diff --id ID --repository-id ID [--comparison working-tree|staged|creation] [--path RELATIVE]
+  session review-context --id ID --repository-id ID [--comparison working-tree|staged|creation] [--path RELATIVE]
+  session review create|edit|delete|submit|list|get --id SESSION [--review-id ID] [--revision N] [--input PATH]
+  session pr link --id SESSION --repository-id ID --number N
+  session pr list|get|unlink --id SESSION [--association-id ID] [--revision N]
   session create --input FILE|- [--wait]
   session prepare --id ID --revision N [--wait]
   session recover-workspace --id ID --revision N [--cleanup] [--wait]
@@ -667,6 +851,20 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   schedule occurrence --id SCHEDULE --occurrence-id OCCURRENCE
   interaction respond --id ID --revision N --input FILE|-
   interaction approve --id ID --revision N --input FILE|-
+  session budget get --id ID
+  session budget set --id ID --revision N --currency USD --threshold DECIMAL
+  session budget remove --id ID --revision N
+  usage pricing get --model-id ID
+  usage pricing version --id ID
+  usage pricing set --model-id ID --model-revision M --revision N --input PATH [--request-id ID]
+  usage summary [--from RFC3339] [--until RFC3339] [--session-id ID] [--project-id ID | --general-chat] [--account-id ID] [--provider-id ID] [--model-id ID]
+  activity list [--session-id ID] [--project-id ID] [--limit N] [--page-token TOKEN]
+  search --query TEXT [--session-id ID] [--project-id ID] [--agent-id ID] [--account-id ID]
+    [--outcome all|not-started|running|succeeded|failed|stopped] [--archive all|active|archiving|archived]
+    [--limit N] [--page-token TOKEN]
+  notification preferences | configure --revision N --interactions on|off --terminals on|off
+  notification list [--limit N] | inspect|claim --id INBOX_ID
+  notification report --id INBOX_ID --claim-id CLAIM_ID --state submitted|denied|failed|uncertain
   inbox list [--session-id ID] [--project-id ID] [--read-state all|read|unread]
     [--source all|interaction|execution-terminal] [--limit N] [--page-token TOKEN]
   inbox get|inspect --id ID
@@ -674,6 +872,9 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   queue list --session-id ID [--limit N] [--page-token TOKEN]
   queue edit --session-id ID --id ID --revision N --input FILE|-
   queue remove --session-id ID --id ID --revision N
+  configuration export [--output PATH]
+  configuration preview --input PATH|- [--output PATH]
+  configuration apply --input PATH|- [--request-id ID]
   backup create
   settings defaults
   KIND list [--limit 50] [--page-token TOKEN] [--project-id ID] [--session-id ID]

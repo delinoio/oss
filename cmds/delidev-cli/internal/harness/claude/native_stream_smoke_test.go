@@ -3,6 +3,7 @@ package claude
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -23,7 +24,7 @@ import (
 // This opt-in test runs only the explicitly selected native binary. Its account,
 // home, workspace and scripted provider are disposable; no user login is read.
 // It validates transport observations, not public execution/account readiness.
-func TestManualNativeStreamRetainsInputIdentityAndResumesHistory(t *testing.T) {
+func TestManualNativeBareStreamGatesResumeOnOriginalHistory(t *testing.T) {
 	binary := os.Getenv("DELIDEV_NATIVE_CLAUDE_EXECUTABLE")
 	if binary == "" {
 		t.Skip("set DELIDEV_NATIVE_CLAUDE_EXECUTABLE for isolated native acceptance")
@@ -105,6 +106,8 @@ func TestManualNativeStreamRetainsInputIdentityAndResumesHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	session := domain.NewID()
+	var proofs []HistoryMessageProof
+	refused := false
 	for turn := 1; turn <= 2; turn++ {
 		t.Run(fmt.Sprintf("turn-%d", turn), func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -137,7 +140,7 @@ func TestManualNativeStreamRetainsInputIdentityAndResumesHistory(t *testing.T) {
 			if err := s.SendInput(ctx, input, session, prompt); err != nil {
 				t.Fatal(err)
 			}
-			queued, started, initialized, replayed, answered := false, false, false, false, false
+			queued, started, initialized, replayed, answered, finished := false, false, false, false, false, false
 			for {
 				event, err := s.Next(ctx)
 				if err != nil || event.Kind != NativeMessage {
@@ -168,6 +171,13 @@ func TestManualNativeStreamRetainsInputIdentityAndResumesHistory(t *testing.T) {
 				if json.Unmarshal(event.Body, &message) != nil || message.Session != session {
 					t.Fatal("native session identity changed")
 				}
+				if event.Type == "user" || event.Type == "assistant" {
+					proof, err := ObserveMainHistoryMessage(event, session)
+					if err != nil {
+						t.Fatal(err)
+					}
+					proofs = append(proofs, proof)
+				}
 				switch event.Type {
 				case "command_lifecycle":
 					if message.Command != input {
@@ -177,6 +187,35 @@ func TestManualNativeStreamRetainsInputIdentityAndResumesHistory(t *testing.T) {
 						queued = true
 					} else if message.State == "started" && queued && !started {
 						started = true
+					} else if message.State == "completed" && finished {
+						if err := s.Finish(ctx); err != nil {
+							t.Fatal("native EOF completion failed", err)
+						}
+						scope, err := openHistoryFiles(ctx, cfg.Home)
+						if err != nil {
+							t.Fatal(err)
+						}
+						raw, err := scope.read(ctx, filepath.Join("projects", "fixture", string(session)+".jsonl"), maxHistoryTranscript)
+						scope.Close()
+						if err != nil {
+							t.Fatal(err)
+						}
+						observed, err := VerifyMainTranscript(ctx, raw, session, workspace, proofs)
+						if err != nil {
+							// The pinned bare CLI occasionally omits its first user
+							// record or persists it after its answer even after clean
+							// EOF. Never resume that unproved
+							// history or reconstruct input from last-prompt metadata.
+							if turn != 1 || domain.SafeError(err).Code != domain.RecoveryRequired || !nativeBareIncompleteOriginalHistory(raw, proofs) {
+
+								t.Fatal("unexpected native retained-history failure", err)
+							}
+							refused = true
+							t.Log("bare native history omitted or reordered the original user; process replacement refused before inference")
+						} else if observed.MatchedMessages != uint32(2*turn) || observed.AdditionalMessages != 0 {
+							t.Fatal("native retained history contains unobserved conversation")
+						}
+						return
 					} else {
 						t.Fatal("native input lifecycle was reordered or repeated")
 					}
@@ -201,25 +240,67 @@ func TestManualNativeStreamRetainsInputIdentityAndResumesHistory(t *testing.T) {
 					if !queued || !started || !initialized || !replayed || !answered || message.Subtype != "success" || message.Error || message.Input != input || message.Terminal != "completed" || message.Stop != "end_turn" || message.Result != fmt.Sprintf("Fixture response %d.", turn) {
 						t.Fatal("native result lacks exact completed input evidence")
 					}
-					return
+					finished = true
 				case "stream_event":
 				default:
 					t.Fatal("unvalidated native event family")
 				}
 			}
 		})
-		if t.Failed() {
+		if t.Failed() || refused {
 			break
 		}
 	}
-	if requests.Load() != 2 {
-		t.Error("native continuation did not issue exactly two provider requests")
+	expectedRequests := int64(2)
+	if refused {
+		expectedRequests = 1
+	}
+	if requests.Load() != expectedRequests {
+		t.Error("native continuation crossed its original-history gate")
 	}
 	for _, private := range []string{"private-fixture-only", "Fixture request", "Fixture response", "Private fixture instructions"} {
 		if strings.Contains(logs.String(), private) {
 			t.Error("private native content entered process logs")
 		}
 	}
+}
+
+// Recognize only the observed pinned bare-mode loss, not arbitrary corruption.
+// Full API-mode process replacement has separate mandatory positive coverage.
+func nativeBareIncompleteOriginalHistory(raw []byte, proofs []HistoryMessageProof) bool {
+	if len(proofs) != 2 || proofs[0].Role != HistoryUser || proofs[1].Role != HistoryAssistant {
+		return false
+	}
+	users, assistants := 0, 0
+	userPosition, assistantPosition := -1, -1
+	for position, line := range bytes.Split(bytes.TrimSpace(raw), []byte("\n")) {
+		var record struct {
+			Type    string          `json:"type"`
+			UUID    string          `json:"uuid"`
+			Parent  string          `json:"parentUuid"`
+			Message json.RawMessage `json:"message"`
+		}
+		if json.Unmarshal(line, &record) != nil {
+			return false
+		}
+		if record.Type == "user" {
+			users++
+			userPosition = position
+			role, digest, err := canonicalHistoryPayload(record.Message)
+			if err != nil || role != HistoryUser || record.UUID != proofs[0].NativeID || record.Parent != "" || hex.EncodeToString(digest[:]) != proofs[0].PayloadSHA256 {
+				return false
+			}
+		}
+		if record.Type == "assistant" {
+			assistants++
+			assistantPosition = position
+			role, digest, err := canonicalHistoryPayload(record.Message)
+			if err != nil || role != HistoryAssistant || record.UUID != proofs[1].NativeID || record.Parent != proofs[0].NativeID || hex.EncodeToString(digest[:]) != proofs[1].PayloadSHA256 {
+				return false
+			}
+		}
+	}
+	return assistants == 1 && (users == 0 || (users == 1 && userPosition > assistantPosition))
 }
 
 func nativeFixtureText(raw json.RawMessage) string {
