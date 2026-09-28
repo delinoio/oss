@@ -1,6 +1,6 @@
 # Limits and troubleshooting
 
-React Forge exposes current budgets through `limits` and `capabilities`. A resource-limit or unsupported-package error is explicit; it does not silently flatten content or download a replacement dependency.
+Start with `ForgeError.code` when an operation fails, then use the recovery table below. The installed package exposes its current budgets through `limits` and `capabilities`. A resource-limit or unsupported-package error is explicit; React Forge does not silently flatten content or download a replacement dependency.
 
 | Resource | Ceiling |
 | --- | ---: |
@@ -13,6 +13,8 @@ React Forge exposes current budgets through `limits` and `capabilities`. A resou
 | Registered assets together | 256 MiB |
 
 An explicit font is bounded to 64 MiB. Existing PPTX constraints include 1,000 slides and tables up to 1,000 rows by 128 columns. Chart expansion is bounded to 200,000 cells and XLSX merge expansion to 250,000 cells. Figma images are limited to 10 MiB and 64 million pixels each. Check the installed package's `limits` and `capabilities` for the applicable full set.
+
+[SFX](/react-forge/formats/sfx/#sessions-mcp-and-limits) and [Sprite](/react-forge/formats/sprite/#limits-and-boundaries) have format-specific bounds. Both are available in npm `0.2.0`; check the installed package's `capabilities` for its complete limits.
 
 ## Common failures
 
@@ -29,4 +31,21 @@ An explicit font is bounded to 64 MiB. Existing PPTX constraints include 1,000 s
 
 ## Boundaries
 
-Local document work has no hosted service, telemetry, URL fetching, automatic recovery, runtime converter, or automatic timeout. Figma is the explicit remote exception and has [separate receipt and retry rules](/react-forge/figma#publication-outcomes-and-receipts). Integrators are responsible for authenticating their own callers and governing process-wide resources; task code is trusted and runs with caller permissions.
+Local document work has no hosted service, telemetry, URL fetching, automatic recovery, runtime converter, or automatic timeout. Figma is the explicit remote exception and has [separate receipt and retry rules](/react-forge/formats/figma/#publication-outcomes-and-receipts). Integrators are responsible for authenticating their own callers and governing process-wide resources; task code is trusted and runs with caller permissions.
+
+## Static 3D format limits
+
+[GLB](/react-forge/formats/glb/) and [FBX](/react-forge/formats/fbx/) creation are available in npm `0.2.0`. They use SceneSession with registered geometry/textures, explicit file export, and revision-bound world-space bounds. The released static API excludes existing-file editing, animation and rigging. The FBX material profile targets Blender 4.5; visual checks do not establish identical results in other FBX applications.
+
+## Animation extension limits (unreleased)
+
+The unreleased scene extension adds at most four joint influences per vertex and
+64 position/optional-normal morphs per geometry. Sampler and deformation arrays
+share existing scene asset/output limits. Sampler times must be finite,
+nonnegative and strictly increasing; scale curves cannot cross zero. Invalid or
+removed refs, foreign-session handles, duplicate target/path tracks and singular
+rotations fail validation. Animate a group containing the mesh and joints instead
+of placing TRS tracks directly on a skinned mesh. Failed/cancelled sampler work
+releases its budget; callbacks cannot be interrupted while synchronously running.
+For FBX rotation/CUBIC approximation and its 1–240 fps setting, see the
+[FBX guide](/react-forge/formats/fbx/#animation-authoring-unreleased).

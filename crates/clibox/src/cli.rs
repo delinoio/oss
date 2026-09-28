@@ -45,6 +45,9 @@ pub enum Command {
     /// Wait for one resource to become ready (no stdin or subsequent command).
     #[command(subcommand)]
     Wait(clibox_wait::Command),
+    /// Observe synchronous file operations for a local command.
+    #[command(subcommand)]
+    Fspy(clibox_fspy::cli::Command),
 }
 
 /// Never render clap's input-error diagnostics: they may embed argv,
@@ -95,6 +98,13 @@ pub fn parser_message(kind: clap::error::ErrorKind, raw: &[std::ffi::OsString]) 
         (Some("wait"), Some("tcp")) => "clibox wait tcp",
         (Some("wait"), Some("http")) => "clibox wait http",
         (Some("wait"), Some("file")) => "clibox wait file",
+        (Some("fspy"), Some("record")) => "clibox fspy record",
+        (Some("fspy"), Some("compare")) => "clibox fspy compare",
+        (Some("fspy"), Some("autowatch")) => "clibox fspy autowatch",
+        (Some("fspy"), Some("assetcov")) => "clibox fspy assetcov",
+        (Some("fspy"), Some("latencylab")) => "clibox fspy latencylab",
+        (Some("fspy"), Some("min-repro")) => "clibox fspy min-repro",
+        (Some("fspy"), Some("fbreak")) => "clibox fspy fbreak",
         (Some("run"), _) => "clibox run",
         (Some("port"), _) => "clibox port",
         (Some("open"), _) => "clibox open",
@@ -107,6 +117,7 @@ pub fn parser_message(kind: clap::error::ErrorKind, raw: &[std::ffi::OsString]) 
         (Some("base64"), _) => "clibox base64",
         (Some("hash"), _) => "clibox hash",
         (Some("wait"), _) => "clibox wait",
+        (Some("fspy"), _) => "clibox fspy",
         _ => "clibox",
     };
     let guidance = match kind {

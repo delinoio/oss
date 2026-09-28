@@ -32,7 +32,7 @@ process.on("message", (message: ParentMessage) => {
       const value = await runtime.call(message.operation, message.input, controller.signal);
       send({ kind: MessageKind.Result, id: message.id, result: success(value) });
     } catch (error) {
-      const result = failure(error);
+      const result = failure(error, runtime.diagnose(error));
       code = (result.structuredContent?.error as { code: ErrorCode }).code;
       send({ kind: MessageKind.Result, id: message.id, result });
     } finally {

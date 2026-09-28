@@ -1,0 +1,731 @@
+{
+  "date": "2026-09-25",
+  "revision": "AURA quality refinement",
+  "implementationCommits": [
+    "3a3b56c6",
+    "fe87d89e",
+    "68dd5f06"
+  ],
+  "availability": "unreleased; absent from npm 0.1.1",
+  "historicalBaseline": "audio-studio-macos-arm64.json",
+  "host": {
+    "os": "macOS 26.6.2 (25G83)",
+    "architecture": "arm64",
+    "gpu": "Apple M3 Max 40-core Metal"
+  },
+  "tools": {
+    "node": "24.17.0",
+    "react": "19.2.8",
+    "typescript": "5.9.3",
+    "rust": "1.94.0-nightly (8d670b93d 2025-12-31)",
+    "blender": "4.5.14 LTS (62c1db4208e8)",
+    "blenderDmgSha256": "65134d9b07b20e2fa8d3c9e44f6f44ffb5c9774dd521b95f50387310241ca170",
+    "gltfValidator": "2.0.0-dev.3.10",
+    "ufbx": "0.23.0",
+    "ufbxRustCrate": "0.11.4",
+    "fbxcel": "0.9.0",
+    "three": "0.186.1",
+    "pillow": "12.3.0"
+  },
+  "render": {
+    "inspectionResolution": [
+      2048,
+      2048
+    ],
+    "individualHeroResolution": [
+      4096,
+      4096
+    ],
+    "studioHeroResolution": [
+      4096,
+      2731
+    ],
+    "samples": 256,
+    "seed": 0,
+    "device": "METAL",
+    "colorManagement": "AgX",
+    "completeProductFraming": "imported bounds with a seven-percent margin",
+    "importedMeshOrMaterialRepairs": false,
+    "reviewedImages": 32
+  },
+  "products": [
+    {
+      "file": "aura-studio.glb",
+      "sha256": "e7237dcf08e7bd39981f56cf1f46deaea053631601de0897cd6dc86e14516614",
+      "bytes": 30193648,
+      "nodes": 209,
+      "meshes": 172,
+      "bounds": {
+        "coordinateSpace": "world",
+        "min": [
+          -0.13174999998509884,
+          0.001999999891966581,
+          -0.0689999982714653
+        ],
+        "max": [
+          0.4096314144703331,
+          0.35259999382495877,
+          0.17346837934608433
+        ],
+        "revision": 1
+      },
+      "triangles": 723874,
+      "textures": 7,
+      "worldBoundsErrorMeters": 1.6632419608253457e-08,
+      "validatorErrors": 0,
+      "validatorWarnings": 0,
+      "renders": [
+        {
+          "file": "aura-studio-glb-hero.png",
+          "width": 4096,
+          "height": 2731,
+          "sha256": "5ff1b441e900568dd0fa7e8f44b18a865c44e9bfd1fa4f906d30d6dcab48b03e"
+        },
+        {
+          "file": "aura-studio-glb-front.png",
+          "width": 2048,
+          "height": 2048,
+          "sha256": "24c2d4e7c80aeeaaa5a7a160d4125f6b02314cc6e6b6add2336dec7583000565"
+        },
+        {
+          "file": "aura-studio-glb-back.png",
+          "width": 2048,
+          "height": 2048,
+          "sha256": "8fb33348d0670bf02c7102c43b38405216f5ed379b2b0daaf96e3b94c98efcda"
+        },
+        {
+          "file": "aura-studio-glb-detail.png",
+          "width": 2048,
+          "height": 2048,
+          "sha256": "dd4ae83c5e5e64aa02d3f41c9978a2f911da0b790e461f43b2fe21ef8bfa7ef4"
+        }
+      ]
+    },
+    {
+      "file": "aura-studio.fbx",
+      "sha256": "a0cfdf8b5fb2a1b90305dae78b53fb8a5386e0ee9922bc2fe83760393755165c",
+      "bytes": 53284928,
+      "nodes": 209,
+      "meshes": 172,
+      "bounds": {
+        "coordinateSpace": "world",
+        "min": [
+          -0.13174999998509884,
+          0.001999999891966581,
+          -0.0689999982714653
+        ],
+        "max": [
+          0.4096314144703331,
+          0.35259999382495877,
+          0.17346837934608433
+        ],
+        "revision": 1
+      },
+      "triangles": 723874,
+      "textures": 13,
+      "worldBoundsErrorMeters": 1.6632419608253457e-08,
+      "validatorErrors": null,
+      "validatorWarnings": null,
+      "renders": [
+        {
+          "file": "aura-studio-fbx-hero.png",
+          "width": 4096,
+          "height": 2731,
+          "sha256": "218c84b74eee671883887949821dd6a0fa8a29239dddaa70c241f76393d185c2"
+        },
+        {
+          "file": "aura-studio-fbx-front.png",
+          "width": 2048,
+          "height": 2048,
+          "sha256": "3af30801d55755721e664864a5b9271ef3a7b558824207c72bd888017f1549c1"
+        },
+        {
+          "file": "aura-studio-fbx-back.png",
+          "width": 2048,
+          "height": 2048,
+          "sha256": "d18c6317cbfb550428f637906de17582c96345a6a6cdd96496357127687a0546"
+        },
+        {
+          "file": "aura-studio-fbx-detail.png",
+          "width": 2048,
+          "height": 2048,
+          "sha256": "bd7c41682fdd4de4c264b7bce1981cbd93b1294cc8a05dd3050711659af4b9d5"
+        }
+      ]
+    },
+    {
+      "file": "aura-headphones.glb",
+      "sha256": "7dc8dafd498d822206d12b53188e2cde386b8dee697f45f8534b5ac2f7c00339",
+      "bytes": 22445020,
+      "nodes": 74,
+      "meshes": 57,
+      "bounds": {
+        "coordinateSpace": "world",
+        "min": [
+          -0.13174999998509884,
+          0.13259270045161248,
+          -0.053200000178068876
+        ],
+        "max": [
+          0.13174999998509884,
+          0.35259999382495877,
+          0.053200000178068876
+        ],
+        "revision": 1
+      },
+      "triangles": 370124,
+      "textures": 6,
+      "worldBoundsErrorMeters": 1.537799831918818e-08,
+      "validatorErrors": 0,
+      "validatorWarnings": 0,
+      "renders": [
+        {
+          "file": "aura-headphones-glb-hero.png",
+          "width": 4096,
+          "height": 4096,
+          "sha256": "dfe33e18914bca82fbfed14fb84b6d6ba5a3f6aeab794c283b6fd7b6239a0799"
+        },
+        {
+          "file": "aura-headphones-glb-front.png",
+          "width": 2048,
+          "height": 2048,
+          "sha256": "6ab66bacd6f25329081ec53571cfb7d2d8ad11f00ec21ea71d40b987784710c5"
+        },
+        {
+          "file": "aura-headphones-glb-back.png",
+          "width": 2048,
+          "height": 2048,
+          "sha256": "c9bb41a49525e43233f28caa5f2ab96daca7fa460ac4b0e5ee85ba90509d73b2"
+        },
+        {
+          "file": "aura-headphones-glb-detail.png",
+          "width": 2048,
+          "height": 2048,
+          "sha256": "a4b126b03f122aedb9fc78f22ad4252f9714e6fc852c2e434a8ccea2e8e437b9"
+        }
+      ]
+    },
+    {
+      "file": "aura-headphones.fbx",
+      "sha256": "8e96afb38e9afce6da4642ae86d6dbb6ee7de83b618570dcd2d720849ff2b77a",
+      "bytes": 37016016,
+      "nodes": 74,
+      "meshes": 57,
+      "bounds": {
+        "coordinateSpace": "world",
+        "min": [
+          -0.13174999998509884,
+          0.13259270045161248,
+          -0.053200000178068876
+        ],
+        "max": [
+          0.13174999998509884,
+          0.35259999382495877,
+          0.053200000178068876
+        ],
+        "revision": 1
+      },
+      "triangles": 370124,
+      "textures": 10,
+      "worldBoundsErrorMeters": 1.6044825315586486e-08,
+      "validatorErrors": null,
+      "validatorWarnings": null,
+      "renders": [
+        {
+          "file": "aura-headphones-fbx-hero.png",
+          "width": 4096,
+          "height": 4096,
+          "sha256": "cf49100562128f837661f7ad22c1b2117f28dbf38c7b5045af23da57ce29ad7b"
+        },
+        {
+          "file": "aura-headphones-fbx-front.png",
+          "width": 2048,
+          "height": 2048,
+          "sha256": "f1cfb4ccda6f174779f045ef6959799e525c98390dbc697756c780fda63d1b19"
+        },
+        {
+          "file": "aura-headphones-fbx-back.png",
+          "width": 2048,
+          "height": 2048,
+          "sha256": "8c8471640b53e3e4f668e3d1cf7088f0d71af8ca459e59fa82869a9d885d24ca"
+        },
+        {
+          "file": "aura-headphones-fbx-detail.png",
+          "width": 2048,
+          "height": 2048,
+          "sha256": "513b285e88f84164a41f0df21e3ad2a3636e86726cd276121529e30a5beeffe2"
+        }
+      ]
+    },
+    {
+      "file": "aura-dac.glb",
+      "sha256": "c52b02b19bf90b8950c5607d846be361a5e0469ef457c44303615d73c67d9a06",
+      "bytes": 22492500,
+      "nodes": 120,
+      "meshes": 103,
+      "bounds": {
+        "coordinateSpace": "world",
+        "min": [
+          -0.1280999999797903,
+          0.001999999891966581,
+          -0.09750000010803342
+        ],
+        "max": [
+          0.1280999999797903,
+          0.0622,
+          0.1114000000071246
+        ],
+        "revision": 1
+      },
+      "triangles": 316882,
+      "textures": 7,
+      "worldBoundsErrorMeters": 7.108505811759258e-09,
+      "validatorErrors": 0,
+      "validatorWarnings": 0,
+      "renders": [
+        {
+          "file": "aura-dac-glb-hero.png",
+          "width": 4096,
+          "height": 4096,
+          "sha256": "b6967257b211101b658deb3ad9f5bbfb93d4a5ef8f6f36e88417b7e5fb1fcd32"
+        },
+        {
+          "file": "aura-dac-glb-front.png",
+          "width": 2048,
+          "height": 2048,
+          "sha256": "9e02b982e3f308ee65d75d7424d49557acbc4d755b9e57471922cdb481aca6a7"
+        },
+        {
+          "file": "aura-dac-glb-back.png",
+          "width": 2048,
+          "height": 2048,
+          "sha256": "727aa6e64b2696dee5757d053521ef453ce171b3af4b6eda146bd827a7d562f4"
+        },
+        {
+          "file": "aura-dac-glb-detail.png",
+          "width": 2048,
+          "height": 2048,
+          "sha256": "b7c8d0d8caa00a324455905a36511ffa3a2f55bb1cbb84ba99339e10f4703740"
+        }
+      ]
+    },
+    {
+      "file": "aura-dac.fbx",
+      "sha256": "c96262a4f3c01e6efca46d865dbd87c02909d33ff37be5fb31968bc0fcb5ccd0",
+      "bytes": 37620656,
+      "nodes": 120,
+      "meshes": 103,
+      "bounds": {
+        "coordinateSpace": "world",
+        "min": [
+          -0.1280999999797903,
+          0.001999999891966581,
+          -0.09750000010803342
+        ],
+        "max": [
+          0.1280999999797903,
+          0.0622,
+          0.1114000000071246
+        ],
+        "revision": 1
+      },
+      "triangles": 316882,
+      "textures": 13,
+      "worldBoundsErrorMeters": 7.108505811759258e-09,
+      "validatorErrors": null,
+      "validatorWarnings": null,
+      "renders": [
+        {
+          "file": "aura-dac-fbx-hero.png",
+          "width": 4096,
+          "height": 4096,
+          "sha256": "8c99d031d451374ac01783f798b29ef3837caa9976e69c7b25f795326cd5e410"
+        },
+        {
+          "file": "aura-dac-fbx-front.png",
+          "width": 2048,
+          "height": 2048,
+          "sha256": "9feeba053373a71397919f7cc8583a3ccc3d379477c1cf79653c4727a22c96d9"
+        },
+        {
+          "file": "aura-dac-fbx-back.png",
+          "width": 2048,
+          "height": 2048,
+          "sha256": "f6a81aeae5a95bae6343933fc22ff1fcbd4454d5a6b8f521c90077a7e85a7c7d"
+        },
+        {
+          "file": "aura-dac-fbx-detail.png",
+          "width": 2048,
+          "height": 2048,
+          "sha256": "91785c5b56da3bfbd544047e8a889f8accb02bf5755a79df99ea3b5dd91d7025"
+        }
+      ]
+    },
+    {
+      "file": "aura-stand.glb",
+      "sha256": "f547024e77b137169fa5b53bcf8d62e6edbd223f31f641cfb5fcfee445dbaf16",
+      "bytes": 16758016,
+      "nodes": 20,
+      "meshes": 12,
+      "bounds": {
+        "coordinateSpace": "world",
+        "min": [
+          -0.07850000262260437,
+          0.0019999999525025488,
+          -0.0689999982714653
+        ],
+        "max": [
+          0.07850000262260437,
+          0.3375000000521541,
+          0.0689999982714653
+        ],
+        "revision": 1
+      },
+      "triangles": 36868,
+      "textures": 5,
+      "worldBoundsErrorMeters": 5.908310396485206e-09,
+      "validatorErrors": 0,
+      "validatorWarnings": 0,
+      "renders": [
+        {
+          "file": "aura-stand-glb-hero.png",
+          "width": 4096,
+          "height": 4096,
+          "sha256": "4e5fe2deb1b64820658998e1bd6be7db83d7468511a93b4a7461b7215aa765fc"
+        },
+        {
+          "file": "aura-stand-glb-front.png",
+          "width": 2048,
+          "height": 2048,
+          "sha256": "4a288ff98c34669cae66e6e1184c4ad1d34dbf6d726c814be0840dd28d80a29f"
+        },
+        {
+          "file": "aura-stand-glb-back.png",
+          "width": 2048,
+          "height": 2048,
+          "sha256": "6ef6f7e2c14e7bb5b588ce42e14b7f72bd37b6fa9448e5fa671c6f9710f2f390"
+        },
+        {
+          "file": "aura-stand-glb-detail.png",
+          "width": 2048,
+          "height": 2048,
+          "sha256": "3214218a97972e879262214c4f8e0658b341ba7d2b8219f8d611669d84459460"
+        }
+      ]
+    },
+    {
+      "file": "aura-stand.fbx",
+      "sha256": "21190a18c830555cea6add56d9e3258962d923907ae9b4296cfa066879035ba2",
+      "bytes": 24170416,
+      "nodes": 20,
+      "meshes": 12,
+      "bounds": {
+        "coordinateSpace": "world",
+        "min": [
+          -0.07850000262260437,
+          0.0019999999525025488,
+          -0.0689999982714653
+        ],
+        "max": [
+          0.07850000262260437,
+          0.3375000000521541,
+          0.0689999982714653
+        ],
+        "revision": 1
+      },
+      "triangles": 36868,
+      "textures": 9,
+      "worldBoundsErrorMeters": 5.908310396485206e-09,
+      "validatorErrors": null,
+      "validatorWarnings": null,
+      "renders": [
+        {
+          "file": "aura-stand-fbx-hero.png",
+          "width": 4096,
+          "height": 4096,
+          "sha256": "2b2574e6724db25dd1d80d0f7e786462efb74815e41bddb02d5e5036246190bd"
+        },
+        {
+          "file": "aura-stand-fbx-front.png",
+          "width": 2048,
+          "height": 2048,
+          "sha256": "5779ccf36899dd4b8800f5e8e803a77443e55b8c29bde0f614650173c8a55003"
+        },
+        {
+          "file": "aura-stand-fbx-back.png",
+          "width": 2048,
+          "height": 2048,
+          "sha256": "5261ab777d3fb89b7eb787723a1dcf6a47d5da889d6bf745961ddb10a5893895"
+        },
+        {
+          "file": "aura-stand-fbx-detail.png",
+          "width": 2048,
+          "height": 2048,
+          "sha256": "6f3b36c15ffa819f28621b1f35d3d07bd8808694727512b32222cc86f92f4caa"
+        }
+      ]
+    }
+  ],
+  "profile": {
+    "result": "passed",
+    "projections": [
+      "perspective",
+      "orthographic"
+    ],
+    "lights": [
+      "directional",
+      "point",
+      "spot"
+    ],
+    "negativeNonuniformScale": true,
+    "opacity": 0.4,
+    "worldVertexErrorMeters": 6.705522537231445e-08
+  },
+  "pixelComparison": [
+    {
+      "product": "studio",
+      "view": "front",
+      "meanAbsoluteRgbDifference": 0.025240580240885418,
+      "rmsRgbDifference": 0.166090338427823,
+      "scale": 255
+    },
+    {
+      "product": "studio",
+      "view": "back",
+      "meanAbsoluteRgbDifference": 0.029668172200520832,
+      "rmsRgbDifference": 0.17807459941900702,
+      "scale": 255
+    },
+    {
+      "product": "studio",
+      "view": "hero",
+      "meanAbsoluteRgbDifference": 0.037185987418756866,
+      "rmsRgbDifference": 0.20232343314656878,
+      "scale": 255
+    },
+    {
+      "product": "studio",
+      "view": "detail",
+      "meanAbsoluteRgbDifference": 0.09293389320373535,
+      "rmsRgbDifference": 0.3191483925780303,
+      "scale": 255
+    },
+    {
+      "product": "headphones",
+      "view": "front",
+      "meanAbsoluteRgbDifference": 0.009741862614949545,
+      "rmsRgbDifference": 0.10452049354352756,
+      "scale": 255
+    },
+    {
+      "product": "headphones",
+      "view": "back",
+      "meanAbsoluteRgbDifference": 0.012706518173217773,
+      "rmsRgbDifference": 0.12058115575236211,
+      "scale": 255
+    },
+    {
+      "product": "headphones",
+      "view": "hero",
+      "meanAbsoluteRgbDifference": 0.014849523703257242,
+      "rmsRgbDifference": 0.1430022625057828,
+      "scale": 255
+    },
+    {
+      "product": "headphones",
+      "view": "detail",
+      "meanAbsoluteRgbDifference": 0.02495574951171875,
+      "rmsRgbDifference": 0.20817595316640305,
+      "scale": 255
+    },
+    {
+      "product": "dac",
+      "view": "front",
+      "meanAbsoluteRgbDifference": 0.03095237414042155,
+      "rmsRgbDifference": 0.179255138624184,
+      "scale": 255
+    },
+    {
+      "product": "dac",
+      "view": "back",
+      "meanAbsoluteRgbDifference": 0.02846503257751465,
+      "rmsRgbDifference": 0.17117178628547558,
+      "scale": 255
+    },
+    {
+      "product": "dac",
+      "view": "hero",
+      "meanAbsoluteRgbDifference": 0.03750842809677124,
+      "rmsRgbDifference": 0.20145871095627196,
+      "scale": 255
+    },
+    {
+      "product": "dac",
+      "view": "detail",
+      "meanAbsoluteRgbDifference": 0.08622574806213379,
+      "rmsRgbDifference": 0.3056923303169904,
+      "scale": 255
+    },
+    {
+      "product": "stand",
+      "view": "front",
+      "meanAbsoluteRgbDifference": 0.005158742268880208,
+      "rmsRgbDifference": 0.07360391604553938,
+      "scale": 255
+    },
+    {
+      "product": "stand",
+      "view": "back",
+      "meanAbsoluteRgbDifference": 0.0072069962819417315,
+      "rmsRgbDifference": 0.0864099030752216,
+      "scale": 255
+    },
+    {
+      "product": "stand",
+      "view": "hero",
+      "meanAbsoluteRgbDifference": 0.007926543553670248,
+      "rmsRgbDifference": 0.09523957941517497,
+      "scale": 255
+    },
+    {
+      "product": "stand",
+      "view": "detail",
+      "meanAbsoluteRgbDifference": 0.002330223719278971,
+      "rmsRgbDifference": 0.04886395360967013,
+      "scale": 255
+    }
+  ],
+  "web": {
+    "url": "http://127.0.0.1:46319/",
+    "renderer": "Three.js 0.186.1 WebGL",
+    "browserVersion": "Not exposed by the browser tool",
+    "startedAt": "2026-09-25T07:33:29.213Z",
+    "productsLoadedAndRotated": [
+      "studio",
+      "headphones",
+      "dac",
+      "stand"
+    ],
+    "zoomVerified": true,
+    "renderGalleryFormats": [
+      "glb",
+      "fbx"
+    ],
+    "renderGalleryViewsVerified": [
+      "hero",
+      "detail"
+    ],
+    "modeSwitching": "passed; canvas fills the visible panel",
+    "freshWarnings": 0,
+    "freshErrors": 0,
+    "observations": [
+      "Planar acoustic liner UVs retain a uniform woven field",
+      "Integral encoder flutes and real lid apertures remain visible under rotation",
+      "Rendered images and interactive WebGL are explicitly distinct modes"
+    ],
+    "captures": [
+      {
+        "file": "web/dac-rotated.png",
+        "sha256": "de449632ee4dfb082f7dd84e1c13b2854c6dc77ab8a20671cf29bbcac0848539"
+      },
+      {
+        "file": "web/gallery-studio-fbx-detail.png",
+        "sha256": "e85c82436a0ada9a8055e7dc6deb98e4e6241c1a76e1e67a14e060e153351542"
+      },
+      {
+        "file": "web/gallery-studio-glb.png",
+        "sha256": "415e38ada2855ef65a8c4df114837f9db1e8590c447b052ae7f7b657efdc91ff"
+      },
+      {
+        "file": "web/headphones-rotated.png",
+        "sha256": "f6aaaa6d1810716f7060c4ab5639120a0cedb9000791fe0677f6e84002648661"
+      },
+      {
+        "file": "web/stand-rotated.png",
+        "sha256": "544308a05e738cb6ff2f7b3a193ee2e3c6ff319d5ffaa565aca69c1277e03e07"
+      },
+      {
+        "file": "web/studio-rotated.png",
+        "sha256": "a2b8aa67f61e2a8b446165912b390bc227e4a39a557b067dcbce4046f6d5b10c"
+      }
+    ]
+  },
+  "validation": {
+    "packageBuildTypecheckLint": "passed",
+    "packageTests": 113,
+    "examplesTypecheck": "passed",
+    "installedCLIFormats": 6,
+    "installedMCPFormats": 6,
+    "sourceTextureRegeneration": "seven originals, identical bytes on Node 24.17.0",
+    "proceduralGeometry": "finite attributes, outward winding, unit orthogonal tangent frames; includes planar acoustic caps"
+  },
+  "notRerun": {
+    "rootRust": "Rust source unchanged; prior 1927 passing tests remain historical evidence",
+    "clippy": "Rust source unchanged; previous acceptance only",
+    "publicDocs": "No public guide changes in this quality revision",
+    "hostedCI": "Not observed"
+  },
+  "notExecuted": [
+    "darwin-x64",
+    "linux-x64-gnu",
+    "linux-arm64-gnu",
+    "win32-x64-msvc",
+    "win32-arm64-msvc",
+    "new Linux Blender CI job"
+  ],
+  "qualityChanges": [
+    "Vertically oval earcups and machined tangent-continuous bevels",
+    "Displaced leather pads with actual 3D stitch tubes and rolled seams",
+    "Supported adjustment rails, yokes, pivots and engraved model/channel identities",
+    "Planar cap UVs remove radial stretching in the woven acoustic liner",
+    "112 integral encoder flutes and a smooth antialiased OLED readout",
+    "36 actual rounded through-slots in a closed lid, with recessed woven dust screens",
+    "Differentiated RCA, USB-C and DC connector geometry; side cooling ribs",
+    "Refined source metal grain without exaggerated low-frequency bands",
+    "Seven deterministic texture originals and an original vector glyph atlas",
+    "Matched softbox lighting, complete-product framing and 4K heroes",
+    "Gallery switches actual GLB/FBX reimport renders and interactive GLB; canvas fills the panel"
+  ],
+  "limits": [
+    "Fictional design studies, not manufacturing or electrical specifications",
+    "Static creation/export only; no rigging or animation",
+    "Basic PBR only; no transmission/refraction/advanced coatings",
+    "Blender 4.5 ignores FBX culling flags and shades both sides",
+    "Other FBX applications and unexecuted hosts are not validated",
+    "WebGL environment/shadows differ from offline Cycles; the gallery identifies each mode",
+    "Higher mesh and texture density increases output size; all files remain below 256 MiB"
+  ],
+  "sourceFiles": {
+    "packages/react-forge/examples/audio-studio-assets/README.md": "a3483bf57810529350d441e8dde90cc7cf9aff0902967efbf097d8d5cf8ebece",
+    "packages/react-forge/examples/audio-studio-assets/brushed-normal.png": "4c9f73741ec2c5ee6250c81b5e0d83dccab6c8aada0d9b73c94676eb483e9d55",
+    "packages/react-forge/examples/audio-studio-assets/brushed-roughness.png": "b5222d4e20fc814253f836b436c5efc8f7aa9a902e304d9990a89f6168bd950f",
+    "packages/react-forge/examples/audio-studio-assets/display.png": "6566855ee822ce2773e820ff1983d6c1f3c32eedb7d0fba5c3078e075f5238c9",
+    "packages/react-forge/examples/audio-studio-assets/fabric-normal.png": "4b8190218d6d7146ff55d0f4211bece36946ab130531e4beb295746e8bf17e0e",
+    "packages/react-forge/examples/audio-studio-assets/geometry.ts": "5b04196bf5e238871c4c8e6c4ac866e756e6381ba8d3b829ed7b1fa1467b2cbb",
+    "packages/react-forge/examples/audio-studio-assets/leather-normal.png": "2f89a97d10dec19be8a7a29203517d225bfeb1b63b9b021a57f236919e2beb59",
+    "packages/react-forge/examples/audio-studio-assets/leather-roughness.png": "7f6b7376c404e224dfe73e02a7bb41e810e16b924a957d1c573ea90182938ce3",
+    "packages/react-forge/examples/audio-studio-assets/textures.mjs": "204e33213b74b4b101a5d7825b16bdc19a5c2a8ed4d76f3d00f4245af917dc40",
+    "packages/react-forge/examples/audio-studio-assets/wordmark.png": "f9add6a4a7f3d7489dd5bca837d2cf30fc9b41fca38df0f719e70aafe61660df",
+    "packages/react-forge/examples/audio-studio.tsx": "a844ce3314c8c5ab9a560872cda1d3b8cd0baca9d0dd1e387c7c29a9593d5ac7",
+    "packages/react-forge/scripts/compare-scenes.py": "20330ec7bc94145f3f6c61174edfcf27d96ff6d0af98b9c9e41f8eb04bfb3a67",
+    "packages/react-forge/scripts/generate-scene-examples.mjs": "6f14083d00147e23ec81a84cf3c41e1291059bec16e931f158cb9a16a68e4dc9",
+    "packages/react-forge/scripts/generate-scene-profile.mjs": "e2a487e450f689a36529c34a38d22d442d5227c7aac43b7526116e15b43fbf49",
+    "packages/react-forge/scripts/inspect-scene-profile.py": "a5ef33bc622b8bf119f39c2fcabaf18899ac95c75e15aea336e47a0e9a04c12f",
+    "packages/react-forge/scripts/inspect-scenes.py": "4f9085af1807aaaf4cdd8d3db84ad356be2900b8110187038b3e314eec07a350",
+    "packages/react-forge/scripts/render-scenes.mjs": "89f1ae71005af78cd514f39cdeced1b1407202e107ec781aedeb2fc1dd7d3129",
+    "packages/react-forge/scripts/render-scenes.py": "97c6b7a0dc72b8d34ad71cf0a6db547987cd03e1cce3094a939002c463d85914",
+    "packages/react-forge/scripts/scene-viewer.html": "9009e8ea74b9375fc86ade9b7ea18644f3b8fe278b64119dbe4a40fd183eb01d",
+    "packages/react-forge/scripts/scene-viewer.js": "4e4dc19a84f1830edf9f9ba366c050c7ee928e6242ffa42ac71b17a04f7d3d1d",
+    "packages/react-forge/scripts/scene-viewer.mjs": "90a387ae205c12bbd0255316611001d4506735436617aebcd69c5db617e39fca",
+    "packages/react-forge/tests/audio-geometry.test.ts": "1737d5d2f3c3aaf40a27184821246f4055f2a7c6cc58aa7d09960bf68e4fec61"
+  },
+  "reportHashes": {
+    "generation.json": "4ef1028bb266fbe61062d87aa1089131fe7f9bdcd7a802742b5baff6910fcdab",
+    "ufbx-report.json": "52c3e0669f28845854c1a3b0c20468bd02df8c51396c4df476f8761535daf93b",
+    "structure-report.json": "0ef779c8d074ba1c77981229bf1727289f32f4170cb664f3621375514cf8109b",
+    "profile/profile-report.json": "f94d1defcc92e8315173b6c5b14917758602a2032b46644c039031c246988cc6",
+    "profile/validator.json": "b7738a371f0dec2e246bc99cae7819fda14e51bf902155d9dc7097746e1a416b",
+    "renders/render-report.json": "ded1647aa704dd3d47a699e98c03c72ef3de2954d3413f6bfe02cecd26d40e67",
+    "pixel-comparison.json": "7adef9a917937f6feb62c08638bc8b04216228b1df5710ff64becf00804e9f3b"
+  }
+}

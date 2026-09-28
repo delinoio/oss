@@ -2,6 +2,10 @@
 
 React Forge builds a local React model for Figma Design, then applies it only when you explicitly call `publish()` or a publishing CLI/MCP operation. It uses the official remote Figma MCP server. Connect Figma in Codex or Claude Code first, use the official Figma MCP `whoami` result to select a plan key, and use that application's existing authorization. Live authentication currently uses macOS Keychain and has been validated on macOS arm64 with Node.js 24; the local Office/PDF six-host support does not establish Figma authentication on every host.
 
+If you only need a local PPTX, DOCX, XLSX, or PDF, start with [Getting started](/react-forge/getting-started). Figma adds an explicit remote publication step and different recovery rules.
+
+## Connect and create
+
 ```tsx
 import React from "react";
 import { createSession, Format, CredentialSource } from "@delino/react-forge";

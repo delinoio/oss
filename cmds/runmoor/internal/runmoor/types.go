@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 )
 
-const Version = "0.1.2"
+const Version = "0.2.3"
 
 // Revision is populated by release builds; development builds remain explicit.
 var Revision = "development"
@@ -43,6 +43,13 @@ const (
 	Retired   PoolPhase = "retired"
 )
 
+type SuspensionSource string
+
+const (
+	SuspensionUnknown  SuspensionSource = ""
+	SuspensionScaleSet SuspensionSource = "remote_scale_set"
+)
+
 type RunnerPhase string
 
 const (
@@ -60,6 +67,7 @@ const (
 	ImagePreparing ImagePhase = "preparing"
 	ImageOpen      ImagePhase = "open"
 	ImageSealed    ImagePhase = "sealed"
+	ImageImported  ImagePhase = "imported"
 	ImageRemoving  ImagePhase = "removing"
 )
 
@@ -127,21 +135,23 @@ func (r Resources) Add(o Resources) Resources {
 }
 
 type PoolState struct {
-	ID                  string     `json:"id"`
-	Generation          string     `json:"generation"`
-	Spec                Pool       `json:"spec"`
-	Connection          Connection `json:"connection"`
-	Phase               PoolPhase  `json:"phase"`
-	ScaleSetID          int        `json:"scale_set_id"`
-	OwnerLabel          string     `json:"owner_label"`
-	CreatePending       bool       `json:"create_pending"`
-	Demand              int        `json:"demand"`
-	Session             string     `json:"session,omitempty"`
-	LastMessage         int        `json:"last_message"`
-	PreparationFailures int        `json:"preparation_failures"`
-	Problem             *Problem   `json:"problem,omitempty"`
-	PreviousIdentity    string     `json:"previous_identity,omitempty"`
+	ID                  string           `json:"id"`
+	Generation          string           `json:"generation"`
+	Spec                Pool             `json:"spec"`
+	Connection          Connection       `json:"connection"`
+	Phase               PoolPhase        `json:"phase"`
+	ScaleSetID          int              `json:"scale_set_id"`
+	OwnerLabel          string           `json:"owner_label"`
+	CreatePending       bool             `json:"create_pending"`
+	Demand              int              `json:"demand"`
+	Session             string           `json:"session,omitempty"`
+	LastMessage         int              `json:"last_message"`
+	PreparationFailures int              `json:"preparation_failures"`
+	Problem             *Problem         `json:"problem,omitempty"`
+	SuspensionSource    SuspensionSource `json:"suspension_source,omitempty"`
+	PreviousIdentity    string           `json:"previous_identity,omitempty"`
 }
+
 type Runner struct {
 	ID               string      `json:"id"`
 	PoolID           string      `json:"pool_id"`
@@ -174,29 +184,41 @@ type Handle struct {
 	PID       int      `json:"pid,omitempty"`
 }
 type Image struct {
-	ID            string     `json:"id"`
-	Name          string     `json:"name"`
-	Phase         ImagePhase `json:"phase"`
-	VM            string     `json:"vm"`
-	Source        string     `json:"source"`
-	Digest        string     `json:"digest,omitempty"`
-	RunnerVersion string     `json:"runner_version,omitempty"`
-	RunnerPath    string     `json:"runner_path"`
-	Resources     Resources  `json:"resources"`
-	CreatedAt     time.Time  `json:"created_at"`
-	Problem       *Problem   `json:"problem,omitempty"`
+	ID               string     `json:"id"`
+	Name             string     `json:"name"`
+	Phase            ImagePhase `json:"phase"`
+	CreationComplete bool       `json:"creation_complete,omitempty"`
+	VM               string     `json:"vm"`
+	Source           string     `json:"source"`
+	Digest           string     `json:"digest,omitempty"`
+	RunnerVersion    string     `json:"runner_version,omitempty"`
+	RunnerPath       string     `json:"runner_path"`
+	Resources        Resources  `json:"resources"`
+	CreatedAt        time.Time  `json:"created_at"`
+	Problem          *Problem   `json:"problem,omitempty"`
 }
 type Snapshot struct {
-	SchemaVersion int                   `json:"schema_version"`
-	Installation  string                `json:"installation"`
-	Generation    string                `json:"generation"`
-	Config        Config                `json:"config"`
-	Pools         map[string]*PoolState `json:"pools"`
-	Runners       map[string]*Runner    `json:"runners"`
-	Images        map[string]*Image     `json:"images"`
-	Generations   map[string]Config     `json:"generations"`
-	Paused        bool                  `json:"paused"`
-	Stopping      bool                  `json:"stopping"`
-	Cursor        int                   `json:"cursor"`
-	PowerProblem  *Problem              `json:"power_problem,omitempty"`
+	ReleaseRetryAt       time.Time                   `json:"release_retry_at,omitempty"`
+	ReleaseProblem       *Problem                    `json:"release_problem,omitempty"`
+	ReleaseAttempts      int                         `json:"release_attempts,omitempty"`
+	SchemaVersion        int                         `json:"schema_version"`
+	Installation         string                      `json:"installation"`
+	Generation           string                      `json:"generation"`
+	Config               Config                      `json:"config"`
+	Requested            Config                      `json:"requested_config"`
+	Managed              map[string]*ManagedPool     `json:"managed_pools"`
+	ManagedRecovery      map[string]*ManagedRecovery `json:"managed_recovery,omitempty"`
+	RetirementAuthority  map[string]Connection       `json:"retirement_authority,omitempty"`
+	RetirementValidation map[string]string           `json:"retirement_validation,omitempty"`
+	Artifacts            map[string]*RunnerArtifact  `json:"runner_artifacts"`
+	Releases             []RunnerRelease             `json:"runner_releases,omitempty"`
+	ReleaseChecked       time.Time                   `json:"release_checked,omitempty"`
+	Pools                map[string]*PoolState       `json:"pools"`
+	Runners              map[string]*Runner          `json:"runners"`
+	Images               map[string]*Image           `json:"images"`
+	Generations          map[string]Config           `json:"generations"`
+	Paused               bool                        `json:"paused"`
+	Stopping             bool                        `json:"stopping"`
+	Cursor               int                         `json:"cursor"`
+	PowerProblem         *Problem                    `json:"power_problem,omitempty"`
 }

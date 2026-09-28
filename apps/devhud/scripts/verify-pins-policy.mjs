@@ -71,8 +71,12 @@ export function validateResolvedDependencySources(
   return closure;
 }
 
-export function validateCiTargetMatrix(workflow, targets) {
-  const entries = workflow.jobs?.["devhud-desktop"]?.strategy?.matrix?.include;
+export function validateCiTargetMatrix(workflow, targets, plannedMatrices) {
+  const matrix = workflow.jobs?.["devhud-desktop"]?.strategy?.matrix;
+  if (plannedMatrices) {
+    assert(matrix === "${{ fromJSON(needs.changes.outputs.desktop_matrix) }}", "native CI must use the planned desktop matrix");
+  }
+  const entries = plannedMatrices?.["devhud-desktop"] ?? matrix?.include;
   assert(Array.isArray(entries), "native CI matrix include list is missing");
   const packageKinds = {
     darwin: [{ suffix: "", os: "macos", bundle: "dmg", package: "macos-app" }],

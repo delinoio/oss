@@ -388,7 +388,15 @@ extern const GUID DETOUR_EXE_HELPER_GUID;
 typedef struct _DETOUR_TRAMPOLINE DETOUR_TRAMPOLINE, *PDETOUR_TRAMPOLINE;
 
 #ifndef DETOUR_MAX_SUPPORTED_IMAGE_SECTION_HEADERS
+#if defined(DETOURS_ARM64)
+// ARM64 MSVC Rust executables in the supported release matrix currently use
+// more than 32 PE sections. Keep their complete original header in the restore
+// payload; remove this bound increase when Detours supports variable-size
+// restore payloads rather than a fixed section array.
+#define DETOUR_MAX_SUPPORTED_IMAGE_SECTION_HEADERS      128
+#else
 #define DETOUR_MAX_SUPPORTED_IMAGE_SECTION_HEADERS      32
+#endif
 #endif // !DETOUR_MAX_SUPPORTED_IMAGE_SECTION_HEADERS
 
 /////////////////////////////////////////////////////////// Binary Structures.
@@ -477,9 +485,11 @@ C_ASSERT(sizeof(IMAGE_NT_HEADERS64) == 0x108);
 
 // The size can change, but assert for clarity due to the muddying #ifdefs.
 #ifdef _WIN64
-C_ASSERT(sizeof(DETOUR_EXE_RESTORE) == 0x688);
+C_ASSERT(sizeof(DETOUR_EXE_RESTORE) == 0x688 + sizeof(IMAGE_SECTION_HEADER) *
+         (DETOUR_MAX_SUPPORTED_IMAGE_SECTION_HEADERS - 32));
 #else
-C_ASSERT(sizeof(DETOUR_EXE_RESTORE) == 0x678);
+C_ASSERT(sizeof(DETOUR_EXE_RESTORE) == 0x678 + sizeof(IMAGE_SECTION_HEADER) *
+         (DETOUR_MAX_SUPPORTED_IMAGE_SECTION_HEADERS - 32));
 #endif
 
 typedef struct _DETOUR_EXE_HELPER

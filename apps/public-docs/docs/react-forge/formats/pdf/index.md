@@ -2,6 +2,10 @@
 
 React Forge builds PDF from its own `@delino/react-forge/pdf` model. It does not import PDF or convert an Office file. `Document` and `Page` contain flow text, lists, tables, images, shapes, links, and explicit page breaks; paragraphs and tables paginate automatically.
 
+The example below exports a new report. Use the [session guide](/react-forge/sessions) for the shared render, font, and export lifecycle.
+
+## Build and export
+
 ```tsx
 import React from "react";
 import { createSession, Format } from "@delino/react-forge";
@@ -23,6 +27,8 @@ try {
   await session.dispose();
 }
 ```
+
+## Semantics and layout
 
 Semantic output includes heading and paragraph structure, lists, table headers and cells, links, image alternative text, language, and reading order. Repeated table headers are visual copies with one logical header. Add alt text to informative images; decorative shapes can omit it. Large indivisible content can fail with `layout_overflow` instead of spilling beyond a page.
 

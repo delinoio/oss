@@ -60,7 +60,7 @@ export function manifest(host = null, revision = sourceRevision()) {
   ensure(/^[a-f0-9]{40}$/u.test(revision), "Exact source commit required");
   ensure(source.name === "@delino/react-forge" && source.private === true && source.license === "Apache-2.0", "Unexpected source package identity");
   const common = { name: host ? nativeName(host) : source.name, version: source.version,
-    description: host ? `React Forge native binding for ${host.id}` : "React document authoring for PPTX, DOCX, XLSX and PDF",
+    description: host ? `React Forge native binding for ${host.id}` : "React authoring for documents and static GLB/FBX scenes",
     license: "Apache-2.0", repository, gitHead: revision,
     publishConfig: { access: "public", registry } };
   if (host) {
@@ -90,7 +90,7 @@ function expectedFiles(host) {
     }
   }
   visit(path.join(packageRoot, "dist"));
-  ensure(dist.includes("dist/index.js") && dist.includes("dist/native-platforms.json") && dist.includes("dist/figma.js") && dist.some((name) => name.startsWith("dist/figma/")) && dist.includes("dist/mcp/server.js") && dist.includes("dist/mcp/worker.js"), "Build the TypeScript package before packing");
+  ensure(dist.includes("dist/index.js") && dist.includes("dist/native-platforms.json") && dist.includes("dist/figma.js") && dist.some((name) => name.startsWith("dist/figma/")) && dist.includes("dist/glb.js") && dist.includes("dist/fbx.js") && dist.includes("dist/scene/session.js") && dist.includes("dist/mcp/server.js") && dist.includes("dist/mcp/worker.js"), "Build the TypeScript package before packing");
   return ["package.json", "bin/react-forge.mjs", "README.md", "LICENSE", "NOTICE", ...dist].sort();
 }
 

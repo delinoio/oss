@@ -2,12 +2,18 @@
 
 `react-forge mcp [--cwd <directory>]` starts a local stdio MCP server. Configure your MCP client to launch the installed `react-forge` executable with Node.js 24 and an absolute task directory. The directory controls relative tool paths and inline imports; imports inside a TSX entry remain relative to that entry file. Keep protocol stdout reserved for MCP messages.
 
+Use the [CLI](/react-forge/cli) for a single task you run yourself. Use MCP when a trusted local client needs to inspect, update, and export the same in-memory session across tool calls.
+
+## Start the server
+
 ```sh
 mkdir -p tasks
 react-forge mcp --cwd "$PWD/tasks"
 ```
 
 `react_forge_capabilities` reports supported formats and limits. Use `react_forge_execute` with exactly one of a TSX `code` string or an `entry` path and optional JSON `data`. A new task returns a session ID. Later calls pass that `sessionId` and can reuse an in-memory `state` Map for components, setters, refs, and mount handles. Both inline TSX and file entries use React's automatic JSX runtime; a file entry's `tsconfig` JSX settings do not change that transform.
+
+## Return a reusable session
 
 Create `report.tsx` in the task directory for the sequence below:
 
@@ -47,6 +53,35 @@ export default async function task({ session, state, data, signal }: McpTaskCont
 
 ## Figma and failure recovery
 
-For Figma, `react_forge_refresh` reads selected pages, nodes, or resources; `react_forge_inspect` reads cached targets. `react_forge_publish` explicitly applies changes remotely and can save a `.figma.json` receipt. Inspect a partial or unknown receipt, including an error result's attached receipt, before another publish. `react_forge_inspect` with `view: "receipt"` retrieves the latest receipt without writing. See [Figma](/react-forge/figma).
+For Figma, `react_forge_refresh` reads selected pages, nodes, or resources; `react_forge_inspect` reads cached targets. `react_forge_publish` explicitly applies changes remotely and can save a `.figma.json` receipt. Inspect a partial or unknown receipt, including an error result's attached receipt, before another publish. `react_forge_inspect` with `view: "receipt"` retrieves the latest receipt without writing. See [Figma](/react-forge/formats/figma/).
 
 Sessions exist only in the server process. Disconnect, shutdown, or worker loss ends them; restart does not replay or restore work. Closing and disposal cancel owned work, but a callback that ignores cancellation or blocks synchronously cannot be forcibly interrupted per tool call. Task output is suppressed to protect protocol stdout and avoid logging document content; use structured results and safe diagnostics for troubleshooting. Caller code runs with normal permissions and is not sandboxed.
+
+When your TSX fails to compile, a module cannot be resolved, a task throws, or React cannot render, the tool error includes a bounded message and `error.diagnostics`. Diagnostics identify the `compile`, `task`, or `render` phase and include an inline, entry, or imported-file line and column when React Forge can map them reliably. File names are relative to the configured task directory. Resolution messages can name the import that failed without exposing the host's absolute path. Compiler errors use `malformed_input`; uncaught task and render errors use `render`. A recovered React error boundary does not fail the tool. The response omits source excerpts and full stacks. Your exception message may contain private data and will be visible to your MCP client; operational stderr logs keep only fixed classifications.
+
+The [SFX format](/react-forge/formats/sfx/) uses the same execute, inspect, measure, export and close sequence with `Format.Wav` and `.wav` output; timeline measurements use seconds. The [Sprite format](/react-forge/formats/sprite/) uses that sequence with `Format.Sprite` and `.sprite.zip` output; measurements use logical frame pixels. Both are available in npm `0.2.0`.
+
+## Static 3D formats
+
+[GLB](/react-forge/formats/glb/) and [FBX](/react-forge/formats/fbx/) creation are available in npm `0.2.0`. They use SceneSession with registered geometry/textures, explicit file export, and revision-bound world-space bounds. The released static API excludes existing-file editing, animation and rigging. The FBX material profile targets Blender 4.5; local verification does not establish results on other hosts or FBX applications.
+
+## Animated scenes (unreleased)
+
+The unreleased extension uses the same nine tools. Execute authors scenes with
+the [animation API](/react-forge/formats/glb/#animation-authoring-unreleased);
+inspect returns named `animation_clip` handles as well as spatial targets. Pass
+the inspected clip's node ID to `react_forge_measure`:
+
+```json
+{
+  "sessionId": "<session-id>",
+  "nodeId": "<mesh-or-group-node-id>",
+  "revision": 1,
+  "animation": { "clip": "<clip-node-id>", "time": 0.5 }
+}
+```
+
+Use the actual revision and IDs from inspect. Animation sampling is valid only
+for GLB/FBX sessions, does not mutate the revision, and returns deformed world
+bounds. Export includes authored clips without starting playback. Callback
+baking stays in Node and participates in cancellation and pending-work settling.

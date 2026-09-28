@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import yaml from "js-yaml";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const operations = readFileSync(`${root}/docs/apps-devhud-operations-contract.md`, "utf8");
@@ -20,7 +21,7 @@ const runtimeRevisionConsumers = [
   "servers/devhud-api/internal/rpc/diagnostics.go",
 ].map((path) => [path, readFileSync(`${root}/${path}`, "utf8")]);
 
-const privateJobs = ["plan", "preflight", "desktop", "extension", "mobile", "oci", "assemble"];
+const privateJobs = ["plan", "preflight", "desktop", "ios-simulators", "extension", "mobile", "oci", "assemble"];
 const publicJobs = ["identity", "private_candidate", "candidate", "preflight", "submit_stores", "review_gate", "docs_candidate", "registry", "prepare_infrastructure", "stores_public", "github_release", "updater_public", "public_docs", "verify_all", "ga", "rollback_pre_store"];
 const primaryArtifacts = [
   "devhud-macos-x64.dmg", "devhud-macos-x64-macos-app.tar.gz", "devhud-macos-arm64.dmg", "devhud-macos-arm64-macos-app.tar.gz",
@@ -50,6 +51,21 @@ test("operations contract names every implemented release job and artifact", () 
   for (const name of ["BootstrapService", "SettingsService", "UploadService", "AccountService", "AdminService", "DiagnosticsService", "devhud-api", "devhud-api-sweeper", "apple", "google-play", "chrome-web-store", "/devhud", "DevHudWidgetProvider", "io.delino.devhud.native_messaging", "io.delino.devhud.widget"]) {
     assert.match(operations, new RegExp(name.replaceAll("/", "\\/"), "u"), name);
   }
+});
+
+test("signed candidate requires both unsigned iOS simulator builds", () => {
+  const jobs = yaml.load(privateWorkflow).jobs;
+  const simulators = jobs["ios-simulators"];
+  assert.ok(jobs.assemble.needs.includes("ios-simulators"));
+  assert.equal(simulators.needs, "preflight");
+  assert.equal(simulators.if, "${{ inputs.mode == 'signed-private' }}");
+  assert.deepEqual(simulators.strategy.matrix.include, [
+    { target: "aarch64-sim", runner: "macos-15" },
+    { target: "x86_64", runner: "macos-15-intel" },
+  ]);
+  assert.equal(simulators.environment, undefined);
+  assert.doesNotMatch(JSON.stringify(simulators), /secrets\.|vars\./u);
+  assert.ok(simulators.steps.some(({ run }) => run === "node scripts/run-mobile.mjs ios build --target ${{ matrix.target }} --ci --no-sign"));
 });
 
 test("repository contract catalog and validation commands use canonical paths", () => {

@@ -2,8 +2,6 @@ package runmoor
 
 import (
 	"context"
-	"encoding/json"
-	"io"
 	"net/http"
 	"os/exec"
 	"runtime"
@@ -44,6 +42,9 @@ func Doctor(ctx context.Context, c Config, s Snapshot, factory func(Connection) 
 	}
 	add("platform", "", platformCheck(ctx), false)
 	add("disk_reserve", "", diskCheck(c), false)
+	if s.Config.DockerCapacityPending {
+		add("docker_capacity", "", problem(ErrRetry, "Docker capacity has not been verified for this manager run.", "Restore Docker connectivity; capacity detection retries automatically."), false)
+	}
 	name, args := powerCommand()
 	if runtime.GOOS == "darwin" {
 		args = []string{"-i", "/usr/bin/true"}
@@ -65,8 +66,8 @@ func Doctor(ctx context.Context, c Config, s Snapshot, factory func(Connection) 
 	}
 	add("sleep_inhibition", "", err, true)
 	for _, p := range s.Pools {
-		if p.Problem != nil {
-			add("pool_state", p.Spec.Name, p.Problem, false)
+		if diagnostic := poolDiagnostic(p); diagnostic != nil {
+			add("pool_state", p.Spec.Name, diagnostic, false)
 		}
 	}
 	for _, runner := range s.Runners {
@@ -80,14 +81,44 @@ func Doctor(ctx context.Context, c Config, s Snapshot, factory func(Connection) 
 			r.Checks = append(r.Checks, Check{Name: "image_recovery", Image: im.ID, Problem: im.Problem})
 		}
 	}
+	for _, q := range s.Managed {
+		err := error(q.Problem)
+		if q.Problem == nil {
+			err = nil
+		}
+		if q.Current == nil && err == nil {
+			err = problem(ErrRetry, "Managed runner image has not been prepared yet.", "Start the manager and inspect runner update status.")
+		}
+		if !q.Expires.IsZero() && !time.Now().Before(q.Expires) {
+			err = problem(ErrRunnerVersion, "The managed runner passed its known support deadline.", "Restore update dependencies; new work waits for a supported image.")
+		}
+		add("runner_update", q.Name, err, q.Current != nil && (q.Expires.IsZero() || time.Now().Before(q.Expires)))
+	}
 	for _, p := range c.Pools {
+		poolConfig := c
+		if managesRunner(p) {
+			managed := s.Managed[p.Name]
+			if managed == nil {
+				add("runner_update", p.Name, problem(ErrRetry, "Managed runner image is awaiting preparation.", "Start the manager; doctor does not download images."), false)
+				continue
+			}
+			if managed.Current == nil {
+				// The managed-state check above already reports pending preparation.
+				continue
+			}
+			// Offline callers supply requested TOML, whose latest/source fields
+			// remain unresolved. Inspect the same committed environment as a live
+			// manager without downloading or replacing any image.
+			p = *managed.Current
+			poolConfig = s.Config
+		}
 		probe, cancel := context.WithTimeout(ctx, 30*time.Second)
 		driver, e := drivers(p.Backend)
 		if e == nil {
-			e = driver.Validate(probe, c, p, s)
+			e = driver.Validate(probe, poolConfig, p, s)
 		}
 		add("backend_and_image", p.Name, e, false)
-		remote, e := factory(c.Connection(p.Connection))
+		remote, e := factory(poolConfig.Connection(p.Connection))
 		if e == nil {
 			e = remote.Check(probe, p)
 		}
@@ -96,6 +127,9 @@ func Doctor(ctx context.Context, c Config, s Snapshot, factory func(Connection) 
 	}
 	versions := map[string]bool{}
 	for _, p := range c.Pools {
+		if managesRunner(p) || s.Managed[p.Name] != nil {
+			continue
+		}
 		if versions[p.RunnerVersion] {
 			continue
 		}
@@ -112,34 +146,9 @@ func Doctor(ctx context.Context, c Config, s Snapshot, factory func(Connection) 
 	return r
 }
 func checkRunnerVersion(ctx context.Context, pinned string, client *http.Client) error {
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.com/repos/actions/runner/releases?per_page=100", nil)
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "runmoor/"+Version)
-	resp, e := client.Do(req)
+	releases, e := fetchRunnerReleases(ctx, client)
 	if e != nil {
-		return problem(ErrRetry, "Runner release freshness is unknown while GitHub is unavailable.", "Check the pinned runner release manually; no automatic update is performed.")
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return problem(ErrRetry, "Runner release freshness could not be checked.", "Retry doctor after GitHub rate limits or connectivity recover.")
-	}
-	// The extra byte distinguishes size exhaustion from malformed upstream JSON;
-	// never decode an incomplete prefix, even if it contains a complete value.
-	body, e := io.ReadAll(io.LimitReader(resp.Body, runnerReleaseResponseLimit+1))
-	if len(body) > runnerReleaseResponseLimit {
-		return problem(ErrRetry, "Runner release metadata exceeds the 8 MiB response limit.", "Check the official actions/runner release notes manually and retry doctor later; no automatic update is performed.")
-	}
-	if e != nil {
-		return problem(ErrRetry, "Runner release metadata could not be read.", "Retry doctor after GitHub connectivity recovers; check the pinned runner release manually in the meantime.")
-	}
-	var releases []struct {
-		Tag        string    `json:"tag_name"`
-		Published  time.Time `json:"published_at"`
-		Draft      bool      `json:"draft"`
-		Prerelease bool      `json:"prerelease"`
-	}
-	if json.Unmarshal(body, &releases) != nil {
-		return problem(ErrRetry, "Runner release metadata is invalid.", "Check the official actions/runner release notes.")
+		return e
 	}
 	var olderUpdate time.Time
 	found := false

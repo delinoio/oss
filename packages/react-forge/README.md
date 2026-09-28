@@ -1,8 +1,8 @@
 # React Forge
 
-`@delino/react-forge` authors PPTX, DOCX, XLSX, independent tagged PDF and editable Figma Design files through persistent React sessions. It imports existing Office packages, exposes supported editable regions, and preserves unrelated XML and package parts when mounting React content into those regions. Its executable is named `react-forge`.
+`@delino/react-forge` authors PPTX, DOCX, XLSX, tagged PDF, static GLB/FBX scenes, WAV sound effects, and pixel sprites through React sessions. It also creates and edits Figma Design files through explicit publication. It imports existing Office packages, exposes supported editable regions, and preserves unrelated XML and package parts when mounting React content into those regions. Its executable is named `react-forge`.
 
-The [React Forge guides](https://oss.delino.io/react-forge/) cover installation, each format, Office editing, Figma publication, the CLI, and local MCP sessions.
+The [React Forge guides](https://oss.delino.io/react-forge/) cover installation, all eight local formats, Office editing, Figma publication, the CLI, and local MCP sessions.
 
 Use Node.js 24 on macOS, Windows, or glibc Linux, on x64 or arm64. Install normally with npm or pnpm; the matching native package is selected as an optional dependency. Keep optional dependencies enabled. Installation does not compile native code or download binaries from a separate service.
 
@@ -181,10 +181,84 @@ Inline TSX uses the automatic React JSX runtime, so JSX does not require an expl
 
 Figma uses the same create/open tasks and existing authentication setup. `react_forge_refresh` reads selected pages/nodes/resources, while `react_forge_inspect` reads cached targets. Call `react_forge_publish` explicitly to write remotely, optionally with `receiptPath: "result.figma.json"` and `overwrite`. Receipt-path conflicts are checked before publication. `react_forge_inspect` with `view: "receipt"` retrieves the latest receipt without another write. A partial or unknown result includes its receipt even when `isError` is true; use the receipt status and confirmed IDs before deciding how to recover. A `remote` error can carry a `partial` receipt. Do not blindly retry uncertain publication or infer that cancellation undid remote changes. Figma measurement requires a completed published revision. Live Figma authentication retains its macOS Keychain requirement.
 
-Success is returned as structured content and matching JSON text; failures carry typed errors. Task output, including console and direct stdout/stderr writes, is suppressed to protect MCP and keep document text out of logs. Operational stderr records contain operation/stage, timing and stable error codes. Use the structured results and explicit session inspection to diagnose failures.
+Success is returned as structured content and matching JSON text; failures carry typed errors. TSX compile, task and uncaught React render failures include bounded messages and source positions when known. Those messages may contain private caller data and appear only in tool error results. Task output, including console and direct stdout/stderr writes, is suppressed to protect MCP and keep document text out of logs. Operational stderr records contain operation/stage, timing and stable error codes. Use the structured results and explicit session inspection to diagnose failures.
 
 Caller code is trusted and runs with normal caller permissions. The execution process is not a sandbox. Execute does not automatically save or publish, but code can explicitly call those APIs or perform other side effects. A failed callback is not a transaction: earlier completed changes remain. Callers must dispose sessions they create but fail to return. Operations on one session stay ordered until each callback actually finishes, even after cancellation; pass `signal` to asynchronous work. A callback that ignores cancellation or blocks synchronously cannot be forcibly interrupted by an individual tool cancellation.
 
 Disconnect and process signals dispose sessions, with a five-second shutdown grace before terminating the execution process. Normal operations have no automatic timeout. Forced termination may prevent cleanup, and worker loss invalidates every in-memory session. `unknown_outcome` means to inspect any output or remote file before retrying. Server restart never automatically replays work. Closing sessions releases their owned resources; imported JavaScript modules remain cached until the process exits.
 
 Test renderers are not runtime dependencies. Direct Microsoft Office validation and PDF/UA certification are not claimed. React Forge is licensed under Apache-2.0. Report issues at https://github.com/delinoio/oss/issues.
+
+## Static GLB and FBX scenes (available in npm 0.2.0)
+
+`createSession(Format.Glb | Format.Fbx)` returns `SceneSession`; `/glb` and `/fbx` expose Scene, Group, Mesh, perspective/orthographic cameras and directional/point/spot lights. Register copied typed-array geometry and PNG/JPEG textures with `registerGeometry` and `registerTexture`, then render and explicitly export. Coordinates use meters and right-handed Y-up. Basic PBR maps, opacity, UVs, tangents, nonuniform/negative scales and hierarchy are supported. The released static API excludes scene import/editing, animation, rigging, refraction and advanced coatings.
+
+`inspect`, settled `snapshot`, revision-bound world-AABB `measure`, `exportBuffer`, atomic `exportFile`, `onDiagnostic` and `dispose` retain the local session lifecycle. GLB uses glTF 2.0; binary FBX 7.4 targets Blender 4.5 materials and embeds textures. Other FBX applications may shade differently. Registered assets and output each have a 256 MiB ceiling, individual geometry/textures 64 MiB, with existing image and React-tree limits. Generation has no Blender or viewer runtime dependency.
+
+See the [GLB guide](https://oss.delino.io/react-forge/formats/glb/), [FBX guide](https://oss.delino.io/react-forge/formats/fbx/), and original [AURA product example](examples/audio-studio-assets/README.md). The CLI/MCP exports `.glb`/`.fbx` in npm `0.2.0` and later.
+
+## Sprite authoring (available in npm 0.2.0)
+
+`Format.Sprite` and `@delino/react-forge/sprite` are available in npm `0.2.0`. See the [Sprite guide](https://oss.delino.io/react-forge/formats/sprite/) for the workflow and limits.
+
+```tsx
+import React from "react";
+import { createSession, Format } from "@delino/react-forge";
+import { SpriteProject, Animation, Frame, PixelGrid } from "@delino/react-forge/sprite";
+
+export default async function () {
+  const session = createSession(Format.Sprite);
+  await session.render(
+    <SpriteProject width={16} height={16} scale={4} palette={{ R: "#e85d75" }}>
+      <Animation name="idle">
+        <Frame durationMs={200}>
+          <PixelGrid x={6} y={6} rows={[".RR.", "RRRR", ".RR."]} />
+        </Frame>
+      </Animation>
+    </SpriteProject>,
+  );
+  return session;
+}
+```
+
+Save your task as `hero.tsx` and run `react-forge run hero.tsx --output hero.sprite.zip`. Library callers use `exportBuffer()` or `exportFile()` and dispose their session in `finally`. MCP callers use the existing execute/inspect/measure/export tools.
+
+The atomic ZIP contains `sheet.png`, `sprite.json`, and `frames/0000.png` onwards. Extract the archive to use its images. JSON includes frame rectangles, millisecond durations, pivots, animation tags and loop flags. Metadata coordinates include output scale; measurement returns logical pixels with `coordinateSpace: "sprite_frame"` and `page` as the zero-based frame index. This follows the Aseprite JSON-array field layout; automatic engine import compatibility has not been verified.
+
+`Layer` provides integer translation and visibility. `Pixel`, `Rect` and `Ellipse` draw explicit `#RRGGBB`/`#RRGGBBAA` colors. `PixelGrid` uses equal-width ASCII rows, palette characters and transparent dots. `Image` uses a session-registered PNG/JPEG asset, explicit width/height, optional `source: {x, y, width, height}` crop and `flipX`/`flipY`. Drawing clips to the frame; enlargement uses nearest neighbor with no antialiasing. There is no automatic artwork generation, sprite-file import, rigging or trimming.
+
+Logical dimensions are 1–4096, scale 1–16, output-pixel padding 0–64 (default 1), and each frame lasts 1–60,000 ms. Up to 1024 frames share one canvas size. Optional columns default to a square grid; explicit columns must be 1–frame count. Animation names are unique, 1–64 ASCII letters/digits/underscore/hyphen; loops default true. Frame pivots default to bottom center and must lie within the logical canvas. Both sheet pixels and total scaled frame pixels are capped at 64 million, referenced decoded image pixels at 64 million, and raster work at 256 million visited pixels. Existing tree/image/archive limits also apply; `capabilities.formats.sprite.limits` exposes sprite limits. Unsupported props and nonempty leaf children fail export rather than silently dropping content.
+
+## Game SFX (available in npm 0.2.0)
+
+The package adds `createSession(Format.Wav)` and `Sound`, `Noise`, `Tone`, `SampleRate`, `Channels` and `Waveform` from `@delino/react-forge/sfx`. See the [SFX guide](https://oss.delino.io/react-forge/formats/sfx/) for the complete parameters and a zombie-game gunshot.
+
+Compose timed seeded noise and sine/triangle sweeps, then use the existing buffer/file export or CLI/MCP with `.wav`. Output is mono/stereo PCM16 at 44100/48000 Hz. Durations, starts, fades and exponential decay are seconds; gains are linear, with automatic attenuation above 0.95 peak. Limits are 30 seconds, 256 layers and 16 million aggregate voice samples. Refs measure in seconds-based `timeline` coordinates. Image/font registration, audio import, recorded samples, live playback and MP3/OGG are unsupported. Generation needs no audio device, network, fonts or conversion tool.
+
+## GLB/FBX animation (unreleased)
+
+The source adds common `Joint`, `AnimationClip` and `AnimationTrack` components,
+`AnimationPath`/`AnimationInterpolation` enums, copied
+`registerAnimationSampler()` assets and cancellable `bakeAnimationSampler()`.
+This extension is not yet on npm; static scenes remain available since `0.2.0`.
+Tracks use same-session node handles or React object refs. Geometry supports four
+joint influences per vertex and up to 64 named position/optional-normal morphs;
+meshes supply ordered skin joints and initial morph weights. Morphing precedes
+skinning. `measure(handle, { revision, animation: { clip, time } })` evaluates
+world bounds in seconds, holding endpoints outside the track range.
+
+Callback baking runs only in Node, defaults to 60 fps (integer 1–240), includes
+both endpoints and creates LINEAR data. Manual STEP/LINEAR/CUBIC samplers use
+Float32 times/values and optional Hermite derivatives. FBX separately accepts
+`createSession(Format.Fbx, { animationBakeFps: 60 })`: rotation/CUBIC conversion
+retains original keys and approximates motion between samples. Animate a group
+containing mesh and joints for whole-rig movement; skinned-mesh TRS tracks fail.
+Pending samplers share export/revision, cancellation, disposal and byte limits.
+
+See the [GLB animation guide](https://oss.delino.io/react-forge/formats/glb/#animation-authoring-unreleased),
+[FBX limits](https://oss.delino.io/react-forge/formats/fbx/#animation-authoring-unreleased),
+and original [character example](examples/animated-character.tsx) with idle,
+walk and wave clips. CLI/MCP use the same API and explicit exports. Local checks
+cover Khronos, Three.js, ufbx and Blender 4.5.14. Import, automatic rigging/weights,
+IK, retargeting, physics, runtime clip blending/playback and Unity/Unreal
+compatibility are outside this extension; consumers decide looping.

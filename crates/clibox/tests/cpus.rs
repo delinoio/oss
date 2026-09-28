@@ -119,19 +119,16 @@ fn parser_diagnostics_are_redacted_even_with_logging_disabled() {
 #[cfg(unix)]
 #[test]
 fn closed_stdout_returns_an_actionable_runtime_failure() {
-    use std::{fs::File, os::fd::FromRawFd};
-    let mut descriptors = [0; 2];
-    assert_eq!(unsafe { libc::pipe(descriptors.as_mut_ptr()) }, 0);
-    let output = unsafe {
-        libc::close(descriptors[0]);
-        let writer = File::from_raw_fd(descriptors[1]);
-        Command::new(CLI)
-            .args(["system", "cpus", "--json"])
-            .env("RUST_LOG", "off")
-            .stdout(Stdio::from(writer))
-            .output()
-            .unwrap()
-    };
+    use std::os::{fd::OwnedFd, unix::net::UnixStream};
+
+    let (reader, writer) = UnixStream::pair().unwrap();
+    drop(reader);
+    let output = Command::new(CLI)
+        .args(["system", "cpus", "--json"])
+        .env("RUST_LOG", "off")
+        .stdout(Stdio::from(OwnedFd::from(writer)))
+        .output()
+        .unwrap();
     assert_eq!(output.status.code(), Some(1));
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert!(stderr.contains("Could not write CPU count to stdout"));

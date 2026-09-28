@@ -235,3 +235,57 @@ Caller-supplied React/TSX is trusted code running with the caller’s permission
 
 ## MCP follow-up
 The subsequent explicit request adds a local stdio `react-forge mcp` server for all existing formats, TSX code/file inputs, retained memory sessions and state, inspection/measurement, explicit file export or Figma publication, and cleanup. It preserves the original complete-format scope and existing Forge interfaces. The [MCP contract](packages-react-forge-mcp-contract.md) defines the added acceptance boundary; it adds no HTTP hosting, public distribution or automatic persistence.
+
+## 2026-09-25 static 3D follow-up
+
+This additive approved scope does not remove the original document requirements. Provide generation-only static GLB and binary FBX 7.4, Format.Glb/Fbx, public subpaths and independent SceneSession. Share bounded forge-scene data while keeping forge-glb/forge-fbx independent and JavaScript outside native workers. Support indexed triangles, hierarchy, transforms, normals/tangents/UVs, basic PBR textures/opacity, both camera projections and directional/point/spot lighting. Coordinates are meters/right-handed/Y-up; exporters own interchange conversion. Preserve revision pinning, Suspense, cancellation, diagnostics and atomic saves. Register copied binary assets outside React JSON; retain tree/image limits and enforce 256 MiB aggregate assets/output.
+
+Deliver original reusable TSX audio-product examples (headphones, DAC/amplifier, stand and combined studio), deterministic geometry/texture source and provenance. Validate actual exports using Khronos Validator, independent ufbx, pinned Blender 4.5 LTS empty-scene imports and 2048-pixel front/back/oblique/detail renders without material/mesh repair, plus interactive local GLB viewing. Inspect and correct visual faults, record versions/hashes/observations, and state unexecuted hosts honestly. Extend CLI/MCP, installation consumers, six-platform engine CI and Linux visual CI. Run root Rust tests, relevant Clippy, package build/typecheck/lint/tests/example checks and public-doc tests; update contracts/AGENTS and remove generated dist. Scene import/editing, animation, rigging, refraction, transmission and advanced coatings are excluded. Full details are in `packages-react-forge-scene-contract.md`.
+
+### CI scope follow-up (2026-09-26)
+
+The explicit request for this PR authorizes removing all React Forge scene CI.
+It supersedes the six-platform engine and Linux visual CI requirements above
+for this extension: React Forge host validation skips its scene test suite and
+excludes the three scene crates from native tests and Clippy; workspace Rust
+tests and Clippy exclude them as well. No CI or release host job prepares scene
+inputs, runs Blender product renders, or performs scene interoperability
+checks. Khronos/ufbx interoperability, Blender re-imports and product image
+inspection remain local acceptance evidence.
+
+## Sprite Follow-up
+The explicit 2026-09-25 request extends React Forge to author game sprites and requires real implementation and tests. The [sprite contract](packages-react-forge-sprite-contract.md) defines React pixel/shape/image composition, palettes, frame animations, native rasterization, PNG atlas and individual PNG exports with JSON metadata in one atomic archive, and library/CLI/MCP integration. This additive extension was included in npm `0.2.0`; it does not replace any Office/PDF/Figma requirements.
+
+## SFX follow-up
+
+The subsequent explicit game SFX request adds offline React-authored sound generation and WAV export, validated with a zombie-game gunshot. The [SFX contract](packages-react-forge-sfx-contract.md) specifies the additional components, independent native model, synthesis bounds, CLI/MCP behavior and evidence. This additive scope does not reduce any original document-format requirement.
+
+## 3D animation follow-up (2026-09-26, Unreleased)
+
+The approved animation plan supersedes the original static extension's animation
+and rigging exclusions for newly authored scenes only. Both GLB and FBX support
+object TRS, explicit Joint hierarchies with four influences per vertex, named
+position/optional-normal morphs, and same-session handle/object-ref tracks. Add
+STEP, vector LINEAR, shortest-path quaternion interpolation, normalized cubic
+Hermite, bounded cancellable Node callback baking (1–240 fps, default 60), and
+revision-pinned clip/time world AABBs. Keep base-pose semantics and clamp track
+endpoints. Validate arrays, references, duplicate target paths, weights, singular
+transforms and preallocation budgets. GLB uses standard glTF structures and
+rejects TRS tracks directly on skinned meshes. FBX emits native animation, bone,
+bind-pose, skin and morph data with independent bindings per mesh instance;
+rotation/CUBIC baking retains original times and documents between-sample error.
+
+Preserve registration/export ordering, recovery, cancellation, atomic output,
+disposal, redacted diagnostics and shared library/CLI/MCP behavior. Local
+acceptance requires Khronos zero errors, independent web playback, ufbx time
+evaluation and Blender 4.5.14 import/deformation/playback. An original rigged
+character with expression morphs and idle/walk/wave must cover callback and
+manual cubic tracks, group movement, camera and light tracks. Record versions,
+hashes, sampled comparisons, start/middle/end renders, package and installed
+consumer regressions, root Rust tests and public-doc tests. Keep scene validation
+local under the existing CI exclusion. Generated models, renders and dist stay
+untracked and are removed from the final worktree. Update contracts, AGENTS,
+README and public guides together; preserve static release history and identify
+animation as unreleased. Existing-file import, automatic rigging/weights, IK,
+retargeting, physics, clip blending/playback runtime, Unity/Unreal acceptance and
+npm publication are excluded. Looping belongs to consumers.

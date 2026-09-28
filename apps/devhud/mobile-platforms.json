@@ -25,12 +25,12 @@
     "previewLimit": 3
   },
   "dependencyClosures": {
-    "aarch64-apple-ios": "sha256-1267055c40b837bd27b9da805339775fd6eb82ecd391b827120180b2d40d86d2",
-    "aarch64-apple-ios-sim": "sha256-1267055c40b837bd27b9da805339775fd6eb82ecd391b827120180b2d40d86d2",
-    "x86_64-apple-ios": "sha256-1267055c40b837bd27b9da805339775fd6eb82ecd391b827120180b2d40d86d2",
-    "aarch64-linux-android": "sha256-8ae06522822dd8654825bda4270742f01e19e5fb48eb0df9e11b44c882ef3868",
-    "armv7-linux-androideabi": "sha256-135dd36d9482bdd86fb68bb29f54e2c9d377786406b0fee8411e55282e46513d",
-    "x86_64-linux-android": "sha256-8ae06522822dd8654825bda4270742f01e19e5fb48eb0df9e11b44c882ef3868"
+    "aarch64-apple-ios": "sha256-2424edeff777b36641eb1250158c735372a9801a8f57451c55b9d47f2a623577",
+    "aarch64-apple-ios-sim": "sha256-2424edeff777b36641eb1250158c735372a9801a8f57451c55b9d47f2a623577",
+    "x86_64-apple-ios": "sha256-2424edeff777b36641eb1250158c735372a9801a8f57451c55b9d47f2a623577",
+    "aarch64-linux-android": "sha256-cd132a78e02fe75da6e8f9b0f76eb735a31951b0a8d6074aed89685152cdc976",
+    "armv7-linux-androideabi": "sha256-259c71bc182eb4c68668c2ee6d26d7ef0cfa08deff8a7f01066e9dd4a0ec5491",
+    "x86_64-linux-android": "sha256-cd132a78e02fe75da6e8f9b0f76eb735a31951b0a8d6074aed89685152cdc976"
   },
   "targets": [
     {

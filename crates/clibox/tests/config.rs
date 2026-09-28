@@ -995,13 +995,18 @@ fn concurrent_authorized_replacements_produce_one_complete_result() {
             } else {
                 let diagnostic = String::from_utf8_lossy(&output.stderr);
                 // Windows sharing can reject concurrent inspection/publication.
+                // Unix inspection can observe a zero-link destination handle
+                // after the other writer replaces it and must fail closed.
                 // A failed writer must not overwrite a successful writer's result;
                 // no locks or automatic retries are promised.
-                #[cfg(not(windows))]
-                panic!("{diagnostic}");
+                assert_eq!(output.status.code(), Some(1), "{diagnostic}");
+                #[cfg(unix)]
+                assert!(
+                    diagnostic.contains("classification=UnsafeDestination"),
+                    "{diagnostic}"
+                );
                 #[cfg(windows)]
                 {
-                    assert_eq!(output.status.code(), Some(1), "{diagnostic}");
                     assert!(
                         diagnostic.contains("classification=Publish")
                             || diagnostic.contains("classification=Permissions"),

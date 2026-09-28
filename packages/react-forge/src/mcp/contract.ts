@@ -3,6 +3,7 @@ import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
 import { ForgeError } from "../errors.js";
 import { FigmaPublishError } from "../figma/session.js";
 import { ErrorCode, limits } from "../types.js";
+import type { TaskDetails } from "./diagnostics.js";
 
 export enum Operation {
   Capabilities = "capabilities",
@@ -31,7 +32,7 @@ export const schemas = {
   }).refine(input => (input.code !== undefined) !== (input.entry !== undefined)),
   [Operation.Sessions]: z.strictObject(page),
   [Operation.Inspect]: z.strictObject({ ...session, ...page, view: z.enum(InspectionView).default(InspectionView.Targets), nodeId: nodeId.optional(), kind: z.string().min(1).max(128).optional() }),
-  [Operation.Measure]: z.strictObject({ ...session, nodeId, revision: z.number().int().min(0) }),
+  [Operation.Measure]: z.strictObject({ ...session, nodeId, revision: z.number().int().min(0), animation: z.strictObject({ clip: nodeId, time: z.number().finite() }).optional() }),
   [Operation.Refresh]: z.strictObject({ ...session, pageId: nodeId.optional(), nodeIds: z.array(nodeId).max(24).optional(), resources: z.boolean().optional() }),
   [Operation.Export]: z.strictObject({ ...session, output: path, overwrite: z.boolean().default(false) }),
   [Operation.Publish]: z.strictObject({ ...session, receiptPath: path.optional(), overwrite: z.boolean().default(false) }),
@@ -47,12 +48,12 @@ export type ChildMessage = { kind: MessageKind.Result; id: number; result: CallT
 
 const descriptions: Record<Operation, string> = {
   capabilities: "Describe supported formats, hosts, resource limits and the trusted TSX callback contract. No I/O.",
-  execute: "Run trusted TSX code OR a local .tsx entry. Default export receives {session,state,data,signal}. New calls return a session; updates return void or the same session. state is a persistent Map. Code runs with your permissions and may explicitly write files or publish remotely; this is not a sandbox or a transaction. No automatic timeout. Does not automatically export or publish.",
+  execute: "Run trusted TSX code OR a local .tsx entry. Default export receives {session,state,data,signal}. New calls return a session; updates return void or the same session. state is a persistent Map. Compile, task and uncaught render failures return bounded caller messages and source positions when known. Code runs with your permissions and may explicitly write files or publish remotely; this is not a sandbox or a transaction. No automatic timeout. Does not automatically export or publish.",
   sessions: "List active in-memory sessions, their format, last revision and execution status. Sessions disappear when the server exits.",
   inspect: "Inspect settled local targets or cached Figma targets. Filter by nodeId/kind; offset/limit paginate. Text previews are capped at 4096 characters. view=receipt returns the last Figma receipt without publishing. Does not refresh Figma remotely.",
-  measure: "Measure a document-scoped node at an exact revision. For local documents first inspect to settle a revision; Figma measurement requires a completed publication. A changed revision returns conflict.",
+  measure: "Measure a document-scoped node at an exact revision (WAV timeline x/width are seconds). GLB/FBX accept animation={clip: clipNodeId, time: seconds} for deformed world bounds. For local documents first inspect to settle a revision; Figma measurement requires a completed publication. A changed revision returns conflict.",
   refresh: "Refresh explicitly selected Figma page/nodes or resources using the existing host credential. Preserves external ownership. Figma only.",
-  export: "Export Office/PDF to a local output. overwrite=true replaces an existing output, never an imported source or its aliases. Atomic publication pins a revision. Figma uses publish instead.",
+  export: "Export Office/PDF/WAV/GLB/FBX or a sprite .sprite.zip bundle to a local output. overwrite=true replaces an existing output, never an imported source or its aliases. Atomic publication pins a revision. Figma uses publish instead.",
   publish: "Explicitly publish a Figma revision remotely. Optionally save a .figma.json receipt; existing receipt requires overwrite=true. Partial/unknown outcomes include a receipt and must be reconciled before retrying. Never automatically retry this tool.",
   close: "Dispose a session after its prior operations finish and release its state Map. Does not delete exported files or undo remote changes.",
 };
@@ -83,8 +84,8 @@ export function parse<O extends Operation>(operation: O, input: unknown): Input<
 export function success(value: ToolValue): CallToolResult {
   return { content: [{ type: "text", text: JSON.stringify(value) }], structuredContent: value };
 }
-export function failure(error: unknown): CallToolResult {
+export function failure(error: unknown, details?: TaskDetails): CallToolResult {
   const safe = error instanceof ForgeError ? error : new ForgeError(ErrorCode.Render, "Task execution failed. Correct the task and retry.");
-  const value = { error: safe.toJSON(), ...(error instanceof FigmaPublishError ? { receipt: error.receipt } : {}) };
+  const value = { error: { ...safe.toJSON(), ...(details ? { message: details.diagnostics[0]?.message ?? safe.message, ...details } : {}) }, ...(error instanceof FigmaPublishError ? { receipt: error.receipt } : {}) };
   return { ...success(value), isError: true };
 }

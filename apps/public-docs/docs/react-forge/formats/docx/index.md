@@ -2,6 +2,10 @@
 
 Use `@delino/react-forge/docx` with a `Format.Docx` session. `Document` contains `Section` elements; sections may have headers and footers. Paragraphs support headings, styled runs, and links. Lists, merged tables, images, explicit page breaks, and editable bar, line, and pie charts are available.
 
+The example below creates a new document. To update an existing DOCX while preserving unrelated content, use [Office editing](/react-forge/office-editing).
+
+## Build and export
+
 ```tsx
 import React from "react";
 import { createSession, Format } from "@delino/react-forge";
@@ -22,6 +26,8 @@ try {
   await session.dispose();
 }
 ```
+
+## Images, charts, and final layout
 
 For images, register PNG/JPEG bytes or an explicit local path, then pass the returned asset to `Image` with width, height, and alt text. Use `Chart` for native editable chart data. The [session guide](/react-forge/sessions#fonts-and-assets) describes font registration and settled assets.
 

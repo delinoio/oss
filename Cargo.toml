@@ -10,6 +10,11 @@ members = [
   "crates/forge-pdf",
     "crates/react-forge-node",
     "crates/forge-figma",
+    "crates/forge-scene",
+    "crates/forge-glb",
+    "crates/forge-fbx",
+    "crates/forge-sprite",
+    "crates/forge-sfx",
     "crates/delino-forge",
     "apps/devhud/src-tauri",
     "apps/delidev/src-tauri",
@@ -17,6 +22,7 @@ members = [
     "crates/binpm",
     "crates/cargo-mono",
     "crates/clibox",
+    "crates/clibox-fspy",
     "crates/clibox-config",
     "crates/clibox-system",
     "crates/clibox-transform",
@@ -116,7 +122,7 @@ future_not_send = "allow"
 
 [workspace.dependencies]
 allocator-api2 = { version = "0.2", default-features = false }
-anyhow = "=1.0.102"
+anyhow = "=1.0.103"
 assert2 = "0.4.0"
 assertables = "10.0.0"
 base64 = "0.22.1"

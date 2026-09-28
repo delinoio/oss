@@ -329,6 +329,26 @@ fn publish_prepared(
 mod tests {
     use super::*;
 
+    #[cfg(unix)]
+    #[test]
+    fn destination_replaced_after_open_rejects_the_unlinked_handle() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("out");
+        fs::write(&path, "original").unwrap();
+        let opened = File::open(&path).unwrap();
+        let replacement = dir.path().join("replacement");
+        fs::write(&replacement, "complete winner").unwrap();
+        fs::rename(&replacement, &path).unwrap();
+
+        assert_eq!(
+            regular_metadata(&opened, Failure::Permissions)
+                .unwrap_err()
+                .kind,
+            Failure::UnsafeDestination
+        );
+        assert_eq!(fs::read(&path).unwrap(), b"complete winner");
+    }
+
     #[test]
     fn in_place_reader_retains_the_validated_file_after_path_replacement() {
         let dir = tempfile::tempdir().unwrap();

@@ -122,10 +122,13 @@ test("private workflow inspects the packaged Android manifest before widget evid
 });
 
 test("private workflow installs native prerequisites before desktop and mobile builds", () => {
-  const desktop = workflow.slice(workflow.indexOf("\n  desktop:"), workflow.indexOf("\n  extension:"));
+  const desktop = workflow.slice(workflow.indexOf("\n  desktop:"), workflow.indexOf("\n  ios-simulators:"));
+  const simulators = workflow.slice(workflow.indexOf("\n  ios-simulators:"), workflow.indexOf("\n  extension:"));
   const mobile = workflow.slice(workflow.indexOf("\n  mobile:"), workflow.indexOf("\n  oci:"));
   const appleTargets = "rustup target add aarch64-apple-darwin x86_64-apple-darwin";
   assert.equal(desktop.split(appleTargets).length - 1, 1);
+  assert.equal(simulators.split(appleTargets).length - 1, 1);
+  assert.ok(simulators.indexOf(appleTargets) < simulators.indexOf("run-mobile.mjs ios build"));
   assert.equal(mobile.split(appleTargets).length - 1, 1);
   assert.ok(mobile.includes("uses: actions/setup-java@v5"));
   assert.ok(mobile.includes("distribution: temurin\n          java-version: \"17\""));

@@ -3,13 +3,14 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { identity, Mode, requireValue, log, origin, encode, sha256 } from './linux-packages/model.mjs';
+import { identity, Mode, requireValue, log, encode, sha256 } from './linux-packages/model.mjs';
 import { downloadRelease } from './linux-packages/release-input.mjs';
 import { importSigningKey, temporarySigningKey, packageFiles, candidateRecord, signCandidate, verifyCandidate, signRecord, verifyRecord } from './linux-packages/package.mjs';
 import { buildRepositories } from './linux-packages/repository.mjs';
 import { R2Store } from './linux-packages/store.mjs';
 import { saveCandidate, loadCandidate, addToCatalog, snapshotFor, promote } from './linux-packages/publish.mjs';
 import { prepareKeyring } from './linux-packages/keyring.mjs';
+import { verifyPublicObject } from './linux-packages/public-readback.mjs';
 
 export async function main(args = process.argv.slice(2)) {
   const { values } = parseArgs({ args, options: { project: { type: 'string' }, version: { type: 'string' }, revision: { type: 'string' }, mode: { type: 'string', default: Mode.DryRun }, output: { type: 'string' } } });
@@ -73,10 +74,7 @@ export async function main(args = process.argv.slice(2)) {
     const snapshot = await snapshotFor(state, catalog, (records, load, generation) => buildRepositories(records, load, path.join(work, 'repository'), signing, generation, keyring), (value) => signRecord(value, signing, work));
     verifyRecord(snapshot, signing, work);
     await event('promote');
-    await promote(state, publicStore, snapshot, async (key, expected) => {
-      const response = await fetch(`${origin}/${key}`, { redirect: 'error', signal: AbortSignal.timeout(120000), cache: 'no-store' });
-      requireValue(response.ok && Buffer.from(await response.arrayBuffer()).equals(expected), 'PUBLIC_READBACK_MISMATCH');
-    });
+    await promote(state, publicStore, snapshot, (key, expected) => verifyPublicObject(key, expected, { context: plan }));
     await event('complete');
   } catch (error) {
     const code = /^[A-Z0-9_]+$/u.test(error.message) ? error.message : 'PACKAGE_OPERATION_FAILED';

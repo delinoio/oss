@@ -3,32 +3,39 @@ use fspy_nostd::BorrowedFd;
 use fspy_shared::ipc::AccessMode;
 use libc::{c_char, c_int, stat as stat_struct};
 
-use crate::{
-    client::{convert::PathAt, handle_open},
-    macros::intercept,
-};
+#[cfg(target_os = "linux")]
+use crate::client::{convert::PathAt, handle_open};
+use crate::macros::intercept;
+#[cfg(target_os = "macos")]
+use crate::operation::{self, Kind};
 
 intercept!(stat(64): unsafe extern "C" fn(path: *const c_char, buf: *mut stat_struct) -> c_int);
 unsafe extern "C" fn stat(path: *const c_char, buf: *mut stat_struct) -> c_int {
-    if !path.is_null() {
-        // SAFETY: the non-null pathname is valid for the intercepted call.
-        unsafe { handle_open(fspy_nostd::CStr::from_ptr(path.cast()), AccessMode::READ) };
-    }
+    #[cfg(target_os = "macos")]
+    // SAFETY: path is the caller's pathname passed unchanged to libc.
+    let operation = unsafe { operation::enter_path(Kind::Metadata, path) };
+    super::observe_path(path, AccessMode::READ);
     // SAFETY: calling the original libc stat() with the same arguments forwarded
     // from the interposed function
-    unsafe { stat::original()(path, buf) }
+    let result = unsafe { stat::original()(path, buf) };
+    #[cfg(target_os = "macos")]
+    operation::finish(operation, i64::from(result));
+    result
 }
 
 intercept!(lstat(64): unsafe extern "C" fn(path: *const c_char, buf: *mut stat_struct) -> c_int);
 unsafe extern "C" fn lstat(path: *const c_char, buf: *mut stat_struct) -> c_int {
+    #[cfg(target_os = "macos")]
+    // SAFETY: path is the caller's pathname passed unchanged to libc.
+    let operation = unsafe { operation::enter_path(Kind::Metadata, path) };
     // TODO: add accessmode ReadNoFollow
-    if !path.is_null() {
-        // SAFETY: the non-null pathname is valid for the intercepted call.
-        unsafe { handle_open(fspy_nostd::CStr::from_ptr(path.cast()), AccessMode::READ) };
-    }
+    super::observe_path(path, AccessMode::READ);
     // SAFETY: calling the original libc lstat() with the same arguments forwarded
     // from the interposed function
-    unsafe { lstat::original()(path, buf) }
+    let result = unsafe { lstat::original()(path, buf) };
+    #[cfg(target_os = "macos")]
+    operation::finish(operation, i64::from(result));
+    result
 }
 
 intercept!(fstatat(64): unsafe extern "C" fn(dirfd: c_int, pathname: *const c_char, buf: *mut stat_struct, flags: c_int) -> c_int);
@@ -38,13 +45,16 @@ unsafe extern "C" fn fstatat(
     buf: *mut stat_struct,
     flags: c_int,
 ) -> c_int {
-    if !pathname.is_null() {
-        // SAFETY: the non-null pathname and descriptor are caller-provided.
-        unsafe { handle_open(PathAt::borrow_raw(dirfd, pathname), AccessMode::READ) };
-    }
+    #[cfg(target_os = "macos")]
+    // SAFETY: pathname is the caller's path passed unchanged to libc.
+    let operation = unsafe { operation::enter_at(Kind::Metadata, dirfd, pathname) };
+    super::observe_at(dirfd, pathname, AccessMode::READ);
     // SAFETY: calling the original libc fstatat() with the same arguments forwarded
     // from the interposed function
-    unsafe { fstatat::original()(dirfd, pathname, buf, flags) }
+    let result = unsafe { fstatat::original()(dirfd, pathname, buf, flags) };
+    #[cfg(target_os = "macos")]
+    operation::finish(operation, i64::from(result));
+    result
 }
 
 #[cfg(target_os = "linux")]

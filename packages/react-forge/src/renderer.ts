@@ -146,8 +146,10 @@ export class RenderRoot {
       // the entire commit, including layout effects, has finished.
       queueMicrotask(() => this.notify());
     } };
-    const uncaught = () => {
-      this.error = new ForgeError(ErrorCode.Render, "React rendering failed. Correct the component and render again.");
+    const uncaught = (error: unknown) => {
+      // The cause stays outside ForgeError.toJSON(); only the trusted MCP
+      // execution child may turn it into a bounded caller-facing diagnostic.
+      this.error = new ForgeError(ErrorCode.Render, "React rendering failed. Correct the component and render again.", {}, error);
       this.notify();
     };
     this.root = reconciler.createContainer(this.container, ConcurrentRoot, null, false, null,

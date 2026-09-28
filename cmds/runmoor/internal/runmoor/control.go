@@ -21,6 +21,7 @@ type ControlRequest struct {
 }
 type ControlResponse struct {
 	SchemaVersion int           `json:"schema_version"`
+	Config        *Config       `json:"config,omitempty"`
 	Status        *Status       `json:"status,omitempty"`
 	Image         *Image        `json:"image,omitempty"`
 	Images        []*Image      `json:"images,omitempty"`
@@ -28,44 +29,60 @@ type ControlResponse struct {
 	Doctor        *DoctorReport `json:"doctor,omitempty"`
 }
 type Status struct {
-	SchemaVersion  int          `json:"schema_version"`
-	Version        string       `json:"version"`
-	Running        bool         `json:"manager_running"`
-	Generation     string       `json:"generation"`
-	Paused         bool         `json:"paused"`
-	Stopping       bool         `json:"stopping"`
-	Budget         Budget       `json:"budget"`
-	Reserved       Resources    `json:"reserved"`
-	Active         int          `json:"active_runners_and_setup_vms"`
-	VMs            int          `json:"macos_vms"`
-	PendingCleanup int          `json:"pending_cleanup"`
-	Pools          []PoolStatus `json:"pools"`
-	Runners        []Runner     `json:"runners"`
-	Images         []*Image     `json:"images"`
-	Power          *Problem     `json:"power_warning,omitempty"`
+	SchemaVersion         int                        `json:"schema_version"`
+	Version               string                     `json:"version"`
+	Running               bool                       `json:"manager_running"`
+	Generation            string                     `json:"generation"`
+	Paused                bool                       `json:"paused"`
+	Stopping              bool                       `json:"stopping"`
+	Budget                Budget                     `json:"budget"`
+	Reserved              Resources                  `json:"reserved"`
+	Active                int                        `json:"active_runners_and_setup_vms"`
+	VMs                   int                        `json:"macos_vms"`
+	PendingCleanup        int                        `json:"pending_cleanup"`
+	Pools                 []PoolStatus               `json:"pools"`
+	Runners               []Runner                   `json:"runners"`
+	Images                []*Image                   `json:"images"`
+	Power                 *Problem                   `json:"power_warning,omitempty"`
+	DockerBudget          Resources                  `json:"docker_budget,omitempty"`
+	DockerCapacityPending bool                       `json:"docker_capacity_pending,omitempty"`
+	Managed               map[string]*ManagedPool    `json:"managed_runners,omitempty"`
+	Artifacts             map[string]*RunnerArtifact `json:"runner_artifacts,omitempty"`
 }
 type PoolStatus struct {
-	ID         string    `json:"id"`
-	Name       string    `json:"name"`
-	Generation string    `json:"generation"`
-	Phase      PoolPhase `json:"phase"`
-	Backend    Backend   `json:"backend"`
-	ScaleSet   string    `json:"scale_set"`
-	Demand     int       `json:"demand"`
-	Total      int       `json:"total"`
-	Busy       int       `json:"busy"`
-	Problem    *Problem  `json:"problem,omitempty"`
+	ID            string     `json:"id"`
+	Name          string     `json:"name"`
+	Generation    string     `json:"generation"`
+	Phase         PoolPhase  `json:"phase"`
+	Backend       Backend    `json:"backend"`
+	ScaleSet      string     `json:"scale_set"`
+	Demand        int        `json:"demand"`
+	Total         int        `json:"total"`
+	Busy          int        `json:"busy"`
+	Problem       *Problem   `json:"problem,omitempty"`
+	RunnerMode    RunnerMode `json:"runner_mode,omitempty"`
+	RunnerVersion string     `json:"runner_version,omitempty"`
+	Resources     Resources  `json:"resources,omitempty"`
+	MaxRunners    int        `json:"max_runners,omitempty"`
 }
 
 func statusOf(s Snapshot, running bool) *Status {
 	used, n, vms := usage(s)
 	v := &Status{SchemaVersion: 1, Version: Version, Running: running, Generation: s.Generation, Paused: s.Paused, Stopping: s.Stopping, Budget: s.Config.Host, Reserved: used, Active: n, VMs: vms, PendingCleanup: pendingCleanup(s), Pools: []PoolStatus{}, Runners: []Runner{}, Power: s.PowerProblem, Images: []*Image{}}
+	v.Managed = s.Managed
+	v.Artifacts = s.Artifacts
+	v.DockerBudget = s.Config.DockerBudget
+	v.DockerCapacityPending = s.Config.DockerCapacityPending
 	for _, p := range sortedPools(s) {
 		if p.Phase == Retired {
 			continue
 		}
 		n, b := liveCount(s, p.ID)
-		v.Pools = append(v.Pools, PoolStatus{p.ID, p.Spec.Name, p.Generation, p.Phase, p.Spec.Backend, p.Spec.ScaleSet, p.Demand, n, b, p.Problem})
+		mode := RunnerPinned
+		if q := s.Managed[p.Spec.Name]; q != nil {
+			mode = q.Mode
+		}
+		v.Pools = append(v.Pools, PoolStatus{ID: p.ID, Name: p.Spec.Name, Generation: p.Generation, Phase: p.Phase, Backend: p.Spec.Backend, ScaleSet: p.Spec.ScaleSet, Demand: p.Demand, Total: n, Busy: b, Problem: poolDiagnostic(p), RunnerMode: mode, RunnerVersion: p.Spec.RunnerVersion, Resources: p.Spec.Cost(), MaxRunners: p.Spec.MaxRunners})
 	}
 	for _, r := range s.Runners {
 		if r.Phase != Completed {
@@ -78,6 +95,18 @@ func statusOf(s Snapshot, running bool) *Status {
 	sort.Slice(v.Images, func(i, j int) bool { return v.Images[i].ID < v.Images[j].ID })
 	sort.Slice(v.Runners, func(i, j int) bool { return v.Runners[i].ID < v.Runners[j].ID })
 	return v
+}
+
+func poolDiagnostic(p *PoolState) *Problem {
+	if p.Problem != nil {
+		return p.Problem
+	}
+	if p.Phase != Suspended {
+		return nil
+	}
+	missing := problem(ErrRetry, "Pool is suspended, but its original failure reason is unavailable.", "Run doctor, correct any reported dependency failure, then resume this pool.")
+	missing.Pool = p.Spec.Name
+	return missing
 }
 func (m *Manager) ServeControl() (*http.Server, error) {
 	c := m.Store.View().Config
@@ -138,6 +167,11 @@ func (m *Manager) Control(ctx context.Context, req ControlRequest) ControlRespon
 			r.Status.Running = true
 		}
 		resp.Doctor = &r
+	case "config":
+		c := displayResolved(m.Store.View())
+		resp.Config = &c
+	case "runner-update":
+		err = m.requestRunnerUpdate(req.Pool)
 	case "status":
 		resp.Status = statusOf(m.Store.View(), true)
 	case "reload":

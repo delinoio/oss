@@ -4,6 +4,10 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
 import { connect } from "./mcp/client.js";
+import { TaskLoader } from "../src/mcp/loader.js";
+import { TaskError, TaskPhase } from "../src/mcp/diagnostics.js";
+import { ErrorCode } from "../src/types.js";
+import { ForgeError } from "../src/errors.js";
 
 const pdf = `import {createSession, Format} from '@delino/react-forge';
 import {Document, Page, Text} from '@delino/react-forge/pdf';
@@ -11,6 +15,14 @@ export default async ({state}) => {
  const session=createSession(Format.Pdf);
  state.set('render', async text => session.render(<Document language="en-US"><Page><Text>{text}</Text></Page></Document>));
  await state.get('render')('Hello MCP'); return session;
+};`;
+
+const jsxPdf = `import {createSession, Format} from '@delino/react-forge';
+import {Document, Page, Text} from '@delino/react-forge/pdf';
+export default async ({state}) => {
+ const session=createSession(Format.Pdf);
+ state.set('render', async content => session.render(<Document language="en-US"><Page>{content}</Page></Document>));
+ await state.get('render')(<Text>JSX_OK</Text>); return session;
 };`;
 
 test("stdio tools keep a session across inline calls and export an exact inspected revision", async () => {
@@ -21,36 +33,62 @@ test("stdio tools keep a session across inline calls and export an exact inspect
     assert.equal(tools.tools.length, 9);
     const capabilities = await peer.call("capabilities");
     assert.equal(capabilities.mcp.transport, "stdio");
-    const { sessionId } = await peer.call("execute", { code: pdf });
+    assert.match(capabilities.mcp.errorDiagnostics, /bounded caller messages/);
+    const { sessionId } = await peer.call("execute", { code: jsxPdf });
     const inspected = await peer.call("inspect", { sessionId });
     assert.ok(inspected.revision > 0);
     assert.ok(inspected.targets.length > 0);
     const text = inspected.targets.find((target: any) => target.kind === "paragraph");
     assert.ok(text);
+    assert.equal(text.text, "JSX_OK");
     const measured = await peer.call("measure", { sessionId, nodeId: text.nodeId, revision: inspected.revision });
     assert.equal(measured.geometry.coordinateSpace, "page");
-    await peer.call("execute", { sessionId, code: "export default async ({state}) => { await state.get('render')('Updated MCP'); };" });
+    await peer.call("execute", { sessionId, code: `import {Text} from '@delino/react-forge/pdf';
+      export default async ({state}) => { await state.get('render')(<Text>JSX_UPDATED</Text>); };` });
     const next = await peer.call("inspect", { sessionId });
     assert.ok(next.revision > inspected.revision);
+    assert.equal(next.targets.find((target: any) => target.kind === "paragraph")?.text, "JSX_UPDATED");
     const exported = await peer.call("export", { sessionId, output: "report.pdf" });
     assert.equal(exported.revision, next.revision);
     assert.equal((await readFile(join(cwd, "report.pdf"))).subarray(0, 5).toString(), "%PDF-");
     assert.equal((await peer.call("sessions")).sessions.length, 1);
     await peer.call("close", { sessionId });
     assert.equal((await peer.call("sessions")).sessions.length, 0);
-  } finally { await peer.close(); await rm(cwd, { recursive: true, force: true }); }
+  } finally { await peer.close(); await removeFixture(cwd); }
 });
+
+test("CommonJS caller dependencies and createElement share the canonical React instance", async () => fixture(async (peer, cwd) => {
+  await writeFile(join(cwd, "helper.cjs"), "module.exports = { label: 'CREATE_ELEMENT_OK' };");
+  const { sessionId } = await peer.call("execute", { code: `import React, {createElement} from 'react';
+    import helper from './helper.cjs';
+    import {createSession, Format} from '@delino/react-forge';
+    import {Document, Page, Text} from '@delino/react-forge/pdf';
+    export default async () => {
+      if (React.createElement !== createElement) throw Error('React identity split');
+      const session = createSession(Format.Pdf);
+      await session.render(createElement(Document, {language: 'en-US'},
+        createElement(Page, null, createElement(Text, null, helper.label))));
+      return session;
+    };` });
+  const inspected = await peer.call("inspect", { sessionId });
+  assert.equal(inspected.targets.find((target: any) => target.kind === "paragraph")?.text, "CREATE_ELEMENT_OK");
+}));
 
 async function fixture(work: (peer: Awaited<ReturnType<typeof connect>>, cwd: string) => Promise<void>) {
   const cwd = await mkdtemp(join(tmpdir(), "react-forge-mcp-"));
   const peer = await connect(cwd);
   try { await work(peer, cwd); }
-  finally { await peer.close(); await rm(cwd, { recursive: true, force: true }); }
+  finally { await peer.close(); await removeFixture(cwd); }
+}
+async function removeFixture(cwd: string) {
+  // Windows can briefly retain a directory handle after the server closes.
+  await rm(cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 }
 async function errorCode(peer: Awaited<ReturnType<typeof connect>>, tool: string, args: Record<string, unknown>, code: string) {
   const result = await peer.raw(tool, args);
   assert.equal(result.isError, true, JSON.stringify(result));
   assert.equal((result.structuredContent!.error as any).code, code);
+  assert.deepEqual(JSON.parse((result.content[0] as { text: string }).text), result.structuredContent);
   return result.structuredContent!;
 }
 async function waitFor(path: string) {
@@ -59,6 +97,29 @@ async function waitFor(path: string) {
   }
   assert.fail("Fixture did not become ready");
 }
+
+test("inline SFX shares the engine, measures time, updates state and exports PCM WAV", async () => fixture(async (peer, cwd) => {
+  const created = await peer.call("execute", { code: `import {createSession,Format} from '@delino/react-forge';
+    import {Sound,Noise} from '@delino/react-forge/sfx';
+    export default async ({state})=>{const s=createSession(Format.Wav);
+      state.set('render',seed=>s.render(<Sound duration={0.25}><Noise start={0.05} duration={0.15} seed={seed}/></Sound>));
+      await state.get('render')(815);return s;};` });
+  const args = { sessionId: created.sessionId };
+  const snapshot = await peer.call("inspect", args);
+  const layer = snapshot.targets.find((target: any) => target.kind === "noise");
+  const measured = await peer.call("measure", { ...args, nodeId: layer.nodeId, revision: snapshot.revision });
+  assert.equal(measured.geometry.coordinateSpace, "timeline"); assert.equal(measured.geometry.x, 0.05);
+  await errorCode(peer, "export", { ...args, output: "shot.mp3" }, "malformed_input");
+  await peer.call("export", { ...args, output: "shot.wav" });
+  const before = await readFile(join(cwd, "shot.wav"));
+  assert.equal(before.subarray(8, 12).toString(), "WAVE"); assert.equal(before.readUInt32LE(24), 48000);
+  assert.equal(before.length, 24044);
+  await peer.call("execute", { ...args, code: "export default async({state})=>{await state.get('render')(816);};" });
+  await errorCode(peer, "measure", { ...args, nodeId: layer.nodeId, revision: snapshot.revision }, "conflict");
+  await peer.call("export", { ...args, output: "shot.wav", overwrite: true });
+  assert.notDeepEqual(await readFile(join(cwd, "shot.wav")), before);
+  await peer.call("close", args);
+}));
 
 const simple = {
   pptx: { imports: "Presentation,Slide,Column,Text", view: '<Presentation><Slide><Column><Text>Original</Text></Column></Slide></Presentation>', kind: "text", edit: '<Text>{data}</Text>' },
@@ -104,12 +165,205 @@ test("entries reload, dependencies share identities and caller output never reac
     console.log('PRIVATE-CONSOLE');console.error('PRIVATE-STDERR');writeSync(1,'PRIVATE-RAW-STDOUT');writeSync(2,'PRIVATE-RAW-STDERR');
     export default ({state})=>{if(identity!==state.get('identity'))throw Error('duplicate inline helper');};` });
   const invalid = await errorCode(peer, "execute", { sessionId, code: "export default ()=>{throw Error('PRIVATE-FAILURE');};" }, "render");
-  assert.ok(!JSON.stringify(invalid).includes("PRIVATE"));
+  assert.equal(invalid.error.message, "PRIVATE-FAILURE");
+  assert.equal(invalid.error.diagnostics[0].phase, "task");
+  assert.equal(invalid.error.diagnostics[0].source, "inline");
+  assert.equal(invalid.error.diagnostics[0].line, 1);
+  assert.ok(!JSON.stringify(invalid).includes("PRIVATE-CONSOLE"));
+  assert.ok(!JSON.stringify(invalid).includes("export default"));
   await peer.call("close", { sessionId });
   assert.ok(!peer.stderr().includes("PRIVATE"));
   assert.ok(!peer.stderr().includes(cwd));
   for (const line of peer.stderr().trim().split("\n").filter(Boolean)) assert.equal(JSON.parse(line).source, "mcp");
 }));
+
+test("MCP reports bounded compiler, module and uncaught render diagnostics without logging task text", async () => fixture(async (peer, cwd) => {
+  const inline = await errorCode(peer, "execute", { code: "export default () => {\n const value = ;\n};" }, "malformed_input");
+  assert.equal(inline.error.diagnostics[0].phase, "compile");
+  assert.equal(inline.error.diagnostics[0].source, "inline");
+  assert.equal(inline.error.diagnostics[0].line, 2);
+  assert.ok(inline.error.diagnostics[0].column > 0);
+  assert.equal(inline.error.message, inline.error.diagnostics[0].message);
+  assert.ok(!JSON.stringify(inline).includes("const value = ;"));
+
+  await mkdir(join(cwd, "tasks"));
+  await writeFile(join(cwd, "tasks", "broken.tsx"), "export default () => {\n const value = ;\n};");
+  const entry = await errorCode(peer, "execute", { entry: "tasks/broken.tsx" }, "malformed_input");
+  assert.equal(entry.error.diagnostics[0].source, "entry");
+  assert.equal(entry.error.diagnostics[0].file, "tasks/broken.tsx");
+  assert.equal(entry.error.diagnostics[0].line, 2);
+
+  await writeFile(join(cwd, "tasks", "helper.ts"), "export const value = ;");
+  await writeFile(join(cwd, "tasks", "import.tsx"), "import { value } from './helper.js'; export default () => value;");
+  const imported = await errorCode(peer, "execute", { entry: "tasks/import.tsx" }, "malformed_input");
+  assert.equal(imported.error.diagnostics[0].source, "import");
+  assert.equal(imported.error.diagnostics[0].file, "tasks/helper.ts");
+  assert.equal(imported.error.diagnostics[0].line, 1);
+
+  const dependencyDirectory = join(cwd, "node_modules", "rf-private-typed");
+  await mkdir(dependencyDirectory, { recursive: true });
+  await writeFile(join(dependencyDirectory, "package.json"), JSON.stringify({ name: "rf-private-typed", type: "module", exports: "./index.ts" }));
+  await writeFile(join(dependencyDirectory, "index.ts"), "export const PRIVATE_TYPED_DEPENDENCY = ;");
+  const dependency = await errorCode(peer, "execute", { code: "import 'rf-private-typed'; export default () => {};" }, "malformed_input");
+  assert.equal(dependency.error.message, "Unable to compile a task dependency.");
+  assert.equal(dependency.error.diagnostics, undefined);
+  assert.ok(!JSON.stringify(dependency).includes("PRIVATE_TYPED_DEPENDENCY"));
+  assert.ok(!JSON.stringify(dependency).includes(cwd));
+
+  const unresolvedDependencyDirectory = join(cwd, "node_modules", "rf-private-import");
+  await mkdir(unresolvedDependencyDirectory, { recursive: true });
+  await writeFile(join(unresolvedDependencyDirectory, "package.json"), JSON.stringify({ name: "rf-private-import", type: "module", exports: "./index.mjs" }));
+  await writeFile(join(unresolvedDependencyDirectory, "index.mjs"), "import 'rf-private-missing'; export const value = 1;");
+  const externalImport = await errorCode(peer, "execute", { code: "import 'rf-private-import'; export default () => {};" }, "malformed_input");
+  assert.equal(externalImport.error.message, "Unable to resolve import.");
+  assert.ok(!JSON.stringify(externalImport).includes("rf-private-missing"));
+  assert.ok(!JSON.stringify(externalImport).includes(cwd));
+
+  const runtimeDependencyDirectory = join(cwd, "node_modules", "rf-private-runtime");
+  await mkdir(runtimeDependencyDirectory, { recursive: true });
+  await writeFile(join(runtimeDependencyDirectory, "package.json"), JSON.stringify({ name: "rf-private-runtime", type: "module", exports: "./index.mjs" }));
+  await writeFile(join(runtimeDependencyDirectory, "index.mjs"), "export function fail() { throw Error('PRIVATE_EXTERNAL_DEPENDENCY'); } export function failString() { throw 'PRIVATE_EXTERNAL_STRING'; }");
+  const externalException = await errorCode(peer, "execute", {
+    code: "import {fail} from 'rf-private-runtime'; export default () => { fail(); };",
+  }, "render");
+  assert.equal(externalException.error.message, "Task execution failed. Correct the task and retry.");
+  assert.equal(externalException.error.diagnostics, undefined);
+  assert.ok(!JSON.stringify(externalException).includes("PRIVATE_EXTERNAL_DEPENDENCY"));
+  const externalString = await errorCode(peer, "execute", {
+    code: "import {failString} from 'rf-private-runtime'; export default () => { failString(); };",
+  }, "render");
+  assert.equal(externalString.error.message, "Task execution failed. Correct the task and retry.");
+  assert.equal(externalString.error.diagnostics, undefined);
+  assert.ok(!JSON.stringify(externalString).includes("PRIVATE_EXTERNAL_STRING"));
+  const nativeFailure = await errorCode(peer, "execute", {
+    code: `import {readFileSync} from 'node:fs';
+      export default () => { readFileSync(${JSON.stringify(join(cwd, "PRIVATE_NATIVE_PATH"))}, 'utf8'); };`,
+  }, "render");
+  assert.equal(nativeFailure.error.message, "Task execution failed. Correct the task and retry.");
+  assert.equal(nativeFailure.error.diagnostics, undefined);
+  assert.ok(!JSON.stringify(nativeFailure).includes("PRIVATE_NATIVE_PATH"));
+  assert.ok(!JSON.stringify(nativeFailure).includes(cwd));
+
+  for (const extension of ["js", "mjs"]) {
+    await writeFile(join(cwd, "tasks", `throwing-helper.${extension}`), `throw Error('PRIVATE-${extension.toUpperCase()}-HELPER');`);
+    await writeFile(join(cwd, "tasks", `javascript-${extension}.tsx`), `import './throwing-helper.${extension}'; export default () => {};`);
+    const helper = await errorCode(peer, "execute", { entry: `tasks/javascript-${extension}.tsx` }, "render");
+    assert.equal(helper.error.message, `PRIVATE-${extension.toUpperCase()}-HELPER`);
+    assert.equal(helper.error.diagnostics[0].phase, "task");
+    assert.equal(helper.error.diagnostics[0].source, "import");
+    assert.equal(helper.error.diagnostics[0].file, `tasks/throwing-helper.${extension}`);
+    assert.equal(helper.error.diagnostics[0].line, 1);
+    assert.ok(helper.error.diagnostics[0].column > 0);
+    assert.ok(!JSON.stringify(helper).includes(cwd));
+  }
+
+  await writeFile(join(cwd, "tasks", "throwing-helper.jsx"), "throw Error('PRIVATE-JSX-HELPER');");
+  await writeFile(join(cwd, "tasks", "javascript-jsx.tsx"), "import './throwing-helper.jsx'; export default () => {};");
+  const jsxHelper = await errorCode(peer, "execute", { entry: "tasks/javascript-jsx.tsx" }, "render");
+  assert.equal(jsxHelper.error.message, "PRIVATE-JSX-HELPER");
+  assert.equal(jsxHelper.error.diagnostics[0].source, "import");
+  assert.equal(jsxHelper.error.diagnostics[0].file, "tasks/throwing-helper.jsx");
+  assert.equal(jsxHelper.error.diagnostics[0].line, 1);
+
+  for (const extension of ["js", "mjs", "cjs", "jsx"]) {
+    await writeFile(join(cwd, "tasks", `syntax-helper.${extension}`), "const PRIVATE_JAVASCRIPT_SOURCE = ;");
+    await writeFile(join(cwd, "tasks", `syntax-${extension}.tsx`), `import './syntax-helper.${extension}'; export default () => {};`);
+    const syntax = await errorCode(peer, "execute", { entry: `tasks/syntax-${extension}.tsx` }, "malformed_input");
+    assert.match(syntax.error.message, /Unexpected/);
+    assert.equal(syntax.error.diagnostics[0].phase, "compile");
+    assert.equal(syntax.error.diagnostics[0].source, "import");
+    assert.equal(syntax.error.diagnostics[0].file, `tasks/syntax-helper.${extension}`);
+    assert.equal(syntax.error.diagnostics[0].line, 1);
+    assert.ok(syntax.error.diagnostics[0].column > 0);
+    assert.ok(!JSON.stringify(syntax).includes("PRIVATE_JAVASCRIPT_SOURCE"));
+    assert.ok(!JSON.stringify(syntax).includes(cwd));
+  }
+
+  const externalSyntaxDirectory = join(cwd, "node_modules", "rf-private-syntax");
+  await mkdir(externalSyntaxDirectory, { recursive: true });
+  await writeFile(join(externalSyntaxDirectory, "package.json"), JSON.stringify({ name: "rf-private-syntax", type: "module", exports: "./index.mjs" }));
+  await writeFile(join(externalSyntaxDirectory, "index.mjs"), "const PRIVATE_EXTERNAL_SYNTAX = ;");
+  const externalSyntax = await errorCode(peer, "execute", { code: "import 'rf-private-syntax'; export default () => {};" }, "render");
+  assert.equal(externalSyntax.error.message, "Task execution failed. Correct the task and retry.");
+  assert.equal(externalSyntax.error.diagnostics, undefined);
+  assert.ok(!JSON.stringify(externalSyntax).includes("PRIVATE_EXTERNAL_SYNTAX"));
+
+  const unresolved = await errorCode(peer, "execute", { code: "import './absent-local-module.js'; export default () => {};" }, "malformed_input");
+  assert.equal(unresolved.error.diagnostics[0].phase, "compile");
+  assert.match(unresolved.error.message, /absent-local-module/);
+  assert.ok(!JSON.stringify(unresolved).includes(cwd));
+
+  const missingPackage = await errorCode(peer, "execute", { code: "import 'react-forge-uninstalled-package'; export default () => {};" }, "malformed_input");
+  assert.match(missingPackage.error.message, /react-forge-uninstalled-package/);
+  assert.ok(!JSON.stringify(missingPackage).includes(cwd));
+
+  const undefinedPackageImport = await errorCode(peer, "execute", { code: "import '#missing'; export default () => {};" }, "malformed_input");
+  assert.equal(undefinedPackageImport.error.diagnostics[0].phase, "compile");
+  assert.match(undefinedPackageImport.error.message, /#missing/);
+  assert.ok(!JSON.stringify(undefinedPackageImport).includes(cwd));
+
+  await writeFile(join(cwd, "unknown.react-forge-extension"), "content");
+  const unknownExtension = await errorCode(peer, "execute", { code: "import './unknown.react-forge-extension'; export default () => {};" }, "malformed_input");
+  assert.equal(unknownExtension.error.diagnostics[0].phase, "compile");
+  assert.ok(!JSON.stringify(unknownExtension).includes(cwd));
+
+  const { sessionId } = await peer.call("execute", { code: pdf });
+  const dynamicImport = await errorCode(peer, "execute", { sessionId, code: "export default async () => { await import('./missing-dynamic.js'); };" }, "malformed_input");
+  assert.equal(dynamicImport.error.diagnostics[0].phase, "compile");
+  assert.match(dynamicImport.error.message, /missing-dynamic/);
+  assert.ok(!JSON.stringify(dynamicImport).includes(cwd));
+
+  const failed = await errorCode(peer, "execute", { sessionId, code: `import {createElement} from 'react';
+    function Broken() { throw Error('PRIVATE-RENDER-DETAIL'); }
+    export default async ({session}) => { await session.render(createElement(Broken)); };` }, "render");
+  assert.equal(failed.error.message, "PRIVATE-RENDER-DETAIL");
+  assert.equal(failed.error.diagnostics[0].phase, "render");
+  assert.equal(failed.error.diagnostics[0].source, "inline");
+  assert.equal(failed.error.diagnostics[0].line, 2);
+
+  const renderDependencyDirectory = join(cwd, "node_modules", "rf-private-render");
+  await mkdir(renderDependencyDirectory, { recursive: true });
+  await writeFile(join(renderDependencyDirectory, "package.json"), JSON.stringify({ name: "rf-private-render", type: "module", exports: "./index.mjs" }));
+  await writeFile(join(renderDependencyDirectory, "index.mjs"), "export function Broken() { throw Error('PRIVATE_EXTERNAL_RENDER'); }");
+  const externalRender = await errorCode(peer, "execute", { sessionId, code: `import {createElement} from 'react';
+    import {Broken} from 'rf-private-render';
+    export default async ({session}) => { await session.render(createElement(Broken)); };` }, "render");
+  assert.equal(externalRender.error.message, "React rendering failed. Correct the component and render again.");
+  assert.equal(externalRender.error.diagnostics, undefined);
+  assert.ok(!JSON.stringify(externalRender).includes("PRIVATE_EXTERNAL_RENDER"));
+
+  await peer.call("execute", { sessionId, code: `import {createElement,Component} from 'react';
+    class Boundary extends Component { state={failed:false}; static getDerivedStateFromError(){return {failed:true};} render(){return this.state.failed?createElement('text',null,'recovered'):this.props.children;} }
+    function Broken(){throw Error('HANDLED-RENDER-DETAIL');}
+    export default async ({session})=>{await session.render(createElement(Boundary,null,createElement(Broken)));};` });
+  await peer.call("execute", { sessionId, code: `import {Document,Page,Text} from '@delino/react-forge/pdf';
+    export default async ({session}) => { await session.render(<Document language='en-US'><Page><Text>Recovered</Text></Page></Document>); };` });
+  const inspected = await peer.call("inspect", { sessionId });
+  assert.ok(inspected.targets);
+  await peer.call("close", { sessionId });
+
+  assert.ok(!peer.stderr().includes("PRIVATE-RENDER-DETAIL"));
+  assert.ok(!peer.stderr().includes("PRIVATE-JS-HELPER"));
+  assert.ok(!peer.stderr().includes("PRIVATE-MJS-HELPER"));
+  assert.ok(!peer.stderr().includes("PRIVATE_EXTERNAL_DEPENDENCY"));
+  assert.ok(!peer.stderr().includes("HANDLED-RENDER-DETAIL"));
+  assert.ok(!peer.stderr().includes("tasks/broken.tsx"));
+  for (const line of peer.stderr().trim().split("\n").filter(Boolean)) assert.equal(JSON.parse(line).source, "mcp");
+}));
+
+test("compiler diagnostics and caller messages have fixed response bounds", () => {
+  const loader = new TaskLoader(process.cwd());
+  try {
+    assert.equal(new ForgeError(ErrorCode.Render, "safe") instanceof TaskError, false);
+    assert.equal(loader.isCallerException(Error("internal detail")), false);
+    const issues = Array.from({ length: 12 }, (_, i) => ({ text: `issue ${i}` }));
+    const details = loader.diagnose(new TaskError(ErrorCode.MalformedInput, TaskPhase.Compile, Error("compile"), undefined, issues));
+    assert.equal(details?.diagnostics.length, 10);
+    assert.equal(details?.diagnosticsTruncated, true);
+    const long = loader.diagnose(new TaskError(ErrorCode.Render, TaskPhase.Task, Error("x".repeat(2048))));
+    assert.equal(long?.diagnostics[0]?.message.length, 1024);
+  } finally { loader.dispose(); }
+});
 
 test("tool validation, filtered pagination, stale measurement and invalid latest render stay recoverable", async () => fixture(async peer => {
   await errorCode(peer, "execute", { code: pdf, entry: "both.tsx" }, "malformed_input");
@@ -139,7 +393,8 @@ test("cancelled callbacks retain their session queue until they actually finish"
   const { sessionId } = await peer.call("execute", { code: pdf });
   const controller = new AbortController();
   const running = peer.raw("execute", { sessionId, code: `import {writeFile} from 'node:fs/promises'; export default async({state,signal})=>{
-    await writeFile('started','ready');await new Promise(resolve=>signal.addEventListener('abort',resolve,{once:true}));
+    const aborted=new Promise(resolve=>{if(signal.aborted)resolve();else signal.addEventListener('abort',resolve,{once:true});});
+    await writeFile('started','ready');await aborted;
     await new Promise(resolve=>setTimeout(resolve,100));state.set('finished',true);
   };` }, controller.signal);
   const rejected = assert.rejects(running);
@@ -153,9 +408,14 @@ test("cancelled callbacks retain their session queue until they actually finish"
 
 test("cancelled creation disposes a late returned session instead of registering it", async () => fixture(async (peer, cwd) => {
   const controller = new AbortController();
+  // A readiness file may be visible before writeFile's promise resumes. Retain
+  // cancellation before publishing it, then deliberately resume after abort to
+  // exercise the ordering that previously stranded this fixture on macOS CI.
   const running = peer.raw("execute", { code: `import {createSession,Format} from '@delino/react-forge';import {writeFile} from 'node:fs/promises';
     export default async({signal})=>{const session=createSession(Format.Pdf);const dispose=session.dispose.bind(session);session.dispose=async()=>{await dispose();await writeFile('disposed','yes');};
-      await writeFile('started','yes');await new Promise(resolve=>signal.addEventListener('abort',resolve,{once:true}));return session;};` }, controller.signal);
+      const aborted=new Promise(resolve=>{if(signal.aborted)resolve();else signal.addEventListener('abort',resolve,{once:true});});
+      await writeFile('started','yes');while(!signal.aborted)await new Promise(resolve=>setTimeout(resolve,10));
+      await aborted;return session;};` }, controller.signal);
   const rejected = assert.rejects(running);
   await waitFor(join(cwd, "started"));controller.abort();await rejected;
   await waitFor(join(cwd, "disposed"));

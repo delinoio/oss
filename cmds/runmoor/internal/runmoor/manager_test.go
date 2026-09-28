@@ -137,6 +137,7 @@ func testManager(t *testing.T) (*Manager, Config, *fakeRemote, *fakeDriver, stri
 	m.RemoteFactory = func(Connection) (Remote, error) { return r, nil }
 	m.Drivers = func(Backend) (Driver, error) { return d, nil }
 	m.Power = fakePower{}
+	m.ResolveCapacity = func(_ context.Context, c Config) (Config, error) { return c, nil }
 	if e := m.activate(c); e != nil {
 		t.Fatal(e)
 	}
@@ -336,5 +337,92 @@ func TestMessageCrashBoundaryNeverAcknowledgesUncommittedEffects(t *testing.T) {
 	remote.session.messages <- msg
 	if err = m.listen(context.Background(), pool, remote.session); err == nil || called {
 		t.Fatal("acknowledged after durable storage failed")
+	}
+}
+
+type capacitySession struct {
+	*fakeSession
+	poll    func(int) (*scaleset.RunnerScaleSetMessage, error)
+	acquire func([]int64) error
+}
+
+func (s capacitySession) Poll(_ context.Context, _, capacity int) (*scaleset.RunnerScaleSetMessage, error) {
+	return s.poll(capacity)
+}
+func (s capacitySession) Acquire(_ context.Context, ids []int64) error {
+	return s.acquire(ids)
+}
+
+func TestListenerRespectsPhysicalCapacity(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		budget, daemon   Resources
+		backend          Backend
+		pending, paused  bool
+		shrinkDuringPoll bool
+		wantPoll, want   int
+	}{
+		{name: "engine CPU", budget: Resources{4, 32768}, wantPoll: 2, want: 2},
+		{name: "engine memory", budget: Resources{16, 8192}, wantPoll: 2, want: 2},
+		{name: "DinD CPU", budget: Resources{4, 32768}, daemon: Resources{1, 1024}, wantPoll: 1, want: 1},
+		{name: "DinD memory", budget: Resources{16, 8192}, daemon: Resources{1, 1024}, wantPoll: 1, want: 1},
+		{name: "host ceiling", budget: Resources{32, 65536}, wantPoll: 8, want: 8},
+		{name: "Tart ignores engine ceiling", backend: Tart, budget: Resources{1, 1024}, wantPoll: 2, want: 2},
+		{name: "pending engine probe", pending: true},
+		{name: "paused", paused: true},
+		{name: "budget shrinks during poll", budget: Resources{16, 32768}, shrinkDuringPoll: true, wantPoll: 8, want: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m, _, remote, _, pool := testManager(t)
+			if err := m.Store.Update(func(s *Snapshot) error {
+				s.Config.Host.CPU, s.Config.Host.MemoryMiB, s.Config.Host.MaxRunners = 16, 32768, 20
+				s.Config.DockerBudget, s.Config.DockerCapacityPending, s.Paused = tc.budget, tc.pending, tc.paused
+				p := s.Pools[pool]
+				p.Spec.MaxRunners, p.Spec.Resources, p.Spec.DaemonResources = 20, Resources{2, 4096}, tc.daemon
+				if tc.backend != "" {
+					p.Spec.Backend = tc.backend
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			done := errors.New("fixture message acknowledged")
+			acquired := 0
+			remote.session.ack = func(int) error { return done }
+			session := capacitySession{
+				fakeSession: remote.session,
+				poll: func(capacity int) (*scaleset.RunnerScaleSetMessage, error) {
+					if capacity != tc.wantPoll {
+						t.Errorf("advertised %d jobs, want %d", capacity, tc.wantPoll)
+					}
+					if tc.shrinkDuringPoll {
+						if err := m.Store.Update(func(s *Snapshot) error {
+							s.Config.DockerBudget = Resources{2, 4096}
+							return nil
+						}); err != nil {
+							return nil, err
+						}
+					}
+					msg := &scaleset.RunnerScaleSetMessage{MessageID: 1, Statistics: &scaleset.RunnerScaleSetStatistic{TotalAssignedJobs: 3}}
+					for i := 0; i < 20; i++ {
+						msg.JobAvailableMessages = append(msg.JobAvailableMessages, &scaleset.JobAvailable{JobMessageBase: scaleset.JobMessageBase{RunnerRequestID: int64(i + 1)}})
+					}
+					return msg, nil
+				},
+				acquire: func(ids []int64) error {
+					acquired += len(ids)
+					if p := m.Store.View().Pools[pool]; p.LastMessage != 1 || p.Demand != 3 {
+						t.Error("acquisition preceded durable authoritative statistics")
+					}
+					return nil
+				},
+			}
+			if err := m.listen(context.Background(), pool, session); !errors.Is(err, done) {
+				t.Fatal(err)
+			}
+			if acquired != tc.want {
+				t.Fatalf("acquired %d jobs, want %d", acquired, tc.want)
+			}
+		})
 	}
 }

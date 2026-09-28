@@ -13,11 +13,13 @@ import (
 )
 
 type tartFixture struct {
-	mu       sync.Mutex
-	c        Config
-	running  map[string]bool
-	commands [][]string
-	jit      string
+	mu          sync.Mutex
+	c           Config
+	running     map[string]bool
+	commands    [][]string
+	jit         string
+	version     string
+	rejectGuest bool
 }
 
 func (f *tartFixture) Run(_ context.Context, name string, args, env []string, in io.Reader) ([]byte, error) {
@@ -38,7 +40,7 @@ func (f *tartFixture) Run(_ context.Context, name string, args, env []string, in
 	}
 	switch args[0] {
 	case "--version":
-		return []byte(TartVersion), nil
+		return []byte(f.version), nil
 	case "create", "clone", "import":
 		vm := args[len(args)-1]
 		dir := vmPath(f.c, vm)
@@ -70,6 +72,9 @@ func (f *tartFixture) Run(_ context.Context, name string, args, env []string, in
 		} else if in != nil {
 			io.Copy(io.Discard, in)
 		} else {
+			if f.rejectGuest {
+				return []byte("RUNMOOR_INVALID\n"), nil
+			}
 			return []byte("RUNMOOR_READY\n"), nil
 		}
 	default:
@@ -85,8 +90,45 @@ func (f *tartFixture) Start(_ string, args, env []string) (int, error) {
 	return 123, nil
 }
 func fakeTart(c Config) (*TartDriver, *tartFixture) {
-	f := &tartFixture{c: c, running: map[string]bool{}}
+	f := &tartFixture{c: c, running: map[string]bool{}, version: "2.37.0"}
 	return &TartDriver{Exec: f, HostCheck: func(context.Context) error { return nil }}, f
+}
+
+func TestTartVersionCompatibility(t *testing.T) {
+	for _, tc := range []struct {
+		version string
+		allowed bool
+	}{
+		{"2.0.0", true},
+		{"2.37.0", true},
+		{"2.999.999", true},
+		{"2.38.0+build.7", true},
+		{" 2.38.0\n", true},
+		{"1.99.0", false},
+		{"3.0.0", false},
+		{"2.38.0-beta.1", false},
+		{"2", false},
+		{"2.38", false},
+		{"2.038.0", false},
+		{"2.38.0 junk", false},
+		{"v2.38.0", false},
+		{"2.38.0+", false},
+		{"", false},
+	} {
+		t.Run(tc.version, func(t *testing.T) {
+			c, _ := fixtureStore(t)
+			driver, fixture := fakeTart(c)
+			fixture.version = tc.version
+			err := driver.check(context.Background(), c)
+			if tc.allowed {
+				if err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+			requireCode(t, err, ErrDependency)
+		})
+	}
 }
 
 type startingTartCommand struct {

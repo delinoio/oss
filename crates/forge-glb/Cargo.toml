@@ -1,0 +1,11 @@
+[package]
+name = "forge-glb"
+version = "0.0.0"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+forge-scene = { path = "../forge-scene" }
+forge-tree-doc = { path = "../forge-tree-doc" }
+serde_json = "1.0.149"

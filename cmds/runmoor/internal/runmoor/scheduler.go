@@ -3,6 +3,7 @@ package runmoor
 import (
 	"sort"
 	"strconv"
+	"time"
 )
 
 func usage(s Snapshot) (Resources, int, int) {
@@ -18,7 +19,19 @@ func usage(s Snapshot) (Resources, int, int) {
 			vms++
 		}
 	}
+	for _, a := range s.Artifacts {
+		if a.Reserved {
+			r = r.Add(a.Resources)
+			count++
+			if a.Backend == Tart {
+				vms++
+			}
+		}
+	}
 	for _, im := range s.Images {
+		if a := s.Artifacts[im.ID]; a != nil && a.Reserved {
+			continue
+		}
 		if im.Phase == ImageOpen {
 			r = r.Add(im.Resources)
 			count++
@@ -49,6 +62,14 @@ func logicalCount(s Snapshot, name string) int {
 	return n
 }
 func eligible(s Snapshot, p *PoolState) bool {
+	if p != nil {
+		if p.Spec.Backend == Docker && s.Config.DockerCapacityPending {
+			return false
+		}
+		if q := s.Managed[p.Spec.Name]; q != nil && (q.Paused || (!q.Expires.IsZero() && !time.Now().Before(q.Expires))) {
+			return false
+		}
+	}
 	if p == nil || s.Paused || s.Stopping || p.Phase != Ready || p.ScaleSetID == 0 || p.Session == "" {
 		return false
 	}
@@ -60,9 +81,31 @@ func eligible(s Snapshot, p *PoolState) bool {
 	return true
 }
 
+// acquisitionCapacity bounds both advertised capacity and job acquisition by
+// the physical ceiling. The scheduler separately accounts for shared usage.
+func acquisitionCapacity(s Snapshot, p *PoolState) int {
+	if !eligible(s, p) {
+		return 0
+	}
+	cost := p.Spec.Cost()
+	capacity := min(p.Spec.MaxRunners, s.Config.Host.MaxRunners,
+		s.Config.Host.CPU/cost.CPU, int(s.Config.Host.MemoryMiB/cost.MemoryMiB))
+	if p.Spec.Backend == Docker && validResources(s.Config.DockerBudget) {
+		capacity = min(capacity, s.Config.DockerBudget.CPU/cost.CPU,
+			int(s.Config.DockerBudget.MemoryMiB/cost.MemoryMiB))
+	}
+	if p.Spec.Backend == Tart {
+		capacity = min(capacity, 2)
+	}
+	return capacity
+}
+
 // Schedule is pure: demand has a complete first pass before any warm capacity.
 // It includes preparations, uncertain live resources, and image setup VMs.
 func Schedule(s Snapshot) []string {
+	if managedCapacityWait(s) != nil {
+		return nil
+	}
 	ids := []string{}
 	for id, p := range s.Pools {
 		if eligible(s, p) {
@@ -76,6 +119,7 @@ func Schedule(s Snapshot) []string {
 	start := s.Cursor % len(ids)
 	ids = append(ids[start:], ids[:start]...)
 	used, total, vms := usage(s)
+	dockerUsed := dockerUsage(s)
 	counts := map[string]int{}
 	logical := map[string]int{}
 	for id, p := range s.Pools {
@@ -100,6 +144,12 @@ func Schedule(s Snapshot) []string {
 				if total >= s.Config.Host.MaxRunners || used.CPU+cost.CPU > s.Config.Host.CPU || used.MemoryMiB+cost.MemoryMiB > s.Config.Host.MemoryMiB || (p.Spec.Backend == Tart && vms >= 2) {
 					continue
 				}
+				if p.Spec.Backend == Docker && validResources(s.Config.DockerBudget) && (dockerUsed.CPU+cost.CPU > s.Config.DockerBudget.CPU || dockerUsed.MemoryMiB+cost.MemoryMiB > s.Config.DockerBudget.MemoryMiB) {
+					continue
+				}
+				if p.Spec.Backend == Docker {
+					dockerUsed = dockerUsed.Add(cost)
+				}
 				result = append(result, id)
 				counts[id]++
 				logical[p.Spec.Name]++
@@ -118,6 +168,33 @@ func Schedule(s Snapshot) []string {
 	return result
 }
 func retirementCandidates(s Snapshot) []string {
+	if candidate := managedCapacityWait(s); candidate != nil {
+		future := cloneSnapshot(s)
+		var ids []string
+		for id, r := range s.Runners {
+			if r.Phase == Idle && !r.Terminated {
+				ids = append(ids, id)
+			}
+		}
+		sort.Strings(ids)
+		var selected []string
+		for _, id := range ids {
+			if preparationFits(future, *candidate) {
+				break
+			}
+			r := future.Runners[id]
+			if candidate.Backend == Tart {
+				_, _, vms := usage(future)
+				if vms >= 2 && r.Backend != Tart {
+					continue
+				}
+			}
+			delete(future.Runners, id)
+			selected = append(selected, id)
+		}
+		return selected
+	}
+
 	// Plan demand against available capacity and the capacity selected for
 	// retirement. Synthetic reservations stay in this private snapshot; actual
 	// allocation still retains every reservation until termination is confirmed.
@@ -185,7 +262,11 @@ func retirementCandidates(s Snapshot) []string {
 		if !needDemand && busy+p.Spec.MinIdle > target {
 			target = busy + p.Spec.MinIdle
 		}
-		if s.Paused || s.Stopping || p.Phase != Ready {
+		managedBlocked := false
+		if q := s.Managed[p.Spec.Name]; q != nil {
+			managedBlocked = q.Paused || !q.Expires.IsZero() && !time.Now().Before(q.Expires)
+		}
+		if s.Paused || s.Stopping || p.Phase != Ready || managedBlocked {
 			target = busy
 		}
 		if count > target {
@@ -195,4 +276,37 @@ func retirementCandidates(s Snapshot) []string {
 		}
 	}
 	return out
+}
+
+func dockerUsage(s Snapshot) Resources {
+	var used Resources
+	for _, r := range s.Runners {
+		if r.Backend == Docker && !r.Terminated && r.Phase != Completed {
+			used = used.Add(r.Resources)
+		}
+	}
+	for _, a := range s.Artifacts {
+		if a.Backend == Docker && a.Reserved {
+			used = used.Add(a.Resources)
+		}
+	}
+	return used
+}
+func managedCapacityWait(s Snapshot) *RunnerArtifact {
+	if s.Stopping || s.Paused {
+		return nil
+	}
+	names := []string{}
+	for name, q := range s.Managed {
+		if q.Phase == UpdateWaiting && !q.Paused {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		if p, ok := requestedPool(s.Requested, name); ok {
+			return &RunnerArtifact{Backend: p.Backend, Resources: p.Resources}
+		}
+	}
+	return nil
 }

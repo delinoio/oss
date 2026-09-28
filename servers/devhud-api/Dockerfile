@@ -11,7 +11,7 @@ COPY packages/devhud-api-client ./packages/devhud-api-client
 RUN mkdir -p servers/devhud-api/internal/adminassets && \
     pnpm --filter devhud-admin build:embedded
 
-FROM --platform=$BUILDPLATFORM golang:1.25.8-bookworm AS build
+FROM --platform=$BUILDPLATFORM golang:1.26.8-bookworm AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download

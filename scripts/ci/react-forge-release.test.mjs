@@ -23,9 +23,20 @@ test("React Forge release is exact-tag or credential-free manual dry run", () =>
   assert.ok(!JSON.stringify(release).includes("NPM_TOKEN"));
 });
 
-test("PR CI runs host installations and leaves complete candidate assembly to release", () => {
-  assert.ok(ci.jobs["react-forge"].steps.some((step) => step.name === "Verify installed public package on this host"));
+test("release runs the same host validation before complete candidate assembly", () => {
+  const sharedCommand = 'bash packages/react-forge/scripts/validate-host.sh "${{ matrix.target }}"';
+  assert.ok(ci.jobs["react-forge"].steps.some((step) => step.run === sharedCommand));
+  assert.ok(release.jobs.build.steps.some((step) => step.run === sharedCommand));
+  const validation = source("packages/react-forge/scripts/validate-host.sh");
+  for (const command of ["install-smoke.mjs", "test:render", "benchmark", "typecheck:examples", "examples/travel-ir.tsx"]) assert.match(validation, new RegExp(command.replaceAll(".", "\\."), "u"));
   assert.equal(ci.jobs["react-forge-package"], undefined);
   assert.ok(!ci.jobs["react-forge"].steps.some((step) => String(step.with?.name).startsWith("react-forge-native-")));
   assert.ok(release.jobs.package.steps.some((step) => step.run?.includes("package.mjs verify")));
+});
+
+test("React Forge source consumers hydrate LFS textures before package and scene validation", () => {
+  for (const job of [ci.jobs["react-forge"], release.jobs.build]) {
+    const checkout = job.steps.find(step => step.uses?.startsWith("actions/checkout@"));
+    assert.equal(checkout.with.lfs, true);
+  }
 });

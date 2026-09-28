@@ -1,13 +1,16 @@
-import { resolve, extname } from "node:path";
+import { SceneSession } from "../scene/session.js";
+import { resolve } from "node:path";
+import { matchesOutputExtension } from "../output-extension.js";
 import { capabilities } from "../capabilities.js";
 import { ForgeError, checkSignal } from "../errors.js";
 import { DocumentSession } from "../session.js";
 import { FigmaSession } from "../figma/session.js";
 import { ErrorCode, Format, limits } from "../types.js";
 import { TaskLoader } from "./loader.js";
+import { TaskError, TaskPhase, type TaskDetails } from "./diagnostics.js";
 import { InspectionView, Operation, SessionStatus, parse, type Input, type ToolValue } from "./contract.js";
 
-export type McpSession = DocumentSession | FigmaSession;
+export type McpSession = DocumentSession | FigmaSession | SceneSession;
 export interface TaskContext {
   session: McpSession | undefined;
   state: Map<string, unknown>;
@@ -30,6 +33,8 @@ export class SessionRuntime {
 
   constructor(private readonly cwd: string) { this.loader = new TaskLoader(cwd); }
 
+  diagnose(error: unknown): TaskDetails | undefined { return this.loader.diagnose(error); }
+
   private metadata(record: RecordEntry): ToolValue {
     return { sessionId: record.session.documentId, format: record.session.format, revision: record.session.revision };
   }
@@ -49,8 +54,9 @@ export class SessionRuntime {
       mcp: { transport: "stdio", memoryOnly: true, trustedCode: true, automaticTimeout: false, sourceAndDataBytes: limits.treeBytes,
         inspectionDefaultLimit: 100, inspectionMaxLimit: 500, textPreviewCharacters: 4096,
         callback: "A default-exported function receives { session, state, data, signal }. state is a Map; signal is an AbortSignal.",
-        creation: "Return a new DocumentSession or FigmaSession.", update: "Return void or the same session. state is a session-owned Map.",
+        creation: "Return a new DocumentSession, SceneSession or FigmaSession.", update: "Return void or the same session. state is a session-owned Map.",
         inlineImports: "Relative to --cwd; automatic React JSX runtime. File imports are relative to the entry. Dependencies are cached; entries are reevaluated.",
+        errorDiagnostics: "Compile, task and uncaught render failures include bounded caller messages and known one-based source positions in tool error results, never operational stderr.",
         cancellation: "Cooperative; the same session remains queued until its callback finishes. No rollback of completed side effects.",
         figmaAuthentication: "Existing macOS Keychain support only; no new credentials or platform expansion.",
       },
@@ -87,7 +93,7 @@ export class SessionRuntime {
         if (returned !== undefined && returned !== record.session) throw new ForgeError(ErrorCode.InvalidTarget, "An update must return void or its existing session.");
         return this.metadata(record);
       }
-      if (!(returned instanceof DocumentSession || returned instanceof FigmaSession)) throw new ForgeError(ErrorCode.MalformedInput, "A new task must return a document session.");
+      if (!(returned instanceof DocumentSession || returned instanceof FigmaSession || returned instanceof SceneSession)) throw new ForgeError(ErrorCode.MalformedInput, "A new task must return a document session.");
       if (this.sessions.has(returned.documentId)) throw new ForgeError(ErrorCode.Conflict, "This session is already registered.");
       checkSignal(signal);
       if (this.stopped) throw new ForgeError(ErrorCode.Disposed, "MCP runtime is shutting down.");
@@ -97,10 +103,15 @@ export class SessionRuntime {
       return this.metadata(entry);
     } catch (error) {
       if (!record) state.clear();
-      if ((returned instanceof DocumentSession || returned instanceof FigmaSession) && !this.sessions.has(returned.documentId)) {
+      if ((returned instanceof DocumentSession || returned instanceof FigmaSession || returned instanceof SceneSession) && !this.sessions.has(returned.documentId)) {
         await returned.dispose().catch(() => {});
       }
-      throw error;
+      if (error instanceof ForgeError) throw error;
+      const resolution = this.loader.resolutionFailure(error);
+      if (resolution) throw resolution;
+      throw this.loader.isCallerException(error)
+        ? new TaskError(ErrorCode.Render, TaskPhase.Task, error)
+        : new ForgeError(ErrorCode.Render, "Task execution failed. Correct the task and retry.");
     }
   }
 
@@ -114,7 +125,7 @@ export class SessionRuntime {
           this.figma(session);
           return { ...this.metadata(record), receipt: session.receipt ?? null };
         }
-        const snapshot = session instanceof DocumentSession ? await session.snapshot({ signal }) : session.inspect();
+        const snapshot = session instanceof DocumentSession || session instanceof SceneSession ? await session.snapshot({ signal }) : session.inspect();
         const targets = snapshot.targets.filter(target => (!nodeId || target.nodeId === nodeId) && (!kind || target.kind === kind));
         return { ...this.metadata(record), revision: snapshot.revision,
           targets: targets.slice(offset, offset + limit).map(target => {
@@ -123,9 +134,12 @@ export class SessionRuntime {
           }), total: targets.length, truncated: offset + limit < targets.length, nextOffset: offset + limit < targets.length ? offset + limit : null };
       }
       case Operation.Measure: {
-        const { nodeId, revision } = input as Input<Operation.Measure>;
+        const { nodeId, revision, animation } = input as Input<Operation.Measure>;
+        if (animation && !(session instanceof SceneSession)) throw new ForgeError(ErrorCode.UnsupportedEdit, "Animation measurement requires a scene session.");
         const handle = { documentId: session.documentId, nodeId };
-        const geometry = await session.measure(handle, { revision, signal });
+        const geometry = session instanceof SceneSession
+          ? await session.measure(handle, { revision, signal, animation: animation ? { clip: { documentId: session.documentId, nodeId: animation.clip }, time: animation.time } : undefined })
+          : await session.measure(handle, { revision, signal });
         return { ...this.metadata(record), revision: geometry.revision, geometry };
       }
       case Operation.Refresh: {
@@ -135,9 +149,9 @@ export class SessionRuntime {
         return { ...this.metadata(record), targetCount: session.inspect().targets.length };
       }
       case Operation.Export: {
-        if (!(session instanceof DocumentSession)) throw new ForgeError(ErrorCode.UnsupportedEdit, "Use publish for Figma sessions.");
+        if (!(session instanceof DocumentSession || session instanceof SceneSession)) throw new ForgeError(ErrorCode.UnsupportedEdit, "Use publish for Figma sessions.");
         const { output, overwrite } = input as Input<Operation.Export>;
-        if (extname(output).toLowerCase() !== `.${session.format}`) throw new ForgeError(ErrorCode.MalformedInput, "Output extension must match the session format.");
+        if (!matchesOutputExtension(session.format, output)) throw new ForgeError(ErrorCode.MalformedInput, "Output extension must match the session format.");
         const result = await session.exportFile(resolve(this.cwd, output), { overwrite, signal });
         return { ...this.metadata(record), ...result };
       }

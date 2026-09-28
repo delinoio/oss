@@ -31,7 +31,9 @@
 - No user data or credentials are stored by this documentation app.
 
 ## Security
+- Installation examples select one exact published release tag, derive archive download URLs and the tag-triggered signing identity from it, and verify both Sigstore bundles and the selected archive checksum before extraction. Manual-main signatures require their separately documented exact identity; never use an arbitrary-version identity wildcard. Keep the CLI README in sync.
 - Preserve the stable-release verification limits, credential-reference guidance, signature verification steps, trusted-workload restrictions, and third-party licensing boundaries.
+- Public configuration guidance identifies `RUNMOOR_PAT` as a GitHub PAT environment reference, explains where to create fine-grained and classic PATs and the repository/organization runner permissions, and distinguishes it from short-lived runner registration tokens. Ubuntu user-service guidance shows a user-owned mode 0600 credential file with an absolute TOML file reference, explains the systemd user-manager environment boundary and the explicit connection refresh/resume after token rotation, and preserves the user-session availability limit. An environment-backed service already running without the imported PAT requires stop/start and pool resume. Never place a PAT value in public examples, TOML, or service definitions.
 - Do not publish internal credentials, private repository paths, or unsupported release claims.
 - Preserve the release-availability classifier previously applied by public-docs, including its negation fixtures. Rendered affirmative beta-channel, partial/staged GA, phased/fractional rollout, early-access, and early-announcement claims fail validation; stable-channel disclosures and explicit unavailable/unsupported/prohibited statements remain valid.
 - The app-local public-content validator preserves the former public-docs credential/path safeguards. It rejects credential patterns and private filesystem/repository paths in rendered text and HTML comments, plus credential-bearing or forbidden HTML/CSS resource URLs after entity and URL decoding. Credential parameters, including authorization codes, are checked in ordinary queries, direct fragments, and the query portion of hash-routed fragments. Public route exceptions match complete route IDs (with optional query or fragment), never arbitrary paths beginning with a route name. Same-origin static assets remain permitted, as do documented environment/file credential placeholders and XDG paths. Rejections report the page and classification without echoing the rejected value.
@@ -70,4 +72,41 @@
 
 ## Native package guidance
 
+The installation page and CLI README also document `brew install delinoio/tap/runmoor`, version inspection, explicit Homebrew upgrades and removal for macOS 14+ Apple Silicon. Homebrew uses the same signed public archive as direct installation, and checks the Formula's pinned SHA-256 during installation. Preserve direct archive/Sigstore instructions and clarify that Tart, runner configuration and Runmoor service registration remain operator-owned. Intel and Linux Homebrew are not supported.
+
+Runmoor `0.1.3` native packages have passed the complete public installation matrix and are documented as available through stable. Shared executable installation/update/removal examples use Runmoor; other projects require their own verified publication before availability claims change. Public installation guidance must distinguish package compatibility from manager runtime support: Linux manager execution requires Ubuntu 22.04+ on x86-64 or ARM64, while non-Ubuntu package checks prove installation and version/help execution only.
+
 The public installation surface documents the exact repository key fingerprint, supported Linux distribution/architecture matrix, stable or explicit preview registration, and package-manager install/update/remove commands. Operational details remain in `docs/repository-linux-packages-contract.md`. Installation guidance must preserve the existing release-archive and other supported installation methods.
+
+The Runmoor install page links directly to the shared key-verification and stable-registration sections before showing installation commands. It explains that key inspection alone does not register an APT source, requires a successful package-list refresh and a visible package candidate, and links to shared troubleshooting for missing packages. Installation, upgrade, and removal commands use separate copyable blocks so copying an installation example cannot immediately uninstall the package. The shared registration page owns architecture, source, suite, update-error, and candidate diagnostics.
+
+## Automatic configuration documentation
+
+Runmoor 0.2.0 introduced interactive/minimal init, omitted resource and
+architecture defaults, latest runner management for Docker/Tart, resolved
+configuration inspection and explicit update requests. Guides label this
+version boundary and retain 0.1.3-compatible manual pins, image setup,
+credentials, license terms and verification limits. Public guides describe
+operator behavior, not the internal SQLite migration journal or repository
+implementation paths.
+
+The generated configuration guide shows the new scale-set, platform and
+architecture labels for an ARM64 Docker host, explains the `x64` amd64 and
+`macOS` Tart variants, and preserves explicitly authored label examples.
+
+Ubuntu operator guidance distinguishes `runmoor init` from `config validate`,
+locates private configuration access failures without removing existing state,
+explains Docker capacity verification and non-root local-socket access, and
+accounts for lingering systemd user managers retaining old group membership
+after a Docker group change. It shows how to inspect an existing systemd user
+unit and the original systemd failure before replacing a service definition.
+The CLI README links to the corresponding public guides. No unverified
+service-start root cause is claimed.
+
+The Tart guide also describes interactive first setup from a host-supported
+Apple IPSW, operator completion of the guest account/Guest Agent/tool setup,
+post-reboot readiness validation, automatic runner installation and sealing,
+and same-command interruption recovery. Preserve the stable Tart 2.x.x range,
+exact Guest Agent version, and version-specific license boundaries. Its
+published-version note must distinguish the released 0.2.0 automatic setup
+from the still-unreleased guided creation of a new Mac VM.

@@ -31,6 +31,7 @@ The owner explicitly confirmed on 2026-09-25 that the active request includes th
 The TypeScript direct-Connect integration boundary is now implemented in `packages/delidev-api-client`, with generated service-specific React Query descriptors and bounded snapshot/event synchronization. Its real Go-server fixture validates the transport and replay boundary; it does not establish a packaged desktop or large-history presentation.
 
 ## Local verification log
+- 2026-09-25, macOS arm64, Go 1.26.8: the late-turn replay fixture now synchronizes actual native request receipt, caller cancellation/uncertainty, and acknowledgment release instead of racing a 70 ms preflight deadline. Start/Steer/Interrupt cases passed 20 repeated runs with original-identity and exactly-once assertions. `go test -race -p 1 -timeout=15m ./cmds/delidev-cli/...`, package vet, and Windows amd64 test-binary cross-compilation pass; cross-compilation does not establish native Windows execution.
 - 2026-09-24, macOS arm64, Go 1.26.1: `go test -race ./cmds/delidev-cli/internal/...` and `go vet ./cmds/delidev-cli/internal/...` for the domain, private-files, and SQLite foundation. No harness or provider account was invoked.
 - 2026-09-24: `go test -race ./cmds/delidev-cli/...`, package vet, Buf formatting/lint, and generated Go bindings validated. The native macOS executable was exercised against an isolated temporary data directory. Linux arm64 cross-compilation succeeded; this does not establish native Linux behavior.
 - 2026-09-24: Windows amd64 cross-compilation succeeded. Native Windows runtime remains unverified. Real temporary Git preparation tests and package race tests/vet pass on macOS arm64.
@@ -2101,3 +2102,30 @@ Complete package-tree vet passes (`/tmp/delidev-pr-match-vet.log`). The complete
 ### Pull-request handoff checkpoint (2026-09-28)
 
 At the owner’s request, further feature expansion is deferred to pull-request iteration. The final desktop `pnpm test` rerun passes all 66 files / 790 tests, type checking and production build (`/tmp/delidev-pr-handoff-frontend.log`). Two source files received only trailing-blank-line cleanup. The affected Go race/vet, API-client, protocol-generation and root Rust results above remain the validation for their unchanged implementation. The branch-wide whitespace check passes outside the unmodified, tool-owned protobuf TypeScript generator’s final blank line. Generated desktop/client dist directories were removed. Issue #964 remains incomplete, and actual token/private/SSO acceptance remains explicitly deferred.
+
+## Windows workspace-recovery CI wait repair (2026-09-26)
+
+PR #988's Windows Go job `108087485872` in run `36139926794` failed the
+`local-mismatched-journal` recovery retry after its five-second fixture deadline.
+That deadline was shorter than the existing two-minute native recovery plus
+thirty-second result-report budgets. No production deadline or recovery
+authorization was changed. The fixture now uses a bounded three-minute wait,
+checks the exact recovery job and session together, detects early Worker exit,
+and emits only typed state transitions and elapsed time. Its original journal,
+uncertainty, explicit-retry, pause/archive and checkout-preservation assertions
+remain intact.
+
+On macOS arm64 with Go 1.26.8, the original focused case passed three ordinary
+runs. A private PATH wrapper that sleeps 700 ms before executing the real
+`/usr/bin/git` reproduced the same retry-timeout failure in the old fixture.
+With the fix, that same real SQLite/Connect/Worker/Git scenario passed; the
+explicit retry completed after 8.251 seconds and retained the original journal,
+unborn branch and staged content. This reproduces slow native-tool latency,
+not native Windows acceptance. The wrapper and output remain temporary and
+never replace the installed Git executable.
+
+After the repair, `go test -race ./cmds/delidev-cli/...` and
+`go vet ./cmds/delidev-cli/...` passed on macOS arm64. The updated server test
+binary also cross-compiled for Windows amd64 with CGO disabled. Hosted Windows
+execution after the repair push is not claimed. No Rust, frontend, production
+runtime, model or texture bytes changed, and no generated `dist` was retained.

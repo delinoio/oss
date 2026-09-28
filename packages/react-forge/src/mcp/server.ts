@@ -19,7 +19,7 @@ export async function serve(cwd: string): Promise<number> {
   // bounds unfinished frames while leaving room for that encoding and metadata.
   const transport = new StdioServerTransport(process.stdin, process.stdout, { maxBufferSize: limits.treeBytes * 6 + 64 * 1024 });
   const child = fork(new URL("./worker.js", import.meta.url), [], {
-    cwd, execArgv: ["--import", import.meta.resolve("tsx")], stdio: ["ignore", "ignore", "ignore", "ipc"], serialization: "json",
+    cwd, execArgv: ["--enable-source-maps", "--import", import.meta.resolve("tsx")], stdio: ["ignore", "ignore", "ignore", "ipc"], serialization: "json",
   });
   const pending = new Map<number, Pending>();
   let nextId = 0;

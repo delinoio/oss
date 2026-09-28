@@ -22,6 +22,9 @@ jobs:
     outputs:
       jobs: ${{ steps.plan.outputs.jobs }}
       forced: ${{ steps.plan.outputs.forced }}
+      event: ${{ steps.plan.outputs.event }}
+      desktop_matrix: ${{ steps.plan.outputs.desktop_matrix }}
+      react_forge_matrix: ${{ steps.plan.outputs.react_forge_matrix }}
       base: ${{ steps.plan.outputs.base }}
       head: ${{ steps.plan.outputs.head }}
     steps:
@@ -87,6 +90,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          lfs: true
           fetch-depth: 0
 
       - name: Setup Go
@@ -147,6 +151,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          lfs: true
           fetch-depth: 0
 
       - name: Setup Go
@@ -245,6 +250,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          lfs: true
           fetch-depth: 0
 
       - name: Install Rust toolchain
@@ -275,7 +281,7 @@ jobs:
           cache-on-failure: false
 
       - name: Run clippy
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+        run: cargo clippy --workspace --exclude forge-scene --exclude forge-glb --exclude forge-fbx --all-targets --all-features -- -D warnings
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
@@ -293,6 +299,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          lfs: true
           fetch-depth: 0
 
       - name: Install Rust toolchain
@@ -325,7 +332,7 @@ jobs:
         run: cargo build --locked -p pnport -p pnport-preload
 
       - name: Run cargo test
-        run: cargo test --workspace --all-targets
+        run: cargo test --workspace --exclude forge-scene --exclude forge-glb --exclude forge-fbx --all-targets
 
 
       - name: Save pnpm cache after successful main validation
@@ -346,6 +353,8 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v6
+        with:
+          lfs: true
       - uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: nightly-2026-01-01
@@ -368,6 +377,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          lfs: true
       - uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: nightly-2026-01-01
@@ -408,16 +419,11 @@ jobs:
         shell: bash
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - { id: darwin-x64, runner: macos-15-intel, platform: darwin, architecture: x64, target: x86_64-apple-darwin }
-          - { id: darwin-arm64, runner: macos-15, platform: darwin, architecture: arm64, target: aarch64-apple-darwin }
-          - { id: linux-x64-gnu, runner: ubuntu-22.04, platform: linux, architecture: x64, target: x86_64-unknown-linux-gnu }
-          - { id: linux-arm64-gnu, runner: ubuntu-22.04-arm, platform: linux, architecture: arm64, target: aarch64-unknown-linux-gnu }
-          - { id: win32-x64-msvc, runner: windows-2022, platform: win32, architecture: x64, target: x86_64-pc-windows-msvc }
-          - { id: win32-arm64-msvc, runner: windows-11-arm, platform: win32, architecture: arm64, target: aarch64-pc-windows-msvc }
+      matrix: ${{ fromJSON(needs.changes.outputs.react_forge_matrix) }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          lfs: true
       - uses: ./.github/actions/setup-ci-node
         id: ci-node
       - uses: dtolnay/rust-toolchain@v1
@@ -440,30 +446,6 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: ./packages/react-forge/scripts/install-ci-fonts.ps1
-      - name: Verify supported host and native contracts
-        run: |
-          node -e 'if (process.platform !== "${{ matrix.platform }}" || process.arch !== "${{ matrix.architecture }}" || process.versions.node.split(".")[0] !== "24") process.exit(1)'
-          cargo test --target ${{ matrix.target }} -p forge-package -p forge-document -p forge-docx -p forge-xlsx -p forge-pdf -p forge-figma -p forge-tree-doc -p forge-pptx -p delino-forge
-          cargo test --target ${{ matrix.target }} -p forge-document -p forge-pdf -- --include-ignored
-          cargo clippy --target ${{ matrix.target }} -p react-forge-node -p forge-package -p forge-document -p forge-docx -p forge-xlsx -p forge-pdf -p forge-figma --all-targets -- -D warnings
-      - name: Build and test library, installed CLI and stdio MCP
-        run: |
-          set -o pipefail
-          pnpm exec turbo run build typecheck lint test --filter=@delino/react-forge 2>&1 | tee "$RUNNER_TEMP/react-forge-turbo.log"
-      - name: Typecheck standalone document examples
-        run: pnpm --filter @delino/react-forge typecheck:examples
-      - name: Verify Windows console cancellation
-        if: runner.os == 'Windows'
-        env:
-          REACT_FORGE_WINDOWS_CONSOLE_TEST: "1"
-        run: cargo test --target ${{ matrix.target }} -p react-forge-node --test windows_console -- --nocapture
-      - name: Generate travel investor example
-        run: pnpm --filter @delino/react-forge cli run examples/travel-ir.tsx --output "$RUNNER_TEMP/react-forge-travel-ir.pptx" --json
-      - name: Verify installed public package on this host
-        run: |
-          node packages/react-forge/scripts/package.mjs main
-          node packages/react-forge/scripts/package.mjs native
-          node packages/react-forge/scripts/install-smoke.mjs
       - name: Install test-only macOS renderers
         if: runner.os == 'macOS'
         run: |
@@ -477,13 +459,8 @@ jobs:
           sudo apt-get install -y libreoffice poppler-utils python3-venv
           python3 -m venv "$RUNNER_TEMP/react-forge-python"
           "$RUNNER_TEMP/react-forge-python/bin/pip" install -r packages/react-forge/scripts/render-requirements.txt
-      - name: Verify generated and edited Office and native PDF output
-        if: runner.os != 'Windows'
-        env:
-          REACT_FORGE_PYTHON: ${{ runner.temp }}/react-forge-python/bin/python
-        run: pnpm --filter @delino/react-forge test:render --output "$RUNNER_TEMP/react-forge-render"
-      - name: Measure representative and near-limit workloads
-        run: pnpm --filter @delino/react-forge benchmark --output "$RUNNER_TEMP/react-forge-benchmark.json"
+      - name: Validate native engine, installed CLI, renders, and benchmark
+        run: bash packages/react-forge/scripts/validate-host.sh "${{ matrix.target }}"
       - name: Retain rendering and benchmark evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -597,6 +574,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          lfs: true
           fetch-depth: 0
           persist-credentials: false
 
@@ -669,6 +647,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          lfs: true
           fetch-depth: 0
           persist-credentials: false
 
@@ -739,67 +718,15 @@ jobs:
     timeout-minutes: 90
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - id: macos-x64
-            runner: macos-15-intel
-            os: macos
-            bundle: dmg
-            package: macos-app
-          - id: macos-arm64
-            runner: macos-15
-            os: macos
-            bundle: dmg
-            package: macos-app
-          - id: windows-x64-nsis
-            runner: windows-2022
-            os: windows
-            bundle: nsis
-            package: windows-nsis
-          - id: windows-x64-msi
-            runner: windows-2022
-            os: windows
-            bundle: msi
-            package: windows-msi
-          - id: windows-arm64-nsis
-            runner: windows-11-arm
-            os: windows
-            bundle: nsis
-            package: windows-nsis
-          - id: windows-arm64-msi
-            runner: windows-11-arm
-            os: windows
-            bundle: msi
-            package: windows-msi
-          - id: ubuntu-x64-deb
-            runner: ubuntu-22.04
-            os: linux
-            bundle: deb
-            package: linux-deb
-          - id: ubuntu-x64-appimage
-            runner: ubuntu-22.04
-            os: linux
-            bundle: appimage
-            package: linux-appimage
-          - id: ubuntu-arm64-deb
-            runner: ubuntu-22.04-arm
-            os: linux
-            bundle: deb
-            package: linux-deb
-          - id: ubuntu-arm64-appimage
-            runner: ubuntu-22.04-arm
-            os: linux
-            bundle: appimage
-            package: linux-appimage
-
+      matrix: ${{ fromJSON(needs.changes.outputs.desktop_matrix) }}
     env:
       MACOSX_DEPLOYMENT_TARGET: "13.0"
       DEVHUD_EXTENSION_TEST_BUILD: "1"
-
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          lfs: true
           fetch-depth: 0
 
       - name: Setup Node.js
@@ -1103,6 +1030,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          lfs: true
           fetch-depth: 0
 
       - name: Setup Node.js
@@ -1392,6 +1320,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          lfs: true
           fetch-depth: 0
 
       - name: Setup Go
@@ -1481,6 +1410,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          lfs: true
           fetch-depth: 0
           persist-credentials: false
 
@@ -1743,7 +1673,7 @@ jobs:
       - name: Verify affected workspace runner
         run: node --test scripts/ci/run-affected.test.mjs
       - name: Test Rust utilities, readiness, configuration processing, and OS adapters
-        run: cargo test --locked -p clibox -p clibox-config -p clibox-system -p clibox-transform -p clibox-wait
+        run: cargo test --locked -p clibox -p clibox-config -p clibox-fspy -p clibox-system -p clibox-transform -p clibox-wait
       - name: Test launcher and native npm consumers
         env:
           FORCE_RUN: ${{ fromJSON(needs.changes.outputs.forced)['node-clibox-test'] }}

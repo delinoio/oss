@@ -72,6 +72,47 @@ func TestConfigRejectsUnsafeOrImpossibleSettings(t *testing.T) {
 		})
 	}
 }
+
+func TestHelpShowsCurrentVersion(t *testing.T) {
+	var out, errs bytes.Buffer
+	if code := Execute([]string{"--help"}, &out, &errs); code != 0 {
+		t.Fatalf("help returned %d: %s", code, errs.String())
+	}
+	if !strings.HasPrefix(out.String(), "Runmoor "+Version+" -") {
+		t.Fatalf("help did not show current version %q: %s", Version, out.String())
+	}
+
+	out.Reset()
+	if code := Execute([]string{"version"}, &out, &errs); code != 0 {
+		t.Fatalf("version returned %d: %s", code, errs.String())
+	}
+	if !strings.HasPrefix(out.String(), "runmoor "+Version+" (") {
+		t.Fatalf("version did not show current version %q: %s", Version, out.String())
+	}
+
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "status", args: []string{"status", "--help"}},
+		{name: "image create", args: []string{"image", "create", "--help"}, want: "Image options:"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			out.Reset()
+			if code := Execute(tc.args, &out, &errs); code != 0 {
+				t.Fatalf("help returned %d: %s", code, errs.String())
+			}
+			if !strings.HasPrefix(out.String(), "Runmoor "+Version+" -") {
+				t.Fatalf("command help did not show current version %q: %s", Version, out.String())
+			}
+			if tc.want != "" && !strings.Contains(out.String(), tc.want) {
+				t.Fatalf("command help omitted %q: %s", tc.want, out.String())
+			}
+		})
+	}
+}
+
 func TestStrictTOMLAndProtectedCredentials(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Unix permissions")
@@ -120,18 +161,15 @@ func TestCLIInitAndErrors(t *testing.T) {
 	c := fixtureConfig(t)
 	p := filepath.Join(filepath.Dir(c.Storage.State), "config.toml")
 	var out, errs bytes.Buffer
-	if code := Execute([]string{"init", "--config", p}, &out, &errs); code != 0 {
+	if code := Execute([]string{"init", "--config", p, "--backend", "docker", "--target", "https://github.com/example/repo", "--credential-env", "TEST_PAT"}, &out, &errs); code != 0 {
 		t.Fatal(errs.String())
 	}
-	if code := Execute([]string{"init", "--config", p}, &out, &errs); code == 0 {
+	if code := Execute([]string{"init", "--config", p, "--backend", "docker", "--target", "https://github.com/example/repo", "--credential-env", "TEST_PAT"}, &out, &errs); code == 0 {
 		t.Fatal("overwrote config")
 	}
 	errs.Reset()
-	if code := Execute([]string{"config", "validate", "--config", p, "--json"}, &out, &errs); code != 2 {
-		t.Fatalf("incomplete skeleton accepted: %d", code)
-	}
-	if !strings.Contains(errs.String(), `"schema_version": 1`) || !strings.Contains(errs.String(), `"code": "CONFIG_INVALID"`) {
-		t.Fatal(errs.String())
+	if code := Execute([]string{"config", "validate", "--config", p, "--json"}, &out, &errs); code != 0 {
+		t.Fatalf("minimal config rejected: %d %s", code, errs.String())
 	}
 	out.Reset()
 	Execute([]string{"version"}, &out, &errs)

@@ -1,5 +1,7 @@
 # Install React Forge
 
+Install the package, verify its CLI, then follow [Getting started](/react-forge/getting-started) to export a first presentation.
+
 ## Requirements
 
 Use Node.js 24 on macOS, Windows, or glibc Linux, with an x64 or arm64 CPU. Alpine/musl, other CPU architectures, and other Node.js major versions are unsupported. Linux needs Fontconfig for system font discovery. Install suitable CJK, RTL, and emoji fonts for the text you generate, or [register fonts explicitly](/react-forge/sessions#fonts-and-assets).
@@ -21,4 +23,6 @@ npx react-forge --help
 
 For a project-local command, use `npx react-forge run hello.tsx --output hello.pptx` after creating the task in [Getting started](/react-forge/getting-started). Keep optional dependencies enabled in deployment and CI installs; a missing matching native package produces an explicit package error. There is no runtime fallback download or build.
 
-Local PPTX, DOCX, XLSX, and PDF work needs no Figma account. [Figma workflows](/react-forge/figma) require a separately connected official Figma MCP server and currently have a narrower live-authentication environment than the six local-document hosts.
+Local PPTX, DOCX, XLSX, and PDF work needs no Figma account. [Figma workflows](/react-forge/formats/figma/) require a separately connected official Figma MCP server and currently have a narrower live-authentication environment than the six local-document hosts.
+
+If verification fails, start with the [installation failure guidance](/react-forge/limits-and-troubleshooting#common-failures). After a successful first export, choose the [format guide](/react-forge/#choose-a-workflow) for the document you want to create.

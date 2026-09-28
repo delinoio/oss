@@ -48,7 +48,7 @@ Protocol diagnostics may expose typed safe error fields and UUID v7 correlation 
 
 ## Build and Test
 
-Use Buf v2 `STANDARD` lint and `FILE` breaking policy. Generation pins Buf 1.72.0, protoc-gen-go 1.36.12, Connect-Go/protoc-gen-connect-go 1.20.0, Protobuf-ES 2.14.0, and protoc-gen-connect-query 2.3.1. Run schema formatting/lint, breaking-change checks, clean generated freshness, API conformance, enum/path consistency, Go/TypeScript serialization, pagination, forbidden-field, Connect Query export and React Query integration, and typed error-mapping tests in CI. Any wire change updates this contract, the server, client, and app contracts together.
+Use Buf v2 `STANDARD` lint and `FILE` breaking policy. Generation pins Buf 1.72.0, protoc-gen-go 1.36.12, Connect-Go/protoc-gen-connect-go 1.20.0, Protobuf-ES 2.14.0, and protoc-gen-connect-query 2.3.1. The breaking check skips Git LFS smudging only in Buf's local baseline clone, which compares proto files and may otherwise request unrelated assets from an incomplete `file://` LFS remote; build and package checkouts still hydrate their required assets. Run schema formatting/lint, breaking-change checks, clean generated freshness, API conformance, enum/path consistency, Go/TypeScript serialization, pagination, forbidden-field, Connect Query export and React Query integration, and typed error-mapping tests in CI. Any wire change updates this contract, the server, client, and app contracts together.
 
 ## Dependencies and Integrations
 

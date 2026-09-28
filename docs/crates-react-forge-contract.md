@@ -100,3 +100,29 @@ Word chart editability validates a closed ChartML/DrawingML structure and baseli
 PDF semantic headings and table headers default to bold only when bold is omitted. Explicit false remains authoritative before shaping, and run-level overrides continue to win over the heading default.
 
 Imported DOCX targets retain a source flow width in points. Body mounts use their enclosing section's page width minus horizontal margins; cell mounts and their nested paragraphs use the source preferred/grid width minus cell, row, table and inherited table-style margins. Omitted start/end margins follow the [Open XML 115-twip default](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.endmargin?view=openxml-3.0.1). Mounted geometry remains local authoring flow, not Word pagination or autofit. Unresolved widths (including multiple columns, gutter placement, conditional cell margins or headers shared by unequal sections) omit geometry, so measurement returns `InvalidTarget` while otherwise safe export remains available; they never receive a fabricated 468-point width.
+
+## Static 3D extension
+
+The generation-only GLB/FBX extension follows [the scene contract](packages-react-forge-scene-contract.md). `SceneSession` shares local publication and MCP lifecycle, uses independent world-space bounds and native scene engines, and introduces no runtime conversion dependency.
+
+## Sprite Engine Extension
+`forge-sprite` adds an independent bounded pixel model, deterministic CPU RGBA rasterization, PNG encoding and ZIP assembly; `react-forge-node/src/sprite.rs` connects the shared generation worker and diagnostics. It reuses cancellation and bounded ZIP output while preserving Office models and all existing font behavior. It does not use the OOXML-specific package reader. Follow the [sprite contract](packages-react-forge-sprite-contract.md) for exact dimensions, work/memory bounds, color/sampling semantics and archive metadata. Raster output is authored only; sprite import is rejected.
+
+## SFX extension
+
+`forge-sfx` independently validates and synthesizes the bounded sound model under the [SFX contract](packages-react-forge-sfx-contract.md). The N-API adapter dispatches format `wav` generation on an existing worker, emits operation-scoped diagnostics and returns PCM16 bytes plus timeline frames without font discovery. No React, audio device, filesystem or network I/O enters synthesis.
+
+## 3D animation follow-up (Unreleased)
+
+`forge-scene` owns joints, per-mesh inverse bind palettes, morph targets, clips
+and the shared STEP/LINEAR/CUBIC evaluator. Morphs precede linear blend skinning;
+measurement and FBX baking share validated sampler evaluation. The worker accepts
+bounded copied FSG2 geometry and FSA1 sampler assets, retaining FSG1 compatibility.
+Bind-palette expansion is checked against 256 MiB before each allocation. GLB
+writes standard skin/animation/morph structures. FBX writes stacks/layers/curves,
+LimbNode/Cluster bind data and BlendShape channels; importer-facing object names
+use FBX's AnimStack/AnimLayer/AnimCurve class names. Rotation/CUBIC export uses
+bounded frequency-controlled samples plus original keys, with Euler continuity
+and the existing camera/light basis conversion. There is no JavaScript callback,
+networking or external converter in native workers. Follow the complete
+[scene contract](packages-react-forge-scene-contract.md).

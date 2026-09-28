@@ -10,6 +10,10 @@ mod diagnostics;
 mod docx;
 mod pdf;
 mod pptx;
+mod scene;
+pub use scene::{SceneAssetOperation, validate_scene_asset};
+mod sfx;
+mod sprite;
 mod xlsx;
 
 enum Format {
@@ -17,6 +21,10 @@ enum Format {
     Docx,
     Xlsx,
     Pdf,
+    Glb,
+    Fbx,
+    Sprite,
+    Wav,
 }
 use napi::{
     Env, Task,
@@ -133,13 +141,21 @@ impl Task for Operation {
             Format::Docx => "docx",
             Format::Xlsx => "xlsx",
             Format::Pdf => "pdf",
+            Format::Glb => "glb",
+            Format::Fbx => "fbx",
+            Format::Sprite => "sprite",
+            Format::Wav => "wav",
         };
         let operation = match self.kind {
             OperationKind::Generate => "generate",
             OperationKind::Inspect => "inspect",
             OperationKind::Update => "update",
         };
-        let stage = if matches!(self.kind, OperationKind::Inspect) {
+        let stage = if matches!(self.kind, OperationKind::Inspect)
+            && matches!(self.format, Format::Glb | Format::Fbx)
+        {
+            "layout"
+        } else if matches!(self.kind, OperationKind::Inspect) {
             "import"
         } else {
             "export"
@@ -150,6 +166,9 @@ impl Task for Operation {
             let mut result = forge_tree_doc::cancellation::with_cancellation(self.cancelled.clone(), || match self.format {
                 Format::Pptx => pptx::process(self), Format::Docx => docx::process(self),
                 Format::Xlsx => xlsx::process(self), Format::Pdf => pdf::process(self),
+                Format::Glb | Format::Fbx => scene::process(self),
+                Format::Wav => sfx::process(self),
+                Format::Sprite => sprite::process(self),
             });
             if self.cancelled.load(Ordering::Acquire){result=Err(Diagnostic::new(ErrorCode::Cancelled,"","The native operation was cancelled"));}
             let code=result.as_ref().err().and_then(|e|serde_json::to_value(e.code).ok()).and_then(|v|v.as_str().map(str::to_owned)).unwrap_or_default();
@@ -214,6 +233,10 @@ pub fn process_document(
         "docx" => Format::Docx,
         "xlsx" => Format::Xlsx,
         "pdf" => Format::Pdf,
+        "glb" => Format::Glb,
+        "fbx" => Format::Fbx,
+        "sprite" => Format::Sprite,
+        "wav" => Format::Wav,
         _ => {
             return Err(native_error(Diagnostic::new(
                 ErrorCode::UnsupportedPackage,

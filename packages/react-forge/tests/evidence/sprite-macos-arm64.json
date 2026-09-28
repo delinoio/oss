@@ -1,0 +1,50 @@
+{
+  "date": "2026-09-25",
+  "host": "darwin-arm64",
+  "node": "24.20.0",
+  "implementationCommit": "4116283a1735fcc0d8b21adc7f15b4256c2d9acb",
+  "example": "examples/sprite.tsx",
+  "frameCount": 8,
+  "sheetSize": {
+    "h": 272,
+    "w": 544
+  },
+  "animations": [
+    {
+      "from": 0,
+      "loop": true,
+      "name": "idle",
+      "to": 1
+    },
+    {
+      "from": 2,
+      "loop": false,
+      "name": "hop",
+      "to": 7
+    }
+  ],
+  "sheetSha256": "006e4a9230e9dfacc60a05c2387004d5d58d43685757ad9a212f1a91923ea02e",
+  "archiveBytes": 8200,
+  "visualInspection": "Sheet inspected; transparent padding, idle frames and hop poses visible. Final rebuilt export matches the inspected sheet bytes.",
+  "checks": {
+    "nativeSpriteTests": 8,
+    "spriteIntegrationTests": 7,
+    "packageTests": 110,
+    "ciContractTests": 37,
+    "forgeRegressionTests": 126,
+    "forgeRegressionIgnored": 1,
+    "clippy": "passed with warnings denied",
+    "buildTypecheckLintExamples": "passed",
+    "installedWorkspaceCliMcp": "passed",
+    "installedPublicCandidateLocalFormats": 5,
+    "rootCargoTests": 1930,
+    "rootCargoIgnored": 3,
+    "rootCargoCommand": "TMPDIR=/private/tmp cargo test",
+    "rootPreparation": "cargo build -p pnport -p fspy_preload_unix --features fspy_preload_unix/pnport"
+  },
+  "limits": [
+    "Local macOS arm64 validation only; other host results await CI.",
+    "Sprite import, artwork generation and engine-specific importer compatibility are not claimed.",
+    "This source extension is not published in npm 0.1.1."
+  ]
+}

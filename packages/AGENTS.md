@@ -59,7 +59,7 @@
 - Finalize the executable header mode during tarball creation before recording integrity, independent of host filesystem permissions. Artifact verification must never repair or rewrite downloaded tarballs.
 - Build both Linux musl targets with the pinned Rust toolchain's `rust-lld` and self-contained runtime objects. Keep native-host and Alpine consumer execution gates; adding C dependencies requires revisiting this toolchain contract.
 
-- clibox GNU npm and GitHub Release archives must contain the same verified AlmaLinux 9/glibc 2.34 binaries. Its separately guarded GitHub publisher validates the complete nine-tarball input, exact tag/commit and source version, preserves immutable assets and reuses verified signatures before stable APT/DNF publication. The npm enable flag gates only npm. Neither publisher may query crates.io or require Cargo registry publication. Include all five clibox crate directories in package test inputs and native CI selection.
+- clibox GNU npm and GitHub Release archives must contain the same verified AlmaLinux 9/glibc 2.34 binaries. Its separately guarded GitHub publisher validates the complete nine-tarball input, exact tag/commit and source version, preserves immutable assets and reuses verified signatures before stable APT/DNF publication. The npm enable flag gates only npm. Neither publisher may query crates.io or require Cargo registry publication. Include all six clibox crate directories and affected fspy interception sources in package test inputs and native CI selection. Installed package smoke must check the fspy command family on every target before its first release.
 
 ### pnport Rules
 
@@ -94,7 +94,9 @@
 
 - DeliDev IntegrationQuery includes generated repository content queries. Keep strict query/scope validation, exact decimal IDs with original API identity source, explicit search/page limits and nullable mergeability; no query cache or content response may carry saved PATs.
 
-
 - DeliDev retained PR feedback uses generated IntegrationQuery refresh/list/dismissal bindings. Preserve exact remote numeric strings, resource revisions and original content-version/request identities. No implicit collection, mutation retry, handling inference or browser persistence is allowed; follow the integration contract.
 
 - DeliDev IntegrationQuery exposes generated retained remediation-history and explicit allowance-resumption bindings. Preserve exact numeric PR IDs and original set/revision/request identity without persistence, implicit mutation retry or execution inference; follow the integration/client contracts.
+
+- React Forge GLB/FBX scene and animation sessions follow `docs/packages-react-forge-scene-contract.md`; preserve the shared React, atomic export and MCP lifecycle while keeping the 3D model independent from Office/PDF.
+- React Forge `/sfx` adds generation-only WAV sessions under `docs/packages-react-forge-sfx-contract.md`; preserve original procedural-example provenance, expose synthesis limits, and distinguish this unreleased extension from npm `0.1.1`.

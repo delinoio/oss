@@ -5,7 +5,11 @@ export enum Format {
   Docx = "docx",
   Xlsx = "xlsx",
   Pdf = "pdf",
+  Sprite = "sprite",
+  Wav = "wav",
   Figma = "figma",
+  Glb = "glb",
+  Fbx = "fbx",
 }
 
 export enum ErrorCode {
@@ -62,7 +66,7 @@ export interface NodeHandle {
 }
 
 export interface Geometry {
-  readonly coordinateSpace?: "word_flow" | "worksheet" | "mounted_region" | "page";
+  readonly coordinateSpace?: "word_flow" | "worksheet" | "mounted_region" | "page" | "sprite_frame" | "timeline";
   readonly x: number;
   readonly y: number;
   readonly width: number;
@@ -100,6 +104,11 @@ export type AssetSource = Uint8Array | { path: string };
 export interface AssetHandle { readonly assetId: string; readonly documentId: string }
 
 export const limits = Object.freeze({
+  sceneBytes: 256 * 1024 * 1024,
+  geometryBytes: 64 * 1024 * 1024,
+  sfxSeconds: 30,
+  sfxLayers: 256,
+  sfxVoiceSamples: 16_000_000,
   officeBytes: 256 * 1024 * 1024,
   pdfBytes: 256 * 1024 * 1024,
   expandedOfficeBytes: 512 * 1024 * 1024,

@@ -28,6 +28,7 @@
 - `crates/cargo-mono`: Cargo-based Rust monorepo management CLI.
 - `crates/clibox`: non-publishable Rust executable distributed through npm and native packages.
 - `crates/clibox-config`, `crates/clibox-system`, `crates/clibox-transform`, `crates/clibox-wait`: non-publishable clibox command-family implementations.
+- `crates/clibox-fspy`: private, non-publishable issue #971 file-access workflow crate. Treat legacy fspy path-access hints as attempts only; never infer a successful content read or complete operation trace from them. Follow `docs/crates-clibox-fspy-contract.md`.
 - `crates/nodeup`: Rust-based Node.js version manager.
 - `crates/with-watch`: Rust-based filesystem-watching command wrapper.
 - `crates/serde-feather`: Size-first serde runtime-facing core crate.
@@ -176,7 +177,10 @@
 
 ### clibox Rules
 
-- Keep the CLI README and `apps/public-docs/docs/clibox` aligned with user-facing behavior. Follow `docs/apps-clibox-docs-foundation.md`; the consolidated public guide covers all 25 next-release commands while version-specific guidance preserves the 19-command published 0.1.6 surface, including their limits, cancellation, and migration guidance.
+- YAML structural sharing uses `imbl` with `RcK`, preserving ordered-map diffing, bounded expansion accounting, and single-threaded reference sharing. Keep the panic-safe chunk dependency and the long shadowed-merge/resource-limit fixtures when updating collections.
+- Concurrent publication fixtures must preserve fail-closed destination validation: a Unix handle unlinked by another successful replacement may return `UnsafeDestination`. Require at least one successful writer, one complete successful payload, and clean staging; retain deterministic zero-link rejection coverage.
+
+- Keep the CLI README and `apps/public-docs/docs/clibox` aligned with user-facing behavior. Follow `docs/apps-clibox-docs-foundation.md`; the consolidated public guide covers the 25 commands published in 0.2.0 and marks issue #971 fspy workflows as source-only until a separate release.
 
 - clibox CLI consistency uses canonical `run env`, `port list`, and `hash compute` without old-name aliases. Report `--quiet` suppresses stdout; PID selection is only `port list --pids`. File-output commands interpret `--output -` as stdout and `./-` as a literal dash file; `--force` requires real file output or `--in-place`. Keep short/long help, static redacted migration guidance, numeric owned-operation cancellation (130/143), filtered-error visibility, and native/npm behavior synchronized.
 
@@ -193,7 +197,8 @@
 - Install signal handlers only for the selected command family: private configuration runtime cancellation returns numeric 130/143 after cleanup, the Tokio readiness runtime returns numeric cancellation with final JSON, the utility runtime returns numeric 130/143 for owned operations while preserving delegated child status/Unix signals, and the transformation supervisor returns numeric 130/143 after cleaning unpublished output.
 - Keep transformations offline and in Rust, binary input streaming for Base64/hash, timezone rules bundled and pinned, and publication restricted to completed output with preserved access permissions. Replacement must not require reading the existing output contents; request only metadata/security access and still fail if permissions cannot be preserved. Reject linked replacement destinations and sanitize parser/dependency/runtime errors before stderr. No input content, patterns, replacements, digests, argv, or paths belong in diagnostics. OS-command signals and transformation cancellation retain their distinct exit/publication contracts behind one command tree.
 - Keep configuration publication in `clibox-config::config_publication` and streaming transformation publication in `clibox-transform::publication`: their result validation, staging ownership, permissions, and cancellation lifecycles follow their respective contracts. Do not route one command family through the other family's publication or signal handlers.
-- All five clibox crates remain explicit workspace members with `publish = false` and are excluded from cargo-mono registry publication. Keep root command composition in `clibox`, configuration processing in `clibox-config`, OS utilities in `clibox-system`, offline transformations in `clibox-transform`, and readiness in `clibox-wait`, using direct path dependencies without companion-to-companion dependencies. Changes beyond the documented command contracts require an explicit contract update.
+- Keep fspy report publication in `clibox-fspy::publication` with the same native replacement permissions and cleanup guarantees; its companion crate must not depend on transformation publication.
+- All six clibox crates remain explicit workspace members with `publish = false` and are excluded from cargo-mono registry publication. Keep root command composition in `clibox`, configuration processing in `clibox-config`, OS utilities in `clibox-system`, offline transformations in `clibox-transform`, readiness in `clibox-wait`, and file-access workflows in `clibox-fspy`, using direct path dependencies without companion-to-companion dependencies. Changes beyond the documented command contracts require an explicit contract update.
 - Wait command kinds, HTTP methods, outcomes, and error classifications use enums. Poll immediately, delay only after unsuccessful attempts, clip all work/delays to monotonic deadlines, and cancel without target mutation or service termination.
 - Let every resolved TCP address attempt finish within the shared deadline until any succeeds; preserve terminal errors only for an all-address failure instead of discarding other addresses on one destination's error.
 - Use Rust networking and metadata only. HTTP verifies OS trust/hostname, completes at headers, disables proxies/credentials/redirects/client retries and custom CA overrides; file readiness follows symlinks but requires a regular file.
@@ -204,7 +209,7 @@
 - Keep injected-clock, loopback/TLS, filesystem, privacy, and native signal tests. Trust fixtures must never modify user certificate stores. Preserve standalone runtime behavior and document crypto build-tool changes across the eight-target matrix.
 - npm cancellation integration must use a disposable Windows console, clear inherited Ctrl+C-ignore state only there, and verify native configuration exit 130 and transformation cleanup/exit 130 through the Node launcher for Ctrl+C and Ctrl+Break. Repository CI provides Node for this npm-source-dependent integration.
 - Delayed TCP readiness fixtures must retain a bound socket until listening starts; never release and reacquire ephemeral ports while parallel fixtures can reuse them.
-- Keep each clibox crate Apache-2.0 licensed. Run all five crates' unit tests plus the executable process tests and npm/native packaging checks; Cargo publication dry-runs are not a clibox completion gate. Companion versions are internal and do not participate in product version bumps.
+- Keep each clibox crate Apache-2.0 licensed. Run all six crates' unit tests plus the executable process tests and npm/native packaging checks; Cargo publication dry-runs are not a clibox completion gate. Companion versions are internal and do not participate in product version bumps. Issue #971 requires native fspy behavior evidence on all eight package targets and a pnport regression gate when shared interception changes.
 - Cross-command tests must account for Windows `run env` variable conversion, including numeric `$1` references, separately from direct transformation capture parsing and literal npm launcher forwarding.
 - Checksum generation with explicit file output must rebase relative inputs against the manifest directory, resolving symlink parents before rebasing; preserve absolute inputs and stdout filename behavior.
 - Windows transformation publication must retain temporary-file rename/cleanup access before copying permissions, replace read-only destinations without clearing their attributes, and leave originals unchanged on cancellation or failed publication. Apply temporary access attributes before the original DACL so denied attribute writes do not block an otherwise authorized replacement. Unsupported filesystem rename capabilities fail closed.
@@ -249,6 +254,8 @@
 
 ### React Forge Engine Rules
 
+- `forge-sprite` owns the independent sprite model and CPU pixel renderer under `docs/packages-react-forge-sprite-contract.md`. Validate hidden nodes, bound decoded images and combined frame/atlas raster work, poll cancellation during rasterization and bounded PNG compression (including within wide scanlines), preserve deterministic alpha/nearest-neighbor output, and return one bounded archive without filesystem or network access.
+
 - `forge-figma` owns pure bounded Figma model validation, preservation-aware diff and batch planning. Keep OAuth, network I/O and JavaScript execution outside Rust workers. Follow `docs/packages-react-forge-figma-contract.md`.
 
 - Follow `docs/crates-react-forge-contract.md` and the complete issue #968 requirements. `forge-package` owns shared bounded OOXML preservation; `forge-document` owns shared text/style, asset and chart primitives; `forge-docx`, `forge-xlsx`, and `forge-pdf` own independent models and engines. `react-forge-node` is only the private N-API adapter.
@@ -271,3 +278,7 @@
 - Presentation text editability must validate paragraph/run semantics as well as body geometry, including table-cell text. Preserve unmodeled fields, links, bullets, defaults and extensions as opaque content.
 - Imported PPTX update envelopes must contain replacements and source identity, not a serialized copy of untouched Office content. Apply the React-tree input ceiling to authored work without making successfully imported large documents unexportable.
 - Imported DOCX mounted measurements must use source section/cell flow constraints. Preserve unknown width as unavailable geometry while retaining safe edits; never substitute a default page width for ambiguous source layout.
+
+- `forge-scene`, `forge-glb` and `forge-fbx` own bounded 3D scene/animation validation and converter-free GLB/FBX generation under `docs/packages-react-forge-scene-contract.md`. Use cancellation checkpoints, preserve meter/Y-up semantics, embed textures, and verify FBX independently with ufbx. Never copy GPL exporter code into repository-owned engines.
+- FBX animation export must reject adjacent source-key intervals shorter than one FBX tick before baking or rounding; distinct rounded ticks do not prove a representable source interval.
+- `forge-sfx` owns independent bounded procedural game-audio synthesis and PCM16 WAV encoding under `docs/packages-react-forge-sfx-contract.md`. Validate before allocation, check cooperative cancellation during synthesis/encoding, and keep devices, files, networking and callbacks outside the engine. Add its tests and Clippy to the six-host React Forge gates.

@@ -140,7 +140,7 @@ describe("DocsSiteSwitcher", () => {
     (pathname) => expect(getDocumentationSiteForPathname(pathname)).toBe(DocumentationSiteId.PublicDocs),
   );
 
-  it.each(["/react-forge", "/react-forge/", "/react-forge/figma", "/react-forge/mcp/"])(
+  it.each(["/react-forge", "/react-forge/", "/react-forge/formats/figma/", "/react-forge/mcp/"])(
     "selects React Forge for %s",
     (pathname) => {
       renderSwitcher(getDocumentationSiteForPathname(pathname));

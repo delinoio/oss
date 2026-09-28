@@ -71,8 +71,10 @@ test("unresolved Suspense is cancellable and disposal releases waiting operation
   controller.abort(new Error("sensitive signal reason"));
   await assert.rejects(waiting, { code: ErrorCode.Cancelled });
   const disposed = root.settled();
+  // Observe rejection before disposal can settle it on faster schedulers.
+  const rejected = assert.rejects(disposed, { code: ErrorCode.Disposed });
   await root.dispose();
-  await assert.rejects(disposed, { code: ErrorCode.Disposed });
+  await rejected;
 });
 
 test("Activity excludes hidden nodes, retains state and restores effects", async () => {

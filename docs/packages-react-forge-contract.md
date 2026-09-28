@@ -59,7 +59,7 @@ Pinned exports snapshot font registrations along with model/assets, and font cha
 
 
 ## Validation and CI
-The `react-forge` CI job is selected on affected PRs and main pushes. Its six native runners cover macOS x64/arm64, Windows x64/arm64 and glibc Linux x64/arm64 with Node 24; each builds the private binding, runs native and existing Forge regressions plus Clippy, and invokes package-owned build/typecheck/lint/test tasks through Turbo. Native/system-font-dependent build, test, rendering and benchmark tasks are never Turbo-cacheable. The job has no publication credentials or action. A dependent CI job verifies the complete seven-package candidate; the separate tag workflow owns release publication.
+The `react-forge` CI job is selected on affected source, native engine, and build-script changes on PRs and main pushes; documentation-only edits do not select it. Ordinary CI runs Windows x64/arm64 and glibc Linux x64/arm64 with Node 24. Manual CI runs those four plus macOS x64/arm64. Every selected host builds the private binding, runs non-scene native and existing Forge regressions plus Clippy, and invokes package-owned build/typecheck/lint/test tasks through Turbo. Hosted validation skips the React scene test suite and excludes `forge-scene`, `forge-glb`, and `forge-fbx` from Rust test and Clippy gates; their engine/interoperability/visual acceptance remains local. Native/system-font-dependent build, test, rendering and benchmark tasks are never Turbo-cacheable. The job has no publication credentials or action. The exact-tag release uses the same `scripts/validate-host.sh` command on both Darwin hosts, including installed CLI, Office/PDF rendering, and benchmarks, before complete seven-package candidate assembly or npm publication.
 
 Test-only LibreOffice/Poppler and pinned Python inspection dependencies produce created/edited Office renders plus independent native PDF renders. Original external Office fixtures are rendered alongside edits so original pagination, including deliberate blank pages, is distinguished from lost output. Structural XML, expected text, visible chart series, CJK text and PDF semantics are checked. Tool/font versions and checksums are recorded without redistributing system fonts. CI retains render and benchmark artifacts for seven days and removes generated package dist even on failure.
 
@@ -82,8 +82,31 @@ PPTX `PresentationTextStyle` exposes font family/size, bold, italic, underline a
 Each export/measurement operation retains its pinned revision for JavaScript completion diagnostics and error context, including publication failures after native processing. Concurrent later snapshots cannot relabel earlier results; failures before snapshot preparation report the operation's initial revision.
 
 ## MCP Extension
-The explicit MCP follow-up supersedes the original new-MCP exclusion. `react-forge mcp [--cwd <directory>]` exposes all five formats through memory-only sessions, inline/file TSX execution and explicit local export or remote publication. Follow the [MCP contract](packages-react-forge-mcp-contract.md) for tool inputs, retained state, cancellation, protocol isolation and failure outcomes. `McpTaskContext` and `McpSessionTask` are type-only exports; the existing library and one-shot CLI remain compatible.
+The explicit MCP follow-up supersedes the original new-MCP exclusion. `react-forge mcp [--cwd <directory>]` exposes the four document formats, Figma and the source WAV extension through memory-only sessions, inline/file TSX execution and explicit local export or remote publication. Follow the [MCP contract](packages-react-forge-mcp-contract.md) for tool inputs, retained state, cancellation, protocol isolation and failure outcomes. `McpTaskContext` and `McpSessionTask` are type-only exports; the existing library and one-shot CLI remain compatible.
 
 ## Public distribution
 
 The private source workspace generates a public `@delino/react-forge` package plus six `@delino/react-forge-<host-id>` native packages. Main optional dependencies pin the exact source version. Generated platform manifests use `os`, `cpu`, and Linux `libc` filters; the source workspace manifest stays host-neutral. Runtime loading selects the exact matching package and rejects a missing or mismatched binding without downloads or compilation. See [release contract](packages-react-forge-release-contract.md).
+
+## Static 3D extension (Published in npm 0.2.0)
+
+The generation-only GLB/FBX extension follows [the scene contract](packages-react-forge-scene-contract.md). `SceneSession` shares local publication and MCP lifecycle, uses independent world-space bounds and native scene engines, and introduces no runtime conversion dependency.
+
+## Sprite Extension (Published in npm 0.2.0)
+`Format.Sprite` uses `DocumentSession` and the `/sprite` components under the [sprite contract](packages-react-forge-sprite-contract.md). Alongside WAV and GLB/FBX, it brings the source package to eight local authoring formats, preserving independent models and the existing export lifecycle. `exportBuffer` returns a ZIP bundle; CLI/MCP file output requires `.sprite.zip`. The bundle contains `sheet.png`, `sprite.json` and each frame PNG from one pinned revision. Measurement uses logical `sprite_frame` coordinates with `page` as the frame index; exported metadata uses scaled pixels. Import and mounted editing are unsupported. Native drawing uses no system fonts or converters. `examples/sprite.tsx` demonstrates reusable palette-based artwork and idle/hop animations; the feature is included in npm `0.2.0` and installed consumers run in the six-host suite.
+
+## SFX extension
+
+The [SFX contract](packages-react-forge-sfx-contract.md) adds `Format.Wav`, the `/sfx` component subpath, generation-only PCM WAV exports and seconds-based `timeline` geometry. It shares the session, revision, cancellation, atomic-output, diagnostics and six-host native boundaries. SFX does not register image/font assets or import audio. It is included in npm `0.2.0`; preserve existing document/Figma behavior.
+
+## 3D animation follow-up (Unreleased)
+
+SceneSession gains registerAnimationSampler and cancellable bakeAnimationSampler,
+common Joint/AnimationClip/AnimationTrack authoring, and optional clip/time
+measurement under the [scene contract](packages-react-forge-scene-contract.md).
+Sampler assets are copied immediately, participate in the pending-work and
+revision barriers, and use the existing registration and output budgets. Scene
+options accept integer animationBakeFps (1–240, default 60) for FBX approximation.
+Original animated-character GLB/FBX tasks return the same session type to CLI/MCP;
+no new command, tool, runtime dependency or automatic publication is introduced.
+Static scene availability since 0.2.0 remains distinct from this unreleased API.

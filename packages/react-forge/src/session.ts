@@ -1,3 +1,4 @@
+import { SceneSession, type SceneSessionOptions } from "./scene/session.js";
 import { FigmaSession, type FigmaOptions } from "./figma/session.js";
 import type { ReactNode } from "react";
 import { v7 } from "uuid";
@@ -5,6 +6,8 @@ import { ForgeError, abortable, checkSignal } from "./errors.js";
 import { digest, publish, withOutputReservation, readSource, type SourceFingerprint } from "./files.js";
 import { processDocument, type NativeOutput } from "./native.js";
 import { pptxModel, pptxNode } from "./pptx-model.js";
+import { spriteModel } from "./sprite-model.js";
+import { sfxModel } from "./sfx-model.js";
 import { pdfModel } from "./pdf-model.js";
 import { xlsxModel, xlsxEdit } from "./xlsx-model.js";
 import type { Address, Range } from "./xlsx.js";
@@ -14,7 +17,7 @@ import { ErrorCode, Format, Stage, limits, type AssetHandle, type AssetSource, t
 
 type Model = Record<string, unknown>;
 interface ModelNode extends Model { id: string; type: string; children?: ModelNode[] }
-export interface TargetHandle extends NodeHandle { readonly kind: string; readonly editable: boolean; readonly text?: string; readonly sheet?: string; readonly address?: Address; readonly range?: Range }
+export interface TargetHandle extends NodeHandle { readonly kind: string; readonly editable: boolean; readonly name?: string; readonly text?: string; readonly sheet?: string; readonly address?: Address; readonly range?: Range }
 interface NativeRegion { id: string; kind: string; target_index: number; part: string; start: number; end: number; text?: string; sheet?: string; address?: Address; range?: Range }
 export interface Inspection { readonly revision: number; readonly targets: readonly TargetHandle[] }
 export interface MountedRegion {
@@ -64,7 +67,7 @@ export class DocumentSession {
     this.operations.add(operation);
     let code: ErrorCode | undefined;
     try { return await operation; }
-    catch (error) { code = error instanceof ForgeError ? error.code : ErrorCode.Io; if (error instanceof ForgeError) throw new ForgeError(error.code, error.message, { stage, format: this.format, ...error.context, revision: context.revision }); throw error; }
+    catch (error) { code = error instanceof ForgeError ? error.code : ErrorCode.Io; if (error instanceof ForgeError) throw new ForgeError(error.code, error.message, { stage, format: this.format, ...error.context, revision: context.revision }, error.cause); throw error; }
     finally {
       this.operations.delete(operation);
       const event = Object.freeze({ source: "javascript" as const, stage, format: this.format, revision: context.revision, durationMs: performance.now() - started, code });
@@ -102,6 +105,7 @@ export class DocumentSession {
 
   private registerAsset(source: AssetSource, font: boolean, options: { signal?: AbortSignal }): Promise<AssetHandle> {
     const signal = this.signal(options.signal);
+    if (this.format === Format.Wav) return Promise.reject(new ForgeError(ErrorCode.UnsupportedEdit, "Procedural SFX does not accept image or font assets."));
     const operation = this.track(Stage.Import, async () => {
       const { bytes } = await readSource(source, limits.imageBytes, signal);
       checkSignal(signal);
@@ -158,7 +162,16 @@ export class DocumentSession {
     if (!this.imported) {
       const targets: TargetHandle[] = [];
       const visit = (node: SerializedNode) => {
-        if (node.type !== "#text") targets.push(Object.freeze({ documentId: this.documentId, nodeId: node.id, kind: node.type.split(":")[1] ?? node.type, editable: false }));
+        if (node.type !== "#text") {
+          const text = node.type === "pdf:paragraph" ? node.children.map(run => {
+            if (run.type === "#text") return String(run.props.text ?? "");
+            if (run.type === "pdf:run" || run.type === "pdf:link") {
+              return run.children.filter(child => child.type === "#text").map(child => String(child.props.text ?? "")).join("");
+            }
+            return "";
+          }).join("") : undefined;
+          targets.push(Object.freeze({ documentId: this.documentId, nodeId: node.id, kind: node.type.split(":")[1] ?? node.type, editable: false, text }));
+        }
         node.children.forEach(visit);
       };
       this.root.snapshot().forEach(visit);
@@ -251,6 +264,8 @@ export class DocumentSession {
       if (this.format === Format.Pptx) model = pptxModel(this.root.snapshot(), this.documentId, this.assets);
       else if (this.format === Format.Docx) model = docxModel(this.root.snapshot(), this.documentId);
       else if (this.format === Format.Xlsx) model = xlsxModel(this.root.snapshot(), this.documentId);
+      else if (this.format === Format.Sprite) model = spriteModel(this.root.snapshot(), this.documentId);
+      else if (this.format === Format.Wav) model = sfxModel(this.root.snapshot());
       else if (this.format === Format.Pdf) model = pdfModel(this.root.snapshot(), this.documentId);
       else throw new ForgeError(ErrorCode.UnsupportedPackage, "This format is not connected to the native adapter yet.");
     }
@@ -314,8 +329,10 @@ export class DocumentSession {
 }
 
 export function createSession(format: Format.Figma, options: FigmaOptions): FigmaSession;
-export function createSession(format: Exclude<Format, Format.Figma>, options?: { systemFonts?: boolean }): DocumentSession;
-export function createSession(format: Format, options: FigmaOptions & {systemFonts?: boolean} = {}): DocumentSession | FigmaSession {
+export function createSession(format: Format.Glb | Format.Fbx, options?: SceneSessionOptions): SceneSession;
+export function createSession(format: Exclude<Format, Format.Figma | Format.Glb | Format.Fbx>, options?: { systemFonts?: boolean }): DocumentSession;
+export function createSession(format: Format, options: FigmaOptions & SceneSessionOptions & {systemFonts?: boolean} = {}): DocumentSession | FigmaSession | SceneSession {
+  if (format === Format.Glb || format === Format.Fbx) return new SceneSession(format, options);
   return format === Format.Figma ? new FigmaSession(options) : new DocumentSession(format, options);
 }
 export const importOffice = DocumentSession.import;

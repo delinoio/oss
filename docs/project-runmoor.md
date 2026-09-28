@@ -12,7 +12,7 @@ Runmoor manages disposable, single-job GitHub Actions runners on one developer o
 
 - Commands: `cmds/runmoor`, using the repository Go module.
 - Public documentation: `apps/public-docs/docs/runmoor`, published at `https://oss.delino.io/runmoor`.
-- Release integration: `.github/workflows/release-runmoor.yml` and Runmoor-specific assets under `scripts/release`.
+- Release integration: `.github/workflows/release-runmoor.yml`, `.github/workflows/release-runmoor-homebrew.yml`, the Runmoor Homebrew template and Runmoor-specific assets under `scripts/release`.
 
 ## Domain Contract Documents
 
@@ -27,14 +27,17 @@ Runmoor manages disposable, single-job GitHub Actions runners on one developer o
 - The shared site selector is present on every Runmoor page. After the consolidated publication is verified, operators decommission the former standalone hosting and DNS configuration without adding redirects.
 - `pnpm --filter public-docs dev` serves the Runmoor section on the consolidated loopback server at `127.0.0.1:46302` and does not require the DevHud team environment.
 - Platforms: macOS 14+ Apple Silicon; Ubuntu 22.04+ amd64/arm64. Host and execution CPU architectures must match. Windows, Intel Macs, emulation, GHES, Kubernetes, cloud/remote Docker, and multi-computer management are excluded.
-- The manager runs on the host. No host job execution, reusable completed runners, public webhook server, dashboard, remote control API, telemetry, Prometheus, plugin API, or automatic update service exists.
+- The manager runs on the host. No host job execution, reusable completed runners, public webhook server, dashboard, remote control API, telemetry, Prometheus, plugin API, or Runmoor binary auto-update service exists. Runner images have manager-owned automatic updates.
 - Committed completion and cleanup survive stale missing-registration inspection results. Actual ownership mismatches remain quarantined, and capacity is released only after confirmed termination; unresolved cleanup remains durable. Existing quarantines require ownership-verified operator recovery, not automatic upgrade-time reclassification.
-- UUID-v7 identities, TOML schema 1, SQLite schema 1, and JSON schema 1 are shared contracts. Credentials are environment/file references, never literal TOML values, SQLite values, or guest management credentials.
+- UUID-v7 identities, TOML schema 1, SQLite schema 2 with an atomic schema-1 migration, and JSON schema 1 are shared contracts. Credentials are environment/file references, never literal TOML values, SQLite values, or guest management credentials.
+- New `init` configurations include the scale-set, execution-platform and native-architecture routing labels. Existing and manually authored pool labels are unchanged; omitted labels stay omitted.
 - Local configuration/state/image storage is an explicit exception to the repository R2 default: the product is an offline-capable local controller and must reconcile owned resources without a hosted storage dependency.
 - GitHub authentication/access policy remains authoritative. Public repository use requires operator-controlled fork execution. Docker and privileged DinD are not secure boundaries for arbitrary hostile workloads.
 - Image mutations run through the manager, which owns the setup VM lifetime and sleep inhibition; initial image preparation can run with no pools or connections.
-- Images are digest-pinned or immutable sealed revisions. Runmoor never bundles Tart or redistributes macOS/Xcode images. External Tart and Guest Agent version-specific licenses remain separate from Runmoor's license.
-- Release identity is `runmoor@v<MAJOR.MINOR.PATCH>`, starting at `0.1.0`. Only darwin-arm64, linux-amd64, and linux-arm64 binary archives are published through the stable release channel, with checksums and Sigstore verification material. No Homebrew packaging is added.
+- Interactive Tart initialization can create a new image from a host-supported Apple IPSW under a temporary manager, wait for operator guest setup, verify Guest Agent readiness after a headless reboot, seal it and publish a new final configuration. Interrupted setup resumes only its journaled owned image; noninteractive and prepared-source routes remain available.
+- Requested runner versions may follow latest stable releases; effective execution images remain digest-pinned or immutable sealed revisions. Automatic preparation preserves operator sources, old execution generations and pause/stop decisions. The host accepts stable Tart 2.x.x releases with complete SemVer triplets; Guest Agent remains pinned to 0.14.2. Runmoor never bundles Tart or redistributes macOS/Xcode images. External Tart and Guest Agent version-specific licenses remain separate from Runmoor's license.
+- Release identity is `runmoor@v<MAJOR.MINOR.PATCH>`, starting at `0.1.0`. Only darwin-arm64, linux-amd64, and linux-arm64 binary archives are published through the stable release channel, with checksums and Sigstore verification material. Homebrew distributes the same verified darwin-arm64 archive through `delinoio/tap/runmoor`, starting with `0.1.3`, on macOS 14+ Apple Silicon only. It does not install Tart or register a service.
+- Publication discovers an existing draft through paginated release listings and pins its numeric ID through the final download, complete signed-asset verification and publication. Published or conflicting releases are never overwritten; an uncertain publication result requires remote inspection before recovery.
 - The implementation task explicitly omits live GitHub verification and local real Tart execution. Automated mocks, local Docker validation, and opt-in Tart tests must not be described as full GitHub/Tart certification.
 
 ## Change Policy

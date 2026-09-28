@@ -4,7 +4,7 @@
 
 The CLI release workflows own native APT and DNF distribution at `https://pkgs.oss.delino.io`. `packaging/linux/` owns pinned tools, public repository configuration, and package metadata; `scripts/release/linux-packages*` owns verification, packaging, repository generation, and resumable publication. This contract complements `repository-workflow-contract.md`.
 
-The stable enrollment contract covers binpm, cargo-mono, nodeup, with-watch, derun, runmoor, and clibox. Preview is reserved with no enrolled CLI. No native packages have been published; the initial rollout, including binpm, was canceled before registry or tag publication. Integrations apply to future explicitly requested releases. Enrollment does not imply a package is already published. Both amd64/x86_64 and arm64/aarch64 are required. Arch Linux and Alpine Linux are unsupported, and DevHud is not enrolled in native CLI packaging. Public package names equal executable names. Version is the exact source SemVer with packaging revision 1. CLI installation owns `/usr/bin/<project>` and package documentation, plus the shared APT keyring dependency described below; it never initializes user configuration, downloads runtimes, registers services, or starts a daemon.
+The stable enrollment contract covers binpm, cargo-mono, nodeup, with-watch, derun, runmoor, and clibox. Preview is reserved with no enrolled CLI. The initial rollout, including binpm, was canceled before registry or tag publication. The subsequently requested Runmoor `0.1.3` release has published native packages and passed the complete public installation matrix; other projects retain their own explicit release and verification gates. Enrollment does not imply a package is already published. Both amd64/x86_64 and arm64/aarch64 are required. Arch Linux and Alpine Linux are unsupported, and DevHud is not enrolled in native CLI packaging. Public package names equal executable names. Version is the exact source SemVer with packaging revision 1. CLI installation owns `/usr/bin/<project>` and package documentation, plus the shared APT keyring dependency described below; it never initializes user configuration, downloads runtimes, registers services, or starts a daemon.
 
 All seven originating GitHub workflows publish stable releases and feed the stable native repository. Project contracts determine channels; callers cannot choose a channel. Clibox reuses the exact verified GNU npm executable bytes in its two signed GitHub Release archives before entering this common workflow.
 
@@ -30,6 +30,8 @@ One GitHub concurrency group serializes all publishers with `cancel-in-progress:
 
 Cache immutable package and snapshot objects for one year. Bypass caching for mutable repository entrypoints and setup/key files, and disable negative caching for this hostname. Verify public HTTPS responses before reporting publication success. Structured logs contain project, version, revision, phase and stable error codes, never credentials or signing material.
 
+Public HTTPS readback retries transient transport errors, HTTP 408/429/5xx responses, and byte mismatches at most three times with bounded pauses. Other HTTP 4xx responses fail immediately. Each retry or terminal failure logs the safe repository object key, attempt, stable error code, and HTTP status when available; publication succeeds only after exact byte equality for every object. The publisher retains the signed snapshot and partial upload state for an exact-identity retry after a terminal failure.
+
 ## Credentials and operations
 
 The `linux-packages` GitHub Environment owns dedicated R2 object credentials limited to the two buckets and an RSA 4096 OpenPGP signing subkey. Keep the primary secret key and recovery material outside CI. Commit the public certificate and fingerprint only. APT uses a repository-specific Signed-By keyring. PR and dry-run paths use disposable signing identities and cannot consume production secrets or write R2.
@@ -38,7 +40,7 @@ Restrict the environment to main and the seven CLI release-tag patterns, includi
 
 ## Validation and rollout
 
-The acceptance matrix is Ubuntu 22.04/24.04/26.04 LTS, Debian 12/13, Fedora 43/44, UBI 9/10, Rocky Linux 9/10, and AlmaLinux 9/10 on both architectures. Verify repository registration, signature validation, installation, upgrade, version/help execution, dependency resolution, removal and preservation of user data. Container checks do not certify Runmoor's Docker/Tart service integration.
+The acceptance matrix is Ubuntu 22.04/24.04/26.04 LTS, Debian 12/13, Fedora 43/44, UBI 9/10, Rocky Linux 9/10, and AlmaLinux 9/10 on both architectures. Verify repository registration, signature validation, installation, upgrade, version/help execution, dependency resolution, removal and preservation of user data. This matrix proves package compatibility, not an expansion of each CLI's runtime support. Runmoor manager execution on Linux remains limited to Ubuntu 22.04+ on x86-64 or ARM64; non-Ubuntu package checks do not exercise manager execution. Container checks do not certify Runmoor's Docker/Tart service integration.
 
 Rocky Linux 10 uses the project's `rockylinux/rockylinux:10` image; the separate Docker Official Image namespace does not publish `rockylinux:10`. Installation logs identify the exact distribution image, project, architecture and fixture/live mode.
 
@@ -47,6 +49,12 @@ Test incorrect identities, checksums, signatures, architectures, dependencies an
 Relevant main changes to any of the five Rust CLI sources, workspace Cargo inputs, Cargo configuration or Rust toolchain select the native package CI job. Both architectures rebuild against AlmaLinux 9 and pass ELF compatibility inspection on main and manual runs; PRs retain the planned native-package skip described above. Release-time validation still requires both architectures before publication.
 
 No release dispatch or retry is authorized by this implementation update. The canceled binpm coordinator left its source version commit on main but created no release tag or public packages. Future explicitly requested releases use the existing coordinator and the same per-project public verification gate. Public documentation must mark unpublished CLI examples as unavailable until their own public installation checks pass.
+
+## Runmoor publication evidence (2026-09-28)
+
+[Release Runmoor run 36362626105](https://github.com/delinoio/oss/actions/runs/36362626105) completed successfully for `runmoor@v0.1.3` at `514ff0a2af4c79a9448b3148c512e416e0b00cf6`. All 60 jobs passed, including signed GitHub archive publication, native package validation, all 26 disposable-repository installation checks, protected stable-repository publication and all 26 public installation checks. The public package version is `0.1.3-1` for amd64 and arm64.
+
+The release used the existing source-bound publisher and existing protected credentials without tag movement or replacement of prior GitHub releases. Public Runmoor installation guidance now describes verified stable availability. This evidence does not certify live GitHub runner assignment or real Tart execution, and it does not establish publication availability for other CLI projects.
 
 ## Implemented operations
 

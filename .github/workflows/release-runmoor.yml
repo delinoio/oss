@@ -104,6 +104,13 @@ jobs:
         run: |
           node scripts/release/runmoor.mjs checksums --output dist
           node scripts/release/runmoor.mjs verify --output dist
+      - name: Validate Homebrew Formula rendering
+        env:
+          RELEASE_VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          node scripts/release/runmoor-homebrew.mjs render \
+            --version "$RELEASE_VERSION" --revision "$GITHUB_SHA" \
+            --archives dist --output "$RUNNER_TEMP/runmoor.rb"
       - uses: actions/upload-artifact@v7
         with:
           name: runmoor-unsigned-archives
@@ -137,17 +144,15 @@ jobs:
           import { appendFileSync, copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
           import { tmpdir } from 'node:os';
           import path from 'node:path';
-          import { archiveNames, assetManifest, checkPublication, releasePlan, verify } from './scripts/release/runmoor.mjs';
+          import { archiveNames, assetManifest, checkPublication, githubRequest, releasePlan, verify } from './scripts/release/runmoor.mjs';
           const identity = `https://github.com/${process.env.GITHUB_WORKFLOW_REF}`;
-          const request = async (apiPath) => {
-            const response = await fetch(`https://api.github.com${apiPath}`, {headers: {Authorization: `Bearer ${process.env.GH_TOKEN}`, Accept: 'application/vnd.github+json'}, redirect: 'error', signal: AbortSignal.timeout(30000)});
-            return {status: response.status, body: response.status === 200 ? await response.json() : {}};
-          };
+          const request = githubRequest(process.env.GH_TOKEN);
           const plan = releasePlan({version: process.env.RELEASE_VERSION, revision: process.env.GITHUB_SHA, ref: process.env.GITHUB_REF, mode: 'publish'});
           const release = await checkPublication(plan, request);
           if (!release) {
             appendFileSync(process.env.GITHUB_ENV, 'RUNMOOR_REUSE_DRAFT=false\n');
           } else {
+            appendFileSync(process.env.GITHUB_ENV, `RUNMOOR_RELEASE_ID=${release.id}\n`);
             const unsignedNames = [...archiveNames, 'SHA256SUMS'];
             const expectedNames = [...unsignedNames, ...unsignedNames.map((name) => `${name}.sigstore.json`)];
             const releaseAssets = release.assets ?? [];
@@ -168,7 +173,7 @@ jobs:
                 appendFileSync(process.env.GITHUB_ENV, 'RUNMOOR_REUSE_DRAFT=false\n');
               } else {
                 const downloaded = assetManifest(draftDirectory, true);
-                await checkPublication(plan, request, downloaded);
+                await checkPublication(plan, request, downloaded, release.id);
                 const local = assetManifest('dist');
                 const downloadedByName = new Map(downloaded.map((asset) => [asset.name, asset]));
                 for (const asset of local) {
@@ -197,14 +202,13 @@ jobs:
           RELEASE_VERSION: ${{ needs.plan.outputs.version }}
         run: |
           node --input-type=module <<'JS'
-          import { checkPublication, releasePlan } from './scripts/release/runmoor.mjs';
+          import { checkPublication, githubRequest, releasePlan } from './scripts/release/runmoor.mjs';
           const plan = releasePlan({version: process.env.RELEASE_VERSION, revision: process.env.GITHUB_SHA, ref: process.env.GITHUB_REF, mode: 'publish'});
-          await checkPublication(plan, async (path) => {
-            const response = await fetch(`https://api.github.com${path}`, {headers: {Authorization: `Bearer ${process.env.GH_TOKEN}`, Accept: 'application/vnd.github+json'}, redirect: 'error', signal: AbortSignal.timeout(30000)});
-            return {status: response.status, body: response.status === 200 ? await response.json() : {}};
-          });
+          const release = await checkPublication(plan, githubRequest(process.env.GH_TOKEN));
+          if ((release?.id ?? '') !== (process.env.RUNMOOR_RELEASE_ID ? Number(process.env.RUNMOOR_RELEASE_ID) : '')) throw new Error('Release draft identity changed before upload');
           JS
       - name: Create stable release draft
+        id: release-draft
         if: env.RUNMOOR_REUSE_DRAFT != 'true'
         uses: softprops/action-gh-release@v2
         with:
@@ -216,6 +220,23 @@ jobs:
           fail_on_unmatched_files: true
           files: dist/*
           body_path: scripts/release/runmoor-release-notes.md
+      - name: Pin stable release draft
+        env:
+          CREATED_RELEASE_ID: ${{ steps.release-draft.outputs.id }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          node --input-type=module <<'JS'
+          import { appendFileSync } from 'node:fs';
+          import { checkPublication, githubRequest, releasePlan } from './scripts/release/runmoor.mjs';
+          const existingId = process.env.RUNMOOR_RELEASE_ID;
+          const createdId = process.env.CREATED_RELEASE_ID;
+          if (existingId && createdId && existingId !== createdId) throw new Error('Draft upload changed the pinned release ID');
+          const releaseId = Number(existingId || createdId);
+          const plan = releasePlan({version: process.env.RELEASE_VERSION, revision: process.env.GITHUB_SHA, ref: process.env.GITHUB_REF, mode: 'publish'});
+          await checkPublication(plan, githubRequest(process.env.GH_TOKEN), undefined, releaseId);
+          appendFileSync(process.env.GITHUB_ENV, `RUNMOOR_RELEASE_ID=${releaseId}\n`);
+          JS
       - name: Download and verify complete stable release draft
         env:
           GH_TOKEN: ${{ github.token }}
@@ -225,15 +246,12 @@ jobs:
           import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
           import { tmpdir } from 'node:os';
           import path from 'node:path';
-          import { archiveNames, assetManifest, checkPublication, releasePlan, verify } from './scripts/release/runmoor.mjs';
+          import { archiveNames, assetManifest, checkPublication, githubRequest, releasePlan, verify } from './scripts/release/runmoor.mjs';
           const identity = `https://github.com/${process.env.GITHUB_WORKFLOW_REF}`;
-          const request = async (apiPath) => {
-            const response = await fetch(`https://api.github.com${apiPath}`, {headers: {Authorization: `Bearer ${process.env.GH_TOKEN}`, Accept: 'application/vnd.github+json'}, redirect: 'error', signal: AbortSignal.timeout(30000)});
-            return {status: response.status, body: response.status === 200 ? await response.json() : {}};
-          };
+          const request = githubRequest(process.env.GH_TOKEN);
           const plan = releasePlan({version: process.env.RELEASE_VERSION, revision: process.env.GITHUB_SHA, ref: process.env.GITHUB_REF, mode: 'publish'});
-          const release = await checkPublication(plan, request);
-          if (!release) throw new Error('Release draft disappeared before final verification');
+          const releaseId = Number(process.env.RUNMOOR_RELEASE_ID);
+          const release = await checkPublication(plan, request, undefined, releaseId);
           const expectedNames = [...archiveNames, 'SHA256SUMS', ...archiveNames.map((name) => `${name}.sigstore.json`), 'SHA256SUMS.sigstore.json'];
           const draftDirectory = mkdtempSync(path.join(tmpdir(), 'runmoor-final-draft-'));
           try {
@@ -244,7 +262,7 @@ jobs:
               writeFileSync(path.join(draftDirectory, asset.name), Buffer.from(await response.arrayBuffer()));
             }
             const downloaded = assetManifest(draftDirectory, true);
-            await checkPublication(plan, request, downloaded);
+            await checkPublication(plan, request, downloaded, releaseId);
             const local = assetManifest('dist', true).filter((asset) => !asset.name.endsWith('.sigstore.json'));
             const downloadedByName = new Map(downloaded.map((asset) => [asset.name, asset]));
             for (const asset of local) {
@@ -252,14 +270,40 @@ jobs:
               if (!candidate || candidate.size !== asset.size || candidate.digest !== asset.digest) throw new Error(`Final release asset ${asset.name} does not match the current source revision`);
             }
             verify(draftDirectory, true, {identity});
+            writeFileSync(path.join(process.env.RUNNER_TEMP, 'runmoor-verified-assets.json'), JSON.stringify(downloaded));
           } finally { rmSync(draftDirectory, {recursive: true, force: true}); }
           JS
       - name: Publish stable release
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ needs.plan.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.plan.outputs.version }}
           RUNMOOR_RELEASE_NOTES: scripts/release/runmoor-release-notes.md
-        run: gh release edit "$RELEASE_TAG" --draft=false --prerelease=false --notes-file "$RUNMOOR_RELEASE_NOTES"
+        run: |
+          node --input-type=module <<'JS'
+          import { readFileSync } from 'node:fs';
+          import path from 'node:path';
+          import { githubRequest, publishDraft, releasePlan } from './scripts/release/runmoor.mjs';
+          const plan = releasePlan({version: process.env.RELEASE_VERSION, revision: process.env.GITHUB_SHA, ref: process.env.GITHUB_REF, mode: 'publish'});
+          await publishDraft(plan, githubRequest(process.env.GH_TOKEN), {
+            releaseId: Number(process.env.RUNMOOR_RELEASE_ID),
+            expectedAssets: JSON.parse(readFileSync(path.join(process.env.RUNNER_TEMP, 'runmoor-verified-assets.json'), 'utf8')),
+            notes: readFileSync(process.env.RUNMOOR_RELEASE_NOTES, 'utf8'),
+          });
+          JS
+
+  homebrew:
+    name: Publish Homebrew Formula
+    needs: [plan, publish]
+    if: needs.plan.outputs.mode == 'publish'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/release-runmoor-homebrew.yml
+    secrets:
+      DELINO_RELEASE_BOT_PRIVATE_KEY: ${{ secrets.DELINO_RELEASE_BOT_PRIVATE_KEY }}
+    with:
+      version: ${{ needs.plan.outputs.version }}
+      revision: ${{ github.sha }}
+      dry_run: false
 
   linux-packages:
     name: Publish native Linux packages
