@@ -171,8 +171,9 @@ fn root_program(command: &Command, max_failed: usize) -> Result<RootProgram, Tra
 /// while the calling tracee thread is stopped at syscall entry. It may select
 /// a bounded per-operation delay; every baseline run still uses the same
 /// tracing path with zero injected delay.
-pub fn capture<F>(
+pub fn capture<F, B>(
     command: &mut Command,
+    build_resolved: B,
     root: &Path,
     limits: Limits,
     cancelled: &AtomicBool,
@@ -180,9 +181,11 @@ pub fn capture<F>(
 ) -> Result<CompleteRecord, TraceFailure>
 where
     F: FnMut(&paths::DecodedOperation) -> Duration,
+    B: FnOnce(&Path) -> Command,
 {
     capture_controlled(
         command,
+        build_resolved,
         root,
         limits,
         cancelled,
@@ -193,8 +196,9 @@ where
 
 /// Capture while allowing a selected calling thread to remain stopped at
 /// operation entry until the controller releases it. Other tracees continue.
-pub fn capture_controlled<F, C>(
+pub fn capture_controlled<F, C, B>(
     command: &mut Command,
+    build_resolved: B,
     root: &Path,
     limits: Limits,
     cancelled: &AtomicBool,
@@ -204,6 +208,7 @@ pub fn capture_controlled<F, C>(
 where
     F: FnMut(&paths::DecodedOperation) -> CaptureAction,
     C: FnMut(&RawEntry) -> Result<ControlDirective, TraceFailure>,
+    B: FnOnce(&Path) -> Command,
 {
     let root = fs::canonicalize(root).map_err(|_| supervision("root_resolution"))?;
     if !root.is_dir() {
@@ -343,8 +348,12 @@ where
     // Charge a generous upper bound before retaining each decoded path. This
     // bounds both the start map and the supervisor's completion buffer while
     // the child runs, before final NDJSON serialization checks exact bytes.
+    // The pre-resolved candidate is the only executable that may be launched.
+    // This keeps recorded PATH failures and the successful root pair tied to
+    // the same image even if an earlier PATH entry changes during admission.
+    let mut resolved_command = build_resolved(&program);
     let result = trace_controlled_locked(
-        command,
+        &mut resolved_command,
         limits,
         cancelled,
         clock,
@@ -596,7 +605,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::{io::Write, process::Stdio};
+    use std::{io::Write, os::unix::process::CommandExt, process::Stdio};
 
     use super::*;
     use crate::record::{parse, serialize, DEFAULT_BYTE_LIMIT, DEFAULT_EVENT_LIMIT};
@@ -611,9 +620,17 @@ mod tests {
         fs::copy("/bin/true", fallback.join("tool")).unwrap();
         let path = env::join_paths([&missing, &fallback]).unwrap();
         let mut command = Command::new("tool");
-        command.env("PATH", path).stdout(Stdio::null());
+        command.env("PATH", &path).stdout(Stdio::null());
         let record = capture(
             &mut command,
+            |program| {
+                let mut resolved = Command::new(program);
+                resolved
+                    .arg0("tool")
+                    .env("PATH", &path)
+                    .stdout(Stdio::null());
+                resolved
+            },
             directory.path(),
             Limits::default(),
             &AtomicBool::new(false),
@@ -637,6 +654,62 @@ mod tests {
     }
 
     #[test]
+    fn root_launch_keeps_the_selected_path_after_earlier_path_candidate_appears() {
+        let directory = tempfile::tempdir().unwrap();
+        let missing = directory.path().join("missing");
+        let fallback = directory.path().join("fallback");
+        fs::create_dir_all(&missing).unwrap();
+        fs::create_dir_all(&fallback).unwrap();
+        let selected = fallback.join("tool");
+        fs::write(&selected, b"#!/bin/sh\nprintf fallback > \"$1\"\n").unwrap();
+        fs::set_permissions(&selected, fs::Permissions::from_mode(0o755)).unwrap();
+        let marker = directory.path().join("result");
+        let path = env::join_paths([&missing, &fallback]).unwrap();
+        let mut command = Command::new("tool");
+        command.arg(&marker).env("PATH", &path);
+        let mut root_seen = false;
+        let mut earlier_created = false;
+        let record = capture_controlled(
+            &mut command,
+            |program| {
+                let mut resolved = Command::new(program);
+                resolved.arg0("tool").arg(&marker).env("PATH", &path);
+                resolved
+            },
+            directory.path(),
+            Limits::default(),
+            &AtomicBool::new(false),
+            |operation| {
+                if operation.operation == Operation::Exec && !root_seen {
+                    root_seen = true;
+                    CaptureAction::Hold
+                } else {
+                    CaptureAction::Proceed(Duration::ZERO)
+                }
+            },
+            |_| {
+                if !earlier_created {
+                    let earlier = missing.join("tool");
+                    fs::write(&earlier, b"#!/bin/sh\nprintf earlier > \"$1\"\n").unwrap();
+                    fs::set_permissions(&earlier, fs::Permissions::from_mode(0o755)).unwrap();
+                    earlier_created = true;
+                }
+                Ok(ControlDirective::ReleaseOne)
+            },
+        )
+        .unwrap();
+        assert_eq!(fs::read(&marker).unwrap(), b"fallback");
+        assert_eq!(
+            record.operations[0].completion.native_error,
+            Some(libc::ENOENT)
+        );
+        assert_eq!(
+            record.operations[1].start.paths[0].project_relative,
+            Some(NativePath::UnixBytes(b"fallback/tool".to_vec()))
+        );
+    }
+
+    #[test]
     fn root_executable_is_recorded_before_child_operations() {
         let directory = tempfile::tempdir().unwrap();
         let program = directory.path().join("tool");
@@ -645,6 +718,14 @@ mod tests {
         command.current_dir(directory.path()).stdout(Stdio::null());
         let record = capture(
             &mut command,
+            |program| {
+                let mut resolved = Command::new(program);
+                resolved
+                    .arg0("./tool")
+                    .current_dir(directory.path())
+                    .stdout(Stdio::null());
+                resolved
+            },
             directory.path(),
             Limits::default(),
             &AtomicBool::new(false),
@@ -693,6 +774,14 @@ mod tests {
         command.arg("-c").arg(format!("touch {}", marker.display()));
         let result = capture_controlled(
             &mut command,
+            |program| {
+                let mut resolved = Command::new(program);
+                resolved
+                    .arg0("/bin/sh")
+                    .arg("-c")
+                    .arg(format!("touch {}", marker.display()));
+                resolved
+            },
             directory.path(),
             Limits::default(),
             &AtomicBool::new(false),
@@ -718,6 +807,14 @@ mod tests {
         command.arg(input.path()).stdout(Stdio::null());
         let record = capture(
             &mut command,
+            |program| {
+                let mut resolved = Command::new(program);
+                resolved
+                    .arg0("/bin/cat")
+                    .arg(input.path())
+                    .stdout(Stdio::null());
+                resolved
+            },
             root,
             Limits::default(),
             &AtomicBool::new(false),
@@ -756,6 +853,11 @@ mod tests {
         command.stdout(Stdio::null());
         let result = capture(
             &mut command,
+            |program| {
+                let mut resolved = Command::new(program);
+                resolved.arg0("/bin/true").stdout(Stdio::null());
+                resolved
+            },
             directory.path(),
             Limits {
                 max_bytes: 10,
@@ -777,6 +879,14 @@ mod tests {
         let mut read_started = None;
         let result = capture(
             &mut command,
+            |program| {
+                let mut resolved = Command::new(program);
+                resolved
+                    .arg0("/bin/cat")
+                    .arg(input.path())
+                    .stdout(Stdio::null());
+                resolved
+            },
             input.path().parent().unwrap(),
             Limits {
                 timeout: Some(Duration::from_secs(3)),

@@ -901,7 +901,7 @@ where
     F: FnMut(&crate::linux::paths::DecodedOperation) -> Duration,
 {
     use std::{
-        os::fd::AsFd,
+        os::{fd::AsFd, unix::process::CommandExt},
         process::{Command as ProcessCommand, Stdio},
         sync::atomic::Ordering,
     };
@@ -921,9 +921,17 @@ where
             error: crate::linux::TraceFailure::Spawn,
             signal: 0,
         })?;
-    child.stdout(Stdio::from(stderr)).stderr(Stdio::inherit());
     let result = crate::linux::capture::capture(
         &mut child,
+        |program| {
+            let mut resolved = ProcessCommand::new(program);
+            resolved
+                .args(&command[1..])
+                .arg0(&command[0])
+                .stdout(Stdio::from(stderr))
+                .stderr(Stdio::inherit());
+            resolved
+        },
         root,
         crate::linux::Limits {
             max_events: args.max_events,
@@ -952,7 +960,7 @@ fn execute_repro_capture(
     use std::{
         os::{
             fd::{AsFd, OwnedFd},
-            unix::net::UnixStream,
+            unix::{net::UnixStream, process::CommandExt},
         },
         process::{Command as ProcessCommand, Stdio},
         sync::{
@@ -974,7 +982,6 @@ fn execute_repro_capture(
             error: crate::linux::TraceFailure::Spawn,
             signal: 0,
         })?;
-    child.stdout(Stdio::from(stdout_stderr));
     let (mut reader, writer) = UnixStream::pair().map_err(|_| CaptureFailure {
         error: crate::linux::TraceFailure::Spawn,
         signal: 0,
@@ -985,7 +992,6 @@ fn execute_repro_capture(
             error: crate::linux::TraceFailure::Spawn,
             signal: 0,
         })?;
-    child.stderr(Stdio::from(OwnedFd::from(writer)));
     let finished = Arc::new(AtomicBool::new(false));
     let reader_finished = finished.clone();
     let needle = expected_stderr.as_bytes().to_vec();
@@ -1030,6 +1036,17 @@ fn execute_repro_capture(
         })?;
     let result = crate::linux::capture::capture(
         &mut child,
+        |program| {
+            let mut resolved = ProcessCommand::new(program);
+            resolved.args(&command[1..]).arg0(&command[0]);
+            if let Some(cwd) = cwd {
+                resolved.current_dir(cwd);
+            }
+            resolved
+                .stdout(Stdio::from(stdout_stderr))
+                .stderr(Stdio::from(OwnedFd::from(writer)));
+            resolved
+        },
         root,
         crate::linux::Limits {
             max_events: args.max_events,
@@ -1040,9 +1057,6 @@ fn execute_repro_capture(
         &signals.cancelled,
         |_| Duration::ZERO,
     );
-    // Command keeps its configured descriptor after spawn. Closing it lets
-    // the forwarding thread observe EOF once all owned tracees have exited.
-    child.stderr(Stdio::null());
     finished.store(true, Ordering::SeqCst);
     let forwarded = forwarder.join().map_err(|_| CaptureFailure {
         error: crate::linux::TraceFailure::Supervision("output_thread"),
@@ -2455,6 +2469,7 @@ fn min_repro(args: MinReproArgs) -> i32 {
 #[cfg(target_os = "linux")]
 fn fbreak(args: BreakArgs) -> i32 {
     use std::{
+        os::unix::process::CommandExt,
         process::{Command as ProcessCommand, Stdio},
         sync::atomic::Ordering,
     };
@@ -2484,6 +2499,16 @@ fn fbreak(args: BreakArgs) -> i32 {
         .stderr(Stdio::inherit());
     let result = crate::linux::capture::capture_controlled(
         &mut child,
+        |program| {
+            let mut resolved = ProcessCommand::new(program);
+            resolved
+                .args(&args.command[1..])
+                .arg0(&args.command[0])
+                .stdin(Stdio::null())
+                .stdout(Stdio::inherit())
+                .stderr(Stdio::inherit());
+            resolved
+        },
         &root,
         crate::linux::Limits {
             max_events: args.execution.max_events,
@@ -2522,6 +2547,7 @@ fn fbreak(args: BreakArgs) -> i32 {
 #[cfg(target_os = "linux")]
 fn autowatch(args: AutowatchArgs) -> i32 {
     use std::{
+        os::unix::process::CommandExt,
         process::{Command as ProcessCommand, Stdio},
         sync::atomic::Ordering,
     };
@@ -2554,6 +2580,16 @@ fn autowatch(args: AutowatchArgs) -> i32 {
             .stderr(Stdio::inherit());
         let record = crate::linux::capture::capture(
             &mut child,
+            |program| {
+                let mut resolved = ProcessCommand::new(program);
+                resolved
+                    .args(&args.command[1..])
+                    .arg0(&args.command[0])
+                    .stdin(Stdio::inherit())
+                    .stdout(Stdio::inherit())
+                    .stderr(Stdio::inherit());
+                resolved
+            },
             &root,
             crate::linux::Limits {
                 max_events: args.execution.max_events,
@@ -4576,7 +4612,7 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn linux_root_executable_is_a_required_reproduction_input() {
-        use std::{process::Stdio, sync::atomic::AtomicBool};
+        use std::{os::unix::process::CommandExt, process::Stdio, sync::atomic::AtomicBool};
 
         let directory = tempfile::tempdir().unwrap();
         let root = fs::canonicalize(directory.path()).unwrap();
@@ -4597,6 +4633,15 @@ mod tests {
             .stderr(Stdio::null());
         let record = crate::linux::capture::capture(
             &mut command,
+            |program| {
+                let mut resolved = std::process::Command::new(program);
+                resolved
+                    .arg0("./tool")
+                    .current_dir(&root)
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null());
+                resolved
+            },
             &root,
             crate::linux::Limits::default(),
             &AtomicBool::new(false),
