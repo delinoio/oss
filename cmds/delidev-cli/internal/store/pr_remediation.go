@@ -364,6 +364,31 @@ func (t *Tx) FinishPRRemediation(id domain.ID, expected uint64) (Record, error) 
 	if err != nil {
 		return r, err
 	}
+	if s.StartupRejection != nil {
+		jr, rejected, verified, err := t.VerifiedStartupRejection(v.SessionID)
+		if err != nil {
+			return r, err
+		}
+		if verified && rejected.Workspace.ExecutionID == v.ExecutionID && rejected.InputID == v.InputID {
+			ir, err := t.Get(domain.QueueKind, v.InputID)
+			if err != nil {
+				return r, err
+			}
+			queued, err := Decode[domain.QueuedInput](ir)
+			if err != nil {
+				return r, err
+			}
+			job, err := Decode[domain.Job](jr)
+			if err != nil {
+				return r, err
+			}
+			if domain.PRRemediationInputDigest(queued) == v.InputDigest && !job.FinishedAt.Before(*v.StartedAt) {
+				v.State, v.Outcome, v.FinishedAt = domain.PRRemediationFinished, domain.ExecutionNotStarted, &t.now
+				v.StartupRejectionJobID = jr.ID
+				return t.releasePRRemediation(r, v)
+			}
+		}
+	}
 	p := s.Execution
 	verified := p != nil && p.ExecutionID == v.ExecutionID && p.InputID == v.InputID && p.CleanupVerified && s.ActiveExecutionID == "" && s.Recovery == domain.NoRecovery
 	if verified {

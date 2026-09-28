@@ -70,26 +70,30 @@ type PRRemediationProblemRef struct {
 }
 
 type PRRemediationAttempt struct {
-	Version     uint32                    `json:"version"`
-	Type        PRProblemRecordType       `json:"type"`
-	SetID       ID                        `json:"set_id"`
-	ChainID     ID                        `json:"chain_id"`
-	Sequence    uint32                    `json:"sequence"`
-	Mode        PRRemediationMode         `json:"mode"`
-	State       PRRemediationAttemptState `json:"state"`
-	Policy      RemediationPolicy         `json:"policy"`
-	Problems    []PRRemediationProblemRef `json:"problems"`
-	Reserved    PRProblemDismissal        `json:"reserved"`
-	SessionID   ID                        `json:"session_id,omitempty"`
-	InputID     ID                        `json:"input_id,omitempty"`
-	InputDigest string                    `json:"input_digest,omitempty"`
-	ExecutionID ID                        `json:"execution_id,omitempty"`
-	StartedAt   *time.Time                `json:"started_at,omitempty"`
-	FinishedAt  *time.Time                `json:"finished_at,omitempty"`
-	Outcome     ExecutionOutcome          `json:"outcome,omitempty"`
+	Version               uint32                    `json:"version"`
+	Type                  PRProblemRecordType       `json:"type"`
+	SetID                 ID                        `json:"set_id"`
+	ChainID               ID                        `json:"chain_id"`
+	Sequence              uint32                    `json:"sequence"`
+	Mode                  PRRemediationMode         `json:"mode"`
+	State                 PRRemediationAttemptState `json:"state"`
+	Policy                RemediationPolicy         `json:"policy"`
+	Problems              []PRRemediationProblemRef `json:"problems"`
+	Reserved              PRProblemDismissal        `json:"reserved"`
+	SessionID             ID                        `json:"session_id,omitempty"`
+	InputID               ID                        `json:"input_id,omitempty"`
+	InputDigest           string                    `json:"input_digest,omitempty"`
+	ExecutionID           ID                        `json:"execution_id,omitempty"`
+	StartedAt             *time.Time                `json:"started_at,omitempty"`
+	FinishedAt            *time.Time                `json:"finished_at,omitempty"`
+	Outcome               ExecutionOutcome          `json:"outcome,omitempty"`
+	StartupRejectionJobID ID                        `json:"startup_rejection_job_id,omitempty"`
 }
 
 func (v PRRemediationAttempt) Validate() error {
+	if v.StartupRejectionJobID != "" && (v.State != PRRemediationFinished || v.Outcome != ExecutionNotStarted || v.StartupRejectionJobID.Validate() != nil) {
+		return invalidPRRemediation()
+	}
 	if v.Version != 1 || v.Type != PRRemediationAttemptRecord || v.SetID.Validate() != nil || v.ChainID.Validate() != nil || v.Sequence < 1 || v.Sequence > MaxPRRemediationAttempts || !v.Mode.Valid() || v.Policy.Validate() != nil || v.Reserved.Validate() != nil || len(v.Problems) == 0 || len(v.Problems) > MaxPRFeedback+MaxCIContexts+1 {
 		return invalidPRRemediation()
 	}
@@ -128,7 +132,8 @@ func (v PRRemediationAttempt) Validate() error {
 			return invalidPRRemediation()
 		}
 	case PRRemediationFinished:
-		if !started || v.FinishedAt == nil || (v.Outcome != ExecutionSucceeded && v.Outcome != ExecutionFailed && v.Outcome != ExecutionStopped) {
+		rejected := v.Outcome == ExecutionNotStarted && v.StartupRejectionJobID != ""
+		if !started || v.FinishedAt == nil || (!rejected && v.Outcome != ExecutionSucceeded && v.Outcome != ExecutionFailed && v.Outcome != ExecutionStopped) {
 			return invalidPRRemediation()
 		}
 	case PRRemediationCanceled:

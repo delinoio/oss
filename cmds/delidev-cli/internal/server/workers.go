@@ -435,6 +435,12 @@ func (s *Service) ReportWork(ctx context.Context, req *connect.Request[pb.Report
 			return nil, domain.Fail(domain.Conflict, "The job is no longer awaiting this result.", "Inspect its current accepted outcome.")
 		}
 		if job.Type == domain.ExecuteSessionJob {
+			if problem == nil {
+				actor, _ := domain.PrincipalFrom(ctx)
+				if saved, handled, err := s.finishPRStartupRejection(tx, actor, record, job, meta.ExpectedRevision, req.Msg.OutputJson); handled {
+					return saved, err
+				}
+			}
 			return finishNativeExecution(tx, record, job, meta.ExpectedRevision, req.Msg.OutputJson, problem)
 		}
 		if problem == nil {

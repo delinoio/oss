@@ -28,6 +28,7 @@ import { Interaction } from "./interactions";
 import { SessionTools } from "./session-tools";
 import { SessionPullRequests } from "./session-pull-requests";
 import { QueuedInput } from "./queue";
+import { StartupRejection } from "./startup-rejection";
 
 function useSessionStream(id: string) {
   const transport = useTransport();
@@ -185,11 +186,12 @@ export function SessionView({ id, draft, setDraft }: { id: string; draft: string
     <header className="session-header"><div><h2>{resourceName(session)}</h2><p>{workspaceNames[text(data.workspace) as Workspace] || "Workspace"} · {text(data.outcome)} · {text(data.dispatch)} · {text(data.archive)}</p></div>
       <div className="actions"><button ref={filesButton} aria-expanded={panel === SessionPanel.Files} aria-controls={`files-${id}`} onClick={() => setPanel(panel === SessionPanel.Files ? SessionPanel.Closed : SessionPanel.Files)}>Files</button><button ref={diffButton} aria-expanded={panel === SessionPanel.Diff} aria-controls={`diff-${id}`} onClick={() => setPanel(panel === SessionPanel.Diff ? SessionPanel.Closed : SessionPanel.Diff)}>Diff</button><button disabled={!session || control.busy || control.uncertain} onClick={() => action(SessionAction.STOP)}>Stop</button>
         <button disabled={!session || control.busy || control.uncertain} onClick={() => action(text(data.archive) === "archived" ? SessionAction.RESTORE : SessionAction.ARCHIVE)}>{text(data.archive) === "archived" ? "Restore" : "Archive"}</button>
-        <button disabled={!session || control.busy || control.uncertain || budgetBlocked || text(data.archive) !== "active"} onClick={() => action(SessionAction.RESUME)}>Resume</button></div></header>
+        <button disabled={!session || control.busy || control.uncertain || budgetBlocked || Object.hasOwn(data, "startup_rejection") || text(data.archive) !== "active"} onClick={() => action(SessionAction.RESUME)}>Resume</button></div></header>
     <p className="connection" role="status">{live.state === ConnectionState.Live ? "Connected" : live.state === ConnectionState.Reconnecting ? "Connection lost · Retained state shown" : live.state === ConnectionState.Failed ? "Connection requires attention" : "Connecting…"}</p>
     <Failure failure={live.error} />{live.state === ConnectionState.Failed ? <button onClick={live.retry}>Refresh connection</button> : null}
     {text(data.recovery) !== "none" && text(data.recovery) ? <p className="notice">Recovery: {text(data.recovery)}. Execution remains under server control.</p> : null}
     {object(data.problem).message ? <p className="notice">{text(object(data.problem).message)} {text(object(data.problem).guidance)}</p> : null}
+    {session ? <StartupRejection session={session} /> : null}
     <Problem error={control.error} />{control.uncertain ? <button onClick={control.retry} disabled={control.busy}>Retry the same control request</button> : null}
     {session ? <><SessionTools resource={session} changed={setAcknowledged} /><SessionPullRequests key={id} session={session} /><ExecutionConfiguration resource={session} /><NativeUsage session={session} /><SessionBudget resource={session} changed={setAcknowledged} blocked={setBudgetBlocked} /></> : null}
     <details className="requests" open={requests.some((r) => readDocument(r).closure === "open")}><summary>Agent requests · {requests.length} on this page</summary><Problem error={interactions.error} />

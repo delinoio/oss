@@ -427,6 +427,9 @@ func (s *Service) ControlSession(ctx context.Context, req *connect.Request[pb.Co
 			return nil, domain.Fail(domain.Conflict, "The session revision changed.", "Reload current state before controlling it.")
 		}
 		if action == domain.ResumeSession {
+			if value.StartupRejection != nil {
+				return nil, domain.Fail(domain.Conflict, "This input was rejected before native startup and cannot be resumed.", "Preserve this attempt and create a fresh authorized PR fix after resolving its rejection.")
+			}
 			if value.InitialExecution != nil {
 				_, err := queueContinuation(tx, r, value, true)
 				return sessionReceipt{SessionID: r.ID}, err

@@ -18,6 +18,15 @@ func controlNativeSession(tx *store.Tx, sr store.Record, session *domain.Session
 	if action != domain.StopSession && action != domain.ArchiveSession {
 		return domain.SessionExecutionUnavailable()
 	}
+	if session.StartupRejection != nil {
+		if _, _, verified, err := tx.VerifiedStartupRejection(sr.ID); err != nil || !verified {
+			return domain.StartupRejectionUncertain()
+		}
+		if action == domain.ArchiveSession {
+			session.Archive = domain.Archived
+		}
+		return nil
+	}
 	r, err := tx.SessionExecutionJob(sr.ID, session.ExecutionSelection().ID)
 	if err != nil {
 		return err

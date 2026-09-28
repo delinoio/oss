@@ -44,6 +44,13 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	logger = logger.With("job_id", owner, "execution_id", input.ExecutionID, "session_id", input.SessionID, "harness", input.Configuration.Harness)
 	logger.InfoContext(ctx, "native_execution_started")
 	defer func() {
+		if workspace.IsPRStartupRejection(returned) {
+			output, returned = reportPRStartupRejection(config, owner, job, returned)
+			if returned == nil {
+				logger.InfoContext(ctx, "native_execution_startup_rejected")
+				return
+			}
+		}
 		if returned != nil {
 			logger.WarnContext(ctx, "native_execution_requires_reconciliation", "code", domain.SafeError(returned).Code)
 		} else {

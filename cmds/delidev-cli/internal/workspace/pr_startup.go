@@ -43,12 +43,7 @@ type prStartupRecord struct {
 }
 
 func rejectedPRReason(code domain.Code) bool {
-	switch code {
-	case domain.Conflict, domain.MissingInput, domain.Unavailable, domain.Canceled, domain.ResourceExhausted, domain.InvalidArgument:
-		return true
-	default:
-		return false
-	}
+	return domain.PRStartupRejectionReason(code)
 }
 
 func (v prStartupRecord) validate() error {

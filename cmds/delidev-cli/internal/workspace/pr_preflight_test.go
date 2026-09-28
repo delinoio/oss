@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -56,6 +57,18 @@ func TestPRFirstExecutionRechecksRemoteAndPreservesOriginalPreparation(t *testin
 			var rejected *prStartupRejection
 			if !errors.As(firstErr, &rejected) || rejected.record.Phase != prStartupRejected {
 				t.Fatal("changed original PR lacks a retained pre-native rejection", firstErr)
+			}
+			proof, err := f.manager.ReadPRStartupRejection(context.Background(), job, execution, f.request, manifest, runtime.GOOS)
+			if err != nil || !MatchesPRStartupRejection(firstErr, proof) || ValidatePRStartupRejection(f.request, manifest, proof, runtime.GOOS) != nil {
+				t.Fatal("original rejection comparison failed", err)
+			}
+			changedProof := proof
+			changedProof.Reason = domain.Canceled
+			if changedProof.Reason == proof.Reason {
+				changedProof.Reason = domain.Conflict
+			}
+			if ValidatePRStartupRejection(f.request, manifest, changedProof, runtime.GOOS) == nil || MatchesPRStartupRejection(firstErr, changedProof) || MatchesPRStartupRejection(domain.SafeError(firstErr), proof) {
+				t.Fatal("changed or reconstructed rejection gained proof authority")
 			}
 			if _, err := os.Stat(f.manager.executionClaimPath(f.request.SessionID)); !os.IsNotExist(err) {
 				t.Fatal("failed preflight created an execution claim", err)

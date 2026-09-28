@@ -359,3 +359,6 @@ Retained PR problem history now covers published feedback, required CI and merge
 
 
 PR detail and detail-bound observations now show their original source repository separately from base/head refs. The source identity disclosure preserves exact numeric/node IDs and private/public metadata. Explicit unavailable source and historical unobserved data have distinct messages; neither substitutes the base repository. Validate exact identity consistency, closed state and detail-only placement before rendering. Names remain inert text and the display cannot initiate Git work.
+
+
+PR sessions with accepted original startup rejection display “Agent did not start” and the closed safe reason, original observation time and paused state. Validate the complete envelope, canonical decimal-string revision, original session/input/account/connection/configuration identities, absence of native progress and nanosecond timestamp ordering before disclosure. The exact queue input retains a no-resend history message. Malformed or foreign evidence is unavailable; any present rejection disables Resume while the server independently owns authorization. The display creates no Fix now action, native completion or replay authority. Component/build evidence remains separate from actual native app and live GitHub acceptance.

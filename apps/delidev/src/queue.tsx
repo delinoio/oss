@@ -3,8 +3,9 @@ import { SessionQuery, newRequestId, type Resource } from "@delinoio/delidev-api
 import { document, object, text } from "./documents";
 import { useRetainedMutation } from "./mutation";
 import { Problem } from "./ui";
+import { RejectedInput } from "./startup-rejection";
 
-enum Delivery { Queued = "queued", Claimed = "claimed", Accepted = "accepted", Uncertain = "uncertain", Removed = "removed" }
+enum Delivery { Queued = "queued", Claimed = "claimed", Accepted = "accepted", Uncertain = "uncertain", Removed = "removed", Rejected = "rejected-before-start" }
 export function QueuedInput({ resource, session, refresh }: { resource: Resource; session?: Resource; refresh: () => void }) {
   const [accepted, setAccepted] = useState<Resource>();
   const current = accepted && accepted.revision > resource.revision ? accepted : resource;
@@ -20,6 +21,7 @@ export function QueuedInput({ resource, session, refresh }: { resource: Resource
   const mutation = () => ({ id: resource.id, expectedRevision: current.revision, requestId: newRequestId() });
   return <article className="queue-item"><header><strong>{text(data.mode)} · {text(data.delivery)}</strong><small>Input {String(data.sequence ?? "")}</small></header>
     {text(data.delivery) === Delivery.Removed ? <p>Removed input · original ordering retained</p> : <p>{text(data.prompt)}</p>}
+    {text(data.delivery) === Delivery.Rejected ? <RejectedInput resource={current} session={session} /> : null}
     {text(data.delivery) === Delivery.Queued ? <>
       <div className="actions"><button disabled={busy} onClick={() => setEdit({ prompt: text(data.prompt), revision: current.revision })}>Edit input</button><button disabled={busy} onClick={() => void remove.send({ mutation: mutation(), sessionId: resource.sessionId })}>Remove input</button><button disabled={busy || !canSteer} onClick={() => void steer.send({ mutation: mutation(), sessionId: resource.sessionId, expectedExecutionId: text(execution.execution_id), expectedTurnId: text(execution.native_turn_id) })}>Steer with this input</button></div>
       {edit ? <form onSubmit={(event) => { event.preventDefault(); if (busy || edit.revision !== current.revision) return; void update.send({ mutation: { id: resource.id, expectedRevision: edit.revision, requestId: newRequestId() }, sessionId: resource.sessionId, prompt: edit.prompt }); }}>
