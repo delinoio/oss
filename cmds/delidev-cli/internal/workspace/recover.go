@@ -214,6 +214,9 @@ func (m *Manager) validatePartial(input PrepareRequest, manifest Manifest) error
 	primaryFound := manifest.PrimaryPath == ""
 	for i, repo := range manifest.Repositories {
 		expected := input.Repositories[i]
+		if !validPreparedPR(expected, repo, input.Type) {
+			return ResultUncertain()
+		}
 		if repo.ID != expected.ID || repo.Source != expected.Checkout {
 			return ResultUncertain()
 		}

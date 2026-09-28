@@ -73,9 +73,19 @@ func ValidateResult(input PrepareRequest, result Manifest, workerOS string) erro
 	}
 	seen := make(map[domain.ID]bool)
 	primaryFound := false
+	prTargets := 0
 	ownedRoot := ""
 	for i, repo := range result.Repositories {
 		expected := input.Repositories[i]
+		if expected.PRTarget != nil {
+			prTargets++
+			if prTargets > 1 {
+				return ResultUncertain()
+			}
+		}
+		if !validPreparedPR(expected, repo, input.Type) {
+			return ResultUncertain()
+		}
 		if repo.ID != expected.ID || repo.ID.Validate() != nil || seen[repo.ID] || !absolute(repo.Source) || !absolute(repo.Path) || repo.Source != expected.Checkout || repo.Owned != (input.Type == domain.Worktree) {
 			return ResultUncertain()
 		}

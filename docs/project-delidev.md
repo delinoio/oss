@@ -245,3 +245,6 @@ Schema v20 now provides an internal PR remediation coordination core: one durabl
 
 
 PR detail now retains original same-repository/fork source identities with explicit unavailable versus historical-unobserved state. Repeated reads bind this source alongside original refs/commits, and desktop detail displays exact original identity. A private non-secret Git-target snapshot establishes the inputs for future Worker preparation without granting Git authentication or execution. Public remediation/session selection and the direct-harness Git flow remain unfinished.
+
+
+The Worker workspace engine now supports explicit PR-head detached preparation with exact source/base identities, canonical native Git transport validation, unchanged original refs/index/FETCH_HEAD and retained provenance through recovery/first-execution ownership. The public remediation controller does not yet issue this profile; fresh execution preflight and isolated harness Git authentication/commit-push remain required.
