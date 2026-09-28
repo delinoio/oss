@@ -102,3 +102,11 @@ after a Docker group change. It shows how to inspect an existing systemd user
 unit and the original systemd failure before replacing a service definition.
 The CLI README links to the corresponding public guides. No unverified
 service-start root cause is claimed.
+
+The Tart guide also describes interactive first setup from a host-supported
+Apple IPSW, operator completion of the guest account/Guest Agent/tool setup,
+post-reboot readiness validation, automatic runner installation and sealing,
+and same-command interruption recovery. Preserve the exact external Tart and
+Guest Agent version and license boundaries. Its published-version note must
+distinguish the released 0.2.0 automatic setup from the still-unreleased guided
+creation of a new Mac VM.

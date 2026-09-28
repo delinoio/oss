@@ -264,6 +264,30 @@ func (t *TartDriver) guestReady(ctx context.Context, c Config, vm, path, version
 	}
 }
 
+// preparedGuest checks the part of a fresh macOS installation that Runmoor can
+// establish before it downloads a runner. Optional tool installation remains
+// an operator decision, so the init wizard also requires explicit confirmation.
+func (t *TartDriver) preparedGuest(ctx context.Context, c Config, vm, path string) error {
+	b, err := t.run(ctx, c, []string{"exec", vm, "/bin/sh", "-c", preparedGuestScript, "runmoor", path, GuestAgentVersion}, nil)
+	if err != nil {
+		return problem(ErrPreparation, "Tart Guest Agent RPC is not ready.", "Log into the non-root runner account and enable Guest Agent 0.14.2 RPC at login.")
+	}
+	if strings.TrimSpace(string(b)) != "RUNMOOR_READY" {
+		return problem(ErrImage, "The macOS guest is not prepared for Runmoor.", "Use a non-root runner account, Guest Agent 0.14.2 and a clean dedicated runner directory.")
+	}
+	return nil
+}
+
+const preparedGuestScript = `set -eu
+invalid() { printf 'RUNMOOR_INVALID\n'; exit 0; }
+[ "$(id -u)" != 0 ] || invalid
+agent=$(tart-guest-agent --version | awk '{print $NF}')
+case "$agent" in "$2"|"$2"-*) ;; *) invalid;; esac
+p="$1"; while [ "$p" != / ]; do [ ! -L "$p" ] || invalid; p=$(dirname "$p"); done
+for f in .runner .credentials .credentials_rsaparams; do [ ! -e "$1/$f" ] || invalid; done
+[ ! -d "$1/_work" ] || [ -z "$(ls -A "$1/_work")" ] || invalid
+printf 'RUNMOOR_READY\n'`
+
 // A reachable guest returns a bounded validation result with a successful RPC.
 // Nonzero Tart exec results remain transport failures, which may recover while
 // the VM boots. Do not conflate a rejected image with an unavailable agent.

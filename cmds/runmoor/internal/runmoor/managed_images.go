@@ -367,22 +367,13 @@ func (b *ManagedImageBuilder) importTartSource(ctx context.Context, c Config, p 
 func (b *ManagedImageBuilder) installTartArchive(ctx context.Context, c Config, vm, path, archive string) error {
 	// A separate readiness probe accepts a prepared guest without a runner. It
 	// rejects dirty registration/workspace state before installing any files.
-	script := `set -eu
-invalid() { printf 'RUNMOOR_INVALID\n'; exit 0; }
-[ "$(id -u)" != 0 ] || invalid
-agent=$(tart-guest-agent --version | awk '{print $NF}')
-case "$agent" in "$2"|"$2"-*) ;; *) invalid;; esac
-p="$1"; while [ "$p" != / ]; do [ ! -L "$p" ] || invalid; p=$(dirname "$p"); done
-for f in .runner .credentials .credentials_rsaparams; do [ ! -e "$1/$f" ] || invalid; done
-[ ! -d "$1/_work" ] || [ -z "$(ls -A "$1/_work")" ] || invalid
-printf 'RUNMOOR_READY\n'`
 	for {
-		out, e := b.Images.Tart.run(ctx, c, []string{"exec", vm, "/bin/sh", "-c", script, "runmoor", path, GuestAgentVersion}, nil)
+		e := b.Images.Tart.preparedGuest(ctx, c, vm, path)
 		if e == nil {
-			if strings.TrimSpace(string(out)) != "RUNMOOR_READY" {
-				return problem(ErrImage, "Prepared macOS guest is incompatible or contains runner credentials/workspaces.", "Prepare a clean non-root account with Guest Agent RPC.")
-			}
 			break
+		}
+		if p, ok := e.(*Problem); ok && p.Code == ErrImage {
+			return e
 		}
 		if !waitContext(ctx, time.Second) {
 			return ctx.Err()

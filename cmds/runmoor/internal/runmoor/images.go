@@ -55,6 +55,54 @@ func (m *ImageManager) Operate(ctx context.Context, c Config, req ImageRequest) 
 		}
 	}
 	switch req.Action {
+	case "close":
+		if im.Phase != ImageOpen {
+			return im, nil
+		}
+		ctx, cancel := context.WithTimeout(ctx, c.Preparation(Tart))
+		defer cancel()
+		if err := m.Tart.Stop(ctx, c, Runner{ID: im.ID, Handle: Handle{VM: im.VM}}, s); err != nil {
+			return nil, m.imageFailure(im.ID, err)
+		}
+		if err := m.Store.Update(func(v *Snapshot) error {
+			v.Images[im.ID].Phase = ImagePreparing
+			return nil
+		}); err != nil {
+			return nil, err
+		}
+		return m.Store.View().Images[im.ID], nil
+	case "probe":
+		if im.Phase != ImageOpen {
+			return nil, problem(ErrImage, "Setup image is not open.", "Open the image before checking guest readiness.")
+		}
+		return im, m.Tart.preparedGuest(ctx, c, im.VM, "/Users/runner/actions-runner")
+	case "verify-boot":
+		if im.Phase != ImageOpen {
+			return nil, problem(ErrImage, "Setup image is not open.", "Open the image before verifying boot readiness.")
+		}
+		ctx, cancel := context.WithTimeout(ctx, c.Preparation(Tart))
+		defer cancel()
+		if err := m.Tart.Stop(ctx, c, Runner{ID: im.ID, Handle: Handle{VM: im.VM}}, s); err != nil {
+			return nil, m.imageFailure(im.ID, err)
+		}
+		if _, err := m.Tart.Exec.Start(c.TartExecutable, []string{"run", "--no-graphics", "--no-audio", im.VM}, tartEnv(c)); err != nil {
+			return nil, m.imageFailure(im.ID, problem(ErrPreparation, "Cannot restart the setup VM.", "Inspect Tart and reopen the owned setup image."))
+		}
+		for {
+			v, err := m.Tart.vm(ctx, c, im.VM)
+			if err == nil && v.Running {
+				guestErr := m.Tart.preparedGuest(ctx, c, im.VM, "/Users/runner/actions-runner")
+				if guestErr == nil {
+					return im, nil
+				}
+				if p, ok := guestErr.(*Problem); ok && p.Code == ErrImage {
+					return nil, m.imageFailure(im.ID, p)
+				}
+			}
+			if !waitContext(ctx, time.Second) {
+				return nil, m.imageFailure(im.ID, problem(ErrPreparation, "Guest Agent did not start after a clean boot.", "Enable Guest Agent 0.14.2 RPC for the logged-in runner account, then retry setup."))
+			}
+		}
 	case "open":
 		ctx, cancel := context.WithTimeout(ctx, c.Preparation(Tart))
 		defer cancel()
@@ -252,8 +300,8 @@ func (m *ImageManager) create(ctx context.Context, c Config, req ImageRequest) (
 	if !safeName.MatchString(req.Name) || (req.IPSW == "") == (req.From == "") || !validResources(req.Resources) {
 		return nil, problem(ErrConfig, "Image creation requires a safe name, explicit resources and exactly one --ipsw or --from source.", "See 'runmoor image create --help'.")
 	}
-	if req.IPSW != "" && (!filepath.IsAbs(req.IPSW) || !strings.HasSuffix(strings.ToLower(req.IPSW), ".ipsw")) {
-		return nil, problem(ErrConfig, "IPSW input must be a local absolute .ipsw path.", "Download the restore image yourself and provide its path.")
+	if req.IPSW != "" && req.IPSW != "latest" && (!filepath.IsAbs(req.IPSW) || !strings.HasSuffix(strings.ToLower(req.IPSW), ".ipsw")) {
+		return nil, problem(ErrConfig, "IPSW input must be 'latest' or a local absolute .ipsw path.", "Use 'latest' for the newest restore image supported by this Mac, or provide a downloaded .ipsw path.")
 	}
 	id := req.ID
 	if id == "" {
@@ -347,6 +395,7 @@ func (m *ImageManager) create(ctx context.Context, c Config, req ImageRequest) (
 	}
 	if e := m.Store.Update(func(s *Snapshot) error {
 		s.Images[id].Phase = ImagePreparing
+		s.Images[id].CreationComplete = true
 		s.Images[id].Source = im.Source
 		return nil
 	}); e != nil {

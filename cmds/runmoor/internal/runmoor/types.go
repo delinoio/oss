@@ -175,17 +175,18 @@ type Handle struct {
 	PID       int      `json:"pid,omitempty"`
 }
 type Image struct {
-	ID            string     `json:"id"`
-	Name          string     `json:"name"`
-	Phase         ImagePhase `json:"phase"`
-	VM            string     `json:"vm"`
-	Source        string     `json:"source"`
-	Digest        string     `json:"digest,omitempty"`
-	RunnerVersion string     `json:"runner_version,omitempty"`
-	RunnerPath    string     `json:"runner_path"`
-	Resources     Resources  `json:"resources"`
-	CreatedAt     time.Time  `json:"created_at"`
-	Problem       *Problem   `json:"problem,omitempty"`
+	ID               string     `json:"id"`
+	Name             string     `json:"name"`
+	Phase            ImagePhase `json:"phase"`
+	CreationComplete bool       `json:"creation_complete,omitempty"`
+	VM               string     `json:"vm"`
+	Source           string     `json:"source"`
+	Digest           string     `json:"digest,omitempty"`
+	RunnerVersion    string     `json:"runner_version,omitempty"`
+	RunnerPath       string     `json:"runner_path"`
+	Resources        Resources  `json:"resources"`
+	CreatedAt        time.Time  `json:"created_at"`
+	Problem          *Problem   `json:"problem,omitempty"`
 }
 type Snapshot struct {
 	ReleaseRetryAt  time.Time                  `json:"release_retry_at,omitempty"`

@@ -1,8 +1,32 @@
 # Runmoor Tart Images
 
-> **Version note:** Runmoor 0.2.0 introduced automatic setup and managed runner updates. Version 0.1.3 uses the explicit pinned configuration and manual image preparation also documented below. Check `runmoor version` before using 0.2.0 commands.
+> **Version note:** Runmoor 0.2.0 introduced automatic setup and managed runner updates. Guided creation of a new Mac VM during `init` and `image create --ipsw latest` are in the next release. Version 0.1.3 uses the explicit pinned configuration and manual image preparation also documented below. Check `runmoor version` before using release-specific commands.
 
 Install **Tart 2.37.0** on macOS 14+ arm64 yourself. Install **Tart Guest Agent 0.14.2** with RPC enabled in the guest's non-root runner account. Account setup, login, Xcode licensing and tools remain manual. Review the version-specific [Tart license](https://github.com/openai/tart/blob/2.37.0/LICENSE) and [Guest Agent license](https://github.com/openai/tart-guest-agent/blob/v0.14.2/LICENSE), currently FSL-1.1-ALv2, plus the applicable Apple software terms. They are external software, not bundled or relicensed by Runmoor.
+
+## Create a Mac image during first setup
+
+Run `runmoor init` in a terminal and choose `tart`, then `create` when asked
+for the image. The default `latest` asks Tart to download the newest Apple
+restore image supported by your Mac; an absolute local `.ipsw` path also works.
+Runmoor starts a temporary image-only manager, creates and opens the VM, and
+keeps supervising it while you complete macOS setup.
+
+In the VM, prepare a non-root `runner` login account, install **Guest Agent
+0.14.2** so `--run-agent` starts with that account after boot, then install any
+tools and accept any required Xcode license. A normal Homebrew install may
+select a different Guest Agent version; check the version in the guest. Keep
+personal credentials, previous runner registration and job workspaces out of
+the image. Press Enter in the original terminal when the VM is ready. Runmoor
+checks Guest Agent RPC, restarts the VM to check it again without manual
+intervention, installs the verified latest GitHub runner, seals the image and
+creates the final configuration. Start the manager with `runmoor run`.
+
+If setup is interrupted, run `runmoor init` again with the same `--config`
+path. Runmoor resumes its owned image rather than downloading another IPSW.
+It never replaces an existing final configuration or an image with uncertain
+ownership. The existing `--image`, `--image-source` and `--image-only`
+paths remain available; noninteractive init still requires an existing image.
 
 ## Managed runners from a prepared Mac image
 
@@ -56,7 +80,7 @@ min_free_disk_mib = 20480
 Choose budgets appropriate for your Mac, start `runmoor run`, and issue image commands from a second terminal using the same configuration. After sealing, add the connection and Tart pool, then run `runmoor reload`.
 
 ```sh
-runmoor image create --name xcode --ipsw "$HOME/Downloads/restore.ipsw" --cpu 2 --memory-mib 4096
+runmoor image create --name xcode --ipsw latest --cpu 2 --memory-mib 4096
 runmoor image create --name imported --from LOCAL_TART_NAME --cpu 2 --memory-mib 4096
 runmoor image create --name imported-oci --from oci://REGISTRY/NAMESPACE/IMAGE:TAG --cpu 2 --memory-mib 4096
 runmoor image list

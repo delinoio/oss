@@ -1,6 +1,6 @@
 # Runmoor Configuration
 
-> **Version note:** Runmoor 0.2.0 introduced automatic setup and managed runner updates. Version 0.1.3 uses the explicit pinned configuration and manual image preparation also documented below. Check `runmoor version` before using 0.2.0 commands.
+> **Version note:** Runmoor 0.2.0 introduced automatic setup and managed runner updates. Guided creation of a new Mac VM during `init` is in the next release. Version 0.1.3 uses the explicit pinned configuration and manual image preparation also documented below. Check `runmoor version` before using release-specific commands.
 
 
 ```sh
@@ -97,6 +97,14 @@ In a terminal, `runmoor init` asks for the GitHub target, execution backend and
 credential reference. On Linux the suggested backend is Docker; on Apple Silicon
 macOS it is Tart. Supply the referenced credential separately. Init does not
 install Docker/Tart or start a service.
+
+On macOS, interactive Tart setup offers `create` (the default) or `existing`.
+`create` downloads the latest host-supported Apple IPSW through Tart or uses
+an absolute local `.ipsw`, supervises guest setup, verifies Guest Agent after
+a reboot, seals the image and writes the final configuration. The guest account,
+Guest Agent and optional tool setup still require your input. Run `runmoor
+init` again with the same config path after an interruption. See [Tart image
+preparation](./tart) for the complete first-run steps.
 
 For scripts, provide the inputs directly:
 

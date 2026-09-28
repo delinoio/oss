@@ -13,11 +13,12 @@ import (
 )
 
 type tartFixture struct {
-	mu       sync.Mutex
-	c        Config
-	running  map[string]bool
-	commands [][]string
-	jit      string
+	mu          sync.Mutex
+	c           Config
+	running     map[string]bool
+	commands    [][]string
+	jit         string
+	rejectGuest bool
 }
 
 func (f *tartFixture) Run(_ context.Context, name string, args, env []string, in io.Reader) ([]byte, error) {
@@ -70,6 +71,9 @@ func (f *tartFixture) Run(_ context.Context, name string, args, env []string, in
 		} else if in != nil {
 			io.Copy(io.Discard, in)
 		} else {
+			if f.rejectGuest {
+				return []byte("RUNMOOR_INVALID\n"), nil
+			}
 			return []byte("RUNMOOR_READY\n"), nil
 		}
 	default:
