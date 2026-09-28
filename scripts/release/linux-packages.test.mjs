@@ -9,6 +9,7 @@ import { FileStore } from './linux-packages/store.mjs';
 import { addToCatalog, saveCandidate, snapshotFor, promote } from './linux-packages/publish.mjs';
 import { validateRotation, rotationOverlapMs } from './linux-packages/keyring.mjs';
 import { isImmutableAptObject } from './linux-packages/repository.mjs';
+import { verifyPublicObject } from './linux-packages/public-readback.mjs';
 
 const revision = 'a'.repeat(40);
 const fingerprint = 'A'.repeat(40);
@@ -129,6 +130,50 @@ test('public digest verification is part of publication success', async (t) => {
   const catalog = await addToCatalog(state, first.record); const snapshot = await snapshotFor(state, catalog, build);
   await assert.rejects(promote(state, publicStore, snapshot, async () => { throw new Error('PUBLIC_READBACK_MISMATCH'); }), /PUBLIC_READBACK_MISMATCH/u);
   assert.equal(await state.get(`published/${catalog.generation}.json`), null);
+});
+
+test('public readback recovers from bounded transport and server failures', async () => {
+  const expected = Buffer.from('verified repository object');
+  const pauses = [];
+  let calls = 0;
+  await verifyPublicObject('apt/dists/stable/InRelease', expected, {
+    fetcher: async (url, options) => {
+      assert.equal(url, 'https://pkgs.oss.delino.io/apt/dists/stable/InRelease');
+      assert.equal(options.redirect, 'error');
+      if (++calls === 1) throw new TypeError('fetch failed');
+      return new Response(calls === 2 ? 'temporary failure' : expected, { status: calls === 2 ? 503 : 200 });
+    },
+    pause: async (milliseconds) => { pauses.push(milliseconds); },
+  });
+  assert.equal(calls, 3);
+  assert.deepEqual(pauses, [1000, 2000]);
+});
+
+test('public readback fails immediately on non-transient client errors', async () => {
+  let calls = 0;
+  await assert.rejects(verifyPublicObject('keys/delino-packages.asc', Buffer.from('key'), {
+    fetcher: async () => { calls++; return new Response('', { status: 403 }); },
+    pause: async () => { throw new Error('must not retry'); },
+  }), /PUBLIC_READBACK_HTTP_FAILED/u);
+  assert.equal(calls, 1);
+});
+
+test('public readback reports a stable code after repeated transport failures', async () => {
+  let calls = 0;
+  await assert.rejects(verifyPublicObject('apt/dists/stable/InRelease', Buffer.from('expected'), {
+    fetcher: async () => { calls++; throw new TypeError('private request detail'); },
+    pause: async () => {},
+  }), /PUBLIC_READBACK_TRANSPORT_FAILED/u);
+  assert.equal(calls, 3);
+});
+
+test('public readback never accepts mismatched bytes', async () => {
+  let calls = 0;
+  await assert.rejects(verifyPublicObject('apt/dists/stable/InRelease', Buffer.from('expected'), {
+    fetcher: async () => { calls++; return new Response('stale'); },
+    pause: async () => {},
+  }), /PUBLIC_READBACK_MISMATCH/u);
+  assert.equal(calls, 3);
 });
 
 test('keyring updates force a new snapshot and signer rotation requires a completed overlap', async (t) => {
