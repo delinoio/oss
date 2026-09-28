@@ -173,7 +173,12 @@ func migrate(ctx context.Context, db *sql.DB, root string) error {
 			return storageError(err)
 		}
 	}
-	if _, err := tx.ExecContext(ctx, prCIProblemSchema); err != nil {
+	if version < 19 {
+		if _, err := tx.ExecContext(ctx, prCIProblemSchema); err != nil {
+			return storageError(err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, prRemediationSchema); err != nil {
 		return storageError(err)
 	}
 	return storageError(tx.Commit())

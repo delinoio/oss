@@ -57,15 +57,19 @@ func (v PRProblemObservation) Validate() error {
 }
 
 type PRProblemSet struct {
-	Version  uint32                  `json:"version"`
-	Type     PRProblemRecordType     `json:"type"`
-	Target   SessionPullRequest      `json:"target"`
-	Feedback *PRProblemObservation   `json:"feedback,omitempty"`
-	CI       *PRCIObservationSummary `json:"ci,omitempty"`
-	Conflict *PRConflictObservation  `json:"conflict,omitempty"`
+	Version     uint32                  `json:"version"`
+	Type        PRProblemRecordType     `json:"type"`
+	Target      SessionPullRequest      `json:"target"`
+	Feedback    *PRProblemObservation   `json:"feedback,omitempty"`
+	CI          *PRCIObservationSummary `json:"ci,omitempty"`
+	Conflict    *PRConflictObservation  `json:"conflict,omitempty"`
+	Remediation *PRRemediationChain     `json:"remediation,omitempty"`
 }
 
 func (v PRProblemSet) Validate() error {
+	if v.Remediation != nil && v.Remediation.Validate() != nil {
+		return invalidPRProblem()
+	}
 	if v.Version != 1 || v.Type != PRProblemSetRecord || v.Target.Validate() != nil || (v.Feedback == nil && v.CI == nil && v.Conflict == nil) || (v.Feedback != nil && v.Feedback.Validate() != nil) || (v.CI != nil && v.CI.Validate() != nil) || (v.Conflict != nil && v.Conflict.Validate() != nil) {
 		return invalidPRProblem()
 	}

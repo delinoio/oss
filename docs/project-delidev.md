@@ -239,3 +239,6 @@ Published PR feedback now has schema-v18 durable shared history and exact conten
 
 
 Schema-v19 PR history now includes required-CI failure versions with immutable shared complete rule/result proofs, plus independently collected verified conflict transitions. Original feedback and local decisions survive migration unchanged. Unknown/current applicability and original evidence remain separate; retries retain one shared stable PR owner and exact kind/request identity. RPC/CLI/desktop expose independent collection, original proof inspection and local Dismiss. Handled/resolved transitions, Fix now, fresh execution authorization, durable attempt chains and the remediation controller remain unfinished.
+
+
+Schema v20 now provides an internal PR remediation coordination core: one durable active/uncertain attempt per stable PR, version/input-bound reservations, fresh independent kind prerequisites, atomic ordinary-claim accounting, lifetime attempt counts and explicit resumption baselines. Original native completion/cleanup gates release without inferring Git push or handled feedback. Public Fix now/controller composition, PR-head workspace selection, direct-harness Git changes and complete platform acceptance remain required; policy persistence does not yet dispatch remediation.
