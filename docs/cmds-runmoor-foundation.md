@@ -237,6 +237,12 @@ slot without interrupting busy jobs. Failures retain the last verified image and
 retry with backoff. Known support deadlines block new acquisition after expiry;
 unknown release freshness is reported without pretending a cached image is
 current. Initial preparation failure has no runnable fallback.
+An unchanged release still requires bounded read-only validation of its committed
+image. Missing or invalid images are prepared again and the candidate is validated
+before activation. Verified repair clears only a matching image/version suspension;
+authentication, ownership and other failures remain suspended, and operator
+pause/drain/stop or concurrent reload cannot be undone. Transient validation
+failures preserve the current artifact and retry with backoff.
 
 SQLite v2 adds managed-pool state, immutable artifact identities, release metadata
 and preparation/cleanup reservations. Opening v1 migrates its snapshot and

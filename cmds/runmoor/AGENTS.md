@@ -39,6 +39,7 @@
 ### Automatic runner management
 
 - Follow the automatic defaults and runner management contract in `docs/cmds-runmoor-foundation.md`. Preserve the difference between omitted and explicit resource values, requested configuration and committed execution generations, and global host versus Docker engine capacity.
+- Revalidate the committed image before treating an unchanged runner release as ready. Missing/invalid images require preparation and candidate validation; transient dependency/ownership failures retain the current artifact with backoff. Verified repair may clear only the matching image/version suspension, never an operator pause, drain, stop or unrelated failure.
 - Only verified immutable candidates may activate. Preparation is credential-free, lifecycle-tracked, durably reserved, and serialized with image operations. Never update a running job or an operator source image. Pause/drain/stop and stale-candidate checks are authoritative at publication.
 - Keep current, previous, source and live execution references during artifact collection. Recover uncertain preparation/commit outcomes by exact journaled ownership; never blindly recreate or force-remove a foreign/referenced artifact.
 - Freeze the first successful Tart import as an owned digest before guest mutation. Runner installation retries clone that frozen source, including after restart; imported source revisions cannot be opened or sealed in place. Transfer preparation reservations atomically during import and clone.

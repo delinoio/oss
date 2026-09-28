@@ -287,21 +287,42 @@ func (m *Manager) updateManaged(ctx context.Context, name string) {
 		return
 	}
 	if managed.Current != nil && managed.Current.RunnerVersion == selected.Version() && managed.AppliedHash == hash {
-		_ = m.Store.Update(func(v *Snapshot) error {
-			q := v.Managed[name]
-			if q == nil || q.DesiredHash != hash {
-				return staleUpdate()
+		current := m.Store.View()
+		err := m.validateManagedImage(ctx, current.Config, *managed.Current, current)
+		repair := false
+		if err != nil {
+			code := classify(err, ErrRetry, "Managed runner image validation failed.", "Wait for the next automatic retry.").Code
+			if code != ErrImage && code != ErrRunnerVersion {
+				m.managedFailure(name, err)
+				return
 			}
-			q.Phase = UpdateReady
-			if !q.Expires.IsZero() && !time.Now().Before(q.Expires) {
-				q.Phase = UpdateExpired
+			repair = true
+		}
+		// Image presence alone cannot disprove a previously observed runner
+		// version failure. Rebuild and verify it in the preparation environment.
+		for _, p := range current.Pools {
+			if fingerprint(p.Spec) == fingerprint(*managed.Current) && managedImageFailure(p) {
+				repair = true
 			}
-			q.NextCheck = time.Now().Add(time.Hour)
-			q.Attempts = 0
-			q.Problem = nil
-			return nil
-		})
-		return
+		}
+		if !repair {
+			_ = m.Store.Update(func(v *Snapshot) error {
+				q := v.Managed[name]
+				if q == nil || q.DesiredHash != hash || q.Paused || v.Paused || v.Stopping || ctx.Err() != nil {
+					return staleUpdate()
+				}
+				q.Phase = UpdateReady
+				if !q.Expires.IsZero() && !time.Now().Before(q.Expires) {
+					q.Phase = UpdateExpired
+				}
+				q.NextCheck = time.Now().Add(time.Hour)
+				q.Attempts = 0
+				q.Problem = nil
+				return nil
+			})
+			return
+		}
+		m.Log.Info("runner_image_repair_required", "pool", name, "version", selected.Version(), "backend", desired.Backend)
 	}
 	m.Log.Info("runner_update_preparing", "pool", name, "version", selected.Version(), "backend", desired.Backend)
 	artifact := RunnerArtifact{ID: newID(), Pool: name, Backend: desired.Backend, Phase: ArtifactPreparing, Resources: desired.Resources, Reserved: true, CreatedAt: nowUTC()}
@@ -333,6 +354,9 @@ func (m *Manager) updateManaged(ctx context.Context, name string) {
 	}
 	buildCtx, cancel := context.WithTimeout(ctx, 30*time.Minute)
 	resolved, err := m.RunnerBuilder.Prepare(buildCtx, s.Requested, desired, artifact, selected)
+	if err == nil {
+		err = m.validateManagedImage(buildCtx, s.Requested, resolved, m.Store.View())
+	}
 	cancel()
 	if err != nil {
 		m.managedFailure(name, err)
@@ -358,6 +382,7 @@ func (m *Manager) updateManaged(ctx context.Context, name string) {
 			return nil
 		}
 		activated = true
+		recoverManagedImage(v, q.Current)
 		q.PreviousArtifact = q.CurrentArtifact
 		q.CurrentArtifact = artifact.ID
 		q.Current = &resolved
@@ -385,6 +410,43 @@ func (m *Manager) updateManaged(ctx context.Context, name string) {
 	}
 	_ = m.cleanupManaged(ctx)
 }
+
+// Validation is read-only and uses no management credentials or JIT data.
+func (m *Manager) validateManagedImage(ctx context.Context, c Config, p Pool, s Snapshot) error {
+	probe, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if err := probe.Err(); err != nil {
+		return err
+	}
+	driver, err := m.Drivers(p.Backend)
+	if err != nil {
+		return err
+	}
+	return driver.Validate(probe, c, p, s)
+}
+
+func managedImageFailure(p *PoolState) bool {
+	return p.Phase == Suspended && p.Problem != nil && (p.Problem.Code == ErrImage || p.Problem.Code == ErrRunnerVersion)
+}
+
+func recoverManagedImage(s *Snapshot, previous *Pool) {
+	if previous == nil {
+		return
+	}
+	for _, p := range s.Pools {
+		if fingerprint(p.Spec) != fingerprint(*previous) || !managedImageFailure(p) {
+			continue
+		}
+		// Only the verified replacement authorizes clearing an image failure.
+		// Operator pauses, draining generations and unrelated failures survive.
+		p.Phase = Ready
+		p.Problem = nil
+		p.PreparationFailures = 0
+		p.Session = ""
+		p.LastMessage = 0
+	}
+}
+
 func staleUpdate() *Problem {
 	return problem(ErrRetry, "Runner update was superseded or stopped.", "The current configuration and existing jobs remain authoritative.")
 }

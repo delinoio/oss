@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -515,5 +516,190 @@ func TestManagedRetentionPreservesLiveAndPreviousImages(t *testing.T) {
 	q := s.Managed["linux"]
 	if s.Artifacts[first] != nil || s.Artifacts[q.CurrentArtifact] == nil || s.Artifacts[q.PreviousArtifact] == nil || len(s.Artifacts) != 2 {
 		t.Fatal("current/previous retention failed")
+	}
+}
+
+func managedCurrentPool(t *testing.T, s Snapshot) string {
+	t.Helper()
+	for id, p := range s.Pools {
+		if p.Phase != Draining && p.Phase != Retired && fingerprint(p.Spec) == fingerprint(*s.Managed["linux"].Current) {
+			return id
+		}
+	}
+	t.Fatal("no current managed execution pool")
+	return ""
+}
+
+func TestManagedRevalidatesAndRepairsCurrentImage(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		backend    Backend
+		newImage   bool
+		validation ErrorCode
+		failure    ErrorCode
+	}{
+		{name: "pruned Docker digest", backend: Docker, validation: ErrImage, failure: ErrImage},
+		{name: "new custom Docker image", backend: Docker, newImage: true, validation: ErrImage, failure: ErrImage},
+		{name: "invalid Tart revision", backend: Tart, newImage: true, validation: ErrImage, failure: ErrImage},
+		{name: "recorded runner version failure", backend: Docker, failure: ErrRunnerVersion},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m, c, builder, _ := managedFixture(t)
+			if tc.backend == Tart {
+				c.Pools[0].Backend = Tart
+				c.Pools[0].Image = newID()
+				c.Pools[0].RunnerPath = "/Users/runner/actions-runner"
+				if err := m.accept(c, false); err != nil {
+					t.Fatal(err)
+				}
+				builder.prepare = func(_ context.Context, _ Config, p Pool, _ RunnerArtifact, r RunnerRelease) (Pool, error) {
+					p.Image, p.RunnerVersion = newID(), r.Version()
+					return p, nil
+				}
+			}
+			m.updateManaged(context.Background(), "linux")
+			before := m.Store.View()
+			pool := managedCurrentPool(t, before)
+			current := *before.Managed["linux"].Current
+			runner := seedRunner(t, m, pool, Busy)
+			beforeRunner := fingerprint(m.Store.View().Runners[runner])
+			m.poolProblem(pool, problem(tc.failure, "Fixture image failure.", "Repair."), true)
+			validated, repaired := 0, false
+			m.Drivers = func(backend Backend) (Driver, error) {
+				return validatingDriver{validate: func(ctx context.Context, _ Config, p Pool, _ Snapshot) error {
+					validated++
+					if _, bounded := ctx.Deadline(); !bounded || backend != tc.backend || p.RunnerVersion != current.RunnerVersion {
+						t.Fatal("validation lost deadline or committed image identity")
+					}
+					if !repaired && tc.validation != "" {
+						return problem(tc.validation, "Fixture image is unavailable.", "Repair.")
+					}
+					return nil
+				}}, nil
+			}
+			builder.prepare = func(context.Context, Config, Pool, RunnerArtifact, RunnerRelease) (Pool, error) {
+				repaired = true
+				p := current
+				if tc.newImage {
+					if tc.backend == Tart {
+						p.Image = newID()
+					} else {
+						p.Image = "sha256:" + strings.Repeat("c", 64)
+					}
+				}
+				return p, nil
+			}
+			m.updateManaged(context.Background(), "linux")
+			after := m.Store.View()
+			q := after.Managed["linux"]
+			active := after.Pools[managedCurrentPool(t, after)]
+			if builder.calls != 2 || validated != 2 || q.Phase != UpdateReady || active.Phase != Ready || active.Problem != nil {
+				t.Fatalf("image repair did not recover the pool: calls=%d validations=%d managed=%+v pool=%+v", builder.calls, validated, q, active)
+			}
+			if q.CurrentArtifact == before.Managed["linux"].CurrentArtifact || q.PreviousArtifact != before.Managed["linux"].CurrentArtifact || fingerprint(after.Runners[runner]) != beforeRunner {
+				t.Fatal("repair lost artifact history or changed a running job")
+			}
+			if tc.newImage && after.Pools[pool].Phase != Draining {
+				t.Fatal("replacement skipped generation draining")
+			}
+		})
+	}
+}
+
+func TestManagedCurrentImageValidationFailureRetainsFallback(t *testing.T) {
+	for _, code := range []ErrorCode{ErrRetry, ErrOwnership, ErrPlatform, ErrImage} {
+		t.Run(string(code), func(t *testing.T) {
+			m, _, builder, _ := managedFixture(t)
+			m.updateManaged(context.Background(), "linux")
+			before := m.Store.View().Managed["linux"]
+			m.Drivers = func(Backend) (Driver, error) {
+				return validatingDriver{validate: func(context.Context, Config, Pool, Snapshot) error {
+					return problem(code, "Fixture validation failed.", "Retry.")
+				}}, nil
+			}
+			m.updateManaged(context.Background(), "linux")
+			after := m.Store.View().Managed["linux"]
+			wantBuilds := 1
+			if code == ErrImage {
+				// The candidate must also validate, including dependencies such as
+				// the DinD daemon image, before any suspension can be cleared.
+				wantBuilds++
+			}
+			if builder.calls != wantBuilds || after.CurrentArtifact != before.CurrentArtifact || fingerprint(after.Current) != fingerprint(before.Current) || after.Phase != UpdateRetry || after.Problem == nil || after.Problem.Code != code || !after.NextCheck.After(time.Now()) {
+				t.Fatalf("validation failure lost fallback or retry: %+v (builds=%d)", after, builder.calls)
+			}
+		})
+	}
+}
+
+func TestManagedImageRepairPreservesUnrelatedSuspension(t *testing.T) {
+	for _, failure := range []ErrorCode{ErrAuth, ErrOwnership, ErrPreparation} {
+		t.Run(string(failure), func(t *testing.T) {
+			m, _, builder, _ := managedFixture(t)
+			m.updateManaged(context.Background(), "linux")
+			pool := managedCurrentPool(t, m.Store.View())
+			m.poolProblem(pool, problem(failure, "Fixture unrelated failure.", "Inspect."), true)
+			m.Drivers = func(Backend) (Driver, error) {
+				return validatingDriver{validate: func(context.Context, Config, Pool, Snapshot) error {
+					if builder.calls == 1 {
+						return problem(ErrImage, "Fixture pruned image.", "Repair.")
+					}
+					return nil
+				}}, nil
+			}
+			m.updateManaged(context.Background(), "linux")
+			p := m.Store.View().Pools[pool]
+			if builder.calls != 2 || p.Phase != Suspended || p.Problem == nil || p.Problem.Code != failure {
+				t.Fatalf("image repair cleared an unrelated suspension: %+v", p)
+			}
+		})
+	}
+}
+
+func TestManagedRevalidationHonorsConcurrentLifecycle(t *testing.T) {
+	for _, repair := range []bool{false, true} {
+		for _, action := range []string{"pause", "stop", "drain", "reload", "cancel"} {
+			t.Run(fmt.Sprintf("repair=%t/%s", repair, action), func(t *testing.T) {
+				m, _, builder, _ := managedFixture(t)
+				m.updateManaged(context.Background(), "linux")
+				before := m.Store.View().Managed["linux"]
+				pool := managedCurrentPool(t, m.Store.View())
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				validations := 0
+				m.Drivers = func(Backend) (Driver, error) {
+					return validatingDriver{validate: func(context.Context, Config, Pool, Snapshot) error {
+						validations++
+						if repair && validations == 1 {
+							return problem(ErrImage, "Fixture missing image.", "Repair.")
+						}
+						if err := m.Store.Update(func(s *Snapshot) error {
+							switch action {
+							case "pause":
+								s.Paused = true
+							case "stop":
+								s.Stopping = true
+							case "drain":
+								s.Managed["linux"].Paused = true
+								s.Pools[pool].Phase = Draining
+							case "reload":
+								s.Managed["linux"].DesiredHash = "replacement"
+							case "cancel":
+								cancel()
+							}
+							return nil
+						}); err != nil {
+							t.Fatal(err)
+						}
+						return nil
+					}}, nil
+				}
+				m.updateManaged(ctx, "linux")
+				after := m.Store.View().Managed["linux"]
+				if after.CurrentArtifact != before.CurrentArtifact || after.Phase == UpdateReady {
+					t.Fatalf("stale validation published readiness: %+v (builds=%d)", after, builder.calls)
+				}
+			})
+		}
 	}
 }
