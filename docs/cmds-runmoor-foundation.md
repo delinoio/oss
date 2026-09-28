@@ -176,7 +176,7 @@ Update this document, the project index, scoped command policies, README/public 
 
 ## Automatic defaults and runner management
 
-Version 0.2.0 extends TOML v1 with optional resource and concurrency
+Runmoor 0.2.0 extends TOML v1 with optional resource and concurrency
 fields. Only omitted values receive defaults; explicit zero and negative values
 remain invalid. Host CPU and physical memory are detected at startup and reload.
 Docker has an additional engine CPU/memory ceiling, shared by all Docker jobs and

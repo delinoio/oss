@@ -1,6 +1,6 @@
 # Runmoor Configuration
 
-> **Version note:** Automatic setup and managed runner updates are available in Runmoor 0.2.0. Version 0.1.3 uses the explicit pinned configuration and manual image preparation also documented below.
+> **Version note:** Runmoor 0.2.0 introduced automatic setup and managed runner updates. Version 0.1.3 uses the explicit pinned configuration and manual image preparation also documented below. Check `runmoor version` before using 0.2.0 commands.
 
 
 ```sh
@@ -20,6 +20,38 @@ Both supported operating systems use:
 | Managed images | `$XDG_DATA_HOME/runmoor` | `~/.local/share/runmoor` |
 
 State/data may be overridden by absolute TOML paths. Configuration and credential files must be owned by your user, regular files, and mode 0600. Directories/socket are private to that user. Very long state paths exceed the Unix socket length limit and are rejected. Storage relocation requires drain, stop, and a complete installation backup; it is not a live reload.
+
+## Recover private configuration access
+
+The setup command is `runmoor init`, not `runmoor config init`. Most other
+commands, including `config validate`, `status`, and `service`, load the selected
+configuration first. `init`, `version`, and help can run without an existing
+configuration. If the file was removed, restore the original configuration from
+a backup before using an existing installation; do not delete its state to make
+the error disappear. `init` creates a new file only when the selected path does
+not already exist.
+
+`Cannot securely open a private file` means a private file could not be opened;
+the message does not identify the file or the operating-system error. If
+`runmoor config validate` reports it, inspect the selected configuration path
+first. A missing file, an inaccessible path, or a symlink at the file itself
+can produce this message. On Ubuntu, inspect the default path with:
+
+```sh
+config_path="${XDG_CONFIG_HOME:-$HOME/.config}/runmoor/config.toml"
+namei -l "$config_path"
+```
+
+If you passed `--config PATH`, inspect that path instead. Restore a missing
+configuration from its matching backup. An existing configuration must be a
+regular file owned by the Runmoor user with mode 0600, without a symlink at the
+file itself. Changing file permissions cannot restore a missing file.
+
+If configuration validation succeeds but `run` or `status` reports the same
+message, inspect the configured state directory and its existing files. The
+default state location is shown above; `[storage].state` can override it. A
+missing lock or database is normal before the first run because Runmoor creates
+those files. Preserve existing state and managed data when diagnosing access.
 
 ## Create a GitHub PAT
 
