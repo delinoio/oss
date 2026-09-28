@@ -66,8 +66,8 @@ func Doctor(ctx context.Context, c Config, s Snapshot, factory func(Connection) 
 	}
 	add("sleep_inhibition", "", err, true)
 	for _, p := range s.Pools {
-		if p.Problem != nil {
-			add("pool_state", p.Spec.Name, p.Problem, false)
+		if diagnostic := poolDiagnostic(p); diagnostic != nil {
+			add("pool_state", p.Spec.Name, diagnostic, false)
 		}
 	}
 	for _, runner := range s.Runners {

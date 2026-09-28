@@ -426,7 +426,7 @@ func (m *Manager) validateManagedImage(ctx context.Context, c Config, p Pool, s 
 }
 
 func managedImageFailure(p *PoolState) bool {
-	return p.Phase == Suspended && p.Problem != nil && (p.Problem.Code == ErrImage || p.Problem.Code == ErrRunnerVersion)
+	return p.Phase == Suspended && p.Problem != nil && (p.Problem.Code == ErrImage || p.Problem.Code == ErrRunnerVersion || p.Problem.Code == ErrPreparation && p.PreparationFailures >= 3)
 }
 
 func recoverManagedImage(s *Snapshot, previous *Pool) {
@@ -437,7 +437,7 @@ func recoverManagedImage(s *Snapshot, previous *Pool) {
 		if fingerprint(p.Spec) != fingerprint(*previous) || !managedImageFailure(p) {
 			continue
 		}
-		// Only the verified replacement authorizes clearing an image failure.
+		// Only the verified replacement authorizes clearing an image or startup failure.
 		// Operator pauses, draining generations and unrelated failures survive.
 		p.Phase = Ready
 		p.Problem = nil

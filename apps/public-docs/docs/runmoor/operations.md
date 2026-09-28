@@ -53,13 +53,14 @@ macOS and Xcode still use their existing manual/package-manager update workflows
 
 ## Troubleshooting and privacy
 
-- `AUTHENTICATION_FAILED`: correct the referenced credential/permissions, then resume the pool.
+- `AUTHENTICATION_FAILED`: correct the referenced credential/permissions. Reload can resume the pool when a changed credential reference or runner group passes validation; if the secret changed at the same reference, use `resume`.
 - `IMAGE_INVALID` or `RUNNER_VERSION_UNSUPPORTED`: pre-pull a correct digest or seal a compatible image. Managed pools retry runner preparation automatically; inspect status or request `runner update`. Exact pins require explicit replacement. GitHub generally requires replacement within 30 days and may require security updates sooner.
 - `CAPACITY_EXHAUSTED` or `DISK_LOW`: adjust explicit budgets/free disk, or remove an unused sealed image yourself. Do not delete active execution storage.
 - `OWNERSHIP_AMBIGUOUS`: preserve local state and investigate the exact resource. Use a different scale-set name when another installation owns it; restoring ownership requires the original matching backup.
 - `CLEANUP_PENDING`: restore Docker/Tart/GitHub connectivity and let reconciliation retry. A stopped manager reports pending cleanup until the next run.
 - `SLEEP_INHIBITION_UNAVAILABLE`: check OS utility/session permissions; work continues without a sleep guarantee.
 - Repeated preparation failures suspend the affected pool after three attempts. Unrelated healthy pools continue.
+- A suspended pool should show its reason in `runmoor status` and `runmoor doctor`. Older state may lack the original reason; Runmoor reports that gap without guessing or automatically resuming the pool. Run `doctor`, correct any reported dependency failure, then use `runmoor resume --pool NAME`.
 
 Diagnostics are local, sanitized structured metadata bounded by **seven days and 256 MiB**. Completed execution history expires after seven days; unresolved ownership/cleanup remains until reconciliation. Credentials, JIT configuration, workflow secrets and raw job output are excluded. User-created sealed images remain until explicit deletion; generated runner revisions follow managed retention. There is no telemetry or Prometheus endpoint.
 
