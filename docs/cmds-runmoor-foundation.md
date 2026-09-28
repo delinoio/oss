@@ -64,7 +64,7 @@ Trusted developers and small-team operators install the binary, Docker/Tart, cre
 
 - Image mutations require a running manager; the CLI never executes them offline. The manager retains sleep inhibition for open setup/validation revisions after the request returns. Whole-manager stop, including force-stop and service stop/uninstall, waits for open setup and pending image removal; pool-scoped waits do not. Shutdown rejects new image operations but permits sealing an already open revision and retrying pending removal. Close the setup VM normally or seal it before expecting stop to finish. Offline image listing remains available. Initial setup accepts automatic or explicit host budgets with no pools/connections; add the Tart pool and reload after sealing.
 
-- Initial compatibility pins: Tart 2.37.0, Guest Agent 0.14.2, macOS 14+ arm64. Require functional Guest Agent RPC and an exact runner version in the prepared non-root guest account. A reachable guest returns a bounded ready/invalid marker; invalid accounts, versions, registration or workspace state fail immediately with `IMAGE_INVALID`, while unavailable RPC retries within the preparation deadline.
+- Host compatibility accepts stable Tart 2.x.x releases with complete SemVer major.minor.patch numbers and optional valid build metadata; reject prereleases, shorthand versions, malformed versions, and other major versions. Guest Agent remains pinned to 0.14.2 on macOS 14+ arm64. Require functional Guest Agent RPC and an exact runner version in the prepared non-root guest account. A reachable guest returns a bounded ready/invalid marker; invalid accounts, versions, registration or workspace state fail immediately with `IMAGE_INVALID`, while unavailable RPC retries within the preparation deadline.
 - `image create --name NAME [--cpu N --memory-mib N]` accepts exactly one `--ipsw latest|PATH` or `--from SOURCE`. `latest` delegates selection of the newest host-supported Apple restore image to Tart; a path is an absolute local `.ipsw`. Sources are a stopped local Tart name (optional `--source-home`), absolute `.tvm`, sealed Runmoor revision UUID, or `oci://` input resolved to a digest. Imports never modify the operator's source image.
 - Local-name imports use a temporary `import-<image UUID>.tvm` archive in private managed data. The image UUID is durable before export begins; normal completion/failure, restart reconciliation across all image phases, and image removal clean that exact artifact. Cleanup errors remain visible in image diagnostics and prevent successful removal from discarding the ownership record. Unjournaled archives and unexpected symlink/directory targets are preserved.
 - `image open --id UUID` opens a mutable setup revision for account/Xcode/tool installation. `image seal --id UUID --runner-version VERSION [--runner-path PATH]` validates guest readiness, clean runner registration/workspace and exact versions, stops the VM, hashes the base files and publishes an immutable local revision. Sealing and sealed-image verification hash with bounded, cancellation-aware reads under the operation context, so preparation deadlines and force-stop do not wait for a whole disk read; cancellation closes the file and discards the partial digest. Editing requires a new revision. `image remove` refuses referenced or active images.
@@ -72,7 +72,7 @@ Trusted developers and small-team operators install the binary, Docker/Tart, cre
 - Seal runner paths use the same validation as TOML pools: a leading `/`, no `..` substring, NUL or line breaks. Reject invalid paths before reservation or guest preparation; store accepted strings unchanged so the pool can match sealed metadata exactly.
 - Every Tart invocation uses argv/stdin and an allowlisted environment containing private `TART_HOME` and `TART_NO_AUTO_PRUNE=1`. No external automatic pruning is permitted. Each job clones a sealed base, configures limits and boots that clone only. Pool validation and every sealed-base clone (including a new setup revision) recompute the recorded digest and reject missing or altered files before cloning.
 - The same arm64 Runmoor binary provides a private guest supervisor, transferred by stdin without management credentials. Its detached runner and the detached native Tart process inherit real null output descriptors, not parent-owned pipes, and survive a manager-only restart. Guest status contains bounded execution metadata, never JIT credentials or job output. Bootstrap checks matching supervisor identity and unfinished readiness after the runner survives a one-second startup observation; missing/non-executable launchers and immediate exits are preparation failures and do not reset the pool circuit breaker. The guest's private state root is fixed alongside the uploaded helper, independent of inherited temporary-directory settings. Reacquisition checks the live supervisor command as well as its persisted identity and startup readiness; rebooted or missing guest state remains uncertain until reconciliation or the original deadline.
-- Ownership markers and durable records constrain all VM cleanup. Finished/failed clones and workspaces are destroyed; bases persist until explicit deletion. Tart and Guest Agent are external, version-specific FSL-1.1-ALv2 dependencies; Runmoor neither bundles them nor distributes macOS/Xcode images.
+- Ownership markers and durable records constrain all VM cleanup. Finished/failed clones and workspaces are destroyed; bases persist until explicit deletion. Tart and Guest Agent are external dependencies with version-specific licenses. The previously pinned Tart 2.37.0 and Guest Agent 0.14.2 sources use FSL-1.1-ALv2; operators must check the license of their installed Tart release. Runmoor neither bundles them nor distributes macOS/Xcode images.
 
 ### Service operation
 
@@ -176,7 +176,7 @@ Update this document, the project index, scoped command policies, README/public 
 - [Issue #893](https://github.com/delinoio/oss/issues/893).
 - [GitHub runner authentication](https://docs.github.com/en/actions/how-tos/manage-runners/use-actions-runner-controller/authenticate-to-the-api).
 - [Runner update requirements](https://docs.github.com/en/actions/reference/runners/self-hosted-runners).
-- [Tart 2.37.0](https://github.com/openai/tart/tree/2.37.0), [Guest Agent 0.14.2](https://github.com/openai/tart-guest-agent/tree/v0.14.2).
+- [Tart releases](https://github.com/openai/tart/releases), [Guest Agent 0.14.2](https://github.com/openai/tart-guest-agent/tree/v0.14.2).
 
 ## Automatic defaults and runner management
 
@@ -310,8 +310,8 @@ managed preparation and cleanup.
   host-supported Apple IPSW, or an absolute local `.ipsw`, alongside the
   existing prepared-source choice. `image create --ipsw latest` uses the same
   Tart option. Noninteractive init still requires an image/source reference or
-  explicit `--image-only`. Tart remains operator-installed at exact version
-  2.37.0.
+  explicit `--image-only`. Tart remains operator-installed at a stable 2.x.x
+  release.
 - Guided init stages a private image-only configuration and a private atomic
   setup journal keyed to the requested final config path and UUID-v7 image.
   It allocates distinct state and data directories for that UUID and records

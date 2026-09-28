@@ -106,7 +106,7 @@ service-start root cause is claimed.
 The Tart guide also describes interactive first setup from a host-supported
 Apple IPSW, operator completion of the guest account/Guest Agent/tool setup,
 post-reboot readiness validation, automatic runner installation and sealing,
-and same-command interruption recovery. Preserve the exact external Tart and
-Guest Agent version and license boundaries. Its published-version note must
-distinguish the released 0.2.0 automatic setup from the still-unreleased guided
-creation of a new Mac VM.
+and same-command interruption recovery. Preserve the stable Tart 2.x.x range,
+exact Guest Agent version, and version-specific license boundaries. Its
+published-version note must distinguish the released 0.2.0 automatic setup
+from the still-unreleased guided creation of a new Mac VM.

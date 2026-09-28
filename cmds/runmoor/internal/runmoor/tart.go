@@ -13,9 +13,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/mod/semver"
 )
 
-const TartVersion = "2.37.0"
 const GuestAgentVersion = "0.14.2"
 
 type CommandExecutor interface {
@@ -67,10 +68,20 @@ func tartEnv(c Config) []string {
 func (t *TartDriver) run(ctx context.Context, c Config, args []string, in io.Reader) ([]byte, error) {
 	b, e := t.Exec.Run(ctx, c.TartExecutable, args, tartEnv(c), in)
 	if e != nil {
-		return nil, problem(ErrDependency, "Tart command failed.", "Check Tart 2.37.0, Guest Agent RPC and the owned VM with 'runmoor doctor'.")
+		return nil, problem(ErrDependency, "Tart command failed.", "Check Tart 2.x.x, Guest Agent RPC and the owned VM with 'runmoor doctor'.")
 	}
 	return b, nil
 }
+
+func supportedTartVersion(output string) bool {
+	version := "v" + strings.TrimSpace(output)
+	if !semver.IsValid(version) || semver.Major(version) != "v2" || semver.Prerelease(version) != "" {
+		return false
+	}
+	// x/mod also accepts v2 and v2.1; Tart must report a full SemVer triplet.
+	return semver.Canonical(version) == strings.SplitN(version, "+", 2)[0]
+}
+
 func (t *TartDriver) check(ctx context.Context, c Config) error {
 	if t.HostCheck != nil {
 		if e := t.HostCheck(ctx); e != nil {
@@ -93,8 +104,8 @@ func (t *TartDriver) check(ctx context.Context, c Config) error {
 	if e != nil {
 		return e
 	}
-	if strings.TrimSpace(string(b)) != TartVersion {
-		return problem(ErrDependency, "Runmoor requires Tart 2.37.0.", "Install the documented Tart version yourself; Runmoor does not bundle it.")
+	if !supportedTartVersion(string(b)) {
+		return problem(ErrDependency, "Runmoor requires a stable Tart 2.x.x release.", "Install a stable Tart 2.x.x release yourself; Runmoor does not bundle it.")
 	}
 	return nil
 }
@@ -145,7 +156,7 @@ func (t *TartDriver) vm(ctx context.Context, c Config, name string) (vmInfo, err
 		return v, e
 	}
 	if json.Unmarshal(b, &v) != nil {
-		return v, problem(ErrDependency, "Tart returned an incompatible VM description.", "Use the documented Tart version.")
+		return v, problem(ErrDependency, "Tart returned an incompatible VM description.", "Check the installed Tart 2.x.x release.")
 	}
 	return v, nil
 }

@@ -274,7 +274,11 @@ Docker and privileged DinD share a kernel; they are not secure isolation for arb
 
 ## Prepare macOS images
 
-Install **Tart 2.37.0** on macOS 14+ arm64 yourself. Install **Tart Guest Agent 0.14.2** with RPC enabled in the guest's non-root runner account. Account setup, login, Xcode licensing and tools remain manual. Review the version-specific [Tart license](https://github.com/openai/tart/blob/2.37.0/LICENSE) and [Guest Agent license](https://github.com/openai/tart-guest-agent/blob/v0.14.2/LICENSE), currently FSL-1.1-ALv2, plus the applicable Apple software terms. They are external software, not bundled or relicensed by Runmoor.
+Install a **stable Tart 2.x.x release** on macOS 14+ arm64 yourself. Runmoor builds with this compatibility update accept a complete SemVer `2.MINOR.PATCH` triplet with optional build metadata; prereleases are unsupported. Previously installed binaries retain their original version check until upgraded.
+
+Install **Tart Guest Agent 0.14.2** with RPC enabled in the guest's non-root runner account. Account setup, login, Xcode licensing and tools remain manual.
+
+Review the license at your selected [Tart release](https://github.com/openai/tart/releases) (for example, the [2.37.0 license](https://github.com/openai/tart/blob/2.37.0/LICENSE)) and the [Guest Agent 0.14.2 license](https://github.com/openai/tart-guest-agent/blob/v0.14.2/LICENSE), plus the applicable Apple software terms. The linked 2.37.0 and 0.14.2 sources use FSL-1.1-ALv2; other Tart releases may have different terms. They are external software, not bundled or relicensed by Runmoor.
 
 ## Create a Mac image during first setup
 
