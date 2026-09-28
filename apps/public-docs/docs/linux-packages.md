@@ -31,7 +31,7 @@ Stop if the fingerprint differs. Keep signature verification enabled when instal
 
 ## APT: stable
 
-After verifying the key, install it in a dedicated keyring and register stable:
+Runmoor is distributed through the Delino repository. Downloading or inspecting the key alone does not register that repository with APT. After verifying the key, install it in a dedicated keyring and register stable:
 
 ```sh
 sudo install -d -m 0755 /usr/share/keyrings
@@ -51,6 +51,23 @@ runmoor version
 ```
 
 The source uses `Signed-By` to restrict this key to the Delino repository. The commands install the available Runmoor package; other stable CLI packages can use the same registration after their verified publication. APT also installs `delino-archive-keyring`, which keeps this repository’s public certificate current through authenticated package updates.
+
+### APT cannot find Runmoor
+
+`Unable to locate package runmoor` means APT's local package lists do not contain Runmoor for the selected architecture. Inspect the architecture and the Delino source, then refresh the lists and check the candidate:
+
+```sh
+dpkg --print-architecture
+cat /etc/apt/sources.list.d/delino.sources
+sudo apt-get update
+apt-cache policy runmoor
+```
+
+- The architecture must be `amd64` or `arm64`.
+- If the source file is missing, complete the key verification and APT stable registration above. An existing custom source file may use a different name; check its settings before adding a duplicate.
+- The source must use `https://pkgs.oss.delino.io/apt`, suite `stable`, and component `main`. Use the literal suite `stable`, not an Ubuntu codename such as `jammy` or `noble`. Preview has no Runmoor package.
+- The update must fetch the Delino `stable` repository without errors. Resolve any reported network, certificate, or signature error before installing; do not disable signature verification.
+- The policy output must show a candidate from `https://pkgs.oss.delino.io/apt`. Once it does, run `sudo apt-get install runmoor`, then `runmoor version`.
 
 ## DNF: stable
 

@@ -1,5 +1,7 @@
 # Install and Verify Runmoor
 
+On Ubuntu 22.04 or newer, use the [APT installation steps below](#linux-apt-and-dnf). Runmoor is distributed through the Delino repository, which you must register before installing with APT. The signed archive method is also available for Linux and Apple Silicon Macs.
+
 ## Homebrew on Apple Silicon Mac
 
 On macOS 14 or newer with Apple Silicon, install from the Delino tap:
@@ -78,17 +80,59 @@ gpg --show-keys --with-fingerprint delino-packages.asc
 
 The full primary fingerprint must match `B08D E37A 14DD 10DD FD04 E66E 87CB 82A1 F70F BD30`. Stop on a mismatch.
 
-Follow the [Linux package setup guide](https://oss.delino.io/linux-packages) to register stable with your package manager. After registration:
+### Ubuntu: register the repository, then install
+
+**Downloading or inspecting the key does not register the repository.** Before running `apt-get install runmoor`, complete both [Verify the repository key](https://oss.delino.io/linux-packages#verify-the-repository-key) and [APT: stable](https://oss.delino.io/linux-packages#apt-stable) in the Linux package setup guide. Those steps install the verified keyring, register the Delino stable source, refresh APT's package lists, and install Runmoor.
+
+If the repository is already registered, refresh its package list and check that APT can find a candidate before installing:
 
 ```sh
-# APT
-sudo apt-get install runmoor
-sudo apt-get install --only-upgrade runmoor
-sudo apt-get remove runmoor
+sudo apt-get update
+apt-cache policy runmoor
+```
 
-# DNF: package installation checks only; the manager requires Ubuntu
+The update must fetch the Delino `stable` repository without errors, and the policy output must show a candidate from `https://pkgs.oss.delino.io/apt`. Then install and verify:
+
+```sh
+sudo apt-get install runmoor
+runmoor version
+```
+
+If APT reports `Unable to locate package runmoor`, its local package lists do not contain Runmoor for the selected architecture. Check the [APT troubleshooting steps](https://oss.delino.io/linux-packages#apt-cannot-find-runmoor) for missing registration, update errors, an incorrect suite, or an unsupported architecture.
+
+### DNF: register the repository, then install
+
+Complete the key verification and [DNF: stable setup](https://oss.delino.io/linux-packages#dnf-stable) first. These commands check package installation only; the manager requires Ubuntu:
+
+```sh
 sudo dnf install runmoor
+runmoor version
+```
+
+### Update or remove an installed package
+
+To update an existing APT installation:
+
+```sh
+sudo apt-get update
+sudo apt-get install --only-upgrade runmoor
+```
+
+To update an existing DNF installation:
+
+```sh
 sudo dnf upgrade runmoor
+```
+
+Run the removal command only when you want to uninstall Runmoor. For APT:
+
+```sh
+sudo apt-get remove runmoor
+```
+
+For DNF:
+
+```sh
 sudo dnf remove runmoor
 ```
 

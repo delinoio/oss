@@ -170,6 +170,7 @@
 ### Native CLI package documentation
 
 - Follow `docs/repository-linux-packages-contract.md`. The shared public `/linux-packages` route owns APT/DNF setup and key verification; standalone CLI installation pages retain product-specific guidance.
+- Runmoor's installation page must make shared key verification and stable repository registration explicit prerequisites, explain that key inspection does not register APT, and link to missing-package troubleshooting. Keep installation, upgrade, and removal in separate copyable blocks; APT diagnostics check architecture, source settings, a successful update, and the package candidate without disabling signature verification.
 - Public package documentation includes the exact public fingerprint, supported systems, stable/preview registration, installation/update/removal, and explicit Runmoor service ownership. Keep R2, signing secrets, CI and recovery internals in `docs/`.
 - Only the shared package registration page may show its exact contracted `/etc/apt`, `/etc/yum.repos.d` and `/usr/share/keyrings` installation paths; never broaden unrelated public filesystem-path exceptions.
 - The canonical public-docs production origin is `https://oss.delino.io`; shared Linux package guidance is `https://oss.delino.io/linux-packages`. Consolidated project documentation uses the same origin with `/runmoor`, `/nodeup`, `/binpm`, `/async-commit-hook`, `/clibox`, `/pnport`, and `/react-forge` prefixes.
