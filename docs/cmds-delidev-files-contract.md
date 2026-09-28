@@ -2,7 +2,7 @@
 
 ## Scope
 
-`cmds/delidev-cli/internal/{domain,workspace,worker,server,cli}` owns read-only session workspace browsing and Git comparisons. `apps/delidev` presents the same product operations in the session's right application area. This contract implements file browsing and bounded Git comparisons for issue #964; local review comments/submissions, terminal, browser, editing and downloads remain separate capabilities.
+`cmds/delidev-cli/internal/{domain,workspace,worker,server,cli}` owns read-only session workspace browsing, Git comparisons and durable local reviews. `apps/delidev` presents the same product operations in the session's right application area. This contract implements file browsing, bounded Git comparisons and durable local review comments/submissions for issue #964; terminal, browser, file editing and downloads remain separate capabilities.
 
 ## Runtime and Language
 
@@ -42,7 +42,7 @@ Desktop Files and Diff share the existing right session area while preserving th
 
 The parser requires matching no-rename file identities, portable paths within the original query, supported modes, exact old/new headers and complete non-overlapping hunk counts. Git-quoted UTF-8 and unquoted filenames containing spaces preserve their original paths. Each ordinary text line retains its old/new number (absence is zero), original text, final-newline presence and hunk identity. Combined/unknown/incomplete/duplicate/ambiguous forms fail explicitly. Binary, mode-only, empty-file, symbolic-link and submodule changes expose file locations only, never fabricated line anchors.
 
-A review selection identifies one file or up to 20 visible consecutive lines on one side in one hunk. The domain anchor binds repository, comparison, query path, exact diff revision, selected file/side/range, SHA-256 of the original file patch and at most 8 KiB of exact selected context. Validation never silently relocates a comment: a changed comparison or context does not match the retained anchor. This read-only increment establishes coordinate evidence; durable comment CRUD, freshness presentation and atomic grouped agent submissions remain separate required work.
+A review selection identifies one file or up to 20 visible consecutive lines on one side in one hunk. The domain anchor binds repository, comparison, query path, exact diff revision, selected file/side/range, SHA-256 of the original file patch and at most 8 KiB of exact selected context. Validation never silently relocates a comment: a changed comparison or context does not match the retained anchor. These coordinates establish original location evidence for the separately authorized durable comment and grouped submission operations below.
 
 ## Storage
 
@@ -79,3 +79,18 @@ Update the project index, protocol/client/desktop contracts and relevant scoped 
 - [Git attributes and filters](https://git-scm.com/docs/gitattributes)
 
 - [Git patch format](https://git-scm.com/docs/diff-format)
+
+## Durable Local Review Mutation Contract
+
+The local-review mutation surface is owner/paired-client-only. A comment creation must independently reread the exact requested Worker comparison, match the author's diff revision and derive its anchor on the server; it cannot accept caller-provided context or patch authority. Recheck original prepared-workspace identity at the database commit boundary. Comment edits preserve their original anchor and increment content revision; deletion removes the retained comment without retracting an already accepted agent input or historical submission.
+
+Version-1 `review` resources are closed comment/submission variants. Comments retain body, anchor, content revision and the last submission link; immutable submission records retain selected original comment content/anchors, their current/stale classification, mode and the accepted queue input UUID. Generic authenticated Resource get/list reads these resources. Mutations bind actor, session, exact input and expected entity revisions to reference-only receipts; replay returns current resources without rereading Worker files or repeating submission. At most 1,000 review records per session and 25 distinct selected comment revisions per submission are accepted; each body is at most 8 KiB and the generated ordinary session input must satisfy its existing 256 KiB bound.
+
+Grouped Request changes rereads each selected comparison, treats any changed original observation as stale without reanchoring, and requires explicit `allow_stale` for known stale comments. Unavailable Worker observations are errors, never fresh. Persist the submission, every selected comment link and the ordinary queued input/session accounting in one transaction. Preserve mode, dispatch/Archive/recovery/native eligibility and existing FIFO behavior. Steering remains a separate explicit operation on the accepted input; no review action automatically steers, resolves comments or publishes to GitHub. Logs/events/receipts carry metadata only. Original comment text/context already copied into a submission and queue remains historical evidence after later comment edits/deletion.
+
+
+`SessionService.CreateLocalReviewComment`, `EditLocalReviewComment`, `DeleteLocalReviewComment` and `SubmitLocalReview` implement this surface. CLI commands are `session review create|edit|delete|submit|list|get --id SESSION`; edit/delete require `--review-id` and exact `--revision`, creation/submission accept their closed JSON documents through `--input`, and editing accepts a closed `{"body":"..."}` document. List/get use existing Resource pagination/reads scoped to the session.
+
+Creation has a 30-second bound; grouped submissions have a 45-second bound and read at most eight distinct original repository/path/comparison groups. CLI workspace reads allow 20 seconds for response headers, beyond the server observation limit of 15 seconds; review commands use 50-second header/command bounds so valid creation/submission can return before the client deadline. Other CLI commands keep their existing limits. Exact accepted submission retries remain read-only even after a selected comment was deleted and linked receipts were redacted: the immutable submission ID is its original request UUID, and the retained input link is read from that submission after Store validates the original actor/request digest. Removed submission/input evidence cannot authorize another queued input. No SQLite schema migration is required.
+
+The desktop Diff panel authors whole-file or visible old/new-line comments, shows exact original context and current/stale/unchecked comparison state, supports revision-checked edits/deletion, and retains selected record revisions across review pages. Request changes explicitly selects Execute or Plan and optional stale consent. Uncertain mutations retain their exact wire requests across panel navigation; reloading current records does not replace a pending selection or unsent edit. Submitted snapshots remain independently inspectable after later comment edits/deletion. This implements acceptance into the ordinary agent queue; it does not establish unsupported native continuation or actual hosted-model response evidence.

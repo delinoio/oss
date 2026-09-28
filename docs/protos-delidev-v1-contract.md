@@ -262,3 +262,8 @@ The existing workspace-read JSON envelope adds operation `git-diff` and a closed
 ## Local review coordinates
 
 `SessionService.ReadSessionReviewContext` accepts a session UUID and the closed `git-diff` workspace query. It returns at most 1 MiB of exact original diff and parsed ordinary file/line coordinates, derived from the owning Worker through the existing read channel. Owner/paired-client authorization and original observation ownership still apply. Binary/non-line changes are file-only; ambiguous/combined/incomplete patches are unsupported. This read does not persist comments, create receipts or grant submission authority. See the [workspace and review coordinate contract](cmds-delidev-files-contract.md).
+
+
+## Durable local review mutations
+
+`SessionService.CreateLocalReviewComment`, `EditLocalReviewComment`, `DeleteLocalReviewComment` and `SubmitLocalReview` are dedicated owner/client operations. Creation/submission carry bounded closed JSON, session and request UUIDs; edits/deletion carry exact mutation metadata. Responses expose retained review Resources and, for submission, the ordinary SessionChange/input link with replay status. Review resource documents are exclusive version-1 comment/submission variants. Generic Resource reads/pagination expose them without introducing generic mutation authority. The [local review contract](cmds-delidev-files-contract.md) defines original anchors, freshness, atomic queue acceptance, retained snapshots and reference-only replay. Protobuf changes are additive and generated bindings reproduce from the schema; SQLite schema remains unchanged.

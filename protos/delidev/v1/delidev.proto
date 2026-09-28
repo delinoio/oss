@@ -539,6 +539,10 @@ service SessionService {
   rpc PrepareSessionWorkspace(PrepareSessionWorkspaceRequest) returns (PrepareSessionWorkspaceResponse);
   rpc RecoverSessionExecution(RecoverSessionExecutionRequest) returns (RecoverSessionExecutionResponse);
   rpc RecoverSessionWorkspace(RecoverSessionWorkspaceRequest) returns (RecoverSessionWorkspaceResponse);
+  rpc CreateLocalReviewComment(CreateLocalReviewCommentRequest) returns (CreateLocalReviewCommentResponse);
+  rpc EditLocalReviewComment(EditLocalReviewCommentRequest) returns (EditLocalReviewCommentResponse);
+  rpc DeleteLocalReviewComment(DeleteLocalReviewCommentRequest) returns (DeleteLocalReviewCommentResponse);
+  rpc SubmitLocalReview(SubmitLocalReviewRequest) returns (SubmitLocalReviewResponse);
 }
 message ReadSessionReviewContextRequest {
   string session_id = 1;
@@ -1267,4 +1271,47 @@ message ApplyConfigurationImportResponse {
   string request_id = 1;
   bool replayed = 2;
   bytes result_json = 3;
+}
+
+message CreateLocalReviewCommentRequest {
+  string request_id = 1;
+  string session_id = 2;
+  // Closed query, expected diff revision, selection and comment body.
+  bytes document_json = 3;
+}
+message CreateLocalReviewCommentResponse {
+  Resource comment = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message EditLocalReviewCommentRequest {
+  Mutation mutation = 1;
+  string session_id = 2;
+  string body = 3;
+}
+message EditLocalReviewCommentResponse {
+  Resource comment = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message DeleteLocalReviewCommentRequest {
+  Mutation mutation = 1;
+  string session_id = 2;
+}
+message DeleteLocalReviewCommentResponse {
+  string id = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message SubmitLocalReviewRequest {
+  string request_id = 1;
+  string session_id = 2;
+  // Selected exact comment revisions, mode and explicit stale selection.
+  bytes document_json = 3;
+}
+message SubmitLocalReviewResponse {
+  Resource submission = 1;
+  SessionChange change = 2;
+  string request_id = 3;
+  bool replayed = 4;
 }

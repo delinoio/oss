@@ -150,7 +150,22 @@ func Run(ctx context.Context, args []string, streams IO) int {
 	}
 	defer c.transport.CloseIdleConnections()
 	if command != "events" {
-		bounded, cancel := context.WithTimeout(ctx, 30*time.Second)
+		limit := 30 * time.Second
+		if command == "session" && len(rest) > 0 {
+			switch rest[0] {
+			case "files", "diff", "review-context":
+				// The Worker observation owns a 15-second deadline. Leave
+				// room for its typed result instead of racing its response.
+				c.transport.ResponseHeaderTimeout = 20 * time.Second
+			case "review":
+				// Comment creation and grouped submission have server limits
+				// of 30 and 45 seconds. The default 15-second header timeout
+				// would abandon valid work before either operation finishes.
+				limit = 50 * time.Second
+				c.transport.ResponseHeaderTimeout = limit
+			}
+		}
+		bounded, cancel := context.WithTimeout(ctx, limit)
 		defer cancel()
 		ctx = bounded
 	}
@@ -752,6 +767,7 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   session files roots|list|read --id ID [--repository-id ID] [--path RELATIVE] [--page-token TOKEN]
   session diff --id ID --repository-id ID [--comparison working-tree|staged|creation] [--path RELATIVE]
   session review-context --id ID --repository-id ID [--comparison working-tree|staged|creation] [--path RELATIVE]
+  session review create|edit|delete|submit|list|get --id SESSION [--review-id ID] [--revision N] [--input PATH]
   session create --input FILE|- [--wait]
   session prepare --id ID --revision N [--wait]
   session recover-workspace --id ID --revision N [--cleanup] [--wait]

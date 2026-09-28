@@ -1,9 +1,9 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
-	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -22,14 +22,18 @@ func TestCLISessionAcceptanceQueueAndArchive(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "server")
 	ctx, cancel := context.WithCancel(context.Background())
 	ready := make(chan struct{})
+	var serverLogs bytes.Buffer
 	done := make(chan error, 1)
 	go func() {
-		done <- server.Serve(ctx, server.Config{DataDir: root, Listen: "127.0.0.1:0", Logger: slog.New(slog.NewJSONHandler(io.Discard, nil))}, func(server.Endpoint) { close(ready) })
+		done <- server.Serve(ctx, server.Config{DataDir: root, Listen: "127.0.0.1:0", Logger: slog.New(slog.NewJSONHandler(&serverLogs, nil))}, func(server.Endpoint) { close(ready) })
 	}()
 	defer func() {
 		cancel()
 		if err := <-done; err != nil {
 			t.Error(err)
+		}
+		if t.Failed() {
+			t.Logf("Private fixture server log:\n%s", serverLogs.String())
 		}
 	}()
 	select {
@@ -210,6 +214,9 @@ func TestCLISessionAcceptanceQueueAndArchive(t *testing.T) {
 			t.Fatal("CLI did not read every prepared worktree")
 		}
 	}
+	var comments []map[string]any
+	var commentInputs []domain.CreateReviewComment
+	var commentRequests []string
 	for i, item := range preparedRepos {
 		data := item.(map[string]any)
 		if data["id"] != string(repositories[i]) || data["starting_commit"] != commits[i] || data["owned"] != true {
@@ -233,6 +240,12 @@ func TestCLISessionAcceptanceQueueAndArchive(t *testing.T) {
 		if file["path"] != "tracked.txt" || file["kind"] != "text" || len(lines) != 2 || lines[0].(map[string]any)["newline"] != false || lines[1].(map[string]any)["new"] != float64(1) {
 			t.Fatal("review lost original line sides or EOF")
 		}
+		commentInput := domain.CreateReviewComment{Query: domain.WorkspaceReadQuery{Operation: domain.WorkspaceGitDiff, RepositoryID: repositories[i], Path: ".", Comparison: domain.DiffCreation}, DiffRevision: comparison["revision"].(string), Selection: domain.ReviewSelection{Path: "tracked.txt", Kind: domain.ReviewLineAnchor, Side: domain.ReviewNewSide, Start: 1, End: 1}, Body: "Please revise repository " + strconv.Itoa(i)}
+		requestID := string(domain.NewID())
+		created := run([]string{"session", "review", "create", "--id", worktreeID, "--request-id", requestID}, commentInput)["comment"].(map[string]any)
+		comments = append(comments, created)
+		commentInputs = append(commentInputs, commentInput)
+		commentRequests = append(commentRequests, requestID)
 		out, err := exec.Command("git", "-C", path, "rev-parse", "HEAD").Output()
 		if err != nil || strings.TrimSpace(string(out)) != commits[i] {
 			t.Fatal("recorded commit differs from actual checkout")
@@ -241,5 +254,57 @@ func TestCLISessionAcceptanceQueueAndArchive(t *testing.T) {
 		if err != nil || strings.TrimSpace(string(out)) != "HEAD" {
 			t.Fatal("prepared worktree was not detached")
 		}
+	}
+	if err := os.WriteFile(filepath.Join(preparedRepos[0].(map[string]any)["path"].(string), "tracked.txt"), []byte("changed after comment\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	selection := domain.SubmitReviewComments{Mode: domain.PlanMode}
+	for _, c := range comments {
+		selection.Comments = append(selection.Comments, domain.ReviewCommentRef{ID: domain.ID(c["id"].(string)), Revision: uint64(c["revision"].(float64))})
+	}
+	encoded, _ := json.Marshal(selection)
+	code, stale := cliRun(t, root, []string{"session", "review", "submit", "--id", worktreeID}, string(encoded))
+	if code != 5 || stale["error"].(map[string]any)["code"] != string(domain.Conflict) {
+		t.Fatal("stale review submitted implicitly", stale)
+	}
+	selection.AllowStale = true
+	submissionRequest := string(domain.NewID())
+	submitArgs := []string{"session", "review", "submit", "--id", worktreeID, "--request-id", submissionRequest}
+	submitted := run(submitArgs, selection)
+	submission := submitted["submission"].(map[string]any)
+	details := submission["data"].(map[string]any)["submission"].(map[string]any)
+	selectedComments := details["comments"].([]any)
+	if submission["id"] != submissionRequest || selectedComments[0].(map[string]any)["freshness"] != "stale" || selectedComments[1].(map[string]any)["freshness"] != "current" {
+		t.Fatal("submission lost exact freshness", details)
+	}
+	change := submitted["change"].(map[string]any)
+	queued := change["input"].(map[string]any)
+	queuedBody := queued["data"].(map[string]any)
+	if queuedBody["mode"] != "plan" || queuedBody["delivery"] != "queued" || !strings.Contains(queuedBody["prompt"].(string), commentInputs[0].Body) || !strings.Contains(queuedBody["prompt"].(string), commentInputs[1].Body) {
+		t.Fatal("review did not use original queue rules")
+	}
+	listedReviews := run([]string{"session", "review", "list", "--id", worktreeID}, nil)["reviews"].([]any)
+	if len(listedReviews) != 3 {
+		t.Fatal("review list lost comments or submission")
+	}
+	current := run([]string{"session", "review", "get", "--id", worktreeID, "--review-id", comments[0]["id"].(string)}, nil)
+	currentRevision := strconv.FormatUint(uint64(current["revision"].(float64)), 10)
+	edited := run([]string{"session", "review", "edit", "--id", worktreeID, "--review-id", comments[0]["id"].(string), "--revision", currentRevision}, map[string]string{"body": "Edited after submission"})["comment"].(map[string]any)
+	stopWorker()
+	replayedCreate := run([]string{"session", "review", "create", "--id", worktreeID, "--request-id", commentRequests[0]}, commentInputs[0])
+	if replayedCreate["replayed"] != true || replayedCreate["comment"].(map[string]any)["revision"] != edited["revision"] {
+		t.Fatal("comment replay reread files or rewrote later edit")
+	}
+	deleteArgs := []string{"session", "review", "delete", "--id", worktreeID, "--review-id", edited["id"].(string), "--revision", strconv.FormatUint(uint64(edited["revision"].(float64)), 10), "--request-id", string(domain.NewID())}
+	run(deleteArgs, nil)
+	if run(deleteArgs, nil)["replayed"] != true {
+		t.Fatal("comment deletion did not replay")
+	}
+	replayedSubmit := run(submitArgs, selection)
+	if replayedSubmit["replayed"] != true || replayedSubmit["submission"].(map[string]any)["id"] != submission["id"] || replayedSubmit["change"].(map[string]any)["input"].(map[string]any)["id"] != queued["id"] {
+		t.Fatal("submission replay lost accepted input after comment deletion")
+	}
+	if len(run([]string{"queue", "list", "--session-id", worktreeID}, nil)["inputs"].([]any)) != 2 {
+		t.Fatal("review retry duplicated queued input")
 	}
 }

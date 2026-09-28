@@ -83,3 +83,23 @@ export const recoverSessionExecution = SessionService.method.recoverSessionExecu
  * @generated from rpc delidev.v1.SessionService.RecoverSessionWorkspace
  */
 export const recoverSessionWorkspace = SessionService.method.recoverSessionWorkspace;
+
+/**
+ * @generated from rpc delidev.v1.SessionService.CreateLocalReviewComment
+ */
+export const createLocalReviewComment = SessionService.method.createLocalReviewComment;
+
+/**
+ * @generated from rpc delidev.v1.SessionService.EditLocalReviewComment
+ */
+export const editLocalReviewComment = SessionService.method.editLocalReviewComment;
+
+/**
+ * @generated from rpc delidev.v1.SessionService.DeleteLocalReviewComment
+ */
+export const deleteLocalReviewComment = SessionService.method.deleteLocalReviewComment;
+
+/**
+ * @generated from rpc delidev.v1.SessionService.SubmitLocalReview
+ */
+export const submitLocalReview = SessionService.method.submitLocalReview;

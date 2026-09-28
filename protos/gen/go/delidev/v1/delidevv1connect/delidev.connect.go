@@ -224,6 +224,18 @@ const (
 	// SessionServiceRecoverSessionWorkspaceProcedure is the fully-qualified name of the
 	// SessionService's RecoverSessionWorkspace RPC.
 	SessionServiceRecoverSessionWorkspaceProcedure = "/delidev.v1.SessionService/RecoverSessionWorkspace"
+	// SessionServiceCreateLocalReviewCommentProcedure is the fully-qualified name of the
+	// SessionService's CreateLocalReviewComment RPC.
+	SessionServiceCreateLocalReviewCommentProcedure = "/delidev.v1.SessionService/CreateLocalReviewComment"
+	// SessionServiceEditLocalReviewCommentProcedure is the fully-qualified name of the SessionService's
+	// EditLocalReviewComment RPC.
+	SessionServiceEditLocalReviewCommentProcedure = "/delidev.v1.SessionService/EditLocalReviewComment"
+	// SessionServiceDeleteLocalReviewCommentProcedure is the fully-qualified name of the
+	// SessionService's DeleteLocalReviewComment RPC.
+	SessionServiceDeleteLocalReviewCommentProcedure = "/delidev.v1.SessionService/DeleteLocalReviewComment"
+	// SessionServiceSubmitLocalReviewProcedure is the fully-qualified name of the SessionService's
+	// SubmitLocalReview RPC.
+	SessionServiceSubmitLocalReviewProcedure = "/delidev.v1.SessionService/SubmitLocalReview"
 	// InboxServiceGetInboxEntryProcedure is the fully-qualified name of the InboxService's
 	// GetInboxEntry RPC.
 	InboxServiceGetInboxEntryProcedure = "/delidev.v1.InboxService/GetInboxEntry"
@@ -1704,6 +1716,10 @@ type SessionServiceClient interface {
 	PrepareSessionWorkspace(context.Context, *connect.Request[v1.PrepareSessionWorkspaceRequest]) (*connect.Response[v1.PrepareSessionWorkspaceResponse], error)
 	RecoverSessionExecution(context.Context, *connect.Request[v1.RecoverSessionExecutionRequest]) (*connect.Response[v1.RecoverSessionExecutionResponse], error)
 	RecoverSessionWorkspace(context.Context, *connect.Request[v1.RecoverSessionWorkspaceRequest]) (*connect.Response[v1.RecoverSessionWorkspaceResponse], error)
+	CreateLocalReviewComment(context.Context, *connect.Request[v1.CreateLocalReviewCommentRequest]) (*connect.Response[v1.CreateLocalReviewCommentResponse], error)
+	EditLocalReviewComment(context.Context, *connect.Request[v1.EditLocalReviewCommentRequest]) (*connect.Response[v1.EditLocalReviewCommentResponse], error)
+	DeleteLocalReviewComment(context.Context, *connect.Request[v1.DeleteLocalReviewCommentRequest]) (*connect.Response[v1.DeleteLocalReviewCommentResponse], error)
+	SubmitLocalReview(context.Context, *connect.Request[v1.SubmitLocalReviewRequest]) (*connect.Response[v1.SubmitLocalReviewResponse], error)
 }
 
 // NewSessionServiceClient constructs a client for the delidev.v1.SessionService service. By
@@ -1813,6 +1829,30 @@ func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(sessionServiceMethods.ByName("RecoverSessionWorkspace")),
 			connect.WithClientOptions(opts...),
 		),
+		createLocalReviewComment: connect.NewClient[v1.CreateLocalReviewCommentRequest, v1.CreateLocalReviewCommentResponse](
+			httpClient,
+			baseURL+SessionServiceCreateLocalReviewCommentProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("CreateLocalReviewComment")),
+			connect.WithClientOptions(opts...),
+		),
+		editLocalReviewComment: connect.NewClient[v1.EditLocalReviewCommentRequest, v1.EditLocalReviewCommentResponse](
+			httpClient,
+			baseURL+SessionServiceEditLocalReviewCommentProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("EditLocalReviewComment")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteLocalReviewComment: connect.NewClient[v1.DeleteLocalReviewCommentRequest, v1.DeleteLocalReviewCommentResponse](
+			httpClient,
+			baseURL+SessionServiceDeleteLocalReviewCommentProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("DeleteLocalReviewComment")),
+			connect.WithClientOptions(opts...),
+		),
+		submitLocalReview: connect.NewClient[v1.SubmitLocalReviewRequest, v1.SubmitLocalReviewResponse](
+			httpClient,
+			baseURL+SessionServiceSubmitLocalReviewProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("SubmitLocalReview")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -1834,6 +1874,10 @@ type sessionServiceClient struct {
 	prepareSessionWorkspace  *connect.Client[v1.PrepareSessionWorkspaceRequest, v1.PrepareSessionWorkspaceResponse]
 	recoverSessionExecution  *connect.Client[v1.RecoverSessionExecutionRequest, v1.RecoverSessionExecutionResponse]
 	recoverSessionWorkspace  *connect.Client[v1.RecoverSessionWorkspaceRequest, v1.RecoverSessionWorkspaceResponse]
+	createLocalReviewComment *connect.Client[v1.CreateLocalReviewCommentRequest, v1.CreateLocalReviewCommentResponse]
+	editLocalReviewComment   *connect.Client[v1.EditLocalReviewCommentRequest, v1.EditLocalReviewCommentResponse]
+	deleteLocalReviewComment *connect.Client[v1.DeleteLocalReviewCommentRequest, v1.DeleteLocalReviewCommentResponse]
+	submitLocalReview        *connect.Client[v1.SubmitLocalReviewRequest, v1.SubmitLocalReviewResponse]
 }
 
 // ReadSessionReviewContext calls delidev.v1.SessionService.ReadSessionReviewContext.
@@ -1916,6 +1960,26 @@ func (c *sessionServiceClient) RecoverSessionWorkspace(ctx context.Context, req 
 	return c.recoverSessionWorkspace.CallUnary(ctx, req)
 }
 
+// CreateLocalReviewComment calls delidev.v1.SessionService.CreateLocalReviewComment.
+func (c *sessionServiceClient) CreateLocalReviewComment(ctx context.Context, req *connect.Request[v1.CreateLocalReviewCommentRequest]) (*connect.Response[v1.CreateLocalReviewCommentResponse], error) {
+	return c.createLocalReviewComment.CallUnary(ctx, req)
+}
+
+// EditLocalReviewComment calls delidev.v1.SessionService.EditLocalReviewComment.
+func (c *sessionServiceClient) EditLocalReviewComment(ctx context.Context, req *connect.Request[v1.EditLocalReviewCommentRequest]) (*connect.Response[v1.EditLocalReviewCommentResponse], error) {
+	return c.editLocalReviewComment.CallUnary(ctx, req)
+}
+
+// DeleteLocalReviewComment calls delidev.v1.SessionService.DeleteLocalReviewComment.
+func (c *sessionServiceClient) DeleteLocalReviewComment(ctx context.Context, req *connect.Request[v1.DeleteLocalReviewCommentRequest]) (*connect.Response[v1.DeleteLocalReviewCommentResponse], error) {
+	return c.deleteLocalReviewComment.CallUnary(ctx, req)
+}
+
+// SubmitLocalReview calls delidev.v1.SessionService.SubmitLocalReview.
+func (c *sessionServiceClient) SubmitLocalReview(ctx context.Context, req *connect.Request[v1.SubmitLocalReviewRequest]) (*connect.Response[v1.SubmitLocalReviewResponse], error) {
+	return c.submitLocalReview.CallUnary(ctx, req)
+}
+
 // SessionServiceHandler is an implementation of the delidev.v1.SessionService service.
 type SessionServiceHandler interface {
 	ReadSessionReviewContext(context.Context, *connect.Request[v1.ReadSessionReviewContextRequest]) (*connect.Response[v1.ReadSessionReviewContextResponse], error)
@@ -1934,6 +1998,10 @@ type SessionServiceHandler interface {
 	PrepareSessionWorkspace(context.Context, *connect.Request[v1.PrepareSessionWorkspaceRequest]) (*connect.Response[v1.PrepareSessionWorkspaceResponse], error)
 	RecoverSessionExecution(context.Context, *connect.Request[v1.RecoverSessionExecutionRequest]) (*connect.Response[v1.RecoverSessionExecutionResponse], error)
 	RecoverSessionWorkspace(context.Context, *connect.Request[v1.RecoverSessionWorkspaceRequest]) (*connect.Response[v1.RecoverSessionWorkspaceResponse], error)
+	CreateLocalReviewComment(context.Context, *connect.Request[v1.CreateLocalReviewCommentRequest]) (*connect.Response[v1.CreateLocalReviewCommentResponse], error)
+	EditLocalReviewComment(context.Context, *connect.Request[v1.EditLocalReviewCommentRequest]) (*connect.Response[v1.EditLocalReviewCommentResponse], error)
+	DeleteLocalReviewComment(context.Context, *connect.Request[v1.DeleteLocalReviewCommentRequest]) (*connect.Response[v1.DeleteLocalReviewCommentResponse], error)
+	SubmitLocalReview(context.Context, *connect.Request[v1.SubmitLocalReviewRequest]) (*connect.Response[v1.SubmitLocalReviewResponse], error)
 }
 
 // NewSessionServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -2039,6 +2107,30 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 		connect.WithSchema(sessionServiceMethods.ByName("RecoverSessionWorkspace")),
 		connect.WithHandlerOptions(opts...),
 	)
+	sessionServiceCreateLocalReviewCommentHandler := connect.NewUnaryHandler(
+		SessionServiceCreateLocalReviewCommentProcedure,
+		svc.CreateLocalReviewComment,
+		connect.WithSchema(sessionServiceMethods.ByName("CreateLocalReviewComment")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sessionServiceEditLocalReviewCommentHandler := connect.NewUnaryHandler(
+		SessionServiceEditLocalReviewCommentProcedure,
+		svc.EditLocalReviewComment,
+		connect.WithSchema(sessionServiceMethods.ByName("EditLocalReviewComment")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sessionServiceDeleteLocalReviewCommentHandler := connect.NewUnaryHandler(
+		SessionServiceDeleteLocalReviewCommentProcedure,
+		svc.DeleteLocalReviewComment,
+		connect.WithSchema(sessionServiceMethods.ByName("DeleteLocalReviewComment")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sessionServiceSubmitLocalReviewHandler := connect.NewUnaryHandler(
+		SessionServiceSubmitLocalReviewProcedure,
+		svc.SubmitLocalReview,
+		connect.WithSchema(sessionServiceMethods.ByName("SubmitLocalReview")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/delidev.v1.SessionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case SessionServiceReadSessionReviewContextProcedure:
@@ -2073,6 +2165,14 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 			sessionServiceRecoverSessionExecutionHandler.ServeHTTP(w, r)
 		case SessionServiceRecoverSessionWorkspaceProcedure:
 			sessionServiceRecoverSessionWorkspaceHandler.ServeHTTP(w, r)
+		case SessionServiceCreateLocalReviewCommentProcedure:
+			sessionServiceCreateLocalReviewCommentHandler.ServeHTTP(w, r)
+		case SessionServiceEditLocalReviewCommentProcedure:
+			sessionServiceEditLocalReviewCommentHandler.ServeHTTP(w, r)
+		case SessionServiceDeleteLocalReviewCommentProcedure:
+			sessionServiceDeleteLocalReviewCommentHandler.ServeHTTP(w, r)
+		case SessionServiceSubmitLocalReviewProcedure:
+			sessionServiceSubmitLocalReviewHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -2144,6 +2244,22 @@ func (UnimplementedSessionServiceHandler) RecoverSessionExecution(context.Contex
 
 func (UnimplementedSessionServiceHandler) RecoverSessionWorkspace(context.Context, *connect.Request[v1.RecoverSessionWorkspaceRequest]) (*connect.Response[v1.RecoverSessionWorkspaceResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.RecoverSessionWorkspace is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) CreateLocalReviewComment(context.Context, *connect.Request[v1.CreateLocalReviewCommentRequest]) (*connect.Response[v1.CreateLocalReviewCommentResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.CreateLocalReviewComment is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) EditLocalReviewComment(context.Context, *connect.Request[v1.EditLocalReviewCommentRequest]) (*connect.Response[v1.EditLocalReviewCommentResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.EditLocalReviewComment is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) DeleteLocalReviewComment(context.Context, *connect.Request[v1.DeleteLocalReviewCommentRequest]) (*connect.Response[v1.DeleteLocalReviewCommentResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.DeleteLocalReviewComment is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) SubmitLocalReview(context.Context, *connect.Request[v1.SubmitLocalReviewRequest]) (*connect.Response[v1.SubmitLocalReviewResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.SubmitLocalReview is not implemented"))
 }
 
 // InboxServiceClient is a client for the delidev.v1.InboxService service.
