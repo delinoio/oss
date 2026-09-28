@@ -92,6 +92,54 @@ func TestValidatedReloadRecoversOnlyRelatedSuspensions(t *testing.T) {
 	}
 }
 
+func TestRunnerVersionSuspensionIgnoresDaemonImageReplacement(t *testing.T) {
+	m, c, _, _, _ := testManager(t)
+	c.Pools[0].Mode = DinD
+	c.Pools[0].DaemonImage = c.Pools[0].Image
+	c.Pools[0].DaemonResources = Resources{CPU: 1, MemoryMiB: 128}
+	if err := m.accept(c, false); err != nil {
+		t.Fatal(err)
+	}
+	var oldID string
+	for id, p := range m.Store.View().Pools {
+		if p.Phase == Ready && p.Spec.Mode == DinD {
+			oldID = id
+		}
+	}
+	if oldID == "" {
+		t.Fatal("DinD fixture was not activated")
+	}
+	blocked := problem(ErrRunnerVersion, "Fixture runner image has the wrong version.", "Replace the runner image.")
+	if err := m.Store.Update(func(s *Snapshot) error {
+		s.Pools[oldID].Phase = Suspended
+		s.Pools[oldID].Problem = blocked
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	c.Pools[0].DaemonImage = "example/daemon@sha256:" + strings.Repeat("b", 64)
+	writeSuspensionReload(t, m, c)
+	if err := m.Reload(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	s := m.Store.View()
+	if s.Pools[oldID].Phase != Draining {
+		t.Fatal("old DinD generation did not drain")
+	}
+	found := false
+	for id, p := range s.Pools {
+		if id != oldID && p.Phase != Draining {
+			found = true
+			if p.Phase != Suspended || p.Problem == nil || *p.Problem != *blocked {
+				t.Fatalf("daemon image replacement resumed a broken runner image: %+v", p)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("replacement DinD generation was not created")
+	}
+}
+
 func TestLegacySuspensionRemainsVisibleAndRequiresResume(t *testing.T) {
 	m, c, _, _, oldID := testManager(t)
 	if err := m.Store.Update(func(s *Snapshot) error {

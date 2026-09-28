@@ -226,8 +226,10 @@ func suspensionCorrected(old PoolState, next Pool, conn Connection, oldConfig, n
 		return authChanged(old.Connection, conn) || !strings.EqualFold(normalizedRunnerGroup(oldPool.RunnerGroup), normalizedRunnerGroup(next.RunnerGroup))
 	case ErrOwnership:
 		return poolIdentity(oldPool, old.Connection) != poolIdentity(next, conn)
-	case ErrImage, ErrRunnerVersion:
+	case ErrImage:
 		return imageChanged(oldPool, next)
+	case ErrRunnerVersion:
+		return runnerImageChanged(oldPool, next)
 	case ErrPlatform:
 		return oldPool.Backend != next.Backend || oldPool.Arch != next.Arch
 	case ErrPreparation:
@@ -255,7 +257,10 @@ func authChanged(a, b Connection) bool {
 	return a.Target != b.Target || a.Auth != b.Auth || a.Credential != b.Credential || a.ClientID != b.ClientID || a.InstallationID != b.InstallationID
 }
 func imageChanged(a, b Pool) bool {
-	return a.Backend != b.Backend || a.Arch != b.Arch || a.Image != b.Image || fingerprint(a.ImageSource) != fingerprint(b.ImageSource) || a.RunnerPath != b.RunnerPath || a.RunnerVersion != b.RunnerVersion || a.DaemonImage != b.DaemonImage
+	return runnerImageChanged(a, b) || a.DaemonImage != b.DaemonImage
+}
+func runnerImageChanged(a, b Pool) bool {
+	return a.Backend != b.Backend || a.Arch != b.Arch || a.Image != b.Image || fingerprint(a.ImageSource) != fingerprint(b.ImageSource) || a.RunnerPath != b.RunnerPath || a.RunnerVersion != b.RunnerVersion
 }
 func executionChanged(a, b Pool) bool {
 	return imageChanged(a, b) || a.Mode != b.Mode || a.Resources != b.Resources || a.DaemonResources != b.DaemonResources
