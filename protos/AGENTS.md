@@ -112,3 +112,6 @@
 - DeliDev LinkSessionPullRequest/UnlinkSessionPullRequest are owner/client metadata mutations under the integration contract. Inputs cannot supply stable remote identity or access evidence; the server resolves/rechecks them. Preserve exact actor-bound retries, association revision ownership, archived retention and deletion tombstones without session execution authority. ResourceService supplies scoped historical association reads/events.
 
 - DeliDev GitHub token forms are read-only, profile/revision-bound non-secret configurations with a closed access enum. Keep credential storage, remote API authority and local OS dispatch outside the response; regenerate all bindings after schema edits.
+
+
+- DeliDev retained PR feedback collection/list/dismissal are dedicated owner/client IntegrationService operations. Accept no caller-supplied remote evidence; bind mutations to actor/original request and dismissal to exact revision/content version. History uses stable remote numeric identities and signed page-size/set-revision-bound cursors. Reference-only replay cannot fetch GitHub, recreate deleted state or start execution; follow the integration contract.

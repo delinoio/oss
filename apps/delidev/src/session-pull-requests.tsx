@@ -4,6 +4,7 @@ import { EntityKind, ResourceQuery, SessionQuery, newRequestId, type Resource } 
 import { document, items, text, type Document } from "./documents";
 import { bounded, date, positive, uuid } from "./github-query-model";
 import { useRetainedMutation } from "./mutation";
+import { OpenPRProblemHistory } from "./pr-problems";
 import { Problem } from "./ui";
 import { ResourceChoice } from "./configuration-fields";
 
@@ -49,6 +50,7 @@ function LinkRow({ row, value, sessionId, refreshed }: { row: Resource; value: D
     <h4>{text(value.owner)}/{text(value.name)}#{text(value.number)}</h4><p>{text(value.title)}</p>
     <p>Linked observation: {text(value.observed_at)}. Current PR state and access may have changed.</p>
     <details><summary>Original PR identity</summary><p>Repository ID {text(value.remote_repository_id)} · PR ID {text(value.pull_request_id)} · Node {text(value.pull_request_node_id)}</p><p>Configured repository: {text(value.repository_id)}</p><p>{`https://github.com/${text(value.owner)}/${text(value.name)}/pull/${text(value.number)}`}</p></details>
+    <OpenPRProblemHistory selection={{ repositoryId: text(value.repository_id), remoteRepositoryId: text(value.remote_repository_id), pullRequestId: text(value.pull_request_id), number: text(value.number) }} />
     <button disabled={remove.busy || remove.uncertain} onClick={() => void remove.send({ sessionId, mutation: { id: row.id, expectedRevision: row.revision, requestId: newRequestId() } })}>Unlink #{text(value.number)}</button>
     <Problem error={remove.error} />{notice ? <p role="alert">{notice}</p> : null}{remove.uncertain ? <button disabled={remove.busy} onClick={remove.retry}>Retry original PR unlink</button> : null}
   </article>;

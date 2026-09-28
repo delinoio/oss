@@ -213,7 +213,7 @@ func TestNotificationMigrationPreservesV16AndRollsBackConflict(t *testing.T) {
 			for _, item := range []struct {
 				path    string
 				version int
-			}{{backups[0], 16}, {filepath.Join(root, "state.sqlite"), map[bool]int{false: 17, true: 16}[conflict]}} {
+			}{{backups[0], 16}, {filepath.Join(root, "state.sqlite"), map[bool]int{false: SchemaVersion, true: 16}[conflict]}} {
 				db, err := sql.Open("sqlite", databaseURI(item.path, true))
 				if err != nil {
 					t.Fatal(err)

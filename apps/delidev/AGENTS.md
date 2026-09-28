@@ -475,3 +475,6 @@
 - Remediation editing uses shared revision-bound configuration RPC. Preserve exact string reviewer IDs and empty selections; repository overrides replace the complete server policy and start with all automation off. Restore inheritance only explicitly, retain original uncertain mutation bytes, and never imply policy persistence starts execution while the controller is unavailable. Follow the integration contract.
 
 - Required CI original lifecycle/output stays inert and bounded, with strict check/status family validation and exact native counts. Label workflow run attempts as aggregate observations, never proof that every retained check ran again. Go owns per-result versions; no displayed evidence grants execution authority.
+
+
+- Retained PR feedback uses generated IntegrationQuery from both PR detail and historical session links. Validate the whole page and exact remote/content identities before local actions; keep original content inert and provider dismissal/resolution separate from local handling. Preserve exact uncertain collection/dismissal requests across navigation, dispose closed reads, and expose history without requiring a current PAT. No collection or local Dismiss may start execution; follow the integration contract.

@@ -38,3 +38,18 @@ export const queryRepositoryIntegration = IntegrationService.method.queryReposit
  * @generated from rpc delidev.v1.IntegrationService.GetGitHubTokenForm
  */
 export const getGitHubTokenForm = IntegrationService.method.getGitHubTokenForm;
+
+/**
+ * @generated from rpc delidev.v1.IntegrationService.RefreshPullRequestProblems
+ */
+export const refreshPullRequestProblems = IntegrationService.method.refreshPullRequestProblems;
+
+/**
+ * @generated from rpc delidev.v1.IntegrationService.ListPullRequestProblems
+ */
+export const listPullRequestProblems = IntegrationService.method.listPullRequestProblems;
+
+/**
+ * @generated from rpc delidev.v1.IntegrationService.DismissPullRequestProblem
+ */
+export const dismissPullRequestProblem = IntegrationService.method.dismissPullRequestProblem;

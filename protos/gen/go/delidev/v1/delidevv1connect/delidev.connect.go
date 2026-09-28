@@ -187,6 +187,15 @@ const (
 	// IntegrationServiceGetGitHubTokenFormProcedure is the fully-qualified name of the
 	// IntegrationService's GetGitHubTokenForm RPC.
 	IntegrationServiceGetGitHubTokenFormProcedure = "/delidev.v1.IntegrationService/GetGitHubTokenForm"
+	// IntegrationServiceRefreshPullRequestProblemsProcedure is the fully-qualified name of the
+	// IntegrationService's RefreshPullRequestProblems RPC.
+	IntegrationServiceRefreshPullRequestProblemsProcedure = "/delidev.v1.IntegrationService/RefreshPullRequestProblems"
+	// IntegrationServiceListPullRequestProblemsProcedure is the fully-qualified name of the
+	// IntegrationService's ListPullRequestProblems RPC.
+	IntegrationServiceListPullRequestProblemsProcedure = "/delidev.v1.IntegrationService/ListPullRequestProblems"
+	// IntegrationServiceDismissPullRequestProblemProcedure is the fully-qualified name of the
+	// IntegrationService's DismissPullRequestProblem RPC.
+	IntegrationServiceDismissPullRequestProblemProcedure = "/delidev.v1.IntegrationService/DismissPullRequestProblem"
 	// ProviderServiceListProviderPresetsProcedure is the fully-qualified name of the ProviderService's
 	// ListProviderPresets RPC.
 	ProviderServiceListProviderPresetsProcedure = "/delidev.v1.ProviderService/ListProviderPresets"
@@ -1588,6 +1597,9 @@ type IntegrationServiceClient interface {
 	InspectRepositoryIntegration(context.Context, *connect.Request[v1.InspectRepositoryIntegrationRequest]) (*connect.Response[v1.InspectRepositoryIntegrationResponse], error)
 	QueryRepositoryIntegration(context.Context, *connect.Request[v1.QueryRepositoryIntegrationRequest]) (*connect.Response[v1.QueryRepositoryIntegrationResponse], error)
 	GetGitHubTokenForm(context.Context, *connect.Request[v1.GetGitHubTokenFormRequest]) (*connect.Response[v1.GetGitHubTokenFormResponse], error)
+	RefreshPullRequestProblems(context.Context, *connect.Request[v1.RefreshPullRequestProblemsRequest]) (*connect.Response[v1.RefreshPullRequestProblemsResponse], error)
+	ListPullRequestProblems(context.Context, *connect.Request[v1.ListPullRequestProblemsRequest]) (*connect.Response[v1.ListPullRequestProblemsResponse], error)
+	DismissPullRequestProblem(context.Context, *connect.Request[v1.DismissPullRequestProblemRequest]) (*connect.Response[v1.DismissPullRequestProblemResponse], error)
 }
 
 // NewIntegrationServiceClient constructs a client for the delidev.v1.IntegrationService service. By
@@ -1643,6 +1655,24 @@ func NewIntegrationServiceClient(httpClient connect.HTTPClient, baseURL string, 
 			connect.WithSchema(integrationServiceMethods.ByName("GetGitHubTokenForm")),
 			connect.WithClientOptions(opts...),
 		),
+		refreshPullRequestProblems: connect.NewClient[v1.RefreshPullRequestProblemsRequest, v1.RefreshPullRequestProblemsResponse](
+			httpClient,
+			baseURL+IntegrationServiceRefreshPullRequestProblemsProcedure,
+			connect.WithSchema(integrationServiceMethods.ByName("RefreshPullRequestProblems")),
+			connect.WithClientOptions(opts...),
+		),
+		listPullRequestProblems: connect.NewClient[v1.ListPullRequestProblemsRequest, v1.ListPullRequestProblemsResponse](
+			httpClient,
+			baseURL+IntegrationServiceListPullRequestProblemsProcedure,
+			connect.WithSchema(integrationServiceMethods.ByName("ListPullRequestProblems")),
+			connect.WithClientOptions(opts...),
+		),
+		dismissPullRequestProblem: connect.NewClient[v1.DismissPullRequestProblemRequest, v1.DismissPullRequestProblemResponse](
+			httpClient,
+			baseURL+IntegrationServiceDismissPullRequestProblemProcedure,
+			connect.WithSchema(integrationServiceMethods.ByName("DismissPullRequestProblem")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -1655,6 +1685,9 @@ type integrationServiceClient struct {
 	inspectRepositoryIntegration *connect.Client[v1.InspectRepositoryIntegrationRequest, v1.InspectRepositoryIntegrationResponse]
 	queryRepositoryIntegration   *connect.Client[v1.QueryRepositoryIntegrationRequest, v1.QueryRepositoryIntegrationResponse]
 	getGitHubTokenForm           *connect.Client[v1.GetGitHubTokenFormRequest, v1.GetGitHubTokenFormResponse]
+	refreshPullRequestProblems   *connect.Client[v1.RefreshPullRequestProblemsRequest, v1.RefreshPullRequestProblemsResponse]
+	listPullRequestProblems      *connect.Client[v1.ListPullRequestProblemsRequest, v1.ListPullRequestProblemsResponse]
+	dismissPullRequestProblem    *connect.Client[v1.DismissPullRequestProblemRequest, v1.DismissPullRequestProblemResponse]
 }
 
 // SaveIntegrationProfile calls delidev.v1.IntegrationService.SaveIntegrationProfile.
@@ -1692,6 +1725,21 @@ func (c *integrationServiceClient) GetGitHubTokenForm(ctx context.Context, req *
 	return c.getGitHubTokenForm.CallUnary(ctx, req)
 }
 
+// RefreshPullRequestProblems calls delidev.v1.IntegrationService.RefreshPullRequestProblems.
+func (c *integrationServiceClient) RefreshPullRequestProblems(ctx context.Context, req *connect.Request[v1.RefreshPullRequestProblemsRequest]) (*connect.Response[v1.RefreshPullRequestProblemsResponse], error) {
+	return c.refreshPullRequestProblems.CallUnary(ctx, req)
+}
+
+// ListPullRequestProblems calls delidev.v1.IntegrationService.ListPullRequestProblems.
+func (c *integrationServiceClient) ListPullRequestProblems(ctx context.Context, req *connect.Request[v1.ListPullRequestProblemsRequest]) (*connect.Response[v1.ListPullRequestProblemsResponse], error) {
+	return c.listPullRequestProblems.CallUnary(ctx, req)
+}
+
+// DismissPullRequestProblem calls delidev.v1.IntegrationService.DismissPullRequestProblem.
+func (c *integrationServiceClient) DismissPullRequestProblem(ctx context.Context, req *connect.Request[v1.DismissPullRequestProblemRequest]) (*connect.Response[v1.DismissPullRequestProblemResponse], error) {
+	return c.dismissPullRequestProblem.CallUnary(ctx, req)
+}
+
 // IntegrationServiceHandler is an implementation of the delidev.v1.IntegrationService service.
 type IntegrationServiceHandler interface {
 	SaveIntegrationProfile(context.Context, *connect.Request[v1.SaveIntegrationProfileRequest]) (*connect.Response[v1.SaveIntegrationProfileResponse], error)
@@ -1701,6 +1749,9 @@ type IntegrationServiceHandler interface {
 	InspectRepositoryIntegration(context.Context, *connect.Request[v1.InspectRepositoryIntegrationRequest]) (*connect.Response[v1.InspectRepositoryIntegrationResponse], error)
 	QueryRepositoryIntegration(context.Context, *connect.Request[v1.QueryRepositoryIntegrationRequest]) (*connect.Response[v1.QueryRepositoryIntegrationResponse], error)
 	GetGitHubTokenForm(context.Context, *connect.Request[v1.GetGitHubTokenFormRequest]) (*connect.Response[v1.GetGitHubTokenFormResponse], error)
+	RefreshPullRequestProblems(context.Context, *connect.Request[v1.RefreshPullRequestProblemsRequest]) (*connect.Response[v1.RefreshPullRequestProblemsResponse], error)
+	ListPullRequestProblems(context.Context, *connect.Request[v1.ListPullRequestProblemsRequest]) (*connect.Response[v1.ListPullRequestProblemsResponse], error)
+	DismissPullRequestProblem(context.Context, *connect.Request[v1.DismissPullRequestProblemRequest]) (*connect.Response[v1.DismissPullRequestProblemResponse], error)
 }
 
 // NewIntegrationServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -1752,6 +1803,24 @@ func NewIntegrationServiceHandler(svc IntegrationServiceHandler, opts ...connect
 		connect.WithSchema(integrationServiceMethods.ByName("GetGitHubTokenForm")),
 		connect.WithHandlerOptions(opts...),
 	)
+	integrationServiceRefreshPullRequestProblemsHandler := connect.NewUnaryHandler(
+		IntegrationServiceRefreshPullRequestProblemsProcedure,
+		svc.RefreshPullRequestProblems,
+		connect.WithSchema(integrationServiceMethods.ByName("RefreshPullRequestProblems")),
+		connect.WithHandlerOptions(opts...),
+	)
+	integrationServiceListPullRequestProblemsHandler := connect.NewUnaryHandler(
+		IntegrationServiceListPullRequestProblemsProcedure,
+		svc.ListPullRequestProblems,
+		connect.WithSchema(integrationServiceMethods.ByName("ListPullRequestProblems")),
+		connect.WithHandlerOptions(opts...),
+	)
+	integrationServiceDismissPullRequestProblemHandler := connect.NewUnaryHandler(
+		IntegrationServiceDismissPullRequestProblemProcedure,
+		svc.DismissPullRequestProblem,
+		connect.WithSchema(integrationServiceMethods.ByName("DismissPullRequestProblem")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/delidev.v1.IntegrationService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case IntegrationServiceSaveIntegrationProfileProcedure:
@@ -1768,6 +1837,12 @@ func NewIntegrationServiceHandler(svc IntegrationServiceHandler, opts ...connect
 			integrationServiceQueryRepositoryIntegrationHandler.ServeHTTP(w, r)
 		case IntegrationServiceGetGitHubTokenFormProcedure:
 			integrationServiceGetGitHubTokenFormHandler.ServeHTTP(w, r)
+		case IntegrationServiceRefreshPullRequestProblemsProcedure:
+			integrationServiceRefreshPullRequestProblemsHandler.ServeHTTP(w, r)
+		case IntegrationServiceListPullRequestProblemsProcedure:
+			integrationServiceListPullRequestProblemsHandler.ServeHTTP(w, r)
+		case IntegrationServiceDismissPullRequestProblemProcedure:
+			integrationServiceDismissPullRequestProblemHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1803,6 +1878,18 @@ func (UnimplementedIntegrationServiceHandler) QueryRepositoryIntegration(context
 
 func (UnimplementedIntegrationServiceHandler) GetGitHubTokenForm(context.Context, *connect.Request[v1.GetGitHubTokenFormRequest]) (*connect.Response[v1.GetGitHubTokenFormResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.IntegrationService.GetGitHubTokenForm is not implemented"))
+}
+
+func (UnimplementedIntegrationServiceHandler) RefreshPullRequestProblems(context.Context, *connect.Request[v1.RefreshPullRequestProblemsRequest]) (*connect.Response[v1.RefreshPullRequestProblemsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.IntegrationService.RefreshPullRequestProblems is not implemented"))
+}
+
+func (UnimplementedIntegrationServiceHandler) ListPullRequestProblems(context.Context, *connect.Request[v1.ListPullRequestProblemsRequest]) (*connect.Response[v1.ListPullRequestProblemsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.IntegrationService.ListPullRequestProblems is not implemented"))
+}
+
+func (UnimplementedIntegrationServiceHandler) DismissPullRequestProblem(context.Context, *connect.Request[v1.DismissPullRequestProblemRequest]) (*connect.Response[v1.DismissPullRequestProblemResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.IntegrationService.DismissPullRequestProblem is not implemented"))
 }
 
 // ProviderServiceClient is a client for the delidev.v1.ProviderService service.

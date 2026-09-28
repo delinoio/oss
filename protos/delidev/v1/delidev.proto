@@ -489,6 +489,41 @@ service IntegrationService {
   rpc InspectRepositoryIntegration(InspectRepositoryIntegrationRequest) returns (InspectRepositoryIntegrationResponse);
   rpc QueryRepositoryIntegration(QueryRepositoryIntegrationRequest) returns (QueryRepositoryIntegrationResponse);
   rpc GetGitHubTokenForm(GetGitHubTokenFormRequest) returns (GetGitHubTokenFormResponse);
+  rpc RefreshPullRequestProblems(RefreshPullRequestProblemsRequest) returns (RefreshPullRequestProblemsResponse);
+  rpc ListPullRequestProblems(ListPullRequestProblemsRequest) returns (ListPullRequestProblemsResponse);
+  rpc DismissPullRequestProblem(DismissPullRequestProblemRequest) returns (DismissPullRequestProblemResponse);
+}
+message RefreshPullRequestProblemsRequest {
+  string request_id = 1;
+  string repository_id = 2;
+  string number = 3;
+}
+message RefreshPullRequestProblemsResponse {
+  Resource problem_set = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message ListPullRequestProblemsRequest {
+  // Stable GitHub numeric identities, independent of local repository aliases.
+  string remote_repository_id = 1;
+  string pull_request_id = 2;
+  uint32 page_size = 3;
+  string page_token = 4;
+}
+message ListPullRequestProblemsResponse {
+  // Absent when this remote PR has no retained inventory.
+  Resource problem_set = 1;
+  repeated Resource problems = 2;
+  string next_page_token = 3;
+}
+message DismissPullRequestProblemRequest {
+  Mutation mutation = 1;
+  string content_version = 2;
+}
+message DismissPullRequestProblemResponse {
+  Resource problem = 1;
+  string request_id = 2;
+  bool replayed = 3;
 }
 enum GitHubTokenAccess {
   GIT_HUB_TOKEN_ACCESS_UNSPECIFIED = 0;

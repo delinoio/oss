@@ -294,6 +294,10 @@ func Run(ctx context.Context, args []string, streams IO) int {
 			return emit(value, err)
 		}
 	case "github":
+		if len(rest) >= 2 && rest[0] == "pr" && rest[1] == "problems" {
+			value, err := prProblemsCommand(ctx, c, o, rest[2:])
+			return emit(value, err)
+		}
 		value, err := githubCommand(ctx, c, rest)
 		return emit(value, err)
 	case "integration":
@@ -809,6 +813,9 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   github pr|issue get|open --repository-id ID --number N
   github pr diff|rules|ci|feedback|reviewers --repository-id ID --number N
   github pr checks|statuses --repository-id ID --number N [--page N --page-size N]
+  github pr problems refresh --repository-id ID --number N
+  github pr problems list --remote-repository-id N --pull-request-id N [--limit N --page-token TOKEN]
+  github pr problems dismiss --id ID --revision N --content-version SHA256
   provider presets
   provider create --preset PRESET [--name NAME]
   provider discover --account-id ID --revision N
