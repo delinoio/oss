@@ -50,6 +50,7 @@ const (
 	nativeUnbornLocalWorkspaces
 	nativeScheduledWorkspaces
 	nativeCronWorkspace
+	nativeLocalReviewWorkspaces
 )
 
 func TestManualNativeCLILocalRepositories(t *testing.T) {
@@ -66,6 +67,10 @@ func TestManualNativeCLIScheduledWorkspaces(t *testing.T) {
 
 func TestManualNativeCLICronWorkspace(t *testing.T) {
 	testManualNativeCLI(t, false, nativeCronWorkspace)
+}
+
+func TestManualNativeCLILocalReview(t *testing.T) {
+	testManualNativeCLI(t, false, nativeLocalReviewWorkspaces)
 }
 
 func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWorkspaceProfile) {
@@ -94,6 +99,9 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 	}
 	if profile == nativeCronWorkspace {
 		scenarios = []nativeScenario{{domain.ExecuteMode, domain.Worktree, 1}}
+	}
+	if profile == nativeLocalReviewWorkspaces {
+		scenarios = []nativeScenario{{domain.ExecuteMode, domain.Worktree, 2}}
 	}
 	for _, scenario := range scenarios {
 		mode := scenario.mode
@@ -179,6 +187,7 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 			if !verified {
 				t.Fatal("actual native protocol was not verified")
 			}
+			reviewScenario := newNativeReviewScenario()
 			var calls, validations atomic.Int64
 			interruptedRequest := make(chan struct{}, 1)
 			firstRequestStarted, releaseFirstRequest := make(chan struct{}), make(chan struct{})
@@ -203,6 +212,10 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 				body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 				if err != nil || !strings.Contains(string(body), "fixture-model") {
 					t.Error("native execution changed accepted input/model")
+				}
+				if profile == nativeLocalReviewWorkspaces {
+					reviewScenario.respond(t, w, r, body, call)
+					return
 				}
 				prompts := []string{"Public first prompt", "Public second prompt", "Public third prompt", "Public fourth prompt", "Public fifth prompt", "Public interrupted prompt", "Public resumed interrupted prompt"}
 				if steerScenario {
@@ -639,7 +652,11 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 				}
 				checkRoots()
 				previousExecution = state.Execution.ExecutionID
-				if calls.Load() != int64(count) {
+				expectedRequests := int64(count)
+				if profile == nativeLocalReviewWorkspaces {
+					expectedRequests++
+				}
+				if calls.Load() != expectedRequests {
 					t.Fatal("continuation replayed or skipped native input", calls.Load(), count)
 				}
 				if !steerScenario {
@@ -666,6 +683,13 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 					t.Fatal("Steer replaced account validation")
 				}
 				t.Log("public CLI selected queue -> same-turn native Steer -> exact acceptance/transcript -> owned cleanup -> process-replacement FIFO continuation; no seeded readiness or external inference")
+				return
+			}
+			if profile == nativeLocalReviewWorkspaces {
+				verifyNativeLocalReview(t, reviewScenario, run, waitTurn, id, value)
+				if calls.Load() != 3 || validations.Load() != 1 {
+					t.Fatal("review replay repeated native requests or account validation")
+				}
 				return
 			}
 			// Complete two FIFO turns in fresh native processes on the original history.
