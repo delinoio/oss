@@ -11,6 +11,30 @@ export const platforms = ["darwin-arm64", "linux-amd64", "linux-arm64"];
 export const archiveNames = platforms.map((platform) => `runmoor-${platform}.tar.gz`);
 const versionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u;
 const releaseAssetNames = [...archiveNames, "SHA256SUMS"];
+const repositoryApi = "/repos/delinoio/oss";
+
+function publicationError(code, message) {
+  return Object.assign(new Error(message), { code });
+}
+
+export function releaseLog(plan, stage, releaseId = null, code = null) {
+  console.error(JSON.stringify({ event: "runmoor.release", stage, tag: plan.tag, release_id: releaseId, code }));
+}
+
+export function githubRequest(token, fetchImpl = fetch) {
+  return async (apiPath, { method = "GET", body } = {}) => {
+    try {
+      const response = await fetchImpl(`https://api.github.com${apiPath}`, {
+        method, headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "Content-Type": "application/json" },
+        body: body === undefined ? undefined : JSON.stringify(body), redirect: "error", signal: AbortSignal.timeout(30000),
+      });
+      return { status: response.status, body: response.ok ? await response.json() : {} };
+    } catch {
+      // Never include upstream bodies or transport errors, which may contain credentials.
+      throw publicationError("REQUEST_FAILED", "GitHub release request failed; inspect remote state before retrying");
+    }
+  };
+}
 
 export function releasePlan({ version, revision, ref, mode = "dry-run" }) {
   if (!versionPattern.test(version ?? "")) throw new Error("An exact MAJOR.MINOR.PATCH version is required");
@@ -36,9 +60,9 @@ function sameAssetManifest(actual, expected) {
   return JSON.stringify(actual.map(normalize).sort(sort)) === JSON.stringify(expected.map(normalize).sort(sort));
 }
 
-export async function checkPublication(plan, request, expectedAssets) {
+async function checkTag(plan, request) {
   if (plan.mode !== "publish") throw new Error("Remote publication checks are unavailable in dry-run mode");
-  const prefix = "/repos/delinoio/oss";
+  const prefix = repositoryApi;
   const tag = await request(`${prefix}/git/ref/tags/${encodeURIComponent(plan.tag)}`);
   if (tag.status !== 404) {
     if (tag.status !== 200) throw new Error("Cannot establish remote tag ownership");
@@ -51,18 +75,68 @@ export async function checkPublication(plan, request, expectedAssets) {
     }
     if (object?.type !== "commit" || object.sha !== plan.revision) throw new Error("Existing release tag belongs to a different source revision");
   }
-  const release = await request(`${prefix}/releases/tags/${encodeURIComponent(plan.tag)}`);
-  if (release.status === 200) {
-    if (release.body?.draft === true) {
-      if (release.body.tag_name !== plan.tag || release.body.prerelease !== false || release.body.target_commitish !== plan.revision) throw new Error("Existing release draft is not bound to the requested stable tag and source revision");
-      // The recovery probe omits expectedAssets so the workflow can download and cryptographically verify the existing signed candidate before generating new bundles. Every publish path performs a second call with the complete manifest.
-      if (expectedAssets !== undefined && !sameAssetManifest(release.body.assets, expectedAssets)) throw new Error("Existing release draft assets do not match the verified release asset inventory");
-      return release.body;
+}
+
+function requireDraft(plan, release, releaseId, expectedAssets) {
+  if (!Number.isSafeInteger(release?.id) || release.id <= 0 || release.id !== releaseId) throw publicationError("RELEASE_ID_CHANGED", "Release draft identity changed");
+  if (release.draft !== true) throw publicationError("ALREADY_PUBLIC", "A public release already exists; immutable artifacts cannot be overwritten");
+  if (release.tag_name !== plan.tag || release.prerelease !== false || release.target_commitish !== plan.revision) throw publicationError("DRAFT_SOURCE_MISMATCH", "Existing release draft is not bound to the requested stable tag and source revision");
+  // Recovery first downloads and verifies existing signatures. Only the complete verified manifest may authorize publication.
+  if (expectedAssets !== undefined && (!sameAssetManifest(release.assets, expectedAssets) || release.assets.some((asset) => asset.state !== "uploaded"))) throw publicationError("ASSET_MISMATCH", "Existing release draft assets do not match the verified release asset inventory");
+  return release;
+}
+
+export async function checkPublication(plan, request, expectedAssets, releaseId) {
+  try {
+    await checkTag(plan, request);
+    if (releaseId === undefined) {
+      // GitHub's tag endpoint returns published releases only. Enumerate all pages
+      // to discover drafts and reject ambiguous same-tag candidates before signing.
+      const matches = [];
+      for (let page = 1; ; page++) {
+        const result = await request(`${repositoryApi}/releases?per_page=100&page=${page}`);
+        if (result.status !== 200 || !Array.isArray(result.body) || result.body.length > 100 || result.body.some((release) => !Number.isSafeInteger(release?.id) || release.id <= 0 || typeof release.tag_name !== "string")) throw publicationError("RELEASE_LIST_FAILED", "Cannot establish whether a release already exists");
+        matches.push(...result.body.filter((release) => release?.tag_name === plan.tag));
+        if (matches.length > 1) throw publicationError("DUPLICATE_RELEASE", "Multiple releases use the requested tag");
+        if (result.body.length < 100) break;
+        // Bound a broken/repeating pagination response without treating it as absence.
+        if (page === 1000) throw publicationError("RELEASE_LIST_LIMIT", "Release pagination limit reached; cannot establish release ownership");
+      }
+      if (matches.length === 0) {
+        releaseLog(plan, "draft-absent");
+        return null;
+      }
+      releaseId = matches[0].id;
+      requireDraft(plan, matches[0], releaseId);
     }
-    throw new Error("A public release already exists; immutable artifacts cannot be overwritten");
+    if (!Number.isSafeInteger(releaseId) || releaseId <= 0) throw publicationError("INVALID_RELEASE_ID", "A positive release ID is required");
+    const result = await request(`${repositoryApi}/releases/${releaseId}`);
+    if (result.status !== 200) throw publicationError("DRAFT_LOOKUP_FAILED", "Cannot retrieve the pinned release draft");
+    const release = requireDraft(plan, result.body, releaseId, expectedAssets);
+    releaseLog(plan, "draft-verified", releaseId);
+    return release;
+  } catch (error) {
+    releaseLog(plan, "draft-check-failed", releaseId, error.code ?? "PUBLICATION_CHECK_FAILED");
+    throw error;
   }
-  if (release.status !== 404) throw new Error("Cannot establish whether a release already exists");
-  return null;
+}
+
+export async function publishDraft(plan, request, { releaseId, expectedAssets, notes }) {
+  try {
+    if (!Number.isSafeInteger(releaseId) || releaseId <= 0) throw publicationError("INVALID_RELEASE_ID", "A positive release ID is required");
+    const names = [...releaseAssetNames, ...releaseAssetNames.map((name) => `${name}.sigstore.json`)].sort();
+    if (!Array.isArray(expectedAssets) || JSON.stringify(expectedAssets.map((asset) => asset.name).sort()) !== JSON.stringify(names)) throw publicationError("ASSET_MISMATCH", "Publication requires the complete verified asset manifest");
+    await checkPublication(plan, request, expectedAssets, releaseId);
+    releaseLog(plan, "publishing", releaseId);
+    const result = await request(`${repositoryApi}/releases/${releaseId}`, { method: "PATCH", body: { draft: false, prerelease: false, body: notes } });
+    const release = result.body;
+    if (result.status !== 200 || release?.id !== releaseId || release.tag_name !== plan.tag || release.target_commitish !== plan.revision || release.draft !== false || release.prerelease !== false || !sameAssetManifest(release.assets, expectedAssets)) throw publicationError("PUBLICATION_UNCONFIRMED", "Publication outcome is unconfirmed; inspect the pinned release before retrying");
+    releaseLog(plan, "published", releaseId);
+    return release;
+  } catch (error) {
+    releaseLog(plan, "publish-failed", releaseId, error.code ?? "PUBLICATION_FAILED");
+    throw error;
+  }
 }
 
 export function assetManifest(directory, signed = false) {

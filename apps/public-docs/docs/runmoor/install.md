@@ -2,27 +2,44 @@
 
 Download the matching `runmoor-darwin-arm64.tar.gz`, `runmoor-linux-amd64.tar.gz` or `runmoor-linux-arm64.tar.gz` from the [`runmoor@v…` releases](https://github.com/delinoio/oss/releases). Download `SHA256SUMS` and the `.sigstore.json` bundles alongside it. A publication dry-run archive is unsigned and is not a public release.
 
-Verify with a separately installed cosign before extraction. For example, for version `0.1.0` on an Apple Silicon Mac:
+Choose a published stable `runmoor@v…` release and replace `X.Y.Z` below with its version. Install cosign separately before verification. This example downloads and installs the Apple Silicon Mac archive; macOS 14 or newer is required.
 
 ```sh
+(
+set -eu
+RUNMOOR_TAG='runmoor@vX.Y.Z'
+RUNMOOR_ARCHIVE='runmoor-darwin-arm64.tar.gz'
+RUNMOOR_IDENTITY="https://github.com/delinoio/oss/.github/workflows/release-runmoor.yml@refs/tags/${RUNMOOR_TAG}"
+RUNMOOR_DOWNLOAD_DIR=$(mktemp -d)
+trap 'rm -rf "$RUNMOOR_DOWNLOAD_DIR"' EXIT
+cd "$RUNMOOR_DOWNLOAD_DIR"
+
+for file in "$RUNMOOR_ARCHIVE" "${RUNMOOR_ARCHIVE}.sigstore.json" SHA256SUMS SHA256SUMS.sigstore.json; do
+  curl --fail --location --silent --show-error \
+    --output "$file" "https://github.com/delinoio/oss/releases/download/${RUNMOOR_TAG}/${file}"
+done
 cosign verify-blob \
-  --bundle runmoor-darwin-arm64.tar.gz.sigstore.json \
-  --certificate-identity-regexp '^https://github\.com/delinoio/oss/\.github/workflows/release-runmoor\.yml@refs/(heads/main|tags/runmoor@v0\.1\.0)$' \
+  --bundle "${RUNMOOR_ARCHIVE}.sigstore.json" \
+  --certificate-identity "$RUNMOOR_IDENTITY" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  runmoor-darwin-arm64.tar.gz
+  "$RUNMOOR_ARCHIVE"
 cosign verify-blob \
   --bundle SHA256SUMS.sigstore.json \
-  --certificate-identity-regexp '^https://github\.com/delinoio/oss/\.github/workflows/release-runmoor\.yml@refs/(heads/main|tags/runmoor@v0\.1\.0)$' \
+  --certificate-identity "$RUNMOOR_IDENTITY" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   SHA256SUMS
-shasum -a 256 runmoor-darwin-arm64.tar.gz
-tar -xzf runmoor-darwin-arm64.tar.gz
+awk -v archive="$RUNMOOR_ARCHIVE" '$2 == archive { print; found++ } END { if (found != 1) exit 1 }' SHA256SUMS > SHA256SUMS.selected
+shasum -a 256 -c SHA256SUMS.selected
+tar -xzf "$RUNMOOR_ARCHIVE"
 mkdir -p "$HOME/.local/bin"
 install -m 755 runmoor "$HOME/.local/bin/runmoor"
-runmoor version
+"$HOME/.local/bin/runmoor" version
+)
 ```
 
-Compare the printed hash with the exact archive entry in the verified `SHA256SUMS`. Linux may use `sha256sum` instead. Add your user binary directory to PATH yourself. No Homebrew package, automatic update, system-level service, or bundled Docker/Tart is installed.
+The download tag and signing identity must refer to the same release. Tag-triggered releases use the identity above. For a release explicitly signed by a manual run on `main`, use the exact identity `https://github.com/delinoio/oss/.github/workflows/release-runmoor.yml@refs/heads/main` after checking its release run.
+
+Linux users select `runmoor-linux-amd64.tar.gz` or `runmoor-linux-arm64.tar.gz` and may use `sha256sum -c` instead of `shasum -a 256 -c`. Add your user binary directory to PATH yourself. No Homebrew package, automatic update, system-level service, or bundled Docker/Tart is installed.
 
 ## Linux APT and DNF
 
