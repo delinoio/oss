@@ -31,13 +31,19 @@ func TestManualNativeGrokOwnedTextInput(t *testing.T) {
 	nativeTextCompletion(t, true)
 }
 
-func nativeTextCompletion(t *testing.T, owned bool) {
+func nativeTextCompletion(t *testing.T, owned bool, instructions ...string) {
 	t.Helper()
 	binary := os.Getenv("DELIDEV_NATIVE_GROK_EXECUTABLE")
 	if binary == "" {
 		t.Skip("explicit private native Grok Build binary required")
 	}
+	instructionText := ""
+	if len(instructions) != 0 {
+		instructionText = instructions[0]
+	}
+	const input = "Return a private fixture response."
 	var calls atomic.Uint32
+	var instructionCalls atomic.Uint32
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet && r.URL.Path == "/" {
 			w.WriteHeader(http.StatusBadRequest)
@@ -50,7 +56,12 @@ func nativeTextCompletion(t *testing.T, owned bool) {
 		}
 		raw, err := io.ReadAll(io.LimitReader(r.Body, 1<<20+1))
 		var body struct {
-			Model string `json:"model"`
+			Model    string            `json:"model"`
+			Tools    []json.RawMessage `json:"tools"`
+			Messages []struct {
+				Role    string          `json:"role"`
+				Content json.RawMessage `json:"content"`
+			} `json:"messages"`
 		}
 		if err != nil || len(raw) > 1<<20 || json.Unmarshal(raw, &body) != nil || body.Model != turnFixtureModel {
 			t.Error("native model or request bound changed")
@@ -58,6 +69,44 @@ func nativeTextCompletion(t *testing.T, owned bool) {
 			return
 		}
 		calls.Add(1)
+		if instructionText != "" {
+			// Native title generation has its own single session_title tool and
+			// deliberately excludes Agent rules. It is not the original root request.
+			titleRequest := false
+			if len(body.Tools) == 1 {
+				var tool struct {
+					Function struct {
+						Name string `json:"name"`
+					} `json:"function"`
+				}
+				if json.Unmarshal(body.Tools[0], &tool) == nil {
+					titleRequest = tool.Function.Name == "session_title"
+				}
+			}
+			matches := 0
+			originalInput := false
+			for _, message := range body.Messages {
+				var content string
+				if json.Unmarshal(message.Content, &content) != nil {
+					continue
+				}
+				if content == "<user_query>\n"+input+"\n</user_query>" {
+					originalInput = true
+				}
+				if strings.Contains(content, instructionText) {
+					matches++
+					if message.Role != "user" || !(instructionProfile{contents: instructionText}).verifyContext(content) {
+						t.Error("native request changed original additive rule envelope")
+					}
+				}
+			}
+			if originalInput && !titleRequest {
+				instructionCalls.Add(1)
+			}
+			if matches > 1 || originalInput && !titleRequest && matches != 1 {
+				t.Error("native request did not retain exactly one complete original rule")
+			}
+		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		for _, chunk := range []string{
 			`{"id":"chat-fixture","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{"role":"assistant","content":"Private fixture response."},"finish_reason":null}]}`,
@@ -71,6 +120,10 @@ func nativeTextCompletion(t *testing.T, owned bool) {
 	config, logs := fixtureAPIConfig(t, "native-turn")
 	config.Probe.Process.Executable = binary
 	config.ServerOrigin, config.Model = provider.URL, turnFixtureModel
+	config.Instructions = instructionText
+	if len(instructionText) > 64<<10 {
+		config.ContextTokens = 1_000_000
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	api, err := openAPI(ctx, config)
@@ -78,6 +131,9 @@ func nativeTextCompletion(t *testing.T, owned bool) {
 		t.Fatal(err)
 	}
 	defer func() {
+		if instructionText != "" && instructionCalls.Load() == 0 {
+			t.Error("native provider never received original instructions")
+		}
 		if err := api.Close(); err != nil {
 			t.Error(err)
 		}
@@ -96,8 +152,8 @@ func nativeTextCompletion(t *testing.T, owned bool) {
 		}); err != nil {
 			t.Error(err)
 		}
-		for _, private := range []string{config.Token, config.Model, config.Workspace, "Private fixture response."} {
-			if strings.Contains(logs.String(), private) {
+		for _, private := range []string{config.Token, config.Model, config.Workspace, "Private fixture response.", instructionText} {
+			if private != "" && strings.Contains(logs.String(), private) {
 				t.Error("private native input or output logged")
 			}
 		}
@@ -106,7 +162,10 @@ func nativeTextCompletion(t *testing.T, owned bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const input = "Return a private fixture response."
+	binding, err := api.sessionBinding(ctx)
+	if err != nil || binding.InstructionsDigest != api.profile.instructions.digest() {
+		t.Fatal("original instructions not bound", err)
+	}
 	if owned {
 		request := domain.NewID()
 		claims := []InputClaim{}
@@ -162,6 +221,14 @@ func nativeTextCompletion(t *testing.T, owned bool) {
 		}
 		if !accepted || !completed || len(claims) != 2 || claims[0].BodyDigest != claims[1].BodyDigest || claims[1].NativePromptID != result.Meta.Prompt || output.String() != "Private fixture response." || result.Meta.Usage.Input != 11 || result.Meta.Usage.Output != 5 {
 			t.Fatal("incomplete owned native input")
+		}
+		if instructionText != "" {
+			if _, err := api.CloseText(ctx, domain.NewID(), func(_ context.Context, claim ClosureClaim) error { return claim.Validate() }); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := api.verifyClosedText(ctx); err != nil {
+				t.Fatal("original instruction history not verified", err, logs.String())
+			}
 		}
 		if _, err := api.RunText(ctx, domain.NewID(), input, func(context.Context, InputClaim) error { t.Error("second native input claimed"); return nil }, func(context.Context, InputObservation) error { return nil }); err == nil {
 			t.Fatal("original input boundary reopened")

@@ -123,7 +123,7 @@ func executeGrokSession(ctx context.Context, config Config, owner domain.ID, inp
 	defer cancelNative()
 	cancelTargeted := context.AfterFunc(ctx, cancelNative)
 	defer cancelTargeted()
-	nativeConfig := grok.APIExecutionConfig{Probe: grok.ProbeConfig{Process: process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: home, Env: env, Logger: logger}, Version: input.Installation.Version, Home: filepath.Join(home, "grok")}, Workspace: lease.WorkingDirectory(), Model: input.Configuration.NativeModel, ContextTokens: contextTokens, Mode: input.Input.Mode, ServerOrigin: connection.Credential.Endpoint, Token: token}
+	nativeConfig := grok.APIExecutionConfig{Probe: grok.ProbeConfig{Process: process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: home, Env: env, Logger: logger}, Version: input.Installation.Version, Home: filepath.Join(home, "grok")}, Workspace: lease.WorkingDirectory(), Model: input.Configuration.NativeModel, Instructions: input.Configuration.Instructions, ContextTokens: contextTokens, Mode: input.Input.Mode, ServerOrigin: connection.Credential.Endpoint, Token: token}
 	api, err := grok.OpenOwnedAPIWithStop(nativeCtx, nativeConfig, binding.Creation, binding.Input, binding.Closure, binding.Stop)
 	if err != nil {
 		return nil, err

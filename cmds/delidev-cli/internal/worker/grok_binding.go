@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"hash"
 	"reflect"
@@ -203,7 +204,12 @@ func (c *GrokBindingPublisher) BindSession(ctx context.Context, binding grok.Ses
 	if c.publisher.input.Configuration.GrokContext != nil {
 		observed.GrokContextTokens = binding.ContextTokens
 	}
-	if binding.OwnerID != c.reference.JobID || binding.ProductSessionID != c.reference.SessionID || binding.CreationRequestID != c.reference.CreationRequestID || domain.NativeIdentity(binding.NativeSessionID).Validate(domain.GrokBuild, domain.NativeThreadIdentity) != nil || observed.ValidateForInput(c.publisher.input.Configuration, c.publisher.input.Input.Mode) != nil {
+	instructionsDigest := ""
+	if instructions := c.publisher.input.Configuration.Instructions; instructions != "" {
+		digest := sha256.Sum256([]byte(instructions))
+		instructionsDigest = hex.EncodeToString(digest[:])
+	}
+	if binding.InstructionsDigest != instructionsDigest || binding.OwnerID != c.reference.JobID || binding.ProductSessionID != c.reference.SessionID || binding.CreationRequestID != c.reference.CreationRequestID || domain.NativeIdentity(binding.NativeSessionID).Validate(domain.GrokBuild, domain.NativeThreadIdentity) != nil || observed.ValidateForInput(c.publisher.input.Configuration, c.publisher.input.Input.Mode) != nil {
 		return c.block()
 	}
 	claims, err := c.readClaims()

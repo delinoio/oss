@@ -31,6 +31,7 @@ type grokPublicScenario uint8
 
 const (
 	grokPublicFirstText grokPublicScenario = iota
+	grokPublicInstructions
 	grokPublicCleanupFailure
 	grokPublicCancellation
 	grokPublicStoppedText
@@ -38,6 +39,10 @@ const (
 	grokPublicPendingTextStop
 	grokPublicPendingCleanupFailure
 )
+
+func TestManualNativeGrokPublicInstructions(t *testing.T) {
+	nativeGrokPublicFirstText(t, grokPublicInstructions)
+}
 
 func TestManualNativeGrokPublicFirstTextDispatch(t *testing.T) {
 	nativeGrokPublicFirstText(t, grokPublicFirstText)
@@ -82,7 +87,13 @@ func nativeGrokPublicFirstText(t *testing.T, scenario grokPublicScenario) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
-	var calls atomic.Uint32
+	instructions := ""
+	const firstRule = "Preserve this first rule exactly.\n한글 <literal> rule.\n"
+	const secondRule = "  Preserve the second rule, its spaces, and its final newline.\n"
+	if scenario == grokPublicInstructions {
+		instructions = firstRule + "\n\n" + secondRule
+	}
+	var calls, instructionCalls atomic.Uint32
 	started, upstreamStopped := make(chan struct{}, 1), make(chan struct{}, 1)
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "" {
@@ -95,8 +106,13 @@ func nativeGrokPublicFirstText(t *testing.T, scenario grokPublicScenario) {
 		}
 		raw, err := io.ReadAll(io.LimitReader(r.Body, 1<<20+1))
 		var request struct {
-			Model  string `json:"model"`
-			Stream bool   `json:"stream"`
+			Model    string            `json:"model"`
+			Tools    []json.RawMessage `json:"tools"`
+			Stream   bool              `json:"stream"`
+			Messages []struct {
+				Role    string          `json:"role"`
+				Content json.RawMessage `json:"content"`
+			} `json:"messages"`
 		}
 		if r.Method != http.MethodPost || r.URL.Path != "/chat/completions" || err != nil || len(raw) > 1<<20 || json.Unmarshal(raw, &request) != nil || request.Model != "fixture-model" || !request.Stream || r.Header.Get("HTTP-Referer") != "https://deli.dev" {
 			t.Error("original Grok request escaped registered profile")
@@ -105,6 +121,44 @@ func nativeGrokPublicFirstText(t *testing.T, scenario grokPublicScenario) {
 		}
 		if calls.Add(1) == 1 && !bytes.Contains(raw, []byte("first retained input")) {
 			t.Error("original native input was changed")
+		}
+		if instructions != "" {
+			// Native title generation has its own single session_title tool and
+			// deliberately excludes Agent rules. It is not the original root request.
+			titleRequest := false
+			if len(request.Tools) == 1 {
+				var tool struct {
+					Function struct {
+						Name string `json:"name"`
+					} `json:"function"`
+				}
+				if json.Unmarshal(request.Tools[0], &tool) == nil {
+					titleRequest = tool.Function.Name == "session_title"
+				}
+			}
+			matches := 0
+			originalInput := false
+			for _, message := range request.Messages {
+				var content string
+				if json.Unmarshal(message.Content, &content) != nil {
+					continue
+				}
+				if content == "<user_query>\nfirst retained input\n</user_query>" {
+					originalInput = true
+				}
+				if strings.Contains(content, instructions) {
+					matches++
+					if message.Role != "user" || !strings.HasSuffix(content, "\n\n<user_rule>\n"+instructions+"</user_rule>\n</user_rules>\n</rules>") {
+						t.Error("native instruction envelope changed")
+					}
+				}
+			}
+			if originalInput && !titleRequest {
+				instructionCalls.Add(1)
+			}
+			if matches > 1 || originalInput && !titleRequest && matches != 1 {
+				t.Error("original ordered instructions did not reach native provider exactly once")
+			}
 		}
 		if cancelled || stopped {
 			if stopped && !pending {
@@ -131,6 +185,11 @@ func nativeGrokPublicFirstText(t *testing.T, scenario grokPublicScenario) {
 	// RPC flows. Discovery is reported fixture evidence; the runner independently
 	// validates this original installed process without real hosted credentials.
 	f := newFirstDispatchFixtureProfile(t, domain.GrokBuild, domain.ExecuteMode, binary, upstream.URL)
+	if instructions != "" {
+		first := f.save(pb.EntityKind_ENTITY_KIND_TEMPLATE, domain.Template{Name: "First original Grok rule", Contents: firstRule})
+		second := f.save(pb.EntityKind_ENTITY_KIND_TEMPLATE, domain.Template{Name: "Second original Grok rule", Contents: secondRule})
+		f.mutateAgent(t, func(a *domain.Agent) { a.Templates = []domain.ID{domain.ID(first.Id), domain.ID(second.Id)} })
+	}
 	f.workerStream.Close()
 	_, err = f.service.Store.Mutate(ctx, domain.NewID(), "fixture.release-grok-setup-worker", nil, func(tx *store.Tx) (any, error) {
 		return nil, tx.SetWorkerInstance(f.selection.MachineID, domain.ID(f.workerInstance), time.Now().Add(-2*time.Minute))
@@ -257,6 +316,9 @@ func nativeGrokPublicFirstText(t *testing.T, scenario grokPublicScenario) {
 	if domain.Decode(assignment.DocumentJson, &accepted) != nil || domain.Decode(accepted.Input, &input) != nil || input.Validate() != nil || input.Configuration.GrokContext == nil || *input.Configuration.GrokContext != (domain.GrokModelContext{Tokens: 48000, Source: domain.UserDeclared}) {
 		t.Fatal("assignment lost selected context provenance")
 	}
+	if input.Configuration.Instructions != instructions {
+		t.Fatal("immutable assignment lost ordered original instructions")
+	}
 	jobID.Store(domain.ID(assignment.Id))
 	original.Store(&input)
 	close(assignmentReady)
@@ -379,6 +441,9 @@ func nativeGrokPublicFirstText(t *testing.T, scenario grokPublicScenario) {
 	if cancelled {
 		wantedPublications = 2
 	}
+	if instructions != "" && instructionCalls.Load() == 0 {
+		t.Fatal("original instructions were never exercised by native inference")
+	}
 	if publications.Load() != wantedPublications || reports.Load() != 1 || calls.Load() == 0 {
 		t.Fatal("receipt loss changed original execution boundaries", publications.Load(), reports.Load(), calls.Load())
 	}
@@ -405,8 +470,8 @@ func nativeGrokPublicFirstText(t *testing.T, scenario grokPublicScenario) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	for _, private := range []string{credential.Token, input.Input.Prompt, f.workerRoot, "Original public Grok completion."} {
-		if strings.Contains(logs.String(), private) {
+	for _, private := range []string{credential.Token, input.Input.Prompt, f.workerRoot, "Original public Grok completion.", instructions} {
+		if private != "" && strings.Contains(logs.String(), private) {
 			t.Fatal("runner logs exposed private data")
 		}
 	}

@@ -128,7 +128,7 @@ func (a *apiConnection) SelectPlan(ctx context.Context, request domain.ID, recor
 	if err := a.profile.checkInitialized(); err != nil {
 		return binding, err
 	}
-	if err := inspectConfiguration(life, a.inspection, a.profile.path); err != nil {
+	if err := inspectProfile(life, a.inspection, a.profile); err != nil {
 		return binding, err
 	}
 	if err := a.profile.checkInitialized(); err != nil {

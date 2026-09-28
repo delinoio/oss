@@ -354,7 +354,7 @@ func TestHistoryOmittedMetadataCannotBecomeExplicitEmptyFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if verifyTextChat(bytes.Join(rows, []byte("\n")), files["system_prompt.txt"], input, a.profile.model, a.completedText) == nil {
+	if verifyTextChat(bytes.Join(rows, []byte("\n")), files["system_prompt.txt"], input, a.profile.model, a.profile.instructions, a.completedText) == nil {
 		t.Fatal("context acquired empty reminder metadata")
 	}
 }

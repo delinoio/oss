@@ -21,7 +21,7 @@ func (c ExecutionConfiguration) GrokFirstTextContext(mode SessionMode) (uint64, 
 		return 0, err
 	}
 	if selected != GrokDefaultMode || c.GrokContext == nil {
-		return 0, Fail(Unsupported, "This Grok runner requires first Execute text and explicit model context metadata.", "Preserve Plan, instructions and other unsupported selections for their separate native profiles.")
+		return 0, Fail(Unsupported, "This Grok runner requires first Execute text and explicit model context metadata.", "Preserve Plan and other unsupported selections for their separate native profiles.")
 	}
 	if err := c.GrokContext.Validate(); err != nil {
 		return 0, err
@@ -47,7 +47,7 @@ func (c ExecutionConfiguration) GrokModeForInput(mode SessionMode) (GrokMode, er
 		return "", Fail(InvalidArgument, "Invalid input mode.", "Select Execute or Plan.")
 	}
 	o := c.Options
-	if c.Harness != GrokBuild || c.Effort != "" || c.Instructions != "" || len(c.Templates) != 0 || o.Permission != PermissionDefault || o.ClaudePermission != "" || o.ApprovalPolicy != "" || o.SubagentModel != "" || o.SubagentEffort != "" || o.MaxConcurrency != 0 || o.ApprovalReviewModel != "" || o.ServiceTier != "" {
+	if c.Harness != GrokBuild || c.Effort != "" || (mode == PlanMode && len(c.Templates) != 0) || o.Permission != PermissionDefault || o.ClaudePermission != "" || o.ApprovalPolicy != "" || o.SubagentModel != "" || o.SubagentEffort != "" || o.MaxConcurrency != 0 || o.ApprovalReviewModel != "" || o.ServiceTier != "" {
 		return "", Fail(Unsupported, "The selected Grok Build settings require an additional native profile.", "Preserve explicit settings and instructions; unsupported selections cannot be omitted or translated.")
 	}
 	if mode == PlanMode {

@@ -156,7 +156,7 @@ func (a *apiConnection) Create(ctx context.Context, request, product domain.ID, 
 	if err := a.profile.checkInitialized(); err != nil {
 		return "", err
 	}
-	if err := inspectConfiguration(ready, a.inspection, a.profile.path); err != nil {
+	if err := inspectProfile(ready, a.inspection, a.profile); err != nil {
 		return "", err
 	}
 	if err := a.profile.checkInitialized(); err != nil {

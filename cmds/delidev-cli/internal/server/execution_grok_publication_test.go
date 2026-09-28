@@ -155,7 +155,8 @@ func TestGrokRegistrationRejectsUnimplementedProfiles(t *testing.T) {
 		{name: "concurrency", configure: func(i *domain.ExecutionJobInput) { i.Configuration.Options.MaxConcurrency = 2 }},
 		{name: "review-model", configure: func(i *domain.ExecutionJobInput) { i.Configuration.Options.ApprovalReviewModel = "other-model" }},
 		{name: "service-tier", configure: func(i *domain.ExecutionJobInput) { i.Configuration.Options.ServiceTier = "fast" }},
-		{name: "instructions", configure: func(i *domain.ExecutionJobInput) {
+		{name: "plan-instructions", configure: func(i *domain.ExecutionJobInput) {
+			i.Input.Mode = domain.PlanMode
 			i.Configuration.Templates = []domain.AppliedTemplate{{ID: domain.NewID(), Revision: 1, Contents: "Original additive instruction"}}
 			i.Configuration.Instructions = "Original additive instruction"
 		}},

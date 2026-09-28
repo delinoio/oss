@@ -41,6 +41,10 @@ func apiFixtureProcess() {
 		if _, err := os.Stat(path); err == nil {
 			report["configSources"].(map[string]any)["layers"] = []any{map[string]any{"role": "user", "path": path}}
 		}
+		instructionsPath := filepath.Join(root, "grok", "Agents.md")
+		if instructions, err := os.ReadFile(instructionsPath); err == nil {
+			report["projectInstructions"] = []any{map[string]any{"path": instructionsPath, "scope": "global", "fileType": "agents_md", "sizeBytes": len(instructions), "approxTokens": len(instructions) / 4}}
+		}
 		if mode == "managed" {
 			report["permissions"].(map[string]any)["managedSettingsActive"] = true
 		}

@@ -197,7 +197,7 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 		return result, err
 	}
 	inspection, stopInspection := context.WithTimeout(ctx, 15*time.Second)
-	err := inspectConfiguration(inspection, a.inspection, a.profile.path)
+	err := inspectProfile(inspection, a.inspection, a.profile)
 	stopInspection()
 	if err != nil {
 		return result, err

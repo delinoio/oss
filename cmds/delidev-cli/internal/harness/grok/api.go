@@ -31,6 +31,7 @@ const credentialVariable = "DELIDEV_GROK_EXECUTION_TOKEN"
 type apiConfig struct {
 	Probe         ProbeConfig        `json:"-"`
 	Workspace     string             `json:"-"`
+	Instructions  string             `json:"-"`
 	Model         string             `json:"-"`
 	ContextTokens uint64             `json:"-"`
 	Mode          domain.SessionMode `json:"-"`
@@ -43,6 +44,7 @@ type apiProfile struct {
 	mode          domain.SessionMode
 	contextTokens uint64
 	configuration []byte
+	instructions  instructionProfile
 	path          string
 }
 
@@ -76,14 +78,14 @@ func buildAPIProfile(config apiConfig) (apiProfile, error) {
 	if config.Mode == "" {
 		config.Mode = domain.ExecuteMode
 	}
-	if !config.Mode.Valid() {
+	if !config.Mode.Valid() || (config.Instructions != "" && config.Mode != domain.ExecuteMode) {
 		return apiProfile{}, apiConfigurationError()
 	}
 	if config.Probe.Version != SupportedVersion {
 		return apiProfile{}, incompatible()
 	}
 	if config.Probe.Process.OwnerID.Validate() != nil || !filepath.IsAbs(config.Probe.Process.Executable) ||
-		!text(config.Model, 256) || config.ContextTokens < 1024 || config.ContextTokens > 1_000_000_000 || !apiproxy.ValidToken(config.Token) {
+		domain.Text(config.Instructions, "instructions", domain.MaxAppliedInstructions, false) != nil || !text(config.Model, 256) || config.ContextTokens < 1024 || config.ContextTokens > 1_000_000_000 || !apiproxy.ValidToken(config.Token) {
 		return apiProfile{}, apiConfigurationError()
 	}
 	if err := rpc.ValidateEndpoint(config.ServerOrigin); err != nil {
@@ -130,10 +132,13 @@ func buildAPIProfile(config apiConfig) (apiProfile, error) {
 	if err != nil || len(configuration) > 16<<10 {
 		return apiProfile{}, apiConfigurationError()
 	}
-	return apiProfile{model: config.Model, mode: config.Mode, contextTokens: config.ContextTokens, configuration: configuration, path: filepath.Join(config.Probe.Home, "config.toml")}, nil
+	return apiProfile{model: config.Model, mode: config.Mode, contextTokens: config.ContextTokens, configuration: configuration, instructions: instructionProfile{path: filepath.Join(config.Probe.Home, "Agents.md"), contents: config.Instructions}, path: filepath.Join(config.Probe.Home, "config.toml")}, nil
 }
 
 func (p apiProfile) check() error {
+	if err := p.instructions.check(); err != nil {
+		return err
+	}
 	raw, err := security.ReadPrivate(p.path, 16<<10)
 	if err != nil || !bytes.Equal(raw, p.configuration) {
 		return incompatible()
@@ -142,6 +147,9 @@ func (p apiProfile) check() error {
 }
 
 func (p apiProfile) checkInitialized() error {
+	if err := p.instructions.check(); err != nil {
+		return err
+	}
 	raw, err := security.ReadPrivate(p.path, 16<<10)
 	if err != nil {
 		return incompatible()
@@ -211,6 +219,9 @@ func openAPI(ctx context.Context, config apiConfig) (api *apiConnection, returne
 	if err := inspect(ready, prepared); err != nil {
 		return nil, err
 	}
+	if err := profile.instructions.write(); err != nil {
+		return nil, err
+	}
 	// The validated runtime was empty. Refuse replacement of any file that
 	// appeared during inspection, including a dangling link.
 	file, err := os.OpenFile(profile.path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
@@ -225,7 +236,7 @@ func openAPI(ctx context.Context, config apiConfig) (api *apiConnection, returne
 	for _, cwd := range []string{prepared.Cwd, config.Workspace} {
 		inspection := prepared
 		inspection.Cwd = cwd
-		if err := inspectConfiguration(ready, inspection, profile.path); err != nil {
+		if err := inspectProfile(ready, inspection, profile); err != nil {
 			return nil, err
 		}
 	}

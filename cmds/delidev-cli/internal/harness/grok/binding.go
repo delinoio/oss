@@ -16,6 +16,7 @@ type SessionBinding struct {
 	CreationRequestID   domain.ID
 	NativeSessionID     domain.ID
 	ConfigurationDigest string
+	InstructionsDigest  string
 	Model               string
 	ContextTokens       uint64
 	Mode                NativeMode
@@ -56,5 +57,5 @@ func (a *apiConnection) sessionBinding(ctx context.Context) (SessionBinding, err
 		return SessionBinding{}, sessionUncertain()
 	}
 	digest := sha256.Sum256(a.profile.configuration)
-	return SessionBinding{OwnerID: a.inspection.OwnerID, ProductSessionID: a.product, CreationRequestID: a.creationRequest, NativeSessionID: a.session, ConfigurationDigest: hex.EncodeToString(digest[:]), Model: a.profile.model, ContextTokens: a.profile.contextTokens, Mode: mode, ModeBinding: bound}, nil
+	return SessionBinding{OwnerID: a.inspection.OwnerID, ProductSessionID: a.product, CreationRequestID: a.creationRequest, NativeSessionID: a.session, ConfigurationDigest: hex.EncodeToString(digest[:]), InstructionsDigest: a.profile.instructions.digest(), Model: a.profile.model, ContextTokens: a.profile.contextTokens, Mode: mode, ModeBinding: bound}, nil
 }

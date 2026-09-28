@@ -152,7 +152,7 @@ func verifyTextUpdates(raw []byte, session domain.ID, model string, completed *c
 	return input, observed, nil
 }
 
-func verifyTextChat(raw, system []byte, input, model string, completed *completedText) error {
+func verifyTextChat(raw, system []byte, input, model string, instructions instructionProfile, completed *completedText) error {
 	rows, err := historyLines(raw, 5)
 	if err != nil {
 		return err
@@ -176,7 +176,7 @@ func verifyTextChat(raw, system []byte, input, model string, completed *complete
 		}
 		switch index {
 		case 1:
-			if row.Reason != nil || row.Index != nil {
+			if row.Reason != nil || row.Index != nil || !instructions.verifyContext(row.Content[0].Text) {
 				return historyUncertain()
 			}
 		case 2:
@@ -330,7 +330,7 @@ func (a *apiConnection) verifyClosedText(ctx context.Context) (result TextHistor
 		return result, historyUncertain()
 	}
 	completed := a.completedText
-	if completed == nil || completed.closed.Validate() != nil || len(completed.chunks) == 0 {
+	if completed == nil || completed.closed.Validate() != nil || len(completed.chunks) == 0 || a.profile.instructions.check() != nil {
 		return result, historyUncertain()
 	}
 	home := filepath.Dir(a.profile.path)
@@ -364,7 +364,7 @@ func (a *apiConnection) verifyClosedText(ctx context.Context) (result TextHistor
 		return result, historyUncertain()
 	}
 	stage = historyChat
-	if verifyTextChat(files[1], files[4], input, a.profile.model, completed) != nil {
+	if verifyTextChat(files[1], files[4], input, a.profile.model, a.profile.instructions, completed) != nil {
 		return result, historyUncertain()
 	}
 	stage = historyUsage
@@ -383,6 +383,9 @@ func (a *apiConnection) verifyClosedText(ctx context.Context) (result TextHistor
 		if err != nil || sha256.Sum256(raw) != hashes[i] {
 			return result, historyUncertain()
 		}
+	}
+	if err := a.profile.instructions.check(); err != nil {
+		return result, historyUncertain()
 	}
 	if err := scope.check(ctx); err != nil {
 		return result, err

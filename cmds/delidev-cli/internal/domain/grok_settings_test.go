@@ -108,3 +108,23 @@ func TestGrokOriginalSessionAndPromptIdentityRemainDistinct(t *testing.T) {
 		t.Fatal("unproved native failure format accepted")
 	}
 }
+
+func TestGrokExecutePreservesOrderedInstructionSnapshot(t *testing.T) {
+	c := grokSettingsFixture(t)
+	c.GrokContext = &GrokModelContext{Tokens: 48000, Source: UserDeclared}
+	c.Templates = []AppliedTemplate{{ID: NewID(), Revision: 3, Contents: "First 한글 rule.\n"}, {ID: NewID(), Revision: 2, Contents: "  Second <literal> rule."}}
+	c.Instructions = c.Templates[0].Contents + "\n\n" + c.Templates[1].Contents
+	if _, err := c.GrokFirstTextContext(ExecuteMode); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.GrokModeForInput(PlanMode); err == nil {
+		t.Fatal("Execute instructions granted unverified Plan instructions")
+	}
+	for _, changed := range []string{"", c.Templates[1].Contents + "\n\n" + c.Templates[0].Contents, strings.Replace(c.Instructions, "\n\n", "\n", 1), c.Instructions + "changed"} {
+		copy := c
+		copy.Instructions = changed
+		if _, err := copy.GrokFirstTextContext(ExecuteMode); err == nil {
+			t.Fatal("changed original instructions accepted")
+		}
+	}
+}

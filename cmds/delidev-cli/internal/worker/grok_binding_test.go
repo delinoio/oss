@@ -112,7 +112,7 @@ func TestGrokBindingRequiresPublicationBeforeOriginalInput(t *testing.T) {
 }
 
 func TestGrokBindingRejectsUnconfirmedOrForeignNativeEvidence(t *testing.T) {
-	for _, mutation := range []string{"missing-claims", "model", "mode", "owner", "product", "creation", "session", "configuration", "mode-event", "mode-claim"} {
+	for _, mutation := range []string{"missing-claims", "model", "mode", "owner", "product", "creation", "session", "configuration", "instructions", "mode-event", "mode-claim"} {
 		t.Run(mutation, func(t *testing.T) {
 			c, claims, binding, client := newGrokBindingFixture(t, domain.PlanMode)
 			ctx := context.Background()
@@ -138,6 +138,8 @@ func TestGrokBindingRejectsUnconfirmedOrForeignNativeEvidence(t *testing.T) {
 				binding.NativeSessionID = domain.NewID()
 			case "configuration":
 				binding.ConfigurationDigest = strings.Repeat("ab", 32)
+			case "instructions":
+				binding.InstructionsDigest = strings.Repeat("ab", 32)
 			case "mode-event":
 				b := *binding.ModeBinding
 				b.EventID = string(binding.NativeSessionID) + "-3"

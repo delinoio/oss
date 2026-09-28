@@ -18,6 +18,10 @@ func inspect(ctx context.Context, config process.Config) error {
 }
 
 func inspectConfiguration(ctx context.Context, config process.Config, ownedConfiguration string) error {
+	return inspectProfile(ctx, config, apiProfile{path: ownedConfiguration})
+}
+
+func inspectProfile(ctx context.Context, config process.Config, profile apiProfile) error {
 	bounded, cancel := context.WithCancel(ctx)
 	defer cancel()
 	stdout := inspectionOutput{cancel: cancel, capture: true}
@@ -34,7 +38,7 @@ func inspectConfiguration(ctx context.Context, config process.Config, ownedConfi
 	if err != nil {
 		return probeUnavailable()
 	}
-	return validateConfiguredInspection(stdout.buffer.Bytes(), config.Cwd, ownedConfiguration)
+	return validateProfileInspection(stdout.buffer.Bytes(), config.Cwd, profile)
 }
 
 type inspectionOutput struct {
@@ -63,6 +67,10 @@ func validateInspection(raw []byte, cwd string) error {
 }
 
 func validateConfiguredInspection(raw []byte, cwd, ownedConfiguration string) error {
+	return validateProfileInspection(raw, cwd, apiProfile{path: ownedConfiguration})
+}
+
+func validateProfileInspection(raw []byte, cwd string, profile apiProfile) error {
 	var report struct {
 		Version             string          `json:"grokVersion"`
 		Channel             string          `json:"channel"`
@@ -122,13 +130,16 @@ func validateConfiguredInspection(raw []byte, cwd, ownedConfiguration string) er
 		!isNull(report.LoginPolicy.DisableAPIKeyAuth) || !isNull(report.LoginPolicy.ForceLoginTeamUUID) || report.LoginPolicy.APIKeyAuthDisabled || report.ExternalCompat.RemoteSettingsLoaded {
 		return incompatible()
 	}
-	for _, list := range []json.RawMessage{report.ProjectInstructions, report.Hooks, report.Skills, report.Plugins, report.Marketplaces, report.MCPServers, report.LSPServers,
+	for _, list := range []json.RawMessage{report.Hooks, report.Skills, report.Plugins, report.Marketplaces, report.MCPServers, report.LSPServers,
 		report.Permissions.Sources, report.Permissions.Skipped, report.Permissions.MCPServerAllowlist, report.Permissions.MCPLockdownSources, report.Permissions.MarketplaceAllowlist, report.Permissions.MarketplaceLockdownSources, report.Permissions.ManagedMarketplaces} {
 		if !emptyArray(list) {
 			return incompatible()
 		}
 	}
-	if ownedConfiguration == "" {
+	if err := profile.instructions.inspect(report.ProjectInstructions); err != nil {
+		return err
+	}
+	if profile.path == "" {
 		if !emptyArray(report.ConfigSources.Layers) {
 			return incompatible()
 		}
@@ -137,7 +148,7 @@ func validateConfiguredInspection(raw []byte, cwd, ownedConfiguration string) er
 			Role string `json:"role"`
 			Path string `json:"path"`
 		}
-		if decode(report.ConfigSources.Layers, &layers) != nil || len(layers) != 1 || layers[0].Role != "user" || layers[0].Path != ownedConfiguration {
+		if decode(report.ConfigSources.Layers, &layers) != nil || len(layers) != 1 || layers[0].Role != "user" || layers[0].Path != profile.path {
 			return incompatible()
 		}
 	}
