@@ -56,9 +56,22 @@ func (g Git) readDiff(ctx context.Context, request ReadRequest, manifest Manifes
 	}
 	args = append(args, value.BaseObject, "--")
 	args = append(args, diffPathspec(q.Path)...)
-	patch, err := g.run(ctx, repo.Path, args...)
+	var patch []byte
+	if q.Comparison == domain.DiffStaged {
+		patch, err = g.run(ctx, repo.Path, args...)
+	} else {
+		patch, err = g.filterFreeDiff(ctx, repo.Path, args)
+	}
 	if err != nil {
 		return result, err
+	}
+	if q.Comparison != domain.DiffStaged {
+		// A peer may have changed attributes after the first check. The
+		// isolated diff cannot execute their filters, and this second check
+		// rejects a filter that remains active after the observation.
+		if err := g.checkDiffFilters(ctx, repo.Path, q.Path); err != nil {
+			return result, err
+		}
 	}
 	if len(patch) > domain.WorkspacePreviewLimit {
 		return result, domain.Fail(domain.ResourceExhausted, "The Git diff exceeds the 64 KiB preview limit.", "Select a narrower relative path; no partial diff was returned.")

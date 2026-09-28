@@ -117,6 +117,30 @@ func TestWorkspaceDiffLiteralPathBinaryAndNoExternalHelpers(t *testing.T) {
 	}
 }
 
+func TestWorkspaceDiffIsolationCannotRunAnActiveCleanFilter(t *testing.T) {
+	root := repository(t)
+	marker := filepath.Join(t.TempDir(), "filter-ran")
+	gitTest(t, root, "config", "filter.fixture.clean", "touch '"+marker+"'")
+	if err := os.WriteFile(filepath.Join(root, ".gitattributes"), []byte("tracked.txt filter=fixture\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("changed\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if got := gitTest(t, root, "check-attr", "filter", "--", "tracked.txt"); !strings.Contains(got, "fixture") {
+		t.Fatal("test did not activate the clean filter", got)
+	}
+	base := gitTest(t, root, "rev-parse", "HEAD")
+	g := Git{ProcessRoot: filepath.Join(t.TempDir(), "processes"), OwnerID: domain.NewID(), readOnly: true}
+	patch, err := g.filterFreeDiff(context.Background(), root, []string{"diff", "--no-ext-diff", "--no-textconv", base, "--", "tracked.txt"})
+	if err != nil || !strings.Contains(string(patch), "+changed") {
+		t.Fatal("isolated diff lost the raw worktree change", err)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatal("isolated Git diff executed an active clean filter", err)
+	}
+}
+
 func TestWorkspaceDiffUnbornAndBoundedResults(t *testing.T) {
 	m, input, manifest := unbornLocalFixture(t)
 	root := manifest.PrimaryPath

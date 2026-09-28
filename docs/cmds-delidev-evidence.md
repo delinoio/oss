@@ -2129,3 +2129,18 @@ After the repair, `go test -race ./cmds/delidev-cli/...` and
 binary also cross-compiled for Windows amd64 with CGO disabled. Hosted Windows
 execution after the repair push is not claimed. No Rust, frontend, production
 runtime, model or texture bytes changed, and no generated `dist` was retained.
+
+### PR #1041 working-tree diff filter race repair (2026-09-28)
+
+A private Git fixture reproduced a clean filter running during `git diff
+--no-textconv` after an attribute change. The Worker comparison now runs its
+working-tree diff through a temporary Git admin whose highest-precedence
+attribute makes `filter` unspecified for every path. It still reads the
+original index, object store and worktree, and rejects active filters before
+and after the diff; staged comparisons remain object-only. The temp admin is
+removed after the read. A focused fixture activates a clean filter during the
+isolated diff and proves the original raw patch is returned without creating
+the filter marker. Focused workspace race tests and vet pass on macOS arm64;
+the workspace test package cross-compiles for Windows amd64. This fixture does
+not establish live Windows filter behavior or make user-owned worktree files
+atomic.

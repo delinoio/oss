@@ -29,13 +29,14 @@ type Inspection struct {
 	DefaultRefs map[string]string `json:"default_refs"`
 }
 type Git struct {
-	Executable  string
-	ProcessRoot string
-	OwnerID     domain.ID
-	Logger      *slog.Logger
-	HooksDir    string
-	Timeout     time.Duration
-	readOnly    bool
+	Executable    string
+	ProcessRoot   string
+	OwnerID       domain.ID
+	Logger        *slog.Logger
+	HooksDir      string
+	Timeout       time.Duration
+	readOnly      bool
+	diffIndexFile string
 }
 
 type limitedOutput struct {
@@ -96,6 +97,9 @@ func (g Git) runCommand(ctx context.Context, root string, args ...string) ([]byt
 		// stable wire grammar independent of the execution machine's locale.
 		environment = slices.DeleteFunc(environment, func(value string) bool { key, _, _ := strings.Cut(value, "="); return strings.EqualFold(key, "LC_ALL") })
 		environment = append(environment, "LC_ALL=C")
+	}
+	if g.diffIndexFile != "" {
+		environment = append(environment, "GIT_INDEX_FILE="+g.diffIndexFile)
 	}
 	err := process.Run(bounded, process.Config{Directory: g.ProcessRoot, OwnerID: g.OwnerID, Executable: binary, Args: commandArgs, Env: environment, Cwd: root, Stdout: &out, Stderr: io.Discard, Logger: g.Logger})
 	if err != nil {
