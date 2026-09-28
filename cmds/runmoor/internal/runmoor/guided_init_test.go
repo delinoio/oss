@@ -21,10 +21,12 @@ type fakeGuidedRuntime struct {
 	probeReady  bool
 	verifyFail  bool
 	startError  error
+	storage     Storage
 }
 
 func (*fakeGuidedRuntime) Check(context.Context, Config) error { return nil }
-func (f *fakeGuidedRuntime) Start(_ context.Context, _ string, _ Config, _ io.Writer) (<-chan error, <-chan error) {
+func (f *fakeGuidedRuntime) Start(_ context.Context, _ string, c Config, _ io.Writer) (<-chan error, <-chan error) {
+	f.storage = c.Storage
 	f.done = make(chan error, 1)
 	ready := make(chan error, 1)
 	ready <- f.startError
@@ -97,6 +99,14 @@ func TestGuidedTartInitResumesAndProtectsConfiguration(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	t.Setenv("XDG_STATE_HOME", filepath.Join(storage, "state"))
 	t.Setenv("XDG_DATA_HOME", filepath.Join(storage, "data"))
+	defaultState := xdg("XDG_STATE_HOME", ".local/state")
+	if err = os.MkdirAll(defaultState, 0700); err != nil {
+		t.Fatal(err)
+	}
+	defaultDatabase := filepath.Join(defaultState, "state.sqlite")
+	if err = os.WriteFile(defaultDatabase, []byte("existing installation"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	path := filepath.Join(dir, "config.toml")
 	opts := InitOptions{Backend: string(Tart), Target: "https://github.com/example/repo", Auth: string(PAT), CredentialEnv: "RUNMOOR_PAT"}
 	fake := &fakeGuidedRuntime{}
@@ -110,6 +120,12 @@ func TestGuidedTartInitResumesAndProtectsConfiguration(t *testing.T) {
 	}
 	if fake.createCount != 1 || fake.image == nil || fake.image.Phase != ImagePreparing {
 		t.Fatalf("interrupted setup lost or recreated the owned image: err=%v created=%d image=%+v output=%s", err, fake.createCount, fake.image, output.String())
+	}
+	if fake.storage.State == defaultState || filepath.Base(fake.storage.State) != "init-"+fake.image.ID || filepath.Base(fake.storage.Data) != "init-"+fake.image.ID {
+		t.Fatalf("setup manager did not use private image storage: %+v", fake.storage)
+	}
+	if existing, e := os.ReadFile(defaultDatabase); e != nil || string(existing) != "existing installation" {
+		t.Fatal("guided setup modified an existing installation")
 	}
 	_, _, staged := guidedPaths(path)
 	originalStage, err := os.ReadFile(staged)
@@ -151,6 +167,9 @@ func TestGuidedTartInitResumesAndProtectsConfiguration(t *testing.T) {
 	if len(config.Pools) != 1 || config.Pools[0].Image != fake.image.ID || config.Pools[0].RunnerVersion != LatestRunner {
 		t.Fatal("final configuration does not select the sealed managed image")
 	}
+	if config.Storage != fake.storage {
+		t.Fatal("final configuration lost the setup manager's isolated storage")
+	}
 	if !strings.Contains(strings.Join(fake.actions, ","), "verify-boot,seal") {
 		t.Fatal("guest reboot verification did not precede sealing")
 	}
@@ -185,6 +204,25 @@ func TestGuidedIPSWSelection(t *testing.T) {
 	for _, input := range []string{"", "relative.ipsw", "/tmp/other.txt", "/tmp/a.ipsw\n"} {
 		if validGuidedIPSW(input) {
 			t.Fatalf("accepted invalid IPSW source %q", input)
+		}
+	}
+}
+
+func TestGuidedStorageRejectsExistingPaths(t *testing.T) {
+	root := t.TempDir()
+	storage := Storage{State: filepath.Join(root, "state"), Data: filepath.Join(root, "data")}
+	if err := requireFreshGuidedStorage(storage); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{storage.State, storage.Data} {
+		if err := os.Mkdir(path, 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := requireFreshGuidedStorage(storage); err == nil {
+			t.Fatalf("accepted preexisting guided storage: %s", path)
+		}
+		if err := os.Remove(path); err != nil {
+			t.Fatal(err)
 		}
 	}
 }

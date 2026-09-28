@@ -302,6 +302,10 @@ managed preparation and cleanup.
   2.37.0.
 - Guided init stages a private image-only configuration and a private atomic
   setup journal keyed to the requested final config path and UUID-v7 image.
+  It allocates distinct state and data directories for that UUID and records
+  them in the final configuration, so starting the setup manager cannot load
+  or mutate a stopped installation's default database. Existing directories
+  at those setup paths are rejected before journal publication.
   Tart image-only setup keeps the 20480 MiB free-disk reserve even before a
   pool exists.
   The normal manager owns image mutations and sleep inhibition. After the

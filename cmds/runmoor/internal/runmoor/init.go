@@ -27,6 +27,7 @@ type InitOptions struct {
 	SourceHome     string
 	RunnerVersion  string
 	ImageOnly      bool
+	Storage        Storage
 }
 
 func initialPoolLabels(backend Backend, arch string) (string, []string, error) {
@@ -177,6 +178,9 @@ func initializeWithContext(ctx context.Context, path string, opts InitOptions, i
 		}
 	}
 	fields := map[string]any{"schema_version": 1}
+	if opts.Storage != (Storage{}) {
+		fields["storage"] = opts.Storage
+	}
 	if opts.ImageOnly && opts.Backend == string(Tart) {
 		fields["host"] = map[string]any{"min_free_disk_mib": 20480}
 	}

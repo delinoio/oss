@@ -94,6 +94,23 @@ func guidedJournalExists(path string) (bool, error) {
 func validGuidedIPSW(ipsw string) bool {
 	return ipsw == "latest" || filepath.IsAbs(ipsw) && strings.HasSuffix(strings.ToLower(ipsw), ".ipsw") && !strings.ContainsAny(ipsw, "\x00\r\n")
 }
+func guidedStorage(id string) Storage {
+	name := "init-" + id
+	return Storage{
+		State: filepath.Join(xdg("XDG_STATE_HOME", ".local/state"), name),
+		Data:  filepath.Join(xdg("XDG_DATA_HOME", ".local/share"), name),
+	}
+}
+func requireFreshGuidedStorage(storage Storage) error {
+	for _, path := range []string{storage.State, storage.Data} {
+		if _, err := os.Lstat(path); err == nil {
+			return problem(ErrOwnership, "Guided Tart setup storage already exists.", "Choose a fresh configuration path and inspect the existing storage before retrying.")
+		} else if !os.IsNotExist(err) {
+			return problem(ErrPermission, "Cannot inspect guided Tart setup storage.", "Check access to the state and data directories before retrying.")
+		}
+	}
+	return nil
+}
 func startGuidedInit(ctx context.Context, path string, opts InitOptions, ipsw string, reader *bufio.Reader, output io.Writer, runtime guidedRuntime) error {
 	if !validGuidedIPSW(ipsw) || opts.ImageOnly || opts.Image != "" || opts.ImageSource != "" || opts.SourceHome != "" {
 		return problem(ErrConfig, "Invalid guided Tart image setup.", "Use 'latest' or an absolute .ipsw path without another image selection.")
@@ -101,6 +118,10 @@ func startGuidedInit(ctx context.Context, path string, opts InitOptions, ipsw st
 	id := newID()
 	opts.Image = id
 	opts.RunnerVersion = LatestRunner
+	opts.Storage = guidedStorage(id)
+	if err := requireFreshGuidedStorage(opts.Storage); err != nil {
+		return err
+	}
 	if err := privateDir(filepath.Dir(path)); err != nil {
 		return err
 	}
@@ -118,7 +139,7 @@ func startGuidedInit(ctx context.Context, path string, opts InitOptions, ipsw st
 	if err = runtime.Check(ctx, preflightConfig); err != nil {
 		return err
 	}
-	j := guidedInitJournal{SchemaVersion: 1, ConfigPath: path, ImageID: id, IPSW: ipsw, Storage: Storage{State: xdg("XDG_STATE_HOME", ".local/state"), Data: xdg("XDG_DATA_HOME", ".local/share")}, Options: opts}
+	j := guidedInitJournal{SchemaVersion: 1, ConfigPath: path, ImageID: id, IPSW: ipsw, Storage: opts.Storage, Options: opts}
 	journal, _, _ := guidedPaths(path)
 	body, err := json.Marshal(j)
 	if err != nil {
@@ -136,7 +157,7 @@ func resumeGuidedInit(ctx context.Context, path string, input io.Reader, output 
 		return err
 	}
 	var j guidedInitJournal
-	if json.Unmarshal(body, &j) != nil || j.SchemaVersion != 1 || j.ConfigPath != path || !validID(j.ImageID) || !validGuidedIPSW(j.IPSW) || j.Options.Backend != string(Tart) || j.Options.Image != j.ImageID || j.Options.ImageSource != "" || j.Options.ImageOnly || j.Options.RunnerVersion != LatestRunner {
+	if json.Unmarshal(body, &j) != nil || j.SchemaVersion != 1 || j.ConfigPath != path || !validID(j.ImageID) || !validGuidedIPSW(j.IPSW) || j.Options.Backend != string(Tart) || j.Options.Image != j.ImageID || j.Options.ImageSource != "" || j.Options.ImageOnly || j.Options.RunnerVersion != LatestRunner || j.Options.Storage != j.Storage || filepath.Base(j.Storage.State) != "init-"+j.ImageID || filepath.Base(j.Storage.Data) != "init-"+j.ImageID {
 		return problem(ErrConfig, "Pending Tart setup record is invalid.", "Preserve the setup files and inspect them before continuing.")
 	}
 	fmt.Fprintln(output, "Resuming the owned macOS image setup.")
@@ -159,7 +180,7 @@ func ensureGuidedFiles(j guidedInitJournal) (Config, error) {
 		return Config{}, problem(ErrConfig, "Pending final configuration changed.", "Preserve the setup files and inspect them; Runmoor will not overwrite the file.")
 	}
 	if _, err = os.Lstat(bootstrap); os.IsNotExist(err) {
-		if err = initialize(bootstrap, InitOptions{Backend: string(Tart), ImageOnly: true}, strings.NewReader(""), io.Discard, false); err != nil {
+		if err = initialize(bootstrap, InitOptions{Backend: string(Tart), ImageOnly: true, Storage: j.Storage}, strings.NewReader(""), io.Discard, false); err != nil {
 			return Config{}, err
 		}
 	} else if err != nil {
