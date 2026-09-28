@@ -114,14 +114,14 @@ fn signal_tracked(
     signal: i32,
     signalled: &mut HashSet<u32>,
 ) -> Result<(), CaptureFailure> {
-    for pid in receiver
+    for tracked_pid in receiver
         .live_processes()
         .map_err(|_| CaptureFailure::Cleanup)?
     {
-        if !signalled.insert(pid) {
+        if signalled.contains(&tracked_pid) {
             continue;
         }
-        let pid = i32::try_from(pid).map_err(|_| CaptureFailure::Cleanup)?;
+        let pid = i32::try_from(tracked_pid).map_err(|_| CaptureFailure::Cleanup)?;
         // SAFETY: the receiver recorded this process's start identity at its
         // authenticated hello and rechecked it immediately before signaling.
         if unsafe { libc::kill(pid, signal) } != 0
@@ -129,6 +129,7 @@ fn signal_tracked(
         {
             return Err(CaptureFailure::Cleanup);
         }
+        signalled.insert(tracked_pid);
     }
     Ok(())
 }
@@ -147,42 +148,63 @@ fn cleanup_owned(
         .checked_add(kill_after)
         .ok_or(CaptureFailure::Cleanup)?;
     while Instant::now() < graceful_until {
-        signal_tracked(receiver, libc::SIGTERM, &mut signalled)?;
+        // A process can exit between enumeration and proc_pidinfo/kill. Keep
+        // trying within the owned cleanup budget instead of treating one
+        // transient inspection failure as confirmed cleanup failure.
+        if signal_tracked(receiver, libc::SIGTERM, &mut signalled).is_err() {
+            tracing::debug!(stage = "cleanup_grace", "retrying process inspection");
+        }
         if !root_done {
             root_done = poll_wait(runtime, wait).is_some();
         } else {
             thread::sleep(POLL);
         }
         if root_done
-            && !group_exists(pid)?
+            && matches!(group_exists(pid), Ok(false))
             && receiver
                 .live_processes()
-                .map_err(|_| CaptureFailure::Cleanup)?
-                .is_empty()
+                .is_ok_and(|processes| processes.is_empty())
         {
             return Ok(());
         }
     }
-    signal_group(pid, libc::SIGKILL)?;
+    let _ = signal_group(pid, libc::SIGKILL);
     let mut signalled = HashSet::new();
     let force_until = Instant::now() + FORCE_CONFIRM;
     while Instant::now() < force_until {
-        signal_tracked(receiver, libc::SIGKILL, &mut signalled)?;
+        if signal_tracked(receiver, libc::SIGKILL, &mut signalled).is_err() {
+            tracing::debug!(stage = "cleanup_force", "retrying process inspection");
+        }
         if !root_done {
             root_done = poll_wait(runtime, wait).is_some();
         } else {
             thread::sleep(POLL);
         }
         if root_done
-            && !group_exists(pid)?
+            && matches!(group_exists(pid), Ok(false))
             && receiver
                 .live_processes()
-                .map_err(|_| CaptureFailure::Cleanup)?
-                .is_empty()
+                .is_ok_and(|processes| processes.is_empty())
         {
             return Ok(());
         }
     }
+    let group_live = group_exists(pid).ok();
+    let tracked_count = receiver
+        .live_processes()
+        .ok()
+        .map(|processes| processes.len());
+    tracing::error!(
+        stage = "cleanup_unconfirmed",
+        root_done,
+        ?group_live,
+        ?tracked_count,
+        "owned process cleanup could not be confirmed"
+    );
+    eprintln!(
+        "clibox fspy supervisor: stage=cleanup_unconfirmed root_done={root_done} \
+         group_live={group_live:?} tracked_count={tracked_count:?}"
+    );
     Err(CaptureFailure::Cleanup)
 }
 
