@@ -147,15 +147,16 @@ type Checkout struct {
 	Path      string `json:"path"`
 }
 type Repository struct {
-	Name            string     `json:"name"`
-	Checkouts       []Checkout `json:"checkouts"`
-	PreferredRemote string     `json:"preferred_remote,omitempty"`
-	Base            Reference  `json:"base"`
-	Starting        Reference  `json:"starting"`
-	AutoFetch       bool       `json:"auto_fetch"`
-	GitHubOwner     string     `json:"github_owner,omitempty"`
-	GitHubName      string     `json:"github_name,omitempty"`
-	IntegrationID   ID         `json:"integration_id,omitempty"`
+	Name            string             `json:"name"`
+	Checkouts       []Checkout         `json:"checkouts"`
+	PreferredRemote string             `json:"preferred_remote,omitempty"`
+	Base            Reference          `json:"base"`
+	Starting        Reference          `json:"starting"`
+	AutoFetch       bool               `json:"auto_fetch"`
+	GitHubOwner     string             `json:"github_owner,omitempty"`
+	GitHubName      string             `json:"github_name,omitempty"`
+	IntegrationID   ID                 `json:"integration_id,omitempty"`
+	Remediation     *RemediationPolicy `json:"remediation,omitempty"`
 }
 
 func (r Repository) Validate() error {
@@ -193,6 +194,11 @@ func (r Repository) Validate() error {
 	}
 	if r.IntegrationID != "" {
 		if err := r.IntegrationID.Validate(); err != nil {
+			return err
+		}
+	}
+	if r.Remediation != nil {
+		if err := r.Remediation.Validate(); err != nil {
 			return err
 		}
 	}
@@ -632,56 +638,13 @@ type Settings struct {
 	AutomaticFetch bool              `json:"automatic_fetch"`
 	Remediation    RemediationPolicy `json:"remediation"`
 }
-type ConflictStrategy string
-
-const (
-	MergeConflictStrategy  ConflictStrategy = "merge"
-	RebaseConflictStrategy ConflictStrategy = "rebase"
-)
-
-type SessionStrategy string
-
-const (
-	ReuseSession     SessionStrategy = "reuse"
-	DedicatedSession SessionStrategy = "dedicated"
-)
-
-type RemediationPolicy struct {
-	CIFailure        bool             `json:"ci_failure"`
-	ReviewFeedback   bool             `json:"review_feedback"`
-	MergeConflict    bool             `json:"merge_conflict"`
-	ConflictStrategy ConflictStrategy `json:"conflict_strategy"`
-	SessionStrategy  SessionStrategy  `json:"session_strategy"`
-	AttemptLimit     uint32           `json:"attempt_limit"`
-	AgentID          ID               `json:"agent_id,omitempty"`
-	MachineID        ID               `json:"machine_id,omitempty"`
-}
 
 func DefaultSettings() Settings {
-	return Settings{DefaultRouting: SequentialExhaustion, Notifications: true, AutomaticFetch: true, Remediation: RemediationPolicy{ConflictStrategy: MergeConflictStrategy, SessionStrategy: ReuseSession, AttemptLimit: 3}}
+	return Settings{DefaultRouting: SequentialExhaustion, Notifications: true, AutomaticFetch: true, Remediation: DefaultRemediationPolicy()}
 }
 func (s Settings) Validate() error {
 	if !s.DefaultRouting.Valid() {
 		return Fail(InvalidArgument, "Invalid default routing policy.", "Select one of the six supported policies.")
 	}
-	if s.Remediation.ConflictStrategy != MergeConflictStrategy && s.Remediation.ConflictStrategy != RebaseConflictStrategy {
-		return Fail(InvalidArgument, "Invalid conflict strategy.", "Select merge or rebase.")
-	}
-	if s.Remediation.SessionStrategy != ReuseSession && s.Remediation.SessionStrategy != DedicatedSession {
-		return Fail(InvalidArgument, "Invalid remediation session strategy.", "Select reuse or dedicated.")
-	}
-	if s.Remediation.AttemptLimit < 1 || s.Remediation.AttemptLimit > 100 {
-		return Fail(InvalidArgument, "Invalid remediation attempt limit.", "Use 1 through 100 attempts; the default is 3.")
-	}
-	if s.Remediation.AgentID != "" {
-		if err := s.Remediation.AgentID.Validate(); err != nil {
-			return err
-		}
-	}
-	if s.Remediation.MachineID != "" {
-		if err := s.Remediation.MachineID.Validate(); err != nil {
-			return err
-		}
-	}
-	return nil
+	return s.Remediation.Validate()
 }

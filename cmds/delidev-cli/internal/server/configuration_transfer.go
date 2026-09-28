@@ -118,6 +118,9 @@ func exportConfiguration(tx *store.Tx) (domain.ConfigurationBundle, error) {
 			}
 			switch v := value.(type) {
 			case *domain.Repository:
+				if v.Remediation != nil && v.Remediation.MachineID != "" {
+					machineIDs[v.Remediation.MachineID] = true
+				}
 				for _, checkout := range v.Checkouts {
 					machineIDs[checkout.MachineID] = true
 					checkouts++
@@ -341,6 +344,23 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 		}
 		return nil
 	}
+	rewriteRemediation := func(policy *domain.RemediationPolicy) error {
+		if policy == nil {
+			return nil
+		}
+		if err := rewrite(&policy.AgentID, domain.AgentKind); err != nil {
+			return err
+		}
+		if policy.MachineID != "" {
+			id := policy.MachineID
+			if machines[id] == "" {
+				return transferInvalid()
+			}
+			usedMachines[id] = true
+			policy.MachineID = machines[id]
+		}
+		return nil
+	}
 	for _, entry := range bundle.Entries {
 		value, err := portableValue(entry.Kind, entry.Document, true)
 		if err != nil {
@@ -383,16 +403,9 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 				v.Checkouts[i] = domain.Checkout{MachineID: machines[c.MachineID], Path: path}
 				delete(checkouts, key)
 			}
+			err = rewriteRemediation(v.Remediation)
 		case *domain.Settings:
-			err = rewrite(&v.Remediation.AgentID, domain.AgentKind)
-			if v.Remediation.MachineID != "" {
-				id := v.Remediation.MachineID
-				if machines[id] == "" {
-					return plan, transferInvalid()
-				}
-				usedMachines[id] = true
-				v.Remediation.MachineID = machines[id]
-			}
+			err = rewriteRemediation(&v.Remediation)
 		}
 		if err != nil {
 			return plan, err
@@ -514,6 +527,9 @@ func validateConfigurationPlan(tx *store.Tx, plan domain.ConfigurationImportPlan
 		}
 		switch v := value.(type) {
 		case *domain.Repository:
+			if v.Remediation != nil && v.Remediation.MachineID != "" && !machines[v.Remediation.MachineID] {
+				return transferInvalid()
+			}
 			for _, c := range v.Checkouts {
 				if !machines[c.MachineID] {
 					return transferInvalid()

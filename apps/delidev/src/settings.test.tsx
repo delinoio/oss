@@ -247,3 +247,65 @@ it("shows unsupported stored Claude modes without replacing the retained draft",
   expect(screen.getByText(/Bypass skips native permission prompts/)).toBeTruthy();
   expect(value.save).not.toHaveBeenCalled();
 });
+
+it("saves remediation switches, exact reviewer IDs and explicit execution choices through configuration", async () => {
+  const agent = resource(EntityKind.AGENT, { name: "Fix agent" });
+  const machine = resource(EntityKind.MACHINE, { name: "Fix machine" });
+  const value = fixture([agent, machine]);
+  render(value.view(<ConfigurationEditor kind={EntityKind.SETTINGS} active saved={() => {}} cancel={() => {}} />));
+  expect(screen.getByText(/Automatic execution is not available yet/)).toBeTruthy();
+  for (const name of ["Automatically fix required CI failures", "Automatically handle matching published feedback", "Automatically resolve verified merge conflicts"]) {
+    expect((screen.getByRole("checkbox", { name }) as HTMLInputElement).checked).toBe(false);
+    fireEvent.click(screen.getByRole("checkbox", { name }));
+  }
+  await screen.findByRole("option", { name: "Fix agent" });
+  fireEvent.change(screen.getByLabelText("Remediation Agent Worker"), { target: { value: agent.id } });
+  fireEvent.change(screen.getByLabelText("Remediation execution Worker"), { target: { value: machine.id } });
+  fireEvent.change(screen.getByLabelText("Remediation session strategy"), { target: { value: "dedicated" } });
+  fireEvent.change(screen.getByLabelText("Conflict resolution strategy"), { target: { value: "rebase" } });
+  fireEvent.change(screen.getByLabelText("Consecutive automatic attempt limit"), { target: { value: "7" } });
+  fireEvent.click(screen.getByRole("button", { name: "Add reviewer selector" }));
+  fireEvent.change(screen.getByLabelText("Selector 1 type"), { target: { value: "bot" } });
+  fireEvent.change(screen.getByLabelText("Selector 1 GitHub numeric ID"), { target: { value: "9007199254740993" } });
+  fireEvent.change(screen.getByLabelText("Selector 1 GitHub node ID"), { target: { value: "BOT_exact" } });
+  fireEvent.click(screen.getByRole("button", { name: "Add reviewer selector" }));
+  fireEvent.change(screen.getByLabelText("Selector 2 type"), { target: { value: "minimum-permission" } });
+  fireEvent.change(screen.getByLabelText("Selector 2 minimum permission"), { target: { value: "MAINTAIN" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save Server preferences" }));
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
+  const saved = JSON.parse(new TextDecoder().decode(input(value.save.mock.calls[0][0]).documentJson));
+  expect(saved.remediation).toEqual({ ci_failure: true, review_feedback: true, merge_conflict: true, conflict_strategy: "rebase", session_strategy: "dedicated", attempt_limit: 7, agent_id: agent.id, machine_id: machine.id, reviewer_selectors: [{ kind: "bot", id: "9007199254740993", node_id: "BOT_exact" }, { kind: "minimum-permission", permission: "MAINTAIN" }] });
+});
+
+it("starts a repository override with automation off and removes it only through explicit inheritance", async () => {
+  const repository = resource(EntityKind.REPOSITORY, { name: "Repository", checkouts: [], base: {}, starting: {}, auto_fetch: true });
+  const value = fixture([repository]);
+  render(value.view(<ConfigurationEditor kind={EntityKind.REPOSITORY} initial={repository} active saved={() => {}} cancel={() => {}} />));
+  expect(screen.getByText(/inherits the complete server remediation policy/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Set repository policy with automation off" }));
+  expect((screen.getByLabelText("Automatically fix required CI failures") as HTMLInputElement).checked).toBe(false);
+  expect((screen.getByLabelText("Consecutive automatic attempt limit") as HTMLInputElement).value).toBe("3");
+  fireEvent.click(screen.getByLabelText("Automatically fix required CI failures"));
+  fireEvent.click(screen.getByRole("button", { name: "Use server remediation policy" }));
+  expect(screen.queryByLabelText("Automatically fix required CI failures")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Save Repository" }));
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
+  const saved = JSON.parse(new TextDecoder().decode(input(value.save.mock.calls[0][0]).documentJson));
+  expect(saved).toEqual({ name: "Repository", checkouts: [], base: {}, starting: {}, auto_fetch: true });
+});
+
+it("retains empty repository selectors and clears incompatible identity fields when changing selector type", async () => {
+  const policy = { ci_failure: false, review_feedback: true, merge_conflict: false, conflict_strategy: "merge", session_strategy: "reuse", attempt_limit: 3, reviewer_selectors: [{ kind: "app", id: "42", node_id: "A_exact" }] };
+  const repository = resource(EntityKind.REPOSITORY, { name: "Repository", checkouts: [], base: {}, starting: {}, auto_fetch: true, remediation: policy }, 4n);
+  const value = fixture([repository]);
+  render(value.view(<ConfigurationEditor kind={EntityKind.REPOSITORY} initial={repository} active saved={() => {}} cancel={() => {}} />));
+  fireEvent.change(screen.getByLabelText("Selector 1 type"), { target: { value: "minimum-permission" } });
+  expect(screen.queryByLabelText("Selector 1 GitHub numeric ID")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Remove reviewer selector 1" }));
+  expect(screen.getByText(/No reviewer selectors/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Save Repository" }));
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
+  const request = input(value.save.mock.calls[0][0]);
+  expect(request.mutation.expectedRevision).toBe(4n);
+  expect(JSON.parse(new TextDecoder().decode(request.documentJson)).remediation).toEqual({ ...policy, reviewer_selectors: [] });
+});

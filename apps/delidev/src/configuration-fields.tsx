@@ -1,3 +1,4 @@
+import { defaultRemediationPolicy, RemediationPolicyFields } from "./remediation-policy";
 import { useEffect, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { EntityKind, ProviderQuery, ResourceQuery, WorkerQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
@@ -23,7 +24,7 @@ export function newConfiguration(kind: EntityKind): Document {
     case EntityKind.PROJECT: return { name: "", repositories: [], primary_repository: "", agents: { configured: false, ids: [] }, accounts: { configured: false, ids: [] } };
     case EntityKind.REPOSITORY: return { name: "", checkouts: [], base: {}, starting: {}, auto_fetch: true };
     case EntityKind.TEMPLATE: return { name: "", contents: "" };
-    case EntityKind.SETTINGS: return { default_routing: Routing.Sequential, notifications: true, automatic_fetch: true, remediation: { ci_failure: false, review_feedback: false, merge_conflict: false, conflict_strategy: "merge", session_strategy: "reuse", attempt_limit: 3 } };
+    case EntityKind.SETTINGS: return { default_routing: Routing.Sequential, notifications: true, automatic_fetch: true, remediation: defaultRemediationPolicy() };
     default: throw new Error("Unsupported configuration editor");
   }
 }
@@ -93,7 +94,7 @@ interface FieldsProps { data: Document; change: (value: Document) => void; activ
 export function ConfigurationFields({ kind, ...props }: FieldsProps & { kind: EntityKind }) {
   const { data, change, active, existing } = props;
   const field = (key: string) => (value: unknown) => change({ ...data, [key]: value });
-  if (kind === EntityKind.SETTINGS) return <><Choice label="Default account routing" value={data.default_routing} choices={Object.values(Routing)} change={field("default_routing")} /><p>Used by Agent Workers that inherit the server default. Existing execution snapshots keep their original selection and routing.</p><Check label="Allow automatic fetch before Worktree preparation" value={data.automatic_fetch} change={field("automatic_fetch")} /><p>Fetching requires both this server preference and the repository's fetch preference. Disabling it uses retained remote-tracking references or reports missing references. Local checkouts remain unchanged.</p></>;
+  if (kind === EntityKind.SETTINGS) return <><Choice label="Default account routing" value={data.default_routing} choices={Object.values(Routing)} change={field("default_routing")} /><p>Used by Agent Workers that inherit the server default. Existing execution snapshots keep their original selection and routing.</p><Check label="Allow automatic fetch before Worktree preparation" value={data.automatic_fetch} change={field("automatic_fetch")} /><p>Fetching requires both this server preference and the repository's fetch preference. Disabling it uses retained remote-tracking references or reports missing references. Local checkouts remain unchanged.</p><RemediationFields value={object(data.remediation)} change={field("remediation")} active={active} /></>;
   if (kind === EntityKind.PROJECT) return <ProjectFields {...props} />;
   if (kind === EntityKind.REPOSITORY) return <RepositoryFields {...props} />;
   if (kind === EntityKind.PROVIDER) return <ProviderFields {...props} />;
@@ -121,6 +122,14 @@ export function ReferenceFields({ label, value, change }: { label: string; value
   const reference = object(value);
   return <fieldset><legend>{label}</legend><label>{label} type<select value={text(reference.type)} onChange={(event) => change(event.target.value ? { type: event.target.value, name: text(reference.name), ...(event.target.value === ReferenceType.Remote ? { remote: text(reference.remote) } : {}) } : {})}><option value="">Use inspected default</option>{Object.values(ReferenceType).map((type) => <option key={type} value={type}>{type}</option>)}</select></label>{reference.type ? <><TextField label={`${label} name`} value={reference.name} required max={1024} change={(name) => change({ ...reference, name })} />{reference.type === ReferenceType.Remote ? <TextField label={`${label} remote`} value={reference.remote} required change={(remote) => change({ ...reference, remote })} /> : null}</> : null}</fieldset>;
 }
+function RemediationFields({ value, change, active }: { value: Document; change: (value: Document) => void; active: boolean }) {
+  const identity = (key: string, id: string) => { const next = { ...value }; if (id) next[key] = id; else delete next[key]; change(next); };
+  return <RemediationPolicyFields value={value} change={change}>
+    <ResourceChoice label="Remediation Agent Worker" kind={EntityKind.AGENT} value={text(value.agent_id)} active={active} change={id => identity("agent_id", id)} />
+    <ResourceChoice label="Remediation execution Worker" kind={EntityKind.MACHINE} value={text(value.machine_id)} active={active} change={id => identity("machine_id", id)} />
+  </RemediationPolicyFields>;
+}
+
 function RepositoryFields({ data, change, active, pendingOperation }: FieldsProps) {
   const [machine, setMachine] = useState(""), [path, setPath] = useState("");
   const [unknownInspection, setUnknownInspection] = useState(false);
@@ -132,5 +141,8 @@ function RepositoryFields({ data, change, active, pendingOperation }: FieldsProp
     <fieldset disabled={blocked}><legend>Add a checkout</legend><ResourceChoice label="Execution Worker" kind={EntityKind.MACHINE} value={machine} active={active} change={setMachine} /><TextField label="Absolute checkout path on this Worker" value={path} max={4096} change={setPath} /><button type="button" disabled={!machine || !path || checkouts.some((checkout) => checkout.machine_id === machine) || checkouts.length >= 1000} onClick={() => void inspect.send({ requestId: newRequestId(), machineId: machine, path, preferredRemote: text(data.preferred_remote) })}>Inspect checkout</button></fieldset><Problem error={inspect.error} />{inspect.uncertain ? <button type="button" disabled={inspect.busy} onClick={inspect.retry}>Retry the same inspection</button> : null}
     {unknownInspection ? <p role="alert">Inspection was acknowledged without a readable job. Inspect the original request before submitting another.</p> : null}{inspection ? <TrackedJob initial={inspection.job} active={active}>{(state, output) => <>{state === JobState.Succeeded ? <><p>Inspected root: {text(output.root)}</p><p>Remotes: {items(output.remotes).map(text).join(", ") || "None"}</p><p>Recorded remote defaults: {Object.entries(object(output.default_refs)).map(([remote, ref]) => `${remote}: ${text(ref)}`).join(", ") || "Unknown"}</p><button type="button" disabled={!text(output.root) || checkouts.some((checkout) => checkout.machine_id === inspection.machine)} onClick={() => { change({ ...data, checkouts: [...checkouts, { machine_id: inspection.machine, path: text(output.root) }] }); setInspection(undefined); setPath(""); setMachine(""); }}>Add inspected checkout</button></> : null}{[JobState.Succeeded, JobState.Failed, JobState.Canceled].includes(state as JobState) ? <button type="button" onClick={() => setInspection(undefined)}>Close inspection</button> : null}</>}</TrackedJob> : null}
     <ol>{checkouts.map((checkout) => <li key={text(checkout.machine_id)}><p>{text(checkout.machine_id)} · {text(checkout.path)}</p><button type="button" onClick={() => change({ ...data, checkouts: checkouts.filter((row) => row.machine_id !== checkout.machine_id) })}>Remove checkout</button></li>)}</ol><ReferenceFields label="Base reference" value={data.base} change={(base) => change({ ...data, base })} /><ReferenceFields label="Starting reference" value={data.starting} change={(starting) => change({ ...data, starting })} /><p>Base controls comparisons; starting controls prepared code. A missing or ambiguous default is reported by the Worker. Local sessions keep their existing checkout unchanged.</p><Check label="Fetch the exact selected remote before Worktree preparation" value={data.auto_fetch} change={(auto_fetch) => change({ ...data, auto_fetch })} />
+    <fieldset><legend>Repository remediation</legend>
+      {data.remediation == null ? <><p>This repository inherits the complete server remediation policy, including future changes.</p><button type="button" onClick={() => change({ ...data, remediation: defaultRemediationPolicy() })}>Set repository policy with automation off</button></> : <><p>This complete repository policy replaces the server policy. Empty reviewer or execution selections remain empty.</p><RemediationFields value={object(data.remediation)} active={active} change={remediation => change({ ...data, remediation })} /><button type="button" onClick={() => { const next = { ...data }; delete next.remediation; change(next); }}>Use server remediation policy</button></>}
+    </fieldset>
   </>;
 }

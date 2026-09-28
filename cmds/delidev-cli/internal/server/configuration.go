@@ -122,7 +122,12 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 			}
 		}
 		if v.IntegrationID != "" {
-			return mustExist(tx, domain.IntegrationKind, v.IntegrationID)
+			if err := mustExist(tx, domain.IntegrationKind, v.IntegrationID); err != nil {
+				return err
+			}
+		}
+		if v.Remediation != nil {
+			return validateRemediationRelationships(tx, *v.Remediation)
 		}
 		return nil
 	case *domain.Agent:
@@ -269,16 +274,19 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 		if len(records) > 0 && records[0].ID != id {
 			return domain.Fail(domain.Conflict, "The server already has settings.", "Edit the existing settings ID and revision.")
 		}
-		if v.Remediation.AgentID != "" {
-			if err := mustExist(tx, domain.AgentKind, v.Remediation.AgentID); err != nil {
-				return err
-			}
+		return validateRemediationRelationships(tx, v.Remediation)
+	}
+	return nil
+}
+
+func validateRemediationRelationships(tx configurationView, policy domain.RemediationPolicy) error {
+	if policy.AgentID != "" {
+		if err := mustExist(tx, domain.AgentKind, policy.AgentID); err != nil {
+			return err
 		}
-		if v.Remediation.MachineID != "" {
-			if err := mustExist(tx, domain.MachineKind, v.Remediation.MachineID); err != nil {
-				return err
-			}
-		}
+	}
+	if policy.MachineID != "" {
+		return mustExist(tx, domain.MachineKind, policy.MachineID)
 	}
 	return nil
 }
