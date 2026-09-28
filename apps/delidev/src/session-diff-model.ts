@@ -28,4 +28,3 @@ export function readDiff(raw: Uint8Array, repository: string, comparison: Compar
   }
   return v as Diff;
 }
-

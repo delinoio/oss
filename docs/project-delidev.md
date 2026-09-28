@@ -3,6 +3,8 @@
 ## Goal
 Run personal AI sessions across projects, accounts, native harnesses, and execution machines with durable single-user ownership. Issue #964 is normative; the historical web platform in #722 is not inherited.
 
+The owner requested a pull-request checkpoint on 2026-09-28 after the private native PR workspace-matching increment. Feature expansion is paused for iteration on that partial implementation; the complete issue remains open. Current verification and deferred acceptance are recorded in the [evidence ledger](cmds-delidev-evidence.md).
+
 ## Project ID
 `delidev`; the Go component is `delidev-cli` and its standalone/sidecar executable is `delidev`.
 

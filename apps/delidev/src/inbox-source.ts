@@ -13,4 +13,3 @@ export function inboxResponseCurrent(view: InboxView): boolean {
   const session = document(view.session), interaction = document(view.interaction);
   return Boolean(view.entry && currentInboxSource(view, view.entry.id) && session.archive === "active" && session.dispatch === "claimed" && session.recovery === "none" && isEntityId(text(session.active_execution_id)) && session.active_execution_id === interaction.execution_id);
 }
-
