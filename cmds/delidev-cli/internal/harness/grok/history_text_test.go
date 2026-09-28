@@ -223,7 +223,7 @@ func TestClosedTextHistoryRetainsFirstFileDigest(t *testing.T) {
 }
 
 func TestHistoryPathEncodesNativeWorkspaceBytes(t *testing.T) {
-	workspace := filepath.Join(string(filepath.Separator), "workspace 공백_+.-()")
+	workspace := filepath.Join(filepath.VolumeName(t.TempDir())+string(filepath.Separator), "workspace 공백_+.-()")
 	path, err := historySessionPath(workspace, turnFixtureSession)
 	if err != nil || !strings.Contains(path, "workspace%20%EA%B3%B5%EB%B0%B1_%2B.-%28%29") {
 		t.Fatal("native path encoding drift", err)
