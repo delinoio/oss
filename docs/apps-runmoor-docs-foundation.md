@@ -82,12 +82,23 @@ The Runmoor install page links directly to the shared key-verification and stabl
 
 ## Automatic configuration documentation
 
-Runmoor 0.2.0 adds interactive/minimal init, omitted resource
-and architecture defaults, latest runner management for Docker/Tart, resolved
-configuration inspection and explicit update requests. Guides label the released
-version boundary and retain 0.1.3-compatible manual pins, image setup, credentials,
-license terms and verification limits. Public guides describe operator behavior,
-not the internal SQLite migration journal or repository implementation paths.
+Runmoor 0.2.0 introduced interactive/minimal init, omitted resource and
+architecture defaults, latest runner management for Docker/Tart, resolved
+configuration inspection and explicit update requests. Guides label this
+version boundary and retain 0.1.3-compatible manual pins, image setup,
+credentials, license terms and verification limits. Public guides describe
+operator behavior, not the internal SQLite migration journal or repository
+implementation paths.
+
 The generated configuration guide shows the new scale-set, platform and
 architecture labels for an ARM64 Docker host, explains the `x64` amd64 and
 `macOS` Tart variants, and preserves explicitly authored label examples.
+
+Ubuntu operator guidance distinguishes `runmoor init` from `config validate`,
+locates private configuration access failures without removing existing state,
+explains Docker capacity verification and non-root local-socket access, and
+accounts for lingering systemd user managers retaining old group membership
+after a Docker group change. It shows how to inspect an existing systemd user
+unit and the original systemd failure before replacing a service definition.
+The CLI README links to the corresponding public guides. No unverified
+service-start root cause is claimed.
