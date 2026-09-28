@@ -17,7 +17,7 @@ use tokio_util::sync::CancellationToken;
 use super::{
     assemble_candidate_record, classify_path, Admission, Frame, FrameKind, OperationReceiver,
 };
-use crate::record::CompleteRecord;
+use crate::record::{self, CompleteRecord};
 
 const POLL: Duration = Duration::from_millis(20);
 const FORCE_CONFIRM: Duration = Duration::from_secs(5);
@@ -292,6 +292,35 @@ where
         observed_delay_ns: 0,
         image_id: None,
     };
+    // Reserve a conservative NDJSON-sized charge for the header, summary,
+    // failed PATH probes, and root pair before any native call is admitted.
+    let mut reserved_bytes =
+        record::retained_frame_charge(root.as_os_str().as_bytes().len(), std::iter::empty())
+            .and_then(|charge| charge.checked_add(512))
+            .ok_or(CaptureFailure::Record)?;
+    for failure in &failed_lookups {
+        let path = failure.path.as_os_str().as_bytes();
+        let classified = classify_path(root, path).map_err(|_| CaptureFailure::Record)?;
+        let charge = record::retained_frame_charge(path.len(), classified.iter())
+            .and_then(|charge| charge.checked_add(512))
+            .ok_or(CaptureFailure::Record)?;
+        reserved_bytes = reserved_bytes
+            .checked_add(charge)
+            .ok_or(CaptureFailure::Record)?;
+    }
+    let root_charge =
+        record::retained_frame_charge(root_start.path.len(), root_start.access_path.iter())
+            .and_then(|charge| charge.checked_add(512))
+            .ok_or(CaptureFailure::Record)?;
+    let native_bytes = limits
+        .max_bytes
+        .checked_sub(
+            reserved_bytes
+                .checked_add(root_charge)
+                .ok_or(CaptureFailure::Record)?,
+        )
+        .filter(|remaining| *remaining > 0)
+        .ok_or(CaptureFailure::Record)?;
     let delay = match admission(&root_start, cancelled) {
         Admission::Proceed(delay) => delay,
         Admission::Quit => {
@@ -324,7 +353,7 @@ where
     let receiver = OperationReceiver::bind_with_admission(
         root,
         limits.max_events - reserved_events,
-        limits.max_bytes,
+        native_bytes,
         admission,
     )
     .map_err(|_| CaptureFailure::Initialization)?;
@@ -628,6 +657,27 @@ mod tests {
             Limits {
                 max_events: 1,
                 max_bytes: 1024 * 1024,
+                timeout: Some(Duration::from_secs(5)),
+                kill_after: Duration::from_millis(500),
+            },
+            &AtomicBool::new(false),
+        );
+        assert!(matches!(result, Err(CaptureFailure::Record)));
+        assert!(!output.exists());
+    }
+
+    #[test]
+    fn synthetic_byte_budget_is_rejected_before_launch() {
+        let directory = tempfile::tempdir().unwrap();
+        let output = directory.path().join("created.txt");
+        let mut command = fspy::Command::new("/usr/bin/touch");
+        command.arg(&output);
+        let result = capture(
+            command,
+            directory.path(),
+            Limits {
+                max_events: 100,
+                max_bytes: 1,
                 timeout: Some(Duration::from_secs(5)),
                 kill_after: Duration::from_millis(500),
             },

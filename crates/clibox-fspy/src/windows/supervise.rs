@@ -34,7 +34,7 @@ use winapi::{
 use super::{
     assemble_candidate_record, classify_path, Admission, Frame, FrameKind, OperationReceiver,
 };
-use crate::record::CompleteRecord;
+use crate::record::{self, CompleteRecord};
 
 const POLL: Duration = Duration::from_millis(20);
 const FORCE_CONFIRM: Duration = Duration::from_secs(5);
@@ -286,6 +286,40 @@ where
         requested_delay_ns: 0,
         observed_delay_ns: 0,
     };
+    // Budget for the header, summary, failed PATH probes, and root pair before
+    // the receiver acknowledges a native operation or the child is launched.
+    let root_bytes = root.as_os_str().encode_wide().count().saturating_mul(2);
+    let mut reserved_bytes = record::retained_frame_charge(root_bytes, std::iter::empty())
+        .and_then(|charge| charge.checked_add(512))
+        .ok_or(CaptureFailure::Record)?;
+    for failure in &failed_lookups {
+        let path = failure
+            .path
+            .as_os_str()
+            .encode_wide()
+            .flat_map(u16::to_le_bytes)
+            .collect::<Vec<_>>();
+        let classified = classify_path(&root, &path).map_err(|_| CaptureFailure::Record)?;
+        let charge = record::retained_frame_charge(path.len(), classified.iter())
+            .and_then(|charge| charge.checked_add(512))
+            .ok_or(CaptureFailure::Record)?;
+        reserved_bytes = reserved_bytes
+            .checked_add(charge)
+            .ok_or(CaptureFailure::Record)?;
+    }
+    let root_charge =
+        record::retained_frame_charge(root_start.path.len(), root_start.access_path.iter())
+            .and_then(|charge| charge.checked_add(512))
+            .ok_or(CaptureFailure::Record)?;
+    let native_bytes = limits
+        .max_bytes
+        .checked_sub(
+            reserved_bytes
+                .checked_add(root_charge)
+                .ok_or(CaptureFailure::Record)?,
+        )
+        .filter(|remaining| *remaining > 0)
+        .ok_or(CaptureFailure::Record)?;
     let delay = match admission(&root_start, cancelled) {
         Admission::Proceed(delay) => delay,
         Admission::Quit => {
@@ -316,7 +350,7 @@ where
         return Err(CaptureFailure::Timeout);
     }
     let receiver =
-        OperationReceiver::bind_with_admission(&root, native_events, limits.max_bytes, admission)
+        OperationReceiver::bind_with_admission(&root, native_events, native_bytes, admission)
             .map_err(|_| CaptureFailure::Initialization)?;
     let job = Job::new()?;
     command
@@ -565,6 +599,32 @@ mod tests {
             Limits {
                 max_events: 2,
                 max_bytes: 1024 * 1024,
+                timeout: Some(Duration::from_secs(5)),
+                kill_after: Duration::from_millis(500),
+            },
+            &AtomicBool::new(false),
+        );
+        assert!(matches!(result, Err(CaptureFailure::Record)));
+        assert!(!marker.exists());
+    }
+
+    #[test]
+    fn synthetic_byte_budget_rejects_before_launch() {
+        let directory = tempfile::tempdir().unwrap();
+        let marker = directory.path().join("launched.txt");
+        let mut command = fspy::Command::new(std::env::current_exe().unwrap());
+        command
+            .args(["--exact", "windows::supervise::tests::event_budget_fixture"])
+            .envs(std::env::vars_os())
+            .env("CLIBOX_FSPY_BUDGET_MARKER", &marker)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let result = capture(
+            command,
+            directory.path(),
+            Limits {
+                max_events: 100,
+                max_bytes: 1,
                 timeout: Some(Duration::from_secs(5)),
                 kill_after: Duration::from_millis(500),
             },
