@@ -1,6 +1,6 @@
 # Runmoor Commands and Routing
 
-> **Version note:** Automatic setup and managed runner updates described here target the next Runmoor release. Published 0.1.3 uses the explicit pinned configuration and manual image preparation also documented below. Check `runmoor init --help` for the new options.
+> **Version note:** Runmoor 0.2.0 introduced automatic setup and managed runner updates. Version 0.1.3 uses the explicit pinned configuration and manual image preparation also documented below. Check `runmoor version` before using 0.2.0 commands.
 
 
 ```yaml
