@@ -10,9 +10,11 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-type windowsStore struct{}
+type windowsStore struct{ profile nativeProfile }
 
-func newNative() (nativeStore, error) { return windowsStore{}, nil }
+func newNativeProfile(profile nativeProfile) (nativeStore, error) {
+	return windowsStore{profile: profile}, nil
+}
 func windowsError(err error) error {
 	if err == nil {
 		return nil
@@ -28,15 +30,15 @@ func windowsError(err error) error {
 		return unavailable()
 	}
 }
-func (windowsStore) get(ctx context.Context, name string) ([]byte, error) {
+func (s windowsStore) get(ctx context.Context, name string) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	c, err := wincred.GetGenericCredential(nativeService + "/" + name)
+	c, err := wincred.GetGenericCredential(s.profile.service() + "/" + name)
 	if err != nil {
 		return nil, windowsError(err)
 	}
-	if len(c.CredentialBlob) != nativeMaterialSize {
+	if !s.profile.accepts(len(c.CredentialBlob)) {
 		clear(c.CredentialBlob)
 		return nil, recovery()
 	}
@@ -46,12 +48,12 @@ func (s windowsStore) create(ctx context.Context, name string, value []byte) err
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if len(value) != nativeMaterialSize {
+	if !s.profile.accepts(len(value)) {
 		return recovery()
 	}
 	// CredWrite replaces records. The exclusive Vault lock plus this exact lookup
 	// prevents replacement of an existing immutable reference on normal retries.
-	old, err := wincred.GetGenericCredential(nativeService + "/" + name)
+	old, err := wincred.GetGenericCredential(s.profile.service() + "/" + name)
 	if err == nil {
 		clear(old.CredentialBlob)
 		return duplicate()
@@ -59,16 +61,16 @@ func (s windowsStore) create(ctx context.Context, name string, value []byte) err
 	if !errors.Is(err, wincred.ErrElementNotFound) {
 		return windowsError(err)
 	}
-	c := wincred.NewGenericCredential(nativeService + "/" + name)
+	c := wincred.NewGenericCredential(s.profile.service() + "/" + name)
 	c.CredentialBlob = value
 	c.Persist = wincred.PersistLocalMachine
 	return windowsError(c.Write())
 }
-func (windowsStore) remove(ctx context.Context, name string) error {
+func (s windowsStore) remove(ctx context.Context, name string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	c := wincred.NewGenericCredential(nativeService + "/" + name)
+	c := wincred.NewGenericCredential(s.profile.service() + "/" + name)
 	err := c.Delete()
 	if errors.Is(err, wincred.ErrElementNotFound) {
 		return nil

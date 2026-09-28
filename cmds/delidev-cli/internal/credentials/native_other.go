@@ -2,4 +2,4 @@
 
 package credentials
 
-func newNative() (nativeStore, error) { return nil, unavailable() }
+func newNativeProfile(nativeProfile) (nativeStore, error) { return nil, unavailable() }

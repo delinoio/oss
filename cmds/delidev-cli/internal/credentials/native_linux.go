@@ -24,9 +24,11 @@ const serviceInterface = "org.freedesktop.Secret.Service"
 const itemInterface = "org.freedesktop.Secret.Item"
 const collectionInterface = "org.freedesktop.Secret.Collection"
 
-type linuxStore struct{}
+type linuxStore struct{ profile nativeProfile }
 
-func newNative() (nativeStore, error) { return linuxStore{}, nil }
+func newNativeProfile(profile nativeProfile) (nativeStore, error) {
+	return linuxStore{profile: profile}, nil
+}
 
 // Use only an already running local user bus. No dbus-launch child, remote TCP
 // bus or implicit keyring creation is allowed. The plain Secret Service session
@@ -127,12 +129,15 @@ func secretServiceError(ctx context.Context, err error) error {
 	}
 	return unavailable()
 }
-func attributes(name string) map[string]string {
-	return map[string]string{"application": nativeService, "reference": name}
+func (s linuxStore) attributes(name string) map[string]string {
+	return map[string]string{"application": s.profile.service(), "reference": name}
 }
 func findItem(ctx context.Context, c *dbus.Conn, name string) (dbus.ObjectPath, error) {
+	return (linuxStore{}).findItem(ctx, c, name)
+}
+func (s linuxStore) findItem(ctx context.Context, c *dbus.Conn, name string) (dbus.ObjectPath, error) {
 	var open, closed []dbus.ObjectPath
-	err := c.Object(serviceName, servicePath).CallWithContext(ctx, serviceInterface+".SearchItems", 0, attributes(name)).Store(&open, &closed)
+	err := c.Object(serviceName, servicePath).CallWithContext(ctx, serviceInterface+".SearchItems", 0, s.attributes(name)).Store(&open, &closed)
 	if err != nil {
 		return "", secretServiceError(ctx, err)
 	}
@@ -167,7 +172,7 @@ func openSession(ctx context.Context, c *dbus.Conn) (dbus.ObjectPath, error) {
 	}
 	return session, nil
 }
-func (linuxStore) get(ctx context.Context, name string) ([]byte, error) {
+func (s linuxStore) get(ctx context.Context, name string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	c, err := connectBus(ctx)
@@ -175,7 +180,7 @@ func (linuxStore) get(ctx context.Context, name string) ([]byte, error) {
 		return nil, err
 	}
 	defer c.Close()
-	path, err := findItem(ctx, c, name)
+	path, err := s.findItem(ctx, c, name)
 	if err != nil {
 		return nil, err
 	}
@@ -190,15 +195,15 @@ func (linuxStore) get(ctx context.Context, name string) ([]byte, error) {
 	}
 	// GNOME Keyring returns text/plain even for binary secrets. MIME is a
 	// presentation hint, not a decoder or trust boundary: retain the exact byte
-	// array, and validate the session, plain-session parameters and fixed size.
-	if secret.Session != session || len(secret.Parameters) != 0 || len(secret.Value) != nativeMaterialSize {
+	// array, and validate the session, plain-session parameters and the exact selected native profile bound.
+	if secret.Session != session || len(secret.Parameters) != 0 || !s.profile.accepts(len(secret.Value)) {
 		clear(secret.Value)
 		return nil, recovery()
 	}
 	return secret.Value, nil
 }
-func (linuxStore) create(ctx context.Context, name string, value []byte) error {
-	if len(value) != nativeMaterialSize {
+func (s linuxStore) create(ctx context.Context, name string, value []byte) error {
+	if !s.profile.accepts(len(value)) {
 		return recovery()
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -208,7 +213,7 @@ func (linuxStore) create(ctx context.Context, name string, value []byte) error {
 		return err
 	}
 	defer c.Close()
-	_, err = findItem(ctx, c, name)
+	_, err = s.findItem(ctx, c, name)
 	if err == nil {
 		return duplicate()
 	}
@@ -240,7 +245,7 @@ func (linuxStore) create(ctx context.Context, name string, value []byte) error {
 		return err
 	}
 	props := map[string]dbus.Variant{itemInterface + ".Label": dbus.MakeVariant("DeliDev credential")}
-	props[itemInterface+".Attributes"] = dbus.MakeVariant(attributes(name))
+	props[itemInterface+".Attributes"] = dbus.MakeVariant(s.attributes(name))
 	var item, prompt dbus.ObjectPath
 	err = c.Object(serviceName, collection).CallWithContext(ctx, collectionInterface+".CreateItem", 0, props, busSecret{session, []byte{}, value, "application/octet-stream"}, false).Store(&item, &prompt)
 	if err != nil {
@@ -256,7 +261,7 @@ func (linuxStore) create(ctx context.Context, name string, value []byte) error {
 	}
 	return nil
 }
-func (linuxStore) remove(ctx context.Context, name string) error {
+func (s linuxStore) remove(ctx context.Context, name string) error {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	c, err := connectBus(ctx)
@@ -264,7 +269,7 @@ func (linuxStore) remove(ctx context.Context, name string) error {
 		return err
 	}
 	defer c.Close()
-	path, err := findItem(ctx, c, name)
+	path, err := s.findItem(ctx, c, name)
 	if isCode(err, domain.NotFound) {
 		return nil
 	}

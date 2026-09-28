@@ -17,6 +17,7 @@ import (
 func TestWindowsTemporaryCredential(t *testing.T) {
 	ctx := context.Background()
 	native := windowsStore{}
+	exerciseNativePAT(t, windowsStore{profile: patProfile}, native)
 	name := string(domain.NewID()) + "/" + string(domain.NewID()) + "/" + string(domain.NewID()) + "/account-api"
 	defer func() {
 		if err := native.remove(ctx, name); err != nil {

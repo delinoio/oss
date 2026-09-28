@@ -52,6 +52,7 @@ func TestMacTemporaryKeychain(t *testing.T) {
 		a.release(keychain)
 	}()
 	backend := &macStore{api: a, keychain: keychain}
+	exerciseNativePAT(t, &macStore{api: a, keychain: keychain, profile: patProfile}, backend)
 	ctx := context.Background()
 	name := string(domain.NewID()) + "/" + string(domain.NewID()) + "/" + string(domain.NewID()) + "/account-api"
 	material := make([]byte, nativeMaterialSize)

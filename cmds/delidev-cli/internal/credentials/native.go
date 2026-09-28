@@ -6,10 +6,10 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
 
-// nativeStore stores only fixed-size wrapping material under an exact opaque
+// nativeStore stores profile-bounded native material under an exact opaque
 // DeliDev reference. Implementations never enumerate unrelated credentials, launch
 // a password-bearing command, display an authentication prompt, or fall back to disk.
-// The enclosing Vault holds an exclusive scope lock through every operation.
+// The enclosing Vault or PATStore holds an exclusive scope lock through every operation.
 type nativeStore interface {
 	get(context.Context, string) ([]byte, error)
 	create(context.Context, string, []byte) error
@@ -37,3 +37,31 @@ func recovery() error {
 func isCode(err error, code domain.Code) bool {
 	return err != nil && domain.SafeError(err).Code == code
 }
+
+// The zero profile preserves existing envelope records exactly. PAT bytes have
+// their own direct native service and cannot be read as account wrapping keys.
+type nativeProfile uint8
+
+const (
+	wrappingProfile nativeProfile = iota
+	patProfile
+)
+const MaxPATBytes = 512
+
+func (p nativeProfile) service() string {
+	if p == patProfile {
+		return "io.delino.delidev.github.pat.v1"
+	}
+	return nativeService
+}
+func (p nativeProfile) accepts(size int) bool {
+	switch p {
+	case wrappingProfile:
+		return size == nativeMaterialSize
+	case patProfile:
+		return size > 0 && size <= MaxPATBytes
+	default:
+		return false
+	}
+}
+func newNative() (nativeStore, error) { return newNativeProfile(wrappingProfile) }

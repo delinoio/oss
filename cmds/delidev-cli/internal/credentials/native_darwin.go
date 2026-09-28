@@ -103,16 +103,17 @@ func dereferenceCFGlobal(address uintptr) uintptr {
 }
 
 type macStore struct {
+	profile  nativeProfile
 	api      *macAPI
 	keychain uintptr
 }
 
-func newNative() (nativeStore, error) {
+func newNativeProfile(profile nativeProfile) (nativeStore, error) {
 	a, err := loadMac()
 	if err != nil {
 		return nil, err
 	}
-	return &macStore{api: a}, nil
+	return &macStore{api: a, profile: profile}, nil
 }
 func (s *macStore) query(name string, adding bool) uintptr {
 	a := s.api
@@ -122,7 +123,7 @@ func (s *macStore) query(name string, adding bool) uintptr {
 	}
 	a.set(q, a.values["kSecClass"], a.values["kSecClassGenericPassword"])
 	a.set(q, a.values["kSecUseAuthenticationUI"], a.values["kSecUseAuthenticationUIFail"])
-	for _, p := range []struct{ k, v string }{{"kSecAttrService", nativeService}, {"kSecAttrAccount", name}} {
+	for _, p := range []struct{ k, v string }{{"kSecAttrService", s.profile.service()}, {"kSecAttrAccount", name}} {
 		value := a.stringValue(0, p.v, 0x08000100) // kCFStringEncodingUTF8
 		if value == 0 {
 			a.release(q)
@@ -185,14 +186,15 @@ func (s *macStore) get(ctx context.Context, name string) ([]byte, error) {
 		return nil, recovery()
 	}
 	defer a.release(value)
-	if a.dataLength(value) != nativeMaterialSize {
+	size := a.dataLength(value)
+	if size < 0 || size > MaxPATBytes || !s.profile.accepts(int(size)) {
 		return nil, recovery()
 	}
 	pointer := a.dataBytes(value)
 	if pointer == nil {
 		return nil, recovery()
 	}
-	out := append([]byte(nil), unsafe.Slice(pointer, nativeMaterialSize)...)
+	out := append([]byte(nil), unsafe.Slice(pointer, int(size))...)
 	if err := ctx.Err(); err != nil {
 		clear(out)
 		return nil, err
@@ -203,7 +205,7 @@ func (s *macStore) create(ctx context.Context, name string, value []byte) error 
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if len(value) != nativeMaterialSize {
+	if !s.profile.accepts(len(value)) {
 		return recovery()
 	}
 	a := s.api
