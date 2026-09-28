@@ -72,6 +72,25 @@ func TestConfigRejectsUnsafeOrImpossibleSettings(t *testing.T) {
 		})
 	}
 }
+
+func TestHelpShowsCurrentVersion(t *testing.T) {
+	var out, errs bytes.Buffer
+	if code := Execute([]string{"--help"}, &out, &errs); code != 0 {
+		t.Fatalf("help returned %d: %s", code, errs.String())
+	}
+	if !strings.HasPrefix(out.String(), "Runmoor "+Version+" -") {
+		t.Fatalf("help did not show current version %q: %s", Version, out.String())
+	}
+
+	out.Reset()
+	if code := Execute([]string{"version"}, &out, &errs); code != 0 {
+		t.Fatalf("version returned %d: %s", code, errs.String())
+	}
+	if !strings.HasPrefix(out.String(), "runmoor "+Version+" (") {
+		t.Fatalf("version did not show current version %q: %s", Version, out.String())
+	}
+}
+
 func TestStrictTOMLAndProtectedCredentials(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Unix permissions")

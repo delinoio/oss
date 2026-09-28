@@ -17,7 +17,7 @@ import (
 	"golang.org/x/term"
 )
 
-const helpText = `Runmoor 0.1.0 - local ephemeral GitHub Actions runners
+const helpText = ` - local ephemeral GitHub Actions runners
 
 Usage: runmoor [--config PATH] COMMAND [OPTIONS]
 
@@ -42,12 +42,16 @@ status and doctor --json use schema_version 1. Product output is English.
 GitHub live compatibility and real Tart execution have not been certified.
 `
 
+func printHelp(out io.Writer) {
+	fmt.Fprint(out, "Runmoor ", Version, helpText)
+}
+
 func Execute(args []string, out, errOut io.Writer) int {
 	if len(args) > 0 && strings.HasPrefix(args[0], "__guest-") {
 		return guestExecute(args[0], args[1:], out)
 	}
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
-		fmt.Fprint(out, helpText)
+		printHelp(out)
 		return 0
 	}
 	path := DefaultConfigPath()
@@ -61,7 +65,7 @@ func Execute(args []string, out, errOut io.Writer) int {
 	}
 	args = root.Args()
 	if len(args) == 0 {
-		fmt.Fprint(out, helpText)
+		printHelp(out)
 		return 2
 	}
 	command := args[0]
@@ -69,7 +73,7 @@ func Execute(args []string, out, errOut io.Writer) int {
 	sub := ""
 	if command == "config" || command == "service" || command == "image" || command == "runner" {
 		if len(args) == 0 {
-			fmt.Fprint(out, helpText)
+			printHelp(out)
 			return 2
 		}
 		sub = args[0]
