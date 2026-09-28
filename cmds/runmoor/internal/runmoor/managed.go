@@ -101,16 +101,21 @@ func recordValidatedManagedRecovery(s *Snapshot, c Config) {
 		}
 		recovery := s.ManagedRecovery[next.Name]
 		if recovery == nil || recovery.PoolID != old.ID || recovery.ProblemHash != fingerprint(old.Problem) {
-			baseline, ok := requestedPool(s.Requested, next.Name)
-			if !ok {
-				delete(s.ManagedRecovery, next.Name)
-				continue
-			}
-			recovery = &ManagedRecovery{PoolID: old.ID, ProblemHash: fingerprint(old.Problem), BaselinePool: baseline, BaselineConnection: s.Requested.Connection(baseline.Connection), BaselineTimeouts: s.Requested.Timeouts, BaselineDockerSocket: s.Requested.DockerSocket, BaselineTartExecutable: s.Requested.TartExecutable}
+			recovery = &ManagedRecovery{PoolID: old.ID, ProblemHash: fingerprint(old.Problem), BaselinePool: old.Spec, BaselineConnection: old.Connection, BaselineTimeouts: s.Config.Timeouts, BaselineDockerSocket: s.Config.DockerSocket, BaselineTartExecutable: s.Config.TartExecutable}
 		}
 		baseline := *old
 		baseline.Spec = recovery.BaselinePool
 		baseline.Connection = recovery.BaselineConnection
+		if old.Problem.Code == ErrImage || old.Problem.Code == ErrRunnerVersion || old.Problem.Code == ErrPreparation {
+			// Managed preparation resolves these fields from the requested image.
+			// A pinned version or resolved image in the committed pool is not
+			// itself a configuration correction; verified image replacement
+			// handles those failures separately.
+			baseline.Spec.Image = next.Image
+			baseline.Spec.ImageSource = next.ImageSource
+			baseline.Spec.RunnerPath = next.RunnerPath
+			baseline.Spec.RunnerVersion = next.RunnerVersion
+		}
 		oldConfig := Config{Timeouts: recovery.BaselineTimeouts, DockerSocket: recovery.BaselineDockerSocket, TartExecutable: recovery.BaselineTartExecutable}
 		if !suspensionCorrected(baseline, next, c.Connection(next.Connection), oldConfig, c) {
 			delete(s.ManagedRecovery, next.Name)

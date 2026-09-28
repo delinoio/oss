@@ -378,6 +378,92 @@ func TestValidatedManagedReloadRecoversAfterCandidatePublication(t *testing.T) {
 	}
 }
 
+func TestValidatedManagedReloadUsesSuspendedCommittedPoolWhenRequestIsPending(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		code   ErrorCode
+		change func(*Config)
+		ready  bool
+	}{
+		{"authentication group", ErrAuth, func(c *Config) { c.Pools[0].RunnerGroup = "replacement-group" }, true},
+		{"ownership scale set", ErrOwnership, func(c *Config) { c.Pools[0].ScaleSet = "replacement-linux" }, true},
+		{"preparation resources", ErrPreparation, func(c *Config) { c.Pools[0].Resources.MemoryMiB++ }, true},
+		{"authentication unrelated labels", ErrAuth, func(c *Config) { c.Pools[0].Labels = append(c.Pools[0].Labels, "pending") }, false},
+		{"preparation unrelated labels", ErrPreparation, func(c *Config) { c.Pools[0].Labels = append(c.Pools[0].Labels, "pending") }, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m, c, _, oldID := managedFixture(t)
+			if tc.name == "authentication group" {
+				c.Connections[0].Target = "https://github.com/delinoio"
+				if err := m.Store.Update(func(s *Snapshot) error {
+					s.Config.Connections[0].Target = c.Connections[0].Target
+					s.Requested.Connections[0].Target = c.Connections[0].Target
+					s.Pools[oldID].Connection.Target = c.Connections[0].Target
+					return nil
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			tc.change(&c)
+			writeSuspensionReload(t, m, c)
+			if err := m.Reload(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if s := m.Store.View(); s.Pools[oldID].Phase != Ready || s.Managed["linux"].Current == nil || s.Managed["linux"].AppliedHash == s.Managed["linux"].DesiredHash {
+				t.Fatal("fixture did not retain an unresolved managed request")
+			}
+			blocked := problem(tc.code, "Fixture pending-request suspension.", "Correct the configuration.")
+			if err := m.Store.Update(func(s *Snapshot) error {
+				s.Pools[oldID].Phase = Suspended
+				s.Pools[oldID].Problem = blocked
+				s.Pools[oldID].PreparationFailures = 2
+				if tc.code == ErrOwnership {
+					s.Pools[oldID].SuspensionSource = SuspensionScaleSet
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			writeSuspensionReload(t, m, c)
+			if err := m.Reload(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if tc.ready && m.Store.View().ManagedRecovery["linux"] == nil {
+				t.Fatal("validated pending correction was not recorded against the failed committed pool")
+			}
+			if !tc.ready && m.Store.View().ManagedRecovery["linux"] != nil {
+				t.Fatal("unrelated pending request was treated as a correction")
+			}
+			c.Pools[0].Labels = append(c.Pools[0].Labels, "later-reload")
+			writeSuspensionReload(t, m, c)
+			if err := m.Reload(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			m.updateManaged(context.Background(), "linux")
+			s := m.Store.View()
+			if s.Pools[oldID].Phase != Draining {
+				t.Fatal("suspended committed pool did not drain after candidate publication")
+			}
+			found := false
+			for id, p := range s.Pools {
+				if id == oldID {
+					continue
+				}
+				found = true
+				if tc.ready && (p.Phase != Ready || p.Problem != nil || p.PreparationFailures != 0) {
+					t.Fatalf("validated pending correction did not resume the replacement: %+v", p)
+				}
+				if !tc.ready && (p.Phase != Suspended || p.Problem == nil || *p.Problem != *blocked || p.PreparationFailures != 2) {
+					t.Fatalf("unrelated pending request hid the failure: %+v", p)
+				}
+			}
+			if !found {
+				t.Fatal("verified candidate was not published")
+			}
+		})
+	}
+}
+
 func TestVerifiedManagedImageRecoversStartupCircuitBreaker(t *testing.T) {
 	m, _, _, oldID := managedFixture(t)
 	if err := m.Store.Update(func(s *Snapshot) error {

@@ -242,7 +242,11 @@ current. Initial preparation failure has no runnable fallback. For an already
 managed suspended pool, a validated reload retains its failure-specific recovery
 decision until the matching desired candidate is verified and published. A later
 unrelated reload may keep that decision while the original correction remains;
-stale candidates, changed failures and operator pause/stop cannot use it. This
+the first decision compares the request with the failed committed pool even when
+an earlier managed request is still pending. Managed image/version fields are
+resolved during candidate preparation, so their committed values alone do not
+count as a configuration correction; verified image replacement handles them.
+Stale candidates, changed failures and operator pause/stop cannot use it. This
 durable decision is private state and does not change status or doctor JSON.
 An unchanged release still requires bounded read-only validation of its committed
 image. Missing or invalid images are prepared again and the candidate is validated
